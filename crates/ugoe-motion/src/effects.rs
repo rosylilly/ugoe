@@ -12,15 +12,21 @@ fn resolve<'a>(
     ids.map(|id| parameters.index_of(id.as_str())).collect()
 }
 
+/// 1 回の [`EyeBlinkPlayer::advance`] で進める段階の数の上限 (1000 回のまばたき)。
+/// 巨大な `dt` や極端に短い設定で止まらないようにする。
+const MAX_BLINK_PHASES_PER_ADVANCE: u32 = 4000;
+
 /// 決定的な擬似乱数 (SplitMix64)。シードが 0 でも偏らない。
 #[derive(Debug, Clone)]
 pub struct Rng(u64);
 
 impl Rng {
+    /// 状態を `seed` にした生成器を作る。
     pub fn new(seed: u64) -> Self {
         Self(seed)
     }
 
+    /// 次の 64 ビットの値 (SplitMix64。`docs/spec/motion.md#目パチ`)。
     pub fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;
@@ -40,8 +46,11 @@ impl Rng {
 pub enum BlinkPhase {
     /// 開いたまま次のまばたきを待つ。
     Open,
+    /// 1 → 0 へ閉じていく (`closing` 秒)。
     Closing,
+    /// 閉じたまま (`closed` 秒)。
     Closed,
+    /// 0 → 1 へ開いていく (`opening` 秒)。
     Opening,
 }
 
@@ -64,6 +73,7 @@ pub struct EyeBlinkPlayer {
 }
 
 impl EyeBlinkPlayer {
+    /// `config` の目パチを `Open` の始めから始める。乱数を `config.seed` で初期化し、最初の間隔を引く。
     pub fn new(config: EyeBlink) -> Self {
         let mut rng = Rng::new(config.seed);
         let wait = next_interval(&mut rng, config.interval);
@@ -77,10 +87,12 @@ impl EyeBlinkPlayer {
         }
     }
 
+    /// 目パチの設定。
     pub fn config(&self) -> &EyeBlink {
         &self.config
     }
 
+    /// 今の段階。
     pub fn phase(&self) -> BlinkPhase {
         self.phase
     }
@@ -98,13 +110,14 @@ impl EyeBlinkPlayer {
 
     /// `dt` 秒進める。1 回で複数の段階をまたいでもよい。
     ///
-    /// `interval <= 0` (不正な設定) なら、まばたきしない。
+    /// `interval <= 0` (不正な設定。NaN を含む) なら、まばたきしない。`dt` が 0 以下か有限値でない
+    /// (NaN・無限大) ときは何もしない。1 回で進める段階の数には上限があり、超えた分の時間は捨てる。
     pub fn advance(&mut self, dt: f32) {
-        if dt <= 0.0 || self.config.interval <= 0.0 {
+        if !(dt > 0.0 && dt.is_finite() && self.config.interval > 0.0) {
             return;
         }
         let mut dt = dt;
-        loop {
+        for _ in 0..MAX_BLINK_PHASES_PER_ADVANCE {
             let len = self.phase_len();
             if self.t + dt < len {
                 self.t += dt;
@@ -122,6 +135,7 @@ impl EyeBlinkPlayer {
                 }
             };
         }
+        // 段階の数の上限に達した。残りの時間は捨てる (今の段階の始めに留まる)。
     }
 
     /// 対象パラメータに `v * lerp(1, openness, strength)` を書き込む。
@@ -161,6 +175,7 @@ pub struct BreathPlayer {
 }
 
 impl BreathPlayer {
+    /// `config` の呼吸を、どの要素も周期内の時刻 0 から始める。
     pub fn new(config: Breath) -> Self {
         let phases = vec![0.0; config.parameters.len()];
         Self {
@@ -170,13 +185,16 @@ impl BreathPlayer {
         }
     }
 
+    /// 呼吸の設定。
     pub fn config(&self) -> &Breath {
         &self.config
     }
 
     /// `dt` 秒進める。
+    ///
+    /// `dt` が 0 以下か有限値でない (NaN・無限大) ときは何もしない。
     pub fn advance(&mut self, dt: f32) {
-        if dt <= 0.0 {
+        if !(dt > 0.0 && dt.is_finite()) {
             return;
         }
         for (phase, p) in self.phases.iter_mut().zip(&self.config.parameters) {
@@ -225,6 +243,7 @@ pub struct LipSyncPlayer {
 }
 
 impl LipSyncPlayer {
+    /// `config` のリップシンクを、音量なし (`None`) で作る。
     pub fn new(config: LipSync) -> Self {
         Self {
             config,
@@ -233,15 +252,17 @@ impl LipSyncPlayer {
         }
     }
 
+    /// リップシンクの設定。
     pub fn config(&self) -> &LipSync {
         &self.config
     }
 
-    /// 音量 (0〜1 にクランプする)。`None` ならリップシンクは何も書き込まない。
+    /// 音量 (0〜1 にクランプする)。`None` ならリップシンクは何も書き込まない。NaN は `None` と同じに扱う。
     pub fn set_level(&mut self, level: Option<f32>) {
-        self.level = level.map(|l| l.clamp(0.0, 1.0));
+        self.level = level.filter(|l| !l.is_nan()).map(|l| l.clamp(0.0, 1.0));
     }
 
+    /// 今の音量 (クランプした後の値)。
     pub fn level(&self) -> Option<f32> {
         self.level
     }
@@ -383,6 +404,71 @@ mod tests {
         });
         b.advance(100.0);
         assert_eq!(b.openness(), 1.0);
+    }
+
+    /// NaN・無限大・巨大な `dt` や、極端に短い設定・NaN の設定でも、1 回の `advance` が終わる。
+    #[test]
+    fn eye_blink_advance_terminates_for_extreme_values() {
+        let tiny = EyeBlink {
+            interval: 1e-30,
+            closing: 0.0,
+            closed: 0.0,
+            opening: 0.0,
+            ..EyeBlink::standard()
+        };
+        let nan = EyeBlink {
+            interval: f32::NAN,
+            ..EyeBlink::standard()
+        };
+        for (config, dt) in [
+            (EyeBlink::standard(), f32::NAN),
+            (EyeBlink::standard(), f32::INFINITY),
+            (EyeBlink::standard(), 1e30),
+            (EyeBlink::standard(), f32::MAX),
+            (tiny.clone(), 1.0 / 60.0),
+            (nan, 1.0 / 60.0),
+        ] {
+            let mut b = EyeBlinkPlayer::new(config);
+            b.advance(dt);
+            assert!(b.openness().is_finite(), "dt={dt}");
+            b.advance(1.0 / 60.0);
+            assert!(b.openness().is_finite(), "dt={dt}");
+        }
+        // NaN と無限大の `dt` は何も進めない。
+        let mut b = blink(1);
+        b.advance(0.5);
+        let t = b.t;
+        b.advance(f32::NAN);
+        b.advance(f32::INFINITY);
+        assert_eq!((b.phase(), b.t), (BlinkPhase::Open, t));
+    }
+
+    /// NaN や無限大の `dt` で位相を壊さない (以降の呼吸が NaN のままにならない)。
+    #[test]
+    fn breath_ignores_non_finite_dt() {
+        let mut breath = BreathPlayer::new(Breath::standard());
+        breath.advance(0.3);
+        breath.advance(f32::NAN);
+        breath.advance(f32::INFINITY);
+        assert!(
+            breath.phases.iter().all(|t| close(*t, 0.3)),
+            "{:?}",
+            breath.phases
+        );
+        breath.advance(1e30);
+        let mut p = params();
+        breath.apply(&mut p);
+        assert!(get(&p, standard::BREATH).is_finite());
+    }
+
+    #[test]
+    fn lip_sync_treats_nan_level_as_no_level() {
+        let mut lip = LipSyncPlayer::new(LipSync::standard());
+        lip.set_level(Some(f32::NAN));
+        assert_eq!(lip.level(), None);
+        let mut p = params();
+        lip.apply(&mut p, 1.0);
+        assert_eq!(get(&p, standard::MOUTH_OPEN_Y), 0.0);
     }
 
     #[test]

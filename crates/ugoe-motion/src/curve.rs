@@ -192,6 +192,29 @@ mod tests {
         assert_eq!(evaluate(&segs, 2.0), None);
     }
 
+    /// セグメントがない・最初が `start` でないカーブは値を持たない (`docs/spec/motion.md#カーブ`)。
+    #[test]
+    fn empty_or_headless_curve_has_no_value() {
+        assert_eq!(evaluate(&[], 0.0), None);
+        let segs = [Segment::Linear { to: p(1.0, 1.0) }];
+        assert_eq!(evaluate(&segs, 0.5), None);
+    }
+
+    /// 2 つ目以降の `start` より前は通常どおり評価し、その後は値を持たない (仕様の例)。
+    #[test]
+    fn second_start_ends_the_curve() {
+        let segs = [
+            Segment::Start { p: p(0.0, 0.0) },
+            Segment::Linear { to: p(1.0, 1.0) },
+            Segment::Start { p: p(2.0, 5.0) },
+            Segment::Linear { to: p(3.0, 6.0) },
+        ];
+        assert_eq!(evaluate(&segs, 0.5), Some(0.5));
+        assert_eq!(evaluate(&segs, 1.0), Some(1.0));
+        assert_eq!(evaluate(&segs, 1.5), None);
+        assert_eq!(evaluate(&segs, 2.5), None);
+    }
+
     /// 制御点を 1/3, 2/3 に置いたベジェは直線と一致する (`docs/spec/motion.md#カーブ`)。
     #[test]
     fn bezier_with_thirds_equals_linear() {

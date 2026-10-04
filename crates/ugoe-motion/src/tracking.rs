@@ -326,7 +326,11 @@ impl Formula {
             Self::BrowInnerUp => b[BROW_INNER_UP],
             Self::BrowLAngle => b[BROW_OUTER_UP_LEFT] - b[BROW_INNER_UP],
             Self::BrowRAngle => b[BROW_OUTER_UP_RIGHT] - b[BROW_INNER_UP],
-            Self::MouthOpenY => (b[JAW_OPEN] - b[MOUTH_CLOSE]).max(0.0),
+            Self::MouthOpenY => {
+                // `f32::max` は NaN を捨てるので使わない (NaN の入力は書き込まずに残す)。
+                let v = b[JAW_OPEN] - b[MOUTH_CLOSE];
+                if v < 0.0 { 0.0 } else { v }
+            }
             Self::MouthForm => {
                 (b[MOUTH_SMILE_LEFT] + b[MOUTH_SMILE_RIGHT]
                     - b[MOUTH_FROWN_LEFT]
@@ -973,6 +977,14 @@ mod tests {
         params.set(params.index_of(standard::ANGLE_X).unwrap(), 12.0);
         map.apply(&input, &mut params);
         assert_eq!(value(&params, standard::ANGLE_X), 12.0);
+
+        // 0 で抑える式 (`MouthOpenY`) も、NaN の入力では書き込まない (0 にしない)。
+        let mouth = params.index_of(standard::MOUTH_OPEN_Y).unwrap();
+        params.set(mouth, 0.5);
+        let mut input = TrackingInput::default();
+        input.set_blend_shape("jawOpen", f32::NAN);
+        map.apply(&input, &mut params);
+        assert_eq!(value(&params, standard::MOUTH_OPEN_Y), 0.5);
     }
 
     #[test]

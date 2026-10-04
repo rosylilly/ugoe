@@ -24,6 +24,7 @@ pub struct PosePlayer {
 }
 
 impl PosePlayer {
+    /// 各グループの先頭の要素を表示した状態 (先頭の不透明度 1、ほかは 0) で作る。
     pub fn new(pose: Pose) -> Self {
         let groups = pose
             .groups
@@ -38,6 +39,7 @@ impl PosePlayer {
         Self { pose, groups }
     }
 
+    /// ポーズの設定。
     pub fn pose(&self) -> &Pose {
         &self.pose
     }

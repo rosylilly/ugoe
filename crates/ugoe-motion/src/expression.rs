@@ -3,7 +3,7 @@
 use ugoe_model::expression::{Expression, ExpressionOp};
 use ugoe_runtime::{ParamIndex, ParameterValues};
 
-use crate::player::fade_weight;
+use crate::player::{advance_clock, fade_weight};
 
 /// 表情 1 つ分の再生状態。フェードは [`MotionPlayer`](crate::MotionPlayer) と同じ規則
 /// (`fade_in` で入り、[`stop`](Self::stop) から `fade_out` 秒で抜ける)。
@@ -12,12 +12,14 @@ pub struct ExpressionPlayer {
     expression: Expression,
     /// 各項目の対象パラメータの添字 (初回の適用時に解決する)。
     param_indices: Option<Vec<Option<ParamIndex>>>,
-    elapsed: f32,
+    /// 経過時間。長時間使い続けても `dt` を足せるように `f64` で持つ。
+    elapsed: f64,
     /// 終了する経過時間。`None` なら止めるまで続く。
-    end: Option<f32>,
+    end: Option<f64>,
 }
 
 impl ExpressionPlayer {
+    /// `expression` を使い始める (`fade_in` でフェードインし、止めるまで続く)。
     pub fn new(expression: Expression) -> Self {
         Self {
             expression,
@@ -27,6 +29,7 @@ impl ExpressionPlayer {
         }
     }
 
+    /// 使っている表情。
     pub fn expression(&self) -> &Expression {
         &self.expression
     }
@@ -38,7 +41,7 @@ impl ExpressionPlayer {
 
     /// 今の時点から `fade_out` 秒かけてフェードアウトして終わる。既に止めていれば早いほうの終了時刻を保つ。
     pub fn stop(&mut self) {
-        let end = self.elapsed + self.expression.fade_out.max(0.0);
+        let end = self.elapsed + f64::from(self.expression.fade_out.max(0.0));
         self.end = Some(self.end.map_or(end, |e| e.min(end)));
     }
 
@@ -52,13 +55,10 @@ impl ExpressionPlayer {
         )
     }
 
-    /// `dt` 秒進める。
+    /// `dt` 秒進める。`dt` が 0 以下か有限値でない (NaN・無限大) ときは何もしない。
     pub fn advance(&mut self, dt: f32) {
-        if dt > 0.0 && !self.is_finished() {
-            self.elapsed += dt;
-            if let Some(end) = self.end {
-                self.elapsed = self.elapsed.min(end);
-            }
+        if !self.is_finished() {
+            advance_clock(&mut self.elapsed, self.end, dt);
         }
     }
 
@@ -96,6 +96,7 @@ pub struct ExpressionManager {
 }
 
 impl ExpressionManager {
+    /// 表情を使っていないマネージャを作る。
     pub fn new() -> Self {
         Self::default()
     }
@@ -206,6 +207,24 @@ mod tests {
             apply_at(ExpressionOp::Overwrite, -0.6, 0.2, 2.0),
             -0.6
         ));
+    }
+
+    /// 長時間使い続けた後でも、止めてから `fade_out` 秒で抜ける (経過時間の精度が落ちて止まらない)。
+    #[test]
+    fn stop_finishes_after_a_long_run() {
+        let mut player = ExpressionPlayer::new(expression("e", ExpressionOp::Add, 1.0, 0.5));
+        // 約 12 日。f32 の経過時間では 1/60 秒を足しても変わらなくなる。
+        player.advance(1_048_576.0);
+        player.advance(f32::NAN);
+        player.advance(f32::INFINITY);
+        assert!(close(player.weight(), 1.0));
+        player.stop();
+        player.advance(0.25);
+        assert!(close(player.weight(), easing(0.5)), "{}", player.weight());
+        for _ in 0..16 {
+            player.advance(1.0 / 60.0);
+        }
+        assert!(player.is_finished());
     }
 
     /// 複数の表情は開始した順に適用する。

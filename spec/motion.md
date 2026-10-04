@@ -105,12 +105,13 @@ It also has an **end** time on the `elapsed` clock, or no end: a non-looping mot
 there was no end). A motion is **finished** when it has an end and `elapsed ≥ end`. A finished motion
 applies nothing and fires no events.
 
-**Advancing** by `dt` (nothing happens if the motion is finished or `dt ≤ 0`):
+**Advancing** by `dt` (nothing happens if the motion is finished, or if `dt` is not a finite number
+greater than 0, such as NaN or infinity):
 
 ```
 dt = min(dt, end − elapsed)                   if there is an end
 elapsed += dt
-if not looping, or duration ≤ 0:
+if not looping, or not duration > 0 (NaN included):
     to = min(time + dt, max(duration, 0))
     fire the events in (time, to];  time = to
 else:
@@ -128,6 +129,10 @@ except that it is `[from, to]` for the first range after the motion starts and f
 after each wrap, so that an event at time 0 fires at the start of every loop. When one advance spans
 several loops, the events of every loop are fired. Events with the same time fire in array order.
 Fired events are delivered to the host with their `value`.
+
+A runtime MAY limit the number of loops one advance handles, so that a huge `dt` or a tiny `duration`
+cannot stall it. What an advance does beyond the limit is not specified, except that `time` stays in
+`[0, duration)`.
 
 **Fade weight.** For a fade-in length `fi` and fade-out length `fo`:
 
@@ -205,7 +210,8 @@ The result is clamped to the parameter's range. Items with an unknown `op` are i
 
 - The fade weight uses the formula of [Motion playback](#motion-playback) with the expression's
   `fade_in` and `fade_out`, on a clock `elapsed` that starts at 0. An expression has no duration: it
-  has no end until it is stopped. Advancing adds `dt > 0` to `elapsed`, but not beyond the end.
+  has no end until it is stopped. Advancing adds `dt` to `elapsed`, but not beyond the end; a `dt`
+  that is not a finite number greater than 0 changes nothing.
 - An expression is **stopped** and **finished** as a motion is ([Motion playback](#motion-playback)):
   stopping sets `end = min(end, elapsed + max(fade_out, 0))`, so it fades out over its `fade_out` from
   now, or stops having an effect at once if `fade_out = 0`; stopping it again keeps the earlier end.
@@ -256,8 +262,8 @@ again whenever the eye blink settings are replaced; a new one is drawn each time
 `open`. The intervals are therefore uniformly distributed in `[0.5, 1.5) × interval` and the same
 seed always gives the same blinks.
 
-**Advancing** by `dt > 0` (if the eye blink `interval` is not positive, the eye blink never
-advances):
+**Advancing** by a finite `dt > 0` (any other `dt` changes nothing; if the eye blink `interval` is
+not greater than 0, NaN included, the eye blink never advances):
 
 ```
 loop:
@@ -266,7 +272,9 @@ loop:
     dt −= max(len − t, 0);  t = 0;  go to the next phase (drawing a new interval when entering open)
 ```
 
-Phases of length 0 are passed through. One advance may pass several phases.
+Phases of length 0 are passed through. One advance may pass several phases. A runtime MAY limit the
+number of phases one advance passes, so that a huge `dt` or tiny lengths cannot stall it; what an
+advance does beyond the limit is not specified.
 
 **Applying** with effect-group strength `s` ([Effect groups](#effect-groups)): each target parameter
 is set to `v × (1 + (openness − 1) × s)`. The blink **multiplies** the current value, so eyes that a
@@ -274,7 +282,7 @@ motion or expression half-closed close further, and values above 1 keep their ra
 
 ### Breathing
 
-Each breath entry keeps a phase `φ ∈ [0, cycle)`, initially 0. Advancing by `dt > 0` sets
+Each breath entry keeps a phase `φ ∈ [0, cycle)`, initially 0. Advancing by a finite `dt > 0` (any other `dt` changes nothing) sets
 `φ = (φ + dt) mod cycle` (Euclidean remainder), or `φ = 0` if `cycle ≤ 0`. Applying adds
 
 ```
@@ -285,9 +293,9 @@ to the target parameter's current value. Breathing has no effect group.
 
 ### Lip sync
 
-The host supplies a **level** between 0 and 1 (values outside are clamped), or no level. With no
-level, lip sync writes nothing. With a level `ℓ` and the strength `s` of the `LipSync` group, each
-target parameter is set to `lerp(v, ℓ, s)`. Lip sync analyzes no audio itself.
+The host supplies a **level** between 0 and 1 (values outside are clamped; NaN counts as no level),
+or no level. With no level, lip sync writes nothing. With a level `ℓ` and the strength `s` of the
+`LipSync` group, each target parameter is set to `lerp(v, ℓ, s)`. Lip sync analyzes no audio itself.
 
 ### Replacing the effect settings
 

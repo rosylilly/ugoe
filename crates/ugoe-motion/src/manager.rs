@@ -34,6 +34,7 @@ pub struct MotionManager {
 }
 
 impl MotionManager {
+    /// モーションを再生していないマネージャを作る。
     pub fn new() -> Self {
         Self::default()
     }
@@ -99,11 +100,11 @@ impl MotionManager {
     /// (`w` はカーブのフェードの重み)。対象のカーブがなければ 1。
     pub fn effect_group_weight(&self, name: &str) -> f32 {
         let mut s = 1.0;
+        let is_group =
+            |target: &CurveTarget| matches!(target, CurveTarget::EffectGroup(g) if g == name);
         for player in &self.players {
-            for (target, value, w) in player.curve_values() {
-                if matches!(target, CurveTarget::EffectGroup(g) if g == name) {
-                    s += (value - s) * w;
-                }
+            for (_, value, w) in player.curve_values_where(is_group) {
+                s += (value - s) * w;
             }
         }
         s
@@ -117,7 +118,8 @@ impl MotionManager {
     pub fn part_opacities(&self) -> Vec<(PartId, f32, f32)> {
         let mut out: Vec<(PartId, f32, f32)> = Vec::new();
         for player in &self.players {
-            for (target, value, w) in player.curve_values() {
+            let is_part = |target: &CurveTarget| matches!(target, CurveTarget::PartOpacity(_));
+            for (target, value, w) in player.curve_values_where(is_part) {
                 let CurveTarget::PartOpacity(part) = target else {
                     continue;
                 };

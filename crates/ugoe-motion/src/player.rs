@@ -6,6 +6,9 @@ use ugoe_runtime::{ParamIndex, ParameterValues};
 
 use crate::curve;
 
+/// 1 回の [`MotionPlayer::advance`] で扱うループの周回の上限。巨大な `dt` や極端に短い長さで止まらないようにする。
+pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
+
 /// フェードの曲線 `0.5 - 0.5 cos(π x)`。`x` は `[0, 1]` にクランプする。
 pub fn easing(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
@@ -34,13 +37,35 @@ fn fade_out_weight(remaining: f32, duration: f32) -> f32 {
 }
 
 /// 経過時間 `elapsed`、終了時刻 `end` での `fade_in_weight * fade_out_weight`。
-pub(crate) fn fade_weight(fade_in: f32, fade_out: f32, elapsed: f32, end: Option<f32>) -> f32 {
-    let w_out = end.map_or(1.0, |end| fade_out_weight(end - elapsed, fade_out));
-    fade_in_weight(elapsed, fade_in) * w_out
+///
+/// 経過時間は `f64` で持つ (長時間動かしても `dt` を足せなくならない)。差を取ってから `f32` にする。
+pub(crate) fn fade_weight(fade_in: f32, fade_out: f32, elapsed: f64, end: Option<f64>) -> f32 {
+    let w_out = end.map_or(1.0, |end| fade_out_weight((end - elapsed) as f32, fade_out));
+    fade_in_weight(elapsed.min(f64::from(f32::MAX)) as f32, fade_in) * w_out
+}
+
+/// 経過時間を `dt` 進める。終了時刻があれば越えない。`dt` が正の有限値でなければ何もしない。
+///
+/// 進めた時間 (終了時刻で切ったもの) を返す。
+pub(crate) fn advance_clock(elapsed: &mut f64, end: Option<f64>, dt: f32) -> f32 {
+    if !(dt > 0.0 && dt.is_finite()) {
+        return 0.0;
+    }
+    match end {
+        Some(end) if *elapsed + f64::from(dt) >= end => {
+            let dt = (end - *elapsed).max(0.0) as f32;
+            *elapsed = end;
+            dt
+        }
+        _ => {
+            *elapsed += f64::from(dt);
+            dt
+        }
+    }
 }
 
 /// カーブ個別のフェード (未指定ならモーション全体の値) を使った重み。
-fn curve_fade_weight(motion: &Motion, curve: &Curve, elapsed: f32, end: Option<f32>) -> f32 {
+fn curve_fade_weight(motion: &Motion, curve: &Curve, elapsed: f64, end: Option<f64>) -> f32 {
     fade_weight(
         curve.fade_in.unwrap_or(motion.fade_in),
         curve.fade_out.unwrap_or(motion.fade_out),
@@ -67,9 +92,10 @@ pub struct MotionPlayer {
     /// 各カーブの対象パラメータの添字 (初回の適用時に解決する)。
     param_indices: Option<Vec<Option<ParamIndex>>>,
     time: f32,
-    elapsed: f32,
+    /// 経過時間。長時間ループさせても `dt` を足せるように `f64` で持つ。
+    elapsed: f64,
     /// 終了する経過時間。`None` なら終わらない (ループ中)。
-    end: Option<f32>,
+    end: Option<f64>,
     /// 次の [`advance`](Self::advance) で、再生位置ちょうどのイベントも発火するか
     /// (再生の開始直後とループの折り返し直後)。
     inclusive_start: bool,
@@ -78,10 +104,11 @@ pub struct MotionPlayer {
 }
 
 impl MotionPlayer {
+    /// `motion` を時刻 0 から再生するプレイヤーを作る。ループしないモーションは `duration` で終わる。
     pub fn new(motion: Motion) -> Self {
         let mut event_order: Vec<usize> = (0..motion.events.len()).collect();
         event_order.sort_by(|&a, &b| motion.events[a].t.total_cmp(&motion.events[b].t));
-        let end = (!motion.looping).then_some(motion.duration.max(0.0));
+        let end = (!motion.looping).then_some(f64::from(motion.duration.max(0.0)));
         Self {
             motion,
             event_order,
@@ -94,6 +121,7 @@ impl MotionPlayer {
         }
     }
 
+    /// 再生しているモーション。
     pub fn motion(&self) -> &Motion {
         &self.motion
     }
@@ -105,7 +133,7 @@ impl MotionPlayer {
 
     /// 再生開始からの経過時間 (秒)。ループしても戻らない。
     pub fn elapsed(&self) -> f32 {
-        self.elapsed
+        self.elapsed as f32
     }
 
     /// 再生が終わった (フェードアウトし切った) か。終わったプレイヤーは何も適用しない。
@@ -117,7 +145,7 @@ impl MotionPlayer {
     ///
     /// 既に決まっている終了時刻のほうが早ければ、そちらを保つ。
     pub fn stop(&mut self) {
-        let end = self.elapsed + self.motion.fade_out.max(0.0);
+        let end = self.elapsed + f64::from(self.motion.fade_out.max(0.0));
         self.end = Some(self.end.map_or(end, |e| e.min(end)));
     }
 
@@ -141,17 +169,22 @@ impl MotionPlayer {
     }
 
     /// `dt` 秒進める。通過したイベントは [`fired_events`](Self::fired_events) で得られる。
+    ///
+    /// `dt` が 0 以下か有限値でない (NaN・無限大) ときは何もしない。
     pub fn advance(&mut self, dt: f32) {
         self.fired.clear();
-        if self.is_finished() || dt <= 0.0 {
+        if self.is_finished() {
             return;
         }
         // 終了時刻を越えて再生位置やイベントを進めない。
-        let dt = self.end.map_or(dt, |end| dt.min(end - self.elapsed));
-        self.elapsed += dt;
+        let dt = advance_clock(&mut self.elapsed, self.end, dt);
+        if dt <= 0.0 {
+            return;
+        }
 
         let duration = self.motion.duration;
-        if !self.motion.looping || duration <= 0.0 {
+        // NaN の長さも 0 以下と同じに扱う (ループさせると周回が終わらない)。
+        if !self.motion.looping || duration.is_nan() || duration <= 0.0 {
             let to = (self.time + dt).min(duration.max(0.0));
             self.fire_range(self.time, to);
             self.time = to;
@@ -159,7 +192,7 @@ impl MotionPlayer {
         }
 
         let mut remaining = dt;
-        loop {
+        for _ in 0..MAX_LAPS_PER_ADVANCE {
             let to = self.time + remaining;
             if to < duration {
                 self.fire_range(self.time, to);
@@ -175,6 +208,10 @@ impl MotionPlayer {
                 return;
             }
         }
+        // 周回の上限を超えた分は発火せず、再生位置だけを合わせる。巨大な `dt` から周回の長さを
+        // 引き続けても桁落ちで減らない (極端に短い長さでも同じ) ので、剰余で [0, duration) に収める。
+        let time = remaining.rem_euclid(duration);
+        self.time = if time < duration { time } else { 0.0 };
     }
 
     /// 直前の [`advance`](Self::advance) (または [`update`](Self::update)) で発火したイベント。
@@ -216,12 +253,20 @@ impl MotionPlayer {
     ///
     /// 重みには外部の重みを含めない。終わったプレイヤーは何も返さない。
     pub fn curve_values(&self) -> impl Iterator<Item = (&CurveTarget, f32, f32)> {
+        self.curve_values_where(|target| *target != CurveTarget::Unknown)
+    }
+
+    /// [`curve_values`](Self::curve_values) のうち、対象が `filter` を満たすカーブだけ。
+    /// 評価の前に対象で絞るので、ほかの対象のカーブは評価しない (モーションマネージャが毎フレーム使う)。
+    pub(crate) fn curve_values_where(
+        &self,
+        filter: impl Fn(&CurveTarget) -> bool,
+    ) -> impl Iterator<Item = (&CurveTarget, f32, f32)> {
         let finished = self.is_finished();
         self.motion
             .curves
             .iter()
-            .filter(move |_| !finished)
-            .filter(|c| c.target != CurveTarget::Unknown)
+            .filter(move |c| !finished && filter(&c.target))
             .filter_map(|c| {
                 let value = curve::evaluate(&c.segments, self.time)?;
                 let w = curve_fade_weight(&self.motion, c, self.elapsed, self.end);
@@ -461,6 +506,18 @@ mod tests {
         assert_eq!(player.time(), 0.0);
     }
 
+    /// 長さ 0 のループしないモーションは、開始した時点で終わる (時刻 0 のイベントも発火しない)。
+    #[test]
+    fn zero_length_motion_finishes_at_start() {
+        let mut m = motion(0.0, false, vec![constant("X", 1.0)]);
+        m.events = vec![event(0.0, "zero")];
+        let mut player = MotionPlayer::new(m);
+        assert!(player.is_finished());
+        player.advance(0.1);
+        assert!(fired(&player).is_empty());
+        assert_eq!(applied(&mut player, 1.0), 0.0);
+    }
+
     #[test]
     fn events_fire_when_passed() {
         let mut m = motion(2.0, false, vec![]);
@@ -532,6 +589,71 @@ mod tests {
         player.advance(10.0);
         assert_eq!(fired(&player), ["early"]);
         assert!(close(player.time(), 0.6));
+        assert!(player.is_finished());
+    }
+
+    /// NaN や無限大の `dt` では何も進めない (ループするモーションで止まらず、ループしないモーションを終わらせない)。
+    #[test]
+    fn non_finite_dt_does_nothing() {
+        for looping in [false, true] {
+            let mut player = MotionPlayer::new(motion(2.0, looping, vec![]));
+            player.advance(0.5);
+            for dt in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                player.advance(dt);
+                assert!(close(player.time(), 0.5), "looping={looping} dt={dt}");
+                assert!(close(player.elapsed(), 0.5), "looping={looping} dt={dt}");
+                assert!(!player.is_finished(), "looping={looping} dt={dt}");
+            }
+        }
+    }
+
+    /// 巨大な `dt`・極端に短い長さ・NaN の長さのループでも、1 回の `advance` が終わる。
+    #[test]
+    fn looping_advance_terminates_for_extreme_values() {
+        for (duration, dt) in [
+            (1.0, 1e30),
+            (1.0, f32::MAX),
+            (1e-30, 1.0 / 60.0),
+            (f32::MIN_POSITIVE, 1.0),
+            (f32::NAN, 1.0 / 60.0),
+        ] {
+            let mut m = motion(duration, true, vec![]);
+            m.events = vec![event(0.0, "zero")];
+            let mut player = MotionPlayer::new(m);
+            player.advance(dt);
+            let time = player.time();
+            assert!(
+                time.is_finite() && time >= 0.0,
+                "duration={duration} dt={dt} time={time}"
+            );
+            if duration > 0.0 {
+                assert!(time < duration, "duration={duration} dt={dt} time={time}");
+            }
+            assert!(fired(&player).len() <= MAX_LAPS_PER_ADVANCE as usize + 1);
+            // その後も普通に進む。
+            player.advance(1.0 / 60.0);
+            assert!(player.time().is_finite());
+        }
+    }
+
+    /// 長時間ループした後でも、`stop` から `fade_out` 秒で終わる (経過時間の精度が落ちて止まらない)。
+    #[test]
+    fn stop_finishes_after_a_long_run() {
+        let mut m = motion(10.0, true, vec![constant("X", 1.0)]);
+        m.fade_out = 0.5;
+        let mut player = MotionPlayer::new(m);
+        // 約 12 日。f32 の経過時間では 1/60 秒を足しても変わらなくなる。
+        player.advance(1_048_576.0);
+        player.stop();
+        player.advance(0.25);
+        assert!(
+            close(player.fade_weight(), easing(0.5)),
+            "{}",
+            player.fade_weight()
+        );
+        for _ in 0..16 {
+            player.advance(1.0 / 60.0);
+        }
         assert!(player.is_finished());
     }
 
