@@ -1,11 +1,11 @@
 ---
 id: T0452
 title: "@ugoe/runtime: ほかの *_json() の型と、警告・エラーのコードの一覧の突き合わせ"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, ugoe-wasm, docs]
 depends_on: [T0434]
-assignee:
+assignee: claude-worker-T0452
 ---
 
 # T0452: @ugoe/runtime: ほかの *_json() の型と、警告・エラーのコードの一覧の突き合わせ
