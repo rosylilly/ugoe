@@ -73,6 +73,11 @@ mirrored: Array<MirrorReport>, };
 export type ApprovalAction = "apply" | "undo" | "redo" | "save";
 
 /**
+ * 確認がどう終わったか (画面は、利用者が答えずに閉じたわけを知らせる)。
+ */
+export type ApprovalOutcome = "approved" | "declined" | "timed_out" | "cancelled";
+
+/**
  * 確認のダイアログに出す、エージェントの求め。
  */
 export type ApprovalRequest = { 
@@ -305,7 +310,7 @@ connected_at: number, };
 /**
  * 画面へ送るイベント。
  */
-export type BridgeEvent = { "kind": "status" } | { "kind": "approval", request: ApprovalRequest, } | { "kind": "approval_closed", id: number, } | { "kind": "document" } | { "kind": "proposals" };
+export type BridgeEvent = { "kind": "status" } | { "kind": "approval", request: ApprovalRequest, } | { "kind": "approval_closed", id: number, outcome: ApprovalOutcome, } | { "kind": "document" } | { "kind": "proposals" };
 
 /**
  * アルファの形からの法線マップの生成の設定 (`ugoe_rigging::BulgeOptions` のうち画面で選ぶもの)。

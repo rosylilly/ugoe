@@ -1680,7 +1680,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   - **外での書き換えとぶつからない:** ブリッジの編集はエディタの文書に入り、ディスクには保存するまで書かないので、外の変更としては見えない。
 - **提案の出どころ:** `Change::Proposed` の名前を `Proposals::set_source` で提案に記し、`ProposalView::source` として画面に出す
   (「from claude-code」。エディタの中で作った提案は `null`)。HTTP はセッションを持たないので、名前は最後に握手したクライアント。
-- **画面へのイベント (`mcp-bridge`、`BridgeEvent`):** `status` (始めた・止めた・握手した)・`approval` / `approval_closed`・`document`
+- **画面へのイベント (`mcp-bridge`、`BridgeEvent`):** `status` (始めた・止めた・握手した)・`approval` / `approval_closed`
+  (終わり方 `ApprovalOutcome` を添える。エージェントの取り消し (`cancelled`) なら画面は Toast で知らせる。T1603)・`document`
   (適用・Undo・Redo・保存。画面は `EditorDocument.refresh`)・`proposals` (一覧を取り直し、AI タブを開いていなければタブに「•」)。
 - **設定 (`mcp-bridge.json`):** アプリの設定のディレクトリに `enabled` (既定は偽)・`port` (無ければ空いているポート)・`token` を残す。
   トークンは初めて有効にしたときに OS の乱数で作り、起動し直しても同じ (HTTP で直接つなぐクライアントの設定を保つ)。Unix では一時ファイルも

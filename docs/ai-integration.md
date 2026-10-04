@@ -526,6 +526,10 @@ T0516 (`ugoe-mcp` の側)、T0642 (エディタの側)、T0643 (Claude Desktop �
 - **エディタの側 (T0642):** 持ち主は `apps/editor/src-tauri/src/mcp.rs` の `EditorHost` (設定の「Connect agents」で有効にする。
   既定は無効)。エージェントの提案は AI タブの提案の一覧に `ProposalView::source` (エージェントの名前) 付きで出て、画面の
   プレビュー・一部だけの採用・Undo がそのまま使えます。適用・Undo・Redo・保存は画面の確認 (120 秒で時間切れ) を通します。
+  確認が閉じると、画面へのイベント `approval_closed` が終わり方 (`outcome`: `approved`・`declined`・`timed_out`・`cancelled`) を
+  添えます。エージェントが要求を取り消して閉じた (`cancelled`) ときは、画面は「エージェントが取り消した。何もしていない」と
+  知らせ (Toast)、時間切れ・利用者の拒否と区別します (T1603)。`ugoe_mcp::host::Approvals::request` は取り消しを拒否
+  (`HostError::Denied`) として返すので、エディタは拒否の文が自分の渡した文 (`DECLINED`) でないことで取り消しと見分けます。
   `ugoe-mcp` はエディタのサイドカーとして同梱し、「Connect agents」の画面が各クライアントの登録のコマンドにそのパスを埋めます。
   詳細は [docs/editor.md#エージェントをつなぐ](editor.md#エージェントをつなぐ)、操作は [操作マニュアル](manual/mcp.md)。
 - **Claude Desktop (T0643):** 中継を MCP Bundle (`.mcpb`) に包み、Claude Desktop に拡張機能として入れます

@@ -74,6 +74,10 @@ impl EditorApp for TestApp {
 
 impl TestApp {
     fn open(project: Option<&Path>, discovery: &Path) -> Arc<Self> {
+        Self::open_with_timeout(project, discovery, Duration::from_millis(300))
+    }
+
+    fn open_with_timeout(project: Option<&Path>, discovery: &Path, timeout: Duration) -> Arc<Self> {
         let (session, document) = match project {
             Some(dir) => {
                 let (project, disk) = Project::load_tracked(dir).unwrap();
@@ -87,7 +91,7 @@ impl TestApp {
         state.mcp = McpBridge {
             discovery: Some(discovery.to_path_buf()),
             shared: Arc::new(Shared {
-                timeout: Duration::from_millis(300),
+                timeout,
                 ..Shared::default()
             }),
             ..McpBridge::default()
@@ -263,7 +267,13 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     assert_eq!(request.proposal, Some(1));
     assert_eq!(request.title.as_deref(), Some("Add AngleX"));
     assert_eq!(request.client.as_deref(), Some("test-agent"));
-    assert_eq!(events[1], BridgeEvent::ApprovalClosed { id: request.id });
+    assert_eq!(
+        events[1],
+        BridgeEvent::ApprovalClosed {
+            id: request.id,
+            outcome: ApprovalOutcome::Declined,
+        }
+    );
     assert_eq!(app.parameter_ids(), vec!["X"]);
 
     // 時間切れ: エラーが返り、待っている確認は残らない。
@@ -271,6 +281,13 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     let err = client.err("apply_proposal", json!({ "path": path, "proposal": "p1" }));
     assert!(err.to_string().contains("did not answer in time"), "{err}");
     assert!(app.status().pending.is_empty());
+    assert!(matches!(
+        app.take_events().last(),
+        Some(BridgeEvent::ApprovalClosed {
+            outcome: ApprovalOutcome::TimedOut,
+            ..
+        })
+    ));
     assert_eq!(app.parameter_ids(), vec!["X"]);
 
     // 承認: 適用され、画面に読み直しを知らせる。
@@ -278,7 +295,15 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     app.take_events();
     client.ok("apply_proposal", json!({ "path": path, "proposal": "p1" }));
     assert_eq!(app.parameter_ids(), vec!["X", "AngleX"]);
-    assert!(app.take_events().contains(&BridgeEvent::Document));
+    let events = app.take_events();
+    assert!(events.contains(&BridgeEvent::Document));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        BridgeEvent::ApprovalClosed {
+            outcome: ApprovalOutcome::Approved,
+            ..
+        }
+    )));
 
     // エディタの Undo (画面の操作) で戻すと、提案が再び一覧に出る。
     {
@@ -326,6 +351,66 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     assert!(!discovery.exists());
     let err = client.err("get_model_summary", json!({ "path": path }));
     assert!(err.to_string().contains("not running"), "{err}");
+}
+
+/// エージェントが要求を取り消すと (`notifications/cancelled`)、確認は閉じ、取り消しとして画面に知らせる (T1603)。
+#[test]
+fn cancelled_requests_close_the_approval_as_cancelled() {
+    let tmp = TempDir::new("cancel");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.display().to_string();
+    let discovery = tmp.0.join("state").join("editor-mcp.json");
+    // 取り消しが時間切れより先に届くように、時間は長くする。
+    let app = TestApp::open_with_timeout(Some(&project), &discovery, Duration::from_secs(30));
+    app.enable();
+    let mut client = Client::new(&discovery);
+    client.initialize();
+    client.ok("propose_edit", add_angle(&path));
+    app.set_answer(None);
+    app.take_events();
+
+    let relay = &client.relay;
+    let call = json!({
+        "jsonrpc": "2.0",
+        "id": "apply",
+        "method": "tools/call",
+        "params": { "name": "apply_proposal", "arguments": { "path": path, "proposal": "p1" } },
+    });
+    let reply = std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| relay.handle_line(&call.to_string()));
+        // 確認が画面に出てから取り消す (時間切れより前に)。
+        while !app
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, BridgeEvent::Approval { .. }))
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let cancel = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": "apply" },
+        });
+        assert_eq!(relay.handle_line(&cancel.to_string()), None);
+        waiting.join().unwrap()
+    });
+    // 取り消した要求には答えない。
+    assert_eq!(reply, None);
+    let events = app.take_events();
+    let BridgeEvent::Approval { request } = &events[0] else {
+        panic!("{events:?}")
+    };
+    assert_eq!(
+        events[1],
+        BridgeEvent::ApprovalClosed {
+            id: request.id,
+            outcome: ApprovalOutcome::Cancelled,
+        }
+    );
+    assert!(app.status().pending.is_empty());
+    assert_eq!(app.parameter_ids(), vec!["X"]);
 }
 
 /// 保存と一緒の `.ugoe` の書き出しは一時ファイルを経る: 書けなければ前のファイルを残し、一時ファイルも残さない (T0687)。

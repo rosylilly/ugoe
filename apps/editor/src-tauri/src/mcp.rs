@@ -66,6 +66,34 @@ pub enum ApprovalAction {
     Save,
 }
 
+/// 確認がどう終わったか (画面は、利用者が答えずに閉じたわけを知らせる)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalOutcome {
+    /// 利用者が承認した。
+    Approved,
+    /// 利用者が拒否した・ブリッジを止めた。
+    Declined,
+    /// 利用者が答えないうちに時間が切れた。
+    TimedOut,
+    /// エージェント (クライアント) が要求を取り消した (`notifications/cancelled`・HTTP の切断)。
+    Cancelled,
+}
+
+impl ApprovalOutcome {
+    /// [`Approvals::request`] の結果から。拒否の文が [`DECLINED`] でなければ、`ugoe_mcp` が取り消しで拒否した
+    /// (`request` が `denied` の文以外で拒否するのは取り消しだけ)。
+    fn of(result: &Result<(), HostError>) -> Self {
+        match result {
+            Ok(()) => Self::Approved,
+            Err(HostError::Denied(message)) if message == DECLINED => Self::Declined,
+            Err(HostError::Denied(_)) => Self::Cancelled,
+            Err(HostError::TimedOut) => Self::TimedOut,
+            Err(HostError::Failed(_)) => Self::Declined,
+        }
+    }
+}
+
 /// 確認のダイアログに出す、エージェントの求め。
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct ApprovalRequest {
@@ -140,10 +168,11 @@ pub enum BridgeEvent {
     Status,
     /// 確認を求める。
     Approval { request: ApprovalRequest },
-    /// 確認が終わった (答えた・時間切れ・止めた)。
+    /// 確認が終わった (答えた・時間切れ・止めた・エージェントが取り消した)。
     ApprovalClosed {
         #[ts(type = "number")]
         id: u64,
+        outcome: ApprovalOutcome,
     },
     /// エージェントが文書を変えた・保存した (読み直す)。
     Document,
@@ -578,7 +607,8 @@ impl EditorHost {
             });
         if let Some(id) = asked {
             lock(&self.shared.pending).retain(|r| r.id != id);
-            self.app.emit(BridgeEvent::ApprovalClosed { id });
+            let outcome = ApprovalOutcome::of(&result);
+            self.app.emit(BridgeEvent::ApprovalClosed { id, outcome });
         }
         result
     }

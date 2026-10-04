@@ -1,7 +1,9 @@
 // エディタの中の MCP サーバ (エージェントをつなぐ) の、画面全体で共有する状態 (docs/editor.md#エージェントをつなぐ)。
 // ブリッジはバックエンド (apps/editor/src-tauri/src/mcp.rs) が持ち、ここは状態の表示・設定の変更・確認への答えだけ。
 // バックエンドのイベント (`mcp-bridge`) は App が `handle` に渡す。
+import { showToast } from "@ugoe/ui";
 import { errorText } from "../errors";
+import { t } from "../i18n";
 import { type ApprovalRequest, type BridgeEvent, ipc, type McpBridgeStatus } from "../ipc";
 
 /** イベントを受けて App がすること。 */
@@ -68,9 +70,15 @@ export class AgentBridge {
           this.#setApprovals([...this.approvals, event.request]);
         }
         break;
-      case "approval_closed":
+      case "approval_closed": {
+        const closed = this.approvals.find((r) => r.id === event.id);
         this.#setApprovals(this.approvals.filter((r) => r.id !== event.id));
+        // 答えずに消えたわけを知らせる (時間切れはダイアログに残りの秒数を出しているので知らせない)。
+        if (closed && event.outcome === "cancelled") {
+          showToast(cancelledText(closed), { tone: "warning" });
+        }
         break;
+      }
       case "document":
         hooks.document();
         break;
@@ -111,6 +119,21 @@ export class AgentBridge {
     } finally {
       this.busy = false;
     }
+  }
+}
+
+/** エージェントが確認の求めを取り消したときの知らせ。 */
+function cancelledText(r: ApprovalRequest): string {
+  const who = r.client ?? t("agents.approval.agent");
+  switch (r.action) {
+    case "apply":
+      return t("agents.approval.cancelled.apply", { who });
+    case "undo":
+      return t("agents.approval.cancelled.undo", { who });
+    case "redo":
+      return t("agents.approval.cancelled.redo", { who });
+    case "save":
+      return t("agents.approval.cancelled.save", { who });
   }
 }
 

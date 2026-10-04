@@ -2,6 +2,7 @@
   エディタにつないだエージェントの求め (提案の適用・Undo・Redo・保存) の確認 (docs/editor.md#エージェントをつなぐ)。
   答えを待っている求めの先頭を、画面の下に出す。画面の操作をふさがない (モーダルにしない) ので、「Show in AI tab」で提案を
   プレビューしながら決められる。答えずに時間が過ぎると、エージェントには時間切れのエラーが返り、ここから消える。
+  エージェントが求めを取り消したときも消え、`AgentBridge.handle` が取り消されたことを Toast で知らせる。
 -->
 <script lang="ts">
 import { formatList, RichText } from "@ugoe/i18n";

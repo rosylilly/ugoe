@@ -1599,6 +1599,12 @@
       },
       "decline": {
         "label": "Decline"
+      },
+      "cancelled": {
+        "apply": "{{who}} cancelled its request to apply a proposal. Nothing was applied.",
+        "undo": "{{who}} cancelled its request to undo. Nothing was undone.",
+        "redo": "{{who}} cancelled its request to redo. Nothing was redone.",
+        "save": "{{who}} cancelled its request to save. Nothing was saved."
       }
     }
   },
