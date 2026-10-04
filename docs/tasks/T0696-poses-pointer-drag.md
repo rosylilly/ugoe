@@ -1,11 +1,11 @@
 ---
 id: T0696
 title: ポーズのパネルの要素の並べ替えを、HTML5 のドラッグ & ドロップからポインタの操作にする
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0671]
-assignee:
+assignee: claude-worker-T0696
 ---
 
 # T0696: ポーズのパネルの要素の並べ替えを、HTML5 のドラッグ & ドロップからポインタの操作にする
