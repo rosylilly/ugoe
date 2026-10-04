@@ -20,10 +20,10 @@ export interface DropTarget {
   container?: ElementRef | null;
 }
 
-/** 失敗の理由。`noop` はすでにそこにある (何も変わらない) こと。 */
 /** ドラッグ中、ある行に落とすとどうなるか (行の表示用)。 */
 export type DropMark = { position: DropPosition; ok: boolean } | null;
 
+/** 編集のコマンドか、失敗の理由。`noop` はすでにそこにある (何も変わらない) こと。 */
 export type EditResult =
   | { ok: true; command: EditCommand }
   | { ok: false; reason: string; noop?: boolean };

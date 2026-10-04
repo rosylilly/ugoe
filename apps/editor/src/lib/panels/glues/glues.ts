@@ -2,13 +2,11 @@
 // 頂点の組を作るのは editor-core (`create_glue`・`set_glue` の `distance`)。ここでは送るコマンドを組み立てるだけ。
 import { t } from "../../i18n";
 import type { Command, Glue, GluePair, ModuleStatus, Parameter } from "../../ipc";
+import { GLUE_PREFIX as DRAW_CLONE_PREFIX } from "../inspector/drawClone/drawClone";
 import { cellAt } from "../inspector/keyforms/keyforms";
 
 /** 頂点の組を作るときの既定の距離 (キャンバスのピクセル)。 */
 export const DEFAULT_GLUE_DISTANCE = 8;
-
-/** 描画用の複製のグルーの ID の接頭辞 (editor-core の `draw_clone::GLUE_PREFIX`)。 */
-const DRAW_CLONE_PREFIX = "DrawClone_";
 
 /**
  * モジュールのプロジェクトで、グルーが本体のもの (読み取り専用) か。モジュールのグルーはモジュールのメッシュだけを

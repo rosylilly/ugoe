@@ -1,4 +1,4 @@
-<!-- キーの格子のセルの由来の凡例 (記号と色は inference.ts の ORIGIN_STYLES)。 -->
+<!-- キーの格子のセルの由来の凡例 (記号と色は inference.ts の ORIGIN_MARKS)。 -->
 <script lang="ts">
 import { Tooltip } from "@ugoe/ui";
 import { LEGEND_ORIGINS, originStyle } from "./inference";

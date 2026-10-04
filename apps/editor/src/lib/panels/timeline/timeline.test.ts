@@ -10,6 +10,7 @@ import {
   keyValuesCommand,
   newMotion,
   segmentEndingAt,
+  segmentHandle,
   segmentShape,
   snapToFrame,
   tickStep,
@@ -118,6 +119,13 @@ describe("curves", () => {
     expect(clampHandle({ t: 3, v: 1 }, { t: 0, v: 0 }, { t: 1, v: 1 })).toEqual({ t: 1, v: 1 });
     expect(segmentShape("bezier")).toEqual({ type: "bezier" });
     expect(segmentShape("stepped")).toEqual({ type: "stepped" });
+  });
+
+  it("reads the handles of the bezier segment ending at a key", () => {
+    expect(segmentHandle(curve, 1, "c1")).toEqual({ t: 0.3, v: 0 });
+    expect(segmentHandle(curve, 1, "c2")).toEqual({ t: 0.7, v: 10 });
+    expect(segmentHandle(curve, 1.5, "c1")).toBeNull();
+    expect(segmentHandle(curve, 0, "c1")).toBeNull();
   });
 });
 

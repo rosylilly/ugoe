@@ -3,12 +3,14 @@ import type { Command, KeyformTarget, RederiveWarning } from "../../../generated
 import type { ElementGrid, KeyformBinding, ModelData } from "../keyforms/keyforms";
 import {
   cellKey,
+  defaultPivot,
   describeMirrorReport,
   describeMirrorSource,
   describeWarning,
   formError,
   inferCommand,
   inferenceForm,
+  inferenceFormKey,
   inferenceFromForm,
   LEGEND_ORIGINS,
   markCommand,
@@ -107,6 +109,43 @@ describe("inference form", () => {
     expect(formError({ ...form, pivotX: Number.NaN })).toBe("Pivot x must be a number");
     expect(formError({ ...form, yaw: "", pitch: "" })).toMatch(/yaw or pitch/);
     expect(formError({ ...form, method: "additive", pivotX: Number.NaN })).toBeNull();
+  });
+});
+
+describe("form resets", () => {
+  it("keys the form by what it is built from, not by object identity", () => {
+    const copy = <T>(x: T): T => JSON.parse(JSON.stringify(x));
+    const inference = {
+      method: "depth_rotation" as const,
+      angle_scale: 1,
+      pivot: [0, 0] as [number, number],
+      pivot_depth: 0,
+    };
+    const key = inferenceFormKey(eyeL, inference, bindings, [1, 2]);
+    // 読み直したモデル (別のオブジェクト) でも同じなら同じ鍵 (編集中のフォームを消さない)。
+    expect(inferenceFormKey(copy(eyeL), copy(inference), copy(bindings), [1, 2])).toBe(key);
+    expect(inferenceFormKey(eyeR, inference, bindings, [1, 2])).not.toBe(key);
+    expect(inferenceFormKey(eyeL, null, bindings, [1, 2])).not.toBe(key);
+    expect(inferenceFormKey(eyeL, inference, bindings.slice(0, 1), [1, 2])).not.toBe(key);
+    expect(inferenceFormKey(eyeL, inference, bindings, [1, 3])).not.toBe(key);
+  });
+
+  it("centers the default pivot on the first cell's points", () => {
+    expect(
+      defaultPivot("mesh", {
+        positions: [
+          [0, 0],
+          [10, 4],
+          [2, 8],
+        ],
+      }),
+    ).toEqual([5, 4]);
+    expect(defaultPivot("rotation", { origin: [3, 4], angle: 0 })).toEqual([3, 4]);
+    expect(defaultPivot("part", { opacity: 1 })).toEqual([0, 0]);
+    expect(defaultPivot("mesh", undefined)).toEqual([0, 0]);
+    // 引数の数に上限のある Math.min(...) では止まる大きさ (JavaScriptCore は 65536 個まで)。
+    const positions = Array.from({ length: 300_000 }, (_, i): [number, number] => [i, -i]);
+    expect(defaultPivot("mesh", { positions })).toEqual([149_999.5, -149_999.5]);
   });
 });
 

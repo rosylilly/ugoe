@@ -6,6 +6,7 @@ import {
   formatCell,
   formatCount,
   groupFindings,
+  isAtCell,
   overflowDots,
   targetLabel,
   targetRef,
@@ -86,6 +87,18 @@ describe("navigation", () => {
       ["AngleX", 30],
       ["Smile", 1],
     ]);
+  });
+
+  it("finds the cell the viewport is on, even after the values went through f32", () => {
+    const parameters = [
+      { id: "AngleX", min: -30, max: 30 },
+      { id: "Smile", min: 0, max: 1 },
+    ];
+    // 0.1 を f32 に丸めた値 (ViewportController.setParameter が WebPuppet から読み直す値)。
+    const values = { AngleX: 30, Smile: Math.fround(0.1) };
+    expect(isAtCell({ AngleX: 30, Smile: 0.1 }, values, parameters)).toBe(true);
+    expect(isAtCell({ AngleX: 0, Smile: 0.1 }, values, parameters)).toBe(false);
+    expect(isAtCell({ Missing: 1 }, values, parameters)).toBe(false);
   });
 });
 

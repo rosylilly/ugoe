@@ -20,6 +20,7 @@ import {
   type SegmentKind,
   segmentEndingAt,
   segmentEnds,
+  segmentHandle,
   segmentKinds,
   segmentShape,
   snapToFrame,
@@ -166,6 +167,9 @@ async function onUp() {
     }
     return;
   }
+  // 動かさずに離したときは送らない (Undo の履歴に何も変えないコマンドを積まない)。
+  const before = row.curve ? segmentHandle(row.curve, d.t, d.kind) : null;
+  if (before && before.t === d.point.t && before.v === d.point.v) return;
   await apply({
     op: "set_motion_segment",
     motion: motion.name,
@@ -243,8 +247,8 @@ async function removeCurve() {
     {#if selectedPoint}
       <span class="fields">
         {#key fieldsKey}
-          <span class="visually-hidden" id="{ids}-t">{t("timeline.curve.keyTime.aria")}</span>
-          <span class="visually-hidden" id="{ids}-v">{t("timeline.curve.keyValue.aria")}</span>
+          <span class="ugoe-visually-hidden" id="{ids}-t">{t("timeline.curve.keyTime.aria")}</span>
+          <span class="ugoe-visually-hidden" id="{ids}-v">{t("timeline.curve.keyValue.aria")}</span>
           <span class="inline"
             ><span aria-hidden="true">{t("timeline.curve.keyTime.label")}</span><NumberField
               step={0.1}
@@ -418,14 +422,6 @@ async function removeCurve() {
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .plot {
     display: block;

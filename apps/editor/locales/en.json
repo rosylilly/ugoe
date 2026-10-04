@@ -2112,7 +2112,7 @@
       "parameter": "Parameter"
     },
     "baseBadge": "base",
-    "empty": "Nothing selected (rev {{revision}})",
+    "empty": "Nothing selected",
     "avatarBaseHint": "The avatar profile belongs to the base model and can't be edited here. Edit it in the base project.",
     "mesh": {
       "title": "Mesh",

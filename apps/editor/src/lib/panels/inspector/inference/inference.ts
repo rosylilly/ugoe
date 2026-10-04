@@ -10,12 +10,14 @@ import type {
 } from "../../../generated/types";
 import { t } from "../../../i18n";
 import { labelOf } from "../../../labels";
-import type {
-  Cell,
-  ElementGrid,
-  KeyformBinding,
-  KeyformOrigin,
-  ModelData,
+import {
+  type Cell,
+  type ElementGrid,
+  editablePoints,
+  type KeyformBinding,
+  type KeyformKind,
+  type KeyformOrigin,
+  type ModelData,
 } from "../keyforms/keyforms";
 
 /** セルの由来ごとの表示 (格子の記号・名前・色)。色は明暗どちらのテーマでも読める中間の明るさ。 */
@@ -156,6 +158,40 @@ export function inferenceForm(
     yaw: bound("AngleX"),
     pitch: bound("AngleY"),
   };
+}
+
+/** 回転の中心の既定値: 基準のセル (先頭) の点の外接矩形の中心。点がなければ原点。 */
+export function defaultPivot(kind: KeyformKind, keyform: unknown): [number, number] {
+  const points = keyform === undefined ? [] : editablePoints(kind, keyform);
+  if (points.length === 0) return [0, 0];
+  // Math.min(...xs) は引数の数の上限で止まるので、1 つずつ見る (頂点の多いメッシュ)。
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of points) {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return [(x0 + x1) / 2, (y0 + y1) / 2];
+}
+
+/**
+ * フォームを作り直すかを決める鍵: フォームの元 (格子・推定の設定・軸・既定の中心) が同じなら同じ文字列。
+ * モデルを読み直すたびに格子は別のオブジェクトになるので、オブジェクトではなくこの鍵の変化で作り直す
+ * (関係のない編集で、編集中のフォームを消さないため)。
+ */
+export function inferenceFormKey(
+  target: KeyformTarget,
+  inference: KeyformInference | null | undefined,
+  bindings: readonly KeyformBinding[],
+  pivot: readonly [number, number],
+): string {
+  return JSON.stringify([
+    targetKey(target),
+    inference ?? null,
+    bindings.map((b) => b.parameter),
+    pivot,
+  ]);
 }
 
 /** フォームの値の誤り (なければ null)。 */

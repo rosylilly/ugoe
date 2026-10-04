@@ -76,6 +76,12 @@ describe("depth summary", () => {
     expect(describeDepth([4, 4])).toBe("4 px");
     expect(describeDepth([0, 12.345])).toBe("0 – 12.35 px");
   });
+
+  it("reads the range of meshes with many vertices", () => {
+    // 引数の数に上限のある Math.min(...) では止まる大きさ (JavaScriptCore は 65536 個まで)。
+    const depth = Array.from({ length: 300_000 }, (_, i) => i - 1);
+    expect(depthRange(depth)).toEqual({ min: -1, max: 299_998 });
+  });
 });
 
 describe("commands", () => {

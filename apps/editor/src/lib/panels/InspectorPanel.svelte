@@ -85,7 +85,7 @@ const primaryLabel = $derived.by(() => {
     <DepthSection {doc} {selection} {viewport} />
   </BaseLock>
 {:else}
-  <p class="muted">{t("inspector.empty", { revision: doc.revision })}</p>
+  <p class="muted">{t("inspector.empty")}</p>
   <BaseLock
     locked={doc.module !== null}
     hint={t("inspector.avatarBaseHint")}

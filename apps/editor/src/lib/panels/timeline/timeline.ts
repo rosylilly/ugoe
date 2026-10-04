@@ -350,6 +350,12 @@ export function canMoveKey(curve: Curve, from: number, to: number): boolean {
   return (!prev || prev.t < to) && (!next || to < next.t);
 }
 
+/** 時刻 `t` のキーで終わるベジェの区間の取っ手 (ベジェでなければ null)。 */
+export function segmentHandle(curve: Curve, t: number, which: "c1" | "c2"): Point | null {
+  const segment = segmentEndingAt(curve, t);
+  return segment?.type === "bezier" ? segment[which] : null;
+}
+
 /** 区間の始点と終点 (時刻 `t` のキーで終わる区間)。 */
 export function segmentEnds(curve: Curve, t: number): [Point, Point] | null {
   const keys = curveKeys(curve);

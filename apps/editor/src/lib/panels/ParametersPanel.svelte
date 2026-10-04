@@ -101,7 +101,8 @@ async function saveEditor(p: ParameterDef) {
   if (draft.name !== p.name)
     commands.push({ op: "rename_parameter", id: p.id, name: draft.name } as const);
   if (draft.min !== p.min || draft.max !== p.max || draft.default !== p.default) {
-    commands.push({ op: "set_parameter_range", id: p.id, ...draft } as const);
+    const { min, default: def, max } = draft;
+    commands.push({ op: "set_parameter_range", id: p.id, min, default: def, max } as const);
   }
   if (commands.length > 0) {
     await doc.apply({ op: "batch", label: t("parameters.history.edit", { id: p.id }), commands });

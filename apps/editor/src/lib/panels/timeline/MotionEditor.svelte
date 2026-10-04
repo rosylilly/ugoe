@@ -399,7 +399,7 @@ function label(m: Motion): string {
           {#key fieldsKey}
             {#each motion.events as ev, i (i)}
               <div class="event">
-                <span class="visually-hidden" id="{ids}-event-{i}"
+                <span class="ugoe-visually-hidden" id="{ids}-event-{i}"
                   >{t("timeline.motion.events.time.aria", { index: i + 1 })}</span
                 >
                 <NumberField
@@ -441,7 +441,7 @@ function label(m: Motion): string {
         ><span aria-hidden="true">{timeline.playing ? "■" : "▶"}</span>
         {timeline.playing ? t("timeline.motion.stop.label") : t("timeline.motion.play.label")}</TipButton
       >
-      <span class="visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
+      <span class="ugoe-visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
       <Checkbox
         label={t("timeline.motion.repeat.label")}
         describedby="{ids}-repeat"
@@ -464,7 +464,7 @@ function label(m: Motion): string {
         labelledby="{ids}-time"
         onchange={(v) => timeline.seek(v)}
       />
-      <span class="visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>
+      <span class="ugoe-visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>
       <IconButton
         small
         variant="secondary"
@@ -604,14 +604,6 @@ function label(m: Motion): string {
     display: flex;
     align-items: center;
     gap: 4px;
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .sheet {
     flex: 1;

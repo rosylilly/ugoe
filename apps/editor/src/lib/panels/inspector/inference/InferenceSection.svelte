@@ -5,21 +5,24 @@
 -->
 <script lang="ts">
 import { Button, Checkbox, NumberField, Select } from "@ugoe/ui";
+import { untrack } from "svelte";
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
 import type { Command, KeyformTarget } from "../../../ipc";
 import type { Selection } from "../../../selection.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
-import { currentCell, editablePoints, elementGrid, parseModel } from "../keyforms/keyforms";
+import { currentCell, elementGrid, parseModel } from "../keyforms/keyforms";
 import { cellSelection } from "./cellSelection.svelte";
 import {
+  defaultPivot,
   describeMirrorReport,
   describeMirrorSource,
   formError,
   type InferenceForm,
   inferCommand,
   inferenceForm,
+  inferenceFormKey,
   inferenceFromForm,
   markCommand,
   methodName,
@@ -30,6 +33,7 @@ import {
   sameInference,
   setInferenceCommand,
   setMirrorPairCommand,
+  targetKey,
   targetName,
 } from "./inference";
 
@@ -51,18 +55,21 @@ const inference = $derived(grid?.inference ?? null);
 const canRotate = $derived(element?.kind === "mesh" || element?.kind === "warp");
 
 /** 回転の中心の既定値: 基準のセル (先頭) の点の外接矩形の中心。 */
-const defaultPivot = $derived.by((): [number, number] => {
-  if (!element || !grid) return [0, 0];
-  const points = editablePoints(element.kind, grid.keyforms[0]);
-  if (points.length === 0) return [0, 0];
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
-});
+const pivot = $derived<[number, number]>(
+  element && grid ? defaultPivot(element.kind, grid.keyforms[0]) : [0, 0],
+);
 
+// 読み直すたびに格子は別のオブジェクトになるので、元の値が変わったとき (要素を替えた・設定を適用した・Undo) だけ
+// フォームを作り直す (関係のない編集で、編集中のフォームを消さない)。
+const formKey = $derived(
+  element ? inferenceFormKey(element.target, inference, bindings, pivot) : "",
+);
 let form = $state<InferenceForm>(inferenceForm(null, []));
 $effect(() => {
-  form = inferenceForm(inference, bindings, defaultPivot);
+  void formKey;
+  untrack(() => {
+    form = inferenceForm(inference, bindings, pivot);
+  });
 });
 const error = $derived(formError(form));
 const edited = $derived(!sameInference(inferenceFromForm(form), inference));
@@ -76,11 +83,18 @@ let mirrorTolerance = $state<number | null>(null);
 let overwriteAuthored = $state(false);
 /** 直前の「Mirror」の結果 (書いたセルの数、何も書かなければその理由)。 */
 let mirrorResult = $state<{ text: string; overwrite: boolean } | null>(null);
+/** 要素の鍵 (読み直しでは変わらない文字列)。 */
+const elementKey = $derived(element ? targetKey(element.target) : null);
+/** ミラー元の候補の鍵 (対を張り替えると候補の並びが変わる)。 */
+const choicesKey = $derived(choices.map((c) => targetKey(c.source)).join("\n"));
 $effect(() => {
-  // 要素が変わったら先頭 (対の相手) を選び直し、前の結果を消す。
-  void element?.target.id;
-  mirrorFrom = 0;
-  mirrorResult = null;
+  // 要素か候補が変わったら先頭 (対の相手) を選び直し、前の結果を消す (読み直しでは選び直さない)。
+  void elementKey;
+  void choicesKey;
+  untrack(() => {
+    mirrorFrom = 0;
+    mirrorResult = null;
+  });
 });
 
 // 左右の対
@@ -92,9 +106,16 @@ const currentPartner = $derived(
 );
 let partnerInput = $state("");
 let pairAxisInput = $state<number | null>(null);
+const pairAxis = $derived(pair?.axis ?? null);
 $effect(() => {
-  partnerInput = currentPartner;
-  pairAxisInput = pair?.axis ?? null;
+  // 要素か対が変わったときだけ欄を今の値に戻す (読み直しでは戻さない)。
+  void elementKey;
+  void currentPartner;
+  void pairAxis;
+  untrack(() => {
+    partnerInput = currentPartner;
+    pairAxisInput = pairAxis;
+  });
 });
 const pairEdited = $derived(
   partnerInput !== currentPartner || finiteOrNull(pairAxisInput) !== (pair?.axis ?? null),
@@ -226,7 +247,7 @@ function finiteOrNull(value: number | null): number | null {
           >{t("inspector.inference.apply.label")}</TipButton
         >
         {#if edited}
-          <Button small onclick={() => (form = inferenceForm(inference, bindings, defaultPivot))}
+          <Button small onclick={() => (form = inferenceForm(inference, bindings, pivot))}
             >{t("inspector.inference.reset.label")}</Button
           >
         {/if}

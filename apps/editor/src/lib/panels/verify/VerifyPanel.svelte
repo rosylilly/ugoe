@@ -25,6 +25,7 @@ import {
   formatCell,
   formatCount,
   groupFindings,
+  isAtCell,
   targetLabel,
   targetRef,
 } from "./overflow";
@@ -167,7 +168,7 @@ function goToPhysics(rig: string, collider: string): void {
                   <button
                     class="cell"
                     class:current={selection.primary?.id === group.target.id &&
-                      cellParameters(finding.cell).every(([id, v]) => viewport.parameterValues[id] === v)}
+                      isAtCell(finding.cell, viewport.parameterValues, model?.parameters ?? [])}
                     onclick={() => goTo(finding)}
                     title={t("verify.overflow.cell")}
                   >

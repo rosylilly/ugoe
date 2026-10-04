@@ -12,6 +12,7 @@ import type {
 } from "../../ipc";
 import { labelOf } from "../../labels";
 import type { ElementRef } from "../../selection.svelte";
+import { keyTolerance, type ParameterData } from "../inspector/keyforms/keyforms";
 
 /** 1 つの要素のはみ出し (一覧の 1 項目)。セルは量の大きい順。 */
 export interface OverflowGroup {
@@ -98,6 +99,22 @@ export function targetRef(target: KeyformTarget): ElementRef | null {
 /** セルへ移るときにビューポートに設定するパラメータの値 (ID と値)。 */
 export function cellParameters(cell: Partial<Record<string, number>>): [string, number][] {
   return Object.entries(cell).filter((e): e is [string, number] => typeof e[1] === "number");
+}
+
+/**
+ * ビューポートのパラメータの値がセルの上にあるか。値は WebPuppet の f32 を経由するので、キーフォームの格子と同じ
+ * 許容差で比べる (keyforms.ts の keyTolerance)。
+ */
+export function isAtCell(
+  cell: Partial<Record<string, number>>,
+  values: Readonly<Record<string, number>>,
+  parameters: readonly Pick<ParameterData, "id" | "min" | "max">[],
+): boolean {
+  return cellParameters(cell).every(([id, key]) => {
+    const value = values[id];
+    if (value === undefined) return false;
+    return Math.abs(value - key) <= keyTolerance(parameters.find((p) => p.id === id));
+  });
 }
 
 /** ビューポートに描くはみ出した点 (CSS ピクセル)。 */

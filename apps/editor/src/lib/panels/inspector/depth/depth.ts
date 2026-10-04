@@ -43,7 +43,14 @@ export function depthElement(model: Model, ref: ElementRef | null): DepthElement
 /** 深度の範囲 (表示用)。深度がなければ null。 */
 export function depthRange(depth: readonly number[] | null): { min: number; max: number } | null {
   if (!depth || depth.length === 0) return null;
-  return { min: Math.min(...depth), max: Math.max(...depth) };
+  // Math.min(...depth) は引数の数の上限で止まるので、1 つずつ見る (頂点の多いメッシュ)。
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const d of depth) {
+    if (d < min) min = d;
+    if (d > max) max = d;
+  }
+  return { min, max };
 }
 
 /** 深度の範囲の説明 ("none"、"0 – 12 px" など)。 */
