@@ -1,11 +1,11 @@
 ---
 id: T0146
 title: ID から添字への引き当てを毎フレームの線形探索にしない
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-runtime, ugoe, ugoe-ffi, docs]
 depends_on: [T0137]
-assignee:
+assignee: claude-worker-T0146
 ---
 
 # T0146: ID から添字への引き当てを毎フレームの線形探索にしない
