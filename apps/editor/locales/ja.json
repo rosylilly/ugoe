@@ -156,6 +156,12 @@
       "baseReloadedAuto": "本体のモデルがエディタの外で変わったので、読み直しました",
       "reloaded": "プロジェクトをディスクから読み直しました",
       "reloadedAuto": "プロジェクトがエディタの外で変わったので、読み直しました"
+    },
+    "filters": {
+      "psd": "Photoshop のドキュメント (.psd)",
+      "project": "ugoe のプロジェクト (.ugoeproj)",
+      "bundle": "ugoe のバンドル (.ugoe)",
+      "module": "ugoe の着せ替えのモジュール (.ugoemod)"
     }
   },
   "baseChange": {
@@ -1482,7 +1488,8 @@
     },
     "token": {
       "copy": {
-        "label": "トークンを写す"
+        "label": "トークンを写す",
+        "failed": "トークンをクリップボードに写せませんでした。"
       },
       "regenerate": {
         "label": "トークンを作り直す"
@@ -1658,7 +1665,8 @@
       "askingAi": "{{name}} にリグの値を尋ねています (答えが検証を通らなければ、もう一度尋ねることがあります)…",
       "building": "テンプレートからリグを組んでいます…",
       "preparing": "プレビューを用意しています…",
-      "applying": "提案を適用しています…"
+      "applying": "提案を適用しています…",
+      "revising": "{{name}} に提案 #{{id}} の作り直しを頼んでいます…"
     },
     "summary": {
       "byAi_other": "{{count}} 個のレイヤーを AI で分類",
@@ -1768,7 +1776,8 @@
         "empty": "先に上の欄に AI への注文を書いてください",
         "tooLong": "注文が {{max}} 文字を超えています"
       }
-    }
+    },
+    "adoptFailed": "提案を適用できませんでした。"
   },
   "errorCause": "{{message}} 原因: {{cause}}",
   "errors": {

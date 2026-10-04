@@ -18,6 +18,8 @@ export class AgentBridge {
   busy = $state(false);
   /** 答えを待っているエージェントの求め (古い順。先頭をダイアログに出す)。 */
   approvals = $state.raw<ApprovalRequest[]>([]);
+  /** 求めを受け取った時刻 (ミリ秒)。待っている間の残りの秒数は、出した時でなくここから数える。 */
+  #received = new Map<number, number>();
 
   /** 待ち受けていて、握手したクライアントがいるか (ヘッダーの印)。 */
   get connected(): number {
@@ -40,9 +42,14 @@ export class AgentBridge {
     return this.#run(ipc.regenerateMcpBridgeToken);
   }
 
+  /** 求め `id` を受け取った時刻 (`Date.now()` の値)。待っていなければ null。 */
+  receivedAt(id: number): number | null {
+    return this.#received.get(id) ?? null;
+  }
+
   /** 確認に答える。答えたものは一覧から外す (閉じた知らせを待たない)。 */
   async answer(id: number, approved: boolean): Promise<void> {
-    this.approvals = this.approvals.filter((r) => r.id !== id);
+    this.#setApprovals(this.approvals.filter((r) => r.id !== id));
     try {
       await ipc.answerMcpApproval(id, approved);
     } catch (e) {
@@ -58,11 +65,11 @@ export class AgentBridge {
         break;
       case "approval":
         if (!this.approvals.some((r) => r.id === event.request.id)) {
-          this.approvals = [...this.approvals, event.request];
+          this.#setApprovals([...this.approvals, event.request]);
         }
         break;
       case "approval_closed":
-        this.approvals = this.approvals.filter((r) => r.id !== event.id);
+        this.#setApprovals(this.approvals.filter((r) => r.id !== event.id));
         break;
       case "document":
         hooks.document();
@@ -71,6 +78,19 @@ export class AgentBridge {
         hooks.proposals();
         break;
     }
+  }
+
+  /** 待っている求めを置き換え、受け取った時刻を新しいものに付け、待たなくなったものから外す。 */
+  #setApprovals(approvals: ApprovalRequest[]): void {
+    const now = Date.now();
+    const ids = new Set(approvals.map((r) => r.id));
+    for (const id of this.#received.keys()) {
+      if (!ids.has(id)) this.#received.delete(id);
+    }
+    for (const id of ids) {
+      if (!this.#received.has(id)) this.#received.set(id, now);
+    }
+    this.approvals = approvals;
   }
 
   async #run(task: () => Promise<McpBridgeStatus>): Promise<boolean> {
@@ -82,7 +102,7 @@ export class AgentBridge {
       const known = new Set(this.approvals.map((r) => r.id));
       const pending = status.pending.filter((r) => !known.has(r.id));
       const live = new Set(status.pending.map((r) => r.id));
-      this.approvals = [...this.approvals.filter((r) => live.has(r.id)), ...pending];
+      this.#setApprovals([...this.approvals.filter((r) => live.has(r.id)), ...pending]);
       this.error = null;
       return true;
     } catch (e) {

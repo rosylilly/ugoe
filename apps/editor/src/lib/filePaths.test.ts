@@ -1,3 +1,4 @@
+import { setLocale } from "@ugoe/i18n";
 import { describe, expect, it } from "vitest";
 import {
   BUNDLE_FILTER,
@@ -16,6 +17,16 @@ describe("filters", () => {
     expect(PROJECT_FILTER.extensions).toEqual(["ugoeproj"]);
     expect(BUNDLE_FILTER.extensions).toEqual(["ugoe"]);
     expect(MODULE_FILTER.extensions).toEqual(["ugoemod"]);
+  });
+
+  it("name the files in the current language", () => {
+    expect(PSD_FILTER.name).toBe("Photoshop document (.psd)");
+    setLocale("ja");
+    try {
+      expect(PROJECT_FILTER.name).toBe("ugoe のプロジェクト (.ugoeproj)");
+    } finally {
+      setLocale("en");
+    }
   });
 });
 

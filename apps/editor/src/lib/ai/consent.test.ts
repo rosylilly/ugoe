@@ -78,4 +78,9 @@ describe("formatBytes", () => {
     expect(formatBytes(200 * 1024)).toBe("200 KB");
     expect(formatBytes(3.25 * 1024 * 1024)).toBe("3.3 MB");
   });
+
+  it("moves to the next unit when the rounded value reaches it", () => {
+    expect(formatBytes(1024 * 1024 - 1)).toBe("1.0 MB");
+    expect(formatBytes(1023.4 * 1024)).toBe("1023 KB");
+  });
 });

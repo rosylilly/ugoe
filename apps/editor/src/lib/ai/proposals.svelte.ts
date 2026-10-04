@@ -278,7 +278,7 @@ export class ProposalsView {
       const ok = await this.classify(null, true);
       if (!ok) return;
     }
-    await this.#task(`Asking ${aiName()} to revise proposal #${id}…`, async () => {
+    await this.#task(t("proposals.busy.revising", { name: aiName(), id }), async () => {
       const reply = await withConsent(
         (consent: ConsentAnswer | null) =>
           ipc.regenerateRigProposal(id, instructions, consent, { ...this.moduleOptions }),
@@ -313,11 +313,17 @@ export class ProposalsView {
 
   /** 提案を複製に適用した姿をビューポートに出す。 */
   async showPreview(id: number): Promise<void> {
+    const revision = this.#doc.revision;
     await this.#task(t("proposals.busy.preparing"), async () => {
       const result = await ipc.previewProposal(id, excludedList(this.excludedOf(id)));
       const bundle = await ipc.getProposalPreviewBundle().catch(() => null);
+      // 作る間にドキュメントが変わった (エージェントの適用・Undo など) なら、古いドキュメントの姿は出さない。
+      if (this.#doc.revision !== revision) {
+        ipc.clearProposalPreview().catch(() => {});
+        return;
+      }
       const parsed = JSON.parse(result.model_json) as Model;
-      this.#previewRevision = this.#doc.revision;
+      this.#previewRevision = revision;
       this.preview = {
         id,
         model: { json: result.model_json, bundle },
@@ -347,7 +353,7 @@ export class ProposalsView {
     this.endPreview();
     await this.#task(t("proposals.busy.applying"), async () => {
       const report = await this.#doc.applyWith(() => ipc.adoptProposal(id, excluded));
-      if (!report) throw new Error(this.#doc.error ?? "the proposal could not be applied");
+      if (!report) throw new Error(this.#doc.error ?? t("proposals.adoptFailed"));
       this.value = await ipc.getProposals();
     });
   }

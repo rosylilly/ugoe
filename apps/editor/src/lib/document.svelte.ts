@@ -46,18 +46,27 @@ export class EditorDocument {
   empty = $state(false);
   /** refresh が成功するたびに増える (ファイルメニューの状態の取り直しなどに使う)。 */
   revision = $state(0);
+  /** 始めた読み直しの数。重なった読み直しは、最後に始めたものだけが結果を置く。 */
+  #generation = 0;
 
   async refresh(): Promise<void> {
+    const generation = ++this.#generation;
     try {
-      const json = await ipc.getModelJson();
-      // バンドルに書けない状態 (テクスチャの欠けなど) でも表示は続ける (JSON なら白いテクスチャで描く)。
-      const bundle = await ipc.getModelBundle().catch((e) => {
-        console.warn("ugoe: showing the model without textures:", e);
-        return null;
-      });
-      const animations = await ipc.getAnimations();
-      this.physics = await ipc.getPhysics();
-      this.module = await ipc.moduleStatus();
+      const [json, bundle, animations, physics, module] = await Promise.all([
+        ipc.getModelJson(),
+        // バンドルに書けない状態 (テクスチャの欠けなど) でも表示は続ける (JSON なら白いテクスチャで描く)。
+        ipc.getModelBundle().catch((e) => {
+          console.warn("ugoe: showing the model without textures:", e);
+          return null;
+        }),
+        ipc.getAnimations(),
+        ipc.getPhysics(),
+        ipc.moduleStatus(),
+      ]);
+      // 後から始めた読み直しがあれば、古い結果で上書きしない (Undo の連打・エージェントの変更の知らせなど)。
+      if (generation !== this.#generation) return;
+      this.physics = physics;
+      this.module = module;
       // 表記から合成の接頭辞を隠す (モデルを差し替える前に。表記はモデルから作り直される)
       setHiddenIdPrefix(this.module ? `${this.module.name}/` : null);
       this.model = { json, bundle };
@@ -69,7 +78,7 @@ export class EditorDocument {
       this.error = null;
       this.revision += 1;
     } catch (e) {
-      this.error = errorText(e);
+      if (generation === this.#generation) this.error = errorText(e);
     }
   }
 

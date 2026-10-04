@@ -10,6 +10,7 @@ import { RichText } from "@ugoe/i18n";
 import { Button, Section, Toggle } from "@ugoe/ui";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
+import { joinPath } from "../filePaths";
 import { openExternal } from "../help";
 import { t } from "../i18n";
 import { ipc } from "../ipc";
@@ -35,8 +36,10 @@ let copied = $state<string | null>(null);
 let portInput = $state("");
 let now = $state(Date.now());
 
+/** 設定に残したポート。変わったときだけ欄に入れ直す (つながったクライアントの知らせなどで、入力中の値を消さない)。 */
+const savedPort = $derived(status?.port ?? null);
 $effect(() => {
-  portInput = status?.port ? String(status.port) : "";
+  portInput = savedPort ? String(savedPort) : "";
 });
 
 $effect(() => {
@@ -98,7 +101,7 @@ async function saveBundle(): Promise<void> {
   const dir = await dialogs.defaultDirectory();
   const path = await dialogs.saveFile({
     title: t("agents.desktop.save.title"),
-    defaultPath: dir ? `${dir}/ugoe-editor.mcpb` : "ugoe-editor.mcpb",
+    defaultPath: dir ? joinPath(dir, "ugoe-editor.mcpb") : "ugoe-editor.mcpb",
     filters: [{ name: t("agents.desktop.save.filter"), extensions: ["mcpb"] }],
   });
   if (!path) return;
@@ -269,6 +272,7 @@ async function openManual(): Promise<void> {
       <p class="ed-buttons">
         <Button onclick={copyToken} disabled={agentBridge.busy}>{t("agents.token.copy.label")}</Button>
         {#if copied === "token"}<span class="ok" role="status">{t("agents.copy.done")}</span>{/if}
+        {#if copied === "token:failed"}<span class="warn" role="status">{t("agents.token.copy.failed")}</span>{/if}
         <Button onclick={() => agentBridge.regenerateToken()} disabled={agentBridge.busy}>
           {t("agents.token.regenerate.label")}
         </Button>

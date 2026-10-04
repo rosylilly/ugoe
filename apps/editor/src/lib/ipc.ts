@@ -162,11 +162,7 @@ export const ipc = {
   /** プレビューの光源をプロジェクトに残す (保存で書き込む。Undo の対象ではない)。範囲の外ならエラー。 */
   setPreviewLighting: (lighting: PreviewLighting) =>
     invoke<ProjectStatus>("set_preview_lighting", { lighting }),
-  /**
-   * apps/editor/src-tauri/src/lighting.rs。テクスチャのアルファの形からふくらみの法線マップを作って付ける
-   * (AI は使わない。モデルのライティングが無効なら有効にする。1 回の Undo で戻る)。
-   */
-  /** テクスチャの法線マップを作る部位のまとまりと、その既定の設定。 */
+  /** apps/editor/src-tauri/src/lighting.rs。テクスチャの法線マップを作る部位のまとまりと、その既定の設定。 */
   getNormalMapGroup: (texture: string) =>
     invoke<NormalMapGroupView>("get_normal_map_group", { texture }),
   /**
@@ -174,7 +170,10 @@ export const ipc = {
    * (`alone` と、ラベルのない `group: null`) はそれぞれ 1 行にまとめて最後に置く。
    */
   getNormalMapGroups: () => invoke<NormalMapGroupView[]>("get_normal_map_groups"),
-  /** まとまりの形から法線マップを作る (`settings` が null ならまとまりの既定、`wholeGroup` ならまとまり全体)。 */
+  /**
+   * テクスチャのアルファの形からふくらみの法線マップを作って付ける (AI は使わない。モデルのライティングが無効なら
+   * 有効にする。1 回の Undo で戻る)。`settings` が null ならまとまりの既定、`wholeGroup` ならまとまり全体。
+   */
   generateTextureNormalMap: (
     texture: string,
     settings: BulgeSettings | null,
@@ -186,8 +185,10 @@ export const ipc = {
   /** テクスチャか法線マップの画像の PNG。生のバイト列で届く。 */
   getTexturePng: async (name: string) =>
     new Uint8Array(await invoke<ArrayBuffer>("get_texture_png", { name })),
-  /** apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。 */
-  /** `meshOptions` の省略したフィールドは既定値。 */
+  /**
+   * apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。`meshOptions` の省略した
+   * フィールドは既定値。
+   */
   importPsd: (path: string, meshOptions?: Partial<AutoMeshOptions>) =>
     invoke<PsdImportWarning[]>("import_psd", { path, meshOptions: meshOptions ?? null }),
   /** apps/editor/src-tauri/src/space.rs。`target` の親の座標系の点をキャンバス座標に写す。 */

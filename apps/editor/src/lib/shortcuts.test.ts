@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyShortcut, isMac, isTextEntry, type KeyInput } from "./shortcuts";
+import { historyShortcut, isInDialog, isMac, isTextEntry, type KeyInput } from "./shortcuts";
 
 const key = (k: string, mods: Partial<KeyInput> = {}): KeyInput => ({
   key: k,
@@ -38,6 +38,17 @@ describe("history shortcuts", () => {
     expect(isTextEntry(at(true))).toBe(true);
     expect(isTextEntry(at(false))).toBe(false);
     expect(isTextEntry(null)).toBe(false);
+  });
+
+  it("detects targets inside dialogs", () => {
+    const at = (selector: string | null) =>
+      ({
+        closest: (s: string) => (selector !== null && s.includes(selector) ? {} : null),
+      }) as unknown as EventTarget;
+    expect(isInDialog(at('[role="dialog"]'))).toBe(true);
+    expect(isInDialog(at('[role="alertdialog"]'))).toBe(true);
+    expect(isInDialog(at(null))).toBe(false);
+    expect(isInDialog(null)).toBe(false);
   });
 
   it("detects macOS", () => {

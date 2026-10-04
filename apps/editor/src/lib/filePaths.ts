@@ -1,20 +1,36 @@
 // ファイルダイアログに渡すフィルタ・既定のパスと、選ばれたパスの整形 (純粋な関数)。
 // ダイアログの呼び出しは ./fileDialogs.ts (docs/editor.md#ファイルダイアログ)。
+import { t } from "./i18n";
 
 /** ダイアログの拡張子フィルタ。`extensions` は `.` を付けない。 */
 export interface FileFilter {
-  name: string;
+  readonly name: string;
   extensions: string[];
 }
 
-export const PSD_FILTER: FileFilter = { name: "Photoshop document (.psd)", extensions: ["psd"] };
+// フィルタの名前は OS のダイアログに出るので、読むたびに今の言語で引く。
+export const PSD_FILTER: FileFilter = {
+  get name() {
+    return t("fileMenu.filters.psd");
+  },
+  extensions: ["psd"],
+};
 export const PROJECT_FILTER: FileFilter = {
-  name: "ugoe project (.ugoeproj)",
+  get name() {
+    return t("fileMenu.filters.project");
+  },
   extensions: ["ugoeproj"],
 };
-export const BUNDLE_FILTER: FileFilter = { name: "ugoe bundle (.ugoe)", extensions: ["ugoe"] };
+export const BUNDLE_FILTER: FileFilter = {
+  get name() {
+    return t("fileMenu.filters.bundle");
+  },
+  extensions: ["ugoe"],
+};
 export const MODULE_FILTER: FileFilter = {
-  name: "ugoe dress-up module (.ugoemod)",
+  get name() {
+    return t("fileMenu.filters.module");
+  },
   extensions: ["ugoemod"],
 };
 

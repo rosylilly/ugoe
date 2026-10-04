@@ -37,7 +37,8 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${formatNumber(bytes, { useGrouping: false })} B`;
   let value = bytes / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  // 丸めて 1024 に届くなら次の単位にする (1023.9 KB は 1024 KB でなく 1.0 MB)
+  while (Math.round(value) >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit += 1;
   }

@@ -55,7 +55,7 @@ import { differenceTarget } from "./lib/preview/differenceHighlight";
 import PreviewPanel from "./lib/preview/PreviewPanel.svelte";
 import { PreviewMode } from "./lib/preview/preview.svelte";
 import { Selection } from "./lib/selection.svelte";
-import { historyShortcut, isMac, isTextEntry } from "./lib/shortcuts";
+import { historyShortcut, isInDialog, isMac, isTextEntry } from "./lib/shortcuts";
 import TabStrip, { type TabItem } from "./lib/ui/TabStrip.svelte";
 import TipButton from "./lib/ui/TipButton.svelte";
 import { ViewportController } from "./lib/viewport/controller.svelte";
@@ -80,9 +80,12 @@ let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 let settings = $state<SettingsDialog>();
 
-ipc.appInfo().then((i) => {
-  info = i;
-});
+ipc
+  .appInfo()
+  .then((i) => {
+    info = i;
+  })
+  .catch((e) => console.warn("ugoe: could not read the app info:", e));
 doc.refresh();
 void lighting.load();
 lighting.onsaved = () => fileMenu?.refresh();
@@ -212,10 +215,13 @@ const paneTabs = $derived<TabItem<PaneTab>[]>([
 
 const mac = isMac(navigator.platform);
 
-/** Undo / Redo のショートカット。入力欄の中では、入力欄自身の取り消しに任せる。 */
+/**
+ * Undo / Redo のショートカット。入力欄の中では、入力欄自身の取り消しに任せる。ダイアログの中では何もしない
+ * (lib/shortcuts.ts の isInDialog)。
+ */
 function onKeydown(e: KeyboardEvent): void {
   const action = historyShortcut(e, mac);
-  if (!action || isTextEntry(e.target) || preview.active) return;
+  if (!action || isTextEntry(e.target) || isInDialog(e.target) || preview.active) return;
   e.preventDefault();
   if (action === "undo") doc.undo();
   else doc.redo();

@@ -33,6 +33,15 @@ export function isTextEntry(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * ダイアログ (設定・確認・エージェントの求めなど) の中か。そこでは後ろの文書を Undo / Redo しない
+ * (開いたダイアログが前提にしている文書を、見えないところで変えないため)。
+ */
+export function isInDialog(target: EventTarget | null): boolean {
+  const el = target as { closest?: (selector: string) => unknown } | null;
+  return typeof el?.closest === "function" && !!el.closest('[role="dialog"], [role="alertdialog"]');
+}
+
 /** 実行環境が macOS か (ショートカットの修飾キーの判定に使う)。 */
 export function isMac(platform: string): boolean {
   return /mac|iphone|ipad/i.test(platform);

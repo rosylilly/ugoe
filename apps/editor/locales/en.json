@@ -159,6 +159,12 @@
       "baseReloadedAuto": "Reloaded the base model: it was changed outside the editor",
       "reloaded": "Reloaded the project from disk",
       "reloadedAuto": "Reloaded: the project was changed outside the editor"
+    },
+    "filters": {
+      "psd": "Photoshop document (.psd)",
+      "project": "ugoe project (.ugoeproj)",
+      "bundle": "ugoe bundle (.ugoe)",
+      "module": "ugoe dress-up module (.ugoemod)"
     }
   },
   "baseChange": {
@@ -1510,7 +1516,8 @@
     },
     "token": {
       "copy": {
-        "label": "Copy token"
+        "label": "Copy token",
+        "failed": "Could not copy the token to the clipboard."
       },
       "regenerate": {
         "label": "Regenerate token"
@@ -1691,7 +1698,8 @@
       "askingAi": "Asking {{name}} for the rig values (it may ask again if an answer fails validation)…",
       "building": "Building the rig from the templates…",
       "preparing": "Preparing the preview…",
-      "applying": "Applying the proposal…"
+      "applying": "Applying the proposal…",
+      "revising": "Asking {{name}} to revise proposal #{{id}}…"
     },
     "summary": {
       "byAi_one": "{{count}} layer classified by AI",
@@ -1811,7 +1819,8 @@
         "empty": "Write instructions for the AI above first",
         "tooLong": "The instructions are longer than {{max}} characters"
       }
-    }
+    },
+    "adoptFailed": "The proposal could not be applied."
   },
   "errorCause": "{{message}} Cause: {{cause}}",
   "errors": {

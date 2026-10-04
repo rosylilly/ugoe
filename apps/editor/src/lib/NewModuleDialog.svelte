@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 import { Button, Dialog } from "@ugoe/ui";
+import { untrack } from "svelte";
 import { errorText } from "./errors";
 import { fileDialogs } from "./fileDialogs";
 import { BUNDLE_FILTER } from "./filePaths";
@@ -38,6 +39,20 @@ let nameEdited = false;
 let error = $state<string | null>(null);
 let busy = $state(false);
 const id = $props.id();
+
+// 開くたびに、前に選んだ本体・名前とエラーを消す。
+$effect(() => {
+  if (open) untrack(reset);
+});
+
+function reset(): void {
+  basePath = null;
+  base = null;
+  slot = null;
+  name = "";
+  nameEdited = false;
+  error = null;
+}
 
 async function chooseBase(kind: "project" | "bundle") {
   const dialogs = fileDialogs();

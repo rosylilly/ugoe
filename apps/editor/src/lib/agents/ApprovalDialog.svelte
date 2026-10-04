@@ -25,13 +25,13 @@ const proposal = $derived(
   request?.proposal != null ? (proposals.find((p) => p.id === request.proposal) ?? null) : null,
 );
 
-/** 求めが出た時刻 (残りの秒数を出す)。 */
-let shownAt = $state(0);
+/** 求めを受け取った時刻 (残りの秒数を出す。前の求めに答えている間も、後ろの求めの時間は過ぎている)。 */
+let receivedAt = $state(0);
 let now = $state(Date.now());
 $effect(() => {
   if (request) {
-    shownAt = Date.now();
-    now = shownAt;
+    now = Date.now();
+    receivedAt = agentBridge.receivedAt(request.id) ?? now;
   }
 });
 $effect(() => {
@@ -40,7 +40,7 @@ $effect(() => {
   return () => clearInterval(timer);
 });
 const remaining = $derived(
-  request ? Math.max(0, request.timeout_secs - Math.floor((now - shownAt) / 1000)) : 0,
+  request ? Math.max(0, request.timeout_secs - Math.floor((now - receivedAt) / 1000)) : 0,
 );
 
 function who(r: ApprovalRequest): string {
