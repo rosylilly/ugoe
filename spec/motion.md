@@ -20,6 +20,7 @@ lip sync), the [pose](model.md#pose), and the order in which all of these, track
 - [Pose](#pose)
 - [Part opacity](#part-opacity)
 - [Order of operations in a frame](#order-of-operations-in-a-frame)
+- [Host-supplied numbers](#host-supplied-numbers)
 - [Unknown values](#unknown-values)
 - [Determinism](#determinism)
 - [Conformance](#conformance)
@@ -416,6 +417,35 @@ Consequences:
   advance while they are off. When physics is turned off, its offsets are cleared; when it is turned
   on again it restarts from the rest pose (a reset). When the pose is off, part opacity requests for
   pose parts are applied as ordinary overrides.
+
+## Host-supplied numbers
+
+The host supplies numbers while the model runs: the time step `dt`, parameter values, the lip sync
+level, tracking input, and, in a runtime that lets the host construct them, motions, expressions and
+effect settings that were not validated ([model.md](model.md#motion-and-expression-validation)).
+A NaN or an infinity supplied by the host MUST NOT stop the runtime (an endless loop or a crash) and
+MUST NOT remain in its state: once the host supplies finite numbers again, the parameter values,
+part opacities and vertex positions are finite. A runtime handles these numbers as follows.
+
+| Number | NaN | Infinity | Negative or out of range |
+| --- | --- | --- | --- |
+| `dt` | The frame is advanced with `dt = 0`: no clock advances, and every stage is applied. | As for NaN. | A negative `dt`: as for NaN. |
+| A parameter value written by the host | The write MAY be ignored ([evaluation.md](evaluation.md#parameter-values)). | Clamped to `[min, max]`. | Clamped to `[min, max]`. |
+| The lip sync level | No level ([Lip sync](#lip-sync)). | Clamped to `[0, 1]`. | Clamped to `[0, 1]`. |
+| Tracking input | Parameters whose computed value is not finite are not written ([avatar-profile.md](avatar-profile.md#computing-the-parameter-values)). | As for NaN. | The computed values are clamped. |
+| A part opacity request of a motion curve, whose value or weight is not finite | Ignored, as if the curve were absent: it neither overrides the part nor requests a pose entry ([Part opacity](#part-opacity)). | As for NaN. | — |
+| The strength of the `LipSync` group, if not finite | Lip sync writes nothing in that frame. | As for NaN. | — |
+
+- A runtime that reports errors to the host (for example with result codes) MAY instead reject such
+  a number: the call fails and changes nothing. Rejecting is only a different way of reporting; for
+  the numbers it accepts, such a runtime follows the rules of this specification.
+- The players of motions, expressions, the eye blink and breathing advance only by a finite `dt`
+  greater than 0 ([Motion playback](#motion-playback), [Eye blink](#eye-blink),
+  [Breathing](#breathing)), and physics accumulates only a finite positive `dt`
+  ([physics.md](physics.md#advancing-time)). The rule for `dt` above makes a frame consistent: every
+  stage sees the same `dt`.
+- Values read from files are validated to be finite ([model.md](model.md#data-conventions)); the
+  rows for motion curves cover only motions that the host constructed without validation.
 
 ## Unknown values
 

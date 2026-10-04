@@ -392,9 +392,10 @@ namespace Ugoe
         }
 
         /// <summary>
-        /// 進める時間を 0 以上にする。逆再生はできない (C ABI は負の dt を断る) ので、負の速さは止めているのと同じにする。
-        /// NaN も 0 (Unity の <c>Mathf.Max(dt, 0)</c> と同じ)。
+        /// 進める時間を 0 以上の有限の値にする。逆再生はできない (C ABI は負の dt を断る) ので、負の速さは止めているのと同じにする。
+        /// NaN と無限大 (<c>speed</c> が無限大など) も 0 (C ABI は断るので、毎フレーム例外にしない。<c>ugoe::Puppet::update</c> が
+        /// 有限でない dt を 0 とみなすのと同じ。docs/portability.md#ホストから来る数)。
         /// </summary>
-        internal static float ClampDeltaTime(float dt) => dt > 0 ? dt : 0f;
+        internal static float ClampDeltaTime(float dt) => dt > 0 && !float.IsInfinity(dt) ? dt : 0f;
     }
 }

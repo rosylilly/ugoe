@@ -140,7 +140,8 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 `set_tracking_body` は NaN のキーを省略とみなし無限大を拒む、ブレンドシェイプは有限でない値を無視する、環境光と光源の色は有限で負でない値
 (それ以外の光源は警告を出して使わない)、`set_base_values` と `follow` の値は NaN 以外 (無限大は値域にクランプ)、`follow` の `delta` は
 有限で負でない値、リップシンクの音量 (当てるとき) と強さ・パーツの不透明度の値と重みは有限 (`ugoe_puppet_follow` と同じ)。
-拒んだ値はエラーを出して捨て、前の値を保つ。
+拒んだ値はエラーを出して捨て、前の値を保つ。ほかの入口 (SDK・C ABI・wasm・Unity) と並べた表は
+[docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
 `set_effects_json`・`set_physics_json`・`set_base_physics_json` と `show_pose` で変えたものは、モデルを読み直すとモデルの設定に戻る。
 読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出し、`get_load_warnings()` でも読める
 (着せ替えのモジュールの警告も Godot の警告として出し、付けている間は `get_module_load_warnings(name)` で読める)。

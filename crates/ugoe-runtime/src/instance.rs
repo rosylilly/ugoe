@@ -8,7 +8,7 @@ use ugoe_model::{BlendMode, DeformerKind};
 
 use crate::blend_shape;
 use crate::deform::{Rotation, Transform, Warp, lerp};
-use crate::dynamic::{Dynamic, DynamicOffsets};
+use crate::dynamic::{Dynamic, DynamicOffsets, finite_offset, finite_or_zero};
 use crate::keyform::{self, GridWeights, Weights};
 use crate::{CompiledModel, ParameterValues};
 
@@ -327,11 +327,17 @@ impl ModelInstance {
     /// 次の [`ModelInstance::update`] から効き、変えるまで保たれる。モーションのパーツの不透明度と
     /// ポーズが使う (`docs/spec/evaluation.md#2-評価の順序`)。
     ///
+    /// `value` か `weight` が有限でない (NaN か無限大) 書き込みは無視する (前の上書きのまま)。
+    /// `lerp` が NaN をパーツの不透明度に入れるため (`docs/portability.md#ホストから来る数`)。
+    ///
     /// # Panics
     ///
     /// `part` が範囲外のとき。
     pub fn set_part_opacity_override(&mut self, part: usize, value: f32, weight: f32) {
-        self.part_opacity_overrides[part] = (value, weight.clamp(0.0, 1.0));
+        let current = &mut self.part_opacity_overrides[part];
+        if value.is_finite() && weight.is_finite() {
+            *current = (value, weight.clamp(0.0, 1.0));
+        }
     }
 
     /// パーツ `part` の不透明度の上書き `(値, 重み)`。
@@ -552,7 +558,7 @@ impl ModelInstance {
                     }
                     if let Some(offsets) = offsets {
                         for (p, o) in points.iter_mut().zip(offsets.warp_points(d)) {
-                            *p += *o;
+                            *p += finite_offset(*o);
                         }
                     }
                     self.warp_points[d] = points;
@@ -586,7 +592,7 @@ impl ModelInstance {
                             });
                     }
                     if let Some(offsets) = offsets {
-                        local.angle += offsets.angle(d);
+                        local.angle += finite_or_zero(offsets.angle(d));
                     }
                     let parent = world_transform(
                         compiled,
@@ -596,7 +602,7 @@ impl ModelInstance {
                     );
                     let mut world = parent.rotation_child(&local);
                     if let Some(offsets) = offsets {
-                        world.translation += offsets.origin(d);
+                        world.translation += finite_offset(offsets.origin(d));
                     }
                     self.deformer_affine[d] = world;
                     opacity
@@ -684,7 +690,7 @@ impl ModelInstance {
                     .iter_mut()
                     .zip(dynamic.offsets.mesh_positions(i))
                 {
-                    *p += *o;
+                    *p += finite_offset(*o);
                 }
             }
             let part = self.part_opacity[cm.part as usize];
@@ -991,6 +997,33 @@ mod tests {
         set(&mut instance, "X", f32::NAN);
         instance.update();
         assert_eq!(instance.drawables(), &before[..]);
+    }
+
+    // T0010: 値か重みが有限でないパーツの不透明度の上書きは無視する (前の上書きのまま)。
+    #[test]
+    fn non_finite_part_opacity_overrides_are_ignored() {
+        let mut instance = instance(fixtures::part_opacity_hierarchy());
+        let parts = instance.compiled().model().parts.len();
+        for part in 0..parts {
+            instance.set_part_opacity_override(part, 0.5, 0.5);
+        }
+        instance.update();
+        let before = instance.drawables().to_vec();
+        for (value, weight) in [
+            (f32::NAN, 1.0),
+            (f32::INFINITY, 0.0),
+            (f32::NEG_INFINITY, 1.0),
+            (0.0, f32::NAN),
+            (0.0, f32::INFINITY),
+        ] {
+            for part in 0..parts {
+                instance.set_part_opacity_override(part, value, weight);
+                assert_eq!(instance.part_opacity_override(part), (0.5, 0.5));
+            }
+            instance.update();
+            assert_eq!(instance.drawables(), &before[..]);
+            assert!((0..parts).all(|p| instance.part_opacity(p).is_finite()));
+        }
     }
 
     /// すべてのバッファの (先頭アドレス, 容量)。再確保が起きれば変わる。

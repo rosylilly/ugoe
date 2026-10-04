@@ -15,6 +15,8 @@
 
 - [docs/spec/evaluation.md](../../docs/spec/evaluation.md)
 - [docs/spec/modules.md](../../docs/spec/modules.md) (着せ替えの合成、`compose`)
+- [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数) (ホストが書く値の NaN・無限大: `ParameterValues::set`・
+  `set_part_opacity_override`・`DynamicOffsets`)
 
 ## 関連タスク
 

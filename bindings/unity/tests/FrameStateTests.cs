@@ -168,10 +168,12 @@ namespace Ugoe.Tests
         }
 
         [Test]
-        public void NegativeOrNaNTimeAdvancesByZero()
+        public void NegativeOrNonFiniteTimeAdvancesByZero()
         {
             Assert.That(FrameState.ClampDeltaTime(-1), Is.EqualTo(0));
             Assert.That(FrameState.ClampDeltaTime(float.NaN), Is.EqualTo(0));
+            Assert.That(FrameState.ClampDeltaTime(float.PositiveInfinity), Is.EqualTo(0));
+            Assert.That(FrameState.ClampDeltaTime(float.NegativeInfinity), Is.EqualTo(0));
             Assert.That(FrameState.ClampDeltaTime(0.25f), Is.EqualTo(0.25f));
             var host = Loaded();
             host.Run = true;

@@ -12,6 +12,8 @@ use ugoe_model::{DeformerKind, Model};
 /// - 回転デフォーマの角度: キーフォームで補間した角度 (局所座標系、度) に足す。
 /// - 回転デフォーマの原点・ワープの制御点・メッシュの頂点: ワールド変換で写した後の
 ///   キャンバス座標に足す (ピクセル)。
+///
+/// 有限でない加算量 (NaN か無限大。位置は成分のどれか) は、評価で 0 として扱う (書いた値は残るが足さない)。
 #[derive(Debug, Clone)]
 pub struct DynamicOffsets {
     /// デフォーマごとの角度の加算量 (回転デフォーマ以外は使わない)。
@@ -126,6 +128,23 @@ impl DynamicOffsets {
     }
 }
 
+/// 評価に足す角度の加算量。有限でなければ 0 (足さない)。
+///
+/// 加算量はホストも書けるので、NaN・無限大を頂点に入れないよう評価の側で止める
+/// (`docs/spec/evaluation.md#動的物理を使う場合-2-段階の評価`)。
+pub(crate) fn finite_or_zero(value: f32) -> f32 {
+    if value.is_finite() { value } else { 0.0 }
+}
+
+/// 評価に足す位置の加算量。成分のどれかが有限でなければ 0 (足さない)。[`finite_or_zero`] と同じ理由。
+pub(crate) fn finite_offset(offset: Vec2) -> Vec2 {
+    if offset.is_finite() {
+        offset
+    } else {
+        Vec2::ZERO
+    }
+}
+
 /// 2 段階の評価の状態。
 #[derive(Debug, Clone)]
 pub(crate) struct Dynamic {
@@ -234,6 +253,43 @@ mod tests {
         instance.dynamic_offsets_mut().clear();
         instance.update();
         assert_eq!(instance.drawables(), &before[..]);
+    }
+
+    // T0010: ホストが書いた有限でない加算量は足さない (0 と同じ)。有限の加算量はそのまま効く。
+    #[test]
+    fn non_finite_offsets_are_not_added() {
+        let mut instance = instance();
+        let before = instance.drawables().to_vec();
+        let (hair1, cloth, ribbon) = (
+            deformer(&instance, "Hair1"),
+            deformer(&instance, "Cloth"),
+            mesh(&instance, "Ribbon"),
+        );
+        let frame_before = instance.rotation_world_frame(hair1).unwrap();
+        let cloth_before = instance.warp_world_points(cloth).unwrap().to_vec();
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let offsets = instance.dynamic_offsets_mut();
+            offsets.clear();
+            offsets.add_angle(hair1, bad);
+            offsets.add_origin(hair1, Vec2::new(0.0, bad));
+            let points = offsets.warp_points_mut(cloth).unwrap();
+            points[0] = Vec2::new(bad, 0.0);
+            points[2] = Vec2::new(3.0, 4.0);
+            offsets.mesh_positions_mut(ribbon).unwrap()[0] = Vec2::splat(bad);
+            instance.update();
+
+            assert_eq!(instance.rotation_world_frame(hair1).unwrap(), frame_before);
+            let points = instance.warp_world_points(cloth).unwrap();
+            assert_eq!(points[0], cloth_before[0]);
+            assert_eq!(points[2], cloth_before[2] + Vec2::new(3.0, 4.0));
+            assert_eq!(
+                instance.drawables()[ribbon].positions[0],
+                before[ribbon].positions[0]
+            );
+            for d in instance.drawables() {
+                assert!(d.positions.iter().all(|p| p.is_finite()), "{bad}");
+            }
+        }
     }
 
     // 1 段目 → (パラメータと加算量の変更) → 2 段目は、同じ値での通常の update と一致する。

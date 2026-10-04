@@ -159,6 +159,10 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 失敗は `UgoeException` (`Result`・着せ替えと読み込みの上限 (`UgoeResult.LimitExceeded`) では `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
 
+NaN・無限大・負の `dt` は C ABI と同じく `UgoeResult.InvalidArgument` で断る (パラメータ・音量の NaN、トラッキングの有限でない値など)。
+`UgoePuppet` が毎フレーム進める時間 (`Time.deltaTime × speed`) だけは、正の有限の値でなければ 0 で進める (負の `speed` で止まる)。
+入口ごとの表は [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
+
 ### 受け手
 
 指揮役 (スタジオなど、別の場所で評価するもの) の値で動かす受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める)) は、`playing` を false にして

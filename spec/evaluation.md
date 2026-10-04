@@ -333,7 +333,10 @@ part_opacity(p) = own(p) × part_opacity(parent(p))           (× 1 for a root p
 opacity curves of motions and the pose write them each frame ([motion.md](motion.md#part-opacity)).
 An override is a pair `(value, weight)` with `weight` clamped to `[0, 1]`; a part without an override
 has weight 0. An override replaces the part's *own* opacity only; it still multiplies with the
-parent's opacity.
+parent's opacity. A runtime MAY ignore an override whose value or weight is not finite (the part
+keeps its previous override), as for parameter values ([Parameter values](#parameter-values));
+otherwise the part's opacity would become NaN. *Informative:* the reference implementation ignores
+such overrides.
 
 Part opacities are not clamped.
 
@@ -513,7 +516,10 @@ parameters. It supplies **offsets** that evaluation adds at these points:
 | Warp control points | Each control point after mapping through the parent (`P[x, y]`) | canvas pixels |
 | Mesh vertices | Each vertex after mapping through the parent, before glues | canvas pixels |
 
-Offsets that are absent are 0. A runtime without dynamic physics never has offsets.
+Offsets that are absent are 0. A runtime without dynamic physics never has offsets. Physics never
+produces an offset that is not finite ([physics.md](physics.md#non-finite-state)); a runtime that lets
+the host write offsets MAY treat an offset that is not finite (any of its components, for a position)
+as 0. *Informative:* the reference implementation does.
 
 Dynamic physics needs the world transforms of deformers *before* it can compute the offsets. A
 runtime that supports it therefore evaluates a frame in two stages:

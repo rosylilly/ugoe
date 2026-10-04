@@ -67,6 +67,7 @@ puppet.clear_tracking();
 ### 有限でない値と `dt`
 
 JS から NaN・無限大・負の `dt` を渡したときの扱い (T0433。T0424 のレビューで確かめ、T0137・T0139・T0155・T0158 で SDK とランタイムを直した後のもの)。
+ほかの入口 (SDK・C ABI・Godot・Unity) と並べた表と方針は [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
 NaN の書き込みや `dt` で `update` が戻らない・パニックする (wasm ではモジュールが壊れる) ことはない。
 
 | 入口 | NaN | 無限大 | 負の値 |

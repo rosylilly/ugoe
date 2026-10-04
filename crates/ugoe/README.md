@@ -19,6 +19,8 @@
 - [docs/spec/file-formats.md#読み込みの上限](../../docs/spec/file-formats.md#読み込みの上限) (`limits`: 上限は `ugoe::format::read_bundle_with` /
   `ugoe::format::module_file::read_module_with` に `ReadLimits` を渡して指定する。超えたときの種類と補足の値 `ReadLimitExceeded` は
   wasm と C ABI が同じ値を返すためにここで決める。T0152)
+- [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数) (NaN・無限大・負の `dt` の扱い。前提はこのクレートと
+  `ugoe-runtime` で決め、C ABI・wasm・Godot・Unity は表し方だけを持つ。`tests/host_numbers.rs`)
 - [docs/spec/rendering.md#ホストでのライティング](../../docs/spec/rendering.md#ホストでのライティング) (`lighting`: `uses_lighting` / `Puppet::uses_lighting`・`bundle_normal_maps`)
 
 ## 関連タスク

@@ -229,7 +229,10 @@ requestAnimationFrame(function frame(now) {
 ```
 
 `WebPuppet` の API (物理・モーション・表情・トラッキング・ライティング・着せ替えなど) は
-[crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md) を見てください。
+[crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md) を見てください。NaN・無限大・負の `dt` を渡したときの扱い
+(`update` と `set_parameter` は例外を投げずに 0 や「書かない」として扱い、`follow` と `set_base_values` は例外) は
+[crates/ugoe-wasm/README.md#有限でない値と-dt](../../crates/ugoe-wasm/README.md#有限でない値と-dt)、ほかの入口との比較は
+[docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
 
 ### 読み込みの警告と着せ替えの失敗の型 (T0438)
 

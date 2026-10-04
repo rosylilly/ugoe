@@ -265,6 +265,11 @@ impl Puppet {
 
     /// `priority` でモーションを開始する。再生中のモーションより低い優先度なら開始せず `false` を返す
     /// (`docs/spec/motion.md#モーションマネージャ`)。
+    ///
+    /// `motion` は検証しない (`.ugoe` の読み込みは `ugoe_model::validate::validate_motion` で検証済みのものを返す)。
+    /// 有限でない数を含んでも、パラメータ・パーツの不透明度・頂点に NaN は入らない: パラメータへの NaN の書き込みは
+    /// 無視し、無限大は値域にクランプし、有限でないパーツの不透明度のカーブとリップシンクの強さは使わない
+    /// (`docs/portability.md#ホストから来る数`)。[`Puppet::set_expression`] も同じ。
     pub fn start_motion(&mut self, motion: Motion, priority: Priority) -> bool {
         self.motions.start(motion, priority)
     }
@@ -461,10 +466,11 @@ impl Puppet {
             physics.update_instance(&mut self.instance, dt);
         }
         let params = self.instance.parameters_mut();
-        // 9. リップシンク
+        // 9. リップシンク。強さが有限でなければ (検証していないモーションのカーブ) 当てない。
+        // 受け手の `follow` は有限でない強さを拒むので、配る記録にも残さない (T0010)。
         self.lip_sync_applied = None;
-        if self.toggles.lip_sync {
-            let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
+        let strength = self.motions.effect_group_weight(LIP_SYNC_GROUP);
+        if self.toggles.lip_sync && strength.is_finite() {
             self.lip_sync.apply(params, strength);
             self.lip_sync_applied = self
                 .lip_sync
@@ -483,9 +489,12 @@ impl Puppet {
     /// 段 10. (パーツの不透明度) を、今のモーションのカーブで書く。`record` なら受け手へ配る記録
     /// ([`Puppet::part_opacities_applied`]) も作り直す。
     pub(crate) fn write_part_opacities(&mut self, dt: f32, record: bool) {
+        // 値か重みが有限でないカーブ (検証していないモーション) は無いものとする。上書きにもポーズの要求にも使わず、
+        // 受け手の `follow` が拒むので配る記録にも残さない (T0010)。
         let curves = self
             .motions
-            .part_opacities_in(&mut self.part_opacity_buffer);
+            .part_opacities_in(&mut self.part_opacity_buffer)
+            .filter(|(_, value, weight)| value.is_finite() && weight.is_finite());
         if record {
             record_part_opacities(
                 &self.instance,

@@ -120,13 +120,7 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
             level: lip_sync_level,
             strength: lip_sync_strength,
         });
-        // NaN は `Puppet::follow` が拒む。無限大の強さ・値・重みは 0 × ∞ で NaN を書きうるので、ここで拒む。
-        if lip_sync.is_some() && lip_sync_strength.is_infinite() {
-            return Err(Error::new(
-                UGOE_ERROR_INVALID_ARGUMENT,
-                format!("`lip_sync_strength` must be finite (got {lip_sync_strength})"),
-            ));
-        }
+        // 有限でない音量・強さ・パーツの不透明度は `Puppet::follow` が拒む (前提は SDK が決め、ここは結果コードに写すだけ)。
         let part_opacities: Vec<PartOpacityInput> = if part_opacity_count == 0 {
             Vec::new()
         } else if part_opacities.is_null() {
@@ -138,15 +132,6 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
                 .map(|&p| p.into())
                 .collect()
         };
-        if let Some(i) = part_opacities
-            .iter()
-            .position(|p| p.value.is_infinite() || p.weight.is_infinite())
-        {
-            return Err(Error::new(
-                UGOE_ERROR_INVALID_ARGUMENT,
-                format!("`part_opacities[{i}]` must be finite"),
-            ));
-        }
         p.puppet
             .follow(values, lip_sync, &part_opacities, dt)
             .map_err(invalid)

@@ -142,6 +142,7 @@
 | [Effects](../../spec/motion.md#effects) | [motion.md#エフェクト](motion.md#エフェクト) | `Effects::standard()` の推奨値は含めない |
 | [Pose](../../spec/motion.md#pose)・[Part opacity](../../spec/motion.md#part-opacity) | [motion.md#ポーズ](motion.md#ポーズ)、[motion.md#パーツの不透明度](motion.md#パーツの不透明度) | |
 | [Order of operations in a frame](../../spec/motion.md#order-of-operations-in-a-frame) | [motion.md#フレーム内の適用順](motion.md#フレーム内の適用順)、[motion.md#トラッキング中のモーションの優先](motion.md#トラッキング中のモーションの優先) | 決めたことの経緯 (T0303・T0722 など) は含めない。モーションの優先は MAY |
+| [Host-supplied numbers](../../spec/motion.md#host-supplied-numbers) | [motion.md#ホストから来る数](motion.md#ホストから来る数)、[portability.md#ホストから来る数](../portability.md#ホストから来る数) | 入口 (SDK・C ABI・wasm・Godot・Unity) ごとの表し方の表は日本語版 (portability.md) だけ |
 | [Unknown values](../../spec/motion.md#unknown-values) | [motion.md#カーブ](motion.md#カーブ)、[motion.md#表情](motion.md#表情) | |
 | [Determinism](../../spec/motion.md#determinism) | [motion.md#目パチ](motion.md#目パチ) | 乱数は目パチの種付きの生成器だけ |
 | [Conformance](../../spec/motion.md#conformance) | [motion.md#互換の基準](motion.md#互換の基準) | |

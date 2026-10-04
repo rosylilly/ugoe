@@ -41,6 +41,72 @@
 - 外から来るファイルの読み込みの上限 (展開するバイト) は、組み込む側が `UgoeReadLimits` で指定できます (指定しない関数は既定値)。
   超えたら `UGOE_ERROR_LIMIT_EXCEEDED` で、種類 `read_limit_exceeded` と補足の値は wasm と同じです (T0152。`docs/spec/file-formats.md#読み込みの上限`)。
 
+## ホストから来る数
+
+ホストが渡す数 (`dt`・パラメータの値・リップシンクの音量・受け手の入力・トラッキングの値・光源・座標など) が NaN・無限大・負・範囲外のときの扱いです (T0010。
+M9 のコードレビューで、入口ごとに拒む・無視する・0 にするがばらばらだったものをまとめた。[code-review.md](workflow/code-review.md#m9-の結果))。
+公開仕様の対応する規則は [spec/motion.md#host-supplied-numbers](../spec/motion.md#host-supplied-numbers)。
+
+**方針: 前提は下の層で決め、上の層は表し方だけを持つ (T0139)。**
+
+- 何を受け付け、受け付けない値をどう扱うかは、下の層 (`ugoe-runtime` と `ugoe::Puppet`) が決める。下の層は、受け付けない値を「書かない」「0 とみなす」
+  「使わない」のどれかにして、パニック・無限ループ・NaN の居座り (一度入ると戻らない状態) を起こさない。Rust から直接使っても安全。
+- 上の層 (C ABI・wasm・Godot・Unity) は、下の層が受け付けない値を **エラーとして知らせる** (何も変えずに失敗を返す) か、**下の層の扱いをそのまま出す** かだけを選ぶ。
+  上の層が下の層と違う前提 (別のクランプや別の既定値) を持たない。上の層の検査を抜けた値も下の層が安全にするので、検査の漏れが壊れにつながらない。
+- 表し方の流儀: C ABI は結果コードで知らせる (`UGOE_ERROR_INVALID_ARGUMENT`)。Unity はそれを例外 (`UgoeException`) にする。Godot は C ABI に揃え、
+  `godot_error!` を出して前の値を保つ (戻り値のある関数は false)。wasm は毎フレームやスライダーから呼ばれる口 (`update`・`set_parameter`・
+  `set_lip_sync_level`) では下の層の扱いをそのまま出し (例外でホストのループを止めないため)、受け手の口 (`follow`・`set_base_values`) では例外にする
+  (理由は [crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#有限でない値と-dt))。
+- 新しい入口を足すときは、下の層の扱いをこの表で確かめ、上の層では検査を写さずに結果を表すだけにする。下の層に無い前提が要るなら、まず下の層に足す。
+
+### 下の層の扱い
+
+| 値 | 入口 (Rust) | NaN | ±無限大 | 負・範囲の外 |
+| --- | --- | --- | --- | --- |
+| `dt` | `Puppet::update`・`Puppet::follow` | 0 とみなす (時間を進めずに各段を当てて評価する) | 0 とみなす | 負は 0 とみなす |
+| `dt` (再生器を直接使う) | `ugoe_motion` の `MotionPlayer`・`ExpressionPlayer`・`EyeBlinkPlayer`・`BreathPlayer` の `advance`、`PhysicsSystem::update` | 何も進めない | 何も進めない | 何も進めない |
+| パラメータの値 | `ParameterValues::set`・`blend` (ホストの書き込み、モーション・表情・目パチ・呼吸・物理・リップシンクの書き込みもここを通る) | 書かない (前の値のまま) | 値域の端にクランプ | 値域にクランプ |
+| 基準値の列 | `Puppet::set_base_values`・`Puppet::follow` の `values` | エラー (何も変えない) | 値域にクランプ | 値域にクランプ。数が違えばエラー |
+| リップシンクの音量 | `Puppet::set_lip_sync_level` | 音量なし (`None` と同じ) | 0〜1 にクランプ | 0〜1 にクランプ |
+| 受け手のリップシンクの音量と強さ、パーツの不透明度の値と重み | `Puppet::follow` | エラー | エラー (強さが無限大だと `lerp` が `0 × ∞` で NaN を書くため) | 音量は 0〜1 にクランプ。重みは 0〜1 にクランプ |
+| パーツの不透明度の上書き | `ModelInstance::set_part_opacity_override` | 書かない (前の上書きのまま) | 書かない | 重みは 0〜1 にクランプ |
+| 動的物理の加算量 | `DynamicOffsets` (`ModelInstance::dynamic_offsets_mut`) | 評価で 0 とみなす (書いた値は残る) | 0 とみなす | (意味どおり) |
+| トラッキングの入力 | `Puppet::set_tracking` (`TrackingInput`) | 式の値が有限でないパラメータには書かない ([avatar-profile.md](spec/avatar-profile.md#フェイストラッキングとの対応)) | 同じ | 値域にクランプ |
+| 当たり判定の点 | `Puppet::hit_test`・`hit_areas_at` | 当たらない | 当たらない (範囲の外) | (意味どおり) |
+| 光源 | `ugoe_render` の `Lighting` | その光源を使わない ([rendering.md](spec/rendering.md#ライティング)) | 同じ。`range` の無限大は減衰なし | `range` が正でなければ使わない |
+| モーション・表情 (検証していないもの) | `Puppet::start_motion`・`Puppet::set_expression` | パラメータへは書かない。パーツの不透明度のカーブは使わない。リップシンクの強さが有限でなければリップシンクを当てない。長さの NaN は 0 と同じ | パラメータへは値域にクランプ。パーツの不透明度のカーブとリップシンクの強さは NaN と同じ | 値域にクランプ |
+| エフェクトの設定 (検証していないもの) | `Puppet::set_effects` | 目パチの `interval` が 0 より大きくなければまばたきしない。呼吸の `cycle` が 0 以下なら `sin` の項は 0 ([motion.md](spec/motion.md#エフェクト)) | 同じ | 同じ |
+| 物理の状態と出力 | `PhysicsSystem` | 鎖を静止姿勢に置き直し、出力を書かない ([physics.md](spec/physics.md#有限でない状態)) | 同じ | — |
+
+- ファイルから読むモデル・物理・モーション・表情の数は、読み込みで有限かを検証する (`ugoe-format`、[model.md#検証](spec/model.md#検証))。
+  上の「検証していないもの」は、Rust から組み立てた値や、検証しない JSON の口 (`set_effects_json` など) から来たもの。
+- `Puppet::update` でモーションのパーツの不透明度のカーブとリップシンクの強さを使わない値は、指揮役が配る記録
+  (`part_opacities_applied`・`lip_sync_applied`) にも入れない。受け手の `follow` は有限でないものを拒むので、指揮役の出力はいつも受け手に通る
+  (`crates/ugoe/tests/host_numbers.rs`)。
+
+### 入口ごとの表し方
+
+「拒む」は、何も変えずに失敗を返す (C ABI は `UGOE_ERROR_INVALID_ARGUMENT`、Unity は `UgoeException`、Godot は `godot_error!` と false、wasm は例外)。
+空欄は下の層と同じ。Unity の `Ugoe.Puppet` は C ABI をそのまま呼ぶので C ABI の列と同じ (違うものだけ書く)。
+
+| 値 | C ABI (`ugoe-ffi`)・Unity | wasm (`WebPuppet`、`@ugoe/runtime`) | Godot (`UgoePuppet` ノード) |
+| --- | --- | --- | --- |
+| `dt` (`update`) | 負・NaN・無限大を拒む (`ugoe_puppet_update`)。Unity の `UgoePuppet` の毎フレームの進め方は、`Time.deltaTime × speed` が正の有限でなければ 0 で進める | 下の層と同じ (0 とみなす) | `advance(delta)` は負・NaN・無限大を拒む。`speed` の setter も負・有限でない値を拒む |
+| パラメータの値 | NaN を拒む (`ugoe_puppet_set_parameter`・`set_parameters_by_id`)。無限大はクランプ | 下の層と同じ (`set_parameter` は書かずに `true`)。`<ugoe-avatar>` の `parameters` 属性は有限でない値の組を無視する | `set_parameter` は NaN を拒む。無限大はクランプ |
+| リップシンクの音量 | NaN を拒む。負 (`-∞` を含む) は入力をやめる (`None`)。`+∞` は 1 | 下の層と同じ (NaN は `undefined` と同じ) | `set_lip_sync_level` は NaN を拒む。負は 0 (入力をやめるのは `clear_lip_sync_level`) |
+| 基準値の列・受け手 (`follow`) | 下の層の拒否を結果コードにする。加えて `dt` の負・NaN・無限大を拒む。音量が負ならリップシンクを当てない | 下の層の拒否を例外にする。`dt` は 0 とみなす | 下の層の拒否をエラーにする。加えて `delta` の負・NaN・無限大を拒む。音量が負ならリップシンクを当てない |
+| トラッキング | 頭の回転とブレンドシェイプが有限でなければ拒む。体と肩は NaN を省略とみなし、無限大を拒む (`UgoeTrackingInput`) | 下の層と同じ (書かない) | `set_tracking_head` は有限でなければ拒む。`set_tracking_body` は C ABI と同じ。ブレンドシェイプは有限でない値を数えずに飛ばす (`set_tracking_blend_shape` は false) |
+| 光源 | 向きが 0・有限でない値・`range` が正でない・負の色を拒む (`ugoe_lighting_uniform`) | `set_lighting_json` は同じ条件で例外 | `ambient_light` は色が有限で負でなければ受け付け、そうでなければ拒む。光源は C ABI と同じ条件で、通らないものは警告を出して使わない |
+| 当たり判定の点 | 下の層と同じ (当たらない) | 同じ | 同じ |
+| 表示 (wasm のビュー・Godot のマスク) | — | `set_view`・`pan_by`・`zoom_at`・`set_background` は有限でなければ何も変えない ([wasm の表](../crates/ugoe-wasm/README.md#有限でない値と-dt)) | `mask_scale` は有限でなければ拒む |
+| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json` は検証して拒む。`set_effects_json` は検証しない) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外) | 同じ |
+
+- C ABI が拒む値を下の層は「書かない」「0 とみなす」で受け付けるのは、上の層の表し方の違いで、前提の違いではない。C ABI は結果コードで知らせる流儀なので、
+  ホストの誤りを早く見つけられるよう拒む (T0423)。
+- 確かめるテスト: 下の層は `ugoe-runtime` (`nan_writes_are_ignored`・`non_finite_part_opacity_overrides_are_ignored`・`non_finite_offsets_are_not_added`)、
+  `ugoe` (`crates/ugoe/tests/host_numbers.rs`・`follow_rejects_non_finite_inputs`)、`ugoe-motion` と `ugoe-physics` の各テスト (T0317・T0320)。
+  上の層は `crates/ugoe-ffi/tests/`、`crates/ugoe-wasm/src/animation.rs`、Godot の smoke (`example/tests/smoke.gd`)、Unity の `tests/ReceiverTests.cs`・`FrameStateTests.cs`。
+
 ## ランタイム層が守る制約 (移植性のため)
 
 - wasm32-unknown-unknown でビルドできること (`just wasm-check`)。

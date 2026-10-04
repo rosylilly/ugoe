@@ -10,6 +10,8 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
 - パニックを FFI の境界の外へ漏らさない (公開する関数はすべて `error::guard` を通す)
 - ABI を壊したら `ABI_VERSION` を上げる ([ABI の版](#abi-の版))
 - 公開する関数・型を変えたら `just ffi-header` でヘッダを作り直してコミットする
+- ホストから来る数 (NaN・無限大・負の `dt`) は、前提を `ugoe::Puppet` と `ugoe-runtime` に任せ、受け付けない値を `UGOE_ERROR_INVALID_ARGUMENT` で
+  知らせるだけにする。入口ごとの表は [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)
 
 ## 使い方
 

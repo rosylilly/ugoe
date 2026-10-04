@@ -125,7 +125,7 @@ W の各要素 (i, w) について、順に:
 
 1. すべてのパーツ・デフォーマ・メッシュについて、キーフォームの重みを計算し、局所的な値を補間する。
 2. パーツの不透明度を根から葉へ伝播する: `part_opacity = own * parent_part_opacity`
-   - `own` は、ホストが上書き `(value, weight)` を与えていれば (`ModelInstance::set_part_opacity_override`)、補間した値 `o` の代わりに `lerp(o, value, weight)` を使う。`weight` は 0〜1 にクランプする。既定は重み 0 (上書きしない)。パーツの不透明度はクランプしない。モーションのパーツの不透明度のカーブとポーズが使う ([motion.md](motion.md#パーツの不透明度))
+   - `own` は、ホストが上書き `(value, weight)` を与えていれば (`ModelInstance::set_part_opacity_override`)、補間した値 `o` の代わりに `lerp(o, value, weight)` を使う。`weight` は 0〜1 にクランプする。`value` か `weight` が有限でない書き込みは無視する (前の上書きのまま。T0010、[portability.md](../portability.md#ホストから来る数))。既定は重み 0 (上書きしない)。パーツの不透明度はクランプしない。モーションのパーツの不透明度のカーブとポーズが使う ([motion.md](motion.md#パーツの不透明度))
    - 評価後の値 `part_opacity` (祖先を掛けたもの) は `ModelInstance::part_opacity(part)` で読める (T0416)。C ABI は `ugoe_puppet_part_evaluated_opacity`、wasm は `part_evaluated_opacity`。上書きの値 (`part_opacity_override`) とは別のもの
 3. デフォーマを **トポロジカル順 (親が先)** に評価し (親が先という条件のほかは `deformers` の配列順。結果はこの順序に依存しません)、それぞれの **ワールド変換** (局所座標 → キャンバス座標の写像) を作る。
 4. メッシュの局所頂点を、親デフォーマのワールド変換でキャンバス座標に写す。
@@ -159,6 +159,8 @@ W の各要素 (i, w) について、順に:
 
 - 2 段目で評価し直さなかったデフォーマは、1 段目の結果をそのまま使う。入力 (パラメータ値と加算量) が同じなので、すべてを評価し直した場合とビット単位で同じ結果になる。
 - 1 段目を呼ばずに `update` を呼ぶと、すべてを評価し、加算量があれば加える (加算量は `DynamicOffsets::clear` するまで残る)。
+- 有限でない加算量 (位置は成分のどれか) は 0 とみなして加えない。物理は有限でない出力を書かないが ([physics.md#有限でない状態](physics.md#有限でない状態))、
+  `dynamic_offsets_mut` はホストも書けるため (T0010、[portability.md](../portability.md#ホストから来る数))。
 - パラメータへの物理の出力は、1 段目の **後** に書き込みます (物理を進めるのに 1 段目の結果が要るため)。そのパラメータを束縛するデフォーマは 2 段目で評価し直すので、結果は 1 段目の前に書き込んだ場合と同じです。メッシュ・パーツ・グルーはもともと 2 段目で評価します。
 - **動的物理を使わない設定のコストは変わりません。** `update_instance` は 1 段目を行わず、`ModelInstance` は加算量や 2 段階の評価の状態を持ちません (`dynamic_offsets()` が `None`)。評価の経路で増えるのは、要素ごとの `Option` の確認だけです。T0305 で、`rotation_chain`・`rotation_under_warp`・`warp_grid`・`glued_quads` の `update()` の時間を変更の前後で測り、差が測定の揺れ (±10%) の範囲に収まることを確かめました。
 - 動的物理を使う場合の追加の費用は、1 段目のデフォーマの評価と、2 段目で評価し直すデフォーマの分です (`dynamic_hair` で 1 フレーム 210 ns → 270 ns 程度)。
