@@ -389,6 +389,17 @@ fn propose_apply_undo_and_save() {
     // 未保存の変更があれば閉じられない。
     client.call_err("close_project", json!({ "path": path }));
 
+    // 書き出し先に書けなければ、何も保存しない。
+    let unwritable = tmp.0.join("missing").join("quad.ugoe");
+    let error = client.call_err(
+        "save_project",
+        json!({ "path": path, "bundle": unwritable.to_str().unwrap() }),
+    );
+    assert!(error.ends_with("nothing was saved"), "{error}");
+    let listed = client.call_ok("list_proposals", json!({ "path": path }));
+    assert_eq!(listed["project"]["modified"], true);
+    assert!(!tmp.0.join("missing").exists());
+
     let bundle = tmp.0.join("quad.ugoe");
     let saved = client.call_ok(
         "save_project",

@@ -31,6 +31,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
@@ -166,6 +167,10 @@ pub trait DocumentHost: Send + Sync {
 
     /// プロジェクトをディスクに保存し、`bundle` があれば `.ugoe` にも書き出す。保存した状態を
     /// 「保存済み」にする。[`DocumentHost::authorize`] で許した後に呼ぶ。
+    ///
+    /// `.ugoe` は一時ファイルに書いてから名前を変えて置き換え、途中で失敗しても前のファイルを壊さない。
+    /// 書けないと保存の前に分かれば何も保存しない。保存の後に置き換えられなかったときは、保存済みのまま
+    /// エラーを返し、文で「保存した」と伝える ([`FileHost`] の振る舞い)。
     fn save(&self, project: &Path, bundle: Option<&Path>) -> Result<(), HostError>;
 
     /// 操作を許すかを決める。待ってよい (利用者の確認を待つ)。既定はすべて許す。
@@ -187,10 +192,27 @@ pub trait DocumentHost: Send + Sync {
 
 /// `.ugoeproj` を自分でディスクから開く持ち主 (`ugoe-mcp` の stdio・`--http`)。
 /// 開いているプロジェクトはパスごとに持ち、ツールがパスで指したときに開いていなければ読む。
+///
+/// 錠はプロジェクトごとの枠 ([`Slot`]) に持つ。表の錠は枠を探す・入れる・除く間だけ握り、読み込み・
+/// 保存・書き出しはそのプロジェクトの枠の錠だけを握って行う (ほかのプロジェクトへの要求を待たせない)。
+/// 同じプロジェクトへの要求は枠の錠で 1 つずつ進むので、同時に開いても文書は 1 つになる。
+/// 錠の順は「枠 → 表」だけにする (表の錠を握ったまま枠の錠を待たない)。
 #[derive(Debug, Default)]
 pub struct FileHost {
     root: Option<Root>,
-    projects: Mutex<BTreeMap<PathBuf, FileProject>>,
+    projects: Mutex<BTreeMap<PathBuf, Arc<Slot>>>,
+}
+
+/// 1 つのプロジェクトの枠。
+type Slot = Mutex<SlotState>;
+
+#[derive(Debug)]
+enum SlotState {
+    /// 開いていない (作ったばかり・読み込みに失敗した・閉じた)。
+    Closed,
+    Open(Box<FileProject>),
+    /// 表から除いた。この枠の錠を待っていた要求は、表から枠を取り直す。
+    Removed,
 }
 
 #[derive(Debug)]
@@ -220,8 +242,55 @@ impl FileHost {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, BTreeMap<PathBuf, FileProject>> {
+    fn lock(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Arc<Slot>>> {
         self.projects.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// 表から `project` の枠を取る (無ければ入れる)。表の錠はこの間だけ握る。
+    fn slot(&self, project: &Path) -> Arc<Slot> {
+        Arc::clone(
+            self.lock()
+                .entry(project.to_path_buf())
+                .or_insert_with(|| Arc::new(Mutex::new(SlotState::Closed))),
+        )
+    }
+
+    /// `project` の枠の錠を握って `f` を呼ぶ。`f` の後に開いていなければ、枠を表から除く。
+    fn with_slot<R>(&self, project: &Path, f: impl FnOnce(&mut SlotState) -> R) -> R {
+        let mut slot = self.slot(project);
+        let mut state = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        while matches!(*state, SlotState::Removed) {
+            drop(state);
+            slot = self.slot(project);
+            state = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        }
+        let out = f(&mut state);
+        if matches!(*state, SlotState::Closed) {
+            let mut projects = self.lock();
+            if projects
+                .get(project)
+                .is_some_and(|current| Arc::ptr_eq(current, &slot))
+            {
+                projects.remove(project);
+            }
+            *state = SlotState::Removed;
+        }
+        out
+    }
+
+    /// 開いていなければディスクから読み、開いているプロジェクトを返す。
+    fn opened<'a>(
+        &self,
+        project: &Path,
+        state: &'a mut SlotState,
+    ) -> Result<&'a mut FileProject, String> {
+        if !matches!(state, SlotState::Open(_)) {
+            *state = SlotState::Open(Box::new(self.load(project)?));
+        }
+        match state {
+            SlotState::Open(open) => Ok(open),
+            _ => Err(format!("project `{}` is not open", project.display())),
+        }
     }
 
     /// `--root` があれば、プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を
@@ -255,20 +324,15 @@ fn unsaved(project: &Path) -> HostError {
 
 impl DocumentHost for FileHost {
     fn with_project(&self, project: &Path, f: &mut dyn FnMut(Lent<'_>)) -> Result<(), HostError> {
-        let mut projects = self.lock();
-        if !projects.contains_key(project) {
-            let loaded = self.load(project)?;
-            projects.insert(project.to_path_buf(), loaded);
-        }
-        let open = projects
-            .get_mut(project)
-            .ok_or_else(|| format!("project `{}` is not open", project.display()))?;
-        f(Lent {
-            meta: &open.meta,
-            document: &mut open.document,
-            proposals: &mut open.proposals,
-        });
-        Ok(())
+        self.with_slot(project, |state| {
+            let open = self.opened(project, state)?;
+            f(Lent {
+                meta: &open.meta,
+                document: &mut open.document,
+                proposals: &mut open.proposals,
+            });
+            Ok(())
+        })
     }
 
     fn open(
@@ -277,55 +341,127 @@ impl DocumentHost for FileHost {
         opening: Opening,
         discard_changes: bool,
     ) -> Result<(), HostError> {
-        let mut projects = self.lock();
-        if let Some(open) = projects.get(project)
-            && open.document.is_modified()
-            && !discard_changes
-        {
-            return Err(unsaved(project));
-        }
-        let open = match opening {
-            Opening::Load => self.load(project)?,
-            Opening::New { meta, document } => FileProject::new(meta, *document),
-        };
-        projects.insert(project.to_path_buf(), open);
-        Ok(())
+        self.with_slot(project, |state| {
+            if let SlotState::Open(open) = state
+                && open.document.is_modified()
+                && !discard_changes
+            {
+                return Err(unsaved(project));
+            }
+            let open = match opening {
+                Opening::Load => self.load(project)?,
+                Opening::New { meta, document } => FileProject::new(meta, *document),
+            };
+            *state = SlotState::Open(Box::new(open));
+            Ok(())
+        })
     }
 
     fn close(&self, project: &Path, discard_changes: bool) -> Result<(), HostError> {
-        let mut projects = self.lock();
-        let Some(open) = projects.get(project) else {
-            return Err(HostError::Failed(format!(
-                "`{}` is not open",
-                project.display()
-            )));
-        };
-        if open.document.is_modified() && !discard_changes {
-            return Err(unsaved(project));
-        }
-        projects.remove(project);
-        Ok(())
+        self.with_slot(project, |state| {
+            let SlotState::Open(open) = state else {
+                return Err(HostError::Failed(format!(
+                    "`{}` is not open",
+                    project.display()
+                )));
+            };
+            if open.document.is_modified() && !discard_changes {
+                return Err(unsaved(project));
+            }
+            *state = SlotState::Closed;
+            Ok(())
+        })
     }
 
+    /// `bundle` があれば、保存の前に `.ugoe` のバイト列を作って一時ファイルに書き、保存の後に名前を変えて
+    /// 置き換える。保存の前に失敗すれば何も変えない (プロジェクトも `.ugoe` も)。保存の後の名前の変更に
+    /// 失敗したときだけ、プロジェクトは保存済みで `.ugoe` は前のままになり、そう伝える。
     fn save(&self, project: &Path, bundle: Option<&Path>) -> Result<(), HostError> {
         self.check_project_dir(project)?;
-        let mut projects = self.lock();
-        if !projects.contains_key(project) {
-            let loaded = self.load(project)?;
-            projects.insert(project.to_path_buf(), loaded);
-        }
-        let open = projects
-            .get_mut(project)
-            .ok_or_else(|| format!("project `{}` is not open", project.display()))?;
-        let data = Project::from_document(open.meta.clone(), &open.document);
-        data.save(project).map_err(|e| e.to_string())?;
-        open.document.mark_saved();
-        if let Some(bundle) = bundle {
-            let bytes = export_bundle(&data).map_err(|e| e.to_string())?;
-            std::fs::write(bundle, bytes)
-                .map_err(|e| format!("failed to write {}: {e}", bundle.display()))?;
-        }
+        self.with_slot(project, |state| {
+            let open = self.opened(project, state)?;
+            let data = Project::from_document(open.meta.clone(), &open.document);
+            let staged = match bundle {
+                Some(bundle) => {
+                    let bytes = export_bundle(&data).map_err(|e| {
+                        format!(
+                            "failed to export `{}`: {e}; nothing was saved",
+                            bundle.display()
+                        )
+                    })?;
+                    let staged = StagedFile::write(bundle, &bytes).map_err(|e| {
+                        format!(
+                            "failed to write `{}`: {e}; nothing was saved",
+                            bundle.display()
+                        )
+                    })?;
+                    Some(staged)
+                }
+                None => None,
+            };
+            // 失敗すれば、書いておいた一時ファイルは捨てる (`StagedFile` の drop)。
+            data.save(project).map_err(|e| e.to_string())?;
+            open.document.mark_saved();
+            if let Some(staged) = staged {
+                let target = staged.target.clone();
+                staged.commit().map_err(|e| {
+                    format!(
+                        "saved the project, but failed to write `{}`: {e}; the previous file is left as it was",
+                        target.display()
+                    )
+                })?;
+            }
+            Ok(())
+        })
+    }
+}
+
+/// 置き換える前のファイル: 行き先と同じディレクトリの一時ファイルに書いておき、[`StagedFile::commit`] で
+/// 名前を変えて置き換える (途中で失敗しても、行き先にある前のファイルを壊さない)。置き換えずに捨てると
+/// 一時ファイルを消す。
+struct StagedFile {
+    temp: PathBuf,
+    target: PathBuf,
+    committed: bool,
+}
+
+impl StagedFile {
+    fn write(target: &Path, bytes: &[u8]) -> std::io::Result<Self> {
+        /// 同じプロセスの中で同じ行き先に同時に書いても、一時ファイルが重ならないように。
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let name = target
+            .file_name()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no file name"))?;
+        let mut temp_name = std::ffi::OsString::from(".");
+        temp_name.push(name);
+        temp_name.push(format!(
+            ".{}.{}.tmp",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let staged = Self {
+            temp: target.with_file_name(temp_name),
+            target: target.to_path_buf(),
+            committed: false,
+        };
+        let mut file = std::fs::File::create(&staged.temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(staged)
+    }
+
+    fn commit(mut self) -> std::io::Result<()> {
+        std::fs::rename(&self.temp, &self.target)?;
+        self.committed = true;
         Ok(())
+    }
+}
+
+impl Drop for StagedFile {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.temp);
+        }
     }
 }
 
@@ -514,6 +650,224 @@ impl DocumentHost for PanickingHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Barrier;
+
+    use ugoe_editor_core::Command;
+
+    /// テスト用の一時ディレクトリ。破棄時に消す。
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("ugoe-mcp-host-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path.canonicalize().unwrap())
+        }
+
+        /// 中の名前 (一時ファイルが残っていないかを見る)。
+        fn names(&self) -> Vec<String> {
+            let mut names: Vec<String> = std::fs::read_dir(&self.0)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// `dir` に単一の四角形のプロジェクトを保存する。
+    fn save_quad(dir: &Path) {
+        let mut textures = ugoe_editor_core::Textures::new();
+        textures.insert(
+            "white".to_owned(),
+            ugoe_editor_core::texture::solid_png(1, 1, [255; 4]).into(),
+        );
+        let document = Document::with_textures(ugoe_model::fixtures::single_quad(), textures);
+        Project::from_document(Project::empty("quad").meta, &document)
+            .save(dir)
+            .unwrap();
+    }
+
+    fn rename(name: &str) -> Command {
+        Command::RenameMesh {
+            id: "Quad".into(),
+            name: name.into(),
+        }
+    }
+
+    /// `project` を開いて (開いていなければ読む) 文書を変える。
+    fn edit(host: &FileHost, project: &Path, name: &str) {
+        host.with_project(project, &mut |lent| {
+            lent.document.apply(rename(name)).unwrap();
+        })
+        .unwrap();
+    }
+
+    fn modified(host: &FileHost, project: &Path) -> bool {
+        let mut modified = None;
+        host.with_project(project, &mut |lent| {
+            modified = Some(lent.document.is_modified());
+        })
+        .unwrap();
+        modified.unwrap()
+    }
+
+    #[test]
+    fn a_busy_project_does_not_block_other_projects() {
+        let tmp = TempDir::new("busy");
+        let (a, b) = (tmp.0.join("a.ugoeproj"), tmp.0.join("b.ugoeproj"));
+        save_quad(&a);
+        save_quad(&b);
+        let host = Arc::new(FileHost::new(None));
+        // 読み込み・保存・書き出しは、そのプロジェクトの枠の錠を握って行う。`with_project` の `f` も
+        // 同じ錠の中で動くので、`f` で止めて「a を読み書きしている間」を作る。
+        let (entered, entered_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel::<()>();
+        let busy = {
+            let host = Arc::clone(&host);
+            let a = a.clone();
+            std::thread::spawn(move || {
+                host.with_project(&a, &mut |_| {
+                    entered.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                })
+            })
+        };
+        entered_rx.recv().unwrap();
+
+        // a を握っている間も、b は読み込み・編集・保存と書き出し・閉じるができる。
+        let (done, done_rx) = mpsc::channel();
+        let other = {
+            let host = Arc::clone(&host);
+            let bundle = tmp.0.join("b.ugoe");
+            std::thread::spawn(move || {
+                edit(&host, &b, "B");
+                host.save(&b, Some(&bundle)).unwrap();
+                assert!(!modified(&host, &b));
+                host.close(&b, false).unwrap();
+                done.send(()).unwrap();
+            })
+        };
+        let finished = done_rx.recv_timeout(Duration::from_secs(30));
+        release.send(()).unwrap();
+        busy.join().unwrap().unwrap();
+        other.join().unwrap();
+        assert!(finished.is_ok(), "b waited for a");
+        assert!(tmp.0.join("b.ugoe").is_file());
+    }
+
+    #[test]
+    fn opening_the_same_project_at_once_makes_one_document() {
+        const THREADS: usize = 8;
+        let tmp = TempDir::new("same");
+        let project = tmp.0.join("a.ugoeproj");
+        save_quad(&project);
+        let host = Arc::new(FileHost::new(None));
+        let barrier = Arc::new(Barrier::new(THREADS));
+        // どのスレッドもまだ開いていないプロジェクトを同時に指して、提案を 1 つ置く。文書が 1 つなら
+        // 提案の番号は重ならない。
+        let threads: Vec<_> = (0..THREADS)
+            .map(|i| {
+                let (host, barrier, project) =
+                    (Arc::clone(&host), Arc::clone(&barrier), project.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let mut id = None;
+                    host.with_project(&project, &mut |lent| {
+                        let view = lent
+                            .proposals
+                            .add(lent.document, format!("p{i}"), "", vec![rename("X")])
+                            .unwrap();
+                        id = Some(view.id);
+                    })
+                    .unwrap();
+                    id.unwrap()
+                })
+            })
+            .collect();
+        let mut ids: Vec<u32> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, (1..=THREADS as u32).collect::<Vec<_>>());
+        assert_eq!(host.lock().len(), 1);
+
+        // 開き直す・閉じるのと同時に指しても、表に枠が残らないか 1 つになる。
+        let threads: Vec<_> = (0..THREADS)
+            .map(|i| {
+                let (host, project) = (Arc::clone(&host), project.clone());
+                std::thread::spawn(move || match i % 3 {
+                    0 => drop(host.open(&project, Opening::Load, true)),
+                    1 => drop(host.close(&project, true)),
+                    _ => edit(&host, &project, "Y"),
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert!(host.lock().len() <= 1);
+        edit(&host, &project, "Z");
+        host.close(&project, true).unwrap();
+        assert!(host.lock().is_empty());
+    }
+
+    #[test]
+    fn a_bundle_that_cannot_be_written_saves_nothing() {
+        let tmp = TempDir::new("bundle-early");
+        let project = tmp.0.join("a.ugoeproj");
+        save_quad(&project);
+        let before = std::fs::read(project.join("project.json")).unwrap();
+        let host = FileHost::new(None);
+        edit(&host, &project, "Renamed");
+        // 書き出し先のディレクトリが無い: 保存の前に一時ファイルが書けない。
+        let err = host
+            .save(&project, Some(&tmp.0.join("missing/a.ugoe")))
+            .unwrap_err();
+        assert!(
+            matches!(&err, HostError::Failed(m) if m.contains("nothing was saved")),
+            "{err}"
+        );
+        assert!(modified(&host, &project));
+        assert_eq!(std::fs::read(project.join("project.json")).unwrap(), before);
+        assert_eq!(tmp.names(), ["a.ugoeproj"]);
+    }
+
+    #[test]
+    fn a_bundle_is_replaced_whole_or_left_as_it_was() {
+        let tmp = TempDir::new("bundle-replace");
+        let project = tmp.0.join("a.ugoeproj");
+        save_quad(&project);
+        let host = FileHost::new(None);
+        let bundle = tmp.0.join("a.ugoe");
+        std::fs::write(&bundle, b"old").unwrap();
+        edit(&host, &project, "First");
+        host.save(&project, Some(&bundle)).unwrap();
+        assert!(!modified(&host, &project));
+        assert_ne!(std::fs::read(&bundle).unwrap(), b"old");
+        assert_eq!(tmp.names(), ["a.ugoe", "a.ugoeproj"]);
+
+        // 名前を変えて置き換えられない (行き先が空でないディレクトリ): プロジェクトは保存済みになり、
+        // 行き先は前のまま、一時ファイルは残らない。
+        let blocked = tmp.0.join("blocked.ugoe");
+        std::fs::create_dir(&blocked).unwrap();
+        std::fs::write(blocked.join("keep"), b"keep").unwrap();
+        edit(&host, &project, "Second");
+        let err = host.save(&project, Some(&blocked)).unwrap_err();
+        assert!(
+            matches!(&err, HostError::Failed(m) if m.starts_with("saved the project, but failed to write")),
+            "{err}"
+        );
+        assert!(!modified(&host, &project));
+        assert_eq!(std::fs::read(blocked.join("keep")).unwrap(), b"keep");
+        assert_eq!(tmp.names(), ["a.ugoe", "a.ugoeproj", "blocked.ugoe"]);
+    }
 
     #[test]
     fn approvals_pass_answers_between_threads() {
