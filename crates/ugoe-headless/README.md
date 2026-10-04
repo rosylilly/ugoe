@@ -47,7 +47,7 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 ```rust
 let mut resident = Resident::new(&gpu, &textures, &shading, ResidentOptions {
     size: (1920, 1080), format: PixelFormat::Nv12, background: [255, 255, 255, 255],
-    view: fit_view(canvas, (1920, 1080), Fit::Contain), slots: DEFAULT_SLOTS,
+    view: fit_view(canvas, (1920, 1080), Fit::Contain), slots: DEFAULT_SLOTS, cpu_yuv: false,
 })?;
 // 毎フレーム: 描いて読み戻しを頼む (待たない)。空いたバッファが無ければ false (GPU が追いついていない)。
 resident.submit(&gpu, puppet.instance(), seq)?;
@@ -58,6 +58,7 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
 - レンダラ・テクスチャ・法線マップ・描画先・読み戻しのバッファ (既定 3 枚) を持ち続ける。モデルが変わったら作り直す。
 - NV12・YUY2 への変換は GPU の計算シェーダ (`src/yuv.wgsl`) で行ってから読み戻す (読み戻す量は RGBA の 3/8〜1/2)。
   計算シェーダの無いアダプタでは RGBA を読み戻して CPU で変換する (`yuv::convert`。式は同じ)。
+  `ResidentOptions::cpu_yuv` を `true` にすると、計算シェーダがあっても CPU で変換する (この道をテストで通すため。`Resident::converts_on_gpu` で確かめられる)。
 - 色の変換は BT.709 の限定範囲。YUV の形は幅を 4 の倍数、高さを 2 の倍数にする。
 - アルファは見ないので、クリアの色 (`background`) は不透明にする (仮想カメラは透過を出せないので単色で埋める)。
 - `set_lighting` で光源を変え、`set_backdrop` で背景の画像 (出力と同じ大きさの乗算済み RGBA8) を置く。背景の画像があれば、クリアの代わりに
@@ -86,7 +87,7 @@ cargo test -p ugoe-headless   # GPU を使わないテスト (引数・大きさ
 ```
 
 常駐の描画は `cargo test -p ugoe-headless --features gpu-tests` (`tests/resident_gpu.rs`。RGBA が 1 枚の口と同じ・
-GPU の YUV が CPU の参照と ±1 で一致・読み戻しを待たない) が確かめ、`just test-gpu` に含まれる。
+GPU の YUV が CPU の参照と ±1 で一致・`cpu_yuv` の CPU の道が GPU の道と ±1 で一致・読み戻しを待たない) が確かめ、`just test-gpu` に含まれる。
 
 実際の描画は `ugoe render` のテスト (`cargo test -p ugoe-cli --features gpu-tests`) と、MCP サーバのテスト
 (`cargo test -p ugoe-mcp --features gpu-tests`) が確かめる。どちらも `just test-gpu` に含まれる。

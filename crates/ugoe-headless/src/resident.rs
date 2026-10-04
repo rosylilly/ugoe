@@ -46,6 +46,9 @@ pub struct ResidentOptions {
     pub view: View,
     /// 読み戻し用のバッファの枚数 (1 以上)。
     pub slots: usize,
+    /// `true` なら、計算シェーダのあるアダプタでも NV12・YUY2 への変換を CPU で行う
+    /// (RGBA を読み戻して [`crate::yuv::convert`])。計算シェーダの無いアダプタと同じ道をテストで通すためのもので、ふつうは `false`。
+    pub cpu_yuv: bool,
 }
 
 /// 読み戻した 1 枚。
@@ -124,6 +127,7 @@ impl Resident {
             background,
             view,
             slots,
+            cpu_yuv,
         } = options;
         format.check_size(size.0, size.1)?;
         if slots == 0 {
@@ -132,7 +136,7 @@ impl Resident {
         gpu.scoped(|| {
             let device = &gpu.device;
             let renderer = new_renderer(device, &gpu.queue, textures, shading, size)?;
-            let compute = format != PixelFormat::Rgba8 && gpu.supports_compute();
+            let compute = format != PixelFormat::Rgba8 && !cpu_yuv && gpu.supports_compute();
             // 背景の画像 (`set_backdrop`) を写せるよう、描画先は写し先にもする。
             let usage = wgpu::TextureUsages::COPY_DST
                 | if compute {

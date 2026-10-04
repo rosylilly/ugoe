@@ -357,6 +357,7 @@ impl Feed {
                 background: self.clear_color(),
                 view: placement_view(model.canvas, self.size, &self.look.transform),
                 slots: DEFAULT_SLOTS,
+                cpu_yuv: false,
             },
         )
         .map_err(|e| e.to_string())

@@ -2,6 +2,7 @@
 //!
 //! - RGBA で読み戻した画は、1 枚を描く口 (`Gpu::render`) と同じ。
 //! - NV12・YUY2 の計算シェーダの結果は、同じ画を CPU の参照実装 (`yuv::convert`) で変換したものと ±1 で一致する。
+//! - `cpu_yuv` で選ぶ CPU の変換の道 (計算シェーダの無いアダプタの道) は、GPU の変換の道と ±1 で一致する。
 //! - 読み戻しを待たない: 空いたバッファが無ければ描かずに `false` を返し、`poll` は最も新しい 1 枚を返す。
 #![cfg(feature = "gpu-tests")]
 #![allow(clippy::unwrap_used)]
@@ -55,6 +56,15 @@ fn prepared() -> Prepared {
 }
 
 fn resident(prepared: &Prepared, format: PixelFormat, slots: usize) -> Resident {
+    resident_with(prepared, format, slots, false)
+}
+
+fn resident_with(
+    prepared: &Prepared,
+    format: PixelFormat,
+    slots: usize,
+    cpu_yuv: bool,
+) -> Resident {
     let canvas = prepared.puppet.instance().compiled().model().meta.canvas;
     Resident::new(
         gpu(),
@@ -66,6 +76,7 @@ fn resident(prepared: &Prepared, format: PixelFormat, slots: usize) -> Resident 
             background: BACKGROUND,
             view: fit_view((canvas.width, canvas.height), SIZE, Fit::Contain),
             slots,
+            cpu_yuv,
         },
     )
     .unwrap()
@@ -107,14 +118,38 @@ fn yuv_on_the_gpu_matches_the_cpu_reference() {
     for format in [PixelFormat::Nv12, PixelFormat::Yuy2] {
         let expected = yuv::convert(&rgba, format).unwrap();
         let mut resident = resident(&prepared, format, 2);
-        let actual = render_once(&mut resident, &prepared);
-        assert_eq!(actual.len(), expected.len(), "{format:?}");
-        for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
-            assert!(
-                (i32::from(*a) - i32::from(*e)).abs() <= 1,
-                "{format:?} byte {i}: {a} != {e}"
+        assert_close(&render_once(&mut resident, &prepared), &expected, format);
+    }
+}
+
+fn assert_close(actual: &[u8], expected: &[u8], format: PixelFormat) {
+    assert_eq!(actual.len(), expected.len(), "{format:?}");
+    for (i, (a, e)) in actual.iter().zip(expected).enumerate() {
+        assert!(
+            (i32::from(*a) - i32::from(*e)).abs() <= 1,
+            "{format:?} byte {i}: {a} != {e}"
+        );
+    }
+}
+
+#[test]
+fn yuv_on_the_cpu_matches_the_gpu_path() {
+    let prepared = prepared();
+    for format in [PixelFormat::Nv12, PixelFormat::Yuy2] {
+        let mut on_cpu = resident_with(&prepared, format, 2, true);
+        assert!(!on_cpu.converts_on_gpu(), "{format:?}");
+        let cpu = render_once(&mut on_cpu, &prepared);
+        // CPU の道は RGBA の読み戻しを参照実装で変換したものそのもの。
+        let (rgba, _) = prepared.render(gpu()).unwrap();
+        assert_eq!(cpu, yuv::convert(&rgba, format).unwrap(), "{format:?}");
+        let mut on_gpu = resident(&prepared, format, 2);
+        if !on_gpu.converts_on_gpu() {
+            eprintln!(
+                "{format:?}: the adapter has no compute shaders; skipping the GPU comparison"
             );
+            continue;
         }
+        assert_close(&cpu, &render_once(&mut on_gpu, &prepared), format);
     }
 }
 

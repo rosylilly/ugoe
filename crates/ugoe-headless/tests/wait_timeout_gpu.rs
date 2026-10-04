@@ -53,6 +53,7 @@ fn zero_timeout_returns_instead_of_waiting() {
             background: [0, 0, 0, 255],
             view: fit_view((canvas.width, canvas.height), SIZE, Fit::Contain),
             slots: 1,
+            cpu_yuv: false,
         },
     )
     .unwrap();
