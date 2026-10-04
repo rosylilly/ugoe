@@ -8,7 +8,10 @@ use crate::lighting::{
     BulgeSettings, LightingError, PreviewLight, PreviewLighting, assign_normal_map,
     generate_normal_map, normal_map_name,
 };
-use crate::texture::{decode_rgba_png, encode_rgba_png, solid_png};
+use crate::message::Coded;
+use crate::texture::{
+    DEFAULT_MAX_IMAGE_SIDE, decode_rgba_png, encode_rgba_png, huge_png_header, solid_png,
+};
 use crate::{Command, Document, ProjectMeta, Textures};
 
 const SIZE: u32 = 32;
@@ -188,6 +191,35 @@ fn assigned_normal_map_can_flip_green() {
         assign_normal_map(doc.model(), "nope", solid_png(1, 1, [0; 4]), false),
         Err(LightingError::TextureNotFound(_))
     ));
+}
+
+/// 上限を超える画像は、画素を確保する前にコードつきのエラーで拒む (外から来た PNG でメモリを使い切らない)。
+#[test]
+fn images_larger_than_the_limit_are_rejected() {
+    let doc = disc_document();
+    let err = assign_normal_map(doc.model(), "white", huge_png_header(), false).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            LightingError::NormalMapTooLarge {
+                width: 65535,
+                height: 65535,
+                max: DEFAULT_MAX_IMAGE_SIDE,
+            }
+        ),
+        "{err}"
+    );
+    assert_eq!(err.code(), "lighting.normal_map_too_large");
+
+    let mut textures = doc.textures().clone();
+    textures.insert("white".into(), Arc::from(huge_png_header()));
+    let err =
+        generate_normal_map(doc.model(), &textures, "white", BulgeSettings::default()).unwrap_err();
+    assert!(
+        matches!(&err, LightingError::TextureTooLarge { texture, .. } if texture == "white"),
+        "{err}"
+    );
+    assert_eq!(err.code(), "lighting.texture_too_large");
 }
 
 #[test]

@@ -4,12 +4,13 @@
 //! 例のファイルは仕様だけから作った別の書き出しで作られている。このテストの側で例を合わせて直してはならない。
 //! 参照実装と食い違う例は、理由を書いて [`KNOWN_MISMATCHES`] に入れる。
 
-use std::io::{Cursor, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use ugoe_format::image::{ImageLimits, Rgba8, decode_png};
 use ugoe_format::{
     FeatureDecl, FormatError, ReadReport, ReadWarning, TextureData, TextureFormat,
     expression_from_json, model_from_json, module_from_json, motion_from_json, physics_from_json,
@@ -538,8 +539,12 @@ fn check_image(
     if actual.format != TextureFormat::Png {
         return failures.push(format!("{label}: {:?}, not PNG", actual.format));
     }
-    match decode_png(&actual.bytes) {
-        Ok((width, height, rgba)) => {
+    match decode_png(&actual.bytes, ImageLimits::default()) {
+        Ok(Rgba8 {
+            width,
+            height,
+            pixels: rgba,
+        }) => {
             if (width, height) != (expected.width, expected.height) {
                 failures.push(format!(
                     "{label}: size {width}x{height} != {}x{}",
@@ -551,37 +556,6 @@ fn check_image(
         }
         Err(e) => failures.push(format!("{label}: {e}")),
     }
-}
-
-/// PNG を 8 bit の RGBA (乗算済みでない) に展開する。
-fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    let size = reader
-        .output_buffer_size()
-        .ok_or("PNG image is too large")?;
-    let mut buf = vec![0; size];
-    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    buf.truncate(info.buffer_size());
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|&[r, g, b]| [r, g, b, 255])
-            .collect(),
-        png::ColorType::GrayscaleAlpha => buf
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .flat_map(|&[g, a]| [g, g, g, a])
-            .collect(),
-        png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::Indexed => return Err("indexed PNG was not expanded".to_owned()),
-    };
-    Ok((info.width, info.height, rgba))
 }
 
 // --- 拒否 ----------------------------------------------------------------------------------------

@@ -160,6 +160,14 @@ pub enum EditError {
     /// モジュールのプロジェクトでないのに、モジュールの設定を変えようとした (`Command::SetModuleSettings`)。
     #[error("this is not a module project")]
     NotModule,
+    /// テクスチャの画像の一辺が、デコードの上限 (`ugoe_format::image::ImageLimits`) を超える。
+    #[error("texture `{texture}` is {width}x{height}, larger than the limit {max}x{max}")]
+    TextureTooLarge {
+        texture: String,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
 }
 
 fn join(errors: &[ValidationError]) -> String {

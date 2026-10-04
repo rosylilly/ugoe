@@ -1876,7 +1876,8 @@
       "invalid_slot": "The slot {{id}} cannot be set ({{reason}}).",
       "invalid_glue": "The glue {{id}} cannot be set ({{reason}}).",
       "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
-      "not_module": "This is not a module project."
+      "not_module": "This is not a module project.",
+      "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels."
     },
     "cell": {
       "missing_axis": "The cell does not specify the axis {{parameter}}.",
@@ -1945,7 +1946,8 @@
       "missing_texture": "The texture {{name}} has no image.",
       "not_png": "The texture {{name}} is not a readable PNG.",
       "texture_out_of_range": "The mesh {{mesh}} refers to texture number {{texture}}, which does not exist.",
-      "invalid_max_size": "The atlas max size must be greater than 0."
+      "invalid_max_size": "The atlas max size must be greater than 0.",
+      "texture_too_large": "The image of the texture {{name}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels."
     },
     "compile": {
       "invalid_model_one": "The model did not pass validation, so it cannot be prepared for evaluation ({{count}} problem: {{details}}).",
@@ -1977,7 +1979,9 @@
       "invalid_preview": "This preview lighting cannot be used ({{reason}}).",
       "unknown_group": "There is no group {{group}}.",
       "empty_group": "The group {{group}} has no textures.",
-      "image_not_found": "The image {{name}} was not found."
+      "image_not_found": "The image {{name}} was not found.",
+      "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels.",
+      "normal_map_too_large": "The normal map image ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels."
     },
     "space": {
       "not_found": "The {{kind}} {{id}} was not found.",

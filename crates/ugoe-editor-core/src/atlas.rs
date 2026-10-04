@@ -19,7 +19,7 @@ use ts_rs::TS;
 use ugoe_model::{Mesh, Model, Module, TextureRef};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
-use crate::texture::{decode_rgba_png, encode_rgba_png};
+use crate::texture::{ImageError, ImageLimits, decode_png, encode_rgba_png};
 use crate::{Project, Textures};
 
 /// アトラスの名前の接頭辞 (`atlas-0`、`atlas-1`…)。
@@ -81,6 +81,14 @@ pub enum AtlasError {
     TextureOutOfRange { mesh: String, texture: u32 },
     #[error("max_size must be positive")]
     InvalidMaxSize,
+    /// 画像の一辺が、デコードの上限 (`ugoe_format::image::ImageLimits`) を超える。
+    #[error("texture `{name}` is {width}x{height}, larger than the limit {max}x{max}")]
+    TextureTooLarge {
+        name: String,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
 }
 
 /// アトラス化したモデルとテクスチャ。
@@ -216,9 +224,18 @@ fn pack_textures(
                 .push((texture.name.clone(), KeptReason::HasNormalMap));
             continue;
         }
-        let (width, height, rgba) = decode_rgba_png(png).ok_or_else(|| AtlasError::NotPng {
-            name: texture.name.clone(),
+        let image = decode_png(png, ImageLimits::default()).map_err(|error| match error {
+            ImageError::TooLarge { width, height, max } => AtlasError::TextureTooLarge {
+                name: texture.name.clone(),
+                width,
+                height,
+                max,
+            },
+            _ => AtlasError::NotPng {
+                name: texture.name.clone(),
+            },
         })?;
+        let (width, height, rgba) = (image.width, image.height, image.pixels);
         let fits = |size: u32| u64::from(size) + 2 * u64::from(pad) <= u64::from(options.max_size);
         if !fits(width) || !fits(height) {
             kept.push(t);

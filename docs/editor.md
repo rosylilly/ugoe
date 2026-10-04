@@ -1107,6 +1107,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 - スナップショットでは画像を `Arc<[u8]>` で共有するので、Undo のたびに画像のバイト列が複製されることはありません。
 - テクスチャ名は `textures/<name>.png` のファイル名になるので、`[A-Za-z0-9_.-]` だけからなり `.` で始まらないものに限り、大文字と小文字を区別せずに一意にします ([ファイル形式](spec/file-formats.md#名前と読み込み))。
 - `png` は JSON では数値の配列になります。大きな画像をフロントエンドから送ることは想定しておらず、バックエンドの中 (取り込み処理) から使います。
+- 画素が要る処理 (メッシュの作り直し・法線マップ・アトラス化) は、PNG を `ugoe_format::image` でデコードします (ランタイムと同じ展開と上限。`texture::decode_png`)。一辺が上限 (既定 16384 画素。[読み込みの上限](spec/file-formats.md#読み込みの上限)) を超える画像は、画素を確保する前に `*.texture_too_large` / `lighting.normal_map_too_large` のエラーで拒みます (T0162)。
 
 ### 法線マップ
 
@@ -1895,6 +1896,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.invalid_slot` / `edit.invalid_glue` | `id`・`reason` |
 | `edit.read_only_base` | `element` |
 | `edit.not_module` | なし |
+| `edit.texture_too_large` (メッシュの作り直しで、テクスチャの画像の一辺がデコードの上限を超える) | `texture`・`width`・`height`・`max` (画素) |
 
 **キーフォームのセル (`CellError`)**
 
@@ -1944,6 +1946,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `atlas.missing_texture` / `atlas.not_png` | `name` |
 | `atlas.texture_out_of_range` | `mesh`・`texture` |
 | `atlas.invalid_max_size` | なし |
+| `atlas.texture_too_large` (画像の一辺がデコードの上限を超える) | `name`・`width`・`height`・`max` (画素) |
 | `compile.invalid_model` | `count`・`details` |
 | `compile.unknown_parameter` | `parameter` |
 | `compile.unsupported` | `feature` |
@@ -1964,6 +1967,8 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `lighting.invalid_preview` | `reason` |
 | `lighting.unknown_group` / `lighting.empty_group` | `group` |
 | `lighting.image_not_found` | `name` |
+| `lighting.texture_too_large` (画像の一辺がデコードの上限を超える) | `texture`・`width`・`height`・`max` (画素) |
+| `lighting.normal_map_too_large` | `width`・`height`・`max` (画素) |
 | `space.not_found` / `space.no_space` | `kind`・`id` |
 | `space.evaluate_failed` | `detail` |
 | `space.length_mismatch` | `points`・`guesses` |

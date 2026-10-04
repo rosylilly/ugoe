@@ -8,7 +8,8 @@ use ugoe_model::{BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, 
 use ugoe_psd::{Layer, LayerNode, LayerTree};
 
 use crate::import::{DRAW_ORDER_RANGE, layer_tree_command};
-use crate::texture::{decode_rgba_png, png_size};
+use crate::message::Coded;
+use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, decode_rgba_png, huge_png_header, png_size};
 use crate::{
     AutoMeshOptions, Command, Document, EditError, Project, ProjectMeta, PsdImport, PsdImportError,
     PsdImportOptions, import_psd,
@@ -508,6 +509,35 @@ fn regenerate_mesh_uses_texture_and_keeps_placement() {
     }
     // 1 回の Undo で元に戻る。
     assert!(doc.undo());
+    assert_eq!(mesh(doc.model(), "Layer1"), &before);
+}
+
+/// テクスチャの画像がデコードの上限を超えるなら、画素を確保せずにコードつきのエラーで拒む。
+#[test]
+fn regenerate_mesh_rejects_textures_larger_than_the_limit() {
+    let (mut doc, _) = imported();
+    doc.apply(Command::SetTextureImage {
+        name: "Layer1".into(),
+        png: huge_png_header(),
+    })
+    .unwrap();
+    let before = mesh(doc.model(), "Layer1").clone();
+    let err = doc
+        .apply(Command::RegenerateMesh {
+            id: "Layer1".into(),
+            options: AutoMeshOptions::default(),
+        })
+        .unwrap_err();
+    assert_eq!(
+        err,
+        EditError::TextureTooLarge {
+            texture: "Layer1".into(),
+            width: 65535,
+            height: 65535,
+            max: DEFAULT_MAX_IMAGE_SIDE,
+        }
+    );
+    assert_eq!(err.to_message().code, "edit.texture_too_large");
     assert_eq!(mesh(doc.model(), "Layer1"), &before);
 }
 

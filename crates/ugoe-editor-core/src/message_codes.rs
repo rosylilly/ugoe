@@ -85,6 +85,7 @@ impl Coded for EditError {
             Self::ReadOnlyBase { .. } => "edit.read_only_base",
             Self::ModuleShape { .. } => "edit.module_shape",
             Self::NotModule => "edit.not_module",
+            Self::TextureTooLarge { .. } => "edit.texture_too_large",
         }
     }
 
@@ -183,6 +184,14 @@ impl Coded for EditError {
             }
             Self::ReadOnlyBase { element } => args! { "element" => element },
             Self::NotModule => args! {},
+            Self::TextureTooLarge {
+                texture,
+                width,
+                height,
+                max,
+            } => {
+                args! { "texture" => texture, "width" => *width, "height" => *height, "max" => *max }
+            }
         }
     }
 
@@ -393,6 +402,7 @@ impl Coded for AtlasError {
             Self::NotPng { .. } => "atlas.not_png",
             Self::TextureOutOfRange { .. } => "atlas.texture_out_of_range",
             Self::InvalidMaxSize => "atlas.invalid_max_size",
+            Self::TextureTooLarge { .. } => "atlas.texture_too_large",
         }
     }
 
@@ -403,6 +413,12 @@ impl Coded for AtlasError {
                 args! { "mesh" => mesh, "texture" => *texture }
             }
             Self::InvalidMaxSize => args! {},
+            Self::TextureTooLarge {
+                name,
+                width,
+                height,
+                max,
+            } => args! { "name" => name, "width" => *width, "height" => *height, "max" => *max },
         }
     }
 }
@@ -432,6 +448,8 @@ impl Coded for LightingError {
             Self::Generate(_) => "lighting.generate_failed",
             Self::InvalidPreview(_) => "lighting.invalid_preview",
             Self::Settings(_) => "lighting.invalid_settings",
+            Self::TextureTooLarge { .. } => "lighting.texture_too_large",
+            Self::NormalMapTooLarge { .. } => "lighting.normal_map_too_large",
         }
     }
 
@@ -444,6 +462,17 @@ impl Coded for LightingError {
             Self::Generate(error) => args! { "detail" => error.to_string() },
             Self::InvalidPreview(reason) => args! { "reason" => reason },
             Self::Settings(error) => args! { "detail" => error.to_string() },
+            Self::TextureTooLarge {
+                texture,
+                width,
+                height,
+                max,
+            } => {
+                args! { "texture" => texture, "width" => *width, "height" => *height, "max" => *max }
+            }
+            Self::NormalMapTooLarge { width, height, max } => {
+                args! { "width" => *width, "height" => *height, "max" => *max }
+            }
         }
     }
 }

@@ -6,6 +6,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub use ugoe_format::image::{DEFAULT_MAX_IMAGE_SIDE, ImageError, ImageLimits, Rgba8};
+
 /// テクスチャ名 → PNG ファイルのバイト列。
 ///
 /// Undo のスナップショットで複製しても画像のバイト列はコピーしないように `Arc` で共有する。
@@ -62,39 +64,35 @@ pub fn encode_rgba_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
-/// PNG を非乗算 RGBA8 の画素 (幅・高さ・画素) にデコードする。読めなければ `None`。
+/// PNG を非乗算 RGBA8 の画素にデコードする (`ugoe_format::image::decode_png`)。
 ///
-/// グレースケール・RGB・パレット・16 ビットの PNG も RGBA8 に直す。
+/// グレースケール・RGB・パレット・16 ビットの PNG も RGBA8 に直す。エディタは外から来た PNG (取り込み・差し替え) を
+/// 読むので、一辺が `limits.max_side` を超える画像は画素を確保する前に [`ImageError::TooLarge`] にする。
+/// 上限は読む側の設定で、既定は [`DEFAULT_MAX_IMAGE_SIDE`] (ランタイムの描画と同じ)。
+pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
+    ugoe_format::image::decode_png(bytes, limits)
+}
+
+/// PNG を非乗算 RGBA8 の画素 (幅・高さ・画素) にデコードする。読めない・既定の上限を超えるなら `None`。
+///
+/// 失敗の理由が要るときは [`decode_png`] を使う。
 pub fn decode_rgba_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()?];
-    let info = reader.next_frame(&mut buf).ok()?;
-    buf.truncate(info.buffer_size());
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        png::ColorType::GrayscaleAlpha => buf
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .flat_map(|p| [p[0], p[0], p[0], p[1]])
-            .collect(),
-        png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        // `normalize_to_color8` はパレットを展開するので、ここには来ない。
-        png::ColorType::Indexed => return None,
-    };
-    // 寸法はファイルから来るので積は checked で求める (デコードできた画素の数なので実際には収まる。T0012)。
-    let expected = (info.width as usize)
-        .checked_mul(info.height as usize)?
-        .checked_mul(4)?;
-    (rgba.len() == expected).then_some((info.width, info.height, rgba))
+    let image = decode_png(bytes, ImageLimits::default()).ok()?;
+    Some((image.width, image.height, image.pixels))
+}
+
+/// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
+#[cfg(test)]
+pub(crate) fn huge_png_header() -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_chunk(png::chunk::IDAT, &[0x78, 0x9c]).unwrap();
+    // 残りの画素は書かない (`finish` も呼ばない)。
+    std::mem::forget(writer);
+    out
 }
 
 #[cfg(test)]
@@ -126,5 +124,36 @@ mod tests {
         assert_eq!(png_size(&png), Some((2, 3)));
         assert_eq!(decode_rgba_png(&png), Some((2, 3, pixels)));
         assert_eq!(decode_rgba_png(b"not a png"), None);
+    }
+
+    /// 一辺が上限を超える PNG は、画素を確保する前に `TooLarge` で拒む (外から来た画像でメモリを使い切らない)。
+    #[test]
+    fn decode_rejects_images_larger_than_the_limit() {
+        let png = solid_png(3, 2, [1, 2, 3, 4]);
+        let image = decode_png(&png, ImageLimits::default().with_max_side(3)).unwrap();
+        assert_eq!((image.width, image.height), (3, 2));
+        let err = decode_png(&png, ImageLimits::default().with_max_side(2)).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ImageError::TooLarge {
+                    width: 3,
+                    height: 2,
+                    max: 2
+                }
+            ),
+            "{err}"
+        );
+        // 既定の上限の判定は IHDR だけで行うので、画素の無い巨大な見出しでも確保せずに失敗する。
+        let huge = huge_png_header();
+        assert_eq!(png_size(&huge), Some((65535, 65535)));
+        assert!(matches!(
+            decode_png(&huge, ImageLimits::default()),
+            Err(ImageError::TooLarge {
+                max: DEFAULT_MAX_IMAGE_SIDE,
+                ..
+            })
+        ));
+        assert_eq!(decode_rgba_png(&huge), None);
     }
 }

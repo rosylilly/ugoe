@@ -11,7 +11,7 @@ use ugoe_model::mesh::Mesh;
 
 use crate::document::EditError;
 use crate::draw_clone;
-use crate::texture::{Textures, decode_rgba_png};
+use crate::texture::{ImageError, ImageLimits, Textures, decode_png};
 
 /// [`ugoe_mesher::MeshOptions`] の JSON 表現。省略したフィールドは既定値になる。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, JsonSchema)]
@@ -129,8 +129,16 @@ pub(crate) fn regenerate_mesh(
     let png = textures
         .get(&texture.name)
         .ok_or_else(|| reject("the texture image is missing"))?;
-    let (width, height, rgba) =
-        decode_rgba_png(png).ok_or_else(|| reject("the texture image cannot be decoded"))?;
+    let image = decode_png(png, ImageLimits::default()).map_err(|error| match error {
+        ImageError::TooLarge { width, height, max } => EditError::TextureTooLarge {
+            texture: texture.name.clone(),
+            width,
+            height,
+            max,
+        },
+        _ => reject("the texture image cannot be decoded"),
+    })?;
+    let (width, height, rgba) = (image.width, image.height, image.pixels);
     let generated =
         ugoe_mesher::generate(&rgba, width, height, &(*options).into()).map_err(|e| {
             EditError::Mesher {

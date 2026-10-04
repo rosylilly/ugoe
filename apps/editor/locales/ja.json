@@ -1832,7 +1832,8 @@
       "invalid_slot": "スロット {{id}} を設定できません ({{reason}})。",
       "invalid_glue": "グルー {{id}} を設定できません ({{reason}})。",
       "read_only_base": "{{element}} は本体のモデルの要素なので、ここでは編集できません。本体のプロジェクトで編集してください。",
-      "not_module": "このプロジェクトはモジュールのプロジェクトではありません。"
+      "not_module": "このプロジェクトはモジュールのプロジェクトではありません。",
+      "texture_too_large": "テクスチャ {{texture}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。"
     },
     "cell": {
       "missing_axis": "セルに軸 {{parameter}} の値が指定されていません。",
@@ -1897,7 +1898,8 @@
       "missing_texture": "テクスチャ {{name}} に画像がありません。",
       "not_png": "テクスチャ {{name}} を PNG として読めません。",
       "texture_out_of_range": "メッシュ {{mesh}} が、存在しないテクスチャの番号 {{texture}} を参照しています。",
-      "invalid_max_size": "アトラスの最大の大きさは 0 より大きくしてください。"
+      "invalid_max_size": "アトラスの最大の大きさは 0 より大きくしてください。",
+      "texture_too_large": "テクスチャ {{name}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。"
     },
     "compile": {
       "invalid_model_other": "モデルが検証を通らないので、評価の準備ができません ({{count}} 件: {{details}})。",
@@ -1928,7 +1930,9 @@
       "invalid_preview": "このプレビューのライティングは使えません ({{reason}})。",
       "unknown_group": "グループ {{group}} がありません。",
       "empty_group": "グループ {{group}} にテクスチャがありません。",
-      "image_not_found": "画像 {{name}} が見つかりません。"
+      "image_not_found": "画像 {{name}} が見つかりません。",
+      "texture_too_large": "テクスチャ {{texture}} の画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。",
+      "normal_map_too_large": "法線マップの画像 ({{width}}×{{height}}) が大きすぎます。一辺は {{max}} 画素までです。"
     },
     "space": {
       "not_found": "{{kind}} {{id}} が見つかりません。",

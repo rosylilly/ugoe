@@ -62,6 +62,12 @@ export const messageCodes: Record<string, readonly string[]> = {
     "mesh",
     "texture"
   ],
+  "atlas.texture_too_large": [
+    "height",
+    "max",
+    "name",
+    "width"
+  ],
   "avatar.duplicate_hit_area_name": [
     "name"
   ],
@@ -294,6 +300,12 @@ export const messageCodes: Record<string, readonly string[]> = {
   "edit.texture_not_png": [
     "name"
   ],
+  "edit.texture_too_large": [
+    "height",
+    "max",
+    "texture",
+    "width"
+  ],
   "edit.too_few_vertices": [
     "id",
     "remaining"
@@ -428,9 +440,20 @@ export const messageCodes: Record<string, readonly string[]> = {
     "detail"
   ],
   "lighting.no_group_chosen": [],
+  "lighting.normal_map_too_large": [
+    "height",
+    "max",
+    "width"
+  ],
   "lighting.normal_maps_model_only": [],
   "lighting.texture_not_found": [
     "texture"
+  ],
+  "lighting.texture_too_large": [
+    "height",
+    "max",
+    "texture",
+    "width"
   ],
   "lighting.unknown_group": [
     "group"

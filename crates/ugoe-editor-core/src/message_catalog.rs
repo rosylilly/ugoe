@@ -228,6 +228,12 @@ fn edit_errors() -> Vec<EditError> {
         EditError::ReadOnlyBase { element: id() },
         EditError::ModuleShape { reason: reason() },
         EditError::NotModule,
+        EditError::TextureTooLarge {
+            texture: id(),
+            width: 20000,
+            height: 10,
+            max: 16384,
+        },
     ]
 }
 
@@ -351,6 +357,12 @@ fn atlas_errors() -> Vec<AtlasError> {
             texture: 3,
         },
         AtlasError::InvalidMaxSize,
+        AtlasError::TextureTooLarge {
+            name: id(),
+            width: 20000,
+            height: 10,
+            max: 16384,
+        },
     ]
 }
 
@@ -372,6 +384,17 @@ fn lighting_errors() -> Vec<LightingError> {
         }),
         LightingError::InvalidPreview(reason()),
         LightingError::Settings(json_error()),
+        LightingError::TextureTooLarge {
+            texture: id(),
+            width: 20000,
+            height: 10,
+            max: 16384,
+        },
+        LightingError::NormalMapTooLarge {
+            width: 20000,
+            height: 10,
+            max: 16384,
+        },
     ]
 }
 

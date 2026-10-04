@@ -16,7 +16,7 @@ thiserror.workspace = true
 ts-rs.workspace = true
 # コード生成 (TypeScript の型と JSON Schema) のための実装を有効にする
 ugoe-core = { workspace = true, features = ["schema", "ts"] }
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["png"] }
 ugoe-mesher.workspace = true
 ugoe-model = { workspace = true, features = ["schema", "ts"] }
 ugoe-motion.workspace = true

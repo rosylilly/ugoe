@@ -15,7 +15,8 @@ use ugoe_rigging::BulgeOptions;
 use crate::command::Command;
 use crate::project::ProjectMeta;
 use crate::texture::{
-    MAX_TEXTURE_NAME_LEN, Textures, decode_rgba_png, encode_rgba_png, is_valid_texture_name,
+    ImageError, ImageLimits, MAX_TEXTURE_NAME_LEN, Rgba8, Textures, decode_png, encode_rgba_png,
+    is_valid_texture_name,
 };
 
 /// `project.json` の `editor` の中で、プレビューの光源を置くキー。
@@ -39,6 +40,19 @@ pub enum LightingError {
     InvalidPreview(String),
     #[error("preview lighting: {0}")]
     Settings(#[source] serde_json::Error),
+    /// テクスチャの画像の一辺が、デコードの上限 (`ugoe_format::image::ImageLimits`) を超える。
+    #[error(
+        "the image of texture `{texture}` is {width}x{height}, larger than the limit {max}x{max}"
+    )]
+    TextureTooLarge {
+        texture: String,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
+    /// 法線マップの画像の一辺が、デコードの上限を超える。
+    #[error("the normal map is {width}x{height}, larger than the limit {max}x{max}")]
+    NormalMapTooLarge { width: u32, height: u32, max: u32 },
 }
 
 /// アルファの形からの法線マップの生成の設定 (`ugoe_rigging::BulgeOptions` のうち画面で選ぶもの)。
@@ -87,9 +101,17 @@ pub fn generate_normal_map(
     let png = textures
         .get(texture)
         .ok_or_else(|| LightingError::UnreadableTexture(texture.to_owned()))?;
-    let (width, height, rgba) =
-        decode_rgba_png(png).ok_or_else(|| LightingError::UnreadableTexture(texture.to_owned()))?;
-    let map = ugoe_rigging::bulge_normal_map(width, height, &rgba, &settings.into())?;
+    let image = decode_png(png, ImageLimits::default()).map_err(|error| match error {
+        ImageError::TooLarge { width, height, max } => LightingError::TextureTooLarge {
+            texture: texture.to_owned(),
+            width,
+            height,
+            max,
+        },
+        _ => LightingError::UnreadableTexture(texture.to_owned()),
+    })?;
+    let map =
+        ugoe_rigging::bulge_normal_map(image.width, image.height, &image.pixels, &settings.into())?;
     let png = encode_rgba_png(map.width, map.height, &map.rgba);
     set_normal_map_batch(model, texture, png, "Generate normal map")
 }
@@ -103,8 +125,16 @@ pub fn assign_normal_map(
     flip_green: bool,
 ) -> Result<Command, LightingError> {
     texture_index(model, texture)?;
-    let (width, height, mut rgba) =
-        decode_rgba_png(&png).ok_or(LightingError::UnreadableNormalMap)?;
+    let Rgba8 {
+        width,
+        height,
+        pixels: mut rgba,
+    } = decode_png(&png, ImageLimits::default()).map_err(|error| match error {
+        ImageError::TooLarge { width, height, max } => {
+            LightingError::NormalMapTooLarge { width, height, max }
+        }
+        _ => LightingError::UnreadableNormalMap,
+    })?;
     let png = if flip_green {
         for px in rgba.as_chunks_mut::<4>().0 {
             px[1] = 255 - px[1];

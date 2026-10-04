@@ -7,7 +7,8 @@ use ugoe_model::{Mesh, Model, TextureRef, fixtures};
 
 use crate::Textures;
 use crate::atlas::{AtlasError, AtlasOptions, KeptReason, build_atlas, build_module_atlas};
-use crate::texture::{decode_rgba_png, encode_rgba_png};
+use crate::message::Coded;
+use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, decode_rgba_png, encode_rgba_png, huge_png_header};
 
 /// 決まった種から作る、隣り合う画素の差が大きい画像 (端の扱いの誤りが色に出るように)。
 fn noise_png(width: u32, height: u32, seed: u32) -> Vec<u8> {
@@ -257,6 +258,18 @@ fn reports_bad_input() {
         build_atlas(&model, &textures, &AtlasOptions::default()),
         Err(AtlasError::NotPng { .. })
     ));
+    // デコードの上限を超える画像は、画素を確保せずに拒む。
+    textures.insert("tex0".into(), Arc::from(huge_png_header()));
+    let err = build_atlas(&model, &textures, &AtlasOptions::default()).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            AtlasError::TextureTooLarge { name, width: 65535, height: 65535, max: DEFAULT_MAX_IMAGE_SIDE }
+                if name == "tex0"
+        ),
+        "{err}"
+    );
+    assert_eq!(err.to_message().code, "atlas.texture_too_large");
     assert!(matches!(
         build_atlas(&model, &Textures::new(), &AtlasOptions::default()),
         Err(AtlasError::MissingTexture { .. })
