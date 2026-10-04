@@ -101,6 +101,7 @@ puppet.SetExpression("smile");
 puppet.ShowPose("ArmB");                      // ポーズの表示の選択 (パーツの ID。フェードで切り替わる)
 puppet.Puppet.SetEffectsJson(effectsJson);    // 目パチ・呼吸・リップシンクの設定の差し替え (モデルの effects と同じ JSON)
 var arm = puppet.Puppet.GetPartOpacity(puppet.Puppet.FindPart("ArmB")); // 直前の評価のパーツの不透明度の上書き (Value, Weight)
+var shown = puppet.Puppet.GetPartEvaluatedOpacity(puppet.Puppet.FindPart("ArmB")); // 祖先を掛けた評価後の不透明度
 puppet.Puppet.SetLipSyncLevel(0.8f);          // Puppet (Ugoe.Puppet) は C ABI の薄い包み。直接使ってよい
 puppet.MotionEventFired += e => Debug.Log($"{e.Value} at {e.Time}");
 puppet.Puppet.ResetPhysics();                 // SetPhysicsJson / PhysicsJson で物理の設定の差し替えと読み出し
@@ -144,11 +145,24 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | `StartMotion` / `SetExpression` / `ShowPose` | モーション・表情・ポーズの表示の選択 |
 | `AttachModule` / `DetachModule` / `SetModules` | 着せ替え (付けたモジュールはシーンに保存される) |
 | `WorldToCanvas` / `CanvasToWorld` / `HitAreasAt` | 座標の変換・当たり判定 |
-| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`、`HitTest`、パーツの一覧と不透明度の上書き (`PartIds`・`FindPart`・`GetPartOpacity`)、効果の差し替え (`SetEffectsJson`)、物理の設定 (`SetPhysicsJson`・`PhysicsJson`・`ResetPhysics`)、読み込みの警告など) |
+| `Follow` | 受け手として、指揮役から受けた値で進めて描き直す (`playing` を false にして毎フレーム呼ぶ。[受け手](#受け手)) |
+| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`・`MotionOverTracking`・`SetTrackingKept`、`HitTest`、パーツの一覧と不透明度 (`PartIds`・`FindPart`・`GetPartOpacity`・`GetPartEvaluatedOpacity`)、効果の差し替え (`SetEffectsJson`)、物理の設定 (`SetPhysicsJson`・`PhysicsJson`・`SetBasePhysicsJson`・`BasePhysicsJson`・`ResetPhysics`)、受け手 (`SetBaseValues`・`Follow`)、読み込みの警告など) |
 | イベント `ModelLoaded` / `MotionEventFired` | 読み込んだとき / モーションのイベントが発火したとき (評価の直後) |
 
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。
 失敗は `UgoeException` (`Result`・着せ替えでは `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
+
+### 受け手
+
+指揮役 (スタジオなど、別の場所で評価するもの) の値で動かす受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める)) は、`playing` を false にして
+毎フレーム `UgoePuppet.Follow(values, lipSyncLevel, lipSyncStrength, partOpacities, dt)` を呼ぶ。値は指揮役の
+`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied` (C ABI・wasm には指揮役の側の取り出しが無いので、
+指揮役から受け取る)。物理・リップシンク・パーツの不透明度・評価だけをこの Puppet で行う。
+
+### C ABI との対応
+
+`Native.cs` は `crates/ugoe-ffi/include/ugoe.h` のすべての関数を宣言する。ただし `ugoe_puppet_positions` (内部のバッファの借用) だけは
+宣言しない。C# では借りても配列に写すことになり、`ugoe_puppet_copy_positions` (`Puppet.CopyPositions`) と同じだから。
 
 ## 描画のしかた
 
@@ -202,7 +216,6 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
   (マスクと同じ前提)、Built-in・URP の両方で表示されることを確かめる。
 - 描画をまとめた見た目 (まとめない場合と画素が一致すること) は Unity で比べていない (`batching` の切り替えで比べられる)。
 - 1 つの `UgoePuppet` は 1 つの解像度でマスクを描く (複数のカメラで大きさが大きく違うと、小さい方に合わない)。
-- パーツの不透明度は「直前の評価に渡した上書き」だけを読める (キーフォームと親を掛けた評価後の値は C ABI に無い)。
 - 見本は旧入力 (`UnityEngine.Input`) を使う。
 
 ## 色空間

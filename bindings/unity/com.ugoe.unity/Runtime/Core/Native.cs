@@ -4,6 +4,8 @@
 // - 構造体はすべて blittable にする (C の bool は byte で受ける)。IL2CPP でもそのまま渡せる。
 // - 文字列は UTF-8 の NUL 終端のバイト列で渡す (Utf8.Encode)。返る const char* は IntPtr で受ける。
 // - 関数を足したら、ヘッダ (crates/ugoe-ffi/include/ugoe.h) の宣言と型を合わせる。
+// - ヘッダの関数のうち ugoe_puppet_positions (内部のバッファの借用) だけは宣言しない。C# では借りても配列に写すことになり、
+//   ugoe_puppet_copy_positions と同じなので (README の「C ABI との対応」)。
 using System;
 using System.Runtime.InteropServices;
 
@@ -99,6 +101,14 @@ namespace Ugoe
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        internal struct PartOpacityInput
+        {
+            public uint Part;
+            public float Value;
+            public float Weight;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         internal struct Canvas
         {
             public float Width;
@@ -149,6 +159,11 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_set_lip_sync_level(PuppetHandle puppet, float value);
         [DllImport(Library)] internal static extern int ugoe_puppet_set_stage_enabled(PuppetHandle puppet, uint stage, byte enabled);
 
+        // --- 受け手 ---
+
+        [DllImport(Library)] internal static extern int ugoe_puppet_set_base_values(PuppetHandle puppet, float[] values, UIntPtr count);
+        [DllImport(Library)] internal static extern int ugoe_puppet_follow(PuppetHandle puppet, float[] values, UIntPtr count, float lipSyncLevel, float lipSyncStrength, PartOpacityInput[] partOpacities, UIntPtr partOpacityCount, float dt);
+
         // --- 描画可能要素 ---
 
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_count(PuppetHandle puppet, out uint count);
@@ -187,12 +202,15 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_part_id(PuppetHandle puppet, uint index, out IntPtr id);
         [DllImport(Library)] internal static extern int ugoe_puppet_part_index(PuppetHandle puppet, byte[] id, out uint index);
         [DllImport(Library)] internal static extern int ugoe_puppet_part_opacity(PuppetHandle puppet, uint index, out PartOpacity opacity);
+        [DllImport(Library)] internal static extern int ugoe_puppet_part_evaluated_opacity(PuppetHandle puppet, uint index, out float opacity);
         [DllImport(Library)] internal static extern int ugoe_puppet_show_pose(PuppetHandle puppet, byte[] part, out byte shown);
 
         // --- 物理 ---
 
         [DllImport(Library)] internal static extern int ugoe_puppet_set_physics_json(PuppetHandle puppet, byte[] json, UIntPtr len);
+        [DllImport(Library)] internal static extern int ugoe_puppet_set_base_physics_json(PuppetHandle puppet, byte[] json, UIntPtr len);
         [DllImport(Library)] internal static extern int ugoe_puppet_physics_json(PuppetHandle puppet, [Out] byte[] buffer, UIntPtr capacity, out UIntPtr len);
+        [DllImport(Library)] internal static extern int ugoe_puppet_base_physics_json(PuppetHandle puppet, [Out] byte[] buffer, UIntPtr capacity, out UIntPtr len);
         [DllImport(Library)] internal static extern int ugoe_puppet_reset_physics(PuppetHandle puppet);
 
         // --- 着せ替え ---
@@ -231,6 +249,9 @@ namespace Ugoe
 
         [DllImport(Library)] internal static extern int ugoe_puppet_set_tracking(PuppetHandle puppet, float[] input);
         [DllImport(Library)] internal static extern int ugoe_puppet_tracking_targets(PuppetHandle puppet, [Out] uint[] buffer, UIntPtr capacity, out UIntPtr count);
+        [DllImport(Library)] internal static extern int ugoe_puppet_set_motion_over_tracking(PuppetHandle puppet, byte enabled);
+        [DllImport(Library)] internal static extern int ugoe_puppet_motion_over_tracking(PuppetHandle puppet, out byte enabled);
+        [DllImport(Library)] internal static extern int ugoe_puppet_set_tracking_kept(PuppetHandle puppet, uint[] indices, UIntPtr count);
         [DllImport(Library)] internal static extern int ugoe_blend_shape_name(uint index, out IntPtr name);
         [DllImport(Library)] internal static extern int ugoe_blend_shape_index(byte[] name, out uint index);
 

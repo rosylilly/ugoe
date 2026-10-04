@@ -226,7 +226,7 @@ namespace Ugoe
             c <= 0.0031308f ? c * 12.92f : 1.055f * (float)Math.Pow(c, 1 / 2.4f) - 0.055f;
 
         /// <summary>0〜1 の値を 8 ビットに丸める (書き込み先の量子化)。</summary>
-        public static byte ToByte(float c) => (byte)Math.Round(Math.Clamp(c, 0f, 1f) * 255f);
+        public static byte ToByte(float c) => (byte)Math.Round(Clamp01(c) * 255f);
 
         /// <summary>
         /// 中間のテクスチャの画素 (乗算済みアルファ、sRGB の値) を、Linear の色空間の書き込み先に合成する値
@@ -235,8 +235,10 @@ namespace Ugoe
         public static (float R, float G, float B, float A) CompositeToLinear(float r, float g, float b, float a)
         {
             if (a <= 0) return (SrgbToLinear(r), SrgbToLinear(g), SrgbToLinear(b), a);
-            return (SrgbToLinear(Math.Clamp(r / a, 0, 1)) * a, SrgbToLinear(Math.Clamp(g / a, 0, 1)) * a,
-                SrgbToLinear(Math.Clamp(b / a, 0, 1)) * a, a);
+            return (SrgbToLinear(Clamp01(r / a)) * a, SrgbToLinear(Clamp01(g / a)) * a, SrgbToLinear(Clamp01(b / a)) * a, a);
         }
+
+        // Math.Clamp は .NET Standard 2.1 からで、Unity の API 互換レベル「.NET Framework」には無いので使わない。
+        private static float Clamp01(float c) => c < 0 ? 0 : c > 1 ? 1 : c;
     }
 }

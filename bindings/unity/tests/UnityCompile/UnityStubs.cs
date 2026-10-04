@@ -376,6 +376,7 @@ namespace UnityEngine.Rendering
         public void SetViewport(Rect pixelRect) { }
         public void ClearRenderTarget(bool clearDepth, bool clearColor, Color backgroundColor) { }
         public void GetTemporaryRT(int nameID, int width, int height, int depthBuffer, FilterMode filter, RenderTextureFormat format) { }
+        public void GetTemporaryRT(int nameID, int width, int height, int depthBuffer, FilterMode filter, RenderTextureFormat format, RenderTextureReadWrite readWrite) { }
         public void ReleaseTemporaryRT(int nameID) { }
         public void SetGlobalTexture(int nameID, RenderTargetIdentifier value) { }
         public void DrawMesh(Mesh mesh, Matrix4x4 matrix, Material material, int submeshIndex, int shaderPass, MaterialPropertyBlock properties) { }

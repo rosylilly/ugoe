@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: MIT
+// 受け手 (follow)・トラッキングの優先・本体の物理・評価後のパーツの不透明度 (T0430 で C# に出した C ABI の関数)。
+using System.IO;
+using NUnit.Framework;
+
+namespace Ugoe.Tests
+{
+    public class ReceiverTests
+    {
+        private static Puppet PoseSelect() =>
+            Puppet.FromJson(File.ReadAllText(Paths.Example("pose-select", "model.json")));
+
+        [Test]
+        public void BaseValuesAreWrittenAndChecked()
+        {
+            using var puppet = PoseSelect();
+            var x = puppet.Parameters[0];
+            puppet.SetBaseValues(new[] { x.Max + 100 });
+            Assert.That(puppet.GetParameter(0), Is.EqualTo(x.Max).Within(1e-5), "clamped to the range");
+
+            var e = Assert.Throws<UgoeException>(() => puppet.SetBaseValues(new float[puppet.Parameters.Count + 1]));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() => puppet.SetBaseValues(new[] { float.NaN }));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            Assert.That(puppet.GetParameter(0), Is.EqualTo(x.Max).Within(1e-5), "a failed call changes nothing");
+        }
+
+        [Test]
+        public void FollowAppliesValuesAndPartOpacities()
+        {
+            using var puppet = PoseSelect();
+            var hat = puppet.FindPart("Hat");
+            var x = puppet.Parameters[0];
+            var value = (x.Min + x.Max) / 2;
+
+            puppet.Follow(new[] { value }, null, 0, new[] { new PartOpacityInput(hat, 0.25f, 0.5f) }, 1f / 60);
+            Assert.That(puppet.GetParameter(0), Is.EqualTo(value).Within(1e-5));
+            Assert.That(puppet.GetPartOpacity(hat).Weight, Is.EqualTo(0.5f).Within(1e-5));
+            // 評価後の値は lerp(1, 0.25, 0.5) × 親 (Root = 1)。
+            Assert.That(puppet.GetPartEvaluatedOpacity(hat), Is.EqualTo(0.625f).Within(1e-5));
+            Assert.That(puppet.GetPartEvaluatedOpacity(puppet.FindPart("Root")), Is.EqualTo(1f).Within(1e-5));
+
+            puppet.Follow(new[] { value }, 0.5f, 1, null, 1f / 60);
+            Assert.That(puppet.GetPartOpacity(hat).Weight, Is.EqualTo(0f), "no part opacities, no override");
+
+            var e = Assert.Throws<UgoeException>(() => puppet.Follow(new float[2], null, 0, null, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { value }, null, 0, null, -1));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() =>
+                puppet.Follow(new[] { value }, null, 0, new[] { new PartOpacityInput(hat, float.NaN, 1) }, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            Assert.Throws<UgoeException>(() => puppet.GetPartEvaluatedOpacity(puppet.PartIds.Count));
+        }
+
+        [Test]
+        public void MotionOverTrackingAndKeptParameters()
+        {
+            using var puppet = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            Assert.That(puppet.MotionOverTracking, Is.False);
+            puppet.MotionOverTracking = true;
+            Assert.That(puppet.MotionOverTracking, Is.True);
+
+            puppet.SetTrackingKept(new[] { puppet.FindParameter("AngleX"), puppet.FindParameter("AngleY") });
+            puppet.SetTrackingKept(null);
+            puppet.SetTrackingKept(new int[0]);
+            var e = Assert.Throws<UgoeException>(() => puppet.SetTrackingKept(new[] { puppet.Parameters.Count }));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.OutOfRange));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => puppet.SetTrackingKept(new[] { -1 }));
+        }
+
+        [Test]
+        public void BasePhysicsSurvivesDressUp()
+        {
+            using var puppet = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            var json = puppet.PhysicsJson();
+            Assert.That(json, Is.Not.Null);
+            Assert.That(puppet.BasePhysicsJson(), Is.EqualTo(json), "without modules the base is the current setting");
+
+            puppet.SetBasePhysicsJson(null);
+            Assert.That(puppet.BasePhysicsJson(), Is.Null);
+            Assert.That(puppet.PhysicsJson(), Is.Null);
+            puppet.SetBasePhysicsJson(json);
+            Assert.That(puppet.BasePhysicsJson(), Is.EqualTo(json));
+            puppet.Update(1f / 60);
+
+            var e = Assert.Throws<UgoeException>(() => puppet.SetBasePhysicsJson("{"));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.Format));
+            Assert.That(puppet.BasePhysicsJson(), Is.EqualTo(json));
+
+            using var dressUp = Puppet.FromBundle(Paths.Read("dress-up", "dress-up.ugoe"));
+            using var hair = Module.FromBytes(Paths.Read("dress-up", "long-hair.ugoemod"));
+            var baseJson = dressUp.BasePhysicsJson();
+            dressUp.AttachModule(hair);
+            Assert.That(dressUp.BasePhysicsJson(), Is.EqualTo(baseJson), "the base does not include the module's rig");
+        }
+    }
+}

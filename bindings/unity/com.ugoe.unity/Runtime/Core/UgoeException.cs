@@ -76,10 +76,11 @@ namespace Ugoe
     /// <summary>C ABI との UTF-8 の文字列のやりとり。</summary>
     internal static class Utf8
     {
-        /// <summary>NUL 終端の UTF-8 のバイト列にする。</summary>
+        /// <summary>NUL 終端の UTF-8 のバイト列にする。途中に NUL があれば (C の側で切れてしまうので) <see cref="ArgumentException"/>。</summary>
         internal static byte[] Encode(string value)
         {
             if (value == null) throw new ArgumentNullException(nameof(value));
+            if (value.IndexOf('\0') >= 0) throw new ArgumentException("the string must not contain NUL", nameof(value));
             var bytes = new byte[Encoding.UTF8.GetByteCount(value) + 1];
             Encoding.UTF8.GetBytes(value, 0, value.Length, bytes, 0);
             return bytes;

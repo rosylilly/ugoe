@@ -199,6 +199,27 @@ namespace Ugoe.Tests
             Assert.That(puppet.TextureCount, Is.EqualTo(baseTextures));
         }
 
+        // UgoePuppet が覚えておくモジュールの並び (読み直しで SetModules に渡す) は、C ABI の付けた順と同じでなければならない。
+        // 同じスロットのモジュールは、合成の順の同じ位置で差し替わる。
+        [Test]
+        public void RememberedModuleOrderMatchesTheNativeOrder()
+        {
+            using var puppet = Puppet.FromBundle(Paths.Read("dress-up", "dress-up.ugoe"));
+            using var hair = Module.FromBytes(Paths.Read("dress-up", "long-hair.ugoemod"));
+            using var twin = Module.FromBytes(Paths.Read("dress-up", "twin-tails.ugoemod"));
+            using var sailor = Module.FromBytes(Paths.Read("dress-up", "sailor.ugoemod"));
+            using var ears = Module.FromBytes(Paths.Read("dress-up", "cat-ears.ugoemod"));
+            var remembered = new System.Collections.Generic.List<Module> { hair, sailor };
+            puppet.SetModules(remembered);
+            foreach (var next in new[] { twin, ears, hair })
+            {
+                puppet.AttachModule(next);
+                ModuleOrder.Attach(remembered, next, m => m.Name, m => m.Slot);
+                Assert.That(remembered.Select(m => m.Name), Is.EqualTo(puppet.AttachedModuleNames), $"after attaching {next.Name}");
+            }
+            Assert.That(puppet.AttachedModuleNames[0], Is.EqualTo(hair.Name), "the replacement keeps the first position");
+        }
+
         [Test]
         public void ModuleOutlivesItsHandle()
         {

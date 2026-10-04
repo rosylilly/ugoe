@@ -61,6 +61,19 @@ namespace Ugoe.Unity
 
         public bool HasMasks => plan.Contents.Count > 0;
 
+        /// <summary>描いたページが失われたか (デバイスの作り直しなど。描き直す)。</summary>
+        public bool Lost
+        {
+            get
+            {
+                foreach (var page in pages)
+                {
+                    if (page != null && !page.IsCreated()) return true;
+                }
+                return false;
+            }
+        }
+
         /// <summary>ページ <paramref name="page"/> のテクスチャ (まだ描いていなければ null)。</summary>
         public RenderTexture GetPage(int page) => page >= 0 && page < pages.Length ? pages[page] : null;
 
@@ -178,7 +191,9 @@ namespace Ugoe.Unity
             if (content.Mode == MaskMode.Intersection && content.Positive.Length > 1)
             {
                 // 共通部分: マスクごとに 1 − c_i を作業用のテクスチャ (ページと同じ大きさ・配置) に描き、R に c_i を掛ける。
-                commands.GetTemporaryRT(ScratchId, page.width, page.height, 0, FilterMode.Bilinear, RenderTextureFormat.ARGB32);
+                // ページと同じく sRGB の変換をしない (Linear の色空間でも、Gamma と同じ 8 ビットの値で持つ)。
+                commands.GetTemporaryRT(ScratchId, page.width, page.height, 0, FilterMode.Bilinear, RenderTextureFormat.ARGB32,
+                    RenderTextureReadWrite.Linear);
                 foreach (var source in content.Positive)
                 {
                     // 作業用のテクスチャは、この内容のためだけに使うので全体を消してよい。

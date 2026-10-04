@@ -210,7 +210,8 @@ namespace Ugoe
 
     /// <summary>
     /// パーツの不透明度の上書き (直前の <see cref="Puppet.Update"/> がモーションのパーツの不透明度のカーブとポーズから
-    /// 書いたもの。docs/spec/motion.md#フレーム内の適用順)。キーフォームと親を掛けた評価後の値ではない。
+    /// 書いたもの。docs/spec/motion.md#フレーム内の適用順)。キーフォームと親を掛けた評価後の値ではない
+    /// (それは <see cref="Puppet.GetPartEvaluatedOpacity"/>)。
     /// </summary>
     public readonly struct PartOpacity
     {
@@ -225,6 +226,27 @@ namespace Ugoe
         }
 
         public override string ToString() => $"{Value} (weight {Weight})";
+    }
+
+    /// <summary>
+    /// 指揮役のモーションのパーツの不透明度のカーブが 1 つのパーツに求めた値と重み (<c>UgoePartOpacityInput</c>。
+    /// 受け手が <see cref="Puppet.Follow"/> に渡す)。
+    /// </summary>
+    public readonly struct PartOpacityInput
+    {
+        /// <summary>パーツの番号 (<see cref="Puppet.FindPart"/>。指揮役と受け手は同じモデルを使う)。モデルに無い番号は無視される。</summary>
+        public readonly int Part;
+        /// <summary>カーブの値 (不透明度)。</summary>
+        public readonly float Value;
+        /// <summary>フェードを含めた重み (0〜1)。</summary>
+        public readonly float Weight;
+
+        public PartOpacityInput(int part, float value, float weight)
+        {
+            Part = part;
+            Value = value;
+            Weight = weight;
+        }
     }
 
     /// <summary>モーションの優先度 (docs/spec/motion.md#モーションマネージャ)。</summary>

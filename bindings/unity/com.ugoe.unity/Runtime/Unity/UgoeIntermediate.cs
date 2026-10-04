@@ -29,6 +29,8 @@ namespace Ugoe.Unity
         private readonly GameObject gameObject;
         private readonly MeshRenderer renderer;
         private readonly Mesh quad;
+        // 写す四角形の頂点 (毎フレーム確保しないよう使い回す)
+        private readonly Vector3[] corners = new Vector3[4];
         private RenderTexture texture;
 
         /// <summary>直前に描いた領域 (キャンバス座標と画素の対応)。</summary>
@@ -46,6 +48,10 @@ namespace Ugoe.Unity
             gameObject.transform.SetParent(parent, false);
             quad = new Mesh { name = "ugoe intermediate", hideFlags = HideFlags.DontSave };
             quad.MarkDynamic();
+            // テクスチャ全体を写す四角形 (uv はキャンバスの向きのまま。v = 0 が上の端)。頂点は Render で動かす。
+            quad.vertices = corners;
+            quad.uv = new[] { Vector2.zero, Vector2.right, Vector2.up, Vector2.one };
+            quad.SetIndices(new[] { 0, 1, 2, 2, 1, 3 }, MeshTopology.Triangles, 0);
             gameObject.AddComponent<MeshFilter>().sharedMesh = quad;
             renderer = gameObject.AddComponent<MeshRenderer>();
             renderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -91,17 +97,14 @@ namespace Ugoe.Unity
             foreach (var d in draws) commands.DrawMesh(d.Mesh, toCanvas, d.Material, 0, 0, d.Block);
             Graphics.ExecuteCommandBuffer(commands);
 
-            // テクスチャ全体を写す四角形 (uv はキャンバスの向きのまま。v = 0 が上の端)。
+            // 写す四角形をテクスチャ全体に合わせる (uv と三角形は作ったときのまま)。
             var x0 = region.X0;
             var y0 = region.Y0;
-            quad.Clear();
-            quad.SetVertices(new List<Vector3>
-            {
-                canvasToLocal(new Vector2(x0, y0)), canvasToLocal(new Vector2(x0 + w, y0)),
-                canvasToLocal(new Vector2(x0, y0 + h)), canvasToLocal(new Vector2(x0 + w, y0 + h)),
-            });
-            quad.SetUVs(0, new List<Vector2> { Vector2.zero, Vector2.right, Vector2.up, Vector2.one });
-            quad.SetIndices(new[] { 0, 1, 2, 2, 1, 3 }, MeshTopology.Triangles, 0);
+            corners[0] = canvasToLocal(new Vector2(x0, y0));
+            corners[1] = canvasToLocal(new Vector2(x0 + w, y0));
+            corners[2] = canvasToLocal(new Vector2(x0, y0 + h));
+            corners[3] = canvasToLocal(new Vector2(x0 + w, y0 + h));
+            quad.vertices = corners;
             quad.RecalculateBounds();
             block.SetTexture(MainTexId, texture);
             renderer.SetPropertyBlock(block);

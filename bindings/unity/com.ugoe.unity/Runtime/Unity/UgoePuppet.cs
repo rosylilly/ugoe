@@ -109,12 +109,15 @@ namespace Ugoe.Unity
         private Material maskMaterial;
         private Material compositeMaterial;
         private UgoeIntermediate intermediate;
+        // 中間のテクスチャに描くバッチ (毎フレーム確保しないよう使い回す)
+        private readonly List<(Mesh, Material, MaterialPropertyBlock)> intermediateDraws = new List<(Mesh, Material, MaterialPropertyBlock)>();
         private bool intermediateDirty;
         private bool intermediateUsed;
         private bool dirty;
         private bool needsLoad = true;
         private bool validated;
         private UgoeModel loadedModel;
+        private float loadedPixelsPerUnit;
         private readonly List<UgoeModule> loadedModules = new List<UgoeModule>();
         private bool lightsDirty = true;
         private float lastMaskScale;
@@ -217,6 +220,7 @@ namespace Ugoe.Unity
             needsLoad = false;
             Unload();
             loadedModel = model;
+            loadedPixelsPerUnit = pixelsPerUnit;
             loadedModules.Clear();
             loadedModules.AddRange(modules);
             if (model == null || model.Bytes == null || model.Bytes.Length == 0) return;
@@ -239,7 +243,16 @@ namespace Ugoe.Unity
             var attach = new List<Module>();
             foreach (var m in modules)
             {
-                if (m != null) attach.Add(m.Module);
+                if (m == null) continue;
+                try
+                {
+                    attach.Add(m.Module);
+                }
+                catch (Exception e)
+                {
+                    // 読めないモジュール (壊れた .ugoemod) は飛ばして、ほかのモジュールと本体を表示する。
+                    Debug.LogError($"ugoe: could not read the module {m.name}: {e.Message}", this);
+                }
             }
             if (attach.Count > 0)
             {
@@ -252,9 +265,19 @@ namespace Ugoe.Unity
                     Debug.LogError($"ugoe: could not attach the modules of {name}: {e.Message} ({e.Kind})", this);
                 }
             }
-            foreach (var p in parameters) puppet.SetParameter(p.id, p.value);
-            textures.LoadAll(puppet, model.name);
-            Build();
+            try
+            {
+                ApplySavedParameters();
+                textures.LoadAll(puppet, model.name);
+                Build();
+            }
+            catch (Exception e)
+            {
+                // 途中で止まった Puppet を残すと、LateUpdate が作りかけの描画で毎フレーム失敗する。
+                Debug.LogError($"ugoe: could not load {model.name}: {e.Message}", this);
+                Unload();
+                return;
+            }
             ModelLoaded?.Invoke();
         }
 
@@ -467,6 +490,7 @@ namespace Ugoe.Unity
         private void OnValidate()
         {
             // インスペクタで変えたものは次の LateUpdate で反映する (OnValidate の中では子を作れない)。
+            pixelsPerUnit = Mathf.Max(pixelsPerUnit, 1e-3f);
             validated = true;
             lightsDirty = true;
         }
@@ -476,18 +500,21 @@ namespace Ugoe.Unity
             if (validated)
             {
                 validated = false;
-                // モデルかモジュールが変わったときだけ読み直す。パラメータは設定し直す。
-                if (model != loadedModel || !SameModules()) needsLoad = true;
+                // モデルかモジュールか頂点の変換 (pixelsPerUnit) が変わったときだけ読み直す。パラメータは設定し直す。
+                if (model != loadedModel || !SameModules() || pixelsPerUnit != loadedPixelsPerUnit) needsLoad = true;
                 else if (puppet != null)
                 {
-                    foreach (var p in parameters) puppet.SetParameter(p.id, p.value);
+                    ApplySavedParameters();
                     dirty = true;
                 }
             }
             if (needsLoad) Load();
             if (puppet == null) return;
+            // マスクのページが失われた (デバイスの作り直しなど) ら、止まっていても描き直す。
+            if (masks != null && masks.Lost) dirty = true;
             var run = playing && (Application.isPlaying || playInEditor);
-            var dt = run ? Time.deltaTime * speed : 0f;
+            // 逆再生はできない (C ABI は負の dt を断る) ので、負の速さは止めているのと同じにする。
+            var dt = run ? Mathf.Max(Time.deltaTime * speed, 0f) : 0f;
             if (run || dirty) Advance(dt);
             if (lightsDirty) ApplyLights();
             RenderIntermediate();
@@ -513,7 +540,8 @@ namespace Ugoe.Unity
             if (!intermediateDirty && !intermediate.Lost) return;
             intermediateDirty = false;
             var bounds = CanvasRect.Empty;
-            var draws = new List<(Mesh, Material, MaterialPropertyBlock)>();
+            var draws = intermediateDraws;
+            draws.Clear();
             foreach (var bv in batchViews)
             {
                 if (!bv.Renderer.enabled) continue;
@@ -527,6 +555,15 @@ namespace Ugoe.Unity
             var inv = 1 / pixelsPerUnit;
             intermediate.Render(bounds, lastResolution, toCanvas, c => new Vector3((c.x - ox) * inv, (oy - c.y) * inv, 0), draws);
             intermediate.Visible = true;
+        }
+
+        // シーンに保存したパラメータの値を設定する (知らない ID と NaN は飛ばす)。
+        private void ApplySavedParameters()
+        {
+            foreach (var p in parameters)
+            {
+                if (!float.IsNaN(p.value)) puppet.SetParameter(p.id, p.value);
+            }
         }
 
         private bool SameModules()
@@ -546,13 +583,31 @@ namespace Ugoe.Unity
         {
             if (puppet == null) return;
             puppet.Update(dt);
-            dirty = false;
-            Sync();
-            intermediateDirty = true;
+            AfterEvaluate();
             if (MotionEventFired != null)
             {
                 foreach (var e in puppet.MotionEvents()) MotionEventFired(e);
             }
+        }
+
+        /// <summary>
+        /// 受け手として、指揮役から受けた値で <paramref name="dt"/> 秒進めて描画を更新する (<see cref="Ugoe.Puppet.Follow"/>)。
+        /// 受け手では <see cref="playing"/> を false にして毎フレームこれを呼び、<see cref="SetParameter"/> などは使わない
+        /// (使うと次の LateUpdate が <see cref="Ugoe.Puppet.Update"/> で評価し直す)。
+        /// </summary>
+        public void Follow(float[] values, float? lipSyncLevel, float lipSyncStrength, IReadOnlyList<PartOpacityInput> partOpacities,
+            float dt)
+        {
+            if (puppet == null) return;
+            puppet.Follow(values, lipSyncLevel, lipSyncStrength, partOpacities, dt);
+            AfterEvaluate();
+        }
+
+        private void AfterEvaluate()
+        {
+            dirty = false;
+            Sync();
+            intermediateDirty = true;
         }
 
         // 変更フラグが立った分だけ Unity に送る。
@@ -590,7 +645,7 @@ namespace Ugoe.Unity
                 if ((sync.States[i].Changes & DrawableChanges.MaskStrength) != 0 && plan.IsMaskSource[i] && plan.ContentOf[i] >= 0) maskDirty = true;
             }
             var scale = MaskResolution();
-            if (!Mathf.Approximately(scale, lastMaskScale)) maskDirty = true;
+            if (!Mathf.Approximately(scale, lastMaskScale) || masks.Lost) maskDirty = true;
             lastResolution = scale;
             if (masks.HasMasks && maskDirty)
             {
@@ -839,8 +894,9 @@ namespace Ugoe.Unity
         /// <summary>モジュールを付ける (同じスロットか名前は差し替え)。付けられなければエラーを出して false (何も変えない)。</summary>
         public bool AttachModule(UgoeModule module) => DressUp(() => puppet.AttachModule(module.Module), () =>
         {
-            modules.RemoveAll(m => m == null || m.Module.Name == module.Module.Name || m.Module.Slot == module.Module.Slot);
-            modules.Add(module);
+            // C ABI と同じ規則で並びを変える (差し替えは同じ位置に入る)。読み直したときに同じ合成の順になるように。
+            modules.RemoveAll(m => m == null);
+            ModuleOrder.Attach(modules, module, m => m.Module.Name, m => m.Module.Slot);
         });
 
         /// <summary>名前でモジュールを外す。</summary>

@@ -28,6 +28,8 @@ namespace Ugoe.Tests
             for (var i = 0; i < puppet.PartIds.Count; i++) Assert.That(puppet.FindPart(puppet.PartIds[i]), Is.EqualTo(i));
             Assert.That(puppet.FindPart("Missing"), Is.EqualTo(-1));
             Assert.That(puppet.FindPart(null), Is.EqualTo(-1));
+            // C の文字列は NUL で終わるので、途中に NUL のある ID を渡すと手前だけで引いてしまう。渡す前に断る。
+            Assert.Throws<System.ArgumentException>(() => puppet.FindPart("Root\0Hat"));
             var e = Assert.Throws<UgoeException>(() => puppet.GetPartOpacity(puppet.PartIds.Count));
             Assert.That(e.Result, Is.EqualTo(UgoeResult.OutOfRange));
         }

@@ -21,9 +21,9 @@ namespace Ugoe
         private ParameterInfo[] parameters;
         private Dictionary<string, int> parameterIndex;
 
-        private Puppet(IntPtr ptr)
+        private Puppet(PuppetHandle handle)
         {
-            handle = new PuppetHandle(ptr);
+            this.handle = handle;
             UgoeException.Check(Native.ugoe_puppet_canvas(handle, out var c));
             Canvas = new CanvasInfo(c.Width, c.Height, c.OriginX, c.OriginY);
             MotionNames = ReadNames(NameList.Motions);
@@ -45,7 +45,7 @@ namespace Ugoe
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
             UgoeException.Check(Native.ugoe_puppet_create_from_bundle(bytes, (UIntPtr)bytes.Length, out var ptr));
-            return new Puppet(ptr);
+            return Wrap(ptr);
         }
 
         /// <summary>モデルの JSON から作る。テクスチャはすべて「画像なし」になる。</summary>
@@ -55,7 +55,22 @@ namespace Ugoe
             UgoeRuntime.EnsureCompatible();
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
             UgoeException.Check(Native.ugoe_puppet_create_from_json(bytes, (UIntPtr)bytes.Length, out var ptr));
-            return new Puppet(ptr);
+            return Wrap(ptr);
+        }
+
+        // 作った UgoePuppet を包む。情報の読み出しに失敗したら、ファイナライザを待たずに破棄する。
+        private static Puppet Wrap(IntPtr ptr)
+        {
+            var handle = new PuppetHandle(ptr);
+            try
+            {
+                return new Puppet(handle);
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
         }
 
         public void Dispose() => handle.Dispose();
@@ -140,6 +155,54 @@ namespace Ugoe
         /// <summary>段を動かすか (既定はすべて動かす)。例: トラッキング中は目パチを止める。</summary>
         public void SetStageEnabled(UpdateStage stage, bool enabled) =>
             UgoeException.Check(Native.ugoe_puppet_set_stage_enabled(handle, (uint)stage, enabled ? (byte)1 : (byte)0));
+
+        // --- 受け手 ---
+
+        /// <summary>
+        /// パラメータの値 (<see cref="Parameters"/> の順で同じ数) を、すべて基準値として書く (範囲に丸める)。
+        /// <see cref="SetParameter(int, float)"/> と違い、前のフレームの出力と同じ値でも基準値にする。
+        /// 数が違うか NaN を含めば <see cref="UgoeResult.InvalidArgument"/> (何も変えない)。
+        /// </summary>
+        public void SetBaseValues(float[] values)
+        {
+            if (values == null) throw new ArgumentNullException(nameof(values));
+            UgoeException.Check(Native.ugoe_puppet_set_base_values(handle, values, (UIntPtr)values.Length));
+        }
+
+        /// <summary>
+        /// 受け手として <paramref name="dt"/> 秒進める (<c>ugoe::Puppet::follow</c>、docs/spec/motion.md#受け手として進める)。
+        /// <paramref name="values"/> (<see cref="Parameters"/> の順で同じ数) を基準値として書き、物理 → リップシンク →
+        /// パーツの不透明度 → 評価の順に進める。モーション・トラッキング・表情・目パチ・呼吸は通さない (指揮役で済んでいる)。
+        /// </summary>
+        /// <param name="values">指揮役の物理の段に入る直前のパラメータの値。</param>
+        /// <param name="lipSyncLevel">指揮役のリップシンクの音量。null ならリップシンクを当てない。</param>
+        /// <param name="lipSyncStrength">指揮役のリップシンクの強さ。</param>
+        /// <param name="partOpacities">指揮役のモーションのパーツの不透明度のカーブ (null か空なら無し)。</param>
+        /// <param name="dt">経過秒数 (0 以上の有限の値)。</param>
+        /// <remarks>
+        /// 値の数が違う・NaN を含む・音量が NaN・強さかパーツの不透明度の値と重みが有限でない・<paramref name="dt"/> が負か
+        /// 有限でないときは <see cref="UgoeResult.InvalidArgument"/> (何も変えない)。モーションのイベント (<see cref="MotionEvents"/>)
+        /// は直前の <see cref="Update"/> のまま。
+        /// </remarks>
+        public void Follow(float[] values, float? lipSyncLevel, float lipSyncStrength, IReadOnlyList<PartOpacityInput> partOpacities,
+            float dt)
+        {
+            if (values == null) throw new ArgumentNullException(nameof(values));
+            var count = partOpacities?.Count ?? 0;
+            Native.PartOpacityInput[] parts = null;
+            if (count > 0)
+            {
+                parts = new Native.PartOpacityInput[count];
+                for (var i = 0; i < count; i++)
+                {
+                    var p = partOpacities[i];
+                    // 負の番号は「モデルに無い番号」として C ABI に無視させる。
+                    parts[i] = new Native.PartOpacityInput { Part = p.Part < 0 ? uint.MaxValue : (uint)p.Part, Value = p.Value, Weight = p.Weight };
+                }
+            }
+            UgoeException.Check(Native.ugoe_puppet_follow(handle, values, (UIntPtr)values.Length, lipSyncLevel ?? -1f,
+                lipSyncLevel.HasValue ? lipSyncStrength : 0f, parts, (UIntPtr)count, dt));
+        }
 
         // --- 描画可能要素 ---
 
@@ -273,7 +336,8 @@ namespace Ugoe
         public MotionEvent[] MotionEvents()
         {
             UgoeException.Check(Native.ugoe_puppet_motion_event_count(handle, out var count));
-            var result = new MotionEvent[count];
+            // イベントの無いフレーム (ほとんど) では確保しない。
+            var result = count == 0 ? Array.Empty<MotionEvent>() : new MotionEvent[count];
             for (uint i = 0; i < count; i++)
             {
                 UgoeException.Check(Native.ugoe_puppet_motion_event(handle, i, out var e));
@@ -317,6 +381,16 @@ namespace Ugoe
         }
 
         /// <summary>
+        /// 直前の評価 (<see cref="Update"/>・<see cref="Follow"/>・着せ替え) でのパーツ <paramref name="index"/> の不透明度。
+        /// 上書きを当てた自身の値に祖先の値を掛けたもので、そのパーツのメッシュの不透明度に掛かる (docs/spec/evaluation.md)。
+        /// </summary>
+        public float GetPartEvaluatedOpacity(int index)
+        {
+            UgoeException.Check(Native.ugoe_puppet_part_evaluated_opacity(handle, (uint)index, out var opacity));
+            return opacity;
+        }
+
+        /// <summary>
         /// ポーズで、パーツ <paramref name="part"/> を持つ要素をそのグループの表示中の要素にする (次の <see cref="Update"/> から
         /// フェードで近づく。そのフレームにモーションが同じグループの要素を要求すれば要求が勝つ。docs/spec/motion.md#ポーズ)。
         /// どの要素のパーツでもない (リンクのパーツ・知らない ID) なら何も変えずに false。
@@ -341,14 +415,40 @@ namespace Ugoe
             UgoeException.Check(Native.ugoe_puppet_set_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0)));
         }
 
-        /// <summary>今の物理の設定の JSON。物理が無ければ null。</summary>
-        public string PhysicsJson()
+        /// <summary>
+        /// 本体の物理の設定を JSON (<see cref="SetPhysicsJson"/> と同じ形) で差し替える。null なら外す。着せ替えのモジュールを
+        /// 付けていれば、モジュールの組と合成し直した設定に差し替え、この後の付け外しでもこの設定から合成する
+        /// (docs/spec/modules.md#puppet-での着せ替え)。読めなければ <see cref="UgoeResult.Format"/>、合わなければ
+        /// <see cref="UgoeResult.InvalidModel"/>、合成できなければ <see cref="UgoeResult.DressUp"/> (何も変えない)。
+        /// </summary>
+        public void SetBasePhysicsJson(string json)
         {
-            var r = Native.ugoe_puppet_physics_json(handle, null, UIntPtr.Zero, out var len);
+            var bytes = json == null ? null : System.Text.Encoding.UTF8.GetBytes(json);
+            UgoeException.Check(Native.ugoe_puppet_set_base_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0)));
+        }
+
+        /// <summary>今の物理の設定の JSON。物理が無ければ null。</summary>
+        public string PhysicsJson() => ReadPhysicsJson(false);
+
+        /// <summary>
+        /// 本体の物理の設定の JSON (モジュールのリグを含まない。付けたことがなければ <see cref="PhysicsJson"/> と同じ)。
+        /// 物理が無ければ null。モデルを読み直すときに本体の設定を引き継ぐために使う。
+        /// </summary>
+        public string BasePhysicsJson() => ReadPhysicsJson(true);
+
+        // IL2CPP で P/Invoke の関数をデリゲートにしないよう、bool で呼び分ける。
+        private string ReadPhysicsJson(bool basePhysics)
+        {
+            UIntPtr len;
+            var r = basePhysics
+                ? Native.ugoe_puppet_base_physics_json(handle, null, UIntPtr.Zero, out len)
+                : Native.ugoe_puppet_physics_json(handle, null, UIntPtr.Zero, out len);
             if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
             if ((int)len == 0) return null;
             var buffer = new byte[(int)len];
-            UgoeException.Check(Native.ugoe_puppet_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len));
+            UgoeException.Check(basePhysics
+                ? Native.ugoe_puppet_base_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len)
+                : Native.ugoe_puppet_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len));
             return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)len);
         }
 
@@ -481,6 +581,36 @@ namespace Ugoe
             var result = new int[(int)count];
             for (var i = 0; i < result.Length; i++) result[i] = (int)buffer[i];
             return result;
+        }
+
+        /// <summary>
+        /// トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (既定は false。
+        /// docs/spec/motion.md#トラッキング中のモーションの優先)。
+        /// </summary>
+        public bool MotionOverTracking
+        {
+            get
+            {
+                UgoeException.Check(Native.ugoe_puppet_motion_over_tracking(handle, out var enabled));
+                return enabled != 0;
+            }
+            set => UgoeException.Check(Native.ugoe_puppet_set_motion_over_tracking(handle, value ? (byte)1 : (byte)0));
+        }
+
+        /// <summary>
+        /// <see cref="MotionOverTracking"/> でもトラッキングのままにするパラメータの番号 (目は除く、など)。null か空で無しに戻す。
+        /// 範囲外の番号があれば <see cref="UgoeResult.OutOfRange"/> (何も変えない)。
+        /// </summary>
+        public void SetTrackingKept(IReadOnlyList<int> indices)
+        {
+            var count = indices?.Count ?? 0;
+            var raw = count > 0 ? new uint[count] : null;
+            for (var i = 0; i < count; i++)
+            {
+                if (indices[i] < 0) throw new ArgumentOutOfRangeException(nameof(indices), indices[i], "parameter index must not be negative");
+                raw[i] = (uint)indices[i];
+            }
+            UgoeException.Check(Native.ugoe_puppet_set_tracking_kept(handle, raw, (UIntPtr)count));
         }
 
         // --- 内部 ---

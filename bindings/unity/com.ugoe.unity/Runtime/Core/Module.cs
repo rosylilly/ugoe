@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Collections.Generic;
 
 namespace Ugoe
 {
@@ -46,7 +47,17 @@ namespace Ugoe
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
             UgoeException.Check(Native.ugoe_module_create(bytes, (UIntPtr)bytes.Length, out var ptr));
-            return new Module(new ModuleHandle(ptr));
+            var handle = new ModuleHandle(ptr);
+            try
+            {
+                return new Module(handle);
+            }
+            catch
+            {
+                // 情報の読み出しに失敗したら、ファイナライザを待たずに破棄する。
+                handle.Dispose();
+                throw;
+            }
         }
 
         /// <summary>警告 <paramref name="index"/> の補足の値 <paramref name="key"/>。無ければ null。</summary>
@@ -59,6 +70,33 @@ namespace Ugoe
         }
 
         public void Dispose() => Handle.Dispose();
+    }
+
+    /// <summary>
+    /// 付けるモジュールの並び (合成の順) を、C ABI の <c>ugoe_puppet_attach_module</c> と同じ規則で変える
+    /// (<c>ugoe::Puppet::attach_module</c>)。ホストが並びを覚えておき、読み直すときに <see cref="Puppet.SetModules"/> に渡すため。
+    /// </summary>
+    internal static class ModuleOrder
+    {
+        /// <summary>
+        /// 同じスロットか同じ名前のモジュールがあれば、最初のものの位置に <paramref name="module"/> を入れ、ほかの該当するものを除く。
+        /// 無ければ最後に加える。
+        /// </summary>
+        internal static void Attach<T>(List<T> list, T module, Func<T, string> name, Func<T, string> slot)
+        {
+            bool Same(T m) => slot(m) == slot(module) || name(m) == name(module);
+            var first = list.FindIndex(Same);
+            if (first < 0)
+            {
+                list.Add(module);
+                return;
+            }
+            list[first] = module;
+            for (var i = list.Count - 1; i > first; i--)
+            {
+                if (Same(list[i])) list.RemoveAt(i);
+            }
+        }
     }
 
     /// <summary>ライブラリ全体の情報。</summary>
