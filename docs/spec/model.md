@@ -319,13 +319,34 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 
 `ugoe_model::validate::validate` は構造の整合性を検査し、見つけたエラーをすべて返します。ランタイムのコンパイル、ファイルの読み込み、AI の提案の受け入れ時に必ず呼びます。
 
+### 数値の検証の方針
+
+モデルと物理の設定の `f32` は、すべて **有限値でなければ検証エラー** (`InvalidValue`) にします (T0141)。
+JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書けて、JSON の `1e39` も `f32` では無限大になります。
+有限でない値は、補間の係数・頂点・物理の粒子を通して NaN を描画まで流すか、黙って無視されるので、読み込みで拒みます。
+正しく書かれたファイルにはもともと含まれないので、これまで読めていたファイルを拒むことにはなりません。
+
+有限値の **範囲** は、次の 2 つに分けます。
+
+- **検証エラー:** 範囲の外で定義の計算が壊れる (0 で割る・発散する・順序が前提) もの。キーの昇順、パラメータの `min <= default <= max`、
+  時間と周期 (0 以上・0 より大きい)、長さと半径 (0 以上)、物理の `mobility` (0〜1。1 を超えると揺れが増幅して発散する)・
+  `delay`・`acceleration` (0 以上)、正規化の範囲の `min <= default <= max`、頂点への出力の重み (0〜1)、スロットの描画順の範囲
+- **エラーにしない:** 範囲の外でも定義の計算が決まっているもの (範囲を定めないか、ランタイムがクランプ・置き換え・無視する)。
+  `mask_strength` (0〜1 にクランプ)、不透明度・描画順・色・回転の拡大率・`uvs`・グルーの `weight` と `intensity`・
+  キャンバスの大きさ (範囲を定めない。評価ではクランプしない)、
+  物理の `fps` (0 以下は既定の 60)、出力の `particle` (0 と範囲外の出力は無視)、粒子が 0 個のリグ (何もしない)、
+  出力の `weight` (0〜100 にクランプ)、入力の `weight` (クランプしない)
+
+アバタープロファイル ([avatar-profile.md#準拠の検査](avatar-profile.md#準拠の検査)) の数値はこの検証の対象外です。
+モーションと表情の数値は T0323 でこの方針にそろえて検証します。
+
 検査項目:
 
 - ID が種類 (パラメータ・パラメータグループ・パーツ・デフォーマ・メッシュ・グルー・当たり判定) ごとに一意であること
 - すべてのキーフォーム格子 (メッシュ・パーツ・デフォーマ・グルー) について:
   - キーフォーム数 = 各軸のキー数の積
   - 各軸にキーが 1 つ以上あること
-  - 各軸のキーが昇順で、重複がないこと (NaN を含まないこと)
+  - 各軸のキーが昇順で、重複がないこと (NaN を含まないこと)。キーが有限値であること (無限大は昇順の検査を通るので、`InvalidValue` で最初の 1 つを報告する。場所は `meshes[Face].keyforms.bindings[0].keys[1]`、ブレンドシェイプ格子は `….keyforms.blend_shapes[0].bindings[0].keys[1]`)
   - 軸のパラメータが存在し、同じ格子で同じパラメータを 2 回使っていないこと
   - `origins` が空か、長さがキーフォーム数と同じであること
   - 深度からの回転の設定: `angle_scale`・`pivot`・`pivot_depth` が有限値で、`yaw` / `pitch` のパラメータが存在し、その格子の軸であること
@@ -347,10 +368,16 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - メッシュのキーフォームの `mask_strength` が有限値であること
 - メッシュとデフォーマの `mirror`: 参照先が同じ種類の中に存在し、対が双方向であること (`A.mirror = B` なら `B.mirror = A`。自分自身との対は常に正しい)。`mirror_axis` は有限値
 - `depth` の長さがメッシュの頂点数・ワープの制御点数と同じで、すべて有限値であること
-- パラメータで `min <= default <= max` が成り立つこと
+- パラメータの `min`・`default`・`max` が有限値で (`InvalidValue`)、`min <= default <= max` が成り立つこと (`ParameterRange`。3 つとも有限のときだけ見る)
+- キャンバスの `width`・`height`・`origin` が有限値であること (大きさの範囲は検査しない。モジュールの検査は大きさ 0 のキャンバスで行う)
+- キーフォームの値が有限値であること (ブレンドシェイプ格子を含む。セルの添字は `mask_strength` と同じ数え方):
+  パーツの `opacity`、ワープの `points`・`opacity`、回転の `origin`・`angle`・`scale`・`opacity`、
+  メッシュの `positions`・`opacity`・`draw_order`・`multiply_color`・`screen_color`・`mask_strength`、グルーの `intensity`。
+  点の列 (`points`・`positions`) は、有限でない点の最初の 1 つだけを報告する
+- メッシュの `uvs` と、グルーの頂点ペアの `weight` が有限値であること (有限でないものの最初の 1 つだけを報告する)
 - 同じパーツがポーズ全体で 2 回以上現れないこと (`part` と `links` を合わせて数える)
 - スロット: ID が一意で、`anchor` (デフォーマ)・`replaces` (パーツ)・`parameters` (パラメータ)・`mask_sources` (メッシュ)・`part` (パーツ)・`pose_parts` (ポーズの要素のパーツ。`target_kind` は `pose entry`) の参照先が存在し (`UnknownReference`、`kind` は `slot`)、`draw_order` の `min` と `max` が有限値で `min <= max` であること
-- 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)
+- 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)。呼吸の `offset`・`peak`・`weight` は有限値
 
 ### 物理の検証
 
@@ -361,4 +388,10 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
 - 出力先のデフォーマの種類: `deformer_angle` / `deformer_offset` は回転デフォーマ、`vertices` の `warp` はワープデフォーマであること (`DeformerKindMismatch`。種類が未知のデフォーマは検査しない)
 - `vertices` の `weights` の長さが、メッシュの頂点数・ワープの制御点数と同じで (`WeightCount`)、すべて 0〜1 であること
 - 粒子の `collision_radius` と衝突体の `radius` が 0 以上の有限値で、衝突体の位置が有限値であること
+- `gravity`・`wind` の成分と `fps` が有限値であること (`fps` が 0 以下ならランタイムが既定の 60 を使うので、エラーにしない)
+- 入力の `weight`、出力の `scale`・`weight` が有限値であること (出力の `weight` の 0〜100 へのクランプはランタイムが行う)
+- 粒子: `position` が有限値、`mobility` が 0〜1 (1 を超えると揺れが増幅して発散する)、`delay`・`acceleration`・`radius` が 0 以上の有限値であること
+- 正規化の範囲 (`position`・`angle`) の `min`・`default`・`max` が有限値で、`min <= default <= max` であること
+  (順序の違反は `….normalization.position.default` の `InvalidValue` で報告する。3 つとも有限のときだけ見る)
 - 未知の出力先と形状 (`Unknown`) はエラーにしない
+- 出力の `particle` が 0 か粒子の数以上の出力と、粒子が 0 個のリグはエラーにしない (ランタイムがその出力を無視する。[physics.md#出力](physics.md#出力))

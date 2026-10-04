@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
 
+use ugoe_core::Vec2;
+
 use crate::deformer::DeformerKind;
 use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
@@ -218,9 +220,25 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         &mut errors,
     );
 
+    let canvas = &model.meta.canvas;
+    check_finite("meta.canvas.width", canvas.width, &mut errors);
+    check_finite("meta.canvas.height", canvas.height, &mut errors);
+    check_vec2("meta.canvas.origin", canvas.origin, &mut errors);
+
     for param in &model.parameters {
         let id = param.id.to_string();
-        if !(param.min <= param.default && param.default <= param.max) {
+        let range = [
+            ("min", param.min),
+            ("default", param.default),
+            ("max", param.max),
+        ];
+        let mut finite = true;
+        for (name, value) in range {
+            finite &= value.is_finite();
+            check_finite(&format!("parameters[{id}].{name}"), value, &mut errors);
+        }
+        // 有限でない値は上で報告したので、順序は有限のときだけ見る。
+        if finite && !(param.min <= param.default && param.default <= param.max) {
             errors.push(ValidationError::ParameterRange {
                 id: id.clone(),
                 min: param.min,
@@ -250,9 +268,23 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             refs.check(&parts, "parent", "part", parent, &mut errors);
         }
         let exists = |id: &str| parts.contains_key(&crate::PartId::new(id));
-        check_grid(&refs, &params, &exists, &part.keyforms, &mut errors);
+        check_grid(
+            &refs,
+            &keyforms_path(&refs),
+            &params,
+            &exists,
+            &part.keyforms,
+            &mut errors,
+        );
         let kinds = Kinds::new(&params, &model.parameters, false);
         check_blend_shapes(&refs, &kinds, &exists, &part.keyforms, &mut errors);
+        for (k, kf) in part.keyforms.all_keyforms().enumerate() {
+            check_finite(
+                &format!("parts[{id}].keyforms[{k}].opacity"),
+                kf.opacity,
+                &mut errors,
+            );
+        }
     }
     check_cycles(
         "part",
@@ -278,7 +310,14 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         let exists = |id: &str| deformers.contains_key(&crate::DeformerId::new(id));
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
-                check_grid(&refs, &params, &exists, &warp.keyforms, &mut errors);
+                check_grid(
+                    &refs,
+                    &keyforms_path(&refs),
+                    &params,
+                    &exists,
+                    &warp.keyforms,
+                    &mut errors,
+                );
                 let kinds = Kinds::new(&params, &model.parameters, true);
                 check_blend_shapes(&refs, &kinds, &exists, &warp.keyforms, &mut errors);
                 let expected = warp_point_count(warp.rows, warp.cols);
@@ -290,7 +329,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                         cols: warp.cols,
                     });
                 }
-                for kf in warp.keyforms.all_keyforms() {
+                for (k, kf) in warp.keyforms.all_keyforms().enumerate() {
                     if kf.points.len() != expected {
                         errors.push(ValidationError::WarpPointCount {
                             id: id.clone(),
@@ -298,12 +337,29 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                             actual: kf.points.len(),
                         });
                     }
+                    let cell = format!("{path}.keyforms[{k}]");
+                    check_points(&format!("{cell}.points"), &kf.points, &mut errors);
+                    check_finite(&format!("{cell}.opacity"), kf.opacity, &mut errors);
                 }
             }
             DeformerKind::Rotation(rotation) => {
-                check_grid(&refs, &params, &exists, &rotation.keyforms, &mut errors);
+                check_grid(
+                    &refs,
+                    &keyforms_path(&refs),
+                    &params,
+                    &exists,
+                    &rotation.keyforms,
+                    &mut errors,
+                );
                 let kinds = Kinds::new(&params, &model.parameters, true);
                 check_blend_shapes(&refs, &kinds, &exists, &rotation.keyforms, &mut errors);
+                for (k, kf) in rotation.keyforms.all_keyforms().enumerate() {
+                    let cell = format!("{path}.keyforms[{k}]");
+                    check_vec2(&format!("{cell}.origin"), kf.origin, &mut errors);
+                    check_finite(&format!("{cell}.angle"), kf.angle, &mut errors);
+                    check_finite(&format!("{cell}.scale"), kf.scale, &mut errors);
+                    check_finite(&format!("{cell}.opacity"), kf.opacity, &mut errors);
+                }
             }
             // 未知の種類は中身を持たない (恒等変換として扱う) ので、検査することがない。
             DeformerKind::Unknown => {}
@@ -347,7 +403,14 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             });
         }
         let exists = |id: &str| meshes.contains_key(&crate::MeshId::new(id));
-        check_grid(&refs, &params, &exists, &mesh.keyforms, &mut errors);
+        check_grid(
+            &refs,
+            &keyforms_path(&refs),
+            &params,
+            &exists,
+            &mesh.keyforms,
+            &mut errors,
+        );
         let kinds = Kinds::new(&params, &model.parameters, true);
         check_blend_shapes(&refs, &kinds, &exists, &mesh.keyforms, &mut errors);
         let path = format!("meshes[{id}]");
@@ -365,6 +428,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 len: mesh.indices.len(),
             });
         }
+        check_points(&format!("{path}.uvs"), &mesh.uvs, &mut errors);
         let vertices = mesh.uvs.len();
         if let Some(&index) = mesh.indices.iter().find(|&&i| usize::from(i) >= vertices) {
             errors.push(ValidationError::IndexOutOfRange {
@@ -382,13 +446,23 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                     actual: kf.positions.len(),
                 });
             }
-            // 0〜1 へのクランプはランタイムが行うので、ここでは有限値であることだけを見る。
-            if !kf.mask_strength.is_finite() {
-                errors.push(ValidationError::InvalidValue {
-                    field: format!("meshes[{id}].keyforms[{k}].mask_strength"),
-                    value: kf.mask_strength,
-                    expected: "finite",
-                });
+            // 値の範囲 (不透明度・`mask_strength` の 0〜1 など) はランタイムがクランプするので、
+            // ここでは有限値であることだけを見る。
+            let cell = format!("{path}.keyforms[{k}]");
+            check_points(&format!("{cell}.positions"), &kf.positions, &mut errors);
+            let values = [
+                ("opacity", kf.opacity),
+                ("draw_order", kf.draw_order),
+                ("multiply_color.r", kf.multiply_color.r),
+                ("multiply_color.g", kf.multiply_color.g),
+                ("multiply_color.b", kf.multiply_color.b),
+                ("screen_color.r", kf.screen_color.r),
+                ("screen_color.g", kf.screen_color.g),
+                ("screen_color.b", kf.screen_color.b),
+                ("mask_strength", kf.mask_strength),
+            ];
+            for (name, value) in values {
+                check_finite(&format!("{cell}.{name}"), value, &mut errors);
             }
         }
     }
@@ -410,9 +484,37 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         let a = refs.check(&meshes, "mesh_a", "mesh", &glue.mesh_a, &mut errors);
         let b = refs.check(&meshes, "mesh_b", "mesh", &glue.mesh_b, &mut errors);
         let exists = |id: &str| glues.contains_key(&crate::GlueId::new(id));
-        check_grid(&refs, &params, &exists, &glue.keyforms, &mut errors);
+        check_grid(
+            &refs,
+            &keyforms_path(&refs),
+            &params,
+            &exists,
+            &glue.keyforms,
+            &mut errors,
+        );
         let kinds = Kinds::new(&params, &model.parameters, false);
         check_blend_shapes(&refs, &kinds, &exists, &glue.keyforms, &mut errors);
+        let path = format!("glues[{}]", glue.id);
+        for (k, kf) in glue.keyforms.all_keyforms().enumerate() {
+            check_finite(
+                &format!("{path}.keyforms[{k}].intensity"),
+                kf.intensity,
+                &mut errors,
+            );
+        }
+        // 有限でない重みは最初の 1 つだけ報告する。
+        if let Some((p, pair)) = glue
+            .pairs
+            .iter()
+            .enumerate()
+            .find(|(_, p)| !p.weight.is_finite())
+        {
+            check_finite(
+                &format!("{path}.pairs[{p}].weight"),
+                pair.weight,
+                &mut errors,
+            );
+        }
         // 参照先メッシュが存在する側だけ頂点インデックスを検査する。
         let sides = [
             (
@@ -511,11 +613,16 @@ fn check_effects(
     };
     for (index, breath) in effects.breath.parameters.iter().enumerate() {
         refs.check(params, "parameters", "parameter", &breath.parameter, errors);
-        check_positive(
-            &format!("effects.breath.parameters[{index}].cycle"),
-            breath.cycle,
-            errors,
-        );
+        let path = format!("effects.breath.parameters[{index}]");
+        check_positive(&format!("{path}.cycle"), breath.cycle, errors);
+        let values = [
+            ("offset", breath.offset),
+            ("peak", breath.peak),
+            ("weight", breath.weight),
+        ];
+        for (name, value) in values {
+            check_finite(&format!("{path}.{name}"), value, errors);
+        }
     }
 
     let refs = Refs {
@@ -602,10 +709,12 @@ impl Refs<'_> {
     }
 }
 
-/// キーフォーム格子の共通検査: キーフォーム数、キーが空でないこと・昇順・重複なし、パラメータの参照と重複、
+/// キーフォーム格子の共通検査: キーフォーム数、キーが空でないこと・昇順・重複なし・有限、パラメータの参照と重複、
 /// ミラー元の参照。`same_kind` は格子を持つ要素と同じ種類の要素に、その ID があるか。
+/// `path` は値の場所に使う格子の場所 (`meshes[Face].keyforms`、`….keyforms.blend_shapes[0]` など)。
 fn check_grid<T>(
     refs: &Refs<'_>,
+    path: &str,
     params: &HashMap<&crate::ParamId, usize>,
     same_kind: &dyn Fn(&str) -> bool,
     grid: &KeyformGrid<T>,
@@ -621,7 +730,7 @@ fn check_grid<T>(
         });
     }
     let mut seen = HashSet::new();
-    for binding in &grid.bindings {
+    for (b, binding) in grid.bindings.iter().enumerate() {
         refs.check(
             params,
             "keyform binding",
@@ -657,6 +766,16 @@ fn check_grid<T>(
                 keys: binding.keys.clone(),
             });
         }
+        // 無限大のキーは昇順の検査を通るが、区間の幅が無限大になり補間の係数が NaN になる。
+        // NaN は上で報告したので、ここでは無限大の最初の 1 つだけを報告する。
+        if let Some((k, &key)) = binding
+            .keys
+            .iter()
+            .enumerate()
+            .find(|(_, k)| k.is_infinite())
+        {
+            check_finite(&format!("{path}.bindings[{b}].keys[{k}]"), key, errors);
+        }
     }
     if !grid.origins.is_empty() && grid.origins.len() != grid.keyforms.len() {
         errors.push(ValidationError::OriginCount {
@@ -676,7 +795,7 @@ fn check_grid<T>(
                 target: source.id.clone(),
             });
         }
-        let path = format!("{}[{}].keyforms.mirror_source", plural(refs.kind), refs.id);
+        let path = format!("{path}.mirror_source");
         let values = [("axis", source.axis), ("tolerance", source.tolerance)];
         for (name, value) in values {
             if let Some(value) = value {
@@ -685,7 +804,7 @@ fn check_grid<T>(
         }
     }
     if let Some(KeyformInference::DepthRotation(rotation)) = &grid.inference {
-        let path = format!("{}[{}].keyforms.inference", plural(refs.kind), refs.id);
+        let path = format!("{path}.inference");
         let values = [
             ("angle_scale", rotation.angle_scale),
             ("pivot.x", rotation.pivot.x),
@@ -778,8 +897,10 @@ fn check_blend_shapes<T>(
         return;
     }
     let mut earlier = HashSet::new();
+    let base = keyforms_path(refs);
     for (index, shape) in grid.blend_shapes.iter().enumerate() {
-        check_grid(refs, kinds.params, same_kind, shape, errors);
+        let path = format!("{base}.blend_shapes[{index}]");
+        check_grid(refs, &path, kinds.params, same_kind, shape, errors);
         if shape.bindings.is_empty() {
             errors.push(invalid(index, "has no bindings"));
         }
@@ -823,6 +944,11 @@ fn plural(kind: &str) -> &str {
     }
 }
 
+/// 要素の最上位の格子の値の場所 (`meshes[Face].keyforms` など)。
+fn keyforms_path(refs: &Refs<'_>) -> String {
+    format!("{}[{}].keyforms", plural(refs.kind), refs.id)
+}
+
 /// 有限値であること。
 fn check_finite(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
     if !value.is_finite() {
@@ -831,6 +957,23 @@ fn check_finite(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
             value,
             expected: "finite",
         });
+    }
+}
+
+/// 2 つの成分が有限値であること。
+fn check_vec2(field: &str, value: Vec2, errors: &mut Vec<ValidationError>) {
+    check_finite(&format!("{field}.x"), value.x, errors);
+    check_finite(&format!("{field}.y"), value.y, errors);
+}
+
+/// 点の列の成分がすべて有限値であること (有限でない点は最初の 1 つだけ報告する)。
+fn check_points(field: &str, points: &[Vec2], errors: &mut Vec<ValidationError>) {
+    if let Some((index, &point)) = points
+        .iter()
+        .enumerate()
+        .find(|(_, p)| !(p.x.is_finite() && p.y.is_finite()))
+    {
+        check_vec2(&format!("{field}[{index}]"), point, errors);
     }
 }
 
@@ -1100,8 +1243,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn valid_model_with_all_kinds_has_no_errors() {
+    /// パラメータグループ・パーツ・ワープ・回転・マスク・グルー・当たり判定を持つ、検証を通るモデル。
+    fn all_kinds() -> Model {
         let mut model = single_quad();
         model.parameter_groups.push(ParameterGroup {
             id: "Face".into(),
@@ -1130,7 +1273,169 @@ mod tests {
             id: "Body".into(),
             mesh: "Quad".into(),
         });
-        assert_eq!(validate(&model), vec![]);
+        model
+    }
+
+    #[test]
+    fn valid_model_with_all_kinds_has_no_errors() {
+        assert_eq!(validate(&all_kinds()), vec![]);
+    }
+
+    // docs/spec/model.md#検証: モデルの数値はすべて有限値 (値の範囲はランタイムに任せる)
+    #[test]
+    fn non_finite_model_values_are_reported() {
+        let inf = f32::INFINITY;
+        let mut model = all_kinds();
+        model.meta.canvas.width = inf;
+        model.meta.canvas.origin.y = -inf;
+        model.parts[0].keyforms.keyforms[0].opacity = inf;
+        let DeformerKind::Warp(w) = &mut model.deformers[0].kind else {
+            unreachable!()
+        };
+        w.keyforms.keyforms[0].points[4].x = inf;
+        w.keyforms.keyforms[0].opacity = -inf;
+        let DeformerKind::Rotation(r) = &mut model.deformers[1].kind else {
+            unreachable!()
+        };
+        let rot = &mut r.keyforms.keyforms[0];
+        (rot.origin.x, rot.angle, rot.scale, rot.opacity) = (inf, inf, inf, inf);
+        let quad = &mut model.meshes[0];
+        quad.uvs[2].y = inf;
+        // 有限でない頂点は最初の 1 つだけ報告する。
+        let kf = &mut quad.keyforms.keyforms[1];
+        kf.positions[1].y = inf;
+        kf.positions[3].x = inf;
+        kf.opacity = inf;
+        kf.draw_order = inf;
+        kf.multiply_color.g = inf;
+        kf.screen_color.b = -inf;
+        model.glues[0].pairs[0].weight = inf;
+        model.glues[0].keyforms.keyforms[0].intensity = inf;
+        let errors = validate(&model);
+        assert_eq!(
+            errors,
+            vec![
+                invalid("meta.canvas.width", inf, "finite"),
+                invalid("meta.canvas.origin.y", -inf, "finite"),
+                invalid("parts[Root].keyforms[0].opacity", inf, "finite"),
+                invalid("deformers[W].keyforms[0].points[4].x", inf, "finite"),
+                invalid("deformers[W].keyforms[0].opacity", -inf, "finite"),
+                invalid("deformers[R].keyforms[0].origin.x", inf, "finite"),
+                invalid("deformers[R].keyforms[0].angle", inf, "finite"),
+                invalid("deformers[R].keyforms[0].scale", inf, "finite"),
+                invalid("deformers[R].keyforms[0].opacity", inf, "finite"),
+                invalid("meshes[Quad].uvs[2].y", inf, "finite"),
+                invalid("meshes[Quad].keyforms[1].positions[1].y", inf, "finite"),
+                invalid("meshes[Quad].keyforms[1].opacity", inf, "finite"),
+                invalid("meshes[Quad].keyforms[1].draw_order", inf, "finite"),
+                invalid("meshes[Quad].keyforms[1].multiply_color.g", inf, "finite"),
+                invalid("meshes[Quad].keyforms[1].screen_color.b", -inf, "finite"),
+                invalid("glues[G].keyforms[0].intensity", inf, "finite"),
+                invalid("glues[G].pairs[0].weight", inf, "finite"),
+            ]
+        );
+
+        // NaN も同じ。範囲の外の有限値 (不透明度 2 など) はランタイムがクランプするのでエラーにしない。
+        let mut model = all_kinds();
+        model.meshes[0].keyforms.keyforms[0].opacity = f32::NAN;
+        model.meshes[0].keyforms.keyforms[1].opacity = 2.0;
+        model.parts[0].keyforms.keyforms[0].opacity = -1.0;
+        let errors = validate(&model);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ValidationError::InvalidValue { field, .. }]
+                    if field == "meshes[Quad].keyforms[0].opacity"
+            ),
+            "{errors:?}"
+        );
+    }
+
+    // T0145: 無限大のキーは昇順の検査を通るので、有限値の検査で報告する (ブレンドシェイプ格子も)。
+    #[test]
+    fn infinite_keys_are_reported() {
+        let mut model = single_quad();
+        model.meshes[0].keyforms.bindings[0].keys[0] = f32::NEG_INFINITY;
+        assert_eq!(
+            validate(&model),
+            vec![invalid(
+                "meshes[Quad].keyforms.bindings[0].keys[0]",
+                f32::NEG_INFINITY,
+                "finite"
+            )]
+        );
+
+        let mut model = crate::fixtures::blend_shapes();
+        let mouth = &mut model.meshes[0].keyforms;
+        mouth.blend_shapes[1].bindings[0].keys[1] = f32::INFINITY;
+        assert_eq!(
+            validate(&model),
+            vec![invalid(
+                "meshes[Mouth].keyforms.blend_shapes[1].bindings[0].keys[1]",
+                f32::INFINITY,
+                "finite"
+            )]
+        );
+    }
+
+    // T0145: パラメータの値域は有限値。順序の検査は有限のときだけ行う。
+    #[test]
+    fn parameter_range_must_be_finite() {
+        let mut model = single_quad();
+        let p = &mut model.parameters[0];
+        (p.min, p.max) = (f32::NEG_INFINITY, f32::INFINITY);
+        assert_eq!(
+            validate(&model),
+            vec![
+                invalid("parameters[X].min", f32::NEG_INFINITY, "finite"),
+                invalid("parameters[X].max", f32::INFINITY, "finite"),
+            ]
+        );
+        model.parameters[0].default = f32::NAN;
+        let fields: Vec<_> = validate(&model)
+            .into_iter()
+            .map(|e| match e {
+                ValidationError::InvalidValue { field, .. } => field,
+                e => panic!("unexpected {e}"),
+            })
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                "parameters[X].min",
+                "parameters[X].default",
+                "parameters[X].max"
+            ]
+        );
+    }
+
+    // 呼吸の中心値・振幅・重みも有限値。
+    #[test]
+    fn breath_values_must_be_finite() {
+        let mut model = pose_and_effects();
+        let breath = &mut model.effects.breath.parameters[0];
+        (breath.offset, breath.peak, breath.weight) =
+            (f32::INFINITY, -f32::INFINITY, f32::INFINITY);
+        assert_eq!(
+            validate(&model),
+            vec![
+                invalid(
+                    "effects.breath.parameters[0].offset",
+                    f32::INFINITY,
+                    "finite"
+                ),
+                invalid(
+                    "effects.breath.parameters[0].peak",
+                    -f32::INFINITY,
+                    "finite"
+                ),
+                invalid(
+                    "effects.breath.parameters[0].weight",
+                    f32::INFINITY,
+                    "finite"
+                ),
+            ]
+        );
     }
 
     #[test]

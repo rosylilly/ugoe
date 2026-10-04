@@ -198,7 +198,7 @@ Meaning of the coefficients (per particle):
 | Field | Meaning |
 | --- | --- |
 | `radius` | Distance to the previous particle (the length of the pendulum segment). |
-| `mobility` | Fraction of the velocity kept per reference frame (0 to 1). 1 keeps the swing forever; smaller values stop it sooner. Values above 1 make the swing grow without limit. |
+| `mobility` | Fraction of the velocity kept per reference frame (0 to 1). 1 keeps the swing forever; smaller values stop it sooner. Values above 1 would make the swing grow without limit; they are invalid ([model.md](model.md#physics-validation)). |
 | `delay` | Time scale. 1 runs at normal speed; larger values react faster and swing faster; smaller values swing slowly. |
 | `acceleration` | Gravity multiplier. Larger values pull the particle back to its rest direction more strongly. It does not multiply the wind. |
 

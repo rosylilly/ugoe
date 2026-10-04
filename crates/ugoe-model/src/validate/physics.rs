@@ -1,10 +1,13 @@
 //! 物理の設定の検査。検査項目は `docs/spec/model.md#物理の検証`。
 
 use super::{
-    Refs, ValidationError, check_finite, check_non_negative, collect_ids, warp_point_count,
+    Refs, ValidationError, check_finite, check_non_negative, check_vec2, collect_ids,
+    warp_point_count,
 };
 use crate::deformer::DeformerKind;
-use crate::physics::{ColliderShape, PhysicsSettings, PhysicsTarget, VertexOwner};
+use crate::physics::{
+    ColliderShape, NormalizationRange, PhysicsSettings, PhysicsTarget, VertexOwner,
+};
 use crate::{DeformerId, Model};
 
 /// 物理の設定を、参照先のモデルと合わせて検査する。検出したエラーを全て返す。
@@ -38,13 +41,18 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
         &mut errors,
     );
 
+    check_vec2("gravity", physics.gravity, &mut errors);
+    check_vec2("wind", physics.wind, &mut errors);
+    // 0 以下はランタイムが既定の周波数に置き換えるので許す (`docs/spec/physics.md#時間の進め方`)。
+    check_finite("fps", physics.fps, &mut errors);
+
     for rig in &physics.rigs {
         let refs = Refs {
             kind: "physics rig",
             id: rig.id.as_str(),
         };
         let path = format!("rigs[{}]", rig.id);
-        for input in &rig.inputs {
+        for (index, input) in rig.inputs.iter().enumerate() {
             refs.check(
                 &params,
                 "inputs",
@@ -52,8 +60,17 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                 &input.parameter,
                 &mut errors,
             );
+            check_finite(
+                &format!("{path}.inputs[{index}].weight"),
+                input.weight,
+                &mut errors,
+            );
         }
+        // 出力の `particle` が 0 や範囲外なら、ランタイムがその出力を無視する (エラーにしない)。
         for (index, output) in rig.outputs.iter().enumerate() {
+            let at = format!("{path}.outputs[{index}]");
+            check_finite(&format!("{at}.scale"), output.scale, &mut errors);
+            check_finite(&format!("{at}.weight"), output.weight, &mut errors);
             match &output.target {
                 PhysicsTarget::Parameter { id } => {
                     refs.check(&params, "outputs", "parameter", id, &mut errors);
@@ -118,12 +135,34 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                 PhysicsTarget::Unknown => {}
             }
         }
+        // 粒子が 0 個のリグはエラーにしない (出力がすべて範囲外になり、何もしない)。
         for (index, particle) in rig.particles.iter().enumerate() {
-            check_non_negative(
-                &format!("{path}.particles[{index}].collision_radius"),
-                particle.collision_radius,
-                &mut errors,
-            );
+            let at = format!("{path}.particles[{index}]");
+            check_vec2(&format!("{at}.position"), particle.position, &mut errors);
+            // 1 を超えると揺れが増幅して発散する (`docs/spec/physics.md#係数の意味`)。
+            if !(0.0..=1.0).contains(&particle.mobility) {
+                errors.push(ValidationError::InvalidValue {
+                    field: format!("{at}.mobility"),
+                    value: particle.mobility,
+                    expected: "in 0..=1",
+                });
+            }
+            let values = [
+                ("delay", particle.delay),
+                ("acceleration", particle.acceleration),
+                ("radius", particle.radius),
+                ("collision_radius", particle.collision_radius),
+            ];
+            for (name, value) in values {
+                check_non_negative(&format!("{at}.{name}"), value, &mut errors);
+            }
+        }
+        let ranges = [
+            ("position", rig.normalization.position),
+            ("angle", rig.normalization.angle),
+        ];
+        for (name, range) in ranges {
+            check_normalization(&format!("{path}.normalization.{name}"), range, &mut errors);
         }
         for collider in &rig.colliders {
             refs.check(
@@ -178,6 +217,28 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
     }
 
     errors
+}
+
+/// 正規化の範囲: 3 つとも有限値で、`min <= default <= max`。
+fn check_normalization(path: &str, range: NormalizationRange, errors: &mut Vec<ValidationError>) {
+    let values = [
+        ("min", range.min),
+        ("default", range.default),
+        ("max", range.max),
+    ];
+    let mut finite = true;
+    for (name, value) in values {
+        finite &= value.is_finite();
+        check_finite(&format!("{path}.{name}"), value, errors);
+    }
+    // 有限でない値は上で報告したので、順序は有限のときだけ見る。
+    if finite && !(range.min <= range.default && range.default <= range.max) {
+        errors.push(ValidationError::InvalidValue {
+            field: format!("{path}.default"),
+            value: range.default,
+            expected: "between min and max",
+        });
+    }
 }
 
 fn kind_mismatch(
@@ -425,6 +486,93 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // docs/spec/model.md#物理の検証: 数値は有限値。係数と長さは 0 以上、`mobility` は 0〜1、
+    // 正規化の範囲は min <= default <= max。
+    #[test]
+    fn reports_invalid_numbers() {
+        let inf = f32::INFINITY;
+        let (model, mut physics) = setup();
+        physics.gravity.y = inf;
+        physics.wind.x = -inf;
+        physics.fps = inf;
+        let rig = &mut physics.rigs[0];
+        rig.inputs[0].weight = inf;
+        rig.outputs[0].scale = inf;
+        rig.outputs[2].weight = -inf;
+        let particle = &mut rig.particles[0];
+        particle.position.x = inf;
+        particle.mobility = 1.5;
+        particle.delay = -1.0;
+        particle.acceleration = -1.0;
+        particle.radius = inf;
+        rig.normalization.position.max = inf;
+        rig.normalization.angle.default = 2.0;
+        let errors = validate_physics(&physics, &model);
+        let invalid = |field: &str, value, expected| ValidationError::InvalidValue {
+            field: field.into(),
+            value,
+            expected,
+        };
+        assert_eq!(
+            errors,
+            [
+                invalid("gravity.y", inf, "finite"),
+                invalid("wind.x", -inf, "finite"),
+                invalid("fps", inf, "finite"),
+                invalid("rigs[Hair].inputs[0].weight", inf, "finite"),
+                invalid("rigs[Hair].outputs[0].scale", inf, "finite"),
+                invalid("rigs[Hair].outputs[2].weight", -inf, "finite"),
+                invalid("rigs[Hair].particles[0].position.x", inf, "finite"),
+                invalid("rigs[Hair].particles[0].mobility", 1.5, "in 0..=1"),
+                invalid("rigs[Hair].particles[0].delay", -1.0, "finite and >= 0"),
+                invalid(
+                    "rigs[Hair].particles[0].acceleration",
+                    -1.0,
+                    "finite and >= 0"
+                ),
+                invalid("rigs[Hair].particles[0].radius", inf, "finite and >= 0"),
+                invalid("rigs[Hair].normalization.position.max", inf, "finite"),
+                invalid(
+                    "rigs[Hair].normalization.angle.default",
+                    2.0,
+                    "between min and max"
+                ),
+            ]
+        );
+
+        // NaN の `mobility` も範囲の外。
+        let (model, mut physics) = setup();
+        physics.rigs[0].particles[0].mobility = f32::NAN;
+        let errors = validate_physics(&physics, &model);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ValidationError::InvalidValue { field, .. }]
+                    if field == "rigs[Hair].particles[0].mobility"
+            ),
+            "{errors:?}"
+        );
+    }
+
+    // ランタイムのフォールバックに任せる値はエラーにしない: 0 以下の `fps` (既定の 60)、
+    // 0 や範囲外の出力の `particle` (その出力を無視)、粒子が 0 個のリグ、範囲の外の出力の `weight` (クランプ)。
+    #[test]
+    fn runtime_fallbacks_are_not_errors() {
+        let (model, mut physics) = setup();
+        physics.fps = 0.0;
+        let rig = &mut physics.rigs[0];
+        rig.outputs[0].particle = 0;
+        rig.outputs[1].particle = 99;
+        rig.outputs[2].weight = 250.0;
+        let mut empty = rig.clone();
+        empty.id = "Empty".into();
+        empty.particles.clear();
+        physics.rigs.push(empty);
+        assert_eq!(validate_physics(&physics, &model), []);
+        physics.fps = -30.0;
+        assert_eq!(validate_physics(&physics, &model), []);
     }
 
     #[test]

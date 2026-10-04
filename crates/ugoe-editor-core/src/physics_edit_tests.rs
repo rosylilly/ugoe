@@ -343,6 +343,7 @@ fn set_particles_checks_coefficients() {
         bad(|p| p.radius = -1.0),
         bad(|p| p.collision_radius = -0.5),
         bad(|p| p.acceleration = f32::NAN),
+        bad(|p| p.acceleration = -1.0),
         bad(|p| p.position.x = f32::INFINITY),
         Command::SetPhysicsParticles {
             rig: "Hair".into(),

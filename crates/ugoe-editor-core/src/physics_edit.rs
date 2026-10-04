@@ -260,7 +260,7 @@ fn check_output(output: &PhysicsOutput) -> Result<(), EditError> {
 }
 
 /// 粒子は 1 つ以上。値は有限で、`radius` と `collision_radius` は 0 以上、`mobility` は 0〜1
-/// (1 を超えると揺れが発散する)、`delay` は 0 以上。
+/// (1 を超えると揺れが発散する)、`delay` と `acceleration` は 0 以上 (`docs/spec/model.md#物理の検証`)。
 fn check_particles(particles: &[PhysicsParticle]) -> Result<(), EditError> {
     if particles.is_empty() {
         return Err(invalid("a physics rig needs at least one particle"));
@@ -284,6 +284,7 @@ fn check_particles(particles: &[PhysicsParticle]) -> Result<(), EditError> {
         }
         for (name, value) in [
             ("delay", p.delay),
+            ("acceleration", p.acceleration),
             ("radius", p.radius),
             ("collision_radius", p.collision_radius),
         ] {

@@ -3,6 +3,7 @@
 use ugoe_model::fixtures::{physics_hair, physics_hair_settings};
 use ugoe_model::physics::PhysicsTarget;
 use ugoe_model::standard::{ANGLE_X, ANGLE_Z, HAIR_BACK, HAIR_FRONT};
+use ugoe_model::validate::validate_physics;
 
 use super::*;
 
@@ -252,6 +253,47 @@ fn missing_parameters_and_bad_particles_are_ignored() {
     }
     assert_eq!(get(&params, HAIR_FRONT), 0.0);
     assert_eq!(get(&params, HAIR_BACK), 0.0);
+}
+
+/// `docs/spec/model.md#物理の検証`: 検証がエラーにせずランタイムのフォールバックに任せる値
+/// (0 以下の `fps`・0 や範囲外の出力の `particle`・粒子が 0 個のリグ・範囲の外の出力の `weight`、
+/// 端の値の係数) は、検証を通り、ランタイムでもパニックせず有限の値を書く。
+#[test]
+fn values_left_to_runtime_fallbacks_pass_validation_and_stay_finite() {
+    let model = physics_hair();
+    for fps in [0.0, -30.0] {
+        let mut settings = physics_hair_settings();
+        settings.fps = fps;
+        settings.rigs[0].outputs[0].particle = 0;
+        settings.rigs[1].outputs[0].weight = 250.0;
+        let mut beyond = settings.rigs[1].outputs[0].clone();
+        beyond.particle = 99;
+        settings.rigs[1].outputs.push(beyond);
+        let mut empty = settings.rigs[0].clone();
+        empty.id = "Empty".into();
+        empty.particles.clear();
+        settings.rigs.push(empty);
+        for particle in &mut settings.rigs[1].particles {
+            (particle.mobility, particle.delay, particle.acceleration) = (1.0, 0.0, 0.0);
+        }
+        assert_eq!(validate_physics(&settings, &model), []);
+
+        let mut physics = PhysicsSystem::new(settings);
+        assert_close(physics.step_duration(), 1.0 / DEFAULT_FPS, 1e-9);
+        let mut params = ParameterValues::from_model(&model);
+        for k in 0..120 {
+            set(&mut params, ANGLE_X, (k as f32 * 0.1).sin() * 30.0);
+            physics.update(&mut params, STEP);
+            assert!(
+                params.as_slice().iter().all(|v| v.is_finite()),
+                "fps {fps}, frame {k}: {:?}",
+                params.as_slice()
+            );
+        }
+        // 粒子 0 の出力は書かない。後ろ髪は揺れている (重み 250 は 100 にクランプ)。
+        assert_eq!(get(&params, HAIR_FRONT), 0.0);
+        assert!(get(&params, HAIR_BACK).abs() > 1e-3);
+    }
 }
 
 /// 出力の重みは、現在値とのブレンドの割合。

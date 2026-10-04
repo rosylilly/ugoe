@@ -63,8 +63,9 @@ Field tables in this document use the following types.
   (for example, the shortest decimal representation that round-trips in JSON, and float 32 in
   MessagePack).
 - Unless a field says otherwise, `f32` values MUST be finite. JSON cannot represent NaN or
-  infinity. The [validation rules](#validation) list the fields whose finiteness a reader checks;
-  a reader MAY reject other non-finite values.
+  infinity (a JSON number too large for `f32`, such as `1e39`, converts to infinity). The
+  [validation rules](#validation) check every `f32` of a model and of physics settings; a reader
+  MAY reject other non-finite values (for example in motions and expressions).
 - Integer fields MUST be integers in the range of their type. A reader MUST reject a float where an
   integer is required.
   - In MessagePack, an integer is a value of one of the integer types; a float 32 or float 64 is a
@@ -992,10 +993,10 @@ Outputs to targets other than `parameter`, and colliders, form the feature `phys
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `position` | `vec2` | — | Initial position relative to the root. |
-| `mobility` | `f32` | — | Mobility coefficient. |
-| `delay` | `f32` | — | Delay coefficient. |
-| `acceleration` | `f32` | — | Acceleration coefficient. |
-| `radius` | `f32` | — | Distance to the previous particle (segment length). |
+| `mobility` | `f32` | — | Mobility coefficient, 0 to 1. |
+| `delay` | `f32` | — | Delay coefficient. At least 0. |
+| `acceleration` | `f32` | — | Acceleration coefficient. At least 0. |
+| `radius` | `f32` | — | Distance to the previous particle (segment length). At least 0. |
 | `collision_radius` | `f32` | `0` | Radius used for collisions. At least 0. |
 
 `PhysicsNormalization`:
@@ -1005,7 +1006,7 @@ Outputs to targets other than `parameter`, and colliders, form the feature `phys
 | `position` | `NormalizationRange` | — | Range for position inputs. |
 | `angle` | `NormalizationRange` | — | Range for angle inputs. |
 
-`NormalizationRange`: `min`, `default`, `max` (all `f32`, required).
+`NormalizationRange`: `min`, `default`, `max` (all `f32`, required; `min <= default <= max`).
 
 `PhysicsCollider`:
 
@@ -1272,8 +1273,8 @@ conformance rules are defined by [avatar-profile.md](avatar-profile.md#conforman
 
 1. IDs are unique within each kind: parameters, parameter groups, parts, deformers, meshes, glues,
    hit areas and slots.
-2. Parameters: `min <= default <= max` (so none of them is NaN). `mirror` and `group`, if present,
-   refer to an existing parameter and parameter group.
+2. Parameters: `min`, `default` and `max` are finite and `min <= default <= max`. `mirror` and
+   `group`, if present, refer to an existing parameter and parameter group.
 3. References exist: the `part` and `parent` of every mesh and deformer; the `parent` of every part;
    every mask's `mesh`; `mesh_a` and `mesh_b` of every glue; the `mesh` of every hit area; every
    `part` and `links` entry of the pose; the parameters of the eye blink, breath and lip sync
@@ -1284,7 +1285,7 @@ conformance rules are defined by [avatar-profile.md](avatar-profile.md#conforman
 6. Every mesh's `texture` is less than the number of `textures`.
 7. Meshes: the length of `indices` is a multiple of 3; every index is less than the vertex count
    (the length of `uvs`); every keyform (including blend-shape grids) has as many `positions` as
-   there are vertices; every keyform's `mask_strength` is finite.
+   there are vertices; every `uvs` component is finite.
 8. Glues: every `a` is less than the vertex count of `mesh_a`, and every `b` less than that of
    `mesh_b`.
 9. Warp deformers: `rows >= 1` and `cols >= 1`; every keyform (including blend-shape grids) has
@@ -1292,7 +1293,7 @@ conformance rules are defined by [avatar-profile.md](avatar-profile.md#conforman
 10. Every keyform grid (of parts, deformers of a known kind, meshes and glues, and every blend-shape
     grid):
     - the number of keyforms is the product of the key counts of its bindings (1 with no bindings);
-    - every binding has at least one key, and its keys are strictly increasing (no NaN);
+    - every binding has at least one key, and its keys are finite and strictly increasing;
     - every binding refers to an existing parameter, and no parameter is bound twice in the grid;
     - `origins` is empty or as long as `keyforms`;
     - `mirror_source.id`, if present, refers to an existing element of the same kind as the owner of
@@ -1310,7 +1311,13 @@ conformance rules are defined by [avatar-profile.md](avatar-profile.md#conforman
 14. Pose: no part appears more than once in the pose; `fade_duration` is finite and at least 0.
 15. Effects: eye blink `closing`, `closed` and `opening` are finite and at least 0; eye blink
     `interval` and every breath `cycle` are finite and greater than 0.
-16. Slots: `anchor` refers to an existing deformer; `replaces` and `part` to existing parts;
+16. Numbers: `width`, `height` and `origin` of the canvas are finite; every value of every keyform
+    (including blend-shape grids) is finite: `opacity` of parts; `points` and `opacity` of warp
+    deformers; `origin`, `angle`, `scale` and `opacity` of rotation deformers; `positions`,
+    `opacity`, `draw_order`, `multiply_color`, `screen_color` and `mask_strength` of meshes;
+    `intensity` of glues. The `weight` of every glue pair and the `offset`, `peak` and `weight` of
+    every breath parameter are finite.
+17. Slots: `anchor` refers to an existing deformer; `replaces` and `part` to existing parts;
     `parameters` to existing parameters; `mask_sources` to existing meshes; `pose_parts` to parts
     that are the `part` of a pose entry (not only a link); `draw_order.min` and `max` are finite and
     `min <= max`.
@@ -1331,9 +1338,18 @@ modules are attached).
    every weight is between 0 and 1.
 5. Every particle's `collision_radius` and every collider's `radius` is finite and at least 0; the
    points of collider shapes are finite.
+6. The components of `gravity` and `wind`, and `fps`, are finite.
+7. Every input's `weight` and every output's `scale` and `weight` are finite.
+8. Particles: `position` is finite; `mobility` is between 0 and 1; `delay`, `acceleration` and
+   `radius` are finite and at least 0.
+9. Both normalization ranges (`position` and `angle`): `min`, `default` and `max` are finite and
+   `min <= default <= max`.
 
-*Informative:* an output whose `particle` is 0 or not less than the number of particles is not
-invalid; it has no effect ([physics.md](physics.md#output-values)).
+*Informative:* the following are not invalid, because the simulation defines a fallback for them
+([physics.md](physics.md)): an `fps` of 0 or less (60 is used); an output whose `particle` is 0 or
+not less than the number of particles (it has no effect, [physics.md](physics.md#output-values));
+a rig without particles (none of its outputs has an effect); an output `weight` outside 0 to 100
+(it is clamped).
 
 ### Module validation
 
