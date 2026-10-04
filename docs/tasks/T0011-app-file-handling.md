@@ -1,11 +1,11 @@
 ---
 id: T0011
 title: アプリのファイルの扱いの残り (通常のファイルだけを読む・保存の拡張子・読めなかった設定を上書きしない)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, apps/viewer, apps/studio, ugoe-cli, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0011
 ---
 
 # T0011: アプリのファイルの扱いの残り (通常のファイルだけを読む・保存の拡張子・読めなかった設定を上書きしない)
