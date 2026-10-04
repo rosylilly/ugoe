@@ -1,11 +1,11 @@
 ---
 id: T0543
 title: ugoe-ai の公開 API の小さな整理 (ApiKey の置き場所・待ち時間の表示)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, ugoe-cli, ugoe-mcp, editor, docs]
 depends_on: [T0527]
-assignee:
+assignee: claude-worker-T0543
 ---
 
 # T0543: ugoe-ai の公開 API の小さな整理 (ApiKey の置き場所・待ち時間の表示)
