@@ -1,11 +1,11 @@
 ---
 id: T0546
 title: AI: 名前の規則と AI の分類の食い違いを利用者に示す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, ugoe-mcp, apps/editor, docs]
 depends_on: [T0528]
-assignee:
+assignee: claude-worker-T0546
 ---
 
 # T0546: AI: 名前の規則と AI の分類の食い違いを利用者に示す
