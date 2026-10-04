@@ -1,11 +1,11 @@
 ---
 id: T0157
 title: 着せ替えの失敗の補足の値の不足を埋める
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, docs]
 depends_on: [T0139]
-assignee:
+assignee: claude-worker-T0157
 ---
 
 # T0157: 着せ替えの失敗の補足の値の不足を埋める
