@@ -12,11 +12,11 @@ pub mod collider;
 use std::sync::Arc;
 
 use ugoe_core::{Vec2, lerp};
-use ugoe_model::DeformerKind;
 use ugoe_model::physics::{
     NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsSettings, PhysicsSource,
     PhysicsTarget, VertexOwner,
 };
+use ugoe_model::{DeformerKind, ParamId};
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterValues};
 
 pub use chain::{Chain, Particle, Segment, StepInput};
@@ -45,6 +45,17 @@ pub struct PhysicsSystem {
     relay: bool,
     /// モデルの要素への参照を解決したもの (動的物理でだけ使う)。
     binding: Option<Binding>,
+    /// 入力と出力のパラメータの添字 ([`RigState::input_params`]・[`RigState::output_params`]) を
+    /// 解決したときの、パラメータの ID の並び。渡された `ParameterValues` の並びが違えば解決し直す。
+    resolved_ids: Option<Vec<ParamId>>,
+    /// 中継のための、ステップの中でリグの出力を書き込むパラメータの写し (中継があるときだけ)。
+    /// フレームごとに作らず使い回す。
+    relay_buffer: Option<Relay>,
+    // 以下はフレームごとの作業用のバッファ (毎フレームの確保を避けるために使い回す)。
+    frames: Vec<RigFrame>,
+    world_colliders: Vec<Option<WorldCollider>>,
+    targets: Vec<RootPose>,
+    starts: Vec<RootPose>,
 }
 
 /// 衝突体を考えない静止姿勢で、衝突体に当たっている区間 ([`PhysicsSystem::rest_pose_collisions`])。
@@ -69,6 +80,10 @@ struct RigState {
     external: RootPose,
     /// 入力ごとに、前のリグが出力するパラメータを読む (中継の入力) か。
     relay_inputs: Vec<bool>,
+    /// 入力ごとの、パラメータの添字 (見つからない入力は `None`)。
+    input_params: Vec<Option<ParamIndex>>,
+    /// 出力ごとの、出力先のパラメータの添字 (パラメータ以外の出力先・見つからないパラメータは `None`)。
+    output_params: Vec<Option<ParamIndex>>,
     /// 直前 2 ステップの出力値 (出力ごと。無効な出力は `None`)。スカラーの出力先では `x` だけを使う。
     previous: Vec<Option<Vec2>>,
     current: Vec<Option<Vec2>>,
@@ -103,7 +118,7 @@ impl RootPose {
 
 /// 1 段目の評価から求めた、リグ 1 つ分のそのフレームの状態。
 /// 動的物理を使わないときは [`RigFrame::canvas`] (キャンバスに固定、衝突体なし)。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct RigFrame {
     /// 根元の位置のずれ (`アンカーで写した粒子 0 の位置 - 粒子 0 の位置`)。
     anchor: Vec2,
@@ -119,15 +134,24 @@ struct RigFrame {
 }
 
 impl RigFrame {
-    fn canvas(rig: &PhysicsRig, gravity: Vec2) -> Self {
-        Self {
-            anchor: Vec2::ZERO,
-            frame_angle: 0.0,
-            references: vec![gravity; rig.outputs.len()],
-            flips: vec![false; rig.outputs.len()],
-            colliders: Vec::new(),
-            collider_ids: Vec::new(),
-        }
+    /// キャンバスに固定し、衝突体を持たない状態にする (バッファは使い回す)。
+    fn set_canvas(&mut self, rig: &PhysicsRig, gravity: Vec2) {
+        self.anchor = Vec2::ZERO;
+        self.frame_angle = 0.0;
+        self.references.clear();
+        self.references.resize(rig.outputs.len(), gravity);
+        self.flips.clear();
+        self.flips.resize(rig.outputs.len(), false);
+        self.colliders.clear();
+        self.collider_ids.clear();
+    }
+}
+
+/// `frames` を、リグごとの [`RigFrame::set_canvas`] にする。
+fn canvas_frames(settings: &PhysicsSettings, frames: &mut Vec<RigFrame>) {
+    frames.resize_with(settings.rigs.len(), RigFrame::default);
+    for (frame, rig) in frames.iter_mut().zip(&settings.rigs) {
+        frame.set_canvas(rig, settings.gravity);
     }
 }
 
@@ -178,6 +202,8 @@ impl PhysicsSystem {
                 pose: RootPose::default(),
                 external: RootPose::default(),
                 relay_inputs: relay_inputs(&settings.rigs[..k], rig),
+                input_params: Vec::new(),
+                output_params: Vec::new(),
                 previous: vec![None; rig.outputs.len()],
                 current: vec![None; rig.outputs.len()],
             })
@@ -192,6 +218,12 @@ impl PhysicsSystem {
             dynamic,
             relay,
             binding: None,
+            resolved_ids: None,
+            relay_buffer: None,
+            frames: Vec::new(),
+            world_colliders: Vec::new(),
+            targets: Vec::new(),
+            starts: Vec::new(),
         }
     }
 
@@ -234,16 +266,19 @@ impl PhysicsSystem {
     /// 動的物理の機能は使わない (根元はキャンバスに固定し、衝突体と重力の基準を無視し、
     /// パラメータ以外への出力を捨てる)。動的物理には [`Self::update_instance`] を使う。
     pub fn update(&mut self, parameters: &mut ParameterValues, dt: f32) {
-        let gravity = self.settings.gravity;
-        let frames: Vec<RigFrame> = self
-            .settings
-            .rigs
-            .iter()
-            .map(|rig| RigFrame::canvas(rig, gravity))
-            .collect();
+        let mut frames = std::mem::take(&mut self.frames);
+        canvas_frames(&self.settings, &mut frames);
         let alpha = self.advance(&frames, parameters, dt);
+        self.frames = frames;
         for (state, rig) in self.rigs.iter().zip(&self.settings.rigs) {
-            write_parameters(rig, &state.previous, &state.current, alpha, parameters);
+            write_parameters(
+                rig,
+                &state.output_params,
+                &state.previous,
+                &state.current,
+                alpha,
+                parameters,
+            );
         }
     }
 
@@ -267,9 +302,45 @@ impl PhysicsSystem {
             self.bind(instance);
         }
         instance.update_first_stage();
-        let frames = self.rig_frames(instance);
+        let mut frames = std::mem::take(&mut self.frames);
+        self.rig_frames(instance, &mut frames);
         let alpha = self.advance(&frames, instance.parameters(), dt);
         self.write_instance(instance, &frames, alpha);
+        self.frames = frames;
+    }
+
+    /// 入力と出力のパラメータの添字を `parameters` の並びで解決する。前に解決したときと並びが
+    /// 同じなら何もしない (名前の探索はパラメータの並びが変わったときだけ)。
+    fn resolve_parameters(&mut self, parameters: &ParameterValues) {
+        if self.resolved_ids.as_deref() == Some(parameters.ids()) {
+            return;
+        }
+        for (state, rig) in self.rigs.iter_mut().zip(&self.settings.rigs) {
+            state.input_params.clear();
+            state.input_params.extend(
+                rig.inputs
+                    .iter()
+                    .map(|input| parameters.index_of(input.parameter.as_str())),
+            );
+            state.output_params.clear();
+            state.output_params.extend(
+                rig.outputs
+                    .iter()
+                    .map(|o| o.parameter().and_then(|p| parameters.index_of(p.as_str()))),
+            );
+        }
+        self.relay_buffer = self.relay.then(|| Relay {
+            values: parameters.clone(),
+            bases: self
+                .rigs
+                .iter()
+                .flat_map(|s| s.output_params.iter().flatten())
+                .map(|&index| (index, parameters.get(index)))
+                .collect(),
+        });
+        let ids = self.resolved_ids.get_or_insert_with(Vec::new);
+        ids.clear();
+        ids.extend_from_slice(parameters.ids());
     }
 
     /// 動的物理の出力先・衝突体・基準のデフォーマを、`instance` のモデルの要素に解決する。
@@ -401,18 +472,26 @@ impl PhysicsSystem {
         }
         self.bind(instance);
         instance.update_first_stage();
-        let frames = self.rig_frames(instance);
-        let settings = &self.settings;
+        let mut frames = Vec::new();
+        self.rig_frames(instance, &mut frames);
         let parameters = instance.parameters();
+        self.resolve_parameters(parameters);
+        let settings = &self.settings;
         // 最初の `update` と同じく、中継の入力は前のリグの静止姿勢の出力から読む。
-        let mut relay = self.relay.then(|| Relay::new(&settings.rigs, parameters));
+        let mut relay = self.relay_buffer.as_mut();
+        if let Some(r) = &mut relay {
+            r.begin(parameters);
+        }
         let mut found = Vec::new();
+        let mut values = Vec::new();
         for ((rig, frame), state) in settings.rigs.iter().zip(&frames).zip(&self.rigs) {
-            let mut pose = root_pose(rig, parameters, |i| !state.relay_inputs[i]);
+            let mut pose = root_pose(rig, &state.input_params, parameters, |i| {
+                !state.relay_inputs[i]
+            });
             pose.translation += frame.anchor;
             pose.angle += frame.frame_angle;
             pose.frame_angle = frame.frame_angle;
-            let pose = with_relay(pose, rig, state, relay.as_ref());
+            let pose = with_relay(pose, rig, state, relay.as_deref());
             let gravity = rotate_deg(settings.gravity, pose.angle);
             let wind = rotate_deg(settings.wind, pose.frame_angle);
             let mut chain = Chain::new(&rig.particles, Vec2::ZERO);
@@ -425,7 +504,10 @@ impl PhysicsSystem {
                     wind,
                     time_scale: 0.0,
                 };
-                r.write(rig, &outputs(rig, &chain, &input, &frame.references));
+                values.clear();
+                values.resize(rig.outputs.len(), None);
+                outputs(rig, &chain, &input, &frame.references, &mut values);
+                r.write(rig, &state.output_params, &values);
             }
             let particles = chain.particles();
             for i in 1..particles.len() {
@@ -444,79 +526,70 @@ impl PhysicsSystem {
         found
     }
 
-    /// 1 段目の評価から、リグごとのそのフレームの状態を求める。
-    fn rig_frames(&self, instance: &ModelInstance) -> Vec<RigFrame> {
+    /// 1 段目の評価から、リグごとのそのフレームの状態を `frames` に求める (バッファは使い回す)。
+    fn rig_frames(&mut self, instance: &ModelInstance, frames: &mut Vec<RigFrame>) {
         let gravity = self.settings.gravity;
         let Some(binding) = &self.binding else {
-            return self
-                .settings
-                .rigs
-                .iter()
-                .map(|rig| RigFrame::canvas(rig, gravity))
-                .collect();
+            canvas_frames(&self.settings, frames);
+            return;
         };
         let model = binding.compiled.model();
         let down = gravity.try_normalize().unwrap_or(Vec2::Y);
-        let colliders: Vec<Option<WorldCollider>> = self
-            .settings
-            .colliders
-            .iter()
-            .zip(&binding.colliders)
-            .map(|(c, attach)| {
+        let colliders = &mut self.world_colliders;
+        colliders.clear();
+        colliders.extend(self.settings.colliders.iter().zip(&binding.colliders).map(
+            |(c, attach)| {
                 let attach = (*attach).ok()?;
                 let world = attach.map_or(ugoe_runtime::WorldTransform::IDENTITY, |d| {
                     instance.deformer_world(d)
                 });
                 WorldCollider::new(&c.shape, &world)
-            })
-            .collect();
-        self.settings
-            .rigs
-            .iter()
+            },
+        ));
+        frames.resize_with(self.settings.rigs.len(), RigFrame::default);
+        for ((frame, rig), rb) in frames
+            .iter_mut()
+            .zip(&self.settings.rigs)
             .zip(&binding.rigs)
-            .map(|(rig, rb)| {
-                let p0 = rig.particles.first().map_or(Vec2::ZERO, |p| p.position);
-                let anchor = rb
-                    .anchor
-                    .map_or(Vec2::ZERO, |a| instance.deformer_world(a).point(p0) - p0);
-                let frame_angle = rb.frame.map_or(0.0, |f| {
-                    // ワープは格子の中心での向き、回転デフォーマはどこでも同じ。
-                    let at = match model.deformers[f].kind {
-                        DeformerKind::Warp(_) => Vec2::splat(0.5),
-                        _ => Vec2::ZERO,
-                    };
-                    chain::signed_angle(down, instance.deformer_world(f).jacobian(at) * down)
-                });
-                let (references, flips) = rb
-                    .outputs
-                    .iter()
-                    .map(|target| match *target {
-                        Target::Angle(d) => {
-                            // 粒子 1 の角度は、出力先の親の座標系での重力の向きから測る。
-                            let origin = instance
-                                .rotation_local_keyform(d)
-                                .map_or(Vec2::ZERO, |k| k.origin);
-                            let j = instance.deformer_parent_world(d).jacobian(origin);
-                            (j * gravity, j.determinant() < 0.0)
-                        }
-                        _ => (gravity, false),
-                    })
-                    .unzip();
-                let (collider_ids, colliders) = rb
-                    .colliders
-                    .iter()
-                    .filter_map(|&c| Some((c, colliders[c]?)))
-                    .unzip();
-                RigFrame {
-                    anchor,
-                    frame_angle,
-                    references,
-                    flips,
-                    colliders,
-                    collider_ids,
+        {
+            let p0 = rig.particles.first().map_or(Vec2::ZERO, |p| p.position);
+            frame.anchor = rb
+                .anchor
+                .map_or(Vec2::ZERO, |a| instance.deformer_world(a).point(p0) - p0);
+            frame.frame_angle = rb.frame.map_or(0.0, |f| {
+                // ワープは格子の中心での向き、回転デフォーマはどこでも同じ。
+                let at = match model.deformers[f].kind {
+                    DeformerKind::Warp(_) => Vec2::splat(0.5),
+                    _ => Vec2::ZERO,
+                };
+                chain::signed_angle(down, instance.deformer_world(f).jacobian(at) * down)
+            });
+            frame.references.clear();
+            frame.flips.clear();
+            for target in &rb.outputs {
+                let (reference, flip) = match *target {
+                    Target::Angle(d) => {
+                        // 粒子 1 の角度は、出力先の親の座標系での重力の向きから測る。
+                        let origin = instance
+                            .rotation_local_keyform(d)
+                            .map_or(Vec2::ZERO, |k| k.origin);
+                        let j = instance.deformer_parent_world(d).jacobian(origin);
+                        (j * gravity, j.determinant() < 0.0)
+                    }
+                    _ => (gravity, false),
+                };
+                frame.references.push(reference);
+                frame.flips.push(flip);
+            }
+            frame.collider_ids.clear();
+            frame.colliders.clear();
+            for &c in &rb.colliders {
+                if let Some(collider) = colliders[c] {
+                    frame.collider_ids.push(c);
+                    frame.colliders.push(collider);
                 }
-            })
-            .collect()
+            }
+        }
     }
 
     /// 入力と `frames` から根元の姿勢を求めて、`dt` 秒分のステップを進める。
@@ -526,17 +599,18 @@ impl PhysicsSystem {
     /// 同じステップで出した出力 (補間しない) を書き込んだパラメータから読む
     /// (`docs/spec/physics.md#リグの順序と中継`)。
     fn advance(&mut self, frames: &[RigFrame], parameters: &ParameterValues, dt: f32) -> f32 {
+        self.resolve_parameters(parameters);
         let step = self.step_duration();
         let time_scale = step * BASE_FPS;
         let settings = &self.settings;
         let initialized = self.initialized;
-        let targets: Vec<RootPose> = settings
-            .rigs
-            .iter()
-            .zip(frames)
-            .zip(&self.rigs)
-            .map(|((rig, frame), state)| {
-                let mut pose = root_pose(rig, parameters, |i| !state.relay_inputs[i]);
+        let targets = &mut self.targets;
+        targets.clear();
+        targets.extend(settings.rigs.iter().zip(frames).zip(&self.rigs).map(
+            |((rig, frame), state)| {
+                let mut pose = root_pose(rig, &state.input_params, parameters, |i| {
+                    !state.relay_inputs[i]
+                });
                 pose.translation += frame.anchor;
                 // 基準の回転は、前のステップから近い側に回ったとみなす (±180 度をまたいでも跳ばない)。
                 let frame_angle = if initialized {
@@ -548,8 +622,9 @@ impl PhysicsSystem {
                 pose.angle += frame_angle;
                 pose.frame_angle = frame_angle;
                 pose
-            })
-            .collect();
+            },
+        ));
+        let targets = &self.targets;
         let step_input = |pose: RootPose, rotation_delta: f32| StepInput {
             root: pose.translation,
             rotation_delta,
@@ -558,7 +633,10 @@ impl PhysicsSystem {
             time_scale,
         };
         // 中継があるときだけ、ステップの中の出力を書き込むパラメータの写しを持つ。
-        let mut relay = self.relay.then(|| Relay::new(&settings.rigs, parameters));
+        let mut relay = self.relay_buffer.as_mut();
+        if let Some(r) = &mut relay {
+            r.begin(parameters);
+        }
 
         if !self.initialized {
             self.initialized = true;
@@ -567,10 +645,10 @@ impl PhysicsSystem {
                 .rigs
                 .iter_mut()
                 .zip(&settings.rigs)
-                .zip(&targets)
+                .zip(targets)
                 .zip(frames)
             {
-                let pose = with_relay(*target, rig, state, relay.as_ref());
+                let pose = with_relay(*target, rig, state, relay.as_deref());
                 let input = step_input(pose, 0.0);
                 state.chain.settle(
                     &rig.particles,
@@ -581,10 +659,16 @@ impl PhysicsSystem {
                 );
                 state.pose = pose;
                 state.external = *target;
-                state.current = outputs(rig, &state.chain, &input, &frame.references);
+                outputs(
+                    rig,
+                    &state.chain,
+                    &input,
+                    &frame.references,
+                    &mut state.current,
+                );
                 state.previous.clone_from(&state.current);
                 if let Some(r) = &mut relay {
-                    r.write(rig, &state.current);
+                    r.write(rig, &state.output_params, &state.current);
                 }
             }
         }
@@ -603,7 +687,9 @@ impl PhysicsSystem {
         let steps = (whole as u32).min(MAX_STEPS_PER_UPDATE);
 
         if steps > 0 {
-            let starts: Vec<RootPose> = self.rigs.iter().map(|s| s.external).collect();
+            let starts = &mut self.starts;
+            starts.clear();
+            starts.extend(self.rigs.iter().map(|s| s.external));
             for k in 1..=steps {
                 if let Some(r) = &mut relay {
                     r.restore();
@@ -612,12 +698,12 @@ impl PhysicsSystem {
                     .rigs
                     .iter_mut()
                     .zip(&settings.rigs)
-                    .zip(starts.iter().zip(&targets))
+                    .zip(starts.iter().zip(targets))
                     .zip(frames)
                 {
                     // 入力はフレームの間で線形補間して、ステップごとに少しずつ動かす。
                     let external = start.lerp(*target, k as f32 / steps as f32);
-                    let pose = with_relay(external, rig, state, relay.as_ref());
+                    let pose = with_relay(external, rig, state, relay.as_deref());
                     let input = step_input(pose, pose.angle - state.pose.angle);
                     state.chain.step(&rig.particles, &input, |s, p| {
                         collide(&frame.colliders, rig, s, p);
@@ -625,9 +711,15 @@ impl PhysicsSystem {
                     state.pose = pose;
                     state.external = external;
                     std::mem::swap(&mut state.previous, &mut state.current);
-                    state.current = outputs(rig, &state.chain, &input, &frame.references);
+                    outputs(
+                        rig,
+                        &state.chain,
+                        &input,
+                        &frame.references,
+                        &mut state.current,
+                    );
                     if let Some(r) = &mut relay {
-                        r.write(rig, &state.current);
+                        r.write(rig, &state.output_params, &state.current);
                     }
                 }
             }
@@ -724,13 +816,19 @@ fn with_relay(
 ) -> RootPose {
     match relay {
         Some(r) if state.relay_inputs.contains(&true) => {
-            pose.with_relay(root_pose(rig, &r.values, |i| state.relay_inputs[i]))
+            pose.with_relay(root_pose(rig, &state.input_params, &r.values, |i| {
+                state.relay_inputs[i]
+            }))
         }
         _ => pose,
     }
 }
 
 /// 中継のための、ステップの中でリグの出力を書き込むパラメータの写し。
+///
+/// [`PhysicsSystem::resolve_parameters`] がパラメータの並びごとに作り、フレームの始めに
+/// [`Relay::begin`] で今の値を写す。
+#[derive(Debug)]
 struct Relay {
     values: ParameterValues,
     /// パラメータへの出力先と、フレームの始めの値 (ステップの始めに戻す)。
@@ -738,16 +836,11 @@ struct Relay {
 }
 
 impl Relay {
-    fn new(rigs: &[PhysicsRig], parameters: &ParameterValues) -> Self {
-        let bases = rigs
-            .iter()
-            .flat_map(|r| &r.outputs)
-            .filter_map(|o| parameters.index_of(o.parameter()?.as_str()))
-            .map(|index| (index, parameters.get(index)))
-            .collect();
-        Self {
-            values: parameters.clone(),
-            bases,
+    /// フレームの始めのパラメータ (`values` と同じ並び) を写す。確保済みのバッファを使い回す。
+    fn begin(&mut self, parameters: &ParameterValues) {
+        self.values.clone_from(parameters);
+        for (index, base) in &mut self.bases {
+            *base = parameters.get(*index);
         }
     }
 
@@ -759,8 +852,13 @@ impl Relay {
     }
 
     /// リグのステップの出力 (補間しない) を書き込む。
-    fn write(&mut self, rig: &PhysicsRig, current: &[Option<Vec2>]) {
-        write_parameters(rig, current, current, 1.0, &mut self.values);
+    fn write(
+        &mut self,
+        rig: &PhysicsRig,
+        indices: &[Option<ParamIndex>],
+        current: &[Option<Vec2>],
+    ) {
+        write_parameters(rig, indices, current, current, 1.0, &mut self.values);
     }
 }
 
@@ -792,18 +890,20 @@ fn wrap_degrees(degrees: f32) -> f32 {
 }
 
 /// 入力パラメータから根元の姿勢を求める (`docs/spec/physics.md#入力`)。
-/// `include(i)` が真の入力 (`rig.inputs` の添字) だけを使う。
+/// `include(i)` が真の入力 (`rig.inputs` の添字) だけを使う。`indices` は入力ごとのパラメータの添字
+/// ([`RigState::input_params`])。
 fn root_pose(
     rig: &PhysicsRig,
+    indices: &[Option<ParamIndex>],
     parameters: &ParameterValues,
     include: impl Fn(usize) -> bool,
 ) -> RootPose {
     let mut pose = RootPose::default();
-    for (i, input) in rig.inputs.iter().enumerate() {
+    for ((i, input), &index) in rig.inputs.iter().enumerate().zip(indices) {
         if !include(i) {
             continue;
         }
-        let Some(index) = parameters.index_of(input.parameter.as_str()) else {
+        let Some(index) = index else {
             continue;
         };
         let range = match input.source {
@@ -848,15 +948,17 @@ fn normalize(parameters: &ParameterValues, index: ParamIndex, range: Normalizati
 ///
 /// スカラーの出力先 (パラメータ・回転デフォーマの角度) は `x` に値を入れる。
 /// ベクトルの出力先 (原点のずれ・頂点) は、粒子の変位の `source` の成分だけを持つベクトル。
-/// `references` は出力ごとの、粒子 1 の角度を測る基準の向き。
+/// `references` は出力ごとの、粒子 1 の角度を測る基準の向き。結果は `out` (出力ごと) に書く。
 fn outputs(
     rig: &PhysicsRig,
     chain: &Chain,
     input: &StepInput,
     references: &[Vec2],
-) -> Vec<Option<Vec2>> {
+    out: &mut [Option<Vec2>],
+) {
     let particles = chain.particles();
-    rig.outputs
+    let values = rig
+        .outputs
         .iter()
         .zip(references)
         .map(|(output, &reference)| {
@@ -902,8 +1004,10 @@ fn outputs(
             };
             let value = value * output.scale;
             Some(if output.reflect { -value } else { value })
-        })
-        .collect()
+        });
+    for (slot, value) in out.iter_mut().zip(values) {
+        *slot = value;
+    }
 }
 
 /// 区間 `segment` (粒子 i-1 → i) と、その親の向き `parent` から、スカラーの出力の元の値を求める。
@@ -943,22 +1047,22 @@ fn blend_parameter(
 }
 
 /// 直前 2 ステップの出力を `alpha` で補間し、パラメータに重み付きで書き込む。
-/// パラメータ以外の出力先は無視する。
+/// パラメータ以外の出力先は無視する。`indices` は出力ごとのパラメータの添字 ([`RigState::output_params`])。
 fn write_parameters(
     rig: &PhysicsRig,
+    indices: &[Option<ParamIndex>],
     previous: &[Option<Vec2>],
     current: &[Option<Vec2>],
     alpha: f32,
     parameters: &mut ParameterValues,
 ) {
-    for ((output, previous), current) in rig.outputs.iter().zip(previous).zip(current) {
+    for (((output, &index), previous), current) in
+        rig.outputs.iter().zip(indices).zip(previous).zip(current)
+    {
         let (Some(previous), Some(current)) = (*previous, *current) else {
             continue;
         };
-        let Some(index) = output
-            .parameter()
-            .and_then(|parameter| parameters.index_of(parameter.as_str()))
-        else {
+        let Some(index) = index else {
             continue;
         };
         let value = lerp(previous.x, current.x, alpha);
@@ -983,3 +1087,6 @@ mod relay_tests;
 
 #[cfg(test)]
 mod additive_tests;
+
+#[cfg(test)]
+mod golden_tests;

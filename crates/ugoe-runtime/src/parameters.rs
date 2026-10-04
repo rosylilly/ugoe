@@ -12,13 +12,37 @@ pub struct ParamIndex(pub u32);
 /// - 初期値はパラメータの `default`。
 /// - 書き込む値はすべて値域 `[min, max]` にクランプする。したがって評価はいつも値域の中の値を見る。
 /// - NaN の書き込みは無視する (値は変わらない)。無限大は値域の端にクランプする。
-#[derive(Debug, Clone)]
+///
+/// `clone_from` は確保済みのバッファを使い回す (ID の並びが同じなら ID を複製しない)。
+#[derive(Debug)]
 pub struct ParameterValues {
     ids: Vec<ParamId>,
     min: Vec<f32>,
     max: Vec<f32>,
     default: Vec<f32>,
     values: Vec<f32>,
+}
+
+impl Clone for ParameterValues {
+    fn clone(&self) -> Self {
+        Self {
+            ids: self.ids.clone(),
+            min: self.min.clone(),
+            max: self.max.clone(),
+            default: self.default.clone(),
+            values: self.values.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        if self.ids != source.ids {
+            self.ids.clone_from(&source.ids);
+        }
+        self.min.clone_from(&source.min);
+        self.max.clone_from(&source.max);
+        self.default.clone_from(&source.default);
+        self.values.clone_from(&source.values);
+    }
 }
 
 impl ParameterValues {
@@ -40,6 +64,13 @@ impl ParameterValues {
             .iter()
             .position(|p| p.as_str() == id)
             .map(|i| ParamIndex(i as u32))
+    }
+
+    /// パラメータの ID の列 (`ParamIndex` の順)。
+    ///
+    /// 連番を解決して持つ側 (物理など) が、並びが変わっていないかを確かめるのに使う。
+    pub fn ids(&self) -> &[ParamId] {
+        &self.ids
     }
 
     /// パラメータの数。
@@ -147,5 +178,31 @@ mod tests {
         // 無限大は値域にクランプする。
         params.set(index, f32::INFINITY);
         assert_eq!(params.get(index), 30.0);
+    }
+
+    #[test]
+    fn clone_from_copies_values_ranges_and_ids() {
+        let hair = ugoe_model::fixtures::physics_hair();
+        let mut source = ParameterValues::from_model(&hair);
+        let index = source.index_of(ugoe_model::standard::ANGLE_X).unwrap();
+        source.set(index, 7.0);
+        // 同じ並び: 値を写す。
+        let mut copy = ParameterValues::from_model(&hair);
+        copy.clone_from(&source);
+        assert_eq!(copy.as_slice(), source.as_slice());
+        assert_eq!(copy.ids(), source.ids());
+        // 違う並び・値域: ID と値域も写す。
+        let mut other = ugoe_model::fixtures::physics_relay();
+        other.parameters.reverse();
+        for p in &mut other.parameters {
+            p.max = 99.0;
+        }
+        let mut copy = ParameterValues::from_model(&other);
+        copy.clone_from(&source);
+        assert_eq!(copy.ids(), source.ids());
+        assert_eq!(copy.as_slice(), source.as_slice());
+        assert_eq!(copy.max(index), source.max(index));
+        assert_eq!(copy.min(index), source.min(index));
+        assert_eq!(copy.default_value(index), source.default_value(index));
     }
 }
