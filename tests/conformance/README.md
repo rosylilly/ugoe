@@ -105,11 +105,12 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
    `steps` があれば、目パチと呼吸を `effects` のとおりにし、ほかの段は動かして、`steps` の `dt` で順に `update` する
    (`ugoe render --time` と同じ列。実行器では `dt` を計算しない)。
    計画に `follow` (各フレームの、指揮役の物理の段に入る直前のパラメータの値。モデルの定義順で `steps` と同じ数) があれば、
-   `update(steps[i])` の代わりに受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`・Godot の `follow`) で、`follow[i]` と
+   `update(steps[i])` の代わりに受け手の口 (C ABI の `ugoe_puppet_follow`・wasm の `follow`・Unity の `Puppet.Follow`・Godot の `follow`) で、`follow[i]` と
    `follow_lip_sync[i]` (リップシンクの `[音量, 強さ]`。無いか `null` なら当てない) と `follow_part_opacities[i]`
    (モーションのパーツの不透明度のカーブ `[パーツの番号, 値, 重み]` の並び。無ければ空) と `steps[i]` を渡す (`plan.txt` では
-   `follow <dt> <音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ...` の行。T0133・T0134・T0135)。このケースの `effects` は常に `false`。受け手の口を持たないバインディング (今は Unity) は、
-   比べ合わせ (`src/main.rs` の `FOLLOW_BINDINGS`) が `skip` にする。
+   `follow <dt> <音量 (無ければ -1)> <強さ> <パーツの数 k> (<番号> <値> <重み>) × k <値> ...` の行。T0133・T0134・T0135)。このケースの `effects` は常に `false`。
+   受け手の口を持つバインディングは `src/main.rs` の `FOLLOW_BINDINGS` に挙げる (今はすべて: C ABI・wasm・Unity の `Puppet.Follow` (T0455)・Godot)。
+   挙げていないバインディングは比べ合わせが `skip` にする。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
    (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
@@ -191,3 +192,4 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 - T0418 (`docs/tasks/T0418-conformance-more-backends.md`: Godot と Unity・wasm の WebGPU)
 - T0420 (`docs/tasks/T0420-unity-and-conformance-extras.md`: Godot の評価の結果の読み戻しとモデルの JSON)
 - T0133 (`docs/tasks/T0133-runtime-explicit-base-values.md`: 受け手として進めるケース (`follow`))
+- T0455 (`docs/tasks/T0455-unity-follow.md`: Unity の実行器で `follow` のケースを比べる)

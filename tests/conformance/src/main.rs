@@ -120,9 +120,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
     }
 }
 
-/// 受け手として進める口 (`Puppet::follow`) を実行器から呼べるバインディング (T0133。Godot は T0449)。
-/// Unity はまだ口を出していないので、`follow` のケースを飛ばす。
-const FOLLOW_BINDINGS: [&str; 4] = ["c", "wasm", "wasm-webgpu", "godot"];
+/// 受け手として進める口 (`Puppet::follow`) を実行器から呼べるバインディング (T0133。Godot は T0449、Unity は T0455)。
+/// ここに無いバインディングは `follow` のケースを飛ばす。
+const FOLLOW_BINDINGS: [&str; 5] = ["c", "wasm", "wasm-webgpu", "unity", "godot"];
 
 /// 何を比べるか。
 #[derive(Clone, Copy, PartialEq, Eq)]

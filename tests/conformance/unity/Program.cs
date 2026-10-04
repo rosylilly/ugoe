@@ -9,6 +9,8 @@
 //
 // - steps が空のケースは、すべての段を止めて Update(0) を 1 回呼ぶ (時間を進めない評価)。
 // - steps があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
+// - follow があるケース (受け手として進める。T0455) は、Update の代わりに Puppet.Follow(値, リップシンクの音量, 強さ,
+//   パーツの不透明度, dt) を順に呼ぶ。
 // - before は使わない (同期して評価するので、値を変えてから反映するまでの遅れが無い)。
 using System;
 using System.Collections.Generic;
@@ -84,7 +86,13 @@ namespace Ugoe.Conformance
                     var effects = (bool)c["effects"];
                     puppet.SetStageEnabled(UpdateStage.EyeBlink, effects);
                     puppet.SetStageEnabled(UpdateStage.Breath, effects);
-                    foreach (var dt in steps) puppet.Update((float)dt);
+                    var follow = c["follow"]?.AsArray();
+                    for (var i = 0; i < steps.Count; i++)
+                    {
+                        var dt = (float)steps[i];
+                        if (follow == null) puppet.Update(dt);
+                        else Follow(puppet, c, follow, i, dt);
+                    }
                 }
                 return Frame(puppet);
             }
@@ -92,6 +100,27 @@ namespace Ugoe.Conformance
             {
                 foreach (var m in modules) m.Dispose();
             }
+        }
+
+        /// <summary>計画の <c>follow</c>・<c>follow_lip_sync</c>・<c>follow_part_opacities</c> の <paramref name="i"/> 番目で受け手として進める。</summary>
+        private static void Follow(Puppet puppet, JsonNode c, JsonArray follow, int i, float dt)
+        {
+            var frame = follow[i].AsArray();
+            var values = new float[frame.Count];
+            for (var k = 0; k < values.Length; k++) values[k] = (float)frame[k];
+            float? level = null;
+            var strength = 0f;
+            if (c["follow_lip_sync"]?[i] is JsonArray lipSync)
+            {
+                level = (float)lipSync[0];
+                strength = (float)lipSync[1];
+            }
+            var parts = new List<PartOpacityInput>();
+            if (c["follow_part_opacities"]?[i] is JsonArray opacities)
+            {
+                foreach (var p in opacities) parts.Add(new PartOpacityInput((int)p[0], (float)p[1], (float)p[2]));
+            }
+            puppet.Follow(values, level, strength, parts, dt);
         }
 
         /// <summary>評価の結果 (tests/conformance/src/frame.rs の Frame)。</summary>

@@ -156,7 +156,8 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | イベント `ModelLoaded` / `MotionEventFired` | 読み込んだとき / モーションのイベントが発火したとき (評価の直後) |
 
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。
-失敗は `UgoeException` (`Result`・着せ替えでは `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
+失敗は `UgoeException` (`Result`・着せ替えと読み込みの上限 (`UgoeResult.LimitExceeded`) では `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
+`UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
 
 ### 受け手
 
@@ -164,6 +165,13 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 毎フレーム `UgoePuppet.Follow(values, lipSyncLevel, lipSyncStrength, partOpacities, dt)` を呼ぶ。値は指揮役の
 `ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied` (C ABI・wasm には指揮役の側の取り出しが無いので、
 指揮役から受け取る)。物理・リップシンク・パーツの不透明度・評価だけをこの Puppet で行う。
+
+- `UgoePuppet` はモデルを読んだ直後の LateUpdate で 1 度評価し、物理の粒子を置く。指揮役と同じ物理の状態から始めるには、
+  受け手として最初に `Follow` を呼ぶ前に `puppet.Puppet.ResetPhysics()` を呼ぶ (Godot の受け手と同じ。適合テストの実行器は
+  作ったばかりの `Ugoe.Puppet` で呼ぶので要らない)。
+- 失敗は C ABI と同じ (`UgoeResult.InvalidArgument`、何も変えない): 値の数がパラメータの数と違う・値に NaN・音量が NaN・
+  強さ・パーツの不透明度の値と重みが有限でない・`dt` が負か有限でない。`tests/ReceiverTests.cs` で確かめ、適合テスト
+  (`just conformance --only unity`) の `*-follow` のケースで参照・C ABI と同じ評価の結果になることを確かめている (T0455)。
 
 ### C ABI との対応
 
@@ -272,4 +280,4 @@ node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.t
 
 ## 関連タスク
 
-- T0405 (`docs/tasks/T0405-unity-package.md`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414
+- T0405 (`docs/tasks/T0405-unity-package.md`)、T0455 (受け手の適合テスト・`LimitExceeded`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414

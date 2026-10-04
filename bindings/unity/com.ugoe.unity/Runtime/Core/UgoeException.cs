@@ -23,6 +23,11 @@ namespace Ugoe
         Panic = 8,
         /// <summary>着せ替えに失敗した (何も変えていない)。種類は <see cref="UgoeException.Kind"/>。</summary>
         DressUp = 9,
+        /// <summary>
+        /// 読み込みの上限を超えたので、読み込みをやめた (ファイルが壊れているとは限らない)。<see cref="UgoeException.Kind"/> は
+        /// <c>"read_limit_exceeded"</c> (crates/ugoe-ffi/README.md#読み込みの上限-t0152)。
+        /// </summary>
+        LimitExceeded = 10,
     }
 
     /// <summary>
@@ -37,7 +42,10 @@ namespace Ugoe
         /// <summary>機械が読む種類 (<c>"unknown_slot"</c>・<c>"invalid_file"</c> など)。種類を持たない失敗では null。</summary>
         public string Kind { get; }
 
-        /// <summary>補足の値 (<c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mesh"</c>・<c>"attached"</c> のうち持つもの)。</summary>
+        /// <summary>
+        /// 補足の値 (着せ替えでは <c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mesh"</c>・<c>"attached"</c>、
+        /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c> のうち持つもの)。
+        /// </summary>
         public IReadOnlyDictionary<string, string> Fields { get; }
 
         public UgoeException(UgoeResult result, string message, string kind = null, IReadOnlyDictionary<string, string> fields = null)
@@ -48,7 +56,7 @@ namespace Ugoe
             Fields = fields ?? new Dictionary<string, string>();
         }
 
-        private static readonly string[] FieldKeys = { "module", "slot", "parameter", "mesh", "attached" };
+        private static readonly string[] FieldKeys = { "module", "slot", "parameter", "mesh", "attached", "limit", "chunk", "max" };
 
         /// <summary>結果が失敗なら、同じスレッドの最後のエラーから例外を作って投げる。</summary>
         internal static void Check(int result)

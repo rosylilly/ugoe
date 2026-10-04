@@ -47,6 +47,21 @@ namespace Ugoe.Tests
             Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
             e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { value }, null, 0, null, -1));
             Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            // 有限でない値は C ABI と同じく断る (値の NaN・音量の NaN・強さと dt の無限大)。
+            e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { float.NaN }, null, 0, null, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { value }, float.NaN, 1, null, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { value }, 0.5f, float.PositiveInfinity, null, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() => puppet.Follow(new[] { value }, null, 0, null, float.PositiveInfinity));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            e = Assert.Throws<UgoeException>(() =>
+                puppet.Follow(new[] { x.Min }, null, 0, new[] { new PartOpacityInput(hat, 1, float.NegativeInfinity) }, 1f / 60));
+            Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
+            Assert.That(puppet.GetParameter(0), Is.EqualTo(value).Within(1e-5), "a failed call changes nothing");
+            // 値の配列が null なら C ABI を呼ばずに断る。
+            Assert.Throws<System.ArgumentNullException>(() => puppet.Follow(null, null, 0, null, 1f / 60));
             e = Assert.Throws<UgoeException>(() =>
                 puppet.Follow(new[] { value }, null, 0, new[] { new PartOpacityInput(hat, float.NaN, 1) }, 1f / 60));
             Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidArgument));
