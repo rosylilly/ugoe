@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // クレートのライセンスと、依存しているクレートのライセンスを検査する。
-// 方針の正は docs/adr/0018-licensing.md。
+// 方針の正は docs/adr/0018-licensing-and-1.0-scope.md。
 //
 // - ワークスペースのクレートは MIT。アプリ (エディタ ugoe-editor・ビューア ugoe-viewer・スタジオ ugoe-studio と
 //   その仮想カメラ ugoe-studio-vcam) だけ GPL-3.0-only (docs/adr/0019-viewer-license.md・docs/adr/0028-studio.md)。

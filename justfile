@@ -22,7 +22,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers groups licenses publish-check spec web-check i18n app-build-check
+ci: fmt-check lint test layers refs groups licenses publish-check spec web-check i18n app-build-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -82,7 +82,7 @@ wt-remove id *flags:
 tasks *args:
     @node scripts/tasks.mjs {{args}}
 
-# 依存クレートのライセンスの検査 (docs/adr/0018-licensing.md)
+# 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md)
 licenses:
     @node scripts/check-licenses.mjs
 
@@ -107,6 +107,13 @@ spec:
 # クレート依存方向の検査
 layers:
     @node scripts/check-layers.mjs
+
+# 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言の過不足
+# (docs/workflow/code-review.md#m9-の結果)
+refs:
+    @node --test --test-reporter=dot scripts/check-refs.test.mjs
+    @node scripts/check-doc-refs.mjs
+    @node scripts/check-ffi-bindings.mjs
 
 # C ABI のヘッダ crates/ugoe-ffi/include/ugoe.h を cbindgen で作り直す (crates/ugoe-ffi/README.md#ヘッダの生成)。
 # cbindgen は MPL-2.0 なので CLI として使う: cargo install cbindgen --version 0.29.4 --locked

@@ -163,7 +163,7 @@ namespace Ugoe
                 contentOf[i] = index;
             }
 
-            // 深さ: マスク用メッシュが読む内容の深さ + 1 の最大 (マスクの参照は循環しない。docs/spec/model.md#masks)。
+            // 深さ: マスク用メッシュが読む内容の深さ + 1 の最大 (マスクの参照は循環しない。docs/spec/rendering.md#マスクの参照)。
             var depth = new int[contents.Count];
             var state = new byte[contents.Count]; // 0 = 未計算, 1 = 計算中, 2 = 済み
             int DepthOf(int c)

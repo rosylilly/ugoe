@@ -77,6 +77,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just crate <name>` | 1 クレートだけ clippy とテスト (反復中はこれを使う) |
 | `just fmt` | Rust と TS を整形 |
 | `just layers` | クレートの依存方向を検査 |
+| `just refs` | コードのコメントから文書の見出しへの参照と、C ABI のヘッダとバインディング (Unity) の宣言の過不足を検査 |
 | `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
@@ -107,7 +108,17 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 - ライブラリコードで `unwrap()` を使わない (テストでは可)。エラー型は `thiserror` で作り、`anyhow` はバイナリ (`ugoe-cli` 等) だけで使う。
 - 未実装の箇所は `todo!()` ではなく `// TODO(T0123): 説明` と書き、タスク ID を付ける。
 - コメントとドキュメントは日本語、識別子は英語。
-- 公開 API には doc コメントを付ける。仕様書と対応する箇所ではファイル名をコメントに書く (例: `docs/spec/evaluation.md`)。
+- 公開 API には doc コメントを付ける。仕様書と対応する箇所ではファイル名をコメントに書く (例: `docs/spec/evaluation.md`)。見出しへの参照 (`#…`) は `just refs` が検査する。
+
+### 繰り返し見つかった誤り (M9 のコードレビュー)
+
+外から来るデータ (ファイル・IPC・FFI・ホストの引数) を扱うコードでは、次を守る。詳しくは [docs/workflow/code-review.md](docs/workflow/code-review.md#m9-で繰り返し見つかった誤り)。
+
+- **NaN と無限大:** `if x <= 0.0 { return }` は NaN を通す。`!(x > 0.0 && x.is_finite())` などで弾く。重みや強さは無限大も拒む。ホストから来る数の前提は下の層 (`Puppet`・`ugoe-runtime`) で決める。
+- **時間のループ:** 時間を消費する `while` には回数の上限を持たせる (巨大な `dt` で止まらない)。長く動く処理の時間の累積は `f64` か周期での折り返しにする。
+- **確保と積:** 外から来た大きさ・個数・番号で確保する前に上限を確かめる。大きさの積は `checked_mul`・`saturating_mul` で求める (wasm32 の `usize` は 32 ビット)。
+- **Tauri のコマンド:** ファイルを読み書きするコマンドは `async` にする (同期のコマンドはメインのスレッドで動く)。エラーはコードで返す ([ADR 0029](docs/adr/0029-shared-ui-and-i18n.md))。
+- **非同期の開始と停止:** `await` をまたぐ開始の処理は世代の番号を持ち、待った後で今も有効かを確かめる (遅れて終わった開始が資源を握ったままにならないように)。
 
 ### 外部のコードとライセンス
 

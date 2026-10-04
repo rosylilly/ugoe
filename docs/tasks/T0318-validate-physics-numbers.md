@@ -1,7 +1,7 @@
 ---
 id: T0318
 title: 物理の検証で、係数・重力・重みが有限値かを確かめる
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-model, docs]
 depends_on: [T0316]
@@ -34,3 +34,5 @@ T0316 で確かめたところ、`gravity` が NaN・粒子の `radius` が無�
 - `docs/spec/model.md#物理の検証`、`docs/spec/physics.md`
 
 ## メモ
+
+- **閉じた (T0008):** T0141 にまとめた。同じ「検証で数値の有限性を確かめる」の判断で、T0141 の受け入れ条件に物理の係数・重力・重み・`mobility` の範囲を足した。

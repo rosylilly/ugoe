@@ -52,6 +52,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Layers
         run: just layers
+      # コードから文書の見出しへの参照と、C ABI のヘッダとバインディングの宣言の突き合わせ
+      - name: Refs
+        run: just refs
       # すべてのクレートが、どれか 1 つのグループ (下の rust-group のジョブ) に入っているか
       - name: Groups
         run: just groups

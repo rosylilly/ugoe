@@ -1,7 +1,7 @@
 //! 物理のテンプレート (`physics_template.rs`) のテスト。
 //!
 //! 動きの検査は、ランタイム SDK の `Puppet` にトラッキング (頭の回転。体の回転はないので、
-//! `BodyAngle*` は頭の回転 × 0.3) を与えて行う (`docs/spec/avatar-profile.md#頭の向き`)。
+//! `BodyAngle*` は頭の回転 × 0.3) を与えて行う (`docs/spec/avatar-profile.md#頭と体`)。
 
 use ugoe::Puppet;
 use ugoe::motion::tracking::{BODY_FROM_HEAD, Rotation, TrackingInput};

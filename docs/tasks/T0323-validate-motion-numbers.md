@@ -4,7 +4,7 @@ title: モーションと表情の数値の検証 (NaN・無限大・負の長�
 status: todo
 milestone: M9
 crates: [ugoe-model, ugoe-format, ugoe-cli, docs]
-depends_on: [T0317]
+depends_on: [T0317, T0141]
 assignee:
 ---
 
@@ -33,3 +33,6 @@ assignee:
 - docs/spec/motion.md#カーブ、docs/spec/model.md#検証
 
 ## メモ
+
+- T0008: 数値の有限性の検証の方針 (エラーにするかランタイムのフォールバックに任せるか) は T0141 (T0145・T0318 をまとめた) で決める。
+  このタスクはデータ (モーション・表情) と呼び出す場所 (`ugoe-format`・`ugoe-cli`・`Puppet`) が違うのでまとめず、T0141 の方針に揃えて後で行う。

@@ -1,7 +1,7 @@
 ---
 id: T0697
 title: WebGL2 のコンテキストの喪失を WebPuppet.is_lost で知らせる
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-wasm, packages/player, bindings/web, apps/editor, docs]
 depends_on: [T0672]
@@ -34,3 +34,5 @@ assignee:
 - crates/ugoe-wasm/src/web.rs の `lost`・`is_lost`
 
 ## メモ
+
+- **閉じた (T0008):** T0932 にまとめた。WebGL2 のコンテキストの喪失の扱いは、WebPuppet の作成・作り直し・破棄の共有と同じコード (エディタの controller と Player) を触るので、T0932 で一緒に決める。T0932 の受け入れ条件と crates: に、wasm の `is_lost` で知らせることと `<ugoe-avatar>` を足した。

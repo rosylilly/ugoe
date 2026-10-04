@@ -1,7 +1,7 @@
 ---
 id: T0694
 title: エディタのパネルが読むモデルの JSON の解析を 1 回にする
-status: todo
+status: done
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0671]
@@ -31,3 +31,5 @@ T0671 (パネルのコードレビュー) の所見。パネルとインスペ�
 - apps/editor/src/lib/document.svelte.ts
 
 ## メモ
+
+- **閉じた (T0008):** T0698 にまとめた。どちらも「モデルの JSON を 1 回だけ解析して共有する」。T0698 の受け入れ条件にパネル・ツリー・`keyforms.ts` と時間の計測を足した。

@@ -1,7 +1,7 @@
 ---
 id: T0145
 title: 検証で、キーフォームの軸のキーとパラメータの値域に有限値を求める
-status: todo
+status: done
 milestone: M9
 crates: [ugoe-model, docs]
 depends_on: [T0137]
@@ -39,3 +39,5 @@ T0137 (ugoe-runtime のコードレビュー) で見つけた検証の穴を埋�
 - spec/evaluation.md#conformance (有限でない結果は許容誤差の対象外)
 
 ## メモ
+
+- **閉じた (T0008):** T0141 にまとめた。同じ「検証で数値の有限性を確かめる」の判断で、T0141 の受け入れ条件にキーフォームの軸のキーとパラメータの値域を足した。

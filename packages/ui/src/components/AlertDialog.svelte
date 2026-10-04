@@ -1,5 +1,5 @@
 <!--
-  AlertDialog: 取り消せない操作の確認 (docs/ui.md#使い分けの約束)。土台は Bits UI の AlertDialog
+  AlertDialog: 取り消せない操作の確認 (docs/ui.md#部品の一覧 の「使い分けの約束」)。土台は Bits UI の AlertDialog
   (外のクリックでは閉じない。Esc と取り消しのボタンで閉じる)。
   開いたときのフォーカスは取り消し側に置く (うっかり Enter で決定しないように)。
 
