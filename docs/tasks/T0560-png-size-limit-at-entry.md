@@ -1,11 +1,11 @@
 ---
 id: T0560
 title: AI の法線マップとテクスチャの追加・差し替えで、PNG の一辺の上限を入口で確かめる (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0560
 ---
 
 # T0560: AI の法線マップとテクスチャの追加・差し替えで、PNG の一辺の上限を入口で確かめる (判断が要る)
