@@ -308,16 +308,14 @@ impl WebPuppet {
         }
     }
 
-    /// パラメータを設定する (値域にクランプされる)。ID が無ければ `false`。
+    /// パラメータを設定する (値域にクランプされる。NaN は書かない)。ID が無ければ `false`。
     pub fn set_parameter(&mut self, id: &str, value: f32) -> bool {
         let Some(puppet) = &mut self.puppet else {
             return false;
         };
-        let params = puppet.instance_mut().parameters_mut();
-        let Some(index) = params.index_of(id) else {
+        if !load::set_parameter(puppet.instance_mut(), id, value) {
             return false;
-        };
-        params.set(index, value);
+        }
         self.dirty = true;
         true
     }
@@ -337,6 +335,7 @@ impl WebPuppet {
     }
 
     /// 物理・モーションを `dt` 秒進めて評価する。静止画の表示だけなら呼ばなくてよい。
+    /// 負・NaN・無限大の `dt` は 0 とみなす (`Puppet::update`)。
     pub fn update(&mut self, dt: f32) {
         if let Some(puppet) = &mut self.puppet {
             puppet.update(dt);

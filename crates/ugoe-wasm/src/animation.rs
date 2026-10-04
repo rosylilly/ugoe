@@ -469,6 +469,10 @@ mod tests {
         assert!((at[0]["value"].as_f64().unwrap() - 7.5).abs() < 1e-4);
         // 範囲の外は端の値。
         assert!((sample(3.0)[0]["value"].as_f64().unwrap() - 30.0).abs() < 1e-4);
+        // 有限でない時刻も端の値 (NaN と無限大は終わり、負の無限大は始め。T0433)。
+        assert_eq!(sample(f32::NAN)[0]["value"], 30.0);
+        assert_eq!(sample(f32::INFINITY)[0]["value"], 30.0);
+        assert_eq!(sample(f32::NEG_INFINITY)[0]["value"], 0.0);
         assert!(sample_motion_json("{", 0.0).is_err());
     }
 
@@ -786,5 +790,102 @@ mod tests {
         let mut new = Puppet::new(fixtures::physics_hair()).unwrap();
         assert!(carry_over(&old, &mut new, false).is_empty());
         assert!(new.physics().is_none());
+    }
+
+    /// パラメータの値と、評価した頂点をつなげたもの (有限かを確かめる)。
+    fn state(puppet: &Puppet) -> Vec<f32> {
+        let instance = puppet.instance();
+        let mut out = instance.parameters().as_slice().to_vec();
+        out.extend(
+            instance
+                .drawables()
+                .iter()
+                .flat_map(|d| d.positions.iter().flat_map(|p| [p.x, p.y])),
+        );
+        out
+    }
+
+    /// `WebPuppet::update` の負・NaN・無限大の `dt` は戻り、0 とみなされる (T0433)。
+    /// 無限大の `dt` でループするモーションが止まらなかった (T0424) ので、物理とループのモーションで確かめる。
+    #[test]
+    fn update_with_non_finite_dt_returns_and_stays_finite() {
+        let run = |bad: Option<f32>| {
+            let mut puppet =
+                quiet(fixtures::physics_hair()).with_physics(fixtures::physics_hair_settings());
+            let looping = MOTION.replace(r#""looping": false"#, r#""looping": true"#);
+            assert!(start_motion_json(&mut puppet, &looping, None).unwrap());
+            let mut trace = Vec::new();
+            for frame in 0..90 {
+                if let Some(dt) = bad.filter(|_| frame % 10 == 5) {
+                    puppet.update(dt);
+                }
+                puppet.update(DT);
+                trace.extend(state(&puppet));
+            }
+            trace
+        };
+        let expected = run(None);
+        assert!(expected.iter().all(|v| v.is_finite()));
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0] {
+            let actual = run(Some(bad));
+            assert!(actual.iter().all(|v| v.is_finite()), "dt {bad}");
+            assert_eq!(actual, expected, "dt {bad}");
+        }
+    }
+
+    /// `set_parameter` の NaN は書かず、`set_lip_sync_level` の NaN は `undefined` と同じ。どちらの後の `update` でも
+    /// パニックせず、値と頂点は有限のまま (T0433)。無限大は値域の端にクランプする。
+    #[test]
+    fn non_finite_parameter_and_lip_sync_writes_keep_state_finite() {
+        use ugoe::model::effects::{Effects, LipSync};
+
+        let mut puppet =
+            quiet(fixtures::physics_hair()).with_physics(fixtures::physics_hair_settings());
+        // リップシンクを物理の入力 (`AngleZ`) に当て、NaN が物理と頂点まで届く経路を作る。
+        puppet.set_effects(Effects {
+            lip_sync: LipSync {
+                parameters: vec![standard::ANGLE_Z.into()],
+            },
+            ..Default::default()
+        });
+        assert!(crate::load::set_parameter(
+            puppet.instance_mut(),
+            standard::ANGLE_X,
+            20.0
+        ));
+        puppet.set_lip_sync_level(Some(0.5));
+        for _ in 0..10 {
+            puppet.update(DT);
+        }
+
+        // ID はあるので `true` を返すが、値は変えない。
+        let before = param(&puppet, standard::ANGLE_X);
+        assert!(crate::load::set_parameter(
+            puppet.instance_mut(),
+            standard::ANGLE_X,
+            f32::NAN
+        ));
+        assert_eq!(param(&puppet, standard::ANGLE_X), before);
+        assert!(!crate::load::set_parameter(
+            puppet.instance_mut(),
+            "Missing",
+            f32::NAN
+        ));
+        puppet.set_lip_sync_level(Some(f32::NAN));
+        for _ in 0..30 {
+            puppet.update(DT);
+            assert!(state(&puppet).iter().all(|v| v.is_finite()));
+        }
+
+        // 無限大は値域の端にクランプする。
+        crate::load::set_parameter(puppet.instance_mut(), standard::ANGLE_X, f32::INFINITY);
+        assert_eq!(param(&puppet, standard::ANGLE_X), 30.0);
+        crate::load::set_parameter(puppet.instance_mut(), standard::ANGLE_X, f32::NEG_INFINITY);
+        assert_eq!(param(&puppet, standard::ANGLE_X), -30.0);
+        puppet.set_lip_sync_level(Some(f32::INFINITY));
+        for _ in 0..30 {
+            puppet.update(DT);
+            assert!(state(&puppet).iter().all(|v| v.is_finite()));
+        }
     }
 }

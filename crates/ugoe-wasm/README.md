@@ -64,6 +64,36 @@ puppet.clear_tracking();
   ビューアは待機以外の優先度のモーションの再生中だけ入れる。
 - `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
 
+### 有限でない値と `dt`
+
+JS から NaN・無限大・負の `dt` を渡したときの扱い (T0433。T0424 のレビューで確かめ、T0137・T0139・T0155・T0158 で SDK とランタイムを直した後のもの)。
+NaN の書き込みや `dt` で `update` が戻らない・パニックする (wasm ではモジュールが壊れる) ことはない。
+
+| 入口 | NaN | 無限大 | 負の値 |
+| --- | --- | --- | --- |
+| `update(dt)` | 0 とみなす (何も進めない) | 0 とみなす | 0 とみなす |
+| `set_parameter(id, v)` | 書かない (ID があれば `true` を返す) | 値域の端にクランプ | (値域にクランプ) |
+| `set_lip_sync_level(v)` | `undefined` と同じ (口に触らない) | 0..1 にクランプ | 0 にクランプ |
+| `set_tracking(...)` | 対応付けの式の値が有限でないパラメータには書き込まない | 同じ | (値の意味どおり) |
+| `follow(values, dt, level, strength, parts, opacities)` | `values`・`level`・`strength`・`opacities` は例外 (何も変えない)。`dt` は 0 とみなす | `values` は値域にクランプ。`level`・`strength`・`opacities` は例外。`dt` は 0 とみなす | `dt` は 0 とみなす |
+| `set_base_values(values)` | 例外 (何も変えない) | 値域にクランプ | (値域にクランプ) |
+| `set_view`・`pan_by`・`zoom_at` | 何も変えない | 何も変えない | `set_view` のズームはクランプ、`zoom_at` の倍率が 0 以下なら何も変えない |
+| `set_background` | 何も変えない | 0..1 にクランプ | 0 にクランプ |
+| `sample_motion_json(json, t)` | 終わりの値 | `+∞` は終わり、`-∞` は始めの値 | 始めの値 |
+
+- `dt` の規則は `Puppet::update`・`Puppet::follow` (`docs/spec/motion.md`)、パラメータの NaN は `ParameterValues::set`
+  (`docs/spec/evaluation.md`、公開仕様 `spec/evaluation.md#parameter-values` の「有限でない書き込みは無視してよい」)、
+  トラッキングは `docs/spec/avatar-profile.md` に従う。wasm は SDK の扱いをそのまま出し、入口で値を検査し直さない。
+- **C ABI との違い:** C ABI は同じ入力を `UGOE_ERROR_INVALID_ARGUMENT` で拒む (`ugoe_puppet_update` は負・有限でない `dt`、
+  `ugoe_puppet_set_parameter`・`ugoe_puppet_set_lip_sync_level` は NaN)。wasm は無視する。JS の `update`・`set_parameter`・
+  `set_lip_sync_level` は戻り値を見ない `void` 相当の関数として使われ (`requestAnimationFrame` のループやスライダーの `input`)、
+  ここで例外を増やすとホストのループが止まる一方、無視しても状態は壊れない (SDK が 0 や「書かない」に揃える) ため。
+  C ABI は戻り値の結果コードで誤りを知らせる流儀なので拒む。`follow`・`set_base_values` は両方とも誤りにする
+  (指揮役から届いた列の誤りで、受け手が黙って進めると指揮役と食い違うため)。
+- 回帰のテストは `src/animation.rs` (`update_with_non_finite_dt_returns_and_stays_finite`・
+  `non_finite_parameter_and_lip_sync_writes_keep_state_finite`・`motion_json_is_sampled_without_fades`)。
+  `set_parameter` の中身は `load::set_parameter` にあり、ネイティブでテストする。
+
 ### 描画結果の読み戻しと評価の結果 (T0418)
 
 ```js

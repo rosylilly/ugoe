@@ -253,6 +253,19 @@ pub fn carry_over_parameters(from: &ModelInstance, to: &mut ModelInstance) {
     to.update();
 }
 
+/// ID のパラメータに `value` を書く (`WebPuppet::set_parameter`)。ID が無ければ `false`。
+///
+/// 値域にクランプする (無限大は端の値になる)。NaN は書かずに `true` を返す (`ParameterValues::set`、
+/// `docs/spec/evaluation.md`。JS の入口で例外を増やさない。`README.md#有限でない値と-dt`)。
+pub fn set_parameter(instance: &mut ModelInstance, id: &str, value: f32) -> bool {
+    let params = instance.parameters_mut();
+    let Some(index) = params.index_of(id) else {
+        return false;
+    };
+    params.set(index, value);
+    true
+}
+
 /// デコードする画像の一辺の上限 (`ugoe_headless` の `MAX_SIZE` と同じ。これより大きな 2D テクスチャを扱えるデバイスは少ない)。
 pub const MAX_IMAGE_SIZE: u32 = 16384;
 

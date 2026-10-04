@@ -166,7 +166,8 @@ impl WebPuppet {
         animation::set_effects_json(self.puppet_mut()?, json).map_err(js_error)
     }
 
-    /// リップシンクの音量 (0〜1)。`undefined` なら口のパラメータに触らない。音声の解析はホストが行う。
+    /// リップシンクの音量 (0〜1。範囲の外はクランプする)。`undefined` なら口のパラメータに触らない。音声の解析はホストが行う。
+    /// NaN は `undefined` と同じに扱う (`Puppet::set_lip_sync_level`)。
     pub fn set_lip_sync_level(&mut self, level: Option<f32>) {
         if let Some(puppet) = &mut self.puppet {
             puppet.set_lip_sync_level(level);
