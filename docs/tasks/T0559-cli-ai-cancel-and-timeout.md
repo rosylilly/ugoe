@@ -1,11 +1,11 @@
 ---
 id: T0559
 title: "ugoe-cli: AI のコマンドに Ctrl+C での取り消しと時間の上限のオプションを付ける"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0559
 ---
 
 # T0559: ugoe-cli: AI のコマンドに Ctrl+C での取り消しと時間の上限のオプションを付ける
