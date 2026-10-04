@@ -10,6 +10,7 @@ use ugoe::model::motion::{CurveTarget, Motion};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::validate::ValidationError;
 use ugoe::motion::Priority;
+use ugoe::motion::curve::SegmentIndex;
 
 use crate::load::LoadWarning;
 
@@ -188,18 +189,60 @@ pub fn start_motion_json(
 /// エディタのタイムラインがシーク・再生の表示に使う (`docs/editor.md#タイムライン`)。
 /// 戻り値は `[{"target": {"kind": "parameter", "id": "AngleX"}, "value": 7.5}, …]` の JSON で、
 /// 値のないカーブ (未知の対象・セグメント) は含めない。
+///
+/// 毎回 JSON を読んで索引を作る。同じモーションを何度も評価するなら [`MotionSampler`] を使う。
 pub fn sample_motion_json(json: &str, t: f32) -> Result<String, AnimationError> {
-    let motion = ugoe::format::motion_from_json(json)?;
-    let values: Vec<serde_json::Value> = motion
-        .curves
-        .iter()
-        .filter(|c| c.target != ugoe::model::motion::CurveTarget::Unknown)
-        .filter_map(|c| {
-            let value = ugoe::motion::curve::evaluate(&c.segments, t)?;
-            Some(serde_json::json!({ "target": c.target, "value": value }))
-        })
-        .collect();
-    Ok(serde_json::to_string(&values)?)
+    MotionSampler::from_json(json)?.sample_json(t)
+}
+
+/// モーション 1 つのカーブの値 ([`sample_motion_json`] と同じもの) を、何度も評価するための状態。
+///
+/// カーブごとにセグメントの索引 (`ugoe_motion::curve::SegmentIndex`) を持ち、区間を二分探索で引く
+/// (モーションの再生と同じ。T0324)。モーションを差し替えると索引を作り直す。
+#[derive(Debug, Clone)]
+pub struct MotionSampler {
+    /// 未知の対象のカーブを除いたモーション。
+    motion: Motion,
+    /// `motion.curves` と同じ順の索引。
+    indices: Vec<SegmentIndex>,
+}
+
+impl MotionSampler {
+    pub fn new(mut motion: Motion) -> Self {
+        motion.curves.retain(|c| c.target != CurveTarget::Unknown);
+        let indices = motion
+            .curves
+            .iter()
+            .map(|c| SegmentIndex::new(&c.segments))
+            .collect();
+        Self { motion, indices }
+    }
+
+    /// JSON (`*.motion.json` の形) のモーションから作る。
+    pub fn from_json(json: &str) -> Result<Self, AnimationError> {
+        Ok(Self::new(ugoe::format::motion_from_json(json)?))
+    }
+
+    /// モーションを JSON のものに差し替え、索引を作り直す。読めなければエラーで、今のモーションを保つ。
+    pub fn set_motion_json(&mut self, json: &str) -> Result<(), AnimationError> {
+        *self = Self::from_json(json)?;
+        Ok(())
+    }
+
+    /// 各カーブを再生位置 `t` (秒) で評価した値の JSON。形は [`sample_motion_json`] と同じ。
+    pub fn sample_json(&self, t: f32) -> Result<String, AnimationError> {
+        let values: Vec<serde_json::Value> = self
+            .motion
+            .curves
+            .iter()
+            .zip(&self.indices)
+            .filter_map(|(c, index)| {
+                let value = index.evaluate(&c.segments, t)?;
+                Some(serde_json::json!({ "target": c.target, "value": value }))
+            })
+            .collect();
+        Ok(serde_json::to_string(&values)?)
+    }
 }
 
 /// JSON (`*.expression.json` の形) の表情だけにする。表情の名前を返す。
@@ -474,6 +517,134 @@ mod tests {
         assert_eq!(sample(f32::INFINITY)[0]["value"], 30.0);
         assert_eq!(sample(f32::NEG_INFINITY)[0]["value"], 0.0);
         assert!(sample_motion_json("{", 0.0).is_err());
+    }
+
+    /// 区間の多いカーブ・ベジェ・ステップ・2 つ目の `start`・未知のセグメント・未知の対象を含むモーション。
+    const CURVES: &str = r#"{
+        "name": "many",
+        "duration": 4.0,
+        "curves": [
+            {
+                "target": { "kind": "parameter", "id": "AngleX" },
+                "segments": [
+                    { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+                    { "type": "linear", "to": { "t": 0.5, "v": 10.0 } },
+                    { "type": "bezier", "c1": { "t": 0.7, "v": 30.0 }, "c2": { "t": 1.2, "v": -5.0 }, "to": { "t": 1.5, "v": 5.0 } },
+                    { "type": "stepped", "to": { "t": 2.0, "v": -10.0 } },
+                    { "type": "inverse_stepped", "to": { "t": 2.5, "v": 20.0 } },
+                    { "type": "linear", "to": { "t": 4.0, "v": 0.0 } }
+                ]
+            },
+            {
+                "target": { "kind": "parameter", "id": "AngleY" },
+                "segments": [
+                    { "type": "start", "p": { "t": 1.0, "v": 3.0 } },
+                    { "type": "linear", "to": { "t": 2.0, "v": 6.0 } },
+                    { "type": "start", "p": { "t": 2.0, "v": 9.0 } }
+                ]
+            },
+            {
+                "target": { "kind": "parameter", "id": "AngleZ" },
+                "segments": [
+                    { "type": "start", "p": { "t": 0.0, "v": 1.0 } },
+                    { "type": "wobble", "to": { "t": 1.0, "v": 2.0 } }
+                ]
+            },
+            {
+                "target": { "kind": "telepathy", "id": "X" },
+                "segments": [
+                    { "type": "start", "p": { "t": 0.0, "v": 1.0 } }
+                ]
+            }
+        ]
+    }"#;
+
+    fn sampled(sampler: &MotionSampler, t: f32) -> Vec<(String, f32)> {
+        let values: serde_json::Value =
+            serde_json::from_str(&sampler.sample_json(t).unwrap()).unwrap();
+        values
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| {
+                let id = v["target"]["id"].as_str().unwrap().to_owned();
+                (id, v["value"].as_f64().unwrap() as f32)
+            })
+            .collect()
+    }
+
+    /// 線形の `curve::evaluate` で評価した値 (索引を使わない、元の実装)。
+    fn linear(json: &str, t: f32) -> Vec<(String, f32)> {
+        let motion = ugoe::format::motion_from_json(json).unwrap();
+        motion
+            .curves
+            .iter()
+            .filter(|c| c.target != CurveTarget::Unknown)
+            .filter_map(|c| {
+                let value = ugoe::motion::curve::evaluate(&c.segments, t)?;
+                let CurveTarget::Parameter(id) = &c.target else {
+                    panic!("unexpected target {:?}", c.target);
+                };
+                Some((id.to_string(), value))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn motion_sampler_matches_linear_evaluation() {
+        let sampler = MotionSampler::from_json(CURVES).unwrap();
+        let mut times: Vec<f32> = (-10..=50).map(|i| i as f32 * 0.1).collect();
+        times.extend([
+            0.5,
+            1.5,
+            2.0,
+            2.5,
+            4.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ]);
+        for t in times {
+            let got = sampled(&sampler, t);
+            let want = linear(CURVES, t);
+            assert_eq!(got.len(), want.len(), "t = {t}");
+            for ((gid, g), (wid, w)) in got.iter().zip(&want) {
+                assert_eq!(gid, wid, "t = {t}");
+                assert!((g - w).abs() < 1e-5, "{gid} at t = {t}: {g} != {w}");
+            }
+            assert_eq!(
+                sample_motion_json(CURVES, t).unwrap(),
+                sampler.sample_json(t).unwrap()
+            );
+        }
+        // 未知のセグメントのカーブ (AngleZ) と未知の対象は含めない。2 つ目の `start` で終わるカーブ (AngleY) は、
+        // 区間の外で値を持たない。
+        let ids: Vec<String> = sampled(&sampler, 1.5)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(ids, ["AngleX", "AngleY"]);
+        assert_eq!(sampled(&sampler, 3.0).len(), 1);
+    }
+
+    #[test]
+    fn motion_sampler_rebuilds_indices_when_the_motion_is_replaced() {
+        let mut sampler = MotionSampler::from_json(CURVES).unwrap();
+        sampler.set_motion_json(MOTION).unwrap();
+        assert_eq!(sampler.indices.len(), sampler.motion.curves.len());
+        let at = sampled(&sampler, 0.25);
+        assert_eq!(at.len(), 1);
+        assert_eq!(at[0].0, "AngleX");
+        assert!((at[0].1 - 7.5).abs() < 1e-4);
+        assert_eq!(sampled(&sampler, 3.0), linear(MOTION, 3.0));
+
+        // 読めない JSON では、今のモーションを保つ。
+        assert!(sampler.set_motion_json("{").is_err());
+        assert_eq!(sampled(&sampler, 0.25), at);
+
+        // 戻すと、区間の多いカーブも索引で引ける。
+        sampler.set_motion_json(CURVES).unwrap();
+        assert_eq!(sampled(&sampler, 1.75), linear(CURVES, 1.75));
     }
 
     #[test]

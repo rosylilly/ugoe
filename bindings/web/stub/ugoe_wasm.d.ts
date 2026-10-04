@@ -2,6 +2,14 @@
 // 生成物 (src/wasm/) が無い環境で `pnpm check` を通すためだけに使う (scripts/check.mjs)。
 // 配布物には生成した本物の型が入る。crates/ugoe-wasm の公開 API を変えたら、生成物から作り直す。
 
+export class MotionSampler {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(json: string);
+  sample(t: number): string;
+  set_motion_json(json: string): void;
+}
+
 export class WebPuppet {
   private constructor();
   free(): void;

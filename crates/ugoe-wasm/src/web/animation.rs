@@ -17,6 +17,33 @@ pub fn sample_motion_json(json: &str, t: f32) -> Result<String, JsError> {
     animation::sample_motion_json(json, t).map_err(js_error)
 }
 
+/// モーション 1 つのカーブの値 ([`sample_motion_json`] と同じもの) を何度も評価するための状態。
+/// カーブごとにセグメントの索引を持つ。毎フレーム評価するタイムラインの再生用。
+#[wasm_bindgen]
+#[derive(Debug)]
+pub struct MotionSampler(animation::MotionSampler);
+
+#[wasm_bindgen]
+impl MotionSampler {
+    /// JSON (`*.motion.json` の形) のモーションから作る。
+    #[wasm_bindgen(constructor)]
+    pub fn new(json: &str) -> Result<MotionSampler, JsError> {
+        animation::MotionSampler::from_json(json)
+            .map(Self)
+            .map_err(js_error)
+    }
+
+    /// モーションを差し替え、索引を作り直す。読めなければエラーで、今のモーションを保つ。
+    pub fn set_motion_json(&mut self, json: &str) -> Result<(), JsError> {
+        self.0.set_motion_json(json).map_err(js_error)
+    }
+
+    /// 各カーブを再生位置 `t` (秒) で評価した値の JSON。形は [`sample_motion_json`] と同じ。
+    pub fn sample(&self, t: f32) -> Result<String, JsError> {
+        self.0.sample_json(t).map_err(js_error)
+    }
+}
+
 #[wasm_bindgen]
 impl WebPuppet {
     // --- モーション ---
