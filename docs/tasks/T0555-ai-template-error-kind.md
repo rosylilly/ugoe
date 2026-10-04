@@ -1,11 +1,11 @@
 ---
 id: T0555
 title: "AI: テンプレートで組めない失敗に専用の種類とエディタの文言を付ける"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, apps/editor, docs]
 depends_on: [T0543]
-assignee:
+assignee: claude-worker-T0555
 ---
 
 # T0555: AI: テンプレートで組めない失敗に専用の種類とエディタの文言を付ける
