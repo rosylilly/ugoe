@@ -1,9 +1,8 @@
 // 操作ウィンドウが覚える設定 (localStorage。言語・テーマ) と、出力ウィンドウの大きさのプリセットと刻みの速さ (docs/studio.md#出力ウィンドウ)。
 // 出力の大きさと刻みの速さはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802・T0827)。
-import { isLocale, type LocalePreference } from "@ugoe/i18n";
 import { PlayerStorage } from "@ugoe/player";
 
-/** 画面の言語の設定のキー。 */
+/** 画面の言語の設定のキー (@ugoe/i18n の initLocale に渡す)。 */
 export const LOCALE_STORAGE_KEY = "ugoe-studio.locale";
 /** テーマの設定のキー (@ugoe/ui の initTheme に渡す。index.html の <head> のスクリプトも同じキーを読む)。出力ウィンドウには効かせない。 */
 export const THEME_STORAGE_KEY = "ugoe-studio.theme";
@@ -55,31 +54,6 @@ export function presetSize(preset: OutputSizePreset): [number, number] | null {
 /** 大きさに一致するプリセット。無ければ `free`。 */
 export function presetOf(width: number, height: number): OutputSizePreset {
   return OUTPUT_SIZE_PRESETS.find((p) => p === `${width}x${height}`) ?? "free";
-}
-
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // 覚えられなくても動く (次に起動したときは既定に戻る)。
-  }
-}
-
-export function loadLocalePreference(): LocalePreference {
-  const v = read(LOCALE_STORAGE_KEY);
-  return v === "system" || isLocale(v) ? v : "system";
-}
-
-export function saveLocalePreference(value: LocalePreference): void {
-  write(LOCALE_STORAGE_KEY, value);
 }
 
 /** プロファイルに書いたプリセットを読む。知らない値なら既定。 */

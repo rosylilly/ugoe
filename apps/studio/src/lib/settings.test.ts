@@ -5,13 +5,12 @@ import {
   forgetLegacySettings,
   LEGACY_STORAGE_KEYS,
   LOCALE_STORAGE_KEY,
-  loadLocalePreference,
   PLAYER_STORAGE_PREFIX,
   parseOutputSize,
   parseTickRate,
   presetOf,
   presetSize,
-  saveLocalePreference,
+  THEME_STORAGE_KEY,
 } from "./settings";
 
 class MemoryStorage {
@@ -49,13 +48,11 @@ describe("output size presets", () => {
   });
 });
 
-describe("locale preference", () => {
-  it("defaults to the OS and remembers the choice", () => {
-    expect(loadLocalePreference()).toBe("system");
-    saveLocalePreference("ja");
-    expect(loadLocalePreference()).toBe("ja");
-    localStorage.setItem(LOCALE_STORAGE_KEY, "xx");
-    expect(loadLocalePreference()).toBe("system");
+describe("storage keys", () => {
+  it("keeps the keys the studio has always used for the language and the theme", () => {
+    // キーを変えると、覚えた設定が読めなくなる (T0925)。
+    expect(LOCALE_STORAGE_KEY).toBe("ugoe-studio.locale");
+    expect(THEME_STORAGE_KEY).toBe("ugoe-studio.theme");
   });
 });
 
@@ -71,10 +68,10 @@ describe("legacy settings", () => {
   it("forgets the tick rate and the virtual camera kept before the profile had them", () => {
     localStorage.setItem("ugoe-studio.tick-rate", "120");
     localStorage.setItem("ugoe-studio.virtual-camera", "{}");
-    saveLocalePreference("ja");
+    localStorage.setItem(LOCALE_STORAGE_KEY, "ja");
     forgetLegacySettings();
     for (const key of LEGACY_STORAGE_KEYS) expect(localStorage.getItem(key)).toBeNull();
-    expect(loadLocalePreference()).toBe("ja");
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("ja");
   });
 
   it("forgets what the output window's player kept under the viewer's prefix (T0930)", () => {

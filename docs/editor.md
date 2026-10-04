@@ -1476,10 +1476,11 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
 
 画面の言語は、ヘッダーの「Settings」の「General」で「OS に合わせる」(既定)・言語自身の名前で書いた言語 (「English」・「日本語」) から選びます
 ([ADR 0029](adr/0029-shared-ui-and-i18n.md) の 3、T0663)。選ぶとすぐに画面全体が切り替わり、`localStorage` (`ugoe-editor.locale`) に覚えます
-(`src/lib/locale.ts`・`src/lib/LanguageSetting.svelte`。選択肢が 4 つまでの間は SegmentedControl)。
+(`@ugoe/i18n` の `initLocale`・`setLocalePreference`。キーと OS の言語の取り方は `src/lib/locale.ts`、画面は `src/lib/LanguageSetting.svelte`。
+選択肢が 4 つまでの間は SegmentedControl)。
 
 - **OS の言語:** 起動時に `tauri-plugin-os` (`@tauri-apps/plugin-os`、MIT OR Apache-2.0) の `locale()` で OS の言語を取り、
-  `@ugoe/i18n` の `setSystemLanguages()` に渡します。WebView の `navigator.languages` は OS の言語と違うことがあるため
+  `@ugoe/i18n` の `initLocale()` に渡します (`setSystemLanguages()` を呼ぶ)。WebView の `navigator.languages` は OS の言語と違うことがあるため
   ([packages/i18n/README.md の「OS の言語」](../packages/i18n/README.md#os-の言語))。権限は `os:allow-locale` だけ (`capabilities/default.json`)。
   Tauri の外 (ヘッドレスのブラウザでの確認) では `navigator.languages` のまま。
 

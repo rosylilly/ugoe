@@ -22,6 +22,13 @@ export {
   type LocalePreference,
   SOURCE_LOCALE,
 } from "./languages";
+export {
+  initLocale,
+  loadLocalePreference,
+  type SystemLanguagesSource,
+  saveLocalePreference,
+  setLocalePreference,
+} from "./preference";
 export { default as RichText } from "./RichText.svelte";
 export { parseRich, type RichPart } from "./rich";
 

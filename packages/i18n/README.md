@@ -11,6 +11,7 @@
 src/i18n.svelte.ts      i18next の 1 つのインスタンスと、今の言語 ($state)。registerCatalogs・translator・setLocale・setSystemLanguages
 src/languages.json      対応する言語の一覧 (原文の言語・言語自身での名前・欠けのない訳として検査するか)。検査のスクリプトも読む
 src/languages.ts        上の一覧の型 (Locale・LocalePreference)
+src/preference.ts       言語の設定を覚える・起動時に戻す (アプリが渡すキーで localStorage に)。initLocale・setLocalePreference
 src/detect.ts           言語の検出 (BCP 47 の言語の部分で、対応する最初の言語を選ぶ)
 src/format.ts           数値・日付・相対時間・一覧の書式 (Intl を今の言語で使う)
 src/rich.ts / RichText.svelte  訳文の中の印 (`<link>…</link>`) をスニペットで描く
@@ -56,7 +57,18 @@ export const t = translator("face-tracking");
 ### 言語
 
 - 既定は「OS に合わせる」(`"system"`): OS の優先する言語を前から見て、最初に対応している言語を使う。どれも対応していなければ英語。
-- `setLocale("ja" | "en" | "system")` で上書きする。設定を覚えるのはアプリ。`getLocale()` が今の言語、`LANGUAGES` が選択肢 (言語自身の名前)。
+- `setLocale("ja" | "en" | "system")` で上書きする (覚えない)。`getLocale()` が今の言語、`getLocalePreference()` が今の設定、`LANGUAGES` が選択肢 (言語自身の名前)。
+- 設定を覚えるのは `src/preference.ts` (T0925。テーマの `@ugoe/ui` の `initTheme` と同じ流儀)。アプリはキー (`<アプリ>.locale`) を渡す:
+
+  ```ts
+  // main.ts (mount の前に 1 回)。覚えた設定を使い、OS の言語を取る関数があれば取って setSystemLanguages() に渡す。
+  void initLocale("ugoe-editor.locale", systemLocale); // 最初の画面から OS の言語で出すなら await する (ビューア)
+  ```
+
+  設定の画面は `getLocalePreference()` を選択の値にし、`setLocalePreference(value)` で切り替えて `initLocale()` のキーに覚える。
+  キーを指定して読み書きするだけなら `loadLocalePreference(key, storage?)`・`saveLocalePreference(key, value, storage?)`。
+  使えない localStorage (例外を出す・無い) では覚えず、覚えていない・知らない値は `"system"` として読む。
+  キーはアプリの前からのもの (`ugoe-editor.locale`・`ugoe-viewer.locale`・`ugoe-studio.locale`) で、値も前と同じ (`system`・`en`・`ja`)。
 - `<html lang>` は今の言語に合わせる。
 - ビューアは設定の言語 (OS に合わせる・日本語・English) で切り替える (T0723)。エディタは設定の「General」の言語 (OS に合わせる・English・日本語) で切り替える (T0663)。
 
@@ -74,7 +86,10 @@ Tauri の WebView で確かめたこと (2026-10-02):
 | WKWebView (macOS) | OS の言語に従うという報告と、アプリのローカライズ (Info.plist の `CFBundleLocalizations`) との重なりに制限されるという報告がある | 未確認 (手元に Mac が無い)。[Apple Developer Forums](https://developer.apple.com/forums/thread/750119) |
 
 どの WebView でも、OS の優先する言語の **一覧** は取れない (取れても 1 つ)。正確にするには、アプリの Rust 側で OS の言語を取り
-(`sys-locale` クレートなど)、`setSystemLanguages()` に渡す。エディタ・ビューア・スタジオは tauri-plugin-os の `locale()` で取って渡している。
+(`sys-locale` クレートなど)、`setSystemLanguages()` に渡す。エディタ・ビューア・スタジオは tauri-plugin-os の `locale()` で取り、
+`initLocale()` の 2 つ目の引数 (タグか一覧を返す非同期の関数。取れなければ `null`) として渡している。
+このパッケージは Tauri に依存しないので、取り方はアプリが決める (Tauri の外では `null` を返すか、引数を省く)。
+取得が失敗・`null`・空の一覧なら `navigator.languages` のまま。`initLocale()` が待つ間に呼び直されたら、古い呼び出しの結果は捨てる。
 
 ## カタログの検査 (`just i18n`)
 
