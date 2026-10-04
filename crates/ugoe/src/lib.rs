@@ -44,8 +44,8 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::pose::Pose;
 use ugoe_model::validate::ValidationError;
 use ugoe_motion::{
-    BreathPlayer, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager, PosePlayer,
-    Priority, TrackingInput, TrackingMap,
+    BreathPlayer, ExpressionManager, EyeBlinkPlayer, LipSyncPlayer, MotionManager,
+    PartOpacityBuffer, PosePlayer, Priority, TrackingInput, TrackingMap,
 };
 use ugoe_runtime::{CompileError, CompiledModel, ModelInstance, ParamIndex};
 
@@ -100,6 +100,10 @@ pub struct Puppet {
     pose: PosePlayer,
     /// `pose.opacities()` の各要素のパーツの添字。
     pose_parts: Vec<Option<usize>>,
+    /// パーツの添字ごとに、ポーズの要素 (リンクは含めない) か。
+    pose_members: Vec<bool>,
+    /// モーションのパーツの不透明度のカーブを重ねる作業領域 (毎フレーム確保しないため)。
+    part_opacity_buffer: PartOpacityBuffer,
     /// パラメータの基準値 (前フレームのモーション適用後の値と、ホストが書き換えた値)。
     base: Vec<f32>,
     /// 前フレームの `update` が最後に書き込んだパラメータ値 (ホストの書き換えの検出用)。
@@ -152,6 +156,8 @@ impl Puppet {
             lip_sync: LipSyncPlayer::new(effects.lip_sync.clone()),
             pose: PosePlayer::new(pose.clone()),
             pose_parts: Vec::new(),
+            pose_members: Vec::new(),
+            part_opacity_buffer: PartOpacityBuffer::default(),
             base: values.clone(),
             before_physics: values.clone(),
             lip_sync_applied: None,
@@ -369,6 +375,15 @@ impl Puppet {
             .opacities()
             .map(|(part, _)| compiled.part_index(part.as_str()))
             .collect();
+        self.pose_members.clear();
+        self.pose_members
+            .resize(compiled.model().parts.len(), false);
+        let entries = self.pose.pose().groups.iter().flat_map(|g| &g.entries);
+        for i in entries.filter_map(|e| compiled.part_index(e.part.as_str())) {
+            if let Some(member) = self.pose_members.get_mut(i) {
+                *member = true;
+            }
+        }
     }
 
     /// ポーズの状態 (各グループの表示中の要素と不透明度)。
@@ -459,40 +474,35 @@ impl Puppet {
         self.output.copy_from_slice(params.as_slice());
 
         // 10. パーツの不透明度 (モーションのカーブとポーズ)
-        let curves = self.motions.part_opacities();
-        self.record_part_opacities(&curves);
-        self.apply_part_opacities(dt, curves);
+        self.write_part_opacities(dt, true);
 
         // 11. 評価
         self.instance.update();
     }
 
-    /// モーションのパーツの不透明度のカーブとポーズを、パーツの不透明度の上書きに書き込む。
-    ///
-    /// ポーズの要素のパーツへのカーブはポーズへの表示の要求 (値 × 重み) として扱い、
-    /// それ以外のパーツへのカーブはそのまま上書きする。ポーズを止めているときは、
-    /// すべてのカーブをそのまま上書きし、ポーズは何も書かない。`curves` は `(パーツ, 値, 重み)`
-    /// (`MotionManager::part_opacities` か、受け手なら指揮役から届いたもの。[`Puppet::follow`])。
-    fn apply_part_opacities(&mut self, dt: f32, curves: Vec<(PartId, f32, f32)>) {
-        self.instance.clear_part_opacity_overrides();
-        let pose = self.toggles.pose;
-        let mut requests = Vec::new();
-        for (part, value, weight) in curves {
-            if pose && self.pose.contains(&part) {
-                requests.push((part, value * weight));
-            } else if let Some(i) = self.instance.compiled().part_index(part.as_str()) {
-                self.instance.set_part_opacity_override(i, value, weight);
-            }
+    /// 段 10. (パーツの不透明度) を、今のモーションのカーブで書く。`record` なら受け手へ配る記録
+    /// ([`Puppet::part_opacities_applied`]) も作り直す。
+    pub(crate) fn write_part_opacities(&mut self, dt: f32, record: bool) {
+        let curves = self
+            .motions
+            .part_opacities_in(&mut self.part_opacity_buffer);
+        if record {
+            record_part_opacities(
+                &self.instance,
+                &mut self.part_opacities_applied,
+                curves.clone(),
+            );
         }
-        if !pose {
-            return;
-        }
-        self.pose.update(dt, &requests);
-        for ((_, opacity), part) in self.pose.opacities().zip(&self.pose_parts) {
-            if let Some(part) = *part {
-                self.instance.set_part_opacity_override(part, opacity, 1.0);
-            }
-        }
+        apply_part_opacities(
+            &mut self.instance,
+            self.toggles.pose.then_some(PoseStage {
+                player: &mut self.pose,
+                parts: &self.pose_parts,
+                members: &self.pose_members,
+            }),
+            dt,
+            curves,
+        );
     }
 
     /// キャンバス座標 `point` を含む当たり判定 (`Model::hit_areas`) の ID を、手前から順に並べる。
@@ -558,6 +568,70 @@ impl Puppet {
 /// (物理は `docs/spec/physics.md` のとおり自分でも 0 とみなす)。
 fn sanitize_dt(dt: f32) -> f32 {
     if dt.is_finite() && dt > 0.0 { dt } else { 0.0 }
+}
+
+/// ポーズを使うときの、[`apply_part_opacities`] がポーズに書くための状態。
+pub(crate) struct PoseStage<'a> {
+    pub(crate) player: &'a mut PosePlayer,
+    /// `player.opacities()` の各要素のパーツの添字 ([`Puppet`] の `pose_parts`)。
+    pub(crate) parts: &'a [Option<usize>],
+    /// パーツの添字ごとに、ポーズの要素か ([`Puppet`] の `pose_members`)。
+    pub(crate) members: &'a [bool],
+}
+
+/// モーションのパーツの不透明度のカーブとポーズを、パーツの不透明度の上書きに書き込む (メモリを確保しない)。
+///
+/// ポーズの要素のパーツへのカーブはポーズへの表示の要求 (値 × 重み) として扱い、
+/// それ以外のパーツへのカーブはそのまま上書きする。ポーズを止めているとき (`pose` が `None`) は、
+/// すべてのカーブをそのまま上書きし、ポーズは何も書かない。`curves` は `(パーツ, 値, 重み)`
+/// (`MotionManager::part_opacities_in` か、受け手なら指揮役から届いたもの。[`Puppet::follow`])。
+/// 同じパーツが複数あれば、上書きは後のもの、ポーズへの要求は先のものを使う。
+pub(crate) fn apply_part_opacities<'a>(
+    instance: &mut ModelInstance,
+    pose: Option<PoseStage<'_>>,
+    dt: f32,
+    curves: impl Iterator<Item = (&'a PartId, f32, f32)> + Clone,
+) {
+    instance.clear_part_opacity_overrides();
+    let members = pose.as_ref().map_or(&[][..], |p| p.members);
+    for (part, value, weight) in curves.clone() {
+        let Some(i) = instance.compiled().part_index(part.as_str()) else {
+            continue;
+        };
+        // ポーズの要素はポーズに任せる (モデルにないパーツは上書きできないので、要求だけになる)。
+        if !members.get(i).copied().unwrap_or(false) {
+            instance.set_part_opacity_override(i, value, weight);
+        }
+    }
+    let Some(pose) = pose else { return };
+    pose.player.update_by(dt, |entry| {
+        curves
+            .clone()
+            .find(|(part, ..)| *part == entry)
+            .map(|(_, value, weight)| value * weight)
+    });
+    for ((_, opacity), part) in pose.player.opacities().zip(pose.parts) {
+        if let Some(part) = *part {
+            instance.set_part_opacity_override(part, opacity, 1.0);
+        }
+    }
+}
+
+/// モーションのパーツの不透明度のカーブ `(パーツ, 値, 重み)` を、受け手へ配る形で `out` に覚える。
+fn record_part_opacities<'a>(
+    instance: &ModelInstance,
+    out: &mut Vec<PartOpacityInput>,
+    curves: impl Iterator<Item = (&'a PartId, f32, f32)>,
+) {
+    let compiled = instance.compiled();
+    out.clear();
+    out.extend(curves.filter_map(|(part, value, weight)| {
+        Some(PartOpacityInput {
+            part: compiled.part_index(part.as_str())? as u32,
+            value,
+            weight,
+        })
+    }));
 }
 
 #[cfg(test)]

@@ -11,11 +11,12 @@ mod expression;
 mod manager;
 mod player;
 mod pose;
+mod resolve;
 pub mod tracking;
 
 pub use effects::{BlinkPhase, BreathPlayer, EyeBlinkPlayer, LipSyncPlayer, Rng};
 pub use expression::{ExpressionManager, ExpressionPlayer};
-pub use manager::{MotionManager, Priority};
+pub use manager::{MotionManager, PartOpacityBuffer, Priority};
 pub use player::{MotionPlayer, easing};
 pub use pose::PosePlayer;
 pub use tracking::{BodyInput, Rotation, TrackingInput, TrackingMap};

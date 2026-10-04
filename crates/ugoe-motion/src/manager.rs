@@ -103,7 +103,7 @@ impl MotionManager {
         let is_group =
             |target: &CurveTarget| matches!(target, CurveTarget::EffectGroup(g) if g == name);
         for player in &self.players {
-            for (_, value, w) in player.curve_values_where(is_group) {
+            for (_, _, value, w) in player.curve_values_where(is_group) {
                 s += (value - s) * w;
             }
         }
@@ -116,21 +116,44 @@ impl MotionManager {
     /// `1 - (1 - W)(1 - w)` で重ねる (どちらも最初は 0)。呼び出し側は、パーツ自身の不透明度 `o` を
     /// `lerp(o, 値, 重み)` で上書きする。
     pub fn part_opacities(&self) -> Vec<(PartId, f32, f32)> {
-        let mut out: Vec<(PartId, f32, f32)> = Vec::new();
-        for player in &self.players {
+        self.part_opacities_in(&mut PartOpacityBuffer::default())
+            .map(|(part, value, weight)| (part.clone(), value, weight))
+            .collect()
+    }
+
+    /// [`Self::part_opacities`] と同じ値を、パーツの ID を複製せずに返す。
+    ///
+    /// 重ねる作業に `buffer` を使う。同じ `buffer` を毎フレーム渡せば、メモリを確保しない。
+    pub fn part_opacities_in<'a>(
+        &'a self,
+        buffer: &'a mut PartOpacityBuffer,
+    ) -> impl Iterator<Item = (&'a PartId, f32, f32)> + Clone + 'a {
+        let out = &mut buffer.entries;
+        out.clear();
+        for (player_index, player) in self.players.iter().enumerate() {
             let is_part = |target: &CurveTarget| matches!(target, CurveTarget::PartOpacity(_));
-            for (target, value, w) in player.curve_values_where(is_part) {
+            for (curve, target, value, w) in player.curve_values_where(is_part) {
                 let CurveTarget::PartOpacity(part) = target else {
                     continue;
                 };
-                let i = match out.iter().position(|(p, ..)| p == part) {
+                let i = match out
+                    .iter()
+                    .position(|e| self.part_of(e.player, e.curve) == Some(part))
+                {
                     Some(i) => i,
                     None => {
-                        out.push((part.clone(), 0.0, 0.0));
+                        out.push(PartOpacityEntry {
+                            player: player_index,
+                            curve,
+                            value: 0.0,
+                            weight: 0.0,
+                        });
                         out.len() - 1
                     }
                 };
-                let (_, v, weight) = &mut out[i];
+                let PartOpacityEntry {
+                    value: v, weight, ..
+                } = &mut out[i];
                 // 重み W で上書きした上に、さらに w で上書きする: lerp(lerp(o, v, W), value, w)
                 // = lerp(o, v', W') となる v' と W' を求める。
                 let new_weight = 1.0 - (1.0 - *weight) * (1.0 - w);
@@ -140,8 +163,37 @@ impl MotionManager {
                 *weight = new_weight;
             }
         }
-        out
+        let buffer: &'a PartOpacityBuffer = buffer;
+        buffer
+            .entries
+            .iter()
+            .filter_map(|e| Some((self.part_of(e.player, e.curve)?, e.value, e.weight)))
     }
+
+    /// `player` 番目のプレイヤーの `curve` 番目のカーブが不透明度を書くパーツ。
+    fn part_of(&self, player: usize, curve: usize) -> Option<&PartId> {
+        let curve = self.players.get(player)?.motion().curves.get(curve)?;
+        match &curve.target {
+            CurveTarget::PartOpacity(part) => Some(part),
+            _ => None,
+        }
+    }
+}
+
+/// [`MotionManager::part_opacities_in`] の作業領域。使い回せば毎フレームのメモリの確保がない。
+#[derive(Debug, Clone, Default)]
+pub struct PartOpacityBuffer {
+    /// パーツごとの値と重み。最初に現れた順。
+    entries: Vec<PartOpacityEntry>,
+}
+
+/// パーツ 1 つ分の重ねた値と重み。パーツは最初に現れたカーブで指す (ID を複製しない)。
+#[derive(Debug, Clone, Copy)]
+struct PartOpacityEntry {
+    player: usize,
+    curve: usize,
+    value: f32,
+    weight: f32,
 }
 
 #[cfg(test)]
@@ -315,5 +367,47 @@ mod tests {
             };
             assert!(close(o + (v - o) * w, direct));
         }
+    }
+
+    /// `part_opacities_in` は `part_opacities` と同じ値を返し、作業領域を使い回す。
+    #[test]
+    fn part_opacities_in_matches_part_opacities() {
+        let (p, q) = (
+            CurveTarget::PartOpacity("P".into()),
+            CurveTarget::PartOpacity("Q".into()),
+        );
+        let mut a = motion("a", 0.0, 1.0);
+        a.curves.push(constant(p.clone(), 0.2));
+        a.curves.push(constant(
+            CurveTarget::EffectGroup(EYE_BLINK_GROUP.into()),
+            0.5,
+        ));
+        let mut b = motion("b", 0.0, 1.0);
+        b.curves.push(constant(q, 0.4));
+        b.curves.push(constant(p, 0.8));
+        let mut m = MotionManager::new();
+        m.start(a, Priority::Normal);
+        m.update(&mut params(), 0.5);
+        m.start(b, Priority::Normal);
+        m.update(&mut params(), 0.25);
+
+        let mut buffer = PartOpacityBuffer::default();
+        for _ in 0..2 {
+            let borrowed: Vec<_> = m
+                .part_opacities_in(&mut buffer)
+                .map(|(part, v, w)| (part.clone(), v, w))
+                .collect();
+            assert_eq!(borrowed, m.part_opacities());
+            assert_eq!(
+                borrowed
+                    .iter()
+                    .map(|(p, ..)| p.as_str())
+                    .collect::<Vec<_>>(),
+                ["P", "Q"]
+            );
+        }
+        let capacity = buffer.entries.capacity();
+        m.part_opacities_in(&mut buffer).count();
+        assert_eq!(buffer.entries.capacity(), capacity);
     }
 }

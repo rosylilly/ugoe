@@ -2,14 +2,13 @@
 
 use ugoe_model::ParamId;
 use ugoe_model::effects::{Breath, EyeBlink, LipSync};
-use ugoe_runtime::{ParamIndex, ParameterValues};
+use ugoe_runtime::ParameterValues;
 
-/// パラメータ ID の列を添字に解決する (見つからないものは `None`)。
-fn resolve<'a>(
-    parameters: &ParameterValues,
-    ids: impl Iterator<Item = &'a ParamId>,
-) -> Vec<Option<ParamIndex>> {
-    ids.map(|id| parameters.index_of(id.as_str())).collect()
+use crate::resolve::ResolvedParams;
+
+/// パラメータ ID の列を、[`ResolvedParams::get`] に渡す形にする。
+fn ids<'a>(ids: impl IntoIterator<Item = &'a ParamId>) -> impl Iterator<Item = Option<&'a str>> {
+    ids.into_iter().map(|id| Some(id.as_str()))
 }
 
 /// 1 回の [`EyeBlinkPlayer::advance`] で進める段階の数の上限 (1000 回のまばたき)。
@@ -69,7 +68,7 @@ pub struct EyeBlinkPlayer {
     t: f32,
     /// 今回の `Open` の長さ。
     wait: f32,
-    param_indices: Option<Vec<Option<ParamIndex>>>,
+    param_indices: ResolvedParams,
 }
 
 impl EyeBlinkPlayer {
@@ -83,7 +82,7 @@ impl EyeBlinkPlayer {
             phase: BlinkPhase::Open,
             t: 0.0,
             wait,
-            param_indices: None,
+            param_indices: ResolvedParams::default(),
         }
     }
 
@@ -144,7 +143,7 @@ impl EyeBlinkPlayer {
         let factor = 1.0 + (self.openness() - 1.0) * strength;
         let indices = self
             .param_indices
-            .get_or_insert_with(|| resolve(parameters, self.config.parameters.iter()));
+            .get(parameters, ids(&self.config.parameters));
         for index in indices.iter().flatten() {
             parameters.set(*index, parameters.get(*index) * factor);
         }
@@ -171,7 +170,7 @@ pub struct BreathPlayer {
     config: Breath,
     /// 各要素の、周期内の時刻 `[0, cycle)`。
     phases: Vec<f32>,
-    param_indices: Option<Vec<Option<ParamIndex>>>,
+    param_indices: ResolvedParams,
 }
 
 impl BreathPlayer {
@@ -181,7 +180,7 @@ impl BreathPlayer {
         Self {
             config,
             phases,
-            param_indices: None,
+            param_indices: ResolvedParams::default(),
         }
     }
 
@@ -209,19 +208,11 @@ impl BreathPlayer {
     /// 各対象パラメータに `weight * (offset + peak * sin(2π t / cycle))` を加える。
     /// `cycle <= 0` の要素は `sin` の項を 0 とする。
     pub fn apply(&mut self, parameters: &mut ParameterValues) {
-        let indices = self.param_indices.get_or_insert_with(|| {
-            resolve(
-                parameters,
-                self.config.parameters.iter().map(|p| &p.parameter),
-            )
-        });
-        for ((p, phase), index) in self
-            .config
-            .parameters
-            .iter()
-            .zip(&self.phases)
-            .zip(indices.iter())
-        {
+        let indices = self.param_indices.get(
+            parameters,
+            ids(self.config.parameters.iter().map(|p| &p.parameter)),
+        );
+        for ((p, phase), index) in self.config.parameters.iter().zip(&self.phases).zip(indices) {
             let Some(index) = *index else { continue };
             let wave = if p.cycle > 0.0 {
                 (std::f32::consts::TAU * phase / p.cycle).sin()
@@ -239,7 +230,7 @@ impl BreathPlayer {
 pub struct LipSyncPlayer {
     config: LipSync,
     level: Option<f32>,
-    param_indices: Option<Vec<Option<ParamIndex>>>,
+    param_indices: ResolvedParams,
 }
 
 impl LipSyncPlayer {
@@ -248,7 +239,7 @@ impl LipSyncPlayer {
         Self {
             config,
             level: None,
-            param_indices: None,
+            param_indices: ResolvedParams::default(),
         }
     }
 
@@ -273,7 +264,7 @@ impl LipSyncPlayer {
         let Some(level) = self.level else { return };
         let indices = self
             .param_indices
-            .get_or_insert_with(|| resolve(parameters, self.config.parameters.iter()));
+            .get(parameters, ids(&self.config.parameters));
         for index in indices.iter().flatten() {
             parameters.blend(*index, level, strength);
         }
@@ -535,5 +526,30 @@ mod tests {
         let mut p = params();
         lip.apply(&mut p, 0.5);
         assert!(close(get(&p, standard::MOUTH_OPEN_Y), 0.3));
+    }
+
+    /// T0325: 並びの違う `ParameterValues` を渡すと添字を解決し直す。
+    #[test]
+    fn effects_resolve_parameters_again_when_layout_changes() {
+        let mut lip = LipSyncPlayer::new(LipSync::standard());
+        lip.set_level(Some(0.6));
+        let mut breath = BreathPlayer::new(Breath::standard());
+        breath.advance(0.5);
+        let mut p = params();
+        lip.apply(&mut p, 1.0);
+        breath.apply(&mut p);
+        let expected_breath = get(&p, standard::BREATH);
+
+        let mut model = fixtures::pose_and_effects();
+        model.parameters.reverse();
+        let mut reversed = ParameterValues::from_model(&model);
+        lip.apply(&mut reversed, 1.0);
+        breath.apply(&mut reversed);
+        assert!(close(get(&reversed, standard::MOUTH_OPEN_Y), 0.6));
+        assert!(close(get(&reversed, standard::BREATH), expected_breath));
+        for id in reversed.ids() {
+            let id = id.as_str();
+            assert!(close(get(&reversed, id), get(&p, id)), "{id}");
+        }
     }
 }

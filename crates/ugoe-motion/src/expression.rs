@@ -1,17 +1,18 @@
 //! 表情の再生 (フェードと重ね合わせ)。仕様: `docs/spec/motion.md#表情`。
 
 use ugoe_model::expression::{Expression, ExpressionOp};
-use ugoe_runtime::{ParamIndex, ParameterValues};
+use ugoe_runtime::ParameterValues;
 
 use crate::player::{advance_clock, fade_weight};
+use crate::resolve::ResolvedParams;
 
 /// 表情 1 つ分の再生状態。フェードは [`MotionPlayer`](crate::MotionPlayer) と同じ規則
 /// (`fade_in` で入り、[`stop`](Self::stop) から `fade_out` 秒で抜ける)。
 #[derive(Debug)]
 pub struct ExpressionPlayer {
     expression: Expression,
-    /// 各項目の対象パラメータの添字 (初回の適用時に解決する)。
-    param_indices: Option<Vec<Option<ParamIndex>>>,
+    /// 各項目の対象パラメータの添字 (適用時に解決し、パラメータの並びが変わったら解決し直す)。
+    param_indices: ResolvedParams,
     /// 経過時間。長時間使い続けても `dt` を足せるように `f64` で持つ。
     elapsed: f64,
     /// 終了する経過時間。`None` なら止めるまで続く。
@@ -23,7 +24,7 @@ impl ExpressionPlayer {
     pub fn new(expression: Expression) -> Self {
         Self {
             expression,
-            param_indices: None,
+            param_indices: ResolvedParams::default(),
             elapsed: 0.0,
             end: None,
         }
@@ -68,14 +69,14 @@ impl ExpressionPlayer {
             return;
         }
         let w = self.weight();
-        let indices = self.param_indices.get_or_insert_with(|| {
+        let indices = self.param_indices.get(
+            parameters,
             self.expression
                 .parameters
                 .iter()
-                .map(|p| parameters.index_of(p.parameter.as_str()))
-                .collect()
-        });
-        for (p, index) in self.expression.parameters.iter().zip(indices.iter()) {
+                .map(|p| Some(p.parameter.as_str())),
+        );
+        for (p, index) in self.expression.parameters.iter().zip(indices) {
             let Some(index) = *index else { continue };
             let v = parameters.get(index);
             let value = match p.op {
@@ -147,6 +148,7 @@ impl ExpressionManager {
 mod tests {
     use ugoe_model::expression::ExpressionParameter;
     use ugoe_model::fixtures;
+    use ugoe_runtime::ParamIndex;
 
     use super::*;
     use crate::easing;
@@ -225,6 +227,25 @@ mod tests {
             player.advance(1.0 / 60.0);
         }
         assert!(player.is_finished());
+    }
+
+    /// T0325: 並びの違う `ParameterValues` を渡すと添字を解決し直し、同じ ID のパラメータに書く。
+    #[test]
+    fn resolves_parameters_again_when_layout_changes() {
+        let mut player = ExpressionPlayer::new(expression("e", ExpressionOp::Add, 0.5, 0.0));
+        let mut p = params(0.0);
+        player.apply(&mut p);
+        assert!(close(p.get(ParamIndex(0)), 0.5));
+
+        // 先頭に `Y` を足した並び (`X` は 1 番目)。
+        let mut model = fixtures::single_quad();
+        let mut y = model.parameters[0].clone();
+        y.id = "Y".into();
+        model.parameters.insert(0, y);
+        let mut shifted = ParameterValues::from_model(&model);
+        player.apply(&mut shifted);
+        assert!(close(shifted.get(shifted.index_of("X").unwrap()), 0.5));
+        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), 0.0);
     }
 
     /// 複数の表情は開始した順に適用する。

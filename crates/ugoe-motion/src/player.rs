@@ -2,9 +2,10 @@
 //! 仕様: `docs/spec/motion.md#再生とフェード`。
 
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent};
-use ugoe_runtime::{ParamIndex, ParameterValues};
+use ugoe_runtime::ParameterValues;
 
 use crate::curve::SegmentIndex;
+use crate::resolve::ResolvedParams;
 
 /// 1 回の [`MotionPlayer::advance`] で扱うループの周回の上限。巨大な `dt` や極端に短い長さで止まらないようにする。
 pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
@@ -91,8 +92,8 @@ pub struct MotionPlayer {
     event_order: Vec<usize>,
     /// 各カーブのセグメントの探索の前処理 (`motion.curves` と同じ順)。毎フレーム先頭から探さないため。
     segment_indices: Vec<SegmentIndex>,
-    /// 各カーブの対象パラメータの添字 (初回の適用時に解決する)。
-    param_indices: Option<Vec<Option<ParamIndex>>>,
+    /// 各カーブの対象パラメータの添字 (適用時に解決し、パラメータの並びが変わったら解決し直す)。
+    param_indices: ResolvedParams,
     time: f32,
     /// 経過時間。長時間ループさせても `dt` を足せるように `f64` で持つ。
     elapsed: f64,
@@ -120,7 +121,7 @@ impl MotionPlayer {
             motion,
             event_order,
             segment_indices,
-            param_indices: None,
+            param_indices: ResolvedParams::default(),
             time: 0.0,
             elapsed: 0.0,
             end,
@@ -237,21 +238,18 @@ impl MotionPlayer {
         if self.is_finished() {
             return;
         }
-        let indices = self.param_indices.get_or_insert_with(|| {
-            self.motion
-                .curves
-                .iter()
-                .map(|c| match &c.target {
-                    CurveTarget::Parameter(id) => parameters.index_of(id.as_str()),
-                    _ => None,
-                })
-                .collect()
-        });
+        let indices = self.param_indices.get(
+            parameters,
+            self.motion.curves.iter().map(|c| match &c.target {
+                CurveTarget::Parameter(id) => Some(id.as_str()),
+                _ => None,
+            }),
+        );
         for ((curve, index), lookup) in self
             .motion
             .curves
             .iter()
-            .zip(indices.iter())
+            .zip(indices)
             .zip(&self.segment_indices)
         {
             let Some(index) = *index else { continue };
@@ -268,24 +266,27 @@ impl MotionPlayer {
     /// 重みには外部の重みを含めない。終わったプレイヤーは何も返さない。
     pub fn curve_values(&self) -> impl Iterator<Item = (&CurveTarget, f32, f32)> {
         self.curve_values_where(|target| *target != CurveTarget::Unknown)
+            .map(|(_, target, value, w)| (target, value, w))
     }
 
-    /// [`curve_values`](Self::curve_values) のうち、対象が `filter` を満たすカーブだけ。
-    /// 評価の前に対象で絞るので、ほかの対象のカーブは評価しない (モーションマネージャが毎フレーム使う)。
+    /// [`curve_values`](Self::curve_values) のうち、対象が `filter` を満たすカーブだけ。先頭はカーブの添字
+    /// (`motion.curves` の)。評価の前に対象で絞るので、ほかの対象のカーブは評価しない
+    /// (モーションマネージャが毎フレーム使う)。
     pub(crate) fn curve_values_where(
         &self,
         filter: impl Fn(&CurveTarget) -> bool,
-    ) -> impl Iterator<Item = (&CurveTarget, f32, f32)> {
+    ) -> impl Iterator<Item = (usize, &CurveTarget, f32, f32)> {
         let finished = self.is_finished();
         self.motion
             .curves
             .iter()
             .zip(&self.segment_indices)
-            .filter(move |(c, _)| !finished && filter(&c.target))
-            .filter_map(|(c, lookup)| {
+            .enumerate()
+            .filter(move |(_, (c, _))| !finished && filter(&c.target))
+            .filter_map(|(i, (c, lookup))| {
                 let value = lookup.evaluate(&c.segments, self.time)?;
                 let w = curve_fade_weight(&self.motion, c, self.elapsed, self.end);
-                Some((&c.target, value, w))
+                Some((i, &c.target, value, w))
             })
     }
 
@@ -307,6 +308,8 @@ impl MotionPlayer {
 mod tests {
     use ugoe_model::fixtures;
     use ugoe_model::motion::{Point, Segment};
+
+    use ugoe_runtime::ParamIndex;
 
     use super::*;
 
@@ -670,6 +673,30 @@ mod tests {
             player.advance(1.0 / 60.0);
         }
         assert!(player.is_finished());
+    }
+
+    /// T0325: 並びの違う `ParameterValues` を渡すと添字を解決し直し、同じ ID のパラメータに書く。
+    #[test]
+    fn resolves_parameters_again_when_layout_changes() {
+        let mut player = MotionPlayer::new(motion(10.0, false, vec![constant("X", 0.5)]));
+        let mut p = params();
+        player.apply(&mut p, 1.0);
+        assert!(close(p.get(ParamIndex(0)), 0.5));
+
+        // 先頭に `Y` を足した並び (`X` は 1 番目)。
+        let mut model = fixtures::single_quad();
+        let mut y = model.parameters[0].clone();
+        y.id = "Y".into();
+        model.parameters.insert(0, y);
+        let mut shifted = ParameterValues::from_model(&model);
+        player.apply(&mut shifted, 1.0);
+        assert!(close(shifted.get(shifted.index_of("X").unwrap()), 0.5));
+        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), 0.0);
+
+        // 元の並びに戻しても正しく書く。
+        let mut p = params();
+        player.apply(&mut p, 1.0);
+        assert!(close(p.get(ParamIndex(0)), 0.5));
     }
 
     /// パラメータ以外の対象は `curve_values` で取り出す。未知の対象と評価できないカーブは除く。

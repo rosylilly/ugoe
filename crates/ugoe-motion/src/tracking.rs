@@ -12,7 +12,7 @@ use ugoe_model::avatar::{
     ARKIT_BLEND_SHAPES, AvatarProfile, HEAD_PITCH, HEAD_ROLL, HEAD_YAW, TrackingSource,
 };
 use ugoe_model::{Model, standard};
-use ugoe_runtime::{ParamIndex, ParameterValues};
+use ugoe_runtime::{ParamIndex, ParameterLayout, ParameterValues};
 
 /// ARKit のブレンドシェイプの数 ([`ARKIT_BLEND_SHAPES`] の長さ)。
 pub const BLEND_SHAPE_COUNT: usize = ARKIT_BLEND_SHAPES.len();
@@ -385,7 +385,10 @@ struct Mapping {
 ///
 /// 作るときに `Model.avatar.tracking` の上書きを解決し、パラメータの添字を引いておくので、
 /// [`TrackingMap::apply`] は文字列を比べず、メモリも確保しない。
-#[derive(Debug, Clone, Default, PartialEq)]
+///
+/// 作ったときと並びの違う `ParameterValues` に書くときは、添字を ID で引き直して同じ ID のパラメータに
+/// 書く (T0325。並びが同じかは定数時間で見分け、違うときだけ書き込み先ごとに引き直す)。
+#[derive(Debug, Clone, Default)]
 pub struct TrackingMap {
     /// 上書きされていない標準の対応。
     standard: Vec<(Formula, ParamIndex)>,
@@ -393,6 +396,19 @@ pub struct TrackingMap {
     overrides: Vec<Mapping>,
     /// 書き込み先と、`overrides` の範囲 (開始, 終了)。
     groups: Vec<(ParamIndex, usize, usize)>,
+    /// 添字を解決したときのパラメータの並び。
+    layout: Option<ParameterLayout>,
+}
+
+/// 対応が同じか。並びは手札でなく ID の列で比べる。
+impl PartialEq for TrackingMap {
+    fn eq(&self, other: &Self) -> bool {
+        self.standard == other.standard
+            && self.overrides == other.overrides
+            && self.groups == other.groups
+            && self.layout.as_ref().map(ParameterLayout::ids)
+                == other.layout.as_ref().map(ParameterLayout::ids)
+    }
 }
 
 impl TrackingMap {
@@ -456,6 +472,7 @@ impl TrackingMap {
             standard,
             overrides,
             groups,
+            layout: Some(parameters.layout()),
         }
     }
 
@@ -498,31 +515,45 @@ impl TrackingMap {
     }
 
     /// [`Self::apply`] と同じだが、`filter` が `true` を返すパラメータにだけ書き込む (T0722。
-    /// `Puppet` がモーションの前と後に分けて書き込むため)。
+    /// `Puppet` がモーションの前と後に分けて書き込むため)。`filter` には `parameters` の並びの添字を渡す。
     pub fn apply_where(
         &self,
         input: &TrackingInput,
         parameters: &mut ParameterValues,
         mut filter: impl FnMut(ParamIndex) -> bool,
     ) {
+        // 作ったときと並びが違えば、添字を ID で引き直す。
+        let moved = self
+            .layout
+            .as_ref()
+            .filter(|layout| !parameters.has_layout(layout));
+        let target = |parameters: &ParameterValues, index: ParamIndex| match moved {
+            Some(layout) => layout
+                .ids()
+                .get(index.0 as usize)
+                .and_then(|id| parameters.index_of(id.as_str())),
+            None => Some(index),
+        };
         for (formula, index) in &self.standard {
-            if filter(*index) {
-                write(parameters, *index, formula.eval(input));
+            if let Some(index) = target(parameters, *index)
+                && filter(index)
+            {
+                write(parameters, index, formula.eval(input));
             }
         }
         for (index, start, end) in &self.groups {
-            if !filter(*index) {
+            let Some(index) = target(parameters, *index).filter(|&i| filter(i)) else {
                 continue;
-            }
+            };
             let value = self.overrides[*start..*end]
                 .iter()
                 .map(|m| m.source.eval(input) * m.scale + m.offset)
                 .sum();
-            write(parameters, *index, value);
+            write(parameters, index, value);
         }
     }
 
-    /// `apply` が書き込むパラメータ (重複なし、順不同)。
+    /// `apply` が書き込むパラメータ (重複なし、順不同)。添字は作ったときに渡した `parameters` の並びのもの。
     pub fn targets(&self) -> impl Iterator<Item = ParamIndex> + '_ {
         self.standard
             .iter()
@@ -1185,5 +1216,48 @@ mod tests {
             TrackingMap::for_model(&model, &params),
             TrackingMap::new(model.avatar.as_ref(), &params)
         );
+    }
+
+    /// T0325: 作ったときと並びの違う `ParameterValues` に書くときも、同じ ID のパラメータに書く。
+    #[test]
+    fn applies_to_parameters_in_a_different_layout() {
+        let mut model = fixtures::avatar_profile();
+        model.avatar.as_mut().unwrap().tracking = vec![over(
+            TrackingSource::BlendShape,
+            "jawLeft",
+            Some(standard::MOUTH_X),
+        )];
+        let map = TrackingMap::for_model(&model, &ParameterValues::from_model(&model));
+        let mut input = input(&[("jawLeft", 0.5), ("eyeBlinkLeft", 0.25), ("jawOpen", 0.75)]);
+        input.head = Rotation {
+            yaw: 10.0,
+            pitch: 20.0,
+            roll: 5.0,
+        };
+        let mut expected = ParameterValues::from_model(&model);
+        map.apply(&input, &mut expected);
+
+        model.parameters.reverse();
+        let mut reversed = ParameterValues::from_model(&model);
+        map.apply(&input, &mut reversed);
+        for id in reversed.ids() {
+            let id = id.as_str();
+            assert_eq!(value(&reversed, id), value(&expected, id), "{id}");
+        }
+        assert!(close(value(&reversed, standard::MOUTH_X), 0.5));
+
+        // フィルタには書き込む先の並びの添字を渡す。
+        let mut filtered = ParameterValues::from_model(&model);
+        let angle_x = filtered.index_of(standard::ANGLE_X).unwrap();
+        map.apply_where(&input, &mut filtered, |index| index == angle_x);
+        for id in filtered.ids() {
+            let id = id.as_str();
+            let want = if id == standard::ANGLE_X {
+                value(&expected, id)
+            } else {
+                value(&ParameterValues::from_model(&model), id)
+            };
+            assert_eq!(value(&filtered, id), want, "{id}");
+        }
     }
 }

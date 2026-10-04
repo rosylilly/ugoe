@@ -106,6 +106,14 @@ impl PosePlayer {
     /// 各グループで、要求の値が 0 より大きい要素のうち最大のもの (同じなら先の要素) を表示する。
     /// 要求がなければ表示中の要素を保つ。
     pub fn update(&mut self, dt: f32, requests: &[(PartId, f32)]) {
+        self.update_by(dt, |part| {
+            requests.iter().find(|(p, _)| p == part).map(|&(_, v)| v)
+        });
+    }
+
+    /// [`Self::update`] と同じだが、表示の要求を `request` で引く (要素のパーツを渡し、要求がなければ `None`)。
+    /// 要求の列を作らずに済む (`Puppet` が毎フレーム使う)。
+    pub fn update_by(&mut self, dt: f32, mut request: impl FnMut(&PartId) -> Option<f32>) {
         let rate = if self.pose.fade_duration > 0.0 {
             dt.max(0.0) / self.pose.fade_duration
         } else {
@@ -114,11 +122,7 @@ impl PosePlayer {
         for (group, state) in self.pose.groups.iter().zip(&mut self.groups) {
             let mut best: Option<(usize, f32)> = None;
             for (i, entry) in group.entries.iter().enumerate() {
-                let request = requests
-                    .iter()
-                    .find(|(p, _)| p == &entry.part)
-                    .map(|&(_, v)| v);
-                if let Some(v) = request
+                if let Some(v) = request(&entry.part)
                     && v > 0.0
                     && best.is_none_or(|(_, b)| v > b)
                 {

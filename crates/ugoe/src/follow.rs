@@ -6,7 +6,8 @@
 //! を配り、受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) はそれを [`Puppet::follow`] で順に適用する。段の順は `update` と同じなので、同じ列なら、どの受け手も物理を含めて
 //! 1 つの `Puppet` と同じ形になる。
 
-use ugoe_model::PartId;
+use std::sync::Arc;
+
 use ugoe_runtime::ParamIndex;
 
 use crate::Puppet;
@@ -114,20 +115,6 @@ impl Puppet {
         &self.part_opacities_applied
     }
 
-    /// モーションのパーツの不透明度のカーブ `(パーツ, 値, 重み)` を、受け手へ配る形で覚える。
-    pub(crate) fn record_part_opacities(&mut self, curves: &[(PartId, f32, f32)]) {
-        let compiled = self.instance.compiled();
-        self.part_opacities_applied.clear();
-        self.part_opacities_applied
-            .extend(curves.iter().filter_map(|(part, value, weight)| {
-                Some(PartOpacityInput {
-                    part: compiled.part_index(part.as_str())? as u32,
-                    value: *value,
-                    weight: *weight,
-                })
-            }));
-    }
-
     /// 受け手として 1 フレーム進める: `values` を基準値として書き ([`Puppet::set_base_values`])、
     /// 物理 → リップシンク → パーツの不透明度 (モーションのカーブとポーズ) → 評価の順に `dt` 秒進める
     /// (`Puppet::update` の 8.〜11. と同じ順。`docs/spec/motion.md#受け手として進める`)。
@@ -186,16 +173,32 @@ impl Puppet {
         self.output
             .copy_from_slice(self.instance.parameters().as_slice());
         // 10. パーツの不透明度 (届いたモーションのカーブとポーズ)
-        let parts = &self.instance.compiled().model().parts;
+        // モデルは `instance` と別に持つ (パーツの ID を複製せずに借りたまま、`instance` に書くため)。
+        let compiled = Arc::clone(self.instance.compiled());
+        let parts = &compiled.model().parts;
         self.part_opacities_applied.clear();
-        let mut curves = Vec::with_capacity(part_opacities.len());
-        for input in part_opacities {
-            if let Some(part) = parts.get(input.part as usize) {
-                curves.push((part.id.clone(), input.value, input.weight));
-                self.part_opacities_applied.push(*input);
-            }
-        }
-        self.apply_part_opacities(dt, curves);
+        self.part_opacities_applied.extend(
+            part_opacities
+                .iter()
+                .filter(|input| (input.part as usize) < parts.len()),
+        );
+        let curves = self.part_opacities_applied.iter().filter_map(|input| {
+            Some((
+                &parts.get(input.part as usize)?.id,
+                input.value,
+                input.weight,
+            ))
+        });
+        crate::apply_part_opacities(
+            &mut self.instance,
+            self.toggles.pose.then_some(crate::PoseStage {
+                player: &mut self.pose,
+                parts: &self.pose_parts,
+                members: &self.pose_members,
+            }),
+            dt,
+            curves,
+        );
         // 11. 評価
         self.instance.update();
         Ok(())
