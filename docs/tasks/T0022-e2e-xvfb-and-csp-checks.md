@@ -1,11 +1,11 @@
 ---
 id: T0022
 title: "e2e: Xvfb の番号の衝突をなくし、3 つのアプリで CSP の違反が無いことを確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0022
 ---
 
 # T0022: e2e: Xvfb の番号の衝突をなくし、3 つのアプリで CSP の違反が無いことを確かめる
