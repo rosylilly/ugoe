@@ -1,11 +1,11 @@
 ---
 id: T0018
 title: ビルドのキャッシュに mbx (mr-boxington) を使い、worktree の target/ のコピーをやめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [scripts, justfile, docs, AGENTS.md, CLAUDE.md, .claude]
 depends_on: []
-assignee:
+assignee: claude-worker-T0018
 ---
 
 # T0018: ビルドのキャッシュに mbx (mr-boxington) を使い、worktree の target/ のコピーをやめる
