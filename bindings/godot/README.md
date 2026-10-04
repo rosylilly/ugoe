@@ -82,7 +82,7 @@ add_child(puppet)
 puppet.set_parameter("AngleX", 15.0)              # インスペクタの parameters/AngleX でも設定できる
 puppet.start_motion("idle", 0)                    # 0 = 待機、1 = 普通、2 = 強制
 puppet.set_expression("smile")
-puppet.set_lip_sync_level(0.8)
+puppet.set_lip_sync_level(0.8)                    # 負の値か clear_lip_sync_level() で口の入力をやめる
 puppet.motion_event.connect(func(value): print(value))
 
 # 着せ替え (docs/spec/modules.md#puppet-での着せ替え)
@@ -120,11 +120,12 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `parameters/<ID>` | インスペクタに出るパラメータ (シーンに保存される) |
 | `load_model(path)` / `load_model_from_buffer(bytes)` / `load_model_from_json(text)` | 読み込む (`load_model` は `model` を設定する。`from_buffer` と `from_json` は `model` を null にする)。`from_json` はモデルの JSON (テクスチャ・物理・モーションは無く、テクスチャは不透明な白で描く) |
 | `get_parameter_ids()` / `get_parameter_info(id)` / `get_parameter(id)` / `set_parameter(id, value)` / `reset_parameters()` | パラメータ |
+| `max_chunk_decompressed` / `max_total_decompressed` / `max_image_side` / `get_load_error()` | 読み込みの上限 (下の「読み込みの上限」) / 直前の読み込みの失敗 (`{ "code", "error", ... }`。成功したら空) |
 | `get_load_warnings()` | 直前に読み込んだモデルの読み込みの警告 (`{ "code", "warning", "texture"? / "feature"? / "path"? }` の配列)。`code` と補足のキーは wasm の `load_warnings_json`・C ABI の `ugoe_puppet_load_warning_*` と同じ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの警告-t0125))。`warning` は英語の文で、安定した値ではない |
 | `get_module_load_warnings(name)` | 取り付けている名前が `name` の着せ替えのモジュール (`.ugoemod`) の読み込みの警告 (T0456)。要素の形は `get_load_warnings()` と同じで、wasm の `modules_json()` の `warning_details`・C ABI の `ugoe_module_warning_*` に揃える。付いているモジュールの探し方は `get_module_names()` と同じで、付いていなければ空 |
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
 | `get_expression_names()` / `set_expression(name)` / `stop_expressions()` | 表情 (`stop_expressions` はフェードアウトをかけてすべて止める) |
-| `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理 |
+| `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理。`set_lip_sync_level` に負の値 (`-INF` を含む) を渡すと、`clear_lip_sync_level()` と同じく口の入力をやめる (C ABI・wasm・Unity と同じ。T0459 より前は 0 にしていた) |
 | `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めなければ false |
 | `set_physics_json(json)` / `set_base_physics_json(json)` / `get_physics_json()` / `get_base_physics_json()` | 物理の設定を `.ugoe` の物理と同じ形の JSON で差し替える (空の文字列で外す) / 読む (無ければ空)。`base` は本体の設定で、着せ替えのモジュールを付けている間も保ち、付け外しのたびにこれと合成する ([docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。`set_physics_json` の設定は次の付け外しで失われる。モデルに合わなければ false (何も変えない) |
 | `get_parameter_values()` / `set_base_values(values)` / `follow(values, delta, lip_sync_level, lip_sync_strength, part_opacities)` | 受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める))。値は `get_parameter_ids()` の順の `PackedFloat32Array`。`follow` は指揮役の値を基準値にして、物理 → リップシンク (`lip_sync_level` が負なら当てない) → パーツの不透明度 (`part_opacities` は `{ "part": get_part_ids() の番号, "value", "weight" }` の配列) → 評価の順に進めて描く。受け手のノードは `playing` を false にして毎フレーム `follow` を呼ぶ (ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、指揮役と同じ形から始めるなら最初の `follow` の前に `reset_physics()` を呼ぶ。適合テストの `*-follow` のケースで C ABI と同じ値になることを確かめている)。失敗したら false (何も変えない) |
@@ -143,7 +144,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | シグナル `model_loaded` / `motion_event(value)` | 読み込み / モーションのイベント |
 
 有限でない値 (GDScript の `NAN`・`INF`) は C ABI と同じく受け付けない: `advance(delta)` と `speed` は有限で負でない値、
-`set_parameter`・`set_lip_sync_level` は NaN 以外 (無限大は値域にクランプ)、`set_tracking_head` と `mask_scale` は有限、
+`set_parameter`・`set_lip_sync_level` は NaN 以外 (`+INF` は 1、負は入力をやめる)、`set_tracking_head` と `mask_scale` は有限、
 `set_tracking_body` は NaN のキーを省略とみなし無限大を拒む、ブレンドシェイプは有限でない値を無視する、環境光と光源の色は有限で負でない値
 (それ以外の光源は警告を出して使わない)、`set_base_values` と `follow` の値は NaN 以外 (無限大は値域にクランプ)、`follow` の `delta` は
 有限で負でない値、リップシンクの音量 (当てるとき) と強さ・パーツの不透明度の値と重みは有限 (`ugoe_puppet_follow` と同じ)。
@@ -151,7 +152,8 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
 `set_effects_json`・`set_physics_json`・`set_base_physics_json` と `show_pose` で変えたものは、モデルを読み直すとモデルの設定に戻る。
 読み込みの警告 (知らない任意の機能・未知の値 (ADR 0013)・画像の無いテクスチャ) は Godot の警告として出し、`get_load_warnings()` でも読める
-(着せ替えのモジュールの警告も Godot の警告として出し、付けている間は `get_module_load_warnings(name)` で読める)。
+(着せ替えのモジュールの警告も Godot の警告として出し、付けている間は `get_module_load_warnings(name)` で読める。`attach_module` は
+新しいモジュールを 1 回だけ読むので、警告も 1 回だけ出る。T0459)。
 木の外で `model` を変えたときは、木に戻ったときに読み込む (外す)。
 
 ノードの原点にキャンバスの原点 (`canvas.origin`) が来る。座標はキャンバスのピクセル単位で、Godot の 2D と同じく Y 下向き。
@@ -159,6 +161,40 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 `UgoeModel.from_buffer(bytes)` / `UgoeModule.from_buffer(bytes)` でバイト列からリソースを作れる。
 
 `.ugoe` と `.ugoemod` はリソースとして書き出しに含まれる (エクスポートの設定は要らない)。
+
+### 読み込みの上限 (T0459)
+
+外から来るファイルを読むときは、ノードのプロパティ (インスペクタの「Load limits」。シーンに保存される) で読み込みの上限を下げられる
+([docs/spec/file-formats.md#読み込みの上限](../../docs/spec/file-formats.md#読み込みの上限))。次の読み込み (`model`・`load_model*`・
+着せ替えのモジュールを読むとき) から効く。付けているモジュールは読み直さない。
+
+| プロパティ | 既定値 | 内容 |
+| --- | --- | --- |
+| `max_chunk_decompressed` | 268435456 (256 MiB) | 圧縮したチャンク 1 つを展開した後の大きさの上限 (バイト)。SDK の `ReadLimits` と同じ |
+| `max_total_decompressed` | 1073741824 (1 GiB) | 1 つのファイルで展開したバイトの合計の上限 |
+| `max_image_side` | 16384 | テクスチャと法線マップの画像 (PNG・KTX2) の幅と高さそれぞれの上限 (画素)。wasm の `max_image_side` と同じ |
+
+負の値 (と `max_image_side` の 2^32 以上) は拒む (エラーを出して前の値を保つ)。画像は Godot がデコードするので、デコードする前に
+PNG の `IHDR` と KTX2 の見出しの大きさで調べる (見出しを読めない画像は調べず、今までどおり Godot に任せる。読めなければ白で描く)。
+モデルの JSON (`load_model_from_json`) は展開も画像も無いので上限を使わない。
+
+上限を超えると読み込みは失敗し (モデルは外れ、モジュールは付かない)、`get_load_error()` が種類と補足の値を返す。
+`code` と補足のキーは wasm の読み込みのエラー ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの上限-t0152)) と同じ:
+
+- `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (チャンクのタグ)・`max` (バイト)
+- `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号。モジュールならモジュールの中の番号)・`width`・`height`・`max` (画素)
+
+ほかの失敗も同じ辞書で返す: 読めないファイルは `invalid_file`・`unsupported_version` (`found`・`supported`)・`unsupported_features`
+(`features`)・`invalid_model` (`errors`)・`compile`、着せ替えの失敗は `ugoe::DressUpError::code` (`unknown_slot` など。補足の値も同じ)。
+`error` は英語の文で、安定した値ではない。成功した読み込みと付け外しで空に戻る。
+
+```gdscript
+puppet.max_image_side = 4096
+if not puppet.load_model_from_buffer(bytes):
+    var error := puppet.get_load_error()
+    if error.get("code") == "image_limit_exceeded":
+        print("texture %d is %dx%d" % [error.texture, error.width, error.height])
+```
 
 ### Light2D から取る光源
 

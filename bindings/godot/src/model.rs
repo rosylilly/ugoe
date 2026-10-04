@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ugoe::core::{Rgb, Vec2};
-use ugoe::format::module_file::read_module_with_report;
-use ugoe::format::{Bundle, FormatError, TextureData};
+use ugoe::format::module_file::read_module_with;
+use ugoe::format::{Bundle, FormatError, TextureData, TextureFormat};
+use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
 use ugoe::model::motion::Motion;
@@ -19,13 +20,208 @@ use ugoe::render::{Light, Lighting, MAX_LIGHTS};
 use ugoe::runtime::{CompileError, CompiledModel};
 use ugoe::{DressUpChange, DressUpError, LoadWarning, Puppet, TextureSource};
 
+/// 画像の一辺の上限の既定値 (画素)。`ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE` (wasm の `max_image_side` の既定値) と同じ。
+pub const DEFAULT_MAX_IMAGE_SIDE: u32 = 16384;
+
+/// 読み込みの上限 (`docs/spec/file-formats.md#読み込みの上限`)。上限はファイル形式の決まりではなく、組み込む側の方針。
+///
+/// 展開の上限 (`read`) は SDK・C ABI と同じ。画像の一辺の上限 (`max_image_side`) は wasm の `max_image_side` と同じ意味で、
+/// 画像は Godot がデコードするので、デコードする前に PNG と KTX2 の見出しの大きさで調べる ([`image_size`])。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadLimits {
+    pub read: ReadLimits,
+    pub max_image_side: u32,
+}
+
+impl Default for LoadLimits {
+    fn default() -> Self {
+        Self {
+            read: ReadLimits::default(),
+            max_image_side: DEFAULT_MAX_IMAGE_SIDE,
+        }
+    }
+}
+
+/// 上限を調べる画像の種類 (エラーの補足の値 `image`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageKind {
+    Texture,
+    NormalMap,
+}
+
+impl ImageKind {
+    /// 補足の値 `image` (`"texture"` | `"normal_map"`。wasm の `image_limit_exceeded` と同じ)。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Texture => "texture",
+            Self::NormalMap => "normal_map",
+        }
+    }
+}
+
 /// 読み込みの失敗。
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
-    #[error("failed to read the bundle: {0}")]
+    #[error("failed to read the file: {0}")]
     Format(#[from] FormatError),
     #[error("failed to compile the model: {0}")]
     Compile(#[from] CompileError),
+    /// 画像の一辺が上限 ([`LoadLimits::max_image_side`]) を超える。画像はデコードしていない。
+    #[error(
+        "the {} of texture {texture} is {width}x{height}, larger than the limit {max}x{max}",
+        if *image == ImageKind::Texture { "image" } else { "normal map" }
+    )]
+    ImageTooLarge {
+        image: ImageKind,
+        /// テクスチャの番号 (本体なら `Model::textures`、モジュールなら `Module::textures` の添字)。
+        texture: usize,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
+}
+
+/// エラーの補足の値 ([`LoadError::info`])。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorField {
+    Int(i64),
+    Text(String),
+}
+
+impl LoadError {
+    /// 画像の一辺の上限を超えたときの種類 (wasm の `image_limit_exceeded` と同じ)。
+    pub const IMAGE_LIMIT_EXCEEDED: &'static str = "image_limit_exceeded";
+
+    /// 機械が読む種類 (`code`) と補足の値。値は wasm の `LoadError::info` (`crates/ugoe-wasm/README.md`) と同じ:
+    ///
+    /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
+    /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture`・`width`・`height`・`max` (画素)。
+    /// - `unsupported_version`: `found`・`supported`。`unsupported_features`: `features` (`", "` でつないだ ID)。
+    /// - `invalid_model`: `errors` (検査のエラーの数)。`compile`: 評価できない構造。
+    /// - `invalid_file`: ほかの読めないファイル (壊れている・ugoe のファイルでないなど)。
+    pub fn info(&self) -> (&'static str, Vec<(&'static str, ErrorField)>) {
+        use ErrorField::{Int, Text};
+        let count = |n: usize| Int(i64::try_from(n).unwrap_or(i64::MAX));
+        match self {
+            Self::Format(e) => {
+                if let Some(exceeded) = ReadLimitExceeded::from_error(e) {
+                    return (
+                        ReadLimitExceeded::CODE,
+                        vec![
+                            ("limit", Text(exceeded.limit.as_str().to_owned())),
+                            ("chunk", Text(exceeded.chunk.to_string())),
+                            ("max", Int(i64::try_from(exceeded.max).unwrap_or(i64::MAX))),
+                        ],
+                    );
+                }
+                if let Some(errors) = e.validation_errors() {
+                    return ("invalid_model", vec![("errors", count(errors.len()))]);
+                }
+                match e {
+                    &FormatError::UnsupportedVersion { found, supported }
+                    | &FormatError::UnsupportedContainerVersion { found, supported } => (
+                        "unsupported_version",
+                        vec![
+                            ("found", Int(found.into())),
+                            ("supported", Int(supported.into())),
+                        ],
+                    ),
+                    FormatError::UnsupportedFeatures(features) => (
+                        "unsupported_features",
+                        vec![("features", Text(features.join(", ")))],
+                    ),
+                    _ => (DressUpError::INVALID_FILE, Vec::new()),
+                }
+            }
+            Self::Compile(CompileError::Invalid(errors)) => {
+                ("invalid_model", vec![("errors", count(errors.len()))])
+            }
+            Self::Compile(_) => ("compile", Vec::new()),
+            &Self::ImageTooLarge {
+                image,
+                texture,
+                width,
+                height,
+                max,
+            } => (
+                Self::IMAGE_LIMIT_EXCEEDED,
+                vec![
+                    ("image", Text(image.as_str().to_owned())),
+                    ("texture", count(texture)),
+                    ("width", Int(width.into())),
+                    ("height", Int(height.into())),
+                    ("max", Int(max.into())),
+                ],
+            ),
+        }
+    }
+}
+
+/// PNG の署名。
+const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+/// KTX2 の識別子 (`«KTX 20»\r\n\x1A\n`)。
+const KTX2_IDENTIFIER: [u8; 12] = [
+    0xab, b'K', b'T', b'X', b' ', b'2', b'0', 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+];
+
+/// 画像の幅と高さを見出しから読む (デコードしない)。PNG は最初のチャンク `IHDR`、KTX2 は `pixelWidth`・`pixelHeight`。
+/// 見出しが読めなければ `None` (上限は調べず、Godot のデコーダに任せる。読めなければ白で描く)。
+pub fn image_size(format: TextureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
+    let read = |at: usize, big_endian: bool| -> Option<u32> {
+        let b: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
+        Some(if big_endian {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        })
+    };
+    match format {
+        TextureFormat::Png => {
+            if !bytes.starts_with(&PNG_SIGNATURE) || bytes.get(12..16)? != b"IHDR" {
+                return None;
+            }
+            Some((read(16, true)?, read(20, true)?))
+        }
+        TextureFormat::Ktx2 => {
+            if !bytes.starts_with(&KTX2_IDENTIFIER) {
+                return None;
+            }
+            Some((read(20, false)?, read(24, false)?))
+        }
+    }
+}
+
+/// テクスチャ (`textures`) と法線マップ (`normal_maps`。どちらもテクスチャの番号の順) の一辺が `max` を超えないか調べる。
+fn check_image_sizes<'a>(
+    textures: impl IntoIterator<Item = Option<&'a TextureData>>,
+    normal_maps: impl IntoIterator<Item = Option<&'a TextureData>>,
+    max: u32,
+) -> Result<(), LoadError> {
+    let images = textures
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| (ImageKind::Texture, i, t))
+        .chain(
+            normal_maps
+                .into_iter()
+                .enumerate()
+                .map(|(i, t)| (ImageKind::NormalMap, i, t)),
+        );
+    for (image, texture, data) in images {
+        let Some((width, height)) = data.and_then(|d| image_size(d.format, &d.bytes)) else {
+            continue;
+        };
+        if width > max || height > max {
+            return Err(LoadError::ImageTooLarge {
+                image,
+                texture,
+                width,
+                height,
+                max,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// 要素が読むマスク 1 つ。
@@ -82,12 +278,17 @@ pub struct ModuleData {
 }
 
 impl ModuleData {
-    /// `.ugoemod` のバイト列から読む。
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, FormatError> {
-        let (file, report) = read_module_with_report(bytes)?;
-        let normal_maps = (0..file.module.textures.len())
+    /// `.ugoemod` のバイト列から、読み込みの上限 `limits` で読む。
+    pub fn from_bytes(bytes: &[u8], limits: LoadLimits) -> Result<Self, LoadError> {
+        let (file, report) = read_module_with(bytes, limits.read)?;
+        let normal_maps: Vec<Option<TextureData>> = (0..file.module.textures.len())
             .map(|i| file.normal_map(i).cloned())
             .collect();
+        check_image_sizes(
+            file.textures.iter().map(Some),
+            normal_maps.iter().map(Option::as_ref),
+            limits.max_image_side,
+        )?;
         Ok(Self {
             module: Arc::new(file.module),
             textures: file.textures,
@@ -122,10 +323,15 @@ pub struct LoadedModel {
 }
 
 impl LoadedModel {
-    /// `.ugoe` バンドルのバイト列から読み込む。
-    pub fn from_bundle_bytes(bytes: &[u8]) -> Result<Self, LoadError> {
-        let (bundle, report) = ugoe::format::read_bundle_with_report(bytes)?;
+    /// `.ugoe` バンドルのバイト列から、読み込みの上限 `limits` で読み込む。
+    pub fn from_bundle_bytes(bytes: &[u8], limits: LoadLimits) -> Result<Self, LoadError> {
+        let (bundle, report) = ugoe::format::read_bundle_with(bytes, limits.read)?;
         let mut loaded = Self::from_bundle(bundle)?;
+        check_image_sizes(
+            loaded.base_textures.iter().map(Option::as_ref),
+            loaded.base_normal_maps.iter().map(Option::as_ref),
+            limits.max_image_side,
+        )?;
         let read = report.warnings.iter().map(LoadWarning::from);
         loaded.warnings.splice(0..0, read);
         Ok(loaded)
@@ -856,8 +1062,11 @@ mod tests {
 
     #[test]
     fn loads_a_bundle_and_evaluates() {
-        let mut loaded =
-            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
+        let mut loaded = LoadedModel::from_bundle_bytes(
+            &bundle_bytes(fixtures::single_quad()),
+            LoadLimits::default(),
+        )
+        .expect("load");
         assert_eq!(loaded.drawables.len(), 1);
         assert_eq!(loaded.texture_count(), loaded.model().textures.len().max(1));
         assert!(loaded.texture(0).is_some());
@@ -870,7 +1079,7 @@ mod tests {
     fn reports_read_warnings() {
         // 知らない任意の機能を宣言したファイル (docs/testing.md#互換性テスト)。
         let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
-        let loaded = LoadedModel::from_bundle_bytes(bytes).expect("load");
+        let loaded = LoadedModel::from_bundle_bytes(bytes, LoadLimits::default()).expect("load");
         assert!(
             loaded
                 .warnings
@@ -880,11 +1089,14 @@ mod tests {
             loaded.warnings
         );
         let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
-        let module = ModuleData::from_bytes(bytes).expect("module");
+        let module = ModuleData::from_bytes(bytes, LoadLimits::default()).expect("module");
         assert!(!module.warnings.is_empty());
         // 警告の無いバンドル
-        let loaded =
-            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
+        let loaded = LoadedModel::from_bundle_bytes(
+            &bundle_bytes(fixtures::single_quad()),
+            LoadLimits::default(),
+        )
+        .expect("load");
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
     }
 
@@ -899,10 +1111,177 @@ mod tests {
         ));
     }
 
+    /// 幅 `width`・高さ `height` の PNG の見出し (署名と `IHDR`) だけのバイト列。画素は読まないので要らない。
+    fn png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = FAKE_PNG.to_vec();
+        bytes.extend_from_slice(&13u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn reads_image_sizes_from_headers() {
+        use ugoe::format::TextureFormat::{Ktx2, Png};
+        assert_eq!(image_size(Png, &png_header(64, 32)), Some((64, 32)));
+        assert_eq!(image_size(Png, &FAKE_PNG), None);
+        assert_eq!(image_size(Png, b"not a png at all, no header"), None);
+        let mut ktx2 = KTX2_IDENTIFIER.to_vec();
+        ktx2.extend_from_slice(&[0; 8]); // vkFormat・typeSize
+        ktx2.extend_from_slice(&300u32.to_le_bytes());
+        ktx2.extend_from_slice(&200u32.to_le_bytes());
+        assert_eq!(image_size(Ktx2, &ktx2), Some((300, 200)));
+        assert_eq!(image_size(Ktx2, &ktx2[..22]), None);
+        assert_eq!(image_size(Ktx2, &png_header(1, 1)), None);
+    }
+
+    #[test]
+    fn rejects_images_larger_than_the_limit() {
+        let model = fixtures::single_quad();
+        let mut bundle = Bundle::new(model.clone());
+        bundle.textures = vec![TextureData {
+            format: ugoe::format::TextureFormat::Png,
+            bytes: png_header(64, 32),
+        }];
+        let bytes = ugoe::format::write_bundle(&bundle).expect("write");
+        let limits = |side| LoadLimits {
+            max_image_side: side,
+            ..LoadLimits::default()
+        };
+        assert!(LoadedModel::from_bundle_bytes(&bytes, limits(64)).is_ok());
+        let error = LoadedModel::from_bundle_bytes(&bytes, limits(63)).expect_err("too large");
+        assert!(matches!(
+            error,
+            LoadError::ImageTooLarge {
+                image: ImageKind::Texture,
+                texture: 0,
+                width: 64,
+                height: 32,
+                max: 63,
+            }
+        ));
+        let (code, fields) = error.info();
+        assert_eq!(code, "image_limit_exceeded");
+        assert_eq!(
+            fields,
+            [
+                ("image", ErrorField::Text("texture".into())),
+                ("texture", ErrorField::Int(0)),
+                ("width", ErrorField::Int(64)),
+                ("height", ErrorField::Int(32)),
+                ("max", ErrorField::Int(63)),
+            ]
+        );
+        // 見出しの読めない画像は調べない (Godot のデコーダに任せる)
+        let loaded = LoadedModel::from_bundle_bytes(&bundle_bytes(model), limits(1));
+        assert!(loaded.is_ok());
+    }
+
+    #[test]
+    fn rejects_module_normal_maps_larger_than_the_limit() {
+        use ugoe::format::module_file::{ModuleFile, write_module};
+        let mut module = fixtures::long_hair_module();
+        let texture = module.textures.len() - 1;
+        module.textures[texture].normal_map = Some("long_hair_normal".into());
+        let mut file = ModuleFile::new(module.clone());
+        file.textures = module
+            .textures
+            .iter()
+            .map(|_| TextureData {
+                format: ugoe::format::TextureFormat::Png,
+                bytes: png_header(16, 16),
+            })
+            .collect();
+        file.normal_maps = vec![TextureData {
+            format: ugoe::format::TextureFormat::Png,
+            bytes: png_header(16, 40),
+        }];
+        let bytes = write_module(&file).expect("write");
+        let limits = LoadLimits {
+            max_image_side: 32,
+            ..LoadLimits::default()
+        };
+        let error = ModuleData::from_bytes(&bytes, limits).expect_err("too large");
+        assert!(
+            matches!(
+                error,
+                LoadError::ImageTooLarge {
+                    image: ImageKind::NormalMap,
+                    height: 40,
+                    max: 32,
+                    texture: t,
+                    ..
+                } if t == texture
+            ),
+            "{error:?}"
+        );
+        assert_eq!(error.info().0, "image_limit_exceeded");
+        assert!(ModuleData::from_bytes(&bytes, LoadLimits::default()).is_ok());
+    }
+
+    #[test]
+    fn rejects_bundles_and_modules_over_the_read_limits() {
+        use ugoe::format::module_file::{ModuleFile, write_module_with};
+        use ugoe::format::{WriteOptions, write_bundle_with};
+        let mut bundle = Bundle::new(fixtures::single_quad());
+        bundle.textures = vec![TextureData {
+            format: ugoe::format::TextureFormat::Png,
+            bytes: FAKE_PNG.to_vec(),
+        }];
+        let bytes = write_bundle_with(&bundle, WriteOptions { compress: true }).expect("write");
+        let limits = LoadLimits {
+            read: ReadLimits::default().with_max_total_decompressed(1),
+            ..LoadLimits::default()
+        };
+        assert!(LoadedModel::from_bundle_bytes(&bytes, LoadLimits::default()).is_ok());
+        let error = LoadedModel::from_bundle_bytes(&bytes, limits).expect_err("over the limit");
+        let (code, fields) = error.info();
+        assert_eq!(code, "read_limit_exceeded");
+        assert_eq!(
+            fields[0],
+            ("limit", ErrorField::Text("total_decompressed".into()))
+        );
+        assert!(matches!(fields[1], ("chunk", ErrorField::Text(_))));
+        assert_eq!(fields[2], ("max", ErrorField::Int(1)));
+
+        let mut file = ModuleFile::new(fixtures::long_hair_module());
+        file.textures = file
+            .module
+            .textures
+            .iter()
+            .map(|_| bundle.textures[0].clone())
+            .collect();
+        let bytes = write_module_with(&file, WriteOptions { compress: true }).expect("write");
+        let limits = LoadLimits {
+            read: ReadLimits::default().with_max_chunk_decompressed(1),
+            ..LoadLimits::default()
+        };
+        let error = ModuleData::from_bytes(&bytes, limits).expect_err("over the limit");
+        let (code, fields) = error.info();
+        assert_eq!(code, "read_limit_exceeded");
+        assert_eq!(
+            fields[0],
+            ("limit", ErrorField::Text("chunk_decompressed".into()))
+        );
+    }
+
+    #[test]
+    fn describes_other_load_errors() {
+        let error = LoadedModel::from_bundle_bytes(b"not a bundle", LoadLimits::default())
+            .expect_err("broken");
+        assert_eq!(error.info(), ("invalid_file", Vec::new()));
+        let mut model = fixtures::single_quad();
+        model.meshes[0].texture = u32::MAX;
+        let error = LoadedModel::from_bundle(Bundle::new(model)).expect_err("invalid");
+        assert_eq!(error.info().0, "invalid_model");
+    }
+
     #[test]
     fn rejects_broken_bytes() {
         assert!(matches!(
-            LoadedModel::from_bundle_bytes(b"not a bundle"),
+            LoadedModel::from_bundle_bytes(b"not a bundle", LoadLimits::default()),
             Err(LoadError::Format(_))
         ));
     }
@@ -1096,7 +1475,9 @@ mod tests {
         use ugoe::format::module_file::{ModuleFile, write_module};
 
         let base = fixtures::dress_up_base();
-        let mut loaded = LoadedModel::from_bundle_bytes(&bundle_bytes(base.clone())).expect("load");
+        let mut loaded =
+            LoadedModel::from_bundle_bytes(&bundle_bytes(base.clone()), LoadLimits::default())
+                .expect("load");
         let base_count = loaded.texture_count();
         let module = fixtures::dress_module();
         let mut file = ModuleFile::new(module.clone());
@@ -1108,8 +1489,10 @@ mod tests {
                 bytes: FAKE_PNG.to_vec(),
             })
             .collect();
-        let data =
-            Arc::new(ModuleData::from_bytes(&write_module(&file).expect("write")).expect("read"));
+        let data = Arc::new(
+            ModuleData::from_bytes(&write_module(&file).expect("write"), LoadLimits::default())
+                .expect("read"),
+        );
         let name = data.name().to_owned();
         let change = loaded.set_modules(vec![Arc::clone(&data)]).expect("attach");
         assert_eq!(loaded.modules().len(), 1);
@@ -1133,8 +1516,11 @@ mod tests {
 
     #[test]
     fn base_physics_is_replaced_and_validated() {
-        let mut loaded =
-            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::physics_hair())).expect("load");
+        let mut loaded = LoadedModel::from_bundle_bytes(
+            &bundle_bytes(fixtures::physics_hair()),
+            LoadLimits::default(),
+        )
+        .expect("load");
         assert!(loaded.puppet.physics().is_none());
         let swapped = loaded
             .set_base_physics(Some(fixtures::physics_hair_settings()))
@@ -1143,8 +1529,11 @@ mod tests {
         assert!(loaded.puppet.physics().is_some());
         assert!(loaded.puppet.base_physics().is_some());
         // モデルに合わない設定 (別のモデルのリグ) は拒み、今の設定を保つ。
-        let mut loaded_quad =
-            LoadedModel::from_bundle_bytes(&bundle_bytes(fixtures::single_quad())).expect("load");
+        let mut loaded_quad = LoadedModel::from_bundle_bytes(
+            &bundle_bytes(fixtures::single_quad()),
+            LoadLimits::default(),
+        )
+        .expect("load");
         assert!(
             loaded_quad
                 .set_base_physics(Some(fixtures::physics_hair_settings()))

@@ -197,6 +197,8 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
     `ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits` (超えたら `UGOE_ERROR_LIMIT_EXCEEDED`。[crates/ugoe-ffi/README.md](../../crates/ugoe-ffi/README.md#読み込みの上限-t0152))、
     wasm は `load_bundle` / `load_module` の上限の JSON で、画像 (PNG・KTX2) の一辺の上限 (`max_image_side`) も指定できます
     ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの上限-t0152))。`@ugoe/runtime` は `loadModel` の `limits`。
+    Godot は `UgoePuppet2D` の `max_chunk_decompressed`・`max_total_decompressed`・`max_image_side` (wasm と同じ意味。画像は Godot が
+    デコードするので、デコードの前に見出しの大きさで調べる) で、失敗は `get_load_error()` で読みます ([bindings/godot/README.md](../../bindings/godot/README.md#読み込みの上限-t0459))。
 - テクスチャと法線マップの PNG / KTX2 は、コンテナの読み込み (`read_bundle` など) ではデコードしません (バイト列のまま返します)。
   デコードする側のための関数は `ugoe_format::image` (feature `png`) の `decode_png(bytes, ImageLimits)` / `decode_png_premultiplied`・
   `decode_ktx2` / `decode_ktx2_premultiplied` (T0222)・形式で選ぶ `decode_image` / `decode_image_premultiplied` で、

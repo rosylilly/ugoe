@@ -12,13 +12,17 @@ use godot::classes::{
 use godot::prelude::*;
 use godot::register::info::{PropertyHint, PropertyHintInfo, PropertyInfo, PropertyUsageFlags};
 use ugoe::core::Rgb;
+use ugoe::limits::ReadLimits;
 use ugoe::model::avatar::ARKIT_BLEND_SHAPES;
 use ugoe::motion::{BodyInput, Priority, Rotation, TrackingInput};
 use ugoe::render::{Light, Lighting};
 use ugoe::runtime::ParamIndex;
-use ugoe::{DressUpChange, Toggles};
+use ugoe::{DressUpChange, DressUpError, FieldValue, Toggles};
 
-use crate::model::{LightUniforms, LoadedModel, ModuleData, directional_from_light2d, valid_color};
+use crate::model::{
+    ErrorField, LightUniforms, LoadError, LoadLimits, LoadedModel, ModuleData,
+    directional_from_light2d, valid_color,
+};
 use crate::render::{Renderer, TextureCache};
 use crate::xr::arkit_from_unified;
 
@@ -88,6 +92,21 @@ pub(crate) struct UgoePuppet2D {
     #[export]
     #[var(set = set_tracking_kept)]
     tracking_kept: PackedStringArray,
+    /// 圧縮したチャンク 1 つを展開した後の大きさの上限 (バイト。`docs/spec/file-formats.md#読み込みの上限`)。
+    /// 次の読み込み (モデルと着せ替えのモジュール) から効く。負の値は拒む。
+    #[export_group(name = "Load limits")]
+    #[export]
+    #[var(set = set_max_chunk_decompressed)]
+    max_chunk_decompressed: i64,
+    /// 1 つのファイルで、圧縮したチャンクを展開したバイトの合計の上限。次の読み込みから効く。負の値は拒む。
+    #[export]
+    #[var(set = set_max_total_decompressed)]
+    max_total_decompressed: i64,
+    /// テクスチャと法線マップの画像 (PNG・KTX2) の幅と高さそれぞれの上限 (画素)。次の読み込みから効く。
+    /// 負の値と 2^32 以上は拒む。
+    #[export]
+    #[var(set = set_max_image_side)]
+    max_image_side: i64,
 
     loaded: Option<LoadedModel>,
     /// 木の外で `model` を変えたので、木に戻ったときに読み込み直す (`ready` は最初の 1 回しか呼ばれないため)。
@@ -106,6 +125,8 @@ pub(crate) struct UgoePuppet2D {
     tracking: Option<TrackingInput>,
     /// `update` の各段を動かすか (モデルを読み直しても保つ)。
     toggles: Toggles,
+    /// 直前の読み込み (モデルか着せ替えのモジュール) の失敗 (`get_load_error()`)。成功したら空。
+    load_error: VarDictionary,
     /// 付けているモジュールのリソースと、読んだ中身 (付け外しで読み直さないため)。
     attached: Vec<(Gd<Resource>, Arc<ModuleData>)>,
     renderer: Option<Renderer>,
@@ -129,6 +150,7 @@ impl std::fmt::Debug for UgoePuppet2D {
 #[godot_api]
 impl INode2D for UgoePuppet2D {
     fn init(base: Base<Node2D>) -> Self {
+        let limits = LoadLimits::default();
         Self {
             model: None,
             playing: true,
@@ -142,6 +164,9 @@ impl INode2D for UgoePuppet2D {
             xr_face_tracker: StringName::default(),
             motion_over_tracking: false,
             tracking_kept: PackedStringArray::new(),
+            max_chunk_decompressed: to_i64(limits.read.max_chunk_decompressed),
+            max_total_decompressed: to_i64(limits.read.max_total_decompressed),
+            max_image_side: limits.max_image_side.into(),
             loaded: None,
             model_pending: false,
             manual_lights: Vec::new(),
@@ -151,6 +176,7 @@ impl INode2D for UgoePuppet2D {
             lighting: LightUniforms::new(&Lighting::default()),
             tracking: None,
             toggles: Toggles::default(),
+            load_error: VarDictionary::new(),
             attached: Vec::new(),
             renderer: None,
             parameters: HashMap::new(),
@@ -299,13 +325,54 @@ impl UgoePuppet2D {
         self.renderer.as_ref().map_or(1.0, Renderer::mask_shrink)
     }
 
+    // --- 読み込みの上限 (docs/spec/file-formats.md#読み込みの上限)
+
+    /// 展開した 1 チャンクの上限 (バイト) を変える。負ならエラーを出して変えない。
+    #[func]
+    pub fn set_max_chunk_decompressed(&mut self, bytes: i64) {
+        if bytes < 0 {
+            godot_error!("ugoe: max_chunk_decompressed must not be negative (got {bytes})");
+            return;
+        }
+        self.max_chunk_decompressed = bytes;
+    }
+
+    /// 展開したバイトの合計の上限を変える。負ならエラーを出して変えない。
+    #[func]
+    pub fn set_max_total_decompressed(&mut self, bytes: i64) {
+        if bytes < 0 {
+            godot_error!("ugoe: max_total_decompressed must not be negative (got {bytes})");
+            return;
+        }
+        self.max_total_decompressed = bytes;
+    }
+
+    /// 画像の一辺の上限 (画素) を変える。負か 2^32 以上ならエラーを出して変えない。
+    #[func]
+    pub fn set_max_image_side(&mut self, pixels: i64) {
+        if u32::try_from(pixels).is_err() {
+            godot_error!("ugoe: max_image_side must be in 0..2^32 (got {pixels})");
+            return;
+        }
+        self.max_image_side = pixels;
+    }
+
+    /// 直前の読み込み (`model`・`load_model*`、着せ替えのモジュールの付け外し) の失敗。成功したら空の辞書。
+    ///
+    /// `{ "code", "error", ... }` で、`code` と補足のキーは wasm の読み込みのエラー (`LoadError` / `DressUpError` の
+    /// `code` とプロパティ) と同じ。上限を超えたら `read_limit_exceeded` (`limit`・`chunk`・`max`) か
+    /// `image_limit_exceeded` (`image`・`texture`・`width`・`height`・`max`)。`error` は英語の文 (安定した値ではない)。
+    #[func]
+    pub fn get_load_error(&self) -> VarDictionary {
+        self.load_error.clone()
+    }
+
     /// `.ugoe` をパスから (`ResourceLoader` で) 読み込み、`model` に設定する。成功したら true。
     #[func]
     pub fn load_model(&mut self, path: GString) -> bool {
         let Some(model) = ResourceLoader::singleton().load(&path) else {
-            godot_error!("ugoe: `{path}` is not a .ugoe model");
             self.model = None;
-            self.unload();
+            self.fail_invalid_file(&format!("`{path}` is not a .ugoe model"));
             return false;
         };
         self.model = Some(model);
@@ -513,7 +580,8 @@ impl UgoePuppet2D {
         true
     }
 
-    /// リップシンクの音量 (0〜1) を設定する。NaN ならエラーを出して変えない。
+    /// リップシンクの音量 (0〜1) を設定する。負の値 (`-INF` を含む) は入力をやめる (`clear_lip_sync_level` と同じ。
+    /// C ABI の `ugoe_puppet_set_lip_sync_level`・wasm・Unity と同じ)。NaN ならエラーを出して変えない。
     #[func]
     pub fn set_lip_sync_level(&mut self, level: f32) {
         if level.is_nan() {
@@ -521,11 +589,13 @@ impl UgoePuppet2D {
             return;
         }
         if let Some(loaded) = &mut self.loaded {
-            loaded.puppet.set_lip_sync_level(Some(level));
+            loaded
+                .puppet
+                .set_lip_sync_level((level >= 0.0).then_some(level));
         }
     }
 
-    /// リップシンクの入力をやめる。
+    /// リップシンクの入力をやめる (`set_lip_sync_level` に負の値を渡すのと同じ)。
     #[func]
     pub fn clear_lip_sync_level(&mut self) {
         if let Some(loaded) = &mut self.loaded {
@@ -609,11 +679,12 @@ impl UgoePuppet2D {
         let Some(data) = self.parse_module(&module) else {
             return false;
         };
-        let mut list: Vec<(Gd<Resource>, Arc<ModuleData>)> = self
-            .module_resources()
-            .into_iter()
-            .filter_map(|r| self.parse_module(&r).map(|d| (r, d)))
-            .collect();
+        let mut list: Vec<(Gd<Resource>, Arc<ModuleData>)> = Vec::new();
+        for r in self.module_resources() {
+            if let Some(d) = self.parse_module(&r) {
+                list.push((r, d));
+            }
+        }
         let (name, slot) = (data.name().to_owned(), data.module.slot.clone());
         let same = |d: &ModuleData| d.name() == name || d.module.slot == slot;
         match list.iter().position(|(_, d)| same(d)) {
@@ -627,7 +698,7 @@ impl UgoePuppet2D {
             }
             None => list.push((module, data)),
         }
-        self.apply_modules(list.into_iter().map(|(r, _)| r).collect())
+        self.apply_parsed_modules(list)
     }
 
     /// 名前が `name` のモジュールを外す。付いていなければ false。
@@ -638,7 +709,7 @@ impl UgoePuppet2D {
         let before = resources.len();
         let list: Vec<Gd<Resource>> = resources
             .into_iter()
-            .filter(|r| self.parse_module(r).is_none_or(|d| d.name() != name))
+            .filter(|r| self.read_module(r).ok().is_none_or(|d| d.name() != name))
             .collect();
         if list.len() == before {
             godot_warn!("ugoe: module `{name}` is not attached");
@@ -666,7 +737,7 @@ impl UgoePuppet2D {
         }
         self.module_resources()
             .iter()
-            .filter_map(|r| self.parse_module(r))
+            .filter_map(|r| self.read_module(r).ok())
             .map(|d| GString::from(d.name()))
             .collect()
     }
@@ -985,6 +1056,47 @@ fn light_from_dictionary(d: &VarDictionary) -> Option<Light> {
     }
 }
 
+/// 上限のバイト数をプロパティの整数にする (`i64` に収まらなければ最大値)。
+fn to_i64(bytes: u64) -> i64 {
+    i64::try_from(bytes).unwrap_or(i64::MAX)
+}
+
+/// `get_load_error()` の辞書: `{ "code", "error", ...fields }`。
+fn error_dictionary(
+    code: &str,
+    error: &str,
+    fields: impl IntoIterator<Item = (&'static str, Variant)>,
+) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    d.set("code", code);
+    d.set("error", error);
+    for (key, value) in fields {
+        d.set(key, &value);
+    }
+    d
+}
+
+/// 読み込みの失敗 ([`LoadError::info`]) の辞書。
+fn load_error_dictionary(error: &LoadError) -> VarDictionary {
+    let (code, fields) = error.info();
+    let fields = fields.into_iter().map(|(key, value)| {
+        let value = match value {
+            ErrorField::Int(i) => i.to_variant(),
+            ErrorField::Text(t) => t.to_variant(),
+        };
+        (key, value)
+    });
+    error_dictionary(code, &error.to_string(), fields)
+}
+
+/// 着せ替えの失敗の補足の値 ([`DressUpError::fields`]) を Godot の値にする (番号は整数)。
+fn field_variant(value: FieldValue<'_>) -> Variant {
+    match value {
+        FieldValue::Index(i) => i64::try_from(i).unwrap_or(i64::MAX).to_variant(),
+        FieldValue::Text(t) => t.to_variant(),
+    }
+}
+
 fn to_canvas(loaded: &LoadedModel, local: Vector2) -> ugoe::core::Vec2 {
     let o = loaded.model().meta.canvas.origin;
     ugoe::core::Vec2::new(local.x + o.x, local.y + o.y)
@@ -1024,8 +1136,7 @@ impl UgoePuppet2D {
         };
         let path = model.get_path();
         let Ok(bytes) = model.get("data").try_to::<PackedByteArray>() else {
-            godot_error!("ugoe: `{path}` is not a UgoeModel (it has no `data`)");
-            self.unload();
+            self.fail_invalid_file(&format!("`{path}` is not a UgoeModel (it has no `data`)"));
             return false;
         };
         self.load_bytes(&bytes, &path.to_string())
@@ -1033,21 +1144,53 @@ impl UgoePuppet2D {
 
     /// `.ugoe` のバイト列から読み込む。`what` はエラーの表示に使う。
     fn load_bytes(&mut self, bytes: &PackedByteArray, what: &str) -> bool {
-        match LoadedModel::from_bundle_bytes(bytes.as_slice()) {
+        match LoadedModel::from_bundle_bytes(bytes.as_slice(), self.load_limits()) {
             Ok(loaded) => {
                 self.install(loaded);
                 true
             }
             Err(e) => {
-                godot_error!("ugoe: `{what}`: {e}");
-                self.unload();
+                self.fail_load(&e, &format!("`{what}`"));
                 false
             }
         }
     }
 
+    /// 読み込みの上限 (`max_*` のプロパティ)。
+    fn load_limits(&self) -> LoadLimits {
+        // 設定の関数が範囲を確かめているので、変換は失敗しない (しても既定値を使う)。
+        let defaults = LoadLimits::default();
+        LoadLimits {
+            read: ReadLimits::default()
+                .with_max_chunk_decompressed(
+                    u64::try_from(self.max_chunk_decompressed)
+                        .unwrap_or(defaults.read.max_chunk_decompressed),
+                )
+                .with_max_total_decompressed(
+                    u64::try_from(self.max_total_decompressed)
+                        .unwrap_or(defaults.read.max_total_decompressed),
+                ),
+            max_image_side: u32::try_from(self.max_image_side).unwrap_or(defaults.max_image_side),
+        }
+    }
+
+    /// モデルの読み込みの失敗: エラーを出し、`get_load_error()` に残し、モデルを外す。`what` はエラーの表示に使う。
+    pub(super) fn fail_load(&mut self, error: &LoadError, what: &str) {
+        godot_error!("ugoe: {what}: {error}");
+        self.load_error = load_error_dictionary(error);
+        self.unload();
+    }
+
+    /// `UgoeModel` でないリソースなど、ファイルを読む前の失敗 (`invalid_file`)。
+    fn fail_invalid_file(&mut self, message: &str) {
+        godot_error!("ugoe: {message}");
+        self.load_error = error_dictionary(DressUpError::INVALID_FILE, message, []);
+        self.unload();
+    }
+
     fn install(&mut self, mut loaded: LoadedModel) {
         self.unload();
+        self.load_error = VarDictionary::new();
         for warning in &loaded.warnings {
             godot_warn!("ugoe: {warning}");
         }
@@ -1110,32 +1253,47 @@ impl UgoePuppet2D {
             .collect()
     }
 
-    /// モジュールのリソースを読む。付けているものなら読み直さない。読めなければエラーを出して `None`。
-    fn parse_module(&self, resource: &Gd<Resource>) -> Option<Arc<ModuleData>> {
-        if let Some((_, data)) = self.attached.iter().find(|(r, _)| r == resource) {
-            return Some(Arc::clone(data));
-        }
-        let path = resource.get_path();
-        let Ok(bytes) = resource.get("data").try_to::<PackedByteArray>() else {
-            godot_error!("ugoe: `{path}` is not a UgoeModule (it has no `data`)");
-            return None;
-        };
-        match ModuleData::from_bytes(bytes.as_slice()) {
-            Ok(data) => {
-                for warning in &data.warnings {
-                    godot_warn!("ugoe: module `{path}`: {warning}");
-                }
-                Some(Arc::new(data))
-            }
-            Err(e) => {
-                godot_error!("ugoe: module `{path}`: {e}");
+    /// モジュールのリソースを読む。付けているものなら読み直さない。読めなければエラーを出し、
+    /// `get_load_error()` に残して `None`。
+    ///
+    /// 読むたびに読み込みの警告を Godot の警告として出すので、1 回の操作で同じリソースを 2 度読まない
+    /// (読んだものを [`Self::apply_parsed_modules`] に渡す)。
+    fn parse_module(&mut self, resource: &Gd<Resource>) -> Option<Arc<ModuleData>> {
+        match self.read_module(resource) {
+            Ok(data) => Some(data),
+            Err(error) => {
+                self.load_error = error;
                 None
             }
         }
     }
 
-    /// 取り付けるモジュールを `list` にする。読み込んだモデルがあれば付け直し、テクスチャを使い回して
-    /// レンダラを作り直す。成功したら true。失敗したら何も変えない。
+    /// [`Self::parse_module`] と同じだが、失敗を `get_load_error()` に残さない (エラーの辞書を返す)。
+    fn read_module(&self, resource: &Gd<Resource>) -> Result<Arc<ModuleData>, VarDictionary> {
+        if let Some((_, data)) = self.attached.iter().find(|(r, _)| r == resource) {
+            return Ok(Arc::clone(data));
+        }
+        let path = resource.get_path();
+        let Ok(bytes) = resource.get("data").try_to::<PackedByteArray>() else {
+            let message = format!("`{path}` is not a UgoeModule (it has no `data`)");
+            godot_error!("ugoe: {message}");
+            return Err(error_dictionary(DressUpError::INVALID_FILE, &message, []));
+        };
+        match ModuleData::from_bytes(bytes.as_slice(), self.load_limits()) {
+            Ok(data) => {
+                for warning in &data.warnings {
+                    godot_warn!("ugoe: module `{path}`: {warning}");
+                }
+                Ok(Arc::new(data))
+            }
+            Err(e) => {
+                godot_error!("ugoe: module `{path}`: {e}");
+                Err(load_error_dictionary(&e))
+            }
+        }
+    }
+
+    /// 取り付けるモジュールを `list` にする ([`Self::apply_parsed_modules`])。読めないリソースがあれば何も変えずに false。
     fn apply_modules(&mut self, list: Vec<Gd<Resource>>) -> bool {
         let mut parsed = Vec::with_capacity(list.len());
         for resource in list {
@@ -1144,12 +1302,20 @@ impl UgoePuppet2D {
             };
             parsed.push((resource, data));
         }
+        self.apply_parsed_modules(parsed)
+    }
+
+    /// 読んだモジュールの組を取り付ける。読み込んだモデルがあれば付け直し、テクスチャを使い回して
+    /// レンダラを作り直す。成功したら true (`get_load_error()` を空にする)。失敗したら何も変えない。
+    fn apply_parsed_modules(&mut self, parsed: Vec<(Gd<Resource>, Arc<ModuleData>)>) -> bool {
         if let Some(loaded) = &mut self.loaded {
             let change =
                 match loaded.set_modules(parsed.iter().map(|(_, d)| Arc::clone(d)).collect()) {
                     Ok(change) => change,
                     Err(e) => {
                         godot_error!("ugoe: dress-up failed: {e}");
+                        let fields = e.fields().into_iter().map(|(k, v)| (k, field_variant(v)));
+                        self.load_error = error_dictionary(e.code(), &e.to_string(), fields);
                         return false;
                     }
                 };
@@ -1157,6 +1323,7 @@ impl UgoePuppet2D {
         }
         self.modules = parsed.iter().map(|(r, _)| r.to_variant()).collect();
         self.attached = parsed;
+        self.load_error = VarDictionary::new();
         true
     }
 

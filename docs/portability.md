@@ -115,7 +115,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | --- | --- | --- | --- |
 | `dt` (`update`) | 負・NaN・無限大を拒む (`ugoe_puppet_update`)。Unity の `UgoePuppet` の毎フレームの進め方は、`Time.deltaTime × speed` が正の有限でなければ 0 で進める | 下の層と同じ (0 とみなす) | `advance(delta)` は負・NaN・無限大を拒む。`speed` の setter も負・有限でない値を拒む |
 | パラメータの値 | NaN を拒む (`ugoe_puppet_set_parameter`・`set_parameters_by_id`)。無限大はクランプ | 下の層と同じ (`set_parameter` は書かずに `true`)。`<ugoe-avatar>` の `parameters` 属性は有限でない値の組を無視する | `set_parameter` は NaN を拒む。無限大はクランプ |
-| リップシンクの音量 | NaN を拒む。負 (`-∞` を含む) は入力をやめる (`None`)。`+∞` は 1 | 下の層と同じ (NaN は `undefined` と同じ) | `set_lip_sync_level` は NaN を拒む。負は 0 (入力をやめるのは `clear_lip_sync_level`) |
+| リップシンクの音量 | NaN を拒む。負 (`-∞` を含む) は入力をやめる (`None`)。`+∞` は 1 | 下の層と同じ (NaN は `undefined` と同じ) | `set_lip_sync_level` は C ABI と同じ (NaN を拒み、負は入力をやめる)。`clear_lip_sync_level` でもやめられる |
 | 基準値の列・受け手 (`follow`) | 下の層の拒否を結果コードにする。加えて `dt` の負・NaN・無限大を拒む。音量が負ならリップシンクを当てない | 下の層の拒否を例外にする。`dt` は 0 とみなす | 下の層の拒否をエラーにする。加えて `delta` の負・NaN・無限大を拒む。音量が負ならリップシンクを当てない |
 | トラッキング | 頭の回転とブレンドシェイプが有限でなければ拒む。体と肩は NaN を省略とみなし、無限大を拒む (`UgoeTrackingInput`) | 下の層と同じ (書かない) | `set_tracking_head` は有限でなければ拒む。`set_tracking_body` は C ABI と同じ。ブレンドシェイプは有限でない値を数えずに飛ばす (`set_tracking_blend_shape` は false) |
 | 光源 | 向きが 0・有限でない値・`range` が正でない・負の色を拒む (`ugoe_lighting_uniform`) | `set_lighting_json` は同じ条件で例外 | `ambient_light` は色が有限で負でなければ受け付け、そうでなければ拒む。光源は C ABI と同じ条件で、通らないものは警告を出して使わない |

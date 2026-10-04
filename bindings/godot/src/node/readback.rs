@@ -8,7 +8,7 @@ use godot::prelude::*;
 use ugoe::format::Bundle;
 
 use super::UgoePuppet2D;
-use crate::model::LoadedModel;
+use crate::model::{LoadError, LoadedModel};
 
 #[godot_api(secondary)]
 impl UgoePuppet2D {
@@ -25,8 +25,7 @@ impl UgoePuppet2D {
                 true
             }
             Err(e) => {
-                godot_error!("ugoe: {e}");
-                self.unload();
+                self.fail_load(&e, "(model JSON)");
                 false
             }
         }
@@ -102,11 +101,10 @@ impl UgoePuppet2D {
     }
 }
 
-/// モデルの JSON を、テクスチャの無いバンドルとして読み込む。失敗したらエラーの文。
-fn load_json(json: &str) -> Result<LoadedModel, String> {
-    let model = ugoe::format::model_from_json(json)
-        .map_err(|e| format!("failed to read the model JSON: {e}"))?;
-    let mut loaded = LoadedModel::from_bundle(Bundle::new(model)).map_err(|e| e.to_string())?;
+/// モデルの JSON を、テクスチャの無いバンドルとして読み込む。
+fn load_json(json: &str) -> Result<LoadedModel, LoadError> {
+    let model = ugoe::format::model_from_json(json)?;
+    let mut loaded = LoadedModel::from_bundle(Bundle::new(model))?;
     // テクスチャが無いのは前提なので、画像の無いテクスチャの警告は出さない。
     loaded.warnings.clear();
     Ok(loaded)

@@ -65,6 +65,18 @@ func _sdk_features(puppet: Node2D) -> void:
 		if w["code"] == "unknown_optional_feature":
 			_check(w.has("feature") and w["warning"] is String, "a module warning has its fields (%s)" % w)
 	_check(module_codes.has("unknown_optional_feature"), "module load warnings %s" % [module_codes])
+	# attach_module は新しいモジュールを 1 回だけ読み、読み込みの警告を 1 回だけ出す (T0459)
+	if ClassDB.class_exists("Logger"):
+		puppet.clear_modules()
+		var counter: Logger = load("res://tests/warning_counter.gd").new()
+		counter.needle = "ugoe: module"
+		OS.add_logger(counter)
+		_check(puppet.attach_module(UgoeModule.from_buffer(FileAccess.get_file_as_bytes(_repo("assets/compat/future/optional-feature.ugoemod")))), "attach the future module again")
+		OS.remove_logger(counter)
+		var expected: int = puppet.get_module_load_warnings(module_names[0]).size()
+		_check(expected > 0 and counter.count == expected, "attach_module warns once per load warning (%d warnings, %d logged)" % [expected, counter.count])
+	else:
+		print("skip: Logger needs Godot 4.5 or later")
 	_check(puppet.get_module_load_warnings("missing").is_empty(), "a missing module has no warnings")
 	puppet.clear_modules()
 	_check(puppet.get_module_load_warnings(module_names[0]).is_empty(), "a detached module has no warnings")
@@ -195,6 +207,62 @@ func _sdk_features(puppet: Node2D) -> void:
 	puppet.advance(0.1)
 	_check(is_equal_approx(puppet.get_parameter("Mouth2"), 0.6), "replaced lip sync moves Mouth2 (%f)" % puppet.get_parameter("Mouth2"))
 	_check(not puppet.set_effects_json("{"), "broken effects JSON fails")
+	# 口の入力をやめる: 負の値 (C ABI・wasm・Unity と同じ) と clear_lip_sync_level (T0459)
+	_check(is_equal_approx(puppet.get_lip_sync_applied().x, 0.6), "lip sync is applied %s" % puppet.get_lip_sync_applied())
+	puppet.set_lip_sync_level(-1.0)
+	puppet.advance(0.1)
+	_check(puppet.get_lip_sync_applied() == Vector2(-1.0, 1.0), "a negative level stops the lip sync input %s" % puppet.get_lip_sync_applied())
+	puppet.set_lip_sync_level(0.0)
+	puppet.advance(0.1)
+	_check(puppet.get_lip_sync_applied() == Vector2(0.0, 1.0), "level 0 is still an input %s" % puppet.get_lip_sync_applied())
+	puppet.set_lip_sync_level(-INF)
+	puppet.advance(0.1)
+	_check(puppet.get_lip_sync_applied() == Vector2(-1.0, 1.0), "-INF stops the lip sync input %s" % puppet.get_lip_sync_applied())
+	puppet.set_lip_sync_level(0.6)
+	puppet.advance(0.1)
+	puppet.clear_lip_sync_level()
+	puppet.advance(0.1)
+	_check(puppet.get_lip_sync_applied() == Vector2(-1.0, 1.0), "clear_lip_sync_level stops the lip sync input %s" % puppet.get_lip_sync_applied())
+
+	# 読み込みの上限 (T0459): 超えたら読み込みに失敗し、get_load_error() で種類と補足の値を読める
+	_check(puppet.max_image_side == 16384 and puppet.max_chunk_decompressed == 256 * 1024 * 1024 and puppet.max_total_decompressed == 1024 * 1024 * 1024, "default load limits")
+	puppet.max_image_side = 8
+	_check(not puppet.load_model("res://models/avatar.ugoe"), "a texture over max_image_side fails")
+	var error: Dictionary = puppet.get_load_error()
+	_check(error.get("code") == "image_limit_exceeded" and error.get("image") == "texture" and error.get("max") == 8 and error.get("width") > 8 and error.get("texture") is int and error.get("error") is String, "image limit error %s" % error)
+	_check(not puppet.is_model_loaded(), "no model after a failed load")
+	puppet.max_image_side = -1
+	puppet.max_image_side = 1 << 32
+	_check(puppet.max_image_side == 8, "max_image_side rejects values outside 0..2^32 (%d)" % puppet.max_image_side)
+	puppet.max_image_side = 16384
+	var zstd := FileAccess.get_file_as_bytes(_repo("spec/examples/bundles/single-quad-zstd.ugoe"))
+	_check(puppet.load_model_from_buffer(zstd), "load a compressed bundle")
+	_check(puppet.get_load_error().is_empty(), "a successful load clears the error")
+	puppet.max_total_decompressed = 1
+	_check(not puppet.load_model_from_buffer(zstd), "a bundle over max_total_decompressed fails")
+	error = puppet.get_load_error()
+	_check(error.get("code") == "read_limit_exceeded" and error.get("limit") == "total_decompressed" and error.get("max") == 1 and error.get("chunk") is String, "read limit error %s" % error)
+	puppet.max_total_decompressed = -1
+	_check(puppet.max_total_decompressed == 1, "max_total_decompressed rejects negative values")
+	puppet.max_total_decompressed = 1024 * 1024 * 1024
+	puppet.max_chunk_decompressed = 1
+	_check(not puppet.load_model_from_buffer(zstd), "a bundle over max_chunk_decompressed fails")
+	_check(puppet.get_load_error().get("limit") == "chunk_decompressed", "chunk limit error %s" % puppet.get_load_error())
+	puppet.max_chunk_decompressed = 256 * 1024 * 1024
+	_check(not puppet.load_model_from_buffer(PackedByteArray([1, 2, 3])), "broken bytes fail")
+	_check(puppet.get_load_error().get("code") == "invalid_file", "broken bytes are invalid_file %s" % puppet.get_load_error())
+	# 着せ替えのモジュールにも効く
+	_check(puppet.load_model("res://models/dress-up.ugoe"), "load dress-up for module limits")
+	puppet.max_image_side = 8
+	_check(not puppet.attach_module(load("res://models/sailor.ugoemod")), "a module texture over max_image_side fails")
+	error = puppet.get_load_error()
+	_check(error.get("code") == "image_limit_exceeded" and error.get("max") == 8, "module image limit error %s" % error)
+	_check(puppet.get_module_names().is_empty(), "the module is not attached")
+	puppet.max_image_side = 16384
+	_check(puppet.attach_module(load("res://models/sailor.ugoemod")), "attach sailor within the limits")
+	_check(puppet.get_load_error().is_empty(), "a successful attach clears the error")
+	puppet.clear_modules()
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(_repo("spec/examples/effects-replace/model.json"))), "reload effects-replace")
 	puppet.clear_lip_sync_level()
 
 	# 物理の設定の差し替え (公開仕様の例 physics-pendulum)
