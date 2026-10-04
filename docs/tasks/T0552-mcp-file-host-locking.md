@@ -1,11 +1,11 @@
 ---
 id: T0552
 title: "MCP: FileHost の読み書きを表全体の錠の外で行い、保存と書き出しを半端にしない"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: [T0529]
-assignee:
+assignee: claude-worker-T0552
 ---
 
 # T0552: MCP: FileHost の読み書きを表全体の錠の外で行い、保存と書き出しを半端にしない
