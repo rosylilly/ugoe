@@ -68,14 +68,8 @@ import {
   parseParameterList,
 } from "./parameters";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
+import type { Screenshot } from "./screenshot";
 import type { UgoeWasmModule, WebPuppet } from "./wasm";
-
-/** 読み戻した画像 (`Player.capture`)。`pixels` はストレートアルファの RGBA (各 8 ビット)、行は上から下。 */
-export interface Screenshot {
-  width: number;
-  height: number;
-  pixels: Uint8Array;
-}
 
 /** プレーヤーを使うアプリが渡すもの (wasm の読み込みとファイルの読み直し)。 */
 export interface PlayerHost {
@@ -859,7 +853,7 @@ export class Player {
   }
 
   /**
-   * 今の表示を画像で読み戻す (スクリーンショット、T0420。PNG にするのはアプリで、ビューアは screenshot.ts)。
+   * 今の表示を画像で読み戻す (スクリーンショット、T0420。PNG への変換は screenshot.ts の encodePng、保存はアプリ)。
    * `WebPuppet.read_pixels()` で、canvas と同じ大きさ (描画バッファの画素)・ビュー・背景・光源で別のテクスチャに描いたものを取る。ビューポートに重ねる HTML
    * (光源の印・市松模様) は写らない。モデルを開いていなければ `null`。
    */

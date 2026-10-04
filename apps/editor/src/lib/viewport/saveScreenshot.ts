@@ -1,13 +1,14 @@
 // ビューポートのスクリーンショットを保存する流れ (T0420。docs/editor.md#スクリーンショット)。
-// 読み戻し (ViewportController.capture) → PNG への変換 (screenshot.ts) → 保存のダイアログ (fileDialogs.ts) →
+// 読み戻し (ViewportController.capture) → PNG への変換 (@ugoe/player の encodePng) → 保存のダイアログ (fileDialogs.ts) →
 // バックエンドの `write_png_file` (src-tauri/src/screenshot.rs)。ヘッドレスのブラウザでは `window.__UGOE_FILE_DIALOGS__` で
 // ダイアログを差し替える。
+import { encodePng } from "@ugoe/player";
 import { fileDialogs } from "../fileDialogs";
 import { joinPath, parentDir, withExtension } from "../filePaths";
 import { t } from "../i18n";
 import { ipc } from "../ipc";
 import type { ViewportController } from "./controller.svelte";
-import { encodePng, PNG_FILTER, screenshotFileName } from "./screenshot";
+import { PNG_FILTER, screenshotFileName } from "./screenshot";
 
 /**
  * 今の表示を PNG で保存する。ダイアログを開く前に読み戻すので、写るのは押したときの姿。

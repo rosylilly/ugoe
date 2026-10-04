@@ -110,5 +110,11 @@
     "sample": "見本 ({{path}})",
     "notAttached_other": "付けていない ({{count}} 個を読み込み)",
     "none": "なし"
+  },
+  "screenshot": {
+    "invalidSize": "画像の大きさが正しくありません ({{width}}×{{height}})",
+    "pixelCount": "画素の数が大きさと合いません ({{bytes}} バイト、{{width}}×{{height}} の RGBA は {{expected}} バイト)",
+    "noCanvas": "PNG に変換できません (2D の canvas を使えません)",
+    "encodeFailed": "PNG に変換できません"
   }
 }

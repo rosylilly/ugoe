@@ -20,10 +20,10 @@ import {
   MODEL_EXTENSIONS,
   MODULE_EXTENSIONS,
   type ModelFile,
+  PNG_PATH_HEADER,
 } from "@ugoe/player";
 import { commandFailure } from "./errors";
 import { t } from "./i18n";
-import { PNG_PATH_HEADER } from "./screenshot";
 
 export interface ViewerHost {
   /** モデル (か着せ替えのモジュール) のファイルを選んで読む。取り消したら `null`。 */

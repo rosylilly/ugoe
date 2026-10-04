@@ -109,7 +109,7 @@ fn is_json_path(path: &Path) -> bool {
     has_extension(path, &["json"])
 }
 
-/// `write_png_file` に保存先のパスを渡すヘッダー (`src/lib/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
+/// `write_png_file` に保存先のパスを渡すヘッダー (`packages/player/src/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
 /// バイト列は本文でそのまま受け取るので、パスはヘッダーに URI の形 (`encodeURIComponent`) で入れる。
 const PNG_PATH_HEADER: &str = "x-ugoe-path";
 

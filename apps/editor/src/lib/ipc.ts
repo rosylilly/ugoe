@@ -5,6 +5,7 @@
 // 画面に出す文は ./errors.ts の `errorText` で取る (コードは docs/editor.md#エラーと警告のコード)。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { PNG_PATH_HEADER } from "@ugoe/player";
 import type {
   AiReply,
   AiSettings,
@@ -48,7 +49,6 @@ import type {
   RestPoseCollision,
 } from "./generated/types";
 import type { Point } from "./panels/inspector/keyforms/keyforms";
-import { PNG_PATH_HEADER } from "./viewport/screenshot";
 
 export type * from "./generated/types";
 

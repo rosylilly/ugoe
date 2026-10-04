@@ -5,8 +5,9 @@
 // - 描画は要求されたときだけ requestAnimationFrame で 1 回行う (requestRender)。
 // - 座標: 公開するメソッドはすべて CSS ピクセル (ビューポート要素の左上原点)。
 //   WebPuppet は canvas の描画バッファの画素 (CSS ピクセル × devicePixelRatio) で受け取るので、ここで換算する。
+
+import type { Screenshot } from "@ugoe/player";
 import { errorText } from "../errors";
-import type { Screenshot } from "./screenshot";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
 /** ビューポートに表示するモデル。bundle があればテクスチャ付きで、無ければ JSON (白いテクスチャ) で表示する。 */
@@ -346,7 +347,7 @@ export class ViewportController {
   }
 
   /**
-   * 今の表示を画像で読み戻す (スクリーンショット、T0420。screenshot.ts)。`WebPuppet.read_pixels()` で、canvas と同じ
+   * 今の表示を画像で読み戻す (スクリーンショット、T0420。PNG への変換は @ugoe/player の encodePng)。`WebPuppet.read_pixels()` で、canvas と同じ
    * 大きさ (描画バッファの画素)・ビュー・背景・光源で別のテクスチャに描いたものを取る。オーバーレイ (ギズモ・選択の輪郭・
    * 光源の取っ手など、HTML と SVG で重ねるもの) は写らない。モデルを読み込んでいなければ `null`。
    */

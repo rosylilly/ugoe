@@ -1772,7 +1772,10 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が
   書きます。バイト列は本文でそのまま送り、パスはヘッダー `x-ugoe-path` (`encodeURIComponent`) で渡します。絶対パス・拡張子 `.png`・
   中身が PNG (先頭の署名) のものだけを書きます。
-- コード: `src/lib/viewport/screenshot.ts` (ファイル名・画素の検査・PNG への変換。Vitest)、`src/lib/viewport/saveScreenshot.ts` (保存の流れ)。
+- コード: `src/lib/viewport/screenshot.ts` (既定のファイル名。Vitest)、`src/lib/viewport/saveScreenshot.ts` (保存の流れ)。
+  画素の検査と PNG への変換 (`encodePng`)・`Screenshot` の型・ヘッダーの名前は、ビューアと共有する `@ugoe/player` の
+  `src/screenshot.ts` にあり、変換の失敗の文はそのカタログ (名前空間 `player`) で訳します (T0730)。バックエンドの `write_png_file` は
+  ビューアにも同じ形のものがあり、共有しない理由は [apps/viewer/README.md](../apps/viewer/README.md#画像の保存-t0420) に書いています。
 
 ### ツール (選択・メッシュ編集)
 

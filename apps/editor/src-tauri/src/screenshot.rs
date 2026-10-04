@@ -8,7 +8,7 @@ use crate::commands::off_main;
 use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
-/// 保存先のパスを渡すヘッダー (`src/lib/viewport/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
+/// 保存先のパスを渡すヘッダー (`packages/player/src/screenshot.ts` の `PNG_PATH_HEADER` と同じ)。
 /// バイト列は本文でそのまま受け取るので、パスはヘッダーに URI の形 (`encodeURIComponent`) で入れる。
 const PATH_HEADER: &str = "x-ugoe-path";
 

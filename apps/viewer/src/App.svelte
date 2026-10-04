@@ -1,7 +1,7 @@
 <script lang="ts">
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { formatNumber } from "@ugoe/i18n";
-import { type ModelFile, Player, visibleSlots } from "@ugoe/player";
+import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
   Button,
   type ButtonBaseProps,
@@ -41,7 +41,7 @@ import MotionPanel from "./lib/MotionPanel.svelte";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
 import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
-import { encodePng, screenshotFileName } from "./lib/screenshot";
+import { screenshotFileName } from "./lib/screenshot";
 import Viewport from "./lib/Viewport.svelte";
 import { loadWasm } from "./lib/wasm/load";
 
@@ -79,7 +79,7 @@ let sampleEntries = $derived(
 );
 
 /**
- * 今の表示を PNG で保存する (T0420)。画像は WebPuppet.read_pixels() で取る (canvas の読み戻しではない。screenshot.ts)。
+ * 今の表示を PNG で保存する (T0420)。画像は WebPuppet.read_pixels() で取る (canvas の読み戻しではない。PNG への変換は @ugoe/player の encodePng)。
  * ダイアログを開く前に読み戻すので、写るのはボタンを押したときの姿。保存した場所は知らせ (Toast) で出す。
  */
 async function saveScreenshot() {

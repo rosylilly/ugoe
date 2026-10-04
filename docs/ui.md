@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `@ugoe/i18n` | `packages/i18n` | 画面に出す文言・数値・日付のすべて |
 | `@ugoe/ui` | `packages/ui` | トークン (`tokens.css`) と部品。アプリの `main.ts` で `tokens.css` を 1 回だけ読む |
-| `@ugoe/player` | `packages/player` | モデルの再生の層 (ビューアとスタジオ) |
+| `@ugoe/player` | `packages/player` | モデルの再生の層 (ビューアとスタジオ。スクリーンショットの PNG への変換はエディタも使う) |
 
 - 依存の向きは `apps/* → @ugoe/player → @ugoe/ui → @ugoe/i18n`。どれも GPL-3.0-only。
 - アプリの中にしか無い部品 (エディタのパネルの見出しなど) はアプリに置く。2 つ以上のアプリで要るものになったら `@ugoe/ui` へ移す。

@@ -25,6 +25,7 @@ src/loadError.ts         読み込みの失敗 (wasm の LoadError) の文 (T043
 src/modelFile.ts         開くファイル (ModelFile) と場所 (FileLocation)、形式の判別
 src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711)
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
+src/screenshot.ts        スクリーンショットの画素の検査・RGBA から PNG への変換・既定の名前の日時・パスのヘッダー (エディタとも共有。T0730)
 ```
 
 画面の部品 (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
@@ -52,7 +53,9 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   WebGL2 は canvas の `webglcontextlost`) canvas ごと作り直してモデルを読み直す。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。
 - `Player` は `@ugoe/face-tracking` の `TrackingTarget` を満たす (`new FaceTracker(player, …)`)。
-- 画像の保存は `capture()` で RGBA を受け取り、PNG にして書くのはアプリ。
+- 画像の保存は `capture()` で RGBA を受け取り、`encodePng` (`src/screenshot.ts`) で PNG にする。保存のダイアログと書き込みはアプリ。
+  `src/screenshot.ts` はエディタのビューポート (`ViewportController.capture`) も使う (T0730。エディタが `@ugoe/player` から import するのは
+  これだけ)。例外の文はカタログの `screenshot.*`。
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは、いまはビューアの名前 (`ugoe-viewer.*`) のまま。
   スタジオで使うときに、キーの接頭辞をアプリが渡せるようにする。
 - 文言は `@ugoe/i18n` の名前空間 `player` (`locales/`。T0723)。言語はアプリが `setLocale()` で決める。

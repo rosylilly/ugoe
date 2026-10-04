@@ -30,7 +30,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/MemoryDialog.svelte  モデルごとに覚えたもの (光源・着せ替えの組・待機モーション) の一覧の画面 (T0714)
   lib/drop.ts           ドロップしたファイルの開き方 (モデルとモジュールを一緒に落としたとき。T0713)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
-  lib/screenshot.ts     画像の保存の既定のファイル名・画素の検査・RGBA から PNG への変換 (T0420)
+  lib/screenshot.ts     画像の保存の既定のファイル名 (T0420。画素の検査と PNG への変換は @ugoe/player の screenshot.ts、T0730)
   lib/wasm/             ugoe-wasm の読み込み (`Player` に `loadWasm` として渡す)。generated/ は `pnpm wasm` の出力 (gitignore 済み)
   global.d.ts           `window.__UGOE_VIEWER__` の型
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス) だけコミットする
@@ -191,8 +191,19 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   透明 (アルファ 0) のまま書く。
 - 押したときに読み戻してから保存のダイアログ (Tauri) を開く。既定の名前は `<モデルの名前>-<年月日>-<時分秒>.png` (拡張子と
   「 (サンプル)」を除き、ファイル名に使えない文字は `_`)。拡張子が無ければ `.png` を付ける。保存した場所は知らせ (`@ugoe/ui` の Toast) で出す。
-- PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行う (`screenshot.ts`)。ブラウザ (`pnpm dev`) ではダウンロードで保存する。
+- PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行う。ブラウザ (`pnpm dev`) ではダウンロードで保存する。
   `ViewerHost` を差し替えるときは `savePngFile(name, bytes)` を置ける (無ければダウンロード)。
+- **エディタと共有するもの (T0730):** 画素の検査と PNG への変換 (`checkScreenshot`・`encodePng`)・既定の名前の日時の部分
+  (`timestampedPngName`)・パスのヘッダーの名前 (`PNG_PATH_HEADER`) は `@ugoe/player` の `src/screenshot.ts` にあり、エディタの
+  ビューポートも同じものを使う。例外の文はそのパッケージのカタログ (名前空間 `player` の `screenshot.*`) で訳す。
+  既定の名前の元 (ビューアはモデルのファイル名、エディタはプロジェクト名) と保存の流れは、それぞれのアプリが持つ。
+- **バックエンドの `write_png_file` は共有しない (T0730):** 同じ処理 (ヘッダーのパスの `%XX` を戻す・拡張子 `.png` と PNG の署名を
+  確かめる・一時ファイルを経て書く) がエディタの `src-tauri/src/screenshot.rs` にもある。共有しないのは、(1) アプリのバックエンドで
+  共有する GPL のクレートがまだ無く、数十行のために新しいクレート (ワークスペースの登録・依存方向・CI のグループ・ライセンスの検査) を
+  足すほどではない、(2) 失敗の形がアプリで違う (ビューアは画面で訳すコード付きの `CommandError` (T0729)、エディタは `EditorError`)、
+  (3) 書けるパスの決め方が違う (ビューアは保存のダイアログで選んだパスを 1 回だけ (T0727)、エディタは絶対パス) ため。
+  一時ファイルを経て書く `atomic_write.rs` (T0728・T0687) も同じ形で 2 つある。アプリのバックエンドで共有するクレートを作るときは、
+  これらをまとめて移す。直すときは両方を同じに直す (テストも両方にある)。
 
 ## 着せ替え (T0706)
 

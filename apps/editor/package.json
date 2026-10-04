@@ -22,6 +22,7 @@
     "@tauri-apps/plugin-os": "^2.4.0",
     "@ugoe/face-tracking": "workspace:*",
     "@ugoe/i18n": "workspace:*",
+    "@ugoe/player": "workspace:*",
     "@ugoe/ui": "workspace:*"
   },
   "devDependencies": {

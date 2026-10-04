@@ -111,5 +111,11 @@
     "notAttached_one": "Not attached ({{count}} loaded)",
     "notAttached_other": "Not attached ({{count}} loaded)",
     "none": "None"
+  },
+  "screenshot": {
+    "invalidSize": "The image size is invalid ({{width}}×{{height}})",
+    "pixelCount": "The pixel data does not match the size ({{bytes}} bytes; {{width}}×{{height}} RGBA needs {{expected}} bytes)",
+    "noCanvas": "Cannot convert the image to PNG (2D canvas is not available)",
+    "encodeFailed": "Cannot convert the image to PNG"
   }
 }

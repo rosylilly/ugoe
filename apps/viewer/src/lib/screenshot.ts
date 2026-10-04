@@ -1,80 +1,12 @@
-// スクリーンショット (表示中のモデルを PNG で保存する、T0420)。
+// スクリーンショット (表示中のモデルを PNG で保存する、T0420) の既定のファイル名。
 //
-// 画像は canvas の読み戻し (`toBlob`・`drawImage`) ではなく `WebPuppet.read_pixels()` で取る。canvas と同じ大きさ
-// (描画バッファの画素 = CSS ピクセル × devicePixelRatio)・ビュー・背景・光源で別のテクスチャに描いた、ストレートアルファの
-// RGBA (行は上から下)。WebGPU の canvas は読み戻すと空になることがあるが、こちらは WebGL2・WebGPU のどちらでも同じに取れる。
-// ビューポートに重ねる HTML (光源の印・透明のときの市松模様) は写らない。透明の背景は透明のまま (アルファ 0) 書く。
-//
-// PNG への変換はブラウザの 2D canvas の `toBlob` で行う (新しい依存を入れない)。ここの関数は DOM に直接触れず、
-// canvas を作る関数を受け取る (screenshot.test.ts で偽物を渡す)。
-import type { Screenshot } from "@ugoe/player";
-import { t } from "./i18n";
-
-/** 読み戻した画像 (@ugoe/player の `Player.capture`)。 */
-export type { Screenshot };
-
-/** `encodePng` が使う canvas の一部 (`HTMLCanvasElement` を満たす)。 */
-export interface PngCanvas {
-  width: number;
-  height: number;
-  getContext(kind: "2d"): PngContext | null;
-  toBlob(callback: (blob: Blob | null) => void, type?: string): void;
-}
-
-/** `encodePng` が使う 2D の描画の文脈の一部。 */
-export interface PngContext {
-  createImageData(width: number, height: number): PngImage;
-  putImageData(image: PngImage, x: number, y: number): void;
-}
-
-/** `createImageData` が返す画像 (`ImageData`) の一部。 */
-export interface PngImage {
-  readonly data: Uint8ClampedArray;
-}
-
-/** 画素の数と大きさが合っているかを調べる。合わなければ例外 (文は今の言語。画面にそのまま出す)。 */
-export function checkScreenshot(shot: Screenshot): void {
-  const { width, height, pixels } = shot;
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
-    throw new Error(t("screenshot.invalidSize", { width, height }));
-  if (pixels.length !== width * height * 4)
-    throw new Error(
-      t("screenshot.pixelCount", {
-        bytes: pixels.length,
-        width,
-        height,
-        expected: width * height * 4,
-      }),
-    );
-}
-
-/** RGBA の画像を PNG のバイト列にする。`createCanvas` は既定で `<canvas>` を作る。 */
-export async function encodePng(
-  shot: Screenshot,
-  createCanvas: () => PngCanvas = () => document.createElement("canvas"),
-): Promise<Uint8Array> {
-  checkScreenshot(shot);
-  const canvas = createCanvas();
-  canvas.width = shot.width;
-  canvas.height = shot.height;
-  const context = canvas.getContext("2d");
-  if (context === null) throw new Error(t("screenshot.noCanvas"));
-  // putImageData はストレートアルファの値を受け取る (read_pixels と同じ)。
-  const image = context.createImageData(shot.width, shot.height);
-  image.data.set(shot.pixels);
-  context.putImageData(image, 0, 0);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (blob === null) throw new Error(t("screenshot.encodeFailed"));
-  return new Uint8Array(await blob.arrayBuffer());
-}
+// 画素の検査と PNG への変換 (`encodePng`)・バックエンドへのヘッダー (`PNG_PATH_HEADER`) は、エディタと共有する
+// @ugoe/player の screenshot.ts にある (T0730)。
+import { timestampedPngName } from "@ugoe/player";
 
 /** 既定のファイル名に使えない文字 (Windows の禁止文字と制御文字)。 */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を取り除くため
 const UNSAFE = /[\\/:*?"<>|\u0000-\u001f]/g;
-
-function pad(value: number, width = 2): string {
-  return String(value).padStart(width, "0");
-}
 
 /**
  * 保存のダイアログの既定のファイル名: `<モデルの名前>-<年月日>-<時分秒>.png` (時刻は地方時)。
@@ -86,10 +18,5 @@ export function screenshotFileName(modelName: string | null, now: Date): string 
   base = base.replace(/\.(ugoe|ugoemod|json)$/i, "");
   base = base.replace(UNSAFE, "_").trim();
   if (base === "" || base === "." || base === "..") base = "screenshot";
-  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `${base}-${date}-${time}.png`;
+  return timestampedPngName(base, now);
 }
-
-/** バックエンドの `write_png_file` に保存先のパスを渡すヘッダー (src-tauri/src/lib.rs の `PNG_PATH_HEADER` と同じ)。 */
-export const PNG_PATH_HEADER = "x-ugoe-path";
