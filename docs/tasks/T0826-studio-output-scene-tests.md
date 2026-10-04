@@ -1,11 +1,11 @@
 ---
 id: T0826
 title: スタジオ: 出力の受け手のシーンの適用をテストする
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0815]
-assignee:
+assignee: claude-worker-T0826
 ---
 
 # T0826: スタジオ: 出力の受け手のシーンの適用をテストする
