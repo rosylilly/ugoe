@@ -76,7 +76,7 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
 - **待つ時間の上限:** `Gpu::render` と `Resident::poll(Wait::All)` は、読み戻しを `Gpu::wait_timeout` (既定は
   `DEFAULT_WAIT_TIMEOUT` = 30 秒。ソフトウェアのラスタライザでも 1 枚は数秒かからないので、十分に余裕を持たせた長さ) までしか待たず、超えたら
   `Error::Gpu` を返す (`Error::is_gpu_wait_timeout` が `true`)。ドライバが止まっても呼び出したスレッドが戻らなくならないように。
-  上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし。`ugoe render` の `--gpu-timeout` は `args::parse_gpu_timeout` で読む)。上限を超えた `Gpu` (とそれで作った `Resident`) は
+  上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし。`ugoe render` と `ugoe-mcp` の `--gpu-timeout` は `args::parse_gpu_timeout` で読む)。上限を超えた `Gpu` (とそれで作った `Resident`) は
   止まっているかもしれないので使い回さず、破棄もせずに手放して作り直す (MCP サーバがそうする)。
   wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒で打ち切るので、1 秒ずつ待ち直して上限まで待つ。
 

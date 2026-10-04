@@ -105,7 +105,7 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
     `--time` は 0 以上の有限の数、`--fps` は 0 より大きい有限の数。
   - テクスチャ (`--texture` とバンドルの PNG) と法線マップ: 一辺 16384 まで (PNG の見出しの大きさで、デコードの前に確かめる)。
   - `--texture`・`--physics`・`--motion`・`--expression` のパス: 通常のファイルだけを読む (装置・FIFO・ディレクトリはエラー)。
-  - MCP サーバの `render_png` は、明示した `width`・`height` を 4096 まで、`time` を 3600 秒 (60 fps) までに限り、大きさを指定しないときは
+  - MCP サーバの `render_png` は、明示した `width`・`height` (片方だけなら縦横比から決めた他方も) を 4096 まで、`time` を 3600 秒 (60 fps) までに限り、大きさを指定しないときは
     4096 に収まるよう縮める (`ugoe-mcp` の `src/render.rs`。描いた PNG をエージェントに返すので小さくする)。
 - **色:** 値はリニア化しない (`docs/spec/rendering.md` の「前提」)。描画先は `Rgba8Unorm`・乗算済みアルファで、
   PNG に書くときストレートアルファに戻す (アルファ 0 の画素は RGB も 0)。

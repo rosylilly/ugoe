@@ -29,6 +29,7 @@ cargo install --path crates/ugoe-mcp
 | `--root <DIR>` | ツールが読み書きするパスを `<DIR>` の下に限る。相対パスも `<DIR>` から解決する ([パスを限る](#パスを限る---root))。`--http` ではこれか `--allow-any-path` が要る |
 | `--allow-any-path` | `--http` で `--root` を付けずに、ツールに任意のパスを読み書きさせる (勧めない) |
 | `--backend <NAME>` | 描画に使う wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
+| `--gpu-timeout <SECONDS>` | `render_png` で GPU を待つ時間の上限 (既定 30 = `ugoe_headless::DEFAULT_WAIT_TIMEOUT`。`ugoe render --gpu-timeout` と同じ)。`0` は上限なし。負・`inf`・`NaN`・大きすぎる値は引数のエラー ([描画](#描画)) |
 | `--http <ADDR>` | stdio の代わりに HTTP で待ち受ける。`127.0.0.1:8765` の形か、ポート番号だけ (`8765` はループバックの `127.0.0.1:8765`)。エンドポイントは `/mcp` |
 | `--token <TOKEN>` | HTTP の要求に求めるトークン (32 文字以上。16 進数で 128 ビット以上)。環境変数 `UGOE_MCP_TOKEN` でも渡せる (コマンド行は `ps` でほかの利用者から見えることがあるので、環境変数を勧める) |
 | `--generate-token` | トークンを OS の乱数で作り (256 ビット、16 進数で 64 文字)、標準エラーに書く |
@@ -548,6 +549,18 @@ Claude Code に次のように頼む:
 長い辺が 4096 を超えるなら縦横比を保って 4096 に収まるよう縮め、`log` に
 ``warning: the canvas (WxH) is larger than 4096 pixels on a side; rendered at ...`` を書く (`ugoe render` も同じ規則で、上限が 16384)。
 
+`width` か `height` の片方だけを指定したときは、他方をキャンバスの縦横比から決め、それも 4096 までに限る。超えたら
+縮めずに、GPU を使う前にエラーにする (`render::check_derived_size`)。エラーには指定した側の収まる最大の値を書く
+(例: 3000x6000 のキャンバスに `width: 4096` なら
+`width 4096 gives a height of 8192 for the 3000x6000 canvas, larger than 4096; give a width of at most 2048, or the height instead`)。
+両方を縮めて描かずにエラーにする理由:
+
+- **明示した大きさは縮めない規則に揃える。** `ugoe render` は、明示した大きさと片方から決めた他方を縮めず、上限を超えたら
+  エラーにする (T0221)。`render_png` も、両方を明示して 4096 を超えればエラーなので、片方だけのときも同じにする。
+- **頼んだ幅と違う画が黙って返らない。** 縮めると `width: 4096` に 2048 幅の画が返る。警告は `log` に入るが、エージェントは
+  画像だけを見て先へ進みやすい。エラーなら収まる値が分かり、次の呼び出しで直せる。
+- 大きさを指定しないときだけ縮めるのは、頼んだ大きさが無く、キャンバスの大きさで描くことが既定の振る舞いだから。
+
 長く動くサーバなので、GPU のドライバの不調で落ちないように次の手当てをする。
 
 - GPU は最初の `render_png` で用意し、以後使い回す。破棄しない (WSL2 の dzn はデバイスの破棄時に SIGSEGV を
@@ -555,8 +568,11 @@ Claude Code に次のように頼む:
 - アダプタやデバイスを用意できなければツールのエラーにし、次の呼び出しでもう一度試す。
 - 描画中の wgpu のエラー (検証・メモリ不足) はエラーとして返す (`ugoe_headless` のエラースコープ)。
 - それでも panic したら受け止めてツールのエラーにし、その GPU を捨てて次の呼び出しで作り直す。
-- 読み戻しは 30 秒 (`ugoe_headless::DEFAULT_WAIT_TIMEOUT`) までしか待たない。ドライバが止まって上限を超えたら、
-  panic のときと同じくツールのエラーにして GPU を捨てる (止まったかもしれないデバイスを使い回さない)。
+- 読み戻しは `--gpu-timeout` (既定 30 秒 = `ugoe_headless::DEFAULT_WAIT_TIMEOUT`) までしか待たない。ドライバが止まって
+  上限を超えたら、panic のときと同じくツールのエラーにして GPU を捨てる (止まったかもしれないデバイスを使い回さない)。
+  遅いソフトウェアの GPU (lavapipe・llvmpipe) で大きな画を描くときは延ばす (`0` は上限なし。止まったドライバでは
+  呼び出しが戻らず、描画の錠も握ったままになるので勧めない)。引数の読み方は `ugoe render` と同じ
+  (`ugoe_headless::args::parse_gpu_timeout`)。
 - ドライバの中の SIGSEGV のようにプロセスごと落ちる不調は防げない。そのときは MCP クライアントがサーバを
   起動し直す (未保存の変更は失われる)。ドライバが不安定な環境では `--backend gl` や Mesa の lavapipe
   (`VK_DRIVER_FILES`) を選ぶ (`docs/testing.md` の GPU の節)。

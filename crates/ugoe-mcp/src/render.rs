@@ -11,8 +11,9 @@
 //!   次の呼び出しで作り直す。
 //! - 出力の一辺は [`MAX_SIZE`] (4096) まで、進める時間は [`MAX_TIME`] (3600 秒) までに限る。描いた PNG は
 //!   base64 でエージェントに返すので、CLI (`ugoe_headless::MAX_SIZE` = 16384) より小さくする。
-//!   大きさを指定しないときは、キャンバスが大きければ [`MAX_SIZE`] に収まるよう縮めて描く。
-//! - 読み戻しは `Gpu::wait_timeout` (既定 30 秒) までしか待たない。ドライバが止まって上限を超えたら、
+//!   大きさを指定しないときは、キャンバスが大きければ [`MAX_SIZE`] に収まるよう縮めて描く。`width` か
+//!   `height` の片方だけを指定して、縦横比から決めた他方が [`MAX_SIZE`] を超えるならエラーにする ([`check_derived_size`])。
+//! - 読み戻しは `Gpu::wait_timeout` (既定 30 秒。`ugoe-mcp --gpu-timeout` で変える) までしか待たない。ドライバが止まって上限を超えたら、
 //!   panic のときと同じくツールのエラーにして GPU を捨てる (止まったデバイスを使い回さない。描画の錠も手放される)。
 //!
 //! ドライバの中の SIGSEGV のように、プロセスごと落ちる不調は防げない。そのときは MCP クライアントが
@@ -20,6 +21,7 @@
 
 use std::mem::ManuallyDrop;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::time::Duration;
 
 use ugoe_editor_core::{Project, ProjectError, export_bundle};
 use ugoe_headless::{Gpu, RenderOptions, Scene};
@@ -32,8 +34,9 @@ use ugoe_headless::{Gpu, RenderOptions, Scene};
 pub const MAX_SIZE: u32 = 4096;
 
 /// `render_png` の `width`・`height` の説明 (ツールのスキーマ)。
-pub const SIZE_NOTE: &str = "出力の幅・高さ (画素)。片方だけなら他方はキャンバスの縦横比から決める。どちらも省くとキャンバスの大きさで描き、\
-     長い辺が 4096 を超えるなら縦横比を保って 4096 に収まるよう縮める (縮めたことは log に書く)";
+pub const SIZE_NOTE: &str = "出力の幅・高さ (画素)。片方だけなら他方はキャンバスの縦横比から決め、それが 4096 を超えるならエラー \
+     (縮めない)。どちらも省くとキャンバスの大きさで描き、長い辺が 4096 を超えるなら縦横比を保って 4096 に収まるよう縮める \
+     (縮めたことは log に書く)";
 
 /// `render_png` の `time` の上限 (秒)。時間は 60 fps で進めるので、`ugoe_headless::animate::MAX_UPDATES`
 /// (60 fps で 1 時間) と同じ。ツールのスキーマの `maximum` もこの値。
@@ -104,6 +107,43 @@ impl RenderRequest {
     }
 }
 
+/// `width` か `height` の片方だけを指定したとき、キャンバスの縦横比から決めた他方が [`MAX_SIZE`] に収まるか。
+///
+/// 明示した大きさは縮めない (`ugoe render` と同じ規則) ので、収まらなければエラーにし、収まる指定の値を示す。
+/// 決めた大きさは `ugoe_headless::output_size` と同じ丸め (四捨五入) で求める。キャンバスが不正なら何もしない
+/// (誤りは `output_size` が報告する)。
+fn check_derived_size(canvas: (f32, f32), req: &RenderRequest) -> Result<(), RenderError> {
+    let (cw, ch) = canvas;
+    if !(cw > 0.0 && ch > 0.0) {
+        return Ok(());
+    }
+    // 他方 = n × num / den (`output_size` と同じ順で計算する)。
+    let (given, other, n, num, den) = match (req.width, req.height) {
+        (Some(w), None) => ("width", "height", w, ch, cw),
+        (None, Some(h)) => ("height", "width", h, cw, ch),
+        _ => return Ok(()),
+    };
+    let derive = |n: u32| (n as f32 * num / den).round();
+    let derived = derive(n);
+    if derived <= MAX_SIZE as f32 {
+        return Ok(());
+    }
+    // 他方が上限に収まる最大の値。丸めの境目を合わせるため、近くを順に試す。極端な縦横比では 1 でも収まらない。
+    let mut max = ((MAX_SIZE as f32 + 0.5) * den / num).floor() as u32 + 1;
+    while max > 0 && derive(max) > MAX_SIZE as f32 {
+        max -= 1;
+    }
+    let hint = if max == 0 {
+        format!("give the {other} instead")
+    } else {
+        format!("give a {given} of at most {max}, or the {other} instead")
+    };
+    Err(RenderError::Invalid(format!(
+        "{given} {n} gives a {other} of {derived} for the {cw}x{ch} canvas, larger than \
+         {MAX_SIZE}; {hint}"
+    )))
+}
+
 /// 描画の結果。
 #[derive(Debug)]
 pub struct Rendered {
@@ -130,7 +170,8 @@ pub enum RenderError {
     )]
     Panicked(String),
     #[error(
-        "{}; the GPU device was discarded and will be recreated on the next call",
+        "{}; the GPU device was discarded and will be recreated on the next call (the server's \
+         --gpu-timeout sets the limit)",
         error_chain(.0)
     )]
     TimedOut(ugoe_headless::Error),
@@ -153,13 +194,21 @@ fn error_chain(error: &ugoe_headless::Error) -> String {
 pub struct Renderer {
     /// wgpu のバックエンド (`vulkan`・`gl` など)。`None` なら `WGPU_BACKEND` か wgpu の既定。
     backend: Option<String>,
+    /// GPU を待つ時間の上限 (`--gpu-timeout`)。`None` なら `ugoe_headless::DEFAULT_WAIT_TIMEOUT`。
+    wait_timeout: Option<Duration>,
     /// 用意した GPU。破棄しないように `ManuallyDrop` に入れる。
     gpu: Option<ManuallyDrop<Gpu>>,
 }
 
 impl Renderer {
-    pub fn new(backend: Option<String>) -> Self {
-        Self { backend, gpu: None }
+    /// `wait_timeout` は GPU を待つ時間の上限 (`Gpu::set_wait_timeout`。`Duration::MAX` なら上限なし)。
+    /// `None` なら既定 (`ugoe_headless::DEFAULT_WAIT_TIMEOUT`)。
+    pub fn new(backend: Option<String>, wait_timeout: Option<Duration>) -> Self {
+        Self {
+            backend,
+            wait_timeout,
+            gpu: None,
+        }
     }
 
     /// `project` の今のモデルを描く。
@@ -171,6 +220,8 @@ impl Renderer {
         // GPU を使う前に引数とモデルを検査する (GPU が無くても誤りを返せるように)。
         let options = req.options()?;
         let scene = scene(project)?;
+        let canvas = &scene.model.meta.canvas;
+        check_derived_size((canvas.width, canvas.height), req)?;
         match catch_unwind(AssertUnwindSafe(|| self.render_scene(scene, &options))) {
             Ok(result) => self.discard_hung_gpu(result),
             Err(payload) => {
@@ -214,7 +265,13 @@ impl Renderer {
         }
         let gpu = match self.gpu.take() {
             Some(gpu) => gpu,
-            None => ManuallyDrop::new(Gpu::new(self.backend.as_deref())?),
+            None => {
+                let mut gpu = Gpu::new(self.backend.as_deref())?;
+                if let Some(timeout) = self.wait_timeout {
+                    gpu.set_wait_timeout(timeout);
+                }
+                ManuallyDrop::new(gpu)
+            }
         };
         let gpu = self.gpu.insert(gpu);
         let (image, _stats) = prepared.render(gpu)?;
@@ -407,6 +464,103 @@ mod tests {
             ..RenderRequest::default()
         });
         assert_eq!(prepared.size, (300, 400));
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+    }
+
+    /// `width` か `height` の片方だけを指定して、縦横比から決めた他方が [`MAX_SIZE`] を超えるなら、縮めずにエラーにする。
+    #[test]
+    fn rejects_a_derived_side_over_the_size_limit() {
+        let req = |width, height| RenderRequest {
+            width,
+            height,
+            ..RenderRequest::default()
+        };
+        let check = |canvas, width, height| check_derived_size(canvas, &req(width, height));
+        let message = |canvas, width, height| check(canvas, width, height).unwrap_err().to_string();
+
+        // 縦長のキャンバス (1:2) で幅を指定すると、高さが上限を超える。
+        let tall = (3000.0, 6000.0);
+        assert_eq!(
+            message(tall, Some(MAX_SIZE), None),
+            "width 4096 gives a height of 8192 for the 3000x6000 canvas, larger than 4096; \
+             give a width of at most 2048, or the height instead"
+        );
+        check(tall, Some(2048), None).unwrap();
+        assert!(check(tall, Some(2049), None).is_err());
+        // 高さを指定するなら、幅は上限に収まる。両方を指定すれば縦横比に関わらない。
+        check(tall, None, Some(MAX_SIZE)).unwrap();
+        check(tall, Some(MAX_SIZE), Some(MAX_SIZE)).unwrap();
+
+        // 横長のキャンバス (3:1) で高さを指定すると、幅が上限を超える。
+        let wide = (6000.0, 2000.0);
+        assert_eq!(
+            message(wide, None, Some(2000)),
+            "height 2000 gives a width of 6000 for the 6000x2000 canvas, larger than 4096; \
+             give a height of at most 1365, or the width instead"
+        );
+        check(wide, None, Some(1365)).unwrap();
+        check(wide, Some(MAX_SIZE), None).unwrap();
+
+        // 示す値は丸めの境目でも上限に収まる最大の値。
+        for canvas in [
+            (1000.0, 3001.0),
+            (70.0, 99999.0),
+            (4095.0, 4097.0),
+            (1.0, 3.0),
+        ] {
+            let err = message(canvas, Some(MAX_SIZE), None);
+            let max: u32 = err
+                .split("at most ")
+                .nth(1)
+                .and_then(|s| s.split(',').next())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| panic!("{err}"));
+            check(canvas, Some(max), None).unwrap_or_else(|e| panic!("{canvas:?} {max}: {e}"));
+            assert!(
+                check(canvas, Some(max + 1), None).is_err(),
+                "{canvas:?} {max}"
+            );
+        }
+
+        // 1 でも収まらない縦横比では、他方を指定させる。
+        let err = message((1.0, 9000.0), Some(1), None);
+        assert!(
+            err.ends_with("larger than 4096; give the height instead"),
+            "{err}"
+        );
+
+        // 大きさを指定しないとき・不正なキャンバスは調べない (縮めるか、`output_size` が報告する)。
+        check(tall, None, None).unwrap();
+        check((0.0, 1.0), Some(MAX_SIZE), None).unwrap();
+    }
+
+    /// サーバを通しても、GPU を使う前にエラーにする。決めた他方が収まれば `ugoe_headless` と同じ大きさで描く。
+    #[test]
+    fn checks_the_derived_side_before_touching_the_gpu() {
+        let mut project = quad_project();
+        project.model.meta.canvas.width = 1000.0;
+        project.model.meta.canvas.height = 3000.0;
+        let mut renderer = Renderer::default();
+        let err = renderer
+            .render(
+                &project,
+                &RenderRequest {
+                    width: Some(2000),
+                    ..RenderRequest::default()
+                },
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("gives a height of 6000"), "{err}");
+        assert!(renderer.gpu.is_none());
+
+        let req = RenderRequest {
+            width: Some(1365),
+            ..RenderRequest::default()
+        };
+        let prepared =
+            ugoe_headless::prepare(scene(&project).unwrap(), &req.options().unwrap()).unwrap();
+        assert_eq!(prepared.size, (1365, 4095));
         assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
     }
 

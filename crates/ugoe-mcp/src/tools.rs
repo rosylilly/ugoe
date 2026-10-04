@@ -39,6 +39,9 @@ pub struct Options {
     /// ツールが触れるパスをこのディレクトリの下に限る (`--root`)。相対パスもここから解決する。
     /// `None` なら限らず、相対パスはサーバの作業ディレクトリから解決する。
     pub root: Option<Root>,
+    /// 描画で GPU を待つ時間の上限 (`--gpu-timeout`。`Duration::MAX` なら上限なし)。`None` なら
+    /// `ugoe_headless::DEFAULT_WAIT_TIMEOUT` (30 秒)。
+    pub gpu_timeout: Option<std::time::Duration>,
 }
 
 /// ツールの集まり。文書は持ち主から借り、ツールだけが使う状態 ([`Extra`]) をパスごとに持つ。
@@ -178,7 +181,7 @@ impl Tools {
     /// 外から渡した持ち主 (エディタなど) で動かす。
     pub fn with_host(options: Options, host: Arc<dyn DocumentHost>) -> Self {
         Self {
-            renderer: Mutex::new(Renderer::new(options.backend.clone())),
+            renderer: Mutex::new(Renderer::new(options.backend.clone(), options.gpu_timeout)),
             options,
             schema: CommandSchema::generate(),
             host,

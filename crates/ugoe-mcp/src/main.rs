@@ -3,6 +3,7 @@
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
@@ -19,7 +20,7 @@ const TOKEN_ENV: &str = "UGOE_MCP_TOKEN";
 #[command(name = "ugoe-mcp", version)]
 struct Cli {
     /// 実行中の ugoe エディタにつなぐ: stdio のメッセージを、エディタの MCP サーバへ中継する (エディタの設定で「エージェントをつなぐ」を有効にしておく)
-    #[arg(long, conflicts_with_all = ["read_only", "backend", "root", "allow_any_path", "http"])]
+    #[arg(long, conflicts_with_all = ["read_only", "backend", "gpu_timeout", "root", "allow_any_path", "http"])]
     editor: bool,
     /// --editor で読む発見用のファイル (既定は OS ごとの場所。環境変数 UGOE_MCP_DISCOVERY でも変えられる)
     #[arg(long, value_name = "FILE", requires = "editor")]
@@ -33,6 +34,9 @@ struct Cli {
     /// 描画に使う wgpu のバックエンド (vulkan / metal / dx12 / gl。カンマ区切りで複数)。省略時は WGPU_BACKEND、それも無ければ wgpu の既定
     #[arg(long)]
     backend: Option<String>,
+    /// 描画 (render_png) で GPU を待つ時間の上限の秒数 (既定 30)。超えたらツールのエラーにして GPU を作り直す。遅いソフトウェアの GPU (lavapipe・llvmpipe) で大きな画を描くときは延ばす。0 は上限なし
+    #[arg(long, value_name = "SECONDS", value_parser = ugoe_headless::args::parse_gpu_timeout)]
+    gpu_timeout: Option<Duration>,
     /// ツールが読み書きするパスをこのディレクトリの下に限る (相対パスもここから解決する)。--http では、これか --allow-any-path が要る
     #[arg(long, value_name = "DIR")]
     root: Option<PathBuf>,
@@ -52,7 +56,7 @@ struct Cli {
     #[arg(long = "allow-origin", value_name = "ORIGIN", requires = "http")]
     allow_origins: Vec<String>,
     /// サーバを動かさず、この実行ファイルの `--editor` を包む Claude Desktop 用の MCP Bundle (.mcpb) を書く
-    #[arg(long, value_name = "OUT", conflicts_with_all = ["editor", "read_only", "backend", "root", "http"])]
+    #[arg(long, value_name = "OUT", conflicts_with_all = ["editor", "read_only", "backend", "gpu_timeout", "root", "http"])]
     mcpb: Option<PathBuf>,
     /// --mcpb で束に入れるアイコン (PNG。512×512 を勧める)
     #[arg(long, value_name = "PNG", requires = "mcpb")]
@@ -87,6 +91,7 @@ fn main() -> anyhow::Result<()> {
         read_only: cli.read_only,
         backend: cli.backend,
         root,
+        gpu_timeout: cli.gpu_timeout,
     });
     match cli.http {
         Some(addr) => {
@@ -200,4 +205,53 @@ fn serve_http(
         );
     }
     http.serve().context("the HTTP server stopped")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gpu_timeout(args: &[&str]) -> Result<Option<Duration>, clap::Error> {
+        Cli::try_parse_from(std::iter::once("ugoe-mcp").chain(args.iter().copied()))
+            .map(|cli| cli.gpu_timeout)
+    }
+
+    #[test]
+    fn parses_the_gpu_timeout() {
+        assert_eq!(gpu_timeout(&[]).unwrap(), None);
+        assert_eq!(
+            gpu_timeout(&["--gpu-timeout", "120"]).unwrap(),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(
+            gpu_timeout(&["--gpu-timeout", "0.5"]).unwrap(),
+            Some(Duration::from_millis(500))
+        );
+        // 0 は上限なし。
+        assert_eq!(
+            gpu_timeout(&["--gpu-timeout", "0"]).unwrap(),
+            Some(Duration::MAX)
+        );
+        for bad in ["-1", "NaN", "inf", "1e300", "abc", ""] {
+            let arg = format!("--gpu-timeout={bad}");
+            let err = gpu_timeout(&[&arg]).unwrap_err();
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ValueValidation,
+                "{bad}: {err}"
+            );
+        }
+        // 描画しない形 (中継・束の書き出し) とは一緒に使えない。
+        for args in [
+            &["--editor", "--gpu-timeout", "10"][..],
+            &["--mcpb", "x.mcpb", "--gpu-timeout", "10"],
+        ] {
+            let err = gpu_timeout(args).unwrap_err();
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "{args:?}: {err}"
+            );
+        }
+    }
 }
