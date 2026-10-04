@@ -2037,6 +2037,7 @@
       "empty_layer": "The layer is empty, so it was skipped.",
       "transparent_layer": "The layer is fully transparent, so it was skipped.",
       "layer_too_complex": "The layer is too complex to mesh, so it was skipped.",
+      "layer_texture_too_large": "The layer image with its margin is {{width}} × {{height}} pixels and exceeds the texture limit of {{max}} pixels per side, so it was skipped. Shrink the layer in your paint tool and import again.",
       "layer_too_large": "The layer is too large to mesh (its working grid of {{width}} × {{height}} cells exceeds {{max}} cells), so it was skipped.",
       "clipping_base_missing": "The clipping base was not imported, so the layer was imported unclipped.",
       "smart_object_without_pixels": "The smart object has no rendered pixels, so it was skipped.",

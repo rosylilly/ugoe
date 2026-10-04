@@ -575,7 +575,7 @@ fn warnings() -> Vec<Message> {
             Message::new(code, args, code)
         })
         .collect();
-    let inline: [(&str, MessageArgs); 10] = [
+    let inline: [(&str, MessageArgs); 11] = [
         (
             "psd.canvas_mismatch",
             args! {
@@ -596,6 +596,10 @@ fn warnings() -> Vec<Message> {
         (
             "psd.layer_too_large",
             args! { "width" => 20000u64, "height" => 20000u64, "max" => 1usize << 28 },
+        ),
+        (
+            "psd.layer_texture_too_large",
+            args! { "layer" => "Background", "width" => 20000u32, "height" => 12000u32, "max" => 16384u32 },
         ),
         (
             "psd.blend_mode_unsupported",

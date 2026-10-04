@@ -807,6 +807,12 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "psd.layer_effects_ignored": [],
   "psd.layer_mask_ignored": [],
+  "psd.layer_texture_too_large": [
+    "height",
+    "layer",
+    "max",
+    "width"
+  ],
   "psd.layer_too_complex": [],
   "psd.layer_too_large": [
     "height",

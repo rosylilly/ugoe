@@ -571,6 +571,45 @@ fn too_large_layer_is_skipped_with_a_warning() {
     assert_eq!(ids, ["Below", "Above"]);
 }
 
+/// テクスチャ (余白付き) の一辺がデコードの上限を超えるレイヤーは、取り込み全体を失敗させずに飛ばして警告する (T1617)。
+/// 高さ 1 px の細長いレイヤーで試すので、大きな画素は確保しない。
+#[test]
+fn layer_with_texture_larger_than_the_limit_is_skipped_with_a_warning() {
+    let pad = AutoMeshOptions::default().margin.ceil() as u32 + 1;
+    let fits = DEFAULT_MAX_IMAGE_SIDE - 2 * pad;
+    let tree = tree(vec![
+        raster("Below", 1, false, 4, 4),
+        raster("Wide", 2, false, fits + 1, 1),
+        raster("Edge", 3, false, fits, 1),
+        raster("Above", 4, false, 4, 4),
+    ]);
+    let model = Project::empty("x").document().model().clone();
+    let import = layer_tree_command(&model, &tree, &PsdImportOptions::new("t")).unwrap();
+    let skipped: Vec<_> = import
+        .warnings
+        .iter()
+        .filter(|w| w.code == "psd.layer_texture_too_large")
+        .collect();
+    assert_eq!(skipped.len(), 1, "{:?}", import.warnings);
+    let warning = skipped[0];
+    assert_eq!(warning.path, vec!["Wide".to_owned()]);
+    assert_eq!(warning.args["layer"], "Wide".into());
+    assert_eq!(warning.args["width"], (DEFAULT_MAX_IMAGE_SIDE + 1).into());
+    assert_eq!(warning.args["height"], (1 + 2 * pad).into());
+    assert_eq!(warning.args["max"], DEFAULT_MAX_IMAGE_SIDE.into());
+    assert!(warning.message.contains("skipped"), "{}", warning.message);
+
+    // 上限ちょうどのレイヤーは取り込み、テクスチャの追加 (上限を超えると拒む) も通る。
+    let mut doc = Document::new(model);
+    doc.apply(import.command).unwrap();
+    let ids: Vec<&str> = doc.model().meshes.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["Below", "Edge", "Above"]);
+    assert_eq!(
+        png_size(&doc.textures()["Edge"]),
+        Some((DEFAULT_MAX_IMAGE_SIDE, 1 + 2 * pad))
+    );
+}
+
 #[test]
 fn regenerate_mesh_uses_texture_and_keeps_placement() {
     let (mut doc, _) = imported();

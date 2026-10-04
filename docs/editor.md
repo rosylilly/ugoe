@@ -891,6 +891,7 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 | ブレンドモード | `norm` → `normal`、`mul` → `multiply`、`lddg` (覆い焼き (リニア)) / `add` → `additive`。ほかは `normal` にして警告する |
 | クリッピング | クリッピングされたレイヤーは、同じ並びの中で下にある最も近いクリッピングでない要素 (土台) を通常マスク (`MaskRef { invert: false }`) にする。土台がグループなら、その中のすべてのメッシュ (和集合)。土台のレイヤーの不透明度 (非表示なら 0) をクリッピングされた側の不透明度に掛ける (Photoshop では土台の不透明度が掛かるため)。下に何もなければ無視し (Photoshop と同じ)、土台を取り込まなかった (空のレイヤーなど) なら警告してマスクなしにする。グループのクリッピングは警告して無視する |
 | 空のレイヤー・完全に透明なレイヤー・頂点が多すぎるレイヤー・大きすぎるレイヤー | 取り込まずに警告し、残りのレイヤーは取り込む。大きすぎるのは、自動メッシュの作業用の格子 (中身の外接矩形と余白) が `ugoe_mesher::MAX_GRID_CELLS` (2^28 セル) を超えるもの (`psd.layer_too_large`) |
+| 画像が上限を超えるレイヤー | 余白を足したテクスチャの一辺が画像のデコードの上限 (`DEFAULT_MAX_IMAGE_SIDE`、16384 px。テクスチャの追加が拒む大きさ ([テクスチャ](#テクスチャ))) を超えるレイヤーは、取り込まずに警告し (`psd.layer_texture_too_large`)、残りのレイヤーは取り込む。上限ちょうどは取り込む。判定は画素を広げる前に寸法だけで行う。**縮小して取り込まない**のは、(1) 解像度が黙って変わり、差分の絵や後から差し替える画像と画素の対応がずれる、(2) 縮小した画像でメッシュと UV を作るとレイヤーの位置との写像が取り込みの規則 (テクスチャ上の 1 px = キャンバスの 1 px) から外れる、(3) 一辺が 16384 px を超えるレイヤーはまれで、利用者がペイントソフトで縮小すれば済み、警告でそれが分かるため (T1617) |
 | 調整レイヤー・レイヤー効果など | `ugoe-psd` の警告をそのまま返す ([ugoe-psd](../crates/ugoe-psd/README.md#警告-layertreewarnings)) |
 
 - ID は名前から `ids` の規則で作ります。名前が英数字を 1 つも含まなければ (日本語だけの名前など)、PSD のレイヤー ID から `Layer12` / `Group8` (ID がなければ `Layer` / `Group`) にします。表示名 (`name`) には元の名前を残します。
@@ -2105,6 +2106,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `psd.adjustment_layer` | `key` |
 | `psd.unsupported_compression` | `compression` |
 | `psd.layer_too_large` (自動メッシュの作業用の格子が大きすぎるので飛ばした) | `width`・`height` (格子のセル数)・`max` (セル数の上限) |
+| `psd.layer_texture_too_large` (余白を足した画像の一辺がテクスチャの上限を超えるので飛ばした) | `layer` (レイヤーの名前)・`width`・`height` (余白を含む画像の画素数)・`max` (一辺の上限の画素数) |
 | `psd.group_clipping_unsupported` / `psd.empty_layer` / `psd.transparent_layer` / `psd.layer_too_complex` / `psd.clipping_base_missing` / `psd.smart_object_without_pixels` / `psd.layer_effects_ignored` / `psd.layer_mask_ignored` / `psd.missing_pixels` / `psd.flattened_image` | なし (レイヤーは警告の `path`) |
 
 **推定の警告 (`RederiveWarning`)・アバタープロファイルの検査 (`AvatarCheck`)**

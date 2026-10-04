@@ -21,7 +21,7 @@ use crate::automesh::AutoMeshOptions;
 use crate::ids::unique_id;
 use crate::message::MessageArgs;
 use crate::message_args;
-use crate::texture::{MAX_TEXTURE_NAME_LEN, encode_rgba_png};
+use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, MAX_TEXTURE_NAME_LEN, encode_rgba_png};
 
 /// 取り込んだメッシュの描画順を並べる範囲 (`docs/spec/model.md` の慣例 0〜1000)。
 pub const DRAW_ORDER_RANGE: f32 = 1000.0;
@@ -458,7 +458,29 @@ impl Builder {
             return Ok(None);
         }
         let pad = self.padding;
-        let (width, height) = (layer.width + 2 * pad, layer.height + 2 * pad);
+        let (width, height) = (
+            layer.width.saturating_add(2 * pad),
+            layer.height.saturating_add(2 * pad),
+        );
+        // テクスチャの追加は一辺がデコードの上限を超える画像を拒む (`edit.texture_too_large`) ので、
+        // 取り込み全体を失敗させないように、画素を広げる前にこのレイヤーだけ飛ばす (縮小はしない。docs/editor.md)。
+        if width.max(height) > DEFAULT_MAX_IMAGE_SIDE {
+            self.warn(
+                path,
+                "psd.layer_texture_too_large",
+                message_args! {
+                    "layer" => &layer.name,
+                    "width" => width,
+                    "height" => height,
+                    "max" => DEFAULT_MAX_IMAGE_SIDE,
+                },
+                format!(
+                    "layer image with its margin ({width}x{height}) exceeds the texture size \
+                     limit of {DEFAULT_MAX_IMAGE_SIDE} px per side, skipped"
+                ),
+            );
+            return Ok(None);
+        }
         let rgba = pad_image(&layer.rgba, layer.width, layer.height, pad);
         let generated = match (self.mesher)(&rgba, width, height, &self.options.into()) {
             Ok(g) => g,
