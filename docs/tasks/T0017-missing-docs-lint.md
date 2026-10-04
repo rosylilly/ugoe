@@ -1,11 +1,11 @@
 ---
 id: T0017
 title: crates.io に出すクレートで doc コメントの不足を lint で止める (missing_docs)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-core, ugoe-model, ugoe-runtime, ugoe-physics, ugoe-motion, ugoe-render, ugoe-format, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0017
 ---
 
 # T0017: crates.io に出すクレートで doc コメントの不足を lint で止める (missing_docs)
