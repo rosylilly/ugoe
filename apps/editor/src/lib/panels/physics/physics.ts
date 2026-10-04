@@ -148,6 +148,44 @@ export type ParticleField =
   | "x"
   | "y";
 
+/** 入力欄の範囲 (`NumberField` の `min`・`max`)。端を持たない側は省く。 */
+export interface FieldBounds {
+  min?: number;
+  max?: number;
+}
+
+/**
+ * 粒子のフィールドの範囲。物理の検証 (docs/spec/model.md#物理の検証) と同じ: `mobility` は 0〜1、
+ * `delay`・`acceleration`・`radius`・`collision_radius` は 0 以上。位置は有限値であればよい。
+ */
+export const PARTICLE_BOUNDS: Readonly<Record<ParticleField, FieldBounds>> = {
+  mobility: { min: 0, max: 1 },
+  delay: { min: 0 },
+  acceleration: { min: 0 },
+  radius: { min: 0 },
+  collision_radius: { min: 0 },
+  x: {},
+  y: {},
+};
+
+/**
+ * 正規化の範囲のフィールド `field` の入力欄の範囲。検証は `min <= default <= max` を求める
+ * (docs/spec/model.md#物理の検証) ので、ほかの 2 つの今の値を端にする。
+ */
+export function normalizationBounds(
+  range: NormalizationRange,
+  field: keyof NormalizationRange,
+): FieldBounds {
+  switch (field) {
+    case "min":
+      return { max: range.default };
+    case "default":
+      return { min: range.min, max: range.max };
+    case "max":
+      return { min: range.default };
+  }
+}
+
 /** 粒子 `index` のフィールドを変えた鎖 (位置は x・y で指定)。 */
 export function setParticleField(
   particles: readonly PhysicsParticle[],

@@ -27,7 +27,9 @@ import {
   hasBlend,
   makeTarget,
   newOutput,
+  normalizationBounds,
   outputBlend,
+  PARTICLE_BOUNDS,
   type ParticleField,
   removeParticle,
   rigOf,
@@ -277,6 +279,7 @@ const rangeFields = $derived([
           <span class="labelled" title={f.title()}>
             <span id="{ids}-p{i}-{f.field}">{f.label()}</span>
             <NumberField value={particleValue(p, f.field)} step={f.step} decimals={4} size={4}
+              {...PARTICLE_BOUNDS[f.field]}
               labelledby="{ids}-p{i} {ids}-p{i}-{f.field}"
               onchange={(v) => setParticle(i, f.field, v)} />
           </span>
@@ -431,6 +434,7 @@ const rangeFields = $derived([
         {#each rangeFields as f (f.field)}
           <span title={f.label}>
             <NumberField value={rig.normalization[which][f.field]} step={1} decimals={4} size={4}
+              {...normalizationBounds(rig.normalization[which], f.field)}
               labelledby="{ids}-range-{which} {ids}-range-{f.field}"
               onchange={(v) => setNormalization(which, f.field, v)} />
           </span>
