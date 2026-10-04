@@ -58,7 +58,7 @@ namespace Ugoe.Unity
     [DisallowMultipleComponent]
     [AddComponentMenu("ugoe/Ugoe Puppet")]
     [RequireComponent(typeof(SortingGroup))]
-    public sealed class UgoePuppet : MonoBehaviour
+    public sealed class UgoePuppet : MonoBehaviour, IFrameHost
     {
         [Tooltip("表示するモデル (.ugoe を取り込んだもの)")]
         [SerializeField] private UgoeModel model;
@@ -111,14 +111,10 @@ namespace Ugoe.Unity
         private UgoeIntermediate intermediate;
         // 中間のテクスチャに描くバッチ (毎フレーム確保しないよう使い回す)
         private readonly List<(Mesh, Material, MaterialPropertyBlock)> intermediateDraws = new List<(Mesh, Material, MaterialPropertyBlock)>();
-        private bool intermediateDirty;
-        private bool intermediateUsed;
-        private bool dirty;
-        private bool needsLoad = true;
-        private bool validated;
+        // 描き直しの印と LateUpdate の順 (Runtime/Core/ComponentState.cs)
+        private readonly FrameState frame = new FrameState();
         // 読み込んだときのモデル・モジュール・pixelsPerUnit (インスペクタでの変更で読み直すかを決める)
         private readonly LoadedSource<UgoeModel, UgoeModule> loaded = new LoadedSource<UgoeModel, UgoeModule>();
-        private bool lightsDirty = true;
         private float lastMaskScale;
         private float lastResolution = 1;
 
@@ -217,7 +213,7 @@ namespace Ugoe.Unity
         /// <summary><see cref="model"/> を読み直す (モジュールとパラメータも設定し直す)。</summary>
         public void Load()
         {
-            needsLoad = false;
+            frame.Loaded();
             Unload();
             loaded.Remember(model, modules, pixelsPerUnit);
             if (model == null || model.Bytes == null || model.Bytes.Length == 0) return;
@@ -311,8 +307,7 @@ namespace Ugoe.Unity
                 views.Add(view);
             }
             batchPlan = null;
-            lightsDirty = true;
-            dirty = true;
+            frame.Built();
             // 作った直後はすべての変更フラグが立っているので、次の Pull ですべて送る。
             Advance(0);
         }
@@ -352,7 +347,7 @@ namespace Ugoe.Unity
                 bv.Block.SetTexture(NormalTexId, normal != null ? normal : UgoeTextures.FlatNormal);
                 masks.BindPageRead(bv.Block, batch.MaskPage);
                 bv.Renderer.SetPropertyBlock(bv.Block);
-                bv.Renderer.forceRenderingOff = intermediateUsed;
+                bv.Renderer.forceRenderingOff = frame.IntermediateUsed;
             }
             while (batchViews.Count > batches.Count)
             {
@@ -445,7 +440,7 @@ namespace Ugoe.Unity
 
         private void OnEnable()
         {
-            needsLoad = true;
+            frame.Enabled();
 #if UNITY_EDITOR
             // エディタで再生していない間も、有効になったらすぐに表示する。
             if (!Application.isPlaying) UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
@@ -455,7 +450,7 @@ namespace Ugoe.Unity
         private void OnDisable()
         {
             Unload();
-            needsLoad = true;
+            frame.Disabled();
         }
 
         private void OnDestroy()
@@ -474,54 +469,39 @@ namespace Ugoe.Unity
         {
             // インスペクタで変えたものは次の LateUpdate で反映する (OnValidate の中では子を作れない)。
             pixelsPerUnit = PixelScale.Sanitize(pixelsPerUnit, PixelScale.Default);
-            validated = true;
-            lightsDirty = true;
+            frame.InspectorChanged();
         }
 
-        private void LateUpdate()
-        {
-            if (validated)
-            {
-                validated = false;
-                // モデルかモジュールか頂点の変換 (pixelsPerUnit) が変わったときだけ読み直す。パラメータは設定し直す。
-                if (loaded.NeedsReload(model, modules, pixelsPerUnit)) needsLoad = true;
-                else if (puppet != null)
-                {
-                    ApplySavedParameters();
-                    dirty = true;
-                }
-            }
-            if (needsLoad) Load();
-            if (puppet == null) return;
-            // マスクのページが失われた (デバイスの作り直しなど) ら、止まっていても描き直す。
-            if (masks != null && masks.Lost) dirty = true;
-            var run = playing && (Application.isPlaying || playInEditor);
-            // 逆再生はできない (C ABI は負の dt を断る) ので、負の速さは止めているのと同じにする。
-            var dt = run ? Mathf.Max(Time.deltaTime * speed, 0f) : 0f;
-            if (run || dirty) Advance(dt);
-            if (lightsDirty) ApplyLights();
-            RenderIntermediate();
-        }
+        // 順と印の扱いは FrameState.LateUpdate。
+        private void LateUpdate() => frame.LateUpdate(this);
+
+        bool IFrameHost.HasPuppet => puppet != null;
+        bool IFrameHost.NeedsReload() => loaded.NeedsReload(model, modules, pixelsPerUnit);
+        void IFrameHost.ApplySavedParameters() => ApplySavedParameters();
+        void IFrameHost.Load() => Load();
+        bool IFrameHost.MasksLost => masks != null && masks.Lost;
+        bool IFrameHost.Running => playing && (Application.isPlaying || playInEditor);
+        float IFrameHost.DeltaTime => Time.deltaTime * speed;
+        void IFrameHost.Advance(float dt) => Advance(dt);
+        void IFrameHost.ApplyLights() => ApplyLights();
+        void IFrameHost.RenderIntermediate() => RenderIntermediate();
 
         // Linear の色空間で、まとめたメッシュを中間のテクスチャに描いて写す (UgoeIntermediate)。使わないときは画面に直接描く。
         private void RenderIntermediate()
         {
             var use = UsesIntermediate && puppet != null;
-            if (use != intermediateUsed)
+            if (frame.SetIntermediateUsed(use))
             {
-                intermediateUsed = use;
                 foreach (var bv in batchViews) bv.Renderer.forceRenderingOff = use;
                 if (intermediate != null) intermediate.Visible = use;
-                intermediateDirty = true;
             }
             if (!use) return;
             if (intermediate == null)
             {
                 intermediate = new UgoeIntermediate(transform, compositeMaterial);
-                intermediateDirty = true;
+                frame.IntermediateCreated();
             }
-            if (!intermediateDirty && !intermediate.Lost) return;
-            intermediateDirty = false;
+            if (!frame.TakeIntermediate(intermediate.Lost)) return;
             var bounds = CanvasRect.Empty;
             var draws = intermediateDraws;
             draws.Clear();
@@ -578,9 +558,9 @@ namespace Ugoe.Unity
 
         private void AfterEvaluate()
         {
-            dirty = false;
+            // 送るのに失敗しても、止まっている間は評価し直し続けない (印を先に下ろす)。
+            frame.Evaluated();
             Sync();
-            intermediateDirty = true;
         }
 
         // 変更フラグが立った分だけ Unity に送る。
@@ -720,12 +700,8 @@ namespace Ugoe.Unity
             return Mathf.Pow(2, Mathf.Ceil(Mathf.Log(s, 2) * 4) / 4);
         }
 
-        private void MarkAllDirty()
-        {
-            if (puppet == null) return;
-            // 頂点の変換が変わったので、次のフレームで全部を送り直す (読み直すのが簡単で確実)。
-            needsLoad = true;
-        }
+        // 頂点の変換が変わったので、次のフレームで全部を送り直す (読み直すのが簡単で確実)。
+        private void MarkAllDirty() => frame.PixelScaleChanged(puppet != null);
 
         // --- ライティング ---
 
@@ -736,7 +712,7 @@ namespace Ugoe.Unity
             set
             {
                 ambientLight = value;
-                lightsDirty = true;
+                frame.LightsChanged();
             }
         }
 
@@ -747,14 +723,13 @@ namespace Ugoe.Unity
         public void SetLights(IEnumerable<UgoeLight> newLights)
         {
             lights = new List<UgoeLight>(newLights);
-            lightsDirty = true;
+            frame.LightsChanged();
         }
 
         private void ApplyLights()
         {
-            lightsDirty = false;
+            frame.LightsApplied(blendMaterials != null);
             if (blendMaterials == null) return;
-            intermediateDirty = true;
             var sources = new List<LightSource>();
             foreach (var l in lights) sources.Add(l.ToSource());
             LightingUniform u;
@@ -813,7 +788,7 @@ namespace Ugoe.Unity
         public bool SetParameter(string id, float value)
         {
             if (puppet == null || !puppet.SetParameter(id, value)) return false;
-            dirty = true;
+            frame.Changed();
             return true;
         }
 
@@ -842,14 +817,14 @@ namespace Ugoe.Unity
         public void SetExpression(string name)
         {
             puppet?.SetExpression(name);
-            dirty = true;
+            frame.Changed();
         }
 
         /// <summary>ポーズで、パーツ <paramref name="part"/> の要素を表示する (フェードで切り替わる)。ポーズの要素でなければ false。</summary>
         public bool ShowPose(string part)
         {
             if (puppet == null || !puppet.ShowPose(part)) return false;
-            dirty = true;
+            frame.Changed();
             return true;
         }
 

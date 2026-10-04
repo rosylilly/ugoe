@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // UgoePuppet (Runtime/Unity) の状態の扱いのうち、Unity に依存しない判断: 読み直すか・読み込みの途中の失敗・
-// 変更フラグから送り直す範囲・マスクを描き直す条件。Unity 無しで確かめるため (tests/ComponentStateTests.cs)。
+// 変更フラグから送り直す範囲・マスクを描き直す条件・描き直しの印と LateUpdate の順。
+// Unity 無しで確かめるため (tests/ComponentStateTests.cs)。
 using System;
 using System.Collections.Generic;
 
@@ -240,5 +241,160 @@ namespace Ugoe
         // Unity の Mathf.Approximately と同じ比べ方。
         private static bool Approximately(float a, float b) =>
             Math.Abs(b - a) < Math.Max(1e-6f * Math.Max(Math.Abs(a), Math.Abs(b)), float.Epsilon * 8);
+    }
+
+    /// <summary><see cref="FrameState.LateUpdate"/> が呼ぶ、Unity の側の処理 (<c>UgoePuppet</c> が実装する)。</summary>
+    internal interface IFrameHost
+    {
+        /// <summary>評価する <see cref="Puppet"/> があるか。</summary>
+        bool HasPuppet { get; }
+        /// <summary>インスペクタでの変更で読み直すか (<see cref="LoadedSource{TModel, TModule}.NeedsReload"/>)。</summary>
+        bool NeedsReload();
+        /// <summary>シーンに保存したパラメータの値を設定し直す。</summary>
+        void ApplySavedParameters();
+        /// <summary>読み直す (読み込みの後に <see cref="FrameState.Loaded"/> を呼ぶ)。</summary>
+        void Load();
+        /// <summary>マスクのページが失われたか (デバイスの作り直しなど)。</summary>
+        bool MasksLost { get; }
+        /// <summary>時間を進めるか (<c>playing</c> で、再生中か <c>playInEditor</c>)。</summary>
+        bool Running { get; }
+        /// <summary>このフレームで進める時間 (<c>Time.deltaTime × speed</c>)。</summary>
+        float DeltaTime { get; }
+        /// <summary>時間を進めて評価し、送る (評価の後に <see cref="FrameState.Evaluated"/> を呼ぶ)。</summary>
+        void Advance(float dt);
+        /// <summary>光源を材質に設定する (設定の後に <see cref="FrameState.LightsApplied"/> を呼ぶ)。</summary>
+        void ApplyLights();
+        /// <summary>中間のテクスチャを使うなら、描き直す必要があるときに描く (<see cref="FrameState.TakeIntermediate"/>)。</summary>
+        void RenderIntermediate();
+    }
+
+    /// <summary>
+    /// <c>UgoePuppet</c> の描き直しの印 (読み直す・評価し直す・光源を設定し直す・中間のテクスチャを描き直す) と、
+    /// LateUpdate の中の順。印は出来事 (パラメータの変更・インスペクタでの変更・評価など) のメソッドで立て、
+    /// <see cref="LateUpdate"/> がそれを見て <see cref="IFrameHost"/> を順に呼ぶ。
+    /// </summary>
+    internal sealed class FrameState
+    {
+        /// <summary>次の LateUpdate で読み直すか。</summary>
+        internal bool NeedsLoad { get; private set; } = true;
+        /// <summary>インスペクタで変えたものを、次の LateUpdate で反映するか (OnValidate の中では子を作れない)。</summary>
+        internal bool Validated { get; private set; }
+        /// <summary>時間を進めていなくても、次の LateUpdate で評価し直すか (パラメータなどを変えた)。</summary>
+        internal bool Dirty { get; private set; }
+        /// <summary>次の LateUpdate で光源を材質に設定し直すか。</summary>
+        internal bool LightsDirty { get; private set; } = true;
+        /// <summary>中間のテクスチャを描き直すか。</summary>
+        internal bool IntermediateDirty { get; private set; }
+        /// <summary>中間のテクスチャを使っているか (まとめたメッシュは直接描かない)。</summary>
+        internal bool IntermediateUsed { get; private set; }
+
+        // --- 出来事 ---
+
+        /// <summary>コンポーネントが有効か無効になった (無効の間に片付けたので、次に読み直す)。</summary>
+        internal void Enabled() => NeedsLoad = true;
+
+        /// <inheritdoc cref="Enabled"/>
+        internal void Disabled() => NeedsLoad = true;
+
+        /// <summary>インスペクタで値が変わった (OnValidate)。光源も設定し直す。</summary>
+        internal void InspectorChanged()
+        {
+            Validated = true;
+            LightsDirty = true;
+        }
+
+        /// <summary>読み込みを始めた (成功したかに関わらず、次のフレームでは読み直さない)。</summary>
+        internal void Loaded() => NeedsLoad = false;
+
+        /// <summary>描画を作り直した (読み込みと着せ替えの後)。光源を設定し直し、評価し直す。</summary>
+        internal void Built()
+        {
+            LightsDirty = true;
+            Dirty = true;
+        }
+
+        /// <summary>パラメータ・表情・ポーズなど、評価の結果を変えるものを設定した。</summary>
+        internal void Changed() => Dirty = true;
+
+        /// <summary>環境光か光源を変えた。</summary>
+        internal void LightsChanged() => LightsDirty = true;
+
+        /// <summary>頂点の変換 (<c>pixelsPerUnit</c>) を変えた。読み込んでいれば、すべてを送り直すために読み直す。</summary>
+        internal void PixelScaleChanged(bool hasPuppet)
+        {
+            if (hasPuppet) NeedsLoad = true;
+        }
+
+        /// <summary>評価して送った。中間のテクスチャを描き直す。</summary>
+        internal void Evaluated()
+        {
+            Dirty = false;
+            IntermediateDirty = true;
+        }
+
+        /// <summary>光源を設定した。材質があって設定したなら、中間のテクスチャを描き直す。</summary>
+        internal void LightsApplied(bool materialsChanged)
+        {
+            LightsDirty = false;
+            if (materialsChanged) IntermediateDirty = true;
+        }
+
+        /// <summary>中間のテクスチャを使うかを決める。切り替わったら true (描き直す)。</summary>
+        internal bool SetIntermediateUsed(bool use)
+        {
+            if (use == IntermediateUsed) return false;
+            IntermediateUsed = use;
+            IntermediateDirty = true;
+            return true;
+        }
+
+        /// <summary>中間のテクスチャを作った (中身は空なので描き直す)。</summary>
+        internal void IntermediateCreated() => IntermediateDirty = true;
+
+        /// <summary>
+        /// 中間のテクスチャを描き直すか。印が立っているか、テクスチャが失われた (<paramref name="lost"/>) とき true で、印を下ろす。
+        /// </summary>
+        internal bool TakeIntermediate(bool lost)
+        {
+            if (!IntermediateDirty && !lost) return false;
+            IntermediateDirty = false;
+            return true;
+        }
+
+        // --- LateUpdate ---
+
+        /// <summary>
+        /// LateUpdate の順: インスペクタでの変更を反映する (読み直すか、パラメータを設定し直す) → 読み直す →
+        /// (読み込んでいれば) マスクが失われていたら評価し直す印を立てる → 時間を進めるか印が立っていれば評価する →
+        /// 光源を設定し直す → 中間のテクスチャを描く。
+        /// </summary>
+        internal void LateUpdate(IFrameHost host)
+        {
+            if (Validated)
+            {
+                Validated = false;
+                // モデルかモジュールか頂点の変換 (pixelsPerUnit) が変わったときだけ読み直す。パラメータは設定し直す。
+                if (host.NeedsReload()) NeedsLoad = true;
+                else if (host.HasPuppet)
+                {
+                    host.ApplySavedParameters();
+                    Dirty = true;
+                }
+            }
+            if (NeedsLoad) host.Load();
+            if (!host.HasPuppet) return;
+            // マスクのページが失われた (デバイスの作り直しなど) ら、止まっていても描き直す。
+            if (host.MasksLost) Dirty = true;
+            var run = host.Running;
+            if (run || Dirty) host.Advance(run ? ClampDeltaTime(host.DeltaTime) : 0f);
+            if (LightsDirty) host.ApplyLights();
+            host.RenderIntermediate();
+        }
+
+        /// <summary>
+        /// 進める時間を 0 以上にする。逆再生はできない (C ABI は負の dt を断る) ので、負の速さは止めているのと同じにする。
+        /// NaN も 0 (Unity の <c>Mathf.Max(dt, 0)</c> と同じ)。
+        /// </summary>
+        internal static float ClampDeltaTime(float dt) => dt > 0 ? dt : 0f;
     }
 }
