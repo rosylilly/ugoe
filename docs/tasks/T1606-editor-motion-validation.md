@@ -1,11 +1,11 @@
 ---
 id: T1606
 title: "エディタ: プロジェクトのモーションと表情も検証し、拒んだ理由をコードで出す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1606
 ---
 
 # T1606: エディタ: プロジェクトのモーションと表情も検証し、拒んだ理由をコードで出す
