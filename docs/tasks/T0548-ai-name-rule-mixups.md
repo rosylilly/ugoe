@@ -1,11 +1,11 @@
 ---
 id: T0548
 title: AI: 名前の規則の取り違えを減らす (部位の語のないハイライト・リボン・top)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, docs]
 depends_on: [T0528]
-assignee:
+assignee: claude-worker-T0548
 ---
 
 # T0548: AI: 名前の規則の取り違えを減らす
