@@ -62,7 +62,11 @@ puppet.clear_tracking();
   既定は `false` (仕様の順。トラッキングがモーションの値を置き換える) と空。どちらもモデルを読み直しても保つ。
   T0721 では wasm が `Puppet::update` の前にホストの書き込みとして入れていたが、パラメータごとに分けるために `Puppet` に移した (T0722)。
   ビューアは待機以外の優先度のモーションの再生中だけ入れる。
-- `is_lost()` が `true` になったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直す。
+- `is_lost()` が `true` になったら、新しい canvas で作り直す (以後の `render` は例外を投げる)。WebGPU はデバイスの喪失 (GPU プロセスのクラッシュなど)、
+  WebGL2 は canvas の `webglcontextlost` (GPU のリセット・ドライバの更新・タブを裏に回したときの回収など) で `true` になる。
+  wgpu の GL のバックエンド (wgpu-hal 30) は WebGL2 の喪失を知らせず描画も失敗しないので、WebGL2 で作ったときは `WebPuppet` が
+  canvas の `webglcontextlost` を聞いて印を立てる (リスナーは `free` で外す。既定の動作は止めないので、復元を待つホストは自分で
+  `preventDefault` する。T0932)。知らせのイベントは出さないので、ホストは描画のたびか毎フレーム `is_lost()` を確かめる。
 
 ### 有限でない値と `dt`
 

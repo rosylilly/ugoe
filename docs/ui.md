@@ -10,10 +10,40 @@
 | --- | --- | --- |
 | `@ugoe/i18n` | `packages/i18n` | 画面に出す文言・数値・日付のすべて |
 | `@ugoe/ui` | `packages/ui` | トークン (`tokens.css`) と部品。アプリの `main.ts` で `tokens.css` を 1 回だけ読む |
-| `@ugoe/player` | `packages/player` | モデルの再生の層 (ビューアとスタジオ。スクリーンショットの PNG への変換はエディタも使う) |
+| `@ugoe/player` | `packages/player` | モデルの再生の層 (ビューアとスタジオ。WebPuppet の寿命 (`PuppetSurface`) とスクリーンショットの PNG への変換はエディタも使う) |
 
 - 依存の向きは `apps/* → @ugoe/player → @ugoe/ui → @ugoe/i18n`。どれも GPL-3.0-only。
 - アプリの中にしか無い部品 (エディタのパネルの見出しなど) はアプリに置く。2 つ以上のアプリで要るものになったら `@ugoe/ui` へ移す。
+
+### WebPuppet の寿命
+
+WebPuppet (ugoe-wasm) と、それを描く canvas の寿命 (作る・作り直す・捨てる) は、`@ugoe/player` の `PuppetSurface`
+(`packages/player/src/surface.ts`) にまとめ、Player (ビューア・スタジオ) とエディタのビューポート (`ViewportController`) が使う (T0932)。
+T0672・T0914 で同じ誤りが両方に入り、別々に直していたため。
+
+- **置き場所:** `@ugoe/player` (GPL-3.0-only)。エディタは T0730 から `@ugoe/player` に依存している。MIT の `bindings/web` の
+  `<ugoe-avatar>` は GPL のコードを使えないので、同じ振る舞いを自分で持つ (下の「`<ugoe-avatar>` との違い」)。
+- **型の受け方:** WebPuppet の型 (wasm-bindgen の生成物) はアプリごとに違うので、`PuppetSurface<P extends SurfacePuppet>` は使うメソッド
+  (`free`・`is_lost`・`resize`) だけの構造の型で受け、`created(puppet)` にはアプリの型のまま渡す。wasm の読み込みも `loadWasm` で受ける。
+- **canvas:** `PuppetSurface` が作り、`attach(container)` の要素の先頭に置く。エディタは T0672 まで `generation` を増やして Svelte の
+  `{#key}` で canvas を作り直していたが、canvas を作るのを `PuppetSurface` に移したので `generation` は除いた (Viewport.svelte は
+  canvas を置く要素を渡すだけ。canvas の見た目は `:global(canvas)`・`canvasClass` で決める)。
+- **WebGL2 への切り替え:** `"auto"` で作れなければ新しい canvas で `"webgl2"` を試す (1 つの canvas は WebGPU と WebGL2 を併用できない)。
+  一度 WebGL2 に落ちたら、作り直しでも WebGL2 から始める。
+- **古い作成の破棄:** `attach`・`detach` のたびに番号を進め、待った後で変わっていたら、遅れてできた WebPuppet と canvas を捨てる
+  (`attach` の結果は `"superseded"`)。作り直しの途中で `detach` されたときも同じ。
+- **GPU の喪失:** WebGPU のデバイスの喪失と WebGL2 のコンテキストの喪失は、どちらも `WebPuppet.is_lost()` で分かる (WebGL2 は
+  ugoe-wasm が canvas の `webglcontextlost` で印を立てる。T0697 を T0932 にまとめた)。描く前に `checkLost()` で確かめ、真なら canvas ごと
+  作り直す。そのうえで `PuppetSurface` も canvas の `webglcontextlost` を聞いてすぐ作り直す: エディタは要求されたときだけ描くので、
+  `is_lost()` だけでは次に描くまで (操作するまで) 真っ白のままになるため。作り直しは一度に 1 つで、捨てた WebPuppet の印と古い
+  canvas のイベントは見ないので、2 つの知らせが重なっても作り直しは 1 回。復元 (`webglcontextrestored`) は待たずに新しい canvas で作る。
+- **devicePixelRatio:** ResizeObserver は倍率だけの変化を知らせないので、`PuppetSurface` が `matchMedia("(resolution: …dppx)")` で聞き、
+  描画バッファの大きさを合わせ直して `pixelRatioChanged` で知らせる。CSS ピクセルと描画バッファの画素の換算には `pixelRatio` を使う。
+- **作り直した後の状態:** 背景・光源・モデル・パラメータの値を渡し直すのは使う側 (`created(puppet, recovered)`。値は `lost` で控える)。
+
+`<ugoe-avatar>` との違い: GPU の喪失は同じく `is_lost()` で分かり、devicePixelRatio も同じく `matchMedia` で聞く。WebGL2 の
+コンテキストの喪失では、要素は `preventDefault` して `webglcontextrestored` を待ってから作り直し、短い間に続けて失ったら諦めて
+`error` を送る (ページに埋め込む部品なので、GPU が戻らない間に作り直しを繰り返さない。T0425・T0439)。
 
 ## デザイントークン
 

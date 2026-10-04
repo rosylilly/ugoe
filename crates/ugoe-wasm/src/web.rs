@@ -93,8 +93,10 @@ pub struct WebPuppet {
     background: wgpu::Color,
     /// パラメータが変わり、評価し直す必要がある。
     dirty: bool,
-    /// デバイスを失った (GPU プロセスのクラッシュなど)。ホストは作り直す必要がある。
+    /// デバイスを失った (GPU プロセスのクラッシュ・WebGL2 のコンテキストの喪失など)。ホストは作り直す必要がある。
     lost: Arc<AtomicBool>,
+    /// WebGL2 で作ったときの、canvas の `webglcontextlost` のリスナー (`lost` を立てる。破棄のときに外す。T0932)。
+    context_lost: Option<Closure<dyn FnMut()>>,
     /// 読み込んだ着せ替えのモジュールと、レンダラに登録したテクスチャの番号の範囲
     /// (モデルを読み直したときや付け外しのときに、使わなくなった画像を捨てるため)。
     wardrobe: Wardrobe,
@@ -224,12 +226,18 @@ impl WebPuppet {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, view_format);
+        let backend = adapter.get_info().backend;
+        // wgpu の GL のバックエンド (wgpu-hal 30) は WebGL2 のコンテキストの喪失をデバイスの喪失として知らせず、
+        // 描画も失敗しない (何も描かれない) ので、canvas のイベントで `lost` を立てる (T0932)。
+        let context_lost = (backend == wgpu::Backend::Gl)
+            .then(|| listen_context_lost(&canvas, lost.clone()))
+            .transpose()?;
 
         Ok(Self {
             canvas,
             _instance: instance,
             surface,
-            backend: adapter.get_info().backend,
+            backend,
             device,
             queue,
             config,
@@ -241,6 +249,7 @@ impl WebPuppet {
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
             lost,
+            context_lost,
             wardrobe: Wardrobe::default(),
             load_warnings: Vec::new(),
             motion_over_tracking: false,
@@ -249,7 +258,11 @@ impl WebPuppet {
         })
     }
 
-    /// デバイスを失ったか。`true` なら以後の描画は無効なので、新しい canvas で作り直すこと。
+    /// デバイスを失ったか。`true` なら以後の描画は無効 (`render` は例外を投げる) なので、新しい canvas で作り直すこと。
+    ///
+    /// WebGPU はデバイスの喪失 (GPU プロセスのクラッシュなど)、WebGL2 は canvas の `webglcontextlost`
+    /// (GPU のリセット・ドライバの更新・タブを裏に回したときの回収など) で `true` になる (T0932)。
+    /// どちらも知らせのイベントは出さないので、ホストは描画のたびか毎フレーム確かめる。
     pub fn is_lost(&self) -> bool {
         self.lost.load(Ordering::Relaxed)
     }
@@ -776,4 +789,34 @@ impl WebPuppet {
                 .transform(canvas, [self.config.width, self.config.height]),
         )
     }
+}
+
+impl Drop for WebPuppet {
+    /// `free` で canvas の `webglcontextlost` のリスナーを外す (canvas を使い回しても古い `WebPuppet` の印を立てない)。
+    fn drop(&mut self) {
+        if let Some(listener) = self.context_lost.take() {
+            // 外せなくても、印を立てるだけのリスナーなので害はない。
+            let _ = self.canvas.remove_event_listener_with_callback(
+                "webglcontextlost",
+                listener.as_ref().unchecked_ref(),
+            );
+        }
+    }
+}
+
+/// canvas の `webglcontextlost` で `lost` を立てるリスナーを付ける。既定の動作 (復元しない) は止めない
+/// (作り直しは新しい canvas で行うので、復元を待たない)。
+fn listen_context_lost(
+    canvas: &HtmlCanvasElement,
+    lost: Arc<AtomicBool>,
+) -> Result<Closure<dyn FnMut()>, JsError> {
+    let listener = Closure::<dyn FnMut()>::new(move || {
+        if !lost.swap(true, Ordering::Relaxed) {
+            web_sys::console::error_1(&"ugoe: WebGL context lost".into());
+        }
+    });
+    canvas
+        .add_event_listener_with_callback("webglcontextlost", listener.as_ref().unchecked_ref())
+        .map_err(|e| JsError::new(&format!("failed to listen for webglcontextlost: {e:?}")))?;
+    Ok(listener)
 }

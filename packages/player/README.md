@@ -12,6 +12,8 @@ src/i18n.ts              文言の `t()` (@ugoe/i18n の名前空間 `player`)
 src/player.svelte.ts     Player: WebPuppet (ugoe-wasm) を持ち、フレームのループを回す。UI に出す状態 ($state) もここ。
                          PlayerHost (アプリが渡すもの)・Screenshot (capture の結果)
 src/wasm.ts              Player が使う WebPuppet の口 (構造だけ。生成物はアプリが持つ)
+src/surface.ts           PuppetSurface: WebPuppet と canvas の寿命 (作成・WebGL2 への切り替え・GPU を失ったときの作り直し・破棄・
+                         devicePixelRatio の追従)。エディタのビューポートも使う (T0932。docs/ui.md#webpuppet-の寿命)
 src/follower.ts          受け手のモード (スタジオの出力ウィンドウ): フレームの読み取り・並べ替え・適用 (T0801)
 src/drivers.ts           パラメータを毎フレーム外から動かす仕組み (ParameterDriver)
 src/parameters.ts        パラメータの一覧 (parameters_json) の読み取り・グループ分け・スライダーの刻み
@@ -51,13 +53,14 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   アプリが決める。`src/wasm.ts` の `WebPuppet` は Player が使うメソッドだけを書いた構造の型で、アプリの生成物
   (`ugoe_wasm.d.ts`) がそれを満たすかはアプリの型検査で確かめる。Player が新しいメソッドを使うときは `src/wasm.ts` に足す。
 - `attach` は前の `attach` を先に `detach` する。WebPuppet を作っている間に `detach` か次の `attach` があれば、遅れて
-  できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU は `is_lost`、
-  WebGL2 は canvas の `webglcontextlost`) canvas ごと作り直してモデルを読み直す。devicePixelRatio だけが変わったときも
-  描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。
+  できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU も WebGL2 も `is_lost`。
+  WebGL2 は canvas の `webglcontextlost` でもすぐ) canvas ごと作り直してモデルを読み直す。devicePixelRatio だけが変わったときも
+  描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
+  エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
 - `Player` は `@ugoe/face-tracking` の `TrackingTarget` を満たす (`new FaceTracker(player, …)`)。
 - 画像の保存は `capture()` で RGBA を受け取り、`encodePng` (`src/screenshot.ts`) で PNG にする。保存のダイアログと書き込みはアプリ。
   `src/screenshot.ts` はエディタのビューポート (`ViewportController.capture`) も使う (T0730。エディタが `@ugoe/player` から import するのは
-  これだけ)。例外の文はカタログの `screenshot.*`。
+  これと `PuppetSurface`)。例外の文はカタログの `screenshot.*`。
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは「接頭辞 + `.` + 名前」(`src/storage.ts`。T0930)。
   接頭辞は `PlayerHost.storagePrefix` で渡し、省くとビューアの `ugoe-viewer` (前から覚えたものを失わない)。スタジオの出力ウィンドウは
   `ugoe-studio.player`。名前の一覧は `STORAGE_NAMES` (下の表)。`PlayerHost.storage` で覚える先 (`Storage`) も差し替えられる (テスト)。

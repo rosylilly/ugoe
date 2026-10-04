@@ -65,10 +65,12 @@ avatar.clearTracking();
 ```
 
 - 大きさは要素の CSS の大きさ (既定 300x300) × `devicePixelRatio` です。背景は透明なので、要素の `background` がそのまま見えます。
+  `devicePixelRatio` だけが変わったとき (倍率の違う画面へウィンドウを移したなど。ResizeObserver は知らせない) も、
+  `matchMedia` で聞いて描画バッファの大きさを合わせ直します。
 - 画面外にあるとき (IntersectionObserver) と `paused` の間は `requestAnimationFrame` を回しません。
 - GPU を失ったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直してモデルを読み直します (パラメータの値は引き継ぐ)。
   WebGL2 では、canvas の `webglcontextlost` で描くのを止め、`webglcontextrestored` を待ってから作り直します
-  (wgpu は WebGL2 の喪失を `puppet.is_lost()` で知らせないため)。前の作り直しから 1 分以内に失うことが続き、4 回目になったら、作り直さずに `error` を送ります。
+  (`puppet.is_lost()` も `true` になりますが、復元を待つために `preventDefault` するので、要素も canvas のイベントを聞きます)。前の作り直しから 1 分以内に失うことが続き、4 回目になったら、作り直さずに `error` を送ります。
 - ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
   `src` を変えたり `load()` を呼んだりして置き換わった取得は中断します (`AbortController`)。
 - 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
@@ -221,6 +223,7 @@ const warnings = await fetchModel(puppet, "avatar.ugoe");        // または lo
 puppet.set_parameter("AngleX", 15);
 let last = performance.now();
 requestAnimationFrame(function frame(now) {
+  if (puppet.is_lost()) return; // GPU を失った (WebGL2 のコンテキストの喪失を含む)。新しい canvas で作り直す
   puppet.update(Math.min((now - last) / 1000, 0.1));
   last = now;
   puppet.render();

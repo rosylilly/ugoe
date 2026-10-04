@@ -153,6 +153,10 @@ export class UgoeAvatarElement extends BaseElement {
   #carry: Record<string, number> | null = null;
   /** 描画バッファの大きさ (画素)。 */
   #size: [number, number] = [0, 0];
+  /** canvas の大きさ (CSS ピクセル。ResizeObserver の最後の知らせ)。devicePixelRatio だけが変わったときに使う。 */
+  #cssSize: [number, number] | null = null;
+  /** devicePixelRatio の変化を聞いている問い合わせ (`#watchPixelRatio`)。 */
+  #pixelRatioQuery: MediaQueryList | null = null;
   #frame = 0;
   #last: number | null = null;
   #needsRender = false;
@@ -531,13 +535,38 @@ export class UgoeAvatarElement extends BaseElement {
       });
       this.#intersectionObserver.observe(this);
     }
+    this.#watchPixelRatio();
   }
+
+  /**
+   * devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
+   * 今の倍率から外れたら描画バッファの大きさを合わせ直す (ぼやけないように。@ugoe/player の PuppetSurface と同じ。T0932)。
+   */
+  #watchPixelRatio(): void {
+    if (typeof matchMedia !== "function") return;
+    this.#pixelRatioQuery = matchMedia(`(resolution: ${globalThis.devicePixelRatio || 1}dppx)`);
+    this.#pixelRatioQuery.addEventListener("change", this.#onPixelRatio, { once: true });
+  }
+
+  #onPixelRatio = (): void => {
+    const css = this.#cssSize;
+    if (css !== null) {
+      const dpr = globalThis.devicePixelRatio || 1;
+      this.#setSize(Math.round(css[0] * dpr), Math.round(css[1] * dpr));
+    }
+    this.#watchPixelRatio();
+  };
 
   #onResize(entry: ResizeObserverEntry): void {
     const box = entry.devicePixelContentBoxSize?.[0];
-    const dpr = globalThis.devicePixelRatio ?? 1;
+    const dpr = globalThis.devicePixelRatio || 1;
+    this.#cssSize = [entry.contentRect.width, entry.contentRect.height];
     const w = Math.round(box ? box.inlineSize : entry.contentRect.width * dpr);
     const h = Math.round(box ? box.blockSize : entry.contentRect.height * dpr);
+    this.#setSize(w, h);
+  }
+
+  #setSize(w: number, h: number): void {
     if (w <= 0 || h <= 0) return;
     this.#size = [w, h];
     this.#puppet?.resize(w, h);
@@ -553,6 +582,8 @@ export class UgoeAvatarElement extends BaseElement {
     this.#resizeObserver = null;
     this.#intersectionObserver?.disconnect();
     this.#intersectionObserver = null;
+    this.#pixelRatioQuery?.removeEventListener("change", this.#onPixelRatio);
+    this.#pixelRatioQuery = null;
     this.#puppet?.free();
     this.#puppet = null;
     this.#canvas?.remove();

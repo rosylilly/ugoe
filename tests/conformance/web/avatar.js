@@ -213,9 +213,12 @@ const scenarios = {
       const errors = [];
       const onError = (e) => errors.push(e.detail.error.message);
       el.addEventListener("error", onError);
+      check(!oldPuppet.is_lost(), `round ${round}: is_lost() before losing the context`);
       ext.loseContext();
       // 失っている間は作り直さない (復元を待つ) し、失ったコンテキストに描いて `error` を送らない
       await frames(5);
+      // wasm も喪失を知らせる (T0932。wgpu の GL は知らせないので、WebPuppet が canvas のイベントを聞く)
+      check(oldPuppet.is_lost(), `round ${round}: is_lost() is false after losing the context`);
       check(el.puppet === oldPuppet, `round ${round}: recreated before the context was restored`);
       check(errors.length === 0, `round ${round}: error while lost: ${errors.join("; ")}`);
       const reloaded = once(el, "load", "the reload after restoring the context");

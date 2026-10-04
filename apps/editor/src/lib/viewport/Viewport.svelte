@@ -31,7 +31,8 @@ interface Props {
 let { controller, model, overlay, hint = null }: Props = $props();
 
 let container: HTMLDivElement;
-let canvas = $state<HTMLCanvasElement>();
+/** canvas を置く要素 (canvas は controller が作り、GPU を失ったら作り直す)。 */
+let surface = $state<HTMLDivElement>();
 let panning: { id: number; x: number; y: number } | null = null;
 /** スクリーンショットを保存している間 (ボタンを押せない)。 */
 let capturing = $state(false);
@@ -61,39 +62,23 @@ $effect(() => {
   if (m) untrack(() => controller.setModel(m));
 });
 
-// canvas は controller.generation が変わるたびに作り直される ({#key})。
+// canvas は controller が surface の中に作る (GPU を失ったときの作り直しも)。
 $effect(() => {
-  const target = canvas;
+  const target = surface;
   if (!target) return;
   untrack(() => controller.attach(target));
   return () => controller.detach();
 });
 
+// devicePixelRatio だけの変化 (ResizeObserver は知らせない) は controller (@ugoe/player の PuppetSurface) が聞く。
 $effect(() => {
   const observer = new ResizeObserver(([entry]) => {
     if (!entry) return;
     const { width, height } = entry.contentRect;
-    controller.resize(width, height, window.devicePixelRatio || 1);
+    controller.resize(width, height);
   });
   observer.observe(container);
   return () => observer.disconnect();
-});
-
-// devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
-// 今の倍率から外れたら描画バッファの大きさを合わせ直す (ぼやけないように)。
-$effect(() => {
-  let media: MediaQueryList | null = null;
-  const watch = (): void => {
-    media = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
-    media.addEventListener("change", changed, { once: true });
-  };
-  const changed = (): void => {
-    const { width, height } = container.getBoundingClientRect();
-    controller.resize(width, height, window.devicePixelRatio || 1);
-    watch();
-  };
-  watch();
-  return () => media?.removeEventListener("change", changed);
 });
 
 // テーマ (設定・OS) が変わったら背景を読み直す。
@@ -149,9 +134,7 @@ function onPointerUp(e: PointerEvent) {
   onpointerup={onPointerUp}
   onpointercancel={onPointerUp}
 >
-  {#key controller.generation}
-    <canvas bind:this={canvas}></canvas>
-  {/key}
+  <div class="surface" bind:this={surface}></div>
   <div class="overlay">
     {#if overlay}{@render overlay(controller)}{/if}
   </div>
@@ -189,7 +172,12 @@ function onPointerUp(e: PointerEvent) {
   touch-action: none;
 }
 
-canvas {
+.surface {
+  position: absolute;
+  inset: 0;
+}
+
+.surface :global(canvas) {
   position: absolute;
   inset: 0;
   width: 100%;

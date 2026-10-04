@@ -5,8 +5,10 @@
 // - 描画は要求されたときだけ requestAnimationFrame で 1 回行う (requestRender)。
 // - 座標: 公開するメソッドはすべて CSS ピクセル (ビューポート要素の左上原点)。
 //   WebPuppet は canvas の描画バッファの画素 (CSS ピクセル × devicePixelRatio) で受け取るので、ここで換算する。
+// - WebPuppet と canvas の寿命 (作成・WebGL2 への切り替え・GPU を失ったときの作り直し・破棄・devicePixelRatio の追従) は
+//   @ugoe/player の PuppetSurface に任せる (Player と共有。T0932)。
 
-import type { Screenshot } from "@ugoe/player";
+import { PuppetSurface, type Screenshot } from "@ugoe/player";
 import { errorText } from "../errors";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
@@ -60,8 +62,6 @@ export class ViewportController {
   parameterValues = $state<Record<string, number>>({});
   /** オーバーレイ用の変換。ビュー・大きさ・モデルが変わるたびに更新される。 */
   transform = $state<ViewTransform | null>(null);
-  /** canvas を作り直すたびに増える (Viewport.svelte が {#key} に使う)。 */
-  generation = $state(0);
   /** 選択中のメッシュ・ワープの深度を色の点で重ねるか (インスペクタの深度の節で切り替える)。 */
   showDepth = $state(false);
   /**
@@ -85,88 +85,72 @@ export class ViewportController {
    */
   posePreview = $state.raw<readonly string[] | null>(null);
 
-  #puppet: WebPuppet | null = null;
+  /** WebPuppet と canvas の寿命 (@ugoe/player の surface.ts)。 */
+  readonly #surface = new PuppetSurface<WebPuppet>({
+    loadWasm: loadUgoeWasm,
+    created: (puppet) => this.#setUp(puppet),
+    failed: (e) => {
+      this.status = "error";
+      this.message = errorText(e);
+    },
+    pixelRatioChanged: () => this.requestRender(),
+  });
   #model: ViewportModel | null = null;
   /** プレビュー中だけ代わりに描くモデル (モジュールのプロジェクトの本体だけのもの。setPreviewModel)。 */
   #previewModel: ViewportModel | null = null;
   /** 次に読み込むモデルでパラメータを既定値から始める (resetParametersOnNextModel)。 */
   #resetOnLoad = false;
-  #size = { width: 1, height: 1, dpr: 1 };
   #background: [number, number, number, number] = [0, 0, 0, 0];
   #frame = 0;
-  /** "auto" で失敗したら "webgl2" で作り直す (1 つの canvas は WebGPU と WebGL2 を併用できないため)。 */
-  #backendPreference: "auto" | "webgl2" = "auto";
   /** 前のプレビューのフレームの時刻 (ms)。0 なら最初のフレーム。 */
   #lastTime = 0;
   #animation = 0;
   #driver: FrameDriver | null = null;
   /** 光源の JSON (`set_lighting_json`)。null なら渡さない。WebPuppet を作り直しても渡し直す。 */
   #lighting: string | null = null;
-  /** attach・detach のたびに増える。待っている間に detach・attach されたら、作った WebPuppet を捨てる。 */
-  #attachToken = 0;
-  /** WebPuppet を作った canvas (コンテキストの喪失を聞くため)。 */
-  #canvas: HTMLCanvasElement | null = null;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
-    return this.#puppet;
+    return this.#surface.puppet;
   }
 
-  /** canvas に WebPuppet を作る。Viewport.svelte がマウント時に呼ぶ。 */
-  async attach(canvas: HTMLCanvasElement): Promise<void> {
+  get #puppet(): WebPuppet | null {
+    return this.#surface.puppet;
+  }
+
+  /**
+   * `container` の中に canvas を作り、WebPuppet を作る。Viewport.svelte がマウント時に呼ぶ。待っている間に detach か
+   * 次の attach があれば、作った WebPuppet は捨てる。GPU を失ったら canvas ごと作り直す (PuppetSurface)。
+   */
+  async attach(container: HTMLElement): Promise<void> {
     this.detach();
-    const generation = this.generation;
-    const token = this.#attachToken;
-    try {
-      const wasm = await loadUgoeWasm();
-      if (token !== this.#attachToken) return;
-      if (!wasm) {
-        this.status = "unbuilt";
-        this.message = "ugoe-wasm is not built. Run `just wasm` and reload.";
-        return;
-      }
-      const puppet = await wasm.WebPuppet.create(canvas, this.#backendPreference);
-      if (generation !== this.generation || token !== this.#attachToken) {
-        puppet.free();
-        return;
-      }
-      this.#puppet = puppet;
-      this.#canvas = canvas;
-      canvas.addEventListener("webglcontextlost", this.#onContextLost);
-      this.backend = puppet.backend();
-      this.status = "ready";
-      this.message = null;
-      puppet.set_background(...this.#background);
-      this.#applyLighting();
-      puppet.resize(this.#pixelWidth(), this.#pixelHeight());
-      const shown = this.#shown();
-      if (shown) this.#load(shown);
-      this.requestRender();
-      this.#scheduleAnimation();
-    } catch (e) {
-      if (generation !== this.generation || token !== this.#attachToken) return;
-      if (this.#backendPreference === "auto") {
-        console.warn("ugoe: falling back to WebGL2:", e);
-        this.#backendPreference = "webgl2";
-        this.generation += 1;
-        return;
-      }
-      this.status = "error";
-      this.message = errorText(e);
+    const result = await this.#surface.attach(container);
+    if (result === "missing") {
+      this.status = "unbuilt";
+      this.message = "ugoe-wasm is not built. Run `just wasm` and reload.";
     }
+  }
+
+  /** WebPuppet を作った (attach と、GPU を失った後の作り直し)。今の表示の設定とモデルを渡す。 */
+  #setUp(puppet: WebPuppet): void {
+    this.backend = puppet.backend();
+    this.status = "ready";
+    this.message = null;
+    puppet.set_background(...this.#background);
+    this.#applyLighting();
+    const shown = this.#shown();
+    if (shown) this.#load(shown);
+    this.requestRender();
+    this.#scheduleAnimation();
   }
 
   /** WebPuppet を破棄する。Viewport.svelte がアンマウント時に呼ぶ。 */
   detach(): void {
-    this.#attachToken += 1;
-    this.#canvas?.removeEventListener("webglcontextlost", this.#onContextLost);
-    this.#canvas = null;
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     cancelAnimationFrame(this.#animation);
     this.#animation = 0;
-    this.#puppet?.free();
-    this.#puppet = null;
+    this.#surface.detach();
   }
 
   /** 表示するモデルを設定する。モデルが変わるたびに呼ぶ (編集・Undo・Redo・新規・開くの後)。 */
@@ -313,10 +297,9 @@ export class ViewportController {
     this.requestRender();
   }
 
-  /** ビューポート要素の大きさ (CSS ピクセル) と devicePixelRatio。 */
-  resize(width: number, height: number, dpr: number): void {
-    this.#size = { width: Math.max(1, width), height: Math.max(1, height), dpr };
-    this.#puppet?.resize(this.#pixelWidth(), this.#pixelHeight());
+  /** ビューポート要素の大きさ (CSS ピクセル)。描画バッファは devicePixelRatio を掛けた画素にする。 */
+  resize(width: number, height: number): void {
+    this.#surface.resize(width, height);
     this.requestRender();
   }
 
@@ -367,14 +350,14 @@ export class ViewportController {
 
   /** CSS ピクセルの点 `(x, y)` を中心にズームを `factor` 倍する。 */
   zoomAt(factor: number, x: number, y: number): void {
-    const { dpr } = this.#size;
+    const dpr = this.#surface.pixelRatio;
     this.#puppet?.zoom_at(factor, x * dpr, y * dpr);
     this.requestRender();
   }
 
   /** CSS ピクセルで `(dx, dy)` だけずらす。 */
   panBy(dx: number, dy: number): void {
-    const { dpr } = this.#size;
+    const dpr = this.#surface.pixelRatio;
     this.#puppet?.pan_by(dx * dpr, dy * dpr);
     this.requestRender();
   }
@@ -409,30 +392,15 @@ export class ViewportController {
     });
   }
 
-  /**
-   * WebGL2 のコンテキストを失った (GPU のリセット・ドライバの更新など)。wgpu の GL のバックエンドはこれを
-   * `is_lost` で知らせず、描画も失敗しない (何も描かれない) ので、WebGPU の喪失と同じく canvas ごと作り直す。
-   */
-  #onContextLost = (): void => {
-    console.warn("ugoe: WebGL context lost; recreating the viewport");
-    this.detach();
-    this.generation += 1;
-  };
-
   #render(): void {
     const puppet = this.#puppet;
-    if (!puppet) return;
+    // GPU を失った (GPU プロセスのクラッシュ・WebGL2 のコンテキストの喪失など)。canvas ごと作り直す。
+    if (!puppet || this.#surface.checkLost()) return;
     try {
       puppet.render();
       this.#updateTransform();
     } catch (e) {
-      if (puppet.is_lost()) {
-        // GPU プロセスのクラッシュなど。canvas ごと作り直す。
-        console.warn("ugoe: GPU device lost; recreating the viewport");
-        this.detach();
-        this.generation += 1;
-        return;
-      }
+      if (this.#surface.checkLost()) return;
       this.status = "error";
       this.message = errorText(e);
     }
@@ -542,7 +510,7 @@ export class ViewportController {
 
   #updateTransform(): void {
     const t = this.#puppet?.view_transform();
-    const { dpr } = this.#size;
+    const dpr = this.#surface.pixelRatio;
     const next =
       t && t.length === 3
         ? { scale: (t[0] ?? 1) / dpr, offsetX: (t[1] ?? 0) / dpr, offsetY: (t[2] ?? 0) / dpr }
@@ -555,13 +523,5 @@ export class ViewportController {
     ) {
       this.transform = next;
     }
-  }
-
-  #pixelWidth(): number {
-    return Math.max(1, Math.round(this.#size.width * this.#size.dpr));
-  }
-
-  #pixelHeight(): number {
-    return Math.max(1, Math.round(this.#size.height * this.#size.dpr));
   }
 }

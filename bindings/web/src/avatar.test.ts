@@ -33,7 +33,7 @@ class FakePuppet {
   is_lost() {
     return this.lost;
   }
-  resize() {}
+  resize(_width: number, _height: number) {}
   fit() {}
   update() {}
   render() {}
@@ -377,6 +377,48 @@ describe("<ugoe-avatar>", () => {
     expect(puppet.backend()).toBe("webgpu");
     await flush();
     expect(puppet.model).toBe("model-a");
+  });
+
+  it("resizes the drawing buffer when only the device pixel ratio changes", async () => {
+    const queries: { media: string; target: EventTarget }[] = [];
+    vi.stubGlobal("matchMedia", (media: string) => {
+      const target = new EventTarget();
+      queries.push({ media, target });
+      return target;
+    });
+    let observed: ResizeObserverCallback | null = null;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observed = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("devicePixelRatio", 1);
+    const avatar = newAvatar();
+    document.body.append(avatar);
+    const puppet = fake(await avatar.ready);
+    const sizes: number[][] = [];
+    puppet.resize = (width: number, height: number) => void sizes.push([width, height]);
+    const entry = { contentRect: { width: 200, height: 100 } } as ResizeObserverEntry;
+    (observed as ResizeObserverCallback | null)?.([entry], {} as ResizeObserver);
+    expect(sizes).toEqual([[200, 100]]);
+    expect(queries.map((q) => q.media)).toEqual(["(resolution: 1dppx)"]);
+
+    vi.stubGlobal("devicePixelRatio", 2);
+    queries[0]?.target.dispatchEvent(new Event("change"));
+    expect(sizes).toEqual([
+      [200, 100],
+      [400, 200],
+    ]);
+    expect(queries.map((q) => q.media)).toEqual(["(resolution: 1dppx)", "(resolution: 2dppx)"]);
+    // 外したら聞かない。
+    avatar.remove();
+    queries[1]?.target.dispatchEvent(new Event("change"));
+    expect(queries).toHaveLength(2);
   });
 
   it("does nothing on restart while disconnected", async () => {

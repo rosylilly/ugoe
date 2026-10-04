@@ -3,13 +3,32 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ViewportController as ViewportControllerType } from "./controller.svelte";
 import type { WebPuppet } from "./wasm";
 
+class FakeCanvas extends EventTarget {
+  width = 300;
+  height = 150;
+  className = "";
+  removed = false;
+  remove(): void {
+    this.removed = true;
+  }
+}
+
 /** WebPuppet.create が返す約束 (テストが好きな時に解く)。 */
-let pending: { resolve: (p: WebPuppet) => void; reject: (e: unknown) => void }[] = [];
+let pending: {
+  canvas: FakeCanvas;
+  resolve: (p: WebPuppet) => void;
+  reject: (e: unknown) => void;
+}[] = [];
+
+// @ugoe/player の Player が読むトラッキング (と画面の部品・MediaPipe) は使わないので空にする (読むと遅く、
+// `document` を置いた後に読むと bits-ui が `window` を引く)。
+vi.mock("@ugoe/face-tracking", () => ({ setPuppetTracking: () => {} }));
 
 vi.mock("./wasm", () => ({
   loadUgoeWasm: async () => ({
     WebPuppet: {
-      create: () => new Promise<WebPuppet>((resolve, reject) => pending.push({ resolve, reject })),
+      create: (canvas: FakeCanvas) =>
+        new Promise<WebPuppet>((resolve, reject) => pending.push({ canvas, resolve, reject })),
     },
   }),
 }));
@@ -19,6 +38,7 @@ let ViewportController: typeof ViewportControllerType;
 beforeAll(async () => {
   globalThis.requestAnimationFrame ??= () => 1;
   globalThis.cancelAnimationFrame ??= () => {};
+  globalThis.document ??= { createElement: () => new FakeCanvas() } as unknown as Document;
   ({ ViewportController } = await import("./controller.svelte"));
 });
 
@@ -29,6 +49,9 @@ beforeEach(() => {
 function fakePuppet() {
   const calls: string[] = [];
   const puppet = {
+    lost: false,
+    is_lost: () => puppet.lost,
+    render() {},
     free: () => calls.push("free"),
     backend: () => "webgl2",
     set_background() {},
@@ -36,11 +59,12 @@ function fakePuppet() {
     resize() {},
     has_model: () => false,
   };
-  return { puppet: puppet as unknown as WebPuppet, calls };
+  return { puppet: puppet as unknown as WebPuppet & { lost: boolean }, calls };
 }
 
-function fakeCanvas(): HTMLCanvasElement {
-  return new EventTarget() as unknown as HTMLCanvasElement;
+/** canvas を置く要素 (canvas は ViewportController が作る)。 */
+function fakeContainer(): HTMLElement {
+  return { prepend() {} } as unknown as HTMLElement;
 }
 
 /** 待っているマイクロタスクを流す (loadUgoeWasm と create の await の後まで)。 */
@@ -51,7 +75,7 @@ async function settle(): Promise<void> {
 describe("ViewportController", () => {
   it("makes a WebPuppet for the canvas", async () => {
     const controller = new ViewportController();
-    const attached = controller.attach(fakeCanvas());
+    const attached = controller.attach(fakeContainer());
     await settle();
     const { puppet } = fakePuppet();
     pending[0]?.resolve(puppet);
@@ -62,7 +86,7 @@ describe("ViewportController", () => {
 
   it("frees a WebPuppet that finishes after detach", async () => {
     const controller = new ViewportController();
-    const attached = controller.attach(fakeCanvas());
+    const attached = controller.attach(fakeContainer());
     await settle();
     controller.detach();
     const { puppet, calls } = fakePuppet();
@@ -74,9 +98,9 @@ describe("ViewportController", () => {
 
   it("keeps only the WebPuppet of the last attach", async () => {
     const controller = new ViewportController();
-    const first = controller.attach(fakeCanvas());
+    const first = controller.attach(fakeContainer());
     await settle();
-    const second = controller.attach(fakeCanvas());
+    const second = controller.attach(fakeContainer());
     await settle();
     const old = fakePuppet();
     const current = fakePuppet();
@@ -90,21 +114,57 @@ describe("ViewportController", () => {
 
   it("recreates the canvas when the WebGL context is lost", async () => {
     const controller = new ViewportController();
-    const canvas = fakeCanvas();
-    const attached = controller.attach(canvas);
+    const attached = controller.attach(fakeContainer());
     await settle();
     const { puppet, calls } = fakePuppet();
     pending[0]?.resolve(puppet);
     await attached;
-    const generation = controller.generation;
+    const canvas = pending[0]?.canvas;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    canvas.dispatchEvent(new Event("webglcontextlost"));
+    // wasm は canvas の webglcontextlost で is_lost を立てる。描くのを待たずに作り直す。
+    puppet.lost = true;
+    canvas?.dispatchEvent(new Event("webglcontextlost"));
     warn.mockRestore();
-    expect(controller.generation).toBe(generation + 1);
     expect(controller.puppet).toBeNull();
     expect(calls).toEqual(["free"]);
+    expect(canvas?.removed).toBe(true);
+    await settle();
+    expect(pending).toHaveLength(2);
+    const next = fakePuppet();
+    pending[1]?.resolve(next.puppet);
+    await settle();
+    expect(controller.puppet).toBe(next.puppet);
+    expect(controller.status).toBe("ready");
     // 作り直した後の古い canvas の知らせは無視する。
-    canvas.dispatchEvent(new Event("webglcontextlost"));
-    expect(controller.generation).toBe(generation + 1);
+    canvas?.dispatchEvent(new Event("webglcontextlost"));
+    await settle();
+    expect(pending).toHaveLength(2);
+  });
+
+  it("recreates the canvas when the GPU device is lost while rendering", async () => {
+    let frame: FrameRequestCallback | null = null;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      const { puppet, calls } = fakePuppet();
+      pending[0]?.resolve(puppet);
+      await attached;
+      (frame as FrameRequestCallback | null)?.(0);
+      frame = null;
+      // WebGPU のデバイスの喪失はイベントが無いので、次に描くときに気づく。
+      puppet.lost = true;
+      controller.requestRender();
+      (frame as FrameRequestCallback | null)?.(16);
+      expect(calls).toEqual(["free"]);
+      await settle();
+      expect(pending).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

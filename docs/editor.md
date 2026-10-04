@@ -1751,9 +1751,10 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - バックエンドはモデルが変わるたびに、モデルのバイト列をフロントエンドへ送ります (`tauri::ipc::Response` で生のバイト列を送る)。
 - パラメータスライダーの操作はフロントエンドの wasm の中だけで完結させます (IPC を往復しない)。これにより 60fps を保ちます。スライダーの値はドキュメントの状態ではなく、表示の状態です。
 - WebGPU が使えない WebView (Linux の WebKitGTK など) では、wgpu の WebGL2 バックエンドにフォールバックします。
-- GPU を失ったら canvas ごと作り直します (`ViewportController`)。WebGPU のデバイスの喪失は `WebPuppet.is_lost()`、WebGL2 の
-  コンテキストの喪失は canvas の `webglcontextlost` で知ります (wgpu の GL のバックエンドは知らせないため。T0697 で wasm の側に寄せる)。
+- GPU を失ったら canvas ごと作り直します。WebGPU のデバイスの喪失も WebGL2 のコンテキストの喪失も `WebPuppet.is_lost()` で分かり
+  (WebGL2 は wasm が canvas の `webglcontextlost` で印を立てる)、要求されたときだけ描くので、WebGL2 は canvas のイベントですぐ作り直します。
   devicePixelRatio だけが変わったとき (倍率の違う画面へ移したなど) も、描画バッファの大きさを合わせ直します。
+  WebPuppet と canvas の寿命はビューアと同じ `@ugoe/player` の `PuppetSurface` が持ちます ([ui.md](ui.md#webpuppet-の寿命)。T0932)。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
 
 ### スクリーンショット
