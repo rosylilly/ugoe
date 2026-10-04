@@ -5,7 +5,7 @@
   右の列はインスペクタ (上) とパラメータ (下) に分け、区切りをドラッグ (または矢印キー) で動かす (lib/layout.ts)。
   上の区画は「Inspector」「Physics」(lib/panels/physics/)「Glue」(lib/panels/glues/)「Slots」(lib/panels/slots/)
   「Poses」(lib/panels/poses/)「Verify」(lib/panels/verify/) をタブで切り替える。
-  Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。
+  Undo / Redo のショートカット (lib/shortcuts.ts) もここで受ける。Undo / Redo のボタンは戻れない・進めないときに押せない。
   ヘッダーの「Settings」は AI の設定 (lib/ai/SettingsDialog.svelte)。外部の AI に送る前の確認
   (lib/ai/ConsentDialog.svelte) もここに置く。
   上の区画の「Lighting」タブはライティングの操作 (lib/panels/lighting/)。開いている間とプレビュー中は、ビューポートに
@@ -298,11 +298,17 @@ $effect(() => {
       >{preview.active ? t("app.preview.exit") : t("app.preview.label")}</TipButton
     >
     {#if !preview.active}
-      <TipButton variant="ghost" onclick={() => doc.undo()} tooltip={t("app.undo.tooltip")} shortcut="Mod+Z"
-        >{t("app.undo.label")}</TipButton
+      <!-- 戻れない・進めないときは押せない (doc.history。編集・Undo・Redo の後に読み直す)。 -->
+      <TipButton
+        variant="ghost"
+        disabled={!doc.canUndo}
+        onclick={() => doc.undo()}
+        tooltip={t("app.undo.tooltip")}
+        shortcut="Mod+Z">{t("app.undo.label")}</TipButton
       >
       <TipButton
         variant="ghost"
+        disabled={!doc.canRedo}
         onclick={() => doc.redo()}
         tooltip={t("app.redo.tooltip")}
         shortcut={mac ? "Mod+Shift+Z" : "Mod+Y"}>{t("app.redo.label")}</TipButton
@@ -408,7 +414,7 @@ $effect(() => {
     </aside>
   {/if}
 </div>
-<SettingsDialog bind:this={settings} onchange={() => fileMenu?.refresh()} />
+<SettingsDialog bind:this={settings} {doc} onchange={() => fileMenu?.refresh()} />
 <ConsentDialog prompt={consentPrompt} />
 <ApprovalDialog
   proposals={proposals.value?.proposals ?? []}

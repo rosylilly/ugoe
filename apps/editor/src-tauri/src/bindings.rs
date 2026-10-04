@@ -23,6 +23,7 @@ use crate::ai_provider::ProviderSettings;
 use crate::commands::{AnimationData, AppInfo};
 use crate::dress_up::PreviewModule;
 use crate::error;
+use crate::history::HistoryStatus;
 use crate::lighting::{NormalMapGroupChoice, NormalMapGroupView};
 use crate::mcp::{BridgeEvent, McpBridgeStatus};
 use crate::module::{
@@ -47,6 +48,7 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<PsdImportWarning>();
     types.add::<ApplyReport>();
     types.add::<AnimationData>();
+    types.add::<HistoryStatus>();
     types.add::<ElementOverflow>();
     types.add::<OverflowReport>();
     types.add::<RestPoseCollision>();

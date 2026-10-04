@@ -32,6 +32,16 @@ impl<T> History<T> {
         self.limit
     }
 
+    /// 戻れる数。
+    pub(super) fn undo_len(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// 進める数。
+    pub(super) fn redo_len(&self) -> usize {
+        self.redo.len()
+    }
+
     /// 上限を変え、超える分を捨てる (古い Undo から。Undo が尽きたら遠い Redo から)。
     pub(super) fn set_limit(&mut self, limit: usize) {
         self.limit = limit;

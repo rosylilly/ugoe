@@ -21,7 +21,8 @@ use crate::AppState;
 use crate::commands::{blocking, off_main};
 use crate::error::{EditorError, IpcResult};
 use crate::project::{
-    ExternalChange, ProjectSession, ProjectStatus, absolute_path, lock_both, status,
+    ExternalChange, ProjectSession, ProjectStatus, absolute_path, lock_both, replace_document,
+    status,
 };
 
 /// 本体のスロット 1 つ (新規作成の画面で選ぶ)。
@@ -301,7 +302,11 @@ pub fn new_module_project(
 ) -> IpcResult<ProjectStatus> {
     let project = Project::new_module(name.trim(), &absolute_path(&base)?, &slot.as_str().into())?;
     let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, None);
+    replace_document(
+        &mut session,
+        &mut document,
+        ProjectSession::from_project(project, None),
+    );
     Ok(status(&session, &document))
 }
 
@@ -330,7 +335,11 @@ pub async fn open_module_with_base(
             Project::load_module_with(&dir, base.as_deref(), slot.as_ref())
         }?;
         let (mut document, mut session) = lock_both(state)?;
-        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(project, Some((dir, disk))),
+        );
         session.mark_meta_modified();
         Ok(status(&session, &document))
     })

@@ -37,3 +37,4 @@
 - T0677 (1000 行を超えたファイルを分けた。`src/document/` (エラー・削除の連鎖・テクスチャのコマンド・左右の対)・`src/module_compare/` (アトラスを戻す部分・要素ごとの中身の違い)・`src/project/` (モジュールのプロジェクトの読み書き・パス・ファイルの補助)・`src/module_project/split.rs` (`Splitter`))
 - T0680 (Undo の履歴の上限と、状態ごとの検証の結果の記憶。`src/document/history.rs`・テスト `src/undo_tests.rs`)
 - T0162 (テクスチャの PNG のデコードを `ugoe_format::image` に寄せた。`src/texture.rs` の `decode_png`。上限を超える画像は `*.texture_too_large` で拒む)
+- T1605 (`Document::can_undo`・`can_redo`・`undo_count`・`redo_count`。エディタの Undo のボタンと上限の設定が使う)

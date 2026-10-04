@@ -464,6 +464,26 @@ impl Document {
         self.history.redo(&mut self.current)
     }
 
+    /// [`Document::undo`] で戻れるか (履歴がない・上限を超えて捨てたときは `false`)。
+    pub fn can_undo(&self) -> bool {
+        self.undo_count() > 0
+    }
+
+    /// [`Document::redo`] で進めるか。
+    pub fn can_redo(&self) -> bool {
+        self.redo_count() > 0
+    }
+
+    /// 続けて Undo できる数。
+    pub fn undo_count(&self) -> usize {
+        self.history.undo_len()
+    }
+
+    /// 続けて Redo できる数。
+    pub fn redo_count(&self) -> usize {
+        self.history.redo_len()
+    }
+
     /// 覚える履歴 (Undo と Redo を合わせた数) の上限。既定は [`DEFAULT_UNDO_LIMIT`]。
     pub fn undo_limit(&self) -> usize {
         self.history.limit()

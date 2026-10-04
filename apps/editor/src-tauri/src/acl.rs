@@ -14,6 +14,8 @@ pub const COMMANDS: &[&str] = &[
     "get_physics",
     "undo",
     "redo",
+    "history_status",
+    "set_undo_limit",
     "project_status",
     "new_project",
     "new_project_from_psd",

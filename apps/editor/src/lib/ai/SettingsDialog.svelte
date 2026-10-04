@@ -1,5 +1,5 @@
 <!--
-  ヘッダーの「Settings」。「General」(画面の言語 (lib/LanguageSetting.svelte) とテーマ)・「AI provider」と
+  ヘッダーの「Settings」。「General」(画面の言語 (lib/LanguageSetting.svelte)・テーマ・Undo の上限 (lib/UndoLimitSetting.svelte))・「AI provider」と
   「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 3 つのタブ。
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
@@ -13,10 +13,12 @@
 import { RichText } from "@ugoe/i18n";
 import { Button, Dialog, type Option, Select, ThemeSetting, Toggle } from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
+import type { EditorDocument } from "../document.svelte";
 import { errorCode, errorText } from "../errors";
 import { t } from "../i18n";
 import { type AiSettings, ipc, type OutputMode, type ProviderSettings } from "../ipc";
 import LanguageSetting from "../LanguageSetting.svelte";
+import UndoLimitSetting from "../UndoLimitSetting.svelte";
 import TabStrip, { type TabItem } from "../ui/TabStrip.svelte";
 import TipButton from "../ui/TipButton.svelte";
 import { aiSettings, consentPrompt } from "./ai.svelte";
@@ -24,11 +26,13 @@ import { withConsent } from "./consent";
 import { OPENAI_PRESETS, OUTPUT_MODES, presetFor } from "./providers";
 
 interface Props {
+  /** 開いているドキュメント (Undo の上限を当てる)。 */
+  doc: EditorDocument;
   /** プロジェクトの設定を変えたとき (未保存の印を取り直すため)。 */
   onchange: () => void;
 }
 
-let { onchange }: Props = $props();
+let { doc, onchange }: Props = $props();
 
 let isOpen = $state(false);
 let keyInput = $state<HTMLInputElement>();
@@ -186,6 +190,7 @@ function keyPlaceholder(s: AiSettings): string {
       <h3>{t("settings.general.tab")}</h3>
       <LanguageSetting />
       <div class="theme"><ThemeSetting /></div>
+      <div class="undo-limit"><UndoLimitSetting {doc} /></div>
     </section>
   {:else if tab === "agents"}
     <ConnectAgents />
@@ -416,7 +421,8 @@ function keyPlaceholder(s: AiSettings): string {
     color: var(--ugoe-color-danger);
     overflow-wrap: anywhere;
   }
-  .theme {
+  .theme,
+  .undo-limit {
     margin-top: var(--ugoe-space-4);
   }
 </style>

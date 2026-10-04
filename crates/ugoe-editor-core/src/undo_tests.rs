@@ -112,6 +112,51 @@ fn lowering_the_limit_drops_old_undo_first_then_far_redo() {
     assert!(!doc.undo());
 }
 
+/// `doc` の (戻れる数, 進める数) と、`can_undo`・`can_redo` がそれと合うこと。
+fn counts(doc: &Document) -> (usize, usize) {
+    assert_eq!(doc.can_undo(), doc.undo_count() > 0);
+    assert_eq!(doc.can_redo(), doc.redo_count() > 0);
+    (doc.undo_count(), doc.redo_count())
+}
+
+#[test]
+fn can_undo_and_can_redo_follow_the_history() {
+    let mut doc = Document::new(fixtures::single_quad()).with_undo_limit(3);
+    assert_eq!(counts(&doc), (0, 0));
+    assert!(!doc.can_undo() && !doc.can_redo());
+    doc.apply(set_default(0.1)).unwrap();
+    doc.apply(set_default(0.2)).unwrap();
+    assert_eq!(counts(&doc), (2, 0));
+    assert!(doc.undo());
+    assert_eq!(counts(&doc), (1, 1));
+    assert!(doc.redo());
+    assert_eq!(counts(&doc), (2, 0));
+    // 拒否された編集は履歴を変えない。
+    assert!(
+        doc.apply(Command::SetParameterRange {
+            id: "missing".into(),
+            min: 0.0,
+            default: 0.0,
+            max: 1.0,
+        })
+        .is_err()
+    );
+    assert_eq!(counts(&doc), (2, 0));
+    // 上限を超えると最も古いものを捨てる。
+    doc.apply(set_default(0.3)).unwrap();
+    doc.apply(set_default(0.4)).unwrap();
+    assert_eq!(counts(&doc), (3, 0));
+    assert!(doc.undo() && doc.undo() && doc.undo());
+    assert_eq!(counts(&doc), (0, 3));
+    assert!(!doc.can_undo() && doc.can_redo());
+    // Undo の後の編集は Redo を捨てる。
+    doc.apply(set_default(0.5)).unwrap();
+    assert_eq!(counts(&doc), (1, 0));
+    // 上限を下げると数も減る。
+    doc.set_undo_limit(0);
+    assert_eq!(counts(&doc), (0, 0));
+}
+
 #[test]
 fn a_zero_limit_keeps_no_history() {
     let mut doc = Document::new(fixtures::single_quad()).with_undo_limit(0);

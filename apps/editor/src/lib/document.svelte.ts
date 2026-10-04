@@ -9,6 +9,7 @@ import {
   type ApplyReport,
   type Command,
   type Expression,
+  type HistoryStatus,
   ipc,
   type Model,
   type ModuleStatus,
@@ -55,6 +56,11 @@ export class EditorDocument {
    * docs/editor.md#モジュールのプロジェクト。
    */
   module = $state.raw<ModuleStatus | null>(null);
+  /**
+   * Undo / Redo できるかと履歴の上限 (docs/editor.md#undo)。refresh (編集・Undo・Redo の後) と上限の変更で読み直す。
+   * 読む前は null (どちらも押せない)。
+   */
+  history = $state.raw<HistoryStatus | null>(null);
   /** 物理の設定 (なければ null)。物理のパネルとビューポートの表示が読む。 */
   physics = $state.raw<PhysicsSettings | null>(null);
   error = $state<string | null>(null);
@@ -85,7 +91,7 @@ export class EditorDocument {
   async refresh(): Promise<void> {
     const generation = ++this.#generation;
     try {
-      const [json, bundle, animations, physics, module] = await Promise.all([
+      const [json, bundle, animations, physics, module, history] = await Promise.all([
         ipc.getModelJson(),
         // バンドルに書けない状態 (テクスチャの欠けなど) でも表示は続ける (JSON なら白いテクスチャで描く)。
         ipc.getModelBundle().catch((e) => {
@@ -95,11 +101,13 @@ export class EditorDocument {
         ipc.getAnimations(),
         ipc.getPhysics(),
         ipc.moduleStatus(),
+        ipc.historyStatus(),
       ]);
       // 後から始めた読み直しがあれば、古い結果で上書きしない (Undo の連打・エージェントの変更の知らせなど)。
       if (generation !== this.#generation) return;
       this.physics = physics;
       this.module = module;
+      this.history = history;
       // 表記から合成の接頭辞を隠す (モデルを差し替える前に。表記はモデルから作り直される)
       setHiddenIdPrefix(this.module ? `${this.module.name}/` : null);
       this.model = { json, bundle };
@@ -158,6 +166,26 @@ export class EditorDocument {
 
   dismissWarnings(): void {
     this.warnings = [];
+  }
+
+  /** Undo で戻れるか (画面のボタンを押せるか)。 */
+  get canUndo(): boolean {
+    return this.history?.can_undo ?? false;
+  }
+
+  /** Redo で進めるか。 */
+  get canRedo(): boolean {
+    return this.history?.can_redo ?? false;
+  }
+
+  /**
+   * Undo の上限を変える (エディタ全体の設定。次の起動でも使う)。前に並べた編集の後に変え、超えた古い履歴は捨てる。
+   * 失敗したら例外のまま返す (設定の画面が自分のエラーとして出す)。
+   */
+  async setUndoLimit(limit: number): Promise<void> {
+    await this.#enqueue(async () => {
+      this.history = await ipc.setUndoLimit(limit);
+    });
   }
 
   async undo(): Promise<void> {

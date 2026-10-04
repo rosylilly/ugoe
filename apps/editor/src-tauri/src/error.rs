@@ -83,6 +83,9 @@ pub enum EditorError {
     EmptyGroup(String),
     #[error("image `{0}` not found")]
     ImageNotFound(String),
+    // ---- 設定 ----
+    #[error("the undo limit must be {min} to {max} steps")]
+    InvalidUndoLimit { min: u32, max: u32 },
     // ---- AI ----
     #[error("choose a Claude model")]
     ClaudeModelMissing,
@@ -191,6 +194,7 @@ impl Coded for EditorError {
             Self::UnknownGroup(_) => "lighting.unknown_group",
             Self::EmptyGroup(_) => "lighting.empty_group",
             Self::ImageNotFound(_) => "lighting.image_not_found",
+            Self::InvalidUndoLimit { .. } => "editor.invalid_undo_limit",
             Self::ClaudeModelMissing => "ai.claude_model_missing",
             Self::InvalidBaseUrl => "ai.invalid_base_url",
             Self::ModelMissing => "ai.model_missing",
@@ -247,7 +251,9 @@ impl Coded for EditorError {
             }
             Self::ImageNotFound(name) => message_args! { "name" => name },
             Self::NotRegenerable(id) => message_args! { "id" => *id },
-            Self::InvalidTimeLimit { min, max } => message_args! { "min" => *min, "max" => *max },
+            Self::InvalidTimeLimit { min, max } | Self::InvalidUndoLimit { min, max } => {
+                message_args! { "min" => *min, "max" => *max }
+            }
             Self::Ai(error) => ai_args(error),
             Self::ModelChanged
             | Self::EmptyPath
@@ -336,6 +342,7 @@ pub fn message_samples() -> Vec<Message> {
         EditorError::CredentialStore(detail()),
         EditorError::MixedDestinations,
         EditorError::SendDisabled,
+        EditorError::InvalidUndoLimit { min: 1, max: 1000 },
         EditorError::InvalidTimeLimit { min: 1, max: 120 },
         EditorError::Ai(AiError::Provider(detail())),
         EditorError::Ai(AiError::InvalidProposal(detail())),

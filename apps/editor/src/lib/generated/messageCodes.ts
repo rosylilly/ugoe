@@ -340,6 +340,10 @@ export const messageCodes: Record<string, readonly string[]> = {
   "editor.invalid_percent_encoding": [
     "detail"
   ],
+  "editor.invalid_undo_limit": [
+    "max",
+    "min"
+  ],
   "editor.io": [
     "detail",
     "path"

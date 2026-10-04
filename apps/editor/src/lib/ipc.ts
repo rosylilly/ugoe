@@ -24,6 +24,7 @@ import type {
   ExportReport,
   ExportSettings,
   ExternalChange,
+  HistoryStatus,
   KeyformTarget,
   McpBridgeStatus,
   Message,
@@ -67,8 +68,17 @@ export const ipc = {
   getAnimations: () => invoke<AnimationData>("get_animations"),
   /** 物理の設定 (ugoe_model::physics::PhysicsSettings)。なければ null。 */
   getPhysics: () => invoke<PhysicsSettings | null>("get_physics"),
+  /** 1 つ前の状態に戻す。戻れなければ (履歴がない・上限を超えて捨てた) false。 */
   undo: () => invoke<boolean>("undo"),
+  /** Undo した状態を 1 つやり直す。やり直せなければ false。 */
   redo: () => invoke<boolean>("redo"),
+  /** apps/editor/src-tauri/src/history.rs。Undo / Redo できるかと履歴の上限 (編集・Undo・Redo の後に読み直す)。 */
+  historyStatus: () => invoke<HistoryStatus>("history_status"),
+  /**
+   * Undo の上限を変えて覚え (次の起動でも使う)、開いているドキュメントに当てる (超えた古い履歴は捨てる)。
+   * 範囲 (UNDO_LIMIT_RANGE) の外なら `editor.invalid_undo_limit` のエラー。変えた後の状態を返す。
+   */
+  setUndoLimit: (limit: number) => invoke<HistoryStatus>("set_undo_limit", { limit }),
   projectStatus: () => invoke<ProjectStatus>("project_status"),
   newProject: () => invoke<ProjectStatus>("new_project"),
   /** apps/editor/src-tauri/src/project.rs。PSD から新しいプロジェクトを作り、取り込みの警告を返す。 */

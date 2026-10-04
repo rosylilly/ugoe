@@ -484,6 +484,11 @@
       "label": "Language",
       "system": "Match the OS",
       "description": "The language of the editor's screens. The user manual is in Japanese only."
+    },
+    "undoLimit": {
+      "label": "Undo history",
+      "unit": "steps",
+      "description": "How many edits Undo remembers (1 to 1000, default 100). Each step keeps a copy of the model, so lower it for large models. Lowering it drops the oldest steps now. Applies to every project."
     }
   },
   "export": {
@@ -2066,7 +2071,8 @@
       "not_json_file": "The file {{path}} is not a JSON file.",
       "too_many_sample_folders": "There are too many sample folders in {{path}}. Remove old ones.",
       "missing_header": "The {{header}} header is missing.",
-      "invalid_header": "The {{header}} header could not be read ({{detail}})."
+      "invalid_header": "The {{header}} header could not be read ({{detail}}).",
+      "invalid_undo_limit": "Set the undo history to {{min}} to {{max}} steps."
     },
     "ai": {
       "claude_model_missing": "Choose a Claude model.",

@@ -968,6 +968,31 @@ b: number,
 weight: number, };
 
 /**
+ * 編集の履歴の状態 (`history_status` の戻り値)。ボタンを押せるかと設定の画面に使う。
+ */
+export type HistoryStatus = { 
+/**
+ * Undo で戻れるか。
+ */
+can_undo: boolean, 
+/**
+ * Redo で進めるか。
+ */
+can_redo: boolean, 
+/**
+ * 続けて Undo できる数。
+ */
+undo_count: number, 
+/**
+ * 続けて Redo できる数。
+ */
+redo_count: number, 
+/**
+ * 覚える履歴 (Undo と Redo を合わせた数) の上限。
+ */
+undo_limit: number, };
+
+/**
  * 当たり判定領域。メッシュの変形後形状で判定する。
  */
 export type HitArea = { 

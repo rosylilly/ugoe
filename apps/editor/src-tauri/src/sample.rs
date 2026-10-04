@@ -12,7 +12,9 @@ use ugoe_editor_core::bundle_project::save_bundle_projects;
 
 use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
-use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
+use crate::project::{
+    ProjectSession, ProjectStatus, absolute_path, lock_both, replace_document, status,
+};
 
 /// 見本の本体。
 const BASE: &[u8] = include_bytes!("../../../../assets/samples/dress-up/dress-up.ugoe");
@@ -44,7 +46,11 @@ pub async fn open_sample_project(app: AppHandle, parent: String) -> IpcResult<Pr
             .ok_or_else(|| EditorError::Internal("no sample project was written".into()))?;
         let (project, disk) = Project::load_tracked(&base)?;
         let (mut document, mut session) = lock_both(state)?;
-        (*session, *document) = ProjectSession::from_project(project, Some((base, disk)));
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(project, Some((base, disk))),
+        );
         Ok(status(&session, &document))
     })
     .await

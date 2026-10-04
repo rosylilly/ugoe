@@ -324,6 +324,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
         ai_provider: ProviderStore::default(),
         mcp: crate::mcp::McpBridge::default(),
         preview_base: crate::module::PreviewBaseCache::default(),
+        undo_limit: crate::history::UndoLimitStore::default(),
     }
 }
 

@@ -477,6 +477,11 @@
       "label": "言語",
       "system": "OS に合わせる",
       "description": "エディタの画面の言語です。操作マニュアルは日本語だけです。"
+    },
+    "undoLimit": {
+      "label": "Undo の履歴",
+      "unit": "回",
+      "description": "元に戻せる編集の数です (1〜1000、既定は 100)。1 回ごとにモデルの写しを持つので、大きなモデルでは下げてください。下げるとすぐに古い履歴から捨てます。すべてのプロジェクトに使います。"
     }
   },
   "export": {
@@ -2015,7 +2020,8 @@
       "not_json_file": "{{path}} は JSON のファイルではありません。",
       "too_many_sample_folders": "{{path}} にサンプルのフォルダが多すぎます。古いものを消してください。",
       "missing_header": "ヘッダー {{header}} がありません。",
-      "invalid_header": "ヘッダー {{header}} を読めません ({{detail}})。"
+      "invalid_header": "ヘッダー {{header}} を読めません ({{detail}})。",
+      "invalid_undo_limit": "Undo の履歴は {{min}} 回から {{max}} 回にしてください。"
     },
     "ai": {
       "claude_model_missing": "Claude のモデルを選んでください。",

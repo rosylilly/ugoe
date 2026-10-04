@@ -12,6 +12,7 @@ pub mod bindings;
 mod commands;
 mod dress_up;
 mod error;
+mod history;
 mod lighting;
 mod mcp;
 mod module;
@@ -46,6 +47,8 @@ pub struct AppState {
     pub mcp: mcp::McpBridge,
     /// プレビューの本体だけの `.ugoe` (モジュールのプロジェクト。`module::get_preview_base_bundle`)。
     pub preview_base: module::PreviewBaseCache,
+    /// Undo の上限 (エディタ全体の設定。起動時にアプリの設定のディレクトリから読む。`docs/editor.md#undo`)。
+    pub undo_limit: history::UndoLimitStore,
 }
 
 pub fn run() {
@@ -58,6 +61,7 @@ pub fn run() {
         ai_provider: ai_provider::ProviderStore::default(),
         mcp: mcp::McpBridge::default(),
         preview_base: module::PreviewBaseCache::default(),
+        undo_limit: history::UndoLimitStore::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -75,6 +79,18 @@ pub fn run() {
             if let Err(e) = loaded {
                 eprintln!("could not read the AI provider settings: {e}");
             }
+            // 読めなければ既定の上限のまま起動する
+            let state = app.state::<AppState>();
+            let loaded = match app.path().app_config_dir() {
+                Ok(dir) => state.undo_limit.load(dir),
+                Err(e) => Err(error::EditorError::Internal(e.to_string())),
+            };
+            if let Err(e) = loaded {
+                eprintln!("could not read the editor settings: {e}");
+            }
+            if let Ok(mut document) = state.document.lock() {
+                document.set_undo_limit(state.undo_limit.get());
+            }
             mcp::setup(app.handle());
             Ok(())
         })
@@ -87,6 +103,8 @@ pub fn run() {
             commands::get_physics,
             commands::undo,
             commands::redo,
+            history::history_status,
+            history::set_undo_limit,
             project::project_status,
             project::new_project,
             project::new_project_from_psd,

@@ -28,6 +28,8 @@
     "allow-get-physics",
     "allow-undo",
     "allow-redo",
+    "allow-history-status",
+    "allow-set-undo-limit",
     "allow-project-status",
     "allow-new-project",
     "allow-new-project-from-psd",

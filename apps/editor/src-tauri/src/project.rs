@@ -251,6 +251,18 @@ pub fn initial_state() -> (ProjectSession, Document) {
     ProjectSession::from_project(Project::empty(UNTITLED), None)
 }
 
+/// 開いているプロジェクトを `next` (開き直した・作ったもの) に置き換える。Undo の上限 (エディタ全体の設定。
+/// `crate::history`) は前のドキュメントから引き継ぐ。
+pub(crate) fn replace_document(
+    session: &mut ProjectSession,
+    document: &mut Document,
+    (next_session, next_document): (ProjectSession, Document),
+) {
+    let limit = document.undo_limit();
+    *session = next_session;
+    *document = next_document.with_undo_limit(limit);
+}
+
 /// 新しいプロジェクトの名前 (保存するまで)。
 const UNTITLED: &str = "Untitled";
 
@@ -343,7 +355,11 @@ pub fn project_status(state: State<'_, AppState>) -> IpcResult<ProjectStatus> {
 #[tauri::command]
 pub fn new_project(state: State<'_, AppState>) -> IpcResult<ProjectStatus> {
     let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(Project::empty(UNTITLED), None);
+    replace_document(
+        &mut session,
+        &mut document,
+        ProjectSession::from_project(Project::empty(UNTITLED), None),
+    );
     Ok(status(&session, &document))
 }
 
@@ -362,7 +378,7 @@ pub async fn new_project_from_psd(
         let (mut new_session, new_document, warnings) = from_psd(&bytes, &options)?;
         new_session.proposals.set_psd(absolute_path(&path)?);
         let (mut document, mut session) = lock_both(state)?;
-        (*session, *document) = (new_session, new_document);
+        replace_document(&mut session, &mut document, (new_session, new_document));
         Ok(warnings)
     })
     .await
@@ -375,7 +391,11 @@ pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStat
         let dir = absolute_path(&path)?;
         let (project, disk) = Project::load_tracked(&dir)?;
         let (mut document, mut session) = lock_both(state)?;
-        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(project, Some((dir, disk))),
+        );
         Ok(status(&session, &document))
     })
     .await
@@ -391,7 +411,11 @@ pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
         let dir = session.path.clone().ok_or(EditorError::NotSaved)?;
         let (project, disk) = Project::load_tracked(&dir)?;
         let consent = std::mem::take(session.ai_consent_mut());
-        (*session, *document) = ProjectSession::from_project(project, Some((dir, disk)));
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(project, Some((dir, disk))),
+        );
         *session.ai_consent_mut() = consent;
         Ok(status(&session, &document))
     })
@@ -534,6 +558,27 @@ pub async fn export_bundle(app: AppHandle, path: String) -> IpcResult<ExportRepo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 開き直しても Undo の上限 (エディタの設定) は変わらず、履歴は新しいドキュメントのものになる (T1605)。
+    #[test]
+    fn replacing_the_document_keeps_the_undo_limit() {
+        let (mut session, mut document) = initial_state();
+        document.set_undo_limit(7);
+        document
+            .apply(ugoe_editor_core::Command::AddParameter {
+                parameter: ugoe_model::fixtures::single_quad().parameters[0].clone(),
+            })
+            .unwrap();
+        assert!(document.can_undo());
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(Project::empty("next"), None),
+        );
+        assert_eq!(document.undo_limit(), 7);
+        assert!(!document.can_undo());
+        assert_eq!(session.meta.name, "next");
+    }
 
     #[test]
     fn project_dir_appends_extension() {

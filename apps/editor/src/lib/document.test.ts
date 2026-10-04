@@ -2,10 +2,24 @@
 // 編集は前の適用と読み直しを待ってから、その時点の写しで組み立てる。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorDocument, parseModelJson } from "./document.svelte";
-import { type Command, ipc } from "./ipc";
+import { type Command, type HistoryStatus, ipc } from "./ipc";
 
 /** 呼ばれるたびに `get_model_json` が返すもの (先頭から順に使う)。 */
 let jsons: Promise<string>[] = [];
+
+/** 戻れる数と進める数から作る履歴の状態 (上限 100)。 */
+function historyOf(undo: number, redo: number, limit = 100): HistoryStatus {
+  return {
+    can_undo: undo > 0,
+    can_redo: redo > 0,
+    undo_count: undo,
+    redo_count: redo,
+    undo_limit: limit,
+  };
+}
+
+/** `history_status` が返すもの (バックエンドの今の履歴)。 */
+let backendHistory: HistoryStatus = historyOf(0, 0);
 
 vi.mock("./ipc", () => ({
   ipc: {
@@ -14,6 +28,8 @@ vi.mock("./ipc", () => ({
     getAnimations: vi.fn(async () => ({ motions: [], expressions: [] })),
     getPhysics: vi.fn(async () => null),
     moduleStatus: vi.fn(async () => null),
+    historyStatus: vi.fn(async () => backendHistory),
+    setUndoLimit: vi.fn(async () => backendHistory),
     applyCommand: vi.fn(async () => ({ warnings: [] })),
     undo: vi.fn(async () => true),
     redo: vi.fn(async () => true),
@@ -41,6 +57,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   jsons = [];
+  backendHistory = historyOf(0, 0);
 });
 
 describe("EditorDocument.refresh", () => {
@@ -218,5 +235,84 @@ describe("EditorDocument.send", () => {
     });
     expect(report).toBeNull();
     expect(doc.error).toBe("no such rig");
+  });
+});
+
+describe("EditorDocument.history", () => {
+  it("cannot undo or redo before the first refresh", () => {
+    const doc = new EditorDocument();
+    expect(doc.history).toBeNull();
+    expect(doc.canUndo).toBe(false);
+    expect(doc.canRedo).toBe(false);
+  });
+
+  it("reads whether undo and redo are possible after each edit, undo and redo", async () => {
+    const doc = new EditorDocument();
+    jsons = [Promise.resolve(model("A"))];
+    await doc.refresh();
+    expect([doc.canUndo, doc.canRedo]).toEqual([false, false]);
+
+    vi.mocked(ipc.applyCommand).mockImplementationOnce(async () => {
+      backendHistory = historyOf(1, 0);
+      return { warnings: [], mirrored: [] };
+    });
+    jsons = [Promise.resolve(model("B"))];
+    await doc.apply({ op: "remove_parameter", id: "A" });
+    expect([doc.canUndo, doc.canRedo]).toEqual([true, false]);
+
+    vi.mocked(ipc.undo).mockImplementationOnce(async () => {
+      backendHistory = historyOf(0, 1);
+      return true;
+    });
+    jsons = [Promise.resolve(model("A"))];
+    await doc.undo();
+    expect([doc.canUndo, doc.canRedo]).toEqual([false, true]);
+
+    vi.mocked(ipc.redo).mockImplementationOnce(async () => {
+      backendHistory = historyOf(1, 0);
+      return true;
+    });
+    jsons = [Promise.resolve(model("B"))];
+    await doc.redo();
+    expect([doc.canUndo, doc.canRedo]).toEqual([true, false]);
+  });
+
+  it("keeps the status when an edit is refused", async () => {
+    const doc = new EditorDocument();
+    backendHistory = historyOf(2, 1);
+    jsons = [Promise.resolve(model("A"))];
+    await doc.refresh();
+    vi.mocked(ipc.applyCommand).mockRejectedValueOnce(new Error("refused"));
+    await doc.apply({ op: "remove_parameter", id: "missing" });
+    expect(doc.history).toEqual(historyOf(2, 1));
+  });
+
+  it("sets the undo limit after the queued edits and shows the trimmed history", async () => {
+    const doc = new EditorDocument();
+    const order: string[] = [];
+    vi.mocked(ipc.applyCommand).mockImplementationOnce(async () => {
+      order.push("apply");
+      backendHistory = historyOf(5, 0);
+      return { warnings: [], mirrored: [] };
+    });
+    vi.mocked(ipc.setUndoLimit).mockImplementationOnce(async (limit) => {
+      order.push(`limit ${limit}`);
+      backendHistory = historyOf(3, 0, limit);
+      return backendHistory;
+    });
+    jsons = [Promise.resolve(model("A"))];
+    const edit = doc.apply({ op: "remove_parameter", id: "a" });
+    const limit = doc.setUndoLimit(3);
+    await Promise.all([edit, limit]);
+    expect(order).toEqual(["apply", "limit 3"]);
+    expect(doc.history).toEqual(historyOf(3, 0, 3));
+    expect(doc.pending).toBe(0);
+  });
+
+  it("rethrows a refused undo limit", async () => {
+    const doc = new EditorDocument();
+    vi.mocked(ipc.setUndoLimit).mockRejectedValueOnce(new Error("out of range"));
+    await expect(doc.setUndoLimit(0)).rejects.toThrow("out of range");
+    expect(doc.pending).toBe(0);
   });
 });

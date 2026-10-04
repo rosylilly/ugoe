@@ -191,8 +191,17 @@
 
 - **履歴の上限:** `Document` が覚える状態は、Undo と Redo を合わせて **100 個** (`DEFAULT_UNDO_LIMIT`) までです。超えると最も古い Undo から捨てるので、
   101 回前の操作には戻れません。上限は `Document::set_undo_limit` / `with_undo_limit` で変えられます (下げると古い Undo から、Undo が尽きたら遠い Redo から捨てる。
-  0 なら履歴を持たない)。画面の設定にはまだ出していません。
-- **上限を超えたときの画面:** 知らせません。最も古い状態まで戻った後の Undo は、履歴が空のときと同じく何もしません (`undo` が `false` を返す)。
+  0 なら履歴を持たない)。
+- **上限の設定:** 設定の「General」の「Undo history」で **1〜1000** (既定 100) から選びます (`src/lib/UndoLimitSetting.svelte`)。確定するとすぐに
+  `set_undo_limit` で開いているドキュメントに当て (超えた古い履歴は捨てる)、アプリの設定のディレクトリの `editor-settings.json`
+  (`{"undo_limit": 100}`) に書きます。エディタ全体の設定で、プロジェクトには残しません。起動時にこのファイルを読み (無い・読めない・範囲の外なら既定の 100)、
+  プロジェクトを開く・作る・開き直すときは前のドキュメントの上限を引き継ぎます (`src-tauri/src/project.rs` の `replace_document`)。
+  0 (履歴なし) は誤った編集を戻せなくなるので選ばせません。上限は 1000 までです (1 状態が数 MB のモデルで数 GB にならないように)。範囲の外は
+  `editor.invalid_undo_limit` のエラーです。実装は `src-tauri/src/history.rs`。
+- **戻れる・進めるか:** `Document::can_undo`・`can_redo` (と続けてできる数 `undo_count`・`redo_count`) で分かります。Tauri の `history_status` が
+  これと上限を `HistoryStatus` で返し、画面は読み直し (`EditorDocument.refresh`。編集・Undo・Redo・エージェントの変更の後) のたびに取り直します。
+  ヘッダーの「Undo」「Redo」のボタンは、戻れない・進めないときは押せません (ショートカットは押しても何もしない)。
+- **上限を超えたときの画面:** 知らせません。最も古い状態まで戻った後は、履歴が空のときと同じく「Undo」のボタンが押せなくなります (`undo` は `false` を返す)。
 - **未保存の印:** 保存した状態を履歴から捨てても `is_modified()` は正しいままです (状態の番号で比べるので、捨てた状態に戻れなくなるだけで「変更あり」のまま)。
 - **メモリの目安:** スナップショット 1 つは、テクスチャの画像を除いたモデル・物理・モーションと表情の複製です (画像は `Arc` で共有)。
   実際の PSD (`assets/fixtures/psd-real/` の 25 メッシュのもの) を取り込んだだけのモデルで 1 状態あたり約 53 KB、上限まで積んで約 5 MB です。
@@ -1282,6 +1291,8 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | コマンド | 内容 |
 | --- | --- |
 | `project_status` | 名前・保存先・未保存の変更の有無 (`ProjectStatus`) を返す |
+| `undo` / `redo` | 1 つ戻す / やり直す。できなければ `false`。`src-tauri/src/commands.rs` |
+| `history_status` / `set_undo_limit(limit)` | Undo / Redo できるかと履歴の上限 (`HistoryStatus`) を返す / 上限を変えて覚え、変えた後の `HistoryStatus` を返す ([Undo](#undo))。`src-tauri/src/history.rs` |
 | `get_animations` | ドキュメントのモーションと表情 (`AnimationData { motions, expressions }`) を返す。タイムラインの表示用 (編集は `apply_command`)。`src-tauri/src/commands.rs` |
 | `new_project` | 空のモデル (1024×1024 のキャンバス) の新しいプロジェクトにする |
 | `new_project_from_psd(path, mesh_options?)` | 空のプロジェクトを作って PSD を取り込み (キャンバスは PSD の大きさ、警告は `import_psd` と同じ)、それを今のプロジェクトにする。名前はファイル名 (拡張子を除く)、保存先はなし。取り込みは Undo の 1 単位で、未保存の状態から始まる (Undo すると空のプロジェクトに戻る)。失敗したら今のプロジェクトはそのまま |
@@ -2051,6 +2062,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `editor.relative_path` / `editor.not_module_file` / `editor.not_png_file` / `editor.not_json_file` / `editor.too_many_sample_folders` | `path` |
 | `editor.missing_header` | `header` |
 | `editor.invalid_header` | `header`・`detail` |
+| `editor.invalid_undo_limit` | `min`・`max` (選べる Undo の上限の範囲) |
 | `ai.claude_model_missing` / `ai.invalid_base_url` / `ai.model_missing` / `ai.api_key_required` / `ai.plain_http_api_key` / `ai.empty_api_key` / `ai.mixed_destinations` / `ai.send_disabled` / `ai.truncated` / `ai.cancelled` | なし |
 | `ai.credential_store` / `ai.provider` / `ai.invalid_proposal` / `ai.missing_api_key` / `ai.invalid_request` / `ai.network` / `ai.invalid_response` | `detail` |
 | `ai.api_error` | `status`・`kind`・`detail` |
