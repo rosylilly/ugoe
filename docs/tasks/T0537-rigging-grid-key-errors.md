@@ -1,11 +1,11 @@
 ---
 id: T0537
 title: 推定の格子の検査を検証 (validate) に頼らないようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-rigging, ugoe-editor-core, docs]
 depends_on: [T0526]
-assignee:
+assignee: claude-worker-T0537
 ---
 
 # T0537: 推定の格子の検査を検証 (validate) に頼らないようにする
