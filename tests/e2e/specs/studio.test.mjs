@@ -142,6 +142,27 @@ describe("studio", () => {
     await waitFor(async () => (await liveScene(s)) === names.chat, { message: "Chat on air" });
   });
 
+  // 仮想カメラの開始と停止はスレッドの終わりを待つ。メインのスレッドの外で行うので、その後も切り替えられる (T0819)。
+  // 機器 (v4l2loopback) が無ければ始められずに止まるが、開始と停止の呼び出しは返る。
+  step(app, "starts and stops the virtual camera", async () => {
+    const s = app.session;
+    const settings = { width: 1280, height: 720, fps: 30, background: [0, 255, 0] };
+    await invoke(s, "start_virtual_camera", { settings });
+    await invoke(s, "stop_virtual_camera");
+    await waitFor(
+      async () => ["stopped", "failed"].includes((await invoke(s, "virtual_camera_state")).state),
+      { message: "the virtual camera to stop" },
+    );
+    const evening = await s.waitFindText(".scenes__item", names.evening);
+    await evening.click();
+    await waitFor(async () => (await liveScene(s)) === names.evening, {
+      message: "Evening on air after the virtual camera",
+    });
+    const chat = await s.waitFindText(".scenes__item", names.chat);
+    await chat.click();
+    await waitFor(async () => (await liveScene(s)) === names.chat, { message: "Chat on air" });
+  });
+
   step(app, "shows the output window and it receives frames", async () => {
     const s = app.session;
     const button = await s.waitFindText(".studio__toolbar button", "Output window");

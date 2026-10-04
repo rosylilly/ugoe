@@ -44,6 +44,9 @@ describe("helpers", () => {
     expect(
       describeError({ code: "futureVersion", path: "p.json", version: 2, supported: 1 }),
     ).toMatch(/2.*1/);
+    expect(describeError({ code: "internal", message: "task panicked" })).toContain(
+      "task panicked",
+    );
     expect(describeError(new Error("boom"))).toBe("boom");
   });
 });

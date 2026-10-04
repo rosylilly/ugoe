@@ -745,6 +745,12 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 - **Channel の受け取りは投げない:** `@tauri-apps/api` の `Channel` は、`onmessage` が一度でも投げると以後のメッセージを配らなくなる。
   スタジオの Channel (刻み・モニター・出力のフレーム) は `host.ts` の `subscribe` で `safeChannelHandler` (`lib/channel.ts`) に包み、
   投げた例外は console に出して次のメッセージを受け取る。
+- **メインのスレッドを塞がない (T0819):** Tauri v2 の `async` でないコマンドはメインのスレッド (イベントループ) で動き、その間は両方の
+  ウィンドウのイベントと `Channel` のメッセージが止まる。ファイルを読む (`activate_scene`・`update_scene`・`open_profile`・`restore_profile`・
+  `module_slot`)・大きなバイト列を返す (`scene_model`・`scene_module`・`scene_background`)・スレッドの終わりを待つ
+  (`start_virtual_camera`・`stop_virtual_camera`) コマンドは `async fn` にし、中身を `spawn_blocking` で行う (`lib.rs` の `blocking`)。
+  ロックは `spawn_blocking` の中で取って放す (`.await` をまたいで握らない)。ホットキーの経路も同じく `spawn_blocking` で行う。
+  外部 API の `dressup.list` は、付けていないモジュールを舞台のロックを放してから読む。
 
 ### 刻みの速さと正確さ
 

@@ -43,7 +43,8 @@
     "noModel": "No model is on air.",
     "unknownMotion": "The model has no motion named {{name}}.",
     "unknownExpression": "The model has no expression named {{name}}.",
-    "motionRejected": "The motion did not start because a motion with a higher priority is playing."
+    "motionRejected": "The motion did not start because a motion with a higher priority is playing.",
+    "internal": "Something went wrong in the studio: {{message}}"
   },
   "state": {
     "heading": "Now",

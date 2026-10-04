@@ -43,7 +43,8 @@
     "noModel": "配信しているモデルがありません。",
     "unknownMotion": "モデルに {{name}} というモーションがありません。",
     "unknownExpression": "モデルに {{name}} という表情がありません。",
-    "motionRejected": "優先度の高いモーションを再生しているので、始まりませんでした。"
+    "motionRejected": "優先度の高いモーションを再生しているので、始まりませんでした。",
+    "internal": "スタジオの中で処理が失敗しました: {{message}}"
   },
   "state": {
     "heading": "いまの状態",

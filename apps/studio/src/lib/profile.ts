@@ -82,7 +82,8 @@ export type StudioError =
   | { code: "noModel" }
   | { code: "unknownMotion"; name: string }
   | { code: "unknownExpression"; name: string }
-  | { code: "motionRejected" };
+  | { code: "motionRejected" }
+  | { code: "internal"; message: string };
 
 const CODES = new Set<string>([
   "io",
@@ -100,6 +101,7 @@ const CODES = new Set<string>([
   "unknownMotion",
   "unknownExpression",
   "motionRejected",
+  "internal",
 ]);
 
 /** バックエンドのエラーか (Tauri の invoke はエラーの値をそのまま投げる)。 */

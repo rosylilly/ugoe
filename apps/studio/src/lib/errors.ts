@@ -50,5 +50,7 @@ export function describeStudioError(e: StudioError): string {
       return t("errors.unknownExpression", { name: e.name });
     case "motionRejected":
       return t("errors.motionRejected");
+    case "internal":
+      return t("errors.internal", { message: e.message });
   }
 }

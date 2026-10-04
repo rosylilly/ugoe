@@ -355,45 +355,56 @@ fn parameter_set(studio: &Studio, p: &Map<String, Value>) -> Result<Value, RpcEr
 }
 
 fn dressup_list(studio: &Studio) -> Value {
-    let stage = lock(&studio.stage);
-    let slots = lock(&studio.conductor).animation_view().slots;
-    let worn: Vec<(PathBuf, String)> = stage
-        .live_modules()
-        .map(|(path, module)| (path.to_owned(), module.slot.as_str().to_owned()))
-        .collect();
+    dressup_list_with(studio, read_module_value)
+}
+
+/// `dressup.list` の中身。付けていないモジュールは `read` で読む (舞台と指揮役のロックを放してから。
+/// 読む間にシーンの切り替えを待たせない。T0819)。
+pub fn dressup_list_with(studio: &Studio, mut read: impl FnMut(&Path) -> Option<Value>) -> Value {
+    let (slots, worn, closet) = {
+        let stage = lock(&studio.stage);
+        let slots = lock(&studio.conductor).animation_view().slots;
+        let worn: Vec<(PathBuf, Value)> = stage
+            .live_modules()
+            .map(|(path, module)| (path.to_owned(), module_value(path, module)))
+            .collect();
+        (slots, worn, wardrobe(&stage))
+    };
     let slot_list: Vec<Value> = slots
         .iter()
         .map(|slot| {
             let module = worn
                 .iter()
-                .find(|(_, s)| s == slot)
+                .find(|(_, value)| value["slot"] == slot.as_str())
                 .map(|(path, _)| path.to_string_lossy().into_owned());
             json!({ "slot": slot, "module": module })
         })
         .collect();
     let mut modules = Vec::new();
-    for path in wardrobe(&stage) {
+    for path in closet {
         // 付けているものは読み直さない。読めないものは出さない。
-        let found = stage
-            .live_modules()
+        let found = worn
+            .iter()
             .find(|(p, _)| *p == path)
-            .map(|(p, m)| module_value(p, m));
-        let value = found.or_else(|| {
-            let bytes = stage::read_asset(
-                stage::Asset::Module,
-                &path,
-                stage::MODULE_EXTENSIONS,
-                stage::MAX_MODEL_BYTES,
-            )
-            .ok()?;
-            let file = ugoe::format::read_module(&bytes).ok()?;
-            Some(module_value(&path, &file.module))
-        });
-        if let Some(value) = value
+            .map(|(_, value)| value.clone());
+        if let Some(value) = found.or_else(|| read(&path))
             && slots.iter().any(|s| value["slot"] == s.as_str())
         {
             modules.push(value);
         }
     }
     json!({ "slots": slot_list, "modules": modules })
+}
+
+/// モジュールのファイルを読み、`dressup.list` に出す値にする (読めなければ `None`)。
+pub fn read_module_value(path: &Path) -> Option<Value> {
+    let bytes = stage::read_asset(
+        stage::Asset::Module,
+        path,
+        stage::MODULE_EXTENSIONS,
+        stage::MAX_MODEL_BYTES,
+    )
+    .ok()?;
+    let file = ugoe::format::read_module(&bytes).ok()?;
+    Some(module_value(path, &file.module))
 }

@@ -163,6 +163,14 @@ enum CommandError {
     Profile(ProfileError),
     Scene(SceneError),
     Animation(AnimationError),
+    Internal(InternalError),
+}
+
+/// 別のスレッドで行った処理が終わらなかった (パニックした)。
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "code", rename = "internal")]
+struct InternalError {
+    message: String,
 }
 
 impl From<ProfileError> for CommandError {
@@ -181,6 +189,25 @@ impl From<AnimationError> for CommandError {
     fn from(e: AnimationError) -> Self {
         Self::Animation(e)
     }
+}
+
+impl From<tauri::Error> for CommandError {
+    fn from(e: tauri::Error) -> Self {
+        Self::Internal(InternalError {
+            message: e.to_string(),
+        })
+    }
+}
+
+/// ファイルを読む・スレッドを待つ処理を、メインのスレッド (イベントループ) と非同期の実行器のワーカーの外で行う
+/// (配信中に両方のウィンドウのイベントとフレームを止めない。docs/studio.md#隠れても止まらない)。
+/// ロックは `action` の中で取って放す (`.await` をまたいで握らない)。
+async fn blocking<T: Send + 'static>(
+    studio: &Arc<Studio>,
+    action: impl FnOnce(&Arc<Studio>) -> T + Send + 'static,
+) -> Result<T, tauri::Error> {
+    let studio = Arc::clone(studio);
+    tauri::async_runtime::spawn_blocking(move || action(&studio)).await
 }
 
 /// 出力ウィンドウの状態。
@@ -734,14 +761,17 @@ fn run_ticks(studio: Arc<Studio>) {
 
 /// 起動して最初の 1 回だけ、最後に使ったプロファイルを開く (無ければ何もしない)。開けなければエラー (新しいプロファイルのまま)。
 #[tauri::command]
-fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
-    if studio.restored.swap(true, Ordering::SeqCst) {
-        return Ok(());
-    }
-    let Some(path) = lock(&studio.stage).recent().first().cloned() else {
-        return Ok(());
-    };
-    open_profile_at(&studio, &path)
+async fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), CommandError> {
+    blocking(&studio, |studio| {
+        if studio.restored.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let Some(path) = lock(&studio.stage).recent().first().cloned() else {
+            return Ok(());
+        };
+        open_profile_at(studio, &path)
+    })
+    .await?
 }
 
 fn open_profile_at(studio: &Studio, path: &Path) -> Result<(), CommandError> {
@@ -759,9 +789,15 @@ fn new_profile(studio: tauri::State<'_, Arc<Studio>>) {
 
 /// プロファイルを開き、最後に使ったシーンにする。シーンを出せなくてもプロファイルは開く (エラーは返す)。
 #[tauri::command]
-fn open_profile(studio: tauri::State<'_, Arc<Studio>>, path: PathBuf) -> Result<(), CommandError> {
-    studio.restored.store(true, Ordering::SeqCst);
-    open_profile_at(&studio, &path)
+async fn open_profile(
+    studio: tauri::State<'_, Arc<Studio>>,
+    path: PathBuf,
+) -> Result<(), CommandError> {
+    blocking(&studio, move |studio| {
+        studio.restored.store(true, Ordering::SeqCst);
+        open_profile_at(studio, &path)
+    })
+    .await?
 }
 
 /// 保存する。`path` を省くと今の保存先 (無ければ何もせず `null`)。保存先を返す。
@@ -813,17 +849,26 @@ fn remove_scene(studio: tauri::State<'_, Arc<Studio>>, id: String) -> Result<(),
 
 /// シーンの設定を置き換える。出しているシーンなら出し直す (出せなければ元に戻してエラー)。
 #[tauri::command]
-fn update_scene(
+async fn update_scene(
     studio: tauri::State<'_, Arc<Studio>>,
     scene: SceneSettings,
 ) -> Result<(), CommandError> {
-    Ok(studio.with_stage(|stage, conductor| stage.update_scene(scene, conductor))?)
+    blocking(&studio, |studio| {
+        Ok(studio.with_stage(|stage, conductor| stage.update_scene(scene, conductor))?)
+    })
+    .await?
 }
 
 /// シーンに切り替える (出せなければ前のシーンのままエラー)。
 #[tauri::command]
-fn activate_scene(studio: tauri::State<'_, Arc<Studio>>, id: String) -> Result<(), CommandError> {
-    Ok(studio.with_stage(|stage, conductor| stage.activate(&id, conductor))?)
+async fn activate_scene(
+    studio: tauri::State<'_, Arc<Studio>>,
+    id: String,
+) -> Result<(), CommandError> {
+    blocking(&studio, move |studio| {
+        Ok(studio.with_stage(|stage, conductor| stage.activate(&id, conductor))?)
+    })
+    .await?
 }
 
 /// 出力ウィンドウの大きさのプリセットをプロファイルに覚える。
@@ -847,39 +892,47 @@ fn subscribe_frames(
 }
 
 /// 今のシーン `revision` のファイルを `pick` で選んで返す。今のシーンでなければエラー (受け手は次のシーンを待つ)。
-fn scene_file(
-    studio: &Studio,
+/// 大きなバイト列を写すので、メインのスレッドの外で行う。
+async fn scene_file(
+    studio: &Arc<Studio>,
     revision: u32,
-    pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>>,
+    pick: impl FnOnce(&Stage) -> Option<Arc<Vec<u8>>> + Send + 'static,
 ) -> Result<Response, String> {
-    studio
-        .scene_bytes(revision, pick)
-        .map(|bytes| Response::new(bytes.to_vec()))
+    blocking(studio, move |studio| {
+        studio
+            .scene_bytes(revision, pick)
+            .map(|bytes| Response::new(bytes.to_vec()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// シーン `revision` のモデルのバイト列。
 #[tauri::command]
-fn scene_model(studio: tauri::State<'_, Arc<Studio>>, revision: u32) -> Result<Response, String> {
-    scene_file(&studio, revision, Stage::model_bytes)
+async fn scene_model(
+    studio: tauri::State<'_, Arc<Studio>>,
+    revision: u32,
+) -> Result<Response, String> {
+    scene_file(&studio, revision, Stage::model_bytes).await
 }
 
 /// シーン `revision` の `index` 番目 (合成の順) のモジュールのバイト列。
 #[tauri::command]
-fn scene_module(
+async fn scene_module(
     studio: tauri::State<'_, Arc<Studio>>,
     revision: u32,
     index: usize,
 ) -> Result<Response, String> {
-    scene_file(&studio, revision, |stage| stage.module_bytes(index))
+    scene_file(&studio, revision, move |stage| stage.module_bytes(index)).await
 }
 
 /// シーン `revision` の背景の画像のバイト列。
 #[tauri::command]
-fn scene_background(
+async fn scene_background(
     studio: tauri::State<'_, Arc<Studio>>,
     revision: u32,
 ) -> Result<Response, String> {
-    scene_file(&studio, revision, Stage::background_image)
+    scene_file(&studio, revision, Stage::background_image).await
 }
 
 /// 操作ウィンドウが値と負荷を受け取り始める。シーンがあれば最初に送る。
@@ -1063,16 +1116,20 @@ fn suspend_hotkeys(studio: tauri::State<'_, Arc<Studio>>, suspended: bool) {
 
 /// モジュール (`.ugoemod`) が付くスロットの名前 (ホットキーの着せ替えの割り当て)。
 #[tauri::command]
-fn module_slot(path: PathBuf) -> Result<String, CommandError> {
+async fn module_slot(path: PathBuf) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || read_module_slot(&path)).await?
+}
+
+fn read_module_slot(path: &Path) -> Result<String, CommandError> {
     let bytes = stage::read_asset(
         stage::Asset::Module,
-        &path,
+        path,
         stage::MODULE_EXTENSIONS,
         stage::MAX_MODEL_BYTES,
     )?;
     let file = ugoe::format::read_module(&bytes).map_err(|e| SceneError::Unreadable {
         asset: stage::Asset::Module,
-        path: path.clone(),
+        path: path.to_owned(),
         message: e.to_string(),
     })?;
     Ok(file.module.slot.as_str().to_owned())
@@ -1133,10 +1190,17 @@ fn virtual_camera_state(studio: tauri::State<'_, Arc<Studio>>) -> virtual_camera
 
 /// 仮想カメラを始める (動いていれば止めてから、新しい設定で始め直す)。状態の変化は操作ウィンドウへの通知で届く。
 #[tauri::command]
-fn start_virtual_camera(
+async fn start_virtual_camera(
     studio: tauri::State<'_, Arc<Studio>>,
     settings: CameraSettings,
 ) -> Result<(), String> {
+    // 動いている仮想カメラのスレッドの終わりを待つので、メインのスレッドの外で行う。
+    blocking(&studio, move |studio| start_camera(studio, settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), String> {
     settings.config().validate().map_err(|e| e.to_string())?;
     studio.stop_camera();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -1146,7 +1210,7 @@ fn start_virtual_camera(
     if let Some(files) = Studio::camera_scene(&stage, &conductor) {
         let _ = tx.send(CameraCommand::Scene(Box::new(files)));
     }
-    let events = Arc::clone(&studio);
+    let events = Arc::clone(studio);
     let thread = std::thread::Builder::new()
         .name("ugoe-studio-virtual-camera".into())
         .spawn(move || {
@@ -1166,8 +1230,11 @@ fn start_virtual_camera(
 
 /// 仮想カメラを止める (受け手と GPU の描画も止める)。
 #[tauri::command]
-fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) {
-    studio.stop_camera();
+async fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), String> {
+    // 仮想カメラのスレッドの終わりを待つので、メインのスレッドの外で行う。
+    blocking(&studio, |studio| studio.stop_camera())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 透過のところを埋める色を変える (動いていれば次の画から)。
@@ -1394,6 +1461,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// メインのスレッドの外で行った処理の結果を返す。中でパニックしたら、`internal` のコードのエラーにする (T0819)。
+    #[test]
+    fn blocking_work_returns_its_result_or_an_internal_error() {
+        let studio = Arc::new(Studio::default());
+        let tick_rate = tauri::async_runtime::block_on(blocking(&studio, |s| s.tick_rate()));
+        assert_eq!(tick_rate.unwrap(), studio.tick_rate());
+        let error: CommandError = tauri::async_runtime::block_on(blocking(&studio, |_| {
+            std::panic::resume_unwind(Box::new("boom"))
+        }))
+        .unwrap_err()
+        .into();
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["code"], "internal");
+        assert!(json["message"].is_string());
+    }
 
     #[test]
     fn monitor_messages_are_tagged() {

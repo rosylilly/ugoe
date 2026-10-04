@@ -697,6 +697,30 @@ fn dresses_up_only_with_modules_from_the_profile() {
     );
 }
 
+/// `dressup.list` は付けていないモジュールを、舞台と指揮役のロックを放してから読む (シーンの切り替えを待たせない。T0819)。
+#[test]
+fn lists_the_wardrobe_without_holding_the_stage() {
+    let dir = Dir::new("dressup-unlocked");
+    let model = dir.model();
+    let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+    let studio = studio();
+    // 出しているのは Chat (モジュール無し) なので、Game の髪は読まないと分からない。
+    stage_scenes(&studio, &model, std::slice::from_ref(&hair));
+    let mut read = Vec::new();
+    let list = methods::dressup_list_with(&studio, |path| {
+        assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+        assert!(
+            studio.conductor.try_lock().is_ok(),
+            "the conductor is locked"
+        );
+        read.push(path.to_owned());
+        methods::read_module_value(path)
+    });
+    assert_eq!(read, std::slice::from_ref(&hair));
+    assert_eq!(list["modules"][0]["id"], hair.to_str().unwrap());
+    assert_eq!(list["modules"][0]["slot"], "Hair");
+}
+
 #[test]
 fn notifies_subscribed_events_only() {
     let dir = Dir::new("events");
