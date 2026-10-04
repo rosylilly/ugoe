@@ -24,6 +24,7 @@ import {
   parseMotionPriority,
   parseParameters,
 } from "./attributes.js";
+import type { LoadLimits } from "./limits.js";
 import { createPuppet, loadModel } from "./runtime.js";
 import { type TrackingInput, trackingArguments } from "./tracking.js";
 import { loadWarnings, type UgoeLoadWarning } from "./warnings.js";
@@ -178,6 +179,7 @@ export class UgoeAvatarElement extends BaseElement {
   #trackingDirty = false;
   /** `motion` 属性のモーションを、再生中のモーションより優先度が低くて始められなかった (始められるまで毎フレーム試す)。 */
   #motionPending = false;
+  #loadLimits: LoadLimits | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #intersectionObserver: IntersectionObserver | null = null;
 
@@ -214,6 +216,17 @@ export class UgoeAvatarElement extends BaseElement {
   }
   set paused(value: boolean) {
     this.toggleAttribute("paused", value);
+  }
+
+  /**
+   * 読み込みの上限 (T0152。`loadModel` の `limits` と同じ)。`null` (既定) は既定値。属性は無い。
+   * 次の読み込み (`src`・`load()`・作り直しの読み直し) から効く (変えただけでは読み直さない)。
+   */
+  get loadLimits(): LoadLimits | null {
+    return this.#loadLimits;
+  }
+  set loadLimits(value: LoadLimits | null) {
+    this.#loadLimits = value;
   }
 
   /** ugoe-wasm の `WebPuppet` (作成前と切断中は `null`)。直接操作したら `requestRender()` を呼ぶ。 */
@@ -642,7 +655,7 @@ export class UgoeAvatarElement extends BaseElement {
   #applyModelOrThrow(model: ModelData): string[] {
     const puppet = this.#puppet;
     if (!puppet) return [];
-    const warnings = loadModel(puppet, model);
+    const warnings = loadModel(puppet, model, { limits: this.#loadLimits ?? undefined });
     const warningDetails = loadWarnings(puppet);
     this.#model = model;
     this.#warnings = warnings;

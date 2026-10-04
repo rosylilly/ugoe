@@ -9,6 +9,8 @@ class FakePuppet {
   freed = false;
   lost = false;
   model: unknown = null;
+  /** 最後の読み込みに渡した上限 (`loadModel` の `options.limits`)。 */
+  limits: unknown = undefined;
   /** `load_warnings_json()` が返す警告の構造。 */
   warningDetails: unknown[] = [];
   values = new Map<string, number>();
@@ -82,8 +84,9 @@ vi.mock("./runtime.js", () => ({
     const puppet = new FakePuppet(canvas, options.backend ?? "auto");
     return puppet;
   },
-  loadModel: (puppet: FakePuppet, data: unknown) => {
+  loadModel: (puppet: FakePuppet, data: unknown, options: { limits?: unknown } = {}) => {
     if (data === runtime.badModel) throw new Error("invalid model");
+    puppet.limits = options.limits;
     puppet.model = typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array);
     return [];
   },
@@ -170,6 +173,20 @@ describe("<ugoe-avatar>", () => {
     avatar.removeEventListener("load", onLoad);
     await avatar.load("model-b");
     expect(loads).toHaveLength(1);
+  });
+
+  it("passes the load limits to the next load", async () => {
+    const avatar = newAvatar();
+    document.body.append(avatar);
+    const puppet = fake(await avatar.ready);
+    expect(avatar.loadLimits).toBeNull();
+    await avatar.load("model-a");
+    expect(puppet.limits).toBeUndefined();
+    avatar.loadLimits = { maxTotalDecompressed: 1024 };
+    // 変えただけでは読み直さない。
+    expect(puppet.limits).toBeUndefined();
+    await avatar.load("model-b");
+    expect(puppet.limits).toEqual({ maxTotalDecompressed: 1024 });
   });
 
   it("creates a puppet when connected and frees it when disconnected", async () => {

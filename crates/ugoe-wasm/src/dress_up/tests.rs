@@ -123,6 +123,29 @@ fn reads_module_files_with_normal_maps() {
     ));
 }
 
+/// 読み込みの上限を超えたモジュールは、`invalid_file` ではなく上限の種類の失敗になる (T0152)。
+#[test]
+fn modules_over_the_read_limits_are_rejected_with_a_code() {
+    let mut file = ModuleFile::new(long_hair_module());
+    file.textures = vec![png([20, 0, 0, 255])];
+    let bytes = ugoe::format::module_file::write_module_with(
+        &file,
+        ugoe::format::WriteOptions { compress: true },
+    )
+    .unwrap();
+    let limits = LoadLimits {
+        read: ugoe::limits::ReadLimits::default().with_max_total_decompressed(1),
+        ..LoadLimits::default()
+    };
+    let error = WardrobeError::from(from_module_file_with(&bytes, limits).unwrap_err());
+    let info = error_info(&error);
+    assert_eq!(info.code, "read_limit_exceeded");
+    assert!(info.fields.contains(&("max", 1.into())), "{info:?}");
+    assert!(from_module_file_with(&bytes, LoadLimits::default()).is_ok());
+    let error = WardrobeError::from(from_module_file(b"not a module").unwrap_err());
+    assert_eq!(error_info(&error).code, "invalid_file");
+}
+
 #[test]
 fn attach_and_detach_register_textures_in_order() {
     let mut sink = Recorder::default();

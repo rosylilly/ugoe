@@ -23,6 +23,12 @@ export const BINDINGS = [
     omit: {
       ugoe_puppet_positions:
         "内部のバッファの借用。C# では配列に写すことになり ugoe_puppet_copy_positions と同じ (bindings/unity/README.md)",
+      ugoe_read_limits_default:
+        "読み込みの上限を Unity から指定する口はまだ無い (既定値で読む。T0152 のメモの起票の候補)",
+      ugoe_puppet_create_from_bundle_with_limits:
+        "読み込みの上限を Unity から指定する口はまだ無い (既定値で読む。T0152 のメモの起票の候補)",
+      ugoe_module_create_with_limits:
+        "読み込みの上限を Unity から指定する口はまだ無い (既定値で読む。T0152 のメモの起票の候補)",
     },
   },
 ];

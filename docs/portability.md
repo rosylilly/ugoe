@@ -38,6 +38,8 @@
 - 可変長の結果は、ホストのバッファ (`out`・`capacity`) に書いて数を返し、足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で数だけを返します。
 - 着せ替えなど、失敗の種類を機械が読む必要がある関数は、`ugoe_last_error_kind()` と `ugoe_last_error_field(key)` で wasm と同じ `code` と補足の値を返します。
   読み込みの警告も wasm と同じ `code` です。どちらも値は SDK (`ugoe::DressUpError::code`・`ugoe::LoadWarning`) が決め、バインディングはそれを写すだけにします (T0412)。
+- 外から来るファイルの読み込みの上限 (展開するバイト) は、組み込む側が `UgoeReadLimits` で指定できます (指定しない関数は既定値)。
+  超えたら `UGOE_ERROR_LIMIT_EXCEEDED` で、種類 `read_limit_exceeded` と補足の値は wasm と同じです (T0152。`docs/spec/file-formats.md#読み込みの上限`)。
 
 ## ランタイム層が守る制約 (移植性のため)
 

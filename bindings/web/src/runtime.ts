@@ -1,6 +1,7 @@
 // wasm の初期化・WebPuppet の作成・モデルの読み込みの薄い補助。
 
 import { type Backend, isBundle } from "./attributes.js";
+import { type LoadLimits, limitsJson } from "./limits.js";
 import init, { type InitInput, WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `initRuntime` の設定。 */
@@ -51,15 +52,28 @@ export async function createPuppet(
   return WebPuppet.create(canvas, options.backend ?? "auto");
 }
 
+/** `loadModel`・`fetchModel` の設定。 */
+export interface LoadModelOptions {
+  /**
+   * 読み込みの上限 (T0152)。省略すると既定値。超えたら `name` が `"LoadError"` で `code` が
+   * `"read_limit_exceeded"` か `"image_limit_exceeded"` の例外 (`isLimitError` で見分ける)。JSON のモデルには効かない。
+   */
+  limits?: LoadLimits;
+}
+
 /**
  * モデルを読み込む。`.ugoe` バンドル (先頭が `UGOE`) なら `load_bundle`、それ以外は JSON として `load_json`。
  * 戻り値は警告の文 (英語) の配列。構造は `puppet.load_warnings_json()` (crates/ugoe-wasm/README.md#読み込みの警告-t0125)。
  */
-export function loadModel(puppet: WebPuppet, data: ArrayBuffer | Uint8Array | string): string[] {
+export function loadModel(
+  puppet: WebPuppet,
+  data: ArrayBuffer | Uint8Array | string,
+  options: LoadModelOptions = {},
+): string[] {
   if (typeof data === "string") return puppet.load_json(data);
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   return isBundle(bytes)
-    ? puppet.load_bundle(bytes)
+    ? puppet.load_bundle(bytes, limitsJson(options.limits))
     : puppet.load_json(new TextDecoder().decode(bytes));
 }
 
@@ -68,9 +82,10 @@ export async function fetchModel(
   puppet: WebPuppet,
   url: string | URL,
   init?: RequestInit,
+  options: LoadModelOptions = {},
 ): Promise<string[]> {
   const response = await fetch(url, init);
   if (!response.ok)
     throw new Error(`failed to fetch ${url}: ${response.status} ${response.statusText}`);
-  return loadModel(puppet, await response.arrayBuffer());
+  return loadModel(puppet, await response.arrayBuffer(), options);
 }

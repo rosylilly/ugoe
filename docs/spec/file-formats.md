@@ -192,7 +192,11 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
     (`limit` は `ChunkDecompressed` か `TotalDecompressed`、`max` はその上限の値)。先に確保はしません。
   - 合計に数えるのは、圧縮したチャンクを展開したバイトだけです。圧縮していないチャンクは入力のバイト列そのもので、大きさは呼び出し側が分かる入力の長さで抑えられるので数えません。展開に失敗したチャンクと、読み飛ばす未知のタグのチャンクも数えません。
   - エディタなどの画面に出すときのコードは `format.chunk_limit_exceeded` / `format.total_limit_exceeded` です ([editor.md](../editor.md#エラーと警告のコード))。ファイルが壊れているとは限らないので、`format.corrupt` と分けています。
-  - SDK・C ABI・wasm・バインディングから上限を指定する口は T0152 で足します。
+  - 組み込む側からの指定 (T0152): SDK は `ugoe::format::read_bundle_with` / `read_module_with` をそのまま使い、超えたときの種類と補足の値は
+    `ugoe::limits::ReadLimitExceeded` (`read_limit_exceeded`。`limit`・`chunk`・`max`) が決めます。C ABI は `UgoeReadLimits` と
+    `ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits` (超えたら `UGOE_ERROR_LIMIT_EXCEEDED`。[crates/ugoe-ffi/README.md](../../crates/ugoe-ffi/README.md#読み込みの上限-t0152))、
+    wasm は `load_bundle` / `load_module` の上限の JSON で、PNG の一辺の上限 (`max_image_side`) も指定できます
+    ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの上限-t0152))。`@ugoe/runtime` は `loadModel` の `limits`。
 - テクスチャと法線マップの PNG は、コンテナの読み込み (`read_bundle` など) ではデコードしません (バイト列のまま返します)。
   デコードする側のための関数は `ugoe_format::image` (feature `png`) の `decode_png(bytes, ImageLimits)` / `decode_png_premultiplied` で、
   `ugoe-headless` と `ugoe-wasm` がこれを使います (T0009)。グレースケール・パレット・16 ビットは 8 ビットの RGBA に展開します。

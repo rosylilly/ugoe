@@ -4,11 +4,12 @@
 //! (`docs/spec/rendering.md` の「前提」: 色の値はリニア化しない)。
 //! ブラウザのデコーダは色空間の変換やアルファの扱いが実装ごとに異なるので使わない。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ugoe::FieldValue;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
+use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 use ugoe::model::physics::PhysicsSettings;
-use ugoe_format::image::ImageLimits;
+use ugoe_format::image::{ImageError, ImageLimits};
 
 use crate::animation::Library;
 use ugoe::model::{Model, Parameter, ParameterGroup};
@@ -24,6 +25,123 @@ pub enum LoadError {
     Texture { index: usize, message: String },
     #[error("decoding the normal map of texture {index}: {message}")]
     NormalMap { index: usize, message: String },
+    /// テクスチャの画像の一辺が上限 ([`LoadLimits::image`]) を超える。画素は確保していない。
+    #[error("texture {index} is {width}x{height}, larger than the limit {max}x{max}")]
+    TextureTooLarge {
+        index: usize,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
+    /// 法線マップの一辺が上限を超える。
+    #[error(
+        "the normal map of texture {index} is {width}x{height}, larger than the limit {max}x{max}"
+    )]
+    NormalMapTooLarge {
+        index: usize,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
+}
+
+impl LoadError {
+    /// 読み込みの上限を超えたときの種類 (JS の `Error` の `code`)。展開の上限は SDK の値 (C ABI と同じ)。
+    pub const IMAGE_LIMIT_EXCEEDED: &'static str = "image_limit_exceeded";
+
+    /// 機械が読む種類と補足の値。今は読み込みの上限を超えたものだけで、ほかの失敗は `None`
+    /// (読み込みのすべての失敗にコードを付けるのは T0434)。
+    ///
+    /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
+    /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素)。
+    pub fn info(&self) -> Option<ErrorInfo> {
+        let image = |image: &str, index: usize, width: u32, height: u32, max: u32| ErrorInfo {
+            code: Self::IMAGE_LIMIT_EXCEEDED,
+            fields: vec![
+                ("image", image.into()),
+                ("texture", index.into()),
+                ("width", width.into()),
+                ("height", height.into()),
+                ("max", max.into()),
+            ],
+        };
+        match self {
+            Self::Format(e) => ReadLimitExceeded::from_error(e).map(|exceeded| ErrorInfo {
+                code: ReadLimitExceeded::CODE,
+                fields: vec![
+                    ("limit", exceeded.limit.as_str().into()),
+                    ("chunk", exceeded.chunk.to_string().into()),
+                    ("max", exceeded.max.into()),
+                ],
+            }),
+            &Self::TextureTooLarge {
+                index,
+                width,
+                height,
+                max,
+            } => Some(image("texture", index, width, height, max)),
+            &Self::NormalMapTooLarge {
+                index,
+                width,
+                height,
+                max,
+            } => Some(image("normal_map", index, width, height, max)),
+            _ => None,
+        }
+    }
+}
+
+/// JS に渡すエラーの中身: 機械が読む `code` と、補足の値 (`module`・`slot`・`max` など)。
+/// 文は元のエラーの `Display` (英語)。補足の値は文字列か数 (読み込みの警告と同じく、番号や大きさは数にする)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ErrorInfo {
+    pub code: &'static str,
+    pub fields: Vec<(&'static str, serde_json::Value)>,
+}
+
+/// 読み込みの上限 (`load_bundle` / `load_module` の `limits_json`。`docs/spec/file-formats.md#読み込みの上限`)。
+///
+/// 上限はファイル形式の決まりではなく、組み込む側の方針。展開の上限 (`read`) は SDK と C ABI と同じ、
+/// PNG の一辺の上限 (`image`) は wasm だけのもの (C ABI は画像をデコードしない)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LoadLimits {
+    pub read: ReadLimits,
+    pub image: ImageLimits,
+}
+
+/// `limits_json` の形。書かなかった上限は既定値。知らない項目は誤り (綴りの誤りで上限が効かないのを防ぐ)。
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LimitsJson {
+    max_chunk_decompressed: Option<u64>,
+    max_total_decompressed: Option<u64>,
+    max_image_side: Option<u32>,
+}
+
+impl LoadLimits {
+    /// JSON `{"max_chunk_decompressed"?, "max_total_decompressed"?, "max_image_side"?}` (バイトと画素) を読む。
+    /// `None` は既定値。
+    pub fn from_json(json: Option<&str>) -> Result<Self, serde_json::Error> {
+        let mut limits = Self::default();
+        let Some(json) = json else {
+            return Ok(limits);
+        };
+        let LimitsJson {
+            max_chunk_decompressed,
+            max_total_decompressed,
+            max_image_side,
+        } = serde_json::from_str(json)?;
+        if let Some(bytes) = max_chunk_decompressed {
+            limits.read = limits.read.with_max_chunk_decompressed(bytes);
+        }
+        if let Some(bytes) = max_total_decompressed {
+            limits.read = limits.read.with_max_total_decompressed(bytes);
+        }
+        if let Some(pixels) = max_image_side {
+            limits.image = limits.image.with_max_side(pixels);
+        }
+        Ok(limits)
+    }
 }
 
 /// RGBA8 の画像 (`ugoe_format::image` と共有。テクスチャは乗算済み、法線マップはアルファを掛けない)。
@@ -107,16 +225,25 @@ pub fn from_json(json: &str) -> Result<LoadedModel, LoadError> {
     })
 }
 
-/// `.ugoe` バンドルを読み、PNG のテクスチャと法線マップをデコードする。
+/// `.ugoe` バンドルを既定の上限で読み、PNG のテクスチャと法線マップをデコードする。
 pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
-    let (bundle, report) = ugoe::format::read_bundle_with_report(bytes)?;
+    from_bundle_with(bytes, LoadLimits::default())
+}
+
+/// 読み込みの上限 `limits` を指定して `.ugoe` バンドルを読み、PNG のテクスチャと法線マップをデコードする。
+pub fn from_bundle_with(bytes: &[u8], limits: LoadLimits) -> Result<LoadedModel, LoadError> {
+    let (bundle, report) = ugoe::format::read_bundle_with(bytes, limits.read)?;
     // 読み込みの報告の警告を先に並べる (C ABI の `ugoe_puppet_load_warning_*` と同じ順。T0412)。
     let mut warnings: Vec<LoadWarning> = report.warnings.iter().map(LoadWarning::from).collect();
-    let normal_maps =
-        decode_normal_maps(ugoe::lighting::bundle_normal_maps(&bundle), &mut warnings)?;
+    let normal_maps = decode_normal_maps(
+        ugoe::lighting::bundle_normal_maps(&bundle),
+        limits.image,
+        &mut warnings,
+    )?;
     let textures = decode_textures(
         texture_count(&bundle.model),
         |i| bundle.textures.get(i),
+        limits.image,
         &mut warnings,
     )?;
     let Bundle {
@@ -146,6 +273,7 @@ pub fn from_bundle(bytes: &[u8]) -> Result<LoadedModel, LoadError> {
 pub(crate) fn decode_textures<'a>(
     count: usize,
     data: impl Fn(usize) -> Option<&'a TextureData>,
+    limits: ImageLimits,
     warnings: &mut Vec<LoadWarning>,
 ) -> Result<Vec<Rgba8>, LoadError> {
     (0..count)
@@ -153,8 +281,18 @@ pub(crate) fn decode_textures<'a>(
             Some(TextureData {
                 format: TextureFormat::Png,
                 bytes,
-            }) => decode_png_premultiplied(bytes)
-                .map_err(|message| LoadError::Texture { index, message }),
+            }) => decode_png_premultiplied(bytes, limits).map_err(|e| match e {
+                ImageError::TooLarge { width, height, max } => LoadError::TextureTooLarge {
+                    index,
+                    width,
+                    height,
+                    max,
+                },
+                e => LoadError::Texture {
+                    index,
+                    message: e.to_string(),
+                },
+            }),
             Some(TextureData {
                 format: TextureFormat::Ktx2,
                 ..
@@ -176,6 +314,7 @@ pub(crate) fn decode_textures<'a>(
 /// KTX2 は警告して使わない。
 pub(crate) fn decode_normal_maps<'a>(
     data: impl IntoIterator<Item = Option<&'a TextureData>>,
+    limits: ImageLimits,
     warnings: &mut Vec<LoadWarning>,
 ) -> Result<Vec<Option<Rgba8>>, LoadError> {
     data.into_iter()
@@ -185,9 +324,18 @@ pub(crate) fn decode_normal_maps<'a>(
             Some(TextureData {
                 format: TextureFormat::Png,
                 bytes,
-            }) => decode_png(bytes)
-                .map(Some)
-                .map_err(|message| LoadError::NormalMap { index, message }),
+            }) => decode_png(bytes, limits).map(Some).map_err(|e| match e {
+                ImageError::TooLarge { width, height, max } => LoadError::NormalMapTooLarge {
+                    index,
+                    width,
+                    height,
+                    max,
+                },
+                e => LoadError::NormalMap {
+                    index,
+                    message: e.to_string(),
+                },
+            }),
             Some(TextureData {
                 format: TextureFormat::Ktx2,
                 ..
@@ -263,18 +411,17 @@ pub use ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE as MAX_IMAGE_SIZE;
 
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする (`ugoe_format::image::decode_png_premultiplied`)。
 ///
-/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が [`MAX_IMAGE_SIZE`] を超える画像は確保の前にエラー
-/// (デバイスの上限との比較 `check_texture_sizes` はデコードの後なので、ここで先に止める)。
-pub fn decode_png_premultiplied(bytes: &[u8]) -> Result<Rgba8, String> {
-    ugoe_format::image::decode_png_premultiplied(bytes, ImageLimits::default())
-        .map_err(|e| e.to_string())
+/// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が `limits.max_side` (既定は [`MAX_IMAGE_SIZE`]) を
+/// 超える画像は確保の前にエラー (デバイスの上限との比較 `check_texture_sizes` はデコードの後なので、ここで先に止める)。
+pub fn decode_png_premultiplied(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
+    ugoe_format::image::decode_png_premultiplied(bytes, limits)
 }
 
 /// PNG をデコードして、アルファを掛けない RGBA8 にする (法線マップ用。`ugoe_format::image::decode_png`)。
 ///
 /// 展開と上限は [`decode_png_premultiplied`] と同じ。
-pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, String> {
-    ugoe_format::image::decode_png(bytes, ImageLimits::default()).map_err(|e| e.to_string())
+pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
+    ugoe_format::image::decode_png(bytes, limits)
 }
 
 #[cfg(test)]
@@ -429,7 +576,7 @@ mod tests {
     #[test]
     fn missing_textures_and_removed_physics_have_codes() {
         let mut warnings = Vec::new();
-        let textures = decode_textures(2, |_| None, &mut warnings).unwrap();
+        let textures = decode_textures(2, |_| None, ImageLimits::default(), &mut warnings).unwrap();
         assert_eq!(textures, vec![placeholder(); 2]);
         warnings.push(LoadWarning::PhysicsRemoved {
             reason: "bad rig".into(),
@@ -479,8 +626,8 @@ mod tests {
     /// 見出しの大きさを確かめてから確保する (外から来た PNG で約 17GB を確保しようとして落ちないように)。
     #[test]
     fn rejects_images_larger_than_the_limit_before_allocating() {
-        let err = decode_png(&huge_png_header()).unwrap_err();
-        assert!(err.contains("65535x65535"), "{err}");
+        let err = decode_png(&huge_png_header(), ImageLimits::default()).unwrap_err();
+        assert!(err.to_string().contains("65535x65535"), "{err}");
     }
 
     #[test]
@@ -495,6 +642,121 @@ mod tests {
             from_bundle(&bytes),
             Err(LoadError::Texture { index: 0, .. })
         ));
+    }
+
+    #[test]
+    fn limits_json_overrides_only_the_given_limits() {
+        assert_eq!(LoadLimits::from_json(None).unwrap(), LoadLimits::default());
+        assert_eq!(
+            LoadLimits::from_json(Some("{}")).unwrap(),
+            LoadLimits::default()
+        );
+        let limits = LoadLimits::from_json(Some(
+            r#"{"max_total_decompressed": 1024, "max_image_side": 64}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            limits.read,
+            ReadLimits::default().with_max_total_decompressed(1024)
+        );
+        assert_eq!(limits.image, ImageLimits::default().with_max_side(64));
+        // 綴りの誤り・負の値・小数は誤り (上限が黙って効かなくならないように)。
+        for json in [
+            r#"{"max_total": 1}"#,
+            r#"{"max_image_side": -1}"#,
+            r#"{"max_chunk_decompressed": 1.5}"#,
+            "[]",
+        ] {
+            assert!(LoadLimits::from_json(Some(json)).is_err(), "{json}");
+        }
+    }
+
+    /// 小さな展開の上限で読むと、SDK と C ABI と同じ種類と補足の値の失敗になる (T0152)。
+    #[test]
+    fn bundles_over_the_read_limits_are_rejected_with_a_code() {
+        let mut bundle = Bundle::new(fixtures::single_quad());
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(1, 1, &[255; 4]),
+        }];
+        let bytes =
+            ugoe::format::write_bundle_with(&bundle, ugoe::format::WriteOptions { compress: true })
+                .unwrap();
+        let limits = LoadLimits {
+            read: ReadLimits::default().with_max_total_decompressed(1),
+            ..LoadLimits::default()
+        };
+        let err = from_bundle_with(&bytes, limits).unwrap_err();
+        let info = err.info().unwrap();
+        assert_eq!(info.code, "read_limit_exceeded");
+        let field = |key: &str| {
+            info.fields
+                .iter()
+                .find(|(k, _)| *k == key)
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(field("limit"), "total_decompressed");
+        assert_eq!(field("max"), 1);
+        assert!(field("chunk").is_string());
+        assert!(from_bundle_with(&bytes, LoadLimits::default()).is_ok());
+        // 上限の外の失敗は、まだ種類を持たない (T0434)。
+        assert!(from_bundle(b"not a bundle").unwrap_err().info().is_none());
+    }
+
+    /// PNG の一辺の上限を指定でき、超えるテクスチャと法線マップは画素を確保する前に種類付きの失敗になる。
+    #[test]
+    fn images_over_the_side_limit_are_rejected_with_a_code() {
+        let mut model = fixtures::single_quad();
+        model.textures[0].normal_map = Some("n".into());
+        let mut bundle = Bundle::new(model);
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(1, 1, &[255; 4]),
+        }];
+        bundle.normal_maps = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(2, 1, &[128, 128, 255, 255, 128, 128, 255, 255]),
+        }];
+        let limits = |side| LoadLimits {
+            image: ImageLimits::default().with_max_side(side),
+            ..LoadLimits::default()
+        };
+        let bytes = write_bundle(&bundle).unwrap();
+        assert!(from_bundle_with(&bytes, limits(2)).is_ok());
+        let err = from_bundle_with(&bytes, limits(1)).unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::NormalMapTooLarge {
+                index: 0,
+                width: 2,
+                height: 1,
+                max: 1,
+            }
+        ));
+        assert_eq!(
+            err.info().unwrap(),
+            ErrorInfo {
+                code: "image_limit_exceeded",
+                fields: vec![
+                    ("image", "normal_map".into()),
+                    ("texture", 0.into()),
+                    ("width", 2.into()),
+                    ("height", 1.into()),
+                    ("max", 1.into()),
+                ],
+            }
+        );
+
+        bundle.normal_maps[0].bytes = encode_png(1, 1, &[128, 128, 255, 255]);
+        bundle.textures[0].bytes = encode_png(1, 3, &[255; 12]);
+        let err = from_bundle_with(&write_bundle(&bundle).unwrap(), limits(2)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "texture 0 is 1x3, larger than the limit 2x2"
+        );
+        assert_eq!(err.info().unwrap().fields[0], ("image", "texture".into()));
     }
 
     #[test]

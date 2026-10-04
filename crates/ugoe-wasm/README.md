@@ -16,7 +16,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | モジュール | 内容 |
 | --- | --- |
 | `web` | JS に公開する `WebPuppet`。canvas に wgpu のサーフェスを作り、クリアと描画を行う |
-| `load` | JSON / `.ugoe` バンドルの読み込み、PNG のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
+| `load` | JSON / `.ugoe` バンドルの読み込み (読み込みの上限 `LoadLimits` と、超えたときのコード)、PNG のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
@@ -220,7 +220,8 @@ try {
   // e.name === "DressUpError"。e.code は "unknown_slot" | "missing_slot" | "missing_parameter" |
   // "parameter_not_exposed" | "avatar_level" | "slot_occupied" | "unknown_mask" | "unknown_collider" |
   // "pose_not_exposed" | "texture_out_of_range" | "invalid_composition" | "invalid_module_name" | "duplicate_module" |
-  // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture"。
+  // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture"
+  // (load_module が読み込みの上限を超えたときは "read_limit_exceeded" | "image_limit_exceeded"。下の「読み込みの上限」)。
   // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)
 }
 ```
@@ -280,6 +281,41 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
   `unknown_optional_feature`・`unknown_value` は読み込みの報告 (`read_bundle_with_report` / `read_module_with_report`) の警告で、
   一覧の先頭 (テクスチャの警告より前) に並ぶ。`.ugoemod` でも出る。
 
+### 読み込みの上限 (T0152)
+
+```js
+const limits = JSON.stringify({
+  max_chunk_decompressed: 64 * 1024 * 1024, // 圧縮したチャンク 1 つの展開後 (バイト)。既定 256 MiB
+  max_total_decompressed: 256 * 1024 * 1024, // 1 つのファイルで展開するバイトの合計。既定 1 GiB
+  max_image_side: 4096,                      // デコードする PNG の幅と高さ (画素)。既定 16384
+});
+try {
+  puppet.load_bundle(bytes, limits);   // 省くと既定値。書かなかった項目も既定値
+  puppet.load_module(modBytes, limits);
+} catch (e) {
+  // load_bundle は e.name === "LoadError"、load_module は "DressUpError"
+  if (e.code === "read_limit_exceeded") console.warn(`${e.chunk}: ${e.limit} > ${e.max}`);
+  if (e.code === "image_limit_exceeded") console.warn(`${e.image} ${e.texture}: ${e.width}x${e.height} > ${e.max}`);
+}
+```
+
+| `code` | 補足の値 | いつ |
+| --- | --- | --- |
+| `read_limit_exceeded` | `limit` (`"chunk_decompressed"` \| `"total_decompressed"`)・`chunk` (チャンクのタグ。`"TEXR"` など)・`max` (バイト数。数) | 圧縮したチャンクの展開が上限を超えそうになった。展開の途中でやめる (先に確保しない) |
+| `image_limit_exceeded` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素。どれも数) | PNG の幅か高さが `max_image_side` を超える。画素を確保する前にやめる |
+
+- 上限はファイル形式の決まりではなく、組み込む側の方針 (`docs/spec/file-formats.md#読み込みの上限`)。ファイルが壊れているとは限らない
+  (上限を上げれば読めることがある) ので、`invalid_file` とは分けた。超えたときは何も変えない (前のモデル・モジュールのまま)。
+- `read_limit_exceeded` の種類と補足の値は SDK の `ugoe::limits::ReadLimitExceeded` が決め、C ABI (`UGOE_ERROR_LIMIT_EXCEEDED` と
+  `ugoe_last_error_kind`・`ugoe_last_error_field`) と同じ。C ABI の補足の値は文字列で、wasm は読み込みの警告と同じく数は数にする。
+  `image_limit_exceeded` は wasm だけ (C ABI は画像をデコードしない)。`src/load.rs` の `LoadError::info`。
+- `load_bundle` のほかの失敗 (壊れたファイル・コンパイルの失敗など) は、まだ `code` を持たない英語の文だけの `Error`
+  (T0434 で `name` を `"LoadError"` にそろえてコードを付ける予定。ここで決めた 2 つの `code` と補足の値はそのまま使う)。
+- 上限の JSON の形の誤り (知らない項目・負の値・小数) は `invalid limits: ...` の例外 (綴りの誤りで上限が黙って効かなくならないように)。
+- `load_json` は展開も画像のデコードもしないので、上限を取らない。
+- デバイスの扱える大きさ (`check_texture_sizes`) は上限とは別で、デコードの後にレンダラが検査する。
+- `@ugoe/runtime` では `loadModel(puppet, data, { limits: { maxTotalDecompressed, ... } })` と `isLimitError` (`bindings/web/src/limits.ts`)。
+
 ## ビルド
 
 ```sh
@@ -306,3 +342,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0210 (ライティング: 法線マップの登録と光源の JSON)
 - T0123 (着せ替え: `.ugoemod` の読み込みと付け外し)
 - T0418 (描画結果の読み戻しと評価の結果の取り出し)
+- T0152 (読み込みの上限)

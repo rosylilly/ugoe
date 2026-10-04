@@ -52,9 +52,9 @@ export class WebPuppet {
   is_motion_over_tracking(): boolean;
   is_motion_playing(): boolean;
   is_tracking(): boolean;
-  load_bundle(bytes: Uint8Array): string[];
+  load_bundle(bytes: Uint8Array, limits_json?: string | null): string[];
   load_json(json: string): string[];
-  load_module(bytes: Uint8Array): string;
+  load_module(bytes: Uint8Array, limits_json?: string | null): string;
   load_warnings_json(): string;
   modules_json(): string;
   motion_events(): string[];

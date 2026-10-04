@@ -30,6 +30,9 @@ mod warning;
 
 pub use warning::{FieldValue, LoadWarning};
 
+// 読み込みの上限と、超えたときの種類 (T0152)。
+pub mod limits;
+
 // ライティングの補助 (T0210)。
 pub mod lighting;
 

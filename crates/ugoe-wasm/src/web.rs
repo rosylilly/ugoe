@@ -20,7 +20,7 @@ use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
 use crate::dress_up::{Wardrobe, attached_names};
-use crate::load::{self, LoadError, LoadWarning, LoadedModel, Rgba8};
+use crate::load::{self, ErrorInfo, LoadError, LoadWarning, LoadedModel, Rgba8};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
 
@@ -37,6 +37,38 @@ mod follow;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())
+}
+
+/// `code` と補足の値をプロパティに持つ JS の `Error` (`name` は `name`)。補足の値の数は数、ほかは文字列にする。
+fn coded_error(name: &str, message: &str, info: ErrorInfo) -> JsValue {
+    let js = js_sys::Error::new(message);
+    js.set_name(name);
+    // 普通のオブジェクトへの設定なので失敗しない。
+    let _ = js_sys::Reflect::set(&js, &"code".into(), &info.code.into());
+    for (key, value) in info.fields {
+        let value = match value {
+            serde_json::Value::Number(n) => JsValue::from_f64(n.as_f64().unwrap_or(f64::NAN)),
+            serde_json::Value::String(s) => JsValue::from_str(&s),
+            other => JsValue::from_str(&other.to_string()),
+        };
+        let _ = js_sys::Reflect::set(&js, &key.into(), &value);
+    }
+    js.into()
+}
+
+/// 読み込みの失敗を JS の値にする。上限を超えたもの (`LoadError::info` が種類を持つもの) は `name` が
+/// `"LoadError"` で `code` と補足の値を持つ `Error`、ほかは今までどおりの `Error` (コードは T0434 で付ける)。
+fn load_error(e: LoadError) -> JsValue {
+    match e.info() {
+        Some(info) => coded_error("LoadError", &e.to_string(), info),
+        None => js_error(e).into(),
+    }
+}
+
+/// `limits_json` を読む (`load_bundle` / `load_module`)。形の誤りは例外。
+fn load_limits(json: Option<String>) -> Result<load::LoadLimits, JsError> {
+    load::LoadLimits::from_json(json.as_deref())
+        .map_err(|e| JsError::new(&format!("invalid limits: {e}")))
 }
 
 /// モデル 1 体と、それを描く canvas。
@@ -251,8 +283,18 @@ impl WebPuppet {
     /// すでにモデルがあれば置き換え、同じ ID のパラメータの値と段の有効無効は引き継ぐ。
     /// 物理・モーション・表情はバンドルのものに置き換える (物理は `validate_physics` で検査済み)。
     /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
-    pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Vec<String>, JsError> {
-        self.load(load::from_bundle(bytes).map_err(js_error)?)
+    ///
+    /// `limits_json` は読み込みの上限 `{"max_chunk_decompressed"?, "max_total_decompressed"?, "max_image_side"?}`
+    /// (省くと既定値。T0152)。超えたら `name` が `"LoadError"` の `Error` で、`code` は `"read_limit_exceeded"` か
+    /// `"image_limit_exceeded"` (補足の値は README の「読み込みの上限」)。何も変えない。
+    pub fn load_bundle(
+        &mut self,
+        bytes: &[u8],
+        limits_json: Option<String>,
+    ) -> Result<Vec<String>, JsValue> {
+        let limits = load_limits(limits_json)?;
+        let loaded = load::from_bundle_with(bytes, limits).map_err(load_error)?;
+        Ok(self.load(loaded)?)
     }
 
     /// 直前の `load_json` / `load_bundle` の警告の JSON (T0125)。戻り値の文の警告と同じ順・同じ数で、

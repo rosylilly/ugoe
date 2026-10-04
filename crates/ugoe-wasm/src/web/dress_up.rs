@@ -54,14 +54,7 @@ impl TextureSink for RendererSink<'_> {
 /// `WardrobeError` を JS の `Error` にする (`name` = `"DressUpError"`、`code` と補足の値を持つ)。
 fn dress_up_error(error: WardrobeError) -> JsValue {
     let info = dress_up::error_info(&error);
-    let js = js_sys::Error::new(&error.to_string());
-    js.set_name("DressUpError");
-    // 普通のオブジェクトへの設定なので失敗しない。
-    let _ = js_sys::Reflect::set(&js, &"code".into(), &info.code.into());
-    for (key, value) in info.fields {
-        let _ = js_sys::Reflect::set(&js, &key.into(), &value.into());
-    }
-    js.into()
+    super::coded_error("DressUpError", &error.to_string(), info)
 }
 
 /// `WebPuppet` のフィールドを分けて借り、付け外しを 1 つ行う。
@@ -88,8 +81,16 @@ impl WebPuppet {
     ///
     /// 同じ名前のモジュールは置き換える。そのモジュールを付けていれば新しい版に付け替える
     /// (付け替えられなければ何も変えずにエラー)。モデルが無くても読み込める。
-    pub fn load_module(&mut self, bytes: &[u8]) -> Result<String, JsValue> {
-        let loaded = dress_up::from_module_file(bytes).map_err(|e| dress_up_error(e.into()))?;
+    /// `limits_json` は `load_bundle` と同じ読み込みの上限 (T0152)。超えたら `DressUpError` で、`code` は
+    /// `"read_limit_exceeded"` か `"image_limit_exceeded"`。
+    pub fn load_module(
+        &mut self,
+        bytes: &[u8],
+        limits_json: Option<String>,
+    ) -> Result<String, JsValue> {
+        let limits = super::load_limits(limits_json)?;
+        let loaded =
+            dress_up::from_module_file_with(bytes, limits).map_err(|e| dress_up_error(e.into()))?;
         self.check_texture_sizes(&loaded.textures, &loaded.normal_maps)
             .map_err(|e| dress_up_error(WardrobeError::Texture(e.to_string())))?;
         let name = loaded.module.name.clone();

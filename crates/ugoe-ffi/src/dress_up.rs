@@ -12,7 +12,8 @@ use ugoe::format::TextureData;
 use ugoe::format::module_file;
 use ugoe::model::module::Module;
 
-use crate::error::{Error, UGOE_ERROR_DRESS_UP, UGOE_ERROR_FORMAT, UgoeResult, c_string, guard};
+use crate::error::{Error, UGOE_ERROR_DRESS_UP, UgoeResult, c_string, guard};
+use crate::limits::{UgoeReadLimits, format_error, read_limits};
 use crate::puppet::{UgoePuppet, c_str, puppet_mut, puppet_ref, write};
 use crate::warning::{
     UgoeWarning, Warning, missing_textures, read_warnings, write_warning, write_warning_field,
@@ -66,6 +67,7 @@ impl UgoePuppet {
 /// 本体との整合 (スロット・パラメータ) は付けるときに検査する。
 ///
 /// 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_last_error_kind` は `"invalid_file"` になる。
+/// 既定の読み込みの上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_module_create_with_limits` を参照)。
 ///
 /// # Safety
 ///
@@ -76,16 +78,39 @@ pub unsafe extern "C" fn ugoe_module_create(
     len: usize,
     out: *mut *mut UgoeModule,
 ) -> UgoeResult {
+    // SAFETY: 呼び出し側の約束。
+    unsafe { ugoe_module_create_with_limits(bytes, len, std::ptr::null(), out) }
+}
+
+/// 読み込みの上限 `limits` を指定して、`.ugoemod` のバイト列から `UgoeModule` を作る (T0152)。
+///
+/// `limits` が NULL なら既定値 (`ugoe_module_create` と同じ)。上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、
+/// `ugoe_last_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
+///
+/// # Safety
+///
+/// `bytes` は `len` バイトの読める領域を指すこと。`limits` は NULL か `UgoeReadLimits` を読める領域を指すこと。
+/// `out` は `UgoeModule*` を書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_module_create_with_limits(
+    bytes: *const u8,
+    len: usize,
+    limits: *const UgoeReadLimits,
+    out: *mut *mut UgoeModule,
+) -> UgoeResult {
     guard(|| {
         if out.is_null() {
             return Err(Error::null("out"));
         }
         // SAFETY: 呼び出し側の約束。
-        let bytes = unsafe { crate::puppet::bytes(bytes, len, "bytes")? };
-        let (file, report) = module_file::read_module_with_report(bytes).map_err(|e| {
-            Error::new(UGOE_ERROR_FORMAT, e.to_string())
-                .with_kind(DressUpError::INVALID_FILE, Vec::new())
-        })?;
+        let (bytes, limits) = unsafe {
+            (
+                crate::puppet::bytes(bytes, len, "bytes")?,
+                read_limits(limits),
+            )
+        };
+        let (file, report) = module_file::read_module_with(bytes, limits)
+            .map_err(|e| format_error(&e, Some(DressUpError::INVALID_FILE)))?;
         let count = file.module.textures.len();
         let normal_maps = (0..count).map(|i| file.normal_map(i).cloned()).collect();
         let mut textures: Vec<Option<TextureData>> =

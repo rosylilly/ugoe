@@ -29,6 +29,10 @@ pub const UGOE_ERROR_PANIC: UgoeResult = 8;
 /// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_last_error_kind`、
 /// 補足の値は `ugoe_last_error_field` で得る (T0409)。
 pub const UGOE_ERROR_DRESS_UP: UgoeResult = 9;
+/// 読み込みの上限 (`UgoeReadLimits`) を超えたので、読み込みをやめた。ファイルが壊れているとは限らない
+/// (上限を上げれば読めることがある)。種類 (`ugoe_last_error_kind`) は `"read_limit_exceeded"`、補足の値は
+/// `ugoe_last_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
+pub const UGOE_ERROR_LIMIT_EXCEEDED: UgoeResult = 10;
 
 /// 境界の内側で使う失敗。コードとメッセージを持つ。
 #[derive(Debug)]
@@ -146,6 +150,7 @@ pub extern "C" fn ugoe_last_error() -> *const c_char {
 ///
 /// 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 /// wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
+/// 読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
 /// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
 #[unsafe(no_mangle)]
 pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
@@ -158,7 +163,7 @@ pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
 }
 
 /// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
-/// `"attached"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// `"attached"`、読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
 ///
 /// # Safety
 ///

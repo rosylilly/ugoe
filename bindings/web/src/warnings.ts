@@ -27,7 +27,10 @@ export type UgoeDressUpErrorCode =
   | "not_loaded"
   | "no_model"
   | "invalid_file"
-  | "texture";
+  | "texture"
+  // `load_module` が読み込みの上限を超えたとき (T0152)。補足の値は `UgoeLimitErrorFields` (`isLimitError` で絞る)。
+  | "read_limit_exceeded"
+  | "image_limit_exceeded";
 
 /** 着せ替えの失敗の補足の値 (種類によって、あるものだけを持つ)。 */
 export interface UgoeDressUpErrorFields {

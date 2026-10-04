@@ -100,6 +100,7 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 | 種類 | 戻り値 | 補足の値 |
 | --- | --- | --- |
 | `invalid_file` | `UGOE_ERROR_FORMAT` (`ugoe_module_create`) | |
+| `read_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_module_create`・`ugoe_module_create_with_limits`。[読み込みの上限](#読み込みの上限-t0152)) | `limit`・`chunk`・`max` |
 | `unknown_slot`・`missing_slot` | `UGOE_ERROR_DRESS_UP` | `module`・`slot` |
 | `missing_parameter` | 同上 | `module`・`parameter` |
 | `parameter_not_exposed` | 同上 | `module`・`slot`・`parameter` |
@@ -112,6 +113,29 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きない (モジュールはポインタで渡し、`UgoePuppet` は常にモデルを持ち、
 画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。種類と補足の値の対応は SDK の
 `ugoe::DressUpError::code`・`fields` (と `INVALID_FILE`) の 1 か所にあり、wasm も同じものを使う (T0412)。
+
+## 読み込みの上限 (T0152)
+
+```c
+UgoeReadLimits limits = ugoe_read_limits_default();       /* 1 チャンク 256 MiB・合計 1 GiB */
+limits.max_total_decompressed = 64u * 1024 * 1024;        /* 置かれた環境に合わせて変える */
+UgoeResult r = ugoe_puppet_create_from_bundle_with_limits(bytes, len, &limits, &puppet);
+if (r == UGOE_ERROR_LIMIT_EXCEEDED) {
+    /* ugoe_last_error_kind() は "read_limit_exceeded" */
+    printf("%s %s > %s\n", ugoe_last_error_field("chunk"), ugoe_last_error_field("limit"), ugoe_last_error_field("max"));
+}
+ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同じ */
+```
+
+- 上限はファイル形式の決まりではなく、組み込む側の方針 (`docs/spec/file-formats.md#読み込みの上限`)。数えるのは圧縮したチャンクを
+  展開したバイトだけで、上限を超えそうになったら展開の途中でやめる (先に確保しない)。`limits` が NULL なら既定値。
+- 上限を指定しない `ugoe_puppet_create_from_bundle`・`ugoe_module_create` は既定値で読み、超えたら同じく `UGOE_ERROR_LIMIT_EXCEEDED` を返す。
+- 種類 (`ugoe_last_error_kind()`) は `"read_limit_exceeded"`、補足の値は `"limit"` (`"chunk_decompressed"` | `"total_decompressed"`)・
+  `"chunk"` (展開をやめたチャンクのタグ。`"TEXR"` など)・`"max"` (超えた上限のバイト数、10 進)。値は SDK の
+  `ugoe::limits::ReadLimitExceeded` で、wasm の読み込みのエラーの `code` と同じ。
+- PNG の大きさの上限 (wasm の `max_image_side`) は無い。C ABI は画像をデコードせず、エンコードされたまま渡すので、デコードの上限はホストが決める。
+- JSON から作る `ugoe_puppet_create_from_json` は展開をしないので、上限を取らない (大きさは入力の長さで決まる)。
+- Unity (`bindings/unity`) はまだこの口を出していない (既定値で読む)。Godot は C ABI ではなく SDK を使う。
 
 ## ライティング (T0409)
 

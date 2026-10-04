@@ -13,7 +13,9 @@ use ugoe::format::module_file;
 use ugoe::model::module::{Module, ModuleRequirements, Slot, SlotId};
 use ugoe::{DressUpChange, DressUpError, Puppet, TextureSource};
 
-use crate::load::{self, LoadError, LoadWarning, Rgba8};
+use crate::load::{self, LoadError, LoadLimits, LoadWarning, Rgba8};
+
+pub use crate::load::ErrorInfo;
 
 /// 読み込んだ `.ugoemod` 1 つ分。
 #[derive(Debug)]
@@ -27,16 +29,25 @@ pub struct LoadedModule {
     pub warnings: Vec<LoadWarning>,
 }
 
-/// `.ugoemod` を読み、テクスチャと法線マップをデコードする。
+/// `.ugoemod` を既定の上限で読み、テクスチャと法線マップをデコードする。
 /// 本体との整合 (スロット・パラメータ) は付けるときに合成が検査する。
 pub fn from_module_file(bytes: &[u8]) -> Result<LoadedModule, LoadError> {
-    let (file, report) = module_file::read_module_with_report(bytes)?;
+    from_module_file_with(bytes, LoadLimits::default())
+}
+
+/// 読み込みの上限 `limits` を指定して `.ugoemod` を読み、テクスチャと法線マップをデコードする。
+pub fn from_module_file_with(bytes: &[u8], limits: LoadLimits) -> Result<LoadedModule, LoadError> {
+    let (file, report) = module_file::read_module_with(bytes, limits.read)?;
     let count = file.module.textures.len();
     // 読み込みの報告の警告を先に並べる (C ABI の `ugoe_module_warning_*` と同じ順)。
     let mut warnings: Vec<LoadWarning> = report.warnings.iter().map(LoadWarning::from).collect();
-    let normal_maps =
-        load::decode_normal_maps((0..count).map(|i| file.normal_map(i)), &mut warnings)?;
-    let textures = load::decode_textures(count, |i| file.textures.get(i), &mut warnings)?;
+    let normal_maps = load::decode_normal_maps(
+        (0..count).map(|i| file.normal_map(i)),
+        limits.image,
+        &mut warnings,
+    )?;
+    let textures =
+        load::decode_textures(count, |i| file.textures.get(i), limits.image, &mut warnings)?;
     Ok(LoadedModule {
         module: Arc::new(file.module),
         textures,
@@ -111,7 +122,7 @@ impl Detached {
         error.insert("code".into(), info.code.into());
         error.insert("message".into(), self.error.to_string().into());
         for (key, value) in info.fields {
-            error.insert(key.into(), value.into());
+            error.insert(key.into(), value);
         }
         serde_json::json!({
             "code": "module_detached",
@@ -373,20 +384,16 @@ fn texture_error(e: impl std::fmt::Display) -> WardrobeError {
     WardrobeError::Texture(e.to_string())
 }
 
-/// JS に渡すエラーの中身: 機械が読む `code` と、補足の値 (`module`・`slot` など)。
-/// 文は `WardrobeError` の `Display` (英語)。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ErrorInfo {
-    pub code: &'static str,
-    pub fields: Vec<(&'static str, String)>,
-}
-
 /// エラーの種類を JS で分けられるように、コードと補足の値にする (`docs/spec/modules.md#puppet-での着せ替え`)。
 /// 付け外しの失敗 (`DressUpError`) と `invalid_file` は SDK の値 (`ugoe::DressUpError::code`・`fields`) を使い、
 /// C ABI と揃える (T0412)。`no_model`・`not_loaded`・`texture` は wasm だけのもの。
+/// 読み込みの上限を超えたものは、`invalid_file` ではなく [`LoadError::info`] の種類 (`read_limit_exceeded` など。T0152)。
 pub fn error_info(error: &WardrobeError) -> ErrorInfo {
     let (code, fields): (_, Vec<(&'static str, &str)>) = match error {
-        WardrobeError::Load(_) => (DressUpError::INVALID_FILE, vec![]),
+        WardrobeError::Load(e) => match e.info() {
+            Some(info) => return info,
+            None => (DressUpError::INVALID_FILE, vec![]),
+        },
         WardrobeError::NoModel => ("no_model", vec![]),
         WardrobeError::NotLoaded(name) => ("not_loaded", vec![("module", name)]),
         WardrobeError::Texture(_) => ("texture", vec![]),
@@ -394,7 +401,7 @@ pub fn error_info(error: &WardrobeError) -> ErrorInfo {
     };
     ErrorInfo {
         code,
-        fields: fields.into_iter().map(|(k, v)| (k, v.to_owned())).collect(),
+        fields: fields.into_iter().map(|(k, v)| (k, v.into())).collect(),
     }
 }
 

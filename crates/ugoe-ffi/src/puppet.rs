@@ -16,6 +16,7 @@ use crate::error::{
     Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_INVALID_MODEL,
     UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
 };
+use crate::limits::{UgoeReadLimits, format_error, read_limits};
 use crate::warning::{
     UgoeWarning, Warning, missing_textures, read_warnings, write_warning, write_warning_field,
 };
@@ -348,6 +349,7 @@ unsafe fn create(
 ///
 /// バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 /// 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
+/// 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
 ///
 /// # Safety
 ///
@@ -359,11 +361,33 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle(
     out: *mut *mut UgoePuppet,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
+    unsafe { ugoe_puppet_create_from_bundle_with_limits(bytes, len, std::ptr::null(), out) }
+}
+
+/// 読み込みの上限 `limits` を指定して、`.ugoe` バンドルのバイト列から `UgoePuppet` を作る (T0152)。
+///
+/// `limits` が NULL なら既定値 (`ugoe_puppet_create_from_bundle` と同じ)。展開したバイトが上限を超えそうになったら
+/// 展開の途中でやめて `UGOE_ERROR_LIMIT_EXCEEDED` を返す (種類は `"read_limit_exceeded"`、補足の値は `"limit"`・`"chunk"`・`"max"`)。
+/// ほかは `ugoe_puppet_create_from_bundle` と同じ。
+///
+/// # Safety
+///
+/// `bytes` は `len` バイトの読める領域を指すこと。`limits` は NULL か `UgoeReadLimits` を読める領域を指すこと。
+/// `out` は `UgoePuppet*` を書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_create_from_bundle_with_limits(
+    bytes: *const u8,
+    len: usize,
+    limits: *const UgoeReadLimits,
+    out: *mut *mut UgoePuppet,
+) -> UgoeResult {
+    // SAFETY: 呼び出し側の約束。
     unsafe {
         create(out, || {
+            let limits = read_limits(limits);
             let (bundle, report) =
-                ugoe::format::read_bundle_with_report(self::bytes(bytes, len, "bytes")?)
-                    .map_err(|e| Error::new(UGOE_ERROR_FORMAT, e.to_string()))?;
+                ugoe::format::read_bundle_with(self::bytes(bytes, len, "bytes")?, limits)
+                    .map_err(|e| format_error(&e, None))?;
             UgoePuppet::from_bundle(bundle, report)
         })
     }

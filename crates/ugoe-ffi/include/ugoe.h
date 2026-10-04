@@ -173,6 +173,17 @@ typedef struct UgoeTexture {
   size_t len;
 } UgoeTexture;
 
+// 読み込みの上限 (Rust の `ugoe::limits::ReadLimits`)。値は `ugoe_read_limits_default` から始めて変える。
+//
+// 数えるのは圧縮したチャンクを展開したバイトだけ (圧縮していないチャンクは入力の長さで抑えられるので数えない)。
+// 上限を足すときは、この構造体を変えずに別の構造体と関数を足す (crates/ugoe-ffi/README.md#abi-の版)。
+typedef struct UgoeReadLimits {
+  // 圧縮したチャンク 1 つを展開した後の大きさの上限 (バイト)。既定は 256 MiB。
+  uint64_t max_chunk_decompressed;
+  // 1 つのファイルで、圧縮したチャンクを展開したバイトの合計の上限。既定は 1 GiB。
+  uint64_t max_total_decompressed;
+} UgoeReadLimits;
+
 // 読み込みの警告 1 つ。文字列は、警告を持つオブジェクト (`UgoePuppet`・`UgoeModule`) を破棄するまで有効。
 typedef struct UgoeWarning {
   // 機械が読む種類 (UTF-8、NUL 終端)。`"texture_missing"`・`"unknown_optional_feature"`・`"unknown_value"`。
@@ -305,6 +316,11 @@ typedef struct UgoeTrackingInput {
 // 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_last_error_kind`、
 // 補足の値は `ugoe_last_error_field` で得る (T0409)。
 #define UGOE_ERROR_DRESS_UP 9
+
+// 読み込みの上限 (`UgoeReadLimits`) を超えたので、読み込みをやめた。ファイルが壊れているとは限らない
+// (上限を上げれば読めることがある)。種類 (`ugoe_last_error_kind`) は `"read_limit_exceeded"`、補足の値は
+// `ugoe_last_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
+#define UGOE_ERROR_LIMIT_EXCEEDED 10
 
 #ifdef __cplusplus
 extern "C" {
@@ -547,6 +563,7 @@ UgoeResult ugoe_puppet_normal_map(const struct UgoePuppet *puppet,
 // 本体との整合 (スロット・パラメータ) は付けるときに検査する。
 //
 // 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_last_error_kind` は `"invalid_file"` になる。
+// 既定の読み込みの上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_module_create_with_limits` を参照)。
 //
 // # Safety
 //
@@ -554,6 +571,20 @@ UgoeResult ugoe_puppet_normal_map(const struct UgoePuppet *puppet,
 UgoeResult ugoe_module_create(const uint8_t *bytes,
                               size_t len,
                               struct UgoeModule **out);
+
+// 読み込みの上限 `limits` を指定して、`.ugoemod` のバイト列から `UgoeModule` を作る (T0152)。
+//
+// `limits` が NULL なら既定値 (`ugoe_module_create` と同じ)。上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、
+// `ugoe_last_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
+//
+// # Safety
+//
+// `bytes` は `len` バイトの読める領域を指すこと。`limits` は NULL か `UgoeReadLimits` を読める領域を指すこと。
+// `out` は `UgoeModule*` を書き込める領域を指すこと。
+UgoeResult ugoe_module_create_with_limits(const uint8_t *bytes,
+                                          size_t len,
+                                          const struct UgoeReadLimits *limits,
+                                          struct UgoeModule **out);
 
 // `UgoeModule` を破棄する。NULL なら何もしない。`UgoePuppet` に付けたモジュールは付いたまま残る。
 //
@@ -691,11 +722,12 @@ const char *ugoe_last_error(void);
 //
 // 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 // wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
+// 読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
 // 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
 const char *ugoe_last_error_kind(void);
 
 // このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
-// `"attached"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+// `"attached"`、読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
 //
 // # Safety
 //
@@ -847,6 +879,9 @@ UgoeResult ugoe_puppet_drawable_lit(const struct UgoePuppet *puppet,
                                     uint32_t index,
                                     bool *out);
 
+// 既定の読み込みの上限 (上限を指定しない関数が使う値)。
+struct UgoeReadLimits ugoe_read_limits_default(void);
+
 // パーツ (`Model::parts`) の数。
 //
 // # Safety
@@ -913,6 +948,7 @@ UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
 //
 // バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 // 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
+// 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
 //
 // # Safety
 //
@@ -920,6 +956,21 @@ UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_create_from_bundle(const uint8_t *bytes,
                                           size_t len,
                                           struct UgoePuppet **out);
+
+// 読み込みの上限 `limits` を指定して、`.ugoe` バンドルのバイト列から `UgoePuppet` を作る (T0152)。
+//
+// `limits` が NULL なら既定値 (`ugoe_puppet_create_from_bundle` と同じ)。展開したバイトが上限を超えそうになったら
+// 展開の途中でやめて `UGOE_ERROR_LIMIT_EXCEEDED` を返す (種類は `"read_limit_exceeded"`、補足の値は `"limit"`・`"chunk"`・`"max"`)。
+// ほかは `ugoe_puppet_create_from_bundle` と同じ。
+//
+// # Safety
+//
+// `bytes` は `len` バイトの読める領域を指すこと。`limits` は NULL か `UgoeReadLimits` を読める領域を指すこと。
+// `out` は `UgoePuppet*` を書き込める領域を指すこと。
+UgoeResult ugoe_puppet_create_from_bundle_with_limits(const uint8_t *bytes,
+                                                      size_t len,
+                                                      const struct UgoeReadLimits *limits,
+                                                      struct UgoePuppet **out);
 
 // モデルの JSON (UTF-8、`len` バイト。NUL 終端は要らない) から `UgoePuppet` を作る。
 //

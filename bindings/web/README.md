@@ -3,7 +3,7 @@
 ugoe のランタイムを Web で使うための npm パッケージです。中身は次の 3 つです。
 
 - ugoe-wasm (`crates/ugoe-wasm`) の wasm と JS バインディング (`WebPuppet`) と、その TypeScript の型
-- 初期化・作成・読み込みの薄い補助 (`initRuntime`・`createPuppet`・`loadModel`・`fetchModel`)
+- 初期化・作成・読み込みの薄い補助 (`initRuntime`・`createPuppet`・`loadModel`・`fetchModel`。読み込みの上限 `LoadLimits`)
 - Web Component の `<ugoe-avatar>`
 
 WebGPU が使えれば WebGPU、使えなければ WebGL2 で描きます。ライセンスは **MIT** です
@@ -281,6 +281,37 @@ try {
 - `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
 - `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
+
+### 読み込みの上限 (T0152)
+
+置かれた環境 (メモリの少ない端末・外から来るファイルを開くページなど) に合わせて、読み込みの上限を小さくできます。
+上限はファイル形式の決まりではなく、読む側の方針です (`docs/spec/file-formats.md#読み込みの上限`)。
+
+```ts
+import { fetchModel, isLimitError, type LoadLimits, limitsJson, loadModel } from "@ugoe/runtime";
+
+const limits: LoadLimits = {
+  maxChunkDecompressed: 64 * 1024 * 1024, // 圧縮したチャンク 1 つの展開後 (バイト)。既定 256 MiB
+  maxTotalDecompressed: 256 * 1024 * 1024, // 1 つのファイルで展開するバイトの合計。既定 1 GiB
+  maxImageSide: 4096, // デコードする PNG の幅と高さ (画素)。既定 16384
+};
+try {
+  await fetchModel(puppet, "avatar.ugoe", undefined, { limits }); // loadModel(puppet, bytes, { limits }) も同じ
+  puppet.load_module(modBytes, limitsJson(limits)); // 着せ替えのモジュールは WebPuppet に JSON で渡す
+} catch (e) {
+  if (!isLimitError(e)) throw e;
+  // e.code: "read_limit_exceeded" (e.limit・e.chunk・e.max) | "image_limit_exceeded" (e.image・e.texture・e.width・e.height・e.max)
+  console.warn(`too large: ${e.code}`);
+}
+```
+
+- 書かなかった上限は既定値です。超えたときは何も変えません (前のモデルのまま)。`code` と補足の値の一覧は
+  [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの上限-t0152)。
+- `<ugoe-avatar>` では `avatar.loadLimits = limits` (属性は無い)。次の読み込み (`src`・`load()`・作り直しの読み直し) から効き、
+  超えたら `src` では `error` イベントの `detail.error`、`load()` では reject の理由が上の例外になります。
+- `loadModel` の例外は `name` が `"LoadError"`、`load_module` は `"DressUpError"` です。`isLimitError` はどちらも受けます。
+  上限の外の読み込みの失敗は、まだ `code` を持たない `Error` です (T0434)。
+- JSON のモデル (`load_json`) は展開も画像のデコードもしないので、上限は効きません。
 
 ### 届いた値で動かす (受け手)
 
