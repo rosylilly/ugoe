@@ -32,7 +32,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 import init, { WebPuppet } from "./generated/ugoe_wasm.js";
 await init();
 const puppet = await WebPuppet.create(canvas, "auto"); // "auto" | "webgpu" | "webgl2"
-puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列 (構造は load_warnings_json())
+puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列 (構造は load_warnings_json())。失敗は LoadError (code 付き)
 puppet.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);
 puppet.parameters_json();         // 値域・既定値・グループ ({"parameters": [...], "groups": [...]})
 puppet.set_parameter("AngleX", 15);
@@ -313,12 +313,49 @@ try {
 - `read_limit_exceeded` の種類と補足の値は SDK の `ugoe::limits::ReadLimitExceeded` が決め、C ABI (`UGOE_ERROR_LIMIT_EXCEEDED` と
   `ugoe_last_error_kind`・`ugoe_last_error_field`) と同じ。C ABI の補足の値は文字列で、wasm は読み込みの警告と同じく数は数にする。
   `image_limit_exceeded` は wasm だけ (C ABI は画像をデコードしない)。`src/load.rs` の `LoadError::info`。
-- `load_bundle` のほかの失敗 (壊れたファイル・コンパイルの失敗など) は、まだ `code` を持たない英語の文だけの `Error`
-  (T0434 で `name` を `"LoadError"` にそろえてコードを付ける予定。ここで決めた 2 つの `code` と補足の値はそのまま使う)。
+- `load_bundle` のほかの失敗も同じ `LoadError` で、`code` を持つ ([読み込みの失敗](#読み込みの失敗-t0434))。
 - 上限の JSON の形の誤り (知らない項目・負の値・小数) は `invalid limits: ...` の例外 (綴りの誤りで上限が黙って効かなくならないように)。
 - `load_json` は展開も画像のデコードもしないので、上限を取らない。
 - デバイスの扱える大きさ (`check_texture_sizes`) は上限とは別で、デコードの後にレンダラが検査する。
 - `@ugoe/runtime` では `loadModel(puppet, data, { limits: { maxTotalDecompressed, ... } })` と `isLimitError` (`bindings/web/src/limits.ts`)。
+
+### 読み込みの失敗 (T0434)
+
+```js
+try {
+  puppet.load_bundle(bytes); // load_json(json) も同じ
+} catch (e) {
+  // e.name === "LoadError"。e.message は英語の文 (安定した値ではない)。言い換えは e.code で行う
+  if (e.code === "unsupported_version") console.warn(`version ${e.found} > ${e.supported}`);
+}
+```
+
+`load_json` / `load_bundle` の失敗は、すべて `name` が `"LoadError"` で `code` と補足の値を持つ `Error`。失敗したときは何も変えない
+(前のモデルのまま)。補足の値は、番号と大きさが数、ほかは文字列 (読み込みの警告・着せ替えの失敗と同じ)。
+
+| `code` | 補足の値 | いつ |
+| --- | --- | --- |
+| `invalid_file` | なし | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の構文や型の誤り・チャンクの誤りなど)。細かい理由は文にだけある |
+| `unsupported_version` | `found` (ファイルの版)・`supported` (読める版) | ファイルの版 (スキーマかコンテナ) が新しすぎる |
+| `unsupported_features` | `features` (知らない必須の機能の ID を `", "` でつないだ文字列) | 知らない必須の機能を宣言している |
+| `invalid_model` | `errors` (検査のエラーの数) | モデル・物理・モーション・表情が検査に通らない。個々のエラーは文にだけある |
+| `compile` | なし | 検査は通ったが評価できない構造 |
+| `read_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | 展開の上限を超えた |
+| `image_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | PNG の一辺が `max_image_side` を超えた |
+| `invalid_texture` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号) | PNG をデコードできない |
+| `texture_too_large` | `image`・`texture`・`width`・`height`・`max` (デバイスの一辺の上限。画素) | 画像がデバイス (`max_texture_dimension_2d`) で扱える大きさを超える |
+| `texture` | なし | テクスチャをレンダラに登録できない (着せ替えの `texture` と同じ) |
+| `device_lost` | なし | GPU のデバイスを失った (`is_lost()`)。新しい canvas で作り直す |
+
+- コードは公開の約束として扱い、名前を変えない (意味が変わるなら新しいコードにする)。知らない `code` (将来の種類) は `message` を出せばよい。
+- `invalid_file`・`compile`・`read_limit_exceeded` は C ABI の `ugoe_last_error_kind` と同じ値 (着せ替えの `invalid_file`・`compile` と
+  同じ意味)。ほかは wasm だけ (C ABI のモデルの読み込みは、上限のほかに種類を持たない)。対応は `src/load.rs` の `LoadError::info` と
+  そのテスト (`every_load_error_has_a_code`)。
+- `.ugoemod` の読み込み (`load_module`) の失敗は `DressUpError` のまま: 上限を超えたものだけ上の 2 つのコードで、ほかは `invalid_file`
+  (C ABI と同じ)。
+- 上限の JSON の形の誤り (`invalid limits: ...`) と、`WebPuppet.create` の失敗は `code` を持たない `Error` (組み込みの誤りで、利用者に見せる文ではない)。
+- 使う側: ビューアとスタジオは `@ugoe/player` が今の言語に訳す (`packages/player/src/loadError.ts`)。TypeScript の型は npm の
+  `@ugoe/runtime` の `UgoeLoadError`・`isLoadError` (`bindings/web/src/limits.ts`)。コードを増やしたら、どちらも同じ PR で直す。
 
 ## ビルド
 
@@ -347,3 +384,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0123 (着せ替え: `.ugoemod` の読み込みと付け外し)
 - T0418 (描画結果の読み戻しと評価の結果の取り出し)
 - T0152 (読み込みの上限)
+- T0434 (読み込みの失敗のコード)

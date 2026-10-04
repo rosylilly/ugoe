@@ -7,6 +7,7 @@ export * from "./dressUpMemory";
 export * from "./drivers";
 export * from "./follower";
 export * from "./lighting";
+export * from "./loadError";
 export * from "./loadWarnings";
 export * from "./modelFile";
 export * from "./modelMemory";

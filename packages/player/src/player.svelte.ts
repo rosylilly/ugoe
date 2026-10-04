@@ -57,6 +57,7 @@ import {
   saveLightMarkers,
   toLightingJson,
 } from "./lighting";
+import { describeLoadError } from "./loadError";
 import { parseLoadWarnings } from "./loadWarnings";
 import { detectModelKind, type FileLocation, type ModelFile, type ModuleToOpen } from "./modelFile";
 import { type ModelIdentity, modelIdentity, sameModel } from "./modelMemory";
@@ -352,7 +353,7 @@ export class Player {
           parseLoadWarnings(puppet.load_warnings_json()),
         );
       } catch (e) {
-        this.error = `${file.name}: ${message(e)}`;
+        this.error = `${file.name}: ${describeLoadError(e)}`;
         // 前のモデルが残るので、除いたモジュールを戻す。GPU を作り直したときも前のモデルを読み直す (`#file` は変えない)。
         if (previous !== null) this.#reloadModules(previous.files, previous.attached);
         return;

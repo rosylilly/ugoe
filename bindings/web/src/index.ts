@@ -25,11 +25,15 @@ export {
 } from "./avatar.js";
 export {
   isLimitError,
+  isLoadError,
   type LoadLimits,
   limitsJson,
   type UgoeLimitError,
   type UgoeLimitErrorCode,
   type UgoeLimitErrorFields,
+  type UgoeLoadError,
+  type UgoeLoadErrorCode,
+  type UgoeLoadErrorFields,
 } from "./limits.js";
 export {
   type CreatePuppetOptions,

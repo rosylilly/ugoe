@@ -1,7 +1,7 @@
 // 読み込みの上限の JSON と、上限を超えた例外の見分け (T0152)。
 
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { isLimitError, limitsJson } from "./limits.js";
+import { isLimitError, isLoadError, limitsJson } from "./limits.js";
 
 /** wasm-bindgen が投げる読み込みの例外と同じ形 (`name`・`code`・補足の値を持つ `Error`)。 */
 function codedError(name: string, code: string, fields: Record<string, unknown> = {}): Error {
@@ -55,5 +55,26 @@ describe("isLimitError", () => {
     expect(isLimitError(new Error("read_limit_exceeded"))).toBe(false);
     expect(isLimitError({ name: "LoadError", code: "read_limit_exceeded" })).toBe(false);
     expect(isLimitError(null)).toBe(false);
+  });
+});
+
+describe("isLoadError", () => {
+  it("accepts every load failure of load_json and load_bundle", () => {
+    const e: unknown = codedError("LoadError", "unsupported_version", { found: 9, supported: 3 });
+    if (!isLoadError(e)) throw new Error("not a load error");
+    expectTypeOf(e.found).toEqualTypeOf<number | undefined>();
+    expect([e.code, e.found, e.supported]).toEqual(["unsupported_version", 9, 3]);
+    // 上限を超えたものも `LoadError` (isLimitError でさらに絞れる)。
+    const limit = codedError("LoadError", "image_limit_exceeded", { image: "texture", texture: 0 });
+    expect(isLoadError(limit) && isLimitError(limit)).toBe(true);
+    // 知らないコード (新しい版のランタイム) も受ける。
+    expect(isLoadError(codedError("LoadError", "future_code"))).toBe(true);
+  });
+
+  it("rejects other errors", () => {
+    expect(isLoadError(codedError("DressUpError", "invalid_file"))).toBe(false);
+    expect(isLoadError(new Error("invalid_file"))).toBe(false);
+    expect(isLoadError({ name: "LoadError", code: "invalid_file" })).toBe(false);
+    expect(isLoadError(null)).toBe(false);
   });
 });

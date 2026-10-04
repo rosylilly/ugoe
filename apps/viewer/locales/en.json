@@ -86,10 +86,6 @@
     },
     "dialog": {
       "failed": "The file dialog failed ({{reason}})"
-    },
-    "format": {
-      "chunk_limit_exceeded": "The file was not read: chunk {{chunk}} decompresses to more than the limit of {{max}} bytes",
-      "total_limit_exceeded": "The file was not read: its compressed chunks decompress to more than the limit of {{max}} bytes in total (at chunk {{chunk}})"
     }
   },
   "files": {

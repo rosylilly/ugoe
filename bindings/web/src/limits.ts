@@ -1,4 +1,4 @@
-// 読み込みの上限 (T0152) と、上限を超えたときの例外の型。
+// 読み込みの上限 (T0152) と、上限を超えたときの例外の型。読み込みの失敗 (`LoadError`。T0434) の型もここに置く。
 //
 // 上限はファイル形式の決まりではなく、組み込む側の方針 (docs/spec/file-formats.md#読み込みの上限)。
 // `loadModel`・`fetchModel`・`<ugoe-avatar>` の `loadLimits` で指定し、`WebPuppet` の `load_bundle(bytes, limitsJson)`・
@@ -65,4 +65,50 @@ export function isLimitError(e: unknown): e is UgoeLimitError {
   if (e.name !== "LoadError" && e.name !== "DressUpError") return false;
   const code = (e as { code?: unknown }).code;
   return typeof code === "string" && LIMIT_CODES.includes(code);
+}
+
+/**
+ * 読み込み (`load_json` / `load_bundle`。`loadModel`・`fetchModel`) の失敗の種類 (`LoadError` の `code`)。
+ * 一覧と意味は crates/ugoe-wasm/README.md#読み込みの失敗-t0434。
+ */
+export type UgoeLoadErrorCode =
+  | "invalid_file"
+  | "unsupported_version"
+  | "unsupported_features"
+  | "invalid_model"
+  | "compile"
+  | UgoeLimitErrorCode
+  | "invalid_texture"
+  | "texture_too_large"
+  | "texture"
+  | "device_lost";
+
+/** 読み込みの失敗の補足の値 (種類によって、あるものだけを持つ)。上限を超えたときの値は `UgoeLimitErrorFields`。 */
+export interface UgoeLoadErrorFields extends UgoeLimitErrorFields {
+  /** `unsupported_version`: ファイルの版。 */
+  found?: number;
+  /** `unsupported_version`: 読める版。 */
+  supported?: number;
+  /** `unsupported_features`: 知らない必須の機能の ID を `", "` でつないだもの。 */
+  features?: string;
+  /** `invalid_model`: 検査のエラーの数。 */
+  errors?: number;
+}
+
+/**
+ * 読み込みの失敗 (`name` が `"LoadError"`)。`isLoadError` で見分ける。`code` は知らない値 (新しい版のランタイムの種類) も
+ * ありうる。`message` は英語の文で、安定した値ではない。`texture_too_large` の `max` はデバイスの一辺の上限 (画素)。
+ */
+export interface UgoeLoadError extends Error, UgoeLoadErrorFields {
+  name: "LoadError";
+  code: UgoeLoadErrorCode | (string & {});
+}
+
+/** `e` が読み込みの失敗 (`LoadError`) か。 */
+export function isLoadError(e: unknown): e is UgoeLoadError {
+  return (
+    e instanceof Error &&
+    e.name === "LoadError" &&
+    typeof (e as { code?: unknown }).code === "string"
+  );
 }

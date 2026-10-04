@@ -24,12 +24,12 @@ describe("command errors", () => {
   it("formats numbers in the current language", () => {
     setLocale("en");
     const error = {
-      code: "format.chunk_limit_exceeded",
-      args: { chunk: "TEXR", max: 268435456 },
-      message: "chunk TEXR exceeds the limit",
+      code: "file.too_large",
+      args: { path: "/m/a.ugoe", size: 600000000, max: 536870912 },
+      message: "/m/a.ugoe is too large",
     };
     expect(messageText(error)).toBe(
-      "The file was not read: chunk TEXR decompresses to more than the limit of 268,435,456 bytes",
+      "/m/a.ugoe is too large to open (600,000,000 bytes; the limit is 536,870,912 bytes)",
     );
   });
 

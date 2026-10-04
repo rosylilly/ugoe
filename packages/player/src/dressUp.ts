@@ -1,6 +1,7 @@
 // 着せ替え (T0706): WebPuppet の着せ替えの口 (crates/ugoe-wasm/README.md#着せ替え-t0123) が返す値の読み取りと、
 // 利用者に見せる文 (名前空間 `player` のカタログ)。付け外しそのものは player.svelte.ts が行う。
 import { t } from "./i18n";
+import { describeLimitError } from "./loadError";
 import {
   describeLoadWarning,
   type LoadWarning,
@@ -195,7 +196,8 @@ const DRESS_UP_ERROR_KEYS = {
  * 原因が細かいもの (合成・コンパイル・物理の検証など) は、wasm の文 (英語) を括弧で添える (`detail`)。
  */
 export function describeDressUpError(e: unknown): string {
-  return describeDressUpInfo(dressUpErrorInfo(e));
+  // 読み込みの上限を超えたもの (`load_module`。T0152) は、モデルの読み込みと同じ文にする。
+  return describeLimitError(e) ?? describeDressUpInfo(dressUpErrorInfo(e));
 }
 
 /** `describeDressUpError` の、読み取った後の中身から文を作る部分 (外したモジュールの `error` にも使う)。 */

@@ -313,8 +313,32 @@ try {
 - `<ugoe-avatar>` では `avatar.loadLimits = limits` (属性は無い)。次の読み込み (`src`・`load()`・作り直しの読み直し) から効き、
   超えたら `src` では `error` イベントの `detail.error`、`load()` では reject の理由が上の例外になります。
 - `loadModel` の例外は `name` が `"LoadError"`、`load_module` は `"DressUpError"` です。`isLimitError` はどちらも受けます。
-  上限の外の読み込みの失敗は、まだ `code` を持たない `Error` です (T0434)。
+  上限の外の読み込みの失敗も `LoadError` で `code` を持ちます (下の「読み込みの失敗」)。
 - JSON のモデル (`load_json`) は展開も画像のデコードもしないので、上限は効きません。
+
+### 読み込みの失敗
+
+`loadModel`・`fetchModel` (`load_json` / `load_bundle`) の失敗は、すべて `name` が `"LoadError"` で `code` と補足の値を持つ例外です
+(T0434)。利用者に見せる文は `code` から作ります (`message` は英語の文で、安定した値ではありません)。
+
+```js
+import { isLoadError, loadModel } from "@ugoe/runtime";
+
+try {
+  loadModel(puppet, bytes);
+} catch (e) {
+  if (!isLoadError(e)) throw e;
+  // e.code: "invalid_file" | "unsupported_version" (e.found・e.supported) | "unsupported_features" (e.features) |
+  // "invalid_model" (e.errors) | "compile" | "read_limit_exceeded" | "image_limit_exceeded" |
+  // "invalid_texture" (e.image・e.texture) | "texture_too_large" (e.image・e.texture・e.width・e.height・e.max) |
+  // "texture" | "device_lost"
+  showError(e.code === "unsupported_version" ? "このファイルは新しい版で作られています" : e.message);
+}
+```
+
+- 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの失敗-t0434)。型は `UgoeLoadError`・`UgoeLoadErrorCode`。
+  新しい版のランタイムは知らない `code` を返しうるので、知らないものは `message` を出してください。
+- 失敗したときは何も変えません (前のモデルのまま)。
 
 ### 届いた値で動かす (受け手)
 

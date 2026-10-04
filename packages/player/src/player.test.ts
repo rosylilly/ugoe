@@ -114,7 +114,12 @@ function fakePuppet(options: FakeOptions = {}) {
     is_lost: () => false,
     has_model: () => state.hasModel,
     load_bundle: (bytes: Uint8Array) => {
-      if (options.failLoad) throw new Error("broken");
+      // ugoe-wasm の `LoadError` と同じ形 (`name`・`code`)。
+      if (options.failLoad)
+        throw Object.assign(new Error("not a ugoe file"), {
+          name: "LoadError",
+          code: "invalid_file",
+        });
       loaded.push(bytes);
       state.hasModel = true;
       state.playing = false;
@@ -362,7 +367,10 @@ describe("Player", () => {
     const broken = fakePuppet({ failLoad: true });
     first.puppet.load_bundle = broken.puppet.load_bundle;
     await p.load(bundle("broken.ugoe", 2));
-    expect(p.error).toContain("broken.ugoe");
+    // 読み込みの失敗はコードから訳す (T0434)。
+    expect(p.error).toBe(
+      `broken.ugoe: ${t("loadError.invalidFile", { detail: "not a ugoe file" })}`,
+    );
     await p.load({ name: "notes.txt", bytes: new Uint8Array([1, 2, 3]) });
 
     pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost"));

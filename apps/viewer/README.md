@@ -177,8 +177,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | `dialog.failed` | `reason` | ダイアログで選ばれたものをパスにできない |
 | `internal` | `reason` | 読み書きのスレッドの処理が終わらなかった (パニック。スタジオと同じコード) |
 
-カタログには、読み込みの上限のコード `format.chunk_limit_exceeded`・`format.total_limit_exceeded` (T0150、引数 `chunk`・`max`) の訳も置く。
-いまの wasm (`ugoe-wasm`) は読み込みのエラーを英語の文で返すので、このコードがビューアに届くのは、wasm がコードを返すようになってから。
+モデルの読み込みの失敗 (wasm の `LoadError`。読み込みの上限を超えたものを含む) は、コマンドのエラーではなく `@ugoe/player` が
+`code` から訳す (`packages/player/src/loadError.ts`。T0434)。ビューアのカタログには置かない (スタジオと同じ訳を使うため)。
 
 ## 画像の保存 (T0420)
 

@@ -81,6 +81,23 @@
     "unknownOptionalFeature": "このファイルは新しい版の機能「{{feature}}」を使っています。この版では代わりの方法で表示しています",
     "unknownValue": "このファイルには、この版が知らない値があります ({{path}})。既定の扱いで表示しています"
   },
+  "loadError": {
+    "invalidFile": "モデルとして読めないファイルです ({{detail}})",
+    "unsupportedVersion": "新しい版の ugoe で保存されたファイルです (ファイルの版 {{found}}。このアプリが読めるのは版 {{supported}} まで)。アプリを更新してから開いてください",
+    "unsupportedFeatures": "このアプリが対応していない機能を使ったファイルです ({{features}})。アプリを更新してから開いてください",
+    "invalidModel": "ファイルのモデルが正しくありません ({{detail}})",
+    "compile": "このモデルを組み立てられません ({{detail}})",
+    "readLimitExceeded": "ファイルを開きませんでした: チャンク {{chunk}} を展開すると上限の {{max}} バイトを超えます",
+    "readLimitExceededTotal": "ファイルを開きませんでした: 圧縮したチャンクを展開すると、合計で上限の {{max}} バイトを超えます (チャンク {{chunk}} で)",
+    "imageLimitExceeded": "ファイルを開きませんでした: テクスチャ {{texture}} の画像が {{width}} × {{height}} ピクセルで、一辺の上限の {{max}} ピクセルを超えます",
+    "imageLimitExceededNormalMap": "ファイルを開きませんでした: テクスチャ {{texture}} の法線マップが {{width}} × {{height}} ピクセルで、一辺の上限の {{max}} ピクセルを超えます",
+    "invalidTexture": "テクスチャ {{texture}} の画像をデコードできません ({{detail}})",
+    "invalidTextureNormalMap": "テクスチャ {{texture}} の法線マップをデコードできません ({{detail}})",
+    "textureTooLarge": "テクスチャ {{texture}} の画像が {{width}} × {{height}} ピクセルで、この GPU で使える大きさ (一辺 {{max}} ピクセル) を超えます",
+    "textureTooLargeNormalMap": "テクスチャ {{texture}} の法線マップが {{width}} × {{height}} ピクセルで、この GPU で使える大きさ (一辺 {{max}} ピクセル) を超えます",
+    "texture": "テクスチャを登録できません ({{detail}})",
+    "deviceLost": "GPU が止まりました。描き直すには、アプリを起動し直してください (ブラウザではページを読み込み直してください)"
+  },
   "errors": {
     "wasmMissing": "ugoe-wasm がビルドされていません",
     "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",

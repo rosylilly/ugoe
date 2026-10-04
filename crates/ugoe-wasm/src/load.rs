@@ -5,16 +5,19 @@
 //! ブラウザのデコーダは色空間の変換やアルファの扱いが実装ごとに異なるので使わない。
 
 use serde::{Deserialize, Serialize};
-use ugoe::FieldValue;
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 use ugoe::model::physics::PhysicsSettings;
+use ugoe::render::RenderError;
+use ugoe::{DressUpError, FieldValue};
 use ugoe_format::image::{ImageError, ImageLimits};
 
 use crate::animation::Library;
 use ugoe::model::{Model, Parameter, ParameterGroup};
 use ugoe::runtime::ModelInstance;
 
+/// 読み込みの失敗 (`load_json` / `load_bundle` と、`.ugoemod` の読み込み)。JS には `name` が `"LoadError"` の `Error` で、
+/// `code` と補足の値は [`LoadError::info`] (`crates/ugoe-wasm/README.md#読み込みの失敗-t0434`)。
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     #[error(transparent)]
@@ -43,52 +46,171 @@ pub enum LoadError {
         height: u32,
         max: u32,
     },
+    /// レンダラがテクスチャを受け付けない (デバイスの扱える大きさを超えるなど)。何も変える前に検査する。
+    #[error(transparent)]
+    Render(#[from] RenderError),
+    /// テクスチャのレンダラへの登録に失敗した。
+    #[error("registering the textures failed: {0}")]
+    Register(String),
+    /// GPU のデバイスを失った (`WebPuppet::is_lost`)。新しい canvas で作り直す必要がある。
+    #[error("the GPU device was lost")]
+    DeviceLost,
 }
 
 impl LoadError {
     /// 読み込みの上限を超えたときの種類 (JS の `Error` の `code`)。展開の上限は SDK の値 (C ABI と同じ)。
     pub const IMAGE_LIMIT_EXCEEDED: &'static str = "image_limit_exceeded";
 
-    /// 機械が読む種類と補足の値。今は読み込みの上限を超えたものだけで、ほかの失敗は `None`
-    /// (読み込みのすべての失敗にコードを付けるのは T0434)。
+    /// 機械が読む種類と補足の値 (JS の `Error` の `code` とプロパティ)。値は組み込み先が照らし合わせるので変えない。
+    /// `invalid_file`・`compile`・`read_limit_exceeded` は C ABI の `ugoe_last_error_kind` と同じ値。
     ///
+    /// - `invalid_file`: ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど)。
+    /// - `unsupported_version`: `found` (ファイルの版)・`supported` (読める版)。
+    /// - `unsupported_features`: `features` (知らない必須の機能の ID を `", "` でつないだもの)。
+    /// - `invalid_model`: `errors` (検査のエラーの数。モデル・物理・モーション・表情の検査)。
+    /// - `compile`: 評価できない構造。
     /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
     /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素)。
-    pub fn info(&self) -> Option<ErrorInfo> {
-        let image = |image: &str, index: usize, width: u32, height: u32, max: u32| ErrorInfo {
-            code: Self::IMAGE_LIMIT_EXCEEDED,
+    /// - `invalid_texture`: `image`・`texture`。PNG をデコードできない。
+    /// - `texture_too_large`: `image_limit_exceeded` と同じ補足の値。デバイスの扱える一辺 (`max`) を超える。
+    /// - `texture`: テクスチャをレンダラに登録できない (着せ替えの `texture` と同じ)。
+    /// - `device_lost`: GPU のデバイスを失った。
+    ///
+    /// 補足の値は、番号と大きさが数 ([`FieldValue::Index`] と同じ)、ほかが文字列 ([`FieldValue::Text`])。
+    pub fn info(&self) -> ErrorInfo {
+        use FieldValue::{Index, Text};
+        let image = |code, image, index: usize, width: u32, height: u32, max: u32| ErrorInfo {
+            code,
             fields: vec![
-                ("image", image.into()),
-                ("texture", index.into()),
+                ("image", field_json(Text(image))),
+                ("texture", field_json(Index(index))),
                 ("width", width.into()),
                 ("height", height.into()),
                 ("max", max.into()),
             ],
         };
+        let decode = |image, index| ErrorInfo {
+            code: "invalid_texture",
+            fields: vec![
+                ("image", field_json(Text(image))),
+                ("texture", field_json(Index(index))),
+            ],
+        };
+        let plain = |code| ErrorInfo {
+            code,
+            fields: Vec::new(),
+        };
         match self {
-            Self::Format(e) => ReadLimitExceeded::from_error(e).map(|exceeded| ErrorInfo {
-                code: ReadLimitExceeded::CODE,
-                fields: vec![
-                    ("limit", exceeded.limit.as_str().into()),
-                    ("chunk", exceeded.chunk.to_string().into()),
-                    ("max", exceeded.max.into()),
-                ],
-            }),
+            Self::Format(e) => format_error_info(e),
+            Self::Compile(ugoe::runtime::CompileError::Invalid(errors)) => ErrorInfo {
+                code: "invalid_model",
+                fields: vec![("errors", field_json(Index(errors.len())))],
+            },
+            Self::Compile(_) => plain("compile"),
+            &Self::Texture { index, .. } => decode("texture", index),
+            &Self::NormalMap { index, .. } => decode("normal_map", index),
             &Self::TextureTooLarge {
                 index,
                 width,
                 height,
                 max,
-            } => Some(image("texture", index, width, height, max)),
+            } => image(
+                Self::IMAGE_LIMIT_EXCEEDED,
+                "texture",
+                index,
+                width,
+                height,
+                max,
+            ),
             &Self::NormalMapTooLarge {
                 index,
                 width,
                 height,
                 max,
-            } => Some(image("normal_map", index, width, height, max)),
-            _ => None,
+            } => image(
+                Self::IMAGE_LIMIT_EXCEEDED,
+                "normal_map",
+                index,
+                width,
+                height,
+                max,
+            ),
+            &Self::Render(RenderError::TextureTooLarge {
+                index,
+                width,
+                height,
+                max,
+            }) => image(
+                "texture_too_large",
+                "texture",
+                index as usize,
+                width,
+                height,
+                max,
+            ),
+            &Self::Render(RenderError::NormalMapTooLarge {
+                index,
+                width,
+                height,
+                max,
+            }) => image(
+                "texture_too_large",
+                "normal_map",
+                index as usize,
+                width,
+                height,
+                max,
+            ),
+            Self::Render(_) | Self::Register(_) => plain("texture"),
+            Self::DeviceLost => plain("device_lost"),
         }
     }
+
+    /// 読み込みの上限 ([`LoadLimits`]) を超えた失敗か (`read_limit_exceeded`・`image_limit_exceeded`)。
+    /// ファイルが壊れているとは限らない (上限を上げれば読めることがある)。
+    pub fn exceeds_limit(&self) -> bool {
+        matches!(
+            self,
+            Self::TextureTooLarge { .. } | Self::NormalMapTooLarge { .. }
+        ) || matches!(self, Self::Format(e) if ReadLimitExceeded::from_error(e).is_some())
+    }
+}
+
+/// ファイルの読み込みの失敗 ([`ugoe::format::FormatError`]) の種類と補足の値 ([`LoadError::info`])。
+fn format_error_info(error: &ugoe::format::FormatError) -> ErrorInfo {
+    use FieldValue::{Index, Text};
+    use ugoe::format::FormatError as E;
+    if let Some(exceeded) = ReadLimitExceeded::from_error(error) {
+        return ErrorInfo {
+            code: ReadLimitExceeded::CODE,
+            fields: vec![
+                ("limit", field_json(Text(exceeded.limit.as_str()))),
+                ("chunk", field_json(Text(&exceeded.chunk.to_string()))),
+                // バイト数は wasm32 の `usize` に収まらないことがあるので、`Index` を通さずに数にする。
+                ("max", exceeded.max.into()),
+            ],
+        };
+    }
+    if let Some(errors) = error.validation_errors() {
+        return ErrorInfo {
+            code: "invalid_model",
+            fields: vec![("errors", field_json(Index(errors.len())))],
+        };
+    }
+    let (code, fields) = match error {
+        &E::UnsupportedVersion { found, supported }
+        | &E::UnsupportedContainerVersion { found, supported } => (
+            "unsupported_version",
+            vec![("found", found.into()), ("supported", supported.into())],
+        ),
+        E::UnsupportedFeatures(features) => (
+            "unsupported_features",
+            vec![("features", field_json(Text(&features.join(", "))))],
+        ),
+        // 壊れたファイル (マジック・チャンク表・圧縮・JSON・MessagePack・テクスチャの数など)。細かい理由は文にある。
+        _ => (DressUpError::INVALID_FILE, Vec::new()),
+    };
+    ErrorInfo { code, fields }
 }
 
 /// JS に渡すエラーの中身: 機械が読む `code` と、補足の値 (`module`・`slot`・`max` など)。
@@ -692,7 +814,7 @@ mod tests {
             ..LoadLimits::default()
         };
         let err = from_bundle_with(&bytes, limits).unwrap_err();
-        let info = err.info().unwrap();
+        let info = err.info();
         assert_eq!(info.code, "read_limit_exceeded");
         let field = |key: &str| {
             info.fields
@@ -706,8 +828,7 @@ mod tests {
         assert_eq!(field("max"), 1);
         assert!(field("chunk").is_string());
         assert!(from_bundle_with(&bytes, LoadLimits::default()).is_ok());
-        // 上限の外の失敗は、まだ種類を持たない (T0434)。
-        assert!(from_bundle(b"not a bundle").unwrap_err().info().is_none());
+        assert!(err.exceeds_limit());
     }
 
     /// PNG の一辺の上限を指定でき、超えるテクスチャと法線マップは画素を確保する前に種類付きの失敗になる。
@@ -740,8 +861,9 @@ mod tests {
                 max: 1,
             }
         ));
+        assert!(err.exceeds_limit());
         assert_eq!(
-            err.info().unwrap(),
+            err.info(),
             ErrorInfo {
                 code: "image_limit_exceeded",
                 fields: vec![
@@ -761,7 +883,114 @@ mod tests {
             err.to_string(),
             "texture 0 is 1x3, larger than the limit 2x2"
         );
-        assert_eq!(err.info().unwrap().fields[0], ("image", "texture".into()));
+        assert_eq!(err.info().fields[0], ("image", "texture".into()));
+    }
+
+    /// 読み込みのすべての失敗が `code` と補足の値を持つ (T0434)。表は README の「読み込みの失敗」。
+    #[test]
+    fn every_load_error_has_a_code() {
+        use ugoe::format::FormatError;
+        use ugoe::model::validate::ValidationError;
+        use ugoe::runtime::CompileError;
+        let validation = || {
+            vec![ValidationError::InvalidValue {
+                field: "a".into(),
+                value: -1.0,
+                expected: ">= 0",
+            }]
+        };
+        let info =
+            |code, fields: Vec<(&'static str, serde_json::Value)>| ErrorInfo { code, fields };
+        let cases: Vec<(LoadError, ErrorInfo)> = vec![
+            (
+                from_bundle(b"not a bundle").unwrap_err(),
+                info("invalid_file", vec![]),
+            ),
+            (from_json("{").unwrap_err(), info("invalid_file", vec![])),
+            (
+                FormatError::UnsupportedVersion {
+                    found: 99,
+                    supported: 3,
+                }
+                .into(),
+                info(
+                    "unsupported_version",
+                    vec![("found", 99.into()), ("supported", 3.into())],
+                ),
+            ),
+            (
+                FormatError::UnsupportedFeatures(vec!["x.a".into(), "x.b".into()]).into(),
+                info(
+                    "unsupported_features",
+                    vec![("features", "x.a, x.b".into())],
+                ),
+            ),
+            (
+                FormatError::InvalidPhysics(validation()).into(),
+                info("invalid_model", vec![("errors", 1.into())]),
+            ),
+            (
+                CompileError::Invalid(validation()).into(),
+                info("invalid_model", vec![("errors", 1.into())]),
+            ),
+            (
+                CompileError::Unsupported("zero-row warp").into(),
+                info("compile", vec![]),
+            ),
+            (
+                LoadError::NormalMap {
+                    index: 2,
+                    message: "broken".into(),
+                },
+                info(
+                    "invalid_texture",
+                    vec![("image", "normal_map".into()), ("texture", 2.into())],
+                ),
+            ),
+            (
+                RenderError::TextureTooLarge {
+                    index: 1,
+                    width: 5,
+                    height: 6,
+                    max: 4,
+                }
+                .into(),
+                info(
+                    "texture_too_large",
+                    vec![
+                        ("image", "texture".into()),
+                        ("texture", 1.into()),
+                        ("width", 5.into()),
+                        ("height", 6.into()),
+                        ("max", 4.into()),
+                    ],
+                ),
+            ),
+            (
+                RenderError::MissingTexture(0).into(),
+                info("texture", vec![]),
+            ),
+            (LoadError::Register("full".into()), info("texture", vec![])),
+            (LoadError::DeviceLost, info("device_lost", vec![])),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.info(), expected, "{error}");
+            assert!(!error.exceeds_limit(), "{error}");
+        }
+        // デコードできない PNG は、どの画像の何番かを持つ。
+        let mut bundle = Bundle::new(fixtures::single_quad());
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Png,
+            bytes: vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0],
+        }];
+        let err = from_bundle(&write_bundle(&bundle).unwrap()).unwrap_err();
+        assert_eq!(
+            err.info(),
+            info(
+                "invalid_texture",
+                vec![("image", "texture".into()), ("texture", 0.into())],
+            )
+        );
     }
 
     #[test]

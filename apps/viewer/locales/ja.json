@@ -85,10 +85,6 @@
     },
     "dialog": {
       "failed": "ファイルのダイアログが失敗しました ({{reason}})"
-    },
-    "format": {
-      "chunk_limit_exceeded": "ファイルを読みませんでした。チャンク {{chunk}} を展開すると上限の {{max}} バイトを超えます",
-      "total_limit_exceeded": "ファイルを読みませんでした。圧縮したチャンクを展開すると、合計が上限の {{max}} バイトを超えます (チャンク {{chunk}} で)"
     }
   },
   "files": {

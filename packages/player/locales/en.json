@@ -81,6 +81,23 @@
     "unknownOptionalFeature": "This file uses the feature \"{{feature}}\" from a newer version. This version shows it in another way.",
     "unknownValue": "This file has a value that this version does not know ({{path}}). It is shown with the default handling."
   },
+  "loadError": {
+    "invalidFile": "This file cannot be read as a model ({{detail}}).",
+    "unsupportedVersion": "This file was saved by a newer version of ugoe (file version {{found}}; this app reads up to version {{supported}}). Update the app to open it.",
+    "unsupportedFeatures": "This file uses features that this app does not support ({{features}}). Update the app to open it.",
+    "invalidModel": "The model in this file is not valid ({{detail}}).",
+    "compile": "Cannot build this model ({{detail}}).",
+    "readLimitExceeded": "The file was not opened: chunk {{chunk}} decompresses to more than the limit of {{max}} bytes.",
+    "readLimitExceededTotal": "The file was not opened: its compressed chunks decompress to more than the limit of {{max}} bytes in total (at chunk {{chunk}}).",
+    "imageLimitExceeded": "The file was not opened: texture {{texture}} is {{width}} × {{height}} pixels, larger than the limit of {{max}} pixels per side.",
+    "imageLimitExceededNormalMap": "The file was not opened: the normal map of texture {{texture}} is {{width}} × {{height}} pixels, larger than the limit of {{max}} pixels per side.",
+    "invalidTexture": "The image of texture {{texture}} cannot be decoded ({{detail}}).",
+    "invalidTextureNormalMap": "The normal map of texture {{texture}} cannot be decoded ({{detail}}).",
+    "textureTooLarge": "Texture {{texture}} is {{width}} × {{height}} pixels, larger than this GPU can use ({{max}} pixels per side).",
+    "textureTooLargeNormalMap": "The normal map of texture {{texture}} is {{width}} × {{height}} pixels, larger than this GPU can use ({{max}} pixels per side).",
+    "texture": "Cannot register the textures ({{detail}}).",
+    "deviceLost": "The GPU stopped working. Restart the app (or reload the page) to draw again."
+  },
   "errors": {
     "wasmMissing": "ugoe-wasm is not built.",
     "notModel": "{{name}}: this is not a .ugoe or JSON model or a .ugoemod module.",

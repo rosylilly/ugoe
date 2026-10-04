@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
-use crate::dress_up::{Wardrobe, attached_names};
+use crate::dress_up::{Wardrobe, WardrobeError, attached_names};
 use crate::load::{self, ErrorInfo, LoadError, LoadWarning, LoadedModel, Rgba8};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
@@ -56,13 +56,9 @@ fn coded_error(name: &str, message: &str, info: ErrorInfo) -> JsValue {
     js.into()
 }
 
-/// 読み込みの失敗を JS の値にする。上限を超えたもの (`LoadError::info` が種類を持つもの) は `name` が
-/// `"LoadError"` で `code` と補足の値を持つ `Error`、ほかは今までどおりの `Error` (コードは T0434 で付ける)。
+/// 読み込みの失敗を JS の値にする: `name` が `"LoadError"` で、`code` と補足の値 ([`LoadError::info`]) を持つ `Error`。
 fn load_error(e: LoadError) -> JsValue {
-    match e.info() {
-        Some(info) => coded_error("LoadError", &e.to_string(), info),
-        None => js_error(e).into(),
-    }
+    coded_error("LoadError", &e.to_string(), e.info())
 }
 
 /// `limits_json` を読む (`load_bundle` / `load_module`)。形の誤りは例外。
@@ -274,8 +270,12 @@ impl WebPuppet {
     /// すでにモデルがあれば置き換え、同じ ID のパラメータの値は引き継ぐ。
     /// 物理の設定・モーションと表情の一覧・段の有効無効も引き継ぐ (新しいモデルと合わない物理は外して警告する)。
     /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
-    pub fn load_json(&mut self, json: &str) -> Result<Vec<String>, JsError> {
-        self.load(load::from_json(json).map_err(js_error)?)
+    ///
+    /// 失敗は `name` が `"LoadError"` の `Error` で、`code` と補足の値を持つ (README の「読み込みの失敗」)。何も変えない。
+    pub fn load_json(&mut self, json: &str) -> Result<Vec<String>, JsValue> {
+        load::from_json(json)
+            .and_then(|loaded| self.load(loaded))
+            .map_err(load_error)
     }
 
     /// `.ugoe` バンドルを読む (PNG テクスチャをデコードする)。戻り値は警告の一覧。
@@ -285,16 +285,19 @@ impl WebPuppet {
     /// 付けていた着せ替えのモジュールは付け直す (付けられないものは外して警告する)。
     ///
     /// `limits_json` は読み込みの上限 `{"max_chunk_decompressed"?, "max_total_decompressed"?, "max_image_side"?}`
-    /// (省くと既定値。T0152)。超えたら `name` が `"LoadError"` の `Error` で、`code` は `"read_limit_exceeded"` か
-    /// `"image_limit_exceeded"` (補足の値は README の「読み込みの上限」)。何も変えない。
+    /// (省くと既定値。T0152)。超えたら `code` が `"read_limit_exceeded"` か `"image_limit_exceeded"` の失敗
+    /// (補足の値は README の「読み込みの上限」)。
+    ///
+    /// 失敗は `name` が `"LoadError"` の `Error` で、`code` と補足の値を持つ (README の「読み込みの失敗」)。何も変えない。
     pub fn load_bundle(
         &mut self,
         bytes: &[u8],
         limits_json: Option<String>,
     ) -> Result<Vec<String>, JsValue> {
         let limits = load_limits(limits_json)?;
-        let loaded = load::from_bundle_with(bytes, limits).map_err(load_error)?;
-        Ok(self.load(loaded)?)
+        load::from_bundle_with(bytes, limits)
+            .and_then(|loaded| self.load(loaded))
+            .map_err(load_error)
     }
 
     /// 直前の `load_json` / `load_bundle` の警告の JSON (T0125)。戻り値の文の警告と同じ順・同じ数で、
@@ -666,9 +669,9 @@ impl WebPuppet {
 }
 
 impl WebPuppet {
-    fn load(&mut self, loaded: LoadedModel) -> Result<Vec<String>, JsError> {
+    fn load(&mut self, loaded: LoadedModel) -> Result<Vec<String>, LoadError> {
         if self.is_lost() {
-            return Err(JsError::new("the GPU device was lost"));
+            return Err(LoadError::DeviceLost);
         }
         let LoadedModel {
             model,
@@ -677,11 +680,8 @@ impl WebPuppet {
             normal_maps,
             warnings: mut load_warnings,
         } = loaded;
-        self.check_texture_sizes(&textures, &normal_maps)
-            .map_err(js_error)?;
-        let mut puppet = Puppet::new(model)
-            .map_err(LoadError::from)
-            .map_err(js_error)?;
+        self.check_texture_sizes(&textures, &normal_maps)?;
+        let mut puppet = Puppet::new(model)?;
         let library = match animation {
             Some(animation) => {
                 if let Some(physics) = animation.physics {
@@ -712,7 +712,10 @@ impl WebPuppet {
         warnings.extend(
             self.wardrobe
                 .load_base(&mut puppet, &attached, &textures, &normal_maps, &mut sink)
-                .map_err(js_error)?,
+                .map_err(|e| match e {
+                    WardrobeError::Texture(message) => LoadError::Register(message),
+                    e => LoadError::Register(e.to_string()),
+                })?,
         );
         puppet.set_motion_over_tracking(self.motion_over_tracking);
         puppet.set_tracking_kept(self.tracking_kept.iter().cloned());

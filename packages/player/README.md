@@ -21,6 +21,7 @@ src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)
 src/dressUpMemory.ts     付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
 src/loadWarnings.ts      読み込みの警告 (load_warnings_json) の読み取りと文 (T0125)
+src/loadError.ts         読み込みの失敗 (wasm の LoadError) の文 (T0434)
 src/modelFile.ts         開くファイル (ModelFile) と場所 (FileLocation)、形式の判別
 src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値を上限付きで localStorage に覚える入れ物 (T0711)
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
@@ -58,6 +59,10 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   `describe*`・`lightingLabel` などの関数と、`MOTION_PRIORITIES`・`TRACKING_GROUPS`・`PRESETS` の `label`・`title`・`name` (読むたびに引く) は、
   呼んだときの言語の文を返すので、画面のテンプレートや `$derived` の中で使えば言語の切り替えに追従する。
   `error`・`warnings`・`dressUpError`・`motionNotice` のように状態に入れた文は、作ったときの言語のまま (次に作り直すまで)。
+- モデルの読み込みの失敗は、wasm の `LoadError` の `code` と補足の値から `loadError.*` の文にして `error` に入れる
+  (`describeLoadError`。T0434。コードの一覧は `crates/ugoe-wasm/README.md#読み込みの失敗-t0434`)。原因が細かいもの (壊れたファイル・
+  検査のエラーなど) は wasm の英語の文を括弧で添え、知らないコードは英語の文のまま出す。`load_module` が上限を超えた `DressUpError`
+  (`read_limit_exceeded`・`image_limit_exceeded`) も同じ文にする。アプリ (ビューア・スタジオ) は `error` を出すだけで、訳を持たない。
 - テストは Svelte のプラグインを通す (`vitest.config.ts`。@ugoe/i18n が runes を使うため)。文を確かめるテストは `setLocale("ja")` で言語を決めてから比べる。
 
 ## 受け手のモード (T0801)

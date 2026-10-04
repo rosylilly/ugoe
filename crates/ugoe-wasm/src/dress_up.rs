@@ -388,12 +388,11 @@ fn texture_error(e: impl std::fmt::Display) -> WardrobeError {
 /// 付け外しの失敗 (`DressUpError`) と `invalid_file` は SDK の値 (`ugoe::DressUpError::code`・`fields`) を使い、
 /// C ABI と揃える (T0412)。番号の補足の値 (`texture`・`required`・`actual`・`errors`) は数にする (T0157)。`no_model`・`not_loaded`・`texture` は wasm だけのもの。
 /// 読み込みの上限を超えたものは、`invalid_file` ではなく [`LoadError::info`] の種類 (`read_limit_exceeded` など。T0152)。
+/// ほかの読み込みの失敗は、`load_bundle` の `LoadError` のように細かく分けず `invalid_file` のまま (C ABI と同じ。T0434)。
 pub fn error_info(error: &WardrobeError) -> ErrorInfo {
     let (code, fields) = match error {
-        WardrobeError::Load(e) => match e.info() {
-            Some(info) => return info,
-            None => (DressUpError::INVALID_FILE, vec![]),
-        },
+        WardrobeError::Load(e) if e.exceeds_limit() => return e.info(),
+        WardrobeError::Load(_) => (DressUpError::INVALID_FILE, vec![]),
         WardrobeError::NoModel => ("no_model", vec![]),
         WardrobeError::NotLoaded(name) => ("not_loaded", vec![("module", name.as_str().into())]),
         WardrobeError::Texture(_) => ("texture", vec![]),
