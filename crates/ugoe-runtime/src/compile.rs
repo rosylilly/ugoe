@@ -1,12 +1,11 @@
 //! オーサリング用 [`Model`] を評価しやすい形へ変換する (ID → インデックス解決、トポロジカル順序付け)。
 
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::sync::Arc;
 
 use ugoe_model::{DeformerKind, KeyformGrid, KeyformInterpolation, MaskMode, Model};
 
 use crate::blend_shape::CompiledBlendShape;
+use crate::id_index::IdIndex;
 use crate::keyform::ResolvedBinding;
 use crate::{ParamIndex, ParameterValues};
 
@@ -48,6 +47,13 @@ pub struct CompiledModel {
     pub(crate) hit_area_meshes: Vec<u32>,
     /// すべてのキーフォーム格子のうち最大の重みの個数。重みバッファの事前確保に使う。
     pub(crate) max_weights: usize,
+    /// ID → 添字の表 (`part_index` などを定数時間にする。T0146)。
+    pub(crate) part_ids: IdIndex,
+    pub(crate) deformer_ids: IdIndex,
+    pub(crate) mesh_ids: IdIndex,
+    pub(crate) hit_area_ids: IdIndex,
+    /// 既定値のパラメータ。インスタンスはこれを複製するので、ID の表を共有する。
+    pub(crate) parameters: ParameterValues,
 }
 
 #[derive(Debug)]
@@ -104,13 +110,12 @@ impl CompiledModel {
             return Err(CompileError::Invalid(errors));
         }
         let params = ParameterValues::from_model(&model);
-        let part_index = index_map(model.parts.iter().map(|p| p.id.as_str()));
-        let deformer_index = index_map(model.deformers.iter().map(|d| d.id.as_str()));
-        let mesh_index = index_map(model.meshes.iter().map(|m| m.id.as_str()));
+        let part_index = IdIndex::new(model.parts.iter().map(|p| p.id.as_str()));
+        let deformer_index = IdIndex::new(model.deformers.iter().map(|d| d.id.as_str()));
+        let mesh_index = IdIndex::new(model.meshes.iter().map(|m| m.id.as_str()));
         // validate 済みなので参照先は必ず存在する。念のため見つからなければ Invalid 相当で失敗させる。
-        let lookup = |map: &HashMap<&str, u32>, id: &str| {
+        let lookup = |map: &IdIndex, id: &str| {
             map.get(id)
-                .copied()
                 .ok_or(CompileError::Unsupported("dangling reference"))
         };
 
@@ -243,7 +248,6 @@ impl CompiledModel {
             .unwrap_or(1);
 
         Ok(Arc::new(Self {
-            model,
             parts,
             part_order,
             deformers,
@@ -253,6 +257,12 @@ impl CompiledModel {
             glues,
             hit_area_meshes,
             max_weights,
+            part_ids: part_index,
+            deformer_ids: deformer_index,
+            mesh_ids: mesh_index,
+            hit_area_ids: IdIndex::new(model.hit_areas.iter().map(|h| h.id.as_str())),
+            model,
+            parameters: params,
         }))
     }
 
@@ -263,20 +273,17 @@ impl CompiledModel {
 
     /// ID が `id` のデフォーマの添字 (`Model::deformers` のインデックス)。
     pub fn deformer_index(&self, id: &str) -> Option<usize> {
-        self.model
-            .deformers
-            .iter()
-            .position(|d| d.id.as_str() == id)
+        self.deformer_ids.get(id).map(|i| i as usize)
     }
 
     /// ID が `id` のパーツの添字 (`Model::parts` のインデックス)。
     pub fn part_index(&self, id: &str) -> Option<usize> {
-        self.model.parts.iter().position(|p| p.id.as_str() == id)
+        self.part_ids.get(id).map(|i| i as usize)
     }
 
     /// ID が `id` のメッシュの添字 (`Model::meshes` のインデックス、`drawables` と同じ並び)。
     pub fn mesh_index(&self, id: &str) -> Option<usize> {
-        self.model.meshes.iter().position(|m| m.id.as_str() == id)
+        self.mesh_ids.get(id).map(|i| i as usize)
     }
 
     /// デフォーマの評価順 (親が先のトポロジカル順、`Model::deformers` のインデックス)。
@@ -327,10 +334,7 @@ impl CompiledModel {
 
     /// ID が `id` の当たり判定の添字 (`Model::hit_areas` のインデックス)。
     pub fn hit_area_index(&self, id: &str) -> Option<usize> {
-        self.model
-            .hit_areas
-            .iter()
-            .position(|h| h.id.as_str() == id)
+        self.hit_area_ids.get(id).map(|i| i as usize)
     }
 
     /// 当たり判定 `hit_area` の判定に使うメッシュ (`Model::meshes` のインデックス)。
@@ -341,10 +345,6 @@ impl CompiledModel {
     pub fn hit_area_mesh(&self, hit_area: usize) -> usize {
         self.hit_area_meshes[hit_area] as usize
     }
-}
-
-fn index_map<K: Eq + Hash>(ids: impl Iterator<Item = K>) -> HashMap<K, u32> {
-    ids.enumerate().map(|(i, id)| (id, i as u32)).collect()
 }
 
 /// 親が先になる順序。循環がないこと (validate で検査済み) を前提にする。
@@ -491,6 +491,42 @@ mod tests {
             err.to_string(),
             format!("model failed validation: {}", errors[0])
         );
+    }
+
+    // T0146: ID → 添字の表は、モデルの並びを先頭から探した結果と同じ添字を返す。
+    #[test]
+    fn index_lookups_match_model_order() {
+        let mut models = vec![
+            ugoe_model::fixtures::dynamic_hair(),
+            ugoe_model::fixtures::nested_masks(),
+            ugoe_model::fixtures::rotation_chain(),
+        ];
+        let mut quad = ugoe_model::fixtures::single_quad();
+        quad.hit_areas.push(ugoe_model::HitArea {
+            id: "Body".into(),
+            mesh: "Quad".into(),
+        });
+        models.push(quad);
+        for model in models {
+            let compiled = CompiledModel::compile(model).unwrap();
+            let m = compiled.model();
+            for (i, p) in m.parts.iter().enumerate() {
+                assert_eq!(compiled.part_index(p.id.as_str()), Some(i));
+            }
+            for (i, d) in m.deformers.iter().enumerate() {
+                assert_eq!(compiled.deformer_index(d.id.as_str()), Some(i));
+            }
+            for (i, mesh) in m.meshes.iter().enumerate() {
+                assert_eq!(compiled.mesh_index(mesh.id.as_str()), Some(i));
+            }
+            for (i, h) in m.hit_areas.iter().enumerate() {
+                assert_eq!(compiled.hit_area_index(h.id.as_str()), Some(i));
+            }
+            assert_eq!(compiled.part_index("Missing"), None);
+            assert_eq!(compiled.deformer_index("Missing"), None);
+            assert_eq!(compiled.mesh_index("Missing"), None);
+            assert_eq!(compiled.hit_area_index("Missing"), None);
+        }
     }
 
     #[test]

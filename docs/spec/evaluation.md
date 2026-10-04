@@ -338,7 +338,7 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 ### デフォーマのワールド変換を読む
 
 エディタのギズモや座標変換のために、`ModelInstance` は直前の `update()` で評価したデフォーマのワールド変換 (3.) を公開します。
-どれも評価済みの状態を借りて読むだけで、`update()` の費用やメモリ確保は増えません。添字は `Model::deformers` / `Model::meshes` のもので、ID からは `CompiledModel::deformer_index(id)` / `mesh_index(id)` で引きます。
+どれも評価済みの状態を借りて読むだけで、`update()` の費用やメモリ確保は増えません。添字は `Model::deformers` / `Model::meshes` のもので、ID からは `CompiledModel::deformer_index(id)` / `mesh_index(id)` で引きます。ID からの引き当て (`part_index`・`hit_area_index`・`ParameterValues::index_of` も) はコンパイル時に作る表を使う定数時間なので、毎フレーム呼んでもモデルの大きさに比例する費用はかかりません。
 
 | API | 内容 |
 | --- | --- |

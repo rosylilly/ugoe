@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
 use ugoe_model::{Model, ParamId};
+
+use crate::id_index::IdIndex;
 
 /// コンパイル済みモデル内でのパラメータ連番 (`Model::parameters` のインデックス)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,20 +15,28 @@ pub struct ParamIndex(pub u32);
 /// - 書き込む値はすべて値域 `[min, max]` にクランプする。したがって評価はいつも値域の中の値を見る。
 /// - NaN の書き込みは無視する (値は変わらない)。無限大は値域の端にクランプする。
 ///
-/// `clone_from` は確保済みのバッファを使い回す (ID の並びが同じなら ID を複製しない)。
+/// ID の並びと ID → 連番の表は複製のあいだで共有する (`Arc`)。`clone` と `clone_from` は
+/// ID を複製せず、`clone_from` は確保済みの値のバッファを使い回す。
 #[derive(Debug)]
 pub struct ParameterValues {
-    ids: Vec<ParamId>,
+    layout: Arc<Layout>,
     min: Vec<f32>,
     max: Vec<f32>,
     default: Vec<f32>,
     values: Vec<f32>,
 }
 
+/// パラメータの ID の並びと、ID → 連番の表 (`index_of` を定数時間にする。T0146)。
+#[derive(Debug)]
+struct Layout {
+    ids: Vec<ParamId>,
+    index: IdIndex,
+}
+
 impl Clone for ParameterValues {
     fn clone(&self) -> Self {
         Self {
-            ids: self.ids.clone(),
+            layout: Arc::clone(&self.layout),
             min: self.min.clone(),
             max: self.max.clone(),
             default: self.default.clone(),
@@ -35,8 +45,8 @@ impl Clone for ParameterValues {
     }
 
     fn clone_from(&mut self, source: &Self) {
-        if self.ids != source.ids {
-            self.ids.clone_from(&source.ids);
+        if !Arc::ptr_eq(&self.layout, &source.layout) {
+            self.layout = Arc::clone(&source.layout);
         }
         self.min.clone_from(&source.min);
         self.max.clone_from(&source.max);
@@ -50,7 +60,10 @@ impl ParameterValues {
     pub fn from_model(model: &Model) -> Self {
         let p = &model.parameters;
         Self {
-            ids: p.iter().map(|p| p.id.clone()).collect(),
+            layout: Arc::new(Layout {
+                ids: p.iter().map(|p| p.id.clone()).collect(),
+                index: IdIndex::new(p.iter().map(|p| p.id.as_str())),
+            }),
             min: p.iter().map(|p| p.min).collect(),
             max: p.iter().map(|p| p.max).collect(),
             default: p.iter().map(|p| p.default).collect(),
@@ -60,17 +73,14 @@ impl ParameterValues {
 
     /// ID が `id` のパラメータの連番。なければ `None`。
     pub fn index_of(&self, id: &str) -> Option<ParamIndex> {
-        self.ids
-            .iter()
-            .position(|p| p.as_str() == id)
-            .map(|i| ParamIndex(i as u32))
+        self.layout.index.get(id).map(ParamIndex)
     }
 
     /// パラメータの ID の列 (`ParamIndex` の順)。
     ///
     /// 連番を解決して持つ側 (物理など) が、並びが変わっていないかを確かめるのに使う。
     pub fn ids(&self) -> &[ParamId] {
-        &self.ids
+        &self.layout.ids
     }
 
     /// パラメータの数。
@@ -126,14 +136,9 @@ impl ParameterValues {
     /// `previous` にある同じ ID のパラメータの値を引き継ぐ (値域にクランプする)。
     /// 組み替え (`docs/spec/modules.md#合成`) で、合成し直したモデルに前の値を移すときに使う。
     pub fn carry_over(&mut self, previous: &ParameterValues) {
-        let values: HashMap<&str, f32> = previous
-            .ids
-            .iter()
-            .map(|id| id.as_str())
-            .zip(previous.values.iter().copied())
-            .collect();
-        for i in 0..self.ids.len() {
-            if let Some(&value) = values.get(self.ids[i].as_str()) {
+        for (i, id) in self.layout.ids.iter().enumerate() {
+            if let Some(j) = previous.index_of(id.as_str()) {
+                let value = previous.get(j);
                 self.values[i] = value.clamp(self.min[i], self.max[i]);
             }
         }
@@ -178,6 +183,26 @@ mod tests {
         // 無限大は値域にクランプする。
         params.set(index, f32::INFINITY);
         assert_eq!(params.get(index), 30.0);
+    }
+
+    // T0146: `index_of` は ID の並びの連番を返す。ID の表は複製のあいだで共有し、複製しない。
+    #[test]
+    fn index_of_matches_order_and_clones_share_ids() {
+        let model = ugoe_model::fixtures::pose_and_effects();
+        let params = ParameterValues::from_model(&model);
+        for (i, p) in model.parameters.iter().enumerate() {
+            assert_eq!(params.index_of(p.id.as_str()), Some(ParamIndex(i as u32)));
+        }
+        assert_eq!(params.index_of("Missing"), None);
+        let copy = params.clone();
+        assert!(std::ptr::eq(copy.ids(), params.ids()));
+        let mut other = ParameterValues::from_model(&ugoe_model::fixtures::single_quad());
+        other.clone_from(&params);
+        assert!(std::ptr::eq(other.ids(), params.ids()));
+        assert_eq!(
+            other.index_of(model.parameters[0].id.as_str()),
+            Some(ParamIndex(0))
+        );
     }
 
     #[test]

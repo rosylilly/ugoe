@@ -14,6 +14,7 @@ pub mod compose;
 mod deform;
 pub mod dynamic;
 mod hit;
+mod id_index;
 pub mod instance;
 pub mod keyform;
 pub mod parameters;

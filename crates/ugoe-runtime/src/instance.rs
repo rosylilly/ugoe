@@ -228,7 +228,7 @@ impl ModelInstance {
     /// インスタンスを作り、既定値のパラメータで 1 回 [`ModelInstance::update`] する。
     /// 評価に使うバッファはここで確保する。
     pub fn new(compiled: Arc<CompiledModel>) -> Self {
-        let parameters = ParameterValues::from_model(&compiled.model);
+        let parameters = compiled.parameters.clone();
         let drawables: Vec<DrawableState> = compiled
             .model
             .meshes
@@ -1017,6 +1017,15 @@ mod tests {
         out.extend(instance.previous.iter().map(|d| id(&d.positions)));
         out.extend(instance.warp_points.iter().map(id));
         out
+    }
+
+    // T0146: 同じコンパイル済みモデルのインスタンスは、パラメータの ID の表を共有する。
+    #[test]
+    fn instances_share_parameter_ids() {
+        let compiled = CompiledModel::compile(fixtures::pose_and_effects()).unwrap();
+        let a = ModelInstance::new(Arc::clone(&compiled));
+        let b = ModelInstance::new(compiled);
+        assert!(std::ptr::eq(a.parameters().ids(), b.parameters().ids()));
     }
 
     // README.md「update() で毎フレームのヒープ確保をしない」: new で確保したバッファが
