@@ -13,6 +13,8 @@ pub const API_FORMAT: &str = "ugoe-studio-api";
 pub const API_VERSION: u32 = 1;
 /// 既定のポート (他製品の既定のポートと同じ番号にしない。Linux と Windows の一時的なポートの範囲の外)。
 pub const DEFAULT_PORT: u16 = 28451;
+/// 選べるポートの下限 (これより下は特権の要るポート)。
+pub const MIN_PORT: u16 = 1024;
 /// 承認したクライアントの数の上限 (ファイルを手で書き換えたとき)。
 pub const MAX_CLIENTS: usize = 64;
 /// クライアントの名前の長さの上限 (文字)。
@@ -169,7 +171,8 @@ impl ApiSettings {
     pub fn sanitize(&mut self) {
         self.format = API_FORMAT.to_owned();
         self.version = API_VERSION;
-        if self.port == 0 {
+        // 1024 未満はパネルで選べない (手で書き換えたとき)。
+        if self.port < MIN_PORT {
             self.port = DEFAULT_PORT;
         }
         if !is_secret(&self.token) {
@@ -318,6 +321,13 @@ mod tests {
         let (settings, problem) = ApiSettings::read(&path);
         assert!(problem.is_some());
         assert!(!settings.enabled);
+        // 手で書き換えた 1024 未満のポート (パネルでは選べない) は既定に戻す。
+        std::fs::write(
+            &path,
+            r#"{"format":"ugoe-studio-api","version":1,"port":80}"#,
+        )
+        .unwrap();
+        assert_eq!(ApiSettings::read(&path).0.port, DEFAULT_PORT);
     }
 
     #[test]

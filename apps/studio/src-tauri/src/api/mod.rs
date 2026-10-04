@@ -30,6 +30,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::animation::AnimationView;
+use crate::conductor::FiredEvent;
 use crate::stage::Stage;
 use crate::{Monitor, Studio, lock};
 use rpc::{Id, RpcError};
@@ -158,7 +159,10 @@ struct ApiState {
     /// 設定を書く場所。`None` なら覚えない (テスト)。
     path: Option<PathBuf>,
     settings: ApiSettings,
+    /// 待ち受けられない・設定を書けない理由。
     error: Option<String>,
+    /// 起動したときに設定のファイルを読めなかった理由 (次に書けたら消す)。
+    file_error: Option<String>,
     server: Option<server::Server>,
     connections: HashMap<u64, Connection>,
     next_connection: u64,
@@ -169,10 +173,11 @@ struct ApiState {
 
 impl ApiState {
     fn save(&mut self) {
-        if let Some(path) = &self.path
-            && let Err(e) = self.settings.write(path)
-        {
-            self.error = Some(format!("{}: {e}", path.display()));
+        if let Some(path) = &self.path {
+            match self.settings.write(path) {
+                Ok(()) => self.file_error = None,
+                Err(e) => self.error = Some(format!("{}: {e}", path.display())),
+            }
         }
     }
 
@@ -198,7 +203,7 @@ impl ApiState {
             enabled: self.settings.enabled,
             listening: self.server.is_some() && self.settings.enabled,
             port: self.settings.port,
-            error: self.error.clone(),
+            error: self.error.clone().or_else(|| self.file_error.clone()),
             clients,
             pending: self.pending.clone(),
             connections: self.connections.len(),
@@ -276,10 +281,14 @@ impl Studio {
                 None => (ApiSettings::default(), None),
             };
             state.settings = settings;
-            state.error = error;
             state.path = path;
-            // 作ったトークンを覚える (読み直すたびに変わらないように)。
-            state.save();
+            // 作ったトークンを覚える (読み直すたびに変わらないように)。読めなかったファイル (壊れたもの・新しい版の
+            // スタジオが書いたもの) は、起動しただけでは書き換えない (承認したクライアントの鍵を黙って失わない)。
+            // 利用者が設定を変えたときに書く。
+            state.file_error = error;
+            if state.file_error.is_none() {
+                state.save();
+            }
         }
         self.sync_listener(false);
     }
@@ -349,7 +358,7 @@ impl Studio {
     }
 
     pub(crate) fn set_api_port(self: &Arc<Self>, port: u16) -> Result<(), String> {
-        if port < 1024 {
+        if port < store::MIN_PORT {
             return Err(format!("unsupported port: {port}"));
         }
         {
@@ -727,28 +736,41 @@ impl Studio {
             .any(|c| matches!(&c.session, Session::Ready { events, .. } if events.contains(event)))
     }
 
-    /// 演技の様子が変わった: 表情・モーション・トラッキングの変化を通知する。
-    pub(crate) fn api_animation_changed(&self, view: &AnimationView) {
-        let previous = lock(&self.api.0).animation.replace(view.clone());
-        for (event, params) in animation_events(previous.as_ref(), view) {
+    /// 刻みの後: 演技の様子の変化 (表情・モーション・トラッキング。変わっていなければ `view` は `None`) と、
+    /// 発火したモーションのイベントを通知する。
+    ///
+    /// 順序: モーションのイベントは、そのモーションの `motion.started` の後に送る。この刻みで終わった (または替わった)
+    /// モーションのイベントは、その `motion.finished` の前に送る (終わりで発火したイベントが、終わりの知らせより後に届かないように)。
+    pub(crate) fn api_animation(&self, view: Option<&AnimationView>, fired: &[FiredEvent]) {
+        let mut events = match view {
+            Some(view) => {
+                let previous = lock(&self.api.0).animation.replace(view.clone());
+                animation_events(previous.as_ref(), view)
+            }
+            None => Vec::new(),
+        };
+        if !fired.is_empty() && self.api_listening_for("motion.event") {
+            // 今も再生しているモーション (始めた番号)。終わったモーションのイベントは、その終わりの前に送る。
+            let current = lock(&self.api.0)
+                .animation
+                .as_ref()
+                .and_then(|v| v.current.as_ref().map(|_| v.motion_start));
+            let finished = events.iter().position(|(e, _)| *e == "motion.finished");
+            let mut ended = Vec::new();
+            for f in fired {
+                let params =
+                    json!({ "motion": f.motion, "value": f.event.value, "time": f.event.t });
+                if Some(f.start) != current && f.motion.is_some() {
+                    ended.push(("motion.event", params));
+                } else {
+                    events.push(("motion.event", params));
+                }
+            }
+            let at = finished.unwrap_or(0);
+            events.splice(at..at, ended);
+        }
+        for (event, params) in events {
             self.api_notify(event, params);
-        }
-    }
-
-    /// 刻みで発火したモーションのイベント。
-    pub(crate) fn api_motion_events(
-        &self,
-        motion: Option<&str>,
-        events: &[ugoe::model::motion::MotionEvent],
-    ) {
-        if events.is_empty() || !self.api_listening_for("motion.event") {
-            return;
-        }
-        for event in events {
-            self.api_notify(
-                "motion.event",
-                json!({ "motion": motion, "value": event.value, "time": event.t }),
-            );
         }
     }
 
@@ -756,7 +778,9 @@ impl Studio {
     pub(crate) fn api_stage_changed(&self, before: &StageSnapshot, after: &StageSnapshot) {
         if before.live != after.live {
             self.api_notify("scene.changed", json!({ "scene": after.live_scene() }));
-        } else if before.modules != after.modules {
+        }
+        // シーンを切り替えて付けているモジュールが変わったときも送る (着せ替えの組だけを見ているクライアントのため)。
+        if before.modules != after.modules {
             self.api_notify("dressup.changed", json!({ "modules": after.modules }));
         }
         if before.scenes != after.scenes {
@@ -807,6 +831,7 @@ fn animation_events(
         lip_sync_paused: false,
         tracking_parameters: Vec::new(),
         slots: Vec::new(),
+        motion_start: 0,
     };
     let previous = previous.unwrap_or(&empty);
     if previous.active_expressions != view.active_expressions {
@@ -815,7 +840,8 @@ fn animation_events(
             json!({ "active": view.active_expressions }),
         ));
     }
-    if previous.current != view.current {
+    // 同じモーションを始め直したときも、終わりと始まりを知らせる。
+    if (&previous.current, previous.motion_start) != (&view.current, view.motion_start) {
         if let Some(motion) = &previous.current {
             events.push(("motion.finished", json!({ "motion": motion.name })));
         }

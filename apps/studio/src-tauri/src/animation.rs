@@ -96,6 +96,9 @@ pub struct AnimationView {
     pub tracking_parameters: Vec<String>,
     /// モデルのスロット (着せ替えの割り当てに使う)。
     pub slots: Vec<String>,
+    /// 今のモーションを始めた番号 ([`Animation::motion_start`])。同じモーションを始め直したことを見分ける (外部 API の通知)。
+    #[serde(skip)]
+    pub motion_start: u64,
 }
 
 /// 演技の状態。
@@ -116,6 +119,8 @@ pub struct Animation {
     auto_eye_blink: bool,
     /// 直前に `Puppet` に渡したモーションの優先 (変わったときだけ渡す)。
     over_applied: Option<bool>,
+    /// モーションを始めた数 (始めるたびに上がる。同じ名前で始め直しても変わる)。
+    starts: u64,
     /// 画面に知らせる変化があった。
     changed: bool,
 }
@@ -191,6 +196,16 @@ impl Animation {
 
     // --- モーション ---
 
+    /// 再生中のモーションの名前 (待機を含む)。
+    pub fn current_motion(&self) -> Option<&str> {
+        self.current.as_ref().map(|(name, _)| name.as_str())
+    }
+
+    /// 今のモーションを始めた番号 (モーションを始めるたびに上がる)。
+    pub fn motion_start(&self) -> u64 {
+        self.starts
+    }
+
     /// モーション `name` を `priority` で始める。再生中のモーションより優先度が低ければ始めず `Ok(false)`。
     pub fn play(
         &mut self,
@@ -210,6 +225,7 @@ impl Animation {
             return Ok(false);
         }
         self.current = Some((name.to_owned(), priority));
+        self.starts += 1;
         self.changed = true;
         Ok(true)
     }
@@ -465,6 +481,7 @@ impl Animation {
             lip_sync_paused: self.lip_sync_paused,
             tracking_parameters,
             slots,
+            motion_start: self.starts,
         }
     }
 }

@@ -74,7 +74,17 @@ pub struct Conductor {
     /// 直前に配った値 (上書きを含む)。
     sent: Vec<f32>,
     /// 刻みで発火したモーションのイベント (読むと空になる)。
-    motion_events: Vec<MotionEvent>,
+    motion_events: Vec<FiredEvent>,
+}
+
+/// 刻みで発火したモーションのイベントと、その刻みを始めたときのモーション (外部 API の `motion.event`)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiredEvent {
+    /// 刻みを始めたときに再生していたモーションの名前 (この刻みで終わったものを含む)。
+    pub motion: Option<String>,
+    /// そのモーションを始めた番号 ([`crate::animation::Animation::motion_start`])。
+    pub start: u64,
+    pub event: MotionEvent,
 }
 
 /// 外部 API の値の上書き (ADR 0028 の 6.。期限を過ぎたらやめる)。
@@ -304,7 +314,7 @@ impl Conductor {
     }
 
     /// 刻みで発火したモーションのイベント (読むと空になる)。
-    pub fn take_motion_events(&mut self) -> Vec<MotionEvent> {
+    pub fn take_motion_events(&mut self) -> Vec<FiredEvent> {
         std::mem::take(&mut self.motion_events)
     }
 
@@ -353,9 +363,17 @@ impl Conductor {
             0.0
         };
         self.animation.before_update(puppet);
+        // イベントは、この刻みで終わるモーションのものでもある (終わった後の名前で知らせない)。
+        let motion = self.animation.current_motion().map(str::to_owned);
+        let start = self.animation.motion_start();
         puppet.update(dt);
         self.animation.after_update(puppet);
-        self.motion_events.extend_from_slice(puppet.motion_events());
+        self.motion_events
+            .extend(puppet.motion_events().iter().map(|event| FiredEvent {
+                motion: motion.clone(),
+                start,
+                event: event.clone(),
+            }));
         let mut values = puppet.values_before_physics().to_vec();
         for o in &mut self.overrides {
             if let Some(v) = values.get_mut(o.index) {

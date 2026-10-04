@@ -28,10 +28,59 @@ use crate::{Studio, lock};
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 /// 読むのを区切る時間 (この間隔で、ほかのスレッドからの通知を送る)。
 const POLL: Duration = Duration::from_millis(20);
-/// 何も送っていなければ ping を送る間隔。
+/// 何も届かなければ ping を送る間隔。
 const PING_INTERVAL: Duration = Duration::from_secs(20);
 /// これだけ何も届かなければ (pong も) 切る。
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// 接続が生きているかの確かめ (操作 API とブラウザソースで共通)。
+///
+/// 何も届かないまま [`PING_INTERVAL`] が過ぎたら ping を送り ([`PING_INTERVAL`] ごと)、[`IDLE_TIMEOUT`] が過ぎたら切る。
+/// 送ったものではなく届いたもので数える (通知やフレームを送り続けていても、読むだけの相手には ping を送って pong を待つ)。
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Keepalive {
+    received: Instant,
+    pinged: Instant,
+}
+
+/// [`Keepalive::check`] の結果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Liveness {
+    Alive,
+    /// ping を送る。
+    Ping,
+    /// 切る。
+    Dead,
+}
+
+impl Keepalive {
+    pub(super) fn new(now: Instant) -> Self {
+        Self {
+            received: now,
+            pinged: now,
+        }
+    }
+
+    /// 何か (メッセージ・pong・ping) が届いた。
+    pub(super) fn received(&mut self, now: Instant) {
+        self.received = now;
+    }
+
+    /// 今どうするか。`Ping` を返したら、送ったものとして数える。
+    pub(super) fn check(&mut self, now: Instant) -> Liveness {
+        let quiet = now.saturating_duration_since(self.received);
+        if quiet > IDLE_TIMEOUT {
+            Liveness::Dead
+        } else if quiet > PING_INTERVAL
+            && now.saturating_duration_since(self.pinged) > PING_INTERVAL
+        {
+            self.pinged = now;
+            Liveness::Ping
+        } else {
+            Liveness::Alive
+        }
+    }
+}
 /// 送るのに待てる時間 (クライアントが読まずに詰まったとき)。
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -183,8 +232,7 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
         );
         return;
     };
-    let mut received = Instant::now();
-    let mut sent = Instant::now();
+    let mut keepalive = Keepalive::new(Instant::now());
     'serve: loop {
         // 送るもの (応答・通知・閉じる)。
         loop {
@@ -193,7 +241,6 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
                     if socket.send(Message::text(text)).is_err() {
                         break 'serve;
                     }
-                    sent = Instant::now();
                 }
                 Ok(Outgoing::Close(code, reason)) => {
                     close(&mut socket, code, reason);
@@ -205,7 +252,7 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
         }
         match socket.read() {
             Ok(Message::Text(text)) => {
-                received = Instant::now();
+                keepalive.received(Instant::now());
                 studio.api_receive(connection, text.as_str());
             }
             Ok(Message::Binary(_)) => {
@@ -218,20 +265,19 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
             }
             // ping への pong は tungstenite が返す。close への応答も返し、次の read で閉じたと分かる。
             Ok(Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_)) => {
-                received = Instant::now();
+                keepalive.received(Instant::now());
             }
             Err(tungstenite::Error::Io(e))
                 if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
             {
-                let now = Instant::now();
-                if now.duration_since(received) > IDLE_TIMEOUT {
-                    break;
-                }
-                if now.duration_since(sent) > PING_INTERVAL {
-                    if socket.send(Message::Ping(Vec::new().into())).is_err() {
-                        break;
+                match keepalive.check(Instant::now()) {
+                    Liveness::Alive => {}
+                    Liveness::Ping => {
+                        if socket.send(Message::Ping(Vec::new().into())).is_err() {
+                            break;
+                        }
                     }
-                    sent = now;
+                    Liveness::Dead => break,
                 }
             }
             // 決まりに反するフレーム・大きすぎるメッセージ・UTF-8 でないテキストは、理由を付けて閉じる。
@@ -266,4 +312,28 @@ fn close(socket: &mut WebSocket<TcpStream>, code: u16, reason: &str) {
     };
     let _ = socket.close(Some(frame));
     let _ = socket.flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 送り続けていても、何も届かなければ ping を送り、それでも届かなければ切る (読むだけの相手を pong で確かめる)。
+    #[test]
+    fn keepalive_counts_what_arrives() {
+        let start = Instant::now();
+        let at = |secs: u64| start + Duration::from_secs(secs);
+        let mut keepalive = Keepalive::new(start);
+        assert_eq!(keepalive.check(at(10)), Liveness::Alive);
+        assert_eq!(keepalive.check(at(21)), Liveness::Ping);
+        // ping は間隔を空けて送る。
+        assert_eq!(keepalive.check(at(30)), Liveness::Alive);
+        assert_eq!(keepalive.check(at(42)), Liveness::Ping);
+        // pong が届けば数え直す。
+        keepalive.received(at(43));
+        assert_eq!(keepalive.check(at(60)), Liveness::Alive);
+        assert_eq!(keepalive.check(at(64)), Liveness::Ping);
+        assert_eq!(keepalive.check(at(85)), Liveness::Ping);
+        assert_eq!(keepalive.check(at(104)), Liveness::Dead);
+    }
 }

@@ -133,7 +133,7 @@ impl Dir {
         Self(dir)
     }
 
-    /// 着せ替えのできるモデル (`.ugoe`) に、モーション `Wave` (`BodySway`) と表情 `Smile`・`Angry` (`Secret`) を入れて書く。
+    /// 着せ替えのできるモデル (`.ugoe`) に、モーション `Wave` (`BodySway`。始まりと終わりにイベント) と表情 `Smile`・`Angry` (`Secret`) を入れて書く。
     fn model(&self) -> PathBuf {
         let mut bundle = Bundle::new(fixtures::dress_up_base());
         bundle.motions = vec![
@@ -142,7 +142,7 @@ impl Dir {
                      "curves": [{ "target": { "kind": "parameter", "id": "BodySway" },
                                   "segments": [{ "type": "start", "p": { "t": 0.0, "v": 1.0 } },
                                                { "type": "linear", "to": { "t": 0.5, "v": 1.0 } }] }],
-                     "events": [{ "t": 0.0, "value": "wave-start" }] }"#,
+                     "events": [{ "t": 0.0, "value": "wave-start" }, { "t": 0.5, "value": "wave-end" }] }"#,
             )
             .unwrap(),
         ];
@@ -604,6 +604,16 @@ fn operates_scenes_expressions_motions_and_parameters() {
             "{bad}"
         );
     }
+    // 1 つでも誤りがあれば、どの値も上書きしない (途中まで当てない)。
+    assert_eq!(
+        client.fail(
+            "parameter.set",
+            json!({ "values": [{ "id": "AngleX", "value": 20.0 }, { "id": "AngleY", "value": 1.0, "weight": 2 }] }),
+        ),
+        INVALID_PARAMS
+    );
+    let frame = lock(&studio.conductor).tick(0.02).unwrap();
+    assert_eq!(frame.values[index], 0.0, "nothing was overridden");
 
     // ホットキーと同じ操作: トラッキングと口パクの一時停止 (省けば切り替え)。
     assert_eq!(
@@ -764,6 +774,105 @@ fn notifies_subscribed_events_only() {
     watcher.call("events.unsubscribe", json!({ "events": ["scene.changed"] }));
     quiet.call("scene.activate", json!({ "scene": chat }));
     assert!(watcher.notification().is_none());
+}
+
+/// 届いている通知を、届いた順に (メソッドと引数)。
+fn drain(client: &mut Client) -> Vec<(String, Value)> {
+    std::iter::from_fn(|| client.notification())
+        .map(|n| {
+            (
+                n["method"].as_str().unwrap().to_owned(),
+                n["params"].clone(),
+            )
+        })
+        .collect()
+}
+
+/// モーションの通知を取りこぼさず、順に送る: 同じモーションを始め直しても終わりと始まりを知らせる。
+/// 終わりで発火したイベントは、そのモーションの名前で、終わりの知らせより先に届く。
+#[test]
+fn motion_notifications_cover_restarts_and_events_at_the_end() {
+    let dir = Dir::new("motion-events");
+    let model = dir.model();
+    let studio = studio();
+    stage_scenes(&studio, &model, &[]);
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+    client.call(
+        "events.subscribe",
+        json!({ "events": ["motion.started", "motion.finished", "motion.event"] }),
+    );
+    let started = |priority: &str| {
+        (
+            "motion.started".to_owned(),
+            json!({ "motion": "Wave", "priority": priority }),
+        )
+    };
+    let event = |value: &str, time: f64| {
+        (
+            "motion.event".to_owned(),
+            json!({ "motion": "Wave", "value": value, "time": time }),
+        )
+    };
+    let finished = ("motion.finished".to_owned(), json!({ "motion": "Wave" }));
+
+    client.call(
+        "motion.play",
+        json!({ "motion": "Wave", "priority": "force" }),
+    );
+    studio.tick(0.02, false);
+    assert_eq!(
+        drain(&mut client),
+        [started("force"), event("wave-start", 0.0)]
+    );
+    // 同じ名前と優先度で始め直す。
+    client.call(
+        "motion.play",
+        json!({ "motion": "Wave", "priority": "force" }),
+    );
+    studio.tick(0.02, false);
+    assert_eq!(
+        drain(&mut client),
+        [finished.clone(), started("force"), event("wave-start", 0.0)]
+    );
+    // 終わるまで進める。
+    let mut tail = Vec::new();
+    for _ in 0..40 {
+        studio.tick(0.02, false);
+        tail.extend(drain(&mut client));
+    }
+    assert_eq!(tail, [event("wave-end", 0.5), finished]);
+}
+
+/// シーンを切り替えて付けているモジュールが変わったら、`scene.changed` に加えて `dressup.changed` も送る。
+#[test]
+fn switching_to_a_scene_with_other_modules_reports_the_dress_up() {
+    let dir = Dir::new("switch-dressup");
+    let model = dir.model();
+    let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+    let studio = studio();
+    let (chat, game) = stage_scenes(&studio, &model, std::slice::from_ref(&hair));
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+    client.call(
+        "events.subscribe",
+        json!({ "events": ["scene.changed", "dressup.changed"] }),
+    );
+    client.call("scene.activate", json!({ "scene": game }));
+    let methods: Vec<String> = drain(&mut client).into_iter().map(|(m, _)| m).collect();
+    assert_eq!(methods, ["scene.changed", "dressup.changed"]);
+    // 同じモジュールの組のシーンどうし (どちらも無し) なら `scene.changed` だけ。
+    client.call("scene.activate", json!({ "scene": chat }));
+    let notifications = drain(&mut client);
+    assert_eq!(notifications[1].1["modules"], json!([]));
+    studio.with_stage(|stage, conductor| {
+        let mut scene = stage.profile().scene(&game).unwrap().clone();
+        scene.modules.clear();
+        stage.update_scene(scene, conductor).unwrap();
+    });
+    client.call("scene.activate", json!({ "scene": game }));
+    let methods: Vec<String> = drain(&mut client).into_iter().map(|(m, _)| m).collect();
+    assert_eq!(methods, ["scene.changed"]);
 }
 
 // --- 本物の待ち受け ---
@@ -1088,6 +1197,32 @@ fn turning_the_api_on_saves_the_choice_and_listens() {
     assert!(reloaded.api_view().listening);
     assert_eq!(reloaded.api_token(), token);
     reloaded.set_api_enabled(false);
+}
+
+/// 読めない設定 (壊れたもの・新しい版のスタジオが書いたもの) は、起動しただけでは書き換えない
+/// (承認したクライアントの鍵を黙って失わない。利用者が設定を変えたときに初めて書く)。
+#[test]
+fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
+    let dir = Dir::new("unreadable");
+    let path = dir.0.join(SETTINGS_FILE);
+    for text in [
+        "{",
+        r#"{"format":"ugoe-studio-api","version":99,"clients":[]}"#,
+    ] {
+        std::fs::write(&path, text).unwrap();
+        let studio = Arc::new(Studio::default());
+        studio.load_api(Some(path.clone()));
+        let view = studio.api_view();
+        assert!(view.error.is_some(), "{text}");
+        assert!(!view.enabled && !view.listening, "{text}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        // 設定を変えたら書く。
+        studio.set_api_port(30001).unwrap();
+        let (saved, problem) = store::ApiSettings::read(&path);
+        assert!(problem.is_none(), "{text}");
+        assert_eq!(saved.port, 30001);
+        assert!(studio.api_view().error.is_none(), "{text}");
+    }
 }
 
 /// Schema はすべてのメソッド (権限も) と通知を定め、送る要求の例も Schema に合う。

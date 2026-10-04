@@ -330,6 +330,16 @@ fn parameter_set(studio: &Studio, p: &Map<String, Value>) -> Result<Value, RpcEr
             "`duration` must be greater than 0 and at most {MAX_OVERRIDE_SECONDS} seconds"
         )));
     }
+    // 先にすべてを確かめる (誤りがあれば、どの値も上書きしない)。
+    if let Some(item) = values
+        .iter()
+        .find(|item| !item.value.is_finite() || !(0.0..=1.0).contains(&item.weight.unwrap_or(1.0)))
+    {
+        return Err(RpcError::invalid_params(format!(
+            "`{}`: `value` must be a number and `weight` must be between 0 and 1",
+            item.id
+        )));
+    }
     let mut conductor = lock(&studio.conductor);
     if conductor.scene().is_none_or(|s| s.model_revision == 0) {
         return Err(RpcError::failed(&AnimationError::NoModel));
@@ -337,12 +347,6 @@ fn parameter_set(studio: &Studio, p: &Map<String, Value>) -> Result<Value, RpcEr
     let mut unknown = Vec::new();
     for item in values {
         let weight = item.weight.unwrap_or(1.0);
-        if !item.value.is_finite() || !(0.0..=1.0).contains(&weight) {
-            return Err(RpcError::invalid_params(format!(
-                "`{}`: `value` must be a number and `weight` must be between 0 and 1",
-                item.id
-            )));
-        }
         if !conductor.override_parameter(&item.id, item.value, weight, duration) {
             unknown.push(item.id);
         }

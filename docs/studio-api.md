@@ -122,8 +122,9 @@ request's response.
 | `4001` | The user revoked the client's key |
 | `4003` | Access denied (wrong token or key, or the user denied the client) |
 
-The studio sends a WebSocket ping when it has sent nothing for 20 seconds, and closes connections that send nothing
-(not even a pong) for 60 seconds. Standard WebSocket clients answer pings automatically.
+The studio sends a WebSocket ping when it has received nothing for 20 seconds (and again every 20 seconds), and closes
+connections that send nothing (not even a pong) for 60 seconds. Standard WebSocket clients answer pings automatically,
+so a client that only listens to events stays connected.
 
 ## Methods
 
@@ -236,10 +237,10 @@ Notifications have the form `{"jsonrpc":"2.0","method":"<event>","params":{…}}
 | `scene.changed` | `{scene}` (`{id, name, model}` or `null`) | Another scene went on air |
 | `scene.listChanged` | `{scenes}` (as in `scene.list`) | Scenes were added, removed, renamed, reordered or got another model |
 | `expression.changed` | `{active}` | The active expressions changed |
-| `motion.started` | `{motion, priority}` | A motion started (including the idle motion) |
+| `motion.started` | `{motion, priority}` | A motion started (including the idle motion, and a motion started again while it plays) |
 | `motion.finished` | `{motion}` | A motion ended or was replaced |
-| `motion.event` | `{motion, value, time}` | A motion reached one of its events (`value` as authored, `time` in seconds) |
-| `dressup.changed` | `{modules}` (`[{id, name, slot}]`) | The worn modules of the scene on air changed |
+| `motion.event` | `{motion, value, time}` | A motion reached one of its events (`value` as authored, `time` in seconds). Sent after the motion's `motion.started` and before its `motion.finished` |
+| `dressup.changed` | `{modules}` (`[{id, name, slot}]`) | The worn modules of the scene on air changed (also after `scene.changed` when the new scene wears other modules) |
 | `tracking.changed` | `{tracking, trackingPaused, lipSyncPaused}` | Face tracking started or stopped, or tracking / lip sync was paused or resumed |
 
 ## Example session

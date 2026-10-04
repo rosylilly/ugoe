@@ -384,13 +384,17 @@ impl Studio {
         let started = Instant::now();
         let mut conductor = lock(&self.conductor);
         let frame = conductor.tick(dt);
-        if conductor.take_animation_changed() {
-            self.send_animation(&conductor);
+        let view = conductor
+            .take_animation_changed()
+            .then(|| conductor.animation_view());
+        let fired = conductor.take_motion_events();
+        if view.is_some() || !fired.is_empty() {
+            self.api_animation(view.as_ref(), &fired);
         }
-        let events = conductor.take_motion_events();
-        if !events.is_empty() {
-            let motion = conductor.animation_view().current.map(|m| m.name);
-            self.api_motion_events(motion.as_deref(), &events);
+        if let Some(view) = view
+            && let Some(body) = Self::json(&Monitor::Animation(view))
+        {
+            self.monitors.send_all(&body);
         }
         let Some(frame) = frame else {
             return;
@@ -466,14 +470,6 @@ impl Studio {
         self.send_profile(&stage);
         self.sync_hotkeys(&stage.profile().hotkeys, false);
         result
-    }
-
-    fn send_animation(&self, conductor: &Conductor) {
-        let view = conductor.animation_view();
-        self.api_animation_changed(&view);
-        if let Some(body) = Self::json(&Monitor::Animation(view)) {
-            self.monitors.send_all(&body);
-        }
     }
 
     fn hotkeys_message(hotkeys: &Hotkeys) -> Option<InvokeResponseBody> {

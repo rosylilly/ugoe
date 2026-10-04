@@ -29,6 +29,7 @@ use tungstenite::protocol::frame::coding::CloseCode;
 use tungstenite::protocol::{Message, Role, WebSocket};
 
 use super::http::{self, Reject, RequestHead};
+use super::server::{Keepalive, Liveness};
 use super::{store, ws};
 use crate::{RenderStats, Reported, Studio, lock};
 
@@ -47,10 +48,6 @@ pub const CLOSE_GOING_AWAY: u16 = 1001;
 
 /// 送るものが無いときに、届いたものを見に行く間隔。
 const POLL: Duration = Duration::from_millis(50);
-/// 何も送っていなければ ping を送る間隔。
-const PING_INTERVAL: Duration = Duration::from_secs(20);
-/// これだけ何も届かなければ (pong も) 切る。
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// ページの応答に付ける CSP。ページは自分のスクリプト・wasm・スタイルと、背景の画像の blob URL だけを使う。
 const CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; \
@@ -472,8 +469,8 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
         );
         return;
     };
-    let mut received = Instant::now();
-    let mut sent = Instant::now();
+    // 何も届かなければ ping を送り、pong も届かなければ切る (フレームを送り続けていても。描画の負荷は隠れると届かない)。
+    let mut keepalive = Keepalive::new(Instant::now());
     'serve: loop {
         let first = match receiver.recv_timeout(POLL) {
             Ok(push) => Some(push),
@@ -496,7 +493,6 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
                     break 'serve;
                 }
             }
-            sent = Instant::now();
         }
         if socket.flush().is_err() {
             break;
@@ -508,7 +504,7 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
         let read = loop {
             match socket.read() {
                 Ok(Message::Text(text)) => {
-                    received = Instant::now();
+                    keepalive.received(Instant::now());
                     studio.source_receive(id, text.as_str());
                 }
                 Ok(Message::Binary(_)) => {
@@ -519,7 +515,7 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
                     );
                     break false;
                 }
-                Ok(_) => received = Instant::now(),
+                Ok(_) => keepalive.received(Instant::now()),
                 Err(tungstenite::Error::Io(e)) if e.kind() == ErrorKind::WouldBlock => break true,
                 Err(_) => break false,
             }
@@ -527,15 +523,14 @@ fn websocket(studio: &Arc<Studio>, reader: BufReader<TcpStream>) {
         if !read || socket.get_ref().set_nonblocking(false).is_err() {
             break;
         }
-        let now = Instant::now();
-        if now.duration_since(received) > IDLE_TIMEOUT {
-            break;
-        }
-        if now.duration_since(sent) > PING_INTERVAL {
-            if socket.send(Message::Ping(Bytes::new())).is_err() {
-                break;
+        match keepalive.check(Instant::now()) {
+            Liveness::Alive => {}
+            Liveness::Ping => {
+                if socket.send(Message::Ping(Bytes::new())).is_err() {
+                    break;
+                }
             }
-            sent = now;
+            Liveness::Dead => break,
         }
     }
     studio.source_disconnect(id);
