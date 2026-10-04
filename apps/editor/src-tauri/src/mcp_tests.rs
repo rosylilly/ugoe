@@ -328,6 +328,58 @@ fn agents_propose_and_the_user_approves_in_the_editor() {
     assert!(err.to_string().contains("not running"), "{err}");
 }
 
+/// 保存と一緒の `.ugoe` の書き出しは一時ファイルを経る: 書けなければ前のファイルを残し、一時ファイルも残さない (T0687)。
+#[test]
+fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
+    let tmp = TempDir::new("bundle-fails");
+    let project = save_fixture_project(&tmp.0);
+    let path = project.display().to_string();
+    let discovery = tmp.0.join("editor-mcp.json");
+    let app = TestApp::open(Some(&project), &discovery);
+    let mut client = Client::new(&discovery);
+    app.enable();
+    client.initialize();
+    let names = |dir: &std::path::Path| {
+        let mut names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+
+    // 書き出した後に書き直しても、行き先には一時ファイルを残さない。
+    let out = tmp.0.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let bundle = out.join("quad.ugoe");
+    for _ in 0..2 {
+        client.ok(
+            "save_project",
+            json!({ "path": path, "bundle": bundle.display().to_string() }),
+        );
+    }
+    assert_eq!(names(&out), ["quad.ugoe"]);
+
+    // 一時ファイルを作れなければ、何も保存しない。
+    let missing = out.join("missing").join("quad.ugoe");
+    let err = client.err(
+        "save_project",
+        json!({ "path": path, "bundle": missing.display().to_string() }),
+    );
+    assert!(err.to_string().contains("nothing was saved"), "{err}");
+
+    // 置き換えられなければ (行き先が中身のあるディレクトリ)、前のものを残し、一時ファイルを消す。
+    let blocked = out.join("blocked.ugoe");
+    std::fs::create_dir_all(blocked.join("inside")).unwrap();
+    let err = client.err(
+        "save_project",
+        json!({ "path": path, "bundle": blocked.display().to_string() }),
+    );
+    assert!(err.to_string().contains("previous file is left"), "{err}");
+    assert!(blocked.join("inside").is_dir());
+    assert_eq!(names(&out), ["blocked.ugoe", "quad.ugoe"]);
+}
+
 /// ほかのプロジェクト・作る・閉じる・PSD から作るはできない。開いているプロジェクトの open_project は状態を返すだけ。
 #[test]
 fn agents_cannot_switch_the_editor_project() {

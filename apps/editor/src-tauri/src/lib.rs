@@ -6,6 +6,7 @@
 mod acl;
 pub(crate) mod ai;
 mod ai_provider;
+mod atomic_write;
 mod avatar;
 pub mod bindings;
 mod commands;

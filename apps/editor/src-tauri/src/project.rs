@@ -525,7 +525,7 @@ pub async fn export_bundle(app: AppHandle, path: String) -> IpcResult<ExportRepo
             )
         };
         let (bytes, report) = export_bundle_with_settings(&project, &settings)?;
-        std::fs::write(&path, bytes).map_err(|e| EditorError::io(&path, e))?;
+        crate::atomic_write::write_atomic(&path, &bytes).map_err(|e| EditorError::io(&path, e))?;
         Ok(report)
     })
     .await

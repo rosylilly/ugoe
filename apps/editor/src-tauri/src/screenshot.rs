@@ -46,7 +46,7 @@ fn write_png(path: &str, bytes: &[u8]) -> IpcResult<()> {
     if !bytes.starts_with(PNG_SIGNATURE) {
         return Err(EditorError::NotPngData.into());
     }
-    std::fs::write(&path, bytes).map_err(|e| EditorError::io(&path, e).into())
+    crate::atomic_write::write_atomic(&path, bytes).map_err(|e| EditorError::io(&path, e).into())
 }
 
 fn is_png_path(path: &Path) -> bool {

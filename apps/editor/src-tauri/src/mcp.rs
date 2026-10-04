@@ -29,6 +29,7 @@ use ugoe_mcp::wsl::WslPaths;
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 
 use crate::AppState;
+use crate::atomic_write::{Access, StagedFile};
 use crate::error::{EditorError, IpcResult};
 use crate::project::ProjectSession;
 
@@ -382,24 +383,13 @@ impl McpBridge {
     }
 }
 
-/// トークンを含むファイルを、利用者だけが読める権限で書く。
+/// トークンを含むファイルを、利用者だけが読める権限で書く。一時ファイルも作るときからその権限にし、
+/// 名前を変えて置き換える (途中で失敗しても前の設定を残す。`atomic_write`)。
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
-    use std::io::Write;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        options.mode(0o600);
-        // 前からあるファイルは mode が効かないので直す
-        if path.exists() {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
-    }
-    options.open(path)?.write_all(text.as_bytes())
+    StagedFile::write(path, text.as_bytes(), Access::Private)?.commit()
 }
 
 /// `ugoe-mcp` を探す場所 (`dir` はエディタの実行ファイルのディレクトリ)。インストールしたものは隣にある。
@@ -648,15 +638,40 @@ impl DocumentHost for EditorHost {
                     .into(),
             ));
         }
+        // `.ugoe` は先に一時ファイルへ書いておき、プロジェクトを保存できてから置き換える (`ugoe-mcp` の
+        // `StagedFile` と同じ順)。どこで失敗しても、前に書き出した `.ugoe` は残る。
+        let staged = match bundle {
+            Some(bundle) => {
+                let (bytes, _) = export_bundle_with_settings(
+                    &session.to_project(&document),
+                    &session.export_settings(),
+                )
+                .map_err(|e| {
+                    format!(
+                        "failed to export `{}`: {e}; nothing was saved",
+                        bundle.display()
+                    )
+                })?;
+                let staged = StagedFile::write(bundle, &bytes, Access::Default).map_err(|e| {
+                    format!(
+                        "failed to write `{}`: {e}; nothing was saved",
+                        bundle.display()
+                    )
+                })?;
+                Some(staged)
+            }
+            None => None,
+        };
+        // 失敗すれば、書いておいた一時ファイルは捨てる (`StagedFile` の drop)。
         session.save_to(&mut document, dir).map_err(failed)?;
-        if let Some(bundle) = bundle {
-            let (bytes, _) = export_bundle_with_settings(
-                &session.to_project(&document),
-                &session.export_settings(),
-            )
-            .map_err(|e| e.to_string())?;
-            std::fs::write(bundle, bytes)
-                .map_err(|e| format!("failed to write {}: {e}", bundle.display()))?;
+        if let Some(staged) = staged {
+            let target = staged.target().to_path_buf();
+            staged.commit().map_err(|e| {
+                format!(
+                    "saved the project, but failed to write `{}`: {e}; the previous file is left as it was",
+                    target.display()
+                )
+            })?;
         }
         Ok(())
     }

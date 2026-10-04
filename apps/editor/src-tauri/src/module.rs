@@ -519,7 +519,8 @@ pub async fn export_module(app: AppHandle, path: String) -> IpcResult<ModuleExpo
             (session.to_project(&document), session.export_settings())
         };
         let export = ugoe_editor_core::export_module_with_settings(&project, &settings)?;
-        std::fs::write(&path, &export.bytes).map_err(|e| EditorError::io(&path, e))?;
+        crate::atomic_write::write_atomic(&path, &export.bytes)
+            .map_err(|e| EditorError::io(&path, e))?;
         Ok(ModuleExportReport {
             bytes: export.bytes.len(),
             warnings: export.warnings,

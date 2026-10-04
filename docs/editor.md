@@ -1354,6 +1354,11 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
 - **結果:** 書き出した後、欄の下にテクスチャの枚数・描画の状態の切り替え回数・描画の回数の前 → 後と、アトラス化の詳細
   (詰めた枚数とアトラスの大きさ、同じ画像として 1 つにしたもの、まとめずに残したものと理由、使われないので取り除いたもの) を出します
   (`src/lib/exportSummary.ts`、Vitest)。別のプロジェクトに替わると欄を閉じて結果を消します。
+- **ファイルの書き方:** 書き出し (`.ugoe`・`.ugoemod`)・画像 (`write_png_file`)・トラッキングの記録 (`write_json_file`)・設定
+  (`ai-provider.json`・`mcp-bridge.json`) は、行き先と同じフォルダーの一時ファイル `.<名前>.<プロセス ID>.<連番>.tmp` に書いて
+  `sync` し、閉じてから名前を変えて置き換えます (`src-tauri/src/atomic_write.rs`、T0687。ビューアと MCP サーバと同じ形)。途中で失敗しても
+  (ディスクがいっぱい・強制終了) 前のファイルは残り、一時ファイルは消します。`.ugoeproj` の保存も各ファイルを一時ファイル経由で書きます
+  (`ugoe_editor_core::Project::save`)。
 - **切り替え回数の見積もり (`ugoe_editor_core::export::estimate_draws`):** エディタのバックエンドは `ugoe-render` (GPU) に依存しないので、
   参照レンダラの本描画のまとめ方 ([rendering.md#描画の最適化](spec/rendering.md#描画の最適化)) を CPU で真似ます。既定のパラメータで
   描画順に並べた、表示されていて三角形を持つメッシュについて、(テクスチャ・合成モード・カリング) が前と変わる回数を数えます。
@@ -1628,7 +1633,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
     外すコマンド・書き出し先) を Tauri のイベントで画面に送る。確認の間も錠は握らないので、利用者は編集を続けられる (その場合は提案が
     古いというエラーになり、承認した差分と違う結果にしない)。**画面から「Adopt」するときは確認しない** (利用者自身の操作)。
   - **保存:** エディタの保存と同じ `ProjectSession::save_to` (指紋を取り直すので、自分の保存を外の変更と取り違えない)。書き出し先 (`bundle`)
-    はプロジェクトの書き出しの設定 (アトラス化) で書く。開いた後で外で書き換えられていたら、エージェントの保存は断る (利用者が
+    はプロジェクトの書き出しの設定 (アトラス化) で書く。`ugoe-mcp` と同じく、`.ugoe` は先に一時ファイルへ書き、プロジェクトを保存できて
+    から置き換える (どこで失敗しても前の `.ugoe` は残る)。開いた後で外で書き換えられていたら、エージェントの保存は断る (利用者が
     [外での書き換え](#外での書き換え)のダイアログで決める)。
   - **外での書き換えとぶつからない:** ブリッジの編集はエディタの文書に入り、ディスクには保存するまで書かないので、外の変更としては見えない。
 - **提案の出どころ:** `Change::Proposed` の名前を `Proposals::set_source` で提案に記し、`ProposalView::source` として画面に出す
@@ -1636,7 +1642,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - **画面へのイベント (`mcp-bridge`、`BridgeEvent`):** `status` (始めた・止めた・握手した)・`approval` / `approval_closed`・`document`
   (適用・Undo・Redo・保存。画面は `EditorDocument.refresh`)・`proposals` (一覧を取り直し、AI タブを開いていなければタブに「•」)。
 - **設定 (`mcp-bridge.json`):** アプリの設定のディレクトリに `enabled` (既定は偽)・`port` (無ければ空いているポート)・`token` を残す。
-  トークンは初めて有効にしたときに OS の乱数で作り、起動し直しても同じ (HTTP で直接つなぐクライアントの設定を保つ)。Unix では 0600 で書く。
+  トークンは初めて有効にしたときに OS の乱数で作り、起動し直しても同じ (HTTP で直接つなぐクライアントの設定を保つ)。Unix では一時ファイルも
+  0600 で作り、名前を変えて置き換える (書いている途中で失敗してもトークンと有効の設定を失わない)。
   「Regenerate token」で作り直す。起動時に有効なら始め、終了時 (`RunEvent::Exit`) に止めて発見用のファイルを消す (待っている確認は拒否)。
 - **登録の手順 (`src/lib/agents/setup.ts`、Vitest):** 同梱の `ugoe-mcp` (エディタの実行ファイルの隣。Windows では WSL から指すパス
   `/mnt/c/…` も) を埋めた、Claude Code (`claude mcp add … -- <ugoe-mcp> --editor`)・OpenCode (`opencode.json`)・ChatGPT
