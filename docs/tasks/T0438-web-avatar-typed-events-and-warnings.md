@@ -1,11 +1,11 @@
 ---
 id: T0438
 title: npm: <ugoe-avatar> のイベントの型と、読み込みの警告・着せ替えのエラーの TypeScript の型
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: [T0425]
-assignee:
+assignee: claude-worker-T0438
 ---
 
 # T0438: <ugoe-avatar> のイベントの型と、警告・エラーの構造の型

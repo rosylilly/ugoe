@@ -1,11 +1,11 @@
 ---
 id: T0324
 title: モーションのカーブの評価でセグメントを線形に探さない
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-motion, docs]
 depends_on: [T0317]
-assignee:
+assignee: claude-worker-T0324
 ---
 
 # T0324: モーションのカーブの評価でセグメントを線形に探さない

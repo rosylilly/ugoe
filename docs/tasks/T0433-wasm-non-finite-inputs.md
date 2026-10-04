@@ -1,11 +1,11 @@
 ---
 id: T0433
 title: wasm の入口の NaN と dt の扱いを揃えて書き、回帰のテストを足す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, docs]
 depends_on: [T0424, T0137, T0139]
-assignee:
+assignee: claude-worker-T0433
 ---
 
 # T0433: wasm の入口の NaN と dt の扱いを揃えて書き、回帰のテストを足す

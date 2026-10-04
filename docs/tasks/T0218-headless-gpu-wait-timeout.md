@@ -1,11 +1,11 @@
 ---
 id: T0218
 title: ヘッドレス描画: GPU を待つときに時間の上限を設ける
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-headless, ugoe-mcp, docs]
 depends_on: [T0212]
-assignee:
+assignee: claude-worker-T0218
 ---
 
 # T0218: ヘッドレス描画: GPU を待つときに時間の上限を設ける

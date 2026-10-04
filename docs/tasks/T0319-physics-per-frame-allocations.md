@@ -1,11 +1,11 @@
 ---
 id: T0319
 title: 物理の毎フレームの確保とパラメータの名前の探索を減らす
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-physics]
 depends_on: [T0316]
-assignee:
+assignee: claude-worker-T0319
 ---
 
 # T0319: 物理の毎フレームの確保とパラメータの名前の探索を減らす

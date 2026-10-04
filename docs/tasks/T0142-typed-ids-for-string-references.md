@@ -1,11 +1,11 @@
 ---
 id: T0142
 title: 文字列のままの ID の参照を Id<T> にそろえるか決める
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, docs]
 depends_on: [T0136]
-assignee:
+assignee: claude-worker-T0142
 ---
 
 # T0142: 文字列のままの ID の参照を Id<T> にそろえるか決める

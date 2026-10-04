@@ -1,11 +1,11 @@
 ---
 id: T0150
 title: ugoe-format: 読み込みの資源の上限を利用者が指定できるようにする (展開の合計・1 チャンク)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, docs, spec]
 depends_on: [T0138]
-assignee:
+assignee: claude-worker-T0150
 ---
 
 # T0150: ugoe-format: 読み込みの資源の上限を利用者が指定できるようにする (展開の合計・1 チャンク)
