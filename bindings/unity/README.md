@@ -27,7 +27,7 @@
 | パス | 内容 |
 | --- | --- |
 | `com.ugoe.unity/` | UPM パッケージ (`package.json` のあるところ) |
-| `com.ugoe.unity/Runtime/Core/` | **Unity に依存しない** C# の層: P/Invoke (`Native.cs`)、`Puppet`・`Module`・`LightingUniform`・`TrackingInput`、描画の準備の計算 (乗算済みアルファ・裏面カリング・マスクの内容の計画・変更フラグを見た取り出し・描画のまとめ・マスクのページと中間のテクスチャの配置・色空間の変換) |
+| `com.ugoe.unity/Runtime/Core/` | **Unity に依存しない** C# の層: P/Invoke (`Native.cs`)、`Puppet`・`Module`・`LightingUniform`・`TrackingInput`、描画の準備の計算 (乗算済みアルファ・裏面カリング・マスクの内容の計画・変更フラグを見た取り出し・描画のまとめ・マスクのページと中間のテクスチャの配置・色空間の変換)、`UgoePuppet` の状態の扱いの判断 (`ComponentState.cs`: 読み直すか・読み込みの途中の失敗・変更フラグから送り直す範囲・マスクを描き直す条件・着せ替えの並び) |
 | `com.ugoe.unity/Runtime/Unity/` | Unity の部分: `UgoePuppet` (コンポーネント)、`UgoeModel` / `UgoeModule` (アセット)、テクスチャのデコード、マスクの描画、Linear の色空間の中間のテクスチャ (`UgoeIntermediate`) |
 | `com.ugoe.unity/Runtime/Resources/Ugoe/` | シェーダ (`UgoeDrawable.shader`・`UgoeMask.shader`・`UgoeComposite.shader`・`UgoeCommon.hlsl`) |
 | `com.ugoe.unity/Runtime/Plugins/` | ネイティブライブラリ (**コミットしない**。`build.mjs` か CI の成果物で置く) |
@@ -209,7 +209,9 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 ## 制限と確かめていないこと
 
 - **Unity の上では実行していない** (この環境に Unity が無い)。確かめたのは `Runtime/Core` の dotnet のテストと、
-  Unity の部分のスタブでの型検査 (`netstandard2.1` と `net48`) だけ。Unity で確かめること:
+  Unity の部分のスタブでの型検査 (`netstandard2.1` と `net48`) だけ。`UgoePuppet` の状態の扱いは、判断を `Runtime/Core`
+  (`ComponentState.cs`) に出して dotnet でテストしている (`tests/ComponentStateTests.cs`) が、Unity の物 (メッシュ・マテリアル・
+  子の GameObject) に写す部分は Unity で動かしていない。Unity で確かめること:
   1. `node bindings/unity/build.mjs` の後、Unity 2022.3 (と Unity 6) の新しいプロジェクトにパッケージを入れ、コンパイルが通るか。
   2. `.ugoe` / `.ugoemod` がアセットとして取り込まれるか (インスペクタで `UgoePuppet.Model` に選べるか)。
   3. 見本の `Basic.unity` が開けて (手で書いたシーンのファイル)、再生でモデルが表示され、`AngleX` が揺れるか。

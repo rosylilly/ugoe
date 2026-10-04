@@ -116,9 +116,8 @@ namespace Ugoe.Unity
         private bool dirty;
         private bool needsLoad = true;
         private bool validated;
-        private UgoeModel loadedModel;
-        private float loadedPixelsPerUnit;
-        private readonly List<UgoeModule> loadedModules = new List<UgoeModule>();
+        // 読み込んだときのモデル・モジュール・pixelsPerUnit (インスペクタでの変更で読み直すかを決める)
+        private readonly LoadedSource<UgoeModel, UgoeModule> loaded = new LoadedSource<UgoeModel, UgoeModule>();
         private bool lightsDirty = true;
         private float lastMaskScale;
         private float lastResolution = 1;
@@ -166,6 +165,7 @@ namespace Ugoe.Unity
             public bool AllColors;
             public int[] Indices;
             public MaterialPropertyBlock Block = new MaterialPropertyBlock();
+            public readonly BatchUpload Upload = new BatchUpload();
         }
 
         /// <summary>表示中のモデル。代入すると読み直す。</summary>
@@ -207,7 +207,7 @@ namespace Ugoe.Unity
             get => pixelsPerUnit;
             set
             {
-                pixelsPerUnit = Mathf.Max(value, 1e-3f);
+                pixelsPerUnit = PixelScale.Sanitize(value, pixelsPerUnit);
                 MarkAllDirty();
             }
         }
@@ -219,66 +219,49 @@ namespace Ugoe.Unity
         {
             needsLoad = false;
             Unload();
-            loadedModel = model;
-            loadedPixelsPerUnit = pixelsPerUnit;
-            loadedModules.Clear();
-            loadedModules.AddRange(modules);
+            loaded.Remember(model, modules, pixelsPerUnit);
             if (model == null || model.Bytes == null || model.Bytes.Length == 0) return;
-            try
+            var modelName = model.name;
+            // 読めないモジュール (壊れた .ugoemod) は飛ばして、ほかのモジュールと本体を表示する。
+            // 準備の途中で失敗したら Puppet を残さない (PuppetLoad)。
+            puppet = PuppetLoad.Run(model.CreatePuppet, modules, m => m != null ? m.Module : null, p =>
             {
-                puppet = model.CreatePuppet();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"ugoe: could not load {model.name}: {e.Message}", this);
-                return;
-            }
-            foreach (var w in puppet.LoadWarnings) Debug.LogWarning($"ugoe: {model.name}: {w}", this);
-            if (QualitySettings.activeColorSpace == ColorSpace.Linear && linearCompositing == LinearCompositing.Direct && !linearWarned)
-            {
-                // 1 回だけ知らせる (Gamma に切り替えない選択もある)。
-                linearWarned = true;
-                Debug.LogWarning($"ugoe: {LinearColorSpaceWarning}", this);
-            }
-            var attach = new List<Module>();
-            foreach (var m in modules)
-            {
-                if (m == null) continue;
-                try
+                puppet = p;
+                foreach (var w in p.LoadWarnings) Debug.LogWarning($"ugoe: {modelName}: {w}", this);
+                if (QualitySettings.activeColorSpace == ColorSpace.Linear && linearCompositing == LinearCompositing.Direct && !linearWarned)
                 {
-                    attach.Add(m.Module);
+                    // 1 回だけ知らせる (Gamma に切り替えない選択もある)。
+                    linearWarned = true;
+                    Debug.LogWarning($"ugoe: {LinearColorSpaceWarning}", this);
                 }
-                catch (Exception e)
-                {
-                    // 読めないモジュール (壊れた .ugoemod) は飛ばして、ほかのモジュールと本体を表示する。
-                    Debug.LogError($"ugoe: could not read the module {m.name}: {e.Message}", this);
-                }
-            }
-            if (attach.Count > 0)
-            {
-                try
-                {
-                    puppet.SetModules(attach);
-                }
-                catch (UgoeException e)
-                {
-                    Debug.LogError($"ugoe: could not attach the modules of {name}: {e.Message} ({e.Kind})", this);
-                }
-            }
-            try
-            {
                 ApplySavedParameters();
-                textures.LoadAll(puppet, model.name);
+                textures.LoadAll(p, modelName);
                 Build();
-            }
-            catch (Exception e)
+            }, (stage, index, e) => LogLoadError(modelName, stage, index, e));
+            if (puppet == null)
             {
-                // 途中で止まった Puppet を残すと、LateUpdate が作りかけの描画で毎フレーム失敗する。
-                Debug.LogError($"ugoe: could not load {model.name}: {e.Message}", this);
+                // 作りかけの描画とテクスチャを片付ける (Puppet は PuppetLoad が破棄した)。
                 Unload();
                 return;
             }
             ModelLoaded?.Invoke();
+        }
+
+        private void LogLoadError(string modelName, LoadStage stage, int index, Exception e)
+        {
+            switch (stage)
+            {
+                case LoadStage.ReadModule:
+                    Debug.LogError($"ugoe: could not read the module {modules[index].name}: {e.Message}", this);
+                    break;
+                case LoadStage.AttachModules:
+                    var kind = e is UgoeException u ? $" ({u.Kind})" : "";
+                    Debug.LogError($"ugoe: could not attach the modules of {name}: {e.Message}{kind}", this);
+                    break;
+                default:
+                    Debug.LogError($"ugoe: could not load {modelName}: {e.Message}", this);
+                    break;
+            }
         }
 
         private void Unload()
@@ -490,7 +473,7 @@ namespace Ugoe.Unity
         private void OnValidate()
         {
             // インスペクタで変えたものは次の LateUpdate で反映する (OnValidate の中では子を作れない)。
-            pixelsPerUnit = Mathf.Max(pixelsPerUnit, 1e-3f);
+            pixelsPerUnit = PixelScale.Sanitize(pixelsPerUnit, PixelScale.Default);
             validated = true;
             lightsDirty = true;
         }
@@ -501,7 +484,7 @@ namespace Ugoe.Unity
             {
                 validated = false;
                 // モデルかモジュールか頂点の変換 (pixelsPerUnit) が変わったときだけ読み直す。パラメータは設定し直す。
-                if (model != loadedModel || !SameModules() || pixelsPerUnit != loadedPixelsPerUnit) needsLoad = true;
+                if (loaded.NeedsReload(model, modules, pixelsPerUnit)) needsLoad = true;
                 else if (puppet != null)
                 {
                     ApplySavedParameters();
@@ -566,16 +549,6 @@ namespace Ugoe.Unity
             }
         }
 
-        private bool SameModules()
-        {
-            if (modules.Count != loadedModules.Count) return false;
-            for (var i = 0; i < modules.Count; i++)
-            {
-                if (modules[i] != loadedModules[i]) return false;
-            }
-            return true;
-        }
-
         /// <summary>
         /// 時間を <paramref name="dt"/> 秒進めて描画を更新する (<see cref="playing"/> が false のときに手で進める)。
         /// </summary>
@@ -614,14 +587,13 @@ namespace Ugoe.Unity
         private void Sync()
         {
             sync.Pull();
-            if (batchPlan == null || sync.RenderOrderChanged || batching != batchingUsed || batchPlan.NeedsRebuild(sync.States))
+            if (SyncRules.NeedsBatchRebuild(batchPlan, sync.RenderOrderChanged, batching, batchingUsed, sync.States))
             {
                 RebuildBatches();
             }
             var ox = puppet.Canvas.OriginX;
             var oy = puppet.Canvas.OriginY;
             var inv = 1 / pixelsPerUnit;
-            var maskDirty = false;
             for (var i = 0; i < views.Count; i++)
             {
                 var view = views[i];
@@ -640,14 +612,13 @@ namespace Ugoe.Unity
                         view.Mesh.uv2 = view.Canvas;
                         view.Mesh.RecalculateBounds();
                     }
-                    if (plan.IsMaskSource[i] || plan.ContentOf[i] >= 0) maskDirty = true;
                 }
-                if ((sync.States[i].Changes & DrawableChanges.MaskStrength) != 0 && plan.IsMaskSource[i] && plan.ContentOf[i] >= 0) maskDirty = true;
             }
             var scale = MaskResolution();
-            if (!Mathf.Approximately(scale, lastMaskScale) || masks.Lost) maskDirty = true;
+            var maskDirty = SyncRules.NeedsMaskRedraw(masks.HasMasks,
+                SyncRules.MaskContentChanged(plan, sync.PositionsChanged, sync.States), scale, lastMaskScale, masks.Lost);
             lastResolution = scale;
-            if (masks.HasMasks && maskDirty)
+            if (maskDirty)
             {
                 lastMaskScale = scale;
                 if (masks.Render(views, sync, scale))
@@ -665,33 +636,27 @@ namespace Ugoe.Unity
             foreach (var bv in batchViews) SyncBatch(bv);
         }
 
-        private const DrawableChanges ColorChanges =
-            DrawableChanges.Opacity | DrawableChanges.MultiplyColor | DrawableChanges.ScreenColor | DrawableChanges.MaskStrength;
-
         // まとめたメッシュ 1 つに、変わった要素の頂点・色・三角形を写して送る。
         private void SyncBatch(BatchView bv)
         {
             var batch = bv.Batch;
             var full = bv.Full;
-            var allColors = full || bv.AllColors;
+            var upload = bv.Upload;
+            upload.Plan(batch, puppet.Drawables, sync.PositionsChanged, sync.States, full, bv.AllColors);
             bv.Full = false;
             bv.AllColors = false;
-            bool vertices = full, colors = allColors, indices = full;
             for (var k = 0; k < batch.Members.Length; k++)
             {
                 var i = batch.Members[k];
                 var offset = batch.VertexOffsets[k];
                 var view = views[i];
                 var state = sync.States[i];
-                if (full || sync.PositionsChanged[i])
+                if (upload.MemberPositions[k])
                 {
                     Array.Copy(view.Vertices, 0, bv.Vertices, offset, view.Vertices.Length);
                     Array.Copy(view.Canvas, 0, bv.Canvas, offset, view.Canvas.Length);
-                    vertices = true;
-                    // 裏面カリングする要素は、頂点が動くと表を向く三角形が変わる。
-                    if (puppet.Drawables[i].Culling) indices = true;
                 }
-                if (allColors || (state.Changes & ColorChanges) != 0)
+                if (upload.MemberColors[k])
                 {
                     var color = new Color(state.MultiplyR, state.MultiplyG, state.MultiplyB, state.Opacity);
                     var screen = new Vector4(state.ScreenR, state.ScreenG, state.ScreenB, 0);
@@ -706,10 +671,9 @@ namespace Ugoe.Unity
                         bv.Extra[offset + v] = extra;
                         bv.MaskMap[offset + v] = read.Map;
                     }
-                    colors = true;
                 }
-                if ((state.Changes & DrawableChanges.Visibility) != 0) indices = true;
             }
+            bool vertices = upload.Vertices, colors = upload.Colors, indices = upload.Indices;
             var mesh = bv.Mesh;
             if (full)
             {
@@ -924,8 +888,7 @@ namespace Ugoe.Unity
                 return false;
             }
             remember();
-            loadedModules.Clear();
-            loadedModules.AddRange(modules);
+            loaded.RememberModules(modules);
             // 描画可能要素の並びが変わったので作り直す。変わっていないテクスチャはデコードし直さない。
             textures.Refresh(puppet, model != null ? model.name : name);
             Build();
