@@ -1,11 +1,11 @@
 ---
 id: T0435
 title: ugoe-wasm の手書きの型の写しを生成物と比べる
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, packages, apps/editor, apps/viewer, apps/studio, scripts, docs]
 depends_on: [T0424]
-assignee:
+assignee: claude-worker-T0435
 ---
 
 # T0435: ugoe-wasm の手書きの型の写しを生成物と比べる
