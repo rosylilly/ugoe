@@ -1,11 +1,11 @@
-// ビューア (apps/viewer) の主な流れ: 見本を開く・トラッキングの記録を流してパラメータが動く・設定を開く。
+// ビューア (apps/viewer) の主な流れ: 見本を開く・トラッキングの記録を流してパラメータが動く・画像からトラッキングする・設定を開く。
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
 import { describe } from "node:test";
 import { checkNoCspViolations, launch, shot, step } from "../lib/harness.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
-import { startFakeTracking, trackerState } from "../lib/tracking.mjs";
+import { checkImageTracking, startFakeTracking, trackerState } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
 describe("viewer", () => {
@@ -58,6 +58,12 @@ describe("viewer", () => {
     assert.ok(Number.isFinite(slider));
     await shot(s, "viewer-tracking");
     await s.execute("window.__UGOE_TRACKER__.stop()");
+  });
+
+  step(app, "tracks a face in an image with MediaPipe", async () => {
+    const s = app.session;
+    const result = await checkImageTracking(s, "viewer-tracking-image");
+    assert.ok(result.after > result.before, JSON.stringify(result));
   });
 
   step(app, "opens and closes the settings", async () => {

@@ -1,30 +1,76 @@
-// エディタ (apps/editor) の主な流れ: 見本のプロジェクトを開く・パラメータを動かす・保存する・言語を切り替える。
+// エディタ (apps/editor) の主な流れ: 見本のプロジェクトを開く・パラメータを動かす・保存する・PSD を取り込む・`.ugoe` を書き出す・
+// プレビューでモジュールを付け外しし、画像からトラッキングする・言語を切り替える。
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe } from "node:test";
-import { checkNoCspViolations, invoke, launch, shot, step, work } from "../lib/harness.mjs";
+import { checkNoCspViolations, invoke, launch, root, shot, step, work } from "../lib/harness.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
+import { checkImageTracking } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
 /**
  * OS のファイルダイアログの代わり (`window.__UGOE_FILE_DIALOGS__`、apps/editor/src/lib/fileDialogs.ts)。
- * フォルダーを選ぶダイアログは `dir` を返す。ファイルを選ぶダイアログは使わない (取り消し)。
+ * フォルダーを選ぶダイアログは `dir` を返す。ファイルを開く・保存先を決めるダイアログは、`answerDialog` で決めたパスを
+ * 1 回だけ返す (決めていなければ取り消し)。
  */
 function replaceDialogs(session, dir) {
   return session.execute(
     `
     const dir = arguments[0];
+    const answers = (window.__e2eDialogAnswers = {});
+    const take = (kind) => {
+      const path = answers[kind] ?? null;
+      delete answers[kind];
+      return path;
+    };
     window.__UGOE_FILE_DIALOGS__ = {
-      openFile: async () => null,
+      openFile: async () => take("openFile"),
       openDirectory: async () => dir,
-      saveFile: async () => null,
+      saveFile: async () => take("saveFile"),
       defaultDirectory: async () => dir,
     };
   `,
     dir,
+  );
+}
+
+/** 次に開くダイアログ (`openFile` か `saveFile`) が `path` を選んだことにする。 */
+function answerDialog(session, kind, path) {
+  return session.execute("window.__e2eDialogAnswers[arguments[0]] = arguments[1]", kind, path);
+}
+
+/** ツリーの行 (`[role=treeitem]`) のうち、名前が `name` のもの。 */
+function treeRow(session, name) {
+  return session.execute(
+    `return [...document.querySelectorAll("[role=treeitem]")]
+       .find((row) => row.querySelector(":scope > .name, .name")?.textContent.trim() === arguments[0]) ?? null`,
+    name,
+  );
+}
+
+/** プレビューの着せ替えの、`.ugoemod` のファイル名を含む行の状態 (付いているか)。行が無ければ `null`。 */
+function moduleRow(session, file) {
+  return session.execute(
+    `
+    const li = [...document.querySelectorAll(".dress-up .modules > li")]
+      .find((li) => li.textContent.includes(arguments[0]));
+    if (!li) return null;
+    const box = li.querySelector("[role=checkbox]");
+    return { attached: box?.getAttribute("aria-checked") === "true", disabled: box?.disabled ?? true };
+  `,
+    file,
+  );
+}
+
+/** プレビューの着せ替えの、スロットの選択欄に出ている値。 */
+function slotValue(session, slot) {
+  return session.execute(
+    `const trigger = document.querySelector(\`.dress-up [aria-label="Module in slot \${arguments[0]}"]\`);
+     return trigger?.querySelector(".ugoe-select__value")?.textContent.trim() ?? null;`,
+    slot,
   );
 }
 
@@ -127,6 +173,124 @@ describe("editor", () => {
     const files = readdirSync(project, { recursive: true }).filter((f) => f.endsWith(".json"));
     const written = files.some((f) => readFileSync(join(project, f), "utf8").includes("9.8.7"));
     assert.ok(written, `9.8.7 is not in the saved project (${files.join(", ")})`);
+  });
+
+  step(app, "imports a PSD and its layers appear in the tree", async () => {
+    const s = app.session;
+    await answerDialog(s, "openFile", join(root, "assets", "fixtures", "character.psd"));
+    const button = await s.waitFindText("nav.file-menu button", "Import PSD");
+    await button.click();
+    // 取り込みは別のスレッドで作り、適用してから画面に届く (T0685)。PSD のファイル名の最上位のパーツができる
+    const top = await waitFor(() => treeRow(s, "character"), {
+      timeout: 30_000,
+      message: "the imported PSD in the tree",
+    });
+    if ((await top.attribute("aria-expanded")) === "false") {
+      const expand = await top.find("button[aria-label=Expand]");
+      await expand.click();
+    }
+    // PSD のグループ `頭` (character の直下) と、その中のレイヤー
+    const head = await waitFor(() => treeRow(s, "頭"), { message: "the group 頭 in the tree" });
+    if ((await head.attribute("aria-expanded")) === "false") {
+      const expand = await head.find("button[aria-label=Expand]");
+      await expand.click();
+    }
+    await waitFor(() => treeRow(s, "前髪"), { message: "the layer 前髪 in the tree" });
+    const model = JSON.parse(await invoke(s, "get_model_json"));
+    for (const layer of ["背景", "後ろ髪", "首", "服", "顔", "右目", "左目", "口", "前髪"]) {
+      assert.ok(
+        model.meshes.some((m) => m.name === layer),
+        `the layer ${layer} is not a mesh in the model`,
+      );
+    }
+    await s.waitFind("nav.file-menu .project .dirty");
+    await shot(s, "editor-psd");
+  });
+
+  step(app, "exports a .ugoe file", async () => {
+    const s = app.session;
+    const dir = join(work(), "export");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, "dress-up-with-psd.ugoe");
+    await answerDialog(s, "saveFile", path);
+    const open = await s.waitFindText("nav.file-menu button", "Export…");
+    await open.click();
+    const button = await s.waitFindText(".export-panel button", "Export .ugoe");
+    await button.click();
+    await waitFor(
+      () => s.execute(`return __e2e.byText(".ugoe-toast__message", "Exported to ") !== null`),
+      { timeout: 30_000, message: "the exported notice" },
+    );
+    assert.ok(existsSync(path), `${path} was not written`);
+    // 取り込んだ PSD のテクスチャも入るので、小さすぎない
+    assert.ok(statSync(path).size > 10_000, `${path} is only ${statSync(path).size} bytes`);
+    // 一時ファイルに書いてから名前を変える (T0687)。一時ファイルが残らない
+    assert.deepEqual(readdirSync(dir), ["dress-up-with-psd.ugoe"]);
+    await s.keys(Keys.Escape);
+  });
+
+  step(app, "puts a module on and takes it off in the preview", async () => {
+    const s = app.session;
+    const preview = await waitFor(() => s.execute(`return __e2e.byText("button", "^Preview$")`), {
+      message: "the Preview button",
+    });
+    await preview.click();
+    await s.waitFindText(".preview-panel h2", "Preview");
+    // 見本の着せ替えのモジュール (ビューアの見本と同じもの)。読み込むとスロット Headwear に付く
+    const file = "cat-ears.ugoemod";
+    await answerDialog(s, "openFile", join(root, "assets", "samples", "dress-up", file));
+    const load = await s.waitFindText(".dress-up button", "Load .ugoemod");
+    await load.click();
+    await waitFor(async () => (await moduleRow(s, file))?.attached, {
+      timeout: 20_000,
+      message: "the module to be put on",
+    });
+    await waitFor(async () => (await slotValue(s, "Headwear")) === "CatEars", {
+      message: "the Headwear slot to show CatEars",
+    });
+    await shot(s, "editor-dress-up-on");
+
+    // チェックを外すと外れる
+    const box = await waitFor(
+      () =>
+        s.execute(
+          `return [...document.querySelectorAll(".dress-up .modules > li")]
+             .find((li) => li.textContent.includes(arguments[0]))?.querySelector("[role=checkbox]") ?? null`,
+          file,
+        ),
+      { message: "the module checkbox" },
+    );
+    await waitFor(async () => (await moduleRow(s, file))?.disabled === false, {
+      message: "the module checkbox to be enabled",
+    });
+    await box.click();
+    await waitFor(async () => (await moduleRow(s, file))?.attached === false, {
+      message: "the module to be taken off",
+    });
+    await waitFor(async () => (await slotValue(s, "Headwear")) === "(none)", {
+      message: "the Headwear slot to show (none)",
+    });
+
+    // スロットの選択欄から付け直す
+    const trigger = await s.waitFind('.dress-up [aria-label="Module in slot Headwear"]');
+    await trigger.click();
+    const option = await s.waitFindText("[role=option]", "CatEars");
+    await option.click();
+    await waitFor(async () => (await moduleRow(s, file))?.attached, {
+      message: "the module to be put on again from the slot",
+    });
+    await shot(s, "editor-dress-up-again");
+  });
+
+  step(app, "tracks a face in an image with MediaPipe in the preview", async () => {
+    const s = app.session;
+    const result = await checkImageTracking(s, "editor-tracking-image");
+    assert.ok(result.after > result.before, JSON.stringify(result));
+    const exit = await s.waitFindText("button", "Exit preview");
+    await exit.click();
+    await waitFor(async () => (await s.findAll(".preview-panel")).length === 0, {
+      message: "the preview to close",
+    });
   });
 
   step(app, "switches the language to Japanese and keeps it", async () => {

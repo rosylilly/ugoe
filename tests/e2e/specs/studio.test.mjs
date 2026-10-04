@@ -20,7 +20,7 @@ import {
   work,
 } from "../lib/harness.mjs";
 import { countInvokes, installPageHelpers, invokeStats, percentile } from "../lib/page.mjs";
-import { startFakeTracking, trackerState } from "../lib/tracking.mjs";
+import { checkImageTracking, startFakeTracking, trackerState } from "../lib/tracking.mjs";
 import { waitFor } from "../lib/webdriver.mjs";
 
 /** 空いている TCP のポート (操作 API に使う。利用者のスタジオの既定のポートとぶつけない)。 */
@@ -278,6 +278,13 @@ describe("studio", () => {
     );
     const tracker = await trackerState(s);
     assert.equal(tracker.status, "running");
+  });
+
+  step(app, "tracks a face in an image with MediaPipe", async () => {
+    const s = app.session;
+    // 記録の再生 (前の手順) を止めて、操作ウィンドウのトラッキングのパネルに画像を入れる
+    const result = await checkImageTracking(s, "studio-tracking-image");
+    assert.ok(result.after > result.before, JSON.stringify(result));
   });
 
   step(app, "connects a client to the studio API", async () => {
