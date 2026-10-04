@@ -1,11 +1,11 @@
 ---
 id: T0926
 title: 同梱物のライセンスの表記: エディタの MIT の JS ライブラリと、アプリ間の写しの検査
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages, apps/editor, apps/viewer, apps/studio, scripts, docs]
 depends_on: [T0913]
-assignee:
+assignee: claude-worker-T0926
 ---
 
 # T0926: 同梱物のライセンスの表記: エディタの MIT の JS ライブラリと、アプリ間の写しの検査
