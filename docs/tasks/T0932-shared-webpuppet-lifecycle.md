@@ -1,11 +1,11 @@
 ---
 id: T0932
 title: WebPuppet の作成・作り直し・破棄をエディタと @ugoe/player で共有する
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, packages, bindings/web, apps/editor, docs]
 depends_on: [T0914, T0672]
-assignee:
+assignee: claude-worker-T0932
 ---
 
 # T0932: WebPuppet の作成・作り直し・破棄をエディタと @ugoe/player で共有する
