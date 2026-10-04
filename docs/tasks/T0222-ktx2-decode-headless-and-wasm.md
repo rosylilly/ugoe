@@ -1,11 +1,11 @@
 ---
 id: T0222
 title: ヘッドレスと wasm で非圧縮の KTX2 を読み、適合テストに KTX2 のケースを足す
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, ugoe-headless, ugoe-wasm, tests/conformance, bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0222
 ---
 
 # T0222: ヘッドレスと wasm で非圧縮の KTX2 を読み、適合テストに KTX2 のケースを足す
