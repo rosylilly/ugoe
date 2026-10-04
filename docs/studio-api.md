@@ -59,6 +59,10 @@ Until `session.hello` succeeds, every other method fails with `-32000`. A wrong 
 with `-32002`, and the connection is closed (close code `4003`). At most four clients can wait for approval at the
 same time.
 
+Call `session.hello` within **30 seconds** of opening the WebSocket. A connection whose `session.hello` has neither succeeded nor
+started waiting for approval by then is closed with code `4008`. Waiting for the user's approval does not count: a
+client whose `session.hello` is pending stays connected for as long as the user takes.
+
 The user can see approved clients in the panel, **disconnect** them (the key stays valid) or **revoke** them (the key
 is deleted and open connections are closed with code `4001`).
 
@@ -121,10 +125,14 @@ request's response.
 | `1013` | Too many connections (32) |
 | `4001` | The user revoked the client's key |
 | `4003` | Access denied (wrong token or key, or the user denied the client) |
+| `4008` | `session.hello` was not called within 30 seconds of connecting |
 
 The studio sends a WebSocket ping when it has received nothing for 20 seconds (and again every 20 seconds), and closes
 connections that send nothing (not even a pong) for 60 seconds. Standard WebSocket clients answer pings automatically,
 so a client that only listens to events stays connected.
+
+The HTTP request that opens the WebSocket (the request line and headers) must arrive in full within 10 seconds of
+connecting; otherwise the studio closes the connection without a response.
 
 ## Methods
 

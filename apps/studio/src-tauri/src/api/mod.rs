@@ -70,6 +70,8 @@ pub enum Outgoing {
 pub const CLOSE_REVOKED: u16 = 4001;
 /// WebSocket の close の符号: トークンか鍵が違う、または利用者が承認しなかった。
 pub const CLOSE_DENIED: u16 = 4003;
+/// WebSocket の close の符号: つないでから決まった時間 (30 秒) のうちに `session.hello` をしなかった (HTTP の 408 に倣う)。
+pub const CLOSE_HELLO_TIMEOUT: u16 = 4008;
 /// WebSocket の close の符号: 利用者が切断した・API を切った (1001 Going Away)。
 pub const CLOSE_GOING_AWAY: u16 = 1001;
 
@@ -507,6 +509,14 @@ impl Studio {
         if known {
             self.send_api_view();
         }
+    }
+
+    /// 接続が名乗ったか (`session.hello` を受けた。承認待ちも含む)。名簿に無ければ `true` (もう閉じている)。
+    pub(crate) fn api_introduced(&self, connection: u64) -> bool {
+        lock(&self.api.0)
+            .connections
+            .get(&connection)
+            .is_none_or(|conn| conn.session != Session::New)
     }
 
     /// 接続に送る。

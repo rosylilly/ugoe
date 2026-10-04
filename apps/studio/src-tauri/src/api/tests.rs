@@ -358,12 +358,15 @@ fn first_contact_needs_the_token_and_the_users_approval() {
         client.fail("session.hello", json!({ "name": " ", "token": TOKEN })),
         INVALID_PARAMS
     );
-    // トークンを示すと承認を待つ (応答は承認まで返らない)。
+    // 名乗れなかった接続は、名乗るまでの期限 (`server.rs` の `HelloDeadline`) で閉じられる側のまま。
+    assert!(!studio.api_introduced(client.id));
+    // トークンを示すと承認を待つ (応答は承認まで返らない)。承認待ちは期限で閉じない。
     client.send(
         "session.hello",
         json!({ "name": "Stream Deck", "token": TOKEN, "permission": "control" }),
     );
     assert!(client.take().is_none());
+    assert!(studio.api_introduced(client.id));
     let view = studio.api_view();
     assert_eq!(view.pending.len(), 1);
     assert_eq!(view.pending[0].name, "Stream Deck");
