@@ -12,10 +12,13 @@ mod parse;
 
 use parse::{Mask, RawLayer, Section};
 
+/// 取り込みのエラー。
 #[derive(Debug, thiserror::Error)]
 pub enum PsdError {
+    /// 壊れた入力・途中で切れた入力。
     #[error("invalid psd: {0}")]
     Invalid(String),
+    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ)。
     #[error("unsupported psd feature: {0}")]
     Unsupported(String),
 }
@@ -133,6 +136,7 @@ impl fmt::Display for ImportWarning {
 /// - 8 ビット・16 ビットの RGB (アルファの有無は問わない)。16 ビットは 8 ビットに丸める
 ///
 /// レイヤーマスク (チャンネル -2 / -3) はレイヤーのアルファに掛ける。
+/// グループの入れ子が 256 段より深いものも [`PsdError::Unsupported`] になる。
 /// 壊れた入力や途中で切れた入力は [`PsdError::Invalid`] を返し、パニックしない。
 pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
     let doc = parse::parse(bytes)?;
@@ -165,7 +169,15 @@ pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
     let mut stack = vec![Frame::default()];
     for raw in doc.layers {
         match raw.section {
-            Some(Section::Divider) => stack.push(Frame::default()),
+            Some(Section::Divider) => {
+                // 木を作る・複製する・捨てる処理は入れ子の深さだけ再帰するので、深さを抑える。
+                if stack.len() > MAX_GROUP_DEPTH {
+                    return Err(PsdError::Unsupported(format!(
+                        "groups nested deeper than {MAX_GROUP_DEPTH} levels"
+                    )));
+                }
+                stack.push(Frame::default());
+            }
             Some(Section::Folder) => {
                 // 対応する終わりの印がないフォルダは、空のグループとして扱う。
                 let frame = if stack.len() > 1 {
@@ -218,6 +230,9 @@ pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
         warnings: root.warnings,
     })
 }
+
+/// グループの入れ子の深さの上限。これより深い PSD は [`PsdError::Unsupported`] にする。
+const MAX_GROUP_DEPTH: usize = 256;
 
 #[derive(Default)]
 struct Frame {

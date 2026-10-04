@@ -25,12 +25,19 @@ pub const MAX_VERTICES: usize = u16::MAX as usize;
 const MAX_ATTEMPTS: u32 = 24;
 /// やり直すたびに間隔に掛ける倍率。
 const SPACING_GROWTH: f64 = 1.5;
+/// `margin` の上限 (px)。作業用の格子は画像の周りに `margin` だけ広がるので、大きすぎる値で
+/// 確保が爆発しないように抑える。
+const MAX_MARGIN: f32 = 1024.0;
+/// 内部点の候補にする六角格子の点の数の上限。これを超える間隔の小さい格子は、点を数え上げる前に
+/// 間隔を広げてやり直す (極端に小さい `interior_spacing` で処理が終わらなくならないように)。
+const MAX_GRID_POINTS: f64 = 256.0 * MAX_VERTICES as f64;
 
+/// [`generate`] のオプション。既定値と範囲はクレートの README の「オプション」。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeshOptions {
     /// この値以上のアルファを「中身」とみなす (0..=255)。
     pub alpha_threshold: u8,
-    /// 輪郭を外側に広げる距離 (px)。簡略化で最大半分ほど内側に戻ることがある。
+    /// 輪郭を外側に広げる距離 (px、0..=1024)。簡略化で最大半分ほど内側に戻ることがある。
     pub margin: f32,
     /// 輪郭上の頂点間隔の目安 (px)。これより長い辺は等分する。
     pub edge_spacing: f32,
@@ -62,14 +69,19 @@ pub struct GeneratedMesh {
     pub indices: Vec<u16>,
 }
 
+/// [`generate`] のエラー。
 #[derive(Debug, thiserror::Error)]
 pub enum MeshError {
+    /// 中身 (`alpha_threshold` 以上の画素) が 1 つもない。
     #[error("image is fully transparent")]
     Empty,
+    /// `rgba` の長さが `width * height * 4` と合わない。
     #[error("rgba length {len} does not match {width}x{height}")]
     BadImage { width: u32, height: u32, len: usize },
+    /// オプションが範囲の外。
     #[error("invalid mesh option: {0}")]
     InvalidOptions(&'static str),
+    /// 間隔を広げてやり直しても、頂点数が [`MAX_VERTICES`] に収まらない。
     #[error("shape is too complex to fit in 65535 vertices")]
     TooComplex,
 }
@@ -145,10 +157,22 @@ pub fn generate(
     for _ in 0..MAX_ATTEMPTS {
         let edge = edge_spacing * scale;
         let tolerance = (0.25 * edge_spacing).min(0.45 * clearance) * scale;
-        let rings: Vec<Vec<P>> = loops
+        let simplified: Vec<Vec<P>> = loops
             .iter()
             .filter_map(|ring| contour::simplify(ring, tolerance))
-            .map(|ring| contour::resample(&ring, edge))
+            .collect();
+        // 再サンプリングした点の数を先に見積もり、収まらなければ点を作らずにやり直す
+        let estimate: f64 = simplified
+            .iter()
+            .map(|ring| contour::resample_count(ring, edge))
+            .sum();
+        if estimate + 4.0 > MAX_VERTICES as f64 {
+            scale *= SPACING_GROWTH;
+            continue;
+        }
+        let rings: Vec<Vec<P>> = simplified
+            .iter()
+            .map(|ring| contour::resample(ring, edge))
             .filter(|ring| ring.len() >= 3)
             .collect();
         let boundary_count: usize = rings.iter().map(Vec::len).sum();
@@ -159,9 +183,11 @@ pub fn generate(
                 let keep_out = 0.5 * edge.min(spacing) + 2.0 * tolerance + 1.5;
                 interior_points(&region, &depth, offset, spacing, keep_out, &bounds)
             } else {
-                Vec::new()
+                Some(Vec::new())
             };
-            if boundary_count + interior.len() + 4 <= MAX_VERTICES {
+            if let Some(interior) = interior
+                && boundary_count + interior.len() + 4 <= MAX_VERTICES
+            {
                 let mesh = triangulate::build(&rings, &interior, &bounds.guard(), &opaque, offset);
                 return Ok(mesh);
             }
@@ -172,8 +198,10 @@ pub fn generate(
 }
 
 fn validate(options: &MeshOptions) -> Result<(), MeshError> {
-    if !(options.margin.is_finite() && options.margin >= 0.0) {
-        return Err(MeshError::InvalidOptions("margin must be finite and >= 0"));
+    if !(0.0..=MAX_MARGIN).contains(&options.margin) {
+        return Err(MeshError::InvalidOptions(
+            "margin must be between 0 and 1024",
+        ));
     }
     if !(options.edge_spacing.is_finite() && options.edge_spacing > 0.0) {
         return Err(MeshError::InvalidOptions(
@@ -223,6 +251,7 @@ impl Bounds {
 
 /// 六角格子 (行ごとに半間隔ずらした格子) の点のうち、領域の境界から `keep_out` 以上離れたもの。
 /// 格子は領域の外接矩形の中心に合わせる (左右・上下の余りが対称になる)。
+/// 格子の点が [`MAX_GRID_POINTS`] を超えるなら `None`。
 fn interior_points(
     region: &Mask,
     depth: &[f32],
@@ -230,14 +259,19 @@ fn interior_points(
     spacing: f64,
     keep_out: f64,
     bounds: &Bounds,
-) -> Vec<P> {
+) -> Option<Vec<P>> {
     let row_step = spacing * 3f64.sqrt() / 2.0;
     let center = [
         (bounds.min[0] + bounds.max[0]) / 2.0,
         (bounds.min[1] + bounds.max[1]) / 2.0,
     ];
-    let rows = ((bounds.max[1] - center[1]) / row_step).floor() as i64;
-    let cols = ((bounds.max[0] - center[0]) / spacing).floor() as i64 + 1;
+    let rows = ((bounds.max[1] - center[1]) / row_step).floor();
+    let cols = ((bounds.max[0] - center[0]) / spacing).floor() + 1.0;
+    if (2.0 * rows + 1.0) * (2.0 * cols + 1.0) > MAX_GRID_POINTS {
+        return None;
+    }
+    // 上で数を抑えたので i64 に収まる
+    let (rows, cols) = (rows as i64, cols as i64);
     let mut out = Vec::new();
     for row in -rows..=rows {
         let y = center[1] + row as f64 * row_step;
@@ -257,7 +291,7 @@ fn interior_points(
             }
         }
     }
-    out
+    Some(out)
 }
 
 #[cfg(test)]

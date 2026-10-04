@@ -31,6 +31,8 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
 
 対応する画像は 8 ビットと 16 ビットの RGB。PSB・32 ビット・CMYK・グレースケールなどは
 `PsdError::Unsupported`、壊れた入力は `PsdError::Invalid` になる。
+グループの入れ子は 256 段まで。これより深いものも `Unsupported` にする (`LayerTree` を作る・複製する・
+捨てる処理が深さだけ再帰し、スタックをあふれさせるため)。
 チャンネルの圧縮は、無圧縮・PackBits (RLE)・ZIP・予測付き ZIP (各行で左の標本との差) のすべてに対応する。
 ZIP は `miniz_oxide` で展開し、展開した大きさがレイヤーの大きさと合わなければ `Invalid` にする。
 

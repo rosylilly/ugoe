@@ -8,15 +8,19 @@ use crate::MAX_VERTICES;
 
 type Cdt = ConstrainedDelaunayTriangulation<Point2<f64>>;
 
+/// [`triangulate_points`] のエラー。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TriangulateError {
+    /// 点の数が [`MAX_VERTICES`] を超える。
     #[error("{0} points exceed the limit of 65535")]
     TooManyPoints(usize),
+    /// 座標が NaN か無限大の点の添字。
     #[error("point {0} is not finite")]
     NonFinite(usize),
     /// 2 つの点が同じ位置にある (三角形分割では 1 点にまとまってしまう)。
     #[error("points {0} and {1} are at the same position")]
     Duplicate(usize, usize),
+    /// 制約辺が、存在しない点の添字を指している。
     #[error("constraint refers to point {0}, which does not exist")]
     ConstraintOutOfRange(u16),
 }
@@ -53,9 +57,21 @@ pub fn triangulate_points(
     // spade の頂点 → 入力の添字
     let mut owner: Vec<usize> = Vec::with_capacity(points.len());
     let mut handles: Vec<Option<FixedVertexHandle>> = Vec::with_capacity(points.len());
+    // spade は絶対値が `MIN_ALLOWED_VALUE` (約 1.8e-43) 未満の 0 でない座標を拒むので、0 に寄せる
+    // (当たるのは f32 の非正規化数だけ)。f32 の最大値は spade の上限より小さい。
+    let coordinate = |v: f32| {
+        let v = f64::from(v);
+        if v.abs() < spade::MIN_ALLOWED_VALUE {
+            0.0
+        } else {
+            v
+        }
+    };
     for (i, p) in points.iter().enumerate() {
-        // 有限の値は検査済みなので、挿入が失敗することはない。
-        let handle = cdt.insert(Point2::new(f64::from(p.x), f64::from(p.y))).ok();
+        // 有限の値は検査済みで、極端に小さい値は 0 に寄せたので、挿入が失敗することはない。
+        let handle = cdt
+            .insert(Point2::new(coordinate(p.x), coordinate(p.y)))
+            .ok();
         if let Some(h) = handle {
             if h.index() < owner.len() {
                 return Err(TriangulateError::Duplicate(owner[h.index()], i));
@@ -209,6 +225,18 @@ mod tests {
         assert_eq!(
             triangulate_points(&line, &[[0, 3]]),
             Err(TriangulateError::ConstraintOutOfRange(3))
+        );
+    }
+
+    #[test]
+    fn subnormal_coordinates_are_not_dropped() {
+        // spade は 0 でない極端に小さい座標を受け付けない。0 とみなして三角形に使う。
+        let points = [Vec2::new(1e-44, 0.0), Vec2::X, Vec2::Y];
+        assert_eq!(triangulate_points(&points, &[]).unwrap().len(), 3);
+        let dup = [Vec2::ZERO, Vec2::X, Vec2::new(0.0, -1e-44)];
+        assert_eq!(
+            triangulate_points(&dup, &[]),
+            Err(TriangulateError::Duplicate(0, 2))
         );
     }
 }

@@ -43,19 +43,21 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
    (`docs/spec/rendering.md#裏面カリング` の表)。
 9. **頂点数の調整:** 頂点数 (番兵を含む) が `MAX_VERTICES` を超えるなら、間隔と許容誤差を 1.5 倍
    にして 4〜7 をやり直す (最大 24 回。それでも収まらなければ `MeshError::TooComplex`)。
+   輪郭の点の数は再サンプリングの前に見積もり、内部点の候補の格子が `MAX_VERTICES` の 256 倍を
+   超えるときも、点を作らずにやり直す (極端に小さい間隔で確保が爆発したり終わらなくなったりしないように)。
 
 ## オプション (`MeshOptions`)
 
 | フィールド | 既定値 | 意味 |
 | --- | --- | --- |
 | `alpha_threshold` | 8 | この値以上のアルファを中身とする |
-| `margin` | 4.0 | 輪郭を外に広げる距離 (px)。作業用の格子がこの分だけ大きくなる |
+| `margin` | 4.0 | 輪郭を外に広げる距離 (px)。作業用の格子がこの分だけ大きくなる。上限は 1024 |
 | `edge_spacing` | 24.0 | 輪郭上の頂点間隔の上限の目安 (px)。曲がった箇所ではこれより密になる |
 | `interior_spacing` | 48.0 | 内部点の間隔 (px)。0 なら内部点を置かない |
 | `min_island_area` | 0 | 画素数がこれ未満の島を捨てる (0 と 1 は捨てない) |
 
-`margin` と `interior_spacing` は 0 以上、`edge_spacing` は 0 より大きい有限の値でなければ
-`MeshError::InvalidOptions` になる。
+`margin` は 0 以上 1024 以下、`interior_spacing` は 0 以上、`edge_spacing` は 0 より大きい有限の値で
+なければ `MeshError::InvalidOptions` になる。
 
 ## 保証
 

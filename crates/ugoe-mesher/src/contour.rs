@@ -152,6 +152,17 @@ pub(crate) fn resample(ring: &[P], spacing: f64) -> Vec<P> {
     out
 }
 
+/// [`resample`] が返す点の数の上限 (重なった点を除く前の数)。点を作らずに数える。
+pub(crate) fn resample_count(ring: &[P], spacing: f64) -> f64 {
+    ring.iter()
+        .enumerate()
+        .map(|(i, &a)| {
+            let b = ring[(i + 1) % ring.len()];
+            (dist2(a, b).sqrt() / spacing).ceil().max(1.0)
+        })
+        .sum()
+}
+
 pub(crate) fn round_f32(p: P) -> P {
     [f64::from(p[0] as f32), f64::from(p[1] as f32)]
 }
@@ -240,5 +251,6 @@ mod tests {
         assert_eq!(s.len(), 4);
         let r = resample(&s, 4.0);
         assert_eq!(r.len(), 12);
+        assert_eq!(resample_count(&s, 4.0), 12.0);
     }
 }

@@ -587,3 +587,26 @@ fn corrupted_input_does_not_panic() {
         }
     }
 }
+
+fn nested_groups(depth: usize) -> Vec<u8> {
+    let mut layers = vec![W::group_end(); depth];
+    layers.push(W::raster("leaf", 0, 0, 1, 1));
+    layers.extend((0..depth).map(|i| W::group(&format!("g{i}"))));
+    write_psd_unchecked(2, 2, &layers, &[0; 12])
+}
+
+/// 深く入れ子にしたグループ。木を作って捨てる (再帰する) ところでスタックをあふれさせないこと。
+#[test]
+fn deeply_nested_groups_are_rejected() {
+    let tree = import(&nested_groups(256)).unwrap();
+    let mut node = &tree.root[0];
+    for _ in 0..256 {
+        node = &group(node).1[0];
+    }
+    assert_eq!(layer(node).name, "leaf");
+    // レイヤー数の上限 (32767) に近い深さ。
+    for depth in [257, 16_000] {
+        let err = import(&nested_groups(depth)).unwrap_err();
+        assert!(matches!(err, PsdError::Unsupported(_)), "{err:?}");
+    }
+}

@@ -153,6 +153,44 @@ fn invalid_options_are_rejected() {
     }
 }
 
+/// 外 (JSON など) から来た極端なオプションで、パニック・確保の爆発・終わらない処理にならないこと。
+#[test]
+fn extreme_options_do_not_blow_up() {
+    let rgba = image(8, 8, |x, y| {
+        (2.0..6.0).contains(&x) && (2.0..6.0).contains(&y)
+    });
+    for margin in [1e6, 1e30, f32::MAX] {
+        let options = MeshOptions {
+            margin,
+            ..MeshOptions::default()
+        };
+        assert!(matches!(
+            generate(&rgba, 8, 8, &options),
+            Err(MeshError::InvalidOptions(_))
+        ));
+    }
+    // 間隔が小さすぎれば、広げても上限に収まらない。点を作り切る前に諦める。
+    for (edge_spacing, interior_spacing) in [(1e-30, 48.0), (24.0, 1e-30), (f32::MIN_POSITIVE, 0.0)]
+    {
+        let options = MeshOptions {
+            edge_spacing,
+            interior_spacing,
+            ..MeshOptions::default()
+        };
+        assert!(matches!(
+            generate(&rgba, 8, 8, &options),
+            Err(MeshError::TooComplex)
+        ));
+    }
+    // 広げれば収まる程度に小さい間隔は、広げて作る。
+    let options = MeshOptions {
+        edge_spacing: 1e-3,
+        interior_spacing: 1e-3,
+        ..MeshOptions::default()
+    };
+    check(&rgba, 8, 8, &options);
+}
+
 #[test]
 fn square_is_covered_with_margin() {
     let rgba = image(64, 64, |x, y| {
