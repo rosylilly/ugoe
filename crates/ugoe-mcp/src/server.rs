@@ -4,12 +4,13 @@
 //! 旧来の `initialize` の握手をする版 (2025-11-25 以前) と、要求ごとに `_meta` で版を示す版
 //! (2026-07-28) の両方に応じる。仕様: https://modelcontextprotocol.io/specification/
 
+use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
 
-use crate::host::DocumentHost;
+use crate::host::{Cancellation, DocumentHost};
 use crate::render::panic_message;
 use crate::tools::{Options, Tools};
 
@@ -46,9 +47,38 @@ get_module_rig_guide と propose_module_rig (パラメータを足さない。se
 
 /// サーバの状態。1 つのプロセスにつき 1 つ (stdio の接続、または HTTP のすべての要求で共有する)。
 /// `&self` で処理でき、HTTP の接続ごとのスレッドから同時に呼んでよい。
-#[derive(Debug)]
 pub struct Server {
     tools: Tools,
+    /// 処理中の要求の取り消しの印。キーは要求の id の JSON の文 (`1` と `"1"` を区別する)。
+    /// HTTP はセッションを持たないので、別のクライアントの要求が同じ id を持つことがある。
+    in_flight: Mutex<HashMap<String, Vec<Arc<Cancellation>>>>,
+}
+
+impl std::fmt::Debug for Server {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Server")
+            .field("tools", &self.tools)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 処理中の要求の登録 (捨てると外す)。
+struct InFlight<'a> {
+    server: &'a Server,
+    key: String,
+    cancellation: Arc<Cancellation>,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        let mut in_flight = self.server.lock_in_flight();
+        if let Some(list) = in_flight.get_mut(&self.key) {
+            list.retain(|c| !Arc::ptr_eq(c, &self.cancellation));
+            if list.is_empty() {
+                in_flight.remove(&self.key);
+            }
+        }
+    }
 }
 
 /// 要求の版。
@@ -64,6 +94,7 @@ impl Server {
     pub fn new(options: Options) -> Self {
         Self {
             tools: Tools::new(options),
+            in_flight: Mutex::default(),
         }
     }
 
@@ -71,6 +102,7 @@ impl Server {
     pub fn with_host(options: Options, host: Arc<dyn DocumentHost>) -> Self {
         Self {
             tools: Tools::with_host(options, host),
+            in_flight: Mutex::default(),
         }
     }
 
@@ -90,6 +122,16 @@ impl Server {
 
     /// 1 つのメッセージを処理する。
     pub fn handle(&self, message: Value) -> Option<Value> {
+        self.handle_cancellable(message, None)
+    }
+
+    /// 1 つのメッセージを処理する。`disconnected` はクライアントが答えを待たずに去ったかを答える
+    /// (HTTP の接続。去ったら要求を取り消す)。
+    pub(crate) fn handle_cancellable(
+        &self,
+        message: Value,
+        disconnected: Option<Box<dyn Fn() -> bool + Send + Sync>>,
+    ) -> Option<Value> {
         let Value::Object(message) = message else {
             // JSON-RPC のバッチ (配列) は 2025-06-18 で取り除かれたので受け付けない。
             return Some(error(
@@ -109,9 +151,51 @@ impl Server {
         let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
         let Some(id) = message.get("id").cloned() else {
             // 通知 (`notifications/initialized`・`notifications/cancelled` など)。応答しない。
+            if method == "notifications/cancelled" {
+                self.cancel(&params);
+            }
             return None;
         };
-        Some(self.request(id, method, &params))
+        // 処理の間、取り消しの印を登録し、このスレッドに付ける (`crate::host` の「取り消し」)。
+        let registered = InFlight {
+            server: self,
+            key: id.to_string(),
+            cancellation: Arc::new(Cancellation::new(disconnected)),
+        };
+        self.lock_in_flight()
+            .entry(registered.key.clone())
+            .or_default()
+            .push(Arc::clone(&registered.cancellation));
+        let reply = registered
+            .cancellation
+            .scope(|| self.request(id, method, &params));
+        drop(registered);
+        Some(reply)
+    }
+
+    fn lock_in_flight(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<Arc<Cancellation>>>> {
+        self.in_flight
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `notifications/cancelled` の `requestId` の要求を取り消す。処理中の要求のうち、その id を持つものが
+    /// 1 つだけのときに限る (HTTP で複数のクライアントが同じ id を使っていれば、どれのことか分からない
+    /// ので無視する。`--editor` の中継は id を重ならないものに変えて送る)。知らない id・終わった要求の
+    /// 取り消しも無視する (仕様のとおり)。
+    fn cancel(&self, params: &Value) {
+        let Some(request) = params.get("requestId") else {
+            return;
+        };
+        let in_flight = self.lock_in_flight();
+        if let Some([cancellation]) = in_flight.get(&request.to_string()).map(Vec::as_slice) {
+            cancellation.cancel();
+            let reason = params.get("reason").and_then(Value::as_str);
+            eprintln!(
+                "ugoe-mcp: the client cancelled request {request}{}",
+                reason.map(|r| format!(": {r}")).unwrap_or_default()
+            );
+        }
     }
 
     fn request(&self, id: Value, method: &str, params: &Value) -> Value {
@@ -280,6 +364,49 @@ mod tests {
 
     use super::*;
     use crate::host::PanickingHost;
+
+    #[test]
+    fn cancellation_reaches_only_an_unambiguous_request() {
+        let server = Server::new(Options::default());
+        let add = |id: Value| {
+            let cancellation = Arc::new(Cancellation::new(None));
+            server
+                .lock_in_flight()
+                .entry(id.to_string())
+                .or_default()
+                .push(Arc::clone(&cancellation));
+            cancellation
+        };
+        let one = add(json!(1));
+        let text_one = add(json!("1"));
+        let shared_a = add(json!(2));
+        let shared_b = add(json!(2));
+        let cancel = |id: Value| {
+            server.handle(json!({
+                "jsonrpc": "2.0", "method": "notifications/cancelled",
+                "params": { "requestId": id },
+            }))
+        };
+        assert!(cancel(json!(1)).is_none());
+        assert!(cancel(json!(2)).is_none());
+        assert!(cancel(json!(3)).is_none());
+        assert!(one.is_cancelled());
+        assert!(!text_one.is_cancelled(), "1 and \"1\" are different ids");
+        assert!(
+            !shared_a.is_cancelled() && !shared_b.is_cancelled(),
+            "ambiguous ids are ignored"
+        );
+    }
+
+    #[test]
+    fn requests_leave_the_in_flight_table() {
+        let server = Server::new(Options::default());
+        let ping = server
+            .handle(json!({ "jsonrpc": "2.0", "id": 9, "method": "ping" }))
+            .unwrap();
+        assert_eq!(ping["result"], json!({}));
+        assert!(server.lock_in_flight().is_empty());
+    }
 
     #[test]
     fn a_panicking_tool_answers_with_an_internal_error() {

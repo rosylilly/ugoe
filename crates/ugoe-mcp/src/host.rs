@@ -19,14 +19,23 @@
 //!   変わっていれば、適用は提案が古いというエラーになる (承認した差分と違う結果にしない)。
 //! - エディタで非同期のコマンド (Tauri の `async` コマンド) から答えるときも、答えを渡す側
 //!   ([`Approvals::answer`]) は待たないので、非同期のランタイムを止めない。
+//!
+//! # 取り消し
+//!
+//! クライアントが要求を取り消すと (`notifications/cancelled`、HTTP では答えを待たずに接続を閉じる)、
+//! [`crate::Server`] はその要求を処理しているスレッドに取り消しの印を立てる。[`Approvals::request`] は
+//! 待つ間にその印を見て、確認を拒否で終える (持ち主は何もしなくてよい。画面の確認は、ほかの終わり方と
+//! 同じく `request` から戻ったときに閉じる)。印は要求を処理するスレッドに付く
+//! ([`Approvals::request`] を要求のスレッドの外で呼ぶと、取り消しは届かない)。
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
-use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, export_bundle};
 
@@ -320,6 +329,68 @@ impl DocumentHost for FileHost {
     }
 }
 
+/// 取り消された要求の確認を拒否するときの文 (クライアントはふつう読まない)。
+const CANCELLED: &str = "the client cancelled the request";
+/// 確認を待つ間に取り消しを確かめる間隔。
+const CANCEL_POLL: Duration = Duration::from_millis(50);
+
+/// 処理中の要求の取り消しの印 (モジュールの説明の「取り消し」)。
+pub(crate) struct Cancellation {
+    cancelled: AtomicBool,
+    /// クライアントが接続を閉じたか (HTTP の接続を覗く)。要求を処理するスレッドだけが呼ぶ。
+    disconnected: Option<Box<dyn Fn() -> bool + Send + Sync>>,
+}
+
+impl Cancellation {
+    pub(crate) fn new(disconnected: Option<Box<dyn Fn() -> bool + Send + Sync>>) -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            disconnected,
+        }
+    }
+
+    /// 取り消す (どのスレッドから呼んでもよい)。
+    pub(crate) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    /// 取り消されたか (接続が閉じていれば取り消す)。
+    pub(crate) fn is_cancelled(&self) -> bool {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return true;
+        }
+        if self.disconnected.as_ref().is_some_and(|d| d()) {
+            self.cancel();
+            return true;
+        }
+        false
+    }
+
+    /// `f` の間、このスレッドの要求の印を `self` にする。
+    pub(crate) fn scope<R>(self: &Arc<Self>, f: impl FnOnce() -> R) -> R {
+        /// panic しても前の印に戻す。
+        struct Restore(Option<Arc<Cancellation>>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                let previous = self.0.take();
+                CURRENT.with(|c| *c.borrow_mut() = previous);
+            }
+        }
+        let previous = CURRENT.with(|c| c.borrow_mut().replace(Arc::clone(self)));
+        let _restore = Restore(previous);
+        f()
+    }
+
+    fn current() -> Option<Arc<Self>> {
+        CURRENT.with(|c| c.borrow().clone())
+    }
+}
+
+thread_local! {
+    /// このスレッドが処理している要求の印 ([`Cancellation::scope`])。
+    static CURRENT: RefCell<Option<Arc<Cancellation>>> = const { RefCell::new(None) };
+}
+
 /// 利用者の確認を待つ仕組み (エディタの持ち主が [`DocumentHost::authorize`] で使う)。
 ///
 /// `authorize` のスレッドが [`Approvals::request`] で確認を出して待ち、画面 (Tauri のコマンド) が
@@ -349,24 +420,48 @@ impl Approvals {
 
     /// 確認の番号を作って `ask` に渡し (`ask` は画面に確認を出すだけで待たない)、答えか時間切れまで待つ。
     /// 拒否は [`HostError::Denied`] (`denied` の文)、時間切れは [`HostError::TimedOut`]。
+    ///
+    /// クライアントが要求を取り消したら (モジュールの説明の「取り消し」)、答えを待たずに拒否で終える
+    /// (待つ前に取り消されていれば `ask` を呼ばない)。
     pub fn request(
         &self,
         timeout: Duration,
         denied: &str,
         ask: impl FnOnce(u64),
     ) -> Result<(), HostError> {
+        let cancellation = Cancellation::current();
+        let cancelled = || cancellation.as_ref().is_some_and(|c| c.is_cancelled());
+        if cancelled() {
+            return Err(HostError::Denied(CANCELLED.to_owned()));
+        }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, receiver) = mpsc::sync_channel(1);
         self.lock().insert(id, sender);
         ask(id);
-        let answer = receiver.recv_timeout(timeout);
+        let deadline = Instant::now() + timeout;
+        let answer = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = match &cancellation {
+                Some(_) => remaining.min(CANCEL_POLL),
+                None => remaining,
+            };
+            match receiver.recv_timeout(wait) {
+                Err(RecvTimeoutError::Timeout) if wait < remaining => {
+                    if cancelled() {
+                        break None;
+                    }
+                }
+                answer => break Some(answer),
+            }
+        };
         self.lock().remove(&id);
         match answer {
-            Ok(true) => Ok(()),
-            Ok(false) | Err(RecvTimeoutError::Disconnected) => {
+            Some(Ok(true)) => Ok(()),
+            Some(Ok(false) | Err(RecvTimeoutError::Disconnected)) => {
                 Err(HostError::Denied(denied.to_owned()))
             }
-            Err(RecvTimeoutError::Timeout) => Err(HostError::TimedOut),
+            Some(Err(RecvTimeoutError::Timeout)) => Err(HostError::TimedOut),
+            None => Err(HostError::Denied(CANCELLED.to_owned())),
         }
     }
 
@@ -418,8 +513,6 @@ impl DocumentHost for PanickingHost {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
 
     #[test]
@@ -458,6 +551,35 @@ mod tests {
         assert!(approvals.answer(second, false));
         assert!(matches!(no.join().unwrap(), Err(HostError::Denied(m)) if m == "no"));
         assert!(approvals.pending().is_empty());
+    }
+
+    #[test]
+    fn cancelling_the_request_declines_its_approval() {
+        let approvals = Arc::new(Approvals::new());
+        let cancellation = Arc::new(Cancellation::new(None));
+        let waiting = {
+            let approvals = Arc::clone(&approvals);
+            let cancellation = Arc::clone(&cancellation);
+            std::thread::spawn(move || {
+                cancellation.scope(|| approvals.request(Duration::from_secs(10), "no", |_| {}))
+            })
+        };
+        while approvals.pending().is_empty() {
+            std::thread::yield_now();
+        }
+        cancellation.cancel();
+        assert!(matches!(waiting.join().unwrap(), Err(HostError::Denied(m)) if m == CANCELLED));
+        assert!(approvals.pending().is_empty());
+
+        // 待つ前に取り消されていれば、確認を出さない。接続が閉じていれば取り消す。
+        let closed = Arc::new(Cancellation::new(Some(Box::new(|| true))));
+        let mut asked = false;
+        let result =
+            closed.scope(|| approvals.request(Duration::from_secs(10), "no", |_| asked = true));
+        assert!(matches!(result, Err(HostError::Denied(m)) if m == CANCELLED));
+        assert!(!asked);
+        // 印はスコープの外に残らない。
+        assert!(Cancellation::current().is_none());
     }
 
     #[test]

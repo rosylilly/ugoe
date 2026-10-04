@@ -130,7 +130,7 @@ fn pack_mcpb(out: &Path, icon: Option<&Path>) -> anyhow::Result<()> {
 }
 
 fn relay(options: RelayOptions) -> anyhow::Result<()> {
-    let mut relay = Relay::new(options);
+    let relay = Relay::new(options);
     // 標準出力には MCP のメッセージだけを書く。ログは標準エラーへ。
     eprintln!(
         "ugoe-mcp {} --editor: {}",
@@ -138,7 +138,7 @@ fn relay(options: RelayOptions) -> anyhow::Result<()> {
         relay.describe()
     );
     relay
-        .run(std::io::stdin().lock(), std::io::stdout().lock())
+        .run(std::io::stdin().lock(), std::io::stdout())
         .context("failed to relay stdio")
 }
 

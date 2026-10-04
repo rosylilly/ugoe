@@ -242,7 +242,8 @@ impl DocumentHost for FakeEditor {
 /// `ugoe-mcp --editor` を子プロセスで起動した stdio のクライアント。
 struct Relay {
     child: Child,
-    stdin: ChildStdin,
+    /// `None` なら閉じた ([`Relay::close_stdin`])。
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
 }
@@ -269,25 +270,41 @@ impl Relay {
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             stdout,
             next_id: 1,
         }
     }
 
     fn send(&mut self, message: &Value) {
-        writeln!(self.stdin, "{message}").unwrap();
-        self.stdin.flush().unwrap();
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{message}").unwrap();
+        stdin.flush().unwrap();
     }
 
-    fn request(&mut self, method: &str, params: Value) -> Value {
+    /// 標準入力を閉じる (クライアントが終わった)。
+    fn close_stdin(&mut self) {
+        self.stdin = None;
+    }
+
+    /// 要求を送り、答えを待たずに id を返す。
+    fn send_request(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
+        id
+    }
+
+    /// 標準出力の次の 1 行。
+    fn read(&mut self) -> Value {
         let mut line = String::new();
         self.stdout.read_line(&mut line).unwrap();
-        let response: Value =
-            serde_json::from_str(&line).unwrap_or_else(|e| panic!("bad line {line:?}: {e}"));
+        serde_json::from_str(&line).unwrap_or_else(|e| panic!("bad line {line:?}: {e}"))
+    }
+
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.send_request(method, params);
+        let response = self.read();
         assert_eq!(response["id"], id, "{response}");
         response
     }
@@ -547,6 +564,198 @@ fn other_requests_proceed_while_an_approval_waits() {
     let applied = waiting.join().unwrap();
     assert_eq!(applied["isError"], false, "{applied}");
     assert_eq!(editor.parameter_ids(), ["X", "AngleX"]);
+}
+
+/// 確認を長く待つ偽のエディタにつないだ中継と、置いた提案 ([`waiting_editor`])。
+struct Waiting {
+    editor: Arc<FakeEditor>,
+    asked: Receiver<(u64, String)>,
+    bridge: EditorBridge,
+    agent: Relay,
+    path: String,
+    proposal: String,
+}
+
+/// 確認を長く待つ偽のエディタ (画面の答えはテストが出す) を、中継につないで提案を 1 つ置く。
+fn waiting_editor(tmp: &TempDir) -> Waiting {
+    let project = save_fixture_project(&tmp.0);
+    let path = project.to_str().unwrap().to_owned();
+    let discovery_file = tmp.0.join("editor-mcp.json");
+    let (editor, asked) = FakeEditor::open(&project);
+    let editor = {
+        let mut editor = Arc::try_unwrap(editor).ok().unwrap();
+        editor.timeout = Duration::from_secs(30);
+        Arc::new(editor)
+    };
+    editor.set_policy(Policy::Manual);
+    let bridge = start(&editor, &discovery_file);
+    let mut agent = Relay::spawn(&discovery_file, &tmp.0);
+    agent.initialize();
+    let proposal = agent.call_ok("propose_edit", add_angle(&path))["proposal"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    Waiting {
+        editor,
+        asked,
+        bridge,
+        agent,
+        path,
+        proposal,
+    }
+}
+
+/// `done` が真になるまで待つ (10 秒で諦める)。
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(std::time::Instant::now() < deadline, "timed out: {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn the_relay_answers_other_requests_while_an_approval_waits() {
+    let tmp = TempDir::new("relay-concurrent");
+    let Waiting {
+        editor,
+        asked,
+        bridge: _bridge,
+        mut agent,
+        path,
+        proposal,
+    } = waiting_editor(&tmp);
+    let apply = agent.send_request(
+        "tools/call",
+        json!({ "name": "apply_proposal", "arguments": { "path": path, "proposal": proposal } }),
+    );
+    let (question, _) = asked.recv_timeout(Duration::from_secs(10)).unwrap();
+
+    // 同じ中継 (同じクライアント) のほかの要求が、確認を待つ適用より先に返る。
+    let ping = agent.request("ping", json!({}));
+    assert_eq!(ping["result"], json!({}), "{ping}");
+    let listed = agent.call_ok("list_proposals", json!({ "path": path }));
+    assert_eq!(listed["proposals"][0]["proposal"], proposal);
+    // 並行の要求でも、標準出力の行は混ざらない (1 行ずつ JSON として読める)。
+    let ids: Vec<u64> = (0..8)
+        .map(|_| {
+            agent.send_request(
+                "tools/call",
+                json!({ "name": "list_proposals", "arguments": { "path": path } }),
+            )
+        })
+        .collect();
+    let mut answered: Vec<u64> = (0..8)
+        .map(|_| agent.read()["id"].as_u64().unwrap())
+        .collect();
+    answered.sort_unstable();
+    assert_eq!(answered, ids);
+    assert_eq!(editor.parameter_ids(), ["X"]);
+
+    assert!(editor.approvals.answer(question, true));
+    let applied = agent.read();
+    assert_eq!(applied["id"], apply, "{applied}");
+    assert_eq!(applied["result"]["isError"], false, "{applied}");
+    assert_eq!(editor.parameter_ids(), ["X", "AngleX"]);
+}
+
+#[test]
+fn a_cancelled_apply_is_declined_in_the_editor() {
+    let tmp = TempDir::new("relay-cancel");
+    let Waiting {
+        editor,
+        asked,
+        bridge: _bridge,
+        mut agent,
+        path,
+        proposal,
+    } = waiting_editor(&tmp);
+    let apply = agent.send_request(
+        "tools/call",
+        json!({ "name": "apply_proposal", "arguments": { "path": path, "proposal": proposal } }),
+    );
+    let (question, _) = asked.recv_timeout(Duration::from_secs(10)).unwrap();
+    agent.send(&json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/cancelled",
+        "params": { "requestId": apply, "reason": "timed out" },
+    }));
+    // エディタの確認が閉じ、後から承認しても適用されない。
+    wait_until("the approval closes", || {
+        editor.approvals.pending().is_empty()
+    });
+    assert!(!editor.approvals.answer(question, true));
+    assert_eq!(editor.parameter_ids(), ["X"]);
+    // 取り消した要求には答えない (次の行は次の要求の答え)。
+    let ping = agent.request("ping", json!({}));
+    assert_eq!(ping["result"], json!({}), "{ping}");
+    // 提案は残る (もう一度適用を頼める)。
+    let listed = agent.call_ok("list_proposals", json!({ "path": path }));
+    assert_eq!(listed["proposals"][0]["proposal"], proposal);
+}
+
+#[test]
+fn closing_stdin_cancels_the_waiting_approvals() {
+    let tmp = TempDir::new("relay-eof");
+    let Waiting {
+        editor,
+        asked,
+        bridge: _bridge,
+        mut agent,
+        path,
+        proposal,
+    } = waiting_editor(&tmp);
+    agent.send_request(
+        "tools/call",
+        json!({ "name": "apply_proposal", "arguments": { "path": path, "proposal": proposal } }),
+    );
+    asked.recv_timeout(Duration::from_secs(10)).unwrap();
+    agent.close_stdin();
+    wait_until("the approval closes", || {
+        editor.approvals.pending().is_empty()
+    });
+    wait_until("the relay exits", || {
+        agent.child.try_wait().unwrap().is_some()
+    });
+    assert_eq!(editor.parameter_ids(), ["X"]);
+}
+
+#[test]
+fn an_http_client_disconnecting_cancels_its_approval() {
+    let tmp = TempDir::new("http-disconnect");
+    let Waiting {
+        editor,
+        asked,
+        bridge,
+        agent: _agent,
+        path,
+        proposal,
+    } = waiting_editor(&tmp);
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": { "name": "apply_proposal", "arguments": { "path": path, "proposal": proposal } },
+    })
+    .to_string();
+    let addr = bridge.local_addr().unwrap();
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    write!(
+        stream,
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n\
+         Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n\
+         Content-Length: {}\r\n\r\n{body}",
+        addr.port(),
+        bridge.token(),
+        body.len()
+    )
+    .unwrap();
+    let (question, _) = asked.recv_timeout(Duration::from_secs(10)).unwrap();
+    // 答えを待たずに接続を閉じた (Streamable HTTP の取り消し)。
+    drop(stream);
+    wait_until("the approval closes", || {
+        editor.approvals.pending().is_empty()
+    });
+    assert!(!editor.approvals.answer(question, true));
+    assert_eq!(editor.parameter_ids(), ["X"]);
 }
 
 #[test]

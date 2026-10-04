@@ -6,6 +6,11 @@
 //!
 //! - エンドポイントは 1 つ (`/mcp`)。要求は 1 つずつ POST で受け、応答は JSON 1 つで返す
 //!   (`application/json`)。ツールは同期で進み、途中の通知を送らないので SSE は使わない。
+//! - 取り消し: 答えを返す前にクライアントが接続を閉じたら、その要求を取り消す (2026-07-28 の
+//!   Streamable HTTP の取り消し。確認を待つ適用などが拒否で終わる。`crate::host` の「取り消し」)。
+//!   旧来の版は接続の切断を取り消しとみなさないよう勧めるが、このサーバは SSE で答えを送り直さない
+//!   ので、去ったクライアントの答えは誰にも届かない。`notifications/cancelled` の POST も受ける
+//!   ([`Server`] が処理中の要求の id で探す)。
 //! - 通知と応答の POST には `202 Accepted` を返す。GET (サーバからの SSE) と DELETE (セッションの
 //!   終了) には `405` を返す。セッション (`Mcp-Session-Id`) は発行しない。状態 (開いている
 //!   プロジェクトと提案) はプロセスに 1 つで、すべての要求で共有する (stdio と同じ)。
@@ -330,7 +335,7 @@ fn serve_connection(endpoint: &Endpoint, stream: TcpStream, limits: &Limits) {
         reader.get_mut().deadline = Instant::now() + limits.request_timeout;
         match read_request(&mut reader, &mut writer, limits) {
             Ok(Some((request, keep_alive))) => {
-                let response = endpoint.respond(&request);
+                let response = endpoint.respond_cancellable(&request, disconnect_probe(&writer));
                 if write_response(&mut writer, &response, keep_alive).is_err() || !keep_alive {
                     break;
                 }
@@ -346,6 +351,32 @@ fn serve_connection(endpoint: &Endpoint, stream: TcpStream, limits: &Limits) {
                 break;
             }
         }
+    }
+}
+
+/// クライアントが接続を閉じたかを確かめる関数 (要求を処理するスレッドで、答えを書く前に呼ぶ)。
+fn disconnect_probe(stream: &TcpStream) -> Option<Box<dyn Fn() -> bool + Send + Sync>> {
+    let stream = stream.try_clone().ok()?;
+    Some(Box::new(move || peer_closed(&stream)))
+}
+
+/// 相手が接続を閉じたか。読まずに覗くので、次の要求 (パイプライン) の本文は消さない。読み込みの期限は
+/// 次に読むときに [`TimedStream`] が決め直す。
+fn peer_closed(stream: &TcpStream) -> bool {
+    if stream
+        .set_read_timeout(Some(Duration::from_millis(1)))
+        .is_err()
+    {
+        return false;
+    }
+    let mut byte = [0u8; 1];
+    match stream.peek(&mut byte) {
+        Ok(0) => true,
+        Ok(_) => false,
+        Err(e) => !matches!(
+            e.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+        ),
     }
 }
 
@@ -648,7 +679,17 @@ impl Endpoint {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn respond(&self, request: &Request) -> Response {
+        self.respond_cancellable(request, None)
+    }
+
+    /// `disconnected` はクライアントが接続を閉じたかを答える (閉じたら要求を取り消す)。
+    fn respond_cancellable(
+        &self,
+        request: &Request,
+        disconnected: Option<Box<dyn Fn() -> bool + Send + Sync>>,
+    ) -> Response {
         if self.closed.load(Ordering::SeqCst) {
             return Response::text(503, "the server is stopping");
         }
@@ -675,7 +716,7 @@ impl Endpoint {
             return response;
         }
         match request.method.as_str() {
-            "POST" => self.post(request),
+            "POST" => self.post(request, disconnected),
             _ => {
                 // GET (サーバからの SSE)・DELETE (セッションの終了) には応じない。
                 let mut response = Response::text(405, "method not allowed: use POST");
@@ -772,7 +813,11 @@ impl Endpoint {
         Err(response)
     }
 
-    fn post(&self, request: &Request) -> Response {
+    fn post(
+        &self,
+        request: &Request,
+        disconnected: Option<Box<dyn Fn() -> bool + Send + Sync>>,
+    ) -> Response {
         if let Some(content_type) = request.header("content-type")
             && !media_type(content_type).eq_ignore_ascii_case("application/json")
         {
@@ -814,7 +859,7 @@ impl Endpoint {
         if let Err(response) = validate_headers(request, &id, method, &params) {
             return response;
         }
-        let Some(reply) = self.server.handle(message) else {
+        let Some(reply) = self.server.handle_cancellable(message, disconnected) else {
             return Response::empty(202);
         };
         let status = match reply

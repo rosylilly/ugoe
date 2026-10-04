@@ -12,6 +12,20 @@
 //!   エラー (`isError`) で、ほかの要求には JSON-RPC のエラーで、直し方を答える。発見用のファイルは
 //!   要求のたびに読み直すので、中継を起動した後にエディタを起動してもよい。
 //!
+//! # 並行と取り消し
+//!
+//! 要求は 1 つずつスレッドでエディタへ送り、答えを待つ間も次の行を読む (適用・保存はエディタで利用者の
+//! 確認を待つので、その間もほかの要求 (`ping`・読むだけのツール) と取り消しを通す)。答えは届いた順に
+//! 書き、1 行ずつ錠の中で書くので混ざらない。
+//!
+//! - **id:** エディタへは、要求の id をこの中継だけの id (`ugoe-relay-<乱数>-<番号>`) に変えて送り、
+//!   答えの id を戻す。エディタの HTTP はセッションを持たず、別の中継やクライアントも同じ id
+//!   (`1` など) を使うので、取り消しがどの要求のものかをエディタが取り違えないように。
+//! - **`notifications/cancelled`:** 処理中の要求の取り消しなら、id を変えてエディタへ送る (エディタは
+//!   確認を待つ適用などを拒否で終える)。その要求の答えは書かない (MCP の仕様のとおり)。知らない id・
+//!   終わった要求の取り消しは送らない。
+//! - **標準入力が閉じた:** 処理中の要求をすべて取り消し、答えを待ってから終わる。
+//!
 //! # どのエディタにつなぐか
 //!
 //! 1. `--discovery <FILE>` か `UGOE_MCP_DISCOVERY` があれば、そのファイルだけ。
@@ -28,8 +42,11 @@
 //! エージェントが渡す WSL のパスは、`--wsl-distro <名前>` (または作業ディレクトリが
 //! `\\wsl.localhost\<名前>\…` のとき) で Windows のパスに変える。
 
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -231,14 +248,28 @@ fn looks_like_path(text: &str) -> bool {
     text.contains('/') || text.contains('\\') || text.ends_with(".json")
 }
 
-/// 中継。
+/// 中継。`&self` で処理でき、要求ごとのスレッドから同時に呼んでよい。
 pub struct Relay {
     options: RelayOptions,
     agent: ureq::Agent,
     /// Windows 版で、エージェントが WSL にいるときの変換 (`--wsl-distro` か作業ディレクトリから)。
     local_wsl: Option<WslPaths>,
     /// 最後に使ったエディタ (版の違いの警告を 1 回だけ出すため)。
-    last: Option<Target>,
+    last: Mutex<Option<Target>>,
+    /// エディタへ送る要求の id の頭 (モジュールの説明の「並行と取り消し」)。
+    prefix: String,
+    next: AtomicU64,
+    /// 処理中の要求。キーはクライアントの id の JSON の文 (`1` と `"1"` を区別する)。
+    in_flight: Mutex<HashMap<String, Pending>>,
+}
+
+/// 処理中の要求。
+#[derive(Debug)]
+struct Pending {
+    /// エディタへ送った id。
+    wire: String,
+    /// クライアントが取り消した (答えを書かない)。
+    cancelled: bool,
 }
 
 impl std::fmt::Debug for Relay {
@@ -268,7 +299,10 @@ impl Relay {
             options,
             agent,
             local_wsl,
-            last: None,
+            last: Mutex::new(None),
+            prefix: format!("ugoe-relay-{}-", relay_nonce()),
+            next: AtomicU64::new(0),
+            in_flight: Mutex::default(),
         }
     }
 
@@ -292,33 +326,75 @@ impl Relay {
         }
     }
 
-    /// 標準入力が閉じるまで中継する。
-    pub fn run(&mut self, input: impl BufRead, mut output: impl Write) -> io::Result<()> {
-        for line in input.lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            if let Some(reply) = self.handle_line(&line) {
-                writeln!(output, "{reply}")?;
-                output.flush()?;
-            }
-        }
-        Ok(())
+    /// 標準入力が閉じるまで中継する。要求は並行に送り、答えは届いた順に 1 行ずつ書く
+    /// (モジュールの説明の「並行と取り消し」)。
+    pub fn run(&self, input: impl BufRead, output: impl Write + Send) -> io::Result<()> {
+        let output = Mutex::new(output);
+        let write = |reply: &str| -> io::Result<()> {
+            let mut output = output.lock().unwrap_or_else(PoisonError::into_inner);
+            writeln!(output, "{reply}")?;
+            output.flush()
+        };
+        let write = &write;
+        std::thread::scope(|scope| {
+            let read = || -> io::Result<()> {
+                for line in input.lines() {
+                    let line = line?;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<Value>(&line) {
+                        Ok(message) if is_request(&message) => {
+                            let wire = self.begin(&message);
+                            scope.spawn(move || {
+                                if let Some(reply) = self.finish(message, wire)
+                                    && let Err(e) = write(&reply)
+                                {
+                                    eprintln!("ugoe-mcp: failed to write a reply: {e}");
+                                }
+                            });
+                        }
+                        // 通知 (取り消しを含む)・クライアントの応答・壊れた行は、読んだ順に送る。
+                        _ => {
+                            if let Some(reply) = self.handle_line(&line) {
+                                write(&reply)?;
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            };
+            let result = read();
+            // クライアントが去った (または読めない): 待っている要求を取り消し、答えを待って終わる。
+            self.cancel_all("the client closed the connection");
+            result
+        })
     }
 
-    /// 1 行 (1 メッセージ) を中継し、返す行を作る。
-    pub fn handle_line(&mut self, line: &str) -> Option<String> {
+    /// 1 行 (1 メッセージ) を中継し、返す行を作る (要求なら答えを待つ)。
+    pub fn handle_line(&self, line: &str) -> Option<String> {
         let message = match serde_json::from_str::<Value>(line) {
             Ok(message) => message,
             // 壊れた行はエディタに解かせる (同じエラーを返す)。
-            Err(_) => Value::String(line.to_owned()),
+            Err(_) => {
+                return match self.post_raw(line.to_owned()) {
+                    Ok(reply) => reply.map(|r| r.to_string()),
+                    Err(e) => {
+                        eprintln!("ugoe-mcp: {e}");
+                        None
+                    }
+                };
+            }
         };
-        let reply = match &message {
-            Value::String(raw) => self.post_raw(raw.clone()),
-            _ => self.forward(message.clone()),
-        };
-        match reply {
+        if is_request(&message) {
+            let wire = self.begin(&message);
+            return self.finish(message, wire);
+        }
+        if message.get("method").and_then(Value::as_str) == Some("notifications/cancelled") {
+            self.cancel(&message);
+            return None;
+        }
+        match self.forward(message.clone()) {
             Ok(reply) => reply.map(|r| r.to_string()),
             Err(e) => {
                 eprintln!("ugoe-mcp: {e}");
@@ -327,7 +403,107 @@ impl Relay {
         }
     }
 
-    fn forward(&mut self, mut message: Value) -> Result<Option<Value>, RelayError> {
+    fn lock_in_flight(&self) -> MutexGuard<'_, HashMap<String, Pending>> {
+        self.in_flight
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// 要求を処理中にし、エディタへ送る id を決める。
+    fn begin(&self, message: &Value) -> String {
+        let n = self.next.fetch_add(1, Ordering::Relaxed);
+        let wire = format!("{}{n}", self.prefix);
+        let key = message.get("id").map(Value::to_string).unwrap_or_default();
+        self.lock_in_flight().insert(
+            key,
+            Pending {
+                wire: wire.clone(),
+                cancelled: false,
+            },
+        );
+        wire
+    }
+
+    /// 要求を `wire` の id でエディタへ送り、答えの id を戻す。取り消されたら答えない。
+    fn finish(&self, message: Value, wire: String) -> Option<String> {
+        let id = message.get("id").cloned().unwrap_or(Value::Null);
+        let key = id.to_string();
+        let is_cancelled = |remove: bool| {
+            let mut in_flight = self.lock_in_flight();
+            let mine = in_flight.get(&key).filter(|p| p.wire == wire);
+            let cancelled = mine.is_some_and(|p| p.cancelled);
+            if remove && mine.is_some() {
+                in_flight.remove(&key);
+            }
+            cancelled
+        };
+        // 送る前に取り消されていれば送らない。
+        let result = if is_cancelled(false) {
+            Ok(None)
+        } else {
+            let mut outgoing = message.clone();
+            if let Some(object) = outgoing.as_object_mut() {
+                object.insert("id".to_owned(), Value::String(wire.clone()));
+            }
+            self.forward(outgoing)
+        };
+        if is_cancelled(true) {
+            return None;
+        }
+        match result {
+            Ok(reply) => reply.map(|mut reply| {
+                if let Some(object) = reply.as_object_mut() {
+                    object.insert("id".to_owned(), id);
+                }
+                reply.to_string()
+            }),
+            Err(e) => {
+                eprintln!("ugoe-mcp: {e}");
+                error_reply(&message, &e).map(|r| r.to_string())
+            }
+        }
+    }
+
+    /// `notifications/cancelled` を、処理中の要求のものならエディタへの id に変えて送る。
+    fn cancel(&self, message: &Value) {
+        let Some(request) = message.pointer("/params/requestId") else {
+            return;
+        };
+        let wire = match self.lock_in_flight().get_mut(&request.to_string()) {
+            Some(pending) if !pending.cancelled => {
+                pending.cancelled = true;
+                pending.wire.clone()
+            }
+            _ => return,
+        };
+        let mut notification = message.clone();
+        if let Some(params) = notification
+            .get_mut("params")
+            .and_then(Value::as_object_mut)
+        {
+            params.insert("requestId".to_owned(), Value::String(wire));
+        }
+        if let Err(e) = self.forward(notification) {
+            eprintln!("ugoe-mcp: failed to pass the cancellation to the editor: {e}");
+        }
+    }
+
+    /// 処理中の要求をすべて取り消す。
+    fn cancel_all(&self, reason: &str) {
+        let pending: Vec<String> = self.lock_in_flight().keys().cloned().collect();
+        for key in pending {
+            let Ok(request) = serde_json::from_str::<Value>(&key) else {
+                continue;
+            };
+            self.cancel(&json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": { "requestId": request, "reason": reason },
+            }));
+        }
+    }
+
+    fn forward(&self, mut message: Value) -> Result<Option<Value>, RelayError> {
         let method = message
             .get("method")
             .and_then(Value::as_str)
@@ -347,7 +523,7 @@ impl Relay {
     }
 
     /// JSON として読めない行をそのまま送る。
-    fn post_raw(&mut self, raw: String) -> Result<Option<Value>, RelayError> {
+    fn post_raw(&self, raw: String) -> Result<Option<Value>, RelayError> {
         let target = self.locate()?;
         self.send(&target, raw.into_bytes(), &[])
     }
@@ -356,7 +532,7 @@ impl Relay {
     /// (エディタが別のポート・トークンで起動し直したとき)。送り直すのは、要求が届いていないと
     /// 分かるときだけ。
     fn post(
-        &mut self,
+        &self,
         target: &Target,
         message: &Value,
         headers: &[(&'static str, String)],
@@ -372,7 +548,7 @@ impl Relay {
     }
 
     fn send(
-        &mut self,
+        &self,
         target: &Target,
         body: Vec<u8>,
         headers: &[(&'static str, String)],
@@ -429,9 +605,9 @@ impl Relay {
         }
     }
 
-    fn warn_version(&mut self, target: &Target) {
-        let same = self
-            .last
+    fn warn_version(&self, target: &Target) {
+        let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+        let same = last
             .as_ref()
             .is_some_and(|last| last.file == target.file && last.discovery == target.discovery);
         if same {
@@ -445,7 +621,7 @@ impl Relay {
                 env!("CARGO_PKG_VERSION")
             );
         }
-        self.last = Some(target.clone());
+        *last = Some(target.clone());
     }
 
     /// このエディタとのパスの変換。
@@ -519,6 +695,26 @@ impl Relay {
             file: file.to_path_buf(),
             windows_from_wsl,
         })
+    }
+}
+
+/// 要求 (`method` と `id` を持つ) か。
+fn is_request(message: &Value) -> bool {
+    message.get("method").is_some_and(Value::is_string) && message.get("id").is_some()
+}
+
+/// 中継ごとの乱数 (エディタへ送る id が、ほかの中継と重ならないように)。乱数が取れなければプロセスの番号と時刻。
+fn relay_nonce() -> String {
+    let mut bytes = [0u8; 8];
+    match getrandom::fill(&mut bytes) {
+        Ok(()) => bytes.iter().map(|b| format!("{b:02x}")).collect(),
+        Err(_) => format!(
+            "{:x}{:x}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        ),
     }
 }
 
