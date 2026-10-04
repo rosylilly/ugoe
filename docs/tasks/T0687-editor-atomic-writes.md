@@ -1,11 +1,11 @@
 ---
 id: T0687
 title: "エディタ: 書き出しと設定のファイルを一時ファイル経由で書く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0669]
-assignee:
+assignee: claude-worker-T0687
 ---
 
 # T0687: エディタ: 書き出しと設定のファイルを一時ファイル経由で書く
