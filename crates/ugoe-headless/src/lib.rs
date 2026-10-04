@@ -92,7 +92,7 @@ pub enum Error {
         context: &'static str,
         detail: String,
     },
-    /// レンダラが受け付けない入力 (テクスチャの大きさと画素の数の食い違いなど)。
+    /// レンダラが受け付けない入力 (テクスチャの大きさと画素の数の食い違い・デバイスの上限を超える大きさなど)。
     #[error(transparent)]
     Render(#[from] ugoe_render::RenderError),
 }

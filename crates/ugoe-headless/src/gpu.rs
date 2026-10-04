@@ -259,7 +259,8 @@ impl Gpu {
     }
 }
 
-/// `size` の描画先と、`textures`・`shading` を上げたレンダラを作る。大きさがデバイスの上限を超えればエラー。
+/// `size` の描画先と、`textures`・`shading` を上げたレンダラを作る。大きさがデバイスの上限を超えればエラー
+/// (テクスチャと法線マップはレンダラが確かめる)。
 pub(crate) fn new_renderer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -271,26 +272,6 @@ pub(crate) fn new_renderer(
     let max = device.limits().max_texture_dimension_2d;
     if width > max || height > max {
         bail!("output size {width}x{height} exceeds the device limit {max}");
-    }
-    for (i, t) in textures.iter().enumerate() {
-        if t.width > max || t.height > max {
-            bail!(
-                "texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width,
-                t.height
-            );
-        }
-    }
-    for (i, t) in shading.normal_maps.iter().enumerate() {
-        if let Some(t) = t
-            && (t.width > max || t.height > max)
-        {
-            bail!(
-                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width,
-                t.height
-            );
-        }
     }
     let mut renderer = Renderer::new(device, FORMAT);
     for (i, t) in textures.iter().enumerate() {

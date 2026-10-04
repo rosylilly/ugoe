@@ -27,8 +27,16 @@ use crate::upload::{IndexUploads, PositionUploads, SlotUploads};
 /// 参照シェーダの WGSL ソース。
 pub const DRAWABLE_WGSL: &str = include_str!("shaders/drawable.wgsl");
 
+/// [`Renderer::set_texture`] / [`Renderer::set_normal_map`] が受け付けるテクスチャの番号の数
+/// (番号は `0..MAX_TEXTURES`)。番号で表を伸ばすので、極端な番号でメモリを使い切らないように上限を置く。
+pub const MAX_TEXTURES: u32 = 1 << 16;
+
 /// [`Renderer`] のエラー。
+///
+/// 今後 variant を足しても利用者を壊さないように `#[non_exhaustive]` にしている
+/// (`match` には `_` の腕が要る)。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RenderError {
     /// 描く要素 (またはそのマスク用メッシュ) が使うテクスチャの番号が登録されていない。
     #[error("texture index {0} is not uploaded")]
@@ -41,6 +49,27 @@ pub enum RenderError {
         height: u32,
         expected: usize,
         actual: usize,
+    },
+    /// テクスチャか法線マップの番号が [`MAX_TEXTURES`] 以上。
+    #[error("texture index {0} exceeds the limit {max}", max = MAX_TEXTURES - 1)]
+    TextureIndexOutOfRange(u32),
+    /// テクスチャの幅か高さが、デバイスの `max_texture_dimension_2d` (`max`) を超える。
+    #[error("texture {index} is {width}x{height}, which exceeds the device limit {max}")]
+    TextureTooLarge {
+        index: u32,
+        width: u32,
+        height: u32,
+        max: u32,
+    },
+    /// 法線マップの幅か高さが、デバイスの `max_texture_dimension_2d` (`max`) を超える。
+    #[error(
+        "the normal map of texture {index} is {width}x{height}, which exceeds the device limit {max}"
+    )]
+    NormalMapTooLarge {
+        index: u32,
+        width: u32,
+        height: u32,
+        max: u32,
     },
 }
 
@@ -363,6 +392,8 @@ pub struct Renderer {
     batch_draws: bool,
     /// アトラスの一辺の上限 (設定とデバイスの上限の小さい方)。
     mask_atlas_max_size: u32,
+    /// テクスチャの一辺の上限 (デバイスの `max_texture_dimension_2d`)。
+    max_texture_size: u32,
     /// アトラスの一辺と枚数 (すぐに大きくし、ヒステリシスを持たせて小さくする)。
     mask_atlas_pool: AtlasPool,
     mask_atlases: Vec<MaskAtlas>,
@@ -536,6 +567,7 @@ impl Renderer {
             mask_options: options.mask_atlas,
             batch_draws: options.batch_draws,
             mask_atlas_max_size,
+            max_texture_size: device.limits().max_texture_dimension_2d,
             mask_atlas_pool: AtlasPool::default(),
             mask_atlases: Vec::new(),
             stats: FrameStats::default(),
@@ -564,10 +596,47 @@ impl Renderer {
         self.stats
     }
 
+    /// [`Renderer::set_texture`] が番号 `index` と大きさ `width × height` を受け付けるか
+    /// (番号が [`MAX_TEXTURES`] 未満で、一辺がデバイスの上限以下か)。データの長さは見ない。
+    ///
+    /// 何も変えないので、いくつものテクスチャを登録する前にまとめて確かめるのに使う。
+    pub fn check_texture(&self, index: u32, width: u32, height: u32) -> Result<(), RenderError> {
+        check_index(index)?;
+        let max = self.max_texture_size;
+        if width > max || height > max {
+            return Err(RenderError::TextureTooLarge {
+                index,
+                width,
+                height,
+                max,
+            });
+        }
+        Ok(())
+    }
+
+    /// [`Renderer::set_normal_map`] が番号 `index` と大きさ `width × height` を受け付けるか
+    /// ([`Renderer::check_texture`] の法線マップ版)。
+    pub fn check_normal_map(&self, index: u32, width: u32, height: u32) -> Result<(), RenderError> {
+        check_index(index)?;
+        let max = self.max_texture_size;
+        if width > max || height > max {
+            return Err(RenderError::NormalMapTooLarge {
+                index,
+                width,
+                height,
+                max,
+            });
+        }
+        Ok(())
+    }
+
     /// 乗算済みアルファの RGBA8 テクスチャを登録する。同じ `index` に再登録すると置き換える。
     ///
     /// 値はリニア化せずにそのまま合成する (`docs/spec/rendering.md` の「前提」) ので、
     /// テクスチャ形式は `Rgba8Unorm` (sRGB 形式ではない)。
+    ///
+    /// 番号が [`MAX_TEXTURES`] 以上・一辺がデバイスの `max_texture_dimension_2d` を超える・
+    /// データの長さが大きさに合わないときはエラーを返し、何も変えない。
     pub fn set_texture(
         &mut self,
         device: &wgpu::Device,
@@ -577,6 +646,7 @@ impl Renderer {
         height: u32,
         rgba_premultiplied: &[u8],
     ) -> Result<(), RenderError> {
+        self.check_texture(index, width, height)?;
         check_rgba8(width, height, rgba_premultiplied)?;
         let texture = device.create_texture_with_data(
             queue,
@@ -601,6 +671,7 @@ impl Renderer {
     ///
     /// 値は接空間法線 `n = 2c − 1` で、G は画像の上向き (`docs/spec/rendering.md#ライティング`)。
     /// 大きさはテクスチャと違ってもよい (同じ UV 空間で読む)。テクスチャより先に登録してもよい。
+    /// 受け付けない入力は [`Renderer::set_texture`] と同じくエラーを返し、何も変えない。
     pub fn set_normal_map(
         &mut self,
         device: &wgpu::Device,
@@ -610,6 +681,7 @@ impl Renderer {
         height: u32,
         rgba: &[u8],
     ) -> Result<(), RenderError> {
+        self.check_normal_map(index, width, height)?;
         check_rgba8(width, height, rgba)?;
         let normal_map = device.create_texture_with_data(
             queue,
@@ -1507,6 +1579,14 @@ fn screen_uv(m: &[[f32; 3]; 3], [x, y]: [f32; 2]) -> [f32; 2] {
     [cx * 0.5 + 0.5, 0.5 - cy * 0.5]
 }
 
+/// テクスチャの番号が [`MAX_TEXTURES`] 未満か確かめる。
+fn check_index(index: u32) -> Result<(), RenderError> {
+    if index >= MAX_TEXTURES {
+        return Err(RenderError::TextureIndexOutOfRange(index));
+    }
+    Ok(())
+}
+
 /// `rgba` が `width × height` の RGBA8 のデータか確かめる (幅と高さは 1 以上)。
 fn check_rgba8(width: u32, height: u32, rgba: &[u8]) -> Result<(), RenderError> {
     // wasm32 では usize が 32 ビットなので、掛け算があふれうる。
@@ -1566,7 +1646,18 @@ fn texture_bind_group(
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderError, check_rgba8};
+    use super::{MAX_TEXTURES, RenderError, check_index, check_rgba8};
+
+    #[test]
+    fn texture_index_must_be_below_the_limit() {
+        assert!(check_index(0).is_ok());
+        assert!(check_index(MAX_TEXTURES - 1).is_ok());
+        assert!(matches!(
+            check_index(MAX_TEXTURES),
+            Err(RenderError::TextureIndexOutOfRange(i)) if i == MAX_TEXTURES
+        ));
+        assert!(check_index(u32::MAX).is_err());
+    }
 
     #[test]
     fn rgba8_data_must_match_the_size() {

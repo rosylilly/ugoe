@@ -10,7 +10,8 @@ use ugoe_core::{Rgb, Vec2};
 use ugoe_model::mesh::Mesh;
 use ugoe_model::{BlendMode, MaskRef, Model, fixtures};
 use ugoe_render::{
-    FrameStats, Light, Lighting, MaskAtlasOptions, RenderError, Renderer, RendererOptions, View,
+    FrameStats, Light, Lighting, MAX_TEXTURES, MaskAtlasOptions, RenderError, Renderer,
+    RendererOptions, View,
 };
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -2139,4 +2140,61 @@ fn normal_maps_can_be_set_replaced_and_removed() {
         .expect("set texture");
     renderer.set_lighting(&lights(0.0, vec![light_from([1.0, 0.0, 0.0])]));
     frame(&mut renderer, &instance).assert_pixel(INSIDE, gray(0.6));
+}
+
+#[test]
+fn textures_beyond_the_limits_are_errors() {
+    let Gpu { device, queue, .. } = gpu();
+    let mut scene = Scene::new(fixtures::single_quad());
+    scene.texture = [0; 4];
+    let (mut renderer, instance) = scene.prepare().expect("prepare");
+    // 一辺がデバイスの上限を超える (wgpu の検証エラーでパニックせず、エラーを返す)。
+    let max = device.limits().max_texture_dimension_2d;
+    let row = vec![255; (max as usize + 1) * 4];
+    assert!(matches!(
+        renderer.set_texture(device, queue, 0, max + 1, 1, &row),
+        Err(RenderError::TextureTooLarge { index: 0, width, height: 1, max: m })
+            if width == max + 1 && m == max
+    ));
+    assert!(matches!(
+        renderer.set_normal_map(device, queue, 0, 1, max + 1, &row),
+        Err(RenderError::NormalMapTooLarge { index: 0, width: 1, height, max: m })
+            if height == max + 1 && m == max
+    ));
+    assert!(matches!(
+        renderer.check_texture(0, max, max + 1),
+        Err(RenderError::TextureTooLarge { .. })
+    ));
+    assert!(renderer.check_texture(0, max, max).is_ok());
+    assert!(renderer.check_normal_map(0, max, max).is_ok());
+    // 番号の上限 (表を伸ばしてメモリを使い切らない)。
+    for index in [MAX_TEXTURES, u32::MAX] {
+        assert!(matches!(
+            renderer.set_texture(device, queue, index, 1, 1, &[255; 4]),
+            Err(RenderError::TextureIndexOutOfRange(i)) if i == index
+        ));
+        assert!(matches!(
+            renderer.set_normal_map(device, queue, index, 1, 1, &[255; 4]),
+            Err(RenderError::TextureIndexOutOfRange(i)) if i == index
+        ));
+    }
+    // 失敗した登録は何も変えない。
+    assert!(matches!(
+        render_frame(
+            &mut renderer,
+            &instance,
+            &normal_view(),
+            SIZE,
+            wgpu::Color::TRANSPARENT
+        ),
+        Err(RenderError::MissingTexture(0))
+    ));
+    // 上限ちょうどの番号は受け付ける。
+    renderer
+        .set_texture(device, queue, MAX_TEXTURES - 1, 1, 1, &[255; 4])
+        .expect("largest index");
+    renderer
+        .set_texture(device, queue, 0, 1, 1, &[255; 4])
+        .expect("set texture");
+    frame(&mut renderer, &instance).assert_pixel(INSIDE, [1.0; 4]);
 }

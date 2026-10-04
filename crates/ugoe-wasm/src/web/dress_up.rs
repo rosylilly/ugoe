@@ -91,7 +91,7 @@ impl WebPuppet {
     pub fn load_module(&mut self, bytes: &[u8]) -> Result<String, JsValue> {
         let loaded = dress_up::from_module_file(bytes).map_err(|e| dress_up_error(e.into()))?;
         self.check_texture_sizes(&loaded.textures, &loaded.normal_maps)
-            .map_err(|e| dress_up_error(WardrobeError::Texture(e)))?;
+            .map_err(|e| dress_up_error(WardrobeError::Texture(e.to_string())))?;
         let name = loaded.module.name.clone();
         with_wardrobe!(self, |wardrobe, puppet, sink| wardrobe.load(
             puppet.as_mut(),

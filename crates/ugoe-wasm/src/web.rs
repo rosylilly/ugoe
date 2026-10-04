@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ugoe::Puppet;
 use ugoe::core::Vec2;
-use ugoe::render::Renderer;
+use ugoe::render::{RenderError, Renderer};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
@@ -636,7 +636,7 @@ impl WebPuppet {
             warnings: mut load_warnings,
         } = loaded;
         self.check_texture_sizes(&textures, &normal_maps)
-            .map_err(|e| JsError::new(&e))?;
+            .map_err(js_error)?;
         let mut puppet = Puppet::new(model)
             .map_err(LoadError::from)
             .map_err(js_error)?;
@@ -685,33 +685,20 @@ impl WebPuppet {
         Ok(warnings)
     }
 
-    /// テクスチャと法線マップが、デバイスの扱える大きさに収まるか。
+    /// テクスチャと法線マップを、何も変える前にレンダラが受け付けるか (デバイスの扱える大きさに収まるかなど)。
     fn check_texture_sizes(
         &self,
         textures: &[Rgba8],
         normal_maps: &[Option<Rgba8>],
-    ) -> Result<(), String> {
-        let max = self.device.limits().max_texture_dimension_2d;
-        if let Some((i, t)) = textures
-            .iter()
-            .enumerate()
-            .find(|(_, t)| t.width > max || t.height > max)
-        {
-            return Err(format!(
-                "texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width, t.height
-            ));
+    ) -> Result<(), RenderError> {
+        for (i, t) in textures.iter().enumerate() {
+            self.renderer.check_texture(i as u32, t.width, t.height)?;
         }
-        if let Some((i, t)) = normal_maps
-            .iter()
-            .enumerate()
-            .filter_map(|(i, t)| t.as_ref().map(|t| (i, t)))
-            .find(|(_, t)| t.width > max || t.height > max)
-        {
-            return Err(format!(
-                "the normal map of texture {i} is {}x{}, which exceeds the device limit {max}",
-                t.width, t.height
-            ));
+        for (i, t) in normal_maps.iter().enumerate() {
+            if let Some(t) = t {
+                self.renderer
+                    .check_normal_map(i as u32, t.width, t.height)?;
+            }
         }
         Ok(())
     }
