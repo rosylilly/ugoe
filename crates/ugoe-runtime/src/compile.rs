@@ -10,14 +10,24 @@ use crate::blend_shape::CompiledBlendShape;
 use crate::keyform::ResolvedBinding;
 use crate::{ParamIndex, ParameterValues};
 
+/// [`CompiledModel::compile`] の失敗。
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
-    #[error("model failed validation: {0:?}")]
+    /// モデルが検証 (`ugoe_model::validate::validate`) を通らない。
+    #[error("model failed validation: {}", join_errors(.0))]
     Invalid(Vec<ugoe_model::validate::ValidationError>),
+    /// キーフォームの軸が、モデルにないパラメータを指す (検証済みなら起きない)。
     #[error("unknown parameter `{0}`")]
     UnknownParameter(String),
+    /// 評価できない構造 (行か列が 0 のワープなど)。
     #[error("unsupported feature: {0}")]
     Unsupported(&'static str),
+}
+
+/// 検証エラーの一覧を、利用者に見せる 1 行の文言にする (`; ` で区切る)。
+pub(crate) fn join_errors(errors: &[ugoe_model::validate::ValidationError]) -> String {
+    let list: Vec<String> = errors.iter().map(ToString::to_string).collect();
+    list.join("; ")
 }
 
 /// 評価用に前処理したモデル。複数インスタンスで共有できる (不変)。
@@ -83,6 +93,11 @@ pub(crate) struct CompiledGlue {
 }
 
 impl CompiledModel {
+    /// モデルを検証し、評価用に前処理する。
+    ///
+    /// # Errors
+    ///
+    /// 検証を通らなければ [`CompileError::Invalid`]、評価できない構造なら [`CompileError::Unsupported`]。
     pub fn compile(model: Model) -> Result<Arc<Self>, CompileError> {
         let errors = ugoe_model::validate::validate(&model);
         if !errors.is_empty() {
@@ -241,6 +256,7 @@ impl CompiledModel {
         }))
     }
 
+    /// 元のモデル。
     pub fn model(&self) -> &Model {
         &self.model
     }
@@ -458,6 +474,21 @@ fn resolve_blend_shapes<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // エラーの文言は検証エラーを Debug ではなく Display で並べる。
+    #[test]
+    fn invalid_error_lists_validation_messages() {
+        let mut model = ugoe_model::fixtures::single_quad();
+        model.parameters[0].default = 99.0;
+        let err = CompiledModel::compile(model).unwrap_err();
+        let CompileError::Invalid(errors) = &err else {
+            panic!("not invalid: {err}");
+        };
+        assert_eq!(
+            err.to_string(),
+            format!("model failed validation: {}", errors[0])
+        );
+    }
 
     #[test]
     fn topological_order_puts_parents_first() {

@@ -39,7 +39,7 @@ impl Rotation {
 }
 
 /// `lerp(a, b, t) = a + (b - a) * t` (仕様の式どおりの演算順)。
-fn lerp(a: Vec2, b: Vec2, t: f32) -> Vec2 {
+pub(crate) fn lerp(a: Vec2, b: Vec2, t: f32) -> Vec2 {
     a + (b - a) * t
 }
 

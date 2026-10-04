@@ -79,7 +79,7 @@ pub enum ComposeError {
         part: String,
     },
     /// 合成したモデルが検証を通らない (モジュール自体の不整合など)。
-    #[error("composed model failed validation: {0:?}")]
+    #[error("composed model failed validation: {}", crate::compile::join_errors(.0))]
     Invalid(Vec<ValidationError>),
 }
 
@@ -87,6 +87,11 @@ pub enum ComposeError {
 ///
 /// 本体の要素の並びと ID は変えず、モジュールの要素を後ろに加える (本体のパーツ・デフォーマ・メッシュの
 /// インデックスは合成の前後で同じ)。結果は検証 (`validate`) 済み。
+///
+/// # Errors
+///
+/// モジュールを取り付けられないとき (名前・スロット・条件・参照の誤り) と、合成したモデルが検証を
+/// 通らないとき ([`ComposeError::Invalid`])。
 pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError> {
     let attachments = attach(base, modules)?;
     let mut model = base.clone();
@@ -431,10 +436,13 @@ impl<'a> Renamer<'a> {
         }
     }
 
-    /// 格子の中の要素の ID (ミラー元)。パラメータの ID は付け替えない。
+    /// 格子の中の要素の ID (ミラー元。ブレンドシェイプ格子のものも)。パラメータの ID は付け替えない。
     fn grid<T>(&self, grid: &mut KeyformGrid<T>) {
         if let Some(source) = &mut grid.mirror_source {
             source.id = self.string(&source.id);
+        }
+        for shape in &mut grid.blend_shapes {
+            self.grid(shape);
         }
     }
 }
@@ -534,6 +542,41 @@ mod tests {
         let names: Vec<&str> = model.textures.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["white", "LongHair/long_hair", "Dress/dress"]);
         assert_eq!((back.texture, skirt.texture), (1, 2));
+    }
+
+    // modules.md 合成 2.: ミラー元の ID は、ブレンドシェイプ格子のものも付け替える。
+    #[test]
+    fn mirror_sources_are_renamed_in_blend_shape_grids() {
+        let mut base = dress_up_base();
+        base.parameters[3].kind = ugoe_model::parameter::ParameterKind::BlendShape;
+        base.slots[1].parameters.push("Secret".into());
+        let mut module = dress_module();
+        let source = || {
+            Some(ugoe_model::MirrorSource {
+                id: "Skirt".into(),
+                axis: None,
+                tolerance: None,
+            })
+        };
+        let skirt = &mut module.meshes[0].keyforms;
+        let mut shape = KeyformGrid::new(
+            vec![ugoe_model::KeyformBinding {
+                parameter: "Secret".into(),
+                keys: vec![0.0, 1.0],
+            }],
+            skirt.keyforms.clone(),
+        );
+        shape.mirror_source = source();
+        skirt.mirror_source = source();
+        skirt.blend_shapes.push(shape);
+
+        let model = compose(&base, &[&module]).unwrap();
+        let grid = &mesh(&model, "Dress/Skirt").keyforms;
+        assert_eq!(grid.mirror_source.as_ref().unwrap().id, "Dress/Skirt");
+        assert_eq!(
+            grid.blend_shapes[0].mirror_source.as_ref().unwrap().id,
+            "Dress/Skirt"
+        );
     }
 
     #[test]

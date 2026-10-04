@@ -9,7 +9,9 @@ use crate::ParamIndex;
 /// ロード時に解決済みのキーフォーム軸。
 #[derive(Debug, Clone)]
 pub struct ResolvedBinding {
+    /// 軸のパラメータ。
     pub param: ParamIndex,
+    /// 軸のキー (空でなく、狭義の昇順。モデルの検証で確かめる)。
     pub keys: Vec<f32>,
     /// 曲線補間の軸で、キーごとの接線の係数 (`docs/spec/evaluation.md#曲線補間`)。
     /// キー `i` の接線は、キー `j = tangent_base(i)` から 3 つのキーの値に `tangents[i]` を掛けた和。
@@ -19,6 +21,7 @@ pub struct ResolvedBinding {
 
 impl ResolvedBinding {
     /// 軸を作る。`interpolation` が曲線でキーが 3 つ以上なら、接線の係数を求めておく。
+    /// `keys` は空でなく、狭義の昇順であること (空だと重みを求めるときにパニックする)。
     pub fn new(param: ParamIndex, keys: Vec<f32>, interpolation: KeyformInterpolation) -> Self {
         let tangents =
             if interpolation.effective() == KeyformInterpolation::Smooth && keys.len() >= 3 {
@@ -82,6 +85,7 @@ pub type Weights = Vec<(usize, f32)>;
 ///
 /// 軸ごとに値をキー範囲にクランプし、線形の軸は隣接 2 キー、曲線の軸は最大 4 キーの重みを求め、
 /// 全軸の組み合わせの積を重みとする。重み 0 の項は含めない。
+/// `values` はパラメータの現在値 ([`crate::ParameterValues::as_slice`]) で、各軸の `param` を添字に読む。
 pub fn weights(bindings: &[ResolvedBinding], values: &[f32], out: &mut Weights) {
     weights_with(bindings, values, true, out);
 }
@@ -171,6 +175,7 @@ pub struct GridWeights {
 }
 
 impl GridWeights {
+    /// 重みの列を `capacity` 個ずつ確保して作る。
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             shape: Weights::with_capacity(capacity),

@@ -2,11 +2,16 @@ use std::collections::HashMap;
 
 use ugoe_model::{Model, ParamId};
 
-/// コンパイル済みモデル内でのパラメータ連番。
+/// コンパイル済みモデル内でのパラメータ連番 (`Model::parameters` のインデックス)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParamIndex(pub u32);
 
-/// パラメータの現在値。モーション・物理・アプリはここを書き換える。
+/// パラメータの現在値。モーション・物理・アプリはここを書き換える
+/// (`spec/evaluation.md#parameter-values`)。
+///
+/// - 初期値はパラメータの `default`。
+/// - 書き込む値はすべて値域 `[min, max]` にクランプする。したがって評価はいつも値域の中の値を見る。
+/// - NaN の書き込みは無視する (値は変わらない)。無限大は値域の端にクランプする。
 #[derive(Debug, Clone)]
 pub struct ParameterValues {
     ids: Vec<ParamId>,
@@ -17,6 +22,7 @@ pub struct ParameterValues {
 }
 
 impl ParameterValues {
+    /// `model` のパラメータの並びで作る。値はすべて既定値。
     pub fn from_model(model: &Model) -> Self {
         let p = &model.parameters;
         Self {
@@ -28,6 +34,7 @@ impl ParameterValues {
         }
     }
 
+    /// ID が `id` のパラメータの連番。なければ `None`。
     pub fn index_of(&self, id: &str) -> Option<ParamIndex> {
         self.ids
             .iter()
@@ -35,14 +42,21 @@ impl ParameterValues {
             .map(|i| ParamIndex(i as u32))
     }
 
+    /// パラメータの数。
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
+    /// パラメータを 1 つも持たないか。
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
+    /// 現在値。
+    ///
+    /// # Panics
+    ///
+    /// `index` が範囲外のとき (`min`・`max`・`default_value`・`set`・`blend` も同じ)。
     pub fn get(&self, index: ParamIndex) -> f32 {
         self.values[index.0 as usize]
     }
@@ -62,13 +76,17 @@ impl ParameterValues {
         self.default[index.0 as usize]
     }
 
-    /// 値域にクランプして設定する。
+    /// 値域にクランプして設定する。NaN は書き込まずに無視する (値は変わらない。
+    /// `docs/spec/evaluation.md` の評価はいつも値域の中の値を見る)。
     pub fn set(&mut self, index: ParamIndex, value: f32) {
         let i = index.0 as usize;
-        self.values[i] = value.clamp(self.min[i], self.max[i]);
+        if !value.is_nan() {
+            self.values[i] = value.clamp(self.min[i], self.max[i]);
+        }
     }
 
     /// 現在値に `weight` の重みで `value` をブレンドする (モーションのフェード用)。
+    /// 結果が NaN なら [`ParameterValues::set`] と同じく無視する。
     pub fn blend(&mut self, index: ParamIndex, value: f32, weight: f32) {
         let current = self.get(index);
         self.set(index, current + (value - current) * weight);
@@ -90,10 +108,12 @@ impl ParameterValues {
         }
     }
 
+    /// すべての値を既定値に戻す。
     pub fn reset(&mut self) {
         self.values.copy_from_slice(&self.default);
     }
 
+    /// 現在値の列 (`ParamIndex` の順)。
     pub fn as_slice(&self) -> &[f32] {
         &self.values
     }
@@ -110,5 +130,22 @@ mod tests {
         assert_eq!(params.min(index), -30.0);
         assert_eq!(params.max(index), 30.0);
         assert_eq!(params.default_value(index), 0.0);
+    }
+
+    // spec/evaluation.md#parameter-values: 有限値でない書き込みは無視してよい。NaN を値に入れると
+    // キーフォームの重みが求まらない (`keyform::locate` が範囲外を指す) ので、NaN の書き込みは無視する。
+    #[test]
+    fn nan_writes_are_ignored() {
+        let mut params = ParameterValues::from_model(&ugoe_model::fixtures::physics_hair());
+        let index = params.index_of(ugoe_model::standard::ANGLE_X).unwrap();
+        params.set(index, 12.0);
+        params.set(index, f32::NAN);
+        assert_eq!(params.get(index), 12.0);
+        params.blend(index, f32::NAN, 0.5);
+        params.blend(index, 0.0, f32::NAN);
+        assert_eq!(params.get(index), 12.0);
+        // 無限大は値域にクランプする。
+        params.set(index, f32::INFINITY);
+        assert_eq!(params.get(index), 30.0);
     }
 }

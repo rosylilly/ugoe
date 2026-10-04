@@ -62,12 +62,15 @@ impl ModelInstance {
 }
 
 /// 点が三角形の内側 (辺の上を含む) にあるか。向きは問わない。
+///
+/// 3 辺に対する符号がすべて 0 以上か、すべて 0 以下なら内側 (NaN を含めば外側)。面積 0 の三角形では
+/// 頂点を通る直線上のすべての点で符号が 0 になるので、外接矩形の中にあることも確かめて、
+/// 線分 (または点) の上だけを内側とする。面積を持つ三角形の内側は必ず外接矩形の中なので結果を変えない。
 fn in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
     let cross = |o: Vec2, u: Vec2, v: Vec2| (u - o).perp_dot(v - o);
     let (d1, d2, d3) = (cross(a, b, p), cross(b, c, p), cross(c, a, p));
-    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
-    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
-    !(has_neg && has_pos)
+    let same_side = (d1 >= 0.0 && d2 >= 0.0 && d3 >= 0.0) || (d1 <= 0.0 && d2 <= 0.0 && d3 <= 0.0);
+    same_side && p.cmpge(a.min(b).min(c)).all() && p.cmple(a.max(b).max(c)).all()
 }
 
 #[cfg(test)]
@@ -95,6 +98,28 @@ mod tests {
         assert!(in_triangle(Vec2::new(2.0, 2.0), a, c, b));
         assert!(in_triangle(Vec2::ZERO, a, b, c));
         assert!(!in_triangle(Vec2::new(8.0, 8.0), a, b, c));
+    }
+
+    // evaluation.md 9.: 面積 0 の三角形が含むのは、その線分 (または点) の上だけ。
+    // 潰れたメッシュ (拡大率 0 の回転デフォーマで隠したものなど) がキャンバス全体で当たってはいけない。
+    #[test]
+    fn degenerate_triangles_contain_only_their_points() {
+        let p = Vec2::new(5.0, 5.0);
+        assert!(in_triangle(p, p, p, p));
+        assert!(!in_triangle(Vec2::new(100.0, 100.0), p, p, p));
+        let (a, b, c) = (Vec2::ZERO, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0));
+        assert!(in_triangle(Vec2::new(15.0, 0.0), a, b, c));
+        assert!(!in_triangle(Vec2::new(100.0, 0.0), a, b, c));
+        assert!(!in_triangle(Vec2::new(-1.0, 0.0), a, b, c));
+        assert!(!in_triangle(Vec2::new(5.0, 1.0), a, b, c));
+        // 頂点が NaN の三角形は何も含まない。
+        let nan = Vec2::new(f32::NAN, 0.0);
+        assert!(!in_triangle(
+            Vec2::new(1.0, 1.0),
+            nan,
+            b,
+            Vec2::new(0.0, 10.0)
+        ));
     }
 
     #[test]

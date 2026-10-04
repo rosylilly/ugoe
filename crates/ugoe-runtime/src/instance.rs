@@ -7,7 +7,7 @@ use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::{BlendMode, DeformerKind};
 
 use crate::blend_shape;
-use crate::deform::{Rotation, Transform, Warp};
+use crate::deform::{Rotation, Transform, Warp, lerp};
 use crate::dynamic::{Dynamic, DynamicOffsets};
 use crate::keyform::{self, GridWeights, Weights};
 use crate::{CompiledModel, ParameterValues};
@@ -15,10 +15,15 @@ use crate::{CompiledModel, ParameterValues};
 /// 描画可能要素 (メッシュ) 1 つの評価結果。座標はキャンバス座標系。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawableState {
+    /// キャンバス座標の頂点位置 (`Mesh::uvs` と同じ並び)。
     pub positions: Vec<Vec2>,
+    /// 最終的な不透明度 (メッシュ × パーツ × デフォーマ。クランプしない)。
     pub opacity: f32,
+    /// 補間後の描画順 (大きいほど手前)。
     pub draw_order: f32,
+    /// 補間後の乗算色 (クランプしない)。
     pub multiply_color: Rgb,
+    /// 補間後のスクリーン色 (クランプしない)。
     pub screen_color: Rgb,
     /// 合成モード。未知のモードには通常の合成のフォールバックを適用済み (`BlendMode::effective`)。
     pub blend: BlendMode,
@@ -220,6 +225,8 @@ enum Stage {
 }
 
 impl ModelInstance {
+    /// インスタンスを作り、既定値のパラメータで 1 回 [`ModelInstance::update`] する。
+    /// 評価に使うバッファはここで確保する。
     pub fn new(compiled: Arc<CompiledModel>) -> Self {
         let parameters = ParameterValues::from_model(&compiled.model);
         let drawables: Vec<DrawableState> = compiled
@@ -250,6 +257,7 @@ impl ModelInstance {
             })
             .collect();
         // 重みの個数は、線形の軸 2 つ・曲線の軸 4 つまでの積 (`keyform::weights`)。
+        // 軸の多い格子で事前確保が膨らみすぎないように上限を置く (超えた分は評価中に確保する)。
         let max_weights = compiled.max_weights.min(1 << 20);
         // 番号は一意であればよい (順序は使わない) ので Relaxed で足りる。
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -298,14 +306,17 @@ impl ModelInstance {
         self.update_count
     }
 
+    /// 評価しているモデル。
     pub fn compiled(&self) -> &Arc<CompiledModel> {
         &self.compiled
     }
 
+    /// パラメータの現在値。
     pub fn parameters(&self) -> &ParameterValues {
         &self.parameters
     }
 
+    /// パラメータの現在値。書き換えは次の [`ModelInstance::update`] で出力に反映される。
     pub fn parameters_mut(&mut self) -> &mut ParameterValues {
         &mut self.parameters
     }
@@ -386,7 +397,8 @@ impl ModelInstance {
             .offsets
     }
 
-    /// 動的物理の加算量。[`ModelInstance::dynamic_offsets_mut`] を呼んでいなければ `None`。
+    /// 動的物理の加算量。[`ModelInstance::dynamic_offsets_mut`] も [`ModelInstance::update_first_stage`]
+    /// も呼んでいなければ `None`。
     pub fn dynamic_offsets(&self) -> Option<&DynamicOffsets> {
         self.dynamic.as_ref().map(|d| &d.offsets)
     }
@@ -920,11 +932,6 @@ fn same_positions(a: &[Vec2], b: &[Vec2]) -> bool {
         .all(|(p, q)| same_f32(p.x, q.x) && same_f32(p.y, q.y))
 }
 
-/// `lerp(a, b, t) = a + (b - a) * t`。
-fn lerp(a: Vec2, b: Vec2, t: f32) -> Vec2 {
-    a + (b - a) * t
-}
-
 /// デフォーマ `parent` のワールド変換 (`None` なら恒等写像)。`parent` は評価済みであること。
 ///
 /// 未知の種類のデフォーマは恒等変換なので、そのワールド変換は親のワールド変換と同じ。
@@ -974,6 +981,18 @@ mod tests {
         assert_eq!(instance.drawables()[0].positions[0], Vec2::new(128.0, 64.0));
     }
 
+    // NaN を書き込んでも評価は止まらない (書き込みは無視される)。
+    #[test]
+    fn nan_parameter_does_not_panic() {
+        let mut instance = instance(fixtures::single_quad());
+        set(&mut instance, "X", 0.5);
+        instance.update();
+        let before = instance.drawables().to_vec();
+        set(&mut instance, "X", f32::NAN);
+        instance.update();
+        assert_eq!(instance.drawables(), &before[..]);
+    }
+
     /// すべてのバッファの (先頭アドレス, 容量)。再確保が起きれば変わる。
     fn buffers(instance: &ModelInstance) -> Vec<(usize, usize)> {
         fn id<T>(v: &Vec<T>) -> (usize, usize) {
@@ -1004,35 +1023,46 @@ mod tests {
     // update で再確保されないことを、アドレスと容量が変わらないことで確かめる。
     #[test]
     fn update_does_not_reallocate_buffers() {
-        for model in [
-            fixtures::single_quad(),
-            fixtures::warp_grid(),
-            fixtures::rotation_chain(),
-            fixtures::rotation_under_warp(),
-            fixtures::part_opacity_hierarchy(),
-            fixtures::glued_quads(),
-            fixtures::nested_masks(),
-            fixtures::mixed_masks(),
-            fixtures::intersection_masks(),
-        ] {
-            let mut instance = ModelInstance::new(CompiledModel::compile(model).unwrap());
+        // 曲線補間・ブレンドシェイプ (重みの作業領域を 2 組使う) を含むすべてのフィクスチャ。
+        for model in all_fixtures() {
+            let mut instance = instance(model);
             let before = buffers(&instance);
-            let params: Vec<_> = instance
-                .compiled()
-                .model()
-                .parameters
-                .iter()
-                .map(|p| (p.min, p.max))
-                .collect();
             for t in [0.0, 0.3, 0.5, 1.0] {
-                for (i, &(min, max)) in params.iter().enumerate() {
-                    instance
-                        .parameters_mut()
-                        .set(crate::ParamIndex(i as u32), min + (max - min) * t);
-                }
-                instance.update();
+                set_all(&mut instance, t);
                 assert_eq!(buffers(&instance), before);
             }
+        }
+    }
+
+    // 動的物理の 2 段階の評価も、最初の 1 段目と加算量の書き込みで確保した後は確保しない。
+    #[test]
+    fn two_stage_update_does_not_reallocate_buffers() {
+        fn dynamic_buffers(instance: &ModelInstance) -> Vec<(usize, usize)> {
+            let d = instance.dynamic.as_deref().unwrap();
+            let mut out = buffers(instance);
+            out.extend([d.snapshot.as_ptr() as usize, d.dirty.as_ptr() as usize].map(|p| (p, 0)));
+            out
+        }
+        let mut instance = instance(fixtures::dynamic_hair());
+        let hair1 = instance.compiled().deformer_index("Hair1").unwrap();
+        let cloth = instance.compiled().deformer_index("Cloth").unwrap();
+        let ribbon = instance.compiled().mesh_index("Ribbon").unwrap();
+        let write_offsets = |instance: &mut ModelInstance, t: f32| {
+            let offsets = instance.dynamic_offsets_mut();
+            offsets.clear();
+            offsets.add_angle(hair1, 10.0 * t);
+            offsets.warp_points_mut(cloth).unwrap()[0] = Vec2::splat(t);
+            offsets.mesh_positions_mut(ribbon).unwrap()[0] = Vec2::splat(t);
+        };
+        instance.update_first_stage();
+        write_offsets(&mut instance, 0.0);
+        instance.update();
+        let before = dynamic_buffers(&instance);
+        for t in [0.0, 0.3, 0.5, 1.0] {
+            instance.update_first_stage();
+            write_offsets(&mut instance, t);
+            set_all(&mut instance, t);
+            assert_eq!(dynamic_buffers(&instance), before);
         }
     }
 
