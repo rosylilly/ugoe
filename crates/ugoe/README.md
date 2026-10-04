@@ -4,9 +4,17 @@
 
 ランタイム SDK のファサード。`Puppet` が 1 体分の更新 (モーション → 表情 → 目パチ・呼吸 → 物理 → リップシンク → ポーズ → 評価。順序は docs/spec/motion.md#フレーム内の適用順) をまとめる。下位のクレートを再エクスポートする。
 
+## feature
+
+- `render` (既定で有効): 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする。エンジン独自のレンダラで描く
+  組み込み先は `default-features = false` で外すと wgpu をビルドしない ([docs/portability.md#ugoe-クレートの-feature](../../docs/portability.md#ugoe-クレートの-feature)、T0156)。
+  外したビルドの検査は `just sdk-no-render-check`
+
 ## 守ること
 
 - アプリやエンジンの組み込みで最初に使うクレートなので、API を小さく分かりやすく保つ
+- `ugoe-render` は `render` feature の下だけで使う。`render` の無いビルドでも通るように、`ugoe::render` の型を
+  `render` の外の公開 API に出さない (doc コメントのリンクも `ugoe_render` へ張らない)
 
 ## 仕様
 
@@ -34,3 +42,4 @@
 - T0134 (受け手の段の順を update とそろえる)
 - T0135 (受け手でもモーションのパーツの不透明度のカーブを当てる)
 - T0152 (読み込みの上限)
+- T0156 (`render` feature)

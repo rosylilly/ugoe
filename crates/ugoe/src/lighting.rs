@@ -1,6 +1,6 @@
 //! ホストがライティングを使うための補助 (`docs/spec/rendering.md#ホストでのライティング`)。
 //!
-//! 光源 ([`ugoe_render::Lighting`]) はホストの状態で、`Renderer::set_lighting` に渡す。
+//! 光源 (`ugoe::render::Lighting`) はホストの状態で、`Renderer::set_lighting` に渡す。
 //! 法線マップは [`bundle_normal_maps`] で引いてデコードし、`Renderer::set_normal_map` で登録する
 //! (PNG は **アルファを掛けずに** デコードする。デコードはホストの仕事)。
 

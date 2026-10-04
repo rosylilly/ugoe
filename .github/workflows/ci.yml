@@ -130,6 +130,10 @@ jobs:
       - name: Generated files
         if: matrix.group == 'apps'
         run: just gen && git diff --exit-code
+      # 参照レンダラを外した ugoe (`default-features = false`) が wgpu 無しでビルド・テストできるか (T0156)
+      - name: ugoe without render
+        if: matrix.group == 'runtime'
+        run: just sdk-no-render-check
       - name: wasm32
         if: matrix.group == 'bindings'
         run: just wasm-check

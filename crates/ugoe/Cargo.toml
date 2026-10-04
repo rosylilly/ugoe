@@ -18,9 +18,14 @@ ugoe-format.workspace = true
 ugoe-model.workspace = true
 ugoe-motion.workspace = true
 ugoe-physics.workspace = true
-ugoe-render.workspace = true
+ugoe-render = { workspace = true, optional = true }
 ugoe-runtime.workspace = true
 thiserror.workspace = true
+
+[features]
+default = ["render"]
+# 参照レンダラ (`ugoe::render`、wgpu)。エンジン独自のレンダラで描く組み込み先は `default-features = false` で外す (T0156)
+render = ["dep:ugoe-render"]
 
 [dev-dependencies]
 serde.workspace = true

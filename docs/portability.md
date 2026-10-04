@@ -6,8 +6,8 @@
 
 | 段階 | 使うもの | 向いている場面 |
 | --- | --- | --- |
-| A. 全部入り | `ugoe` + `ugoe-render` (wgpu) | Rust 製のアプリ・Bevy 以外の wgpu アプリ・Web (wasm) |
-| B. 評価だけ | `ugoe` (+ C ABI) で頂点を取り出し、描画はエンジンで行う | Unity、Unreal、Godot、Bevy (wgpu のバージョンが合わない場合) |
+| A. 全部入り | `ugoe` (既定の feature。参照レンダラ `ugoe::render` = `ugoe-render` (wgpu) を含む) | Rust 製のアプリ・Bevy 以外の wgpu アプリ・Web (wasm) |
+| B. 評価だけ | `ugoe` (+ C ABI) で頂点を取り出し、描画はエンジンで行う。Rust から使うなら `default-features = false` で参照レンダラを外せる ([下](#ugoe-クレートの-feature)) | Unity、Unreal、Godot、Bevy (wgpu のバージョンが合わない場合) |
 | C. 再実装 | 仕様書 (`docs/spec/`) だけを使う | Rust を持ち込めない環境 |
 
 **段階 B を第一級に扱います。** ゲームエンジンは自前の描画パイプライン (ソート・バッチ・ポストエフェクト) を持つので、描画はエンジンに任せ、ugoe はエンジンに頂点と状態を渡すのが最も組み込みやすいためです。
@@ -24,6 +24,25 @@
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
+
+## `ugoe` クレートの feature
+
+| feature | 既定 | 内容 |
+| --- | --- | --- |
+| `render` | 有効 | 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする |
+
+段階 B で Rust から `ugoe` を使う組み込み先 (自前のエンジン・godot-rust など) は、`default-features = false` で `render` を外すと
+wgpu と naga をビルドしません。`Puppet` と評価・物理・モーション・読み込み (`ugoe::format`) はそのまま使え、無くなるのは `ugoe::render` だけです。
+光源の型 (`Lighting`) も `ugoe::render` にあるので、外したときはホストが自分の形で持ちます (`ugoe::lighting` の `uses_lighting`・`bundle_normal_maps` は使える)。
+
+```sh
+cargo add ugoe --no-default-features
+```
+
+既定で有効にしているのは、`cargo add ugoe` だけで段階 A まで使えるようにするためと、今の利用者 (`ugoe-wasm`・`ugoe-headless`・
+`ugoe-ffi`・`bindings/godot`) のビルドを変えないためです。`ugoe-render` は外せても crates.io には公開します ([ADR 0027](adr/0027-crates-io-publishing.md)。
+省ける依存も crates.io に無いと `ugoe` を公開できないため)。外したビルドは CI の `rust (runtime)` で `just sdk-no-render-check` が検査します
+(clippy とテストと、`cargo tree` に wgpu・naga が無いこと。T0156)。
 
 ## C ABI (`ugoe-ffi`) の規約
 

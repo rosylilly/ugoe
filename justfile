@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check
+ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -183,6 +183,13 @@ vcam-check: (cross-check "vcam")
 # wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
+
+# 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、wgpu・naga に依存しないことの検査
+# (docs/portability.md#ugoe-クレートの-feature、T0156)
+sdk-no-render-check:
+    cargo clippy -p ugoe --no-default-features --all-targets -- -D warnings
+    cargo test -p ugoe --no-default-features
+    if cargo tree -p ugoe --no-default-features -e normal,build --prefix none | grep -E '^(wgpu|naga) '; then echo "ugoe (default-features = false) が wgpu・naga に依存している" >&2; exit 1; fi
 
 # ugoe-wasm をビルドし、エディタが読む JS バインディングを生成する (出力は gitignore 済み)。
 # ビューアは `just wasm apps/viewer/src/lib/wasm/generated` (apps/viewer の `pnpm wasm`)。

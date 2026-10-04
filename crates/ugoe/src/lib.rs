@@ -2,7 +2,13 @@
 //!
 //! [`Puppet`] が 1 体分の「モデル + 物理 + モーション + 常時エフェクト」をまとめ、
 //! `update(dt)` 1 回で 1 フレーム分のパラメータ更新と変形評価を行う。
-//! 描画は参照レンダラ [`ugoe_render`] (`ugoe::render` として再エクスポート) か、エンジン独自のレンダラで行う。
+//! 描画は参照レンダラ `ugoe::render` (`ugoe-render` の再エクスポート) か、エンジン独自のレンダラで行う。
+//!
+//! # feature
+//!
+//! - `render` (既定で有効): 参照レンダラ (wgpu) を `ugoe::render` として再エクスポートする。
+//!   エンジン独自のレンダラで描くなら `default-features = false` で外すと、wgpu をビルドしない
+//!   (`docs/portability.md#ugoe-クレートの-feature`)。
 
 #![warn(missing_docs)]
 
@@ -13,6 +19,7 @@ pub use ugoe_format as format;
 pub use ugoe_model as model;
 pub use ugoe_motion as motion;
 pub use ugoe_physics as physics;
+#[cfg(feature = "render")]
 pub use ugoe_render as render;
 pub use ugoe_runtime as runtime;
 
