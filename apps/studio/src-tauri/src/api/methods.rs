@@ -52,7 +52,7 @@ pub fn call(studio: &Studio, method: &str, p: &Map<String, Value>) -> Result<Val
             }
             let P { scene } = params(p)?;
             studio
-                .with_stage(|stage, conductor| stage.activate(&scene, conductor))
+                .switch_scene(|stage, conductor| stage.begin_activate(&scene, conductor).map(Some))
                 .map_err(|e| RpcError::failed(&e))?;
             Ok(json!({}))
         }
@@ -136,7 +136,9 @@ pub fn call(studio: &Studio, method: &str, p: &Map<String, Value>) -> Result<Val
                 return Err(RpcError::failed(&AnimationError::NoModel));
             }
             studio
-                .with_stage(|stage, conductor| stage.dress_up(&slot, module.as_deref(), conductor))
+                .switch_scene(|stage, conductor| {
+                    stage.begin_dress_up(&slot, module.as_deref(), conductor)
+                })
                 .map_err(|e| RpcError::failed(&e))?;
             Ok(json!({}))
         }

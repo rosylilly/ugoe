@@ -163,7 +163,9 @@ path) and `live` (the scene on air, or `null`).
 
 `scene.activate` takes `{scene}` (a scene ID) and switches to it. Scenes with the same model keep parameter values,
 tracking and playing motions; a different model is loaded fresh. If the scene cannot be shown (missing file), the
-previous scene stays on air and the call fails with `-32010`.
+previous scene stays on air and the call fails with `-32010`. The studio keeps answering other requests while the
+files load. If another switch (from any client, a hotkey or the control window) starts before the files finish
+loading, the later switch wins: the earlier call still succeeds but its scene is not put on air.
 
 ### Expressions
 
@@ -217,6 +219,7 @@ they are.
 
 `dressup.set` (control) takes `{slot, module}` and puts `module` (an ID from `dressup.list`) in `slot` of the scene on
 air, or empties the slot when `module` is `null`. The change is saved in the scene, like a dress-up hotkey.
+Like `scene.activate`, a switch that starts while the modules load wins, and the earlier dress-up is dropped.
 
 ### Hotkey actions
 

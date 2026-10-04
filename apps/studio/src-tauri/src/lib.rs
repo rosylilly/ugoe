@@ -52,8 +52,8 @@ use crate::conductor::Conductor;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
-use crate::profile::{ProfileError, SceneSettings, VirtualCameraSettings};
-use crate::stage::{ProfileView, SceneError, Stage};
+use crate::profile::{Profile, ProfileError, SceneSettings, VirtualCameraSettings};
+use crate::stage::{Finish, Pending, ProfileView, ReadAsset, SceneError, Stage};
 use crate::stream::{Frame, Scene};
 use crate::virtual_camera::{
     Command as CameraCommand, Event as CameraEvent, SceneFiles, Settings as CameraSettings,
@@ -517,6 +517,49 @@ impl Studio {
         result
     }
 
+    /// シーンを切り替える (T0834。docs/studio.md#シーンの切り替えと舞台のロック): 舞台を握って `begin` で始め、ファイルを舞台のロックの外で
+    /// 読んでから、握り直して差し込む (読んでいる間もほかの操作と外部 API の要求に答える)。読むファイルが無ければ握ったまま差し込む。
+    /// 読んでいる間に後から始めた切り替えがあれば、読んだものは捨てて `Ok` を返す (差し込むのは最後の切り替えだけ)。
+    fn switch_scene(
+        &self,
+        begin: impl FnOnce(&mut Stage, &mut Conductor) -> Result<Option<Pending>, SceneError>,
+    ) -> Result<(), SceneError> {
+        self.switch_scene_with(begin, &stage::read_asset)
+    }
+
+    /// [`Studio::switch_scene`] を、ファイルを `read` で読んで行う。
+    fn switch_scene_with(
+        &self,
+        begin: impl FnOnce(&mut Stage, &mut Conductor) -> Result<Option<Pending>, SceneError>,
+        read: &ReadAsset<'_>,
+    ) -> Result<(), SceneError> {
+        let pending = self.with_stage(|stage, conductor| {
+            let Some(pending) = begin(stage, conductor)? else {
+                return Ok(None);
+            };
+            if pending.needs_reading() {
+                return Ok(Some(pending));
+            }
+            // 見せ方だけの編集など: 握ったまま差し込む (通知を 1 回にまとめる)。
+            stage.settle(pending, conductor, read).map(|()| None)
+        })?;
+        match pending {
+            Some(pending) => self.present_with(pending, read),
+            None => Ok(()),
+        }
+    }
+
+    /// 始めた切り替えを、舞台のロックの外で読んで差し込む。
+    fn present_with(&self, mut pending: Pending, read: &ReadAsset<'_>) -> Result<(), SceneError> {
+        loop {
+            let loaded = pending.load_with(read);
+            match self.with_stage(|stage, conductor| stage.finish(loaded, conductor))? {
+                Finish::Again(next) => pending = *next,
+                Finish::Done | Finish::Superseded => return Ok(()),
+            }
+        }
+    }
+
     fn hotkeys_message(hotkeys: &Hotkeys) -> Option<InvokeResponseBody> {
         Self::json(&Monitor::Hotkeys {
             problems: &hotkeys.problems,
@@ -592,14 +635,16 @@ impl Studio {
         let result = match action {
             HotkeyAction::Scene { scene } => {
                 return self
-                    .with_stage(|stage, conductor| stage.activate(scene, conductor))
+                    .switch_scene(|stage, conductor| {
+                        stage.begin_activate(scene, conductor).map(Some)
+                    })
                     .err()
                     .map(HotkeyError::Scene);
             }
             HotkeyAction::DressUp { slot, module } => {
                 return self
-                    .with_stage(|stage, conductor| {
-                        stage.dress_up(slot, module.as_deref(), conductor)
+                    .switch_scene(|stage, conductor| {
+                        stage.begin_dress_up(slot, module.as_deref(), conductor)
                     })
                     .err()
                     .map(HotkeyError::Scene);
@@ -793,7 +838,15 @@ async fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), Co
 }
 
 fn open_profile_at(studio: &Arc<Studio>, path: &Path) -> Result<(), CommandError> {
-    let error = studio.with_stage(|stage, conductor| stage.open_profile(path, conductor))?;
+    // プロファイルとシーンのファイルは舞台のロックの外で読む (T0834)。
+    let read = Profile::read(path);
+    let error = studio
+        .with_stage(|stage, conductor| stage.begin_open_profile(path, read, conductor))?
+        .and_then(|pending| match pending {
+            Some(pending) => studio.present_with(pending, &stage::read_asset),
+            None => Ok(()),
+        })
+        .err();
     // 仮想カメラの設定もプロファイルのものにする (仮想カメラを始められなくても、プロファイルは開いている)。
     let _ = sync_camera(studio);
     match error {
@@ -881,7 +934,7 @@ async fn update_scene(
     scene: SceneSettings,
 ) -> Result<(), CommandError> {
     blocking(&studio, |studio| {
-        Ok(studio.with_stage(|stage, conductor| stage.update_scene(scene, conductor))?)
+        Ok(studio.switch_scene(|stage, conductor| stage.begin_update_scene(scene, conductor))?)
     })
     .await?
 }
@@ -893,7 +946,8 @@ async fn activate_scene(
     id: String,
 ) -> Result<(), CommandError> {
     blocking(&studio, move |studio| {
-        Ok(studio.with_stage(|stage, conductor| stage.activate(&id, conductor))?)
+        Ok(studio
+            .switch_scene(|stage, conductor| stage.begin_activate(&id, conductor).map(Some))?)
     })
     .await?
 }

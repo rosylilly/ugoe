@@ -730,6 +730,75 @@ fn lists_the_wardrobe_without_holding_the_stage() {
     assert_eq!(list["modules"][0]["slot"], "Hair");
 }
 
+/// シーンの切り替えはファイルを舞台のロックの外で読み、読んでいる間も外部 API の要求に答える。
+/// 読んでいる間に次の切り替えが来たら、先の切り替えは捨てる (T0834)。
+#[test]
+fn answers_while_a_scene_loads_and_keeps_the_later_switch() {
+    let dir = Dir::new("load-unlocked");
+    let model = dir.model();
+    let other = dir.0.join("other.ugoe");
+    std::fs::copy(&model, &other).unwrap();
+    let studio = studio();
+    let (chat, game) = stage_scenes(&studio, &model, &[]);
+    let far = studio.with_stage(|stage, conductor| {
+        let id = stage.add_scene("Far");
+        let mut scene = stage.profile().scene(&id).unwrap().clone();
+        scene.model = Some(other.clone());
+        stage.update_scene(scene, conductor).unwrap();
+        id
+    });
+    let client = std::cell::RefCell::new(Client::connect(&studio));
+    client.borrow_mut().approved(Permission::Control);
+
+    let reads = std::cell::Cell::new(0);
+    let read = |asset: Asset, path: &Path, extensions: &[&str], max: u64| {
+        reads.set(reads.get() + 1);
+        assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+        assert!(
+            studio.conductor.try_lock().is_ok(),
+            "the conductor is locked"
+        );
+        let mut client = client.borrow_mut();
+        // 読むだけの要求に答える (まだ前のシーン)。
+        let list = client.call("scene.list", json!({}));
+        assert_eq!(list["live"], chat.as_str());
+        client.call("studio.state", json!({}));
+        // 読んでいる間に次の切り替え (同じモデルなので読まずに出す)。
+        client.call("scene.activate", json!({ "scene": game }));
+        assert_eq!(lock(&studio.stage).live(), Some(game.as_str()));
+        crate::stage::read_asset(asset, path, extensions, max)
+    };
+    studio
+        .switch_scene_with(
+            |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
+            &read,
+        )
+        .unwrap();
+    assert_eq!(reads.get(), 1);
+    // 先に始めた Far は読み終えても出さない。
+    assert_eq!(lock(&studio.stage).live(), Some(game.as_str()));
+    assert_eq!(
+        lock(&studio.conductor).scene().unwrap().model_name,
+        "avatar.ugoe"
+    );
+
+    // 次の切り替えが来なければ、読み終えて出す。
+    studio
+        .switch_scene_with(
+            |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
+            &|asset: Asset, path: &Path, extensions: &[&str], max: u64| {
+                assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+                crate::stage::read_asset(asset, path, extensions, max)
+            },
+        )
+        .unwrap();
+    assert_eq!(lock(&studio.stage).live(), Some(far.as_str()));
+    assert_eq!(
+        lock(&studio.conductor).scene().unwrap().model_name,
+        "other.ugoe"
+    );
+}
+
 /// `dressup.list` は付けていないモジュールの概要を覚え、ファイルの時刻と大きさが変わらなければ読み直さない (T0833)。
 #[test]
 fn remembers_the_wardrobe_until_the_file_changes() {

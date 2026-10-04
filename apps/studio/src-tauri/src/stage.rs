@@ -1,6 +1,7 @@
 //! 舞台: 開いているプロファイルと、指揮役に出しているシーン (`docs/studio.md#シーンとプロファイル`、ADR 0028 の 4.)。
 //!
 //! シーンの追加・複製・並べ替え・削除・編集と、シーンの切り替え (ファイルを読んで [`Conductor::present`] に渡す) を受け持つ。
+//! 切り替えのファイルは舞台のロックの外で読めるよう、始める・読む・差し込むの 3 つに分ける ([`Pending`]、T0834)。
 //! 受け手が取るファイルの中身 (モデル・モジュール・背景の画像) は、今のシーンの分だけをここで持つ
 //! (任意のパスは読ませない)。Tauri には依存しない (コマンドは `lib.rs`)。
 
@@ -116,6 +117,8 @@ pub struct Stage {
     recent: RecentProfiles,
     /// 最近のプロファイルを書く場所 (アプリのデータの場所)。`None` なら覚えない。
     recent_path: Option<PathBuf>,
+    /// 最後に始めた切り替えの番号 (読んでいる間に後から始めた切り替えがあれば、読んだものを捨てる。T0834)。
+    tickets: u64,
 }
 
 impl Stage {
@@ -172,18 +175,22 @@ impl Stage {
         self.dirty = false;
         self.live = None;
         self.assets = Assets::default();
+        // 読んでいる途中の切り替えは捨てる。
+        self.tickets = self.tickets.wrapping_add(1);
         conductor.clear(Look::default());
         self.apply_motion_settings(conductor);
     }
 
-    /// プロファイルを開いて、最後に使ったシーンに切り替える。プロファイルを読めなければ何も変えない。
-    /// 開けたがシーンを出せなかったときは、`Ok(Some(エラー))` (プロファイルは開いたまま、指揮役は前のシーンのまま)。
-    pub fn open_profile(
+    /// 読んだプロファイル `read` (`path` から [`Profile::read`] で、舞台のロックの外で読む) を開き、最後に使ったシーンへの切り替えを始める。
+    /// 読めなかったら何も変えない。開けたがシーンを出せなかったときは `Ok(Err(エラー))`
+    /// (プロファイルは開いたまま、指揮役は前のシーンのまま)。切り替えを差し込んでも未保存にはならない (`activeScene` のシーンなので)。
+    pub fn begin_open_profile(
         &mut self,
         path: &Path,
+        read: Result<Profile, ProfileError>,
         conductor: &mut Conductor,
-    ) -> Result<Option<SceneError>, ProfileError> {
-        let profile = match Profile::read(path) {
+    ) -> Result<Result<Option<Pending>, SceneError>, ProfileError> {
+        let profile = match read {
             Ok(profile) => profile,
             Err(e) => {
                 // 消えたファイルは最近の一覧から外す。
@@ -198,17 +205,32 @@ impl Stage {
         self.path = Some(path.to_owned());
         self.dirty = false;
         self.live = None;
+        // 前のプロファイルの読んでいる途中の切り替えは捨てる。
+        self.tickets = self.tickets.wrapping_add(1);
         self.touch_recent(path);
         self.apply_motion_settings(conductor);
         let Some(id) = self.profile.active_scene.clone() else {
             self.assets = Assets::default();
             conductor.clear(Look::default());
-            return Ok(None);
+            return Ok(Ok(None));
         };
-        let error = self.activate(&id, conductor).err();
-        // 開いた直後は保存したものと同じ (切り替えで active_scene を書き直しても変わらない)。
-        self.dirty = false;
-        Ok(error)
+        Ok(self.begin_activate(&id, conductor).map(Some))
+    }
+
+    /// プロファイルを開いて、最後に使ったシーンに切り替える (読む間も舞台を握ったまま。テスト用)。
+    #[cfg(test)]
+    pub fn open_profile(
+        &mut self,
+        path: &Path,
+        conductor: &mut Conductor,
+    ) -> Result<Option<SceneError>, ProfileError> {
+        let pending = self.begin_open_profile(path, Profile::read(path), conductor)?;
+        Ok(pending
+            .and_then(|pending| match pending {
+                Some(pending) => self.settle(pending, conductor, &read_asset),
+                None => Ok(()),
+            })
+            .err())
     }
 
     /// 保存する。`path` を省くと今の保存先 (無ければ `None` を返して何もしない)。保存したら保存先を返す。
@@ -350,59 +372,182 @@ impl Stage {
         Ok(())
     }
 
-    /// シーンの設定を置き換える (`scene.id` で探す。値は収め直す)。出しているシーンなら出し直し、出せなければ元の設定に戻す。
-    pub fn update_scene(
-        &mut self,
-        mut scene: SceneSettings,
-        conductor: &mut Conductor,
-    ) -> Result<(), SceneError> {
-        scene.sanitize();
-        let index = self.index_of(&scene.id)?;
-        if self.profile.scenes[index] == scene {
-            return Ok(());
-        }
-        let previous = std::mem::replace(&mut self.profile.scenes[index], scene);
-        self.dirty = true;
-        if self.live.as_deref() != Some(previous.id.as_str()) {
-            return Ok(());
-        }
-        let id = previous.id.clone();
-        self.activate(&id, conductor).inspect_err(|_| {
-            self.profile.scenes[index] = previous;
-            // 戻したので、出しているシーンはそのまま。
-            self.live = Some(id.clone());
-        })
-    }
-
     fn index_of(&self, id: &str) -> Result<usize, SceneError> {
         self.profile
             .index_of(id)
             .ok_or_else(|| SceneError::UnknownScene { id: id.to_owned() })
     }
 
-    // --- 切り替え ---
+    // --- 切り替え (docs/studio.md#シーンの切り替えと舞台のロック、T0834) ---
+    //
+    // 切り替えは 3 つに分ける: 舞台を握って始め (`begin_*`)、握らずに読み ([`Pending::load`])、握り直して差し込む ([`Stage::finish`])。
+    // 始めた順の番号 (`tickets`) を持ち、差し込むときに後から始めた切り替えがあれば、読んだものを捨てる。
 
-    /// シーン `id` に切り替える (指揮役に出す)。ファイルを読めなければ何も変えない (指揮役は前のシーンのまま)。
+    /// シーン `id` への切り替えを始める (指揮役に出すのは [`Stage::finish`])。
     ///
     /// 同じモデル (同じパス) のシーンどうしでは、モデルを読み直さず、パラメータの値や再生中のモーションを引き継ぐ。
     /// 背景の画像が読めないときは透過にして続ける (配信中に切り替えを止めない)。
-    pub fn activate(&mut self, id: &str, conductor: &mut Conductor) -> Result<(), SceneError> {
+    pub fn begin_activate(
+        &mut self,
+        id: &str,
+        conductor: &Conductor,
+    ) -> Result<Pending, SceneError> {
+        self.plan(id, Kind::Activate, conductor)
+    }
+
+    /// シーンの設定を置き換える (`scene.id` で探す。値は収め直す)。出しているシーンなら、出し直す切り替えを返す
+    /// (出せなければ [`Stage::finish`] が元の設定に戻す)。
+    pub fn begin_update_scene(
+        &mut self,
+        mut scene: SceneSettings,
+        conductor: &Conductor,
+    ) -> Result<Option<Pending>, SceneError> {
+        scene.sanitize();
+        let index = self.index_of(&scene.id)?;
+        if self.profile.scenes[index] == scene {
+            return Ok(None);
+        }
+        let previous = std::mem::replace(&mut self.profile.scenes[index], scene);
+        self.dirty = true;
+        if self.live.as_deref() != Some(previous.id.as_str()) {
+            return Ok(None);
+        }
+        let id = previous.id.clone();
+        self.plan(&id, Kind::Update { previous }, conductor)
+            .map(Some)
+    }
+
+    /// 出しているシーンの着せ替え (ホットキー、T0803) を始める: スロット `slot` に付けているモジュールを外し、`module` があれば付ける。
+    /// 付けるモジュールのスロットは読んでから分かるので、シーンの設定 (`modules`) は差し込むときに書き換える
+    /// (出せなければ元のまま)。出しているシーンが無ければ何もしない。
+    pub fn begin_dress_up(
+        &mut self,
+        slot: &str,
+        module: Option<&Path>,
+        conductor: &Conductor,
+    ) -> Result<Option<Pending>, SceneError> {
+        let Some(id) = self.live.clone() else {
+            return Ok(None);
+        };
+        let kind = Kind::DressUp {
+            slot: slot.to_owned(),
+            module: module.map(Path::to_owned),
+        };
+        self.plan(&id, kind, conductor).map(Some)
+    }
+
+    /// 番号を進めて切り替えを始める。
+    fn plan(&mut self, id: &str, kind: Kind, conductor: &Conductor) -> Result<Pending, SceneError> {
+        self.index_of(id)?;
+        self.tickets = self.tickets.wrapping_add(1);
+        self.pending(self.tickets, id, kind, conductor)
+    }
+
+    fn pending(
+        &self,
+        ticket: u64,
+        id: &str,
+        kind: Kind,
+        conductor: &Conductor,
+    ) -> Result<Pending, SceneError> {
         let scene = self.profile.scenes[self.index_of(id)?].clone();
-        let mut look = Look {
-            lighting: scene.lighting.clone(),
-            transform: scene.transform,
-            background: scene.background.clone(),
-        };
-        let background = match &scene.background {
-            Background::Image { path } => match self.background_bytes(path) {
-                Ok(bytes) => Some((path.clone(), bytes)),
-                Err(_) => {
-                    look.background = Background::Transparent;
-                    None
-                }
+        // 指揮役がモデルを外していれば、同じパスでも読み直す。
+        let model = conductor
+            .scene()
+            .is_some_and(|s| s.model_revision != 0)
+            .then(|| self.assets.model.clone())
+            .flatten();
+        Ok(Pending {
+            ticket,
+            id: id.to_owned(),
+            scene,
+            kind,
+            cached: Cached {
+                model,
+                modules: self.assets.modules.clone(),
+                background: self.assets.background.clone(),
             },
-            _ => None,
+        })
+    }
+
+    /// 読み終えた切り替えを差し込む (指揮役に出す)。
+    ///
+    /// - 読めなければ何も変えずにエラー (指揮役は前のシーンのまま。設定を置き換えた編集は、まだ置き換えたままなら元に戻す)。
+    /// - 読んでいる間に後から切り替えが始まった (`begin_*`・プロファイルを開く・新しいプロファイル) なら、読んだものを捨てる
+    ///   ([`Finish::Superseded`])。差し込むのは最後に始めた切り替えだけ。
+    /// - 読んでいる間にシーンの設定が変わったら: 切り替えは今の設定で読み直す ([`Finish::Again`])。編集と着せ替えは捨てる。
+    pub fn finish(
+        &mut self,
+        loaded: Loaded,
+        conductor: &mut Conductor,
+    ) -> Result<Finish, SceneError> {
+        let Loaded {
+            ticket,
+            id,
+            kind,
+            expected,
+            result,
+        } = loaded;
+        let latest = ticket == self.tickets;
+        let unchanged = self.profile.scene(&id) == Some(&expected);
+        if latest && !unchanged && matches!(kind, Kind::Activate) {
+            return self
+                .pending(ticket, &id, kind, conductor)
+                .map(|next| Finish::Again(Box::new(next)));
+        }
+        let prepared = match result {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                if unchanged {
+                    self.revert(&id, kind);
+                }
+                return Err(e);
+            }
         };
+        if !latest || !unchanged {
+            return Ok(Finish::Superseded);
+        }
+        if matches!(kind, Kind::DressUp { .. }) && prepared.scene == expected {
+            return Ok(Finish::Done);
+        }
+        let scene = prepared.scene.clone();
+        if let Err(e) = self.present(&id, prepared, conductor) {
+            self.revert(&id, kind);
+            return Err(e);
+        }
+        if matches!(kind, Kind::DressUp { .. })
+            && let Some(index) = self.profile.index_of(&id)
+        {
+            self.profile.scenes[index] = scene;
+            self.dirty = true;
+        }
+        Ok(Finish::Done)
+    }
+
+    /// 出せなかった編集を元の設定に戻す (出しているシーンはそのまま)。
+    fn revert(&mut self, id: &str, kind: Kind) {
+        if let Kind::Update { previous } = kind
+            && let Some(index) = self.profile.index_of(id)
+        {
+            self.profile.scenes[index] = previous;
+        }
+    }
+
+    /// 読んだシーンを指揮役に出す。
+    fn present(
+        &mut self,
+        id: &str,
+        prepared: Prepared,
+        conductor: &mut Conductor,
+    ) -> Result<(), SceneError> {
+        let Prepared {
+            scene,
+            look,
+            model,
+            new_model,
+            modules,
+            background,
+        } = prepared;
         let Some(model_path) = &scene.model else {
             conductor.clear(look);
             self.assets = Assets {
@@ -412,32 +557,6 @@ impl Stage {
             self.set_live(id);
             return Ok(());
         };
-        let same_model = conductor.scene().is_some_and(|s| s.model_revision != 0)
-            && self
-                .assets
-                .model
-                .as_ref()
-                .is_some_and(|(path, _)| path == model_path);
-        let (model, new_model) = if same_model {
-            (self.assets.model.clone(), None)
-        } else {
-            let bytes = read_asset(Asset::Model, model_path, MODEL_EXTENSIONS, MAX_MODEL_BYTES)?;
-            let bundle = conductor::read_model(&bytes).map_err(|e| SceneError::Unreadable {
-                asset: Asset::Model,
-                path: model_path.clone(),
-                message: e.to_string(),
-            })?;
-            let name = file_name(model_path);
-            (
-                Some((model_path.clone(), Arc::new(bytes))),
-                Some(NewModel { name, bundle }),
-            )
-        };
-        let modules = scene
-            .modules
-            .iter()
-            .map(|path| self.module(path))
-            .collect::<Result<Vec<_>, _>>()?;
         conductor
             .present(
                 new_model,
@@ -463,41 +582,53 @@ impl Stage {
         Ok(())
     }
 
-    /// 出しているシーンの着せ替え (ホットキー、T0803): スロット `slot` に付けているモジュールを外し、`module` があれば付ける。
-    /// シーンの設定 (`modules`) を書き換えて出し直す。出せなければ元に戻してエラー。出しているシーンが無ければ何もしない。
+    /// 始めた切り替えを、舞台を握ったまま読んで差し込む (読むファイルが無いとき・テスト)。
+    pub fn settle(
+        &mut self,
+        mut pending: Pending,
+        conductor: &mut Conductor,
+        read: &ReadAsset<'_>,
+    ) -> Result<(), SceneError> {
+        loop {
+            match self.finish(pending.load_with(read), conductor)? {
+                Finish::Again(next) => pending = *next,
+                Finish::Done | Finish::Superseded => return Ok(()),
+            }
+        }
+    }
+
+    /// シーン `id` に切り替える (読む間も舞台を握ったまま。テスト用)。
+    #[cfg(test)]
+    pub fn activate(&mut self, id: &str, conductor: &mut Conductor) -> Result<(), SceneError> {
+        let pending = self.begin_activate(id, conductor)?;
+        self.settle(pending, conductor, &read_asset)
+    }
+
+    /// [`Stage::begin_update_scene`] と差し込みを続けて行う (テスト用)。
+    #[cfg(test)]
+    pub fn update_scene(
+        &mut self,
+        scene: SceneSettings,
+        conductor: &mut Conductor,
+    ) -> Result<(), SceneError> {
+        match self.begin_update_scene(scene, conductor)? {
+            Some(pending) => self.settle(pending, conductor, &read_asset),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Stage::begin_dress_up`] と差し込みを続けて行う (テスト用)。
+    #[cfg(test)]
     pub fn dress_up(
         &mut self,
         slot: &str,
         module: Option<&Path>,
         conductor: &mut Conductor,
     ) -> Result<(), SceneError> {
-        let Some(id) = self.live.clone() else {
-            return Ok(());
-        };
-        let mut scene = self.profile.scenes[self.index_of(&id)?].clone();
-        let mut modules = Vec::with_capacity(scene.modules.len() + 1);
-        for path in &scene.modules {
-            if self.module(path)?.module.slot.as_str() != slot {
-                modules.push(path.clone());
-            }
+        match self.begin_dress_up(slot, module, conductor)? {
+            Some(pending) => self.settle(pending, conductor, &read_asset),
+            None => Ok(()),
         }
-        if let Some(path) = module {
-            let loaded = self.module(path)?;
-            if loaded.module.slot.as_str() != slot {
-                // 割り当てたスロットと違うスロットのモジュール: そのモジュールのスロットを空けてから付ける。
-                let other = loaded.module.slot.as_str().to_owned();
-                let mut kept = Vec::with_capacity(modules.len());
-                for p in modules {
-                    if self.module(&p)?.module.slot.as_str() != other {
-                        kept.push(p);
-                    }
-                }
-                modules = kept;
-            }
-            modules.push(path.to_owned());
-        }
-        scene.modules = modules;
-        self.update_scene(scene, conductor)
     }
 
     fn set_live(&mut self, id: &str) {
@@ -506,33 +637,6 @@ impl Stage {
             self.profile.active_scene = Some(id.to_owned());
             self.dirty = true;
         }
-    }
-
-    /// モジュールを読む (今のシーンで読んであれば、それを使う)。
-    fn module(&self, path: &Path) -> Result<LoadedModule, SceneError> {
-        if let Some(loaded) = self.assets.modules.iter().find(|m| m.path == path) {
-            return Ok(loaded.clone());
-        }
-        let bytes = read_asset(Asset::Module, path, MODULE_EXTENSIONS, MAX_MODEL_BYTES)?;
-        let file = ugoe::format::read_module(&bytes).map_err(|e| SceneError::Unreadable {
-            asset: Asset::Module,
-            path: path.to_owned(),
-            message: e.to_string(),
-        })?;
-        Ok(LoadedModule {
-            path: path.to_owned(),
-            bytes: Arc::new(bytes),
-            module: Arc::new(file.module),
-        })
-    }
-
-    fn background_bytes(&self, path: &Path) -> Result<Arc<Vec<u8>>, SceneError> {
-        if let Some((loaded, bytes)) = &self.assets.background
-            && loaded == path
-        {
-            return Ok(Arc::clone(bytes));
-        }
-        read_asset(Asset::Background, path, IMAGE_EXTENSIONS, MAX_IMAGE_BYTES).map(Arc::new)
     }
 
     // --- 受け手が取るファイル (今のシーンの分だけ) ---
@@ -558,6 +662,270 @@ impl Stage {
             .modules
             .iter()
             .map(|m| (m.path.as_path(), m.module.as_ref()))
+    }
+}
+
+/// ファイルを読む関数 ([`read_asset`] の形。テストでは差し替えて、読む間に舞台を握っていないことを確かめる)。
+pub type ReadAsset<'a> = dyn Fn(Asset, &Path, &[&str], u64) -> Result<Vec<u8>, SceneError> + 'a;
+
+/// 始めた切り替え。舞台のロックの外で [`Pending::load`] で読み、[`Stage::finish`] に渡す (T0834)。
+#[derive(Debug)]
+pub struct Pending {
+    /// 始めた順の番号。
+    ticket: u64,
+    id: String,
+    /// 始めたときのシーンの設定。
+    scene: SceneSettings,
+    kind: Kind,
+    /// 今のシーンで読んであるもの (同じパスは読み直さない)。
+    cached: Cached,
+}
+
+#[derive(Debug)]
+enum Kind {
+    Activate,
+    /// 出しているシーンの設定を置き換えた。`previous` は元の設定 (出せなければ戻す)。
+    Update {
+        previous: SceneSettings,
+    },
+    /// 出しているシーンの着せ替え。
+    DressUp {
+        slot: String,
+        module: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Default)]
+struct Cached {
+    /// 指揮役に出しているモデル (指揮役がモデルを外していれば `None`)。
+    model: Option<(PathBuf, Arc<Vec<u8>>)>,
+    modules: Vec<LoadedModule>,
+    background: Option<(PathBuf, Arc<Vec<u8>>)>,
+}
+
+/// 読み終えた切り替え。
+#[derive(Debug)]
+pub struct Loaded {
+    ticket: u64,
+    id: String,
+    kind: Kind,
+    /// 差し込むときにプロファイルが持っているはずのシーンの設定 (違えば、読んだものは古い)。
+    expected: SceneSettings,
+    result: Result<Prepared, SceneError>,
+}
+
+/// 指揮役に出すシーン。
+#[derive(Debug)]
+struct Prepared {
+    /// 出す設定 (着せ替えなら書き換えた後のもの)。
+    scene: SceneSettings,
+    look: Look,
+    model: Option<(PathBuf, Arc<Vec<u8>>)>,
+    /// 読んだモデル (同じモデルなら `None`)。
+    new_model: Option<NewModel>,
+    modules: Vec<LoadedModule>,
+    background: Option<(PathBuf, Arc<Vec<u8>>)>,
+}
+
+/// 差し込んだ結果。
+#[derive(Debug)]
+pub enum Finish {
+    /// 出した (着せ替えで変わらなければ何もしない)。
+    Done,
+    /// 読んでいる間に後から切り替えが始まったので、読んだものを捨てた。
+    Superseded,
+    /// 読んでいる間にシーンの設定が変わったので、今の設定で読み直す。
+    Again(Box<Pending>),
+}
+
+impl Pending {
+    /// 読むファイルがあるか (無ければ舞台を握ったまま差し込んでよい)。
+    pub fn needs_reading(&self) -> bool {
+        let cached = &self.cached;
+        let model = self
+            .scene
+            .model
+            .as_ref()
+            .is_some_and(|path| cached.model.as_ref().is_none_or(|(p, _)| p != path));
+        let module = |path: &Path| !cached.modules.iter().any(|m| m.path == path);
+        let modules = self.scene.modules.iter().any(|p| module(p))
+            || matches!(&self.kind, Kind::DressUp { module: Some(path), .. } if module(path));
+        let background = matches!(&self.scene.background, Background::Image { path }
+            if cached.background.as_ref().is_none_or(|(p, _)| p != path));
+        model || modules || background
+    }
+
+    /// ファイルを読む (舞台のロックの外で呼ぶ)。
+    pub fn load(self) -> Loaded {
+        self.load_with(&read_asset)
+    }
+
+    /// `read` でファイルを読む。
+    pub fn load_with(self, read: &ReadAsset<'_>) -> Loaded {
+        let Pending {
+            ticket,
+            id,
+            scene,
+            kind,
+            cached,
+        } = self;
+        let mut loader = Loader {
+            cached,
+            read,
+            fresh: Vec::new(),
+        };
+        let result = match &kind {
+            Kind::DressUp { slot, module } => loader.dress_up(&scene, slot, module.as_deref()),
+            _ => Ok(scene.clone()),
+        }
+        .and_then(|target| loader.prepare(target));
+        Loaded {
+            ticket,
+            id,
+            kind,
+            expected: scene,
+            result,
+        }
+    }
+}
+
+/// 切り替えのファイルを読む (読んであるものは使う)。
+struct Loader<'a> {
+    cached: Cached,
+    read: &'a ReadAsset<'a>,
+    /// この切り替えで読んだモジュール (着せ替えで読んだものを、もう一度読まない)。
+    fresh: Vec<LoadedModule>,
+}
+
+impl Loader<'_> {
+    /// シーンのファイルを読む。
+    fn prepare(&mut self, scene: SceneSettings) -> Result<Prepared, SceneError> {
+        let mut look = Look {
+            lighting: scene.lighting.clone(),
+            transform: scene.transform,
+            background: scene.background.clone(),
+        };
+        let background = match &scene.background {
+            Background::Image { path } => match self.background(path) {
+                Ok(bytes) => Some((path.clone(), bytes)),
+                Err(_) => {
+                    look.background = Background::Transparent;
+                    None
+                }
+            },
+            _ => None,
+        };
+        let Some(model_path) = scene.model.clone() else {
+            return Ok(Prepared {
+                scene,
+                look,
+                model: None,
+                new_model: None,
+                modules: Vec::new(),
+                background,
+            });
+        };
+        let (model, new_model) = match &self.cached.model {
+            Some((path, bytes)) if *path == model_path => {
+                (Some((model_path.clone(), Arc::clone(bytes))), None)
+            }
+            _ => {
+                let bytes =
+                    (self.read)(Asset::Model, &model_path, MODEL_EXTENSIONS, MAX_MODEL_BYTES)?;
+                let bundle = conductor::read_model(&bytes).map_err(|e| SceneError::Unreadable {
+                    asset: Asset::Model,
+                    path: model_path.clone(),
+                    message: e.to_string(),
+                })?;
+                let name = file_name(&model_path);
+                (
+                    Some((model_path.clone(), Arc::new(bytes))),
+                    Some(NewModel { name, bundle }),
+                )
+            }
+        };
+        let modules = scene
+            .modules
+            .iter()
+            .map(|path| self.module(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Prepared {
+            scene,
+            look,
+            model,
+            new_model,
+            modules,
+            background,
+        })
+    }
+
+    /// 着せ替えた後の設定: スロット `slot` のモジュールを外し、`module` があれば付ける
+    /// (割り当てたスロットと違うスロットのモジュールなら、そのモジュールのスロットを空けてから付ける)。
+    fn dress_up(
+        &mut self,
+        base: &SceneSettings,
+        slot: &str,
+        module: Option<&Path>,
+    ) -> Result<SceneSettings, SceneError> {
+        let mut modules = Vec::with_capacity(base.modules.len() + 1);
+        for path in &base.modules {
+            if self.module(path)?.module.slot.as_str() != slot {
+                modules.push(path.clone());
+            }
+        }
+        if let Some(path) = module {
+            let loaded = self.module(path)?;
+            if loaded.module.slot.as_str() != slot {
+                let other = loaded.module.slot.as_str().to_owned();
+                let mut kept = Vec::with_capacity(modules.len());
+                for p in modules {
+                    if self.module(&p)?.module.slot.as_str() != other {
+                        kept.push(p);
+                    }
+                }
+                modules = kept;
+            }
+            modules.push(path.to_owned());
+        }
+        let mut scene = base.clone();
+        scene.modules = modules;
+        scene.sanitize();
+        Ok(scene)
+    }
+
+    /// モジュールを読む (今のシーンかこの切り替えで読んであれば、それを使う)。
+    fn module(&mut self, path: &Path) -> Result<LoadedModule, SceneError> {
+        if let Some(loaded) = self
+            .cached
+            .modules
+            .iter()
+            .chain(&self.fresh)
+            .find(|m| m.path == path)
+        {
+            return Ok(loaded.clone());
+        }
+        let bytes = (self.read)(Asset::Module, path, MODULE_EXTENSIONS, MAX_MODEL_BYTES)?;
+        let file = ugoe::format::read_module(&bytes).map_err(|e| SceneError::Unreadable {
+            asset: Asset::Module,
+            path: path.to_owned(),
+            message: e.to_string(),
+        })?;
+        let loaded = LoadedModule {
+            path: path.to_owned(),
+            bytes: Arc::new(bytes),
+            module: Arc::new(file.module),
+        };
+        self.fresh.push(loaded.clone());
+        Ok(loaded)
+    }
+
+    fn background(&self, path: &Path) -> Result<Arc<Vec<u8>>, SceneError> {
+        if let Some((loaded, bytes)) = &self.cached.background
+            && loaded == path
+        {
+            return Ok(Arc::clone(bytes));
+        }
+        (self.read)(Asset::Background, path, IMAGE_EXTENSIONS, MAX_IMAGE_BYTES).map(Arc::new)
     }
 }
 
@@ -856,6 +1224,105 @@ mod tests {
             Err(SceneError::DressUp { .. })
         ));
         assert_eq!(conductor.scene().unwrap().revision, revision);
+    }
+
+    /// 読んでいる間に後から始めた切り替えがあれば、先に始めた方は読み終えた順によらず捨てる (T0834)。
+    #[test]
+    fn a_later_switch_discards_the_earlier_one() {
+        let dir = Dir::new("superseded");
+        let base = dir.model("base.json", fixtures::dress_up_base());
+        let lone = dir.model("lone.json", fixtures::single_quad());
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        let a = scene(&mut stage, Some(&base), &[]);
+        let b = scene(&mut stage, Some(&lone), &[]);
+        stage.update_scene(a.clone(), &mut conductor).unwrap();
+        stage.update_scene(b.clone(), &mut conductor).unwrap();
+
+        // 読み終えた順: 先に始めた方が先・後の方が先。
+        for earlier_first in [true, false] {
+            let empty = stage.profile().scenes[0].id.clone();
+            stage.activate(&empty, &mut conductor).unwrap();
+            let revision = conductor.scene().unwrap().revision;
+            let earlier = stage.begin_activate(&a.id, &conductor).unwrap();
+            let later = stage.begin_activate(&b.id, &conductor).unwrap();
+            assert!(earlier.needs_reading() && later.needs_reading());
+            let (earlier, later) = (earlier.load(), later.load());
+            if earlier_first {
+                assert!(matches!(
+                    stage.finish(earlier, &mut conductor),
+                    Ok(Finish::Superseded)
+                ));
+                assert_eq!(conductor.scene().unwrap().revision, revision);
+                assert!(matches!(
+                    stage.finish(later, &mut conductor),
+                    Ok(Finish::Done)
+                ));
+            } else {
+                assert!(matches!(
+                    stage.finish(later, &mut conductor),
+                    Ok(Finish::Done)
+                ));
+                assert!(matches!(
+                    stage.finish(earlier, &mut conductor),
+                    Ok(Finish::Superseded)
+                ));
+            }
+            assert_eq!(stage.live(), Some(b.id.as_str()));
+            assert_eq!(conductor.scene().unwrap().model_name, "lone.json");
+        }
+
+        // 新しいプロファイルにしたら、読んでいる途中の切り替えは捨てる。
+        let pending = stage.begin_activate(&a.id, &conductor).unwrap().load();
+        stage.new_profile(&mut conductor);
+        assert!(matches!(
+            stage.finish(pending, &mut conductor),
+            Ok(Finish::Superseded)
+        ));
+        assert_eq!(stage.live(), None);
+        assert_eq!(conductor.scene().unwrap().model_revision, 0);
+    }
+
+    /// 読んでいる間にシーンの設定が変わったら、切り替えは今の設定で読み直す。出しているシーンの編集は、後の切り替えに捨てられても設定は残す (T0834)。
+    #[test]
+    fn a_scene_edited_while_loading_is_read_again() {
+        let dir = Dir::new("edited");
+        let base = dir.model("base.json", fixtures::dress_up_base());
+        let lone = dir.model("lone.json", fixtures::single_quad());
+        let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        let mut a = scene(&mut stage, Some(&base), &[]);
+        stage.update_scene(a.clone(), &mut conductor).unwrap();
+
+        let pending = stage.begin_activate(&a.id, &conductor).unwrap().load();
+        a.model = Some(lone.clone());
+        stage.update_scene(a.clone(), &mut conductor).unwrap();
+        let Ok(Finish::Again(again)) = stage.finish(pending, &mut conductor) else {
+            panic!("expected to read the scene again");
+        };
+        assert!(matches!(
+            stage.finish(again.load(), &mut conductor),
+            Ok(Finish::Done)
+        ));
+        assert_eq!(conductor.scene().unwrap().model_name, "lone.json");
+
+        // 出しているシーンの編集を読んでいる間に別のシーンへ切り替えた: 出すのは後のシーン、編集した設定は残す。
+        a.model = Some(base.clone());
+        a.modules = vec![hair.clone()];
+        let b = stage.profile().scenes[0].id.clone();
+        let edit = stage
+            .begin_update_scene(a.clone(), &conductor)
+            .unwrap()
+            .unwrap()
+            .load();
+        stage.activate(&b, &mut conductor).unwrap();
+        assert!(matches!(
+            stage.finish(edit, &mut conductor),
+            Ok(Finish::Superseded)
+        ));
+        assert_eq!(stage.live(), Some(b.as_str()));
+        assert_eq!(stage.profile().scene(&a.id).unwrap().modules, [hair]);
     }
 
     #[test]
