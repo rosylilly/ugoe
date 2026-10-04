@@ -10,6 +10,12 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # `test-gpu` と `commitlint` は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
+# mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の cargo の shim があれば PATH の先頭に置き、
+# レシピの cargo を mbx に通す。shim が無ければ PATH は変えない (従来どおり)。
+# 一時的に mbx を通さないときは `MBX_DISABLE=1 just ...` (shim が素の cargo を呼ぶ)。Windows では何もしない。
+mbx_shim_dir := data_local_directory() / "mbx" / "bin"
+export PATH := if os_family() == "unix" { if path_exists(mbx_shim_dir / "cargo") == "true" { mbx_shim_dir + ":" + env("PATH") } else { env("PATH") } } else { env("PATH", "") }
+
 # デスクトップアプリのビルド: `just app::build TARGET=editor,viewer,studio PLATFORM=windows,macos,linux` (scripts/app.just)
 mod app "scripts/app.just"
 
@@ -22,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint test layers refs groups licenses publish-check spec web-check i18n app-build-check
+ci: fmt-check lint test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -70,7 +76,7 @@ crate name:
     cargo clippy -p {{name}} --all-targets -- -D warnings
     cargo test -p {{name}}
 
-# タスク用 worktree を作る (main の target/ をコピーしてビルドを省く): `just wt-add T0104`
+# タスク用 worktree を作る (mbx が無効なら main の target/ をコピーしてビルドを省く。docs/workflow/build-cache.md): `just wt-add T0104`
 wt-add id *slug:
     @node scripts/worktree.mjs add {{id}} {{slug}}
 
@@ -232,6 +238,10 @@ studio:
 # スタジオのリリースビルド。`just app::build TARGET=studio` の別名: `just studio-build --bundles deb`
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
+
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs)
+script-check:
+    @node --test --test-reporter=dot scripts/mbx.test.mjs
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ、手で確かめる一式 (scripts/check-pack.mjs) のパスの検査
 app-build-check:

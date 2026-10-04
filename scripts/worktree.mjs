@@ -5,14 +5,19 @@
 //   node scripts/worktree.mjs remove <TASK_ID> [--delete-branch]
 //
 // add では、ビルドをやり直さずに済むよう main の作業ツリーの target/ をコピーする。
+// - mbx が cargo を包んでいるとき (判定は scripts/lib/mbx.mjs) はコピーしない。依存クレートの成果物は
+//   mbx の置き場から戻るので要らない (docs/workflow/build-cache.md)
+// - main の target/ がシンボリックリンク (mbx の managed target) のときもコピーしない。リンクを写すと
+//   worktree が main と同じ target を指してしまい、実体を写すと置き場の全体 (数十 GB) を写すことになる
 // - ワークスペースのクレートの incremental キャッシュはコピーしない (パスが変わるため再利用できない)
 // - 更新時刻を保つ (cargo は更新時刻で再ビルドの要否を判断するため)
 // - reflink に対応したファイルシステム (btrfs / XFS / APFS) ではコピーオンライトで一瞬で終わる
 // node_modules は pnpm のストアからハードリンクされるので、`pnpm install --offline` で十分速い。
 
 import { execFileSync } from "node:child_process";
-import { constants, cpSync, existsSync, readdirSync, statSync } from "node:fs";
+import { constants, cpSync, existsSync, lstatSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
+import { mbxEnabled } from "./lib/mbx.mjs";
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });
 const capture = (cmd, args, opts = {}) =>
@@ -50,8 +55,26 @@ function add(id, slug = taskSlug(id)) {
   }
   run("git", ["worktree", "add", path, "-b", branch, "main"], { cwd: root });
 
+  copyTarget(path);
+  run("pnpm", ["install", "--offline"], { cwd: path });
+  console.log(`\nready: ${relative(root, path)} (branch ${branch})`);
+}
+
+function copyTarget(path) {
+  if (mbxEnabled()) {
+    console.log(
+      "mbx が有効なため target/ のコピーを省略します (依存クレートは mbx の置き場から戻ります)",
+    );
+    return;
+  }
   const target = join(root, "target");
-  if (existsSync(target) && statSync(target).isDirectory()) {
+  const stat = existsSync(target) ? lstatSync(target) : undefined;
+  if (stat?.isSymbolicLink()) {
+    console.log(
+      "main の target/ は mbx の managed target (シンボリックリンク) なのでコピーを省略します。" +
+        "MBX_DISABLE を外して mbx を通すと、依存クレートは置き場から戻ります",
+    );
+  } else if (stat?.isDirectory()) {
     const started = Date.now();
     console.log("copying target/ from main (incremental caches excluded)...");
     cpSync(target, join(path, "target"), {
@@ -64,16 +87,27 @@ function add(id, slug = taskSlug(id)) {
   } else {
     console.log("main に target/ がないためコピーを省略します (初回ビルドは時間がかかります)");
   }
-
-  run("pnpm", ["install", "--offline"], { cwd: path });
-  console.log(`\nready: ${relative(root, path)} (branch ${branch})`);
 }
 
 function remove(id, deleteBranch) {
   const path = join(root, ".worktrees", id);
   const branch = capture("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: path });
+  const managedTarget = lstatSync(join(path, "target"), {
+    throwIfNoEntry: false,
+  })?.isSymbolicLink();
   // 未コミットの変更があれば git が拒否する (--force は使わない)
   run("git", ["worktree", "remove", path], { cwd: root });
+  // mbx の managed target は worktree の外 (~/.cache/mbx/targets) にあるので、ここで片付ける。
+  // 失敗しても mbx の gc がいずれ集める (target.max_age)
+  if (managedTarget) {
+    try {
+      run("mbx", ["clean", path]);
+    } catch {
+      console.warn(
+        `warning: mbx clean ${path} に失敗しました。あとで \`mbx gc\` で片付けてください`,
+      );
+    }
+  }
   if (deleteBranch) run("git", ["branch", "-D", branch], { cwd: root });
   console.log(`removed ${relative(root, path)}${deleteBranch ? ` and branch ${branch}` : ""}`);
 }

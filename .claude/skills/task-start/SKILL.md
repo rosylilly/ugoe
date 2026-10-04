@@ -14,7 +14,8 @@ description: docs/tasks/ のタスクに着手する (担当の宣言、worktree
    `git commit -m "chore(tasks): start <ID>" docs/tasks/<ID>-*.md`
 3. 自分がすでにこのタスクの worktree の中にいる場合 (オーケストレーターが用意した場合) は、そのまま作業する。
    そうでなければ main の作業ツリーで `just wt-add <ID>` を実行し、以降は `.worktrees/<ID>` で作業する。
-   (worktree とブランチの作成、main の target/ のコピー、`pnpm install --offline` まで行われる。
-   `git worktree add` を直接使うと、依存クレートを最初からビルドし直すことになるので使わない)
+   (worktree とブランチの作成、`pnpm install --offline` まで行われる。mbx が無効なら main の target/ もコピーする。
+   `git worktree add` を直接使うと、mbx が無効な機械では依存クレートを最初からビルドし直すことになるので使わない。
+   docs/workflow/build-cache.md)
 4. 次の文書を読む: `AGENTS.md`、タスクファイルの「参考」、`crates:` に書かれた各クレートの `README.md`。
 5. 受け入れ条件を TODO リストに書き写してから、作業を始める。

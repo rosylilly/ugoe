@@ -1,0 +1,3 @@
+# mbx (ビルドのキャッシュ) のワークスペースの設定。docs/workflow/build-cache.md#注意点
+# ビルドスクリプトを /bin/sh のラッパーで包むと、dash では Tauri の DEP_TAURI_CORE:... の環境変数が落ちるので切る。
+build_script_execution = false

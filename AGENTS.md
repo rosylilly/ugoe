@@ -82,7 +82,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
-| `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (main の `target/` をコピーしてビルドを省く) |
+| `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |
 | `just app::build TARGET=editor,viewer,studio PLATFORM=windows,macos,linux` | デスクトップアプリのビルド (既定はすべてのアプリを今の OS 向けに。`DRY_RUN=1` で表示だけ。docs/release.md) |
@@ -162,7 +162,8 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 詳細は [docs/workflow/multi-agent.md](docs/workflow/multi-agent.md)。
 
 - 作業は `docs/tasks/` のタスク単位で行う。1 タスク = 1 ブランチ = 1 PR。
-- 他のエージェントと並行するときは git worktree で作業する。worktree は `just wt-add T0123` で作る (`.worktrees/T0123` とブランチ `task/T0123-<slug>` を作り、main の `target/` のコピーと `pnpm install --offline` まで行う)。片付けは `just wt-remove T0123 --delete-branch`。
+- 他のエージェントと並行するときは git worktree で作業する。worktree は `just wt-add T0123` で作る (`.worktrees/T0123` とブランチ `task/T0123-<slug>` を作り、`pnpm install --offline` まで行う。依存クレートの成果物は、ビルドのキャッシュ mbx が有効ならその置き場から戻り、無効なら main の `target/` をコピーする。[docs/workflow/build-cache.md](docs/workflow/build-cache.md))。片付けは `just wt-remove T0123 --delete-branch`。
+- cargo は `just crate`・`just test-group` などの just のレシピから呼ぶ (justfile が mbx の shim を PATH に足す)。直接呼んだ cargo は mbx を通らないことがある。
 - タスクファイルの `crates:` に書かれた範囲の外を編集しない。範囲外の変更が必要になったら、タスクファイルの「メモ」に書いて止まるか、新しいタスクを起票する。
 - `ugoe-core` / `ugoe-model` の公開 API 変更は影響が大きい。「インターフェースだけを先に入れる」小さな PR に分ける。
 - コミットの規約は下の「コミット」を参照。
