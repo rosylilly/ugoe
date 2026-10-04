@@ -835,3 +835,35 @@ fn ai_variant_hints_become_poses() {
     let (module, _) = doc.split_module().unwrap().unwrap();
     compose(base.model(), &[&module]).unwrap();
 }
+
+/// 名前の末尾に空白 (全角の空白を含む) のある差分も、名前の末尾の文字で組にし、空白を除いた名前で示す
+/// (文字の途中で名前を切らない。T0528)。
+#[test]
+fn variant_names_with_trailing_spaces() {
+    let base = base_with_arms(true);
+    let costume = tree(vec![
+        layer("badge A\u{3000}", Vec2::new(250.0, 20.0), (20, 20)),
+        layer("badge B\u{3000}", Vec2::new(250.0, 20.0), (24, 24)),
+        layer("ribbon_a ", Vec2::new(300.0, 20.0), (20, 20)),
+        layer("ribbon_b ", Vec2::new(300.0, 20.0), (24, 24)),
+    ]);
+    let doc = module_doc(&base, "Sleeves", &costume);
+    let parts = module_mesh_parts(&doc, &classify_by_name(&costume));
+    let proposal = propose_module_rig(
+        &doc,
+        &parts,
+        &ModuleRigParams::default(),
+        &ModuleRigOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        proposal.rationale.contains("“badge” (AB)"),
+        "{}",
+        proposal.rationale
+    );
+    assert!(
+        proposal.rationale.contains("“ribbon” (AB)"),
+        "{}",
+        proposal.rationale
+    );
+}

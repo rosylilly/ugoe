@@ -201,7 +201,8 @@ fn named_variants(model: &Model, context: &ModuleContext) -> Vec<Variants> {
         if entries.len() < 2 || !distinct {
             continue;
         }
-        let name = entries[0].2.clone();
+        // 名前の前後の空白 (全角を含む) を除いてから末尾の文字を外す (`split_variant` と同じ)。
+        let name = entries[0].2.trim();
         let name = name[..name.len() - 1]
             .trim_end_matches([' ', '_', '-', '.'])
             .to_owned();

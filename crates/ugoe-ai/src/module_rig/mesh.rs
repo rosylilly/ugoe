@@ -102,6 +102,8 @@ impl Frame {
 /// 作業用のモデルを、任意のパラメータの値で評価する (メッシュの頂点をキャンバス座標で返す)。
 pub(super) struct Poser {
     instance: ModelInstance,
+    /// 基準の姿 (すべて既定値) のメッシュの頂点 (衣装のメッシュごと・本体のメッシュごとに何度も引くので、1 回だけ評価する)。
+    rest: Option<Vec<Vec<Vec2>>>,
 }
 
 impl Poser {
@@ -110,11 +112,26 @@ impl Poser {
             .map_err(|e| AiError::InvalidRequest(format!("the model cannot be evaluated: {e}")))?;
         Ok(Self {
             instance: ModelInstance::new(compiled),
+            rest: None,
         })
     }
 
     /// `values` のパラメータ (ほかは既定値) でのメッシュ `mesh` の頂点。
     pub(super) fn mesh(&mut self, values: &[(ParamId, f32)], mesh: &MeshId) -> Option<Vec<Vec2>> {
+        let index = self.instance.compiled().mesh_index(mesh.as_str())?;
+        if values.is_empty() {
+            if self.rest.is_none() {
+                self.pose(values);
+                let rest = self.instance.drawables().iter();
+                self.rest = Some(rest.map(|d| d.positions.clone()).collect());
+            }
+            return self.rest.as_ref()?.get(index).cloned();
+        }
+        self.pose(values);
+        Some(self.instance.drawables()[index].positions.clone())
+    }
+
+    fn pose(&mut self, values: &[(ParamId, f32)]) {
         let parameters = self.instance.parameters_mut();
         parameters.reset();
         for (id, value) in values {
@@ -124,8 +141,6 @@ impl Poser {
         }
         self.instance.mark_all_changed();
         self.instance.update();
-        let index = self.instance.compiled().mesh_index(mesh.as_str())?;
-        Some(self.instance.drawables()[index].positions.clone())
     }
 }
 

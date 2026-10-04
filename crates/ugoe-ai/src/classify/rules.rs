@@ -172,6 +172,46 @@ const RULES: &[Rule] = &[
             "衣装",
         ],
     ),
+    // 髪 (目・口より先に見る。髪のハイライトを目のハイライトにしない)
+    rule(
+        Label::HairFront,
+        &["fronthair", "hairfront", "bangs", "fringe", "forelock"],
+        &["前髪"],
+    ),
+    rule(
+        Label::HairSide,
+        &[
+            "sidehair",
+            "hairside",
+            "sidelock",
+            "sidelocks",
+            "sideburn",
+            "sideburns",
+            "sidetail",
+        ],
+        &["横髪", "もみあげ", "サイド髪", "触覚", "触角"],
+    ),
+    rule(
+        Label::HairBack,
+        &[
+            "backhair",
+            "hairback",
+            "rearhair",
+            "ponytail",
+            "twintail",
+            "twintails",
+            "braid",
+        ],
+        &[
+            "後ろ髪",
+            "後髪",
+            "うしろ髪",
+            "ポニーテール",
+            "ツインテール",
+            "おさげ",
+        ],
+    ),
+    vague(Label::HairFront, &["hair"], &["髪"]),
     // 目 (具体的なものから)
     rule(
         Label::EyeClosed,
@@ -273,46 +313,6 @@ const RULES: &[Rule] = &[
     ),
     rule(Label::Tongue, &["tongue"], &["舌"]),
     rule(Label::Mouth, &["mouth", "lip", "lips"], &["口", "唇"]),
-    // 髪
-    rule(
-        Label::HairFront,
-        &["fronthair", "hairfront", "bangs", "fringe", "forelock"],
-        &["前髪"],
-    ),
-    rule(
-        Label::HairSide,
-        &[
-            "sidehair",
-            "hairside",
-            "sidelock",
-            "sidelocks",
-            "sideburn",
-            "sideburns",
-            "sidetail",
-        ],
-        &["横髪", "もみあげ", "サイド髪", "触覚"],
-    ),
-    rule(
-        Label::HairBack,
-        &[
-            "backhair",
-            "hairback",
-            "rearhair",
-            "ponytail",
-            "twintail",
-            "twintails",
-            "braid",
-        ],
-        &[
-            "後ろ髪",
-            "後髪",
-            "うしろ髪",
-            "ポニーテール",
-            "ツインテール",
-            "おさげ",
-        ],
-    ),
-    vague(Label::HairFront, &["hair"], &["髪"]),
     // 顔
     rule(
         Label::Cheek,
@@ -478,6 +478,21 @@ mod tests {
         assert_eq!(label("mouth-close"), Some(Label::MouthClosed));
         assert_eq!(label("back hair"), Some(Label::HairBack));
         assert_eq!(label("front hair"), Some(Label::HairFront));
+    }
+
+    #[test]
+    fn hair_highlights_stay_hair() {
+        // 髪のハイライトは目のハイライトではない (目の規則より髪の規則を先に見る)。
+        assert_eq!(label("前髪ハイライト"), Some(Label::HairFront));
+        assert_eq!(label("後ろ髪ハイライト"), Some(Label::HairBack));
+        assert_eq!(label("back hair hl"), Some(Label::HairBack));
+        assert_eq!(label("hair highlight"), Some(Label::HairFront));
+        assert_eq!(label("髪ハイライト"), Some(Label::HairFront));
+        // 部位の語のないハイライトは目のハイライトのまま。
+        assert_eq!(label("highlight-l"), Some(Label::EyeHighlight));
+        assert_eq!(label("目ハイライト"), Some(Label::EyeHighlight));
+        // 触角 (顔の横に垂れる房) は横髪。
+        assert_eq!(label("触角"), Some(Label::HairSide));
     }
 
     #[test]

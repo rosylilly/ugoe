@@ -161,15 +161,21 @@ impl RigParams {
 
     /// 範囲の外の値のエラー (英語。AI に送り返す)。なければ空。
     pub fn check(&self) -> Vec<String> {
-        Self::RANGES
-            .iter()
-            .zip(self.values())
-            .filter(|((_, min, max), v)| !(v.is_finite() && *min <= *v && *v <= *max))
-            .map(|((name, min, max), v)| {
-                format!("{name} is {v}, but it must be between {min} and {max}")
-            })
-            .collect()
+        range_errors(&Self::RANGES, &self.values())
     }
+}
+
+/// 範囲 `ranges` (名前・下限・上限) の外の値 `values` (同じ並び) のエラー (英語。AI に送り返す)。
+/// [`RigParams::check`] と `crate::module_rig::ModuleRigParams::check` で共有する。
+pub(crate) fn range_errors(ranges: &[(&str, f32, f32)], values: &[f32]) -> Vec<String> {
+    ranges
+        .iter()
+        .zip(values)
+        .filter(|((_, min, max), v)| !(v.is_finite() && *min <= **v && **v <= *max))
+        .map(|((name, min, max), v)| {
+            format!("{name} is {v}, but it must be between {min} and {max}")
+        })
+        .collect()
 }
 
 /// 振り向き (`AngleX` / `AngleY`) の深度の出どころ。
@@ -1469,10 +1475,15 @@ pub const DEFAULT_MAX_ATTEMPTS: usize = 3;
 ///
 /// 構造化出力は数値の範囲を書けないので、範囲は説明に書き、受け取った後に確かめる。
 pub fn rig_output_schema() -> serde_json::Value {
+    values_schema(&RigParams::RANGES)
+}
+
+/// 範囲 `ranges` の数と理由 (`reason`) を答えさせる JSON Schema (すべて必須)。
+pub(crate) fn values_schema(ranges: &[(&str, f32, f32)]) -> serde_json::Value {
     let mut properties = serde_json::Map::new();
-    for (name, min, max) in RigParams::RANGES {
+    for (name, min, max) in ranges {
         properties.insert(
-            name.to_owned(),
+            (*name).to_owned(),
             json!({ "type": "number", "description": format!("From {min} to {max}.") }),
         );
     }
@@ -1480,7 +1491,7 @@ pub fn rig_output_schema() -> serde_json::Value {
         "reason".into(),
         json!({ "type": "string", "description": "One or two sentences on why you chose these values." }),
     );
-    let required: Vec<&str> = RigParams::RANGES
+    let required: Vec<&str> = ranges
         .iter()
         .map(|(name, ..)| *name)
         .chain(["reason"])
@@ -1556,15 +1567,33 @@ fn system_prompt() -> String {
 
 /// 注文か前の答えがあるときにシステムプロンプトに足す規則。
 fn guidance_rules(guidance: &RigGuidance) -> String {
+    revision_rules(
+        guidance.previous.is_some(),
+        guidance.instructions.is_some(),
+        guidance.labels_follow_instructions,
+        "the four values above",
+        "other parameters, a different rig structure, physics, motions, or changes to the drawing",
+    )
+}
+
+/// 注文か前の答えがあるときにシステムプロンプトに足す規則 (リグとモジュールのリグで共有する)。`values` は値の呼び名、
+/// `examples` は反映できない注文の例。
+pub(crate) fn revision_rules(
+    previous: bool,
+    instructions: bool,
+    labels_follow_instructions: bool,
+    values: &str,
+    examples: &str,
+) -> String {
     let mut s = String::new();
-    if guidance.previous.is_some() {
+    if previous {
         s.push_str(
             "\n\nThis is a revision. Your previous answer is given in the prompt. Start from its \
              values and change only what the user's instructions call for.",
         );
     }
-    if guidance.instructions.is_some() {
-        let labels = if guidance.labels_follow_instructions {
+    if instructions {
+        let labels = if labels_follow_instructions {
             "Parts about layer labels were already applied when the layers were classified; do \
              not list them."
         } else {
@@ -1572,14 +1601,26 @@ fn guidance_rules(guidance: &RigGuidance) -> String {
              applied too (the user can classify the layers again)."
         };
         s.push_str(&system_rules(&format!(
-            "reflect them only through the four values above. For every part you cannot reflect \
-             that way (for example other parameters, a different rig structure, physics, motions, \
-             or changes to the drawing), do not pretend: end `reason` with one line per such part, \
+            "reflect them only through {values}. For every part you cannot reflect \
+             that way (for example {examples}), do not pretend: end `reason` with one line per such part, \
              starting with \"{}\" and saying what was asked and why it cannot be done. {labels}",
             crate::instructions::NOT_APPLIED
         )));
     }
     s
+}
+
+/// 捨てた答えとエラーをプロンプトに書く (問い直し)。
+pub(crate) fn push_rejected(s: &mut String, rejected: &[RejectedAnswer]) {
+    for (i, r) in rejected.iter().enumerate() {
+        let _ = write!(
+            s,
+            "\nAttempt {} was rejected.\nAnswer: {}\nErrors: {}\n",
+            i + 1,
+            r.answer,
+            r.error
+        );
+    }
 }
 
 fn prompt(
@@ -1648,15 +1689,7 @@ fn prompt(
         s.push_str("\nThe user's instructions:\n");
         s.push_str(&instructions.block());
     }
-    for (i, r) in rejected.iter().enumerate() {
-        let _ = write!(
-            s,
-            "\nAttempt {} was rejected.\nAnswer: {}\nErrors: {}\n",
-            i + 1,
-            r.answer,
-            r.error
-        );
-    }
+    push_rejected(&mut s, rejected);
     s.push_str("\nChoose the values.");
     s
 }
@@ -1740,52 +1773,88 @@ pub fn propose_rig_with_ai_guided(
     guidance: &RigGuidance,
 ) -> Result<AiRig, AiError> {
     let layout = Layout::new(model, parts)?;
-    let schema = rig_output_schema();
+    let answered = ask_until_valid(
+        provider,
+        &rig_output_schema(),
+        max_attempts,
+        |rejected| request(model, &layout, image, rejected, guidance),
+        params_from_answer,
+        |params| build(model, parts, &layout, params, options),
+    )?;
+    let Answered {
+        mut proposal,
+        params,
+        reason,
+        unapplied,
+        rejected,
+    } = answered;
+    proposal.rationale = format!(
+        "Values chosen by the AI: turn {:.2}, eye close line {:.2}, bend {:+.2}, mouth open {:.2} ({})\n{}",
+        params.turn_angle_scale,
+        params.eye_close_line,
+        params.eye_close_bend,
+        params.mouth_open_height,
+        reason,
+        proposal.rationale
+    );
+    Ok(AiRig {
+        proposal,
+        params,
+        reason,
+        unapplied,
+        rejected,
+    })
+}
+
+/// [`ask_until_valid`] の結果: 採用した提案・値・理由 (反映できなかった注文を除いた本文)・反映できなかった注文・
+/// 捨てた答え。
+pub(crate) struct Answered<P> {
+    pub(crate) proposal: Proposal,
+    pub(crate) params: P,
+    pub(crate) reason: String,
+    pub(crate) unapplied: Vec<String>,
+    pub(crate) rejected: Vec<RejectedAnswer>,
+}
+
+/// テンプレートで決められない値を `provider` に決めさせ、組めるまで問い直す (リグとモジュールのリグで共有する)。
+///
+/// `request` は捨てた答えを添えたリクエスト、`parse` は答えを値と理由に読む、`build` は値で提案を組む。
+/// 形の合わない答え (`parse` の失敗) と、範囲の外・検証を通らない値 (`build` の [`AiError::InvalidProposal`]) は
+/// 答えとエラーを添えて問い直す。それ以外のエラーはそのまま返す。`max_attempts` 回で通らなければ
+/// [`AiError::InvalidProposal`]。
+pub(crate) fn ask_until_valid<P>(
+    provider: &dyn Provider,
+    schema: &serde_json::Value,
+    max_attempts: usize,
+    request: impl Fn(&[RejectedAnswer]) -> ProviderRequest,
+    parse: impl Fn(&serde_json::Value) -> Result<(P, String), AiError>,
+    build: impl Fn(&P) -> Result<Proposal, AiError>,
+) -> Result<Answered<P>, AiError> {
     let mut rejected: Vec<RejectedAnswer> = Vec::new();
     for _ in 0..max_attempts {
-        let request = request(model, &layout, image, &rejected, guidance);
-        let value = provider.complete_json(&request, &schema)?;
-        let (params, reason) = match params_from_answer(&value) {
-            Ok(answer) => answer,
-            Err(e) => {
-                rejected.push(RejectedAnswer {
-                    answer: value,
-                    error: match e {
-                        AiError::InvalidProposal(error) => error,
-                        e => e.to_string(),
-                    },
-                });
-                continue;
-            }
+        let value = provider.complete_json(&request(&rejected), schema)?;
+        let error = match parse(&value) {
+            Ok((params, reason)) => match build(&params) {
+                Ok(proposal) => {
+                    let (reason, unapplied) = split_unapplied(&reason);
+                    return Ok(Answered {
+                        proposal,
+                        params,
+                        reason,
+                        unapplied,
+                        rejected,
+                    });
+                }
+                Err(AiError::InvalidProposal(error)) => error,
+                Err(e) => return Err(e),
+            },
+            Err(AiError::InvalidProposal(error)) => error,
+            Err(e) => e.to_string(),
         };
-        match build(model, parts, &layout, &params, options) {
-            Ok(mut proposal) => {
-                let (reason, unapplied) = split_unapplied(&reason);
-                proposal.rationale = format!(
-                    "Values chosen by the AI: turn {:.2}, eye close line {:.2}, bend {:+.2}, mouth open {:.2} ({})\n{}",
-                    params.turn_angle_scale,
-                    params.eye_close_line,
-                    params.eye_close_bend,
-                    params.mouth_open_height,
-                    reason,
-                    proposal.rationale
-                );
-                return Ok(AiRig {
-                    proposal,
-                    params,
-                    reason,
-                    unapplied,
-                    rejected,
-                });
-            }
-            Err(AiError::InvalidProposal(error)) => {
-                rejected.push(RejectedAnswer {
-                    answer: value,
-                    error,
-                });
-            }
-            Err(e) => return Err(e),
-        }
+        rejected.push(RejectedAnswer {
+            answer: value,
+            error,
+        });
     }
     Err(AiError::InvalidProposal(format!(
         "no valid rig after {max_attempts} attempts{}",

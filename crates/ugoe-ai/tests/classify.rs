@@ -99,7 +99,7 @@ fn bustup_truth() -> Vec<(String, Label, Side)> {
 fn names_classify_the_bustup_psd() {
     let labels = classify_by_name(&bustup());
     assert_eq!(summary(&labels), bustup_truth());
-    // 録画の答えに組はない (Claude の録画は `variant_sets` を持たない。欠けは手がかりなしとして読む)。
+    // 名前の規則は差分の手がかりを付けない。
     assert!(labels.iter().all(|l| l.variant.is_none()));
     assert_eq!(labels[13].layer_path, ["face", "eye-r", "eyewhite-r"]);
     assert!(labels.iter().all(|l| l.confidence >= 0.9));

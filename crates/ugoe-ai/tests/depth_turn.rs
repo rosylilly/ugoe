@@ -326,18 +326,16 @@ fn layer_labels_are_matched_to_meshes_by_name() {
         confidence: 0.9,
         variant: None,
     };
-    let labels = mesh_labels(
-        &model,
-        &[
-            layer(&["Head", "Skin"], Label::Face),
-            layer(&["Head", "Bangs"], Label::HairFront),
-            // 同じ名前で違うラベルのレイヤーがあれば決めない。
-            layer(&["Head", "Nose"], Label::Nose),
-            layer(&["Other", "Nose"], Label::Other),
-            // メッシュのない名前は無視する。
-            layer(&["Head", "Hat"], Label::Headwear),
-        ],
-    );
+    let layers = [
+        layer(&["Head", "Skin"], Label::Face),
+        layer(&["Head", "Bangs"], Label::HairFront),
+        // 同じ名前で違うラベルのレイヤーがあれば決めない。
+        layer(&["Head", "Nose"], Label::Nose),
+        layer(&["Other", "Nose"], Label::Other),
+        // メッシュのない名前は無視する。
+        layer(&["Head", "Hat"], Label::Headwear),
+    ];
+    let labels = mesh_labels(&model, &layers);
     let expected: Vec<(String, Label)> = vec![
         ("Bangs".into(), Label::HairFront),
         ("Skin".into(), Label::Face),
@@ -347,4 +345,18 @@ fn layer_labels_are_matched_to_meshes_by_name() {
         .map(|(m, l)| (m.as_str().to_owned(), l))
         .collect();
     assert_eq!(actual, expected);
+
+    // 同じ名前のメッシュが 2 つあれば、どちらにも付けない。
+    let mut twins = model.clone();
+    let mut copy = twins
+        .meshes
+        .iter()
+        .find(|m| m.name == "Bangs")
+        .unwrap()
+        .clone();
+    copy.id = "Bangs2".into();
+    twins.meshes.push(copy);
+    let labels = mesh_labels(&twins, &layers);
+    assert_eq!(labels.len(), 1, "{labels:?}");
+    assert!(labels.keys().all(|m| m.as_str() != "Bangs"));
 }

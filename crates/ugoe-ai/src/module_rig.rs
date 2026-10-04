@@ -45,10 +45,11 @@ use ugoe_model::{
 use ugoe_rigging::ParentWorld;
 
 use crate::classify::{Label, LabelCategory, LayerLabel, Side};
-use crate::instructions::{Instructions, split_unapplied, system_rules};
+use crate::instructions::Instructions;
 use crate::rig::hair::{self, Sway};
 use crate::rig::{
-    MeshPart, Rect, RejectedAnswer, Rig, mesh_bounds, mesh_name, mesh_parts_where, template,
+    Answered, MeshPart, Rect, RejectedAnswer, Rig, ask_until_valid, mesh_bounds, mesh_name,
+    mesh_parts_where, push_rejected, range_errors, revision_rules, template, values_schema,
 };
 use crate::turn::Builder;
 use crate::{AiError, Proposal, Provider, ProviderRequest};
@@ -110,14 +111,7 @@ impl ModuleRigParams {
 
     /// 範囲の外の値のエラー (英語。AI に送り返す)。なければ空。
     pub fn check(&self) -> Vec<String> {
-        Self::RANGES
-            .iter()
-            .zip(self.values())
-            .filter(|((_, min, max), v)| !(v.is_finite() && *min <= *v && *v <= *max))
-            .map(|((name, min, max), v)| {
-                format!("{name} is {v}, but it must be between {min} and {max}")
-            })
-            .collect()
+        range_errors(&Self::RANGES, &self.values())
     }
 }
 
@@ -1303,28 +1297,7 @@ pub struct ModuleRigGuidance {
 
 /// AI の答えの JSON Schema: [`ModuleRigParams`] の 2 つの数と、理由 (`reason`)。
 pub fn module_rig_output_schema() -> serde_json::Value {
-    let mut properties = serde_json::Map::new();
-    for (name, min, max) in ModuleRigParams::RANGES {
-        properties.insert(
-            name.to_owned(),
-            json!({ "type": "number", "description": format!("From {min} to {max}.") }),
-        );
-    }
-    properties.insert(
-        "reason".into(),
-        json!({ "type": "string", "description": "One or two sentences on why you chose these values." }),
-    );
-    let required: Vec<&str> = ModuleRigParams::RANGES
-        .iter()
-        .map(|(name, ..)| *name)
-        .chain(["reason"])
-        .collect();
-    json!({
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": false
-    })
+    values_schema(&ModuleRigParams::RANGES)
 }
 
 #[derive(Deserialize)]
@@ -1373,31 +1346,14 @@ fn system_prompt() -> String {
 
 /// 注文か前の答えがあるときにシステムプロンプトに足す規則。
 fn guidance_rules(guidance: &ModuleRigGuidance) -> String {
-    let mut s = String::new();
-    if guidance.previous.is_some() {
-        s.push_str(
-            "\n\nThis is a revision. Your previous answer is given in the prompt. Start from its \
-             values and change only what the user's instructions call for.",
-        );
-    }
-    if guidance.instructions.is_some() {
-        let labels = if guidance.labels_follow_instructions {
-            "Parts about layer labels were already applied when the layers were classified; do \
-             not list them."
-        } else {
-            "Layer labels cannot change in this step, so list requests to relabel layers as not \
-             applied too (the user can classify the layers again)."
-        };
-        s.push_str(&system_rules(&format!(
-            "reflect them only through the two values above. For every part you cannot reflect \
-             that way (for example new parameters, which a module cannot add, other parts, a \
-             different rig structure, motions, or changes to the drawing), do not pretend: end \
-             `reason` with one line per such part, starting with \"{}\" and saying what was asked \
-             and why it cannot be done. {labels}",
-            crate::instructions::NOT_APPLIED
-        )));
-    }
-    s
+    revision_rules(
+        guidance.previous.is_some(),
+        guidance.instructions.is_some(),
+        guidance.labels_follow_instructions,
+        "the two values above",
+        "new parameters, which a module cannot add, other parts, a different rig structure, \
+         motions, or changes to the drawing",
+    )
 }
 
 fn prompt(
@@ -1461,15 +1417,7 @@ fn prompt(
         s.push_str("\nThe user's instructions:\n");
         s.push_str(&instructions.block());
     }
-    for (i, r) in rejected.iter().enumerate() {
-        let _ = write!(
-            s,
-            "\nAttempt {} was rejected.\nAnswer: {}\nErrors: {}\n",
-            i + 1,
-            r.answer,
-            r.error
-        );
-    }
+    push_rejected(&mut s, rejected);
     s.push_str("\nChoose the values.");
     s
 }
@@ -1534,55 +1482,31 @@ pub fn propose_module_rig_with_ai_guided(
     guidance: &ModuleRigGuidance,
 ) -> Result<AiModuleRig, AiError> {
     let layout = ModuleLayout::new(doc, parts)?;
-    let schema = module_rig_output_schema();
-    let mut rejected: Vec<RejectedAnswer> = Vec::new();
-    for _ in 0..max_attempts {
-        let request = request(doc, &layout, image, &rejected, guidance);
-        let value = provider.complete_json(&request, &schema)?;
-        let (params, reason) = match module_params_from_answer(&value) {
-            Ok(answer) => answer,
-            Err(e) => {
-                rejected.push(RejectedAnswer {
-                    answer: value,
-                    error: match e {
-                        AiError::InvalidProposal(error) => error,
-                        e => e.to_string(),
-                    },
-                });
-                continue;
-            }
-        };
-        match build(doc, &layout, &params, options) {
-            Ok(mut proposal) => {
-                let (reason, unapplied) = split_unapplied(&reason);
-                proposal.rationale = format!(
-                    "Values chosen by the AI: sway scale {:.2}, pendulum length {:.2} ({})\n{}",
-                    params.sway_scale, params.sway_length, reason, proposal.rationale
-                );
-                return Ok(AiModuleRig {
-                    proposal,
-                    params,
-                    reason,
-                    unapplied,
-                    rejected,
-                });
-            }
-            Err(AiError::InvalidProposal(error)) => {
-                rejected.push(RejectedAnswer {
-                    answer: value,
-                    error,
-                });
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Err(AiError::InvalidProposal(format!(
-        "no valid rig after {max_attempts} attempts{}",
-        rejected
-            .last()
-            .map(|r| format!(": {}", r.error))
-            .unwrap_or_default()
-    )))
+    let Answered {
+        mut proposal,
+        params,
+        reason,
+        unapplied,
+        rejected,
+    } = ask_until_valid(
+        provider,
+        &module_rig_output_schema(),
+        max_attempts,
+        |rejected| request(doc, &layout, image, rejected, guidance),
+        module_params_from_answer,
+        |params| build(doc, &layout, params, options),
+    )?;
+    proposal.rationale = format!(
+        "Values chosen by the AI: sway scale {:.2}, pendulum length {:.2} ({})\n{}",
+        params.sway_scale, params.sway_length, reason, proposal.rationale
+    );
+    Ok(AiModuleRig {
+        proposal,
+        params,
+        reason,
+        unapplied,
+        rejected,
+    })
 }
 
 #[cfg(test)]

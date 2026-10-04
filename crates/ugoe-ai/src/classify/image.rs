@@ -109,7 +109,9 @@ pub(super) fn overview(tree: &LayerTree, max_side: u32) -> (Rgb, f32) {
 /// 1 枚のレイヤーのサムネイル。長い辺が `max_side` を超えれば縮め、`min_side` に満たなければ
 /// 整数倍に拡大する (小さな目のパーツでもモデルが形を見られるように)。
 pub(super) fn thumbnail(layer: &Layer, max_side: u32, min_side: u32) -> Option<Rgb> {
-    if layer.width == 0 || layer.height == 0 {
+    // 画素の数は usize で数える (u32 ではあふれる大きさのレイヤーもある)。
+    let texels = layer.width as usize * layer.height as usize;
+    if texels == 0 || layer.rgba.len() != texels * 4 {
         return None;
     }
     let premul: Vec<f32> = layer
@@ -127,9 +129,6 @@ pub(super) fn thumbnail(layer: &Layer, max_side: u32, min_side: u32) -> Option<R
             ]
         })
         .collect();
-    if premul.len() != (layer.width * layer.height * 4) as usize {
-        return None;
-    }
     let long = layer.width.max(layer.height);
     let scale = if long < min_side {
         (min_side.div_ceil(long)) as f32
@@ -161,7 +160,7 @@ fn resample_premultiplied(src: &[f32], width: u32, height: u32, scale: f32) -> R
     let ow = ((width as f32 * scale).round() as u32).max(1);
     let oh = ((height as f32 * scale).round() as u32).max(1);
     let (w, h) = (width as usize, height as usize);
-    let mut data = Vec::with_capacity((ow * oh * 3) as usize);
+    let mut data = Vec::with_capacity(ow as usize * oh as usize * 3);
     for oy in 0..oh as usize {
         let y0 = oy * h / oh as usize;
         let y1 = ((oy + 1) * h / oh as usize).max(y0 + 1).min(h);
@@ -221,6 +220,14 @@ mod tests {
         let small = thumbnail(&layer(15, 9, [0, 0, 255, 255]), 200, 64).unwrap();
         assert_eq!((small.width, small.height), (75, 45));
         assert!(thumbnail(&layer(0, 0, [0; 4]), 200, 64).is_none());
+    }
+
+    #[test]
+    fn huge_layers_without_pixels_have_no_thumbnail() {
+        // 画素の数を u32 で数えるとあふれる大きさ (PSD のレイヤーは一辺 60000 まで)。
+        let mut huge = layer(0, 0, [0; 4]);
+        (huge.width, huge.height) = (60_000, 60_000);
+        assert!(thumbnail(&huge, 200, 64).is_none());
     }
 
     #[test]
