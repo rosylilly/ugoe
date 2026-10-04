@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use ugoe_ai::classify::{Label, LayerLabel, Side};
 
-use ugoe_ai::claude::ApiKey;
+use ugoe_ai::ApiKey;
 use ugoe_ai::depth::{
     DepthEstimator, DepthMap, DepthRequest, FixedDepthEstimator, HttpDepthConfig,
     HttpDepthEstimator, RetryPolicy,

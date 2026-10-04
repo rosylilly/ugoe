@@ -14,10 +14,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use ugoe_ai::claude::{self, ApiKey, ClaudeConfig, ClaudeProvider, Effort};
+use ugoe_ai::claude::{self, ClaudeConfig, ClaudeProvider, Effort};
 use ugoe_ai::openai::{self, OpenAiConfig, OpenAiProvider, StructuredOutput};
 use ugoe_ai::transport::{is_loopback_url, url_host};
-use ugoe_ai::{CancelToken, Provider};
+use ugoe_ai::{ApiKey, CancelToken, Provider};
 
 use crate::error::EditorError;
 

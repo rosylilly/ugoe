@@ -15,13 +15,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::json;
+use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{
     ClassifyGuidance, ClassifyOptions, Label, LayerLabel, Side, apply_answer,
     classification_instructions, classification_requests, classification_requests_guided,
     classify_by_name, classify_layers, classify_layers_guided, layer_thumbnail_png, layers,
     output_schema,
 };
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
 use ugoe_ai::transport::{Cassette, ReplayTransport};

@@ -25,7 +25,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::claude::ApiKey;
+use crate::ApiKey;
 use crate::transport::{
     HttpRequest, HttpResponse, RetryPolicy, SendFailure, Transport, UreqTransport, error_excerpt,
     is_loopback_url, is_retryable_status, send_with_retry, url_host,

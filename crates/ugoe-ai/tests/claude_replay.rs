@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::json;
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider, Effort};
+use ugoe_ai::ApiKey;
+use ugoe_ai::claude::{self, ClaudeConfig, ClaudeProvider, Effort};
 use ugoe_ai::transport::{Cassette, RecordingTransport, ReplayTransport};
 use ugoe_ai::{AiError, Destination, Provider, ProviderRequest};
 
@@ -279,7 +280,11 @@ fn record_live() {
     let config = ClaudeConfig::default();
     let transport = ugoe_ai::transport::UreqTransport::new(config.timeout);
     let rec = Arc::new(RecordingTransport::new(transport));
-    let p = ClaudeProvider::with_transport(config, ApiKey::from_env().unwrap(), rec.clone());
+    let p = ClaudeProvider::with_transport(
+        config,
+        ApiKey::from_env(claude::API_KEY_ENV).unwrap(),
+        rec.clone(),
+    );
     let req = ProviderRequest {
         images: vec![],
         ..request()

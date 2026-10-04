@@ -1465,7 +1465,7 @@ AI のプロバイダを選び、外部の AI サービスを安全に使うた�
   アカウントはプロバイダごと (`KeySlot`) で、Claude は前からの `anthropic-api-key`、OpenAI 互換は送り先のホストごとの
   `openai-compatible:<host>` です (OpenAI のキーを OpenRouter などの別の送り先に送らないため)。プロジェクト・設定ファイル・ログには書きません。
   - 読む順は保存先 → 環境変数 (Claude は `ANTHROPIC_API_KEY`、OpenAI 互換は送り先が `api.openai.com` のときだけ `OPENAI_API_KEY`)。
-    読んだ値は `ApiKey::new` に渡します。
+    読んだ値は `ugoe_ai::ApiKey::new` に渡します。
   - Claude はキーがないと送れません。OpenAI 互換はキーを省けます (手元のサーバ。キーがなければ `Authorization` を送りません)。
     キーがあっても、平文の `http://` で外部の送り先には送りません (`https://` にするよう断ります。ループバックは除く)。
   - 保存先は最初に使うときに開きます。開けない・読めない環境 (WSL・キーリングのない Linux など) では「使えない」と出し、
@@ -2066,9 +2066,9 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `ai.claude_model_missing` / `ai.invalid_base_url` / `ai.model_missing` / `ai.api_key_required` / `ai.plain_http_api_key` / `ai.empty_api_key` / `ai.mixed_destinations` / `ai.send_disabled` / `ai.truncated` / `ai.cancelled` | なし |
 | `ai.credential_store` / `ai.provider` / `ai.invalid_proposal` / `ai.missing_api_key` / `ai.invalid_request` / `ai.network` / `ai.invalid_response` | `detail` |
 | `ai.api_error` | `status`・`kind`・`detail` |
-| `ai.rate_limited` | `retry_after` (秒。分からなければ無い) |
+| `ai.rate_limited` | `retry_after` (秒。切り上げ。分からなければ無い) |
 | `ai.refused` | `category` (分からなければ無い) |
-| `ai.time_limit` | `minutes` (1 回の提案の時間の上限。分) |
+| `ai.time_limit` | `minutes` (1 回の提案の時間の上限。分。切り上げ) |
 | `ai.invalid_time_limit` | `min`・`max` (選べる範囲。分) |
 | `mcp.invalid_port` / `mcp.no_binary` / `mcp.unsupported_platform` / `mcp.not_mcpb_file` | なし |
 | `mcp.bridge_start_failed` / `mcp.bundle_write_failed` | `detail` |

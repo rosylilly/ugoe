@@ -422,13 +422,13 @@ fn ai_args(error: &AiError) -> MessageArgs {
         } => message_args! { "status" => *status, "kind" => kind, "detail" => message },
         AiError::RateLimited {
             retry_after: Some(after),
-        } => message_args! { "retry_after" => after.as_secs() },
+        } => message_args! { "retry_after" => ugoe_ai::secs_rounded_up(*after) },
         AiError::Refused {
             category: Some(category),
         } => message_args! { "category" => category },
         // 画面は分で示す (上限は分で選ぶ)
         AiError::TimeLimitExceeded { limit } => {
-            message_args! { "minutes" => limit.as_secs().div_ceil(60) }
+            message_args! { "minutes" => ugoe_ai::secs_rounded_up(*limit).div_ceil(60) }
         }
         AiError::RateLimited { retry_after: None }
         | AiError::Refused { category: None }
@@ -475,6 +475,20 @@ mod tests {
         assert_eq!(message.code, "ai.rate_limited");
         assert_eq!(message.args, message_args! { "retry_after" => 30u64 });
         assert_eq!(message.message, "rate limited (retry after 30s)");
+
+        // 1 秒に満たない待ちを「0 秒」と示さない (文言と引数の両方を切り上げる)
+        let message = EditorError::Ai(AiError::RateLimited {
+            retry_after: Some(Duration::from_millis(500)),
+        })
+        .to_message();
+        assert_eq!(message.args, message_args! { "retry_after" => 1u64 });
+        assert_eq!(message.message, "rate limited (retry after 1s)");
+
+        let message = EditorError::Ai(AiError::TimeLimitExceeded {
+            limit: Duration::from_millis(60_500),
+        })
+        .to_message();
+        assert_eq!(message.args, message_args! { "minutes" => 2u64 });
 
         let message = EditorError::Ai(AiError::Api {
             status: 400,

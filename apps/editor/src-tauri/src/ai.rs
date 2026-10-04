@@ -22,8 +22,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
-use ugoe_ai::claude::ApiKey;
-use ugoe_ai::{AiError, CancelToken, Destination, Disclosure, Provider, ProviderRequest};
+use ugoe_ai::{AiError, ApiKey, CancelToken, Destination, Disclosure, Provider, ProviderRequest};
 
 use crate::AppState;
 pub use crate::ai_provider::KeySlot;

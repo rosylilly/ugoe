@@ -19,8 +19,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use ugoe::{Puppet, Toggles};
+use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{ClassifyOptions, classify_layers, overview_png};
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::rig::{DEFAULT_MAX_ATTEMPTS, RigOptions, mesh_parts, propose_rig_with_ai};
 use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_core::Vec2;

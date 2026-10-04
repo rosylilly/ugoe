@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::ApiKey;
+use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::depth::{DepthEstimator, DepthRequest, HttpDepthConfig, HttpDepthEstimator};
 use ugoe_ai::openai::{OpenAiConfig, OpenAiProvider, StructuredOutput};
 use ugoe_ai::transport::{

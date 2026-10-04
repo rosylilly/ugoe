@@ -345,6 +345,7 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 - **設定 (`ClaudeConfig`):** モデル (既定は `claude-opus-5-5`)、`max_tokens` (既定は 16000。考える分を含む)、考える量 `effort` (既定は API の既定)、API の URL、1 回のリクエストの時間の上限 (既定は 600 秒)、再試行の方針。
 - **応答の扱い:** テキストのブロックだけをつないで JSON として読みます (`thinking` のブロックは読み飛ばします)。`stop_reason` が `refusal` なら `AiError::Refused`、`max_tokens` か `model_context_window_exceeded` (文脈の窓の上限) なら `AiError::Truncated` を返します。エラーの本文が JSON でない (プロキシの HTML のページなど) ときは、先頭の 500 文字だけを文言にします。
 - **再試行:** HTTP 408・409・429・5xx (529 overloaded を含む)・接続の失敗・タイムアウトは、指数バックオフ (0.5 秒から倍々、上限 8 秒) で 2 回まで再試行します。`retry-after` ヘッダがあればその秒数を待ち、長すぎる (既定で 60 秒を超える) ときは待たずに `AiError::RateLimited` を返します。400・401・403・404 などは再試行しません。再試行の規則 (`transport::RetryPolicy`) は OpenAI 互換の API と共通です。
+- **エラー (`AiError`):** 種類ごとのヴァリアントで返し、文言 (`Display`) は英語で API キーを含みません。待ち時間 (`RateLimited` の `retry_after`・`TimeLimitExceeded` の `limit`) の秒は切り上げて示します (`ugoe_ai::secs_rounded_up`。0.5 秒を「0s」と示さない。エディタのエラーの引数も同じ関数を使う)。`AiError::Provider` は他の種類に当たらないプロバイダ自身の失敗 (テスト用の `FakeProvider` の応答が尽きた・リクエストを送るスレッドを作れない) に使います (T0543)。OpenAI 互換の API と深度推定も同じです。
 - **HTTP クライアント:** 同期の `ureq` (TLS は rustls) を使い、`Transport` トレイトの裏に隠します。転送 (3xx) には従わず、そのまま `AiError::Api` にします (ureq は転送のときに `Authorization` しか外さず、`x-api-key` を転送先のホストへ送ってしまうため)。応答の本文は 256 MiB まで読みます (深度マップの JSON は ureq の既定の 10 MB を超えることがあるため)。`retry-after` が `Duration` に収まらないほど長いときは、長すぎるものとして諦めます。
 
 ## OpenAI 互換の API
@@ -367,7 +368,7 @@ T0518 (方法は T0707 の見本 `ugoe sample avatar --lit` から)。テクス�
 - **トークン数の上限:** 既定では送りません (サーバの既定)。`OpenAiConfig::max_tokens` を決めると `max_completion_tokens` (OpenAI の今の名前) で送ります。`max_tokens` しか受け付けないサーバ (Ollama・Gemini の互換の窓口など) では `MaxTokensField::MaxTokens` にします。
 - **再試行:** Claude と同じ規則 (408・409・429・5xx・接続の失敗・タイムアウト、`retry-after`)。ただし 429 でも、残高・利用上限の不足 (`insufficient_quota`・`credit_balance_exhausted`・`*_spend_limit_exceeded`・`*_usage_limit_exceeded`) は再試行しても直らないので、すぐに `AiError::Api` を返します。エラーの本文は OpenAI の `{"error": {"message", "type", "code"}}` のほか、`{"error": "..."}` と `{"message": "..."}` も読みます。
 - **送り先の提示:** 送り先がループバック (`localhost`・`127.0.0.0/8`・`::1`。`transport::is_loopback_url`) なら `Destination::Local` を返します。それ以外は送り先の URL から決めたサービスの名前 (`openai::service_name`。`OpenAI API`・`OpenRouter`・`Google Gemini API`・`OpenAI-compatible API (<host>)`) と URL・モデルを返します。LAN の中の計算機 (`192.168.x.x` など) は外部として扱います。
-- **API キー:** `ApiKey` (Claude と共通)。CLI や開発では `OPENAI_API_KEY` から読めます (`ApiKey::from_env_var`)。
+- **API キー:** `ugoe_ai::ApiKey` (Claude・深度推定と共通)。CLI や開発では `OPENAI_API_KEY` から読めます (`ApiKey::from_env(openai::API_KEY_ENV)`)。
 - 録画: `tests/cassettes/openai_*.json` (Chat Completions の応答の形に合わせて手で作ったもの。`openai_ollama_*` は Ollama の形)。分類とリギングの提案のテストは、Claude の録画と同じ答えを OpenAI の形にしたもので、同じ結果になることを確かめます (`tests/classify.rs`・`tests/auto_rig.rs`)。実際の API から録るには `tests/openai_replay.rs` の `record_live`。
 - 法線マップの提案は `Provider` を使いません (決定的な方法と深度推定器 `DepthEstimator`) ので、プロバイダの選択に関わりません。
 - 出典: [Chat Completions の API リファレンス](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)・[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)・[エラーコード](https://developers.openai.com/api/docs/guides/error-codes)・[レート制限](https://developers.openai.com/api/docs/guides/rate-limits)・[Ollama の OpenAI 互換](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx)・[LM Studio の構造化出力](https://lmstudio.ai/docs/developer/openai-compat/structured-output)・[OpenRouter の構造化出力](https://openrouter.ai/docs/features/structured-outputs)・[Gemini の OpenAI 互換](https://ai.google.dev/gemini-api/docs/openai)。
@@ -543,7 +544,7 @@ T0516 (`ugoe-mcp` の側)、T0642 (エディタの側)、T0643 (Claude Desktop �
 ## セキュリティとプライバシー
 
 - API キーはプロバイダごとに OS の資格情報の保存先 (キーチェーンなど。`keyring-core`) に保存します (OpenAI 互換の API は送り先のホストごと)。プロジェクトファイルや普通のファイルには書き込みません。保存先が使えない環境では環境変数だけを使います ([エディタの AI の設定](editor.md#ai-の設定と送信の同意))。
-  - `ugoe-ai` はキーチェーンを直接読みません。ホスト (エディタ) が読んだ値を `ApiKey::new` に渡します。CLI や開発では環境変数 `ANTHROPIC_API_KEY` から読みます (`ApiKey::from_env`)。OpenAI は `OPENAI_API_KEY` (`ApiKey::from_env_var`。エディタは送り先が OpenAI のときだけ使います)。
+  - `ugoe-ai` はキーチェーンを直接読みません。ホスト (エディタ) が読んだ値を `ApiKey::new` に渡します。`ApiKey` はプロバイダ (Claude・OpenAI 互換) と深度推定で共通で、クレートの直下 (`ugoe_ai::ApiKey`) に置きます (T0543)。CLI や開発では環境変数から読みます (`ApiKey::from_env(name)`。Claude は `claude::API_KEY_ENV` の `ANTHROPIC_API_KEY`、OpenAI は `openai::API_KEY_ENV` の `OPENAI_API_KEY`。エディタは `OPENAI_API_KEY` を送り先が OpenAI のときだけ使います)。
   - `ApiKey` の `Debug` は伏せ字で、エラーの文言にキーが紛れ込んだ場合も伏せます。録画にはリクエストのヘッダ (キーを含む) を残さず、送った画像のデータも長さだけに置き換えます。
 - 外部の API に画像を送る前に、プロバイダに関わらず同じ流れでユーザーに確認します。手元のサーバ (ループバック) は外部に出ないので確かめません。プロジェクト単位で「送信しない」を設定できます (`project.json` の `editor.ai.send_externally`)。「今後は確かめない」はプロジェクトを開いている間だけ、同じ送り先に限って効きます。
   - 確認に示す内容は `Provider::disclosure` で得ます。送り先 (サービス名・URL・モデル) と、画像の枚数・バイト数、テキストのバイト数を返します。ローカルで完結するプロバイダ (と、ループバックへ送る OpenAI 互換のプロバイダ) は `Destination::Local` を返します。

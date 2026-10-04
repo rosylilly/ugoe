@@ -16,8 +16,9 @@ use std::sync::{Arc, OnceLock};
 use serde_json::json;
 
 use ugoe::{Puppet, Toggles};
+use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{Label, classify_by_name, overview_png};
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,

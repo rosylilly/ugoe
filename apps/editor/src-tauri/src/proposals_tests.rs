@@ -243,7 +243,7 @@ fn ai_rig_notes_retries() {
 /// ADR 0022: 分類とリギングの提案は、選んだプロバイダ (ここでは OpenAI 互換の API の録画) でも同じ流れで動く。
 #[test]
 fn an_openai_compatible_provider_classifies_and_rigs() {
-    use ugoe_ai::claude::ApiKey;
+    use ugoe_ai::ApiKey;
     use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
     use ugoe_ai::transport::{Cassette, ReplayTransport};
 
@@ -515,7 +515,7 @@ fn proposals_made_here_can_be_regenerated() {
 /// 反映できなかった注文を記す。前の提案は残り、プレビューと採用 (1 回の Undo) はどちらでもできる。
 #[test]
 fn a_regenerated_proposal_is_listed_after_the_original() {
-    use ugoe_ai::claude::ApiKey;
+    use ugoe_ai::ApiKey;
     use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
     use ugoe_ai::transport::{Cassette, ReplayTransport};
 

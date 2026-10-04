@@ -12,8 +12,9 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 
 ## 構成
 
-- `lib.rs`: `Provider` トレイト、`ProviderRequest`、`Proposal`、`Disclosure` (外部に送る内容の要約)
-- `claude.rs`: Claude API のプロバイダ (`ClaudeProvider`・`ClaudeConfig`・`ApiKey`)
+- `lib.rs`: `Provider` トレイト、`ProviderRequest`、`Proposal`、`Disclosure` (外部に送る内容の要約)、エラー `AiError` と、待ち時間を秒に切り上げる `secs_rounded_up` (エラーの文言とエディタの表示で共通)
+- `api_key.rs`: プロバイダと深度推定で共通の API キー (`ugoe_ai::ApiKey`。`Debug` は伏せ字。環境変数からは `ApiKey::from_env(claude::API_KEY_ENV)` などで読む)
+- `claude.rs`: Claude API のプロバイダ (`ClaudeProvider`・`ClaudeConfig`)
 - `openai.rs`: OpenAI 互換の API (Chat Completions) のプロバイダ (`OpenAiProvider`・`OpenAiConfig`・`StructuredOutput`)。OpenAI・OpenRouter・Gemini・Ollama・LM Studio・vLLM など
 - `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)、プロバイダで共通の再試行 (`RetryPolicy`)、ループバックの判定 (`is_loopback_url`)
 - `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
@@ -51,3 +52,4 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - T0517 (`docs/tasks/T0517-ai-module-proposals.md`)
 - T0519 (`docs/tasks/T0519-ai-module-rig-followups.md`)
 - T0541 (`docs/tasks/T0541-ai-request-cancel.md`)
+- T0543 (`docs/tasks/T0543-ai-public-api-tidy.md`)

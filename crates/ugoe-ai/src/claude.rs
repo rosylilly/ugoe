@@ -23,7 +23,7 @@ use crate::transport::{
     error_excerpt, is_retryable_status, send_with_retry,
 };
 use crate::{
-    AiError, CancelToken, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest,
+    AiError, ApiKey, CancelToken, Destination, Disclosure, PNG_SIGNATURE, Provider, ProviderRequest,
 };
 
 /// 既定のモデル。
@@ -34,46 +34,6 @@ pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 /// 送る `anthropic-version` ヘッダ。
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-
-/// API キー。値は `Debug` やエラーに出ない。
-///
-/// OS の資格情報の保存先 (キーチェーンなど) から読むのはホスト (エディタ) の役目で、
-/// 読んだ値を [`ApiKey::new`] に渡す。
-#[derive(Clone)]
-pub struct ApiKey(String);
-
-impl ApiKey {
-    pub fn new(key: impl Into<String>) -> Result<Self, AiError> {
-        let key = key.into().trim().to_owned();
-        if key.is_empty() {
-            return Err(AiError::MissingApiKey("the API key is empty".into()));
-        }
-        Ok(Self(key))
-    }
-
-    /// 環境変数 `ANTHROPIC_API_KEY` から読む。
-    pub fn from_env() -> Result<Self, AiError> {
-        Self::from_env_var(API_KEY_ENV)
-    }
-
-    /// 環境変数 `name` から読む (OpenAI 互換の API の `OPENAI_API_KEY` など)。
-    pub fn from_env_var(name: &str) -> Result<Self, AiError> {
-        match std::env::var(name) {
-            Ok(v) => Self::new(v).map_err(|_| AiError::MissingApiKey(format!("{name} is empty"))),
-            Err(_) => Err(AiError::MissingApiKey(format!("{name} is not set"))),
-        }
-    }
-
-    pub(crate) fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ApiKey(<redacted>)")
-    }
-}
 
 /// 考える量 (`output_config.effort`)。省くと API の既定 (`claude-opus-5-5` では `medium`)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -358,13 +318,6 @@ struct ErrorDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn api_key_rejects_empty_and_hides_value() {
-        assert!(matches!(ApiKey::new("  "), Err(AiError::MissingApiKey(_))));
-        let key = ApiKey::new("sk-ant-hidden").unwrap();
-        assert_eq!(format!("{key:?}"), "ApiKey(<redacted>)");
-    }
 
     /// 1 つの応答を返すプロバイダ。
     fn replying(status: u16, body: &str) -> ClaudeProvider {

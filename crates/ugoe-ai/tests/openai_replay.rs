@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::json;
-use ugoe_ai::claude::ApiKey;
+use ugoe_ai::ApiKey;
 use ugoe_ai::openai::{
     MaxTokensField, OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider, StructuredOutput,
 };
@@ -359,7 +359,7 @@ fn record_live() {
     let config = OpenAiConfig::new(base, model);
     let transport = ugoe_ai::transport::UreqTransport::new(config.timeout);
     let rec = Arc::new(RecordingTransport::new(transport));
-    let key = ApiKey::from_env_var(ugoe_ai::openai::API_KEY_ENV).ok();
+    let key = ApiKey::from_env(ugoe_ai::openai::API_KEY_ENV).ok();
     let p = OpenAiProvider::with_transport(config, key, rec.clone());
     let req = ProviderRequest {
         images: vec![],

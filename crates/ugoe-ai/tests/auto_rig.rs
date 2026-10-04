@@ -13,8 +13,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use serde_json::json;
+use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{classify_by_name, overview_png};
-use ugoe_ai::claude::{ApiKey, ClaudeConfig, ClaudeProvider};
+use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::depth::DepthMap;
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::openai::{OPENAI_BASE_URL, OpenAiConfig, OpenAiProvider};
