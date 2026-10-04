@@ -1,11 +1,11 @@
 ---
 id: T0729
 title: ビューアのコマンドのエラーをコードで返し、画面で訳す
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer]
 depends_on: [T0724]
-assignee:
+assignee: claude-worker-T0729
 ---
 
 # T0729: ビューアのコマンドのエラーをコードで返し、画面で訳す
