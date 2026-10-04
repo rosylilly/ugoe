@@ -1,11 +1,11 @@
 ---
 id: T0163
 title: 検証・合成・推定のエラーにもコードを付け、エディタの自由な文の引数を訳せるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, ugoe-rigging, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0015, T0678]
-assignee:
+assignee: claude-worker-T0163
 ---
 
 # T0163: 検証・合成・推定のエラーにもコードを付け、エディタの自由な文の引数を訳せるようにする
