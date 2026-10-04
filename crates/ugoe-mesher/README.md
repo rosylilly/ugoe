@@ -57,7 +57,8 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
 | `min_island_area` | 0 | 画素数がこれ未満の島を捨てる (0 と 1 は捨てない) |
 
 `margin` は 0 以上 1024 以下、`interior_spacing` は 0 以上、`edge_spacing` は 0 より大きい有限の値で
-なければ `MeshError::InvalidOptions` になる。
+なければ `MeshError::InvalidOptions` になる。この検証は `MeshOptions::validate()` として公開していて、
+呼び出し側がオプションを先に確かめるときもこれを使う (`ugoe-editor-core` の `AutoMeshOptions::check`)。
 
 ## 保証
 

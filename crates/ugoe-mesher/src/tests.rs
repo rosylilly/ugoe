@@ -153,6 +153,23 @@ fn invalid_options_are_rejected() {
     }
 }
 
+#[test]
+fn validate_accepts_margin_up_to_the_limit() {
+    assert!(MeshOptions::default().validate().is_ok());
+    for (margin, ok) in [
+        (0.0, true),
+        (1024.0, true),
+        (1024.5, false),
+        (f32::INFINITY, false),
+    ] {
+        let options = MeshOptions {
+            margin,
+            ..MeshOptions::default()
+        };
+        assert_eq!(options.validate().is_ok(), ok, "margin {margin}");
+    }
+}
+
 /// 外 (JSON など) から来た極端なオプションで、パニック・確保の爆発・終わらない処理にならないこと。
 #[test]
 fn extreme_options_do_not_blow_up() {

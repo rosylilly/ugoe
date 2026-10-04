@@ -834,7 +834,7 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 
 - ID は名前から `ids` の規則で作ります。名前が英数字を 1 つも含まなければ (日本語だけの名前など)、PSD のレイヤー ID から `Layer12` / `Group8` (ID がなければ `Layer` / `Group`) にします。表示名 (`name`) には元の名前を残します。
 - テクスチャ名はメッシュの ID と同じにし、大文字小文字を区別せずに重なれば `_2`、… を付けます。
-- 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値なら取り込みをエラーにします。
+- 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値 (`MeshOptions::validate` と同じ規則。`margin` の上限 1024 を含む) なら、レイヤーを処理する前に取り込みをエラー (`PsdImportError::InvalidMeshOptions`) にします。
 
 ### メッシュの再生成
 

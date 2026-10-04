@@ -462,6 +462,14 @@ fn rejects_invalid_mesh_options() {
         matches!(err, PsdImportError::InvalidMeshOptions(_)),
         "{err}"
     );
+    // `margin` の上限 (1024) は mesher と同じ検証で、レイヤーごとでなく最初に弾く。
+    let mut options = PsdImportOptions::new("t");
+    options.mesh.margin = 1025.0;
+    let err = import_psd(&model, &fixture_bytes(), &options).unwrap_err();
+    assert!(
+        matches!(err, PsdImportError::InvalidMeshOptions(_)),
+        "{err}"
+    );
     let err = import_psd(&model, b"not a psd", &PsdImportOptions::new("t")).unwrap_err();
     assert!(matches!(err, PsdImportError::Psd(_)), "{err}");
 }

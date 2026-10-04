@@ -104,7 +104,7 @@ pub fn generate(
             len: rgba.len(),
         });
     }
-    validate(options)?;
+    options.validate()?;
     let margin = f64::from(options.margin);
     let edge_spacing = f64::from(options.edge_spacing);
     let interior_spacing = f64::from(options.interior_spacing);
@@ -197,23 +197,30 @@ pub fn generate(
     Err(MeshError::TooComplex)
 }
 
-fn validate(options: &MeshOptions) -> Result<(), MeshError> {
-    if !(0.0..=MAX_MARGIN).contains(&options.margin) {
-        return Err(MeshError::InvalidOptions(
-            "margin must be between 0 and 1024",
-        ));
+impl MeshOptions {
+    /// [`generate`] が受け付ける値か確かめる (`margin` は 0 以上 1024 以下、`interior_spacing` は
+    /// 0 以上、`edge_spacing` は 0 より大きい有限の値)。範囲の外なら [`MeshError::InvalidOptions`]。
+    ///
+    /// 呼び出し側 (エディタの取り込みなど) がオプションを先に確かめるときも、これを使う
+    /// (検証の規則を 1 か所に保つため)。
+    pub fn validate(&self) -> Result<(), MeshError> {
+        if !(0.0..=MAX_MARGIN).contains(&self.margin) {
+            return Err(MeshError::InvalidOptions(
+                "margin must be between 0 and 1024",
+            ));
+        }
+        if !(self.edge_spacing.is_finite() && self.edge_spacing > 0.0) {
+            return Err(MeshError::InvalidOptions(
+                "edge_spacing must be finite and > 0",
+            ));
+        }
+        if !(self.interior_spacing.is_finite() && self.interior_spacing >= 0.0) {
+            return Err(MeshError::InvalidOptions(
+                "interior_spacing must be finite and >= 0",
+            ));
+        }
+        Ok(())
     }
-    if !(options.edge_spacing.is_finite() && options.edge_spacing > 0.0) {
-        return Err(MeshError::InvalidOptions(
-            "edge_spacing must be finite and > 0",
-        ));
-    }
-    if !(options.interior_spacing.is_finite() && options.interior_spacing >= 0.0) {
-        return Err(MeshError::InvalidOptions(
-            "interior_spacing must be finite and >= 0",
-        ));
-    }
-    Ok(())
 }
 
 /// 領域の画素の中心を囲む矩形 (画像座標)。

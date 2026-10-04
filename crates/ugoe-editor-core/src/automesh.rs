@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use ugoe_core::Vec2;
-use ugoe_mesher::MeshOptions;
+use ugoe_mesher::{MeshError, MeshOptions};
 use ugoe_model::Model;
 use ugoe_model::mesh::Mesh;
 
@@ -60,19 +60,16 @@ impl From<AutoMeshOptions> for MeshOptions {
 }
 
 impl AutoMeshOptions {
-    /// `ugoe_mesher::generate` が受け付ける値か (`margin` と `interior_spacing` は 0 以上、
-    /// `edge_spacing` は 0 より大きい有限の値)。不正ならその理由。
+    /// `ugoe_mesher::generate` が受け付ける値か。不正ならその理由。
+    ///
+    /// 規則は [`MeshOptions::validate`] と同じ (`margin` は 0 以上 1024 以下、`interior_spacing` は
+    /// 0 以上、`edge_spacing` は 0 より大きい有限の値)。
     pub fn check(&self) -> Result<(), &'static str> {
-        if !(self.margin.is_finite() && self.margin >= 0.0) {
-            return Err("margin must be a finite value >= 0");
-        }
-        if !(self.edge_spacing.is_finite() && self.edge_spacing > 0.0) {
-            return Err("edge_spacing must be a finite value > 0");
-        }
-        if !(self.interior_spacing.is_finite() && self.interior_spacing >= 0.0) {
-            return Err("interior_spacing must be a finite value >= 0");
-        }
-        Ok(())
+        MeshOptions::from(*self).validate().map_err(|e| match e {
+            MeshError::InvalidOptions(reason) => reason,
+            // `validate` はオプションの誤りしか返さない。
+            _ => "invalid mesh options",
+        })
     }
 }
 
@@ -248,6 +245,26 @@ fn det3(m: &[[f64; 3]; 3]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_follows_mesher_validation() {
+        for margin in [0.0, 1024.0, 1024.5, -1.0, f32::NAN, f32::MAX] {
+            let options = AutoMeshOptions {
+                margin,
+                ..AutoMeshOptions::default()
+            };
+            assert_eq!(
+                options.check().is_ok(),
+                MeshOptions::from(options).validate().is_ok(),
+                "margin {margin}"
+            );
+        }
+        let options = AutoMeshOptions {
+            margin: 2048.0,
+            ..AutoMeshOptions::default()
+        };
+        assert_eq!(options.check(), Err("margin must be between 0 and 1024"));
+    }
 
     #[test]
     fn fits_offset_and_scale() {
