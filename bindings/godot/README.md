@@ -60,6 +60,9 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
 - `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、同じ画素の
   KTX2 (`R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`、Godot の `Image.compress` で作る `BC3_UNORM_BLOCK`) に差し替えたバンドルを描き、
   PNG のバンドル (BC3 は展開した画素の PNG) の画像と画素ごとに比べる (適合テストの参照の `ugoe render` は KTX2 を読めないため)。
+- 1 フレームの時間は `example/tests/bench.gd` で測る (検査ではない。見本のモデルのパラメータを毎フレーム動かし、`_process` に
+  かかった時間を出す。`node bindings/godot/build.mjs --release` の後に
+  `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
   `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行する。
 

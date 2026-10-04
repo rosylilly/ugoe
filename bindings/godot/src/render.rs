@@ -68,6 +68,34 @@ pub struct DecodedTexture {
 /// 着せ替えでレンダラを作り直すときに、変わっていないテクスチャを使い回す。
 pub type TextureCache = Vec<Option<DecodedTexture>>;
 
+/// 毎フレーム (と光源が変わるたびに) 設定する uniform の名前。
+/// `&str` で渡すと呼ぶたびに `StringName` を作る (Godot の名前の表を引く) ので、作っておいて使い回す。
+struct UniformNames {
+    opacity: StringName,
+    multiply_color: StringName,
+    screen_color: StringName,
+    mask_strength: StringName,
+    ambient_light: StringName,
+    light_count: StringName,
+    light_vectors: StringName,
+    light_colors: StringName,
+}
+
+impl UniformNames {
+    fn new() -> Self {
+        Self {
+            opacity: StringName::from("opacity"),
+            multiply_color: StringName::from("multiply_color"),
+            screen_color: StringName::from("screen_color"),
+            mask_strength: StringName::from("mask_strength"),
+            ambient_light: StringName::from("ambient_light"),
+            light_count: StringName::from("light_count"),
+            light_vectors: StringName::from("light_vectors"),
+            light_colors: StringName::from("light_colors"),
+        }
+    }
+}
+
 /// 1 体分の描画の資源。
 pub struct Renderer {
     container: Rid,
@@ -91,6 +119,7 @@ pub struct Renderer {
     indices: Vec<PackedInt32Array>,
     culled: Vec<i32>,
     colors: PackedColorArray,
+    names: UniformNames,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -270,6 +299,13 @@ impl Renderer {
             viewport.set_disable_3d(true);
             viewport.set_update_mode(UpdateMode::ALWAYS);
             viewport.set_size(Vector2i::new(1, 1));
+            // 子 (根と前の段) を足す前に確かめる。無ければこの段を解放してやめる (木に入れていないので Godot は解放しない)。
+            // 前の段までは下で木に入れるので、`Drop` と `remove_viewports` で解放される。
+            let Some(texture) = viewport.get_texture() else {
+                godot_error!("ugoe: a mask viewport has no texture");
+                viewport.free();
+                break;
+            };
             let root = Node2D::new_alloc();
             viewport.add_child(&root);
             if let Some(previous) = levels.last() {
@@ -283,10 +319,6 @@ impl Renderer {
                 rs.canvas_item_set_default_texture_filter(copy, CanvasItemTextureFilter::NEAREST);
                 m
             });
-            let Some(texture) = viewport.get_texture() else {
-                godot_error!("ugoe: a mask viewport has no texture");
-                break;
-            };
             levels.push(MaskLevel {
                 viewport,
                 _root: root,
@@ -337,6 +369,8 @@ impl Renderer {
             Vec::new()
         };
 
+        let names = UniformNames::new();
+        let light = LightParams::new(lighting);
         let items = model
             .drawables
             .iter()
@@ -375,7 +409,7 @@ impl Renderer {
                     if let Some(normal) = normal {
                         material.set_shader_parameter("normal_map", &normal.to_variant());
                     }
-                    set_light_params(&mut material, lighting);
+                    set_light_params(&mut material, &names, &light);
                 }
                 rs().canvas_item_set_material(item, material.get_rid());
                 DrawItem { item, material }
@@ -410,14 +444,16 @@ impl Renderer {
             indices,
             culled: Vec::new(),
             colors: PackedColorArray::from([Color::WHITE].as_slice()),
+            names,
         }
     }
 
     /// 光源を変える (ライティングを受ける要素だけ)。
     pub fn set_lighting(&mut self, model: &LoadedModel, lighting: &LightUniforms) {
+        let light = LightParams::new(lighting);
         for (item, info) in self.items.iter_mut().zip(&model.drawables) {
             if info.lit {
-                set_light_params(&mut item.material, lighting);
+                set_light_params(&mut item.material, &self.names, &light);
             }
         }
     }
@@ -493,7 +529,7 @@ impl Renderer {
             if fresh || changes[mask.mesh].contains(DrawableChanges::MASK_STRENGTH) {
                 let strength = states[mask.mesh].mask_strength;
                 mask.material
-                    .set_shader_parameter("mask_strength", &strength.to_variant());
+                    .set_shader_parameter(&self.names.mask_strength, &strength.to_variant());
             }
             if !moved[s] {
                 continue;
@@ -570,7 +606,7 @@ impl Renderer {
                     .done();
                 }
             }
-            set_color_params(&mut item.material, state, changed, redraw);
+            set_color_params(&mut item.material, &self.names, state, changed, redraw);
         }
     }
 
@@ -684,40 +720,66 @@ impl Drop for Renderer {
     }
 }
 
-fn set_light_params(material: &mut Gd<ShaderMaterial>, lighting: &LightUniforms) {
-    let [r, g, b] = lighting.ambient;
-    material.set_shader_parameter("ambient_light", &Vector3::new(r, g, b).to_variant());
-    material.set_shader_parameter("light_count", &(lighting.vectors.len() as i32).to_variant());
-    let pad = |v: &[[f32; 4]]| -> PackedVector4Array {
-        (0..ugoe::render::MAX_LIGHTS)
-            .map(|i| {
-                let [x, y, z, w] = v.get(i).copied().unwrap_or([0.0; 4]);
-                Vector4::new(x, y, z, w)
-            })
-            .collect()
-    };
-    material.set_shader_parameter("light_vectors", &pad(&lighting.vectors).to_variant());
-    material.set_shader_parameter("light_colors", &pad(&lighting.colors).to_variant());
+/// 光源の uniform の値。1 回作って、ライティングを受けるすべての要素に渡す。
+struct LightParams {
+    ambient: Variant,
+    count: Variant,
+    vectors: Variant,
+    colors: Variant,
+}
+
+impl LightParams {
+    fn new(lighting: &LightUniforms) -> Self {
+        let [r, g, b] = lighting.ambient;
+        let pad = |v: &[[f32; 4]]| -> PackedVector4Array {
+            (0..ugoe::render::MAX_LIGHTS)
+                .map(|i| {
+                    let [x, y, z, w] = v.get(i).copied().unwrap_or([0.0; 4]);
+                    Vector4::new(x, y, z, w)
+                })
+                .collect()
+        };
+        Self {
+            ambient: Vector3::new(r, g, b).to_variant(),
+            count: (lighting.vectors.len() as i32).to_variant(),
+            vectors: pad(&lighting.vectors).to_variant(),
+            colors: pad(&lighting.colors).to_variant(),
+        }
+    }
+}
+
+fn set_light_params(material: &mut Gd<ShaderMaterial>, names: &UniformNames, light: &LightParams) {
+    material.set_shader_parameter(&names.ambient_light, &light.ambient);
+    material.set_shader_parameter(&names.light_count, &light.count);
+    material.set_shader_parameter(&names.light_vectors, &light.vectors);
+    material.set_shader_parameter(&names.light_colors, &light.colors);
 }
 
 fn set_color_params(
     material: &mut Gd<ShaderMaterial>,
+    names: &UniformNames,
     state: &DrawableState,
     changed: DrawableChanges,
     all: bool,
 ) {
     if all || changed.contains(DrawableChanges::OPACITY) {
-        material.set_shader_parameter("opacity", &state.opacity.to_variant());
+        material.set_shader_parameter(&names.opacity, &state.opacity.to_variant());
     }
     if all || changed.contains(DrawableChanges::MULTIPLY_COLOR) {
         let c = state.multiply_color;
-        material.set_shader_parameter("multiply_color", &Vector3::new(c.r, c.g, c.b).to_variant());
+        material.set_shader_parameter(
+            &names.multiply_color,
+            &Vector3::new(c.r, c.g, c.b).to_variant(),
+        );
     }
     if all || changed.contains(DrawableChanges::SCREEN_COLOR) {
         let c = state.screen_color;
-        material.set_shader_parameter("screen_color", &Vector3::new(c.r, c.g, c.b).to_variant());
+        material.set_shader_parameter(
+            &names.screen_color,
+            &Vector3::new(c.r, c.g, c.b).to_variant(),
+        );
     }
     if all || changed.contains(DrawableChanges::MASK_STRENGTH) {
-        material.set_shader_parameter("mask_strength", &state.mask_strength.to_variant());
+        material.set_shader_parameter(&names.mask_strength, &state.mask_strength.to_variant());
     }
 }
