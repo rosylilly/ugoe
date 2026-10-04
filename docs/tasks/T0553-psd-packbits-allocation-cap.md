@@ -1,11 +1,11 @@
 ---
 id: T0553
 title: "PSD: PackBits の展開の確保の上限 (入力の 64 倍) を見直す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-psd]
 depends_on: []
-assignee:
+assignee: claude-worker-T0553
 ---
 
 # T0553: PSD: PackBits の展開の確保の上限 (入力の 64 倍) を見直す
