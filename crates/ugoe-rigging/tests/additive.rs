@@ -666,3 +666,31 @@ fn own_scope_keeps_cells_of_other_methods_as_sources() {
     let report = infer_additive(&model, &mut depth, InferScope::Own).unwrap();
     assert_eq!(report.written, vec![0, 2, 6, 8]);
 }
+
+/// 軸のキー数の積が `usize` に収まらない格子は、パニックせずに大きさの不一致のエラーになる。
+/// 軸は 64 本までなので、2 キーの軸が 64 本 (2⁶⁴ セル) は軸の数の検査を通る。
+#[test]
+fn oversized_and_overlong_grids_are_errors() {
+    let mut model = model();
+    model.parameters = (0..65).map(|i| parameter(&format!("P{i}"), 0.0)).collect();
+    let bindings = |n: usize| -> Vec<KeyformBinding> {
+        (0..n)
+            .map(|i| binding(&format!("P{i}"), &[0.0, 1.0]))
+            .collect()
+    };
+
+    let mut grid = KeyformGrid::new(bindings(64), Vec::<RotationKeyform>::new());
+    assert_eq!(
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
+        Err(InferError::GridSizeMismatch {
+            expected: usize::MAX,
+            found: 0
+        })
+    );
+
+    let mut grid = KeyformGrid::new(bindings(65), Vec::<RotationKeyform>::new());
+    assert_eq!(
+        infer_additive(&model, &mut grid, InferScope::AllDerived),
+        Err(InferError::TooManyAxes { count: 65 })
+    );
+}

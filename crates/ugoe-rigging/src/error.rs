@@ -14,7 +14,7 @@ pub enum InferError {
     /// 軸が多すぎる (64 本まで)。
     #[error("too many axes ({count}, at most 64)")]
     TooManyAxes { count: usize },
-    /// `keyforms` の数が軸のキー数の積と合わない。
+    /// `keyforms` の数が軸のキー数の積と合わない。積が `usize` に収まらなければ `expected` は `usize::MAX`。
     #[error("grid has {found} keyforms, expected {expected}")]
     GridSizeMismatch { expected: usize, found: usize },
     /// `origins` が空でなく、長さが `keyforms` と合わない。

@@ -389,3 +389,105 @@ fn configuration_errors() {
         )))
     );
 }
+
+/// 書いたセルの由来は `depth_rotation` になる。`Own` では別の方法 (`additive`) のセルを書き換えず、
+/// 手で直したセルと同じく推定の元にする (T0614、`docs/spec/keyform-inference.md#方法ごとの書き換えの範囲`)。
+#[test]
+fn own_scope_records_the_method_and_keeps_other_methods_as_sources() {
+    let mut model = model();
+    let o = [128.0, 128.0, 0.0];
+    let x30 = cell(30.0, 0.0);
+    let other = WarpKeyform {
+        points: rotated(30.0, 0.0, o)
+            .into_iter()
+            .map(|p| p + Vec2::new(2.0, 0.0))
+            .collect(),
+        opacity: 1.0,
+    };
+    {
+        let grid = &mut warp_mut(&mut model, "Face").keyforms;
+        grid.keyforms[x30] = other.clone();
+        grid.origins[x30] = KeyformOrigin::Additive;
+    }
+    let report = infer_depth_rotation(&mut model, &face(), InferScope::Own).unwrap();
+    assert_eq!(report.written.len(), 23);
+    assert!(!report.written.contains(&x30));
+    let grid = &warp_mut(&mut model, "Face").keyforms;
+    for &i in &report.written {
+        assert_eq!(grid.origins[i], KeyformOrigin::DepthRotation, "cell {i}");
+    }
+    assert_eq!(grid.origins[x30], KeyformOrigin::Additive);
+    assert_eq!(grid.keyforms[x30], other);
+    // `additive` のセルの回転の式からのずれ (+2) が、軸の上で外挿される。
+    assert_points(
+        &points(&mut model, cell(-30.0, 0.0)),
+        &rotated(-30.0, 0.0, o)
+            .into_iter()
+            .map(|p| p + Vec2::new(-2.0, 0.0))
+            .collect::<Vec<_>>(),
+    );
+
+    // `AllDerived` では `additive` のセルも回転の式どおりに書き換える。
+    let report = infer_depth_rotation(&mut model, &face(), InferScope::AllDerived).unwrap();
+    assert_eq!(report.written.len(), 24);
+    assert_points(&points(&mut model, x30), &rotated(30.0, 0.0, o));
+    assert_eq!(
+        warp_mut(&mut model, "Face").keyforms.origins[x30],
+        KeyformOrigin::DepthRotation
+    );
+}
+
+/// 親をたどれない (親がない・循環する) 要素はエラーで、モデルを変えない。
+#[test]
+fn broken_parent_chains_are_errors() {
+    let mut model = model();
+    let head = |id: &str, parent: &str| Deformer {
+        id: id.into(),
+        name: id.into(),
+        part: "Root".into(),
+        parent: Some(parent.into()),
+        kind: DeformerKind::Rotation(RotationDeformer {
+            keyforms: KeyformGrid::constant(RotationKeyform {
+                origin: Vec2::ZERO,
+                angle: 0.0,
+                scale: 1.0,
+                reflect_x: false,
+                reflect_y: false,
+                opacity: 1.0,
+            }),
+        }),
+        mirror: None,
+        mirror_axis: None,
+    };
+    let face_parent = |model: &mut Model, parent: &str| {
+        model
+            .deformers
+            .iter_mut()
+            .find(|d| d.id == "Face".into())
+            .unwrap()
+            .parent = Some(parent.into());
+    };
+
+    face_parent(&mut model, "Missing");
+    let before = model.clone();
+    assert_eq!(
+        infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
+        Err(InferError::UnknownParent {
+            deformer: "Missing".into()
+        })
+    );
+    assert_eq!(model, before);
+
+    model.deformers.push(head("A", "B"));
+    model.deformers.push(head("B", "A"));
+    face_parent(&mut model, "A");
+    let before = model.clone();
+    assert!(
+        matches!(
+            infer_depth_rotation(&mut model, &face(), InferScope::AllDerived),
+            Err(InferError::ParentCycle { .. })
+        ),
+        "a cycle through A and B"
+    );
+    assert_eq!(model, before);
+}

@@ -64,7 +64,7 @@ pub struct BulgeOptions {
     pub radius: Option<f32>,
     /// 高さをならすガウスぼかしの標準偏差 (画素)。0 ならならさない。
     pub smoothing: f32,
-    /// 形とみなすアルファの下限 (0〜255)。
+    /// 形とみなすアルファの下限 (0〜255)。0 は 1 とみなす (アルファが 0 の画素は形にしない)。
     pub alpha_threshold: u8,
 }
 
@@ -557,11 +557,13 @@ fn squared_distance_1d(f: &[f32], out: &mut Vec<f32>) {
 }
 
 /// 分離したガウスぼかし (`sigma` は画素単位。3σ で打ち切る)。画像の外は端の値とみなす。
+/// 3σ が画像の長いほうの辺より広ければ、その辺の長さで打ち切る (大きすぎる `sigma` でカーネルが
+/// 確保できなくならないように。それより遠くは端の値の繰り返しなので、結果はほぼ変わらない)。
 fn gaussian_blur(values: &mut [f32], w: usize, h: usize, sigma: f32) {
     if sigma <= 0.0 || w == 0 || h == 0 {
         return;
     }
-    let r = (sigma * 3.0).ceil() as isize;
+    let r = (sigma * 3.0).ceil().min(w.max(h) as f32) as isize;
     let kernel: Vec<f32> = (-r..=r)
         .map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp())
         .collect();
@@ -636,6 +638,16 @@ mod tests {
             }
         }
         assert_eq!(at(0, 0), 0.0);
+    }
+
+    /// 画像より広いぼかしでも、カーネルを画像の大きさで打ち切るので止まらない (平均に近づく)。
+    #[test]
+    fn huge_blur_is_bounded_by_the_image() {
+        let mut values = vec![0.0, 3.0, 6.0];
+        gaussian_blur(&mut values, 3, 1, 1e12);
+        for v in &values {
+            assert!((v - 3.0).abs() < 1.0, "{values:?}");
+        }
     }
 
     #[test]

@@ -368,6 +368,34 @@ fn self_mirrored_parameter_needs_the_negated_key() {
             parameter: "AngleY".into()
         }
     );
+
+    // 元の格子の軸が余ってもエラー (先の格子に AngleY の軸がない)。
+    let mut model = eye_model();
+    let left = mesh(&model, "EyeL").keyforms.keyforms[1].clone();
+    set_grid(
+        &mut mesh_mut(&mut model, "EyeL").keyforms,
+        vec![
+            binding("AngleX", &[-30.0, 0.0, 30.0]),
+            binding("AngleY", &[0.0, 30.0]),
+        ],
+        vec![left; 6],
+        &[0, 1, 2, 3, 4, 5],
+    );
+    let before = model.clone();
+    let err = mirror_keyforms(
+        &mut model,
+        &target("EyeL"),
+        &target("EyeR"),
+        &MirrorOptions::default(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        InferError::MirrorAxisMismatch {
+            parameter: "AngleY".into()
+        }
+    );
+    assert_eq!(model, before);
 }
 
 #[test]

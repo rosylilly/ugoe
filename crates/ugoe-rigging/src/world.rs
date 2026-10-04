@@ -15,11 +15,13 @@ pub enum WorldError {
     /// 親の祖先のデフォーマを評価できない (不正なモデルなど)。
     #[error("cannot evaluate the parent deformers: {0}")]
     Evaluate(String),
+    /// [`ParentWorld::from_canvas`] の点と初期値の数が合わない。
     #[error("{points} points but {guesses} initial guesses")]
     LengthMismatch { points: usize, guesses: usize },
     /// 親の変換が点 `index` の近くで潰れていて、逆に解けない。
     #[error("the parent transform is degenerate near point {index}")]
     Singular { index: usize },
+    /// 点 `index` が反復の上限までに解けなかった (`residual` は最後の残差、キャンバスのピクセル)。
     #[error("point {index} did not converge (residual {residual} px)")]
     NotConverged { index: usize, residual: f32 },
 }

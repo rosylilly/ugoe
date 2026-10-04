@@ -27,6 +27,8 @@ pub(crate) struct Layout<'a> {
 impl<'a> Layout<'a> {
     /// 格子の軸を `parameters` から引いて作る。
     /// 軸の数・パラメータ・中立のキー・`keyforms` と `origins` の長さを検査する。
+    /// セルの数 (軸のキー数の積) が `usize` に収まらなければ、`expected` が `usize::MAX` の
+    /// [`InferError::GridSizeMismatch`] にする。
     pub fn new<T>(
         parameters: &'a [Parameter],
         grid: &'a KeyformGrid<T>,
@@ -36,7 +38,8 @@ impl<'a> Layout<'a> {
                 count: grid.bindings.len(),
             });
         }
-        let mut stride = 1;
+        // 積があふれたら `None` (`KeyformGrid::expected_len` は検査せずに掛ける)。
+        let mut stride = Some(1usize);
         let mut axes = Vec::with_capacity(grid.bindings.len());
         for binding in &grid.bindings {
             let parameter = parameters
@@ -57,13 +60,13 @@ impl<'a> Layout<'a> {
                 parameter,
                 keys: &binding.keys,
                 neutral,
-                stride,
+                stride: stride.unwrap_or(usize::MAX),
             });
-            stride *= binding.keys.len();
+            stride = stride.and_then(|s| s.checked_mul(binding.keys.len()));
         }
 
-        let len = grid.expected_len();
-        if grid.keyforms.len() != len {
+        let len = stride.unwrap_or(usize::MAX);
+        if stride.is_none() || grid.keyforms.len() != len {
             return Err(InferError::GridSizeMismatch {
                 expected: len,
                 found: grid.keyforms.len(),
