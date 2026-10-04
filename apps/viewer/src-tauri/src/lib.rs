@@ -1,6 +1,7 @@
 //! ビューアのバックエンド。モデルの描画とパラメータの操作はすべて webview の wasm (`ugoe-wasm`) で行い、
 //! ここはファイルの読み書きとカメラの許可など、webview だけではできないことに限る (`apps/viewer/README.md`)。
 
+use std::io::Read;
 use std::path::Path;
 
 use tauri::ipc::Response;
@@ -25,34 +26,61 @@ fn has_extension(path: &Path, extensions: &[&str]) -> bool {
         .is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x)))
 }
 
+/// ファイルの読み書きを、Tauri のメインスレッド (イベントのループ) ではなく読み書き用のスレッドで行う。
+/// コマンドは `async` にして、読み書きはここに渡す (同期のコマンドはメインスレッドで動き、
+/// 大きなファイルやネットワークのドライブを読む間ウィンドウが止まるため。T0726)。
+async fn blocking<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| format!("the file task failed: {e}"))?
+}
+
 /// モデルかモジュールのファイルを読み、バイト列をそのまま返す (JS では `ArrayBuffer`)。
 /// 形式の判別と読み込みはフロントエンドの wasm が行う。
 #[tauri::command]
-fn read_model_file(path: String) -> Result<Response, String> {
-    let path = Path::new(&path);
+async fn read_model_file(path: String) -> Result<Response, String> {
+    blocking(move || read_model(Path::new(&path), MAX_FILE_BYTES))
+        .await
+        .map(Response::new)
+}
+
+/// `read_model_file` の中身。`max` バイトより大きいファイルは読まない。
+fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     if !is_readable_path(path) {
         return Err(format!(
             "not a model or module file (.ugoe, .json or .ugoemod): {}",
             path.display()
         ));
     }
-    let len = std::fs::metadata(path)
+    let too_large = |len: u64| format!("{}: file is too large ({len} bytes)", path.display());
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let len = file
+        .metadata()
         .map_err(|e| format!("{}: {e}", path.display()))?
         .len();
-    if len > MAX_FILE_BYTES {
-        return Err(format!(
-            "{}: file is too large ({len} bytes)",
-            path.display()
-        ));
+    if len > max {
+        return Err(too_large(len));
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Response::new(bytes))
+    // 大きさを見てから読むまでの間にファイルが大きくなっても上限を超えて読まないよう、上限 + 1 バイトまでに限って読む。
+    let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
+    file.take(max.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    if bytes.len() as u64 > max {
+        return Err(too_large(bytes.len() as u64));
+    }
+    Ok(bytes)
 }
 
 /// JSON のファイル (トラッキングの記録など) を書く。パスは保存のダイアログで利用者が選んだもの。
 #[tauri::command]
-fn write_json_file(path: String, contents: String) -> Result<(), String> {
-    let path = Path::new(&path);
+async fn write_json_file(path: String, contents: String) -> Result<(), String> {
+    blocking(move || write_json(Path::new(&path), &contents)).await
+}
+
+fn write_json(path: &Path, contents: &str) -> Result<(), String> {
     if !is_json_path(path) {
         return Err(format!("not a JSON file: {}", path.display()));
     }
@@ -73,7 +101,7 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// スクリーンショット (T0420) の PNG を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path`
 /// (保存のダイアログで利用者が選んだもの)。拡張子が `.png` で、中身が PNG のものだけを書く。
 #[tauri::command]
-fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+async fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected the bytes of a PNG image".into());
     };
@@ -83,7 +111,10 @@ fn write_png_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
         .ok_or_else(|| format!("missing the {PNG_PATH_HEADER} header"))?
         .to_str()
         .map_err(|e| format!("{PNG_PATH_HEADER}: {e}"))?;
-    write_png(Path::new(&percent_decode(header)?), bytes)
+    let path = percent_decode(header)?;
+    // 要求は借りものなので、別のスレッドへはバイト列の写しを渡す。
+    let bytes = bytes.clone();
+    blocking(move || write_png(Path::new(&path), &bytes)).await
 }
 
 fn write_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -180,16 +211,50 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ugoe-viewer-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("rec.json");
-        write_json_file(path.to_string_lossy().into_owned(), "{}".into()).unwrap();
+        tauri::async_runtime::block_on(write_json_file(
+            path.to_string_lossy().into_owned(),
+            "{}".into(),
+        ))
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
+        assert!(write_json(&dir.join("rec.sh"), "x").is_err());
+        assert!(!dir.join("rec.sh").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_model_files_within_the_limit() {
+        let dir = std::env::temp_dir().join(format!("ugoe-viewer-read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.ugoe");
+        std::fs::write(&path, b"UGOE1234").unwrap();
+        assert_eq!(read_model(&path, 8).unwrap(), b"UGOE1234");
+        assert!(read_model(&path, 7).unwrap_err().contains("too large"));
+        let other = dir.join("model.txt");
+        std::fs::write(&other, b"{}").unwrap();
+        assert!(read_model(&other, 8).unwrap_err().contains("not a model"));
+        assert!(read_model(&dir.join("missing.ugoe"), 8).is_err());
+        // コマンドは別のスレッドで読み、同じ結果を返す。
         assert!(
-            write_json_file(
-                dir.join("rec.sh").to_string_lossy().into_owned(),
-                "x".into()
-            )
-            .is_err()
+            tauri::async_runtime::block_on(read_model_file(other.to_string_lossy().into_owned()))
+                .is_err()
+        );
+        assert!(
+            tauri::async_runtime::block_on(read_model_file(path.to_string_lossy().into_owned()))
+                .is_ok()
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn runs_file_tasks_off_the_calling_thread() {
+        let caller = std::thread::current().id();
+        let worker =
+            tauri::async_runtime::block_on(blocking(|| Ok(std::thread::current().id()))).unwrap();
+        assert_ne!(worker, caller);
+        let err: Result<(), String> =
+            tauri::async_runtime::block_on(blocking(|| Err("failed".into())));
+        assert_eq!(err.unwrap_err(), "failed");
     }
 
     #[test]

@@ -60,6 +60,10 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   画像 (スクリーンショット) を PNG で書く (`write_png_file`。本文が PNG のバイト列、パスはヘッダー `x-ugoe-path`。保存のダイアログで選んだ `.png` で、中身が PNG のものだけ) こと、
   起動時の引数のパスを返す (`initial_file`) こと、webview からのカメラの許可の要求に応じること、OS の言語を返すこと
   (tauri-plugin-os の `locale()`。権限は `os:allow-locale` だけ)。依存してよいのはランタイム層のクレートだけ (`scripts/check-layers.mjs`)。
+  ファイルを読み書きする 3 つのコマンド (`read_model_file`・`write_json_file`・`write_png_file`) は `async` のコマンドで、
+  読み書きは `tauri::async_runtime::spawn_blocking` の別のスレッドで行う (`lib.rs` の `blocking`)。同期のコマンドは Tauri の
+  メインスレッドで動き、大きなバンドル (上限 512 MiB) やネットワークのドライブを読む間ウィンドウが止まるため (T0726)。
+  `read_model_file` は大きさを見てから上限 + 1 バイトまでに限って読むので、読む間にファイルが大きくなっても上限を超えて読まない。
   いまは内部のクレートに依存していない。
 - 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
   `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
