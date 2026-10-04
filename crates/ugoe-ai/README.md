@@ -18,7 +18,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)、プロバイダで共通の再試行 (`RetryPolicy`)、ループバックの判定 (`is_loopback_url`)
 - `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
 - `fake.rs`: テスト用の `FakeProvider`
-- `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)
+- `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)。HTTP の推論サーバへはプロバイダと同じ規則で送る (再試行・任意の `Authorization: Bearer`)
 - `turn.rs`: 深度推定による振り向きリグの提案 (`propose_depth_turn`・`plan_turn`・`label_depth`・`mesh_labels`)
 - `instructions.rs`: 利用者の注文 (`Instructions`) をプロンプトに区切って入れる書き方と、反映できない注文 (`Not applied:`) の取り出し (`split_unapplied`)。分類・リグの `*_guided` が使う (`docs/ai-integration.md#利用者の注文`)
 - `rig.rs`: ラベルのテンプレートによる自動リギングの提案 (`propose_rig`)、テンプレートで決められない値 (`RigParams`) を AI に決めさせ、検証エラーを添えて問い直す `propose_rig_with_ai`、分類の結果をメッシュに対応付ける `mesh_parts`

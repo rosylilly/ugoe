@@ -9,12 +9,16 @@
 
 mod common;
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use ugoe_ai::classify::{Label, LayerLabel, Side};
+
+use ugoe_ai::claude::ApiKey;
 use ugoe_ai::depth::{
     DepthEstimator, DepthMap, DepthRequest, FixedDepthEstimator, HttpDepthConfig,
-    HttpDepthEstimator,
+    HttpDepthEstimator, RetryPolicy,
 };
-use ugoe_ai::transport::ReplayTransport;
+use ugoe_ai::transport::{Cassette, RecordingTransport, ReplayTransport};
 use ugoe_ai::turn::{TurnRole, TurnTarget, mesh_labels, plan_turn, propose_depth_turn};
 use ugoe_ai::{AiError, Destination, Proposal};
 use ugoe_core::Vec2;
@@ -258,8 +262,16 @@ fn server_errors_and_bad_maps_are_reported() {
               "response": { "status": 200, "body": { "width": 2, "height": 2, "depth": [1, 2, 3] } } },
         ]
     });
+    // 再試行しない設定で、503 をそのまま返すことを確かめる (再試行は下のテスト)
+    let config = HttpDepthConfig {
+        retry: RetryPolicy {
+            max_retries: 0,
+            ..Default::default()
+        },
+        ..HttpDepthConfig::new(ENDPOINT, "m")
+    };
     let estimator = HttpDepthEstimator::with_transport(
-        HttpDepthConfig::new(ENDPOINT, "m"),
+        config,
         ReplayTransport::new(serde_json::from_value(cassette).unwrap()),
     );
     let request = DepthRequest { image: png() };
@@ -359,4 +371,171 @@ fn layer_labels_are_matched_to_meshes_by_name() {
     let labels = mesh_labels(&twins, &layers);
     assert_eq!(labels.len(), 1, "{labels:?}");
     assert!(labels.keys().all(|m| m.as_str() != "Bangs"));
+}
+
+const SECRET: &str = "depth-secret-key";
+const MAP_2X2: &str = r#"{ "width": 2, "height": 2, "depth": [1, 2, 3, 4] }"#;
+
+fn replay(interactions: serde_json::Value) -> Arc<ReplayTransport> {
+    let cassette: Cassette =
+        serde_json::from_value(serde_json::json!({ "interactions": interactions })).unwrap();
+    Arc::new(ReplayTransport::new(cassette))
+}
+
+/// 待った時間を記録する推定器。
+fn retrying(
+    config: HttpDepthConfig,
+    transport: Arc<ReplayTransport>,
+) -> (HttpDepthEstimator, Arc<Mutex<Vec<Duration>>>) {
+    let slept = Arc::new(Mutex::new(Vec::new()));
+    let log = slept.clone();
+    let estimator = HttpDepthEstimator::with_transport(config, transport)
+        .with_sleeper(move |d| log.lock().unwrap().push(d));
+    (estimator, slept)
+}
+
+fn assert_no_secret(e: &AiError) {
+    assert!(!e.to_string().contains(SECRET), "{e}");
+    assert!(!format!("{e:?}").contains(SECRET), "{e:?}");
+}
+
+#[test]
+fn retries_connection_failures_and_unavailable_servers() {
+    let map: serde_json::Value = serde_json::from_str(MAP_2X2).unwrap();
+    let transport = replay(serde_json::json!([
+        // 推論サーバの起動直後: 接続できない → モデルを読み込み中
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "error": { "kind": "connect", "message": "connection refused" } },
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "response": { "status": 503, "headers": { "retry-after": "3" }, "body_text": "loading" } },
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "response": { "status": 200, "body": map } },
+    ]));
+    let (estimator, slept) = retrying(HttpDepthConfig::new(ENDPOINT, "m"), transport.clone());
+    let depth = estimator.estimate(&DepthRequest { image: png() }).unwrap();
+    assert_eq!(depth.values, vec![1.0, 2.0, 3.0, 4.0]);
+    // 1 回目はバックオフ、2 回目は retry-after に従う
+    assert_eq!(
+        *slept.lock().unwrap(),
+        vec![Duration::from_millis(500), Duration::from_secs(3)]
+    );
+    assert_eq!(transport.remaining(), 0);
+}
+
+#[test]
+fn gives_up_after_the_retry_limit_and_keeps_the_failure_kind() {
+    let timeout = serde_json::json!({ "request": { "method": "POST", "url": ENDPOINT },
+        "error": { "kind": "timeout", "message": "timed out reading response" } });
+    let transport = replay(serde_json::json!([timeout, timeout, timeout]));
+    let (estimator, slept) = retrying(HttpDepthConfig::new(ENDPOINT, "m"), transport.clone());
+    let e = estimator
+        .estimate(&DepthRequest { image: png() })
+        .unwrap_err();
+    // プロバイダと同じく、種類 (Timeout) を文言に残す
+    assert!(
+        matches!(&e, AiError::Network(m) if m.starts_with("Timeout:") && m.contains("timed out")),
+        "{e:?}"
+    );
+    assert_eq!(slept.lock().unwrap().len(), 2);
+    assert_eq!(transport.remaining(), 0);
+
+    // 再試行しない失敗 (4xx・それ以外の通信の失敗) は 1 回で諦める
+    let transport = replay(serde_json::json!([
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "response": { "status": 400, "body_text": "bad image" } },
+    ]));
+    let (estimator, slept) = retrying(HttpDepthConfig::new(ENDPOINT, "m"), transport);
+    let e = estimator
+        .estimate(&DepthRequest { image: png() })
+        .unwrap_err();
+    assert!(
+        matches!(&e, AiError::Api { status: 400, kind, message } if kind == "depth_server_error" && message == "bad image"),
+        "{e:?}"
+    );
+    assert!(slept.lock().unwrap().is_empty());
+
+    // 429 はプロバイダと同じくレート制限として返す
+    let transport = replay(serde_json::json!([
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "response": { "status": 429, "headers": { "retry-after": "600" } } },
+    ]));
+    let (estimator, _) = retrying(HttpDepthConfig::new(ENDPOINT, "m"), transport);
+    assert!(matches!(
+        estimator.estimate(&DepthRequest { image: png() }),
+        Err(AiError::RateLimited { retry_after: Some(d) }) if d == Duration::from_secs(600)
+    ));
+}
+
+#[test]
+fn sends_the_api_key_as_a_bearer_token_without_leaking_it() {
+    const REMOTE: &str = "https://depth.example.com/v1";
+    let map: serde_json::Value = serde_json::from_str(MAP_2X2).unwrap();
+    let transport = replay(serde_json::json!([
+        { "request": { "method": "POST", "url": REMOTE },
+          "response": { "status": 200, "body": map } },
+        { "request": { "method": "POST", "url": REMOTE },
+          "response": { "status": 401, "body_text": format!("invalid key {SECRET}") } },
+        { "request": { "method": "POST", "url": REMOTE },
+          "error": { "kind": "connect", "message": format!("refused for {SECRET}") } },
+    ]));
+    let config = HttpDepthConfig {
+        retry: RetryPolicy {
+            max_retries: 0,
+            ..Default::default()
+        },
+        ..HttpDepthConfig::new(REMOTE, "m")
+    };
+    let recording = Arc::new(RecordingTransport::new(transport.clone()));
+    let estimator = HttpDepthEstimator::with_transport(config, recording.clone())
+        .with_api_key(ApiKey::new(SECRET).unwrap());
+    let request = DepthRequest { image: png() };
+    estimator.estimate(&request).unwrap();
+
+    // ヘッダは送るが、受け取ったリクエストの記録では伏せてある
+    let received = transport.received();
+    let auth = received[0]
+        .headers
+        .iter()
+        .find(|(k, _)| k == "authorization")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(auth, Some("<redacted>"));
+    assert!(!format!("{received:?}").contains(SECRET));
+    assert!(!format!("{estimator:?}").contains(SECRET));
+
+    // エラーの文言に紛れ込んだ鍵も伏せる
+    let e = estimator.estimate(&request).unwrap_err();
+    assert!(matches!(&e, AiError::Api { status: 401, .. }), "{e:?}");
+    assert!(e.to_string().contains("<redacted>"));
+    assert_no_secret(&e);
+    let e = estimator.estimate(&request).unwrap_err();
+    assert!(
+        matches!(&e, AiError::Network(m) if m.starts_with("Connect:")),
+        "{e:?}"
+    );
+    assert_no_secret(&e);
+
+    // 録画したリクエストにも残らない (応答はサーバが返したまま録る)
+    let cassette = recording.cassette();
+    assert_eq!(cassette.interactions.len(), 3);
+    for interaction in &cassette.interactions {
+        let request = serde_json::to_string(&interaction.request).unwrap();
+        assert!(!request.contains(SECRET), "{request}");
+    }
+}
+
+#[test]
+fn sends_no_authorization_header_without_a_key() {
+    let map: serde_json::Value = serde_json::from_str(MAP_2X2).unwrap();
+    let transport = replay(serde_json::json!([
+        { "request": { "method": "POST", "url": ENDPOINT },
+          "response": { "status": 200, "body": map } },
+    ]));
+    let estimator =
+        HttpDepthEstimator::with_transport(HttpDepthConfig::new(ENDPOINT, "m"), transport.clone());
+    estimator.estimate(&DepthRequest { image: png() }).unwrap();
+    let headers = &transport.received()[0].headers;
+    assert!(
+        headers.iter().all(|(k, _)| k != "authorization"),
+        "{headers:?}"
+    );
 }

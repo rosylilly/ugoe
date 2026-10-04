@@ -215,6 +215,8 @@ AI が決める値 (`ModuleRigParams`。`propose_module_rig_with_ai`・`_guided`
 - リクエスト: `POST <endpoint>`、本文は `{"image": {"type": "base64", "media_type": "image/png", "data": "..."}}`。
 - 応答: `{"width": W, "height": H, "depth": [W*H 個の数]}` (行優先、x が速い)。深度マップの大きさは画像と違ってよい (キャンバスに引き伸ばして使う)。
 - 値の向きは設定 (`DepthPolarity`) で指定する。既定は値が大きいほど手前 (視差・逆深度。Depth Anything・MiDaS の相対深度の出力)。
+- 再試行はプロバイダと同じ規則 (`HttpDepthConfig::retry` の `RetryPolicy`): 接続の失敗・タイムアウト・408・409・429・5xx を指数バックオフで再試行し、`retry-after` があればそれに従う (推論サーバの起動直後の接続の失敗や、モデルを読み込み中の 503 を待つ)。諦めたときのエラーもプロバイダと同じで、429 は `AiError::RateLimited`、それ以外の状態は `AiError::Api { kind: "depth_server_error" }`、通信の失敗は種類 (`Timeout` / `Connect`) を文言に残した `AiError::Network` (T0542)。
+- 認証: 送り先はループバックに限らない (外部なら `Disclosure` で外部に送る扱い) ので、鍵を要る推論サーバのために `HttpDepthEstimator::with_api_key` で `ApiKey` を渡せば `Authorization: Bearer <鍵>` を送る。渡さなければ認証のヘッダは送らない。鍵はプロバイダと同じく `Debug`・エラーの文言・録画に出さない (T0542)。
 - テストは `Transport` を録画の再生 (`ReplayTransport`) に差し替えて行う (録画は `crates/ugoe-ai/tests/cassettes/depth_face.json`)。
 
 #### 深度の決め方 (`ugoe_ai::turn`)

@@ -7,14 +7,25 @@
 //!
 //! 推定器が返すのは **相対的な深度** ([`DepthMap`]、値が大きいほど手前) で、尺度とずれは決まらない。
 //! キャンバスのピクセル単位の深度に直すのは振り向きの提案 ([`crate::turn`]) の役目。
+//!
+//! 推論サーバへのリクエストは、言語モデルのプロバイダと同じ規則で送る: 接続の失敗・タイムアウト・
+//! 408・409・429・5xx を [`RetryPolicy`] で再試行し、鍵 ([`ApiKey`]) があれば
+//! `Authorization: Bearer` で送る。鍵はエラー・録画・`Debug` に出さない。
 
 use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::transport::{HttpRequest, Transport, UreqTransport, error_excerpt, is_loopback_url};
+use crate::claude::ApiKey;
+pub use crate::transport::RetryPolicy;
+use crate::transport::{
+    HttpRequest, HttpResponse, SendFailure, Transport, TransportError, UreqTransport,
+    error_excerpt, is_loopback_url, is_retryable_status, send_with_retry,
+};
 use crate::{AiError, Destination, Disclosure, PNG_SIGNATURE};
 
 /// 画素ごとの相対的な深度。値が大きいほど手前 (視差・逆深度と同じ向き)。
@@ -168,7 +179,10 @@ pub struct HttpDepthConfig {
     /// 利用者に示すモデルの名前 (例: `depth-anything-v2-small`)。
     pub model: String,
     pub polarity: DepthPolarity,
-    pub timeout: std::time::Duration,
+    /// 1 回のリクエストの時間の上限。
+    pub timeout: Duration,
+    /// 再試行の方針 (プロバイダと同じ。推論サーバの起動直後の接続の失敗や 503 を待つ)。
+    pub retry: RetryPolicy,
 }
 
 impl HttpDepthConfig {
@@ -177,7 +191,8 @@ impl HttpDepthConfig {
             endpoint: endpoint.into(),
             model: model.into(),
             polarity: DepthPolarity::default(),
-            timeout: std::time::Duration::from_secs(120),
+            timeout: Duration::from_secs(120),
+            retry: RetryPolicy::default(),
         }
     }
 
@@ -196,15 +211,21 @@ impl HttpDepthConfig {
 ///   [`HttpDepthConfig::polarity`] で指定する。
 ///
 /// 送り先がループバックでなければ外部に送る扱い ([`Destination::External`]) にする。
+/// 外部の推論サーバが鍵を要るときは [`HttpDepthEstimator::with_api_key`] で渡す。
 pub struct HttpDepthEstimator {
     config: HttpDepthConfig,
+    api_key: Option<ApiKey>,
     transport: Box<dyn Transport>,
+    sleep: Sleeper,
 }
+
+type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
 
 impl fmt::Debug for HttpDepthEstimator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpDepthEstimator")
             .field("config", &self.config)
+            .field("api_key", &self.api_key)
             .finish_non_exhaustive()
     }
 }
@@ -226,12 +247,83 @@ impl HttpDepthEstimator {
     pub fn with_transport(config: HttpDepthConfig, transport: impl Transport + 'static) -> Self {
         Self {
             config,
+            api_key: None,
             transport: Box::new(transport),
+            sleep: Arc::new(std::thread::sleep),
         }
+    }
+
+    /// 鍵を `Authorization: Bearer` で送る (鍵を要る外部の推論サーバ)。省けばヘッダを送らない。
+    #[must_use]
+    pub fn with_api_key(mut self, api_key: ApiKey) -> Self {
+        self.api_key = Some(api_key);
+        self
+    }
+
+    /// 再試行の前に待つ関数を差し替える (テストで実際に待たないため)。
+    #[must_use]
+    pub fn with_sleeper(mut self, sleep: impl Fn(Duration) + Send + Sync + 'static) -> Self {
+        self.sleep = Arc::new(sleep);
+        self
     }
 
     pub fn config(&self) -> &HttpDepthConfig {
         &self.config
+    }
+
+    fn http_request(&self, body: &serde_json::Value) -> HttpRequest {
+        let mut headers = vec![("content-type".into(), "application/json".into())];
+        if let Some(key) = &self.api_key {
+            headers.push(("authorization".into(), format!("Bearer {}", key.expose())));
+        }
+        HttpRequest {
+            method: "POST".into(),
+            url: self.config.endpoint.clone(),
+            headers,
+            body: body.to_string().into_bytes(),
+        }
+    }
+
+    /// 再試行しながら送り、成功した応答を返す。
+    fn send(&self, request: &HttpRequest) -> Result<HttpResponse, AiError> {
+        send_with_retry(
+            self.transport.as_ref(),
+            &self.config.retry,
+            self.sleep.as_ref(),
+            request,
+            |r| is_retryable_status(r.status),
+        )
+        .map_err(|failure| match failure {
+            SendFailure::Status {
+                response,
+                retry_after,
+            } => self.status_error(&response, retry_after),
+            SendFailure::Transport(e) => self.transport_error(&e),
+        })
+    }
+
+    fn status_error(&self, response: &HttpResponse, retry_after: Option<Duration>) -> AiError {
+        if response.status == 429 {
+            return AiError::RateLimited { retry_after };
+        }
+        AiError::Api {
+            status: response.status,
+            kind: "depth_server_error".into(),
+            message: self.redact(&error_excerpt(&response.body)),
+        }
+    }
+
+    /// 種類 (タイムアウト・接続) を残す (プロバイダと同じ形)。
+    fn transport_error(&self, e: &TransportError) -> AiError {
+        AiError::Network(self.redact(&e.to_string()))
+    }
+
+    /// 文言に鍵が紛れ込んでいたら伏せる (念のため)。
+    fn redact(&self, text: &str) -> String {
+        match &self.api_key {
+            Some(key) => text.replace(key.expose(), "<redacted>"),
+            None => text.to_owned(),
+        }
     }
 }
 
@@ -244,23 +336,7 @@ impl DepthEstimator for HttpDepthEstimator {
         let body = json!({
             "image": { "type": "base64", "media_type": "image/png", "data": data },
         });
-        let http = HttpRequest {
-            method: "POST".into(),
-            url: self.config.endpoint.clone(),
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: body.to_string().into_bytes(),
-        };
-        let response = self
-            .transport
-            .send(&http)
-            .map_err(|e| AiError::Network(e.message))?;
-        if !(200..300).contains(&response.status) {
-            return Err(AiError::Api {
-                status: response.status,
-                kind: "depth_server_error".into(),
-                message: error_excerpt(&response.body),
-            });
-        }
+        let response = self.send(&self.http_request(&body))?;
         let parsed: DepthResponse = serde_json::from_slice(&response.body)
             .map_err(|e| AiError::InvalidResponse(format!("depth response: {e}")))?;
         let map = DepthMap::new(parsed.width, parsed.height, parsed.depth)?;
