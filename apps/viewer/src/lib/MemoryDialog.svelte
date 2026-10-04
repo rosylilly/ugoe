@@ -86,7 +86,7 @@ function forgetAll() {
             <th scope="col">{t("memory.column.dressUp")}</th>
             <th scope="col">{t("memory.column.idle")}</th>
             <th scope="col">{t("memory.column.date")}</th>
-            <th scope="col"><span class="visually-hidden">{t("memory.column.actions")}</span></th>
+            <th scope="col"><span class="ugoe-visually-hidden">{t("memory.column.actions")}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -104,7 +104,7 @@ function forgetAll() {
                 {#if row.lighting}
                   <span>{lightingLabel(row.lighting)}</span>
                   <Button small onclick={() => forget(row, { lighting: true, dressUp: false, idle: false })}
-                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="ugoe-visually-hidden"
                       >{t("memory.forget.lighting.aria", { model: name })}</span
                     ></Button
                   >
@@ -116,7 +116,7 @@ function forgetAll() {
                 {#if row.dressUp}
                   <span>{describeDressUpSet(row.dressUp)}</span>
                   <Button small onclick={() => forget(row, { lighting: false, dressUp: true, idle: false })}
-                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="ugoe-visually-hidden"
                       >{t("memory.forget.dressUp.aria", { model: name })}</span
                     ></Button
                   >
@@ -128,7 +128,7 @@ function forgetAll() {
                 {#if row.idle}
                   <span>{describeIdleChoice(row.idle)}</span>
                   <Button small onclick={() => forget(row, { lighting: false, dressUp: false, idle: true })}
-                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="visually-hidden"
+                    ><span aria-hidden="true">{t("memory.forget.label")}</span><span class="ugoe-visually-hidden"
                       >{t("memory.forget.idle.aria", { model: name })}</span
                     ></Button
                   >
@@ -142,7 +142,7 @@ function forgetAll() {
               <td>
                 {#if rememberedCount(row) > 1}
                   <Button small onclick={() => forget(row, {})}
-                    ><span aria-hidden="true">{t("memory.forgetRow.label")}</span><span class="visually-hidden"
+                    ><span aria-hidden="true">{t("memory.forgetRow.label")}</span><span class="ugoe-visually-hidden"
                       >{t("memory.forgetRow.aria", { model: name })}</span
                     ></Button
                   >
@@ -232,13 +232,5 @@ function forgetAll() {
     color: var(--ugoe-color-accent);
     border: 1px solid var(--ugoe-color-accent);
     border-radius: var(--ugoe-radius-sm);
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 </style>

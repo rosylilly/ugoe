@@ -67,7 +67,7 @@ function onkeydown(e: KeyboardEvent) {
           (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
           onselect(tab.value);
         }}
-        >{tab.label}{#if tab.attention}<span aria-hidden="true"> •</span><span class="visually-hidden"
+        >{tab.label}{#if tab.attention}<span aria-hidden="true"> •</span><span class="ugoe-visually-hidden"
             >{attentionLabel}</span
           >{/if}</button
       >
@@ -118,13 +118,5 @@ function onkeydown(e: KeyboardEvent) {
   button:focus-visible {
     outline: var(--ugoe-focus-ring);
     outline-offset: -2px;
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 </style>
