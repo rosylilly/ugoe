@@ -1,11 +1,11 @@
 ---
 id: T0140
 title: 物理の頂点への出力の対象 (VertexOwner) を未知の値として読めるようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, ugoe-physics, ugoe-runtime, ugoe-editor-core, ugoe-ai, ugoe-cli, apps/editor, docs, spec]
 depends_on: [T0136]
-assignee:
+assignee: claude-worker-T0140
 ---
 
 # T0140: 物理の頂点への出力の対象 (VertexOwner) を未知の値として読めるようにする
