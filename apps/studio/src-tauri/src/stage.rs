@@ -18,6 +18,7 @@ use crate::pacing::TickRate;
 use crate::profile::{
     Background, Profile, ProfileError, RecentProfiles, SceneSettings, VirtualCameraSettings,
 };
+use crate::read_file::{ReadError, read_regular_file};
 use crate::stream::Look;
 
 /// モデルとモジュールのファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
@@ -935,7 +936,7 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// 拡張子と大きさを確かめてから読む。
+/// 拡張子と大きさを確かめてから読む。通常のファイルだけを読む。
 pub fn read_asset(
     asset: Asset,
     path: &Path,
@@ -966,15 +967,15 @@ pub fn read_asset(
             }
         }
     };
-    let bytes = std::fs::metadata(path).map_err(io)?.len();
-    if bytes > max_bytes {
-        return Err(SceneError::TooLarge {
+    // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+    read_regular_file(path, max_bytes).map_err(|e| match e {
+        ReadError::Io(e) => io(e),
+        ReadError::TooLarge { len, .. } => SceneError::TooLarge {
             asset,
             path: path.to_owned(),
-            bytes,
-        });
-    }
-    std::fs::read(path).map_err(io)
+            bytes: len,
+        },
+    })
 }
 
 #[cfg(test)]
@@ -1346,6 +1347,39 @@ mod tests {
             stage.activate(&s2.id, &mut conductor),
             Err(SceneError::Unreadable { .. })
         ));
+    }
+
+    /// 名前がモデル・画像でも、通常のファイルでなければ (ディレクトリ・装置・FIFO) 読まない (T0011)。
+    #[test]
+    fn reads_only_regular_files() {
+        let dir = Dir::new("regular");
+        let folder = dir.0.join("model.ugoe");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(matches!(
+            read_asset(Asset::Model, &folder, MODEL_EXTENSIONS, MAX_MODEL_BYTES),
+            Err(SceneError::Unreadable { .. })
+        ));
+        let image = dir.0.join("bg.png");
+        std::fs::write(&image, b"12345").unwrap();
+        assert!(matches!(
+            read_asset(Asset::Background, &image, IMAGE_EXTENSIONS, 4),
+            Err(SceneError::TooLarge { bytes: 5, .. })
+        ));
+        assert_eq!(
+            read_asset(Asset::Background, &image, IMAGE_EXTENSIONS, 5).unwrap(),
+            b"12345"
+        );
+        #[cfg(unix)]
+        {
+            let zero = std::path::Path::new("/dev/zero");
+            // 拡張子の検査を通すため、`/dev/zero` へのリンクを `.png` の名前で置く。
+            let link = dir.0.join("zero.png");
+            std::os::unix::fs::symlink(zero, &link).unwrap();
+            assert!(matches!(
+                read_asset(Asset::Background, &link, IMAGE_EXTENSIONS, MAX_IMAGE_BYTES),
+                Err(SceneError::Unreadable { .. })
+            ));
+        }
     }
 
     #[test]

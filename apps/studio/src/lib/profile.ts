@@ -112,6 +112,14 @@ export function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+/**
+ * 拡張子 (大文字小文字は区別しない) が無ければ付け足す。Linux の保存のダイアログはフィルタの拡張子を付けずに
+ * パスを返すことがある (エディタの `withExtension` と同じ。T0011)。
+ */
+export function withExtension(path: string, extension: string): string {
+  return path.toLowerCase().endsWith(`.${extension.toLowerCase()}`) ? path : `${path}.${extension}`;
+}
+
 /** シーンの光源の設定 (`null` なら既定の光源)。範囲の外の値は収める。 */
 export function sceneLighting(scene: Pick<SceneSettings, "lighting">): LightingSettings {
   return scene.lighting === null ? defaultLighting() : sanitizeLighting(scene.lighting);

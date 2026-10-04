@@ -529,6 +529,23 @@ fn unsaved_projects_ask_the_user_to_save() {
     assert!(err.to_string().contains("Save As"), "{err}");
 }
 
+/// 読めない設定は、起動しただけでは書き換えない (始めもしない)。利用者が設定を変えたときに初めて書く (T0011)。
+#[test]
+fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
+    let tmp = TempDir::new("unreadable-settings");
+    let discovery = tmp.0.join("editor-mcp.json");
+    let app = TestApp::open(None, &discovery);
+    let config = tmp.0.join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    let file = config.join(SETTINGS_FILE);
+    std::fs::write(&file, "{").unwrap();
+    assert!(app.state.mcp.load(config).is_err());
+    let as_app: Arc<dyn EditorApp> = app.clone();
+    app.state.mcp.start_if_enabled(as_app);
+    assert!(!app.status().running);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{");
+}
+
 /// 設定はファイルに残り (トークンを含むので利用者だけが読める)、トークンを作り直すと始め直す。
 #[test]
 fn settings_are_kept_and_the_token_can_be_regenerated() {

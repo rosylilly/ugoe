@@ -55,6 +55,8 @@ use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::{ProjectSession, absolute_path};
+use crate::psd::MAX_PSD_BYTES;
+use crate::read_file::read_regular_file;
 
 /// 開いているプロジェクトの AI の提案と、その入力 (`ProjectSession` が持つ。プロジェクトを替えると消える)。
 #[derive(Debug, Default)]
@@ -386,7 +388,7 @@ fn read_tree(path: &Path) -> IpcResult<LayerTree> {
 /// PSD を展開の上限 `limits` で読む。上限の超過は、どの上限かが分かるコード (`psd.channel_limit_exceeded`・
 /// `psd.total_limit_exceeded`) のまま返し、ほかの読み込みのエラーはパス付きの `psd.read_file_failed` にする。
 fn read_tree_with(path: &Path, limits: ImportLimits) -> IpcResult<LayerTree> {
-    let bytes = std::fs::read(path).map_err(|e| EditorError::io(path, e))?;
+    let bytes = read_regular_file(path, MAX_PSD_BYTES).map_err(|e| EditorError::io(path, e))?;
     import::read_layer_tree(&bytes, limits).map_err(|e| match e {
         PsdImportError::Psd(error) => EditorError::psd_read(path, error).into(),
         e => e.into(),

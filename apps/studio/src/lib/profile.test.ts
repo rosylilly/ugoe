@@ -1,6 +1,6 @@
 import { defaultLighting } from "@ugoe/player";
 import { describe, expect, it } from "vitest";
-import { fileName, sceneLighting, withBackgroundKind } from "./profile";
+import { fileName, sceneLighting, withBackgroundKind, withExtension } from "./profile";
 
 describe("withBackgroundKind", () => {
   it("keeps the color of the same kind and uses defaults otherwise", () => {
@@ -25,6 +25,12 @@ describe("helpers", () => {
   it("reads file names on any OS", () => {
     expect(fileName("/a/b/avatar.ugoe")).toBe("avatar.ugoe");
     expect(fileName("C:\\a\\avatar.ugoe")).toBe("avatar.ugoe");
+  });
+
+  it("adds the extension the save dialog left out", () => {
+    expect(withExtension("/a/stream", "json")).toBe("/a/stream.json");
+    expect(withExtension("/a/stream.JSON", "json")).toBe("/a/stream.JSON");
+    expect(withExtension("/a/stream.ugoe", "json")).toBe("/a/stream.ugoe.json");
   });
 
   it("uses the default lighting when the scene has none", () => {

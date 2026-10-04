@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::hotkeys::{self, Hotkey};
 use crate::input::{InputSettings, MotionSettings};
 use crate::pacing::TickRate;
+use crate::read_file::{ReadError, read_regular_file};
 use crate::virtual_camera;
 
 /// `format` の値 (ほかの JSON、たとえば JSON のモデルを開いたときに分かるように)。
@@ -307,14 +308,20 @@ impl Profile {
             path: path.to_owned(),
             message: e.to_string(),
         };
-        let bytes = std::fs::metadata(path).map_err(io)?.len();
-        if bytes > MAX_PROFILE_BYTES {
-            return Err(ProfileError::TooLarge {
+        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+        let bytes = read_regular_file(path, MAX_PROFILE_BYTES).map_err(|e| match e {
+            ReadError::Io(e) => io(e),
+            ReadError::TooLarge { len, .. } => ProfileError::TooLarge {
                 path: path.to_owned(),
-                bytes,
-            });
-        }
-        let text = std::fs::read_to_string(path).map_err(io)?;
+                bytes: len,
+            },
+        })?;
+        let text = String::from_utf8(bytes).map_err(|e| {
+            io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.utf8_error(),
+            ))
+        })?;
         Self::from_json(&text, path)
     }
 
@@ -728,6 +735,13 @@ mod tests {
         assert!(!dir.join("p.json.tmp").exists());
         assert!(matches!(
             Profile::read(&dir.join("missing.json")),
+            Err(ProfileError::Io { .. })
+        ));
+        // 通常のファイルでなければ読まない (T0011)。
+        let folder = dir.join("folder.json");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(matches!(
+            Profile::read(&folder),
             Err(ProfileError::Io { .. })
         ));
         std::fs::remove_dir_all(&dir).unwrap();

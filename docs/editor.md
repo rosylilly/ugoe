@@ -1390,7 +1390,9 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
 
 - **最初の場所:** 最後にダイアログで選んで成功した場所 → 開いているプロジェクトの隣 → ドキュメント (`documentDir()`、なければホーム) の順。
   プロジェクト名のうちファイル名に使えない文字は `_` にする。
-- 保存のダイアログで選んだ名前に拡張子 (`.ugoeproj` / `.ugoe`) がなければ付け足す (`save_project_as` も `.ugoeproj` を付ける)。
+- 保存のダイアログで選んだ名前に拡張子 (`.ugoeproj` / `.ugoe` / `.ugoemod`) がなければ付け足す (`save_project_as` も `.ugoeproj` を付ける)。
+  Linux のダイアログはフィルタの拡張子を付けずにパスを返すことがあるため。ファイルメニューの外の保存のダイアログ (スクリーンショットの `.png`・
+  トラッキングの記録の `.json`・Claude Desktop の拡張の `.mcpb`) も同じく `withExtension` で付ける。
 - ダイアログを閉じた (取り消した) ときは何もしない。ダイアログを開いている間はメニューのボタンを押せない。
 - 権限 (`capabilities/default.json`) は `dialog:allow-open` と `dialog:allow-save` だけ (メッセージ・確認のダイアログは使わないので入れない)。
   既定の場所を得る `@tauri-apps/api/path` は `core:default` に含まれる。
@@ -1419,6 +1421,15 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
   `sync` し、閉じてから名前を変えて置き換えます (`src-tauri/src/atomic_write.rs`、T0687。ビューアと MCP サーバと同じ形)。途中で失敗しても
   (ディスクがいっぱい・強制終了) 前のファイルは残り、一時ファイルは消します。`.ugoeproj` の保存も各ファイルを一時ファイル経由で書きます
   (`ugoe_editor_core::Project::save`)。
+- **IPC で受けたパスの読み方:** 画面から受けたパスで読むファイル (PSD (`import_psd`・`new_project_from_psd`・AI の提案)・`.ugoemod`
+  (`read_module_file`)・法線マップの PNG (`assign_texture_normal_map`)) は、通常のファイル (リンクは辿る) のときだけ、大きさの上限までで
+  読みます (`src-tauri/src/read_file.rs`、T0011。PSD は 2 GiB (PSD の形式の上限)、`.ugoemod` は 512 MiB、PNG は 64 MiB)。
+  装置 (`/dev/zero`)・FIFO・ディレクトリは開かずに `editor.io` (`not a regular file`) にします (読み続けてメモリを使い果たす・開くだけで
+  止まるため)。線引きは MCP サーバ・ugoe-headless と同じで、利用者が自分でパスを渡す CLI だけは FIFO を読めるままにします (T0530)。
+  `.ugoeproj` と本体の `.ugoe` は `ugoe_editor_core::Project` が読むので、ここには含みません。
+- **読めなかった設定:** アプリの設定のファイル (`editor-settings.json`・`ai-provider.json`・`mcp-bridge.json`) が壊れている・読めない
+  ときは、既定のまま起動し、起動しただけではファイルを書き換えません (ブリッジも始めない)。利用者が設定を変えたときに初めて書きます
+  (スタジオの API の設定と同じ。T0011 で確かめた)。
 - **切り替え回数の見積もり (`ugoe_editor_core::export::estimate_draws`):** エディタのバックエンドは `ugoe-render` (GPU) に依存しないので、
   参照レンダラの本描画のまとめ方 ([rendering.md#描画の最適化](spec/rendering.md#描画の最適化)) を CPU で真似ます。既定のパラメータで
   描画順に並べた、表示されていて三角形を持つメッシュについて、(テクスチャ・合成モード・カリング) が前と変わる回数を数えます。

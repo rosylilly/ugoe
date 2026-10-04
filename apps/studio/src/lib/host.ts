@@ -13,7 +13,13 @@ import type {
   InputSettings,
   MotionSettings,
 } from "./inputs";
-import type { Background, ProfileView, SceneSettings, Transform } from "./profile";
+import {
+  type Background,
+  type ProfileView,
+  type SceneSettings,
+  type Transform,
+  withExtension,
+} from "./profile";
 import type { VirtualCameraProfile, VirtualCameraStatus } from "./virtualCamera";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
@@ -157,7 +163,7 @@ export interface StudioHost {
   // --- 操作ウィンドウ ---
   /** OS のダイアログでファイルを選ぶ。やめたら `null`。 */
   pickFile(kind: FileKind, filterName: string): Promise<string | null>;
-  /** OS のダイアログで保存先を選ぶ (プロファイル)。やめたら `null`。 */
+  /** OS のダイアログで保存先を選ぶ (プロファイル)。拡張子 `.json` が無ければ付ける。やめたら `null`。 */
   pickSavePath(filterName: string, defaultName: string): Promise<string | null>;
   // プロファイル (コマンドはどれも、失敗すると commandMessage.ts の `CommandMessage` を投げる)
   restoreProfile(): Promise<void>;
@@ -287,10 +293,12 @@ async function tauriHost(): Promise<StudioHost> {
     },
     async pickSavePath(filterName, defaultName) {
       const { save } = await import("@tauri-apps/plugin-dialog");
-      return save({
+      const path = await save({
         defaultPath: defaultName,
         filters: [{ name: filterName, extensions: ["json"] }],
       });
+      // Linux のダイアログはフィルタの拡張子を付けずに返すことがある。
+      return path && withExtension(path, "json");
     },
     restoreProfile: () => invoke("restore_profile"),
     newProfile: () => invoke("new_profile"),

@@ -11,6 +11,10 @@ use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::lock_both;
 use crate::proposals::Base;
+use crate::read_file::read_regular_file;
+
+/// 読む PSD の大きさの上限 (PSD の形式の上限は 2 GB。PSB は読まない)。
+pub(crate) const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// PSD ファイルを読み、取り込みの設定 (最上位のパーツの名前はファイル名) と合わせて返す。
 pub(crate) fn read_psd(
@@ -18,7 +22,8 @@ pub(crate) fn read_psd(
     mesh_options: Option<AutoMeshOptions>,
 ) -> IpcResult<(Vec<u8>, PsdImportOptions)> {
     let path = crate::project::absolute_path(path)?;
-    let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
+    // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+    let bytes = read_regular_file(&path, MAX_PSD_BYTES).map_err(|e| EditorError::io(&path, e))?;
     let name = path
         .file_stem()
         .map_or_else(|| "PSD".to_owned(), |s| s.to_string_lossy().into_owned());
@@ -66,4 +71,40 @@ pub(crate) fn import_psd_in(
         .proposals
         .set_psd(crate::project::absolute_path(path)?);
     Ok(import.warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 通常のファイルでなければ (ディレクトリ・装置・FIFO) 読まない (T0011)。
+    #[test]
+    fn reads_only_regular_files() {
+        let dir = std::env::temp_dir().join(format!("ugoe-editor-read-psd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("folder.psd");
+        std::fs::create_dir_all(&folder).unwrap();
+        let error = read_psd(&folder.display().to_string(), None).unwrap_err();
+        assert_eq!(error.code, "editor.io");
+        assert!(
+            error.message.contains("not a regular file"),
+            "{}",
+            error.message
+        );
+        #[cfg(unix)]
+        {
+            let error = read_psd("/dev/zero", None).unwrap_err();
+            assert!(
+                error.message.contains("not a regular file"),
+                "{}",
+                error.message
+            );
+        }
+        let file = dir.join("character.psd");
+        std::fs::write(&file, b"8BPS").unwrap();
+        let (bytes, options) = read_psd(&file.display().to_string(), None).unwrap();
+        assert_eq!(bytes, b"8BPS");
+        assert_eq!(options.name, "character");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

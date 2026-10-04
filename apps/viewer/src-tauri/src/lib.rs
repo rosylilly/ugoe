@@ -3,9 +3,9 @@
 
 mod atomic_write;
 mod error;
+mod read_file;
 
 use std::collections::HashSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -16,6 +16,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use atomic_write::write_atomic;
 use error::CommandError;
+use read_file::{ReadError, read_regular_file};
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -62,27 +63,15 @@ async fn read_model_file(
         .map(Response::new)
 }
 
-/// `read_model_file` の中身。`max` バイトより大きいファイルは読まない。
+/// `read_model_file` の中身。通常のファイルだけを読み、`max` バイトより大きいファイルは読まない (`read_file`)。
 fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, CommandError> {
     if !is_readable_path(path) {
         return Err(CommandError::not_model(path));
     }
-    let too_large = |len: u64| CommandError::too_large(path, len, max);
-    let read_failed = |e: std::io::Error| CommandError::read_failed(path, &e);
-    let file = std::fs::File::open(path).map_err(read_failed)?;
-    let len = file.metadata().map_err(read_failed)?.len();
-    if len > max {
-        return Err(too_large(len));
-    }
-    // 大きさを見てから読むまでの間にファイルが大きくなっても上限を超えて読まないよう、上限 + 1 バイトまでに限って読む。
-    let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
-    file.take(max.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(read_failed)?;
-    if bytes.len() as u64 > max {
-        return Err(too_large(bytes.len() as u64));
-    }
-    Ok(bytes)
+    read_regular_file(path, max).map_err(|e| match e {
+        ReadError::Io(e) => CommandError::read_failed(path, &e),
+        ReadError::TooLarge { len, max } => CommandError::too_large(path, len, max),
+    })
 }
 
 /// JSON のファイル (トラッキングの記録など) を書く。パスは `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
@@ -317,12 +306,26 @@ struct ReadableFiles {
 
 impl FileAccess {
     /// `store` に覚えた読めるパスを読み込む (無い・壊れていれば空から始める)。
+    /// 読めない (権限が無い・一時的な失敗・通常のファイルでない) ときは、空から始めてこのセッションでは覚えない
+    /// (読めなかった一覧を、次にファイルを選んだときの短い一覧で上書きしない。T0011)。壊れた JSON は直せないので、
+    /// 次に選んだときに書き直す (スタジオの設定と同じ。利用者が操作したときに初めて書く)。
     fn load(store: Option<PathBuf>) -> Self {
-        let paths = store
-            .as_deref()
-            .and_then(|s| std::fs::read(s).ok())
-            .and_then(|bytes| serde_json::from_slice::<Vec<PathBuf>>(&bytes).ok())
-            .unwrap_or_default();
+        let (paths, store) = match store {
+            None => (Vec::new(), None),
+            Some(store) => match read_regular_file(&store, MAX_READABLE_FILES_STORE_BYTES) {
+                Ok(bytes) => (
+                    serde_json::from_slice::<Vec<PathBuf>>(&bytes).unwrap_or_default(),
+                    Some(store),
+                ),
+                Err(ReadError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                    (Vec::new(), Some(store))
+                }
+                Err(e) => {
+                    eprintln!("could not read {}: {e}", store.display());
+                    (Vec::new(), None)
+                }
+            },
+        };
         Self {
             readable: Mutex::new(ReadableFiles { paths, store }),
             writable: Mutex::default(),
@@ -393,6 +396,9 @@ fn on_webview_event(webview: &tauri::Webview, event: &WebviewEvent) {
 
 /// 読めるパスを覚えるファイル (アプリのデータのディレクトリ)。
 const READABLE_FILES_STORE: &str = "readable-files.json";
+
+/// 読めるパスを覚えるファイルの大きさの上限 (`MAX_READABLE_PATHS` 件の長いパスより十分に大きい)。
+const MAX_READABLE_FILES_STORE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub fn run() {
     #[allow(clippy::expect_used)]
@@ -477,6 +483,10 @@ mod tests {
         assert_eq!(read_model(&other, 8).unwrap_err().code, "file.not_model");
         let missing = read_model(&dir.join("missing.ugoe"), 8).unwrap_err();
         assert_eq!(missing.code, "file.not_found");
+        // ディレクトリ (や装置・FIFO) は名前が `.ugoe` でも読まない (T0011)。
+        let folder = dir.join("folder.ugoe");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert_eq!(read_model(&folder, 8).unwrap_err().code, "file.read_failed");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -571,6 +581,30 @@ mod tests {
         std::fs::write(&store, b"not json").unwrap();
         let broken = FileAccess::load(Some(store));
         assert!(broken.check_readable(Path::new("/a.ugoe")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 覚えるファイルを読めない (ここでは権限が無い) ときは、選んだファイルを読めるが、覚えるファイルは書き換えない。
+    #[cfg(unix)]
+    #[test]
+    fn does_not_overwrite_an_unreadable_store() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "ugoe-viewer-unreadable-grants-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = dir.join(READABLE_FILES_STORE);
+        std::fs::write(&store, br#"["/kept.ugoe"]"#).unwrap();
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // root では権限に関わらず読めるので確かめられない。
+        if std::fs::read(&store).is_err() {
+            let access = FileAccess::load(Some(store.clone()));
+            access.grant_readable([PathBuf::from("/a.ugoe")]);
+            assert!(access.check_readable(Path::new("/a.ugoe")).is_ok());
+            std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o600)).unwrap();
+            assert_eq!(std::fs::read(&store).unwrap(), br#"["/kept.ugoe"]"#);
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -15,6 +15,10 @@ use crate::AppState;
 use crate::commands::off_main;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
+use crate::read_file::read_regular_file;
+
+/// 読む `.ugoemod` の大きさの上限 (ビューア・スタジオのモデルと同じ)。
+const MAX_MODULE_BYTES: u64 = 512 * 1024 * 1024;
 
 /// `project.json` の `editor` のうち、プレビューの着せ替えを置く項目。
 const DRESS_UP_KEY: &str = "dress_up";
@@ -147,20 +151,47 @@ pub fn set_preview_modules(
 /// `.ugoemod` だけを読む。中身の検査と付け外しは webview の中の `WebPuppet.load_module` が行う。
 #[tauri::command]
 pub async fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
-    off_main(move || {
-        let path = absolute_path(&path)?;
-        if !is_module_path(&path) {
-            return Err(EditorError::NotModuleFile(path.display().to_string()).into());
-        }
-        let bytes = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
-        Ok(tauri::ipc::Response::new(bytes))
-    })
-    .await
+    off_main(move || read_module(&path).map(tauri::ipc::Response::new)).await
+}
+
+/// [`read_module_file`] の中身。通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+fn read_module(path: &str) -> IpcResult<Vec<u8>> {
+    let path = absolute_path(path)?;
+    if !is_module_path(&path) {
+        return Err(EditorError::NotModuleFile(path.display().to_string()).into());
+    }
+    Ok(read_regular_file(&path, MAX_MODULE_BYTES).map_err(|e| EditorError::io(&path, e))?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `.ugoemod` の名前でも、通常のファイルでなければ読まない (T0011)。
+    #[test]
+    fn reads_only_regular_module_files() {
+        let dir =
+            std::env::temp_dir().join(format!("ugoe-editor-read-module-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join("hair.ugoemod");
+        let folder = dir.join("folder.ugoemod");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(&file, b"module").unwrap();
+        assert_eq!(read_module(&file.display().to_string()).unwrap(), b"module");
+        let error = read_module(&folder.display().to_string()).unwrap_err();
+        assert_eq!(error.code, "editor.io");
+        assert!(
+            error.message.contains("not a regular file"),
+            "{}",
+            error.message
+        );
+        let other = dir.join("notes.txt");
+        assert_eq!(
+            read_module(&other.display().to_string()).unwrap_err().code,
+            "editor.not_module_file"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn module(path: &str, attached: bool) -> PreviewModule {
         PreviewModule {

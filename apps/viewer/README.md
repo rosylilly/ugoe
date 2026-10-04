@@ -66,6 +66,8 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
   読み書きとダイアログは `tauri::async_runtime::spawn_blocking` の別のスレッドで行う (`lib.rs` の `blocking`)。同期のコマンドは Tauri の
   メインスレッドで動き、大きなバンドル (上限 512 MiB) やネットワークのドライブを読む間ウィンドウが止まるため (T0726)。
   `read_model_file` は大きさを見てから上限 + 1 バイトまでに限って読むので、読む間にファイルが大きくなっても上限を超えて読まない。
+  通常のファイル (リンクは辿る) だけを読み、装置 (`/dev/zero`)・FIFO・ディレクトリは開かずに `file.read_failed` (`not a regular file`) にする
+  (`read_file.rs`、T0011。エディタ・スタジオと同じ形の写し。読み続けてメモリを使い果たす・開くだけで止まるため)。
   いまは内部のクレートに依存していない。
 - 形式は中身で判別する (先頭が `UGOE` ならチャンク表を見て、`MODL` があればバンドル、`MODU` があれば着せ替えのモジュール。
   `{` なら JSON)。決まらなければ拡張子で決める (`modelFile.ts`)。
@@ -145,6 +147,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   - 覚えた場所 (`path:`。着せ替えの組・覚えたものの一覧) から次の起動の後にも読み直せるよう、読めるパスはアプリのデータの
     ディレクトリの `readable-files.json` に覚える (新しいものから 1000 件。古いものは忘れ、忘れた場所は読み直せない)。
     このファイルはバックエンドだけが書く (webview の localStorage の場所の一覧を信じて読むことはしない)。
+    起動時に読めない (権限が無い・通常のファイルでないなど。無いときを除く) ときは、空から始めてそのセッションでは書かない
+    (読めなかった一覧を、次に選んだファイルだけの短い一覧で上書きしないため。T0011)。壊れた JSON は直せないので、次に選んだときに書き直す。
   - ドロップのパスは、Tauri がドロップのイベントを webview へ送った直後に、同じメインスレッドで `on_webview_event` が加える。
     webview がそのイベントを受けて `read_model_file` を呼ぶのはその後になる。
 - 同梱の見本 (`sample:`) と `?model=` の URL (ブラウザ) は `fetch` で読むので、この範囲とは関わらない。
@@ -165,7 +169,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | `file.not_model` | `path` | 読もうとしたファイルが `.ugoe`・`.json`・`.ugoemod` でない |
 | `file.too_large` | `path`・`size`・`max` (バイト) | 読み込みの上限 (512 MiB) より大きい |
 | `file.not_found` | `path` | 読もうとしたファイルが無い |
-| `file.read_failed` | `path`・`reason` (OS の英語の文) | ほかの理由で読めない |
+| `file.read_failed` | `path`・`reason` (OS の英語の文) | ほかの理由で読めない (通常のファイルでないときは `not a regular file`) |
 | `file.write_failed` | `path`・`reason` | 書けない (一時ファイル・置き換えの失敗を含む) |
 | `file.not_json` / `file.not_png` | `path` | JSON・PNG を書くパスの拡張子が `.json`・`.png` でない |
 | `file.not_chosen` | `path` | 利用者が選んでいないファイルを読もうとした (「ファイルの読み書きの範囲」) |

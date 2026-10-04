@@ -28,6 +28,10 @@ use crate::commands::{blocking, lock};
 use crate::error::{EditorError, IpcResult};
 use crate::project::{absolute_path, lock_both};
 use crate::proposals::Base;
+use crate::read_file::read_regular_file;
+
+/// 法線マップとして読む PNG の大きさの上限 (スタジオの背景の画像と同じ)。
+const MAX_NORMAL_MAP_BYTES: u64 = 64 * 1024 * 1024;
 
 /// テクスチャの法線マップを、どのまとまりで作るか (`get_normal_map_group` の戻り値)。
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -358,7 +362,9 @@ pub async fn assign_texture_normal_map(
 ) -> IpcResult<ApplyReport> {
     blocking(app, move |state| {
         let path = absolute_path(&path)?;
-        let png = std::fs::read(&path).map_err(|e| EditorError::io(&path, e))?;
+        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+        let png = read_regular_file(&path, MAX_NORMAL_MAP_BYTES)
+            .map_err(|e| EditorError::io(&path, e))?;
         let mut document = lock(state)?;
         let command = assign_normal_map(document.model(), &texture, png, flip_green)?;
         document.apply_with_report(command).map_err(Message::from)

@@ -494,6 +494,24 @@ fn provider_settings_are_checked_and_saved() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// 読めない設定は、起動しただけでは書き換えない (利用者が設定を変えたときに初めて書く。T0011)。
+#[test]
+fn an_unreadable_provider_settings_file_is_not_overwritten_at_startup() {
+    let dir = std::env::temp_dir().join(format!(
+        "ugoe-editor-provider-unreadable-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ai-provider.json");
+    std::fs::write(&path, "{").unwrap();
+    let store = ProviderStore::default();
+    assert!(store.load(dir.clone()).is_err());
+    assert_eq!(store.get(), ProviderSettings::default());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// 設定の応答はキーの中身を含まない。
 #[test]
 fn settings_never_contain_the_key() {

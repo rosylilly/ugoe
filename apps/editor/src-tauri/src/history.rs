@@ -205,6 +205,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 読めない設定 (壊れたもの・新しい版が書いたもの) は、起動しただけでは書き換えない。
+    /// 利用者が上限を変えたときに初めて書く (スタジオの設定と同じ。T0011)。
+    #[test]
+    fn an_unreadable_settings_file_is_not_overwritten_at_startup() {
+        let dir = temp_dir("undo-limit-unreadable");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SETTINGS_FILE);
+        std::fs::write(&path, "{").unwrap();
+        let store = UndoLimitStore::default();
+        assert!(store.load(dir.clone()).is_err());
+        assert_eq!(store.get(), DEFAULT_UNDO_LIMIT);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{");
+        store.set(20).unwrap();
+        assert_eq!(store_in(&dir).get(), 20);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn setting_the_limit_trims_the_open_document() {
         let state = crate::ai::tests::state(None);
