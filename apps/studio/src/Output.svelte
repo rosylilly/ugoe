@@ -43,6 +43,7 @@ let stage: HTMLDivElement;
 const player = new Player({
   loadWasm,
   // 着せ替えの組を戻す経路は使わない (モデルとモジュールは指揮役のシーンから取る)。
+  // i18n-ignore: 開発者向け (受け手はこの経路を使わない)
   readFile: () => Promise.reject(new Error("the output window reads models from the scene only")),
   storagePrefix: PLAYER_STORAGE_PREFIX,
 });

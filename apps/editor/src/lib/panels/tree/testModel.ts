@@ -65,6 +65,7 @@ export function testModel(): TreeModel {
 /** 配列の要素 (無ければテストを失敗させる)。 */
 export function at<T>(list: T[], i: number): T {
   const x = list[i];
+  // i18n-ignore: テストの部品 (画面に出ない)
   if (x === undefined) throw new Error(`no element at ${i}`);
   return x;
 }

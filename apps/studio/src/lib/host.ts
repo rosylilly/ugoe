@@ -386,6 +386,7 @@ export function studioHost(): Promise<StudioHost> {
     const replaced = window.__UGOE_STUDIO_HOST__;
     if (replaced !== undefined) return replaced;
     if ("__TAURI_INTERNALS__" in window) return tauriHost();
+    // i18n-ignore: 開発者向け (Tauri の外で開いたとき)
     throw new Error("ugoe studio runs inside its Tauri app (or set window.__UGOE_STUDIO_HOST__)");
   })();
   return pending;

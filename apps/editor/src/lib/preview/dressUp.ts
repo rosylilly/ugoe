@@ -1,14 +1,8 @@
 // プレビューの着せ替え (docs/editor.md#プレビューの着せ替え) の、DOM と wasm に依存しない部分 (dressUp.test.ts)。
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
-import type { FileFilter } from "../filePaths";
 import { t } from "../i18n";
 import type { Slot } from "../ipc";
 import { describeModuleWarnings } from "./loadWarnings";
-
-export const MODULE_FILTER: FileFilter = {
-  name: "ugoe module (.ugoemod)",
-  extensions: ["ugoemod"],
-};
 
 /** 着せ替えのモジュールのファイル名か (拡張子 `.ugoemod`。大文字小文字は区別しない)。 */
 export function isModuleFile(name: string): boolean {

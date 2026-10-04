@@ -11,6 +11,7 @@ import { LOCALE_STORAGE_KEY, THEME_STORAGE_KEY } from "./lib/settings";
 initTheme(THEME_STORAGE_KEY);
 
 const target = document.getElementById("app");
+// i18n-ignore: 開発者向け (index.html の誤り。起こらない)
 if (!target) throw new Error("#app not found");
 
 // 画面の言語: 覚えた設定 (既定は OS に合わせる)。OS の言語は WebView の navigator.languages ではなく、

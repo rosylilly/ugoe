@@ -7,6 +7,7 @@ import { numberFieldCommit } from "@ugoe/ui";
 import { tick } from "svelte";
 import { isEmptyModel } from "./emptyState";
 import { errorText } from "./errors";
+import { t } from "./i18n";
 import {
   type ApplyReport,
   type Command,
@@ -125,7 +126,7 @@ export class EditorDocument {
       this.motions = animations.motions;
       this.expressions = animations.expressions;
       const parsed = this.parsedModel;
-      if (!parsed) throw new Error("the model JSON could not be read");
+      if (!parsed) throw new Error(t("app.modelUnreadable"));
       this.parameters = parsed.parameters;
       this.empty = isEmptyModel(parsed);
       this.error = null;

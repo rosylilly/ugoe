@@ -56,12 +56,17 @@ export interface FollowerPuppet {
   reset_physics(): void;
 }
 
-/** フレームのバイト列を読む (リトルエンディアン)。形が違えば例外を投げる。 */
+/**
+ * フレームのバイト列を読む (リトルエンディアン)。形が違えば例外を投げる。
+ * 例外の文は開発者向け (指揮役と受け手の食い違い。画面に出さない) なので英語のまま (`i18n-ignore`)。
+ */
 export function decodeFrame(buffer: ArrayBuffer): FollowFrame {
   if (buffer.byteLength < FRAME_HEADER)
+    // i18n-ignore: 開発者向け
     throw new Error(`the frame is too short (${buffer.byteLength} bytes)`);
   const view = new DataView(buffer);
   const kind = view.getUint8(0);
+  // i18n-ignore: 開発者向け
   if (kind !== FRAME_KIND) throw new Error(`not a frame (kind ${kind})`);
   const count = view.getUint32(28, true);
   const flags = view.getUint8(1);
@@ -71,6 +76,7 @@ export function decodeFrame(buffer: ArrayBuffer): FollowFrame {
   const expected = (count + 1 + parts * 3) * 4;
   if (buffer.byteLength - FRAME_HEADER !== expected)
     throw new Error(
+      // i18n-ignore: 開発者向け
       `the frame has ${expected} bytes after the header but ${buffer.byteLength - FRAME_HEADER} bytes`,
     );
   // 値は 4 の倍数の位置から始まるので、写さずに重ねられる (Float32Array はプラットフォームのバイト順だが、

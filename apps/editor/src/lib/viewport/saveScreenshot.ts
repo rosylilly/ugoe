@@ -4,11 +4,11 @@
 // ダイアログを差し替える。
 import { encodePng } from "@ugoe/player";
 import { fileDialogs } from "../fileDialogs";
-import { joinPath, parentDir, withExtension } from "../filePaths";
+import { joinPath, PNG_FILTER, parentDir, withExtension } from "../filePaths";
 import { t } from "../i18n";
 import { ipc } from "../ipc";
 import type { ViewportController } from "./controller.svelte";
-import { PNG_FILTER, screenshotFileName } from "./screenshot";
+import { screenshotFileName } from "./screenshot";
 
 /**
  * 今の表示を PNG で保存する。ダイアログを開く前に読み戻すので、写るのは押したときの姿。

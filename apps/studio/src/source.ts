@@ -6,6 +6,7 @@ import { type OutputFeed, sourceFeed } from "./lib/feed";
 import Output from "./Output.svelte";
 
 const target = document.getElementById("app");
+// i18n-ignore: 開発者向け (index.html の誤り。起こらない)
 if (!target) throw new Error("#app not found");
 
 const feed: OutputFeed = sourceFeed({ base: new URL(".", window.location.href).href });

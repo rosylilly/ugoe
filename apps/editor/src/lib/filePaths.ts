@@ -33,6 +33,18 @@ export const MODULE_FILTER: FileFilter = {
   },
   extensions: ["ugoemod"],
 };
+export const PNG_FILTER: FileFilter = {
+  get name() {
+    return t("fileMenu.filters.png");
+  },
+  extensions: ["png"],
+};
+export const JSON_FILTER: FileFilter = {
+  get name() {
+    return t("fileMenu.filters.json");
+  },
+  extensions: ["json"],
+};
 
 /** 拡張子 (大文字小文字は区別しない) がなければ付け足す。 */
 export function withExtension(path: string, extension: string): string {

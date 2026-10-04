@@ -15,6 +15,7 @@ import { Button, Checkbox, Slider } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
 import { fileDialogs } from "../../fileDialogs";
+import { PNG_FILTER } from "../../filePaths";
 import { t } from "../../i18n";
 import { type ApplyReport, ipc, type Model, type NormalMapGroupView } from "../../ipc";
 import { textureLabel } from "../../labels";
@@ -149,7 +150,7 @@ async function assign(): Promise<void> {
   const name = ref.name;
   const path = await fileDialogs().openFile({
     title: t("lighting.normalMap.assign.title"),
-    filters: [{ name: t("lighting.normalMap.pngFilter"), extensions: ["png"] }],
+    filters: [PNG_FILTER],
   });
   if (path) void run(() => ipc.assignTextureNormalMap(name, path, flipGreen));
 }

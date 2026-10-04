@@ -93,7 +93,8 @@
       "filter": "着せ替えのモジュール"
     },
     "saveJson": {
-      "title": "保存"
+      "title": "保存",
+      "filter": "JSON ファイル"
     },
     "savePng": {
       "title": "スクリーンショットを保存",

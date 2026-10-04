@@ -16,6 +16,7 @@ void initLocale(LOCALE_STORAGE_KEY, () => studioHost().then((host) => host.syste
 initTheme(THEME_STORAGE_KEY);
 
 const target = document.getElementById("app");
+// i18n-ignore: 開発者向け (index.html の誤り。起こらない)
 if (!target) throw new Error("#app not found");
 
 export default mount(Control, { target });

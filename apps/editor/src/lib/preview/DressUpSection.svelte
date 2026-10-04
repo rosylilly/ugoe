@@ -14,11 +14,12 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Checkbox, IconButton, Notice, Select, Tooltip } from "@ugoe/ui";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
+import { MODULE_FILTER } from "../filePaths";
 import { t } from "../i18n";
 import type { DifferenceItem, Slot } from "../ipc";
 import TipButton from "../ui/TipButton.svelte";
 import { selectTitle } from "./differenceHighlight";
-import { isModuleFile, MODULE_FILTER, slotRows } from "./dressUp";
+import { isModuleFile, slotRows } from "./dressUp";
 import type { DressUp, ModuleSource } from "./dressUp.svelte";
 
 interface Props {

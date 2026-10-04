@@ -94,7 +94,8 @@
       "filter": "Dress-up modules"
     },
     "saveJson": {
-      "title": "Save"
+      "title": "Save",
+      "filter": "JSON files"
     },
     "savePng": {
       "title": "Save the screenshot",

@@ -799,6 +799,7 @@ onMount(() => {
           onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}
           onpickmodule={() => pickFile("module")}
           moduleSlot={async (path) => {
+            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
             if (host === null) throw new Error("no host");
             try {
               return await host.moduleSlot(path);
@@ -856,6 +857,7 @@ onMount(() => {
           disabled={host === null}
           onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
           url={async () => {
+            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
             if (host === null) throw new Error("no host");
             return host.sourceUrl();
           }}
@@ -873,6 +875,7 @@ onMount(() => {
           }}
           onport={(port) => void run((h) => h.setApiPort(port))}
           token={async () => {
+            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
             if (host === null) throw new Error("no host");
             return host.apiToken();
           }}

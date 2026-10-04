@@ -8,10 +8,12 @@
 // - 表示に使う属性 (`title`・`aria-label`・`placeholder`・`alt`・部品の `label` など。DISPLAY_ATTRS) の値の文字列
 // - `{...}` で表示する式の、値になる位置の文字列 (`{busy ? "Saving" : "Save"}`。`t("key")` の引数は値ではない)
 // - スクリプト (`.svelte` の `<script>` と `.ts`) の文字列のうち、表示に使う場所 (`label: "..."`・`el.title = "..."`・
-//   `alert("...")` など) にあるもの、ASCII でない文字 (日本語など) を含むもの、英語の文に見えるもの
+//   `alert("...")`・ファイルのダイアログのフィルタの `name` など) にあるもの、ASCII でない文字 (日本語など) を含むもの、
+//   英語の文に見えるもの (テンプレート文字列は語を数える。isTemplateSentence)
+// - 例外 (`throw`・`new Error(...)`) の文 (画面は `errorText(e)` でそのまま出す。小文字で始まる文も。isErrorText)
 //
 // 対象の外: 文字を含まない文字列 (記号・数値)、ID・キー・単位のような小文字の識別子 (`dialog-title`・`px`)、比較 (`=== "Escape"`)・`case`・型・
-// import の文字列、`console.*` の引数、例外 (`throw`・`new Error(...)`) の文、`i18n-ignore` と書いたコメントの行と次の行。
+// import の文字列、`console.*` の引数、`i18n-ignore` と書いたコメントの行と次の行。
 //
 // 移行の途中は、ファイルごとの件数を許す一覧 (`scripts/hardcoded-strings-allowlist.json`) に持つ。一覧より増えたら失敗する。
 // 減ったら一覧を縮めるまで失敗する (一覧は減る向きにしか動かない)。
@@ -97,11 +99,42 @@ export function isHardcoded(text, display) {
   return NON_ASCII_LETTER.test(s) || SENTENCE.test(s);
 }
 
+/**
+ * テンプレート文字列 (差し込みを `0` にしたもの) が英語の文に見えるか。差し込みや記号で文が切れるので
+ * (`` `Asking ${name} to revise proposal #${id}…` ``)、全体の形ではなく語を数える: 前後の記号を除いて文字だけになる語が
+ * 2 つ以上あり、そのうち 1 つが大文字で始まる語 (`Asking`) なら文とみなす。識別子・パス・URL・CSS
+ * (`editor.${key}.label`・`${dir}/${name}.png`・`translate(${x}px, ${y}px)`) は語が文字だけにならないので数えない。
+ */
+export function isTemplateSentence(text) {
+  const w = words(text);
+  return w.length >= 2 && w.some((word) => /^\p{Lu}\p{Ll}/u.test(word));
+}
+
+/**
+ * 例外の文 (`new Error(...)`・`throw` の値) が直書きの文言かどうか。例外の文は英語の慣習で小文字で始まることが多い
+ * (`the proposal could not be applied`) ので、大文字を求めず、文字だけの語が 2 つ以上あれば文とみなす。
+ * ASCII でない文字を含むものも見つける。
+ */
+export function isErrorText(text) {
+  return NON_ASCII_LETTER.test(text) || words(text).length >= 2;
+}
+
+/** 空白で区切り、前後の記号を除いて文字だけになる語 (`#app` → `app`。`editor.save`・`0px` は語ではない)。 */
+function words(text) {
+  return text
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ""))
+    .filter((w) => /^\p{L}[\p{L}'’]*$/u.test(w));
+}
+
 /** マークアップのテキストノードが直書きの文言かどうか。値の名前・単位のような小文字の 1 語 (`yaw`・`px`) は除く。 */
 export function isHardcodedText(text) {
   const s = text.replace(/\s+/g, " ").trim();
   return LETTER.test(s) && !IDENTIFIER.test(s);
 }
+
+/** `visit` の `display` に渡す、例外の文の位置の印。 */
+const ERROR = "error";
 
 const COMPARISON = new Set(["==", "===", "!=", "!=="]);
 
@@ -195,15 +228,20 @@ export function scan(source, kind) {
     found.push({ line, kind: kindName, text: text.replace(/\s+/g, " ").trim() });
   };
 
-  /** 文字列のノードを検査する。 */
+  /** 文字列のノードを検査する。`display` は表示に使う場所か (`ERROR` は例外の文)。 */
   const literal = (node, display, label) => {
     if (node.type === "Literal" && typeof node.value === "string") {
-      if (isHardcoded(node.value, display)) report(node, label, node.value);
+      if (display === ERROR ? isErrorText(node.value) : isHardcoded(node.value, display))
+        report(node, label, node.value);
       return true;
     }
     if (node.type === "TemplateLiteral") {
       const text = node.quasis.map((q) => q.value.cooked ?? q.value.raw).join("0");
-      if (isHardcoded(text, display)) report(node, label, text);
+      const found =
+        display === ERROR
+          ? isErrorText(text)
+          : isHardcoded(text, display) || isTemplateSentence(text);
+      if (found) report(node, label, text);
       return false; // 差し込みの式は続けて見る
     }
     return false;
@@ -224,7 +262,9 @@ export function scan(source, kind) {
       case "ImportDeclaration":
       case "ExportAllDeclaration":
       case "ImportExpression":
+        return;
       case "ThrowStatement":
+        visit(node.argument, ERROR, label);
         return;
       case "ExportNamedDeclaration":
         visit(node.declaration, false, label);
@@ -235,8 +275,14 @@ export function scan(source, kind) {
       case "CallExpression":
       case "NewExpression": {
         const name = calleeName(node.callee);
-        if (isConsole(node.callee) || name?.endsWith("Error")) return;
+        if (isConsole(node.callee)) return;
         visit(node.callee, false, label);
+        if (name?.endsWith("Error")) {
+          // 例外の文は画面に出うる (`errorText(e)`)。最初の引数 (文) を例外の決まりで見る
+          visit(node.arguments[0], ERROR, label);
+          visit(node.arguments.slice(1), false, label);
+          return;
+        }
         if (name === "setAttribute" && node.arguments[0]?.type === "Literal") {
           visit(node.arguments[1], DISPLAY_ATTRS.has(node.arguments[0].value), label);
           return;
@@ -260,6 +306,22 @@ export function scan(source, kind) {
         visit(node.object, false, label);
         if (node.computed && node.property.type !== "Literal") visit(node.property, false, label);
         return;
+      case "ObjectExpression": {
+        // ファイルのダイアログのフィルタ (`{ name, extensions }`) の `name` は OS のダイアログに出る
+        const filter = node.properties.some(
+          (p) => p.type === "Property" && !p.computed && propertyName(p.key) === "extensions",
+        );
+        for (const p of node.properties) {
+          if (p.type !== "Property") {
+            visit(p, false, label);
+            continue;
+          }
+          const name = p.computed ? null : propertyName(p.key);
+          if (p.computed) visit(p.key, false, label);
+          visit(p.value, DISPLAY_PROPS.has(name) || (filter && name === "name"), label);
+        }
+        return;
+      }
       case "Property":
         if (node.computed) visit(node.key, false, label);
         visit(node.value, DISPLAY_PROPS.has(propertyName(node.key)), label);
@@ -283,7 +345,8 @@ export function scan(source, kind) {
     const values = display ? new Set(valueChildren(node)) : new Set();
     for (const [key, child] of Object.entries(node)) {
       if (SKIP_KEYS.has(key) || !child || typeof child !== "object") continue;
-      for (const c of Array.isArray(child) ? child : [child]) visit(c, values.has(c), label);
+      for (const c of Array.isArray(child) ? child : [child])
+        visit(c, values.has(c) && display, label);
     }
   };
 
@@ -376,6 +439,7 @@ const SKIP_DIRS = new Set([
   "scripts",
   "test",
   "tests",
+  "testing", // テストの部品 (@ugoe/player の偽物など。画面に出ない)
   "pkg",
   "gallery", // @ugoe/ui の部品の見本 (開発者向け。見本の文言は gallery/strings.ts に持つ)
 ]);

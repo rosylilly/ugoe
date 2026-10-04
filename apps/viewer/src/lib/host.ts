@@ -139,7 +139,12 @@ const tauriHost: ViewerHost = {
     return path === null ? null : readTauriFile(path);
   },
   async saveJsonFile(name, text) {
-    const path = await saveFileDialog(t("files.saveJson.title"), name, "JSON", "json");
+    const path = await saveFileDialog(
+      t("files.saveJson.title"),
+      name,
+      t("files.saveJson.filter"),
+      "json",
+    );
     if (path === null) return false;
     await command("write_json_file", { path, contents: text });
     return true;

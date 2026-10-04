@@ -1,5 +1,5 @@
 // ビューポートのスクリーンショット (表示中のモデルを PNG で保存する、T0420。docs/editor.md#スクリーンショット) の
-// 既定のファイル名とダイアログのフィルタ。
+// 既定のファイル名 (ダイアログのフィルタは filePaths.ts の `PNG_FILTER`)。
 //
 // 画像は canvas の読み戻しではなく `WebPuppet.read_pixels()` で取る (ViewportController.capture)。画素の検査と
 // PNG への変換 (`encodePng`)・読み戻した画像の型 (`Screenshot`)・バックエンドへのヘッダー (`PNG_PATH_HEADER`) は、
@@ -14,6 +14,3 @@ import { safeFileName } from "../filePaths";
 export function screenshotFileName(projectName: string | null, now: Date): string {
   return timestampedPngName(safeFileName(projectName ?? ""), now);
 }
-
-/** ダイアログのフィルタ。 */
-export const PNG_FILTER = { name: "PNG image (.png)", extensions: ["png"] };

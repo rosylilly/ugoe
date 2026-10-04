@@ -39,15 +39,23 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
-/** JSON の文字列を読む。形式が違えば例外を投げる。 */
+/**
+ * JSON の文字列を読む。形式が違えば例外を投げる。
+ * 例外の文は英語のまま (`i18n-ignore`)。JSON.parse の構文の誤りと同じく技術的な補足で、画面では訳した
+ * `errors.recordingInvalid` の後に付けて出す (tracker.svelte.ts の startReplay)。
+ */
 export function parseRecording(text: string): Recording {
   const data: unknown = JSON.parse(text);
+  // i18n-ignore: 形式の誤りの詳細
   if (typeof data !== "object" || data === null) throw new Error("not a JSON object");
   const obj = data as Record<string, unknown>;
+  // i18n-ignore: 形式の誤りの詳細
   if (obj.format !== RECORDING_FORMAT) throw new Error(`format is not "${RECORDING_FORMAT}"`);
   if (!isFiniteNumber(obj.version) || obj.version > RECORDING_VERSION) {
+    // i18n-ignore: 形式の誤りの詳細
     throw new Error(`unsupported version: ${String(obj.version)}`);
   }
+  // i18n-ignore: 形式の誤りの詳細
   if (!Array.isArray(obj.frames)) throw new Error("frames is not an array");
   const frames: RecordedFrame[] = [];
   let last = -Infinity;
@@ -64,6 +72,7 @@ export function parseRecording(text: string): Recording {
       typeof f.blendShapes !== "object" ||
       f.blendShapes === null
     ) {
+      // i18n-ignore: 形式の誤りの詳細
       throw new Error(`frames[${i}] is invalid`);
     }
     last = f.t;

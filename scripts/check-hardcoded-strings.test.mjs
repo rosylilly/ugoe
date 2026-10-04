@@ -1,7 +1,14 @@
 // scripts/check-hardcoded-strings.mjs の検査のテスト (`just i18n`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compare, isHardcoded, scan, shrinkAllowlist } from "./check-hardcoded-strings.mjs";
+import {
+  compare,
+  isErrorText,
+  isHardcoded,
+  isTemplateSentence,
+  scan,
+  shrinkAllowlist,
+} from "./check-hardcoded-strings.mjs";
 
 const texts = (source, kind = "svelte") => scan(source, kind).map((f) => `${f.kind}: ${f.text}`);
 
@@ -32,16 +39,63 @@ test("表示する式の、値になる位置の文字列を見つける", () =>
   ]);
 });
 
-test("比較・case・console・例外・import・型の文字列は見つけない", () => {
+test("比較・case・console・import・型の文字列は見つけない", () => {
   const source = `
 import x from "Some module path";
 type Mode = "Edit mode" | "View mode";
 if (e.key === "Escape key") console.warn("Could not load the file");
 switch (mode) { case "Edit mode": break; }
-throw new Error("Something went wrong here");
-const err = new TypeError("Bad value given");
 `;
   assert.deepEqual(texts(source, "ts"), []);
+});
+
+test("テンプレート文字列の文を見つけ、識別子・パス・URL・CSS は見つけない", () => {
+  const source = `
+this.busy = \`Asking \${name} to revise proposal #\${id}…\`;
+const path = \`\${dir}/\${name}.png\`;
+const key = \`editor.\${key}.label\`;
+const url = \`http://127.0.0.1:\${port}/mcp\`;
+const style = \`translate(\${x}px, \${y}px) rotate(\${r}deg)\`;
+const css = \`width: \${w}px; height: \${h}px\`;
+const cls = \`tool \${active ? "on" : ""}\`;
+`;
+  assert.deepEqual(texts(source, "ts"), ["script: Asking 0 to revise proposal #0…"]);
+  assert.equal(isTemplateSentence("Failed to open 0: 0"), true);
+  assert.equal(isTemplateSentence("Bearer 0"), false);
+  assert.equal(isTemplateSentence("HTTP 0 error"), false);
+});
+
+test("例外の文を見つける (小文字で始まる文も)。t() を通したもの・識別子だけのものは見つけない", () => {
+  const source = `
+throw new Error("the proposal could not be applied");
+const err = new TypeError(\`Bad value: \${value}\`);
+const reject = Promise.reject(new Error("no files"));
+throw "plain string thrown";
+throw new Error(t("errors.adoptFailed"));
+throw new Error(\`\${path}: \${response.status}\`);
+throw new Error(describeError(e), { cause: e });
+throw Object.assign(new Error("not_found"), { code: "not_found" });
+// i18n-ignore: 開発者向け
+throw new Error("#app not found");
+`;
+  assert.deepEqual(texts(source, "ts"), [
+    "script: the proposal could not be applied",
+    "script: Bad value: 0",
+    "script: no files",
+    "script: plain string thrown",
+  ]);
+  assert.equal(isErrorText("読めません"), true);
+  assert.equal(isErrorText("unsupported"), false);
+});
+
+test("ファイルのダイアログのフィルタの name を見つける", () => {
+  const source = `
+const filters = [{ name: "PNG image (.png)", extensions: ["png"] }];
+const translated = { name: t("fileMenu.filters.png"), extensions: ["png"] };
+const getter = { get name() { return t("fileMenu.filters.psd"); }, extensions: ["psd"] };
+const notFilter = { name: "Hair", id: "hair" };
+`;
+  assert.deepEqual(texts(source, "ts"), ["script: PNG image (.png)"]);
 });
 
 test("スクリプトの表示の場所・日本語・英語の文を見つける", () => {

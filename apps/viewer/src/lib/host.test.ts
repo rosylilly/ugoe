@@ -40,7 +40,7 @@ describe("saving in Tauri", () => {
     expect(invoke).toHaveBeenNthCalledWith(1, "save_file_dialog", {
       title: expect.any(String),
       defaultName: "face-tracking.json",
-      filterName: "JSON",
+      filterName: "JSON ファイル",
       extension: "json",
     });
     expect(invoke).toHaveBeenLastCalledWith("write_json_file", {

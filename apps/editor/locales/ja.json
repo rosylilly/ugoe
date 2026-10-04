@@ -25,6 +25,7 @@
     },
     "proposalBanner": "AI の提案をプレビューしています。採用するまでモデルは変わりません。",
     "slotsBaseHint": "スロットは本体のモデルのものなので、モジュールのプロジェクトでは編集できません。本体のプロジェクトで編集してください。",
+    "modelUnreadable": "モデルを読めませんでした。",
     "splitter": {
       "aria": "インスペクタとパラメータの高さを変える"
     },
@@ -161,7 +162,9 @@
       "psd": "Photoshop のドキュメント (.psd)",
       "project": "ugoe のプロジェクト (.ugoeproj)",
       "bundle": "ugoe のバンドル (.ugoe)",
-      "module": "ugoe の着せ替えのモジュール (.ugoemod)"
+      "module": "ugoe の着せ替えのモジュール (.ugoemod)",
+      "png": "PNG 画像 (.png)",
+      "json": "JSON ファイル (.json)"
     }
   },
   "baseChange": {
@@ -997,7 +1000,6 @@
         "label": "PNG を付ける…",
         "title": "法線マップを付ける"
       },
-      "pngFilter": "PNG 画像 (.png)",
       "remove": {
         "label": "法線マップを外す"
       }

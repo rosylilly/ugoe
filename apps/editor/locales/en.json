@@ -26,6 +26,7 @@
     },
     "proposalBanner": "Previewing an AI proposal. The model is unchanged until you adopt it.",
     "slotsBaseHint": "Slots belong to the base model and can't be edited in a module project. Edit them in the base project.",
+    "modelUnreadable": "The model could not be read.",
     "splitter": {
       "aria": "Resize the inspector and the parameters"
     },
@@ -164,7 +165,9 @@
       "psd": "Photoshop document (.psd)",
       "project": "ugoe project (.ugoeproj)",
       "bundle": "ugoe bundle (.ugoe)",
-      "module": "ugoe dress-up module (.ugoemod)"
+      "module": "ugoe dress-up module (.ugoemod)",
+      "png": "PNG image (.png)",
+      "json": "JSON file (.json)"
     }
   },
   "baseChange": {
@@ -1021,7 +1024,6 @@
         "label": "Assign PNG…",
         "title": "Assign normal map"
       },
-      "pngFilter": "PNG image (.png)",
       "remove": {
         "label": "Remove normal map"
       }

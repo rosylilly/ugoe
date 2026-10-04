@@ -57,7 +57,7 @@ ugoe のエディタ・ビューア・スタジオの画面の文言を訳す人
 
 カタログを通さずに画面に出す文言を、`scripts/check-hardcoded-strings.mjs` (`just i18n`) が見つけます。
 `apps/*` と `packages/*` の `.svelte` と `.ts` を Svelte の公式のパーサ (`svelte/compiler` の `parse`) で読みます。
-テスト (`*.test.ts`・`test/`)・設定 (`*.config.ts`)・生成物 (`generated/`)・`src-tauri/`・`@ugoe/ui` の部品の見本 (`gallery/`) は見ません。
+テスト (`*.test.ts`・`test/`・テストの部品の `testing/`)・設定 (`*.config.ts`)・生成物 (`generated/`)・`src-tauri/`・`@ugoe/ui` の部品の見本 (`gallery/`) は見ません。
 
 **見つけるもの:**
 
@@ -68,9 +68,16 @@ ugoe のエディタ・ビューア・スタジオの画面の文言を訳す人
   `t("key")` の引数のように、関数に渡す文字列は値ではないので見ません。
 - スクリプト (`<script>` と `.ts`) の文字列のうち、次のもの。
   - 表示に使う場所にあるもの: オブジェクトの `label:`・`title:`・`message:` など (上の props と同じ名前)、`el.textContent = ...`・
-    `el.title = ...` などの代入、`setAttribute("title", ...)`、`alert`・`confirm`・`prompt` と Tauri の dialog の `message`・`ask` の引数。
+    `el.title = ...` などの代入、`setAttribute("title", ...)`、`alert`・`confirm`・`prompt` と Tauri の dialog の `message`・`ask` の引数、
+    ファイルのダイアログのフィルタ (`extensions` を持つオブジェクト) の `name` (`{ name: "PNG image (.png)", extensions: ["png"] }`)。
   - ASCII でない文字 (日本語など) を含むもの。
   - 英語の文に見えるもの (大文字で始まる語の後に、空白で区切った語が続く。`Warp deformer`・`` `Loaded ${n} files` ``)。
+    テンプレート文字列は差し込みや記号で文が切れるので、語を数えます: 前後の記号を除いて文字だけになる語が 2 つ以上あり、
+    そのうち 1 つが大文字で始まれば文とみなします (`` `Asking ${name} to revise proposal #${id}…` ``)。
+    識別子・パス・URL・CSS (`` `editor.${key}.label` ``・`` `${dir}/${name}.png` ``・`` `translate(${x}px, ${y}px)` ``) は語が文字だけに
+    ならないので見つけません。
+  - 例外の文 (`new Error(...)`・`new TypeError(...)` など名前が `Error` で終わるものの最初の引数と、`throw` の値)。画面は例外の文を
+    `errorText(e)` でそのまま出すので、文字だけの語が 2 つ以上あれば、小文字で始まっても (`the proposal could not be applied`) 見つけます。
 
 **見つけないもの (誤検知を減らす約束):**
 
@@ -79,10 +86,16 @@ ugoe のエディタ・ビューア・スタジオの画面の文言を訳す人
   テキストノードと表示の属性でも同じです。
 - 表示に使わない属性 (`class`・`id`・`href`・`type` など) の固定の値と、表示に使わない場所の英語の 1 語 (`kind: "Warp"`)。
 - 比較 (`e.key === "Escape"`)・`case`・型 (`type Mode = "Edit"`)・`import` の文字列・プロパティのキー。
-- 開発者向けの出力: `console.*` の引数と、例外の文 (`throw ...`・`new Error(...)`・`new TypeError(...)` など、名前が `Error` で終わるもの)。
+- 開発者向けの出力: `console.*` の引数。
+- 例外の文のうち、`t()` を通したもの (`new Error(t("errors.modelMissing"))`) と、語が 1 つ以下のもの (`` `${path}: ${status}` ``)。
 - `<style>`・`<script>` の要素の中のテキスト。
 - **訳さない文字列** (製品名・コマンドの例など) は、その行か前の行のコメントに `i18n-ignore` と理由を書きます
   (`<!-- i18n-ignore: 製品名 -->`・`// i18n-ignore: シェルのコマンド`)。コメントの行と次の行が対象の外になります。
+  画面に出ない例外 (起こらないはずの状態・起動の失敗・ウィンドウの間のフレームの形の誤り) と、訳した文の後に付ける技術的な補足
+  (記録のファイルの形の誤り。`JSON.parse` の文と同じ扱い) も、英語のまま `i18n-ignore` と理由を書きます。
+
+検査が見ない場所もあります: 関数の引数で渡す文言 (ビューアの `saveFileDialog(title, name, filterName, ...)` の
+フィルタの名前など) は、受け取る側の名前が分からないので見ません。呼ぶ側で `t()` を通します。
 
 **移行の途中の許す一覧:** まだカタログに移していないファイルは、`scripts/hardcoded-strings-allowlist.json` に
 アプリ・パッケージごとにファイルと件数を持ちます (載っていないファイルは 0 件)。
