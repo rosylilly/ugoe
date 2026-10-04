@@ -15,6 +15,8 @@ export default defineConfig({
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  // テストでは Svelte のブラウザ向けの実装を読む (部品を happy-dom に描くテスト。docs/testing.md#エディタの部品のテスト)。
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   // テストは英語の文言で検査する (src/test-setup.ts)。
   test: { setupFiles: ["./src/test-setup.ts"] },
 });

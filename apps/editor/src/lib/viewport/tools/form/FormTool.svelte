@@ -177,7 +177,8 @@ function onAreaPointerDown(e: PointerEvent) {
 }
 
 function onPointerMove(e: PointerEvent) {
-  if (drag?.pointerId !== e.pointerId) return;
+  // 送っている間は、送ったドラッグを動かさない・送り直さない (離した後の移動と、別の押下の離す操作が届く)。
+  if (busy || drag?.pointerId !== e.pointerId) return;
   const [x, y] = local(e);
   if (drag.kind === "points") {
     drag.delta = [x - drag.start[0], y - drag.start[1]];
@@ -189,7 +190,7 @@ function onPointerMove(e: PointerEvent) {
 
 async function onPointerUp(e: PointerEvent) {
   const d = drag;
-  if (d?.pointerId !== e.pointerId) return;
+  if (busy || d?.pointerId !== e.pointerId) return;
   if (d.kind === "box") {
     drag = null;
     const { box } = d;

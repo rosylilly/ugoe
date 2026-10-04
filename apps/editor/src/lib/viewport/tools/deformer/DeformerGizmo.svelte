@@ -243,7 +243,8 @@ function capture(e: PointerEvent): void {
 }
 
 function onPointerMove(e: PointerEvent): void {
-  if (drag?.id !== e.pointerId) return;
+  // 送っている間は、送ったドラッグを動かさない・送り直さない (離した後の移動と、別の押下の離す操作が届く)。
+  if (busy || drag?.id !== e.pointerId) return;
   const p = local(e);
   switch (drag.kind) {
     case "points":
@@ -268,7 +269,7 @@ function onPointerMove(e: PointerEvent): void {
 
 function onPointerUp(e: PointerEvent): void {
   const d = drag;
-  if (d?.id !== e.pointerId) return;
+  if (busy || d?.id !== e.pointerId) return;
   if (d.kind === "box") {
     drag = null;
     const { box } = d;
