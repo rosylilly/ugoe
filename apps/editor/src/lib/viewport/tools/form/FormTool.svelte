@@ -24,8 +24,8 @@ import {
   currentCell,
   editablePoints,
   elementGrid,
+  modelData,
   type Point,
-  parseModel,
   snapToKeys,
   withPoint,
 } from "../../../panels/inspector/keyforms/keyforms";
@@ -61,7 +61,7 @@ let busy = $state(false);
 /** 選んだ点 (要素ごと。キーは `種類:ID`)。 */
 let selected = $state<{ key: string; indices: number[] } | null>(null);
 
-const model = $derived(doc.model ? parseModel(doc.model.json) : null);
+const model = $derived(modelData(doc.parsedModel));
 const element = $derived.by(() => {
   const e = model ? elementGrid(model, selection.primary) : null;
   return e && e.kind !== "part" ? e : null;

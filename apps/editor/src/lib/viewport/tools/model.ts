@@ -27,11 +27,10 @@ export interface ModelSummary {
 
 export const EMPTY_MODEL: ModelSummary = { meshes: [], textures: [] };
 
-/** モデル JSON を要約する。読めなければ空。 */
-export function summarizeModel(json: string | null | undefined): ModelSummary {
-  if (!json) return EMPTY_MODEL;
+/** 解析したモデル (`EditorDocument.parsedModel`) を要約する。無ければ空。 */
+export function summarizeModel(model: Model | null | undefined): ModelSummary {
+  if (!model) return EMPTY_MODEL;
   try {
-    const model = JSON.parse(json) as Model;
     return {
       meshes: model.meshes.map((m) => ({
         id: m.id,

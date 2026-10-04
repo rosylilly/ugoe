@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Model } from "../../generated/types";
 import {
   buildDeformerTree,
   buildPartTree,
@@ -8,7 +9,7 @@ import {
   pathTo,
   type TreeNode,
 } from "./build";
-import { keyformAtDefaults, parseTreeModel } from "./model";
+import { keyformAtDefaults, treeModel } from "./model";
 import { at, testModel } from "./testModel";
 
 /** 節を `key(子, ...)` の形の文字列にする (比較しやすくするため)。 */
@@ -114,23 +115,27 @@ describe("model helpers", () => {
     expect(keyformAtDefaults({ keyforms: ["only"] }, new Map())).toBe("only");
   });
 
+  it("reads missing lists as empty", () => {
+    const model = treeModel({} as Model);
+    expect(model).toEqual({ parameters: [], parts: [], meshes: [], deformers: [] });
+    expect(indexModel(model).model.meshes).toEqual([]);
+  });
+
   it("reads deformer keyforms from the kind", () => {
-    const model = parseTreeModel(
-      JSON.stringify({
-        parameters: [],
-        parts: [],
-        meshes: [],
-        deformers: [
-          {
-            id: "W",
-            name: "W",
-            part: "P",
-            parent: null,
-            kind: { type: "warp", rows: 1, cols: 1, keyforms: { keyforms: [{ opacity: 0 }] } },
-          },
-        ],
-      }),
-    );
+    const model = treeModel({
+      parameters: [],
+      parts: [],
+      meshes: [],
+      deformers: [
+        {
+          id: "W",
+          name: "W",
+          part: "P",
+          parent: null,
+          kind: { type: "warp", rows: 1, cols: 1, keyforms: { keyforms: [{ opacity: 0 }] } },
+        },
+      ],
+    } as unknown as Model);
     expect(model.deformers[0]?.keyforms?.keyforms[0]?.opacity).toBe(0);
   });
 

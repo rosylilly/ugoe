@@ -19,7 +19,7 @@ import {
   elementGrid,
   keyAt,
   keyTolerance,
-  parseModel,
+  modelData,
   snapToKeys,
 } from "./inspector/keyforms/keyforms";
 import ParameterMirror from "./parameters/ParameterMirror.svelte";
@@ -34,7 +34,7 @@ interface Props {
 
 let { parameters, viewport, doc, selection }: Props = $props();
 
-const model = $derived(doc.model ? parseModel(doc.model.json) : null);
+const model = $derived(modelData(doc.parsedModel));
 const element = $derived(model ? elementGrid(model, selection.primary) : null);
 const bindings = $derived(element?.grid.bindings ?? []);
 /** モジュールのプロジェクトでは、パラメータはすべて本体のもの (定義は変えられない。スライダーは動かせる)。 */

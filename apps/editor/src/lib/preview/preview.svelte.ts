@@ -28,7 +28,7 @@ import {
 import type { EditorDocument } from "../document.svelte";
 import { errorText } from "../errors";
 import { t } from "../i18n";
-import { type Expression, ipc, type Model, type Motion, type PoseGroup } from "../ipc";
+import { type Expression, ipc, type Motion, type PoseGroup } from "../ipc";
 import { showEntry } from "../panels/poses/poses";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
@@ -234,8 +234,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   /** WebPuppet の合成したポーズから、付けたモジュールのグループを読み直す。 */
   #readPose(puppet: WebPuppet): void {
     try {
-      const json = this.#doc.model?.json;
-      const own = json ? (JSON.parse(json) as Model).pose.groups : [];
+      const own = this.#doc.parsedModel?.pose.groups ?? [];
       this.modulePoses = modulePoseGroups(puppet.pose_json(), own, this.#ownModule());
     } catch (e) {
       console.warn("ugoe:", e);

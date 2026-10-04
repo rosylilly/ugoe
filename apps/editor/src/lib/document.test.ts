@@ -1,7 +1,7 @@
 // EditorDocument の読み直しと編集の列 (IPC は偽物)。重なった読み直しは、後から始めたものの結果を残す。
 // 編集は前の適用と読み直しを待ってから、その時点の写しで組み立てる。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EditorDocument } from "./document.svelte";
+import { EditorDocument, parseModelJson } from "./document.svelte";
 import { type Command, ipc } from "./ipc";
 
 /** 呼ばれるたびに `get_model_json` が返すもの (先頭から順に使う)。 */
@@ -74,6 +74,43 @@ describe("EditorDocument.refresh", () => {
     await doc.refresh();
     expect(doc.error).toBe("no model");
     expect(doc.revision).toBe(0);
+  });
+});
+
+describe("EditorDocument.parsedModel", () => {
+  it("parses the model JSON once and keeps it while the JSON stays the same", async () => {
+    const json = model("AngleX");
+    jsons = [Promise.resolve(json), Promise.resolve(json), Promise.resolve(model("AngleY"))];
+    const doc = new EditorDocument();
+    expect(doc.parsedModel).toBeNull();
+    await doc.refresh();
+    const first = doc.parsedModel;
+    expect(first?.parameters.map((p) => p.id)).toEqual(["AngleX"]);
+    // 読み直しで同じ JSON なら同じオブジェクト ($effect を関係のない読み直しで走らせない)
+    await doc.refresh();
+    expect(doc.revision).toBe(2);
+    expect(doc.parsedModel).toBe(first);
+    await doc.refresh();
+    expect(doc.parsedModel).not.toBe(first);
+    expect(doc.parsedModel?.parameters.map((p) => p.id)).toEqual(["AngleY"]);
+  });
+
+  it("is null for a model JSON that cannot be read, and the refresh shows the failure", async () => {
+    jsons = [Promise.resolve("{ broken")];
+    const doc = new EditorDocument();
+    await doc.refresh();
+    expect(doc.parsedModel).toBeNull();
+    expect(doc.error).not.toBeNull();
+    expect(doc.revision).toBe(0);
+  });
+
+  it("reads only JSON objects", () => {
+    expect(parseModelJson(undefined)).toBeNull();
+    expect(parseModelJson("")).toBeNull();
+    expect(parseModelJson("{ broken")).toBeNull();
+    expect(parseModelJson("null")).toBeNull();
+    expect(parseModelJson("5")).toBeNull();
+    expect(parseModelJson(model("A"))?.parameters[0]?.id).toBe("A");
   });
 });
 

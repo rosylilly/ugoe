@@ -23,7 +23,7 @@ interface Props {
 
 let { doc, selection }: Props = $props();
 
-const model = $derived(summarizeModel(doc.model?.json));
+const model = $derived(summarizeModel(doc.parsedModel));
 const mesh = $derived(
   selection.primary?.kind === "mesh"
     ? (model.meshes.find((m) => m.id === selection.primary?.id) ?? null)

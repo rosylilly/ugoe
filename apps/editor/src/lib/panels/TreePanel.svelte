@@ -35,7 +35,7 @@ import {
   parentPartFor,
   renameCommand,
 } from "./tree/edit";
-import { parseTreeModel } from "./tree/model";
+import { treeModel } from "./tree/model";
 import TreeItem from "./tree/TreeItem.svelte";
 
 interface Props {
@@ -55,9 +55,9 @@ let confirmDelete = $state<ElementRef[] | null>(null);
 let treeEl = $state<HTMLElement>();
 
 const index = $derived.by(() => {
-  if (!doc.model) return null;
+  if (!doc.parsedModel) return null;
   try {
-    return indexModel(parseTreeModel(doc.model.json));
+    return indexModel(treeModel(doc.parsedModel));
   } catch (e) {
     console.error("ugoe: cannot read the model for the tree:", e);
     return null;

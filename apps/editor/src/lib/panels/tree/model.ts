@@ -6,6 +6,7 @@ import type {
   KeyformGrid as FullKeyformGrid,
   Mesh,
   MeshKeyform,
+  Model,
   Parameter,
   Part,
   PartKeyform,
@@ -26,7 +27,7 @@ export type TreePart = Pick<Part, "id" | "name" | "parent"> & {
 export type TreeDeformer = Pick<Deformer, "id" | "name" | "part" | "parent"> & {
   /** `warp` / `rotation` (知らない種類は読み込み時に `Unknown` になり、書き出されない)。 */
   kind: Pick<DeformerKind, "type">;
-  /** `kind` の中のキーフォーム (`parseTreeModel` が取り出す)。 */
+  /** `kind` の中のキーフォーム (`treeModel` が取り出す)。 */
   keyforms?: KeyformGrid<Pick<WarpKeyform | RotationKeyform, "opacity">>;
 };
 
@@ -42,16 +43,19 @@ export interface TreeModel {
   meshes: TreeMesh[];
 }
 
-/** get_model_json の文字列を読む。デフォーマのキーフォームは `kind` の中にある。 */
-export function parseTreeModel(json: string): TreeModel {
-  const raw = JSON.parse(json);
+/**
+ * 解析したモデル (`EditorDocument.parsedModel`) からツリーが読む部分を取り出す。デフォーマのキーフォームは `kind` の中にある。
+ * 欠けた配列は空として読む。
+ */
+export function treeModel(model: Model): TreeModel {
+  const raw = model as Partial<Model>;
   return {
     parameters: raw.parameters ?? [],
     parts: raw.parts ?? [],
     meshes: raw.meshes ?? [],
-    deformers: (raw.deformers ?? []).map((d: TreeDeformer & { kind: { keyforms?: unknown } }) => ({
+    deformers: (raw.deformers ?? []).map((d) => ({
       ...d,
-      keyforms: d.kind?.keyforms,
+      keyforms: d.kind && "keyforms" in d.kind ? d.kind.keyforms : undefined,
     })),
   };
 }

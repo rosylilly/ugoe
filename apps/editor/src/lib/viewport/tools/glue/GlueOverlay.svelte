@@ -12,7 +12,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
-import type { Glue, Model } from "../../../ipc";
+import type { Glue } from "../../../ipc";
 import { labelOf } from "../../../labels";
 import {
   isBaseGlue,
@@ -35,13 +35,7 @@ interface Props {
 
 let { doc, scene, view }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const glue = $derived(
   view.active && view.glue !== null ? (model?.glues.find((g) => g.id === view.glue) ?? null) : null,
 );

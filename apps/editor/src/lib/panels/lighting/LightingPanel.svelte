@@ -11,7 +11,7 @@ import { Button, Toggle, Tooltip } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Command, Model } from "../../ipc";
+import type { Command } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { isBaseMesh, isBaseTexture } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
@@ -28,13 +28,7 @@ interface Props {
 
 let { doc, selection, view }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const meshes = $derived(model ? litCandidates(model) : []);
 const hint = $derived(model && meshes.length > 0 ? lightingHint(model) : null);
 const selectedMesh = $derived(

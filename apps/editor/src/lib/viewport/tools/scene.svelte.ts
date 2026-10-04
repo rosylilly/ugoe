@@ -14,7 +14,7 @@ export class ViewportScene {
   readonly #doc: EditorDocument;
   /** 評価結果が変わりうるたびに増える。 */
   #tick = $state(0);
-  readonly model: ModelSummary = $derived.by(() => summarizeModel(this.#doc.model?.json));
+  readonly model: ModelSummary = $derived.by(() => summarizeModel(this.#doc.parsedModel));
   readonly #index: Map<string, number> = $derived(
     new Map(this.model.meshes.map((m, i) => [m.id, i])),
   );

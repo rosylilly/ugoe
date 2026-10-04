@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EditorDocument } from "../../document.svelte";
+import { type EditorDocument, parseModelJson } from "../../document.svelte";
 import type { ViewportController } from "../controller.svelte";
 import type { WebPuppet } from "../wasm";
 import { ViewportScene } from "./scene.svelte";
@@ -22,7 +22,7 @@ const mesh = (id: string) => ({
 });
 
 /** 3 つのメッシュの偽の WebPuppet。`drawable_ids` を呼んだ回数を数える。 */
-function setup() {
+function setup(json = JSON.stringify({ meshes: ["A", "B", "C"].map(mesh), textures: [] })) {
   let idCalls = 0;
   const puppet = {
     drawable_ids: () => {
@@ -39,11 +39,9 @@ function setup() {
     screenToCanvas: (x: number, y: number) => [x, y],
   } as unknown as ViewportController;
   const doc = {
-    model: {
-      json: JSON.stringify({ meshes: ["A", "B", "C"].map(mesh), textures: [] }),
-      bundle: null,
-    },
-  } as unknown as EditorDocument;
+    model: { json, bundle: null },
+    parsedModel: parseModelJson(json),
+  } as EditorDocument;
   return { scene: new ViewportScene(controller, doc), calls: () => idCalls };
 }
 
@@ -63,5 +61,12 @@ describe("ViewportScene", () => {
     scene.invalidate();
     scene.canvasPositions("A");
     expect(calls()).toBe(2);
+  });
+
+  it("shows nothing for a model JSON that cannot be read", () => {
+    const { scene } = setup("{ broken");
+    expect(scene.model.meshes).toEqual([]);
+    expect(scene.mesh("A")).toBeNull();
+    expect(scene.canvasPositions("A")).toBeNull();
   });
 });

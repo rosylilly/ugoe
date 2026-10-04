@@ -11,8 +11,8 @@
 //   イベントの clientX / clientY がそのままツールの座標になる。
 import { type Component, flushSync, mount, unmount } from "svelte";
 import { afterEach, vi } from "vitest";
-import type { EditorDocument } from "../../../document.svelte";
-import type { Command, PhysicsSettings } from "../../../ipc";
+import { type EditorDocument, parseModelJson } from "../../../document.svelte";
+import type { ApplyReport, Command, PhysicsSettings } from "../../../ipc";
 import type { ViewportController, ViewTransform } from "../../controller.svelte";
 import type { WebPuppet } from "../../wasm";
 import type { Point } from "../geometry";
@@ -172,6 +172,8 @@ export class FakeDocument {
     json: testModel(),
     bundle: null,
   });
+  /** 解析したモデル (`EditorDocument.parsedModel` と同じく `model.json` から作る)。 */
+  readonly parsedModel = $derived(parseModelJson(this.model?.json));
   physics = $state.raw<PhysicsSettings | null>(null);
   module = $state.raw(null);
   error = $state<string | null>(null);
@@ -179,10 +181,11 @@ export class FakeDocument {
   /** 設定すると、`apply` はこの約束が解けるまで終わらない (送っている間の操作を試す)。 */
   pending: Promise<void> | null = null;
 
-  apply = vi.fn(async (command: Command) => {
+  /** 本物の `apply` と同じく、適用できたら報告を返す (失敗は null。部品は戻り値で成否を見る)。 */
+  apply = vi.fn(async (command: Command): Promise<ApplyReport | null> => {
     this.commands.push(command);
     if (this.pending) await this.pending;
-    return null;
+    return { warnings: [], mirrored: [] };
   });
 
   get asDocument(): EditorDocument {

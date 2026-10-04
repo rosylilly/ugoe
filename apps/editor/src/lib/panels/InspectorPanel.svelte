@@ -8,7 +8,6 @@
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
-import type { Model } from "../ipc";
 import { labelOf } from "../labels";
 import { baseElements, isBaseElement } from "../moduleProject";
 import type { ElementKind, Selection } from "../selection.svelte";
@@ -20,7 +19,6 @@ import DrawCloneSection from "./inspector/drawClone/DrawCloneSection.svelte";
 import InferenceSection from "./inspector/inference/InferenceSection.svelte";
 import RederiveNotice from "./inspector/inference/RederiveNotice.svelte";
 import KeyformInspector from "./inspector/keyforms/KeyformInspector.svelte";
-import { parseModel } from "./inspector/keyforms/keyforms";
 import MeshProperties from "./inspector/MeshProperties.svelte";
 import StaleRigNotice from "./inspector/StaleRigNotice.svelte";
 
@@ -54,9 +52,8 @@ function kindLabel(kind: ElementKind): string {
 /** 主な選択の表記 (表示名と ID)。 */
 const primaryLabel = $derived.by(() => {
   const primary = selection.primary;
-  if (!primary || !doc.model) return primary?.id ?? "";
-  // 名前も含むモデル全体 (parseModel は同じ JSON の解析を使い回す)。
-  const model = parseModel(doc.model.json) as unknown as Model;
+  const model = doc.parsedModel;
+  if (!primary || !model) return primary?.id ?? "";
   const items = {
     part: model.parts,
     deformer: model.deformers,

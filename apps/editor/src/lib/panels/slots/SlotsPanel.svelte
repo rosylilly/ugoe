@@ -12,12 +12,12 @@ import { formatList } from "@ugoe/i18n";
 import { Button, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Command, Model } from "../../ipc";
+import type { Command } from "../../ipc";
 import { elementLabel, elementOptions, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 import TipButton from "../../ui/TipButton.svelte";
 import { indexModel, type ModelIndex } from "../tree/build";
-import { parseTreeModel } from "../tree/model";
+import { treeModel } from "../tree/model";
 import PickList from "./PickList.svelte";
 import {
   DRAW_ORDER_MAX,
@@ -42,16 +42,10 @@ interface Props {
 
 let { doc, selection, view }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const index = $derived.by((): ModelIndex | null => {
   try {
-    return doc.model ? indexModel(parseTreeModel(doc.model.json)) : null;
+    return model ? indexModel(treeModel(model)) : null;
   } catch {
     return null;
   }

@@ -14,7 +14,7 @@ import { Button, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
 import { t } from "../../i18n";
-import { ipc, type Model, type OverflowFinding, type OverflowReport } from "../../ipc";
+import { ipc, type OverflowFinding, type OverflowReport } from "../../ipc";
 import type { Selection } from "../../selection.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import type { PhysicsView } from "../physics/physicsView.svelte";
@@ -41,13 +41,7 @@ interface Props {
 
 let { doc, selection, viewport, view, physics }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 
 let report = $state.raw<OverflowReport | null>(null);
 let error = $state<string | null>(null);

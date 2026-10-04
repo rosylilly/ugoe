@@ -21,12 +21,31 @@ import { setHiddenIdPrefix } from "./labels";
 import { mergeWarnings } from "./panels/inspector/inference/inference";
 import type { ViewportModel } from "./viewport/controller.svelte";
 
+/** モデルの JSON を解析する。無いか読めなければ null。 */
+export function parseModelJson(json: string | null | undefined): Model | null {
+  if (!json) return null;
+  try {
+    const value: unknown = JSON.parse(json);
+    return value !== null && typeof value === "object" ? (value as Model) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** パネルが使うパラメータの定義 (ugoe_model::Parameter)。 */
 export type ParameterDef = Parameter;
 
 export class EditorDocument {
   /** ビューポートに渡すモデル (JSON と、テクスチャ付きの .ugoe バンドル)。refresh のたびに作り直す。 */
   model = $state.raw<ViewportModel | null>(null);
+  /**
+   * `model.json` を解析したモデル。部品はそれぞれ `JSON.parse` せずにこれを読む。読めない JSON なら null。
+   * 部品の間で共有するので書き換えない。読み直しで JSON が同じ文字列なら解析し直さず同じオブジェクトを返すので、
+   * これに依存する `$derived` / `$effect` は関係のない読み直しでは走らない。
+   */
+  readonly parsedModel: Model | null = $derived.by(() => this.#parse(this.model?.json ?? null));
+  /** 最後に解析した JSON とその結果。 */
+  #parsed: { json: string | null; model: Model | null } = { json: null, model: null };
   parameters = $state<ParameterDef[]>([]);
   /** モーションと表情 (保存・書き出しの順)。refresh のたびに読み直す。 */
   motions = $state.raw<Motion[]>([]);
@@ -58,6 +77,11 @@ export class EditorDocument {
   /** 編集の列の末尾 (失敗しても次へ進むよう、拒否を飲み込んだもの)。 */
   #queue: Promise<void> = Promise.resolve();
 
+  #parse(json: string | null): Model | null {
+    if (json !== this.#parsed.json) this.#parsed = { json, model: parseModelJson(json) };
+    return this.#parsed.model;
+  }
+
   async refresh(): Promise<void> {
     const generation = ++this.#generation;
     try {
@@ -81,7 +105,8 @@ export class EditorDocument {
       this.model = { json, bundle };
       this.motions = animations.motions;
       this.expressions = animations.expressions;
-      const parsed = JSON.parse(json) as Model;
+      const parsed = this.parsedModel;
+      if (!parsed) throw new Error("the model JSON could not be read");
       this.parameters = parsed.parameters;
       this.empty = isEmptyModel(parsed);
       this.error = null;

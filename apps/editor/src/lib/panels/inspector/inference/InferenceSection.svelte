@@ -12,7 +12,7 @@ import type { Command, KeyformTarget } from "../../../ipc";
 import type { Selection } from "../../../selection.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
-import { currentCell, elementGrid, parseModel } from "../keyforms/keyforms";
+import { currentCell, elementGrid, modelData } from "../keyforms/keyforms";
 import { cellSelection } from "./cellSelection.svelte";
 import {
   defaultPivot,
@@ -45,7 +45,7 @@ interface Props {
 
 let { doc, selection, viewport }: Props = $props();
 
-const model = $derived(doc.model ? parseModel(doc.model.json) : null);
+const model = $derived(modelData(doc.parsedModel));
 const element = $derived(model ? elementGrid(model, selection.primary) : null);
 const grid = $derived(element?.grid);
 const bindings = $derived(grid?.bindings ?? []);

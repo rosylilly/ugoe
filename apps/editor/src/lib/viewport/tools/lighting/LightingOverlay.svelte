@@ -9,7 +9,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
-import type { Model, PreviewLighting } from "../../../ipc";
+import type { PreviewLighting } from "../../../ipc";
 import {
   directionToHandle,
   handleToDirection,
@@ -27,13 +27,7 @@ interface Props {
 
 let { controller, view, doc }: Props = $props();
 
-const canvas = $derived.by(() => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model).meta.canvas : null;
-  } catch {
-    return null;
-  }
-});
+const canvas = $derived(doc.parsedModel?.meta.canvas ?? null);
 
 let svg = $state<SVGSVGElement>();
 /** ドラッグ中の光源。`before` は押したときの設定 (取り消したら戻す)。 */

@@ -7,7 +7,7 @@
 import { Button, Checkbox, Notice, Select } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText, messageText } from "../../../errors";
-import type { AvatarCheck, AvatarMeta, Command, Model } from "../../../generated/types";
+import type { AvatarCheck, AvatarMeta, Command } from "../../../generated/types";
 import { t } from "../../../i18n";
 import { ipc } from "../../../ipc";
 import { elementLabel } from "../../../labels";
@@ -35,16 +35,7 @@ interface Props {
 
 let { doc }: Props = $props();
 
-function parse(json: string | undefined): Model | null {
-  if (!json) return null;
-  try {
-    return JSON.parse(json) as Model;
-  } catch {
-    return null;
-  }
-}
-
-const model = $derived(parse(doc.model?.json));
+const model = $derived(doc.parsedModel);
 const profile = $derived(model?.avatar ?? null);
 const meta = $derived(profile?.meta ?? null);
 

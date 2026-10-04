@@ -62,7 +62,7 @@ $effect(() => {
 
 const highlight = $derived(preview.dressUp.highlight);
 /** 作業用のモデルのメッシュ (三角形の外周を取る)。 */
-const workspace = $derived(new Map(summarizeModel(doc.model?.json).meshes.map((m) => [m.id, m])));
+const workspace = $derived(new Map(summarizeModel(doc.parsedModel).meshes.map((m) => [m.id, m])));
 
 function screen(p: Point): Point {
   const t = controller.transform;

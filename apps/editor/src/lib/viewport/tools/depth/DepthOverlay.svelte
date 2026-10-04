@@ -7,7 +7,6 @@
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
-import type { Model } from "../../../ipc";
 import { depthColor, depthElement, depthScale } from "../../../panels/inspector/depth/depth";
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../controller.svelte";
@@ -33,12 +32,8 @@ $effect(() => {
 });
 
 const element = $derived.by(() => {
-  if (!controller.showDepth || !doc.model) return null;
-  try {
-    return depthElement(JSON.parse(doc.model.json) as Model, selection.primary);
-  } catch {
-    return null;
-  }
+  if (!controller.showDepth || !doc.parsedModel) return null;
+  return depthElement(doc.parsedModel, selection.primary);
 });
 
 /** 点の位置 (CSS ピクセル、[x0, y0, ...])。 */

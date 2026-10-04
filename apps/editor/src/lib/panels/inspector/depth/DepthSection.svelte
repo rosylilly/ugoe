@@ -11,7 +11,7 @@
 import { Button, Checkbox, NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
-import type { Command, Model } from "../../../ipc";
+import type { Command } from "../../../ipc";
 import type { ElementRef, Selection } from "../../../selection.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
@@ -33,13 +33,7 @@ interface Props {
 
 let { doc, selection, viewport }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const element = $derived(model ? depthElement(model, selection.primary) : null);
 
 let uniform = $state(0);

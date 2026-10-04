@@ -16,7 +16,7 @@ import { Button, IconButton, NumberField } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Model, PhysicsRig } from "../../ipc";
+import type { PhysicsRig } from "../../ipc";
 import { elementLabel } from "../../labels";
 import { baseElements, canMoveRig, isBaseElement, isBaseRig } from "../../moduleProject";
 import type { Selection } from "../../selection.svelte";
@@ -50,13 +50,7 @@ interface Props {
 
 let { doc, selection, viewport, view }: Props = $props();
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const settings = $derived(doc.physics);
 const world = $derived(settings ?? DEFAULT_SETTINGS);
 const rig = $derived(settings?.rigs.find((r) => r.id === view.rig) ?? null);

@@ -6,7 +6,6 @@
 <script lang="ts">
 import { Button, Notice, NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
-import type { Model } from "../../../generated/types";
 import { t } from "../../../i18n";
 import { elementLabel } from "../../../labels";
 import type { Selection } from "../../../selection.svelte";
@@ -23,16 +22,7 @@ interface Props {
 
 let { doc, selection, viewport }: Props = $props();
 
-function parse(json: string | undefined): Model | null {
-  if (!json) return null;
-  try {
-    return JSON.parse(json) as Model;
-  } catch {
-    return null;
-  }
-}
-
-const model = $derived(parse(doc.model?.json));
+const model = $derived(doc.parsedModel);
 const mesh = $derived(
   selection.primary?.kind === "mesh" && model
     ? (model.meshes.find((m) => m.id === selection.primary?.id) ?? null)
@@ -60,7 +50,7 @@ async function createClone(): Promise<void> {
   const source = mesh.id;
   const before = model;
   if (!(await doc.apply(createCommand(source)))) return;
-  const after = parse(doc.model?.json);
+  const after = doc.parsedModel;
   const id = after ? newClone(before, after, source) : null;
   if (id) select(id);
 }

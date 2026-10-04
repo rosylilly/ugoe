@@ -24,7 +24,7 @@ import {
   cellIndex,
   currentCell,
   elementGrid,
-  parseModel,
+  modelData,
   snapToKeys,
 } from "../../../panels/inspector/keyforms/keyforms";
 import type { Selection } from "../../../selection.svelte";
@@ -97,7 +97,7 @@ $effect(() => {
   queueMicrotask(() => (tick += 1));
 });
 
-const model = $derived(doc.model ? parseModel(doc.model.json) : null);
+const model = $derived(modelData(doc.parsedModel));
 const element = $derived(model ? elementGrid(model, { kind: "deformer", id: deformerId }) : null);
 const params = $derived(model?.parameters ?? []);
 const bindings = $derived(element?.grid.bindings ?? []);

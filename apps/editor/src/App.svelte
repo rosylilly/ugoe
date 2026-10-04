@@ -139,7 +139,7 @@ function openTab(
  * (T0656・T0657・T0659)。
  */
 function selectDifference(item: DifferenceItem): void {
-  const meshes = new Set(summarizeModel(doc.model?.json).meshes.map((m) => m.id));
+  const meshes = new Set(summarizeModel(doc.parsedModel).meshes.map((m) => m.id));
   const target = differenceTarget(item, doc.module?.name ?? "", (id) => meshes.has(id));
   if (!target) return;
   // ツリーと右の列のタブはプレビューの間は隠れるので、出てから選ぶ。

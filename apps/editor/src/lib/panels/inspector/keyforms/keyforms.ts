@@ -1,6 +1,11 @@
 // キーフォーム格子を読む補助 (docs/editor.md#キーフォームの編集)。DOM や IPC に依存しない純粋な関数だけを置く
 // (keyforms.test.ts で検査する)。モデルの JSON (ugoe_model::Model) のうち、ここで使う部分だけを型にする。
-import type { KeyformInference, KeyformTarget, MirrorSource } from "../../../generated/types";
+import type {
+  KeyformInference,
+  KeyformTarget,
+  MirrorSource,
+  Model,
+} from "../../../generated/types";
 import type { ElementRef } from "../../../selection.svelte";
 
 export type { KeyformTarget };
@@ -118,16 +123,9 @@ export interface ElementGrid {
 /** 軸のパラメータ ID → キーの値。ugoe_editor_core::KeyformCell。 */
 export type Cell = Record<string, number>;
 
-const parsed = new Map<string, ModelData>();
-
-/** モデルの JSON を読む。同じ文字列は 1 度だけ解析する (直近の 1 つだけを覚える)。 */
-export function parseModel(json: string): ModelData {
-  const hit = parsed.get(json);
-  if (hit) return hit;
-  const model = JSON.parse(json) as ModelData;
-  parsed.clear();
-  parsed.set(json, model);
-  return model;
+/** 解析したモデル (`EditorDocument.parsedModel`) を、ここで使う部分の型で見る (同じオブジェクトを返す)。 */
+export function modelData(model: Model | null): ModelData | null {
+  return model as ModelData | null;
 }
 
 /** 選択した要素のキーフォーム格子。格子を持たない要素 (パラメータ・未知のデフォーマ) なら null。 */

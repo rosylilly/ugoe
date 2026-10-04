@@ -13,7 +13,7 @@ import { formatList } from "@ugoe/i18n";
 import { Button, NumberField } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { ChildRef, Model } from "../../ipc";
+import type { ChildRef } from "../../ipc";
 import { labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 
@@ -34,13 +34,7 @@ let name = $state("");
 /** 編集を送っている間はボタンを無効にする (docs/editor.md#パネルからの編集)。 */
 const busy = $derived(doc.pending > 0);
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 
 const children = $derived(
   selection.items.flatMap((r): ChildRef[] =>

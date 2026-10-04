@@ -9,7 +9,7 @@
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText } from "../../../errors";
-import { ipc, type KeyformTarget, type Model } from "../../../ipc";
+import { ipc, type KeyformTarget } from "../../../ipc";
 import { overflowDots } from "../../../panels/verify/overflow";
 import type { VerifyView } from "../../../panels/verify/verifyView.svelte";
 import type { ViewportController } from "../../controller.svelte";
@@ -69,13 +69,7 @@ $effect(() => {
   void request({ ...controller.parameterValues });
 });
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 
 /** 要素の点の位置 (CSS ピクセル、[x0, y0, ...])。 */
 function positions(target: KeyformTarget): ArrayLike<number> | null {

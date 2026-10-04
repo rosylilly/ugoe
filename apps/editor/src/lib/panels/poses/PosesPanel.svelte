@@ -20,7 +20,7 @@ import { Button, IconButton, NumberField, Select, Toggle, Tooltip } from "@ugoe/
 import { onDestroy } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Model, Pose } from "../../ipc";
+import type { Pose } from "../../ipc";
 import { elementLabel, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 import TipButton from "../../ui/TipButton.svelte";
@@ -144,13 +144,7 @@ function dragKeydown(event: KeyboardEvent): void {
   }
 }
 
-const model = $derived.by((): Model | null => {
-  try {
-    return doc.model ? (JSON.parse(doc.model.json) as Model) : null;
-  } catch {
-    return null;
-  }
-});
+const model = $derived(doc.parsedModel);
 const module = $derived(doc.module);
 const pose = $derived(model?.pose ?? null);
 const parts = $derived(model?.parts ?? []);

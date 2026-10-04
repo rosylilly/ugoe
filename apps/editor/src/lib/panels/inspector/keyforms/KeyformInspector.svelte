@@ -24,9 +24,9 @@ import {
   gridInterpolation,
   keyAt,
   keyTolerance,
+  modelData,
   type ParameterData,
   parameterValue,
-  parseModel,
   snapToKeys,
   supportsSmooth,
 } from "./keyforms";
@@ -39,7 +39,7 @@ interface Props {
 
 let { doc, selection, viewport }: Props = $props();
 
-const model = $derived(doc.model ? parseModel(doc.model.json) : null);
+const model = $derived(modelData(doc.parsedModel));
 const element = $derived(model ? elementGrid(model, selection.primary) : null);
 const params = $derived<ParameterData[]>(model?.parameters ?? []);
 const bindings = $derived(element?.grid.bindings ?? []);

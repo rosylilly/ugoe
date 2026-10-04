@@ -9,7 +9,7 @@ import { TrackingPanel } from "@ugoe/face-tracking";
 import { Button, Notice, Section, Select, Slider, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
-import type { DifferenceItem, Model } from "../ipc";
+import type { DifferenceItem } from "../ipc";
 import { labelOf } from "../labels";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
@@ -48,7 +48,7 @@ let licenses = $state<LicenseDialog | null>(null);
 /** 表情を付けない選択肢の値 (表情の名前は空にならないが、念のため Select の「未選択」の空文字列と分ける)。 */
 const NO_EXPRESSION = "#none";
 
-const model = $derived(doc.model ? (JSON.parse(doc.model.json) as Model) : null);
+const model = $derived(doc.parsedModel);
 const sections = $derived(
   groupParameters(doc.parameters, model?.parameter_groups ?? [], t("preview.parameters.other")),
 );
