@@ -9,6 +9,8 @@
 //! - 描画中の wgpu のエラー (検証・メモリ不足) は `ugoe_headless` がエラースコープで受けてエラーにする。
 //! - それでも panic したら受け止めてツールのエラーにし、その GPU を捨てて (破棄せずに手放して)、
 //!   次の呼び出しで作り直す。
+//! - 出力の一辺は [`MAX_SIZE`] (4096) まで、進める時間は [`MAX_TIME`] (3600 秒) までに限る。描いた PNG は
+//!   base64 でエージェントに返すので、CLI (`ugoe_headless::MAX_SIZE` = 16384) より小さくする。
 //! - 読み戻しは `Gpu::wait_timeout` (既定 30 秒) までしか待たない。ドライバが止まって上限を超えたら、
 //!   panic のときと同じくツールのエラーにして GPU を捨てる (止まったデバイスを使い回さない。描画の錠も手放される)。
 //!
@@ -20,6 +22,19 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ugoe_editor_core::{Project, ProjectError, export_bundle};
 use ugoe_headless::{Gpu, RenderOptions, Scene};
+
+/// `render_png` で明示できる出力の一辺の上限 (`width`・`height`)。ツールのスキーマの `maximum` もこの値。
+///
+/// 1 回の描画で読み戻す画素 (4096 × 4096 × 4 = 64 MiB) と、base64 で返す PNG を抑えるため、CLI の上限
+/// ([`ugoe_headless::MAX_SIZE`]) より小さくする。大きさを指定しないとき (キャンバスの大きさ) には効かない。
+pub const MAX_SIZE: u32 = 4096;
+
+/// `render_png` の `time` の上限 (秒)。時間は 60 fps で進めるので、`ugoe_headless::animate::MAX_UPDATES`
+/// (60 fps で 1 時間) と同じ。ツールのスキーマの `maximum` もこの値。
+pub const MAX_TIME: f32 = (ugoe_headless::animate::MAX_UPDATES / FPS) as f32;
+
+/// `render_png` で時間を進めるときの 1 秒あたりの `update` の回数 (`ugoe render` の `--fps` の既定と同じ)。
+const FPS: u32 = 60;
 
 /// 描画の指定。値は `ugoe render` の同名のオプションと同じ意味。
 #[derive(Debug, Clone, Default)]
@@ -38,6 +53,29 @@ pub struct RenderRequest {
     pub time: Option<f32>,
 }
 
+impl RenderRequest {
+    /// `width`・`height` が 1..=[`MAX_SIZE`]、`time` が 0..=[`MAX_TIME`] に入っているか。
+    fn check(&self) -> Result<(), RenderError> {
+        for (name, value) in [("width", self.width), ("height", self.height)] {
+            if let Some(n) = value
+                && !(1..=MAX_SIZE).contains(&n)
+            {
+                return Err(RenderError::Invalid(format!(
+                    "{name} must be in 1..={MAX_SIZE}, got {n}"
+                )));
+            }
+        }
+        if let Some(t) = self.time
+            && !(0.0..=MAX_TIME).contains(&t)
+        {
+            return Err(RenderError::Invalid(format!(
+                "time must be in 0..={MAX_TIME} seconds, got {t}"
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// 描画の結果。
 #[derive(Debug)]
 pub struct Rendered {
@@ -48,6 +86,8 @@ pub struct Rendered {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
+    #[error("{0}")]
+    Invalid(String),
     #[error("invalid background: {0}")]
     Background(String),
     #[error("failed to export the project as a bundle: {0}")]
@@ -101,6 +141,7 @@ impl Renderer {
         req: &RenderRequest,
     ) -> Result<Rendered, RenderError> {
         // GPU を使う前に引数とモデルを検査する (GPU が無くても誤りを返せるように)。
+        req.check()?;
         let background = match &req.background {
             Some(bg) => ugoe_headless::args::parse_color(bg).map_err(RenderError::Background)?,
             None => [0; 4],
@@ -111,6 +152,7 @@ impl Renderer {
             height: req.height,
             background,
             time: req.time,
+            fps: FPS as f32,
             motion: req.motion.clone(),
             expression: req.expression.clone(),
             ..RenderOptions::default()
@@ -253,6 +295,57 @@ mod tests {
             )
             .unwrap_err()
             .to_string();
+        assert!(err.contains("no motion named `Idle`"), "{err}");
+        assert!(renderer.gpu.is_none());
+    }
+
+    /// 大きさと時間の上限 (ツールのスキーマの `maximum`) を、GPU を使う前に確かめる。
+    #[test]
+    fn checks_the_size_and_time_limits_before_touching_the_gpu() {
+        assert_eq!(MAX_TIME, 3600.0);
+        let mut renderer = Renderer::default();
+        let project = quad_project();
+        let render = |renderer: &mut Renderer, req: RenderRequest| {
+            renderer.render(&project, &req).unwrap_err().to_string()
+        };
+        for (width, height) in [
+            (Some(MAX_SIZE + 1), None),
+            (None, Some(MAX_SIZE + 1)),
+            (Some(0), None),
+        ] {
+            let err = render(
+                &mut renderer,
+                RenderRequest {
+                    width,
+                    height,
+                    ..RenderRequest::default()
+                },
+            );
+            assert!(err.contains(&format!("must be in 1..={MAX_SIZE}")), "{err}");
+        }
+        for time in [MAX_TIME + 1.0, -1.0, f32::NAN] {
+            let err = render(
+                &mut renderer,
+                RenderRequest {
+                    time: Some(time),
+                    ..RenderRequest::default()
+                },
+            );
+            assert!(err.contains("time must be in 0..=3600 seconds"), "{err}");
+        }
+        assert!(renderer.gpu.is_none());
+
+        // 上限ちょうどは通る (検査を通った後の誤りで止めて、GPU は使わない)。
+        let err = render(
+            &mut renderer,
+            RenderRequest {
+                width: Some(MAX_SIZE),
+                height: Some(MAX_SIZE),
+                time: Some(MAX_TIME),
+                motion: Some("Idle".into()),
+                ..RenderRequest::default()
+            },
+        );
         assert!(err.contains("no motion named `Idle`"), "{err}");
         assert!(renderer.gpu.is_none());
     }

@@ -518,6 +518,11 @@ Claude Code に次のように頼む:
 メモリの上で `.ugoe` に書き出して読み直したもの (書き出した `.ugoe` を `ugoe render` で描くのと同じ中身) を描き、
 結果は MCP の画像 (`image/png`、base64) で返す。`log` には警告・時間を進めた回数・大きさとアダプタが入る。
 
+上限は `ugoe render` と同じ (crates/ugoe-cli/README.md の「上限」) だが、PNG をエージェントに返すので、明示した
+`width`・`height` は 4096 まで、`time` は 3600 秒までに狭める (`render::MAX_SIZE`・`render::MAX_TIME`。ツールのスキーマの
+`maximum` と同じ値で、サーバも GPU を使う前に確かめる)。時間は 60 fps で進める。大きさを指定しないときはキャンバスの大きさで、
+これは CLI と同じ 16384 までになる。
+
 長く動くサーバなので、GPU のドライバの不調で落ちないように次の手当てをする。
 
 - GPU は最初の `render_png` で用意し、以後使い回す。破棄しない (WSL2 の dzn はデバイスの破棄時に SIGSEGV を

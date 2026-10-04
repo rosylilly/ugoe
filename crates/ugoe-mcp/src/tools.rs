@@ -23,7 +23,7 @@ use ugoe_editor_core::{Command, Document, Project, ProposalError, ProposalView};
 use crate::autorig::{self, PsdSource};
 use crate::diff;
 use crate::host::{Action, Change, DocumentHost, FileHost, HostError, Lent, Opening};
-use crate::render::{RenderRequest, Renderer};
+use crate::render::{self, RenderRequest, Renderer};
 use crate::root::Root;
 use crate::schema::{CommandSchema, object_schema};
 use crate::summary::{ELEMENT_KINDS, element, model_summary};
@@ -309,12 +309,12 @@ impl Tools {
                             "description": "パラメータの ID → 値",
                             "additionalProperties": { "type": "number" },
                         },
-                        "width": { "type": "integer", "minimum": 1, "maximum": 4096 },
-                        "height": { "type": "integer", "minimum": 1, "maximum": 4096 },
+                        "width": { "type": "integer", "minimum": 1, "maximum": render::MAX_SIZE },
+                        "height": { "type": "integer", "minimum": 1, "maximum": render::MAX_SIZE },
                         "background": { "type": "string", "description": "transparent (既定)・white・black・#RRGGBB・#RRGGBBAA" },
                         "motion": { "type": "string", "description": format!("再生するモーションの名前か .motion.json のパス。{PATH_NOTE}") },
                         "expression": { "type": "string", "description": format!("使う表情の名前か .expression.json のパス。{PATH_NOTE}") },
-                        "time": { "type": "number", "minimum": 0, "description": "この秒数だけ時間を進めてから描く (物理・モーション)" },
+                        "time": { "type": "number", "minimum": 0, "maximum": render::MAX_TIME, "description": "この秒数だけ時間を進めてから描く (物理・モーション。60 fps で進める)" },
                     }),
                     &["path"],
                     None,

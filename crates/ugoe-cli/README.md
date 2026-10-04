@@ -93,6 +93,14 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 
 - **テクスチャ:** バンドルの PNG はデコードして乗算済みアルファにする。KTX2 は未対応でエラーになる (`--texture` で PNG を渡せば描ける)。
   JSON とフィクスチャはテクスチャを持たないので、`model.textures` の各項目に不透明な白 1x1 を使う。
+- **上限:** 外から来る値で止まったりメモリを使い果たしたりしないように、次を超えるとエラーにする。
+  - 出力の大きさ: 一辺 1..=16384 (`ugoe_headless::MAX_SIZE`)。`--size`・`--width`・`--height` で明示しても、`--scale` から決めても同じ。
+  - 時間を進める回数: `floor(time * fps)` が `ugoe_headless::animate::MAX_UPDATES` (216000 = 60 fps で 1 時間) まで。
+    `--time` は 0 以上の有限の数、`--fps` は 0 より大きい有限の数。
+  - テクスチャ (`--texture` とバンドルの PNG) と法線マップ: 一辺 16384 まで (PNG の見出しの大きさで、デコードの前に確かめる)。
+  - `--texture`・`--physics`・`--motion`・`--expression` のパス: 通常のファイルだけを読む (装置・FIFO・ディレクトリはエラー)。
+  - MCP サーバの `render_png` は、明示した `width`・`height` を 4096 まで、`time` を 3600 秒 (60 fps) までに限る
+    (`ugoe-mcp` の `src/render.rs`。描いた PNG をエージェントに返すので小さくする)。
 - **色:** 値はリニア化しない (`docs/spec/rendering.md` の「前提」)。描画先は `Rgba8Unorm`・乗算済みアルファで、
   PNG に書くときストレートアルファに戻す (アルファ 0 の画素は RGB も 0)。
 - **背景:** 既定は透明。透明な背景の上に描いた結果は、そのまま別の画像に合成できる。

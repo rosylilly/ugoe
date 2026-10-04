@@ -538,6 +538,11 @@ fn render_reports_bad_arguments_before_touching_the_gpu() {
     assert!(err.contains("unknown parameter `Nope` (known: X)"), "{err}");
     let err = client.call_err("render_png", json!({ "path": path, "background": "#fff" }));
     assert!(err.contains("invalid background"), "{err}");
+    // スキーマの `maximum` (4096 と 3600 秒) をサーバも確かめる。
+    let err = client.call_err("render_png", json!({ "path": path, "width": 4097 }));
+    assert!(err.contains("width must be in 1..=4096, got 4097"), "{err}");
+    let err = client.call_err("render_png", json!({ "path": path, "time": 3601 }));
+    assert!(err.contains("time must be in 0..=3600 seconds"), "{err}");
 }
 
 /// 胸から上の実際の PSD (`assets/fixtures/psd-real/`)。
