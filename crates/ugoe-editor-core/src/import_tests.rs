@@ -3,11 +3,14 @@
 use std::path::PathBuf;
 
 use ugoe_core::Vec2;
+use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
 use ugoe_model::validate::validate;
 use ugoe_model::{BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, fixtures};
-use ugoe_psd::{Layer, LayerNode, LayerTree};
+use ugoe_psd::{ImportLimits, Layer, LayerNode, LayerTree};
 
-use crate::import::{DRAW_ORDER_RANGE, layer_tree_command};
+use crate::import::{
+    DRAW_ORDER_RANGE, PsdLimit, layer_tree_command, layer_tree_command_with, read_layer_tree,
+};
 use crate::message::Coded;
 use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, decode_rgba_png, huge_png_header, png_size};
 use crate::{
@@ -473,6 +476,102 @@ fn rejects_invalid_mesh_options() {
     );
     let err = import_psd(&model, b"not a psd", &PsdImportOptions::new("t")).unwrap_err();
     assert!(matches!(err, PsdImportError::Psd(_)), "{err}");
+}
+
+#[test]
+fn limit_exceeded_tells_which_limit() {
+    // `layers.psd` (64 x 48) のチャンネル 1 枚は 3072 バイト。
+    let limits = ImportLimits::default().with_max_channel_decompressed(100);
+    let err = read_layer_tree(&fixture_bytes(), limits).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            PsdImportError::LimitExceeded {
+                limit: PsdLimit::Channel,
+                max: 100
+            }
+        ),
+        "{err:?}"
+    );
+    let message = err.to_message();
+    assert_eq!(message.code, "psd.channel_limit_exceeded");
+    assert_eq!(message.args["max"], 100u64.into());
+    assert!(
+        message.message.contains("import limit of 100 bytes"),
+        "{}",
+        message.message
+    );
+
+    let limits = ImportLimits::default().with_max_total_decompressed(5000);
+    let err = read_layer_tree(&fixture_bytes(), limits).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            PsdImportError::LimitExceeded {
+                limit: PsdLimit::Total,
+                max: 5000
+            }
+        ),
+        "{err:?}"
+    );
+    let message = err.to_message();
+    assert_eq!(message.code, "psd.total_limit_exceeded");
+    assert_eq!(message.args["max"], 5000u64.into());
+
+    // ほかの読み込みのエラーは `psd.read_failed` のまま。
+    let err = read_layer_tree(b"not a psd", ImportLimits::default()).unwrap_err();
+    assert_eq!(err.code(), "psd.read_failed");
+    // 既定の上限では読める。
+    read_layer_tree(&fixture_bytes(), ImportLimits::default()).unwrap();
+}
+
+/// 幅 8 のレイヤーだけ `TooLarge` を返し、ほかは本物の自動メッシュを使う。
+fn too_large_for_width_8(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    options: &MeshOptions,
+) -> Result<GeneratedMesh, MeshError> {
+    let pad = options.margin.ceil() as u32 + 1;
+    if width == 8 + 2 * pad {
+        return Err(MeshError::TooLarge {
+            width: 20000,
+            height: 30000,
+        });
+    }
+    ugoe_mesher::generate(rgba, width, height, options)
+}
+
+#[test]
+fn too_large_layer_is_skipped_with_a_warning() {
+    let tree = tree(vec![
+        raster("Below", 1, false, 4, 4),
+        raster("Huge", 2, false, 8, 4),
+        raster("Above", 3, false, 4, 4),
+    ]);
+    let model = Project::empty("x").document().model().clone();
+    let import = layer_tree_command_with(
+        &model,
+        &tree,
+        &PsdImportOptions::new("t"),
+        too_large_for_width_8,
+    )
+    .unwrap();
+    let warning = import
+        .warnings
+        .iter()
+        .find(|w| w.code == "psd.layer_too_large")
+        .expect("a warning for the huge layer");
+    assert_eq!(warning.path, vec!["Huge".to_owned()]);
+    assert_eq!(warning.args["width"], 20000u64.into());
+    assert_eq!(warning.args["height"], 30000u64.into());
+    assert_eq!(warning.args["max"], ugoe_mesher::MAX_GRID_CELLS.into());
+    assert!(warning.message.contains("skipped"), "{}", warning.message);
+
+    let mut doc = Document::new(model);
+    doc.apply(import.command).unwrap();
+    let ids: Vec<&str> = doc.model().meshes.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["Below", "Above"]);
 }
 
 #[test]

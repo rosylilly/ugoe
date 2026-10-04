@@ -24,7 +24,7 @@ use crate::command::KeyformTarget;
 use crate::document::EditError;
 use crate::export::ExportError;
 use crate::grid::CellError;
-use crate::import::{PsdImportError, psd_warning_code};
+use crate::import::{PsdImportError, PsdLimit, psd_warning_code};
 use crate::inference::RederiveWarning;
 use crate::lighting::LightingError;
 use crate::message::{Coded, Message, MessageArgs};
@@ -427,6 +427,14 @@ fn space_errors() -> Vec<SpaceError> {
 fn psd_import_errors() -> Vec<PsdImportError> {
     vec![
         PsdImportError::Psd(PsdError::Invalid(reason())),
+        PsdImportError::LimitExceeded {
+            limit: PsdLimit::Channel,
+            max: 1024,
+        },
+        PsdImportError::LimitExceeded {
+            limit: PsdLimit::Total,
+            max: 4096,
+        },
         PsdImportError::InvalidMeshOptions("max_edge"),
         PsdImportError::Mesh {
             layer: id(),
@@ -554,7 +562,7 @@ fn warnings() -> Vec<Message> {
             Message::new(code, args, code)
         })
         .collect();
-    let inline: [(&str, MessageArgs); 9] = [
+    let inline: [(&str, MessageArgs); 10] = [
         (
             "psd.canvas_mismatch",
             args! {
@@ -572,6 +580,10 @@ fn warnings() -> Vec<Message> {
         ("psd.empty_layer", args! {}),
         ("psd.transparent_layer", args! {}),
         ("psd.layer_too_complex", args! {}),
+        (
+            "psd.layer_too_large",
+            args! { "width" => 20000u64, "height" => 20000u64, "max" => 1usize << 28 },
+        ),
         (
             "psd.blend_mode_unsupported",
             args! { "blend_mode" => "diss" },

@@ -874,12 +874,28 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 | 描画順 | ドキュメント全体で下から上へ、`draw_order = 1000 × (i + 1) / (n + 1)` (`i` は下から数えた番号、`n` はメッシュの数)。`meshes` にも下から上の順に並べる。既存のモデルに取り込むと、既存のメッシュと描画順が混ざるので、必要なら後で並べ直す |
 | ブレンドモード | `norm` → `normal`、`mul` → `multiply`、`lddg` (覆い焼き (リニア)) / `add` → `additive`。ほかは `normal` にして警告する |
 | クリッピング | クリッピングされたレイヤーは、同じ並びの中で下にある最も近いクリッピングでない要素 (土台) を通常マスク (`MaskRef { invert: false }`) にする。土台がグループなら、その中のすべてのメッシュ (和集合)。土台のレイヤーの不透明度 (非表示なら 0) をクリッピングされた側の不透明度に掛ける (Photoshop では土台の不透明度が掛かるため)。下に何もなければ無視し (Photoshop と同じ)、土台を取り込まなかった (空のレイヤーなど) なら警告してマスクなしにする。グループのクリッピングは警告して無視する |
-| 空のレイヤー・完全に透明なレイヤー・頂点が多すぎるレイヤー | 取り込まずに警告する |
+| 空のレイヤー・完全に透明なレイヤー・頂点が多すぎるレイヤー・大きすぎるレイヤー | 取り込まずに警告し、残りのレイヤーは取り込む。大きすぎるのは、自動メッシュの作業用の格子 (中身の外接矩形と余白) が `ugoe_mesher::MAX_GRID_CELLS` (2^28 セル) を超えるもの (`psd.layer_too_large`) |
 | 調整レイヤー・レイヤー効果など | `ugoe-psd` の警告をそのまま返す ([ugoe-psd](../crates/ugoe-psd/README.md#警告-layertreewarnings)) |
 
 - ID は名前から `ids` の規則で作ります。名前が英数字を 1 つも含まなければ (日本語だけの名前など)、PSD のレイヤー ID から `Layer12` / `Group8` (ID がなければ `Layer` / `Group`) にします。表示名 (`name`) には元の名前を残します。
 - テクスチャ名はメッシュの ID と同じにし、大文字小文字を区別せずに重なれば `_2`、… を付けます。
 - 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値 (`MeshOptions::validate` と同じ規則。`margin` の上限 1024 を含む) なら、レイヤーを処理する前に取り込みをエラー (`PsdImportError::InvalidMeshOptions`) にします。
+
+### 読み込みの上限
+
+PSD は ZIP で圧縮したチャンネルが 1000 倍ほどに展開されうるので、`ugoe-psd` は展開する前に大きさを上限
+(`ugoe_psd::ImportLimits`。チャンネル 1 枚が 1 GiB、1 つの PSD の合計が 4 GiB) と比べます ([ugoe-psd](../crates/ugoe-psd/README.md))。
+editor-core は `import::read_layer_tree(bytes, limits)` で読み、上限の超過を `PsdImportError::LimitExceeded` (どの上限か
+(`PsdLimit`) とその値) に分けます。コードは `psd.channel_limit_exceeded` (チャンネル 1 枚) と `psd.total_limit_exceeded` (合計) で、
+引数 `max` (バイト) を持ちます。ほかの読み込みのエラー (壊れた PSD・対応しない機能) は `psd.read_failed` のままです。
+
+- **上限を変える設定は持たせません** (T0554)。エディタ (取り込み・新しいプロジェクト・AI の提案の PSD)・CLI・MCP サーバはどれも
+  既定の上限で読みます。既定の値は PSD の最大のキャンバス (30000 × 30000) の 8 ビットのレイヤーの 1 チャンネルが収まる大きさで、
+  上限に当たる PSD は、そのままではデスクトップのメモリでも扱いきれない大きさだからです。上げる設定は、メモリを使い果たす入力を
+  通す手段になるので置きません。必要になったら、上限を超えた実例をもとに既定の値を見直します。ライブラリとして使う側は
+  `read_layer_tree` に別の `ImportLimits` を渡せます。
+- `ugoe-psd` は上限の超過を `PsdError::Unsupported` の文 ("import limit" を含む) で返すので、editor-core は文で見分けます
+  (`PsdImportError::from_psd`)。文の形が変わると `import_tests` の上限のテストが失敗します。
 
 ### メッシュの再生成
 
@@ -2028,6 +2044,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | コード | 引数 |
 | --- | --- |
 | `psd.read_failed` | `detail` |
+| `psd.channel_limit_exceeded` / `psd.total_limit_exceeded` (読み込みの上限。チャンネル 1 枚の展開後の大きさ / 展開の合計。[読み込みの上限](#読み込みの上限)) | `max` (バイト) |
 | `psd.read_file_failed` | `path`・`detail` |
 | `psd.invalid_mesh_options` | `reason` |
 | `psd.automesh_failed` | `layer`・`detail` |
@@ -2035,6 +2052,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `psd.group_blend_mode_ignored` / `psd.blend_mode_unsupported` | `blend_mode` |
 | `psd.adjustment_layer` | `key` |
 | `psd.unsupported_compression` | `compression` |
+| `psd.layer_too_large` (自動メッシュの作業用の格子が大きすぎるので飛ばした) | `width`・`height` (格子のセル数)・`max` (セル数の上限) |
 | `psd.group_clipping_unsupported` / `psd.empty_layer` / `psd.transparent_layer` / `psd.layer_too_complex` / `psd.clipping_base_missing` / `psd.smart_object_without_pixels` / `psd.layer_effects_ignored` / `psd.layer_mask_ignored` / `psd.missing_pixels` / `psd.flattened_image` | なし (レイヤーは警告の `path`) |
 
 **推定の警告 (`RederiveWarning`)・アバタープロファイルの検査 (`AvatarCheck`)**

@@ -75,7 +75,11 @@ pub struct GeneratedMesh {
 }
 
 /// [`generate`] のエラー。
+///
+/// 変種を足しても公開 API の破壊的な変更にならないよう `#[non_exhaustive]` にしている
+/// (外の `match` は `_` の腕が要る)。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MeshError {
     /// 中身 (`alpha_threshold` 以上の画素) が 1 つもない。
     #[error("image is fully transparent")]

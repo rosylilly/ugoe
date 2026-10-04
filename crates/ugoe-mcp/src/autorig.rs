@@ -41,10 +41,10 @@ use ugoe_ai::rig::{
     RigOptions, RigParams, mesh_parts, params_from_answer, propose_rig as template_rig,
     rig_output_schema, rig_request,
 };
-use ugoe_editor_core::import::layer_tree_command;
-use ugoe_editor_core::{Document, Project, ProjectMeta, PsdImportOptions};
+use ugoe_editor_core::import::{layer_tree_command, read_layer_tree};
+use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions};
 use ugoe_model::SlotId;
-use ugoe_psd::LayerTree;
+use ugoe_psd::{ImportLimits, LayerTree};
 
 use crate::schema::object_schema;
 use crate::tools::{Content, Draft, Kind, Output, PATH_NOTE, ToolResult, path_property, tool_def};
@@ -89,13 +89,20 @@ impl fmt::Debug for PsdSource {
 
 impl PsdSource {
     fn load(path: PathBuf) -> Result<Self, String> {
+        Self::load_with(path, ImportLimits::default())
+    }
+
+    /// PSD を展開の上限 `limits` で読む。読めなければ、エラーのコード (`psd.total_limit_exceeded` など。
+    /// `docs/editor.md#エラーと警告のコード`) を文の後ろに付けて返す (どの上限を超えたかをエージェントが見分けられるように)。
+    fn load_with(path: PathBuf, limits: ImportLimits) -> Result<Self, String> {
         // 装置 (`/dev/zero`)・FIFO・ディレクトリは読まない (終わらない読み込みでメモリを使い果たさないように)。
         let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         if !metadata.is_file() {
             return Err(format!("{}: not a regular file", path.display()));
         }
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let tree = ugoe_psd::import(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        let tree = read_layer_tree(&bytes, limits)
+            .map_err(|e| format!("{}: {e} (code: {})", path.display(), e.code()))?;
         Ok(Self {
             labels: classify_by_name(&tree),
             by_agent: BTreeSet::new(),
@@ -898,6 +905,25 @@ mod tests {
         assert!(err.contains("not a regular file"), "{err}");
         let err = PsdSource::load(std::env::temp_dir()).unwrap_err();
         assert!(err.contains("not a regular file"), "{err}");
+    }
+
+    #[test]
+    fn exceeding_an_import_limit_names_the_limit() {
+        let psd =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd");
+        let limits = ImportLimits::default().with_max_channel_decompressed(100);
+        let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
+        assert!(
+            err.ends_with(
+                "a PSD channel decompresses to more than the import limit of 100 bytes \
+                 (code: psd.channel_limit_exceeded)"
+            ),
+            "{err}"
+        );
+        let limits = ImportLimits::default().with_max_total_decompressed(5000);
+        let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
+        assert!(err.ends_with("(code: psd.total_limit_exceeded)"), "{err}");
+        PsdSource::load(psd).unwrap();
     }
 
     #[test]

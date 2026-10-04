@@ -240,6 +240,18 @@ fn ai_rig_notes_retries() {
     );
 }
 
+/// T0554: PSD の展開の上限を超えたら、どの上限かが分かるコードで返す (`psd.read_file_failed` に包まない)。
+#[test]
+fn read_tree_names_the_exceeded_limit() {
+    let limits = ImportLimits::default().with_max_channel_decompressed(100);
+    let err = read_tree_with(&bustup_path(), limits).unwrap_err();
+    assert_eq!(err.code, "psd.channel_limit_exceeded");
+    assert_eq!(err.args["max"], 100u64.into());
+    let limits = ImportLimits::default().with_max_total_decompressed(100_000);
+    let err = read_tree_with(&bustup_path(), limits).unwrap_err();
+    assert_eq!(err.code, "psd.total_limit_exceeded");
+}
+
 /// T0546: AI の分類が名前の規則と食い違うレイヤー (名前に右と書いた白目を左にした) は、確からしさが高くても
 /// 画面の分類で確かめるよう示し、提案の理由にも名前の規則の答えを添える。
 #[test]

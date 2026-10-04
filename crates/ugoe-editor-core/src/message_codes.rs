@@ -14,7 +14,7 @@ use crate::atlas::AtlasError;
 use crate::document::EditError;
 use crate::export::ExportError;
 use crate::grid::CellError;
-use crate::import::PsdImportError;
+use crate::import::{PsdImportError, PsdLimit};
 use crate::lighting::LightingError;
 use crate::message::{Coded, Message, MessageArgs};
 use crate::message_args as args;
@@ -530,6 +530,15 @@ impl Coded for PsdImportError {
     fn code(&self) -> &'static str {
         match self {
             Self::Psd(_) => "psd.read_failed",
+            // 読み込みの上限 (ファイルが壊れているとは限らない)。
+            Self::LimitExceeded {
+                limit: PsdLimit::Channel,
+                ..
+            } => "psd.channel_limit_exceeded",
+            Self::LimitExceeded {
+                limit: PsdLimit::Total,
+                ..
+            } => "psd.total_limit_exceeded",
             Self::InvalidMeshOptions(_) => "psd.invalid_mesh_options",
             Self::Mesh { .. } => "psd.automesh_failed",
         }
@@ -538,6 +547,7 @@ impl Coded for PsdImportError {
     fn args(&self) -> MessageArgs {
         match self {
             Self::Psd(error) => args! { "detail" => error.to_string() },
+            Self::LimitExceeded { max, .. } => args! { "max" => *max },
             Self::InvalidMeshOptions(reason) => args! { "reason" => *reason },
             Self::Mesh { layer, source } => {
                 args! { "layer" => layer, "detail" => source.to_string() }

@@ -10,11 +10,11 @@ use std::fmt;
 use serde::Serialize;
 use ts_rs::TS;
 use ugoe_core::{Rgb, Vec2};
-use ugoe_mesher::MeshError;
+use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, Model, Part, PartId};
-use ugoe_psd::{Layer, LayerNode, LayerTree, PsdError, WarningKind};
+use ugoe_psd::{ImportLimits, Layer, LayerNode, LayerTree, PsdError, WarningKind};
 
 use crate::Command;
 use crate::automesh::AutoMeshOptions;
@@ -81,8 +81,17 @@ impl fmt::Display for PsdImportWarning {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PsdImportError {
+    /// PSD の読み込みの失敗 (上限の超過は [`PsdImportError::LimitExceeded`])。
     #[error(transparent)]
     Psd(#[from] PsdError),
+    /// PSD の展開が読み込みの上限 ([`ImportLimits`]) を超えた。ファイルが壊れているとは限らない。
+    #[error("{}", limit_message(*.limit, *.max))]
+    LimitExceeded {
+        /// 超えた上限。
+        limit: PsdLimit,
+        /// その上限 (バイト)。
+        max: u64,
+    },
     #[error("invalid mesh options: {0}")]
     InvalidMeshOptions(&'static str),
     #[error("layer `{layer}`: automatic meshing failed: {source}")]
@@ -91,6 +100,59 @@ pub enum PsdImportError {
         #[source]
         source: MeshError,
     },
+}
+
+/// PSD の読み込みの上限 ([`ImportLimits`]) のどれを超えたか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PsdLimit {
+    /// チャンネル 1 枚を展開した後の大きさ (`ImportLimits::max_channel_decompressed`)。
+    Channel,
+    /// 1 つの PSD で展開するバイトの合計 (`ImportLimits::max_total_decompressed`)。
+    Total,
+}
+
+fn limit_message(limit: PsdLimit, max: u64) -> String {
+    match limit {
+        PsdLimit::Channel => {
+            format!("a PSD channel decompresses to more than the import limit of {max} bytes")
+        }
+        PsdLimit::Total => format!(
+            "the PSD channels decompress to more than the import limit of {max} bytes in total"
+        ),
+    }
+}
+
+impl PsdImportError {
+    /// `limits` で読んだ `ugoe-psd` のエラー。上限の超過は [`PsdImportError::LimitExceeded`] に分ける。
+    ///
+    /// `ugoe-psd` は上限の超過を `PsdError::Unsupported` の文 ("import limit" を含む) で返すので、文で見分ける
+    /// (文の形は `ugoe-psd` の `Budget::take`。変わったら `import_tests` の上限のテストが失敗する)。
+    pub fn from_psd(error: PsdError, limits: ImportLimits) -> Self {
+        match &error {
+            PsdError::Unsupported(reason) if reason.contains("import limit") => {
+                if reason.ends_with("in total") {
+                    Self::LimitExceeded {
+                        limit: PsdLimit::Total,
+                        max: limits.max_total_decompressed,
+                    }
+                } else {
+                    Self::LimitExceeded {
+                        limit: PsdLimit::Channel,
+                        max: limits.max_channel_decompressed,
+                    }
+                }
+            }
+            _ => Self::Psd(error),
+        }
+    }
+}
+
+/// PSD のバイト列を、展開の上限 `limits` で読む。上限の超過は [`PsdImportError::LimitExceeded`]。
+///
+/// エディタ・CLI・MCP サーバは既定の上限 (`ImportLimits::default()`) で読み、利用者が変える設定は持たない
+/// (`docs/editor.md#読み込みの上限`)。
+pub fn read_layer_tree(bytes: &[u8], limits: ImportLimits) -> Result<LayerTree, PsdImportError> {
+    ugoe_psd::import_with(bytes, limits).map_err(|e| PsdImportError::from_psd(e, limits))
 }
 
 /// `ugoe-psd` の読み込みの警告のコードと引数。
@@ -119,9 +181,12 @@ pub fn import_psd(
     bytes: &[u8],
     options: &PsdImportOptions,
 ) -> Result<PsdImport, PsdImportError> {
-    let tree = ugoe_psd::import(bytes)?;
+    let tree = read_layer_tree(bytes, ImportLimits::default())?;
     layer_tree_command(model, &tree, options)
 }
+
+/// 自動メッシュの関数 (`ugoe_mesher::generate` の形。テストで差し替える)。
+pub(crate) type Mesher = fn(&[u8], u32, u32, &MeshOptions) -> Result<GeneratedMesh, MeshError>;
 
 /// 読み込み済みの [`LayerTree`] から、`model` に取り込むコマンドを作る。
 pub fn layer_tree_command(
@@ -129,11 +194,21 @@ pub fn layer_tree_command(
     tree: &LayerTree,
     options: &PsdImportOptions,
 ) -> Result<PsdImport, PsdImportError> {
+    layer_tree_command_with(model, tree, options, ugoe_mesher::generate)
+}
+
+/// [`layer_tree_command`] を、自動メッシュの関数 `mesher` で行う。
+pub(crate) fn layer_tree_command_with(
+    model: &Model,
+    tree: &LayerTree,
+    options: &PsdImportOptions,
+    mesher: Mesher,
+) -> Result<PsdImport, PsdImportError> {
     options
         .mesh
         .check()
         .map_err(PsdImportError::InvalidMeshOptions)?;
-    let mut builder = Builder::new(model, options.mesh);
+    let mut builder = Builder::new(model, options.mesh, mesher);
     builder.warnings.extend(tree.warnings.iter().map(|w| {
         let text = w.to_string();
         // `ImportWarning` の表示は `パス: 内容` なので、内容だけを取り出す。
@@ -232,6 +307,7 @@ struct Builder {
     /// 追加するテクスチャのインデックスの始まり。
     texture_base: usize,
     options: AutoMeshOptions,
+    mesher: Mesher,
     /// テクスチャの周りに足す透明な余白 (px)。膨張した輪郭がテクスチャの内側に収まるように。
     padding: u32,
     parts: Vec<Part>,
@@ -241,7 +317,7 @@ struct Builder {
 }
 
 impl Builder {
-    fn new(model: &Model, options: AutoMeshOptions) -> Self {
+    fn new(model: &Model, options: AutoMeshOptions, mesher: Mesher) -> Self {
         Self {
             part_ids: model.parts.iter().map(|p| p.id.to_string()).collect(),
             mesh_ids: model.meshes.iter().map(|m| m.id.to_string()).collect(),
@@ -252,6 +328,7 @@ impl Builder {
                 .collect(),
             texture_base: model.textures.len(),
             options,
+            mesher,
             padding: options.margin.ceil() as u32 + 1,
             parts: Vec::new(),
             meshes: Vec::new(),
@@ -383,7 +460,7 @@ impl Builder {
         let pad = self.padding;
         let (width, height) = (layer.width + 2 * pad, layer.height + 2 * pad);
         let rgba = pad_image(&layer.rgba, layer.width, layer.height, pad);
-        let generated = match ugoe_mesher::generate(&rgba, width, height, &self.options.into()) {
+        let generated = match (self.mesher)(&rgba, width, height, &self.options.into()) {
             Ok(g) => g,
             Err(MeshError::Empty) => {
                 self.warn(
@@ -400,6 +477,22 @@ impl Builder {
                     "psd.layer_too_complex",
                     message_args! {},
                     "layer too complex to mesh, skipped",
+                );
+                return Ok(None);
+            }
+            Err(MeshError::TooLarge { width, height }) => {
+                self.warn(
+                    path,
+                    "psd.layer_too_large",
+                    message_args! {
+                        "width" => width,
+                        "height" => height,
+                        "max" => ugoe_mesher::MAX_GRID_CELLS,
+                    },
+                    format!(
+                        "layer too large to mesh (working grid {width}x{height} exceeds {} cells), skipped",
+                        ugoe_mesher::MAX_GRID_CELLS
+                    ),
                 );
                 return Ok(None);
             }

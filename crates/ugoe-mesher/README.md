@@ -72,6 +72,9 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
 - 作業用の格子 (中身の外接矩形と余白) が `MAX_GRID_CELLS` (2^28 = 16384 x 16384 セル) を超えるなら、
   確保の前に `MeshError::TooLarge`。1 セルあたり 20 バイトほど確保するので、確保は約 5 GB までに収まる。
   この上限で、輪郭の辺 ID (`u32`、セルあたり 2 つ) があふれないことも保証する。
+- `MeshError` は `#[non_exhaustive]` (T0554)。失敗の種類を足しても公開 API の破壊的な変更にならないよう、
+  外のクレートの `match` には `_` の腕を書く (このクレートは crates.io に出さないが、利用者の網羅的な
+  `match` を壊さない約束にしておく)。
 
 ## 性能の目安
 

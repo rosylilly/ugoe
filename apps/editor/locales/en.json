@@ -2019,6 +2019,8 @@
     },
     "psd": {
       "read_failed": "Could not read the PSD ({{detail}}).",
+      "channel_limit_exceeded": "The PSD was not read: a channel decompresses to more than the import limit of {{max}} bytes.",
+      "total_limit_exceeded": "The PSD was not read: its channels decompress to more than the import limit of {{max}} bytes in total.",
       "read_file_failed": "Could not read the PSD file {{path}} ({{detail}}).",
       "invalid_mesh_options": "The mesh options cannot be used ({{reason}}).",
       "automesh_failed": "Automatic meshing failed for the layer {{layer}} ({{detail}}).",
@@ -2031,6 +2033,7 @@
       "empty_layer": "The layer is empty, so it was skipped.",
       "transparent_layer": "The layer is fully transparent, so it was skipped.",
       "layer_too_complex": "The layer is too complex to mesh, so it was skipped.",
+      "layer_too_large": "The layer is too large to mesh (its working grid of {{width}} × {{height}} cells exceeds {{max}} cells), so it was skipped.",
       "clipping_base_missing": "The clipping base was not imported, so the layer was imported unclipped.",
       "smart_object_without_pixels": "The smart object has no rendered pixels, so it was skipped.",
       "layer_effects_ignored": "Layer effects were ignored; only the pixels without effects were imported.",

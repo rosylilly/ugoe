@@ -1968,6 +1968,8 @@
     },
     "psd": {
       "read_failed": "PSD を読めません ({{detail}})。",
+      "channel_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、1 枚が取り込みの上限の {{max}} バイトを超えます。",
+      "total_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、合計が取り込みの上限の {{max}} バイトを超えます。",
       "read_file_failed": "PSD のファイル {{path}} を読めません ({{detail}})。",
       "invalid_mesh_options": "メッシュの設定を使えません ({{reason}})。",
       "automesh_failed": "レイヤー {{layer}} の自動メッシュの生成に失敗しました ({{detail}})。",
@@ -1980,6 +1982,7 @@
       "empty_layer": "空のレイヤーなので、取り込みませんでした。",
       "transparent_layer": "完全に透明なレイヤーなので、取り込みませんでした。",
       "layer_too_complex": "メッシュにするには複雑すぎるレイヤーなので、取り込みませんでした。",
+      "layer_too_large": "メッシュにするには大きすぎるレイヤーなので、取り込みませんでした (作業用の格子が {{width}} × {{height}} セルで、上限の {{max}} セルを超えます)。",
       "clipping_base_missing": "クリッピングの下のレイヤーを取り込まなかったので、クリッピングせずに取り込みました。",
       "smart_object_without_pixels": "描画済みの画素を持たないスマートオブジェクトなので、取り込みませんでした。",
       "layer_effects_ignored": "レイヤー効果は使わず、効果を除いた画素だけを取り込みました。",

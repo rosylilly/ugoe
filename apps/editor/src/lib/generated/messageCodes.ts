@@ -617,6 +617,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "psd_height",
     "psd_width"
   ],
+  "psd.channel_limit_exceeded": [
+    "max"
+  ],
   "psd.clipping_base_missing": [],
   "psd.empty_layer": [],
   "psd.flattened_image": [],
@@ -630,6 +633,11 @@ export const messageCodes: Record<string, readonly string[]> = {
   "psd.layer_effects_ignored": [],
   "psd.layer_mask_ignored": [],
   "psd.layer_too_complex": [],
+  "psd.layer_too_large": [
+    "height",
+    "max",
+    "width"
+  ],
   "psd.missing_pixels": [],
   "psd.read_failed": [
     "detail"
@@ -639,6 +647,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "path"
   ],
   "psd.smart_object_without_pixels": [],
+  "psd.total_limit_exceeded": [
+    "max"
+  ],
   "psd.transparent_layer": [],
   "psd.unsupported_compression": [
     "compression"

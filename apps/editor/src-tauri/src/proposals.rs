@@ -43,9 +43,10 @@ use ugoe_ai::rig::{
 use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
 use ugoe_editor_core::{
     ApplyReport, Command, Document, KeyformTarget, ProposalOrigin, ProposalView, Proposals,
+    PsdImportError, import,
 };
 use ugoe_model::{Mesh, MeshId};
-use ugoe_psd::LayerTree;
+use ugoe_psd::{ImportLimits, LayerTree};
 
 use crate::AppState;
 use crate::ai::{AiReply, ConsentAnswer, Prepared, lock_project, prepare_instructed};
@@ -379,8 +380,17 @@ pub struct ProposalPreview {
 // ---- 分類と提案 (IPC から切り離した本体。テストでプロバイダを差し替える) ----
 
 fn read_tree(path: &Path) -> IpcResult<LayerTree> {
+    read_tree_with(path, ImportLimits::default())
+}
+
+/// PSD を展開の上限 `limits` で読む。上限の超過は、どの上限かが分かるコード (`psd.channel_limit_exceeded`・
+/// `psd.total_limit_exceeded`) のまま返し、ほかの読み込みのエラーはパス付きの `psd.read_file_failed` にする。
+fn read_tree_with(path: &Path, limits: ImportLimits) -> IpcResult<LayerTree> {
     let bytes = std::fs::read(path).map_err(|e| EditorError::io(path, e))?;
-    ugoe_psd::import(&bytes).map_err(|e| EditorError::psd_read(path, e).into())
+    import::read_layer_tree(&bytes, limits).map_err(|e| match e {
+        PsdImportError::Psd(error) => EditorError::psd_read(path, error).into(),
+        e => e.into(),
+    })
 }
 
 /// レイヤーを分類する。`provider` があれば AI で (注文と前の分類を添えて)、なければ名前の規則で。
