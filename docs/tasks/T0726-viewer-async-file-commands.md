@@ -1,11 +1,11 @@
 ---
 id: T0726
 title: ビューアのファイルの読み書きのコマンドを非同期にする
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer]
 depends_on: [T0724]
-assignee:
+assignee: claude-worker-T0726
 ---
 
 # T0726: ビューアのファイルの読み書きのコマンドを非同期にする
