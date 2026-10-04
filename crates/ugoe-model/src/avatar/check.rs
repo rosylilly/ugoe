@@ -8,7 +8,8 @@ use std::collections::HashSet;
 
 use super::{
     ARKIT_BLEND_SHAPES, AvatarProfile, HEAD_INPUTS, LEVEL_1_PARAMETERS, LEVEL_2_PARAMETERS,
-    LEVEL_3_EXTENDED_COUNT, MAX_LEVEL, PROFILE_VERSION, TRACKED_PARAMETERS, TrackingSource,
+    LEVEL_3_EXTENDED_COUNT, MAX_LEVEL, PROFILE_VERSION, TRACKED_PARAMETERS, TrackingOverride,
+    TrackingSource,
 };
 use crate::{Model, standard};
 
@@ -261,8 +262,12 @@ fn check_tracking(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profil
             TrackingSource::Standard => ("standard", TRACKED_PARAMETERS),
             TrackingSource::BlendShape => ("blend_shape", &ARKIT_BLEND_SHAPES),
             TrackingSource::Head => ("head", HEAD_INPUTS),
-            // 未知の入力の上書きは無視されるので検査しない (未知の値として下で報告する)。
-            TrackingSource::Unknown => continue,
+            // 未知の入力の上書きは無視されるので、入力と対象は検査しない (未知の値として下で報告する)。
+            // 数値は `f32` の規則 (有限値) が新しい版でも変わらないので検査する (`docs/spec/model.md#数値の検証の方針`)。
+            TrackingSource::Unknown => {
+                check_numbers(&path, entry, issues);
+                continue;
+            }
         };
         if !known.contains(&entry.input.as_str()) {
             issues.push(ProfileIssue::UnknownTrackingInput {
@@ -281,9 +286,14 @@ fn check_tracking(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profil
                 field: path.clone(),
             }),
         }
-        check_finite(&format!("{path}.scale"), entry.scale, issues);
-        check_finite(&format!("{path}.offset"), entry.offset, issues);
+        check_numbers(&path, entry, issues);
     }
+}
+
+/// トラッキングの上書きの係数とオフセットが有限値であること。範囲は定めない (0 や負の係数も意味がある)。
+fn check_numbers(path: &str, entry: &TrackingOverride, issues: &mut Vec<ProfileIssue>) {
+    check_finite(&format!("{path}.scale"), entry.scale, issues);
+    check_finite(&format!("{path}.offset"), entry.offset, issues);
 }
 
 /// 視線の検査: パラメータの参照と可動範囲。省略した場合 (標準の視線のパラメータを使う) は調べない。
@@ -565,7 +575,7 @@ mod tests {
             entry(TrackingSource::BlendShape, "jawOpenWide", None),
             entry(TrackingSource::Head, "yaw", Some("Nope")),
             TrackingOverride {
-                scale: f32::NAN,
+                scale: f32::INFINITY,
                 ..entry(TrackingSource::Unknown, "x", None)
             },
         ];
@@ -595,6 +605,12 @@ mod tests {
                     field: "avatar.tracking[5].parameter".into(),
                     target_kind: "parameter",
                     target: "Nope".into(),
+                },
+                // 未知の入力の上書きでも、数値は有限値でなければならない。
+                ProfileIssue::InvalidValue {
+                    field: "avatar.tracking[6].scale".into(),
+                    value: f32::INFINITY,
+                    expected: "finite",
                 },
                 ProfileIssue::UnknownValue {
                     field: "avatar.tracking[6].source".into(),
@@ -687,6 +703,52 @@ mod tests {
                 target_kind: "slot",
                 target: "Outfit".into(),
             }]
+        );
+    }
+
+    /// プロファイルの数値の NaN・±無限大は、場所つきのエラーになる (`docs/spec/model.md#数値の検証の方針`)。
+    #[test]
+    fn non_finite_numbers_are_errors() {
+        let mut model = level_1();
+        let entry = |source, scale, offset| TrackingOverride {
+            source,
+            input: standard::ANGLE_X.into(),
+            parameter: None,
+            scale,
+            offset,
+        };
+        let profile = avatar(&mut model);
+        profile.tracking = vec![
+            entry(TrackingSource::Standard, f32::INFINITY, f32::NAN),
+            entry(TrackingSource::Standard, 1.0, f32::NEG_INFINITY),
+            // 0 や負の係数・オフセットは意味があるのでエラーにしない。
+            entry(TrackingSource::Standard, -2.0, -0.5),
+            entry(TrackingSource::Standard, 0.0, 0.0),
+            entry(TrackingSource::Unknown, f32::NEG_INFINITY, 0.0),
+        ];
+        profile.look_at = Some(LookAt {
+            x: standard::ANGLE_X.into(),
+            y: standard::ANGLE_Y.into(),
+            range_x: f32::NAN,
+            range_y: f32::INFINITY,
+        });
+        let errors: Vec<_> = check_profile(&model)
+            .errors()
+            .map(|issue| match issue {
+                ProfileIssue::InvalidValue { field, .. } => field.clone(),
+                other => panic!("unexpected error: {other}"),
+            })
+            .collect();
+        assert_eq!(
+            errors,
+            [
+                "avatar.tracking[0].scale",
+                "avatar.tracking[0].offset",
+                "avatar.tracking[1].offset",
+                "avatar.tracking[4].scale",
+                "avatar.look_at.range_x",
+                "avatar.look_at.range_y",
+            ]
         );
     }
 

@@ -163,7 +163,7 @@ not handle as the author expects. A validator SHOULD report every failed check.
 | `level` is between 1 and 3. | error |
 | The metadata requirement above is met. | error |
 | The model has every parameter that the claimed level requires (for level 3, at least 8 extended parameters). If `level` is greater than 3, the checks of level 3 apply. | error |
-| For each element of `tracking` whose `source` is known: `input` is a known input for that `source` ([Overrides](#overrides)); the parameter it writes is determined (`parameter` is present, or `source` is `standard`) and the model has it; `scale` and `offset` are finite. | error |
+| For each element of `tracking` whose `source` is known: `input` is a known input for that `source` ([Overrides](#overrides)); the parameter it writes is determined (`parameter` is present, or `source` is `standard`) and the model has it. For each element of `tracking`, including those whose `source` is unknown: `scale` and `offset` are finite. | error |
 | If `look_at` is present: the model has its `x` and `y` parameters, and `range_x` and `range_y` are finite and greater than 0. | error |
 | The `name` values of `hit_areas` are unique, and each `hit_area` is the ID of one of the model's hit areas. | error |
 | Each element of `slots` is the ID of one of the model's slots. | error |
@@ -172,6 +172,13 @@ not handle as the author expects. A validator SHOULD report every failed check.
 | `profile_version` is not greater than the version the validator supports (0 in this document). A validator that meets a greater version SHOULD say that its checks may be incomplete. | warning |
 | The profile contains no unknown value (an unknown license term or an unknown `tracking` `source`). | warning |
 | No parameter that tracking or gaze writes is `internal` ([model.md](model.md#parameters)): a parameter of the [standard mapping](#standard-mapping) that the model has, the parameter written by an element of `tracking`, and the `x` and `y` parameters of `look_at`. Tracking never writes internal parameters. | warning |
+
+Every `f32` of the profile (`scale` and `offset` of each `tracking` element, and `range_x` and
+`range_y` of `look_at`) MUST be finite, as in [model.md](model.md#data-conventions); a validator
+reports a NaN or an infinity as an error together with its location (for example
+`avatar.tracking[0].scale`). This rule does not depend on the version, so it also applies to
+elements whose `source` is unknown. Apart from `range_x` and `range_y`, the profile defines no
+range for its numbers: a `scale` of 0 or less is valid.
 
 A validator MAY also report the **satisfied level**: the highest level whose metadata and parameter
 requirements the model meets, regardless of the claimed level, or 0 if it meets none (for example
@@ -332,7 +339,7 @@ An element is **ignored** — it writes nothing and replaces nothing — when an
 - it has no target, or the model does not have the target parameter;
 - `scale` or `offset` is not finite.
 
-A validator reports the last three as errors ([Conformance checks](#conformance-checks)), but an
+A validator reports the last three as errors (and a non-finite `scale` or `offset` also when `source` is unknown) ([Conformance checks](#conformance-checks)), but an
 application MUST ignore such elements and go on.
 
 ### Computing the parameter values

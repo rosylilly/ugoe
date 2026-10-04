@@ -65,7 +65,8 @@ Field tables in this document use the following types.
 - Unless a field says otherwise, `f32` values MUST be finite. JSON cannot represent NaN or
   infinity (a JSON number too large for `f32`, such as `1e39`, converts to infinity). The
   [validation rules](#validation) check every `f32` of a model, of physics settings, of motions and
-  of expressions.
+  of expressions. The `f32` values of the avatar profile are checked by its
+  [conformance checks](avatar-profile.md#conformance-checks) instead.
 - Integer fields MUST be integers in the range of their type. A reader MUST reject a float where an
   integer is required.
   - In MessagePack, an integer is a value of one of the integer types; a float 32 or float 64 is a
