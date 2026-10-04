@@ -87,8 +87,14 @@ export class EditorDocument {
     return this.applyWith(() => ipc.applyCommand(command));
   }
 
-  /** 適用の報告を返す IPC (AI の提案の採用など) を呼んで読み直す。`apply` と同じく失敗したら null。 */
-  async applyWith(action: () => Promise<ApplyReport>): Promise<ApplyReport | null> {
+  /**
+   * 適用の報告を返す IPC (AI の提案の採用など) を呼んで読み直す。`apply` と同じく失敗したら null。
+   * `rethrow` なら、失敗を `error` に置かずに例外のまま返す (ダイアログが自分のエラーとして出すとき)。
+   */
+  async applyWith(
+    action: () => Promise<ApplyReport>,
+    options: { rethrow?: boolean } = {},
+  ): Promise<ApplyReport | null> {
     let applied: ApplyReport | null = null;
     await this.#run(async () => {
       const report = await action();
@@ -96,7 +102,7 @@ export class EditorDocument {
         this.warnings = mergeWarnings(this.warnings, report.warnings);
       }
       applied = report;
-    });
+    }, options.rethrow);
     return applied;
   }
 
@@ -112,10 +118,11 @@ export class EditorDocument {
     await this.#run(ipc.redo);
   }
 
-  async #run(action: () => Promise<unknown>): Promise<void> {
+  async #run(action: () => Promise<unknown>, rethrow = false): Promise<void> {
     try {
       await action();
     } catch (e) {
+      if (rethrow) throw e;
       this.error = errorText(e);
       return;
     }

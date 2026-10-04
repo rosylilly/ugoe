@@ -74,3 +74,20 @@ describe("EditorDocument.refresh", () => {
     expect(doc.revision).toBe(0);
   });
 });
+
+describe("EditorDocument.applyWith", () => {
+  it("shows the failure in the document", async () => {
+    const doc = new EditorDocument();
+    const report = await doc.applyWith(() => Promise.reject(new Error("refused")));
+    expect(report).toBeNull();
+    expect(doc.error).toBe("refused");
+  });
+
+  it("returns the failure to the caller with rethrow", async () => {
+    const doc = new EditorDocument();
+    await expect(
+      doc.applyWith(() => Promise.reject(new Error("refused")), { rethrow: true }),
+    ).rejects.toThrow("refused");
+    expect(doc.error).toBeNull();
+  });
+});

@@ -723,7 +723,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 - **`ModuleContext` はスナップショットに入れる:** `Document` の `module` を `Snapshot` に移し、Undo / Redo で設定も戻るようにしました
   (以前は「編集中は変わらない」ものとして `Document` が直接持っていた)。
 - **名前を変えると ID の接頭辞が変わる:** 作業用のモデルの要素の ID は `<新しい名前>/…` になります (新しく作って接頭辞のなかった要素も、合成し直すと付く)。
-  画面は選択を新しい ID に付け替えます (`renamePrefix`、FileMenu の `onrenamemodule`)。
+  画面は選択を新しい ID に付け替えます (`renamePrefix`、FileMenu の `onrenamemodule`。適用の後、ドキュメントを読み直す前に)。
+- **ほかの編集と同じ道を通る (T0689):** 画面の「Apply」は `EditorDocument.applyWith` で適用し、適用の報告の警告 (`ApplyReport.warnings`) を
+  ほかの編集と同じく出します。失敗は `rethrow` で設定の画面に返し、画面の中に出します。
 - **スロットを変えると:** 描画順は新しいスロットの範囲に写し直されます。モジュールの最上位の要素は取り付け先の局所座標なので、
   取り付け先の違うスロットに移すとき:
   - `keep_look` (画面の「Keep where it appears」、既定で入) なら、合成し直した作業用のモデルで、モジュールの最上位のデフォーマとメッシュの親を
@@ -1300,6 +1302,10 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
   依存も増えない。代わりに、確かめた時点でしか気づかない。
 - **いつ確かめるか:** ウィンドウに戻ったとき (`focus`)、ウィンドウが見えている間は 5 秒ごと (`CHECK_INTERVAL_MS`)、保存の前。
   バックエンドの `save_project` も書く直前に確かめ、変わっていれば `overwrite` なしでは書かない (画面の確認とのあいだの書き換えも拾う)。
+- **操作を重ねない (T0689):** ファイルメニューの流れは `src/lib/fileMenu.svelte.ts` の `FileMenuFlow` が持つ (`FileMenu.svelte` は表示と呼び出しだけ。
+  `fileMenu.test.ts` で IPC を偽物にして確かめる)。利用者の操作 (保存・上書き・開き直し・本体の読み直し・ダイアログで選ぶ操作・モジュールの設定) は
+  `busy` を立てて 1 つずつ行い、途中に来たもの (「Save」の連打など) は捨てる。確かめは操作の途中には行わず、ウィンドウに戻ったときと間隔の確かめが
+  重なれば同じ確かめを待つ (同じ変化に 2 回応じない)。確かめの途中に来た利用者の操作は、確かめ (自動の開き直しまで) が終わってから行う。
 - **比べ方:** 開いた (保存した) ときの指紋を `ProjectSession` が覚え、`ProjectFingerprint::reread` で取り直して比べる。中身が同じなら更新日時が変わっても
   変更としない (`touch`・同じ内容の書き直し)。JSON は毎回読んでハッシュし、PNG は大きさと更新日時が前と同じなら前のハッシュを使い回す
   (大きな画像を 5 秒ごとに読まないため。大きさも日時も同じまま PNG の中身だけを変えられると気づかない)。ハッシュは `std` の `DefaultHasher` で、ファイルには残さない。
@@ -1351,6 +1357,8 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
 - 設定は変えるたびにプロジェクトに残し (`set_export_settings`)、保存で `project.json` の `editor.export` に書きます
   ([file-formats.md#projectjson](spec/file-formats.md#projectjson))。すべて既定値なら書きません。設定を変えると未保存の印が付きます
   (`ProjectSession.meta_modified`。Undo の対象ではない。モデルを変えないので `Command` にしない)。
+- 欄を続けて変えても重ねません (`src/lib/exportSettings.svelte.ts`、T0689): 変えた値はすぐ欄に出し、`set_export_settings` は 1 つずつ順に、
+  前の変更まで残した設定に重ねて送ります (前の変更が終わる前の古い設定を元に送って戻さない)。断られた変更だけを欄から戻し、理由を出します。
 - **結果:** 書き出した後、欄の下にテクスチャの枚数・描画の状態の切り替え回数・描画の回数の前 → 後と、アトラス化の詳細
   (詰めた枚数とアトラスの大きさ、同じ画像として 1 つにしたもの、まとめずに残したものと理由、使われないので取り除いたもの) を出します
   (`src/lib/exportSummary.ts`、Vitest)。別のプロジェクトに替わると欄を閉じて結果を消します。

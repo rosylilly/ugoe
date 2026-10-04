@@ -1,12 +1,13 @@
 <script lang="ts">
 import { Button, Checkbox, NumberField, Select } from "@ugoe/ui";
-import { errorText } from "./errors";
 // 書き出しの設定 (アトラス化の有無・最大の大きさ・余白) と、最後の書き出しの結果 (docs/editor.md#書き出し)。
-// 設定は変えるたびにプロジェクトに残す (保存で project.json の editor.export に書く)。
+// 設定は変えるたびにプロジェクトに残す (保存で project.json の editor.export に書く。続けて変えても重ねない。
+// 状態は exportSettings.svelte.ts の ExportSettingsForm)。
 // .ugoe の書き出しと、モジュールのプロジェクトの .ugoemod の書き出し (T0654) で同じ設定を使う。
+import { ExportSettingsForm } from "./exportSettings.svelte";
 import { ATLAS_SIZES, MAX_ATLAS_PADDING } from "./exportSummary";
 import { t } from "./i18n";
-import { type ExportSettings, ipc, type ProjectStatus } from "./ipc";
+import type { ProjectStatus } from "./ipc";
 
 interface Props {
   /** ダイアログを開いているか、その後の処理の途中か。 */
@@ -23,61 +24,33 @@ interface Props {
 
 let { busy, summary, label, onexport, onstatus }: Props = $props();
 
+const form = new ExportSettingsForm((status) => onstatus(status));
+
 /** 最大の大きさの選択肢 (今の値が一覧に無ければ足す)。 */
 const sizeOptions = $derived.by(() => {
   const sizes: number[] = [...ATLAS_SIZES];
+  const settings = form.settings;
   if (settings && !sizes.includes(settings.atlas_max_size)) sizes.push(settings.atlas_max_size);
   return sizes.map((size) => ({ value: String(size), label: t("export.px", { value: size }) }));
 });
 
-let settings = $state<ExportSettings | null>(null);
-let error = $state<string | null>(null);
-
-async function load() {
-  try {
-    settings = await ipc.getExportSettings();
-  } catch (e) {
-    error = errorText(e);
-  }
-}
-
-async function update(patch: Partial<ExportSettings>) {
-  if (!settings) return;
-  const next = { ...settings, ...patch };
-  try {
-    onstatus(await ipc.setExportSettings(next));
-    settings = next;
-    error = null;
-  } catch (e) {
-    error = errorText(e);
-  }
-}
-
-function setPadding(value: number) {
-  if (Number.isInteger(value) && value >= 0 && value <= MAX_ATLAS_PADDING) {
-    update({ atlas_padding: value });
-  } else {
-    error = t("export.padding.invalid", { max: MAX_ATLAS_PADDING });
-  }
-}
-
-load();
+form.load();
 </script>
 
 <div class="export-panel">
-  {#if settings}
+  {#if form.settings}
     <Checkbox
       label={t("export.atlas.label")}
-      checked={settings.atlas}
+      checked={form.settings.atlas}
       disabled={busy}
-      onchange={(atlas) => update({ atlas })}
+      onchange={(atlas) => form.update({ atlas })}
     />
     <Select
       label={t("export.maxSize.label")}
-      value={String(settings.atlas_max_size)}
+      value={String(form.settings.atlas_max_size)}
       options={sizeOptions}
-      disabled={busy || !settings.atlas}
-      onchange={(v) => update({ atlas_max_size: Number(v) })}
+      disabled={busy || !form.settings.atlas}
+      onchange={(v) => form.update({ atlas_max_size: Number(v) })}
     />
     <NumberField
       label={t("export.padding.label")}
@@ -86,16 +59,16 @@ load();
       max={MAX_ATLAS_PADDING}
       step={1}
       size={4}
-      value={settings.atlas_padding}
-      disabled={busy || !settings.atlas}
-      onchange={setPadding}
+      value={form.settings.atlas_padding}
+      disabled={busy || !form.settings.atlas}
+      onchange={(value) => form.setPadding(value)}
     />
     <p class="ed-hint">{t("export.hint")}</p>
   {/if}
   <div class="ed-buttons">
     <Button variant="primary" onclick={onexport} disabled={busy}>{label ?? t("fileMenu.export.bundle")}</Button>
   </div>
-  {#if error}<p class="error ugoe-selectable">{error}</p>{/if}
+  {#if form.error}<p class="error ugoe-selectable">{form.error}</p>{/if}
   {#if summary}
     <ul class="summary" aria-label={t("export.summary.aria")}>
       {#each summary as line, i (i)}
