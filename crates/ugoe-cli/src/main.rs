@@ -5,6 +5,7 @@ mod physics;
 mod sample;
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
@@ -242,6 +243,11 @@ struct RenderArgs {
     /// 省略時は環境変数 `WGPU_BACKEND`、それも無ければ wgpu の既定。
     #[arg(long)]
     backend: Option<String>,
+    /// GPU を待つ時間の上限 (秒)。超えたらエラーで終わる (ドライバが止まっても戻るように)。
+    /// 遅いソフトウェアの GPU (lavapipe・llvmpipe) で大きな画を描くときは延ばす。`0` は上限なし。
+    #[arg(long, value_name = "SECONDS", default_value = "30",
+          value_parser = args::parse_gpu_timeout)]
+    gpu_timeout: Duration,
     /// 描画の統計 (描画回数など。`ugoe_render::FrameStats`) を標準出力に `stats: <JSON>` の 1 行で書く。
     #[arg(long)]
     stats: bool,
@@ -1017,11 +1023,20 @@ fn run_render(args: RenderArgs) -> anyhow::Result<()> {
         eprintln!("warning: {w}");
     }
 
-    let gpu = ugoe_headless::Gpu::new(args.backend.as_deref())?;
+    let mut gpu = ugoe_headless::Gpu::new(args.backend.as_deref())?;
+    gpu.set_wait_timeout(args.gpu_timeout);
     let result = prepared.render(&gpu);
     let adapter = gpu.adapter_description();
     gpu.leak();
-    let (image, stats) = result?;
+    let (image, stats) = result.map_err(|e| {
+        let timed_out = e.is_gpu_wait_timeout();
+        let e = anyhow::Error::new(e);
+        if timed_out {
+            e.context("rendering did not finish within --gpu-timeout (raise it, or 0 waits without a limit)")
+        } else {
+            e
+        }
+    })?;
 
     let png = ugoe_headless::image::encode_png_unpremultiplied(&image)?;
     std::fs::write(&args.output, png)
@@ -1062,6 +1077,8 @@ fn prepare_render(args: &RenderArgs) -> anyhow::Result<ugoe_headless::Prepared> 
         width: args.width,
         height: args.height,
         scale: args.scale,
+        // 大きさを指定しないときは、上限に収まるよう縮める (`render_png` と同じ規則。上限は 16384)。
+        shrink_to: Some(ugoe_headless::MAX_SIZE),
         fit: args.fit,
         background: args.background,
         texture_overrides: args.textures.clone(),
@@ -1270,6 +1287,58 @@ mod tests {
         assert_eq!(args.textures, vec![(0, PathBuf::from("a.png"))]);
         assert_eq!(args.fit, Fit::Contain);
         assert_eq!(args.scale, 1.0);
+        assert_eq!(args.gpu_timeout, ugoe_headless::DEFAULT_WAIT_TIMEOUT);
+    }
+
+    #[test]
+    fn parses_the_gpu_timeout() {
+        let timeout = |value: &str| {
+            parse(&["render", "m.json", "-o", "o.png", "--gpu-timeout", value]).map(|cli| {
+                let Cmd::Render(args) = cli.command else {
+                    panic!("not render");
+                };
+                args.gpu_timeout
+            })
+        };
+        assert_eq!(timeout("120").unwrap(), Duration::from_secs(120));
+        assert_eq!(timeout("0").unwrap(), Duration::MAX);
+        for bad in ["-1", "inf", "abc"] {
+            assert!(timeout(bad).is_err(), "{bad}");
+        }
+    }
+
+    /// 大きさを指定しないとき、上限 (16384) を超えるキャンバスは縮めて描く (`render_png` と同じ規則)。
+    #[test]
+    fn render_shrinks_a_canvas_larger_than_the_limit() {
+        let tmp = std::env::temp_dir().join(format!("ugoe-cli-shrink-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mut model = ugoe_model::fixtures::single_quad();
+        model.meta.canvas.width = 40000.0;
+        model.meta.canvas.height = 10000.0;
+        let path = tmp.join("big.json");
+        std::fs::write(&path, ugoe_format::model_to_json(&model).unwrap()).unwrap();
+        let path = path.to_str().unwrap();
+
+        let render = |extra: &[&str]| {
+            let mut argv = vec!["render", path, "-o", "o.png"];
+            argv.extend(extra);
+            let Cmd::Render(args) = parse(&argv).unwrap().command else {
+                panic!("not render");
+            };
+            prepare_render(&args)
+        };
+        let prepared = render(&[]).unwrap();
+        assert_eq!(prepared.size, (16384, 4096));
+        assert!(
+            prepared.warnings[0].contains("rendered at 16384x4096"),
+            "{:?}",
+            prepared.warnings
+        );
+        // 大きさを指定すれば縮めない (警告も出さない)。
+        let prepared = render(&["--width", "100"]).unwrap();
+        assert_eq!(prepared.size, (100, 25));
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

@@ -24,8 +24,8 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | モジュール | 内容 |
 | --- | --- |
 | `lib.rs` | `Scene` (モデルとバンドルの中身)・`RenderOptions` (`ugoe render` のオプションと 1 対 1)・`prepare`・`Prepared::render` |
-| `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps・光の色・光源)。clap の `value_parser` にそのまま渡せる |
-| `view` | 出力の大きさ (`output_size`) とキャンバスを収めるビュー (`fit_view`・`Fit`) |
+| `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps・GPU を待つ秒数・光の色・光源)。clap の `value_parser` にそのまま渡せる |
+| `view` | 出力の大きさ (`output_size`。大きさを指定しないときに上限へ縮める倍率は `shrink_scale`。`RenderOptions::shrink_to` で使う) とキャンバスを収めるビュー (`fit_view`・`Fit`) |
 | `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1)・バンドルの法線マップをデコードする |
 | `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 (`update` は `MAX_UPDATES` 回 = 60 fps で 1 時間まで) |
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
@@ -76,7 +76,7 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
 - **待つ時間の上限:** `Gpu::render` と `Resident::poll(Wait::All)` は、読み戻しを `Gpu::wait_timeout` (既定は
   `DEFAULT_WAIT_TIMEOUT` = 30 秒。ソフトウェアのラスタライザでも 1 枚は数秒かからないので、十分に余裕を持たせた長さ) までしか待たず、超えたら
   `Error::Gpu` を返す (`Error::is_gpu_wait_timeout` が `true`)。ドライバが止まっても呼び出したスレッドが戻らなくならないように。
-  上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし)。上限を超えた `Gpu` (とそれで作った `Resident`) は
+  上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし。`ugoe render` の `--gpu-timeout` は `args::parse_gpu_timeout` で読む)。上限を超えた `Gpu` (とそれで作った `Resident`) は
   止まっているかもしれないので使い回さず、破棄もせずに手放して作り直す (MCP サーバがそうする)。
   wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒で打ち切るので、1 秒ずつ待ち直して上限まで待つ。
 

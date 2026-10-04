@@ -62,6 +62,23 @@ pub fn output_size(
     })
 }
 
+/// 大きさを指定しないとき (キャンバスの大きさ × `scale`) の出力の長い辺が `limit` を超えるなら、縦横比を保って
+/// `limit` に収まるよう縮めた倍率を返す。超えなければ `None` (`scale` のまま描く)。
+///
+/// キャンバスや `scale` が不正なら `None` を返す (誤りは [`output_size`] が報告する)。
+pub fn shrink_scale(canvas: (f32, f32), scale: f32, limit: u32) -> Option<f32> {
+    let (cw, ch) = canvas;
+    if !(cw > 0.0 && ch > 0.0 && scale > 0.0 && scale.is_finite()) {
+        return None;
+    }
+    let longest = cw.max(ch) * scale;
+    // 丸めた後の大きさで比べる ([`output_size`] は四捨五入する)。
+    if longest.round() <= limit as f32 {
+        return None;
+    }
+    Some(limit as f32 / cw.max(ch))
+}
+
 /// キャンバス (Y 下向き) を出力画像に収めるビュー。クリップ座標は Y 上向き。
 pub fn fit_view(canvas: (f32, f32), output: (u32, u32), fit: Fit) -> View {
     let (cw, ch) = canvas;
@@ -125,6 +142,39 @@ mod tests {
             output_size(c, Some((MAX_SIZE, 1)), None, None, 1.0).unwrap(),
             (MAX_SIZE, 1)
         );
+    }
+
+    /// 上限を超えるときだけ、縦横比を保って長い辺が上限になるよう縮める。
+    #[test]
+    fn shrink_scale_fits_the_longest_side() {
+        assert_eq!(shrink_scale((256.0, 128.0), 1.0, 4096), None);
+        assert_eq!(shrink_scale((4096.0, 128.0), 1.0, 4096), None);
+        assert_eq!(shrink_scale((4096.4, 128.0), 1.0, 4096), None);
+
+        let c = (8000.0, 6000.0);
+        let s = shrink_scale(c, 1.0, 4096).unwrap();
+        assert_eq!(output_size(c, None, None, None, s).unwrap(), (4096, 3072));
+        // 縦長でも長い辺 (高さ) で決める。`scale` で大きくした分も縮める。
+        let c = (3000.0, 5000.0);
+        let s = shrink_scale(c, 2.0, 4096).unwrap();
+        assert_eq!(output_size(c, None, None, None, s).unwrap(), (2458, 4096));
+        assert_eq!(shrink_scale((3000.0, 5000.0), 0.5, 4096), None);
+        // 上限ちょうどにも、端数の出る大きさでも収まる。
+        for (cw, ch) in [
+            (16385.0, 16385.0),
+            (20000.0, 7.0),
+            (4097.0, 3333.0),
+            (99999.0, 12345.0),
+        ] {
+            let s = shrink_scale((cw, ch), 1.0, 4096).unwrap();
+            let (w, h) = output_size((cw, ch), None, None, None, s).unwrap();
+            assert_eq!(w.max(h), 4096, "{cw}x{ch}");
+        }
+
+        // 不正な値は縮めずに、`output_size` の誤りに任せる。
+        assert_eq!(shrink_scale((0.0, 1.0), 1.0, 4096), None);
+        assert_eq!(shrink_scale((1.0, 1.0), f32::NAN, 4096), None);
+        assert_eq!(shrink_scale((1.0, 1.0), -1.0, 4096), None);
     }
 
     fn apply(view: &View, (x, y): (f32, f32)) -> (f32, f32) {

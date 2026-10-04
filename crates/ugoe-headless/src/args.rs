@@ -3,6 +3,7 @@
 //! どれも誤りを `String` で返すので、clap の `value_parser` にそのまま渡せる。
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use ugoe::core::Rgb;
 use ugoe_render::Light;
@@ -112,6 +113,24 @@ pub fn parse_fps(s: &str) -> Result<f32, String> {
         .parse()
         .map_err(|_| format!("invalid number `{s}`"))?;
     check_fps(fps).map_err(|_| format!("fps must be a finite number > 0, got `{s}`"))
+}
+
+/// `--gpu-timeout` を読む: GPU を待つ時間の上限の秒数 ([`crate::Gpu::set_wait_timeout`])。
+///
+/// 0 より大きい有限の秒数か、上限なしの `0`。負・NaN・無限大と、`Duration` に収まらない値はエラー。
+pub fn parse_gpu_timeout(s: &str) -> Result<Duration, String> {
+    let secs: f64 = s
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number `{s}`"))?;
+    let invalid = || format!("GPU timeout must be a finite number of seconds >= 0, got `{s}`");
+    if !secs.is_finite() || secs < 0.0 {
+        return Err(invalid());
+    }
+    if secs == 0.0 {
+        return Ok(Duration::MAX);
+    }
+    Duration::try_from_secs_f64(secs).map_err(|_| invalid())
 }
 
 /// 光の色 (`--ambient` と `--light` の色) を読む: `V` (灰色) か `R,G,B`。0 以上の有限の値で、1 を超えてもよい (強さを兼ねる)。
@@ -317,5 +336,16 @@ mod tests {
         assert!(parse_fps("0").is_err());
         assert!(check_time(f32::NAN).is_err());
         assert!(check_fps(-1.0).is_err());
+    }
+
+    #[test]
+    fn parses_gpu_timeouts() {
+        assert_eq!(parse_gpu_timeout("30"), Ok(Duration::from_secs(30)));
+        assert_eq!(parse_gpu_timeout("0.5"), Ok(Duration::from_millis(500)));
+        // 0 は上限なし。
+        assert_eq!(parse_gpu_timeout("0"), Ok(Duration::MAX));
+        for bad in ["-1", "inf", "NaN", "1e300", "x", ""] {
+            assert!(parse_gpu_timeout(bad).is_err(), "{bad}");
+        }
     }
 }

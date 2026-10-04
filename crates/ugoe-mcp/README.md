@@ -542,8 +542,9 @@ Claude Code に次のように頼む:
 
 上限は `ugoe render` と同じ (crates/ugoe-cli/README.md の「上限」) だが、PNG をエージェントに返すので、明示した
 `width`・`height` は 4096 まで、`time` は 3600 秒までに狭める (`render::MAX_SIZE`・`render::MAX_TIME`。ツールのスキーマの
-`maximum` と同じ値で、サーバも GPU を使う前に確かめる)。時間は 60 fps で進める。大きさを指定しないときはキャンバスの大きさで、
-これは CLI と同じ 16384 までになる。
+`maximum` と同じ値で、サーバも GPU を使う前に確かめる)。時間は 60 fps で進める。大きさを指定しないときはキャンバスの大きさで描くが、
+長い辺が 4096 を超えるなら縦横比を保って 4096 に収まるよう縮め、`log` に
+``warning: the canvas (WxH) is larger than 4096 pixels on a side; rendered at ...`` を書く (`ugoe render` も同じ規則で、上限が 16384)。
 
 長く動くサーバなので、GPU のドライバの不調で落ちないように次の手当てをする。
 

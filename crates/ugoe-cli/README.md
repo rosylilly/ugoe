@@ -72,7 +72,7 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 | `--param ID=VALUE` | パラメータの値 (複数可)。未知の ID はエラー (既知の ID を列挙する)。値域の外はクランプされ、警告を出す |
 | `--size WxH` | 出力の大きさ |
 | `--width` / `--height` | 片方だけならキャンバスの縦横比から他方を決める |
-| `--scale <F>` | 大きさを指定しないときの、キャンバスに対する倍率 (既定 1 = キャンバスと同じ大きさ) |
+| `--scale <F>` | 大きさを指定しないときの、キャンバスに対する倍率 (既定 1 = キャンバスと同じ大きさ)。長い辺が 16384 を超えるなら縮める (下の「上限」) |
 | `--fit contain\|stretch` | `contain` (既定) は縦横比を保って中央に収める。`stretch` は出力全体に引き伸ばす |
 | `--view A,B,C,D,E,F` | ビュー変換を直接与える (`--fit` と同時には使えない)。キャンバスの点 `(x, y)` を出力の `(A*x + C*y + E, B*x + D*y + F)` (画素、左上が原点・Y 下向き) に写す。鏡映・回転もできる。公開仕様の描画の例の `view` と同じ意味 (T0414) |
 | `--background <COLOR>` | `transparent` (既定)、`white`、`black`、`#RRGGBB`、`#RRGGBBAA` |
@@ -87,6 +87,7 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 | `--light <LIGHT>` | 光源 (複数可)。`directional:DX,DY,DZ[:COLOR]` か `point:X,Y,Z[:COLOR[:RANGE]]` (下の「ライティング」) |
 | `--module <PATH>` | 本体に付ける着せ替えのモジュール (`.ugoemod`、複数可。付ける順は指定の順)。入力は `.ugoe` バンドル。合成 (`ugoe_runtime::compose`) と同じ規則で付け、付けられなければエラー。モジュールの物理のリグは本体の物理に加わる (本体に物理が無ければ重力 `(0, 1)`・60 Hz の設定に加える) |
 | `--backend <NAME>` | wgpu のバックエンド (`vulkan` `metal` `dx12` `gl`、カンマ区切り)。省略時は `WGPU_BACKEND`、それも無ければ wgpu の既定 |
+| `--gpu-timeout <SECONDS>` | GPU を待つ時間の上限 (既定 30 = `ugoe_headless::DEFAULT_WAIT_TIMEOUT`)。超えたらエラーで終わる。`0` は上限なし。負・`inf`・`NaN` はエラー (下の「GPU」) |
 | `--stats` | 描画の統計 (`ugoe_render::FrameStats`) を標準出力に `stats: {"drawables":21,...}` の 1 行 (JSON、キーは名前順) で書く |
 
 成功すると標準出力に 1 行 (`wrote out.png (256x256, adapter: ...)`) を書く。警告は標準エラーに `warning: ...` で出す。
@@ -94,13 +95,16 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 - **テクスチャ:** バンドルの PNG はデコードして乗算済みアルファにする。KTX2 は未対応でエラーになる (`--texture` で PNG を渡せば描ける)。
   JSON とフィクスチャはテクスチャを持たないので、`model.textures` の各項目に不透明な白 1x1 を使う。
 - **上限:** 外から来る値で止まったりメモリを使い果たしたりしないように、次を超えるとエラーにする。
-  - 出力の大きさ: 一辺 1..=16384 (`ugoe_headless::MAX_SIZE`)。`--size`・`--width`・`--height` で明示しても、`--scale` から決めても同じ。
+  - 出力の大きさ: 一辺 1..=16384 (`ugoe_headless::MAX_SIZE`)。`--size`・`--width`・`--height` で明示した値と、`--width`・`--height` の
+    片方から縦横比で決めた他方が超えたらエラー。**大きさを指定しないとき** (キャンバスの大きさ × `--scale`) は、長い辺が 16384 を超えるなら
+    縦横比を保って 16384 に収まるよう縮めて描き、``warning: the canvas (WxH) is larger than 16384 pixels on a side; rendered at ...`` を出す
+    (`ugoe_headless::RenderOptions::shrink_to`。MCP の `render_png` も同じ規則で、上限が 4096)。
   - 時間を進める回数: `floor(time * fps)` が `ugoe_headless::animate::MAX_UPDATES` (216000 = 60 fps で 1 時間) まで。
     `--time` は 0 以上の有限の数、`--fps` は 0 より大きい有限の数。
   - テクスチャ (`--texture` とバンドルの PNG) と法線マップ: 一辺 16384 まで (PNG の見出しの大きさで、デコードの前に確かめる)。
   - `--texture`・`--physics`・`--motion`・`--expression` のパス: 通常のファイルだけを読む (装置・FIFO・ディレクトリはエラー)。
-  - MCP サーバの `render_png` は、明示した `width`・`height` を 4096 まで、`time` を 3600 秒 (60 fps) までに限る
-    (`ugoe-mcp` の `src/render.rs`。描いた PNG をエージェントに返すので小さくする)。
+  - MCP サーバの `render_png` は、明示した `width`・`height` を 4096 まで、`time` を 3600 秒 (60 fps) までに限り、大きさを指定しないときは
+    4096 に収まるよう縮める (`ugoe-mcp` の `src/render.rs`。描いた PNG をエージェントに返すので小さくする)。
 - **色:** 値はリニア化しない (`docs/spec/rendering.md` の「前提」)。描画先は `Rgba8Unorm`・乗算済みアルファで、
   PNG に書くときストレートアルファに戻す (アルファ 0 の画素は RGB も 0)。
 - **背景:** 既定は透明。透明な背景の上に描いた結果は、そのまま別の画像に合成できる。
@@ -127,6 +131,10 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
     になるので、光源を足すときは `--ambient` を 1 より下げないと白く飛ぶ。参照レンダラが使うのは先頭の 8 個まで。
 - **GPU:** サーフェス無しでアダプタを要求する。見つからなければエラー。GPU の無い環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
   `WGPU_POWER_PREF` も参照する。
+- **GPU を待つ時間:** 読み戻しは `--gpu-timeout` (既定 30 秒) まで待ち、超えたら
+  `rendering did not finish within --gpu-timeout (...): the GPU did not finish in time: ...` で失敗する (ドライバが止まっても戻るように。
+  `ugoe_headless::Gpu::set_wait_timeout`)。遅いソフトウェアの GPU (lavapipe・llvmpipe) で大きなモデルや大きな画を描くときは延ばし、
+  `0` なら上限なしで待つ。
 - **WSL2 の注意:** dzn (Vulkan on D3D12) ドライバは wgpu のインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、
   CLI はこれらを破棄せずにプロセスを終える (`ugoe_headless::Gpu::leak`)。
 

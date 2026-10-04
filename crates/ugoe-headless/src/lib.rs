@@ -34,7 +34,7 @@ pub use image::Rgba8;
 pub use resident::{DEFAULT_SLOTS, Readback, Resident, ResidentOptions, Wait};
 pub use textures::{placeholder_texture, resolve_normal_maps, resolve_textures, texture_count};
 pub use ugoe_render::{Light, Lighting};
-pub use view::{Fit, MAX_SIZE, fit_view, output_size};
+pub use view::{Fit, MAX_SIZE, fit_view, output_size, shrink_scale};
 
 /// ヘッドレス描画のエラー。
 #[derive(Debug, thiserror::Error)]
@@ -206,6 +206,10 @@ pub struct RenderOptions {
     pub height: Option<u32>,
     /// 大きさを指定しないときの、キャンバスに対する倍率 (`--scale`)。
     pub scale: f32,
+    /// 大きさを指定しないとき、キャンバスの大きさ × `scale` の長い辺がこれを超えるなら、縦横比を保って
+    /// これに収まるよう縮めて描き、警告を出す ([`shrink_scale`])。既定は [`MAX_SIZE`]。
+    /// `None` なら縮めない ([`MAX_SIZE`] を超えるとエラー)。
+    pub shrink_to: Option<u32>,
     /// キャンバスを出力にどう収めるか (`--fit`)。
     pub fit: Fit,
     /// 背景色 (ストレートアルファの RGBA8。`--background`)。
@@ -239,6 +243,7 @@ impl Default for RenderOptions {
             width: None,
             height: None,
             scale: 1.0,
+            shrink_to: Some(MAX_SIZE),
             fit: Fit::Contain,
             background: [0; 4],
             texture_overrides: Vec::new(),
@@ -302,19 +307,43 @@ pub fn prepare(scene: Scene, options: &RenderOptions) -> Result<Prepared, Error>
         animation,
     } = scene;
     let canvas = (model.meta.canvas.width, model.meta.canvas.height);
+    let mut warnings = Vec::new();
+    // 大きさを指定しないときだけ、上限に収まるよう縮める (明示した大きさは縮めずに検査する)。
+    let shrunk = match (
+        options.size,
+        options.width,
+        options.height,
+        options.shrink_to,
+    ) {
+        (None, None, None, Some(limit)) => {
+            shrink_scale(canvas, options.scale, limit).map(|scale| (scale, limit))
+        }
+        _ => None,
+    };
     let size = output_size(
         canvas,
         options.size,
         options.width,
         options.height,
-        options.scale,
+        shrunk.map_or(options.scale, |(scale, _)| scale),
     )?;
+    if let Some((_, limit)) = shrunk {
+        let scaled = if options.scale == 1.0 {
+            String::new()
+        } else {
+            format!(" at scale {}", options.scale)
+        };
+        warnings.push(format!(
+            "the canvas ({}x{}{scaled}) is larger than {limit} pixels on a side; rendered at {}x{} \
+             instead (give a size to choose it)",
+            canvas.0, canvas.1, size.0, size.1
+        ));
+    }
     let view = fit_view(canvas, size, options.fit);
     // モデルの検査 (コンパイル) を先に行う。テクスチャの枚数はメッシュが参照する番号から決まるので、
     // 検査の前に揃えると範囲の外の番号 (`u32::MAX` など) の数だけ仮のテクスチャを作ってしまう。
     let (mut puppet, param_warnings) = animate::puppet(model, &options.params)?;
     let model = puppet.instance().compiled().model();
-    let mut warnings = Vec::new();
     let textures = resolve_textures(model, &textures, &options.texture_overrides, &mut warnings)?;
     let shading = Shading {
         normal_maps: resolve_normal_maps(&normal_maps, &mut warnings)?,
@@ -431,6 +460,61 @@ mod tests {
             "{:?}",
             prepared.warnings
         );
+    }
+
+    /// 大きさを指定しないとき、上限を超えるキャンバスは縦横比を保って縮めて描き、警告を出す。
+    #[test]
+    fn shrinks_a_large_canvas_when_no_size_is_given() {
+        let mut model = fixtures::single_quad();
+        model.meta.canvas.width = 20000.0;
+        model.meta.canvas.height = 10000.0;
+        let prepare = |options: RenderOptions| prepare(Scene::from_model(model.clone()), &options);
+
+        let prepared = prepare(RenderOptions::default()).unwrap();
+        assert_eq!(prepared.size, (MAX_SIZE, MAX_SIZE / 2));
+        assert_eq!(prepared.warnings.len(), 1, "{:?}", prepared.warnings);
+        assert_eq!(
+            prepared.warnings[0],
+            "the canvas (20000x10000) is larger than 16384 pixels on a side; rendered at \
+             16384x8192 instead (give a size to choose it)"
+        );
+
+        let prepared = prepare(RenderOptions {
+            shrink_to: Some(4096),
+            scale: 0.5,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(prepared.size, (4096, 2048));
+        assert!(
+            prepared.warnings[0].contains("(20000x10000 at scale 0.5) is larger than 4096"),
+            "{:?}",
+            prepared.warnings
+        );
+
+        // 収まるなら縮めない。明示した大きさは縮めない。`None` なら縮めずにエラー。
+        let prepared = prepare(RenderOptions {
+            shrink_to: Some(4096),
+            scale: 0.1,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(prepared.size, (2000, 1000));
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+        let prepared = prepare(RenderOptions {
+            shrink_to: Some(4096),
+            width: Some(8000),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(prepared.size, (8000, 4000));
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+        let err = prepare(RenderOptions {
+            shrink_to: None,
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("out of range"), "{err}");
     }
 
     #[test]

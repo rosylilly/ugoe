@@ -11,6 +11,7 @@
 //!   次の呼び出しで作り直す。
 //! - 出力の一辺は [`MAX_SIZE`] (4096) まで、進める時間は [`MAX_TIME`] (3600 秒) までに限る。描いた PNG は
 //!   base64 でエージェントに返すので、CLI (`ugoe_headless::MAX_SIZE` = 16384) より小さくする。
+//!   大きさを指定しないときは、キャンバスが大きければ [`MAX_SIZE`] に収まるよう縮めて描く。
 //! - 読み戻しは `Gpu::wait_timeout` (既定 30 秒) までしか待たない。ドライバが止まって上限を超えたら、
 //!   panic のときと同じくツールのエラーにして GPU を捨てる (止まったデバイスを使い回さない。描画の錠も手放される)。
 //!
@@ -26,8 +27,13 @@ use ugoe_headless::{Gpu, RenderOptions, Scene};
 /// `render_png` で明示できる出力の一辺の上限 (`width`・`height`)。ツールのスキーマの `maximum` もこの値。
 ///
 /// 1 回の描画で読み戻す画素 (4096 × 4096 × 4 = 64 MiB) と、base64 で返す PNG を抑えるため、CLI の上限
-/// ([`ugoe_headless::MAX_SIZE`]) より小さくする。大きさを指定しないとき (キャンバスの大きさ) には効かない。
+/// ([`ugoe_headless::MAX_SIZE`]) より小さくする。大きさを指定しないときは、キャンバスの長い辺がこれを超えるなら
+/// 縦横比を保ってこれに収まるよう縮めて描き、縮めたことを `log` に警告で書く (`RenderOptions::shrink_to`)。
 pub const MAX_SIZE: u32 = 4096;
+
+/// `render_png` の `width`・`height` の説明 (ツールのスキーマ)。
+pub const SIZE_NOTE: &str = "出力の幅・高さ (画素)。片方だけなら他方はキャンバスの縦横比から決める。どちらも省くとキャンバスの大きさで描き、\
+     長い辺が 4096 を超えるなら縦横比を保って 4096 に収まるよう縮める (縮めたことは log に書く)";
 
 /// `render_png` の `time` の上限 (秒)。時間は 60 fps で進めるので、`ugoe_headless::animate::MAX_UPDATES`
 /// (60 fps で 1 時間) と同じ。ツールのスキーマの `maximum` もこの値。
@@ -73,6 +79,28 @@ impl RenderRequest {
             )));
         }
         Ok(())
+    }
+
+    /// 検査して `ugoe_headless` の描き方の指定にする。
+    fn options(&self) -> Result<RenderOptions, RenderError> {
+        self.check()?;
+        let background = match &self.background {
+            Some(bg) => ugoe_headless::args::parse_color(bg).map_err(RenderError::Background)?,
+            None => [0; 4],
+        };
+        Ok(RenderOptions {
+            params: self.params.clone(),
+            width: self.width,
+            height: self.height,
+            background,
+            time: self.time,
+            fps: FPS as f32,
+            motion: self.motion.clone(),
+            expression: self.expression.clone(),
+            // 大きさを指定しないときも、キャンバスが大きければ明示できる上限に収まるよう縮める (警告を `log` に書く)。
+            shrink_to: Some(MAX_SIZE),
+            ..RenderOptions::default()
+        })
     }
 }
 
@@ -141,22 +169,7 @@ impl Renderer {
         req: &RenderRequest,
     ) -> Result<Rendered, RenderError> {
         // GPU を使う前に引数とモデルを検査する (GPU が無くても誤りを返せるように)。
-        req.check()?;
-        let background = match &req.background {
-            Some(bg) => ugoe_headless::args::parse_color(bg).map_err(RenderError::Background)?,
-            None => [0; 4],
-        };
-        let options = RenderOptions {
-            params: req.params.clone(),
-            width: req.width,
-            height: req.height,
-            background,
-            time: req.time,
-            fps: FPS as f32,
-            motion: req.motion.clone(),
-            expression: req.expression.clone(),
-            ..RenderOptions::default()
-        };
+        let options = req.options()?;
         let scene = scene(project)?;
         match catch_unwind(AssertUnwindSafe(|| self.render_scene(scene, &options))) {
             Ok(result) => self.discard_hung_gpu(result),
@@ -322,6 +335,7 @@ mod tests {
     #[test]
     fn checks_the_size_and_time_limits_before_touching_the_gpu() {
         assert_eq!(MAX_TIME, 3600.0);
+        assert!(SIZE_NOTE.contains(&MAX_SIZE.to_string()), "{SIZE_NOTE}");
         let mut renderer = Renderer::default();
         let project = quad_project();
         let render = |renderer: &mut Renderer, req: RenderRequest| {
@@ -367,6 +381,33 @@ mod tests {
         );
         assert!(err.contains("no motion named `Idle`"), "{err}");
         assert!(renderer.gpu.is_none());
+    }
+
+    /// 大きさを指定しないとき、キャンバスの長い辺が [`MAX_SIZE`] を超えるなら縦横比を保って縮め、`log` に書く警告を出す。
+    #[test]
+    fn shrinks_a_large_canvas_to_the_size_limit() {
+        let mut project = quad_project();
+        project.model.meta.canvas.width = 6000.0;
+        project.model.meta.canvas.height = 8000.0;
+        let prepare = |req: RenderRequest| {
+            ugoe_headless::prepare(scene(&project).unwrap(), &req.options().unwrap()).unwrap()
+        };
+        let prepared = prepare(RenderRequest::default());
+        assert_eq!(prepared.size, (3072, MAX_SIZE));
+        assert_eq!(prepared.warnings.len(), 1, "{:?}", prepared.warnings);
+        assert!(
+            prepared.warnings[0]
+                .contains("larger than 4096 pixels on a side; rendered at 3072x4096"),
+            "{:?}",
+            prepared.warnings
+        );
+        // 明示した大きさは縮めない。
+        let prepared = prepare(RenderRequest {
+            width: Some(300),
+            ..RenderRequest::default()
+        });
+        assert_eq!(prepared.size, (300, 400));
+        assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
     }
 
     fn wait_timeout() -> RenderError {
