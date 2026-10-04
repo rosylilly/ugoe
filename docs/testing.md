@@ -15,7 +15,7 @@
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと Unity の宣言の過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
-| 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオも本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
+| 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
@@ -302,7 +302,7 @@ WSL2 では環境変数を付けないと dzn (Vulkan on D3D12) が選ばれる�
 時間を進めた物理と、公開仕様の評価の例・バンドルの例)。
 
 ```sh
-just conformance            # C ABI・wasm (ヘッドレスの Chrome の WebGL2 と WebGPU)・<ugoe-avatar>・Unity (dotnet)・Godot。dotnet・Godot が無ければ飛ばす
+just conformance            # C ABI・wasm (ヘッドレスの Chrome の WebGL2 と WebGPU)・<ugoe-avatar>・問い合わせの JSON のキー・Unity (dotnet)・Godot。dotnet・Godot が無ければ飛ばす
 just conformance --only c   # C ABI だけ
 ```
 

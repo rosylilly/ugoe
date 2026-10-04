@@ -375,6 +375,7 @@ avatarSlots(puppet);          // avatar_slots_json():     string[] | null (ア�
 drawableStates(puppet);       // drawable_states_json():  UgoeDrawableState[] (drawable_ids() の順)
 currentPose(puppet);          // pose_json():             UgoePose | undefined (モデルが無ければ undefined)
 sampleMotion(motionJson, t);  // sample_motion_json():    UgoeCurveValue[] ({ target: { kind, id }, value })。wasm の初期化の後に呼ぶ
+sampleMotion(sampler, t);     // MotionSampler.sample():  同じ形 (下の「モーションを何度も評価する」)
 ```
 
 | `*_json()` | 型と補助 |
@@ -382,10 +383,27 @@ sampleMotion(motionJson, t);  // sample_motion_json():    UgoeCurveValue[] ({ ta
 | `load_warnings_json`・`detached_modules_json` | `loadWarnings`・`detachedModules` (上の「読み込みの警告と着せ替えの失敗の型」) |
 | `parameters_json`・`motions_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`sample_motion_json` | 上の例 |
 | `physics_json`・`base_physics_json` | **型を出さない。** 中身は `*.physics.json` の形 (リグ・粒子・入力・出力・衝突体などモデルの JSON 形式の大きな一部。[spec/schema/physics.schema.json](../../spec/schema/physics.schema.json)) で、主な使い道は保存して `set_physics_json`・`set_base_physics_json` に戻すこと。中を読むなら JSON Schema から型を作ってください |
-| `MotionSampler.sample` | 形は `sample_motion_json` と同じ (`UgoeCurveValue[]`)。`MotionSampler` はこのパッケージの入口から出していない (`@ugoe/runtime/wasm` から使う) |
+| `MotionSampler.sample` | 形は `sample_motion_json` と同じ。`sampleMotion(sampler, t)` で `UgoeCurveValue[]` にする |
 
 - 要素がモデルの JSON 形式と同じもの (パラメータ・スロット・ポーズ) は、新しい版のランタイムがキーを足しうります。知らないキーは無視してください。
 - 新しい `*_json()` を足したら、ここに型と補助を足すか、この表に足さない理由を書きます。
+- 型のキーは、本物の wasm の出力のキーと突き合わせています (下の「開発」の「問い合わせの JSON のキーの突き合わせ」)。
+
+#### モーションを何度も評価する (`MotionSampler`、T0451・T0463)
+
+`sampleMotion(json, t)` (`sample_motion_json`) は呼ぶたびに JSON を読み、カーブごとの索引を作ります。タイムラインの再生やシークのように
+同じモーションを何度も評価するなら、`MotionSampler` を 1 度作って使い回します (区間を二分探索で引く。値は `sample_motion_json` と同じ)。
+`MotionSampler` は ugoe-wasm のクラスそのもので、`WebPuppet` と同じく使い終えたら `free()` で解放します。
+
+```ts
+import { initRuntime, MotionSampler, sampleMotion } from "@ugoe/runtime";
+
+await initRuntime();                          // new MotionSampler の前に wasm を初期化する
+const sampler = new MotionSampler(motionJson); // *.motion.json の形。読めなければ例外
+sampleMotion(sampler, 0.25);                  // UgoeCurveValue[] (フェードなし。値の無いカーブは含めない)
+sampler.set_motion_json(editedJson);          // 編集したら差し替える (索引を作り直す。読めなければ例外で、前のモーションを保つ)
+sampler.free();
+```
 
 ### 届いた値で動かす (受け手)
 
@@ -566,7 +584,7 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 | `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み)・`tsc`・`dist/` への出力 |
 | `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される) |
 | `pnpm --filter @ugoe/runtime test` | 属性の解釈・トラッキングの変換と平滑化・`<ugoe-avatar>` の作成と読み込みの順序 (happy-dom と `WebPuppet` の偽物)・問い合わせの JSON の補助・スタブの型のずれ・`code` の一覧と Rust の突き合わせの単体テスト (Vitest) |
-| `just conformance --only wasm,wasm-webgpu,avatar` | 配布物の適合テスト (`tests/conformance/README.md`)。`WebPuppet` の評価の結果と画像を参照と比べ (`wasm`・`wasm-webgpu`)、`<ugoe-avatar>` の作成・切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直しを、本物の wasm とヘッドレスの Chrome で確かめる (`avatar`)。Chrome と wasm-bindgen-cli が要る |
+| `just conformance --only wasm,wasm-webgpu,avatar,queries` | 配布物の適合テスト (`tests/conformance/README.md`)。`WebPuppet` の評価の結果と画像を参照と比べ (`wasm`・`wasm-webgpu`)、`<ugoe-avatar>` の作成・切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直しを、本物の wasm とヘッドレスの Chrome で確かめる (`avatar`)。問い合わせの JSON の出力のキーを型のキーと比べる (`queries`)。Chrome と wasm-bindgen-cli が要る |
 
 - `crates/ugoe-wasm` の公開 API を変えたら、`stub/ugoe_wasm.d.ts` を生成物 (`src/wasm/ugoe_wasm.d.ts`) から作り直します。
   メソッドと関数の名前がクレートとずれていると、単体テスト (`stub/ugoe_wasm.test.mjs`) が失敗します。
@@ -579,7 +597,13 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
   補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
   `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts` も同じ PR で直します
   (片方だけでは、どちらかのテストが落ちる)。
+- **問い合わせの JSON のキーの突き合わせ (T0463):** `src/queries.ts` の型ごとのキー (必須と省略できるもの) の一覧を
+  `src/query-keys.ts` の `QUERY_KEYS` に値で持ちます (入口からは出さない)。一覧と型が同じことは `src/query-keys.test.ts` が
+  `expectTypeOf` で確かめ (`pnpm check`)、本物の wasm の出力と一覧を比べるのは適合テストの `queries`
+  (`just conformance --only queries`。`tests/conformance/web/queries.js`) です。見本のモデルとフィクスチャを読み、すべての `*_json()`
+  (警告と物理を除く) と `sample_motion_json`・`MotionSampler.sample` について、無い必須のキーと一覧に無いキーで落ち、1 度も出なかった形があっても落ちます。
+  型にキーを足したら一覧にも足し (足さないと `pnpm check` が落ちる)、ugoe-wasm の出力にキーを足したら型と一覧に足します (足さないと `queries` が落ちる)。
 - このパッケージは MIT です。`apps/`・`packages/` (GPL-3.0-only) のコードを import したり写したりしないでください ([ADR 0025](../../docs/adr/0025-web-runtime-package.md))。
 - 構成: `src/index.ts` (入口)・`src/runtime.ts` (初期化・作成・読み込み)・`src/avatar.ts` (`<ugoe-avatar>`)・
-  `src/queries.ts` (問い合わせの JSON の型)・`src/warnings.ts`・`src/limits.ts` (警告と例外の型)・
+  `src/queries.ts` (問い合わせの JSON の型)・`src/query-keys.ts` (その型のキーの一覧。適合テストが使う)・`src/warnings.ts`・`src/limits.ts` (警告と例外の型)・
   `src/element.ts` (登録するだけの入口)・`src/attributes.ts` (属性の解釈。DOM と wasm に触れない)。

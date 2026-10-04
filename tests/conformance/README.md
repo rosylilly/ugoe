@@ -11,6 +11,7 @@
 | C ABI (`ugoe-ffi`、`c`) | 位置・不透明度・描画順の値・乗算色・スクリーン色・マスクの効き具合・`visible`・描画の順番 | なし (C ABI は描画しない) | [`c/runner.c`](c/runner.c) |
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
 | `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
+| 問い合わせの JSON (npm パッケージ `@ugoe/runtime` の `*_json()`、`queries`) | 参照とは比べない。出力のキーを、パッケージの型のキーの一覧と比べる (下の「問い合わせの JSON のキー」) | なし (ヘッドレスの Chrome の WebGL2 で `WebPuppet` を作るだけ) | [`web/queries.js`](web/queries.js) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
 | Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
@@ -21,6 +22,7 @@ just conformance                          # = node tests/conformance/run.mjs (�
 just conformance --only c                 # C ABI だけ (Chrome も GPU も要らない)
 just conformance --only wasm,wasm-webgpu  # wasm だけ (WebGL2 と WebGPU)
 just conformance --only avatar            # <ugoe-avatar> のシナリオだけ (参照を作らないので cargo のビルドも要らない)
+just conformance --only queries           # 問い合わせの JSON のキーだけ (参照を作らない。フィクスチャを書き出す ugoe-cli だけビルドする)
 just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
 just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
 just conformance --cases avatar-pose,masks-moving   # ケースを絞る
@@ -38,6 +40,8 @@ target/conformance/
   wasm/<ケース>.json .png       wasm (WebGL2) の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)。chrome.log (ページのコンソールを含む)
   wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
   avatar/avatar.json           <ugoe-avatar> のシナリオごとの結果 ("ok" か失敗の理由)。chrome.log
+  queries/queries.json         問い合わせの JSON のキーの項目ごとの結果 ("ok" か食い違いの一覧) と、形ごとに比べた数。
+                               pose_and_effects.json (ページが読むフィクスチャ)。chrome.log
   unity/<ケース>.json           Unity の C# の層の結果
   godot/<ケース>.json .png      Godot の結果。skipped.json (扱わなかったケースと理由。今は空)
 ```
@@ -54,7 +58,7 @@ target/conformance/
   エンジンの道具は重く、C ABI と wasm だけを確かめたい人や CI のジョブが多いため。
 - `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
 
-CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオも含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
+CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオと問い合わせの JSON のキーも含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
 `godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を実行する。落ちたら `target/conformance` を成果物として残す。
 このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
 
@@ -180,6 +184,29 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 | `backend-change` | `backend` を変えると作り直してパラメータの値を引き継ぐ (`auto` はこの Chrome では WebGPU のアダプタが無く、同じ canvas の WebGL2 で描く)。取得中・作成中に続けて変えても、`WebPuppet` は 1 つで新しい `src` を描く |
 
 WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないので、ここでは確かめていない (偽物のテストだけ)。
+
+## 問い合わせの JSON のキー
+
+`queries` は、npm パッケージの `WebPuppet` の `*_json()` と `sample_motion_json`・`MotionSampler.sample` の出力のキーを、パッケージの型
+(`bindings/web/src/queries.ts`) のキーと比べる (T0463)。型は実行時に残らないので、型ごとのキーの一覧 `QUERY_KEYS`
+(`bindings/web/src/query-keys.ts`。`dist/query-keys.js` を `/pkg/` から読む) と比べ、一覧と型が同じことは bindings/web の
+`pnpm check` (`src/query-keys.test.ts`) が確かめる。`run.mjs` のサーバーが [`web/queries.html`](web/queries.html) を配り、
+[`web/queries.js`](web/queries.js) が項目を順に動かす。
+
+| 項目 | 読むもの |
+| --- | --- |
+| `no-model` | モデルの無い `WebPuppet` (空の一覧) |
+| `sample-motion` | 3 種類の対象 (`parameter`・`part_opacity`・`effect_group`) のカーブを持つモーションを `sampleMotion` (`sample_motion_json`) と `MotionSampler` で評価する |
+| `pose-and-groups` | フィクスチャ `pose_and_effects` (`run.mjs` が `ugoe fixture` で書き出す) にパラメータのグループを足した JSON のモデル。見本はポーズとグループを持たないため |
+| `avatar`・`avatar-lit` | 見本のモデル (モーション・表情・アバタープロファイル) |
+| `dress-up` | 着せ替えの見本。`long-hair`・`cat-ears`・`sailor` を付け、`twin-tails` は読むだけ (`attached: false`) |
+| `coverage` | 上のどれかで、一覧のすべての形を 1 度は比べたか |
+
+- 無い必須のキーと、一覧に無いキー (型に無いキー) を食い違いとする。型が `[key: string]: unknown` を持つ形 (パラメータ・スロット) でも、
+  このランタイムの出力に型に無いキーがあれば落とす (型に足し忘れたキーを見つけるため)。
+- 読み込みの警告 (`load_warnings_json`・`detached_modules_json`・`modules_json` の `warning_details`) の `code` と補足の値は
+  `crates/ugoe-wasm/codes.json` で突き合わせているので比べない。物理 (`physics_json`) は型を出していないので比べない。
+- 出力の形は描画のバックエンドによらないので、WebGL2 だけで動かす。
 
 ## エンジン向けのバインディングを足す
 

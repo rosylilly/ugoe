@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // 配布物の適合テストを実行する (`just conformance`。tests/conformance/README.md)。
 //
-//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,unity,godot] [--cases A,B] [--out DIR]
+//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,queries,unity,godot] [--cases A,B] [--out DIR]
 //                                  [--no-web-build] [--no-godot-build]
 //
 // 1. 参照を作る: `ugoe-conformance reference` (計画と参照の評価の結果) と `ugoe render` (参照の画像)
 // 2. C ABI: tests/conformance/c/runner.c を libugoe_ffi.a にリンクして実行し、評価の結果を比べる
 // 3. wasm: npm パッケージ (bindings/web/dist) をヘッドレスの Chrome の WebGL2 (wasm) と WebGPU (wasm-webgpu) で動かし、
 //    評価の結果と画像を比べる。avatar: 同じパッケージの `<ugoe-avatar>` を WebGL2 で動かし、作成・切り離しと再接続・
-//    `backend` の変更・コンテキストの喪失からの作り直しのシナリオを確かめる (web/avatar.js。参照とは比べない)
+//    `backend` の変更・コンテキストの喪失からの作り直しのシナリオを確かめる (web/avatar.js。参照とは比べない)。
+//    queries: 同じパッケージの `*_json()` の出力のキーを、パッケージの型のキーの一覧と比べる (web/queries.js。参照とは比べない)
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
 // 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
 //
@@ -37,11 +38,11 @@ const root = resolve(here, "..", "..");
 const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 const exe = (name) => join(target, "debug", process.platform === "win32" ? `${name}.exe` : name);
 
-const BINDINGS = ["c", "wasm", "wasm-webgpu", "avatar", "unity", "godot"];
+const BINDINGS = ["c", "wasm", "wasm-webgpu", "avatar", "queries", "unity", "godot"];
 /** ヘッドレスの Chrome と npm パッケージ (bindings/web/dist) で動かすバインディング。 */
-const WEB = ["wasm", "wasm-webgpu", "avatar"];
+const WEB = ["wasm", "wasm-webgpu", "avatar", "queries"];
 /** 参照 (計画・評価の結果・画像) と比べないバインディング (シナリオの成否だけを見る)。 */
-const NO_REFERENCE = new Set(["avatar"]);
+const NO_REFERENCE = new Set(["avatar", "queries"]);
 /** `--only` を付けないとき、道具が無ければ飛ばすバインディング。 */
 const OPTIONAL = new Set(["unity", "godot"]);
 /** 画像を比べるバインディング。 */
@@ -178,6 +179,9 @@ const skipped = {};
 const reference = [...only].some((b) => !NO_REFERENCE.has(b));
 if (reference) {
   run("cargo", ["build", "-q", "-p", "ugoe-cli", "-p", "ugoe-conformance", "-p", "ugoe-ffi"]);
+} else if (only.has("queries")) {
+  // queries はポーズを持つフィクスチャを `ugoe fixture` で書き出して読む (見本のモデルはポーズを持たない)
+  run("cargo", ["build", "-q", "-p", "ugoe-cli"]);
 }
 const images = [...only].some((b) => IMAGES.has(b));
 if (images) {
@@ -273,6 +277,20 @@ if (web) {
     mkdirSync(join(out, "avatar"), { recursive: true });
     results.avatar = await runWeb(dist, "avatar", "webgl2", "avatar.html");
   }
+  // 問い合わせの JSON のキー (T0463)。出力の形はバックエンドによらないので WebGL2 だけで
+  if (only.has("queries")) {
+    mkdirSync(join(out, "queries"), { recursive: true });
+    const fixture = spawnSync(exe("ugoe"), ["fixture", "pose_and_effects"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (fixture.status !== 0) {
+      console.error(`ugoe fixture pose_and_effects failed:\n${fixture.stderr}`);
+      process.exit(2);
+    }
+    writeFileSync(join(out, "queries", "pose_and_effects.json"), fixture.stdout);
+    results.queries = await runWeb(dist, "queries", "webgl2", "queries.html");
+  }
 }
 
 // --- 4. Unity (Runtime/Core を dotnet で) ---
@@ -324,7 +342,8 @@ for (const binding of Object.keys(skipped)) console.log(`${binding}: skipped (mi
 process.exit(Object.values(results).every(Boolean) ? 0 : 1);
 
 /**
- * ヘッドレスの Chrome で web/<page> (index.html は計画のケース、avatar.html は <ugoe-avatar> のシナリオ) を開き、
+ * ヘッドレスの Chrome で web/<page> (index.html は計画のケース、avatar.html は <ugoe-avatar> のシナリオ、
+ * queries.html は問い合わせの JSON のキーの項目) を開き、
  * ページが /done (`{total, failed}` か `{error}`) を送るまで待つ。
  */
 async function runWeb(dist, binding, backend, page) {
@@ -377,15 +396,22 @@ async function runWeb(dist, binding, backend, page) {
       });
       return;
     }
-    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールと、見本のモデル (avatar.html) だけを配る。
+    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールと、見本のモデルとモジュール (avatar.html・queries.html)、
+    // queries.html のフィクスチャだけを配る。
     let file;
     const m = url.pathname.match(/^\/file\/(\d+)\/(model|\d+)$/);
-    const sample = url.pathname.match(/^\/samples\/((?:dress-up\/)?[\w-]+\.ugoe)$/);
+    const sample = url.pathname.match(/^\/samples\/((?:dress-up\/)?[\w-]+\.ugoe(?:mod)?)$/);
     if (url.pathname === "/" || url.pathname === "/index.html")
       file = join(here, "web", "index.html");
-    else if (["/runner.js", "/avatar.html", "/avatar.js"].includes(url.pathname))
+    else if (
+      ["/runner.js", "/avatar.html", "/avatar.js", "/queries.html", "/queries.js"].includes(
+        url.pathname,
+      )
+    )
       file = join(here, "web", url.pathname.slice(1));
     else if (url.pathname === "/plan.json") file = join(out, "plan.json");
+    else if (url.pathname === "/fixture/pose_and_effects.json")
+      file = join(out, "queries", "pose_and_effects.json");
     else if (sample) {
       // `?delay=ミリ秒` で応答を遅らせる (取得中の切り離しと `backend` の変更を確かめるため)
       file = join(root, "assets", "samples", sample[1]);
@@ -442,8 +468,9 @@ async function runWeb(dist, binding, backend, page) {
     );
     return false;
   }
+  const unit = { "avatar.html": "scenarios", "queries.html": "items" }[page] ?? "cases";
   console.log(
-    `${binding} (${backend}): passed ${result.total - result.failed} of ${result.total} ${page === "avatar.html" ? "scenarios" : "cases"}`,
+    `${binding} (${backend}): passed ${result.total - result.failed} of ${result.total} ${unit}`,
   );
   return result.failed === 0;
 }

@@ -3,7 +3,12 @@
 import { type Backend, isBundle } from "./attributes.js";
 import { type LoadLimits, limitsJson } from "./limits.js";
 import type { UgoeCurveValue } from "./queries.js";
-import init, { type InitInput, sample_motion_json, WebPuppet } from "./wasm/ugoe_wasm.js";
+import init, {
+  type InitInput,
+  type MotionSampler,
+  sample_motion_json,
+  WebPuppet,
+} from "./wasm/ugoe_wasm.js";
 
 /** `initRuntime` の設定。 */
 export interface InitOptions {
@@ -92,9 +97,15 @@ export async function fetchModel(
 }
 
 /**
- * モーション (`*.motion.json` の形の JSON) の各カーブを時刻 `t` (秒) で評価した値 (フェードなし。`sample_motion_json`)。
- * 値の無いカーブ (未知の対象など) は含めない。wasm を初期化 (`initRuntime`) してから呼ぶ。読めない JSON は例外。
+ * モーションの各カーブを時刻 `t` (秒) で評価した値 (フェードなし)。値の無いカーブ (未知の対象など) は含めない。
+ *
+ * - `motion` が文字列 (`*.motion.json` の形の JSON) なら `sample_motion_json`。毎回 JSON を読んで索引を作る。
+ *   読めない JSON は例外。
+ * - `MotionSampler` なら `sampler.sample(t)`。同じモーションを何度も評価する (再生・シーク) ときはこちら (T0451)。
+ *
+ * wasm を初期化 (`initRuntime`) してから呼ぶ。
  */
-export function sampleMotion(json: string, t: number): UgoeCurveValue[] {
-  return JSON.parse(sample_motion_json(json, t)) as UgoeCurveValue[];
+export function sampleMotion(motion: string | MotionSampler, t: number): UgoeCurveValue[] {
+  const json = typeof motion === "string" ? sample_motion_json(motion, t) : motion.sample(t);
+  return JSON.parse(json) as UgoeCurveValue[];
 }

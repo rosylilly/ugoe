@@ -198,7 +198,7 @@ export interface UgoeCurveTarget {
   id: string;
 }
 
-/** カーブ 1 つの値 (`sample_motion_json` の要素。`sampleMotion` (`./runtime.ts`) で読む)。 */
+/** カーブ 1 つの値 (`sample_motion_json`・`MotionSampler.sample` の要素。`sampleMotion` (`./runtime.ts`) で読む)。 */
 export interface UgoeCurveValue {
   target: UgoeCurveTarget;
   value: number;

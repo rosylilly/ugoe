@@ -15,7 +15,7 @@ import {
 } from "./queries.js";
 import { sampleMotion } from "./runtime.js";
 import { isKnownLoadWarning } from "./warnings.js";
-import type { WebPuppet } from "./wasm/ugoe_wasm.js";
+import type { MotionSampler, WebPuppet } from "./wasm/ugoe_wasm.js";
 
 vi.mock("./wasm/ugoe_wasm.js", () => ({
   default: vi.fn(),
@@ -153,5 +153,19 @@ describe("sampleMotion", () => {
     const values = sampleMotion(JSON.stringify({ name: "AngleX" }), 0.25);
     expectTypeOf(values).toEqualTypeOf<UgoeCurveValue[]>();
     expect(values).toEqual([{ target: { kind: "parameter", id: "AngleX" }, value: 0.25 }]);
+  });
+
+  it("parses MotionSampler.sample", () => {
+    const sampled: number[] = [];
+    const sampler = {
+      sample: (t: number) => {
+        sampled.push(t);
+        return JSON.stringify([{ target: { kind: "part_opacity", id: "ArmA" }, value: t / 2 }]);
+      },
+    } as unknown as MotionSampler;
+    const values = sampleMotion(sampler, 0.5);
+    expectTypeOf(values).toEqualTypeOf<UgoeCurveValue[]>();
+    expect(values).toEqual([{ target: { kind: "part_opacity", id: "ArmA" }, value: 0.25 }]);
+    expect(sampled).toEqual([0.5]);
   });
 });
