@@ -331,6 +331,144 @@ fn failed_attach_changes_nothing_and_reports_a_code() {
     assert_eq!(error_info(&error).code, "not_loaded");
 }
 
+/// 補足の値は C ABI (`crates/ugoe-ffi/src/dress_up.rs` の `numbered_and_referenced_fields_reach_the_c_abi`) と同じキーで出る。
+/// 番号は数 (C ABI では 10 進の文字列)。無い値 (本体がプロファイルを持たないときの `actual`) はキーごと無い。
+#[test]
+fn numbered_and_referenced_fields_reach_js() {
+    use ugoe::model::validate::ValidationError;
+    use ugoe::runtime::ComposeError;
+
+    let s = |v: &str| v.to_owned();
+    let invalid = ValidationError::InvalidModuleName { name: s("") };
+    type Fields = Vec<(&'static str, serde_json::Value)>;
+    let cases: Vec<(DressUpError, &str, Fields)> = vec![
+        (
+            ComposeError::UnknownMask {
+                module: s("m"),
+                mesh: s("x"),
+                mask: s("k"),
+            }
+            .into(),
+            "unknown_mask",
+            vec![
+                ("module", "m".into()),
+                ("mesh", "x".into()),
+                ("mask", "k".into()),
+            ],
+        ),
+        (
+            ComposeError::UnknownCollider {
+                module: s("m"),
+                rig: s("r"),
+                collider: s("c"),
+            }
+            .into(),
+            "unknown_collider",
+            vec![
+                ("module", "m".into()),
+                ("rig", "r".into()),
+                ("collider", "c".into()),
+            ],
+        ),
+        (
+            ComposeError::PoseNotExposed {
+                module: s("m"),
+                slot: s("s"),
+                part: s("p"),
+            }
+            .into(),
+            "pose_not_exposed",
+            vec![
+                ("module", "m".into()),
+                ("slot", "s".into()),
+                ("part", "p".into()),
+            ],
+        ),
+        (
+            ComposeError::TextureOutOfRange {
+                module: s("m"),
+                mesh: s("x"),
+                texture: 3,
+            }
+            .into(),
+            "texture_out_of_range",
+            vec![
+                ("module", "m".into()),
+                ("mesh", "x".into()),
+                ("texture", 3.into()),
+            ],
+        ),
+        (
+            ComposeError::AvatarLevel {
+                module: s("m"),
+                required: 2,
+                actual: Some(1),
+            }
+            .into(),
+            "avatar_level",
+            vec![
+                ("module", "m".into()),
+                ("required", 2.into()),
+                ("actual", 1.into()),
+            ],
+        ),
+        (
+            ComposeError::AvatarLevel {
+                module: s("m"),
+                required: 2,
+                actual: None,
+            }
+            .into(),
+            "avatar_level",
+            vec![("module", "m".into()), ("required", 2.into())],
+        ),
+        (
+            DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+            "invalid_physics",
+            vec![("errors", 2.into())],
+        ),
+        (
+            ComposeError::Invalid(vec![invalid]).into(),
+            "invalid_composition",
+            vec![("errors", 1.into())],
+        ),
+    ];
+    for (error, code, fields) in cases {
+        let info = error_info(&WardrobeError::DressUp(error));
+        assert_eq!(info, ErrorInfo { code, fields }, "{code}");
+    }
+}
+
+#[test]
+fn failed_attach_reports_numbered_fields() {
+    let mut sink = Recorder::default();
+    let (mut puppet, mut wardrobe) = setup(&mut sink);
+    let mut picky = long_hair_module();
+    picky.name = "Picky".into();
+    picky.requires.avatar_level = Some(2);
+    wardrobe
+        .load(Some(&mut puppet), loaded(picky, 50, None), &mut sink)
+        .unwrap();
+
+    let error = wardrobe
+        .attach(&mut puppet, "Picky", &mut sink)
+        .unwrap_err();
+    assert_eq!(
+        error_info(&error),
+        ErrorInfo {
+            code: "avatar_level",
+            fields: vec![("module", "Picky".into()), ("required", 2.into())],
+        }
+    );
+    // `detached_modules_json` の `error` も同じ値 (番号は数)。
+    let detached = Detached {
+        module: "Picky".into(),
+        slot: "Hair".into(),
+        error,
+    };
+    assert_eq!(detached.to_json()["error"]["required"], 2);
+}
+
 #[test]
 fn lists_modules_and_slots() {
     let mut sink = Recorder::default();

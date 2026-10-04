@@ -447,7 +447,7 @@ fn errors_have_stable_codes_and_fields() {
     let mut puppet = Puppet::new(dress_up_base()).unwrap();
     let error = puppet.detach_module("LongHair").unwrap_err();
     assert_eq!(error.code(), "not_attached");
-    assert_eq!(error.fields(), [("module", "LongHair")]);
+    assert_eq!(error.fields(), [("module", FieldValue::Text("LongHair"))]);
 
     puppet.attach_module(Arc::new(long_hair_module())).unwrap();
     let mut other = long_hair_module();
@@ -459,9 +459,9 @@ fn errors_have_stable_codes_and_fields() {
     assert_eq!(
         error.fields(),
         [
-            ("slot", long_hair_module().slot.as_str()),
-            ("module", "OtherHair"),
-            ("attached", "LongHair"),
+            ("slot", FieldValue::Text(long_hair_module().slot.as_str())),
+            ("module", FieldValue::Text("OtherHair")),
+            ("attached", FieldValue::Text("LongHair")),
         ]
     );
 }
@@ -469,29 +469,35 @@ fn errors_have_stable_codes_and_fields() {
 /// `code` と `fields` のキーは組み込み先が照らし合わせる値なので、すべての種類を固定する (T0412)。
 #[test]
 fn every_error_kind_has_a_fixed_code_and_fields() {
+    use FieldValue::{Index, Text};
     let s = |v: &str| v.to_owned();
-    type Fields = Vec<(&'static str, &'static str)>;
+    type Fields = Vec<(&'static str, FieldValue<'static>)>;
+    let invalid = ValidationError::InvalidModuleName { name: s("") };
     let cases: Vec<(DressUpError, &str, Fields)> = vec![
         (
             DressUpError::NotAttached(s("m")),
             "not_attached",
-            vec![("module", "m")],
+            vec![("module", Text("m"))],
         ),
         (
             CompileError::UnknownParameter(s("p")).into(),
             "compile",
             vec![],
         ),
-        (DressUpError::Physics(Vec::new()), "invalid_physics", vec![]),
+        (
+            DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+            "invalid_physics",
+            vec![("errors", Index(2))],
+        ),
         (
             ComposeError::InvalidModuleName(s("m")).into(),
             "invalid_module_name",
-            vec![("module", "m")],
+            vec![("module", Text("m"))],
         ),
         (
             ComposeError::DuplicateModule(s("m")).into(),
             "duplicate_module",
-            vec![("module", "m")],
+            vec![("module", Text("m"))],
         ),
         (
             ComposeError::UnknownSlot {
@@ -500,7 +506,7 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "unknown_slot",
-            vec![("module", "m"), ("slot", "s")],
+            vec![("module", Text("m")), ("slot", Text("s"))],
         ),
         (
             ComposeError::SlotOccupied {
@@ -510,8 +516,27 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "slot_occupied",
-            vec![("slot", "s"), ("module", "m"), ("attached", "a")],
+            vec![
+                ("slot", Text("s")),
+                ("module", Text("m")),
+                ("attached", Text("a")),
+            ],
         ),
+        (
+            ComposeError::AvatarLevel {
+                module: s("m"),
+                required: 2,
+                actual: Some(1),
+            }
+            .into(),
+            "avatar_level",
+            vec![
+                ("module", Text("m")),
+                ("required", Index(2)),
+                ("actual", Index(1)),
+            ],
+        ),
+        // 本体がアバタープロファイルを持たなければ `actual` は無い。
         (
             ComposeError::AvatarLevel {
                 module: s("m"),
@@ -520,7 +545,7 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "avatar_level",
-            vec![("module", "m")],
+            vec![("module", Text("m")), ("required", Index(2))],
         ),
         (
             ComposeError::MissingSlot {
@@ -529,7 +554,7 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "missing_slot",
-            vec![("module", "m"), ("slot", "s")],
+            vec![("module", Text("m")), ("slot", Text("s"))],
         ),
         (
             ComposeError::MissingParameter {
@@ -538,7 +563,7 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "missing_parameter",
-            vec![("module", "m"), ("parameter", "p")],
+            vec![("module", Text("m")), ("parameter", Text("p"))],
         ),
         (
             ComposeError::ParameterNotExposed {
@@ -548,7 +573,11 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "parameter_not_exposed",
-            vec![("module", "m"), ("slot", "s"), ("parameter", "p")],
+            vec![
+                ("module", Text("m")),
+                ("slot", Text("s")),
+                ("parameter", Text("p")),
+            ],
         ),
         (
             ComposeError::UnknownMask {
@@ -558,7 +587,11 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "unknown_mask",
-            vec![("module", "m"), ("mesh", "x")],
+            vec![
+                ("module", Text("m")),
+                ("mesh", Text("x")),
+                ("mask", Text("k")),
+            ],
         ),
         (
             ComposeError::TextureOutOfRange {
@@ -568,7 +601,11 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "texture_out_of_range",
-            vec![("module", "m"), ("mesh", "x")],
+            vec![
+                ("module", Text("m")),
+                ("mesh", Text("x")),
+                ("texture", Index(3)),
+            ],
         ),
         (
             ComposeError::UnknownCollider {
@@ -578,7 +615,11 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "unknown_collider",
-            vec![("module", "m")],
+            vec![
+                ("module", Text("m")),
+                ("rig", Text("r")),
+                ("collider", Text("c")),
+            ],
         ),
         (
             ComposeError::PoseNotExposed {
@@ -588,12 +629,16 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             }
             .into(),
             "pose_not_exposed",
-            vec![("module", "m"), ("slot", "s")],
+            vec![
+                ("module", Text("m")),
+                ("slot", Text("s")),
+                ("part", Text("p")),
+            ],
         ),
         (
-            ComposeError::Invalid(Vec::new()).into(),
+            ComposeError::Invalid(vec![invalid.clone()]).into(),
             "invalid_composition",
-            vec![],
+            vec![("errors", Index(1))],
         ),
     ];
     for (error, code, fields) in &cases {

@@ -53,7 +53,7 @@ pub enum LoadWarning {
     },
 }
 
-/// 警告の補足の値。
+/// 警告 ([`LoadWarning::fields`]) と着せ替えの失敗 ([`crate::DressUpError::fields`]) の補足の値。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldValue<'a> {
     /// 番号 (テクスチャの番号など)。

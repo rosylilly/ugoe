@@ -41,12 +41,12 @@ pub struct UgoeModule {
     warnings: Vec<Warning>,
 }
 
-/// 着せ替えの失敗を、種類と補足の値の付いたエラーにする。
+/// 着せ替えの失敗を、種類と補足の値の付いたエラーにする。番号の補足の値は 10 進の文字列にする。
 pub(crate) fn dress_up_error(error: DressUpError) -> Error {
     let fields = error
         .fields()
         .into_iter()
-        .map(|(k, v)| (k, v.to_owned()))
+        .map(|(k, v)| (k, v.to_string()))
         .collect();
     Error::new(UGOE_ERROR_DRESS_UP, error.to_string()).with_kind(error.code(), fields)
 }
@@ -459,4 +459,134 @@ pub unsafe extern "C" fn ugoe_puppet_changed_textures(
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", p.changed_textures.as_ptr()) }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CStr;
+
+    use ugoe::model::validate::ValidationError;
+    use ugoe::runtime::ComposeError;
+
+    use super::*;
+    use crate::error::{ugoe_last_error_field, ugoe_last_error_kind};
+
+    /// 補足の値は wasm (`crates/ugoe-wasm/src/dress_up/tests.rs` の `numbered_and_referenced_fields_reach_js`) と同じキーで出る。
+    /// 番号は 10 進の文字列 (wasm では数)。無い値 (本体がプロファイルを持たないときの `actual`) は NULL。
+    #[test]
+    fn numbered_and_referenced_fields_reach_the_c_abi() {
+        let s = |v: &str| v.to_owned();
+        let invalid = ValidationError::InvalidModuleName { name: s("") };
+        type Fields = Vec<(&'static str, Option<&'static str>)>;
+        let cases: Vec<(DressUpError, &str, Fields)> = vec![
+            (
+                ComposeError::UnknownMask {
+                    module: s("m"),
+                    mesh: s("x"),
+                    mask: s("k"),
+                }
+                .into(),
+                "unknown_mask",
+                vec![
+                    ("module", Some("m")),
+                    ("mesh", Some("x")),
+                    ("mask", Some("k")),
+                ],
+            ),
+            (
+                ComposeError::UnknownCollider {
+                    module: s("m"),
+                    rig: s("r"),
+                    collider: s("c"),
+                }
+                .into(),
+                "unknown_collider",
+                vec![
+                    ("module", Some("m")),
+                    ("rig", Some("r")),
+                    ("collider", Some("c")),
+                ],
+            ),
+            (
+                ComposeError::PoseNotExposed {
+                    module: s("m"),
+                    slot: s("s"),
+                    part: s("p"),
+                }
+                .into(),
+                "pose_not_exposed",
+                vec![
+                    ("module", Some("m")),
+                    ("slot", Some("s")),
+                    ("part", Some("p")),
+                ],
+            ),
+            (
+                ComposeError::TextureOutOfRange {
+                    module: s("m"),
+                    mesh: s("x"),
+                    texture: 3,
+                }
+                .into(),
+                "texture_out_of_range",
+                vec![
+                    ("module", Some("m")),
+                    ("mesh", Some("x")),
+                    ("texture", Some("3")),
+                ],
+            ),
+            (
+                ComposeError::AvatarLevel {
+                    module: s("m"),
+                    required: 2,
+                    actual: Some(1),
+                }
+                .into(),
+                "avatar_level",
+                vec![
+                    ("module", Some("m")),
+                    ("required", Some("2")),
+                    ("actual", Some("1")),
+                ],
+            ),
+            (
+                ComposeError::AvatarLevel {
+                    module: s("m"),
+                    required: 2,
+                    actual: None,
+                }
+                .into(),
+                "avatar_level",
+                vec![
+                    ("module", Some("m")),
+                    ("required", Some("2")),
+                    ("actual", None),
+                ],
+            ),
+            (
+                DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+                "invalid_physics",
+                vec![("errors", Some("2"))],
+            ),
+            (
+                ComposeError::Invalid(vec![invalid]).into(),
+                "invalid_composition",
+                vec![("errors", Some("1"))],
+            ),
+        ];
+        let text = |p: *const c_char| {
+            // SAFETY: NULL でないポインタは、次の失敗まで有効な NUL 終端の文字列。
+            (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
+        };
+        for (error, code, fields) in cases {
+            assert_eq!(guard(|| Err(dress_up_error(error))), UGOE_ERROR_DRESS_UP);
+            assert_eq!(text(ugoe_last_error_kind()).as_deref(), Some(code));
+            for (key, value) in fields {
+                let key = CString::new(key).unwrap();
+                // SAFETY: `key` は NUL 終端の文字列。
+                let field = text(unsafe { ugoe_last_error_field(key.as_ptr()) });
+                assert_eq!(field.as_deref(), value, "{code} {key:?}");
+            }
+        }
+    }
 }

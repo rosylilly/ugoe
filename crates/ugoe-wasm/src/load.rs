@@ -183,12 +183,17 @@ pub fn warning_json(warning: &LoadWarning) -> serde_json::Value {
         "warning": warning.to_string(),
     });
     for (key, value) in warning.fields() {
-        json[key] = match value {
-            FieldValue::Index(i) => i.into(),
-            FieldValue::Text(s) => s.into(),
-        };
+        json[key] = field_json(value);
     }
     json
+}
+
+/// 補足の値 (警告と着せ替えの失敗の `fields`) の JSON。番号は数、文は文字列。
+pub fn field_json(value: FieldValue<'_>) -> serde_json::Value {
+    match value {
+        FieldValue::Index(i) => i.into(),
+        FieldValue::Text(s) => s.into(),
+    }
 }
 
 /// 読み込みの警告の構造 (`load_warnings_json`)。戻り値の文の警告と同じ順: モデルの読み込みと物理の引き継ぎの

@@ -15,7 +15,7 @@ use ugoe_runtime::{
     compose_physics, compose_physics_without_base,
 };
 
-use crate::Puppet;
+use crate::{FieldValue, Puppet};
 
 /// 合成したモデルのテクスチャ (`Model::textures` の 1 つ) の出どころ。
 ///
@@ -78,38 +78,67 @@ impl DressUpError {
         self.info().0
     }
 
-    /// 補足の値 (キーと値)。キーは `module`・`slot`・`parameter`・`mesh`・`attached` (付いていたモジュール)。
-    pub fn fields(&self) -> Vec<(&'static str, &str)> {
+    /// 補足の値 (キーと値)。値は ID・名前なら [`FieldValue::Text`]、番号・数なら [`FieldValue::Index`]
+    /// (wasm は文字列と数、C ABI は 10 進の文字列にする)。キー:
+    ///
+    /// - `module`・`slot`・`parameter`・`mesh`・`part` (ポーズの要素): ID・名前。`attached`: `slot_occupied` で付いていたモジュール。
+    ///   `mask`: `unknown_mask` のマスクの参照先。`rig`・`collider`: `unknown_collider` のリグと衝突体。
+    /// - `texture`: `texture_out_of_range` のテクスチャの番号 (モジュールの `Module::textures` の添字)。
+    /// - `required`・`actual`: `avatar_level` で、モジュールが求めるレベルと本体のレベル。本体がアバタープロファイルを
+    ///   持たなければ `actual` は無い。
+    /// - `errors`: `invalid_physics`・`invalid_composition` の検査のエラーの数 (1 以上)。個々のエラーは文
+    ///   (`Display`) にだけある (検査のエラーには機械が読む種類が無い)。
+    pub fn fields(&self) -> Vec<(&'static str, FieldValue<'_>)> {
         self.info().1
     }
 
-    fn info(&self) -> (&'static str, Vec<(&'static str, &str)>) {
+    fn info(&self) -> (&'static str, Vec<(&'static str, FieldValue<'_>)>) {
         use ComposeError as C;
+        use FieldValue::{Index, Text};
         match self {
-            Self::NotAttached(name) => ("not_attached", vec![("module", name)]),
+            Self::NotAttached(name) => ("not_attached", vec![("module", Text(name))]),
             Self::Compile(_) => ("compile", vec![]),
-            Self::Physics(_) => ("invalid_physics", vec![]),
+            Self::Physics(errors) => ("invalid_physics", vec![("errors", Index(errors.len()))]),
             Self::Compose(e) => match e {
-                C::InvalidModuleName(name) => ("invalid_module_name", vec![("module", name)]),
-                C::DuplicateModule(name) => ("duplicate_module", vec![("module", name)]),
-                C::UnknownSlot { module, slot } => {
-                    ("unknown_slot", vec![("module", module), ("slot", slot)])
-                }
+                C::InvalidModuleName(name) => ("invalid_module_name", vec![("module", Text(name))]),
+                C::DuplicateModule(name) => ("duplicate_module", vec![("module", Text(name))]),
+                C::UnknownSlot { module, slot } => (
+                    "unknown_slot",
+                    vec![("module", Text(module)), ("slot", Text(slot))],
+                ),
                 C::SlotOccupied {
                     slot,
                     first,
                     second,
                 } => (
                     "slot_occupied",
-                    vec![("slot", slot), ("module", second), ("attached", first)],
+                    vec![
+                        ("slot", Text(slot)),
+                        ("module", Text(second)),
+                        ("attached", Text(first)),
+                    ],
                 ),
-                C::AvatarLevel { module, .. } => ("avatar_level", vec![("module", module)]),
-                C::MissingSlot { module, slot } => {
-                    ("missing_slot", vec![("module", module), ("slot", slot)])
+                C::AvatarLevel {
+                    module,
+                    required,
+                    actual,
+                } => {
+                    let mut fields = vec![
+                        ("module", Text(module)),
+                        ("required", Index(usize::from(*required))),
+                    ];
+                    if let Some(actual) = actual {
+                        fields.push(("actual", Index(usize::from(*actual))));
+                    }
+                    ("avatar_level", fields)
                 }
+                C::MissingSlot { module, slot } => (
+                    "missing_slot",
+                    vec![("module", Text(module)), ("slot", Text(slot))],
+                ),
                 C::MissingParameter { module, parameter } => (
                     "missing_parameter",
-                    vec![("module", module), ("parameter", parameter)],
+                    vec![("module", Text(module)), ("parameter", Text(parameter))],
                 ),
                 C::ParameterNotExposed {
                     module,
@@ -117,20 +146,55 @@ impl DressUpError {
                     parameter,
                 } => (
                     "parameter_not_exposed",
-                    vec![("module", module), ("slot", slot), ("parameter", parameter)],
+                    vec![
+                        ("module", Text(module)),
+                        ("slot", Text(slot)),
+                        ("parameter", Text(parameter)),
+                    ],
                 ),
-                C::UnknownMask { module, mesh, .. } => {
-                    ("unknown_mask", vec![("module", module), ("mesh", mesh)])
-                }
-                C::TextureOutOfRange { module, mesh, .. } => (
+                C::UnknownMask { module, mesh, mask } => (
+                    "unknown_mask",
+                    vec![
+                        ("module", Text(module)),
+                        ("mesh", Text(mesh)),
+                        ("mask", Text(mask)),
+                    ],
+                ),
+                C::TextureOutOfRange {
+                    module,
+                    mesh,
+                    texture,
+                } => (
                     "texture_out_of_range",
-                    vec![("module", module), ("mesh", mesh)],
+                    vec![
+                        ("module", Text(module)),
+                        ("mesh", Text(mesh)),
+                        ("texture", Index(*texture as usize)),
+                    ],
                 ),
-                C::UnknownCollider { module, .. } => ("unknown_collider", vec![("module", module)]),
-                C::PoseNotExposed { module, slot, .. } => {
-                    ("pose_not_exposed", vec![("module", module), ("slot", slot)])
+                C::UnknownCollider {
+                    module,
+                    rig,
+                    collider,
+                } => (
+                    "unknown_collider",
+                    vec![
+                        ("module", Text(module)),
+                        ("rig", Text(rig)),
+                        ("collider", Text(collider)),
+                    ],
+                ),
+                C::PoseNotExposed { module, slot, part } => (
+                    "pose_not_exposed",
+                    vec![
+                        ("module", Text(module)),
+                        ("slot", Text(slot)),
+                        ("part", Text(part)),
+                    ],
+                ),
+                C::Invalid(errors) => {
+                    ("invalid_composition", vec![("errors", Index(errors.len()))])
                 }
-                C::Invalid(_) => ("invalid_composition", vec![]),
             },
         }
     }

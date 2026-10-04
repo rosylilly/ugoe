@@ -31,6 +31,29 @@
   `ugoe-runtime` で決め、C ABI・wasm・Godot・Unity は表し方だけを持つ。`tests/host_numbers.rs`)
 - [docs/spec/rendering.md#ホストでのライティング](../../docs/spec/rendering.md#ホストでのライティング) (`lighting`: `uses_lighting` / `Puppet::uses_lighting`・`bundle_normal_maps`)
 
+## 着せ替えの失敗の補足の値
+
+`DressUpError::fields` は `(キー, FieldValue)` の列を返す。値は ID・名前なら `FieldValue::Text`、番号・数なら `FieldValue::Index`
+(読み込みの警告 `LoadWarning::fields` と同じ型)。wasm の `DressUpError` は文字列と数、C ABI の `ugoe_last_error_field` は
+10 進の文字列にする。キーは種類ごとに決まり、無い値はキーごと出さない (T0412・T0157)。
+
+| `code` | キー |
+| --- | --- |
+| `not_attached`・`invalid_module_name`・`duplicate_module` | `module` |
+| `unknown_slot`・`missing_slot` | `module`・`slot` |
+| `missing_parameter` | `module`・`parameter` |
+| `parameter_not_exposed` | `module`・`slot`・`parameter` |
+| `slot_occupied` | `slot`・`module` (付けようとしたもの)・`attached` (付いていたもの) |
+| `unknown_mask` | `module`・`mesh`・`mask` (マスクの参照先) |
+| `texture_out_of_range` | `module`・`mesh`・`texture` (番号。モジュールの `Module::textures` の添字) |
+| `unknown_collider` | `module`・`rig`・`collider` |
+| `pose_not_exposed` | `module`・`slot`・`part` (ポーズの要素) |
+| `avatar_level` | `module`・`required` (モジュールが求めるレベル)・`actual` (本体のレベル。本体がアバタープロファイルを持たなければ無い) |
+| `invalid_physics`・`invalid_composition` | `errors` (検査のエラーの数。個々のエラーは文 `Display` にだけある) |
+| `compile` | なし |
+
+検査のエラー (`ValidationError`) には機械が読む種類が無いので、個々のエラーは補足の値にしない (数だけを出す)。
+
 ## 関連タスク
 
 - T0303 (`docs/tasks/T0303-*.md`)
@@ -38,6 +61,7 @@
 - T0121 (着せ替え)
 - T0210 (ライティングの補助)
 - T0412 (エラーと警告の code)
+- T0157 (着せ替えの失敗の補足の値の不足を埋める)
 - T0133 (受け手として進める)
 - T0134 (受け手の段の順を update とそろえる)
 - T0135 (受け手でもモーションのパーツの不透明度のカーブを当てる)

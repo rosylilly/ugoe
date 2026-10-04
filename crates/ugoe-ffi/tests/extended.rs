@@ -297,6 +297,19 @@ fn dress_up_failures_carry_the_wasm_codes() {
     assert!(m.is_null());
     assert_eq!(text(ugoe_last_error_kind()), "invalid_file");
 
+    // 番号の補足の値は 10 進の文字列。本体がアバタープロファイルを持たなければ `actual` は無い (T0157)。
+    let mut picky = long_hair_module();
+    picky.requires.avatar_level = Some(2);
+    let picky = module(picky, 1);
+    assert_eq!(
+        unsafe { ugoe_puppet_attach_module(p.0, picky.0) },
+        UGOE_ERROR_DRESS_UP
+    );
+    assert_eq!(text(ugoe_last_error_kind()), "avatar_level");
+    assert_eq!(field("module"), "LongHair");
+    assert_eq!(field("required"), "2");
+    assert!(unsafe { ugoe_last_error_field(c"actual".as_ptr()) }.is_null());
+
     // 本体がスロットを持たなければ付けられない。
     let q = from_model(fixtures::single_quad());
     let hair = module(long_hair_module(), 1);

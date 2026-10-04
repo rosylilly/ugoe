@@ -163,7 +163,8 @@ pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
 }
 
 /// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
-/// `"attached"`、読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
+/// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
 ///
 /// # Safety
 ///

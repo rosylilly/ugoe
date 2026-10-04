@@ -223,7 +223,10 @@ try {
   // "pose_not_exposed" | "texture_out_of_range" | "invalid_composition" | "invalid_module_name" | "duplicate_module" |
   // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture"
   // (load_module が読み込みの上限を超えたときは "read_limit_exceeded" | "image_limit_exceeded"。下の「読み込みの上限」)。
-  // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)
+  // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)・
+  // e.mask (unknown_mask)・e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・
+  // e.texture (texture_out_of_range。数)・e.required・e.actual (avatar_level。数。本体がプロファイルを持たなければ actual は無い)・
+  // e.errors (invalid_physics・invalid_composition の検査のエラーの数)。キーの意味は crates/ugoe/README.md#着せ替えの失敗の補足の値 (T0157)
 }
 ```
 

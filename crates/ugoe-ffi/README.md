@@ -96,8 +96,10 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
   `ugoe_puppet_attached_module_count` / `ugoe_puppet_attached_module_name` (合成の順)。
 
 失敗の種類 (`ugoe_last_error_kind()`) は wasm の `DressUpError` の `code` と同じで、同じ補足の値
-(`ugoe_last_error_field("module")`・`"slot"`・`"parameter"`・`"mesh"`・`"attached"`) を持つ
-([crates/ugoe-wasm/README.md](../ugoe-wasm/README.md#着せ替え-t0123))。
+(`ugoe_last_error_field("module")`・`"slot"`・`"parameter"`・`"mesh"`・`"attached"` など) を持つ
+([crates/ugoe-wasm/README.md](../ugoe-wasm/README.md#着せ替え-t0123))。番号 (`texture`・`required`・`actual`・`errors`) は 10 進の文字列
+(wasm では数)。無い値 (本体がアバタープロファイルを持たないときの `actual`) は NULL (T0157。キーの意味は
+[crates/ugoe/README.md](../ugoe/README.md#着せ替えの失敗の補足の値))。
 
 | 種類 | 戻り値 | 補足の値 |
 | --- | --- | --- |
@@ -107,10 +109,15 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 | `missing_parameter` | 同上 | `module`・`parameter` |
 | `parameter_not_exposed` | 同上 | `module`・`slot`・`parameter` |
 | `slot_occupied` | 同上 | `slot`・`module`・`attached` |
-| `unknown_mask`・`texture_out_of_range` | 同上 | `module`・`mesh` |
-| `pose_not_exposed` | 同上 | `module`・`slot` |
-| `avatar_level`・`unknown_collider`・`invalid_module_name`・`duplicate_module`・`not_attached` | 同上 | `module` |
-| `invalid_composition`・`compile`・`invalid_physics` | 同上 | |
+| `unknown_mask` | 同上 | `module`・`mesh`・`mask` |
+| `texture_out_of_range` | 同上 | `module`・`mesh`・`texture` |
+| `unknown_collider` | 同上 | `module`・`rig`・`collider` |
+| `pose_not_exposed` | 同上 | `module`・`slot`・`part` |
+| `avatar_level` | 同上 | `module`・`required`・`actual` (本体のレベル。無ければ NULL) |
+| `invalid_module_name`・`duplicate_module`・`not_attached` | 同上 | `module` |
+| `invalid_composition` | 同上 | `errors` (検査のエラーの数) |
+| `compile` | 同上 | |
+| `invalid_physics` | 同上 (`ugoe_puppet_set_base_physics` では `UGOE_ERROR_INVALID_MODEL` で、種類を持たない) | `errors` |
 
 wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きない (モジュールはポインタで渡し、`UgoePuppet` は常にモデルを持ち、
 画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。種類と補足の値の対応は SDK の
