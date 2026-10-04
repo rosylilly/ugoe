@@ -1,9 +1,37 @@
 // SPDX-License-Identifier: MIT
 // C ABI の値を、Unity に依存しない C# の型にしたもの。
 using System;
+using System.Runtime.InteropServices;
 
 namespace Ugoe
 {
+    /// <summary>
+    /// 読み込みの上限 (C ABI の <c>UgoeReadLimits</c>。docs/spec/file-formats.md#読み込みの上限、T0152)。
+    /// 値は <see cref="Default"/> から始めて変え、<see cref="Puppet.FromBundle(byte[], UgoeReadLimits)"/> と
+    /// <see cref="Module.FromBytes(byte[], UgoeReadLimits)"/> に渡す。超えたら <see cref="UgoeResult.LimitExceeded"/>
+    /// (種類 <c>"read_limit_exceeded"</c>、補足の値 <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c>)。
+    /// 数えるのは圧縮したチャンクを展開したバイトだけ。上限はファイル形式の決まりではなく、読む側の方針。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct UgoeReadLimits
+    {
+        /// <summary>圧縮したチャンク 1 つを展開した後の大きさの上限 (バイト)。既定は 256 MiB。</summary>
+        public ulong MaxChunkDecompressed;
+
+        /// <summary>1 つのファイルで、圧縮したチャンクを展開したバイトの合計の上限。既定は 1 GiB。</summary>
+        public ulong MaxTotalDecompressed;
+
+        /// <summary>既定の上限 (上限を指定しない <see cref="Puppet.FromBundle(byte[])"/> などが使う値)。ネイティブライブラリから読む。</summary>
+        public static UgoeReadLimits Default
+        {
+            get
+            {
+                UgoeRuntime.EnsureCompatible();
+                return Native.ugoe_read_limits_default();
+            }
+        }
+    }
+
     /// <summary>モデルのキャンバス (ピクセル単位・Y 下向き。docs/spec/model.md)。</summary>
     public readonly struct CanvasInfo
     {

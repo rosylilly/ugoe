@@ -142,6 +142,8 @@ namespace Ugoe
         // --- 作成と破棄 ---
 
         [DllImport(Library)] internal static extern int ugoe_puppet_create_from_bundle(byte[] bytes, UIntPtr len, out IntPtr puppet);
+        [DllImport(Library)] internal static extern int ugoe_puppet_create_from_bundle_with_limits(byte[] bytes, UIntPtr len, ref UgoeReadLimits limits, out IntPtr puppet);
+        [DllImport(Library)] internal static extern UgoeReadLimits ugoe_read_limits_default();
         [DllImport(Library)] internal static extern int ugoe_puppet_create_from_json(byte[] json, UIntPtr len, out IntPtr puppet);
         [DllImport(Library)] internal static extern void ugoe_puppet_destroy(IntPtr puppet);
         [DllImport(Library)] internal static extern int ugoe_puppet_canvas(PuppetHandle puppet, out Canvas canvas);
@@ -222,6 +224,7 @@ namespace Ugoe
         // --- 着せ替え ---
 
         [DllImport(Library)] internal static extern int ugoe_module_create(byte[] bytes, UIntPtr len, out IntPtr module);
+        [DllImport(Library)] internal static extern int ugoe_module_create_with_limits(byte[] bytes, UIntPtr len, ref UgoeReadLimits limits, out IntPtr module);
         [DllImport(Library)] internal static extern void ugoe_module_destroy(IntPtr module);
         [DllImport(Library)] internal static extern int ugoe_module_name(ModuleHandle module, out IntPtr name);
         [DllImport(Library)] internal static extern int ugoe_module_slot(ModuleHandle module, out IntPtr slot);

@@ -47,6 +47,24 @@ namespace Ugoe
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
             UgoeException.Check(Native.ugoe_module_create(bytes, (UIntPtr)bytes.Length, out var ptr));
+            return Wrap(ptr);
+        }
+
+        /// <summary>
+        /// 読み込みの上限 <paramref name="limits"/> を指定して、<c>.ugoemod</c> のバイト列から作る。
+        /// 上限を超えたら <see cref="UgoeException"/> (<see cref="UgoeResult.LimitExceeded"/>)。ほかは <see cref="FromBytes(byte[])"/> と同じ。
+        /// </summary>
+        public static Module FromBytes(byte[] bytes, UgoeReadLimits limits)
+        {
+            if (bytes == null) throw new ArgumentNullException(nameof(bytes));
+            UgoeRuntime.EnsureCompatible();
+            UgoeException.Check(Native.ugoe_module_create_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr));
+            return Wrap(ptr);
+        }
+
+        // 作った UgoeModule を包む。
+        private static Module Wrap(IntPtr ptr)
+        {
             var handle = new ModuleHandle(ptr);
             try
             {

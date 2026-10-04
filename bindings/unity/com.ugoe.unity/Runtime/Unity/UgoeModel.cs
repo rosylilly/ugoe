@@ -26,5 +26,11 @@ namespace Ugoe.Unity
 
         /// <summary>この中身から新しい <see cref="Puppet"/> を作る。呼び出し側が破棄する。</summary>
         public Puppet CreatePuppet() => Puppet.FromBundle(bytes);
+
+        /// <summary>
+        /// 読み込みの上限 <paramref name="limits"/> を指定して、この中身から新しい <see cref="Puppet"/> を作る。呼び出し側が破棄する。
+        /// <see cref="UgoePuppet"/> と取り込み (Editor/UgoeImporters.cs) は既定の上限で読む (bindings/unity/README.md#読み込みの上限)。
+        /// </summary>
+        public Puppet CreatePuppet(UgoeReadLimits limits) => Puppet.FromBundle(bytes, limits);
     }
 }

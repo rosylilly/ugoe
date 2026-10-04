@@ -33,7 +33,7 @@
 | `com.ugoe.unity/Runtime/Plugins/` | ネイティブライブラリ (**コミットしない**。`build.mjs` か CI の成果物で置く) |
 | `com.ugoe.unity/Editor/` | `.ugoe` / `.ugoemod` の取り込み (ScriptedImporter) とインスペクタ |
 | `com.ugoe.unity/Samples~/Basic/` | 見本のシーン (`Basic.unity`) とスクリプト。`Models/` は `build.mjs` が置く (コミットしない) |
-| `tests/` | `Runtime/Core` の dotnet のテスト (ホストの `libugoe_ffi` と `assets/samples/` のモデルで実行) |
+| `tests/` | `Runtime/Core` の dotnet のテスト (ホストの `libugoe_ffi` と `assets/samples/` のモデルで実行)。`tests/Fixtures/` はテスト用のファイル (作り方は `tests/Fixtures/README.md`) |
 | `tests/UnityCompile/` | Unity に依存する C# を、Unity の API の形だけを書いたスタブに対して型検査する (実行はしない)。Unity の API 互換レベルの 2 つに合わせ、`netstandard2.1` (.NET Standard 2.1) と `net48` (.NET Framework) の両方でビルドする |
 | `build.mjs` | ビルド・配置・検査 (下) |
 | `release.mjs` | 版の照合と UPM の tarball ([リリース](#リリース)) |
@@ -158,6 +158,32 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。
 失敗は `UgoeException` (`Result`・着せ替えと読み込みの上限 (`UgoeResult.LimitExceeded`) では `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
+`Fields` は C ABI の `ugoe_last_error_field` で、`UgoeException.FieldKeys` のキーを 1 つずつ読む (C ABI にはキーを列挙する関数が無い)。
+`FieldKeys` は `crates/ugoe-wasm/codes.json` の `dress_up_error` と `load_error` のすべてのキー (`module`・`slot`・`mask`・`rig`・`collider`・
+`part`・`texture`・`required`・`actual`・`errors`・`limit`・`chunk`・`max` など) で、食い違いは `tests/ResultTests.cs` が検出する
+(種類やキーが増えて `codes.json` を書き直したら、`FieldKeys` も直す。T0458)。
+
+### 読み込みの上限
+
+信頼できないファイル (利用者が選んだ `.ugoe`・ダウンロードした `.ugoemod` など) を実行時に読むときは、読み込みの上限
+(`UgoeReadLimits`。C ABI の `UgoeReadLimits`、[docs/spec/file-formats.md#読み込みの上限](../../docs/spec/file-formats.md#読み込みの上限)) を指定できる。
+数えるのは圧縮したチャンクを展開したバイトだけ。超えたら `UgoeException` (`UgoeResult.LimitExceeded`、種類 `"read_limit_exceeded"`、
+`Fields` の `"limit"` (`chunk_decompressed` か `total_decompressed`)・`"chunk"`・`"max"`)。ファイルが壊れているとは限らない。
+
+```csharp
+var limits = UgoeReadLimits.Default;                 // 既定 (1 チャンク 256 MiB・合計 1 GiB) から始めて変える
+limits.MaxTotalDecompressed = 64UL * 1024 * 1024;
+using var puppet = Puppet.FromBundle(bytes, limits); // UgoeModel.CreatePuppet(limits) も同じ
+using var module = Module.FromBytes(modBytes, limits);
+```
+
+- 上限を指定しない `Puppet.FromBundle(bytes)`・`Module.FromBytes(bytes)` は既定の上限で読む (C ABI と同じ)。
+- `UgoePuppet` (コンポーネント)・`UgoeModule.Module`・取り込み (`Editor/UgoeImporters.cs`) は既定の上限で読み、上限を指定する口を持たない。
+  取り込むのはプロジェクトに入れた (作者が選んだ) ファイルで、既定の上限は普通のモデルより十分に大きいため。アセットに上限を持たせると、
+  同じモデルを読む場所ごとに上限が変わってしまう (上限はファイルではなく読む側の方針。docs/spec/file-formats.md)。
+  実行時に信頼できないファイルを読むときは、`UgoeModel.CreatePuppet(limits)` か `Puppet.FromBundle(bytes, limits)` で作って確かめる
+  (T0458 で検討した)。
+- `tests/LimitsTests.cs` が、圧縮したバンドル (`spec/examples/bundles/single-quad-zstd.ugoe`) とモジュール (`tests/Fixtures/`) で確かめる。
 
 NaN・無限大・負の `dt` は C ABI と同じく `UgoeResult.InvalidArgument` で断る (パラメータ・音量の NaN、トラッキングの有限でない値など)。
 `UgoePuppet` が毎フレーム進める時間 (`Time.deltaTime × speed`) だけは、正の有限の値でなければ 0 で進める (負の `speed` で止まる)。
@@ -192,6 +218,9 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
 
 `Native.cs` は `crates/ugoe-ffi/include/ugoe.h` のすべての関数を宣言する。ただし `ugoe_puppet_positions` (内部のバッファの借用) だけは
 宣言しない。C# では借りても配列に写すことになり、`ugoe_puppet_copy_positions` (`Puppet.CopyPositions`) と同じだから。
+読み込みの上限の関数 (`ugoe_read_limits_default`・`ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits`) は
+`UgoeReadLimits.Default`・`Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` (T0458)。
+宣言の漏れは `scripts/check-ffi-bindings.mjs` (`just refs`) が検出する。
 
 ## 描画のしかた
 
@@ -295,4 +324,4 @@ node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.t
 
 ## 関連タスク
 
-- T0405 (`docs/tasks/T0405-unity-package.md`)、T0455 (受け手の適合テスト・`LimitExceeded`)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414、指揮役の側の値は T0454
+- T0405 (`docs/tasks/T0405-unity-package.md`)、T0455 (受け手の適合テスト・`LimitExceeded`)、T0458 (読み込みの上限・補足の値のキー)、T0419 (C# の API の追加・描画のまとめ・リリース・色空間)、T0420 (Linear の中間のテクスチャ・マスクのページ・アトラスにした見本)、C ABI は T0401・T0409・T0412・T0414、指揮役の側の値は T0454

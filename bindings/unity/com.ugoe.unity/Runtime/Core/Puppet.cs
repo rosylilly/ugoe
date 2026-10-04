@@ -48,6 +48,18 @@ namespace Ugoe
             return Wrap(ptr);
         }
 
+        /// <summary>
+        /// 読み込みの上限 <paramref name="limits"/> を指定して、<c>.ugoe</c> バンドルのバイト列から作る。
+        /// 上限を超えたら <see cref="UgoeException"/> (<see cref="UgoeResult.LimitExceeded"/>)。ほかは <see cref="FromBundle(byte[])"/> と同じ。
+        /// </summary>
+        public static Puppet FromBundle(byte[] bytes, UgoeReadLimits limits)
+        {
+            if (bytes == null) throw new ArgumentNullException(nameof(bytes));
+            UgoeRuntime.EnsureCompatible();
+            UgoeException.Check(Native.ugoe_puppet_create_from_bundle_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr));
+            return Wrap(ptr);
+        }
+
         /// <summary>モデルの JSON から作る。テクスチャはすべて「画像なし」になる。</summary>
         public static Puppet FromJson(string json)
         {

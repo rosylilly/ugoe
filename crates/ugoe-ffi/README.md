@@ -144,7 +144,7 @@ ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同
   `ugoe::limits::ReadLimitExceeded` で、wasm の読み込みのエラーの `code` と同じ。
 - PNG の大きさの上限 (wasm の `max_image_side`) は無い。C ABI は画像をデコードせず、エンコードされたまま渡すので、デコードの上限はホストが決める。
 - JSON から作る `ugoe_puppet_create_from_json` は展開をしないので、上限を取らない (大きさは入力の長さで決まる)。
-- Unity (`bindings/unity`) はまだこの口を出していない (既定値で読む)。Godot は C ABI ではなく SDK を使う。
+- Unity (`bindings/unity`) は `UgoeReadLimits` と `Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` で出す (T0458)。Godot は C ABI ではなく SDK を使う。
 
 ## ライティング (T0409)
 

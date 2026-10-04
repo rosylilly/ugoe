@@ -43,8 +43,9 @@ namespace Ugoe
         public string Kind { get; }
 
         /// <summary>
-        /// 補足の値 (着せ替えでは <c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mesh"</c>・<c>"attached"</c>、
-        /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c> のうち持つもの)。
+        /// 補足の値 (着せ替えでは <c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mask"</c> など、
+        /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c> のうち持つもの)。種類ごとのキーは
+        /// crates/ugoe-wasm/codes.json の <c>dress_up_error</c> と <c>load_error</c> と同じ。
         /// </summary>
         public IReadOnlyDictionary<string, string> Fields { get; }
 
@@ -56,7 +57,15 @@ namespace Ugoe
             Fields = fields ?? new Dictionary<string, string>();
         }
 
-        private static readonly string[] FieldKeys = { "module", "slot", "parameter", "mesh", "attached", "limit", "chunk", "max" };
+        /// <summary>
+        /// 読みに行く補足の値のキー。crates/ugoe-wasm/codes.json の <c>dress_up_error</c> と <c>load_error</c> のすべてのキー
+        /// (C ABI にはキーを列挙する関数が無いので、ここに写す)。食い違いは tests/ResultTests.cs が検出する。
+        /// </summary>
+        internal static readonly string[] FieldKeys =
+        {
+            "actual", "attached", "chunk", "collider", "errors", "features", "found", "height", "image", "limit", "mask",
+            "max", "mesh", "module", "parameter", "part", "required", "rig", "slot", "supported", "texture", "width",
+        };
 
         /// <summary>結果が失敗なら、同じスレッドの最後のエラーから例外を作って投げる。</summary>
         internal static void Check(int result)
