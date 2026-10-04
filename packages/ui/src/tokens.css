@@ -157,7 +157,7 @@
   }
 }
 
-/* 部品が使う補助のクラス: 見せずに読み上げだけさせる文字 */
+/* 見せずに読み上げだけさせる文字 (部品とアプリが使う。docs/ui.md#そのほか) */
 .ugoe-visually-hidden {
   position: absolute;
   width: 1px;

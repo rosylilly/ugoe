@@ -115,7 +115,8 @@ function onkeydown(event: KeyboardEvent) {
       return;
   }
   event.preventDefault();
-  const base = parseEditable(text) ?? value;
+  // 値が数でない (NaN など) ときは、範囲に収めた 0 から動かす (NaN を onchange に渡さない)
+  const base = parseEditable(text) ?? (Number.isFinite(value) ? value : clamp(0, min, max));
   commit(stepValue(base, steps, { min, max, step }));
 }
 </script>

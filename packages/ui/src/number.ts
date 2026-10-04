@@ -21,10 +21,14 @@ export function decimalsOf(step: number): number {
   return Math.max(0, fraction - Number(exponent ?? 0));
 }
 
+/** 桁数を toFixed に渡せる 0〜15 の整数にする。 */
+function digitsOf(decimals: number): number {
+  return Math.min(Math.max(0, Math.round(decimals)), 15);
+}
+
 /** 浮動小数点の誤差 (0.1 + 0.2) を、`decimals` 桁で丸めて消す。 */
 export function roundTo(value: number, decimals: number): number {
-  const d = Math.min(Math.max(0, Math.round(decimals)), 15);
-  return Number(value.toFixed(d));
+  return Number(value.toFixed(digitsOf(decimals)));
 }
 
 /** 編集の欄に出す文字列。末尾の 0 は付けない (0.50 → "0.5")。 */
@@ -32,8 +36,9 @@ export function formatEditable(value: number, decimals: number): string {
   if (!Number.isFinite(value)) return "";
   const rounded = roundTo(value, decimals);
   // -0 を "0" にする
-  const s = (Object.is(rounded, -0) ? 0 : rounded).toFixed(Math.min(decimals, 15));
-  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+  const s = (Object.is(rounded, -0) ? 0 : rounded).toFixed(digitsOf(decimals));
+  // 1e21 以上は toFixed が指数の表記 ("1.2e+30") を返すので、末尾を削らない
+  return s.includes(".") && !s.includes("e") ? s.replace(/\.?0+$/, "") : s;
 }
 
 /**

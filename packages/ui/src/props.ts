@@ -1,4 +1,5 @@
-// 部品の中で、Bits UI のトリガーの属性 (Tooltip・Menu・Popover) と ugoe の props を重ねる。
+// Bits UI のトリガーの属性 (Tooltip・Menu・Popover) と ugoe の props を重ねる。部品の中と、自前のトリガーを作るアプリ
+// (エディタの TipButton) が使う。
 
 /** トリガーにする要素 (ボタンなど) に広げる属性。Tooltip・Menu・Popover の `trigger` のスニペットが受け取る。 */
 export type TriggerAttributes = Record<string, unknown>;

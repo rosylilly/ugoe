@@ -139,7 +139,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Section` | 折りたためるまとまり (パネルの中) | Bits UI `Collapsible` | Enter・Space | 1 |
 | `Toolbar` | ボタンの並び。中は 1 つのタブ止まりにする | Bits UI `Toolbar` | 左右の矢印 (roving tabindex) | 1 |
 | `Dialog` | 作業を止めて確認・入力させる (モーダル)。取り消せない操作の確認は `AlertDialog` | Bits UI `Dialog`・`AlertDialog` | Esc で閉じる・中でフォーカスが回る・閉じたら開いた元にフォーカスを戻す | 2 |
-| `Notice` | 画面に残る知らせ (読み込みの警告など)。閉じるボタン付き | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
+| `Notice` | 画面に残る知らせ (読み込みの警告など)。`ondismiss` を渡すと閉じるボタンを出す | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
 | `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする。`showToast()` で出し、アプリの根元の `Toaster` が描く | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない。ポインタやフォーカスが乗っている間は消えない | 2 |
 | `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
 | `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
@@ -264,6 +264,8 @@ Bits UI を包むときの約束:
 ### そのほか
 
 - **名前:** すべての操作できる部品に、読み上げの名前を付けます (見えるラベル、`<label>`、または `aria-label`)。`aria-label` などの文言も翻訳を通します。
+- **見せずに読ませる文字:** 読み上げだけに渡す文字 (表の見出しの無い列の名前・印の意味など) は、`@ugoe/ui` の `tokens.css` の
+  `.ugoe-visually-hidden` を付けます。アプリの CSS に同じ指定 (`.visually-hidden`) を書き直しません。
 - **押せる大きさ:** 押せる部品は 24×24 CSS px 以上 (WCAG 2.5.8)。`compact` でもこれより小さくしません。
   エディタの密な行 (タイムラインの行とキー・ツリーの行と開閉・パラメータの名前と値の欄) もこれに従います (2026-10-02、利用者の判断。T0907)。
   見た目の印 (◆・▸・グラフの点) は小さいままでよく、押せる範囲 (透明な枠) を 24px に広げます。行が減っても、選んだ行は見える所まで送ります。

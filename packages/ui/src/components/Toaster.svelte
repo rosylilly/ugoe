@@ -16,6 +16,14 @@ import IconButton from "./IconButton.svelte";
 let region = $state<HTMLElement>();
 const list = $derived(toasts());
 let lastCount = -1;
+// ポインタとフォーカスのどちらかが乗っている間は止める (片方が離れただけでは進めない)
+let hovered = false;
+let focused = false;
+
+function update() {
+  if (hovered || focused) pauseToasts();
+  else resumeToasts();
+}
 
 $effect(() => {
   const count = list.length;
@@ -26,8 +34,12 @@ $effect(() => {
     if (el.matches(":popover-open")) el.hidePopover();
     el.showPopover();
   }
-  // 閉じるボタンで最後の知らせを消すと pointerleave が来ないので、ここで時間を進め直す
-  if (count === 0) resumeToasts();
+  // 閉じるボタンで最後の知らせを消すと pointerleave・focusout が来ないので、ここで時間を進め直す
+  if (count === 0) {
+    hovered = false;
+    focused = false;
+    resumeToasts();
+  }
   lastCount = count;
 });
 </script>
@@ -38,11 +50,22 @@ $effect(() => {
   popover="manual"
   role="status"
   aria-label={t("toast.region.aria")}
-  onpointerenter={pauseToasts}
-  onpointerleave={resumeToasts}
-  onfocusin={pauseToasts}
+  onpointerenter={() => {
+    hovered = true;
+    update();
+  }}
+  onpointerleave={() => {
+    hovered = false;
+    update();
+  }}
+  onfocusin={() => {
+    focused = true;
+    update();
+  }}
   onfocusout={(e) => {
-    if (!region?.contains(e.relatedTarget as Node | null)) resumeToasts();
+    if (region?.contains(e.relatedTarget as Node | null)) return;
+    focused = false;
+    update();
   }}
 >
   {#each list as item (item.id)}

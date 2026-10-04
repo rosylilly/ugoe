@@ -28,6 +28,8 @@ describe("shortcut", () => {
     expect(ariaKeyShortcuts("Mod+Shift+Z", "mac")).toBe("Shift+Meta+Z");
     expect(ariaKeyShortcuts("Mod+Shift+Z", "other")).toBe("Control+Shift+Z");
     expect(ariaKeyShortcuts("Shift+Space", "other")).toBe("Shift+Space");
+    // "+" は組み合わせの区切りなので、キーとしては "Plus" と書く (WAI-ARIA の aria-keyshortcuts)
+    expect(ariaKeyShortcuts("Mod++", "other")).toBe("Control+Plus");
   });
 });
 

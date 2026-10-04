@@ -19,7 +19,7 @@ src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
 src/toast.svelte.ts     Toast の列 (showToast・dismissToast)
 src/theme.svelte.ts     テーマの設定 (initTheme・setThemePreference・currentTheme。ThemeSetting が使う)
-src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (内部用)
+src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (mergeAttributes。自前のトリガーを作るときに使う)
 src/i18n.ts             部品の既定の文言 (@ugoe/i18n の名前空間 `ui`。カタログは locales/)
 src/context.ts          部品の間の context (Toolbar の中の Button を Bits UI の Toolbar.Button で出す)
 src/*.test.ts           Vitest (happy-dom の上でキーボード操作と aria を検査する)
@@ -50,8 +50,11 @@ import "@ugoe/ui/tokens.css";
 - **アプリと、ほかのパッケージは `bits-ui` を直接 import しない。** 部品の props は ugoe の言葉で決めてあり、Bits UI の props は外に出さない
   (Bits UI の破壊的な変更をこのパッケージの中で吸収するため)。
 - **見えるラベル・読み上げの名前・選択肢の名前は、翻訳を通した文言を props で渡す。** 部品が既定で出す文言
-  (いまは `Slider` のリセットの名前 `slider.reset.aria` だけ) は、このパッケージのカタログ `locales/<言語>.json`
-  (@ugoe/i18n の名前空間 `ui`) から引き、props で上書きできる。言語はアプリが @ugoe/i18n の `setLocale()` で決める。
+  (閉じる・キャンセル・`Slider` のリセットの名前・`Notice` と Toast の種類の言葉・`ColorPicker` の欄の名前・`DropZone` の案内とボタン・
+  `ThemeSetting` の選択肢) は、このパッケージのカタログ `locales/<言語>.json` (@ugoe/i18n の名前空間 `ui`) から引く。
+  名前の props (`closeLabel`・`cancelLabel`・`resetLabel`・`prompt`・`buttonLabel` など) があるものは上書きできる。
+  言語はアプリが @ugoe/i18n の `setLocale()` で決める。
+- **見せずに読み上げだけさせる文字** には `class="ugoe-visually-hidden"` を付ける (tokens.css にある。アプリで同じ CSS を書き直さない)。
 - `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
   (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。

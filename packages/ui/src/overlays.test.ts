@@ -216,6 +216,31 @@ describe("Toast", () => {
     expect(region.querySelectorAll(".ugoe-toast")).toHaveLength(0);
   });
 
+  it("waits while either the pointer or the focus is on it", () => {
+    vi.useFakeTimers();
+    const root = render(Toaster, {});
+    const region = get(root, ".ugoe-toaster");
+    showToast("Exported", { duration: 1000 });
+    flushSync();
+    region.dispatchEvent(new PointerEvent("pointerenter"));
+    get(region, "button").focus();
+    // ポインタが離れても、フォーカスが中にある間は消えない
+    region.dispatchEvent(new PointerEvent("pointerleave"));
+    vi.advanceTimersByTime(5000);
+    flushSync();
+    expect(region.querySelectorAll(".ugoe-toast")).toHaveLength(1);
+    // フォーカスが外れても、ポインタが乗っている間は消えない
+    region.dispatchEvent(new PointerEvent("pointerenter"));
+    get(region, "button").blur();
+    vi.advanceTimersByTime(5000);
+    flushSync();
+    expect(region.querySelectorAll(".ugoe-toast")).toHaveLength(1);
+    region.dispatchEvent(new PointerEvent("pointerleave"));
+    vi.advanceTimersByTime(1000);
+    flushSync();
+    expect(region.querySelectorAll(".ugoe-toast")).toHaveLength(0);
+  });
+
   it("closes from its button and can stay", () => {
     const root = render(Toaster, {});
     showToast("Connected", { duration: 0 });
@@ -347,6 +372,32 @@ describe("Menu", () => {
   });
 });
 
+describe("Menu with a submenu", () => {
+  it("opens the submenu with ArrowRight and runs its item", async () => {
+    const onexport = vi.fn();
+    const entries: MenuEntry[] = [
+      { kind: "submenu", label: "Export", entries: [{ label: "PNG", onselect: onexport }] },
+    ];
+    const root = render(Menu, { label: "File", entries });
+    const trigger = get(root, "button");
+    trigger.focus();
+    press(trigger, "ArrowDown");
+    const sub = await vi.waitFor(() => $('[role="menu"] [role="menuitem"][aria-haspopup="menu"]'));
+    await vi.waitFor(() => expect(focused()).toBe(sub));
+    press(sub, "ArrowRight");
+    const menus = await vi.waitFor(() => {
+      const all = [...document.querySelectorAll<HTMLElement>('[role="menu"]')];
+      expect(all).toHaveLength(2);
+      return all;
+    });
+    expect(menus[1]?.getAttribute("aria-label")).toBe("Export");
+    const png = get(menus[1] as HTMLElement, '[role="menuitem"]');
+    await vi.waitFor(() => expect(focused()).toBe(png));
+    press(png, "Enter");
+    await vi.waitFor(() => expect(onexport).toHaveBeenCalledOnce());
+  });
+});
+
 describe("ContextMenu", () => {
   it("opens on the context menu event", async () => {
     const onselect = vi.fn();
@@ -377,6 +428,20 @@ describe("Popover", () => {
     press(focused() as HTMLElement, "Escape");
     await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"));
     await vi.waitFor(() => expect(focused()).toBe(trigger));
+  });
+});
+
+describe("Popover onclose", () => {
+  it("is called when it closes", async () => {
+    const onclose = vi.fn();
+    const root = render(PopoverHarness, { onclose });
+    const trigger = get(root, "#trigger");
+    click(trigger);
+    await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+    expect(onclose).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect($(".ugoe-popover").contains(focused())).toBe(true));
+    press(focused() as HTMLElement, "Escape");
+    await vi.waitFor(() => expect(onclose).toHaveBeenCalledOnce());
   });
 });
 
@@ -478,6 +543,40 @@ describe("DropZone", () => {
     drop(get(root, ".ugoe-drop-zone"), [a, b]);
     expect(onfiles).toHaveBeenCalledWith([a]);
     expect(onreject).toHaveBeenCalledWith([b]);
+  });
+
+  function drag(target: Element, type: string, types = ["Files"]) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { types, dropEffect: "none" } });
+    target.dispatchEvent(event);
+    flushSync();
+    return event;
+  }
+
+  it("shows the dragging state while files are over it, across its children", () => {
+    const root = render(DropZone, {});
+    const zone = get(root, ".ugoe-drop-zone");
+    const button = get(zone, "button");
+    // 文字などのドラッグには反応しない
+    expect(drag(zone, "dragenter", ["text/plain"]).defaultPrevented).toBe(false);
+    expect(zone.hasAttribute("data-dragging")).toBe(false);
+    expect(drag(zone, "dragenter").defaultPrevented).toBe(true);
+    drag(button, "dragenter");
+    drag(zone, "dragleave");
+    expect(zone.hasAttribute("data-dragging")).toBe(true);
+    drag(button, "dragleave");
+    expect(zone.hasAttribute("data-dragging")).toBe(false);
+  });
+
+  it("ignores drops while disabled", () => {
+    const onfiles = vi.fn();
+    const root = render(DropZone, { disabled: true, onfiles });
+    const zone = get(root, ".ugoe-drop-zone");
+    expect(drag(zone, "dragenter").defaultPrevented).toBe(false);
+    expect(zone.hasAttribute("data-dragging")).toBe(false);
+    drop(zone, [new File(["x"], "a.ugoe")]);
+    expect(onfiles).not.toHaveBeenCalled();
+    expect(get<HTMLButtonElement>(zone, "button").disabled).toBe(true);
   });
 
   it("shows the dragging state and can use the app's own file dialog", () => {

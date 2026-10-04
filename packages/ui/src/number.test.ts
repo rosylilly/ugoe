@@ -28,6 +28,12 @@ describe("number", () => {
     expect(formatEditable(Number.NaN, 2)).toBe("");
   });
 
+  it("keeps the exponent of very large values and takes any decimals", () => {
+    // 1e21 以上は toFixed が指数の表記を返す。末尾の 0 を削ると指数が変わる (1.2e+30 → 1.2e+3)
+    expect(parseEditable(formatEditable(1.2e30, 2))).toBe(1.2e30);
+    expect(formatEditable(1.5, -1)).toBe("2");
+  });
+
   it("parses edited text", () => {
     expect(parseEditable(" 1.5 ")).toBe(1.5);
     expect(parseEditable("-.5")).toBe(-0.5);

@@ -103,6 +103,31 @@ describe("Toggle", () => {
   });
 });
 
+describe("Toggle with a tooltip", () => {
+  it("keeps its own description next to the tooltip's", async () => {
+    const note = document.createElement("p");
+    note.id = "mirror-note";
+    note.textContent = "Flips the model";
+    document.body.append(note);
+    const root = render(Toggle, {
+      label: "Mirror",
+      tooltip: "Mirror the view",
+      describedby: "mirror-note",
+    });
+    const sw = get(root, '[role="switch"]');
+    expect(get<HTMLLabelElement>(root, "label").htmlFor).toBe(sw.id);
+    expect(sw.getAttribute("aria-describedby")).toBe("mirror-note");
+    sw.focus();
+    await vi.waitFor(() => expect(sw.getAttribute("aria-describedby")?.split(" ")).toHaveLength(2));
+    const ids = sw.getAttribute("aria-describedby")?.split(" ") ?? [];
+    expect(ids).toContain("mirror-note");
+    expect(ids.map((id) => document.getElementById(id)?.textContent).join(" ")).toContain(
+      "Mirror the view",
+    );
+    note.remove();
+  });
+});
+
 describe("NumberField", () => {
   function setup(props: Record<string, unknown> = {}) {
     const onchange = vi.fn();
@@ -172,6 +197,14 @@ describe("NumberField", () => {
     flushSync();
     expect(input.value).toBe("1");
     expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("steps from a number when the value is not one", () => {
+    const { input, onchange } = setup({ value: Number.NaN, min: 2 });
+    expect(input.value).toBe("");
+    press(input, "ArrowUp");
+    expect(onchange).toHaveBeenLastCalledWith(2.5);
+    expect(input.value).toBe("2.5");
   });
 });
 

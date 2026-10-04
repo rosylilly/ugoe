@@ -115,6 +115,7 @@ export function formatShortcut(text: string, platform: Platform = currentPlatfor
 /** `aria-keyshortcuts` の値 ("Meta+Shift+Z" / "Control+Shift+Z")。 */
 export function ariaKeyShortcuts(text: string, platform: Platform = currentPlatform()): string {
   const { modifiers, key } = parseShortcut(text, platform);
-  const ariaKey = key === " " ? "Space" : key;
+  // "+" は組み合わせの区切りなので、キーとしては "Plus" と書く (WAI-ARIA の aria-keyshortcuts)
+  const ariaKey = key === " " ? "Space" : key === "+" ? "Plus" : key;
   return [...modifiers.map((m) => ARIA_MODIFIER[m]), ...(key ? [ariaKey] : [])].join("+");
 }
