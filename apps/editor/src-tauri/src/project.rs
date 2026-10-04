@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::MutexGuard;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 use tauri::State;
@@ -25,6 +26,9 @@ use crate::proposals::{ProposalSession, RIGGED_MESHES_KEY};
 /// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
 #[derive(Debug)]
 pub struct ProjectSession {
+    /// セッションの番号 (開く・作るたびに変わる。開き直しても変わる)。時間のかかる処理の間にプロジェクトが
+    /// 替わったことに気づくために比べる (`crate::proposals`)。
+    id: u64,
     /// 保存先の `.ugoeproj` ディレクトリ。一度も保存していなければ `None`。
     path: Option<PathBuf>,
     /// `path` のファイルの、開いた (または最後に保存した) ときの指紋。外での書き換えに気づくために比べる
@@ -43,6 +47,9 @@ pub struct ProjectSession {
     pub(crate) proposals: ProposalSession,
 }
 
+/// 次のセッションの番号 ([`ProjectSession::id`])。
+static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
+
 impl ProjectSession {
     /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。
     pub(crate) fn from_project(
@@ -54,6 +61,7 @@ impl ProjectSession {
         let mut proposals = ProposalSession::default();
         proposals.restore_rigged(project.meta.editor.get(RIGGED_MESHES_KEY));
         let session = Self {
+            id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
             path,
             disk,
             base_disk: base_fingerprint(&document),
@@ -63,6 +71,11 @@ impl ProjectSession {
             proposals,
         };
         (session, document)
+    }
+
+    /// セッションの番号 (開く・作るたびに変わる)。
+    pub(crate) fn id(&self) -> u64 {
+        self.id
     }
 
     /// `Document` の外の設定 (本体の参照の付け替えなど) を変えたことにする (未保存の印を付ける)。
@@ -408,15 +421,23 @@ pub fn save_project(
 pub fn save_project_as(state: State<'_, AppState>, path: String) -> IpcResult<ProjectStatus> {
     let dir = project_dir(&path)?;
     let (mut document, mut session) = lock_both(&state)?;
-    let old_meta = session.meta.clone();
+    save_as(&mut document, &mut session, dir)?;
+    Ok(status(&session, &document))
+}
+
+/// [`save_project_as`] の中身 (テストから呼ぶ)。失敗したらメタ情報は元のまま。
+fn save_as(document: &mut Document, session: &mut ProjectSession, dir: PathBuf) -> IpcResult<()> {
+    let (old_meta, old_modified) = (session.meta.clone(), session.meta_modified);
     if let Some(name) = stem(&dir) {
         session.meta.name = name;
     }
-    if let Err(e) = session.save_to(&mut document, dir) {
-        session.meta = old_meta;
+    // 前の保存先からの相対パスで残したものを、新しい保存先から指し直す
+    crate::dress_up::move_to(session, &dir);
+    if let Err(e) = session.save_to(document, dir) {
+        (session.meta, session.meta_modified) = (old_meta, old_modified);
         return Err(e);
     }
-    Ok(status(&session, &document))
+    Ok(())
 }
 
 /// 今のドキュメントを `.ugoe` バンドルのバイト列で返す (ビューポートがテクスチャ付きで表示するため)。
@@ -611,6 +632,36 @@ mod tests {
     fn unsaved_project_has_no_external_change() {
         let (session, _) = initial_state();
         assert_eq!(session.external_change().unwrap(), None);
+    }
+
+    /// 別のフォルダーに保存し直しても (Save As)、プレビューの着せ替えの一覧は同じファイルを指す
+    /// (前の保存先からの相対パスで残したものも)。
+    #[test]
+    fn save_as_keeps_the_dress_up_modules() {
+        let root = std::env::temp_dir().join(format!("t0669-save-as-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (mut session, mut document) = initial_state();
+        save_as(&mut document, &mut session, root.join("work/a.ugoeproj")).unwrap();
+        let hair = root.join("work/mods/hair.ugoemod").display().to_string();
+        let modules = vec![crate::dress_up::PreviewModule {
+            path: hair,
+            attached: true,
+        }];
+        crate::dress_up::set_modules(&mut session, &modules);
+        save_as(
+            &mut document,
+            &mut session,
+            root.join("elsewhere/deeper/b.ugoeproj"),
+        )
+        .unwrap();
+        assert_eq!(crate::dress_up::modules(&session), modules);
+        assert_eq!(status(&session, &document).name, "b");
+        // 開き直しても同じ
+        let (project, disk) = Project::load_tracked(session.path().unwrap()).unwrap();
+        let path = session.path().unwrap().to_path_buf();
+        let (reopened, _) = ProjectSession::from_project(project, Some((path, disk)));
+        assert_eq!(crate::dress_up::modules(&reopened), modules);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn character_psd() -> Vec<u8> {

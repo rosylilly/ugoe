@@ -477,7 +477,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     (`face_landmarker.task`・`pose_landmarker_lite.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
     同じ場所にライセンスの表記 (`third-party-notices.txt`、Apache-2.0) を写し、パネルの「Third-party licenses」で表示します。
   - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
-    記録の保存は `write_json_file` (保存のダイアログで選んだ `.json` だけ)。macOS は `Info.plist` の
+    記録の保存は `write_json_file` (保存のダイアログで選んだ絶対パスの `.json` だけ)。macOS は `Info.plist` の
     `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。
   - ヘッドレスのブラウザでは、記録した値の列 (JSON) か画像・動画を「File…」で入れて確かめます
     (`window.__UGOE_TRACKER__` でトラッカーを読める)。
@@ -521,7 +521,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 - **一覧をプロジェクトに残す:** 一覧 (パスと、付けるか) を `project.json` の `editor.dress_up` に残し、次に開いたときに
   読み込み直します (`get_preview_modules` / `set_preview_modules`。Undo の対象ではなく、変えると未保存の印が付く)。
   モジュールを書き出し直しては本体で試す、を繰り返すためです。パスは `.ugoeproj` と同じフォルダの中なら相対パスで書きます
-  ([file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj))。パスの分からないもの (ブラウザでドロップしたもの) は残しません。
+  ([file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj))。「Save As…」で別のフォルダーに保存し直すと、新しい保存先から
+  同じファイルを指すように書き直します (T0669)。パスの分からないもの (ブラウザでドロップしたもの) は残しません。
   自動で外れたものは、残した一覧を書き換えません (次に開いたときも付けようとして、また知らせる)。
 - **モジュールのプロジェクトのプレビュー (T0650・T0651):** プレビューの間は、作業用のモデル (本体と合成したもの) の代わりに
   **本体だけのモデル** (`get_preview_base_bundle`、`ugoe_editor_core::export_base_bundle`) を描き、**今の編集を書き出したモジュール**

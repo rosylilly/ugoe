@@ -37,10 +37,13 @@ const FOLDER: &str = "ugoe-dress-up-sample";
 #[tauri::command]
 pub fn open_sample_project(state: State<'_, AppState>, parent: String) -> IpcResult<ProjectStatus> {
     let dir = new_folder(&absolute_path(&parent)?)?;
-    let written = write_projects(&dir)?;
-    let (project, disk) = Project::load_tracked(&written[0])?;
+    let base = write_projects(&dir)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| EditorError::Internal("no sample project was written".into()))?;
+    let (project, disk) = Project::load_tracked(&base)?;
     let (mut document, mut session) = lock_both(&state)?;
-    (*session, *document) = ProjectSession::from_project(project, Some((written[0].clone(), disk)));
+    (*session, *document) = ProjectSession::from_project(project, Some((base, disk)));
     Ok(status(&session, &document))
 }
 

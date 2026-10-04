@@ -6,15 +6,16 @@ use std::path::Path;
 use tauri::webview::{PermissionKind, PermissionResponse};
 
 use crate::error::{EditorError, IpcResult};
+use crate::project::absolute_path;
 
-/// トラッキングの記録 (JSON) を書く。パスは保存のダイアログで利用者が選んだもの。`.json` だけを書く。
+/// トラッキングの記録 (JSON) を書く。パスは保存のダイアログで利用者が選んだ絶対パス。`.json` だけを書く。
 #[tauri::command]
 pub fn write_json_file(path: String, contents: String) -> IpcResult<()> {
-    let path = Path::new(&path);
-    if !is_json_path(path) {
+    let path = absolute_path(&path)?;
+    if !is_json_path(&path) {
         return Err(EditorError::NotJsonFile(path.display().to_string()).into());
     }
-    std::fs::write(path, contents).map_err(|e| EditorError::io(path, e).into())
+    std::fs::write(&path, contents).map_err(|e| EditorError::io(&path, e).into())
 }
 
 fn is_json_path(path: &Path) -> bool {
@@ -53,6 +54,10 @@ mod tests {
             )
             .is_err()
         );
+        // 相対パスは作業ディレクトリに書いてしまうので断る (`docs/editor.md#プロジェクト`)。
+        let err = write_json_file("ugoe-editor-rec.json".into(), "{}".into()).unwrap_err();
+        assert_eq!(err.code, "editor.relative_path");
+        assert!(!Path::new("ugoe-editor-rec.json").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

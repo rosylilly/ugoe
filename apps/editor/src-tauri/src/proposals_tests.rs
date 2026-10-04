@@ -524,7 +524,8 @@ fn a_regenerated_proposal_is_listed_after_the_original() {
     let original = done(propose_in(&state, false, None).unwrap());
     let (model, base) = {
         let document = state.document.lock().unwrap();
-        (document.model().clone(), document.state_id())
+        let session = state.project.lock().unwrap();
+        (document.model().clone(), Base::of(&document, &session))
     };
     let (labels, previous) = {
         let session = state.project.lock().unwrap();
@@ -1086,4 +1087,37 @@ fn normal_maps_are_proposed_by_group() {
         settings: BulgeSettings::default(),
     };
     assert!(propose_normal_maps_in(&state, &[unknown], false).is_err());
+}
+
+/// 提案を作る間に別のプロジェクト (ここでは同じモデルの写し) に替わったら、提案を置かない (開いた直後のドキュメントは
+/// どれも状態の番号が同じなので、番号だけでは気づけない)。
+#[test]
+fn proposals_made_for_another_project_are_not_placed() {
+    let state = from_psd(None);
+    done(classify_in(&state, None, false, None).unwrap());
+    let (base, document) = {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        (Base::of(&document, &session), document.detached())
+    };
+    let labels = state
+        .project
+        .lock()
+        .unwrap()
+        .proposals
+        .layer_labels()
+        .unwrap();
+    let rigged = rig(&document, &labels, &[], None, &RigAsk::default()).unwrap();
+    // 別のプロジェクトを開く (`open_project` と同じ置き換え)。
+    let (session, _) = crate::project::initial_state();
+    *state.document.lock().unwrap() = Document::new(document.model().clone());
+    *state.project.lock().unwrap() = session;
+    let origin = ProposalOrigin {
+        revises: None,
+        instructions: None,
+        unapplied: Vec::new(),
+    };
+    let err = place(&state, base, rigged, origin).unwrap_err();
+    assert_eq!(err.code, "proposal.model_changed");
+    assert!(state.project.lock().unwrap().proposals.proposals.is_empty());
 }

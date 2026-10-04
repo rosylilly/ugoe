@@ -505,10 +505,10 @@ pub async fn open_claude_desktop_bundle(app: AppHandle) -> IpcResult<String> {
     Ok(path)
 }
 
-/// Claude Desktop 用の `.mcpb` を `path` (保存のダイアログで選んだもの) に書く。
+/// Claude Desktop 用の `.mcpb` を `path` (保存のダイアログで選んだ絶対パス) に書く。
 #[tauri::command]
 pub async fn save_claude_desktop_bundle(path: String) -> IpcResult<String> {
-    let out = PathBuf::from(path);
+    let out = crate::project::absolute_path(&path)?;
     if out.extension().is_none_or(|e| e != "mcpb") {
         return Err(EditorError::NotMcpbFile.into());
     }

@@ -13,7 +13,7 @@ use ts_rs::TS;
 
 use crate::AppState;
 use crate::error::{EditorError, IpcResult};
-use crate::project::{ProjectStatus, absolute_path, lock_both, status};
+use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
 
 /// `project.json` の `editor` のうち、プレビューの着せ替えを置く項目。
 const DRESS_UP_KEY: &str = "dress_up";
@@ -104,11 +104,27 @@ fn is_module_path(path: &Path) -> bool {
 #[tauri::command]
 pub fn get_preview_modules(state: State<'_, AppState>) -> IpcResult<Vec<PreviewModule>> {
     let (_document, session) = lock_both(&state)?;
+    Ok(modules(&session))
+}
+
+/// `session` に残した一覧 (パスは絶対パス)。
+pub(crate) fn modules(session: &ProjectSession) -> Vec<PreviewModule> {
     let base = base_dir(session.path());
-    Ok(read_modules(
-        session.editor_value(DRESS_UP_KEY),
-        base.as_deref(),
-    ))
+    read_modules(session.editor_value(DRESS_UP_KEY), base.as_deref())
+}
+
+/// 保存先を `project` (`.ugoeproj`) に替える前に、一覧を `project` のフォルダーからの相対パスで書き直す (Save As)。
+pub(crate) fn move_to(session: &mut ProjectSession, project: &Path) {
+    let modules = modules(session);
+    let value = write_modules(&modules, project.parent());
+    session.set_editor_value(DRESS_UP_KEY, value);
+}
+
+/// `session` に一覧を残す (パスは絶対パス。保存先のフォルダーの中なら相対パスで書く)。
+pub(crate) fn set_modules(session: &mut ProjectSession, modules: &[PreviewModule]) {
+    let base = base_dir(session.path());
+    let value = write_modules(modules, base.as_deref());
+    session.set_editor_value(DRESS_UP_KEY, value);
 }
 
 /// プレビューで試すモジュールの一覧をプロジェクトに残す (保存するまでファイルには書かない。変われば未保存の印が付く)。
@@ -122,9 +138,7 @@ pub fn set_preview_modules(
         absolute_path(&m.path)?;
     }
     let (document, mut session) = lock_both(&state)?;
-    let base = base_dir(session.path());
-    let value = write_modules(&modules, base.as_deref());
-    session.set_editor_value(DRESS_UP_KEY, value);
+    set_modules(&mut session, &modules);
     Ok(status(&session, &document))
 }
 

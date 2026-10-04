@@ -468,6 +468,11 @@ fn the_claude_desktop_bundle_wraps_the_sidecar_with_the_editor_icon() {
     assert!(bytes.windows(icon_name.len()).any(|w| w == icon_name));
     assert!(BUNDLE_ICON.starts_with(b"\x89PNG"));
 
+    // 保存先は絶対パスだけ (相対パスは作業ディレクトリに書いてしまう)。
+    let err =
+        tauri::async_runtime::block_on(save_claude_desktop_bundle("x.mcpb".into())).unwrap_err();
+    assert_eq!(err.code, "editor.relative_path");
+
     let err = write_claude_desktop_bundle(None, &tmp.0.join("x.mcpb")).unwrap_err();
     assert!(
         err.to_string()

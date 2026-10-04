@@ -52,7 +52,7 @@ use crate::ai::{AiReply, ConsentAnswer, Prepared, blocking, lock_project, prepar
 use crate::ai_provider::Purpose;
 use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
-use crate::project::absolute_path;
+use crate::project::{ProjectSession, absolute_path};
 
 /// 開いているプロジェクトの AI の提案と、その入力 (`ProjectSession` が持つ。プロジェクトを替えると消える)。
 #[derive(Debug, Default)]
@@ -655,6 +655,32 @@ fn labels_note(labels: &[LayerLabel]) -> String {
     )
 }
 
+/// 提案を作り始めたときの、開いているプロジェクトとドキュメントの状態。作る間 (AI の応答を待つ間など) に変わったら、
+/// 結果を置かない。ドキュメントの状態の番号は開くたびに 0 から数え直すので、セッションの番号も比べる。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Base {
+    session: u64,
+    state: u64,
+}
+
+impl Base {
+    pub(crate) fn of(document: &Document, session: &ProjectSession) -> Self {
+        Self {
+            session: session.id(),
+            state: document.state_id(),
+        }
+    }
+
+    /// 今も同じプロジェクトの同じ状態か。
+    fn check(self, document: &Document, session: &ProjectSession) -> IpcResult<()> {
+        if Self::of(document, session) == self {
+            Ok(())
+        } else {
+            Err(EditorError::ProposalModelChanged.into())
+        }
+    }
+}
+
 // ---- IPC ----
 
 fn lock_document(state: &AppState) -> IpcResult<std::sync::MutexGuard<'_, Document>> {
@@ -763,19 +789,18 @@ pub(crate) fn propose_normal_maps_in(
     choices: &[NormalMapGroupChoice],
     replace_existing: bool,
 ) -> IpcResult<ProposalView> {
-    let layers = lock_project(state)?.proposals.layer_labels();
     // 作る間はロックを持たない (大きなテクスチャでは時間がかかる)。
-    let (document, base) = {
+    let (document, base, layers) = {
         let document = lock_document(state)?;
-        (document.detached(), document.state_id())
+        let session = lock_project(state)?;
+        let base = Base::of(&document, &session);
+        (document.detached(), base, session.proposals.layer_labels())
     };
     let (proposal, sections) =
         normal_map_proposal_in(&document, layers.as_deref(), choices, replace_existing)?;
     let document = lock_document(state)?;
-    if document.state_id() != base {
-        return Err(EditorError::ProposalModelChanged.into());
-    }
     let mut session = lock_project(state)?;
+    base.check(&document, &session)?;
     let proposals = &mut session.proposals;
     let view = proposals.proposals.add(
         &document,
@@ -802,13 +827,13 @@ pub(crate) fn classify_guided_in(
     ask: &Ask<'_>,
     consent: Option<&ConsentAnswer>,
 ) -> IpcResult<AiReply<Classification>> {
-    let path = match psd {
-        Some(p) => absolute_path(&p)?,
-        None => lock_project(state)?
-            .proposals
-            .psd
-            .clone()
-            .ok_or(EditorError::NoPsd)?,
+    let (path, opened) = {
+        let session = lock_project(state)?;
+        let path = match psd {
+            Some(p) => absolute_path(&p)?,
+            None => session.proposals.psd.clone().ok_or(EditorError::NoPsd)?,
+        };
+        (path, session.id())
     };
     let tree = read_tree(&path)?;
     let mut guidance = ClassifyGuidance::default();
@@ -846,6 +871,10 @@ pub(crate) fn classify_guided_in(
     };
     let value = classified.view();
     let mut session = lock_project(state)?;
+    // 分類する間に別のプロジェクトに替わったら、そのプロジェクトには残さない
+    if session.id() != opened {
+        return Err(EditorError::ProposalModelChanged.into());
+    }
     session.proposals.set_psd(path);
     session.proposals.classification = Some(classified);
     Ok(AiReply::Done { value })
@@ -903,15 +932,20 @@ fn make_rig(
     consent: Option<&ConsentAnswer>,
 ) -> IpcResult<AiReply<ProposalView>> {
     // 提案を作る間はロックを持たない (AI の応答を待つ)。複製は履歴を持たず、モジュールの情報は持つ。
-    let (document, base) = {
+    let (document, base, classified) = {
         let document = lock_document(state)?;
-        (document.detached(), document.state_id())
+        let session = lock_project(state)?;
+        let classified = session
+            .proposals
+            .classification
+            .clone()
+            .ok_or(EditorError::NotClassified)?;
+        (
+            document.detached(),
+            Base::of(&document, &session),
+            classified,
+        )
     };
-    let classified = lock_project(state)?
-        .proposals
-        .classification
-        .clone()
-        .ok_or(EditorError::NotClassified)?;
     // 同じ注文で AI が分類したなら、ラベルに関わる注文は分類で反映した。
     guidance.labels_follow_instructions = classified.by_ai
         && guidance.instructions.is_some()
@@ -955,18 +989,17 @@ fn make_rig(
     Ok(AiReply::Done { value: view })
 }
 
-/// 作ったリグの提案を一覧に置き、作り直しに使う値と理由を覚える。提案を作る間にドキュメントが変わっていたら置かない。
+/// 作ったリグの提案を一覧に置き、作り直しに使う値と理由を覚える。提案を作る間にプロジェクトかドキュメントが変わっていたら
+/// 置かない。
 pub(crate) fn place(
     state: &AppState,
-    base: u64,
+    base: Base,
     rigged: Rigged,
     origin: ProposalOrigin,
 ) -> IpcResult<ProposalView> {
     let document = lock_document(state)?;
-    if document.state_id() != base {
-        return Err(EditorError::ProposalModelChanged.into());
-    }
     let mut session = lock_project(state)?;
+    base.check(&document, &session)?;
     let proposals = &mut session.proposals;
     let writes = matches!(rigged.previous, PreviousAnswer::Module(_))
         .then(|| mesh_writes(&rigged.proposal.commands));
