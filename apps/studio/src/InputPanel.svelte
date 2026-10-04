@@ -11,6 +11,7 @@ import { onMount } from "svelte";
 import { t } from "./lib/i18n";
 import type { InputSettings } from "./lib/inputs";
 import type { Microphone } from "./lib/microphone.svelte";
+import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { rememberTrackerSettings } from "./lib/trackerSettings.svelte";
 
 interface Props {
@@ -24,7 +25,8 @@ interface Props {
   trackingPaused: boolean;
   lipSyncPaused: boolean;
   disabled?: boolean;
-  onsettings: (settings: InputSettings) => void;
+  /** 設定を送る (送り終えるまで、送った設定を画面に出し、次の変更の基にする)。 */
+  onsettings: (settings: InputSettings) => Promise<unknown>;
   ontrackingpause: (paused: boolean) => void;
   onlipsyncpause: (paused: boolean) => void;
 }
@@ -51,17 +53,22 @@ const microphoneOptions = $derived([
   ...microphone.devices.map((d) => ({ value: d.id, label: d.label })),
 ]);
 
+/** 送っている途中の設定 (プロファイルの通知を待たずに、続けて変えた変更を積み重ねる)。 */
+const edit = new PendingEdit<InputSettings>((next) => onsettings(next));
+/** 画面に出す設定。 */
+const current = $derived(edit.current(settings));
+
 function change(patch: Partial<InputSettings>) {
-  const current = $state.snapshot(settings) as InputSettings;
-  const next = { ...current, ...patch };
-  if (JSON.stringify(next) !== JSON.stringify(current)) onsettings(next);
+  const base = $state.snapshot(current) as InputSettings;
+  const next = { ...base, ...patch };
+  if (JSON.stringify(next) !== JSON.stringify(base)) void edit.submit(next);
 }
 
 // トラッキングのパネルで変えた調整と、使ったカメラを覚える。
 rememberTrackerSettings(
   () => tracker,
-  () => settings,
-  (next) => onsettings(next),
+  () => current,
+  (next) => void edit.submit(next),
 );
 
 function chooseMicrophone(value: string) {
@@ -85,7 +92,7 @@ async function toggleMicrophone() {
 }
 
 onMount(() => {
-  void microphone.refreshDevices().then(() => microphone.choose(settings.microphone));
+  void microphone.refreshDevices().then(() => microphone.choose(current.microphone));
 });
 
 /** メーターの表示 (百分率)。 */
@@ -156,7 +163,7 @@ function percent(value: number): string {
         id="inputs-loudness"
         min="0"
         max="1"
-        low={settings.noiseGate}
+        low={current.noiseGate}
         value={microphone.loudness}>{percent(microphone.loudness)}</meter
       >
       <label for="inputs-mouth">{t("microphone.mouth")}</label>
@@ -164,7 +171,7 @@ function percent(value: number): string {
     </div>
     <Slider
       label={t("microphone.sensitivity")}
-      value={settings.sensitivity}
+      value={current.sensitivity}
       min={0}
       max={1}
       step={0.01}
@@ -174,7 +181,7 @@ function percent(value: number): string {
     />
     <Slider
       label={t("microphone.noiseGate")}
-      value={settings.noiseGate}
+      value={current.noiseGate}
       min={0}
       max={1}
       step={0.01}

@@ -14,6 +14,7 @@ import {
 import { Button, Checkbox, SegmentedControl, Select, Toggle } from "@ugoe/ui";
 import { t } from "./lib/i18n";
 import type { AnimationView, MotionSettings } from "./lib/inputs";
+import { PendingEdit } from "./lib/pendingEdit.svelte";
 
 interface Props {
   animation: AnimationView;
@@ -22,7 +23,8 @@ interface Props {
   onplay: (name: string, priority: MotionPriority) => void;
   onstop: () => void;
   onexpression: (op: "set" | "add" | "remove" | "clear", name?: string) => void;
-  onsettings: (settings: MotionSettings) => void;
+  /** 設定を送る (送り終えるまで、送った設定を画面に出し、次の変更の基にする)。 */
+  onsettings: (settings: MotionSettings) => Promise<unknown>;
 }
 
 let {
@@ -50,8 +52,13 @@ const idleOptions = $derived([
 ]);
 const groups = $derived(groupTrackingParameters(animation.trackingParameters));
 
+/** 送っている途中の設定 (プロファイルの通知を待たずに、続けて変えた変更を積み重ねる)。 */
+const edit = new PendingEdit<MotionSettings>((next) => onsettings(next));
+/** 画面に出す設定。 */
+const current = $derived(edit.current(settings));
+
 function change(patch: Partial<MotionSettings>) {
-  onsettings({ ...$state.snapshot(settings), ...patch } as MotionSettings);
+  void edit.submit({ ...$state.snapshot(current), ...patch } as MotionSettings);
 }
 
 function toggleExpression(name: string) {
@@ -60,12 +67,12 @@ function toggleExpression(name: string) {
 
 /** まとまりのパラメータを、トラッキングのままにする・しない。 */
 function keepGroup(ids: string[], keep: boolean) {
-  const rest = settings.trackingKept.filter((id) => !ids.includes(id));
+  const rest = current.trackingKept.filter((id) => !ids.includes(id));
   change({ trackingKept: keep ? [...rest, ...ids] : rest });
 }
 
 function groupState(ids: string[]): { checked: boolean; indeterminate: boolean } {
-  const kept = ids.filter((id) => settings.trackingKept.includes(id)).length;
+  const kept = ids.filter((id) => current.trackingKept.includes(id)).length;
   return { checked: kept === ids.length, indeterminate: kept > 0 && kept < ids.length };
 }
 </script>
@@ -130,7 +137,7 @@ function groupState(ids: string[]): { checked: boolean; indeterminate: boolean }
             >
             <span class="motion__meta">
               {describeMotion(m)}
-              {#if effect !== null && effect.kind !== "none" && !settings.overTracking}
+              {#if effect !== null && effect.kind !== "none" && !current.overTracking}
                 · {t(effect.kind === "all" ? "motion.trackingAll" : "motion.trackingSome")}
               {/if}
             </span>
@@ -151,15 +158,15 @@ function groupState(ids: string[]): { checked: boolean; indeterminate: boolean }
     <div class="motion__group">
       <Toggle
         label={t("motion.autoIdle")}
-        checked={settings.autoIdle}
+        checked={current.autoIdle}
         {disabled}
         onchange={(v) => change({ autoIdle: v })}
       />
       <Select
         label={t("motion.idleMotion")}
-        value={settings.idleMotion ?? AUTO}
+        value={current.idleMotion ?? AUTO}
         options={idleOptions}
-        disabled={disabled || !settings.autoIdle}
+        disabled={disabled || !current.autoIdle}
         onchange={(v) => change({ idleMotion: v === AUTO ? null : v })}
       />
       <p class="motion__hint">
@@ -173,12 +180,12 @@ function groupState(ids: string[]): { checked: boolean; indeterminate: boolean }
   <div class="motion__group">
     <Toggle
       label={t("motion.overTracking")}
-      checked={settings.overTracking}
+      checked={current.overTracking}
       {disabled}
       onchange={(v) => change({ overTracking: v })}
     />
     <p class="motion__hint">{t("motion.overTrackingHint")}</p>
-    {#if settings.overTracking && groups.length > 0}
+    {#if current.overTracking && groups.length > 0}
       <span class="motion__label">{t("motion.keptHeading")}</span>
       <div class="motion__checks">
         {#each groups as group (group.group)}

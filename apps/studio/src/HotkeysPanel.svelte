@@ -16,6 +16,7 @@ import {
 } from "./lib/hotkeys";
 import { t } from "./lib/i18n";
 import type { Hotkey, HotkeyAction, HotkeyKind, HotkeyProblem } from "./lib/inputs";
+import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { fileName } from "./lib/profile";
 
 interface Props {
@@ -29,7 +30,8 @@ interface Props {
   motions: string[];
   slots: string[];
   disabled?: boolean;
-  onchange: (hotkeys: Hotkey[]) => void;
+  /** 割り当てを送る (送り終えるまで、送った割り当てを画面に出し、次の変更の基にする)。 */
+  onchange: (hotkeys: Hotkey[]) => Promise<unknown>;
   /** キーを押している間、ホットキーの登録を外す。 */
   onsuspend: (suspended: boolean) => void;
   /** モジュールのファイルを選ぶ (やめたら `null`)。 */
@@ -88,6 +90,11 @@ const dressOptions = $derived([
 ]);
 const problemAt = $derived(new Map(problems));
 
+/** 送っている途中の割り当て (プロファイルの通知を待たずに、続けて変えた変更を積み重ねる)。 */
+const edit = new PendingEdit<Hotkey[]>((next) => onchange(next));
+/** 画面に出す割り当て。 */
+const current = $derived(edit.current(hotkeys));
+
 /** 選択肢 (今の値がモデルに無くても出す。別のモデルのシーン用の割り当てもあるため)。 */
 function choices(list: readonly string[], current: string) {
   const all = current === "" || list.includes(current) ? list : [current, ...list];
@@ -103,11 +110,11 @@ function sceneChoices(current: string) {
 }
 
 function update(index: number, change: (hotkey: Hotkey) => void) {
-  const next = structuredClone($state.snapshot(hotkeys)) as Hotkey[];
+  const next = structuredClone($state.snapshot(current)) as Hotkey[];
   const hotkey = next[index];
   if (hotkey === undefined) return;
   change(hotkey);
-  onchange(next);
+  void edit.submit(next);
 }
 
 function setAction(index: number, action: HotkeyAction) {
@@ -122,7 +129,7 @@ function setKind(index: number, kind: HotkeyKind) {
 }
 
 function add() {
-  const next = structuredClone($state.snapshot(hotkeys)) as Hotkey[];
+  const next = structuredClone($state.snapshot(current)) as Hotkey[];
   next.push({
     keys: "",
     action: defaultAction("scene", {
@@ -132,15 +139,15 @@ function add() {
       slots,
     }),
   });
-  onchange(next);
+  void edit.submit(next);
   startCapture(next.length - 1);
 }
 
 function remove(index: number) {
   if (capturing !== null) stopCapture();
-  const next = structuredClone($state.snapshot(hotkeys)) as Hotkey[];
+  const next = structuredClone($state.snapshot(current)) as Hotkey[];
   next.splice(index, 1);
-  onchange(next);
+  void edit.submit(next);
 }
 
 // --- キーの割り当て ---
@@ -219,11 +226,11 @@ function problemText(problem: HotkeyProblem): string {
   {#if pickError !== null}
     <Notice tone="danger" ondismiss={() => (pickError = null)}>{pickError}</Notice>
   {/if}
-  {#if hotkeys.length === 0}
+  {#if current.length === 0}
     <p class="hotkeys__hint">{t("hotkeys.empty")}</p>
   {/if}
   <ol class="hotkeys__list">
-    {#each hotkeys as hotkey, index (index)}
+    {#each current as hotkey, index (index)}
       {@const problem = problemAt.get(index)}
       {@const action = hotkey.action}
       <li class="hotkeys__item" aria-label={t("hotkeys.itemLabel", { n: index + 1 })}>

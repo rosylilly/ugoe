@@ -756,7 +756,7 @@ onMount(() => {
           onplay={(name, priority) => void playMotion(name, priority)}
           onstop={() => void run((h) => h.stopMotions())}
           onexpression={onExpression}
-          onsettings={(settings) => void run((h) => h.setMotionSettings(settings))}
+          onsettings={(settings) => run((h) => h.setMotionSettings(settings))}
         />
       </Section>
       <Section title={t("inputs.heading")}>
@@ -769,7 +769,7 @@ onMount(() => {
           trackingPaused={animation.trackingPaused}
           lipSyncPaused={animation.lipSyncPaused}
           disabled={host === null}
-          onsettings={(settings) => void run((h) => h.setInputSettings(settings))}
+          onsettings={(settings) => run((h) => h.setInputSettings(settings))}
           ontrackingpause={(paused) => void run((h) => h.setTrackingPaused(paused))}
           onlipsyncpause={(paused) => void run((h) => h.setLipSyncPaused(paused))}
         />
@@ -784,7 +784,7 @@ onMount(() => {
           motions={animation.motions.map((m) => m.name)}
           slots={animation.slots}
           disabled={host === null}
-          onchange={(list) => void run((h) => h.setHotkeys(list))}
+          onchange={(list) => run((h) => h.setHotkeys(list))}
           onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}
           onpickmodule={() => pickFile("module")}
           moduleSlot={async (path) => {
