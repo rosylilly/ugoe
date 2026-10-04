@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -9,7 +9,6 @@ use ugoe_model::expression::Expression;
 use ugoe_model::module::{ModuleRequirements, SlotId};
 use ugoe_model::motion::Motion;
 use ugoe_model::physics::PhysicsSettings;
-use ugoe_model::validate::{validate, validate_physics};
 use ugoe_model::{Canvas, KeyformOrigin, Model, Module};
 use ugoe_rigging::{InferScope, MirrorOptions};
 
@@ -26,6 +25,7 @@ use crate::{
 };
 
 mod error;
+mod history;
 mod lookup;
 mod pair;
 mod remove;
@@ -33,6 +33,10 @@ mod reorder;
 mod texture_edit;
 
 pub use error::EditError;
+pub use history::DEFAULT_UNDO_LIMIT;
+#[cfg(test)]
+pub(crate) use history::checks;
+use history::{History, Problems};
 use lookup::{deformer, ensure_new, mesh, parameter, part};
 use pair::{pair, set_mirror_pair};
 use remove::{remove_deformer, remove_mesh, remove_parameter, remove_part};
@@ -53,11 +57,12 @@ pub struct ApplyReport {
 ///
 /// 暫定実装としてスナップショット方式の Undo を使う (`docs/adr/0005-editor-command-model.md`)。
 /// テクスチャの画像は `Arc` で共有するので、スナップショットでバイト列は複製されない。
+/// 履歴は Undo と Redo を合わせて [`Document::undo_limit`] 個までで、超えると古いものから捨てる
+/// (`docs/editor.md#undo`)。
 #[derive(Debug)]
 pub struct Document {
     current: Snapshot,
-    undo: Vec<Snapshot>,
-    redo: Vec<Snapshot>,
+    history: History<Snapshot>,
     /// 次に作る状態の番号。
     next_state: u64,
     /// 最後に保存した状態の番号 (未保存なら `None`)。
@@ -77,6 +82,23 @@ struct Snapshot {
     /// 名前・スロット・条件は [`Command::SetModuleSettings`] で変わるので、Undo の単位に含める。
     module: Option<Arc<ModuleContext>>,
     state: u64,
+    /// この状態の検証の結果 (初めて要ったときに求める)。状態を変えたら空に戻す ([`Snapshot::edited`])。
+    problems: OnceLock<Problems>,
+}
+
+impl Snapshot {
+    /// この状態の検証の結果。同じ状態では 1 度だけ検証する。
+    fn problems(&self) -> &Problems {
+        self.problems
+            .get_or_init(|| Problems::of(&self.model, self.physics.as_ref()))
+    }
+
+    /// 書き換えて次の状態にするための複製 (検証の結果は持たない)。
+    fn edited(&self) -> Snapshot {
+        let mut next = self.clone();
+        next.problems = OnceLock::new();
+        next
+    }
 }
 
 impl Document {
@@ -96,9 +118,9 @@ impl Document {
                 physics: None,
                 module: None,
                 state: 0,
+                problems: OnceLock::new(),
             },
-            undo: Vec::new(),
-            redo: Vec::new(),
+            history: History::new(DEFAULT_UNDO_LIMIT),
             next_state: 1,
             saved: Some(0),
         }
@@ -151,6 +173,7 @@ impl Document {
     /// 物理の設定を持たせる (作った時点の状態として。保存済みのまま)。
     pub fn with_physics(mut self, physics: Option<PhysicsSettings>) -> Self {
         self.current.physics = physics;
+        self.current.problems = OnceLock::new();
         self
     }
 
@@ -190,8 +213,7 @@ impl Document {
     pub fn detached(&self) -> Document {
         Document {
             current: self.current.clone(),
-            undo: Vec::new(),
-            redo: Vec::new(),
+            history: History::new(self.history.limit()),
             next_state: self.next_state,
             saved: None,
         }
@@ -252,7 +274,7 @@ impl Document {
             self.set_module_settings(name, &slot, requires, keep_look)?;
             return Ok(ApplyReport::default());
         }
-        let mut next = self.current.clone();
+        let mut next = self.current.edited();
         let mut touched = Vec::new();
         let mut mirrored = Vec::new();
         apply_to(
@@ -277,25 +299,23 @@ impl Document {
         draw_clone::follow(&self.current.model, &mut next.model)?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
         inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
-        let before = validate(&self.current.model);
-        let mut introduced: Vec<_> = validate(&next.model)
-            .into_iter()
-            .filter(|e| !before.contains(e))
+        // 適用前の状態の検証の結果は、状態ごとに覚えたものを使う。
+        let before = self.current.problems();
+        let after = Problems::of(&next.model, next.physics.as_ref());
+        let mut introduced: Vec<_> = after
+            .model
+            .iter()
+            .filter(|e| !before.model.contains(e))
+            .cloned()
             .collect();
         // 物理の参照先と値の検査 (`docs/spec/model.md#物理の検証`)。
-        if let Some(physics) = &next.physics {
-            let before = self
-                .current
+        introduced.extend(
+            after
                 .physics
-                .as_ref()
-                .map(|p| validate_physics(p, &self.current.model))
-                .unwrap_or_default();
-            introduced.extend(
-                validate_physics(physics, &next.model)
-                    .into_iter()
-                    .filter(|e| !before.contains(e)),
-            );
-        }
+                .iter()
+                .filter(|e| !before.physics.contains(e))
+                .cloned(),
+        );
         if !introduced.is_empty() {
             return Err(EditError::Invalid(introduced));
         }
@@ -308,10 +328,11 @@ impl Document {
             }
             context.split(&next.model, next.physics.as_ref(), &next.textures)?;
         }
+        next.problems = OnceLock::from(after);
         next.state = self.next_state;
         self.next_state += 1;
-        self.undo.push(std::mem::replace(&mut self.current, next));
-        self.redo.clear();
+        self.history
+            .record(std::mem::replace(&mut self.current, next));
         Ok(ApplyReport { warnings, mirrored })
     }
 
@@ -337,6 +358,7 @@ impl Document {
         )?;
         let reconfigured = context.reconfigured(slot, name, requires)?;
         let mut workspace = reconfigured.workspace(&module, &images)?;
+        let mut problems = OnceLock::new();
         if keep_look {
             let mut touched = Vec::new();
             reconfigured.keep_look(
@@ -346,10 +368,13 @@ impl Document {
                 &mut touched,
             )?;
             inference::rederive(&mut workspace.model, &touched)?;
-            let before = validate(&self.current.model);
-            let introduced: Vec<_> = validate(&workspace.model)
-                .into_iter()
+            let before = &self.current.problems().model;
+            let after = Problems::of(&workspace.model, workspace.physics.as_ref());
+            let introduced: Vec<_> = after
+                .model
+                .iter()
                 .filter(|e| !before.contains(e))
+                .cloned()
                 .collect();
             if !introduced.is_empty() {
                 return Err(EditError::Invalid(introduced));
@@ -359,6 +384,7 @@ impl Document {
                 workspace.physics.as_ref(),
                 &workspace.textures,
             )?;
+            problems = OnceLock::from(after);
         }
         let next = Snapshot {
             model: workspace.model,
@@ -367,10 +393,11 @@ impl Document {
             physics: workspace.physics,
             module: Some(Arc::new(reconfigured)),
             state: self.next_state,
+            problems,
         };
         self.next_state += 1;
-        self.undo.push(std::mem::replace(&mut self.current, next));
-        self.redo.clear();
+        self.history
+            .record(std::mem::replace(&mut self.current, next));
         Ok(())
     }
 
@@ -419,32 +446,40 @@ impl Document {
             physics: workspace.physics,
             module: Some(Arc::new(rebased)),
             state: self.next_state,
+            problems: OnceLock::new(),
         };
         self.next_state += 1;
-        self.undo.clear();
-        self.redo.clear();
+        self.history.clear();
         self.saved = saved.then_some(self.current.state);
         Ok(())
     }
 
+    /// 1 つ前の状態に戻す。戻れなければ (履歴がない・上限を超えて捨てた) `false`。
     pub fn undo(&mut self) -> bool {
-        match self.undo.pop() {
-            Some(prev) => {
-                self.redo.push(std::mem::replace(&mut self.current, prev));
-                true
-            }
-            None => false,
-        }
+        self.history.undo(&mut self.current)
     }
 
+    /// Undo した状態を 1 つやり直す。やり直せなければ `false`。
     pub fn redo(&mut self) -> bool {
-        match self.redo.pop() {
-            Some(next) => {
-                self.undo.push(std::mem::replace(&mut self.current, next));
-                true
-            }
-            None => false,
-        }
+        self.history.redo(&mut self.current)
+    }
+
+    /// 覚える履歴 (Undo と Redo を合わせた数) の上限。既定は [`DEFAULT_UNDO_LIMIT`]。
+    pub fn undo_limit(&self) -> usize {
+        self.history.limit()
+    }
+
+    /// 履歴の上限を変える。今の履歴が超えていれば、古い Undo から (尽きたら遠い Redo から) 捨てる。
+    /// 0 なら履歴を持たない。保存済みの状態を捨てても [`Document::is_modified`] は正しいまま
+    /// (戻れなくなるだけ)。
+    pub fn set_undo_limit(&mut self, limit: usize) {
+        self.history.set_limit(limit);
+    }
+
+    /// 上限を `limit` にしたドキュメント ([`Document::set_undo_limit`])。
+    pub fn with_undo_limit(mut self, limit: usize) -> Self {
+        self.set_undo_limit(limit);
+        self
     }
 }
 

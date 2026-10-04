@@ -35,3 +35,4 @@
 - T0666 (エラー・警告のコードと引数 `Message`・`Coded`。`src/message.rs`・`src/message_codes.rs`)
 - T0014 (削除の後の参照の後始末を 1 か所にまとめた `src/cleanup.rs`・不正だが読み込めるデータへの編集のテスト `src/malformed_tests.rs`)
 - T0677 (1000 行を超えたファイルを分けた。`src/document/` (エラー・削除の連鎖・テクスチャのコマンド・左右の対)・`src/module_compare/` (アトラスを戻す部分・要素ごとの中身の違い)・`src/project/` (モジュールのプロジェクトの読み書き・パス・ファイルの補助)・`src/module_project/split.rs` (`Splitter`))
+- T0680 (Undo の履歴の上限と、状態ごとの検証の結果の記憶。`src/document/history.rs`・テスト `src/undo_tests.rs`)
