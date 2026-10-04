@@ -10,7 +10,7 @@ use ugoe_core::Vec2;
 
 mod parse;
 
-use parse::{Mask, RawLayer, Section};
+use parse::{RawLayer, Section};
 
 /// 取り込みのエラー。
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +18,8 @@ pub enum PsdError {
     /// 壊れた入力・途中で切れた入力。
     #[error("invalid psd: {0}")]
     Invalid(String),
-    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ)。
+    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ・
+    /// 展開した大きさが [`ImportLimits`] を超えるもの)。
     #[error("unsupported psd feature: {0}")]
     Unsupported(String),
 }
@@ -132,14 +133,81 @@ impl fmt::Display for ImportWarning {
     }
 }
 
+/// [`ImportLimits::default`] の、チャンネル 1 枚を展開した後の大きさの上限 (1 GiB)。
+///
+/// PSD の最大のキャンバス (30000 × 30000) を覆う 8 ビットのレイヤーの 1 チャンネル (約 858 MiB) が収まる。
+pub const DEFAULT_MAX_CHANNEL_DECOMPRESSED: u64 = 1024 * 1024 * 1024;
+
+/// [`ImportLimits::default`] の、1 つの PSD で展開するバイトの合計の上限 (4 GiB)。
+pub const DEFAULT_MAX_TOTAL_DECOMPRESSED: u64 = 4 * 1024 * 1024 * 1024;
+
+/// 取り込みの資源の上限。
+///
+/// 上限は PSD の形式の決まりではなく、読む側の方針。ZIP で圧縮したチャンネルは 1000 倍ほどに縮むので、
+/// 数十 MiB の PSD が数百 GiB の画素に展開されうる (展開の爆発)。メモリを使い切らないよう、
+/// チャンネルの画素を展開する前に、展開後の大きさ (矩形の画素数 × 標本のバイト数。16 ビットは 2 バイト) を
+/// 上限と比べ、超えるなら [`PsdError::Unsupported`] を返す (先に確保しない)。
+///
+/// 数えるのは、色・アルファ・マスクのチャンネルと合成画像の平面を展開したバイトで、圧縮方式によらない
+/// (無圧縮・PackBits は入力の大きさで抑えられるが、合計をメモリの目安にするため含める)。
+/// 取り込んだ RGBA (1 画素 4 バイト) は、8 ビットの 4 チャンネルのレイヤーなら数えた大きさとほぼ同じになる。
+///
+/// 将来ほかの上限を足せるように `#[non_exhaustive]` にしている。値を変えるときは
+/// `ImportLimits::default().with_max_total_decompressed(n)` のように既定値から始める。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ImportLimits {
+    /// チャンネル 1 枚を展開した後の大きさの上限 (バイト)。既定は
+    /// [`DEFAULT_MAX_CHANNEL_DECOMPRESSED`] (1 GiB)。
+    pub max_channel_decompressed: u64,
+    /// 1 つの PSD で、チャンネルを展開したバイトの合計の上限。既定は
+    /// [`DEFAULT_MAX_TOTAL_DECOMPRESSED`] (4 GiB)。
+    pub max_total_decompressed: u64,
+}
+
+impl Default for ImportLimits {
+    fn default() -> Self {
+        Self {
+            max_channel_decompressed: DEFAULT_MAX_CHANNEL_DECOMPRESSED,
+            max_total_decompressed: DEFAULT_MAX_TOTAL_DECOMPRESSED,
+        }
+    }
+}
+
+impl ImportLimits {
+    /// チャンネル 1 枚の展開後の上限を `bytes` にしたもの。
+    pub const fn with_max_channel_decompressed(self, bytes: u64) -> Self {
+        Self {
+            max_channel_decompressed: bytes,
+            ..self
+        }
+    }
+
+    /// 展開したバイトの合計の上限を `bytes` にしたもの。
+    pub const fn with_max_total_decompressed(self, bytes: u64) -> Self {
+        Self {
+            max_total_decompressed: bytes,
+            ..self
+        }
+    }
+}
+
+/// PSD を既定の上限 ([`ImportLimits::default`]) で取り込む。
+///
 /// 対応する色空間とビット深度。これ以外は [`PsdError::Unsupported`] になる。
 /// - 8 ビット・16 ビットの RGB (アルファの有無は問わない)。16 ビットは 8 ビットに丸める
 ///
 /// レイヤーマスク (チャンネル -2 / -3) はレイヤーのアルファに掛ける。
-/// グループの入れ子が 256 段より深いものも [`PsdError::Unsupported`] になる。
+/// グループの入れ子が 256 段より深いもの、展開した大きさが上限を超えるものも
+/// [`PsdError::Unsupported`] になる。
 /// 壊れた入力や途中で切れた入力は [`PsdError::Invalid`] を返し、パニックしない。
 pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
-    let doc = parse::parse(bytes)?;
+    import_with(bytes, ImportLimits::default())
+}
+
+/// PSD を、展開の上限 `limits` で取り込む。そのほかは [`import`] と同じ。
+pub fn import_with(bytes: &[u8], limits: ImportLimits) -> Result<LayerTree, PsdError> {
+    let doc = parse::parse(bytes, limits)?;
     if let Some(rgba) = doc.composite {
         let name = "Background".to_string();
         return Ok(LayerTree {
@@ -274,7 +342,7 @@ const SMART_OBJECT_KEYS: &[&[u8; 4]] = &[b"SoLd", b"PlLd", b"SoLE"];
 /// レイヤー効果のキー。
 const EFFECT_KEYS: &[&[u8; 4]] = &[b"lrFX", b"lfx2", b"lfxs", b"lmfx"];
 
-fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
+fn layer(mut raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
     let has = |keys: &[&[u8; 4]]| raw.keys.iter().find(|k| keys.contains(k)).copied();
     if let Some(key) = has(ADJUSTMENT_KEYS) {
         let key = blend_name(key);
@@ -288,17 +356,11 @@ fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
             vec![WarningKind::UnsupportedCompression { compression }],
         );
     }
-    let pixel_count = raw.width as usize * raw.height as usize;
-    let mut mask_ignored = false;
-    let rgba = if pixel_count == 0 {
-        Some(Vec::new())
-    } else {
-        rgba(&raw, pixel_count).map(|mut rgba| {
-            mask_ignored = !apply_masks(&raw, &mut rgba);
-            rgba
-        })
-    };
-    let Some(rgba) = rgba.filter(|p| !(p.is_empty() && has(SMART_OBJECT_KEYS).is_some())) else {
+    let Some(rgba) = raw
+        .rgba
+        .take()
+        .filter(|p| !(p.is_empty() && has(SMART_OBJECT_KEYS).is_some()))
+    else {
         let kind = if has(SMART_OBJECT_KEYS).is_some() {
             WarningKind::SmartObjectWithoutPixels
         } else {
@@ -311,7 +373,7 @@ fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
     if has(EFFECT_KEYS).is_some() {
         warnings.push(WarningKind::LayerEffectsIgnored);
     }
-    if mask_ignored {
+    if raw.mask_ignored {
         warnings.push(WarningKind::LayerMaskIgnored);
     }
     let layer = Layer {
@@ -328,65 +390,4 @@ fn layer(raw: RawLayer) -> (Option<Layer>, Vec<WarningKind>) {
         name: raw.name,
     };
     (Some(layer), warnings)
-}
-
-/// チャンネルを非乗算 RGBA8 に並べ直す。色チャンネルが揃っていなければ `None`。
-fn rgba(raw: &RawLayer, pixel_count: usize) -> Option<Vec<u8>> {
-    let plane = |id: i16| {
-        raw.channels
-            .iter()
-            .find(|c| c.id == id)
-            .and_then(|c| c.pixels.as_deref())
-            .filter(|p| p.len() == pixel_count)
-    };
-    let (r, g, b) = (plane(0)?, plane(1)?, plane(2)?);
-    let a = plane(-1);
-    let mut out = Vec::with_capacity(pixel_count * 4);
-    for i in 0..pixel_count {
-        out.extend_from_slice(&[r[i], g[i], b[i], a.map_or(255, |a| a[i])]);
-    }
-    Some(out)
-}
-
-/// レイヤーマスクをアルファに掛ける。掛けられない (マスクの画素がない) ときは false。
-///
-/// ベクトルマスクと併用したレイヤーでは、両方を合成した最終的なマスク (-3) だけを掛ける。
-fn apply_masks(raw: &RawLayer, rgba: &mut [u8]) -> bool {
-    let (id, mask) = match (&raw.real_mask, &raw.mask) {
-        (Some(real), _) => (-3, real),
-        (None, Some(user)) => (-2, user),
-        (None, None) => return true,
-    };
-    let pixels = raw
-        .channels
-        .iter()
-        .find(|c| c.id == id)
-        .and_then(|c| c.pixels.as_deref())
-        .filter(|p| p.len() == mask.width as usize * mask.height as usize);
-    match pixels {
-        Some(pixels) => {
-            apply_mask(raw, mask, pixels, rgba);
-            true
-        }
-        None => false,
-    }
-}
-
-/// マスクの値 (0 = 隠す、255 = 見せる) をアルファに掛ける。矩形の外は既定の色、
-/// 濃度が 255 未満なら隠す量をその割合に弱める。
-fn apply_mask(raw: &RawLayer, mask: &Mask, pixels: &[u8], rgba: &mut [u8]) {
-    let density = u32::from(mask.density);
-    let (mw, mh) = (i64::from(mask.width), i64::from(mask.height));
-    for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-        let x = i64::from(raw.rect.left) + (i % raw.width as usize) as i64;
-        let y = i64::from(raw.rect.top) + (i / raw.width as usize) as i64;
-        let (mx, my) = (x - i64::from(mask.rect.left), y - i64::from(mask.rect.top));
-        let m = if (0..mw).contains(&mx) && (0..mh).contains(&my) {
-            pixels[(my * mw + mx) as usize]
-        } else {
-            mask.default_color
-        };
-        let m = 255 - ((255 - u32::from(m)) * density + 127) / 255;
-        px[3] = ((u32::from(px[3]) * m + 127) / 255) as u8;
-    }
 }

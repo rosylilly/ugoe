@@ -46,6 +46,9 @@ pub struct Layer {
     pub legacy_name: Option<Vec<u8>>,
     /// そのほかの追加情報 (キーと中身)。
     pub extra: Vec<([u8; 4], Vec<u8>)>,
+    /// 色・アルファの 4 チャンネルの中身 (圧縮方式の 2 バイトを含む) を `rgba` から作らず、このバイト列にする。
+    /// `rgba` は `None` で、矩形は大きくてよい (画素を用意せずに大きなレイヤーを書く。展開の上限のテスト用)。
+    pub channel_data: Option<Vec<u8>>,
 }
 
 impl Layer {
@@ -70,6 +73,7 @@ impl Layer {
             unicode_name: true,
             legacy_name: None,
             extra: Vec::new(),
+            channel_data: None,
         }
     }
 
@@ -482,14 +486,15 @@ fn channels(layer: &Layer, depth: u16) -> Vec<(i16, Vec<u8>)> {
     let mut out: Vec<(i16, Vec<u8>)> = [-1i16, 0, 1, 2]
         .iter()
         .map(|&id| {
-            let data = match &layer.rgba {
-                Some(rgba) => {
+            let data = match (&layer.channel_data, &layer.rgba) {
+                (Some(data), _) => data.clone(),
+                (None, Some(rgba)) => {
                     let c = if id < 0 { 3 } else { id as usize };
                     let plane: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[c]).collect();
                     channel_data(&plane, layer.width, layer.height, layer.compression, depth)
                 }
                 // 矩形が空なので、中身は圧縮方式 (無圧縮) の 2 バイトだけ。
-                None => vec![0, 0],
+                (None, None) => vec![0, 0],
             };
             (id, data)
         })
@@ -523,7 +528,7 @@ fn channels(layer: &Layer, depth: u16) -> Vec<(i16, Vec<u8>)> {
 }
 
 fn layer_record(out: &mut Out, layer: &Layer, channels: &[(i16, Vec<u8>)]) {
-    if layer.rgba.is_none() {
+    if layer.rgba.is_none() && layer.channel_data.is_none() {
         assert_eq!((layer.width, layer.height), (0, 0), "{}", layer.name);
     }
     out.i32(layer.top);

@@ -7,9 +7,12 @@ mod common;
 use common::fixtures::{LAYERS_HEIGHT, LAYERS_WIDTH, fixture_path, layers_bytes};
 use common::{
     Layer as W, Mask, levels_identity, pattern, write_flat_psd, write_psd, write_psd_unchecked,
-    write_psd16,
+    write_psd16, zlib,
 };
-use ugoe_psd::{ImportWarning, Layer, LayerNode, PsdError, WarningKind, import};
+use ugoe_psd::{
+    DEFAULT_MAX_CHANNEL_DECOMPRESSED, DEFAULT_MAX_TOTAL_DECOMPRESSED, ImportLimits, ImportWarning,
+    Layer, LayerNode, PsdError, WarningKind, import, import_with,
+};
 
 const WIDTH: u32 = LAYERS_WIDTH;
 const HEIGHT: u32 = LAYERS_HEIGHT;
@@ -260,6 +263,128 @@ fn broken_zip_data_is_invalid() {
         let err = import(&broken).unwrap_err();
         assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
     }
+}
+
+/// ZIP で圧縮したチャンネルが 0 の画素 `width` × `height` に展開されるレイヤー。画素は用意しない。
+fn zip_bomb(name: &str, width: u32, height: u32, stream: &[u8]) -> W {
+    let mut data = vec![0, 2];
+    data.extend_from_slice(stream);
+    W {
+        width,
+        height,
+        compression: 2,
+        channel_data: Some(data),
+        ..W::new(name)
+    }
+}
+
+fn assert_over_limit(result: Result<ugoe_psd::LayerTree, PsdError>) {
+    let Err(err) = result else {
+        panic!("expected the import limit to be exceeded");
+    };
+    assert!(
+        matches!(&err, PsdError::Unsupported(m) if m.contains("import limit")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn zip_bomb_channel_is_rejected_before_inflating() {
+    // 1 チャンネルが 40000 × 40000 = 1.6 GB に展開されると宣言したレイヤー。既定の上限 (1 GiB) を超えるので、
+    // ストリームを展開する前 (画素を確保する前) に止まる。
+    let bytes = write_psd(4, 4, &[zip_bomb("bomb", 40_000, 40_000, &zlib(&[0; 1024]))]);
+    assert_over_limit(import(&bytes));
+    // 上限を上げると展開に進み、ストリームが宣言より短いので壊れた入力になる (止めていたのは上限)。
+    let limits = ImportLimits::default()
+        .with_max_channel_decompressed(u64::MAX)
+        .with_max_total_decompressed(u64::MAX);
+    let err = import_with(&bytes, limits).unwrap_err();
+    assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
+}
+
+#[test]
+fn zip_bomb_layers_stop_at_the_total_limit() {
+    // 本物の ZIP 爆弾: 1 MiB の 0 が約 1 KiB に縮む。64 レイヤー × 4 チャンネルで 256 MiB に展開される。
+    let stream = zlib(&vec![0; 1024 * 1024]);
+    assert!(stream.len() < 2048, "{}", stream.len());
+    let layers: Vec<W> = (0..64)
+        .map(|i| zip_bomb(&format!("bomb {i}"), 1024, 1024, &stream))
+        .collect();
+    let bytes = write_psd(4, 4, &layers);
+    assert!(bytes.len() < 1024 * 1024, "{}", bytes.len());
+    let limit = 16 * 1024 * 1024;
+    assert_over_limit(import_with(
+        &bytes,
+        ImportLimits::default().with_max_total_decompressed(limit),
+    ));
+    // 4 レイヤー分 (16 MiB) ちょうどなら読める。
+    let tree = import_with(
+        &write_psd(4, 4, &layers[..4]),
+        ImportLimits::default().with_max_total_decompressed(limit),
+    )
+    .unwrap();
+    assert_eq!(tree.root.len(), 4);
+    assert_eq!(layer(&tree.root[3]).rgba, vec![0; 1024 * 1024 * 4]);
+}
+
+#[test]
+fn import_limits_count_decompressed_bytes_of_every_compression() {
+    let limits = |channel: u64, total: u64| {
+        ImportLimits::default()
+            .with_max_channel_decompressed(channel)
+            .with_max_total_decompressed(total)
+    };
+    // 16 × 16 のレイヤーは 1 チャンネル 256 バイト、4 チャンネルで 1024 バイト。
+    for compression in 0..=3 {
+        let layers = [W {
+            compression,
+            ..W::raster("a", 0, 0, 16, 16)
+        }];
+        let bytes = write_psd(16, 16, &layers);
+        assert!(
+            import_with(&bytes, limits(256, 1024)).is_ok(),
+            "{compression}"
+        );
+        assert_over_limit(import_with(&bytes, limits(255, 1024)));
+        assert_over_limit(import_with(&bytes, limits(256, 1023)));
+        // 16 ビットは標本が 2 バイト。
+        let wide = write_psd16(16, 16, &layers);
+        assert!(
+            import_with(&wide, limits(512, 2048)).is_ok(),
+            "{compression}"
+        );
+        assert_over_limit(import_with(&wide, limits(511, 2048)));
+    }
+    // マスクのチャンネルも数える (4 × 4 のマスクで 16 バイト)。
+    let masked = write_psd(
+        16,
+        16,
+        &[W {
+            mask: Some(Mask::window(0, 0, 4, 4)),
+            ..W::raster("a", 0, 0, 16, 16)
+        }],
+    );
+    assert!(import_with(&masked, limits(256, 1024 + 16)).is_ok());
+    assert_over_limit(import_with(&masked, limits(256, 1024 + 15)));
+    // 合成画像 (レイヤーのない PSD) は 3 チャンネル。
+    let flat = write_flat_psd(16, 16, &[0; 16 * 16 * 3], 1);
+    assert!(import_with(&flat, limits(256, 768)).is_ok());
+    assert_over_limit(import_with(&flat, limits(256, 767)));
+}
+
+#[test]
+fn default_import_limits() {
+    let limits = ImportLimits::default();
+    assert_eq!(
+        limits.max_channel_decompressed,
+        DEFAULT_MAX_CHANNEL_DECOMPRESSED
+    );
+    assert_eq!(
+        limits.max_total_decompressed,
+        DEFAULT_MAX_TOTAL_DECOMPRESSED
+    );
+    // PSD の最大のキャンバスを覆う 8 ビットのチャンネルは既定で読める。
+    const { assert!(30_000 * 30_000 <= DEFAULT_MAX_CHANNEL_DECOMPRESSED) };
 }
 
 #[test]

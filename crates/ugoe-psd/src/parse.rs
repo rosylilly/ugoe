@@ -4,7 +4,7 @@
 //! 読むのは、ヘッダ・レイヤーとマスクの情報・(レイヤーがない場合の) 合成画像だけ。
 //! 16 ビットのチャンネルは、読んだところで 8 ビットに丸める。
 
-use crate::PsdError;
+use crate::{ImportLimits, PsdError};
 
 /// PSD の画像の幅・高さの上限 (Photoshop の PSD 形式の上限)。
 const MAX_DIMENSION: u32 = 30_000;
@@ -47,7 +47,7 @@ impl Rect {
 pub(crate) struct Channel {
     pub id: i16,
     pub len: usize,
-    /// 圧縮を解いて 8 ビットにした画素 (チャンネル画像を読んだ後に入る)。
+    /// 圧縮を解いて 8 ビットにした画素 (チャンネル画像を読んでから、RGBA に並べ直すまでの間だけ入る)。
     pub pixels: Option<Vec<u8>>,
 }
 
@@ -96,6 +96,125 @@ pub(crate) struct RawLayer {
     pub keys: Vec<[u8; 4]>,
     /// チャンネル画像の圧縮方式のうち、対応していないもの。
     pub unsupported_compression: Option<u16>,
+    /// マスクを掛けた非乗算 RGBA8。対応しない圧縮方式のチャンネルがある・色チャンネルが
+    /// 揃っていないときは `None`。矩形が空なら空の `Vec`。
+    pub rgba: Option<Vec<u8>>,
+    /// マスクがあるのに、マスクの画素が読めず掛けられなかった。
+    pub mask_ignored: bool,
+}
+
+impl RawLayer {
+    /// 読んだチャンネルを RGBA に並べ直してマスクを掛け、`rgba` に入れる。チャンネルの画素は捨てる。
+    fn assemble(&mut self) {
+        let pixel_count = self.width as usize * self.height as usize;
+        self.rgba = if self.unsupported_compression.is_some() {
+            None
+        } else if pixel_count == 0 {
+            Some(Vec::new())
+        } else {
+            self.interleave(pixel_count).map(|mut rgba| {
+                self.mask_ignored = !self.apply_masks(&mut rgba);
+                rgba
+            })
+        };
+        for channel in &mut self.channels {
+            channel.pixels = None;
+        }
+    }
+
+    /// チャンネルを非乗算 RGBA8 に並べ直す。色チャンネルが揃っていなければ `None`。
+    fn interleave(&self, pixel_count: usize) -> Option<Vec<u8>> {
+        let plane = |id: i16| {
+            self.channels
+                .iter()
+                .find(|c| c.id == id)
+                .and_then(|c| c.pixels.as_deref())
+                .filter(|p| p.len() == pixel_count)
+        };
+        let (r, g, b) = (plane(0)?, plane(1)?, plane(2)?);
+        let a = plane(-1);
+        let mut out = Vec::with_capacity(pixel_count * 4);
+        for i in 0..pixel_count {
+            out.extend_from_slice(&[r[i], g[i], b[i], a.map_or(255, |a| a[i])]);
+        }
+        Some(out)
+    }
+
+    /// レイヤーマスクをアルファに掛ける。掛けられない (マスクの画素がない) ときは false。
+    ///
+    /// ベクトルマスクと併用したレイヤーでは、両方を合成した最終的なマスク (-3) だけを掛ける。
+    fn apply_masks(&self, rgba: &mut [u8]) -> bool {
+        let (id, mask) = match (&self.real_mask, &self.mask) {
+            (Some(real), _) => (-3, real),
+            (None, Some(user)) => (-2, user),
+            (None, None) => return true,
+        };
+        let pixels = self
+            .channels
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.pixels.as_deref())
+            .filter(|p| p.len() == mask.width as usize * mask.height as usize);
+        match pixels {
+            Some(pixels) => {
+                self.apply_mask(mask, pixels, rgba);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// マスクの値 (0 = 隠す、255 = 見せる) をアルファに掛ける。矩形の外は既定の色、
+    /// 濃度が 255 未満なら隠す量をその割合に弱める。
+    fn apply_mask(&self, mask: &Mask, pixels: &[u8], rgba: &mut [u8]) {
+        let density = u32::from(mask.density);
+        let (mw, mh) = (i64::from(mask.width), i64::from(mask.height));
+        for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let x = i64::from(self.rect.left) + (i % self.width as usize) as i64;
+            let y = i64::from(self.rect.top) + (i / self.width as usize) as i64;
+            let (mx, my) = (x - i64::from(mask.rect.left), y - i64::from(mask.rect.top));
+            let m = if (0..mw).contains(&mx) && (0..mh).contains(&my) {
+                pixels[(my * mw + mx) as usize]
+            } else {
+                mask.default_color
+            };
+            let m = 255 - ((255 - u32::from(m)) * density + 127) / 255;
+            px[3] = ((u32::from(px[3]) * m + 127) / 255) as u8;
+        }
+    }
+}
+
+/// 読み込みの上限 ([`ImportLimits`]) に対して、展開したバイトを数える。
+struct Budget {
+    limits: ImportLimits,
+    used: u64,
+}
+
+impl Budget {
+    fn new(limits: ImportLimits) -> Self {
+        Self { limits, used: 0 }
+    }
+
+    /// これから `len` バイトの平面を 1 枚展開する。上限を超えるなら、確保する前に
+    /// [`PsdError::Unsupported`] を返す。
+    fn take(&mut self, len: usize) -> Result<(), PsdError> {
+        let len = len as u64;
+        let max = self.limits.max_channel_decompressed;
+        if len > max {
+            return Err(PsdError::Unsupported(format!(
+                "a channel decompresses to {len} bytes, over the import limit of {max} bytes"
+            )));
+        }
+        let used = self.used.saturating_add(len);
+        let max = self.limits.max_total_decompressed;
+        if used > max {
+            return Err(PsdError::Unsupported(format!(
+                "channels decompress to more than the import limit of {max} bytes in total"
+            )));
+        }
+        self.used = used;
+        Ok(())
+    }
 }
 
 fn invalid(msg: impl Into<String>) -> PsdError {
@@ -178,7 +297,8 @@ impl<'a> Reader<'a> {
     }
 }
 
-pub(crate) fn parse(bytes: &[u8]) -> Result<Document, PsdError> {
+pub(crate) fn parse(bytes: &[u8], limits: ImportLimits) -> Result<Document, PsdError> {
+    let mut budget = Budget::new(limits);
     let mut r = Reader::new(bytes);
     if r.bytes(4, "signature")? != b"8BPS" {
         return Err(invalid("not a psd file (bad signature)"));
@@ -223,19 +343,26 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Document, PsdError> {
         Vec::new()
     } else {
         let mut info = layer_and_mask.block("layer info")?;
-        parse_layer_info(&mut info, depth)?
+        parse_layer_info(&mut info, depth, &mut budget)?
     };
     if layers.is_empty() && layer_and_mask.remaining() > 0 {
         // 16 ビットの PSD では、レイヤー情報は空で、後ろの追加情報 `Lr16` に入る。
         layer_and_mask.block("global layer mask info")?;
         if let Some(mut info) = find_layer_info_block(&mut layer_and_mask, depth)? {
-            layers = parse_layer_info(&mut info, depth)?;
+            layers = parse_layer_info(&mut info, depth, &mut budget)?;
         }
     }
 
     // レイヤーを持たない PSD は、合成画像を 1 枚のレイヤーとして扱う。
     let composite = if layers.is_empty() {
-        Some(parse_composite(&mut r, width, height, channels, depth)?)
+        Some(parse_composite(
+            &mut r,
+            width,
+            height,
+            channels,
+            depth,
+            &mut budget,
+        )?)
     } else {
         None
     };
@@ -283,7 +410,11 @@ fn find_layer_info_block<'a>(
     Ok(None)
 }
 
-fn parse_layer_info(r: &mut Reader<'_>, depth: u16) -> Result<Vec<RawLayer>, PsdError> {
+fn parse_layer_info(
+    r: &mut Reader<'_>,
+    depth: u16,
+    budget: &mut Budget,
+) -> Result<Vec<RawLayer>, PsdError> {
     if r.remaining() == 0 {
         return Ok(Vec::new());
     }
@@ -293,8 +424,11 @@ fn parse_layer_info(r: &mut Reader<'_>, depth: u16) -> Result<Vec<RawLayer>, Psd
     for _ in 0..count {
         layers.push(parse_layer_record(r)?);
     }
+    // チャンネルを 1 レイヤーずつ展開して RGBA に並べ直し、展開した平面はすぐ捨てる
+    // (全レイヤーの平面を同時に持たない)。
     for layer in &mut layers {
-        read_channel_images(r, layer, depth)?;
+        read_channel_images(r, layer, depth, budget)?;
+        layer.assemble();
     }
     Ok(layers)
 }
@@ -354,6 +488,8 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
         real_mask,
         keys: Vec::new(),
         unsupported_compression: None,
+        rgba: None,
+        mask_ignored: false,
     };
     parse_additional_info(&mut extra, &mut layer)?;
     Ok(layer)
@@ -482,6 +618,7 @@ fn read_channel_images(
     r: &mut Reader<'_>,
     layer: &mut RawLayer,
     depth: u16,
+    budget: &mut Budget,
 ) -> Result<(), PsdError> {
     for channel in &mut layer.channels {
         let mut data = Reader::new(r.bytes(channel.len, "channel image data")?);
@@ -502,7 +639,7 @@ fn read_channel_images(
         if width == 0 || height == 0 {
             continue;
         }
-        match decode_plane(&mut data, compression, width, height, depth)? {
+        match decode_plane(&mut data, compression, width, height, depth, budget)? {
             Some(pixels) => channel.pixels = Some(pixels),
             // マスクのチャンネルが読めないときは、マスクを掛けずに取り込む (警告は取り込み側)。
             None if channel.id < -1 => {}
@@ -513,16 +650,23 @@ fn read_channel_images(
 }
 
 /// 1 チャンネルの画素を読み、8 ビットにして返す。対応しない圧縮方式なら `None`。
+///
+/// 展開する大きさは矩形から決まるので、読む前に上限 (`budget`) と比べる。
 fn decode_plane(
     r: &mut Reader<'_>,
     compression: u16,
     width: u32,
     height: u32,
     depth: u16,
+    budget: &mut Budget,
 ) -> Result<Option<Vec<u8>>, PsdError> {
     let bytes_per_sample = usize::from(depth / 8);
     let row = width as usize * bytes_per_sample;
     let len = row.saturating_mul(height as usize);
+    if compression > 3 {
+        return Ok(None);
+    }
+    budget.take(len)?;
     let mut raw = match compression {
         0 => r.bytes(len, "raw channel data")?.to_vec(),
         1 => decode_rle(r, row, height, 1)?,
@@ -653,6 +797,7 @@ fn parse_composite(
     height: u32,
     channels: u16,
     depth: u16,
+    budget: &mut Budget,
 ) -> Result<Vec<u8>, PsdError> {
     if channels < 3 {
         return Err(invalid(format!(
@@ -661,6 +806,9 @@ fn parse_composite(
     }
     let plane = width as usize * height as usize;
     let row = width as usize * usize::from(depth / 8);
+    for _ in 0..channels {
+        budget.take(row * height as usize)?;
+    }
     let planes = match r.u16("image data compression")? {
         0 => r
             .bytes(
