@@ -13,6 +13,7 @@ pub mod classify;
 pub mod claude;
 pub mod depth;
 mod fake;
+mod grid;
 pub mod instructions;
 pub mod module_rig;
 pub mod normal;

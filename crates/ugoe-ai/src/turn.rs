@@ -23,6 +23,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::classify::{Label, LayerLabel};
 use crate::depth::{DepthEstimator, DepthMap, DepthRequest};
+use crate::grid;
 use crate::{AiError, Proposal};
 
 /// 相対的な深度を正規化するときに捨てる両端の割合 (外れ値に引きずられないように)。
@@ -352,14 +353,12 @@ impl Builder {
 
     /// 格子の軸にキーがなければ足す。足したら `true`。
     fn add_key(&mut self, deformer: &DeformerId, id: &ParamId, key: f32) -> Result<bool, AiError> {
-        if warp_keys(self.doc.model(), deformer, id)
-            .iter()
-            .any(|k| (k - key).abs() <= 1e-5)
-        {
+        let target = KeyformTarget::Deformer(deformer.clone());
+        if grid::has_key(grid::axis_keys(self.doc.model(), &target, id), key) {
             return Ok(false);
         }
         self.apply(Command::AddKeyformKey {
-            target: KeyformTarget::Deformer(deformer.clone()),
+            target,
             parameter: id.clone(),
             key,
         })?;
@@ -475,24 +474,6 @@ fn standard_parameter(id: &ParamId) -> Result<Parameter, AiError> {
     })
 }
 
-/// ワープの格子の、パラメータ `id` の軸のキー。
-fn warp_keys(model: &Model, deformer: &DeformerId, id: &ParamId) -> Vec<f32> {
-    model
-        .deformers
-        .iter()
-        .find(|d| &d.id == deformer)
-        .and_then(|d| match &d.kind {
-            DeformerKind::Warp(w) => w
-                .keyforms
-                .bindings
-                .iter()
-                .find(|b| &b.parameter == id)
-                .map(|b| b.keys.clone()),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
 /// 足したキー (`added`) のどれかにある `authored` のセル。
 fn new_cells(
     model: &Model,
@@ -510,31 +491,17 @@ fn new_cells(
     else {
         return Vec::new();
     };
-    let mut cells = Vec::new();
-    for index in 0..grid.keyforms.len() {
-        if grid.origin(index) != KeyformOrigin::Authored {
-            continue;
-        }
-        let mut rest = index;
-        let mut cell = KeyformCell::new();
-        let mut is_new = false;
-        for binding in &grid.bindings {
-            let n = binding.keys.len().max(1);
-            let key = binding.keys[rest % n];
-            rest /= n;
-            if added
-                .get(&binding.parameter)
-                .is_some_and(|keys| keys.contains(&key))
-            {
-                is_new = true;
-            }
-            cell.insert(binding.parameter.clone(), key);
-        }
-        if is_new {
-            cells.push(cell);
-        }
-    }
-    cells
+    (0..grid.keyforms.len())
+        .filter(|index| grid.origin(*index) == KeyformOrigin::Authored)
+        .filter_map(|index| grid::cell_at(&grid.bindings, index))
+        .filter(|cell| {
+            cell.iter().any(|(parameter, key)| {
+                added
+                    .get(parameter)
+                    .is_some_and(|keys| grid::has_key(keys, *key))
+            })
+        })
+        .collect()
 }
 
 /// 子孫のメッシュのラベルから部位を決める。
@@ -695,6 +662,34 @@ fn invalid(message: String) -> AiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_cells_name_the_cells_on_the_added_keys() {
+        let model = ugoe_model::fixtures::warp_grid();
+        let added = BTreeMap::from([(ParamId::new("X"), vec![1.0])]);
+        let cells = new_cells(&model, &DeformerId::new("Warp"), &added);
+        assert_eq!(cells, vec![KeyformCell::from([(ParamId::new("X"), 1.0)])]);
+    }
+
+    #[test]
+    fn new_cells_skip_an_axis_without_keys() {
+        // 検証を通らない格子 (キーのない軸) でも添字の外を読まない。
+        let mut model = ugoe_model::fixtures::warp_grid();
+        let Some(DeformerKind::Warp(warp)) = model
+            .deformers
+            .iter_mut()
+            .find(|d| d.id.as_str() == "Warp")
+            .map(|d| &mut d.kind)
+        else {
+            panic!("no warp");
+        };
+        warp.keyforms.bindings.push(ugoe_model::KeyformBinding {
+            parameter: ParamId::new("Y"),
+            keys: Vec::new(),
+        });
+        let added = BTreeMap::from([(ParamId::new("X"), vec![1.0])]);
+        assert!(new_cells(&model, &DeformerId::new("Warp"), &added).is_empty());
+    }
 
     #[test]
     fn labels_order_the_parts_front_to_back() {

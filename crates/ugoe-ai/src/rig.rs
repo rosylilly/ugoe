@@ -51,6 +51,7 @@ use ugoe_runtime::{CompiledModel, ModelInstance};
 
 use crate::classify::{Label, LabelCategory, LayerLabel, Side};
 use crate::depth::DepthMap;
+use crate::grid;
 use crate::instructions::{Instructions, split_unapplied, system_rules};
 use crate::turn::{Builder, TurnRole, TurnTarget, plan_turn, push_turn};
 use crate::{AiError, Proposal, Provider, ProviderRequest};
@@ -428,141 +429,16 @@ struct Layout {
 impl Layout {
     fn new(model: &Model, parts: &BTreeMap<MeshId, MeshPart>) -> Result<Self, AiError> {
         let bounds = mesh_bounds(model)?;
-        // 取り込みの順 (描画順) に並べる。
-        let labeled: Vec<(&MeshId, MeshPart)> = model
-            .meshes
-            .iter()
-            .filter(|m| !m.mask_only && bounds.contains_key(&m.id))
-            .filter_map(|m| parts.get(&m.id).map(|p| (&m.id, *p)))
-            .collect();
-        let with = |pred: &dyn Fn(Label) -> bool| -> Vec<MeshId> {
-            labeled
-                .iter()
-                .filter(|(_, p)| pred(p.label))
-                .map(|(id, _)| (*id).clone())
-                .collect()
-        };
-        let union = |ids: &[MeshId]| {
-            ids.iter()
-                .filter_map(|id| bounds.get(id).copied())
-                .reduce(Rect::union)
-        };
-
-        let face_ids = with(&|l| l == Label::Face);
-        let face = union(&face_ids).ok_or_else(|| {
+        let labeled = Labeled::new(model, parts, &bounds);
+        let face = union_of(&bounds, &labeled.with(|l| l == Label::Face)).ok_or_else(|| {
             AiError::InvalidRequest("no mesh is labeled `face`; cannot place the head".into())
         })?;
-        let head = with(&is_head);
-        // 呼吸の体のワープはマスク用のメッシュも含める (マスクされるメッシュと一緒に動かす)。
-        let body = model
-            .meshes
-            .iter()
-            .filter(|m| bounds.contains_key(&m.id))
-            .filter(|m| {
-                parts
-                    .get(&m.id)
-                    .is_none_or(|p| p.label.category() != LabelCategory::Other)
-            })
-            .map(|m| m.id.clone())
-            .collect();
+        let head = labeled.with(is_head);
+        let body = body_meshes(model, parts, &bounds);
         let mut skipped = Vec::new();
-
-        // 目: 左右はラベルの左右、中央のものは顔の中心との位置で決める (画像の右がキャラクターの左)。
-        let mut eyes: Vec<EyeParts> = [Side::Left, Side::Right]
-            .into_iter()
-            .map(|side| EyeParts {
-                side,
-                open: Vec::new(),
-                closed: Vec::new(),
-            })
-            .collect();
-        for (id, part) in &labeled {
-            let closed = part.label == Label::EyeClosed;
-            if !closed && !is_open_eye(part.label) {
-                continue;
-            }
-            let side = match part.side {
-                Side::Center => {
-                    let rect = bounds[*id];
-                    let cx = face.center().x;
-                    if rect.min.x >= cx {
-                        Side::Left
-                    } else if rect.max.x <= cx {
-                        Side::Right
-                    } else {
-                        skipped.push(format!(
-                            "{} (`{}`) spans both eyes, so it does not open and close",
-                            part.label,
-                            mesh_name(model, id)
-                        ));
-                        continue;
-                    }
-                }
-                side => side,
-            };
-            if let Some(eye) = eyes.iter_mut().find(|e| e.side == side) {
-                if closed {
-                    eye.closed.push((*id).clone());
-                } else {
-                    eye.open.push((*id).clone());
-                }
-            }
-        }
-        eyes.retain(|eye| {
-            if eye.open.is_empty() {
-                skipped.push(format!(
-                    "no {} eye (open eye parts), so `{}` is not made",
-                    if eye.side == Side::Left {
-                        "left"
-                    } else {
-                        "right"
-                    },
-                    eye.parameter()
-                ));
-            }
-            !eye.open.is_empty()
-        });
-
-        let open = with(&|l| {
-            matches!(
-                l,
-                Label::MouthOpen | Label::MouthInner | Label::Teeth | Label::Tongue
-            )
-        });
-        let closed = with(&|l| l == Label::MouthClosed);
-        let mouth = if with(&|l| l == Label::MouthOpen).is_empty() || closed.is_empty() {
-            let all = with(&|l| l.category() == LabelCategory::Mouth);
-            if all.is_empty() {
-                skipped.push("no mouth, so `MouthOpenY` is not made".into());
-                None
-            } else {
-                Some(MouthParts::Single(all))
-            }
-        } else {
-            Some(MouthParts::Pair { open, closed })
-        };
-
-        // 髪: ラベルと左右ごとに 1 つの房にまとめる (前髪・横髪・後ろ髪の順)。
-        let mut hair: Vec<HairGroup> = Vec::new();
-        for label in [Label::HairFront, Label::HairSide, Label::HairBack] {
-            for (id, part) in labeled.iter().filter(|(_, p)| p.label == label) {
-                match hair
-                    .iter_mut()
-                    .find(|g| g.label == label && g.side == part.side)
-                {
-                    Some(group) => group.meshes.push((*id).clone()),
-                    None => hair.push(HairGroup {
-                        label,
-                        side: part.side,
-                        meshes: vec![(*id).clone()],
-                    }),
-                }
-            }
-        }
-        if hair.is_empty() {
-            skipped.push("no meshes are labeled as hair, so there is no hair sway physics".into());
-        }
-
+        let eyes = eye_parts(model, &labeled, &bounds, face, &mut skipped);
+        let mouth = mouth_parts(&labeled, &mut skipped);
+        let hair = hair_groups(&labeled, &mut skipped);
         Ok(Self {
             face,
             body,
@@ -576,10 +452,177 @@ impl Layout {
     }
 
     fn union(&self, ids: &[MeshId]) -> Option<Rect> {
-        ids.iter()
-            .filter_map(|id| self.bounds.get(id).copied())
-            .reduce(Rect::union)
+        union_of(&self.bounds, ids)
     }
+}
+
+/// `ids` のメッシュの外接矩形を合わせたもの (外接矩形のないメッシュは飛ばす)。
+fn union_of(bounds: &BTreeMap<MeshId, Rect>, ids: &[MeshId]) -> Option<Rect> {
+    ids.iter()
+        .filter_map(|id| bounds.get(id).copied())
+        .reduce(Rect::union)
+}
+
+/// ラベルの付いた (マスク用でなく、外接矩形のある) メッシュ。取り込みの順 (描画順) に並べる。
+struct Labeled<'a> {
+    meshes: Vec<(&'a MeshId, MeshPart)>,
+}
+
+impl<'a> Labeled<'a> {
+    fn new(
+        model: &'a Model,
+        parts: &BTreeMap<MeshId, MeshPart>,
+        bounds: &BTreeMap<MeshId, Rect>,
+    ) -> Self {
+        let meshes = model
+            .meshes
+            .iter()
+            .filter(|m| !m.mask_only && bounds.contains_key(&m.id))
+            .filter_map(|m| parts.get(&m.id).map(|p| (&m.id, *p)))
+            .collect();
+        Self { meshes }
+    }
+
+    /// ラベルが `pred` に当てはまるメッシュ。
+    fn with(&self, pred: impl Fn(Label) -> bool) -> Vec<MeshId> {
+        self.meshes
+            .iter()
+            .filter(|(_, p)| pred(p.label))
+            .map(|(id, _)| (*id).clone())
+            .collect()
+    }
+}
+
+/// 呼吸で動かすメッシュ (背景・その他のラベルを除くすべて)。
+fn body_meshes(
+    model: &Model,
+    parts: &BTreeMap<MeshId, MeshPart>,
+    bounds: &BTreeMap<MeshId, Rect>,
+) -> Vec<MeshId> {
+    // 呼吸の体のワープはマスク用のメッシュも含める (マスクされるメッシュと一緒に動かす)。
+    model
+        .meshes
+        .iter()
+        .filter(|m| bounds.contains_key(&m.id))
+        .filter(|m| {
+            parts
+                .get(&m.id)
+                .is_none_or(|p| p.label.category() != LabelCategory::Other)
+        })
+        .map(|m| m.id.clone())
+        .collect()
+}
+
+/// 左右の目の部位。開いた目の部位のない目は除き、`skipped` に書く。
+fn eye_parts(
+    model: &Model,
+    labeled: &Labeled<'_>,
+    bounds: &BTreeMap<MeshId, Rect>,
+    face: Rect,
+    skipped: &mut Vec<String>,
+) -> Vec<EyeParts> {
+    // 目: 左右はラベルの左右、中央のものは顔の中心との位置で決める (画像の右がキャラクターの左)。
+    let mut eyes: Vec<EyeParts> = [Side::Left, Side::Right]
+        .into_iter()
+        .map(|side| EyeParts {
+            side,
+            open: Vec::new(),
+            closed: Vec::new(),
+        })
+        .collect();
+    for (id, part) in &labeled.meshes {
+        let closed = part.label == Label::EyeClosed;
+        if !closed && !is_open_eye(part.label) {
+            continue;
+        }
+        let side = match part.side {
+            Side::Center => {
+                let rect = bounds[*id];
+                let cx = face.center().x;
+                if rect.min.x >= cx {
+                    Side::Left
+                } else if rect.max.x <= cx {
+                    Side::Right
+                } else {
+                    skipped.push(format!(
+                        "{} (`{}`) spans both eyes, so it does not open and close",
+                        part.label,
+                        mesh_name(model, id)
+                    ));
+                    continue;
+                }
+            }
+            side => side,
+        };
+        if let Some(eye) = eyes.iter_mut().find(|e| e.side == side) {
+            if closed {
+                eye.closed.push((*id).clone());
+            } else {
+                eye.open.push((*id).clone());
+            }
+        }
+    }
+    eyes.retain(|eye| {
+        if eye.open.is_empty() {
+            skipped.push(format!(
+                "no {} eye (open eye parts), so `{}` is not made",
+                if eye.side == Side::Left {
+                    "left"
+                } else {
+                    "right"
+                },
+                eye.parameter()
+            ));
+        }
+        !eye.open.is_empty()
+    });
+    eyes
+}
+
+/// 口の部位。開いた口と閉じた口の絵がそろっていれば組、なければ口のラベルのものすべて。
+fn mouth_parts(labeled: &Labeled<'_>, skipped: &mut Vec<String>) -> Option<MouthParts> {
+    let open = labeled.with(|l| {
+        matches!(
+            l,
+            Label::MouthOpen | Label::MouthInner | Label::Teeth | Label::Tongue
+        )
+    });
+    let closed = labeled.with(|l| l == Label::MouthClosed);
+    if labeled.with(|l| l == Label::MouthOpen).is_empty() || closed.is_empty() {
+        let all = labeled.with(|l| l.category() == LabelCategory::Mouth);
+        if all.is_empty() {
+            skipped.push("no mouth, so `MouthOpenY` is not made".into());
+            None
+        } else {
+            Some(MouthParts::Single(all))
+        }
+    } else {
+        Some(MouthParts::Pair { open, closed })
+    }
+}
+
+/// 髪: ラベルと左右ごとに 1 つの房にまとめる (前髪・横髪・後ろ髪の順)。
+fn hair_groups(labeled: &Labeled<'_>, skipped: &mut Vec<String>) -> Vec<HairGroup> {
+    let mut hair: Vec<HairGroup> = Vec::new();
+    for label in [Label::HairFront, Label::HairSide, Label::HairBack] {
+        for (id, part) in labeled.meshes.iter().filter(|(_, p)| p.label == label) {
+            match hair
+                .iter_mut()
+                .find(|g| g.label == label && g.side == part.side)
+            {
+                Some(group) => group.meshes.push((*id).clone()),
+                None => hair.push(HairGroup {
+                    label,
+                    side: part.side,
+                    meshes: vec![(*id).clone()],
+                }),
+            }
+        }
+    }
+    if hair.is_empty() {
+        skipped.push("no meshes are labeled as hair, so there is no hair sway physics".into());
+    }
+    hair
 }
 
 /// メッシュの基準の姿 (すべてのパラメータが既定値) の外接矩形 (キャンバス座標)。
@@ -769,22 +812,11 @@ impl Rig {
             grid: &KeyformGrid<T>,
             values: &BTreeMap<ParamId, f32>,
         ) -> Result<(T, KeyformCell), AiError> {
-            let mut index = 0;
-            let mut stride = 1;
-            let mut cell = KeyformCell::new();
-            for binding in &grid.bindings {
-                let value = values.get(&binding.parameter).copied().unwrap_or(0.0);
-                let key = binding
-                    .keys
-                    .iter()
-                    .position(|k| *k == value)
-                    .ok_or_else(|| {
-                        template(format!("axis {} has no key {value}", binding.parameter))
+            let (index, cell) =
+                grid::cell_index(&grid.bindings, |p| values.get(p).copied().unwrap_or(0.0))
+                    .map_err(|(parameter, value)| {
+                        template(format!("axis {parameter} has no key {value}"))
                     })?;
-                index += key * stride;
-                stride *= binding.keys.len();
-                cell.insert(binding.parameter.clone(), value);
-            }
             let keyform = grid
                 .keyforms
                 .get(index)
@@ -838,7 +870,7 @@ impl Rig {
         let mut ordered = vec![default];
         ordered.extend(keys.iter().copied().filter(|k| *k != default));
         for key in ordered {
-            if self.has_key(target, &id, key) {
+            if grid::has_key(grid::axis_keys(self.model(), target, &id), key) {
                 continue;
             }
             self.apply(Command::AddKeyformKey {
@@ -848,37 +880,6 @@ impl Rig {
             })?;
         }
         Ok(())
-    }
-
-    fn has_key(&self, target: &KeyformTarget, id: &ParamId, key: f32) -> bool {
-        fn keys<T>(grid: &KeyformGrid<T>, id: &ParamId) -> Vec<f32> {
-            grid.bindings
-                .iter()
-                .find(|b| &b.parameter == id)
-                .map(|b| b.keys.clone())
-                .unwrap_or_default()
-        }
-        let model = self.model();
-        let keys = match target {
-            KeyformTarget::Mesh(mesh) => model
-                .meshes
-                .iter()
-                .find(|m| &m.id == mesh)
-                .map(|m| keys(&m.keyforms, id)),
-            KeyformTarget::Deformer(d) => {
-                model
-                    .deformers
-                    .iter()
-                    .find(|x| &x.id == d)
-                    .and_then(|x| match &x.kind {
-                        DeformerKind::Warp(w) => Some(keys(&w.keyforms, id)),
-                        DeformerKind::Rotation(r) => Some(keys(&r.keyforms, id)),
-                        DeformerKind::Unknown => None,
-                    })
-            }
-            _ => None,
-        };
-        keys.unwrap_or_default().contains(&key)
     }
 
     /// 格子のセル `cell` (書かない軸は既定値) を、そのセルの今のキーフォームを `edit` で変えたものにする。

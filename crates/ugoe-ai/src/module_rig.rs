@@ -275,27 +275,7 @@ impl ModuleLayout {
         let bounds = mesh_bounds(model)?;
         let anchor = context.slot().anchor.clone();
         let mut skipped = Vec::new();
-        // 衣装のメッシュのうち、取り付け先の直下のもの (自分で組んだデフォーマの中のものは変えない)。
-        let mut top = Vec::new();
-        for mesh in &model.meshes {
-            if context.is_base_mesh(&mesh.id) || mesh.mask_only || !bounds.contains_key(&mesh.id) {
-                continue;
-            }
-            if mesh.parent == anchor {
-                top.push(mesh.id.clone());
-            } else {
-                skipped.push(format!(
-                    "`{}` is inside a deformer of the module, so it is left as is",
-                    mesh_name(model, &mesh.id)
-                ));
-            }
-        }
-        if top.is_empty() {
-            return Err(AiError::InvalidRequest(
-                "the module has no meshes directly under the slot's anchor; import the costume PSD first"
-                    .into(),
-            ));
-        }
+        let top = costume_meshes(model, context, anchor.as_ref(), &bounds, &mut skipped)?;
         let usable = usable_parameters(model, context);
         let costume: Vec<Rect> = top.iter().map(|id| bounds[id]).collect();
         let candidates = candidates(
@@ -306,25 +286,7 @@ impl ModuleLayout {
             &costume,
             &mut skipped,
         )?;
-
-        // 本体のメッシュを、いちばん近い候補の祖先のワープに振り分ける (そのワープで動く本体の絵)。
-        let mut owned: BTreeMap<DeformerId, Vec<(Rect, f32)>> = BTreeMap::new();
-        for mesh in &model.meshes {
-            if !context.is_base_mesh(&mesh.id) || mesh.mask_only {
-                continue;
-            }
-            let (Some(rect), Some(order)) = (bounds.get(&mesh.id), draw_order(mesh)) else {
-                continue;
-            };
-            let mut parent = mesh.parent.as_ref();
-            while let Some(id) = parent {
-                if candidates.iter().any(|c| &c.deformer == id) {
-                    owned.entry(id.clone()).or_default().push((*rect, order));
-                    break;
-                }
-                parent = find(model, id).and_then(|d| d.parent.as_ref());
-            }
-        }
+        let owned = owned_base_meshes(model, context, &bounds, &candidates);
         let mut groups: Vec<Group> = Vec::new();
         for id in &top {
             let rect = bounds[id];
@@ -334,103 +296,16 @@ impl ModuleLayout {
                 .find(|m| &m.id == id)
                 .and_then(draw_order)
                 .unwrap_or(0.0);
-            // 衣装と重なる本体の絵のうち、描画順が衣装に最も近いもの (衣装が重なる層) を動かすワープに従う。
-            let gap = |f: &Followed| {
-                owned
-                    .get(&f.deformer)
-                    .into_iter()
-                    .flatten()
-                    .filter(|(r, _)| overlap(rect, *r) > 0.0)
-                    .map(|(_, o)| (o - order).abs())
-                    .fold(f32::INFINITY, f32::min)
-            };
-            let followed = candidates
-                .iter()
-                .filter(|f| overlap(rect, f.region) >= MIN_OVERLAP)
-                .min_by(|a, b| {
-                    gap(a)
-                        .total_cmp(&gap(b))
-                        .then(b.depth.cmp(&a.depth))
-                        .then(overlap(rect, b.region).total_cmp(&overlap(rect, a.region)))
-                })
-                .cloned();
-            let key = followed.as_ref().map(|f| f.deformer.clone());
-            let group = match groups
-                .iter_mut()
-                .find(|g| g.followed.as_ref().map(|f| &f.deformer) == key.as_ref())
-            {
-                Some(g) => g,
-                None => {
-                    groups.push(Group {
-                        followed,
-                        meshes: Vec::new(),
-                        sways: Vec::new(),
-                    });
-                    groups
-                        .last_mut()
-                        .ok_or_else(|| template("no group".into()))?
-                }
-            };
+            let followed = followed_warp(&candidates, &owned, rect, order);
+            let group = group_of(&mut groups, followed)?;
             group.meshes.push(id.clone());
-            let Some(part) = parts.get(id) else {
-                continue;
-            };
-            let Some((sway, input)) = sway_of(part.label) else {
-                continue;
-            };
-            let has = |p: &str| usable.contains(&ParamId::new(p));
-            let input = match input {
-                SwayInput::Body if has(standard::BODY_ANGLE_X) => standard::BODY_ANGLE_X,
-                _ if has(standard::ANGLE_X) => standard::ANGLE_X,
-                _ => {
-                    skipped.push(format!(
-                        "{} (`{}`) does not sway because the base has no `AngleX`",
-                        part.label,
-                        mesh_name(model, id)
-                    ));
-                    continue;
-                }
-            };
-            match group
-                .sways
-                .iter_mut()
-                .find(|s| s.label == part.label && s.side == part.side)
-            {
-                Some(s) => s.meshes.push(id.clone()),
-                None => group.sways.push(SwayGroup {
-                    label: part.label,
-                    side: part.side,
-                    meshes: vec![id.clone()],
-                    sway,
-                    input: ParamId::new(input),
-                }),
+            if let Some(part) = parts.get(id) {
+                add_sway(group, model, &usable, id, part, &mut skipped);
             }
         }
-        // 本体のメッシュの変位は、衣装が従う本体のワープ (なければ取り付け先) の座標系で測る。
-        let frames: BTreeMap<MeshId, Option<DeformerId>> = groups
-            .iter()
-            .flat_map(|g| {
-                let frame = g
-                    .followed
-                    .as_ref()
-                    .map(|f| f.deformer.clone())
-                    .or_else(|| anchor.clone());
-                g.meshes.iter().map(move |m| (m.clone(), frame.clone()))
-            })
-            .collect();
+        let frames = mesh_frames(&groups, anchor.as_ref());
         let mesh_follows = mesh_follows(model, context, &usable, &frames, anchor.as_ref(), parts)?;
-        let colliders = doc
-            .physics()
-            .map(|physics| {
-                context
-                    .slot()
-                    .colliders
-                    .iter()
-                    .filter(|id| physics.colliders.iter().any(|c| &c.id == *id))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let colliders = exposed_colliders(doc, context);
         let variants = pose::variants(model, context, parts, &bounds);
         Ok(Self {
             anchor,
@@ -449,6 +324,191 @@ impl ModuleLayout {
             .filter_map(|id| self.bounds.get(id).copied())
             .reduce(Rect::union)
     }
+}
+
+/// 衣装のメッシュのうち、取り付け先の直下のもの (自分で組んだデフォーマの中のものは変えない。`skipped` に書く)。
+/// なければ [`AiError::InvalidRequest`]。
+fn costume_meshes(
+    model: &Model,
+    context: &ModuleContext,
+    anchor: Option<&DeformerId>,
+    bounds: &BTreeMap<MeshId, Rect>,
+    skipped: &mut Vec<String>,
+) -> Result<Vec<MeshId>, AiError> {
+    let mut top = Vec::new();
+    for mesh in &model.meshes {
+        if context.is_base_mesh(&mesh.id) || mesh.mask_only || !bounds.contains_key(&mesh.id) {
+            continue;
+        }
+        if mesh.parent.as_ref() == anchor {
+            top.push(mesh.id.clone());
+        } else {
+            skipped.push(format!(
+                "`{}` is inside a deformer of the module, so it is left as is",
+                mesh_name(model, &mesh.id)
+            ));
+        }
+    }
+    if top.is_empty() {
+        return Err(AiError::InvalidRequest(
+            "the module has no meshes directly under the slot's anchor; import the costume PSD first"
+                .into(),
+        ));
+    }
+    Ok(top)
+}
+
+/// 本体のメッシュを、いちばん近い候補の祖先のワープに振り分ける (そのワープで動く本体の絵の外接矩形と描画順)。
+fn owned_base_meshes(
+    model: &Model,
+    context: &ModuleContext,
+    bounds: &BTreeMap<MeshId, Rect>,
+    candidates: &[Followed],
+) -> BTreeMap<DeformerId, Vec<(Rect, f32)>> {
+    let mut owned: BTreeMap<DeformerId, Vec<(Rect, f32)>> = BTreeMap::new();
+    for mesh in &model.meshes {
+        if !context.is_base_mesh(&mesh.id) || mesh.mask_only {
+            continue;
+        }
+        let (Some(rect), Some(order)) = (bounds.get(&mesh.id), draw_order(mesh)) else {
+            continue;
+        };
+        let mut parent = mesh.parent.as_ref();
+        while let Some(id) = parent {
+            if candidates.iter().any(|c| &c.deformer == id) {
+                owned.entry(id.clone()).or_default().push((*rect, order));
+                break;
+            }
+            parent = find(model, id).and_then(|d| d.parent.as_ref());
+        }
+    }
+    owned
+}
+
+/// 外接矩形 `rect`・描画順 `order` の衣装が従う本体のワープ。衣装と重なる本体の絵のうち、描画順が衣装に
+/// 最も近いもの (衣装が重なる層) を動かすワープ。同じなら深いもの、重なりの大きいもの。
+fn followed_warp(
+    candidates: &[Followed],
+    owned: &BTreeMap<DeformerId, Vec<(Rect, f32)>>,
+    rect: Rect,
+    order: f32,
+) -> Option<Followed> {
+    let gap = |f: &Followed| {
+        owned
+            .get(&f.deformer)
+            .into_iter()
+            .flatten()
+            .filter(|(r, _)| overlap(rect, *r) > 0.0)
+            .map(|(_, o)| (o - order).abs())
+            .fold(f32::INFINITY, f32::min)
+    };
+    candidates
+        .iter()
+        .filter(|f| overlap(rect, f.region) >= MIN_OVERLAP)
+        .min_by(|a, b| {
+            gap(a)
+                .total_cmp(&gap(b))
+                .then(b.depth.cmp(&a.depth))
+                .then(overlap(rect, b.region).total_cmp(&overlap(rect, a.region)))
+        })
+        .cloned()
+}
+
+/// 本体のワープ `followed` に従う衣装のまとまり (なければ末尾に足す)。
+fn group_of(groups: &mut Vec<Group>, followed: Option<Followed>) -> Result<&mut Group, AiError> {
+    let key = followed.as_ref().map(|f| f.deformer.clone());
+    let index = match groups
+        .iter()
+        .position(|g| g.followed.as_ref().map(|f| &f.deformer) == key.as_ref())
+    {
+        Some(index) => index,
+        None => {
+            groups.push(Group {
+                followed,
+                meshes: Vec::new(),
+                sways: Vec::new(),
+            });
+            groups.len() - 1
+        }
+    };
+    groups
+        .get_mut(index)
+        .ok_or_else(|| template("no group".into()))
+}
+
+/// 揺れるラベルの衣装のメッシュ `id` を、まとまり `group` の揺れ (ラベルと左右ごと) に加える。
+/// 入力のパラメータが本体になければ `skipped` に書く。
+fn add_sway(
+    group: &mut Group,
+    model: &Model,
+    usable: &BTreeSet<ParamId>,
+    id: &MeshId,
+    part: &MeshPart,
+    skipped: &mut Vec<String>,
+) {
+    let Some((sway, input)) = sway_of(part.label) else {
+        return;
+    };
+    let has = |p: &str| usable.contains(&ParamId::new(p));
+    let input = match input {
+        SwayInput::Body if has(standard::BODY_ANGLE_X) => standard::BODY_ANGLE_X,
+        _ if has(standard::ANGLE_X) => standard::ANGLE_X,
+        _ => {
+            skipped.push(format!(
+                "{} (`{}`) does not sway because the base has no `AngleX`",
+                part.label,
+                mesh_name(model, id)
+            ));
+            return;
+        }
+    };
+    match group
+        .sways
+        .iter_mut()
+        .find(|s| s.label == part.label && s.side == part.side)
+    {
+        Some(s) => s.meshes.push(id.clone()),
+        None => group.sways.push(SwayGroup {
+            label: part.label,
+            side: part.side,
+            meshes: vec![id.clone()],
+            sway,
+            input: ParamId::new(input),
+        }),
+    }
+}
+
+/// 本体のメッシュの変位を測る座標系: 衣装が従う本体のワープ (なければ取り付け先)。
+fn mesh_frames(
+    groups: &[Group],
+    anchor: Option<&DeformerId>,
+) -> BTreeMap<MeshId, Option<DeformerId>> {
+    groups
+        .iter()
+        .flat_map(|g| {
+            let frame = g
+                .followed
+                .as_ref()
+                .map(|f| f.deformer.clone())
+                .or_else(|| anchor.cloned());
+            g.meshes.iter().map(move |m| (m.clone(), frame.clone()))
+        })
+        .collect()
+}
+
+/// 揺れのリグが当たってよい本体の衝突体 (スロットが公開し、本体の物理にあるもの)。
+fn exposed_colliders(doc: &Document, context: &ModuleContext) -> Vec<ColliderId> {
+    doc.physics()
+        .map(|physics| {
+            context
+                .slot()
+                .colliders
+                .iter()
+                .filter(|id| physics.colliders.iter().any(|c| &c.id == *id))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 本体のメッシュのキーフォームに従う衣装のメッシュ ([`mesh::find`])。形の決まった飾り (帽子・眼鏡・耳飾り)・髪・
@@ -764,7 +824,6 @@ fn build(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rig_group(
     rig: &mut Rig,
     context: &ModuleContext,
@@ -800,26 +859,7 @@ fn rig_group(
     };
     // 衣装を包むワープ (追従のワープか、揺れの振り子の取り付け先)。
     let frame = if warp_follow.is_some() || sways {
-        let (base, name) = match warp_follow {
-            Some(f) => (
-                format!("Follow{}", f.deformer),
-                format!("Follow {}", f.name),
-            ),
-            None => ("SwayRoot".to_owned(), "Sway root".to_owned()),
-        };
-        let id = DeformerId::new(fresh_id(
-            context,
-            &base,
-            rig.model().deformers.iter().map(|d| d.id.as_str()),
-        ));
-        Some(rig.create_warp_as(
-            id,
-            &name,
-            &group.meshes,
-            FOLLOW_CELLS,
-            FOLLOW_CELLS,
-            layout.anchor.as_ref(),
-        )?)
+        Some(create_frame(rig, context, layout, group, warp_follow)?)
     } else {
         None
     };
@@ -855,7 +895,50 @@ fn rig_group(
     } else if !group.sways.is_empty() {
         rationale.push("Sway: the sway scale is 0, so nothing sways".into());
     }
-    // メッシュのキーフォーム: 本体のワープの変形 (直接写すとき) と、本体のメッシュのキーフォームへの追従。
+    follow_meshes(rig, layout, group, direct, &names, rationale)
+}
+
+/// まとまり `group` を包むワープを取り付け先の下に作る。本体のワープ `warp_follow` に従うなら追従のワープ
+/// (`Follow…`)、なければ揺れの振り子の取り付け先 (`SwayRoot`)。
+fn create_frame(
+    rig: &mut Rig,
+    context: &ModuleContext,
+    layout: &ModuleLayout,
+    group: &Group,
+    warp_follow: Option<&Followed>,
+) -> Result<DeformerId, AiError> {
+    let (base, name) = match warp_follow {
+        Some(f) => (
+            format!("Follow{}", f.deformer),
+            format!("Follow {}", f.name),
+        ),
+        None => ("SwayRoot".to_owned(), "Sway root".to_owned()),
+    };
+    let id = DeformerId::new(fresh_id(
+        context,
+        &base,
+        rig.model().deformers.iter().map(|d| d.id.as_str()),
+    ));
+    rig.create_warp_as(
+        id,
+        &name,
+        &group.meshes,
+        FOLLOW_CELLS,
+        FOLLOW_CELLS,
+        layout.anchor.as_ref(),
+    )
+}
+
+/// まとまり `group` のメッシュのキーフォーム: 本体のワープ `direct` の変形 (直接写すとき) と、本体のメッシュの
+/// キーフォームへの追従。`names` はまとまりのメッシュの名前 (提案の理由に書く)。
+fn follow_meshes(
+    rig: &mut Rig,
+    layout: &ModuleLayout,
+    group: &Group,
+    direct: Option<&Followed>,
+    names: &str,
+    rationale: &mut Vec<String>,
+) -> Result<(), AiError> {
     for mesh in &group.meshes {
         let follow = layout.mesh_follows.get(mesh);
         if direct.is_none() && follow.is_none() {
