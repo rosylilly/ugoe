@@ -1,11 +1,11 @@
 ---
 id: T0015
 title: 検証エラーの列の取り出し方と見せ方をそろえる (FormatError・SDK・C ABI・wasm・CLI)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, ugoe, ugoe-ffi, ugoe-wasm, ugoe-cli, ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0015
 ---
 
 # T0015: 検証エラーの列の取り出し方と見せ方をそろえる (FormatError・SDK・C ABI・wasm・CLI)
