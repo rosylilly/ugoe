@@ -1,11 +1,11 @@
 ---
 id: T0679
 title: SetMeshProperties のテクスチャを名前で指定する
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-mcp, ugoe-ai, apps/editor, docs]
 depends_on: [T0667]
-assignee:
+assignee: claude-worker-T0679
 ---
 
 # T0679: SetMeshProperties のテクスチャを名前で指定する
