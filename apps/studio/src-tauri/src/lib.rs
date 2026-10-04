@@ -26,6 +26,7 @@ pub mod follower;
 pub mod hotkeys;
 pub mod input;
 pub mod lighting;
+pub mod load_failure;
 pub mod pacing;
 pub mod profile;
 pub mod stage;
@@ -145,6 +146,11 @@ enum Monitor<'a> {
     /// 操作 API の様子 (待ち受け・承認したクライアント・承認の待ち。接続したときも送る。T0805)。
     #[serde(rename = "api")]
     Api(api::ApiView),
+    /// 受け手が今のシーンのファイルを読めなかった (受け手ごと。無ければ空。接続したときも送る。T0825)。
+    #[serde(rename = "loadFailures")]
+    LoadFailures {
+        failures: Vec<load_failure::ReceiverFailure>,
+    },
 }
 
 /// ホットキーの操作を行えなかった理由。画面は `code` で文言を選ぶ。
@@ -305,6 +311,8 @@ struct Studio {
     measured: Mutex<Option<Measured>>,
     /// 出力ごとの描画の負荷 (ラベル → 報告)。
     renders: Mutex<HashMap<String, Reported>>,
+    /// 受け手が今のシーンで読めなかったこと (ラベル → 報告。T0825)。ほかのロックを握ったまま取ってよい (最後に取る)。
+    load_failures: Mutex<load_failure::LoadFailures>,
     /// 刻みごとに入力の処理を促す操作ウィンドウ (`subscribe_pulse`。T0803)。
     pulses: Subscribers,
     /// グローバルなホットキー (T0803)。
@@ -463,6 +471,7 @@ impl Studio {
 
     /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
     fn send_scene(&self, stage: &Stage, conductor: &Conductor) {
+        self.scene_changed_load_failures(conductor.scene().map(|s| s.revision));
         if let Some(body) = Self::scene_message(conductor) {
             if let InvokeResponseBody::Json(json) = &body {
                 self.source_scene(json);
@@ -964,6 +973,9 @@ fn subscribe_status(
     if let Some(body) = Studio::json(&Monitor::Api(studio.api_view())) {
         let _ = channel.send(body);
     }
+    if let Some(body) = studio.load_failures_message() {
+        let _ = channel.send(body);
+    }
     studio.monitors.insert(webview.label(), channel);
 }
 
@@ -1183,6 +1195,17 @@ fn report_render_stats(
         },
     );
     Ok(())
+}
+
+/// 受け手が今のシーンのファイルを読めなかったことを報告する (操作ウィンドウに出す。出力ウィンドウには何も重ねない。
+/// 今のシーンの報告でなければ捨てる。docs/studio.md#受け手が読めなかったとき)。
+#[tauri::command]
+fn report_load_failure(
+    studio: tauri::State<'_, Arc<Studio>>,
+    webview: tauri::Webview,
+    failure: load_failure::LoadFailure,
+) {
+    studio.report_load_failure(webview.label(), failure);
 }
 
 /// 仮想カメラの今の状態 (止めているなら、始められない理由も)。
@@ -1423,6 +1446,7 @@ pub fn run() {
             tick_rate,
             set_tick_rate,
             report_render_stats,
+            report_load_failure,
             subscribe_pulse,
             set_tracking,
             set_tracking_paused,

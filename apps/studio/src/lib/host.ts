@@ -56,6 +56,29 @@ export interface RendererLoad extends RenderStats {
   targetFps: number | null;
 }
 
+/**
+ * 受け手が今のシーンのファイルを読めなかったこと (load_failure.rs の `LoadFailure`。docs/studio.md#受け手が読めなかったとき)。
+ * 次のシーンに移ったための失敗は報告しない。
+ */
+export interface LoadFailure {
+  /** シーンの版。今のシーンでなければバックエンドが捨てる。 */
+  revision: number;
+  asset: "model" | "module" | "background";
+  /** モジュールなら、その番号 (`StudioScene.modules` の順)。ほかは `null`。 */
+  index: number | null;
+  /**
+   * 理由。`unavailable` は受け取れなかった、`unreadable` は受け取ったが読めなかった、
+   * `noRenderer` は受け手が描画を始められない (wasm・WebGPU・WebGL2 が使えない)。
+   */
+  code: "unavailable" | "unreadable" | "noRenderer";
+}
+
+/** 操作ウィンドウに出す、受け手ごとの読めなかったこと (load_failure.rs の `ReceiverFailure`)。 */
+export interface ReceiverFailure extends LoadFailure {
+  /** 受け手のラベル (`RendererLoad.label` と同じ)。 */
+  label: string;
+}
+
 /** 間引いた今の値と負荷 (lib.rs の `Monitor::Status`)。 */
 export interface StatusMessage {
   kind: "status";
@@ -108,7 +131,12 @@ export type MonitorMessage =
     }
   | { kind: "hotkey"; action: HotkeyAction; error: StudioError | null }
   | ({ kind: "virtualCamera" } & VirtualCameraStatus)
-  | ({ kind: "api" } & ApiView);
+  | ({ kind: "api" } & ApiView)
+  | {
+      kind: "loadFailures";
+      /** 受け手が今のシーンで読めなかったこと (無ければ空。シーンが変わると空になる)。 */
+      failures: ReceiverFailure[];
+    };
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */
 export type StreamMessage = StudioScene | ArrayBuffer;
@@ -224,6 +252,8 @@ export interface StudioHost {
   startDragging(): Promise<void>;
   /** 描画の負荷を報告する (操作ウィンドウに出す)。 */
   reportRenderStats(stats: RenderStats): Promise<void>;
+  /** 今のシーンのファイルを読めなかったことを報告する (操作ウィンドウに出す)。 */
+  reportLoadFailure(failure: LoadFailure): Promise<void>;
 }
 
 declare global {
@@ -333,6 +363,7 @@ async function tauriHost(): Promise<StudioHost> {
       await getCurrentWindow().startDragging();
     },
     reportRenderStats: (stats) => invoke("report_render_stats", { stats }),
+    reportLoadFailure: (failure) => invoke("report_load_failure", { failure }),
   };
 }
 

@@ -23,7 +23,9 @@ use super::store::{self, Permission};
 use super::ws;
 use super::*;
 use crate::hotkeys::{Hotkey, HotkeyAction};
+use crate::load_failure::{LoadFailure, LoadFailureCode};
 use crate::lock;
+use crate::stage::Asset;
 
 /// メッセージの JSON Schema (`docs/studio-api.schema.json`)。
 const SCHEMA: &str = include_str!("../../../../../docs/studio-api.schema.json");
@@ -1549,6 +1551,23 @@ fn the_browser_source_serves_the_scene_and_streams_frames() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(lock(&studio.renders)[source::LABEL].stats.fps, 59.5);
+    // 読めなかったことも返す (今のシーンのものだけ。操作ウィンドウに出る。T0825)。
+    let revision = next["revision"].as_u64().unwrap();
+    socket.send(
+        opcode::TEXT,
+        format!(
+            r#"{{"kind":"loadFailure","revision":{revision},"asset":"model","code":"unreadable"}}"#
+        )
+        .as_bytes(),
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while studio.load_failures_view().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "the failure arrives");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let failures = studio.load_failures_view();
+    assert_eq!(failures[0].label, source::LABEL);
+    assert_eq!(failures[0].failure.code, LoadFailureCode::Unreadable);
     // 2 つ目のページは別のラベル。
     let mut second = Socket::open_at(port, &format!("/source/{token}/frames"), &origin);
     assert_eq!(second.read_json()["kind"], "scene");
@@ -1578,7 +1597,90 @@ fn the_browser_source_serves_the_scene_and_streams_frames() {
         (opcode::CLOSE, &source::CLOSE_GOING_AWAY.to_be_bytes()[..])
     );
     assert!(!lock(&studio.renders).contains_key(source::LABEL));
+    assert!(studio.load_failures_view().is_empty());
     assert_eq!(studio.api_view().source.connections, 0);
+}
+
+/// 受け手が読めなかったことは、今のシーンのものだけを受け、次のシーンに移ったら捨てる (T0825)。
+#[test]
+fn load_failures_are_kept_for_the_current_scene_only() {
+    let dir = Dir::new("load-failure");
+    let model = dir.model();
+    let studio = studio();
+    let (_, game) = stage_scenes(&studio, &model, &[]);
+    let revision = lock(&studio.conductor).scene().unwrap().revision;
+    let failure = |revision, asset, index, code| LoadFailure {
+        revision,
+        asset,
+        index,
+        code,
+    };
+    // 前のシーンのもの (受け手が読んでいる間に次のシーンになった) は知らせない。
+    studio.report_load_failure(
+        "output",
+        failure(
+            revision - 1,
+            Asset::Model,
+            None,
+            LoadFailureCode::Unavailable,
+        ),
+    );
+    // シーンに無いモジュールの番号・モデルに番号を付けたものは捨てる。
+    studio.report_load_failure(
+        "output",
+        failure(
+            revision,
+            Asset::Module,
+            Some(0),
+            LoadFailureCode::Unreadable,
+        ),
+    );
+    studio.report_load_failure(
+        "output",
+        failure(revision, Asset::Model, Some(0), LoadFailureCode::Unreadable),
+    );
+    assert!(studio.load_failures_view().is_empty());
+
+    studio.report_load_failure(
+        "output",
+        failure(revision, Asset::Model, None, LoadFailureCode::Unreadable),
+    );
+    studio.report_load_failure(
+        "browserSource",
+        failure(
+            revision,
+            Asset::Background,
+            None,
+            LoadFailureCode::Unavailable,
+        ),
+    );
+    let failures = studio.load_failures_view();
+    assert_eq!(
+        failures
+            .iter()
+            .map(|f| (f.label.as_str(), f.failure.asset, f.failure.code))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "browserSource",
+                Asset::Background,
+                LoadFailureCode::Unavailable
+            ),
+            ("output", Asset::Model, LoadFailureCode::Unreadable),
+        ]
+    );
+    // 受け手が去れば、その報告を捨てる。
+    studio.forget_load_failure("browserSource");
+    assert_eq!(studio.load_failures_view().len(), 1);
+
+    // シーンを切り替えると、前のシーンの報告はすべて捨てる。遅れて届いた前のシーンの報告も受けない。
+    studio.with_stage(|stage, conductor| stage.activate(&game, conductor).unwrap());
+    assert!(studio.load_failures_view().is_empty());
+    studio.report_load_failure(
+        "output",
+        failure(revision, Asset::Model, None, LoadFailureCode::Unreadable),
+    );
+    assert!(studio.load_failures_view().is_empty());
 }
 
 #[test]

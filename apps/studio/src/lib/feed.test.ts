@@ -73,7 +73,7 @@ describe("sourceFeed", () => {
     expect(FakeSocket.made).toHaveLength(2);
   });
 
-  it("reads the scene files under the token and reports stats when open", async () => {
+  it("reads the scene files under the token and reports stats and failures when open", async () => {
     const { f, fetched } = feed();
     expect(await f.sceneModel(7)).toEqual(new Uint8Array([1, 2, 3]));
     await f.sceneModule(7, 1);
@@ -93,7 +93,12 @@ describe("sourceFeed", () => {
     expect(socket.sent).toEqual([]);
     socket.readyState = FakeSocket.OPEN;
     await f.reportRenderStats(stats);
-    expect(socket.sent.map((s) => JSON.parse(s))).toEqual([{ kind: "renderStats", ...stats }]);
+    const failure = { revision: 7, asset: "module", index: 1, code: "unreadable" } as const;
+    await f.reportLoadFailure(failure);
+    expect(socket.sent.map((s) => JSON.parse(s))).toEqual([
+      { kind: "renderStats", ...stats },
+      { kind: "loadFailure", ...failure },
+    ]);
     expect(f.startDragging).toBeUndefined();
   });
 });

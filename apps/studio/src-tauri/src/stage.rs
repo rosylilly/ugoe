@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ugoe::model::module::Module;
 
 use crate::conductor::{self, Conductor, NewModel};
@@ -27,8 +27,8 @@ pub const MODULE_EXTENSIONS: &[&str] = &["ugoemod"];
 /// 背景の画像の拡張子。
 pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
-/// シーンのファイルの種類 (エラーの表示用)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// シーンのファイルの種類 (エラーの表示用。受け手が読めなかったことの報告 (`load_failure.rs`) にも使う)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Asset {
     Model,

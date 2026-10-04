@@ -48,6 +48,7 @@ src/lib/latest.ts             送っている間に届いた値は最後のも�
 src/lib/outputLayout.ts       受け手がシーンの通知ですること (planScene)・配置を舞台とビューと CSS の回転に分ける計算
 src/lib/errors.ts             バックエンドのエラー (code) を文にする
 src/lib/labels.ts             シーンの表示名
+src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文
 src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
@@ -64,12 +65,13 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
+  src/load_failure.rs           受け手が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、操作ウィンドウに配る。T0825)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知
     methods.rs                    メソッド (指揮役と舞台に入れる。ホットキーと同じ口)
     server.rs                     ループバックの待ち受け・経路 (`/api` と `/source/<トークン>/…`)・接続ごとのスレッド (読むのを区切って通知を送る)
-    source.rs                     ブラウザソース (T0808): ページ・ファイル・フレームの WebSocket・スイッチとトークン・描画の負荷の受け取り
+    source.rs                     ブラウザソース (T0808): ページ・ファイル・フレームの WebSocket・スイッチとトークン・描画の負荷と読めなかったことの受け取り
     source_check.rs               ブラウザソースの画の確かめの待ち受け (手で実行する ignored のテスト。下の「ブラウザソースの画を確かめる」)
     http.rs                       要求の頭の読み取りと検査 (Host・転送ヘッダ・Origin)
     ws.rs                         WebSocket の握手の検査と接続の設定 (フレームは tungstenite)
@@ -121,7 +123,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `add_scene(name)` / `duplicate_scene(id, name)` / `move_scene(id, index)` / `remove_scene(id)` | 操作 | シーンの一覧 |
 | `update_scene(scene)` / `activate_scene(id)` | 操作 | シーンの設定を置き換える (配信中なら出し直す) / 切り替える (ファイルの拡張子と大きさを確かめる) |
 | `set_output_preset(preset)` | 操作 | 出力ウィンドウの大きさのプリセットをプロファイルに持つ |
-| `subscribe_status(channel)` | 操作 | プロファイル・シーン・値・負荷・出力ウィンドウの状態を受け取る |
+| `subscribe_status(channel)` | 操作 | プロファイル・シーン・値・負荷・出力ウィンドウの状態・受け手が読めなかったことを受け取る |
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
 | `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー) |
@@ -140,6 +142,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
 | `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
+| `report_load_failure(failure)` | 出力 | 今のシーンのモデル・モジュール・背景を読めなかったこと (版・何を・理由のコード) を送る。操作ウィンドウに出す (`subscribe_status` の `loadFailures`。docs/studio.md#受け手が読めなかったとき) |
 | `virtual_camera_state()` | 操作 | 仮想カメラの状態 (止めている・始めている・動いている・止まった。始められない理由も) |
 | `start_virtual_camera(settings)` / `stop_virtual_camera()` | 操作 | 仮想カメラを始める (動いていれば始め直す)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
 | `set_virtual_camera_background(background)` | 操作 | 透過を埋める色 (RGB) を変える |

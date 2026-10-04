@@ -9,12 +9,14 @@
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
   出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
+  今のシーンのモデル・モジュール・背景を取れない・読めないときも、バックエンドへ返して操作ウィンドウに出す
+  (次のシーンに移ったための失敗は返さない。失敗したものは次のシーンの通知で取り直す。docs/studio.md#受け手が読めなかったとき)。
 -->
 <script lang="ts">
-import { decodeFrame, Player } from "@ugoe/player";
+import { decodeFrame, type ModelFile, Player } from "@ugoe/player";
 import { onMount } from "svelte";
 import type { OutputFeed } from "./lib/feed";
-import type { StudioScene } from "./lib/host";
+import type { LoadFailure, StudioScene } from "./lib/host";
 import {
   backgroundCss,
   type FollowedScene,
@@ -81,6 +83,17 @@ function onScene(scene: StudioScene) {
     });
 }
 
+/**
+ * 今のシーン `scene` で読めなかったことを報告する。次のシーンに移っていれば (ファイルを取れないのはふつうこのため)、
+ * 移ったための失敗なので報告しない。
+ */
+function fail(scene: StudioScene, failure: Omit<LoadFailure, "revision">) {
+  if (scene.revision !== latest) return;
+  void feed()
+    .then((f) => f.reportLoadFailure({ revision: scene.revision, ...failure }))
+    .catch(() => {});
+}
+
 async function applyScene(scene: StudioScene): Promise<void> {
   if (scene.revision !== latest) return;
   const host = await feed();
@@ -90,43 +103,84 @@ async function applyScene(scene: StudioScene): Promise<void> {
     await showLook(scene);
     return;
   }
-  const modules =
-    plan === "reload" || plan === "modules"
-      ? await Promise.all(
-          scene.modules.map(async (name, i) => ({
-            name: `${name}.ugoemod`,
-            bytes: await host.sceneModule(scene.revision, i),
-          })),
-        ).catch(() => null)
-      : [];
-  // 取れなければ、もう次のシーンになっている。次のシーンの通知を待つ。
-  if (modules === null || scene.revision !== latest) return;
+  if (plan === "reload" && player.status === "unavailable") {
+    // 描画を始められない (wasm・WebGPU・WebGL2 が無い)。モデルは読まず、背景だけ出す。
+    fail(scene, { asset: "model", index: null, code: "noRenderer" });
+    await showLook(scene);
+    return;
+  }
+  let modules: ModelFile[] = [];
+  if (plan === "reload" || plan === "modules") {
+    const fetched = await Promise.all(
+      scene.modules.map(async (name, i) => {
+        try {
+          return { name: `${name}.ugoemod`, bytes: await host.sceneModule(scene.revision, i) };
+        } catch {
+          return i;
+        }
+      }),
+    );
+    const missing = fetched.find((m) => typeof m === "number");
+    if (missing !== undefined) {
+      fail(scene, { asset: "module", index: missing, code: "unavailable" });
+      return;
+    }
+    modules = fetched.filter((m) => typeof m !== "number");
+  }
+  if (scene.revision !== latest) return;
   if (plan === "reload") {
     let bytes: Uint8Array;
     try {
       bytes = await host.sceneModel(scene.revision);
     } catch {
+      fail(scene, { asset: "model", index: null, code: "unavailable" });
       return;
     }
     if (scene.revision !== latest) return;
     for (const m of player.modules) player.unloadModule(m.name);
-    await player.load(
-      { name: scene.modelName, bytes },
-      modules.map((file) => ({ file, attach: true })),
-    );
+    // 読めなければ Player は `error` に書いて前のモデルを残す。前のモデルにこのシーンのフレームは当てない (値の並びが違う)。
+    player.error = null;
+    await player.load({ name: scene.modelName, bytes });
+    if (player.error !== null) {
+      fail(scene, { asset: "model", index: null, code: "unreadable" });
+      return;
+    }
+    const unreadable = attachModules(modules);
     // 読んだモデルには前のシーンのフレームを当てない (値の数が違う)。見せ方を待たずに、このシーンのフレームへ移る。
-    followed = { modelRevision: scene.modelRevision, modulesRevision: scene.modulesRevision };
+    followed = {
+      modelRevision: scene.modelRevision,
+      modulesRevision: unreadable === null ? scene.modulesRevision : -1,
+    };
     player.followScene(scene.revision);
+    if (unreadable !== null)
+      fail(scene, { asset: "module", index: unreadable, code: "unreadable" });
     await showLook(scene);
     return;
   }
   if (plan === "modules") {
     for (const m of player.modules) player.unloadModule(m.name);
-    for (const file of modules) player.loadModule(file, true);
-    followed = { modelRevision: scene.modelRevision, modulesRevision: scene.modulesRevision };
+    const unreadable = attachModules(modules);
+    followed = {
+      modelRevision: scene.modelRevision,
+      modulesRevision: unreadable === null ? scene.modulesRevision : -1,
+    };
+    if (unreadable !== null)
+      fail(scene, { asset: "module", index: unreadable, code: "unreadable" });
   }
   await showLook(scene);
   player.continueScene(scene.revision);
+}
+
+/**
+ * モジュールを合成の順に読んで付ける。読めなかったものがあれば、その最初の番号 (読めたものは付ける。
+ * 次のシーンの通知で付け直すため、呼び出し側は付けたモジュールの版を覚えない)。
+ */
+function attachModules(modules: readonly ModelFile[]): number | null {
+  let unreadable: number | null = null;
+  modules.forEach((file, i) => {
+    if (player.loadModule(file, true) === null) unreadable ??= i;
+  });
+  return unreadable;
 }
 
 /** 見せ方 (ライティング・配置・背景) を当てる。 */
@@ -138,7 +192,8 @@ async function showLook(scene: StudioScene): Promise<void> {
       if (image !== null) URL.revokeObjectURL(image.url);
       image = { path, url: URL.createObjectURL(new Blob([bytes as BlobPart])) };
     } catch {
-      // もう次のシーンになっている (次の通知で取り直す)。
+      // 次のシーンの通知で取り直す。
+      fail(scene, { asset: "background", index: null, code: "unavailable" });
     }
   }
   if (scene.revision !== latest) return;

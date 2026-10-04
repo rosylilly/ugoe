@@ -37,6 +37,7 @@ import type {
   MonitorMessage,
   OutputState,
   ParameterInfo,
+  ReceiverFailure,
   StatusMessage,
   StudioHost,
   StudioScene,
@@ -58,6 +59,7 @@ import { latestOnly } from "./lib/latest";
 import { Microphone } from "./lib/microphone.svelte";
 import { fileName, isStudioError, type ProfileView, type SceneSettings } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
+import { describeLoadFailure } from "./lib/receivers";
 import {
   loadTickRate,
   OUTPUT_SIZE_PRESETS,
@@ -103,6 +105,8 @@ let output = $state<OutputState | null>(null);
 let tickRate = $state<TickRate>(loadTickRate());
 /** 最新の値と負荷 (負荷の表示に使う)。 */
 let status = $state<StatusMessage | null>(null);
+/** 受け手が今のシーンで読めなかったこと (T0825。シーンが変わると空になって届く)。 */
+let loadFailures = $state<ReceiverFailure[]>([]);
 /** 出力ウィンドウに当てたプリセット (プロファイルの値と比べて、変わったら当て直す)。 */
 let appliedSize: OutputSizePreset | null = null;
 let showInternal = $state(false);
@@ -264,6 +268,9 @@ function onMonitor(message: MonitorMessage) {
       api = view;
       break;
     }
+    case "loadFailures":
+      loadFailures = message.failures;
+      break;
   }
 }
 
@@ -672,6 +679,12 @@ onMount(() => {
       {/snippet}
     </Notice>
   {/if}
+
+  {#each loadFailures as failure (failure.label)}
+    <Notice tone="danger" ondismiss={() => (loadFailures = loadFailures.filter((f) => f !== failure))}>
+      {describeLoadFailure(failure, scene)}
+    </Notice>
+  {/each}
 
   <main class="studio__main">
     <ScenesPanel

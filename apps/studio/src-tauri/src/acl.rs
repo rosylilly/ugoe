@@ -33,6 +33,7 @@ pub const COMMANDS: &[&str] = &[
     "tick_rate",
     "set_tick_rate",
     "report_render_stats",
+    "report_load_failure",
     "subscribe_pulse",
     "set_tracking",
     "set_tracking_paused",
@@ -77,6 +78,7 @@ pub const OUTPUT_COMMANDS: &[&str] = &[
     "scene_module",
     "scene_background",
     "report_render_stats",
+    "report_load_failure",
 ];
 
 #[cfg(test)]

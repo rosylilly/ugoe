@@ -113,6 +113,16 @@
       "stale": "{{name}}が描いていません。隠れているか最小化されていると、配信ソフトが取り込めないことがあります。"
     }
   },
+  "receiverFailure": {
+    "unavailable": "{{receiver}}が{{asset}}を受け取れませんでした。次にシーンが変わったときに、もう一度取ります。",
+    "unreadable": "{{receiver}}が{{asset}}を読めませんでした。ファイルが壊れているか、このスタジオでは読めない形式です。",
+    "noRenderer": "{{receiver}}で描画を始められないため、モデルを出せません。WebGPU か WebGL2 が使えるか確かめてください。",
+    "model": "モデル「{{name}}」",
+    "module": "モジュール「{{name}}」",
+    "modelUnnamed": "モデル",
+    "moduleUnnamed": "モジュール",
+    "background": "背景の画像"
+  },
   "profile": {
     "new": "新しいプロファイル",
     "open": "プロファイルを開く…",

@@ -5,7 +5,7 @@
 //! | --- | --- |
 //! | (空) | 受け手のページ (`source.html`。出力ウィンドウと同じ `Output.svelte` を WebSocket で動かす) |
 //! | `assets/…` | ページのスクリプト・スタイル・wasm (ビルドした `dist/assets/`) |
-//! | `frames` | WebSocket: シーンの通知 (テキストの JSON) とフレーム (バイナリ) を配る。ページは描画の負荷 (テキストの JSON) を返す |
+//! | `frames` | WebSocket: シーンの通知 (テキストの JSON) とフレーム (バイナリ) を配る。ページは描画の負荷と読めなかったこと (テキストの JSON) を返す |
 //! | `scene/<revision>/model`・`scene/<revision>/module/<index>`・`scene/<revision>/background` | 今のシーンのファイル |
 //!
 //! - **スイッチとトークンは操作 API とは別** (`studio-api.json` の `source`。既定は切)。切っているときとトークンが違うときは、
@@ -31,6 +31,7 @@ use tungstenite::protocol::{Message, Role, WebSocket};
 use super::http::{self, Reject, RequestHead};
 use super::server::{Keepalive, Liveness};
 use super::{store, ws};
+use crate::load_failure::LoadFailure;
 use crate::{RenderStats, Reported, Studio, lock};
 
 /// 経路の頭。
@@ -127,12 +128,16 @@ impl Sources {
     }
 }
 
-/// ページが返す描画の負荷 (`apps/studio/src/source.ts`)。
+/// ページが返すもの (`apps/studio/src/lib/feed.ts` の `sourceFeed`)。
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum Incoming {
+    /// 描画の負荷。
     #[serde(rename = "renderStats")]
     RenderStats(RenderStats),
+    /// 今のシーンのファイルを読めなかった (T0825)。
+    #[serde(rename = "loadFailure")]
+    LoadFailure(LoadFailure),
 }
 
 impl Studio {
@@ -159,6 +164,9 @@ impl Studio {
                 renders.remove(label);
             }
             drop(renders);
+            for label in &removed {
+                self.forget_load_failure(label);
+            }
             self.send_api_view();
         }
     }
@@ -180,6 +188,9 @@ impl Studio {
             renders.remove(&conn.label);
         }
         drop(renders);
+        for conn in &closed {
+            self.forget_load_failure(&conn.label);
+        }
         drop(closed);
         self.send_api_view();
     }
@@ -226,24 +237,30 @@ impl Studio {
         let removed = lock(&self.sources.state).connections.remove(&id);
         if let Some(conn) = removed {
             lock(&self.renders).remove(&conn.label);
+            self.forget_load_failure(&conn.label);
             self.send_api_view();
         }
     }
 
-    /// ページから届いたテキスト (描画の負荷)。読めないものは捨てる。
+    /// ページから届いたテキスト (描画の負荷・読めなかったこと)。読めないものは捨てる。
     fn source_receive(&self, id: u64, text: &str) {
-        let Ok(Incoming::RenderStats(stats)) = serde_json::from_str::<Incoming>(text) else {
+        let Ok(incoming) = serde_json::from_str::<Incoming>(text) else {
             return;
         };
-        if !stats.is_valid() {
-            return;
-        }
         let Some(label) = lock(&self.sources.state)
             .connections
             .get(&id)
             .map(|c| c.label.clone())
         else {
             return;
+        };
+        let stats = match incoming {
+            Incoming::RenderStats(stats) if stats.is_valid() => stats,
+            Incoming::RenderStats(_) => return,
+            Incoming::LoadFailure(failure) => {
+                self.report_load_failure(&label, failure);
+                return;
+            }
         };
         lock(&self.renders).insert(
             label,

@@ -115,6 +115,16 @@
       "stale": "{{name}} is not drawing. It may be hidden or minimized; streaming software may not capture it."
     }
   },
+  "receiverFailure": {
+    "unavailable": "{{receiver}} could not get {{asset}}. It tries again when the scene changes next.",
+    "unreadable": "{{receiver}} could not read {{asset}}. The file is broken or in a format this studio cannot read.",
+    "noRenderer": "{{receiver}} cannot start rendering, so the model is not shown. Check that WebGPU or WebGL2 is available.",
+    "model": "the model “{{name}}”",
+    "module": "the module “{{name}}”",
+    "modelUnnamed": "the model",
+    "moduleUnnamed": "a module",
+    "background": "the background image"
+  },
   "profile": {
     "new": "New profile",
     "open": "Open profile…",

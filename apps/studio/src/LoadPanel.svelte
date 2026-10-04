@@ -8,6 +8,7 @@ import { Notice, SegmentedControl } from "@ugoe/ui";
 import type { StatusMessage } from "./lib/host";
 import { t } from "./lib/i18n";
 import { type LoadWarning, loadWarnings } from "./lib/load";
+import { receiverName } from "./lib/receivers";
 import { TICK_RATES, type TickRate } from "./lib/settings";
 
 interface Props {
@@ -35,16 +36,6 @@ function ms(value: number): string {
 
 function perSecond(value: number): string {
   return t("load.perSecond", { value: formatNumber(value, { maximumFractionDigits: 1 }) });
-}
-
-function receiverName(label: string): string {
-  if (label === "output") return t("load.outputWindow");
-  if (label === "virtualCamera") return t("load.virtualCamera");
-  // ブラウザソースのページ (つないだ順に `browserSource`・`browserSource:2`…。api/source.rs の `LABEL`)。
-  if (label === "browserSource") return t("load.browserSource");
-  const page = /^browserSource:(\d+)$/.exec(label);
-  if (page !== null) return t("load.browserSourceN", { n: Number(page[1]) });
-  return label;
 }
 
 function warningText(w: LoadWarning): string {
