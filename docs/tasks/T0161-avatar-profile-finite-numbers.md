@@ -1,11 +1,11 @@
 ---
 id: T0161
 title: アバタープロファイルの数値の有限性を準拠の検査で見る
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0161
 ---
 
 # T0161: アバタープロファイルの数値の有限性を準拠の検査で見る
