@@ -49,4 +49,7 @@ assignee: claude-worker-T0326
 
 ### 起票の候補
 
-- なし。
+- 仕様の曖昧さ (spec-check の作業者の指摘): Motion and expression validation の「every curve」が、再生で無視される曲線 (未知の対象・未知のセグメントの種類) を含むかが書かれていない
+  (未知の `op` の調整は明記されている)。spec-check は字義どおり、復号できた数をすべて検証した。参照実装と揃っているかを確かめ、`spec/model.md` に明記する。
+- spec-check の `EyeBlink.advance` は 1 回の更新の段の数に上限がなく、巨大な `dt` で RangeError になる (仕様は上限を許し、超えた後は決めていない)。必要なら仕様で決めて直す。
+- 拒まれる例の JSON の文書を `*.motion.json`・`*.expression.json` の名前にしたいなら、`scripts/check-spec.mjs` が `error: validation` の項目だけが使う文書を JSON Schema の検査から外す必要がある (今は `invalid-*.json` の名前で避けた)。
