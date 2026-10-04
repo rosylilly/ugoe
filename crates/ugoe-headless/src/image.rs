@@ -1,6 +1,8 @@
-//! PNG の読み書きと、乗算済みアルファとの変換。
+//! PNG の読み書き・KTX2 の読み込みと、乗算済みアルファとの変換。
 //!
-//! 色の値はリニア化しない (`docs/spec/rendering.md` の「前提」)。PNG の 8bit 値をそのまま使う。
+//! 色の値はリニア化しない (`docs/spec/rendering.md` の「前提」)。PNG と KTX2 の 8bit 値をそのまま使う。
+
+use ugoe_format::TextureFormat;
 
 use crate::Error;
 
@@ -25,6 +27,145 @@ pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, Error> {
         bytes,
         ImageLimits::default(),
     )?)
+}
+
+/// 形式 (PNG・KTX2) に合わせて画像をデコードし、乗算済みアルファの RGBA8 にする (`ugoe_format::image`)。
+///
+/// KTX2 は圧縮していない 8bit の RGB / RGBA だけを読み、ほかの形式は
+/// [`ugoe_format::image::ImageError::UnsupportedKtx2`] ([`Error::ImageDecode`])。上限は [`decode_png_premultiplied`] と同じ。
+pub fn decode_image_premultiplied(format: TextureFormat, bytes: &[u8]) -> Result<Rgba8, Error> {
+    Ok(ugoe_format::image::decode_image_premultiplied(
+        format,
+        bytes,
+        ImageLimits::default(),
+    )?)
+}
+
+/// 形式 (PNG・KTX2) に合わせて画像をデコードし、アルファを掛けない RGBA8 にする (法線マップ用)。
+///
+/// 読む形式と上限は [`decode_image_premultiplied`] と同じ。
+pub fn decode_image(format: TextureFormat, bytes: &[u8]) -> Result<Rgba8, Error> {
+    Ok(ugoe_format::image::decode_image(
+        format,
+        bytes,
+        ImageLimits::default(),
+    )?)
+}
+
+/// [`encode_ktx2`] の書き方。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Ktx2Options {
+    /// `VK_FORMAT_R8G8B8A8_SRGB` (転送関数 sRGB) で書く。偽なら `VK_FORMAT_R8G8B8A8_UNORM` (リニア)。
+    /// 画素の値はどちらも同じに書く (読む側は値を保存されたまま使う。`docs/spec/rendering.md#前提`)。
+    pub srgb: bool,
+    /// 各段を zstd で超圧縮する (`supercompressionScheme` = 2)。
+    pub zstd: bool,
+}
+
+/// `KHR_DF_MODEL_RGBSDA`・`KHR_DF_PRIMARIES_BT709`・`KHR_DF_TRANSFER_LINEAR` / `_SRGB`。
+const DF_MODEL_RGBSDA: u8 = 1;
+const DF_PRIMARIES_BT709: u8 = 1;
+const DF_TRANSFER_LINEAR: u8 = 1;
+const DF_TRANSFER_SRGB: u8 = 2;
+
+/// ストレートアルファの RGBA8 の段 (`levels[0]` がレベル 0。続く段は幅と高さを半分 (切り捨て、最小 1) にしたもの) を、
+/// 圧縮していない RGBA8 の KTX2 にする。適合テストと単体テストで KTX2 のバンドルを作るためのもの。
+///
+/// データ形式の記述の `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` は立てない (アルファは乗算していない。`docs/spec/rendering.md#前提`)。
+/// 段が無い・画素の数が大きさと合わない・段の大きさが半分ずつでなければ [`Error::Invalid`]。
+pub fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<Vec<u8>, Error> {
+    let Some(base) = levels.first() else {
+        return Err(Error::Invalid("KTX2 needs at least one level".to_owned()));
+    };
+    for (i, level) in levels.iter().enumerate() {
+        let size = ((base.width >> i).max(1), (base.height >> i).max(1));
+        if (level.width, level.height) != size
+            || level.pixels.len() != level.width as usize * level.height as usize * 4
+        {
+            return Err(Error::Invalid(format!(
+                "KTX2 level {i} must be {}x{} with 4 bytes per pixel",
+                size.0, size.1
+            )));
+        }
+    }
+    let (vk_format, transfer) = if options.srgb {
+        (43, DF_TRANSFER_SRGB) // VK_FORMAT_R8G8B8A8_SRGB
+    } else {
+        (37, DF_TRANSFER_LINEAR) // VK_FORMAT_R8G8B8A8_UNORM
+    };
+    // データ形式の記述: dfdTotalSize と基本の記述ブロック (KDF 1.3) 1 つ。標本は R・G・B・A の 8bit。
+    let mut dfd = Vec::new();
+    let block_size: u32 = 24 + 16 * 4;
+    dfd.extend((4 + block_size).to_le_bytes());
+    dfd.extend(0u32.to_le_bytes()); // vendorId = Khronos、descriptorType = basic
+    dfd.extend((2 | (block_size << 16)).to_le_bytes()); // versionNumber = 1.3
+    dfd.extend([DF_MODEL_RGBSDA, DF_PRIMARIES_BT709, transfer, 0]); // flags = 0 (乗算していない)
+    dfd.extend([0; 4]); // texelBlockDimension
+    dfd.extend([4, 0, 0, 0, 0, 0, 0, 0]); // bytesPlane
+    // 標本の channelType: 赤 0・緑 1・青 2・アルファ 15。sRGB のアルファはリニア (KHR_DF_SAMPLE_DATATYPE_LINEAR)。
+    let alpha = if options.srgb { 15 | 0x10 } else { 15 };
+    for (i, channel) in [0u8, 1, 2, alpha].into_iter().enumerate() {
+        dfd.extend((i as u16 * 8).to_le_bytes());
+        dfd.extend([7, channel]);
+        dfd.extend(0u32.to_le_bytes()); // samplePosition
+        dfd.extend(0u32.to_le_bytes()); // sampleLower
+        dfd.extend(255u32.to_le_bytes()); // sampleUpper
+    }
+    let stored: Vec<Vec<u8>> = levels
+        .iter()
+        .map(|level| {
+            if options.zstd {
+                ruzstd::encoding::compress_to_vec(
+                    level.pixels.as_slice(),
+                    ruzstd::encoding::CompressionLevel::Fastest,
+                )
+            } else {
+                level.pixels.clone()
+            }
+        })
+        .collect();
+    let level_index = 80;
+    let dfd_offset = level_index + 24 * levels.len();
+    let mut out = ugoe_format::image::KTX2_IDENTIFIER.to_vec();
+    let header = [
+        vk_format,
+        1, // typeSize
+        base.width,
+        base.height,
+        0, // pixelDepth
+        0, // layerCount
+        1, // faceCount
+        levels.len() as u32,
+        if options.zstd { 2 } else { 0 },
+        dfd_offset as u32,
+        dfd.len() as u32,
+        0, // kvdByteOffset
+        0, // kvdByteLength
+    ];
+    for value in header {
+        out.extend(value.to_le_bytes());
+    }
+    out.extend([0; 16]); // sgdByteOffset・sgdByteLength
+    // 段のデータは小さい段から順に置く。超圧縮しないときは 4 バイト境界に揃える。
+    let align = if options.zstd { 1 } else { 4 };
+    let mut cursor = dfd_offset + dfd.len();
+    let mut offsets = vec![0; levels.len()];
+    for (i, data) in stored.iter().enumerate().rev() {
+        cursor = cursor.next_multiple_of(align);
+        offsets[i] = cursor;
+        cursor += data.len();
+    }
+    for (i, data) in stored.iter().enumerate() {
+        out.extend((offsets[i] as u64).to_le_bytes());
+        out.extend((data.len() as u64).to_le_bytes());
+        out.extend((levels[i].pixels.len() as u64).to_le_bytes());
+    }
+    out.extend(dfd);
+    for (i, data) in stored.iter().enumerate().rev() {
+        out.resize(offsets[i], 0);
+        out.extend(data);
+    }
+    Ok(out)
 }
 
 /// 乗算済みアルファの RGBA8 を、ストレートアルファの PNG にエンコードする。
@@ -244,6 +385,63 @@ mod tests {
         std::mem::forget(writer);
         let err = decode_png(&out).unwrap_err().to_string();
         assert!(err.contains("16385x1, larger than the limit"), "{err}");
+    }
+
+    fn level(width: u32, height: u32, value: u8) -> Rgba8 {
+        Rgba8 {
+            width,
+            height,
+            pixels: vec![value; width as usize * height as usize * 4],
+        }
+    }
+
+    /// 書いた KTX2 は `ugoe_format::image` で読め、レベル 0 の値が保存されたまま戻る。乗算済みの印は立てない。
+    #[test]
+    fn ktx2_round_trip_keeps_values_and_does_not_flag_premultiplied() {
+        let base = Rgba8 {
+            width: 2,
+            height: 2,
+            pixels: vec![
+                255, 0, 0, 255, 128, 200, 255, 0, 255, 255, 255, 128, 10, 20, 30, 40,
+            ],
+        };
+        for srgb in [false, true] {
+            for zstd in [false, true] {
+                let options = Ktx2Options { srgb, zstd };
+                let bytes = encode_ktx2(&[base.clone(), level(1, 1, 7)], options).unwrap();
+                assert_eq!(
+                    ugoe_format::TextureFormat::detect(&bytes),
+                    Some(TextureFormat::Ktx2)
+                );
+                // データ形式の記述 (dfdByteOffset から) の転送関数と flags。
+                // flags の KHR_DF_FLAG_ALPHA_PREMULTIPLIED (bit 0) は立てない。
+                let dfd = u32::from_le_bytes(bytes[48..52].try_into().unwrap()) as usize;
+                assert_eq!(bytes[dfd + 4 + 8 + 2], if srgb { 2 } else { 1 }, "transfer");
+                assert_eq!(bytes[dfd + 4 + 8 + 3] & 1, 0);
+                assert_eq!(
+                    decode_image(TextureFormat::Ktx2, &bytes).unwrap(),
+                    base,
+                    "{options:?}"
+                );
+                let mut premultiplied = base.clone();
+                premultiply(&mut premultiplied.pixels);
+                assert_eq!(
+                    decode_image_premultiplied(TextureFormat::Ktx2, &bytes).unwrap(),
+                    premultiplied
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ktx2_levels_must_halve() {
+        let options = Ktx2Options::default();
+        assert!(encode_ktx2(&[], options).is_err());
+        assert!(encode_ktx2(&[level(4, 1, 0), level(2, 1, 0), level(1, 1, 0)], options).is_ok());
+        assert!(encode_ktx2(&[level(4, 1, 0), level(1, 1, 0)], options).is_err());
+        let mut short = level(2, 2, 0);
+        short.pixels.pop();
+        assert!(encode_ktx2(&[short], options).is_err());
     }
 
     #[test]

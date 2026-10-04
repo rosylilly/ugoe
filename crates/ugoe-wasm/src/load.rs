@@ -1,16 +1,16 @@
 //! モデルの読み込み (JSON / `.ugoe` バンドル) とテクスチャのデコード。GPU には触れない。
 //!
-//! テクスチャは Rust 側で PNG をデコードし、乗算済みアルファの RGBA8 にする
+//! テクスチャは Rust 側で PNG と KTX2 (圧縮していない 8bit の RGB / RGBA) をデコードし、乗算済みアルファの RGBA8 にする
 //! (`docs/spec/rendering.md` の「前提」: 色の値はリニア化しない)。
 //! ブラウザのデコーダは色空間の変換やアルファの扱いが実装ごとに異なるので使わない。
 
 use serde::{Deserialize, Serialize};
-use ugoe::format::{Bundle, TextureData, TextureFormat};
+use ugoe::format::{Bundle, TextureData};
 use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::render::RenderError;
 use ugoe::{DressUpError, FieldValue};
-use ugoe_format::image::{ImageError, ImageLimits};
+use ugoe_format::image::{ImageError, ImageLimits, decode_image, decode_image_premultiplied};
 
 use crate::animation::Library;
 use ugoe::model::{Model, Parameter, ParameterGroup};
@@ -71,7 +71,7 @@ impl LoadError {
     /// - `compile`: 評価できない構造。
     /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
     /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素)。
-    /// - `invalid_texture`: `image`・`texture`。PNG をデコードできない。
+    /// - `invalid_texture`: `image`・`texture`。画像 (PNG・KTX2) をデコードできない (壊れている。読まない形式の KTX2 は失敗でなく警告)。
     /// - `texture_too_large`: `image_limit_exceeded` と同じ補足の値。デバイスの扱える一辺 (`max`) を超える。
     /// - `texture`: テクスチャをレンダラに登録できない (着せ替えの `texture` と同じ)。
     /// - `device_lost`: GPU のデバイスを失った。
@@ -395,8 +395,8 @@ pub fn from_bundle_with(bytes: &[u8], limits: LoadLimits) -> Result<LoadedModel,
     })
 }
 
-/// テクスチャ `count` 枚をデコードする (`data(i)` が `i` 番目の画像)。PNG は乗算済みアルファにし、
-/// KTX2 と画像の無い番号は白のプレースホルダで代用して警告する。
+/// テクスチャ `count` 枚をデコードする (`data(i)` が `i` 番目の画像)。PNG と KTX2 は乗算済みアルファにし、
+/// デコードしない形式の KTX2 (ブロック圧縮など) と画像の無い番号は白のプレースホルダで代用して警告する。
 pub(crate) fn decode_textures<'a>(
     count: usize,
     data: impl Fn(usize) -> Option<&'a TextureData>,
@@ -405,28 +405,27 @@ pub(crate) fn decode_textures<'a>(
 ) -> Result<Vec<Rgba8>, LoadError> {
     (0..count)
         .map(|index| match data(index) {
-            Some(TextureData {
-                format: TextureFormat::Png,
-                bytes,
-            }) => decode_png_premultiplied(bytes, limits).map_err(|e| match e {
-                ImageError::TooLarge { width, height, max } => LoadError::TextureTooLarge {
-                    index,
-                    width,
-                    height,
-                    max,
-                },
-                e => LoadError::Texture {
-                    index,
-                    message: e.to_string(),
-                },
-            }),
-            Some(TextureData {
-                format: TextureFormat::Ktx2,
-                ..
-            }) => {
-                // KTX2 のデコードは未対応 (`ugoe render` と同じ)。表示は止めずに白で代用する。
-                warnings.push(LoadWarning::TextureKtx2 { texture: index });
-                Ok(placeholder())
+            Some(TextureData { format, bytes }) => {
+                match decode_image_premultiplied(*format, bytes, limits) {
+                    Ok(image) => Ok(image),
+                    // デコードしない形式の KTX2 (`ugoe render` はエラー)。表示は止めずに白で代用する。
+                    Err(ImageError::UnsupportedKtx2(_)) => {
+                        warnings.push(LoadWarning::TextureKtx2 { texture: index });
+                        Ok(placeholder())
+                    }
+                    Err(ImageError::TooLarge { width, height, max }) => {
+                        Err(LoadError::TextureTooLarge {
+                            index,
+                            width,
+                            height,
+                            max,
+                        })
+                    }
+                    Err(e) => Err(LoadError::Texture {
+                        index,
+                        message: e.to_string(),
+                    }),
+                }
             }
             // 読み込み (`read_bundle` / `read_module`) がテクスチャの数を検証するので、通常は起きない。
             None => {
@@ -438,7 +437,7 @@ pub(crate) fn decode_textures<'a>(
 }
 
 /// テクスチャの番号ごとの法線マップ (`None` は法線マップなし) を、アルファを掛けずにデコードする。
-/// KTX2 は警告して使わない。
+/// デコードしない形式の KTX2 は警告して使わない。
 pub(crate) fn decode_normal_maps<'a>(
     data: impl IntoIterator<Item = Option<&'a TextureData>>,
     limits: ImageLimits,
@@ -448,28 +447,25 @@ pub(crate) fn decode_normal_maps<'a>(
         .enumerate()
         .map(|(index, data)| match data {
             None => Ok(None),
-            Some(TextureData {
-                format: TextureFormat::Png,
-                bytes,
-            }) => decode_png(bytes, limits).map(Some).map_err(|e| match e {
-                ImageError::TooLarge { width, height, max } => LoadError::NormalMapTooLarge {
-                    index,
-                    width,
-                    height,
-                    max,
-                },
-                e => LoadError::NormalMap {
+            Some(TextureData { format, bytes }) => match decode_image(*format, bytes, limits) {
+                Ok(image) => Ok(Some(image)),
+                Err(ImageError::UnsupportedKtx2(_)) => {
+                    warnings.push(LoadWarning::NormalMapKtx2 { texture: index });
+                    Ok(None)
+                }
+                Err(ImageError::TooLarge { width, height, max }) => {
+                    Err(LoadError::NormalMapTooLarge {
+                        index,
+                        width,
+                        height,
+                        max,
+                    })
+                }
+                Err(e) => Err(LoadError::NormalMap {
                     index,
                     message: e.to_string(),
-                },
-            }),
-            Some(TextureData {
-                format: TextureFormat::Ktx2,
-                ..
-            }) => {
-                warnings.push(LoadWarning::NormalMapKtx2 { texture: index });
-                Ok(None)
-            }
+                }),
+            },
         })
         .collect()
 }
@@ -553,7 +549,7 @@ pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError
 
 #[cfg(test)]
 mod tests {
-    use ugoe::format::write_bundle;
+    use ugoe::format::{TextureFormat, write_bundle};
     use ugoe::model::fixtures;
     use ugoe::runtime::CompiledModel;
 
@@ -567,6 +563,21 @@ mod tests {
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(rgba).unwrap();
         writer.finish().unwrap();
+        out
+    }
+
+    /// 圧縮していない RGBA8 (`vk_format` 37 = `_UNORM`、43 = `_SRGB`) か、ほかの `vk_format` の KTX2。
+    /// レベルは 1 つで、データ形式の記述は付けない (デコードは見ない)。
+    fn encode_ktx2(vk_format: u32, width: u32, height: u32, data: &[u8]) -> Vec<u8> {
+        let mut out = ugoe_format::image::KTX2_IDENTIFIER.to_vec();
+        for v in [vk_format, 1, width, height, 0, 0, 1, 1, 0] {
+            out.extend(v.to_le_bytes());
+        }
+        out.extend([0; 32]);
+        for v in [80 + 24, data.len(), data.len()] {
+            out.extend((v as u64).to_le_bytes());
+        }
+        out.extend(data);
         out
     }
 
@@ -616,14 +627,82 @@ mod tests {
         );
     }
 
+    /// 圧縮していない KTX2 は値のまま読み、テクスチャは乗算し、法線マップは乗算しない (PNG と同じ)。
     #[test]
-    fn ktx2_images_are_replaced_with_structured_warnings() {
+    fn bundle_ktx2_is_decoded_like_png() {
+        let mut model = fixtures::single_quad();
+        model.textures[0].normal_map = Some("n".into());
+        let mut bundle = Bundle::new(model);
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: encode_ktx2(43, 2, 1, &[255, 0, 0, 255, 255, 255, 255, 128]),
+        }];
+        bundle.normal_maps = vec![TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: encode_ktx2(37, 1, 1, &[128, 200, 255, 0]),
+        }];
+        let loaded = from_bundle(&write_bundle(&bundle).unwrap()).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert_eq!(
+            loaded.textures,
+            vec![Rgba8 {
+                width: 2,
+                height: 1,
+                pixels: vec![255, 0, 0, 255, 128, 128, 128, 128],
+            }]
+        );
+        assert_eq!(
+            loaded.normal_maps,
+            vec![Some(Rgba8 {
+                width: 1,
+                height: 1,
+                pixels: vec![128, 200, 255, 0],
+            })]
+        );
+    }
+
+    /// 壊れた KTX2 は読み込みの失敗。一辺の上限は PNG と同じく種類付きの失敗。
+    #[test]
+    fn broken_or_too_large_ktx2_is_an_error() {
+        let mut bundle = Bundle::new(fixtures::single_quad());
+        bundle.textures = vec![TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: encode_ktx2(43, 2, 1, &[255; 4]),
+        }];
+        let err = from_bundle(&write_bundle(&bundle).unwrap()).unwrap_err();
+        assert!(matches!(err, LoadError::Texture { index: 0, .. }), "{err}");
+        assert!(err.to_string().contains("decoding KTX2"), "{err}");
+        assert_eq!(err.info().code, "invalid_texture");
+        bundle.textures[0].bytes = encode_ktx2(43, 3, 1, &[255; 12]);
+        let limits = LoadLimits {
+            image: ImageLimits::default().with_max_side(2),
+            ..LoadLimits::default()
+        };
+        let err = from_bundle_with(&write_bundle(&bundle).unwrap(), limits).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                LoadError::TextureTooLarge {
+                    index: 0,
+                    width: 3,
+                    height: 1,
+                    max: 2,
+                }
+            ),
+            "{err}"
+        );
+        assert_eq!(err.info().code, LoadError::IMAGE_LIMIT_EXCEEDED);
+    }
+
+    /// デコードしない形式の KTX2 (ここでは `VK_FORMAT_BC3_UNORM_BLOCK`) は、白と法線マップなしで代用して警告する。
+    #[test]
+    fn unsupported_ktx2_images_are_replaced_with_structured_warnings() {
         let mut model = fixtures::single_quad();
         model.textures[0].normal_map = Some("n".into());
         let mut bundle = Bundle::new(model);
         let ktx2 = TextureData {
             format: TextureFormat::Ktx2,
-            bytes: b"\xABKTX 20\xBB\r\n\x1A\n".to_vec(),
+            bytes: encode_ktx2(137, 4, 4, &[0; 16]),
         };
         bundle.textures = vec![ktx2.clone()];
         bundle.normal_maps = vec![ktx2];
@@ -637,10 +716,10 @@ mod tests {
                 LoadWarning::TextureKtx2 { texture: 0 },
             ]
         );
-        // 文の警告は T0125 の前と同じ文面。構造には同じ文字列を `warning` に入れる。
+        // 構造には文の警告と同じ文字列を `warning` に入れる。
         assert_eq!(
             loaded.warnings[0].to_string(),
-            "the normal map of texture 0 is KTX2, which is not supported yet; drawing without it"
+            "the normal map of texture 0 is KTX2 in a format that is not supported yet; drawing without it"
         );
         assert_eq!(
             warnings_json(&loaded.warnings, &[]),
@@ -652,7 +731,7 @@ mod tests {
                 }),
                 serde_json::json!({
                     "code": "texture_ktx2",
-                    "warning": "texture 0 is KTX2, which is not supported yet; using a white placeholder",
+                    "warning": "texture 0 is KTX2 in a format that is not supported yet; using a white placeholder",
                     "texture": 0,
                 }),
             ]

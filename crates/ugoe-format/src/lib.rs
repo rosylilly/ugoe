@@ -3,7 +3,7 @@
 //! - `.ugoe` : ランタイムバンドル (ヘッダ + チャンク表 + チャンク)。バイナリ。[`bundle`] を参照。
 //! - `.ugoemod` : 着せ替えのモジュール。バンドルと同じコンテナ。[`module_file`] を参照。
 //! - `*.motion.json` / `*.expression.json` / `*.physics.json` : JSON。
-//! - テクスチャの PNG のデコード (上限つき): `image` (feature `png`)。
+//! - テクスチャの PNG と KTX2 のデコード (上限つき): `image` (feature `png`)。
 //!
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
 

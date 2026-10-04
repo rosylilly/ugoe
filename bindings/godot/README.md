@@ -56,10 +56,11 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
   受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、
-  バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)。
-- `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、同じ画素の
-  KTX2 (`R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`、Godot の `Image.compress` で作る `BC3_UNORM_BLOCK`) に差し替えたバンドルを描き、
-  PNG のバンドル (BC3 は展開した画素の PNG) の画像と画素ごとに比べる (適合テストの参照の `ugoe render` は KTX2 を読めないため)。
+  バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)、
+  圧縮していない KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222)。
+- `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、Godot の
+  `Image.compress` で作る `BC3_UNORM_BLOCK` の KTX2 に差し替えたバンドルを描き、展開した画素の PNG のバンドルの画像と画素ごとに比べる
+  (参照の `ugoe render` と wasm は圧縮した KTX2 をデコードしないので、適合テストでは比べられないため)。
 - 1 フレームの時間は `example/tests/bench.gd` で測る (検査ではない。見本のモデルのパラメータを毎フレーム動かし、`_process` に
   かかった時間を出す。`node bindings/godot/build.mjs --release` の後に
   `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。
@@ -218,7 +219,8 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   - 圧縮した形式は `Image.decompress` で展開してから乗算する (GPU では圧縮しないで持つ)。展開できない形式は警告を出し、
     乗算せずにそのまま描く。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
   - ミップマップは捨てて最初の段だけを使う。
-  - 確かめたもの: `example/tests/ktx2.gd` (下の「検査」) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM`・`BC3_UNORM_BLOCK`。
+  - 確かめたもの: 適合テストの `ktx2-*` のケース (参照と比べる) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM` (ミップマップ付き・zstd の超圧縮)、
+    `example/tests/ktx2.gd` (下の「検査」) で `BC3_UNORM_BLOCK`。
     Basis Universal と ETC2・ASTC は確かめていない (テストで作る道具が無い)。
   ライティングは参照レンダラ (`crates/ugoe-render/src/shaders/drawable.wgsl`) と同じ式で、法線は画面での微分から求めたヤコビ行列で回す。
 - マスクは、マスクとして参照されるメッシュのカバレッジを 1 枚のアトラス (`SubViewport`) に並べて描き、要素はキャンバス座標から読む

@@ -76,7 +76,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | --- | --- |
 | `name` / `summary` | 名前 (出力のファイル名。英数字・`-`・`_`) と説明 |
 | `model` | `.ugoe` かモデルの JSON (リポジトリのルートからの相対パス) |
-| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`) |
+| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`・`avatar-ktx2`・`avatar-lit-ktx2`・`ktx2-mips`) |
 | `spec` | `spec/examples/<例>` を書くと、その `expected.json` のケースごとに展開する (`spec-<例>-<番号>`。モデルとパラメータはそこから取る) |
 | `modules` | 付ける `.ugoemod` (付ける順) |
 | `parameters` | パラメータの値 (値域の外はクランプされる) |
@@ -91,8 +91,21 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 
 入力は見本 (`assets/samples/avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/`)、生成するマスクと合成モードのモデル (もとは Godot の
 `build.mjs --conformance` だけにあったもの。T0418 で移した)、公開仕様の評価の例 (`spec/examples/*/expected.json`) と
-バンドルの例 (`spec/examples/bundles/`: zstd の圧縮・任意の機能・法線マップ・物理)。描画の例 (`render.json`) は、テクスチャを
+バンドルの例 (`spec/examples/bundles/`: zstd の圧縮・任意の機能・法線マップ・物理)、KTX2 のテクスチャ (T0222。下の段落)。描画の例 (`render.json`) は、テクスチャを
 その場で作る必要があるので使っていない (参照レンダラは `crates/ugoe-render/tests/spec_render.rs` で確かめている)。
+
+**KTX2 のテクスチャ (`ktx2-*` のケース、T0222):** 生成するモデルで、テクスチャを圧縮していない KTX2 にしたもの。KTX2 も乗算していない
+アルファとして読んで乗算し、値は形式の `_SRGB` や転送関数によらず保存されたまま使い、ミップマップは最初の段だけを使う
+([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。どの実装もそう読めば、PNG のバンドルと同じ画像になる
+(`src/bundles.rs` の単体テストが、デコードした画素が元の PNG と同じことを確かめる)。
+
+- `avatar-ktx2` / `avatar-lit-ktx2`: 見本のテクスチャと法線マップを `VK_FORMAT_R8G8B8A8_SRGB` にしたもの。
+- `ktx2-mips`: `nested-masks` のテクスチャを、zstd で超圧縮したミップマップ付きの `VK_FORMAT_R8G8B8A8_UNORM` にしたもの
+  (2 段目からは不透明なマゼンタ)。
+
+KTX2 は `ugoe_headless::image::encode_ktx2` で書く (乗算済みの印 `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てない)。ブロック圧縮の KTX2 は
+参照 (`ugoe render`) と wasm がデコードしないので、ここでは比べない (Godot の `bindings/godot/example/tests/ktx2.gd` が BC3 を確かめる)。
+C ABI と Unity の C# の層は画像を扱わないので、頂点だけを比べる。
 
 ### 実行器の約束 (計画)
 
@@ -193,3 +206,4 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 - T0420 (`docs/tasks/T0420-unity-and-conformance-extras.md`: Godot の評価の結果の読み戻しとモデルの JSON)
 - T0133 (`docs/tasks/T0133-runtime-explicit-base-values.md`: 受け手として進めるケース (`follow`))
 - T0455 (`docs/tasks/T0455-unity-follow.md`: Unity の実行器で `follow` のケースを比べる)
+- T0222 (`docs/tasks/T0222-ktx2-decode-headless-and-wasm.md`: KTX2 のテクスチャのケース)

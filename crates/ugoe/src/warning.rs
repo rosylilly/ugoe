@@ -8,11 +8,13 @@ use std::fmt;
 use ugoe_format::ReadWarning;
 
 /// 読み込めたが注意が要ること。`Display` は英語の文で、安定した値として扱わない
-/// (wasm の読み込みの戻り値に入る文。T0125 から変えていない)。
+/// (wasm の読み込みの戻り値に入る文。KTX2 の 2 つは T0222 で、対応しない形式だけに出すことに合わせて変えた)。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LoadWarning {
-    /// テクスチャが KTX2 (未対応) なので、白のプレースホルダで代用した。
-    #[error("texture {texture} is KTX2, which is not supported yet; using a white placeholder")]
+    /// テクスチャが、デコードしない形式 (ブロック圧縮など) の KTX2 なので、白のプレースホルダで代用した。
+    #[error(
+        "texture {texture} is KTX2 in a format that is not supported yet; using a white placeholder"
+    )]
     TextureKtx2 {
         /// テクスチャの番号。
         texture: usize,
@@ -23,9 +25,9 @@ pub enum LoadWarning {
         /// テクスチャの番号。
         texture: usize,
     },
-    /// 法線マップが KTX2 (未対応) なので、法線マップなしで描く。
+    /// 法線マップが、デコードしない形式 (ブロック圧縮など) の KTX2 なので、法線マップなしで描く。
     #[error(
-        "the normal map of texture {texture} is KTX2, which is not supported yet; drawing without it"
+        "the normal map of texture {texture} is KTX2 in a format that is not supported yet; drawing without it"
     )]
     NormalMapKtx2 {
         /// 法線マップを持つテクスチャの番号。

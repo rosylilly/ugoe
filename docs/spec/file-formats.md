@@ -195,13 +195,22 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
   - 組み込む側からの指定 (T0152): SDK は `ugoe::format::read_bundle_with` / `read_module_with` をそのまま使い、超えたときの種類と補足の値は
     `ugoe::limits::ReadLimitExceeded` (`read_limit_exceeded`。`limit`・`chunk`・`max`) が決めます。C ABI は `UgoeReadLimits` と
     `ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits` (超えたら `UGOE_ERROR_LIMIT_EXCEEDED`。[crates/ugoe-ffi/README.md](../../crates/ugoe-ffi/README.md#読み込みの上限-t0152))、
-    wasm は `load_bundle` / `load_module` の上限の JSON で、PNG の一辺の上限 (`max_image_side`) も指定できます
+    wasm は `load_bundle` / `load_module` の上限の JSON で、画像 (PNG・KTX2) の一辺の上限 (`max_image_side`) も指定できます
     ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの上限-t0152))。`@ugoe/runtime` は `loadModel` の `limits`。
-- テクスチャと法線マップの PNG は、コンテナの読み込み (`read_bundle` など) ではデコードしません (バイト列のまま返します)。
-  デコードする側のための関数は `ugoe_format::image` (feature `png`) の `decode_png(bytes, ImageLimits)` / `decode_png_premultiplied` で、
-  `ugoe-headless` と `ugoe-wasm` がこれを使います (T0009)。グレースケール・パレット・16 ビットは 8 ビットの RGBA に展開します。
-  見出し (IHDR) の大きさだけで確保すると小さなファイルで数 GB を求められるので、一辺が `ImageLimits::max_side`
+- テクスチャと法線マップの PNG / KTX2 は、コンテナの読み込み (`read_bundle` など) ではデコードしません (バイト列のまま返します)。
+  デコードする側のための関数は `ugoe_format::image` (feature `png`) の `decode_png(bytes, ImageLimits)` / `decode_png_premultiplied`・
+  `decode_ktx2` / `decode_ktx2_premultiplied` (T0222)・形式で選ぶ `decode_image` / `decode_image_premultiplied` で、
+  `ugoe-headless` と `ugoe-wasm` がこれを使います (T0009)。PNG のグレースケール・パレット・16 ビットは 8 ビットの RGBA に展開します。
+  見出し (PNG の IHDR、KTX2 の `pixelWidth` / `pixelHeight`) の大きさだけで確保すると小さなファイルで数 GB を求められるので、一辺が `ImageLimits::max_side`
   (既定 16384。`ImageLimits::default().with_max_side(n)` で変えられる) を超える画像は、画素を確保する前に `ImageError::TooLarge` で止めます。
+- `decode_ktx2` が読む KTX2 は、圧縮していない `VK_FORMAT_R8G8B8_*` / `VK_FORMAT_R8G8B8A8_*` (`_UNORM`・`_SRGB`) の 2D テクスチャ
+  (配列・キューブマップ・3D でない) で、超圧縮は無しか zstd です。値は保存されたまま使い、レベル 0 だけを読み、データ形式の記述は見ません
+  ([rendering.md#前提](rendering.md#前提))。ほかの形式 (BCn・ETC2・ASTC・Basis Universal など) は `ImageError::UnsupportedKtx2`、
+  見出しやレベルの範囲が壊れていれば `ImageError::InvalidKtx2` です。読めない形式の扱いは使う側が決めます: `ugoe render` はテクスチャを
+  エラーにし (法線マップは警告して使わない)、wasm は白で代用して警告します (`texture_ktx2`・`normal_map_ktx2`)。
+- 書き出し (`write_bundle`・`write_module`・エディタの書き出し) は KTX2 を作りません。読んだバンドルの KTX2 のバイト列をそのまま書き戻すだけです
+  (シグネチャと形式が合うかだけを確かめる)。適合テストのための KTX2 の書き出し `ugoe_headless::image::encode_ktx2` は、
+  データ形式の記述に `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てません (T0222)。
 
 ### 読み込み時の検査
 

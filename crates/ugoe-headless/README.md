@@ -26,12 +26,12 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | `lib.rs` | `Scene` (モデルとバンドルの中身)・`RenderOptions` (`ugoe render` のオプションと 1 対 1)・`prepare`・`Prepared::render` |
 | `args` | 文字列の引数を読む (`ID=VALUE`・`WxH`・色・`INDEX=PATH`・秒数・fps・GPU を待つ秒数・光の色・光源)。clap の `value_parser` にそのまま渡せる |
 | `view` | 出力の大きさ (`output_size`。大きさを指定しないときに上限へ縮める倍率は `shrink_scale`。`RenderOptions::shrink_to` で使う) とキャンバスを収めるビュー (`fit_view`・`Fit`) |
-| `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG → 不透明な白 1x1)・バンドルの法線マップをデコードする |
+| `textures` | テクスチャを揃える (`--texture` の差し替え → バンドルの PNG / KTX2 → 不透明な白 1x1)・バンドルの法線マップをデコードする |
 | `animate` | パラメータの書き込みと、`ugoe::Puppet` で時間を進める処理 (`update` は `MAX_UPDATES` 回 = 60 fps で 1 時間まで) |
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
 | `resident` | 常駐の描画の口 `Resident` (毎フレーム描き続ける。下の「常駐の描画」) |
 | `yuv` | 画素の形 `PixelFormat` (RGBA8・NV12・YUY2) と、RGBA からの変換の CPU の参照実装 |
-| `image` | PNG の読み書きと乗算済みアルファの変換 (デコードと一辺の上限は `ugoe_format::image` を ugoe-wasm と共有) |
+| `image` | PNG の読み書き・KTX2 の読み込み (圧縮していない 8bit の RGB / RGBA) と乗算済みアルファの変換 (デコードと一辺の上限は `ugoe_format::image` を ugoe-wasm と共有)。適合テスト用の KTX2 の書き出し `encode_ktx2` (乗算済みの印を立てない) |
 
 - **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
   光源は `RenderOptions::lighting` (`None` ならレンダラに渡さないので、出力は法線マップが無いのと同じ)。

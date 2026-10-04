@@ -92,7 +92,9 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 
 成功すると標準出力に 1 行 (`wrote out.png (256x256, adapter: ...)`) を書く。警告は標準エラーに `warning: ...` で出す。
 
-- **テクスチャ:** バンドルの PNG はデコードして乗算済みアルファにする。KTX2 は未対応でエラーになる (`--texture` で PNG を渡せば描ける)。
+- **テクスチャ:** バンドルの PNG と KTX2 はデコードして乗算済みアルファにする。KTX2 は圧縮していない 8bit の RGB / RGBA (`_UNORM`・`_SRGB`。
+  超圧縮は無しか zstd) だけを、保存された値のまま読み、レベル 0 だけを使う (`docs/spec/rendering.md#前提`)。ほかの形式 (ブロック圧縮・
+  Basis Universal など) はエラーになる (`--texture` で PNG を渡せば描ける。`--texture` には KTX2 も渡せる)。
   JSON とフィクスチャはテクスチャを持たないので、`model.textures` の各項目に不透明な白 1x1 を使う。
 - **上限:** 外から来る値で止まったりメモリを使い果たしたりしないように、次を超えるとエラーにする。
   - 出力の大きさ: 一辺 1..=16384 (`ugoe_headless::MAX_SIZE`)。`--size`・`--width`・`--height` で明示した値と、`--width`・`--height` の
@@ -120,7 +122,7 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
   固定の刻みで進めるので、同じ引数からは常に同じ絵になる。標準出力に `advanced 0.25s in 15 update(s)` も書く。
   手順は `docs/testing.md#モーションの途中の絵を確かめる`。
 - **ライティング** (`docs/spec/rendering.md#ライティング`): バンドルの法線マップ (`NRML`) はアルファを掛けずにデコードしてレンダラに登録する
-  (KTX2 は警告を出して使わない。`--texture` で差し替えても法線マップはバンドルのもの)。`--ambient` も `--light` も無ければ光源を渡さない
+  (KTX2 はテクスチャと同じ形式を読む。読めない形式は警告を出して使わない。`--texture` で差し替えても法線マップはバンドルのもの)。`--ambient` も `--light` も無ければ光源を渡さない
   ので、法線マップやライティングの指定があっても出力は 1 画素も変わらない。どちらかがあれば、環境光 (既定 1) と光源を渡す。
   - 座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (z、キャンバスから手前向き・ピクセル)。
   - `directional:DX,DY,DZ[:COLOR]`: 平行光源。`DX,DY,DZ` は **光が進む向き** (長さは問わない。0 はエラー)。

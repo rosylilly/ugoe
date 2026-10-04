@@ -9,6 +9,13 @@
 //! `part-switch` はポーズ (`ArmA`+`SleeveA` と `ArmB`) とポーズに属さないパーツ `Badge` にメッシュを持たせ、
 //! パーツを切り替えるモーション `switch` を入れたもの (受け手がモーションのパーツの不透明度のカーブを当てるかを確かめる。T0135)。
 //! もとは Godot の `build.mjs --conformance` の `conformance_bundles` (T0411) で、T0418 でここに移した。
+//!
+//! KTX2 のテクスチャのバンドルも作る (T0222。もとは Godot の `example/tests/ktx2.gd`)。画素は PNG と同じで、KTX2 も
+//! 乗算していないアルファとして読んで乗算すれば (`docs/spec/rendering.md#前提`)、PNG のバンドルと同じ画像になる。
+//! - `avatar-ktx2` / `avatar-lit-ktx2`: 見本 (`assets/samples/avatar.ugoe`・`avatar-lit.ugoe`) のテクスチャと法線マップを、
+//!   同じ画素の `VK_FORMAT_R8G8B8A8_SRGB` の KTX2 にしたもの (転送関数が sRGB でも値はそのまま使う)。
+//! - `ktx2-mips`: `nested-masks` のテクスチャを `VK_FORMAT_R8G8B8A8_UNORM` の zstd で超圧縮した KTX2 にしたもの。
+//!   ミップマップの 2 段目からは別の色 (不透明なマゼンタ) で、最初の段だけを使わなければ画像が変わる。
 
 use std::path::{Path, PathBuf};
 
@@ -18,12 +25,13 @@ use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::{
     BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, TextureRef, fixtures,
 };
+use ugoe_headless::image::Ktx2Options;
 use ugoe_headless::{Rgba8, image};
 
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 8] = [
+pub const NAMES: [&str; 11] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
@@ -32,25 +40,43 @@ pub const NAMES: [&str; 8] = [
     "moving-masks",
     "lip-sync-hair",
     "part-switch",
+    "avatar-ktx2",
+    "avatar-lit-ktx2",
+    "ktx2-mips",
+];
+
+/// KTX2 にする見本 (生成するモデルの名前と、リポジトリのルートからのパス)。
+const KTX2_SAMPLES: [(&str, &str); 2] = [
+    ("avatar-ktx2", "assets/samples/avatar.ugoe"),
+    ("avatar-lit-ktx2", "assets/samples/avatar-lit.ugoe"),
 ];
 
 /// すべてのモデルを `dir` に書き、書いたパスを返す。
 pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     std::fs::create_dir_all(dir).map_err(Error::io(format!("creating {}", dir.display())))?;
-    let png = texture()?;
+    let png = encode_png(&texture())?;
     let mut paths = Vec::new();
     for name in NAMES {
-        let mut bundle = Bundle::new(model(name)?);
-        if name == "lip-sync-hair" {
-            bundle.physics = Some(fixtures::dynamic_hair_settings());
-        }
-        if name == "part-switch" {
-            bundle.motions = vec![switch_motion()];
-        }
-        bundle.textures = vec![TextureData {
-            format: TextureFormat::Png,
-            bytes: png.clone(),
-        }];
+        let bundle = if let Some((_, sample)) = KTX2_SAMPLES.iter().find(|(n, _)| *n == name) {
+            sample_as_ktx2(sample)?
+        } else if name == "ktx2-mips" {
+            let mut bundle = Bundle::new(model("nested-masks")?);
+            bundle.textures = vec![mipmapped_ktx2()?];
+            bundle
+        } else {
+            let mut bundle = Bundle::new(model(name)?);
+            if name == "lip-sync-hair" {
+                bundle.physics = Some(fixtures::dynamic_hair_settings());
+            }
+            if name == "part-switch" {
+                bundle.motions = vec![switch_motion()];
+            }
+            bundle.textures = vec![TextureData {
+                format: TextureFormat::Png,
+                bytes: png.clone(),
+            }];
+            bundle
+        };
         let bytes = ugoe::format::write_bundle(&bundle).map_err(|source| Error::Format {
             context: format!("writing the generated bundle `{name}`"),
             source,
@@ -76,8 +102,8 @@ fn model(name: &str) -> Result<Model, Error> {
     })
 }
 
-/// 64x64 の、色とアルファが位置で変わるテクスチャ (PNG、乗算していないアルファ)。
-fn texture() -> Result<Vec<u8>, Error> {
+/// 64x64 の、色とアルファが位置で変わるテクスチャ (乗算していないアルファ)。
+fn texture() -> Rgba8 {
     const SIZE: u32 = 64;
     let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
@@ -91,17 +117,77 @@ fn texture() -> Result<Vec<u8>, Error> {
             ]);
         }
     }
-    // PNG はストレートアルファ。書き出しの関数は乗算済みを受け取るので、先に掛けておく。
-    image::premultiply(&mut rgba);
-    image::encode_png_unpremultiplied(&Rgba8 {
+    Rgba8 {
         width: SIZE,
         height: SIZE,
         pixels: rgba,
-    })
-    .map_err(|source| Error::Headless {
+    }
+}
+
+/// 乗算していないアルファの `straight` を PNG にする。
+fn encode_png(straight: &Rgba8) -> Result<Vec<u8>, Error> {
+    // PNG はストレートアルファ。書き出しの関数は乗算済みを受け取るので、先に掛けておく。
+    let mut premultiplied = straight.clone();
+    image::premultiply(&mut premultiplied.pixels);
+    image::encode_png_unpremultiplied(&premultiplied).map_err(|source| Error::Headless {
         context: "encoding the texture of the generated bundles".to_owned(),
         source,
     })
+}
+
+fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<TextureData, Error> {
+    Ok(TextureData {
+        format: TextureFormat::Ktx2,
+        bytes: image::encode_ktx2(levels, options).map_err(|source| Error::Headless {
+            context: "encoding a KTX2 texture of the generated bundles".to_owned(),
+            source,
+        })?,
+    })
+}
+
+/// 見本のバンドル `sample` を読み、テクスチャと法線マップ (PNG) を同じ画素の `R8G8B8A8_SRGB` の KTX2 にする。
+fn sample_as_ktx2(sample: &str) -> Result<Bundle, Error> {
+    let path = crate::repo_root().join(sample);
+    let bytes = std::fs::read(&path).map_err(Error::io(format!("reading {}", path.display())))?;
+    let mut bundle = ugoe::format::read_bundle(&bytes).map_err(|source| Error::Format {
+        context: format!("reading {}", path.display()),
+        source,
+    })?;
+    let srgb = Ktx2Options {
+        srgb: true,
+        zstd: false,
+    };
+    for data in bundle.textures.iter_mut().chain(&mut bundle.normal_maps) {
+        let straight =
+            image::decode_image(data.format, &data.bytes).map_err(|source| Error::Headless {
+                context: format!("decoding a texture of {sample}"),
+                source,
+            })?;
+        *data = encode_ktx2(&[straight], srgb)?;
+    }
+    Ok(bundle)
+}
+
+/// [`texture`] のミップマップ付きの KTX2 (`R8G8B8A8_UNORM`、zstd)。2 段目からは不透明なマゼンタ。
+fn mipmapped_ktx2() -> Result<TextureData, Error> {
+    let base = texture();
+    let mut levels = vec![base.clone()];
+    let mut side = base.width / 2;
+    while side >= 1 {
+        levels.push(Rgba8 {
+            width: side,
+            height: side,
+            pixels: [255, 0, 255, 255].repeat((side * side) as usize),
+        });
+        side /= 2;
+    }
+    encode_ktx2(
+        &levels,
+        Ktx2Options {
+            srgb: false,
+            zstd: true,
+        },
+    )
 }
 
 fn tint(mesh: &mut Mesh, multiply: Rgb, screen: Rgb) {
@@ -320,9 +406,51 @@ mod tests {
         assert_eq!(paths.len(), NAMES.len());
         for path in &paths {
             let bundle = ugoe_format::read_bundle(&std::fs::read(path).unwrap()).unwrap();
-            assert_eq!(bundle.textures.len(), 1);
+            assert!(!bundle.textures.is_empty());
             ugoe::Puppet::new(bundle.model).unwrap();
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn decoded(data: &[TextureData]) -> Vec<Rgba8> {
+        data.iter()
+            .map(|d| image::decode_image_premultiplied(d.format, &d.bytes).unwrap())
+            .collect()
+    }
+
+    /// KTX2 のバンドルは、元の PNG のバンドルと同じ乗算済みの画素にデコードされる (なので参照の画像も同じになる)。
+    /// 見本の法線マップも KTX2 にする。
+    #[test]
+    fn ktx2_bundles_decode_like_the_png_ones() {
+        for (_, sample) in KTX2_SAMPLES {
+            let png =
+                ugoe_format::read_bundle(&std::fs::read(crate::repo_root().join(sample)).unwrap())
+                    .unwrap();
+            let ktx2 = sample_as_ktx2(sample).unwrap();
+            assert!(
+                ktx2.textures
+                    .iter()
+                    .all(|t| t.format == TextureFormat::Ktx2)
+            );
+            assert!(
+                ktx2.normal_maps
+                    .iter()
+                    .all(|t| t.format == TextureFormat::Ktx2)
+            );
+            assert_eq!(decoded(&ktx2.textures), decoded(&png.textures), "{sample}");
+            assert_eq!(
+                decoded(&ktx2.normal_maps),
+                decoded(&png.normal_maps),
+                "{sample}"
+            );
+            assert_eq!(ktx2.model, png.model);
+        }
+        let lit = sample_as_ktx2("assets/samples/avatar-lit.ugoe").unwrap();
+        assert!(!lit.normal_maps.is_empty());
+        let png = TextureData {
+            format: TextureFormat::Png,
+            bytes: encode_png(&texture()).unwrap(),
+        };
+        assert_eq!(decoded(&[mipmapped_ktx2().unwrap()]), decoded(&[png]));
     }
 }

@@ -10,13 +10,15 @@
 - 壊れた入力でパニックしない
 - 外から来る入力で資源を使い切らない。展開の上限は形式でなく読む側の設定 (`ReadLimits`。既定は 1 チャンク 256 MiB・合計 1 GiB)。超えたら展開の途中でやめてエラーにする
 - ファイルシステムに触れない (バイト列と `Read`/`Write` を扱う)
-- PNG のデコードの上限も読む側の設定 (`ImageLimits`。既定は一辺 16384)。見出しの大きさだけで確保しない
+- 画像 (PNG・KTX2) のデコードの上限も読む側の設定 (`ImageLimits`。既定は一辺 16384)。見出しの大きさだけで確保しない
 - 知らない必須の機能は拒否する (`features` モジュール)。未知の値 (`Unknown`) は警告にして読み、書き出さない (`ugoe_model::unknown`)
 
 ## feature
 
-- `png` (既定で無効): テクスチャの PNG のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`) と WebAssembly (`ugoe-wasm`) が共有する
-  (`docs/spec/file-formats.md#読み込みの上限`)。
+- `png` (既定で無効): テクスチャの PNG と KTX2 のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`) と WebAssembly (`ugoe-wasm`) が共有する
+  (`docs/spec/file-formats.md#読み込みの上限`)。KTX2 は圧縮していない 8bit の RGB / RGBA (`_UNORM`・`_SRGB`。超圧縮は無しか zstd) を
+  保存された値のまま読み、レベル 0 だけを使う。ほかの形式は `ImageError::UnsupportedKtx2` (代用するか誤りにするかは呼ぶ側が決める)。
+  形式で選ぶときは `decode_image` / `decode_image_premultiplied`。
 
 ```rust
 use ugoe_format::image::{ImageLimits, decode_png_premultiplied};
@@ -39,3 +41,4 @@ let small = decode_png_premultiplied(&bytes, ImageLimits::default().with_max_sid
 - T0115 (互換性テストの資料 `assets/compat/` と `tests/compat.rs`。手順は `docs/testing.md#互換性テスト`)
 - T0150 (読み込みの上限 `ReadLimits`。`docs/spec/file-formats.md#読み込みの上限`)
 - T0009 (PNG のデコードと上限 `ImageLimits` を ugoe-headless と ugoe-wasm から 1 か所にまとめた `image`)
+- T0222 (圧縮していない KTX2 のデコード)

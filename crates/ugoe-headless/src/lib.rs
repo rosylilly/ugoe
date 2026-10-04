@@ -56,9 +56,9 @@ pub enum Error {
         #[source]
         source: ugoe_format::FormatError,
     },
-    /// PNG のデコードの失敗 (壊れている・一辺が上限を超える。`ugoe_format::image`)。
+    /// 画像 (PNG・KTX2) のデコードの失敗 (壊れている・一辺が上限を超える・対応しない KTX2 の形式。`ugoe_format::image`)。
     #[error(transparent)]
-    PngDecode(#[from] ugoe_format::image::ImageError),
+    ImageDecode(#[from] ugoe_format::image::ImageError),
     /// PNG のエンコードの失敗。
     #[error("{context}")]
     PngEncode {

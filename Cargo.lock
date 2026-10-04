@@ -5417,6 +5417,7 @@ dependencies = [
  "clap",
  "png 0.18.1",
  "pollster",
+ "ruzstd",
  "serde_json",
  "thiserror 2.0.21",
  "ugoe",

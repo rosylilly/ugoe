@@ -29,7 +29,7 @@ ugoe-format = { path = ".", features = ["png"] }
 ugoe-runtime.workspace = true
 
 [features]
-# テクスチャの PNG のデコード (`image` モジュール)。
+# テクスチャの PNG と KTX2 のデコード (`image` モジュール。KTX2 は圧縮していない 8bit の RGB / RGBA)。
 png = ["dep:png"]
 
 [lints]

@@ -135,6 +135,36 @@
       "summary": "Multiply, additive and normal blending, multiply and screen colors, and back-face culling.",
       "generated": "blend-modes"
     },
+    {
+      "name": "ktx2-avatar",
+      "summary": "The sample avatar with its textures as uncompressed R8G8B8A8_SRGB KTX2 (non-premultiplied, values used as stored), posed.",
+      "generated": "avatar-ktx2",
+      "parameters": {
+        "AngleX": 22,
+        "AngleY": -14,
+        "EyeLOpen": 0.25,
+        "MouthOpenY": 0.7,
+        "MouthForm": 0.5
+      }
+    },
+    {
+      "name": "ktx2-avatar-lit",
+      "summary": "The lit sample with its textures and normal maps as R8G8B8A8_SRGB KTX2, lit as avatar-lit.",
+      "generated": "avatar-lit-ktx2",
+      "parameters": { "AngleX": -12, "MouthForm": 0.4 },
+      "lighting": {
+        "ambient": [0.55, 0.55, 0.55],
+        "lights": [
+          { "type": "directional", "direction": [1, 1, -1.4], "color": [0.6, 0.6, 0.6] },
+          { "type": "point", "position": [800, 300, 250], "color": [0.5, 0.35, 0.2], "range": 900 }
+        ]
+      }
+    },
+    {
+      "name": "ktx2-mips",
+      "summary": "Nested masks with a zstd-supercompressed R8G8B8A8_UNORM KTX2 texture whose smaller mip levels are magenta (only level 0 is used).",
+      "generated": "ktx2-mips"
+    },
     { "spec": "spec/examples/single-quad" },
     { "spec": "spec/examples/warp-grid" },
     { "spec": "spec/examples/rotation-chain" },

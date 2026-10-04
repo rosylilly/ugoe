@@ -16,7 +16,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | モジュール | 内容 |
 | --- | --- |
 | `web` | JS に公開する `WebPuppet`。canvas に wgpu のサーフェスを作り、クリアと描画を行う |
-| `load` | JSON / `.ugoe` バンドルの読み込み (読み込みの上限 `LoadLimits` と、超えたときのコード)、PNG のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
+| `load` | JSON / `.ugoe` バンドルの読み込み (読み込みの上限 `LoadLimits` と、超えたときのコード)、PNG と KTX2 (圧縮していない 8bit の RGB / RGBA) のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
@@ -197,7 +197,7 @@ puppet.set_lighting_json(undefined); // 既定 (環境光が白で光源なし) 
 
 - 規則は `docs/spec/rendering.md#ライティング`。座標はキャンバス座標 (ピクセル・Y 下向き) + 奥行き (手前が +z) で、ビュー (ズーム・パン) の影響を受けない。
 - 光源はホストの状態 (背景色と同じ) で、モデルを読み直しても保つ。次の `render` から使う。形の誤り・向きが 0・`range` が正でない・負の色はエラー。
-- 光源を設定しなければ、ライティングを受けるメッシュも受けない場合と同じ色で描く。法線マップはアルファを掛けずに読む (KTX2 は警告を出して使わない)。
+- 光源を設定しなければ、ライティングを受けるメッシュも受けない場合と同じ色で描く。法線マップはアルファを掛けずに読む (デコードしない形式の KTX2 は警告を出して使わない)。
 
 ### 着せ替え (T0123)
 
@@ -261,9 +261,9 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 
 | `code` | 補足の値 | いつ |
 | --- | --- | --- |
-| `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが KTX2 (未対応) なので白のプレースホルダで代用した |
+| `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが、デコードしない形式 (ブロック圧縮・Basis Universal など。圧縮していない 8bit の RGB / RGBA 以外) の KTX2 なので白のプレースホルダで代用した |
 | `texture_missing` | `texture` | テクスチャの画像が無いので白で代用した (`read_bundle` が数を検査するので通常は起きない) |
-| `normal_map_ktx2` | `texture` | 法線マップが KTX2 なので、法線マップなしで描く |
+| `normal_map_ktx2` | `texture` | 法線マップが、デコードしない形式の KTX2 なので、法線マップなしで描く |
 | `physics_removed` | `reason` (英語の理由) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |
 | `module_detached` | `module`・`slot`・`error` (`detached_modules_json()` の要素と同じ) | 付けていたモジュールを付け直せないので外した |
 | `unknown_optional_feature` | `feature` (機能の ID) | 知らない任意の機能を宣言したファイル (新しい版で書かれたもの)。フォールバックで読んだ (T0412) |
@@ -291,7 +291,7 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 const limits = JSON.stringify({
   max_chunk_decompressed: 64 * 1024 * 1024, // 圧縮したチャンク 1 つの展開後 (バイト)。既定 256 MiB
   max_total_decompressed: 256 * 1024 * 1024, // 1 つのファイルで展開するバイトの合計。既定 1 GiB
-  max_image_side: 4096,                      // デコードする PNG の幅と高さ (画素)。既定 16384
+  max_image_side: 4096,                      // デコードする画像 (PNG・KTX2) の幅と高さ (画素)。既定 16384
 });
 try {
   puppet.load_bundle(bytes, limits);   // 省くと既定値。書かなかった項目も既定値
@@ -306,7 +306,7 @@ try {
 | `code` | 補足の値 | いつ |
 | --- | --- | --- |
 | `read_limit_exceeded` | `limit` (`"chunk_decompressed"` \| `"total_decompressed"`)・`chunk` (チャンクのタグ。`"TEXR"` など)・`max` (バイト数。数) | 圧縮したチャンクの展開が上限を超えそうになった。展開の途中でやめる (先に確保しない) |
-| `image_limit_exceeded` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素。どれも数) | PNG の幅か高さが `max_image_side` を超える。画素を確保する前にやめる |
+| `image_limit_exceeded` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素。どれも数) | 画像 (PNG・KTX2) の幅か高さが `max_image_side` を超える。画素を確保する前にやめる |
 
 - 上限はファイル形式の決まりではなく、組み込む側の方針 (`docs/spec/file-formats.md#読み込みの上限`)。ファイルが壊れているとは限らない
   (上限を上げれば読めることがある) ので、`invalid_file` とは分けた。超えたときは何も変えない (前のモデル・モジュールのまま)。
@@ -342,7 +342,7 @@ try {
 | `compile` | なし | 検査は通ったが評価できない構造 |
 | `read_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | 展開の上限を超えた |
 | `image_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | PNG の一辺が `max_image_side` を超えた |
-| `invalid_texture` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号) | PNG をデコードできない |
+| `invalid_texture` | `image` (`"texture"` \| `"normal_map"`)・`texture` (テクスチャの番号) | 画像 (PNG・KTX2) をデコードできない (壊れている。読まない形式の KTX2 は失敗でなく `texture_ktx2` などの警告) |
 | `texture_too_large` | `image`・`texture`・`width`・`height`・`max` (デバイスの一辺の上限。画素) | 画像がデバイス (`max_texture_dimension_2d`) で扱える大きさを超える |
 | `texture` | なし | テクスチャをレンダラに登録できない (着せ替えの `texture` と同じ) |
 | `device_lost` | なし | GPU のデバイスを失った (`is_lost()`)。新しい canvas で作り直す |

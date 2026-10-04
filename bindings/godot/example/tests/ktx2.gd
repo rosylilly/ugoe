@@ -4,34 +4,27 @@ extends SceneTree
 ##
 ##   godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/ktx2.gd
 ##
-## 見本のモデル (`res://models/avatar.ugoe`) のテクスチャ (PNG) を、同じ画素の KTX2 に差し替えたバンドルを作って描き、
-## PNG のままのバンドルの画像と画素ごとに比べる。KTX2 の画素も乗算していないアルファなので
-## (`docs/spec/rendering.md#前提`)、読み込みで乗算すれば PNG と同じ画像になる。
+## 見本のモデル (`res://models/avatar.ugoe`) のテクスチャ (PNG) を、ブロック圧縮の KTX2 (`VK_FORMAT_BC3_UNORM_BLOCK`。
+## Godot の `Image.compress` で作る) に差し替えたバンドルを作って描き、圧縮した画像を展開して PNG にしたバンドル
+## (圧縮で変わった画素を同じにするため) の画像と画素ごとに比べる。KTX2 の画素も乗算していないアルファなので
+## (`docs/spec/rendering.md#前提`)、展開してから乗算すれば PNG と同じ画像になる。
 ##
-## - `rgba8-srgb` / `rgba8-unorm`: 圧縮していない KTX2 (`VK_FORMAT_R8G8B8A8_SRGB` / `_UNORM`)。比べる相手は元のバンドル。
-##   転送関数が sRGB でも、値はリニアに変換せずにそのまま使う。
-## - `bc3`: ブロック圧縮の KTX2 (`VK_FORMAT_BC3_UNORM_BLOCK`。Godot の `Image.compress` で作る)。
-##   比べる相手は、圧縮した画像を展開して PNG にしたバンドル (圧縮で変わった画素を同じにするため)。
+## 圧縮していない KTX2 (`R8G8B8A8_SRGB` / `_UNORM`) は、適合テスト (`tests/conformance` の `ktx2-*` のケース) で参照
+## (`ugoe render`)・wasm と比べる (T0222 で移した)。BC3 がここに残るのは、参照と wasm が圧縮した KTX2 をデコードしない
+## (白で代用する) ため、適合テストでは比べられないから。
 
 const MODEL := "res://models/avatar.ugoe"
 const WARMUP_FRAMES := 4
 const BACKGROUND := Color8(128, 128, 128)
 
 const KTX2_IDENTIFIER := [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A]
-const VK_FORMAT_R8G8B8A8_UNORM := 37
-const VK_FORMAT_R8G8B8A8_SRGB := 43
 const VK_FORMAT_BC3_UNORM_BLOCK := 137
 # Khronos Data Format の値 (KHR_DF_*)
-const DF_MODEL_RGBSDA := 1
 const DF_MODEL_BC3 := 130
 const DF_PRIMARIES_BT709 := 1
 const DF_TRANSFER_LINEAR := 1
-const DF_TRANSFER_SRGB := 2
 const DF_CHANNEL_COLOR := 0
-const DF_CHANNEL_GREEN := 1
-const DF_CHANNEL_BLUE := 2
 const DF_CHANNEL_ALPHA := 15
-const DF_QUALIFIER_LINEAR := 0x10
 
 var _failures := 0
 var _frames := 0
@@ -56,14 +49,10 @@ func _initialize() -> void:
 	# GPU での圧縮 (betsy) を使うと、終了の処理で落ちることがある。
 	ProjectSettings.set_setting("rendering/textures/vram_compression/compress_with_gpu", false)
 	var chunks := _read_chunks(original)
-	var rgba8_srgb := []
-	var rgba8_unorm := []
 	var bc3 := []
 	var bc3_png := []
 	for chunk in chunks:
 		if chunk["tag"] != "TEXR":
-			rgba8_srgb.append(chunk)
-			rgba8_unorm.append(chunk)
 			bc3.append(chunk)
 			bc3_png.append(chunk)
 			continue
@@ -73,8 +62,6 @@ func _initialize() -> void:
 			quit(2)
 			return
 		image.convert(Image.FORMAT_RGBA8)
-		rgba8_srgb.append(_texr(_ktx2_rgba8(image, true)))
-		rgba8_unorm.append(_texr(_ktx2_rgba8(image, false)))
 		image.compress(Image.COMPRESS_S3TC, Image.COMPRESS_SOURCE_GENERIC)
 		if image.get_format() != Image.FORMAT_DXT5:
 			printerr("Image.compress did not give DXT5 (%d)" % image.get_format())
@@ -84,10 +71,7 @@ func _initialize() -> void:
 		image.decompress()
 		image.convert(Image.FORMAT_RGBA8)
 		bc3_png.append(_texr(image.save_png_to_buffer()))
-	var expected := _view(original)
 	_pairs = [
-		["rgba8-srgb", _view(_write_chunks(rgba8_srgb)), expected],
-		["rgba8-unorm", _view(_write_chunks(rgba8_unorm)), expected],
 		["bc3", _view(_write_chunks(bc3)), _view(_write_chunks(bc3_png))],
 	]
 
@@ -194,21 +178,6 @@ func _write_chunks(chunks: Array) -> PackedByteArray:
 		out.resize(offsets[i])
 		out.append_array(chunks[i]["payload"])
 	return out
-
-
-## 圧縮していない RGBA8 の KTX2 (アルファは乗算していない)。
-func _ktx2_rgba8(image: Image, srgb: bool) -> PackedByteArray:
-	var alpha := DF_CHANNEL_ALPHA | (DF_QUALIFIER_LINEAR if srgb else 0)
-	var samples := [
-		_sample(0, 8, DF_CHANNEL_COLOR, 255),
-		_sample(8, 8, DF_CHANNEL_GREEN, 255),
-		_sample(16, 8, DF_CHANNEL_BLUE, 255),
-		_sample(24, 8, alpha, 255),
-	]
-	var transfer := DF_TRANSFER_SRGB if srgb else DF_TRANSFER_LINEAR
-	var dfd := _dfd(DF_MODEL_RGBSDA, transfer, [0, 0, 0, 0], 4, samples)
-	var vk_format := VK_FORMAT_R8G8B8A8_SRGB if srgb else VK_FORMAT_R8G8B8A8_UNORM
-	return _ktx2(vk_format, image, dfd, 4)
 
 
 ## BC3 (DXT5) の KTX2。
