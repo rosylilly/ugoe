@@ -1,11 +1,11 @@
 ---
 id: T0920
 title: 共有 UI (@ugoe/ui) の props の名前と公開の範囲をそろえる
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/ui, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: [T0912]
-assignee:
+assignee: claude-worker-T0920
 ---
 
 # T0920: @ugoe/ui の props の名前と公開の範囲をそろえる
