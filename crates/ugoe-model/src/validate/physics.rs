@@ -1,6 +1,8 @@
 //! 物理の設定の検査。検査項目は `docs/spec/model.md#物理の検証`。
 
-use super::{Refs, ValidationError, check_finite, check_non_negative, collect_ids};
+use super::{
+    Refs, ValidationError, check_finite, check_non_negative, collect_ids, warp_point_count,
+};
 use crate::deformer::DeformerKind;
 use crate::physics::{ColliderShape, PhysicsSettings, PhysicsTarget, VertexOwner};
 use crate::{DeformerId, Model};
@@ -79,9 +81,9 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                                 &mut errors,
                             );
                             match found.map(|d| &model.deformers[d].kind) {
-                                Some(DeformerKind::Warp(warp)) => Some(
-                                    (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1),
-                                ),
+                                Some(DeformerKind::Warp(warp)) => {
+                                    Some(warp_point_count(warp.rows, warp.cols))
+                                }
                                 Some(DeformerKind::Rotation(_)) => {
                                     errors.push(kind_mismatch(&refs, deformer, "warp"));
                                     None

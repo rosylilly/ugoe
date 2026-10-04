@@ -780,7 +780,7 @@ export type KeyformBinding = { parameter: string, keys: Array<number>, };
  * N 本のパラメータ軸の直積格子上に並んだキーフォーム。
  *
  * `keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。
- * 並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。
+ * 並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。
  * 格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。
  *
  * `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす

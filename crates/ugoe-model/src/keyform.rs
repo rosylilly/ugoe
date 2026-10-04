@@ -19,7 +19,7 @@ pub struct KeyformBinding {
 /// N 本のパラメータ軸の直積格子上に並んだキーフォーム。
 ///
 /// `keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。
-/// 並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。
+/// 並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。
 /// 格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。
 ///
 /// `origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす
@@ -76,8 +76,13 @@ impl<T> KeyformGrid<T> {
     }
 
     /// 格子として期待されるキーフォーム数。
+    ///
+    /// 積が `usize` からあふれるとき (壊れたファイルなど) は `usize::MAX` を返す。どの `keyforms` の長さとも一致しない。
     pub fn expected_len(&self) -> usize {
-        self.bindings.iter().map(|b| b.keys.len()).product()
+        self.bindings
+            .iter()
+            .try_fold(1usize, |len, b| len.checked_mul(b.keys.len()))
+            .unwrap_or(usize::MAX)
     }
 
     /// この格子とブレンドシェイプ格子のすべてのキーフォーム (この格子のものが先、次にブレンドシェイプ格子の宣言順)。

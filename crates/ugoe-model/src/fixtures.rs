@@ -1667,6 +1667,10 @@ mod tests {
             physics_hair(),
             blend_shapes(),
             dynamic_hair(),
+            smooth_arc(),
+            physics_relay(),
+            physics_additive(),
+            avatar_profile(),
         ] {
             assert_eq!(
                 crate::validate::validate(&model),
@@ -1693,11 +1697,22 @@ mod tests {
     }
 
     #[test]
-    fn physics_hair_settings_roundtrip_json() {
-        let settings = physics_hair_settings();
-        let json = serde_json::to_string(&settings).unwrap();
-        let back: PhysicsSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(settings, back);
+    fn physics_settings_are_valid_and_roundtrip_json() {
+        for (settings, model) in [
+            (physics_hair_settings(), physics_hair()),
+            (physics_relay_settings(), physics_relay()),
+            (physics_additive_settings(), physics_additive()),
+        ] {
+            assert_eq!(
+                crate::validate::validate_physics(&settings, &model),
+                vec![],
+                "{}",
+                model.meta.name
+            );
+            let json = serde_json::to_string(&settings).unwrap();
+            let back: PhysicsSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(settings, back);
+        }
     }
 
     #[test]

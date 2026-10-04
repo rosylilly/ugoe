@@ -3688,7 +3688,7 @@
       ]
     },
     "KeyformGrid": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -3750,7 +3750,7 @@
       ]
     },
     "KeyformGrid2": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -3812,7 +3812,7 @@
       ]
     },
     "KeyformGrid3": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -3874,7 +3874,7 @@
       ]
     },
     "KeyformGrid4": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
       "type": "object",
       "properties": {
         "bindings": {
@@ -3936,7 +3936,7 @@
       ]
     },
     "KeyformGrid5": {
-      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 行優先 (column-major 的) 順。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
+      "description": "N 本のパラメータ軸の直積格子上に並んだキーフォーム。\n\n`keyforms.len() == bindings.iter().map(|b| b.keys.len()).product()` (軸 0 本なら 1)。\n並びは **軸 0 が最も速く変化する** 順 (列優先、column-major)。\n格子座標 `(i0, i1, ..)` の線形インデックスは `i0 + n0 * (i1 + n1 * (i2 + ..))`。\n\n`origins`・`inference`・`mirror_source` はオーサリング用のデータで、ランタイムは読み飛ばす\n(`docs/spec/keyform-inference.md`)。\n\n`blend_shapes` はブレンドシェイプ格子の列で、この格子の補間結果に差分を加算する\n(`docs/spec/evaluation.md#6-ブレンドシェイプ`)。",
       "type": "object",
       "properties": {
         "bindings": {

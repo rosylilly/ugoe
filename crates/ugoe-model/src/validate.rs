@@ -249,7 +249,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         if let Some(parent) = &part.parent {
             refs.check(&parts, "parent", "part", parent, &mut errors);
         }
-        let exists = |id: &str| parts.keys().any(|p| p.as_str() == id);
+        let exists = |id: &str| parts.contains_key(&crate::PartId::new(id));
         check_grid(&refs, &params, &exists, &part.keyforms, &mut errors);
         let kinds = Kinds::new(&params, &model.parameters, false);
         check_blend_shapes(&refs, &kinds, &exists, &part.keyforms, &mut errors);
@@ -275,13 +275,13 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
         }
         let path = format!("deformers[{id}]");
         check_mirror_axis(&path, deformer.mirror_axis, &mut errors);
-        let exists = |id: &str| deformers.keys().any(|d| d.as_str() == id);
+        let exists = |id: &str| deformers.contains_key(&crate::DeformerId::new(id));
         match &deformer.kind {
             DeformerKind::Warp(warp) => {
                 check_grid(&refs, &params, &exists, &warp.keyforms, &mut errors);
                 let kinds = Kinds::new(&params, &model.parameters, true);
                 check_blend_shapes(&refs, &kinds, &exists, &warp.keyforms, &mut errors);
-                let expected = (usize::from(warp.rows) + 1) * (usize::from(warp.cols) + 1);
+                let expected = warp_point_count(warp.rows, warp.cols);
                 check_depth(&refs, &path, warp.depth.as_deref(), expected, &mut errors);
                 if warp.rows == 0 || warp.cols == 0 {
                     errors.push(ValidationError::EmptyWarpGrid {
@@ -346,7 +346,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
                 textures: model.textures.len(),
             });
         }
-        let exists = |id: &str| meshes.keys().any(|m| m.as_str() == id);
+        let exists = |id: &str| meshes.contains_key(&crate::MeshId::new(id));
         check_grid(&refs, &params, &exists, &mesh.keyforms, &mut errors);
         let kinds = Kinds::new(&params, &model.parameters, true);
         check_blend_shapes(&refs, &kinds, &exists, &mesh.keyforms, &mut errors);
@@ -643,11 +643,12 @@ fn check_grid<T>(
                 parameter: binding.parameter.to_string(),
             });
         }
-        // NaN を含む比較 (`partial_cmp` が `None`) も不正とする。
-        if binding
-            .keys
-            .windows(2)
-            .any(|w| w[0].partial_cmp(&w[1]) != Some(Ordering::Less))
+        // NaN を含む比較 (`partial_cmp` が `None`) も不正とする。キーが 1 つの軸の NaN は比較では見つからないので別に見る。
+        if binding.keys.iter().any(|k| k.is_nan())
+            || binding
+                .keys
+                .windows(2)
+                .any(|w| w[0].partial_cmp(&w[1]) != Some(Ordering::Less))
         {
             errors.push(ValidationError::KeysNotAscending {
                 kind: refs.kind,
@@ -803,6 +804,12 @@ fn check_blend_shapes<T>(
         }
         earlier.extend(shape.bindings.iter().map(|b| &b.parameter));
     }
+}
+
+/// ワープの制御点数 `(rows+1)*(cols+1)`。32 ビットの `usize` (wasm32) であふれるときは `usize::MAX`
+/// (どの長さとも一致しない)。
+fn warp_point_count(rows: u16, cols: u16) -> usize {
+    (usize::from(rows) + 1).saturating_mul(usize::from(cols) + 1)
 }
 
 /// エラーメッセージの値の場所に使う、要素の種類の配列名。
@@ -1219,6 +1226,56 @@ mod tests {
                 "{errors:?}"
             );
         }
+    }
+
+    /// キーが 1 つだけの軸でも NaN を拒む (比較する隣のキーがない)。
+    #[test]
+    fn single_nan_key_is_rejected() {
+        let mut model = single_quad();
+        let keyforms = &mut model.meshes[0].keyforms;
+        keyforms.bindings[0].keys = vec![f32::NAN];
+        keyforms.keyforms.truncate(1);
+        let errors = validate(&model);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ValidationError::KeysNotAscending { kind: "mesh", id, parameter, .. }]
+                    if id == "Quad" && parameter == "X"
+            ),
+            "{errors:?}"
+        );
+    }
+
+    /// 軸のキー数の積があふれる格子 (壊れた・悪意のあるファイル) でも止まらず、キーフォーム数の不一致として報告する。
+    #[test]
+    fn keyform_count_overflow_is_reported() {
+        let mut model = single_quad();
+        let ids: Vec<String> = (0..usize::BITS).map(|i| format!("P{i}")).collect();
+        for id in &ids {
+            model.parameters.push(Parameter {
+                id: id.as_str().into(),
+                name: id.clone(),
+                ..model.parameters[0].clone()
+            });
+        }
+        let keyforms = &mut model.meshes[0].keyforms;
+        keyforms.bindings = ids
+            .iter()
+            .map(|id| KeyformBinding {
+                parameter: id.as_str().into(),
+                keys: vec![0.0, 1.0],
+            })
+            .collect();
+        keyforms.keyforms.clear();
+        assert_eq!(
+            validate(&model),
+            vec![ValidationError::KeyformCount {
+                kind: "mesh",
+                id: "Quad".into(),
+                expected: usize::MAX,
+                actual: 0,
+            }]
+        );
     }
 
     #[test]

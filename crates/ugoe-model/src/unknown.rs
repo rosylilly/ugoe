@@ -16,7 +16,7 @@ use crate::parameter::ParameterKind;
 use crate::physics::{ColliderShape, PhysicsBlend, PhysicsSettings, PhysicsSource, PhysicsTarget};
 use crate::{Model, Module};
 
-/// モデルの中の未知の値の場所をすべて返す。
+/// モデルの中の未知の値の場所をすべて返す (キーフォームの `origins` は格子ごとに最初の 1 つだけ)。
 pub fn in_model(model: &Model) -> Vec<String> {
     let mut found = Vec::new();
     for parameter in &model.parameters {
@@ -158,6 +158,7 @@ pub fn in_expression(expression: &Expression) -> Vec<String> {
         .collect()
 }
 
+/// 格子 (とブレンドシェイプ格子) の未知の値。`origins` の未知の由来は、セルの数だけ並ばないよう最初の 1 つだけを返す。
 fn check_grid<T>(path: &str, grid: &KeyformGrid<T>, found: &mut Vec<String>) {
     if let Some(index) = grid
         .origins

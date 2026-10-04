@@ -1,6 +1,6 @@
 [package]
 name = "ugoe-core"
-description = "ugoe 共通基盤: 数学型・ID・色・エラー"
+description = "ugoe 共通基盤: 数学型・ID・色"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,7 +23,6 @@ ts = ["dep:ts-rs"]
 glam.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
-thiserror.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [lints]
