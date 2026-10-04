@@ -10,6 +10,7 @@ export class WebPuppet {
   add_expression(name: string): void;
   attach_module(name: string): void;
   attached_modules(): string[];
+  avatar_slots_json(): string;
   backend(): string;
   base_physics_json(): string | undefined;
   canvas_size(): Float32Array;

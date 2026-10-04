@@ -41,8 +41,10 @@ export interface UgoeParameterDefinition {
 
 type ModelData = ArrayBuffer | Uint8Array | string;
 
-/** GPU を失ったときに作り直す回数の上限 (作り直してもすぐ失うときに止めるため)。 */
+/** GPU を失ったときに続けて作り直す回数の上限 (作り直してもすぐ失うときに止めるため)。 */
 const MAX_RESTARTS = 3;
+/** 前の作り直しからこれ (ミリ秒) より後に失ったら、続けて失ったとは数えない (スリープからの復帰などで時々失うため)。 */
+const RESTART_WINDOW_MS = 60_000;
 /** 1 フレームで進める時間の上限 (秒)。タブが裏にあった後などに物理が飛ばないようにする。 */
 const MAX_DT = 0.1;
 
@@ -55,6 +57,11 @@ canvas { display: block; width: 100%; height: 100%; }
 // Node (SSR) で import しても落ちないように、HTMLElement が無ければ空のクラスを継承する。
 const BaseElement: typeof HTMLElement =
   globalThis.HTMLElement ?? (class {} as unknown as typeof HTMLElement);
+
+interface LoadWaiter {
+  resolve(warnings: string[]): void;
+  reject(error: unknown): void;
+}
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -100,8 +107,14 @@ export class UgoeAvatarElement extends BaseElement {
   #session = 0;
   /** `src` の取得のたびに増やす。古い取得の結果を捨てるため。 */
   #fetch = 0;
-  /** 最後に読み込んだ (または読み込みを待っている) モデル。作り直したときに読み直す。 */
+  /** `src` を取得している (切断しても続ける。繋ぎ直したら、古いモデルではなく取得の結果を読む)。 */
+  #fetching = false;
+  /** 最後に読み込めたモデル。作り直したときに読み直す (読み込めなかったものは覚えない)。 */
   #model: ModelData | null = null;
+  /** `WebPuppet` ができたら読み込むモデル (`load` か `src` の取得が、作成の前や作り直しの途中に終わった)。 */
+  #pendingModel: ModelData | null = null;
+  /** `WebPuppet` ができる前に呼ばれた `load` の結果を待つもの。 */
+  #loadWaiters: LoadWaiter[] = [];
   #warnings: string[] = [];
   /** 作り直す前のパラメータの値。作り直した後の読み込みで戻す (`backend` の変更・GPU を失ったとき)。 */
   #carry: Record<string, number> | null = null;
@@ -112,6 +125,10 @@ export class UgoeAvatarElement extends BaseElement {
   #needsRender = false;
   #visible = true;
   #restarts = 0;
+  /** 最後に作り直した時刻 (`performance.now()`)。 */
+  #restartedAt: number | null = null;
+  /** WebGL2 のコンテキストを失って、復元を待っている (wgpu は WebGL2 の喪失を `is_lost` で知らせないため、canvas のイベントで知る)。 */
+  #contextLost = false;
   /** 最後に渡されたトラッキングの入力。モデルを読み直したら渡し直す。 */
   #tracking: TrackingInput | null = null;
   /** トラッキングの入力を渡してから、まだ `update` していない (`paused` の間も反映するため)。 */
@@ -246,14 +263,15 @@ export class UgoeAvatarElement extends BaseElement {
 
   /**
    * モデルを読み込む (`src` 属性の代わりに、バイト列や JSON の文字列を渡す)。戻り値は警告の文。
-   * 接続前に呼ぶと、`WebPuppet` ができてから読み込む。
+   * 接続前に呼ぶと、`WebPuppet` ができてから読み込む (作成や読み込みに失敗したら reject する。
+   * その前に `src` を変えると `AbortError` で reject する)。読み込めなかったモデルは、作り直したときにも読み直さない。
    */
   async load(data: ModelData): Promise<string[]> {
     this.#fetch++; // 取得中の `src` があっても、こちらを優先する
-    this.#model = data;
-    if (this.#puppet) return this.#applyModelOrThrow();
-    await this.ready;
-    return this.#warnings;
+    this.#fetching = false;
+    if (this.#puppet) return this.#applyModelOrThrow(data);
+    this.#pendingModel = data;
+    return new Promise((resolve, reject) => this.#loadWaiters.push({ resolve, reject }));
   }
 
   /** 次のフレームで描き直す (`puppet` を直接操作したとき用)。 */
@@ -311,7 +329,10 @@ export class UgoeAvatarElement extends BaseElement {
     try {
       puppet = await this.#create(session);
     } catch (e) {
-      if (session === this.#session) this.#dispatchError(e);
+      if (session === this.#session) {
+        this.#rejectLoads(e);
+        this.#dispatchError(e);
+      }
       return;
     }
     if (session !== this.#session) {
@@ -324,9 +345,17 @@ export class UgoeAvatarElement extends BaseElement {
     const [w, h] = this.#size;
     if (w > 0 && h > 0) puppet.resize(w, h);
     this.#ready.resolve(puppet);
-    if (this.#model !== null) {
-      this.#guard(() => this.#applyModelOrThrow());
-    } else if (this.src) {
+    const model = this.#pendingModel ?? this.#model;
+    this.#pendingModel = null;
+    if (model !== null) {
+      try {
+        this.#resolveLoads(this.#applyModelOrThrow(model));
+      } catch (e) {
+        // `load` で渡したモデルなら、その Promise で知らせる
+        if (this.#loadWaiters.length > 0) this.#rejectLoads(e);
+        else this.#dispatchError(e);
+      }
+    } else if (this.src && !this.#fetching) {
       void this.#fetchSrc();
     }
     this.requestRender();
@@ -353,6 +382,19 @@ export class UgoeAvatarElement extends BaseElement {
     canvas.height = Math.max(1, h);
     this.#root.append(canvas);
     this.#canvas = canvas;
+    this.#contextLost = false;
+    canvas.addEventListener("webglcontextlost", (e) => {
+      if (canvas !== this.#canvas) return;
+      // 既定の動作 (復元しない) を止めて、復元を待つ。失ったコンテキストには描かない
+      e.preventDefault();
+      this.#contextLost = true;
+      if (this.#frame) cancelAnimationFrame(this.#frame);
+      this.#frame = 0;
+    });
+    canvas.addEventListener("webglcontextrestored", () => {
+      // wgpu の資源は戻らないので、新しい canvas で作り直す
+      if (canvas === this.#canvas) this.#restart();
+    });
     this.#resizeObserver?.disconnect();
     this.#resizeObserver?.observe(canvas);
     return canvas;
@@ -389,7 +431,6 @@ export class UgoeAvatarElement extends BaseElement {
 
   #stop(): void {
     this.#session++;
-    this.#fetch++;
     if (this.#frame) cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     this.#last = null;
@@ -413,6 +454,10 @@ export class UgoeAvatarElement extends BaseElement {
 
   /** GPU を失ったので作り直す。 */
   #restart(): void {
+    const now = performance.now();
+    if (this.#restartedAt !== null && now - this.#restartedAt > RESTART_WINDOW_MS)
+      this.#restarts = 0;
+    this.#restartedAt = now;
     if (this.#restarts >= MAX_RESTARTS) {
       this.#stop();
       this.#dispatchError(new Error("the GPU device was lost repeatedly"));
@@ -426,13 +471,18 @@ export class UgoeAvatarElement extends BaseElement {
 
   async #fetchSrc(): Promise<void> {
     const token = ++this.#fetch;
+    // 作成を待っている `load` は、こちらで置き換わる
+    this.#rejectLoads(new DOMException("the load was superseded by src", "AbortError"));
     const src = this.src;
     if (!src) {
+      this.#fetching = false;
       this.#model = null;
+      this.#pendingModel = null;
       this.#puppet?.unload();
       this.requestRender();
       return;
     }
+    this.#fetching = true;
     try {
       const response = await fetch(new URL(src, document.baseURI));
       if (!response.ok) {
@@ -440,18 +490,21 @@ export class UgoeAvatarElement extends BaseElement {
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (token !== this.#fetch) return;
-      this.#model = bytes;
-      if (this.#puppet) this.#applyModelOrThrow();
+      if (this.#puppet) this.#applyModelOrThrow(bytes);
+      else this.#pendingModel = bytes;
     } catch (e) {
       if (token === this.#fetch) this.#dispatchError(e);
+    } finally {
+      if (token === this.#fetch) this.#fetching = false;
     }
   }
 
-  /** `#model` を読み込み、属性の状態 (パラメータ・表情・モーション) を適用して `load` を送る。 */
-  #applyModelOrThrow(): string[] {
+  /** `model` を読み込み、属性の状態 (パラメータ・表情・モーション) を適用して `load` を送る。 */
+  #applyModelOrThrow(model: ModelData): string[] {
     const puppet = this.#puppet;
-    if (!puppet || this.#model === null) return [];
-    const warnings = loadModel(puppet, this.#model);
+    if (!puppet) return [];
+    const warnings = loadModel(puppet, model);
+    this.#model = model;
     this.#warnings = warnings;
     puppet.fit();
     this.#applyParameters();
@@ -468,6 +521,20 @@ export class UgoeAvatarElement extends BaseElement {
       }),
     );
     return warnings;
+  }
+
+  /** 作成を待っている `load` を、読み込みの警告で終える。 */
+  #resolveLoads(warnings: string[]): void {
+    const waiters = this.#loadWaiters;
+    this.#loadWaiters = [];
+    for (const w of waiters) w.resolve(warnings);
+  }
+
+  /** 作成を待っている `load` を、例外で終える。 */
+  #rejectLoads(error: unknown): void {
+    const waiters = this.#loadWaiters;
+    this.#loadWaiters = [];
+    for (const w of waiters) w.reject(error);
   }
 
   #applyParameters(): void {
@@ -523,7 +590,7 @@ export class UgoeAvatarElement extends BaseElement {
   }
 
   #schedule(): void {
-    if (this.#frame || !this.#puppet) return;
+    if (this.#frame || !this.#puppet || this.#contextLost) return;
     if (!this.#needsRender && !this.#animating()) return;
     this.#frame = requestAnimationFrame((now) => this.#tick(now));
   }
@@ -580,9 +647,11 @@ export class UgoeAvatarElement extends BaseElement {
 /**
  * `<ugoe-avatar>` を登録する (登録済みなら何もしない)。別の名前でも登録できる
  * (1 つのクラスは 1 つの名前にしか登録できないので、そのときは派生クラスを登録する)。
+ * `customElements` が無い環境 (サーバーでの描画) では何もしない。
  */
 export function defineUgoeAvatar(name = "ugoe-avatar"): void {
-  if (customElements.get(name)) return;
+  // DOM の無い環境 (SSR) では何もしない
+  if (typeof customElements === "undefined" || customElements.get(name)) return;
   customElements.define(
     name,
     name === "ugoe-avatar" ? UgoeAvatarElement : class extends UgoeAvatarElement {},

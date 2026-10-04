@@ -47,6 +47,18 @@ function smoothingFactor(cutoff: number, dt: number): number {
   return 1 / (1 + tau / dt);
 }
 
+/** 設定の省略した値と `undefined` の値を既定値にする (`{ ...defaults, ...options }` では `undefined` が既定値を消す)。 */
+function withDefaults(
+  defaults: Required<OneEuroOptions>,
+  options: OneEuroOptions | undefined,
+): Required<OneEuroOptions> {
+  return {
+    minCutoff: options?.minCutoff ?? defaults.minCutoff,
+    beta: options?.beta ?? defaults.beta,
+    derivativeCutoff: options?.derivativeCutoff ?? defaults.derivativeCutoff,
+  };
+}
+
 /** 1 つの値の One Euro フィルタ。 */
 class OneEuro {
   readonly #options: Required<OneEuroOptions>;
@@ -92,8 +104,8 @@ export class TrackingFilter {
   #lastTime: number | null = null;
 
   constructor(options: TrackingFilterOptions = {}) {
-    this.#rotation = { ...ROTATION_DEFAULTS, ...options.rotation };
-    this.#blendshapes = { ...BLENDSHAPE_DEFAULTS, ...options.blendshapes };
+    this.#rotation = withDefaults(ROTATION_DEFAULTS, options.rotation);
+    this.#blendshapes = withDefaults(BLENDSHAPE_DEFAULTS, options.blendshapes);
   }
 
   /** すべての値のフィルタを忘れる (顔を見失ったとき・トラッキングをやめたとき)。 */

@@ -35,6 +35,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "happy-dom": "^20.14.5",
     "typescript": "^6.0.3",
     "vitest": "^5.0.2"
   }

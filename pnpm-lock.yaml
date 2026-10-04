@@ -340,6 +340,9 @@ importers:
 
   bindings/web:
     devDependencies:
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

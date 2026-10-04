@@ -55,8 +55,11 @@ avatar.clearTracking();
 
 - 大きさは要素の CSS の大きさ (既定 300x300) × `devicePixelRatio` です。背景は透明なので、要素の `background` がそのまま見えます。
 - 画面外にあるとき (IntersectionObserver) と `paused` の間は `requestAnimationFrame` を回しません。
-- GPU を失ったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直してモデルを読み直します (パラメータの値は引き継ぐ。3 回まで)。
-- ページから外すと GPU の資源を捨て、戻すと作り直します。
+- GPU を失ったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直してモデルを読み直します (パラメータの値は引き継ぐ)。
+  WebGL2 では、canvas の `webglcontextlost` で描くのを止め、`webglcontextrestored` を待ってから作り直します
+  (wgpu は WebGL2 の喪失を `puppet.is_lost()` で知らせないため)。前の作り直しから 1 分以内に失うことが続き、4 回目になったら、作り直さずに `error` を送ります。
+- ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
+- 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
 - 別の名前で登録するなら、`@ugoe/runtime/element` の代わりに `defineUgoeAvatar("my-avatar")` を呼びます。
 
 ## フェイストラッキング
@@ -370,9 +373,10 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 | --- | --- |
 | `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み)・`tsc`・`dist/` への出力 |
 | `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される) |
-| `pnpm --filter @ugoe/runtime test` | 属性の解釈などの単体テスト (Vitest) |
+| `pnpm --filter @ugoe/runtime test` | 属性の解釈・トラッキングの変換と平滑化・`<ugoe-avatar>` の作成と読み込みの順序 (happy-dom と `WebPuppet` の偽物)・スタブの型のずれの単体テスト (Vitest) |
 
 - `crates/ugoe-wasm` の公開 API を変えたら、`stub/ugoe_wasm.d.ts` を生成物 (`src/wasm/ugoe_wasm.d.ts`) から作り直します。
+  メソッドと関数の名前がクレートとずれていると、単体テスト (`stub/ugoe_wasm.test.mjs`) が失敗します。
 - このパッケージは MIT です。`apps/`・`packages/` (GPL-3.0-only) のコードを import したり写したりしないでください ([ADR 0025](../../docs/adr/0025-web-runtime-package.md))。
 - 構成: `src/index.ts` (入口)・`src/runtime.ts` (初期化・作成・読み込み)・`src/avatar.ts` (`<ugoe-avatar>`)・
   `src/element.ts` (登録するだけの入口)・`src/attributes.ts` (属性の解釈。DOM と wasm に触れない)。

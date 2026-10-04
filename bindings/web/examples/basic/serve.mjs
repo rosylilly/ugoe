@@ -32,10 +32,12 @@ function resolveIn(base, path) {
 
 createServer((req, res) => {
   const { pathname } = new URL(req.url ?? "/", "http://localhost");
-  let file = pathname.startsWith("/samples/")
-    ? resolveIn(samples, pathname.slice("/samples/".length))
-    : resolveIn(here, pathname === "/" ? "index.html" : pathname.slice(1));
+  let file = null;
   try {
+    // 壊れた `%` の並び (`decodeURIComponent` が投げる) でサーバーを落とさない
+    file = pathname.startsWith("/samples/")
+      ? resolveIn(samples, pathname.slice("/samples/".length))
+      : resolveIn(here, pathname === "/" ? "index.html" : pathname.slice(1));
     if (file && statSync(file).isDirectory()) file = join(file, "index.html");
     if (!file || !statSync(file).isFile()) throw new Error("not a file");
   } catch {

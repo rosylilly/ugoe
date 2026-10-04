@@ -126,3 +126,13 @@ describe("calibration", () => {
     expect(withNeutral.body?.shoulderRight).toBeCloseTo(0.1);
   });
 });
+
+describe("TrackingFilter options", () => {
+  it("uses the defaults for options given as undefined", () => {
+    const filter = new TrackingFilter({ rotation: { minCutoff: undefined, beta: undefined } });
+    filter.apply(input(0, 0), 0);
+    const out = filter.apply(input(10, 0), 16);
+    expect(Number.isFinite(out.head.yaw)).toBe(true);
+    expect(out.head.yaw).toBeGreaterThan(0);
+  });
+});
