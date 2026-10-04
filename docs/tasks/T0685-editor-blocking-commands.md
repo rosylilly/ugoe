@@ -1,11 +1,11 @@
 ---
 id: T0685
 title: "エディタ: 重い同期コマンドをメインのスレッドの外へ"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0669]
-assignee:
+assignee: claude-worker-T0685
 ---
 
 # T0685: エディタ: 重い同期コマンドをメインのスレッドの外へ
