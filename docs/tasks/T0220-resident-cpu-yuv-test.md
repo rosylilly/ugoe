@@ -1,11 +1,11 @@
 ---
 id: T0220
 title: 常駐の描画: 計算シェーダの無いアダプタでの YUV の読み戻しをテストする
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-headless, docs]
 depends_on: [T0212]
-assignee:
+assignee: claude-worker-T0220
 ---
 
 # T0220: 常駐の描画: 計算シェーダの無いアダプタでの YUV の読み戻しをテストする

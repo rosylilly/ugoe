@@ -1,11 +1,11 @@
 ---
 id: T0219
 title: ugoe render と render_png: 大きさ・時間・ファイルの上限を文書とスキーマに揃える
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, ugoe-mcp, docs]
 depends_on: [T0212]
-assignee:
+assignee: claude-worker-T0219
 ---
 
 # T0219: ugoe render と render_png: 大きさ・時間・ファイルの上限を文書とスキーマに揃える

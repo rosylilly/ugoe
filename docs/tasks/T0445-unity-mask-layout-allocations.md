@@ -1,11 +1,11 @@
 ---
 id: T0445
 title: Unity: マスクのページの配置と描画で毎フレーム確保しない
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, docs]
 depends_on: [T0426]
-assignee:
+assignee: claude-worker-T0445
 ---
 
 # T0445: Unity: マスクの配置の確保を減らす
