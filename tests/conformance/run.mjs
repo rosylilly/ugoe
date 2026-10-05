@@ -9,7 +9,7 @@
 // 2. C ABI: tests/conformance/c/runner.c を libugoe_ffi.a にリンクして実行し、評価の結果を比べる
 // 3. wasm: npm パッケージ (bindings/web/dist) をヘッドレスの Chrome の WebGL2 (wasm) と WebGPU (wasm-webgpu) で動かし、
 //    評価の結果と画像を比べる。avatar: 同じパッケージの `<ugoe-avatar>` を WebGL2 で動かし、作成・切り離しと再接続・
-//    `backend` の変更・コンテキストの喪失からの作り直しのシナリオを確かめる (web/avatar.js。参照とは比べない)。
+//    `backend` の変更・コンテキストの喪失からの作り直し (復元の時間切れと諦めも) のシナリオを確かめる (web/avatar.js。参照とは比べない)。
 //    queries: 同じパッケージの `*_json()` の出力のキーを、パッケージの型のキーの一覧と比べる (web/queries.js。参照とは比べない)
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
 // 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
@@ -447,6 +447,10 @@ async function runWeb(dist, binding, backend, page) {
     ...(backend === "webgpu"
       ? ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"]
       : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
+    // Chrome は生きている WebGL のコンテキストを 16 までにし、超えると古いものから失わせる。<ugoe-avatar> の作り直しを繰り返す
+    // シナリオでは捨てた canvas のコンテキストも GC されるまで数に入り、今のコンテキストが失われることがあるので上げる
+    // (packages/player/browser-test と同じ。T0938・T0479)
+    "--max-active-webgl-contexts=256",
     ...(process.env.CI ? ["--no-sandbox"] : []),
     `http://127.0.0.1:${port}/${page}?backend=${backend}`,
   ];

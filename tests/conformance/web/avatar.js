@@ -1,7 +1,8 @@
 // 適合テストの `<ugoe-avatar>` (npm パッケージ @ugoe/runtime の要素) の実行器 (tests/conformance/README.md、T0440)。
 //
 // run.mjs のサーバーが配るページで動く。本物の wasm とヘッドレスの Chrome の WebGL2 (SwiftShader) で、要素の作成・読み込み・
-// 切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直しを、シナリオごとに確かめる。
+// 切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直し (復元の時間切れ・作れないときの試し直しと
+// 諦め) を、シナリオごとに確かめる。
 // 順序は bindings/web/src/avatar.test.ts が偽物で確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
 // - パッケージは /pkg/ (bindings/web/dist)、モデルは /samples/<名前> (assets/samples。`?delay=ミリ秒` で応答を遅らせる)。
@@ -17,14 +18,25 @@ const MODEL_A = "/samples/avatar.ugoe";
 const MODEL_B = "/samples/dress-up/dress-up.ugoe";
 /** 1 つの待ち (読み込み・作り直し) の上限 (ミリ秒)。SwiftShader の作成と読み込みは数秒かかることがある。 */
 const WAIT_MS = 30_000;
+/** 要素が WebGL2 の復元を待つ時間 (bindings/web/src/avatar.ts の `RESTORE_TIMEOUT_MS`。作れなかった作り直しを試し直すまでも同じ)。 */
+const RESTORE_TIMEOUT_MS = 5_000;
 
 // --- 生きている WebPuppet を数える ---
 
 const live = new Set();
 /** 作成中の `WebPuppet.create` の数。 */
 let creating = 0;
+/**
+ * 0 より大きければ、`WebPuppet.create` の前に canvas の WebGL2 のコンテキストを失わせる (1 回ごとに 1 減らす)。本物の wasm が
+ * `CreateError` (`context_unavailable`) で失敗する (T0475)。GPU が戻らずに作り直しで作れない場面の代わり。
+ */
+let loseContextsBeforeCreate = 0;
 const create = WebPuppet.create;
 WebPuppet.create = async function (...args) {
+  if (loseContextsBeforeCreate > 0) {
+    loseContextsBeforeCreate--;
+    loseContextOf(args[0]);
+  }
   creating++;
   try {
     const puppet = await create.apply(this, args);
@@ -66,6 +78,15 @@ function frames(n = 3) {
   });
 }
 
+/** `condition()` が真になるまで待つ (`WAIT_MS` を過ぎたら失敗)。 */
+async function until(condition, what) {
+  const deadline = performance.now() + WAIT_MS;
+  while (!condition()) {
+    if (performance.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await sleep(20);
+  }
+}
+
 /** 要素が `type` を送るまで待つ (`error` を先に送ったらその理由で失敗)。 */
 function once(el, type, what = type) {
   return new Promise((resolve, reject) => {
@@ -105,6 +126,32 @@ function avatar(attributes) {
   const el = document.createElement("ugoe-avatar");
   for (const [k, v] of Object.entries(attributes)) el.setAttribute(k, v);
   return el;
+}
+
+/** canvas の WebGL2 のコンテキストを失わせる (`WEBGL_lose_context`)。復元させるための拡張を返す。 */
+function loseContextOf(canvas) {
+  // 2 回目の getContext は設定によらず同じコンテキストを返す
+  const gl = canvas.getContext("webgl2", { antialias: false });
+  check(gl !== null, "the canvas has no WebGL2 context");
+  const ext = gl.getExtension("WEBGL_lose_context");
+  check(ext !== null, "WEBGL_lose_context is not available");
+  ext.loseContext();
+  check(gl.isContextLost(), "the context is not lost");
+  return ext;
+}
+
+/** 要素の `error` と `gpulost` を数える (`stop()` で聞くのをやめる)。 */
+function recordEvents(el) {
+  const log = { errors: [], gpulost: 0 };
+  const onError = (e) => log.errors.push(e.detail.error);
+  const onLost = () => log.gpulost++;
+  el.addEventListener("error", onError);
+  el.addEventListener("gpulost", onLost);
+  log.stop = () => {
+    el.removeEventListener("error", onError);
+    el.removeEventListener("gpulost", onLost);
+  };
+  return log;
 }
 
 function canvasOf(el) {
@@ -256,6 +303,146 @@ const scenarios = {
       await expectLive(1, `round ${round}: after restoring`);
     }
 
+    el.remove();
+    await expectLive(0, "after removing");
+  },
+
+  /**
+   * WebGL2 のコンテキストを失って復元が届かなければ、`gpulost` を送って待ち、`RESTORE_TIMEOUT_MS` の後に新しい canvas で
+   * 作り直して、モデルとパラメータの値を戻して描く (T0938)。
+   */
+  async "context-loss-timeout"() {
+    const el = avatar({ backend: "webgl2", src: MODEL_A });
+    const loaded = once(el, "load");
+    document.body.append(el);
+    await loaded;
+    const [id, value] = pickParameter(el);
+    check(el.setParameter(id, value), `setParameter(${id}) failed`);
+    await expectDrawn(el, "before losing the context");
+    const old = canvasOf(el);
+    const oldPuppet = el.puppet;
+    const oldReady = el.ready;
+    check(!el.waitingForGpu, "waitingForGpu before losing the context");
+    const events = recordEvents(el);
+    const lost = once(el, "gpulost");
+    const lostAt = performance.now();
+    loseContextOf(old);
+    await lost;
+    check(el.waitingForGpu, "waitingForGpu is false after gpulost");
+    const ready = el.ready;
+    check(ready !== oldReady, "ready was not replaced after gpulost");
+
+    // 復元させない。時間切れまでは作り直さず、`error` も送らない
+    const reloaded = once(el, "load", "the recreation after the restore timeout");
+    await sleep(RESTORE_TIMEOUT_MS / 2);
+    check(el.puppet === oldPuppet, "recreated before the restore timeout");
+    check(canvasOf(el) === old, "the canvas was replaced before the restore timeout");
+    check(el.waitingForGpu, "stopped waiting before the restore timeout");
+    await reloaded;
+    const waited = performance.now() - lostAt;
+    await log(`context-loss-timeout: recreated ${waited.toFixed(0)} ms after the loss`);
+    check(waited >= RESTORE_TIMEOUT_MS - 100, `recreated ${waited.toFixed(0)} ms after the loss`);
+    events.stop();
+    check(!el.waitingForGpu, "still waitingForGpu after the recreation");
+    check(events.gpulost === 1, `gpulost was sent ${events.gpulost} times`);
+    check(events.errors.length === 0, `error: ${events.errors.map((e) => e.message).join("; ")}`);
+    check((await ready) === el.puppet, "ready does not resolve to the recreated puppet");
+    const canvas = canvasOf(el);
+    check(canvas !== old, "the canvas was not replaced");
+    check(!old.isConnected, "the old canvas is still in the shadow root");
+    check(el.puppet !== oldPuppet && !el.puppet.is_lost(), "the puppet was not recreated");
+    check(signature(el) === signatures.a, "a different model after the recreation");
+    const got = el.getParameter(id);
+    check(Math.abs(got - value) < 1e-6, `${id} is ${got} after the recreation, expected ${value}`);
+    await expectDrawn(el, "after the recreation");
+    await expectLive(1, "after the recreation");
+    el.remove();
+    await expectLive(0, "after removing");
+  },
+
+  /**
+   * 作り直しで作れなければ (GPU が戻らない)、`RESTORE_TIMEOUT_MS` ごとに試し直し、試し直しも作り直しの回数に数える。
+   * 上限 (bindings/web/src/avatar.ts の `MAX_RESTARTS` = 3 回) で諦めて `error` を送り、`ready` を reject する。`restart()` で作り直して描く (T0938)。
+   * 作れないことは、作成の前に新しい canvas のコンテキストを失わせて起こす (本物の wasm の `CreateError`。T0475)。
+   */
+  async "gpu-lost-repeatedly"() {
+    const el = avatar({ backend: "webgl2", src: MODEL_A });
+    const loaded = once(el, "load");
+    document.body.append(el);
+    await loaded;
+    const [id, value] = pickParameter(el);
+    check(el.setParameter(id, value), `setParameter(${id}) failed`);
+    const events = recordEvents(el);
+
+    // 1 回目の喪失: 復元は届くが作り直し (1 回目) で作れず、待って試し直し (2 回目) で作る
+    loseContextsBeforeCreate = 1;
+    const retried = once(el, "load", "the reload after retrying");
+    let lost = once(el, "gpulost");
+    let ext = loseContextOf(canvasOf(el));
+    await lost;
+    // `gpulost` は `webglcontextlost` の処理の中で送られるので、その処理が終わってから戻す (でなければ Chrome は復元を許さない)
+    await frames(2);
+    let restoredAt = performance.now();
+    ext.restoreContext();
+    await until(() => loseContextsBeforeCreate === 0 && creating === 0, "the failed recreation");
+    check(el.puppet === null, "a puppet remains after the failed recreation");
+    check(el.waitingForGpu, "not waitingForGpu after the failed recreation");
+    check(events.errors.length === 0, "error after the failed recreation");
+    await retried;
+    let waited = performance.now() - restoredAt;
+    await log(`gpu-lost-repeatedly: retried ${waited.toFixed(0)} ms after the restore`);
+    check(waited >= RESTORE_TIMEOUT_MS - 100, `retried ${waited.toFixed(0)} ms after the restore`);
+    check(!el.waitingForGpu, "still waitingForGpu after the retry");
+    check(events.gpulost === 1, `gpulost was sent ${events.gpulost} times`);
+    check(events.errors.length === 0, `error: ${events.errors.map((e) => e.message).join("; ")}`);
+    check(signature(el) === signatures.a, "a different model after the retry");
+    await expectDrawn(el, "after the retry");
+    await expectLive(1, "after the retry");
+
+    // 2 回目の喪失: 作り直し (3 回目 = 上限) で作れず、試し直す時に上限を超えるので諦める
+    loseContextsBeforeCreate = 1;
+    const failed = once(el, "error");
+    lost = once(el, "gpulost");
+    ext = loseContextOf(canvasOf(el));
+    await lost;
+    await frames(2);
+    const waiting = el.ready;
+    let rejected = null;
+    waiting.catch((e) => {
+      rejected = e;
+    });
+    restoredAt = performance.now();
+    ext.restoreContext();
+    const error = (await failed).detail.error;
+    waited = performance.now() - restoredAt;
+    await log(`gpu-lost-repeatedly: gave up ${waited.toFixed(0)} ms after the restore`);
+    check(loseContextsBeforeCreate === 0, "the recreation after the second loss was not tried");
+    check(waited >= RESTORE_TIMEOUT_MS - 100, `gave up ${waited.toFixed(0)} ms after the restore`);
+    check(/lost repeatedly/.test(error.message), `error: ${error.message}`);
+    await sleep(0);
+    check(rejected === error, `ready was not rejected with the error (${rejected})`);
+    check(events.gpulost === 2, `gpulost was sent ${events.gpulost} times`);
+    check(events.errors.length === 1, `error was sent ${events.errors.length} times`);
+    check(!el.waitingForGpu, "still waitingForGpu after giving up");
+    check(el.puppet === null, "a puppet remains after giving up");
+    check(
+      el.shadowRoot.querySelectorAll("canvas").length === 0,
+      "a canvas remains after giving up",
+    );
+    await expectLive(0, "after giving up");
+
+    // `restart()` で作り直し (回数は数え直す)、モデルとパラメータの値を戻して描く
+    const restarted = once(el, "load", "the reload after restart()");
+    el.restart();
+    await restarted;
+    events.stop();
+    check(events.errors.length === 1, `error was sent ${events.errors.length} times`);
+    check((await el.ready) === el.puppet, "ready does not resolve to the restarted puppet");
+    check(signature(el) === signatures.a, "a different model after restart()");
+    const got = el.getParameter(id);
+    check(Math.abs(got - value) < 1e-6, `${id} is ${got} after restart(), expected ${value}`);
+    await expectDrawn(el, "after restart()");
+    await expectLive(1, "after restart()");
     el.remove();
     await expectLive(0, "after removing");
   },
