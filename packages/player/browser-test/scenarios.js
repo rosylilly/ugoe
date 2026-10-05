@@ -35,8 +35,17 @@ const WAIT_MS = 30_000 + RESTORE_TIMEOUT_MS;
 const live = new Set();
 /** 次の `WebPuppet.create` を呼んだ直後 (できるのを待つ前) に一度だけ呼ぶ (作っている間の `detach` を確かめるため)。 */
 let onCreating = null;
+/**
+ * これから呼ぶ `WebPuppet.create` のうち、この回数だけ、渡す canvas の WebGL2 のコンテキストを先に作って失わせておく
+ * (Chrome が失ったコンテキストを返すとき (描画バッファを作れない・上限に当たったなど) と同じ状態。T0475)。
+ */
+let loseContextsBeforeCreate = 0;
 const create = WebPuppet.create;
 WebPuppet.create = async function (...args) {
+  if (loseContextsBeforeCreate > 0) {
+    loseContextsBeforeCreate--;
+    loseContextOf(args[0]);
+  }
   const pending = create.apply(this, args);
   const hook = onCreating;
   onCreating = null;
@@ -213,17 +222,46 @@ function expectBufferSize(surface, container, [width, height], ratio, when) {
   );
 }
 
+/**
+ * `canvas` の WebGL2 のコンテキストを (無ければ wgpu と同じ設定で作って) 失わせる。復元に使う拡張を返す
+ * (失った後は取り直せない)。
+ */
+function loseContextOf(canvas) {
+  // 2 回目の getContext は設定によらず同じコンテキストを返す
+  const gl = canvas.getContext("webgl2", { antialias: false });
+  check(gl !== null, "the canvas has no WebGL2 context");
+  const ext = gl.getExtension("WEBGL_lose_context");
+  check(ext !== null, "WEBGL_lose_context is not available");
+  ext.loseContext();
+  check(gl.isContextLost(), "the context is not lost");
+  return ext;
+}
+
+/** `promise` を待つ。`WAIT_MS` を過ぎたら失敗する (wasm が panic すると、作成の Promise は決着しない)。 */
+function within(promise, what) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out waiting for ${what}`)), WAIT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** 作成の失敗が、コンテキストを作れなかったことを示す `CreateError` である (T0475)。 */
+function expectContextUnavailable(error, when) {
+  check(
+    error instanceof Error && error.name === "CreateError" && error.code === "context_unavailable",
+    `${when}: expected a CreateError with code context_unavailable, got ${error?.name} ${error?.code}: ${error}`,
+  );
+}
+
 /** 今の canvas の WebGL2 のコンテキストを失わせる。復元に使う拡張を返す (失った後は取り直せない)。 */
 async function loseContext(container) {
   const canvases = canvasesIn(container);
   check(canvases.length === 1, `expected one canvas, found ${canvases.length}`);
   // wgpu が作ったコンテキストがそのまま返る (同じ canvas の 2 回目の getContext)
-  const gl = canvases[0].getContext("webgl2");
-  check(gl !== null, "the canvas has no WebGL2 context");
-  const ext = gl.getExtension("WEBGL_lose_context");
-  check(ext !== null, "WEBGL_lose_context is not available");
-  ext.loseContext();
-  return ext;
+  return loseContextOf(canvases[0]);
 }
 
 /** 失わせて、復元を待つ状態になったことを確かめてから復元し、作り直されるのを待つ。作り直した WebPuppet を返す。 */
@@ -422,6 +460,85 @@ const scenarios = {
     check(log.failed.length === 1, "gave up right after restart");
     expectDrawn(surface, container, "after a loss after restart");
     surface.detach();
+  },
+
+  /**
+   * 失った WebGL2 のコンテキストしか取れない canvas では、`WebPuppet.create` は panic せずに `CreateError`
+   * (`code` が `context_unavailable`) で失敗し、その後も wasm は使える (T0475)。
+   */
+  async "create-on-lost-context"() {
+    for (const backend of ["webgl2", "auto"]) {
+      const canvas = document.createElement("canvas");
+      document.body.append(canvas);
+      loseContextOf(canvas);
+      let error = null;
+      try {
+        (await within(WebPuppet.create(canvas, backend), `create (${backend})`)).free();
+      } catch (e) {
+        error = e;
+      }
+      expectContextUnavailable(error, backend);
+      check(live.size === 0, `${backend}: ${live.size} live puppets after the failure`);
+    }
+    // 失敗の後も、新しい canvas なら作って描ける
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    check((await within(surface.attach(container), "attach")) === "ready", "attach failed");
+    check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+    expectDrawn(surface, container, "after the failures");
+    surface.detach();
+  },
+
+  /** 最初の作成でコンテキストを作れなければ、`attach` は `"failed"` で、`failed` に `CreateError` を渡す (T0475)。 */
+  async "attach-on-lost-context"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    // "auto" と、落ちた先の "webgl2" の両方
+    loseContextsBeforeCreate = 2;
+    const result = await within(surface.attach(container), "attach");
+    check(result === "failed", `attach returned ${result}`);
+    check(log.failed.length === 1, `failed was called ${log.failed.length} times`);
+    expectContextUnavailable(log.failed[0], "attach");
+    check(canvasesIn(container).length === 0, "the canvas remains after the failure");
+    check(live.size === 0, `${live.size} live puppets`);
+    // 次の attach では作れる
+    check((await within(surface.attach(container), "attach again")) === "ready", "attach failed");
+    expectDrawn(surface, container, "after attaching again");
+    surface.detach();
+  },
+
+  /**
+   * GPU を失った後の作り直しでコンテキストを作れなければ (`CreateError`)、`waiting` で知らせて `RESTORE_TIMEOUT_MS` 後に
+   * 試し直し、作り直しの回数に数える (T0938 の上限で諦める。T0475)。
+   */
+  async "recreate-on-lost-context"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    check((await surface.attach(container)) === "ready", "attach failed");
+    const waitingBefore = log.waiting;
+    // 作り直しの 1 回目は "auto" と "webgl2" のどちらも失ったコンテキストになる
+    loseContextsBeforeCreate = 2;
+    const puppet = await loseAndRestore(surface, container, log);
+    check(loseContextsBeforeCreate === 0, "the recreation did not try both backends");
+    check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+    check(puppet !== null && !puppet.is_lost(), "no usable puppet after the retry");
+    // 復元を待ったときと、作れずに試し直しを待ったときの 2 回
+    check(
+      log.waiting - waitingBefore === 2,
+      `waiting was called ${log.waiting - waitingBefore} times`,
+    );
+    check(log.created.length === 2 && log.created[1].recovered, "not recovered");
+    check(live.size === 1, `${live.size} live puppets`);
+    expectDrawn(surface, container, "after the retry");
+    // 作れなかった作り直しも数えたので (2 回)、あと 1 回で上限 (MAX_RESTARTS) に当たり、次で諦める
+    for (let round = 2; round < MAX_RESTARTS; round++) {
+      await loseAndRestore(surface, container, log);
+      check(log.failed.length === 0, `round ${round}: gave up too early`);
+    }
+    await loseAndRestore(surface, container, log);
+    check(log.failed.length === 1, `failed was called ${log.failed.length} times`);
+    check(log.failed[0] instanceof GpuLostRepeatedlyError, `failed with ${log.failed[0]}`);
+    check(live.size === 0, `${live.size} live puppets after giving up`);
   },
 
   /** 作っている間の `detach` と、続けての `attach`。遅れてできた WebPuppet と canvas は残らない。 */
@@ -657,6 +774,7 @@ window.runScenarios = async (names) => {
       results.push({ name, ok: false, error: e instanceof Error ? e.message : String(e) });
     } finally {
       onCreating = null;
+      loseContextsBeforeCreate = 0;
       for (const surface of surfaces.splice(0)) surface.detach();
       for (const player of players.splice(0)) player.detach();
       for (let i = localStorage.length - 1; i >= 0; i--) {

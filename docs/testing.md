@@ -336,7 +336,10 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 
 - **シナリオ (`PuppetSurface`):** 作って描いて大きさを変えて捨てる・WebGL2 のコンテキストを失ったら復元を待って新しい canvas で作り直す (2 回続けて)・
   復元が届かなければ `waiting` で知らせ、`RESTORE_TIMEOUT_MS` の後に新しい canvas で作り直す (`context-loss-timeout`)・
-  続けて失って諦め、次の `attach` で作れる・諦めた後の `restart` で作り直し、回数も数え直す (`restart-after-giving-up`)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
+  続けて失って諦め、次の `attach` で作れる・諦めた後の `restart` で作り直し、回数も数え直す (`restart-after-giving-up`)・
+  失った WebGL2 のコンテキストしか取れない canvas では `WebPuppet.create` が panic せずに `CreateError` (`context_unavailable`) で失敗し、
+  その後も wasm が使える (`create-on-lost-context`)・最初の作成でそうなれば `attach` は `"failed"` で `failed` に例外を渡す (`attach-on-lost-context`)・
+  作り直しでそうなれば待って試し直し、作り直しの回数に数える (`recreate-on-lost-context`。T0475)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
   描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
   WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
 - **シナリオ (`Player`):** 着せ替えの見本 (`dress-up.ugoe` とモジュール 1 つ) を開いてパラメータを動かし、WebGL2 のコンテキストを失って復元したら、
@@ -353,7 +356,8 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   ブラウザ (と Tauri の WebView) が `change` を届けることは確かめていません (MDN の `matchMedia` の例にある、ブラウザの振る舞い)。
 - **WebGL のコンテキストの数 (T0938):** Chrome は生きている WebGL のコンテキストを 16 までにし、超えると古いものから失わせます。作り直しを
   繰り返すシナリオでは、捨てた canvas のコンテキストも GC されるまで数に入り (復元したものは生き返る)、今のコンテキストが失われて
-  落ちることがあるので、run.mjs は Chrome を `--max-active-webgl-contexts=256` で起動します。
+  落ちることがあるので、run.mjs は Chrome を `--max-active-webgl-contexts=256` で起動します (`--max-webgl-contexts N` で変えられる)。
+  失ったコンテキストを `getContext` が返す状態は、シナリオが canvas のコンテキストを先に作って `WEBGL_lose_context` で失わせて作ります (T0475)。
 - **テストが壊れを見つけること (T0939 で確かめた):** `surface.ts` で、倍率の問い合わせを `attach` で作らない・`change` の後に聞き直さない・
   `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
   作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。

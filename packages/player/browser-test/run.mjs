@@ -6,7 +6,10 @@
 // 3. 小さなサーバでページ (index.html・scenarios.js)・player.js・wasm・見本のモデルを配り、ヘッドレスの Chrome
 //    (playwright-core。WebGL2 は SwiftShader) で開いて、scenarios.js のシナリオを順に流す。
 //
-//   node packages/player/browser-test/run.mjs [--no-build] [--only NAME,...] [--out DIR]
+//   node packages/player/browser-test/run.mjs [--no-build] [--only NAME,...] [--out DIR] [--max-webgl-contexts N]
+//
+// `--max-webgl-contexts` は Chrome の WebGL のコンテキストの数の上限 (既定は 256。Chrome の既定の 16 で流すと、捨てた
+// canvas のコンテキストが上限に数えられて、今のコンテキストを失うことがある。T0475 の再現に使った)。
 //
 // 要るもの: Google Chrome か Chromium (環境変数 CHROME で場所を指定できる)、`just wasm` に要るもの (wasm-bindgen-cli)。
 // 置き場所を packages/player にした理由 (ライセンス) は README.md。
@@ -31,6 +34,7 @@ function option(name, fallback) {
 const out = resolve(option("--out", join(root, "target", "player-browser")));
 const only = option("--only", null)?.split(",") ?? null;
 const build = !args.includes("--no-build");
+const maxWebglContexts = Number(option("--max-webgl-contexts", "256"));
 /** 全体の上限 (ミリ秒)。SwiftShader の WebPuppet の作成は 1 回で数秒かかることがある。 */
 const TIMEOUT_MS = 300_000;
 /** ページの大きさ (CSS ピクセル)。devicePixelRatio を変えるときも同じ大きさで上書きする。 */
@@ -129,7 +133,7 @@ const browser = await chromium.launch({
   args: [
     "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader",
-    "--max-active-webgl-contexts=256",
+    `--max-active-webgl-contexts=${maxWebglContexts}`,
   ],
 });
 let failed = 0;

@@ -24,6 +24,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | `dress_up` | `.ugoemod` の読み込み、付け外しに合わせたテクスチャの登録し直し (`Wardrobe`)、エラーのコード (JS への公開は `src/web/dress_up.rs`) |
 | `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
 | `frame` | 描画と読み戻し (`render`・`read_pixels`) の失敗のコード (`FrameError`。JS では `RenderError`) |
+| `create` | `WebPuppet.create` の失敗のコード (`CreateError`。T0475) |
 | `readback` | `drawable_states_json` の中身と、読み戻した画素をストレートアルファの RGBA にする処理 (JS への公開は `src/web/readback.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
@@ -54,6 +55,7 @@ puppet.clear_tracking();
 - モデルを読み直すと、同じ ID のパラメータの値は引き継がれる (エディタで編集・Undo のたびに読み直すため)。
 - 背景は透明 (既定の `set_background` は透明) で、WebGPU・WebGL2 のどちらでも canvas を乗算済みアルファでページに重ねる。
 - `"auto"` は WebGPU のアダプタを実際に要求して判定し、無ければ WebGL2 を使う。1 つの canvas は WebGPU と WebGL2 を併用できないので、作成に失敗したら新しい canvas で作り直す。
+  GPU やブラウザの都合で作れないとき (canvas のコンテキストを取れない・失っているなど) は `CreateError` を投げる ([作成の失敗](#作成の失敗-t0475))。
 - トラッキングの入力は次の `update(dt)` から毎フレーム適用される (モーションの直後、表情・目パチ・呼吸の前)。
   平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
   (`docs/spec/avatar-profile.md#実装の範囲`)。`clear_tracking()` の後も最後の値は残る。
@@ -397,7 +399,8 @@ try {
   (C ABI は画像をデコードせず、レンダラを持たない)。対応は `src/load.rs` の `LoadError::info` とそのテスト (`every_load_error_has_a_code`)。
 - `.ugoemod` の読み込み (`load_module`) の失敗は `DressUpError` のまま: 上限を超えたものだけ上の 2 つのコードで、ほかは `invalid_file`
   (C ABI と同じ)。
-- 上限の JSON の形の誤り (`invalid limits: ...`) と、`WebPuppet.create` の失敗は `code` を持たない `Error` (組み込みの誤りで、利用者に見せる文ではない)。
+- 上限の JSON の形の誤り (`invalid limits: ...`) は `code` を持たない `Error` (組み込みの誤りで、利用者に見せる文ではない)。
+  `WebPuppet.create` の失敗は [`CreateError`](#作成の失敗-t0475)。
 - 使う側: ビューアとスタジオは `@ugoe/player` が今の言語に訳す (`packages/player/src/loadError.ts`)。TypeScript の型は npm の
   `@ugoe/runtime` の `UgoeLoadError`・`isLoadError` (`bindings/web/src/limits.ts`)。コードを増やしたら、どちらも同じ PR で直す。
 
@@ -425,11 +428,42 @@ try {
 - 使う側: `@ugoe/player` の `describeRenderError` (`packages/player/src/loadError.ts`) が今の言語に訳す (読み込みの `device_lost` と同じ文)。
   TypeScript の型は npm の `@ugoe/runtime` の `UgoeRenderError`・`isRenderError` (`bindings/web/src/render-errors.ts`)。
 
+### 作成の失敗 (T0475)
+
+```js
+try {
+  puppet = await WebPuppet.create(canvas, "webgl2");
+} catch (e) {
+  // GPU やブラウザの都合で作れない: e.name === "CreateError"、e.code === "context_unavailable" など。
+  // 時間を置いて新しい canvas で作り直せば作れることがある
+}
+```
+
+`WebPuppet.create` の失敗のうち、GPU やブラウザの都合で作れなかったものは、`name` が `"CreateError"` で `code` を持つ `Error`
+(読み込みの `LoadError`・描画の `RenderError` と同じ形)。補足の値は持たない。どれも panic (wasm の trap。以後の呼び出しが壊れる) にはならない。
+
+| `code` | いつ |
+| --- | --- |
+| `backend_unavailable` | `"webgpu"` を求めたが、このブラウザに WebGPU が無い |
+| `context_unavailable` | canvas から GPU のコンテキストを取れない (`getContext` が `null` を返した・取れた WebGL2 のコンテキストが既に失われている。canvas を別の種類のコンテキストで使っている・WebGL のコンテキストの数の上限・GPU プロセスの不調など) |
+| `adapter_unavailable` | GPU のアダプタを取れない |
+| `device_unavailable` | GPU のデバイスを作れない |
+
+- 失ったコンテキストの確かめ: wgpu の GL のバックエンド (wgpu-hal 30) は `getContext` で受け取った WebGL2 のコンテキストを確かめずに
+  glow (0.17) に渡し、glow は失ったコンテキストの `getSupportedExtensions()` が返す `null` を `unwrap` して panic する
+  (`glow-0.17.0/src/web_sys.rs` の `build_extensions!`)。そこで WebGL2 で作るときは、サーフェスを作った直後 (アダプタを求める前) に
+  同じ canvas の `getContext("webgl2")` (wgpu が受け取ったものと同じコンテキスト) の `isContextLost()` を確かめ、失っていれば `context_unavailable` を投げる。
+- 知らない `backend` (`unknown backend ...`) と、起きないはずの失敗 (canvas のサーフェスが形式を 1 つも持たない・`webglcontextlost` を聞けない) は、
+  組み込みの誤りなので `code` を持たない `Error` のまま。
+- 種類は `src/create.rs` の `CreateError`。使う側: `@ugoe/player` の `PuppetSurface` と `<ugoe-avatar>` は、作り直しの途中の失敗を
+  「GPU がまだ戻っていない」として待って試し直し、作り直しの回数に数える ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
+  TypeScript の型は npm の `@ugoe/runtime` の `UgoeCreateError`・`isCreateError` (`bindings/web/src/create-errors.ts`)。
+
 ### `code` の一覧 (T0452)
 
 読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`)・描画と読み戻しの失敗 (`render_error`。T0465)・
-設定の差し替え (`set_effects_json`・`set_physics_json`・`set_base_physics_json`) の検査の失敗 (`settings_error`。T0469) の
-`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError`・`AnimationError` と、その中の
+作成の失敗 (`create_error`。T0475)・設定の差し替え (`set_effects_json`・`set_physics_json`・`set_base_physics_json`) の検査の失敗 (`settings_error`。T0469) の
+`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError`・`CreateError`・`AnimationError` と、その中の
 `DressUpError`・`ComposeError`・`CompileError`) から一覧を作って比べる。種類を足すと、テストの網羅の `match` (`guard`) がコンパイルできなくなるので、
 見本を足してから `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で書き直す。
 

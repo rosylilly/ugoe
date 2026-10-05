@@ -2,6 +2,7 @@
 // `<ugoe-avatar>` の作成・読み込み・作り直しの順序。wasm は使わず、`WebPuppet` の代わりの偽物を作る (runtime.js を差し替える)。
 
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { isCreateError } from "./create-errors.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** `WebPuppet` の偽物。`<ugoe-avatar>` が呼ぶメソッドだけを持つ。 */
@@ -69,8 +70,16 @@ class FakePuppet {
 const runtime = vi.hoisted(() => ({
   /** 次の作成で投げる例外 (1 回だけ)。 */
   createError: null as Error | null,
-  /** 真の間は作成がいつも失敗する (GPU が戻っていない)。 */
+  /**
+   * 真の間は作成がいつも失敗する (GPU が戻っていない)。ugoe-wasm と同じく、コンテキストを取れない `CreateError`
+   * (`code` が `context_unavailable`。T0475) を投げる。
+   */
   failing: false,
+  contextUnavailable(): Error {
+    const e = new Error("the canvas could not provide a GPU context: the WebGL2 context is lost");
+    e.name = "CreateError";
+    return Object.assign(e, { code: "context_unavailable" });
+  },
   /** 読み込むと例外を投げるモデル。 */
   badModel: "bad",
 }));
@@ -83,7 +92,7 @@ vi.mock("./runtime.js", () => ({
       runtime.createError = null;
       throw e;
     }
-    if (runtime.failing) throw new Error("context lost");
+    if (runtime.failing) throw runtime.contextUnavailable();
     const puppet = new FakePuppet(canvas, options.backend ?? "auto");
     return puppet;
   },
@@ -431,6 +440,19 @@ describe("<ugoe-avatar>", () => {
     expect(errors.map((e) => e.message)).toEqual(["no GPU"]);
     // 作成に失敗した後の `load` は待たせずに reject する
     await expect(avatar.load("model-a")).rejects.toThrow("no GPU");
+  });
+
+  it("reports a CreateError when the first creation cannot get a context", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    runtime.failing = true;
+    const errors: Error[] = [];
+    const avatar = newAvatar();
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    const error = await avatar.ready.catch((e: unknown) => e);
+    expect(isCreateError(error) && error.code).toBe("context_unavailable");
+    expect(errors).toEqual([error]);
+    expect(avatar.waitingForGpu).toBe(false);
   });
 
   it("restarts after the puppet could not be created", async () => {

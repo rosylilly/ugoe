@@ -19,6 +19,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
+use crate::create::CreateError;
 use crate::dress_up::{Wardrobe, WardrobeError, attached_names};
 use crate::frame::FrameError;
 use crate::load::{self, ErrorInfo, LoadError, LoadWarning, LoadedModel, Rgba8};
@@ -65,6 +66,27 @@ fn load_error(e: LoadError) -> JsValue {
 /// 描画・読み戻しの失敗を JS の値にする: `name` が `"RenderError"` で、`code` ([`FrameError::info`]) を持つ `Error` (T0465)。
 fn frame_error(e: FrameError) -> JsValue {
     coded_error(FrameError::NAME, &e.to_string(), e.info())
+}
+
+/// 作成の失敗を JS の値にする: `name` が `"CreateError"` で、`code` ([`CreateError::info`]) を持つ `Error` (T0475)。
+fn create_error(e: CreateError) -> JsValue {
+    coded_error(CreateError::NAME, &e.to_string(), e.info())
+}
+
+/// `canvas` の WebGL2 のコンテキストを既に失っている (wgpu が `getContext` で受け取ったものと同じコンテキストを見る)。
+///
+/// Chrome は失ったコンテキストを `getContext` から返すことがある (前に失った canvas・作れなかったときなど)。
+/// wgpu の GL のバックエンド (wgpu-hal 30) はそれを確かめずに glow (0.17) へ渡し、glow は失ったコンテキストの
+/// `getSupportedExtensions()` が返す `null` を `unwrap` して panic するので、アダプタを求める前にここで確かめる (T0475)。
+fn webgl2_context_lost(canvas: &HtmlCanvasElement) -> bool {
+    match canvas.get_context("webgl2") {
+        Ok(Some(context)) => match context.dyn_into::<web_sys::WebGl2RenderingContext>() {
+            Ok(gl) => gl.is_context_lost(),
+            Err(_) => true,
+        },
+        // wgpu が取れたものを取れないなら、使えるコンテキストは無い。
+        _ => true,
+    }
 }
 
 /// `limits_json` を読む (`load_bundle` / `load_module`)。形の誤りは例外。
@@ -125,7 +147,7 @@ impl WebPuppet {
     pub async fn create(
         canvas: HtmlCanvasElement,
         backend: Option<String>,
-    ) -> Result<WebPuppet, JsError> {
+    ) -> Result<WebPuppet, JsValue> {
         console_error_panic_hook::set_once();
         let mut backends = match backend.as_deref().unwrap_or("auto") {
             "auto" => wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
@@ -134,7 +156,8 @@ impl WebPuppet {
             other => {
                 return Err(JsError::new(&format!(
                     "unknown backend `{other}` (expected auto, webgpu or webgl2)"
-                )));
+                ))
+                .into());
             }
         };
         // navigator.gpu があってもアダプタを作れないブラウザがあるので、実際に試して判定する。
@@ -144,7 +167,7 @@ impl WebPuppet {
             backends.remove(wgpu::Backends::BROWSER_WEBGPU);
         }
         if backends.is_empty() {
-            return Err(JsError::new("WebGPU is not available in this browser"));
+            return Err(create_error(CreateError::BackendUnavailable));
         }
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = backends;
@@ -152,14 +175,20 @@ impl WebPuppet {
 
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
-            .map_err(js_error)?;
+            .map_err(|e| create_error(CreateError::ContextUnavailable(e.to_string())))?;
+        // WebGPU が無ければ wgpu は WebGL2 を使う (`wgpu::Instance::new`)。
+        if !backends.contains(wgpu::Backends::BROWSER_WEBGPU) && webgl2_context_lost(&canvas) {
+            return Err(create_error(CreateError::ContextUnavailable(
+                "the WebGL2 context of the canvas is lost".into(),
+            )));
+        }
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
             .await
-            .map_err(js_error)?;
+            .map_err(|e| create_error(CreateError::AdapterUnavailable(e.to_string())))?;
         // レンダラは WebGL2 で使える機能だけを使う。テクスチャの大きさだけはアダプタの上限まで使う。
         let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
         let (device, queue) = adapter
@@ -169,7 +198,7 @@ impl WebPuppet {
                 ..Default::default()
             })
             .await
-            .map_err(js_error)?;
+            .map_err(|e| create_error(CreateError::DeviceUnavailable(e.to_string())))?;
         // canvas がデバイスの扱える大きさを超えていれば、`resize` と同じく上限に収める
         // (超えたままではサーフェスを作れない)。
         let (width, height) = view::surface_size(

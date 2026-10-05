@@ -22,7 +22,7 @@ wgpu.workspace = true
 console_error_panic_hook.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
-web-sys = { workspace = true, features = ["HtmlCanvasElement", "console"] }
+web-sys = { workspace = true, features = ["HtmlCanvasElement", "WebGl2RenderingContext", "console"] }
 
 [dev-dependencies]
 png.workspace = true

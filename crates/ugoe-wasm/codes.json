@@ -1,4 +1,10 @@
 {
+  "create_error": {
+    "adapter_unavailable": [],
+    "backend_unavailable": [],
+    "context_unavailable": [],
+    "device_unavailable": []
+  },
   "dress_up_error": {
     "avatar_level": [
       "actual",

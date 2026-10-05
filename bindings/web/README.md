@@ -307,8 +307,8 @@ try {
 ```
 
 - `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
-- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` でも読めます
-  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeRenderErrorCode`・`UgoeSettingsErrorCode` はこの配列の要素)。
+- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`CREATE_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` でも読めます
+  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeCreateErrorCode`・`UgoeRenderErrorCode`・`UgoeSettingsErrorCode` はこの配列の要素)。
   ランタイムの `code` との突き合わせは下の「開発」。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
 - `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
@@ -396,6 +396,27 @@ try {
   `UgoeSettingsErrorCode`、一覧の配列は `SETTINGS_ERROR_CODES` (crates/ugoe-wasm/codes.json の `settings_error` と同じ)。
 - 読めない JSON と、`set_base_physics_json` で付けているモジュールと合成できない失敗は、`code` を持たない `Error` です。
 - `isSettingsError` は、このパッケージの知っている `code` だけを受けます (`name` で見分けられないため)。
+
+### 作成の失敗 (T0475)
+
+`createPuppet` (`WebPuppet.create`) は、GPU やブラウザの都合で作れないとき (canvas のコンテキストを取れない・取れた WebGL2 の
+コンテキストが既に失われている・アダプタやデバイスを取れないなど) に、`name` が `"CreateError"` で `code` を持つ例外を投げます。
+時間を置いて新しい canvas で作り直せば作れることがあります (`<ugoe-avatar>` は GPU を失った後の作り直しでこの失敗が起きたら、待って試し直し、
+作り直しの回数に数えます。最初の作成なら `error` を送って `ready` を reject します)。
+
+```ts
+import { createPuppet, isCreateError } from "@ugoe/runtime";
+
+try {
+  const puppet = await createPuppet(canvas, { backend: "webgl2" });
+} catch (e) {
+  if (!isCreateError(e)) throw e;
+  // e.code: "backend_unavailable" | "context_unavailable" | "adapter_unavailable" | "device_unavailable" (知らない値もありうる)
+}
+```
+
+- 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#作成の失敗-t0475)。型は `UgoeCreateError`・`UgoeCreateErrorCode`、
+  一覧の配列は `CREATE_ERROR_CODES`。知らない `backend` などの引数の誤りは `code` を持たない `Error` です。
 
 ### 描画と読み戻しの失敗 (T0465)
 
@@ -662,11 +683,11 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
   引数と戻り値の型まで含めたずれは、`just wasm` の後の `just wasm-types` (`scripts/check-wasm-types.mjs`。CI の web ジョブ) が報告します。
 - このスタブは、生成物の無い環境でのアプリ (エディタ・ビューア・スタジオ) の型検査でも使います (各アプリの `tsconfig.json` の `paths`)。
   型の宣言をアプリが読むだけで、このパッケージが GPL のコードを読むわけではありません。
-- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・描画と読み戻しの失敗 (T0465)・設定の差し替えの失敗 (T0469) の `code` と補足の値のキーの一覧は
+- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・作成の失敗 (T0475)・描画と読み戻しの失敗 (T0465)・設定の差し替えの失敗 (T0469) の `code` と補足の値のキーの一覧は
   `crates/ugoe-wasm/codes.json` にあります。ugoe-wasm のテスト (`src/codes.rs`。`just ci` の Rust のテスト) がすべての種類の見本から作った一覧と、
-  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` と
+  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`CREATE_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` と
   補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeSettingsErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
-  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts`・`src/render-errors.ts`・`src/settings-errors.ts` も同じ PR で直します
+  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts`・`src/create-errors.ts`・`src/render-errors.ts`・`src/settings-errors.ts` も同じ PR で直します
   (片方だけでは、どちらかのテストが落ちる)。
 - **問い合わせの JSON のキーの突き合わせ (T0463):** `src/queries.ts` の型ごとのキー (必須と省略できるもの) の一覧を
   `src/query-keys.ts` の `QUERY_KEYS` に値で持ちます (入口からは出さない)。一覧と型が同じことは `src/query-keys.test.ts` が

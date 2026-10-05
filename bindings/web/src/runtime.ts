@@ -49,6 +49,8 @@ export interface CreatePuppetOptions {
  *
  * 1 つの canvas は WebGPU と WebGL2 のどちらか一方にしか使えない。作成に失敗したら、
  * 別の canvas と `backend: "webgl2"` で作り直すこと (`<ugoe-avatar>` はそうしている)。
+ * GPU やブラウザの都合で作れないとき (canvas のコンテキストを取れない・失っているなど) は `name` が `"CreateError"` で
+ * `code` を持つ例外 (`isCreateError` で見分ける。T0475)。
  */
 export async function createPuppet(
   canvas: HTMLCanvasElement,
