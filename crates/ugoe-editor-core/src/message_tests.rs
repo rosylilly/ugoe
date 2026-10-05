@@ -258,7 +258,11 @@ fn every_code_is_documented() {
         include_str!("inference.rs"),
         include_str!("project.rs"),
     ];
-    let codes: Vec<String> = sources.iter().flat_map(|s| codes_in(s)).collect();
+    let codes: Vec<String> = sources
+        .iter()
+        .flat_map(|s| codes_in(s))
+        .chain(sourced_codes())
+        .collect();
     assert!(codes.len() > 100, "{}", codes.len());
     for code in codes {
         assert_code_shape(&code);
@@ -269,7 +273,8 @@ fn every_code_is_documented() {
     }
 }
 
-/// ソースに書いたすべてのコードに見本があり (`message_catalog`)、見本にソースに無いコードが無い。
+/// ソースに書いたすべてのコード (と元のクレートのコードから組み立てるコード) に見本があり (`message_catalog`)、
+/// 見本にそれら以外のコードが無い。
 #[test]
 fn every_code_has_a_sample() {
     let sources = [
@@ -281,6 +286,8 @@ fn every_code_has_a_sample() {
     let mut in_source: BTreeSet<String> = sources.iter().flat_map(|s| codes_in(s)).collect();
     // `codes_in` はファイル名 (`.json`) を除くので、ファイル名と同じ綴りのコードを足す。
     in_source.insert("project.json".to_owned());
+    // 元のクレートのエラーのコードは、ソースに並べず組み立てる。
+    in_source.extend(sourced_codes());
     let sampled: BTreeSet<String> = message_codes(message_samples()).into_keys().collect();
     let missing: Vec<_> = in_source.difference(&sampled).collect();
     assert!(
@@ -348,50 +355,77 @@ fn interpolation_is_passed_by_its_json_name() {
     );
 }
 
-/// 検証・推定・写像・法線マップのエラーのコードは、元のエラーのコード (`ValidationError::code` など) に
-/// 領域の名前を付けたもの (元のクレートでコードを固定し、ここはそれに揃える)。
+/// 元のクレートの `code()` (`Self::… => "name"` の `match`) に書いたコード。
+fn crate_codes(source: &str) -> Vec<&str> {
+    let start = source
+        .find("pub fn code(&self) -> &'static str {")
+        .expect("no code() in the source");
+    let body = &source[start..];
+    let body = &body[..body.find("\n    }\n").expect("no end of code()")];
+    body.split("=> \"")
+        .skip(1)
+        .map(|s| &s[..s.find('"').unwrap()])
+        .collect()
+}
+
+/// 元のクレートのすべてのコードに領域の名前を付けたもの (`validation.duplicate_id` など)。editor-core はこれらを
+/// 一覧に持たず組み立てる (`message_codes.rs` の `sourced`) ので、ソースのコード (`codes_in`) の代わりにこれを使う。
+fn sourced_codes() -> BTreeSet<String> {
+    let sources = [
+        (
+            "validation",
+            include_str!("../../ugoe-model/src/validate/code.rs"),
+        ),
+        ("infer", include_str!("../../ugoe-rigging/src/error.rs")),
+        ("world", include_str!("../../ugoe-rigging/src/world.rs")),
+        (
+            "normal_map",
+            include_str!("../../ugoe-rigging/src/normal.rs"),
+        ),
+        ("compose", include_str!("../../ugoe-runtime/src/compose.rs")),
+    ];
+    sources
+        .iter()
+        .flat_map(|(area, source)| {
+            crate_codes(source)
+                .into_iter()
+                .map(move |code| format!("{area}.{code}"))
+        })
+        .collect()
+}
+
+/// 検証・推定・写像・法線マップ・合成のエラーのコードは、元のエラーのコード (`ValidationError::code` など) に
+/// 領域の名前を付けたもの (元のクレートでコードを固定し、ここはそれから組み立てる。T1618)。見本は元のクレートの
+/// すべてのコードを含む (組み立てたコードが `docs/editor.md` の一覧にあることは `every_code_is_documented` が確かめる)。
 #[test]
 fn source_error_codes_follow_the_crate_codes() {
-    use crate::message_catalog::{compose_errors, infer_errors, validation_errors};
+    use crate::message_catalog::{
+        compose_errors, infer_errors, normal_map_errors, validation_errors, world_errors,
+    };
+    let mut built = BTreeSet::new();
+    let mut check = |code: std::borrow::Cow<'static, str>, expected: String| {
+        assert_eq!(code, expected);
+        built.insert(expected);
+    };
     for error in validation_errors() {
-        assert_eq!(
-            Coded::code(&error),
-            format!("validation.{}", error.code()),
-            "{error:?}"
-        );
+        check(Coded::code(&error), format!("validation.{}", error.code()));
     }
     for error in infer_errors() {
-        assert_eq!(
-            Coded::code(&error),
-            format!("infer.{}", error.code()),
-            "{error:?}"
-        );
+        check(Coded::code(&error), format!("infer.{}", error.code()));
     }
-    let compose = compose_errors();
-    for error in &compose {
-        assert_eq!(
-            Coded::code(error),
-            format!("compose.{}", error.code()),
-            "{error:?}"
-        );
+    for error in world_errors() {
+        check(Coded::code(&error), format!("world.{}", error.code()));
     }
-    // 合成のエラーの見本はすべてのバリアントを含む (コードの値は ugoe-runtime の `codes_are_fixed` が固定する)。
-    let kinds: std::collections::HashSet<_> = compose.iter().map(|e| e.code()).collect();
-    assert_eq!(kinds.len(), 13, "{kinds:?}");
-    let world = ugoe_rigging::WorldError::NotConverged {
-        index: 0,
-        residual: 1.0,
-    };
-    assert_eq!(Coded::code(&world), format!("world.{}", world.code()));
-    let normal = ugoe_rigging::NormalMapError::GridTooLarge {
-        width: 1.0,
-        height: 1.0,
-        max: 1,
-    };
-    assert_eq!(
-        Coded::code(&normal),
-        format!("normal_map.{}", normal.code())
-    );
+    for error in normal_map_errors() {
+        check(Coded::code(&error), format!("normal_map.{}", error.code()));
+    }
+    for error in compose_errors() {
+        check(Coded::code(&error), format!("compose.{}", error.code()));
+    }
+    let all = sourced_codes();
+    // 27 (検証) + 27 (推定) + 4 (写像) + 4 (法線マップ) + 13 (合成)。読み取りの誤りで一覧が欠けないように。
+    assert!(all.len() >= 75, "{}", all.len());
+    assert_eq!(built, all, "every crate code has a sample");
 }
 
 /// 検証のエラーの一覧は、`count`・`details` に加えて、先頭の 10 件を訳せる形 (`items`) で渡す。

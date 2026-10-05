@@ -3,6 +3,7 @@
 //! [`EditorError`] にまとめる。コードの一覧は `docs/editor.md#エラーと警告のコード`。
 //! **コードは公開の約束なので名前を変えない。** 英語の文は前と同じにする (ログ・MCP で使う)。
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use ugoe_ai::AiError;
@@ -164,8 +165,9 @@ impl EditorError {
     }
 }
 
-impl Coded for EditorError {
-    fn code(&self) -> &'static str {
+impl EditorError {
+    /// [`Coded::code`] の値。どれも固定の文字列。
+    fn fixed_code(&self) -> &'static str {
         match self {
             Self::LockPoisoned { .. } => "editor.lock_poisoned",
             Self::Io { .. } => "editor.io",
@@ -221,6 +223,12 @@ impl Coded for EditorError {
             Self::OpenFailed { .. } => "mcp.open_failed",
             Self::NotMcpbFile => "mcp.not_mcpb_file",
         }
+    }
+}
+
+impl Coded for EditorError {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(self.fixed_code())
     }
 
     fn args(&self) -> MessageArgs {

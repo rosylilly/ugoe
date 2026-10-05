@@ -43,4 +43,5 @@
 - T1600 (エラー型の ID は文字列のまま、`ColliderReference` の ID を型付きにした)
 - T1607 (プロジェクト・本体・指紋が、通常のファイルだけを大きさの上限付きで読む。`src/project/read.rs` の `ProjectReadLimits` (既定は JSON 256 MiB・画像 512 MiB・本体の `.ugoe` 512 MiB。値と理由は [docs/editor.md#読むファイルの種類と大きさ](../../docs/editor.md#読むファイルの種類と大きさ))。拒んだら `project.not_regular_file`・`project.file_too_large`)
 - T0167 (合成のエラーのコード `compose.*` の後ろの部分を ugoe-runtime の `ComposeError::code` に揃え、テスト `source_error_codes_follow_the_crate_codes` で一致を確かめる)
+- T1618 (`Coded::code` を `Cow<'static, str>` にし、`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*` を元のクレートのコードから組み立てる。手で並べた一覧をなくした)
 - T1609 (`SetModuleSettings` の `keep_look` の作り直しの警告を `ApplyReport` で返す)

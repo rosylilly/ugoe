@@ -8,6 +8,7 @@
 //!   カタログに無いコードは、画面もこれを出す。
 //! - 翻訳のカタログはこのクレートに置かない。
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -136,8 +137,9 @@ impl fmt::Display for Message {
 
 /// コードと引数を持つエラー・警告。英語の文は `Display`。
 pub trait Coded: fmt::Display {
-    /// 安定した識別子 ([`Message::code`])。
-    fn code(&self) -> &'static str;
+    /// 安定した識別子 ([`Message::code`])。ほかのクレートのエラーは、元のコードに領域の名前を付けて組み立てる
+    /// (`validation.duplicate_id` など) ので `Cow`。
+    fn code(&self) -> Cow<'static, str>;
 
     /// 文に差し込む値 ([`Message::args`])。
     fn args(&self) -> MessageArgs {
@@ -157,7 +159,7 @@ pub trait Coded: fmt::Display {
     /// 画面に渡す形にする。
     fn to_message(&self) -> Message {
         Message {
-            code: self.code().to_owned(),
+            code: self.code().into_owned(),
             args: self.args(),
             message: self.to_string(),
             cause: self.cause().map(Box::new),

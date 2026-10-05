@@ -3,7 +3,10 @@
 //!
 //! ほかのクレートのエラーを含むものは、その英語の文を `detail` (`details`) の引数で渡す。検証・合成・推定・法線マップの
 //! エラーは、それに加えて元のエラーを原因 (`cause`。検証の一覧は `items`) に載せ、画面はそれを訳して `detail`
-//! (`details`) の代わりに差し込む (T0163)。自動メッシュなどはまだ英語の文だけ。
+//! (`details`) の代わりに差し込む (T0163)。自動メッシュなどはまだ英語の文だけ。これらのコードは、元のエラーのコードに
+//! 領域の名前を付けて組み立てる (`sourced`。T1618)。
+
+use std::borrow::Cow;
 
 use ugoe_format::{FormatError, ReadLimit};
 use ugoe_model::KeyformInterpolation;
@@ -54,6 +57,14 @@ fn validation_items(errors: &[ValidationError]) -> Vec<Message> {
         .collect()
 }
 
+/// 元のクレートのエラーのコード `code` に領域の名前 `area` を付けたコード (`validation.duplicate_id` など)。
+///
+/// 検証・推定・写像・法線マップ・合成のエラーのコードはこれで組み立て、ここに一覧を持たない (元のクレートにコードが
+/// 増えても直さずに済むように。T1618)。値が今と同じことは `source_error_codes_follow_the_crate_codes` が確かめる。
+fn sourced(area: &str, code: &str) -> Cow<'static, str> {
+    Cow::Owned(format!("{area}.{code}"))
+}
+
 /// 数の並びの引数 (`, ` でつなぐ)。
 fn join<T: ToString>(values: &[T]) -> String {
     values
@@ -84,8 +95,8 @@ fn interpolation_name(interpolation: KeyformInterpolation) -> &'static str {
 }
 
 impl Coded for EditError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::DuplicateId { .. } => "edit.duplicate_id",
             Self::NotFound { .. } => "edit.not_found",
             Self::InvalidRange { .. } => "edit.invalid_range",
@@ -125,10 +136,10 @@ impl Coded for EditError {
             Self::ReadOnlyBase { .. } => "edit.read_only_base",
             Self::ModuleShape { .. } => "edit.module_shape",
             Self::NotModule => "edit.not_module",
-            Self::Module(error) => error.code(),
+            Self::Module(error) => return error.code(),
             Self::TextureTooLarge { .. } => "edit.texture_too_large",
             Self::ConflictingTexture { .. } => "edit.conflicting_texture",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -258,8 +269,8 @@ impl Coded for EditError {
 }
 
 impl Coded for CellError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::MissingAxis(_) => "cell.missing_axis",
             Self::UnknownAxis(_) => "cell.unknown_axis",
             Self::UnknownKey { .. } => "cell.unknown_key",
@@ -268,7 +279,7 @@ impl Coded for CellError {
             Self::NonFiniteKey { .. } => "cell.non_finite_key",
             Self::KeyformCount { .. } => "cell.keyform_count",
             Self::ShapeMismatch { .. } => "cell.shape_mismatch",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -290,14 +301,14 @@ impl Coded for CellError {
 }
 
 impl Coded for ProposalError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::NotFound(_) => "proposal.not_found",
             Self::Stale => "proposal.stale",
             Self::InvalidIndex { .. } => "proposal.invalid_index",
             Self::NothingSelected => "proposal.nothing_selected",
             Self::Rejected(_) => "proposal.rejected",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -317,8 +328,8 @@ impl Coded for ProposalError {
 }
 
 impl Coded for ProjectError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::Io { .. } => "project.io",
             Self::NotRegularFile { .. } => "project.not_regular_file",
             Self::FileTooLarge { .. } => "project.file_too_large",
@@ -340,10 +351,10 @@ impl Coded for ProjectError {
             Self::BaseIsModule { .. } => "project.base_is_module",
             Self::UnsupportedBaseTexture { .. } => "project.unsupported_base_texture",
             Self::UnsupportedTexture { .. } => "project.unsupported_texture",
-            Self::Module(error) => error.code(),
+            Self::Module(error) => return error.code(),
             Self::NotAModule => "project.not_a_module",
             Self::InvalidModule(_) => "project.invalid_module",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -408,8 +419,8 @@ impl Coded for ProjectError {
 }
 
 impl Coded for ModuleError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::InvalidName(_) => "module.invalid_name",
             Self::UnknownSlot(_) => "module.unknown_slot",
             Self::Compose(_) => "module.compose_failed",
@@ -417,7 +428,7 @@ impl Coded for ModuleError {
             Self::ReadOnlyBase { .. } => "module.read_only_base",
             Self::Shape { .. } => "module.shape",
             Self::NotModule => "module.not_module",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -445,14 +456,14 @@ impl Coded for ModuleError {
 }
 
 impl Coded for ExportError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::InvalidMaxSize(_) => "export.invalid_max_size",
             Self::InvalidPadding(_) => "export.invalid_padding",
             Self::Settings(_) => "export.invalid_settings",
-            Self::Atlas(error) => error.code(),
-            Self::Project(error) => error.code(),
-        }
+            Self::Atlas(error) => return error.code(),
+            Self::Project(error) => return error.code(),
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -486,14 +497,14 @@ impl Coded for ExportError {
 }
 
 impl Coded for AtlasError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::MissingTexture { .. } => "atlas.missing_texture",
             Self::NotPng { .. } => "atlas.not_png",
             Self::TextureOutOfRange { .. } => "atlas.texture_out_of_range",
             Self::InvalidMaxSize => "atlas.invalid_max_size",
             Self::TextureTooLarge { .. } => "atlas.texture_too_large",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -514,10 +525,10 @@ impl Coded for AtlasError {
 }
 
 impl Coded for OverflowError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::UnknownParameter { .. } => "overflow.unknown_parameter",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -530,8 +541,8 @@ impl Coded for OverflowError {
 }
 
 impl Coded for LightingError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::TextureNotFound(_) => "lighting.texture_not_found",
             Self::UnreadableTexture(_) => "lighting.unreadable_texture",
             Self::UnreadableNormalMap => "lighting.unreadable_normal_map",
@@ -540,7 +551,7 @@ impl Coded for LightingError {
             Self::Settings(_) => "lighting.invalid_settings",
             Self::TextureTooLarge { .. } => "lighting.texture_too_large",
             Self::NormalMapTooLarge { .. } => "lighting.normal_map_too_large",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -575,15 +586,15 @@ impl Coded for LightingError {
 }
 
 impl Coded for SpaceError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::NotFound { .. } => "space.not_found",
             Self::NoSpace { .. } => "space.no_space",
             Self::Evaluate(_) => "space.evaluate_failed",
             Self::LengthMismatch { .. } => "space.length_mismatch",
             Self::Singular { .. } => "space.singular",
             Self::NotConverged { .. } => "space.not_converged",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -604,8 +615,8 @@ impl Coded for SpaceError {
 }
 
 impl Coded for PsdImportError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::Psd(_) => "psd.read_failed",
             // 読み込みの上限 (ファイルが壊れているとは限らない)。
             Self::LimitExceeded {
@@ -618,7 +629,7 @@ impl Coded for PsdImportError {
             } => "psd.total_limit_exceeded",
             Self::InvalidMeshOptions(_) => "psd.invalid_mesh_options",
             Self::Mesh { .. } => "psd.automesh_failed",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -634,8 +645,8 @@ impl Coded for PsdImportError {
 }
 
 impl Coded for FormatError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::BadMagic => "format.not_ugoe_file",
             Self::UnsupportedVersion { .. } => "format.unsupported_version",
             Self::TooLarge => "format.too_large",
@@ -654,7 +665,7 @@ impl Coded for FormatError {
             Self::ReadLimitExceeded { .. } => "format.chunk_limit_exceeded",
             // 壊れたファイル (チャンク・圧縮・テクスチャ・MessagePack・JSON)。細かい理由は `detail`。
             _ => "format.corrupt",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -689,8 +700,8 @@ impl Coded for FormatError {
 
 /// アバタープロファイルの検査の問題 (`avatar.*`。[`crate::avatar::AvatarCheck`])。
 impl Coded for ProfileIssue {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::MissingProfile => "avatar.missing_profile",
             Self::NewerProfileVersion { .. } => "avatar.newer_profile_version",
             Self::InvalidLevel { .. } => "avatar.invalid_level",
@@ -705,7 +716,7 @@ impl Coded for ProfileIssue {
             Self::UnknownValue { .. } => "avatar.unknown_value",
             Self::InvalidValue { .. } => "avatar.invalid_value",
             Self::InternalTrackingTarget { .. } => "avatar.internal_tracking_target",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -759,12 +770,12 @@ impl Coded for ProfileIssue {
 
 /// 評価のためにモデルを前処理できない (物理の検査など)。
 impl Coded for CompileError {
-    fn code(&self) -> &'static str {
-        match self {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Self::Invalid(_) => "compile.invalid_model",
             Self::UnknownParameter(_) => "compile.unknown_parameter",
             Self::Unsupported(_) => "compile.unsupported",
-        }
+        })
     }
 
     fn args(&self) -> MessageArgs {
@@ -786,36 +797,8 @@ impl Coded for CompileError {
 /// モデルの検証のエラー (`validation.*`)。コードは `validation.` と [`ValidationError::code`] をつないだもの、
 /// 引数はバリアントのフィールド (並びは `, ` でつなぐ)。
 impl Coded for ValidationError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::DuplicateId { .. } => "validation.duplicate_id",
-            Self::KeyformCount { .. } => "validation.keyform_count",
-            Self::KeysNotAscending { .. } => "validation.keys_not_ascending",
-            Self::EmptyKeys { .. } => "validation.empty_keys",
-            Self::DuplicateBinding { .. } => "validation.duplicate_binding",
-            Self::IndicesNotTriangles { .. } => "validation.indices_not_triangles",
-            Self::IndexOutOfRange { .. } => "validation.index_out_of_range",
-            Self::VertexCount { .. } => "validation.vertex_count",
-            Self::WarpPointCount { .. } => "validation.warp_point_count",
-            Self::EmptyWarpGrid { .. } => "validation.empty_warp_grid",
-            Self::UnknownReference { .. } => "validation.unknown_reference",
-            Self::TextureOutOfRange { .. } => "validation.texture_out_of_range",
-            Self::GlueVertexOutOfRange { .. } => "validation.glue_vertex_out_of_range",
-            Self::ParentCycle { .. } => "validation.parent_cycle",
-            Self::MaskCycle { .. } => "validation.mask_cycle",
-            Self::ParameterRange { .. } => "validation.parameter_range",
-            Self::DuplicatePosePart { .. } => "validation.duplicate_pose_part",
-            Self::InvalidModuleName { .. } => "validation.invalid_module_name",
-            Self::OriginCount { .. } => "validation.origin_count",
-            Self::UnboundInferenceParameter { .. } => "validation.unbound_inference_parameter",
-            Self::AsymmetricMirror { .. } => "validation.asymmetric_mirror",
-            Self::DepthCount { .. } => "validation.depth_count",
-            Self::DeformerKindMismatch { .. } => "validation.deformer_kind_mismatch",
-            Self::WeightCount { .. } => "validation.weight_count",
-            Self::ParameterKindMismatch { .. } => "validation.parameter_kind_mismatch",
-            Self::InvalidBlendShape { .. } => "validation.invalid_blend_shape",
-            Self::InvalidValue { .. } => "validation.invalid_value",
-        }
+    fn code(&self) -> Cow<'static, str> {
+        sourced("validation", ValidationError::code(self))
     }
 
     fn args(&self) -> MessageArgs {
@@ -995,36 +978,8 @@ impl Coded for ValidationError {
 
 /// キーフォームの推定のエラー (`infer.*`。[`InferError::code`])。
 impl Coded for InferError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::UnknownParameter { .. } => "infer.unknown_parameter",
-            Self::MissingNeutralKey { .. } => "infer.missing_neutral_key",
-            Self::DuplicateAxis { .. } => "infer.duplicate_axis",
-            Self::NonFiniteKey { .. } => "infer.non_finite_key",
-            Self::KeysNotAscending { .. } => "infer.keys_not_ascending",
-            Self::TooManyAxes { .. } => "infer.too_many_axes",
-            Self::GridTooLarge => "infer.grid_too_large",
-            Self::GridSizeMismatch { .. } => "infer.grid_size_mismatch",
-            Self::OriginsLengthMismatch { .. } => "infer.origins_length_mismatch",
-            Self::BaseNotAuthored { .. } => "infer.base_not_authored",
-            Self::ShapeMismatch { .. } => "infer.shape_mismatch",
-            Self::UnknownTarget(_) => "infer.unknown_target",
-            Self::UnsupportedTarget(_) => "infer.unsupported_target",
-            Self::UnknownParent { .. } => "infer.unknown_parent",
-            Self::UnsupportedParent { .. } => "infer.unsupported_parent",
-            Self::ParentCycle { .. } => "infer.parent_cycle",
-            Self::NotMirrorPair { .. } => "infer.not_mirror_pair",
-            Self::IncompatibleMirror { .. } => "infer.incompatible_mirror",
-            Self::MirrorAxisMismatch { .. } => "infer.mirror_axis_mismatch",
-            Self::MissingMirrorKey { .. } => "infer.missing_mirror_key",
-            Self::UnmatchedVertices { .. } => "infer.unmatched_vertices",
-            Self::ParentTransform(_) => "infer.parent_transform",
-            Self::NotDepthRotation(_) => "infer.not_depth_rotation",
-            Self::MissingDepth(_) => "infer.missing_depth",
-            Self::DepthLengthMismatch { .. } => "infer.depth_length_mismatch",
-            Self::MissingRotationAxis { .. } => "infer.missing_rotation_axis",
-            Self::NonAffineParent(_) => "infer.non_affine_parent",
-        }
+    fn code(&self) -> Cow<'static, str> {
+        sourced("infer", InferError::code(self))
     }
 
     fn args(&self) -> MessageArgs {
@@ -1085,13 +1040,8 @@ impl Coded for InferError {
 
 /// 親の座標系とキャンバス座標の写像のエラー (`world.*`。[`WorldError::code`])。
 impl Coded for WorldError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::Evaluate(_) => "world.evaluate",
-            Self::LengthMismatch { .. } => "world.length_mismatch",
-            Self::Singular { .. } => "world.singular",
-            Self::NotConverged { .. } => "world.not_converged",
-        }
+    fn code(&self) -> Cow<'static, str> {
+        sourced("world", WorldError::code(self))
     }
 
     fn args(&self) -> MessageArgs {
@@ -1110,13 +1060,8 @@ impl Coded for WorldError {
 
 /// 法線マップの生成のエラー (`normal_map.*`。[`NormalMapError::code`])。
 impl Coded for NormalMapError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::EmptyImage { .. } => "normal_map.empty_image",
-            Self::SizeMismatch { .. } => "normal_map.size_mismatch",
-            Self::InvalidOption { .. } => "normal_map.invalid_option",
-            Self::GridTooLarge { .. } => "normal_map.grid_too_large",
-        }
+    fn code(&self) -> Cow<'static, str> {
+        sourced("normal_map", NormalMapError::code(self))
     }
 
     fn args(&self) -> MessageArgs {
@@ -1143,27 +1088,11 @@ impl Coded for NormalMapError {
     }
 }
 
-/// モジュールの合成のエラー (`compose.*`)。コードの後ろの部分は ugoe-runtime の `ComposeError::code`、引数の名前は
-/// SDK の `DressUpError::fields` と同じ。
+/// モジュールの合成のエラー (`compose.*`)。コードは `compose.` と ugoe-runtime の [`ComposeError::code`] をつないだもの、
+/// 引数の名前は SDK の `DressUpError::fields` と同じ。
 impl Coded for ComposeError {
-    /// `&'static str` を返すので、領域の名前を付けた値をここに並べる (`source_error_codes_follow_the_crate_codes` が
-    /// `ComposeError::code` と一致することを確かめる)。
-    fn code(&self) -> &'static str {
-        match self {
-            Self::InvalidModuleName(_) => "compose.invalid_module_name",
-            Self::DuplicateModule(_) => "compose.duplicate_module",
-            Self::UnknownSlot { .. } => "compose.unknown_slot",
-            Self::SlotOccupied { .. } => "compose.slot_occupied",
-            Self::AvatarLevel { .. } => "compose.avatar_level",
-            Self::MissingSlot { .. } => "compose.missing_slot",
-            Self::MissingParameter { .. } => "compose.missing_parameter",
-            Self::ParameterNotExposed { .. } => "compose.parameter_not_exposed",
-            Self::UnknownMask { .. } => "compose.unknown_mask",
-            Self::TextureOutOfRange { .. } => "compose.texture_out_of_range",
-            Self::UnknownCollider { .. } => "compose.unknown_collider",
-            Self::PoseNotExposed { .. } => "compose.pose_not_exposed",
-            Self::Invalid(_) => "compose.invalid_composition",
-        }
+    fn code(&self) -> Cow<'static, str> {
+        sourced("compose", ComposeError::code(self))
     }
 
     fn args(&self) -> MessageArgs {

@@ -855,7 +855,7 @@ pub(crate) fn infer_errors() -> Vec<InferError> {
 }
 
 /// 親の座標系とキャンバス座標の写像のエラー (`world.*`)。
-fn world_errors() -> Vec<WorldError> {
+pub(crate) fn world_errors() -> Vec<WorldError> {
     vec![
         WorldError::Evaluate("detail".into()),
         WorldError::LengthMismatch {
@@ -871,7 +871,7 @@ fn world_errors() -> Vec<WorldError> {
 }
 
 /// 法線マップの生成のエラー (`normal_map.*`)。
-fn normal_map_errors() -> Vec<NormalMapError> {
+pub(crate) fn normal_map_errors() -> Vec<NormalMapError> {
     vec![
         NormalMapError::EmptyImage {
             width: 0,
