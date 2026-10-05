@@ -336,7 +336,11 @@
 | `add_physics_collider { collider }`・`set_physics_collider { collider }`・`remove_physics_collider { id }` | 衝突体の追加・置き換え (`collider.id` のもの)・削除 (リグとスロットの `colliders` からも外す。[削除の連鎖と拒否](#削除の連鎖と拒否)) |
 
 - **検証:** `Document::apply` は、適用後の物理を `validate_physics` で検査し、適用前になかったエラーが生じたら `EditError::Invalid` で拒否します (存在しない参照先・種類の違うデフォーマ・頂点の重みの数・負の半径など。モデルの検証と同じ規則)。
-  `validate_physics` が見ない値はコマンドが検査し、`EditError::InvalidPhysics` で拒否します: 有限でない値、`fps` が 0 以下、粒子が 0 個、`mobility` が 0〜1 の外、`delay`・`radius`・`collision_radius` が負、出力の `particle` が 0 (根元)、出力の `blend` が未知の値、正規化の範囲が `min <= default <= max` でない、空の ID。
+  `validate_physics` が見ない値はコマンドが検査し、`EditError::InvalidPhysics` で拒否します: 有限でない値、`fps` が 0 以下、粒子が 0 個、`mobility` が 0〜1 の外、`delay`・`radius`・`collision_radius` が負、出力の `particle` が 0 (根元)、正規化の範囲が `min <= default <= max` でない、空の ID。
+- **未知の値:** 新しい版のファイルから読んだ未知の値 ([spec/file-formats.md#未知の値の読み込み](spec/file-formats.md#未知の値の読み込み)) は、どの種類も `EditError::InvalidPhysics` で拒否します
+  (入力・出力の `source`、出力先 `target`、頂点への出力の対象 `owner`、出力の `blend`、衝突体の `shape`。`add_physics_rig`・`set_physics_inputs`・`set_physics_outputs`・`add_physics_collider`・`set_physics_collider` のどれでも)。
+  未知の値は書き出せず保存も拒否される (`FormatError::UnknownValues`) ので、編集で作らせません。ほかのコマンド (モーション・表情・アバターのプロファイル・格子の補間と推定) が未知の値を拒否するのと同じ扱いです。
+  ファイルに既にある未知の値は、それを置き換えるコマンドを適用しない限り残ります (モデルの要素を消しても外さない)。置き換えるコマンドでは、未知の値を含まない列を渡します。
 - **モデルの編集との関係:** どのコマンドの後でも、そのコマンドが消したパラメータ・デフォーマ・メッシュ (`unwrap_deformer` を含む) を参照する入力・出力を削除し、重力の基準を外します。
   取り付け先のデフォーマが消えた衝突体は取り付けを外し、形状の位置を消す前の基準の姿でのキャンバス座標に写します (見た目の位置を保つ)。
   `add_mesh_vertex` は、そのメッシュへの頂点の出力の重みの末尾に 0 を足し、`remove_mesh_vertices` は消した頂点の重みを除きます。

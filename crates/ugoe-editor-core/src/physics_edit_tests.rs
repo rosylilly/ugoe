@@ -4,8 +4,8 @@
 use ugoe_core::Vec2;
 use ugoe_model::fixtures;
 use ugoe_model::physics::{
-    ColliderShape, PhysicsBlend, PhysicsCollider, PhysicsInput, PhysicsSettings, PhysicsSource,
-    PhysicsTarget, VertexOwner,
+    ColliderShape, PhysicsBlend, PhysicsCollider, PhysicsInput, PhysicsOutput, PhysicsRig,
+    PhysicsSettings, PhysicsSource, PhysicsTarget, VertexOwner,
 };
 use ugoe_model::validate::ValidationError;
 
@@ -736,4 +736,101 @@ fn set_output_blend_and_undo() {
         Err(EditError::InvalidPhysics { .. })
     ));
     assert_eq!(blend(&doc), PhysicsBlend::Overwrite);
+}
+
+/// 未知の値 (新しい版のファイルから読んだもの) は、どの種類もどの物理のコマンドでも拒否する
+/// (書き出せないので、編集で作らせない。`docs/editor.md#物理の編集`)。
+#[test]
+fn commands_reject_every_unknown_physics_value() {
+    let mut doc = doc();
+    let before = physics(&doc).clone();
+    let rig = before.rigs[0].clone();
+
+    let inputs = vec![PhysicsInput {
+        parameter: "AngleZ".into(),
+        source: PhysicsSource::Unknown,
+        weight: 50.0,
+        reflect: false,
+    }];
+    let mut outputs: Vec<Vec<_>> = Vec::new();
+    for change in [
+        |o: &mut PhysicsOutput| o.source = PhysicsSource::Unknown,
+        |o: &mut PhysicsOutput| o.target = PhysicsTarget::Unknown,
+        |o: &mut PhysicsOutput| {
+            o.target = PhysicsTarget::Vertices {
+                owner: VertexOwner::Unknown,
+                weights: vec![1.0],
+            }
+        },
+        |o: &mut PhysicsOutput| o.blend = PhysicsBlend::Unknown,
+    ] {
+        let mut changed = rig.outputs.clone();
+        change(&mut changed[0]);
+        outputs.push(changed);
+    }
+    let mut unknown_shape = before.colliders[0].clone();
+    unknown_shape.shape = ColliderShape::Unknown;
+    let mut new_collider = unknown_shape.clone();
+    new_collider.id = "NewCollider".into();
+
+    let mut commands = vec![
+        Command::SetPhysicsInputs {
+            rig: rig.id.clone(),
+            inputs: inputs.clone(),
+        },
+        Command::AddPhysicsRig {
+            rig: PhysicsRig {
+                id: "NewRig".into(),
+                inputs,
+                ..rig.clone()
+            },
+        },
+        Command::AddPhysicsCollider {
+            collider: new_collider,
+        },
+        Command::SetPhysicsCollider {
+            collider: unknown_shape,
+        },
+    ];
+    for outputs in outputs {
+        commands.push(Command::SetPhysicsOutputs {
+            rig: rig.id.clone(),
+            outputs: outputs.clone(),
+        });
+        commands.push(Command::AddPhysicsRig {
+            rig: PhysicsRig {
+                id: "NewRig".into(),
+                outputs,
+                ..rig.clone()
+            },
+        });
+    }
+    for command in commands {
+        let label = format!("{command:?}");
+        let err = doc.apply(command).unwrap_err();
+        assert!(
+            matches!(err, EditError::InvalidPhysics { .. }),
+            "{label}: {err}"
+        );
+        assert_eq!(physics(&doc), &before, "{label}");
+    }
+}
+
+/// IPC や MCP から届いた JSON の知らない値も、読み込みで `Unknown` になってから同じく拒否される。
+#[test]
+fn unknown_values_from_json_are_rejected() {
+    let mut doc = doc();
+    for json in [
+        r#"{"op":"set_physics_inputs","rig":"Hair","inputs":[{"parameter":"AngleZ","source":"twist","weight":50}]}"#,
+        r#"{"op":"set_physics_outputs","rig":"Hair","outputs":[{"target":{"type":"bone","id":"B"},"particle":1,"source":"angle","scale":1,"weight":100}]}"#,
+        r#"{"op":"set_physics_outputs","rig":"Hair","outputs":[{"target":{"type":"vertices","owner":{"bone":"B"},"weights":[1]},"particle":1,"source":"x","scale":1,"weight":100}]}"#,
+        r#"{"op":"add_physics_collider","collider":{"id":"Box","name":"Box","shape":{"type":"box"}}}"#,
+    ] {
+        let command: Command = serde_json::from_str(json).unwrap();
+        let err = doc.apply(command).unwrap_err();
+        assert!(
+            matches!(err, EditError::InvalidPhysics { .. }),
+            "{json}: {err}"
+        );
+    }
 }

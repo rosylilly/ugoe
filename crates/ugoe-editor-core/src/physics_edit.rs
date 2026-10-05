@@ -132,7 +132,7 @@ pub(crate) fn apply(
                     id: collider.id.to_string(),
                 });
             }
-            check_collider_id(collider.id.as_str())?;
+            check_collider(&collider)?;
             settings.colliders.push(collider);
         }
         Command::RemovePhysicsCollider { id } => {
@@ -157,6 +157,7 @@ pub(crate) fn apply(
                     kind: "physics collider",
                     id: collider.id.to_string(),
                 })?;
+            check_collider(&collider)?;
             *existing = collider;
         }
         Command::ReorderPhysicsRig { id, before } => {
@@ -219,9 +220,12 @@ fn reorder_rig(
     Ok(())
 }
 
-fn check_collider_id(id: &str) -> Result<(), EditError> {
-    if id.is_empty() {
+fn check_collider(collider: &PhysicsCollider) -> Result<(), EditError> {
+    if collider.id.as_str().is_empty() {
         return Err(invalid("physics collider id must not be empty"));
+    }
+    if collider.shape == ColliderShape::Unknown {
+        return Err(invalid("collider shape must be circle or capsule"));
     }
     Ok(())
 }
@@ -239,8 +243,15 @@ fn check_vec(field: &str, value: Vec2) -> Result<(), EditError> {
     check_finite(field, value.y)
 }
 
+// 未知の値 (新しい版のファイルから読んだもの) は書き出せないので、どのコマンドでも受け付けない
+// (`docs/editor.md#物理の編集`)。既にあるものは、コマンドが置き換えない限り残る。
+
 fn check_input(input: &PhysicsInput) -> Result<(), EditError> {
-    check_finite("input weight", input.weight)
+    check_finite("input weight", input.weight)?;
+    if input.source == PhysicsSource::Unknown {
+        return Err(invalid("input source must be x, y or angle"));
+    }
+    Ok(())
 }
 
 fn check_output(output: &PhysicsOutput) -> Result<(), EditError> {
@@ -250,6 +261,21 @@ fn check_output(output: &PhysicsOutput) -> Result<(), EditError> {
         return Err(invalid(
             "output particle must be 1 or more (particle 0 is the root)",
         ));
+    }
+    if output.source == PhysicsSource::Unknown {
+        return Err(invalid("output source must be x, y or angle"));
+    }
+    match &output.target {
+        PhysicsTarget::Unknown => {
+            return Err(invalid(
+                "output target must be parameter, deformer_angle, deformer_offset or vertices",
+            ));
+        }
+        PhysicsTarget::Vertices {
+            owner: VertexOwner::Unknown,
+            ..
+        } => return Err(invalid("vertex output owner must be mesh or warp")),
+        _ => {}
     }
     if output.blend == PhysicsBlend::Unknown {
         return Err(invalid("output blend must be overwrite or add"));
