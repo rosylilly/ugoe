@@ -1,11 +1,11 @@
 ---
 id: T0572
 title: "MeshError::InvalidOptions の理由をフィールドと値にして automesh.invalid_options の reason を訳す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mesher, ugoe-editor-core, apps/editor, docs]
 depends_on: [T0571]
-assignee:
+assignee: claude-worker-T0572
 ---
 
 # T0572: MeshError::InvalidOptions の理由をフィールドと値にして automesh.invalid_options の reason を訳す
