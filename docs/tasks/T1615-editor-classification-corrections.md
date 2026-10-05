@@ -1,11 +1,11 @@
 ---
 id: T1615
 title: "エディタ: 分類の結果 (ラベル・左右) を直し、食い違いを「これでよい」と認めて印を消す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1615
 ---
 
 # T1615: エディタ: 分類の結果 (ラベル・左右) を直し、食い違いを「これでよい」と認めて印を消す (判断が要る)
