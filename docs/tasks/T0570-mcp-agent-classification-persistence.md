@@ -1,11 +1,11 @@
 ---
 id: T0570
 title: "MCP のエージェントの分類の答えをエディタに残す方法 (直しの提案・キャッシュへの書き込み。判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, ugoe-ai, ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0570
 ---
 
 # T0570: MCP のエージェントの分類の答えをエディタに残す方法 (直しの提案・キャッシュへの書き込み。判断が要る)
