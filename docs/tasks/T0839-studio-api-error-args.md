@@ -1,11 +1,11 @@
 ---
 id: T0839
 title: スタジオの操作 API の -32010 の error.data に args と ADR 0029 のコードを足すか決める (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0838]
-assignee:
+assignee: claude-worker-T0839
 ---
 
 # T0839: スタジオの操作 API の -32010 の error.data に args と ADR 0029 のコードを足すか決める (判断が要る)
