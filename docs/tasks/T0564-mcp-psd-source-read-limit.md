@@ -1,11 +1,11 @@
 ---
 id: T0564
 title: "ugoe-mcp: 自動リギングの PSD を ugoe_fs::read_regular_file で上限付きで読む"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
-assignee:
+assignee: claude-worker-T0564
 ---
 
 # T0564: ugoe-mcp: 自動リギングの PSD を ugoe_fs::read_regular_file で上限付きで読む
