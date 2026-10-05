@@ -191,7 +191,61 @@ describe("Output load failures", () => {
     await vi.waitFor(() =>
       expect(r.failures).toEqual([{ revision: 1, asset: "module", index: 1, code: "unavailable" }]),
     );
-    expect(r.player.loaded).toEqual([]);
+    // 受け取れないモジュールは飛ばして、モデルと受け取れたモジュールで出す (T0840)。
+    expect(r.player.loaded).toEqual(["avatar.ugoe"]);
+    expect(r.player.modules.map((m) => m.name)).toEqual(["CatEars.ugoemod"]);
+  });
+
+  // 1 つのシーンで読めなかったものは、最初の 1 つでなくすべて知らせる (T0840)。
+  it("reports every module and the background it cannot get or read", async () => {
+    vi.mocked(decodeImage).mockResolvedValueOnce(false);
+    const r = receiver({
+      model: async () => GOOD,
+      module: async (_revision, index) =>
+        index === 0 ? BROKEN : index === 1 ? Promise.reject(new Error("io")) : GOOD,
+      background: async () => GOOD,
+    });
+    await r.send(
+      scene(1, {
+        modules: ["CatEars", "Hat", "Ribbon"],
+        background: { kind: "image", path: "/bg.png" },
+      }),
+    );
+    await vi.waitFor(() => expect(r.failures).toHaveLength(3));
+    expect(r.failures).toEqual([
+      { revision: 1, asset: "module", index: 0, code: "unreadable" },
+      { revision: 1, asset: "module", index: 1, code: "unavailable" },
+      { revision: 1, asset: "background", index: null, code: "unreadable" },
+    ]);
+    expect(r.player.followed).toEqual([1]);
+    expect(r.player.modules.map((m) => m.name)).toEqual(["Ribbon.ugoemod"]);
+    // 見せ方だけが変わった次のシーンで付け直し、まだ読めなければもう一度すべて知らせる。
+    await r.send(
+      scene(2, {
+        modelRevision: 1,
+        modulesRevision: 1,
+        modules: ["CatEars", "Hat", "Ribbon"],
+      }),
+    );
+    await vi.waitFor(() => expect(r.failures).toHaveLength(5));
+    expect(r.failures.slice(3)).toEqual([
+      { revision: 2, asset: "module", index: 0, code: "unreadable" },
+      { revision: 2, asset: "module", index: 1, code: "unavailable" },
+    ]);
+  });
+
+  it("reports only the model when it cannot read the model", async () => {
+    const r = receiver({
+      model: async () => BROKEN,
+      module: async () => Promise.reject(new Error("io")),
+      background: async () => Promise.reject(new Error("io")),
+    });
+    await r.send(
+      scene(1, { modules: ["CatEars"], background: { kind: "image", path: "/bg.png" } }),
+    );
+    await vi.waitFor(() => expect(r.failures).toHaveLength(1));
+    await settle();
+    expect(r.failures).toEqual([{ revision: 1, asset: "model", index: null, code: "unreadable" }]);
   });
 
   it("does not report a failure caused by moving to the next scene", async () => {

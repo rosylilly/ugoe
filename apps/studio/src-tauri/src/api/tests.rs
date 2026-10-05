@@ -1973,6 +1973,109 @@ fn load_failures_are_kept_for_the_current_scene_only() {
     assert!(studio.load_failures_view().is_empty());
 }
 
+/// 1 つの受け手で読めなかったものは、1 つでなくすべて覚えて出す。同じものの報告は置き換え、並びはモデル・モジュール
+/// (番号の順)・背景の画像 (T0840)。
+#[test]
+fn every_load_failure_of_a_receiver_is_kept() {
+    use crate::virtual_camera::{Event, LABEL};
+    let dir = Dir::new();
+    let model = dir.model();
+    let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+    let dress = dir.module("dress.ugoemod", fixtures::dress_module());
+    let studio = studio();
+    let (chat, game) = stage_scenes(&studio, &model, &[hair, dress]);
+    studio.with_stage(|stage, conductor| stage.activate(&game, conductor).unwrap());
+    let revision = lock(&studio.conductor).scene().unwrap().revision;
+    let failure = |asset, index, code| LoadFailure {
+        revision,
+        asset,
+        index,
+        code,
+    };
+    let view = |studio: &Studio| {
+        studio
+            .load_failures_view()
+            .into_iter()
+            .map(|f| (f.label, f.failure.asset, f.failure.index, f.failure.code))
+            .collect::<Vec<_>>()
+    };
+    let output = || "output".to_owned();
+    let camera = || LABEL.to_owned();
+
+    // 出力ウィンドウは 1 つずつ返す。前に返したものは残る。
+    studio.report_load_failure(
+        "output",
+        failure(Asset::Background, None, LoadFailureCode::Unreadable),
+    );
+    studio.report_load_failure(
+        "output",
+        failure(Asset::Module, Some(1), LoadFailureCode::Unreadable),
+    );
+    studio.report_load_failure(
+        "output",
+        failure(Asset::Module, Some(0), LoadFailureCode::Unavailable),
+    );
+    // 同じものは置き換える (同じ報告が重ねて届いても 1 つ)。
+    studio.report_load_failure(
+        "output",
+        failure(Asset::Module, Some(1), LoadFailureCode::Unavailable),
+    );
+    studio.report_load_failure(
+        "output",
+        failure(Asset::Module, Some(1), LoadFailureCode::Unavailable),
+    );
+    // 仮想カメラは 1 つのシーンの分をまとめて返す。捨てるもの (シーンに無い番号) が混じっても、残りは受ける。
+    studio.camera_event(
+        Event::LoadFailures(vec![
+            failure(Asset::Module, Some(0), LoadFailureCode::Unreadable),
+            failure(Asset::Module, Some(2), LoadFailureCode::Unreadable),
+            failure(Asset::Background, None, LoadFailureCode::Unavailable),
+        ]),
+        30,
+    );
+    assert_eq!(
+        view(&studio),
+        [
+            (
+                output(),
+                Asset::Module,
+                Some(0),
+                LoadFailureCode::Unavailable
+            ),
+            (
+                output(),
+                Asset::Module,
+                Some(1),
+                LoadFailureCode::Unavailable
+            ),
+            (
+                output(),
+                Asset::Background,
+                None,
+                LoadFailureCode::Unreadable
+            ),
+            (
+                camera(),
+                Asset::Module,
+                Some(0),
+                LoadFailureCode::Unreadable
+            ),
+            (
+                camera(),
+                Asset::Background,
+                None,
+                LoadFailureCode::Unavailable
+            ),
+        ]
+    );
+    // 受け手が去れば、その報告をすべて捨てる。
+    studio.forget_load_failure(LABEL);
+    assert_eq!(view(&studio).len(), 3);
+    // シーンを切り替えると、すべて捨てる。
+    studio.with_stage(|stage, conductor| stage.activate(&chat, conductor).unwrap());
+    assert!(view(&studio).is_empty());
+}
+
 /// 仮想カメラの受け手が読めなかったことも、同じ報告として操作ウィンドウに出す。止まったら捨てる (T0836)。
 #[test]
 fn virtual_camera_load_failures_are_reported_like_the_output_window() {
@@ -1989,13 +2092,13 @@ fn virtual_camera_load_failures_are_reported_like_the_output_window() {
         code: LoadFailureCode::Unreadable,
     };
     // シーンに無いモジュールの番号は、出力ウィンドウと同じく捨てる。
-    studio.camera_event(Event::LoadFailure(failure), 30);
+    studio.camera_event(Event::LoadFailures(vec![failure]), 30);
     assert!(studio.load_failures_view().is_empty());
     let failure = LoadFailure {
         asset: Asset::Model,
         ..failure
     };
-    studio.camera_event(Event::LoadFailure(failure), 30);
+    studio.camera_event(Event::LoadFailures(vec![failure]), 30);
     let failures = studio.load_failures_view();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].label, LABEL);

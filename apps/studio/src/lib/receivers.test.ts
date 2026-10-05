@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReceiverFailure, StudioScene } from "./host";
 import { t } from "./i18n";
-import { describeLoadFailure, receiverName } from "./receivers";
+import { describeLoadFailure, groupLoadFailures, receiverName } from "./receivers";
 
 const scene = {
   kind: "scene",
@@ -76,5 +76,19 @@ describe("describeLoadFailure", () => {
     expect(describeLoadFailure(failure({ asset: "module", index: 5 }), scene)).toContain(
       t("receiverFailure.moduleUnnamed"),
     );
+  });
+});
+
+describe("groupLoadFailures", () => {
+  it("keeps every failure of a receiver together in the order received", () => {
+    const model = failure();
+    const module = failure({ asset: "module", index: 1 });
+    const camera = failure({ label: "virtualCamera", asset: "background" });
+    const background = failure({ asset: "background" });
+    expect(groupLoadFailures([model, camera, module, background])).toEqual([
+      { label: "output", failures: [model, module, background] },
+      { label: "virtualCamera", failures: [camera] },
+    ]);
+    expect(groupLoadFailures([])).toEqual([]);
   });
 });

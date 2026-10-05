@@ -60,7 +60,6 @@ import { Microphone } from "./lib/microphone.svelte";
 import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { fileName, type ProfileView, type SceneSettings } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
-import { describeLoadFailure } from "./lib/receivers";
 import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
   forgetLegacySettings,
@@ -74,6 +73,7 @@ import {
 } from "./lib/settings";
 import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
+import ReceiverFailuresNotices from "./ReceiverFailuresNotices.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
 import SettingsDialog from "./SettingsDialog.svelte";
@@ -690,11 +690,11 @@ onMount(() => {
     </Notice>
   {/if}
 
-  {#each loadFailures as failure (failure.label)}
-    <Notice tone="danger" ondismiss={() => (loadFailures = loadFailures.filter((f) => f !== failure))}>
-      {describeLoadFailure(failure, scene)}
-    </Notice>
-  {/each}
+  <ReceiverFailuresNotices
+    failures={loadFailures}
+    {scene}
+    ondismiss={(label) => (loadFailures = loadFailures.filter((f) => f.label !== label))}
+  />
 
   <main class="studio__main">
     <ScenesPanel

@@ -21,6 +21,7 @@ src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源
 src/MotionPanel.svelte        表情とモーション (表情の付け外し・モーションの再生と優先度・待機モーション・トラッキング中のモーションの優先)
 src/InputPanel.svelte         入力 (@ugoe/face-tracking のパネルでカメラのトラッキング、マイクの機器・感度・ノイズの閾値・メーター)
 src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない理由)
+src/ReceiverFailuresNotices.svelte 操作ウィンドウの上の、受け手が読めなかったことの知らせ (受け手ごとに 1 つ。読めなかったものをすべて並べる。T0840)
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
 src/LicenseDialog.svelte      ライセンスの表示 (設定の「ライセンスを表示…」)。本文は public/third-party-notices.txt
 public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記 (`node scripts/third-party-notices.mjs` が生成する)
@@ -50,7 +51,7 @@ src/lib/outputLayout.ts       受け手がシーンの通知ですること (pla
 src/lib/errors.ts             バックエンドのコマンドのエラー (コードと引数) を今の言語の文にする (下の「コマンドのエラー」)
 src/lib/commandMessage.ts     コマンドのエラーの形と英語の文 (@ugoe/i18n を読まない出力ウィンドウとブラウザソースも使う)
 src/lib/labels.ts             シーンの表示名
-src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文
+src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文と受け手ごとのまとめ (T0840)
 src/lib/decodeImage.ts        受け手が受け取った背景の画像をデコードできるか (壊れた画像を知らせる。T0836)
 src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
@@ -69,7 +70,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
-  src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、操作ウィンドウに配る。T0825・T0836)
+  src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、受け手ごとにすべて覚えて操作ウィンドウに配る。T0825・T0836・T0840)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知

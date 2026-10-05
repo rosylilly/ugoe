@@ -42,3 +42,20 @@ export function describeLoadFailure(failure: ReceiverFailure, scene: StudioScene
     asset: assetName(failure, scene),
   });
 }
+
+/** 1 つの受け手の、読めなかったことすべて (バックエンドが送る順。モデル・モジュール・背景の画像)。 */
+export interface ReceiverFailures {
+  label: string;
+  failures: ReceiverFailure[];
+}
+
+/** 受け手ごとにまとめる (操作ウィンドウは受け手ごとに 1 つの知らせにする。T0840)。受け手は最初に出てきた順。 */
+export function groupLoadFailures(failures: readonly ReceiverFailure[]): ReceiverFailures[] {
+  const groups = new Map<string, ReceiverFailure[]>();
+  for (const failure of failures) {
+    const group = groups.get(failure.label);
+    if (group === undefined) groups.set(failure.label, [failure]);
+    else group.push(failure);
+  }
+  return [...groups].map(([label, failures]) => ({ label, failures }));
+}

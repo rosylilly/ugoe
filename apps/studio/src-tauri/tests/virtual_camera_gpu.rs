@@ -134,7 +134,7 @@ fn the_camera_feed_matches_a_single_puppet() {
             modules: Vec::new(),
             background: None,
         };
-        assert_eq!(feed.set_scene(gpu(), &files).unwrap(), None);
+        assert!(feed.set_scene(gpu(), &files).unwrap().is_empty());
         for i in 0..90 {
             let value = 30.0 * (i as f32 * 0.2).sin();
             assert!(conductor.set_parameter("AngleX", value));
@@ -250,7 +250,7 @@ fn the_camera_feed_uses_the_scene_lighting_and_background_image() {
         modules: Vec::new(),
         background: Some(Arc::new(background_png.clone())),
     };
-    assert_eq!(feed.set_scene(gpu(), &files).unwrap(), None);
+    assert!(feed.set_scene(gpu(), &files).unwrap().is_empty());
     let mut reference = puppet(&source, true);
     for i in 0..20 {
         let value = 20.0 * (i as f32 * 0.3).sin();
@@ -332,7 +332,8 @@ fn the_camera_feed_uses_the_scene_lighting_and_background_image() {
 }
 
 /// 今のシーンのモデル・モジュール・背景の画像を読めなければ、止まらずに知らせる。モデルを読めなければ前のモデルを残し、
-/// このシーンのフレームは当てない。読めなかったものは次のシーンの通知で読み直す (T0836)。
+/// このシーンのフレームは当てない。読めなかったものは次のシーンの通知で読み直す (T0836)。1 つのシーンで読めなかったものは
+/// すべて知らせる (T0840)。
 #[test]
 fn the_camera_feed_reports_what_it_cannot_read() {
     let (source, bytes) = bundle();
@@ -347,20 +348,23 @@ fn the_camera_feed_reports_what_it_cannot_read() {
         modules,
         background,
     };
-    let failure = |scene: &ugoe_studio_lib::stream::Scene, asset, index, code| {
-        Some(LoadFailure {
-            revision: scene.revision,
-            asset,
-            index,
-            code,
-        })
+    let failure = |scene: &ugoe_studio_lib::stream::Scene, asset, index, code| LoadFailure {
+        revision: scene.revision,
+        asset,
+        index,
+        code,
     };
 
     // モデルを受け取れない・読めない。モデルが無いままなので背景だけを出す。
     let result = feed.set_scene(gpu(), &files(&first, None, Vec::new(), None));
     assert_eq!(
         result.unwrap(),
-        failure(&first, Asset::Model, None, LoadFailureCode::Unavailable)
+        [failure(
+            &first,
+            Asset::Model,
+            None,
+            LoadFailureCode::Unavailable
+        )]
     );
     let result = feed.set_scene(
         gpu(),
@@ -368,11 +372,16 @@ fn the_camera_feed_reports_what_it_cannot_read() {
     );
     assert_eq!(
         result.unwrap(),
-        failure(&first, Asset::Model, None, LoadFailureCode::Unreadable)
+        [failure(
+            &first,
+            Asset::Model,
+            None,
+            LoadFailureCode::Unreadable
+        )]
     );
     assert_eq!(feed.poll(gpu(), Wait::All).unwrap().unwrap(), fill);
 
-    // 読めないモジュールは飛ばしてモデルを出す。背景の画像を読めなければ設定の色で埋める (知らせるのはモジュール)。
+    // 受け取れない・読めないモジュールは飛ばしてモデルを出す。背景の画像を読めなければ設定の色で埋める (どれも知らせる)。
     let mut scene = first.clone();
     scene.look.background = Background::Image {
         path: PathBuf::from("/backgrounds/broken.png"),
@@ -383,13 +392,17 @@ fn the_camera_feed_reports_what_it_cannot_read() {
         &files(
             &scene,
             model.clone(),
-            vec![Some(Arc::clone(&garbage))],
+            vec![Some(Arc::clone(&garbage)), None],
             Some(Arc::clone(&garbage)),
         ),
     );
     assert_eq!(
         result.unwrap(),
-        failure(&scene, Asset::Module, Some(0), LoadFailureCode::Unreadable)
+        [
+            failure(&scene, Asset::Module, Some(0), LoadFailureCode::Unreadable),
+            failure(&scene, Asset::Module, Some(1), LoadFailureCode::Unavailable),
+            failure(&scene, Asset::Background, None, LoadFailureCode::Unreadable),
+        ]
     );
     let frame = conductor.tick(1.0 / 60.0).unwrap();
     assert_eq!(feed.receive(&frame).unwrap(), Received::Applied);
@@ -414,7 +427,12 @@ fn the_camera_feed_reports_what_it_cannot_read() {
     );
     assert_eq!(
         result.unwrap(),
-        failure(&scene, Asset::Background, None, LoadFailureCode::Unreadable)
+        [failure(
+            &scene,
+            Asset::Background,
+            None,
+            LoadFailureCode::Unreadable
+        )]
     );
 
     // 次のモデルを読めなければ、前のモデルを残して新しいシーンのフレームは当てない。
@@ -426,7 +444,12 @@ fn the_camera_feed_reports_what_it_cannot_read() {
     );
     assert_eq!(
         result.unwrap(),
-        failure(&second, Asset::Model, None, LoadFailureCode::Unreadable)
+        [failure(
+            &second,
+            Asset::Model,
+            None,
+            LoadFailureCode::Unreadable
+        )]
     );
     let frame = conductor.tick(1.0 / 60.0).unwrap();
     assert_eq!(feed.receive(&frame).unwrap(), Received::Ahead);

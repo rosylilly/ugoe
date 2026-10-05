@@ -114,23 +114,18 @@ async function applyScene(scene: StudioScene): Promise<void> {
     await showLook(scene);
     return;
   }
-  let modules: ModelFile[] = [];
+  // 受け取れなかったモジュールは `null` (飛ばして、読めたものだけを付ける。次のシーンの通知で取り直す)。
+  let modules: (ModelFile | null)[] = [];
   if (plan === "reload" || plan === "modules") {
-    const fetched = await Promise.all(
+    modules = await Promise.all(
       scene.modules.map(async (name, i) => {
         try {
           return { name: `${name}.ugoemod`, bytes: await host.sceneModule(scene.revision, i) };
         } catch {
-          return i;
+          return null;
         }
       }),
     );
-    const missing = fetched.find((m) => typeof m === "number");
-    if (missing !== undefined) {
-      fail(scene, { asset: "module", index: missing, code: "unavailable" });
-      return;
-    }
-    modules = fetched.filter((m) => typeof m !== "number");
   }
   if (scene.revision !== latest) return;
   if (plan === "reload") {
@@ -147,30 +142,27 @@ async function applyScene(scene: StudioScene): Promise<void> {
     player.error = null;
     await player.load({ name: scene.modelName, bytes });
     if (player.error !== null) {
+      // モジュールと背景の画像はこのシーンでは付けない・出さないので、知らせるのはモデルだけ。
       fail(scene, { asset: "model", index: null, code: "unreadable" });
       return;
     }
-    const unreadable = attachModules(modules);
+    const skipped = attachModules(scene, modules);
     // 読んだモデルには前のシーンのフレームを当てない (値の数が違う)。見せ方を待たずに、このシーンのフレームへ移る。
     followed = {
       modelRevision: scene.modelRevision,
-      modulesRevision: unreadable === null ? scene.modulesRevision : -1,
+      modulesRevision: skipped ? -1 : scene.modulesRevision,
     };
     player.followScene(scene.revision);
-    if (unreadable !== null)
-      fail(scene, { asset: "module", index: unreadable, code: "unreadable" });
     await showLook(scene);
     return;
   }
   if (plan === "modules") {
     for (const m of player.modules) player.unloadModule(m.name);
-    const unreadable = attachModules(modules);
+    const skipped = attachModules(scene, modules);
     followed = {
       modelRevision: scene.modelRevision,
-      modulesRevision: unreadable === null ? scene.modulesRevision : -1,
+      modulesRevision: skipped ? -1 : scene.modulesRevision,
     };
-    if (unreadable !== null)
-      fail(scene, { asset: "module", index: unreadable, code: "unreadable" });
   }
   await showLook(scene);
   // 背景の画像を取っている間に次のシーンが届いたら、このシーンには移らない (次のシーンが移る)。
@@ -179,15 +171,18 @@ async function applyScene(scene: StudioScene): Promise<void> {
 }
 
 /**
- * モジュールを合成の順に読んで付ける。読めなかったものがあれば、その最初の番号 (読めたものは付ける。
- * 次のシーンの通知で付け直すため、呼び出し側は付けたモジュールの版を覚えない)。
+ * モジュール (`scene.modules` の順。受け取れなかったものは `null`) を合成の順に読んで付け、受け取れなかった・読めなかった
+ * ものをすべて知らせる (T0840)。飛ばしたものがあれば `true` (読めたものは付ける。次のシーンの通知で付け直すため、
+ * 呼び出し側は付けたモジュールの版を覚えない)。
  */
-function attachModules(modules: readonly ModelFile[]): number | null {
-  let unreadable: number | null = null;
+function attachModules(scene: StudioScene, modules: readonly (ModelFile | null)[]): boolean {
+  let skipped = false;
   modules.forEach((file, i) => {
-    if (player.loadModule(file, true) === null) unreadable ??= i;
+    if (file !== null && player.loadModule(file, true) !== null) return;
+    skipped = true;
+    fail(scene, { asset: "module", index: i, code: file === null ? "unavailable" : "unreadable" });
   });
-  return unreadable;
+  return skipped;
 }
 
 /** 見せ方 (ライティング・配置・背景) を当てる。 */

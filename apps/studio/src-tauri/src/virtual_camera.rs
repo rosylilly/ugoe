@@ -12,8 +12,8 @@
 //!   (`crates/ugoe-headless/README.md#gpu`)。GPU を待つ時間の上限を超えたら (止めるときの待ち・動いている間に読み戻しが
 //!   [`STALL_LIMIT`] 来ない)、その GPU を手放して次の開始で作り直す (T0832)。描画中に GPU がエラーを返したときも
 //!   (`gpuError`。デバイスの喪失など) 手放す (T0836)。
-//! - シーンのモデル・モジュール・背景の画像を読めなくても止まらず、出力ウィンドウの受け手と同じ報告 ([`Event::LoadFailure`]) で
-//!   知らせる (T0836、`docs/studio.md#受け手が読めなかったとき`)。
+//! - シーンのモデル・モジュール・背景の画像を読めなくても止まらず、出力ウィンドウの受け手と同じ報告 ([`Event::LoadFailures`]) で
+//!   読めなかったものをすべて知らせる (T0836・T0840、`docs/studio.md#受け手が読めなかったとき`)。
 //! - OS の部品 (`VirtualCamera`) は、作ったスレッドで使って落とす (Windows の COM)。
 
 use std::path::PathBuf;
@@ -114,7 +114,7 @@ pub enum Status {
     /// 止まった (始められなかった・途中で失敗した)。`code` は `ugoe_studio_vcam::Error::code` か
     /// `gpu` (GPU が無い)・`gpuError` (描画中に GPU がエラーを返した)・`gpuTimeout` (GPU が止まった)・
     /// `model` (フレームをモデルに当てられない)・`os`。シーンのファイルを読めなかったことは止まる理由にせず、
-    /// [`Event::LoadFailure`] で知らせる。
+    /// [`Event::LoadFailures`] で知らせる。
     #[serde(rename = "failed", rename_all = "camelCase")]
     Failed {
         settings: Settings,
@@ -166,8 +166,9 @@ pub enum Event {
         render_max_ms: f32,
         dropped: u64,
     },
-    /// 今のシーンのファイルを読めなかった (`load_failure.rs`。受け手のラベルは [`LABEL`])。
-    LoadFailure(LoadFailure),
+    /// 今のシーンのファイルを読めなかった (`load_failure.rs`。受け手のラベルは [`LABEL`])。1 つのシーンで読めなかったものすべて
+    /// (空にはしない)。
+    LoadFailures(Vec<LoadFailure>),
 }
 
 /// 受け手と描画のエラー (仮想カメラを止める理由)。
@@ -293,18 +294,18 @@ impl Feed {
         }
     }
 
-    /// シーンの通知を受ける。今のシーンのモデル・モジュール・背景の画像を読めなければ、そのことを返す
-    /// (出力ウィンドウの受け手と同じ扱い。`docs/studio.md#受け手が読めなかったとき`)。読めなかったことが
-    /// いくつかあれば、モデル・モジュール・背景の画像の順に最初のもの (受け手ごとに 1 つ覚えるため)。
+    /// シーンの通知を受ける。今のシーンのモデル・モジュール・背景の画像で読めなかったものを、すべて返す
+    /// (出力ウィンドウの受け手と同じ扱い。`docs/studio.md#受け手が読めなかったとき`)。並びはモジュール (番号の順)・背景の画像の順。
     ///
     /// - モデルを読めなければ前のモデルを残し、このシーンのフレームを当てない (見せ方も変えない)。次のシーンの通知で読み直す。
+    ///   モジュールと背景の画像はこのシーンでは読まないので、返すのはモデルのことだけ。
     /// - モジュールを読めなければ、モデルと読めたモジュールで出す。次のシーンの通知で付け直す。
     /// - 背景の画像を読めなければ設定の色で埋める。次のシーンの通知で読み直す。
     pub fn set_scene(
         &mut self,
         gpu: &Gpu,
         files: &SceneFiles,
-    ) -> Result<Option<LoadFailure>, FeedError> {
+    ) -> Result<Vec<LoadFailure>, FeedError> {
         let scene = &files.scene;
         let failure = |asset, index, code| LoadFailure {
             revision: scene.revision,
@@ -312,7 +313,13 @@ impl Feed {
             index,
             code,
         };
-        let mut unread = None;
+        let module_failures = |skipped: Vec<(usize, LoadFailureCode)>| {
+            skipped
+                .into_iter()
+                .map(|(index, code)| failure(Asset::Module, Some(index), code))
+                .collect::<Vec<_>>()
+        };
+        let mut unread = Vec::new();
         if scene.model_revision == 0 {
             self.follower.clear();
             self.resident = None;
@@ -320,36 +327,35 @@ impl Feed {
             self.modules_revision = Some(scene.modules_revision);
         } else if self.model.as_ref().map(|m| m.revision) != Some(scene.model_revision) {
             let Some(bytes) = files.model.as_deref() else {
-                return Ok(Some(failure(
+                return Ok(vec![failure(
                     Asset::Model,
                     None,
                     LoadFailureCode::Unavailable,
-                )));
+                )]);
             };
             let Some((mut puppet, model)) = read_model(bytes, scene.model_revision) else {
-                return Ok(Some(failure(
+                return Ok(vec![failure(
                     Asset::Model,
                     None,
                     LoadFailureCode::Unreadable,
-                )));
+                )]);
             };
-            let (modules, module_failure) = attach_modules(&mut puppet, &files.modules);
-            unread = module_failure.map(|(index, code)| failure(Asset::Module, Some(index), code));
+            let (modules, skipped) = attach_modules(&mut puppet, &files.modules);
+            unread = module_failures(skipped);
             self.look = scene.look.clone();
             self.resident = Some(self.resident_for(gpu, &puppet, &model, &modules)?);
             self.model = Some(model);
             self.follower.set_scene(scene.revision, puppet);
             self.last_seq = None;
-            self.modules_revision = unread.is_none().then_some(scene.modules_revision);
+            self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
         } else {
             if self.modules_revision != Some(scene.modules_revision) {
                 let puppet = self
                     .follower
                     .puppet_mut()
                     .ok_or_else(|| FeedError::Model("no model is loaded".to_owned()))?;
-                let (modules, module_failure) = attach_modules(puppet, &files.modules);
-                unread =
-                    module_failure.map(|(index, code)| failure(Asset::Module, Some(index), code));
+                let (modules, skipped) = attach_modules(puppet, &files.modules);
+                unread = module_failures(skipped);
                 self.look = scene.look.clone();
                 // 物理のリセットは、指揮役がフレームの印で揃える。テクスチャの並びが変わるので描画は作り直す。
                 let (Some(puppet), Some(model)) = (self.follower.puppet(), self.model.as_ref())
@@ -358,16 +364,16 @@ impl Feed {
                 };
                 let resident = self.resident_for(gpu, puppet, model, &modules)?;
                 self.resident = Some(resident);
-                self.modules_revision = unread.is_none().then_some(scene.modules_revision);
+                self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
             }
             self.follower.continue_scene(scene.revision);
         }
         self.look = scene.look.clone();
-        let background = self
-            .read_image(files.background.as_deref())
-            .map(|code| failure(Asset::Background, None, code));
+        if let Some(code) = self.read_image(files.background.as_deref()) {
+            unread.push(failure(Asset::Background, None, code));
+        }
         self.apply_look(gpu)?;
-        Ok(unread.or(background))
+        Ok(unread)
     }
 
     /// 画像の背景をデコードする (同じパスで読めたものは読み直さない)。読めない画像は設定の色で埋め、その理由を返す。
@@ -741,21 +747,18 @@ fn read_module(bytes: &[u8]) -> Option<LoadedModule> {
 }
 
 /// シーンのモジュール (合成の順。受け取れなかったものは `None`) を読んで `puppet` に付ける。読めない・付けられない
-/// ものは飛ばして、残りを付ける (出力ウィンドウの受け手と同じ)。付けたモジュールと、飛ばした最初のものの番号と理由を返す。
+/// ものは飛ばして、残りを付ける (出力ウィンドウの受け手と同じ)。付けたモジュールと、飛ばしたものすべての番号と理由
+/// (番号の順) を返す。
 fn attach_modules(
     puppet: &mut Puppet,
     files: &[Option<Arc<Vec<u8>>>],
-) -> (Vec<LoadedModule>, Option<(usize, LoadFailureCode)>) {
-    let mut failure = None;
+) -> (Vec<LoadedModule>, Vec<(usize, LoadFailureCode)>) {
+    let mut skipped = Vec::new();
     let mut loaded = Vec::new();
     for (i, bytes) in files.iter().enumerate() {
         match bytes.as_deref().map(|b| read_module(b)) {
-            None => {
-                failure.get_or_insert((i, LoadFailureCode::Unavailable));
-            }
-            Some(None) => {
-                failure.get_or_insert((i, LoadFailureCode::Unreadable));
-            }
+            None => skipped.push((i, LoadFailureCode::Unavailable)),
+            Some(None) => skipped.push((i, LoadFailureCode::Unreadable)),
             Some(Some(module)) => loaded.push((i, module)),
         }
     }
@@ -773,8 +776,8 @@ fn attach_modules(
             trial.push(Arc::clone(&module.module));
             if puppet.set_modules(trial).is_ok() {
                 attached.push((i, module));
-            } else if failure.is_none_or(|(first, _)| i < first) {
-                failure = Some((i, LoadFailureCode::Unreadable));
+            } else {
+                skipped.push((i, LoadFailureCode::Unreadable));
             }
         }
         loaded = attached;
@@ -783,7 +786,8 @@ fn attach_modules(
             let _ = puppet.set_modules(Vec::new());
         }
     }
-    (loaded.into_iter().map(|(_, m)| m).collect(), failure)
+    skipped.sort_unstable_by_key(|(i, _)| *i);
+    (loaded.into_iter().map(|(_, m)| m).collect(), skipped)
 }
 
 /// `#rrggbb` を RGB にする。
@@ -890,18 +894,19 @@ fn drain<T>(
     }
 }
 
-/// 知らせを 1 つ適用する。止めるなら `Ok(false)`。今のシーンのファイルを読めなければ `report` で知らせる。
+/// 知らせを 1 つ適用する。止めるなら `Ok(false)`。今のシーンのファイルを読めなければ、読めなかったものを `report` で知らせる。
 fn apply(
     feed: &mut Feed,
     gpu: &Gpu,
     command: Command,
-    report: impl FnOnce(LoadFailure),
+    report: impl FnOnce(Vec<LoadFailure>),
 ) -> Result<bool, FeedError> {
     match command {
         Command::Frame(frame) => feed.receive(&frame).map(|_| true),
         Command::Scene(files) => {
-            if let Some(failure) = feed.set_scene(gpu, &files)? {
-                report(failure);
+            let failures = feed.set_scene(gpu, &files)?;
+            if !failures.is_empty() {
+                report(failures);
             }
             Ok(true)
         }
@@ -961,7 +966,7 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
             Err(RecvTimeoutError::Disconnected) => break,
         };
         for command in first.into_iter().chain(commands.try_iter()) {
-            match apply(&mut feed, gpu, command, |f| events(Event::LoadFailure(f))) {
+            match apply(&mut feed, gpu, command, |f| events(Event::LoadFailures(f))) {
                 Ok(true) => {}
                 Ok(false) => break 'outer,
                 Err(e) => {
@@ -1379,9 +1384,10 @@ mod tests {
         assert!(read_module(&module_bytes(hair(), broken_texture())).is_none());
     }
 
-    /// 受け取れない・読めない・付けられないモジュールは飛ばして、残りを付ける。知らせるのは最初のもの (T0836)。
+    /// 受け取れない・読めない・付けられないモジュールは飛ばして、残りを付ける。飛ばしたものはすべて番号の順に知らせる
+    /// (T0836・T0840)。
     #[test]
-    fn unreadable_modules_are_skipped_and_the_first_is_reported() {
+    fn unreadable_modules_are_skipped_and_all_are_reported() {
         use ugoe::model::fixtures;
         let hair = module_bytes(fixtures::long_hair_module(), png_texture());
         let dress = module_bytes(fixtures::dress_module(), png_texture());
@@ -1405,25 +1411,47 @@ mod tests {
                 Some(Arc::clone(&dress)),
             ],
         );
-        assert_eq!(failure, Some((1, LoadFailureCode::Unreadable)));
+        assert_eq!(
+            failure,
+            [
+                (1, LoadFailureCode::Unreadable),
+                (2, LoadFailureCode::Unavailable)
+            ]
+        );
         assert_eq!(attached.len(), 2);
         assert_eq!(names(&puppet).len(), 2);
 
         let mut puppet = base();
         let (attached, failure) = attach_modules(&mut puppet, &[None, Some(Arc::clone(&garbage))]);
-        assert_eq!(failure, Some((0, LoadFailureCode::Unavailable)));
+        assert_eq!(
+            failure,
+            [
+                (0, LoadFailureCode::Unavailable),
+                (1, LoadFailureCode::Unreadable)
+            ]
+        );
         assert!(attached.is_empty());
 
         // 本体にスロットが無いモジュールは付けられない (読めないものとして知らせる)。前に付けていた組は外す。
         let mut puppet = Puppet::new(fixtures::single_quad()).unwrap();
         let (attached, failure) = attach_modules(&mut puppet, &[Some(Arc::clone(&hair))]);
-        assert_eq!(failure, Some((0, LoadFailureCode::Unreadable)));
+        assert_eq!(failure, [(0, LoadFailureCode::Unreadable)]);
         assert!(attached.is_empty());
+        // 付けられないものは後から見つかるが、番号の順に並べる。
+        let mut puppet = Puppet::new(fixtures::single_quad()).unwrap();
+        let (_, failure) = attach_modules(&mut puppet, &[Some(Arc::clone(&hair)), None]);
+        assert_eq!(
+            failure,
+            [
+                (0, LoadFailureCode::Unreadable),
+                (1, LoadFailureCode::Unavailable)
+            ]
+        );
         let mut puppet = base();
         attach_modules(&mut puppet, &[Some(Arc::clone(&hair))]);
         assert_eq!(names(&puppet).len(), 1);
         let (_, failure) = attach_modules(&mut puppet, &[Some(Arc::clone(&garbage))]);
-        assert_eq!(failure, Some((0, LoadFailureCode::Unreadable)));
+        assert_eq!(failure, [(0, LoadFailureCode::Unreadable)]);
         assert!(names(&puppet).is_empty());
     }
 

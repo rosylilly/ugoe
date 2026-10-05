@@ -712,8 +712,8 @@ impl Studio {
                 }
                 *lock(&self.camera_status) = Some(status);
             }
-            CameraEvent::LoadFailure(failure) => {
-                self.report_load_failure(virtual_camera::LABEL, failure);
+            CameraEvent::LoadFailures(failures) => {
+                self.report_load_failures(virtual_camera::LABEL, &failures);
             }
             CameraEvent::Stats {
                 fps: measured,
