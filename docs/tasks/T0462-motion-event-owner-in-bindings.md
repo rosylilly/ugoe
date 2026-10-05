@@ -1,11 +1,11 @@
 ---
 id: T0462
 title: モーションのイベントを発火したモーション (名前と番号) を C ABI・wasm・Unity・Godot から読む (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ffi, ugoe-wasm, bindings/web, bindings/unity, bindings/godot, docs]
 depends_on: [T0461]
-assignee:
+assignee: claude-worker-T0462
 ---
 
 # T0462: モーションのイベントを発火したモーション (名前と番号) を C ABI・wasm・Unity・Godot から読む (判断が要る)
