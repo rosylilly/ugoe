@@ -1,17 +1,16 @@
 // タイムラインの表示の状態 (選択中のモーション・再生位置・再生・キーの選択) と、パラメータへの書き込み。
 // Undo の対象ではない。モーションの編集は EditorDocument.apply (Command) で行う (docs/editor.md#タイムライン)。
 //
-// 再生・シークは、モーションの各カーブをその時刻で評価した値 (wasm の sample_motion_json。フェードなし) を
-// スライダーと同じ ViewportController.setParameter で書き込む。WebPuppet のモーションの再生は使わないので、
+// 再生・シークは、モーションの各カーブをその時刻で評価した値 (wasm の MotionSampler。フェードなし) を
+// スライダーと同じ ViewportController.setParameter で書き込む。MotionSampler はカーブごとの区間の索引を持つので、
+// モーション (選び直し・編集の後の新しいオブジェクト) が変わったときだけ set_motion_json で渡し直し、再生中は sample(t) だけを呼ぶ。WebPuppet のモーションの再生は使わないので、
 // 編集のたびにモデルを読み直しても再生位置は保たれ、同じ時刻は常に同じ姿になる。
 import type { EditorDocument } from "../../document.svelte";
 import type { CurveTarget, Expression, Motion } from "../../ipc";
 import type { ViewportController } from "../../viewport/controller.svelte";
-import { loadUgoeWasm } from "../../viewport/wasm";
+import { loadUgoeWasm, type MotionSampler } from "../../viewport/wasm";
 import { applyExpression } from "./expressions";
 import { advance, roundTime, targetKey } from "./timeline";
-
-type Sampler = (json: string, t: number) => string;
 
 /** 選んだキー: 行 (targetKey) と時刻。 */
 export interface KeySelection {
@@ -35,7 +34,14 @@ export class TimelineState {
 
   #doc: EditorDocument;
   #viewport: ViewportController;
-  #sampler: Sampler | null = null;
+  /** wasm の MotionSampler のコンストラクタ (wasm がまだ読めていなければ null)。 */
+  #Sampler: (new (json: string) => MotionSampler) | null = null;
+  #sampler: MotionSampler | null = null;
+  /**
+   * `#sampler` が今持っているモーション。ドキュメントは編集のたびにモーションの配列を読み直す (`$state.raw`) ので、
+   * オブジェクトが同じなら中身も同じ。違えば索引を作り直す。
+   */
+  #sampled: Motion | null = null;
   #frame = 0;
   #last = 0;
   /**
@@ -50,7 +56,7 @@ export class TimelineState {
     this.#doc = doc;
     this.#viewport = viewport;
     loadUgoeWasm().then((wasm) => {
-      if (wasm) this.#sampler = wasm.sample_motion_json;
+      if (wasm) this.#Sampler = wasm.MotionSampler;
     });
   }
 
@@ -74,9 +80,11 @@ export class TimelineState {
    */
   sample(t: number, motion: Motion | null = this.motion): Record<string, number> {
     const out: Record<string, number> = {};
-    if (!motion || !this.#sampler) return out;
+    if (!motion) return out;
+    const sampler = this.#samplerFor(motion);
+    if (!sampler) return out;
     try {
-      const values = JSON.parse(this.#sampler(JSON.stringify(motion), t)) as {
+      const values = JSON.parse(sampler.sample(t)) as {
         target: CurveTarget;
         value: number;
       }[];
@@ -87,6 +95,26 @@ export class TimelineState {
       console.warn("ugoe: cannot sample the motion:", e);
     }
     return out;
+  }
+
+  /**
+   * `motion` を持った MotionSampler。持っているモーションと違えば渡し直す (読めなければ null。前のモーションの索引では評価しない)。
+   */
+  #samplerFor(motion: Motion): MotionSampler | null {
+    if (this.#sampled === motion) return this.#sampler;
+    const Sampler = this.#Sampler;
+    if (!Sampler) return null;
+    this.#sampled = null;
+    try {
+      const json = JSON.stringify(motion);
+      if (this.#sampler) this.#sampler.set_motion_json(json);
+      else this.#sampler = new Sampler(json);
+      this.#sampled = motion;
+      return this.#sampler;
+    } catch (e) {
+      console.warn("ugoe: cannot sample the motion:", e);
+      return null;
+    }
   }
 
   /** 再生位置を `t` にし、その時刻の姿をスライダーに書き込む。 */
@@ -192,5 +220,8 @@ export class TimelineState {
 
   dispose(): void {
     this.stop();
+    this.#sampler?.free();
+    this.#sampler = null;
+    this.#sampled = null;
   }
 }

@@ -5,7 +5,7 @@
 // - 型は tsconfig.json の paths で generated/ を優先し、無ければ bindings/web/stub/ugoe_wasm.d.ts を使う。
 import type * as UgoeWasm from "ugoe-wasm";
 
-export type { WebPuppet } from "ugoe-wasm";
+export type { MotionSampler, WebPuppet } from "ugoe-wasm";
 
 const modules = import.meta.glob<typeof UgoeWasm>("./generated/ugoe_wasm.js");
 

@@ -296,7 +296,9 @@
 - **フレーム:** キーの時刻は 30 fps のフレームに揃えます (`snapToFrame`)。時刻の欄とキーの欄に数を入れれば、揃えない時刻も使えます。
 - **ドラッグ中** は表示だけを変え (ドープシートのひし形・グラフの曲線)、離したときに 1 つのコマンドを送ります。
 
-**再生とシーク:** `TimelineState` は、選んだモーションの各カーブをその時刻で評価した値 (wasm の `sample_motion_json(json, t)`、`ugoe_motion::curve::evaluate` そのもの。フェードなし) を、スライダーと同じ `ViewportController.setParameter` で書き込みます。再生は `requestAnimationFrame` の経過時間で再生位置を進めます (`advance`)。
+**再生とシーク:** `TimelineState` は、選んだモーションの各カーブをその時刻で評価した値 (wasm の `MotionSampler`、`ugoe_motion::curve::evaluate` そのもの。フェードなし) を、スライダーと同じ `ViewportController.setParameter` で書き込みます。再生は `requestAnimationFrame` の経過時間で再生位置を進めます (`advance`)。
+
+- `MotionSampler` はカーブごとの区間の索引を持ちます。`TimelineState` は 1 つを持ち続け、評価するモーションが前と違うとき (モーションを選び直したとき・編集や Undo の後。ドキュメントは編集のたびにモーションの配列を新しいオブジェクトで読み直すので、オブジェクトが違えば中身が変わったとみなす) だけ `set_motion_json` で渡し直します。再生中のフレームは `sample(t)` だけを呼び、モーションの JSON を毎回作りません。渡し直しに失敗したら (wasm は前のモーションを保つ) 値を書き込まず、次の評価でまた渡し直します (古い索引の値を返さない。`timeline-state.test.ts`)。
 
 - WebPuppet のモーションの再生 (`start_motion_json` と `update`) は使いません。エディタは編集のたびにモデルを読み直し、そのとき WebPuppet の再生状態は初めからになる (T0309) ためです。この方式なら読み直しても再生位置は保たれ、同じ時刻は常に同じ姿になります。
 - そのため **プレビューはカーブの値だけ** で、フェード・目パチ・呼吸・物理・パーツの不透明度とエフェクトの強さのカーブは掛かりません (後続の候補)。
