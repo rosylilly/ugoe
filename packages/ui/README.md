@@ -12,7 +12,7 @@ src/tokens.css          デザイントークン (CSS 変数)。ライト・ダ�
 src/index.ts            公開する部品と関数 (アプリとほかのパッケージが使うものだけを名前で出す)
 src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・Select・SegmentedControl・
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
-                        Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting)
+                        Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting・Icon)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
 src/commit.ts           数値の欄の確定の印 (numberFieldCommit。同じ欄の続けての確定を受け手がまとめるため)
 src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
@@ -114,6 +114,7 @@ showToast(t("file.saved"), { tone: "success" }); // 既定で 5 秒。ポイン�
 - **DropZone:** 同じことができる「ファイルを選ぶ…」のボタンを必ず出す。Tauri のように WebView の外でドロップを受けるアプリは、
   `active` で見た目を変え、`onbrowse` で自前のダイアログを開く。
 - **Kbd:** `keys="Mod+Shift+Z"`。macOS は ⌘⇧Z、ほかは Ctrl+Shift+Z。
+- **Icon:** `<Icon name="close" />`。線のアイコン (大きさと線の太さは tokens.css の `.ugoe-icon`)。ボタンの中の印に文字の記号 (×・▲・▶) を使わない ([docs/ui.md](../../docs/ui.md#アイコン))。
 - Bits UI 2.19.4 が付けないので、`@ugoe/ui` で足しているもの: Tooltip の `role="tooltip"`、Menu・ContextMenu の一覧の `aria-label`。
 
 ## テーマ (T0909)

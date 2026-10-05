@@ -17,6 +17,8 @@ let {
   variant,
   small = false,
   pressed,
+  busy = false,
+  disabled,
   type = "button",
   class: className = "",
   children,
@@ -33,11 +35,25 @@ const classes = $derived(
 </script>
 
 {#if inToolbar}
-  <Toolbar.Button {...rest} {type} class={classes} aria-pressed={pressed}>
+  <Toolbar.Button
+    {...rest}
+    {type}
+    class={classes}
+    disabled={disabled || busy}
+    aria-pressed={pressed}
+    aria-busy={busy || undefined}
+  >
     {@render children?.()}
   </Toolbar.Button>
 {:else}
-  <Button.Root {...rest} {type} class={classes} aria-pressed={pressed}>
+  <Button.Root
+    {...rest}
+    {type}
+    class={classes}
+    disabled={disabled || busy}
+    aria-pressed={pressed}
+    aria-busy={busy || undefined}
+  >
     {@render children?.()}
   </Button.Root>
 {/if}
@@ -68,18 +84,30 @@ const classes = $derived(
         border-color var(--ugoe-duration-fast);
     }
 
+    /* hover と押下は地の上に本文の色を薄く重ねる (種類に依らず同じ見せ方。docs/ui.md#デザイン) */
     .ugoe-button:hover:not(:disabled) {
-      background: var(--ugoe-color-sunken);
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-button:active:not(:disabled) {
+      background-image: var(--ugoe-overlay-active);
     }
 
     .ugoe-button:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
+    }
+
+    .ugoe-button[aria-busy="true"] {
+      cursor: progress;
+    }
+
+    .ugoe-button:disabled:not([aria-busy="true"]) {
+      cursor: default;
     }
 
     .ugoe-button:disabled {
-      cursor: default;
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-button--small {
@@ -95,18 +123,9 @@ const classes = $derived(
       font-weight: var(--ugoe-font-weight-strong);
     }
 
-    .ugoe-button--primary:hover:not(:disabled) {
-      border-color: color-mix(in srgb, var(--ugoe-color-accent) 85%, var(--ugoe-color-text));
-      background: color-mix(in srgb, var(--ugoe-color-accent) 85%, var(--ugoe-color-text));
-    }
-
     .ugoe-button--danger {
       border-color: var(--ugoe-color-danger);
       color: var(--ugoe-color-danger);
-    }
-
-    .ugoe-button--danger:hover:not(:disabled) {
-      background: var(--ugoe-color-danger-soft);
     }
 
     .ugoe-button--ghost {

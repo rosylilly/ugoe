@@ -444,7 +444,7 @@ p {
 
 .source {
   font-size: var(--ugoe-font-size-sm);
-  color: #2563eb;
+  color: var(--ugoe-color-hue-blue);
   overflow-wrap: anywhere;
 }
 

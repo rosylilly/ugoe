@@ -71,7 +71,7 @@ const id = $props.id();
     }
 
     .ugoe-toggle[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-toggle__switch {
@@ -89,6 +89,14 @@ const id = $props.id();
       transition: background-color var(--ugoe-duration-fast);
     }
 
+    .ugoe-toggle:not([data-disabled]):hover .ugoe-toggle__switch {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-toggle:not([data-disabled]) .ugoe-toggle__switch:active {
+      background-image: var(--ugoe-overlay-active);
+    }
+
     .ugoe-toggle__switch:disabled {
       cursor: default;
     }
@@ -100,7 +108,7 @@ const id = $props.id();
 
     .ugoe-toggle__switch:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     /* つまみの位置 (左右) でも状態がわかる */

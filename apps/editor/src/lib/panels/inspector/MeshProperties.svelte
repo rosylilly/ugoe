@@ -3,7 +3,7 @@
   変更は 1 項目ずつ set_mesh_properties で送る (指定したフィールドだけが変わる)。
 -->
 <script lang="ts">
-import { Button, Checkbox, IconButton, Select } from "@ugoe/ui";
+import { Button, Checkbox, Icon, IconButton, Select } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { EditCommand } from "../../ipc";
@@ -154,7 +154,7 @@ function removeMask(index: number): void {
             onchange={(v) => setMask(i, { invert: v })}
           />
           <IconButton small label={t("inspector.mesh.masks.remove")} onclick={() => removeMask(i)}
-            >×</IconButton
+            ><Icon name="close" /></IconButton
           >
         </li>
       {/each}

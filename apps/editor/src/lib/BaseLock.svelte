@@ -35,7 +35,7 @@ provideBaseLock(() => locked || outer());
     min-width: 0;
   }
   .base-lock.locked {
-    opacity: 0.65;
+    opacity: var(--ugoe-opacity-disabled);
   }
   .base-note {
     margin: var(--ugoe-space-2) 0;

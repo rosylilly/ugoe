@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { numberFieldCommit } from "./commit";
 import Button from "./components/Button.svelte";
 import Checkbox from "./components/Checkbox.svelte";
+import Icon from "./components/Icon.svelte";
 import IconButton from "./components/IconButton.svelte";
 import NumberField from "./components/NumberField.svelte";
 import Section from "./components/Section.svelte";
@@ -52,6 +53,21 @@ describe("Button", () => {
     const root = render(Button, { pressed: true, children: html("<span>Mirror</span>") });
     expect(get(root, "button").getAttribute("aria-pressed")).toBe("true");
   });
+
+  it("is busy: disabled and aria-busy, and does not fire", () => {
+    const onclick = vi.fn();
+    const root = render(Button, { busy: true, onclick, children: html("<span>Save</span>") });
+    const button = get<HTMLButtonElement>(root, "button");
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    click(button);
+    expect(onclick).not.toHaveBeenCalled();
+  });
+
+  it("is not busy by default", () => {
+    const root = render(Button, { children: html("<span>Save</span>") });
+    expect(get(root, "button").hasAttribute("aria-busy")).toBe(false);
+  });
 });
 
 describe("IconButton", () => {
@@ -68,6 +84,21 @@ describe("IconButton", () => {
     render(IconButton, { label: " ", children: icon });
     expect(error).toHaveBeenCalled();
     error.mockRestore();
+  });
+});
+
+describe("Icon", () => {
+  it("is hidden from assistive technology and uses the icon class", () => {
+    const root = render(Icon, { name: "close" });
+    const svg = get(root, "svg");
+    expect(svg.getAttribute("aria-hidden")).toBe("true");
+    expect(svg.getAttribute("class")).toContain("ugoe-icon");
+    expect(svg.getAttribute("class")).not.toContain("ugoe-icon--fill");
+  });
+
+  it("fills the shapes that are weak as strokes", () => {
+    const root = render(Icon, { name: "play" });
+    expect(get(root, "svg").getAttribute("class")).toContain("ugoe-icon--fill");
   });
 });
 
@@ -155,6 +186,14 @@ describe("NumberField", () => {
     expect(input.getAttribute("aria-valuemax")).toBe("10");
     expect(input.getAttribute("aria-valuetext")).toBe("1 deg");
     expect(input.value).toBe("1");
+    expect(input.hasAttribute("aria-invalid")).toBe(false);
+  });
+
+  it("marks an invalid value", () => {
+    const { root, input } = setup({ invalid: true, "aria-describedby": "angle-error" });
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toBe("angle-error");
+    expect(get(root, ".ugoe-number-field").hasAttribute("data-invalid")).toBe(true);
   });
 
   it("steps with the arrow keys and Shift", () => {

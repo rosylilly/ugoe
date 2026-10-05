@@ -66,7 +66,7 @@ const items = $derived(
         id={`${id}-value`}
         data-placeholder={selected ? undefined : ""}>{selected?.label ?? placeholder}</span
       >
-      <svg class="ugoe-select__chevron" viewBox="0 0 16 16" aria-hidden="true">
+      <svg class="ugoe-icon ugoe-select__chevron" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M4 6l4 4 4-4" />
       </svg>
     </Select.Trigger>
@@ -82,7 +82,7 @@ const items = $derived(
               aria-disabled={option.disabled ? "true" : undefined}
             >
               {#snippet children({ selected })}
-                <svg class="ugoe-select__check" viewBox="0 0 16 16" aria-hidden="true">
+                <svg class="ugoe-icon ugoe-select__check" viewBox="0 0 16 16" aria-hidden="true">
                   {#if selected}<path d="M3.5 8.5l3 3 6-7" />{/if}
                 </svg>
                 <span>{option.label}</span>
@@ -108,7 +108,7 @@ const items = $derived(
     }
 
     .ugoe-select[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-select__trigger {
@@ -129,29 +129,29 @@ const items = $derived(
       cursor: pointer;
     }
 
+    .ugoe-select__trigger:hover:not(:disabled) {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-select__trigger:active:not(:disabled) {
+      background-image: var(--ugoe-overlay-active);
+    }
+
     .ugoe-select__trigger:disabled {
       cursor: default;
     }
 
     .ugoe-select__trigger:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-select__value[data-placeholder] {
       color: var(--ugoe-color-text-muted);
     }
 
-    .ugoe-select__chevron,
-    .ugoe-select__check {
-      flex: none;
-      width: 14px;
-      height: 14px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.75;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+    .ugoe-select__chevron {
+      color: var(--ugoe-color-text-muted);
     }
 
     .ugoe-select__content {
@@ -189,8 +189,8 @@ const items = $derived(
     }
 
     .ugoe-select__item[data-disabled] {
-      color: var(--ugoe-color-text-muted);
       cursor: default;
+      opacity: var(--ugoe-opacity-disabled);
     }
   }
 </style>

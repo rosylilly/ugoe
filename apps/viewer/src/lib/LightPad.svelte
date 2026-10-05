@@ -110,7 +110,7 @@ function onKeyDown(e: KeyboardEvent) {
     border-radius: 50%;
   }
   .pad.disabled {
-    opacity: 0.5;
+    opacity: var(--ugoe-opacity-disabled);
     cursor: default;
   }
   .pad:focus-visible {

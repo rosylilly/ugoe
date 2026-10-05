@@ -71,23 +71,31 @@ const id = $props.id();
     }
 
     .ugoe-checkbox[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
-    /* 見た目の箱は 16px だが、押せる範囲はラベルを含めて 24px 以上ある */
+    /* 見た目の箱はアイコンの段 (16px・18px) だが、押せる範囲はラベルを含めて 24px 以上ある */
     .ugoe-checkbox__box {
       display: inline-flex;
       flex: none;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
+      width: var(--ugoe-icon-size);
+      height: var(--ugoe-icon-size);
       padding: 0;
       border: 1px solid var(--ugoe-color-control-border);
       border-radius: var(--ugoe-radius-sm);
       background: var(--ugoe-color-surface);
       color: var(--ugoe-color-on-accent);
       cursor: pointer;
+    }
+
+    .ugoe-checkbox:not([data-disabled]):hover .ugoe-checkbox__box {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-checkbox:not([data-disabled]) .ugoe-checkbox__box:active {
+      background-image: var(--ugoe-overlay-active);
     }
 
     .ugoe-checkbox__box:disabled {
@@ -102,12 +110,12 @@ const id = $props.id();
 
     .ugoe-checkbox__box:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-checkbox__box svg {
-      width: 14px;
-      height: 14px;
+      width: calc(var(--ugoe-icon-size) - 2px);
+      height: calc(var(--ugoe-icon-size) - 2px);
       fill: none;
       stroke: currentColor;
       stroke-width: 2;

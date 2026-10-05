@@ -11,7 +11,7 @@
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { Checkbox, IconButton, Notice, Select, Tooltip } from "@ugoe/ui";
+import { Checkbox, Icon, IconButton, Notice, Select, Tooltip } from "@ugoe/ui";
 import { onMount } from "svelte";
 import { fileDialogs } from "../fileDialogs";
 import { MODULE_FILTER } from "../filePaths";
@@ -216,14 +216,14 @@ onMount(() => {
                 disabled={entry.path === null || dressUp.busy}
                 label={t("preview.dressUp.modules.reload.aria", { name: entry.name })}
                 tooltip={t("preview.dressUp.modules.reload.tooltip")}
-                onclick={() => void dressUp.reload(entry.name)}>↻</IconButton
+                onclick={() => void dressUp.reload(entry.name)}><Icon name="reload" /></IconButton
               >
               <IconButton
                 small
                 variant="ghost"
                 label={t("preview.dressUp.modules.remove.aria", { name: entry.name })}
                 tooltip={t("preview.dressUp.modules.remove.tooltip")}
-                onclick={() => dressUp.remove(entry.name)}>✕</IconButton
+                onclick={() => dressUp.remove(entry.name)}><Icon name="close" /></IconButton
               >
             {/if}
           </div>
@@ -423,7 +423,7 @@ p {
 
 .differences ul {
   margin: var(--ugoe-space-1) 0;
-  padding-left: 16px;
+  padding-left: 1.5em;
   overflow-wrap: anywhere;
 }
 

@@ -357,7 +357,7 @@ function moveToNearestKey() {
   top: 40px;
   left: 8px;
   display: flex;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
   align-items: center;
   pointer-events: auto;
 }

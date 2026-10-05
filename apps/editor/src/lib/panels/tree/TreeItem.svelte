@@ -2,6 +2,7 @@
   ツリーの 1 行。状態 (選択・展開・名前の変更・ドロップの表示) は TreePanel が持ち、ここは表示と入力の中継だけ。
 -->
 <script lang="ts">
+import { Icon } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type { TreeRow } from "./build";
 import type { DropMark } from "./edit";
@@ -100,7 +101,7 @@ function onKeydown(e: KeyboardEvent) {
       }}
       ondblclick={(e) => e.stopPropagation()}
       onpointerdown={(e) => e.stopPropagation()}
-    >{expanded ? "▾" : "▸"}</button>
+    ><Icon name={expanded ? "chevronDown" : "chevronRight"} /></button>
   {:else}
     <span class="twisty"></span>
   {/if}
@@ -130,10 +131,10 @@ function onKeydown(e: KeyboardEvent) {
 .row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   height: var(--ugoe-target-min);
-  padding-right: 4px;
-  border-radius: 3px;
+  padding-right: var(--ugoe-space-2);
+  border-radius: var(--ugoe-radius-sm);
   border: 1px solid transparent;
   cursor: default;
   user-select: none;
@@ -181,7 +182,7 @@ function onKeydown(e: KeyboardEvent) {
   border: none;
   background: none;
   color: var(--ugoe-color-text-muted);
-  font-size: 10px;
+  font-size: var(--ugoe-font-size-xs);
   text-align: center;
 }
 .name {
@@ -193,7 +194,7 @@ function onKeydown(e: KeyboardEvent) {
   flex: 1;
   min-width: 0;
   font: inherit;
-  padding: 0 2px;
+  padding: 0 var(--ugoe-space-1);
 }
 .badge,
 .order {
@@ -202,8 +203,8 @@ function onKeydown(e: KeyboardEvent) {
   color: var(--ugoe-color-text-muted);
 }
 .badge {
-  padding: 0 3px;
+  padding: 0 var(--ugoe-space-1);
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 3px;
+  border-radius: var(--ugoe-radius-sm);
 }
 </style>

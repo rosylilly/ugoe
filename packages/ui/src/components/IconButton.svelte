@@ -63,7 +63,7 @@ function attributes(trigger: TriggerAttributes): ButtonBaseProps {
 {/snippet}
 
 {#if tip}
-  <Tooltip text={tip} {shortcut} side={tooltipSide} id={rest.id} disabled={rest.disabled}>
+  <Tooltip text={tip} {shortcut} side={tooltipSide} id={rest.id} disabled={rest.disabled || rest.busy}>
     {#snippet trigger(attrs)}{@render button(attrs)}{/snippet}
   </Tooltip>
 {:else}
@@ -79,8 +79,8 @@ function attributes(trigger: TriggerAttributes): ButtonBaseProps {
 
     .ugoe-icon-button__icon {
       display: inline-flex;
-      width: 1.15em;
-      height: 1.15em;
+      width: var(--ugoe-icon-size);
+      height: var(--ugoe-icon-size);
       align-items: center;
       justify-content: center;
     }

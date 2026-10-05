@@ -29,6 +29,8 @@ interface Props {
   /** 補足の説明を持つ要素の id。 */
   "aria-describedby"?: string;
   disabled?: boolean;
+  /** 入力の誤り (範囲の外など)。危険の色の枠と `aria-invalid` にする。誤りの文は `aria-describedby` で結ぶ。 */
+  invalid?: boolean;
   /** 欄の幅 (文字数)。既定は 6。 */
   size?: number;
   /** 利用者の操作で値を確定し、値が変わったとき。外から渡した値では呼ばない。 */
@@ -46,6 +48,7 @@ let {
   "aria-labelledby": labelledby,
   "aria-describedby": describedby,
   disabled = false,
+  invalid = false,
   size = 6,
   onchange,
 }: Props = $props();
@@ -123,7 +126,11 @@ function onkeydown(event: KeyboardEvent) {
 }
 </script>
 
-<span class="ugoe-number-field" data-disabled={disabled ? "" : undefined}>
+<span
+  class="ugoe-number-field"
+  data-disabled={disabled ? "" : undefined}
+  data-invalid={invalid ? "" : undefined}
+>
   {#if label}
     <label class="ugoe-number-field__label" id={`${id}-label`} for={`${id}-input`}>{label}</label>
   {/if}
@@ -151,6 +158,7 @@ function onkeydown(event: KeyboardEvent) {
       {disabled}
       aria-labelledby={labelledby ?? (label ? `${id}-label` : undefined)}
       aria-describedby={describedby}
+      aria-invalid={invalid || undefined}
       aria-valuenow={value}
       aria-valuemin={min}
       aria-valuemax={max}
@@ -179,7 +187,7 @@ function onkeydown(event: KeyboardEvent) {
     }
 
     .ugoe-number-field[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-number-field__box {
@@ -194,9 +202,19 @@ function onkeydown(event: KeyboardEvent) {
       background: var(--ugoe-color-surface);
     }
 
+    .ugoe-number-field:not([data-disabled]) .ugoe-number-field__box:hover {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    /* 誤りは色に加えて枠の太さでも示す (文は呼び手が aria-describedby で結ぶ) */
+    .ugoe-number-field[data-invalid] .ugoe-number-field__box {
+      border-color: var(--ugoe-color-danger);
+      box-shadow: inset 0 0 0 1px var(--ugoe-color-danger);
+    }
+
     .ugoe-number-field__box:focus-within {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-number-field__input {
@@ -211,6 +229,11 @@ function onkeydown(event: KeyboardEvent) {
       font-size: var(--ugoe-font-size-md);
       font-variant-numeric: tabular-nums;
       text-align: right;
+    }
+
+    /* 誤りの印は外側の枠に出すので、tokens.css の文字の欄の印を打ち消す */
+    .ugoe-number-field__input[aria-invalid] {
+      box-shadow: none;
     }
 
     /* 輪は外側の枠 (focus-within) に出す */

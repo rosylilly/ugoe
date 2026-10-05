@@ -8,6 +8,7 @@ import {
   Button,
   type ButtonBaseProps,
   Checkbox,
+  Icon,
   IconButton,
   NumberField,
   Popover,
@@ -436,7 +437,7 @@ function label(m: Motion): string {
                 <IconButton
                   small
                   label={t("timeline.motion.events.remove", { index: i + 1 })}
-                  onclick={() => removeEvent(i)}>×</IconButton
+                  onclick={() => removeEvent(i)}><Icon name="close" /></IconButton
                 >
               </div>
             {/each}
@@ -456,7 +457,7 @@ function label(m: Motion): string {
         onclick={() => timeline.toggle()}
         tooltip={t("timeline.motion.play.tooltip")}
         shortcut="Space"
-        ><span aria-hidden="true">{timeline.playing ? "■" : "▶"}</span>
+        ><Icon name={timeline.playing ? "stop" : "play"} />
         {timeline.playing ? t("timeline.motion.stop.label") : t("timeline.motion.play.label")}</TipButton
       >
       <span class="ugoe-visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
@@ -470,7 +471,7 @@ function label(m: Motion): string {
         variant="secondary"
         label={t("timeline.motion.previousFrame")}
         shortcut="ArrowLeft"
-        onclick={() => stepFrame(-1)}>◀</IconButton
+        onclick={() => stepFrame(-1)}><Icon name="stepBack" /></IconButton
       >
       <NumberField
         min={0}
@@ -488,12 +489,12 @@ function label(m: Motion): string {
         variant="secondary"
         label={t("timeline.motion.nextFrame")}
         shortcut="ArrowRight"
-        onclick={() => stepFrame(1)}>▶</IconButton
+        onclick={() => stepFrame(1)}><Icon name="stepForward" /></IconButton
       >
       <span class="muted">{t("timeline.motion.durationOf", { duration: motion.duration })}</span>
       <span class="sep"></span>
       <TipButton small onclick={keyChanged} tooltip={t("timeline.motion.keyChanged.tooltip")}
-        >{t("timeline.motion.keyChanged.label")}</TipButton
+        ><Icon name="key" />{t("timeline.motion.keyChanged.label")}</TipButton
       >
       <TipButton
         small
@@ -598,8 +599,8 @@ function label(m: Motion): string {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
   }
   .inline {
@@ -615,13 +616,13 @@ function label(m: Motion): string {
   }
   .popup {
     display: grid;
-    gap: 4px;
+    gap: var(--ugoe-space-2);
     min-width: 260px;
   }
   .event {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--ugoe-space-2);
   }
   .sheet {
     flex: 1;
@@ -640,10 +641,10 @@ function label(m: Motion): string {
     background: var(--ugoe-color-surface);
     height: 20px;
     border-bottom: 1px solid var(--ugoe-color-border);
-    font-size: 11px;
+    font-size: var(--ugoe-font-size-xs);
   }
   .corner {
-    padding: 2px 8px;
+    padding: var(--ugoe-space-1) var(--ugoe-space-3);
   }
   .ruler {
     position: sticky;
@@ -661,16 +662,16 @@ function label(m: Motion): string {
     position: absolute;
     bottom: -4px;
     transform: translateX(-50%);
-    color: #d97706;
+    color: var(--ugoe-color-hue-amber);
     pointer-events: none;
   }
   /* 行と印の押せる範囲は 24px 以上 (docs/ui.md#そのほか。2026-10-02 の利用者の判断。T0907) */
   .label {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--ugoe-space-1);
     height: var(--row-height);
-    padding-left: 4px;
+    padding-left: var(--ugoe-space-2);
     scroll-margin-top: 21px;
     min-width: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--ugoe-color-border) 40%, transparent);
@@ -686,7 +687,7 @@ function label(m: Motion): string {
     text-overflow: ellipsis;
     white-space: nowrap;
     align-self: stretch;
-    padding: 0 2px;
+    padding: 0 var(--ugoe-space-1);
   }
   .label.has-curve .track {
     color: var(--ugoe-color-text);
@@ -701,7 +702,7 @@ function label(m: Motion): string {
     border: none;
     background: none;
     color: var(--ugoe-color-text-muted);
-    font-size: 10px;
+    font-size: var(--ugoe-font-size-xs);
     padding: 0;
   }
   .key:hover {
@@ -717,7 +718,7 @@ function label(m: Motion): string {
     top: 0;
     bottom: 0;
     width: 1px;
-    background: #dc2626;
+    background: var(--ugoe-color-danger);
     pointer-events: none;
   }
   /* キーの印: 押せる範囲は 24×24 で、見た目の◆は中の 10px (::before) */
@@ -750,6 +751,6 @@ function label(m: Motion): string {
     outline-offset: -2px;
   }
   .empty {
-    padding: 12px;
+    padding: var(--ugoe-space-4);
   }
 </style>

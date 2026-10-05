@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, Checkbox, NumberField, Select, Tooltip } from "@ugoe/ui";
+import { Button, Checkbox, Icon, NumberField, Select, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { t } from "../../../i18n";
 import type { Selection } from "../../../selection.svelte";
@@ -224,7 +224,7 @@ async function removeKey(parameter: string, key: number) {
                       {...withClick(attrs, () => removeKey(b.parameter, key))}
                       class="remove"
                       aria-label={removeTip}
-                      aria-describedby={undefined}>×</button
+                      aria-describedby={undefined}><Icon name="close" /></button
                     >
                   {/snippet}
                 </Tooltip>
@@ -345,27 +345,27 @@ async function removeKey(parameter: string, key: number) {
 
 <style>
 .status {
-  margin: 4px 0;
+  margin: var(--ugoe-space-2) 0;
 }
 
 .axes li {
   display: grid;
-  gap: 2px;
-  margin-bottom: 6px;
+  gap: var(--ugoe-space-1);
+  margin-bottom: var(--ugoe-space-2);
 }
 
 .keys,
 .add-axis {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
 }
 
 .chip {
   display: inline-flex;
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
 }
 
 .chip.current {
@@ -376,18 +376,18 @@ async function removeKey(parameter: string, key: number) {
   border: none;
   background: none;
   color: inherit;
-  padding: 0 4px;
+  padding: 0 var(--ugoe-space-2);
   cursor: pointer;
 }
 
 .grid {
   border-collapse: collapse;
-  margin-top: 8px;
+  margin-top: var(--ugoe-space-3);
 }
 
 .grid th,
 .grid td {
-  padding: 2px;
+  padding: var(--ugoe-space-1);
   text-align: center;
   font-weight: normal;
 }
@@ -397,7 +397,7 @@ async function removeKey(parameter: string, key: number) {
   height: 24px;
   padding: 0;
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
   background: var(--ugoe-color-surface);
   color: inherit;
   cursor: pointer;
@@ -433,13 +433,13 @@ async function removeKey(parameter: string, key: number) {
 
 .draw-order {
   display: flex;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   align-items: center;
-  margin-top: 8px;
+  margin-top: var(--ugoe-space-3);
 }
 
 .hint {
-  margin: 4px 0 0;
-  font-size: 11px;
+  margin: var(--ugoe-space-2) 0 0;
+  font-size: var(--ugoe-font-size-xs);
 }
 </style>

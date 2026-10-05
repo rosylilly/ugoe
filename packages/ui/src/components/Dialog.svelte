@@ -138,7 +138,7 @@ let {
 
     .ugoe-dialog:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-dialog__title {

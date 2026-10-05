@@ -169,7 +169,7 @@ async function chooseImage() {
       </ol>
     {/if}
     <div>
-      <Button small disabled={disabled || scene.model === null} onclick={addModule}>{t("editor.addModule")}</Button>
+      <Button disabled={disabled || scene.model === null} onclick={addModule}>{t("editor.addModule")}</Button>
     </div>
   </div>
 
@@ -218,7 +218,7 @@ async function chooseImage() {
       onchange={(v) => setTransform("rotation", v)}
     />
     <div>
-      <Button small {disabled} onclick={() => edit((s) => (s.transform = { ...DEFAULT_TRANSFORM }))}>
+      <Button {disabled} onclick={() => edit((s) => (s.transform = { ...DEFAULT_TRANSFORM }))}>
         {t("editor.resetPlacement")}
       </Button>
     </div>

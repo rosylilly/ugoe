@@ -4,7 +4,7 @@
   (viewport/tools/lighting/LightingOverlay.svelte)。スライダーは動かしている間は表示だけを変え、離したときにプロジェクトに残す。
 -->
 <script lang="ts">
-import { Button, IconButton, NumberField, Slider, Toggle } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField, Slider, Toggle } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type { PreviewLight, PreviewLighting } from "../../ipc";
 import TipButton from "../../ui/TipButton.svelte";
@@ -145,7 +145,7 @@ function lightName(light: PreviewLight, index: number): string {
           />
         </span>
         <IconButton small label={t("lighting.lights.remove.aria", { index: i + 1 })} onclick={() => removeLight(i)}
-          >×</IconButton
+          ><Icon name="close" /></IconButton
         >
       </li>
     {/each}

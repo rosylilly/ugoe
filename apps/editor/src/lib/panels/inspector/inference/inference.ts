@@ -34,10 +34,10 @@ export interface OriginStyle {
 /** 由来ごとの記号と色 (名前と説明は言語ごとなので `originStyle` で引く)。 */
 const ORIGIN_MARKS: Record<KeyformOrigin, Pick<OriginStyle, "symbol" | "color">> = {
   authored: { symbol: "A", color: "var(--ugoe-color-text)" },
-  additive: { symbol: "+", color: "#0d9488" },
-  depth_rotation: { symbol: "R", color: "#d97706" },
-  mirror: { symbol: "M", color: "#2563eb" },
-  derived: { symbol: "D", color: "#a855f7" },
+  additive: { symbol: "+", color: "var(--ugoe-color-hue-teal)" },
+  depth_rotation: { symbol: "R", color: "var(--ugoe-color-hue-amber)" },
+  mirror: { symbol: "M", color: "var(--ugoe-color-hue-blue)" },
+  derived: { symbol: "D", color: "var(--ugoe-color-hue-violet)" },
 };
 
 /** 由来ごとの名前と説明 (呼ぶたびに今の言語で引く)。 */

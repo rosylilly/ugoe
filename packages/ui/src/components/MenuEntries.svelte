@@ -104,8 +104,8 @@ let { entries }: { entries: MenuEntry[] } = $props();
     }
 
     .ugoe-menu__item[data-disabled] {
-      color: var(--ugoe-color-text-muted);
       cursor: default;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-menu__item--danger:not([data-disabled]) {
@@ -115,7 +115,7 @@ let { entries }: { entries: MenuEntry[] } = $props();
     .ugoe-menu__check {
       display: inline-flex;
       flex: none;
-      width: 1.15em;
+      width: var(--ugoe-icon-size);
     }
 
     .ugoe-menu__label {

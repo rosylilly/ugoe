@@ -122,8 +122,8 @@ function set(next: number, commit: boolean) {
       class="ugoe-slider__reset"
       onclick={() => set(defaultValue, true)}
     >
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M3 8a5 5 0 1 0 1.5-3.5M3 3v2.5h2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3 8a5 5 0 1 0 1.5-3.5M3 3v2.5h2.5" />
       </svg>
     </IconButton>
   {/if}
@@ -145,7 +145,7 @@ function set(next: number, commit: boolean) {
     }
 
     .ugoe-slider[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-slider__label {
@@ -192,9 +192,17 @@ function set(next: number, commit: boolean) {
       box-sizing: border-box;
     }
 
+    .ugoe-slider:not([data-disabled]) .ugoe-slider__thumb:hover {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-slider:not([data-disabled]) .ugoe-slider__thumb:active {
+      background-image: var(--ugoe-overlay-active);
+    }
+
     .ugoe-slider__thumb:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-slider .ugoe-number-field {

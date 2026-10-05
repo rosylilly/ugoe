@@ -3109,7 +3109,7 @@
         "aria": "Time"
       },
       "keyChanged": {
-        "label": "◆ Key changed",
+        "label": "Key changed",
         "tooltip": "Key every parameter whose slider differs from the motion at this time",
         "nothing": "No parameter differs from the motion at this time. Move a slider first."
       },

@@ -483,7 +483,7 @@ $effect(() => {
   header :global(.agents) {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
   }
   header :global(.agents .dot) {
     width: 8px;
@@ -511,7 +511,7 @@ $effect(() => {
     min-width: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    padding: 0 12px 8px;
+    padding: 0 var(--ugoe-space-4) var(--ugoe-space-3);
   }
   .pane.inspector {
     flex: 0 0 auto;

@@ -440,9 +440,9 @@ async function removeCurve() {
   .side {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
+    gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    font-size: var(--ugoe-font-size-sm);
     min-width: 0;
     overflow: hidden;
   }
@@ -454,12 +454,12 @@ async function removeCurve() {
   .fields {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--ugoe-space-2);
   }
   .inline {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--ugoe-space-1);
   }
   label.inline {
     display: inline-flex;
@@ -470,7 +470,7 @@ async function removeCurve() {
   .kinds {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: var(--ugoe-space-1);
   }
   .plot {
     display: block;
@@ -485,7 +485,7 @@ async function removeCurve() {
     stroke: var(--ugoe-color-border);
   }
   .playhead {
-    stroke: #dc2626;
+    stroke: var(--ugoe-color-danger);
   }
   .curve {
     fill: none;

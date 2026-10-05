@@ -6,7 +6,7 @@
 // モデルに前に付けていた組があれば、戻すか尋ねる (T0711。`player.restoreOffer`)。覚えた組は「覚えた組を忘れる」で忘れる (T0709)。
 import { formatList } from "@ugoe/i18n";
 import { groupBySlot, type ModuleInfo, type Player, visibleSlots } from "@ugoe/player";
-import { Button, IconButton, Notice, Section, Toggle } from "@ugoe/ui";
+import { Button, Icon, IconButton, Notice, Section, Toggle } from "@ugoe/ui";
 import { errorText } from "./errors";
 import { viewerHost } from "./host";
 import { t } from "./i18n";
@@ -157,9 +157,7 @@ function describe(m: ModuleInfo): string {
                   label={t("dressUp.unload.aria", { module: m.name })}
                   onclick={() => player.unloadModule(m.name)}
                 >
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                    <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke-linecap="round" />
-                  </svg>
+                  <Icon name="close" />
                 </IconButton>
               </li>
             {/each}

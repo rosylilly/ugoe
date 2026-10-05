@@ -149,7 +149,7 @@ const channels = $derived([
     }
 
     .ugoe-color-picker[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-button.ugoe-color-picker__trigger {
@@ -157,8 +157,8 @@ const channels = $derived([
     }
 
     .ugoe-color-picker__swatch {
-      width: 1.15em;
-      height: 1.15em;
+      width: var(--ugoe-icon-size);
+      height: var(--ugoe-icon-size);
       box-sizing: border-box;
       border: 1px solid var(--ugoe-color-control-border);
       border-radius: var(--ugoe-radius-sm);
@@ -208,7 +208,7 @@ const channels = $derived([
     .ugoe-color-picker__native input:focus-visible,
     .ugoe-color-picker__hex input:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-color-picker__channels {

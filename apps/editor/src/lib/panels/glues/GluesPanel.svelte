@@ -12,7 +12,7 @@
     モジュールのメッシュだけ。描画用の複製のグルーは、インスペクタの「Sync」が作り直すので編集しない。
 -->
 <script lang="ts">
-import { Button, IconButton, NumberField, Select, Slider, Tooltip } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField, Select, Slider, Tooltip } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -252,7 +252,7 @@ const axisKeyValue = $derived(
                       label={b.keys.length === 1
                         ? t("glues.removeKey.lastAria", { key: k })
                         : t("glues.removeKey.aria", { key: k })}
-                      onclick={() => send(() => removeGlueKeyCommand(glue.id, b.parameter, k))}>×</IconButton
+                      onclick={() => send(() => removeGlueKeyCommand(glue.id, b.parameter, k))}><Icon name="close" /></IconButton
                     ></span
                   >
                 {/each}

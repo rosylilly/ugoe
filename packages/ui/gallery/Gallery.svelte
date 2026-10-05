@@ -139,39 +139,42 @@ const swatches = [
   "danger",
   "warning",
   "success",
+  "accent-soft",
   "danger-soft",
   "warning-soft",
   "success-soft",
+  "hover",
+  "active",
 ];
 </script>
 
 {#snippet undoIcon()}
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M6 4L3 7l3 3M3 7h6a4 4 0 0 1 0 8H7" stroke-linecap="round" stroke-linejoin="round" />
+  <svg class="ugoe-icon" viewBox="0 0 16 16">
+    <path d="M6 4L3 7l3 3M3 7h6a4 4 0 0 1 0 8H7" />
   </svg>
 {/snippet}
 
 {#snippet redoIcon()}
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M10 4l3 3-3 3M13 7H7a4 4 0 0 0 0 8h2" stroke-linecap="round" stroke-linejoin="round" />
+  <svg class="ugoe-icon" viewBox="0 0 16 16">
+    <path d="M10 4l3 3-3 3M13 7H7a4 4 0 0 0 0 8h2" />
   </svg>
 {/snippet}
 
 {#snippet mirrorIcon()}
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M8 2v12M6 4L2 12h4zM10 4l4 8h-4z" stroke-linejoin="round" />
+  <svg class="ugoe-icon" viewBox="0 0 16 16">
+    <path d="M8 2v12M6 4L2 12h4zM10 4l4 8h-4z" />
   </svg>
 {/snippet}
 
 {#snippet moreIcon()}
-  <svg viewBox="0 0 16 16" fill="currentColor" stroke="none">
+  <svg class="ugoe-icon ugoe-icon--fill" viewBox="0 0 16 16">
     <circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" />
   </svg>
 {/snippet}
 
 {#snippet trashIcon()}
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M3 4h10M6 4V2.5h4V4M4.5 4l.5 9.5h6l.5-9.5" stroke-linejoin="round" />
+  <svg class="ugoe-icon" viewBox="0 0 16 16">
+    <path d="M3 4h10M6 4V2.5h4V4M4.5 4l.5 9.5h6l.5-9.5" />
   </svg>
 {/snippet}
 
@@ -220,6 +223,7 @@ const swatches = [
       <div class="gallery__row">
         <Button small>{s.small}</Button>
         <Button disabled>{s.disabled}</Button>
+        <Button variant="primary" busy>{s.saving}</Button>
         <Button pressed={mirrored} onclick={() => (mirrored = !mirrored)}>{s.mirror}</Button>
         <IconButton label={s.undo}>{@render undoIcon()}</IconButton>
         <IconButton label={s.deleteItem} variant="danger">{@render trashIcon()}</IconButton>
@@ -278,6 +282,8 @@ const swatches = [
         />
         <Slider label={s.disabled} value={3} min={0} max={10} disabled />
         <NumberField label={s.scale} bind:value={scale} min={0.1} max={10} step={0.1} />
+        <NumberField label={s.scale} value={12} step={0.1} invalid aria-describedby="gallery-scale-error" />
+        <p id="gallery-scale-error" class="gallery__error">{s.scaleError}</p>
       </div>
     </section>
 
@@ -529,6 +535,12 @@ const swatches = [
     display: flex;
     align-items: center;
     gap: var(--ugoe-space-2);
+  }
+
+  .gallery__error {
+    margin: 0;
+    color: var(--ugoe-color-danger);
+    font-size: var(--ugoe-font-size-sm);
   }
 
   .gallery__swatch {

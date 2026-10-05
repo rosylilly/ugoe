@@ -16,7 +16,7 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, IconButton, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
 import { onDestroy } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -335,20 +335,20 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                   disabled={busy || base || ei === 0}
                   label={t("poses.entry.moveUp.aria")}
                   tooltip={t("poses.entry.moveUp.tooltip")}
-                  onclick={() => send((p) => moveEntry(p, gi, ei, -1))}>▲</IconButton
+                  onclick={() => send((p) => moveEntry(p, gi, ei, -1))}><Icon name="arrowUp" /></IconButton
                 >
                 <IconButton
                   small
                   disabled={busy || base || ei === group.entries.length - 1}
                   label={t("poses.entry.moveDown.aria")}
-                  onclick={() => send((p) => moveEntry(p, gi, ei, 1))}>▼</IconButton
+                  onclick={() => send((p) => moveEntry(p, gi, ei, 1))}><Icon name="arrowDown" /></IconButton
                 >
                 <IconButton
                   small
                   disabled={busy || base}
                   label={t("poses.entry.remove.aria")}
                   tooltip={t("poses.entry.remove.tooltip")}
-                  onclick={() => send((p) => removeEntry(p, gi, ei))}>✕</IconButton
+                  onclick={() => send((p) => removeEntry(p, gi, ei))}><Icon name="close" /></IconButton
                 >
               </span>
             </div>
@@ -490,7 +490,7 @@ h3 {
 
 .entries {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 1.5em;
 }
 
 .entries li {

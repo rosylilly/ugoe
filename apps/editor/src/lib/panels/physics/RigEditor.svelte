@@ -5,7 +5,7 @@
   組み立てる (sendRig。前の編集を読み直す前の写しから組み立てると、その編集を戻してしまう)。
 -->
 <script lang="ts">
-import { Button, Checkbox, IconButton, NumberField, Select } from "@ugoe/ui";
+import { Button, Checkbox, Icon, IconButton, NumberField, Select } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type {
   Command,
@@ -288,7 +288,7 @@ const rangeFields = $derived([
       {#if i > 0}
         <span class="remove">
           <IconButton small disabled={busy} label={t("physics.particles.remove", { index: i })}
-            onclick={() => updateParticles((ps) => removeParticle(ps, i))}>×</IconButton
+            onclick={() => updateParticles((ps) => removeParticle(ps, i))}><Icon name="close" /></IconButton
           >
         </span>
       {/if}
@@ -325,7 +325,7 @@ const rangeFields = $derived([
         onchange={(on) => patchInput(i, { reflect: on })} />
       <span class="remove">
         <IconButton small disabled={busy} label={t("physics.inputs.remove", { index: i })}
-          onclick={() => updateInputs((inputs) => inputs.filter((_, k) => k !== i))}>×</IconButton
+          onclick={() => updateInputs((inputs) => inputs.filter((_, k) => k !== i))}><Icon name="close" /></IconButton
         >
       </span>
     </div>
@@ -396,7 +396,7 @@ const rangeFields = $derived([
       {/if}
       <span class="remove">
         <IconButton small disabled={busy} label={t("physics.outputs.remove", { index: i })}
-          onclick={() => updateOutputs((outputs) => outputs.filter((_, k) => k !== i))}>×</IconButton
+          onclick={() => updateOutputs((outputs) => outputs.filter((_, k) => k !== i))}><Icon name="close" /></IconButton
         >
       </span>
     </div>

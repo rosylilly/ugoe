@@ -6,6 +6,7 @@ import {
   Button,
   type ButtonBaseProps,
   ColorPicker,
+  Icon,
   IconButton,
   Menu,
   showToast,
@@ -245,24 +246,14 @@ function onKeyDown(e: KeyboardEvent) {
       <span class="spacer"></span>
       <Toolbar label={t("toolbar.view.aria")}>
         <IconButton label={t("toolbar.zoomOut.aria")} onclick={() => player.zoomBy(1 / 1.25)}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3.5 8h9" stroke-linecap="round" />
-          </svg>
+          <Icon name="minus" />
         </IconButton>
         <span class="zoom">{formatNumber(player.zoom, { style: "percent", maximumFractionDigits: 0 })}</span>
         <IconButton label={t("toolbar.zoomIn.aria")} onclick={() => player.zoomBy(1.25)}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3.5 8h9M8 3.5v9" stroke-linecap="round" />
-          </svg>
+          <Icon name="plus" />
         </IconButton>
         <IconButton label={t("toolbar.fit.aria")} shortcut="F" onclick={() => player.fit()}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path
-              d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
+          <Icon name="fit" />
         </IconButton>
       </Toolbar>
       <ColorPicker
@@ -285,13 +276,7 @@ function onKeyDown(e: KeyboardEvent) {
         {/snippet}
       </Tooltip>
       <IconButton label={t("toolbar.settings.aria")} onclick={() => (settingsOpen = true)}>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.2" />
-          <path
-            d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
-            stroke-linecap="round"
-          />
-        </svg>
+        <Icon name="settings" />
       </IconButton>
     </header>
 

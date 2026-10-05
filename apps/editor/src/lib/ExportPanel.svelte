@@ -93,7 +93,7 @@ form.load();
   }
   .summary {
     margin: 0;
-    padding: var(--ugoe-space-2) 0 0 18px;
+    padding: var(--ugoe-space-2) 0 0 1.5em;
     border-top: 1px solid var(--ugoe-color-border);
   }
 </style>

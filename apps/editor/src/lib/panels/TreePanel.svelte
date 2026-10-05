@@ -471,19 +471,19 @@ const dragHint = $derived.by(() => {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ugoe-space-2);
   min-height: 100%;
 }
 .toolbar {
   display: flex;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 .footer {
   position: sticky;
   bottom: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   background: var(--ugoe-color-surface);
 }
 .tree {
@@ -491,7 +491,7 @@ const dragHint = $derived.by(() => {
   min-height: 80px;
   outline: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
 }
 .tree:focus-visible {
   outline: var(--ugoe-focus-ring);
@@ -505,7 +505,7 @@ const dragHint = $derived.by(() => {
   border-style: dashed;
 }
 .empty {
-  padding: 4px;
+  padding: var(--ugoe-space-2);
 }
 .hint {
   margin: 0;

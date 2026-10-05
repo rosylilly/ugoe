@@ -175,12 +175,12 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
 .meshes li {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 4px;
+  gap: var(--ugoe-space-2);
+  padding: 1px var(--ugoe-space-2);
 }
 
 .meshes li.base {
-  opacity: 0.65;
+  opacity: var(--ugoe-opacity-disabled);
 }
 
 .meshes li.selected {

@@ -9,7 +9,7 @@
   (docs/editor.md#パラメータのグループ)。
 -->
 <script lang="ts">
-import { Button, Checkbox, IconButton, NumberField, Tooltip } from "@ugoe/ui";
+import { Button, Checkbox, Icon, IconButton, NumberField, Tooltip } from "@ugoe/ui";
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
 import { t } from "../i18n";
@@ -271,7 +271,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
               class={onKey !== undefined ? "key on" : "key"}
               disabled={elementIsBase}
               label={keyLabel(value, onKey, element.target.id)}
-              onclick={() => toggleKey(p, onKey)}>◆</IconButton
+              onclick={() => toggleKey(p, onKey)}><Icon name="key" /></IconButton
             >
           {/if}
         </span>
@@ -359,12 +359,12 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .actions {
   display: flex;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 ul {
@@ -373,7 +373,7 @@ ul {
 }
 
 li {
-  margin-bottom: 8px;
+  margin-bottom: var(--ugoe-space-3);
 }
 
 .name {
@@ -392,17 +392,17 @@ li {
 }
 
 .tag {
-  margin-left: 4px;
-  padding: 0 4px;
+  margin-left: var(--ugoe-space-2);
+  padding: 0 var(--ugoe-space-2);
   border: 1px solid var(--ugoe-color-text-muted);
-  border-radius: 3px;
-  font-size: 10px;
+  border-radius: var(--ugoe-radius-sm);
+  font-size: var(--ugoe-font-size-xs);
   font-style: normal;
 }
 
 .buttons {
   display: flex;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .value {
@@ -448,13 +448,13 @@ li {
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 0;
+  gap: var(--ugoe-space-2);
+  padding: var(--ugoe-space-2) 0;
 }
 
 .range {
   display: flex;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .range {

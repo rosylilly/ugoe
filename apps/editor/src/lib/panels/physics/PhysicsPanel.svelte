@@ -12,7 +12,7 @@
   - パネルを開いている間、ビューポートに粒子と衝突体を重ねる (viewport/tools/physics/PhysicsOverlay.svelte)。
 -->
 <script lang="ts">
-import { Button, IconButton, NumberField } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -212,14 +212,14 @@ function togglePreview(): void {
               disabled={busy || !canMoveRig(doc.module, rigIds, i, -1)}
               onclick={() => moveRig(r.id, -1)}
               label={t("physics.rigs.moveUp.aria", { name })}
-              tooltip={moveTitle(i, -1)}>▲</IconButton
+              tooltip={moveTitle(i, -1)}><Icon name="arrowUp" /></IconButton
             >
             <IconButton
               small
               disabled={busy || !canMoveRig(doc.module, rigIds, i, 1)}
               onclick={() => moveRig(r.id, 1)}
               label={t("physics.rigs.moveDown.aria", { name })}
-              tooltip={moveTitle(i, 1)}>▼</IconButton
+              tooltip={moveTitle(i, 1)}><Icon name="arrowDown" /></IconButton
             >
           </span>
         </li>

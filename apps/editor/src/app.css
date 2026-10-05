@@ -2,6 +2,15 @@
 :root {
   font-family: var(--ugoe-font-sans);
   font-size: var(--ugoe-font-size-md);
+  /* 密な行 (ツリー・タイムライン・欄) は部品の 1 行の高さ。文 (段落・説明) は下で本文の高さにする (docs/ui.md#文字) */
+  line-height: var(--ugoe-line-height-control);
+}
+
+p,
+li,
+dd,
+.ed-hint {
+  line-height: var(--ugoe-line-height);
 }
 
 * {
@@ -27,8 +36,8 @@ header {
   grid-area: header;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: var(--ugoe-space-3);
+  padding: 0 var(--ugoe-space-4);
   border-bottom: 1px solid var(--ugoe-color-border);
   background: var(--ugoe-color-surface);
 }
@@ -38,7 +47,7 @@ header {
 }
 
 aside {
-  padding: 8px 12px;
+  padding: var(--ugoe-space-3) var(--ugoe-space-4);
   background: var(--ugoe-color-surface);
   overflow: auto;
 }
@@ -82,7 +91,7 @@ ul {
 
 label {
   display: grid;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 input[type="range"] {

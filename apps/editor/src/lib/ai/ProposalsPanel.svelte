@@ -630,8 +630,8 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    margin: 6px 0;
+    gap: var(--ugoe-space-2);
+    margin: var(--ugoe-space-2) 0;
   }
   .psd {
     overflow: hidden;
@@ -653,7 +653,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   .stale-list {
     list-style: disc;
     margin: var(--ugoe-space-1) 0 0;
-    padding-left: 18px;
+    padding-left: 1.5em;
   }
   /* 行の中のスライダーは名前を見せない (読み上げの名前には使う)。 */
   .inline-slider :global(.ugoe-slider__label) {
@@ -668,17 +668,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     min-width: 60px;
   }
   .options {
-    margin: 6px 0;
-    padding: 2px 8px 4px;
+    margin: var(--ugoe-space-2) 0;
+    padding: var(--ugoe-space-1) var(--ugoe-space-3) var(--ugoe-space-2);
     border: 1px solid var(--ugoe-color-border);
     border-radius: var(--ugoe-radius-md);
   }
   .options legend {
-    padding: 0 4px;
+    padding: 0 var(--ugoe-space-2);
   }
   .instructions {
     display: block;
-    margin-top: 6px;
+    margin-top: var(--ugoe-space-2);
   }
   textarea {
     box-sizing: border-box;
@@ -697,20 +697,20 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     outline-offset: 1px;
   }
   .sent {
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .unapplied {
-    margin: 4px 0;
-    padding: 4px 6px;
+    margin: var(--ugoe-space-2) 0;
+    padding: var(--ugoe-space-2);
     border-left: 3px solid var(--ugoe-color-warning);
     font-size: var(--ugoe-font-size-sm);
   }
   .unapplied ul {
     list-style: disc;
-    margin: 2px 0;
-    padding-left: 18px;
+    margin: var(--ugoe-space-1) 0;
+    padding-left: 1.5em;
   }
   .progress {
     color: var(--ugoe-color-accent);
@@ -718,7 +718,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   .progress-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--ugoe-space-3);
   }
   .progress-row .progress {
     flex: 1;
@@ -728,18 +728,18 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     color: var(--ugoe-color-warning);
   }
   .labels {
-    margin: 4px 0;
-    padding-left: 18px;
-    font-size: 12px;
+    margin: var(--ugoe-space-2) 0;
+    padding-left: 1.5em;
+    font-size: var(--ugoe-font-size-sm);
   }
   .review {
     list-style: none;
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
     padding: 0;
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
   }
   .review li {
-    padding: 4px 0;
+    padding: var(--ugoe-space-2) 0;
     border-top: 1px solid var(--ugoe-color-border);
     overflow-wrap: anywhere;
   }
@@ -747,14 +747,14 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    margin-top: 2px;
+    gap: var(--ugoe-space-2);
+    margin-top: var(--ugoe-space-1);
   }
   .proposal {
     border: 1px solid var(--ugoe-color-border);
-    border-radius: 4px;
-    padding: 6px 8px;
-    margin: 6px 0;
+    border-radius: var(--ugoe-radius-md);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    margin: var(--ugoe-space-2) 0;
   }
   .proposal.previewing {
     border-color: var(--ugoe-color-accent);
@@ -763,40 +763,40 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
   }
   .source {
-    padding: 0 6px;
+    padding: 0 var(--ugoe-space-2);
     border: 1px solid var(--ugoe-color-accent);
-    border-radius: 8px;
+    border-radius: var(--ugoe-radius-full);
     color: var(--ugoe-color-accent);
-    font-size: 11px;
+    font-size: var(--ugoe-font-size-xs);
     white-space: nowrap;
   }
   .rationale {
     max-height: 10em;
     overflow-y: auto;
     white-space: pre-wrap;
-    font-size: 12px;
-    margin: 4px 0;
+    font-size: var(--ugoe-font-size-sm);
+    margin: var(--ugoe-space-2) 0;
   }
   .commands {
     list-style: none;
-    margin: 2px 0;
+    margin: var(--ugoe-space-1) 0;
     padding: 0;
   }
   .groups {
     list-style: none;
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
     padding: 0;
     max-height: 320px;
     overflow-y: auto;
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
   }
   .group {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
+    gap: var(--ugoe-space-2);
   }
   .inner summary {
     cursor: pointer;
@@ -807,16 +807,16 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   }
   .normal-groups {
     list-style: none;
-    margin: 4px 0;
+    margin: var(--ugoe-space-2) 0;
     padding: 0;
-    font-size: 12px;
+    font-size: var(--ugoe-font-size-sm);
   }
   .normal-groups li {
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: center;
-    column-gap: 6px;
-    padding: 2px 0;
+    column-gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-1) 0;
   }
   .normal-groups .group-name {
     min-width: 0;
@@ -824,7 +824,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   .normal-groups .counts {
     grid-column: 1;
     padding-left: 22px;
-    font-size: 11px;
+    font-size: var(--ugoe-font-size-xs);
   }
   .normal-groups .strength {
     grid-column: 2;
@@ -843,7 +843,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     gap: var(--ugoe-space-1);
     grid-column: 1 / -1;
     padding-left: 22px;
-    font-size: 11px;
+    font-size: var(--ugoe-font-size-xs);
   }
   .normal-groups .shape summary {
     cursor: pointer;

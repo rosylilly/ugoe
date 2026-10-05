@@ -5,7 +5,7 @@
   モジュールのプロジェクトでは本体のものなので変えられない。
 -->
 <script lang="ts">
-import { Button, IconButton, Section, Tooltip } from "@ugoe/ui";
+import { Button, Icon, IconButton, Section, Tooltip } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -132,13 +132,13 @@ async function move(id: string, delta: -1 | 1) {
               small
               disabled={i === 0}
               label={t("parameters.groups.moveUp.aria", { name: label })}
-              onclick={() => move(g.id, -1)}>▲</IconButton
+              onclick={() => move(g.id, -1)}><Icon name="arrowUp" /></IconButton
             >
             <IconButton
               small
               disabled={i === groups.length - 1}
               label={t("parameters.groups.moveDown.aria", { name: label })}
-              onclick={() => move(g.id, 1)}>▼</IconButton
+              onclick={() => move(g.id, 1)}><Icon name="arrowDown" /></IconButton
             >
           </span>
           {#if editing === g.id}

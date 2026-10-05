@@ -470,7 +470,7 @@ function onKeyDown(e: KeyboardEvent): void {
   left: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
   align-items: center;
   pointer-events: auto;
 }

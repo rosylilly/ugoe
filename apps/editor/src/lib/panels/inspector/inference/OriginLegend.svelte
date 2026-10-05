@@ -28,18 +28,18 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin: 8px 0 0;
+  gap: var(--ugoe-space-2) var(--ugoe-space-3);
+  margin: var(--ugoe-space-3) 0 0;
   padding: 0;
   list-style: none;
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-xs);
   color: var(--ugoe-color-text-muted);
 }
 
 .item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
 }
 
 .swatch {
@@ -48,7 +48,7 @@ import { LEGEND_ORIGINS, originStyle } from "./inference";
   width: 16px;
   height: 16px;
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 3px;
+  border-radius: var(--ugoe-radius-sm);
   /* 記号は文字なので、色を本文の色へ寄せて 4.5:1 にする (枠と地は由来の色のまま。T0907) */
   color: color-mix(in srgb, var(--origin) 60%, var(--ugoe-color-text));
 }

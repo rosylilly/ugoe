@@ -19,6 +19,8 @@ export interface ButtonBaseProps {
   /** 押された状態 (入・切のボタン)。`aria-pressed` になる。 */
   pressed?: boolean;
   disabled?: boolean;
+  /** 実行中 (押すと二重になる操作の待ち)。無効にし、`aria-busy` を付ける。文言 (「保存しています…」) は呼び手が変える。 */
+  busy?: boolean;
   type?: "button" | "submit" | "reset";
   id?: string;
   class?: string;

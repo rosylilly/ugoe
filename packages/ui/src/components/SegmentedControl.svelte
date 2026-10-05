@@ -67,7 +67,7 @@ const id = $props.id();
     }
 
     .ugoe-segmented[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-segmented__group {
@@ -94,7 +94,11 @@ const id = $props.id();
     }
 
     .ugoe-segmented__item:hover:not(:disabled) {
-      background: var(--ugoe-color-surface);
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-segmented__item:active:not(:disabled) {
+      background-image: var(--ugoe-overlay-active);
     }
 
     /* 選んだものは地の色に加えて枠と太さでも示す */
@@ -106,12 +110,17 @@ const id = $props.id();
 
     .ugoe-segmented__item:disabled {
       cursor: default;
-      color: var(--ugoe-color-text-muted);
+      opacity: var(--ugoe-opacity-disabled);
+    }
+
+    /* 部品の全体が無効なら、全体に掛けた薄さだけにする (二重に薄くしない) */
+    .ugoe-segmented[data-disabled] .ugoe-segmented__item:disabled {
+      opacity: 1;
     }
 
     .ugoe-segmented__item:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
   }
 </style>

@@ -527,9 +527,9 @@ const ids = $props.id();
 
 .orders button {
   display: flex;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
   width: 100%;
-  padding: 1px 6px;
+  padding: 1px var(--ugoe-space-2);
   border: none;
   border-radius: 0;
   background: none;

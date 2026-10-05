@@ -299,10 +299,10 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 .base-tag {
-  padding: 2px 6px;
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
   background: var(--ugoe-color-surface);
   border: 1px dashed var(--ugoe-color-border);
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
 }
 
 /* 右上の HUD (Viewport.svelte) と重ならないよう、その幅を空けて折り返す (T0907) */
@@ -314,7 +314,7 @@ function onKeyDown(e: KeyboardEvent): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--ugoe-space-2);
   pointer-events: auto;
 }
 

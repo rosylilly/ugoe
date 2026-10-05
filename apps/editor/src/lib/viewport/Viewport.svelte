@@ -218,6 +218,6 @@ function onPointerUp(e: PointerEvent) {
   right: 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ugoe-space-3);
 }
 </style>

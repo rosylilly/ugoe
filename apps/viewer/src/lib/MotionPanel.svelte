@@ -19,7 +19,16 @@ import {
   trackedOverlap,
   trackingWins,
 } from "@ugoe/player";
-import { Button, Checkbox, IconButton, Section, SegmentedControl, Select, Toggle } from "@ugoe/ui";
+import {
+  Button,
+  Checkbox,
+  Icon,
+  IconButton,
+  Section,
+  SegmentedControl,
+  Select,
+  Toggle,
+} from "@ugoe/ui";
 import { t } from "./i18n";
 
 let { player }: { player: Player } = $props();
@@ -211,9 +220,9 @@ function expressionOverlap(e: ExpressionInfo): string[] {
                 onclick={() => (current ? player.stopMotions() : player.playMotion(m.name))}
               >
                 {#if current}
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" fill="currentColor" /></svg>
+                  <Icon name="stop" />
                 {:else}
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7.5-4.5z" fill="currentColor" /></svg>
+                  <Icon name="play" />
                 {/if}
               </IconButton>
               <div class="info">

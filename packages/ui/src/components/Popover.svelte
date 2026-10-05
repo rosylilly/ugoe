@@ -84,7 +84,7 @@ let {
 
     .ugoe-popover:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
   }
 </style>

@@ -43,22 +43,22 @@ const titles = $derived<Record<NodeIcon, string>>({
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.3;
+  stroke-width: var(--ugoe-icon-stroke);
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .part {
-  color: #d97706;
+  color: var(--ugoe-color-hue-amber);
 }
 .warp,
 .rotation,
 .deformer {
-  color: #0891b2;
+  color: var(--ugoe-color-hue-cyan);
 }
 .mesh {
   color: var(--ugoe-color-accent);
 }
 .mask {
-  color: #db2777;
+  color: var(--ugoe-color-hue-pink);
 }
 </style>

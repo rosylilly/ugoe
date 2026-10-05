@@ -299,19 +299,19 @@ const hint = $derived(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--ugoe-space-2);
   max-width: calc(100% - 16px);
-  padding: 2px 6px;
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
   background: var(--ugoe-color-surface);
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 4px;
+  border-radius: var(--ugoe-radius-md);
   pointer-events: auto;
 }
 
 .title {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ugoe-space-2);
   overflow-wrap: anywhere;
 }
 
@@ -319,11 +319,11 @@ const hint = $derived(
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--ugoe-radius-sm);
   background: var(--glue);
 }
 
 .hint {
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-xs);
 }
 </style>

@@ -3,7 +3,7 @@
   状態 (選択中のモーション・再生位置など) は TimelineState、編集は Command (docs/editor.md#タイムライン)。
 -->
 <script lang="ts">
-import { IconButton } from "@ugoe/ui";
+import { Icon, IconButton } from "@ugoe/ui";
 import { onDestroy, untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -68,7 +68,7 @@ function switchTab(next: "motions" | "expressions") {
       small
       label={open ? t("timeline.collapse") : t("timeline.expand")}
       aria-expanded={open}
-      onclick={toggleOpen}>{open ? "▾" : "▸"}</IconButton
+      onclick={toggleOpen}><Icon name={open ? "chevronDown" : "chevronRight"} /></IconButton
     >
     <TabStrip {tabs} value={tab} ariaLabel={t("timeline.tabs.aria")} onselect={switchTab} />
     {#if doc.error && open}<span class="error ugoe-selectable" title={doc.error}>{doc.error}</span>{/if}
@@ -98,8 +98,8 @@ function switchTab(next: "motions" | "expressions") {
   .tabs {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 0 8px;
+    gap: var(--ugoe-space-2);
+    padding: 0 var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
     min-width: 0;
   }
@@ -108,7 +108,7 @@ function switchTab(next: "motions" | "expressions") {
     border-bottom: 0;
   }
   .error {
-    margin-left: 8px;
+    margin-left: var(--ugoe-space-3);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

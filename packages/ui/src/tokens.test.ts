@@ -1,0 +1,95 @@
+// デザイントークン (tokens.css) の整理の検査 (docs/ui.md#デザイントークン)。
+// ダークの 2 つの宣言がそろっていること・宣言したトークンがどこかで使われていること・使っているトークンが宣言されていることを見る。
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+// happy-dom の下では import.meta.url が file: でないので、dirname を使う
+const here = import.meta.dirname;
+const root = join(here, "../../..");
+const tokensPath = join(here, "tokens.css");
+const tokens = readFileSync(tokensPath, "utf8");
+
+/** packages/ と apps/ の画面のソース (Svelte・CSS・TS・HTML)。 */
+function sources(): { path: string; text: string }[] {
+  const out: { path: string; text: string }[] = [];
+  const skip = new Set(["node_modules", "dist", "target", "src-tauri", "gen"]);
+  function walk(dir: string) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(entry.name) || entry.name.startsWith(".")) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.(svelte|css|ts|html)$/.test(entry.name) && path !== tokensPath) {
+        out.push({ path, text: readFileSync(path, "utf8") });
+      }
+    }
+  }
+  walk(join(root, "packages"));
+  walk(join(root, "apps"));
+  return out;
+}
+
+/** 宣言の `--name: value;` を名前から値への表にする。 */
+function declarations(block: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const m of block.matchAll(/(--ugoe-[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+    map.set(m[1] as string, (m[2] as string).replace(/\s+/g, " ").trim());
+  }
+  return map;
+}
+
+/** `selector {` から対応する `}` までの中身。 */
+function blockAfter(text: string, start: number): string {
+  const open = text.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) return text.slice(open + 1, i);
+  }
+  throw new Error("閉じていないブロック");
+}
+
+describe("tokens.css", () => {
+  it("declares the same dark values in the media query and in data-theme=dark", () => {
+    const media = blockAfter(tokens, tokens.indexOf("@media (prefers-color-scheme: dark)"));
+    const explicit = blockAfter(tokens, tokens.indexOf('[data-theme="dark"] {'));
+    const a = declarations(media);
+    const b = declarations(explicit);
+    expect(a.size).toBeGreaterThan(10);
+    expect(Object.fromEntries(a)).toEqual(Object.fromEntries(b));
+  });
+
+  it("declares every light color again for dark", () => {
+    const light = declarations(blockAfter(tokens, tokens.indexOf(':root,\n[data-theme="light"]')));
+    const dark = declarations(blockAfter(tokens, tokens.indexOf('[data-theme="dark"] {')));
+    expect([...dark.keys()].sort()).toEqual([...light.keys()].sort());
+  });
+
+  const files = sources();
+  const declared = new Set(declarations(tokens).keys());
+
+  it("has no unused tokens", () => {
+    const used = new Set<string>();
+    for (const text of [tokens, ...files.map((f) => f.text)]) {
+      for (const m of text.matchAll(/var\((--ugoe-[a-z0-9-]+)/g)) used.add(m[1] as string);
+    }
+    const unused = [...declared].filter((name) => !used.has(name));
+    expect(unused).toEqual([]);
+  });
+
+  it("has no references to undeclared tokens", () => {
+    const missing: string[] = [];
+    for (const { path, text } of files) {
+      // 部品が自分の中で宣言する変数 (`--ugoe-notice-color` など) は、その部品の中だけで使う
+      const local = new Set(declarations(text).keys());
+      for (const m of text.matchAll(/var\((--ugoe-[a-z0-9-]+)/g)) {
+        const name = m[1] as string;
+        // 名前を組み立てるもの (`var(--ugoe-color-${name})`) は数えない
+        if (name.endsWith("-")) continue;
+        if (!declared.has(name) && !local.has(name)) missing.push(`${path}: ${name}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});

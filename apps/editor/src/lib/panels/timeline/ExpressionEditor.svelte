@@ -4,7 +4,7 @@
   操作はすべて Command (docs/editor.md#表情)。
 -->
 <script lang="ts">
-import { Button, IconButton, NumberField, Select } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField, Select } from "@ugoe/ui";
 import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -267,7 +267,7 @@ function label(e: Expression): string {
                   label={t("timeline.expression.row.remove", { parameter: row.parameter })}
                   onclick={() =>
                     selected && setParameters(selected.parameters.filter((_, j) => j !== i))}
-                  >×</IconButton
+                  ><Icon name="close" /></IconButton
                 >
               </td>
             </tr>
@@ -304,8 +304,8 @@ function label(e: Expression): string {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: var(--ugoe-space-2);
+    padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
   }
   .inline {
@@ -326,19 +326,19 @@ function label(e: Expression): string {
   }
   table {
     border-collapse: collapse;
-    margin: 4px 8px;
+    margin: var(--ugoe-space-2) var(--ugoe-space-3);
   }
   th {
     text-align: left;
     font-weight: normal;
     color: var(--ugoe-color-text-muted);
-    font-size: 11px;
-    padding: 2px 8px;
+    font-size: var(--ugoe-font-size-xs);
+    padding: var(--ugoe-space-1) var(--ugoe-space-3);
   }
   td {
-    padding: 1px 8px;
+    padding: 1px var(--ugoe-space-3);
   }
   .empty {
-    padding: 12px;
+    padding: var(--ugoe-space-4);
   }
 </style>

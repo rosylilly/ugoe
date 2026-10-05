@@ -239,7 +239,7 @@ function rays(x: number, y: number): string {
 
 .label {
   fill: #facc15;
-  font-size: 11px;
+  font-size: var(--ugoe-font-size-xs);
   paint-order: stroke;
   stroke: #0008;
   stroke-width: 3px;

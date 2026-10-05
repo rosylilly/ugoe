@@ -80,25 +80,23 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     </p>
   {/if}
   <div class="scenes__actions">
-    <Button small {disabled} onclick={onadd}>{t("scenes.add")}</Button>
-    <Button small disabled={disabled || current === null} onclick={() => current && onduplicate(current.id)}>
+    <Button {disabled} onclick={onadd}>{t("scenes.add")}</Button>
+    <Button disabled={disabled || current === null} onclick={() => current && onduplicate(current.id)}>
       {t("scenes.duplicate")}
     </Button>
     <Button
-      small
       disabled={disabled || current === null || index <= 0}
       onclick={() => current && onmove(current.id, index - 1)}
     >
       {t("scenes.moveUp")}
     </Button>
     <Button
-      small
       disabled={disabled || current === null || index >= scenes.length - 1}
       onclick={() => current && onmove(current.id, index + 1)}
     >
       {t("scenes.moveDown")}
     </Button>
-    <Button small variant="danger" disabled={disabled || current === null} onclick={() => (removing = true)}>
+    <Button variant="danger" disabled={disabled || current === null} onclick={() => (removing = true)}>
       {t("scenes.remove")}
     </Button>
   </div>

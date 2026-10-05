@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 import { TrackingPanel } from "@ugoe/face-tracking";
-import { Button, Notice, Section, Select, Slider, Toggle } from "@ugoe/ui";
+import { Button, Icon, Notice, Section, Select, Slider, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
 import type { DifferenceItem } from "../ipc";
@@ -196,7 +196,7 @@ const expressionOptions = $derived([
                 ? t("preview.motions.stopOne", { name: motion.name })
                 : t("preview.motions.play", { name: motion.name })}
               onclick={() => (current ? preview.stopMotions() : preview.playMotion(motion))}
-              >{current ? "■" : "▶"} {motion.name}</Button
+              ><Icon name={current ? "stop" : "play"} /> {motion.name}</Button
             >
             <span class="muted"
               >{motion.looping

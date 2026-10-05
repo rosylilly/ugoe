@@ -96,11 +96,11 @@ const primaryLabel = $derived.by(() => {
   overflow-wrap: anywhere;
 }
 .badge {
-  margin-left: 6px;
-  padding: 0 4px;
+  margin-left: var(--ugoe-space-2);
+  padding: 0 var(--ugoe-space-2);
   border: 1px solid var(--ugoe-color-border);
-  border-radius: 3px;
-  font-size: 11px;
-  opacity: 0.8;
+  border-radius: var(--ugoe-radius-sm);
+  font-size: var(--ugoe-font-size-xs);
+  color: var(--ugoe-color-text-muted);
 }
 </style>

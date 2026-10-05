@@ -153,13 +153,18 @@ function take(files: File[]) {
     }
 
     .ugoe-drop-zone[data-disabled] {
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-drop-zone__icon {
       display: inline-flex;
       color: var(--ugoe-color-text-muted);
-      font-size: var(--ugoe-font-size-xl);
+    }
+
+    /* 領域の目印になる大きな印は、アイコンの段の 2 倍 */
+    .ugoe-drop-zone__icon .ugoe-icon {
+      width: calc(2 * var(--ugoe-icon-size));
+      height: calc(2 * var(--ugoe-icon-size));
     }
 
     .ugoe-drop-zone__prompt {

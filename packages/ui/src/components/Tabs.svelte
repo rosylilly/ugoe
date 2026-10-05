@@ -73,6 +73,7 @@ const current = $derived(value ?? tabs[0]?.value);
       padding: 0 var(--ugoe-space-3);
       border: 0;
       border-bottom: 2px solid transparent;
+      border-radius: var(--ugoe-radius-md) var(--ugoe-radius-md) 0 0;
       background: transparent;
       color: var(--ugoe-color-text-muted);
       font: inherit;
@@ -81,7 +82,12 @@ const current = $derived(value ?? tabs[0]?.value);
     }
 
     .ugoe-tabs__trigger:hover:not(:disabled) {
+      background-image: var(--ugoe-overlay-hover);
       color: var(--ugoe-color-text);
+    }
+
+    .ugoe-tabs__trigger:active:not(:disabled) {
+      background-image: var(--ugoe-overlay-active);
     }
 
     /* 選んだタブは色に加えて下線と太さでも示す */
@@ -93,13 +99,13 @@ const current = $derived(value ?? tabs[0]?.value);
 
     .ugoe-tabs__trigger:disabled {
       cursor: default;
-      opacity: 0.5;
+      opacity: var(--ugoe-opacity-disabled);
     }
 
     .ugoe-tabs__trigger:focus-visible,
     .ugoe-tabs__panel:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-tabs__panel {

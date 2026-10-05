@@ -32,7 +32,7 @@ let { title, open = $bindable(true), level = 3, actions, children, onchange }: P
   <div class="ugoe-section__header">
     <svelte:element this={`h${level}`} class="ugoe-section__heading">
       <Collapsible.Trigger class="ugoe-section__trigger">
-        <svg class="ugoe-section__chevron" viewBox="0 0 16 16" aria-hidden="true">
+        <svg class="ugoe-icon ugoe-section__chevron" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M6 4l4 4-4 4" />
         </svg>
         <span>{title}</span>
@@ -87,20 +87,21 @@ let { title, open = $bindable(true), level = 3, actions, children, onchange }: P
       cursor: pointer;
     }
 
+    .ugoe-section__trigger:hover {
+      background-image: var(--ugoe-overlay-hover);
+    }
+
+    .ugoe-section__trigger:active {
+      background-image: var(--ugoe-overlay-active);
+    }
+
     .ugoe-section__trigger:focus-visible {
       outline: var(--ugoe-focus-ring);
-      outline-offset: 2px;
+      outline-offset: var(--ugoe-focus-offset);
     }
 
     .ugoe-section__chevron {
-      flex: none;
-      width: 14px;
-      height: 14px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.75;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+      color: var(--ugoe-color-text-muted);
       transition: transform var(--ugoe-duration-fast);
     }
 

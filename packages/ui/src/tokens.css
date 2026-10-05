@@ -24,6 +24,13 @@
   --ugoe-color-danger: #c81e1e;
   --ugoe-color-warning: #a14a06;
   --ugoe-color-success: #126c34;
+  /* 分類の色 (種類を見分ける印と文字。状態の意味は持たない) */
+  --ugoe-color-hue-amber: #b45309;
+  --ugoe-color-hue-cyan: #0e7490;
+  --ugoe-color-hue-pink: #be185d;
+  --ugoe-color-hue-teal: #0f766e;
+  --ugoe-color-hue-blue: #1d4ed8;
+  --ugoe-color-hue-violet: #7e22ce;
   --ugoe-color-backdrop: rgb(0 0 0 / 40%);
   --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 20%);
 }
@@ -47,6 +54,12 @@
     --ugoe-color-danger: #f87171;
     --ugoe-color-warning: #fbbf24;
     --ugoe-color-success: #4ade80;
+    --ugoe-color-hue-amber: #fbbf24;
+    --ugoe-color-hue-cyan: #22d3ee;
+    --ugoe-color-hue-pink: #f472b6;
+    --ugoe-color-hue-teal: #2dd4bf;
+    --ugoe-color-hue-blue: #60a5fa;
+    --ugoe-color-hue-violet: #c084fc;
     --ugoe-color-backdrop: rgb(0 0 0 / 55%);
     --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 50%);
   }
@@ -67,6 +80,12 @@
   --ugoe-color-danger: #f87171;
   --ugoe-color-warning: #fbbf24;
   --ugoe-color-success: #4ade80;
+  --ugoe-color-hue-amber: #fbbf24;
+  --ugoe-color-hue-cyan: #22d3ee;
+  --ugoe-color-hue-pink: #f472b6;
+  --ugoe-color-hue-teal: #2dd4bf;
+  --ugoe-color-hue-blue: #60a5fa;
+  --ugoe-color-hue-violet: #c084fc;
   --ugoe-color-backdrop: rgb(0 0 0 / 55%);
   --ugoe-shadow-overlay: 0 4px 16px rgb(0 0 0 / 50%);
 }
@@ -77,16 +96,20 @@
 :root,
 [data-theme] {
   --ugoe-color-focus: var(--ugoe-color-accent);
-  --ugoe-color-danger-soft: color-mix(in srgb, var(--ugoe-color-danger) 12%, var(--ugoe-color-bg));
+  --ugoe-color-danger-soft: color-mix(
+    in srgb,
+    var(--ugoe-color-danger) 12%,
+    var(--ugoe-color-surface)
+  );
   --ugoe-color-warning-soft: color-mix(
     in srgb,
     var(--ugoe-color-warning) 12%,
-    var(--ugoe-color-bg)
+    var(--ugoe-color-surface)
   );
   --ugoe-color-success-soft: color-mix(
     in srgb,
     var(--ugoe-color-success) 12%,
-    var(--ugoe-color-bg)
+    var(--ugoe-color-surface)
   );
   --ugoe-color-accent-soft: color-mix(
     in srgb,
@@ -94,6 +117,14 @@
     var(--ugoe-color-surface)
   );
   --ugoe-focus-ring: 2px solid var(--ugoe-color-focus);
+  /*
+   * hover と押下: 本文の色を薄く重ねる (地の色が何でも一段ずつ濃く (ダークでは明るく) なる)。
+   * 部品は `background-image: var(--ugoe-overlay-hover)` で地の上に重ねる (地の色を書き換えない)。
+   */
+  --ugoe-color-hover: color-mix(in srgb, var(--ugoe-color-text) 6%, transparent);
+  --ugoe-color-active: color-mix(in srgb, var(--ugoe-color-text) 12%, transparent);
+  --ugoe-overlay-hover: linear-gradient(var(--ugoe-color-hover), var(--ugoe-color-hover));
+  --ugoe-overlay-active: linear-gradient(var(--ugoe-color-active), var(--ugoe-color-active));
 }
 
 /* 密度: compact (既定) */
@@ -106,6 +137,7 @@
   --ugoe-space-5: 16px;
   --ugoe-space-6: 24px;
   --ugoe-control-height: 24px;
+  --ugoe-icon-size: 16px;
   --ugoe-font-size-xs: 11px;
   --ugoe-font-size-sm: 12px;
   --ugoe-font-size-md: 13px;
@@ -122,6 +154,7 @@
   --ugoe-space-5: 20px;
   --ugoe-space-6: 32px;
   --ugoe-control-height: 30px;
+  --ugoe-icon-size: 18px;
   --ugoe-font-size-xs: 12px;
   --ugoe-font-size-sm: 13px;
   --ugoe-font-size-md: 15px;
@@ -134,7 +167,8 @@
   --ugoe-font-sans:
     system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
   --ugoe-font-mono: ui-monospace, "Cascadia Mono", "SF Mono", "Noto Sans Mono", monospace;
-  --ugoe-line-height: 1.4;
+  /* 本文 (段落・説明)。日本語の折り返しで行が詰まらないように 1.5 */
+  --ugoe-line-height: 1.5;
   --ugoe-line-height-control: 1.2;
   --ugoe-font-weight-normal: 400;
   --ugoe-font-weight-strong: 600;
@@ -146,6 +180,11 @@
   --ugoe-z-toast: 200;
   --ugoe-duration-fast: 100ms;
   --ugoe-duration-normal: 200ms;
+  --ugoe-focus-offset: 2px;
+  /* 無効の部品 (全体に掛ける。無効の文字はコントラストの基準の外) */
+  --ugoe-opacity-disabled: 0.5;
+  /* アイコンの線の太さ (16 の格子の viewBox の単位) */
+  --ugoe-icon-stroke: 1.5;
   /* 押せる部品の最小の大きさ (WCAG 2.5.8)。compact でもこれより小さくしない */
   --ugoe-target-min: 24px;
 }
@@ -155,6 +194,37 @@
     --ugoe-duration-fast: 0ms;
     --ugoe-duration-normal: 0ms;
   }
+}
+
+/*
+ * アイコン (docs/ui.md#アイコン)。16 の格子の viewBox で描いた線のアイコンに付ける:
+ * `<svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">`。大きさは密度で変わる。
+ */
+.ugoe-icon {
+  flex: none;
+  width: var(--ugoe-icon-size);
+  height: var(--ugoe-icon-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--ugoe-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+/* 塗りのアイコン (再生・停止など、線では形が弱いもの) */
+.ugoe-icon--fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+/*
+ * 入力の誤り (docs/ui.md#デザイン の状態の表)。アプリの文字の欄も `aria-invalid="true"` を付ければ危険の色の枠になる。
+ * 枠の色はアプリの CSS が上書きしうるので、内側の影でも示す。誤りの文は aria-describedby で結ぶ。
+ */
+:is(input, textarea)[aria-invalid="true"] {
+  border-color: var(--ugoe-color-danger);
+  box-shadow: inset 0 0 0 1px var(--ugoe-color-danger);
 }
 
 /* 見せずに読み上げだけさせる文字 (部品とアプリが使う。docs/ui.md#そのほか) */

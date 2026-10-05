@@ -11,6 +11,7 @@ export { default as ColorPicker } from "./components/ColorPicker.svelte";
 export { default as ContextMenu } from "./components/ContextMenu.svelte";
 export { default as Dialog } from "./components/Dialog.svelte";
 export { default as DropZone } from "./components/DropZone.svelte";
+export { default as Icon, type IconName } from "./components/Icon.svelte";
 export { default as IconButton } from "./components/IconButton.svelte";
 export { default as Kbd } from "./components/Kbd.svelte";
 export { default as Menu } from "./components/Menu.svelte";

@@ -318,7 +318,7 @@ async function openManual(): Promise<void> {
   }
   .clients {
     margin: var(--ugoe-space-2) 0;
-    padding-left: 18px;
+    padding-left: 1.5em;
   }
   .choices {
     margin: var(--ugoe-space-2) 0;
@@ -380,7 +380,7 @@ async function openManual(): Promise<void> {
   }
   .checks {
     margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
-    padding-left: 18px;
+    padding-left: 1.5em;
   }
   .warn {
     color: var(--ugoe-color-warning);
