@@ -1,11 +1,11 @@
 ---
 id: T0916
 title: UI 品質: デザインの見直し (トークンと部品の見た目)
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages, docs, apps/editor, apps/viewer, apps/studio]
 depends_on: [T0915, T0912]
-assignee:
+assignee: claude-worker-T0916
 ---
 
 # T0916: UI 品質: デザインの見直し (トークンと部品の見た目)
