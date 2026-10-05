@@ -5,14 +5,21 @@
 // - パラメータ AngleX (-30..30、既定 0)。
 // - メッシュ Quad: 頂点 4 つ (キャンバス座標 (0,0) (100,0) (100,100) (0,100))、AngleX の 3 つのキー。
 // - ワープ Warp: 1×1 の格子 (点 4 つ、Quad と同じ位置)、軸なし。
-// - 回転 Rot: 原点 (50,50)・角度 0・拡大率 1、軸なし。
+// - 回転 Rot (名前 Neck): 原点 (50,50)・角度 0・拡大率 1、軸なし。
 // - グルー Seam: Quad の頂点 1 と 0 の組 1 つ。
 // - キャンバス座標 → CSS ピクセル: `(10, 20) + 2 * p`。happy-dom の getBoundingClientRect は 0 なので、
 //   イベントの clientX / clientY がそのままツールの座標になる。
 import { type Component, flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, vi } from "vitest";
 import { type EditorDocument, parseModelJson } from "../../../document.svelte";
-import type { ApplyReport, Command, Motion, PhysicsSettings } from "../../../ipc";
+import type {
+  ApplyReport,
+  Command,
+  Expression,
+  Motion,
+  PhysicsSettings,
+  RederiveWarning,
+} from "../../../ipc";
 import type { ViewportController, ViewTransform } from "../../controller.svelte";
 import type { WebPuppet } from "../../wasm";
 import type { Point } from "../geometry";
@@ -70,11 +77,13 @@ export function testModel(): string {
     deformers: [
       {
         id: "Warp",
+        name: "Warp",
         parent: null,
         kind: { type: "warp", rows: 1, cols: 1, keyforms: grid({ points: QUAD }) },
       },
       {
         id: "Rot",
+        name: "Neck",
         parent: null,
         kind: {
           type: "rotation",
@@ -137,6 +146,7 @@ export class FakeController {
   animationFrame = $state(0);
   previewingPhysics = $state(false);
   showDepth = $state(false);
+  posePreview = $state.raw<readonly string[] | null>(null);
   puppet: WebPuppet | null = fakePuppet();
 
   canvasToScreen(x: number, y: number): Point | null {
@@ -155,6 +165,10 @@ export class FakeController {
 
   resetParameters(): void {
     this.parameterValues = {};
+  }
+
+  setPosePreview(parts: readonly string[] | null): void {
+    this.posePreview = parts;
   }
 
   stopPhysicsPreview(): void {
@@ -176,6 +190,8 @@ export class FakeDocument {
   readonly parsedModel = $derived(parseModelJson(this.model?.json));
   physics = $state.raw<PhysicsSettings | null>(null);
   motions = $state.raw<Motion[]>([]);
+  expressions = $state.raw<Expression[]>([]);
+  warnings = $state<RederiveWarning[]>([]);
   module = $state.raw(null);
   error = $state<string | null>(null);
   /** 読み直しの回数 (`EditorDocument.revision`)。テストが増やして編集の後の読み直しの代わりにする。 */
@@ -212,6 +228,10 @@ export class FakeDocument {
     this.#queue = result.catch(() => undefined);
     return result;
   });
+
+  dismissWarnings(): void {
+    this.warnings = [];
+  }
 
   get asDocument(): EditorDocument {
     return this as unknown as EditorDocument;
