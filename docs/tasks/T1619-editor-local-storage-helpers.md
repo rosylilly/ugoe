@@ -1,7 +1,7 @@
 ---
 id: T1619
 title: "エディタ: localStorage の読み書きを @ugoe/i18n の readStoredItem などに寄せる"
-status: in-progress
+status: done
 milestone: M9
 crates: [apps/editor]
 depends_on: [T1610]
@@ -18,9 +18,9 @@ T0937 でビューアとスタジオの localStorage の読み書きを `@ugoe/i
 
 ## 受け入れ条件
 
-- [ ] エディタの localStorage の読み書きが `readStoredItem` など共有の関数を通り、自前の try の写しが無い (`grep localStorage apps/editor/src` で、テストの外に直接の呼び出しが無い)
-- [ ] 保存した値の読み書きの振る舞い (壊れた値・使えないストレージで既定に戻る) は今のままで、テストが通る
-- [ ] `just ci` が通る
+- [x] エディタの localStorage の読み書きが `readStoredItem` など共有の関数を通り、自前の try の写しが無い (`grep localStorage apps/editor/src` で、テストの外に直接の呼び出しが無い)
+- [x] 保存した値の読み書きの振る舞い (壊れた値・使えないストレージで既定に戻る) は今のままで、テストが通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -30,3 +30,12 @@ T0937 でビューアとスタジオの localStorage の読み書きを `@ugoe/i
 ## メモ
 
 - T0032 で起票した (元の候補: T0937)。
+- やったこと (T1619): `lib/layout.ts` の `loadSplit`・`saveSplit`、`lib/externalChange.ts` の `loadAutoReload`・`saveAutoReload` を
+  `@ugoe/i18n` の `readStoredItem`・`writeStoredItem` で書き直した。`TimelinePanel.svelte` の畳む状態の読み書きは
+  `panels/timeline/timeline.ts` の `loadPanelOpen`・`savePanelOpen` に移して同じ関数を通した (テストできるように)。
+  キーと値の形は前のまま (`ugoe.editor.rightSplit` = 数の文字列、`ugoe.editor.autoReload` = `true`/`false`、`ugoe.timeline` = `open`/`closed`)。
+  `grep localStorage apps/editor/src` に残るのはコメントだけ。
+- テスト: `layout.test.ts`・`externalChange.test.ts`・`timeline.test.ts` に、`@ugoe/i18n/testing` の `MemoryStorage`・`BrokenStorage`・
+  `useLocalStorage` で、前と同じキーと値で覚えること・壊れた値・使えないストレージ (例外・無い) で既定に戻ることを足した。
+- `just ci` は通った。
+- やらなかったこと・起票の候補: なし。

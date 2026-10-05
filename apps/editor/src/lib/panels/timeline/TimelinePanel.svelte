@@ -11,6 +11,7 @@ import TabStrip, { type TabItem } from "../../ui/TabStrip.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ExpressionEditor from "./ExpressionEditor.svelte";
 import MotionEditor from "./MotionEditor.svelte";
+import { loadPanelOpen, savePanelOpen } from "./timeline";
 import { TimelineState } from "./timeline.svelte";
 
 interface Props {
@@ -36,25 +37,12 @@ $effect(() => {
   }
 });
 
-const STORAGE_KEY = "ugoe.timeline";
 let tab = $state<"motions" | "expressions">("motions");
-let open = $state(load());
-
-function load(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== "closed";
-  } catch {
-    return true;
-  }
-}
+let open = $state(loadPanelOpen());
 
 function toggleOpen() {
   open = !open;
-  try {
-    localStorage.setItem(STORAGE_KEY, open ? "open" : "closed");
-  } catch {
-    // 覚えられなくても表示は変える。
-  }
+  savePanelOpen(open);
 }
 
 type Tab = "motions" | "expressions";

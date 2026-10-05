@@ -1,5 +1,6 @@
 // 外でのプロジェクトの書き換え (docs/editor.md#外での書き換え) の判定と表示の文。DOM に依存しない部分だけを置く
 // (externalChange.test.ts で検査する)。検出はバックエンドの `check_external_change` (ファイルの指紋を比べる)。
+import { readStoredItem, writeStoredItem } from "@ugoe/i18n";
 import { errorCode } from "./errors";
 import { t } from "./i18n";
 import type { ExternalChange } from "./ipc";
@@ -60,17 +61,10 @@ const AUTO_RELOAD_KEY = "ugoe.editor.autoReload";
 
 /** 「未保存の変更がなければ自動で開き直す」(既定は切。localStorage に覚える。使えない環境では切)。 */
 export function loadAutoReload(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(AUTO_RELOAD_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return readStoredItem(AUTO_RELOAD_KEY) === "true";
 }
 
+/** 覚えられなくても、この画面では今の値を使い続ける。 */
 export function saveAutoReload(enabled: boolean): void {
-  try {
-    globalThis.localStorage?.setItem(AUTO_RELOAD_KEY, String(enabled));
-  } catch {
-    // 保存できなくても、この画面では今の値を使い続ける。
-  }
+  writeStoredItem(AUTO_RELOAD_KEY, String(enabled));
 }

@@ -1,5 +1,6 @@
 // 右の列 (インスペクタとパラメータ) の上下の分け方 (docs/editor.md#画面構成-m2-の目標)。DOM に依存しない部分だけを置き、
 // 覚えておく値は localStorage に入れる (使えない環境では既定値)。layout.test.ts で検査する。
+import { readStoredItem, writeStoredItem } from "@ugoe/i18n";
 
 /** インスペクタの高さの割合の既定値 (残りがパラメータ)。 */
 export const DEFAULT_SPLIT = 0.6;
@@ -39,18 +40,11 @@ export function splitByKey(split: number, key: string): number | null {
 }
 
 export function loadSplit(): number {
-  try {
-    const saved = globalThis.localStorage?.getItem(KEY);
-    return saved == null ? DEFAULT_SPLIT : clampSplit(Number(saved));
-  } catch {
-    return DEFAULT_SPLIT;
-  }
+  const saved = readStoredItem(KEY);
+  return saved == null ? DEFAULT_SPLIT : clampSplit(Number(saved));
 }
 
+/** 覚えられなくても、この画面では今の値を使い続ける。 */
 export function saveSplit(split: number): void {
-  try {
-    globalThis.localStorage?.setItem(KEY, String(split));
-  } catch {
-    // 保存できなくても、この画面では今の値を使い続ける。
-  }
+  writeStoredItem(KEY, String(split));
 }

@@ -1,3 +1,4 @@
+import { BrokenStorage, MemoryStorage, useLocalStorage } from "@ugoe/i18n/testing";
 import { describe, expect, it } from "vitest";
 import type { Curve, Motion, Parameter } from "../../ipc";
 import {
@@ -9,7 +10,9 @@ import {
   followKey,
   isValidName,
   keyValuesCommand,
+  loadPanelOpen,
   newMotion,
+  savePanelOpen,
   segmentEndingAt,
   segmentHandle,
   segmentShape,
@@ -218,5 +221,30 @@ describe("names", () => {
     expect(isValidName("笑顔")).toBe(false);
     expect(isValidName("a".repeat(129))).toBe(false);
     expect(uniqueName("Motion", ["motion", "Motion_2"])).toBe("Motion_3");
+  });
+});
+
+describe("remembered panel state", () => {
+  it("saves and loads whether the panel is open under the same key and values as before", () => {
+    const storage = new MemoryStorage();
+    useLocalStorage(storage);
+    expect(loadPanelOpen()).toBe(true);
+    savePanelOpen(false);
+    expect(storage.getItem("ugoe.timeline")).toBe("closed");
+    expect(loadPanelOpen()).toBe(false);
+    savePanelOpen(true);
+    expect(storage.getItem("ugoe.timeline")).toBe("open");
+    expect(loadPanelOpen()).toBe(true);
+    // 知らない値は開く
+    storage.setItem("ugoe.timeline", "?");
+    expect(loadPanelOpen()).toBe(true);
+  });
+
+  it("stays open when localStorage cannot be used", () => {
+    for (const storage of [new BrokenStorage(), undefined]) {
+      useLocalStorage(storage);
+      expect(loadPanelOpen()).toBe(true);
+      expect(() => savePanelOpen(false)).not.toThrow();
+    }
   });
 });

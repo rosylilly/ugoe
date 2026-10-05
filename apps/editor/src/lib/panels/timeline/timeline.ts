@@ -1,6 +1,7 @@
 // タイムライン (モーションの編集) の、DOM に依存しない補助。Vitest で検査する (timeline.test.ts)。
 // コマンドの規則は docs/editor.md#モーションと表情の編集、カーブの式は docs/spec/motion.md#カーブ。
 // 時刻の引数 `t` と重なるので、文言を引く関数は `translate` の名前で使う。
+import { readStoredItem, writeStoredItem } from "@ugoe/i18n";
 import { t as translate } from "../../i18n";
 import type {
   Command,
@@ -47,6 +48,18 @@ export const FPS = 30;
 
 /** 新しいモーションの長さ (秒)。 */
 export const DEFAULT_DURATION = 2;
+
+const PANEL_STORAGE_KEY = "ugoe.timeline";
+
+/** パネルを開いておくか (localStorage に覚える。覚えていない・読めなければ開く)。 */
+export function loadPanelOpen(): boolean {
+  return readStoredItem(PANEL_STORAGE_KEY) !== "closed";
+}
+
+/** 覚えられなくても表示は変える。 */
+export function savePanelOpen(open: boolean): void {
+  writeStoredItem(PANEL_STORAGE_KEY, open ? "open" : "closed");
+}
 
 /** カーブの対象を 1 つの文字列にする (表の行や選択のキー)。 */
 export function targetKey(target: CurveTarget): string {

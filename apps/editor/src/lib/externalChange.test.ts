@@ -1,5 +1,13 @@
+import { BrokenStorage, MemoryStorage, useLocalStorage } from "@ugoe/i18n/testing";
 import { describe, expect, it } from "vitest";
-import { baseAction, describeFiles, externalAction, isExternalChangeError } from "./externalChange";
+import {
+  baseAction,
+  describeFiles,
+  externalAction,
+  isExternalChangeError,
+  loadAutoReload,
+  saveAutoReload,
+} from "./externalChange";
 import type { ExternalChange } from "./ipc";
 
 const change: ExternalChange = { files: ["model.json"], missing: false, token: "abc" };
@@ -53,5 +61,29 @@ describe("external change", () => {
       false,
     );
     expect(isExternalChangeError("disk full")).toBe(false);
+  });
+});
+
+describe("remembered auto reload", () => {
+  it("saves and loads the setting under the same key and value as before", () => {
+    const storage = new MemoryStorage();
+    useLocalStorage(storage);
+    expect(loadAutoReload()).toBe(false);
+    saveAutoReload(true);
+    expect(storage.getItem("ugoe.editor.autoReload")).toBe("true");
+    expect(loadAutoReload()).toBe(true);
+    saveAutoReload(false);
+    expect(storage.getItem("ugoe.editor.autoReload")).toBe("false");
+    expect(loadAutoReload()).toBe(false);
+    storage.setItem("ugoe.editor.autoReload", "yes");
+    expect(loadAutoReload()).toBe(false);
+  });
+
+  it("is off when localStorage cannot be used", () => {
+    for (const storage of [new BrokenStorage(), undefined]) {
+      useLocalStorage(storage);
+      expect(loadAutoReload()).toBe(false);
+      expect(() => saveAutoReload(true)).not.toThrow();
+    }
   });
 });
