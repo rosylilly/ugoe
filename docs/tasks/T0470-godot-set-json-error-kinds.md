@@ -34,3 +34,4 @@ C ABI・wasm のような種類と補足の値 (`invalid_model`・`invalid_physi
 ## メモ
 
 - T0036 で起票した (元の候補: T0461 (Godot))。
+- 判断 (2026-10-05、利用者の判断): `set_effects_json`・`set_physics_json`・`set_base_physics_json` の戻り値を辞書にする (既存のスクリプトの bool の判定は変わる。README に移行の書き方を書く)。
