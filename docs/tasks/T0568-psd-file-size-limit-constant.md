@@ -1,11 +1,11 @@
 ---
 id: T0568
 title: "PSD のファイルの大きさの上限を ugoe-psd の 1 か所にまとめ、CLI の import-psd も上限付きで読む"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-psd, ugoe-mcp, ugoe-cli, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0568
 ---
 
 # T0568: PSD のファイルの大きさの上限を ugoe-psd の 1 か所にまとめ、CLI の import-psd も上限付きで読む
