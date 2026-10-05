@@ -1,6 +1,6 @@
 //! モデルの読み込み (JSON / `.ugoe` バンドル) とテクスチャのデコード。GPU には触れない。
 //!
-//! テクスチャは Rust 側で PNG と KTX2 (圧縮していない 8bit の RGB / RGBA) をデコードし、乗算済みアルファの RGBA8 にする
+//! テクスチャは Rust 側で PNG と KTX2 (圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7) をデコードし、乗算済みアルファの RGBA8 にする
 //! (`docs/spec/rendering.md` の「前提」: 色の値はリニア化しない)。
 //! ブラウザのデコーダは色空間の変換やアルファの扱いが実装ごとに異なるので使わない。
 
@@ -387,7 +387,7 @@ pub fn from_bundle_with(bytes: &[u8], limits: LoadLimits) -> Result<LoadedModel,
 }
 
 /// テクスチャ `count` 枚をデコードする (`data(i)` が `i` 番目の画像)。PNG と KTX2 は乗算済みアルファにし、
-/// デコードしない形式の KTX2 (ブロック圧縮など) と画像の無い番号は白のプレースホルダで代用して警告する。
+/// デコードしない形式の KTX2 (ETC2・ASTC・Basis Universal など) と画像の無い番号は白のプレースホルダで代用して警告する。
 pub(crate) fn decode_textures<'a>(
     count: usize,
     data: impl Fn(usize) -> Option<&'a TextureData>,
@@ -652,6 +652,36 @@ mod tests {
         );
     }
 
+    /// ブロック圧縮 (BC3) の KTX2 は展開してから、テクスチャは乗算し、法線マップは乗算しない
+    /// (`docs/adr/0030-compressed-ktx2-decoding.md`)。
+    #[test]
+    fn bundle_bc3_ktx2_is_decoded() {
+        let mut model = fixtures::single_quad();
+        model.textures[0].normal_map = Some("n".into());
+        let mut bundle = Bundle::new(model);
+        // アルファ 128 (端点はどちらも 128) と、赤 (RGB565 の 0xf800。端点はどちらも同じ) の 4x4 の 1 ブロック。
+        let block = [
+            128, 128, 0, 0, 0, 0, 0, 0, 0x00, 0xf8, 0x00, 0xf8, 0, 0, 0, 0,
+        ];
+        let ktx2 = TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: encode_ktx2(137, 4, 4, &block),
+        };
+        bundle.textures = vec![ktx2.clone()];
+        bundle.normal_maps = vec![ktx2];
+        let loaded = from_bundle(&write_bundle(&bundle).unwrap()).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        assert_eq!(loaded.textures[0].pixels, [128, 0, 0, 128].repeat(16));
+        assert_eq!(
+            loaded.normal_maps,
+            vec![Some(Rgba8 {
+                width: 4,
+                height: 4,
+                pixels: [255, 0, 0, 128].repeat(16),
+            })]
+        );
+    }
+
     /// 壊れた KTX2 は読み込みの失敗。一辺の上限は PNG と同じく種類付きの失敗。
     #[test]
     fn broken_or_too_large_ktx2_is_an_error() {
@@ -685,7 +715,7 @@ mod tests {
         assert_eq!(err.info().code, LoadError::IMAGE_LIMIT_EXCEEDED);
     }
 
-    /// デコードしない形式の KTX2 (ここでは `VK_FORMAT_BC3_UNORM_BLOCK`) は、白と法線マップなしで代用して警告する。
+    /// デコードしない形式の KTX2 (ここでは `VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK`) は、白と法線マップなしで代用して警告する。
     #[test]
     fn unsupported_ktx2_images_are_replaced_with_structured_warnings() {
         let mut model = fixtures::single_quad();
@@ -693,7 +723,7 @@ mod tests {
         let mut bundle = Bundle::new(model);
         let ktx2 = TextureData {
             format: TextureFormat::Ktx2,
-            bytes: encode_ktx2(137, 4, 4, &[0; 16]),
+            bytes: encode_ktx2(151, 4, 4, &[0; 16]),
         };
         bundle.textures = vec![ktx2.clone()];
         bundle.normal_maps = vec![ktx2];

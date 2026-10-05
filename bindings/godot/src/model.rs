@@ -993,21 +993,28 @@ const DFD_TRANSFER: usize = 4 + 8 + 2;
 const DF_TRANSFER_LINEAR: u8 = 1;
 const DF_TRANSFER_SRGB: u8 = 2;
 
-/// 8 ビットの非圧縮の形式の `vkFormat` と、Godot が値を変えずに読む形式 (`*_UINT`) の組。
+/// `vkFormat` と、Godot が値を変えずに読む形式の組。
 ///
 /// Godot 4.7 の KTX2 の読み込みは、`R8G8B8(A8)_SRGB` を読むとリニアに変換し (8 ビットのまま。戻せない)、
 /// `R8G8B8(A8)_UNORM` は読めない。どちらも同じ大きさの `*_UINT` (Godot は RGB8 / RGBA8 として読む) に書き換える。
-const KTX2_AS_STORED_FORMATS: [(u32, u32); 4] = [
-    (23, 27), // R8G8B8_UNORM → R8G8B8_UINT
-    (29, 27), // R8G8B8_SRGB → R8G8B8_UINT
-    (37, 41), // R8G8B8A8_UNORM → R8G8B8A8_UINT
-    (43, 41), // R8G8B8A8_SRGB → R8G8B8A8_UINT
+/// ブロック圧縮の `BC*_SRGB_BLOCK` は読めないので、同じブロックの `*_UNORM_BLOCK` にする (値は保存されたまま展開される。
+/// 参照の実装は BC1〜BC5・BC7 を読む。`docs/adr/0030-compressed-ktx2-decoding.md`)。
+const KTX2_AS_STORED_FORMATS: [(u32, u32); 9] = [
+    (23, 27),   // R8G8B8_UNORM → R8G8B8_UINT
+    (29, 27),   // R8G8B8_SRGB → R8G8B8_UINT
+    (37, 41),   // R8G8B8A8_UNORM → R8G8B8A8_UINT
+    (43, 41),   // R8G8B8A8_SRGB → R8G8B8A8_UINT
+    (132, 131), // BC1_RGB_SRGB_BLOCK → BC1_RGB_UNORM_BLOCK
+    (134, 133), // BC1_RGBA_SRGB_BLOCK → BC1_RGBA_UNORM_BLOCK
+    (136, 135), // BC2_SRGB_BLOCK → BC2_UNORM_BLOCK
+    (138, 137), // BC3_SRGB_BLOCK → BC3_UNORM_BLOCK
+    (146, 145), // BC7_SRGB_BLOCK → BC7_UNORM_BLOCK
 ];
 
 /// KTX2 の画素を保存された値のまま (sRGB からリニアへ変換せずに) Godot に読ませるため、ヘッダを書き換える
 /// (`docs/spec/rendering.md#前提`: KTX2 の値は転送関数によらずそのまま使う)。
 ///
-/// - 8 ビットの非圧縮の形式は、同じ大きさの `*_UINT` にする ([`KTX2_AS_STORED_FORMATS`])。
+/// - 8 ビットの非圧縮の形式は同じ大きさの `*_UINT` に、ブロック圧縮の `_SRGB` は `_UNORM` にする ([`KTX2_AS_STORED_FORMATS`])。
 /// - データ形式の記述の転送関数が sRGB なら、リニアにする (Basis Universal を、Godot が sRGB のときだけ
 ///   RGBA8 に展開してリニアに変換するため。リニアなら GPU の圧縮形式に変換し、値は変えない)。
 ///
@@ -1732,6 +1739,9 @@ mod tests {
         assert_eq!(patched, ktx2_header(41, DF_TRANSFER_LINEAR));
         let patched = ktx2_as_stored(&ktx2_header(23, DF_TRANSFER_LINEAR)).expect("rewritten");
         assert_eq!(patched, ktx2_header(27, DF_TRANSFER_LINEAR));
+        // BC7_SRGB_BLOCK は BC7_UNORM_BLOCK に (Godot は BC の sRGB の形式を読めない)
+        let patched = ktx2_as_stored(&ktx2_header(146, DF_TRANSFER_SRGB)).expect("rewritten");
+        assert_eq!(patched, ktx2_header(145, DF_TRANSFER_LINEAR));
         // Basis Universal (VK_FORMAT_UNDEFINED) は転送関数だけを書き換える
         let patched = ktx2_as_stored(&ktx2_header(0, DF_TRANSFER_SRGB)).expect("rewritten");
         assert_eq!(patched, ktx2_header(0, DF_TRANSFER_LINEAR));

@@ -4,7 +4,7 @@
 
 use ugoe_format::TextureFormat;
 
-use crate::Error;
+use crate::{Error, bc};
 
 pub use ugoe_format::image::{ImageLimits, Rgba8, premultiply};
 
@@ -31,7 +31,7 @@ pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, Error> {
 
 /// 形式 (PNG・KTX2) に合わせて画像をデコードし、乗算済みアルファの RGBA8 にする (`ugoe_format::image`)。
 ///
-/// KTX2 は圧縮していない 8bit の RGB / RGBA だけを読み、ほかの形式は
+/// KTX2 は圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 を読み、ほかの形式 (ETC2・ASTC・Basis Universal など) は
 /// [`ugoe_format::image::ImageError::UnsupportedKtx2`] ([`Error::ImageDecode`])。上限は [`decode_png_premultiplied`] と同じ。
 pub fn decode_image_premultiplied(format: TextureFormat, bytes: &[u8]) -> Result<Rgba8, Error> {
     Ok(ugoe_format::image::decode_image_premultiplied(
@@ -55,11 +55,50 @@ pub fn decode_image(format: TextureFormat, bytes: &[u8]) -> Result<Rgba8, Error>
 /// [`encode_ktx2`] の書き方。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Ktx2Options {
-    /// `VK_FORMAT_R8G8B8A8_SRGB` (転送関数 sRGB) で書く。偽なら `VK_FORMAT_R8G8B8A8_UNORM` (リニア)。
+    /// 転送関数 sRGB の形式 (`VK_FORMAT_*_SRGB*`) で書く。偽ならリニアの形式 (`*_UNORM*`)。
     /// 画素の値はどちらも同じに書く (読む側は値を保存されたまま使う。`docs/spec/rendering.md#前提`)。
     pub srgb: bool,
     /// 各段を zstd で超圧縮する (`supercompressionScheme` = 2)。
     pub zstd: bool,
+    /// ブロック圧縮。既定は圧縮しない RGBA8。
+    pub compression: Ktx2Compression,
+}
+
+/// [`encode_ktx2`] のブロック圧縮 (`docs/adr/0030-compressed-ktx2-decoding.md`)。
+///
+/// 適合テストで読む側の展開を比べるための簡単な圧縮で、画質は求めない (端点は各チャンネルの最小と最大)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Ktx2Compression {
+    /// 圧縮しない (`VK_FORMAT_R8G8B8A8_*`)。
+    #[default]
+    None,
+    /// BC1 のアルファなし (`VK_FORMAT_BC1_RGB_*_BLOCK`)。アルファは捨てる。
+    Bc1,
+    /// BC3 (`VK_FORMAT_BC3_*_BLOCK`)。
+    Bc3,
+    /// BC7 (`VK_FORMAT_BC7_*_BLOCK`。モード 6 だけを使う)。
+    Bc7,
+}
+
+impl Ktx2Compression {
+    /// `vkFormat` (リニアと sRGB) と、データ形式の記述の色のモデル。
+    fn vk_format_and_model(self) -> ((u32, u32), u8) {
+        match self {
+            Self::None => ((37, 43), DF_MODEL_RGBSDA), // VK_FORMAT_R8G8B8A8_UNORM / _SRGB
+            Self::Bc1 => ((131, 132), 128), // VK_FORMAT_BC1_RGB_*_BLOCK、KHR_DF_MODEL_BC1A
+            Self::Bc3 => ((137, 138), 130), // VK_FORMAT_BC3_*_BLOCK、KHR_DF_MODEL_BC3
+            Self::Bc7 => ((145, 146), 134), // VK_FORMAT_BC7_*_BLOCK、KHR_DF_MODEL_BC7
+        }
+    }
+
+    fn block(self) -> Option<bc::BlockFormat> {
+        match self {
+            Self::None => None,
+            Self::Bc1 => Some(bc::BlockFormat::Bc1),
+            Self::Bc3 => Some(bc::BlockFormat::Bc3),
+            Self::Bc7 => Some(bc::BlockFormat::Bc7),
+        }
+    }
 }
 
 /// `KHR_DF_MODEL_RGBSDA`・`KHR_DF_PRIMARIES_BT709`・`KHR_DF_TRANSFER_LINEAR` / `_SRGB`。
@@ -69,7 +108,8 @@ const DF_TRANSFER_LINEAR: u8 = 1;
 const DF_TRANSFER_SRGB: u8 = 2;
 
 /// ストレートアルファの RGBA8 の段 (`levels[0]` がレベル 0。続く段は幅と高さを半分 (切り捨て、最小 1) にしたもの) を、
-/// 圧縮していない RGBA8 の KTX2 にする。適合テストと単体テストで KTX2 のバンドルを作るためのもの。
+/// KTX2 (圧縮していない RGBA8 か、`options.compression` のブロック圧縮) にする。適合テストと単体テストで KTX2 の
+/// バンドルを作るためのもの。
 ///
 /// データ形式の記述の `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` は立てない (アルファは乗算していない。`docs/spec/rendering.md#前提`)。
 /// 段が無い・画素の数が大きさと合わない・段の大きさが半分ずつでなければ [`Error::Invalid`]。
@@ -88,39 +128,65 @@ pub fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<Vec<u8>, Er
             )));
         }
     }
+    let ((linear, srgb), model) = options.compression.vk_format_and_model();
     let (vk_format, transfer) = if options.srgb {
-        (43, DF_TRANSFER_SRGB) // VK_FORMAT_R8G8B8A8_SRGB
+        (srgb, DF_TRANSFER_SRGB)
     } else {
-        (37, DF_TRANSFER_LINEAR) // VK_FORMAT_R8G8B8A8_UNORM
+        (linear, DF_TRANSFER_LINEAR)
     };
-    // データ形式の記述: dfdTotalSize と基本の記述ブロック (KDF 1.3) 1 つ。標本は R・G・B・A の 8bit。
+    let block = options.compression.block();
+    // データ形式の記述: dfdTotalSize と基本の記述ブロック (KDF 1.3) 1 つ。
+    // 標本は、RGBA8 なら R・G・B・A の 8bit、ブロック圧縮ならブロックの中の色 (とアルファ) のビットの範囲。
+    let samples: Vec<(u16, u8, u8, u32)> = match options.compression {
+        // (bitOffset、bitLength - 1、channelType、sampleUpper)。sRGB のアルファはリニア (KHR_DF_SAMPLE_DATATYPE_LINEAR)。
+        Ktx2Compression::None => {
+            let alpha = if options.srgb { 15 | 0x10 } else { 15 };
+            [0u8, 1, 2, alpha]
+                .into_iter()
+                .enumerate()
+                .map(|(i, channel)| (i as u16 * 8, 7, channel, 255))
+                .collect()
+        }
+        Ktx2Compression::Bc1 => vec![(0, 63, 0, u32::MAX)],
+        Ktx2Compression::Bc7 => vec![(0, 127, 0, u32::MAX)],
+        Ktx2Compression::Bc3 => vec![(0, 63, 15, u32::MAX), (64, 63, 0, u32::MAX)],
+    };
     let mut dfd = Vec::new();
-    let block_size: u32 = 24 + 16 * 4;
+    let block_size = 24 + 16 * samples.len() as u32;
     dfd.extend((4 + block_size).to_le_bytes());
     dfd.extend(0u32.to_le_bytes()); // vendorId = Khronos、descriptorType = basic
     dfd.extend((2 | (block_size << 16)).to_le_bytes()); // versionNumber = 1.3
-    dfd.extend([DF_MODEL_RGBSDA, DF_PRIMARIES_BT709, transfer, 0]); // flags = 0 (乗算していない)
-    dfd.extend([0; 4]); // texelBlockDimension
-    dfd.extend([4, 0, 0, 0, 0, 0, 0, 0]); // bytesPlane
-    // 標本の channelType: 赤 0・緑 1・青 2・アルファ 15。sRGB のアルファはリニア (KHR_DF_SAMPLE_DATATYPE_LINEAR)。
-    let alpha = if options.srgb { 15 | 0x10 } else { 15 };
-    for (i, channel) in [0u8, 1, 2, alpha].into_iter().enumerate() {
-        dfd.extend((i as u16 * 8).to_le_bytes());
-        dfd.extend([7, channel]);
+    dfd.extend([model, DF_PRIMARIES_BT709, transfer, 0]); // flags = 0 (乗算していない)
+    let (dimension, bytes_plane) = match block {
+        Some(block) => ([3, 3, 0, 0], block.block_bytes() as u8),
+        None => ([0; 4], 4),
+    };
+    dfd.extend(dimension); // texelBlockDimension (4x4 は 3)
+    dfd.extend([bytes_plane, 0, 0, 0, 0, 0, 0, 0]); // bytesPlane
+    for (offset, length, channel, upper) in samples {
+        dfd.extend(offset.to_le_bytes());
+        dfd.extend([length, channel]);
         dfd.extend(0u32.to_le_bytes()); // samplePosition
         dfd.extend(0u32.to_le_bytes()); // sampleLower
-        dfd.extend(255u32.to_le_bytes()); // sampleUpper
+        dfd.extend(upper.to_le_bytes()); // sampleUpper
     }
-    let stored: Vec<Vec<u8>> = levels
+    let raw: Vec<Vec<u8>> = levels
+        .iter()
+        .map(|level| match block {
+            Some(block) => bc::encode(level, block),
+            None => level.pixels.clone(),
+        })
+        .collect();
+    let stored: Vec<Vec<u8>> = raw
         .iter()
         .map(|level| {
             if options.zstd {
                 ruzstd::encoding::compress_to_vec(
-                    level.pixels.as_slice(),
+                    level.as_slice(),
                     ruzstd::encoding::CompressionLevel::Fastest,
                 )
             } else {
-                level.pixels.clone()
+                level.clone()
             }
         })
         .collect();
@@ -146,8 +212,12 @@ pub fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<Vec<u8>, Er
         out.extend(value.to_le_bytes());
     }
     out.extend([0; 16]); // sgdByteOffset・sgdByteLength
-    // 段のデータは小さい段から順に置く。超圧縮しないときは 4 バイト境界に揃える。
-    let align = if options.zstd { 1 } else { 4 };
+    // 段のデータは小さい段から順に置く。超圧縮しないときは画素 (ブロック) の大きさと 4 の公倍数の境界に揃える。
+    let align = if options.zstd {
+        1
+    } else {
+        block.map_or(4, |b| b.block_bytes())
+    };
     let mut cursor = dfd_offset + dfd.len();
     let mut offsets = vec![0; levels.len()];
     for (i, data) in stored.iter().enumerate().rev() {
@@ -158,7 +228,7 @@ pub fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<Vec<u8>, Er
     for (i, data) in stored.iter().enumerate() {
         out.extend((offsets[i] as u64).to_le_bytes());
         out.extend((data.len() as u64).to_le_bytes());
-        out.extend((levels[i].pixels.len() as u64).to_le_bytes());
+        out.extend((raw[i].len() as u64).to_le_bytes());
     }
     out.extend(dfd);
     for (i, data) in stored.iter().enumerate().rev() {
@@ -407,7 +477,11 @@ mod tests {
         };
         for srgb in [false, true] {
             for zstd in [false, true] {
-                let options = Ktx2Options { srgb, zstd };
+                let options = Ktx2Options {
+                    srgb,
+                    zstd,
+                    ..Default::default()
+                };
                 let bytes = encode_ktx2(&[base.clone(), level(1, 1, 7)], options).unwrap();
                 assert_eq!(
                     ugoe_format::TextureFormat::detect(&bytes),
@@ -431,6 +505,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 色とアルファが位置で滑らかに変わる、4 の倍数でない大きさの画像 (ストレートアルファ)。
+    fn gradient(width: u32, height: u32) -> Rgba8 {
+        let mut pixels = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                pixels.extend([
+                    (x * 255 / (width - 1)) as u8,
+                    (y * 255 / (height - 1)) as u8,
+                    ((x + y) * 255 / (width + height - 2)) as u8,
+                    (255 - y * 200 / (height - 1)) as u8,
+                ]);
+            }
+        }
+        Rgba8 {
+            width,
+            height,
+            pixels,
+        }
+    }
+
+    /// ブロック圧縮の KTX2 は `ugoe_format::image` で読め、元の画素に近い (BC1 はアルファを捨てる)。
+    /// `vkFormat` と、データ形式の記述の色のモデル・ブロックの大きさも確かめる。
+    #[test]
+    fn ktx2_block_compression_round_trips_approximately() {
+        let base = gradient(37, 30);
+        let mip = gradient(18, 15);
+        for (compression, formats, model, tolerance) in [
+            (Ktx2Compression::Bc1, (131, 132), 128, [24, 24, 24, 255]),
+            (Ktx2Compression::Bc3, (137, 138), 130, [24, 24, 24, 10]),
+            (Ktx2Compression::Bc7, (145, 146), 134, [24, 24, 24, 24]),
+        ] {
+            for (srgb, zstd) in [(false, false), (true, true)] {
+                let options = Ktx2Options {
+                    srgb,
+                    zstd,
+                    compression,
+                };
+                let bytes = encode_ktx2(&[base.clone(), mip.clone()], options).unwrap();
+                let vk_format = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+                assert_eq!(vk_format, if srgb { formats.1 } else { formats.0 });
+                let dfd = u32::from_le_bytes(bytes[48..52].try_into().unwrap()) as usize;
+                assert_eq!(bytes[dfd + 12], model, "{options:?}");
+                assert_eq!(bytes[dfd + 16], 3, "texelBlockDimension0 {options:?}");
+                let image = decode_image(TextureFormat::Ktx2, &bytes).unwrap();
+                assert_eq!((image.width, image.height), (37, 30));
+                for (a, b) in image.pixels.chunks(4).zip(base.pixels.chunks(4)) {
+                    for c in 0..4 {
+                        let diff = a[c].abs_diff(b[c]);
+                        assert!(diff <= tolerance[c], "{options:?}: {a:?} vs {b:?}");
+                    }
+                }
+                if compression == Ktx2Compression::Bc1 {
+                    assert!(image.pixels.chunks(4).all(|p| p[3] == 255));
+                }
+            }
+        }
+    }
+
+    /// 一色のブロックは、BC3 のアルファでは元の値のまま、BC7 では 1 以内で戻る (p ビットは RGBA で共有するので、
+    /// 偶奇の違うチャンネルを同時にちょうどにはできない)。
+    #[test]
+    fn ktx2_block_compression_keeps_solid_colors() {
+        let solid = Rgba8 {
+            width: 4,
+            height: 4,
+            pixels: [201, 100, 3, 77].repeat(16),
+        };
+        let decode = |compression| {
+            let options = Ktx2Options {
+                compression,
+                ..Default::default()
+            };
+            let bytes = encode_ktx2(std::slice::from_ref(&solid), options).unwrap();
+            decode_image(TextureFormat::Ktx2, &bytes).unwrap().pixels
+        };
+        let bc7 = decode(Ktx2Compression::Bc7);
+        assert!(
+            bc7.iter()
+                .zip(&solid.pixels)
+                .all(|(a, b)| a.abs_diff(*b) <= 1),
+            "{bc7:?}"
+        );
+        assert!(decode(Ktx2Compression::Bc3).chunks(4).all(|p| p[3] == 77));
     }
 
     #[test]

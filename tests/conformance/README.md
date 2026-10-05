@@ -80,7 +80,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | --- | --- |
 | `name` / `summary` | 名前 (出力のファイル名。英数字・`-`・`_`) と説明 |
 | `model` | `.ugoe` かモデルの JSON (リポジトリのルートからの相対パス) |
-| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`・`avatar-ktx2`・`avatar-lit-ktx2`・`ktx2-mips`) |
+| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`・`avatar-ktx2`・`avatar-lit-ktx2`・`ktx2-mips`・`avatar-bc3`・`avatar-lit-bc`) |
 | `spec` | `spec/examples/<例>` を書くと、その `expected.json` のケースごとに展開する (`spec-<例>-<番号>`。モデルとパラメータはそこから取る) |
 | `modules` | 付ける `.ugoemod` (付ける順) |
 | `parameters` | パラメータの値 (値域の外はクランプされる) |
@@ -98,7 +98,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 バンドルの例 (`spec/examples/bundles/`: zstd の圧縮・任意の機能・法線マップ・物理)、KTX2 のテクスチャ (T0222。下の段落)。描画の例 (`render.json`) は、テクスチャを
 その場で作る必要があるので使っていない (参照レンダラは `crates/ugoe-render/tests/spec_render.rs` で確かめている)。
 
-**KTX2 のテクスチャ (`ktx2-*` のケース、T0222):** 生成するモデルで、テクスチャを圧縮していない KTX2 にしたもの。KTX2 も乗算していない
+**KTX2 のテクスチャ (`ktx2-*` のケース、T0222・T0223):** 生成するモデルで、テクスチャを KTX2 にしたもの。KTX2 も乗算していない
 アルファとして読んで乗算し、値は形式の `_SRGB` や転送関数によらず保存されたまま使い、ミップマップは最初の段だけを使う
 ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。どの実装もそう読めば、PNG のバンドルと同じ画像になる
 (`src/bundles.rs` の単体テストが、デコードした画素が元の PNG と同じことを確かめる)。
@@ -106,9 +106,16 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 - `avatar-ktx2` / `avatar-lit-ktx2`: 見本のテクスチャと法線マップを `VK_FORMAT_R8G8B8A8_SRGB` にしたもの。
 - `ktx2-mips`: `nested-masks` のテクスチャを、zstd で超圧縮したミップマップ付きの `VK_FORMAT_R8G8B8A8_UNORM` にしたもの
   (2 段目からは不透明なマゼンタ)。
+- `avatar-bc3` (ケース `ktx2-bc3-avatar`): 見本のテクスチャをブロック圧縮の `VK_FORMAT_BC3_UNORM_BLOCK` にしたもの
+  (もとは Godot の `example/tests/ktx2.gd`。T0223 で移した)。
+- `avatar-lit-bc` (ケース `ktx2-bc-avatar-lit`): ライティングの見本のテクスチャを zstd で超圧縮した `VK_FORMAT_BC7_SRGB_BLOCK` に、
+  法線マップを `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。
 
-KTX2 は `ugoe_headless::image::encode_ktx2` で書く (乗算済みの印 `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てない)。ブロック圧縮の KTX2 は
-参照 (`ugoe render`) と wasm がデコードしないので、ここでは比べない (Godot の `bindings/godot/example/tests/ktx2.gd` が BC3 を確かめる)。
+ブロック圧縮のケースは、画素が圧縮で変わるので PNG のバンドルと同じ画像にはならない (参照も同じ KTX2 を展開して描く)。
+参照 (`ugoe render`) と wasm は BC1〜BC5・BC7 を `bcdec_rs` で展開する ([ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md))。
+
+KTX2 は `ugoe_headless::image::encode_ktx2` で書く (乗算済みの印 `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てない。ブロック圧縮は
+`Ktx2Compression` の簡単な圧縮で、画質は求めない)。ETC2・ASTC・Basis Universal は参照と wasm がデコードしないので、ここでは比べない。
 C ABI と Unity の C# の層は画像を扱わないので、頂点だけを比べる。
 
 ### 実行器の約束 (計画)

@@ -40,6 +40,7 @@ ugoe-studio-vcam = { path = "apps/studio/vcam" }
 anyhow = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 base64 = "0.22"
+bcdec_rs = "0.2"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"

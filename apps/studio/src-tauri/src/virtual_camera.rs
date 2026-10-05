@@ -1319,10 +1319,10 @@ mod tests {
         }
     }
 
-    /// 読めない形式の KTX2 (`vkFormat` をブロック圧縮の BC3 (137) に書き換えたもの)。
-    fn bc3_texture() -> TextureData {
+    /// 読めない形式の KTX2 (`vkFormat` を ETC2 (151) に書き換えたもの。BC1〜BC5・BC7 は読める。ADR 0030)。
+    fn etc2_texture() -> TextureData {
         let mut texture = ktx2_texture();
-        texture.bytes[12..16].copy_from_slice(&137u32.to_le_bytes());
+        texture.bytes[12..16].copy_from_slice(&151u32.to_le_bytes());
         texture
     }
 
@@ -1352,7 +1352,7 @@ mod tests {
         ugoe::format::write_bundle(&bundle).unwrap()
     }
 
-    /// モデルとモジュールのテクスチャは PNG と、圧縮していない KTX2 を読む (T0836)。読めない形式の KTX2 は白で描き、
+    /// モデルとモジュールのテクスチャは PNG と KTX2 (圧縮していないものと BC1〜BC5・BC7) を読む (T0836)。読めない形式の KTX2 は白で描き、
     /// 壊れた画像のあるモデル・モジュールは読めない。
     #[test]
     fn models_and_modules_read_png_and_ktx2_textures() {
@@ -1363,7 +1363,7 @@ mod tests {
         assert_eq!(model.revision, 3);
         assert!(!model.textures.is_empty());
         assert!(model.textures.iter().all(|t| *t == premultiplied));
-        let (_, model) = read_model(&model_bytes(bc3_texture()), 3).unwrap();
+        let (_, model) = read_model(&model_bytes(etc2_texture()), 3).unwrap();
         assert!(model.textures.iter().all(|t| *t == placeholder_texture()));
         assert!(read_model(&model_bytes(broken_texture()), 3).is_none());
         assert!(read_model(b"not a model", 3).is_none());
@@ -1374,7 +1374,7 @@ mod tests {
         assert!(module.textures.iter().all(|t| *t == premultiplied));
         let module = read_module(&module_bytes(hair(), png_texture())).unwrap();
         assert!(module.textures.iter().all(|t| *t == premultiplied));
-        let module = read_module(&module_bytes(hair(), bc3_texture())).unwrap();
+        let module = read_module(&module_bytes(hair(), etc2_texture())).unwrap();
         assert!(module.textures.iter().all(|t| *t == placeholder_texture()));
         assert!(read_module(&module_bytes(hair(), broken_texture())).is_none());
     }

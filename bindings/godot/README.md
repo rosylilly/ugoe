@@ -62,10 +62,8 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、実行器の中の指揮役のノードの値で受け手を
   進めるケース (`*-conduct`。T0454)、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)、
-  圧縮していない KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222)。
-- `--conformance` は続けて `example/tests/ktx2.gd` を実行する (`--only` のときは飛ばす)。見本のモデルのテクスチャを、Godot の
-  `Image.compress` で作る `BC3_UNORM_BLOCK` の KTX2 に差し替えたバンドルを描き、展開した画素の PNG のバンドルの画像と画素ごとに比べる
-  (参照の `ugoe render` と wasm は圧縮した KTX2 をデコードしないので、適合テストでは比べられないため)。
+  KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222。
+  ブロック圧縮の `BC3_UNORM_BLOCK`・zstd の `BC7_SRGB_BLOCK`・法線マップの `BC1_RGB_UNORM_BLOCK`。T0223 で `example/tests/ktx2.gd` から移した)。
 - 1 フレームの時間は `example/tests/bench.gd` で測る (検査ではない。見本のモデルのパラメータを毎フレーム動かし、`_process` に
   かかった時間を出す。`node bindings/godot/build.mjs --release` の後に
   `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。
@@ -261,12 +259,15 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   - Godot 4.7 は `R8G8B8(A8)_SRGB` をリニアに変換して読み (8 ビットのまま。戻せない)、`R8G8B8(A8)_UNORM` は読めず、
     転送関数が sRGB の Basis Universal は RGBA8 に展開してリニアに変換する。仕様では値をそのまま使うので、読む前にヘッダを
     書き換える (`src/model.rs` の `ktx2_as_stored`。8 ビットの非圧縮の形式は同じ大きさの `*_UINT` に、転送関数は linear に)。
+    Godot 4.7 はブロック圧縮の `BC*_SRGB_BLOCK` を読めないので、同じブロックの `*_UNORM_BLOCK` に書き換える (T0223)。
     法線マップも同じ。Godot の挙動は [modules/ktx/texture_loader_ktx.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/modules/ktx/texture_loader_ktx.cpp) で調べた。
   - 圧縮した形式は `Image.decompress` で展開してから乗算する (GPU では圧縮しないで持つ)。展開できない形式は警告を出し、
     乗算せずにそのまま描く。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
   - ミップマップは捨てて最初の段だけを使う。
-  - 確かめたもの: 適合テストの `ktx2-*` のケース (参照と比べる) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM` (ミップマップ付き・zstd の超圧縮)、
-    `example/tests/ktx2.gd` (下の「検査」) で `BC3_UNORM_BLOCK`。
+  - 確かめたもの: 適合テストの `ktx2-*` のケース (参照と比べる) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM` (ミップマップ付き・zstd の超圧縮)・
+    `BC3_UNORM_BLOCK`・`BC7_SRGB_BLOCK` (zstd)・法線マップの `BC1_RGB_UNORM_BLOCK`。
+    BC1 の 3 色のモードの 4 つ目は、Godot (`FORMAT_DXT1` として bcdec で展開する) ではアルファなしの形式でも透明になるはずで、
+    参照 (不透明) と違いうる (適合テストの書き出しは 3 色のモードを使わないので確かめていない)。
     Basis Universal と ETC2・ASTC は確かめていない (テストで作る道具が無い)。
   ライティングは参照レンダラ (`crates/ugoe-render/src/shaders/drawable.wgsl`) と同じ式で、法線は画面での微分から求めたヤコビ行列で回す。
 - マスクは、マスクとして参照されるメッシュのカバレッジを 1 枚のアトラス (`SubViewport`) に並べて描き、要素はキャンバス座標から読む

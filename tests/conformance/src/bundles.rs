@@ -10,12 +10,16 @@
 //! パーツを切り替えるモーション `switch` を入れたもの (受け手がモーションのパーツの不透明度のカーブを当てるかを確かめる。T0135)。
 //! もとは Godot の `build.mjs --conformance` の `conformance_bundles` (T0411) で、T0418 でここに移した。
 //!
-//! KTX2 のテクスチャのバンドルも作る (T0222。もとは Godot の `example/tests/ktx2.gd`)。画素は PNG と同じで、KTX2 も
+//! KTX2 のテクスチャのバンドルも作る (T0222・T0223。もとは Godot の `example/tests/ktx2.gd`)。圧縮しない KTX2 の画素は PNG と同じで、KTX2 も
 //! 乗算していないアルファとして読んで乗算すれば (`docs/spec/rendering.md#前提`)、PNG のバンドルと同じ画像になる。
 //! - `avatar-ktx2` / `avatar-lit-ktx2`: 見本 (`assets/samples/avatar.ugoe`・`avatar-lit.ugoe`) のテクスチャと法線マップを、
 //!   同じ画素の `VK_FORMAT_R8G8B8A8_SRGB` の KTX2 にしたもの (転送関数が sRGB でも値はそのまま使う)。
 //! - `ktx2-mips`: `nested-masks` のテクスチャを `VK_FORMAT_R8G8B8A8_UNORM` の zstd で超圧縮した KTX2 にしたもの。
 //!   ミップマップの 2 段目からは別の色 (不透明なマゼンタ) で、最初の段だけを使わなければ画像が変わる。
+//! - `avatar-bc3`: 見本のテクスチャを `VK_FORMAT_BC3_UNORM_BLOCK` にしたもの (Godot の `ktx2.gd` の BC3 を移した)。
+//! - `avatar-lit-bc`: ライティングの見本のテクスチャを zstd の `VK_FORMAT_BC7_SRGB_BLOCK` に、法線マップを
+//!   `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。ブロック圧縮は画素が変わるので、PNG のバンドルとは同じ画像にならない
+//!   (`docs/adr/0030-compressed-ktx2-decoding.md`)。
 
 use std::path::{Path, PathBuf};
 
@@ -25,13 +29,13 @@ use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::{
     BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, TextureRef, fixtures,
 };
-use ugoe_headless::image::Ktx2Options;
+use ugoe_headless::image::{Ktx2Compression, Ktx2Options};
 use ugoe_headless::{Rgba8, image};
 
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 11] = [
+pub const NAMES: [&str; 13] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
@@ -43,12 +47,55 @@ pub const NAMES: [&str; 11] = [
     "avatar-ktx2",
     "avatar-lit-ktx2",
     "ktx2-mips",
+    "avatar-bc3",
+    "avatar-lit-bc",
 ];
 
-/// KTX2 にする見本 (生成するモデルの名前と、リポジトリのルートからのパス)。
-const KTX2_SAMPLES: [(&str, &str); 2] = [
-    ("avatar-ktx2", "assets/samples/avatar.ugoe"),
-    ("avatar-lit-ktx2", "assets/samples/avatar-lit.ugoe"),
+/// 圧縮していない sRGB の KTX2 (`R8G8B8A8_SRGB`)。
+const RGBA8_SRGB: Ktx2Options = Ktx2Options {
+    srgb: true,
+    zstd: false,
+    compression: Ktx2Compression::None,
+};
+
+/// KTX2 にする見本 (生成するモデルの名前・リポジトリのルートからのパス・テクスチャと法線マップの書き方)。
+const KTX2_SAMPLES: [(&str, &str, Ktx2Options, Ktx2Options); 4] = [
+    (
+        "avatar-ktx2",
+        "assets/samples/avatar.ugoe",
+        RGBA8_SRGB,
+        RGBA8_SRGB,
+    ),
+    (
+        "avatar-lit-ktx2",
+        "assets/samples/avatar-lit.ugoe",
+        RGBA8_SRGB,
+        RGBA8_SRGB,
+    ),
+    (
+        "avatar-bc3",
+        "assets/samples/avatar.ugoe",
+        Ktx2Options {
+            srgb: false,
+            zstd: false,
+            compression: Ktx2Compression::Bc3,
+        },
+        RGBA8_SRGB,
+    ),
+    (
+        "avatar-lit-bc",
+        "assets/samples/avatar-lit.ugoe",
+        Ktx2Options {
+            srgb: true,
+            zstd: true,
+            compression: Ktx2Compression::Bc7,
+        },
+        Ktx2Options {
+            srgb: false,
+            zstd: false,
+            compression: Ktx2Compression::Bc1,
+        },
+    ),
 ];
 
 /// すべてのモデルを `dir` に書き、書いたパスを返す。
@@ -57,8 +104,10 @@ pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     let png = encode_png(&texture())?;
     let mut paths = Vec::new();
     for name in NAMES {
-        let bundle = if let Some((_, sample)) = KTX2_SAMPLES.iter().find(|(n, _)| *n == name) {
-            sample_as_ktx2(sample)?
+        let bundle = if let Some(&(_, sample, textures, normal_maps)) =
+            KTX2_SAMPLES.iter().find(|(n, ..)| *n == name)
+        {
+            sample_as_ktx2(sample, textures, normal_maps)?
         } else if name == "ktx2-mips" {
             let mut bundle = Bundle::new(model("nested-masks")?);
             bundle.textures = vec![mipmapped_ktx2()?];
@@ -145,25 +194,31 @@ fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<TextureData, Er
     })
 }
 
-/// 見本のバンドル `sample` を読み、テクスチャと法線マップ (PNG) を同じ画素の `R8G8B8A8_SRGB` の KTX2 にする。
-fn sample_as_ktx2(sample: &str) -> Result<Bundle, Error> {
+/// 見本のバンドル `sample` を読み、テクスチャと法線マップ (PNG) を、同じ画素をそれぞれ `textures` と `normal_maps` の
+/// 書き方で KTX2 にしたものに差し替える (ブロック圧縮なら画素は圧縮で変わる)。
+fn sample_as_ktx2(
+    sample: &str,
+    textures: Ktx2Options,
+    normal_maps: Ktx2Options,
+) -> Result<Bundle, Error> {
     let path = crate::repo_root().join(sample);
     let bytes = std::fs::read(&path).map_err(Error::io(format!("reading {}", path.display())))?;
     let mut bundle = ugoe::format::read_bundle(&bytes).map_err(|source| Error::Format {
         context: format!("reading {}", path.display()),
         source,
     })?;
-    let srgb = Ktx2Options {
-        srgb: true,
-        zstd: false,
-    };
-    for data in bundle.textures.iter_mut().chain(&mut bundle.normal_maps) {
+    let images = bundle.textures.iter_mut().map(|data| (data, textures));
+    let maps = bundle
+        .normal_maps
+        .iter_mut()
+        .map(|data| (data, normal_maps));
+    for (data, options) in images.chain(maps) {
         let straight =
             image::decode_image(data.format, &data.bytes).map_err(|source| Error::Headless {
                 context: format!("decoding a texture of {sample}"),
                 source,
             })?;
-        *data = encode_ktx2(&[straight], srgb)?;
+        *data = encode_ktx2(&[straight], options)?;
     }
     Ok(bundle)
 }
@@ -186,6 +241,7 @@ fn mipmapped_ktx2() -> Result<TextureData, Error> {
         Ktx2Options {
             srgb: false,
             zstd: true,
+            compression: Ktx2Compression::None,
         },
     )
 }
@@ -418,34 +474,48 @@ mod tests {
             .collect()
     }
 
-    /// KTX2 のバンドルは、元の PNG のバンドルと同じ乗算済みの画素にデコードされる (なので参照の画像も同じになる)。
-    /// 見本の法線マップも KTX2 にする。
+    /// 圧縮していない KTX2 のバンドルは、元の PNG のバンドルと同じ乗算済みの画素にデコードされる (なので参照の画像も
+    /// 同じになる)。ブロック圧縮のバンドルは大きさが同じで、画素は近い。見本の法線マップも KTX2 にする。
     #[test]
     fn ktx2_bundles_decode_like_the_png_ones() {
-        for (_, sample) in KTX2_SAMPLES {
+        for (name, sample, textures, normal_maps) in KTX2_SAMPLES {
             let png =
                 ugoe_format::read_bundle(&std::fs::read(crate::repo_root().join(sample)).unwrap())
                     .unwrap();
-            let ktx2 = sample_as_ktx2(sample).unwrap();
+            let ktx2 = sample_as_ktx2(sample, textures, normal_maps).unwrap();
             assert!(
                 ktx2.textures
                     .iter()
+                    .chain(&ktx2.normal_maps)
                     .all(|t| t.format == TextureFormat::Ktx2)
-            );
-            assert!(
-                ktx2.normal_maps
-                    .iter()
-                    .all(|t| t.format == TextureFormat::Ktx2)
-            );
-            assert_eq!(decoded(&ktx2.textures), decoded(&png.textures), "{sample}");
-            assert_eq!(
-                decoded(&ktx2.normal_maps),
-                decoded(&png.normal_maps),
-                "{sample}"
             );
             assert_eq!(ktx2.model, png.model);
+            for (ktx2, png, options) in [
+                (&ktx2.textures, &png.textures, textures),
+                (&ktx2.normal_maps, &png.normal_maps, normal_maps),
+            ] {
+                let (ktx2, png) = (decoded(ktx2), decoded(png));
+                if options.compression == Ktx2Compression::None {
+                    assert_eq!(ktx2, png, "{name}");
+                    continue;
+                }
+                assert_eq!(ktx2.len(), png.len(), "{name}");
+                for (a, b) in ktx2.iter().zip(&png) {
+                    assert_eq!((a.width, a.height), (b.width, b.height), "{name}");
+                    // 乗算済みの画素の平均の差。書き出しの圧縮は簡単なもので (`ugoe_headless::image::Ktx2Compression`)、
+                    // 細かい小さなテクスチャでは BC7 で 10 ほど違う。
+                    let total: u64 = a
+                        .pixels
+                        .iter()
+                        .zip(&b.pixels)
+                        .map(|(x, y)| u64::from(x.abs_diff(*y)))
+                        .sum();
+                    let mean = total as f64 / a.pixels.len() as f64;
+                    assert!(mean < 12.0, "{name}: mean difference {mean}");
+                }
+            }
         }
-        let lit = sample_as_ktx2("assets/samples/avatar-lit.ugoe").unwrap();
+        let lit = sample_as_ktx2("assets/samples/avatar-lit.ugoe", RGBA8_SRGB, RGBA8_SRGB).unwrap();
         assert!(!lit.normal_maps.is_empty());
         let png = TextureData {
             format: TextureFormat::Png,

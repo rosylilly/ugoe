@@ -92,9 +92,9 @@ ugoe render fixture:single_quad -o flipped.png --size 256x256 --view=-1,0,0,1,25
 
 成功すると標準出力に 1 行 (`wrote out.png (256x256, adapter: ...)`) を書く。警告は標準エラーに `warning: ...` で出す。
 
-- **テクスチャ:** バンドルの PNG と KTX2 はデコードして乗算済みアルファにする。KTX2 は圧縮していない 8bit の RGB / RGBA (`_UNORM`・`_SRGB`。
-  超圧縮は無しか zstd) だけを、保存された値のまま読み、レベル 0 だけを使う (`docs/spec/rendering.md#前提`)。ほかの形式 (ブロック圧縮・
-  Basis Universal など) はエラーになる (`--texture` で PNG を渡せば描ける。`--texture` には KTX2 も渡せる)。
+- **テクスチャ:** バンドルの PNG と KTX2 はデコードして乗算済みアルファにする。KTX2 は圧縮していない 8bit の RGB / RGBA と、ブロック圧縮の
+  BC1〜BC5・BC7 (`_UNORM`・`_SRGB`。超圧縮は無しか zstd) だけを、保存された値のまま読み (BCn は展開してから乗算する)、レベル 0 だけを使う
+  (`docs/spec/rendering.md#前提`)。ほかの形式 (ETC2・ASTC・Basis Universal など) はエラーになる (`--texture` で PNG を渡せば描ける。`--texture` には KTX2 も渡せる)。
   JSON とフィクスチャはテクスチャを持たないので、`model.textures` の各項目に不透明な白 1x1 を使う。
 - **上限:** 外から来る値で止まったりメモリを使い果たしたりしないように、次を超えるとエラーにする。
   - 出力の大きさ: 一辺 1..=16384 (`ugoe_headless::MAX_SIZE`)。`--size`・`--width`・`--height` で明示した値と、`--width`・`--height` の

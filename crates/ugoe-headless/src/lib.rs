@@ -14,6 +14,7 @@
 
 pub mod animate;
 pub mod args;
+mod bc;
 mod gpu;
 pub mod image;
 mod resident;

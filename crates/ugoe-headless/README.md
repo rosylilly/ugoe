@@ -31,7 +31,7 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 | `gpu` | ヘッドレスの `Gpu` (アダプタとデバイス)・描いて読み戻す・`stats_json` |
 | `resident` | 常駐の描画の口 `Resident` (毎フレーム描き続ける。下の「常駐の描画」) |
 | `yuv` | 画素の形 `PixelFormat` (RGBA8・NV12・YUY2) と、RGBA からの変換の CPU の参照実装 |
-| `image` | PNG の読み書き・KTX2 の読み込み (圧縮していない 8bit の RGB / RGBA) と乗算済みアルファの変換 (デコードと一辺の上限は `ugoe_format::image` を ugoe-wasm と共有)。適合テスト用の KTX2 の書き出し `encode_ktx2` (乗算済みの印を立てない) |
+| `image` | PNG の読み書き・KTX2 の読み込み (圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7。[ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md)) と乗算済みアルファの変換 (デコードと一辺の上限は `ugoe_format::image` を ugoe-wasm と共有)。適合テスト用の KTX2 の書き出し `encode_ktx2` (乗算済みの印を立てない。`Ktx2Compression` で BC1・BC3・BC7 の簡単な圧縮もできる。`bc` モジュール) |
 
 - **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
   光源は `RenderOptions::lighting` (`None` ならレンダラに渡さないので、出力は法線マップが無いのと同じ)。

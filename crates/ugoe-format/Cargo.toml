@@ -13,6 +13,7 @@ keywords = ["ugoe", "animation", "rigging", "file-format", "2d"]
 categories = ["graphics", "game-development", "encoding", "parser-implementations"]
 
 [dependencies]
+bcdec_rs = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 rmp-serde.workspace = true
 ruzstd.workspace = true
@@ -31,8 +32,9 @@ ugoe-physics.workspace = true
 ugoe-runtime.workspace = true
 
 [features]
-# テクスチャの PNG と KTX2 のデコード (`image` モジュール。KTX2 は圧縮していない 8bit の RGB / RGBA)。
-png = ["dep:png"]
+# テクスチャの PNG と KTX2 のデコード (`image` モジュール。KTX2 は圧縮していない 8bit の RGB / RGBA と BCn。
+# BCn は bcdec_rs で展開する。docs/adr/0030-compressed-ktx2-decoding.md)。
+png = ["dep:bcdec_rs", "dep:png"]
 
 [lints]
 workspace = true

@@ -18,8 +18,10 @@
 ## feature
 
 - `png` (既定で無効): テクスチャの PNG と KTX2 のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`) と WebAssembly (`ugoe-wasm`) が共有する
-  (`docs/spec/file-formats.md#読み込みの上限`)。KTX2 は圧縮していない 8bit の RGB / RGBA (`_UNORM`・`_SRGB`。超圧縮は無しか zstd) を
-  保存された値のまま読み、レベル 0 だけを使う。ほかの形式は `ImageError::UnsupportedKtx2` (代用するか誤りにするかは呼ぶ側が決める)。
+  (`docs/spec/file-formats.md#読み込みの上限`)。KTX2 は圧縮していない 8bit の RGB / RGBA と、ブロック圧縮の BC1〜BC5・BC7
+  (`_UNORM`・`_SRGB`。超圧縮は無しか zstd。BCn の展開は依存の `bcdec_rs`。[ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md)) を
+  保存された値のまま読み、レベル 0 だけを使う。ほかの形式 (ETC2・ASTC・Basis Universal など) は `ImageError::UnsupportedKtx2`
+  (代用するか誤りにするかは呼ぶ側が決める)。
   形式で選ぶときは `decode_image` / `decode_image_premultiplied`。
 
 ```rust
@@ -45,3 +47,4 @@ let small = decode_png_premultiplied(&bytes, ImageLimits::default().with_max_sid
 - T0009 (PNG のデコードと上限 `ImageLimits` を ugoe-headless と ugoe-wasm から 1 か所にまとめた `image`)
 - T0222 (圧縮していない KTX2 のデコード)
 - T0170 (`check_motion`・`check_expression` を公開し、editor-core の写しを置き換えた)
+- T0223 (ブロック圧縮 (BC1〜BC5・BC7) の KTX2 のデコード。ADR 0030)

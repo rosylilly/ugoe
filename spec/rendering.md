@@ -76,6 +76,13 @@ results within the tolerances of [Conformance](#conformance).
     and premultiplies the decoded texels. Sampling the compressed data and premultiplying
     afterwards does not meet the bilinear filtering of premultiplied values below;
   - uses only the base level (level 0) of a file with mipmaps.
+
+  *Informative:* the reference implementation decodes uncompressed 8-bit RGB and RGBA and the
+  block-compressed BC1 to BC5 and BC7 formats. It expands BC4 to `(R, 0, 0, 1)`, BC5 to
+  `(R, G, 0, 1)` and the alpha-less BC1 formats to opaque texels, as a GPU samples them, and reads
+  the color block of BC2 and BC3 in four-color mode whatever the order of its endpoints (as
+  Direct3D 10 and later define). It does not decode the other formats (ETC2, ASTC, Basis Universal
+  and so on) yet.
 - Textures are sampled at the interpolated texture coordinates of the pixel with **bilinear
   filtering** of the premultiplied values and **clamp-to-edge** addressing, without mipmaps.
   Renderers SHOULD sample this way; other filtering changes edge pixels and may exceed the

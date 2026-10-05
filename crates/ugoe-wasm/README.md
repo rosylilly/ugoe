@@ -16,7 +16,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | モジュール | 内容 |
 | --- | --- |
 | `web` | JS に公開する `WebPuppet`。canvas に wgpu のサーフェスを作り、クリアと描画を行う |
-| `load` | JSON / `.ugoe` バンドルの読み込み (読み込みの上限 `LoadLimits` と、超えたときのコード)、PNG と KTX2 (圧縮していない 8bit の RGB / RGBA) のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
+| `load` | JSON / `.ugoe` バンドルの読み込み (読み込みの上限 `LoadLimits` と、超えたときのコード)、PNG と KTX2 (圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7。[ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md)) のデコード (乗算済みアルファへ。`ugoe_format::image` を ugoe-headless と共有)、パラメータ値の引き継ぎ |
 | `view` | フィット・ズーム・パンと、キャンバス座標 ↔ 画面座標の変換 |
 | `tracking` | フェイストラッキングの入力 (ブレンドシェイプの名前と値・頭の回転) から `TrackingInput` を作る。JS への公開は `web/tracking.rs` |
 | `hit` | 評価済みの要素の外接矩形とヒットテスト (エディタの選択用。三角形の判定は `ModelInstance::mesh_contains`) |
@@ -280,7 +280,7 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 
 | `code` | 補足の値 | いつ |
 | --- | --- | --- |
-| `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが、デコードしない形式 (ブロック圧縮・Basis Universal など。圧縮していない 8bit の RGB / RGBA 以外) の KTX2 なので白のプレースホルダで代用した |
+| `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが、デコードしない形式 (ETC2・ASTC・Basis Universal など。圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 以外) の KTX2 なので白のプレースホルダで代用した |
 | `texture_missing` | `texture` | テクスチャの画像が無いので白で代用した (`read_bundle` が数を検査するので通常は起きない) |
 | `normal_map_ktx2` | `texture` | 法線マップが、デコードしない形式の KTX2 なので、法線マップなしで描く |
 | `physics_removed` | `reason` (英語の理由) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |

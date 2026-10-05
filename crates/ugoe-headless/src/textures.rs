@@ -33,8 +33,9 @@ pub fn placeholder_texture() -> Rgba8 {
 ///
 /// 優先順: `overrides` (`--texture`) の指定 → バンドルの画像 → 不透明な白 1x1 (JSON・フィクスチャ用)。
 ///
-/// 画像は PNG と、圧縮していない 8bit の RGB / RGBA の KTX2 を読む (`ugoe_format::image`。形式は先頭のシグネチャで決める)。
-/// 読めない形式の KTX2 (ブロック圧縮など) はエラーにする (`--texture` で PNG を渡せば描ける)。
+/// 画像は PNG と、圧縮していない 8bit の RGB / RGBA・ブロック圧縮の BC1〜BC5・BC7 の KTX2 を読む (`ugoe_format::image`。
+/// 形式は先頭のシグネチャで決める)。読めない形式の KTX2 (ETC2・ASTC・Basis Universal など) はエラーにする
+/// (`--texture` で PNG を渡せば描ける)。
 pub fn resolve_textures(
     model: &Model,
     bundle: &[TextureData],
@@ -89,7 +90,7 @@ pub fn resolve_textures(
 
 /// バンドルの法線マップ (添字 = テクスチャの番号) をデコードする (`docs/spec/rendering.md#ライティング`)。
 ///
-/// 法線マップはアルファを掛けずに読む。読めない形式の KTX2 (ブロック圧縮など) は、警告を出して法線マップなし
+/// 法線マップはアルファを掛けずに読む。読めない形式の KTX2 (ETC2・ASTC・Basis Universal など) は、警告を出して法線マップなし
 /// (法線 `(0, 0, 1)`) として描く。`--texture` でテクスチャを差し替えても、法線マップはバンドルのものを使う。
 pub fn resolve_normal_maps(
     normal_maps: &[Option<TextureData>],
@@ -171,13 +172,40 @@ mod tests {
                 format: TextureFormat::Ktx2,
                 bytes: image::encode_ktx2(
                     std::slice::from_ref(&straight),
-                    image::Ktx2Options { srgb, zstd: false },
+                    image::Ktx2Options {
+                        srgb,
+                        ..Default::default()
+                    },
                 )
                 .unwrap(),
             };
             let textures = resolve_textures(&model, &[ktx2], &[], &mut Vec::new()).unwrap();
             assert_eq!(textures[0].pixels, vec![255, 0, 0, 255, 128, 128, 128, 128]);
         }
+    }
+
+    /// ブロック圧縮 (BC3) の KTX2 も展開してから乗算する (`docs/adr/0030-compressed-ktx2-decoding.md`)。
+    #[test]
+    fn decodes_bundle_bc_ktx2_textures() {
+        let model = ugoe_model::fixtures::single_quad();
+        let straight = Rgba8 {
+            width: 4,
+            height: 4,
+            pixels: [255, 255, 255, 128].repeat(16),
+        };
+        let ktx2 = TextureData {
+            format: TextureFormat::Ktx2,
+            bytes: image::encode_ktx2(
+                std::slice::from_ref(&straight),
+                image::Ktx2Options {
+                    compression: image::Ktx2Compression::Bc3,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        };
+        let textures = resolve_textures(&model, &[ktx2], &[], &mut Vec::new()).unwrap();
+        assert_eq!(textures[0].pixels, [128, 128, 128, 128].repeat(16));
     }
 
     /// `--texture` に KTX2 のファイルも渡せる (形式はシグネチャで決める)。
@@ -200,7 +228,7 @@ mod tests {
         assert_eq!(textures, vec![red]);
     }
 
-    /// 読めない形式の KTX2 (ブロック圧縮など) と壊れた KTX2 はエラー。
+    /// 読めない形式の KTX2 (ETC2 など) と壊れた KTX2 はエラー。
     #[test]
     fn rejects_unsupported_and_broken_ktx2_bundle_textures() {
         let model = ugoe_model::fixtures::single_quad();
@@ -212,9 +240,9 @@ mod tests {
             let err = resolve_textures(&model, &[ktx2], &[], &mut Vec::new()).unwrap_err();
             format!("{err}: {}", std::error::Error::source(&err).unwrap())
         };
-        let err = error(bc3_ktx2());
+        let err = error(etc2_ktx2());
         assert!(err.contains("cannot decode; pass --texture 0="), "{err}");
-        assert!(err.contains("vkFormat 137"), "{err}");
+        assert!(err.contains("vkFormat 151"), "{err}");
         let err = error(ugoe_format::image::KTX2_IDENTIFIER.to_vec());
         assert!(
             err.contains("decoding bundle texture 0: decoding KTX2"),
@@ -222,8 +250,8 @@ mod tests {
         );
     }
 
-    /// `VK_FORMAT_BC3_UNORM_BLOCK` (137) の見出しを持つ KTX2 (読めない形式)。
-    fn bc3_ktx2() -> Vec<u8> {
+    /// `VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK` (151) の見出しを持つ KTX2 (読めない形式)。
+    fn etc2_ktx2() -> Vec<u8> {
         let mut bytes = image::encode_ktx2(
             &[Rgba8 {
                 width: 4,
@@ -233,7 +261,7 @@ mod tests {
             image::Ktx2Options::default(),
         )
         .unwrap();
-        bytes[12..16].copy_from_slice(&137u32.to_le_bytes());
+        bytes[12..16].copy_from_slice(&151u32.to_le_bytes());
         bytes
     }
 
@@ -269,13 +297,13 @@ mod tests {
             bytes: image::encode_ktx2(std::slice::from_ref(&normal), image::Ktx2Options::default())
                 .unwrap(),
         };
-        let bc3 = TextureData {
+        let etc2 = TextureData {
             format: TextureFormat::Ktx2,
-            bytes: bc3_ktx2(),
+            bytes: etc2_ktx2(),
         };
         let mut warnings = Vec::new();
         let maps =
-            resolve_normal_maps(&[None, Some(png), Some(ktx2), Some(bc3)], &mut warnings).unwrap();
+            resolve_normal_maps(&[None, Some(png), Some(ktx2), Some(etc2)], &mut warnings).unwrap();
         assert_eq!(maps, vec![None, Some(normal.clone()), Some(normal), None]);
         assert_eq!(warnings.len(), 1);
         assert!(

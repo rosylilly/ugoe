@@ -6,8 +6,9 @@
 //! - 色の値はリニア化しない (`docs/spec/rendering.md` の「前提」)。PNG の 8bit 値をそのまま使う。
 //!   KTX2 も、形式の `_SRGB` や転送関数によらず保存された値のまま使う。
 //! - グレースケール・パレット・16bit は 8bit RGBA に展開する (16bit は上位 8bit)。
-//! - KTX2 は圧縮していない 8bit の RGB / RGBA ([`decode_ktx2`]) だけを読む。ブロック圧縮などは
-//!   [`ImageError::UnsupportedKtx2`] にする (読む側が代用するか誤りにするかを決める)。
+//! - KTX2 は圧縮していない 8bit の RGB / RGBA と、ブロック圧縮の BC1〜BC5・BC7 ([`decode_ktx2`]) を読む。
+//!   ETC2・ASTC・Basis Universal などは [`ImageError::UnsupportedKtx2`] にする (読む側が代用するか誤りにするかを決める。
+//!   `docs/adr/0030-compressed-ktx2-decoding.md`)。
 //! - 外から来る画像は信用しない。見出し (IHDR) の大きさだけで確保すると、小さなファイルで数 GB を求められるので、
 //!   確保の前に一辺を [`ImageLimits::max_side`] と比べる (png の `Limits` はデコーダの中のバッファにしか効かない)。
 //!   KTX2 も見出しの大きさを確保の前に比べる。
@@ -87,8 +88,8 @@ pub enum ImageError {
     /// KTX2 として読めない (見出しやレベルの範囲が壊れている・切り詰め・zstd の展開の失敗)。
     #[error("decoding KTX2: {0}")]
     InvalidKtx2(String),
-    /// 読める KTX2 だが、デコードしない形式 (ブロック圧縮・Basis Universal・8bit の RGB / RGBA 以外・
-    /// 2D でないテクスチャなど)。中身は理由。
+    /// 読める KTX2 だが、デコードしない形式 (ETC2・ASTC・BC6H・Basis Universal など、8bit の RGB / RGBA と
+    /// BC1〜BC5・BC7 以外・2D でないテクスチャなど)。中身は理由。
     #[error("unsupported KTX2: {0}")]
     UnsupportedKtx2(String),
 }
@@ -181,14 +182,99 @@ pub fn decode_png_premultiplied(bytes: &[u8], limits: ImageLimits) -> Result<Rgb
 /// KTX2 ファイルの先頭の識別子 (12 バイト)。
 pub const KTX2_IDENTIFIER: [u8; 12] = KTX2_SIGNATURE;
 
-/// KTX2 の `vkFormat` のうち、デコードする形式 (圧縮していない 8bit の RGB / RGBA) と 1 画素のバイト数。
+/// KTX2 の画素の形式 (`vkFormat` から決める。[`KTX2_FORMATS`])。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ktx2Texel {
+    /// 圧縮していない 8bit。中身は 1 画素のバイト数 (RGB は 3、RGBA は 4)。
+    Uncompressed(usize),
+    /// ブロック圧縮 (4x4 画素のブロック)。
+    Block(BlockFormat),
+}
+
+/// デコードするブロック圧縮の形式 (`docs/adr/0030-compressed-ktx2-decoding.md`)。展開は bcdec_rs。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockFormat {
+    /// BC1 のアルファなし。3 色のモードの 4 つ目も不透明の黒。
+    Bc1Rgb,
+    /// BC1 の 1bit のアルファ付き。3 色のモードの 4 つ目は透明の黒。
+    Bc1Rgba,
+    Bc2,
+    Bc3,
+    /// 1 チャンネル。`(R, 0, 0, 255)` にする (GPU が読むときと同じ)。
+    Bc4,
+    /// 2 チャンネル。`(R, G, 0, 255)` にする。
+    Bc5,
+    Bc7,
+}
+
+impl BlockFormat {
+    /// 1 ブロック (4x4 画素) のバイト数。
+    const fn block_bytes(self) -> usize {
+        match self {
+            Self::Bc1Rgb | Self::Bc1Rgba | Self::Bc4 => 8,
+            Self::Bc2 | Self::Bc3 | Self::Bc5 | Self::Bc7 => 16,
+        }
+    }
+
+    /// 1 ブロックを 4x4 の RGBA8 (行の順、1 行 16 バイト) に展開する。`block` は [`Self::block_bytes`] バイト。
+    fn decode(self, block: &[u8], out: &mut [u8; 64]) {
+        const PITCH: usize = 16;
+        match self {
+            Self::Bc1Rgb | Self::Bc1Rgba => {
+                bcdec_rs::bc1(block, out, PITCH);
+                if self == Self::Bc1Rgb {
+                    for p in out.as_chunks_mut::<4>().0 {
+                        p[3] = 255;
+                    }
+                }
+            }
+            Self::Bc2 => bcdec_rs::bc2(block, out, PITCH),
+            Self::Bc3 => bcdec_rs::bc3(block, out, PITCH),
+            Self::Bc7 => bcdec_rs::bc7(block, out, PITCH),
+            Self::Bc4 => {
+                let mut r = [0u8; 16];
+                bcdec_rs::bc4(block, &mut r, 4, false);
+                for (p, r) in out.as_chunks_mut::<4>().0.iter_mut().zip(r) {
+                    *p = [r, 0, 0, 255];
+                }
+            }
+            Self::Bc5 => {
+                let mut rg = [0u8; 32];
+                bcdec_rs::bc5(block, &mut rg, 8, false);
+                for (p, rg) in out
+                    .as_chunks_mut::<4>()
+                    .0
+                    .iter_mut()
+                    .zip(rg.as_chunks::<2>().0)
+                {
+                    *p = [rg[0], rg[1], 0, 255];
+                }
+            }
+        }
+    }
+}
+
+/// KTX2 の `vkFormat` のうち、デコードする形式。
 ///
 /// `_SRGB` と `_UNORM` は同じに扱う (値を保存されたまま使う。`docs/spec/rendering.md#前提`)。
-const KTX2_FORMATS: [(u32, usize); 4] = [
-    (23, 3), // VK_FORMAT_R8G8B8_UNORM
-    (29, 3), // VK_FORMAT_R8G8B8_SRGB
-    (37, 4), // VK_FORMAT_R8G8B8A8_UNORM
-    (43, 4), // VK_FORMAT_R8G8B8A8_SRGB
+/// BC4 / BC5 の `_SNORM` と BC6H (HDR) は読まない。
+const KTX2_FORMATS: [(u32, Ktx2Texel); 16] = [
+    (23, Ktx2Texel::Uncompressed(3)), // VK_FORMAT_R8G8B8_UNORM
+    (29, Ktx2Texel::Uncompressed(3)), // VK_FORMAT_R8G8B8_SRGB
+    (37, Ktx2Texel::Uncompressed(4)), // VK_FORMAT_R8G8B8A8_UNORM
+    (43, Ktx2Texel::Uncompressed(4)), // VK_FORMAT_R8G8B8A8_SRGB
+    (131, Ktx2Texel::Block(BlockFormat::Bc1Rgb)), // VK_FORMAT_BC1_RGB_UNORM_BLOCK
+    (132, Ktx2Texel::Block(BlockFormat::Bc1Rgb)), // VK_FORMAT_BC1_RGB_SRGB_BLOCK
+    (133, Ktx2Texel::Block(BlockFormat::Bc1Rgba)), // VK_FORMAT_BC1_RGBA_UNORM_BLOCK
+    (134, Ktx2Texel::Block(BlockFormat::Bc1Rgba)), // VK_FORMAT_BC1_RGBA_SRGB_BLOCK
+    (135, Ktx2Texel::Block(BlockFormat::Bc2)), // VK_FORMAT_BC2_UNORM_BLOCK
+    (136, Ktx2Texel::Block(BlockFormat::Bc2)), // VK_FORMAT_BC2_SRGB_BLOCK
+    (137, Ktx2Texel::Block(BlockFormat::Bc3)), // VK_FORMAT_BC3_UNORM_BLOCK
+    (138, Ktx2Texel::Block(BlockFormat::Bc3)), // VK_FORMAT_BC3_SRGB_BLOCK
+    (139, Ktx2Texel::Block(BlockFormat::Bc4)), // VK_FORMAT_BC4_UNORM_BLOCK
+    (141, Ktx2Texel::Block(BlockFormat::Bc5)), // VK_FORMAT_BC5_UNORM_BLOCK
+    (145, Ktx2Texel::Block(BlockFormat::Bc7)), // VK_FORMAT_BC7_UNORM_BLOCK
+    (146, Ktx2Texel::Block(BlockFormat::Bc7)), // VK_FORMAT_BC7_SRGB_BLOCK
 ];
 /// KTX2 の見出し (識別子・形式・大きさ・索引) と、レベルの索引の 1 段の大きさ。
 const KTX2_HEADER_LEN: usize = 80;
@@ -199,12 +285,13 @@ const KTX2_SUPERCOMPRESSION_ZSTD: u32 = 2;
 
 /// KTX2 をデコードして、アルファを掛けない (ストレートの) RGBA8 にする。法線マップのようにアルファを使わない画像用。
 ///
-/// 読むのは圧縮していない `VK_FORMAT_R8G8B8_*` / `VK_FORMAT_R8G8B8A8_*` (`_UNORM`・`_SRGB`) の 2D テクスチャで、
-/// 超圧縮は無しか zstd。値は形式や転送関数によらず保存されたまま使い、ミップマップは最初の段 (レベル 0) だけを読む。
+/// 読むのは圧縮していない `VK_FORMAT_R8G8B8_*` / `VK_FORMAT_R8G8B8A8_*` と、ブロック圧縮の BC1〜BC5・BC7
+/// (`_UNORM`・`_SRGB`。BC4 / BC5 は `_UNORM` だけ) の 2D テクスチャで、超圧縮は無しか zstd。ブロック圧縮は展開して
+/// RGBA8 にする (BC4 は `(R, 0, 0, 255)`、BC5 は `(R, G, 0, 255)`。`docs/adr/0030-compressed-ktx2-decoding.md`)。値は形式や転送関数によらず保存されたまま使い、ミップマップは最初の段 (レベル 0) だけを読む。
 /// データ形式の記述 (`KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を含む) は見ない (`docs/spec/rendering.md#前提`)。
 ///
 /// - 一辺が `limits.max_side` を超える画像は、画素を確保する前に [`ImageError::TooLarge`]。
-/// - ほかの形式 (ブロック圧縮・Basis Universal など)・配列・キューブマップ・3D は [`ImageError::UnsupportedKtx2`]。
+/// - ほかの形式 (ETC2・ASTC・BC6H・Basis Universal など)・配列・キューブマップ・3D は [`ImageError::UnsupportedKtx2`]。
 /// - 見出しやレベルの範囲が壊れていれば [`ImageError::InvalidKtx2`]。
 pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
     let invalid = |message: &str| ImageError::InvalidKtx2(message.to_owned());
@@ -222,7 +309,7 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
     let unsupported = |message: String| Err(ImageError::UnsupportedKtx2(message));
     let Some(&(_, texel)) = KTX2_FORMATS.iter().find(|(f, _)| *f == vk_format) else {
         return unsupported(format!(
-            "vkFormat {vk_format} (only uncompressed 8-bit RGB and RGBA are decoded)"
+            "vkFormat {vk_format} (only uncompressed 8-bit RGB and RGBA, BC1-BC5 and BC7 are decoded)"
         ));
     };
     if width == 0 || height == 0 {
@@ -256,10 +343,20 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
         .and_then(|(offset, length)| bytes.get(offset..offset.checked_add(length)?))
         .ok_or_else(|| invalid("level 0 is outside the file"))?;
     // 上限を大きくした 32bit の環境 (wasm32) では、画素のバイト数が usize に収まらないことがある。
-    let size = (width as usize)
+    let rgba_size = (width as usize)
         .checked_mul(height as usize)
-        .and_then(|n| n.checked_mul(texel))
+        .and_then(|n| n.checked_mul(4))
         .ok_or(ImageError::TooLarge { width, height, max })?;
+    // レベル 0 の (超圧縮を外した) バイト数。ブロック圧縮は端の欠けたブロックも 1 つに数える。
+    let size = match texel {
+        Ktx2Texel::Uncompressed(bytes) => (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|n| n.checked_mul(bytes)),
+        Ktx2Texel::Block(bc) => (width.div_ceil(4) as usize)
+            .checked_mul(height.div_ceil(4) as usize)
+            .and_then(|n| n.checked_mul(bc.block_bytes())),
+    }
+    .ok_or(ImageError::TooLarge { width, height, max })?;
     let expected = |actual: u64, what: &str| {
         if actual == size as u64 {
             Ok(())
@@ -286,20 +383,52 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
         expected(length, "stored")?;
         data
     };
-    let pixels = if texel == 4 {
-        data.to_vec()
-    } else {
-        let mut pixels = Vec::with_capacity(size / 3 * 4);
-        for p in data.as_chunks::<3>().0 {
-            pixels.extend_from_slice(&[p[0], p[1], p[2], 255]);
+    let pixels = match texel {
+        Ktx2Texel::Uncompressed(4) => data.to_vec(),
+        Ktx2Texel::Uncompressed(_) => {
+            let mut pixels = Vec::with_capacity(rgba_size);
+            for p in data.as_chunks::<3>().0 {
+                pixels.extend_from_slice(&[p[0], p[1], p[2], 255]);
+            }
+            pixels
         }
-        pixels
+        Ktx2Texel::Block(bc) => decode_blocks(bc, data, width as usize, height as usize, rgba_size),
     };
     Ok(Rgba8 {
         width,
         height,
         pixels,
     })
+}
+
+/// ブロック圧縮の段 (`data` はブロックが行の順に `ceil(w / 4) * ceil(h / 4)` 個。呼ぶ側が長さを確かめている) を
+/// RGBA8 (`rgba_size` = `w * h * 4` バイト) に展開する。右端と下端の欠けたブロックは、画像に入る画素だけを使う。
+fn decode_blocks(
+    bc: BlockFormat,
+    data: &[u8],
+    width: usize,
+    height: usize,
+    rgba_size: usize,
+) -> Vec<u8> {
+    let mut pixels = vec![0u8; rgba_size];
+    let mut block = [0u8; 64];
+    let blocks_x = width.div_ceil(4);
+    for (i, compressed) in data.chunks_exact(bc.block_bytes()).enumerate() {
+        bc.decode(compressed, &mut block);
+        let (x, y) = ((i % blocks_x) * 4, (i / blocks_x) * 4);
+        let columns = (width - x).min(4);
+        for (row, line) in block
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .take((height - y).min(4))
+            .enumerate()
+        {
+            let at = ((y + row) * width + x) * 4;
+            pixels[at..at + columns * 4].copy_from_slice(&line[..columns * 4]);
+        }
+    }
+    pixels
 }
 
 /// KTX2 をデコードして、乗算済みアルファの RGBA8 にする (描画するテクスチャ用)。
@@ -520,7 +649,18 @@ mod tests {
     const R8G8B8A8_UNORM: u32 = 37;
     const R8G8B8A8_SRGB: u32 = 43;
     const R8G8B8_SRGB: u32 = 29;
+    const BC1_RGB_UNORM_BLOCK: u32 = 131;
+    const BC1_RGBA_SRGB_BLOCK: u32 = 134;
+    const BC2_UNORM_BLOCK: u32 = 135;
     const BC3_UNORM_BLOCK: u32 = 137;
+    const BC3_SRGB_BLOCK: u32 = 138;
+    const BC4_UNORM_BLOCK: u32 = 139;
+    const BC4_SNORM_BLOCK: u32 = 140;
+    const BC5_UNORM_BLOCK: u32 = 141;
+    const BC6H_UFLOAT_BLOCK: u32 = 143;
+    const BC7_UNORM_BLOCK: u32 = 145;
+    const BC7_SRGB_BLOCK: u32 = 146;
+    const ETC2_R8G8B8A8_UNORM_BLOCK: u32 = 151;
 
     /// KTX2 の見出し (`vkFormat`・大きさ・`layerCount`・`faceCount`・超圧縮) とレベルの列 (レベル 0 から) で KTX2 を作る。
     /// データ形式の記述は付けない (デコードは見ない)。`zstd` ならレベルを zstd で圧縮する。
@@ -691,7 +831,7 @@ mod tests {
         );
     }
 
-    /// 圧縮した形式・超圧縮 (Basis)・配列・キューブマップ・3D は、読めるが対応しない KTX2。
+    /// 読まない圧縮形式 (ETC2・BC6H・BC4 の SNORM)・超圧縮 (Basis)・配列・キューブマップ・3D は、読めるが対応しない KTX2。
     #[test]
     fn ktx2_unsupported_kinds_are_reported_as_such() {
         let unsupported = |ktx2: Ktx2| {
@@ -699,11 +839,17 @@ mod tests {
             assert!(matches!(err, ImageError::UnsupportedKtx2(_)), "{err}");
             err.to_string()
         };
-        let bc3 = unsupported(Ktx2::rgba8(BC3_UNORM_BLOCK, (4, 4), vec![vec![0; 16]]));
+        let etc2 = unsupported(Ktx2::rgba8(
+            ETC2_R8G8B8A8_UNORM_BLOCK,
+            (4, 4),
+            vec![vec![0; 16]],
+        ));
         assert_eq!(
-            bc3,
-            "unsupported KTX2: vkFormat 137 (only uncompressed 8-bit RGB and RGBA are decoded)"
+            etc2,
+            "unsupported KTX2: vkFormat 151 (only uncompressed 8-bit RGB and RGBA, BC1-BC5 and BC7 are decoded)"
         );
+        unsupported(Ktx2::rgba8(BC6H_UFLOAT_BLOCK, (4, 4), vec![vec![0; 16]]));
+        unsupported(Ktx2::rgba8(BC4_SNORM_BLOCK, (4, 4), vec![vec![0; 8]]));
         // Basis Universal (`vkFormat` が 0 で、超圧縮が BasisLZ)。
         unsupported(Ktx2::rgba8(0, (4, 4), vec![vec![0; 16]]));
         let mut array = Ktx2::rgba8(R8G8B8A8_SRGB, (1, 1), vec![vec![0; 8]]);
@@ -768,6 +914,199 @@ mod tests {
         let mut wrong = Ktx2::rgba8(R8G8B8A8_SRGB, (1, 1), vec![vec![1; 8]]);
         wrong.zstd = true;
         invalid(&wrong.bytes());
+    }
+
+    /// RGB565 の色。
+    const RED: u16 = 0xf800;
+    const BLUE: u16 = 0x001f;
+
+    /// BC1 の色のブロック (端点 2 つと、画素ごとの 2bit の添字。添字は左上から行の順)。
+    fn bc1_block(c0: u16, c1: u16, indices: [u8; 16]) -> Vec<u8> {
+        let bits = indices
+            .iter()
+            .enumerate()
+            .fold(0u32, |bits, (i, &index)| bits | u32::from(index) << (2 * i));
+        [c0.to_le_bytes(), c1.to_le_bytes()]
+            .concat()
+            .into_iter()
+            .chain(bits.to_le_bytes())
+            .collect()
+    }
+
+    /// BC3 / BC4 のアルファ (1 チャンネル) のブロック。添字はすべて 0 (値は `a0`)。
+    fn bc4_block(a0: u8, a1: u8) -> Vec<u8> {
+        vec![a0, a1, 0, 0, 0, 0, 0, 0]
+    }
+
+    /// BC7 のモード 6 の、全画素が同じ色のブロック。端点はどちらも `rgba` (7bit) で、p ビットは 1
+    /// (8bit の値は `(c << 1) | 1`)。添字はすべて 0。
+    fn bc7_solid(rgba: [u8; 4]) -> Vec<u8> {
+        let mut bits: u128 = 1 << 6; // モード 6
+        let mut at = 7;
+        for c in rgba {
+            for _ in 0..2 {
+                bits |= u128::from(c & 0x7f) << at;
+                at += 7;
+            }
+        }
+        bits |= 0b11 << at; // p ビット
+        bits.to_le_bytes().to_vec()
+    }
+
+    fn pixel(image: &Rgba8, x: u32, y: u32) -> [u8; 4] {
+        let at = ((y * image.width + x) * 4) as usize;
+        image.pixels[at..at + 4].try_into().unwrap()
+    }
+
+    /// BC1: 4 色のモードは端点の色、3 色のモードの 4 つ目は、アルファ付きの形式なら透明の黒、アルファなしなら不透明の黒。
+    #[test]
+    fn ktx2_bc1_is_decoded() {
+        let mut indices = [0; 16];
+        indices[1] = 1;
+        let four = bc1_block(RED, BLUE, indices);
+        let image =
+            ktx2_straight(&Ktx2::rgba8(BC1_RGB_UNORM_BLOCK, (4, 4), vec![four]).bytes()).unwrap();
+        assert_eq!((image.width, image.height), (4, 4));
+        assert_eq!(pixel(&image, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(pixel(&image, 1, 0), [0, 0, 255, 255]);
+        let three = bc1_block(BLUE, RED, [3; 16]);
+        for (format, alpha) in [(BC1_RGB_UNORM_BLOCK, 255), (BC1_RGBA_SRGB_BLOCK, 0)] {
+            let image =
+                ktx2_straight(&Ktx2::rgba8(format, (4, 4), vec![three.clone()]).bytes()).unwrap();
+            assert_eq!(image.pixels, [0, 0, 0, alpha].repeat(16), "{format}");
+        }
+    }
+
+    /// BC3 の色のブロックは、端点の大小によらず 4 色のモードで読む (Direct3D 10 以降の決まり。
+    /// `docs/adr/0030-compressed-ktx2-decoding.md`)。`color0 == color1` で添字 3 は端点の色で、黒ではない。
+    #[test]
+    fn ktx2_bc3_colors_always_use_four_color_mode() {
+        let block = [bc4_block(128, 0), bc1_block(RED, RED, [3; 16])].concat();
+        for format in [BC3_UNORM_BLOCK, BC3_SRGB_BLOCK] {
+            let bytes = Ktx2::rgba8(format, (4, 4), vec![block.clone()]).bytes();
+            assert_eq!(
+                ktx2_straight(&bytes).unwrap().pixels,
+                [255, 0, 0, 128].repeat(16)
+            );
+            // 乗算は展開した後 (`docs/spec/rendering.md#前提`)。
+            assert_eq!(
+                decode_ktx2_premultiplied(&bytes, ImageLimits::default())
+                    .unwrap()
+                    .pixels,
+                [128, 0, 0, 128].repeat(16)
+            );
+        }
+        // BC2 のアルファは 4bit をそのまま広げる (0x8 → 0x88)。
+        let bc2 = [vec![0x88; 8], bc1_block(BLUE, BLUE, [0; 16])].concat();
+        assert_eq!(
+            ktx2_straight(&Ktx2::rgba8(BC2_UNORM_BLOCK, (4, 4), vec![bc2]).bytes())
+                .unwrap()
+                .pixels,
+            [0, 0, 255, 0x88].repeat(16)
+        );
+    }
+
+    /// BC4 は `(R, 0, 0, 255)`、BC5 は `(R, G, 0, 255)`、BC7 は RGBA。
+    #[test]
+    fn ktx2_bc4_bc5_and_bc7_are_decoded() {
+        let decode = |format: u32, block: Vec<u8>| {
+            ktx2_straight(&Ktx2::rgba8(format, (4, 4), vec![block]).bytes())
+                .unwrap()
+                .pixels
+        };
+        assert_eq!(
+            decode(BC4_UNORM_BLOCK, bc4_block(200, 0)),
+            [200, 0, 0, 255].repeat(16)
+        );
+        assert_eq!(
+            decode(
+                BC5_UNORM_BLOCK,
+                [bc4_block(10, 0), bc4_block(20, 0)].concat()
+            ),
+            [10, 20, 0, 255].repeat(16)
+        );
+        for format in [BC7_UNORM_BLOCK, BC7_SRGB_BLOCK] {
+            assert_eq!(
+                decode(format, bc7_solid([100, 50, 0, 63])),
+                [201, 101, 1, 127].repeat(16)
+            );
+        }
+    }
+
+    /// 幅・高さが 4 の倍数でなければ、端のブロックの画像に入る画素だけを使う。ミップマップは最初の段だけ、zstd も外す。
+    #[test]
+    fn ktx2_partial_blocks_levels_and_zstd() {
+        // 5x3 は 2x1 ブロック。左のブロックは赤、右は青。
+        let level0 = [bc1_block(RED, RED, [0; 16]), bc1_block(BLUE, BLUE, [0; 16])].concat();
+        let level1 = bc1_block(0xffff, 0xffff, [0; 16]); // 2x1 (白)
+        let level2 = bc1_block(0xffff, 0xffff, [0; 16]); // 1x1
+        for zstd in [false, true] {
+            let mut ktx2 = Ktx2::rgba8(
+                BC1_RGB_UNORM_BLOCK,
+                (5, 3),
+                vec![level0.clone(), level1.clone(), level2.clone()],
+            );
+            ktx2.zstd = zstd;
+            let image = ktx2_straight(&ktx2.bytes()).unwrap();
+            assert_eq!((image.width, image.height), (5, 3));
+            assert_eq!(image.pixels.len(), 5 * 3 * 4);
+            for y in 0..3 {
+                for x in 0..4 {
+                    assert_eq!(pixel(&image, x, y), [255, 0, 0, 255]);
+                }
+                assert_eq!(pixel(&image, 4, y), [0, 0, 255, 255]);
+            }
+        }
+    }
+
+    /// ブロック圧縮の段の大きさは、ブロックの数とブロックのバイト数の積と合わなければ壊れている。上限は展開する前に確かめる。
+    #[test]
+    fn ktx2_block_level_size_must_match() {
+        let short = Ktx2::rgba8(BC3_UNORM_BLOCK, (4, 4), vec![vec![0; 8]]).bytes();
+        let err = ktx2_straight(&short).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "decoding KTX2: level 0 has 8 stored bytes, but a 4x4 image needs 16"
+        );
+        // 5x5 は 2x2 ブロック (BC7 で 64 バイト)。
+        let bytes = Ktx2::rgba8(BC7_UNORM_BLOCK, (5, 5), vec![vec![0; 48]]).bytes();
+        assert!(matches!(
+            ktx2_straight(&bytes).unwrap_err(),
+            ImageError::InvalidKtx2(_)
+        ));
+        let huge = Ktx2::rgba8(BC1_RGB_UNORM_BLOCK, (65535, 65535), vec![vec![0; 8]]).bytes();
+        assert!(matches!(
+            ktx2_straight(&huge).unwrap_err(),
+            ImageError::TooLarge { .. }
+        ));
+    }
+
+    /// 乱れたブロックでもパニックせず、大きさどおりの画素を返す (外から来るデータ)。
+    #[test]
+    fn ktx2_arbitrary_blocks_do_not_panic() {
+        let mut seed = 0x2545_f491_u32;
+        let mut noise = |n: usize| {
+            (0..n)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 17;
+                    seed ^= seed << 5;
+                    seed as u8
+                })
+                .collect::<Vec<u8>>()
+        };
+        for (format, block) in [
+            (BC1_RGB_UNORM_BLOCK, 8),
+            (BC1_RGBA_SRGB_BLOCK, 8),
+            (BC2_UNORM_BLOCK, 16),
+            (BC3_UNORM_BLOCK, 16),
+            (BC4_UNORM_BLOCK, 8),
+            (BC5_UNORM_BLOCK, 16),
+            (BC7_UNORM_BLOCK, 16),
+        ] {
+            let bytes = Ktx2::rgba8(format, (7, 9), vec![noise(2 * 3 * block)]).bytes();
+            assert_eq!(ktx2_straight(&bytes).unwrap().pixels.len(), 7 * 9 * 4);
+        }
     }
 
     #[test]
