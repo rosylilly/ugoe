@@ -1,11 +1,11 @@
 ---
 id: T1610
 title: "エディタ: タイムラインの再生・シークを wasm の MotionSampler に切り替える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1610
 ---
 
 # T1610: エディタ: タイムラインの再生・シークを wasm の MotionSampler に切り替える
