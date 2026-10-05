@@ -9,11 +9,14 @@
 //! 法線マップの生成 (アルファの形からふくらみを作る決定的な方法) も持つ ([`bulge_normal_map`]、部位のまとまりを
 //! 1 つの形にする [`group_bulge_normal_maps`]、形に加えず向きだけを受けるテクスチャを含める
 //! [`group_bulge_normal_maps_oriented`])。
+//!
+//! 格子のセルと線形インデックスの変換とキーの比べ方 ([`grid_index`]) は、`ugoe-editor-core`・`ugoe-ai` と共有する。
 
 mod additive;
 mod depth;
 mod error;
 mod grid;
+pub mod grid_index;
 mod mirror;
 mod normal;
 mod space;

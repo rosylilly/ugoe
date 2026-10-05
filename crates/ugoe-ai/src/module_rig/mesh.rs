@@ -17,7 +17,7 @@ use ugoe_model::{DeformerId, DeformerKind, Mesh, MeshId, Model, ParamId};
 use ugoe_rigging::ParentWorld;
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
-use super::{MAX_FOLLOW_CELLS, cells, find as find_deformer, grid_axes};
+use super::{MAX_FOLLOW_CELLS, Survey, cells, find as find_deformer, grid_axes};
 use crate::AiError;
 use crate::rig::{Rect, RigTemplate, template};
 
@@ -237,29 +237,26 @@ fn chain_axes(
 /// 衣装のメッシュ `costume` (基準の姿の頂点 `points`、描画順 `order`) が従う本体のメッシュを探す。
 /// 頂点の半分以上がその三角形の中にあり、使えるパラメータの軸 (メッシュ自身か、フレームより下の祖先の
 /// デフォーマのもの) でフレームに対して形が変わる本体のメッシュのうち、描画順が衣装に最も近いもの
-/// (同じなら覆う割合の大きいもの)。なければ `None`。`anchor` はスロットの取り付け先。
-#[allow(clippy::too_many_arguments)]
+/// (同じなら覆う割合の大きいもの)。なければ `None`。本体のメッシュ・使えるパラメータ・取り付け先は `survey` から引く。
 pub(super) fn find(
     poser: &mut Poser,
-    model: &Model,
-    is_base: impl Fn(&MeshId) -> bool,
-    usable: &BTreeSet<ParamId>,
+    survey: &Survey<'_>,
     frame: &mut Frame,
-    anchor: Option<&DeformerId>,
     points: &[Vec2],
     order: f32,
 ) -> Result<Option<MeshFollow>, AiError> {
     if points.is_empty() {
         return Ok(None);
     }
-    let stop = [frame.id().cloned(), anchor.cloned()];
+    let model = survey.model;
+    let stop = [frame.id().cloned(), survey.anchor.cloned()];
     let stop: Vec<Option<&DeformerId>> = stop.iter().map(Option::as_ref).collect();
     let mut candidates = Vec::new();
     for mesh in &model.meshes {
-        if !is_base(&mesh.id) || mesh.mask_only {
+        if !survey.context.is_base_mesh(&mesh.id) || mesh.mask_only {
             continue;
         }
-        let (axes, smooth) = chain_axes(model, mesh, usable, &stop);
+        let (axes, smooth) = chain_axes(model, mesh, &survey.usable, &stop);
         if axes.is_empty() {
             continue;
         }

@@ -7,7 +7,8 @@ use ugoe_model::{
     DeformerId, DeformerKind, KeyformGrid, KeyformOrigin, MirrorSource, Model, Parameter,
 };
 
-use crate::grid::{KEY_EPSILON, Layout, apply, rewrites};
+use crate::grid::{Layout, apply, rewrites};
+use crate::grid_index::key_position;
 use crate::space::{Space, parent_space};
 use crate::values::Points;
 use crate::{InferError, InferReport, InferScope, KeyformTarget, KeyformValues, ParentWorld};
@@ -604,14 +605,10 @@ fn mirror_grid<T: KeyformValues>(
             .iter()
             .map(|&v| {
                 let w = if negate { -v } else { v };
-                src.axes[k]
-                    .keys
-                    .iter()
-                    .position(|&key| (key - w).abs() <= KEY_EPSILON)
-                    .ok_or_else(|| InferError::MissingMirrorKey {
-                        parameter: q.clone(),
-                        key: w,
-                    })
+                key_position(src.axes[k].keys, w).ok_or_else(|| InferError::MissingMirrorKey {
+                    parameter: q.clone(),
+                    key: w,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         axes.push((k, keys));

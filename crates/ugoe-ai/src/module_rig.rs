@@ -267,27 +267,40 @@ struct ModuleLayout {
     skipped: Vec<String>,
 }
 
+/// 衣装の配置を調べる文脈: 作業用のモデル、スロットの文脈、取り付け先、使えるパラメータ。
+struct Survey<'a> {
+    model: &'a Model,
+    context: &'a ModuleContext,
+    /// スロットの取り付け先 (`None` ならキャンバス)。
+    anchor: Option<&'a DeformerId>,
+    /// モジュールが使えるパラメータ ([`usable_parameters`])。
+    usable: BTreeSet<ParamId>,
+}
+
+impl<'a> Survey<'a> {
+    fn new(model: &'a Model, context: &'a ModuleContext) -> Self {
+        Self {
+            model,
+            context,
+            anchor: context.slot().anchor.as_ref(),
+            usable: usable_parameters(model, context),
+        }
+    }
+}
+
 impl ModuleLayout {
     fn new(doc: &Document, parts: &BTreeMap<MeshId, MeshPart>) -> Result<Self, AiError> {
         let context = doc.module().ok_or_else(|| {
             AiError::InvalidRequest("the document is not a module project".into())
         })?;
         let model = doc.model();
+        let survey = Survey::new(model, context);
         let bounds = mesh_bounds(model)?;
-        let anchor = context.slot().anchor.clone();
         let mut skipped = Vec::new();
-        let top = costume_meshes(model, context, anchor.as_ref(), &bounds, &mut skipped)?;
-        let usable = usable_parameters(model, context);
+        let top = costume_meshes(&survey, &bounds, &mut skipped)?;
         let costume: Vec<Rect> = top.iter().map(|id| bounds[id]).collect();
-        let candidates = candidates(
-            model,
-            context,
-            anchor.as_ref(),
-            &usable,
-            &costume,
-            &mut skipped,
-        )?;
-        let owned = owned_base_meshes(model, context, &bounds, &candidates);
+        let candidates = candidates(&survey, &costume, &mut skipped)?;
+        let owned = owned_base_meshes(&survey, &bounds, &candidates);
         let mut groups: Vec<Group> = Vec::new();
         for id in &top {
             let rect = bounds[id];
@@ -301,15 +314,15 @@ impl ModuleLayout {
             let group = group_of(&mut groups, followed)?;
             group.meshes.push(id.clone());
             if let Some(part) = parts.get(id) {
-                add_sway(group, model, &usable, id, part, &mut skipped);
+                add_sway(group, &survey, id, part, &mut skipped);
             }
         }
-        let frames = mesh_frames(&groups, anchor.as_ref());
-        let mesh_follows = mesh_follows(model, context, &usable, &frames, anchor.as_ref(), parts)?;
+        let frames = mesh_frames(&groups, survey.anchor);
+        let mesh_follows = mesh_follows(&survey, &frames, parts)?;
         let colliders = exposed_colliders(doc, context);
         let variants = pose::variants(model, context, parts, &bounds);
         Ok(Self {
-            anchor,
+            anchor: survey.anchor.cloned(),
             groups,
             labels: parts.clone(),
             bounds,
@@ -330,18 +343,18 @@ impl ModuleLayout {
 /// 衣装のメッシュのうち、取り付け先の直下のもの (自分で組んだデフォーマの中のものは変えない。`skipped` に書く)。
 /// なければ [`AiError::Template`]。
 fn costume_meshes(
-    model: &Model,
-    context: &ModuleContext,
-    anchor: Option<&DeformerId>,
+    survey: &Survey<'_>,
     bounds: &BTreeMap<MeshId, Rect>,
     skipped: &mut Vec<String>,
 ) -> Result<Vec<MeshId>, AiError> {
+    let model = survey.model;
     let mut top = Vec::new();
     for mesh in &model.meshes {
-        if context.is_base_mesh(&mesh.id) || mesh.mask_only || !bounds.contains_key(&mesh.id) {
+        if survey.context.is_base_mesh(&mesh.id) || mesh.mask_only || !bounds.contains_key(&mesh.id)
+        {
             continue;
         }
-        if mesh.parent.as_ref() == anchor {
+        if mesh.parent.as_ref() == survey.anchor {
             top.push(mesh.id.clone());
         } else {
             skipped.push(format!(
@@ -362,14 +375,14 @@ fn costume_meshes(
 
 /// 本体のメッシュを、いちばん近い候補の祖先のワープに振り分ける (そのワープで動く本体の絵の外接矩形と描画順)。
 fn owned_base_meshes(
-    model: &Model,
-    context: &ModuleContext,
+    survey: &Survey<'_>,
     bounds: &BTreeMap<MeshId, Rect>,
     candidates: &[Followed],
 ) -> BTreeMap<DeformerId, Vec<(Rect, f32)>> {
+    let model = survey.model;
     let mut owned: BTreeMap<DeformerId, Vec<(Rect, f32)>> = BTreeMap::new();
     for mesh in &model.meshes {
-        if !context.is_base_mesh(&mesh.id) || mesh.mask_only {
+        if !survey.context.is_base_mesh(&mesh.id) || mesh.mask_only {
             continue;
         }
         let (Some(rect), Some(order)) = (bounds.get(&mesh.id), draw_order(mesh)) else {
@@ -442,8 +455,7 @@ fn group_of(groups: &mut Vec<Group>, followed: Option<Followed>) -> Result<&mut 
 /// 入力のパラメータが本体になければ `skipped` に書く。
 fn add_sway(
     group: &mut Group,
-    model: &Model,
-    usable: &BTreeSet<ParamId>,
+    survey: &Survey<'_>,
     id: &MeshId,
     part: &MeshPart,
     skipped: &mut Vec<String>,
@@ -451,7 +463,7 @@ fn add_sway(
     let Some((sway, input)) = sway_of(part.label) else {
         return;
     };
-    let has = |p: &str| usable.contains(&ParamId::new(p));
+    let has = |p: &str| survey.usable.contains(&ParamId::new(p));
     let input = match input {
         SwayInput::Body if has(standard::BODY_ANGLE_X) => standard::BODY_ANGLE_X,
         _ if has(standard::ANGLE_X) => standard::ANGLE_X,
@@ -459,7 +471,7 @@ fn add_sway(
             skipped.push(format!(
                 "{} (`{}`) does not sway because the base has no `AngleX`",
                 part.label,
-                mesh_name(model, id)
+                mesh_name(survey.model, id)
             ));
             return;
         }
@@ -517,13 +529,11 @@ fn exposed_colliders(doc: &Document, context: &ModuleContext) -> Vec<ColliderId>
 /// 服・体のラベルの衣装は従わない (目を閉じても眼鏡は潰れない)。ラベルのないものと、顔・目・口のラベルのもの
 /// (化粧・まつ毛など) が従う。
 fn mesh_follows(
-    model: &Model,
-    context: &ModuleContext,
-    usable: &BTreeSet<ParamId>,
+    survey: &Survey<'_>,
     frames: &BTreeMap<MeshId, Option<DeformerId>>,
-    anchor: Option<&DeformerId>,
     parts: &BTreeMap<MeshId, MeshPart>,
 ) -> Result<MeshFollows, AiError> {
+    let model = survey.model;
     let mut poser = Poser::new(model)?;
     let mut worlds: BTreeMap<Option<DeformerId>, Frame> = BTreeMap::new();
     let mut out = MeshFollows::new();
@@ -553,16 +563,7 @@ fn mesh_follows(
                 e.insert(Frame::new(model, frame.as_ref())?)
             }
         };
-        if let Some(found) = mesh::find(
-            &mut poser,
-            model,
-            |m| context.is_base_mesh(m),
-            usable,
-            world,
-            anchor,
-            &points,
-            order,
-        )? {
+        if let Some(found) = mesh::find(&mut poser, survey, world, &points, order)? {
             out.insert(id.clone(), found);
         }
     }
@@ -611,95 +612,41 @@ fn grid_axes<T>(grid: &KeyformGrid<T>) -> (Vec<(ParamId, Vec<f32>)>, bool) {
 
 /// 衣装が従えるワープ: 取り付け先の下 (取り付け先がなければどこでも) にある本体のワープで、
 /// 使えるパラメータの軸を持つもの。追従のワープには、祖先 (取り付け先の手前まで) の軸も付ける。
+/// キーの組が多すぎるワープは候補にせず、衣装と重なるものだけ `skipped` に書く。
 fn candidates(
-    model: &Model,
-    context: &ModuleContext,
-    anchor: Option<&DeformerId>,
-    usable: &BTreeSet<ParamId>,
+    survey: &Survey<'_>,
     costume: &[Rect],
     skipped: &mut Vec<String>,
 ) -> Result<Vec<Followed>, AiError> {
     let mut found = Vec::new();
-    for deformer in &model.deformers {
-        if !context.is_base_deformer(&deformer.id)
-            || !matches!(deformer.kind, DeformerKind::Warp(_))
-            || Some(&deformer.id) == anchor
-        {
+    for deformer in &survey.model.deformers {
+        let DeformerKind::Warp(warp) = &deformer.kind else {
             continue;
-        }
-        // 自分から取り付け先の手前までの鎖。取り付け先の下になければ飛ばす。
-        let mut chain = vec![deformer];
-        let mut parent = deformer.parent.as_ref();
-        let mut under_anchor = anchor.is_none();
-        while let Some(id) = parent {
-            if Some(id) == anchor {
-                under_anchor = true;
-                break;
-            }
-            let Some(d) = find(model, id) else { break };
-            chain.push(d);
-            parent = d.parent.as_ref();
-        }
-        if !under_anchor {
+        };
+        if !survey.context.is_base_deformer(&deformer.id) || Some(&deformer.id) == survey.anchor {
             continue;
         }
         // 自分の軸を持たないワープ (揺れ用のワープなど) は、親と同じに動くので候補にしない。
-        let own = match &deformer.kind {
-            DeformerKind::Warp(w) => &w.keyforms.bindings,
-            _ => continue,
-        };
-        if !own.iter().any(|b| usable.contains(&b.parameter)) {
+        if !warp
+            .keyforms
+            .bindings
+            .iter()
+            .any(|b| survey.usable.contains(&b.parameter))
+        {
             continue;
         }
-        let mut axes: BTreeMap<ParamId, BTreeSet<u32>> = BTreeMap::new();
-        let mut ignored = Vec::new();
-        let mut smooth = false;
-        for d in &chain {
-            let (grid, s) = match &d.kind {
-                DeformerKind::Warp(w) => grid_axes(&w.keyforms),
-                DeformerKind::Rotation(r) => grid_axes(&r.keyforms),
-                DeformerKind::Unknown => continue,
-            };
-            smooth |= s;
-            for (parameter, keys) in grid {
-                if !usable.contains(&parameter) {
-                    if !ignored.contains(&parameter) {
-                        ignored.push(parameter);
-                    }
-                    continue;
-                }
-                let default = model
-                    .parameters
-                    .iter()
-                    .find(|p| p.id == parameter)
-                    .map_or(0.0, |p| p.default);
-                axes.entry(parameter)
-                    .or_default()
-                    .extend(keys.into_iter().chain([default]).map(f32::to_bits));
-            }
-        }
+        let Some(chain) = anchor_chain(survey, deformer) else {
+            continue;
+        };
+        let ChainAxes {
+            axes,
+            ignored,
+            smooth,
+        } = chain_axes(survey, &chain);
         if axes.is_empty() {
             continue;
         }
-        let mut axes: Vec<(ParamId, Vec<f32>)> = axes
-            .into_iter()
-            .map(|(p, keys)| {
-                let mut keys: Vec<f32> = keys.into_iter().map(f32::from_bits).collect();
-                keys.sort_by(f32::total_cmp);
-                (p, keys)
-            })
-            .collect();
-        axes.sort_by(|a, b| a.0.cmp(&b.0));
-        let world = ParentWorld::new(model, Some(&deformer.id)).map_err(|e| {
-            template(
-                RigTemplate::Module,
-                format!("deformer `{}`: {e}", deformer.id),
-            )
-        })?;
-        let samples: Vec<Vec2> = (0..=4)
-            .flat_map(|j| (0..=4).map(move |i| Vec2::new(i as f32 / 4.0, j as f32 / 4.0)))
-            .collect();
-        let Some(region) = Rect::of(&world.to_canvas(&samples)) else {
+        let Some(region) = warp_region(survey.model, &deformer.id)? else {
             continue;
         };
         let cells = crate::grid::cell_count(axes.iter().map(|(_, k)| k.len()));
@@ -724,6 +671,91 @@ fn candidates(
         });
     }
     Ok(found)
+}
+
+/// デフォーマ `deformer` から取り付け先の手前までの鎖 (自分が先頭)。取り付け先の下になければ `None`。
+fn anchor_chain<'a>(survey: &Survey<'a>, deformer: &'a Deformer) -> Option<Vec<&'a Deformer>> {
+    let mut chain = vec![deformer];
+    let mut parent = deformer.parent.as_ref();
+    let mut under_anchor = survey.anchor.is_none();
+    while let Some(id) = parent {
+        if Some(id) == survey.anchor {
+            under_anchor = true;
+            break;
+        }
+        let Some(d) = find(survey.model, id) else {
+            break;
+        };
+        chain.push(d);
+        parent = d.parent.as_ref();
+    }
+    under_anchor.then_some(chain)
+}
+
+/// 鎖のデフォーマの軸を合わせたもの ([`Followed`] の同じ名前のフィールドになる)。
+struct ChainAxes {
+    /// 使えるパラメータの軸 (パラメータの順。キーは既定値を含み昇順)。
+    axes: Vec<(ParamId, Vec<f32>)>,
+    /// 使えないパラメータの軸。
+    ignored: Vec<ParamId>,
+    /// 曲線補間の軸を持つ。
+    smooth: bool,
+}
+
+/// 鎖 `chain` のデフォーマの軸を合わせる。
+fn chain_axes(survey: &Survey<'_>, chain: &[&Deformer]) -> ChainAxes {
+    let mut axes: BTreeMap<ParamId, BTreeSet<u32>> = BTreeMap::new();
+    let mut ignored = Vec::new();
+    let mut smooth = false;
+    for d in chain {
+        let (grid, s) = match &d.kind {
+            DeformerKind::Warp(w) => grid_axes(&w.keyforms),
+            DeformerKind::Rotation(r) => grid_axes(&r.keyforms),
+            DeformerKind::Unknown => continue,
+        };
+        smooth |= s;
+        for (parameter, keys) in grid {
+            if !survey.usable.contains(&parameter) {
+                if !ignored.contains(&parameter) {
+                    ignored.push(parameter);
+                }
+                continue;
+            }
+            let default = survey
+                .model
+                .parameters
+                .iter()
+                .find(|p| p.id == parameter)
+                .map_or(0.0, |p| p.default);
+            axes.entry(parameter)
+                .or_default()
+                .extend(keys.into_iter().chain([default]).map(f32::to_bits));
+        }
+    }
+    // `BTreeMap` なのでパラメータの順に並ぶ。
+    let axes = axes
+        .into_iter()
+        .map(|(p, keys)| {
+            let mut keys: Vec<f32> = keys.into_iter().map(f32::from_bits).collect();
+            keys.sort_by(f32::total_cmp);
+            (p, keys)
+        })
+        .collect();
+    ChainAxes {
+        axes,
+        ignored,
+        smooth,
+    }
+}
+
+/// 基準の姿でワープ `id` が覆う矩形 (キャンバス座標)。矩形にならなければ `None`。
+fn warp_region(model: &Model, id: &DeformerId) -> Result<Option<Rect>, AiError> {
+    let world = ParentWorld::new(model, Some(id))
+        .map_err(|e| template(RigTemplate::Module, format!("deformer `{id}`: {e}")))?;
+    let samples: Vec<Vec2> = (0..=4)
+        .flat_map(|j| (0..=4).map(move |i| Vec2::new(i as f32 / 4.0, j as f32 / 4.0)))
+        .collect();
+    Ok(Rect::of(&world.to_canvas(&samples)))
 }
 
 /// 作業用のモデルで使われておらず、接頭辞 (`<モジュールの名前>/`) を外した ID とも重ならない ID。
@@ -753,6 +785,14 @@ pub fn propose_module_rig(
     build(doc, &layout, params, options)
 }
 
+/// モジュールのリグを組む文脈: スロットの文脈、衣装の配置、AI (かテンプレート) の値、組み方。
+struct RigContext<'a> {
+    module: &'a ModuleContext,
+    layout: &'a ModuleLayout,
+    params: &'a ModuleRigParams,
+    options: &'a ModuleRigOptions,
+}
+
 fn build(
     doc: &Document,
     layout: &ModuleLayout,
@@ -766,6 +806,12 @@ fn build(
     let context = doc
         .module()
         .ok_or_else(|| AiError::InvalidRequest("the document is not a module project".into()))?;
+    let cx = RigContext {
+        module: context,
+        layout,
+        params,
+        options,
+    };
     let mut rig = Rig {
         b: Builder::from_document(doc),
         template: RigTemplate::Module,
@@ -779,15 +825,7 @@ fn build(
         context.slot().id
     )];
     for group in &layout.groups {
-        rig_group(
-            &mut rig,
-            context,
-            layout,
-            group,
-            params,
-            options,
-            &mut rationale,
-        )?;
+        rig_group(&mut rig, &cx, group, &mut rationale)?;
     }
     if options.poses {
         pose::propose(
@@ -836,20 +874,18 @@ fn build(
 
 fn rig_group(
     rig: &mut Rig,
-    context: &ModuleContext,
-    layout: &ModuleLayout,
+    cx: &RigContext<'_>,
     group: &Group,
-    params: &ModuleRigParams,
-    options: &ModuleRigOptions,
     rationale: &mut Vec<String>,
 ) -> Result<(), AiError> {
+    let layout = cx.layout;
     let names = group
         .meshes
         .iter()
         .map(|id| format!("`{}`", mesh_name(rig.model(), id)))
         .collect::<Vec<_>>()
         .join(", ");
-    let sways = params.sway_scale > 0.0 && !group.sways.is_empty();
+    let sways = cx.params.sway_scale > 0.0 && !group.sways.is_empty();
     let follows_mesh = group
         .meshes
         .iter()
@@ -862,14 +898,14 @@ fn rig_group(
         return Ok(());
     }
     // 本体のワープの変形を、ワープで写すか (追従のワープ) メッシュに直接写すか。
-    let (warp_follow, direct) = match (&group.followed, options.follow) {
+    let (warp_follow, direct) = match (&group.followed, cx.options.follow) {
         (Some(f), FollowMode::Warp) => (Some(f), None),
         (Some(f), FollowMode::Mesh) => (None, Some(f)),
         (None, _) => (None, None),
     };
     // 衣装を包むワープ (追従のワープか、揺れの振り子の取り付け先)。
     let frame = if warp_follow.is_some() || sways {
-        Some(create_frame(rig, context, layout, group, warp_follow)?)
+        Some(create_frame(rig, cx, group, warp_follow)?)
     } else {
         None
     };
@@ -898,9 +934,7 @@ fn rig_group(
             .as_ref()
             .ok_or_else(|| template(RigTemplate::Module, "no frame for the sway".into()))?;
         for sway in &group.sways {
-            rig_sway(
-                rig, context, layout, frame, sway, params, options, rationale,
-            )?;
+            rig_sway(rig, cx, frame, sway, rationale)?;
         }
     } else if !group.sways.is_empty() {
         rationale.push("Sway: the sway scale is 0, so nothing sways".into());
@@ -912,8 +946,7 @@ fn rig_group(
 /// (`Follow…`)、なければ揺れの振り子の取り付け先 (`SwayRoot`)。
 fn create_frame(
     rig: &mut Rig,
-    context: &ModuleContext,
-    layout: &ModuleLayout,
+    cx: &RigContext<'_>,
     group: &Group,
     warp_follow: Option<&Followed>,
 ) -> Result<DeformerId, AiError> {
@@ -925,7 +958,7 @@ fn create_frame(
         None => ("SwayRoot".to_owned(), "Sway root".to_owned()),
     };
     let id = DeformerId::new(fresh_id(
-        context,
+        cx.module,
         &base,
         rig.model().deformers.iter().map(|d| d.id.as_str()),
     ));
@@ -935,7 +968,7 @@ fn create_frame(
         &group.meshes,
         FOLLOW_CELLS,
         FOLLOW_CELLS,
-        layout.anchor.as_ref(),
+        cx.layout.anchor.as_ref(),
     )
 }
 
@@ -1208,18 +1241,15 @@ fn cells(axes: &[(ParamId, Vec<f32>)]) -> Vec<Vec<f32>> {
 /// 揺れ: 揺れる衣装を包む揺れ用のワープを `frame` (追従のワープか `SwayRoot`) の中に作り、`frame` に取り付けた
 /// 振り子の先の横の変位を、制御点に重み付きで足す (`crate::rig` の髪揺れと同じ)。スロットが公開する本体の
 /// 衝突体があれば振り子を当てる ([`sway_colliders`])。
-#[allow(clippy::too_many_arguments)]
 fn rig_sway(
     rig: &mut Rig,
-    context: &ModuleContext,
-    layout: &ModuleLayout,
+    cx: &RigContext<'_>,
     frame: &DeformerId,
     group: &SwayGroup,
-    params: &ModuleRigParams,
-    options: &ModuleRigOptions,
     rationale: &mut Vec<String>,
 ) -> Result<(), AiError> {
-    let rect = layout.union(&group.meshes).ok_or_else(|| {
+    let params = cx.params;
+    let rect = cx.layout.union(&group.meshes).ok_or_else(|| {
         template(
             RigTemplate::Module,
             format!("{} has no bounds", group.label),
@@ -1232,7 +1262,7 @@ fn rig_sway(
     };
     let base = format!("Sway_{}{side}", group.label.as_str());
     let id = DeformerId::new(fresh_id(
-        context,
+        cx.module,
         &base,
         rig.model().deformers.iter().map(|d| d.id.as_str()),
     ));
@@ -1265,7 +1295,7 @@ fn rig_sway(
         .physics()
         .map(|p| p.rigs.iter().map(|r| r.id.to_string()).collect())
         .unwrap_or_default();
-    let rig_id = fresh_id(context, &base, existing.iter().map(String::as_str));
+    let rig_id = fresh_id(cx.module, &base, existing.iter().map(String::as_str));
     let mut physics = rig.pendulum(
         &rig_id,
         &format!("Sway {} {}", group.label, group.side.as_str()),
@@ -1279,8 +1309,8 @@ fn rig_sway(
         VertexOwner::Warp(warp),
         weights,
     )?;
-    let collide = if options.colliders {
-        sway_colliders(rig, &mut physics, &layout.colliders, rect)?
+    let collide = if cx.options.colliders {
+        sway_colliders(rig, &mut physics, &cx.layout.colliders, rect)?
     } else {
         None
     };

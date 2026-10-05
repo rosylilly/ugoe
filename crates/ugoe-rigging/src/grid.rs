@@ -2,10 +2,8 @@
 
 use ugoe_model::{KeyformBinding, KeyformGrid, KeyformOrigin, Parameter};
 
+use crate::grid_index::{cell_coords, key_position};
 use crate::{InferError, InferReport, InferScope, KeyformValues};
-
-/// 中立のキーとパラメータの `default` を等しいとみなす誤差。キーどうしの比較にも使う。
-pub(crate) const KEY_EPSILON: f32 = 1e-5;
 
 /// 格子の 1 本の軸。
 pub(crate) struct Axis<'a> {
@@ -54,14 +52,12 @@ impl<'a> Layout<'a> {
                 });
             }
             check_keys(binding)?;
-            let neutral = binding
-                .keys
-                .iter()
-                .position(|&k| (k - parameter.default).abs() <= KEY_EPSILON)
-                .ok_or_else(|| InferError::MissingNeutralKey {
+            let neutral = key_position(&binding.keys, parameter.default).ok_or_else(|| {
+                InferError::MissingNeutralKey {
                     parameter: binding.parameter.clone(),
                     default: parameter.default,
-                })?;
+                }
+            })?;
             axes.push(Axis {
                 parameter,
                 keys: &binding.keys,
@@ -87,15 +83,9 @@ impl<'a> Layout<'a> {
         Ok(Self { axes, len })
     }
 
-    pub fn coords(&self, mut index: usize) -> Vec<usize> {
-        self.axes
-            .iter()
-            .map(|a| {
-                let i = index % a.keys.len();
-                index /= a.keys.len();
-                i
-            })
-            .collect()
+    /// セル `index` の、軸ごとのキーの位置。
+    pub fn coords(&self, index: usize) -> Vec<usize> {
+        cell_coords(self.axes.iter().map(|a| a.keys.len()), index).collect()
     }
 
     /// セル `index` の姿勢: 軸ごとのパラメータの ID と、そのセルでのキーの値。
