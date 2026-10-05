@@ -361,7 +361,12 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 - **確かめること:** 離したときに送るコマンド (1 つの Undo の単位)、ドラッグ中はプレビューだけで何も送らないこと、`pointercancel` では送らずに
   元に戻すこと、送っている間の操作、window で受けるキー (Esc・Delete・Ctrl (Cmd) + A) がダイアログ・入力欄の中では効かないこと。
 - **読めないモデル:** `doc.parsedModel` が null (モデルの JSON が読めない) でも部品が例外を出さずに描けることを、ビューポートに重ねる部品
-  (`viewport/unreadableModel.test.ts`) と主なパネル (`panels/unreadableModel.test.ts`) で確かめます。新しいパネルや重ねる部品を作ったら、ここに足します。
+  (`viewport/unreadableModel.test.ts`)・主なパネル (`panels/unreadableModel.test.ts`)・プレビューの部品 (`PreviewPanel`・`DifferenceOverlay`。
+  `preview/unreadableModel.test.ts`) で確かめます。新しいパネルや重ねる部品を作ったら、ここに足します。プレビューの部品には `PreviewMode` の偽物
+  `FakePreview` (`preview/test/fakePreview.svelte.ts`。部品が読む状態を持ち、操作を `calls` に記録する。トラッカーと着せ替えは本物。
+  `@ugoe/face-tracking` の読み込みが重いので `harness.svelte.ts` と分ける) を渡します。`harness.svelte.ts` の `FakeController` には
+  プレビューが読む `message`・`usesLighting` と、ビューを寄せる `zoomAt`・`panBy` (記録する)、`fakePuppet` には `has_model`・
+  `attached_modules`・`physics_json` があります。
 - happy-dom は描画もレイアウトもしないので、見た目 (重なり・CSS の `pointer-events`) は確かめられません。それは実機の e2e テストで確かめます。
 
 ## UI の監査

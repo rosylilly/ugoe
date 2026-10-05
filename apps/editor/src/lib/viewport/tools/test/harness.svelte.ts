@@ -134,6 +134,9 @@ export function fakePuppet(): WebPuppet {
       Float32Array.from(id === "Rot" ? [x + 20, y + 10] : [x, y]),
     deformer_jacobian: () => Float32Array.from([1, 0, 0, 1]),
     physics_particles: () => new Float32Array(),
+    has_model: () => true,
+    attached_modules: (): string[] => [],
+    physics_json: (): string | undefined => undefined,
   };
   return puppet as unknown as WebPuppet;
 }
@@ -141,6 +144,10 @@ export function fakePuppet(): WebPuppet {
 /** ViewportController の代わり (ツールが読む状態と座標の換算だけ)。 */
 export class FakeController {
   status = $state<"loading" | "ready">("ready");
+  /** 読み込めないときの説明 (プレビューのパネルが出す)。 */
+  message = $state<string | null>(null);
+  /** モデルがライティングを使うか (プレビューのパネルが光源の節を出す)。 */
+  usesLighting = $state(false);
   transform = $state<ViewTransform | null>({ ...TRANSFORM });
   parameterValues = $state<Record<string, number>>({});
   animationFrame = $state(0);
@@ -174,6 +181,10 @@ export class FakeController {
   stopPhysicsPreview(): void {
     this.previewingPhysics = false;
   }
+
+  /** ビューを寄せる (着せ替えの違いの強調の「Fit」)。呼ばれた引数を記録する。 */
+  zoomAt = vi.fn((_factor: number, _x: number, _y: number): void => {});
+  panBy = vi.fn((_dx: number, _dy: number): void => {});
 
   get asController(): ViewportController {
     return this as unknown as ViewportController;
