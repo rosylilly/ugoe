@@ -27,7 +27,9 @@
 //! 本文の大きさ・ヘッダの数と大きさ・読み込みの時間・同時の接続の数に上限を設け (`Limits`)、
 //! 超えたら `413`・`431`・`408`・`503` で答えて接続を閉じる。要求を読み終える前の誤りの答え (`408`・`413`・
 //! `431`・`400` など) の後は、書く側を閉じてから相手の残りを上限まで読み捨てて閉じる (lingering close。
-//! 読み残しのまま閉じると RST になり、Windows のクライアントが答えを失う。T0556)。
+//! 読み残しのまま閉じると RST になり、Windows のクライアントが答えを失う。T0556)。接続の数の上限を超えた
+//! `503` の後も同じく読み捨てる。受け付けのスレッドを止めないように、接続の枠の外の短いスレッドで行い、その数にも
+//! 上限を設ける (超えた分は読み捨てずに閉じる。T0562)。
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -81,6 +83,10 @@ pub(crate) struct Limits {
     pub(crate) linger_timeout: Duration,
     /// 誤りの答えの後に読み捨てる量の上限。
     pub(crate) max_linger_bytes: usize,
+    /// 接続の数の上限を超えて `503` で断った接続のうち、同時に読み捨てる (lingering close) ものの上限。
+    /// 読み捨ては受け付けのスレッドを止めないように、接続の枠の外の短いスレッドで行う。超えたら、
+    /// 読み捨てずに `503` を書いてすぐ閉じる。
+    pub(crate) max_rejections: usize,
 }
 
 impl Default for Limits {
@@ -93,6 +99,7 @@ impl Default for Limits {
             request_timeout: Duration::from_secs(60),
             linger_timeout: Duration::from_secs(2),
             max_linger_bytes: 1024 * 1024,
+            max_rejections: 8,
         }
     }
 }
@@ -138,6 +145,8 @@ pub struct HttpServer {
     listener: TcpListener,
     endpoint: Arc<Endpoint>,
     connections: Arc<AtomicUsize>,
+    /// `503` で断って読み捨てている接続の数 ([`Limits::max_rejections`])。
+    rejections: Arc<AtomicUsize>,
     limits: Limits,
     /// 止めるように頼まれた ([`RunningHttpServer::stop`])。
     stopping: Arc<AtomicBool>,
@@ -219,6 +228,7 @@ impl HttpServer {
             listener,
             endpoint: Arc::new(Endpoint::new(server, options)),
             connections: Arc::new(AtomicUsize::new(0)),
+            rejections: Arc::new(AtomicUsize::new(0)),
             limits: Limits::default(),
             stopping: Arc::new(AtomicBool::new(false)),
         })
@@ -259,7 +269,7 @@ impl HttpServer {
             if self.stopping.load(Ordering::SeqCst) {
                 break;
             }
-            let mut stream = match stream {
+            let stream = match stream {
                 Ok(stream) => stream,
                 Err(e) => {
                     eprintln!("ugoe-mcp: failed to accept a connection: {e}");
@@ -270,8 +280,7 @@ impl HttpServer {
             };
             if self.connections.fetch_add(1, Ordering::SeqCst) >= self.limits.max_connections {
                 self.connections.fetch_sub(1, Ordering::SeqCst);
-                let response = Response::text(503, "too many connections");
-                let _ = write_response(&mut stream, &response, false);
+                self.reject(stream);
                 continue;
             }
             let endpoint = Arc::clone(&self.endpoint);
@@ -285,9 +294,41 @@ impl HttpServer {
         }
         Ok(())
     }
+
+    /// 接続の数の上限を超えた接続に `503` で答えて閉じる。読み捨ての枠が空いていれば、書く側を閉じてから
+    /// 相手の残りを上限まで読み捨てる (lingering close) のを別のスレッドに任せ、受け付けのスレッドは止めない。
+    /// 枠が無ければ (スレッドを立てられなければ) 答えを書いてすぐ閉じる。
+    fn reject(&self, mut stream: TcpStream) {
+        // 小さな答えなので送信のバッファに収まるが、念のため書き込みで止められないようにする。
+        let _ = stream.set_write_timeout(Some(self.limits.linger_timeout));
+        let response = Response::text(503, "too many connections");
+        if write_response(&mut stream, &response, false).is_err() {
+            return;
+        }
+        if self.rejections.fetch_add(1, Ordering::SeqCst) >= self.limits.max_rejections {
+            self.rejections.fetch_sub(1, Ordering::SeqCst);
+            return;
+        }
+        let slot = ConnectionSlot(Arc::clone(&self.rejections));
+        let limits = self.limits;
+        // 立てられなければ、クロージャと一緒に接続を閉じ、枠も戻る。
+        let _ = std::thread::Builder::new()
+            .name("ugoe-mcp-reject".to_owned())
+            .spawn(move || {
+                let _slot = slot;
+                let Ok(writer) = stream.try_clone() else {
+                    return;
+                };
+                let mut reader = BufReader::new(TimedStream {
+                    stream,
+                    deadline: Instant::now(),
+                });
+                linger(&mut reader, &writer, &limits);
+            });
+    }
 }
 
-/// 同時の接続の枠 1 つ。捨てると (スレッドが panic で終わっても) 数を戻す。
+/// 同時の接続 (または読み捨て) の枠 1 つ。捨てると (スレッドが panic で終わっても) 数を戻す。
 struct ConnectionSlot(Arc<AtomicUsize>);
 
 impl Drop for ConnectionSlot {
@@ -1526,6 +1567,7 @@ mod tests {
             request_timeout: Duration::from_millis(300),
             linger_timeout: Duration::from_millis(500),
             max_linger_bytes: 4096,
+            max_rejections: 1,
         }
     }
 
@@ -1736,6 +1778,75 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(ok);
+    }
+
+    /// 接続を開き、keep-alive の要求に答えてもらってから返す (接続の枠を確かに握っている。受け付けの順は
+    /// つないだ順とは限らないので、つないだだけでは枠を握ったか分からない)。
+    fn hold_a_connection(addr: SocketAddr) -> TcpStream {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let ping = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+        let raw = format!(
+            "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{ping}",
+            ping.len()
+        );
+        stream.write_all(raw.as_bytes()).unwrap();
+        let mut response = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !response.ends_with(b"}") {
+            let n = stream.read(&mut buf).unwrap();
+            assert!(n > 0, "closed: {:?}", String::from_utf8_lossy(&response));
+            response.extend_from_slice(&buf[..n]);
+        }
+        assert!(response.starts_with(b"HTTP/1.1 200"));
+        stream
+    }
+
+    #[test]
+    fn rejections_reach_clients_that_are_still_sending() {
+        let limits = Limits {
+            max_connections: 1,
+            request_timeout: Duration::from_secs(30),
+            ..small_limits()
+        };
+        let addr = spawn_limited(limits);
+        let _held = hold_a_connection(addr);
+        let head = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 200\r\n\r\n";
+        let body = "x".repeat(200);
+        // 本文を送る前に 503 を読み、その後も残りを送れる (読み捨てずに閉じれば RST になる)。
+        assert_eq!(
+            read_early_then_send(addr, head.as_bytes(), body.as_bytes()),
+            (503, true)
+        );
+    }
+
+    #[test]
+    fn rejections_do_not_block_accepting() {
+        let limits = Limits {
+            max_connections: 1,
+            request_timeout: Duration::from_secs(30),
+            linger_timeout: Duration::from_secs(30),
+            ..small_limits()
+        };
+        let addr = spawn_limited(limits);
+        let _held = hold_a_connection(addr);
+        let started = Instant::now();
+        // 断った接続を読み捨ての枠 (1 つ) より多く開いたままにしても、次の接続にすぐ 503 で答える
+        // (読み捨ては受け付けのスレッドを止めず、枠を超えた分は読み捨てずに閉じる)。
+        let lingering: Vec<TcpStream> = (0..3)
+            .map(|_| {
+                let mut stream = TcpStream::connect(addr).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                assert_eq!(status_of(&mut stream), 503);
+                stream
+            })
+            .collect();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        drop(lingering);
     }
 
     #[test]
