@@ -31,7 +31,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
@@ -39,6 +38,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, export_bundle};
+use ugoe_fs::{Access, StagedFile};
 
 use crate::root::Root;
 
@@ -392,7 +392,7 @@ impl DocumentHost for FileHost {
                             bundle.display()
                         )
                     })?;
-                    let staged = StagedFile::write(bundle, &bytes).map_err(|e| {
+                    let staged = StagedFile::write(bundle, &bytes, Access::Default).map_err(|e| {
                         format!(
                             "failed to write `{}`: {e}; nothing was saved",
                             bundle.display()
@@ -406,7 +406,7 @@ impl DocumentHost for FileHost {
             data.save(project).map_err(|e| e.to_string())?;
             open.document.mark_saved();
             if let Some(staged) = staged {
-                let target = staged.target.clone();
+                let target = staged.target().to_path_buf();
                 staged.commit().map_err(|e| {
                     format!(
                         "saved the project, but failed to write `{}`: {e}; the previous file is left as it was",
@@ -416,55 +416,6 @@ impl DocumentHost for FileHost {
             }
             Ok(())
         })
-    }
-}
-
-/// 置き換える前のファイル: 行き先と同じディレクトリの一時ファイルに書いておき、[`StagedFile::commit`] で
-/// 名前を変えて置き換える (途中で失敗しても、行き先にある前のファイルを壊さない)。置き換えずに捨てると
-/// 一時ファイルを消す。
-struct StagedFile {
-    temp: PathBuf,
-    target: PathBuf,
-    committed: bool,
-}
-
-impl StagedFile {
-    fn write(target: &Path, bytes: &[u8]) -> std::io::Result<Self> {
-        /// 同じプロセスの中で同じ行き先に同時に書いても、一時ファイルが重ならないように。
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let name = target
-            .file_name()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no file name"))?;
-        let mut temp_name = std::ffi::OsString::from(".");
-        temp_name.push(name);
-        temp_name.push(format!(
-            ".{}.{}.tmp",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let staged = Self {
-            temp: target.with_file_name(temp_name),
-            target: target.to_path_buf(),
-            committed: false,
-        };
-        let mut file = std::fs::File::create(&staged.temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        Ok(staged)
-    }
-
-    fn commit(mut self) -> std::io::Result<()> {
-        std::fs::rename(&self.temp, &self.target)?;
-        self.committed = true;
-        Ok(())
-    }
-}
-
-impl Drop for StagedFile {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = std::fs::remove_file(&self.temp);
-        }
     }
 }
 

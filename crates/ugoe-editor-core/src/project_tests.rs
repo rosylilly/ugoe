@@ -197,6 +197,39 @@ fn save_removes_stale_files_but_keeps_sources() {
     assert_eq!(Project::load(&dir).unwrap(), project);
 }
 
+/// 保存は一時ファイル `.<名前>.<プロセス ID>.<連番>.tmp` を経て書き (`ugoe_fs::write_atomic`)、一時ファイルを残さない。
+/// 落ちて残った一時ファイルは、読み込み・指紋・古いファイルの削除のどれにも拾われない (T0025)。
+#[test]
+fn leftover_temporary_files_are_ignored() {
+    let tmp = TempDir::new("leftover");
+    let dir = tmp.project();
+    let project = sample_project();
+    project.save(&dir).unwrap();
+    let saved = file_names(&dir);
+    assert!(
+        saved.iter().all(|name| !name.ends_with(".tmp")),
+        "{saved:?}"
+    );
+
+    let (_, fingerprint) = Project::load_tracked(&dir).unwrap();
+    let leftovers = [
+        "motions/.idle.motion.json.1.0.tmp",
+        "expressions/.smile.expression.json.1.1.tmp",
+        "textures/.white.png.1.2.tmp",
+    ];
+    for name in leftovers {
+        fs::write(dir.join(name), b"half").unwrap();
+    }
+    let (loaded, after) = Project::load_tracked(&dir).unwrap();
+    assert_eq!(loaded, project);
+    assert_eq!(after, fingerprint);
+    project.save(&dir).unwrap();
+    let mut expected = saved;
+    expected.extend(leftovers.map(String::from));
+    expected.sort();
+    assert_eq!(file_names(&dir), expected);
+}
+
 /// 大文字小文字だけを変えた名前で保存し直しても、ファイルが 1 つだけ新しい名前で残る。大文字小文字を区別しない
 /// ファイルシステム (Windows・macOS) では、古い名前のファイルを消すと新しく書いたファイルも消えるので、書き直す。
 #[test]

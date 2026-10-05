@@ -1,14 +1,13 @@
 //! ファイルの読み書きの補助 (JSON・一時ファイル経由の書き込み・古いファイルの削除)。
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use ugoe_format::FormatError;
 
-use super::{ProjectError, TEMP_SUFFIX, read_regular_file};
+use super::{ProjectError, read_regular_file};
 
 pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectError + '_ {
     move |source| ProjectError::Io {
@@ -134,7 +133,9 @@ pub(super) fn remove_if_exists(path: &Path) -> Result<(), ProjectError> {
     }
 }
 
-/// 中身が変わるときだけ、一時ファイルに書いてから名前を変えて置き換える。
+/// 中身が変わるときだけ、同じディレクトリの一時ファイル (`.<名前>.<プロセス ID>.<連番>.tmp`) に書いてから
+/// 名前を変えて置き換える (`ugoe_fs::write_atomic`)。一時ファイルは `.` で始まり `.tmp` で終わるので、
+/// 書き込みに失敗して残っても読み込み・指紋 ([`list_files`]) には拾われない。
 ///
 /// 今のファイルは、通常のファイルで書く中身と同じ大きさのときだけ読んで比べる (FIFO・装置を読んで止まらないように。T1607)。
 /// それ以外は比べずに置き換える。
@@ -146,20 +147,5 @@ pub(super) fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), ProjectE
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(io_error(parent))?;
     }
-    let mut temp = path.as_os_str().to_owned();
-    temp.push(TEMP_SUFFIX);
-    let temp = PathBuf::from(temp);
-    let result = (|| {
-        let mut file = fs::File::create(&temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&temp, path)
-    })();
-    result.map_err(|source| {
-        let _ = fs::remove_file(&temp);
-        ProjectError::Io {
-            path: path.to_path_buf(),
-            source,
-        }
-    })
+    ugoe_fs::write_atomic(path, bytes).map_err(io_error(path))
 }

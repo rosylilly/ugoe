@@ -1382,7 +1382,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | 本体の `.ugoe` | 512 MiB (`DEFAULT_MAX_BUNDLE_BYTES`) | ビューア・スタジオが開く `.ugoe` の上限 (512 MiB) と揃える |
 
 - 保存 (`Project::save`) で今のファイルと中身を比べるのも、通常のファイルで書く中身と同じ大きさのときだけです (比べられなければ置き換える)。
-- 3 つのアプリの `read_regular_file` (T0011) と同じ形の写しです。T0025 で作る共有のクレート (`ugoe-fs`) に寄せる予定です。
+- 読み方は 3 つのアプリと同じ `ugoe_fs::read_regular_file` です (T0011・T0025)。
 - 見てから開くまでの間に FIFO へ差し替えられると、開くところで止まりえます (その窓は小さいので受け入れています)。
 
 ### 外での書き換え
@@ -1467,12 +1467,12 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
   (`src/lib/exportSummary.ts`、Vitest)。別のプロジェクトに替わると欄を閉じて結果を消します。
 - **ファイルの書き方:** 書き出し (`.ugoe`・`.ugoemod`)・画像 (`write_png_file`)・トラッキングの記録 (`write_json_file`)・設定
   (`ai-provider.json`・`mcp-bridge.json`) は、行き先と同じフォルダーの一時ファイル `.<名前>.<プロセス ID>.<連番>.tmp` に書いて
-  `sync` し、閉じてから名前を変えて置き換えます (`src-tauri/src/atomic_write.rs`、T0687。ビューアと MCP サーバと同じ形)。途中で失敗しても
+  `sync` し、閉じてから名前を変えて置き換えます (`ugoe_fs::write_atomic`、T0687・T0025。ビューア・スタジオ・MCP サーバ・`ugoe-editor-core` と同じ関数)。途中で失敗しても
   (ディスクがいっぱい・強制終了) 前のファイルは残り、一時ファイルは消します。`.ugoeproj` の保存も各ファイルを一時ファイル経由で書きます
   (`ugoe_editor_core::Project::save`)。
 - **IPC で受けたパスの読み方:** 画面から受けたパスで読むファイル (PSD (`import_psd`・`new_project_from_psd`・AI の提案)・`.ugoemod`
   (`read_module_file`)・法線マップの PNG (`assign_texture_normal_map`)) は、通常のファイル (リンクは辿る) のときだけ、大きさの上限までで
-  読みます (`src-tauri/src/read_file.rs`、T0011。PSD は 2 GiB (PSD の形式の上限)、`.ugoemod` は 512 MiB、PNG は 64 MiB)。
+  読みます (`ugoe_fs::read_regular_file`、T0011・T0025。PSD は 2 GiB (PSD の形式の上限)、`.ugoemod` は 512 MiB、PNG は 64 MiB)。
   装置 (`/dev/zero`)・FIFO・ディレクトリは開かずに `editor.io` (`not a regular file`) にします (読み続けてメモリを使い果たす・開くだけで
   止まるため)。線引きは MCP サーバ・ugoe-headless と同じで、利用者が自分でパスを渡す CLI だけは FIFO を読めるままにします (T0530)。
   `.ugoeproj` と本体の `.ugoe` は `ugoe_editor_core::Project` が読むので、ここには含みません。

@@ -29,9 +29,9 @@ use ugoe_mcp::wsl::WslPaths;
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 
 use crate::AppState;
-use crate::atomic_write::{Access, StagedFile};
 use crate::error::{EditorError, IpcResult};
 use crate::project::ProjectSession;
+use ugoe_fs::{Access, StagedFile};
 
 /// 設定のファイル (アプリの設定のディレクトリの下)。トークンを含むので Unix では 0600 で書く。
 const SETTINGS_FILE: &str = "mcp-bridge.json";
@@ -416,12 +416,12 @@ impl McpBridge {
 }
 
 /// トークンを含むファイルを、利用者だけが読める権限で書く。一時ファイルも作るときからその権限にし、
-/// 名前を変えて置き換える (途中で失敗しても前の設定を残す。`atomic_write`)。
+/// 名前を変えて置き換える (途中で失敗しても前の設定を残す。`ugoe_fs`)。
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    StagedFile::write(path, text.as_bytes(), Access::Private)?.commit()
+    ugoe_fs::write_atomic_private(path, text.as_bytes())
 }
 
 /// `ugoe-mcp` を探す場所 (`dir` はエディタの実行ファイルのディレクトリ)。インストールしたものは隣にある。

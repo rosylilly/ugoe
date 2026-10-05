@@ -3,16 +3,13 @@
 //!
 //! 装置 (`/dev/zero`)・FIFO を読むと、終わらない・書き手を待って止まる・メモリを使い果たす。プロジェクトの中のファイルは
 //! 外 (`ugoe-mcp`・手での編集・受け取ったプロジェクト) が置くので、名前だけでは中身の種類が分からない。
-//! 3 つのアプリの `src-tauri/src/read_file.rs` (T0011) と同じ形。T0025 で作る共有のクレート (`ugoe-fs`) に寄せる予定。
-//!
-//! - 開く前に `fs::metadata` で通常のファイル (リンクは辿る) かと大きさを見て、開いた後にも見直す。
-//! - 見てから読むまでの間に大きくなっても上限を超えて読まないよう、上限 + 1 バイトまでに限って読む。
-//! - 見てから開くまでの間に FIFO へ差し替えられると、開くところで止まりうる (`O_NONBLOCK` で開くには unsafe か libc が
-//!   要る。その窓は小さいので受け入れる)。
+//! 読み方は 3 つのアプリと同じ `ugoe_fs::read_regular_file` (T0011・T0025。開く前と開いた後に通常のファイルかと大きさを見て、
+//! 上限 + 1 バイトまでに限って読む)。ここはエラーを [`ProjectError`] に替える。
 
-use std::fs::{self, File, Metadata};
-use std::io::Read;
+use std::fs::Metadata;
 use std::path::Path;
+
+use ugoe_fs::ReadError;
 
 use super::ProjectError;
 
@@ -107,25 +104,18 @@ pub(crate) fn read_regular_file_as(
     shown: &Path,
     max: u64,
 ) -> Result<Vec<u8>, ProjectError> {
-    let io = |source| ProjectError::Io {
-        path: shown.to_path_buf(),
-        source,
-    };
-    // 開く前に見る (FIFO は開くだけで書き手を待って止まる)。
-    check_regular(shown, &fs::metadata(path).map_err(io)?, max)?;
-    let file = File::open(path).map_err(io)?;
-    let metadata = file.metadata().map_err(io)?;
-    check_regular(shown, &metadata, max)?;
-    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or(0));
-    file.take(max.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(io)?;
-    if bytes.len() as u64 > max {
-        return Err(ProjectError::FileTooLarge {
+    ugoe_fs::read_regular_file(path, max).map_err(|e| match e {
+        ReadError::Io(source) => ProjectError::Io {
             path: shown.to_path_buf(),
-            len: bytes.len() as u64,
+            source,
+        },
+        ReadError::NotRegularFile => ProjectError::NotRegularFile {
+            path: shown.to_path_buf(),
+        },
+        ReadError::TooLarge { len, max } => ProjectError::FileTooLarge {
+            path: shown.to_path_buf(),
+            len,
             max,
-        });
-    }
-    Ok(bytes)
+        },
+    })
 }

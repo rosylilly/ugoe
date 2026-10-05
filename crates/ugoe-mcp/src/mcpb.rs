@@ -184,7 +184,7 @@ impl Bundle {
         zip.finish()
     }
 
-    /// `.mcpb` を `out` に書く (一時ファイルに書いてから名前を変える)。
+    /// `.mcpb` を `out` に書く (一時ファイルに書いて `sync_all` してから名前を変える。`ugoe_fs::write_atomic`)。
     pub fn write(&self, out: &Path) -> Result<(), McpbError> {
         let bytes = self.to_bytes()?;
         let write_error = |source| McpbError::Write {
@@ -194,14 +194,7 @@ impl Bundle {
         if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir).map_err(write_error)?;
         }
-        let mut tmp = out.as_os_str().to_owned();
-        tmp.push(".tmp");
-        let tmp = PathBuf::from(tmp);
-        std::fs::write(&tmp, &bytes).map_err(write_error)?;
-        std::fs::rename(&tmp, out).map_err(|source| {
-            let _ = std::fs::remove_file(&tmp);
-            write_error(source)
-        })
+        ugoe_fs::write_atomic(out, &bytes).map_err(write_error)
     }
 }
 

@@ -56,7 +56,7 @@ use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::{ProjectSession, absolute_path};
 use crate::psd::MAX_PSD_BYTES;
-use crate::read_file::read_regular_file;
+use ugoe_fs::read_regular_file;
 
 /// 開いているプロジェクトの AI の提案と、その入力 (`ProjectSession` が持つ。プロジェクトを替えると消える)。
 #[derive(Debug, Default)]

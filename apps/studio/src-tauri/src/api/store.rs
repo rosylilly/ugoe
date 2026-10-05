@@ -3,7 +3,7 @@
 //! **プロファイルに入れない** (プロファイルを人に渡しても漏れない)。アプリのデータの場所の `studio-api.json` に置き、
 //! 書くときは一時ファイルに書いてから置き換える。Unix では持ち主だけが読めるようにする (0600)。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -195,12 +195,9 @@ impl ApiSettings {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let mut temp = path.as_os_str().to_owned();
-        temp.push(".tmp");
-        let temp = PathBuf::from(temp);
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        write_private(&temp, json.as_bytes())?;
-        std::fs::rename(&temp, path)
+        // Windows ではアプリのデータの場所 (利用者のプロファイルの下) が既に持ち主だけのもの。
+        ugoe_fs::write_atomic_private(path, json.as_bytes())
     }
 
     /// 鍵 `key` を持つクライアント (定数時間で比べる)。
@@ -214,26 +211,6 @@ impl ApiSettings {
         }
         found
     }
-}
-
-#[cfg(unix)]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
-}
-
-#[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // Windows ではアプリのデータの場所 (利用者のプロファイルの下) が既に持ち主だけのもの。
-    std::fs::write(path, bytes)
 }
 
 #[cfg(test)]

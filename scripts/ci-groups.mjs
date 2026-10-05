@@ -50,9 +50,9 @@ export const GROUPS = {
   assets: {
     crates: ["ugoe-psd", "ugoe-mesher", "ugoe-rigging", "ugoe-headless"],
   },
-  // エディタの中核・AI・CLI・MCP サーバ
+  // エディタの中核・AI・CLI・MCP サーバ・ファイルの読み書きの補助
   tools: {
-    crates: ["ugoe-editor-core", "ugoe-ai", "ugoe-cli", "ugoe-mcp"],
+    crates: ["ugoe-fs", "ugoe-editor-core", "ugoe-ai", "ugoe-cli", "ugoe-mcp"],
   },
   // Tauri のアプリ (エディタ・ビューア・スタジオ)。CI では生成物の検査 (`just gen`) もこのジョブで行う
   apps: {
@@ -65,7 +65,7 @@ export const GROUPS = {
  * Windows と macOS のランナーでも clippy とテストを流すクレート (CI の rust (windows)・rust (macos)。docs/testing.md#ci-のジョブ)。
  * ファイルを書き出す・パスを扱うクレート。大文字小文字だけが違う名前やパスの区切りの違いの誤りは、Linux では見つからない (T0667)。
  */
-export const OS_CRATES = ["ugoe-format", "ugoe-editor-core", "ugoe-cli", "ugoe-mcp"];
+export const OS_CRATES = ["ugoe-format", "ugoe-fs", "ugoe-editor-core", "ugoe-cli", "ugoe-mcp"];
 
 /** 検査から除く `required-features` (別のレシピが担当する)。 */
 const IGNORED_FEATURES = new Set(["gpu-tests"]);

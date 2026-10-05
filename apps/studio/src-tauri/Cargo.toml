@@ -30,6 +30,7 @@ thiserror.workspace = true
 # 操作 API の WebSocket のフレーム (T0805。HTTP の要求と握手の検査は自前。利用者の決定 2026-10-02)。
 tungstenite.workspace = true
 ugoe.workspace = true
+ugoe-fs.workspace = true
 ugoe-headless.workspace = true
 ugoe-studio-vcam.workspace = true
 # 仮想カメラの背景の画像 (JPEG) のデコード (T0808。利用者の判断 2026-10-02)。

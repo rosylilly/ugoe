@@ -30,7 +30,6 @@ pub mod lighting;
 pub mod load_failure;
 pub mod pacing;
 pub mod profile;
-mod read_file;
 pub mod stage;
 pub mod stream;
 pub mod virtual_camera;

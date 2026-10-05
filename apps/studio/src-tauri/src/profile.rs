@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::hotkeys::{self, Hotkey};
 use crate::input::{InputSettings, MotionSettings};
 use crate::pacing::TickRate;
-use crate::read_file::{ReadError, read_regular_file};
 use crate::virtual_camera;
+use ugoe_fs::{ReadError, read_regular_file};
 
 /// `format` の値 (ほかの JSON、たとえば JSON のモデルを開いたときに分かるように)。
 pub const PROFILE_FORMAT: &str = "ugoe-studio-profile";
@@ -308,13 +308,13 @@ impl Profile {
             path: path.to_owned(),
             message: e.to_string(),
         };
-        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
         let bytes = read_regular_file(path, MAX_PROFILE_BYTES).map_err(|e| match e {
-            ReadError::Io(e) => io(e),
             ReadError::TooLarge { len, .. } => ProfileError::TooLarge {
                 path: path.to_owned(),
                 bytes: len,
             },
+            e => io(e.into()),
         })?;
         let text = String::from_utf8(bytes).map_err(|e| {
             io(std::io::Error::new(
@@ -334,17 +334,12 @@ impl Profile {
         serde_json::to_string_pretty(&profile).unwrap_or_default() + "\n"
     }
 
-    /// ファイルに書く (一時ファイルに書いてから置き換え、途中で落ちても前のファイルを壊さない)。
+    /// ファイルに書く (一時ファイルに書いてから置き換え、途中で落ちても前のファイルを壊さない。`ugoe_fs::write_atomic`)。
     pub fn write(&self, path: &Path) -> Result<(), ProfileError> {
-        let io = |e: std::io::Error| ProfileError::Io {
+        ugoe_fs::write_atomic(path, self.to_json().as_bytes()).map_err(|e| ProfileError::Io {
             path: path.to_owned(),
             message: e.to_string(),
-        };
-        let mut temp = path.as_os_str().to_owned();
-        temp.push(".tmp");
-        let temp = PathBuf::from(temp);
-        std::fs::write(&temp, self.to_json()).map_err(io)?;
-        std::fs::rename(&temp, path).map_err(io)
+        })
     }
 
     /// 値の範囲を外れたものを収め直す。ID の重複と空の ID は付け直し、`active_scene` が無いシーンを指していれば先頭にする。
@@ -491,7 +486,12 @@ impl RecentProfiles {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(path, serde_json::to_string_pretty(self).unwrap_or_default())
+        ugoe_fs::write_atomic(
+            path,
+            serde_json::to_string_pretty(self)
+                .unwrap_or_default()
+                .as_bytes(),
+        )
     }
 
     /// `path` を先頭にする (重複は除き、多ければ古いものを捨てる)。
@@ -732,7 +732,12 @@ mod tests {
         let profile = Profile::new();
         profile.write(&path).unwrap();
         assert_eq!(Profile::read(&path).unwrap(), profile);
-        assert!(!dir.join("p.json.tmp").exists());
+        // 一時ファイルは残らない。
+        let names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["p.json"]);
         assert!(matches!(
             Profile::read(&dir.join("missing.json")),
             Err(ProfileError::Io { .. })

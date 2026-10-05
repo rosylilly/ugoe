@@ -18,8 +18,8 @@ use crate::pacing::TickRate;
 use crate::profile::{
     Background, Profile, ProfileError, RecentProfiles, SceneSettings, VirtualCameraSettings,
 };
-use crate::read_file::{ReadError, read_regular_file};
 use crate::stream::Look;
+use ugoe_fs::{ReadError, read_regular_file};
 
 /// モデルとモジュールのファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 pub const MAX_MODEL_BYTES: u64 = 512 * 1024 * 1024;
@@ -967,14 +967,14 @@ pub fn read_asset(
             }
         }
     };
-    // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+    // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
     read_regular_file(path, max_bytes).map_err(|e| match e {
-        ReadError::Io(e) => io(e),
         ReadError::TooLarge { len, .. } => SceneError::TooLarge {
             asset,
             path: path.to_owned(),
             bytes: len,
         },
+        e => io(e.into()),
     })
 }
 

@@ -650,7 +650,7 @@ pub async fn export_bundle(app: AppHandle, path: String) -> IpcResult<ExportRepo
             )
         };
         let (bytes, report) = export_bundle_with_settings(&project, &settings)?;
-        crate::atomic_write::write_atomic(&path, &bytes).map_err(|e| EditorError::io(&path, e))?;
+        ugoe_fs::write_atomic(&path, &bytes).map_err(|e| EditorError::io(&path, e))?;
         Ok(report)
     })
     .await

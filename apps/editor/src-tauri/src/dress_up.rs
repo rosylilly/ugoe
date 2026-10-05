@@ -15,7 +15,7 @@ use crate::AppState;
 use crate::commands::off_main;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
-use crate::read_file::read_regular_file;
+use ugoe_fs::read_regular_file;
 
 /// 読む `.ugoemod` の大きさの上限 (ビューア・スタジオのモデルと同じ)。
 const MAX_MODULE_BYTES: u64 = 512 * 1024 * 1024;
@@ -154,7 +154,7 @@ pub async fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
     off_main(move || read_module(&path).map(tauri::ipc::Response::new)).await
 }
 
-/// [`read_module_file`] の中身。通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+/// [`read_module_file`] の中身。通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
 fn read_module(path: &str) -> IpcResult<Vec<u8>> {
     let path = absolute_path(path)?;
     if !is_module_path(&path) {

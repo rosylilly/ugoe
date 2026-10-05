@@ -23,6 +23,7 @@ ugoe-ai = { path = "crates/ugoe-ai" }
 ugoe-core = { path = "crates/ugoe-core", version = "0.0.0" }
 ugoe-editor-core = { path = "crates/ugoe-editor-core" }
 ugoe-format = { path = "crates/ugoe-format", version = "0.0.0" }
+ugoe-fs = { path = "crates/ugoe-fs" }
 ugoe-headless = { path = "crates/ugoe-headless" }
 ugoe-mcp = { path = "crates/ugoe-mcp" }
 ugoe-mesher = { path = "crates/ugoe-mesher" }

@@ -51,6 +51,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mesher         自動メッシュ生成
   ugoe-rigging        キーフォームの推定 (加算合成・ミラー・深度からの回転)
   ugoe-headless       ヘッドレス描画 (GPU の用意・大きさと fit・時間を進める・PNG。CLI と MCP サーバで共有)
+  ugoe-fs             ファイルの読み書きの補助 (一時ファイルを経た置き換え・通常のファイルだけの読み込み。アプリ・MCP サーバ・エディタ中核で共有)
   ugoe-editor-core    ヘッドレスなエディタ中核 (Document / Command / Undo)
   ugoe-ai             AI プロバイダ抽象と自動リギング
   ugoe-cli            `ugoe` コマンド

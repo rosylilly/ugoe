@@ -6,7 +6,6 @@
 mod acl;
 pub(crate) mod ai;
 mod ai_provider;
-mod atomic_write;
 mod avatar;
 pub mod bindings;
 mod commands;
@@ -21,7 +20,6 @@ mod physics_check;
 mod project;
 mod proposals;
 mod psd;
-mod read_file;
 mod sample;
 mod screenshot;
 mod space;

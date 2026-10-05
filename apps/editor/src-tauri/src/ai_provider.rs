@@ -320,8 +320,7 @@ impl ProviderStore {
             let mut text = serde_json::to_string_pretty(&settings)
                 .map_err(|e| EditorError::Internal(e.to_string()))?;
             text.push('\n');
-            crate::atomic_write::write_atomic(path, text.as_bytes())
-                .map_err(|e| EditorError::io(path, e))?;
+            ugoe_fs::write_atomic(path, text.as_bytes()).map_err(|e| EditorError::io(path, e))?;
         }
         *self.lock() = settings;
         Ok(())

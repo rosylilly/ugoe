@@ -4,9 +4,7 @@
 // コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0024)。
 #[cfg(test)]
 mod acl;
-mod atomic_write;
 mod error;
-mod read_file;
 
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -18,9 +16,8 @@ use tauri::webview::{PermissionKind, PermissionResponse};
 use tauri::{DragDropEvent, Emitter, Manager, State, WebviewEvent, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
-use atomic_write::write_atomic;
 use error::CommandError;
-use read_file::{ReadError, read_regular_file};
+use ugoe_fs::{ReadError, read_regular_file, write_atomic};
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -67,19 +64,20 @@ async fn read_model_file(
         .map(Response::new)
 }
 
-/// `read_model_file` の中身。通常のファイルだけを読み、`max` バイトより大きいファイルは読まない (`read_file`)。
+/// `read_model_file` の中身。通常のファイルだけを読み、`max` バイトより大きいファイルは読まない (`ugoe_fs::read_regular_file`)。
 fn read_model(path: &Path, max: u64) -> Result<Vec<u8>, CommandError> {
     if !is_readable_path(path) {
         return Err(CommandError::not_model(path));
     }
     read_regular_file(path, max).map_err(|e| match e {
-        ReadError::Io(e) => CommandError::read_failed(path, &e),
         ReadError::TooLarge { len, max } => CommandError::too_large(path, len, max),
+        // 通常のファイルでなければ `file.read_failed` (`not a regular file`)。
+        e => CommandError::read_failed(path, &e.into()),
     })
 }
 
 /// JSON のファイル (トラッキングの記録など) を書く。パスは `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
-/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`atomic_write`)。
+/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`ugoe_fs::write_atomic`)。
 #[tauri::command]
 async fn write_json_file(
     access: State<'_, FileAccess>,
@@ -111,7 +109,7 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// スクリーンショット (T0420) の PNG を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path`
 /// (`save_file_dialog` で利用者が選んだもの。1 回だけ書ける)。拡張子が `.png` で、中身が PNG のものだけを書く。
-/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`atomic_write`)。
+/// 一時ファイルを経て置き換えるので、失敗しても前のファイルは残る (`ugoe_fs::write_atomic`)。
 #[tauri::command]
 async fn write_png_file(
     access: State<'_, FileAccess>,

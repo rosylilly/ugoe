@@ -1,16 +1,18 @@
-//! ファイルを、途中で失敗しても前の中身を壊さずに置き換える (T0687)。
+//! ファイルを、途中で失敗しても前の中身を壊さずに置き換える (T0687・T0728・T0552 の写しを T0025 でまとめた)。
 //!
 //! 行き先と同じディレクトリの一時ファイル `.<名前>.<プロセス ID>.<連番>.tmp` に書いて `sync_all` し、
 //! 閉じてから名前を変えて (`std::fs::rename`) 行き先を置き換える。書く・`sync`・名前の変更のどこで失敗しても
-//! 一時ファイルを消し、行き先にある前のファイルはそのまま残る。形はビューア (`apps/viewer/src-tauri/src/atomic_write.rs`、
-//! T0728) と MCP サーバの `StagedFile` (`crates/ugoe-mcp/src/host.rs`、T0552) と同じ。
+//! 一時ファイルを消し、行き先にある前のファイルはそのまま残る。
 //!
 //! - 同じディレクトリに置くのは、名前の変更が同じファイルシステムの中で 1 回で済む (別のファイルシステムへは
-//!   名前を変えられない) ため。先頭の `.` で、Unix の一覧では隠れる。
+//!   名前を変えられない) ため。先頭の `.` で、Unix の一覧では隠れる。末尾が `.tmp` なので、接尾辞で選ぶ読み込み
+//!   (`ugoe-editor-core` の `motions/*.motion.json` など) にも拾われない。
 //! - Windows の `std::fs::rename` は `MoveFileExW` (`MOVEFILE_REPLACE_EXISTING`) で、既にあるファイルも置き換える。
 //!   行き先をほかのアプリが削除の共有なしで開いているなどで置き換えられなければ、エラーを返して前のファイルを残す。
+//!   開いたままのファイルの名前は変えられないので、一時ファイルは名前を変える前に閉じる。
 //! - [`Access::Private`] は、一時ファイルを作るときから利用者だけが読める権限 (Unix の `0o600`) にする。
 //!   名前を変えると行き先はその権限を引き継ぐので、前のファイルの権限が広くても狭くなる。
+//! - 行き先のディレクトリは作らない (呼ぶ側が作る。作り方 (権限など) が呼ぶ側ごとに違うため)。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -19,7 +21,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 書くファイルの権限。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Access {
+pub enum Access {
     /// ふつうの権限 (umask に従う)。
     Default,
     /// 利用者だけが読み書きできる (Unix の `0o600`。トークンを含むファイル)。Windows では既定のまま。
@@ -27,15 +29,21 @@ pub(crate) enum Access {
 }
 
 /// `bytes` を `path` に書く。失敗しても `path` にある前のファイルは残る (モジュールの説明)。
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     StagedFile::write(path, bytes, Access::Default)?.commit()
+}
+
+/// [`write_atomic`] と同じだが、利用者だけが読める権限 ([`Access::Private`]) で書く (トークンや鍵を含むファイル)。
+pub fn write_atomic_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    StagedFile::write(path, bytes, Access::Private)?.commit()
 }
 
 /// 置き換える前のファイル: 行き先と同じディレクトリの一時ファイルに書いておき、[`StagedFile::commit`] で
 /// 名前を変えて置き換える。置き換えずに捨てると一時ファイルを消す。
 ///
 /// ほかの保存 (プロジェクトの保存) と組にして、両方が書けてから置き換えるときに使う (MCP の `save` の `bundle`)。
-pub(crate) struct StagedFile {
+#[derive(Debug)]
+pub struct StagedFile {
     temp: PathBuf,
     target: PathBuf,
     committed: bool,
@@ -43,7 +51,7 @@ pub(crate) struct StagedFile {
 
 impl StagedFile {
     /// `bytes` を一時ファイルに書いて `sync_all` し、閉じる。行き先はまだ変えない。
-    pub(crate) fn write(target: &Path, bytes: &[u8], access: Access) -> std::io::Result<Self> {
+    pub fn write(target: &Path, bytes: &[u8], access: Access) -> std::io::Result<Self> {
         Self::write_with(target, access, |file| file.write_all(bytes))
     }
 
@@ -68,14 +76,14 @@ impl StagedFile {
     }
 
     /// 名前を変えて行き先を置き換える。失敗すれば一時ファイルを消し、前のファイルを残す。
-    pub(crate) fn commit(mut self) -> std::io::Result<()> {
+    pub fn commit(mut self) -> std::io::Result<()> {
         std::fs::rename(&self.temp, &self.target)?;
         self.committed = true;
         Ok(())
     }
 
     /// 置き換える先のパス。
-    pub(crate) fn target(&self) -> &Path {
+    pub fn target(&self) -> &Path {
         &self.target
     }
 }
@@ -219,5 +227,13 @@ mod tests {
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         assert_eq!(names(dir), ["mcp-bridge.json"]);
+        // `write_atomic_private` も同じ。
+        let store = dir.join("api-clients.json");
+        std::fs::write(&store, b"{}").unwrap();
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic_private(&store, b"{\"key\":1}").unwrap();
+        let mode = std::fs::metadata(&store).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(std::fs::read(&store).unwrap(), b"{\"key\":1}");
     }
 }

@@ -5360,6 +5360,7 @@ dependencies = [
  "ugoe-ai",
  "ugoe-editor-core",
  "ugoe-format",
+ "ugoe-fs",
  "ugoe-mcp",
  "ugoe-model",
  "ugoe-psd",
@@ -5380,6 +5381,7 @@ dependencies = [
  "ugoe",
  "ugoe-core",
  "ugoe-format",
+ "ugoe-fs",
  "ugoe-mesher",
  "ugoe-model",
  "ugoe-motion",
@@ -5412,6 +5414,13 @@ dependencies = [
  "ugoe-model",
  "ugoe-physics",
  "ugoe-runtime",
+]
+
+[[package]]
+name = "ugoe-fs"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -5449,6 +5458,7 @@ dependencies = [
  "ugoe-ai",
  "ugoe-editor-core",
  "ugoe-format",
+ "ugoe-fs",
  "ugoe-headless",
  "ugoe-model",
  "ugoe-psd",
@@ -5566,6 +5576,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tungstenite",
  "ugoe",
+ "ugoe-fs",
  "ugoe-headless",
  "ugoe-studio-vcam",
  "zune-jpeg",
@@ -5600,6 +5611,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-os",
  "tempfile",
+ "ugoe-fs",
 ]
 
 [[package]]

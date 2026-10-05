@@ -22,7 +22,10 @@ const ASSETS = new Set(["ugoe-psd", "ugoe-mesher"]);
 const RIGGING = new Set(["ugoe-rigging"]);
 // ヘッドレス描画 (ugoe render と MCP サーバの render_png が共有する)
 const HEADLESS = new Set(["ugoe-headless"]);
-const TOOL_BASE = union(RUNTIME_TIER, ASSETS, RIGGING, HEADLESS, ["ugoe-editor-core"]);
+// ファイルの読み書きの補助 (一時ファイルを経た置き換え・通常のファイルだけの読み込み。T0025)。内部のクレートに依存しない葉なので、
+// ランタイム層だけに依存するビューアや、エディタの中核に依存しないスタジオにも許す
+const FS = new Set(["ugoe-fs"]);
+const TOOL_BASE = union(RUNTIME_TIER, ASSETS, RIGGING, HEADLESS, FS, ["ugoe-editor-core"]);
 
 // クレート -> 依存してよい内部クレート
 const ALLOWED = {
@@ -37,11 +40,11 @@ const ALLOWED = {
   ugoe: without(RUNTIME_TIER, "ugoe"),
   "ugoe-ffi": RUNTIME_TIER,
   "ugoe-wasm": RUNTIME_TIER,
-  // ビューア (apps/viewer): 描画は webview の ugoe-wasm が行う。Rust 側はランタイム層だけに依存してよい
-  "ugoe-viewer": RUNTIME_TIER,
+  // ビューア (apps/viewer): 描画は webview の ugoe-wasm が行う。Rust 側はランタイム層と ugoe-fs だけに依存してよい
+  "ugoe-viewer": union(RUNTIME_TIER, FS),
   // スタジオ (apps/studio、ADR 0028 の 1.): 指揮役はネイティブの Puppet。ランタイム層と ugoe-headless (仮想カメラの常駐の描画) に依存してよい。
   // エディタの中核と AI には依存しない (スタジオはモデルを編集しない)
-  "ugoe-studio": union(RUNTIME_TIER, HEADLESS, ["ugoe-studio-vcam"]),
+  "ugoe-studio": union(RUNTIME_TIER, HEADLESS, FS, ["ugoe-studio-vcam"]),
   // スタジオの仮想カメラ (apps/studio/vcam、ADR 0028 の 8.): OS の境界だけを持ち、内部のクレートに依存しない
   // (Windows の Frame Server が読み込む DLL にもなるので、小さく保つ)。unsafe を許す唯一のアプリのクレート
   "ugoe-studio-vcam": new Set(),
@@ -50,7 +53,8 @@ const ALLOWED = {
   "ugoe-mesher": CORE,
   "ugoe-rigging": union(EVAL, ["ugoe-mesher"]),
   "ugoe-headless": RUNTIME_TIER,
-  "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING),
+  "ugoe-fs": new Set(),
+  "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING, FS),
   "ugoe-ai": TOOL_BASE,
   "ugoe-cli": union(TOOL_BASE, ["ugoe-ai"]),
   "ugoe-mcp": union(TOOL_BASE, ["ugoe-ai"]),

@@ -15,8 +15,7 @@ pub fn write_json_file(path: String, contents: String) -> IpcResult<()> {
     if !is_json_path(&path) {
         return Err(EditorError::NotJsonFile(path.display().to_string()).into());
     }
-    crate::atomic_write::write_atomic(&path, contents.as_bytes())
-        .map_err(|e| EditorError::io(&path, e).into())
+    ugoe_fs::write_atomic(&path, contents.as_bytes()).map_err(|e| EditorError::io(&path, e).into())
 }
 
 fn is_json_path(path: &Path) -> bool {

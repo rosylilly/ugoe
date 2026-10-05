@@ -1,7 +1,7 @@
 ---
 id: T0025
 title: 一時ファイルを経た置き換えを 1 か所にまとめ、MCP の保存の書き込みをロックの外へ出す
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-fs, ugoe-editor-core, ugoe-mcp, apps/editor, apps/viewer, apps/studio, Cargo.toml, Cargo.lock, scripts, commitlint.config.mjs, AGENTS.md, docs]
 depends_on: [T0687]
@@ -25,10 +25,10 @@ assignee: claude-worker-T0025
 
 ## 受け入れ条件
 
-- [ ] 置き場所を決めた (上の判断)。利用者の判断が要るなら案と推奨をメモに書いて止まる
-- [ ] 3 つのアプリ・`ugoe-mcp`・`ugoe-editor-core` の写しを、まとめた 1 つに置き換えた。失敗したときに前のファイルが残るテストと、利用者だけが読める権限で作るテストがまとめた側にある
+- [x] 置き場所を決めた (上の判断)。利用者の判断が要るなら案と推奨をメモに書いて止まる
+- [x] 3 つのアプリ・`ugoe-mcp`・`ugoe-editor-core` の写しを、まとめた 1 つに置き換えた。失敗したときに前のファイルが残るテストと、利用者だけが読める権限で作るテストがまとめた側にある
 - [x] エディタの MCP の `save_project` が、ロックを放してからファイルを書く (書いている間にほかの読むだけのツールが答えるテスト)
-- [ ] `just ci` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -86,3 +86,35 @@ assignee: claude-worker-T0025
     editor-core の読み込みを通常のファイルに絞るのは T1607 で起票した (置き場所が決まれば共有の補助を使う)。
 
 - **判断 (2026-10-05、利用者の判断):** 案 (b)。ツール層に、ほかの ugoe クレートに依存しない MIT の小さなクレート `ugoe-fs` を新しく作り (publish = false、依存は std だけ)、一時ファイル経由の書き込みと通常のファイルの読み込みをまとめる。エディタ・ビューア・スタジオ・ugoe-mcp・ugoe-editor-core から使う。`scripts/check-layers.mjs`・`scripts/ci-groups.mjs`・`commitlint.config.mjs` の SCOPES (`fs`)・AGENTS.md のリポジトリ構成に登録する。
+- T0025 (やったこと、案 (b) の置き換え):
+  - `crates/ugoe-fs` を作った (MIT・`publish = false`・依存は std だけ、テストに `tempfile`)。中身はエディタの `atomic_write.rs` を移した
+    `write_atomic`・`StagedFile`・`Access` と、トークン向けの `write_atomic_private` (= `StagedFile::write(.., Access::Private)?.commit()`)、
+    3 つのアプリの `read_file.rs` を移した `read_regular_file`・`ReadError` (`std::error::Error` を足した)。テスト (置き換え・途中の失敗で
+    前のファイルが残る・名前を変えられないときに一時ファイルを消す・捨てる・`0o600`・通常のファイルだけを読む) も移した。
+    置き場所の理由はクレートの README に書いた。
+  - 登録: `Cargo.toml` の `[workspace.dependencies]`、`scripts/check-layers.mjs` (`"ugoe-fs": new Set()`。`FS` を `TOOL_BASE` に入れ、
+    ビューア・スタジオ・editor-core にも許した)、`scripts/ci-groups.mjs` (`tools` と `OS_CRATES`。Windows・macOS の CI でも置き換えのテストを流す)、
+    commitlint の SCOPES (`fs`)、AGENTS.md のリポジトリ構成、docs/architecture.md の層の表、docs/testing.md (tools のジョブと OS_CRATES)。
+  - 置き換えた写し: エディタとビューアの `atomic_write.rs`・3 つのアプリの `read_file.rs` (消した)、スタジオの `Profile::write`
+    (`<名前>.tmp`・`sync_all` なし) と `ApiSettings::write` (`<名前>.tmp` に `0o600`)、`ugoe-mcp` の `StagedFile` (rename の前に閉じない)・
+    `mcpb::Bundle::write` (`<名前>.tmp`・`sync_all` なし)・`discovery::write` (`<名前>.<pid>.tmp`。メモに無かった 7 つ目の写し)、
+    `ugoe-editor-core` の `write_if_changed` (`<名前>.ugoe-tmp`・rename の前に閉じない)。どれも一時ファイルの名前が
+    `.<名前>.<pid>.<連番>.tmp` に揃い、`sync_all` して閉じてから名前を変え、失敗すれば一時ファイルを消す。
+    スタジオの最近のプロファイルの一覧 (`RecentProfiles::write`。`std::fs::write` で直に書いていた) も `write_atomic` にした。
+  - `.ugoeproj` の一時ファイルの名前が変わったので docs/spec/file-formats.md を直した (残った一時ファイルは `.` で始まるので、
+    `list_files` が読み込み・指紋・古いファイルの削除から外す)。テスト `project_tests::leftover_temporary_files_are_ignored`。
+    英語の公開仕様 (`spec/`) にプロジェクトの形式の節は無いので直していない。
+  - docs/editor.md・docs/studio.md・apps/viewer/README.md の参照を `ugoe_fs` に直した。ビューアの README の `write_png_file` を共有しない理由から
+    「共有するクレートが無い」を外した (`write_png_file` の中身 (PNG の検査・パスの復号) は T0730 の候補のまま残る)。
+  - `ReadError` に `NotRegularFile` を足した (アプリは `InvalidInput` の `Io` で見分けていたが、パスの NUL などの `InvalidInput` と
+    区別できないため)。`std::io::Error` への `From` (`InvalidInput`・`FileTooLarge`) を足し、アプリの文 (`not a regular file`) は変わらない。
+    T1607 が editor-core に入れた `project::read::read_regular_file_as` (アプリの写しと同じ形) も、`ugoe_fs::read_regular_file` を呼んで
+    `ProjectError` に替えるだけにした。
+  - Windows・macOS では確かめていない (Linux だけ。`ugoe-fs` を OS_CRATES に入れたので CI の rust (windows)・rust (macos) で流れる)。
+- 起票の候補 (残り):
+  - `save_project_as` もロックの外で書く (上の候補のまま)。
+  - T0730 の `write_png_file` の共有 (ビューアとエディタ。GPL の共有の場所が要るかは別に判断)。
+  - `ugoe-mcp` の `PsdSource::load_with` (`autorig.rs`) は `metadata` を見てから `std::fs::read` で読む (開いた後に見直さず、大きさの上限も無い)。
+    `ugoe_fs::read_regular_file` に PSD の上限 (エディタは 2 GiB) を付けて読む。
+  - `ugoe-headless` の `read_file` (`lib.rs`) も同じ形の読み込み。ugoe-headless は今の依存方向では `ugoe-fs` に依存できない
+    (`"ugoe-headless": RUNTIME_TIER`)。許すかは別に判断。

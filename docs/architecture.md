@@ -43,11 +43,12 @@
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
 | T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
 | T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層 (`ugoe render` と `ugoe-mcp` の `render_png` が共有する) |
+| T1 ファイルの補助 | `ugoe-fs` | なし (std だけ。一時ファイルを経た置き換えと通常のファイルだけの読み込みを、アプリ・`ugoe-mcp`・`ugoe-editor-core` で共有する。T0025) |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
-| アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層だけ。描画は webview の `ugoe-wasm` |
-| アプリ (配信) | `apps/studio` (`ugoe-studio`) | ランタイム層と `ugoe-headless` (仮想カメラの描画)・`ugoe-studio-vcam` (`apps/studio/vcam`。仮想カメラの OS の境界。内部のクレートに依存しない。`unsafe` を許す例外)。出力ウィンドウとブラウザソースの描画は `ugoe-wasm` ([studio.md](studio.md)) |
+| アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層と `ugoe-fs` だけ。描画は webview の `ugoe-wasm` |
+| アプリ (配信) | `apps/studio` (`ugoe-studio`) | ランタイム層と `ugoe-headless` (仮想カメラの描画)・`ugoe-fs`・`ugoe-studio-vcam` (`apps/studio/vcam`。仮想カメラの OS の境界。内部のクレートに依存しない。`unsafe` を許す例外)。出力ウィンドウとブラウザソースの描画は `ugoe-wasm` ([studio.md](studio.md)) |
 
 層を分ける理由:
 

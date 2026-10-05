@@ -28,7 +28,7 @@ use crate::commands::{blocking, lock};
 use crate::error::{EditorError, IpcResult};
 use crate::project::{absolute_path, lock_both};
 use crate::proposals::Base;
-use crate::read_file::read_regular_file;
+use ugoe_fs::read_regular_file;
 
 /// 法線マップとして読む PNG の大きさの上限 (スタジオの背景の画像と同じ)。
 const MAX_NORMAL_MAP_BYTES: u64 = 64 * 1024 * 1024;
@@ -362,7 +362,7 @@ pub async fn assign_texture_normal_map(
 ) -> IpcResult<ApplyReport> {
     blocking(app, move |state| {
         let path = absolute_path(&path)?;
-        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`read_file`)。
+        // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
         let png = read_regular_file(&path, MAX_NORMAL_MAP_BYTES)
             .map_err(|e| EditorError::io(&path, e))?;
         let mut document = lock(state)?;

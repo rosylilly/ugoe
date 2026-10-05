@@ -23,6 +23,7 @@ const SCOPES = [
   "rigging",
   "mcp",
   "headless",
+  "fs",
   // tests/conformance (ugoe-conformance)
   "conformance",
   // bindings/

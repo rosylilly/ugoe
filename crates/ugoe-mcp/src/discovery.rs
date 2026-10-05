@@ -18,7 +18,7 @@
 //! [`crate::wsl`]。
 
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -121,24 +121,7 @@ pub fn write(path: &Path, discovery: &Discovery) -> io::Result<()> {
         create_private_dir(dir)?;
     }
     let bytes = serde_json::to_vec_pretty(discovery).map_err(io::Error::other)?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-    let mut temp_name = file_name.to_owned();
-    temp_name.push(format!(".{}.tmp", std::process::id()));
-    let temp = path.with_file_name(temp_name);
-    let _ = fs::remove_file(&temp);
-    let written = (|| {
-        let mut file = create_private_file(&temp)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temp, path)
-    })();
-    if written.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    written
+    ugoe_fs::write_atomic_private(path, &bytes)
 }
 
 /// 発見用のファイルを読む。形の版が違えば [`DiscoveryError::Format`]。
@@ -217,24 +200,6 @@ fn create_private_dir(dir: &Path) -> io::Result<()> {
 fn create_private_dir(dir: &Path) -> io::Result<()> {
     // Windows の %LOCALAPPDATA% の下は、利用者ごとのアクセス権を受け継ぐ。
     fs::create_dir_all(dir)
-}
-
-#[cfg(unix)]
-fn create_private_file(path: &Path) -> io::Result<fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-}
-
-#[cfg(not(unix))]
-fn create_private_file(path: &Path) -> io::Result<fs::File> {
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
 }
 
 #[cfg(test)]

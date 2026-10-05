@@ -69,8 +69,6 @@ pub(crate) const TEXTURES_DIR: &str = "textures";
 pub(crate) const MOTION_SUFFIX: &str = ".motion.json";
 pub(crate) const EXPRESSION_SUFFIX: &str = ".expression.json";
 pub(crate) const TEXTURE_SUFFIX: &str = ".png";
-/// 一時ファイルの接尾辞。書き込みに失敗して残っても、読み込みでは無視される。
-const TEMP_SUFFIX: &str = ".ugoe-tmp";
 const GITIGNORE_CONTENT: &str = ".ugoe-cache/\n";
 
 #[derive(Debug, thiserror::Error)]
