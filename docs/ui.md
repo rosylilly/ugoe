@@ -58,8 +58,21 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
     を出し、どちらも「作り直す」ボタンを出す (Player の `canRestart`・ViewportController の `canRestart`。ボタンはビューアの描く領域と
     エディタのビューポートの右上)。押すと `PuppetSurface.restart()` が同じ container で作り直し (回数は数え直す)、`created(puppet, true)` で
     GPU を失ったときの作り直しと同じく、開いていたモデル・付けていたモジュール・パラメータの値を戻す。作れなければ上と同じく待って試し直し、
-    続けば諦めてまたボタンを出す。描画を始められないだけ (wasm が無い・WebGL2 も無い) のときはボタンを出さない (押しても変わらないため)。
+    続けば諦めてまたボタンを出す。最初の `attach` で GPU やブラウザの都合で作れなかった (`failed` に `CreateError`) ときも、時間を置けば
+    作れることがあるのでボタンを出す (T0941)。描画を始められないだけ (wasm が無い・`code` を持たない例外) のときはボタンを出さない
+    (押しても変わらないため)。
     スタジオの出力ウィンドウは画面に知らせを出さないので、ボタンも置かない。
+- **失敗の文 (T0941):** どの文がどこから来るか。
+  | 場面 | Player (ビューア・スタジオ) | エディタのビューポート |
+  | --- | --- | --- |
+  | 続けて失って諦めた (`GpuLostRepeatedlyError`) | `player` の `errors.gpuLostRepeatedly` | `editor` の `viewport.gpuLostRepeatedly` |
+  | 作れなかった (`CreateError`。`code` ごと) | `player` の `createError.*` (`describeCreateError`) | `editor` の `viewport.createError.*` (`createErrorText`) |
+  | 作れなかった (ほかの例外・知らないコード) | `player` の `errors.renderStart` に例外の文を埋める | 例外の文 (`errorText`) |
+  | 読み込みの失敗 (`LoadError`) | `player` の `loadError.*` (`describeLoadError`) | 同じ。ただし `device_lost` は `editor` の `viewport.deviceLost` (`loadErrorText`) |
+  | 読み戻しの失敗 (`RenderError` の `device_lost`) | `player` の `loadError.deviceLost` (`describeRenderError`) | `editor` の `viewport.deviceLost` (`screenshotErrorText`) |
+
+  `player` のカタログの GPU が止まった文は「アプリを起動し直して (ブラウザではページを読み込み直して)」で、エディタはエディタを起動し直す
+  案内にする。`CreateError` の文はどれも「描画を始められません」の理由と、できること (ほかのタブ・ウィンドウを閉じる・待って「作り直す」) を書く。
 - **devicePixelRatio:** ResizeObserver は倍率だけの変化を知らせないので、`PuppetSurface` が `matchMedia("(resolution: …dppx)")` で聞き、
   描画バッファの大きさを合わせ直して `pixelRatioChanged` で知らせる。CSS ピクセルと描画バッファの画素の換算には `pixelRatio` を使う。
 - **作り直した後の状態:** 背景・光源・モデル・パラメータの値を渡し直すのは使う側 (`created(puppet, recovered)`。値は `lost` で控える)。

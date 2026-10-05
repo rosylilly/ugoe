@@ -4,8 +4,8 @@
   操作: ホイールでカーソル位置を中心にズーム、中ボタン (または Alt + 左ボタン) のドラッグでパン、
   「Fit」でキャンバス全体を表示。「Screenshot」で今の表示を PNG で保存する (saveScreenshot.ts。WebPuppet.read_pixels で
   取るので、オーバーレイは写らない。docs/editor.md#スクリーンショット)。左ボタンはツール (オーバーレイ) のために空けておく。
-  GPU を失って戻るのを待つ間は右上に「GPU の復元を待っています」を、続けて失って諦めたら「作り直す」ボタンを出す
-  (controller.canRestart。docs/ui.md#webpuppet-の寿命。T0938)。
+  GPU を失って戻るのを待つ間は右上に「GPU の復元を待っています」を、続けて失って諦めた・作れなかったら「作り直す」ボタンを出す
+  (controller.canRestart。docs/ui.md#webpuppet-の寿命。T0938・T0941)。
 
   オーバーレイ (ギズモ・選択枠・メッシュ編集など、T0606 以降):
   `overlay` スニペットに描く。ViewportController を受け取り、`controller.transform`

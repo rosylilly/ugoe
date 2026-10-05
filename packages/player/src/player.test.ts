@@ -171,6 +171,49 @@ describe("Player", () => {
     expect(restarted.puppet.parameter("AngleX")).toBe(0.5);
   });
 
+  it("translates a CreateError and offers a restart", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const createError = () =>
+      Object.assign(new Error("could not get a webgl2 context"), {
+        name: "CreateError",
+        code: "context_unavailable",
+      });
+    const p = player();
+    const attached = p.attach(container);
+    // WebGPU で作れず、WebGL2 でも作れない。
+    await settle();
+    pending[0]?.reject(createError());
+    await settle();
+    pending[1]?.reject(createError());
+    await attached;
+    expect(p.status).toBe("unavailable");
+    expect(p.error).toBe(t("createError.contextUnavailable"));
+    expect(p.canRestart).toBe(true);
+
+    const restarting = p.restart();
+    await settle();
+    const restarted = fakePuppet();
+    pending[2]?.resolve(restarted.puppet);
+    await restarting;
+    expect(p.status).toBe("empty");
+    expect(p.error).toBeNull();
+  });
+
+  it("keeps the exception text of a failure without a known code", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.reject(new Error("no webgpu"));
+    await settle();
+    pending[1]?.reject(new Error("unknown backend"));
+    await attached;
+    expect(p.error).toBe(t("errors.renderStart", { message: "unknown backend" }));
+    expect(p.canRestart).toBe(false);
+  });
+
   it("does not offer a restart when drawing could not start", async () => {
     const p = player({ loadWasm: async () => null });
     await p.attach(container);

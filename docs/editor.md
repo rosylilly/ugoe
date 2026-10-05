@@ -2006,7 +2006,11 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - モデルの読み込み (`load_bundle`・`load_json`) の失敗は、wasm の `LoadError` の `code` と補足の値から今の言語の文にします
   (ビューアと同じ `@ugoe/player` の `describeLoadError`。訳はそのカタログ (名前空間 `player`) の `loadError`。T1611)。
   編集中もプレビューモードも同じ `ViewportController` で読むので、どちらにも出ます。知らない `code` と `LoadError` でない例外は
-  wasm の文 (英語) のままです。
+  wasm の文 (英語) のままです。GPU が止まった (`device_lost`) ときだけは、ビューアの「アプリを起動し直して」ではなくエディタのカタログの
+  文 (`viewport.deviceLost`。エディタを起動し直す案内。スクリーンショットと同じ文) にします (`viewportErrors.ts` の `loadErrorText`。T0941)。
+- WebPuppet を GPU やブラウザの都合で作れなかった (`CreateError`。T0475) ときは、`code` ごとのエディタのカタログの文
+  (`viewport.createError.*`) をビューポートに出し、「作り直す」ボタンも出します (`viewportErrors.ts` の `createErrorText`。T0941)。
+  知らない `code` と、`code` を持たない例外は例外の文のままで、ボタンは出しません ([ui.md](ui.md#webpuppet-の寿命))。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
 
 ### スクリーンショット
@@ -2022,8 +2026,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - 読み戻してから保存のダイアログ (`fileDialogs().saveFile`、フィルタ `.png`) を開くので、写るのは押したときの姿です。
   最初の場所はプロジェクトの隣 (保存していなければドキュメント、なければホーム)、既定の名前は `<プロジェクト名>-<年月日>-<時分秒>.png`。
   拡張子が無ければ `.png` を付けます (保存のダイアログが付ける。[ファイルダイアログ](#ファイルダイアログ))。保存した場所は Toast で知らせ、失敗の理由はビューポートの右上に閉じるまで出します (`Notice`。T0664)。
-  読み戻しで GPU が止まった (`RenderError` の `device_lost`。T0465) ときの理由は、エディタのカタログの文 (`viewport.screenshot.deviceLost`。
-  起動し直す案内) にします (`saveScreenshot.ts` の `screenshotErrorText`。T0940)。
+  読み戻しで GPU が止まった (`RenderError` の `device_lost`。T0465) ときの理由は、エディタのカタログの文 (`viewport.deviceLost`。
+  起動し直す案内。読み込みの `device_lost` と同じ) にします (`saveScreenshot.ts` の `screenshotErrorText`。T0940)。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が
   書きます。バイト列は本文でそのまま送り、パスはヘッダー `x-ugoe-path` (`encodeURIComponent`) で渡します。絶対パス・拡張子 `.png`・
   中身が PNG (先頭の署名) のものだけを書きます。

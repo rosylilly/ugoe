@@ -42,6 +42,6 @@ export async function saveViewportScreenshot(
  */
 export function screenshotErrorText(e: unknown): string {
   const code = errorCode(e, ["RenderError"]);
-  if (code === "device_lost") return t("viewport.screenshot.deviceLost");
+  if (code === "device_lost") return t("viewport.deviceLost");
   return code !== null ? describeRenderError(e) : errorText(e);
 }

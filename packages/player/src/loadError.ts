@@ -100,3 +100,29 @@ export function describeRenderError(e: unknown): string {
   if (key !== undefined) return lookup(key, { detail: (e as Error).message });
   return e instanceof Error ? e.message : String(e);
 }
+
+/** 作成の失敗 (`CreateError`) の `code` ごとの文のキー。 */
+const CREATE_ERROR_KEYS: Record<string, string> = {
+  backend_unavailable: "createError.backendUnavailable",
+  context_unavailable: "createError.contextUnavailable",
+  adapter_unavailable: "createError.adapterUnavailable",
+  device_unavailable: "createError.deviceUnavailable",
+};
+
+/**
+ * `e` が作成の失敗 (`CreateError`。T0475) か。どれも GPU やブラウザの都合で、時間を置いて作り直せば作れることがある
+ * (知らないコードも同じに扱う)。
+ */
+export function isCreateFailure(e: unknown): boolean {
+  return errorCode(e, ["CreateError"]) !== null;
+}
+
+/**
+ * `WebPuppet.create` の失敗 (`CreateError`。T0475。コードの一覧は crates/ugoe-wasm/README.md#作成の失敗-t0475) を、
+ * 今の言語の文にする (「描画を始められません」から始まる 1 つの文)。`CreateError` でない例外と知らないコードは `null`。
+ */
+export function describeCreateError(e: unknown): string | null {
+  const code = errorCode(e, ["CreateError"]);
+  const key = code === null ? undefined : CREATE_ERROR_KEYS[code];
+  return key === undefined ? null : lookup(key);
+}

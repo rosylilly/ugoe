@@ -2735,12 +2735,18 @@
     "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Press “Try again” once the GPU is back.",
     "gpuWaiting": "Waiting for the GPU to be restored…",
     "restart": "Try again",
+    "deviceLost": "The GPU stopped working. Restart the editor to draw again.",
+    "createError": {
+      "backendUnavailable": "Cannot start drawing because this browser does not support WebGPU.",
+      "contextUnavailable": "Cannot start drawing because a GPU context could not be created. Close other windows, or wait a moment, then press “Try again”.",
+      "adapterUnavailable": "Cannot start drawing because no usable GPU was found. Check the GPU driver, then press “Try again”.",
+      "deviceUnavailable": "Cannot start drawing because the GPU could not be prepared. Wait a moment, then press “Try again”."
+    },
     "screenshot": {
       "label": "Screenshot",
       "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",
       "saved": "Saved screenshot to {{path}}",
       "failed": "Cannot save the screenshot: {{error}}",
-      "deviceLost": "The GPU stopped working. Restart the editor to draw again.",
       "dialogTitle": "Save Screenshot"
     },
     "fit": {

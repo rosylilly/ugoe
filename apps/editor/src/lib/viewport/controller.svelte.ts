@@ -9,13 +9,14 @@
 //   @ugoe/player の PuppetSurface に任せる (Player と共有。T0932)。
 
 import {
-  describeLoadError,
   GpuLostRepeatedlyError,
+  isCreateFailure,
   PuppetSurface,
   type Screenshot,
 } from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
+import { createErrorText, loadErrorText } from "./viewportErrors";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
 /** ビューポートに表示するモデル。bundle があればテクスチャ付きで、無ければ JSON (白いテクスチャ) で表示する。 */
@@ -65,8 +66,8 @@ export class ViewportController {
   /** 使っているバックエンド ("webgpu" / "webgl2")。 */
   backend = $state<string | null>(null);
   /**
-   * GPU を続けて失って描画を止めた (`status` は `error`)。`restart()` で作り直せる (ビューポートに「作り直す」ボタンを出す。
-   * docs/ui.md#webpuppet-の寿命。T0938)。
+   * GPU を続けて失って描画を止めた・GPU やブラウザの都合 (`CreateError`) で作れなかった (`status` は `error`)。`restart()` で
+   * 作り直せる (ビューポートに「作り直す」ボタンを出す。docs/ui.md#webpuppet-の寿命。T0938・T0941)。
    */
   canRestart = $state(false);
   /** パラメータの表示中の値 (ID → 値)。モデルを読み直しても同じ ID の値は保たれる。 */
@@ -101,10 +102,11 @@ export class ViewportController {
     loadWasm: loadUgoeWasm,
     created: (puppet) => this.#setUp(puppet),
     failed: (e) => {
-      this.canRestart = e instanceof GpuLostRepeatedlyError;
+      // GPU を続けて失ったときと、GPU やブラウザの都合で作れなかったとき (`CreateError`) は、作り直せば描けることがある。
+      this.canRestart = e instanceof GpuLostRepeatedlyError || isCreateFailure(e);
       this.status = "error";
       this.message =
-        e instanceof GpuLostRepeatedlyError ? t("viewport.gpuLostRepeatedly") : errorText(e);
+        e instanceof GpuLostRepeatedlyError ? t("viewport.gpuLostRepeatedly") : createErrorText(e);
     },
     // GPU が戻るのを待つ間 (WebGL2 の復元・作り直しの試し直し) は描かず、そう出す。作り直せたら `#setUp` が消す。
     waiting: () => {
@@ -150,7 +152,7 @@ export class ViewportController {
   }
 
   /**
-   * GPU を続けて失って描画を止めた後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。表示しているモデルと
+   * GPU を続けて失って描画を止めた後・作れなかった後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。表示しているモデルと
    * パラメータの値は `#setUp` が渡し直す。作り直しの回数は数え直す。
    */
   async restart(): Promise<void> {
@@ -523,9 +525,10 @@ export class ViewportController {
       }
       this.requestRender();
     } catch (e) {
-      // 読み込みの失敗 (`LoadError`。T0434) はビューアと同じ訳 (@ugoe/player のカタログ) にする (T1611)。
+      // 読み込みの失敗 (`LoadError`。T0434) はビューアと同じ訳 (@ugoe/player のカタログ) にする (T1611)。GPU が止まったものは
+      // エディタのカタログの文 (T0941)。
       this.status = "error";
-      this.message = describeLoadError(e);
+      this.message = loadErrorText(e);
     }
   }
 

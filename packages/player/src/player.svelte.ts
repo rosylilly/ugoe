@@ -54,7 +54,7 @@ import {
   saveLighting,
   toLightingJson,
 } from "./lighting";
-import { describeLoadError } from "./loadError";
+import { describeCreateError, describeLoadError, isCreateFailure } from "./loadError";
 import { parseLoadWarnings } from "./loadWarnings";
 import { detectModelKind, type FileLocation, type ModelFile, type ModuleToOpen } from "./modelFile";
 import { type ModelIdentity, type ModelMemory, modelIdentity, sameModel } from "./modelMemory";
@@ -124,7 +124,10 @@ export class Player {
    * 画面には「GPU の復元を待っています」を出す (T0938)。
    */
   waitingForGpu = $state(false);
-  /** GPU を続けて失って描画を止めた。`restart()` で作り直せる (画面には「作り直す」ボタンを出す。T0938)。 */
+  /**
+   * GPU を続けて失って描画を止めた・GPU やブラウザの都合 (`CreateError`) で作れなかった。`restart()` で作り直せる
+   * (画面には「作り直す」ボタンを出す。T0938・T0941)。
+   */
   canRestart = $state(false);
   sections = $state<ParameterSection[]>([]);
   /** パラメータの現在値 (ID → 値)。 */
@@ -309,12 +312,13 @@ export class Player {
       },
       failed: (e) => {
         this.waitingForGpu = false;
-        this.canRestart = e instanceof GpuLostRepeatedlyError;
+        // GPU を続けて失ったときと、GPU やブラウザの都合で作れなかったとき (`CreateError`) は、作り直せば描けることがある。
+        this.canRestart = e instanceof GpuLostRepeatedlyError || isCreateFailure(e);
         this.status = "unavailable";
         this.error =
           e instanceof GpuLostRepeatedlyError
             ? t("errors.gpuLostRepeatedly")
-            : t("errors.renderStart", { message: message(e) });
+            : (describeCreateError(e) ?? t("errors.renderStart", { message: message(e) }));
       },
       lost: () => {
         this.#carry = { ...this.values };
@@ -362,7 +366,7 @@ export class Player {
   }
 
   /**
-   * GPU を続けて失って描画を止めた後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。開いていたモデルと
+   * GPU を続けて失って描画を止めた後・作れなかった後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。開いていたモデルと
    * 付けていたモジュールを読み直し、パラメータの値を戻す (GPU を失ったときの作り直しと同じ)。作り直しの回数は数え直す。
    */
   async restart(): Promise<void> {

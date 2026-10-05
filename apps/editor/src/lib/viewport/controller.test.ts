@@ -175,6 +175,54 @@ describe("ViewportController", () => {
     }
   });
 
+  it("translates a CreateError and offers a restart", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const createError = () =>
+        Object.assign(new Error("could not get a webgl2 context"), {
+          name: "CreateError",
+          code: "context_unavailable",
+        });
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      // WebGPU で作れず、WebGL2 でも作れない。
+      await settle();
+      pending[0]?.reject(createError());
+      await settle();
+      pending[1]?.reject(createError());
+      await attached;
+      expect(controller.status).toBe("error");
+      expect(controller.message).toBe(t("viewport.createError.contextUnavailable"));
+      expect(controller.canRestart).toBe(true);
+
+      const restarting = controller.restart();
+      await settle();
+      pending[2]?.resolve(fakePuppet().puppet);
+      await restarting;
+      expect(controller.status).toBe("ready");
+      expect(controller.message).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("keeps the exception text and no restart for a failure without a code", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      pending[0]?.reject(new Error("no webgpu"));
+      await settle();
+      pending[1]?.reject(new Error("unknown backend"));
+      await attached;
+      expect(controller.message).toBe("unknown backend");
+      expect(controller.canRestart).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("stops drawing and says so after losing the WebGL context repeatedly", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let now = 0;

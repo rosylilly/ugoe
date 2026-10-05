@@ -2672,12 +2672,18 @@
     "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。GPU が戻ったら「作り直す」を押してください",
     "gpuWaiting": "GPU の復元を待っています…",
     "restart": "作り直す",
+    "deviceLost": "GPU が止まりました。描き直すには、エディタを起動し直してください。",
+    "createError": {
+      "backendUnavailable": "このブラウザは WebGPU に対応していないため、描画を始められません",
+      "contextUnavailable": "GPU のコンテキストを作れないため、描画を始められません。ほかのウィンドウを閉じるか、少し待ってから「作り直す」を押してください",
+      "adapterUnavailable": "使える GPU が見つからないため、描画を始められません。GPU のドライバーを確かめてから「作り直す」を押してください",
+      "deviceUnavailable": "GPU を使う準備ができないため、描画を始められません。少し待ってから「作り直す」を押してください"
+    },
     "screenshot": {
       "label": "スクリーンショット",
       "tooltip": "今の表示を PNG の画像で保存します (ギズモなどの重ね描きは写りません)",
       "saved": "スクリーンショットを {{path}} に保存しました",
       "failed": "スクリーンショットを保存できません: {{error}}",
-      "deviceLost": "GPU が止まりました。描き直すには、エディタを起動し直してください。",
       "dialogTitle": "スクリーンショットを保存"
     },
     "fit": {

@@ -1,7 +1,13 @@
 import { setLocale } from "@ugoe/i18n";
 import { beforeEach, describe, expect, it } from "vitest";
 import { describeDressUpError } from "./dressUp";
-import { describeLimitError, describeLoadError, describeRenderError } from "./loadError";
+import {
+  describeCreateError,
+  describeLimitError,
+  describeLoadError,
+  describeRenderError,
+  isCreateFailure,
+} from "./loadError";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
@@ -112,5 +118,41 @@ describe("describeRenderError", () => {
     expect(describeRenderError(loadError("device_lost", {}, "load"))).toBe("load");
     expect(describeRenderError(new Error("plain"))).toBe("plain");
     expect(describeRenderError("text")).toBe("text");
+  });
+});
+
+describe("describeCreateError", () => {
+  const createError = (code: string) => codedError("CreateError", code, {}, "wasm text");
+
+  it("translates every code of crates/ugoe-wasm/README.md#作成の失敗-t0475", () => {
+    expect(describeCreateError(createError("backend_unavailable"))).toBe(
+      "このブラウザは WebGPU に対応していないため、描画を始められません",
+    );
+    expect(describeCreateError(createError("context_unavailable"))).toBe(
+      "GPU のコンテキストを作れないため、描画を始められません。ほかのタブやウィンドウを閉じるか、少し待ってから「作り直す」を押してください",
+    );
+    expect(describeCreateError(createError("adapter_unavailable"))).toContain(
+      "使える GPU が見つからない",
+    );
+    expect(describeCreateError(createError("device_unavailable"))).toContain(
+      "GPU を使う準備ができない",
+    );
+    setLocale("en");
+    expect(describeCreateError(createError("context_unavailable"))).toBe(
+      "Cannot start drawing because a GPU context could not be created. Close other tabs or windows, or wait a moment, then press “Try again”.",
+    );
+  });
+
+  it("returns null for unknown codes and other errors", () => {
+    expect(describeCreateError(createError("something_new"))).toBeNull();
+    expect(describeCreateError(codedError("LoadError", "context_unavailable"))).toBeNull();
+    expect(describeCreateError(new Error("plain"))).toBeNull();
+    expect(describeCreateError("text")).toBeNull();
+  });
+
+  it("tells a CreateError apart (with any code)", () => {
+    expect(isCreateFailure(createError("something_new"))).toBe(true);
+    expect(isCreateFailure(new Error("plain"))).toBe(false);
+    expect(isCreateFailure(Object.assign(new Error("x"), { name: "CreateError" }))).toBe(false);
   });
 });

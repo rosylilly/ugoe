@@ -457,6 +457,7 @@ try {
   組み込みの誤りなので `code` を持たない `Error` のまま。
 - 種類は `src/create.rs` の `CreateError`。使う側: `@ugoe/player` の `PuppetSurface` と `<ugoe-avatar>` は、作り直しの途中の失敗を
   「GPU がまだ戻っていない」として待って試し直し、作り直しの回数に数える ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
+  画面の文は `@ugoe/player` の `describeCreateError` (エディタは `viewport.createError.*`) が今の言語に訳す (T0941)。
   TypeScript の型は npm の `@ugoe/runtime` の `UgoeCreateError`・`isCreateError` (`bindings/web/src/create-errors.ts`)。
 
 ### `code` の一覧 (T0452)

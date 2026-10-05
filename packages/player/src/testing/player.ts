@@ -9,15 +9,19 @@ import { tracked } from "./faceTracking";
 import { FakeCanvas, type FakeOptions, fakePuppet } from "./fakePuppet";
 
 /** WebPuppet.create が返す約束 (テストが好きな時に解く)。 */
-export const pending: { canvas: FakeCanvas; resolve: (p: WebPuppet) => void }[] = [];
+export const pending: {
+  canvas: FakeCanvas;
+  resolve: (p: WebPuppet) => void;
+  reject: (e: unknown) => void;
+}[] = [];
 /** 次の `requestAnimationFrame` で呼ばれるもの。 */
 let nextFrame: FrameRequestCallback | null = null;
 
 const wasm: UgoeWasmModule = {
   WebPuppet: {
     create: (canvas) =>
-      new Promise<WebPuppet>((resolve) =>
-        pending.push({ canvas: canvas as unknown as FakeCanvas, resolve }),
+      new Promise<WebPuppet>((resolve, reject) =>
+        pending.push({ canvas: canvas as unknown as FakeCanvas, resolve, reject }),
       ),
   },
 };

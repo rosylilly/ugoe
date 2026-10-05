@@ -98,6 +98,12 @@
     "texture": "テクスチャを登録できません ({{detail}})",
     "deviceLost": "GPU が止まりました。描き直すには、アプリを起動し直してください (ブラウザではページを読み込み直してください)"
   },
+  "createError": {
+    "backendUnavailable": "このブラウザは WebGPU に対応していないため、描画を始められません",
+    "contextUnavailable": "GPU のコンテキストを作れないため、描画を始められません。ほかのタブやウィンドウを閉じるか、少し待ってから「作り直す」を押してください",
+    "adapterUnavailable": "使える GPU が見つからないため、描画を始められません。GPU のドライバーと、ハードウェア アクセラレーションの設定を確かめてから「作り直す」を押してください",
+    "deviceUnavailable": "GPU を使う準備ができないため、描画を始められません。少し待ってから「作り直す」を押してください"
+  },
   "errors": {
     "wasmMissing": "ugoe-wasm がビルドされていません",
     "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",

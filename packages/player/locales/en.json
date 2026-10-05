@@ -98,6 +98,12 @@
     "texture": "Cannot register the textures ({{detail}}).",
     "deviceLost": "The GPU stopped working. Restart the app (or reload the page) to draw again."
   },
+  "createError": {
+    "backendUnavailable": "Cannot start drawing because this browser does not support WebGPU.",
+    "contextUnavailable": "Cannot start drawing because a GPU context could not be created. Close other tabs or windows, or wait a moment, then press “Try again”.",
+    "adapterUnavailable": "Cannot start drawing because no usable GPU was found. Check the GPU driver and the hardware acceleration setting, then press “Try again”.",
+    "deviceUnavailable": "Cannot start drawing because the GPU could not be prepared. Wait a moment, then press “Try again”."
+  },
   "errors": {
     "wasmMissing": "ugoe-wasm is not built.",
     "notModel": "{{name}}: this is not a .ugoe or JSON model or a .ugoemod module.",
