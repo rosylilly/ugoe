@@ -1,11 +1,11 @@
 ---
 id: T0567
 title: "レイヤーの分類の答えそのものをプロジェクトに残すか (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, ugoe-mcp, docs]
 depends_on: [T0566]
-assignee:
+assignee: claude-worker-T0567
 ---
 
 # T0567: レイヤーの分類の答えそのものをプロジェクトに残すか (判断が要る)
