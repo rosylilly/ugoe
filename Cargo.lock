@@ -5331,8 +5331,10 @@ dependencies = [
  "ugoe-core",
  "ugoe-editor-core",
  "ugoe-format",
+ "ugoe-fs",
  "ugoe-headless",
  "ugoe-model",
+ "ugoe-psd",
  "ugoe-rigging",
  "ugoe-runtime",
 ]

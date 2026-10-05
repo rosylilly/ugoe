@@ -51,7 +51,7 @@ use ugoe_editor_core::message::MessageArgs;
 use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions, message_args};
 use ugoe_fs::read_regular_file;
 use ugoe_model::SlotId;
-use ugoe_psd::{ImportLimits, LayerTree};
+use ugoe_psd::{ImportLimits, LayerTree, MAX_PSD_FILE_BYTES};
 
 use crate::schema::object_schema;
 use crate::tools::{
@@ -74,11 +74,6 @@ const NOT_A_MODULE: &str = "this is not a module project: use get_rig_guide and 
 /// 小さくする: MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で
 /// 25,000 トークン。画像も数える) ので、既定では小分けにし、多く返すのは `count` で頼まれたときだけにする。
 const DEFAULT_COUNT: usize = 8;
-
-/// 読む PSD の大きさの上限 (PSD の形式の上限は 2 GB。PSB は読まない)。エディタの PSD の読み込みの上限
-/// (`apps/editor/src-tauri/src/psd.rs` の `MAX_PSD_BYTES`) と同じ値。GPL のアプリの定数は MIT のこのクレートから
-/// 参照できないので、値を写して揃える (変えるときは両方を直す)。
-const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// 自動リギングの元にする PSD と、レイヤーの分類。
 ///
@@ -111,13 +106,14 @@ impl fmt::Debug for PsdSource {
 
 impl PsdSource {
     fn load(path: PathBuf) -> Result<Self, ToolError> {
-        Self::load_with(path, MAX_PSD_BYTES, ImportLimits::default())
+        Self::load_with(path, MAX_PSD_FILE_BYTES, ImportLimits::default())
     }
 
     /// PSD を読み、プロジェクトのディレクトリ `project` にエディタが残した分類の答えが同じ PSD (識別が合う) の
     /// ものなら、名前の規則の案の代わりにそれを使う。キャッシュが読めない・合わないときは名前の規則の案。
     fn load_for(path: PathBuf, project: &Path) -> Result<Self, ToolError> {
-        let (mut source, bytes) = Self::read_with(path, MAX_PSD_BYTES, ImportLimits::default())?;
+        let (mut source, bytes) =
+            Self::read_with(path, MAX_PSD_FILE_BYTES, ImportLimits::default())?;
         if let Ok(Some(cache)) = read_classification_cache::<LayerLabel>(project) {
             source.restore(cache, &bytes);
         }
@@ -636,7 +632,7 @@ pub(crate) fn recall(
         return;
     };
     let Ok((mut source, bytes)) =
-        PsdSource::read_with(path, MAX_PSD_BYTES, ImportLimits::default())
+        PsdSource::read_with(path, MAX_PSD_FILE_BYTES, ImportLimits::default())
     else {
         return;
     };
@@ -1195,7 +1191,7 @@ mod tests {
         let psd =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd");
         let limits = ImportLimits::default().with_max_channel_decompressed(100);
-        let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
+        let err = PsdSource::load_with(psd.clone(), MAX_PSD_FILE_BYTES, limits).unwrap_err();
         assert!(
             err.message().ends_with(
                 "a PSD channel decompresses to 3072 bytes, more than the import limit of 100 bytes \
@@ -1204,7 +1200,7 @@ mod tests {
             "{err}"
         );
         let limits = ImportLimits::default().with_max_total_decompressed(5000);
-        let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
+        let err = PsdSource::load_with(psd.clone(), MAX_PSD_FILE_BYTES, limits).unwrap_err();
         assert!(
             err.message().ends_with("(code: psd.total_limit_exceeded)"),
             "{err}"

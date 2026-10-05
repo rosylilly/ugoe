@@ -299,6 +299,53 @@ fn render_rejects_bad_size() {
     assert!(!output.status.success());
 }
 
+/// `ugoe import-psd` は通常のファイルだけを、`ugoe_psd::MAX_PSD_FILE_BYTES` まで読む
+/// (装置・FIFO・ディレクトリや巨大なファイルで止まったりメモリを使い果たしたりしない)。
+#[cfg(unix)]
+#[test]
+fn import_psd_refuses_non_regular_files_and_files_over_the_limit() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let tmp = temp.path();
+    let project = tmp.join("out.ugoeproj");
+    let import = |input: &std::path::Path| {
+        let output = ugoe(&[
+            "import-psd",
+            input.to_str().expect("utf-8 path"),
+            "-o",
+            project.to_str().expect("utf-8 path"),
+        ]);
+        assert!(!output.status.success());
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+
+    let fifo = tmp.join("fifo.psd");
+    let status = Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("run mkfifo");
+    assert!(status.success());
+    for input in [std::path::Path::new("/dev/zero"), tmp, &fifo] {
+        let err = import(input);
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+
+    // 上限より 1 バイト大きい疎なファイル (中身は書かないので、ディスクは使わない)。
+    let large = tmp.join("large.psd");
+    std::fs::File::create(&large)
+        .expect("create large file")
+        .set_len(ugoe_psd::MAX_PSD_FILE_BYTES + 1)
+        .expect("extend large file");
+    let err = import(&large);
+    assert!(
+        err.contains(&format!(
+            "the limit is {} bytes",
+            ugoe_psd::MAX_PSD_FILE_BYTES
+        )),
+        "{err}"
+    );
+    assert!(!project.exists());
+}
+
 #[test]
 fn import_psd_writes_project_and_bundle() {
     let psd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

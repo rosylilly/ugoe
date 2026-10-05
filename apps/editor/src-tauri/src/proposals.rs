@@ -54,7 +54,7 @@ use ugoe_editor_core::{
     ProposalView, Proposals, PsdImportError, import,
 };
 use ugoe_model::{Mesh, MeshId};
-use ugoe_psd::{ImportLimits, LayerTree};
+use ugoe_psd::{ImportLimits, LayerTree, MAX_PSD_FILE_BYTES};
 
 use crate::AppState;
 use crate::ai::{AiReply, ConsentAnswer, Prepared, lock_project, prepare_instructed};
@@ -63,7 +63,6 @@ use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::lighting::{CommandSection, NormalMapGroupChoice, normal_map_proposal_in};
 use crate::project::{ProjectSession, absolute_path};
-use crate::psd::MAX_PSD_BYTES;
 use ugoe_fs::read_regular_file;
 
 /// 開いているプロジェクトの AI の提案と、その入力 (`ProjectSession` が持つ。プロジェクトを替えると消える)。
@@ -463,7 +462,8 @@ fn read_tree_with(path: &Path, limits: ImportLimits) -> IpcResult<LayerTree> {
 
 /// [`read_tree_with`] と同じだが、PSD の識別も返す。
 fn read_psd_with(path: &Path, limits: ImportLimits) -> IpcResult<(LayerTree, PsdIdentity)> {
-    let bytes = read_regular_file(path, MAX_PSD_BYTES).map_err(|e| EditorError::io(path, e))?;
+    let bytes =
+        read_regular_file(path, MAX_PSD_FILE_BYTES).map_err(|e| EditorError::io(path, e))?;
     let tree = import::read_layer_tree(&bytes, limits).map_err(|e| -> Message {
         match e {
             PsdImportError::Psd(error) => EditorError::psd_read(path, error).into(),

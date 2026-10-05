@@ -410,8 +410,10 @@ fn check_avatar_profile(model: &Model) -> usize {
 fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
     use ugoe_editor_core::{AutoMeshOptions, Project, PsdImportOptions};
 
-    let bytes =
-        std::fs::read(&args.input).with_context(|| format!("reading {}", args.input.display()))?;
+    // 通常のファイルだけを、PSD のファイルの上限まで読む (装置・FIFO・ディレクトリや巨大なファイルで
+    // 止まったりメモリを使い果たしたりしないように。エディタ・MCP サーバと同じ `ugoe_fs::read_regular_file`)。
+    let bytes = ugoe_fs::read_regular_file(&args.input, ugoe_psd::MAX_PSD_FILE_BYTES)
+        .with_context(|| format!("reading {}", args.input.display()))?;
     let name = args.name.unwrap_or_else(|| {
         args.input
             .file_stem()
@@ -703,12 +705,14 @@ fn kept_reason(reason: ugoe_editor_core::atlas::KeptReason) -> &'static str {
 
 /// `ugoe sample avatar`: 見本のモデルを組み立てて書き出す (`sample::build_avatar`)。
 fn run_sample_avatar(args: SampleAvatarArgs) -> anyhow::Result<()> {
-    let psd = std::fs::read(&args.psd).with_context(|| {
-        format!(
-            "reading {} (run from the repository root or pass --psd)",
-            args.psd.display()
-        )
-    })?;
+    // `import-psd` と同じく、通常のファイルだけを PSD のファイルの上限まで読む。
+    let psd =
+        ugoe_fs::read_regular_file(&args.psd, ugoe_psd::MAX_PSD_FILE_BYTES).with_context(|| {
+            format!(
+                "reading {} (run from the repository root or pass --psd)",
+                args.psd.display()
+            )
+        })?;
     let mut project = sample::build_avatar(&psd)?;
     if args.lit {
         project = sample::lit::light_avatar(&project, &psd)?;

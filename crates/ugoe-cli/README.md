@@ -159,6 +159,8 @@ ugoe render character.ugoe -o preview.png           # 取り込んだ結果を�
 | `--alpha-threshold` / `--margin` / `--edge-spacing` / `--interior-spacing` | 自動メッシュの設定 (`ugoe-mesher` の `MeshOptions`) |
 
 取り込みの警告は標準エラーに `warning: ...` で出す。
+入力の PSD は通常のファイルだけを、`ugoe_psd::MAX_PSD_FILE_BYTES` (2 GiB) まで読む (`ugoe_fs::read_regular_file`。エディタ・MCP サーバと同じ)。
+装置 (`/dev/zero`)・FIFO・ディレクトリと上限より大きいファイルはエラーにする (`ugoe sample avatar` の `--psd` も同じ)。
 
 ### `ugoe build`
 

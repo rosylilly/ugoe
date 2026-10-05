@@ -565,7 +565,7 @@ Claude Code に次のように頼む:
   `-32603` (internal error) で答える (stdio のサーバごと落ちて未保存の変更を失わないように)。
 - PSD (`import_psd`・`get_psd_layers` の `psd`) は通常のファイルだけを、2 GiB まで読む (`ugoe_fs::read_regular_file`。
   `/dev/zero` のような装置・FIFO・ディレクトリは開かずにエラー、2 GiB より大きいファイルは読まずにエラー。終わらない
-  読み込みでメモリを使い果たさないように)。上限はエディタの PSD の読み込みと同じ値。展開の上限は `ugoe_psd::ImportLimits` の既定値。
+  読み込みでメモリを使い果たさないように)。上限は `ugoe_psd::MAX_PSD_FILE_BYTES` (エディタ・`ugoe import-psd` と同じ定数)。展開の上限は `ugoe_psd::ImportLimits` の既定値。
 - 提案はエディタと同じ `ugoe_editor_core::Proposals` に置く。提案は作ったときのモデルの状態に対するもので、
   モデルが変わると適用できない (Undo で同じ状態に戻れば、また使える)。
 - 自動リギングのツール (`src/autorig.rs`) の入力の型 (分類の語彙と左右、リグの値) は `ugoe_ai` の JSON Schema

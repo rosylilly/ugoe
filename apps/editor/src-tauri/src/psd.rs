@@ -12,9 +12,7 @@ use crate::error::{EditorError, IpcResult};
 use crate::project::lock_both;
 use crate::proposals::Base;
 use ugoe_fs::read_regular_file;
-
-/// 読む PSD の大きさの上限 (PSD の形式の上限は 2 GB。PSB は読まない)。
-pub(crate) const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+use ugoe_psd::MAX_PSD_FILE_BYTES;
 
 /// PSD ファイルを読み、取り込みの設定 (最上位のパーツの名前はファイル名) と合わせて返す。
 pub(crate) fn read_psd(
@@ -23,7 +21,8 @@ pub(crate) fn read_psd(
 ) -> IpcResult<(Vec<u8>, PsdImportOptions)> {
     let path = crate::project::absolute_path(path)?;
     // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
-    let bytes = read_regular_file(&path, MAX_PSD_BYTES).map_err(|e| EditorError::io(&path, e))?;
+    let bytes =
+        read_regular_file(&path, MAX_PSD_FILE_BYTES).map_err(|e| EditorError::io(&path, e))?;
     let name = path
         .file_stem()
         .map_or_else(|| "PSD".to_owned(), |s| s.to_string_lossy().into_owned());

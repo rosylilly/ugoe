@@ -15,8 +15,10 @@ ugoe = { workspace = true, features = ["render"] }
 ugoe-core.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
+ugoe-fs.workspace = true
 ugoe-headless = { workspace = true, features = ["clap"] }
 ugoe-model.workspace = true
+ugoe-psd.workspace = true
 ugoe-rigging.workspace = true
 ugoe-runtime.workspace = true
 

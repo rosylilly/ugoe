@@ -973,6 +973,9 @@ editor-core は `import::read_layer_tree(bytes, limits)` で読んで、それ�
   上限に当たる PSD は、そのままではデスクトップのメモリでも扱いきれない大きさだからです。上げる設定は、メモリを使い果たす入力を
   通す手段になるので置きません。必要になったら、上限を超えた実例をもとに既定の値を見直します。ライブラリとして使う側は
   `read_layer_tree` に別の `ImportLimits` を渡せます。
+- 展開の前に、PSD のファイルそのものの大きさも上限 `ugoe_psd::MAX_PSD_FILE_BYTES` (2 GiB。PSD の形式は長さを 32 ビットで持つ) までに
+  抑えます。エディタ・MCP サーバ・CLI (`ugoe import-psd`) はどれもこの定数で `ugoe_fs::read_regular_file` を呼び、値は 1 か所にあります
+  (T0568)。これも設定には出しません。
 - `ugoe-psd` は上限の超過を `PsdError::Unsupported` の文 ("import limit" を含む) で返すので、editor-core は文で見分けます
   (`PsdImportError::from_psd`)。文の形が変わると `import_tests` の上限のテストが失敗します。
 
@@ -1575,9 +1578,10 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
   (`ugoe_editor_core::Project::save`)。
 - **IPC で受けたパスの読み方:** 画面から受けたパスで読むファイル (PSD (`import_psd`・`new_project_from_psd`・AI の提案)・`.ugoemod`
   (`read_module_file`)・法線マップの PNG (`assign_texture_normal_map`)) は、通常のファイル (リンクは辿る) のときだけ、大きさの上限までで
-  読みます (`ugoe_fs::read_regular_file`、T0011・T0025。PSD は 2 GiB (PSD の形式の上限)、`.ugoemod` は 512 MiB、PNG は 64 MiB)。
+  読みます (`ugoe_fs::read_regular_file`、T0011・T0025。PSD は `ugoe_psd::MAX_PSD_FILE_BYTES` の 2 GiB (PSD の形式の上限)、`.ugoemod` は 512 MiB、PNG は 64 MiB)。
   装置 (`/dev/zero`)・FIFO・ディレクトリは開かずに `editor.io` (`not a regular file`) にします (読み続けてメモリを使い果たす・開くだけで
-  止まるため)。線引きは MCP サーバ・ugoe-headless と同じで、利用者が自分でパスを渡す CLI だけは FIFO を読めるままにします (T0530)。
+  止まるため)。線引きは MCP サーバ・ugoe-headless・CLI の `import-psd` と同じです。CLI のモデル・バンドルの入力だけは、利用者が自分でパスを渡すので
+  FIFO を読めるままにします (T0530)。
   `.ugoeproj` と本体の `.ugoe` は `ugoe_editor_core::Project` が読むので、ここには含みません。
 - **読めなかった設定:** アプリの設定のファイル (`editor-settings.json`・`ai-provider.json`・`mcp-bridge.json`) が壊れている・読めない
   ときは、既定のまま起動し、起動しただけではファイルを書き換えません (ブリッジも始めない)。利用者が設定を変えたときに初めて書きます
