@@ -110,6 +110,36 @@ export function parseExpressions(json: string): ExpressionInfo[] {
   }));
 }
 
+/** 発火したモーションのイベント 1 つ (T0734)。 */
+export interface MotionEventInfo {
+  /** イベントの値。 */
+  value: string;
+  /** モーションの中の時刻 (秒)。 */
+  time: number;
+  /** 発火したモーションの名前。 */
+  motion: string;
+  /**
+   * 発火したモーションを始めた番号 (WebPuppet が開始したモーションに 1 から振る)。クロスフェード中の 2 つや、
+   * 同じ名前を始め直したものを見分ける。
+   */
+  number: number;
+}
+
+/**
+ * `motion_events_json()` (`[{value, time, motion, number}]`。crates/ugoe-wasm/README.md) を読む。値かモーションの名前が
+ * 文字列でない項目は飛ばし、欠けた数は 0 にする。
+ */
+export function parseMotionEvents(json: string): MotionEventInfo[] {
+  const value: unknown = JSON.parse(json);
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((e: unknown) => {
+    const { value, time, motion, number } = (e ?? {}) as Record<string, unknown>;
+    return typeof value === "string" && typeof motion === "string"
+      ? [{ value, time: num(time), motion, number: num(number) }]
+      : [];
+  });
+}
+
 /** 秒の表示 (`1.2 s`。小数は 2 桁まで)。 */
 export function formatSeconds(s: number): string {
   return t("motion.seconds", { value: Number(s.toFixed(2)) });

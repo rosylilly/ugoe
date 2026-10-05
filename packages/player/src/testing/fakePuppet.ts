@@ -46,6 +46,8 @@ export function fakePuppet(options: FakeOptions = {}) {
     playing: false,
     /** `start_motion` が始めるか (偽なら優先度が低くて始まらなかったことにする)。 */
     accept: true,
+    /** 次に `motion_events_json` が返すイベント (`[{value, time, motion, number}]`)。 */
+    events: [] as unknown[],
     values: new Map<string, number>(),
     /** 読み込んだモジュール (名前 → スロット。読み込んだ順)。 */
     modules: new Map<string, string>(),
@@ -146,7 +148,12 @@ export function fakePuppet(options: FakeOptions = {}) {
     set_motion_over_tracking: (enabled: boolean) => log.push(`over ${enabled}`),
     set_tracking_kept: (ids: string[]) => log.push(`kept ${ids.join(",")}`),
     active_expressions: () => [],
-    motion_events: () => [],
+    motion_events_json: () => {
+      // 読むと空にする (Player は update の直後に 1 度だけ読むので、次の update で発火したことになる)。
+      const fired = state.events;
+      state.events = [];
+      return JSON.stringify(fired);
+    },
     uses_lighting: () => false,
     set_lighting_json: (json?: string | null) => void state.lighting.push(json),
     canvas_size: () => new Float32Array([100, 100]),

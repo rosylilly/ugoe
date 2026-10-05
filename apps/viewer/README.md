@@ -512,7 +512,10 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 - **スライダー:** 再生中のモーションが動かすパラメータのスライダーは「(自動)」になり、手では動かせない (動かしてもモーションに上書きされるため)。
   表情の対象のパラメータは動かせ、その値の上に表情が重なる。
 - 使っている表情の一覧は、操作のたびに WebPuppet の `active_expressions()` から読む (T0721。T0720 では操作から求めていた)。同じ表情を 2 回重ねない。
-- 直近に発火したモーションのイベント (見本の `nod` の `nod-end` など) を新しい順に 5 つまで出す。
+- 直近に発火したモーションのイベント (見本の `nod` の `nod-end` など) を新しい順に 5 つまで出す。イベントごとに、発火したモーションの
+  名前と開始の番号を添える (`nod-end (nod #3)`。WebPuppet の `motion_events_json()` を `Player.motionEvents` が読む。T0734)。
+  番号は WebPuppet がモーションを始めるたびに 1 から振るもので、クロスフェード中にフェードアウトしていくモーションのイベントと、
+  同じ名前を始め直したものを見分けられる。
 - モデルを開き直すと (同じモデルでも) 再生の状態は初めからになる。着せ替えの付け外しでは続きから動く。
 - ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `motions`・`expressions`・`currentMotion`・`activeExpressions`・`motionNotice`・`motionEvents`・
   `playMotion(name, priority?)`・`stopMotions()`・`setMotionPriority`・`setRepeatMotion`・`setExpression`・`addExpression`・`stopExpression`・`stopExpressions()`、

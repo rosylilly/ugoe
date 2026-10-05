@@ -381,6 +381,8 @@
       }
     },
     "events": "Events: {{events}}",
+    "event": "{{value}} ({{motion}} #{{number}})",
+    "eventsTooltip": "Newest first. Each event shows the motion that fired it and the number it was started with, so a restarted motion and the two motions of a crossfade can be told apart.",
     "expressions": {
       "title": "Expressions",
       "empty": "This model has no expressions",

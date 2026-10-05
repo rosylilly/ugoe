@@ -17,7 +17,7 @@ src/surface.ts           PuppetSurface: WebPuppet と canvas の寿命 (作成�
 src/follower.ts          受け手のモード (スタジオの出力ウィンドウ): フレームの読み取り・並べ替え・適用 (T0801)
 src/drivers.ts           パラメータを毎フレーム外から動かす仕組み (ParameterDriver)
 src/parameters.ts        パラメータの一覧 (parameters_json) の読み取り・グループ分け・スライダーの刻み
-src/animation.ts         モーションと表情の一覧の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
+src/animation.ts         モーションと表情の一覧・発火したイベント (motion_events_json。T0734) の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
 src/lighting.ts          光源の設定・既定の組・set_lighting_json の JSON・localStorage への保存・光源の印の幾何 (T0708・T0709)
 src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)

@@ -12,10 +12,12 @@ import {
   idleMemory,
   initialIdleMotion,
   loadTrackingKept,
+  type MotionEventInfo,
   type MotionInfo,
   type MotionPriority,
   motionOverTrackingActive,
   parseExpressions,
+  parseMotionEvents,
   parseMotions,
   saveTrackingKept,
 } from "./animation";
@@ -180,8 +182,11 @@ export class Player {
   repeatMotion = $state(false);
   /** モーションを始められなかったときの説明。 */
   motionNotice = $state<string | null>(null);
-  /** 直近に発火したモーションのイベントの値 (新しい順、`MOTION_EVENTS` 個まで)。 */
-  motionEvents = $state<string[]>([]);
+  /**
+   * 直近に発火したモーションのイベント (新しい順、`MOTION_EVENTS` 個まで)。発火したモーションの名前と番号も持つ
+   * (クロスフェード中にどちらのモーションのイベントかを見分ける。T0734)。
+   */
+  motionEvents = $state<MotionEventInfo[]>([]);
   /** 使っている表情 (開始した順。フェードアウト中のものは含めない)。 */
   activeExpressions = $state<string[]>([]);
   /**
@@ -1133,7 +1138,7 @@ export class Player {
 
   /** `update` の後で、モーションの終わりとイベントを読む。 */
   #afterMotionUpdate(puppet: WebPuppet): void {
-    const fired = puppet.motion_events();
+    const fired = parseMotionEvents(puppet.motion_events_json());
     if (fired.length > 0)
       this.motionEvents = [...fired.reverse(), ...this.motionEvents].slice(0, MOTION_EVENTS);
     const current = this.currentMotion;

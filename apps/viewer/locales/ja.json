@@ -367,6 +367,8 @@
       }
     },
     "events": "イベント: {{events}}",
+    "event": "{{value}} ({{motion}} #{{number}})",
+    "eventsTooltip": "新しい順。発火したモーションの名前と、始めた番号を添える (始め直したモーションや、クロスフェード中の 2 つを見分けられる)。",
     "expressions": {
       "title": "表情",
       "empty": "このモデルには表情がありません",

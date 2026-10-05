@@ -14,6 +14,7 @@ import {
   motionTrackingEffect,
   parseExpressions,
   parseIdleChoice,
+  parseMotionEvents,
   parseMotions,
   saveTrackingKept,
   trackingGroup,
@@ -60,6 +61,31 @@ describe("parseMotions", () => {
       { name: "short", duration: 0, looping: false, fadeIn: 0, fadeOut: 0, parameters: [] },
     ]);
     expect(parseMotions("{}")).toEqual([]);
+  });
+});
+
+describe("parseMotionEvents", () => {
+  it("reads the value, the time and the motion that fired each event", () => {
+    const json = JSON.stringify([
+      { value: "blink", time: 0.5, motion: "idle", number: 1 },
+      { value: "wave", time: 0.25, motion: "wave", number: 2 },
+    ]);
+    expect(parseMotionEvents(json)).toEqual([
+      { value: "blink", time: 0.5, motion: "idle", number: 1 },
+      { value: "wave", time: 0.25, motion: "wave", number: 2 },
+    ]);
+  });
+
+  it("skips entries without a value or a motion and zeroes missing numbers", () => {
+    const json = JSON.stringify([
+      { value: "a", motion: "m" },
+      { value: 1, motion: "m", number: 1 },
+      { value: "b", number: 1 },
+      null,
+      "c",
+    ]);
+    expect(parseMotionEvents(json)).toEqual([{ value: "a", time: 0, motion: "m", number: 0 }]);
+    expect(parseMotionEvents("{}")).toEqual([]);
   });
 });
 

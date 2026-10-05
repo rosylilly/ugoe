@@ -57,7 +57,7 @@ export interface WebPuppet extends TrackingPuppet {
   start_motion(name: string, priority?: string | null): boolean;
   stop_motions(): void;
   is_motion_playing(): boolean;
-  motion_events(): string[];
+  motion_events_json(): string;
   expressions_json(): string;
   active_expressions(): string[];
   set_expression(name: string): void;

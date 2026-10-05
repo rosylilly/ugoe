@@ -238,8 +238,12 @@ function expressionOverlap(e: ExpressionInfo): string[] {
           {/each}
         </ul>
         {#if player.motionEvents.length > 0}
-          <p class="hint events">
-            {t("motions.events", { events: player.motionEvents.join(", ") })}
+          <p class="hint events" title={t("motions.eventsTooltip")}>
+            {t("motions.events", {
+              events: player.motionEvents
+                .map((e) => t("motions.event", { value: e.value, motion: e.motion, number: e.number }))
+                .join(", "),
+            })}
           </p>
         {/if}
       {/if}
