@@ -78,6 +78,23 @@ export const messageCodes: Record<string, readonly string[]> = {
     "name",
     "width"
   ],
+  "automesh.bad_image": [
+    "height",
+    "len",
+    "width"
+  ],
+  "automesh.empty": [],
+  "automesh.invalid_options": [
+    "reason"
+  ],
+  "automesh.too_complex": [
+    "max"
+  ],
+  "automesh.too_large": [
+    "height",
+    "max",
+    "width"
+  ],
   "avatar.duplicate_hit_area_name": [
     "name"
   ],
@@ -813,7 +830,8 @@ export const messageCodes: Record<string, readonly string[]> = {
     "psd_width"
   ],
   "psd.channel_limit_exceeded": [
-    "max"
+    "max",
+    "size"
   ],
   "psd.clipping_base_missing": [],
   "psd.empty_layer": [],
@@ -849,11 +867,23 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "psd.smart_object_without_pixels": [],
   "psd.total_limit_exceeded": [
-    "max"
+    "max",
+    "size"
   ],
   "psd.transparent_layer": [],
   "psd.unsupported_compression": [
     "compression"
+  ],
+  "psd_read.invalid": [
+    "detail"
+  ],
+  "psd_read.limit_exceeded": [
+    "limit",
+    "max",
+    "size"
+  ],
+  "psd_read.unsupported": [
+    "detail"
   ],
   "space.evaluate_failed": [
     "detail"

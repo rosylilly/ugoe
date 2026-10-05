@@ -122,6 +122,35 @@ fn below_threshold_is_empty() {
 }
 
 #[test]
+fn error_codes_are_the_variant_names() {
+    let codes = [
+        MeshError::Empty,
+        MeshError::BadImage {
+            width: 2,
+            height: 2,
+            len: 12,
+        },
+        MeshError::InvalidOptions("margin"),
+        MeshError::TooComplex,
+        MeshError::TooLarge {
+            width: 1,
+            height: 1,
+        },
+    ]
+    .map(|e| e.code());
+    assert_eq!(
+        codes,
+        [
+            "empty",
+            "bad_image",
+            "invalid_options",
+            "too_complex",
+            "too_large"
+        ]
+    );
+}
+
+#[test]
 fn bad_image_size_is_rejected() {
     assert!(matches!(
         generate(&[0; 12], 2, 2, &MeshOptions::default()),

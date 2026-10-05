@@ -10,8 +10,8 @@ use common::{
     write_psd16, zlib,
 };
 use ugoe_psd::{
-    DEFAULT_MAX_CHANNEL_DECOMPRESSED, DEFAULT_MAX_TOTAL_DECOMPRESSED, ImportLimits, ImportWarning,
-    Layer, LayerNode, PsdError, WarningKind, import, import_with,
+    DEFAULT_MAX_CHANNEL_DECOMPRESSED, DEFAULT_MAX_TOTAL_DECOMPRESSED, ImportLimit, ImportLimits,
+    ImportWarning, Layer, LayerNode, PsdError, WarningKind, import, import_with,
 };
 
 const WIDTH: u32 = LAYERS_WIDTH;
@@ -283,9 +283,10 @@ fn assert_over_limit(result: Result<ugoe_psd::LayerTree, PsdError>) {
         panic!("expected the import limit to be exceeded");
     };
     assert!(
-        matches!(&err, PsdError::Unsupported(m) if m.contains("import limit")),
+        matches!(&err, PsdError::LimitExceeded { size, max, .. } if size > max),
         "{err:?}"
     );
+    assert_eq!(err.code(), "limit_exceeded");
 }
 
 #[test]
@@ -453,6 +454,47 @@ fn import_limits_count_decompressed_bytes_of_every_compression() {
     let flat = write_flat_psd(16, 16, &[0; 16 * 16 * 3], 1);
     assert!(import_with(&flat, limits(256, 768)).is_ok());
     assert_over_limit(import_with(&flat, limits(256, 767)));
+}
+
+#[test]
+fn limit_exceeded_tells_which_limit_and_the_size() {
+    // 16 × 16 のレイヤーは 1 チャンネル 256 バイト、4 チャンネルで 1024 バイト。
+    let bytes = write_psd(16, 16, &[W::raster("a", 0, 0, 16, 16)]);
+    let channel = import_with(
+        &bytes,
+        ImportLimits::default().with_max_channel_decompressed(255),
+    )
+    .unwrap_err();
+    assert_eq!(
+        channel,
+        PsdError::LimitExceeded {
+            limit: ImportLimit::ChannelDecompressed,
+            size: 256,
+            max: 255,
+        }
+    );
+    assert_eq!(
+        channel.to_string(),
+        "channel_decompressed of 256 bytes exceeds the import limit of 255 bytes"
+    );
+    // 合計は、超えたところ (4 枚目のチャンネル) までの大きさ。
+    let total = import_with(
+        &bytes,
+        ImportLimits::default().with_max_total_decompressed(1000),
+    )
+    .unwrap_err();
+    assert_eq!(
+        total,
+        PsdError::LimitExceeded {
+            limit: ImportLimit::TotalDecompressed,
+            size: 1024,
+            max: 1000,
+        }
+    );
+    assert_eq!(total.code(), "limit_exceeded");
+    // ほかの種類のコード。
+    assert_eq!(import(b"not a psd").unwrap_err().code(), "invalid");
+    assert_eq!(PsdError::Unsupported("psb".into()).code(), "unsupported");
 }
 
 #[test]

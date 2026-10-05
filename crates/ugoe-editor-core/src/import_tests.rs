@@ -481,6 +481,7 @@ fn limit_exceeded_tells_which_limit() {
             err,
             PsdImportError::LimitExceeded {
                 limit: PsdLimit::Channel,
+                size: 3072,
                 max: 100
             }
         ),
@@ -489,8 +490,11 @@ fn limit_exceeded_tells_which_limit() {
     let message = err.to_message();
     assert_eq!(message.code, "psd.channel_limit_exceeded");
     assert_eq!(message.args["max"], 100u64.into());
+    assert_eq!(message.args["size"], 3072u64.into());
     assert!(
-        message.message.contains("import limit of 100 bytes"),
+        message
+            .message
+            .contains("3072 bytes, more than the import limit of 100 bytes"),
         "{}",
         message.message
     );
@@ -502,7 +506,8 @@ fn limit_exceeded_tells_which_limit() {
             err,
             PsdImportError::LimitExceeded {
                 limit: PsdLimit::Total,
-                max: 5000
+                max: 5000,
+                ..
             }
         ),
         "{err:?}"
@@ -511,9 +516,12 @@ fn limit_exceeded_tells_which_limit() {
     assert_eq!(message.code, "psd.total_limit_exceeded");
     assert_eq!(message.args["max"], 5000u64.into());
 
-    // ほかの読み込みのエラーは `psd.read_failed` のまま。
+    // ほかの読み込みのエラーは `psd.read_failed` のままで、元のエラーを原因 (`psd_read.*`) に載せる。
     let err = read_layer_tree(b"not a psd", ImportLimits::default()).unwrap_err();
     assert_eq!(err.code(), "psd.read_failed");
+    let cause = err.to_message().cause.expect("the psd error as the cause");
+    assert_eq!(cause.code, "psd_read.invalid");
+    assert!(cause.args.contains_key("detail"), "{:?}", cause.args);
     // 既定の上限では読める。
     read_layer_tree(&fixture_bytes(), ImportLimits::default()).unwrap();
 }
@@ -751,6 +759,29 @@ fn regenerate_mesh_rejects_deformed_keyforms() {
         })
         .unwrap_err();
     assert!(matches!(err, EditError::Mesher { .. }), "{err}");
+    // 自動メッシュのエラーは、コードと引数で訳せる原因 (`automesh.*`) に載る。
+    let message = err.to_message();
+    assert_eq!(message.code, "edit.automesh_failed");
+    let cause = message.cause.expect("the mesh error as the cause");
+    assert_eq!(cause.code, "automesh.invalid_options");
+    assert!(cause.args.contains_key("reason"), "{:?}", cause.args);
+}
+
+#[test]
+fn psd_import_mesh_error_carries_the_mesh_error_as_the_cause() {
+    let err = PsdImportError::Mesh {
+        layer: "Hair".into(),
+        source: MeshError::TooLarge {
+            width: 20000,
+            height: 30000,
+        },
+    };
+    let message = err.to_message();
+    assert_eq!(message.code, "psd.automesh_failed");
+    let cause = message.cause.expect("the mesh error as the cause");
+    assert_eq!(cause.code, "automesh.too_large");
+    assert_eq!(cause.args["width"], 20000u64.into());
+    assert_eq!(cause.args["max"], ugoe_mesher::MAX_GRID_CELLS.into());
 }
 
 #[test]

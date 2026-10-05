@@ -1198,7 +1198,7 @@ mod tests {
         let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
         assert!(
             err.message().ends_with(
-                "a PSD channel decompresses to more than the import limit of 100 bytes \
+                "a PSD channel decompresses to 3072 bytes, more than the import limit of 100 bytes \
                  (code: psd.channel_limit_exceeded)"
             ),
             "{err}"

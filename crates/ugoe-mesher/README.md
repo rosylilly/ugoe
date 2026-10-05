@@ -75,6 +75,9 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
 - `MeshError` は `#[non_exhaustive]` (T0554)。失敗の種類を足しても公開 API の破壊的な変更にならないよう、
   外のクレートの `match` には `_` の腕を書く (このクレートは crates.io に出さないが、利用者の網羅的な
   `match` を壊さない約束にしておく)。
+- `MeshError::code()` は機械の読む種類 (変種の名前の `snake_case`。`empty`・`bad_image`・`invalid_options`・`too_complex`・
+  `too_large`) で、値は変えない (T0558)。エディタは `automesh.{code}` に組み立てて自動メッシュの失敗の原因に載せ、訳す
+  (`docs/editor.md#エラーと警告のコード`)。
 
 ## 性能の目安
 

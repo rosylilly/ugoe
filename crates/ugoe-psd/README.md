@@ -50,8 +50,10 @@ ZIP で圧縮したチャンネルは 1000 倍ほどに縮むので、数十 MB 
 
 - 数えるのは、色・アルファ・マスクのチャンネルと合成画像の平面を展開したバイト (矩形の画素数 × 標本のバイト数。
   16 ビットは 2 バイト)。圧縮方式によらず数える (無圧縮・PackBits は入力の大きさで抑えられるが、合計をメモリの目安にするため)。
-- 展開する大きさは矩形から先に分かるので、チャンネルを展開する **前に** 上限と比べ、超えるなら `PsdError::Unsupported` にする
-  (壊れた入力とは限らず、上限を上げれば読める)。
+- 展開する大きさは矩形から先に分かるので、チャンネルを展開する **前に** 上限と比べ、超えるなら
+  `PsdError::LimitExceeded { limit, size, max }` にする (壊れた入力とは限らず、上限を上げれば読める。T0558)。
+  `limit` はどの上限か (`ImportLimit::ChannelDecompressed` / `TotalDecompressed`)、`size` は展開しようとした大きさ
+  (合計なら、それまでの合計にその平面を足したもの。超えたところでやめるので PSD 全体の合計より小さいことがある)、`max` は上限の値。
 - `import` は既定の上限で読む。変えるときは `import_with(bytes, ImportLimits::default().with_max_total_decompressed(n))`。
 - チャンネルは 1 レイヤーずつ展開して RGBA に並べ直し、展開した平面はすぐ捨てる。ピークのメモリは、取り込んだ RGBA の合計と
   1 レイヤー分の平面になる (全レイヤーの平面を同時に持たない)。
@@ -101,6 +103,20 @@ Photoshop は 16 ビットの PSD で、ヘッダの直後のレイヤー情報�
 1. UTF-8 (ASCII もここに入る。UTF-8 で書くツールもある)
 2. Shift-JIS (CP932)。日本語の Shift-JIS のバイト列が UTF-8 として正しくなることはほぼない
 3. Windows-1252 (西欧の環境の既定。どのバイト列も読める)
+
+## エラー (`PsdError`)
+
+| 変種 | `code()` | 意味 |
+| --- | --- | --- |
+| `Invalid(理由)` | `invalid` | 壊れた入力・途中で切れた入力 |
+| `Unsupported(理由)` | `unsupported` | 形式としては正しいが対応しない (PSB・32 ビット・RGB 以外・深すぎるグループ・仕様にない合成画像の圧縮) |
+| `LimitExceeded { limit, size, max }` | `limit_exceeded` | 展開の上限を超える (上の「展開の上限」) |
+
+- `code()` は機械の読む種類 (変種の名前の `snake_case`) で、値は変えない。エディタは `psd_read.{code}` に組み立てて
+  エラーの原因に載せ、訳す (`docs/editor.md#エラーと警告のコード`)。`Invalid`・`Unsupported` の理由は英語の文のまま。
+- `PsdError` は `#[non_exhaustive]` (T0558)。このクレートは crates.io に出さない (`scripts/crates.mjs` の `PUBLISHED` に無い) が、
+  `ugoe-mesher` の `MeshError` (T0554) と同じく、変種を足しても外の `match` を壊さない約束にしておく (外の `match` には `_` の腕を書く)。
+  `ImportLimit` も同じ。
 
 ## 警告 (`LayerTree::warnings`)
 

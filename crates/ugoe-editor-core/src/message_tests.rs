@@ -383,6 +383,8 @@ fn sourced_codes() -> BTreeSet<String> {
             include_str!("../../ugoe-rigging/src/normal.rs"),
         ),
         ("compose", include_str!("../../ugoe-runtime/src/compose.rs")),
+        ("psd_read", include_str!("../../ugoe-psd/src/lib.rs")),
+        ("automesh", include_str!("../../ugoe-mesher/src/lib.rs")),
     ];
     sources
         .iter()
@@ -394,13 +396,14 @@ fn sourced_codes() -> BTreeSet<String> {
         .collect()
 }
 
-/// 検証・推定・写像・法線マップ・合成のエラーのコードは、元のエラーのコード (`ValidationError::code` など) に
+/// 検証・推定・写像・法線マップ・合成・PSD の読み込み・自動メッシュのエラーのコードは、元のエラーのコード (`ValidationError::code` など) に
 /// 領域の名前を付けたもの (元のクレートでコードを固定し、ここはそれから組み立てる。T1618)。見本は元のクレートの
 /// すべてのコードを含む (組み立てたコードが `docs/editor.md` の一覧にあることは `every_code_is_documented` が確かめる)。
 #[test]
 fn source_error_codes_follow_the_crate_codes() {
     use crate::message_catalog::{
-        compose_errors, infer_errors, normal_map_errors, validation_errors, world_errors,
+        compose_errors, infer_errors, mesh_errors, normal_map_errors, psd_errors,
+        validation_errors, world_errors,
     };
     let mut built = BTreeSet::new();
     let mut check = |code: std::borrow::Cow<'static, str>, expected: String| {
@@ -422,9 +425,16 @@ fn source_error_codes_follow_the_crate_codes() {
     for error in compose_errors() {
         check(Coded::code(&error), format!("compose.{}", error.code()));
     }
+    for error in psd_errors() {
+        check(Coded::code(&error), format!("psd_read.{}", error.code()));
+    }
+    for error in mesh_errors() {
+        check(Coded::code(&error), format!("automesh.{}", error.code()));
+    }
     let all = sourced_codes();
-    // 27 (検証) + 27 (推定) + 4 (写像) + 4 (法線マップ) + 13 (合成)。読み取りの誤りで一覧が欠けないように。
-    assert!(all.len() >= 75, "{}", all.len());
+    // 27 (検証) + 27 (推定) + 4 (写像) + 4 (法線マップ) + 13 (合成) + 3 (PSD の読み込み) + 5 (自動メッシュ)。
+    // 読み取りの誤りで一覧が欠けないように。
+    assert!(all.len() >= 83, "{}", all.len());
     assert_eq!(built, all, "every crate code has a sample");
 }
 

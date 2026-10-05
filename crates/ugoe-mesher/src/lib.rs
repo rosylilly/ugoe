@@ -78,7 +78,7 @@ pub struct GeneratedMesh {
 ///
 /// 変種を足しても公開 API の破壊的な変更にならないよう `#[non_exhaustive]` にしている
 /// (外の `match` は `_` の腕が要る)。
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum MeshError {
     /// 中身 (`alpha_threshold` 以上の画素) が 1 つもない。
@@ -97,6 +97,19 @@ pub enum MeshError {
     /// [`MAX_GRID_CELLS`] を超える。
     #[error("working grid {width}x{height} exceeds {MAX_GRID_CELLS} cells")]
     TooLarge { width: u64, height: u64 },
+}
+
+impl MeshError {
+    /// 機械が読む種類 (`"empty"` など。バリアントの名前の `snake_case`)。値は **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::BadImage { .. } => "bad_image",
+            Self::InvalidOptions(_) => "invalid_options",
+            Self::TooComplex => "too_complex",
+            Self::TooLarge { .. } => "too_large",
+        }
+    }
 }
 
 /// 非乗算 RGBA8 画像からメッシュを生成する。

@@ -1,17 +1,19 @@
 //! エラーのコードと引数 ([`Coded`]) の実装。コードの一覧は `docs/editor.md#エラーと警告のコード`。
 //! **コードは公開の約束なので名前を変えない** (ADR 0029)。新しいバリアントには新しいコードを付ける。
 //!
-//! ほかのクレートのエラーを含むものは、その英語の文を `detail` (`details`) の引数で渡す。検証・合成・推定・法線マップの
+//! ほかのクレートのエラーを含むものは、その英語の文を `detail` (`details`) の引数で渡す。検証・合成・推定・法線マップなどの
 //! エラーは、それに加えて元のエラーを原因 (`cause`。検証の一覧は `items`) に載せ、画面はそれを訳して `detail`
-//! (`details`) の代わりに差し込む (T0163)。自動メッシュなどはまだ英語の文だけ。これらのコードは、元のエラーのコードに
-//! 領域の名前を付けて組み立てる (`sourced`。T1618)。
+//! (`details`) の代わりに差し込む (T0163)。PSD の読み込みと自動メッシュのエラーも同じく原因に載せる (T0558)。
+//! これらのコードは、元のエラーのコードに領域の名前を付けて組み立てる (`sourced`。T1618)。
 
 use std::borrow::Cow;
 
 use ugoe_format::{FormatError, ReadLimit};
+use ugoe_mesher::{MAX_GRID_CELLS, MAX_VERTICES, MeshError};
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::{DESCRIBED_ERRORS_MAX, ValidationError};
+use ugoe_psd::PsdError;
 use ugoe_rigging::{InferError, KeyformTarget, NormalMapError, WorldError};
 use ugoe_runtime::{CompileError, ComposeError};
 
@@ -59,7 +61,7 @@ fn validation_items(errors: &[ValidationError]) -> Vec<Message> {
 
 /// 元のクレートのエラーのコード `code` に領域の名前 `area` を付けたコード (`validation.duplicate_id` など)。
 ///
-/// 検証・推定・写像・法線マップ・合成のエラーのコードはこれで組み立て、ここに一覧を持たない (元のクレートにコードが
+/// 検証・推定・写像・法線マップ・合成・PSD の読み込み・自動メッシュのエラーのコードはこれで組み立て、ここに一覧を持たない (元のクレートにコードが
 /// 増えても直さずに済むように。T1618)。値が今と同じことは `source_error_codes_follow_the_crate_codes` が確かめる。
 fn sourced(area: &str, code: &str) -> Cow<'static, str> {
     Cow::Owned(format!("{area}.{code}"))
@@ -168,7 +170,7 @@ impl Coded for EditError {
             Self::CannotRegenerateMesh { id, reason } | Self::MeshGeometry { id, reason } => {
                 args! { "id" => id, "reason" => reason }
             }
-            Self::Mesher { id, message } => args! { "id" => id, "detail" => message },
+            Self::Mesher { id, error } => args! { "id" => id, "detail" => error.to_string() },
             Self::VertexOutOfRange {
                 id,
                 index,
@@ -255,6 +257,7 @@ impl Coded for EditError {
     fn cause(&self) -> Option<Message> {
         match self {
             Self::InvalidCell { error, .. } => Some(error.to_message()),
+            Self::Mesher { error, .. } => Some(error.to_message()),
             Self::Inference { error, .. } => Some(error.to_message()),
             Self::Module(error) => error.cause(),
             _ => None,
@@ -637,11 +640,61 @@ impl Coded for PsdImportError {
     fn args(&self) -> MessageArgs {
         match self {
             Self::Psd(error) => args! { "detail" => error.to_string() },
-            Self::LimitExceeded { max, .. } => args! { "max" => *max },
+            Self::LimitExceeded { size, max, .. } => args! { "size" => *size, "max" => *max },
             Self::InvalidMeshOptions(reason) => args! { "reason" => *reason },
             Self::Mesh { layer, source } => {
                 args! { "layer" => layer, "detail" => source.to_string() }
             }
+        }
+    }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            Self::Psd(error) => Some(error.to_message()),
+            Self::Mesh { source, .. } => Some(source.to_message()),
+            Self::LimitExceeded { .. } | Self::InvalidMeshOptions(_) => None,
+        }
+    }
+}
+
+/// PSD の読み込みのエラー (`psd_read.*`。[`PsdError::code`])。上限の超過は [`PsdImportError::LimitExceeded`] が
+/// 自分のコードで返すので、原因に載るのは主に壊れた入力と対応しない機能。`Invalid`・`Unsupported` の理由は英語の文のまま。
+impl Coded for PsdError {
+    fn code(&self) -> Cow<'static, str> {
+        sourced("psd_read", PsdError::code(self))
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::Invalid(detail) | Self::Unsupported(detail) => args! { "detail" => detail },
+            Self::LimitExceeded { limit, size, max } => {
+                args! { "limit" => limit.as_str(), "size" => *size, "max" => *max }
+            }
+            // `ugoe-psd` に変種が増えたら、引数を足すまでは英語の文を渡す。
+            other => args! { "detail" => other.to_string() },
+        }
+    }
+}
+
+/// 自動メッシュの生成のエラー (`automesh.*`。[`MeshError::code`])。
+impl Coded for MeshError {
+    fn code(&self) -> Cow<'static, str> {
+        sourced("automesh", MeshError::code(self))
+    }
+
+    fn args(&self) -> MessageArgs {
+        match self {
+            Self::Empty => args! {},
+            Self::BadImage { width, height, len } => {
+                args! { "width" => *width, "height" => *height, "len" => *len }
+            }
+            Self::InvalidOptions(reason) => args! { "reason" => *reason },
+            Self::TooComplex => args! { "max" => MAX_VERTICES },
+            Self::TooLarge { width, height } => {
+                args! { "width" => *width, "height" => *height, "max" => MAX_GRID_CELLS }
+            }
+            // `ugoe-mesher` に変種が増えたら、引数を足すまでは英語の文を渡す。
+            other => args! { "detail" => other.to_string() },
         }
     }
 }

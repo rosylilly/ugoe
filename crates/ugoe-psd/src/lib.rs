@@ -13,15 +13,67 @@ mod parse;
 use parse::{RawLayer, Section};
 
 /// 取り込みのエラー。
-#[derive(Debug, thiserror::Error)]
+///
+/// 変種を足しても公開 API の破壊的な変更にならないよう `#[non_exhaustive]` にしている
+/// (外の `match` は `_` の腕が要る。T0558)。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum PsdError {
     /// 壊れた入力・途中で切れた入力。
     #[error("invalid psd: {0}")]
     Invalid(String),
-    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ・
-    /// 展開した大きさが [`ImportLimits`] を超えるもの)。
+    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ)。
     #[error("unsupported psd feature: {0}")]
     Unsupported(String),
+    /// チャンネルを展開した大きさが読み込みの上限 ([`ImportLimits`]) を超える。ファイルが壊れているとは限らない
+    /// (上限を上げれば読めることがある)。展開する前に止めるので、`size` の平面は確保していない。
+    #[error("{limit} of {size} bytes exceeds the import limit of {max} bytes")]
+    LimitExceeded {
+        /// 超えた上限の種類。
+        limit: ImportLimit,
+        /// 展開しようとした大きさ (バイト)。チャンネル 1 枚ならその平面の大きさ、合計ならそれまでの合計に
+        /// その平面を足したもの (上限を超えたところで止めるので、PSD 全体の合計より小さいことがある)。
+        size: u64,
+        /// その上限の値 (バイト)。
+        max: u64,
+    },
+}
+
+impl PsdError {
+    /// 機械が読む種類 (`"invalid"` など。バリアントの名前の `snake_case`)。値は **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Invalid(_) => "invalid",
+            Self::Unsupported(_) => "unsupported",
+            Self::LimitExceeded { .. } => "limit_exceeded",
+        }
+    }
+}
+
+/// どの読み込みの上限を超えたか ([`PsdError::LimitExceeded`])。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ImportLimit {
+    /// チャンネル 1 枚の展開後の大きさ ([`ImportLimits::max_channel_decompressed`])。
+    ChannelDecompressed,
+    /// 1 つの PSD で展開するバイトの合計 ([`ImportLimits::max_total_decompressed`])。
+    TotalDecompressed,
+}
+
+impl ImportLimit {
+    /// 安定した名前 (`channel_decompressed` / `total_decompressed`)。エラーのコードの引数に使う。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ChannelDecompressed => "channel_decompressed",
+            Self::TotalDecompressed => "total_decompressed",
+        }
+    }
+}
+
+impl fmt::Display for ImportLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// 取り込んだドキュメント。
@@ -146,7 +198,7 @@ pub const DEFAULT_MAX_TOTAL_DECOMPRESSED: u64 = 4 * 1024 * 1024 * 1024;
 /// 上限は PSD の形式の決まりではなく、読む側の方針。ZIP で圧縮したチャンネルは 1000 倍ほどに縮むので、
 /// 数十 MiB の PSD が数百 GiB の画素に展開されうる (展開の爆発)。メモリを使い切らないよう、
 /// チャンネルの画素を展開する前に、展開後の大きさ (矩形の画素数 × 標本のバイト数。16 ビットは 2 バイト) を
-/// 上限と比べ、超えるなら [`PsdError::Unsupported`] を返す (先に確保しない)。
+/// 上限と比べ、超えるなら [`PsdError::LimitExceeded`] を返す (先に確保しない)。
 ///
 /// 数えるのは、色・アルファ・マスクのチャンネルと合成画像の平面を展開したバイトで、圧縮方式によらない
 /// (無圧縮・PackBits は入力の大きさで抑えられるが、合計をメモリの目安にするため含める)。
@@ -198,8 +250,8 @@ impl ImportLimits {
 /// - 8 ビット・16 ビットの RGB (アルファの有無は問わない)。16 ビットは 8 ビットに丸める
 ///
 /// レイヤーマスク (チャンネル -2 / -3) はレイヤーのアルファに掛ける。
-/// グループの入れ子が 256 段より深いもの、展開した大きさが上限を超えるものも
-/// [`PsdError::Unsupported`] になる。
+/// グループの入れ子が 256 段より深いものも [`PsdError::Unsupported`] になる。
+/// 展開した大きさが上限を超えるものは [`PsdError::LimitExceeded`] になる。
 /// 壊れた入力や途中で切れた入力は [`PsdError::Invalid`] を返し、パニックしない。
 pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
     import_with(bytes, ImportLimits::default())

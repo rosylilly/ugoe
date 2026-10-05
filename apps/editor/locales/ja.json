@@ -2023,8 +2023,8 @@
     },
     "psd": {
       "read_failed": "PSD を読めません ({{detail}})。",
-      "channel_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、1 枚が取り込みの上限の {{max}} バイトを超えます。",
-      "total_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、合計が取り込みの上限の {{max}} バイトを超えます。",
+      "channel_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、1 枚が {{size}} バイトになり、取り込みの上限の {{max}} バイトを超えます。",
+      "total_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、合計が {{size}} バイト以上になり、取り込みの上限の {{max}} バイトを超えます。",
       "read_file_failed": "PSD のファイル {{path}} を読めません ({{detail}})。",
       "invalid_mesh_options": "メッシュの設定を使えません ({{reason}})。",
       "automesh_failed": "レイヤー {{layer}} の自動メッシュの生成に失敗しました ({{detail}})。",
@@ -2194,6 +2194,18 @@
       "size_mismatch": "{{width}} × {{height}} の画像の値は {{found}} 個ですが、{{expected}} 個が要ります",
       "invalid_option": "設定 {{field}} = {{value}} は使えません",
       "grid_too_large": "グループの格子 ({{width}} × {{height}} 升) が上限の {{max}} 升を超えます"
+    },
+    "psd_read": {
+      "invalid": "ファイルが壊れているか途中で切れています: {{detail}}",
+      "unsupported": "対応していない機能を使っています: {{detail}}",
+      "limit_exceeded": "チャンネルを展開すると {{size}} バイトになり、取り込みの上限の {{max}} バイトを超えます"
+    },
+    "automesh": {
+      "empty": "画像がすべて透明です",
+      "bad_image": "画像のデータ ({{len}} バイト) が大きさ {{width}} × {{height}} と合いません",
+      "invalid_options": "メッシュの設定が使えません: {{reason}}",
+      "too_complex": "形が複雑で、頂点が上限の {{max}} 個に収まりません",
+      "too_large": "作業用の格子 ({{width}} × {{height}} セル) が上限の {{max}} セルを超えます"
     },
     "compose": {
       "invalid_module_name": "モジュールの名前 {{module}} は、空でなく、/ を含まず、# で始まらない名前にしてください",

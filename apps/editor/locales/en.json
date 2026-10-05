@@ -2074,8 +2074,8 @@
     },
     "psd": {
       "read_failed": "Could not read the PSD ({{detail}}).",
-      "channel_limit_exceeded": "The PSD was not read: a channel decompresses to more than the import limit of {{max}} bytes.",
-      "total_limit_exceeded": "The PSD was not read: its channels decompress to more than the import limit of {{max}} bytes in total.",
+      "channel_limit_exceeded": "The PSD was not read: a channel decompresses to {{size}} bytes, more than the import limit of {{max}} bytes.",
+      "total_limit_exceeded": "The PSD was not read: its channels decompress to at least {{size}} bytes, more than the import limit of {{max}} bytes in total.",
       "read_file_failed": "Could not read the PSD file {{path}} ({{detail}}).",
       "invalid_mesh_options": "The mesh options cannot be used ({{reason}}).",
       "automesh_failed": "Automatic meshing failed for the layer {{layer}} ({{detail}}).",
@@ -2245,6 +2245,18 @@
       "size_mismatch": "the {{width}} × {{height}} image has {{found}} values, but needs {{expected}}",
       "invalid_option": "the setting {{field}} = {{value}} cannot be used",
       "grid_too_large": "the group spans {{width}} × {{height}} cells, more than the limit of {{max}}"
+    },
+    "psd_read": {
+      "invalid": "the file is broken or truncated: {{detail}}",
+      "unsupported": "it uses a feature that is not supported: {{detail}}",
+      "limit_exceeded": "decompressing the channels takes {{size}} bytes, more than the import limit of {{max}} bytes"
+    },
+    "automesh": {
+      "empty": "the image is fully transparent",
+      "bad_image": "the image data ({{len}} bytes) does not match its size {{width}} × {{height}}",
+      "invalid_options": "the mesh options cannot be used: {{reason}}",
+      "too_complex": "the shape is too complex to fit in {{max}} vertices",
+      "too_large": "the working grid of {{width}} × {{height}} cells is more than the limit of {{max}} cells"
     },
     "compose": {
       "invalid_module_name": "the module name {{module}} must not be empty, contain /, or start with #",

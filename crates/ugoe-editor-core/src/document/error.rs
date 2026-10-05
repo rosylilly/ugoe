@@ -1,5 +1,6 @@
 //! 編集の失敗 [`EditError`]。
 
+use ugoe_mesher::MeshError;
 use ugoe_model::validate::ValidationError;
 
 use crate::grid::CellError;
@@ -50,8 +51,8 @@ pub enum EditError {
     #[error("mesh `{id}` cannot be regenerated: {reason}")]
     CannotRegenerateMesh { id: String, reason: String },
     /// 自動メッシュの生成に失敗した (画像が透明、設定が不正など)。
-    #[error("mesh `{id}`: automatic meshing failed: {message}")]
-    Mesher { id: String, message: String },
+    #[error("mesh `{id}`: automatic meshing failed: {error}")]
+    Mesher { id: String, error: MeshError },
     #[error("mesh `{id}`: vertex {index} out of range (vertices = {vertices})")]
     VertexOutOfRange {
         id: String,

@@ -961,9 +961,12 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 
 PSD は ZIP で圧縮したチャンネルが 1000 倍ほどに展開されうるので、`ugoe-psd` は展開する前に大きさを上限
 (`ugoe_psd::ImportLimits`。チャンネル 1 枚が 1 GiB、1 つの PSD の合計が 4 GiB) と比べます ([ugoe-psd](../crates/ugoe-psd/README.md))。
-editor-core は `import::read_layer_tree(bytes, limits)` で読み、上限の超過を `PsdImportError::LimitExceeded` (どの上限か
-(`PsdLimit`) とその値) に分けます。コードは `psd.channel_limit_exceeded` (チャンネル 1 枚) と `psd.total_limit_exceeded` (合計) で、
-引数 `max` (バイト) を持ちます。ほかの読み込みのエラー (壊れた PSD・対応しない機能) は `psd.read_failed` のままです。
+`ugoe-psd` は上限の超過を `PsdError::LimitExceeded` (どの上限か (`ImportLimit`)・展開しようとした大きさ・上限の値) で返し (T0558)、
+editor-core は `import::read_layer_tree(bytes, limits)` で読んで、それを変種で見分けて `PsdImportError::LimitExceeded` (どの上限か
+(`PsdLimit`)・大きさ・上限の値) に分けます。コードは `psd.channel_limit_exceeded` (チャンネル 1 枚) と `psd.total_limit_exceeded` (合計) で、
+引数 `size`・`max` (バイト) を持ちます。合計の `size` は超えたところまでの合計で、PSD 全体の合計より小さいことがあります
+(超えたところで読むのをやめるため)。ほかの読み込みのエラー (壊れた PSD・対応しない機能) は `psd.read_failed` のままで、
+元のエラーを原因 (`psd_read.*`) に載せます。
 
 - **上限を変える設定は持たせません** (T0554)。エディタ (取り込み・新しいプロジェクト・AI の提案の PSD)・CLI・MCP サーバはどれも
   既定の上限で読みます。既定の値は PSD の最大のキャンバス (30000 × 30000) の 8 ビットのレイヤーの 1 チャンネルが収まる大きさで、
@@ -2137,14 +2140,16 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
 - **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、その英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
-- **元のエラーのコード (T0163・T0167・T1618):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`)・
-  合成 (`ComposeError::code`) は元のクレートが機械の読むコードを持ち、editor-core はそれに領域の名前を付けたコード
-  (`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*`) で `cause` (検証の一覧は `items`) に載せます。
+- **元のエラーのコード (T0163・T0167・T1618・T0558):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`)・
+  合成 (`ComposeError::code`)・PSD の読み込み (`PsdError::code`)・自動メッシュ (`MeshError::code`) は元のクレートが機械の読むコードを持ち、
+  editor-core はそれに領域の名前を付けたコード (`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*`・`psd_read.*`・`automesh.*`)
+  で `cause` (検証の一覧は `items`) に載せます。
   editor-core はこれらのコードを一覧に持たず、元のコードから組み立てます (`Coded::code` は `Cow<'static, str>`)。
   `source_error_codes_follow_the_crate_codes` が、元のクレートのすべてのコードに見本があり組み立てた値と一致することを、
   `every_code_is_documented` が組み立てたコードがどれも下の一覧にあることを確かめます (元のクレートにコードを足したら、一覧と訳と見本にも足す)。合成のコードは SDK の `DressUpError::code` とも同じです。`detail`・`details` の英語の文は互換のために残します (MCP・CLI・古い画面)。
 - 自由な文の引数のうち、editor-core が自分で組む理由 (`edit.invalid_physics`・`edit.invalid_motion`・`edit.deformer_edit_failed` などの `reason`)、
-  自動メッシュ (`edit.automesh_failed`・`psd.automesh_failed`)・PSD の読み込み・AI のプロバイダの `detail` はまだ英語のままです。
+  AI のプロバイダの `detail`、PSD の読み込みの壊れた入力・対応しない機能の理由 (`psd_read.invalid`・`psd_read.unsupported` の `detail`。
+  `ugoe-psd` の `PsdError::Invalid`・`Unsupported` が文しか持たないため) はまだ英語のままです。
 
 ### コードの一覧
 
@@ -2163,7 +2168,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `edit.invalid_texture_name` / `edit.texture_not_png` | `name` |
 | `edit.invalid_canvas` | `width`・`height` |
 | `edit.cannot_regenerate_mesh` / `edit.mesh_geometry` | `id`・`reason` |
-| `edit.automesh_failed` | `id`・`detail` |
+| `edit.automesh_failed` | `id`・`detail` (原因は `automesh.*`) |
 | `edit.vertex_out_of_range` | `id`・`index`・`vertices` |
 | `edit.too_few_vertices` | `id`・`remaining` |
 | `edit.invalid_draw_order` | `id`・`draw_order` |
@@ -2278,11 +2283,11 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 
 | コード | 引数 |
 | --- | --- |
-| `psd.read_failed` | `detail` |
-| `psd.channel_limit_exceeded` / `psd.total_limit_exceeded` (読み込みの上限。チャンネル 1 枚の展開後の大きさ / 展開の合計。[読み込みの上限](#読み込みの上限)) | `max` (バイト) |
+| `psd.read_failed` | `detail` (原因は `psd_read.*`) |
+| `psd.channel_limit_exceeded` / `psd.total_limit_exceeded` (読み込みの上限。チャンネル 1 枚の展開後の大きさ / 展開の合計。[読み込みの上限](#読み込みの上限)) | `size` (展開しようとした大きさ。合計は超えたところまで)・`max` (上限)。どちらもバイト |
 | `psd.read_file_failed` | `path`・`detail` |
 | `psd.invalid_mesh_options` | `reason` |
-| `psd.automesh_failed` | `layer`・`detail` |
+| `psd.automesh_failed` | `layer`・`detail` (原因は `automesh.*`) |
 | `psd.canvas_mismatch` | `psd_width`・`psd_height`・`model_width`・`model_height` |
 | `psd.group_blend_mode_ignored` / `psd.blend_mode_unsupported` | `blend_mode` |
 | `psd.adjustment_layer` | `key` |
@@ -2372,6 +2377,13 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `compose.unknown_collider` | `module`・`rig`・`collider` |
 | `compose.pose_not_exposed` | `module`・`slot`・`part` |
 | `compose.invalid_composition` | `count`・`details` |
+| `psd_read.invalid` / `psd_read.unsupported` (壊れた PSD / 対応しない機能。`psd.read_failed` の原因) | `detail` (理由。英語) |
+| `psd_read.limit_exceeded` (読み込みの上限。editor-core は `psd.channel_limit_exceeded`・`psd.total_limit_exceeded` で返すので、ふつうは画面に出ない) | `limit` (`channel_decompressed`・`total_decompressed`)・`size`・`max` (バイト) |
+| `automesh.empty` (中身の画素が無い) | なし |
+| `automesh.bad_image` (画像の長さが大きさと合わない) | `width`・`height`・`len` (バイト) |
+| `automesh.invalid_options` | `reason` (範囲の外のオプションの説明。英語) |
+| `automesh.too_complex` (頂点数が上限に収まらない) | `max` (頂点数の上限) |
+| `automesh.too_large` (作業用の格子が大きすぎる) | `width`・`height` (格子のセル数)・`max` (セル数の上限) |
 
 **エディタのバックエンド (`EditorError`。`src-tauri/src/error.rs`)**
 

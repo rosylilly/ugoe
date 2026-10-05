@@ -14,7 +14,7 @@ use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, Model, Part, PartId};
-use ugoe_psd::{ImportLimits, Layer, LayerNode, LayerTree, PsdError, WarningKind};
+use ugoe_psd::{ImportLimit, ImportLimits, Layer, LayerNode, LayerTree, PsdError, WarningKind};
 
 use crate::Command;
 use crate::automesh::AutoMeshOptions;
@@ -83,12 +83,14 @@ impl fmt::Display for PsdImportWarning {
 pub enum PsdImportError {
     /// PSD の読み込みの失敗 (上限の超過は [`PsdImportError::LimitExceeded`])。
     #[error(transparent)]
-    Psd(#[from] PsdError),
+    Psd(PsdError),
     /// PSD の展開が読み込みの上限 ([`ImportLimits`]) を超えた。ファイルが壊れているとは限らない。
-    #[error("{}", limit_message(*.limit, *.max))]
+    #[error("{}", limit_message(*.limit, *.size, *.max))]
     LimitExceeded {
         /// 超えた上限。
         limit: PsdLimit,
+        /// 展開しようとした大きさ (バイト。`ugoe_psd::PsdError::LimitExceeded` の `size`)。
+        size: u64,
         /// その上限 (バイト)。
         max: u64,
     },
@@ -111,39 +113,31 @@ pub enum PsdLimit {
     Total,
 }
 
-fn limit_message(limit: PsdLimit, max: u64) -> String {
+fn limit_message(limit: PsdLimit, size: u64, max: u64) -> String {
     match limit {
-        PsdLimit::Channel => {
-            format!("a PSD channel decompresses to more than the import limit of {max} bytes")
-        }
+        PsdLimit::Channel => format!(
+            "a PSD channel decompresses to {size} bytes, more than the import limit of {max} bytes"
+        ),
         PsdLimit::Total => format!(
-            "the PSD channels decompress to more than the import limit of {max} bytes in total"
+            "the PSD channels decompress to at least {size} bytes, more than the import limit of {max} bytes in total"
         ),
     }
 }
 
-impl PsdImportError {
-    /// `limits` で読んだ `ugoe-psd` のエラー。上限の超過は [`PsdImportError::LimitExceeded`] に分ける。
-    ///
-    /// `ugoe-psd` は上限の超過を `PsdError::Unsupported` の文 ("import limit" を含む) で返すので、文で見分ける
-    /// (文の形は `ugoe-psd` の `Budget::take`。変わったら `import_tests` の上限のテストが失敗する)。
-    pub fn from_psd(error: PsdError, limits: ImportLimits) -> Self {
-        match &error {
-            PsdError::Unsupported(reason) if reason.contains("import limit") => {
-                if reason.ends_with("in total") {
-                    Self::LimitExceeded {
-                        limit: PsdLimit::Total,
-                        max: limits.max_total_decompressed,
-                    }
-                } else {
-                    Self::LimitExceeded {
-                        limit: PsdLimit::Channel,
-                        max: limits.max_channel_decompressed,
-                    }
-                }
-            }
-            _ => Self::Psd(error),
-        }
+/// `ugoe-psd` のエラー。上限の超過 (`PsdError::LimitExceeded`) は変種で見分けて
+/// [`PsdImportError::LimitExceeded`] に分ける。
+impl From<PsdError> for PsdImportError {
+    fn from(error: PsdError) -> Self {
+        let PsdError::LimitExceeded { limit, size, max } = error else {
+            return Self::Psd(error);
+        };
+        let limit = match limit {
+            ImportLimit::ChannelDecompressed => PsdLimit::Channel,
+            ImportLimit::TotalDecompressed => PsdLimit::Total,
+            // `ugoe-psd` に上限が増えたら、ここにコードを足すまでは読み込みの失敗として返す。
+            _ => return Self::Psd(error),
+        };
+        Self::LimitExceeded { limit, size, max }
     }
 }
 
@@ -152,7 +146,7 @@ impl PsdImportError {
 /// エディタ・CLI・MCP サーバは既定の上限 (`ImportLimits::default()`) で読み、利用者が変える設定は持たない
 /// (`docs/editor.md#読み込みの上限`)。
 pub fn read_layer_tree(bytes: &[u8], limits: ImportLimits) -> Result<LayerTree, PsdImportError> {
-    ugoe_psd::import_with(bytes, limits).map_err(|e| PsdImportError::from_psd(e, limits))
+    Ok(ugoe_psd::import_with(bytes, limits)?)
 }
 
 /// `ugoe-psd` の読み込みの警告のコードと引数。

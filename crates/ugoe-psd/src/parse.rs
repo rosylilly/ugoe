@@ -4,7 +4,7 @@
 //! 読むのは、ヘッダ・レイヤーとマスクの情報・(レイヤーがない場合の) 合成画像だけ。
 //! 16 ビットのチャンネルは、読んだところで 8 ビットに丸める。
 
-use crate::{ImportLimits, PsdError};
+use crate::{ImportLimit, ImportLimits, PsdError};
 
 /// PSD の画像の幅・高さの上限 (Photoshop の PSD 形式の上限)。
 const MAX_DIMENSION: u32 = 30_000;
@@ -198,21 +198,25 @@ impl Budget {
     }
 
     /// これから `len` バイトの平面を 1 枚展開する。上限を超えるなら、確保する前に
-    /// [`PsdError::Unsupported`] を返す。
+    /// [`PsdError::LimitExceeded`] を返す。
     fn take(&mut self, len: usize) -> Result<(), PsdError> {
         let len = len as u64;
         let max = self.limits.max_channel_decompressed;
         if len > max {
-            return Err(PsdError::Unsupported(format!(
-                "a channel decompresses to {len} bytes, over the import limit of {max} bytes"
-            )));
+            return Err(PsdError::LimitExceeded {
+                limit: ImportLimit::ChannelDecompressed,
+                size: len,
+                max,
+            });
         }
         let used = self.used.saturating_add(len);
         let max = self.limits.max_total_decompressed;
         if used > max {
-            return Err(PsdError::Unsupported(format!(
-                "channels decompress to more than the import limit of {max} bytes in total"
-            )));
+            return Err(PsdError::LimitExceeded {
+                limit: ImportLimit::TotalDecompressed,
+                size: used,
+                max,
+            });
         }
         self.used = used;
         Ok(())

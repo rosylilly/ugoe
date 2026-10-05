@@ -143,7 +143,7 @@ pub(crate) fn regenerate_mesh(
         ugoe_mesher::generate(&rgba, width, height, &(*options).into()).map_err(|e| {
             EditError::Mesher {
                 id: id.to_string(),
-                message: e.to_string(),
+                error: e,
             }
         })?;
     let size = Vec2::new(width as f32, height as f32);

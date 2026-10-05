@@ -16,7 +16,7 @@ use ugoe_mesher::MeshError;
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::ValidationError;
-use ugoe_psd::{PsdError, WarningKind};
+use ugoe_psd::{ImportLimit, PsdError, WarningKind};
 use ugoe_rigging::{InferError, NormalMapError, WorldError};
 use ugoe_runtime::{CompileError, ComposeError};
 
@@ -78,6 +78,8 @@ pub fn message_samples() -> Vec<Message> {
     out.extend(world_errors().iter().map(Coded::to_message));
     out.extend(normal_map_errors().iter().map(Coded::to_message));
     out.extend(compose_errors().iter().map(Coded::to_message));
+    out.extend(psd_errors().iter().map(Coded::to_message));
+    out.extend(mesh_errors().iter().map(Coded::to_message));
     out.extend(warnings());
     let mirror = RederiveWarning::mirror_failed(
         KeyformTarget::Mesh("EyeR".into()),
@@ -155,7 +157,7 @@ fn edit_errors() -> Vec<EditError> {
         },
         EditError::Mesher {
             id: id(),
-            message: reason(),
+            error: MeshError::Empty,
         },
         EditError::VertexOutOfRange {
             id: id(),
@@ -449,10 +451,12 @@ fn psd_import_errors() -> Vec<PsdImportError> {
         PsdImportError::Psd(PsdError::Invalid(reason())),
         PsdImportError::LimitExceeded {
             limit: PsdLimit::Channel,
+            size: 2048,
             max: 1024,
         },
         PsdImportError::LimitExceeded {
             limit: PsdLimit::Total,
+            size: 5000,
             max: 4096,
         },
         PsdImportError::InvalidMeshOptions("max_edge"),
@@ -852,6 +856,37 @@ pub(crate) fn infer_errors() -> Vec<InferError> {
             parameter: parameter(),
         },
         InferError::NonAffineParent(target()),
+    ]
+}
+
+/// PSD の読み込みのエラー (`psd_read.*`)。
+pub(crate) fn psd_errors() -> Vec<PsdError> {
+    vec![
+        PsdError::Invalid(reason()),
+        PsdError::Unsupported(reason()),
+        PsdError::LimitExceeded {
+            limit: ImportLimit::ChannelDecompressed,
+            size: 2048,
+            max: 1024,
+        },
+    ]
+}
+
+/// 自動メッシュの生成のエラー (`automesh.*`)。
+pub(crate) fn mesh_errors() -> Vec<MeshError> {
+    vec![
+        MeshError::Empty,
+        MeshError::BadImage {
+            width: 2,
+            height: 2,
+            len: 12,
+        },
+        MeshError::InvalidOptions("margin"),
+        MeshError::TooComplex,
+        MeshError::TooLarge {
+            width: 20_000,
+            height: 20_000,
+        },
     ]
 }
 
