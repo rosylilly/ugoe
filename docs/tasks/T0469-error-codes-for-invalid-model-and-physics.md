@@ -1,11 +1,11 @@
 ---
 id: T0469
 title: "読み込みの invalid_model に error_codes、物理の差し替えの失敗に invalid_physics の種類、@ugoe/runtime に set_effects_json の例外を書く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, bindings/web, bindings/unity, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0469
 ---
 
 # T0469: 読み込みの invalid_model に error_codes、物理の差し替えの失敗に invalid_physics の種類、@ugoe/runtime に set_effects_json の例外を書く
