@@ -97,8 +97,9 @@ const MIRRORS: &[(&str, &str)] = &[
     (sp::BROW_L_ANGLE, sp::BROW_R_ANGLE),
 ];
 
-/// パラメータのグループ (エディタ・ビューアのスライダーの区切り。T0468) と、それぞれに入れる標準パラメータ。
-/// 見本のアバターと着せ替えの本体 ([`dress_up`]) で共有する (モデルに無いパラメータは入らないだけ)。
+/// パラメータのグループ (エディタ・ビューアのスライダーの区切り。T0468) と、それぞれに入れるパラメータ
+/// (標準パラメータと、着せ替えの本体の振る手の `ArmWave`)。見本のアバターと着せ替えの本体 ([`dress_up`]) で
+/// 共有する (モデルに無いパラメータは入らないだけ)。
 const PARAMETER_GROUPS: &[(&str, &[&str])] = &[
     ("Head", &[sp::ANGLE_X, sp::ANGLE_Y, sp::ANGLE_Z]),
     (
@@ -108,6 +109,7 @@ const PARAMETER_GROUPS: &[(&str, &[&str])] = &[
             sp::BODY_ANGLE_Y,
             sp::BODY_ANGLE_Z,
             sp::BREATH,
+            dress_up::ARM_WAVE,
         ],
     ),
     (

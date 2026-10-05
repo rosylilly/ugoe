@@ -114,11 +114,11 @@
 
 | プロジェクト | 開くと |
 | --- | --- |
-| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある。モーション (`idle`・`nod`・`shake`・`tilt`・`wave`) と表情 (`smile`・`surprised`・`sad`) も入っている。「Slots」タブの `Outfit` の「Pose parts」には振る手の差分 `Wave` が入っている |
+| `dress-up.ugoeproj` | 本体。「Slots」タブにスロット `Hair`・`Headwear`・`Outfit` があり、3 つとも「Show to apps」が入っている (本体はアバタープロファイルのレベル 2 を名乗る)。物理のタブには既定の後ろ髪を揺らすリグ `HairSway` がある。モーション (`idle`・`nod`・`shake`・`tilt`・`wave`) と表情 (`smile`・`surprised`・`sad`) も入っている。「Slots」タブの `Outfit` の「Pose parts」には振る手の差分 `Wave`、公開するパラメータには振る手を揺らす `ArmWave` が入っている |
 | `long-hair.ugoeproj` | スロット `Hair` のモジュール `LongHair`。後ろ髪は回転デフォーマ `Sway` と物理で揺れ、本体の肌を反転マスクに使う |
 | `twin-tails.ugoeproj` | スロット `Hair` のモジュール `TwinTails`。房が結び目を軸に揺れ、内側へ振れると本体の肩の衝突体 `Shoulders` に当たる |
 | `cat-ears.ugoeproj` | スロット `Headwear` のモジュール `CatEars` |
-| `sailor.ugoeproj` | スロット `Outfit` のモジュール `Sailor`。体のワープに付き、本体のシャツを置き換える。振る手の袖 (`WaveSleeve`) を本体の差分 `Wave` に追従させる (ポーズの追従の見本) |
+| `sailor.ugoeproj` | スロット `Outfit` のモジュール `Sailor`。体のワープに付き、本体のシャツを置き換える。振る手の袖 (`WaveSleeve`) を本体の差分 `Wave` に追従させ (ポーズの追従の見本)、本体と同じ肘の回転デフォーマ `WaveRotation` に付けて、スロットが公開するパラメータ `ArmWave` で手と一緒に揺らす |
 
 モジュールのプロジェクトは、続けて「Open…」で開きます (ダイアログは見本のフォルダーから始まります)。モジュールのプロジェクトを開くと本体が下敷きに出て、
 本体のパラメータで一緒に動きます。物理のタブには本体のリグ `HairSway` も並びます (モジュールでは動かせない行。

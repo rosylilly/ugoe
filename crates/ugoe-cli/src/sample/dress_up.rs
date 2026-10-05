@@ -101,6 +101,13 @@ const WAVE: &str = "Wave";
 const WAVE_SLEEVE: &str = "WaveSleeve";
 /// 振る手の袖の上の端 (キャンバスの y)。前腕はここで切り、袖が肩の側を覆う。
 const CUFF: f32 = 430.0;
+/// 振る手を揺らすパラメータ (T0328)。−1〜1 で、手と袖が肘 ([`ELBOW`]) を軸に ±[`WAVE_ANGLE`] 度傾く。
+/// 標準パラメータではないので、スロット `Outfit` が公開し (`parameters`)、`Sailor` の袖も同じ角度で揺らす。
+pub(super) const ARM_WAVE: &str = "ArmWave";
+/// `ArmWave` = ±1 で手と袖が傾く角度 (度)。
+const WAVE_ANGLE: f32 = 12.0;
+/// 振る手の肘 (回転デフォーマ `WaveRotation` の原点。前腕の下の端の近く)。
+const ELBOW: Vec2 = Vec2::new(365.0, 500.0);
 
 /// 本体のスロットの描画順の範囲。髪は顔 (500) と目・眉を挟む (後ろ髪は顔の奥、前髪は眉の手前)。
 const HAIR_RANGE: (f32, f32) = (420.0, 680.0);
@@ -546,7 +553,12 @@ fn base() -> Bundle {
         sp::MOUTH_FORM,
     ]
     .map(parameter)
-    .to_vec();
+    .into_iter()
+    .chain([Parameter {
+        min: -1.0,
+        ..parameter(ARM_WAVE)
+    }])
+    .collect();
     let parts = vec![
         part("Body", None),
         part("Head", Some("Body")),
@@ -620,6 +632,8 @@ fn base() -> Bundle {
         Some("HeadWarp"),
         KeyformGrid::constant(rotation_keyform(IN_HEAD.local(HEAD), 0.0)),
     );
+
+    let wave_rotation = wave_rotation(Some("BodyWarp"), "Body");
 
     let hair = Palette {
         fill: rgb(0x8c5a43),
@@ -731,13 +745,15 @@ fn base() -> Bundle {
     let t = textures.add("hair-front", &art);
     meshes.push(Sheet::head("HairFront", "Hair", 650.0, (4, 4)).still(t, &art));
     // 振る手は髪 (スロット `Hair` の範囲) より手前、頭の飾り (`Headwear`) より奥。袖は服と同じく髪より奥
-    // (服のスロット `Outfit` のモジュールの袖と同じ並び)。
+    // (服のスロット `Outfit` のモジュールの袖と同じ並び)。どちらも肘の回転デフォーマに付けて `ArmWave` で揺らす。
+    let on_elbow =
+        |id, part, draw_order| on_pivot(id, part, (WAVE_ROTATION, ELBOW), draw_order, (4, 4));
     let art = waving_hand();
     let t = textures.add("hand-wave", &art);
-    meshes.push(Sheet::body("HandWave", WAVE, 700.0).still(t, &art));
+    meshes.push(on_elbow("HandWave", WAVE, 700.0).still(t, &art));
     let art = wave_sleeve(SHIRT, SHIRT_LINE);
     let t = textures.add("sleeve-wave", &art);
-    meshes.push(Sheet::body("SleeveWave", WAVE_SLEEVE, 255.0).still(t, &art));
+    meshes.push(on_elbow("SleeveWave", WAVE_SLEEVE, 255.0).still(t, &art));
 
     let slot = |id: &str, anchor: &str, (min, max): (f32, f32), part: &str| Slot {
         id: id.into(),
@@ -762,8 +778,9 @@ fn base() -> Bundle {
         slot("Headwear", "HeadWarp", HEADWEAR_RANGE, "Head"),
         Slot {
             replaces: vec!["Clothes".into()],
-            // 振る手に合わせて袖を替えられる (`Sailor`)。
+            // 振る手に合わせて袖を替え (`Sailor`)、手と一緒に揺らせる。
             pose_parts: vec![WAVE.into()],
+            parameters: vec![ARM_WAVE.into()],
             ..slot("Outfit", "BodyWarp", OUTFIT_RANGE, "Body")
         },
     ];
@@ -781,7 +798,13 @@ fn base() -> Bundle {
         parameters,
         parameter_groups: super::parameter_groups(),
         parts,
-        deformers: vec![body_warp, head_rotation, head_warp, hair_sway],
+        deformers: vec![
+            body_warp,
+            head_rotation,
+            head_warp,
+            hair_sway,
+            wave_rotation,
+        ],
         meshes,
         glues: Vec::new(),
         textures: textures.refs,
@@ -820,6 +843,23 @@ fn base() -> Bundle {
         physics: Some(base_physics()),
         ..Bundle::new(model)
     }
+}
+
+/// 振る手と袖を揺らす回転デフォーマの ID。
+const WAVE_ROTATION: &str = "WaveRotation";
+
+/// 振る手と袖を揺らす回転デフォーマ `WaveRotation` (パーツ `part`)。原点は肘で、`ArmWave` = ±1 で ±[`WAVE_ANGLE`] 度
+/// 回る。本体では体のワープの子、`Sailor` では最上位 (スロット `Outfit` の取り付け先の体のワープに付く) なので、
+/// どちらも原点は体のワープの座標系で書く。
+fn wave_rotation(parent: Option<&str>, part: &str) -> Deformer {
+    rotation(
+        WAVE_ROTATION,
+        part,
+        parent,
+        grid(&[(ARM_WAVE, &[-1.0, 1.0])], |v| {
+            rotation_keyform(IN_BODY.local(ELBOW), v[0] * WAVE_ANGLE)
+        }),
+    )
 }
 
 /// 本体の肩の衝突体の ID (スロット `Hair` が公開する)。
@@ -1452,7 +1492,8 @@ fn cat_ears() -> ModuleFile {
 }
 
 /// `Sailor` (スロット `Outfit`): セーラー服。体のワープに付き、既定のシャツ (`Clothes`) を置き換える。
-/// 振る手の袖 (パーツ `WaveSleeve`) を本体のポーズの要素 `Wave` に追従させる (T0474)。
+/// 振る手の袖 (パーツ `WaveSleeve`) を本体のポーズの要素 `Wave` に追従させ (T0474)、本体と同じ肘の回転デフォーマ
+/// (`ArmWave` で揺れる) に付ける (T0328)。
 fn sailor() -> ModuleFile {
     let mut builder = ModuleBuilder::new("Sailor", "Outfit", "Sailor");
     let on_body = |id, draw_order, cells| Sheet {
@@ -1523,10 +1564,14 @@ fn sailor() -> ModuleFile {
         .module
         .parts
         .push(hidden_part(WAVE_SLEEVE, Some("Sailor")));
-    let sheet = Sheet {
-        part: WAVE_SLEEVE,
-        ..on_body("SleeveWave", 250.0, (2, 4))
-    };
+    builder.module.deformers.push(wave_rotation(None, "Sailor"));
+    let sheet = on_pivot(
+        "SleeveWave",
+        WAVE_SLEEVE,
+        (WAVE_ROTATION, ELBOW),
+        250.0,
+        (2, 4),
+    );
     builder.add(sheet, &art);
     builder.module.pose.links = vec![PoseEntry {
         part: WAVE.into(),
@@ -1703,8 +1748,76 @@ mod tests {
         assert_opacity(&puppet, sailor_sleeve, 0.0);
     }
 
-    /// モーション `wave` は再生中に手を上げ (ポーズの `Wave` を表示し)、終わると手を下ろす (`HandsDown`)。
-    /// `Sailor` を付けていれば袖も一緒に切り替わる (T0474)。
+    /// 合成したモデルのメッシュ `id` の描画の頂点位置 (キャンバス座標)。
+    fn drawn(puppet: &ugoe::Puppet, id: &str) -> Vec<Vec2> {
+        let meshes = &puppet.instance().compiled().model().meshes;
+        let i = meshes.iter().position(|m| m.id == id).unwrap();
+        puppet.instance().drawables()[i].positions.clone()
+    }
+
+    /// `ArmWave` は振る手と袖を肘を軸に回し (指先ほど大きく動き、肘の近くはほとんど動かない)、顔は動かさない。
+    /// `Sailor` の袖は本体の袖と同じだけ回る (T0328)。
+    #[test]
+    fn arm_wave_swings_the_hand_and_the_sleeves() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        let parameter = model.parameters.iter().find(|p| p.id == ARM_WAVE).unwrap();
+        assert_eq!(
+            (parameter.min, parameter.default, parameter.max),
+            (-1.0, 0.0, 1.0)
+        );
+        let outfit = model.slots.iter().find(|s| s.id == "Outfit").unwrap();
+        assert_eq!(outfit.parameters, [ugoe_model::ParamId::from(ARM_WAVE)]);
+
+        let rest = positions(model, &[], "HandWave");
+        for value in [-1.0, 1.0] {
+            let swung = positions(model, &[(ARM_WAVE, value)], "HandWave");
+            // 一番上の頂点 (指先の側) は肘から約 250px なので、12 度で 50px ほど動く。
+            let top = rest[0].distance(swung[0]);
+            assert!(
+                top > 40.0,
+                "ArmWave = {value} moves the fingers only {top} px"
+            );
+            let elbow = |p: &[Vec2]| p.iter().map(|q| q.distance(ELBOW)).collect::<Vec<_>>();
+            for (a, b) in elbow(&rest).iter().zip(elbow(&swung)) {
+                assert!((a - b).abs() < 1e-3, "the hand turns around the elbow");
+            }
+            let sleeve = max_shift(
+                &positions(model, &[], "SleeveWave"),
+                &positions(model, &[(ARM_WAVE, value)], "SleeveWave"),
+            );
+            assert!(
+                sleeve > 10.0,
+                "ArmWave = {value} moves the sleeve only {sleeve} px"
+            );
+            assert_eq!(
+                max_shift(
+                    &positions(model, &[], "Face"),
+                    &positions(model, &[(ARM_WAVE, value)], "Face")
+                ),
+                0.0
+            );
+        }
+        // 右へ倒すと (正) 指先が画面の右へ動く。
+        assert!(positions(model, &[(ARM_WAVE, 1.0)], "HandWave")[0].x > rest[0].x);
+
+        // `Sailor` の袖の四隅は、本体の袖の四隅と同じところにある (同じ絵の矩形を同じ角度で回す)。
+        let refs: Vec<&Module> = sample.modules.iter().map(|f| &f.module).collect();
+        let composed = ugoe_runtime::compose(model, &[refs[3]]).unwrap();
+        for value in [-1.0, 0.0, 0.7] {
+            let base = positions(model, &[(ARM_WAVE, value)], "SleeveWave");
+            let sailor = positions(&composed, &[(ARM_WAVE, value)], "Sailor/SleeveWave");
+            for (a, b) in [
+                (base[0], sailor[0]),
+                (base[base.len() - 1], sailor[sailor.len() - 1]),
+            ] {
+                assert!(a.distance(b) < 1e-3, "ArmWave = {value}: {a} {b}");
+            }
+        }
+    }
+
+    /// モーション `wave` は再生中に手を上げ (ポーズの `Wave` を表示し)、手と袖を振り (`ArmWave`。T0328)、
+    /// 終わると手を下ろす (`HandsDown`)。`Sailor` を付けていれば袖も一緒に切り替わって揺れる (T0474)。
     #[test]
     fn wave_motion_switches_the_pose() {
         let sample = build_dress_up().unwrap();
@@ -1724,7 +1837,17 @@ mod tests {
                     t += dt;
                 }
             };
-            // ポーズのフェード (0.5 秒) を終えた後。
+            // ポーズのフェード (0.5 秒) を終えた後。手と袖は `ArmWave` の −0.5 (0.9 秒) と 1 (1.2 秒) の間で揺れる。
+            step(&mut puppet, 0.9);
+            let (hand, cuff) = (drawn(&puppet, "HandWave"), drawn(&puppet, sleeve));
+            step(&mut puppet, 1.2);
+            let swing = max_shift(&hand, &drawn(&puppet, "HandWave"));
+            assert!(swing > 60.0, "{modules:?}: the hand swings only {swing} px");
+            let swing = max_shift(&cuff, &drawn(&puppet, sleeve));
+            assert!(
+                swing > 10.0,
+                "{modules:?}: the sleeve swings only {swing} px"
+            );
             step(&mut puppet, 1.5);
             assert_opacity(&puppet, "HandWave", 1.0);
             assert_opacity(&puppet, sleeve, 1.0);

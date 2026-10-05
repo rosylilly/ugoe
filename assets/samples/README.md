@@ -29,10 +29,12 @@ npm パッケージの `<ugoe-avatar motion="nod" expression="smile">` (`binding
 | `nod` | 1.2 秒 | `AngleY` 0→−25→5→−20→0 (うなずく)。終わりにイベント `nod-end` |
 | `shake` | 1.6 秒 | `AngleX` 0→25→−25→25→0 (首を振る) |
 | `tilt` | 1.5 秒 | `AngleZ` 0→25 (ベジェで入る)→25→0 と `EyeBallX` 0.5 (首をかしげて横を見る) |
-| `wave` (`dress-up.ugoe` だけ) | 2.5 秒 | ポーズの要素 `Wave` を 2 秒表示し (パーツの不透明度のカーブ。ポーズへの表示の要求)、`HandsDown` に戻す。`AngleZ` −12・`MouthForm` 1 (手を振って笑う)。終わりにイベント `wave-end` ([下](#パラメータのグループとポーズ)) |
+| `wave` (`dress-up.ugoe` だけ) | 2.5 秒 | ポーズの要素 `Wave` を 2 秒表示し (パーツの不透明度のカーブ。ポーズへの表示の要求)、`HandsDown` に戻す。手が上がった 0.4〜2 秒に `ArmWave` を 1 と −0.5 の間で 0.3 秒ごとに往復させて手を振る (T0328)。`AngleZ` −12・`MouthForm` 1 (手を振って笑う)。終わりにイベント `wave-end` ([下](#パラメータのグループとポーズ)) |
 
 `idle`・`nod`・`shake`・`tilt` は標準パラメータの頭と体の向き・目玉だけを動かすので、2 つのモデルで同じものを使います。
-`wave` は着せ替えの本体のポーズを切り替えるので、`dress-up.ugoe` だけに入れます (T0474)。
+`wave` は着せ替えの本体のポーズと振る手のパラメータ `ArmWave` を動かすので、`dress-up.ugoe` だけに入れます (T0474・T0328)。
+見本のアバターにはポーズを切り替えるモーションを入れていません (耳飾りを外す差分は付けたままにしておく着せ替えで、
+モーションのカーブはモーションが終わると効かなくなり、再生の間だけ外すことになるため。切り替えはポーズの `show_pose` で行います)。
 `dress-up.ugoe` は標準の呼吸 (`AngleX/Y/Z` の小さな揺れを含む) を持つので、モーションの値にそれが足されます。
 
 | 表情 | `avatar.ugoe` | `dress-up.ugoe` |
@@ -54,7 +56,7 @@ npm パッケージの `<ugoe-avatar motion="nod" expression="smile">` (`binding
 | グループ | パラメータ (モデルにあるものだけ) |
 | --- | --- |
 | `Head` | `AngleX/Y/Z` |
-| `Body` | `BodyAngleX/Y/Z`・`Breath` |
+| `Body` | `BodyAngleX/Y/Z`・`Breath`・`ArmWave` (`dress-up.ugoe` の振る手。[下](#本体-dress-upugoe)) |
 | `Eyes` | `EyeLOpen`・`EyeROpen`・`EyeLSmile`・`EyeRSmile`・`EyeLWide`・`EyeRWide`・`EyeBallX/Y` |
 | `Brows` | `BrowLY`・`BrowRY`・`BrowLAngle`・`BrowRAngle`・`BrowInnerUp` |
 | `Mouth` | `MouthOpenY`・`MouthForm`・`MouthX`・`JawX`・`MouthPucker`・`MouthPress`・`MouthShrug` |
@@ -65,14 +67,15 @@ npm パッケージの `<ugoe-avatar motion="nod" expression="smile">` (`binding
 | モデル | ポーズのグループ (先頭が最初に表示される) |
 | --- | --- |
 | `avatar.ugoe` | `earwear` (耳飾り `earwear-l`・`earwear-r` を耳のパーツから移したもの) / `no_earwear` (中身の無いパーツ。耳飾りを外した姿) |
-| `dress-up.ugoe` | `HandsDown` (中身の無いパーツ。手は絵の外) / `Wave` (顔の横で手を振る `HandWave`。`links` の `WaveSleeve` (既定の服の色の袖 `SleeveWave`) も一緒に表示する) |
+| `dress-up.ugoe` | `HandsDown` (中身の無いパーツ。手は絵の外) / `Wave` (顔の横に上げた手 `HandWave`。`links` の `WaveSleeve` (既定の服の色の袖 `SleeveWave`) も一緒に表示する。手と袖は `ArmWave` で揺れる) |
 
 どちらも先頭の要素が既定の姿なので、ポーズを効かせても効かせなくても既定の見た目は前と同じです (`avatar-*.jpg`・`dress-up.jpg` は
 作り直していません)。`Wave` と `WaveSleeve` はパーツの不透明度を 0 にしてあるので、ポーズの段を通らない描画 (`ugoe render` の時間を進めない描画、
 エディタの編集中のビューポート) でも見えません。ポーズで表示すると、不透明度を上書き (重み 1) して見せます。
 切り替えはエディタの「Pose」の節 (プレビューモード) や「Poses」タブの「Show the pose in the viewport」、ランタイムの `show_pose`
 (`Puppet::pose_mut().show`)、見本のモーション `wave` (T0474。ビューア・npm パッケージの例の選択欄でも再生できる) で試せます。
-`ugoe render` では `--motion wave` の途中の時刻を描きます (ポーズのフェードは 0.5 秒なので、0.7〜2 秒なら手が上がりきっている):
+`ugoe render` では `--motion wave` の途中の時刻を描きます (ポーズのフェードは 0.5 秒なので、0.7〜2 秒なら手が上がりきっている。
+`ArmWave` は 0.6・1.2・1.8 秒で 1 (画面の右へ倒す)、0.9・1.5 秒で −0.5):
 
 ```sh
 just cli render assets/samples/dress-up/dress-up.ugoe -o wave.png --motion wave --time 1.2
@@ -82,7 +85,9 @@ just cli render assets/samples/dress-up/dress-up.ugoe --module assets/samples/dr
 ```
 
 着せ替えのスロット `Outfit` は `Wave` を `pose_parts` で公開し、`Sailor` は自分の袖のパーツ `WaveSleeve` を `pose.links` で `Wave` に
-追従させます ([docs/spec/modules.md#ポーズ](../../docs/spec/modules.md#ポーズ))。既定の袖のパーツ `WaveSleeve` は既定の服 `Clothes` の子なので、
+追従させます ([docs/spec/modules.md#ポーズ](../../docs/spec/modules.md#ポーズ))。
+手と袖は肘を原点にした回転デフォーマ `WaveRotation` に付き、パラメータ `ArmWave` で揺れます (T0328)。`ArmWave` は標準パラメータではないので、
+スロット `Outfit` が `parameters` で公開し、`Sailor` は同じキーフォームの回転デフォーマ (最上位なので取り付け先の体のワープに付く) を持って、袖を手と同じ角度で揺らします。既定の袖のパーツ `WaveSleeve` は既定の服 `Clothes` の子なので、
 `Sailor` が `Clothes` を置き換えると一緒に隠れます。手 (`HandWave`、描画順 700) は髪より手前ですが、袖は服と同じく髪より奥
 (既定の袖は 255、`Sailor` の袖はスロットの範囲に写した 280) に描くので、前腕は袖の上の端で切ってあります。
 
@@ -205,9 +210,10 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 
 | 要素 | 内容 |
 | --- | --- |
-| パラメータ | アバタープロファイルのレベル 2 の分 (T0715): `AngleX/Y/Z`・`BodyAngleX/Y/Z`・`Breath`・`EyeLOpen`・`EyeROpen`・`EyeBallX/Y`・`BrowLY`・`BrowRY`・`MouthOpenY`・`MouthForm` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定。グループは [上](#パラメータのグループとポーズ) |
+| パラメータ | アバタープロファイルのレベル 2 の分 (T0715): `AngleX/Y/Z`・`BodyAngleX/Y/Z`・`Breath`・`EyeLOpen`・`EyeROpen`・`EyeBallX/Y`・`BrowLY`・`BrowRY`・`MouthOpenY`・`MouthForm` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定。グループは [上](#パラメータのグループとポーズ)。標準でないパラメータは下の表 |
 | パーツ | `Body` → `Head` → `Hair` (既定の髪)、`Body` → `Clothes` (既定のシャツ) → `WaveSleeve` (振る手の袖)、`Body` → `HandsDown`・`Wave` (ポーズ) |
-| ポーズ | `HandsDown` (中身なし) / `Wave` (`links`: `WaveSleeve`) の 1 グループ。`Wave` の手 `HandWave` は体のワープの子で、描画順 700 (髪のスロットより手前、頭の飾りのスロットより奥)。袖 `SleeveWave` は描画順 255。パーツの不透明度はどちらも 0 ([上](#パラメータのグループとポーズ)) |
+| ポーズ | `HandsDown` (中身なし) / `Wave` (`links`: `WaveSleeve`) の 1 グループ。`Wave` の手 `HandWave` は描画順 700 (髪のスロットより手前、頭の飾りのスロットより奥)。袖 `SleeveWave` は描画順 255。パーツの不透明度はどちらも 0 ([上](#パラメータのグループとポーズ)) |
+| `WaveRotation` (回転、`BodyWarp` の子) | 振る手 `HandWave` と袖 `SleeveWave` の親。原点は肘 (キャンバスの (365, 500))。`ArmWave` ±1 で ±12 度 (正で画面の右へ倒す) |
 | `BodyWarp` (ワープ 2x2) | 上ほど `BodyAngleX` で横に、`Breath` で上に、`BodyAngleY` で上下 (±4px) に動き、`BodyAngleZ` ±10 で腰の下を軸に上の辺が ±5 度傾く (下の辺は動かない) |
 | `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度、`BodyAngleZ` ±10 で ±5 度を足す。`BodyAngleX/Y/Z` で中心が体と一緒に動く |
 | `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |
@@ -216,11 +222,15 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 | 当たり判定 | `Head` (顔 `Face`)・`Body` (肌 `Skin`) |
 | アバタープロファイル | レベル 2 (メタデータ・許諾は `avatar.ugoe` と同じく MIT で自由に使える形)。`slots` に 3 つのスロットをすべて書き、アプリに公開する (T0712) |
 
+| 標準でないパラメータ | 範囲 (既定) | グループ | 動かすもの |
+| --- | --- | --- | --- |
+| `ArmWave` | −1〜1 (0) | `Body` | 振る手 `HandWave` と袖 (`SleeveWave`・`Sailor` の袖) を肘を軸に ±12 度傾ける (正で画面の右へ)。モーション `wave` が動かす (T0328)。スロット `Outfit` が公開する |
+
 | スロット | 取り付け先 | 描画順 | 置き換える | その他 |
 | --- | --- | --- | --- | --- |
 | `Hair` | `HeadWarp` | 420〜680 (顔 500・目 530・眉 540 を挟む) | `Hair` | マスクに本体の肌 `Skin` を公開 (長い後ろ髪を体の奥に見せる) |
 | `Headwear` | `HeadWarp` | 900〜1000 | なし | |
-| `Outfit` | `BodyWarp` | 260〜340 (肌 200 と顔の間) | `Clothes` | ポーズの要素 `Wave` を公開 (`pose_parts`。モジュールの袖を振る手に追従させる) |
+| `Outfit` | `BodyWarp` | 260〜340 (肌 200 と顔の間) | `Clothes` | ポーズの要素 `Wave` (`pose_parts`。モジュールの袖を振る手に追従させる) とパラメータ `ArmWave` (`parameters`。袖を手と一緒に揺らす) を公開 |
 
 ### モジュール
 
@@ -229,10 +239,10 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 | `long-hair.ugoemod` | `LongHair` | `Hair` | 紺の長い髪。後ろ髪は頭の中心を軸にした回転デフォーマ `Sway` に付き、動的物理 (`deformer_angle`、長さ 250px の振り子) で揺れる。本体の肌を反転マスクにして体の奥に見せる。顔の横の房は胸の前に垂れる |
 | `twin-tails.ugoemod` | `TwinTails` | `Hair` | 金のツインテール。房とリボンは結び目を軸にした回転デフォーマ `TailL`・`TailR` に付き、それぞれ物理で揺れる。房は肩のすぐ外に垂れ、内側へ振れると本体の肩の衝突体 `Shoulders` に当たって止まる (T0662。静止姿勢では当たらないので、垂れ方は変わらない) |
 | `cat-ears.ugoemod` | `CatEars` | `Headwear` | 猫耳のカチューシャ |
-| `sailor.ugoemod` | `Sailor` | `Outfit` | セーラー服 (上着・襟・スカーフ)。体のワープと一緒に動く。振る手の袖 (パーツ `WaveSleeve`、紺の袖口) を本体のポーズの要素 `Wave` に追従させる (`pose.links`。T0474) |
+| `sailor.ugoemod` | `Sailor` | `Outfit` | セーラー服 (上着・襟・スカーフ)。体のワープと一緒に動く。振る手の袖 (パーツ `WaveSleeve`、紺の袖口) を本体のポーズの要素 `Wave` に追従させ (`pose.links`。T0474)、本体と同じ回転デフォーマ `WaveRotation` に付けて `ArmWave` で揺らす (T0328) |
 
 `LongHair` と `TwinTails` は同じスロット `Hair` なので、付けると差し替わります。どのモジュールも `requires` は持たず、
-本体のパラメータは標準パラメータだけを使います。
+本体のパラメータは標準パラメータと、スロット `Outfit` が公開する `ArmWave` (`Sailor`) だけを使います。
 
 ### エディタで開くプロジェクト
 
