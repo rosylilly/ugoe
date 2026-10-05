@@ -1,11 +1,11 @@
 ---
 id: T1624
 title: "エディタ: プレビュー (PreviewPanel・DifferenceOverlay) を読めないモデルで描く部品のテスト"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1624
 ---
 
 # T1624: エディタ: プレビュー (PreviewPanel・DifferenceOverlay) を読めないモデルで描く部品のテスト
