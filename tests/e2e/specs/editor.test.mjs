@@ -1,6 +1,7 @@
 // エディタ (apps/editor) の主な流れ: 見本のプロジェクトを開く・パラメータを動かす・保存する・PSD を取り込む・`.ugoe` を書き出す・
-// 偽の AI のプロバイダで提案を作ってプレビューする・プレビューでモジュールを付け外しし、画像からトラッキングする・
-// モジュールのプロジェクトを開いて `.ugoemod` を書き出す・言語を切り替える。
+// プレビューでモジュールを付け外しし、画像からトラッキングする・モジュールのプロジェクトを開いて `.ugoemod` を書き出す・
+// 偽の AI のプロバイダで、見本の着せ替えの本体に取り込んだ PSD と「New from PSD…」の新しいプロジェクトから提案を作って
+// プレビューする・言語を切り替える。
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
@@ -82,6 +83,96 @@ function hasToast(session, text) {
     `return [...document.querySelectorAll(".ugoe-toast__message")].some((el) => el.textContent.includes(arguments[0]))`,
     text,
   );
+}
+
+/** 物理の設定が着せ替えの本体の衝突体 `Shoulders` を持つか。 */
+function hasShoulders(physics) {
+  return physics?.colliders?.some((c) => c.id === "Shoulders") ?? false;
+}
+
+/**
+ * AI タブで、取り込んだ PSD (character.psd) を偽のプロバイダ (`ai`) で分類してリグを提案し、提案を「Preview」して
+ * 「End preview」で戻す。分類とリグの要求が画像付きで届き、提案の理由に偽の答えの文が入り、プレビューの間も後もドキュメントが
+ * 変わらないことを確かめ、作った提案 (`get_proposals` の最後) を返す。
+ */
+async function proposeAndPreview(s, ai) {
+  const sent = ai.requests.length;
+  await s.clickWhen(
+    () => s.execute(`return __e2e.byText(".right [role=tab]", "^AI( \\(\\d+\\))?$")`),
+    { message: "the AI tab" },
+  );
+  await s.waitFindText(".psd", "character.psd");
+  // 「Use …」を入れる (前の提案で入れたままなら押さない)
+  const useAi = await waitFor(
+    () =>
+      s.execute(
+        `const label = __e2e.byText(".ugoe-checkbox__label", "sends images to a server on this computer");
+         const box = label && document.getElementById(label.htmlFor);
+         return box && !box.disabled ? box : null;`,
+      ),
+    { message: "the Use AI checkbox" },
+  );
+  if ((await useAi.attribute("aria-checked")) !== "true") await useAi.click();
+  await waitFor(async () => (await useAi.attribute("aria-checked")) === "true", {
+    message: "the Use AI checkbox to be checked",
+  });
+  await s.clickText("button", "Propose rig");
+  // 提案が一覧に出るか、パネルにエラーが出るまで待つ
+  const made = await waitFor(
+    () =>
+      s.execute(`
+        if (document.querySelector("article.proposal")) return { made: true };
+        const error = [...document.querySelectorAll(".right .error")].find((el) => el.closest("section"));
+        return error ? { error: error.textContent.trim() } : null;
+      `),
+    { timeout: 60_000, message: "the proposal" },
+  );
+  assert.equal(made.error, undefined, `the proposal failed: ${made.error}`);
+  const requests = ai.requests.slice(sent);
+  const kinds = requests.map((r) => r.kind);
+  assert.ok(kinds.includes("classify"), `no classification request: ${JSON.stringify(requests)}`);
+  assert.ok(kinds.includes("values"), `no rig request: ${JSON.stringify(requests)}`);
+  // 分類はレイヤーのサムネイル、リグは原画の全体を送る
+  assert.ok(
+    requests.every((r) => r.images > 0),
+    JSON.stringify(requests),
+  );
+  const state = await invoke(s, "get_proposals");
+  assert.equal(state.classification?.by_ai, true, "the layers were not classified by the AI");
+  const proposal = state.proposals.at(-1);
+  assert.ok(proposal.commands.length > 0, JSON.stringify(proposal));
+  assert.ok(proposal.rationale.includes(FAKE_REASON), proposal.rationale);
+
+  // プレビュー: 提案を複製に適用した姿 (`get_proposal_preview_bundle`) をビューポートに出す。ドキュメントは変えない
+  const before = await invoke(s, "get_model_json");
+  // 数は前の提案のプレビューからの通算なので、押す前との差を見る
+  await countInvokes(s, ["preview_proposal", "get_proposal_preview_bundle"]);
+  const counted = await invokeStats(s);
+  await s.clickText("article.proposal button", "Preview");
+  await s.waitFind(".viewport .proposal-banner", 30_000);
+  await waitFor(
+    () =>
+      s.execute(`return document.querySelector("article.proposal.previewing .sliders") !== null`),
+    { message: "the proposal to be previewed" },
+  );
+  const stats = await invokeStats(s);
+  const bundles =
+    (stats.done.get_proposal_preview_bundle ?? 0) - (counted.done.get_proposal_preview_bundle ?? 0);
+  assert.equal(bundles, 1, JSON.stringify(stats));
+  assert.deepEqual(stats.errors, {}, JSON.stringify(stats));
+  const hud = await s.execute(
+    `return document.querySelector(".viewport .hud .error")?.textContent.trim() ?? null`,
+  );
+  assert.equal(hud, null, `the viewport failed: ${hud}`);
+  await shot(s, "editor-proposal-preview");
+
+  // プレビューをやめる。ビューポートは元のモデルに戻り、ドキュメントは変わっていない
+  await s.clickText("article.proposal.previewing button", "End preview");
+  await waitFor(async () => (await s.findAll(".viewport .proposal-banner")).length === 0, {
+    message: "the preview to end",
+  });
+  assert.equal(await invoke(s, "get_model_json"), before);
+  return proposal;
 }
 
 describe("editor", () => {
@@ -356,17 +447,8 @@ describe("editor", () => {
     await s.keys(Keys.Escape);
   });
 
-  step(app, "proposes a rig from a PSD with a fake AI provider and previews it", async () => {
+  step(app, "points the AI provider at a fake one", async () => {
     const s = app.session;
-    // 「New from PSD…」で character.psd から新しいプロジェクトを作る (AI の提案の元にする PSD になる)。
-    // 見本の本体に取り込んだ PSD でも提案は作れる (T1627。proposals_tests.rs の
-    // a_dress_up_base_with_an_imported_psd_is_rigged) が、ここでは本体の要素の無いプロジェクトで通す
-    answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
-    await s.clickText("nav.file-menu button", "New from PSD…");
-    await waitFor(() => treeRow(s, "character"), {
-      timeout: 30_000,
-      message: "the new project from the PSD in the tree",
-    });
     // 設定の「AI provider」で、OpenAI 互換の API の送り先を偽のプロバイダ (127.0.0.1) にする (モデルは既定のまま)。
     // ループバックなので送る前の確認も API キーも要らない
     await s.clickText("button", "Settings");
@@ -395,79 +477,87 @@ describe("editor", () => {
       { message: "the fake provider to be applied" },
     );
     await s.keys(Keys.Escape);
-
-    // AI タブ: 取り込んだ PSD (character.psd) を、偽のプロバイダで分類してリグを提案する
     await waitFor(async () => (await s.findAll("[role=dialog]")).length === 0, {
       message: "the settings to close",
     });
-    await s.clickWhen(
-      () => s.execute(`return __e2e.byText(".right [role=tab]", "^AI( \\(\\d+\\))?$")`),
-      { message: "the AI tab" },
-    );
-    await s.waitFindText(".psd", "character.psd");
-    await s.clickWhen(
-      () =>
-        s.execute(
-          `const label = __e2e.byText(".ugoe-checkbox__label", "sends images to a server on this computer");
-           const box = label && document.getElementById(label.htmlFor);
-           return box && !box.disabled && box.getAttribute("aria-checked") !== "true" ? box : null;`,
-        ),
-      { message: "the Use AI checkbox" },
-    );
-    await s.clickText("button", "Propose rig");
-    // 提案が一覧に出るか、パネルにエラーが出るまで待つ
-    const made = await waitFor(
-      () =>
-        s.execute(`
-          if (document.querySelector("article.proposal")) return { made: true };
-          const error = [...document.querySelectorAll(".right .error")].find((el) => el.closest("section"));
-          return error ? { error: error.textContent.trim() } : null;
-        `),
-      { timeout: 60_000, message: "the proposal" },
-    );
-    assert.equal(made.error, undefined, `the proposal failed: ${made.error}`);
-    const kinds = ai.requests.map((r) => r.kind);
-    assert.ok(
-      kinds.includes("classify"),
-      `no classification request: ${JSON.stringify(ai.requests)}`,
-    );
-    assert.ok(kinds.includes("values"), `no rig request: ${JSON.stringify(ai.requests)}`);
-    // 分類はレイヤーのサムネイル、リグは原画の全体を送る
-    assert.ok(
-      ai.requests.every((r) => r.images > 0),
-      JSON.stringify(ai.requests),
-    );
-    const state = await invoke(s, "get_proposals");
-    assert.equal(state.classification?.by_ai, true, "the layers were not classified by the AI");
-    const proposal = state.proposals.at(-1);
-    assert.ok(proposal.commands.length > 0, JSON.stringify(proposal));
-    assert.ok(proposal.rationale.includes(FAKE_REASON), proposal.rationale);
+  });
 
-    // プレビュー: 提案を複製に適用した姿 (`get_proposal_preview_bundle`) をビューポートに出す。ドキュメントは変えない
-    const before = await invoke(s, "get_model_json");
-    await countInvokes(s, ["preview_proposal", "get_proposal_preview_bundle"]);
-    await s.clickText("article.proposal button", "Preview");
-    await s.waitFind(".viewport .proposal-banner", 30_000);
+  step(
+    app,
+    "proposes a rig on the dress-up base with an imported PSD and previews it",
+    async () => {
+      const s = app.session;
+      // 見本の着せ替えの本体を開き直す (今はモジュールのプロジェクト。変更は無いので確かめずに開く)。
+      // 本体は物理の衝突体 `Shoulders` を持ち、スロット `Hair` がそれを公開する
+      answerDialog("open-directory", project);
+      await s.clickText("nav.file-menu button", "Open…");
+      await s.waitFindText("nav.file-menu .project .name", "dress-up", 20_000);
+      await waitFor(async () => (await s.findAll("nav.file-menu button.module")).length === 0, {
+        message: "the base project to open",
+      });
+      const physics = await invoke(s, "get_physics");
+      assert.ok(
+        hasShoulders(physics),
+        `the base has no Shoulders collider: ${JSON.stringify(physics)}`,
+      );
+      const hair = JSON.parse(await invoke(s, "get_model_json")).slots.find(
+        (slot) => slot.id === "Hair",
+      );
+      assert.deepEqual(hair?.colliders, ["Shoulders"], JSON.stringify(hair));
+
+      // 本体に character.psd を取り込む。取り込んだ PSD が AI タブの提案の元になる
+      answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
+      await s.clickText("nav.file-menu button", "Import PSD");
+      await waitFor(() => treeRow(s, "character"), {
+        timeout: 30_000,
+        message: "the imported PSD in the tree",
+      });
+
+      // 提案は本体の物理 (衝突体 `Shoulders`) に髪揺れのリグを足す。前は本体の物理を外して試し、スロット `Hair` の
+      // 衝突体の参照が何も指さなくなって提案が作れなかった (T1627)
+      const proposal = await proposeAndPreview(s, ai);
+      assert.ok(
+        proposal.commands.some((c) => c.op === "add_physics_rig"),
+        `no hair sway in the proposal: ${proposal.rationale}`,
+      );
+
+      // 採用すると、本体の物理に髪揺れのリグが足され、衝突体 `Shoulders` とスロットの参照が残る
+      await s.clickText("article.proposal button", "Adopt");
+      const adopted = await waitFor(
+        async () => {
+          const after = await invoke(s, "get_physics");
+          return after && after.rigs.length > physics.rigs.length ? after : null;
+        },
+        { timeout: 30_000, message: "the proposal to be adopted" },
+      );
+      assert.ok(
+        hasShoulders(adopted),
+        `the Shoulders collider is gone: ${JSON.stringify(adopted)}`,
+      );
+      for (const rig of physics.rigs) {
+        assert.ok(
+          adopted.rigs.some((r) => r.id === rig.id),
+          `the base rig ${rig.id} is gone: ${adopted.rigs.map((r) => r.id).join(", ")}`,
+        );
+      }
+      const model = JSON.parse(await invoke(s, "get_model_json"));
+      assert.deepEqual(model.slots.find((slot) => slot.id === "Hair")?.colliders, ["Shoulders"]);
+      await shot(s, "editor-proposal-dress-up");
+    },
+  );
+
+  step(app, "proposes a rig in a new project from a PSD and previews it", async () => {
+    const s = app.session;
+    // 「New from PSD…」で character.psd から新しいプロジェクトを作る (本体の要素の無いプロジェクト)。
+    // 前の手順で採用した提案は保存していないので、作る前に変更を捨てるかを訊かれる
+    answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
+    await s.clickText("nav.file-menu button", "New from PSD…");
+    await s.clickText("[role=alertdialog] button, [role=dialog] button", "Discard and continue");
     await waitFor(
-      () =>
-        s.execute(`return document.querySelector("article.proposal.previewing .sliders") !== null`),
-      { message: "the proposal to be previewed" },
+      async () => (await treeRow(s, "character")) && (await invoke(s, "get_physics")) === null,
+      { timeout: 30_000, message: "the new project from the PSD in the tree" },
     );
-    const stats = await invokeStats(s);
-    assert.equal(stats.done.get_proposal_preview_bundle, 1, JSON.stringify(stats));
-    assert.deepEqual(stats.errors, {}, JSON.stringify(stats));
-    const hud = await s.execute(
-      `return document.querySelector(".viewport .hud .error")?.textContent.trim() ?? null`,
-    );
-    assert.equal(hud, null, `the viewport failed: ${hud}`);
-    await shot(s, "editor-proposal-preview");
-
-    // プレビューをやめる。ビューポートは元のモデルに戻り、ドキュメントは変わっていない
-    await s.clickText("article.proposal.previewing button", "End preview");
-    await waitFor(async () => (await s.findAll(".viewport .proposal-banner")).length === 0, {
-      message: "the preview to end",
-    });
-    assert.equal(await invoke(s, "get_model_json"), before);
+    await proposeAndPreview(s, ai);
   });
 
   step(app, "switches the language to Japanese and keeps it", async () => {
