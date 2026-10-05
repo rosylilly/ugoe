@@ -196,7 +196,7 @@ impl ProfileReport {
 /// 主張したレベル (`avatar.level`) までに必要なパラメータとメタデータ、`avatar` の中の参照を調べる。
 /// モデルが構造の検証 ([`crate::validate::validate`]) を通ることは前提にしない。
 pub fn check_profile(model: &Model) -> ProfileReport {
-    let has_param = |id: &str| model.parameters.iter().any(|p| p.id.as_str() == id);
+    let has_param = |id: &str| model.parameters.iter().any(|p| p.id == id);
     let extended = standard::EXTENDED
         .iter()
         .filter(|(id, ..)| has_param(id))
@@ -414,7 +414,7 @@ fn check_slots(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<ProfileIs
 
 /// パラメータ `id` がモデルにあること。
 fn check_param(model: &Model, field: &str, id: &str, issues: &mut Vec<ProfileIssue>) {
-    if !model.parameters.iter().any(|p| p.id.as_str() == id) {
+    if !model.parameters.iter().any(|p| p.id == id) {
         issues.push(ProfileIssue::UnknownReference {
             field: field.to_owned(),
             target_kind: "parameter",
@@ -425,11 +425,7 @@ fn check_param(model: &Model, field: &str, id: &str, issues: &mut Vec<ProfileIss
 
 /// パラメータ `id` が中継用 (`internal`) でないこと (警告)。
 fn check_not_internal(model: &Model, field: String, id: &str, issues: &mut Vec<ProfileIssue>) {
-    if model
-        .parameters
-        .iter()
-        .any(|p| p.internal && p.id.as_str() == id)
-    {
+    if model.parameters.iter().any(|p| p.internal && p.id == id) {
         issues.push(ProfileIssue::InternalTrackingTarget {
             field,
             id: id.to_owned(),
@@ -602,7 +598,7 @@ mod tests {
         let angle = model
             .parameters
             .iter_mut()
-            .find(|p| p.id.as_str() == standard::ANGLE_X)
+            .find(|p| p.id == standard::ANGLE_X)
             .unwrap();
         angle.min = -45.0;
         let report = check_profile(&model);
@@ -820,7 +816,7 @@ mod tests {
             ..param("Relay")
         });
         for p in &mut model.parameters {
-            if p.id.as_str() == standard::ANGLE_X {
+            if p.id == standard::ANGLE_X {
                 p.internal = true;
             }
         }

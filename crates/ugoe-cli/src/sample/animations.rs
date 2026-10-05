@@ -95,7 +95,7 @@ fn expressions(files: &[(&str, &str)]) -> anyhow::Result<Vec<Expression>> {
 /// モーションと表情が `model` に無いパラメータを動かさないこと (無いものはランタイムが黙って無視するので、
 /// 見本では誤りにする)。
 pub fn check(model: &Model, motions: &[Motion], expressions: &[Expression]) -> anyhow::Result<()> {
-    let has = |id: &str| model.parameters.iter().any(|p| p.id.as_str() == id);
+    let has = |id: &str| model.parameters.iter().any(|p| p.id == id);
     for motion in motions {
         for curve in &motion.curves {
             match &curve.target {

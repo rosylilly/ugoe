@@ -59,7 +59,7 @@ fn rig_mut<'a>(
 ) -> Result<&'a mut PhysicsRig, EditError> {
     physics
         .as_mut()
-        .and_then(|p| p.rigs.iter_mut().find(|r| r.id.as_str() == id))
+        .and_then(|p| p.rigs.iter_mut().find(|r| r.id == id))
         .ok_or_else(|| rig_not_found(id))
 }
 
@@ -204,16 +204,16 @@ fn reorder_rig(
     let from = settings
         .rigs
         .iter()
-        .position(|r| r.id.as_str() == id)
+        .position(|r| r.id == id)
         .ok_or_else(|| rig_not_found(id))?;
     if let Some(before) = before
-        && !settings.rigs.iter().any(|r| r.id.as_str() == before)
+        && !settings.rigs.iter().any(|r| r.id == before)
     {
         return Err(rig_not_found(before));
     }
     let moved = settings.rigs.remove(from);
     let to = before
-        .and_then(|before| settings.rigs.iter().position(|r| r.id.as_str() == before))
+        .and_then(|before| settings.rigs.iter().position(|r| r.id == before))
         .unwrap_or(settings.rigs.len());
     settings.rigs.insert(to, moved);
     Ok(())

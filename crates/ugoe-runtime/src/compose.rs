@@ -533,11 +533,11 @@ mod tests {
     }
 
     fn mesh<'a>(model: &'a Model, id: &str) -> &'a ugoe_model::Mesh {
-        model.meshes.iter().find(|m| m.id.as_str() == id).unwrap()
+        model.meshes.iter().find(|m| m.id == id).unwrap()
     }
 
     fn part<'a>(model: &'a Model, id: &str) -> &'a Part {
-        model.parts.iter().find(|p| p.id.as_str() == id).unwrap()
+        model.parts.iter().find(|p| p.id == id).unwrap()
     }
 
     #[test]
@@ -570,7 +570,7 @@ mod tests {
         let sway = model
             .deformers
             .iter()
-            .find(|d| d.id.as_str() == "LongHair/Sway")
+            .find(|d| d.id == "LongHair/Sway")
             .unwrap();
         assert_eq!(sway.parent.as_ref().unwrap().as_str(), "Head");
         assert_eq!(sway.part.as_str(), "LongHair/Hair");

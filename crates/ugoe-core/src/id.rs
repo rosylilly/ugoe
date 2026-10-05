@@ -44,6 +44,37 @@ impl<T> PartialEq for Id<T> {
 
 impl<T> Eq for Id<T> {}
 
+/// 文字列と比べる (`id == "ParamAngleX"`)。
+///
+/// 文字列には種類が無いので、どの種類の ID とも比べられる。
+/// 種類の違う `Id<T>` どうしの比較は、これまでどおりコンパイルエラーになる。
+impl<T> PartialEq<str> for Id<T> {
+    fn eq(&self, other: &str) -> bool {
+        self.value == other
+    }
+}
+
+/// 文字列と比べる (`id == "ParamAngleX"`)。[`PartialEq<str>`] と同じ。
+impl<T> PartialEq<&str> for Id<T> {
+    fn eq(&self, other: &&str) -> bool {
+        self.value == *other
+    }
+}
+
+/// 文字列と比べる (`"ParamAngleX" == id`)。[`PartialEq<str>`] の逆向き。
+impl<T> PartialEq<Id<T>> for str {
+    fn eq(&self, other: &Id<T>) -> bool {
+        self == other.value
+    }
+}
+
+/// 文字列と比べる (`"ParamAngleX" == id`)。[`PartialEq<str>`] の逆向き。
+impl<T> PartialEq<Id<T>> for &str {
+    fn eq(&self, other: &Id<T>) -> bool {
+        *self == other.value
+    }
+}
+
 impl<T> std::hash::Hash for Id<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.value.hash(state);
@@ -123,5 +154,35 @@ impl<T> schemars::JsonSchema for Id<T> {
             "type": "string",
             "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Param;
+
+    #[test]
+    fn compares_with_str_both_ways() {
+        let id: Id<Param> = Id::new("ParamAngleX");
+        let name = "ParamAngleX";
+
+        assert!(id == "ParamAngleX");
+        assert!(id == *name);
+        assert!("ParamAngleX" == id);
+        assert!(*name == id);
+        assert!(id != "ParamAngleY");
+        assert!("ParamAngleY" != id);
+        assert_eq!(id, "ParamAngleX");
+        assert_eq!("ParamAngleX", id);
+    }
+
+    #[test]
+    fn compares_by_value_not_by_debug_form() {
+        // Debug は引用符付きだが、比較は中身の文字列で行う
+        let id: Id<Param> = Id::new("A");
+        assert!(id != "\"A\"");
+        assert!(Id::<Param>::new("") == "");
     }
 }

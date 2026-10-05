@@ -453,22 +453,14 @@ fn removing_a_mirror_source_freezes_the_mirrored_cells() {
 fn removing_a_glue_forgets_it_as_a_mirror_source() {
     // `Pull` の格子のミラー元が `Seam`。`Seam` を消すと、メッシュの削除と同じくミラー元の記録を外す。
     let mut model = fixtures::glued_quads();
-    let pull = model
-        .glues
-        .iter_mut()
-        .find(|g| g.id.as_str() == "Pull")
-        .unwrap();
+    let pull = model.glues.iter_mut().find(|g| g.id == "Pull").unwrap();
     pull.keyforms.mirror_source = Some(ugoe_model::MirrorSource {
         id: "Seam".into(),
         axis: None,
         tolerance: None,
     });
     let after = applied(&model, Command::RemoveGlue { id: "Seam".into() });
-    let pull = after
-        .glues
-        .iter()
-        .find(|g| g.id.as_str() == "Pull")
-        .unwrap();
+    let pull = after.glues.iter().find(|g| g.id == "Pull").unwrap();
     assert_eq!(pull.keyforms.mirror_source, None);
 }
 

@@ -49,7 +49,7 @@ fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
     model
         .meshes
         .iter_mut()
-        .find(|m| m.id == id.into())
+        .find(|m| m.id == id)
         .unwrap_or_else(|| panic!("no {id}"))
 }
 
@@ -57,7 +57,7 @@ fn mesh<'a>(model: &'a Model, id: &str) -> &'a Mesh {
     model
         .meshes
         .iter()
-        .find(|m| m.id == id.into())
+        .find(|m| m.id == id)
         .unwrap_or_else(|| panic!("no {id}"))
 }
 
@@ -498,7 +498,7 @@ fn deformer_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Deformer {
     model
         .deformers
         .iter_mut()
-        .find(|d| d.id == id.into())
+        .find(|d| d.id == id)
         .unwrap_or_else(|| panic!("no {id}"))
 }
 

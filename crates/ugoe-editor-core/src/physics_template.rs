@@ -174,7 +174,7 @@ fn angle_of(model: &Model, id: &str) -> NormalizationRange {
     let (min, default, max) = model
         .parameters
         .iter()
-        .find(|p| p.id.as_str() == id)
+        .find(|p| p.id == id)
         .map(|p| (p.min, p.default, p.max))
         .or_else(|| range(id))
         .unwrap_or((POSITION.min, POSITION.default, POSITION.max));
@@ -387,7 +387,7 @@ pub fn commands(
     template: PhysicsTemplate,
     options: &PhysicsTemplateOptions,
 ) -> Result<Vec<Command>, EditError> {
-    let has = |id: &str| model.parameters.iter().any(|p| p.id.as_str() == id);
+    let has = |id: &str| model.parameters.iter().any(|p| p.id == id);
     let mut out = Vec::new();
     let mut created: HashSet<&str> = HashSet::new();
     let mut missing: Vec<&str> = Vec::new();

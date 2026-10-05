@@ -32,7 +32,7 @@ fn deformer_kind<'a>(model: &'a mut Model, id: &str) -> &'a mut DeformerKind {
     &mut model
         .deformers
         .iter_mut()
-        .find(|d| d.id.as_str() == id)
+        .find(|d| d.id == id)
         .unwrap()
         .kind
 }

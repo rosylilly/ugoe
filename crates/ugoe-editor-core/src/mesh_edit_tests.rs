@@ -43,24 +43,16 @@ fn assert_close(a: Vec2, b: Vec2) {
 }
 
 fn mesh<'a>(model: &'a Model, id: &str) -> &'a Mesh {
-    model.meshes.iter().find(|m| m.id.as_str() == id).unwrap()
+    model.meshes.iter().find(|m| m.id == id).unwrap()
 }
 
 fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
-    model
-        .meshes
-        .iter_mut()
-        .find(|m| m.id.as_str() == id)
-        .unwrap()
+    model.meshes.iter_mut().find(|m| m.id == id).unwrap()
 }
 
 /// 既定値のパラメータで評価したメッシュのキャンバス座標。
 fn world(model: &Model, id: &str) -> Vec<Vec2> {
-    let index = model
-        .meshes
-        .iter()
-        .position(|m| m.id.as_str() == id)
-        .unwrap();
+    let index = model.meshes.iter().position(|m| m.id == id).unwrap();
     let instance = ModelInstance::new(CompiledModel::compile(model.clone()).unwrap());
     instance.drawables()[index].positions.clone()
 }

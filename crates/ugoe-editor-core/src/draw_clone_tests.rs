@@ -49,15 +49,11 @@ fn create(source: &str) -> Command {
 }
 
 fn mesh<'a>(model: &'a Model, id: &str) -> &'a Mesh {
-    model.meshes.iter().find(|m| m.id.as_str() == id).unwrap()
+    model.meshes.iter().find(|m| m.id == id).unwrap()
 }
 
 fn index(model: &Model, id: &str) -> usize {
-    model
-        .meshes
-        .iter()
-        .position(|m| m.id.as_str() == id)
-        .unwrap()
+    model.meshes.iter().position(|m| m.id == id).unwrap()
 }
 
 #[track_caller]
@@ -146,16 +142,11 @@ fn create_uses_given_id_and_name_and_numbers_default_ids() {
         },
     );
     assert_eq!(mesh(&after, "PalmFront").name, "手のひら (前)");
-    assert!(
-        after
-            .glues
-            .iter()
-            .any(|g| g.id.as_str() == "DrawClone_PalmFront")
-    );
+    assert!(after.glues.iter().any(|g| g.id == "DrawClone_PalmFront"));
 
     let twice = applied(&applied(&model, create("Palm")), create("Palm"));
-    assert!(twice.meshes.iter().any(|m| m.id.as_str() == "Palm_Clone"));
-    assert!(twice.meshes.iter().any(|m| m.id.as_str() == "Palm_Clone_2"));
+    assert!(twice.meshes.iter().any(|m| m.id == "Palm_Clone"));
+    assert!(twice.meshes.iter().any(|m| m.id == "Palm_Clone_2"));
     assert_eq!(clones_of(&twice, &"Palm".into()).len(), 2);
 }
 
@@ -429,7 +420,7 @@ fn sync_repairs_a_drifted_clone() {
     let clone = model
         .meshes
         .iter_mut()
-        .find(|m| m.id.as_str() == "Left_Clone")
+        .find(|m| m.id == "Left_Clone")
         .unwrap();
     clone.uvs[0] = Vec2::new(0.5, 0.5);
     let glue = model.glues.pop().unwrap();

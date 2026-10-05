@@ -305,7 +305,7 @@ impl ModuleContext {
             match error {
                 ComposeError::UnknownCollider { rig, collider, .. }
                     if self.base.physics.is_none()
-                        && self.slot.colliders.iter().any(|c| c.as_str() == collider) =>
+                        && self.slot.colliders.iter().any(|c| c == collider.as_str()) =>
                 {
                     ModuleError::ColliderNeedsBasePhysics {
                         rig,

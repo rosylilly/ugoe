@@ -158,7 +158,7 @@ fn position(model: &Model, id: &str) -> Result<usize, EditError> {
     model
         .glues
         .iter()
-        .position(|g| g.id.as_str() == id)
+        .position(|g| g.id == id)
         .ok_or_else(|| EditError::NotFound {
             kind: "glue",
             id: id.to_owned(),

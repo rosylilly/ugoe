@@ -92,13 +92,7 @@ fn rules_path_proposes_without_sending() {
         .proposals
         .adopt(&mut document, view.id, &[])
         .unwrap();
-    assert!(
-        document
-            .model()
-            .parameters
-            .iter()
-            .any(|p| p.id.as_str() == "AngleX")
-    );
+    assert!(document.model().parameters.iter().any(|p| p.id == "AngleX"));
     assert!(document.undo());
     assert!(document.model().parameters.is_empty());
     assert_eq!(document.state_id(), base);
@@ -357,13 +351,7 @@ fn an_openai_compatible_provider_classifies_and_rigs() {
         .proposals
         .adopt(&mut document, view.id, &[])
         .unwrap();
-    assert!(
-        document
-            .model()
-            .parameters
-            .iter()
-            .any(|p| p.id.as_str() == "AngleX")
-    );
+    assert!(document.model().parameters.iter().any(|p| p.id == "AngleX"));
 }
 
 /// 採用した後に手で直したセルは `authored` になる (提案が推定に任せた `derived` のセルでも)。
@@ -779,12 +767,7 @@ fn module_projects_get_module_rigs() {
     assert_eq!(document.model().parameters, parameters);
     let (module, _) = document.split_module().unwrap().unwrap();
     assert!(!module.physics.rigs.is_empty());
-    assert!(
-        module
-            .deformers
-            .iter()
-            .any(|d| d.id.as_str() == "FollowFaceWarp")
-    );
+    assert!(module.deformers.iter().any(|d| d.id == "FollowFaceWarp"));
 
     // AI の経路 (作り直し): 前の答えを添える。
     let (state, _) = module_state();
@@ -859,7 +842,7 @@ fn module_rig_choice_reaches_the_proposal() {
         hat.keyforms
             .bindings
             .iter()
-            .any(|b| b.parameter.as_str() == "AngleX")
+            .any(|b| b.parameter == "AngleX")
     );
     assert_eq!(
         ModuleRigOptions::from(ModuleRigChoice::default()),

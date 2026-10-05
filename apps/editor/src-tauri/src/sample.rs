@@ -215,7 +215,7 @@ mod tests {
             found
                 .collider_references
                 .iter()
-                .all(|c| c.collider.as_str() == "Shoulders")
+                .all(|c| c.collider == "Shoulders")
         );
         let (reopened, _) =
             Project::load_module_without_unavailable_colliders(&written[1], None, None).unwrap();

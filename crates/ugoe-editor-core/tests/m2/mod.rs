@@ -647,7 +647,7 @@ pub fn deformer<'a>(model: &'a Model, id: &str) -> &'a Deformer {
     model
         .deformers
         .iter()
-        .find(|d| d.id.as_str() == id)
+        .find(|d| d.id == id)
         .unwrap_or_else(|| panic!("deformer {id} not found"))
 }
 

@@ -663,7 +663,7 @@ mod tests {
         let mut g = grid();
         collapse_axis(&mut g, &"A".into(), 1.0);
         assert_eq!(g.bindings.len(), 1);
-        assert_eq!(g.bindings[0].parameter, "B".into());
+        assert_eq!(g.bindings[0].parameter, "B");
         assert_eq!(g.keyforms, vec![1, 11]);
     }
 

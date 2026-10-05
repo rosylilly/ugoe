@@ -83,18 +83,14 @@ fn assert_same_look(before: &Model, after: &Model, poses: &[&[(&str, f32)]]) {
 const REST: &[(&str, f32)] = &[];
 
 fn deformer<'a>(model: &'a Model, id: &str) -> &'a Deformer {
-    model
-        .deformers
-        .iter()
-        .find(|d| d.id.as_str() == id)
-        .unwrap()
+    model.deformers.iter().find(|d| d.id == id).unwrap()
 }
 
 fn mesh_parent(model: &Model, id: &str) -> Option<String> {
     model
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == id)
+        .find(|m| m.id == id)
         .unwrap()
         .parent
         .as_ref()
@@ -140,11 +136,7 @@ fn reparent(element: ChildRef, new_parent: Option<&str>) -> Command {
 }
 
 fn set_default(model: &mut Model, id: &str, value: f32) {
-    let p = model
-        .parameters
-        .iter_mut()
-        .find(|p| p.id.as_str() == id)
-        .unwrap();
+    let p = model.parameters.iter_mut().find(|p| p.id == id).unwrap();
     p.default = value;
 }
 

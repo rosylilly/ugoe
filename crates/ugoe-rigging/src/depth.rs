@@ -2,7 +2,8 @@
 
 use ugoe_core::Vec2;
 use ugoe_model::{
-    DeformerId, DeformerKind, KeyformGrid, KeyformInference, KeyformOrigin, Model, Parameter,
+    DeformerId, DeformerKind, KeyformGrid, KeyformInference, KeyformOrigin, Model, ParamId,
+    Parameter,
 };
 
 use crate::additive::combine;
@@ -133,7 +134,7 @@ fn rotate_grid<T: Points>(
             found: depth.len(),
         });
     }
-    let axis_of = |parameter: &Option<_>| {
+    let axis_of = |parameter: &Option<ParamId>| {
         parameter
             .as_ref()
             .map(|id| {

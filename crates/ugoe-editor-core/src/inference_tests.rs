@@ -23,11 +23,11 @@ const EPS: f32 = 1e-5;
 const KEYS: [f32; 3] = [-30.0, 0.0, 30.0];
 
 fn mesh<'a>(model: &'a Model, id: &str) -> &'a Mesh {
-    model.meshes.iter().find(|m| m.id == id.into()).unwrap()
+    model.meshes.iter().find(|m| m.id == id).unwrap()
 }
 
 fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
-    model.meshes.iter_mut().find(|m| m.id == id.into()).unwrap()
+    model.meshes.iter_mut().find(|m| m.id == id).unwrap()
 }
 
 fn target(id: &str) -> KeyformTarget {

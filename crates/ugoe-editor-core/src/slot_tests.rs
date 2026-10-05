@@ -67,7 +67,7 @@ fn find<'a>(model: &'a Model, id: &str) -> &'a Slot {
     model
         .slots
         .iter()
-        .find(|s| s.id.as_str() == id)
+        .find(|s| s.id == id)
         .unwrap_or_else(|| panic!("slot {id} not found"))
 }
 
@@ -167,7 +167,7 @@ fn add_slot_checks_colliders_against_physics() {
         Some(physics_with_collar()),
         Command::AddSlot { slot: hat.clone() },
     );
-    assert_eq!(find(&after, "Hat").colliders, ["Collar".into()]);
+    assert_eq!(find(&after, "Hat").colliders, ["Collar"]);
     hat.colliders = vec!["Nope".into()];
     assert_eq!(
         rejected_with(
@@ -347,7 +347,7 @@ fn remove_slot_drops_it_from_the_avatar_profile() {
     let base = with_profile();
     let after = applied(&base, Command::RemoveSlot { id: "Hair".into() });
     assert_eq!(after.slots.len(), 1);
-    assert_eq!(after.avatar.unwrap().slots, ["Outfit".into()]);
+    assert_eq!(after.avatar.unwrap().slots, ["Outfit"]);
     assert_eq!(
         rejected(&base, Command::RemoveSlot { id: "Hair2".into() }),
         EditError::NotFound {
@@ -402,9 +402,9 @@ fn removing_parts_cascades_into_replaces_and_pose_parts() {
     base.slots[0].replaces.push("Hat".into());
 
     let after = applied(&base, Command::RemovePart { id: "ArmA".into() });
-    assert_eq!(find(&after, "Outfit").pose_parts, ["ArmB".into()]);
+    assert_eq!(find(&after, "Outfit").pose_parts, ["ArmB"]);
     let after = applied(&base, Command::RemovePart { id: "Hat".into() });
-    assert_eq!(find(&after, "Hair").replaces, ["Hair".into()]);
+    assert_eq!(find(&after, "Hair").replaces, ["Hair"]);
 }
 
 #[test]

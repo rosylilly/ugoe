@@ -106,10 +106,7 @@ fn reparenting_a_self_mirrored_element_remirrors_in_the_new_space() {
     // どちらも同じ縦の直線)。
     let mut model = fixtures::keyform_inference();
     // AngleX を自分自身と対にする (AngleX = 30 のセルは AngleX = -30 のセルの反転)。
-    let angle_x = model
-        .parameters
-        .iter_mut()
-        .find(|p| p.id.as_str() == "AngleX");
+    let angle_x = model.parameters.iter_mut().find(|p| p.id == "AngleX");
     angle_x.unwrap().mirror = Some("AngleX".into());
     let nose = mesh_mut(&mut model, "Nose");
     let base = nose.keyforms.keyforms[0].clone();
@@ -206,11 +203,7 @@ fn off_center_model() -> Model {
     for id in ["EyeL", "EyeR"] {
         mesh_mut(&mut model, id).mirror_axis = None;
     }
-    let face = model
-        .deformers
-        .iter_mut()
-        .find(|d| d.id == "Face".into())
-        .unwrap();
+    let face = model.deformers.iter_mut().find(|d| d.id == "Face").unwrap();
     if let ugoe_model::deformer::DeformerKind::Warp(w) = &mut face.kind {
         for kf in &mut w.keyforms.keyforms {
             kf.points.iter_mut().for_each(|p| p.x -= 20.0);

@@ -48,7 +48,7 @@ fn setup() -> (Document, Proposals, u32) {
 }
 
 fn has_deformer(doc: &Document, id: &str) -> bool {
-    doc.model().deformers.iter().any(|d| d.id.as_str() == id)
+    doc.model().deformers.iter().any(|d| d.id == id)
 }
 
 fn mesh_name(doc: &Document) -> &str {
@@ -120,7 +120,7 @@ fn adopting_is_one_undo_step() {
     assert!(doc.undo());
     assert!(!has_deformer(&doc, "W"));
     assert_eq!(mesh_name(&doc), "Quad");
-    assert!(doc.model().parameters.iter().all(|p| p.id.as_str() != "Y"));
+    assert!(doc.model().parameters.iter().all(|p| p.id != "Y"));
     assert!(!doc.undo());
     // Undo で提案を作った状態に戻ると、採用した提案が再び出て、選び直して採用し直せる。
     let views = proposals.views(&doc);

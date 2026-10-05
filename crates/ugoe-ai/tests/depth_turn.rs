@@ -371,7 +371,7 @@ fn layer_labels_are_matched_to_meshes_by_name() {
     twins.meshes.push(copy);
     let labels = mesh_labels(&twins, &layers);
     assert_eq!(labels.len(), 1, "{labels:?}");
-    assert!(labels.keys().all(|m| m.as_str() != "Bangs"));
+    assert!(labels.keys().all(|m| m != "Bangs"));
 }
 
 const SECRET: &str = "depth-secret-key";

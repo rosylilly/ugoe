@@ -133,7 +133,7 @@ fn remove_parameter_drops_mirror_and_effect_references() {
     let right = model
         .parameters
         .iter_mut()
-        .find(|p| p.id.as_str() == "EyeROpen")
+        .find(|p| p.id == "EyeROpen")
         .unwrap();
     right.mirror = Some("EyeLOpen".into());
     let after = applied(
@@ -156,17 +156,17 @@ fn remove_parameter_drops_mirror_and_effect_references() {
     let right = after
         .parameters
         .iter()
-        .find(|p| p.id.as_str() == "EyeROpen")
+        .find(|p| p.id == "EyeROpen")
         .unwrap();
     assert_eq!(right.mirror, None);
-    assert_eq!(after.effects.eye_blink.parameters, vec!["EyeROpen".into()]);
+    assert_eq!(after.effects.eye_blink.parameters, vec!["EyeROpen"]);
     assert!(
         after
             .effects
             .breath
             .parameters
             .iter()
-            .all(|b| b.parameter.as_str() != "Breath")
+            .all(|b| b.parameter != "Breath")
     );
     assert_eq!(after.effects.breath.parameters.len(), 4);
     assert!(after.effects.lip_sync.parameters.is_empty());
@@ -283,7 +283,7 @@ fn set_parameter_mirror() {
         model
             .parameters
             .iter()
-            .find(|p| p.id.as_str() == id)
+            .find(|p| p.id == id)
             .unwrap()
             .mirror
             .clone()

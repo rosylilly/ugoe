@@ -108,12 +108,7 @@ fn body_follow_creates_missing_standard_parameters() {
         .unwrap();
     assert_eq!(rig_ids(&doc), ["BodyFollowX", "BodyFollowY", "BodyFollowZ"]);
     for id in [ANGLE_Y, ANGLE_Z, BODY_ANGLE_Y, BODY_ANGLE_Z] {
-        let p = doc
-            .model()
-            .parameters
-            .iter()
-            .find(|p| p.id.as_str() == id)
-            .unwrap();
+        let p = doc.model().parameters.iter().find(|p| p.id == id).unwrap();
         assert_eq!(Some((p.min, p.default, p.max)), range(id), "{id}");
         assert!(!p.internal);
     }
@@ -153,7 +148,7 @@ fn bounce_creates_an_internal_relay_in_order() {
         .model()
         .parameters
         .iter()
-        .find(|p| p.id.as_str() == BOUNCE_RELAY)
+        .find(|p| p.id == BOUNCE_RELAY)
         .unwrap();
     assert!(relay.internal);
     let mut puppet = Puppet::new(doc.model().clone()).unwrap();
@@ -414,7 +409,7 @@ fn neck_follow_targets_a_rotation_deformer() {
             .model()
             .meshes
             .iter()
-            .position(|m| m.id.as_str() == "Skirt")
+            .position(|m| m.id == "Skirt")
             .unwrap();
         puppet.instance().drawables()[i].positions.clone()
     };

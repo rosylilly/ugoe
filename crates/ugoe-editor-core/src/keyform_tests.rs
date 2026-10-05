@@ -60,11 +60,7 @@ fn evaluate(model: &Model, values: &[Vec<(&str, f32)>]) -> Vec<Vec<(Vec<Vec2>, f
 
 /// パラメータ `id` の値域を `steps` 等分した値 (両端を含む)。
 fn sweep(model: &Model, id: &str, steps: usize) -> Vec<f32> {
-    let p = model
-        .parameters
-        .iter()
-        .find(|p| p.id.as_str() == id)
-        .unwrap();
+    let p = model.parameters.iter().find(|p| p.id == id).unwrap();
     (0..=steps)
         .map(|i| p.min + (p.max - p.min) * i as f32 / steps as f32)
         .collect()
@@ -98,7 +94,7 @@ fn one_axis(model: &Model, id: &'static str) -> Vec<Vec<(&'static str, f32)>> {
 }
 
 fn warp_keys(doc: &Document, id: &str) -> (Vec<f32>, usize, Vec<KeyformOrigin>) {
-    let d = doc.model().deformers.iter().find(|d| d.id.as_str() == id);
+    let d = doc.model().deformers.iter().find(|d| d.id == id);
     match &d.unwrap().kind {
         DeformerKind::Warp(w) => (
             w.keyforms.bindings[0].keys.clone(),
@@ -129,11 +125,7 @@ fn add_key_between_keys_keeps_the_look() {
 fn add_key_outside_keys_copies_the_end_cell() {
     // `Arm` のキーは -30 と 30。範囲の外のキーは端のセルと同じ値になる (外挿しない)。
     let mut model = fixtures::rotation_chain();
-    let arm = model
-        .deformers
-        .iter_mut()
-        .find(|d| d.id.as_str() == "Arm")
-        .unwrap();
+    let arm = model.deformers.iter_mut().find(|d| d.id == "Arm").unwrap();
     if let DeformerKind::Rotation(r) = &mut arm.kind {
         r.keyforms.bindings[0].keys = vec![-10.0, 10.0];
     }
@@ -754,11 +746,7 @@ fn keyform_commands_have_stable_json() {
 fn set_mesh_draw_order_writes_every_cell_and_keeps_origins() {
     // `part_opacity_hierarchy` の `D` は描画順を `Fade` で 500 → 100 に動かす。
     let mut model = fixtures::part_opacity_hierarchy();
-    let d = model
-        .meshes
-        .iter_mut()
-        .find(|m| m.id.as_str() == "D")
-        .unwrap();
+    let d = model.meshes.iter_mut().find(|m| m.id == "D").unwrap();
     d.keyforms.origins = vec![KeyformOrigin::Authored, KeyformOrigin::Additive];
     let mut doc = Document::new(model.clone());
     doc.apply(Command::SetMeshDrawOrder {
@@ -766,19 +754,14 @@ fn set_mesh_draw_order_writes_every_cell_and_keeps_origins() {
         draw_order: 250.0,
     })
     .unwrap();
-    let d = doc
-        .model()
-        .meshes
-        .iter()
-        .find(|m| m.id.as_str() == "D")
-        .unwrap();
+    let d = doc.model().meshes.iter().find(|m| m.id == "D").unwrap();
     assert!(d.keyforms.keyforms.iter().all(|k| k.draw_order == 250.0));
     assert_eq!(
         d.keyforms.origins,
         vec![KeyformOrigin::Authored, KeyformOrigin::Additive]
     );
     // 他のフィールドは変わらない。
-    let before = model.meshes.iter().find(|m| m.id.as_str() == "D").unwrap();
+    let before = model.meshes.iter().find(|m| m.id == "D").unwrap();
     assert_eq!(
         d.keyforms.keyforms[1].opacity,
         before.keyforms.keyforms[1].opacity

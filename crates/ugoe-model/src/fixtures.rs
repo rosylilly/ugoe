@@ -1607,7 +1607,7 @@ pub fn avatar_profile() -> Model {
     model.meta.name = "avatar_profile".into();
     let extended: Vec<Parameter> = standard::EXTENDED
         .iter()
-        .filter(|(id, ..)| !model.parameters.iter().any(|p| p.id.as_str() == *id))
+        .filter(|(id, ..)| !model.parameters.iter().any(|p| p.id == *id))
         .map(|&(id, min, default, max)| parameter(id, min, default, max))
         .collect();
     model.parameters.extend(extended);

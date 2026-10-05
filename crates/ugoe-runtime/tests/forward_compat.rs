@@ -104,11 +104,7 @@ fn unknown_deformer_from_json_evaluates_as_identity() {
 #[test]
 fn unknown_blend_and_mask_modes_fall_back() {
     let mut model = fixtures::intersection_masks();
-    let tongue = model
-        .meshes
-        .iter()
-        .position(|m| m.id.as_str() == "Tongue")
-        .unwrap();
+    let tongue = model.meshes.iter().position(|m| m.id == "Tongue").unwrap();
     model.meshes[tongue].mask_mode = MaskMode::Unknown;
     model.meshes[tongue].blend = BlendMode::Unknown;
     let m = instance(model);

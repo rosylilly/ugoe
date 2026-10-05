@@ -210,11 +210,7 @@ fn two_texture_project() -> Project {
         height: 5,
         normal_map: None,
     });
-    let front = module
-        .meshes
-        .iter_mut()
-        .find(|m| m.id.as_str() == "Front")
-        .unwrap();
+    let front = module.meshes.iter_mut().find(|m| m.id == "Front").unwrap();
     front.texture = 1;
     let images: Textures = [
         ("long_hair".to_owned(), pattern_png(9, 7, 1)),
@@ -252,7 +248,7 @@ fn mesh_mut<'a>(project: &'a mut Project, id: &str) -> &'a mut ugoe_model::Mesh 
         .model
         .meshes
         .iter_mut()
-        .find(|m| m.id.as_str() == id)
+        .find(|m| m.id == id)
         .unwrap()
 }
 
@@ -356,14 +352,14 @@ fn physics_differences_tell_what_changed() {
     let rig = physics
         .rigs
         .iter_mut()
-        .find(|r| r.id.as_str() == "LongHair/Sway")
+        .find(|r| r.id == "LongHair/Sway")
         .unwrap();
     rig.particles[1].mobility = 0.5;
     rig.colliders.clear();
     let collider = physics
         .colliders
         .iter_mut()
-        .find(|c| c.id.as_str() == "LongHair/Collar")
+        .find(|c| c.id == "LongHair/Collar")
         .unwrap();
     collider.shape = ColliderShape::Circle {
         center: Vec2::new(0.0, 40.0),
@@ -403,7 +399,7 @@ fn physics_differences_tell_what_changed() {
         .model
         .deformers
         .iter_mut()
-        .find(|d| d.id.as_str() == "LongHair/Sway")
+        .find(|d| d.id == "LongHair/Sway")
         .unwrap();
     sway.name = "Swing".into();
     let differences = compare_with_module_file(&changed, &bytes).unwrap();

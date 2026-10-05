@@ -7,7 +7,7 @@ fn unwrap_moves_children_to_the_parent_and_keeps_look() {
     // Hand は既定値 (Flip = 0) で固定なので、Arm の角度に関わらず一致する。
     let model = fixtures::rotation_chain();
     let after = applied(&model, unwrap("Hand"));
-    assert!(after.deformers.iter().all(|d| d.id.as_str() != "Hand"));
+    assert!(after.deformers.iter().all(|d| d.id != "Hand"));
     assert_eq!(mesh_parent(&after, "Palm").as_deref(), Some("Arm"));
     assert_same_look(
         &model,
@@ -20,7 +20,7 @@ fn unwrap_moves_children_to_the_parent_and_keeps_look() {
 fn unwrap_root_deformer_moves_nested_children_to_root() {
     let model = fixtures::rotation_chain();
     let after = applied(&model, unwrap("Arm"));
-    assert!(after.deformers.iter().all(|d| d.id.as_str() != "Arm"));
+    assert!(after.deformers.iter().all(|d| d.id != "Arm"));
     assert_eq!(deformer(&after, "Hand").parent, None);
     assert_eq!(deformer(&after, "Cloth").parent, None);
     assert_same_look(&model, &after, &[REST, &[("Flip", 1.0)]]);

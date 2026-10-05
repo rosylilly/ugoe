@@ -58,7 +58,7 @@ fn rotation_chain_deformer(id: &str) -> Deformer {
     fixtures::rotation_chain()
         .deformers
         .into_iter()
-        .find(|d| d.id.as_str() == id)
+        .find(|d| d.id == id)
         .unwrap()
 }
 

@@ -25,7 +25,7 @@ fn warp_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut ugoe_model::deformer:
     let deformer = model
         .deformers
         .iter_mut()
-        .find(|d| d.id == id.into())
+        .find(|d| d.id == id)
         .unwrap_or_else(|| panic!("no {id}"));
     let DeformerKind::Warp(warp) = &mut deformer.kind else {
         panic!("not a warp")
@@ -285,11 +285,7 @@ fn mesh_needs_an_affine_parent() {
     let mut model = model();
     let eye = KeyformTarget::Mesh("EyeL".into());
     {
-        let mesh = model
-            .meshes
-            .iter_mut()
-            .find(|m| m.id == "EyeL".into())
-            .unwrap();
+        let mesh = model.meshes.iter_mut().find(|m| m.id == "EyeL").unwrap();
         let base = mesh.keyforms.keyforms[0].clone();
         mesh.keyforms = KeyformGrid::new(vec![binding("AngleX", &[0.0, 30.0])], vec![base; 2]);
         mesh.keyforms.origins = vec![KeyformOrigin::Authored, KeyformOrigin::Derived];
@@ -328,15 +324,11 @@ fn mesh_needs_an_affine_parent() {
         mirror: None,
         mirror_axis: None,
     });
-    let mesh = model
-        .meshes
-        .iter_mut()
-        .find(|m| m.id == "EyeL".into())
-        .unwrap();
+    let mesh = model.meshes.iter_mut().find(|m| m.id == "EyeL").unwrap();
     mesh.parent = Some("Head".into());
     let base = mesh.keyforms.keyforms[0].positions.clone();
     infer_depth_rotation(&mut model, &eye, InferScope::AllDerived).unwrap();
-    let mesh = model.meshes.iter().find(|m| m.id == "EyeL".into()).unwrap();
+    let mesh = model.meshes.iter().find(|m| m.id == "EyeL").unwrap();
     let expected: Vec<Vec2> = base
         .iter()
         .map(|p| expected([p.x, p.y, 4.0], [0.0, 0.0, 0.0], 30.0, 0.0))
@@ -463,7 +455,7 @@ fn broken_parent_chains_are_errors() {
         model
             .deformers
             .iter_mut()
-            .find(|d| d.id == "Face".into())
+            .find(|d| d.id == "Face")
             .unwrap()
             .parent = Some(parent.into());
     };

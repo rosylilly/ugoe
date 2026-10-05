@@ -529,7 +529,7 @@ fn derived_base_and_malformed_grids_are_errors() {
 }
 
 fn face(model: &Model) -> &KeyformGrid<WarpKeyform> {
-    let deformer = model.deformers.iter().find(|d| d.id == "Face".into());
+    let deformer = model.deformers.iter().find(|d| d.id == "Face");
     match deformer.map(|d| &d.kind) {
         Some(DeformerKind::Warp(w)) => &w.keyforms,
         _ => panic!("Face is not a warp deformer"),
@@ -537,7 +537,7 @@ fn face(model: &Model) -> &KeyformGrid<WarpKeyform> {
 }
 
 fn face_mut(model: &mut Model) -> &mut KeyformGrid<WarpKeyform> {
-    let deformer = model.deformers.iter_mut().find(|d| d.id == "Face".into());
+    let deformer = model.deformers.iter_mut().find(|d| d.id == "Face");
     match deformer.map(|d| &mut d.kind) {
         Some(DeformerKind::Warp(w)) => &mut w.keyforms,
         _ => panic!("Face is not a warp deformer"),
@@ -737,7 +737,7 @@ fn malformed_keys_and_axes_are_errors() {
     let before = grid.clone();
     let err = infer_additive(&model, &mut grid, InferScope::AllDerived).unwrap_err();
     assert!(
-        matches!(&err, InferError::NonFiniteKey { parameter, key } if parameter.as_str() == "A" && key.is_nan()),
+        matches!(&err, InferError::NonFiniteKey { parameter, key } if parameter == "A" && key.is_nan()),
         "{err:?}"
     );
     assert_eq!(grid.bindings[0].keys.len(), before.bindings[0].keys.len());

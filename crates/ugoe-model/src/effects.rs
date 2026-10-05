@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn standard_targets_are_standard_parameters() {
-        let known = |id: &ParamId| standard::ALL.iter().any(|(s, ..)| id.as_str() == *s);
+        let known = |id: &ParamId| standard::ALL.iter().any(|(s, ..)| id == *s);
         let effects = Effects::standard();
         assert!(effects.eye_blink.parameters.iter().all(known));
         assert!(effects.lip_sync.parameters.iter().all(known));

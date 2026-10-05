@@ -67,7 +67,7 @@ fn module_project_saves_only_the_module() {
             .model()
             .meshes
             .iter()
-            .any(|m| m.id.as_str() == "LongHair/Strand")
+            .any(|m| m.id == "LongHair/Strand")
     );
     assert_eq!(module.meshes[0].id.as_str(), "Strand");
     assert_eq!(module.meshes[0].parent, None);

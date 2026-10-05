@@ -112,7 +112,7 @@ pub fn compare_with_module_file(
                             .model
                             .parts
                             .iter()
-                            .any(|p| context.is_base_part(&p.id) && p.id.as_str() == part)
+                            .any(|p| context.is_base_part(&p.id) && p.id == part)
                             .then(|| part.to_owned())
                     })
                 })
@@ -407,7 +407,7 @@ fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Ve
     for module in modules {
         match kind {
             DifferenceKind::Mesh => {
-                if module.meshes.iter().any(|m| m.id.as_str() == id) {
+                if module.meshes.iter().any(|m| m.id == id) {
                     push(id);
                 }
             }
@@ -424,13 +424,13 @@ fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Ve
                 }
             }
             DifferenceKind::Glue => {
-                if let Some(glue) = module.glues.iter().find(|g| g.id.as_str() == id) {
+                if let Some(glue) = module.glues.iter().find(|g| g.id == id) {
                     push(glue.mesh_a.as_str());
                     push(glue.mesh_b.as_str());
                 }
             }
             DifferenceKind::PhysicsRig => {
-                let Some(rig) = module.physics.rigs.iter().find(|r| r.id.as_str() == id) else {
+                let Some(rig) = module.physics.rigs.iter().find(|r| r.id == id) else {
                     continue;
                 };
                 for output in &rig.outputs {
@@ -491,7 +491,7 @@ fn pose_parts<'a>(module: &'a Module, kind: DifferenceKind, id: &'a str) -> Vec<
             .pose
             .links
             .iter()
-            .filter(|e| e.part.as_str() == id)
+            .filter(|e| e.part == id)
             .flat_map(entry_parts)
             .collect(),
         _ => Vec::new(),
@@ -512,7 +512,7 @@ fn in_part(module: &Module, part: &str, ancestor: &str) -> bool {
         current = module
             .parts
             .iter()
-            .find(|p| p.id.as_str() == id)
+            .find(|p| p.id == id)
             .and_then(|p| p.parent.as_ref())
             .map(|p| p.as_str());
     }
@@ -533,7 +533,7 @@ fn under_deformer<'a>(module: &'a Module, deformer: &str) -> Vec<&'a str> {
             current = module
                 .deformers
                 .iter()
-                .find(|d| d.id.as_str() == id)
+                .find(|d| d.id == id)
                 .and_then(|d| d.parent.as_ref())
                 .map(|p| p.as_str());
         }

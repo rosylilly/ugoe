@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model.meta.name = "depth_face".into();
     for p in &mut model.parameters {
         // AngleX は自分自身と対にする (ミラーで符号を反転したキーに対応させる)。
-        if p.id == "AngleX".into() {
+        if p.id == "AngleX" {
             p.mirror = Some(p.id.clone());
         }
     }
@@ -207,7 +207,7 @@ fn pair_eyes(model: &mut Model) {
             })
             .collect();
         m.keyforms = KeyformGrid::new(vec![binding("AngleX")], keyforms);
-        m.keyforms.origins = if m.id == "EyeL".into() {
+        m.keyforms.origins = if m.id == "EyeL" {
             vec![KeyformOrigin::Authored; 5]
         } else {
             let mut o = vec![KeyformOrigin::Derived; 5];

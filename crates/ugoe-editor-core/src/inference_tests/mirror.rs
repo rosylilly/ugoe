@@ -230,7 +230,7 @@ fn self_mirror_fills_unedited_cells_from_edited_ones() {
     model
         .parameters
         .iter_mut()
-        .find(|p| p.id.as_str() == "AngleX")
+        .find(|p| p.id == "AngleX")
         .unwrap()
         .mirror = Some("AngleX".into());
     let ugoe_model::DeformerKind::Warp(warp) = &mut model.deformers[0].kind else {

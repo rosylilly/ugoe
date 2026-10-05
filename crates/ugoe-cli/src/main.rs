@@ -1190,13 +1190,7 @@ mod tests {
         assert_eq!(scene.textures.len(), base.textures.len() + module_textures);
         assert_eq!(scene.textures.len(), scene.model.textures.len());
         assert_eq!(scene.normal_maps.len(), scene.textures.len());
-        assert!(
-            scene
-                .model
-                .meshes
-                .iter()
-                .any(|m| m.id.as_str() == "LongHair/Back")
-        );
+        assert!(scene.model.meshes.iter().any(|m| m.id == "LongHair/Back"));
         // モジュールに物理のリグがあるので、本体に物理が無くても物理の設定ができる。
         assert!(!scene.animation.physics.unwrap().rigs.is_empty());
         // テクスチャの無い入力 (フィクスチャ) には付けられない。

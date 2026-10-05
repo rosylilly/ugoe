@@ -11,7 +11,7 @@ fn exposed_colliders_need_the_base_physics() {
         .model
         .slots
         .iter_mut()
-        .find(|s| s.id.as_str() == "Hair")
+        .find(|s| s.id == "Hair")
         .unwrap();
     hair.colliders = vec!["Shoulders".into()];
     let mut module = long_hair_module();
@@ -51,7 +51,7 @@ fn exposed_colliders_need_the_base_physics() {
             collider: "Shoulders".into(),
         }]
     );
-    assert_eq!(dropped.physics.rigs[0].colliders, ["Own".into()]);
+    assert_eq!(dropped.physics.rigs[0].colliders, ["Own"]);
     without.workspace(&dropped, &images(&dropped)).unwrap();
     assert!(without.drop_unavailable_colliders(&mut dropped).is_empty());
     let error = without.workspace(&module, &images(&module)).unwrap_err();
@@ -94,12 +94,7 @@ fn exposed_colliders_need_the_base_physics() {
     assert!(with.unavailable_colliders().is_empty());
     let workspace = with.workspace(&module, &images(&module)).unwrap();
     let physics = workspace.physics.unwrap();
-    assert!(
-        physics
-            .rigs
-            .iter()
-            .any(|r| r.colliders == ["Shoulders".into()])
-    );
+    assert!(physics.rigs.iter().any(|r| r.colliders == ["Shoulders"]));
 }
 
 /// 物理の無い本体で開けないモジュールのプロジェクトを、衝突体の参照を外して開く (T0661)。外さずには開けず、
@@ -112,7 +107,7 @@ fn module_project_opens_without_unavailable_colliders() {
         .model
         .slots
         .iter_mut()
-        .find(|s| s.id.as_str() == "Hair")
+        .find(|s| s.id == "Hair")
         .unwrap();
     hair.colliders = vec!["Shoulders".into()];
     let base_path = temp.path().join("avatar.ugoeproj");
@@ -162,7 +157,7 @@ fn module_project_opens_without_unavailable_colliders() {
         .physics
         .rigs
         .iter()
-        .find(|r| r.id.as_str() == rig)
+        .find(|r| r.id == rig.as_str())
         .unwrap();
     assert!(saved_rig.colliders.is_empty());
     Project::load(&dir).unwrap();

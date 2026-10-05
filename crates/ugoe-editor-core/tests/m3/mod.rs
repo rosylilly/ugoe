@@ -154,7 +154,7 @@ fn physics(wf: &mut Workflow) {
     });
     let physics = wf.physics();
     assert_eq!(physics.colliders.len(), 1);
-    assert_eq!(physics.rigs[0].colliders, vec![SHOULDER.into()]);
+    assert_eq!(physics.rigs[0].colliders, vec![SHOULDER]);
 }
 
 pub fn angle_x() -> CurveTarget {

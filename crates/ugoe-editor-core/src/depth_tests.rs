@@ -18,7 +18,7 @@ fn mesh_depth(model: &Model, id: &str) -> Option<Vec<f32>> {
     model
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == id)
+        .find(|m| m.id == id)
         .unwrap()
         .depth
         .clone()

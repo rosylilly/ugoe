@@ -23,7 +23,7 @@ fn mesh_index(instance: &ModelInstance, id: &str) -> usize {
         .model()
         .meshes
         .iter()
-        .position(|m| m.id.as_str() == id)
+        .position(|m| m.id == id)
         .expect("mesh")
 }
 

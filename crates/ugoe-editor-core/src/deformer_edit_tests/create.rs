@@ -181,20 +181,10 @@ fn chain_with_parts() -> Model {
     fingers.parent = Some("Limb".into());
     model.parts.extend([limb, fingers]);
     for d in &mut model.deformers {
-        d.part = if d.id.as_str() == "Hand" {
-            "Fingers"
-        } else {
-            "Limb"
-        }
-        .into();
+        d.part = if d.id == "Hand" { "Fingers" } else { "Limb" }.into();
     }
     for m in &mut model.meshes {
-        m.part = if m.id.as_str() == "Palm" {
-            "Fingers"
-        } else {
-            "Limb"
-        }
-        .into();
+        m.part = if m.id == "Palm" { "Fingers" } else { "Limb" }.into();
     }
     model
 }
@@ -242,7 +232,7 @@ fn create_warp_around_sub_part_skips_elements_under_outside_deformers() {
     model
         .meshes
         .iter_mut()
-        .find(|m| m.id.as_str() == "Palm")
+        .find(|m| m.id == "Palm")
         .unwrap()
         .part = "Limb".into();
     let after = applied(

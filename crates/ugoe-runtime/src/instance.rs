@@ -1369,7 +1369,7 @@ mod tests {
 
     fn mesh_index(instance: &ModelInstance, id: &str) -> usize {
         let meshes = &instance.compiled().model().meshes;
-        meshes.iter().position(|m| m.id.as_str() == id).unwrap()
+        meshes.iter().position(|m| m.id == id).unwrap()
     }
 
     fn assert_no_changes(instance: &ModelInstance) {

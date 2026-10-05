@@ -82,7 +82,7 @@ fn blend_shape_mirror_sources_are_renamed_both_ways() {
         .model()
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == "LongHair/Front")
+        .find(|m| m.id == "LongHair/Front")
         .unwrap();
     let source = |grid: &KeyformGrid<MeshKeyform>| grid.mirror_source.clone().unwrap().id;
     assert_eq!(source(&workspace.keyforms), "LongHair/Back");
@@ -207,7 +207,7 @@ fn new_canvas_elements_move_under_the_slot() {
         .model()
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == "CoatMesh")
+        .find(|m| m.id == "CoatMesh")
         .unwrap();
     // 見た目を保ったまま取り付け先 (ワープ `Torso`) の下へ移り、描画順はスロットの範囲 (300〜400) に写る。
     assert_eq!(mesh.parent.as_ref().unwrap().as_str(), "Torso");
@@ -216,27 +216,19 @@ fn new_canvas_elements_move_under_the_slot() {
         .model()
         .parts
         .iter()
-        .find(|p| p.id.as_str() == "Coat")
+        .find(|p| p.id == "Coat")
         .unwrap();
     assert_eq!(coat.parent, Some(PartId::new("Body")));
 
     let split = split(&document);
-    let mesh = split
-        .meshes
-        .iter()
-        .find(|m| m.id.as_str() == "CoatMesh")
-        .unwrap();
+    let mesh = split.meshes.iter().find(|m| m.id == "CoatMesh").unwrap();
     assert_eq!(mesh.parent, None);
     assert_eq!(mesh.texture, 0);
     assert!((mesh.keyforms.keyforms[0].draw_order - 500.0).abs() < 1e-3);
     // ワープの UV 空間 (Torso は 64〜192 × 128〜256) で表す。
     let p = mesh.keyforms.keyforms[0].positions[0];
     assert!((p.x - (100.0 - 64.0) / 128.0).abs() < 1e-3, "{p:?}");
-    let coat = split
-        .parts
-        .iter()
-        .find(|p| p.id.as_str() == "Coat")
-        .unwrap();
+    let coat = split.parts.iter().find(|p| p.id == "Coat").unwrap();
     assert_eq!(coat.parent, None);
 }
 

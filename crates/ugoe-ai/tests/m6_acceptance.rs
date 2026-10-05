@@ -228,7 +228,7 @@ fn the_adopted_proposal_covers_every_part_and_the_profile_passes() {
         standard::MOUTH_OPEN_Y,
         standard::BREATH,
     ] {
-        assert!(model.parameters.iter().any(|p| p.id.as_str() == id), "{id}");
+        assert!(model.parameters.iter().any(|p| p.id == id), "{id}");
     }
     // エフェクト: 目パチ・呼吸・リップシンクが作ったパラメータに向いている。
     let effects = &model.effects;
@@ -238,12 +238,9 @@ fn the_adopted_proposal_covers_every_part_and_the_profile_passes() {
             .breath
             .parameters
             .iter()
-            .any(|b| b.parameter.as_str() == standard::BREATH)
+            .any(|b| b.parameter == standard::BREATH)
     );
-    assert_eq!(
-        effects.lip_sync.parameters,
-        vec![standard::MOUTH_OPEN_Y.into()]
-    );
+    assert_eq!(effects.lip_sync.parameters, vec![standard::MOUTH_OPEN_Y]);
     // 髪揺れ: 前髪と後ろ髪の動的物理 (頭の回転デフォーマに取り付く)。
     let physics = adopted.doc.physics().unwrap();
     assert_eq!(physics.rigs.len(), 2);

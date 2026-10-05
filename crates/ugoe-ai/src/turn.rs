@@ -678,7 +678,7 @@ mod tests {
         let Some(DeformerKind::Warp(warp)) = model
             .deformers
             .iter_mut()
-            .find(|d| d.id.as_str() == "Warp")
+            .find(|d| d.id == "Warp")
             .map(|d| &mut d.kind)
         else {
             panic!("no warp");

@@ -144,7 +144,7 @@ fn bustup_rig_turns_the_head_and_opens_the_eyes_and_mouth() {
         standard::EYE_R_OPEN,
         standard::MOUTH_OPEN_Y,
     ] {
-        assert!(model.parameters.iter().any(|p| p.id.as_str() == id), "{id}");
+        assert!(model.parameters.iter().any(|p| p.id == id), "{id}");
     }
     assert!((angle_scale(&model) - 0.7).abs() < 1e-6);
 

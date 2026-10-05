@@ -1,7 +1,7 @@
 ---
 id: T0159
 title: ugoe-core の Id<T> を文字列と比べられるようにする
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-core, ugoe-rigging, ugoe-editor-core, ugoe-cli, ugoe-ai, ugoe-mcp, ugoe-model, ugoe-runtime, apps/editor, docs]
 depends_on: []
@@ -20,9 +20,9 @@ T0142 で文字列のままの ID の参照を `Id<T>` にそろえた結果、�
 
 ## 受け入れ条件
 
-- [ ] 足すか決めた (上の判断)。足すなら `PartialEq<str>`・`PartialEq<&str>`・`PartialEq<Id<T>> for str`/`&str` を実装し、doc コメントとテストを書いた
-- [ ] 足したなら、ワークスペースの `as_str() == "..."` の形を置き換えた (`crates:` の外のクレートのテストは、置き換えずに件数をメモに書くか、別のタスクにする)
-- [ ] `just ci` と `just wasm-check` が通る
+- [x] 足すか決めた (上の判断)。足すなら `PartialEq<str>`・`PartialEq<&str>`・`PartialEq<Id<T>> for str`/`&str` を実装し、doc コメントとテストを書いた
+- [x] 足したなら、ワークスペースの `as_str() == "..."` の形を置き換えた (`crates:` の外のクレートのテストは、置き換えずに件数をメモに書くか、別のタスクにする)
+- [x] `just ci` と `just wasm-check` が通る
 
 ## 参考
 
@@ -67,3 +67,28 @@ B でも実害はない (今の書き方のまま)。
 実装の差分 (A を選んだときの出発点): ugoe-core の 4 つの impl とテスト、ugoe-rigging/src/depth.rs の型注釈。
 
 - **判断 (2026-10-05、利用者の判断):** 案 A。impl を入れ、型推論が壊れる 35 か所 (rigging 16・editor-core 15・cli 4・ai 2、ほか見つかれば) を同じタスクで機械的に直す。`id.as_str() == "..."` も置き換える。実装の差分は以前のワーカーが残したパッチ (scratchpad の t0159-impl.patch) を参考にしてよい。
+
+### 2026-10-05 review (claude-worker-T0159)
+
+やったこと:
+
+- `crates/ugoe-core/src/id.rs` に `PartialEq<str>`・`PartialEq<&str>` for `Id<T>` と、`PartialEq<Id<T>>` for `str`/`&str` を足した (doc コメントとテスト付き)。
+  型の違う `Id<T>` どうしの比較はコンパイルエラーのまま。`crates/ugoe-core/README.md` の「守ること」に書き方 (`id == "A"`・`ids == ["A"]`) を足した。
+- 型推論が壊れた 35 か所 (rigging 16・editor-core 15・cli 4・ai 2。cli の tests は editor-core の tests/m3 を共有するので 1 か所として数えた) は
+  `.into()` を外して `x.id == "A"` / `ids == ["A"]` の形にした。ugoe-rigging/src/depth.rs のクロージャは `&Option<ParamId>` と型を書いた。
+  ugoe-mcp・apps/editor・apps/viewer・apps/studio に新しい推論のエラーは出なかった (`cargo clippy --workspace --all-targets --all-features -D warnings` で確認)。
+- `Id<T>` の `as_str() ==`/`!=` を `crates:` の範囲 (core・rigging・editor-core・cli・ai・mcp・model・runtime・apps/editor) で 135 か所置き換えた
+  (`Id::as_str` を一時的に `#[deprecated]` にして、警告が出た箇所のうち `Id` のものだけを機械的に選んだ)。
+  相手が `String` の 4 か所 (editor-core の module_project.rs と colliders.rs のテスト、ai の module_rig_sample.rs の `mesh_id(..)` の 2 か所) は
+  `x == s.as_str()` か元の形にした。ugoe-mcp/tests/stdio.rs の `p.id.to_string() == "AngleX"` は clippy (cmp_owned) の指摘で `p.id == "AngleX"` にした。
+
+やらなかったこと:
+
+- `crates:` の外の `Id` の `as_str() ==` は置き換えていない (21 か所): apps/studio 5 (conductor.rs 2・stage.rs 3)、ugoe-format の tests 3、ugoe-motion 2、
+  ugoe-physics の tests 3、ugoe-render 2 (src/mask.rs 1・tests 1)、ugoe-wasm 2、ugoe 3 (src/lib.rs 1・tests 2)、tests/conformance 1。
+  bindings/godot (ワークスペースの外) にも 2 か所ある (model.rs・node.rs)。どれも今のままでコンパイルできる。
+- bindings/godot のビルドは流していない (ワークスペースの外。`.into()` を使う比較は無いことを grep で確かめた)。
+
+起票の候補:
+
+- 上の `crates:` の外の `as_str() ==` (21 か所と godot の 2 か所) を `id == "..."` に置き換える。

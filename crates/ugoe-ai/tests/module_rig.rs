@@ -288,12 +288,7 @@ fn the_costume_follows_the_face_turn_without_adding_parameters() {
 
     // モジュールに分けられ、本体と合成できる (書き出しの確かめと同じ)。
     let (module, _) = doc.split_module().unwrap().unwrap();
-    assert!(
-        module
-            .deformers
-            .iter()
-            .any(|d| d.id.as_str() == "FollowFaceWarp")
-    );
+    assert!(module.deformers.iter().any(|d| d.id == "FollowFaceWarp"));
     assert_eq!(module.physics.rigs.len(), 2, "{:?}", module.physics.rigs);
     for rig in &module.physics.rigs {
         assert_eq!(rig.frame.as_ref().unwrap().as_str(), "FollowFaceWarp");
@@ -416,7 +411,7 @@ fn nothing_to_rig_is_reported() {
     let root = module
         .deformers
         .iter()
-        .find(|d| d.id.as_str() == "SwayRoot")
+        .find(|d| d.id == "SwayRoot")
         .unwrap();
     assert!(root.parent.is_none());
     assert!(matches!(&root.kind, DeformerKind::Warp(w) if w.keyforms.bindings.is_empty()));

@@ -119,6 +119,6 @@ fn mesh_index(model: &ugoe_model::Model, id: &str) -> usize {
     model
         .meshes
         .iter()
-        .position(|m| m.id.as_str() == id)
+        .position(|m| m.id == id)
         .unwrap_or_else(|| panic!("mesh {id}"))
 }

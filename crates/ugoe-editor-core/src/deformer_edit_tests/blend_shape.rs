@@ -29,7 +29,7 @@ fn deformer_edits_keep_the_look_of_blend_shape_cells() {
         let after = applied(before, command);
         assert_same_look(before, &after, poses);
     }
-    let mouth = wrapped.meshes.iter().find(|m| m.id.as_str() == "Mouth");
+    let mouth = wrapped.meshes.iter().find(|m| m.id == "Mouth");
     assert_eq!(mouth.unwrap().keyforms.blend_shapes.len(), 2);
 
     // 回転の中心の移動は、ブレンドシェイプ格子のセルの原点にも同じだけ足す。

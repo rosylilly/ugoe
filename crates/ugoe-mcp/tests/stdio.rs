@@ -433,13 +433,7 @@ fn propose_apply_undo_and_save() {
     assert_eq!(saved["modified"], false);
     assert!(fs::read(&bundle).unwrap().starts_with(b"UGOE"));
     let on_disk = Project::load(&project).unwrap();
-    assert!(
-        on_disk
-            .model
-            .parameters
-            .iter()
-            .any(|p| p.id.to_string() == "AngleX")
-    );
+    assert!(on_disk.model.parameters.iter().any(|p| p.id == "AngleX"));
 
     client.call_ok("close_project", json!({ "path": path }));
 }

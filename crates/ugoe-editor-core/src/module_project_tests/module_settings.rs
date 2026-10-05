@@ -11,13 +11,7 @@ fn module_settings_rename_the_module_and_undo() {
         .unwrap();
     let context = document.module().unwrap();
     assert_eq!(context.name(), "Braid");
-    assert!(
-        document
-            .model()
-            .meshes
-            .iter()
-            .any(|m| m.id.as_str() == "Braid/Back")
-    );
+    assert!(document.model().meshes.iter().any(|m| m.id == "Braid/Back"));
     assert_eq!(context.display_id("Braid/Back"), "Back");
     assert_eq!(context.display_id("Face"), "Face");
     let (split, _) = document.split_module().unwrap().unwrap();
@@ -92,7 +86,7 @@ fn module_settings_move_to_another_slot() {
             },
         ))
         .unwrap();
-    assert_eq!(split(&document).requires.slots, vec!["Hair".into()]);
+    assert_eq!(split(&document).requires.slots, vec!["Hair"]);
     // バッチの中では使えない。
     let error = document
         .apply(Command::Batch {
@@ -150,21 +144,9 @@ fn rebase_keeps_unsaved_module_edits() {
     document
         .rebase_module(crate::project::load_base(&base_path).unwrap())
         .unwrap();
-    assert!(
-        document
-            .model()
-            .parameters
-            .iter()
-            .any(|p| p.id.as_str() == "Extra")
-    );
+    assert!(document.model().parameters.iter().any(|p| p.id == "Extra"));
     // 合成し直すので、新しく作った要素の ID にも接頭辞が付く。
-    assert!(
-        document
-            .model()
-            .parts
-            .iter()
-            .any(|p| p.id.as_str() == "Hat/Brim")
-    );
+    assert!(document.model().parts.iter().any(|p| p.id == "Hat/Brim"));
     assert_eq!(document.module().unwrap().slot().draw_order.max, 600.0);
     assert!(document.is_modified());
     assert!(document.state_id() > state);
@@ -200,13 +182,7 @@ fn rebase_keeps_unsaved_module_edits() {
         )
         .unwrap();
     assert_eq!(document.module().unwrap().slot().id.as_str(), "Outfit");
-    assert!(
-        document
-            .model()
-            .parts
-            .iter()
-            .any(|p| p.id.as_str() == "Hat/Brim")
-    );
+    assert!(document.model().parts.iter().any(|p| p.id == "Hat/Brim"));
     assert!(document.is_modified());
 }
 
@@ -227,7 +203,7 @@ fn module_settings_keep_the_look_when_the_anchor_changes() {
         let index = model
             .meshes
             .iter()
-            .position(|m| m.id.as_str() == "Dress/Skirt")
+            .position(|m| m.id == "Dress/Skirt")
             .unwrap();
         instance.drawables()[index].positions.clone()
     };
@@ -245,7 +221,7 @@ fn module_settings_keep_the_look_when_the_anchor_changes() {
         .model()
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == "Dress/Skirt")
+        .find(|m| m.id == "Dress/Skirt")
         .unwrap();
     assert_eq!(skirt.parent.as_ref().map(|p| p.as_str()), Some("Head"));
     for (a, b) in before.iter().zip(positions(&document)) {
@@ -293,13 +269,7 @@ fn module_settings_keep_physics_in_place_when_the_anchor_changes() {
             ugoe_runtime::CompiledModel::compile(model.clone()).unwrap(),
         );
         instance.update();
-        let index = |id: &str| {
-            model
-                .deformers
-                .iter()
-                .position(|d| d.id.as_str() == id)
-                .unwrap()
-        };
+        let index = |id: &str| model.deformers.iter().position(|d| d.id == id).unwrap();
         let collider = &physics.colliders[0];
         let ugoe_model::physics::ColliderShape::Circle { center, .. } = collider.shape else {
             unreachable!()

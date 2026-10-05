@@ -463,7 +463,7 @@ fn collider_add_edit_remove() {
         id: "HeadBall".into(),
     })
     .unwrap();
-    assert_eq!(physics(&doc).rigs[0].colliders, vec!["Shoulder".into()]);
+    assert_eq!(physics(&doc).rigs[0].colliders, vec!["Shoulder"]);
     assert_eq!(physics(&doc).colliders.len(), 1);
     // Undo で戻る。
     assert!(doc.undo());
@@ -497,7 +497,7 @@ fn removing_model_elements_keeps_unknown_vertex_owners() {
     assert_eq!(targets[0], unknown);
     assert!(matches!(
         &targets[1],
-        PhysicsTarget::Vertices { owner: VertexOwner::Warp(w), .. } if w.as_str() == "Cloth"
+        PhysicsTarget::Vertices { owner: VertexOwner::Warp(w), .. } if w == "Cloth"
     ));
 }
 
@@ -555,7 +555,7 @@ fn removing_the_attached_deformer_keeps_the_collider_in_place() {
     })
     .unwrap();
     let p = physics(&doc);
-    let tip = p.colliders.iter().find(|c| c.id.as_str() == "Tip").unwrap();
+    let tip = p.colliders.iter().find(|c| c.id == "Tip").unwrap();
     assert_eq!(tip.attach, None);
     // Hair3 の原点はキャンバスの (148,160)、角度 0。
     let ColliderShape::Circle { center, .. } = tip.shape else {
@@ -597,7 +597,7 @@ fn model_edits_that_break_physics_are_rejected() {
         .model()
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == "Ribbon")
+        .find(|m| m.id == "Ribbon")
         .unwrap()
         .clone();
     mesh.uvs.pop();
@@ -684,7 +684,7 @@ fn set_parameter_internal_and_undo() {
         doc.model()
             .parameters
             .iter()
-            .find(|p| p.id.as_str() == id)
+            .find(|p| p.id == id)
             .unwrap()
             .internal
     };

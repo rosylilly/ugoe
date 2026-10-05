@@ -182,7 +182,7 @@ fn check(base: &Model, physics: &PhysicsSettings, modules: &[ModuleFile]) -> any
         let set: Vec<&Module> = modules
             .iter()
             .map(|f| &f.module)
-            .filter(|m| m.slot.as_str() != "Hair" || m.name == hair)
+            .filter(|m| m.slot != "Hair" || m.name == hair)
             .collect();
         for n in 1..=set.len() {
             let modules = &set[..n];
@@ -1671,11 +1671,7 @@ mod tests {
             parameters.set(index, *value);
         }
         instance.update();
-        let index = model
-            .meshes
-            .iter()
-            .position(|m| m.id.as_str() == id)
-            .unwrap();
+        let index = model.meshes.iter().position(|m| m.id == id).unwrap();
         instance.drawables()[index].positions.clone()
     }
 
@@ -1803,7 +1799,7 @@ mod tests {
         let index = model
             .meshes
             .iter()
-            .position(|m| m.id.as_str() == "HairBack")
+            .position(|m| m.id == "HairBack")
             .unwrap();
         let angle = puppet
             .instance()
@@ -1840,13 +1836,9 @@ mod tests {
         let sample = build_dress_up().unwrap();
         let model = &sample.base.model;
         let physics = sample.base.physics.clone().unwrap();
-        let hair = model
-            .slots
-            .iter()
-            .find(|s| s.id.as_str() == "Hair")
-            .unwrap();
-        assert_eq!(hair.colliders, [SHOULDERS.into()]);
-        assert!(physics.colliders.iter().any(|c| c.id.as_str() == SHOULDERS));
+        let hair = model.slots.iter().find(|s| s.id == "Hair").unwrap();
+        assert_eq!(hair.colliders, [SHOULDERS]);
+        assert!(physics.colliders.iter().any(|c| c.id == SHOULDERS));
         // 肩は胴の上の辺 (頭の下) にあり、体と一緒に動く。
         let ColliderShape::Capsule { a, b, .. } = physics.colliders[0].shape else {
             panic!("{:?}", physics.colliders[0].shape);
@@ -1866,7 +1858,7 @@ mod tests {
                 .physics
                 .rigs
                 .iter()
-                .all(|r| r.colliders == [SHOULDERS.into()])
+                .all(|r| r.colliders == [SHOULDERS])
         );
         let long_hair = sample.modules[0].module.clone();
         assert!(
@@ -1882,7 +1874,7 @@ mod tests {
         let shoulders = rigs
             .rigs
             .iter()
-            .filter(|r| r.colliders == [SHOULDERS.into()])
+            .filter(|r| r.colliders == [SHOULDERS])
             .count();
         assert_eq!(shoulders, 2);
 
@@ -1893,12 +1885,7 @@ mod tests {
                 .with_physics(physics.clone());
             with_physics.attach_module(module.clone()).unwrap();
             let settings = with_physics.physics().unwrap().settings();
-            assert!(
-                settings
-                    .colliders
-                    .iter()
-                    .any(|c| c.id.as_str() == SHOULDERS)
-            );
+            assert!(settings.colliders.iter().any(|c| c.id == SHOULDERS));
             let mut model_only = ugoe::Puppet::new(model.clone()).unwrap();
             model_only.attach_module(module).unwrap();
             let settings = model_only.physics().unwrap().settings();
@@ -1925,13 +1912,7 @@ mod tests {
                 .attach_module(std::sync::Arc::new(sample.modules[index].module.clone()))
                 .unwrap();
             let model = puppet.instance().compiled().model().clone();
-            let find = |id: &str| {
-                model
-                    .meshes
-                    .iter()
-                    .position(|m| m.id.as_str() == id)
-                    .unwrap()
-            };
+            let find = |id: &str| model.meshes.iter().position(|m| m.id == id).unwrap();
             let angle = puppet
                 .instance()
                 .parameters()
@@ -2015,7 +1996,7 @@ mod tests {
                 .settings()
                 .rigs
                 .iter()
-                .position(|r| r.id.as_str() == "TwinTails/TailR")
+                .position(|r| r.id == "TwinTails/TailR")
                 .unwrap();
             let parameters = puppet.instance().parameters();
             let (head, body) = (

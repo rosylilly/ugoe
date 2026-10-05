@@ -179,7 +179,7 @@ fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
     model
         .meshes
         .iter_mut()
-        .find(|m| m.id == id.into())
+        .find(|m| m.id == id)
         .unwrap_or_else(|| panic!("no {id}"))
 }
 
@@ -255,7 +255,7 @@ fn assert_eyes_symmetric(model: &Model) {
 }
 
 fn mirror(model: &mut Model, from: &str, to: &str) -> Result<Vec<usize>, InferError> {
-    let (from, to) = if model.meshes.iter().any(|m| m.id == from.into()) {
+    let (from, to) = if model.meshes.iter().any(|m| m.id == from) {
         (
             KeyformTarget::Mesh(from.into()),
             KeyformTarget::Mesh(to.into()),
@@ -437,11 +437,7 @@ fn same_parent_pairs_keep_the_parent_space_formula() {
     mesh_mut(&mut model, "EyeR").keyforms = stale(right);
     let source = model.clone();
     mirror(&mut model, "EyeL", "EyeR").unwrap();
-    let source = &source
-        .meshes
-        .iter()
-        .find(|m| m.id == "EyeL".into())
-        .unwrap();
+    let source = &source.meshes.iter().find(|m| m.id == "EyeL").unwrap();
     let right = &mesh_mut(&mut model, "EyeR").keyforms;
     for (t, s) in [(0, 2), (2, 0)] {
         let p = &source.keyforms.keyforms[s].positions;

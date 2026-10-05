@@ -271,7 +271,7 @@ fn swaying_parts_collide_with_the_exposed_colliders() {
     apply(&mut doc, &proposal);
     let physics = doc.physics().unwrap();
     let rig = physics.rigs.last().unwrap();
-    assert_eq!(rig.colliders, vec!["Shoulder".into()]);
+    assert_eq!(rig.colliders, vec!["Shoulder"]);
     // `Neck` を外せば、粒子に衝突の半径を付けても静止姿勢で当たらない。
     assert!(
         rig.particles[1..].iter().all(|p| p.collision_radius > 0.0),
@@ -328,7 +328,7 @@ fn base_with_arms(expose: bool) -> Document {
             .model()
             .meshes
             .iter()
-            .find(|m| m.id.as_str() == "Shirt")
+            .find(|m| m.id == "Shirt")
             .unwrap()
             .clone();
         arm.id = format!("{id}Mesh").as_str().into();
@@ -490,7 +490,7 @@ fn makeup_follows_the_face_warp_the_eye_rotation_and_the_eye_mesh_together() {
         .model()
         .deformers
         .iter()
-        .find(|d| d.id.as_str() == "EyeLTilt")
+        .find(|d| d.id == "EyeLTilt")
         .unwrap();
     let ugoe_model::DeformerKind::Rotation(rotation) = &tilt.kind else {
         panic!("not a rotation deformer");
@@ -521,7 +521,7 @@ fn makeup_follows_the_face_warp_the_eye_rotation_and_the_eye_mesh_together() {
         .model()
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == "EyeL")
+        .find(|m| m.id == "EyeL")
         .unwrap()
         .indices
         .clone();

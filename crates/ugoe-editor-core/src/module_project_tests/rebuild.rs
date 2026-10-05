@@ -122,7 +122,7 @@ fn module_settings_leave_no_references_to_removed_elements() {
             .model()
             .parts
             .iter()
-            .find(|p| p.id.as_str() == "Hair")
+            .find(|p| p.id == "Hair")
             .unwrap();
         assert_eq!(hair.parent.as_ref().map(|p| p.as_str()), Some("Root"));
     }
@@ -151,7 +151,7 @@ fn rebase_leaves_no_references_to_removed_elements() {
         .model
         .slots
         .iter_mut()
-        .find(|s| s.id.as_str() == "Hair")
+        .find(|s| s.id == "Hair")
         .unwrap();
     hair.colliders = vec!["Shoulders".into()];
     let mut module = long_hair_module();
@@ -175,10 +175,7 @@ fn rebase_leaves_no_references_to_removed_elements() {
     // 本体のスロットが `Hair` を置き換えなくなり、本体のメッシュ `HairDefault` も消えた: どちらもモジュールは参照しない。
     let mut changed = base.clone();
     changed.model.slots[0].replaces.clear();
-    changed
-        .model
-        .meshes
-        .retain(|m| m.id.as_str() != "HairDefault");
+    changed.model.meshes.retain(|m| m.id != "HairDefault");
     let mut document = open(&base);
     let before = workspaces(&document);
     document.rebase_module(changed.clone()).unwrap();
@@ -206,7 +203,7 @@ fn rebase_leaves_no_references_to_removed_elements() {
     let before = workspaces(&document);
     let state = document.state_id();
     let mut no_face = base.clone();
-    no_face.model.meshes.retain(|m| m.id.as_str() != "Face");
+    no_face.model.meshes.retain(|m| m.id != "Face");
     no_face.model.slots[0].mask_sources.clear();
     let error = document.rebase_module(no_face).unwrap_err();
     assert!(

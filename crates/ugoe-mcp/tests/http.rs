@@ -358,13 +358,7 @@ fn legacy_and_modern_clients_call_tools_over_http() {
     let saved = client.call_ok("save_project", json!({ "path": path }));
     assert_eq!(saved["modified"], false);
     let on_disk = Project::load(&project).unwrap();
-    assert!(
-        on_disk
-            .model
-            .parameters
-            .iter()
-            .any(|p| p.id.as_str() == "AngleX")
-    );
+    assert!(on_disk.model.parameters.iter().any(|p| p.id == "AngleX"));
 }
 
 /// 生の HTTP: GET と DELETE は 405、keep-alive で続けて送れる、Host と Origin の守り。

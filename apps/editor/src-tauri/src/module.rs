@@ -698,13 +698,7 @@ mod tests {
         let module = module_status_of(&document).unwrap();
         assert_eq!(module.slot.id, "Outfit");
         assert_eq!(module.base, moved_dir.display().to_string());
-        assert!(
-            document
-                .model()
-                .parts
-                .iter()
-                .any(|p| p.id.as_str() == "Hat/Brim")
-        );
+        assert!(document.model().parts.iter().any(|p| p.id == "Hat/Brim"));
         assert_eq!(session.base_change(&document).unwrap(), None);
     }
 

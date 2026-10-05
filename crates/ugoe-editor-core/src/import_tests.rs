@@ -45,12 +45,12 @@ fn mesh<'a>(model: &'a Model, id: &str) -> &'a Mesh {
     model
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == id)
+        .find(|m| m.id == id)
         .unwrap_or_else(|| panic!("mesh {id} not found"))
 }
 
 fn part_opacity(model: &Model, id: &str) -> f32 {
-    let part = model.parts.iter().find(|p| p.id.as_str() == id).unwrap();
+    let part = model.parts.iter().find(|p| p.id == id).unwrap();
     part.keyforms.keyforms[0].opacity
 }
 
@@ -341,11 +341,7 @@ fn import_into_existing_model_uses_new_top_level_part() {
     assert_eq!(model.meta.canvas.width, 256.0);
     assert_eq!(model.meshes.len(), 1 + 12);
     assert_eq!(model.textures.len(), 1 + 12);
-    let part = model
-        .parts
-        .iter()
-        .find(|p| p.id.as_str() == "layers_2")
-        .unwrap();
+    let part = model.parts.iter().find(|p| p.id == "layers_2").unwrap();
     assert_eq!(part.parent, None);
     let copy = mesh(model, "Layer6_2");
     assert_eq!(copy.masks, vec![MaskRef::normal("Layer5_2")]);
@@ -423,7 +419,7 @@ fn clipping_onto_group_and_skipped_base() {
         0.5
     ));
     assert!(mesh(model, "Orphan").masks.is_empty());
-    assert!(model.meshes.iter().all(|m| m.id.as_str() != "Empty"));
+    assert!(model.meshes.iter().all(|m| m.id != "Empty"));
     assert_eq!(mesh(model, "Glow").blend, BlendMode::Normal);
 
     let messages: Vec<String> = import.warnings.iter().map(ToString::to_string).collect();
