@@ -10,9 +10,12 @@ import {
   Checkbox,
   Icon,
   IconButton,
+  mergeAttributes,
   NumberField,
   Popover,
   Select,
+  TextField,
+  Tooltip,
 } from "@ugoe/ui";
 import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
@@ -388,13 +391,7 @@ function label(m: Motion): string {
       >
       <span class="sep"></span>
       <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
-      <input
-        id="{ids}-name"
-        class="name"
-        bind:value={renaming}
-        onchange={rename}
-        onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-      />
+      <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
       {#key fieldsKey}
         <NumberField
           label={t("timeline.motion.duration.label")}
@@ -450,10 +447,11 @@ function label(m: Motion): string {
                   aria-labelledby="{ids}-event-{i}"
                   onchange={(v) => editEvent(i, { t: v })}
                 />
-                <input
+                <TextField
                   value={ev.value}
+                  size={10}
                   aria-label={t("timeline.motion.events.value.aria", { index: i + 1 })}
-                  onchange={(e) => editEvent(i, { value: (e.currentTarget as HTMLInputElement).value })}
+                  onchange={(value) => editEvent(i, { value })}
                 />
                 <IconButton
                   small
@@ -561,12 +559,18 @@ function label(m: Motion): string {
           >
             <button class="track" onclick={() => (timeline.selectedTrack = key)} title={row.label}>{row.label}</button>
             {#if row.target.kind === "parameter" && row.parameter}
-              <button
-                class="key"
-                onclick={() => keyRow(row.target)}
-                title={t("timeline.motion.keyRow.tooltip", { id: row.target.id, time: timeline.time })}
-                >◆</button
-              >
+              {@const keyRowText = t("timeline.motion.keyRow.tooltip", { id: row.target.id, time: timeline.time })}
+              <!-- 名前と説明が同じ文なので、Tooltip の aria-describedby は付けない (IconButton と同じ) -->
+              <Tooltip text={keyRowText}>
+                {#snippet trigger(attrs)}
+                  <button
+                    {...mergeAttributes(attrs, { onclick: () => keyRow(row.target) })}
+                    class="key"
+                    aria-label={keyRowText}
+                    aria-describedby={undefined}>◆</button
+                  >
+                {/snippet}
+              </Tooltip>
             {/if}
           </div>
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -579,17 +583,22 @@ function label(m: Motion): string {
             {#if row.curve}
               {#each curveKeys(row.curve) as k (k.t)}
                 {@const selected = timeline.selectedKey?.track === key && timeline.selectedKey.t === k.t}
-                <button
-                  class="diamond"
-                  class:selected
-                  style:left="{keyX(row.target, k)}px"
-                  title={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}
-                  aria-label={t("timeline.motion.key.aria", { label: row.label, time: k.t })}
-                  onpointerdown={(e) => onKeyDown(e, row.target, k)}
-                  onpointermove={onKeyMove}
-                  onpointerup={onKeyUp}
-                  onpointercancel={() => (drag = null)}
-                ></button>
+                <Tooltip text={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}>
+                  {#snippet trigger(attrs)}
+                    <button
+                      {...mergeAttributes(attrs, {
+                        onpointerdown: (e: PointerEvent) => onKeyDown(e, row.target, k),
+                        onpointermove: onKeyMove,
+                        onpointerup: onKeyUp,
+                        onpointercancel: () => (drag = null),
+                      })}
+                      class="diamond"
+                      class:selected
+                      style:left="{keyX(row.target, k)}px"
+                      aria-label={t("timeline.motion.key.aria", { label: row.label, time: k.t })}
+                    ></button>
+                  {/snippet}
+                </Tooltip>
               {/each}
             {/if}
           </div>
@@ -626,9 +635,6 @@ function label(m: Motion): string {
   }
   .inline {
     display: inline;
-  }
-  input.name {
-    width: 110px;
   }
   .sep {
     width: 1px;

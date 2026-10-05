@@ -6,10 +6,13 @@
   - onchange は利用者の操作 (キー・入力の確定) で値が変わったときだけ呼ぶ。外から渡した値が `decimals` の桁に乗らなくても、
     欄を書き換えずにフォーカスを外したり Enter を押したりしただけでは呼ばない (docs/ui.md#数値の部品と-onchange)。
   - onchange を呼んでいる間は、`numberFieldCommit()` が欄ごとに一意な印を返す (同じ欄の続けての確定をまとめるため)。
+  - `tooltip` を渡すと、欄に Tooltip で説明を出す (`title` 属性の代わり)。
 -->
 <script lang="ts">
 import { withNumberFieldCommit } from "../commit";
 import { clamp, decimalsOf, formatEditable, parseEditable, roundTo, stepValue } from "../number";
+import type { TriggerAttributes } from "../props";
+import Tooltip from "./Tooltip.svelte";
 
 interface Props {
   /** 値。確定したときに更新される。 */
@@ -31,6 +34,8 @@ interface Props {
   disabled?: boolean;
   /** 入力の誤り (範囲の外など)。危険の色の枠と `aria-invalid` にする。誤りの文は `aria-describedby` で結ぶ。 */
   invalid?: boolean;
+  /** 欄に出す説明 (Tooltip。翻訳を通した文言)。`title` 属性の代わり。 */
+  tooltip?: string;
   /** 欄の幅 (文字数)。既定は 6。 */
   size?: number;
   /** 利用者の操作で値を確定し、値が変わったとき。外から渡した値では呼ばない。 */
@@ -49,6 +54,7 @@ let {
   "aria-describedby": describedby,
   disabled = false,
   invalid = false,
+  tooltip,
   size = 6,
   onchange,
 }: Props = $props();
@@ -126,6 +132,36 @@ function onkeydown(event: KeyboardEvent) {
 }
 </script>
 
+{#snippet input(attrs: TriggerAttributes)}
+  <input
+    {...attrs}
+    bind:this={inputEl}
+    id={`${id}-input`}
+    class="ugoe-number-field__input"
+    type="text"
+    inputmode="decimal"
+    role="spinbutton"
+    autocomplete="off"
+    spellcheck="false"
+    {size}
+    {disabled}
+    aria-labelledby={labelledby ?? (label ? `${id}-label` : undefined)}
+    aria-describedby={[attrs["aria-describedby"], describedby].filter(Boolean).join(" ") || undefined}
+    aria-invalid={invalid || undefined}
+    aria-valuenow={value}
+    aria-valuemin={min}
+    aria-valuemax={max}
+    aria-valuetext={unit ? `${text} ${unit}` : undefined}
+    bind:value={text}
+    oninput={() => (dirty = true)}
+    onblur={(e) => {
+      commitText();
+      (attrs.onblur as ((e: FocusEvent) => void) | undefined)?.(e);
+    }}
+    {onkeydown}
+  />
+{/snippet}
+
 <span
   class="ugoe-number-field"
   data-disabled={disabled ? "" : undefined}
@@ -145,29 +181,13 @@ function onkeydown(event: KeyboardEvent) {
       }
     }}
   >
-    <input
-      bind:this={inputEl}
-      id={`${id}-input`}
-      class="ugoe-number-field__input"
-      type="text"
-      inputmode="decimal"
-      role="spinbutton"
-      autocomplete="off"
-      spellcheck="false"
-      {size}
-      {disabled}
-      aria-labelledby={labelledby ?? (label ? `${id}-label` : undefined)}
-      aria-describedby={describedby}
-      aria-invalid={invalid || undefined}
-      aria-valuenow={value}
-      aria-valuemin={min}
-      aria-valuemax={max}
-      aria-valuetext={unit ? `${text} ${unit}` : undefined}
-      bind:value={text}
-      oninput={() => (dirty = true)}
-      onblur={commitText}
-      {onkeydown}
-    />
+    {#if tooltip}
+      <Tooltip text={tooltip} id={`${id}-input`} {disabled}>
+        {#snippet trigger(attrs)}{@render input(attrs)}{/snippet}
+      </Tooltip>
+    {:else}
+      {@render input({})}
+    {/if}
     {#if unit}
       <span class="ugoe-number-field__unit" aria-hidden="true">{unit}</span>
     {/if}

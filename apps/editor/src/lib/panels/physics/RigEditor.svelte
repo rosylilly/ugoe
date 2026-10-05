@@ -5,7 +5,7 @@
   組み立てる (sendRig。前の編集を読み直す前の写しから組み立てると、その編集を戻してしまう)。
 -->
 <script lang="ts">
-import { Button, Checkbox, Icon, IconButton, NumberField, Select } from "@ugoe/ui";
+import { Button, Checkbox, Icon, IconButton, NumberField, Select, TextField } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type {
   Command,
@@ -251,15 +251,14 @@ const rangeFields = $derived([
   <div class="ed-field">
     <label for="{ids}-name">{t("physics.rig.name.label")}</label>
     <span class="pair">
-      <input id="{ids}-name" class="text" type="text" value={rig.name}
-        onchange={(e) => rename(e.currentTarget.value)} />
+      <TextField id="{ids}-name" value={rig.name} onchange={rename} />
       <span class="muted id">{rig.id}</span>
     </span>
   </div>
   <div class="ed-field">
-    <span id="{ids}-frame" title={t("physics.rig.frame.tooltip")}>{t("physics.rig.frame.label")}</span>
+    <span id="{ids}-frame">{t("physics.rig.frame.label")}</span>
     <Select aria-labelledby="{ids}-frame" value={rig.frame ?? CANVAS} options={frameOptions}
-      onchange={(v) => setFrame(v === CANVAS ? "" : v)} />
+      tooltip={t("physics.rig.frame.tooltip")} onchange={(v) => setFrame(v === CANVAS ? "" : v)} />
   </div>
   <div class="ed-buttons row">
     <Button disabled={busy} onclick={() => sendRig((r) => ({ op: "remove_physics_rig", id: r.id }))}>
@@ -477,21 +476,8 @@ const rangeFields = $derived([
   color: var(--ugoe-color-text-muted);
 }
 
-.text {
+.pair :global(.ugoe-text-field) {
   flex: 1;
-  min-width: 0;
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.text:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 .index {

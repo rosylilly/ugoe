@@ -40,13 +40,16 @@
   },
   "samples": {
     "avatar": {
-      "label": "Avatar"
+      "label": "Avatar",
+      "description": "Bust-up with tracking parameters, physics, motions and expressions"
     },
     "avatarLit": {
-      "label": "Avatar (lighting)"
+      "label": "Avatar (lighting)",
+      "description": "The avatar with normal maps, for trying the lights"
     },
     "dressUp": {
-      "label": "Dress-up"
+      "label": "Dress-up",
+      "description": "A base with slots and four outfit modules"
     },
     "fileName": "{{name}} (sample)"
   },
@@ -384,7 +387,7 @@
     },
     "events": "Events: {{events}}",
     "event": "{{value}} ({{motion}} #{{number}})",
-    "eventsTooltip": "Newest first. Each event shows the motion that fired it and the number it was started with, so a restarted motion and the two motions of a crossfade can be told apart.",
+    "eventsDescription": "Newest first. Each event shows the motion that fired it and the number it was started with, so a restarted motion and the two motions of a crossfade can be told apart.",
     "expressions": {
       "title": "Expressions",
       "empty": "This model has no expressions",

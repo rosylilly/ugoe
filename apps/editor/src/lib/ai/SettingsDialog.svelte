@@ -11,7 +11,16 @@
 -->
 <script lang="ts">
 import { RichText } from "@ugoe/i18n";
-import { Button, Dialog, type Option, Select, ThemeSetting, Toggle } from "@ugoe/ui";
+import {
+  Button,
+  Dialog,
+  NumberField,
+  type Option,
+  Select,
+  TextField,
+  ThemeSetting,
+  Toggle,
+} from "@ugoe/ui";
 import ConnectAgents from "../agents/ConnectAgents.svelte";
 import type { EditorDocument } from "../document.svelte";
 import { errorCode, errorText } from "../errors";
@@ -220,7 +229,7 @@ function keyPlaceholder(s: AiSettings): string {
           <div class="ed-field">
             <label for={`${id}-claude-model`}>{t("settings.ai.model.label")}</label>
             <!-- i18n-ignore: モデルの ID の例 -->
-            <input id={`${id}-claude-model`} type="text" bind:value={draft.claude.model} spellcheck="false" placeholder="claude-opus-5-5" />
+            <TextField id={`${id}-claude-model`} mono bind:value={draft.claude.model} placeholder="claude-opus-5-5" />
           </div>
         {:else}
           <div class="ed-field">
@@ -236,7 +245,7 @@ function keyPlaceholder(s: AiSettings): string {
           <div class="ed-field">
             <label for={`${id}-base-url`}>{t("settings.ai.baseUrl.label")}</label>
             <!-- i18n-ignore: URL の例 -->
-            <input id={`${id}-base-url`} type="text" bind:value={draft.openai.base_url} spellcheck="false" placeholder="https://api.example.com/v1"
+            <TextField id={`${id}-base-url`} type="url" mono bind:value={draft.openai.base_url} placeholder="https://api.example.com/v1"
               aria-describedby={`${id}-base-url-note`} />
           </div>
           <p class="ed-hint note" id={`${id}-base-url-note`}>
@@ -246,11 +255,10 @@ function keyPlaceholder(s: AiSettings): string {
           </p>
           <div class="ed-field">
             <label for={`${id}-openai-model`}>{t("settings.ai.model.label")}</label>
-            <input
+            <TextField
               id={`${id}-openai-model`}
-              type="text"
+              mono
               bind:value={draft.openai.model}
-              spellcheck="false"
               placeholder={preset?.placeholder ?? t("settings.ai.model.placeholder")}
             />
           </div>
@@ -267,14 +275,14 @@ function keyPlaceholder(s: AiSettings): string {
           <p class="ed-hint note">{t("settings.ai.output.description")}</p>
         {/if}
         <div class="ed-field">
-          <label for={`${id}-time-limit`}>{t("settings.ai.timeLimit.label")}</label>
-          <input
-            id={`${id}-time-limit`}
-            type="number"
-            min="1"
-            max="120"
-            step="1"
+          <span id={`${id}-time-limit`}>{t("settings.ai.timeLimit.label")}</span>
+          <NumberField
+            min={1}
+            max={120}
+            step={1}
+            size={4}
             bind:value={draft.time_limit_minutes}
+            aria-labelledby={`${id}-time-limit`}
             aria-describedby={`${id}-time-limit-note`}
           />
         </div>
@@ -387,9 +395,6 @@ function keyPlaceholder(s: AiSettings): string {
     gap: var(--ugoe-space-2);
     margin-bottom: var(--ugoe-space-3);
   }
-  .ed-field input {
-    min-width: 0;
-  }
   .note {
     margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
   }
@@ -398,7 +403,7 @@ function keyPlaceholder(s: AiSettings): string {
     align-items: center;
     gap: var(--ugoe-space-3);
   }
-  /* API キーの欄 (app.css の .ugoe-dialog input[type="text"] と同じ見た目)。 */
+  /* API キーの欄 (@ugoe/ui の TextField と同じ見た目)。キーを Svelte の状態に持たないよう、標準の input のまま。 */
   .key input {
     flex: 1;
     min-width: 0;

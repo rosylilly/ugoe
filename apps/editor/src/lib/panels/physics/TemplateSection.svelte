@@ -36,6 +36,7 @@ let { model, module = null, send, busy, onApplied }: Props = $props();
 
 let createMissingChoice = $state(true);
 /** モジュールはパラメータを足せない。 */
+const ids = $props.id();
 const createMissing = $derived(module === null && createMissingChoice);
 const base = $derived(baseElements(module));
 let blend = $state<PhysicsBlend>("add");
@@ -75,13 +76,18 @@ async function apply(template: PhysicsTemplate): Promise<void> {
 <section>
   <h3>{t("physics.templates.title")}</h3>
   <p class="ed-hint">{t("physics.templates.hint")}</p>
-  <div class="row" title={module ? t("physics.templates.createMissing.moduleTooltip") : undefined}>
+  <div class="row">
     <Checkbox checked={createMissing} disabled={module !== null} label={t("physics.templates.createMissing.label")}
+      aria-describedby={module ? `${ids}-create-missing` : undefined}
       onchange={(on) => (createMissingChoice = on)} />
+    {#if module}
+      <!-- 押せない理由は近くに見える文で書く (docs/ui.md#部品の一覧 の使い分け) -->
+      <p class="ed-hint" id="{ids}-create-missing">{t("physics.templates.createMissing.description")}</p>
+    {/if}
   </div>
-  <div class="row" title={t("physics.templates.blend.tooltip")}>
+  <div class="row">
     <Select label={t("physics.templates.blend.label")} value={blend} options={blendOptions}
-      onchange={(v) => (blend = v)} />
+      tooltip={t("physics.templates.blend.tooltip")} onchange={(v) => (blend = v)} />
   </div>
   <div class="row">
     <Select

@@ -279,15 +279,15 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   {#if view.notice}<p class="muted" role="status">{view.notice}</p>{/if}
   {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
   {#if summary && panel?.classification}
-    <p
-      class="muted"
-      title={panel.classification.instructions
-        ? t("proposals.summary.instructionsTooltip", { instructions: panel.classification.instructions })
-        : undefined}
-    >
+    <p class="muted">
       {classifiedText(summary.layers, panel.classification.by_ai, !!panel.classification.instructions)}
       {#if summary.review > 0}{" · "}<span class="warn">{t("proposals.summary.review", { count: summary.review })}</span>{/if}
     </p>
+    {#if panel.classification.instructions}
+      <p class="muted instructions ugoe-selectable">
+        {t("proposals.summary.instructions", { instructions: panel.classification.instructions })}
+      </p>
+    {/if}
     <details>
       <summary>{t("proposals.summary.labels")}</summary>
       <ul class="labels">
@@ -536,9 +536,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                           {@const command = proposal.commands[i]}
                           {#if command}
                             <li>
-                              <label class="check" title={command.requires.length > 0
-                                ? t("proposals.list.dependsOn", { list: command.requires.join(", #") })
-                                : undefined}>
+                              <label class="check">
                                 <input
                                   type="checkbox"
                                   checked={!excluded.has(i)}
@@ -547,6 +545,11 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                                 />
                                 <span class="index">#{i}</span>
                                 <code>{group.section && command.subject ? `${command.op} ${command.subject}` : command.op}</code>
+                                {#if command.requires.length > 0}
+                                  <span class="muted requires"
+                                    >{t("proposals.list.dependsOn", { list: command.requires.join(", #") })}</span
+                                  >
+                                {/if}
                               </label>
                             </li>
                           {/if}
@@ -643,6 +646,13 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     display: flex;
     align-items: center;
     gap: var(--ugoe-space-2);
+  }
+  .requires {
+    font-size: var(--ugoe-font-size-sm);
+  }
+  .instructions {
+    overflow-wrap: anywhere;
+    white-space: pre-line;
   }
   .note {
     font-size: var(--ugoe-font-size-sm);

@@ -243,7 +243,7 @@ function kindButton(target: HTMLElement, index: number): HTMLButtonElement {
 
 /** カーブのフェードの欄 (0 = フェードイン、1 = フェードアウト) に値を入れて確定する。 */
 function setFade(target: HTMLElement, index: number, text: string): void {
-  const input = target.querySelectorAll<HTMLInputElement>("label.inline input")[index];
+  const input = target.querySelectorAll<HTMLInputElement>('.fields input[type="number"]')[index];
   if (!input) throw new Error("no fade field");
   input.value = text;
   input.dispatchEvent(new Event("change", { bubbles: true }));

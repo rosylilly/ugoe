@@ -24,6 +24,7 @@ import {
   Slider,
   showToast,
   Tabs,
+  TextField,
   Toaster,
   Toggle,
   Toolbar,
@@ -70,6 +71,9 @@ let smoothing = $state(0.5);
 let angle = $state(12.5);
 let scale = $state(1);
 let camera = $state<string>("1");
+let layerName = $state("Hair front");
+let layerId = $state("Layer3");
+let filterText = $state("");
 let fit = $state<string>("0");
 let tab = $state<string>("0");
 let mirrored = $state(true);
@@ -85,7 +89,7 @@ let dropResult = $state("");
 let noticeVisible = $state(true);
 
 const fileEntries = $derived<MenuEntry[]>([
-  { label: s.open, shortcut: "Mod+O", onselect: () => {} },
+  { label: s.open, description: s.openDescription, shortcut: "Mod+O", onselect: () => {} },
   {
     label: s.save,
     shortcut: "Mod+S",
@@ -256,6 +260,14 @@ const swatches = [
         <Toggle label={s.disabled} disabled />
         <Select label={s.camera} options={cameraOptions} bind:value={camera} />
         <Select aria-label={s.camera} options={cameraOptions} placeholder={s.chooseCamera} />
+        <Select
+          label={s.frame}
+          options={cameraOptions}
+          value="2"
+          invalid
+          aria-describedby="gallery-frame-error"
+        />
+        <p id="gallery-frame-error" class="gallery__error">{s.frameError}</p>
         <SegmentedControl label={s.fit} options={fitOptions} bind:value={fit} />
       </div>
     </section>
@@ -270,6 +282,7 @@ const swatches = [
           max={1}
           step={0.05}
           defaultValue={0.5}
+          tooltip={s.smoothingTooltip}
         />
         <Slider
           label={s.angle}
@@ -284,6 +297,16 @@ const swatches = [
         <NumberField label={s.scale} bind:value={scale} min={0.1} max={10} step={0.1} />
         <NumberField label={s.scale} value={12} step={0.1} invalid aria-describedby="gallery-scale-error" />
         <p id="gallery-scale-error" class="gallery__error">{s.scaleError}</p>
+      </div>
+    </section>
+
+    <section class="gallery__card">
+      <h2>{s.textFields}</h2>
+      <div class="gallery__column">
+        <TextField label={s.layerName} hint={s.layerNameHint} bind:value={layerName} />
+        <TextField label={s.layerId} mono bind:value={layerId} error={s.layerIdError} />
+        <TextField type="search" aria-label={s.filter} placeholder={s.filterPlaceholder} bind:value={filterText} />
+        <TextField label={s.disabled} value={layerName} disabled />
       </div>
     </section>
 

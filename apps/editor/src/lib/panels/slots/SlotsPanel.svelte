@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
+import { Button, NumberField, Select, TextField, Toggle, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, Slot } from "../../ipc";
@@ -60,6 +60,11 @@ const slots = $derived(model?.slots ?? []);
 const renames = new Map<string, string>();
 const current = $derived(resolveSlot(slots, view.slot, renames));
 const slot = $derived(current ? fullSlot(current) : null);
+/** 名前の欄の文字。読めない名前や適用の失敗では今の名前に戻す。 */
+let slotName = $state("");
+$effect.pre(() => {
+  slotName = slot?.id ?? "";
+});
 const exposed = $derived(model?.avatar ? model.avatar.slots : null);
 const rows = $derived(index ? drawOrderRows(index, slots) : []);
 /** ポーズの要素のパーツ (リンクは含めない)。 */
@@ -129,14 +134,13 @@ function addSlot(): void {
   );
 }
 
-function rename(event: Event): void {
-  const input = event.currentTarget as HTMLInputElement;
-  const id = input.value.trim();
+function rename(value: string): void {
+  const id = value.trim();
   const from = slot?.id;
   if (from === undefined || id === from) return;
   if (!isValidSlotId(id)) {
     message = t("slots.name.invalid");
-    input.value = from;
+    slotName = from;
     return;
   }
   void send(
@@ -150,7 +154,7 @@ function rename(event: Event): void {
       view.slot = id;
     },
   ).then((ok) => {
-    if (!ok && slot) input.value = slot.id;
+    if (!ok && slot) slotName = slot.id;
   });
 }
 
@@ -260,9 +264,15 @@ const ids = $props.id();
         <h3>{t("slots.slot.title")}</h3>
         <div class="field">
           <label for="{ids}-name">{t("slots.name.label")}</label>
-          <input id="{ids}-name" value={slot.id} onchange={rename} />
+          <TextField
+            id="{ids}-name"
+            mono
+            bind:value={slotName}
+            aria-describedby="{ids}-name-help"
+            onchange={rename}
+          />
         </div>
-        <p class="help">{t("slots.name.help")}</p>
+        <p class="help" id="{ids}-name-help">{t("slots.name.help")}</p>
 
         <div class="field">
           <span id="{ids}-anchor">{t("slots.anchor.label")}</span>
@@ -484,7 +494,7 @@ const ids = $props.id();
   margin: var(--ugoe-space-2) 0 0;
 }
 
-.field input,
+.field :global(.ugoe-text-field),
 .control {
   width: 12em;
   min-width: 0;

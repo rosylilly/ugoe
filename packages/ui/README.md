@@ -10,7 +10,7 @@
 ```
 src/tokens.css          デザイントークン (CSS 変数)。ライト・ダーク (data-theme)、compact・comfortable (data-density)
 src/index.ts            公開する部品と関数 (アプリとほかのパッケージが使うものだけを名前で出す)
-src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・Select・SegmentedControl・
+src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・TextField・Select・SegmentedControl・
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
                         Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting・Icon)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
@@ -60,9 +60,19 @@ import "@ugoe/ui/tokens.css";
 - `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
   (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。
+- **文字の欄は `TextField`:** 見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を渡すと欄と結ぶ (`aria-describedby`・`aria-invalid`・
+  `aria-errormessage`)。行の左に名前を置くときは `id` と外の `<label for>`。`oninput` は打つたび、`onchange` は確定 (Enter・フォーカスを外す) で
+  値が変わったときだけ呼ぶ (外から渡した値では呼ばない)。Esc で確定前の値に戻す。
+- **欄の説明は `tooltip`:** `Toggle`・`Slider` (つまみ)・`NumberField`・`Select`・`TextField` は `tooltip` で、フォーカスを受ける要素に
+  Tooltip を付ける (`title` 属性の代わり。渡した `aria-describedby` と並べて読む)。`Menu` の項目は `description` で名前の下に説明の行を出す。
+
+  ```svelte
+  <TextField label={t("rig.name.label")} bind:value={name} error={nameError} />
+  <Select label={t("rig.frame.label")} {options} bind:value={frame} tooltip={t("rig.frame.tooltip")} />
+  ```
 - **読み上げの props は HTML の属性の名前で渡す:** `aria-label` (見えるラベルを置けないとき)・`aria-labelledby` (見えるラベルが別の要素に
-  あるとき)・`aria-describedby` (補足の説明)。`Button` と同じ書き方で、`Checkbox`・`Toggle`・`NumberField`・`Select`・`SegmentedControl`・
-  `ColorPicker`・`Tabs` も同じ名前で受ける。
+  あるとき)・`aria-describedby` (補足の説明)。`Button` と同じ書き方で、`Checkbox`・`Toggle`・`Slider`・`NumberField`・`TextField`・`Select`・
+  `SegmentedControl`・`ColorPicker`・`Tabs` も同じ名前で受ける。
 
   ```svelte
   <span id="{ids}-gravity">{t("physics.gravity.label")}</span>

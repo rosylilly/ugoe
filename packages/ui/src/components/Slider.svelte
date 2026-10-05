@@ -3,13 +3,16 @@
   (矢印・PageUp / PageDown・Home / End)。NumberField とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。
   onchange と oncommit は利用者の操作 (ドラッグ・キー・欄・リセット) のときだけ呼ぶ。外から渡した値を Bits UI が刻みの格子に
   寄せても呼ばない (docs/ui.md#数値の部品と-onchange)。
+  `tooltip` を渡すと、つまみに Tooltip で説明を出す (`title` 属性の代わり)。
 -->
 <script lang="ts">
 import { Slider } from "bits-ui";
 import { t } from "../i18n";
 import { decimalsOf, roundTo } from "../number";
+import type { TriggerAttributes } from "../props";
 import IconButton from "./IconButton.svelte";
 import NumberField from "./NumberField.svelte";
+import Tooltip from "./Tooltip.svelte";
 
 interface Props {
   value?: number;
@@ -29,6 +32,10 @@ interface Props {
   /** リセットのボタンの読み上げの名前。省くと @ugoe/ui のカタログの「既定値に戻す」(`slider.reset.aria`)。 */
   resetLabel?: string;
   disabled?: boolean;
+  /** 補足の説明を持つ要素の id。つまみと数値の欄の両方に結ぶ。 */
+  "aria-describedby"?: string;
+  /** つまみに出す説明 (Tooltip。翻訳を通した文言)。`title` 属性の代わり。 */
+  tooltip?: string;
   /** 利用者の操作で値が変わるたび (つまみを動かしている間も)。外から渡した値では呼ばない。 */
   onchange?: (value: number) => void;
   /** 値を確定したとき (つまみを離した・キーで動かした・欄で確定した・リセットした)。 */
@@ -47,6 +54,8 @@ let {
   defaultValue,
   resetLabel,
   disabled = false,
+  "aria-describedby": describedby,
+  tooltip,
   onchange,
   oncommit,
 }: Props = $props();
@@ -71,6 +80,17 @@ function set(next: number, commit: boolean) {
   if (commit) oncommit?.(v);
 }
 </script>
+
+{#snippet thumb(attrs: TriggerAttributes)}
+  <Slider.Thumb
+    {...attrs}
+    id={`${id}-thumb`}
+    index={0}
+    class="ugoe-slider__thumb"
+    aria-labelledby={`${id}-label`}
+    aria-describedby={[attrs["aria-describedby"], describedby].filter(Boolean).join(" ") || undefined}
+  />
+{/snippet}
 
 <svelte:document onpointerup={endPointer} onpointercancel={endPointer} onpointerleave={endPointer} />
 
@@ -97,7 +117,13 @@ function set(next: number, commit: boolean) {
     <span class="ugoe-slider__track">
       <Slider.Range class="ugoe-slider__range" />
     </span>
-    <Slider.Thumb index={0} class="ugoe-slider__thumb" aria-labelledby={`${id}-label`} />
+    {#if tooltip}
+      <Tooltip text={tooltip} id={`${id}-thumb`} {disabled}>
+        {#snippet trigger(attrs)}{@render thumb(attrs)}{/snippet}
+      </Tooltip>
+    {:else}
+      {@render thumb({})}
+    {/if}
   </Slider.Root>
   {#if field}
     <NumberField
@@ -109,6 +135,7 @@ function set(next: number, commit: boolean) {
       {unit}
       {disabled}
       aria-labelledby={`${id}-label`}
+      aria-describedby={describedby}
       onchange={(v) => {
         set(v, true);
       }}

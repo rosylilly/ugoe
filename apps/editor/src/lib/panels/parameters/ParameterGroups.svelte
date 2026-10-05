@@ -5,7 +5,7 @@
   モジュールのプロジェクトでは本体のものなので変えられない。
 -->
 <script lang="ts">
-import { Button, Icon, IconButton, Section, Tooltip } from "@ugoe/ui";
+import { Button, Icon, IconButton, Section, TextField, Tooltip } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -87,15 +87,13 @@ async function move(id: string, delta: -1 | 1) {
     <p class="ed-hint" id="{ids}-note">{t("parameters.groups.description")}</p>
     {#if creating}
       <form class="editor" onsubmit={create}>
-        <label
-          >{t("parameters.field.id")}
-          <!-- i18n-ignore: グループの ID の例 (訳さない) -->
-          <input bind:value={fresh.id} required placeholder="Face" /></label
-        >
-        <label
-          >{t("parameters.field.name")}
-          <input bind:value={fresh.name} placeholder={t("parameters.field.namePlaceholder")} /></label
-        >
+        <!-- i18n-ignore: グループの ID の例 (訳さない) -->
+        <TextField label={t("parameters.field.id")} bind:value={fresh.id} required mono placeholder="Face" />
+        <TextField
+          label={t("parameters.field.name")}
+          bind:value={fresh.name}
+          placeholder={t("parameters.field.namePlaceholder")}
+        />
         <span class="ed-buttons">
           <Button small type="submit">{t("parameters.create.label")}</Button>
           <Button small onclick={() => (creating = false)}>{t("parameters.cancel.label")}</Button>
@@ -143,7 +141,7 @@ async function move(id: string, delta: -1 | 1) {
           </span>
           {#if editing === g.id}
             <form class="editor" onsubmit={(e) => rename(e, g.id, g.name)}>
-              <label>{t("parameters.field.name")} <input bind:value={draftName} /></label>
+              <TextField label={t("parameters.field.name")} bind:value={draftName} />
               <p class="ed-hint" id="{ids}-delete-{g.id}">{t("parameters.groups.delete.description")}</p>
               <span class="ed-buttons">
                 <Button small type="submit">{t("parameters.apply.label")}</Button>

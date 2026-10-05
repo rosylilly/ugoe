@@ -14,9 +14,11 @@ import SegmentedControl from "./components/SegmentedControl.svelte";
 import Select from "./components/Select.svelte";
 import Slider from "./components/Slider.svelte";
 import Tabs from "./components/Tabs.svelte";
+import TextField from "./components/TextField.svelte";
 import Toggle from "./components/Toggle.svelte";
 import ExternalValueHarness from "./test/ExternalValueHarness.svelte";
 import { click, get, html, labelledByText, press, render } from "./test/render";
+import TextFieldHarness from "./test/TextFieldHarness.svelte";
 import ToolbarHarness from "./test/ToolbarHarness.svelte";
 
 const icon = html('<svg viewBox="0 0 16 16"></svg>');
@@ -584,5 +586,231 @@ describe("aria props", () => {
       options: options.slice(0, 2),
     });
     expect(get(segmented, '[role="radiogroup"]').getAttribute("aria-label")).toBe("Fit");
+  });
+});
+
+/** aria-describedby が指す要素の文字をつないだもの (読み上げの説明)。 */
+function describedByText(el: Element): string {
+  const ids = el.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
+  return ids.map((id) => document.getElementById(id)?.textContent?.trim() ?? "").join(" ");
+}
+
+/** 欄に文字を打つ (input を送り、Svelte の更新を流す)。 */
+function type(input: HTMLInputElement, text: string) {
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
+
+describe("TextField", () => {
+  function setup(props: Record<string, unknown> = {}) {
+    const oninput = vi.fn();
+    const onchange = vi.fn();
+    const root = render(TextField, { label: "Name", value: "Hair", oninput, onchange, ...props });
+    const input = get<HTMLInputElement>(root, "input");
+    return { root, input, oninput, onchange };
+  }
+
+  it("is a labelled text box", () => {
+    const { root, input } = setup();
+    expect(input.type).toBe("text");
+    expect(input.value).toBe("Hair");
+    expect(labelledByText(input)).toBe("Name");
+    expect(get<HTMLLabelElement>(root, "label").htmlFor).toBe(input.id);
+    expect(input.getAttribute("autocomplete")).toBe("off");
+    expect(input.getAttribute("spellcheck")).toBe("false");
+    expect(input.hasAttribute("aria-invalid")).toBe(false);
+    expect(input.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("reads the hint and the error as its description", () => {
+    const { root, input } = setup({
+      hint: "Shown in the tree",
+      error: "The name is already used",
+      "aria-describedby": "name-note",
+    });
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")?.split(" ")[0]).toBe("name-note");
+    expect(describedByText(input)).toContain("Shown in the tree The name is already used");
+    const error = document.getElementById(input.getAttribute("aria-errormessage") ?? "");
+    expect(error?.textContent).toBe("The name is already used");
+    expect(get(root, ".ugoe-text-field").hasAttribute("data-invalid")).toBe(true);
+  });
+
+  it("marks an invalid value without its own message", () => {
+    const { input } = setup({ invalid: true });
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.hasAttribute("aria-errormessage")).toBe(false);
+  });
+
+  it("takes an external label by id and the aria-label", () => {
+    const outer = render(TextField, { id: "rig-name", "aria-labelledby": "rig-label" });
+    const input = get<HTMLInputElement>(outer, "input");
+    expect(input.id).toBe("rig-name");
+    expect(input.getAttribute("aria-labelledby")).toBe("rig-label");
+    expect(outer.querySelector("label")).toBeNull();
+    const named = get(render(TextField, { "aria-label": "Filter", type: "search" }), "input");
+    expect(named.getAttribute("aria-label")).toBe("Filter");
+    expect(named.getAttribute("type")).toBe("search");
+  });
+
+  it("reports typing and commits on Enter only when the value changed", () => {
+    const { input, oninput, onchange } = setup();
+    input.focus();
+    press(input, "Enter");
+    expect(onchange).not.toHaveBeenCalled();
+    type(input, "Hair back");
+    expect(oninput).toHaveBeenLastCalledWith("Hair back");
+    press(input, "Enter");
+    expect(onchange).toHaveBeenCalledTimes(1);
+    expect(onchange).toHaveBeenLastCalledWith("Hair back");
+    // 確定した後でフォーカスを外しても、同じ値をもう一度確定しない
+    input.blur();
+    flushSync();
+    expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits when the focus leaves", () => {
+    const { input, onchange } = setup();
+    input.focus();
+    type(input, "Face");
+    input.blur();
+    flushSync();
+    expect(onchange).toHaveBeenCalledWith("Face");
+  });
+
+  it("reverts on Escape and passes Escape on when there is nothing to revert", () => {
+    const { input, oninput, onchange } = setup();
+    input.focus();
+    type(input, "Face");
+    const esc = press(input, "Escape");
+    expect(esc.defaultPrevented).toBe(true);
+    expect(input.value).toBe("Hair");
+    expect(oninput).toHaveBeenLastCalledWith("Hair");
+    expect(press(input, "Escape").defaultPrevented).toBe(false);
+    input.blur();
+    flushSync();
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a value from outside as an edit", () => {
+    const onchange = vi.fn();
+    const control: { set?: (value: string) => void } = {};
+    const root = render(TextFieldHarness, { initial: "Hair", control, onchange });
+    const input = get<HTMLInputElement>(root, "input");
+    input.focus();
+    type(input, " Face ");
+    press(input, "Enter");
+    expect(onchange).toHaveBeenLastCalledWith(" Face ");
+    // 呼び手が確定した値を整えて返す (前後の空白を除くなど)
+    control.set?.("Face");
+    flushSync();
+    expect(input.value).toBe("Face");
+    // 書き換えていないので、Esc は外側に渡し、フォーカスを外しても確定しない
+    expect(press(input, "Escape").defaultPrevented).toBe(false);
+    expect(input.value).toBe("Face");
+    input.blur();
+    flushSync();
+    expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the caller handle a key first", () => {
+    const onkeydown = vi.fn((e: KeyboardEvent) => e.preventDefault());
+    const { input, onchange } = setup({ onkeydown });
+    input.focus();
+    type(input, "Face");
+    press(input, "Escape");
+    expect(onkeydown).toHaveBeenCalled();
+    // 呼び手が preventDefault したので、部品は戻さない
+    expect(input.value).toBe("Face");
+    press(input, "Enter");
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("is disabled", () => {
+    const { root, input } = setup({ disabled: true });
+    expect(input.disabled).toBe(true);
+    expect(get(root, ".ugoe-text-field").hasAttribute("data-disabled")).toBe(true);
+  });
+
+  it("shows a tooltip and keeps its own description", async () => {
+    const { input } = setup({ tooltip: "Letters and digits", hint: "Shown in the tree" });
+    expect(describedByText(input)).toBe("Shown in the tree");
+    input.focus();
+    await vi.waitFor(() => expect(describedByText(input)).toContain("Letters and digits"));
+    expect(describedByText(input)).toContain("Shown in the tree");
+  });
+});
+
+describe("tooltips on value controls", () => {
+  it("are shown on the NumberField's input", async () => {
+    const root = render(NumberField, {
+      label: "Fade in",
+      value: 0.5,
+      step: 0.1,
+      tooltip: "Blank uses the motion's own fade",
+      "aria-describedby": "fade-note",
+    });
+    const input = get<HTMLInputElement>(root, "input");
+    expect(input.getAttribute("aria-describedby")).toBe("fade-note");
+    input.focus();
+    await vi.waitFor(() =>
+      expect(describedByText(input)).toContain("Blank uses the motion's own fade"),
+    );
+    expect(input.getAttribute("aria-describedby")?.split(" ")).toContain("fade-note");
+    // 欄としてのふるまいは変わらない
+    press(input, "ArrowUp");
+    expect(input.value).toBe("0.6");
+  });
+
+  it("are shown on the Slider's thumb", async () => {
+    const root = render(Slider, {
+      label: "Smoothing",
+      value: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      tooltip: "Stronger is smoother but lags",
+      "aria-describedby": "smoothing-note",
+    });
+    const thumb = get(root, '[role="slider"]');
+    expect(labelledByText(thumb)).toBe("Smoothing");
+    expect(thumb.getAttribute("aria-describedby")).toBe("smoothing-note");
+    expect(get(root, "input").getAttribute("aria-describedby")).toBe("smoothing-note");
+    thumb.focus();
+    await vi.waitFor(() =>
+      expect(describedByText(thumb)).toContain("Stronger is smoother but lags"),
+    );
+  });
+
+  it("are shown on the Select's button", async () => {
+    const root = render(Select, {
+      label: "Camera",
+      options,
+      value: "a",
+      tooltip: "Used for tracking",
+    });
+    const trigger = get(root, '[aria-haspopup="listbox"]');
+    expect(labelledByText(trigger)).toBe("Camera Alpha");
+    trigger.focus();
+    await vi.waitFor(() => expect(describedByText(trigger)).toContain("Used for tracking"));
+  });
+});
+
+describe("Select invalid", () => {
+  it("marks the selection as invalid and keeps the description", () => {
+    const root = render(Select, {
+      label: "Frame",
+      options,
+      value: "a",
+      invalid: true,
+      "aria-describedby": "frame-error",
+    });
+    const trigger = get(root, '[aria-haspopup="listbox"]');
+    expect(trigger.getAttribute("aria-invalid")).toBe("true");
+    expect(trigger.getAttribute("aria-describedby")).toBe("frame-error");
+    expect(get(root, ".ugoe-select").hasAttribute("data-invalid")).toBe(true);
+    const valid = render(Select, { label: "Frame", options, value: "a" });
+    expect(get(valid, '[aria-haspopup="listbox"]').hasAttribute("aria-invalid")).toBe(false);
   });
 });

@@ -76,6 +76,7 @@ let capturing = $state(false);
 let sampleEntries = $derived(
   SAMPLES.map((sample) => ({
     label: sample.label,
+    description: sample.description,
     onselect: () => void openSampleFromMenu(sample),
   })),
 );

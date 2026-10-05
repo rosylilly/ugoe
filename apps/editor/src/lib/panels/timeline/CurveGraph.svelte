@@ -5,7 +5,7 @@
   欄の確定・区間の種類・フェードも、送る直前のカーブから組み立てる。
 -->
 <script lang="ts">
-import { NumberField } from "@ugoe/ui";
+import { NumberField, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, Curve, Motion, Point, Segment } from "../../ipc";
@@ -363,28 +363,40 @@ async function removeCurve() {
     {/if}
     {#if row.curve}
       <span class="fields">
-        <label class="inline" title={t("timeline.curve.fade.tooltip")}
-          >{t("timeline.curve.fadeIn.label")}
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            placeholder="—"
-            value={row.curve.fade_in ?? ""}
-            onchange={(e) => setFade("fade_in", e)}
-          /></label
-        >
-        <label class="inline" title={t("timeline.curve.fade.tooltip")}
-          >{t("timeline.curve.fadeOut.label")}
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            placeholder="—"
-            value={row.curve.fade_out ?? ""}
-            onchange={(e) => setFade("fade_out", e)}
-          /></label
-        >
+        <span class="inline">
+          <label for="{ids}-fade_in">{t("timeline.curve.fadeIn.label")}</label>
+          <!-- 空 (モーションのフェードを使う) にできるよう、数値の欄は標準の input のまま。説明は Tooltip -->
+          <Tooltip text={t("timeline.curve.fade.tooltip")} id="{ids}-fade_in">
+            {#snippet trigger(attrs)}
+              <input
+                {...attrs}
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="—"
+                value={row.curve?.fade_in ?? ""}
+                onchange={(e) => setFade("fade_in", e)}
+              />
+            {/snippet}
+          </Tooltip>
+        </span>
+        <span class="inline">
+          <label for="{ids}-fade_out">{t("timeline.curve.fadeOut.label")}</label>
+          <!-- 空 (モーションのフェードを使う) にできるよう、数値の欄は標準の input のまま。説明は Tooltip -->
+          <Tooltip text={t("timeline.curve.fade.tooltip")} id="{ids}-fade_out">
+            {#snippet trigger(attrs)}
+              <input
+                {...attrs}
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="—"
+                value={row.curve?.fade_out ?? ""}
+                onchange={(e) => setFade("fade_out", e)}
+              />
+            {/snippet}
+          </Tooltip>
+        </span>
         <TipButton small onclick={removeCurve} tooltip={t("timeline.curve.delete.tooltip")}
           >{t("timeline.curve.delete.label")}</TipButton
         >
@@ -484,9 +496,6 @@ async function removeCurve() {
     display: inline-flex;
     align-items: center;
     gap: var(--ugoe-space-1);
-  }
-  label.inline {
-    display: inline-flex;
   }
   input[type="number"] {
     width: 56px;

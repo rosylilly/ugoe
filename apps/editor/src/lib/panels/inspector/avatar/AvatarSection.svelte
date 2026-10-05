@@ -4,7 +4,7 @@
   準拠の検査 (check_avatar_profile) の結果を出す。トラッキングの上書き・視線・スロットはここでは編集しない。
 -->
 <script lang="ts">
-import { Button, Checkbox, Notice, Select } from "@ugoe/ui";
+import { Button, Checkbox, Notice, Select, TextField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText, messageText } from "../../../errors";
 import type { AvatarCheck, AvatarMeta, Command } from "../../../generated/types";
@@ -76,12 +76,8 @@ function setMeta(patch: Partial<AvatarMeta>): Promise<void> {
   return meta ? apply(metaCommand(meta, patch)) : Promise.resolve();
 }
 
-function setText(field: OptionalText, event: Event): Promise<void> {
-  return setMeta({ [field]: optionalText((event.currentTarget as HTMLInputElement).value) });
-}
-
 function inputValue(event: Event): string {
-  return (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
+  return (event.currentTarget as HTMLTextAreaElement).value;
 }
 
 const optionalTexts = $derived<{ key: OptionalText; label: string; placeholder?: string }[]>([
@@ -143,11 +139,10 @@ const ids = $props.id();
       <h4>{t("inspector.avatar.meta.title")}</h4>
       <div class="row">
         <label for="{ids}-name">{t("inspector.avatar.meta.name")}</label>
-        <input
+        <TextField
           id="{ids}-name"
-          type="text"
           value={meta.name}
-          onchange={(e) => setMeta({ name: inputValue(e).trim() })}
+          onchange={(value) => setMeta({ name: value.trim() })}
         />
       </div>
       <div class="column">
@@ -162,12 +157,11 @@ const ids = $props.id();
       {#each optionalTexts as field (field.key)}
         <div class="row">
           <label for="{ids}-{field.key}">{field.label}</label>
-          <input
+          <TextField
             id="{ids}-{field.key}"
-            type="text"
             value={meta[field.key] ?? ""}
             placeholder={field.placeholder}
-            onchange={(e) => setText(field.key, e)}
+            onchange={(value) => setMeta({ [field.key]: optionalText(value) })}
           />
         </div>
       {/each}
@@ -306,13 +300,12 @@ const ids = $props.id();
   margin: var(--ugoe-space-2) 0;
 }
 
-.row input,
+.row :global(.ugoe-text-field),
 .row :global(.ugoe-select__trigger) {
   width: 12em;
   min-width: 0;
 }
 
-.row input,
 .column textarea {
   min-height: var(--ugoe-control-height);
   padding: 0 var(--ugoe-space-2);
@@ -327,7 +320,6 @@ const ids = $props.id();
   padding: var(--ugoe-space-1) var(--ugoe-space-2);
 }
 
-.row input:focus-visible,
 .column textarea:focus-visible {
   outline: var(--ugoe-focus-ring);
   outline-offset: 1px;

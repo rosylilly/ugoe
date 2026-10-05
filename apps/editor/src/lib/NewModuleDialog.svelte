@@ -4,7 +4,7 @@
   スロットのない本体は、本体のプロジェクトの「Slots」タブでスロットを足してから選ぶ。Esc で閉じる。
 -->
 <script lang="ts">
-import { Button, Dialog } from "@ugoe/ui";
+import { Button, Dialog, TextField } from "@ugoe/ui";
 import { untrack } from "svelte";
 import { errorText } from "./errors";
 import { fileDialogs } from "./fileDialogs";
@@ -145,21 +145,15 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
           </label>
         {/each}
       </fieldset>
-      <div class="row">
-        <label class="label" for={`${id}-name`}>{t("newModule.name.label")}</label>
-        <input
-          id={`${id}-name`}
-          type="text"
-          value={name}
-          oninput={(e) => {
-            nameEdited = true;
-            name = e.currentTarget.value;
-          }}
-        />
-      </div>
-      {#if name.length > 0 && !isValidModuleName(name)}
-        <p class="warn">{t("newModule.name.invalid")}</p>
-      {/if}
+      <TextField
+        label={t("newModule.name.label")}
+        value={name}
+        error={name.length > 0 && !isValidModuleName(name) ? t("newModule.name.invalid") : undefined}
+        oninput={(value) => {
+          nameEdited = true;
+          name = value;
+        }}
+      />
     {/if}
   {/if}
   {#if error}<p class="error ugoe-selectable" role="alert">{error}</p>{/if}
@@ -186,9 +180,6 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
     display: flex;
     align-items: center;
     gap: var(--ugoe-space-3);
-  }
-  .row input {
-    flex: 1;
   }
   .label {
     display: block;

@@ -199,8 +199,10 @@ const profileEntries = $derived<MenuEntry[]>([
     kind: "submenu",
     label: t("profile.recent"),
     disabled: (profile?.recent.length ?? 0) === 0,
+    // 名前はファイル名、説明の行に場所の全体を出す (同じ名前のファイルを見分ける)
     entries: (profile?.recent ?? []).map((path) => ({
-      label: path,
+      label: fileName(path),
+      description: path,
       onselect: () => confirmDiscard(() => void openProfileAt(path)),
     })),
   },

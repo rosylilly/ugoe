@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 import { RichText } from "@ugoe/i18n";
-import { Button, Section, Toggle } from "@ugoe/ui";
+import { Button, Section, TextField, Toggle } from "@ugoe/ui";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
 import { joinPath } from "../filePaths";
@@ -255,9 +255,9 @@ async function openManual(): Promise<void> {
     <Section title={t("agents.port.title")} open={false} level={4}>
       <form class="row" onsubmit={applyPort}>
         <label for="mcp-port">{t("agents.port.label")}</label>
-        <input
+        <TextField
           id="mcp-port"
-          class="port"
+          size={8}
           bind:value={portInput}
           inputmode="numeric"
           placeholder={t("agents.port.placeholder")}
@@ -353,21 +353,6 @@ async function openManual(): Promise<void> {
     display: flex;
     align-items: center;
     gap: var(--ugoe-space-3);
-  }
-  .port {
-    box-sizing: border-box;
-    width: 8em;
-    min-height: var(--ugoe-control-height);
-    padding: 0 var(--ugoe-space-2);
-    border: 1px solid var(--ugoe-color-control-border);
-    border-radius: var(--ugoe-radius-md);
-    background: var(--ugoe-color-surface);
-    color: var(--ugoe-color-text);
-    font: inherit;
-  }
-  .port:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 1px;
   }
   .muted {
     color: var(--ugoe-color-text-muted);

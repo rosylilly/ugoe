@@ -80,7 +80,9 @@ function enter(input: HTMLInputElement, text: string): void {
 /** 名前の欄を書き換えて確定する。 */
 function rename(target: HTMLElement, id: string): void {
   const input = get<HTMLInputElement>(target, 'input[id$="-name"]');
+  input.focus();
   input.value = id;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
   flushSync();
 }

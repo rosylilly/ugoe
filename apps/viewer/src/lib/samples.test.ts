@@ -29,6 +29,7 @@ describe("samples", () => {
     const sample: Sample = {
       id: "x",
       label: "x",
+      description: "x",
       model: "m.ugoe",
       modules: [
         { file: "a.ugoemod", attach: true },

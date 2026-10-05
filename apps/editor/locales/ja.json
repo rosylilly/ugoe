@@ -822,7 +822,7 @@
       "hint": "標準パラメータでよく使うリグです。もう一度適用すると、そのリグを作り直します。1 回の Undo でテンプレートが作ったものをすべて消せます。",
       "createMissing": {
         "label": "足りないパラメータを作る",
-        "moduleTooltip": "モジュールはパラメータを足せません。本体のプロジェクトで足してください。"
+        "description": "モジュールはパラメータを足せません。本体のプロジェクトで足してください。"
       },
       "blend": {
         "label": "体の合成",
@@ -1719,7 +1719,7 @@
       "byAiInstructed_other": "{{count}} 個のレイヤーを注文付きで AI で分類",
       "byNameInstructed_other": "{{count}} 個のレイヤーを注文付きで名前で分類",
       "review_other": "{{count}} 個を確かめてください",
-      "instructionsTooltip": "注文: {{instructions}}",
+      "instructions": "注文: {{instructions}}",
       "labels": "ラベル",
       "variants": "同じパーツの描き分け (一度に 1 つだけ見えます。衣装のリグではポーズのグループになります):",
       "toReview": "確かさが低いものと、AI の分類がレイヤー名と食い違うもの (採用の前に確かめてください。左右の取り違えは目の開閉などを入れ替えます):",

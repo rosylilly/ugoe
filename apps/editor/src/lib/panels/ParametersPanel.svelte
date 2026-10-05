@@ -9,7 +9,7 @@
   (docs/editor.md#パラメータのグループ)。
 -->
 <script lang="ts">
-import { Button, Checkbox, Icon, IconButton, NumberField, Tooltip } from "@ugoe/ui";
+import { Button, Checkbox, Icon, IconButton, NumberField, TextField, Tooltip } from "@ugoe/ui";
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
 import { t } from "../i18n";
@@ -199,15 +199,13 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
 
 {#if creating}
   <form class="editor" onsubmit={create}>
-    <label
-      >{t("parameters.field.id")}
-      <!-- i18n-ignore: パラメータの ID の例 (訳さない) -->
-      <input bind:value={fresh.id} required placeholder="ParamAngleX" /></label
-    >
-    <label
-      >{t("parameters.field.name")}
-      <input bind:value={fresh.name} placeholder={t("parameters.field.namePlaceholder")} /></label
-    >
+    <!-- i18n-ignore: パラメータの ID の例 (訳さない) -->
+    <TextField label={t("parameters.field.id")} bind:value={fresh.id} required mono placeholder="ParamAngleX" />
+    <TextField
+      label={t("parameters.field.name")}
+      bind:value={fresh.name}
+      placeholder={t("parameters.field.namePlaceholder")}
+    />
     <span class="range">
       <NumberField label={t("parameters.field.min")} bind:value={fresh.min} decimals={3} size={5} />
       <NumberField
@@ -260,6 +258,10 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
                 inputmode="decimal"
                 value={formatValue(value)}
                 aria-label={t("parameters.value.aria", { name: p.name })}
+                aria-invalid={valueError?.id === p.id || undefined}
+                aria-describedby={[attrs["aria-describedby"], valueError?.id === p.id ? `${ids}-value-error` : undefined]
+                  .filter(Boolean)
+                  .join(" ") || undefined}
                 onchange={(e) => onValueChange(p, e)}
                 onkeydown={onValueKeyDown}
               />
@@ -304,11 +306,11 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
           </Tooltip>
         {/each}
       </span>
-      {#if valueError?.id === p.id}<p class="error ugoe-selectable">{valueError.message}</p>{/if}
+      {#if valueError?.id === p.id}<p class="error ugoe-selectable" id="{ids}-value-error">{valueError.message}</p>{/if}
       {#if editing === p.id}
         <BaseLock locked={baseParameters} hint={t("parameters.baseHint")}>
           <div class="editor">
-            <label>{t("parameters.field.name")} <input bind:value={draft.name} /></label>
+            <TextField label={t("parameters.field.name")} bind:value={draft.name} />
             <span class="range">
               <NumberField
                 label={t("parameters.field.min")}

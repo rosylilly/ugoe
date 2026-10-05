@@ -16,6 +16,8 @@ export interface Sample {
   id: string;
   /** メニューに出す名前 (今の言語)。 */
   readonly label: string;
+  /** メニューの名前の下に出す説明の行 (今の言語)。何を試せる見本か。 */
+  readonly description: string;
   /** モデル (`samples/` からのパス)。 */
   model: string;
   modules: readonly SampleModule[];
@@ -27,6 +29,9 @@ export const SAMPLES: readonly Sample[] = [
     get label() {
       return t("samples.avatar.label");
     },
+    get description() {
+      return t("samples.avatar.description");
+    },
     model: "avatar.ugoe",
     modules: [],
   },
@@ -36,6 +41,9 @@ export const SAMPLES: readonly Sample[] = [
     get label() {
       return t("samples.avatarLit.label");
     },
+    get description() {
+      return t("samples.avatarLit.description");
+    },
     model: "avatar-lit.ugoe",
     modules: [],
   },
@@ -44,6 +52,9 @@ export const SAMPLES: readonly Sample[] = [
     id: "dress-up",
     get label() {
       return t("samples.dressUp.label");
+    },
+    get description() {
+      return t("samples.dressUp.description");
     },
     model: "dress-up/dress-up.ugoe",
     modules: [

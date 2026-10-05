@@ -45,6 +45,8 @@ export type MenuEntry =
   | {
       kind?: "item";
       label: string;
+      /** 名前の下に出す説明の行 (翻訳を通した文言)。項目の説明として読み上げる。 */
+      description?: string;
       onselect: () => void;
       /** ショートカット (`"Mod+S"`。Kbd の書き方)。項目の右に出す。 */
       shortcut?: string;
@@ -55,10 +57,17 @@ export type MenuEntry =
   | {
       kind: "checkbox";
       label: string;
+      description?: string;
       checked: boolean;
       onchange: (checked: boolean) => void;
       shortcut?: string;
       disabled?: boolean;
     }
   | { kind: "separator" }
-  | { kind: "submenu"; label: string; entries: MenuEntry[]; disabled?: boolean };
+  | {
+      kind: "submenu";
+      label: string;
+      description?: string;
+      entries: MenuEntry[];
+      disabled?: boolean;
+    };

@@ -4,7 +4,7 @@
   操作はすべて Command (docs/editor.md#表情)。
 -->
 <script lang="ts">
-import { Button, Icon, IconButton, NumberField, Select } from "@ugoe/ui";
+import { Button, Icon, IconButton, NumberField, Select, TextField } from "@ugoe/ui";
 import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -198,13 +198,7 @@ function label(e: Expression): string {
       >
       <Button small onclick={remove}>{t("timeline.delete")}</Button>
       <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
-      <input
-        id="{ids}-name"
-        class="name"
-        bind:value={renaming}
-        onchange={rename}
-        onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-      />
+      <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
       {#key fieldsKey}
         <NumberField
           label={t("timeline.fadeIn.label")}
@@ -310,9 +304,6 @@ function label(e: Expression): string {
   }
   .inline {
     display: inline;
-  }
-  input.name {
-    width: 120px;
   }
   .sep {
     width: 1px;

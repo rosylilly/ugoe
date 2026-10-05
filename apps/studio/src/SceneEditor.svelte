@@ -4,7 +4,7 @@
   (配信しているシーンなら、バックエンドがすぐ出し直す)。
 -->
 <script lang="ts">
-import { Button, ColorPicker, Notice, SegmentedControl, Slider } from "@ugoe/ui";
+import { Button, ColorPicker, Notice, SegmentedControl, Slider, TextField } from "@ugoe/ui";
 import LightingEditor from "./LightingEditor.svelte";
 import { t } from "./lib/i18n";
 import {
@@ -114,15 +114,13 @@ async function chooseImage() {
 
   <div class="editor__field">
     <label for={nameId}>{t("editor.name")}</label>
-    <input
+    <TextField
       id={nameId}
-      class="editor__input"
-      type="text"
       value={scene.name}
       maxlength={100}
       {disabled}
-      onchange={(e) => {
-        const name = e.currentTarget.value.trim();
+      onchange={(value) => {
+        const name = value.trim();
         edit((s) => (s.name = name));
       }}
     />
@@ -292,21 +290,6 @@ async function chooseImage() {
   .editor__label {
     font-size: var(--ugoe-font-size-sm);
     color: var(--ugoe-color-text-muted);
-  }
-
-  .editor__input {
-    height: var(--ugoe-control-height);
-    padding: 0 var(--ugoe-space-2);
-    border: 1px solid var(--ugoe-color-control-border);
-    border-radius: var(--ugoe-radius-md);
-    background: var(--ugoe-color-bg);
-    color: var(--ugoe-color-text);
-    font: inherit;
-  }
-
-  .editor__input:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 2px;
   }
 
   .editor__file,

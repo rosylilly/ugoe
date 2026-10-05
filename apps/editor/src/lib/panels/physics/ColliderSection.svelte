@@ -5,7 +5,7 @@
   set_physics_collider は衝突体を丸ごと置き換えるので、送る直前の衝突体から組み立てる (updateCollider)。
 -->
 <script lang="ts">
-import { Button, Notice, NumberField, Select } from "@ugoe/ui";
+import { Button, Notice, NumberField, Select, TextField } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -183,11 +183,8 @@ const ids = $props.id();
       <span hidden id="{ids}-y">{t("physics.axis.y")}</span>
       <div class="ed-field">
         <label for="{ids}-name">{t("physics.colliders.name.label")}</label>
-        <input id="{ids}-name" class="text" type="text" value={collider.name}
-          onchange={(e) => {
-            const name = e.currentTarget.value;
-            updateCollider((c) => ({ ...c, name }));
-          }} />
+        <TextField id="{ids}-name" value={collider.name}
+          onchange={(name) => updateCollider((c) => ({ ...c, name }))} />
       </div>
       <div class="ed-field">
         <span id="{ids}-attach">{t("physics.colliders.attach.label")}</span>
@@ -244,22 +241,6 @@ const ids = $props.id();
   gap: var(--ugoe-space-2);
   align-items: center;
   min-width: 0;
-}
-
-.text {
-  min-width: 0;
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.text:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 .list {

@@ -837,7 +837,7 @@
       "hint": "Common rigs on the standard parameters. Applying one again resets its rigs. One Undo removes everything a template made.",
       "createMissing": {
         "label": "Create missing parameters",
-        "moduleTooltip": "A module can't add parameters. Add them in the base project."
+        "description": "A module can't add parameters. Add them in the base project."
       },
       "blend": {
         "label": "Body blend",
@@ -1757,7 +1757,7 @@
       "byNameInstructed_other": "{{count}} layers classified by name with instructions",
       "review_one": "{{count}} to review",
       "review_other": "{{count}} to review",
-      "instructionsTooltip": "With instructions: {{instructions}}",
+      "instructions": "With instructions: {{instructions}}",
       "labels": "Labels",
       "variants": "Alternative drawings of the same part (one shows at a time; costume rigs make pose groups):",
       "toReview": "Low confidence, or the AI disagrees with the layer name (check these before adopting; a swapped side swaps the eye blinks and similar):",

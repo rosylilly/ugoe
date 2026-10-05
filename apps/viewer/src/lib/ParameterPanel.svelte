@@ -1,7 +1,7 @@
 <script lang="ts">
 // パラメータのスライダーの一覧 (グループごと)。中継用 (internal) のパラメータは既定で隠し、切り替えて出せる。
 import { formatValue, internalCount, type Player, sliderStep, visibleSections } from "@ugoe/player";
-import { Button, Section, Slider, Toggle } from "@ugoe/ui";
+import { Button, Section, Slider, TextField, Toggle } from "@ugoe/ui";
 import { t } from "./i18n";
 
 let { player }: { player: Player } = $props();
@@ -27,13 +27,14 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
       {player.status === "ready" ? t("parameters.empty") : t("parameters.noModel")}
     </p>
   {:else}
-    <input
-      class="filter"
-      type="search"
-      aria-label={t("parameters.filter.aria")}
-      placeholder={t("parameters.filter.placeholder")}
-      bind:value={filter}
-    />
+    <div class="filter">
+      <TextField
+        type="search"
+        aria-label={t("parameters.filter.aria")}
+        placeholder={t("parameters.filter.placeholder")}
+        bind:value={filter}
+      />
+    </div>
     {#if hidden > 0}
       <div class="internal-toggle">
         <Toggle
@@ -119,18 +120,6 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
   }
   .filter {
     margin: var(--ugoe-space-3) 0 var(--ugoe-space-2);
-    height: var(--ugoe-control-height);
-    padding: 0 var(--ugoe-space-2);
-    font: inherit;
-    font-size: var(--ugoe-font-size-sm);
-    color: var(--ugoe-color-text);
-    background: var(--ugoe-color-surface);
-    border: 1px solid var(--ugoe-color-control-border);
-    border-radius: var(--ugoe-radius-md);
-  }
-  .filter:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 2px;
   }
   .internal-toggle {
     margin-bottom: var(--ugoe-space-2);

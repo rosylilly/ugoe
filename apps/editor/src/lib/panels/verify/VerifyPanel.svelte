@@ -10,7 +10,7 @@
     行を押すと「Physics」のタブに移り、そのリグと衝突体を選ぶ。
 -->
 <script lang="ts">
-import { Button, Toggle } from "@ugoe/ui";
+import { Button, Toggle, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
 import { t } from "../../i18n";
@@ -159,18 +159,25 @@ function goToPhysics(rig: string, collider: string): void {
             <ul class="cells">
               {#each group.findings as finding, i (i)}
                 <li>
-                  <button
-                    class="cell"
-                    class:current={selection.primary?.id === group.target.id &&
-                      isAtCell(finding.cell, viewport.parameterValues, model?.parameters ?? [])}
-                    onclick={() => goTo(finding)}
-                    title={t("verify.overflow.cell")}
-                  >
-                    <span class="values">{formatCell(finding.cell, model)}</span>
-                    <span class="amount">
-                      {formatCount(group.kind, finding.count)} · {formatAmount(finding.max_amount)}
-                    </span>
-                  </button>
+                  <Tooltip text={t("verify.overflow.cell")}>
+                    {#snippet trigger(attrs)}
+                      <button
+                        {...attrs}
+                        class="cell"
+                        class:current={selection.primary?.id === group.target.id &&
+                          isAtCell(finding.cell, viewport.parameterValues, model?.parameters ?? [])}
+                        onclick={(e) => {
+                          (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                          goTo(finding);
+                        }}
+                      >
+                        <span class="values">{formatCell(finding.cell, model)}</span>
+                        <span class="amount">
+                          {formatCount(group.kind, finding.count)} · {formatAmount(finding.max_amount)}
+                        </span>
+                      </button>
+                    {/snippet}
+                  </Tooltip>
                 </li>
               {/each}
             </ul>

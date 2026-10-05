@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 import { TrackingPanel } from "@ugoe/face-tracking";
-import { Button, Icon, Notice, Section, Select, Slider, Toggle } from "@ugoe/ui";
+import { Button, Icon, Notice, Section, Select, Slider, TextField, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
 import type { DifferenceItem } from "../ipc";
@@ -233,13 +233,14 @@ const expressionOptions = $derived([
         >{t("preview.parameters.resetAll.label")}</TipButton
       >
     </div>
-    <input
-      class="filter"
-      type="search"
-      placeholder={t("preview.parameters.filter.placeholder")}
-      aria-label={t("preview.parameters.filter.aria")}
-      bind:value={filter}
-    />
+    <div class="filter">
+      <TextField
+        type="search"
+        placeholder={t("preview.parameters.filter.placeholder")}
+        aria-label={t("preview.parameters.filter.aria")}
+        bind:value={filter}
+      />
+    </div>
     {#if doc.parameters.length === 0}
       <p class="ed-hint">{t("preview.parameters.empty")}</p>
     {/if}
@@ -382,20 +383,7 @@ section {
 }
 
 .filter {
-  width: 100%;
-  min-height: var(--ugoe-control-height);
   margin-bottom: var(--ugoe-space-2);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.filter:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 .row {

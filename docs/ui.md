@@ -252,9 +252,10 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `IconButton` | 文字を出す場所が無いときの操作。**`label` (読み上げとツールチップに使う) を必ず渡す** | Bits UI `Button` と `Tooltip` | Enter・Space | 1 |
 | `Checkbox` | 決定 (保存・OK) を押すまで効かない選択肢、または一覧の中の選択 | Bits UI `Checkbox` | Space | 1 |
 | `Toggle` | すぐに効く入・切 (「鏡像で表示」など)。説明は `tooltip` (スイッチに Tooltip を付ける) | Bits UI `Switch` | Space・Enter | 1 |
-| `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作) | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
-| `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
-| `Select` | 5 個以上の選択肢から 1 つ | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
+| `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。説明は `tooltip` (つまみに Tooltip を付ける) | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
+| `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す。誤りは `invalid`、説明は `tooltip` | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
+| `TextField` | 1 行の文字 (名前・ID・URL・検索)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は標準の `<textarea>` (まだ部品が無い) | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
+| `Select` | 5 個以上の選択肢から 1 つ。誤りは `invalid` (選べなくなった値など)、説明は `tooltip` | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
 | `SegmentedControl` | 2〜4 個の選択肢から 1 つ (すべて見せたいとき) | Bits UI `RadioGroup` (または `ToggleGroup` の単一選択) | 矢印で移り、選ぶ | 1 |
 | `Tabs` | 同じ場所の中身を切り替える (中身が別の画面のとき) | Bits UI `Tabs` | 左右の矢印・Home/End | 1 |
 | `Section` | 折りたためるまとまり (パネルの中) | Bits UI `Collapsible` | Enter・Space | 1 |
@@ -263,7 +264,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Notice` | 画面に残る知らせ (読み込みの警告など)。`ondismiss` を渡すと閉じるボタンを出す | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
 | `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする。`showToast()` で出し、アプリの根元の `Toaster` が描く | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない。ポインタやフォーカスが乗っている間は消えない | 2 |
 | `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
-| `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
+| `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く)。名前の下に説明の行 (`description`。項目の説明として読む) を出せる (見本の中身・最近のファイルの場所など) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
 | `Popover` | 部品の近くに出す小さな編集の枠 (色の選択など) | Bits UI `Popover` | Esc で閉じ、開いた元に戻る | 2 |
 | `ColorPicker` | 光源などの色 | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
 | `DropZone` | ファイルを落とす領域。**同じことができるボタン (「ファイル…」) を必ず並べる** | 自作 (`<div>` と `Button`) | ボタンで開く | 2 |
@@ -286,8 +287,9 @@ Bits UI を包むときの約束:
 使い分けの約束:
 
 - **`title` 属性で説明を出さない**のを基本にし、`Tooltip` を使います (`title` はキーボードで出せず、タッチでも出ない)。
-  T0907 の見直しの後に残している `title` は、フォーカスを受けない要素の補い (省略した名前の全体・ID・一覧の行の印) だけです。
-  同じことを見える文や読み上げの名前で伝えていて、`title` が無くても操作に困らないものに限ります。
+  欄の説明は部品の `tooltip` (`Toggle`・`Slider`・`NumberField`・`Select`・`TextField`) で、押せない理由・読み方の説明は見える補足で出します。
+  T0917 の後に残している `title` は、フォーカスを受けない要素の補い (省略した名前の全体・ID・一覧の行の印・図の印) だけです
+  (一覧は下の「足りない部品と口 (T0917)」)。同じことを見える文や読み上げの名前で伝えていて、`title` が無くても操作に困らないものに限ります。
 - **チェックボックスとトグル:** 押した瞬間に効くならトグル、決定のボタンを押すまで効かないならチェックボックス。
 - **`Dialog` と `Notice`:** 利用者の判断が要らない知らせにダイアログを使いません。
 - **取り消せない操作** (すべて忘れる・上書き保存の前の確認など) は `danger` のボタンにし、確かめのダイアログを出すか、Undo を用意します。確かめのダイアログでは、既定のフォーカスを取り消し側に置きます。
@@ -311,7 +313,7 @@ Bits UI を包むときの約束:
 | 本体のもの (モジュールのプロジェクト) | `BaseLock` | 欄をまとめて無効にし、直す場所を `role="note"` の文で示す。`fieldset` の `disabled` は `<input>`・`<button>` にしか効かないので、`Slider` など中にそれらを持たない部品には `useBaseLock()` (`lib/ui/baseLock.ts`) の値を `disabled` に渡す |
 | 確かめ | `AlertDialog` | 取り消せない操作・保存していない変更を捨てる操作。同じボタンを 2 度押させる形にしない |
 | ダイアログ | `Dialog` | 見出しは `title`、説明は `description`、決定・取り消しは `actions`。Esc で閉じるときの意味 (「後で」など) を `onclose` で決める |
-| 文字の入力欄 | `<input type="text">` | `@ugoe/ui` に部品がまだ無い。ダイアログの中は `app.css` の `.ugoe-dialog input[type="text"]` で装う。名前は `<label for>` |
+| 文字の入力欄 | `TextField` | 行の左に名前を置くときは `<label for>` と `id`、ほかは `label`。確定で送る欄は `onchange` (Enter・フォーカスを外す)。標準の `<input>` のまま残すものは下の「足りない部品と口 (T0917)」 |
 | 要素の名前 | `src/lib/labels.ts` | `顔 (Layer8)` の形 (名前と ID)。ID・パス・パラメータの名前は訳さない |
 
 - **文言の置き場所:** エディタのカタログ (`apps/editor/locales/<言語>.json`、名前空間 `editor`) のキーの最初の段は、画面の部分 (`app`・`fileMenu`・
@@ -428,7 +430,7 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   | フォーカス | `--ugoe-focus-ring` (`:focus-visible`)。外側の枠に出す部品は `:focus-within` | `outline: var(--ugoe-focus-ring)`・`outline-offset: var(--ugoe-focus-offset)` |
   | 選択 | 強調色の地か枠に加えて、形 (チェックの印・下線・枠・太字) | `accent`・`accent-soft`。一覧の行の選択は `accent-soft` の地に、形 (印・太字・枠) を足す |
   | 無効 | 部品の全体を薄くする (コントラストの基準の外)。理由を近くに書くか Tooltip で出す | `opacity: var(--ugoe-opacity-disabled)`。一覧の中の 1 項目だけ無効なときもその項目に同じ値 |
-  | エラー | 危険の色の枠と印と文 (`aria-invalid`・`aria-describedby` で文を結ぶ) | `NumberField` の `invalid`。文字の欄は `[aria-invalid="true"]` に `danger` の枠 |
+  | エラー | 危険の色の枠と印と文 (`aria-invalid`・`aria-describedby` で文を結ぶ) | `TextField` の `error` (文を欄の下に出して結ぶ)・`invalid`、`NumberField`・`Select` の `invalid`。標準の文字の欄は `[aria-invalid="true"]` に `danger` の枠 |
   | 読み込み中・実行中 | その場所に文 (「読み込んでいます…」) と、長いものは進み具合と取り消し。押すと二重になる操作は無効にする | `Button`・`IconButton` の `busy` (無効にし `aria-busy`。文言は呼び手が「保存しています…」に変える) |
 
   キーボードで選んでいる候補 (メニュー・`Select` の一覧の項目) は、hover と同じ扱いでなく `accent-soft` の地と強調色の 1px の枠で示します
@@ -566,6 +568,42 @@ T0907 で見た場面ではコントラスト・はみ出し・押せる大き�
 | 透過の市松模様 (`NormalMapSection`) | `#8884` | 画像の透明な所の印。地のテーマに依らず見えるように半透明 |
 | トラッキングの映像の地 (`TrackingPanel`) | `#000` | 映像の外の帯 (映像と同じく暗くする) |
 | 並べ替え中の行 (`PosesPanel`) | `opacity: 0.5` | 持ち上げている行の印 (無効ではない) |
+
+### 足りない部品と口 (T0917)
+
+T0907 の後続の候補だった部品の不足を埋め、アプリに残る自前の欄と `title` を減らしました。
+
+- **部品に足したもの:** `TextField` (ラベル・補足・誤りの文・無効)、`Slider`・`NumberField`・`Select` の `tooltip`、`Select` の `invalid`、
+  `Slider` の `aria-describedby`、`Menu` の項目の説明の行 (`description`)。
+- **置き換えたもの:** 3 つのアプリの標準の文字の欄 (名前・ID・URL・モデル・ポート・検索・イベントの値) を `TextField` に、AI の設定の
+  時間の上限 (`type="number"`) を `NumberField` にしました。ビューアの「サンプル」のメニューに見本の中身を、スタジオの最近のプロファイルに
+  ファイルの場所 (名前はファイル名) を、説明の行で出します。
+- **トラッキングの平滑化の説明:** T0907 で見える補足にしていた説明を、`Slider` の `tooltip` に戻しました。同じパネルの入・切 (`Toggle`) の
+  説明が Tooltip なのでそろえるのと、広い幅のビューアでトラッキングのパネルが長く、パラメータが送らないと見えないため (T0915 の振り分け)。
+- **見える補足・Tooltip にした `title`:** 物理のリグの「基準」(`Select` の `tooltip`)、テンプレートの「合成」(`Select` の `tooltip`) と
+  「足りないパラメータを作る」を押せない理由 (見える補足)、カーブのフェードの欄 (Tooltip)、タイムラインのキーを打つ ◆ とキーの印 (Tooltip。◆ には
+  読み上げの名前も付けた)、静止姿勢の警告の行・検証のセル (Tooltip)、AI の提案の注文の文と依存 (見える補足)、ビューアのイベントの読み方 (見える補足)。
+
+標準の `<input>` のまま残したもの:
+
+| 場所 | 理由 |
+| --- | --- |
+| 空にできる数値の欄 (カーブのフェード・グルーのキー・推定の軸と許す差) | 空 (既定を使う) を持てる数値の部品がまだ無い (`NumberField` は空を持てない) |
+| パラメータの値の欄 (`ParametersPanel`) | 範囲の外を丸めず、誤りの文を出す作り (誤りの文は `aria-describedby`・`aria-invalid` で結んだ) |
+| ツリーの名前の変更 (`TreeItem`) | 行の中で開く欄。行の高さ (24px) と、押下を行に渡さない処理・開いたときに全体を選ぶ処理を持つ |
+| API キー (`SettingsDialog`、`type="password"`) | キーを Svelte の状態に持たない (`TextField` は値を状態に持つ)。見た目は `TextField` とそろえた |
+| 複数行の欄 (アバターのメタデータ・AI の注文の `<textarea>`) | 複数行の部品がまだ無い |
+| チェックボックス・ラジオ・範囲・ファイルの `<input>` | 文字の欄ではない (一覧の中の小さなチェックボックスなど。T0907・T0674 の範囲) |
+
+残した `title` (フォーカスを受けない要素の補い):
+
+| 場所 | 中身 |
+| --- | --- |
+| エディタのツリーの行 (`TreeItem`) | 名前の ID・行の印 (本体・マスク・非表示・描く順)。行はフォーカスを受けない (木が `aria-activedescendant` で受ける) |
+| 物理のリグの一覧の「中継」の印 (`PhysicsPanel`) | 読むパラメータの一覧。ボタンの中の印なので Tooltip を入れ子にできない |
+| タイムラインの行の名前・目盛り・イベントの印 (`MotionEditor`・`CurveGraph`) | 省略した名前の全体・目盛りの操作 (コマ送りのボタンで同じことができる)・図の印 |
+| AI の提案の面の数 (`ProposalsPanel`) | テクスチャの名前の一覧 (省略した全体) |
+| ビューアのモーション・表情・着せ替え・覚えたものの行と状態の帯 | 名前と動かすパラメータ・重なりの印・警告の全体 (始めの 1 件は見える)・場所の全体 |
 
 ## 文言の書き方
 

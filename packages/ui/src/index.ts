@@ -23,6 +23,7 @@ export { default as SegmentedControl } from "./components/SegmentedControl.svelt
 export { default as Select } from "./components/Select.svelte";
 export { default as Slider } from "./components/Slider.svelte";
 export { default as Tabs } from "./components/Tabs.svelte";
+export { default as TextField } from "./components/TextField.svelte";
 export { default as ThemeSetting } from "./components/ThemeSetting.svelte";
 export { default as Toaster } from "./components/Toaster.svelte";
 export { default as Toggle } from "./components/Toggle.svelte";

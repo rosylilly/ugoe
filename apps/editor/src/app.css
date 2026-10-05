@@ -148,20 +148,3 @@ select:not([class*="ugoe-"]) {
   color: var(--ugoe-color-text-muted);
   font-size: var(--ugoe-font-size-sm);
 }
-
-/* ダイアログ (@ugoe/ui の Dialog) の中の文字の入力欄。@ugoe/ui に文字の欄の部品ができたら置き換える。 */
-.ugoe-dialog input[type="text"] {
-  box-sizing: border-box;
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.ugoe-dialog input[type="text"]:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
-}

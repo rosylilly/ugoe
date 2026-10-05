@@ -1,6 +1,7 @@
 <!--
   Menu と ContextMenu の項目の並び (内部用)。Bits UI の DropdownMenu と ContextMenu は項目の部品を共有するので、両方で使う。
   ショートカットは控えめな文字 (Ctrl+S・⌘S) で見た目だけに出し (aria-hidden)、読み上げには aria-keyshortcuts で渡す。
+  説明の行 (`description`) は名前の下に控えめな文字で出し、名前とは分けて説明として読ませる (aria-labelledby・aria-describedby)。
 -->
 <script lang="ts">
 import { DropdownMenu } from "bits-ui";
@@ -10,7 +11,26 @@ import Icon from "./Icon.svelte";
 import Self from "./MenuEntries.svelte";
 
 let { entries }: { entries: MenuEntry[] } = $props();
+
+const id = $props.id();
+
+/** 説明の行があるときに、名前と説明を分けて結ぶ属性。 */
+function described(entry: { description?: string }, i: number) {
+  if (!entry.description) return {};
+  return { "aria-labelledby": `${id}-${i}-label`, "aria-describedby": `${id}-${i}-description` };
+}
 </script>
+
+{#snippet text(entry: { label: string; description?: string }, i: number)}
+  {#if entry.description}
+    <span class="ugoe-menu__text">
+      <span class="ugoe-menu__label" id={`${id}-${i}-label`}>{entry.label}</span>
+      <span class="ugoe-menu__description" id={`${id}-${i}-description`}>{entry.description}</span>
+    </span>
+  {:else}
+    <span class="ugoe-menu__label">{entry.label}</span>
+  {/if}
+{/snippet}
 
 {#snippet shortcutOf(shortcut: string | undefined)}
   {#if shortcut}
@@ -29,18 +49,24 @@ let { entries }: { entries: MenuEntry[] } = $props();
       textValue={entry.label}
       aria-keyshortcuts={entry.shortcut ? ariaKeyShortcuts(entry.shortcut) : undefined}
       onCheckedChange={(v) => entry.onchange(v)}
+      {...described(entry, i)}
     >
       {#snippet children({ checked })}
         <span class="ugoe-menu__check">{#if checked}<Icon name="check" />{/if}</span>
-        <span class="ugoe-menu__label">{entry.label}</span>
+        {@render text(entry, i)}
         {@render shortcutOf(entry.shortcut)}
       {/snippet}
     </DropdownMenu.CheckboxItem>
   {:else if entry.kind === "submenu"}
     <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger class="ugoe-menu__item" disabled={entry.disabled} textValue={entry.label}>
+      <DropdownMenu.SubTrigger
+        class="ugoe-menu__item"
+        disabled={entry.disabled}
+        textValue={entry.label}
+        {...described(entry, i)}
+      >
         <span class="ugoe-menu__check"></span>
-        <span class="ugoe-menu__label">{entry.label}</span>
+        {@render text(entry, i)}
         <Icon name="chevronRight" />
       </DropdownMenu.SubTrigger>
       <DropdownMenu.SubContent class="ugoe-menu" aria-label={entry.label} sideOffset={2}>
@@ -54,9 +80,10 @@ let { entries }: { entries: MenuEntry[] } = $props();
       textValue={entry.label}
       aria-keyshortcuts={entry.shortcut ? ariaKeyShortcuts(entry.shortcut) : undefined}
       onSelect={() => entry.onselect()}
+      {...described(entry, i)}
     >
       <span class="ugoe-menu__check"></span>
-      <span class="ugoe-menu__label">{entry.label}</span>
+      {@render text(entry, i)}
       {@render shortcutOf(entry.shortcut)}
     </DropdownMenu.Item>
   {/if}
@@ -68,6 +95,8 @@ let { entries }: { entries: MenuEntry[] } = $props();
       z-index: var(--ugoe-z-popover);
       box-sizing: border-box;
       min-width: 180px;
+      /* 説明の行を折り返して、窓の幅 (狭い幅のビューア・スタジオ) に収める */
+      max-width: min(28rem, var(--bits-dropdown-menu-content-available-width, calc(100vw - 16px)));
       max-height: var(--bits-dropdown-menu-content-available-height, 80vh);
       padding: var(--ugoe-space-1);
       overflow: auto;
@@ -121,6 +150,28 @@ let { entries }: { entries: MenuEntry[] } = $props();
     .ugoe-menu__label {
       flex: 1;
       white-space: nowrap;
+    }
+
+    /* 説明の行のある項目: 名前の下に控えめな文字で出す。説明は折り返す */
+    .ugoe-menu__text {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      padding: var(--ugoe-space-1) 0;
+    }
+
+    .ugoe-menu__text > .ugoe-menu__label {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .ugoe-menu__description {
+      color: var(--ugoe-color-text-muted);
+      font-size: var(--ugoe-font-size-sm);
+      line-height: var(--ugoe-line-height);
+      overflow-wrap: anywhere;
     }
 
     .ugoe-menu__shortcut {

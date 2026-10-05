@@ -10,7 +10,7 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, NumberField } from "@ugoe/ui";
+import { Button, NumberField, TextField } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { ChildRef } from "../../ipc";
@@ -153,12 +153,7 @@ async function unwrap(id: string): Promise<void> {
     </p>
     <div class="row name">
       <label for="{ids}-name">{t("inspector.deformer.wrap.name.label")}</label>
-      <input
-        id="{ids}-name"
-        type="text"
-        bind:value={name}
-        placeholder={t("inspector.deformer.wrap.name.placeholder")}
-      />
+      <TextField id="{ids}-name" bind:value={name} placeholder={t("inspector.deformer.wrap.name.placeholder")} />
     </div>
     <div class="row">
       <NumberField label={t("inspector.deformer.wrap.rows")} min={1} max={MAX_DIVISIONS} size={3} bind:value={rows} />
@@ -192,22 +187,6 @@ async function unwrap(id: string): Promise<void> {
 .name {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-}
-
-.name input {
-  min-width: 0;
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.name input:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 h3 {

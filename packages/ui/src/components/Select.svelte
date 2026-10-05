@@ -2,10 +2,13 @@
   Select: 5 個以上の選択肢から 1 つを選ぶ (docs/ui.md#部品の一覧)。2〜4 個なら SegmentedControl を使う。
   土台は Bits UI の Select (上下の矢印・Enter・頭文字で移る・Esc で閉じる)。
   一覧は body に出す (Portal) ので、テーマと密度は <html> の属性に従う。
+  `tooltip` を渡すと、ボタンに Tooltip で説明を出す (`title` 属性の代わり)。
 -->
 <script lang="ts" generics="T extends string">
 import { Select } from "bits-ui";
+import type { TriggerAttributes } from "../props";
 import type { Option } from "../types";
+import Tooltip from "./Tooltip.svelte";
 
 interface Props {
   /** 選んでいる値。何も選んでいなければ空文字列。 */
@@ -18,9 +21,15 @@ interface Props {
   "aria-labelledby"?: string;
   /** 見えるラベルを置けないときの読み上げの名前。 */
   "aria-label"?: string;
+  /** 補足の説明を持つ要素の id。 */
+  "aria-describedby"?: string;
   /** 何も選んでいないときに出す文言。 */
   placeholder?: string;
   disabled?: boolean;
+  /** 選んでいる値の誤り (選べなくなった値など)。危険の色の枠と `aria-invalid` にする。誤りの文は `aria-describedby` で結ぶ。 */
+  invalid?: boolean;
+  /** ボタンに出す説明 (Tooltip。翻訳を通した文言)。`title` 属性の代わり。 */
+  tooltip?: string;
   onchange?: (value: T) => void;
 }
 
@@ -30,8 +39,11 @@ let {
   label,
   "aria-labelledby": labelledby,
   "aria-label": ariaLabel,
+  "aria-describedby": describedby,
   placeholder = "",
   disabled = false,
+  invalid = false,
+  tooltip,
   onchange,
 }: Props = $props();
 
@@ -42,7 +54,32 @@ const items = $derived(
 );
 </script>
 
-<span class="ugoe-select" data-disabled={disabled ? "" : undefined}>
+{#snippet triggerButton(attrs: TriggerAttributes)}
+  <Select.Trigger
+    {...attrs}
+    id={`${id}-trigger`}
+    class="ugoe-select__trigger"
+    aria-labelledby={labelledby ?? (label ? `${id}-label ${id}-value` : undefined)}
+    aria-label={ariaLabel}
+    aria-describedby={[attrs["aria-describedby"], describedby].filter(Boolean).join(" ") || undefined}
+    aria-invalid={invalid || undefined}
+  >
+    <span
+      class="ugoe-select__value"
+      id={`${id}-value`}
+      data-placeholder={selected ? undefined : ""}>{selected?.label ?? placeholder}</span
+    >
+    <svg class="ugoe-icon ugoe-select__chevron" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  </Select.Trigger>
+{/snippet}
+
+<span
+  class="ugoe-select"
+  data-disabled={disabled ? "" : undefined}
+  data-invalid={invalid ? "" : undefined}
+>
   {#if label}
     <span class="ugoe-select__label" id={`${id}-label`}>{label}</span>
   {/if}
@@ -56,20 +93,13 @@ const items = $derived(
       onchange?.(v as T);
     }}
   >
-    <Select.Trigger
-      class="ugoe-select__trigger"
-      aria-labelledby={labelledby ?? (label ? `${id}-label ${id}-value` : undefined)}
-      aria-label={ariaLabel}
-    >
-      <span
-        class="ugoe-select__value"
-        id={`${id}-value`}
-        data-placeholder={selected ? undefined : ""}>{selected?.label ?? placeholder}</span
-      >
-      <svg class="ugoe-icon ugoe-select__chevron" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M4 6l4 4 4-4" />
-      </svg>
-    </Select.Trigger>
+    {#if tooltip}
+      <Tooltip text={tooltip} id={`${id}-trigger`} {disabled}>
+        {#snippet trigger(attrs)}{@render triggerButton(attrs)}{/snippet}
+      </Tooltip>
+    {:else}
+      {@render triggerButton({})}
+    {/if}
     <Select.Portal>
       <Select.Content class="ugoe-select__content" sideOffset={4}>
         <Select.Viewport class="ugoe-select__viewport">
@@ -139,6 +169,12 @@ const items = $derived(
 
     .ugoe-select__trigger:disabled {
       cursor: default;
+    }
+
+    /* 誤りは色に加えて枠の太さでも示す (文は呼び手が aria-describedby で結ぶ) */
+    .ugoe-select[data-invalid] .ugoe-select__trigger {
+      border-color: var(--ugoe-color-danger);
+      box-shadow: inset 0 0 0 1px var(--ugoe-color-danger);
     }
 
     .ugoe-select__trigger:focus-visible {

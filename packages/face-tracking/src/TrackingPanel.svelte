@@ -195,9 +195,9 @@ let cameraOptions = $derived(
         step={0.05}
         decimals={2}
         value={tracker.smoothing}
+        tooltip={t("smoothing.tooltip")}
         onchange={(v) => (tracker.smoothing = v)}
       />
-      <p class="hint">{t("smoothing.tooltip")}</p>
     </div>
 
     <div class="row">
@@ -355,7 +355,6 @@ let cameraOptions = $derived(
   .smoothing {
     margin-top: var(--ugoe-space-2);
   }
-  .hint,
   .note {
     margin: var(--ugoe-space-1) 0 0;
     font-size: var(--ugoe-font-size-sm);

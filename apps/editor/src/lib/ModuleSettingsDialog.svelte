@@ -7,7 +7,7 @@
   本体を直してモジュールに戻り、適用し直した設定がまた拒否されたら (`retry`)、その設定とエラーを欄に入れて開く (T1622)。
 -->
 <script lang="ts">
-import { Button, Checkbox, Dialog, Select } from "@ugoe/ui";
+import { Button, Checkbox, Dialog, Select, TextField } from "@ugoe/ui";
 import { untrack } from "svelte";
 import { errorText } from "./errors";
 import type { SettingsRetry } from "./fileMenu.svelte";
@@ -49,7 +49,6 @@ let failure = $state.raw<unknown>(null);
 /** 拒否された設定 (「Open base project」で本体を開くとき、戻った後に適用し直すために渡す)。 */
 let rejected = $state.raw<Command | null>(null);
 let busy = $state(false);
-const nameId = $props.id();
 
 // 開くたびに今の設定を欄に入れる。
 $effect(() => {
@@ -135,15 +134,14 @@ async function apply(): Promise<void> {
 
 <Dialog {open} title={t("moduleSettings.title")} size="md" {onclose}>
   {#if module}
-    <div class="field">
-      <label for={nameId}>{t("moduleSettings.name.label")}</label>
-      <input id={nameId} type="text" bind:value={name} />
-    </div>
-    {#if name.length > 0 && !isValidModuleName(name)}
-      <p class="warn">{t("moduleSettings.name.invalid")}</p>
-    {:else if renamed}
-      <p class="muted">{t("moduleSettings.name.renameHint", { name: name.trim() })}</p>
-    {/if}
+    <TextField
+      label={t("moduleSettings.name.label")}
+      bind:value={name}
+      error={name.length > 0 && !isValidModuleName(name) ? t("moduleSettings.name.invalid") : undefined}
+      hint={renamed && isValidModuleName(name)
+        ? t("moduleSettings.name.renameHint", { name: name.trim() })
+        : undefined}
+    />
 
     <fieldset>
       <legend>{t("moduleSettings.slot.label")}</legend>
@@ -216,17 +214,6 @@ async function apply(): Promise<void> {
 <style>
   p {
     margin: 0;
-  }
-  .field {
-    display: flex;
-    align-items: center;
-    gap: var(--ugoe-space-3);
-  }
-  .field label {
-    display: block;
-  }
-  .field input {
-    flex: 1;
   }
   fieldset {
     display: flex;

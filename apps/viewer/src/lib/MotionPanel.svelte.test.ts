@@ -64,6 +64,10 @@ describe("MotionPanel", () => {
     expect(events?.textContent?.trim()).toBe(
       "イベント: hi (wave #3), hi (wave #2), blink (idle #1)",
     );
-    expect(events?.getAttribute("title")).toBe(t("motions.eventsTooltip"));
+    // 読み方の説明は title でなく見える補足に出す
+    expect(events?.hasAttribute("title")).toBe(false);
+    expect(target.querySelector(".events-description")?.textContent).toBe(
+      t("motions.eventsDescription"),
+    );
   });
 });

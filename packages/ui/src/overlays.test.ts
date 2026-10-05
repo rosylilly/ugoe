@@ -372,6 +372,38 @@ describe("Menu", () => {
   });
 });
 
+describe("Menu with descriptions", () => {
+  it("shows a description line and reads it as the item's description", async () => {
+    const entries: MenuEntry[] = [
+      { label: "Hiyori", description: "Bundled sample with physics", onselect: () => {} },
+      {
+        kind: "checkbox",
+        label: "Loop",
+        description: "Repeat the motion",
+        checked: true,
+        onchange: () => {},
+      },
+      { label: "Plain", onselect: () => {} },
+    ];
+    const root = render(Menu, { label: "Samples", entries });
+    const trigger = get(root, "button");
+    trigger.focus();
+    press(trigger, "ArrowDown");
+    await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+    const items = [...$('[role="menu"]').querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+    const describedText = (el: Element) =>
+      document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent;
+    expect(labelledByText(items[0] as HTMLElement)).toBe("Hiyori");
+    expect(describedText(items[0] as HTMLElement)).toBe("Bundled sample with physics");
+    expect(labelledByText(items[1] as HTMLElement)).toBe("Loop");
+    expect(describedText(items[1] as HTMLElement)).toBe("Repeat the motion");
+    // 説明の無い項目は名前を中身から取る (説明を結ばない)
+    expect(items[2]?.hasAttribute("aria-labelledby")).toBe(false);
+    expect(items[2]?.hasAttribute("aria-describedby")).toBe(false);
+    expect(items[2]?.textContent?.trim()).toBe("Plain");
+  });
+});
+
 describe("Menu with a submenu", () => {
   it("opens the submenu with ArrowRight and runs its item", async () => {
     const onexport = vi.fn();

@@ -4,6 +4,7 @@
   行を押すと `onSelect` でリグと衝突体を知らせる (選ぶのは呼び出し側)。
 -->
 <script lang="ts">
+import { Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
 import { t } from "../../i18n";
@@ -57,14 +58,21 @@ $effect(() => {
   <ul>
     {#each found as c (restPoseKey(c))}
       <li>
-        <button
-          class:current={selected?.rig === c.rig && selected?.collider === c.collider}
-          onclick={() => onSelect(c.rig, c.collider)}
-          title={t("physics.restPose.select")}
-        >
-          <span>{restPoseTitle(c, doc.physics)}</span>
-          <span class="muted small">{formatSegments(c.particles)}</span>
-        </button>
+        <Tooltip text={t("physics.restPose.select")}>
+          {#snippet trigger(attrs)}
+            <button
+              {...attrs}
+              class:current={selected?.rig === c.rig && selected?.collider === c.collider}
+              onclick={(e) => {
+                (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                onSelect(c.rig, c.collider);
+              }}
+            >
+              <span>{restPoseTitle(c, doc.physics)}</span>
+              <span class="muted small">{formatSegments(c.particles)}</span>
+            </button>
+          {/snippet}
+        </Tooltip>
       </li>
     {/each}
   </ul>
