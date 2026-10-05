@@ -85,10 +85,11 @@ namespace Ugoe.Tests
         [Test]
         public void UnknownMaskFillsTheMaskField()
         {
-            // 見本の LongHair (assets/samples/dress-up) は本体の Skin でマスクする。互換性テストの本体 (assets/compat/dev) の
-            // スロット Hair がマスクに使わせるのは Face だけなので、付けると unknown_mask で、新しいキー mask (T0458) が入る。
-            using var puppet = Puppet.FromBundle(File.ReadAllBytes(Path.Combine(Paths.Root, "assets", "compat", "dev", "dress-up-base.ugoe")));
-            using var hair = Module.FromBytes(Paths.Read("dress-up", "long-hair.ugoemod"));
+            // テスト用の本体 (tests/Fixtures/mask-base.model.json) のスロット Hair がマスクに使わせるのは Face だけで、
+            // モジュール (unknown-mask.ugoemod) のメッシュ Back は本体の Skin でマスクする。付けると unknown_mask で、
+            // 新しいキー mask (T0458) が入る。ファイルの作り方は tests/Fixtures/README.md。
+            using var puppet = Puppet.FromJson(File.ReadAllText(Fixture("mask-base.model.json")));
+            using var hair = Module.FromBytes(File.ReadAllBytes(Fixture("unknown-mask.ugoemod")));
             var e = Assert.Throws<UgoeException>(() => puppet.AttachModule(hair));
             Assert.That(e.Result, Is.EqualTo(UgoeResult.DressUp), e.Message);
             AssertCodes("dress_up_error", e, "unknown_mask");
@@ -108,6 +109,8 @@ namespace Ugoe.Tests
             var keys = codes.RootElement.GetProperty(group).GetProperty(kind).EnumerateArray().Select(k => k.GetString()).ToArray();
             Assert.That(e.Fields.Keys, Is.SubsetOf(keys), $"{group}.{kind} in codes.json");
         }
+
+        private static string Fixture(string name) => Path.Combine(Paths.Root, "bindings", "unity", "tests", "Fixtures", name);
 
         // NULL_POINTER → NullPointer
         private static string Pascal(string snake) =>

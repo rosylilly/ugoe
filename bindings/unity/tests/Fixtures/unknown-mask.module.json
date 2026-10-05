@@ -1,0 +1,27 @@
+{
+  "schema_version": 0,
+  "name": "unknown_mask",
+  "slot": "Hair",
+  "parts": [{ "id": "Hair", "name": "Hair", "keyforms": { "keyforms": [{ "opacity": 1.0 }] } }],
+  "meshes": [
+    {
+      "id": "Back",
+      "name": "Back",
+      "part": "Hair",
+      "texture": 0,
+      "uvs": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+      "indices": [0, 1, 2, 0, 2, 3],
+      "masks": [{ "mesh": "Skin" }],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [[-20.0, -20.0], [20.0, -20.0], [20.0, 8.0], [-20.0, 8.0]],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [{ "name": "hair", "width": 1, "height": 1 }]
+}

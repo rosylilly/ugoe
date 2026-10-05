@@ -1,0 +1,53 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "mask_base",
+    "canvas": { "width": 64.0, "height": 64.0, "origin": [32.0, 32.0] }
+  },
+  "parameters": [],
+  "parts": [{ "id": "Root", "name": "Root", "keyforms": { "keyforms": [{ "opacity": 1.0 }] } }],
+  "meshes": [
+    {
+      "id": "Face",
+      "name": "Face",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+      "indices": [0, 1, 2, 0, 2, 3],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [[-16.0, -16.0], [16.0, -16.0], [16.0, 16.0], [-16.0, 16.0]],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Skin",
+      "name": "Skin",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+      "indices": [0, 1, 2, 0, 2, 3],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [[-24.0, 0.0], [24.0, 0.0], [24.0, 24.0], [-24.0, 24.0]],
+            "opacity": 1.0,
+            "draw_order": 400.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [{ "name": "white", "width": 1, "height": 1 }],
+  "slots": [
+    {
+      "id": "Hair",
+      "draw_order": { "min": 600.0, "max": 700.0 },
+      "mask_sources": ["Face"]
+    }
+  ]
+}
