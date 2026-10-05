@@ -1,11 +1,11 @@
 ---
 id: T0938
 title: WebGL2 の復元が届かないときの扱いと、諦めた後に作り直すボタン (エディタ・Player。判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, bindings/web, docs]
 depends_on: [T0936]
-assignee:
+assignee: claude-worker-T0938
 ---
 
 # T0938: WebGL2 の復元が届かないときの扱いと、諦めた後に作り直すボタン (エディタ・Player。判断が要る)
