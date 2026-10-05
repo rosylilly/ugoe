@@ -1,3 +1,6 @@
+import { loadLocalePreference } from "@ugoe/i18n";
+import { BrokenStorage, MemoryStorage, useLocalStorage } from "@ugoe/i18n/testing";
+import { loadThemePreference } from "@ugoe/ui";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_OUTPUT_SIZE,
@@ -13,25 +16,7 @@ import {
   THEME_STORAGE_KEY,
 } from "./settings";
 
-class MemoryStorage {
-  #items = new Map<string, string>();
-  getItem(key: string) {
-    return this.#items.get(key) ?? null;
-  }
-  setItem(key: string, value: string) {
-    this.#items.set(key, value);
-  }
-  removeItem(key: string) {
-    this.#items.delete(key);
-  }
-}
-
-beforeEach(() => {
-  Object.defineProperty(globalThis, "localStorage", {
-    value: new MemoryStorage(),
-    configurable: true,
-  });
-});
+beforeEach(() => useLocalStorage(new MemoryStorage()));
 
 describe("output size presets", () => {
   it("maps presets to sizes and back", () => {
@@ -53,6 +38,14 @@ describe("storage keys", () => {
     // キーを変えると、覚えた設定が読めなくなる (T0925)。
     expect(LOCALE_STORAGE_KEY).toBe("ugoe-studio.locale");
     expect(THEME_STORAGE_KEY).toBe("ugoe-studio.theme");
+  });
+
+  it("reads the language and the theme the studio kept before the shared helpers (T0937)", () => {
+    // 前の版が書いた値をそのまま置き、共有の読み書き (@ugoe/i18n・@ugoe/ui) で読めることを確かめる。
+    localStorage.setItem("ugoe-studio.locale", "ja");
+    localStorage.setItem("ugoe-studio.theme", "dark");
+    expect(loadLocalePreference(LOCALE_STORAGE_KEY)).toBe("ja");
+    expect(loadThemePreference(THEME_STORAGE_KEY)).toBe("dark");
   });
 });
 
@@ -82,5 +75,10 @@ describe("legacy settings", () => {
     expect(localStorage.getItem("ugoe-viewer.idle-motion.models")).toBeNull();
     expect(localStorage.getItem("ugoe-viewer.lighting")).toBeNull();
     expect(localStorage.getItem(`${PLAYER_STORAGE_PREFIX}.lighting`)).toBe("{}");
+  });
+
+  it("does not throw when localStorage cannot be used", () => {
+    useLocalStorage(new BrokenStorage());
+    expect(() => forgetLegacySettings()).not.toThrow();
   });
 });

@@ -3,7 +3,8 @@
 // (前からのキーのまま。ビューアが覚えたものを失わない)。
 //
 // localStorage は引くだけで例外になる環境 (保存を禁止したブラウザ) や、書くと容量で例外になることがある。
-// ここの読み書きはすべて try の中で行い、読めなければ「覚えていない」、書けなければ何もしない (例外を出さない)。
+// 読み書きは @ugoe/i18n の `readStoredItem` などを通し、読めなければ「覚えていない」、書けなければ何もしない (例外を出さない。T0937)。
+import { readStoredItem, removeStoredItem, writeStoredItem } from "@ugoe/i18n";
 
 /** 接頭辞を省いたときの接頭辞 (ビューア)。 */
 export const DEFAULT_STORAGE_PREFIX = "ugoe-viewer";
@@ -52,29 +53,17 @@ export class PlayerStorage {
 
   /** 覚えた文字列。覚えていない・読めなければ `null`。 */
   get(name: StorageName): string | null {
-    try {
-      return this.#target()?.getItem(this.key(name)) ?? null;
-    } catch {
-      return null;
-    }
+    return readStoredItem(this.key(name), this.#storage);
   }
 
   /** 文字列を覚える。覚えられなくても無視する (今回の値は効く)。 */
   set(name: StorageName, value: string): void {
-    try {
-      this.#target()?.setItem(this.key(name), value);
-    } catch {
-      // 覚えられないだけで、今回の値は効く。
-    }
+    writeStoredItem(this.key(name), value, this.#storage);
   }
 
   /** 忘れる。忘れられなくても無視する。 */
   remove(name: StorageName): void {
-    try {
-      this.#target()?.removeItem(this.key(name));
-    } catch {
-      // 忘れられないだけで、表示には影響しない。
-    }
+    removeStoredItem(this.key(name), this.#storage);
   }
 
   /** 覚えた JSON の値。覚えていない・読めない・壊れた JSON なら `undefined`。 */
@@ -107,10 +96,5 @@ export class PlayerStorage {
   /** この接頭辞で Player が覚えたものをすべて忘れる (アプリの古い値を捨てるとき)。 */
   clear(): void {
     for (const name of Object.values(STORAGE_NAMES)) this.remove(name);
-  }
-
-  #target(): Storage | undefined {
-    // 引くだけで例外になる環境があるので、呼ぶ側の try の中で引く。
-    return this.#storage ?? globalThis.localStorage;
   }
 }

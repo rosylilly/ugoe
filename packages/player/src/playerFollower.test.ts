@@ -1,5 +1,7 @@
 // Player の受け手のモード (スタジオの出力ウィンドウ。フレームの順と適用・覚えるものを書かない。T0931)。
 // wasm と DOM は偽物 (src/testing/)。
+
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { describe, expect, it, vi } from "vitest";
 import { idleMemory } from "./animation";
 import type { FollowFrame, FollowRenderStats } from "./follower";
@@ -7,7 +9,6 @@ import { t } from "./i18n";
 import { modelIdentity } from "./modelMemory";
 import { PlayerStorage } from "./storage";
 import { bundle, fakePuppet, moduleFile } from "./testing/fakePuppet";
-import { MemoryStorage } from "./testing/memoryStorage";
 import {
   container,
   moduleRows,

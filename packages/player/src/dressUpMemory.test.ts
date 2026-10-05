@@ -1,4 +1,5 @@
 import { setLocale } from "@ugoe/i18n";
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type DressUpSet,
@@ -13,7 +14,6 @@ import {
 } from "./dressUpMemory";
 import type { ModelFile } from "./modelFile";
 import { PlayerStorage } from "./storage";
-import { MemoryStorage } from "./testing/memoryStorage";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));

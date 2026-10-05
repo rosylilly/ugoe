@@ -7,29 +7,9 @@ import {
   setLocalePreference,
 } from "./preference";
 
+import { BrokenStorage, MemoryStorage, useLocalStorage } from "./testing";
+
 const KEY = "ugoe-test.locale";
-
-/** 最小の Storage (getItem と setItem だけ使う)。 */
-function memoryStorage(): Storage {
-  const map = new Map<string, string>();
-  return {
-    getItem: (key: string) => map.get(key) ?? null,
-    setItem: (key: string, value: string) => void map.set(key, value),
-  } as Storage;
-}
-
-const brokenStorage = {
-  getItem() {
-    throw new Error("blocked");
-  },
-  setItem() {
-    throw new Error("blocked");
-  },
-} as unknown as Storage;
-
-function useLocalStorage(storage: Storage | undefined) {
-  Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
-}
 
 afterEach(() => {
   useLocalStorage(undefined);
@@ -39,7 +19,7 @@ afterEach(() => {
 
 describe("loadLocalePreference / saveLocalePreference", () => {
   it("follows the OS until a language is chosen, and remembers the choice under the key", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     expect(loadLocalePreference(KEY, storage)).toBe("system");
     saveLocalePreference(KEY, "ja", storage);
     expect(storage.getItem(KEY)).toBe("ja");
@@ -51,7 +31,7 @@ describe("loadLocalePreference / saveLocalePreference", () => {
 
   it("reads the values the apps saved before T0925", () => {
     // 前からの値 ("system"・言語のタグ) をそのまま読む (覚えた設定を引き継ぐ)。
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     for (const value of ["system", "en", "ja"]) {
       storage.setItem(KEY, value);
       expect(loadLocalePreference(KEY, storage)).toBe(value);
@@ -59,7 +39,7 @@ describe("loadLocalePreference / saveLocalePreference", () => {
   });
 
   it("ignores unknown values", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     for (const value of ["fr", "ja-JP", "", "JA"]) {
       storage.setItem(KEY, value);
       expect(loadLocalePreference(KEY, storage)).toBe("system");
@@ -67,15 +47,15 @@ describe("loadLocalePreference / saveLocalePreference", () => {
   });
 
   it("works without a usable localStorage", () => {
-    expect(loadLocalePreference(KEY, brokenStorage)).toBe("system");
-    expect(() => saveLocalePreference(KEY, "en", brokenStorage)).not.toThrow();
+    expect(loadLocalePreference(KEY, new BrokenStorage())).toBe("system");
+    expect(() => saveLocalePreference(KEY, "en", new BrokenStorage())).not.toThrow();
     useLocalStorage(undefined);
     expect(loadLocalePreference(KEY)).toBe("system");
     expect(() => saveLocalePreference(KEY, "en")).not.toThrow();
   });
 
   it("uses globalThis.localStorage when no storage is given", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     useLocalStorage(storage);
     saveLocalePreference(KEY, "ja");
     expect(storage.getItem(KEY)).toBe("ja");
@@ -85,7 +65,7 @@ describe("loadLocalePreference / saveLocalePreference", () => {
 
 describe("initLocale / setLocalePreference", () => {
   it("applies the remembered preference and remembers changes under the same key", async () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     storage.setItem(KEY, "ja");
     useLocalStorage(storage);
     await initLocale(KEY);
@@ -99,7 +79,7 @@ describe("initLocale / setLocalePreference", () => {
   });
 
   it("passes the OS language from the app", async () => {
-    useLocalStorage(memoryStorage());
+    useLocalStorage(new MemoryStorage());
     await initLocale(KEY, async () => "ja-JP");
     expect(getLocalePreference()).toBe("system");
     expect(getLocale()).toBe("ja");
@@ -108,7 +88,7 @@ describe("initLocale / setLocalePreference", () => {
   });
 
   it("keeps navigator.languages when the OS language is unavailable", async () => {
-    useLocalStorage(memoryStorage());
+    useLocalStorage(new MemoryStorage());
     setSystemLanguages(["ja-JP"]);
     await initLocale(KEY, async () => null);
     expect(getLocale()).toBe("ja");
@@ -123,7 +103,7 @@ describe("initLocale / setLocalePreference", () => {
   });
 
   it("drops the OS language of an earlier call that finished late", async () => {
-    useLocalStorage(memoryStorage());
+    useLocalStorage(new MemoryStorage());
     let finishFirst: (tag: string) => void = () => {};
     const first = initLocale(KEY, () => new Promise<string>((resolve) => (finishFirst = resolve)));
     await initLocale(KEY, async () => "en-US");

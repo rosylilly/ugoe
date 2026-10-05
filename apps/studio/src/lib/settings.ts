@@ -1,5 +1,6 @@
 // 操作ウィンドウが覚える設定 (localStorage。言語・テーマ) と、出力ウィンドウの大きさのプリセットと刻みの速さ (docs/studio.md#出力ウィンドウ)。
 // 出力の大きさと刻みの速さはプロファイル (lib/profile.ts の `Profile.output`) に持つ (T0802・T0827)。
+import { removeStoredItem } from "@ugoe/i18n";
 import { PlayerStorage } from "@ugoe/player";
 
 /** 画面の言語の設定のキー (@ugoe/i18n の initLocale に渡す)。 */
@@ -68,12 +69,7 @@ export function parseTickRate(value: number | null | undefined): TickRate {
 
 /** 前に覚えていて、今は使わない設定を消す (`LEGACY_STORAGE_KEYS` と `LEGACY_PLAYER_STORAGE_PREFIX`)。 */
 export function forgetLegacySettings(): void {
-  for (const key of LEGACY_STORAGE_KEYS) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // 消せなくても読まないので害は無い。
-    }
-  }
+  // 消せなくても読まないので害は無い (removeStoredItem は例外を出さない)。
+  for (const key of LEGACY_STORAGE_KEYS) removeStoredItem(key);
   new PlayerStorage(LEGACY_PLAYER_STORAGE_PREFIX).clear();
 }

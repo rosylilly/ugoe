@@ -29,7 +29,7 @@ src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値�
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
 src/screenshot.ts        スクリーンショットの画素の検査・RGBA から PNG への変換・既定の名前の日時・パスのヘッダー (エディタとも共有。T0730)
 src/storage.ts           覚えるものの localStorage の読み書き (PlayerStorage: 接頭辞と Storage の組。T0930)
-src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備・localStorage の代わり。T0933)。index.ts から出さない
+src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備。T0933。localStorage の代わりは `@ugoe/i18n/testing` の `MemoryStorage`)。index.ts から出さない
 ```
 
 画面の部品 (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
@@ -66,11 +66,17 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは「接頭辞 + `.` + 名前」(`src/storage.ts`。T0930)。
   接頭辞は `PlayerHost.storagePrefix` で渡し、省くとビューアの `ugoe-viewer` (前から覚えたものを失わない)。スタジオの出力ウィンドウは
   `ugoe-studio.player`。名前の一覧は `STORAGE_NAMES` (下の表)。`PlayerHost.storage` で覚える先 (`Storage`) も差し替えられる (テスト)。
-  - 読み書きはすべて `PlayerStorage` (`player.storage`) を通す。localStorage を引くだけで例外になる環境・壊れた JSON・容量の超過では、
+  - 読み書きはすべて `PlayerStorage` (`player.storage`) を通す (中は `@ugoe/i18n` の `readStoredItem` など。T0937)。localStorage を引くだけで例外になる環境・壊れた JSON・容量の超過では、
     覚えていないものとして動き、例外を出さない。`load*`・`save*` の関数と `ModelMemory` はこれを受け取る。
   - Player の外で覚えるもの (ビューアの「覚えたもの」の一覧の並び `loadRememberedOrder`・`saveRememberedOrder`) も
     `player.storage` を渡して同じ接頭辞で覚える。
   - `PlayerStorage.clear()` はその接頭辞で覚えたものをすべて消す (アプリが古い値を捨てるとき)。
+  - **保存の形の版 (T0937):** `ModelMemory` の値 (`{version, entries}`) が今より新しい版 (整数で今の版より大きい。新しい版のアプリが
+    同じ localStorage に覚えた) なら、読まずに、書き換えも消しもしない。その間の覚える・忘れる・すべて忘れるは入れ物の中だけで効き、
+    起動し直すと残らない (1 つのキーに多くのモデルの値が入るので、1 つ覚えるだけで新しい版の値をすべて失わないように)。
+    壊れた値・版の無い値は、前と同じく次に覚えるときに書き直す。版を上げるときは、前の版の値を今の形に直して読む。
+    1 つの値だけを持つもの (`lighting` の `{version, settings}`) は、エディタ・スタジオの設定と同じく、起動では書かず、
+    利用者が変えたときに今の版で書く (T0011)。
 
   | 名前 (`STORAGE_NAMES`) | キーの名前の部分 | 値 |
   | --- | --- | --- |

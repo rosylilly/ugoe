@@ -12,6 +12,8 @@ src/i18n.svelte.ts      i18next の 1 つのインスタンスと、今の言語
 src/languages.json      対応する言語の一覧 (原文の言語・言語自身での名前・欠けのない訳として検査するか)。検査のスクリプトも読む
 src/languages.ts        上の一覧の型 (Locale・LocalePreference)
 src/preference.ts       言語の設定を覚える・起動時に戻す (アプリが渡すキーで localStorage に)。initLocale・setLocalePreference
+src/storage.ts          localStorage の読み書き (例外を出さない)。readStoredItem・writeStoredItem・removeStoredItem (T0937)
+src/testing.ts          テスト用の部品 (`@ugoe/i18n/testing`)。MemoryStorage・BrokenStorage・useLocalStorage
 src/detect.ts           言語の検出 (BCP 47 の言語の部分で、対応する最初の言語を選ぶ)
 src/format.ts           数値・日付・相対時間・一覧の書式 (Intl を今の言語で使う)
 src/rich.ts / RichText.svelte  訳文の中の印 (`<link>…</link>`) をスニペットで描く
@@ -70,6 +72,18 @@ export const t = translator("face-tracking");
   使えない localStorage (例外を出す・無い) では覚えず、覚えていない・知らない値は `"system"` として読む。
   キーはアプリの前からのもの (`ugoe-editor.locale`・`ugoe-viewer.locale`・`ugoe-studio.locale`) で、値も前と同じ (`system`・`en`・`ja`)。
 - `<html lang>` は今の言語に合わせる。
+
+### localStorage の読み書き (T0937)
+
+- 設定を localStorage に覚える処理は `src/storage.ts` の `readStoredItem(key, storage?)`・`writeStoredItem(key, value, storage?)`・
+  `removeStoredItem(key, storage?)` を通す。言語 (`preference.ts`)・テーマ (`@ugoe/ui`)・Player が覚えるもの (`@ugoe/player` の
+  `PlayerStorage`)・スタジオの古い設定の片付けが使う。翻訳とは別の役目だが、3 つのアプリとすべての共有の部品が依存する一番下の
+  パッケージなのでここに置く。
+- localStorage を引くだけで例外になる環境 (保存を禁止したブラウザ)・無い環境・容量の超過でも例外を出さない。読めなければ `null`
+  (覚えていない)、書けなければ何もしない。`storage` を省くと呼ぶたびに `globalThis.localStorage` を引く。
+- テストは `@ugoe/i18n/testing` の `MemoryStorage` (Map に覚える `Storage`)・`BrokenStorage` (すべて例外を出す)・
+  `useLocalStorage(storage)` (`globalThis.localStorage` を置き換える) を使う。パッケージとアプリのテストで写しを持たない。
+  画面のコードからは import しない。
 - ビューアは設定の言語 (OS に合わせる・日本語・English) で切り替える (T0723)。エディタは設定の「General」の言語 (OS に合わせる・English・日本語) で切り替える (T0663)。
 
 ### OS の言語

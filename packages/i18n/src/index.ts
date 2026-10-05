@@ -31,6 +31,7 @@ export {
 } from "./preference";
 export { default as RichText } from "./RichText.svelte";
 export { parseRich, type RichPart } from "./rich";
+export { readStoredItem, removeStoredItem, writeStoredItem } from "./storage";
 
 /**
  * 名前空間 → 原文 (英語) のカタログの型。パッケージは自分のカタログを足し、`translator()` の `t()` のキーを型で検査させる:

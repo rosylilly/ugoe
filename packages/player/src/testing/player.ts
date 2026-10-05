@@ -1,11 +1,12 @@
 // テスト用の部品 (配布物に入らない。src/index.ts からは出さない)。偽の wasm と DOM で Player を動かす。
 // テストのファイルは `@ugoe/face-tracking` を `./testing/faceTracking` に差し替え、先頭で `setupPlayer()` を呼ぶ。
+
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { beforeAll, beforeEach, vi } from "vitest";
 import type { PlayerHost, Player as PlayerType } from "../player.svelte";
 import type { UgoeWasmModule, WebPuppet } from "../wasm";
 import { tracked } from "./faceTracking";
 import { FakeCanvas, type FakeOptions, fakePuppet } from "./fakePuppet";
-import { MemoryStorage } from "./memoryStorage";
 
 /** WebPuppet.create が返す約束 (テストが好きな時に解く)。 */
 export const pending: { canvas: FakeCanvas; resolve: (p: WebPuppet) => void }[] = [];

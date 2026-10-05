@@ -1,3 +1,4 @@
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { describe, expect, it } from "vitest";
 import type { ModelFile } from "./modelFile";
 import {
@@ -9,7 +10,6 @@ import {
   sameModel,
 } from "./modelMemory";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
-import { MemoryStorage } from "./testing/memoryStorage";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
 const file = (name: string, content: Uint8Array, location?: ModelFile["location"]): ModelFile =>
@@ -166,6 +166,45 @@ describe("ModelMemory", () => {
     expect(memory.get(id(2))).toBe(2);
     memory.set(id(3), 3);
     expect(memory.models().map((m) => m.name)).toEqual(["m3", "m2"]);
+  });
+
+  it("keeps values a newer version wrote, and remembers only for this session (T0937)", () => {
+    const storage = new MemoryStorage();
+    const newer = JSON.stringify({ version: 2, entries: [{ model: id(1), value: { v2: 10 } }] });
+    storage.setItem(KEY, newer);
+    const memory = new ModelMemory(store(storage), NAME, numberValue, { limit: 10 });
+    // 読めない (形を知らない) ので覚えていないものとして動く。
+    expect(memory.get(id(1))).toBeNull();
+    expect(memory.entries()).toEqual([]);
+    // 覚える・忘れる・すべて忘れるは、このセッションの間だけ効き、新しい版の値は書き換えない。
+    memory.set(id(2), 20);
+    memory.set(id(3), 30);
+    expect(memory.get(id(2))).toBe(20);
+    expect(memory.models().map((m) => m.name)).toEqual(["m3", "m2"]);
+    memory.delete(id(3));
+    expect(memory.models().map((m) => m.name)).toEqual(["m2"]);
+    expect(storage.getItem(KEY)).toBe(newer);
+    memory.clear();
+    expect(memory.entries()).toEqual([]);
+    expect(storage.getItem(KEY)).toBe(newer);
+    // 起動し直すと (別の入れ物)、このセッションで覚えたものは無い。新しい版の値は残る。
+    expect(new ModelMemory(store(storage), NAME, numberValue, { limit: 10 }).get(id(2))).toBeNull();
+  });
+
+  it("overwrites broken values and versions that are not newer", () => {
+    // 壊れた値・版の無い値・整数でない版は、前と同じく次に覚えるときに書き直す。
+    for (const text of [
+      "{not json",
+      "[]",
+      '{"entries":[]}',
+      '{"version":"2","entries":[]}',
+      '{"version":1.5}',
+    ]) {
+      const storage = new MemoryStorage();
+      storage.setItem(KEY, text);
+      new ModelMemory(store(storage), NAME, numberValue, { limit: 10 }).set(id(1), 1);
+      expect(JSON.parse(storage.getItem(KEY) ?? "null")).toMatchObject({ version: 1 });
+    }
   });
 
   it("skips entries whose parser throws", () => {

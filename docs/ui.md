@@ -67,6 +67,8 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
   (`ugoe-editor.theme`・`ugoe-viewer.theme`・`ugoe-studio.theme`) に覚えます (T0909)。
   言語も同じ流儀で、`@ugoe/i18n` の `initLocale(key, OS の言語を取る関数)` に `<アプリ>.locale` のキーを渡し、
   設定の画面は `setLocalePreference()` で切り替えて覚えます (T0925。[packages/i18n/README.md の「言語」](../packages/i18n/README.md#言語))。
+  localStorage の読み書きは、テーマ・言語・`@ugoe/player` の覚えるものとも `@ugoe/i18n` の `readStoredItem` などを通し、
+  使えない localStorage でも例外を出しません (T0937。[packages/i18n/README.md](../packages/i18n/README.md#localstorage-の読み書き-t0937))。
   起動時のちらつきを避けるため、各アプリの `index.html` の `<head>` で同じキーを読んで先に `data-theme` を付けます。
   CSS の変数を JS で読むところ (エディタのビューポートの背景) は `currentTheme()` で変化を知ります。スタジオの出力ウィンドウには効かせません (透過のまま)。
   `color-scheme` も合わせて切り替え、スクロールバーやフォームの標準の部品の色もそろえます。

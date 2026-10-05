@@ -68,7 +68,10 @@ export interface ModelMemoryOptions {
   now?: () => number;
 }
 
-/** 保存の形の版。変えたら古いものは読まずに捨てる。 */
+/**
+ * 保存の形の版。上げるときは、前の版の値を `#read` で今の形に直して読む (次に覚えるときに今の版で書く)。
+ * 今より新しい版の値は読めないが書き換えない (`ModelMemory` の説明。T0937)。
+ */
 const STORAGE_VERSION = 1;
 
 /** 覚えた項目。`at` は最後に覚えた日時 (ミリ秒。T0717)。日時を持たない前の保存値から読んだ項目には無い。 */
@@ -84,7 +87,12 @@ type Entry<T> = MemoryEntry<T>;
  * モデルごとの値を localStorage の 1 つのキー (`store` の `name`) に覚える。値の形は `parse` が確かめる (形の違う項目は読み飛ばす)。
  * 保存の形は `{"version": 1, "entries": [{"model": ModelIdentity, "value": T, "at": number}]}` で、最近使った順。
  * `at` (覚えた日時、T0717) は後から足したので無くてもよい (版は変えない。無い項目は日時なしとして読む)。
- * localStorage が使えない・壊れた値・版の違いでは、何も覚えていないものとして動き、例外を出さない。
+ * localStorage が使えない・壊れた値では、何も覚えていないものとして動き、例外を出さない (壊れた値は次に覚えるときに書き直す)。
+ *
+ * 今より新しい版 (整数で `STORAGE_VERSION` より大きい) の値は、新しい版のアプリが覚えたもの (同じ localStorage を
+ * 古い版のアプリで開いた)。形を知らないので読まないが、書き換えも消しもしない (T0937。1 つのキーに多くのモデルの値が入るので、
+ * 1 つ覚えるだけで新しい版の値がすべて失われるため)。その間は覚える・忘れる・すべて忘れるがこの入れ物の中だけで効き、
+ * 起動し直すと残らない。
  */
 export class ModelMemory<T> {
   readonly #store: PlayerStorage;
@@ -92,6 +100,8 @@ export class ModelMemory<T> {
   readonly #parse: (value: unknown) => T | null;
   readonly #limit: number;
   readonly #now: () => number;
+  /** 新しい版の値があってキーに書けない間、このセッションで覚えたもの。 */
+  #session: Entry<T>[] = [];
 
   constructor(
     store: PlayerStorage,
@@ -139,13 +149,22 @@ export class ModelMemory<T> {
     return this.#read();
   }
 
-  /** すべて忘れる。 */
+  /** すべて忘れる (新しい版の値は消さない)。 */
   clear(): void {
-    this.#store.remove(this.#name);
+    this.#session = [];
+    if (!this.#newerVersion()) this.#store.remove(this.#name);
+  }
+
+  /** キーにある値が今より新しい版か。 */
+  #newerVersion(saved: unknown = this.#store.getJson(this.#name)): boolean {
+    if (typeof saved !== "object" || saved === null) return false;
+    const { version } = saved as Record<string, unknown>;
+    return Number.isInteger(version) && (version as number) > STORAGE_VERSION;
   }
 
   #read(): Entry<T>[] {
     const saved = this.#store.getJson(this.#name);
+    if (this.#newerVersion(saved)) return this.#session;
     if (typeof saved !== "object" || saved === null) return [];
     const { version, entries } = saved as Record<string, unknown>;
     if (version !== STORAGE_VERSION || !Array.isArray(entries)) return [];
@@ -174,6 +193,7 @@ export class ModelMemory<T> {
   }
 
   #write(entries: Entry<T>[]): void {
-    this.#store.setJson(this.#name, { version: STORAGE_VERSION, entries });
+    if (this.#newerVersion()) this.#session = entries;
+    else this.#store.setJson(this.#name, { version: STORAGE_VERSION, entries });
   }
 }

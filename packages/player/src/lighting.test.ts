@@ -1,4 +1,5 @@
 import { setLocale } from "@ugoe/i18n";
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   anglesFromPad,
@@ -30,7 +31,6 @@ import {
 } from "./lighting";
 import { type ModelIdentity, modelIdentity } from "./modelMemory";
 import { PlayerStorage } from "./storage";
-import { MemoryStorage } from "./testing/memoryStorage";
 
 /** 前からのビューアの接頭辞で `storage` に覚える入れ物。 */
 const store = (storage: Storage) => new PlayerStorage(undefined, storage);

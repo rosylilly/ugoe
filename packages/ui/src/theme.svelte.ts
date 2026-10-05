@@ -3,6 +3,7 @@
 // 設定は localStorage に `<アプリ>.theme` のキーで覚える (言語の `<アプリ>.locale` と同じ流儀)。
 // 起動時のちらつきを避けるため、アプリの index.html の <head> にも同じキーを読んで data-theme を付ける小さなスクリプトを置く
 // (README.md の「テーマ」)。
+import { readStoredItem, writeStoredItem } from "@ugoe/i18n";
 
 /** テーマの設定。`system` は OS に合わせる。 */
 export type ThemePreference = "system" | "light" | "dark";
@@ -18,21 +19,13 @@ export function isThemePreference(value: unknown): value is ThemePreference {
 
 /** 覚えた設定。覚えていない・読めない・知らない値なら「OS に合わせる」。 */
 export function loadThemePreference(key: string, storage?: Storage): ThemePreference {
-  try {
-    const v = (storage ?? globalThis.localStorage)?.getItem(key);
-    return isThemePreference(v) ? v : "system";
-  } catch {
-    return "system";
-  }
+  const v = readStoredItem(key, storage);
+  return isThemePreference(v) ? v : "system";
 }
 
 /** 設定を覚える。覚えられなくても動く (次に起動したときは OS に合わせる)。 */
 export function saveThemePreference(key: string, value: ThemePreference, storage?: Storage): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(key, value);
-  } catch {
-    // 使えない localStorage (プライベートモードなど) では覚えない。
-  }
+  writeStoredItem(key, value, storage);
 }
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";

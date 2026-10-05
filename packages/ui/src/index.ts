@@ -29,7 +29,7 @@ export { default as Toolbar } from "./components/Toolbar.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
 export { default as TooltipProvider } from "./components/TooltipProvider.svelte";
 export { mergeAttributes, type TriggerAttributes } from "./props";
-export { currentTheme, initTheme, type Theme } from "./theme.svelte";
+export { currentTheme, initTheme, loadThemePreference, type Theme } from "./theme.svelte";
 export { showToast, type ToastOptions } from "./toast.svelte";
 export type {
   ButtonBaseProps,

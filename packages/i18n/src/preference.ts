@@ -3,15 +3,12 @@
 // OS の言語の取り方 (Tauri の tauri-plugin-os など) はアプリが関数で渡す (このパッケージは Tauri に依存しない。README の「OS の言語」)。
 import { setLocale, setSystemLanguages } from "./i18n.svelte";
 import { isLocale, type LocalePreference } from "./languages";
+import { readStoredItem, writeStoredItem } from "./storage";
 
 /** 覚えた言語の設定。覚えていない・読めない・知らない値なら「OS に合わせる」(`"system"`)。 */
 export function loadLocalePreference(key: string, storage?: Storage): LocalePreference {
-  try {
-    const v = (storage ?? globalThis.localStorage)?.getItem(key);
-    return v === "system" || isLocale(v) ? v : "system";
-  } catch {
-    return "system";
-  }
+  const v = readStoredItem(key, storage);
+  return v === "system" || isLocale(v) ? v : "system";
 }
 
 /** 言語の設定を覚える。覚えられなくても動く (次に起動したときは OS に合わせる)。 */
@@ -20,11 +17,7 @@ export function saveLocalePreference(
   value: LocalePreference,
   storage?: Storage,
 ): void {
-  try {
-    (storage ?? globalThis.localStorage)?.setItem(key, value);
-  } catch {
-    // 使えない localStorage (プライベートモードなど) では覚えない。
-  }
+  writeStoredItem(key, value, storage);
 }
 
 /** OS の言語を取る関数。BCP 47 のタグか、その一覧 (前ほど優先)。取れなければ `null`。 */

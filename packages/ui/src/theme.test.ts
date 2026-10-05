@@ -1,3 +1,4 @@
+import { BrokenStorage } from "@ugoe/i18n/testing";
 import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ThemeSetting from "./components/ThemeSetting.svelte";
@@ -58,14 +59,7 @@ describe("theme preference storage", () => {
   });
 
   it("works without a usable storage", () => {
-    const broken = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    } as unknown as Storage;
+    const broken = new BrokenStorage();
     expect(loadThemePreference(KEY, broken)).toBe("system");
     expect(() => saveThemePreference(KEY, "light", broken)).not.toThrow();
   });

@@ -1,40 +1,12 @@
+import { BrokenStorage, MemoryStorage } from "@ugoe/i18n/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_STORAGE_PREFIX, PlayerStorage, STORAGE_NAMES } from "./storage";
-
-/** 最小の Storage (Map に覚える)。 */
-function memoryStorage(): Storage & { items: Map<string, string> } {
-  const items = new Map<string, string>();
-  return {
-    items,
-    getItem: (k) => items.get(k) ?? null,
-    setItem: (k, v) => void items.set(k, v),
-    removeItem: (k) => void items.delete(k),
-    clear: () => items.clear(),
-    key: (i) => [...items.keys()][i] ?? null,
-    get length() {
-      return items.size;
-    },
-  };
-}
-
-/** 読み書きのたびに例外を出す Storage (保存を禁止したブラウザ・容量の超過)。 */
-const broken = {
-  getItem: () => {
-    throw new Error("denied");
-  },
-  setItem: () => {
-    throw new Error("quota");
-  },
-  removeItem: () => {
-    throw new Error("denied");
-  },
-} as unknown as Storage;
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PlayerStorage", () => {
   it("keeps the viewer's keys when the prefix is omitted", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     const store = new PlayerStorage(undefined, storage);
     expect(store.prefix).toBe(DEFAULT_STORAGE_PREFIX);
     // 前からのビューアのキー (接頭辞を渡せるようにする前に覚えたものを読めるように)。
@@ -53,19 +25,19 @@ describe("PlayerStorage", () => {
   });
 
   it("reads and writes only under its own prefix", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     const viewer = new PlayerStorage(undefined, storage);
     const studio = new PlayerStorage("ugoe-studio.player", storage);
     viewer.set(STORAGE_NAMES.rememberedOrder, "name");
     expect(studio.get(STORAGE_NAMES.rememberedOrder)).toBeNull();
     studio.setJson(STORAGE_NAMES.trackingKept, ["EyeLOpen"]);
-    expect(storage.items.get("ugoe-studio.player.motion-over-tracking.kept")).toBe('["EyeLOpen"]');
+    expect(storage.getItem("ugoe-studio.player.motion-over-tracking.kept")).toBe('["EyeLOpen"]');
     expect(viewer.getJson(STORAGE_NAMES.trackingKept)).toBeUndefined();
     expect(studio.getJson(STORAGE_NAMES.trackingKept)).toEqual(["EyeLOpen"]);
   });
 
   it("remembers on and off and falls back otherwise", () => {
-    const store = new PlayerStorage("p", memoryStorage());
+    const store = new PlayerStorage("p", new MemoryStorage());
     expect(store.getToggle(STORAGE_NAMES.autoIdle, true)).toBe(true);
     store.setToggle(STORAGE_NAMES.autoIdle, false);
     expect(store.getToggle(STORAGE_NAMES.autoIdle, true)).toBe(false);
@@ -76,26 +48,23 @@ describe("PlayerStorage", () => {
   });
 
   it("treats broken JSON as nothing remembered", () => {
-    const store = new PlayerStorage("p", memoryStorage());
+    const store = new PlayerStorage("p", new MemoryStorage());
     store.set(STORAGE_NAMES.lighting, "{not json");
     expect(store.getJson(STORAGE_NAMES.lighting)).toBeUndefined();
   });
 
   it("forgets everything under its prefix and nothing else", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     const old = new PlayerStorage("ugoe-viewer", storage);
     for (const name of Object.values(STORAGE_NAMES)) old.set(name, "x");
     storage.setItem("ugoe-viewer.locale", "ja");
     new PlayerStorage("ugoe-studio.player", storage).set(STORAGE_NAMES.lighting, "y");
     old.clear();
-    expect([...storage.items.keys()].sort()).toEqual([
-      "ugoe-studio.player.lighting",
-      "ugoe-viewer.locale",
-    ]);
+    expect(storage.keys().sort()).toEqual(["ugoe-studio.player.lighting", "ugoe-viewer.locale"]);
   });
 
   it("never throws when the storage cannot be used", () => {
-    const store = new PlayerStorage("p", broken);
+    const store = new PlayerStorage("p", new BrokenStorage());
     expect(store.get(STORAGE_NAMES.lighting)).toBeNull();
     expect(store.getJson(STORAGE_NAMES.lighting)).toBeUndefined();
     expect(store.getToggle(STORAGE_NAMES.autoIdle, true)).toBe(true);
@@ -105,11 +74,11 @@ describe("PlayerStorage", () => {
   });
 
   it("uses localStorage when no storage is given, even if reading it throws", () => {
-    const storage = memoryStorage();
+    const storage = new MemoryStorage();
     vi.stubGlobal("localStorage", storage);
     const store = new PlayerStorage();
     store.set(STORAGE_NAMES.rememberedOrder, "name");
-    expect(storage.items.get("ugoe-viewer.remembered-order")).toBe("name");
+    expect(storage.getItem("ugoe-viewer.remembered-order")).toBe("name");
 
     // 引くだけで例外になる環境。
     Object.defineProperty(globalThis, "localStorage", {
