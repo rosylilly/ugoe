@@ -437,7 +437,7 @@ ADR 0006 は「AI は提案だけを行い、適用は人間が承認する」�
 - `propose_edit` は `Command` の列 (`ugoe_ai::Proposal` と同じ `title`・`rationale`・`commands`) を受け取り、ドキュメントの複製に `Batch` として適用して、検証の結果・`ApplyReport`・変わる要素の ID (種類ごとの `added`・`removed`・`changed` と、並べ替えなら `reordered`。テクスチャは画像の差し替えも `changed`) を返します。元のドキュメントは変えません (読むだけのツール)。成功すると提案の ID を返します。
 - `apply_proposal` は提案の ID だけを受け取り、`Document::apply` で適用します (1 回の Undo で戻せます)。提案の後にドキュメントが変わっていたら拒否します (承認した差分と違う結果にならないように。Undo で提案を作った状態に戻れば、また使えます)。
 - **状態:** プロジェクトを指すツールの結果は、プロジェクトの状態 (`modified`・`revision`・`can_undo`・`can_redo` など) を返します。`can_undo`・`can_redo` は持ち主の文書の履歴から求めるので、エージェントは戻せない (`can_undo: false`) のに `undo` を求めて利用者に確認を出させずに済みます (T0557)。
-- **エラーのコード:** ツールの実行エラー (`isError`) は文で理由を返し、`structuredContent` にもエディタのメッセージと同じ形 (`code`・`args`・`message`・`cause`・`items`) でコードと引数を載せます (T0557)。すべてのエラーがコードを持ちます: エディタと同じコード (`proposal.*`・`psd.*`・`project.*` など。エディタにつないだときの保存の失敗もエディタのコード)、持ち主の拒否 `host.denied`・時間切れ `host.timed_out`・取り消し `host.cancelled`、それ以外 (引数の誤り・`--root` の外・要素が無いなど) は MCP だけのコード `mcp.*` です (T0563)。`host.*`・`mcp.*` はエージェントが見分けるためのもので、エディタの訳の表 (ADR 0029) には入れません。文は今までと同じで、結果の形は足しただけです。一覧は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#ツールのエラー)。
+- **エラーのコード:** ツールの実行エラー (`isError`) は文で理由を返し、`structuredContent` にもエディタのメッセージと同じ形 (`code`・`args`・`message`・`cause`・`items`) でコードと引数を載せます (T0557)。すべてのエラーがコードを持ちます: エディタと同じコード (`proposal.*`・`psd.*`・`project.*` など。エディタにつないだときの保存の失敗もエディタのコード)、持ち主の拒否 `host.denied`・時間切れ `host.timed_out`・取り消し `host.cancelled`、それ以外 (引数の誤り・`--root` の外・要素が無いなど) は MCP だけのコード `mcp.*` です (T0563)。`host.*`・`mcp.*` はエージェントが見分けるためのもので、エディタの訳の表 (ADR 0029) には入れません。文にはコードを付けません (コードは `structuredContent` で読みます)。一覧は [crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#ツールのエラー)。
 - 提案の置き場はエディタと同じ `ugoe_editor_core::Proposals` です (T0637)。提案の結果にはコマンドごとの要約と依存 (`requires`) を付け、`apply_proposal` の `exclude` でコマンドの一部を外して適用できます (外した列も複製で確かめ、通らなければ適用しません)。
 - **承認するのは MCP クライアントの確認です。** Claude Code は、許可していないツールを呼ぶ前にユーザーに確認を求めます。ユーザーは `propose_edit` の差分を見て、`apply_proposal` の呼び出しを許します。`propose_edit`・`get_*`・`render_png` は読むだけ (`readOnlyHint`) なので常に許してよく、`apply_proposal` と `save_project` は常に許す設定にしないことを勧めます。常に許すことは ADR 0006 の「すべての提案を自動で採用する」設定にあたります。
 - 適用してもディスクには書きません。`save_project` を呼んで初めて書きます (`destructiveHint`)。
@@ -477,9 +477,9 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
   利用者の直しはこの上に重ねます。
 - **直して呼び直す:** 番号が範囲の外・語彙にないラベル・範囲の外の値・組んだリグが検証を通らないときは、ツールの実行エラー (`isError`) で理由を返します。エージェントはそれを読んで直し、呼び直します (API の経路の問い直しにあたります)。分類は誤りがあれば何も変えません。
 - **1 回に返す画像:** MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で 25,000 トークン) ので、`get_psd_layers` は既定で 8 枚ずつ返し、`count` (32 枚まで)・`thumbnail_size`・`indices` で調整できます。サムネイルごとに `layer N: 名前` の文を直前に置き、画像と番号の対応が分かるようにします。
-- **PSD を読めないとき:** `import_psd`・`get_psd_layers` の PSD が読み込みの上限を超えるなど読めなければ、ツールの実行エラーの文の
-  末尾にエラーのコードを `(code: psd.channel_limit_exceeded)` の形で付けます (T0554。コードは [docs/editor.md](editor.md#エラーと警告のコード)
-  と同じ)。コードと引数は結果の `structuredContent` にも載ります (下の「エラーのコード」)。上限は既定の値で、MCP から変える引数はありません (エディタと同じ。[読み込みの上限](editor.md#読み込みの上限))。
+- **PSD を読めないとき:** `import_psd`・`get_psd_layers` の PSD が読み込みの上限を超えるなど読めなければ、ツールの実行エラーを
+  返し、結果の `structuredContent` にエラーのコード (`psd.channel_limit_exceeded` など。[docs/editor.md](editor.md#エラーと警告のコード)
+  と同じ) と引数を載せます (上の「エラーのコード」)。ほかのツールのエラーと同じく、文にはコードを付けません。上限は既定の値で、MCP から変える引数はありません (エディタと同じ。[読み込みの上限](editor.md#読み込みの上限))。
   作業用の格子が大きすぎて飛ばしたレイヤーは、`import_psd` の結果の `warnings` に `psd.layer_too_large` で、画像がテクスチャの上限を超えて飛ばしたレイヤーは `psd.layer_texture_too_large` で出ます。
 - **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エージェントの答えはプロジェクトに保存しません。利用者の直しとエディタが残した分類は上のとおりプロジェクトから読む)。開き直したら `get_psd_layers` に `psd` を渡します (エディタが分類を残していれば不要)。
 - **深度:** 深度推定器は使わず、顔に内接する楕円体 (`TurnDepth::Rules`) で振り向かせます。

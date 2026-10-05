@@ -132,8 +132,8 @@ impl PsdSource {
     }
 
     /// PSD を、ファイルの大きさの上限 `max_bytes` と展開の上限 `limits` で読む。読めなければ、エラーのコード
-    /// (`psd.total_limit_exceeded` など。`docs/editor.md#エラーと警告のコード`) を文の後ろに付け、コードと引数
-    /// ([`ToolError::coded`]) も添えて返す (どの上限を超えたかをエージェントが見分けられるように)。
+    /// (`psd.total_limit_exceeded` など。`docs/editor.md#エラーと警告のコード`) と引数 ([`ToolError::coded`]) を
+    /// 添えて返す (どの上限を超えたかをエージェントが `structuredContent` で見分けられるように)。
     fn load_with(path: PathBuf, max_bytes: u64, limits: ImportLimits) -> Result<Self, ToolError> {
         Self::read_with(path, max_bytes, limits).map(|(source, _)| source)
     }
@@ -155,12 +155,8 @@ impl PsdSource {
                 format!("{shown}: {e}"),
             )
         })?;
-        let tree = read_layer_tree(&bytes, limits).map_err(|e| {
-            ToolError::coded(
-                format!("{}: {e} (code: {})", path.display(), e.code()),
-                e.to_message(),
-            )
-        })?;
+        let tree = read_layer_tree(&bytes, limits)
+            .map_err(|e| ToolError::coded(format!("{}: {e}", path.display()), e.to_message()))?;
         let source = Self {
             labels: classify_by_name(&tree),
             by_agent: BTreeSet::new(),
@@ -1194,18 +1190,17 @@ mod tests {
         let err = PsdSource::load_with(psd.clone(), MAX_PSD_FILE_BYTES, limits).unwrap_err();
         assert!(
             err.message().ends_with(
-                "a PSD channel decompresses to 3072 bytes, more than the import limit of 100 bytes \
-                 (code: psd.channel_limit_exceeded)"
+                "a PSD channel decompresses to 3072 bytes, more than the import limit of 100 bytes"
             ),
             "{err}"
         );
+        // 文の末尾にコードは付けない (コードは `structuredContent` で返す)。
+        assert!(!err.message().contains("(code:"), "{err}");
+        assert_eq!(err.detail().code, "psd.channel_limit_exceeded");
         let limits = ImportLimits::default().with_max_total_decompressed(5000);
         let err = PsdSource::load_with(psd.clone(), MAX_PSD_FILE_BYTES, limits).unwrap_err();
-        assert!(
-            err.message().ends_with("(code: psd.total_limit_exceeded)"),
-            "{err}"
-        );
-        // コードと引数は構造でも返す (`structuredContent`)。
+        assert!(!err.message().contains("(code:"), "{err}");
+        // コードと引数は構造で返す (`structuredContent`)。
         let detail = err.detail();
         assert_eq!(detail.code, "psd.total_limit_exceeded");
         assert_eq!(detail.args["max"], 5000u32.into());
