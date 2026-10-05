@@ -1,11 +1,11 @@
 ---
 id: T0565
 title: editor-core の Rig::pendulum の引数をまとめ、ugoe-rigging の Layout の添字の計算を grid_index にそろえるか確かめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, ugoe-rigging]
 depends_on: []
-assignee:
+assignee: claude-worker-T0565
 ---
 
 # T0565: editor-core の Rig::pendulum の引数をまとめ、ugoe-rigging の Layout の添字の計算を grid_index にそろえるか確かめる
