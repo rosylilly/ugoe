@@ -432,9 +432,9 @@ fn source_error_codes_follow_the_crate_codes() {
         check(Coded::code(&error), format!("automesh.{}", error.code()));
     }
     let all = sourced_codes();
-    // 27 (検証) + 27 (推定) + 4 (写像) + 4 (法線マップ) + 13 (合成) + 3 (PSD の読み込み) + 5 (自動メッシュ)。
+    // 27 (検証) + 27 (推定) + 4 (写像) + 4 (法線マップ) + 13 (合成) + 20 (PSD の読み込み) + 5 (自動メッシュ)。
     // 読み取りの誤りで一覧が欠けないように。
-    assert!(all.len() >= 83, "{}", all.len());
+    assert!(all.len() >= 100, "{}", all.len());
     assert_eq!(built, all, "every crate code has a sample");
 }
 

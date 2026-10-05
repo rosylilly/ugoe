@@ -14,17 +14,78 @@ use parse::{RawLayer, Section};
 
 /// 取り込みのエラー。
 ///
+/// 壊れた入力 ([`PsdError::is_invalid`])・対応しない機能 ([`PsdError::is_unsupported`])・読み込みの上限の超過
+/// ([`PsdError::LimitExceeded`]) に分かれ、どれも理由を種類と値で持つ (英語の文は `Display`。T0571)。
 /// 変種を足しても公開 API の破壊的な変更にならないよう `#[non_exhaustive]` にしている
 /// (外の `match` は `_` の腕が要る。T0558)。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PsdError {
-    /// 壊れた入力・途中で切れた入力。
-    #[error("invalid psd: {0}")]
-    Invalid(String),
-    /// 形式としては正しいが対応していない (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ)。
-    #[error("unsupported psd feature: {0}")]
-    Unsupported(String),
+    // ---- 壊れた入力・途中で切れた入力 ----
+    /// 先頭の印が `8BPS` でない (PSD のファイルでない)。
+    #[error("invalid psd: not a psd file (bad signature)")]
+    NotPsd,
+    /// ヘッダの版が 1 (PSD) でも 2 (PSB) でもない。
+    #[error("invalid psd: unknown version {version}")]
+    UnknownVersion { version: u16 },
+    /// `section` を読んでいる途中でデータが終わった。`section` は PSD の形式の区画の名前 (英語。`"layer info"` など)。
+    #[error("invalid psd: unexpected end of data while reading {section}")]
+    Truncated { section: &'static str },
+    /// ヘッダのチャンネル数が 1..=56 の外。
+    #[error("invalid psd: invalid channel count {channels}")]
+    InvalidChannelCount { channels: u16 },
+    /// ヘッダの幅・高さが 1..=30000 の外。
+    #[error("invalid psd: invalid image size {width}x{height}")]
+    InvalidImageSize { width: u32, height: u32 },
+    /// レイヤー (またはマスク) の矩形の幅・高さが負か、上限 (60000) を超える。
+    #[error("invalid psd: layer bounds out of range: {width}x{height} at ({left}, {top})")]
+    LayerBoundsOutOfRange {
+        width: i64,
+        height: i64,
+        left: i32,
+        top: i32,
+    },
+    /// レイヤーのチャンネル数が上限 `max` を超える。
+    #[error("invalid psd: too many channels ({channels})")]
+    TooManyLayerChannels { channels: u16, max: u16 },
+    /// レイヤーの記録のブレンドモードの印が `8BIM` でない。
+    #[error("invalid psd: bad blend mode signature in layer record")]
+    BadBlendModeSignature,
+    /// ZIP で圧縮したチャンネルを展開できない。
+    #[error("invalid psd: bad zip channel data")]
+    BadZipData,
+    /// ZIP で圧縮したチャンネルを展開した大きさ `len` がレイヤーの大きさ `expected` と合わない (バイト)。
+    #[error("invalid psd: zip channel data decodes to {len} bytes, expected {expected}")]
+    ZipLengthMismatch { len: u64, expected: u64 },
+    /// PackBits の行が、行の幅を書ける最も短いバイト数より短い。
+    #[error("invalid psd: rle row is too short for the row width")]
+    RleRowTooShort,
+    /// PackBits の行を展開した長さが行の幅と合わない。
+    #[error("invalid psd: rle row decodes to the wrong length")]
+    RleRowWrongLength,
+    /// レイヤーのない PSD の合成画像のチャンネルが RGB の 3 つに足りない。
+    #[error("invalid psd: rgb image needs 3 channels, found {channels}")]
+    TooFewCompositeChannels { channels: u16 },
+    /// グループの始まりに対応する終わりがない。
+    #[error("invalid psd: group start without a matching group end")]
+    UnbalancedGroups,
+    // ---- 形式としては正しいが対応しない ----
+    /// 大きなドキュメント形式 (PSB)。
+    #[error("unsupported psd feature: large document format (psb) is not supported")]
+    UnsupportedPsb,
+    /// 8・16 ビット以外のチャンネル。`depth` はビット数。
+    #[error("unsupported psd feature: {depth}-bit channels (only 8-bit and 16-bit are supported)")]
+    UnsupportedDepth { depth: u16 },
+    /// RGB 以外のカラーモード。`mode` は PSD のカラーモードの番号 (名前は [`color_mode_name`])。
+    #[error("unsupported psd feature: {} color mode (only rgb is supported)", ColorModeName(*.mode))]
+    UnsupportedColorMode { mode: u16 },
+    /// 仕様にない合成画像の圧縮方式 (`compression` は PSD の番号)。
+    #[error("unsupported psd feature: image data compression {compression}")]
+    UnsupportedCompositeCompression { compression: u16 },
+    /// グループの入れ子が `max` 段より深い。
+    #[error("unsupported psd feature: groups nested deeper than {max} levels")]
+    GroupsTooDeep { max: u32 },
+    // ---- 読み込みの上限 ----
     /// チャンネルを展開した大きさが読み込みの上限 ([`ImportLimits`]) を超える。ファイルが壊れているとは限らない
     /// (上限を上げれば読めることがある)。展開する前に止めるので、`size` の平面は確保していない。
     #[error("{limit} of {size} bytes exceeds the import limit of {max} bytes")]
@@ -40,12 +101,73 @@ pub enum PsdError {
 }
 
 impl PsdError {
-    /// 機械が読む種類 (`"invalid"` など。バリアントの名前の `snake_case`)。値は **変えない**。
+    /// 機械が読む種類 (`"not_psd"` など。バリアントの名前の `snake_case`)。値は **変えない**。
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Invalid(_) => "invalid",
-            Self::Unsupported(_) => "unsupported",
+            Self::NotPsd => "not_psd",
+            Self::UnknownVersion { .. } => "unknown_version",
+            Self::Truncated { .. } => "truncated",
+            Self::InvalidChannelCount { .. } => "invalid_channel_count",
+            Self::InvalidImageSize { .. } => "invalid_image_size",
+            Self::LayerBoundsOutOfRange { .. } => "layer_bounds_out_of_range",
+            Self::TooManyLayerChannels { .. } => "too_many_layer_channels",
+            Self::BadBlendModeSignature => "bad_blend_mode_signature",
+            Self::BadZipData => "bad_zip_data",
+            Self::ZipLengthMismatch { .. } => "zip_length_mismatch",
+            Self::RleRowTooShort => "rle_row_too_short",
+            Self::RleRowWrongLength => "rle_row_wrong_length",
+            Self::TooFewCompositeChannels { .. } => "too_few_composite_channels",
+            Self::UnbalancedGroups => "unbalanced_groups",
+            Self::UnsupportedPsb => "unsupported_psb",
+            Self::UnsupportedDepth { .. } => "unsupported_depth",
+            Self::UnsupportedColorMode { .. } => "unsupported_color_mode",
+            Self::UnsupportedCompositeCompression { .. } => "unsupported_composite_compression",
+            Self::GroupsTooDeep { .. } => "groups_too_deep",
             Self::LimitExceeded { .. } => "limit_exceeded",
+        }
+    }
+
+    /// 壊れた入力・途中で切れた入力か。
+    pub fn is_invalid(&self) -> bool {
+        !self.is_unsupported() && !matches!(self, Self::LimitExceeded { .. })
+    }
+
+    /// 形式としては正しいが対応しない機能か (PSB・8/16 ビット以外・RGB 以外・深すぎるグループ・仕様にない合成画像の圧縮)。
+    pub fn is_unsupported(&self) -> bool {
+        matches!(
+            self,
+            Self::UnsupportedPsb
+                | Self::UnsupportedDepth { .. }
+                | Self::UnsupportedColorMode { .. }
+                | Self::UnsupportedCompositeCompression { .. }
+                | Self::GroupsTooDeep { .. }
+        )
+    }
+}
+
+/// PSD のカラーモードの番号 `mode` の名前 (`"cmyk"` など。小文字の英語)。知らない番号は `None`。
+pub fn color_mode_name(mode: u16) -> Option<&'static str> {
+    Some(match mode {
+        0 => "bitmap",
+        1 => "grayscale",
+        2 => "indexed",
+        3 => "rgb",
+        4 => "cmyk",
+        7 => "multichannel",
+        8 => "duotone",
+        9 => "lab",
+        _ => return None,
+    })
+}
+
+/// [`PsdError::UnsupportedColorMode`] の文のカラーモードの名前 (知らない番号は `unknown (番号)`)。
+struct ColorModeName(u16);
+
+impl fmt::Display for ColorModeName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match color_mode_name(self.0) {
+            Some(name) => f.write_str(name),
+            None => write!(f, "unknown ({})", self.0),
         }
     }
 }
@@ -254,13 +376,13 @@ impl ImportLimits {
 
 /// PSD を既定の上限 ([`ImportLimits::default`]) で取り込む。
 ///
-/// 対応する色空間とビット深度。これ以外は [`PsdError::Unsupported`] になる。
+/// 対応する色空間とビット深度。これ以外は対応しない機能のエラー ([`PsdError::is_unsupported`]) になる。
 /// - 8 ビット・16 ビットの RGB (アルファの有無は問わない)。16 ビットは 8 ビットに丸める
 ///
 /// レイヤーマスク (チャンネル -2 / -3) はレイヤーのアルファに掛ける。
-/// グループの入れ子が 256 段より深いものも [`PsdError::Unsupported`] になる。
+/// グループの入れ子が 256 段より深いものは [`PsdError::GroupsTooDeep`] になる。
 /// 展開した大きさが上限を超えるものは [`PsdError::LimitExceeded`] になる。
-/// 壊れた入力や途中で切れた入力は [`PsdError::Invalid`] を返し、パニックしない。
+/// 壊れた入力や途中で切れた入力は壊れた入力のエラー ([`PsdError::is_invalid`]) を返し、パニックしない。
 pub fn import(bytes: &[u8]) -> Result<LayerTree, PsdError> {
     import_with(bytes, ImportLimits::default())
 }
@@ -300,9 +422,9 @@ pub fn import_with(bytes: &[u8], limits: ImportLimits) -> Result<LayerTree, PsdE
             Some(Section::Divider) => {
                 // 木を作る・複製する・捨てる処理は入れ子の深さだけ再帰するので、深さを抑える。
                 if stack.len() > MAX_GROUP_DEPTH {
-                    return Err(PsdError::Unsupported(format!(
-                        "groups nested deeper than {MAX_GROUP_DEPTH} levels"
-                    )));
+                    return Err(PsdError::GroupsTooDeep {
+                        max: MAX_GROUP_DEPTH as u32,
+                    });
                 }
                 stack.push(Frame::default());
             }
@@ -359,7 +481,7 @@ pub fn import_with(bytes: &[u8], limits: ImportLimits) -> Result<LayerTree, PsdE
     })
 }
 
-/// グループの入れ子の深さの上限。これより深い PSD は [`PsdError::Unsupported`] にする。
+/// グループの入れ子の深さの上限。これより深い PSD は [`PsdError::GroupsTooDeep`] にする。
 const MAX_GROUP_DEPTH: usize = 256;
 
 #[derive(Default)]
@@ -369,7 +491,7 @@ struct Frame {
 }
 
 fn unbalanced() -> PsdError {
-    PsdError::Invalid("group start without a matching group end".into())
+    PsdError::UnbalancedGroups
 }
 
 fn blend_name(key: [u8; 4]) -> String {

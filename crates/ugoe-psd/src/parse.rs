@@ -34,10 +34,12 @@ impl Rect {
         let h = i64::from(self.bottom) - i64::from(self.top);
         let limit = i64::from(MAX_DIMENSION) * 2;
         if !(0..=limit).contains(&w) || !(0..=limit).contains(&h) {
-            return Err(invalid(format!(
-                "layer bounds out of range: {}x{} at ({}, {})",
-                w, h, self.left, self.top
-            )));
+            return Err(PsdError::LayerBoundsOutOfRange {
+                width: w,
+                height: h,
+                left: self.left,
+                top: self.top,
+            });
         }
         // 範囲は上で確かめてある。
         Ok((w as u32, h as u32))
@@ -223,12 +225,8 @@ impl Budget {
     }
 }
 
-fn invalid(msg: impl Into<String>) -> PsdError {
-    PsdError::Invalid(msg.into())
-}
-
-fn truncated(what: &str) -> PsdError {
-    invalid(format!("unexpected end of data while reading {what}"))
+fn truncated(section: &'static str) -> PsdError {
+    PsdError::Truncated { section }
 }
 
 /// 境界検査付きのビッグエンディアン読み取り。
@@ -246,7 +244,7 @@ impl<'a> Reader<'a> {
         self.data.len() - self.pos
     }
 
-    fn bytes(&mut self, n: usize, what: &str) -> Result<&'a [u8], PsdError> {
+    fn bytes(&mut self, n: usize, what: &'static str) -> Result<&'a [u8], PsdError> {
         if n > self.remaining() {
             return Err(truncated(what));
         }
@@ -255,33 +253,33 @@ impl<'a> Reader<'a> {
         Ok(out)
     }
 
-    fn array<const N: usize>(&mut self, what: &str) -> Result<[u8; N], PsdError> {
+    fn array<const N: usize>(&mut self, what: &'static str) -> Result<[u8; N], PsdError> {
         let mut out = [0; N];
         out.copy_from_slice(self.bytes(N, what)?);
         Ok(out)
     }
 
-    fn u8(&mut self, what: &str) -> Result<u8, PsdError> {
+    fn u8(&mut self, what: &'static str) -> Result<u8, PsdError> {
         Ok(self.array::<1>(what)?[0])
     }
 
-    fn u16(&mut self, what: &str) -> Result<u16, PsdError> {
+    fn u16(&mut self, what: &'static str) -> Result<u16, PsdError> {
         Ok(u16::from_be_bytes(self.array(what)?))
     }
 
-    fn i16(&mut self, what: &str) -> Result<i16, PsdError> {
+    fn i16(&mut self, what: &'static str) -> Result<i16, PsdError> {
         Ok(i16::from_be_bytes(self.array(what)?))
     }
 
-    fn u32(&mut self, what: &str) -> Result<u32, PsdError> {
+    fn u32(&mut self, what: &'static str) -> Result<u32, PsdError> {
         Ok(u32::from_be_bytes(self.array(what)?))
     }
 
-    fn i32(&mut self, what: &str) -> Result<i32, PsdError> {
+    fn i32(&mut self, what: &'static str) -> Result<i32, PsdError> {
         Ok(i32::from_be_bytes(self.array(what)?))
     }
 
-    fn rect(&mut self, what: &str) -> Result<Rect, PsdError> {
+    fn rect(&mut self, what: &'static str) -> Result<Rect, PsdError> {
         Ok(Rect {
             top: self.i32(what)?,
             left: self.i32(what)?,
@@ -297,7 +295,7 @@ impl<'a> Reader<'a> {
     }
 
     /// 32 ビットの長さが前に付いたブロックを切り出す。
-    fn block(&mut self, what: &str) -> Result<Reader<'a>, PsdError> {
+    fn block(&mut self, what: &'static str) -> Result<Reader<'a>, PsdError> {
         let len = self.u32(what)? as usize;
         Ok(Reader::new(self.bytes(len, what)?))
     }
@@ -307,16 +305,14 @@ pub(crate) fn parse(bytes: &[u8], limits: ImportLimits) -> Result<Document, PsdE
     let mut budget = Budget::new(limits);
     let mut r = Reader::new(bytes);
     if r.bytes(4, "signature")? != b"8BPS" {
-        return Err(invalid("not a psd file (bad signature)"));
+        return Err(PsdError::NotPsd);
     }
     match r.u16("version")? {
         1 => {}
         2 => {
-            return Err(PsdError::Unsupported(
-                "large document format (psb) is not supported".into(),
-            ));
+            return Err(PsdError::UnsupportedPsb);
         }
-        v => return Err(invalid(format!("unknown version {v}"))),
+        version => return Err(PsdError::UnknownVersion { version }),
     }
     r.bytes(6, "header")?;
     let channels = r.u16("channel count")?;
@@ -325,21 +321,16 @@ pub(crate) fn parse(bytes: &[u8], limits: ImportLimits) -> Result<Document, PsdE
     let depth = r.u16("depth")?;
     let mode = r.u16("color mode")?;
     if !(1..=MAX_CHANNELS).contains(&channels) {
-        return Err(invalid(format!("invalid channel count {channels}")));
+        return Err(PsdError::InvalidChannelCount { channels });
     }
     if !(1..=MAX_DIMENSION).contains(&width) || !(1..=MAX_DIMENSION).contains(&height) {
-        return Err(invalid(format!("invalid image size {width}x{height}")));
+        return Err(PsdError::InvalidImageSize { width, height });
     }
     if depth != 8 && depth != 16 {
-        return Err(PsdError::Unsupported(format!(
-            "{depth}-bit channels (only 8-bit and 16-bit are supported)"
-        )));
+        return Err(PsdError::UnsupportedDepth { depth });
     }
     if mode != 3 {
-        return Err(PsdError::Unsupported(format!(
-            "{} color mode (only rgb is supported)",
-            color_mode_name(mode)
-        )));
+        return Err(PsdError::UnsupportedColorMode { mode });
     }
 
     r.block("color mode data")?;
@@ -378,19 +369,6 @@ pub(crate) fn parse(bytes: &[u8], limits: ImportLimits) -> Result<Document, PsdE
         layers,
         composite,
     })
-}
-
-fn color_mode_name(mode: u16) -> String {
-    match mode {
-        0 => "bitmap".into(),
-        1 => "grayscale".into(),
-        2 => "indexed".into(),
-        4 => "cmyk".into(),
-        7 => "multichannel".into(),
-        8 => "duotone".into(),
-        9 => "lab".into(),
-        m => format!("unknown ({m})"),
-    }
 }
 
 /// レイヤーとマスクの情報の末尾の追加情報から、ビット深度に合うレイヤー情報
@@ -444,7 +422,10 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
     let (width, height) = rect.size()?;
     let channel_count = r.u16("layer channel count")?;
     if channel_count > MAX_CHANNELS {
-        return Err(invalid(format!("too many channels ({channel_count})")));
+        return Err(PsdError::TooManyLayerChannels {
+            channels: channel_count,
+            max: MAX_CHANNELS,
+        });
     }
     let mut channels = Vec::with_capacity(usize::from(channel_count));
     for _ in 0..channel_count {
@@ -457,7 +438,7 @@ fn parse_layer_record(r: &mut Reader<'_>) -> Result<RawLayer, PsdError> {
         });
     }
     if r.bytes(4, "blend mode signature")? != b"8BIM" {
-        return Err(invalid("bad blend mode signature in layer record"));
+        return Err(PsdError::BadBlendModeSignature);
     }
     let blend_key = r.array("blend mode")?;
     let opacity = r.u8("opacity")?;
@@ -688,12 +669,12 @@ fn decode_plane(
 /// zlib ストリームを、ちょうど `len` バイトに展開する。
 fn inflate(data: &[u8], len: usize) -> Result<Vec<u8>, PsdError> {
     let out = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(data, len)
-        .map_err(|e| invalid(format!("bad zip channel data ({:?})", e.status)))?;
+        .map_err(|_| PsdError::BadZipData)?;
     if out.len() != len {
-        return Err(invalid(format!(
-            "zip channel data decodes to {} bytes, expected {len}",
-            out.len()
-        )));
+        return Err(PsdError::ZipLengthMismatch {
+            len: out.len() as u64,
+            expected: len as u64,
+        });
     }
     Ok(out)
 }
@@ -762,7 +743,7 @@ fn decode_rle(
     // `2 * ceil(width / 128)` バイト要る。これより短い行は嘘なので、確保する前に弾く。
     let min_row = width.div_ceil(128) * 2;
     if counts.iter().any(|&count| count < min_row) {
-        return Err(invalid("rle row is too short for the row width"));
+        return Err(PsdError::RleRowTooShort);
     }
     let mut out = Vec::with_capacity(rows * width);
     for count in counts {
@@ -774,7 +755,7 @@ fn decode_rle(
 
 fn unpack_bits(mut src: &[u8], width: usize, out: &mut Vec<u8>) -> Result<(), PsdError> {
     let start = out.len();
-    let overrun = || invalid("rle row decodes to the wrong length");
+    let overrun = || PsdError::RleRowWrongLength;
     while let Some((&header, rest)) = src.split_first() {
         src = rest;
         let written = out.len() - start;
@@ -816,9 +797,7 @@ fn parse_composite(
     budget: &mut Budget,
 ) -> Result<Vec<u8>, PsdError> {
     if channels < 3 {
-        return Err(invalid(format!(
-            "rgb image needs 3 channels, found {channels}"
-        )));
+        return Err(PsdError::TooFewCompositeChannels { channels });
     }
     // 幅・高さは `MAX_DIMENSION` までなので、`plane * 4` は 32 ビットの usize にも収まる (T0012)。
     let plane = width as usize * height as usize;
@@ -836,7 +815,7 @@ fn parse_composite(
             .to_vec(),
         1 => decode_rle(r, row, height, channels)?,
         c => {
-            return Err(PsdError::Unsupported(format!("image data compression {c}")));
+            return Err(PsdError::UnsupportedCompositeCompression { compression: c });
         }
     };
     let planes = to_8bit(planes, depth);
@@ -884,19 +863,18 @@ mod tests {
         // 合計は足りていても (64 倍の目安を満たしても)、1 行でも短ければ展開せずに弾く。
         let data = rle_data(&[7, 3]);
         let err = decode_rle(&mut Reader::new(&data), 256, 2, 1).unwrap_err();
-        assert!(
-            matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
-            "{err:?}"
-        );
+        assert_eq!(err, PsdError::RleRowTooShort);
     }
 
     #[test]
     fn rle_count_table_longer_than_the_input_is_truncated() {
         // 30000 行 × 56 枚の表 (約 3.4 MB) を、4 バイトの入力から確保しない。
         let err = decode_rle(&mut Reader::new(&[0, 2, 0, 2]), 1, 30_000, 56).unwrap_err();
-        assert!(
-            matches!(&err, PsdError::Invalid(m) if m.contains("rle byte counts")),
-            "{err:?}"
+        assert_eq!(
+            err,
+            PsdError::Truncated {
+                section: "rle byte counts"
+            }
         );
     }
 

@@ -11,7 +11,7 @@ use common::{
 };
 use ugoe_psd::{
     DEFAULT_MAX_CHANNEL_DECOMPRESSED, DEFAULT_MAX_TOTAL_DECOMPRESSED, ImportLimit, ImportLimits,
-    ImportWarning, Layer, LayerNode, PsdError, WarningKind, import, import_with,
+    ImportWarning, Layer, LayerNode, PsdError, WarningKind, color_mode_name, import, import_with,
 };
 
 const WIDTH: u32 = LAYERS_WIDTH;
@@ -261,7 +261,14 @@ fn broken_zip_data_is_invalid() {
         let mut broken = bytes.clone();
         broken[at] ^= 0xff;
         let err = import(&broken).unwrap_err();
-        assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
+        assert!(
+            matches!(
+                err,
+                PsdError::BadZipData | PsdError::ZipLengthMismatch { .. }
+            ),
+            "{err:?}"
+        );
+        assert!(err.is_invalid() && !err.is_unsupported(), "{err:?}");
     }
 }
 
@@ -300,7 +307,13 @@ fn zip_bomb_channel_is_rejected_before_inflating() {
         .with_max_channel_decompressed(u64::MAX)
         .with_max_total_decompressed(u64::MAX);
     let err = import_with(&bytes, limits).unwrap_err();
-    assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
+    assert!(
+        matches!(
+            err,
+            PsdError::BadZipData | PsdError::ZipLengthMismatch { .. }
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -390,10 +403,7 @@ fn packbits_channel_larger_than_the_limit_is_rejected_before_decoding() {
         .with_max_channel_decompressed(u64::MAX)
         .with_max_total_decompressed(u64::MAX);
     let err = import_with(&bytes, limits).unwrap_err();
-    assert!(
-        matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
-        "{err:?}"
-    );
+    assert_eq!(err, PsdError::RleRowTooShort);
 }
 
 #[test]
@@ -402,10 +412,7 @@ fn packbits_rows_too_short_for_the_width_are_invalid() {
     // 1 行には少なくとも 2 * ceil(30000 / 128) = 470 バイト要るので、確保せずに壊れた入力にする。
     let bytes = write_psd(4, 4, &[packbits_bomb("bomb", 30_000, 30_000, 2)]);
     let err = import(&bytes).unwrap_err();
-    assert!(
-        matches!(&err, PsdError::Invalid(m) if m.contains("too short")),
-        "{err:?}"
-    );
+    assert_eq!(err, PsdError::RleRowTooShort);
     // 最も短い長さちょうどなら正しいデータとして読める (小さな矩形で確かめる)。
     let tree = import(&write_psd(4, 4, &[packbits_bomb("ok", 300, 2, 6)])).unwrap();
     assert_eq!(layer(&tree.root[0]).rgba, vec![0; 300 * 2 * 4]);
@@ -492,9 +499,56 @@ fn limit_exceeded_tells_which_limit_and_the_size() {
         }
     );
     assert_eq!(total.code(), "limit_exceeded");
-    // ほかの種類のコード。
-    assert_eq!(import(b"not a psd").unwrap_err().code(), "invalid");
-    assert_eq!(PsdError::Unsupported("psb".into()).code(), "unsupported");
+    assert!(!total.is_invalid() && !total.is_unsupported());
+}
+
+/// 壊れた入力・対応しない機能の理由は種類と値で持ち、コードは変種の名前 (T0571)。
+#[test]
+fn error_reasons_carry_their_kind_and_values() {
+    let not_psd = import(b"not a psd").unwrap_err();
+    assert_eq!(not_psd, PsdError::NotPsd);
+    assert_eq!(not_psd.code(), "not_psd");
+    assert!(not_psd.is_invalid() && !not_psd.is_unsupported());
+    assert_eq!(
+        not_psd.to_string(),
+        "invalid psd: not a psd file (bad signature)"
+    );
+
+    let cmyk = import(&header_with(24, &[0, 4])).unwrap_err();
+    assert_eq!(cmyk, PsdError::UnsupportedColorMode { mode: 4 });
+    assert_eq!(cmyk.code(), "unsupported_color_mode");
+    assert!(cmyk.is_unsupported() && !cmyk.is_invalid());
+    assert_eq!(
+        cmyk.to_string(),
+        "unsupported psd feature: cmyk color mode (only rgb is supported)"
+    );
+    assert_eq!(color_mode_name(4), Some("cmyk"));
+    assert_eq!(color_mode_name(5), None);
+    assert_eq!(
+        PsdError::UnsupportedColorMode { mode: 5 }.to_string(),
+        "unsupported psd feature: unknown (5) color mode (only rgb is supported)"
+    );
+
+    let deep = import(&nested_groups(257)).unwrap_err();
+    assert_eq!(deep, PsdError::GroupsTooDeep { max: 256 });
+    assert_eq!(deep.code(), "groups_too_deep");
+
+    let truncated = import(&fixture_bytes()[..20]).unwrap_err();
+    assert_eq!(truncated, PsdError::Truncated { section: "width" });
+    assert_eq!(truncated.code(), "truncated");
+    assert_eq!(
+        truncated.to_string(),
+        "invalid psd: unexpected end of data while reading width"
+    );
+
+    let size = import(&header_with(18, &[0, 0, 0, 0])).unwrap_err();
+    assert_eq!(
+        size,
+        PsdError::InvalidImageSize {
+            width: 0,
+            height: HEIGHT
+        }
+    );
 }
 
 #[test]
@@ -732,7 +786,7 @@ fn flat_psd_becomes_one_layer() {
 fn unbalanced_groups_are_invalid() {
     let layers = vec![W::group_end(), W::raster("a", 0, 0, 1, 1)];
     let err = import(&write_psd_unchecked(2, 2, &layers, &[0; 12])).unwrap_err();
-    assert!(matches!(err, PsdError::Invalid(_)), "{err:?}");
+    assert_eq!(err, PsdError::UnbalancedGroups);
 }
 
 fn header_with(offset: usize, value: &[u8]) -> Vec<u8> {
@@ -743,15 +797,28 @@ fn header_with(offset: usize, value: &[u8]) -> Vec<u8> {
 
 #[test]
 fn rejects_unsupported_documents() {
-    let unsupported = |bytes: &[u8], needle: &str| match import(bytes) {
-        Err(PsdError::Unsupported(msg)) => assert!(msg.contains(needle), "{msg}"),
-        other => panic!("expected unsupported, got {other:?}"),
+    let unsupported = |bytes: &[u8], expected: PsdError| {
+        let err = import(bytes).unwrap_err();
+        assert_eq!(err, expected);
+        assert!(err.is_unsupported(), "{err:?}");
     };
-    unsupported(&header_with(4, &[0, 2]), "psb");
-    unsupported(&header_with(22, &[0, 32]), "32-bit");
-    unsupported(&header_with(22, &[0, 1]), "1-bit");
-    unsupported(&header_with(24, &[0, 4]), "cmyk");
-    unsupported(&header_with(24, &[0, 1]), "grayscale");
+    unsupported(&header_with(4, &[0, 2]), PsdError::UnsupportedPsb);
+    unsupported(
+        &header_with(22, &[0, 32]),
+        PsdError::UnsupportedDepth { depth: 32 },
+    );
+    unsupported(
+        &header_with(22, &[0, 1]),
+        PsdError::UnsupportedDepth { depth: 1 },
+    );
+    unsupported(
+        &header_with(24, &[0, 4]),
+        PsdError::UnsupportedColorMode { mode: 4 },
+    );
+    unsupported(
+        &header_with(24, &[0, 1]),
+        PsdError::UnsupportedColorMode { mode: 1 },
+    );
 }
 
 #[test]
@@ -764,9 +831,10 @@ fn rejects_malformed_headers() {
         header_with(14, &[0, 0, 0, 0]),
         header_with(18, &[0xff, 0xff, 0xff, 0xff]),
     ] {
+        let err = import(&bytes).unwrap_err();
         assert!(
-            matches!(import(&bytes), Err(PsdError::Invalid(_))),
-            "{:?}",
+            err.is_invalid(),
+            "{err:?} {:?}",
             &bytes[..bytes.len().min(26)]
         );
     }
@@ -857,6 +925,6 @@ fn deeply_nested_groups_are_rejected() {
     // レイヤー数の上限 (32767) に近い深さ。
     for depth in [257, 16_000] {
         let err = import(&nested_groups(depth)).unwrap_err();
-        assert!(matches!(err, PsdError::Unsupported(_)), "{err:?}");
+        assert_eq!(err, PsdError::GroupsTooDeep { max: 256 });
     }
 }

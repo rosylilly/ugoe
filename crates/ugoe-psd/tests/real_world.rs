@@ -4,7 +4,7 @@
 //! ファイルが無ければ何もしない。
 //!
 //! - 対応する形式 (8/16 ビット RGB の PSD) なら、取り込みが成功すること (警告はあってよい)
-//! - 対応しない形式 (PSB・8/16 ビット以外・RGB 以外) なら、`PsdError::Unsupported` になること
+//! - 対応しない形式 (PSB・8/16 ビット以外・RGB 以外) なら、対応しない機能のエラー (`PsdError::is_unsupported`) になること
 //! - ImageMagick (`identify`) があれば、画素を持つレイヤーの数が ImageMagick の見方と一致すること
 
 // テストの補助関数でも unwrap を使う (失敗はテストの失敗)。
@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use ugoe_psd::{LayerNode, PsdError, WarningKind, import};
+use ugoe_psd::{LayerNode, WarningKind, import};
 
 fn corpus() -> Vec<PathBuf> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/psd-real");
@@ -78,7 +78,7 @@ fn real_world_psds_import() {
         let result = import(&bytes);
         if !is_supported_format(&bytes) {
             assert!(
-                matches!(result, Err(PsdError::Unsupported(_))),
+                matches!(&result, Err(e) if e.is_unsupported()),
                 "{name}: expected unsupported, got {result:?}"
             );
             continue;

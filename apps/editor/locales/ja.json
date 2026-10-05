@@ -2196,8 +2196,25 @@
       "grid_too_large": "グループの格子 ({{width}} × {{height}} 升) が上限の {{max}} 升を超えます"
     },
     "psd_read": {
-      "invalid": "ファイルが壊れているか途中で切れています: {{detail}}",
-      "unsupported": "対応していない機能を使っています: {{detail}}",
+      "not_psd": "PSD のファイルではありません",
+      "unknown_version": "ヘッダの版 {{version}} を知りません",
+      "truncated": "ファイルが途中で切れています ({{section}} を読んでいるところ)",
+      "invalid_channel_count": "ヘッダのチャンネル数 {{channels}} が正しくありません",
+      "invalid_image_size": "ヘッダの画像の大きさ {{width}} × {{height}} が正しくありません",
+      "layer_bounds_out_of_range": "レイヤーの矩形 ({{left}}, {{top}} にある {{width}} × {{height}}) が範囲の外です",
+      "too_many_layer_channels": "レイヤーのチャンネル数 {{channels}} が上限の {{max}} を超えます",
+      "bad_blend_mode_signature": "レイヤーの記録が壊れています (ブレンドモードの印が違います)",
+      "bad_zip_data": "ZIP で圧縮したチャンネルのデータが壊れています",
+      "zip_length_mismatch": "ZIP で圧縮したチャンネルを展開すると {{len}} バイトになり、{{expected}} バイトと合いません",
+      "rle_row_too_short": "PackBits の行が行の幅に対して短すぎます",
+      "rle_row_wrong_length": "PackBits の行を展開した長さが合いません",
+      "too_few_composite_channels": "合成画像には RGB の 3 チャンネルが要りますが、{{channels}} チャンネルしかありません",
+      "unbalanced_groups": "グループの始まりに対応する終わりがありません",
+      "unsupported_psb": "大きなドキュメント形式 (PSB) には対応していません",
+      "unsupported_depth": "{{depth}} ビットのチャンネルには対応していません (8 ビットと 16 ビットだけ)",
+      "unsupported_color_mode": "カラーモード {{name}} には対応していません (RGB だけ)",
+      "unsupported_composite_compression": "合成画像の圧縮方式 {{compression}} には対応していません",
+      "groups_too_deep": "グループの入れ子が {{max}} 段より深くなっています",
       "limit_exceeded": "チャンネルを展開すると {{size}} バイトになり、取り込みの上限の {{max}} バイトを超えます"
     },
     "automesh": {

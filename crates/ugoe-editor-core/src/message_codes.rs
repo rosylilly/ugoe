@@ -3,7 +3,7 @@
 //!
 //! ほかのクレートのエラーを含むものは、その英語の文を `detail` (`details`) の引数で渡す。検証・合成・推定・法線マップなどの
 //! エラーは、それに加えて元のエラーを原因 (`cause`。検証の一覧は `items`) に載せ、画面はそれを訳して `detail`
-//! (`details`) の代わりに差し込む (T0163)。PSD の読み込みと自動メッシュのエラーも同じく原因に載せる (T0558)。
+//! (`details`) の代わりに差し込む (T0163)。PSD の読み込みと自動メッシュのエラーも同じく原因に載せる (T0558・T0571)。
 //! これらのコードは、元のエラーのコードに領域の名前を付けて組み立てる (`sourced`。T1618)。
 
 use std::borrow::Cow;
@@ -658,7 +658,7 @@ impl Coded for PsdImportError {
 }
 
 /// PSD の読み込みのエラー (`psd_read.*`。[`PsdError::code`])。上限の超過は [`PsdImportError::LimitExceeded`] が
-/// 自分のコードで返すので、原因に載るのは主に壊れた入力と対応しない機能。`Invalid`・`Unsupported` の理由は英語の文のまま。
+/// 自分のコードで返すので、原因に載るのは主に壊れた入力と対応しない機能 (理由の種類ごとのコードと値。T0571)。
 impl Coded for PsdError {
     fn code(&self) -> Cow<'static, str> {
         sourced("psd_read", PsdError::code(self))
@@ -666,7 +666,52 @@ impl Coded for PsdError {
 
     fn args(&self) -> MessageArgs {
         match self {
-            Self::Invalid(detail) | Self::Unsupported(detail) => args! { "detail" => detail },
+            Self::NotPsd
+            | Self::BadBlendModeSignature
+            | Self::BadZipData
+            | Self::RleRowTooShort
+            | Self::RleRowWrongLength
+            | Self::UnbalancedGroups
+            | Self::UnsupportedPsb => args! {},
+            Self::UnknownVersion { version } => args! { "version" => *version },
+            // 区画の名前は PSD の形式の用語 (英語) のまま渡す。
+            Self::Truncated { section } => args! { "section" => *section },
+            Self::InvalidChannelCount { channels } | Self::TooFewCompositeChannels { channels } => {
+                args! { "channels" => *channels }
+            }
+            Self::TooManyLayerChannels { channels, max } => {
+                args! { "channels" => *channels, "max" => *max }
+            }
+            Self::InvalidImageSize { width, height } => {
+                args! { "width" => *width, "height" => *height }
+            }
+            Self::LayerBoundsOutOfRange {
+                width,
+                height,
+                left,
+                top,
+            } => {
+                // 2 つの i32 の差なので、f64 で正確に表せる。
+                args! {
+                    "width" => *width as f64,
+                    "height" => *height as f64,
+                    "left" => *left,
+                    "top" => *top,
+                }
+            }
+            Self::ZipLengthMismatch { len, expected } => {
+                args! { "len" => *len, "expected" => *expected }
+            }
+            Self::UnsupportedDepth { depth } => args! { "depth" => *depth },
+            // 名前は PSD のカラーモードの名前 (`cmyk` など。英語の用語のまま)。
+            Self::UnsupportedColorMode { mode } => args! {
+                "mode" => *mode,
+                "name" => ugoe_psd::color_mode_name(*mode).unwrap_or("unknown"),
+            },
+            Self::UnsupportedCompositeCompression { compression } => {
+                args! { "compression" => *compression }
+            }
+            Self::GroupsTooDeep { max } => args! { "max" => *max },
             Self::LimitExceeded { limit, size, max } => {
                 args! { "limit" => limit.as_str(), "size" => *size, "max" => *max }
             }

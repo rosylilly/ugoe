@@ -520,8 +520,19 @@ fn limit_exceeded_tells_which_limit() {
     let err = read_layer_tree(b"not a psd", ImportLimits::default()).unwrap_err();
     assert_eq!(err.code(), "psd.read_failed");
     let cause = err.to_message().cause.expect("the psd error as the cause");
-    assert_eq!(cause.code, "psd_read.invalid");
-    assert!(cause.args.contains_key("detail"), "{:?}", cause.args);
+    assert_eq!(cause.code, "psd_read.not_psd");
+    assert!(cause.args.is_empty(), "{:?}", cause.args);
+    // 理由の値は引数に載る (T0571)。
+    let mut bytes = fixture_bytes();
+    bytes[24..26].copy_from_slice(&[0, 4]);
+    let cause = read_layer_tree(&bytes, ImportLimits::default())
+        .unwrap_err()
+        .to_message()
+        .cause
+        .expect("the psd error as the cause");
+    assert_eq!(cause.code, "psd_read.unsupported_color_mode");
+    assert_eq!(cause.args["mode"], 4u16.into());
+    assert_eq!(cause.args["name"], "cmyk".into());
     // 既定の上限では読める。
     read_layer_tree(&fixture_bytes(), ImportLimits::default()).unwrap();
 }

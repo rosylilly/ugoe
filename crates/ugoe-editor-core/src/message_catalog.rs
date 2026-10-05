@@ -448,7 +448,7 @@ fn space_errors() -> Vec<SpaceError> {
 
 fn psd_import_errors() -> Vec<PsdImportError> {
     vec![
-        PsdImportError::Psd(PsdError::Invalid(reason())),
+        PsdImportError::Psd(PsdError::NotPsd),
         PsdImportError::LimitExceeded {
             limit: PsdLimit::Channel,
             size: 2048,
@@ -862,8 +862,41 @@ pub(crate) fn infer_errors() -> Vec<InferError> {
 /// PSD の読み込みのエラー (`psd_read.*`)。
 pub(crate) fn psd_errors() -> Vec<PsdError> {
     vec![
-        PsdError::Invalid(reason()),
-        PsdError::Unsupported(reason()),
+        PsdError::NotPsd,
+        PsdError::UnknownVersion { version: 3 },
+        PsdError::Truncated {
+            section: "layer info",
+        },
+        PsdError::InvalidChannelCount { channels: 0 },
+        PsdError::InvalidImageSize {
+            width: 0,
+            height: 64,
+        },
+        PsdError::LayerBoundsOutOfRange {
+            width: -4,
+            height: 8,
+            left: 10,
+            top: 20,
+        },
+        PsdError::TooManyLayerChannels {
+            channels: 60,
+            max: 56,
+        },
+        PsdError::BadBlendModeSignature,
+        PsdError::BadZipData,
+        PsdError::ZipLengthMismatch {
+            len: 100,
+            expected: 256,
+        },
+        PsdError::RleRowTooShort,
+        PsdError::RleRowWrongLength,
+        PsdError::TooFewCompositeChannels { channels: 1 },
+        PsdError::UnbalancedGroups,
+        PsdError::UnsupportedPsb,
+        PsdError::UnsupportedDepth { depth: 32 },
+        PsdError::UnsupportedColorMode { mode: 4 },
+        PsdError::UnsupportedCompositeCompression { compression: 2 },
+        PsdError::GroupsTooDeep { max: 256 },
         PsdError::LimitExceeded {
             limit: ImportLimit::ChannelDecompressed,
             size: 2048,

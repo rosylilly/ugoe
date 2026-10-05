@@ -30,11 +30,12 @@ PSD から、PSD の形式に依存しない `LayerTree` を作る。
 並び順は **下から上** (描画順) で、PSD のファイル内の順と同じ。
 
 対応する画像は 8 ビットと 16 ビットの RGB。PSB・32 ビット・CMYK・グレースケールなどは
-`PsdError::Unsupported`、壊れた入力は `PsdError::Invalid` になる。
-グループの入れ子は 256 段まで。これより深いものも `Unsupported` にする (`LayerTree` を作る・複製する・
+対応しない機能のエラー (`PsdError::UnsupportedPsb`・`UnsupportedDepth`・`UnsupportedColorMode` など)、壊れた入力は
+壊れた入力のエラー (`NotPsd`・`Truncated` など) になる (下の「エラー」)。
+グループの入れ子は 256 段まで。これより深いものは `GroupsTooDeep` にする (`LayerTree` を作る・複製する・
 捨てる処理が深さだけ再帰し、スタックをあふれさせるため)。
 チャンネルの圧縮は、無圧縮・PackBits (RLE)・ZIP・予測付き ZIP (各行で左の標本との差) のすべてに対応する。
-ZIP は `miniz_oxide` で展開し、展開した大きさがレイヤーの大きさと合わなければ `Invalid` にする。
+ZIP は `miniz_oxide` で展開し、展開した大きさがレイヤーの大きさと合わなければ `ZipLengthMismatch` にする。
 展開した大きさには上限がある (下の「展開の上限」)。
 
 ### ファイルの大きさの上限 (T0568)
@@ -70,9 +71,9 @@ ZIP で圧縮したチャンネルは 1000 倍ほどに縮むので、数十 MB 
 PackBits の展開で確保するのは、矩形 (幅 × 高さ × 標本のバイト数) から決まる 1 枚の平面だけで、その大きさは確保する前に
 上の上限と比べる。さらに、確保する前に行のバイト数の表を確かめる。
 
-- 表 (1 行 2 バイト) が残りの入力より大きければ、表を確保せずに `Invalid` にする。
+- 表 (1 行 2 バイト) が残りの入力より大きければ、表を確保せずに `Truncated` にする。
 - PackBits は 2 バイト (繰り返しの見出しと値) が最大 128 バイトに伸びるので、幅 `w` バイトの行には少なくとも
-  `2 * ceil(w / 128)` バイト要る。1 行でもこれより短ければ、平面を確保せずに `Invalid` にする
+  `2 * ceil(w / 128)` バイト要る。1 行でもこれより短ければ、平面を確保せずに `RleRowTooShort` にする
   (T0531 までは全行の合計で入力の 64 倍と比べていたので、短い行を長い行で補う嘘を通していた)。
 - このため、PackBits の確保は入力 (そのチャンネルの行のデータ) の約 64 倍を超えない。64 倍は PackBits の
   本当の最大の比で、単色のレイヤーを最も縮めた正しいファイルはこの比になるので、これより厳しくはしない
@@ -113,14 +114,46 @@ Photoshop は 16 ビットの PSD で、ヘッダの直後のレイヤー情報�
 
 ## エラー (`PsdError`)
 
+理由は種類と値で持つ (T0571)。`Display` は英語の文で、壊れた入力は `invalid psd: `、対応しない機能は
+`unsupported psd feature: ` で始まる。`code()` は機械の読む種類 (変種の名前の `snake_case`) で、値は変えない。
+
+**壊れた入力・途中で切れた入力** (`is_invalid()`)
+
 | 変種 | `code()` | 意味 |
 | --- | --- | --- |
-| `Invalid(理由)` | `invalid` | 壊れた入力・途中で切れた入力 |
-| `Unsupported(理由)` | `unsupported` | 形式としては正しいが対応しない (PSB・32 ビット・RGB 以外・深すぎるグループ・仕様にない合成画像の圧縮) |
+| `NotPsd` | `not_psd` | 先頭の印が `8BPS` でない |
+| `UnknownVersion { version }` | `unknown_version` | ヘッダの版が 1 (PSD)・2 (PSB) のどちらでもない |
+| `Truncated { section }` | `truncated` | `section` (PSD の形式の区画の名前。英語) を読む途中で終わった |
+| `InvalidChannelCount { channels }` | `invalid_channel_count` | ヘッダのチャンネル数が 1..=56 の外 |
+| `InvalidImageSize { width, height }` | `invalid_image_size` | ヘッダの幅・高さが 1..=30000 の外 |
+| `LayerBoundsOutOfRange { width, height, left, top }` | `layer_bounds_out_of_range` | レイヤー・マスクの矩形が負か大きすぎる |
+| `TooManyLayerChannels { channels, max }` | `too_many_layer_channels` | レイヤーのチャンネル数が上限を超える |
+| `BadBlendModeSignature` | `bad_blend_mode_signature` | レイヤーの記録のブレンドモードの印が `8BIM` でない |
+| `BadZipData` | `bad_zip_data` | ZIP のチャンネルを展開できない |
+| `ZipLengthMismatch { len, expected }` | `zip_length_mismatch` | ZIP のチャンネルの展開した大きさがレイヤーと合わない |
+| `RleRowTooShort` | `rle_row_too_short` | PackBits の行が、行の幅を書ける最も短いバイト数より短い (下の「PackBits」) |
+| `RleRowWrongLength` | `rle_row_wrong_length` | PackBits の行を展開した長さが行の幅と合わない |
+| `TooFewCompositeChannels { channels }` | `too_few_composite_channels` | 合成画像のチャンネルが RGB の 3 つに足りない |
+| `UnbalancedGroups` | `unbalanced_groups` | グループの始まりに対応する終わりがない |
+
+**形式としては正しいが対応しない** (`is_unsupported()`)
+
+| 変種 | `code()` | 意味 |
+| --- | --- | --- |
+| `UnsupportedPsb` | `unsupported_psb` | 大きなドキュメント形式 (PSB) |
+| `UnsupportedDepth { depth }` | `unsupported_depth` | 8・16 ビット以外のチャンネル |
+| `UnsupportedColorMode { mode }` | `unsupported_color_mode` | RGB 以外のカラーモード (名前は `color_mode_name(mode)`) |
+| `UnsupportedCompositeCompression { compression }` | `unsupported_composite_compression` | 仕様にない合成画像の圧縮 |
+| `GroupsTooDeep { max }` | `groups_too_deep` | グループの入れ子が 256 段より深い |
+
+**読み込みの上限**
+
+| 変種 | `code()` | 意味 |
+| --- | --- | --- |
 | `LimitExceeded { limit, size, max }` | `limit_exceeded` | 展開の上限を超える (上の「展開の上限」) |
 
-- `code()` は機械の読む種類 (変種の名前の `snake_case`) で、値は変えない。エディタは `psd_read.{code}` に組み立てて
-  エラーの原因に載せ、訳す (`docs/editor.md#エラーと警告のコード`)。`Invalid`・`Unsupported` の理由は英語の文のまま。
+- エディタは `code()` を `psd_read.{code}` に組み立て、値を引数にしてエラーの原因に載せ、訳す
+  (`docs/editor.md#エラーと警告のコード`)。
 - `PsdError` は `#[non_exhaustive]` (T0558)。このクレートは crates.io に出さない (`scripts/crates.mjs` の `PUBLISHED` に無い) が、
   `ugoe-mesher` の `MeshError` (T0554) と同じく、変種を足しても外の `match` を壊さない約束にしておく (外の `match` には `_` の腕を書く)。
   `ImportLimit` も同じ。

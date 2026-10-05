@@ -9,6 +9,7 @@ use std::path::Path;
 use ugoe_ai::AiError;
 use ugoe_ai::rig::RigTemplate;
 use ugoe_editor_core::{Coded, Message, MessageArgs, message_args};
+use ugoe_psd::PsdError;
 
 /// IPC コマンドの戻り値。
 pub type IpcResult<T> = Result<T, Message>;
@@ -71,9 +72,9 @@ pub enum EditorError {
     CreateFolder { path: String, detail: String },
     #[error("too many sample folders in {0}; remove old ones")]
     TooManySampleFolders(String),
-    /// PSD のファイルを読めない。
-    #[error("{path}: {detail}")]
-    PsdRead { path: String, detail: String },
+    /// PSD のファイルを読めない。`error` は原因 (`psd_read.*`) に載せる。
+    #[error("{path}: {error}")]
+    PsdRead { path: String, error: PsdError },
     // ---- ライティング ----
     #[error("normal maps are proposed only in model projects")]
     NormalMapsModelOnly,
@@ -178,10 +179,10 @@ impl EditorError {
     }
 
     /// PSD の `path` を読めない。
-    pub fn psd_read(path: &Path, error: impl ToString) -> Self {
+    pub fn psd_read(path: &Path, error: PsdError) -> Self {
         Self::PsdRead {
             path: path.display().to_string(),
-            detail: error.to_string(),
+            error,
         }
     }
 }
@@ -260,9 +261,11 @@ impl Coded for EditorError {
             Self::LockPoisoned { what } => message_args! { "what" => *what },
             Self::Io { path, detail }
             | Self::CreateFolder { path, detail }
-            | Self::PsdRead { path, detail }
             | Self::OpenFailed { path, detail } => {
                 message_args! { "path" => path, "detail" => detail }
+            }
+            Self::PsdRead { path, error } => {
+                message_args! { "path" => path, "detail" => error.to_string() }
             }
             Self::Internal(detail)
             | Self::Task(detail)
@@ -321,6 +324,14 @@ impl Coded for EditorError {
             | Self::NotMcpbFile => message_args! {},
         }
     }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            // 画面は原因の訳を `detail` に差し込む (T0571)。
+            Self::PsdRead { error, .. } => Some(error.to_message()),
+            _ => None,
+        }
+    }
 }
 
 /// エディタのバックエンドが出すすべてのコードの見本 (`ugoe_editor_core::message_catalog::message_samples` の
@@ -362,7 +373,7 @@ pub fn message_samples() -> Vec<Message> {
         EditorError::TooManySampleFolders(path()),
         EditorError::PsdRead {
             path: path(),
-            detail: detail(),
+            error: PsdError::NotPsd,
         },
         EditorError::NormalMapsModelOnly,
         EditorError::NoGroupChosen,
@@ -526,6 +537,29 @@ mod tests {
             "the project was changed outside the editor after it was opened; reload it, or save \
              again to overwrite"
         );
+    }
+
+    /// PSD を読めないときは、英語の文を `detail` に、元のエラーを原因 (`psd_read.*`) に載せる (T0571)。
+    #[test]
+    fn psd_read_carries_the_psd_error_as_the_cause() {
+        let error = EditorError::psd_read(
+            Path::new("/work/a.psd"),
+            PsdError::UnsupportedDepth { depth: 32 },
+        );
+        let message = error.to_message();
+        assert_eq!(message.code, "psd.read_file_failed");
+        assert_eq!(
+            message.args,
+            message_args! {
+                "path" => "/work/a.psd",
+                "detail" => "unsupported psd feature: 32-bit channels (only 8-bit and 16-bit are supported)",
+            }
+        );
+        let cause = message.cause.expect("the psd error as the cause");
+        assert_eq!(cause.code, "psd_read.unsupported_depth");
+        assert_eq!(cause.args, message_args! { "depth" => 32u16 });
+        // ほかのエラーは原因を持たない。
+        assert!(EditorError::EmptyPath.to_message().cause.is_none());
     }
 
     #[test]

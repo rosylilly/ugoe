@@ -997,7 +997,8 @@ editor-core は `import::read_layer_tree(bytes, limits)` で読んで、それ�
 (`PsdLimit`)・大きさ・上限の値) に分けます。コードは `psd.channel_limit_exceeded` (チャンネル 1 枚) と `psd.total_limit_exceeded` (合計) で、
 引数 `size`・`max` (バイト) を持ちます。合計の `size` は超えたところまでの合計で、PSD 全体の合計より小さいことがあります
 (超えたところで読むのをやめるため)。ほかの読み込みのエラー (壊れた PSD・対応しない機能) は `psd.read_failed` のままで、
-元のエラーを原因 (`psd_read.*`) に載せます。
+元のエラーを原因 (`psd_read.*`。理由の種類ごとのコードと値。T0571) に載せます。エディタのバックエンドが AI の提案のために PSD を読むとき
+(`psd.read_file_failed`) も同じく原因を載せます。
 
 - **上限を変える設定は持たせません** (T0554)。エディタ (取り込み・新しいプロジェクト・AI の提案の PSD)・CLI・MCP サーバはどれも
   既定の上限で読みます。既定の値は PSD の最大のキャンバス (30000 × 30000) の 8 ビットのレイヤーの 1 チャンネルが収まる大きさで、
@@ -1007,8 +1008,6 @@ editor-core は `import::read_layer_tree(bytes, limits)` で読んで、それ�
 - 展開の前に、PSD のファイルそのものの大きさも上限 `ugoe_psd::MAX_PSD_FILE_BYTES` (2 GiB。PSD の形式は長さを 32 ビットで持つ) までに
   抑えます。エディタ・MCP サーバ・CLI (`ugoe import-psd`) はどれもこの定数で `ugoe_fs::read_regular_file` を呼び、値は 1 か所にあります
   (T0568)。これも設定には出しません。
-- `ugoe-psd` は上限の超過を `PsdError::Unsupported` の文 ("import limit" を含む) で返すので、editor-core は文で見分けます
-  (`PsdImportError::from_psd`)。文の形が変わると `import_tests` の上限のテストが失敗します。
 
 ### メッシュの再生成
 
@@ -2200,16 +2199,17 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
 - **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、その英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
-- **元のエラーのコード (T0163・T0167・T1618・T0558):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`)・
+- **元のエラーのコード (T0163・T0167・T1618・T0558・T0571):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`)・
   合成 (`ComposeError::code`)・PSD の読み込み (`PsdError::code`)・自動メッシュ (`MeshError::code`) は元のクレートが機械の読むコードを持ち、
   editor-core はそれに領域の名前を付けたコード (`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*`・`psd_read.*`・`automesh.*`)
   で `cause` (検証の一覧は `items`) に載せます。
   editor-core はこれらのコードを一覧に持たず、元のコードから組み立てます (`Coded::code` は `Cow<'static, str>`)。
   `source_error_codes_follow_the_crate_codes` が、元のクレートのすべてのコードに見本があり組み立てた値と一致することを、
   `every_code_is_documented` が組み立てたコードがどれも下の一覧にあることを確かめます (元のクレートにコードを足したら、一覧と訳と見本にも足す)。合成のコードは SDK の `DressUpError::code` とも同じです。`detail`・`details` の英語の文は互換のために残します (MCP・CLI・古い画面)。
-- 自由な文の引数のうち、editor-core が自分で組む理由 (`edit.invalid_physics`・`edit.invalid_motion`・`edit.deformer_edit_failed` などの `reason`)、
-  AI のプロバイダの `detail`、PSD の読み込みの壊れた入力・対応しない機能の理由 (`psd_read.invalid`・`psd_read.unsupported` の `detail`。
-  `ugoe-psd` の `PsdError::Invalid`・`Unsupported` が文しか持たないため) はまだ英語のままです。
+- 自由な文の引数のうち、editor-core が自分で組む理由 (`edit.invalid_physics`・`edit.invalid_motion`・`edit.deformer_edit_failed` などの `reason`)
+  と AI のプロバイダの `detail` はまだ英語のままです。PSD の読み込みの理由は種類と値で訳します (`psd_read.*`。T0571) が、
+  途中で切れた区画の名前 (`psd_read.truncated` の `section`) とカラーモードの名前 (`psd_read.unsupported_color_mode` の `name`) は
+  PSD の形式の用語 (英語) のまま渡します。
 
 ### コードの一覧
 
@@ -2345,7 +2345,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | --- | --- |
 | `psd.read_failed` | `detail` (原因は `psd_read.*`) |
 | `psd.channel_limit_exceeded` / `psd.total_limit_exceeded` (読み込みの上限。チャンネル 1 枚の展開後の大きさ / 展開の合計。[読み込みの上限](#読み込みの上限)) | `size` (展開しようとした大きさ。合計は超えたところまで)・`max` (上限)。どちらもバイト |
-| `psd.read_file_failed` | `path`・`detail` |
+| `psd.read_file_failed` | `path`・`detail` (原因は `psd_read.*`) |
 | `psd.invalid_mesh_options` | `reason` |
 | `psd.automesh_failed` | `layer`・`detail` (原因は `automesh.*`) |
 | `psd.canvas_mismatch` | `psd_width`・`psd_height`・`model_width`・`model_height` |
@@ -2437,7 +2437,24 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `compose.unknown_collider` | `module`・`rig`・`collider` |
 | `compose.pose_not_exposed` | `module`・`slot`・`part` |
 | `compose.invalid_composition` | `count`・`details` |
-| `psd_read.invalid` / `psd_read.unsupported` (壊れた PSD / 対応しない機能。`psd.read_failed` の原因) | `detail` (理由。英語) |
+| `psd_read.not_psd` (先頭の印が PSD でない。以下 `psd_read.*` は `psd.read_failed`・`psd.read_file_failed` の原因) | なし |
+| `psd_read.unknown_version` (ヘッダの版が PSD・PSB のどちらでもない) | `version` |
+| `psd_read.truncated` (途中で切れている) | `section` (読んでいた区画の名前。PSD の形式の用語で英語) |
+| `psd_read.invalid_channel_count` (ヘッダのチャンネル数が 1〜56 の外) | `channels` |
+| `psd_read.invalid_image_size` (ヘッダの幅・高さが 1〜30000 の外) | `width`・`height` |
+| `psd_read.layer_bounds_out_of_range` (レイヤー・マスクの矩形が負か大きすぎる) | `width`・`height`・`left`・`top` |
+| `psd_read.too_many_layer_channels` (レイヤーのチャンネル数が上限を超える) | `channels`・`max` |
+| `psd_read.bad_blend_mode_signature` (レイヤーの記録が壊れている) | なし |
+| `psd_read.bad_zip_data` (ZIP のチャンネルを展開できない) | なし |
+| `psd_read.zip_length_mismatch` (ZIP のチャンネルの展開した大きさがレイヤーと合わない) | `len`・`expected` (バイト) |
+| `psd_read.rle_row_too_short` / `psd_read.rle_row_wrong_length` (PackBits の行が短すぎる / 展開した長さが合わない) | なし |
+| `psd_read.too_few_composite_channels` (合成画像のチャンネルが RGB に足りない) | `channels` |
+| `psd_read.unbalanced_groups` (グループの始まりに対応する終わりがない) | なし |
+| `psd_read.unsupported_psb` (大きなドキュメント形式) | なし |
+| `psd_read.unsupported_depth` (8・16 ビット以外) | `depth` (ビット数) |
+| `psd_read.unsupported_color_mode` (RGB 以外) | `mode` (番号)・`name` (`cmyk` などの名前。知らない番号は `unknown`) |
+| `psd_read.unsupported_composite_compression` (仕様にない合成画像の圧縮) | `compression` |
+| `psd_read.groups_too_deep` (グループの入れ子が深すぎる) | `max` (段数) |
 | `psd_read.limit_exceeded` (読み込みの上限。editor-core は `psd.channel_limit_exceeded`・`psd.total_limit_exceeded` で返すので、ふつうは画面に出ない) | `limit` (`channel_decompressed`・`total_decompressed`)・`size`・`max` (バイト) |
 | `automesh.empty` (中身の画素が無い) | なし |
 | `automesh.bad_image` (画像の長さが大きさと合わない) | `width`・`height`・`len` (バイト) |

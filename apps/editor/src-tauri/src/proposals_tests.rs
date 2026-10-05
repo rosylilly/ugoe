@@ -247,6 +247,19 @@ fn read_tree_names_the_exceeded_limit() {
     assert_eq!(err.code, "psd.total_limit_exceeded");
 }
 
+/// T0571: ほかの読み込みのエラーはパス付きの `psd.read_file_failed` で、元のエラーを原因 (`psd_read.*`) に載せる。
+#[test]
+fn read_tree_carries_the_psd_error_as_the_cause() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("broken.psd");
+    std::fs::write(&path, b"not a psd").unwrap();
+    let err = read_tree(&path).unwrap_err();
+    assert_eq!(err.code, "psd.read_file_failed");
+    assert_eq!(err.args["path"], path.display().to_string().into());
+    let cause = err.cause.expect("the psd error as the cause");
+    assert_eq!(cause.code, "psd_read.not_psd");
+}
+
 /// T0546: AI の分類が名前の規則と食い違うレイヤー (名前に右と書いた白目を左にした) は、確からしさが高くても
 /// 画面の分類で確かめるよう示し、提案の理由にも名前の規則の答えを添える。
 #[test]

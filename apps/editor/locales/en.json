@@ -2247,8 +2247,25 @@
       "grid_too_large": "the group spans {{width}} × {{height}} cells, more than the limit of {{max}}"
     },
     "psd_read": {
-      "invalid": "the file is broken or truncated: {{detail}}",
-      "unsupported": "it uses a feature that is not supported: {{detail}}",
+      "not_psd": "the file is not a PSD",
+      "unknown_version": "the header has an unknown version {{version}}",
+      "truncated": "the file ends in the middle (while reading the {{section}})",
+      "invalid_channel_count": "the header has an invalid channel count {{channels}}",
+      "invalid_image_size": "the header has an invalid image size {{width}} × {{height}}",
+      "layer_bounds_out_of_range": "a layer's bounds are out of range ({{width}} × {{height}} at {{left}}, {{top}})",
+      "too_many_layer_channels": "a layer has {{channels}} channels, more than the limit of {{max}}",
+      "bad_blend_mode_signature": "a layer record is broken (bad blend mode signature)",
+      "bad_zip_data": "the ZIP-compressed channel data is broken",
+      "zip_length_mismatch": "the ZIP-compressed channel data decodes to {{len}} bytes instead of {{expected}}",
+      "rle_row_too_short": "a PackBits row is too short for the row width",
+      "rle_row_wrong_length": "a PackBits row decodes to the wrong length",
+      "too_few_composite_channels": "the composite image needs 3 RGB channels but has {{channels}}",
+      "unbalanced_groups": "a group start has no matching group end",
+      "unsupported_psb": "the large document format (PSB) is not supported",
+      "unsupported_depth": "{{depth}}-bit channels are not supported (only 8-bit and 16-bit)",
+      "unsupported_color_mode": "the {{name}} color mode is not supported (only RGB)",
+      "unsupported_composite_compression": "the composite image compression {{compression}} is not supported",
+      "groups_too_deep": "groups are nested deeper than {{max}} levels",
       "limit_exceeded": "decompressing the channels takes {{size}} bytes, more than the import limit of {{max}} bytes"
     },
     "automesh": {

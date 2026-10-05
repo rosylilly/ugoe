@@ -874,16 +874,60 @@ export const messageCodes: Record<string, readonly string[]> = {
   "psd.unsupported_compression": [
     "compression"
   ],
-  "psd_read.invalid": [
-    "detail"
+  "psd_read.bad_blend_mode_signature": [],
+  "psd_read.bad_zip_data": [],
+  "psd_read.groups_too_deep": [
+    "max"
+  ],
+  "psd_read.invalid_channel_count": [
+    "channels"
+  ],
+  "psd_read.invalid_image_size": [
+    "height",
+    "width"
+  ],
+  "psd_read.layer_bounds_out_of_range": [
+    "height",
+    "left",
+    "top",
+    "width"
   ],
   "psd_read.limit_exceeded": [
     "limit",
     "max",
     "size"
   ],
-  "psd_read.unsupported": [
-    "detail"
+  "psd_read.not_psd": [],
+  "psd_read.rle_row_too_short": [],
+  "psd_read.rle_row_wrong_length": [],
+  "psd_read.too_few_composite_channels": [
+    "channels"
+  ],
+  "psd_read.too_many_layer_channels": [
+    "channels",
+    "max"
+  ],
+  "psd_read.truncated": [
+    "section"
+  ],
+  "psd_read.unbalanced_groups": [],
+  "psd_read.unknown_version": [
+    "version"
+  ],
+  "psd_read.unsupported_color_mode": [
+    "mode",
+    "name"
+  ],
+  "psd_read.unsupported_composite_compression": [
+    "compression"
+  ],
+  "psd_read.unsupported_depth": [
+    "depth"
+  ],
+  "psd_read.unsupported_psb": [],
+  "psd_read.zip_length_mismatch": [
+    "expected",
+    "len"
   ],
   "space.evaluate_failed": [
     "detail"
