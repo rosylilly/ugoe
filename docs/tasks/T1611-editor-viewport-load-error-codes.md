@@ -1,11 +1,11 @@
 ---
 id: T1611
 title: "エディタ: ビューポートとプレビューの読み込みの失敗を wasm の LoadError のコードから訳す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1611
 ---
 
 # T1611: エディタ: ビューポートとプレビューの読み込みの失敗を wasm の LoadError のコードから訳す
