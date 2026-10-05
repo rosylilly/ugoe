@@ -7,9 +7,14 @@ use godot::prelude::*;
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::validate::{ValidationError, describe_errors};
 use ugoe::motion::TrackingMap;
-use ugoe::{DressUpError, FieldValue, LipSyncInput, LoadWarning, PartOpacityInput};
+use ugoe::{
+    DressUpError, FieldValue, LipSyncInput, LoadWarning, PartOpacityInput, validation_fields,
+};
 
-use super::{UgoePuppet2D, to_canvas};
+use super::{UgoePuppet2D, error_dictionary, field_variant, to_canvas};
+
+/// JSON を読めないときの種類 (読み込みの `invalid_file` と同じ値)。
+const INVALID_FILE: &str = DressUpError::INVALID_FILE;
 
 #[godot_api(secondary)]
 impl UgoePuppet2D {
@@ -311,67 +316,73 @@ impl UgoePuppet2D {
 
     /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。省いたフィールドは既定値) で差し替える
     /// (`docs/spec/motion.md#エフェクト設定の差し替え`)。再生の状態は初めからになり、リップシンクの音量は保つ。
-    /// モデルを読み直すとモデルの設定に戻る。読めないか、モデルの読み込みと同じ検査 (`ugoe::Puppet::try_set_effects`。
-    /// 有限でない値・範囲の外の値・モデルにないパラメータ) を通らなければ、エラーを出して何も変えずに false
-    /// (検査の文は C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形)。
+    /// モデルを読み直すとモデルの設定に戻る。
+    ///
+    /// 戻り値は結果の辞書 (T0470): 成功なら `{ "ok": true }`。失敗ならエラーを出して何も変えず、
+    /// `{ "ok": false, "code", "error", ... }` (`get_load_error()` と同じ形)。種類は、モデルが無ければ `no_model`、JSON を読めなければ
+    /// `invalid_file`、モデルの読み込みと同じ検査 (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにないパラメータ) を
+    /// 通らなければ `invalid_model` で、補足の値 `errors` (検査のエラーの数)・`error_codes` (その種類を `", "` でつないだもの) を持つ
+    /// (C ABI の `ugoe_puppet_set_effects_json`・wasm の `set_effects_json` と同じ。文は C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形)。
     #[func]
-    pub fn set_effects_json(&mut self, json: GString) -> bool {
+    pub fn set_effects_json(&mut self, json: GString) -> VarDictionary {
         let Some(loaded) = &mut self.loaded else {
-            godot_error!("ugoe: no model is loaded");
-            return false;
+            return no_model();
         };
         let effects = match serde_json::from_str(&json.to_string()) {
             Ok(effects) => effects,
-            Err(e) => {
-                godot_error!("ugoe: effects: {e}");
-                return false;
-            }
+            Err(e) => return settings_error(INVALID_FILE, &format!("effects: {e}"), []),
         };
         match loaded.puppet.try_set_effects(effects) {
             Ok(()) => {
                 self.dirty = true;
-                true
+                settings_ok()
             }
-            Err(errors) => {
-                godot_error!("ugoe: {}", describe_errors("effects", &errors));
-                false
-            }
+            Err(errors) => settings_error(
+                "invalid_model",
+                &describe_errors("effects", &errors),
+                validation_fields(&errors),
+            ),
         }
     }
 
     /// 今の物理の設定を JSON (`.ugoe` の物理と同じ形) で差し替える。空の文字列なら物理を外す。
     /// 着せ替えのモジュールを付けていれば、次の付け外しで本体の設定から合成し直すので失われる
     /// (付けている間も保つなら `set_base_physics_json`)。モデルを読み直すとモデルの設定に戻る。
-    /// 読めないか、モデルに対する検査を通らなければ、エラーを出して何も変えずに false。
+    ///
+    /// 戻り値は `set_effects_json` と同じ結果の辞書。失敗の種類は、JSON を読めなければ `invalid_file`、モデルが無ければ `no_model`、
+    /// モデルに対する検査を通らなければ `invalid_physics` (補足の値 `errors`・`error_codes`。着せ替えの `invalid_physics` と、C ABI の
+    /// `ugoe_puppet_set_physics_json`・wasm の `set_physics_json` と同じ。T0469)。
     #[func]
-    pub fn set_physics_json(&mut self, json: GString) -> bool {
-        let Some(settings) = read_physics(&json) else {
-            return false;
+    pub fn set_physics_json(&mut self, json: GString) -> VarDictionary {
+        let settings = match read_physics(&json) {
+            Ok(settings) => settings,
+            Err(error) => return error,
         };
         let Some(loaded) = &mut self.loaded else {
-            godot_error!("ugoe: no model is loaded");
-            return false;
+            return no_model();
         };
         if let Err(errors) = loaded.puppet.set_physics(settings) {
-            godot_error!("ugoe: {}", invalid_physics(&errors));
-            return false;
+            return invalid_physics(&errors);
         }
         self.dirty = true;
-        true
+        settings_ok()
     }
 
     /// 本体の物理の設定を JSON で差し替える。空の文字列なら外す (`ugoe::Puppet::set_base_physics`、
     /// `docs/spec/modules.md#puppet-での着せ替え`)。モジュールを付けていれば、付けているモジュールと合成し直し、
     /// この後の付け外しでもこの設定から合成する。付けたことがなければ `set_physics_json` と同じ。
-    /// モデルを読み直すとモデルの設定に戻る。失敗したらエラーを出して何も変えずに false。
+    /// モデルを読み直すとモデルの設定に戻る。
+    ///
+    /// 戻り値は `set_physics_json` と同じ結果の辞書。付けているモジュールと合成できなければ、種類と補足の値は着せ替えの失敗
+    /// (`get_load_error()` のモジュールの付け外しと同じ。C ABI の `UGOE_ERROR_DRESS_UP` の種類) になる。
     #[func]
-    pub fn set_base_physics_json(&mut self, json: GString) -> bool {
-        let Some(settings) = read_physics(&json) else {
-            return false;
+    pub fn set_base_physics_json(&mut self, json: GString) -> VarDictionary {
+        let settings = match read_physics(&json) {
+            Ok(settings) => settings,
+            Err(error) => return error,
         };
         let Some(loaded) = &mut self.loaded else {
-            godot_error!("ugoe: no model is loaded");
-            return false;
+            return no_model();
         };
         match loaded.set_base_physics(settings) {
             Ok(swapped) => {
@@ -385,16 +396,10 @@ impl UgoePuppet2D {
                     self.rebuild_renderer(textures);
                 }
                 self.dirty = true;
-                true
+                settings_ok()
             }
-            Err(DressUpError::Physics(errors)) => {
-                godot_error!("ugoe: {}", invalid_physics(&errors));
-                false
-            }
-            Err(e) => {
-                godot_error!("ugoe: base physics: {e}");
-                false
-            }
+            Err(DressUpError::Physics(errors)) => invalid_physics(&errors),
+            Err(e) => settings_error(e.code(), &format!("base physics: {e}"), e.fields()),
         }
     }
 
@@ -490,25 +495,53 @@ fn read_part_opacities(list: &VarArray) -> Option<Vec<PartOpacityInput>> {
     Some(out)
 }
 
-/// 物理の設定の JSON を読む。空なら外す (`Some(None)`)。読めなければエラーを出して `None`。
-fn read_physics(json: &GString) -> Option<Option<PhysicsSettings>> {
+/// 物理の設定の JSON を読む。空なら外す (`Ok(None)`)。読めなければエラーを出して `invalid_file` の結果の辞書。
+fn read_physics(json: &GString) -> Result<Option<PhysicsSettings>, VarDictionary> {
     let json = json.to_string();
     if json.trim().is_empty() {
-        return Some(None);
+        return Ok(None);
     }
-    match ugoe::format::physics_from_json(&json) {
-        Ok(settings) => Some(Some(settings)),
-        Err(e) => {
-            godot_error!("ugoe: physics: {e}");
-            None
-        }
-    }
+    ugoe::format::physics_from_json(&json)
+        .map(Some)
+        .map_err(|e| settings_error(INVALID_FILE, &format!("physics: {e}"), []))
 }
 
-/// 物理の設定の検査の結果を 1 行の文にする (C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形。
-/// `docs/spec/model.md#検証エラーの文`)。
-fn invalid_physics(errors: &[ValidationError]) -> String {
-    describe_errors("physics settings", errors)
+/// 設定の差し替え (`set_*_json`) が成功したときの結果の辞書: `{ "ok": true }`。
+fn settings_ok() -> VarDictionary {
+    let mut d = VarDictionary::new();
+    d.set("ok", true);
+    d
+}
+
+/// 設定の差し替えが失敗したときの結果の辞書: エラーを出し、`{ "ok": false, "code", "error", ...fields }`
+/// (`get_load_error()` と同じ形に `ok` を足したもの)。
+fn settings_error<'a>(
+    code: &str,
+    message: &str,
+    fields: impl IntoIterator<Item = (&'static str, FieldValue<'a>)>,
+) -> VarDictionary {
+    godot_error!("ugoe: {message}");
+    let fields = fields
+        .into_iter()
+        .map(|(key, value)| (key, field_variant(value)));
+    let mut d = error_dictionary(code, message, fields);
+    d.set("ok", false);
+    d
+}
+
+/// モデルが無いときの結果の辞書 (wasm の着せ替えの `no_model` と同じ種類)。
+fn no_model() -> VarDictionary {
+    settings_error("no_model", "no model is loaded", [])
+}
+
+/// 物理の設定の検査の失敗の結果の辞書: 種類は `invalid_physics`、補足の値は `errors`・`error_codes`
+/// (文は C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形。`docs/spec/model.md#検証エラーの文`)。
+fn invalid_physics(errors: &[ValidationError]) -> VarDictionary {
+    settings_error(
+        "invalid_physics",
+        &describe_errors("physics settings", errors),
+        validation_fields(errors),
+    )
 }
 
 fn physics_json(settings: Option<&PhysicsSettings>) -> GString {

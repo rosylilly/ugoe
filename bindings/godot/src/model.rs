@@ -16,9 +16,10 @@ use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
 use ugoe::model::motion::Motion;
 use ugoe::model::physics::PhysicsSettings;
+use ugoe::model::validate::ValidationError;
 use ugoe::model::{MaskMode, Model};
 use ugoe::runtime::{CompileError, CompiledModel};
-use ugoe::{DressUpChange, DressUpError, LoadWarning, Puppet, TextureSource};
+use ugoe::{DressUpChange, DressUpError, FieldValue, LoadWarning, Puppet, TextureSource};
 
 /// 画像の一辺の上限の既定値 (画素)。`ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE` (wasm の `max_image_side` の既定値) と同じ。
 pub const DEFAULT_MAX_IMAGE_SIDE: u32 = 16384;
@@ -97,11 +98,22 @@ impl LoadError {
     /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
     /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture`・`width`・`height`・`max` (画素)。
     /// - `unsupported_version`: `found`・`supported`。`unsupported_features`: `features` (`", "` でつないだ ID)。
-    /// - `invalid_model`: `errors` (検査のエラーの数)。`compile`: 評価できない構造。
+    /// - `invalid_model`: `errors` (検査のエラーの数)・`error_codes` (その種類を `", "` でつないだもの。SDK の
+    ///   [`ugoe::validation_fields`]。T0470)。`compile`: 評価できない構造。
     /// - `invalid_file`: ほかの読めないファイル (壊れている・ugoe のファイルでないなど)。
     pub fn info(&self) -> (&'static str, Vec<(&'static str, ErrorField)>) {
         use ErrorField::{Int, Text};
         let count = |n: usize| Int(i64::try_from(n).unwrap_or(i64::MAX));
+        let invalid = |errors: &[ValidationError]| {
+            let fields = ugoe::validation_fields(errors)
+                .into_iter()
+                .map(|(key, value)| match value {
+                    FieldValue::Index(n) => (key, count(n)),
+                    value => (key, Text(value.to_string())),
+                })
+                .collect();
+            ("invalid_model", fields)
+        };
         match self {
             Self::Format(e) => {
                 if let Some(exceeded) = ReadLimitExceeded::from_error(e) {
@@ -115,7 +127,7 @@ impl LoadError {
                     );
                 }
                 if let Some(errors) = e.validation_errors() {
-                    return ("invalid_model", vec![("errors", count(errors.len()))]);
+                    return invalid(errors);
                 }
                 match e {
                     &FormatError::UnsupportedVersion { found, supported }
@@ -133,9 +145,7 @@ impl LoadError {
                     _ => (DressUpError::INVALID_FILE, Vec::new()),
                 }
             }
-            Self::Compile(CompileError::Invalid(errors)) => {
-                ("invalid_model", vec![("errors", count(errors.len()))])
-            }
+            Self::Compile(CompileError::Invalid(errors)) => invalid(errors),
             Self::Compile(_) => ("compile", Vec::new()),
             &Self::ImageTooLarge {
                 image,
@@ -1298,7 +1308,20 @@ mod tests {
         let mut model = fixtures::single_quad();
         model.meshes[0].texture = u32::MAX;
         let error = LoadedModel::from_bundle(Bundle::new(model)).expect_err("invalid");
-        assert_eq!(error.info().0, "invalid_model");
+        // 補足の値は SDK の `ugoe::LoadError::fields` と同じ `errors`・`error_codes` (T0470)。
+        assert_eq!(
+            error.info(),
+            (
+                "invalid_model",
+                vec![
+                    ("errors", ErrorField::Int(1)),
+                    (
+                        "error_codes",
+                        ErrorField::Text("texture_out_of_range".into())
+                    ),
+                ]
+            )
+        );
     }
 
     #[test]

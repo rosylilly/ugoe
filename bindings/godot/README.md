@@ -136,8 +136,8 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `get_motion_events()` | 直前の `advance` で発火したモーションのイベント (T0462)。`{ "value", "time", "motion", "number" }` の配列で、`time` はモーションの中の秒、`motion`・`number` は発火したモーションの名前と始めた番号 (このノードで開始したモーションに 1 から振る。開始しなかった要求では進まず、モデルを読み直すと 1 から)。クロスフェードでフェードアウト中のモーションのイベントはそのモーションのもの。wasm の `motion_events_json()`・C ABI の `ugoe_puppet_motion_event_source` と同じ |
 | `get_expression_names()` / `set_expression(name)` / `stop_expressions()` | 表情 (`stop_expressions` はフェードアウトをかけてすべて止める) |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理。`set_lip_sync_level` に負の値 (`-INF` を含む) を渡すと、`clear_lip_sync_level()` と同じく口の入力をやめる (C ABI・wasm・Unity と同じ。T0459 より前は 0 にしていた) |
-| `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めないか、モデルの読み込みと同じ検査 (有限でない値・範囲の外の値・モデルにないパラメータ) を通らなければ、エラー (検査の文は C ABI の `UGOE_ERROR_INVALID_MODEL` と同じ) を出して何も変えずに false |
-| `set_physics_json(json)` / `set_base_physics_json(json)` / `get_physics_json()` / `get_base_physics_json()` | 物理の設定を `.ugoe` の物理と同じ形の JSON で差し替える (空の文字列で外す) / 読む (無ければ空)。`base` は本体の設定で、着せ替えのモジュールを付けている間も保ち、付け外しのたびにこれと合成する ([docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。`set_physics_json` の設定は次の付け外しで失われる。モデルに合わなければ false (何も変えない) |
+| `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めないか、モデルの読み込みと同じ検査 (有限でない値・範囲の外の値・モデルにないパラメータ) を通らなければ、エラー (検査の文は C ABI の `UGOE_ERROR_INVALID_MODEL` と同じ) を出して何も変えない。戻り値は結果の辞書 (下の「設定の差し替えの結果」) |
+| `set_physics_json(json)` / `set_base_physics_json(json)` / `get_physics_json()` / `get_base_physics_json()` | 物理の設定を `.ugoe` の物理と同じ形の JSON で差し替える (空の文字列で外す) / 読む (無ければ空)。`base` は本体の設定で、着せ替えのモジュールを付けている間も保ち、付け外しのたびにこれと合成する ([docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え))。`set_physics_json` の設定は次の付け外しで失われる。モデルに合わなければエラーを出して何も変えない。`set_*` の戻り値は結果の辞書 (下の「設定の差し替えの結果」) |
 | `get_parameter_values()` / `set_base_values(values)` / `follow(values, delta, lip_sync_level, lip_sync_strength, part_opacities)` | 受け手 ([docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める))。値は `get_parameter_ids()` の順の `PackedFloat32Array`。`follow` は指揮役の値を基準値にして、物理 → リップシンク (`lip_sync_level` が負なら当てない) → パーツの不透明度 (`part_opacities` は `{ "part": get_part_ids() の番号, "value", "weight" }` の配列) → 評価の順に進めて描く。受け手のノードは `playing` を false にして毎フレーム `follow` を呼ぶ (ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、指揮役と同じ形から始めるなら最初の `follow` の前に `reset_physics()` を呼ぶ。適合テストの `*-follow` のケースで C ABI と同じ値になることを確かめている)。失敗したら false (何も変えない) |
 | `get_values_before_physics()` / `get_lip_sync_applied()` / `get_part_opacities_applied()` | 指揮役 (T0454)。直前の `advance` (か `follow`) が受け手へ配る値を、`follow` の引数と同じ形で返す: 物理の段に入る直前の値 (`PackedFloat32Array`。`get_parameter_values()` は物理の後の値なので、物理を持つモデルではこちらを配る)、当てたリップシンクの `Vector2(音量, 強さ)` (当てていなければ `Vector2(-1, 1)`)、モーションのパーツの不透明度のカーブ (`{ "part", "value", "weight" }` の配列)。`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`、C ABI の `ugoe_puppet_values_before_physics` などと同じ値。適合テストの `*-conduct` のケースで、実行器の中の指揮役のノードの値で別のノードを `follow` させて確かめている。`var ls := conductor.get_lip_sync_applied(); follower.follow(conductor.get_values_before_physics(), delta, ls.x, ls.y, conductor.get_part_opacities_applied())` |
 | `get_part_ids()` / `get_part_opacity(id)` / `get_part_evaluated_opacity(id)` / `show_pose(part)` | パーツの ID (モデルの順) / 直前の評価でパーツに書いた不透明度の上書き (`{ "value", "weight" }`。モーションのカーブとポーズの結果) / 祖先を掛けた評価後の不透明度 / ポーズで `part` を持つ要素を表示する (フェードで切り替わる。ポーズの要素のパーツでなければ false) |
@@ -195,7 +195,7 @@ PNG の `IHDR` と KTX2 の見出しの大きさで調べる (見出しを読め
 - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号。モジュールならモジュールの中の番号)・`width`・`height`・`max` (画素)
 
 ほかの失敗も同じ辞書で返す: 読めないファイルは `invalid_file`・`unsupported_version` (`found`・`supported`)・`unsupported_features`
-(`features`)・`invalid_model` (`errors`)・`compile`、着せ替えの失敗は `ugoe::DressUpError::code` (`unknown_slot` など。補足の値も同じ)。
+(`features`)・`invalid_model` (`errors`・`error_codes`。検査のエラーの数と、その種類を `", "` でつないだもの。T0470)・`compile`、着せ替えの失敗は `ugoe::DressUpError::code` (`unknown_slot` など。補足の値も同じ)。
 `error` は英語の文で、安定した値ではない。成功した読み込みと付け外しで空に戻る。
 
 ```gdscript
@@ -204,6 +204,35 @@ if not puppet.load_model_from_buffer(bytes):
     var error := puppet.get_load_error()
     if error.get("code") == "image_limit_exceeded":
         print("texture %d is %dx%d" % [error.texture, error.width, error.height])
+```
+
+### 設定の差し替えの結果 (T0470)
+
+`set_effects_json`・`set_physics_json`・`set_base_physics_json` は結果の辞書を返す。成功なら `{ "ok": true }`。
+失敗ならエラーを出して何も変えず、`{ "ok": false, "code", "error", ... }` を返す (`ok` のほかは `get_load_error()` と同じ形。
+`get_load_error()` は変えない)。`code` と補足の値は C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と wasm の例外の
+`code` とプロパティ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#code-の一覧-t0452) の `settings_error`) に揃える:
+
+| `code` | 補足の値 | いつ |
+| --- | --- | --- |
+| `no_model` | なし | モデルを読み込んでいない |
+| `invalid_file` | なし | JSON を読めない (C ABI の `UGOE_ERROR_FORMAT`。wasm の例外は `code` を持たない) |
+| `invalid_model` | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類を `", "` でつないだもの。例: `"invalid_value"`) | `set_effects_json` の設定がモデルの読み込みと同じ検査を通らない |
+| `invalid_physics` | `errors`・`error_codes` (同上。着せ替えの `invalid_physics` と同じ) | 物理の設定がモデル (`set_base_physics_json` でモジュールを付けていれば合成したモデル) に対する検査を通らない |
+| 着せ替えの失敗の種類 (`ugoe::DressUpError::code`) | その補足の値 | `set_base_physics_json` で、付けているモジュールと合成し直せない (C ABI の `UGOE_ERROR_DRESS_UP`) |
+
+`error` は英語の文で、安定した値ではない。
+
+辞書は失敗しても空でないので、成否は `ok` で見る。
+
+```gdscript
+var result := puppet.set_physics_json(json)
+if not result.ok:
+    match result.code:
+        "invalid_physics":
+            print("physics does not fit: %s (%d errors)" % [result.error_codes, result.errors])
+        _:
+            print("cannot set physics: %s" % result.error)
 ```
 
 ### Light2D から取る光源

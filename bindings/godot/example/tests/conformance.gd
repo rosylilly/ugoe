@@ -239,8 +239,9 @@ func _conduct(conduct: Dictionary) -> void:
 		return
 	var effects = conduct.get("effects")
 	if effects is String:
-		if not conductor.set_effects_json(effects):
-			printerr("%s: the conductor rejects the effects" % name)
+		var result: Dictionary = conductor.set_effects_json(effects)
+		if not result.get("ok", false):
+			printerr("%s: the conductor rejects the effects: %s" % [name, result])
 		conductor.set_stage_enabled("eye_blink", true)
 		conductor.set_stage_enabled("breath", true)
 	var motion = conduct.get("motion")
