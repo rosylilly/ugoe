@@ -190,6 +190,11 @@
         ]
       }
     },
+    {
+      "name": "ktx2-bc1-three-color",
+      "summary": "Nested masks with an opaque BC1_RGB_UNORM KTX2 texture whose blocks all use the three-color mode; the fourth color (black) is opaque because the format has no alpha.",
+      "generated": "bc1-three-color"
+    },
     { "spec": "spec/examples/single-quad" },
     { "spec": "spec/examples/warp-grid" },
     { "spec": "spec/examples/rotation-chain" },

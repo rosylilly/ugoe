@@ -46,6 +46,8 @@ just godot-check        # = build.mjs --check --conformance (Godot と、画面�
 node bindings/godot/build.mjs --check        # 依存のライセンス + wgpu・naga に依存しないこと (T0166) + ヘッドレスの Godot で example/tests/smoke.gd
 node bindings/godot/build.mjs --conformance  # 配布物の適合テストを Godot で (= node tests/conformance/run.mjs --only godot。画面が要る。無ければ xvfb-run)
 node bindings/godot/build.mjs --conformance --only masks-moving   # 計画のケースを絞る (複数可)
+node bindings/godot/build.mjs --conformance --renderer forward_plus   # Forward+ (RenderingDevice の Vulkan) で描く (下の注)
+node bindings/godot/build.mjs --release --bench [--renderer forward_plus]   # 1 フレームの時間を測る (検査ではない。下の注)
 cargo test --manifest-path bindings/godot/Cargo.toml   # Godot なしで確かめられる部分 (src/model.rs・src/shader.rs)
 cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warnings
 ```
@@ -63,12 +65,19 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   進めるケース (`*-conduct`。T0454)、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)、
   KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222。
-  ブロック圧縮の `BC3_UNORM_BLOCK`・zstd の `BC7_SRGB_BLOCK`・法線マップの `BC1_RGB_UNORM_BLOCK`。T0223 で `example/tests/ktx2.gd` から移した)。
+  ブロック圧縮の `BC3_UNORM_BLOCK`・zstd の `BC7_SRGB_BLOCK`・法線マップの `BC1_RGB_UNORM_BLOCK`。T0223 で `example/tests/ktx2.gd` から移した。
+  3 色のモードの `BC1_RGB_UNORM_BLOCK`。T0467)。
+- 適合テストは既定で Compatibility (`--rendering-driver opengl3`) で描く。`--renderer forward_plus` は Forward+
+  (`--rendering-method forward_plus --rendering-driver vulkan`。RenderingDevice の経路) で描く。GPU が無ければ Mesa の lavapipe を使う:
+  `mesa-vulkan-drivers` を入れ、`VK_DRIVER_FILES` (古いローダは `VK_ICD_FILENAMES`) に lavapipe の ICD (`/usr/share/vulkan/icd.d/lvp_icd*.json`)
+  を指す。Godot は Vulkan を作れないと黙って Compatibility に戻るので、実行器は描き方が指定のとおりかを確かめて違えば止まる (T0467)。
 - 1 フレームの時間は `example/tests/bench.gd` で測る (検査ではない。見本のモデルのパラメータを毎フレーム動かし、`_process` に
-  かかった時間を出す。`node bindings/godot/build.mjs --release` の後に
-  `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。
+  かかった時間を出す。`node bindings/godot/build.mjs --release --bench` (=
+  `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。最初の行に Godot の版・
+  描き方・アダプタ・論理プロセッサの数を出す)。CI の `godot` のジョブは、検査の後にリリースビルドで bench.gd を Compatibility と
+  Forward+ で流し、結果をジョブの要約と成果物 `godot-bench` に残す (落ちても検査は落とさない。T0467)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
-  `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行する。
+  `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
 
 ## 使い方 (GDScript)
 
@@ -265,12 +274,13 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
     Godot 4.7 はブロック圧縮の `BC*_SRGB_BLOCK` を読めないので、同じブロックの `*_UNORM_BLOCK` に書き換える (T0223)。
     法線マップも同じ。Godot の挙動は [modules/ktx/texture_loader_ktx.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/modules/ktx/texture_loader_ktx.cpp) で調べた。
   - 圧縮した形式は `Image.decompress` で展開してから乗算する (GPU では圧縮しないで持つ)。展開できない形式は警告を出し、
-    乗算せずにそのまま描く。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
+    乗算せずにそのまま描く。Godot は BC1 をアルファのあるもの (`FORMAT_DXT1`) として展開し、3 色のモード (`color0 <= color1`) の
+    4 つ目の色を透明にするので、アルファの無い `BC1_RGB_*` は展開した後でアルファを 255 にする (`src/model.rs` の `ktx2_is_bc1_rgb`。
+    参照と同じ。T0467)。法線マップは RGB だけを読むので変えない。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
   - ミップマップは捨てて最初の段だけを使う。
   - 確かめたもの: 適合テストの `ktx2-*` のケース (参照と比べる) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM` (ミップマップ付き・zstd の超圧縮)・
-    `BC3_UNORM_BLOCK`・`BC7_SRGB_BLOCK` (zstd)・法線マップの `BC1_RGB_UNORM_BLOCK`。
-    BC1 の 3 色のモードの 4 つ目は、Godot (`FORMAT_DXT1` として bcdec で展開する) ではアルファなしの形式でも透明になるはずで、
-    参照 (不透明) と違いうる (適合テストの書き出しは 3 色のモードを使わないので確かめていない)。
+    `BC3_UNORM_BLOCK`・`BC7_SRGB_BLOCK` (zstd)・法線マップの `BC1_RGB_UNORM_BLOCK`・すべてのブロックが 3 色のモードの
+    `BC1_RGB_UNORM_BLOCK` (`ktx2-bc1-three-color`。アルファを 255 にしないと背景が透けて落ちる)。
     Basis Universal と ETC2・ASTC は確かめていない (テストで作る道具が無い)。
   ライティングは参照レンダラ (`crates/ugoe-render/src/shaders/drawable.wgsl`) と同じ式で、法線は画面での微分から求めたヤコビ行列で回す。
 - マスクは、マスクとして参照されるメッシュのカバレッジを 1 枚のアトラス (`SubViewport`) に並べて描き、要素はキャンバス座標から読む

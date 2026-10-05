@@ -74,6 +74,9 @@ pub enum Ktx2Compression {
     None,
     /// BC1 のアルファなし (`VK_FORMAT_BC1_RGB_*_BLOCK`)。アルファは捨てる。
     Bc1,
+    /// BC1 のアルファなしで、すべてのブロックを 3 色のモード (`color0 <= color1`。4 つ目の色は黒) で書く。
+    /// アルファのない BC1 では 4 つ目の色も不透明に読むことを確かめるためのもの。アルファは捨てる。
+    Bc1ThreeColor,
     /// BC3 (`VK_FORMAT_BC3_*_BLOCK`)。
     Bc3,
     /// BC7 (`VK_FORMAT_BC7_*_BLOCK`。モード 6 だけを使う)。
@@ -85,7 +88,7 @@ impl Ktx2Compression {
     fn vk_format_and_model(self) -> ((u32, u32), u8) {
         match self {
             Self::None => ((37, 43), DF_MODEL_RGBSDA), // VK_FORMAT_R8G8B8A8_UNORM / _SRGB
-            Self::Bc1 => ((131, 132), 128), // VK_FORMAT_BC1_RGB_*_BLOCK、KHR_DF_MODEL_BC1A
+            Self::Bc1 | Self::Bc1ThreeColor => ((131, 132), 128), // VK_FORMAT_BC1_RGB_*_BLOCK、KHR_DF_MODEL_BC1A
             Self::Bc3 => ((137, 138), 130), // VK_FORMAT_BC3_*_BLOCK、KHR_DF_MODEL_BC3
             Self::Bc7 => ((145, 146), 134), // VK_FORMAT_BC7_*_BLOCK、KHR_DF_MODEL_BC7
         }
@@ -95,6 +98,7 @@ impl Ktx2Compression {
         match self {
             Self::None => None,
             Self::Bc1 => Some(bc::BlockFormat::Bc1),
+            Self::Bc1ThreeColor => Some(bc::BlockFormat::Bc1ThreeColor),
             Self::Bc3 => Some(bc::BlockFormat::Bc3),
             Self::Bc7 => Some(bc::BlockFormat::Bc7),
         }
@@ -147,7 +151,7 @@ pub fn encode_ktx2(levels: &[Rgba8], options: Ktx2Options) -> Result<Vec<u8>, Er
                 .map(|(i, channel)| (i as u16 * 8, 7, channel, 255))
                 .collect()
         }
-        Ktx2Compression::Bc1 => vec![(0, 63, 0, u32::MAX)],
+        Ktx2Compression::Bc1 | Ktx2Compression::Bc1ThreeColor => vec![(0, 63, 0, u32::MAX)],
         Ktx2Compression::Bc7 => vec![(0, 127, 0, u32::MAX)],
         Ktx2Compression::Bc3 => vec![(0, 63, 15, u32::MAX), (64, 63, 0, u32::MAX)],
     };
@@ -535,6 +539,12 @@ mod tests {
         let mip = gradient(18, 15);
         for (compression, formats, model, tolerance) in [
             (Ktx2Compression::Bc1, (131, 132), 128, [24, 24, 24, 255]),
+            (
+                Ktx2Compression::Bc1ThreeColor,
+                (131, 132),
+                128,
+                [32, 32, 32, 255],
+            ),
             (Ktx2Compression::Bc3, (137, 138), 130, [24, 24, 24, 10]),
             (Ktx2Compression::Bc7, (145, 146), 134, [24, 24, 24, 24]),
         ] {
@@ -558,7 +568,10 @@ mod tests {
                         assert!(diff <= tolerance[c], "{options:?}: {a:?} vs {b:?}");
                     }
                 }
-                if compression == Ktx2Compression::Bc1 {
+                if matches!(
+                    compression,
+                    Ktx2Compression::Bc1 | Ktx2Compression::Bc1ThreeColor
+                ) {
                     assert!(image.pixels.chunks(4).all(|p| p[3] == 255));
                 }
             }
@@ -590,6 +603,54 @@ mod tests {
             "{bc7:?}"
         );
         assert!(decode(Ktx2Compression::Bc3).chunks(4).all(|p| p[3] == 77));
+    }
+
+    /// `Bc1ThreeColor` はすべてのブロックを 3 色のモード (`color0 <= color1`) で書き、黒い画素は添字 3 (黒) にする。
+    /// アルファのない BC1 なので、添字 3 も不透明な黒に読む。
+    #[test]
+    fn ktx2_bc1_three_color_mode_uses_opaque_black() {
+        let (width, height) = (8, 4);
+        let mut pixels = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                pixels.extend(if (x + y) % 3 == 0 {
+                    [0, 0, 0, 0]
+                } else {
+                    [200, 120 + 10 * x as u8, 40, 255]
+                });
+            }
+        }
+        let image = Rgba8 {
+            width,
+            height,
+            pixels,
+        };
+        let options = Ktx2Options {
+            compression: Ktx2Compression::Bc1ThreeColor,
+            ..Default::default()
+        };
+        let bytes = encode_ktx2(std::slice::from_ref(&image), options).unwrap();
+        // 段は 1 つで、ファイルの終わりの 2 ブロック。
+        let blocks = &bytes[bytes.len() - 16..];
+        let mut three = 0;
+        for block in blocks.chunks(8) {
+            let c0 = u16::from_le_bytes([block[0], block[1]]);
+            let c1 = u16::from_le_bytes([block[2], block[3]]);
+            assert!(c0 <= c1, "{block:?}");
+            let indices = u32::from_le_bytes(block[4..].try_into().unwrap());
+            three += (0..16).filter(|i| (indices >> (2 * i)) & 3 == 3).count();
+        }
+        let decoded = decode_image(TextureFormat::Ktx2, &bytes).unwrap();
+        let black = image.pixels.chunks(4).filter(|p| p[3] == 0).count();
+        assert_eq!(three, black);
+        for (a, b) in decoded.pixels.chunks(4).zip(image.pixels.chunks(4)) {
+            if b[3] == 0 {
+                assert_eq!(a, [0, 0, 0, 255]);
+            } else {
+                assert_eq!(a[3], 255);
+                assert!((0..3).all(|c| a[c].abs_diff(b[c]) <= 24), "{a:?} vs {b:?}");
+            }
+        }
     }
 
     #[test]

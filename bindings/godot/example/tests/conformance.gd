@@ -5,7 +5,10 @@ extends SceneTree
 ## 描画が要るので、ヘッドレスではなく画面 (Xvfb でもよい) のある環境で実行する:
 ##
 ##   godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/conformance.gd -- \
-##       <plan.json> <出力先のディレクトリ>
+##       <plan.json> <出力先のディレクトリ> [<描き方>]
+##
+## 描き方 (`gl_compatibility`・`forward_plus` など) を渡すと、Godot がその描き方で動いているかを確かめる (Forward+ の Vulkan を
+## 作れないと Godot は黙って Compatibility に戻るため。T0467)。
 ##
 ## ふつうは `node tests/conformance/run.mjs --only godot` (か `just godot-check`) から実行する。
 ##
@@ -68,6 +71,12 @@ func _initialize() -> void:
 		return
 	_plan = parsed
 	_out = args[1]
+	var method := RenderingServer.get_current_rendering_method()
+	print("godot: rendering method %s, adapter %s" % [method, RenderingServer.get_video_adapter_name()])
+	if args.size() >= 3 and method != args[2]:
+		printerr("expected the rendering method %s, but Godot runs %s" % [args[2], method])
+		quit(2)
+		return
 	DirAccess.make_dir_recursive_absolute(_out)
 	_next_case()
 

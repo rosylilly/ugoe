@@ -3,6 +3,7 @@
 //
 //   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,queries,unity,godot] [--cases A,B] [--out DIR]
 //                                  [--no-web-build] [--no-godot-build]
+//                                  [--godot-renderer compatibility|forward_plus]
 //
 // 1. 参照を作る: `ugoe-conformance reference` (計画と参照の評価の結果) と `ugoe render` (参照の画像)
 // 2. C ABI: tests/conformance/c/runner.c を libugoe_ffi.a にリンクして実行し、評価の結果を比べる
@@ -69,6 +70,14 @@ const out = resolve(option("--out", join(target, "conformance")));
 const cases = option("--cases", null);
 const webBuild = !args.includes("--no-web-build");
 const godotBuild = !args.includes("--no-godot-build");
+/** Godot の描き方。既定は Compatibility (opengl3)。`forward_plus` は RenderingDevice の Vulkan (GPU が無ければ lavapipe)。 */
+const godotRenderer = option("--godot-renderer", "compatibility");
+if (!["compatibility", "forward_plus"].includes(godotRenderer)) {
+  console.error(
+    `unknown --godot-renderer \`${godotRenderer}\` (expected compatibility or forward_plus)`,
+  );
+  process.exit(2);
+}
 for (const name of only) {
   if (!BINDINGS.includes(name)) {
     console.error(`unknown binding \`${name}\` (expected ${BINDINGS.join(", ")})`);
@@ -323,13 +332,15 @@ if (only.has("godot")) {
   const godotArgs = [
     "--path",
     example,
-    "--rendering-driver",
-    "opengl3",
+    ...(godotRenderer === "forward_plus"
+      ? ["--rendering-method", "forward_plus", "--rendering-driver", "vulkan"]
+      : ["--rendering-driver", "opengl3"]),
     "--script",
     "res://tests/conformance.gd",
     "--",
     join(out, "plan.json"),
     join(out, "godot"),
+    godotRenderer === "forward_plus" ? "forward_plus" : "gl_compatibility",
   ];
   const [cmd, cmdArgs] = headless
     ? ["xvfb-run", ["-a", "-s", "-screen 0 1280x1024x24", godot, ...godotArgs]]

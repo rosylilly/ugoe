@@ -20,6 +20,9 @@
 //! - `avatar-lit-bc`: ライティングの見本のテクスチャを zstd の `VK_FORMAT_BC7_SRGB_BLOCK` に、法線マップを
 //!   `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。ブロック圧縮は画素が変わるので、PNG のバンドルとは同じ画像にならない
 //!   (`docs/adr/0030-compressed-ktx2-decoding.md`)。
+//! - `bc1-three-color`: `nested-masks` のテクスチャを不透明にして斜めの黒い線を引き、すべてのブロックを BC1 の 3 色のモードで
+//!   書いた `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。黒い画素は 4 つ目の色 (添字 3) になり、アルファのない BC1 なので
+//!   不透明な黒に読む (アルファのある BC1 のように透明にすると、背景が透ける。T0467)。
 
 use std::path::{Path, PathBuf};
 
@@ -35,7 +38,7 @@ use ugoe_headless::{Rgba8, image};
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 13] = [
+pub const NAMES: [&str; 14] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
@@ -49,6 +52,7 @@ pub const NAMES: [&str; 13] = [
     "ktx2-mips",
     "avatar-bc3",
     "avatar-lit-bc",
+    "bc1-three-color",
 ];
 
 /// 圧縮していない sRGB の KTX2 (`R8G8B8A8_SRGB`)。
@@ -111,6 +115,10 @@ pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
         } else if name == "ktx2-mips" {
             let mut bundle = Bundle::new(model("nested-masks")?);
             bundle.textures = vec![mipmapped_ktx2()?];
+            bundle
+        } else if name == "bc1-three-color" {
+            let mut bundle = Bundle::new(model("nested-masks")?);
+            bundle.textures = vec![three_color_bc1()?];
             bundle
         } else {
             let mut bundle = Bundle::new(model(name)?);
@@ -242,6 +250,29 @@ fn mipmapped_ktx2() -> Result<TextureData, Error> {
             srgb: false,
             zstd: true,
             compression: Ktx2Compression::None,
+        },
+    )
+}
+
+/// [`texture`] を不透明にし、斜めの黒い線 (`(x + y) % 4 == 0`。どのブロックにも黒と黒でない画素がある) を引いて、
+/// すべてのブロックを 3 色のモードで書いた BC1 (アルファなし) の KTX2 にする。
+fn three_color_bc1() -> Result<TextureData, Error> {
+    let mut image = texture();
+    let width = image.width as usize;
+    for (i, px) in image.pixels.chunks_mut(4).enumerate() {
+        let (x, y) = (i % width, i / width);
+        if (x + y) % 4 == 0 {
+            px.copy_from_slice(&[0, 0, 0, 255]);
+        } else {
+            px[3] = 255;
+        }
+    }
+    encode_ktx2(
+        &[image],
+        Ktx2Options {
+            srgb: false,
+            zstd: false,
+            compression: Ktx2Compression::Bc1ThreeColor,
         },
     )
 }
@@ -522,5 +553,20 @@ mod tests {
             bytes: encode_png(&texture()).unwrap(),
         };
         assert_eq!(decoded(&[mipmapped_ktx2().unwrap()]), decoded(&[png]));
+    }
+
+    /// 3 色のモードの BC1 は、黒い線を不透明な黒に読む (アルファのない BC1)。
+    #[test]
+    fn three_color_bc1_reads_black_as_opaque() {
+        let decoded = decoded(&[three_color_bc1().unwrap()]);
+        let image = &decoded[0];
+        assert_eq!((image.width, image.height), (64, 64));
+        assert!(image.pixels.chunks(4).all(|p| p[3] == 255));
+        let black = image
+            .pixels
+            .chunks(4)
+            .filter(|p| p[..3] == [0, 0, 0])
+            .count();
+        assert!(black >= 64 * 64 / 4, "{black}");
     }
 }

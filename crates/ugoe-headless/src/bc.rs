@@ -1,7 +1,7 @@
 //! 適合テストと単体テストのための、簡単なブロック圧縮 (BC1・BC3・BC7) の書き出し ([`crate::image::encode_ktx2`])。
 //!
 //! 画質は求めない (読む側の展開を比べるためのもの)。端点はブロックの画素の各チャンネルの最小と最大で、添字は
-//! いちばん近い色を選ぶ。BC7 はモード 6 (1 つの区画・RGBA の 7bit の端点と p ビット・4bit の添字) だけを使う。
+//! いちばん近い色を選ぶ。BC1 は 4 色のモードのほかに、すべてのブロックを 3 色のモード (4 つ目の添字は黒) で書ける。BC7 はモード 6 (1 つの区画・RGBA の 7bit の端点と p ビット・4bit の添字) だけを使う。
 //! ブロックの形式は Microsoft の Direct3D 11 の文書と Khronos Data Format Specification の S3TC・BPTC の節に従う
 //! (`docs/adr/0030-compressed-ktx2-decoding.md`)。
 
@@ -12,6 +12,8 @@ use crate::Rgba8;
 pub(crate) enum BlockFormat {
     /// BC1 (アルファなし。常に 4 色のモード)。
     Bc1,
+    /// BC1 (アルファなし。常に 3 色のモード: `color0 <= color1`、添字 3 は黒)。
+    Bc1ThreeColor,
     /// BC3 (BC1 の色と、8 段のアルファ)。
     Bc3,
     /// BC7 のモード 6。
@@ -22,7 +24,7 @@ impl BlockFormat {
     /// 1 ブロック (4x4 画素) のバイト数。
     pub(crate) const fn block_bytes(self) -> usize {
         match self {
-            Self::Bc1 => 8,
+            Self::Bc1 | Self::Bc1ThreeColor => 8,
             Self::Bc3 | Self::Bc7 => 16,
         }
     }
@@ -44,6 +46,7 @@ pub(crate) fn encode(image: &Rgba8, format: BlockFormat) -> Vec<u8> {
             }
             match format {
                 BlockFormat::Bc1 => out.extend(color_block(&block)),
+                BlockFormat::Bc1ThreeColor => out.extend(three_color_block(&block)),
                 BlockFormat::Bc3 => {
                     out.extend(alpha_block(&block));
                     out.extend(color_block(&block));
@@ -129,6 +132,42 @@ fn color_block(block: &[[u8; 4]; 16]) -> [u8; 8] {
                 .unwrap_or(0);
             indices |= (best as u32) << (2 * i);
         }
+    }
+    let mut out = [0u8; 8];
+    out[..2].copy_from_slice(&c0.to_le_bytes());
+    out[2..4].copy_from_slice(&c1.to_le_bytes());
+    out[4..].copy_from_slice(&indices.to_le_bytes());
+    out
+}
+
+/// BC1 の 3 色のモードの色のブロック (8 バイト)。`color0 <= color1` で書き、色は端点・その中点・黒の 4 つ
+/// (添字 3 の黒は、アルファのある BC1 では透明、アルファのない BC1 では不透明。Khronos Data Format Specification の S3TC の節)。
+/// 端点は黒を除いた画素から取る (黒い画素は添字 3 で表す)。
+fn three_color_block(block: &[[u8; 4]; 16]) -> [u8; 8] {
+    let colored: Vec<[u8; 4]> = block
+        .iter()
+        .copied()
+        .filter(|t| t[..3] != [0, 0, 0])
+        .collect();
+    let (low, high) = if colored.is_empty() {
+        ([0; 3], [0; 3])
+    } else {
+        let mut padded = [colored[0]; 16];
+        padded[..colored.len()].copy_from_slice(&colored);
+        endpoints::<3>(&padded)
+    };
+    let (mut c0, mut c1) = (to_565(low), to_565(high));
+    if c0 > c1 {
+        std::mem::swap(&mut c0, &mut c1);
+    }
+    let (e0, e1) = (from_565(c0), from_565(c1));
+    let palette = [e0, e1, [0, 1, 2].map(|c| (e0[c] + e1[c]) / 2), [0, 0, 0]];
+    let mut indices = 0u32;
+    for (i, texel) in block.iter().enumerate() {
+        let best = (0..4)
+            .min_by_key(|&k| distance(palette[k], *texel))
+            .unwrap_or(0);
+        indices |= (best as u32) << (2 * i);
     }
     let mut out = [0u8; 8];
     out[..2].copy_from_slice(&c0.to_le_bytes());

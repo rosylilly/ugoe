@@ -1011,6 +1011,22 @@ const KTX2_AS_STORED_FORMATS: [(u32, u32); 9] = [
     (146, 145), // BC7_SRGB_BLOCK → BC7_UNORM_BLOCK
 ];
 
+/// アルファの無い BC1 の `vkFormat` (`VK_FORMAT_BC1_RGB_UNORM_BLOCK`・`_SRGB_BLOCK`)。
+const KTX2_BC1_RGB_FORMATS: [u32; 2] = [131, 132];
+
+/// KTX2 がアルファの無い BC1 (`VK_FORMAT_BC1_RGB_*_BLOCK`) か。
+///
+/// Godot は BC1 をアルファのあるもの (`Image.FORMAT_DXT1`) として読み、3 色のモード (`color0 <= color1`) の
+/// 4 つ目の色を透明な黒にする。アルファの無い BC1 ではその色も不透明 (Khronos Data Format Specification の S3TC の節。
+/// 参照の実装も不透明に読む) なので、展開した後でアルファを 255 にする (`render.rs` の `load_texture`。T0467)。
+pub fn ktx2_is_bc1_rgb(bytes: &[u8]) -> bool {
+    bytes.starts_with(&KTX2_IDENTIFIER)
+        && bytes
+            .get(KTX2_VK_FORMAT..KTX2_VK_FORMAT + 4)
+            .and_then(|b| b.try_into().ok())
+            .is_some_and(|b| KTX2_BC1_RGB_FORMATS.contains(&u32::from_le_bytes(b)))
+}
+
 /// KTX2 の画素を保存された値のまま (sRGB からリニアへ変換せずに) Godot に読ませるため、ヘッダを書き換える
 /// (`docs/spec/rendering.md#前提`: KTX2 の値は転送関数によらずそのまま使う)。
 ///
@@ -1739,6 +1755,23 @@ mod tests {
         // Basis Universal (VK_FORMAT_UNDEFINED) は転送関数だけを書き換える
         let patched = ktx2_as_stored(&ktx2_header(0, DF_TRANSFER_SRGB)).expect("rewritten");
         assert_eq!(patched, ktx2_header(0, DF_TRANSFER_LINEAR));
+    }
+
+    #[test]
+    fn ktx2_is_bc1_rgb_reads_the_format() {
+        let with_identifier = |vk_format: u32| {
+            let mut bytes = KTX2_IDENTIFIER.to_vec();
+            bytes.extend_from_slice(&vk_format.to_le_bytes());
+            bytes
+        };
+        assert!(ktx2_is_bc1_rgb(&with_identifier(131)));
+        assert!(ktx2_is_bc1_rgb(&with_identifier(132)));
+        // アルファのある BC1・BC3・RGBA8
+        for other in [133, 134, 137, 37] {
+            assert!(!ktx2_is_bc1_rgb(&with_identifier(other)), "{other}");
+        }
+        assert!(!ktx2_is_bc1_rgb(&with_identifier(131)[..14]));
+        assert!(!ktx2_is_bc1_rgb(&FAKE_PNG));
     }
 
     #[test]

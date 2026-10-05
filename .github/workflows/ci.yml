@@ -303,6 +303,8 @@ jobs:
   # 版を固定する: Godot は公式のビルド (SHA-512 を書いておいて確かめる)、Xvfb と Mesa はランナーの ubuntu-24.04 のもの。
   # Godot を上げるときは、リリースの SHA512-SUMS.txt の値に GODOT_SHA512 を書き換える。
   # Godot は Xvfb の上の llvmpipe (Compatibility / OpenGL) で、参照の画像 (ugoe render) は EGL の llvmpipe で描く。
+  # 続けて適合テストを Forward+ (RenderingDevice の Vulkan) で lavapipe の上でも流し、最後に bench.gd で 1 フレームの時間を
+  # 測って要約と成果物に残す (測るだけで、落ちてもジョブは落とさない。T0467)。
   godot:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -318,8 +320,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb xauth libgl1-mesa-dri libegl1 libegl-mesa0 libglx-mesa0 \
-            libxcursor1 libxinerama1 libxrandr2 libxi6 libfontconfig1
-          dpkg-query -W xvfb libgl1-mesa-dri
+            libxcursor1 libxinerama1 libxrandr2 libxi6 libfontconfig1 \
+            mesa-vulkan-drivers libvulkan1
+          dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers
+      # Godot の Forward+ (Vulkan) を lavapipe で動かす (参照の画像は WGPU_BACKEND=gl のまま)
+      - name: Restrict Vulkan loader to lavapipe
+        run: |
+          icd="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n 1)"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
       - name: Install Godot
         run: |
           name="Godot_v${GODOT_VERSION}_linux.x86_64"
@@ -340,6 +349,35 @@ jobs:
       - uses: extractions/setup-just@v4
       - name: Godot binding
         run: just godot-check
+      - name: Godot conformance (Forward+ on lavapipe)
+        run: node bindings/godot/build.mjs --conformance --renderer forward_plus
+      # 落ちたときに画像 (参照・Godot・違いの画像) を見られるように残す
+      - name: Upload conformance results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-conformance
+          path: target/conformance
+      # 1 フレームの時間 (bindings/godot/README.md の「検査」)。ランナーは共有の仮想機械なので、値は目安
+      - name: Benchmark (bench.gd)
+        continue-on-error: true
+        run: |
+          mkdir -p target/godot-bench
+          node bindings/godot/build.mjs --release --bench | tee target/godot-bench/compatibility.txt
+          node bindings/godot/build.mjs --release --bench --renderer forward_plus | tee target/godot-bench/forward_plus.txt
+          for f in compatibility forward_plus; do
+            echo "### bench.gd ($f)"
+            echo '```'
+            grep -E '^(godot |avatar|dress-up)' "target/godot-bench/$f.txt"
+            echo '```'
+          done >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload benchmark
+        if: success() || failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-bench
+          path: target/godot-bench
+          if-no-files-found: ignore
 
   # 配布物の適合テスト (tests/conformance/README.md、`just conformance`)。C ABI と wasm (npm パッケージ) の
   # 頂点と画像を、ModelInstance と `ugoe render` の参照と比べる。参照の画像は Mesa の lavapipe で、

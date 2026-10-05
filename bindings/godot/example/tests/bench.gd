@@ -5,6 +5,9 @@ extends SceneTree
 ##   node bindings/godot/build.mjs --release
 ##   xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd
 ##
+## (`node bindings/godot/build.mjs --release --bench [--renderer forward_plus]` と同じ)。`-- <描き方>` を渡すと、Godot がその
+## 描き方 (`gl_compatibility`・`forward_plus` など) で動いているかを確かめる (T0467)。
+##
 ## 描画の資源 (RenderingServer) に渡す配列のコピーも測りたいので、ヘッドレス (描画しない) ではなく画面のある環境で実行する。
 
 const FRAMES := 2000
@@ -24,6 +27,24 @@ var _light: PointLight2D
 
 
 func _initialize() -> void:
+	var method := RenderingServer.get_current_rendering_method()
+	print(
+		(
+			"godot %s, rendering method %s, adapter %s (%s), %d logical processors"
+			% [
+				Engine.get_version_info()["string"],
+				method,
+				RenderingServer.get_video_adapter_name(),
+				RenderingServer.get_video_adapter_vendor(),
+				OS.get_processor_count(),
+			]
+		)
+	)
+	var args := OS.get_cmdline_user_args()
+	if args.size() >= 1 and method != args[0]:
+		printerr("expected the rendering method %s, but Godot runs %s" % [args[0], method])
+		quit(2)
+		return
 	# 光源を読むところ (`_process`) と評価・描画の準備 (`playing` の `_process`) を、前後のノードで挟んで測る。
 	var before := Hook.new()
 	before.process_priority = -1000

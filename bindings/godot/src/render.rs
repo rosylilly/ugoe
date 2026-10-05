@@ -27,7 +27,7 @@ use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
     AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, front_facing,
-    ktx2_as_stored, premultiply,
+    ktx2_as_stored, ktx2_is_bc1_rgb, premultiply,
 };
 use crate::shader::{self, ShaderKind};
 
@@ -264,6 +264,7 @@ fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
 ///
 /// PNG も KTX2 も乗算していないアルファなので、RGBA8 にして乗算済みにする (`docs/spec/rendering.md#前提`)。
 /// 圧縮した KTX2 は展開してから乗算する。展開できなければ警告を出し、乗算せずにそのまま使う。
+/// アルファの無い BC1 は、Godot が透明にする 3 色のモードの 4 つ目の色も不透明にする ([`ktx2_is_bc1_rgb`])。
 fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
     let mut image = decode(data, "texture")?;
     if image.is_compressed() && image.decompress() != godot::global::Error::OK {
@@ -279,6 +280,11 @@ fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
         image.convert(Format::RGBA8);
     }
     let mut rgba = image.get_data().to_vec();
+    if data.format == TextureFormat::Ktx2 && ktx2_is_bc1_rgb(&data.bytes) {
+        for px in rgba.as_chunks_mut::<4>().0 {
+            px[3] = 255;
+        }
+    }
     premultiply(&mut rgba);
     let (w, h) = (image.get_width(), image.get_height());
     image.set_data(

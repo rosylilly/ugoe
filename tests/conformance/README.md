@@ -13,7 +13,7 @@
 | `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
 | 問い合わせの JSON (npm パッケージ `@ugoe/runtime` の `*_json()`、`queries`) | 参照とは比べない。出力のキーを、パッケージの型のキーの一覧と比べる (下の「問い合わせの JSON のキー」) | なし (ヘッドレスの Chrome の WebGL2 で `WebPuppet` を作るだけ) | [`web/queries.js`](web/queries.js) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
-| Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
+| Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。`--godot-renderer forward_plus` で Forward+ (RenderingDevice の Vulkan。GPU が無ければ lavapipe)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
 ## 実行
 
@@ -25,6 +25,7 @@ just conformance --only avatar            # <ugoe-avatar> のシナリオだけ 
 just conformance --only queries           # 問い合わせの JSON のキーだけ (参照を作らない。フィクスチャを書き出す ugoe-cli だけビルドする)
 just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
 just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
+just conformance --only godot --godot-renderer forward_plus   # Godot を Forward+ (Vulkan) で描く (既定は compatibility = opengl3)
 just conformance --cases avatar-pose,masks-moving   # ケースを絞る
 just conformance --no-web-build           # bindings/web/dist を作り直さない (--no-godot-build は Godot の拡張)
 ```
@@ -59,7 +60,8 @@ target/conformance/
 - `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
 
 CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオと問い合わせの JSON のキーも含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
-`godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を実行する。落ちたら `target/conformance` を成果物として残す。
+`godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を、続けて `--renderer forward_plus` で
+Forward+ (lavapipe) でも実行する (T0467)。落ちたら `target/conformance` を成果物として残す。
 このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
 
 ## 流れ
@@ -80,7 +82,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | --- | --- |
 | `name` / `summary` | 名前 (出力のファイル名。英数字・`-`・`_`) と説明 |
 | `model` | `.ugoe` かモデルの JSON (リポジトリのルートからの相対パス) |
-| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`・`avatar-ktx2`・`avatar-lit-ktx2`・`ktx2-mips`・`avatar-bc3`・`avatar-lit-bc`) |
+| `generated` | `model` の代わりに、[`src/bundles.rs`](src/bundles.rs) が作るモデルの名前 (`nested-masks`・`mixed-masks`・`intersection-masks`・`blend-modes`・`many-masks`・`moving-masks`・`lip-sync-hair`・`part-switch`・`avatar-ktx2`・`avatar-lit-ktx2`・`ktx2-mips`・`avatar-bc3`・`avatar-lit-bc`・`bc1-three-color`) |
 | `spec` | `spec/examples/<例>` を書くと、その `expected.json` のケースごとに展開する (`spec-<例>-<番号>`。モデルとパラメータはそこから取る) |
 | `modules` | 付ける `.ugoemod` (付ける順) |
 | `parameters` | パラメータの値 (値域の外はクランプされる) |
@@ -111,6 +113,10 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
   (もとは Godot の `example/tests/ktx2.gd`。T0223 で移した)。
 - `avatar-lit-bc` (ケース `ktx2-bc-avatar-lit`): ライティングの見本のテクスチャを zstd で超圧縮した `VK_FORMAT_BC7_SRGB_BLOCK` に、
   法線マップを `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。
+- `bc1-three-color` (ケース `ktx2-bc1-three-color`。T0467): `nested-masks` のテクスチャを不透明にして斜めの黒い線を引き、
+  すべてのブロックを BC1 の 3 色のモード (`color0 <= color1`) で書いた `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。黒は 4 つ目の色
+  (添字 3) になる。アルファの無い BC1 ではこの色も不透明 (Khronos Data Format Specification の S3TC の節) で、アルファのある BC1
+  (Direct3D の `DXGI_FORMAT_BC1_UNORM` や Godot の `Image.FORMAT_DXT1`) として読むと透明になって背景が透ける。
 
 ブロック圧縮のケースは、画素が圧縮で変わるので PNG のバンドルと同じ画像にはならない (参照も同じ KTX2 を展開して描く)。
 参照 (`ugoe render`) と wasm は BC1〜BC5・BC7 を `bcdec_rs` で展開する ([ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md))。

@@ -11,6 +11,11 @@
 //       # ビルドして、配布物の適合テスト (tests/conformance/README.md) を Godot で実行する
 //       # (= node tests/conformance/run.mjs --only godot。実行器は example/tests/conformance.gd)。
 //       # 描画に画面が要る。DISPLAY が無ければ xvfb-run を使う。`--only` で計画のケースを絞る (複数可)。
+//   node bindings/godot/build.mjs --release --bench
+//       # ビルドして、1 フレームの時間を example/tests/bench.gd で測る (検査ではない。画面が要る)。
+//   --renderer forward_plus
+//       # --conformance と --bench を、Compatibility (opengl3。既定) の代わりに Forward+ (RenderingDevice の Vulkan) で描く。
+//       # GPU が無ければ Mesa の lavapipe を使う (VK_DRIVER_FILES で lavapipe の ICD を指す。README の「検査」)。
 //
 // ライブラリを example/addons/ugoe/bin/ に、見本のモデル (assets/samples/ の .ugoe と着せ替えの .ugoemod) を example/models/ に写す。
 // Godot の実行ファイルは環境変数 GODOT (既定は `godot`) で指定する。
@@ -29,6 +34,12 @@ const release = args.includes("--release");
 const check = args.includes("--check");
 const conformance = args.includes("--conformance");
 const importProject = args.includes("--import");
+const bench = args.includes("--bench");
+const renderer = args.flatMap((a, i) => (args[i - 1] === "--renderer" ? [a] : [])).at(-1);
+if (renderer !== undefined && !["compatibility", "forward_plus"].includes(renderer)) {
+  console.error(`error: unknown --renderer ${renderer} (expected compatibility or forward_plus)`);
+  process.exit(2);
+}
 const only = args.flatMap((a, i) => (args[i - 1] === "--only" ? [a] : []));
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
@@ -121,8 +132,8 @@ function runGodot(godotArgs, { display = false } = {}) {
   execFileSync(cmd, cmdArgs, { stdio: "inherit", timeout: 10 * 60 * 1000 });
 }
 
-if (check || conformance || importProject) {
-  requireGodot({ display: conformance });
+if (check || conformance || importProject || bench) {
+  requireGodot({ display: conformance || bench });
   // 初回はプロジェクトの読み込み (.godot/ の作成と拡張の登録) が要る。
   // Godot 4.7.1 は、GDExtension のクラスを持つプロジェクトの初回の --import の終わりに異常終了することがある
   // (godot-rust の最小のクラスでも起きる。2 回目からは起きない) ので、1 回だけやり直す。
@@ -171,6 +182,7 @@ if (conformance) {
         "--only",
         "godot",
         "--no-godot-build",
+        ...(renderer ? ["--godot-renderer", renderer] : []),
         ...cases,
       ],
       // 参照を描く ugoe のクレートも、上の cargo と同じ環境と target でビルドする。
@@ -179,4 +191,16 @@ if (conformance) {
   } catch {
     process.exitCode = 1;
   }
+}
+
+if (bench) {
+  // 描画の資源に渡すところも測るので、ヘッドレスではなく画面のある環境で描く (bench.gd の冒頭)。
+  const [rendering, method] =
+    renderer === "forward_plus"
+      ? [["--rendering-method", "forward_plus", "--rendering-driver", "vulkan"], "forward_plus"]
+      : [["--rendering-driver", "opengl3"], "gl_compatibility"];
+  if (!release) console.warn("warning: --bench without --release measures a debug build");
+  runGodot(["--path", example, ...rendering, "--script", "res://tests/bench.gd", "--", method], {
+    display: true,
+  });
 }
