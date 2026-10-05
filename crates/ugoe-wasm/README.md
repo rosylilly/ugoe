@@ -120,6 +120,9 @@ puppet.motions_json();                 // [{name, duration, looping, fade_in, fa
 puppet.start_motion("idle", "idle");   // 優先度は "idle" | "normal" (既定) | "force"。開始しなければ false
 puppet.start_motion_json(json);        // *.motion.json の形。タイムラインのプレビュー用
 sample_motion_json(json, t);           // (関数) 各カーブの時刻 t の値 (フェードなし) の JSON。タイムラインのシーク用
+const sampler = new MotionSampler(json); // 同じモーションを毎フレーム評価するとき (カーブごとの索引を持つ。T0451)
+sampler.sample(t);                     // sample_motion_json と同じ形の JSON
+sampler.set_motion_json(json);         // モーションを差し替えて索引を作り直す (読めなければ例外で、今のモーションを保つ)
 puppet.set_expression("smile");        // または set_expression_json(json)。stop_expressions()
 puppet.add_expression("surprised");    // 使用中の表情に重ねる。stop_expression("smile") で名前を指定して止める (T0720)
 puppet.expressions_json();             // [{name, fade_in, fade_out, parameters: [{parameter, value, op}]}] (T0720)

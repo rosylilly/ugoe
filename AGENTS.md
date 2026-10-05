@@ -84,6 +84,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
+| `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |

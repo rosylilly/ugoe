@@ -25,3 +25,6 @@ T0415・T0420 から、公開に関わる項目を分けた。公開の時期は
 - `docs/tasks/T0415-godot-distribution.md`・`docs/tasks/T0420-unity-and-conformance-extras.md`、`docs/release.md`
 
 ## メモ
+
+- T0032 (3 回目の起票のまとめ) から: T0166 の候補「C ABI の共有ライブラリ (Unity の配布物) が wgpu を外してどれだけ小さくなったかを、リリースビルドで
+  測って docs/portability.md に書く」をこのタスクで扱う (配布物を作るときに測る)。
