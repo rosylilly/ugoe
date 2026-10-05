@@ -400,7 +400,8 @@ fn on_webview_event(webview: &tauri::Webview, event: &WebviewEvent) {
 const OPEN_FILES_EVENT: &str = "open-files";
 
 /// OS から渡されたファイル (T0732)。起動時の引数 (コマンドラインと、Windows・Linux の「このアプリで開く」) と、
-/// macOS の `RunEvent::Opened` (macOS は起動時も起動中も、ファイルを引数ではなくこのイベントで渡す) で届く。
+/// macOS の `RunEvent::Opened` (macOS は起動時も起動中も、ファイルを引数ではなくこのイベントで渡す) と、2 つ目の起動の引数
+/// (Windows・Linux の起動中の「このアプリで開く」。`on_second_instance`、T0733) で届く。
 /// 画面が `initial_files` で受け取るまでは溜めておき、受け取った後に届いたものはイベント `OPEN_FILES_EVENT` ですぐ送る。
 /// 画面は届いたファイルをドロップと同じに開く (README の「OS から開く」)。
 #[derive(Default)]
@@ -434,16 +435,49 @@ impl OpenedFiles {
     }
 }
 
-/// 起動時の引数から、開くファイルのパスを選ぶ (`-` で始まるものと、読めない拡張子のものは除く)。相対パスは今のディレクトリからの
-/// 絶対パスにする (覚えた場所 `path:` から、別のディレクトリで起動した後も読み直せるように)。
-fn paths_from_args(args: impl IntoIterator<Item = OsString>) -> Vec<PathBuf> {
+/// 起動時の引数 (実行ファイルのパスを除いたもの) から、開くファイルのパスを選ぶ (`-` で始まるものと、読めない拡張子のものは除く)。
+/// 相対パスは `cwd` (起動したプロセスの今のディレクトリ) からの絶対パスにする (覚えた場所 `path:` から、別のディレクトリで起動した後も
+/// 読み直せるように)。
+fn paths_from_args(args: impl IntoIterator<Item = OsString>, cwd: &Path) -> Vec<PathBuf> {
     args.into_iter()
         .filter(|a| !a.as_encoded_bytes().starts_with(b"-"))
         .map(PathBuf::from)
         .filter(|p| is_readable_path(p))
-        .map(|p| std::path::absolute(&p).unwrap_or(p))
+        .map(|p| {
+            let p = cwd.join(p);
+            std::path::absolute(&p).unwrap_or(p)
+        })
         .collect()
 }
+
+/// 2 つ目の起動 (Windows・Linux の、起動中の「このアプリで開く」) から tauri-plugin-single-instance で届いた引数から、開くファイルの
+/// パスを選ぶ (T0733)。`argv` の先頭は実行ファイルのパス、`cwd` は 2 つ目のプロセスの今のディレクトリ。選び方は起動時の引数と同じ。
+fn paths_from_second_instance(argv: Vec<String>, cwd: &str) -> Vec<PathBuf> {
+    paths_from_args(argv.into_iter().skip(1).map(OsString::from), Path::new(cwd))
+}
+
+/// 2 つ目の起動を受けたとき: 渡されたファイルを今のウィンドウで開き (`open_from_os`)、ウィンドウを前に出す。
+/// 2 つ目のプロセスは引数を渡した後に自分で終わる (ウィンドウを作らない)。
+fn on_second_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    argv: Vec<String>,
+    cwd: String,
+) {
+    open_from_os(app, paths_from_second_instance(argv, &cwd));
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        // 最小化や隠したウィンドウも前に出す。できなくても開くことは済んでいるので、知らせるだけ。
+        let shown = window
+            .unminimize()
+            .and_then(|()| window.show())
+            .and_then(|()| window.set_focus());
+        if let Err(e) = shown {
+            eprintln!("could not bring the window to the front: {e}");
+        }
+    }
+}
+
+/// ウィンドウのラベル (`tauri.conf.json` の `app.windows` はラベルを書かないので既定の `main`)。
+const MAIN_WINDOW: &str = "main";
 
 /// macOS の `RunEvent::Opened` の URL から、開くファイルのパスを選ぶ (`file:` の URL で、読める拡張子のものだけ)。
 #[cfg(any(target_os = "macos", test))]
@@ -497,6 +531,8 @@ const MAX_READABLE_FILES_STORE_BYTES: u64 = 16 * 1024 * 1024;
 pub fn run() {
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
+        // 2 つ目の起動は、引数を 1 つ目へ渡して終わる (T0733)。2 つ目では何も作らずに終わるよう、プラグインの最初に置く。
+        .plugin(tauri_plugin_single_instance::init(on_second_instance))
         // `Opened` が `setup` より先に届いても受けられるよう、ここで置く。
         .manage(OpenedFiles::default())
         .plugin(tauri_plugin_dialog::init())
@@ -508,7 +544,11 @@ pub fn run() {
                 .ok()
                 .map(|d| d.join(READABLE_FILES_STORE));
             app.manage(FileAccess::load(store));
-            open_from_os(app.handle(), paths_from_args(std::env::args_os().skip(1)));
+            let cwd = std::env::current_dir().unwrap_or_default();
+            open_from_os(
+                app.handle(),
+                paths_from_args(std::env::args_os().skip(1), &cwd),
+            );
             Ok(())
         })
         .on_permission_request(|_, kind| permission_response(kind))
@@ -776,14 +816,41 @@ mod tests {
             module.clone().into_os_string(),
             OsString::from("project.ugoeproj"),
         ];
-        assert_eq!(paths_from_args(args), [model, module]);
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(paths_from_args(args, &cwd), [model, module]);
         // 相対パスは今のディレクトリからの絶対パスにする。
-        let relative = paths_from_args([OsString::from("models/a.json")]);
-        assert_eq!(
-            relative,
-            [std::env::current_dir().unwrap().join("models/a.json")]
-        );
+        let relative = paths_from_args([OsString::from("models/a.json")], &cwd);
+        assert_eq!(relative, [cwd.join("models/a.json")]);
         assert!(relative[0].is_absolute());
+    }
+
+    /// 2 つ目の起動の引数 (T0733) は、起動時の引数と同じに選ぶ。先頭 (実行ファイルのパス) は開かず、相対パスは
+    /// 1 つ目ではなく 2 つ目のプロセスの今のディレクトリから解く。
+    #[test]
+    fn opens_files_from_a_second_instance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("work");
+        let model = tmp.path().join("model.ugoe");
+        let argv = vec![
+            // 実行ファイルの名前が読める拡張子でも開かない。
+            tmp.path()
+                .join("viewer.json")
+                .to_string_lossy()
+                .into_owned(),
+            "--flag".to_owned(),
+            model.to_string_lossy().into_owned(),
+            "notes.txt".to_owned(),
+            "dress-up/hat.ugoemod".to_owned(),
+        ];
+        assert_eq!(
+            paths_from_second_instance(argv, &cwd.to_string_lossy()),
+            [model, cwd.join("dress-up/hat.ugoemod")]
+        );
+        // ファイルを渡さずに起動したとき (ウィンドウを前に出すだけ)。
+        assert!(
+            paths_from_second_instance(vec!["ugoe-viewer".to_owned()], &cwd.to_string_lossy())
+                .is_empty()
+        );
     }
 
     #[test]
