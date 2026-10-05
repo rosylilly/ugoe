@@ -1,11 +1,11 @@
 ---
 id: T0164
 title: 公開仕様と spec-check の残り (検証するカーブの範囲・目パチの段の上限・拒まれる例の名前・文字列の enum の形。判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, tools/spec-check, scripts, ugoe-model, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0164
 ---
 
 # T0164: 公開仕様と spec-check の残り (検証するカーブの範囲・目パチの段の上限・拒まれる例の名前・文字列の enum の形。判断が要る)

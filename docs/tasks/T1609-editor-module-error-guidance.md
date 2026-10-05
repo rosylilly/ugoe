@@ -1,11 +1,11 @@
 ---
 id: T1609
 title: "エディタ: モジュールの適用のエラーに直し方の案内を出し、keep_look の作り直しの警告を捨てない"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1609
 ---
 
 # T1609: エディタ: モジュールの適用のエラーに直し方の案内を出し、keep_look の作り直しの警告を捨てない
