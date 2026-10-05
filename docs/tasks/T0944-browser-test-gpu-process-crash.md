@@ -1,11 +1,11 @@
 ---
 id: T0944
 title: "PuppetSurface のブラウザのテスト: 作成の後に GPU プロセスが落ちても wasm が panic しないことを確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0944
 ---
 
 # T0944: PuppetSurface のブラウザのテスト: 作成の後に GPU プロセスが落ちても wasm が panic しないことを確かめる

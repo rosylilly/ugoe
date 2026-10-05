@@ -1,11 +1,11 @@
 ---
 id: T0480
 title: "<ugoe-avatar>: 作り直しが CreateError で失敗すると、復元の時間切れのタイマーを消さずに上書きする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0480
 ---
 
 # T0480: <ugoe-avatar>: 作り直しが CreateError で失敗すると、復元の時間切れのタイマーを消さずに上書きする

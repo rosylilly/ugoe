@@ -1,11 +1,11 @@
 ---
 id: T0817
 title: スタジオ UI: 操作ウィンドウの配置とレイアウト
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/studio, docs]
 depends_on: [T0916, T0917, T0815]
-assignee:
+assignee: claude-worker-T0817
 ---
 
 # T0817: スタジオ UI: 操作ウィンドウの配置とレイアウト
