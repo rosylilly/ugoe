@@ -1,11 +1,11 @@
 ---
 id: T0465
 title: wasm の描画・読み戻しの GPU の喪失にコードを付けるか決め、@ugoe/player の着せ替えの失敗の訳に device_lost を足す (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, bindings/web, packages/player, docs]
 depends_on: [T0934]
-assignee:
+assignee: claude-worker-T0465
 ---
 
 # T0465: wasm の描画・読み戻しの GPU の喪失にコードを付けるか決め、@ugoe/player の着せ替えの失敗の訳に device_lost を足す (判断が要る)
