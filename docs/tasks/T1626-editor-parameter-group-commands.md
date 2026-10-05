@@ -1,11 +1,11 @@
 ---
 id: T1626
 title: "エディタ: パラメータのグループを足す・消す・名前を変えるコマンドと画面"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, apps/editor, ugoe-cli, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1626
 ---
 
 # T1626: エディタ: パラメータのグループを足す・消す・名前を変えるコマンドと画面

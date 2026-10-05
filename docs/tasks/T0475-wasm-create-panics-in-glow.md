@@ -1,11 +1,11 @@
 ---
 id: T0475
 title: "wasm: WebPuppet の作成が WebGL のコンテキストを取れないときに glow の中で panic する"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, ugoe-render, packages/player, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0475
 ---
 
 # T0475: wasm: WebPuppet の作成が WebGL のコンテキストを取れないときに glow の中で panic する
