@@ -1,11 +1,11 @@
 ---
 id: T1612
 title: "エディタ: スロットの欄・カーブのキーの時刻・グルーの組を doc.send で送り、パネルのドラッグの送り直しを点検する"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1612
 ---
 
 # T1612: エディタ: スロットの欄・カーブのキーの時刻・グルーの組を doc.send で送り、パネルのドラッグの送り直しを点検する
