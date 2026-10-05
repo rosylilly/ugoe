@@ -2,6 +2,7 @@
 
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { isSettingsError } from "./settings-errors.js";
+import { isDressUpError } from "./warnings.js";
 
 /** wasm-bindgen が投げる検査の失敗と同じ形 (`name` が `"Error"` で、`code` と補足の値を持つ `Error`)。 */
 function codedError(code: unknown, fields: Record<string, unknown> = {}): Error {
@@ -31,5 +32,22 @@ describe("isSettingsError", () => {
     expect(isSettingsError(codedError("device_lost"))).toBe(false);
     expect(isSettingsError(codedError(1))).toBe(false);
     expect(isSettingsError({ name: "Error", code: "invalid_physics" })).toBe(false);
+  });
+
+  it("leaves the composition failure of set_base_physics_json to isDressUpError", () => {
+    // 合成の失敗は付け外しの失敗と同じ `name`・`code`・補足の値 (T0476)。検査の失敗と同じ `code` でも受けない。
+    const compose = Object.assign(
+      codedError("unknown_collider", { module: "LongHair", rig: "Sway", collider: "Chest" }),
+      {
+        name: "DressUpError",
+      },
+    );
+    expect(isSettingsError(compose)).toBe(false);
+    expect(isDressUpError(compose)).toBe(true);
+    if (isDressUpError(compose)) expect(compose.collider).toBe("Chest");
+    const physics = Object.assign(codedError("invalid_physics", { errors: 1 }), {
+      name: "DressUpError",
+    });
+    expect(isSettingsError(physics)).toBe(false);
   });
 });

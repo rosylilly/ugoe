@@ -311,7 +311,8 @@ try {
   (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeCreateErrorCode`・`UgoeRenderErrorCode`・`UgoeSettingsErrorCode` はこの配列の要素)。
   ランタイムの `code` との突き合わせは下の「開発」。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
-- `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
+- `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`set_base_physics_json` で付けているモジュールと
+  合成できない失敗も同じ `DressUpError` です (T0476)。`message` は英語の文で、安定した値ではありません。
 
 ### 読み込みの上限 (T0152)
 
@@ -394,8 +395,11 @@ try {
 
 - 意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#物理モーション表情エフェクト-t0309)。型は `UgoeSettingsError`・
   `UgoeSettingsErrorCode`、一覧の配列は `SETTINGS_ERROR_CODES` (crates/ugoe-wasm/codes.json の `settings_error` と同じ)。
-- 読めない JSON と、`set_base_physics_json` で付けているモジュールと合成できない失敗は、`code` を持たない `Error` です。
-- `isSettingsError` は、このパッケージの知っている `code` だけを受けます (`name` で見分けられないため)。
+- 読めない JSON は、`code` を持たない `Error` です。
+- `set_base_physics_json` で付けているモジュールと合成できない失敗は、付け外しの失敗と同じ `DressUpError` です (`code` と補足の値も同じ。
+  `isDressUpError` で見分ける。T0476)。
+- `isSettingsError` は、`name` が `"Error"` で、このパッケージの知っている `code` を持つものだけを受けます (`name` が普通の `"Error"` なので。
+  同じ `code` の `invalid_physics` を持つ `DressUpError` は受けません)。
 
 ### 作成の失敗 (T0475)
 

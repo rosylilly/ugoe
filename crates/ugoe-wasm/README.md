@@ -169,9 +169,11 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
   と同じ値。T0461・T0469)。読めない JSON の例外は `code` を持たない。
 - `set_physics_json`・`set_base_physics_json` の検査の失敗は、`code` が `"invalid_physics"` で `errors`・`error_codes` を持つ `Error`
   (着せ替えの `invalid_physics` と同じ値。C ABI の `ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` と同じ。T0469)。
-  読めない JSON と、`set_base_physics_json` で付けているモジュールと合成できない失敗の例外は `code` を持たない。
-  どちらの例外も `name` は `"Error"` (`LoadError`・`DressUpError` のような専用の名前を持たない)。種類の一覧は [`code` の一覧](#code-の一覧-t0452) の
-  `settings_error`。
+  読めない JSON の例外は `code` を持たない。検査の失敗の例外は `name` が `"Error"` (`LoadError`・`DressUpError` のような専用の名前を
+  持たない)。種類の一覧は [`code` の一覧](#code-の一覧-t0452) の `settings_error`。
+- `set_base_physics_json` で付けているモジュールと合成できないときは、付け外しの失敗と同じ `name` が `"DressUpError"` の例外で、`code` と
+  補足の値も同じ (`unknown_collider` の `module`・`rig`・`collider` など。下の「着せ替え」。C ABI の `UGOE_ERROR_DRESS_UP` と同じ種類。T0476)。
+  `@ugoe/runtime` の `isDressUpError` で見分ける。種類の一覧は `code` の一覧の `dress_up_error`。
 - `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
   そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 
@@ -273,7 +275,7 @@ try {
 ```
 
 `code` と補足の値のうち、付け外しの失敗と `invalid_file` は SDK の `ugoe::DressUpError::code`・`fields`・`INVALID_FILE` が決め、
-C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`・`texture`・`device_lost` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
+C ABI の `ugoe_last_error_kind` と同じ (T0412)。`set_base_physics_json` で付けているモジュールと合成できないときも、同じ `DressUpError` を投げる (T0476)。`not_loaded`・`no_model`・`texture`・`device_lost` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
 GPU のデバイスを失った (`is_lost()`) 後の `load_module`・`attach_module`・`detach_module`・`set_modules`・`unload_module` は、何も変えずに
 `code` が `device_lost` の `DressUpError` を投げる (T0457。それまではコードを持たない `Error`)。新しい canvas で作り直す。
 
@@ -464,7 +466,7 @@ try {
 
 読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`)・描画と読み戻しの失敗 (`render_error`。T0465)・
 作成の失敗 (`create_error`。T0475)・設定の差し替え (`set_effects_json`・`set_physics_json`・`set_base_physics_json`) の検査の失敗 (`settings_error`。T0469) の
-`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError`・`CreateError`・`AnimationError` と、その中の
+`code` と (`set_base_physics_json` の合成の失敗は `DressUpError` なので `dress_up_error` に入る。T0476)、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError`・`CreateError`・`AnimationError` と、その中の
 `DressUpError`・`ComposeError`・`CompileError`) から一覧を作って比べる。種類を足すと、テストの網羅の `match` (`guard`) がコンパイルできなくなるので、
 見本を足してから `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で書き直す。
 

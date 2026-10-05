@@ -114,6 +114,7 @@ describe("codes.json (Rust) and the TypeScript unions", () => {
     expect(allFields(codes.render_error)).toEqual([]);
   });
 
+  // `set_base_physics_json` の合成の失敗は `DressUpError` なので、codes.json では `dress_up_error` に入る (T0476)。
   it("lists the same settings error codes and fields", () => {
     expectTypeOf<(typeof SETTINGS_ERROR_FIELDS)[number]>().toEqualTypeOf<
       keyof UgoeSettingsErrorFields

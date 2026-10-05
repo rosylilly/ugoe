@@ -12,6 +12,7 @@ use ugoe::model::validate::{ValidationError, describe_errors};
 use ugoe::motion::Priority;
 use ugoe::motion::curve::SegmentIndex;
 
+use crate::dress_up::{WardrobeError, dress_up_info};
 use crate::load::{ErrorInfo, LoadWarning, field_json};
 
 #[derive(Debug, thiserror::Error)]
@@ -26,6 +27,7 @@ pub enum AnimationError {
     #[error("{}", describe_errors("effects", .0))]
     InvalidEffects(Vec<ValidationError>),
     /// 本体の物理の設定を、付けているモジュールと合成できなかった (`set_base_physics_json`)。
+    /// JS では付け外しの失敗と同じ `DressUpError` になる ([`AnimationError::name`]。T0476)。
     #[error(transparent)]
     DressUp(ugoe::DressUpError),
     #[error("unknown motion `{0}`")]
@@ -39,16 +41,29 @@ pub enum AnimationError {
 }
 
 impl AnimationError {
-    /// JS の例外に付ける種類と補足の値 (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ)。検査の失敗だけが持つ:
+    /// JS の例外の `name`。合成の失敗 ([`AnimationError::DressUp`]) は付け外しの失敗と同じ `"DressUpError"`
+    /// ([`WardrobeError::NAME`]。T0476)、ほかは `"Error"`。
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::DressUp(_) => WardrobeError::NAME,
+            _ => "Error",
+        }
+    }
+
+    /// JS の例外に付ける種類と補足の値 (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ)。検査と合成の失敗だけが持つ:
     ///
     /// - エフェクトの設定 (`set_effects_json`): 読み込みと同じ `"invalid_model"` (T0461)。
     /// - 物理の設定 (`set_physics_json`・`set_base_physics_json`): 着せ替えと同じ `"invalid_physics"` (T0469)。
     ///
     /// 補足の値はどちらも `errors` (検査のエラーの数) と `error_codes` (種類を `, ` でつないだもの。`ugoe::validation_fields`)。
+    ///
+    /// - `set_base_physics_json` で付けているモジュールと合成できない: 付け外しの失敗と同じ種類と補足の値
+    ///   ([`crate::dress_up::dress_up_info`]。C ABI の `UGOE_ERROR_DRESS_UP` と同じ。T0476)。
     pub fn info(&self) -> Option<ErrorInfo> {
         let (code, errors) = match self {
             Self::InvalidEffects(errors) => ("invalid_model", errors),
             Self::InvalidPhysics(errors) => ("invalid_physics", errors),
+            Self::DressUp(error) => return Some(dress_up_info(error)),
             _ => return None,
         };
         let fields = ugoe::validation_fields(errors)
@@ -1072,6 +1087,41 @@ mod tests {
             puppet.physics().unwrap().settings().wind,
             ugoe::core::Vec2::ZERO
         );
+    }
+
+    /// `set_base_physics_json` の合成の失敗は、付け外しの失敗と同じ `name`・`code`・補足の値になる (T0476)。
+    /// 検査を通った本体の設定で合成が失敗する組は今の SDK では作れない (付けたときと同じ合成で、衝突体の参照は
+    /// 本体の検査が先に確かめる) ので、SDK の `DressUpError` から作って確かめる。検査の失敗は `"Error"` のまま。
+    #[test]
+    fn compose_failure_is_a_dress_up_error() {
+        let compose = || {
+            ugoe::DressUpError::from(ugoe::runtime::ComposeError::UnknownCollider {
+                module: "LongHair".into(),
+                rig: "Sway".into(),
+                collider: "Chest".into(),
+            })
+        };
+        let expected = crate::dress_up::error_info(&WardrobeError::DressUp(compose()));
+        let err = AnimationError::DressUp(compose());
+        assert_eq!(err.name(), "DressUpError");
+        let info = err.info().unwrap();
+        assert_eq!(info, expected);
+        assert_eq!(info.code, "unknown_collider");
+        assert_eq!(
+            info.fields,
+            vec![
+                ("module", "LongHair".into()),
+                ("rig", "Sway".into()),
+                ("collider", "Chest".into())
+            ]
+        );
+
+        let compile = AnimationError::DressUp(ugoe::runtime::CompileError::Unsupported("x").into());
+        assert_eq!(compile.name(), "DressUpError");
+        assert_eq!(compile.info().unwrap().code, "compile");
+
+        assert_eq!(AnimationError::InvalidPhysics(Vec::new()).name(), "Error");
+        assert_eq!(AnimationError::UnknownMotion("m".into()).name(), "Error");
     }
 
     /// ポーズの JSON はモデルの `pose` の形で、付けたモジュールのグループも入る。

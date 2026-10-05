@@ -10,11 +10,12 @@ use wasm_bindgen::prelude::*;
 use super::{WebPuppet, coded_error, js_error};
 use crate::animation;
 
-/// 設定の差し替えの失敗を JS の値にする。検査の失敗は `code` と補足の値 ([`animation::AnimationError::info`]) を持つ
-/// `Error` (`name` は `"Error"`)、ほかは `code` を持たない `Error`。
+/// 設定の差し替えの失敗を JS の値にする。検査と合成の失敗は `code` と補足の値 ([`animation::AnimationError::info`]) を持つ
+/// `Error` (`name` は [`animation::AnimationError::name`]。合成の失敗は `"DressUpError"`、検査の失敗は `"Error"`)、
+/// ほかは `code` を持たない `Error`。
 fn animation_error(e: animation::AnimationError) -> JsValue {
     match e.info() {
-        Some(info) => coded_error("Error", &e.to_string(), info),
+        Some(info) => coded_error(e.name(), &e.to_string(), info),
         None => js_error(e).into(),
     }
 }
@@ -251,7 +252,8 @@ impl WebPuppet {
     /// 本体の物理の設定 (`*.physics.json` の形) を差し替える。`undefined` で外す。着せ替えのモジュールを付けていれば
     /// 合成し直し、この後の付け外しでもこの設定から合成する (`set_physics_json` で渡した設定は次の付け外しで失われる)。
     /// 本体のモデルと合成したモデルに対して検査し、失敗すれば何も変えない。粒子は静止姿勢から始める。
-    /// 検査の失敗の例外は `set_physics_json` と同じ (`code` が `"invalid_physics"`)。
+    /// 検査の失敗の例外は `set_physics_json` と同じ (`code` が `"invalid_physics"`)。付けているモジュールと合成できなければ、
+    /// 付け外しの失敗と同じ `name` が `"DressUpError"` の例外で、`code` と補足の値も同じ (T0476)。
     pub fn set_base_physics_json(&mut self, json: Option<String>) -> Result<(), JsValue> {
         animation::set_base_physics_json(self.puppet_mut()?, json.as_deref())
             .map_err(animation_error)?;

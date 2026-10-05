@@ -405,15 +405,22 @@ pub fn error_info(error: &WardrobeError) -> ErrorInfo {
         WardrobeError::NotLoaded(name) => ("not_loaded", vec![("module", name.as_str().into())]),
         WardrobeError::Texture(_) => ("texture", vec![]),
         WardrobeError::DeviceLost => ("device_lost", vec![]),
-        WardrobeError::DressUp(e) => (
-            e.code(),
-            e.fields()
-                .into_iter()
-                .map(|(k, v)| (k, load::field_json(v)))
-                .collect(),
-        ),
+        WardrobeError::DressUp(e) => return dress_up_info(e),
     };
     ErrorInfo { code, fields }
+}
+
+/// 付け外しの失敗 (`ugoe::DressUpError`) の `code` と補足の値 (SDK の `code`・`fields`。C ABI と同じ)。
+/// `set_base_physics_json` の合成の失敗 ([`crate::animation::AnimationError::DressUp`]。T0476) も同じ値を使う。
+pub fn dress_up_info(error: &DressUpError) -> ErrorInfo {
+    ErrorInfo {
+        code: error.code(),
+        fields: error
+            .fields()
+            .into_iter()
+            .map(|(k, v)| (k, load::field_json(v)))
+            .collect(),
+    }
 }
 
 #[cfg(test)]

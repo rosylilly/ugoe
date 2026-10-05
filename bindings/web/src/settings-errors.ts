@@ -1,4 +1,5 @@
 // 設定の差し替え (`set_effects_json`・`set_physics_json`・`set_base_physics_json`) の検査の失敗 (T0461・T0469) の型。
+// `set_base_physics_json` で付けているモジュールと合成できない失敗は、付け外しの失敗と同じ `DressUpError` (`isDressUpError`。T0476)。
 // `code` の意味は crates/ugoe-wasm/README.md#物理モーション表情エフェクト-t0309 の節と
 // crates/ugoe-wasm/README.md#code-の一覧-t0452 (`settings_error`)。
 
@@ -28,20 +29,21 @@ export interface UgoeSettingsErrorFields {
 /**
  * `set_effects_json`・`set_physics_json`・`set_base_physics_json` の検査の失敗。`isSettingsError` で見分ける。
  * `name` は `"Error"` のまま (専用の名前を持たない)。`message` は英語の文で、安定した値ではない。
- * 読めない JSON などほかの失敗は `code` を持たない `Error`。
+ * 読めない JSON などほかの失敗は `code` を持たない `Error`。`set_base_physics_json` の合成の失敗は `DressUpError`。
  */
 export interface UgoeSettingsError extends Error, UgoeSettingsErrorFields {
+  name: "Error";
   code: UgoeSettingsErrorCode;
 }
 
 const CODES: readonly string[] = SETTINGS_ERROR_CODES;
 
 /**
- * `e` が設定の差し替えの検査の失敗か。`name` で見分けられないので、`code` がこのパッケージの知っている種類のものだけを受ける
- * (新しい版のランタイムが種類を足しても、ここでは受けない)。
+ * `e` が設定の差し替えの検査の失敗か。`name` は普通の `"Error"` なので、`code` がこのパッケージの知っている種類のものだけを受ける
+ * (新しい版のランタイムが種類を足しても、ここでは受けない)。同じ `code` (`invalid_physics`) を持つ `DressUpError` は受けない。
  */
 export function isSettingsError(e: unknown): e is UgoeSettingsError {
-  if (!(e instanceof Error)) return false;
+  if (!(e instanceof Error) || e.name !== "Error") return false;
   const code = (e as { code?: unknown }).code;
   return typeof code === "string" && CODES.includes(code);
 }

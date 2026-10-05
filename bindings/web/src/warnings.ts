@@ -84,7 +84,8 @@ export interface UgoeDressUpErrorFields extends UgoeLimitErrorFields {
 }
 
 /**
- * 着せ替えの付け外し (`attach_module`・`set_modules` など) が投げる例外。`isDressUpError` で見分ける。
+ * 着せ替えの付け外し (`attach_module`・`set_modules` など) と、`set_base_physics_json` で付けているモジュールと合成できないとき
+ * (T0476) に投げる例外。`isDressUpError` で見分ける。
  * `code` は知らない値 (新しい版のランタイムの種類) もありうる。`message` は英語の文で、安定した値ではない。
  */
 export interface UgoeDressUpError extends Error, UgoeDressUpErrorFields {
