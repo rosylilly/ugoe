@@ -33,16 +33,19 @@
 
 段階 B で Rust から `ugoe` を使う組み込み先 (自前のエンジン・godot-rust など) は、`default-features = false` で `render` を外すと
 wgpu と naga をビルドしません。`Puppet` と評価・物理・モーション・読み込み (`ugoe::format`) はそのまま使え、無くなるのは `ugoe::render` だけです。
-光源の型 (`Lighting`) も `ugoe::render` にあるので、外したときはホストが自分の形で持ちます (`ugoe::lighting` の `uses_lighting`・`bundle_normal_maps` は使える)。
+光源の型 (`Lighting`・`Light`・`MAX_LIGHTS`) は `ugoe::lighting` にあり、外しても使えます (`ugoe::render` にも同じ型があります。
+`uses_lighting`・`bundle_normal_maps` も同じモジュール。T0166)。
 
 ```sh
 cargo add ugoe --no-default-features
 ```
 
-既定で有効にしているのは、`cargo add ugoe` だけで段階 A まで使えるようにするためと、今の利用者 (`ugoe-wasm`・`ugoe-headless`・
-`ugoe-ffi`・`bindings/godot`) のビルドを変えないためです。`ugoe-render` は外せても crates.io には公開します ([ADR 0027](adr/0027-crates-io-publishing.md)。
+既定で有効にしているのは、`cargo add ugoe` だけで段階 A まで使えるようにするためです。リポジトリの中では、ルートの
+`[workspace.dependencies]` の `ugoe` で既定の feature を切り、参照レンダラを使うクレート (`ugoe-wasm`・`ugoe-cli`・スタジオ) だけが
+`features = ["render"]` を書きます。`ugoe-ffi` と `bindings/godot` は `render` を使わないので、C ABI の共有ライブラリと GDExtension に
+wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には公開します ([ADR 0027](adr/0027-crates-io-publishing.md)。
 省ける依存も crates.io に無いと `ugoe` を公開できないため)。外したビルドは CI の `rust (runtime)` で `just sdk-no-render-check` が検査します
-(clippy とテストと、`cargo tree` に wgpu・naga が無いこと。T0156)。
+(clippy とテストと、`ugoe` と `ugoe-ffi` の `cargo tree` に wgpu・naga が無いこと。T0156・T0166)。
 
 ## C ABI (`ugoe-ffi`) の規約
 
@@ -97,7 +100,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 動的物理の加算量 | `DynamicOffsets` (`ModelInstance::dynamic_offsets_mut`) | 評価で 0 とみなす (書いた値は残る) | 0 とみなす | (意味どおり) |
 | トラッキングの入力 | `Puppet::set_tracking` (`TrackingInput`) | 式の値が有限でないパラメータには書かない ([avatar-profile.md](spec/avatar-profile.md#フェイストラッキングとの対応)) | 同じ | 値域にクランプ |
 | 当たり判定の点 | `Puppet::hit_test`・`hit_areas_at` | 当たらない | 当たらない (範囲の外) | (意味どおり) |
-| 光源 | `ugoe_render` の `Lighting` | その光源を使わない ([rendering.md](spec/rendering.md#ライティング)) | 同じ。`range` の無限大は減衰なし | `range` が正でなければ使わない |
+| 光源 | `ugoe::lighting` の `Lighting` | その光源を使わない ([rendering.md](spec/rendering.md#ライティング)) | 同じ。`range` の無限大は減衰なし | `range` が正でなければ使わない |
 | モーション・表情 (検証していないもの) | `Puppet::start_motion`・`Puppet::set_expression` | パラメータへは書かない。パーツの不透明度のカーブは使わない。リップシンクの強さが有限でなければリップシンクを当てない。長さの NaN は 0 と同じ | パラメータへは値域にクランプ。パーツの不透明度のカーブとリップシンクの強さは NaN と同じ | 値域にクランプ |
 | エフェクトの設定 (検証していないもの) | `Puppet::set_effects` | 目パチの `interval` が 0 より大きくなければまばたきしない。呼吸の `cycle` が 0 以下なら `sin` の項は 0 ([motion.md](spec/motion.md#エフェクト)) | 同じ | 同じ |
 | 物理の状態と出力 | `PhysicsSystem` | 鎖を静止姿勢に置き直し、出力を書かない ([physics.md](spec/physics.md#有限でない状態)) | 同じ | — |

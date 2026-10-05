@@ -4,6 +4,7 @@
 //   node bindings/godot/build.mjs            # デバッグビルド
 //   node bindings/godot/build.mjs --release  # リリースビルド
 //   node bindings/godot/build.mjs --check    # ビルドして、依存のライセンスの検査 (scripts/check-licenses.mjs --godot) と、
+//                                            # wgpu・naga に依存しないことの検査 (T0166) と、
 //                                            # ヘッドレスの Godot での example/tests/smoke.gd を実行する
 //   node bindings/godot/build.mjs --import   # ビルドして、見本のプロジェクトを Godot で読み込む (.godot/ の作成と拡張の登録)
 //   node bindings/godot/build.mjs --conformance [--only <ケース>]
@@ -138,6 +139,25 @@ if (check) {
   execFileSync("node", [join(root, "scripts", "check-licenses.mjs"), "--godot"], {
     stdio: "inherit",
   });
+  // GDExtension は参照レンダラを使わない (ugoe を default-features = false で使う) ので、wgpu・naga を含めない (T0166)。
+  const tree = execFileSync(
+    "cargo",
+    [
+      "tree",
+      "--locked",
+      "--manifest-path",
+      join(here, "Cargo.toml"),
+      "-e",
+      "normal,build",
+      "--prefix",
+      "none",
+    ],
+    { encoding: "utf8", env: cargoEnv },
+  );
+  const gpu = tree.split("\n").filter((line) => /^(wgpu|naga) /.test(line));
+  if (gpu.length > 0) {
+    throw new Error(`the GDExtension depends on wgpu or naga:\n${[...new Set(gpu)].join("\n")}`);
+  }
   runGodot(["--headless", "--path", example, "--script", "res://tests/smoke.gd"]);
 }
 

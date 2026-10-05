@@ -847,7 +847,7 @@ impl LightParams {
     fn new(lighting: &LightUniforms) -> Self {
         let [r, g, b] = lighting.ambient;
         let pad = |v: &[[f32; 4]]| -> PackedVector4Array {
-            (0..ugoe::render::MAX_LIGHTS)
+            (0..ugoe::lighting::MAX_LIGHTS)
                 .map(|i| {
                     let [x, y, z, w] = v.get(i).copied().unwrap_or([0.0; 4]);
                     Vector4::new(x, y, z, w)

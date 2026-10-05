@@ -187,12 +187,13 @@ vcam-check: (cross-check "vcam")
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
 
-# 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、wgpu・naga に依存しないことの検査
-# (docs/portability.md#ugoe-クレートの-feature、T0156)
+# 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
+# (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)
 sdk-no-render-check:
     cargo clippy -p ugoe --no-default-features --all-targets -- -D warnings
     cargo test -p ugoe --no-default-features
     if cargo tree -p ugoe --no-default-features -e normal,build --prefix none | grep -E '^(wgpu|naga) '; then echo "ugoe (default-features = false) が wgpu・naga に依存している" >&2; exit 1; fi
+    if cargo tree -p ugoe-ffi -e normal,build --prefix none | grep -E '^(wgpu|naga) '; then echo "ugoe-ffi (C ABI) が wgpu・naga に依存している (T0166)" >&2; exit 1; fi
 
 # ugoe-wasm をビルドし、エディタが読む JS バインディングを生成する (出力は gitignore 済み)。
 # ビューアは `just wasm apps/viewer/src/lib/wasm/generated` (apps/viewer の `pnpm wasm`)。

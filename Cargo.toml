@@ -18,7 +18,8 @@ license = "MIT"
 # --- internal ---
 # crates.io に公開するクレート (publish = true) は、path に加えて version を書く (公開したパッケージでは version だけが残る)。
 # version は [workspace.package] の version と揃える (`node scripts/crates.mjs sync`。docs/release.md)。
-ugoe = { path = "crates/ugoe", version = "0.0.0" }
+# ugoe の既定の feature (render = wgpu) は切ってある。参照レンダラを使うクレートは `features = ["render"]` を書く (C ABI・GDExtension に wgpu を入れないため。T0166)。
+ugoe = { path = "crates/ugoe", version = "0.0.0", default-features = false }
 ugoe-ai = { path = "crates/ugoe-ai" }
 ugoe-core = { path = "crates/ugoe-core", version = "0.0.0" }
 ugoe-editor-core = { path = "crates/ugoe-editor-core" }

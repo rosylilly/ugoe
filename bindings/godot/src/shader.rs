@@ -11,7 +11,7 @@
 //!   - `additive`: `blend_premul_alpha` でアルファを 0 にして出す。`src + dst`、アルファは `dst.a` になる。
 //!   - `multiply`: `blend_mul` で `rgb + (1 − a)` とアルファ 1 を出す。`src × dst + dst × (1 − src.a)`、アルファは `dst.a`。
 
-use ugoe::render::MAX_LIGHTS;
+use ugoe::lighting::MAX_LIGHTS;
 
 use crate::model::MASK_TABLE_WIDTH;
 

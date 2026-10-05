@@ -9,7 +9,7 @@ license.workspace = true
 
 [dependencies]
 serde_json.workspace = true
-ugoe.workspace = true
+ugoe = { workspace = true, default-features = false }
 
 [lints]
 workspace = true

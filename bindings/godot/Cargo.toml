@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 godot = { version = "0.5", features = ["api-4-4"] }
 serde_json = "1"
 thiserror = "2"
-ugoe = { path = "../../crates/ugoe" }
+ugoe = { path = "../../crates/ugoe", default-features = false }
 
 # リポジトリのルートのワークスペースには入れない (独自の Cargo.lock を持つ)。
 # godot-rust (MPL-2.0) を MIT のクレートのワークスペースに入れないため (docs/adr/0026-godot-binding.md)。

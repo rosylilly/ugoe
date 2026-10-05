@@ -55,6 +55,11 @@
 - **ランタイム層は配布物になる。** ゲームや Web に組み込まれるので、小さく、依存が少なく、wasm32 でビルドできなければならない。PSD パーサや AI クライアントを混ぜない。
 - **`ugoe-model` はデータだけを持つ。** 「データ」と「アルゴリズム」を分けておくと、エディタ・フォーマット・ランタイムがそれぞれ独立に進められる。また、ランタイムを他言語で再実装するときにも仕様とデータ定義だけを渡せばよい。
 - **物理・モーション・レンダラは互いに依存しない。** 3 つを別々のエージェントが並行して開発できる。
+- **レンダラにもエンジン独自のレンダラにも渡す型は、GPU に依存しない層に置く。** 光源の型 (`Light`・`Lighting`・`MAX_LIGHTS`) は
+  `ugoe-core` の `lighting` にあり、`ugoe` は `ugoe::lighting`、`ugoe-render` は同じ名前 (`ugoe_render::Lighting` など) で再エクスポートする。
+  利用者が決めた置き場所は `ugoe` の `lighting` モジュールだが、`ugoe` は (`render` feature で) `ugoe-render` に依存するので、
+  `ugoe-render` は `ugoe` の型を使えない。両方が依存できる最も低い層が `ugoe-core` (光源の色が `Rgb`) で、モデルのデータではないので
+  `ugoe-model` には置かない。これで C ABI (`ugoe-ffi`) と GDExtension (`bindings/godot`) は `ugoe` を `render` 無しで使え、wgpu を含まない (T0166)。
 
 ## 1 フレームのデータフロー
 

@@ -43,7 +43,7 @@ godot --path bindings/godot/example        # 見本のシーンを開く (エデ
 
 ```sh
 just godot-check        # = build.mjs --check --conformance (Godot と、画面が無ければ xvfb-run が要る)
-node bindings/godot/build.mjs --check        # 依存のライセンス + ヘッドレスの Godot で example/tests/smoke.gd
+node bindings/godot/build.mjs --check        # 依存のライセンス + wgpu・naga に依存しないこと (T0166) + ヘッドレスの Godot で example/tests/smoke.gd
 node bindings/godot/build.mjs --conformance  # 配布物の適合テストを Godot で (= node tests/conformance/run.mjs --only godot。画面が要る。無ければ xvfb-run)
 node bindings/godot/build.mjs --conformance --only masks-moving   # 計画のケースを絞る (複数可)
 cargo test --manifest-path bindings/godot/Cargo.toml   # Godot なしで確かめられる部分 (src/model.rs・src/shader.rs)

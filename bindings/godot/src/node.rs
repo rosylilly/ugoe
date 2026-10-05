@@ -12,10 +12,10 @@ use godot::classes::{
 use godot::prelude::*;
 use godot::register::info::{PropertyHint, PropertyHintInfo, PropertyInfo, PropertyUsageFlags};
 use ugoe::core::Rgb;
+use ugoe::lighting::{Light, Lighting};
 use ugoe::limits::ReadLimits;
 use ugoe::model::avatar::ARKIT_BLEND_SHAPES;
 use ugoe::motion::{BodyInput, Priority, Rotation, TrackingInput};
-use ugoe::render::{Light, Lighting};
 use ugoe::runtime::ParamIndex;
 use ugoe::{DressUpChange, DressUpError, FieldValue, Toggles};
 

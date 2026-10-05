@@ -13,6 +13,7 @@ pub mod codegen;
 /// 色 ([`Rgb`])。
 pub mod color;
 pub mod id;
+pub mod lighting;
 
 pub use color::Rgb;
 pub use glam::{Affine2, Mat2, Vec2};

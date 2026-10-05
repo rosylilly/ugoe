@@ -9,6 +9,8 @@ wgpu による参照レンダラと参照シェーダ (WGSL)。
 - Device / Queue / Surface を所有しない
 - WebGL2 で使えない機能を使わない
 - 描画の式は `docs/spec/rendering.md` に従う。式を変えたら仕様書も変える
+- 光源の型 (`Light`・`Lighting`・`MAX_LIGHTS`) は `ugoe-core` の `lighting` にあり、ここでは同じ名前で再エクスポートする。
+  シェーダのユニフォームへの変換 (`src/lighting.rs` の `LightingRaw`) だけをこのクレートが持つ (T0166)
 
 ## 仕様
 

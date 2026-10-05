@@ -29,7 +29,7 @@ tauri-plugin-os.workspace = true
 thiserror.workspace = true
 # 操作 API の WebSocket のフレーム (T0805。HTTP の要求と握手の検査は自前。利用者の決定 2026-10-02)。
 tungstenite.workspace = true
-ugoe.workspace = true
+ugoe = { workspace = true, features = ["render"] }
 ugoe-fs.workspace = true
 ugoe-headless.workspace = true
 ugoe-studio-vcam.workspace = true

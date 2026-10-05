@@ -10,13 +10,13 @@ use std::sync::Arc;
 use ugoe::core::{Rgb, Vec2};
 use ugoe::format::module_file::read_module_with;
 use ugoe::format::{Bundle, FormatError, TextureData, TextureFormat};
+use ugoe::lighting::{Light, Lighting, MAX_LIGHTS};
 use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
 use ugoe::model::motion::Motion;
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{MaskMode, Model};
-use ugoe::render::{Light, Lighting, MAX_LIGHTS};
 use ugoe::runtime::{CompileError, CompiledModel};
 use ugoe::{DressUpChange, DressUpError, LoadWarning, Puppet, TextureSource};
 

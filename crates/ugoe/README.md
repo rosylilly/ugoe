@@ -8,7 +8,8 @@
 
 - `render` (既定で有効): 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする。エンジン独自のレンダラで描く
   組み込み先は `default-features = false` で外すと wgpu をビルドしない ([docs/portability.md#ugoe-クレートの-feature](../../docs/portability.md#ugoe-クレートの-feature)、T0156)。
-  外したビルドの検査は `just sdk-no-render-check`
+  外したビルドの検査は `just sdk-no-render-check`。光源の型 (`ugoe::lighting::{Light, Lighting, MAX_LIGHTS}`。`ugoe-core` の再エクスポート) は
+  `render` が無くても使える (T0166)
 
 ## 守ること
 
@@ -33,7 +34,7 @@
   wasm と C ABI が同じ値を返すためにここで決める。T0152)
 - [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数) (NaN・無限大・負の `dt` の扱い。前提はこのクレートと
   `ugoe-runtime` で決め、C ABI・wasm・Godot・Unity は表し方だけを持つ。`tests/host_numbers.rs`)
-- [docs/spec/rendering.md#ホストでのライティング](../../docs/spec/rendering.md#ホストでのライティング) (`lighting`: `uses_lighting` / `Puppet::uses_lighting`・`bundle_normal_maps`)
+- [docs/spec/rendering.md#ホストでのライティング](../../docs/spec/rendering.md#ホストでのライティング) (`lighting`: 光源の型 `Light`・`Lighting`・`MAX_LIGHTS`、`uses_lighting` / `Puppet::uses_lighting`・`bundle_normal_maps`)
 
 ## 着せ替えの失敗の補足の値
 

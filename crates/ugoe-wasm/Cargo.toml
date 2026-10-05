@@ -11,7 +11,7 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-ugoe.workspace = true
+ugoe = { workspace = true, features = ["render"] }
 ugoe-format = { workspace = true, features = ["png"] }
 ugoe-render = { workspace = true, features = ["webgl"] }
 wasm-bindgen.workspace = true

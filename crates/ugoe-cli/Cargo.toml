@@ -11,7 +11,7 @@ license.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true
-ugoe.workspace = true
+ugoe = { workspace = true, features = ["render"] }
 ugoe-core.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
