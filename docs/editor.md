@@ -1991,6 +1991,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - 読み戻してから保存のダイアログ (`fileDialogs().saveFile`、フィルタ `.png`) を開くので、写るのは押したときの姿です。
   最初の場所はプロジェクトの隣 (保存していなければドキュメント、なければホーム)、既定の名前は `<プロジェクト名>-<年月日>-<時分秒>.png`。
   拡張子が無ければ `.png` を付けます。保存した場所は Toast で知らせ、失敗の理由はビューポートの右上に閉じるまで出します (`Notice`。T0664)。
+  読み戻しで GPU が止まった (`RenderError` の `device_lost`。T0465) ときの理由は、エディタのカタログの文 (`viewport.screenshot.deviceLost`。
+  起動し直す案内) にします (`saveScreenshot.ts` の `screenshotErrorText`。T0940)。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が
   書きます。バイト列は本文でそのまま送り、パスはヘッダー `x-ugoe-path` (`encodeURIComponent`) で渡します。絶対パス・拡張子 `.png`・
   中身が PNG (先頭の署名) のものだけを書きます。

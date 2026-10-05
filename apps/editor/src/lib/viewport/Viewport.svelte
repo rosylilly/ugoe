@@ -13,11 +13,10 @@
 <script lang="ts">
 import { Button, currentTheme, Notice, showToast } from "@ugoe/ui";
 import { type Snippet, untrack } from "svelte";
-import { errorText } from "../errors";
 import { t } from "../i18n";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
-import { saveViewportScreenshot } from "./saveScreenshot";
+import { saveViewportScreenshot, screenshotErrorText } from "./saveScreenshot";
 
 interface Props {
   controller: ViewportController;
@@ -51,7 +50,7 @@ async function screenshot() {
     shotError = null;
     if (path !== null) showToast(t("viewport.screenshot.saved", { path }), { tone: "success" });
   } catch (e) {
-    shotError = t("viewport.screenshot.failed", { error: errorText(e) });
+    shotError = t("viewport.screenshot.failed", { error: screenshotErrorText(e) });
   } finally {
     capturing = false;
   }

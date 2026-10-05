@@ -229,6 +229,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   透明 (アルファ 0) のまま書く。
 - 押したときに読み戻してから保存のダイアログ (Tauri) を開く。既定の名前は `<モデルの名前>-<年月日>-<時分秒>.png` (拡張子と
   「 (サンプル)」を除き、ファイル名に使えない文字は `_`)。拡張子が無ければ `.png` を付ける。保存した場所は知らせ (`@ugoe/ui` の Toast) で出す。
+  読み戻しの失敗 (`RenderError`。GPU が止まったなど。T0465) の理由は `@ugoe/player` の `describeRenderError` で訳す
+  (`src/lib/screenshot.ts` の `screenshotErrorText`。T0940)。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行う。ブラウザ (`pnpm dev`) ではダウンロードで保存する。
   `ViewerHost` を差し替えるときは `savePngFile(name, bytes)` を置ける (無ければダウンロード)。
 - **エディタと共有するもの (T0730):** 画素の検査と PNG への変換 (`checkScreenshot`・`encodePng`)・既定の名前の日時の部分

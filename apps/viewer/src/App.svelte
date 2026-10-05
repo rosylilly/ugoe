@@ -42,7 +42,7 @@ import ParameterPanel from "./lib/ParameterPanel.svelte";
 import PosePanel from "./lib/PosePanel.svelte";
 import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
-import { screenshotFileName } from "./lib/screenshot";
+import { screenshotErrorText, screenshotFileName } from "./lib/screenshot";
 import Viewport from "./lib/Viewport.svelte";
 import { loadWasm } from "./lib/wasm/load";
 
@@ -93,7 +93,7 @@ async function saveScreenshot() {
     const saved = await savePngFile(screenshotFileName(player.modelName, new Date()), png);
     if (saved !== null) showToast(t("screenshot.saved", { path: saved }), { tone: "success" });
   } catch (e) {
-    player.error = t("screenshot.error", { message: errorText(e) });
+    player.error = t("screenshot.error", { message: screenshotErrorText(e) });
   } finally {
     capturing = false;
   }

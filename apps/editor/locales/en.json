@@ -2737,6 +2737,7 @@
       "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",
       "saved": "Saved screenshot to {{path}}",
       "failed": "Cannot save the screenshot: {{error}}",
+      "deviceLost": "The GPU stopped working. Restart the editor to draw again.",
       "dialogTitle": "Save Screenshot"
     },
     "fit": {
