@@ -354,6 +354,11 @@ requests pose parts the host's choice has no lasting effect. While the pose stag
 shown entry, but the opacities neither advance nor are written; when the stage is turned on again,
 the fade continues from the opacities the pose kept.
 
+**Reading the shown entries.** A runtime SHOULD let a host read the shown entry of each group (for
+example, to keep a pose selector in step with motions). An entry the host shows is the shown entry at
+once; an entry that motions request becomes the shown entry in the next frame (step 1). The shown
+entry changes also while the pose stage is off.
+
 While switching, the old and the new entry's opacities sum to 1. During a cross-fade between two
 motions, the old motion's request loses weight while the new one's gains it, so the shown entry
 changes when the new request becomes larger.

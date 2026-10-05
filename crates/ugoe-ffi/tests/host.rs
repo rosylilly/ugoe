@@ -1,5 +1,6 @@
 //! T0414 で足した C ABI (パーツの一覧と不透明度の上書き・ポーズの表示の選択・効果の設定の差し替え) と
-//! T0416 で足した評価後のパーツの不透明度を Rust から呼んで、`ugoe::Puppet` と同じ結果になることを確かめる。
+//! T0416 で足した評価後のパーツの不透明度と、T0478 で足した表示中のポーズの要素を Rust から呼んで、
+//! `ugoe::Puppet` と同じ結果になることを確かめる。
 #![allow(unsafe_code)] // C ABI の関数は unsafe なので、呼ぶテストに限り許可する。
 #![allow(clippy::unwrap_used)]
 // SAFETY (このファイルの unsafe すべて): C ABI の関数には、このテストが作って破棄していない `UgoePuppet`、
@@ -9,7 +10,10 @@ use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
 use ugoe::Puppet;
+use ugoe::format::module_file::{ModuleFile, write_module};
+use ugoe::format::{Bundle, TextureData, TextureFormat, motion_from_json, write_bundle};
 use ugoe::model::effects::Effects;
+use ugoe::model::pose::{PoseEntry, PoseGroup};
 use ugoe::model::{Model, fixtures, standard};
 use ugoe_ffi::*;
 
@@ -161,6 +165,125 @@ fn showing_a_pose_entry_follows_the_puppet() {
     let (arm_a, _) = part_opacity(&p, parts[0]);
     assert!(arm_a > 0.0 && arm_a < 1.0, "{arm_a}");
     assert_eq!(part_opacity(&p, parts[1]).0, arm_a);
+}
+
+/// 画像の中身は読まないので、PNG の署名だけのバイト列でよい。
+fn png() -> TextureData {
+    TextureData {
+        format: TextureFormat::Png,
+        bytes: vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+    }
+}
+
+/// ポーズの各グループで表示中の要素のパーツの ID (要素の無いグループは `None`)。
+fn visible_pose_parts(p: &Handle) -> Vec<Option<String>> {
+    let mut groups = u32::MAX;
+    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups) });
+    (0..groups)
+        .map(|group| {
+            let mut part = u32::MAX;
+            let code = unsafe { ugoe_puppet_pose_visible_part(p.0, group, &mut part) };
+            if code == UGOE_ERROR_NOT_FOUND {
+                return None;
+            }
+            ok(code);
+            let mut id = ptr::null();
+            ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id) });
+            Some(text(id))
+        })
+        .collect()
+}
+
+fn some(id: &str) -> Option<String> {
+    Some(id.to_owned())
+}
+
+/// 表示中のポーズの要素は、`ugoe_puppet_show_pose` の選択 (すぐ) とモーションの要求 (次の update の後) の両方に従う。
+#[test]
+fn visible_pose_parts_follow_show_pose_and_motions() {
+    let model = fixtures::pose_and_effects();
+    let motion = motion_from_json(
+        r#"{
+            "name": "arm_a",
+            "duration": 1.0,
+            "looping": true,
+            "fade_in": 0.0,
+            "fade_out": 0.0,
+            "curves": [{
+                "target": { "kind": "part_opacity", "id": "ArmA" },
+                "segments": [
+                    { "type": "start", "p": { "t": 0.0, "v": 1.0 } },
+                    { "type": "linear", "to": { "t": 1.0, "v": 1.0 } }
+                ]
+            }]
+        }"#,
+    )
+    .unwrap();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png()).collect();
+    bundle.motions = vec![motion];
+    let bytes = write_bundle(&bundle).unwrap();
+    let mut raw = ptr::null_mut();
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw) });
+    let p = Handle(raw);
+
+    assert_eq!(visible_pose_parts(&p), [some("ArmA")]);
+    assert!(show_pose(&p, "ArmB"));
+    assert_eq!(visible_pose_parts(&p), [some("ArmB")]);
+    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    assert_eq!(visible_pose_parts(&p), [some("ArmB")]);
+
+    let mut started = false;
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, &mut started) });
+    assert!(started);
+    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    assert_eq!(visible_pose_parts(&p), [some("ArmA")]);
+
+    let mut part = 0;
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_visible_part(p.0, 1, &mut part) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_visible_part(p.0, 0, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_group_count(ptr::null(), &mut part) },
+        UGOE_ERROR_NULL_POINTER
+    );
+}
+
+/// 要素の無いグループは `UGOE_ERROR_NOT_FOUND` で、ほかのグループの番号はずれない。付けたモジュールのグループも入る。
+#[test]
+fn visible_pose_parts_skip_empty_groups_and_include_modules() {
+    let mut model = fixtures::pose_and_effects();
+    model.pose.groups.insert(
+        0,
+        PoseGroup {
+            entries: Vec::new(),
+        },
+    );
+    let p = from_model(&model);
+    assert_eq!(visible_pose_parts(&p), [None, some("ArmA")]);
+
+    let p = from_model(&fixtures::dress_up_base());
+    assert!(visible_pose_parts(&p).is_empty());
+    let mut module = fixtures::long_hair_module();
+    module.pose.groups = vec![PoseGroup {
+        entries: vec![PoseEntry {
+            part: "Hair".into(),
+            links: Vec::new(),
+        }],
+    }];
+    let mut file = ModuleFile::new(module);
+    file.textures = file.module.textures.iter().map(|_| png()).collect();
+    let bytes = write_module(&file).unwrap();
+    let mut m = ptr::null_mut();
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, m) });
+    unsafe { ugoe_module_destroy(m) };
+    assert_eq!(visible_pose_parts(&p), [some("LongHair/Hair")]);
 }
 
 /// 評価後のパーツの不透明度は `ModelInstance::part_opacity` と同じで、ポーズのフェードと祖先が掛かる。

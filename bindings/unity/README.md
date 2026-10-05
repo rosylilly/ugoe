@@ -108,6 +108,7 @@ puppet.ShowPose("ArmB");                      // ポーズの表示の選択 (�
 puppet.Puppet.SetEffectsJson(effectsJson);    // 目パチ・呼吸・リップシンクの設定の差し替え (モデルの effects と同じ JSON)
 var arm = puppet.Puppet.GetPartOpacity(puppet.Puppet.FindPart("ArmB")); // 直前の評価のパーツの不透明度の上書き (Value, Weight)
 var shown = puppet.Puppet.GetPartEvaluatedOpacity(puppet.Puppet.FindPart("ArmB")); // 祖先を掛けた評価後の不透明度
+var poses = puppet.Puppet.GetVisiblePoseParts(); // グループごとに表示中の要素のパーツの ID (モーションの切り替えも入る。T0478)
 puppet.Puppet.SetLipSyncLevel(0.8f);          // Puppet (Ugoe.Puppet) は C ABI の薄い包み。直接使ってよい
 puppet.MotionEventFired += e => Debug.Log($"{e.Value} at {e.Time} from {e.Motion} #{e.Number}"); // 発火したモーションの名前と始めた番号 (T0462)
 puppet.Puppet.ResetPhysics();                 // SetPhysicsJson / PhysicsJson で物理の設定の差し替えと読み出し
@@ -152,7 +153,7 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | `AttachModule` / `DetachModule` / `SetModules` | 着せ替え (付けたモジュールはシーンに保存される) |
 | `WorldToCanvas` / `CanvasToWorld` / `HitAreasAt` | 座標の変換・当たり判定 |
 | `Follow` | 受け手として、指揮役から受けた値で進めて描き直す (`playing` を false にして毎フレーム呼ぶ。[受け手](#受け手)) |
-| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`・`MotionOverTracking`・`SetTrackingKept`、`HitTest`、パーツの一覧と不透明度 (`PartIds`・`FindPart`・`GetPartOpacity`・`GetPartEvaluatedOpacity`)、効果の差し替え (`SetEffectsJson`)、物理の設定 (`SetPhysicsJson`・`PhysicsJson`・`SetBasePhysicsJson`・`BasePhysicsJson`・`ResetPhysics`)、受け手 (`SetBaseValues`・`Follow`)、読み込みの警告など) |
+| `Puppet` | `Ugoe.Puppet` (パラメータの一覧、`SetParameters`、`SetTracking`・`MotionOverTracking`・`SetTrackingKept`、`HitTest`、パーツの一覧と不透明度 (`PartIds`・`FindPart`・`GetPartOpacity`・`GetPartEvaluatedOpacity`)、表示中のポーズの要素 (`GetVisiblePoseParts`)、効果の差し替え (`SetEffectsJson`)、物理の設定 (`SetPhysicsJson`・`PhysicsJson`・`SetBasePhysicsJson`・`BasePhysicsJson`・`ResetPhysics`)、受け手 (`SetBaseValues`・`Follow`)、読み込みの警告など) |
 | イベント `ModelLoaded` / `MotionEventFired` | 読み込んだとき / モーションのイベントが発火したとき (評価の直後)。`MotionEvent` は値と時刻のほかに、発火したモーションの名前 (`Motion`) と始めた番号 (`Number`。開始したモーションに 1 から振る。T0462) を持ち、クロスフェードでフェードアウト中のモーションのイベントはそのモーションのもの (C ABI の `ugoe_puppet_motion_event_source`) |
 
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。

@@ -138,6 +138,7 @@ const outputs = () => ({
     },
   ],
   pose_json: { fade_duration: 0.5, groups: [{ entries: [{ part: "ArmA", links: [] }] }] },
+  pose_visible_json: ["ArmA"] as unknown[],
 });
 
 describe("QueryKeyCheck", () => {
@@ -155,6 +156,7 @@ describe("QueryKeyCheck", () => {
     values.motions_json[0] = { ...values.motions_json[0], speed: 1 };
     delete values.motions_json[0]?.events;
     values.pose_json.groups[0]?.entries.push({ part: "ArmB" } as never);
+    values.pose_visible_json = [1];
     values.avatar_slots_json = [1];
     const check = new QueryKeyCheck();
     check.puppet(puppetWith(values), "fake");
@@ -162,6 +164,7 @@ describe("QueryKeyCheck", () => {
       "fake.motions_json()[0]: missing key `events` (motion_info)",
       "fake.motions_json()[0]: unknown key `speed` (motion_info)",
       "fake.pose_json().groups[0].entries[1]: missing key `links` (pose_entry)",
+      "fake.pose_visible_json(): expected (string | null)[] per pose group, got [1]",
       "fake.avatar_slots_json(): expected string[] or null, got [1]",
     ]);
   });
@@ -169,7 +172,13 @@ describe("QueryKeyCheck", () => {
   it("reports shapes that were not seen", () => {
     const check = new QueryKeyCheck();
     check.puppet(
-      puppetWith({ ...outputs(), modules_json: [], motion_events_json: [], pose_json: undefined }),
+      puppetWith({
+        ...outputs(),
+        modules_json: [],
+        motion_events_json: [],
+        pose_json: undefined,
+        pose_visible_json: undefined,
+      }),
       "without modules",
     );
     expect(check.unseen()).toEqual([

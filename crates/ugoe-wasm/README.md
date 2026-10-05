@@ -140,6 +140,7 @@ puppet.base_physics_json();            // 本体の物理 (モジュールを付
 puppet.set_effects_json(json);         // 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) を差し替える
 puppet.show_pose("ArmB");              // ポーズの要素 (part の ID) を表示する (T0414)。要素でなければ false
 puppet.pose_json();                    // 今のポーズ (モデルの pose の形。付けたモジュールのグループと追従も入る。T0661)
+puppet.pose_visible_json();            // 表示中の要素のパーツ (pose_json の groups の並びで string | null の配列。T0478)
 puppet.part_evaluated_opacity("ArmB"); // 評価後のパーツの不透明度 (祖先を掛けた値。T0416)。パーツが無ければ undefined
 puppet.update(dt);                     // Puppet::update と同じ順で 1 フレーム進める
 puppet.motion_events();                // 直前の update で発火したイベントの値
@@ -163,6 +164,9 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
+- `pose_visible_json` はグループごとの表示中の要素の `part` (`PosePlayer::visible_parts`。要素の無いグループは `null`)。`show_pose` で
+  選んだ要素はフェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の `update` の後に入る。ポーズの段を
+  止めている間も表示中の要素は変わる。C ABI では `ugoe_puppet_pose_group_count`・`ugoe_puppet_pose_visible_part` (T0478)。
 - `set_effects_json` は設定をモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・
   範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数)・`error_codes`
   (検査のエラーの種類を `", "` でつないだ文字列) を持つ `Error` を投げ、何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field`

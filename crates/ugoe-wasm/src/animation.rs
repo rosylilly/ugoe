@@ -354,6 +354,32 @@ pub fn pose_json(puppet: &Puppet) -> Result<String, AnimationError> {
     Ok(serde_json::to_string(puppet.pose().pose())?)
 }
 
+/// 表示中のポーズの要素のパーツ (`ugoe::motion::PosePlayer::visible_parts`)。`pose_json` の `groups` と同じ並びで
+/// グループごとに 1 つ。要素の無いグループは `None`。`show_pose` で選んだ要素も、モーションの要求で切り替わった要素も入る
+/// (`docs/spec/motion.md#ポーズ`)。
+pub fn pose_visible_parts(puppet: &Puppet) -> Vec<Option<&str>> {
+    let player = puppet.pose();
+    // `visible_parts` は要素の無いグループを飛ばし、ほかのグループでは 1 つずつ返す。
+    let mut visible = player.visible_parts();
+    player
+        .pose()
+        .groups
+        .iter()
+        .map(|group| {
+            if group.entries.is_empty() {
+                None
+            } else {
+                visible.next().map(|part| part.as_str())
+            }
+        })
+        .collect()
+}
+
+/// [`pose_visible_parts`] の JSON (`string | null` の配列)。
+pub fn pose_visible_json(puppet: &Puppet) -> Result<String, AnimationError> {
+    Ok(serde_json::to_string(&pose_visible_parts(puppet))?)
+}
+
 /// 物理の設定 (`*.physics.json` の形) を差し替える。`None` で外す。
 /// モデルと合わせて検査し、エラーがあれば何も変えない。
 pub fn set_physics_json(puppet: &mut Puppet, json: Option<&str>) -> Result<(), AnimationError> {
@@ -1150,6 +1176,64 @@ mod tests {
             .map(|e| e.part.as_str())
             .collect();
         assert_eq!(parts, ["LongHair/Hair"]);
+    }
+
+    /// 表示中の要素は `show_pose` の選択とモーションの要求の両方に従い、付けたモジュールのグループも入る。
+    #[test]
+    fn pose_visible_json_follows_show_pose_and_motions() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let visible = |puppet: &Puppet| -> Vec<Option<String>> {
+            serde_json::from_str(&pose_visible_json(puppet).unwrap()).unwrap()
+        };
+        assert_eq!(visible(&puppet), [Some("ArmA".to_owned())]);
+
+        // 選んだ要素は、フェードを待たずに表示中になる。
+        assert!(show_pose(&mut puppet, "ArmB"));
+        assert_eq!(pose_visible_parts(&puppet), [Some("ArmB")]);
+        puppet.update(DT);
+        assert_eq!(pose_visible_parts(&puppet), [Some("ArmB")]);
+
+        // モーションのパーツの不透明度のカーブが ArmA を要求すると、ArmA に切り替わる。
+        let motion = r#"{
+            "name": "arm_a",
+            "duration": 1.0,
+            "looping": true,
+            "fade_in": 0.0,
+            "fade_out": 0.0,
+            "curves": [{
+                "target": { "kind": "part_opacity", "id": "ArmA" },
+                "segments": [
+                    { "type": "start", "p": { "t": 0.0, "v": 1.0 } },
+                    { "type": "linear", "to": { "t": 1.0, "v": 1.0 } }
+                ]
+            }]
+        }"#;
+        assert!(start_motion_json(&mut puppet, motion, None).unwrap());
+        puppet.update(DT);
+        assert_eq!(visible(&puppet), [Some("ArmA".to_owned())]);
+
+        // 要素の無いグループは null で、並びは `pose_json` の `groups` と同じ。
+        let mut model = fixtures::pose_and_effects();
+        model.pose.groups.insert(
+            0,
+            ugoe::model::pose::PoseGroup {
+                entries: Vec::new(),
+            },
+        );
+        let puppet = quiet(model);
+        assert_eq!(pose_visible_json(&puppet).unwrap(), r#"[null,"ArmA"]"#);
+
+        let mut puppet = quiet(fixtures::dress_up_base());
+        assert_eq!(pose_visible_json(&puppet).unwrap(), "[]");
+        let mut module = fixtures::long_hair_module();
+        module.pose.groups = vec![ugoe::model::pose::PoseGroup {
+            entries: vec![ugoe::model::pose::PoseEntry {
+                part: "Hair".into(),
+                links: Vec::new(),
+            }],
+        }];
+        puppet.attach_module(std::sync::Arc::new(module)).unwrap();
+        assert_eq!(pose_visible_parts(&puppet), [Some("LongHair/Hair")]);
     }
 
     #[test]

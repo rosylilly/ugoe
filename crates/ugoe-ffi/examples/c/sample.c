@@ -338,6 +338,26 @@ static void host_actions(UgoePuppet *puppet) {
     CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
     printf("%u parts, %u overridden, %u pose entries\n", parts, overridden, entries);
 
+    /* 表示中のポーズの要素 (グループごとのパーツの番号。T0478)。上で最後に選んだ要素が表示中になる。 */
+    uint32_t groups = 0;
+    CHECK(ugoe_puppet_pose_group_count(puppet, &groups));
+    for (uint32_t g = 0; g < groups; g++) {
+        uint32_t part = UINT32_MAX;
+        UgoeResult r = ugoe_puppet_pose_visible_part(puppet, g, &part);
+        if (r == UGOE_ERROR_NOT_FOUND) {
+            continue; /* 要素の無いグループ */
+        }
+        CHECK(r);
+        const char *id = NULL;
+        CHECK(ugoe_puppet_part_id(puppet, part, &id));
+        bool shown = false;
+        CHECK(ugoe_puppet_show_pose(puppet, id, &shown));
+        EXPECT(shown);
+        printf("pose group %u shows %s\n", g, id);
+    }
+    uint32_t unused = 0;
+    EXPECT(ugoe_puppet_pose_visible_part(puppet, groups, &unused) == UGOE_ERROR_OUT_OF_RANGE);
+
     /* モデルの effects と同じ JSON。省略したフィールドは既定値。 */
     static const char effects[] =
         "{\"eye_blink\": {\"parameters\": [\"EyeLOpen\", \"EyeROpen\"], \"interval\": 2, \"seed\": 42}}";

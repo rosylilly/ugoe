@@ -68,6 +68,7 @@ export {
   type UgoePose,
   type UgoePoseEntry,
   type UgoeSlot,
+  visiblePoseParts,
 } from "./queries.js";
 export {
   isRenderError,

@@ -16,6 +16,7 @@ import {
   motionInfos,
   parameterDefinitions,
   slotDefinitions,
+  visiblePoseParts,
 } from "./queries.js";
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
@@ -177,6 +178,19 @@ export class QueryKeyCheck {
     this.list(drawableStates(puppet), "drawable_state", `${name}.drawable_states_json()`);
     const pose = currentPose(puppet);
     if (pose !== undefined) this.check(pose, "pose", `${name}.pose_json()`);
+    const visible = visiblePoseParts(puppet);
+    if (
+      visible !== undefined &&
+      !(
+        Array.isArray(visible) &&
+        visible.length === pose?.groups.length &&
+        visible.every((part) => part === null || typeof part === "string")
+      )
+    ) {
+      this.errors.push(
+        `${name}.pose_visible_json(): expected (string | null)[] per pose group, got ${JSON.stringify(visible)}`,
+      );
+    }
     const slots = avatarSlots(puppet);
     if (slots !== null && !(Array.isArray(slots) && slots.every((s) => typeof s === "string"))) {
       this.errors.push(

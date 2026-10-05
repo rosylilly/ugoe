@@ -459,6 +459,7 @@ import {
   parameterDefinitions,
   sampleMotion,
   slotDefinitions,
+  visiblePoseParts,
 } from "@ugoe/runtime";
 
 parameterDefinitions(puppet); // parameters_json():       { parameters: UgoeParameterDefinition[], groups: UgoeParameterGroup[] }
@@ -470,6 +471,7 @@ slotDefinitions(puppet);      // slots_json():            UgoeSlot[] (空の一�
 avatarSlots(puppet);          // avatar_slots_json():     string[] | null (アバタープロファイルが無ければ null)
 drawableStates(puppet);       // drawable_states_json():  UgoeDrawableState[] (drawable_ids() の順)
 currentPose(puppet);          // pose_json():             UgoePose | undefined (モデルが無ければ undefined)
+visiblePoseParts(puppet);     // pose_visible_json():     (string | null)[] | undefined (グループごとの表示中の要素のパーツ。T0478)
 sampleMotion(motionJson, t);  // sample_motion_json():    UgoeCurveValue[] ({ target: { kind, id }, value })。wasm の初期化の後に呼ぶ
 sampleMotion(sampler, t);     // MotionSampler.sample():  同じ形 (下の「モーションを何度も評価する」)
 ```
@@ -477,7 +479,7 @@ sampleMotion(sampler, t);     // MotionSampler.sample():  同じ形 (下の「�
 | `*_json()` | 型と補助 |
 | --- | --- |
 | `load_warnings_json`・`detached_modules_json` | `loadWarnings`・`detachedModules` (上の「読み込みの警告と着せ替えの失敗の型」) |
-| `parameters_json`・`motions_json`・`motion_events_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`sample_motion_json` | 上の例 |
+| `parameters_json`・`motions_json`・`motion_events_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`pose_visible_json`・`sample_motion_json` | 上の例 |
 | `physics_json`・`base_physics_json` | **型を出さない。** 中身は `*.physics.json` の形 (リグ・粒子・入力・出力・衝突体などモデルの JSON 形式の大きな一部。[spec/schema/physics.schema.json](../../spec/schema/physics.schema.json)) で、主な使い道は保存して `set_physics_json`・`set_base_physics_json` に戻すこと。中を読むなら JSON Schema から型を作ってください |
 | `MotionSampler.sample` | 形は `sample_motion_json` と同じ。`sampleMotion(sampler, t)` で `UgoeCurveValue[]` にする |
 

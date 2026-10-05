@@ -1,4 +1,5 @@
 //! パーツの一覧・パーツの不透明度の上書き・ポーズの表示の選択 (T0414)。評価後のパーツの不透明度 (T0416)。
+//! 表示中のポーズの要素 (T0478)。
 
 use std::ffi::c_char;
 
@@ -164,5 +165,76 @@ pub unsafe extern "C" fn ugoe_puppet_show_pose(
             unsafe { out_shown.write(shown) };
         }
         Ok(())
+    })
+}
+
+/// ポーズのグループの数 (着せ替えで付けたモジュールのグループを含む、合成したモデルのポーズ)。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_pose_group_count(
+    puppet: *const UgoePuppet,
+    out: *mut u32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let count = p.puppet.pose().pose().groups.len() as u32;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", count) }
+    })
+}
+
+/// ポーズの `group` 番目のグループで表示中の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で `out` に書く
+/// (`ugoe::motion::PosePlayer::visible_parts`、`docs/spec/motion.md#ポーズ`)。`ugoe_puppet_show_pose` で選んだ要素は
+/// フェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の `ugoe_puppet_update` の後に入る。
+///
+/// `group` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`、要素の無いグループなら `UGOE_ERROR_NOT_FOUND`。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_pose_visible_part(
+    puppet: *const UgoePuppet,
+    group: u32,
+    out: *mut u32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let player = p.puppet.pose();
+        let groups = &player.pose().groups;
+        let index = group as usize;
+        if index >= groups.len() {
+            return Err(Error::out_of_range("pose group", index, groups.len()));
+        }
+        if groups[index].entries.is_empty() {
+            return Err(Error::new(
+                UGOE_ERROR_NOT_FOUND,
+                format!("pose group {index} has no entries"),
+            ));
+        }
+        // `visible_parts` は要素の無いグループを飛ばし、ほかのグループでは 1 つずつ返す。
+        let skip = groups[..index]
+            .iter()
+            .filter(|g| !g.entries.is_empty())
+            .count();
+        let part = player.visible_parts().nth(skip).ok_or_else(|| {
+            Error::new(
+                UGOE_ERROR_NOT_FOUND,
+                format!("pose group {index} has no shown entry"),
+            )
+        })?;
+        let part = p
+            .puppet
+            .instance()
+            .compiled()
+            .part_index(part.as_str())
+            .ok_or_else(|| Error::new(UGOE_ERROR_NOT_FOUND, format!("no part `{part}`")))?;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", part as u32) }
     })
 }

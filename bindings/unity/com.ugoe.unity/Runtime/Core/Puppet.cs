@@ -466,6 +466,25 @@ namespace Ugoe
             return shown != 0;
         }
 
+        /// <summary>
+        /// ポーズのグループごとに表示中の要素のパーツの ID (グループの並び。着せ替えで付けたモジュールのグループを含む)。要素の無いグループは null。
+        /// <see cref="ShowPose"/> で選んだ要素はすぐに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の
+        /// <see cref="Update"/> の後に入る (docs/spec/motion.md#ポーズ)。
+        /// </summary>
+        public string[] GetVisiblePoseParts()
+        {
+            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count));
+            var result = new string[count];
+            for (uint i = 0; i < count; i++)
+            {
+                var r = Native.ugoe_puppet_pose_visible_part(handle, i, out var part);
+                if (r == (int)UgoeResult.NotFound) continue;
+                UgoeException.Check(r);
+                result[i] = PartIds[(int)part];
+            }
+            return result;
+        }
+
         // --- 物理 ---
 
         /// <summary>

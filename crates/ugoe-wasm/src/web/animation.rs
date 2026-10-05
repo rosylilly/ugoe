@@ -203,6 +203,18 @@ impl WebPuppet {
         }
     }
 
+    /// 表示中のポーズの要素のパーツ (`string | null` の配列の JSON)。`pose_json` の `groups` と同じ並びでグループごとに 1 つ、
+    /// 要素の無いグループは `null`。`show_pose` で選んだ要素 (フェードを待たずに入る) も、モーションのパーツの不透明度の
+    /// カーブの要求で切り替わった要素 (`update` の後) も入る。モデルが無ければ `undefined`。
+    pub fn pose_visible_json(&self) -> Result<Option<String>, JsError> {
+        match &self.puppet {
+            Some(puppet) => animation::pose_visible_json(puppet)
+                .map(Some)
+                .map_err(js_error),
+            None => Ok(None),
+        }
+    }
+
     // --- エフェクト ---
 
     /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。

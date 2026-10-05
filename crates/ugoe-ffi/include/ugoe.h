@@ -1107,6 +1107,27 @@ UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
                                  const char *part,
                                  bool *out_shown);
 
+// ポーズのグループの数 (着せ替えで付けたモジュールのグループを含む、合成したモデルのポーズ)。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_pose_group_count(const struct UgoePuppet *puppet,
+                                        uint32_t *out);
+
+// ポーズの `group` 番目のグループで表示中の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で `out` に書く
+// (`ugoe::motion::PosePlayer::visible_parts`、`docs/spec/motion.md#ポーズ`)。`ugoe_puppet_show_pose` で選んだ要素は
+// フェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の `ugoe_puppet_update` の後に入る。
+//
+// `group` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`、要素の無いグループなら `UGOE_ERROR_NOT_FOUND`。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_pose_visible_part(const struct UgoePuppet *puppet,
+                                         uint32_t group,
+                                         uint32_t *out);
+
 // `.ugoe` バンドルのバイト列から `UgoePuppet` を作る。
 //
 // バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、

@@ -13,6 +13,7 @@ import {
   slotDefinitions,
   type UgoeCurveValue,
   type UgoeModuleInfo,
+  visiblePoseParts,
 } from "./queries.js";
 import { sampleMotion } from "./runtime.js";
 import { isKnownLoadWarning } from "./warnings.js";
@@ -161,6 +162,13 @@ describe("drawableStates and currentPose", () => {
     const pose = { fade_duration: 0.5, groups: [{ entries: [{ part: "ArmA", links: [] }] }] };
     expect(currentPose(puppetWith({ pose_json: pose }))).toEqual(pose);
     expect(currentPose(puppetWith({ pose_json: undefined }))).toBeUndefined();
+  });
+
+  it("reads the shown pose parts per group, or undefined without a model", () => {
+    const parsed = visiblePoseParts(puppetWith({ pose_visible_json: [null, "ArmB"] }));
+    expect(parsed).toEqual([null, "ArmB"]);
+    expectTypeOf(parsed).toEqualTypeOf<(string | null)[] | undefined>();
+    expect(visiblePoseParts(puppetWith({ pose_visible_json: undefined }))).toBeUndefined();
   });
 });
 

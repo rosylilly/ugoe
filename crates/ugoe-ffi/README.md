@@ -337,6 +337,9 @@ ugoe_puppet_part_evaluated_opacity(puppet, index, &evaluated); /* 評価後の�
 
 bool shown = false;
 ugoe_puppet_show_pose(puppet, "ArmB", &shown);      /* ポーズの要素 (part の ID) を表示する。要素でなければ false */
+uint32_t groups = 0, visible = 0;
+ugoe_puppet_pose_group_count(puppet, &groups);      /* ポーズのグループの数 (付けたモジュールのグループを含む) */
+ugoe_puppet_pose_visible_part(puppet, 0, &visible); /* グループ 0 で表示中の要素のパーツの番号 (T0478) */
 ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) */
 ```
 
@@ -349,6 +352,12 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
 - `ugoe_puppet_show_pose` は `PosePlayer::show` と同じ (`docs/spec/motion.md#ポーズ`)。`links` のパーツや、どの要素の `part` でもない
   パーツは何も変えず `false` (エラーにはしない)。不透明度は次の update からフェードし、そのフレームにモーションが同じグループの要素を
   要求すれば要求が勝つ。ポーズの段を止めている間も表示中の要素は変わる。wasm は `show_pose(part)`。
+- `ugoe_puppet_pose_visible_part` はグループで表示中の要素の `part` をパーツの番号で返す (`PosePlayer::visible_parts`。T0478)。
+  `ugoe_puppet_show_pose` で選んだ要素はフェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の update の
+  後に入るので、ホストはポーズの欄をモーションに追従させられる。グループの番号は合成したモデルのポーズ (付けたモジュールのグループを
+  含む) の並びで、着せ替えの操作で変わる。範囲の外は `UGOE_ERROR_OUT_OF_RANGE`、要素の無いグループは `UGOE_ERROR_NOT_FOUND`。
+  wasm は `pose_visible_json()` (`pose_json()` の `groups` の並びで、パーツの ID か `null` の配列)。関数を足しただけなので ABI の版は上げない
+  ([ABI の版](#abi-の版))。
 - `ugoe_puppet_set_effects_json` は `Puppet::set_effects` と同じ (`docs/spec/motion.md#エフェクト設定の差し替え`)。同じ設定でも目パチと呼吸は
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
   設定はモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・範囲の外の値

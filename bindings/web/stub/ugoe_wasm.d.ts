@@ -83,6 +83,7 @@ export class WebPuppet {
   physics_json(): string | undefined;
   physics_particles(rig: number): Float32Array;
   pose_json(): string | undefined;
+  pose_visible_json(): string | undefined;
   read_pixels(): Promise<Uint8Array>;
   render(): void;
   render_order(): Uint32Array;

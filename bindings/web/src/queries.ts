@@ -214,6 +214,16 @@ export function currentPose(puppet: WebPuppet): UgoePose | undefined {
   return json === undefined ? undefined : (JSON.parse(json) as UgoePose);
 }
 
+/**
+ * 表示中のポーズの要素のパーツの ID (`pose_visible_json()`。T0478)。`currentPose` の `groups` と同じ並びでグループごとに 1 つ、
+ * 要素の無いグループは `null`。`show_pose` で選んだ要素はすぐに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は
+ * 次の `update` の後に入る。モデルが無ければ `undefined`。
+ */
+export function visiblePoseParts(puppet: WebPuppet): (string | null)[] | undefined {
+  const json = puppet.pose_visible_json();
+  return json === undefined ? undefined : (JSON.parse(json) as (string | null)[]);
+}
+
 /** カーブの対象 (`*.motion.json` の `target`)。 */
 export interface UgoeCurveTarget {
   kind: "parameter" | "part_opacity" | "effect_group";
