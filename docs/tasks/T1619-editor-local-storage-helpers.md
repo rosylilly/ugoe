@@ -1,11 +1,11 @@
 ---
 id: T1619
 title: "エディタ: localStorage の読み書きを @ugoe/i18n の readStoredItem などに寄せる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: [T1610]
-assignee:
+assignee: claude-worker-T1619
 ---
 
 # T1619: エディタ: localStorage の読み書きを @ugoe/i18n の readStoredItem などに寄せる
