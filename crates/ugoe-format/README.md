@@ -12,6 +12,8 @@
 - ファイルシステムに触れない (バイト列と `Read`/`Write` を扱う)
 - 画像 (PNG・KTX2) のデコードの上限も読む側の設定 (`ImageLimits`。既定は一辺 16384)。見出しの大きさだけで確保しない
 - 知らない必須の機能は拒否する (`features` モジュール)。未知の値 (`Unknown`) は警告にして読み、書き出さない (`ugoe_model::unknown`)
+- モーション・表情の数値の検査は `check_motion`・`check_expression` の 1 か所に置く (`FormatError::InvalidMotion`・`InvalidExpression`)。
+  JSON・バンドルの読み込みのほか、エディタのプロジェクトの読み込み (`ugoe-editor-core`) も同じ関数を使い、写しを作らない
 
 ## feature
 
@@ -42,3 +44,4 @@ let small = decode_png_premultiplied(&bytes, ImageLimits::default().with_max_sid
 - T0150 (読み込みの上限 `ReadLimits`。`docs/spec/file-formats.md#読み込みの上限`)
 - T0009 (PNG のデコードと上限 `ImageLimits` を ugoe-headless と ugoe-wasm から 1 か所にまとめた `image`)
 - T0222 (圧縮していない KTX2 のデコード)
+- T0170 (`check_motion`・`check_expression` を公開し、editor-core の写しを置き換えた)

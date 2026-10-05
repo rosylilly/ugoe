@@ -299,8 +299,12 @@ pub fn expression_from_json(json: &str) -> Result<Expression, FormatError> {
     Ok(expression)
 }
 
-/// モーションの数値の検査 (JSON とバンドルで共通)。
-fn check_motion(motion: &Motion) -> Result<(), FormatError> {
+/// モーションの数値を `ugoe_model::validate::validate_motion` で検査する。通らなければ [`FormatError::InvalidMotion`]
+/// (`docs/spec/model.md#モーションと表情の検証`)。
+///
+/// JSON とバンドルの読み込みが使う検査と同じもの。エディタのプロジェクト (`ugoe-editor-core`) の読み込みも
+/// これを使い、書き出したバンドルを読み直すと拒まれる値を同じ理由で拒む。
+pub fn check_motion(motion: &Motion) -> Result<(), FormatError> {
     let errors = ugoe_model::validate::validate_motion(motion);
     if errors.is_empty() {
         Ok(())
@@ -312,8 +316,11 @@ fn check_motion(motion: &Motion) -> Result<(), FormatError> {
     }
 }
 
-/// 表情の数値の検査 (JSON とバンドルで共通)。
-fn check_expression(expression: &Expression) -> Result<(), FormatError> {
+/// 表情の数値を `ugoe_model::validate::validate_expression` で検査する。通らなければ
+/// [`FormatError::InvalidExpression`] (`docs/spec/model.md#モーションと表情の検証`)。
+///
+/// JSON とバンドルの読み込みが使う検査と同じもの ([`check_motion`] を参照)。
+pub fn check_expression(expression: &Expression) -> Result<(), FormatError> {
     let errors = ugoe_model::validate::validate_expression(expression);
     if errors.is_empty() {
         Ok(())
