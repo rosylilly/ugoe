@@ -1777,14 +1777,15 @@ AI タブの分類の確認の一覧で、レイヤーのラベル・左右を�
     外れれば `edit.invalid_layer_correction` で拒み、何も変えません。ラベルの語彙は ugoe-editor-core は知らない (`ugoe-ai` に依存しない) ので、
     語彙にないラベルの直しは受け付けますが、重ねる側 (エディタ) が無視します。
   - 直しもドキュメントの状態を変えるので、未保存の印が付き、置いてある提案は古く (stale) なります (直した分類でリグを提案し直す)。
-- **重ね方 (`src-tauri/src/proposals.rs` の `corrected_labels`):** 分類の答えのうち、パス (`LayerLabel::layer_path`) が同じレイヤーのラベルと
+- **重ね方 (`ugoe_ai::classify::corrected_labels`。MCP サーバと共有する):** 分類の答えのうち、パス (`LayerLabel::layer_path`) が同じレイヤーのラベルと
   左右を直しで置き換え、人が確かめたものとして確からしさを 1 にし、名前の規則との食い違いの印を消します (差分の組は保つ)。
   画面の一覧 (`get_proposals`)・リグの提案 (`propose_rig_from_psd`・`regenerate_rig_proposal`)・分類の作り直しで送る前の答え (`revise`)・
   法線マップのまとまり (`get_normal_map_groups` など) は、どれも重ねた分類を使います。分類し直しても直しは残り、新しい答えの上に重ねます。
 - **保存:** `project.json` の `editor.classification` (`{"corrections": [{"path": [...], "label": "...", "side": "left"}]}`。
   [file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj)) に、保存したときに書きます。PSD のパスは持たず、レイヤーのパスだけで対応させるので、
   同じ構成で書き出し直した PSD にも効きます。直しがなければ項目を書きません。読めない件は捨てます。
-  `.ugoe` には書き出しません。外部のエージェント (MCP の `get_psd_layers`・`set_layer_labels`) はまだこの直しを読みません。
+  `.ugoe` には書き出しません。外部のエージェント (MCP サーバ) も同じ規則でこの直しを重ねます (T0566。
+  [ai-integration.md#エージェントに任せる自動リギング](ai-integration.md#エージェントに任せる自動リギング))。
 
 ### 法線マップの提案
 

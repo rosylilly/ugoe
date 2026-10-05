@@ -17,7 +17,7 @@ AI プロバイダの抽象 (`Provider`) と、自動リギングのパイプラ
 - `claude.rs`: Claude API のプロバイダ (`ClaudeProvider`・`ClaudeConfig`)
 - `openai.rs`: OpenAI 互換の API (Chat Completions) のプロバイダ (`OpenAiProvider`・`OpenAiConfig`・`StructuredOutput`)。OpenAI・OpenRouter・Gemini・Ollama・LM Studio・vLLM など
 - `transport.rs`: HTTP の差し替え (`UreqTransport`・`ReplayTransport`・`RecordingTransport`・`Cassette`)、プロバイダで共通の再試行 (`RetryPolicy`)、ループバックの判定 (`is_loopback_url`)
-- `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`、名前の規則との食い違いの印 `mark_name_disagreements`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
+- `classify.rs`: レイヤーの意味分類 (`Label`・`Side`・`LayerLabel`、名前の規則による `classify_by_name`、`Provider` による `classify_layers`、名前の規則との食い違いの印 `mark_name_disagreements`、利用者の直し (`ugoe_editor_core::classification`) を重ねる `corrected_labels`)。`classify/rules.rs` が名前の規則、`classify/image.rs` が送る画像
 - `fake.rs`: テスト用の `FakeProvider`
 - `cancel.rs`: 提案の取り消しと時間の合計の上限 (`CancelToken`)。プロバイダと深度推定器に `with_cancel` で渡し、`transport::send_with_retry` が送る前・応答を待つ間・再試行の待ちの間に確かめる (`docs/ai-integration.md#取り消しと時間の上限`)
 - `depth.rs`: 深度推定 (`DepthEstimator`・`DepthMap`・`HttpDepthEstimator`・`FixedDepthEstimator`)。HTTP の推論サーバへはプロバイダと同じ規則で送る (再試行・任意の `Authorization: Bearer`)

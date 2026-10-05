@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use ugoe_editor_core::classification::{LayerCorrection, LayerCorrections, LayerSide};
 use ugoe_psd::{Layer, LayerNode, LayerTree};
 
 use crate::instructions::{Instructions, system_rules};
@@ -979,6 +980,38 @@ pub fn mark_name_disagreements(tree: &LayerTree, labels: &mut [LayerLabel]) -> R
             (disagreement.label.is_some() || disagreement.side.is_some()).then_some(disagreement);
     }
     Ok(())
+}
+
+/// 利用者の直し (`ugoe_editor_core::classification`) のラベルと左右。語彙にないラベルなら `None` (重ねない)。
+pub fn correction_label(correction: &LayerCorrection) -> Option<(Label, Side)> {
+    let label = correction.label.parse().ok()?;
+    let side = match correction.side {
+        LayerSide::Left => Side::Left,
+        LayerSide::Right => Side::Right,
+        LayerSide::Center => Side::Center,
+    };
+    Some((label, side))
+}
+
+/// 分類 `labels` に利用者の直し `corrections` を重ねる (`docs/editor.md#分類の直し`)。直しはレイヤーのパスで
+/// 対応させ、直したレイヤーは人が確かめたものとして確からしさを 1 にし、名前の規則との食い違いの印を消す
+/// (差分の組は保つ)。語彙にないラベルの直しは重ねない ([`correction_label`])。エディタと MCP サーバが使う。
+pub fn corrected_labels(labels: &[LayerLabel], corrections: &LayerCorrections) -> Vec<LayerLabel> {
+    labels
+        .iter()
+        .map(
+            |l| match corrections.get(&l.layer_path).and_then(correction_label) {
+                Some((label, side)) => LayerLabel {
+                    label,
+                    side,
+                    confidence: 1.0,
+                    name_disagreement: None,
+                    ..l.clone()
+                },
+                None => l.clone(),
+            },
+        )
+        .collect()
 }
 
 /// [`output_schema`] の形の答え (外部のエージェントが決めた分類) を `labels` に書き込む。

@@ -29,8 +29,8 @@ use serde_json::{Value, json};
 use ugoe_ai::AiError;
 use ugoe_ai::classify::{
     ClassifyOptions, Label, LayerLabel, apply_answer, classification_instructions,
-    classify_by_name, layer_thumbnail_png, layers, mark_name_disagreements, output_schema,
-    overview_png,
+    classify_by_name, corrected_labels, correction_label, layer_thumbnail_png, layers,
+    mark_name_disagreements, output_schema, overview_png,
 };
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
@@ -76,10 +76,15 @@ const DEFAULT_COUNT: usize = 8;
 const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// 自動リギングの元にする PSD と、レイヤーの分類。
+///
+/// 利用者がエディタで直した分類 (`project.json` の `editor.classification`。文書の
+/// [`Document::layer_corrections`]) は、ここには入れず、使うたびに上に重ねる ([`PsdSource::labels_for`])。
+/// 直しは文書の状態 (Undo の対象) なので、重ねる時の文書に従う。
 pub(crate) struct PsdSource {
     path: PathBuf,
     tree: LayerTree,
     /// 分類 (`classify_by_name` と同じ並び)。エージェントが決めていないレイヤーは名前の規則の案。
+    /// 利用者の直しは含まない。
     labels: Vec<LayerLabel>,
     /// エージェントが決めたレイヤーの番号。
     by_agent: BTreeSet<usize>,
@@ -128,6 +133,53 @@ impl PsdSource {
             path,
             tree,
         })
+    }
+}
+
+/// 利用者の直しを重ねた分類 ([`PsdSource::labels_for`])。
+struct Labels {
+    /// 分類 (`classify_by_name` と同じ並び)。直したレイヤーは直しのラベル・左右で、確からしさ 1。
+    labels: Vec<LayerLabel>,
+    /// 利用者が直したレイヤーの番号。
+    corrected: BTreeSet<usize>,
+    /// エージェントが決めたレイヤーのうち、利用者が直していないものの数。
+    by_agent: usize,
+}
+
+impl PsdSource {
+    /// 分類に文書 `doc` の利用者の直しを、エディタと同じ規則で重ねる (`ugoe_ai::classify::corrected_labels`。
+    /// `docs/editor.md#分類の直し`): 直しはレイヤーのパスで対応させ、直したレイヤーは確からしさ 1・名前の規則との
+    /// 食い違いの印なし。語彙にないラベルの直しは重ねない。
+    fn labels_for(&self, doc: &Document) -> Labels {
+        let corrections = doc.layer_corrections();
+        let corrected: BTreeSet<usize> = self
+            .labels
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| {
+                corrections
+                    .get(&l.layer_path)
+                    .and_then(correction_label)
+                    .is_some()
+            })
+            .map(|(i, _)| i)
+            .collect();
+        Labels {
+            labels: corrected_labels(&self.labels, corrections),
+            by_agent: self.by_agent.difference(&corrected).count(),
+            corrected,
+        }
+    }
+}
+
+/// レイヤー `i` の分類を決めたもの (利用者の直し・エージェント・名前の規則)。
+fn set_by(source: &PsdSource, labels: &Labels, i: usize) -> &'static str {
+    if labels.corrected.contains(&i) {
+        "user"
+    } else if source.by_agent.contains(&i) {
+        "agent"
+    } else {
+        "rules"
     }
 }
 
@@ -264,7 +316,8 @@ pub(crate) fn tools() -> Vec<Value> {
                  分類は名前の規則による案 (set_by=rules) が入っているので、画像を見て直すものを \
                  set_layer_labels で渡す。name_disagreement は、渡した分類が名前の規則の確からしい答えと \
                  食い違うときの名前の規則のラベル (label) か左右 (side) で、needs_review になる \
-                 (画像で確かめ、名前が正しければ直す)。",
+                 (画像で確かめ、名前が正しければ直す)。set_by=user は利用者がエディタで直したレイヤー \
+                 (プロジェクトの editor.classification) で、確からしさ 1。set_layer_labels でも変わらない。",
                 options.overview_max_side, options.thumbnail_max_side
             ),
             object_schema(
@@ -303,7 +356,9 @@ pub(crate) fn tools() -> Vec<Value> {
              重ねて描く絵と、目や口の開閉は組にしない)。layers と variant_sets の少なくとも一方を渡す。\
              モデルは変えない。結果はメッシュとの対応・差分の組・確かめたほうがよいレイヤー・名前の規則の \
              確からしい答えと食い違うレイヤー (name_disagreements。左右の取り違えは目の開閉などを入れ替える) \
-             ・リグを組めるか (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。",
+             ・リグを組めるか (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。\
+             利用者がエディタで直したレイヤー (get_psd_layers の set_by=user) は上書きしない (答えは覚えるが \
+             直しが優先し、その番号を kept_corrections に返す。reset でも直しは消えない)。",
             object_schema(
                 json!({
                     "path": path_property(),
@@ -518,6 +573,7 @@ pub(crate) fn get_psd_layers(
     let per_call = defaults.max_layers_per_request;
     let meshes = unique_mesh_names(doc);
     let source = source(slot, psd)?;
+    let effective = source.labels_for(doc);
     let infos = layers(&source.tree);
     let total = infos.len();
     let selected: Vec<usize> = match &args.indices {
@@ -580,7 +636,7 @@ pub(crate) fn get_psd_layers(
     let mut listed = Vec::with_capacity(selected.len());
     for &i in &selected {
         let info = &infos[i];
-        let label = &source.labels[i];
+        let label = &effective.labels[i];
         if args.images && info.has_pixels {
             let png =
                 layer_thumbnail_png(&source.tree, i, &options).map_err(ai("mcp.image_failed"))?;
@@ -603,7 +659,7 @@ pub(crate) fn get_psd_layers(
             "label": label.label,
             "side": label.side,
             "confidence": (f64::from(label.confidence) * 100.0).round() / 100.0,
-            "set_by": if source.by_agent.contains(&i) { "agent" } else { "rules" },
+            "set_by": set_by(source, &effective, i),
             "needs_review": label.needs_review(&options),
             "name_disagreement": label.name_disagreement,
             "variant": label.variant,
@@ -682,17 +738,26 @@ pub(crate) fn set_layer_labels(
     if args.reset {
         source.by_agent.clear();
     }
-    source.by_agent.extend(indices);
-    let mut value = labels_summary(doc, source);
+    source.by_agent.extend(indices.iter().copied());
+    let effective = source.labels_for(doc);
+    // 利用者が直したレイヤーへの答えは、覚えるが直しの下に置く (直しを消せば効く)。
+    let kept: BTreeSet<usize> = indices
+        .iter()
+        .copied()
+        .filter(|i| effective.corrected.contains(i))
+        .collect();
+    let mut value = labels_summary(doc, &effective);
     value["updated"] = json!(updated);
+    value["kept_corrections"] = json!(kept);
     Ok(value.into())
 }
 
 /// 分類の要約: メッシュとの対応・対応しないレイヤー・確かめたほうがよいレイヤー・名前の規則と食い違うレイヤー・
 /// リグを組めるか。
-fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
+fn labels_summary(doc: &Document, effective: &Labels) -> Value {
     let model = doc.model();
-    let parts = mesh_parts(model, &source.labels);
+    let labels = &effective.labels;
+    let parts = mesh_parts(model, labels);
     let options = ClassifyOptions::default();
     let meshes: Vec<Value> = model
         .meshes
@@ -711,7 +776,7 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
     let mut unmatched = Vec::new();
     let mut review = Vec::new();
     let mut disagreements = Vec::new();
-    for (i, label) in source.labels.iter().enumerate() {
+    for (i, label) in labels.iter().enumerate() {
         let name = label.layer_path.last().map(String::as_str).unwrap_or("");
         if label.label != Label::Other && !matched.contains(name) {
             unmatched.push(json!({ "index": i, "path": label.layer_path, "label": label.label }));
@@ -731,7 +796,7 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
     }
     // モジュールのプロジェクトでは、モジュールのリグを組めるか (衣装のメッシュが取り付け先の下にあるか)。
     let ready = if doc.module().is_some() {
-        let parts = module_mesh_parts(doc, &source.labels);
+        let parts = module_mesh_parts(doc, labels);
         module_rig_request_guided(doc, &parts, &[], &[], &ModuleRigGuidance::default()).map(|_| ())
     } else {
         rig_request(model, &parts, &[], &[]).map(|_| ())
@@ -746,15 +811,40 @@ fn labels_summary(doc: &Document, source: &PsdSource) -> Value {
         Err(e) => json!({ "ready": false, "tool": tool, "error": ai_error(e) }),
     };
     json!({
-        "layers": source.labels.len(),
-        "set_by_agent": source.by_agent.len(),
+        "layers": labels.len(),
+        "set_by_agent": effective.by_agent,
+        "corrected_by_user": effective.corrected,
         "meshes": meshes,
-        "variant_sets": variant_sets(&source.labels),
+        "variant_sets": variant_sets(labels),
         "unmatched_layers": unmatched,
         "needs_review": review,
         "name_disagreements": disagreements,
         "rig": rig,
     })
+}
+
+/// リグのガイドに添える分類の数 (レイヤー・エージェントが決めた・利用者が直した)。
+fn labels_count(effective: &Labels) -> Value {
+    json!({
+        "layers": effective.labels.len(),
+        "set_by_agent": effective.by_agent,
+        "corrected_by_user": effective.corrected.len(),
+    })
+}
+
+/// 提案の理由に書く、分類を決めたものの内訳。
+fn labels_note(effective: &Labels) -> String {
+    let total = effective.labels.len();
+    let by_agent = effective.by_agent;
+    match effective.corrected.len() {
+        0 => {
+            format!("the agent chose {by_agent} of {total} layers; the rest follow the name rules")
+        }
+        corrected => format!(
+            "the user corrected {corrected} and the agent chose {by_agent} of {total} layers; \
+             the rest follow the name rules"
+        ),
+    }
 }
 
 /// 差分の組 (レイヤーの番号の組。組の番号の順)。
@@ -773,8 +863,9 @@ pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolRes
         return Err(use_module_rig());
     }
     let source = slot.as_ref().ok_or_else(no_psd)?;
+    let effective = source.labels_for(doc);
     let model = doc.model();
-    let parts = mesh_parts(model, &source.labels);
+    let parts = mesh_parts(model, &effective.labels);
     let max_side = ClassifyOptions::default().overview_max_side;
     let image = overview_png(&source.tree, max_side).map_err(ai("mcp.image_failed"))?;
     // エディタが API に送るリクエストと同じ文 (システムプロンプトが値の説明、プロンプトが位置)。
@@ -785,7 +876,7 @@ pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolRes
             "layout": request.prompt,
             "params_schema": rig_output_schema(),
             "defaults": RigParams::default(),
-            "labels": { "layers": source.labels.len(), "set_by_agent": source.by_agent.len() },
+            "labels": labels_count(&effective),
             "next": "画像を見て値を選び、propose_rig の params に渡す",
         }),
         content: vec![
@@ -816,7 +907,8 @@ pub(crate) fn propose_rig(
         }
         None => (RigParams::default(), None),
     };
-    let parts = mesh_parts(model, &source.labels);
+    let effective = source.labels_for(doc);
+    let parts = mesh_parts(model, &effective.labels);
     let proposal = template_rig(model, &parts, &params, &RigOptions::default()).map_err(|e| {
         rig_failed(format!(
             "the rig could not be built: {}; fix it and call propose_rig again",
@@ -834,11 +926,7 @@ pub(crate) fn propose_rig(
         Some(reason) => format!("Values chosen by the agent: {values} ({reason})"),
         None => format!("Default values: {values}"),
     };
-    let by_agent = source.by_agent.len();
-    let labels = format!(
-        "Labels: the agent chose {by_agent} of {total} layers; the rest follow the name rules",
-        total = source.labels.len()
-    );
+    let labels = format!("Labels: {}", labels_note(&effective));
     let title = args.title.unwrap_or_else(|| {
         format!(
             "{} — {}",
@@ -871,7 +959,8 @@ fn module_source<'a>(
 
 pub(crate) fn get_module_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
     let source = module_source(doc, slot)?;
-    let parts = module_mesh_parts(doc, &source.labels);
+    let effective = source.labels_for(doc);
+    let parts = module_mesh_parts(doc, &effective.labels);
     let max_side = ClassifyOptions::default().overview_max_side;
     // エディタが API に送るものと同じく、衣装の PSD の原画 (`docs/ai-integration.md#モジュールの自動リギング`)。
     let image = overview_png(&source.tree, max_side).map_err(ai("mcp.image_failed"))?;
@@ -887,8 +976,8 @@ pub(crate) fn get_module_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> 
             "defaults": ModuleRigParams::default(),
             "options": ModuleRigOptions::default(),
             "slot": context.slot().id,
-            "variant_sets": variant_sets(&source.labels),
-            "labels": { "layers": source.labels.len(), "set_by_agent": source.by_agent.len() },
+            "variant_sets": variant_sets(&effective.labels),
+            "labels": labels_count(&effective),
             "next": "画像を見て値を選び、propose_module_rig の params に渡す",
         }),
         content: vec![
@@ -921,7 +1010,8 @@ pub(crate) fn propose_module_rig(
         colliders: args.colliders.unwrap_or(defaults.colliders),
         poses: args.poses.unwrap_or(defaults.poses),
     };
-    let parts = module_mesh_parts(doc, &source.labels);
+    let effective = source.labels_for(doc);
+    let parts = module_mesh_parts(doc, &effective.labels);
     let proposal = template_module_rig(doc, &parts, &params, &options).map_err(|e| {
         rig_failed(format!(
             "the module rig could not be built: {}; fix it and call propose_module_rig again",
@@ -937,10 +1027,9 @@ pub(crate) fn propose_module_rig(
         None => format!("Default values: {values}"),
     };
     let labels = format!(
-        "Labels: the agent chose {} of {} layers and {} variant set(s); the rest follow the name rules",
-        source.by_agent.len(),
-        source.labels.len(),
-        variant_sets(&source.labels).len()
+        "Labels: {}; {} variant set(s)",
+        labels_note(&effective),
+        variant_sets(&effective.labels).len()
     );
     let title = args.title.unwrap_or_else(|| {
         format!(

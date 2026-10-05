@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use ugoe_editor_core::texture::solid_png;
-use ugoe_editor_core::{Project, ProjectMeta, Textures};
+use ugoe_editor_core::{
+    LayerCorrection, LayerCorrections, LayerSide, Project, ProjectMeta, Textures,
+};
 use ugoe_model::fixtures;
 
 /// `single_quad` (メッシュ `Quad`、パラメータ `X`) のプロジェクトを保存する。
@@ -932,6 +934,143 @@ fn agent_driven_auto_rig_from_psd() {
         json!({ "path": path, "psd": psd.to_str().unwrap(), "images": false, "count": 1 }),
     );
     assert_eq!(page["layers"][0]["set_by"], "rules");
+}
+
+/// T0566: 利用者がエディタで直した分類 (`project.json` の `editor.classification`) を、名前の規則とエージェントの
+/// 答えの上に重ねる。直したレイヤーは確からしさ 1 で `set_by=user`、`set_layer_labels` でも変わらず、
+/// リグのガイドと提案は直した分類で組む。語彙にないラベルの直しは重ねない。
+#[test]
+fn layer_corrections_from_the_project_overlay_the_classification() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("bustup.ugoeproj");
+    let path = project.to_str().unwrap();
+    let psd = bustup_psd();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+
+    // 直しのないプロジェクトでのガイドと提案。
+    client.call_ok(
+        "import_psd",
+        json!({ "path": path, "psd": psd.to_str().unwrap() }),
+    );
+    let all = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "count": 64, "images": false, "overview": false }),
+    )["layers"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let before = client.call_ok("get_rig_guide", json!({ "path": path }));
+    let proposal_before = client.call_ok("propose_rig", json!({ "path": path }));
+    client.call_ok("save_project", json!({ "path": path }));
+    client.call_ok("close_project", json!({ "path": path }));
+
+    // エディタで直したことにする: 左右の目のレイヤーの左右を入れ替え、最初のレイヤーには語彙にないラベルを付ける。
+    let in_group = |l: &Value, group: &str| {
+        l["path"].as_array().unwrap().iter().any(|n| n == group) && l["side"] != "center"
+    };
+    let mut corrections = LayerCorrections::default();
+    let mut swapped = Vec::new();
+    for l in &all {
+        let side = if in_group(l, "eye-r") {
+            LayerSide::Left
+        } else if in_group(l, "eye-l") {
+            LayerSide::Right
+        } else {
+            continue;
+        };
+        let layer_path: Vec<String> = serde_json::from_value(l["path"].clone()).unwrap();
+        let label = l["label"].as_str().unwrap().to_owned();
+        corrections
+            .set(layer_path, Some(LayerCorrection { label, side }))
+            .unwrap();
+        swapped.push(l["index"].as_u64().unwrap() as usize);
+    }
+    assert!(swapped.len() >= 4, "{swapped:?}");
+    let unknown: Vec<String> = serde_json::from_value(all[0]["path"].clone()).unwrap();
+    corrections
+        .set(
+            unknown,
+            Some(LayerCorrection {
+                label: "halo".into(),
+                side: LayerSide::Center,
+            }),
+        )
+        .unwrap();
+    let mut on_disk = Project::load(&project).unwrap();
+    on_disk.meta.set_layer_corrections(&corrections);
+    on_disk.save(&project).unwrap();
+
+    // 開き直すと、直したレイヤーは直しのとおりで、名前の規則と食い違っても確認に回さない。
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "psd": psd.to_str().unwrap(), "count": 64, "images": false }),
+    );
+    let layers = page["layers"].as_array().unwrap();
+    for l in layers {
+        let i = l["index"].as_u64().unwrap() as usize;
+        if swapped.contains(&i) {
+            assert_eq!(l["set_by"], "user", "{l}");
+            assert_eq!(l["confidence"], 1.0, "{l}");
+            assert_eq!(l["needs_review"], false, "{l}");
+            assert_eq!(l["name_disagreement"], Value::Null, "{l}");
+            assert_ne!(l["side"], all[i]["side"], "{l}");
+        } else {
+            assert_eq!(l["set_by"], "rules", "{l}");
+            assert_eq!(l["side"], all[i]["side"], "{l}");
+        }
+    }
+    assert_eq!(layers[0]["label"], all[0]["label"]);
+
+    // エージェントの答えは直したレイヤーを上書きしない (覚えるが、直しが優先する)。
+    let eye = swapped[0];
+    let answer = json!([
+        { "index": eye, "label": "eye_white", "side": all[eye]["side"], "confidence": 0.9 },
+        { "index": 0, "label": all[0]["label"], "side": all[0]["side"], "confidence": 0.9 },
+    ]);
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": answer }),
+    );
+    assert_eq!(summary["updated"], 2);
+    assert_eq!(summary["kept_corrections"], json!([eye]));
+    assert_eq!(summary["set_by_agent"], 1);
+    assert_eq!(summary["corrected_by_user"], json!(swapped));
+    assert_eq!(summary["rig"]["ready"], true, "{summary}");
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "indices": [eye, 0], "images": false }),
+    );
+    assert_eq!(page["layers"][0]["set_by"], "user");
+    assert_eq!(page["layers"][0]["side"], layers[eye]["side"]);
+    assert_eq!(page["layers"][1]["set_by"], "agent");
+
+    // リグのガイドは直した分類で目の位置を書く (エディタと同じ重ね方で組んだものと同じ)。
+    let guide = client.call_ok("get_rig_guide", json!({ "path": path }));
+    assert_eq!(guide["labels"]["corrected_by_user"], swapped.len());
+    let tree = ugoe_editor_core::import::read_layer_tree(
+        &fs::read(&psd).unwrap(),
+        ugoe_psd::ImportLimits::default(),
+    )
+    .unwrap();
+    let model = Project::load(&project).unwrap().model;
+    let labels = ugoe_ai::classify::corrected_labels(
+        &ugoe_ai::classify::classify_by_name(&tree),
+        &corrections,
+    );
+    let parts = ugoe_ai::rig::mesh_parts(&model, &labels);
+    let expected = ugoe_ai::rig::rig_request(&model, &parts, &[], &[]).unwrap();
+    assert_eq!(guide["layout"], expected.prompt.as_str());
+    assert_ne!(guide["layout"], before["layout"]);
+
+    // リグの提案も直した分類で組む。
+    let proposal = client.call_ok("propose_rig", json!({ "path": path }));
+    let rationale = proposal["rationale"].as_str().unwrap();
+    assert!(
+        rationale.contains(&format!("the user corrected {}", swapped.len())),
+        "{rationale}"
+    );
+    assert_ne!(proposal["commands"], proposal_before["commands"]);
 }
 
 /// 着せ替えの見本の本体 (`assets/samples/dress-up/`)。

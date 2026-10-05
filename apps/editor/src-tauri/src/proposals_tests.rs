@@ -5,7 +5,8 @@ use std::sync::OnceLock;
 
 use serde_json::json;
 use ugoe_ai::FakeProvider;
-use ugoe_ai::classify::Label;
+use ugoe_ai::classify::{Label, Side};
+use ugoe_editor_core::{LayerCorrection, LayerSide};
 use ugoe_model::Model;
 
 use super::*;

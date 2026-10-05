@@ -3,7 +3,7 @@
 //! 分類 (`ugoe_ai::classify`) の結果そのものはエディタを開いている間だけ持つが、利用者が直したラベル・左右と
 //! 「これでよい」と認めた答えは、レイヤーのパスごとの [`LayerCorrection`] として [`crate::Document`] が持ち
 //! (Undo の対象。[`crate::Command::SetLayerCorrection`])、`project.json` の `editor.classification` に残す。
-//! 分類し直しても、直しは分類の上に重ねる (重ねるのはエディタ。`apps/editor/src-tauri/src/proposals.rs`)。
+//! 分類し直しても、直しは分類の上に重ねる (重ねるのは `ugoe_ai::classify::corrected_labels`。エディタと MCP サーバが使う)。
 //!
 //! このクレートは `ugoe-ai` に依存できないので、ラベルは文字列 (`eye_white` など) で持ち、形 (小文字の英数字と `_`)
 //! だけを確かめる。語彙にないラベルは重ねる側が無視する。

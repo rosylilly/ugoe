@@ -422,7 +422,8 @@ Claude Code に次のように頼む:
    次の `get_psd_layers` に `psd` を渡す
 2. `get_psd_layers { "path": ... }` → 最初のページ: 分類の指示と語彙 (`instructions`)・全体の合成画像・8 枚分の
    サムネイル (`layer N: 名前` の文の直後にその画像)。各レイヤーには名前の規則による案 (`label`・`side`・
-   `set_by: "rules"`) と対応するメッシュ (`mesh`) が付く。`next_start` で続きを読む
+   `set_by: "rules"`) と対応するメッシュ (`mesh`) が付く。`next_start` で続きを読む。利用者がエディタで直したレイヤー
+   (`project.json` の `editor.classification`) は直しのラベル・左右で、`set_by: "user"`・`confidence: 1` になる ([利用者の直し](#利用者の直し))
 3. 画像を見て案と違うものを `set_layer_labels` で渡す:
 
    ```json
@@ -452,6 +453,24 @@ Claude Code に次のように頼む:
    `{ "AngleX": 30 }`・`{ "EyeLOpen": 0 }`・`{ "MouthOpenY": 1 }` などを描いて確かめ、`save_project` で保存する
 
 同じ流れ (胸から上の実際の PSD) を `tests/stdio.rs` の `agent_driven_auto_rig_from_psd` が確かめている。
+
+### 利用者の直し
+
+利用者がエディタの「AI」タブで直した分類 (ラベル・左右。`project.json` の `editor.classification`。
+[docs/editor.md#分類の直し](../../docs/editor.md#分類の直し)) は、名前の規則とエージェントの答えの上に重ねる (T0566)。
+重ね方はエディタと同じ `ugoe_ai::classify::corrected_labels`: レイヤーのパスで対応させ、直したレイヤーは確からしさ 1・
+名前の規則との食い違いの印なし (確認に回さない)。語彙にないラベルの直しは重ねない。
+
+- `get_psd_layers`: 直したレイヤーは `set_by: "user"`。
+- `set_layer_labels`: **直したレイヤーは上書きしない。** 渡した答えは覚えるが直しが優先し、そのレイヤーの番号を結果の
+  `kept_corrections` に返す (`reset` でも直しは消えない。利用者がエディタで直しを消せば、覚えた答えが効く)。結果の
+  `corrected_by_user` は直したレイヤーの番号、`set_by_agent` は直していないレイヤーのうちエージェントが決めた数。
+- `get_rig_guide`・`propose_rig`・`get_module_rig_guide`・`propose_module_rig`: 重ねた分類で組む。ガイドの `labels` に
+  `corrected_by_user` (数)、提案の理由に `the user corrected N ...` と書く。
+- 直しは文書の状態 (エディタでは Undo の対象) なので、サーバは分類のメモリに入れず、呼ぶたびに今の文書から重ねる。
+  エディタにつないだとき (`--editor`・組み込み) はエディタの文書の直しを使う。MCP には直しを書くツールはない。
+
+`tests/stdio.rs` の `layer_corrections_from_the_project_overlay_the_classification` が確かめている。
 
 ### 着せ替えのモジュールの自動リギング
 
@@ -496,7 +515,7 @@ Claude Code に次のように頼む:
 | `list_proposals` | 読む | 適用を待っている提案の一覧 (`stale` は提案の後にモデルが変わったもの) |
 | `import_psd` | 読む | PSD から新しいプロジェクトを作る (保存するまでディスクに書かない)。PSD を覚える。`base` と `slot` を渡すと着せ替えのモジュールのプロジェクト |
 | `get_psd_layers` | 読む | PSD のレイヤーの一覧・今の分類・対応するメッシュと、全体の合成画像・サムネイル (MCP の image)。分類の指示と語彙 |
-| `set_layer_labels` | 読む | エージェントが決めた分類と差分の組 (`variant_sets`) を受け取る (モデルは変えない)。メッシュとの対応・差分の組・リグを組めるかを返す |
+| `set_layer_labels` | 読む | エージェントが決めた分類と差分の組 (`variant_sets`) を受け取る (モデルは変えない。利用者がエディタで直したレイヤーは上書きしない。[利用者の直し](#利用者の直し))。メッシュとの対応・差分の組・リグを組めるかを返す |
 | `get_rig_guide` | 読む | リグのテンプレートで決められない値の説明・範囲・既定値、顔・目・口の位置、原画 |
 | `propose_rig` | 読む | 分類と値からリグ (AngleX/Y/Z・EyeL/ROpen・MouthOpenY) の提案を作る。値が通らなければエラー |
 | `get_module_rig_guide` | 読む | モジュールのプロジェクトで、リグのテンプレートで決められない値の説明・範囲・既定値、衣装のメッシュの位置と組み方、差分の組、衣装の原画 |

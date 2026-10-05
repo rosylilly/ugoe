@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
-    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, Side, classification_requests_guided,
-    classify_by_name, classify_layers_guided, overview_png,
+    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, classification_requests_guided,
+    classify_by_name, classify_layers_guided, corrected_labels, correction_label, overview_png,
 };
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
@@ -42,8 +42,8 @@ use ugoe_ai::rig::{
 };
 use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
 use ugoe_editor_core::{
-    ApplyReport, Command, Document, KeyformTarget, LayerCorrection, LayerCorrections, LayerSide,
-    ProposalOrigin, ProposalView, Proposals, PsdImportError, import,
+    ApplyReport, Command, Document, KeyformTarget, LayerCorrections, ProposalOrigin, ProposalView,
+    Proposals, PsdImportError, import,
 };
 use ugoe_model::{Mesh, MeshId};
 use ugoe_psd::{ImportLimits, LayerTree};
@@ -335,40 +335,6 @@ pub struct Classification {
     pub label_choices: Vec<String>,
 }
 
-/// 分類の直しのラベルと左右 (語彙にないラベルなら `None` で、重ねない)。
-fn correction_of(correction: &LayerCorrection) -> Option<(Label, Side)> {
-    let label = correction.label.parse().ok()?;
-    let side = match correction.side {
-        LayerSide::Left => Side::Left,
-        LayerSide::Right => Side::Right,
-        LayerSide::Center => Side::Center,
-    };
-    Some((label, side))
-}
-
-/// 分類 `labels` に利用者の直し `corrections` を重ねる (`docs/editor.md#分類の直し`)。直したレイヤーは
-/// 人が確かめたものとして、確からしさを 1 にし、名前の規則との食い違いの印を消す (差分の組は保つ)。
-pub(crate) fn corrected_labels(
-    labels: &[LayerLabel],
-    corrections: &LayerCorrections,
-) -> Vec<LayerLabel> {
-    labels
-        .iter()
-        .map(
-            |l| match corrections.get(&l.layer_path).and_then(correction_of) {
-                Some((label, side)) => LayerLabel {
-                    label,
-                    side,
-                    confidence: 1.0,
-                    name_disagreement: None,
-                    ..l.clone()
-                },
-                None => l.clone(),
-            },
-        )
-        .collect()
-}
-
 impl Classified {
     /// 画面に渡す形。`corrections` の直しを重ねる。
     fn view(&self, corrections: &LayerCorrections) -> Classification {
@@ -393,7 +359,7 @@ impl Classified {
                     }),
                     corrected: corrections
                         .get(&l.layer_path)
-                        .and_then(correction_of)
+                        .and_then(correction_label)
                         .is_some(),
                 })
                 .collect(),
