@@ -1,11 +1,11 @@
 ---
 id: T0673
 title: エディタ UI: 外枠 (ヘッダー・ツールバー・パネルの配置・ダイアログ・設定)
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0916, T0917, T0670]
-assignee:
+assignee: claude-worker-T0673
 ---
 
 # T0673: エディタ UI: 外枠 (ヘッダー・ツールバー・パネルの配置・ダイアログ・設定)
