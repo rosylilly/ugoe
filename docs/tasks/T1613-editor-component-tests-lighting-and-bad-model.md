@@ -1,11 +1,11 @@
 ---
 id: T1613
 title: "エディタ: 光源のドラッグと、読めないモデルで部品が止まらないことを部品の単位でテストする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: [T1612]
-assignee:
+assignee: claude-worker-T1613
 ---
 
 # T1613: エディタ: 光源のドラッグと、読めないモデルで部品が止まらないことを部品の単位でテストする
