@@ -3,9 +3,9 @@
 //! バンドルの `TEXR` / `NRML` の PNG と KTX2 を、8bit の RGBA に正規化してデコードする。ヘッドレス描画 (`ugoe-headless`) と
 //! WebAssembly (`ugoe-wasm`) が同じ関数を使い、画像の大きさの上限と色の展開の規則を 1 か所に保つ。
 //!
-//! - 色の値はリニア化しない (`docs/spec/rendering.md` の「前提」)。PNG の 8bit 値をそのまま使う。
-//!   KTX2 も、形式の `_SRGB` や転送関数によらず保存された値のまま使う。
-//! - グレースケール・パレット・16bit は 8bit RGBA に展開する (16bit は上位 8bit)。
+//! - 色の値はリニア化しない (`docs/spec/rendering.md#前提`)。PNG は `gAMA`・`sRGB`・`iCCP`・`cHRM` を見ずに
+//!   保存された値のまま使う。KTX2 も、形式の `_SRGB` や転送関数によらず保存された値のまま使う。
+//! - グレースケール・パレット・16bit は 8bit RGBA に展開する (16bit は上位 8bit、`tRNS` はアルファ)。
 //! - KTX2 は圧縮していない 8bit の RGB / RGBA と、ブロック圧縮の BC1〜BC5・BC7 ([`decode_ktx2`]) を読む。
 //!   ETC2・ASTC・Basis Universal などは [`ImageError::UnsupportedKtx2`] にする (読む側が代用するか誤りにするかを決める。
 //!   `docs/adr/0030-compressed-ktx2-decoding.md`)。
@@ -459,19 +459,32 @@ mod tests {
     use super::*;
 
     fn encode(
-        (width, height): (u32, u32),
+        size: (u32, u32),
         color: png::ColorType,
         depth: png::BitDepth,
         palette: Option<&[u8]>,
         data: &[u8],
     ) -> Vec<u8> {
+        encode_with(size, color, depth, data, |encoder| {
+            if let Some(palette) = palette {
+                encoder.set_palette(palette.to_vec());
+            }
+        })
+    }
+
+    /// `setup` で見出しの後のチャンク (`PLTE`・`tRNS`・`gAMA` など) を足して PNG を作る。
+    fn encode_with(
+        (width, height): (u32, u32),
+        color: png::ColorType,
+        depth: png::BitDepth,
+        data: &[u8],
+        setup: impl FnOnce(&mut png::Encoder<'_, &mut Vec<u8>>),
+    ) -> Vec<u8> {
         let mut out = Vec::new();
         let mut encoder = png::Encoder::new(&mut out, width, height);
         encoder.set_color(color);
         encoder.set_depth(depth);
-        if let Some(palette) = palette {
-            encoder.set_palette(palette.to_vec());
-        }
+        setup(&mut encoder);
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(data).unwrap();
         writer.finish().unwrap();
@@ -575,6 +588,224 @@ mod tests {
             &[0x12, 0x34, 0xab, 0xcd, 0xff, 0x00, 0x80, 0x01],
         );
         assert_eq!(straight(&bytes), vec![0x12, 0xab, 0xff, 0x80]);
+    }
+
+    /// パレットの `tRNS` はアルファになる。`tRNS` より後ろの番号は不透明 (`docs/spec/rendering.md#前提`)。
+    #[test]
+    fn palette_transparency_becomes_alpha() {
+        let bytes = encode_with(
+            (3, 1),
+            png::ColorType::Indexed,
+            png::BitDepth::Eight,
+            &[0, 1, 2],
+            |encoder| {
+                encoder.set_palette(vec![10, 20, 30, 40, 50, 60, 70, 80, 90]);
+                encoder.set_trns(vec![0, 128]);
+            },
+        );
+        assert_eq!(
+            straight(&bytes),
+            vec![10, 20, 30, 0, 40, 50, 60, 128, 70, 80, 90, 255]
+        );
+    }
+
+    /// グレースケールと RGB の `tRNS` (透明にする 1 色) は、一致する画素のアルファを 0、ほかを 255 にする。
+    #[test]
+    fn color_key_transparency_becomes_alpha() {
+        let gray = encode_with(
+            (2, 1),
+            png::ColorType::Grayscale,
+            png::BitDepth::Eight,
+            &[200, 201],
+            |encoder| encoder.set_trns(vec![0, 200]),
+        );
+        assert_eq!(straight(&gray), vec![200, 200, 200, 0, 201, 201, 201, 255]);
+        let rgb = encode_with(
+            (2, 1),
+            png::ColorType::Rgb,
+            png::BitDepth::Eight,
+            &[1, 2, 3, 1, 2, 4],
+            |encoder| encoder.set_trns(vec![0, 1, 0, 2, 0, 3]),
+        );
+        assert_eq!(straight(&rgb), vec![1, 2, 3, 0, 1, 2, 4, 255]);
+    }
+
+    /// 16bit の `tRNS` は、上位 8bit にする前の 16bit の値で比べる (下位のバイトだけが違う画素は不透明)。
+    #[test]
+    fn sixteen_bit_color_key_is_compared_before_reduction() {
+        let bytes = encode_with(
+            (2, 1),
+            png::ColorType::Rgb,
+            png::BitDepth::Sixteen,
+            &[
+                0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, // 透明にする色と同じ
+                0x12, 0x35, 0x56, 0x78, 0x9a, 0xbc, // R の下位だけが違う
+            ],
+            |encoder| encoder.set_trns(vec![0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
+        );
+        assert_eq!(
+            straight(&bytes),
+            vec![0x12, 0x56, 0x9a, 0, 0x12, 0x56, 0x9a, 255]
+        );
+        let gray = encode(
+            (1, 1),
+            png::ColorType::GrayscaleAlpha,
+            png::BitDepth::Sixteen,
+            None,
+            &[0xab, 0xff, 0x7f, 0xff],
+        );
+        assert_eq!(straight(&gray), vec![0xab, 0xab, 0xab, 0x7f]);
+    }
+
+    /// 8bit 未満のグレースケールは `v × 255 / (2^depth − 1)` に広げる。パレットの番号は広げずに引く。
+    #[test]
+    fn low_bit_depths_are_scaled_or_looked_up() {
+        let two = encode(
+            (4, 1),
+            png::ColorType::Grayscale,
+            png::BitDepth::Two,
+            None,
+            &[0b00_01_10_11],
+        );
+        assert_eq!(
+            straight(&two),
+            vec![
+                0, 0, 0, 255, 85, 85, 85, 255, 170, 170, 170, 255, 255, 255, 255, 255
+            ]
+        );
+        let four = encode(
+            (2, 1),
+            png::ColorType::Grayscale,
+            png::BitDepth::Four,
+            None,
+            &[0x1f],
+        );
+        assert_eq!(straight(&four), vec![17, 17, 17, 255, 255, 255, 255, 255]);
+        let palette = encode(
+            (2, 1),
+            png::ColorType::Indexed,
+            png::BitDepth::Four,
+            Some(&[10, 20, 30, 40, 50, 60]),
+            &[0x10],
+        );
+        assert_eq!(straight(&palette), vec![40, 50, 60, 255, 10, 20, 30, 255]);
+    }
+
+    /// zlib の無圧縮のブロック 1 つで `data` を包む (テストで PNG を手で組むため)。
+    fn zlib_stored(data: &[u8]) -> Vec<u8> {
+        let len = u16::try_from(data.len()).unwrap();
+        let mut out = vec![0x78, 0x01, 0x01];
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(&(!len).to_le_bytes());
+        out.extend_from_slice(data);
+        let (mut a, mut b) = (1u32, 0u32);
+        for &byte in data {
+            a = (a + u32::from(byte)) % 65521;
+            b = (b + a) % 65521;
+        }
+        out.extend_from_slice(&((b << 16) | a).to_be_bytes());
+        out
+    }
+
+    /// チャンクの型と中身から、長さと CRC を付けたチャンクを作る。
+    fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut crc = !0u32;
+        for &byte in kind.iter().chain(data) {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = if crc & 1 == 1 {
+                    (crc >> 1) ^ 0xedb8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        let mut out = u32::try_from(data.len()).unwrap().to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        out.extend_from_slice(&(!crc).to_be_bytes());
+        out
+    }
+
+    /// `IHDR` の後に `extra` のチャンクを挟んだ、8bit RGBA の PNG を手で組む。
+    fn handmade_png(
+        (width, height): (u32, u32),
+        interlace: u8,
+        extra: &[Vec<u8>],
+        raw: &[u8],
+    ) -> Vec<u8> {
+        let mut out = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        let mut ihdr = width.to_be_bytes().to_vec();
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, interlace]);
+        out.extend(chunk(b"IHDR", &ihdr));
+        for c in extra {
+            out.extend_from_slice(c);
+        }
+        out.extend(chunk(b"IDAT", &zlib_stored(raw)));
+        out.extend(chunk(b"IEND", &[]));
+        out
+    }
+
+    /// `gAMA`・`sRGB`・`cHRM`・`iCCP` は値を変えない (保存された値のまま。`docs/spec/rendering.md#前提`)。
+    #[test]
+    fn gamma_and_color_chunks_are_ignored() {
+        let raw = [0, 10, 128, 250, 200];
+        let plain = handmade_png((1, 1), 0, &[], &raw);
+        let mut iccp = b"profile\0\0".to_vec();
+        iccp.extend(zlib_stored(&[0; 16]));
+        let chunks = [
+            // ガンマ 1.0 と 0.2 (sRGB の値として読むなら大きく変わる)。
+            chunk(b"gAMA", &100_000u32.to_be_bytes()),
+            chunk(b"gAMA", &20_000u32.to_be_bytes()),
+            chunk(b"sRGB", &[0]),
+            chunk(b"cHRM", &[0x42; 32]),
+            chunk(b"iCCP", &iccp),
+        ];
+        assert_eq!(straight(&plain), vec![10, 128, 250, 200]);
+        for c in &chunks {
+            let tagged = handmade_png((1, 1), 0, std::slice::from_ref(c), &raw);
+            assert_eq!(straight(&tagged), straight(&plain));
+        }
+        let all = handmade_png((1, 1), 0, &chunks[1..], &raw);
+        assert_eq!(straight(&all), straight(&plain));
+    }
+
+    /// Adam7 のインターレースは、行の順の画像に戻す。
+    #[test]
+    fn interlaced_png_is_deinterlaced() {
+        // 2x2 の Adam7: 1 回目が (0, 0)、6 回目が (1, 0)、7 回目が 2 行目。各行は先頭にフィルタの種類 (0)。
+        let raw = [
+            0, 1, 1, 1, 255, // (0, 0)
+            0, 2, 2, 2, 255, // (1, 0)
+            0, 3, 3, 3, 255, 4, 4, 4, 255, // (0, 1)・(1, 1)
+        ];
+        let bytes = handmade_png((2, 2), 1, &[], &raw);
+        assert_eq!(
+            straight(&bytes),
+            vec![1, 1, 1, 255, 2, 2, 2, 255, 3, 3, 3, 255, 4, 4, 4, 255]
+        );
+    }
+
+    /// APNG は既定の画像 (`IDAT`) だけを読む。アニメーションの枠 (`fdAT`) は読まない。
+    #[test]
+    fn apng_uses_only_the_default_image() {
+        for separate_default in [false, true] {
+            let mut out = Vec::new();
+            let mut encoder = png::Encoder::new(&mut out, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.set_animated(2, 0).unwrap();
+            encoder.set_sep_def_img(separate_default).unwrap();
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[1, 2, 3, 4]).unwrap();
+            writer.write_image_data(&[5, 6, 7, 8]).unwrap();
+            if separate_default {
+                writer.write_image_data(&[9, 10, 11, 12]).unwrap();
+            }
+            writer.finish().unwrap();
+            assert_eq!(straight(&out), vec![1, 2, 3, 4], "{separate_default}");
+        }
     }
 
     /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。

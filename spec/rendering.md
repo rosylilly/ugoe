@@ -65,6 +65,29 @@ results within the tolerances of [Conformance](#conformance).
   them to premultiplied alpha before sampling. *Informative:* the reference implementation converts
   8-bit images as `c' = (c × a + 127) div 255` (integer arithmetic, `div` rounding down) per color
   channel.
+- A renderer first decodes a texture image to non-premultiplied RGBA with 8 bits per channel and
+  then premultiplies it. It does not premultiply 16-bit values. Normal maps are decoded the same way
+  and are not premultiplied ([Normals](#normals)).
+- A renderer decodes PNG texture images ([bundle.md](bundle.md#textures-and-normal-maps)) as
+  follows:
+  - The stored sample values are used as they are. Gamma and color chunks (`gAMA`, `sRGB`, `iCCP`,
+    `cHRM` and so on) are ignored: no gamma correction or color conversion is applied (see
+    [Color values](#color-values)).
+  - A 16-bit sample is reduced to its **most significant byte** (the low byte is dropped, not
+    rounded).
+  - A grayscale sample of bit depth `d` below 8 (1, 2 or 4) is scaled to `v × 255 / (2^d − 1)`
+    (exact; for example 0, 85, 170 and 255 for 2 bits). Palette indices are not scaled.
+  - Grayscale expands to `(g, g, g, 255)`, grayscale with alpha to `(g, g, g, a)`, RGB to
+    `(r, g, b, 255)`; RGBA is kept. An indexed-color pixel takes its color from `PLTE` and its alpha
+    from the same entry of `tRNS`, or 255 when `tRNS` is absent or shorter than the index.
+  - For grayscale and RGB images, a `tRNS` chunk gives one transparent color: a pixel whose samples
+    equal it at the image's bit depth (all 16 bits for a 16-bit image, the unscaled value below 8
+    bits) gets alpha 0, every other pixel alpha 255.
+  - An interlaced (Adam7) image is decoded to the full image in row order. Of an APNG file only the
+    default image (`IDAT`) is used; the animation frames (`fcTL`, `fdAT`) are ignored.
+
+  *Informative:* the reference implementation's PNG decoder follows these rules for every host that
+  uses it (the command-line tool, the C ABI and WebAssembly).
 - KTX2 texture images ([bundle.md](bundle.md#textures-and-normal-maps)) are non-premultiplied as
   well. A renderer:
   - ignores `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` in the KTX2 data format descriptor (writers do not
