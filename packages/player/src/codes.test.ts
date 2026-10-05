@@ -1,11 +1,11 @@
 // 訳の表 (loadError.ts・loadWarnings.ts・dressUp.ts) が、ugoe-wasm のすべての `code` (crates/ugoe-wasm/codes.json。
-// @ugoe/runtime の `LOAD_ERROR_CODES`・`LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES` と同じ一覧) と補足の値の組を、
+// @ugoe/runtime の `LOAD_ERROR_CODES`・`LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`RENDER_ERROR_CODES` と同じ一覧) と補足の値の組を、
 // すべての言語で文にするか (T0934)。wasm に種類を足して訳を足し忘れると、このテストが落ちる。
 import { LANGUAGES, SOURCE_LOCALE, setLocale } from "@ugoe/i18n";
 import { afterEach, describe, expect, it } from "vitest";
 import codes from "../../../crates/ugoe-wasm/codes.json";
 import { describeDressUpError, describeLoadWarnings } from "./dressUp";
-import { describeLoadError } from "./loadError";
+import { describeLoadError, describeRenderError } from "./loadError";
 import { readLoadWarnings } from "./loadWarnings";
 
 /** wasm の文 (訳が無いと、これがそのまま出る)。 */
@@ -87,6 +87,13 @@ describe("translation tables against crates/ugoe-wasm/codes.json", () => {
       combos(fields).map((f): [string, unknown] => [code, codedError("DressUpError", code, f)]),
     );
     expectTranslated(samples, describeDressUpError);
+  });
+
+  it("translates every render error code", () => {
+    const samples = Object.entries(codes.render_error).flatMap(([code, fields]) =>
+      combos(fields).map((f): [string, unknown] => [code, codedError("RenderError", code, f)]),
+    );
+    expectTranslated(samples, describeRenderError);
   });
 
   it("translates every load warning code", () => {

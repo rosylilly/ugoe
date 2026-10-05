@@ -20,6 +20,7 @@ use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
 use crate::dress_up::{Wardrobe, WardrobeError, attached_names};
+use crate::frame::FrameError;
 use crate::load::{self, ErrorInfo, LoadError, LoadWarning, LoadedModel, Rgba8};
 use crate::view::{Transform, ViewState};
 use crate::{gizmo, hit, view};
@@ -59,6 +60,11 @@ fn coded_error(name: &str, message: &str, info: ErrorInfo) -> JsValue {
 /// 読み込みの失敗を JS の値にする: `name` が `"LoadError"` で、`code` と補足の値 ([`LoadError::info`]) を持つ `Error`。
 fn load_error(e: LoadError) -> JsValue {
     coded_error("LoadError", &e.to_string(), e.info())
+}
+
+/// 描画・読み戻しの失敗を JS の値にする: `name` が `"RenderError"` で、`code` ([`FrameError::info`]) を持つ `Error` (T0465)。
+fn frame_error(e: FrameError) -> JsValue {
+    coded_error(FrameError::NAME, &e.to_string(), e.info())
 }
 
 /// `limits_json` を読む (`load_bundle` / `load_module`)。形の誤りは例外。
@@ -434,10 +440,10 @@ impl WebPuppet {
         }
     }
 
-    /// 現在の状態を canvas に描く。
-    pub fn render(&mut self) -> Result<(), JsError> {
+    /// 現在の状態を canvas に描く。GPU を失った (`is_lost()`) 後は、`code` が `device_lost` の `RenderError` を投げる (T0465)。
+    pub fn render(&mut self) -> Result<(), JsValue> {
         if self.is_lost() {
-            return Err(JsError::new("the GPU device was lost"));
+            return Err(frame_error(FrameError::DeviceLost));
         }
         self.evaluate();
         let frame = match self.surface.get_current_texture() {
@@ -452,7 +458,7 @@ impl WebPuppet {
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Validation => {
-                return Err(JsError::new("failed to acquire the canvas texture"));
+                return Err(JsError::new("failed to acquire the canvas texture").into());
             }
         };
         let target = frame.texture.create_view(&wgpu::TextureViewDescriptor {
@@ -491,7 +497,7 @@ impl WebPuppet {
         // 描画に失敗しても、クリアした画面は出す。
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
-        result.map_err(js_error)
+        result.map_err(|e| js_error(e).into())
     }
 
     // --- ビュー (docs/editor.md#ビューポート) ---

@@ -150,5 +150,8 @@
     "unknown_value": [
       "path"
     ]
+  },
+  "render_error": {
+    "device_lost": []
   }
 }

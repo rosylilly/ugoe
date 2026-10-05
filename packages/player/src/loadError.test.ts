@@ -1,7 +1,7 @@
 import { setLocale } from "@ugoe/i18n";
 import { beforeEach, describe, expect, it } from "vitest";
 import { describeDressUpError } from "./dressUp";
-import { describeLimitError, describeLoadError } from "./loadError";
+import { describeLimitError, describeLoadError, describeRenderError } from "./loadError";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
 beforeEach(() => setLocale("ja"));
@@ -97,5 +97,20 @@ describe("describeLimitError", () => {
     expect(describeDressUpError(e)).toBe(describeLimitError(e));
     expect(describeLimitError(codedError("DressUpError", "invalid_file"))).toBeNull();
     expect(describeLimitError(loadError("invalid_file"))).toBeNull();
+  });
+});
+
+describe("describeRenderError", () => {
+  it("translates device_lost like the load error", () => {
+    const lost = codedError("RenderError", "device_lost", {}, "the GPU device was lost");
+    expect(describeRenderError(lost)).toBe(describeLoadError(loadError("device_lost")));
+    expect(describeRenderError(lost)).toContain("GPU が止まりました");
+  });
+
+  it("keeps the message of other errors and unknown codes", () => {
+    expect(describeRenderError(codedError("RenderError", "something_new", {}, "new"))).toBe("new");
+    expect(describeRenderError(loadError("device_lost", {}, "load"))).toBe("load");
+    expect(describeRenderError(new Error("plain"))).toBe("plain");
+    expect(describeRenderError("text")).toBe("text");
   });
 });

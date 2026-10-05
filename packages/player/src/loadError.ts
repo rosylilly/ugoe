@@ -84,3 +84,19 @@ export function describeLimitError(e: unknown): string | null {
   if (code === null || !LOAD_LIMIT_CODES.includes(code)) return null;
   return describe(code, e as Error);
 }
+
+/** 描画と読み戻しの失敗 (`RenderError`) の `code` ごとの文のキー。GPU が止まったのは読み込みと同じ文。 */
+const RENDER_ERROR_KEYS: Record<string, string> = {
+  device_lost: "loadError.deviceLost",
+};
+
+/**
+ * 描画と読み戻し (`render`・`read_pixels`) の失敗 (`RenderError`。T0465。コードの一覧は
+ * crates/ugoe-wasm/README.md#描画と読み戻しの失敗-t0465) を、今の言語の文にする。`RenderError` でない例外と知らないコードは、例外の文のまま。
+ */
+export function describeRenderError(e: unknown): string {
+  const code = errorCode(e, ["RenderError"]);
+  const key = code === null ? undefined : RENDER_ERROR_KEYS[code];
+  if (key !== undefined) return lookup(key, { detail: (e as Error).message });
+  return e instanceof Error ? e.message : String(e);
+}

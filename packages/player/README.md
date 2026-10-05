@@ -99,6 +99,8 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   (`describeLoadError`。T0434。コードの一覧は `crates/ugoe-wasm/README.md#読み込みの失敗-t0434`)。原因が細かいもの (壊れたファイル・
   検査のエラーなど) は wasm の英語の文を括弧で添え、知らないコードは英語の文のまま出す。`load_module` が上限を超えた `DressUpError`
   (`read_limit_exceeded`・`image_limit_exceeded`) も同じ文にする。アプリ (ビューア・スタジオ) は `error` を出すだけで、訳を持たない。
+- 描画と読み戻し (`render`・`read_pixels`) の `RenderError` (T0465。`code` は `device_lost` だけ) は `describeRenderError` が
+  読み込みの `device_lost` と同じ文にする (`capture` の失敗を出すアプリが使う)。着せ替えの `device_lost` も同じ文。
 - テストは Svelte のプラグインを通す (`vitest.config.ts`。@ugoe/i18n が runes を使うため)。文を確かめるテストは `setLocale("ja")` で言語を決めてから比べる。
 
 ## 受け手のモード (T0801)

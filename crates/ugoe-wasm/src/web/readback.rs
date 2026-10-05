@@ -11,7 +11,8 @@ use std::sync::atomic::Ordering;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::{WebPuppet, js_error};
+use super::{WebPuppet, frame_error, js_error};
+use crate::frame::FrameError;
 use crate::readback;
 
 #[wasm_bindgen]
@@ -31,10 +32,11 @@ impl WebPuppet {
     /// 画素を読み戻す。値はストレートアルファの RGBA (各 8 ビット)、行は上から下。canvas には描かない。
     ///
     /// 読み戻しは非同期なので、`Promise` が解決するまでの間に `WebPuppet` を操作してもよい (結果は呼んだときの状態)。
+    /// GPU を失った (`is_lost()`) 後と、読み戻しを待つ間に失ったときは、`code` が `device_lost` の `RenderError` で失敗する (T0465)。
     #[wasm_bindgen(unchecked_return_type = "Promise<Uint8Array>")]
-    pub fn read_pixels(&mut self) -> Result<js_sys::Promise, JsError> {
+    pub fn read_pixels(&mut self) -> Result<js_sys::Promise, JsValue> {
         if self.is_lost() {
-            return Err(JsError::new("the GPU device was lost"));
+            return Err(frame_error(FrameError::DeviceLost));
         }
         self.evaluate();
         let (width, height) = (self.config.width, self.config.height);
@@ -43,9 +45,9 @@ impl WebPuppet {
             wgpu::TextureFormat::Rgba8Unorm => false,
             wgpu::TextureFormat::Bgra8Unorm => true,
             other => {
-                return Err(JsError::new(&format!(
-                    "reading back {other:?} is not supported"
-                )));
+                return Err(
+                    JsError::new(&format!("reading back {other:?} is not supported")).into(),
+                );
             }
         };
         let target = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -91,7 +93,7 @@ impl WebPuppet {
                     &transform.to_view([width, height]),
                     puppet.instance(),
                 )
-                .map_err(js_error)?;
+                .map_err(|e| JsValue::from(js_error(e)))?;
         }
         // 読み戻しバッファの行は COPY_BYTES_PER_ROW_ALIGNMENT の倍数に揃える必要がある。
         let row_bytes = width * 4;
@@ -133,7 +135,7 @@ impl WebPuppet {
                     break r;
                 }
                 if lost.load(Ordering::Relaxed) {
-                    return Err(JsError::new("the GPU device was lost").into());
+                    return Err(frame_error(FrameError::DeviceLost));
                 }
                 waited += 1;
                 if waited > WAIT_LIMIT {

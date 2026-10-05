@@ -289,8 +289,8 @@ try {
 ```
 
 - `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
-- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES` でも読めます
-  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode` はこの配列の要素)。
+- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES` でも読めます
+  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeRenderErrorCode` はこの配列の要素)。
   ランタイムの `code` との突き合わせは下の「開発」。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
 - `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
@@ -349,6 +349,26 @@ try {
 - 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの失敗-t0434)。型は `UgoeLoadError`・`UgoeLoadErrorCode`。
   新しい版のランタイムは知らない `code` を返しうるので、知らないものは `message` を出してください。
 - 失敗したときは何も変えません (前のモデルのまま)。
+
+### 描画と読み戻しの失敗 (T0465)
+
+`WebPuppet` の `render()`・`read_pixels()` は、GPU を失った (`is_lost()`) 後と、読み戻しを待つ間に失ったときに、`name` が
+`"RenderError"` で `code` が `"device_lost"` の例外を投げます (`read_pixels` は `Promise` の失敗)。新しい canvas で作り直してください
+(`<ugoe-avatar>` は自分で作り直します)。
+
+```ts
+import { isRenderError } from "@ugoe/runtime";
+
+try {
+  const pixels = await puppet.read_pixels();
+} catch (e) {
+  if (!isRenderError(e)) throw e;
+  // e.code: "device_lost" (知らない値もありうる)
+}
+```
+
+- 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#描画と読み戻しの失敗-t0465)。型は `UgoeRenderError`・`UgoeRenderErrorCode`、
+  一覧の配列は `RENDER_ERROR_CODES`。ほかの描画の失敗 (組み込みの誤りや一時的なもの) は `code` を持たない `Error` です。
 
 ### 問い合わせの JSON の型 (T0452)
 
@@ -595,11 +615,11 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
   引数と戻り値の型まで含めたずれは、`just wasm` の後の `just wasm-types` (`scripts/check-wasm-types.mjs`。CI の web ジョブ) が報告します。
 - このスタブは、生成物の無い環境でのアプリ (エディタ・ビューア・スタジオ) の型検査でも使います (各アプリの `tsconfig.json` の `paths`)。
   型の宣言をアプリが読むだけで、このパッケージが GPL のコードを読むわけではありません。
-- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗の `code` と補足の値のキーの一覧は
+- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・描画と読み戻しの失敗 (T0465) の `code` と補足の値のキーの一覧は
   `crates/ugoe-wasm/codes.json` にあります。ugoe-wasm のテスト (`src/codes.rs`。`just ci` の Rust のテスト) がすべての種類の見本から作った一覧と、
-  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES` と
+  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES` と
   補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
-  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts` も同じ PR で直します
+  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts`・`src/render-errors.ts` も同じ PR で直します
   (片方だけでは、どちらかのテストが落ちる)。
 - **問い合わせの JSON のキーの突き合わせ (T0463):** `src/queries.ts` の型ごとのキー (必須と省略できるもの) の一覧を
   `src/query-keys.ts` の `QUERY_KEYS` に値で持ちます (入口からは出さない)。一覧と型が同じことは `src/query-keys.test.ts` が

@@ -4,7 +4,7 @@
 // - ここでは初期化 (`initRuntime`)・作成 (`createPuppet`)・モデルの読み込み (`loadModel`) の薄い補助と、
 //   Web Component の `<ugoe-avatar>` (`./element.ts`)、フェイストラッキングの入力の変換 (`./tracking.ts`) と
 //   平滑化・キャリブレーション (`./tracking-filter.ts`)、読み込みの警告と着せ替えの例外の型 (`./warnings.ts`)、
-//   読み込みの上限 (`./limits.ts`)、問い合わせの JSON の型と読む補助 (`./queries.ts`) を足す。
+//   読み込みの上限 (`./limits.ts`)、描画と読み戻しの例外の型 (`./render-errors.ts`)、問い合わせの JSON の型と読む補助 (`./queries.ts`) を足す。
 // - 配布の方針は `docs/adr/0017-single-runtime-distribution.md`、ライセンスと置き場所は
 //   `docs/adr/0025-web-runtime-package.md`。
 
@@ -61,6 +61,12 @@ export {
   type UgoePoseEntry,
   type UgoeSlot,
 } from "./queries.js";
+export {
+  isRenderError,
+  RENDER_ERROR_CODES,
+  type UgoeRenderError,
+  type UgoeRenderErrorCode,
+} from "./render-errors.js";
 export {
   type CreatePuppetOptions,
   createPuppet,

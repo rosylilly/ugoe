@@ -1,7 +1,7 @@
 //! JS に渡す `code` の一覧 (`codes.json`) の検査 (T0452)。
 //!
-//! 読み込みの警告 (`load_warnings_json` の要素)・着せ替えの失敗 (`DressUpError`)・読み込みの失敗 (`LoadError`) の
-//! `code` と、その種類が持つ補足の値のキーを、すべての種類の見本から集めて `codes.json` と比べる。
+//! 読み込みの警告 (`load_warnings_json` の要素)・着せ替えの失敗 (`DressUpError`)・読み込みの失敗 (`LoadError`)・
+//! 描画と読み戻しの失敗 (`RenderError`。T0465) の `code` と、その種類が持つ補足の値のキーを、すべての種類の見本から集めて `codes.json` と比べる。
 //! `@ugoe/runtime` (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TypeScript の和型と比べるので、
 //! Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる。
 //!
@@ -17,6 +17,7 @@ use ugoe::runtime::{CompileError, ComposeError};
 use ugoe::{DressUpError, LoadWarning};
 
 use crate::dress_up::{Detached, WardrobeError, error_info};
+use crate::frame::FrameError;
 use crate::load::{ErrorInfo, LoadError, warning_json};
 
 /// 種類 (`code`) → 補足の値のキー (その種類の見本に出たものの和)。
@@ -226,6 +227,17 @@ fn wardrobe_errors() -> Vec<WardrobeError> {
         .collect()
 }
 
+/// 描画と読み戻しの失敗の見本 (`FrameError` のすべての種類)。種類を足すと、`match` が網羅の誤りになる。
+fn frame_errors() -> Vec<FrameError> {
+    let all = vec![FrameError::DeviceLost];
+    for error in &all {
+        match error {
+            FrameError::DeviceLost => {}
+        }
+    }
+    all
+}
+
 /// 読み込みの警告の見本 (`LoadWarning` のすべての種類)。
 fn load_warnings() -> Vec<LoadWarning> {
     vec![
@@ -289,10 +301,15 @@ fn actual() -> serde_json::Value {
         };
         add_warning(&mut load_warning, &detached.to_json());
     }
+    let mut render_error = Codes::new();
+    for error in frame_errors() {
+        add(&mut render_error, &error.info());
+    }
     serde_json::json!({
         "load_warning": load_warning,
         "dress_up_error": dress_up_error,
         "load_error": load_error,
+        "render_error": render_error,
     })
 }
 
@@ -310,7 +327,7 @@ fn codes_json_lists_every_code_and_field() {
         actual,
         expected,
         "crates/ugoe-wasm/codes.json is out of date; run `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` \
-         and update bindings/web/src (warnings.ts・limits.ts)\n{}",
+         and update bindings/web/src (warnings.ts・limits.ts・render-errors.ts)\n{}",
         serde_json::to_string_pretty(&actual).unwrap()
     );
 }

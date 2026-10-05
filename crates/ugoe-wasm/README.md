@@ -23,6 +23,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | `physics_view` | エディタの物理の表示用の問い合わせ: デフォーマの写像とヤコビ行列、粒子の今の位置 (JS への公開は `src/web/physics.rs`) |
 | `dress_up` | `.ugoemod` の読み込み、付け外しに合わせたテクスチャの登録し直し (`Wardrobe`)、エラーのコード (JS への公開は `src/web/dress_up.rs`) |
 | `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
+| `frame` | 描画と読み戻し (`render`・`read_pixels`) の失敗のコード (`FrameError`。JS では `RenderError`) |
 | `readback` | `drawable_states_json` の中身と、読み戻した画素をストレートアルファの RGBA にする処理 (JS への公開は `src/web/readback.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
@@ -62,7 +63,8 @@ puppet.clear_tracking();
   既定は `false` (仕様の順。トラッキングがモーションの値を置き換える) と空。どちらもモデルを読み直しても保つ。
   T0721 では wasm が `Puppet::update` の前にホストの書き込みとして入れていたが、パラメータごとに分けるために `Puppet` に移した (T0722)。
   ビューアは待機以外の優先度のモーションの再生中だけ入れる。
-- `is_lost()` が `true` になったら、新しい canvas で作り直す (以後の `render` は例外を投げる)。WebGPU はデバイスの喪失 (GPU プロセスのクラッシュなど)、
+- `is_lost()` が `true` になったら、新しい canvas で作り直す (以後の `render`・`read_pixels` は `code` が `device_lost` の `RenderError` を投げる。
+  [描画と読み戻しの失敗](#描画と読み戻しの失敗-t0465))。WebGPU はデバイスの喪失 (GPU プロセスのクラッシュなど)、
   WebGL2 は canvas の `webglcontextlost` (GPU のリセット・ドライバの更新・タブを裏に回したときの回収など) で `true` になる。
   wgpu の GL のバックエンド (wgpu-hal 30) は WebGL2 の喪失を知らせず描画も失敗しないので、WebGL2 で作ったときは `WebPuppet` が
   canvas の `webglcontextlost` を聞いて印を立てる (リスナーは `free` で外す。既定の動作は止めないので、復元を待つホストは自分で
@@ -109,6 +111,7 @@ JSON.parse(puppet.drawable_states_json()); // [{opacity, draw_order, multiply_co
 - `read_pixels` は、今の状態を canvas と同じ大きさ・ビュー・背景・光源で canvas とは **別のテクスチャ** に描き、バッファに写して読む
   (canvas には描かない)。canvas の読み戻し (`drawImage`・`toBlob`) はヘッドレスの Chrome の WebGPU で空になることがあったので、
   配布物の適合テスト (`tests/conformance`) は WebGL2・WebGPU のどちらでもこれで画像を取る。スクリーンショットにも使える。
+- GPU を失った後と、読み戻しを待つ間に失ったときは、`code` が `device_lost` の `RenderError` で失敗する ([描画と読み戻しの失敗](#描画と読み戻しの失敗-t0465))。
 - `drawable_states_json` は `drawable_ids()` の順。頂点は `drawable_positions`、描画の順番は `render_order` (`docs/spec/evaluation.md#8-出力`)。
 
 ### 物理・モーション・表情・エフェクト (T0309)
@@ -392,10 +395,34 @@ try {
 - 使う側: ビューアとスタジオは `@ugoe/player` が今の言語に訳す (`packages/player/src/loadError.ts`)。TypeScript の型は npm の
   `@ugoe/runtime` の `UgoeLoadError`・`isLoadError` (`bindings/web/src/limits.ts`)。コードを増やしたら、どちらも同じ PR で直す。
 
+### 描画と読み戻しの失敗 (T0465)
+
+```js
+try {
+  puppet.render(); // read_pixels() の Promise の失敗も同じ
+} catch (e) {
+  // GPU を失った後は e.name === "RenderError"、e.code === "device_lost"。新しい canvas で作り直す
+  if (e.name === "RenderError" && e.code === "device_lost") recreate();
+}
+```
+
+`render`・`read_pixels` の失敗のうち、利用者に知らせるものは `name` が `"RenderError"` で `code` を持つ `Error` (読み込みの `LoadError`・
+着せ替えの `DressUpError` と同じ形。それまではコードを持たない `Error`)。何も描かず、何も変えない。
+
+| `code` | 補足の値 | いつ |
+| --- | --- | --- |
+| `device_lost` | なし | GPU のデバイスを失った (`is_lost()`)。`read_pixels` は読み戻しを待つ間に失ったときも。新しい canvas で作り直す |
+
+- ほかの描画の失敗 (canvas のテクスチャを取れない・レンダラの失敗・読み戻しの形式が無い・読み戻しの時間切れ) は、組み込みの誤りか一時的なもので、
+  コードを持たない `Error` のまま。知らない `code` (将来の種類) は `message` を出せばよい。
+- 文 (`message`) は読み込みと着せ替えの `device_lost` と同じ `the GPU device was lost` (安定した値ではない)。種類は `src/frame.rs` の `FrameError`。
+- 使う側: `@ugoe/player` の `describeRenderError` (`packages/player/src/loadError.ts`) が今の言語に訳す (読み込みの `device_lost` と同じ文)。
+  TypeScript の型は npm の `@ugoe/runtime` の `UgoeRenderError`・`isRenderError` (`bindings/web/src/render-errors.ts`)。
+
 ### `code` の一覧 (T0452)
 
-読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`) の `code` と、種類ごとの補足の値のキーの
-一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError` と、その中の
+読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`)・描画と読み戻しの失敗 (`render_error`。T0465) の
+`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError` と、その中の
 `DressUpError`・`ComposeError`・`CompileError`) から一覧を作って比べる。種類を足すと、テストの網羅の `match` (`guard`) がコンパイルできなくなるので、
 見本を足してから `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で書き直す。
 
@@ -433,3 +460,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0152 (読み込みの上限)
 - T0434 (読み込みの失敗のコード)
 - T0457 (読み込みの失敗の種類を SDK で決めて C ABI と揃える・着せ替えの `device_lost`)
+- T0465 (描画と読み戻しの `RenderError` の `device_lost`)

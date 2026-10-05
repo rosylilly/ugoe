@@ -219,6 +219,22 @@ const scenarios = {
       await frames(5);
       // wasm も喪失を知らせる (T0932。wgpu の GL は知らせないので、WebPuppet が canvas のイベントを聞く)
       check(oldPuppet.is_lost(), `round ${round}: is_lost() is false after losing the context`);
+      // 失った後の描画と読み戻しは `code` が `device_lost` の `RenderError` (T0465)
+      for (const [name, call] of [
+        ["render", () => oldPuppet.render()],
+        ["read_pixels", () => oldPuppet.read_pixels()],
+      ]) {
+        let thrown = null;
+        try {
+          await call();
+        } catch (e) {
+          thrown = e;
+        }
+        check(
+          thrown?.name === "RenderError" && thrown.code === "device_lost",
+          `round ${round}: ${name} after losing the context threw ${thrown?.name}/${thrown?.code}`,
+        );
+      }
       check(el.puppet === oldPuppet, `round ${round}: recreated before the context was restored`);
       check(errors.length === 0, `round ${round}: error while lost: ${errors.join("; ")}`);
       const reloaded = once(el, "load", "the reload after restoring the context");

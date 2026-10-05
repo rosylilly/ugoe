@@ -7,6 +7,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import codes from "../../../crates/ugoe-wasm/codes.json" with { type: "json" };
 import { LOAD_ERROR_CODES, type UgoeLoadErrorFields } from "./limits.js";
+import { RENDER_ERROR_CODES } from "./render-errors.js";
 import {
   DRESS_UP_ERROR_CODES,
   LOAD_WARNING_CODES,
@@ -95,6 +96,11 @@ describe("codes.json (Rust) and the TypeScript unions", () => {
     expectTypeOf<(typeof LOAD_ERROR_FIELDS)[number]>().toEqualTypeOf<keyof UgoeLoadErrorFields>();
     expect(sorted(LOAD_ERROR_CODES)).toEqual(sorted(Object.keys(codes.load_error)));
     expect(sorted(LOAD_ERROR_FIELDS)).toEqual(allFields(codes.load_error));
+  });
+
+  it("lists the same render error codes (without fields)", () => {
+    expect(sorted(RENDER_ERROR_CODES)).toEqual(sorted(Object.keys(codes.render_error)));
+    expect(allFields(codes.render_error)).toEqual([]);
   });
 
   it("lists the same load warning codes and fields per code", () => {

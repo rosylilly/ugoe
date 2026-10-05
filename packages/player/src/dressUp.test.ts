@@ -10,6 +10,7 @@ import {
   parseSlots,
   visibleSlots,
 } from "./dressUp";
+import { describeLoadError } from "./loadError";
 import { parseLoadWarnings } from "./loadWarnings";
 
 // 文言は日本語の訳で確かめる (英語の原文を確かめる it は、その中で言語を切り替える)。
@@ -150,6 +151,11 @@ describe("describeDressUpError", () => {
       ),
     ).toContain("「A」が付いている");
     expect(describeDressUpError(dressUpError("no_model"))).toContain("先にモデル");
+    // GPU を失った後の付け外し (T0457) は、モデルの読み込みと同じ文 (T0465)。
+    expect(describeDressUpError(dressUpError("device_lost"))).toBe(
+      describeLoadError(Object.assign(new Error("x"), { name: "LoadError", code: "device_lost" })),
+    );
+    expect(describeDressUpError(dressUpError("device_lost"))).toContain("GPU が止まりました");
     setLocale("en");
     expect(describeDressUpError(dressUpError("no_model"))).toBe(
       "Open a model (.ugoe or .json) first.",
