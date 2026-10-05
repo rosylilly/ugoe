@@ -1,11 +1,11 @@
 ---
 id: T0168
 title: 着せ替えのエラーの補足に、検証のエラーのコードの一覧と、取り除いた物理の元のコードを載せる (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-wasm, ugoe-ffi, bindings/web, docs]
 depends_on: [T0167]
-assignee:
+assignee: claude-worker-T0168
 ---
 
 # T0168: 着せ替えのエラーの補足に、検証のエラーのコードの一覧と、取り除いた物理の元のコードを載せる (判断が要る)
