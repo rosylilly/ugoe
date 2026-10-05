@@ -1,11 +1,11 @@
 ---
 id: T0477
 title: "Godot: PNG のガンマや色のチャンクで画素が参照と変わらないようにし、png-16bit に gAMA を戻す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, tests/conformance, docs]
 depends_on: [T0173]
-assignee:
+assignee: claude-worker-T0477
 ---
 
 # T0477: Godot: PNG のガンマや色のチャンクで画素が参照と変わらないようにし、png-16bit に gAMA を戻す

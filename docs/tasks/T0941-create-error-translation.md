@@ -1,11 +1,11 @@
 ---
 id: T0941
 title: "@ugoe/player とエディタで CreateError を訳し、エディタのビューポートの device_lost をエディタ向けの文にする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0941
 ---
 
 # T0941: @ugoe/player とエディタで CreateError を訳し、エディタのビューポートの device_lost をエディタ向けの文にする

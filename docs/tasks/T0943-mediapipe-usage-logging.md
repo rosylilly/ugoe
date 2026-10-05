@@ -1,11 +1,11 @@
 ---
 id: T0943
 title: "MediaPipe の利用状況の送信 (odml.pa.googleapis.com) を送らせない方法を調べ、プライバシーの説明に書く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/face-tracking, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0943
 ---
 
 # T0943: MediaPipe の利用状況の送信 (odml.pa.googleapis.com) を送らせない方法を調べ、プライバシーの説明に書く

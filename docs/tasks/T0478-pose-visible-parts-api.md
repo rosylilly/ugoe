@@ -1,11 +1,11 @@
 ---
 id: T0478
 title: "wasm・C ABI・@ugoe/runtime に表示中のポーズの要素を読む口を足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, ugoe-ffi, bindings/web, bindings/unity, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0478
 ---
 
 # T0478: wasm・C ABI・@ugoe/runtime に表示中のポーズの要素を読む口を足す
