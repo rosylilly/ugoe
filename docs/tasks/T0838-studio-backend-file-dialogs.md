@@ -1,11 +1,11 @@
 ---
 id: T0838
 title: "スタジオ: ファイルのダイアログをバックエンドで開き、コマンドが読み書きできるパスを利用者が選んだものに絞る"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0837]
-assignee:
+assignee: claude-worker-T0838
 ---
 
 # T0838: スタジオ: ファイルのダイアログをバックエンドで開き、コマンドが読み書きできるパスを利用者が選んだものに絞る

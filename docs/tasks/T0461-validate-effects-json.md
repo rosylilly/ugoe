@@ -1,11 +1,11 @@
 ---
 id: T0461
 title: エフェクトの設定を差し替える set_effects_json (C ABI・wasm・Godot) で設定を検証する
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0461
 ---
 
 # T0461: エフェクトの設定を差し替える set_effects_json (C ABI・wasm・Godot) で設定を検証する
