@@ -1,11 +1,11 @@
 ---
 id: T0037
 title: "3 つのアプリで写しになっている FileAccess・ダイアログの組み立てを共有する置き場を作るか (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-fs, apps/editor, apps/viewer, apps/studio, Cargo.toml, scripts, docs]
 depends_on: [T1620, T1625]
-assignee:
+assignee: claude-worker-T0037
 ---
 
 # T0037: 3 つのアプリで写しになっている FileAccess・ダイアログの組み立てを共有する置き場を作るか (判断が要る)
