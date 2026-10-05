@@ -359,7 +359,8 @@ describe("editor", () => {
   step(app, "proposes a rig from a PSD with a fake AI provider and previews it", async () => {
     const s = app.session;
     // 「New from PSD…」で character.psd から新しいプロジェクトを作る (AI の提案の元にする PSD になる)。
-    // 見本の本体に取り込んだ PSD では、リグの提案が本体の物理の衝突体を外してしまい使えない (T0029 のメモ)
+    // 見本の本体に取り込んだ PSD でも提案は作れる (T1627。proposals_tests.rs の
+    // a_dress_up_base_with_an_imported_psd_is_rigged) が、ここでは本体の要素の無いプロジェクトで通す
     answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
     await s.clickText("nav.file-menu button", "New from PSD…");
     await waitFor(() => treeRow(s, "character"), {

@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let labels = classify_by_name(&ugoe_psd::import(&bytes)?);
     let parts = mesh_parts(document.model(), &labels);
     let proposal = propose_rig(
-        document.model(),
+        &document,
         &parts,
         &RigParams::default(),
         &RigOptions::default(),

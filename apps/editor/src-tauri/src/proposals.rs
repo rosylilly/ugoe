@@ -677,7 +677,7 @@ pub(crate) fn rig(
         Some(p) => {
             let rig = propose_rig_with_ai_guided(
                 p,
-                model,
+                document,
                 &parts,
                 image,
                 &options,
@@ -700,7 +700,7 @@ pub(crate) fn rig(
         }
         None => {
             let params = RigParams::default();
-            let mut proposal = propose_rig(model, &parts, &params, &options)?;
+            let mut proposal = propose_rig(document, &parts, &params, &options)?;
             proposal.title.push_str(" — rules");
             let previous = PreviousRig {
                 params,

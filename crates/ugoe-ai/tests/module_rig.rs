@@ -66,13 +66,8 @@ fn base() -> &'static Base {
             .find(|(_, p)| p.label == Label::Face)
             .map(|(id, _)| id.clone())
             .unwrap();
-        let proposal = propose_rig(
-            doc.model(),
-            &parts,
-            &RigParams::default(),
-            &RigOptions::default(),
-        )
-        .unwrap();
+        let proposal =
+            propose_rig(&doc, &parts, &RigParams::default(), &RigOptions::default()).unwrap();
         apply(&mut doc, &proposal);
         for (id, anchor, (min, max)) in [
             ("Headwear", "HeadRotation", (960.0, 1000.0)),

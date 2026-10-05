@@ -27,7 +27,10 @@ use ugoe_ai::transport::{Cassette, ReplayTransport};
 use ugoe_ai::{AiError, FakeProvider, Proposal};
 use ugoe_ai::{Provider, ProviderRequest};
 use ugoe_core::Vec2;
+use ugoe_editor_core::physics_edit::default_settings;
 use ugoe_editor_core::{Command, Document, PsdImportOptions, import_psd};
+use ugoe_model::module::{DrawOrderRange, Slot};
+use ugoe_model::physics::{ColliderShape, PhysicsCollider, PhysicsRig, PhysicsSettings};
 use ugoe_model::{DeformerKind, KeyformInference, MeshId, Model, standard};
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -40,6 +43,13 @@ struct Input {
     model: Model,
     parts: BTreeMap<MeshId, MeshPart>,
     image: Vec<u8>,
+}
+
+impl Input {
+    /// 取り込んだモデルだけのドキュメント (物理の設定なし)。
+    fn doc(&self) -> Document {
+        Document::new(self.model.clone())
+    }
 }
 
 fn load(name: &str) -> Input {
@@ -129,7 +139,7 @@ fn angle_scale(model: &Model) -> f32 {
 fn bustup_rig_turns_the_head_and_opens_the_eyes_and_mouth() {
     let input = bustup();
     let proposal = propose_rig(
-        &input.model,
+        &input.doc(),
         &input.parts,
         &RigParams::default(),
         &RigOptions::default(),
@@ -218,7 +228,7 @@ fn bustup_rig_turns_the_head_and_opens_the_eyes_and_mouth() {
 fn full_body_rig_squashes_single_eyes_and_stretches_a_single_mouth() {
     let input = full_body();
     let proposal = propose_rig(
-        &input.model,
+        &input.doc(),
         &input.parts,
         &RigParams::default(),
         &RigOptions::default(),
@@ -255,7 +265,7 @@ fn an_estimated_depth_map_drives_the_turn() {
             .unwrap()
     };
     let rules = propose_rig(
-        &input.model,
+        &input.doc(),
         &input.parts,
         &RigParams::default(),
         &RigOptions::default(),
@@ -269,7 +279,7 @@ fn an_estimated_depth_map_drives_the_turn() {
     )
     .unwrap();
     let estimated = propose_rig(
-        &input.model,
+        &input.doc(),
         &input.parts,
         &RigParams::default(),
         &RigOptions {
@@ -295,7 +305,7 @@ fn a_rejected_ai_answer_is_retried_with_the_errors() {
     );
     let rig = propose_rig_with_ai(
         &provider,
-        &input.model,
+        &input.doc(),
         &input.parts,
         &input.image,
         &RigOptions::default(),
@@ -361,7 +371,7 @@ fn the_ai_gives_up_after_the_attempt_limit() {
     fake.push(answer(5.0)).push(answer(-1.0)).push(answer(0.7));
     let error = propose_rig_with_ai(
         &fake,
-        &input.model,
+        &input.doc(),
         &input.parts,
         &input.image,
         &RigOptions::default(),
@@ -383,7 +393,7 @@ fn an_answer_that_does_not_match_the_schema_is_retried() {
         .push(answer(0.8));
     let rig = propose_rig_with_ai(
         &fake,
-        &input.model,
+        &input.doc(),
         &input.parts,
         &input.image,
         &RigOptions::default(),
@@ -416,7 +426,7 @@ fn a_model_without_a_face_is_not_sent_to_the_ai() {
     let fake = FakeProvider::new();
     let error = propose_rig_with_ai(
         &fake,
-        &input.model,
+        &input.doc(),
         &parts,
         &input.image,
         &RigOptions::default(),
@@ -444,7 +454,7 @@ fn an_openai_compatible_provider_rigs_the_same_way() {
     );
     let rig = propose_rig_with_ai(
         &provider,
-        &input.model,
+        &input.doc(),
         &input.parts,
         &input.image,
         &RigOptions::default(),
@@ -499,7 +509,7 @@ fn check_revision(
     let input = full_body();
     let rig = propose_rig_with_ai_guided(
         provider,
-        &input.model,
+        &input.doc(),
         &input.parts,
         &input.image,
         &RigOptions::default(),
@@ -627,4 +637,151 @@ fn requests_without_guidance_are_unchanged() {
             .contains("already applied when the layers were classified")
     );
     assert!(!labeled.system.contains("list requests to relabel"));
+}
+
+/// 着せ替えの本体: スロット `Hair` が本体の物理の衝突体 `Shoulders` を公開するモデル (T1627)。
+fn with_exposed_collider(model: &Model) -> Model {
+    let mut model = model.clone();
+    model.slots = vec![Slot {
+        id: "Hair".into(),
+        anchor: None,
+        draw_order: DrawOrderRange {
+            min: 0.0,
+            max: 1000.0,
+        },
+        replaces: Vec::new(),
+        parameters: Vec::new(),
+        mask_sources: Vec::new(),
+        part: None,
+        colliders: vec!["Shoulders".into()],
+        pose_parts: Vec::new(),
+    }];
+    model
+}
+
+/// `doc` に提案を適用し、モデルと物理が検証を通ることを確かめる。
+fn apply_with_physics(doc: &Document, proposal: &Proposal) -> Document {
+    let mut doc = doc.detached();
+    doc.apply(Command::Batch {
+        label: proposal.title.clone(),
+        commands: proposal.commands.clone(),
+    })
+    .unwrap();
+    assert!(ugoe_model::validate::validate(doc.model()).is_empty());
+    let physics = doc.physics().unwrap();
+    let errors = ugoe_model::validate::validate_physics(physics, doc.model());
+    assert!(errors.is_empty(), "{errors:?}");
+    doc
+}
+
+/// 提案が足す物理のリグ。
+fn added_rigs(proposal: &Proposal) -> Vec<&PhysicsRig> {
+    proposal
+        .commands
+        .iter()
+        .filter_map(|c| match c {
+            Command::AddPhysicsRig { rig } => Some(rig),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 着せ替えの本体の物理: 衝突体 `Shoulders` と、提案の髪揺れのリグと同じ ID の本体のリグ (T1627)。
+fn base_physics(input: &Input) -> PhysicsSettings {
+    let plain = propose_rig(
+        &input.doc(),
+        &input.parts,
+        &RigParams::default(),
+        &RigOptions::default(),
+    )
+    .unwrap();
+    let mut rig = added_rigs(&plain)[0].clone();
+    rig.inputs.clear();
+    rig.outputs.clear();
+    rig.frame = None;
+    PhysicsSettings {
+        rigs: vec![rig],
+        colliders: vec![PhysicsCollider {
+            id: "Shoulders".into(),
+            name: "Shoulders".into(),
+            attach: None,
+            shape: ColliderShape::Circle {
+                center: Vec2::new(100.0, 100.0),
+                radius: 10.0,
+            },
+        }],
+        ..default_settings()
+    }
+}
+
+#[test]
+fn a_dress_up_base_whose_slot_exposes_a_collider_is_rigged() {
+    let input = bustup();
+    let physics = base_physics(input);
+    let doc =
+        Document::new(with_exposed_collider(&input.model)).with_physics(Some(physics.clone()));
+    let proposal = propose_rig(
+        &doc,
+        &input.parts,
+        &RigParams::default(),
+        &RigOptions::default(),
+    )
+    .unwrap();
+    // 本体の物理に足す: 本体のリグと衝突体はそのまま残り、髪揺れのリグは本体のリグと重ならない ID になる。
+    let rigs = added_rigs(&proposal);
+    assert!(!rigs.is_empty());
+    assert!(
+        rigs.iter()
+            .all(|r| physics.rigs.iter().all(|b| b.id != r.id))
+    );
+    let applied = apply_with_physics(&doc, &proposal);
+    let after = applied.physics().unwrap();
+    assert_eq!(after.colliders, physics.colliders);
+    assert_eq!(after.rigs[0], physics.rigs[0]);
+    assert_eq!(after.rigs.len(), 1 + rigs.len());
+    assert_eq!(applied.model().slots, doc.model().slots);
+}
+
+#[test]
+fn a_dress_up_base_whose_slot_exposes_a_collider_is_rigged_with_ai() {
+    let input = bustup();
+    let doc =
+        Document::new(with_exposed_collider(&input.model)).with_physics(Some(base_physics(input)));
+    let fake = FakeProvider::new();
+    fake.push(answer(0.7));
+    let rig = propose_rig_with_ai(
+        &fake,
+        &doc,
+        &input.parts,
+        &input.image,
+        &RigOptions::default(),
+        1,
+    )
+    .unwrap();
+    assert!(!added_rigs(&rig.proposal).is_empty());
+    apply_with_physics(&doc, &rig.proposal);
+}
+
+#[test]
+fn hair_sway_is_skipped_when_slots_expose_colliders_without_physics() {
+    // 物理の設定が無いのにスロットが衝突体を公開している本体: 物理を足すとスロットの参照が壊れるので、
+    // 髪揺れを組まずに理由を示す。
+    let input = bustup();
+    let model = with_exposed_collider(&input.model);
+    let proposal = propose_rig(
+        &Document::new(model.clone()),
+        &input.parts,
+        &RigParams::default(),
+        &RigOptions::default(),
+    )
+    .unwrap();
+    assert!(added_rigs(&proposal).is_empty());
+    assert!(
+        proposal
+            .rationale
+            .contains("Not rigged: hair sway physics, because the model has no physics but its slots (Hair) expose physics colliders"),
+        "{}",
+        proposal.rationale
+    );
+    apply(&model, &proposal);
 }

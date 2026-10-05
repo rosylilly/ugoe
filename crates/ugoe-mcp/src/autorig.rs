@@ -997,7 +997,7 @@ pub(crate) fn propose_rig(
     };
     let effective = source.labels_for(doc);
     let parts = mesh_parts(model, &effective.labels);
-    let proposal = template_rig(model, &parts, &params, &RigOptions::default()).map_err(|e| {
+    let proposal = template_rig(doc, &parts, &params, &RigOptions::default()).map_err(|e| {
         rig_failed(format!(
             "the rig could not be built: {}; fix it and call propose_rig again",
             ai_error(e)

@@ -87,7 +87,7 @@ fn build() -> Adopted {
     let (provider, transport) = replay("m6_rig_bustup.json");
     let rig = propose_rig_with_ai(
         &provider,
-        doc.model(),
+        &doc,
         &parts,
         &overview_png(&tree, 1024).unwrap(),
         &RigOptions::default(),

@@ -33,9 +33,9 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ugoe_core::Vec2;
-use ugoe_editor_core::ids::new_deformer_id;
+use ugoe_editor_core::ids::{new_deformer_id, unique_id};
 use ugoe_editor_core::space::{ParameterValues, canvas_to_local, local_to_canvas};
-use ugoe_editor_core::{ChildRef, Command, Keyform, KeyformCell, KeyformTarget};
+use ugoe_editor_core::{ChildRef, Command, Document, Keyform, KeyformCell, KeyformTarget};
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::effects::Effects;
 use ugoe_model::mesh::MeshKeyform;
@@ -681,19 +681,20 @@ pub(crate) fn mesh_name<'a>(model: &'a Model, id: &'a MeshId) -> &'a str {
 ///
 /// `parts` はメッシュの意味ラベル ([`mesh_parts`] でレイヤーの分類から作れる)。`face` のラベルの
 /// メッシュが必要。`params` はテンプレートで決められない値 (AI を使わないなら `RigParams::default()`)。
-/// 返す提案は `model` に `Command::Batch` として適用でき、`ugoe_model::validate` を通る。
+/// 返す提案は `doc` に `Command::Batch` として適用でき、`ugoe_model::validate` を通る。
+/// 髪揺れの物理は `doc` の物理の設定に足す (本体のリグ・衝突体と、スロットが公開する衝突体の参照を残す)。
 pub fn propose_rig(
-    model: &Model,
+    doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     params: &RigParams,
     options: &RigOptions,
 ) -> Result<Proposal, AiError> {
-    let layout = Layout::new(model, parts)?;
-    build(model, parts, &layout, params, options)
+    let layout = Layout::new(doc.model(), parts)?;
+    build(doc, parts, &layout, params, options)
 }
 
 fn build(
-    model: &Model,
+    doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     layout: &Layout,
     params: &RigParams,
@@ -704,7 +705,7 @@ fn build(
         return Err(AiError::InvalidProposal(errors.join("; ")));
     }
     let mut rig = Rig {
-        b: Builder::new(model),
+        b: Builder::from_document(doc),
         template: RigTemplate::Character,
     };
     let mut rationale = Vec::new();
@@ -1251,6 +1252,10 @@ impl Rig {
     ///
     /// 入力は `AngleX` (頭を横に向ける動きはデフォーマを動かさないので、根元の平行移動で与える)。
     /// `AngleZ`・呼吸は頭のデフォーマを動かすので、それだけで根元が動く (`crates/ugoe-cli/src/sample.rs` の見本と同じ方法)。
+    ///
+    /// リグは本体の物理の設定に足す (ID は本体のリグと重ならないようにする)。物理の設定が無いのにスロットが
+    /// 衝突体を公開している本体 (着せ替えの本体。`docs/spec/modules.md`) では、物理を足すとスロットの参照が
+    /// 何も指さなくなって検証を通らないので、髪揺れを組まずに理由を示す (T1627)。
     fn rig_hair(
         &mut self,
         layout: &Layout,
@@ -1258,6 +1263,25 @@ impl Rig {
         face_warp: &DeformerId,
         rationale: &mut Vec<String>,
     ) -> Result<(), AiError> {
+        if layout.hair.is_empty() {
+            return Ok(());
+        }
+        if self.b.doc.physics().is_none() {
+            let exposing: Vec<&str> = self
+                .model()
+                .slots
+                .iter()
+                .filter(|s| !s.colliders.is_empty())
+                .map(|s| s.id.as_str())
+                .collect();
+            if !exposing.is_empty() {
+                rationale.push(format!(
+                    "Not rigged: hair sway physics, because the model has no physics but its slots ({}) expose physics colliders; add those colliders to the physics first",
+                    exposing.join(", ")
+                ));
+                return Ok(());
+            }
+        }
         let face = layout.face;
         for group in &layout.hair {
             let rect = layout
@@ -1305,8 +1329,18 @@ impl Rig {
             let length = (rect.max.y - top) * sway.length;
             let lengths = vec![length / sway.sections as f32; sway.sections];
             let shift = sway.shift * face.size().x;
+            let existing: Vec<String> = self
+                .b
+                .doc
+                .physics()
+                .map(|p| p.rigs.iter().map(|r| r.id.as_str().to_owned()).collect())
+                .unwrap_or_default();
+            let id = unique_id(
+                &format!("Hair{kind}{side}"),
+                existing.iter().map(String::as_str),
+            );
             let rig = self.pendulum(Pendulum {
-                id: &format!("Hair{kind}{side}"),
+                id: &id,
                 name: format!("Hair {kind} {side}").trim_end(),
                 frame: head,
                 space: &KeyformTarget::Deformer(face_warp.clone()),
@@ -1808,7 +1842,7 @@ fn request(
 /// - `max_attempts` が 0 なら、問い合わせずに [`AiError::InvalidRequest`] を返す。
 pub fn propose_rig_with_ai(
     provider: &dyn Provider,
-    model: &Model,
+    doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     image: &[u8],
     options: &RigOptions,
@@ -1816,7 +1850,7 @@ pub fn propose_rig_with_ai(
 ) -> Result<AiRig, AiError> {
     propose_rig_with_ai_guided(
         provider,
-        model,
+        doc,
         parts,
         image,
         options,
@@ -1832,13 +1866,14 @@ pub fn propose_rig_with_ai(
 /// 始まる行として書かせ、[`AiRig::unapplied`] に分けて返す (提案の理由には本文だけを書く)。
 pub fn propose_rig_with_ai_guided(
     provider: &dyn Provider,
-    model: &Model,
+    doc: &Document,
     parts: &BTreeMap<MeshId, MeshPart>,
     image: &[u8],
     options: &RigOptions,
     max_attempts: usize,
     guidance: &RigGuidance,
 ) -> Result<AiRig, AiError> {
+    let model = doc.model();
     let layout = Layout::new(model, parts)?;
     let answered = ask_until_valid(
         provider,
@@ -1846,7 +1881,7 @@ pub fn propose_rig_with_ai_guided(
         max_attempts,
         |rejected| request(model, &layout, image, rejected, guidance),
         params_from_answer,
-        |params| build(model, parts, &layout, params, options),
+        |params| build(doc, parts, &layout, params, options),
     )?;
     let Answered {
         mut proposal,

@@ -1421,3 +1421,82 @@ fn psd_imports_are_made_from_a_copy() {
     assert!(document.undo());
     assert!(document.model().meshes.is_empty());
 }
+
+/// T1627: 見本の着せ替えの本体 (`assets/samples/dress-up/dress-up.ugoe`。スロット `Hair` が本体の物理の衝突体
+/// `Shoulders` を公開する) に `character.psd` を取り込んでから、AI あり・なしの両方でリグを提案できる。
+/// 髪揺れの物理は本体の物理に足し、本体の衝突体とスロットの参照を残す。
+#[test]
+fn a_dress_up_base_with_an_imported_psd_is_rigged() {
+    let base = ugoe_format::read_bundle(include_bytes!(
+        "../../../../assets/samples/dress-up/dress-up.ugoe"
+    ))
+    .unwrap();
+    let physics = base.physics.clone().unwrap();
+    assert!(base.model.slots.iter().any(|s| !s.colliders.is_empty()));
+    let mut doc = Document::new(base.model).with_physics(Some(physics.clone()));
+    let bytes = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../assets/fixtures/character.psd"),
+    )
+    .unwrap();
+    let import = ugoe_editor_core::import_psd(
+        doc.model(),
+        &bytes,
+        &ugoe_editor_core::PsdImportOptions::new("character.psd"),
+    )
+    .unwrap();
+    doc.apply(import.command).unwrap();
+    // e2e の偽のプロバイダ (`tests/e2e/lib/fake-ai.mjs`) と同じ分類
+    let tree = ugoe_psd::import(&bytes).unwrap();
+    let labels: Vec<_> = ugoe_ai::classify::classify_by_name(&tree)
+        .into_iter()
+        .map(|mut l| {
+            l.label = match l.layer_path.last().unwrap().as_str() {
+                "後ろ髪" => Label::HairBack,
+                "前髪" => Label::HairFront,
+                "顔" => Label::Face,
+                "右目" | "左目" => Label::Eye,
+                "口" => Label::Mouth,
+                "首" => Label::Neck,
+                "服" => Label::Topwear,
+                "背景" => Label::Background,
+                _ => l.label,
+            };
+            l.side = match l.layer_path.last().unwrap().as_str() {
+                "右目" => Side::Right,
+                "左目" => Side::Left,
+                _ => Side::Center,
+            };
+            l
+        })
+        .collect();
+    let fake = FakeProvider::new();
+    fake.push(json!({
+        "turn_angle_scale": 0.7,
+        "eye_close_line": 0.7,
+        "eye_close_bend": 0.04,
+        "mouth_open_height": 0.35,
+        "reason": "test"
+    }));
+    for provider in [None, Some(&fake as &dyn Provider)] {
+        let proposal = rig(&doc, &labels, b"png", provider, &RigAsk::default())
+            .unwrap()
+            .proposal;
+        assert!(
+            proposal.rationale.contains("Hair sway"),
+            "{}",
+            proposal.rationale
+        );
+        let mut applied = doc.detached();
+        applied
+            .apply(Command::Batch {
+                label: proposal.title.clone(),
+                commands: proposal.commands.clone(),
+            })
+            .unwrap();
+        let after = applied.physics().unwrap();
+        assert_eq!(after.colliders, physics.colliders);
+        assert!(after.rigs.len() > physics.rigs.len());
+        assert!(ugoe_model::validate::validate_physics(after, applied.model()).is_empty());
+        assert_eq!(applied.model().slots, doc.model().slots);
+    }
+}
