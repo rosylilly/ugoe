@@ -71,6 +71,9 @@ jobs:
       # 補助スクリプト (scripts/) の単体テスト。Node だけで動くので、ビルドしないこのジョブに置く (T0027)
       - name: Script check
         run: just script-check
+      # UI の監査の道具 (tests/ui-audit) の単体テスト。監査そのもの (just ui-audit) はアプリのビルドが重いので流さない
+      - name: UI audit check
+        run: just ui-audit-check
 
   # rust-group の matrix を scripts/ci-groups.mjs の GROUPS から作る (グループの定義は 1 か所に置く)
   rust-groups:

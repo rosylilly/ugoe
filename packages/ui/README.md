@@ -166,6 +166,7 @@ just ui-shots /tmp/ugoe-ui-shots      # 見本の画面を 21 通り撮って検
 ```
 
 `test` と `check` は `just web-check` (`just ci`) に入っている。`ui-shots` は Chrome が要るので CI に入れていない。
+部品を使うアプリの画面 (3 つのアプリ) は `just ui-audit` で撮って検査する ([docs/testing.md](../../docs/testing.md#ui-の監査))。部品の見た目を変えたら、両方を流す。
 撮るのはテーマ (light・dark) × 密度 (compact・comfortable) × 言語 (en・ja) の 8 通りと、狭い幅 (360px) の 1 枚、
 重ねて出す部品 (ダイアログ・確かめのダイアログ・メニュー・Popover・Toast・ツールチップ) を見本の画面の `?open=` で開いた 12 枚 (2 通りずつ)。
 動きの途中を撮らないよう、Chrome に `--force-prefers-reduced-motion` を渡す。

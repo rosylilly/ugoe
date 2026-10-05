@@ -16,6 +16,7 @@
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・npm のライセンスの例外・worktree の cargo の設定) | `just script-check` |
 | API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`) |
+| UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
@@ -24,6 +25,7 @@
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
 実機の e2e テストは 3 つのアプリをビルドし直すので、PR ごとの CI に入れず、別のワークフロー `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
+UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮るので `just ci` に入れず、画面を変える PR で人とエージェントが流します ([下](#ui-の監査))。
 
 ## CI のジョブ
 
@@ -331,6 +333,32 @@ just conformance --only c   # C ABI だけ
 - **確かめること:** 離したときに送るコマンド (1 つの Undo の単位)、ドラッグ中はプレビューだけで何も送らないこと、`pointercancel` では送らずに
   元に戻すこと、送っている間の操作、window で受けるキー (Esc・Delete・Ctrl (Cmd) + A) がダイアログ・入力欄の中では効かないこと。
 - happy-dom は描画もレイアウトもしないので、見た目 (重なり・CSS の `pointer-events`) は確かめられません。それは実機の e2e テストで確かめます。
+
+## UI の監査
+
+3 つのアプリの画面を同じ物差しで繰り返し確かめる道具です (T0915)。基準は [docs/ui.md の「UI の品質の基準」](ui.md#ui-の品質の基準)。
+M10 の UI のタスクは、直す前と後にこれを流して比べます。
+
+```sh
+just ui-audit --out target/ui-audit-before   # 直す前に撮る (3 つのアプリ・すべての場面。5 分ほど)
+just ui-audit --only editor --quick          # 反復中: アプリを選び、ライトの英語の広い幅と狭い幅だけ
+just ui-audit --no-build --compare target/ui-audit-before   # 直した後: 前の結果と比べて、増えた・消えた種類を出す
+```
+
+- **開き方:** `just wasm` と `vite build` でビルドした画面を小さな静的サーバで配り、playwright-core で入っている Chrome を動かす。
+  Tauri の代わりに偽のホストを置く (エディタは読むだけの IPC の偽物と `ugoe sample dress-up` の見本、スタジオは `StudioHost` の偽物と
+  見本のプロファイル、ビューアはブラウザの口のまま)。偽物は画面を見るためのもので、編集・保存の流れは Vitest と実機の e2e が確かめる。
+- **場面:** ライト・ダーク × 英語・日本語 × 広い幅・狭い幅 (エディタ 1440 と 1024、ほか 1280 と 360) と、devicePixelRatio 2・200% の拡大
+  (CSS の窓の幅が半分)。それぞれで空の状態・見本を開いた画面・下まで送った画面・設定・メニュー・エディタの右の列のタブなどを撮る。
+  どれも `prefers-reduced-motion: reduce` で開く。
+- **検査:** 文字のコントラスト・横のはみ出し・文字の重なりと切れ・24px 未満の押せるもの・名前の無い部品 (axe-core)・そのほかの ARIA の規則
+  (axe-core)・reduced motion の下の動き・画面に出たエラー・Tab の止まり (印・名前・画面の外)。同じ部品の行は 1 つの種類にまとめて数える。
+- **結果:** `target/ui-audit/<アプリ>/` に PNG・アクセシビリティの木 (`.aria.yml`)・Tab の順・報告 (`report.md`)、`target/ui-audit/summary.md` と
+  `summary.json`。既定の終了コードは場面を開けなかったときだけ 1 (`--strict` なら見つけたものがあっても 1)。
+- **確かめないこと:** 実物の WebView (WebKitGTK は `just e2e` の側。T0919)・実際のスクリーンリーダー・ビューポートの中身・配置の良し悪し。
+- **`just ui-shots` との関係:** `just ui-shots` は `@ugoe/ui` の部品の見本の画面 (packages/ui/README.md) を撮る。部品を変えたときはそれを、
+  アプリの画面を変えたときは `just ui-audit` を使う。
+- 場面の足し方・検査の作り・偽のホストは [tests/ui-audit/README.md](../tests/ui-audit/README.md)。
 
 ## 実機の e2e テスト
 

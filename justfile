@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check
+ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -304,9 +304,20 @@ doc-check:
 doc-group name:
     args="$(node scripts/ci-groups.mjs args {{name}})"; RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc $args --no-deps
 
-# @ugoe/ui の部品の見本の画面をヘッドレスの Chrome で撮って検査する (packages/ui/README.md): `just ui-shots /tmp/shots`
+# @ugoe/ui の部品の見本の画面をヘッドレスの Chrome で撮って検査する (packages/ui/README.md): `just ui-shots /tmp/shots`。
+# 部品 (packages/ui) を変えたときに使う。アプリの画面は `just ui-audit`
 ui-shots out:
     node packages/ui/scripts/shots.mjs {{out}}
+
+# 3 つのアプリの UI の監査 (tests/ui-audit/README.md): ビルドした画面を偽のホストとヘッドレスの Chrome で開き、ライト・ダーク × 日英 ×
+# 幅 × devicePixelRatio で撮って、コントラスト・はみ出し・重なり・押せる大きさ・名前・Tab の順を報告する。重いので `just ci` には含めない。
+# 例: `just ui-audit --only editor --quick`・`just ui-audit --no-build --compare target/ui-audit-before`
+ui-audit *args:
+    @node tests/ui-audit/run.mjs {{args}}
+
+# UI の監査の道具の単体テスト (色の計算・まとめと比べ方・偽のホスト・文言のキー)
+ui-audit-check:
+    @node --test --test-reporter=dot tests/ui-audit/test/
 
 # 実機で手で確かめる一式 (Windows のインストーラ・見本・見本のプロファイル・確認表) を Windows のフォルダーにまとめる (docs/manual-check.md)
 check-pack *args:
