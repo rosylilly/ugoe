@@ -185,7 +185,9 @@
     "switchHint": "Click a scene to switch to it.",
     "removeTitle": "Delete “{{name}}”?",
     "removeBody": "The scene is removed from the profile. The output keeps showing it until you switch scenes.",
-    "empty": "No scenes. Add one to start."
+    "empty": "No scenes. Add one to start.",
+    "loading": "Loading",
+    "loadingStatus": "Loading the scene…"
   },
   "editor": {
     "heading": "Scene",

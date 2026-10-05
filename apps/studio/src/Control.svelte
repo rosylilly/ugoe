@@ -61,6 +61,7 @@ import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { fileName, type ProfileView, type SceneSettings } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
 import { describeLoadFailure } from "./lib/receivers";
+import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
   forgetLegacySettings,
   OUTPUT_SIZE_PRESETS,
@@ -104,6 +105,8 @@ let tickMs = $state<number | null>(null);
 let receivers = $state(0);
 let output = $state<OutputState | null>(null);
 /** 送っている途中の刻みの速さ (プロファイルに持つ。T0827)。 */
+/** 操作ウィンドウが始めたシーンの切り替えの読み込み中 (T0837)。 */
+const sceneLoading = new SceneLoading();
 const tickRateEdit = new PendingEdit<TickRate>((rate) => run((h) => h.setTickRate(rate)));
 const tickRate = $derived(tickRateEdit.current(parseTickRate(profile?.profile.output.tickRate)));
 /** 最新の値と負荷 (負荷の表示に使う)。 */
@@ -356,7 +359,8 @@ async function openProfileAt(path: string) {
   error = null;
   sceneError = null;
   try {
-    await host?.openProfile(path);
+    const h = host;
+    if (h !== null) await sceneLoading.track(null, () => h.openProfile(path));
   } catch (e) {
     reportError(e, profile?.profile.activeScene ?? null);
   }
@@ -405,7 +409,7 @@ async function sceneOp(id: string | null, action: (host: StudioHost) => Promise<
 
 function activateScene(id: string) {
   selected = id;
-  void sceneOp(id, (h) => h.activateScene(id));
+  void sceneOp(id, (h) => sceneLoading.track(id, () => h.activateScene(id)));
 }
 
 async function addScene() {
@@ -436,7 +440,12 @@ async function updateScene(next: SceneSettings) {
   while (queued !== null) {
     const scene = queued;
     queued = null;
-    await sceneOp(scene.id, (h) => h.updateScene(scene));
+    // 出しているシーンの編集は、読み直すことがある (モデル・モジュール・背景の画像を替えた)。
+    await sceneOp(scene.id, (h) =>
+      profile?.live === scene.id
+        ? sceneLoading.track(scene.id, () => h.updateScene(scene))
+        : h.updateScene(scene),
+    );
   }
   sending = false;
   editing = null;
@@ -469,10 +478,12 @@ async function chooseModel() {
   if (next.model !== path) next.modules = [];
   next.model = path;
   const id = next.id;
-  await sceneOp(id, async (h) => {
-    await h.updateScene(next);
-    if (profile?.live !== id) await h.activateScene(id);
-  });
+  await sceneOp(id, (h) =>
+    sceneLoading.track(id, async () => {
+      await h.updateScene(next);
+      if (profile?.live !== id) await h.activateScene(id);
+    }),
+  );
   // 開いたら出力ウィンドウを出す (配信ソフトに取り込ませるため)。
   if (sceneError === null && output !== null && !output.visible) await setOutputVisible(true);
 }
@@ -572,7 +583,8 @@ onMount(() => {
     stopMicrophoneSteps = pulse.schedule((now) => microphone.step(now));
     // 最後に使ったプロファイルを開く (起動して最初の 1 回だけ。開けなければ新しいプロファイルのまま)。
     try {
-      await host.restoreProfile();
+      const h = host;
+      await sceneLoading.track(null, () => h.restoreProfile());
     } catch (e) {
       reportError(e, profile?.profile.activeScene ?? null);
     }
@@ -689,6 +701,7 @@ onMount(() => {
       {scenes}
       live={profile?.live ?? null}
       {selected}
+      loading={sceneLoading.active ? { scene: sceneLoading.scene } : null}
       disabled={host === null}
       onactivate={activateScene}
       onadd={addScene}

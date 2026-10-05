@@ -2,6 +2,7 @@
 //!
 //! シーンの追加・複製・並べ替え・削除・編集と、シーンの切り替え (ファイルを読んで [`Conductor::present`] に渡す) を受け持つ。
 //! 切り替えのファイルは舞台のロックの外で読めるよう、始める・読む・差し込むの 3 つに分ける ([`Pending`]、T0834)。
+//! 読むときにパペットの組み立て ([`conductor::assemble`]) も済ませる (T0837)。
 //! 受け手が取るファイルの中身 (モデル・モジュール・背景の画像) は、今のシーンの分だけをここで持つ
 //! (任意のパスは読ませない)。Tauri には依存しない (コマンドは `lib.rs`)。
 
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ugoe::model::module::Module;
 
-use crate::conductor::{self, Conductor, NewModel};
+use crate::conductor::{self, Assembled, Conductor, NewModel};
 use crate::hotkeys::{self, Hotkey};
 use crate::input::{InputSettings, MotionSettings};
 use crate::pacing::TickRate;
@@ -228,7 +229,7 @@ impl Stage {
         let pending = self.begin_open_profile(path, Profile::read(path), conductor)?;
         Ok(pending
             .and_then(|pending| match pending {
-                Some(pending) => self.settle(pending, conductor, &read_asset),
+                Some(pending) => self.settle(pending, conductor, LOADING),
                 None => Ok(()),
             })
             .err())
@@ -381,7 +382,8 @@ impl Stage {
 
     // --- 切り替え (docs/studio.md#シーンの切り替えと舞台のロック、T0834) ---
     //
-    // 切り替えは 3 つに分ける: 舞台を握って始め (`begin_*`)、握らずに読み ([`Pending::load`])、握り直して差し込む ([`Stage::finish`])。
+    // 切り替えは 3 つに分ける: 舞台を握って始め (`begin_*`)、握らずに読んでパペットを組み立て ([`Pending::load`])、
+    // 握り直して差し込む ([`Stage::finish`])。
     // 始めた順の番号 (`tickets`) を持ち、差し込むときに後から始めた切り替えがあれば、読んだものを捨てる。
 
     /// シーン `id` への切り替えを始める (指揮役に出すのは [`Stage::finish`])。
@@ -473,7 +475,7 @@ impl Stage {
 
     /// 読み終えた切り替えを差し込む (指揮役に出す)。
     ///
-    /// - 読めなければ何も変えずにエラー (指揮役は前のシーンのまま。設定を置き換えた編集は、まだ置き換えたままなら元に戻す)。
+    /// - 読めない・組み立てられなければ何も変えずにエラー (指揮役は前のシーンのまま。設定を置き換えた編集は、まだ置き換えたままなら元に戻す)。
     /// - 読んでいる間に後から切り替えが始まった (`begin_*`・プロファイルを開く・新しいプロファイル) なら、読んだものを捨てる
     ///   ([`Finish::Superseded`])。差し込むのは最後に始めた切り替えだけ。
     /// - 読んでいる間にシーンの設定が変わったら: 切り替えは今の設定で読み直す ([`Finish::Again`])。編集と着せ替えは捨てる。
@@ -564,16 +566,7 @@ impl Stage {
                 Some(modules.iter().map(|m| Arc::clone(&m.module)).collect()),
                 look,
             )
-            .map_err(|e| match e {
-                conductor::LoadError::DressUp(e) => SceneError::DressUp {
-                    message: e.to_string(),
-                },
-                e => SceneError::Unreadable {
-                    asset: Asset::Model,
-                    path: model_path.clone(),
-                    message: e.to_string(),
-                },
-            })?;
+            .map_err(|e| load_error(e, model_path.clone()))?;
         self.assets = Assets {
             model,
             modules,
@@ -588,10 +581,10 @@ impl Stage {
         &mut self,
         mut pending: Pending,
         conductor: &mut Conductor,
-        read: &ReadAsset<'_>,
+        loading: Loading<'_>,
     ) -> Result<(), SceneError> {
         loop {
-            match self.finish(pending.load_with(read), conductor)? {
+            match self.finish(pending.load_with(loading), conductor)? {
                 Finish::Again(next) => pending = *next,
                 Finish::Done | Finish::Superseded => return Ok(()),
             }
@@ -602,7 +595,7 @@ impl Stage {
     #[cfg(test)]
     pub fn activate(&mut self, id: &str, conductor: &mut Conductor) -> Result<(), SceneError> {
         let pending = self.begin_activate(id, conductor)?;
-        self.settle(pending, conductor, &read_asset)
+        self.settle(pending, conductor, LOADING)
     }
 
     /// [`Stage::begin_update_scene`] と差し込みを続けて行う (テスト用)。
@@ -613,7 +606,7 @@ impl Stage {
         conductor: &mut Conductor,
     ) -> Result<(), SceneError> {
         match self.begin_update_scene(scene, conductor)? {
-            Some(pending) => self.settle(pending, conductor, &read_asset),
+            Some(pending) => self.settle(pending, conductor, LOADING),
             None => Ok(()),
         }
     }
@@ -627,7 +620,7 @@ impl Stage {
         conductor: &mut Conductor,
     ) -> Result<(), SceneError> {
         match self.begin_dress_up(slot, module, conductor)? {
-            Some(pending) => self.settle(pending, conductor, &read_asset),
+            Some(pending) => self.settle(pending, conductor, LOADING),
             None => Ok(()),
         }
     }
@@ -669,7 +662,30 @@ impl Stage {
 /// ファイルを読む関数 ([`read_asset`] の形。テストでは差し替えて、読む間に舞台を握っていないことを確かめる)。
 pub type ReadAsset<'a> = dyn Fn(Asset, &Path, &[&str], u64) -> Result<Vec<u8>, SceneError> + 'a;
 
-/// 始めた切り替え。舞台のロックの外で [`Pending::load`] で読み、[`Stage::finish`] に渡す (T0834)。
+/// パペットを組み立てる関数 ([`conductor::assemble`] の形。テストでは差し替えて、組み立てる間に舞台を握っていないことを確かめる)。
+pub type Assemble<'a> =
+    dyn Fn(NewModel, &[Arc<Module>]) -> Result<Assembled, conductor::LoadError> + 'a;
+
+/// 切り替えをロックの外で進める関数 (ファイルを読む・パペットを組み立てる)。ふつうは [`LOADING`]。
+#[derive(Clone, Copy)]
+pub struct Loading<'a> {
+    pub read: &'a ReadAsset<'a>,
+    pub assemble: &'a Assemble<'a>,
+}
+
+impl std::fmt::Debug for Loading<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Loading").finish_non_exhaustive()
+    }
+}
+
+/// ファイルを [`read_asset`] で読み、パペットを [`conductor::assemble`] で組み立てる。
+pub const LOADING: Loading<'static> = Loading {
+    read: &read_asset,
+    assemble: &conductor::assemble,
+};
+
+/// 始めた切り替え。舞台のロックの外で [`Pending::load`] で読んで組み立て、[`Stage::finish`] に渡す (T0834・T0837)。
 #[derive(Debug)]
 pub struct Pending {
     /// 始めた順の番号。
@@ -715,17 +731,61 @@ pub struct Loaded {
     result: Result<Prepared, SceneError>,
 }
 
-/// 指揮役に出すシーン。
+/// 指揮役に出すシーン (`M` は読んだモデル。組み立てた後は [`Assembled`])。
 #[derive(Debug)]
-struct Prepared {
+struct Prepared<M = Assembled> {
     /// 出す設定 (着せ替えなら書き換えた後のもの)。
     scene: SceneSettings,
     look: Look,
     model: Option<(PathBuf, Arc<Vec<u8>>)>,
-    /// 読んだモデル (同じモデルなら `None`)。
-    new_model: Option<NewModel>,
+    /// 読んで組み立てたパペット (同じモデルなら `None`)。
+    new_model: Option<M>,
     modules: Vec<LoadedModule>,
     background: Option<(PathBuf, Arc<Vec<u8>>)>,
+}
+
+impl Prepared<NewModel> {
+    /// 読んだモデルからパペットを組み立て、モジュールを付ける (同じモデルなら何もしない。付け替えは差し込むときに指揮役が行う)。
+    fn assemble(self, assemble: &Assemble<'_>) -> Result<Prepared, SceneError> {
+        let Prepared {
+            scene,
+            look,
+            model,
+            new_model,
+            modules,
+            background,
+        } = self;
+        let new_model = match new_model {
+            Some(new_model) => {
+                let path = scene.model.clone().unwrap_or_default();
+                let arcs: Vec<_> = modules.iter().map(|m| Arc::clone(&m.module)).collect();
+                Some(assemble(new_model, &arcs).map_err(|e| load_error(e, path))?)
+            }
+            None => None,
+        };
+        Ok(Prepared {
+            scene,
+            look,
+            model,
+            new_model,
+            modules,
+            background,
+        })
+    }
+}
+
+/// 指揮役の読み込みのエラーを、シーンのエラーにする (モジュールを付けられないのは `dressUp`、ほかはモデルを読めない)。
+fn load_error(e: conductor::LoadError, model_path: PathBuf) -> SceneError {
+    match e {
+        conductor::LoadError::DressUp(e) => SceneError::DressUp {
+            message: e.to_string(),
+        },
+        e => SceneError::Unreadable {
+            asset: Asset::Model,
+            path: model_path,
+            message: e.to_string(),
+        },
+    }
 }
 
 /// 差し込んだ結果。
@@ -756,13 +816,13 @@ impl Pending {
         model || modules || background
     }
 
-    /// ファイルを読む (舞台のロックの外で呼ぶ)。
+    /// ファイルを読み、パペットを組み立てる (舞台のロックの外で呼ぶ)。
     pub fn load(self) -> Loaded {
-        self.load_with(&read_asset)
+        self.load_with(LOADING)
     }
 
-    /// `read` でファイルを読む。
-    pub fn load_with(self, read: &ReadAsset<'_>) -> Loaded {
+    /// `loading` でファイルを読み、パペットを組み立てる。
+    pub fn load_with(self, loading: Loading<'_>) -> Loaded {
         let Pending {
             ticket,
             id,
@@ -772,14 +832,15 @@ impl Pending {
         } = self;
         let mut loader = Loader {
             cached,
-            read,
+            read: loading.read,
             fresh: Vec::new(),
         };
         let result = match &kind {
             Kind::DressUp { slot, module } => loader.dress_up(&scene, slot, module.as_deref()),
             _ => Ok(scene.clone()),
         }
-        .and_then(|target| loader.prepare(target));
+        .and_then(|target| loader.prepare(target))
+        .and_then(|prepared| prepared.assemble(loading.assemble));
         Loaded {
             ticket,
             id,
@@ -800,7 +861,7 @@ struct Loader<'a> {
 
 impl Loader<'_> {
     /// シーンのファイルを読む。
-    fn prepare(&mut self, scene: SceneSettings) -> Result<Prepared, SceneError> {
+    fn prepare(&mut self, scene: SceneSettings) -> Result<Prepared<NewModel>, SceneError> {
         let mut look = Look {
             lighting: scene.lighting.clone(),
             transform: scene.transform,

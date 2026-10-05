@@ -55,7 +55,7 @@ use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, Motion
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
 use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
 use crate::profile::{Profile, SceneSettings, VirtualCameraSettings};
-use crate::stage::{Finish, Pending, ProfileView, ReadAsset, SceneError, Stage};
+use crate::stage::{Finish, Loading, Pending, ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
 use crate::virtual_camera::{
     Command as CameraCommand, Event as CameraEvent, SceneFiles, Settings as CameraSettings,
@@ -464,21 +464,22 @@ impl Studio {
         result
     }
 
-    /// シーンを切り替える (T0834。docs/studio.md#シーンの切り替えと舞台のロック): 舞台を握って `begin` で始め、ファイルを舞台のロックの外で
-    /// 読んでから、握り直して差し込む (読んでいる間もほかの操作と外部 API の要求に答える)。読むファイルが無ければ握ったまま差し込む。
+    /// シーンを切り替える (T0834。docs/studio.md#シーンの切り替えと舞台のロック): 舞台を握って `begin` で始め、ファイルを読んでパペットを
+    /// 組み立てる (T0837) のは舞台のロックの外で行い、握り直して差し込む (その間もほかの操作と外部 API の要求に答える)。
+    /// 読むファイルが無ければ握ったまま差し込む。
     /// 読んでいる間に後から始めた切り替えがあれば、読んだものは捨てて `Ok` を返す (差し込むのは最後の切り替えだけ)。
     fn switch_scene(
         &self,
         begin: impl FnOnce(&mut Stage, &mut Conductor) -> Result<Option<Pending>, SceneError>,
     ) -> Result<(), SceneError> {
-        self.switch_scene_with(begin, &stage::read_asset)
+        self.switch_scene_with(begin, stage::LOADING)
     }
 
-    /// [`Studio::switch_scene`] を、ファイルを `read` で読んで行う。
+    /// [`Studio::switch_scene`] を、`loading` で読んで組み立てて行う。
     fn switch_scene_with(
         &self,
         begin: impl FnOnce(&mut Stage, &mut Conductor) -> Result<Option<Pending>, SceneError>,
-        read: &ReadAsset<'_>,
+        loading: Loading<'_>,
     ) -> Result<(), SceneError> {
         let pending = self.with_stage(|stage, conductor| {
             let Some(pending) = begin(stage, conductor)? else {
@@ -488,18 +489,18 @@ impl Studio {
                 return Ok(Some(pending));
             }
             // 見せ方だけの編集など: 握ったまま差し込む (通知を 1 回にまとめる)。
-            stage.settle(pending, conductor, read).map(|()| None)
+            stage.settle(pending, conductor, loading).map(|()| None)
         })?;
         match pending {
-            Some(pending) => self.present_with(pending, read),
+            Some(pending) => self.present_with(pending, loading),
             None => Ok(()),
         }
     }
 
-    /// 始めた切り替えを、舞台のロックの外で読んで差し込む。
-    fn present_with(&self, mut pending: Pending, read: &ReadAsset<'_>) -> Result<(), SceneError> {
+    /// 始めた切り替えを、舞台のロックの外で読んで組み立て、差し込む。
+    fn present_with(&self, mut pending: Pending, loading: Loading<'_>) -> Result<(), SceneError> {
         loop {
-            let loaded = pending.load_with(read);
+            let loaded = pending.load_with(loading);
             match self.with_stage(|stage, conductor| stage.finish(loaded, conductor))? {
                 Finish::Again(next) => pending = *next,
                 Finish::Done | Finish::Superseded => return Ok(()),
@@ -796,12 +797,12 @@ async fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), Co
 }
 
 fn open_profile_at(studio: &Arc<Studio>, path: &Path) -> Result<(), CommandError> {
-    // プロファイルとシーンのファイルは舞台のロックの外で読む (T0834)。
+    // プロファイルとシーンのファイルは舞台のロックの外で読む (T0834。パペットの組み立ても、T0837)。
     let read = Profile::read(path);
     let error = studio
         .with_stage(|stage, conductor| stage.begin_open_profile(path, read, conductor))?
         .and_then(|pending| match pending {
-            Some(pending) => studio.present_with(pending, &stage::read_asset),
+            Some(pending) => studio.present_with(pending, stage::LOADING),
             None => Ok(()),
         })
         .err();

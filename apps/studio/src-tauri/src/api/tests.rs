@@ -25,7 +25,7 @@ use super::*;
 use crate::hotkeys::{Hotkey, HotkeyAction};
 use crate::load_failure::{LoadFailure, LoadFailureCode};
 use crate::lock;
-use crate::stage::Asset;
+use crate::stage::{Asset, LOADING, Loading};
 
 /// メッセージの JSON Schema (`docs/studio-api.schema.json`)。
 const SCHEMA: &str = include_str!("../../../../../docs/studio-api.schema.json");
@@ -767,7 +767,10 @@ fn answers_while_a_scene_loads_and_keeps_the_later_switch() {
     studio
         .switch_scene_with(
             |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
-            &read,
+            Loading {
+                read: &read,
+                ..LOADING
+            },
         )
         .unwrap();
     assert_eq!(reads.get(), 1);
@@ -782,9 +785,93 @@ fn answers_while_a_scene_loads_and_keeps_the_later_switch() {
     studio
         .switch_scene_with(
             |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
-            &|asset: Asset, path: &Path, extensions: &[&str], max: u64| {
-                assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
-                crate::stage::read_asset(asset, path, extensions, max)
+            Loading {
+                read: &|asset: Asset, path: &Path, extensions: &[&str], max: u64| {
+                    assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+                    crate::stage::read_asset(asset, path, extensions, max)
+                },
+                ..LOADING
+            },
+        )
+        .unwrap();
+    assert_eq!(lock(&studio.stage).live(), Some(far.as_str()));
+    assert_eq!(
+        lock(&studio.conductor).scene().unwrap().model_name,
+        "other.ugoe"
+    );
+}
+
+/// パペットの組み立ても舞台のロックの外で行い、組み立てている間も外部 API の要求に答える。
+/// 組み立てている間に次の切り替えが来たら、先の組み立ての結果は差し込まない (T0837)。
+#[test]
+fn answers_while_a_puppet_is_assembled_and_drops_the_stale_one() {
+    let dir = Dir::new();
+    let model = dir.model();
+    let other = dir.0.path().join("other.ugoe");
+    std::fs::copy(&model, &other).unwrap();
+    let studio = studio();
+    let (chat, game) = stage_scenes(&studio, &model, &[]);
+    let far = studio.with_stage(|stage, conductor| {
+        let id = stage.add_scene("Far");
+        let mut scene = stage.profile().scene(&id).unwrap().clone();
+        scene.model = Some(other.clone());
+        stage.update_scene(scene, conductor).unwrap();
+        id
+    });
+    let revision = lock(&studio.conductor).scene().unwrap().revision;
+    let client = std::cell::RefCell::new(Client::connect(&studio));
+    client.borrow_mut().approved(Permission::Control);
+
+    let assembled = std::cell::Cell::new(0);
+    let assemble = |model: crate::conductor::NewModel,
+                    modules: &[Arc<ugoe::model::module::Module>]| {
+        assembled.set(assembled.get() + 1);
+        assert_eq!(model.name, "other.ugoe");
+        assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+        assert!(
+            studio.conductor.try_lock().is_ok(),
+            "the conductor is locked"
+        );
+        let mut client = client.borrow_mut();
+        // 読むだけの要求に答える (まだ前のシーン)。
+        let list = client.call("scene.list", json!({}));
+        assert_eq!(list["live"], chat.as_str());
+        client.call("studio.state", json!({}));
+        // 組み立てている間に次の切り替え (同じモデルなので読まずに出す)。
+        client.call("scene.activate", json!({ "scene": game }));
+        assert_eq!(lock(&studio.stage).live(), Some(game.as_str()));
+        crate::conductor::assemble(model, modules)
+    };
+    studio
+        .switch_scene_with(
+            |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
+            Loading {
+                assemble: &assemble,
+                ..LOADING
+            },
+        )
+        .unwrap();
+    assert_eq!(assembled.get(), 1);
+    // 先に始めた Far の組み立ての結果は差し込まない (指揮役は Game の 1 回だけ進む)。
+    assert_eq!(lock(&studio.stage).live(), Some(game.as_str()));
+    let conductor = lock(&studio.conductor);
+    let scene = conductor.scene().unwrap();
+    assert_eq!(
+        (scene.model_name.as_str(), scene.revision),
+        ("avatar.ugoe", revision + 1)
+    );
+    drop(conductor);
+
+    // 次の切り替えが来なければ、組み立てた結果を差し込む。
+    studio
+        .switch_scene_with(
+            |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
+            Loading {
+                assemble: &|model, modules| {
+                    assert!(studio.stage.try_lock().is_ok(), "the stage is locked");
+                    crate::conductor::assemble(model, modules)
+                },
+                ..LOADING
             },
         )
         .unwrap();

@@ -12,8 +12,9 @@ use std::sync::Arc;
 
 use ugoe::format::Bundle;
 use ugoe::model::Parameter;
+use ugoe::model::expression::Expression;
 use ugoe::model::module::Module;
-use ugoe::model::motion::MotionEvent;
+use ugoe::model::motion::{Motion, MotionEvent};
 use ugoe::{DressUpError, Puppet, Toggles};
 
 use crate::animation::{Animation, AnimationView};
@@ -36,12 +37,53 @@ pub enum LoadError {
     NoModel,
 }
 
-/// 読むモデル (`Conductor::present` に渡す)。
+/// 読んだモデル ([`assemble`] でパペットを組み立てる)。
 #[derive(Debug)]
 pub struct NewModel {
     /// 表示名 (ファイル名)。
     pub name: String,
     pub bundle: Bundle,
+}
+
+/// 組み立てたパペット ([`Conductor::present`] に渡す)。
+///
+/// 大きなモデルではモデルのコンパイルとモジュールの合成が重いので、舞台と指揮役のロックの外で組み立ててから差し込む
+/// (`docs/studio.md#シーンの切り替えと舞台のロック`、T0837)。
+#[derive(Debug)]
+pub struct Assembled {
+    name: String,
+    puppet: Puppet,
+    motions: Vec<Motion>,
+    expressions: Vec<Expression>,
+}
+
+/// モデルからパペットを組み立て、`modules` を付ける (指揮役の状態は使わない。ロックの外で呼ぶ)。
+///
+/// 物理の設定は持たせたうえで段を切る (受け手が回す)。
+pub fn assemble(model: NewModel, modules: &[Arc<Module>]) -> Result<Assembled, LoadError> {
+    let bundle = model.bundle;
+    let mut puppet = Puppet::new(bundle.model)?;
+    if let Some(physics) = bundle.physics {
+        puppet = puppet.with_physics(physics);
+    }
+    puppet.set_toggles(Toggles {
+        physics: false,
+        ..Toggles::default()
+    });
+    if !modules.is_empty() {
+        puppet.set_modules(modules.to_vec())?;
+    }
+    Ok(Assembled {
+        name: model.name,
+        puppet,
+        motions: bundle.motions,
+        expressions: bundle.expressions,
+    })
+}
+
+/// `a` と `b` が同じモジュールの組か (`Arc` で見分ける)。
+fn same_modules(a: &[Arc<Module>], b: &[Arc<Module>]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| Arc::ptr_eq(a, b))
 }
 
 /// `.ugoe` バンドルか JSON のモデルのバイト列を読む (先頭が `{` なら JSON)。
@@ -121,25 +163,29 @@ impl Conductor {
 
     /// モデルを読み、新しいシーンにする (`revision` が上がる)。パラメータは既定値から始める。モジュールは付けず、見せ方は既定。
     pub fn load(&mut self, model_name: &str, bundle: Bundle) -> Result<&Scene, LoadError> {
-        let model = NewModel {
-            name: model_name.to_owned(),
-            bundle,
-        };
+        let model = assemble(
+            NewModel {
+                name: model_name.to_owned(),
+                bundle,
+            },
+            &[],
+        )?;
         self.present(Some(model), Some(Vec::new()), Look::default())
     }
 
     /// シーンを替える (`revision` が上がる)。失敗したら何も変えない。
     ///
-    /// - `model` が `Some` なら読み直す (パラメータは既定値から。受け手もモデルを読み直すので物理は新しく始まる)。
+    /// - `model` が `Some` なら組み立てたパペット ([`assemble`]) に替える (パラメータは既定値から。受け手もモデルを読み直すので
+    ///   物理は新しく始まる)。
     ///   `None` なら今のモデルのまま、パラメータの値・再生中のモーションなどを引き継ぐ (`docs/studio.md#シーンとプロファイル`)。
     /// - `modules` が `Some` なら付けるモジュールの組をそれにする (合成の順)。今のモデルのまま組が変わったときは、
     ///   次のフレームに物理のリセットを載せる (受け手どうしの物理を揃える)。`None` なら変えない。
     /// - 見せ方 (`look`) は受け手に配るだけで、指揮役は使わない。
     ///
-    /// 物理の設定は持たせたうえで段を切る (受け手が回す)。モデルが無ければ ([`Conductor::clear`] の後など) `model` が要る。
+    /// モデルが無ければ ([`Conductor::clear`] の後など) `model` が要る。
     pub fn present(
         &mut self,
-        model: Option<NewModel>,
+        model: Option<Assembled>,
         modules: Option<Vec<Arc<Module>>>,
         look: Look,
     ) -> Result<&Scene, LoadError> {
@@ -156,20 +202,13 @@ impl Conductor {
         let mut reset = false;
         match model {
             Some(model) => {
-                let bundle = model.bundle;
-                let mut puppet = Puppet::new(bundle.model)?;
-                if let Some(physics) = bundle.physics {
-                    puppet = puppet.with_physics(physics);
-                }
-                puppet.set_toggles(Toggles {
-                    physics: false,
-                    ..Toggles::default()
-                });
-                if let Some(modules) = modules.filter(|m| !m.is_empty()) {
+                let mut puppet = model.puppet;
+                // 組み立てたときと違う組なら付け直す (ふつうは組み立てたときに付けてある)。
+                if let Some(modules) = modules.filter(|m| !same_modules(puppet.modules(), m)) {
                     puppet.set_modules(modules)?;
                 }
                 self.animation
-                    .load(&mut puppet, bundle.motions, bundle.expressions);
+                    .load(&mut puppet, model.motions, model.expressions);
                 // 受け手は新しいモデルを読み直すので、物理は新しく始まる (リセットを載せなくてよい)。
                 self.puppet = Some(puppet);
                 self.overrides.clear();
@@ -180,18 +219,10 @@ impl Conductor {
                 let Some(puppet) = &mut self.puppet else {
                     return Err(LoadError::NoModel);
                 };
-                if let Some(modules) = modules {
-                    let same = puppet.modules().len() == modules.len()
-                        && puppet
-                            .modules()
-                            .iter()
-                            .zip(&modules)
-                            .all(|(a, b)| Arc::ptr_eq(a, b));
-                    if !same {
-                        puppet.set_modules(modules)?;
-                        modules_revision = revision;
-                        reset = true;
-                    }
+                if let Some(modules) = modules.filter(|m| !same_modules(puppet.modules(), m)) {
+                    puppet.set_modules(modules)?;
+                    modules_revision = revision;
+                    reset = true;
                 }
             }
         }
@@ -499,10 +530,14 @@ mod tests {
     fn switching_within_a_model_keeps_values_and_versions_what_changed() {
         let mut conductor = Conductor::new();
         let hair = Arc::new(fixtures::long_hair_module());
-        let model = NewModel {
-            name: "base.ugoe".into(),
-            bundle: dress_up(),
-        };
+        let model = assemble(
+            NewModel {
+                name: "base.ugoe".into(),
+                bundle: dress_up(),
+            },
+            std::slice::from_ref(&hair),
+        )
+        .unwrap();
         let first = conductor
             .present(Some(model), Some(vec![Arc::clone(&hair)]), Look::default())
             .unwrap()

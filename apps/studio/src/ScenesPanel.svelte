@@ -1,6 +1,6 @@
 <!--
   シーンの一覧 (docs/studio.md#操作ウィンドウ の左)。押すとそのシーンに切り替え、編集の対象にする。
-  追加・複製・並べ替え・削除。配信しているシーンに印を付ける。
+  追加・複製・並べ替え・削除。配信しているシーンと、読み込んでいるシーンに印を付ける。
 -->
 <script lang="ts">
 import { AlertDialog, Button } from "@ugoe/ui";
@@ -14,6 +14,8 @@ interface Props {
   live: string | null;
   /** 編集しているシーンの ID。 */
   selected: string | null;
+  /** 切り替えを読み込んでいるか (`scene` は読み込んでいるシーンの ID。分からなければ `null`)。 */
+  loading?: { scene: string | null } | null;
   disabled?: boolean;
   onactivate: (id: string) => void;
   onadd: () => void;
@@ -26,6 +28,7 @@ let {
   scenes,
   live,
   selected,
+  loading = null,
   disabled = false,
   onactivate,
   onadd,
@@ -54,6 +57,7 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
             class:scenes__item--selected={scene.id === selected}
             class:scenes__item--live={scene.id === live}
             aria-current={scene.id === live ? "true" : undefined}
+            aria-busy={scene.id === loading?.scene ? "true" : undefined}
             {disabled}
             onclick={() => onactivate(scene.id)}
           >
@@ -61,14 +65,19 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
             <span class="scenes__model">
               {scene.model === null ? t("scenes.noModel") : fileName(scene.model)}
             </span>
-            {#if scene.id === live}
+            {#if scene.id === loading?.scene}
+              <span class="scenes__loading">{t("scenes.loading")}</span>
+            {:else if scene.id === live}
               <span class="scenes__live">{t("scenes.live")}</span>
             {/if}
           </button>
         </li>
       {/each}
     </ul>
-    <p class="scenes__hint">{t("scenes.switchHint")}</p>
+    <!-- 読み込んでいる間は、切り替えの案内の代わりに読み込み中を出す (読み上げにも知らせる)。 -->
+    <p class="scenes__hint" role="status">
+      {loading === null ? t("scenes.switchHint") : t("scenes.loadingStatus")}
+    </p>
   {/if}
   <div class="scenes__actions">
     <Button small {disabled} onclick={onadd}>{t("scenes.add")}</Button>
@@ -192,6 +201,17 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     border-radius: var(--ugoe-radius-sm);
     background: var(--ugoe-color-accent);
     color: var(--ugoe-color-on-accent);
+    font-size: var(--ugoe-font-size-sm);
+  }
+
+  .scenes__loading {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    padding: 0 var(--ugoe-space-2);
+    border: 1px solid var(--ugoe-color-control-border);
+    border-radius: var(--ugoe-radius-sm);
+    color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);
   }
 

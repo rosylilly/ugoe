@@ -56,7 +56,7 @@ src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態�
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 src-tauri/                    バックエンド (Rust クレート `ugoe-studio`)
-  src/conductor.rs              指揮役: 物理を切ったネイティブの Puppet。刻みごとにフレームを作る。シーンを替える (present)
+  src/conductor.rs              指揮役: 物理を切ったネイティブの Puppet。刻みごとにフレームを作る。パペットを組み立て (assemble。舞台のロックの外)、シーンを替える (present)
   src/animation.rs              指揮役の演技: モーション・表情・待機モーション・トラッキング中のモーションの優先・トラッキングと口パクの入力
   src/input.rs                  プロファイルの入力とモーションの設定・操作ウィンドウから届くトラッキングの 1 フレーム
   src/hotkeys.rs                ホットキーの割り当ての形と、登録してよいかの判断 (キーを読めるか・ぶつかり)
