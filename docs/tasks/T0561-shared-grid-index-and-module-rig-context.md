@@ -1,11 +1,11 @@
 ---
 id: T0561
 title: 格子のセルと線形の添字の計算を 1 か所にまとめ、module_rig の引数を文脈の構造体にまとめる
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-rigging, ugoe-editor-core, ugoe-ai]
 depends_on: []
-assignee:
+assignee: claude-worker-T0561
 ---
 
 # T0561: 格子のセルと線形の添字の計算を 1 か所にまとめ、module_rig の引数を文脈の構造体にまとめる
