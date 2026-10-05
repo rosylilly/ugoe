@@ -9,6 +9,7 @@ import {
   curvePath,
   followKey,
   isValidName,
+  KeyMoves,
   keyValuesCommand,
   loadPanelOpen,
   newMotion,
@@ -143,6 +144,24 @@ describe("curves", () => {
         ]),
       ),
     ).toBeNull();
+  });
+
+  it("remembers moved key times per motion and track until the sends finish", async () => {
+    const moves = new KeyMoves();
+    const other: Curve = { ...curve, target: { kind: "parameter", id: "AngleY" } };
+    let finish = () => {};
+    const sent = moves.track(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    moves.record("Nod", curve, 0.8, 1);
+    expect(moves.follow("Nod", curve, 0.8)?.t).toBe(1);
+    expect(moves.follow("Shake", curve, 0.8)).toBeNull();
+    expect(moves.follow("Nod", other, 0.8)).toBeNull();
+    finish();
+    await sent;
+    expect(moves.follow("Nod", curve, 0.8)).toBeNull();
   });
 
   it("keeps handles inside their segment", () => {

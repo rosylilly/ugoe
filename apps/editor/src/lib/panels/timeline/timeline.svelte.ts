@@ -10,7 +10,7 @@ import type { CurveTarget, Expression, Motion } from "../../ipc";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import { loadUgoeWasm, type MotionSampler } from "../../viewport/wasm";
 import { applyExpression } from "./expressions";
-import { advance, roundTime, targetKey } from "./timeline";
+import { advance, KeyMoves, roundTime, targetKey } from "./timeline";
 
 /** 選んだキー: 行 (targetKey) と時刻。 */
 export interface KeySelection {
@@ -31,6 +31,8 @@ export class TimelineState {
   selectedKey = $state<KeySelection | null>(null);
   /** プレビュー中の表情の名前。 */
   previewExpression = $state<string | null>(null);
+  /** 送ったキーの時刻の変更 (ドープシートとカーブのグラフが共有する。docs/editor.md#パネルからの編集)。 */
+  readonly keyMoves = new KeyMoves();
 
   #doc: EditorDocument;
   #viewport: ViewportController;

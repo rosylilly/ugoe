@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-// カーブのグラフ: キーの時刻と値の欄を、前の適用を待つ間に続けて確定しても、送る直前の (動かした後の) キーを動かすこと
-// (docs/editor.md#パネルからの編集、docs/testing.md#エディタの部品のテスト)。
+// カーブのグラフ: キーの時刻と値の欄の確定と、キー・取っ手のドラッグを、前の適用を待つ間に続けて行っても、送る直前の
+// (動かした後の) キーを動かすこと (docs/editor.md#パネルからの編集、docs/testing.md#エディタの部品のテスト)。
 import { flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import type { Command, Curve, CurveTarget, Motion } from "../../ipc";
 import {
   deferred,
+  drag,
   FakeController,
   FakeDocument,
   get,
@@ -25,7 +26,7 @@ function curve(): Curve {
     target: TARGET,
     segments: [
       { type: "start", p: { t: 0, v: 0 } },
-      { type: "linear", to: { t: 1, v: 10 } },
+      { type: "bezier", c1: { t: 0.3, v: 3 }, c2: { t: 0.7, v: 8 }, to: { t: 1, v: 10 } },
       { type: "linear", to: { t: 2, v: 0 } },
     ],
     fade_in: null,
@@ -51,7 +52,17 @@ function moveKey(c: Curve, command: Extract<Command, { op: "move_motion_key" }>)
   if (index < 0) return null;
   const segments = c.segments.map((s, i) => {
     if (i !== index) return s;
-    return s.type === "start" ? { ...s, p: command.to } : { ...s, to: command.to };
+    if (s.type === "start") return { ...s, p: command.to };
+    // 取っ手は区間の中に収める (本物の move_motion_key と同じく、検証を通る形にする)。
+    if (s.type === "bezier") {
+      const t1 = command.to.t;
+      return {
+        ...s,
+        c2: { t: Math.min(s.c2.t, t1), v: s.c2.v },
+        to: command.to,
+      };
+    }
+    return { ...s, to: command.to };
   });
   return { ...c, segments };
 }
@@ -133,5 +144,82 @@ describe("CurveGraph key fields while sending", () => {
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.5, v: 4 } },
     ]);
     expect(timeline.selectedKey?.t).toBe(1.5);
+  });
+});
+
+/**
+ * グラフの点 (時刻, 値) の位置 (happy-dom の getBoundingClientRect は 0 なので clientX / clientY)。
+ * 幅 200 で 0..2 秒、高さ 94 (上下に 8 の余白) で値は 0..10 (カーブの値の範囲)。
+ */
+function at(t: number, v: number): [number, number] {
+  return [t * 100, 8 + 94 - (v / 10) * 94];
+}
+
+/** 時刻 1 のキー (2 番目の印) の押せる範囲。 */
+function keyHit(target: HTMLElement): Element {
+  const hit = target.querySelectorAll("rect.hit.grab")[1];
+  if (!hit) throw new Error("no key");
+  return hit;
+}
+
+/** 時刻 1 のキーで終わるベジェの区間の取っ手 (c2) の押せる範囲。 */
+function handleHit(target: HTMLElement): Element {
+  const hit = target.querySelectorAll("rect.hit.move")[1];
+  if (!hit) throw new Error("no handle");
+  return hit;
+}
+
+describe("CurveGraph drags while sending", () => {
+  it("moves the key again from where the previous drag put it", async () => {
+    const { doc, timeline, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    // 表示は読み直していない (時刻 1 のまま) ので、同じ印をもう一度つかむ。
+    drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
+    await settle();
+    drag(keyHit(target), [at(1, 10), at(1.6, 10)]);
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.6, v: 10 } },
+    ]);
+    expect(timeline.selectedKey?.t).toBe(1.6);
+  });
+
+  it("moves the handle of the key moved by a pending drag", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
+    await settle();
+    drag(handleHit(target), [at(0.7, 8), at(0.9, 5)]);
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      {
+        op: "set_motion_segment",
+        motion: "Nod",
+        target: TARGET,
+        t: 1.5,
+        segment: { type: "bezier", c2: { t: 0.9, v: 5 } },
+      },
+    ]);
+  });
+
+  it("drags the key moved by a pending field commit", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    enter(field(target, "-t"), "1.5");
+    await settle();
+    drag(keyHit(target), [at(1, 10), at(1.6, 10)]);
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.6, v: 10 } },
+    ]);
   });
 });

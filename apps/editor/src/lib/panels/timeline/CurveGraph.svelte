@@ -1,6 +1,6 @@
 <!--
   選んだ行のカーブのグラフ: キー (円) とベジェの取っ手 (四角) をドラッグで編集し、離したときに Command を 1 つ送る
-  (キーは move_motion_key、取っ手は set_motion_segment)。ダブルクリックでその位置にキーを打つ。
+  (キーは move_motion_key、取っ手は set_motion_segment。送る直前のカーブから組み立てる。docs/editor.md#パネルからの編集)。ダブルクリックでその位置にキーを打つ。
   左の欄: 選んだキーの時刻と値、そのキーに入る区間の種類 (直線・ベジェ・ステップ)、カーブ個別のフェード、カーブの削除。
 -->
 <script lang="ts">
@@ -16,7 +16,6 @@ import {
   curvePath,
   endPoint,
   findCurve,
-  followKey,
   type GraphView,
   keyCommand,
   type SegmentKind,
@@ -52,9 +51,8 @@ const PAD = 8;
 /** 印を押せる範囲の一辺 (CSS px。docs/ui.md の 24×24)。 */
 const HIT = 24;
 
-type Drag =
-  | { kind: "key"; t: number; point: Point }
-  | { kind: "c1" | "c2"; t: number; point: Point };
+/** ドラッグ: 押した印 (キーの時刻 `t` と押したときの位置 `from`) と、今の位置 `point`。 */
+type Drag = { kind: "key" | "c1" | "c2"; t: number; from: Point; point: Point };
 let drag = $state<Drag | null>(null);
 /** 適用に失敗したとき、数値の欄を今の値に戻すために作り直す (数値の欄は確定した値を出したままになるので)。 */
 let fieldsKey = $state(0);
@@ -121,6 +119,12 @@ function round(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
+/** 送る直前の (前の編集を読み直した後の) このカーブ。 */
+function currentCurve(): Curve | null {
+  const m = doc.motions.find((x) => x.name === motion.name);
+  return m ? findCurve(m, row.target) : null;
+}
+
 // --- ドラッグ ---
 
 function onDown(e: PointerEvent, kind: Drag["kind"], t: number, point: Point) {
@@ -129,7 +133,7 @@ function onDown(e: PointerEvent, kind: Drag["kind"], t: number, point: Point) {
   timeline.selectKey(row.target, t);
   if (kind === "key") timeline.seek(t);
   (e.currentTarget as SVGElement).setPointerCapture(e.pointerId);
-  drag = { kind, t, point };
+  drag = { kind, t, from: point, point };
 }
 
 function onMove(e: PointerEvent) {
@@ -148,37 +152,57 @@ function onMove(e: PointerEvent) {
   drag = { ...d, point: clampHandle({ t: p.t, v: round(p.v) }, ends[0], ends[1]) };
 }
 
-async function onUp() {
+function onUp() {
   const d = drag;
   drag = null;
-  if (!d) return;
-  if (d.kind === "key") {
-    const original = curveKeys(row.curve as Curve).find((k) => k.t === d.t);
-    if (!original || (original.t === d.point.t && original.v === d.point.v)) return;
-    if (
-      await apply({
-        op: "move_motion_key",
-        motion: motion.name,
-        target: row.target,
-        t: d.t,
-        to: d.point,
-      })
-    ) {
-      timeline.selectKey(row.target, d.point.t);
-      timeline.seek(d.point.t);
-    }
-    return;
-  }
   // 動かさずに離したときは送らない (Undo の履歴に何も変えないコマンドを積まない)。
-  const before = row.curve ? segmentHandle(row.curve, d.t, d.kind) : null;
-  if (before && before.t === d.point.t && before.v === d.point.v) return;
-  await apply({
-    op: "set_motion_segment",
-    motion: motion.name,
-    target: row.target,
-    t: d.t,
-    segment: { type: "bezier", [d.kind]: d.point },
-  });
+  if (!d || (d.point.t === d.from.t && d.point.v === d.from.v)) return;
+  const name = motion.name;
+  const moves = timeline.keyMoves;
+  // 組み立てたキーの移動の行き先 (送らなかったら null のまま)。
+  let to: Point | null = null;
+  // 離したときの表示はまだ前の編集を読み直していないことがあるので、送る直前のカーブで今の時刻のキーを引き直す。
+  void moves
+    .track(
+      doc.send(() => {
+        const curve = currentCurve();
+        const key = curve ? moves.follow(name, curve, d.t) : null;
+        if (!curve || !key) return null;
+        if (d.kind === "key") {
+          // 時刻を動かさなかった (Shift で値だけ動かした) ときは、今の時刻のまま。
+          const next = { t: d.point.t === d.from.t ? key.t : d.point.t, v: d.point.v };
+          if (next.t === key.t && next.v === key.v) return null;
+          if (next.t !== key.t && !canMoveKey(curve, key.t, next.t)) {
+            onmessage(t("timeline.keyBlocked"));
+            return null;
+          }
+          onmessage(null);
+          moves.record(name, curve, key.t, next.t);
+          to = next;
+          // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+          return { op: "move_motion_key", motion: name, target: row.target, t: key.t, to: next };
+        }
+        const ends = segmentEnds(curve, key.t);
+        const before = segmentHandle(curve, key.t, d.kind);
+        if (!ends || !before) return null;
+        const point = clampHandle(d.point, ends[0], ends[1]);
+        if (before.t === point.t && before.v === point.v) return null;
+        onmessage(null);
+        return {
+          op: "set_motion_segment",
+          motion: name,
+          target: row.target,
+          t: key.t,
+          segment: { type: "bezier", [d.kind]: point },
+        };
+      }),
+    )
+    .then((report) => {
+      const sent: Point | null = to;
+      if (sent === null || !report) return;
+      timeline.selectKey(row.target, sent.t);
+      timeline.seek(sent.t);
+    });
 }
 
 async function onDoubleClick(e: MouseEvent) {
@@ -194,44 +218,34 @@ async function onDoubleClick(e: MouseEvent) {
 
 // --- 左の欄 ---
 
-/**
- * 送ったキーの時刻の変更 (前の時刻 → 新しい時刻)。前の確定の適用を待つ間に欄を続けて確定したとき、送る直前にこれを
- * たどって今の時刻のキーを動かす (確定したときの選択はまだ前の時刻を指している)。送っている確定が無くなったら空にする。
- */
-const moved = new Map<number, number>();
-/** 送っていてまだ終わっていない欄の確定の数。 */
-let sending = 0;
-
-/** 送る直前の (前の編集を読み直した後の) このカーブ。 */
-function currentCurve(): Curve | null {
-  const m = doc.motions.find((x) => x.name === motion.name);
-  return m ? findCurve(m, row.target) : null;
-}
-
 function setKeyField(field: "t" | "v", value: number) {
   const from = selectedPoint?.t;
   if (from === undefined) return;
+  const name = motion.name;
+  const moves = timeline.keyMoves;
   // 組み立てたコマンドの行き先 (組み立てを数値の欄の次の確定に置き換えられたら null のまま)。
   let to: Point | null = null;
-  sending++;
-  void doc
-    .send(() => {
-      const curve = currentCurve();
-      const p = curve ? followKey(curve, from, moved) : null;
-      if (!curve || !p) return null;
-      const next = field === "t" ? { t: value, v: p.v } : { t: p.t, v: value };
-      if (next.t === p.t && next.v === p.v) return null;
-      if (field === "t" && !canMoveKey(curve, p.t, value)) {
-        onmessage(t("timeline.keyBlocked"));
-        fieldsKey++;
-        return null;
-      }
-      onmessage(null);
-      if (next.t !== p.t) moved.set(p.t, next.t);
-      to = next;
-      // 失敗の理由は doc.error (タイムラインの見出し) に出る。
-      return { op: "move_motion_key", motion: motion.name, target: row.target, t: p.t, to: next };
-    })
+  // 確定したときの選択はまだ前の時刻を指していることがあるので、送った時刻の変更をたどって今の時刻のキーを動かす。
+  void moves
+    .track(
+      doc.send(() => {
+        const curve = currentCurve();
+        const p = curve ? moves.follow(name, curve, from) : null;
+        if (!curve || !p) return null;
+        const next = field === "t" ? { t: value, v: p.v } : { t: p.t, v: value };
+        if (next.t === p.t && next.v === p.v) return null;
+        if (field === "t" && !canMoveKey(curve, p.t, value)) {
+          onmessage(t("timeline.keyBlocked"));
+          fieldsKey++;
+          return null;
+        }
+        onmessage(null);
+        moves.record(name, curve, p.t, next.t);
+        to = next;
+        // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+        return { op: "move_motion_key", motion: name, target: row.target, t: p.t, to: next };
+      }),
+    )
     .then((report) => {
       const sent: Point | null = to;
       if (sent === null) return;
@@ -241,10 +255,6 @@ function setKeyField(field: "t" | "v", value: number) {
       } else {
         fieldsKey++;
       }
-    })
-    .finally(() => {
-      sending--;
-      if (sending === 0) moved.clear();
     });
 }
 

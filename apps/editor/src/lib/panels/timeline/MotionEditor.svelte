@@ -24,6 +24,7 @@ import {
   canMoveKey,
   curveKeys,
   FPS,
+  findCurve,
   isValidName,
   keyCommand,
   keyValuesCommand,
@@ -206,18 +207,9 @@ async function removeSelectedKey() {
   }
 }
 
-async function moveKey(target: CurveTarget, t: number, to: Point) {
-  if (!motion) return;
-  if (await apply({ op: "move_motion_key", motion: motion.name, target, t, to })) {
-    timeline.selectKey(target, to.t);
-  }
-}
-
 // --- ドープシートのドラッグ ---
 
-let drag = $state<{ target: CurveTarget; t: number; v: number; x0: number; dt: number } | null>(
-  null,
-);
+let drag = $state<{ target: CurveTarget; t: number; x0: number; dt: number } | null>(null);
 
 function onKeyDown(e: PointerEvent, target: CurveTarget, key: Point) {
   e.stopPropagation();
@@ -225,7 +217,7 @@ function onKeyDown(e: PointerEvent, target: CurveTarget, key: Point) {
   timeline.selectKey(target, key.t);
   timeline.seek(key.t);
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  drag = { target, t: key.t, v: key.v, x0: e.clientX, dt: 0 };
+  drag = { target, t: key.t, x0: e.clientX, dt: 0 };
 }
 
 function onKeyMove(e: PointerEvent) {
@@ -234,18 +226,44 @@ function onKeyMove(e: PointerEvent) {
   drag.dt = t;
 }
 
-async function onKeyUp(e: PointerEvent) {
+function onKeyUp(e: PointerEvent) {
   const d = drag;
   drag = null;
-  if (!d || Math.abs(e.clientX - d.x0) < 3) return;
+  if (!d || !motion || Math.abs(e.clientX - d.x0) < 3) return;
   const to = snapToFrame(Math.max(0, d.t + d.dt));
-  const curve = motion?.curves.find((c) => targetKey(c.target) === targetKey(d.target));
-  if (!curve || to === d.t) return;
-  if (!canMoveKey(curve, d.t, to)) {
-    message = t("timeline.keyBlocked");
-    return;
-  }
-  await moveKey(d.target, d.t, { t: to, v: d.v });
+  if (to === d.t) return;
+  const name = motion.name;
+  const moves = timeline.keyMoves;
+  let sent = false;
+  // 離したときの表示はまだ前の編集を読み直していないことがあるので、送る直前のカーブで今の時刻のキーを引き直す
+  // (docs/editor.md#パネルからの編集)。行き先は表示で離した時刻のまま。
+  void moves
+    .track(
+      doc.send(() => {
+        const m = doc.motions.find((x) => x.name === name);
+        const curve = m ? findCurve(m, d.target) : null;
+        const key = curve ? moves.follow(name, curve, d.t) : null;
+        if (!curve || !key || key.t === to) return null;
+        if (!canMoveKey(curve, key.t, to)) {
+          message = t("timeline.keyBlocked");
+          return null;
+        }
+        message = null;
+        moves.record(name, curve, key.t, to);
+        sent = true;
+        // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+        return {
+          op: "move_motion_key",
+          motion: name,
+          target: d.target,
+          t: key.t,
+          to: { t: to, v: key.v },
+        };
+      }),
+    )
+    .then((report) => {
+      if (sent && report) timeline.selectKey(d.target, to);
+    });
 }
 
 function keyX(target: CurveTarget, key: Point): number {

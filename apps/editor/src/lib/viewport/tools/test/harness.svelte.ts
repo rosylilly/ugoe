@@ -11,7 +11,7 @@
 //   イベントの clientX / clientY がそのままツールの座標になる。
 import { type Component, flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, vi } from "vitest";
-import { type EditorDocument, parseModelJson } from "../../../document.svelte";
+import { type EditorDocument, type ParameterDef, parseModelJson } from "../../../document.svelte";
 import type {
   ApplyReport,
   Command,
@@ -189,6 +189,8 @@ export class FakeDocument {
   /** 解析したモデル (`EditorDocument.parsedModel` と同じく `model.json` から作る)。 */
   readonly parsedModel = $derived(parseModelJson(this.model?.json));
   physics = $state.raw<PhysicsSettings | null>(null);
+  /** パラメータの一覧 (`EditorDocument.parameters`)。テストが必要なら入れる。 */
+  parameters = $state.raw<ParameterDef[]>([]);
   motions = $state.raw<Motion[]>([]);
   expressions = $state.raw<Expression[]>([]);
   warnings = $state<RederiveWarning[]>([]);

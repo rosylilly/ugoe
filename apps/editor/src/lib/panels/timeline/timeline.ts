@@ -385,6 +385,43 @@ export function followKey(
   return null;
 }
 
+/**
+ * 送ったキーの時刻の変更を、モーションと行ごとに覚える。ドープシートとカーブのグラフ (キーのドラッグ・欄の確定) が共有し、
+ * 前の移動の適用を待つ間に並べた編集は、送る直前にこれをたどって今の時刻のキーを動かす (docs/editor.md#パネルからの編集)。
+ * 送っている編集が無くなったら忘れる。
+ */
+export class KeyMoves {
+  #moved = new Map<string, Map<number, number>>();
+  #sending = 0;
+
+  /** モーション `motion` のカーブ `curve` の、時刻 `t` のキー (無ければ送った変更をたどった先。`followKey`)。 */
+  follow(motion: string, curve: Curve, t: number): Point | null {
+    return followKey(curve, t, this.#moved.get(movesKey(motion, curve.target)) ?? new Map());
+  }
+
+  /** 時刻 `from` のキーを `to` へ動かすコマンドを組み立てたことを覚える。 */
+  record(motion: string, curve: Curve, from: number, to: number): void {
+    if (from === to) return;
+    const key = movesKey(motion, curve.target);
+    const moved = this.#moved.get(key) ?? new Map<number, number>();
+    moved.set(from, to);
+    this.#moved.set(key, moved);
+  }
+
+  /** 送信 `sent` が終わるまで覚えておく (`doc.send` を呼んだその場で渡す)。 */
+  track<T>(sent: Promise<T>): Promise<T> {
+    this.#sending++;
+    return sent.finally(() => {
+      this.#sending--;
+      if (this.#sending === 0) this.#moved.clear();
+    });
+  }
+}
+
+function movesKey(motion: string, target: CurveTarget): string {
+  return `${motion}\n${targetKey(target)}`;
+}
+
 /** 時刻 `t` のキーで終わるベジェの区間の取っ手 (ベジェでなければ null)。 */
 export function segmentHandle(curve: Curve, t: number, which: "c1" | "c2"): Point | null {
   const segment = segmentEndingAt(curve, t);
