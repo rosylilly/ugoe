@@ -456,6 +456,7 @@ pub async fn new_project_from_psd(
     mesh_options: Option<AutoMeshOptions>,
 ) -> IpcResult<Vec<PsdImportWarning>> {
     blocking(app, move |state| {
+        crate::access::readable_path(state, &path)?;
         // 読み込みと自動メッシュはロックの外で行う
         let (bytes, options) = crate::psd::read_psd(&path, mesh_options)?;
         let (mut new_session, new_document, warnings) = from_psd(&bytes, &options)?;
@@ -467,11 +468,12 @@ pub async fn new_project_from_psd(
     .await
 }
 
-/// `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま。
+/// `.ugoeproj` ディレクトリを開く。失敗したら今のプロジェクトはそのまま。開けるのは開くダイアログで選んだフォルダーと、
+/// 開いているプロジェクトが指すもの (モジュールの本体など。`crate::access`)。
 #[tauri::command]
 pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
-        let dir = absolute_path(&path)?;
+        let dir = crate::access::readable_path(state, &path)?;
         let (project, disk) = Project::load_tracked(&dir)?;
         let (mut document, mut session) = lock_both(state)?;
         replace_document(
@@ -549,10 +551,11 @@ fn save_current(state: &AppState, overwrite: bool) -> IpcResult<ProjectStatus> {
 }
 
 /// 別の場所に保存し、以後の保存先をそこにする。拡張子 `.ugoeproj` がなければ付ける。
-/// プロジェクト名はディレクトリ名 (拡張子を除く) にする。
+/// プロジェクト名はディレクトリ名 (拡張子を除く) にする。`path` は `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
 #[tauri::command]
 pub async fn save_project_as(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
+        crate::access::writable_path(state, &path)?;
         let dir = project_dir(&path)?;
         // 名前と保存先を変えるので、ロックを持ったまま書く (ほかの保存とは重ねない)
         let _saving = lock_saving(state);
@@ -638,10 +641,11 @@ pub fn set_preview_lighting(
 
 /// プロジェクトの書き出しの設定に従って (アトラス化は任意)、`.ugoe` バンドルとしてファイルに書き出す。
 /// 保存状態は変えない。書き出しの前後のテクスチャの枚数と描画の状態の切り替えの見積もりを返す。
+/// `path` は `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
 #[tauri::command]
 pub async fn export_bundle(app: AppHandle, path: String) -> IpcResult<ExportReport> {
     blocking(app, move |state| {
-        let path = absolute_path(&path)?;
+        let path = crate::access::writable_path(state, &path)?;
         let (project, settings) = {
             let (document, session) = lock_both(state)?;
             (

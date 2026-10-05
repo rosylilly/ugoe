@@ -12,9 +12,7 @@ use ugoe_editor_core::bundle_project::save_bundle_projects;
 
 use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
-use crate::project::{
-    ProjectSession, ProjectStatus, absolute_path, lock_both, replace_document, status,
-};
+use crate::project::{ProjectSession, ProjectStatus, lock_both, replace_document, status};
 
 /// 見本の本体。
 const BASE: &[u8] = include_bytes!("../../../../assets/samples/dress-up/dress-up.ugoe");
@@ -39,7 +37,8 @@ const FOLDER: &str = "ugoe-dress-up-sample";
 #[tauri::command]
 pub async fn open_sample_project(app: AppHandle, parent: String) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
-        let dir = new_folder(&absolute_path(&parent)?)?;
+        // 書き出す先は、開くダイアログで選んだフォルダーの中だけ (`crate::access`)
+        let dir = new_folder(&crate::access::readable_path(state, &parent)?)?;
         let base = write_projects(&dir)?
             .into_iter()
             .next()

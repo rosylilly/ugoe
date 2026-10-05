@@ -1,14 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "メインウィンドウの権限 (OS の言語を読む os:allow-locale を含む。アプリのコマンドは src/acl.rs の COMMANDS をすべて。T0686)",
+  "description": "メインウィンドウの権限 (OS の言語を読む os:allow-locale を含む。アプリのコマンドは src/acl.rs の COMMANDS をすべて。T0686。ファイルのダイアログはバックエンドが開く (open_file_dialog・save_file_dialog、T1616))",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:allow-open",
-    "dialog:allow-save",
     "os:allow-locale",
     {
       "identifier": "opener:allow-open-url",
@@ -100,6 +98,8 @@
     "allow-generate-texture-normal-map",
     "allow-assign-texture-normal-map",
     "allow-get-texture-png",
-    "allow-get-texture-versions"
+    "allow-get-texture-versions",
+    "allow-open-file-dialog",
+    "allow-save-file-dialog"
   ]
 }

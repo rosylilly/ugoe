@@ -18,7 +18,7 @@ use ugoe_editor_core::{Coded, Message};
 use ugoe_model::module::ModuleRequirements;
 
 use crate::AppState;
-use crate::commands::{blocking, off_main};
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{
     ExternalChange, ProjectSession, ProjectStatus, absolute_path, lock_both, replace_document,
@@ -279,35 +279,46 @@ pub fn module_status(state: State<'_, AppState>) -> IpcResult<Option<ModuleStatu
 }
 
 /// 本体の候補 (`.ugoeproj` のディレクトリか `.ugoe`) を読み、名前とスロットを返す (新規作成の画面)。
+/// 読めるのは開くダイアログで選んだものと、開いているプロジェクトが指すもの (`crate::access`)。
 #[tauri::command]
-pub async fn read_module_base(path: String) -> IpcResult<BaseSummary> {
-    off_main(move || {
-        let base = load_base(&absolute_path(&path)?)?;
-        Ok(BaseSummary {
-            name: base.model.meta.name.clone(),
-            slots: base.model.slots.iter().map(slot_summary).collect(),
-        })
+pub async fn read_module_base(app: AppHandle, path: String) -> IpcResult<BaseSummary> {
+    blocking(app, move |state| {
+        base_summary(&crate::access::readable_path(state, &path)?)
     })
     .await
 }
 
+/// [`read_module_base`] の中身 (テストから呼ぶ)。
+fn base_summary(path: &Path) -> IpcResult<BaseSummary> {
+    let base = load_base(path)?;
+    Ok(BaseSummary {
+        name: base.model.meta.name.clone(),
+        slots: base.model.slots.iter().map(slot_summary).collect(),
+    })
+}
+
 /// 本体 `base` のスロット `slot` に付ける、名前 `name` の空のモジュールのプロジェクトにする
 /// (未保存。未保存の変更は破棄する。確認はフロントエンドで行う)。失敗したら今のプロジェクトはそのまま。
+/// `base` は開くダイアログで選んだもの (`crate::access`)。本体を読むので、メインのスレッドの外で動かす。
 #[tauri::command]
-pub fn new_module_project(
-    state: State<'_, AppState>,
+pub async fn new_module_project(
+    app: AppHandle,
     base: String,
     slot: String,
     name: String,
 ) -> IpcResult<ProjectStatus> {
-    let project = Project::new_module(name.trim(), &absolute_path(&base)?, &slot.as_str().into())?;
-    let (mut document, mut session) = lock_both(&state)?;
-    replace_document(
-        &mut session,
-        &mut document,
-        ProjectSession::from_project(project, None),
-    );
-    Ok(status(&session, &document))
+    blocking(app, move |state| {
+        let base = crate::access::readable_path(state, &base)?;
+        let project = Project::new_module(name.trim(), &base, &slot.as_str().into())?;
+        let (mut document, mut session) = lock_both(state)?;
+        replace_document(
+            &mut session,
+            &mut document,
+            ProjectSession::from_project(project, None),
+        );
+        Ok(status(&session, &document))
+    })
+    .await
 }
 
 /// モジュールのプロジェクト `path` を、本体を `base` に、スロットを `slot` に付け替えて開く (`null` なら
@@ -324,9 +335,12 @@ pub async fn open_module_with_base(
     drop_colliders: bool,
 ) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
-        let dir = absolute_path(&path)?;
+        let dir = crate::access::readable_path(state, &path)?;
         let disk = ProjectFingerprint::read(&dir)?;
-        let base = base.as_deref().map(absolute_path).transpose()?;
+        let base = base
+            .as_deref()
+            .map(|base| crate::access::readable_path(state, base))
+            .transpose()?;
         let slot = slot.map(|s| ugoe_model::SlotId::from(s.as_str()));
         let project = if drop_colliders {
             Project::load_module_without_unavailable_colliders(&dir, base.as_deref(), slot.as_ref())
@@ -349,13 +363,29 @@ pub async fn open_module_with_base(
 /// `path` がモジュールのプロジェクトで、本体の問題 (見つからない・読めない・スロットがない・合わない) で
 /// 開けないなら、その問題と直すための情報。開ける・モジュールのプロジェクトでない・本体と関係のない
 /// エラーなら `null`。`base` があれば `project.json` の本体の代わりにそれで確かめる (選び直した本体)。
-/// `open_project`・`open_module_with_base` が失敗した後にフロントエンドが呼ぶ。
+/// `open_project`・`open_module_with_base` が失敗した後にフロントエンドが呼ぶ。`path` と `base` は読めるもの
+/// (`crate::access`) だけ。問題の本体 (`ModuleProblem::base`) は、選んだプロジェクトが指すものなので読めるパスに加える
+/// (問題の枠の「Open base project」で開くため)。
 #[tauri::command]
 pub async fn module_open_problem(
+    app: AppHandle,
     path: String,
     base: Option<String>,
 ) -> IpcResult<Option<ModuleProblem>> {
-    off_main(move || open_problem(&path, base.as_deref())).await
+    blocking(app, move |state| {
+        crate::access::readable_path(state, &path)?;
+        if let Some(base) = &base {
+            crate::access::readable_path(state, base)?;
+        }
+        let problem = open_problem(&path, base.as_deref())?;
+        if let Some(problem) = &problem {
+            state
+                .files
+                .grant_readable([std::path::PathBuf::from(&problem.base)]);
+        }
+        Ok(problem)
+    })
+    .await
 }
 
 /// [`module_open_problem`] の中身。
@@ -404,7 +434,10 @@ pub async fn reload_base(
     slot: Option<String>,
 ) -> IpcResult<BaseReload> {
     blocking(app, move |state| {
-        let base = base.as_deref().map(absolute_path).transpose()?;
+        let base = base
+            .as_deref()
+            .map(|base| crate::access::readable_path(state, base))
+            .transpose()?;
         let (mut document, mut session) = lock_both(state)?;
         rebase(&mut document, &mut session, base, slot)
     })
@@ -519,10 +552,11 @@ pub async fn get_preview_module(
 /// 開いているモジュールのプロジェクトを `.ugoemod` として書き出す。書き出す前に、モジュールの検証と
 /// 本体との合成を確かめる。書き出しの設定 (`get_export_settings`。`.ugoe` の書き出しと同じもの) で
 /// アトラス化を選んでいれば、モジュールのテクスチャをアトラスにまとめる (T0654)。保存状態は変えない。
+/// `path` は `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
 #[tauri::command]
 pub async fn export_module(app: AppHandle, path: String) -> IpcResult<ModuleExportReport> {
     blocking(app, move |state| {
-        let path = absolute_path(&path)?;
+        let path = crate::access::writable_path(state, &path)?;
         let (project, settings) = {
             let (document, session) = lock_both(state)?;
             (session.to_project(&document), session.export_settings())
@@ -564,9 +598,7 @@ mod tests {
         Project::new(ProjectMeta::new("avatar"), model, textures)
             .save(&base_dir)
             .unwrap();
-        let summary =
-            tauri::async_runtime::block_on(read_module_base(base_dir.display().to_string()))
-                .unwrap();
+        let summary = base_summary(&base_dir).unwrap();
         assert_eq!(summary.slots.len(), 2);
 
         let project = Project::new_module("Hat", &base_dir, &"Hair".into()).unwrap();

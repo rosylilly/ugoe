@@ -4,7 +4,9 @@
 
 use std::path::Path;
 
-use crate::commands::off_main;
+use tauri::AppHandle;
+
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
@@ -15,10 +17,10 @@ const PATH_HEADER: &str = "x-ugoe-path";
 /// PNG のファイルの先頭 8 バイト。
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
-/// PNG の画像を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path` (保存のダイアログで利用者が選んだ絶対パス)。
-/// 拡張子が `.png` で、中身が PNG のものだけを書く。
+/// PNG の画像を書く。本文は PNG のバイト列、パスはヘッダー `x-ugoe-path` (`save_file_dialog` で利用者が選んだもの。
+/// 1 回だけ書ける。`crate::access`)。拡張子が `.png` で、中身が PNG のものだけを書く。
 #[tauri::command]
-pub async fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
+pub async fn write_png_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> IpcResult<()> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err(EditorError::ExpectedPngBytes.into());
     };
@@ -34,7 +36,11 @@ pub async fn write_png_file(request: tauri::ipc::Request<'_>) -> IpcResult<()> {
     let path = percent_decode(header)?;
     // 要求は借りものなので、別のスレッドへはバイト列の写しを渡す。
     let bytes = bytes.clone();
-    off_main(move || write_png(&path, &bytes)).await
+    blocking(app, move |state| {
+        crate::access::writable_path(state, &path)?;
+        write_png(&path, &bytes)
+    })
+    .await
 }
 
 /// [`write_png_file`] の中身 (テストから呼ぶ)。

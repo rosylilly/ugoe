@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 use ts_rs::TS;
 use ugoe_editor_core::{Coded, Document, Message, export_bundle_with_settings};
 use ugoe_mcp::host::{
@@ -530,10 +530,13 @@ pub async fn open_claude_desktop_bundle(app: AppHandle) -> IpcResult<String> {
     Ok(path)
 }
 
-/// Claude Desktop 用の `.mcpb` を `path` (保存のダイアログで選んだ絶対パス) に書く。
+/// Claude Desktop 用の `.mcpb` を `path` (`save_file_dialog` で利用者が選んだもの。1 回だけ書ける) に書く。
 #[tauri::command]
-pub async fn save_claude_desktop_bundle(path: String) -> IpcResult<String> {
-    let out = crate::project::absolute_path(&path)?;
+pub async fn save_claude_desktop_bundle(
+    state: State<'_, AppState>,
+    path: String,
+) -> IpcResult<String> {
+    let out = crate::access::writable_path(&state, &path)?;
     if out.extension().is_none_or(|e| e != "mcpb") {
         return Err(EditorError::NotMcpbFile.into());
     }

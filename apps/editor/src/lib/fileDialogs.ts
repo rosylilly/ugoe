@@ -1,9 +1,10 @@
-// OS のファイルダイアログ (tauri-plugin-dialog) と既定の場所 (ドキュメント、なければホーム)。
+// OS のファイルダイアログと既定の場所 (ドキュメント、なければホーム)。ダイアログはバックエンドが開き
+// (`open_file_dialog`・`save_file_dialog`)、選ばれたパスだけをコマンドが読み書きできる (src-tauri/src/access.rs。T1616)。
 // ヘッドレスのブラウザでの確認のため差し替えられる: `window.__UGOE_FILE_DIALOGS__` に
 // `FileDialogs` を置くと、ダイアログの代わりにそれを呼ぶ (docs/editor.md#ファイルダイアログ)。
 import { documentDir, homeDir } from "@tauri-apps/api/path";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import type { FileFilter } from "./filePaths";
+import { ipc } from "./ipc";
 
 export interface FileDialogOptions {
   title: string;
@@ -18,7 +19,7 @@ export interface FileDialogs {
   openFile(options: FileDialogOptions): Promise<string | null>;
   /** 既存のディレクトリを 1 つ選ぶ (`.ugoeproj` を開く)。 */
   openDirectory(options: FileDialogOptions): Promise<string | null>;
-  /** 保存先の名前を決める (ファイルが存在しなくてもよい)。 */
+  /** 保存先の名前を決める (ファイルが存在しなくてもよい)。名前に最初のフィルタの最初の拡張子が無ければ付ける。 */
   saveFile(options: FileDialogOptions): Promise<string | null>;
   /** 既定の場所 (ドキュメント、なければホーム)。分からなければ `null`。 */
   defaultDirectory(): Promise<string | null>;
@@ -32,9 +33,12 @@ declare global {
 }
 
 const tauriDialogs: FileDialogs = {
-  openFile: (options) => open({ ...options, multiple: false, directory: false }),
-  openDirectory: (options) => open({ ...options, multiple: false, directory: true }),
-  saveFile: (options) => save({ ...options, canCreateDirectories: true }),
+  openFile: ({ title, defaultPath, filters }) =>
+    ipc.openFileDialog(title, defaultPath ?? null, filters ?? [], false),
+  openDirectory: ({ title, defaultPath, filters }) =>
+    ipc.openFileDialog(title, defaultPath ?? null, filters ?? [], true),
+  saveFile: ({ title, defaultPath, filters }) =>
+    ipc.saveFileDialog(title, defaultPath ?? null, filters ?? []),
   async defaultDirectory() {
     for (const dir of [documentDir, homeDir]) {
       try {

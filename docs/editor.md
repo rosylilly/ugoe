@@ -569,7 +569,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     パネルの「Third-party licenses」は、MediaPipe とバンドルに入る JS のライブラリのライセンスの表記 (`public/third-party-notices.txt`。
     ビューア・スタジオと同じ形) を表示します。生成と検査は [release.md](release.md#同梱物のライセンスの表記)。
   - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
-    記録の保存は `write_json_file` (保存のダイアログで選んだ絶対パスの `.json` だけ)。macOS は `Info.plist` の
+    記録の保存は `write_json_file` (保存のダイアログで選んだパスの `.json` だけ。[読み書きできるパス](#読み書きできるパス))。macOS は `Info.plist` の
     `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。
   - ヘッドレスのブラウザでは、記録した値の列 (JSON) か画像・動画を「File…」で入れて確かめます
     (`window.__UGOE_TRACKER__` でトラッカーを読める)。
@@ -1454,7 +1454,9 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 
 ### ファイルダイアログ
 
-ファイルメニューのパスは OS のファイルダイアログ (`tauri-plugin-dialog` / `@tauri-apps/plugin-dialog`、MIT OR Apache-2.0) で選びます。
+ファイルメニューのパスは OS のファイルダイアログ (`tauri-plugin-dialog`、MIT OR Apache-2.0) で選びます。ダイアログはバックエンドが開き
+(`open_file_dialog`・`save_file_dialog`、`src-tauri/src/dialog.rs`)、選ばれたパスを覚えて、コマンドが読み書きできるパスをそれに絞ります
+(下の「読み書きできるパス」。T1616)。
 パスの入力欄はありません (ダイアログが使えない環境の予備も置かない。ヘッドレスの確認では下の差し替えを使う)。
 取り込みの警告はメニューの横のボタン (押すと一覧の Popover) で、保存・書き出しの結果 (書いた場所の絶対パス) は Toast で、
 失敗はヘッダーの下の知らせの帯 (Notice。閉じるまで残る) で出します。保存していない変更を捨てる操作 (New・New from PSD…・New Module…・
@@ -1472,14 +1474,49 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
 - **最初の場所:** 最後にダイアログで選んで成功した場所 → 開いているプロジェクトの隣 → ドキュメント (`documentDir()`、なければホーム) の順。
   プロジェクト名のうちファイル名に使えない文字は `_` にする。
 - 保存のダイアログで選んだ名前に拡張子 (`.ugoeproj` / `.ugoe` / `.ugoemod`) がなければ付け足す (`save_project_as` も `.ugoeproj` を付ける)。
-  Linux のダイアログはフィルタの拡張子を付けずにパスを返すことがあるため。ファイルメニューの外の保存のダイアログ (スクリーンショットの `.png`・
-  トラッキングの記録の `.json`・Claude Desktop の拡張の `.mcpb`) も同じく `withExtension` で付ける。
+  Linux のダイアログはフィルタの拡張子を付けずにパスを返すことがあるため。付けるのはバックエンドの `save_file_dialog` (最初のフィルタの
+  最初の拡張子。画面の `withExtension` と同じ規則なので、画面が付け直しても同じパスになる)。ファイルメニューの外の保存のダイアログ
+  (スクリーンショットの `.png`・トラッキングの記録の `.json`・Claude Desktop の拡張の `.mcpb`) も同じ。
 - ダイアログを閉じた (取り消した) ときは何もしない。ダイアログを開いている間はメニューのボタンを押せない。
-- 権限 (`capabilities/default.json`) は `dialog:allow-open` と `dialog:allow-save` だけ (メッセージ・確認のダイアログは使わないので入れない)。
-  既定の場所を得る `@tauri-apps/api/path` は `core:default` に含まれる。
-- コード: ダイアログの呼び出しは `src/lib/fileDialogs.ts` (`FileDialogs`)、フィルタ・拡張子・パスの整形は `src/lib/filePaths.ts` (Vitest)。
+- 権限 (`capabilities/default.json`) に `dialog:` のものは無い (webview はダイアログを開けない。`acl.rs` のテストが確かめる)。
+  ダイアログはアプリのコマンド `open_file_dialog`・`save_file_dialog` で開く。既定の場所を得る `@tauri-apps/api/path` は `core:default` に含まれる。
+- コード: ダイアログの呼び出しは `src/lib/fileDialogs.ts` (`FileDialogs`。`ipc.openFileDialog`・`ipc.saveFileDialog`)、フィルタ・拡張子・
+  パスの整形は `src/lib/filePaths.ts` (Vitest)。
 - **差し替え (テスト用):** `window.__UGOE_FILE_DIALOGS__` に `FileDialogs` (`openFile`・`openDirectory`・`saveFile`・`defaultDirectory`) を置くと、
   ダイアログの代わりにそれを呼ぶ。ヘッドレスのブラウザでは、IPC の差し替え (`window.__TAURI_INTERNALS__`) と一緒に固定のパスを返すものを置く。
+  本物のアプリではこの差し替えのパスをバックエンドが知らないので、コマンドは `file.not_chosen` で断る。e2e (tests/e2e) はデバッグビルドの
+  バックエンドの差し替えを使う: 環境変数 `UGOE_EDITOR_DIALOG_ANSWERS` にディレクトリを渡すと、ダイアログは OS のものを開かず、そこの
+  `open-file`・`open-directory`・`save-file` のファイルに書いたパスを選んだことにする (読んだら消す。無ければ取り消し)。環境変数はアプリを
+  起動する側が決めるので、webview はこれで選ばせるパスを決められない。リリースビルドには入らない。
+
+### 読み書きできるパス
+
+webview で思わぬスクリプトが動いても、利用者が選んでいないファイルを読み書きできないよう、ファイルのパスを受けるコマンドは
+利用者が選んだパスだけを受け付けます (T1616。ビューアの `FileAccess` (T0727)・スタジオの `access.rs` (T0838) と同じ考え。`src-tauri/src/access.rs`)。
+
+- **読める:** 開くダイアログで選んだパス (ファイルとフォルダー)・ウィンドウにドロップしたパス・開いているプロジェクトのフォルダーの中
+  (`..` を含むパスは除く)・開いているプロジェクトが指すファイル (モジュールの本体・プレビューの着せ替えの一覧・提案の元の PSD)。
+  どれもこのセッションの間だけ覚える (エディタには最近のファイルの一覧が無いので、ファイルには残さない)。
+- **書ける:** 保存のダイアログで選んだパス。1 回書いたら忘れる (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
+  今の保存先への保存 (`save_project`・`reload_project`) はバックエンドが保存先を持つので、選び直さずに書ける。
+- 選んでいないパスは、ファイルに触る前に `file.not_chosen` (読む) か `file.not_chosen_for_save` (書く) で断る (ビューア・スタジオと同じコード)。
+
+| コマンド | パス | 受け付けるもの |
+| --- | --- | --- |
+| `open_project` | `path` | 読める (開くダイアログのフォルダー・本体の問題の枠の「Open base project」の本体) |
+| `new_project_from_psd` / `import_psd` | `path` | 読める (開くダイアログ) |
+| `open_sample_project` | `parent` | 読める (開くダイアログのフォルダー)。**例外:** 選んだフォルダーの中に見本のフォルダーを新しく作って書く (既にあるものには書かない) |
+| `read_module_base` / `new_module_project` | `path` / `base` | 読める (開くダイアログ) |
+| `open_module_with_base` / `module_open_problem` / `reload_base` | `path`・`base` | 読める。`module_open_problem` が返した本体 (選んだモジュールのプロジェクトが指すもの) は読めるパスに加える |
+| `classify_psd_layers` | `psd` | 読める (開くダイアログ・取り込んだ PSD) |
+| `assign_texture_normal_map` | `path` | 読める (開くダイアログ) |
+| `set_preview_modules` / `read_module_file` | モジュールのパス | 読める (開くダイアログ・ドロップ・一覧に前からあるもの) |
+| `save_project_as` | `path` | 書ける (保存のダイアログ)。`.ugoeproj` が無ければ付けたフォルダーに書く |
+| `export_bundle` / `export_module` | `path` | 書ける (保存のダイアログ) |
+| `write_png_file` / `write_json_file` / `save_claude_desktop_bundle` | `path` | 書ける (保存のダイアログ) |
+
+パスを受けないコマンド (`save_project`・`reload_project`・`get_model_bundle` など) は、バックエンドが持つ保存先だけを読み書きする。
+つないだエージェント (MCP のブリッジ) はファイルのパスを受けない (開いているドキュメントだけを扱う)。
 
 ### 書き出し
 
@@ -1954,8 +1991,9 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | まとまり | コマンド |
 | --- | --- |
 | プロジェクトのファイル | `open_project`・`reload_project`・`save_project`・`save_project_as`・`new_project_from_psd`・`open_sample_project`・`check_external_change` |
-| モジュールのプロジェクト | `open_module_with_base`・`module_open_problem`・`read_module_base`・`reload_base`・`check_base_change`・`export_module`・`get_preview_base_bundle`・`get_preview_module` |
-| 取り込み・書き出し・画像 | `import_psd`・`export_bundle`・`get_model_bundle`・`generate_texture_normal_map`・`assign_texture_normal_map`・`read_module_file`・`write_png_file` |
+| モジュールのプロジェクト | `open_module_with_base`・`module_open_problem`・`read_module_base`・`new_module_project`・`reload_base`・`check_base_change`・`export_module`・`get_preview_base_bundle`・`get_preview_module` |
+| 取り込み・書き出し・画像 | `import_psd`・`export_bundle`・`get_model_bundle`・`generate_texture_normal_map`・`assign_texture_normal_map`・`read_module_file`・`write_png_file`・`write_json_file` |
+| ファイルのダイアログ | `open_file_dialog`・`save_file_dialog` (ダイアログを閉じるまで待つ) |
 | AI の提案 | `classify_psd_layers`・`propose_rig_from_psd`・`regenerate_rig_proposal`・`propose_normal_maps`・`preview_proposal`・`get_proposal_preview_bundle` |
 | 設定・連携 | `ai_settings`・`set_ai_provider`・`store_api_key`・`delete_api_key`・`set_ai_send_externally`・`forget_ai_consent`・`test_ai_connection`・`cancel_ai_requests`・`open_claude_desktop_bundle`・`save_claude_desktop_bundle` |
 
@@ -1982,7 +2020,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 
 ページは同梱したものだけで、PSD のレイヤー名・モデルの名前・エージェントの提案の題名と理由は Svelte が文字として出すので、
 ページに何かを差し込まれる穴は今は無いつもりです。それでも差し込まれたときに、MCP のトークン (`get_mcp_bridge_token`)・
-任意の場所への書き込み (`write_json_file`・`write_png_file`)・API キー (`store_api_key`) などを呼ばれないよう、二重に絞ります
+書き込み (`write_json_file`・`write_png_file`。書けるのは保存のダイアログで選んだパスだけ。[読み書きできるパス](#読み書きできるパス))・API キー (`store_api_key`) などを呼ばれないよう、二重に絞ります
 (多層の防御。T0686。ビューア T0727・スタジオ T0820 と同じ形)。
 
 - **CSP** (`src-tauri/tauri.conf.json` の `app.security.csp`): 同梱したものだけを読みます (`default-src 'self'`)。許すのは、
@@ -2290,6 +2328,8 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `editor.internal` / `editor.task_failed` / `editor.invalid_percent_encoding` | `detail` |
 | `editor.model_changed` / `editor.empty_path` / `editor.not_saved` / `editor.not_saved_use_save_as` / `editor.external_change` / `editor.not_a_module` / `editor.expected_module_bytes` / `editor.expected_png_bytes` / `editor.not_png_data` | なし |
 | `editor.relative_path` / `editor.not_module_file` / `editor.not_png_file` / `editor.not_json_file` / `editor.too_many_sample_folders` | `path` |
+| `file.not_chosen` / `file.not_chosen_for_save` (利用者が選んでいないパス。[読み書きできるパス](#読み書きできるパス)。ビューア・スタジオと同じコード) | `path` |
+| `dialog.failed` (OS のファイルのダイアログが失敗した) | `reason` |
 | `editor.missing_header` | `header` |
 | `editor.invalid_header` | `header`・`detail` |
 | `editor.invalid_undo_limit` | `min`・`max` (選べる Undo の上限の範囲) |

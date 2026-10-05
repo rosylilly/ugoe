@@ -326,6 +326,7 @@ pub(crate) fn state(secret: Option<&str>) -> AppState {
         mcp: crate::mcp::McpBridge::default(),
         preview_base: crate::module::PreviewBaseCache::default(),
         undo_limit: crate::history::UndoLimitStore::default(),
+        files: crate::access::FileAccess::default(),
     }
 }
 

@@ -26,7 +26,7 @@ use ugoe_model::{MeshId, Model};
 use crate::AppState;
 use crate::commands::{blocking, lock};
 use crate::error::{EditorError, IpcResult};
-use crate::project::{absolute_path, lock_both};
+use crate::project::lock_both;
 use crate::proposals::Base;
 use ugoe_fs::read_regular_file;
 
@@ -367,7 +367,7 @@ pub async fn assign_texture_normal_map(
     flip_green: bool,
 ) -> IpcResult<ApplyReport> {
     blocking(app, move |state| {
-        let path = absolute_path(&path)?;
+        let path = crate::access::readable_path(state, &path)?;
         // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
         let png = read_regular_file(&path, MAX_NORMAL_MAP_BYTES)
             .map_err(|e| EditorError::io(&path, e))?;

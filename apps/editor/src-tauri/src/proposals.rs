@@ -162,6 +162,11 @@ impl ProposalSession {
         self.psd = Some(path);
     }
 
+    /// 提案の元にする PSD (読めるパスの 1 つ。`crate::access`)。
+    pub(crate) fn psd(&self) -> Option<&Path> {
+        self.psd.as_deref()
+    }
+
     /// 最後に分類した PSD のレイヤーのラベルに、`document` の分類の直しを重ねたもの (法線マップのまとまりに使う。
     /// `crate::lighting`)。
     pub(crate) fn layer_labels(&self, document: &Document) -> Option<Vec<LayerLabel>> {
@@ -819,6 +824,10 @@ pub async fn classify_psd_layers(
     consent: Option<ConsentAnswer>,
 ) -> IpcResult<AiReply<Classification>> {
     blocking(app, move |state| {
+        // 選んだ PSD は、開くダイアログで選んだものか取り込んだもの (`crate::access`)
+        if let Some(psd) = &psd {
+            crate::access::readable_path(state, psd)?;
+        }
         let ask = Ask {
             instructions: instructions.as_deref(),
             revise,

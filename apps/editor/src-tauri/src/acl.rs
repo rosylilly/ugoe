@@ -87,6 +87,8 @@ pub const COMMANDS: &[&str] = &[
     "assign_texture_normal_map",
     "get_texture_png",
     "get_texture_versions",
+    "open_file_dialog",
+    "save_file_dialog",
 ];
 
 #[cfg(test)]
@@ -143,6 +145,20 @@ mod tests {
         let main = allowed(include_str!("../capabilities/default.json"));
         let expected: BTreeSet<String> = COMMANDS.iter().map(|c| c.to_string()).collect();
         assert_eq!(main, expected);
+    }
+
+    #[test]
+    fn webview_cannot_open_file_dialogs_by_itself() {
+        // ダイアログはバックエンドが開き、選ばれたパスだけを読み書きできるようにする (src/access.rs。T1616)
+        let json: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let permissions = json["permissions"].as_array().unwrap();
+        assert!(
+            permissions
+                .iter()
+                .filter_map(|p| p.as_str())
+                .all(|p| !p.starts_with("dialog:"))
+        );
     }
 
     #[test]

@@ -232,6 +232,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "module",
     "slot"
   ],
+  "dialog.failed": [
+    "reason"
+  ],
   "edit.automesh_failed": [
     "detail",
     "id"
@@ -460,6 +463,12 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "export.invalid_settings": [
     "detail"
+  ],
+  "file.not_chosen": [
+    "path"
+  ],
+  "file.not_chosen_for_save": [
+    "path"
   ],
   "format.chunk_limit_exceeded": [
     "chunk",

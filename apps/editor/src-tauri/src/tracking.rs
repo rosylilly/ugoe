@@ -3,15 +3,27 @@
 
 use std::path::Path;
 
+use tauri::AppHandle;
 use tauri::webview::{PermissionKind, PermissionResponse};
 
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::absolute_path;
 
-/// トラッキングの記録 (JSON) を書く。パスは保存のダイアログで利用者が選んだ絶対パス。`.json` だけを書く。
+/// トラッキングの記録 (JSON) を書く。パスは `save_file_dialog` で利用者が選んだもの (1 回だけ書ける。`crate::access`)。
+/// `.json` だけを書く。
 #[tauri::command]
-pub fn write_json_file(path: String, contents: String) -> IpcResult<()> {
-    let path = absolute_path(&path)?;
+pub async fn write_json_file(app: AppHandle, path: String, contents: String) -> IpcResult<()> {
+    blocking(app, move |state| {
+        crate::access::writable_path(state, &path)?;
+        write_json(&path, &contents)
+    })
+    .await
+}
+
+/// [`write_json_file`] の中身 (テストから呼ぶ)。
+fn write_json(path: &str, contents: &str) -> IpcResult<()> {
+    let path = absolute_path(path)?;
     if !is_json_path(&path) {
         return Err(EditorError::NotJsonFile(path.display().to_string()).into());
     }
@@ -45,17 +57,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         let path = dir.join("rec.json");
-        write_json_file(path.to_string_lossy().into_owned(), "{}".into()).unwrap();
+        write_json(&path.to_string_lossy(), "{}").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
-        assert!(
-            write_json_file(
-                dir.join("rec.sh").to_string_lossy().into_owned(),
-                "x".into()
-            )
-            .is_err()
-        );
+        assert!(write_json(&dir.join("rec.sh").to_string_lossy(), "x").is_err());
         // 相対パスは作業ディレクトリに書いてしまうので断る (`docs/editor.md#プロジェクト`)。
-        let err = write_json_file("ugoe-editor-rec.json".into(), "{}".into()).unwrap_err();
+        let err = write_json("ugoe-editor-rec.json", "{}").unwrap_err();
         assert_eq!(err.code, "editor.relative_path");
         assert!(!Path::new("ugoe-editor-rec.json").exists());
     }

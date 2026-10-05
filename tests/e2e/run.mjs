@@ -296,10 +296,14 @@ for (const app of only) {
     LANG: "en_US.UTF-8",
     LC_ALL: "en_US.UTF-8",
     LANGUAGE: "en",
+    // エディタのファイルのダイアログの差し替え (デバッグビルドのバックエンドが、OS のダイアログの代わりにここの答えを読む。
+    // apps/editor/src-tauri/src/dialog.rs、T1616)
+    UGOE_EDITOR_DIALOG_ANSWERS: join(dir, "dialog-answers"),
   };
   for (const sub of Object.values(appEnv).filter((v) => v.startsWith(xdg))) {
     mkdirSync(sub, { recursive: true });
   }
+  mkdirSync(appEnv.UGOE_EDITOR_DIALOG_ANSWERS, { recursive: true });
   const work = join(dir, "work");
   mkdirSync(work, { recursive: true });
 
@@ -344,6 +348,8 @@ for (const app of only) {
           E2E_WORK: work,
           // アプリの設定の場所 (起動の前に置くもの。スタジオの最近のプロファイルなど)
           E2E_CONFIG_HOME: appEnv.XDG_CONFIG_HOME,
+          // エディタのファイルのダイアログの答えを置く場所
+          E2E_DIALOG_ANSWERS: appEnv.UGOE_EDITOR_DIALOG_ANSWERS,
           E2E_DISPLAY: display,
         },
       },

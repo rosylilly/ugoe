@@ -42,7 +42,11 @@ pub async fn import_psd(
     path: String,
     mesh_options: Option<AutoMeshOptions>,
 ) -> IpcResult<Vec<PsdImportWarning>> {
-    blocking(app, move |state| import_psd_in(state, &path, mesh_options)).await
+    blocking(app, move |state| {
+        crate::access::readable_path(state, &path)?;
+        import_psd_in(state, &path, mesh_options)
+    })
+    .await
 }
 
 /// [`import_psd`] の本体。PSD のデコードと自動メッシュはロックの外で、モデルの写しに対して行い、適用だけを

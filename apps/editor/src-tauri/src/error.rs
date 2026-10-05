@@ -145,6 +145,17 @@ pub enum EditorError {
     OpenFailed { path: String, detail: String },
     #[error("the file name must end with .mcpb")]
     NotMcpbFile,
+    // ---- ファイルの読み書きの許可 (T1616。`crate::access`) ----
+    /// 読もうとしたパスを、利用者が選んでいない (ダイアログで選んだ・ドロップした・開いているプロジェクトの中や
+    /// プロジェクトが指すもののどれでもない)。ビューア・スタジオと同じコード。
+    #[error("{0}: the file was not chosen by the user")]
+    NotChosen(String),
+    /// 書こうとしたパスを、保存のダイアログで選んでいない (選んだパスにも 1 回しか書けない)。ビューア・スタジオと同じコード。
+    #[error("{0}: the path was not chosen in the save dialog")]
+    NotChosenForSave(String),
+    /// OS のファイルのダイアログが失敗した。ビューア・スタジオと同じコード。
+    #[error("the dialog failed: {0}")]
+    DialogFailed(String),
 }
 
 impl EditorError {
@@ -154,6 +165,16 @@ impl EditorError {
             path: path.display().to_string(),
             detail: error.to_string(),
         }
+    }
+
+    /// `path` を利用者が選んでいない (`file.not_chosen`)。
+    pub fn not_chosen(path: &Path) -> Self {
+        Self::NotChosen(path.display().to_string())
+    }
+
+    /// `path` を保存のダイアログで選んでいない (`file.not_chosen_for_save`)。
+    pub fn not_chosen_for_save(path: &Path) -> Self {
+        Self::NotChosenForSave(path.display().to_string())
     }
 
     /// PSD の `path` を読めない。
@@ -222,6 +243,9 @@ impl EditorError {
             Self::BundleWrite(_) => "mcp.bundle_write_failed",
             Self::OpenFailed { .. } => "mcp.open_failed",
             Self::NotMcpbFile => "mcp.not_mcpb_file",
+            Self::NotChosen(_) => "file.not_chosen",
+            Self::NotChosenForSave(_) => "file.not_chosen_for_save",
+            Self::DialogFailed(_) => "dialog.failed",
         }
     }
 }
@@ -250,7 +274,10 @@ impl Coded for EditorError {
             | Self::NotModuleFile(path)
             | Self::NotPngFile(path)
             | Self::NotJsonFile(path)
-            | Self::TooManySampleFolders(path) => message_args! { "path" => path },
+            | Self::TooManySampleFolders(path)
+            | Self::NotChosen(path)
+            | Self::NotChosenForSave(path) => message_args! { "path" => path },
+            Self::DialogFailed(reason) => message_args! { "reason" => reason },
             Self::MissingHeader(header) => message_args! { "header" => *header },
             Self::InvalidHeader { header, detail } => {
                 message_args! { "header" => *header, "detail" => detail }
@@ -403,6 +430,9 @@ pub fn message_samples() -> Vec<Message> {
             detail: detail(),
         },
         EditorError::NotMcpbFile,
+        EditorError::NotChosen(path()),
+        EditorError::NotChosenForSave(path()),
+        EditorError::DialogFailed(detail()),
     ];
     errors.iter().map(Coded::to_message).collect()
 }
@@ -558,9 +588,18 @@ mod tests {
             .skip(1)
             .step_by(2)
             .filter(|s| {
-                ["editor.", "ai.", "mcp.", "psd.", "lighting.", "proposal."]
-                    .iter()
-                    .any(|a| s.starts_with(a) && s.len() > a.len())
+                [
+                    "editor.",
+                    "ai.",
+                    "mcp.",
+                    "psd.",
+                    "lighting.",
+                    "proposal.",
+                    "file.",
+                    "dialog.",
+                ]
+                .iter()
+                .any(|a| s.starts_with(a) && s.len() > a.len())
                     && s.chars()
                         .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
             })

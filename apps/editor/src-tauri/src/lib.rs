@@ -1,6 +1,7 @@
 //! エディタのバックエンド。ここは **薄い IPC 層** に保ち、編集ロジックは `ugoe-editor-core` に置く。
 //! 設計: `docs/editor.md`。
 
+mod access;
 // コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0686)。
 #[cfg(test)]
 mod acl;
@@ -9,6 +10,7 @@ mod ai_provider;
 mod avatar;
 pub mod bindings;
 mod commands;
+mod dialog;
 mod dress_up;
 mod error;
 mod history;
@@ -51,6 +53,8 @@ pub struct AppState {
     pub preview_base: module::PreviewBaseCache,
     /// Undo の上限 (エディタ全体の設定。起動時にアプリの設定のディレクトリから読む。`docs/editor.md#undo`)。
     pub undo_limit: history::UndoLimitStore,
+    /// webview に読み書きを許したパス (T1616。`access`)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
+    pub files: access::FileAccess,
 }
 
 pub fn run() {
@@ -65,6 +69,7 @@ pub fn run() {
         mcp: mcp::McpBridge::default(),
         preview_base: module::PreviewBaseCache::default(),
         undo_limit: history::UndoLimitStore::default(),
+        files: access::FileAccess::default(),
     };
     #[allow(clippy::expect_used)]
     tauri::Builder::default()
@@ -98,6 +103,7 @@ pub fn run() {
             Ok(())
         })
         .on_permission_request(|_, kind| tracking::permission_response(kind))
+        .on_webview_event(access::on_webview_event)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::apply_command,
@@ -179,6 +185,8 @@ pub fn run() {
             lighting::assign_texture_normal_map,
             lighting::get_texture_png,
             lighting::get_texture_versions,
+            dialog::open_file_dialog,
+            dialog::save_file_dialog,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

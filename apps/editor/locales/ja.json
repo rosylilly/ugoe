@@ -2195,6 +2195,13 @@
       "unknown_collider": "モジュール {{module}} のリグ {{rig}} が当たる衝突体 {{collider}} は使えません",
       "pose_not_exposed": "モジュール {{module}} が追従するポーズの要素 {{part}} を、スロット {{slot}} は公開していません",
       "invalid_composition_other": "合成したモデルが検証を通りません ({{count}} 件: {{details}})"
+    },
+    "file": {
+      "not_chosen": "{{path}} は選ばれていないので読めません (ダイアログで選び直してください)。",
+      "not_chosen_for_save": "{{path}} は保存のダイアログで選ばれていないので書けません。"
+    },
+    "dialog": {
+      "failed": "ファイルのダイアログが失敗しました: {{reason}}"
     }
   },
   "errorArgs": {

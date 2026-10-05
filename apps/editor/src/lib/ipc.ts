@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { PNG_PATH_HEADER } from "@ugoe/player";
+import type { FileFilter } from "./filePaths";
 import type {
   AiReply,
   AiSettings,
@@ -370,20 +371,20 @@ export const ipc = {
    * OS に開かせる (Claude Desktop がインストールの画面を出す)。作ったファイルのパスを返す。
    */
   openClaudeDesktopBundle: () => invoke<string>("open_claude_desktop_bundle"),
-  /** Claude Desktop 用の .mcpb を `path` (保存のダイアログで選んだもの。拡張子は .mcpb) に書く。 */
+  /** Claude Desktop 用の .mcpb を `path` (`saveFileDialog` で選んだもの。拡張子は .mcpb) に書く。 */
   saveClaudeDesktopBundle: (path: string) => invoke<string>("save_claude_desktop_bundle", { path }),
   /** ブリッジからのイベント (確認の求め・文書や提案の変化)。戻り値で購読をやめる。 */
   onMcpBridgeEvent: (handler: (event: BridgeEvent) => void): Promise<UnlistenFn> =>
     listen<BridgeEvent>("mcp-bridge", (e) => handler(e.payload)),
   /**
    * apps/editor/src-tauri/src/tracking.rs。JSON のテキスト (フェイストラッキングの記録) を `path` に書く。
-   * パスは保存のダイアログで選んだもの。拡張子は `.json` だけ。
+   * パスは `saveFileDialog` で選んだもの (1 回だけ書ける)。拡張子は `.json` だけ。
    */
   writeJsonFile: (path: string, contents: string) =>
     invoke<void>("write_json_file", { path, contents }),
   /**
    * apps/editor/src-tauri/src/screenshot.rs。ビューポートのスクリーンショット (PNG のバイト列) を `path` に書く (T0420)。
-   * パスは保存のダイアログで選んだ絶対パスで、拡張子は `.png` だけ。バイト列は本文でそのまま送り、パスはヘッダー
+   * パスは `saveFileDialog` で選んだもの (1 回だけ書ける) で、拡張子は `.png` だけ。バイト列は本文でそのまま送り、パスはヘッダー
    * (`PNG_PATH_HEADER`。ASCII だけなので `encodeURIComponent` で符号化する) で渡す。
    */
   writePngFile: (path: string, bytes: Uint8Array) =>
@@ -401,4 +402,20 @@ export const ipc = {
   /** `.ugoemod` (絶対パス) のバイト列。生のバイト列で届く。 */
   readModuleFile: async (path: string) =>
     new Uint8Array(await invoke<ArrayBuffer>("read_module_file", { path })),
+  /**
+   * apps/editor/src-tauri/src/dialog.rs。OS の開くダイアログでファイル (`directory` ならフォルダー) を選ぶ。取り消したら `null`。
+   * 選んだパスはコマンドが読める (src-tauri/src/access.rs。T1616)。`defaultPath` はディレクトリか、ファイル名まで含むパス。
+   */
+  openFileDialog: (
+    title: string,
+    defaultPath: string | null,
+    filters: FileFilter[],
+    directory: boolean,
+  ) => invoke<string | null>("open_file_dialog", { title, defaultPath, filters, directory }),
+  /**
+   * OS の保存のダイアログで保存先を決める。取り消したら `null`。名前に最初のフィルタの最初の拡張子が無ければ付ける。
+   * 選んだパスには書き出し・保存のコマンドが 1 回だけ書ける (src-tauri/src/access.rs。T1616)。
+   */
+  saveFileDialog: (title: string, defaultPath: string | null, filters: FileFilter[]) =>
+    invoke<string | null>("save_file_dialog", { title, defaultPath, filters }),
 };

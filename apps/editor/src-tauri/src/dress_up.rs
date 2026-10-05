@@ -8,11 +8,11 @@
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 
 use crate::AppState;
-use crate::commands::off_main;
+use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, ProjectStatus, absolute_path, lock_both, status};
 use ugoe_fs::read_regular_file;
@@ -133,25 +133,30 @@ pub(crate) fn set_modules(session: &mut ProjectSession, modules: &[PreviewModule
 }
 
 /// プレビューで試すモジュールの一覧をプロジェクトに残す (保存するまでファイルには書かない。変われば未保存の印が付く)。
-/// パスは絶対パスだけを受け付ける。
+/// パスは絶対パスで、読めるもの (選んだ・ドロップした・一覧に前からある。`crate::access`) だけを受け付ける。
 #[tauri::command]
 pub fn set_preview_modules(
     state: State<'_, AppState>,
     modules: Vec<PreviewModule>,
 ) -> IpcResult<ProjectStatus> {
-    for m in &modules {
-        absolute_path(&m.path)?;
-    }
     let (document, mut session) = lock_both(&state)?;
+    for m in &modules {
+        let path = absolute_path(&m.path)?;
+        state.files.check_readable(&path, &document, &session)?;
+    }
     set_modules(&mut session, &modules);
     Ok(status(&session, &document))
 }
 
-/// `.ugoemod` のバイト列を返す (ファイルのダイアログで選んだ・ドロップした・プロジェクトに残したもの)。
+/// `.ugoemod` のバイト列を返す (ファイルのダイアログで選んだ・ドロップした・プロジェクトに残したもの。`crate::access`)。
 /// `.ugoemod` だけを読む。中身の検査と付け外しは webview の中の `WebPuppet.load_module` が行う。
 #[tauri::command]
-pub async fn read_module_file(path: String) -> IpcResult<tauri::ipc::Response> {
-    off_main(move || read_module(&path).map(tauri::ipc::Response::new)).await
+pub async fn read_module_file(app: AppHandle, path: String) -> IpcResult<tauri::ipc::Response> {
+    blocking(app, move |state| {
+        crate::access::readable_path(state, &path)?;
+        read_module(&path).map(tauri::ipc::Response::new)
+    })
+    .await
 }
 
 /// [`read_module_file`] の中身。通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
@@ -235,23 +240,17 @@ mod tests {
 
     #[test]
     fn reads_module_files_only() {
-        use tauri::async_runtime::block_on;
         assert!(is_module_path(Path::new("Hair.UGOEMOD")));
         assert!(!is_module_path(Path::new("avatar.ugoe")));
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         let text = dir.join("notes.txt");
         std::fs::write(&text, "x").unwrap();
-        assert!(block_on(read_module_file(text.display().to_string())).is_err());
-        assert!(block_on(read_module_file("hair.ugoemod".into())).is_err());
-        assert!(
-            block_on(read_module_file(
-                dir.join("missing.ugoemod").display().to_string()
-            ))
-            .is_err()
-        );
+        assert!(read_module(&text.display().to_string()).is_err());
+        assert!(read_module("hair.ugoemod").is_err());
+        assert!(read_module(&dir.join("missing.ugoemod").display().to_string()).is_err());
         let file = dir.join("hair.ugoemod");
         std::fs::write(&file, [1, 2, 3]).unwrap();
-        assert!(block_on(read_module_file(file.display().to_string())).is_ok());
+        assert!(read_module(&file.display().to_string()).is_ok());
     }
 }

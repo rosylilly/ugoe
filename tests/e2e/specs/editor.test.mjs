@@ -3,43 +3,43 @@
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe } from "node:test";
-import { checkNoCspViolations, invoke, launch, root, shot, step, work } from "../lib/harness.mjs";
+import {
+  checkNoCspViolations,
+  dialogAnswers,
+  invoke,
+  launch,
+  root,
+  shot,
+  step,
+  work,
+} from "../lib/harness.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
 import { checkImageTracking } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
 /**
- * OS のファイルダイアログの代わり (`window.__UGOE_FILE_DIALOGS__`、apps/editor/src/lib/fileDialogs.ts)。
- * フォルダーを選ぶダイアログは `dir` を返す。ファイルを開く・保存先を決めるダイアログは、`answerDialog` で決めたパスを
- * 1 回だけ返す (決めていなければ取り消し)。
+ * 次に開くダイアログ (`open-file`・`open-directory`・`save-file`) が `path` を選んだことにする (1 回だけ。決めていなければ取り消し)。
+ * OS のファイルダイアログの代わりに、デバッグビルドのバックエンドが答えのファイルを読む (`UGOE_EDITOR_DIALOG_ANSWERS`、
+ * apps/editor/src-tauri/src/dialog.rs)。バックエンドが選んだパスを覚えるので、コマンドはそのパスを読み書きできる (T1616)。
  */
-function replaceDialogs(session, dir) {
-  return session.execute(
-    `
-    const dir = arguments[0];
-    const answers = (window.__e2eDialogAnswers = {});
-    const take = (kind) => {
-      const path = answers[kind] ?? null;
-      delete answers[kind];
-      return path;
-    };
-    window.__UGOE_FILE_DIALOGS__ = {
-      openFile: async () => take("openFile"),
-      openDirectory: async () => dir,
-      saveFile: async () => take("saveFile"),
-      defaultDirectory: async () => dir,
-    };
-  `,
-    dir,
-  );
+function answerDialog(kind, path) {
+  writeFileSync(join(dialogAnswers(), kind), path);
 }
 
-/** 次に開くダイアログ (`openFile` か `saveFile`) が `path` を選んだことにする。 */
-function answerDialog(session, kind, path) {
-  return session.execute("window.__e2eDialogAnswers[arguments[0]] = arguments[1]", kind, path);
+/** バックエンドのコマンドを直に呼び、失敗したらそのコード (成功したら `null`) を返す。 */
+function commandError(session, command, args) {
+  return session.run(
+    (command, args) =>
+      window.__TAURI_INTERNALS__.invoke(command, args).then(
+        () => null,
+        (e) => e.code,
+      ),
+    command,
+    args,
+  );
 }
 
 /** ツリーの行 (`[role=treeitem]`) のうち、名前が `name` のもの。 */
@@ -82,11 +82,22 @@ describe("editor", () => {
     const s = app.session;
     await s.waitFindText("nav.file-menu button", "Open Sample", 20_000);
     await installPageHelpers(s);
-    await replaceDialogs(s, work());
+  });
+
+  step(app, "refuses paths that were not chosen in a dialog", async () => {
+    const s = app.session;
+    // webview が渡しただけのパスは読み書きできない (src-tauri/src/access.rs、T1616)
+    const psd = join(root, "assets", "fixtures", "character.psd");
+    assert.equal(await commandError(s, "import_psd", { path: psd }), "file.not_chosen");
+    const out = join(work(), "not-chosen.ugoe");
+    assert.equal(await commandError(s, "export_bundle", { path: out }), "file.not_chosen_for_save");
+    assert.ok(!existsSync(out), `${out} was written`);
   });
 
   step(app, "opens the sample project", async () => {
     const s = app.session;
+    // 見本のフォルダーは、フォルダーを選ぶダイアログで選んだ場所の中に作る
+    answerDialog("open-directory", work());
     const button = await s.waitFindText("nav.file-menu button", "Open Sample");
     await button.click();
     await waitFor(() => existsSync(project), { message: `${project} to be written` });
@@ -177,7 +188,7 @@ describe("editor", () => {
 
   step(app, "imports a PSD and its layers appear in the tree", async () => {
     const s = app.session;
-    await answerDialog(s, "openFile", join(root, "assets", "fixtures", "character.psd"));
+    answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
     const button = await s.waitFindText("nav.file-menu button", "Import PSD");
     await button.click();
     // 取り込みは別のスレッドで作り、適用してから画面に届く (T0685)。PSD のファイル名の最上位のパーツができる
@@ -212,7 +223,7 @@ describe("editor", () => {
     const dir = join(work(), "export");
     mkdirSync(dir, { recursive: true });
     const path = join(dir, "dress-up-with-psd.ugoe");
-    await answerDialog(s, "saveFile", path);
+    answerDialog("save-file", path);
     const open = await s.waitFindText("nav.file-menu button", "Export…");
     await open.click();
     const button = await s.waitFindText(".export-panel button", "Export .ugoe");
@@ -238,7 +249,7 @@ describe("editor", () => {
     await s.waitFindText(".preview-panel h2", "Preview");
     // 見本の着せ替えのモジュール (ビューアの見本と同じもの)。読み込むとスロット Headwear に付く
     const file = "cat-ears.ugoemod";
-    await answerDialog(s, "openFile", join(root, "assets", "samples", "dress-up", file));
+    answerDialog("open-file", join(root, "assets", "samples", "dress-up", file));
     const load = await s.waitFindText(".dress-up button", "Load .ugoemod");
     await load.click();
     await waitFor(async () => (await moduleRow(s, file))?.attached, {

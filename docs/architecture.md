@@ -159,16 +159,16 @@
 | capability | `default.json` (`main`) | `default.json` (`main`) | `control.json` (`main`、操作ウィンドウ)・`output.json` (`output`、出力ウィンドウ) |
 | アプリのコマンド | すべて | すべて | 操作は出力のもの以外のすべて、出力は受け手のもの (`OUTPUT_COMMANDS`) だけ |
 | `core:default` | あり | あり | 操作だけ (出力は `core:window:allow-start-dragging` だけ) |
-| `dialog:allow-open`・`dialog:allow-save` | あり | **なし** | **なし** |
+| `dialog:allow-open`・`dialog:allow-save` | **なし** | **なし** | **なし** |
 | `os:allow-locale` | あり | あり | 操作だけ |
 | `opener:allow-open-url` | GitHub と Anthropic の規約の URL だけ | なし | なし |
 
 違いを残す理由:
 
-- **ビューア・スタジオの dialog:** ビューアとスタジオは利用者が選んだパスだけを読み書きできるよう、ダイアログをバックエンドが開いて
-  選ばれたパスを覚える (`open_file_dialog`・`save_file_dialog`。ビューアは `FileAccess` (T0727)、スタジオは `access.rs` (T0838)。
-  スタジオは開いているプロファイルにあるパスも読める)。エディタは今も webview がダイアログを開き、選ばれたパスをコマンドの引数で渡す
-  (コマンドは拡張子などを確かめるが、パスの範囲は絞っていない。T1616)。
+- **dialog (3 つとも無し):** 利用者が選んだパスだけを読み書きできるよう、ダイアログをバックエンドが開いて選ばれたパスを覚える
+  (`open_file_dialog`・`save_file_dialog`。ビューアは `FileAccess` (T0727)、スタジオは `access.rs` (T0838)、エディタは `access.rs` (T1616))。
+  スタジオは開いているプロファイルにあるパスも、エディタは開いているプロジェクトの中とプロジェクトが指すファイルも読める
+  ([editor.md#読み書きできるパス](editor.md#読み書きできるパス))。
 - **エディタの opener:** ヘルプと AI の規約のリンクを OS のブラウザで開くため。開ける URL を絞っている。
 - **スタジオの出力ウィンドウ:** OBS などに映す受け手で、操作を持たないので、受け手のコマンドとウィンドウのドラッグだけを許す (ADR 0028)。
 
