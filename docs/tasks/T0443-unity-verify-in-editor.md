@@ -32,3 +32,8 @@ T0426 (bindings/unity のレビュー) で、Unity に依存する部分 (`Runti
 - `bindings/unity/README.md`、`docs/tasks/T0426-review-unity-binding.md` のメモ
 
 ## メモ
+
+- T0036 (4 回目の起票のまとめ) から書き足した: 実際の Unity で確かめることが T0466 で増えた (T0466 の候補・確かめていないこと)。
+  - BCn の KTX2 のバンドル (適合テストの `avatar-bc3`・`avatar-lit-bc`) の見え方を、参照の画像 (`ugoe render`) と比べる。
+  - KTX2 を `LoadRawTextureData` で渡すときの行の向き (上下が逆にならないか) と、`Texture2D` の作り方 (RGBA32・`linear: true`) で色が合うか。
+  - T0473 (PNG も C ABI のデコーダで読む) の後なら、`LoadImage` で読んでいたときと見え方が変わらないか (16 ビット・パレットの PNG を含む)。
