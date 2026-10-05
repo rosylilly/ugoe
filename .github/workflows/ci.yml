@@ -420,7 +420,7 @@ jobs:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       - name: Conformance
         run: just conformance
-      # PuppetSurface (packages/player。GPL なので tests/conformance の外) を同じ Chrome と wasm で確かめる (T0936)。
+      # PuppetSurface と Player (packages/player。GPL なので tests/conformance の外) を同じ Chrome と wasm で確かめる (T0936・T0939)。
       # 適合テストが落ちても流す (別のものを確かめるため)
       - name: PuppetSurface in the browser
         if: success() || failure()

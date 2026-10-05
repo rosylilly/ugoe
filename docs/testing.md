@@ -19,7 +19,7 @@
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
-| PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
+| PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
@@ -325,21 +325,43 @@ just conformance --only c   # C ABI だけ
 
 ## PuppetSurface のブラウザのテスト
 
-エディタのビューポートと Player が共有する `PuppetSurface` (`packages/player/src/surface.ts`。[docs/ui.md](ui.md#webpuppet-の寿命)) を、
-本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で確かめます (T0936)。順序の細部は偽の wasm の Vitest
-(`surface.test.ts`) が確かめるので、ここでは本物の GPU と wasm でも通ることを見ます。
+エディタのビューポートと Player が共有する `PuppetSurface` (`packages/player/src/surface.ts`。[docs/ui.md](ui.md#webpuppet-の寿命)) と、
+それを使う `Player` (`player.svelte.ts`) を、本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で確かめます (T0936・T0939)。
+順序の細部は偽の wasm の Vitest (`surface.test.ts`・`player*.test.ts`) が確かめるので、ここでは本物の GPU と wasm でも通ることを見ます。
 
 ```sh
 just player-browser                                    # ugoe-wasm をビルドしてすべてのシナリオ
 just player-browser --no-build --only context-loss-restore   # 前にビルドした wasm で、選んだシナリオだけ
 ```
 
-- **シナリオ:** 作って描いて大きさを変えて捨てる・WebGL2 のコンテキストを失ったら復元を待って新しい canvas で作り直す (2 回続けて)・
-  続けて失って諦め、次の `attach` で作れる・作っている間の `detach` と次の `attach`。どのシナリオの後も、生きている WebPuppet と canvas が
-  残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
-- **置き場所:** `packages/player/browser-test/` (GPL-3.0-only)。テストは GPL の `surface.ts` を JS にして読むので、MIT の `tests/conformance`
-  (と、ライセンスを書いていないのでリポジトリの既定の MIT になる `tests/ui-audit`) には置きません。Chrome の起動は `just ui-audit` と同じ
-  playwright-core (ルートの devDependencies) で、新しい依存は足していません。
+- **シナリオ (`PuppetSurface`):** 作って描いて大きさを変えて捨てる・WebGL2 のコンテキストを失ったら復元を待って新しい canvas で作り直す (2 回続けて)・
+  続けて失って諦め、次の `attach` で作れる・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
+  描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
+  WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
+- **シナリオ (`Player`):** 着せ替えの見本 (`dress-up.ugoe` とモジュール 1 つ) を開いてパラメータを動かし、WebGL2 のコンテキストを失って復元したら、
+  新しい WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描く (`capture` の読み戻しで確かめる。2 回続けて。`player-loss-restore`)。
+  devicePixelRatio だけが変わったら、canvas と読み戻しの大きさが新しい倍率になり、CSS ピクセルで見たビュー (`view`) は動かず、
+  CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
+- **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
+  `setDevicePixelRatio(ratio)` として出します。ヘッドレスの Chrome (154 で確かめた) は倍率の上書きだけではメディアクエリを評価し直さず、
+  `matchMedia` の `matches` は変わっても `change` が届きません (ページの大きさも変えると届く)。そこで上書きのたびに、エミュレートする
+  メディアの型を `""` と `"screen"` (どちらも画面) で交互に切り替えて評価し直させます。届いた `change` で聞き直す (`{once: true}` の後に
+  新しい倍率の問い合わせを作る) 処理と描画バッファの大きさは本物で確かめますが、倍率の違う画面へウィンドウを移したときに本物の
+  ブラウザ (と Tauri の WebView) が `change` を届けることは確かめていません (MDN の `matchMedia` の例にある、ブラウザの振る舞い)。
+- **テストが壊れを見つけること (T0939 で確かめた):** `surface.ts` で、倍率の問い合わせを `attach` で作らない・`change` の後に聞き直さない・
+  `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
+  作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。
+- **エディタの `ViewportController` は対象にしていません (T0939 で決めた):** `PuppetSurface` を通る経路 (作り直しで表示の設定とモデルを渡し直す・
+  諦めたら状態と文を出す・倍率の変化で描き直しを頼む・CSS ピクセルと描画バッファの画素の換算) は Player と同じ形で薄く、本物の wasm で
+  確かめたい部分 (作り直し・倍率・換算) は上の `PuppetSurface` と `Player` のシナリオで通ります。順序は偽の wasm の
+  `apps/editor/src/lib/viewport/controller.test.ts` が確かめます。ブラウザで動かすには、`@ugoe/player` のテストがアプリ (`apps/editor`) の
+  コードを読むか (パッケージからアプリへ向きが逆になる)、エディタの側に同じ仕組みを作り直し、エディタの wasm の読み込み
+  (`import.meta.glob` の `generated/`) と文言のカタログを差し替える必要があり、得られる確かさに比べて手間が大きいためです。
+  エディタが作り直しのまわりに自分の処理を持つようになったら (諦めた後に作り直すボタン (T0938) など)、エディタの側に足すことを考えます。
+- **置き場所:** `packages/player/browser-test/` (GPL-3.0-only)。テストは GPL の `surface.ts`・`player.svelte.ts` を読むので、MIT の
+  `tests/conformance` (と、ライセンスを書いていないのでリポジトリの既定の MIT になる `tests/ui-audit`) には置きません。Chrome の起動は
+  `just ui-audit` と同じ playwright-core (ルートの devDependencies)。`@ugoe/player` を Vite (アプリと同じ版を `@ugoe/player` の
+  devDependencies に入れた) と Svelte のプラグインで 1 つの ES モジュールにまとめて配ります (runes と依存を含むため)。
 - **CI:** `conformance` ジョブ (Chrome と wasm-bindgen-cli が入っている) で、適合テストの後に流します。落ちたときはページのコンソールを
   `target/player-browser/page.log` に残します。
 - WebGPU のデバイスの喪失は、ヘッドレスの Chrome で起こす手段が無いので確かめていません (偽の wasm のテストだけ)。

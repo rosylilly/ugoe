@@ -312,8 +312,8 @@ doc-group name:
 ui-shots out:
     node packages/ui/scripts/shots.mjs {{out}}
 
-# PuppetSurface (packages/player/src/surface.ts) を本物の wasm とヘッドレスの Chrome の WebGL2 で確かめる (packages/player/README.md。T0936):
-# 作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄。wasm をビルドし Chrome が要るので `just ci` には含めない (CI の conformance ジョブで流す)。
+# PuppetSurface (packages/player/src/surface.ts) と Player を本物の wasm とヘッドレスの Chrome の WebGL2 で確かめる (packages/player/README.md。T0936・T0939):
+# 作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従。wasm をビルドし Chrome が要るので `just ci` には含めない (CI の conformance ジョブで流す)。
 # 例: `just player-browser --no-build --only context-loss-restore`
 player-browser *args:
     @node packages/player/browser-test/run.mjs {{args}}

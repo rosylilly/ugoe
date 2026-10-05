@@ -1,18 +1,26 @@
-// PuppetSurface のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936)。
+// PuppetSurface と Player のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936・T0939)。
 //
-// 本物の wasm (/wasm/ugoe_wasm.js) とヘッドレスの Chrome の WebGL2 (SwiftShader) で、PuppetSurface (/surface.js。
-// src/surface.ts を JS にしたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935)・諦め・破棄を確かめる。
-// 順序の細部は src/surface.test.ts が偽の wasm で確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
+// 本物の wasm (/wasm/ugoe_wasm.js) とヘッドレスの Chrome の WebGL2 (SwiftShader) で、PuppetSurface (/player.js。
+// @ugoe/player を Vite でまとめたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935)・諦め・破棄・
+// devicePixelRatio の追従を確かめる。Player は、作り直しでモデル・モジュール・値を戻すことと、倍率が変わったときの
+// ビューと読み戻しを確かめる (`player-*`)。順序の細部は src/surface.test.ts・player*.test.ts が偽の wasm で
+// 確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
 // - `WebPuppet.create` と `free` を包んで、生きている WebPuppet を数える (GPU の資源が残らないことを確かめる)。
 // - 描いたことは、描いた直後に canvas を 2D の canvas に写して、透明でない画素があるかで確かめる (背景は透明)。
 // - コンテキストの喪失と復元は `WEBGL_lose_context` の `loseContext`・`restoreContext` で起こす。
+// - devicePixelRatio だけの変化は、run.mjs が出す `setDevicePixelRatio` (CDP の `Emulation.setDeviceMetricsOverride`) で起こす (T0939)。
 // - `window.runScenarios(names)` が結果 ([{name, ok, error}]) を返す (names が null ならすべて)。
 
-import { GpuLostRepeatedlyError, MAX_RESTARTS, PuppetSurface } from "/surface.js";
+import { GpuLostRepeatedlyError, MAX_RESTARTS, Player, PuppetSurface } from "/player.js";
 import init, { WebPuppet } from "/wasm/ugoe_wasm.js";
 
 const MODEL = "/samples/avatar.ugoe";
+/** 着せ替えの見本 (Player が作り直しでモジュールを付け直すことを確かめる)。 */
+const DRESS_UP = "/samples/dress-up/dress-up.ugoe";
+const DRESS_UP_MODULE = "/samples/dress-up/cat-ears.ugoemod";
+/** Player が覚えるものの localStorage の接頭辞 (シナリオの後に消す)。 */
+const STORAGE_PREFIX = "player-browser-test";
 /** 1 つの待ち (作成・作り直し) の上限 (ミリ秒)。SwiftShader の作成は数秒かかることがある。 */
 const WAIT_MS = 30_000;
 
@@ -62,14 +70,51 @@ async function until(condition, what) {
 /** シナリオが作った PuppetSurface (失敗したシナリオの後にも捨てるため)。 */
 const surfaces = [];
 
-let model = null;
-async function modelBytes() {
-  if (model === null) {
-    const response = await fetch(MODEL);
-    check(response.ok, `GET ${MODEL}: ${response.status}`);
-    model = new Uint8Array(await response.arrayBuffer());
+const files = new Map();
+async function fileBytes(path) {
+  if (!files.has(path)) {
+    const response = await fetch(path);
+    check(response.ok, `GET ${path}: ${response.status}`);
+    files.set(path, new Uint8Array(await response.arrayBuffer()));
   }
-  return model;
+  return files.get(path);
+}
+
+function modelBytes() {
+  return fileBytes(MODEL);
+}
+
+/** シナリオが作った Player (失敗したシナリオの後にも捨てるため)。 */
+const players = [];
+
+/** 本物の wasm で動く Player (ビューア・スタジオと同じ。ファイルの読み直しは使わない)。 */
+function newPlayer() {
+  const player = new Player({
+    loadWasm: async () => ({ WebPuppet }),
+    readFile: () => Promise.reject(new Error("no files")),
+    storagePrefix: STORAGE_PREFIX,
+  });
+  player.resize(160, 120);
+  players.push(player);
+  return player;
+}
+
+/** `player.capture()` (`read_pixels`) の透明でない画素の割合 (背景を透明にして呼ぶ)。 */
+async function capturedFraction(player) {
+  const shot = await player.capture();
+  check(shot !== null, "capture returned null");
+  let opaque = 0;
+  for (let i = 3; i < shot.pixels.length; i += 4) if (shot.pixels[i] > 0) opaque++;
+  return { shot, fraction: opaque / (shot.width * shot.height) };
+}
+
+async function expectCaptured(player, when) {
+  const { fraction } = await capturedFraction(player);
+  check(fraction > 0.01, `${when}: the capture is empty (${(fraction * 100).toFixed(2)}% drawn)`);
+}
+
+function near(a, b, epsilon = 1e-3) {
+  return Math.abs(a - b) <= epsilon * Math.max(1, Math.abs(a), Math.abs(b));
 }
 
 /** 描く領域 (PuppetSurface の container) を作る。 */
@@ -86,7 +131,7 @@ function stage() {
  */
 async function surfaceWithHost() {
   const bytes = await modelBytes();
-  const log = { created: [], failed: [], lost: 0, released: 0 };
+  const log = { created: [], failed: [], lost: 0, released: 0, pixelRatioChanged: 0 };
   const surface = new PuppetSurface({
     loadWasm: async () => ({ WebPuppet }),
     created(puppet, recovered) {
@@ -103,6 +148,9 @@ async function surfaceWithHost() {
     },
     released() {
       log.released++;
+    },
+    pixelRatioChanged() {
+      log.pixelRatioChanged++;
     },
     canvasClass: "surface",
   });
@@ -133,6 +181,27 @@ function expectDrawn(surface, container, when) {
 
 function canvasesIn(container) {
   return [...container.querySelectorAll("canvas")];
+}
+
+/** devicePixelRatio を変える (run.mjs の CDP)。ページに届くまで待つ。 */
+async function setPixelRatio(ratio) {
+  await window.setDevicePixelRatio(ratio);
+  await until(() => devicePixelRatio === ratio, `devicePixelRatio ${ratio}`);
+}
+
+/** WebPuppet と canvas の描画バッファが、CSS の大きさ × `ratio` になっている。 */
+function expectBufferSize(surface, container, [width, height], ratio, when) {
+  const expected = [Math.round(width * ratio), Math.round(height * ratio)];
+  const puppet = [surface.puppet.width(), surface.puppet.height()];
+  const canvas = canvasesIn(container)[0];
+  check(
+    puppet[0] === expected[0] && puppet[1] === expected[1],
+    `${when}: the puppet is ${puppet.join("x")}, expected ${expected.join("x")}`,
+  );
+  check(
+    canvas.width === expected[0] && canvas.height === expected[1],
+    `${when}: the canvas is ${canvas.width}x${canvas.height}, expected ${expected.join("x")}`,
+  );
 }
 
 /** 今の canvas の WebGL2 のコンテキストを失わせる。復元に使う拡張を返す (失った後は取り直せない)。 */
@@ -199,6 +268,46 @@ const scenarios = {
     check(canvasesIn(container).length === 0, "the canvas remains after detach");
     check(log.released === 1, `released was called ${log.released} times`);
     check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+  },
+
+  /**
+   * devicePixelRatio だけが変わったら (ResizeObserver は知らせない)、`matchMedia` の `change` で描画バッファを新しい倍率に
+   * 合わせ直して `pixelRatioChanged` を知らせる。続けて変わっても追い、`detach` の後は聞かない (T0939)。
+   */
+  async "pixel-ratio-change"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    try {
+      check((await surface.attach(container)) === "ready", "attach failed");
+      check(surface.pixelRatio === 1, `the initial ratio is ${surface.pixelRatio}`);
+      expectBufferSize(surface, container, [160, 120], 1, "after attach");
+      let changes = 0;
+      for (const ratio of [2, 1.5, 1]) {
+        await setPixelRatio(ratio);
+        changes++;
+        await until(
+          () => log.pixelRatioChanged === changes,
+          `pixelRatioChanged after devicePixelRatio became ${ratio}`,
+        );
+        check(surface.pixelRatio === ratio, `ratio ${ratio}: pixelRatio is ${surface.pixelRatio}`);
+        expectBufferSize(surface, container, [160, 120], ratio, `ratio ${ratio}`);
+        expectDrawn(surface, container, `ratio ${ratio}`);
+      }
+      // 大きさが変わったときも今の倍率で合わせる
+      await setPixelRatio(2);
+      await until(() => log.pixelRatioChanged === 4, "pixelRatioChanged after the 4th change");
+      surface.resize(100, 50);
+      expectBufferSize(surface, container, [100, 50], 2, "resize at ratio 2");
+      check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+      check(log.created.length === 1, `created was called ${log.created.length} times`);
+
+      surface.detach();
+      await setPixelRatio(1);
+      await frames(3);
+      check(log.pixelRatioChanged === 4, "pixelRatioChanged was called after detach");
+    } finally {
+      await setPixelRatio(1);
+    }
   },
 
   /** WebGL2 のコンテキストを失ったら復元を待ち、復元されたら新しい canvas で作り直して描く (2 回続けて)。 */
@@ -273,6 +382,121 @@ const scenarios = {
     check(log.created.length === 1, `created was called ${log.created.length} times`);
     surface.detach();
   },
+
+  /**
+   * Player (player.svelte.ts) が WebGL2 のコンテキストを失ったら、新しい canvas の WebPuppet でモデルを読み直し、
+   * 付けていたモジュールを付け直し、パラメータの値を戻して描く (T0939)。
+   */
+  async "player-loss-restore"() {
+    const container = stage();
+    const player = newPlayer();
+    // 時間で動くもの (待機モーション・目パチ) を止めて、戻した値を比べられるようにする
+    player.setAutoIdle(false);
+    player.setAutoEyeBlink(false);
+    player.setBackground("#000000", true);
+    await player.attach(container);
+    check(player.status === "empty", `status after attach is ${player.status}`);
+    check(player.backend === "webgl2", `backend is ${player.backend}`);
+    const module = { name: "cat-ears.ugoemod", bytes: await fileBytes(DRESS_UP_MODULE) };
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) }, [
+      { file: module, attach: true },
+    ]);
+    check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+    const attached = () => player.modules.filter((m) => m.attached).map((m) => m.name);
+    check(attached().length === 1, `attached modules: ${attached().join(", ")}`);
+    const moduleName = attached()[0];
+    player.setParameter("MouthForm", 0.7);
+    await frames(2);
+    check(near(player.values.MouthForm, 0.7), `MouthForm is ${player.values.MouthForm}`);
+    await expectCaptured(player, "after load");
+
+    for (let round = 1; round <= 2; round++) {
+      const oldCanvas = canvasesIn(container)[0];
+      const ext = await loseContext(container);
+      await frames(3);
+      // 復元を待っている間は作り直さない
+      check(canvasesIn(container)[0] === oldCanvas, `round ${round}: recreated before the restore`);
+      ext.restoreContext();
+      await until(() => {
+        const canvases = canvasesIn(container);
+        return (
+          (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
+          player.status === "unavailable"
+        );
+      }, `round ${round}: the recreation of the player`);
+      check(player.status === "ready", `round ${round}: status ${player.status} (${player.error})`);
+      check(player.error === null, `round ${round}: error ${player.error}`);
+      check(player.modelName === "dress-up.ugoe", `round ${round}: model ${player.modelName}`);
+      check(
+        attached().length === 1 && attached()[0] === moduleName,
+        `round ${round}: attached modules: ${attached().join(", ")}`,
+      );
+      await frames(2);
+      check(
+        near(player.values.MouthForm, 0.7),
+        `round ${round}: MouthForm is ${player.values.MouthForm} after the recreation`,
+      );
+      check(live.size === 1, `round ${round}: ${live.size} live puppets`);
+      await expectCaptured(player, `round ${round}`);
+    }
+    player.detach();
+    check(canvasesIn(container).length === 0, "the canvas remains after detach");
+  },
+
+  /**
+   * devicePixelRatio だけが変わったら、Player の描画バッファは新しい倍率になり、CSS ピクセルで見たビュー (`view`) と
+   * 読み戻す画像の大きさが合う (T0939)。
+   */
+  async "player-pixel-ratio"() {
+    const container = stage();
+    const player = newPlayer();
+    try {
+      await player.attach(container);
+      await player.load({ name: "avatar.ugoe", bytes: await modelBytes() });
+      check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+      const before = player.view;
+      check(before !== null, "no view after load");
+      for (const ratio of [2, 1.5]) {
+        await setPixelRatio(ratio);
+        await until(() => {
+          const canvas = canvasesIn(container)[0];
+          return canvas?.width === Math.round(160 * ratio);
+        }, `the canvas at ratio ${ratio}`);
+        const canvas = canvasesIn(container)[0];
+        check(
+          canvas.height === Math.round(120 * ratio),
+          `ratio ${ratio}: the canvas is ${canvas.width}x${canvas.height}`,
+        );
+        const view = player.view;
+        check(
+          view !== null &&
+            near(view.scale, before.scale) &&
+            near(view.x, before.x) &&
+            near(view.y, before.y),
+          `ratio ${ratio}: the view moved from ${JSON.stringify(before)} to ${JSON.stringify(view)}`,
+        );
+        const { shot } = await capturedFraction(player);
+        check(
+          shot.width === canvas.width && shot.height === canvas.height,
+          `ratio ${ratio}: the capture is ${shot.width}x${shot.height}`,
+        );
+        // CSS ピクセルの点を中心にズームしても、その点にあるキャンバスの点は動かない (換算に今の倍率を使う)
+        const [x, y] = [40, 30];
+        const anchor = [(x - view.x) / view.scale, (y - view.y) / view.scale];
+        player.zoomBy(2, x, y);
+        const zoomed = player.view;
+        const moved = [zoomed.x + zoomed.scale * anchor[0], zoomed.y + zoomed.scale * anchor[1]];
+        check(
+          near(zoomed.scale, view.scale * 2) && near(moved[0], x) && near(moved[1], y),
+          `ratio ${ratio}: zooming at (${x}, ${y}) moved the point to (${moved.join(", ")})`,
+        );
+        player.fit();
+      }
+      player.detach();
+    } finally {
+      await setPixelRatio(1);
+    }
+  },
 };
 
 window.runScenarios = async (names) => {
@@ -290,6 +514,11 @@ window.runScenarios = async (names) => {
     } finally {
       onCreating = null;
       for (const surface of surfaces.splice(0)) surface.detach();
+      for (const player of players.splice(0)) player.detach();
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(STORAGE_PREFIX)) localStorage.removeItem(key);
+      }
       for (const puppet of live) puppet.free();
       document.body.replaceChildren();
     }
