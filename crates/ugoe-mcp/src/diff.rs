@@ -1,4 +1,5 @@
 //! 提案の前後の差分: 種類ごとに、加わった・消えた・変わった要素の ID と、並びが変わったか。
+//! PSD のレイヤーの分類の直し (`layer_corrections`) も、レイヤーのパスを要素として比べる。
 //! エージェント (と承認する人) が、提案で何が変わるかを確かめるためのもの。
 
 use std::collections::BTreeMap;
@@ -77,6 +78,11 @@ fn collect(doc: &Document) -> Elements {
     whole.insert("effects".to_owned(), to_json(&model.effects));
     whole.insert("avatar".to_owned(), to_json(&model.avatar));
     whole.insert("physics".to_owned(), to_json(&doc.physics()));
+    // PSD のレイヤーの分類の直し (モデルの外だが、提案に添えて承認を経て残る。T0570)。レイヤーのパスを ` / ` でつなぐ。
+    let corrections = out.entry("layer_corrections").or_default();
+    for (path, correction) in doc.layer_corrections().iter() {
+        corrections.insert(path.join(" / "), to_json(correction));
+    }
     out
 }
 
@@ -145,7 +151,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use ugoe_editor_core::texture::solid_png;
-    use ugoe_editor_core::{Command, Textures};
+    use ugoe_editor_core::{Command, LayerCorrection, LayerSide, Textures};
     use ugoe_model::fixtures;
 
     use super::*;
@@ -178,6 +184,40 @@ mod tests {
             json!({ "meshes": { "reordered": true } })
         );
         assert_eq!(diff(&before, &before), json!({}));
+    }
+
+    #[test]
+    fn layer_corrections_show_in_the_diff() {
+        let before = with_white(fixtures::single_quad());
+        let correction = |side| {
+            Some(LayerCorrection {
+                label: "eye_white".into(),
+                side,
+            })
+        };
+        let path = vec!["Face".to_owned(), "Eye L".to_owned()];
+        let after = edited(
+            &before,
+            Command::SetLayerCorrection {
+                path: path.clone(),
+                correction: correction(LayerSide::Left),
+            },
+        );
+        assert_eq!(
+            diff(&before, &after),
+            json!({ "layer_corrections": { "added": ["Face / Eye L"] } })
+        );
+        let changed = edited(
+            &after,
+            Command::SetLayerCorrection {
+                path,
+                correction: correction(LayerSide::Right),
+            },
+        );
+        assert_eq!(
+            diff(&after, &changed),
+            json!({ "layer_corrections": { "changed": ["Face / Eye L"] } })
+        );
     }
 
     #[test]

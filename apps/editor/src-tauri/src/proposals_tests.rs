@@ -1220,6 +1220,100 @@ fn the_classification_is_restored_when_the_project_is_reopened() {
     assert!(session.proposals.classification.is_none());
 }
 
+/// T0570: つないだエージェントの提案に添えた分類の直し (`set_layer_correction`) は、採用するとドキュメントの直しになり、
+/// 保存して開き直しても分類の一覧に「直した」として戻る (エージェントの答えはエディタのキャッシュには書かない)。
+#[test]
+fn an_agent_proposal_keeps_its_labels_after_reopening() {
+    use crate::project::ProjectSession;
+    use ugoe_editor_core::Project;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("bustup.ugoeproj");
+    let psd = dir.join("sources").join("bustup.psd");
+    let state = state(None);
+    let (bytes, options) =
+        crate::psd::read_psd(&bustup_path().display().to_string(), None).unwrap();
+    let (session, document, _) = crate::project::from_psd(&bytes, &options).unwrap();
+    *state.document.lock().unwrap() = document;
+    *state.project.lock().unwrap() = session;
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session.save_to(&mut document, dir.clone()).unwrap();
+    }
+    std::fs::create_dir_all(psd.parent().unwrap()).unwrap();
+    std::fs::copy(bustup_path(), &psd).unwrap();
+    let classified =
+        done(classify_in(&state, Some(psd.display().to_string()), false, None).unwrap());
+    let eye = classified
+        .layers
+        .iter()
+        .position(|l| l.path.last().unwrap() == "eyewhite-r")
+        .unwrap();
+    assert_eq!(classified.layers[eye].side, "right");
+
+    // MCP のエージェントが置いた提案 (`Change::Proposed` と同じく出どころを記す)。
+    let id = {
+        let document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        let proposals = session.lend().1;
+        let view = proposals
+            .add(
+                &document,
+                "rig",
+                "",
+                vec![
+                    Command::SetLayerCorrection {
+                        path: classified.layers[eye].path.clone(),
+                        correction: Some(LayerCorrection {
+                            label: "eye_white".into(),
+                            side: LayerSide::Left,
+                        }),
+                    },
+                    Command::SetLighting { enabled: true },
+                ],
+            )
+            .unwrap();
+        proposals.set_source(view.id, "agent");
+        view.id
+    };
+    adopt_in(&state, id, &[]).unwrap();
+    let layer = |session: &ProjectSession, document: &Document| {
+        session
+            .proposals
+            .state(document)
+            .classification
+            .unwrap()
+            .layers[eye]
+            .clone()
+    };
+    {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        let adopted = layer(&session, &document);
+        assert!(adopted.corrected);
+        assert_eq!(adopted.side, "left");
+    }
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session.save_to(&mut document, dir.clone()).unwrap();
+    }
+
+    let (project, disk) = Project::load_tracked(&dir).unwrap();
+    let (session, document) = ProjectSession::from_project(project, Some((dir.clone(), disk)));
+    let reopened = layer(&session, &document);
+    assert!(reopened.corrected);
+    assert_eq!(
+        (reopened.label.as_str(), reopened.side.as_str()),
+        ("eye_white", "left")
+    );
+    assert!(document.model().lighting);
+    // 一覧の答え (キャッシュ) は名前の規則のまま (直しはその上に重ねる)。
+    let cached = session.proposals.cache().unwrap();
+    assert_eq!(cached.layers[eye].side, Side::Right);
+}
+
 /// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、
 /// 1 回の Undo で戻る (T0520)。
 #[test]

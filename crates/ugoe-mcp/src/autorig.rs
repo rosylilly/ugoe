@@ -21,6 +21,9 @@
 //! 同じ PSD (識別が合うもの) を読むときに名前の規則の案の代わりに使い、PSD を渡されていなければそのキャッシュの PSD を読む
 //! (書くのはエディタだけ。`docs/ai-integration.md#エージェントに任せる自動リギング`)。
 //!
+//! エージェントの分類はサーバのメモリにだけ持つ。`propose_rig`・`propose_module_rig` は、エージェントが決めたレイヤーの分類を
+//! 分類の直し (`Command::SetLayerCorrection`) としてリグの提案の先頭に添え、利用者が承認すると `project.json` に残る (T0570)。
+//!
 //! 提案の適用は `apply_proposal` (利用者の確認を通す。ADR 0006)。画像の大きさと 1 回に返す枚数は、
 //! API で分類するときと同じ上限 (`ClassifyOptions` の既定値) に合わせる。
 
@@ -33,8 +36,8 @@ use serde_json::{Value, json};
 use ugoe_ai::AiError;
 use ugoe_ai::classify::{
     ClassifyOptions, Label, LayerLabel, apply_answer, cached_labels, classification_instructions,
-    classify_by_name, corrected_labels, correction_label, layer_thumbnail_png, layers,
-    mark_name_disagreements, output_schema, overview_png,
+    classify_by_name, corrected_labels, correction_label, label_correction, layer_thumbnail_png,
+    layers, mark_name_disagreements, output_schema, overview_png,
 };
 use ugoe_ai::module_rig::{
     FollowMode, ModuleRigGuidance, ModuleRigOptions, ModuleRigParams, module_mesh_parts,
@@ -48,7 +51,9 @@ use ugoe_ai::rig::{
 use ugoe_editor_core::classification_cache::{CachedClassification, read_classification_cache};
 use ugoe_editor_core::import::{layer_tree_command, read_layer_tree};
 use ugoe_editor_core::message::MessageArgs;
-use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions, message_args};
+use ugoe_editor_core::{
+    Coded, Command, Document, Project, ProjectMeta, PsdImportOptions, message_args,
+};
 use ugoe_fs::read_regular_file;
 use ugoe_model::SlotId;
 use ugoe_psd::{ImportLimits, LayerTree, MAX_PSD_FILE_BYTES};
@@ -69,6 +74,11 @@ const USE_MODULE_RIG: &str = "this is a module project, which cannot add paramet
 /// モジュールのプロジェクトでないときにモジュールのリグのツールを呼んだときの断りの文 (`mcp.not_a_module`)。
 const NOT_A_MODULE: &str = "this is not a module project: use get_rig_guide and propose_rig, or \
                             create a module project with import_psd and `base` and `slot`";
+
+/// `propose_rig`・`propose_module_rig` の `keep_labels` の説明。
+const KEEP_LABELS: &str = "エージェントが set_layer_labels で決めた分類 (利用者が直していないレイヤー) を、分類の直し \
+                           (set_layer_correction) として提案の先頭に添える (既定 true)。承認されるとプロジェクトに残り、\
+                           開き直しても set_by=user で戻る。外すコマンドの番号は結果の label_commands";
 
 /// `get_psd_layers` が既定で 1 回に返すレイヤーの数。上限 (`ClassifyOptions::max_layers_per_request`) より
 /// 小さくする: MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で
@@ -263,6 +273,8 @@ pub(crate) struct RigArgs {
     /// `rig_output_schema` の形 (ugoe-ai が読む)。省略すると既定値。
     params: Option<Value>,
     title: Option<String>,
+    /// エージェントが決めた分類を、分類の直しとして提案に添える (既定 true)。
+    keep_labels: Option<bool>,
 }
 
 /// `propose_module_rig` の引数。
@@ -277,6 +289,8 @@ pub(crate) struct ModuleRigArgs {
     colliders: Option<bool>,
     poses: Option<bool>,
     title: Option<String>,
+    /// エージェントが決めた分類を、分類の直しとして提案に添える (既定 true)。
+    keep_labels: Option<bool>,
 }
 
 /// `import_psd` の引数。
@@ -397,7 +411,9 @@ pub(crate) fn tools() -> Vec<Value> {
              確からしい答えと食い違うレイヤー (name_disagreements。左右の取り違えは目の開閉などを入れ替える) \
              ・リグを組めるか (rig.ready)。左右はキャラクター自身の左右 (正面を向いたキャラクターの左目は画像の右側)。\
              利用者がエディタで直したレイヤー (get_psd_layers の set_by=user) は上書きしない (答えは覚えるが \
-             直しが優先し、その番号を kept_corrections に返す。reset でも直しは消えない)。",
+             直しが優先し、その番号を kept_corrections に返す。reset でも直しは消えない)。\
+             答えはサーバのメモリにだけ持つ。propose_rig・propose_module_rig が分類の直しとして提案に添え、\
+             利用者が承認するとプロジェクトに残る (リグなしで残す・直すなら propose_edit で set_layer_correction)。",
             object_schema(
                 json!({
                     "path": path_property(),
@@ -425,12 +441,14 @@ pub(crate) fn tools() -> Vec<Value> {
             "今の分類とテンプレートでリグ (AngleX/Y/Z・EyeL/ROpen・MouthOpenY) を組む提案を作る。\
              モデルは変えない (複製に適用して検証し、差分とコマンドの要約を返す)。値が範囲の外か、\
              組んだリグが検証を通らなければエラーを返すので、直して呼び直す。成功したら提案の ID を \
-             返すので、ユーザーの承認を得てから apply_proposal で適用し、render_png で確かめる。",
+             返すので、ユーザーの承認を得てから apply_proposal で適用し、render_png で確かめる。\
+             エージェントが決めた分類は分類の直しとして提案の先頭に添える (keep_labels)。",
             object_schema(
                 json!({
                     "path": path_property(),
                     "params": params,
                     "title": { "type": "string", "description": "提案の題 (既定はテンプレートの題)" },
+                    "keep_labels": { "type": "boolean", "description": KEEP_LABELS },
                 }),
                 &["path"],
                 None,
@@ -455,7 +473,8 @@ pub(crate) fn tools() -> Vec<Value> {
              耳飾り・首の飾り・下の服) を物理で揺らしてスロットが公開する本体の衝突体に当て、衣装の差分 \
              (set_layer_labels の variant_sets の組・名前の末尾の A / B・PSD で片方を隠した重なる絵) を \
              ポーズにする。モデルは変えない。値が範囲の外か、組んだリグが検証を通らなければエラーを返すので、\
-             直して呼び直す。成功したら提案の ID を返すので、ユーザーの承認を得てから apply_proposal で適用する。",
+             直して呼び直す。成功したら提案の ID を返すので、ユーザーの承認を得てから apply_proposal で適用する。\
+             エージェントが決めた分類は分類の直しとして提案の先頭に添える (keep_labels)。",
             object_schema(
                 json!({
                     "path": path_property(),
@@ -468,6 +487,7 @@ pub(crate) fn tools() -> Vec<Value> {
                     "colliders": { "type": "boolean", "description": "揺れをスロットが公開する本体の衝突体に当てる (既定 true)" },
                     "poses": { "type": "boolean", "description": "衣装の差分をポーズにする (既定 true)" },
                     "title": { "type": "string", "description": "提案の題 (既定はテンプレートの題)" },
+                    "keep_labels": { "type": "boolean", "description": KEEP_LABELS },
                 }),
                 &["path"],
                 None,
@@ -935,6 +955,42 @@ fn labels_note(effective: &Labels) -> String {
     }
 }
 
+/// リグの提案に添える分類の直し: エージェントが決めたレイヤーのうち、利用者が直していないものの今の分類 (T0570)。
+/// 利用者が承認すると `project.json` の `editor.classification` に残り、開き直しても戻る。`keep` が偽なら添えない。
+/// 直したレイヤーはリグが直しで組まれているので、エージェントの答えで上書きしない。
+fn kept_labels(source: &PsdSource, effective: &Labels, keep: Option<bool>) -> Vec<Command> {
+    if !keep.unwrap_or(true) {
+        return Vec::new();
+    }
+    source
+        .by_agent
+        .iter()
+        .filter(|i| !effective.corrected.contains(i))
+        .filter_map(|&i| effective.labels.get(i))
+        .map(|label| Command::SetLayerCorrection {
+            path: label.layer_path.clone(),
+            correction: Some(label_correction(label)),
+        })
+        .collect()
+}
+
+/// 提案の理由に書く、添えた分類の直しの数。
+fn kept_note(kept: usize) -> String {
+    match kept {
+        0 => String::new(),
+        n => format!(
+            "; commands 0-{} keep the agent's labels of {n} layer(s) in the project \
+             (exclude them to adopt only the rig)",
+            n - 1
+        ),
+    }
+}
+
+/// 添えた分類の直しのコマンドの番号 (提案の先頭から)。
+fn label_commands(kept: usize) -> Vec<usize> {
+    (0..kept).collect()
+}
+
 /// 差分の組 (レイヤーの番号の組。組の番号の順)。
 fn variant_sets(labels: &[LayerLabel]) -> Vec<Vec<usize>> {
     let mut sets: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
@@ -997,6 +1053,7 @@ pub(crate) fn propose_rig(
     };
     let effective = source.labels_for(doc);
     let parts = mesh_parts(model, &effective.labels);
+    let kept = kept_labels(source, &effective, args.keep_labels);
     let proposal = template_rig(doc, &parts, &params, &RigOptions::default()).map_err(|e| {
         rig_failed(format!(
             "the rig could not be built: {}; fix it and call propose_rig again",
@@ -1014,7 +1071,11 @@ pub(crate) fn propose_rig(
         Some(reason) => format!("Values chosen by the agent: {values} ({reason})"),
         None => format!("Default values: {values}"),
     };
-    let labels = format!("Labels: {}", labels_note(&effective));
+    let labels = format!(
+        "Labels: {}{}",
+        labels_note(&effective),
+        kept_note(kept.len())
+    );
     let title = args.title.unwrap_or_else(|| {
         format!(
             "{} — {}",
@@ -1029,8 +1090,8 @@ pub(crate) fn propose_rig(
     Ok(Draft {
         title,
         rationale: format!("{head}\n{labels}\n{}", proposal.rationale),
-        commands: proposal.commands,
-        extra: json!({ "params": params }),
+        extra: json!({ "params": params, "label_commands": label_commands(kept.len()) }),
+        commands: kept.into_iter().chain(proposal.commands).collect(),
     })
 }
 
@@ -1100,6 +1161,7 @@ pub(crate) fn propose_module_rig(
     };
     let effective = source.labels_for(doc);
     let parts = module_mesh_parts(doc, &effective.labels);
+    let kept = kept_labels(source, &effective, args.keep_labels);
     let proposal = template_module_rig(doc, &parts, &params, &options).map_err(|e| {
         rig_failed(format!(
             "the module rig could not be built: {}; fix it and call propose_module_rig again",
@@ -1115,9 +1177,10 @@ pub(crate) fn propose_module_rig(
         None => format!("Default values: {values}"),
     };
     let labels = format!(
-        "Labels: {}; {} variant set(s)",
+        "Labels: {}; {} variant set(s){}",
         labels_note(&effective),
-        variant_sets(&effective.labels).len()
+        variant_sets(&effective.labels).len(),
+        kept_note(kept.len())
     );
     let title = args.title.unwrap_or_else(|| {
         format!(
@@ -1133,8 +1196,12 @@ pub(crate) fn propose_module_rig(
     Ok(Draft {
         title,
         rationale: format!("{head}\n{labels}\n{}", proposal.rationale),
-        commands: proposal.commands,
-        extra: json!({ "params": params, "options": options }),
+        extra: json!({
+            "params": params,
+            "options": options,
+            "label_commands": label_commands(kept.len()),
+        }),
+        commands: kept.into_iter().chain(proposal.commands).collect(),
     })
 }
 

@@ -305,3 +305,40 @@ fn normal_map_commands_name_their_texture() {
     let subjects: Vec<Option<&str>> = view.commands.iter().map(|c| c.subject.as_deref()).collect();
     assert_eq!(subjects, [Some(texture.as_str()), None]);
 }
+
+/// T0570: 分類の直しを添えた提案は採用でき (直しもモデルの編集と同じ 1 回の Undo で戻る)、一覧の対象はレイヤーのパス。
+#[test]
+fn proposals_can_carry_layer_corrections() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let path = vec!["Face".to_owned(), "Eye L".to_owned()];
+    let commands = vec![
+        Command::SetLayerCorrection {
+            path: path.clone(),
+            correction: Some(crate::LayerCorrection {
+                label: "eye_white".into(),
+                side: crate::LayerSide::Left,
+            }),
+        },
+        Command::SetLighting { enabled: true },
+    ];
+    let mut proposals = Proposals::new();
+    let view = proposals.add(&doc, "rig", "", commands).unwrap();
+    let subjects: Vec<Option<&str>> = view.commands.iter().map(|c| c.subject.as_deref()).collect();
+    assert_eq!(subjects, [Some("Face / Eye L"), None]);
+    assert!(view.commands.iter().all(|c| c.requires.is_empty()));
+    // プレビューは元のドキュメントの直しを変えない。
+    let (preview, _) = proposals.preview(&doc, view.id, &[]).unwrap();
+    assert!(preview.layer_corrections().get(&path).is_some());
+    assert!(doc.layer_corrections().is_empty());
+
+    proposals.adopt(&mut doc, view.id, &[]).unwrap();
+    assert!(doc.layer_corrections().get(&path).is_some());
+    assert!(doc.model().lighting);
+    assert!(doc.undo());
+    assert!(doc.layer_corrections().is_empty());
+    assert!(!doc.model().lighting);
+    // 直しを外して採用すれば、モデルの編集だけが入る。
+    proposals.adopt(&mut doc, view.id, &[0]).unwrap();
+    assert!(doc.layer_corrections().is_empty());
+    assert!(doc.model().lighting);
+}

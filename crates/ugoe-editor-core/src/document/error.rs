@@ -182,7 +182,7 @@ pub enum EditError {
     )]
     ConflictingTexture { id: String },
     /// 分類の直し (`Command::SetLayerCorrection`) が正しくない (空のパス・形の違うラベル・数の上限など。
-    /// `docs/editor.md#分類の直し`)。`Batch` の中で使ったときも。
+    /// `docs/editor.md#分類の直し`)。
     #[error("layer correction: {reason}")]
     InvalidLayerCorrection { reason: String },
 }

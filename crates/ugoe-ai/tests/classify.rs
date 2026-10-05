@@ -20,7 +20,8 @@ use ugoe_ai::classify::{
     ClassifyGuidance, ClassifyOptions, Label, LayerLabel, NameDisagreement, Side, apply_answer,
     cached_labels, classification_instructions, classification_requests,
     classification_requests_guided, classify_by_name, classify_layers, classify_layers_guided,
-    layer_thumbnail_png, layers, mark_name_disagreements, output_schema,
+    correction_label, label_correction, layer_thumbnail_png, layers, mark_name_disagreements,
+    output_schema,
 };
 use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
@@ -819,5 +820,23 @@ fn cached_labels_must_fit_the_psd() {
         let mut odd = saved.clone();
         odd[2].confidence = confidence;
         assert!(cached_labels(&tree, odd).is_none(), "{confidence}");
+    }
+}
+
+/// 分類の答えを直しにしたもの (`label_correction`) は、重ねると同じラベルと左右に戻る (T0570)。
+#[test]
+fn a_label_turns_into_a_correction_and_back() {
+    for label in Label::ALL {
+        for side in Side::ALL {
+            let layer = LayerLabel {
+                label,
+                side,
+                ..classify_by_name(&small_tree())[0].clone()
+            };
+            assert_eq!(
+                correction_label(&label_correction(&layer)),
+                Some((label, side))
+            );
+        }
     }
 }

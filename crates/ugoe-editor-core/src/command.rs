@@ -782,7 +782,8 @@ pub enum Command {
     /// PSD のレイヤー `path` (外側のグループから順に、最後がレイヤー自身の名前) の分類を利用者の答え `correction`
     /// (ラベルと左右) にする。`null` なら直しを消し、分類の答えに戻す。モデルは変えず、`project.json` の
     /// `editor.classification` に残す。ラベルは小文字の英数字と `_` (語彙にないものはエディタが重ねない)。
-    /// 同じ値なら何もしない。`Batch` の中では使えない。
+    /// 同じ値なら何もしない。`Batch` の中でも使える (エージェントの提案に分類の直しを添える。直しもその `Batch` と同じ
+    /// Undo の単位になる)。
     SetLayerCorrection {
         path: Vec<String>,
         correction: Option<LayerCorrection>,

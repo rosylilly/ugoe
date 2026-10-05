@@ -341,7 +341,8 @@ fn strings<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
 }
 
 /// 一覧に出す対象: `id`、`{kind, id}` の形の `target` / `element`、要素そのもの (`parameter` など) の `id`、
-/// テクスチャの名前 (`texture` が文字列のもの。`set_normal_map` など)、`name` の順に探す。
+/// テクスチャの名前 (`texture` が文字列のもの。`set_normal_map` など)、レイヤーのパス (`path`。`set_layer_correction`。
+/// 名前を ` / ` でつなぐ)、`name` の順に探す。
 fn subject(json: &Value) -> Option<String> {
     let str_at = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::to_owned);
     if let Some(id) = str_at(json, "id") {
@@ -371,6 +372,10 @@ fn subject(json: &Value) -> Option<String> {
     }
     if let Some(texture) = str_at(json, "texture") {
         return Some(texture);
+    }
+    if let Some(path) = json.get("path").and_then(Value::as_array) {
+        let names: Vec<&str> = path.iter().filter_map(Value::as_str).collect();
+        return Some(names.join(" / "));
     }
     str_at(json, "name").filter(|n| !n.is_empty())
 }

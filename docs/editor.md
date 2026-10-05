@@ -1817,7 +1817,10 @@ AI タブの分類の確認の一覧で、レイヤーのラベル・左右を�
   「Looks right」で今の答えをそのまま利用者の答えにします。直した行は「checked by you」と出し、「Reset」で直しを消して分類の答えに戻します。
 - **コマンド:** どれも `set_layer_correction { path, correction }` (`correction` は `{ label, side }` か、消すなら `null`) を 1 つ送り、
   **1 回の Undo で戻ります**。直しは `Document` のスナップショット (`LayerCorrections`) に入り、モデルは変えません (検証もしない)。
-  同じ値なら何もしません (Undo を積まない)。`batch` の中では使えません (`edit.invalid_layer_correction`)。
+  同じ値なら何もしません (Undo を積まない)。`batch` の中でも使え、その `batch` と同じ 1 回の Undo で戻ります (T0570)。
+  - **エージェントの提案から:** MCP でつないだエージェントのリグの提案は、エージェントが決めた分類をこのコマンドとして先頭に添えます
+    ([ai-integration.md#エージェントに任せる自動リギング](ai-integration.md#エージェントに任せる自動リギング))。採用すると利用者の直しと同じ
+    直しになり (一覧で「checked by you」)、外して採用すればリグだけが入ります。提案の一覧ではレイヤーのパスを ` / ` でつないで対象に出します。
   - 受け付ける形: パスは 1〜64 段で、名前は 1024 文字まで。ラベルは 1〜64 バイトの小文字の英数字と `_`。直しは 65536 件まで。
     外れれば `edit.invalid_layer_correction` で拒み、何も変えません。ラベルの語彙は ugoe-editor-core は知らない (`ugoe-ai` に依存しない) ので、
     語彙にないラベルの直しは受け付けますが、重ねる側 (エディタ) が無視します。
@@ -2243,7 +2246,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `module.*` (モジュールのプロジェクトで作業用のモデルを作り直せない。`EditError::Module`) | 中の `ModuleError` のコードと引数 (下の「プロジェクト・モジュール」の表。本体の要素の編集は `edit.read_only_base`、モジュールとして表せないものは `edit.module_shape`、モジュールでないものは `edit.not_module`) |
 | `edit.texture_too_large` (テクスチャ・法線マップの追加・差し替えとメッシュの作り直しで、画像の一辺がデコードの上限を超える。`texture` は法線マップならその画像の名前) | `texture`・`width`・`height`・`max` (画素) |
 | `edit.conflicting_texture` (`set_mesh_properties` でテクスチャを `texture_name` と非推奨の `texture` の両方で指定した) | `id` (メッシュ) |
-| `edit.invalid_layer_correction` (分類の直し `set_layer_correction` が正しくない・`batch` の中で使った。[分類の直し](#分類の直し)) | `reason` |
+| `edit.invalid_layer_correction` (分類の直し `set_layer_correction` が正しくない。[分類の直し](#分類の直し)) | `reason` |
 
 **キーフォームのセル (`CellError`)**
 

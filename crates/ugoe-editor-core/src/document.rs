@@ -272,6 +272,7 @@ impl Document {
                 &mut Vec::new(),
                 &mut Vec::new(),
                 &mut next.physics,
+                &mut next.corrections,
             )
             .is_ok();
             if !ok {
@@ -355,6 +356,7 @@ impl Document {
             &mut touched,
             &mut mirrored,
             &mut next.physics,
+            &mut next.corrections,
         )?;
         cleanup::forget_removed(
             &self.current.model,
@@ -421,15 +423,12 @@ impl Document {
         correction: Option<crate::LayerCorrection>,
         merge: bool,
     ) -> Result<(), EditError> {
-        let mut corrections = (*self.current.corrections).clone();
-        let changed = corrections
-            .set(path, correction)
-            .map_err(|reason| EditError::InvalidLayerCorrection { reason })?;
-        if !changed {
+        let mut corrections = Arc::clone(&self.current.corrections);
+        if !set_correction(&mut corrections, path, correction)? {
             return Ok(());
         }
         let mut next = self.current.clone();
-        next.corrections = Arc::new(corrections);
+        next.corrections = corrections;
         next.state = self.next_state;
         self.next_state += 1;
         let prev = std::mem::replace(&mut self.current, next);
@@ -649,6 +648,22 @@ fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
     ids
 }
 
+/// 分類の直し `corrections` のレイヤー `path` を `correction` にする (`None` なら消す)。変わったら `true`。
+/// 同じ値なら複製しない (直しは状態の間で `Arc` で共有する)。形が正しくなければ何も変えない。
+fn set_correction(
+    corrections: &mut Arc<LayerCorrections>,
+    path: Vec<String>,
+    correction: Option<crate::LayerCorrection>,
+) -> Result<bool, EditError> {
+    // 今ある直しは確かめ済みなので、同じ値ならそのまま変えない。
+    if correction.is_some() && corrections.get(&path) == correction.as_ref() {
+        return Ok(false);
+    }
+    Arc::make_mut(corrections)
+        .set(path, correction)
+        .map_err(|reason| EditError::InvalidLayerCorrection { reason })
+}
+
 /// コマンドを適用する。
 ///
 /// キーフォーム格子のセル (値や由来) を変えたコマンドは、その格子の要素を `touched` に積む。
@@ -657,6 +672,8 @@ fn element_ids(snapshot: &Snapshot) -> BTreeSet<String> {
 /// (`InferKeyforms`・`MirrorKeyforms`) も積む: 作り直しはセルに記録した方法で行うので、推定の結果を
 /// 別の方法で上書きせず、その格子をミラー元にする格子にも変化を伝える。
 /// 明示的に実行したミラーの結果は `mirrored` に積む。
+// 引数はスナップショットの部分ごとの借用 (`Snapshot` の欄) と、積む先。
+#[allow(clippy::too_many_arguments)]
 fn apply_to(
     model: &mut Model,
     textures: &mut Textures,
@@ -665,6 +682,7 @@ fn apply_to(
     touched: &mut Vec<KeyformTarget>,
     mirrored: &mut Vec<MirrorReport>,
     physics: &mut Option<PhysicsSettings>,
+    corrections: &mut Arc<LayerCorrections>,
 ) -> Result<(), EditError> {
     match command {
         Command::AddParameter { parameter } => {
@@ -686,7 +704,16 @@ fn apply_to(
         }
         Command::Batch { commands, .. } => {
             for c in commands {
-                apply_to(model, textures, anim, c, touched, mirrored, physics)?;
+                apply_to(
+                    model,
+                    textures,
+                    anim,
+                    c,
+                    touched,
+                    mirrored,
+                    physics,
+                    corrections,
+                )?;
             }
         }
         Command::SetAvatarProfile { profile } => avatar::set_profile(model, profile)?,
@@ -1110,7 +1137,16 @@ fn apply_to(
         Command::ApplyPhysicsTemplate { template, options } => {
             let commands = physics_template::commands(model, physics.as_ref(), template, &options)?;
             for c in commands {
-                apply_to(model, textures, anim, c, touched, mirrored, physics)?;
+                apply_to(
+                    model,
+                    textures,
+                    anim,
+                    c,
+                    touched,
+                    mirrored,
+                    physics,
+                    corrections,
+                )?;
             }
         }
         Command::SetNormalMap {
@@ -1140,11 +1176,9 @@ fn apply_to(
                 reason: "module settings must be changed on their own, not in a batch".into(),
             });
         }
-        // モデルの外 (`Snapshot::corrections`) を変えるので、`Document::apply_with_report` が単独で受ける。
-        Command::SetLayerCorrection { .. } => {
-            return Err(EditError::InvalidLayerCorrection {
-                reason: "layer corrections must be set on their own, not in a batch".into(),
-            });
+        // `Batch` の中の直し (エージェントの提案に添えた分類など)。単独のときは `Document::apply_inner` が先に受ける。
+        Command::SetLayerCorrection { path, correction } => {
+            set_correction(corrections, path, correction)?;
         }
         Command::AddParameterGroup { group } => {
             ensure_new(&model.parameter_groups, "parameter group", &group.id, |g| {

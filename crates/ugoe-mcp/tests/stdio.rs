@@ -876,7 +876,28 @@ fn agent_driven_auto_rig_from_psd() {
     assert_eq!(proposal["params"]["turn_angle_scale"], 0.6_f32 as f64);
     assert_eq!(proposal["report"]["warnings"], json!([]));
     let commands = proposal["commands"].as_array().unwrap();
-    assert!(commands.len() > 20, "{}", commands.len());
+    assert!(commands.len() > 20 + total, "{}", commands.len());
+    // エージェントの分類は分類の直しとして提案の先頭に添わる (T0570)。
+    let label_commands = proposal["label_commands"].as_array().unwrap();
+    assert_eq!(label_commands.len(), total);
+    assert!(
+        commands[..total]
+            .iter()
+            .all(|c| c["op"] == "set_layer_correction")
+    );
+    assert_eq!(
+        proposal["changes"]["layer_corrections"]["added"]
+            .as_array()
+            .unwrap()
+            .len(),
+        total
+    );
+    assert!(
+        proposal["rationale"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("keep the agent's labels of {total} layer(s)"))
+    );
     let added = proposal["changes"]["parameters"]["added"]
         .as_array()
         .unwrap();
@@ -918,6 +939,7 @@ fn agent_driven_auto_rig_from_psd() {
     let on_disk = Project::load(&project).unwrap();
     assert!(ugoe_model::validate::validate(&on_disk.model).is_empty());
     assert_eq!(on_disk.model.parameters.len(), 7);
+    assert_eq!(on_disk.meta.layer_corrections().len(), total);
 
     // 保存したプロジェクトを開き直すと PSD は覚えていないので、get_psd_layers に渡す。
     client.call_ok("close_project", json!({ "path": path }));
@@ -929,11 +951,14 @@ fn agent_driven_auto_rig_from_psd() {
         json!({ "path": path, "psd": psd.to_str().unwrap() }),
     );
     assert!(err.contains("already a project"), "{err}");
+    // 承認したリグの提案に添えたエージェントの分類は、直しとして戻る (T0570)。
     let page = client.call_ok(
         "get_psd_layers",
-        json!({ "path": path, "psd": psd.to_str().unwrap(), "images": false, "count": 1 }),
+        json!({ "path": path, "psd": psd.to_str().unwrap(), "images": false, "indices": [0, eye] }),
     );
-    assert_eq!(page["layers"][0]["set_by"], "rules");
+    assert_eq!(page["layers"][0]["set_by"], "user");
+    assert_eq!(page["layers"][1]["set_by"], "user");
+    assert_eq!(page["layers"][1]["side"], "right");
 }
 
 /// T0566: 利用者がエディタで直した分類 (`project.json` の `editor.classification`) を、名前の規則とエージェントの
@@ -1071,6 +1096,131 @@ fn layer_corrections_from_the_project_overlay_the_classification() {
         "{rationale}"
     );
     assert_ne!(proposal["commands"], proposal_before["commands"]);
+}
+
+/// T0570: エージェントの分類は、リグの提案に分類の直しとして添わり、利用者が承認したときだけプロジェクトに残る
+/// (外せる・Undo で戻る・開き直しても `set_by=user` で戻る)。リグなしで直しだけを提案するには `propose_edit`。
+#[test]
+fn agent_labels_are_kept_when_the_rig_is_approved() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("bustup.ugoeproj");
+    let path = project.to_str().unwrap();
+    let psd = bustup_psd();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+    client.call_ok(
+        "import_psd",
+        json!({ "path": path, "psd": psd.to_str().unwrap() }),
+    );
+    let all = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "count": 64, "images": false, "overview": false }),
+    )["layers"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let eye = all
+        .iter()
+        .find(|l| l["path"].as_array().unwrap().last().unwrap() == "eyewhite-r")
+        .unwrap()["index"]
+        .as_u64()
+        .unwrap();
+    // 名前の規則と違う答え (右の白目を左に)。
+    client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [{ "index": eye, "label": "eye_white", "side": "left", "confidence": 0.9 }] }),
+    );
+    let layer = |client: &mut Client, psd: Option<&Path>| {
+        let mut args = json!({ "path": path, "indices": [eye], "images": false });
+        if let Some(psd) = psd {
+            args["psd"] = json!(psd.to_str().unwrap());
+        }
+        client.call_ok("get_psd_layers", args)["layers"][0].clone()
+    };
+
+    // 添えないこともできる。
+    let without = client.call_ok("propose_rig", json!({ "path": path, "keep_labels": false }));
+    assert_eq!(without["label_commands"], json!([]));
+    assert!(without["changes"].get("layer_corrections").is_none());
+    let proposal = client.call_ok("propose_rig", json!({ "path": path }));
+    let id = proposal["proposal"].as_str().unwrap().to_owned();
+    assert_eq!(proposal["label_commands"], json!([0]));
+    assert_eq!(
+        proposal["commands"][0],
+        json!({ "op": "set_layer_correction", "subject": "face / eye-r / eyewhite-r", "requires": [] })
+    );
+    assert_eq!(
+        proposal["changes"]["layer_corrections"],
+        json!({ "added": ["face / eye-r / eyewhite-r"] })
+    );
+    // リグのコマンドは同じで、どれも添えた直しに頼らない (外せる)。
+    let ops = |commands: &[Value]| -> Vec<(Value, Value)> {
+        commands
+            .iter()
+            .map(|c| (c["op"].clone(), c["subject"].clone()))
+            .collect()
+    };
+    let commands = proposal["commands"].as_array().unwrap();
+    assert_eq!(
+        ops(without["commands"].as_array().unwrap()),
+        ops(&commands[1..])
+    );
+    assert!(
+        commands
+            .iter()
+            .all(|c| !c["requires"].as_array().unwrap().contains(&json!(0)))
+    );
+
+    // 外して適用すればリグだけが入る。
+    let applied = client.call_ok(
+        "apply_proposal",
+        json!({ "path": path, "proposal": id, "exclude": [0] }),
+    );
+    assert!(applied["changes"].get("layer_corrections").is_none());
+    assert_eq!(layer(&mut client, None)["set_by"], "agent");
+    client.call_ok("undo", json!({ "path": path }));
+
+    // 全体を適用すると直しになり、Undo で戻る。
+    let applied = client.call_ok("apply_proposal", json!({ "path": path, "proposal": id }));
+    assert_eq!(applied["changes"], proposal["changes"]);
+    assert_eq!(layer(&mut client, None)["set_by"], "user");
+    client.call_ok("undo", json!({ "path": path }));
+    assert_eq!(layer(&mut client, None)["set_by"], "agent");
+    client.call_ok("redo", json!({ "path": path }));
+    client.call_ok("save_project", json!({ "path": path }));
+    let corrections = Project::load(&project).unwrap().meta.layer_corrections();
+    assert_eq!(corrections.len(), 1);
+
+    // 開き直すとエージェントの答えはメモリにないが、直しとして戻る。
+    client.call_ok("close_project", json!({ "path": path }));
+    let reopened = layer(&mut client, Some(&psd));
+    assert_eq!(reopened["set_by"], "user");
+    assert_eq!(
+        (&reopened["label"], &reopened["side"]),
+        (&json!("eye_white"), &json!("left"))
+    );
+
+    // 直しだけの提案 (リグなし) は propose_edit で出す。消せば名前の規則に戻る。
+    let layer_path = all[eye as usize]["path"].clone();
+    let edit = client.call_ok(
+        "propose_edit",
+        json!({
+            "path": path,
+            "title": "Forget the label",
+            "commands": [{ "op": "set_layer_correction", "path": layer_path, "correction": null }],
+        }),
+    );
+    assert_eq!(
+        edit["changes"],
+        json!({ "layer_corrections": { "removed": ["face / eye-r / eyewhite-r"] } })
+    );
+    client.call_ok(
+        "apply_proposal",
+        json!({ "path": path, "proposal": edit["proposal"] }),
+    );
+    let forgotten = layer(&mut client, None);
+    assert_eq!(forgotten["set_by"], "rules");
+    assert_eq!(forgotten["side"], "right");
 }
 
 /// エディタがプロジェクトに残した分類の答え (`.ugoe-cache/classification.json`) を、同じ PSD なら名前の規則の案の
@@ -1313,6 +1463,8 @@ fn agent_driven_module_rig_from_psd() {
     assert!(rationale.contains(pose), "{rationale}");
     assert!(rationale.contains("soft ribbons"), "{rationale}");
     assert!(rationale.contains("1 variant set(s)"), "{rationale}");
+    // 差分の組だけを渡した (ラベルを決めていない) ので、添える分類の直しはない (直しは差分の組を持たない。T0570)。
+    assert_eq!(proposal["label_commands"], json!([]));
     assert!(proposal["title"].as_str().unwrap().ends_with("agent"));
     assert_eq!(proposal["params"]["sway_scale"], 1.2_f32 as f64);
     let added = &proposal["changes"]["parameters"]["added"];

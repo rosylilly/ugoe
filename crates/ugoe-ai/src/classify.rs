@@ -993,6 +993,19 @@ pub fn correction_label(correction: &LayerCorrection) -> Option<(Label, Side)> {
     Some((label, side))
 }
 
+/// 分類の答え `label` のラベルと左右を、分類の直し (`ugoe_editor_core::classification`) にしたもの。[`correction_label`] の逆。
+/// MCP のエージェントの答えを、利用者が承認したら直しとして残すために使う (`docs/ai-integration.md#エージェントに任せる自動リギング`)。
+pub fn label_correction(label: &LayerLabel) -> LayerCorrection {
+    LayerCorrection {
+        label: label.label.as_str().to_owned(),
+        side: match label.side {
+            Side::Left => LayerSide::Left,
+            Side::Right => LayerSide::Right,
+            Side::Center => LayerSide::Center,
+        },
+    }
+}
+
 /// 分類 `labels` に利用者の直し `corrections` を重ねる (`docs/editor.md#分類の直し`)。直しはレイヤーのパスで
 /// 対応させ、直したレイヤーは人が確かめたものとして確からしさを 1 にし、名前の規則との食い違いの印を消す
 /// (差分の組は保つ)。語彙にないラベルの直しは重ねない ([`correction_label`])。エディタと MCP サーバが使う。

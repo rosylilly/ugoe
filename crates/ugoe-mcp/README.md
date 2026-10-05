@@ -469,6 +469,25 @@ Claude Code に次のように頼む:
   `corrected_by_user` (数)、提案の理由に `the user corrected N ...` と書く。
 - 直しは文書の状態 (エディタでは Undo の対象) なので、サーバは分類のメモリに入れず、呼ぶたびに今の文書から重ねる。
 
+### エージェントの分類を残す
+
+エージェントが `set_layer_labels` で決めた分類はサーバのメモリにだけある。プロジェクトに残すのは **利用者が承認した提案** を
+通してだけで、残す先は利用者の直しと同じ `editor.classification` (T0570。キャッシュ `.ugoe-cache/classification.json` には書かない)。
+
+- `propose_rig`・`propose_module_rig` は、エージェントが決めたレイヤー (利用者が直したものを除く) の今の分類を、
+  分類の直し `set_layer_correction` としてリグの提案の **先頭** に添える。結果の `label_commands` が添えたコマンドの番号
+  (`[0, 1, …]`)、提案の理由に `commands 0-N keep the agent's labels of M layer(s)`、差分 (`changes`) に `layer_corrections`
+  (レイヤーのパスを ` / ` でつないだもの) が出る。リグのコマンドは添えた直しに頼らない (`requires` に入らない)。
+- 承認されたら `apply_proposal` で適用する。直しもリグと同じ 1 回の `undo` で戻る。`exclude` に `label_commands` を渡せば
+  リグだけを入れられる。`keep_labels: false` なら添えない。
+- 適用した直しは利用者の直しと同じ扱いになる (`set_by: "user"`・確からしさ 1。後の `set_layer_labels` は上書きしない)。
+  `save_project` で `project.json` に書き、開き直しても (エディタでも) 戻る。差分の組 (`variant_sets`) と確からしさは残さない。
+- リグなしで分類だけを残す・直しを変える・消すときは、`propose_edit` で `set_layer_correction` の列を提案する
+  (`{"op": "set_layer_correction", "path": [...], "correction": {"label": "eye_white", "side": "left"}}`。消すなら `null`)。
+- エディタにつないだとき (`--editor`) も同じで、提案はエディタの一覧に出て、採用するとエディタの文書の直しになる。
+
+`tests/stdio.rs` の `agent_labels_are_kept_when_the_rig_is_approved` が確かめている。
+
 ### エディタが残した分類
 
 エディタはプロジェクトで分類した答え (名前の規則と AI の答え) を `.ugoe-cache/classification.json` に残す
@@ -483,7 +502,8 @@ Claude Code に次のように頼む:
   `saved_by_editor: true`、提案の理由に `the rest follow the classification the editor saved`。`set_layer_labels` の `reset` は
   名前の規則の案に戻す。利用者の直しはこの上に重ねる。
 - 同じ流れを `tests/stdio.rs` の `the_classification_saved_by_the_editor_is_used` が確かめている。
-  エディタにつないだとき (`--editor`・組み込み) はエディタの文書の直しを使う。MCP には直しを書くツールはない。
+  エディタにつないだとき (`--editor`・組み込み) はエディタの文書の直しを使う。直しを書くのは承認した提案だけ
+  ([エージェントの分類を残す](#エージェントの分類を残す))。
 
 `tests/stdio.rs` の `layer_corrections_from_the_project_overlay_the_classification` が確かめている。
 
@@ -532,9 +552,9 @@ Claude Code に次のように頼む:
 | `get_psd_layers` | 読む | PSD のレイヤーの一覧・今の分類・対応するメッシュと、全体の合成画像・サムネイル (MCP の image)。分類の指示と語彙 |
 | `set_layer_labels` | 読む | エージェントが決めた分類と差分の組 (`variant_sets`) を受け取る (モデルは変えない。利用者がエディタで直したレイヤーは上書きしない。[利用者の直し](#利用者の直し))。メッシュとの対応・差分の組・リグを組めるかを返す |
 | `get_rig_guide` | 読む | リグのテンプレートで決められない値の説明・範囲・既定値、顔・目・口の位置、原画 |
-| `propose_rig` | 読む | 分類と値からリグ (AngleX/Y/Z・EyeL/ROpen・MouthOpenY) の提案を作る。値が通らなければエラー |
+| `propose_rig` | 読む | 分類と値からリグ (AngleX/Y/Z・EyeL/ROpen・MouthOpenY) の提案を作る。エージェントの分類を分類の直しとして先頭に添える ([エージェントの分類を残す](#エージェントの分類を残す))。値が通らなければエラー |
 | `get_module_rig_guide` | 読む | モジュールのプロジェクトで、リグのテンプレートで決められない値の説明・範囲・既定値、衣装のメッシュの位置と組み方、差分の組、衣装の原画 |
-| `propose_module_rig` | 読む | モジュールのプロジェクトで、分類と値からリグ (追従・揺れ・衝突体・差分の組などのポーズ) の提案を作る。パラメータは足さない。値が通らなければエラー |
+| `propose_module_rig` | 読む | モジュールのプロジェクトで、分類と値からリグ (追従・揺れ・衝突体・差分の組などのポーズ) の提案を作る。パラメータは足さない。エージェントの分類を分類の直しとして先頭に添える。値が通らなければエラー |
 | `render_png` | 読む | 今のモデル (未保存の変更を含む) を PNG で描く。`ugoe render` と同じ |
 | `apply_proposal` | 編集 | 提案を適用する (1 回の `undo` で戻る)。`exclude` でコマンドの一部を外せる。提案の後にモデルが変わっていたら拒否する |
 | `undo` / `redo` | 編集 | 取り消し・やり直し |
@@ -570,7 +590,7 @@ Claude Code に次のように頼む:
   モデルが変わると適用できない (Undo で同じ状態に戻れば、また使える)。
 - 自動リギングのツール (`src/autorig.rs`) の入力の型 (分類の語彙と左右、リグの値) は `ugoe_ai` の JSON Schema
   (`classify::output_schema`・`rig::rig_output_schema`) から作る。画像の大きさの上限は `ClassifyOptions` の既定値。
-  PSD と分類はプロジェクトごとにメモリに持つ (プロジェクトには保存しない)。
+  PSD と分類はプロジェクトごとにメモリに持つ (プロジェクトには保存しない。承認したリグの提案に添えた分類だけが直しとして残る)。
 
 ### ツールのエラー
 

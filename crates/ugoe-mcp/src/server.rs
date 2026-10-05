@@ -43,7 +43,8 @@ PSD からの自動リギング: import_psd → get_psd_layers (画像を見て�
 get_rig_guide (画像を見て値を選ぶ) → propose_rig → ユーザーの承認を得て apply_proposal。\
 着せ替えのモジュール (import_psd に base と slot を渡して作る) では、get_rig_guide と propose_rig の代わりに \
 get_module_rig_guide と propose_module_rig (パラメータを足さない。set_layer_labels の variant_sets はポーズになる)。\
-分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。";
+分類と値はあなたが画像を見て決める (サーバは AI を呼ばない)。あなたの分類はリグの提案に分類の直しとして添わり、\
+承認されるとプロジェクトに残る。";
 
 /// サーバの状態。1 つのプロセスにつき 1 つ (stdio の接続、または HTTP のすべての要求で共有する)。
 /// `&self` で処理でき、HTTP の接続ごとのスレッドから同時に呼んでよい。

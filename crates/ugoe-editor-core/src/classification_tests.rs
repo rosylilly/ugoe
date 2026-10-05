@@ -124,20 +124,64 @@ fn malformed_corrections_are_rejected() {
     assert!(!doc.can_undo());
 }
 
+/// T0570: `Batch` の中の直し (エージェントの提案に添えた分類) は、モデルの編集と同じ 1 回の Undo で戻る。
 #[test]
-fn corrections_are_not_allowed_in_a_batch() {
+fn corrections_in_a_batch_share_its_undo_step() {
     let mut doc = Document::new(fixtures::single_quad());
+    let eye = path(&["Face", "Eye L"]);
+    doc.apply(Command::Batch {
+        label: "rig".into(),
+        commands: vec![
+            set(eye.clone(), Some(correction("eye_white", LayerSide::Left))),
+            Command::SetLighting { enabled: true },
+        ],
+    })
+    .unwrap();
+    assert!(doc.model().lighting);
+    assert_eq!(
+        doc.layer_corrections().get(&eye),
+        Some(&correction("eye_white", LayerSide::Left))
+    );
+    assert_eq!(doc.undo_count(), 1);
+    assert!(doc.undo());
+    assert!(doc.layer_corrections().is_empty());
+    assert!(!doc.model().lighting);
+    assert!(doc.redo());
+    assert_eq!(doc.layer_corrections().len(), 1);
+    assert!(doc.model().lighting);
+}
+
+/// 失敗した `Batch` は、先に適用した直しも残さない。正しくない直しは `Batch` の中でも拒む。
+#[test]
+fn a_rejected_batch_keeps_the_corrections() {
+    let mut doc = Document::new(fixtures::single_quad());
+    let state = doc.state_id();
     let error = doc
         .apply(Command::Batch {
             label: "batch".into(),
-            commands: vec![set(
-                path(&["Eye"]),
-                Some(correction("eye", LayerSide::Left)),
-            )],
+            commands: vec![
+                set(path(&["Eye"]), Some(correction("eye", LayerSide::Left))),
+                Command::RemoveParameter {
+                    id: "Missing".into(),
+                },
+            ],
+        })
+        .unwrap_err();
+    assert!(!matches!(error, EditError::InvalidLayerCorrection { .. }));
+    let error = doc
+        .apply(Command::Batch {
+            label: "batch".into(),
+            commands: vec![
+                Command::SetLighting { enabled: true },
+                set(path(&["Eye"]), Some(correction("Eye!", LayerSide::Left))),
+            ],
         })
         .unwrap_err();
     assert!(matches!(error, EditError::InvalidLayerCorrection { .. }));
     assert!(doc.layer_corrections().is_empty());
+    assert!(!doc.model().lighting);
+    assert_eq!(doc.state_id(), state);
+    assert!(!doc.can_undo());
 }
 
 #[test]
