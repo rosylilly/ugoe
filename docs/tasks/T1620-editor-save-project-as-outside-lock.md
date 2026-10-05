@@ -1,11 +1,11 @@
 ---
 id: T1620
 title: "エディタ: 「名前を付けて保存」もドキュメントのロックの外でファイルを書く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T1616]
-assignee:
+assignee: claude-worker-T1620
 ---
 
 # T1620: エディタ: 「名前を付けて保存」もドキュメントのロックの外でファイルを書く
