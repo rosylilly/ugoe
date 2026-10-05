@@ -61,7 +61,7 @@ impl MotionInfo {
         let mut parameters: Vec<String> = Vec::new();
         for c in &m.curves {
             if let CurveTarget::Parameter(id) = &c.target
-                && !parameters.iter().any(|p| p == id.as_str())
+                && !parameters.iter().any(|p| id == p.as_str())
             {
                 parameters.push(id.as_str().to_owned());
             }

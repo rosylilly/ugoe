@@ -839,11 +839,7 @@ const BLUE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 const WHITE: [f32; 4] = [1.0; 4];
 
 fn mesh_mut<'a>(model: &'a mut Model, id: &str) -> &'a mut Mesh {
-    model
-        .meshes
-        .iter_mut()
-        .find(|m| m.id.as_str() == id)
-        .expect("mesh")
+    model.meshes.iter_mut().find(|m| m.id == id).expect("mesh")
 }
 
 /// メッシュ `id` のすべてのキーフォームを書き換える。

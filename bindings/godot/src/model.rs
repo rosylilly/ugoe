@@ -1297,13 +1297,7 @@ mod tests {
     fn nested_masks_come_before_their_users() {
         let model = fixtures::nested_masks();
         let (drawables, plan) = drawables(&model);
-        let pos = |id: &str| {
-            model
-                .meshes
-                .iter()
-                .position(|m| m.id.as_str() == id)
-                .expect(id)
-        };
+        let pos = |id: &str| model.meshes.iter().position(|m| m.id == id).expect(id);
         // Pupil -> Iris -> Sclera。Sclera のカバレッジを先に描く。
         assert_eq!(plan.sources, vec![pos("Sclera"), pos("Iris")]);
         // Iris は Sclera を読むので 1 段目。

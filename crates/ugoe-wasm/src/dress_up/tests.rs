@@ -250,7 +250,7 @@ fn reloading_the_base_reattaches_modules_and_drops_leftovers() {
 
     // スロット `Outfit` の無いモデル: `Dress` は付けられないので外して警告し、残った画像を捨てる。
     let mut base = dress_up_base();
-    base.slots.retain(|s| s.id.as_str() != "Outfit");
+    base.slots.retain(|s| s.id != "Outfit");
     let mut other = Puppet::new(base).unwrap();
     let warnings = wardrobe
         .load_base(&mut other, &attached, &[image(13)], &[], &mut sink)

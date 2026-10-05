@@ -671,7 +671,7 @@ pub fn index_of(bindings: &[KeyformBinding], cell: &[(&str, f32)]) -> usize {
     for binding in bindings {
         let (_, value) = cell
             .iter()
-            .find(|(p, _)| *p == binding.parameter.as_str())
+            .find(|(p, _)| *p == binding.parameter)
             .unwrap_or_else(|| panic!("axis {} missing", binding.parameter.as_str()));
         let i = binding
             .keys

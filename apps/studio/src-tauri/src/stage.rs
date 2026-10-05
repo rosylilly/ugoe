@@ -931,17 +931,17 @@ impl Loader<'_> {
     ) -> Result<SceneSettings, SceneError> {
         let mut modules = Vec::with_capacity(base.modules.len() + 1);
         for path in &base.modules {
-            if self.module(path)?.module.slot.as_str() != slot {
+            if self.module(path)?.module.slot != slot {
                 modules.push(path.clone());
             }
         }
         if let Some(path) = module {
             let loaded = self.module(path)?;
-            if loaded.module.slot.as_str() != slot {
+            if loaded.module.slot != slot {
                 let other = loaded.module.slot.as_str().to_owned();
                 let mut kept = Vec::with_capacity(modules.len());
                 for p in modules {
-                    if self.module(&p)?.module.slot.as_str() != other {
+                    if self.module(&p)?.module.slot != other.as_str() {
                         kept.push(p);
                     }
                 }

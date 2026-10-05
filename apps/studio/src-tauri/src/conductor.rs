@@ -323,7 +323,7 @@ impl Conductor {
             return false;
         };
         let model = puppet.instance().compiled().model();
-        let Some(index) = model.parameters.iter().position(|p| p.id.as_str() == id) else {
+        let Some(index) = model.parameters.iter().position(|p| p.id == id) else {
             return false;
         };
         let p = &model.parameters[index];
@@ -496,7 +496,7 @@ mod tests {
         let index = conductor
             .parameters()
             .iter()
-            .position(|p| p.id.as_str() == "AngleX")
+            .position(|p| p.id == "AngleX")
             .unwrap();
         assert_eq!(frame.values[index], 12.0);
         conductor.reset_parameters();

@@ -428,7 +428,7 @@ fn moving_masks() -> Model {
     parameter.default = 0.0;
     model.parameters.push(parameter);
     for mesh in &mut model.meshes {
-        if mesh.id.as_str() == "Pupil" {
+        if mesh.id == "Pupil" {
             continue;
         }
         let base = mesh.keyforms.keyforms[0].clone();

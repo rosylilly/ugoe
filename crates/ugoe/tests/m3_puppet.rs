@@ -582,7 +582,7 @@ fn avatar_sample_follows_arkit_tracking() {
     let tracked: Vec<&str> = ugoe::model::avatar::TRACKED_PARAMETERS
         .iter()
         .copied()
-        .filter(|id| model.parameters.iter().any(|p| p.id.as_str() == *id))
+        .filter(|id| model.parameters.iter().any(|p| p.id == *id))
         .filter(|id| !overridden.contains(id))
         .collect();
     assert!(tracked.len() >= 15, "{tracked:?}");
@@ -592,11 +592,7 @@ fn avatar_sample_follows_arkit_tracking() {
         puppet.set_tracking(Some(input));
         puppet.update(DT);
         for id in &tracked {
-            let p = model
-                .parameters
-                .iter()
-                .find(|p| p.id.as_str() == *id)
-                .unwrap();
+            let p = model.parameters.iter().find(|p| p.id == *id).unwrap();
             let expected = standard_value(id, &input).unwrap().clamp(p.min, p.max);
             assert_close(
                 param(&puppet, id),

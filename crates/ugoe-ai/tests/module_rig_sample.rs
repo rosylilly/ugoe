@@ -626,13 +626,13 @@ fn overlapping_hidden_alternatives_become_poses() {
     let cap = model
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == mesh_id(&doc, "cap"))
+        .find(|m| m.id == *mesh_id(&doc, "cap"))
         .unwrap();
     assert!(cap.keyforms.keyforms.iter().all(|k| k.opacity == 1.0));
     let tie = model
         .meshes
         .iter()
-        .find(|m| m.id.as_str() == mesh_id(&doc, "tie"))
+        .find(|m| m.id == *mesh_id(&doc, "tie"))
         .unwrap();
     assert!(tie.keyforms.keyforms.iter().all(|k| k.opacity == 0.0));
     let (module, _) = doc.split_module().unwrap().unwrap();

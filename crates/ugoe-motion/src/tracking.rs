@@ -1038,9 +1038,7 @@ mod tests {
     #[test]
     fn apply_skips_parameters_missing_from_model() {
         let mut model = fixtures::avatar_profile();
-        model
-            .parameters
-            .retain(|p| p.id.as_str() != standard::MOUTH_X);
+        model.parameters.retain(|p| p.id != standard::MOUTH_X);
         let mut params = ParameterValues::from_model(&model);
         let map = TrackingMap::new(model.avatar.as_ref(), &params);
         map.apply(&input(&[("mouthLeft", 1.0)]), &mut params);

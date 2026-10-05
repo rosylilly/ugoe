@@ -269,7 +269,7 @@ fn rest_pose_inside_a_collider_is_reported_and_kept_on_the_near_side() {
     assert!(
         found
             .iter()
-            .all(|c| c.rig.as_str() == "Hair" && c.collider.as_str() == "Shoulder")
+            .all(|c| c.rig == "Hair" && c.collider == "Shoulder")
     );
     // 検査は粒子を動かさない。
     assert_eq!(

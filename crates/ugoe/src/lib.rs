@@ -601,7 +601,7 @@ impl Puppet {
                 avatar
                     .hit_areas
                     .iter()
-                    .filter(move |h| h.hit_area.as_str() == id)
+                    .filter(move |h| h.hit_area == id)
                     .map(|h| h.name.as_str())
             })
             .collect()

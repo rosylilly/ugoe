@@ -617,14 +617,14 @@ fn unknown_optional_features_in_bundles_fall_back() {
     let face = model
         .meshes
         .iter()
-        .position(|m| m.id.as_str() == "Face")
+        .position(|m| m.id == "Face")
         .expect("Face");
     assert_eq!(model.meshes[face].blend, BlendMode::Unknown);
     assert_eq!(model.meshes[face].mask_mode, MaskMode::Unknown);
     let bend = model
         .deformers
         .iter()
-        .find(|d| d.id.as_str() == "Bend")
+        .find(|d| d.id == "Bend")
         .expect("Bend");
     assert_eq!(bend.kind, DeformerKind::Unknown);
 

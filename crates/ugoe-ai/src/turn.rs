@@ -459,7 +459,7 @@ pub(crate) fn push_turn(b: &mut Builder, plan: &TurnPlan) -> Result<String, AiEr
 fn standard_parameter(id: &ParamId) -> Result<Parameter, AiError> {
     let &(_, min, default, max) = standard::ALL
         .iter()
-        .find(|(s, ..)| *s == id.as_str())
+        .find(|(s, ..)| *s == id)
         .ok_or_else(|| AiError::InvalidProposal(format!("`{id}` is not a standard parameter")))?;
     Ok(Parameter {
         id: id.clone(),

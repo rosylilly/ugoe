@@ -123,7 +123,7 @@ fn check_case(instance: &ModelInstance, case: &Case, label: &str, failures: &mut
         model
             .meshes
             .iter()
-            .position(|m| m.id.as_str() == id)
+            .position(|m| m.id == id)
             .unwrap_or_else(|| panic!("{label}: unknown mesh {id}"))
     };
     for (id, expected) in &case.meshes {

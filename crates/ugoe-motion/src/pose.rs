@@ -184,7 +184,7 @@ mod tests {
 
     fn opacity(p: &PosePlayer, id: &str) -> f32 {
         p.opacities()
-            .find(|(part, _)| part.as_str() == id)
+            .find(|(part, _)| *part == id)
             .map(|(_, o)| o)
             .unwrap()
     }

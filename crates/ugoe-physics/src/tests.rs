@@ -82,7 +82,7 @@ fn normalize_maps_each_side_of_default_separately() {
     let angle_x = model
         .parameters
         .iter_mut()
-        .find(|p| p.id.as_str() == ANGLE_X)
+        .find(|p| p.id == ANGLE_X)
         .unwrap();
     angle_x.min = -10.0;
     angle_x.max = 30.0;

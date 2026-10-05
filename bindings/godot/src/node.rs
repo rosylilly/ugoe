@@ -482,7 +482,7 @@ impl UgoePuppet2D {
         if let Some(p) = self
             .loaded
             .as_ref()
-            .and_then(|l| l.model().parameters.iter().find(|p| p.id.as_str() == id))
+            .and_then(|l| l.model().parameters.iter().find(|p| p.id == *id))
         {
             dict.set("name", &GString::from(p.name.as_str()));
             dict.set("min", p.min);

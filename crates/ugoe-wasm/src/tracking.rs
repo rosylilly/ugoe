@@ -119,7 +119,7 @@ mod tests {
                 model
                     .parameters
                     .iter()
-                    .position(|p| p.id.as_str() == t)
+                    .position(|p| p.id == t.as_str())
                     .unwrap()
             })
             .collect();
