@@ -1,11 +1,11 @@
 ---
 id: T1625
 title: "エディタ: 保存のダイアログの後の withExtension を、ブラウザ用の差し替えの側に移す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T1620, T0940]
-assignee:
+assignee: claude-worker-T1625
 ---
 
 # T1625: エディタ: 保存のダイアログの後の withExtension を、ブラウザ用の差し替えの側に移す
