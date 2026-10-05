@@ -419,6 +419,10 @@ JSON は NaN と無限大を書けませんが、MessagePack (`.ugoe`) は書け
 - スロット: ID が一意で、`anchor` (デフォーマ)・`replaces` (パーツ)・`parameters` (パラメータ)・`mask_sources` (メッシュ)・`part` (パーツ)・`pose_parts` (ポーズの要素のパーツ。`target_kind` は `pose entry`) の参照先が存在し (`UnknownReference`、`kind` は `slot`)、`draw_order` の `min` と `max` が有限値で `min <= max` であること
 - 時間と周期の値: ポーズの `fade_duration` と目パチの `closing` / `closed` / `opening` は 0 以上、目パチの `interval` と呼吸の `cycle` は 0 より大きいこと (いずれも有限値)。呼吸の `offset`・`peak`・`weight` は有限値
 
+エフェクトの設定 (`Effects`) だけを検査するときは `ugoe_model::validate::validate_effects(&effects, &model)` を使います。
+上のエフェクトの対象パラメータの参照と時間・周期の値の検査と同じで、モデルの `effects` は見ません。
+実行中に設定を差し替える `ugoe::Puppet::try_set_effects` (C ABI・wasm・Godot の `set_effects_json`) が使います (T0461)。
+
 ### モーションと表情の検証
 
 モーションと表情はモデルと照らさずに、数値だけを検査します (T0323)。対象が存在しないカーブと項目は効かないだけです。

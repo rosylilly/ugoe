@@ -286,6 +286,10 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
   要求すれば要求が勝つ。ポーズの段を止めている間も表示中の要素は変わる。wasm は `show_pose(part)`。
 - `ugoe_puppet_set_effects_json` は `Puppet::set_effects` と同じ (`docs/spec/motion.md#エフェクト設定の差し替え`)。同じ設定でも目パチと呼吸は
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
+  設定はモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・範囲の外の値
+  (目パチの `interval` と呼吸の `cycle` が 0 以下、目パチの `closing`・`closed`・`opening` が負)・モデルにないパラメータ)。
+  通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、`ugoe_last_error_field("errors")` は検査のエラーの数。
+  読み込みの `invalid_model` と同じ) を返し、何も変えない (T0461)。
 - パーツの ID のポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効 (当たり判定の ID と同じ)。
 
 ## 受け手として進める (T0133・T0134・T0135)

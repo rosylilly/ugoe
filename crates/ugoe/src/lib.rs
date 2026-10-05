@@ -321,12 +321,27 @@ impl Puppet {
 
     /// 目パチ・呼吸・リップシンクの設定を差し替える (再生状態は初めからになる)。
     /// リップシンクの音量は保つ。
+    ///
+    /// 設定は検査しない (`docs/portability.md#ホストから来る数`)。検査するなら [`Puppet::try_set_effects`] を使う。
     pub fn set_effects(&mut self, effects: Effects) {
         let level = self.lip_sync.level();
         self.eye_blink = EyeBlinkPlayer::new(effects.eye_blink);
         self.breath = BreathPlayer::new(effects.breath);
         self.lip_sync = LipSyncPlayer::new(effects.lip_sync);
         self.lip_sync.set_level(level);
+    }
+
+    /// 設定をモデルと合わせて `ugoe_model::validate::validate_effects` (モデルの読み込みのエフェクトの検査と同じ。
+    /// `docs/spec/model.md#検証`) で検査し、通れば [`Puppet::set_effects`] と同じに差し替える。
+    /// エラーがあれば何も変えずにそれを返す (有限でない値・範囲の外の値・モデルにないパラメータ)。
+    pub fn try_set_effects(&mut self, effects: Effects) -> Result<(), Vec<ValidationError>> {
+        let errors =
+            ugoe_model::validate::validate_effects(&effects, self.instance.compiled().model());
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        self.set_effects(effects);
+        Ok(())
     }
 
     /// リップシンクの音量 (0〜1)。`None` ならリップシンクは口のパラメータに触らない。
@@ -934,6 +949,54 @@ mod tests {
         puppet.set_lip_sync_level(None);
         puppet.update(DT);
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
+    }
+
+    /// `try_set_effects` は有限でない値・範囲の外の値・モデルにないパラメータを拒み、今の設定を変えない。
+    #[test]
+    fn try_set_effects_rejects_invalid_effects_and_keeps_the_current_ones() {
+        let mut puppet = quiet_puppet();
+        puppet.set_lip_sync_level(Some(0.7));
+        let lip_sync = ugoe_model::effects::LipSync {
+            parameters: vec![standard::MOUTH_OPEN_Y.into()],
+        };
+        let mut breath = ugoe_model::effects::Breath::standard();
+        breath.parameters[0].weight = f32::INFINITY;
+        let invalid = [
+            Effects {
+                breath,
+                lip_sync: lip_sync.clone(),
+                ..Effects::default()
+            },
+            Effects {
+                eye_blink: ugoe_model::effects::EyeBlink {
+                    interval: -1.0,
+                    ..ugoe_model::effects::EyeBlink::standard()
+                },
+                lip_sync: lip_sync.clone(),
+                ..Effects::default()
+            },
+            Effects {
+                lip_sync: ugoe_model::effects::LipSync {
+                    parameters: vec![standard::MOUTH_OPEN_Y.into(), "Missing".into()],
+                },
+                ..Effects::default()
+            },
+        ];
+        for effects in invalid {
+            let errors = puppet.try_set_effects(effects).unwrap_err();
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            puppet.update(DT);
+            assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
+        }
+
+        puppet
+            .try_set_effects(Effects {
+                lip_sync,
+                ..Effects::default()
+            })
+            .unwrap();
+        puppet.update(DT);
+        assert!(close(param(&puppet, standard::MOUTH_OPEN_Y), 0.7));
     }
 
     /// ポーズの要素へのパーツの不透明度のカーブは表示の要求になり、クロスフェードで切り替わる。

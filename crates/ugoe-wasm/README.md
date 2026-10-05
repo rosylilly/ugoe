@@ -148,6 +148,9 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
+- `set_effects_json` は設定をモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・
+  範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数) を持つ `Error` を投げ、
+  何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ値。T0461)。読めない JSON の例外は `code` を持たない。
 - `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
   そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 

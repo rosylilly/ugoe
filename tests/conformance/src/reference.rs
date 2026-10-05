@@ -50,20 +50,21 @@ pub fn conductor_frames(
     Ok(frames)
 }
 
-/// 指揮役の効果の設定 (`effects` のとき): 標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) と、
-/// モデルのリップシンクの設定。
+/// 指揮役の効果の設定 (`effects` のとき): 標準の目パチと呼吸 (`EyeBlink::standard()`・`Breath::standard()`) のうち
+/// モデルにあるパラメータを対象にするものと、モデルのリップシンクの設定。`set_effects_json` はモデルにないパラメータを
+/// 拒むので (T0461)、ここで外す (外さなくても、ランタイムはモデルにないパラメータを無視するので値は同じ)。
 fn conductor_effects(conductor: &Puppet) -> ugoe::model::effects::Effects {
-    let lip_sync = conductor
-        .instance()
-        .compiled()
-        .model()
-        .effects
-        .lip_sync
-        .clone();
-    ugoe::model::effects::Effects {
-        eye_blink: ugoe::model::effects::EyeBlink::standard(),
-        breath: ugoe::model::effects::Breath::standard(),
-        lip_sync,
+    use ugoe::model::effects::{Breath, Effects, EyeBlink};
+    let model = conductor.instance().compiled().model();
+    let known = |id: &ugoe::model::ParamId| model.parameters.iter().any(|p| &p.id == id);
+    let mut eye_blink = EyeBlink::standard();
+    eye_blink.parameters.retain(|id| known(id));
+    let mut breath = Breath::standard();
+    breath.parameters.retain(|p| known(&p.parameter));
+    Effects {
+        eye_blink,
+        breath,
+        lip_sync: model.effects.lip_sync.clone(),
     }
 }
 

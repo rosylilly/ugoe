@@ -410,7 +410,8 @@ namespace Ugoe
         /// <summary>
         /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの <c>effects</c> と同じ形) で差し替える。省略したフィールドは既定値。
         /// 目パチと呼吸は初めから (同じ設定でも) になり、リップシンクの音量は保つ (docs/spec/motion.md#エフェクト設定の差し替え)。
-        /// 読めなければ <see cref="UgoeResult.Format"/> (何も変えない)。
+        /// 読めなければ <see cref="UgoeResult.Format"/>、モデルの読み込みと同じ検査 (有限でない値・範囲の外の値・モデルにないパラメータ) を
+        /// 通らなければ <see cref="UgoeResult.InvalidModel"/> (種類は <c>invalid_model</c>、補足の値 <c>errors</c>。どちらも何も変えない)。
         /// </summary>
         public void SetEffectsJson(string json)
         {

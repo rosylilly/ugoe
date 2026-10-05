@@ -281,6 +281,10 @@ pub unsafe extern "C" fn ugoe_puppet_reset_physics(puppet: *mut UgoePuppet) -> U
 /// リップシンクの音量は保つ (`docs/spec/motion.md#エフェクト設定の差し替え`、`ugoe::Puppet::set_effects`)。
 /// 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
 ///
+/// 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
+/// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
+/// `ugoe_last_error_field` の `"errors"` は検査のエラーの数) を返し、何も変えない。
+///
 /// # Safety
 ///
 /// `puppet` は有効な `UgoePuppet`、`json` は `len` バイトの読める領域を指すこと。
@@ -301,7 +305,14 @@ pub unsafe extern "C" fn ugoe_puppet_set_effects_json(
             .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
         let effects = serde_json::from_str(json)
             .map_err(|e| Error::new(UGOE_ERROR_FORMAT, format!("effects: {e}")))?;
-        p.puppet.set_effects(effects);
-        Ok(())
+        p.puppet
+            .try_set_effects(effects)
+            .map_err(|errors| invalid_effects(&errors))
     })
+}
+
+/// エフェクトの設定の検査の失敗。種類と補足の値は読み込みの `invalid_model` と同じ (`ugoe::LoadError::fields`)。
+fn invalid_effects(errors: &[ValidationError]) -> Error {
+    Error::new(UGOE_ERROR_INVALID_MODEL, describe_errors("effects", errors))
+        .with_kind("invalid_model", vec![("errors", errors.len().to_string())])
 }

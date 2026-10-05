@@ -57,13 +57,13 @@
 // マスクの効き具合。
 #define UGOE_CHANGED_MASK_STRENGTH (1 << 6)
 
-// 平行光源 (`ugoe::render::Light::Directional`)。
+// 平行光源 (`ugoe::lighting::Light::Directional`)。
 #define UGOE_LIGHT_DIRECTIONAL 0
 
-// 点光源 (`ugoe::render::Light::Point`)。
+// 点光源 (`ugoe::lighting::Light::Point`)。
 #define UGOE_LIGHT_POINT 1
 
-// 参照レンダラが使う光源の数の上限 (`ugoe::render::MAX_LIGHTS`)。
+// 参照レンダラが使う光源の数の上限 (`ugoe::lighting::MAX_LIGHTS`)。
 #define UGOE_MAX_LIGHTS 8
 
 // 待機モーション。ほかのモーションが再生中なら開始しない (`docs/spec/motion.md#モーションマネージャ`)。
@@ -423,6 +423,10 @@ UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
 // 再生の状態は初めからになる (目パチは新しい `seed` で目を開けた状態から、呼吸の位相は 0)。
 // リップシンクの音量は保つ (`docs/spec/motion.md#エフェクト設定の差し替え`、`ugoe::Puppet::set_effects`)。
 // 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
+//
+// 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
+// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
+// `ugoe_last_error_field` の `"errors"` は検査のエラーの数) を返し、何も変えない。
 //
 // # Safety
 //

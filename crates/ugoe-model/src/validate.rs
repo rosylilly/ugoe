@@ -9,6 +9,7 @@ use std::hash::Hash;
 use ugoe_core::Vec2;
 
 use crate::deformer::DeformerKind;
+use crate::effects::Effects;
 use crate::parameter::ParameterKind;
 use crate::{KeyformGrid, KeyformInference, Model, Parameter};
 
@@ -670,7 +671,7 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
     }
 
     check_pose(model, &parts, &mut errors);
-    check_effects(model, &params, &mut errors);
+    check_effects(&model.effects, &params, &mut errors);
     module::check_slots(model, &params, &parts, &deformers, &meshes, &mut errors);
 
     errors
@@ -707,14 +708,29 @@ fn check_pose(
     }
 }
 
+/// エフェクトの設定 (目パチ・呼吸・リップシンク) を、参照先のモデルと合わせて検査する。検出したエラーを全て返す。
+///
+/// [`validate`] のエフェクトの検査と同じ (`docs/spec/model.md#検証`)。モデルの `effects` は見ない。
+/// 実行中に設定を差し替える `ugoe::Puppet::try_set_effects` が使う。
+pub fn validate_effects(effects: &Effects, model: &Model) -> Vec<ValidationError> {
+    // モデル側の重複 ID は `validate` が報告するので、ここでは表を作るだけにする。
+    let mut ignored = Vec::new();
+    let params = collect_ids(
+        "parameter",
+        model.parameters.iter().map(|p| &p.id),
+        &mut ignored,
+    );
+    let mut errors = Vec::new();
+    check_effects(effects, &params, &mut errors);
+    errors
+}
+
 /// エフェクトの検査: 対象パラメータの参照と時間・周期の値。
 fn check_effects(
-    model: &Model,
+    effects: &Effects,
     params: &HashMap<&crate::ParamId, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
-    let effects = &model.effects;
-
     let blink = &effects.eye_blink;
     let refs = Refs {
         kind: "effect",
@@ -2152,6 +2168,35 @@ mod tests {
                     if field == "effects.breath.parameters[0].cycle"
             ),
             "{errors:?}"
+        );
+    }
+
+    /// `validate_effects` は渡した設定だけを、モデルのパラメータと合わせて検査する (モデルの `effects` は見ない)。
+    #[test]
+    fn validate_effects_checks_the_given_effects() {
+        let mut model = pose_and_effects();
+        assert_eq!(validate_effects(&model.effects, &model), vec![]);
+
+        let mut effects = model.effects.clone();
+        effects.eye_blink.interval = f32::INFINITY;
+        effects.breath.parameters[0].weight = f32::NEG_INFINITY;
+        effects.lip_sync.parameters.push("Missing".into());
+        model.effects.eye_blink.closing = -1.0;
+        assert_eq!(
+            validate_effects(&effects, &model),
+            vec![
+                invalid(
+                    "effects.eye_blink.interval",
+                    f32::INFINITY,
+                    "finite and > 0"
+                ),
+                invalid(
+                    "effects.breath.parameters[0].weight",
+                    f32::NEG_INFINITY,
+                    "finite"
+                ),
+                unknown("effect", "lip_sync", "parameters", "parameter", "Missing"),
+            ]
         );
     }
 

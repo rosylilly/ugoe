@@ -323,6 +323,10 @@ The replacement takes effect in the next frame. It does not change the parameter
 that the old settings wrote and the new ones do not returns to its base value in the next frame
 ([Order of operations in a frame](#order-of-operations-in-a-frame)).
 
+A runtime MAY check the new settings against the model with the effect rules of
+[Model validation](model.md#model-validation) (finite values, ranges and parameter references). If it rejects them, it MUST leave the current
+settings and the state of the effects unchanged.
+
 ## Pose
 
 Each pose group keeps a **shown entry** and an opacity per entry. Initially the first entry is shown,

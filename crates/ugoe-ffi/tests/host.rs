@@ -249,3 +249,43 @@ fn effect_settings_can_be_replaced() {
         UGOE_ERROR_NULL_POINTER
     );
 }
+
+/// 効果の設定はモデルの読み込みと同じに検査する。有限でない値・範囲の外の値・モデルにないパラメータは
+/// `UGOE_ERROR_INVALID_MODEL` (種類 `invalid_model`、補足の値 `errors`) で拒み、今の設定を変えない (T0461)。
+#[test]
+fn invalid_effect_settings_are_rejected_without_changes() {
+    let model = fixtures::pose_and_effects();
+    let p = from_model(&model);
+    ok(set_effects(
+        &p,
+        r#"{ "lip_sync": { "parameters": ["MouthOpenY"] } }"#,
+    ));
+    ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5) });
+
+    let errors = CString::new("errors").unwrap();
+    for (json, count) in [
+        // `1e39` は `f32` の無限大になる。
+        (r#"{ "eye_blink": { "interval": 1e39 } }"#, "1"),
+        (r#"{ "eye_blink": { "interval": 0, "closing": -1 } }"#, "2"),
+        (
+            r#"{ "breath": { "parameters": [{ "parameter": "AngleX", "offset": 0, "peak": -1e39, "cycle": 3, "weight": 1 }] } }"#,
+            "1",
+        ),
+        (r#"{ "lip_sync": { "parameters": ["Missing"] } }"#, "1"),
+    ] {
+        assert_eq!(set_effects(&p, json), UGOE_ERROR_INVALID_MODEL, "{json}");
+        assert_eq!(text(ugoe_last_error_kind()), "invalid_model", "{json}");
+        assert_eq!(
+            text(unsafe { ugoe_last_error_field(errors.as_ptr()) }),
+            count,
+            "{json}"
+        );
+        assert!(text(ugoe_last_error()).starts_with("effects failed validation"));
+        // リップシンクは前の設定のまま。
+        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        assert!(
+            (param(&p, standard::MOUTH_OPEN_Y) - 0.5).abs() < 1e-5,
+            "{json}"
+        );
+    }
+}

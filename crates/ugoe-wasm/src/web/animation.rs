@@ -7,7 +7,7 @@ use ugoe::Puppet;
 use ugoe::core::Vec2;
 use wasm_bindgen::prelude::*;
 
-use super::{WebPuppet, js_error};
+use super::{WebPuppet, coded_error, js_error};
 use crate::animation;
 
 /// モーション (JSON) の各カーブを再生位置 `t` (秒) で評価した値 (フェードなし)。
@@ -189,8 +189,12 @@ impl WebPuppet {
 
     /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。
     /// 再生状態は初めからになる。リップシンクの音量は保つ。
-    pub fn set_effects_json(&mut self, json: &str) -> Result<(), JsError> {
-        animation::set_effects_json(self.puppet_mut()?, json).map_err(js_error)
+    /// 検査を通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数) を持つ例外を投げ、何も変えない。
+    pub fn set_effects_json(&mut self, json: &str) -> Result<(), JsValue> {
+        animation::set_effects_json(self.puppet_mut()?, json).map_err(|e| match e.info() {
+            Some(info) => coded_error("Error", &e.to_string(), info),
+            None => js_error(e).into(),
+        })
     }
 
     /// リップシンクの音量 (0〜1。範囲の外はクランプする)。`undefined` なら口のパラメータに触らない。音声の解析はホストが行う。

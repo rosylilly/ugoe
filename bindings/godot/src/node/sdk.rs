@@ -283,21 +283,29 @@ impl UgoePuppet2D {
 
     /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。省いたフィールドは既定値) で差し替える
     /// (`docs/spec/motion.md#エフェクト設定の差し替え`)。再生の状態は初めからになり、リップシンクの音量は保つ。
-    /// モデルを読み直すとモデルの設定に戻る。読めなければエラーを出して何も変えずに false。
+    /// モデルを読み直すとモデルの設定に戻る。読めないか、モデルの読み込みと同じ検査 (`ugoe::Puppet::try_set_effects`。
+    /// 有限でない値・範囲の外の値・モデルにないパラメータ) を通らなければ、エラーを出して何も変えずに false
+    /// (検査の文は C ABI の `UGOE_ERROR_INVALID_MODEL` の文と同じ形)。
     #[func]
     pub fn set_effects_json(&mut self, json: GString) -> bool {
         let Some(loaded) = &mut self.loaded else {
             godot_error!("ugoe: no model is loaded");
             return false;
         };
-        match serde_json::from_str(&json.to_string()) {
-            Ok(effects) => {
-                loaded.puppet.set_effects(effects);
+        let effects = match serde_json::from_str(&json.to_string()) {
+            Ok(effects) => effects,
+            Err(e) => {
+                godot_error!("ugoe: effects: {e}");
+                return false;
+            }
+        };
+        match loaded.puppet.try_set_effects(effects) {
+            Ok(()) => {
                 self.dirty = true;
                 true
             }
-            Err(e) => {
-                godot_error!("ugoe: effects: {e}");
+            Err(errors) => {
+                godot_error!("ugoe: {}", describe_errors("effects", &errors));
                 false
             }
         }

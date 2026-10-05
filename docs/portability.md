@@ -102,11 +102,12 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 当たり判定の点 | `Puppet::hit_test`・`hit_areas_at` | 当たらない | 当たらない (範囲の外) | (意味どおり) |
 | 光源 | `ugoe::lighting` の `Lighting` | その光源を使わない ([rendering.md](spec/rendering.md#ライティング)) | 同じ。`range` の無限大は減衰なし | `range` が正でなければ使わない |
 | モーション・表情 (検証していないもの) | `Puppet::start_motion`・`Puppet::set_expression` | パラメータへは書かない。パーツの不透明度のカーブは使わない。リップシンクの強さが有限でなければリップシンクを当てない。長さの NaN は 0 と同じ | パラメータへは値域にクランプ。パーツの不透明度のカーブとリップシンクの強さは NaN と同じ | 値域にクランプ |
-| エフェクトの設定 (検証していないもの) | `Puppet::set_effects` | 目パチの `interval` が 0 より大きくなければまばたきしない。呼吸の `cycle` が 0 以下なら `sin` の項は 0 ([motion.md](spec/motion.md#エフェクト)) | 同じ | 同じ |
+| エフェクトの設定 (検証していないもの) | `Puppet::set_effects` (検証するなら `Puppet::try_set_effects`) | 目パチの `interval` が 0 より大きくなければまばたきしない。呼吸の `cycle` が 0 以下なら `sin` の項は 0 ([motion.md](spec/motion.md#エフェクト)) | 同じ | 同じ |
 | 物理の状態と出力 | `PhysicsSystem` | 鎖を静止姿勢に置き直し、出力を書かない ([physics.md](spec/physics.md#有限でない状態)) | 同じ | — |
 
 - ファイルから読むモデル・物理・モーション・表情の数は、読み込みで有限かを検証する (`ugoe-format`、[model.md#検証](spec/model.md#検証))。
-  上の「検証していないもの」は、Rust から組み立てた値や、検証しない JSON の口 (`set_effects_json` など) から来たもの。
+  上の「検証していないもの」は、Rust から組み立てた値 (`Puppet::start_motion`・`Puppet::set_effects` に直接渡したもの) から来たもの。
+  エフェクトの設定は `Puppet::try_set_effects` で読み込みと同じに検証でき、C ABI・wasm・Godot の `set_effects_json` はこれを使う (T0461)。
 - `Puppet::update` でモーションのパーツの不透明度のカーブとリップシンクの強さを使わない値は、指揮役が配る記録
   (`part_opacities_applied`・`lip_sync_applied`) にも入れない。受け手の `follow` は有限でないものを拒むので、指揮役の出力はいつも受け手に通る
   (`crates/ugoe/tests/host_numbers.rs`)。
@@ -128,7 +129,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 光源 | 向きが 0・有限でない値・`range` が正でない・負の色を拒む (`ugoe_lighting_uniform`) | `set_lighting_json` は同じ条件で例外 | `ambient_light` は色が有限で負でなければ受け付け、そうでなければ拒む。光源は C ABI と同じ条件で、通らないものは警告を出して使わない |
 | 当たり判定の点 | 下の層と同じ (当たらない) | 同じ | 同じ |
 | 表示 (wasm のビュー・Godot のマスク) | — | `set_view`・`pan_by`・`zoom_at`・`set_background` は有限でなければ何も変えない ([wasm の表](../crates/ugoe-wasm/README.md#有限でない値と-dt)) | `mask_scale` は有限でなければ拒む |
-| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json` は検証して拒む。`set_effects_json` は検証しない) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外) | 同じ |
+| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json` は検証して拒む。`ugoe_puppet_set_effects_json` は検証して `UGOE_ERROR_INVALID_MODEL` で拒み、`ugoe_last_error_kind` は `invalid_model`、補足の値 `errors` は検査のエラーの数) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外。`set_effects_json` は `code` が `invalid_model` で `errors` を持つ例外) | 同じ (`set_effects_json` は C ABI と同じ文のエラーを出して false) |
 
 - C ABI が拒む値を下の層は「書かない」「0 とみなす」で受け付けるのは、上の層の表し方の違いで、前提の違いではない。C ABI は結果コードで知らせる流儀なので、
   ホストの誤りを早く見つけられるよう拒む (T0423)。
