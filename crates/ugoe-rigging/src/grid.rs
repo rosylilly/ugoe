@@ -11,7 +11,9 @@ pub(crate) struct Axis<'a> {
     pub keys: &'a [f32],
     /// 中立のキーの位置 `z_k`。
     pub neutral: usize,
-    /// 線形インデックスでの 1 キーあたりの間隔。
+    /// 線形インデックスでの 1 キーあたりの間隔。`Layout::new` が積のあふれを検査した後の値なので、
+    /// 加算合成とミラーの内側のループはこれで添字を求める (`grid_index::linear_index` で毎回求め直すと、
+    /// 6 軸の格子の加算合成で 1.3〜1.6 倍遅かった。T0565)。
     pub stride: usize,
 }
 

@@ -330,6 +330,29 @@ fn is_open_eye(label: Label) -> bool {
     )
 }
 
+/// 真下に垂れる振り子 ([`Rig::pendulum`]) の設定。
+pub(crate) struct Pendulum<'a> {
+    /// リグの ID と表示名。
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    /// 根元を取り付けるデフォーマ。
+    pub(crate) frame: &'a DeformerId,
+    /// 親が `frame` の要素 (根元の位置をその親の座標系で書く)。
+    pub(crate) space: &'a KeyformTarget,
+    /// 根元を横に動かす入力のパラメータ。
+    pub(crate) input: &'a str,
+    /// 根元 (キャンバス座標)。
+    pub(crate) root: Vec2,
+    /// 根元から先へ、区間ごとの長さ。
+    pub(crate) lengths: &'a [f32],
+    pub(crate) sway: hair::Sway,
+    /// 入力の値で根元が横に動く幅 (`±shift`)。
+    pub(crate) shift: f32,
+    /// 先の粒子の横の変位を `weights` の重みで足す頂点の持ち主。
+    pub(crate) owner: VertexOwner,
+    pub(crate) weights: Vec<f32>,
+}
+
 /// キャンバス座標の軸に平行な矩形。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Rect {
@@ -1282,19 +1305,19 @@ impl Rig {
             let length = (rect.max.y - top) * sway.length;
             let lengths = vec![length / sway.sections as f32; sway.sections];
             let shift = sway.shift * face.size().x;
-            let rig = self.pendulum(
-                &format!("Hair{kind}{side}"),
-                format!("Hair {kind} {side}").trim_end(),
-                head,
-                &KeyformTarget::Deformer(face_warp.clone()),
-                standard::ANGLE_X,
+            let rig = self.pendulum(Pendulum {
+                id: &format!("Hair{kind}{side}"),
+                name: format!("Hair {kind} {side}").trim_end(),
+                frame: head,
+                space: &KeyformTarget::Deformer(face_warp.clone()),
+                input: standard::ANGLE_X,
                 root,
-                &lengths,
+                lengths: &lengths,
                 sway,
                 shift,
-                VertexOwner::Warp(warp),
+                owner: VertexOwner::Warp(warp),
                 weights,
-            )?;
+            })?;
             self.apply(Command::AddPhysicsRig { rig })?;
             rationale.push(format!(
                 "Hair sway: {} ({} meshes) sways with a {}-section pendulum ({length:.0} px long) attached to the head (`AngleX` ±30 moves the root by {shift:.0} px)",
@@ -1306,24 +1329,21 @@ impl Rig {
         Ok(())
     }
 
-    /// 真下に垂れる振り子 (根元 `root` はキャンバス座標) の動的物理のリグ。根元は `frame` に取り付け、
-    /// 先の粒子の横の変位を `owner` の頂点に `weights` の重みで足す。`space` は親が `frame` の要素
-    /// (根元の位置をその親の座標系で書く)。入力は `input` の値で根元を横に `±shift` だけ動かす。
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pendulum(
-        &self,
-        id: &str,
-        name: &str,
-        frame: &DeformerId,
-        space: &KeyformTarget,
-        input: &str,
-        root: Vec2,
-        lengths: &[f32],
-        sway: hair::Sway,
-        shift: f32,
-        owner: VertexOwner,
-        weights: Vec<f32>,
-    ) -> Result<PhysicsRig, AiError> {
+    /// 真下に垂れる振り子 `spec` の動的物理のリグ。
+    pub(crate) fn pendulum(&self, spec: Pendulum<'_>) -> Result<PhysicsRig, AiError> {
+        let Pendulum {
+            id,
+            name,
+            frame,
+            space,
+            input,
+            root,
+            lengths,
+            sway,
+            shift,
+            owner,
+            weights,
+        } = spec;
         // 根元の位置は `frame` の局所座標で書く (リグの髪なら頭の回転デフォーマ。その子の顔のワープの親の座標系)。
         let local = canvas_to_local(
             self.model(),

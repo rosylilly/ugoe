@@ -48,9 +48,9 @@ use crate::classify::{Label, LabelCategory, LayerLabel, Side};
 use crate::instructions::Instructions;
 use crate::rig::hair::{self, Sway};
 use crate::rig::{
-    Answered, MeshPart, Rect, RejectedAnswer, Rig, RigTemplate, ask_until_valid, mesh_bounds,
-    mesh_name, mesh_parts_where, push_rejected, range_errors, revision_rules, template,
-    values_schema,
+    Answered, MeshPart, Pendulum, Rect, RejectedAnswer, Rig, RigTemplate, ask_until_valid,
+    mesh_bounds, mesh_name, mesh_parts_where, push_rejected, range_errors, revision_rules,
+    template, values_schema,
 };
 use crate::turn::Builder;
 use crate::{AiError, Proposal, Provider, ProviderRequest};
@@ -1296,19 +1296,19 @@ fn rig_sway(
         .map(|p| p.rigs.iter().map(|r| r.id.to_string()).collect())
         .unwrap_or_default();
     let rig_id = fresh_id(cx.module, &base, existing.iter().map(String::as_str));
-    let mut physics = rig.pendulum(
-        &rig_id,
-        &format!("Sway {} {}", group.label, group.side.as_str()),
+    let mut physics = rig.pendulum(Pendulum {
+        id: &rig_id,
+        name: &format!("Sway {} {}", group.label, group.side.as_str()),
         frame,
-        &target,
-        group.input.as_str(),
+        space: &target,
+        input: group.input.as_str(),
         root,
-        &lengths,
+        lengths: &lengths,
         sway,
         shift,
-        VertexOwner::Warp(warp),
+        owner: VertexOwner::Warp(warp),
         weights,
-    )?;
+    })?;
     let collide = if cx.options.colliders {
         sway_colliders(rig, &mut physics, &cx.layout.colliders, rect)?
     } else {
