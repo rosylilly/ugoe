@@ -1,11 +1,11 @@
 ---
 id: T0571
 title: "ugoe-psd の Invalid・Unsupported の理由を構造にして psd_read.* の detail を訳し、EditorError::PsdRead に原因を持たせる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-psd, ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0571
 ---
 
 # T0571: ugoe-psd の Invalid・Unsupported の理由を構造にして psd_read.* の detail を訳し、EditorError::PsdRead に原因を持たせる
