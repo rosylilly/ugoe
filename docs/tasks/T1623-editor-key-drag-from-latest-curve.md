@@ -1,11 +1,11 @@
 ---
 id: T1623
 title: "エディタ: ドープシートとカーブのグラフのキー・取っ手のドラッグを、送る直前のカーブから組み立てる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1623
 ---
 
 # T1623: エディタ: ドープシートとカーブのグラフのキー・取っ手のドラッグを、送る直前のカーブから組み立てる
