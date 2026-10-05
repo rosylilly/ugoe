@@ -18,6 +18,10 @@
 バンドルと同じコンテナなので、これも拡張子ではなく中身 (`MODL` の代わりに `MODU` チャンクを持つ) で判別する。`render` にモジュールを
 渡すとエラーになる (モジュールは本体に付けないと描けないので、`render` では `--module` で付ける)。
 
+入力のファイルは、利用者が自分で渡すものなので通常のファイルに限らない (`/dev/stdin` や `<(...)` の FIFO も読める。
+`ugoe build` の入力も同じ)。外からパスを受ける MCP サーバやアプリは通常のファイルだけを読む (T0530 の線引き)。
+`render` の `--texture` などの補助のファイルと、`import-psd` の PSD は通常のファイルだけを読む (下の各節)。
+
 ```sh
 ugoe validate model.json                 # 検証。問題なければ "ok"
 ugoe validate model.ugoe --profile avatar  # アバタープロファイルへの準拠も検査 (準拠レベルを表示)
@@ -164,13 +168,16 @@ ugoe render character.ugoe -o preview.png           # 取り込んだ結果を�
 
 ### `ugoe build`
 
-`.ugoeproj` プロジェクトか `.ugoe` バンドルから、配布用の `.ugoe` バンドルを書き出す。`--atlas` でテクスチャをアトラスにまとめる
+`.ugoeproj` プロジェクトか `.ugoe` バンドル、または手で書いたモデルの JSON から、配布用の `.ugoe` バンドルを書き出す。
+`.ugoemod` モジュールやモジュールの JSON からは `.ugoemod` を書き出す。`--atlas` でテクスチャをアトラスにまとめる
 (規則は [docs/spec/file-formats.md#テクスチャのアトラス化](../../docs/spec/file-formats.md#テクスチャのアトラス化))。
 
 ```sh
 ugoe build character.ugoeproj -o character.ugoe --atlas
 ugoe build character.ugoe -o packed.ugoe --atlas --atlas-max-size 4096
 ugoe build long-hair.ugoemod -o packed.ugoemod --atlas   # モジュールのテクスチャをモジュールの単位でまとめる
+ugoe build quad.model.json -o quad.ugoe              # 手で書いたモデルの JSON から (画像は隣の textures/<name>.png)
+ugoe build hair.module.json -o hair.ugoemod --compress   # 手で書いたモジュールの JSON から
 ugoe render packed.ugoe -o check.png                 # 見た目が変わっていないことを目で確かめる
 ```
 
@@ -182,12 +189,23 @@ ugoe render packed.ugoe -o check.png                 # 見た目が変わって�
 | `--atlas-padding <PX>` | 各画像の周りに複製する端の画素の幅 (既定 2) |
 | `--compress` | 画像 (`TEXR` `NRML`) 以外のチャンクを zstd で圧縮する (既定は無圧縮) |
 
-- 入力はディレクトリならプロジェクト、ファイルならバンドルとして読む。バンドルの物理・モーション・表情・法線マップ・`META` は引き継ぐ。
+- 入力はディレクトリならプロジェクト、先頭のマジックが `UGOE` のファイルならバンドル (かモジュール)、ほかのファイルなら JSON として読む。バンドルの物理・モーション・表情・法線マップ・`META` は引き継ぐ。
   テクスチャと法線マップは PNG であること (KTX2 はエラー)。アトラスを使わなければ、読んだバンドルと同じ内容のバンドルを書く
   (`assets/compat/dev` の全ファイルで確かめている)。
 - 入力が `.ugoemod` モジュールなら、モジュールとして書き直す。`--atlas` では、モジュールのテクスチャだけをモジュールの単位で
   まとめる (本体のアトラスには入れない。画像はメッシュの宣言順で詰める。`ugoe_editor_core::build_module_atlas`)。
   テクスチャと法線マップの名前が重なっていたり PNG でなければエラー。
+- 入力が JSON なら、最上位に `slot` があればモジュール (`Module`)、なければモデル (`Model`) として読み (拡張子は見ない)、
+  `ugoe_model::validate::validate` / `validate_module` で検証する。壊れた JSON は `parsing ...` で、検証に通らなければバンドルと同じく
+  各エラーを `error: ...` で書いてから件数 (`N validation error(s)`) で失敗する。モデルの JSON からは物理・モーション・表情・`META` の無いバンドルを、
+  モジュールの JSON からは `META` の無いモジュールを書く (`--atlas`・`--compress` はバンドル・モジュールの入力と同じ)。
+  - **画像の置き場:** テクスチャ (`TextureRef::name`) と法線マップ (`TextureRef::normal_map`) の画像は、プロジェクトと同じく
+    JSON の隣の `textures/<name>.png` から名前で読む ([docs/spec/file-formats.md#プロジェクト-ugoeproj](../../docs/spec/file-formats.md#プロジェクト-ugoeproj))。
+    通常のファイルだけを、プロジェクトの画像と同じ上限まで読み、PNG でなければエラーにする。
+  - **画像なし:** 見つからない画像 (名前がファイル名に使えないものも) は 1x1 の画像で埋め、標準エラーに
+    ``warning: texture `<name>` has no image (...); using a 1x1 placeholder`` を書く。テクスチャは不透明な白
+    (`ugoe render` が JSON のモデルに使うものと同じ)、法線マップは正面向き (`(128, 128, 255)` = 法線 `(0, 0, 1)`) で埋める。
+    テストの資料のように絵が要らないなら、画像を置かずに書ける。
 - `--atlas` では標準出力に `atlas: packed 24 texture(s) into 1 atlas(es) [994x1698], kept 0, removed 0 unused` のような要約を書き、
   まとめずに残したテクスチャを標準エラーに `warning: ...` で出す。
 

@@ -35,6 +35,10 @@ character.ugoeproj/
 
 着せ替えのモジュールのプロジェクト ([モジュールのプロジェクト](#モジュールのプロジェクト)) は、`model.json` の代わりに `module.json` を置きます。
 
+`ugoe build` は、手で書いたモデル・モジュールの JSON (`*.model.json`・`*.module.json`) からもバンドル・モジュールを書きます。画像は
+プロジェクトと同じく JSON の隣の `textures/<name>.png` から読み、見つからない画像は 1x1 の画像 (テクスチャは不透明な白、法線マップは正面向き) で埋めます
+([crates/ugoe-cli/README.md](../../crates/ugoe-cli/README.md#ugoe-build))。
+
 ### `project.json`
 
 | フィールド | 型 | 内容 |

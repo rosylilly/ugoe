@@ -1,6 +1,7 @@
 //! `ugoe` コマンド。人間と AI エージェントの双方が、GUI 無しでモデルを検査・変換・確認するための道具。
 
 mod fixtures;
+mod json_source;
 mod physics;
 mod sample;
 
@@ -9,6 +10,7 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
+use json_source::JsonSource;
 use ugoe_editor_core::AtlasOptions;
 use ugoe_format::{TextureData, TextureFormat};
 use ugoe_headless::{Fit, Light, Lighting, RenderOptions, Scene, animate, args};
@@ -146,6 +148,7 @@ struct ImportPsdArgs {
 #[derive(Debug, Args)]
 struct BuildArgs {
     /// 入力の `.ugoeproj` ディレクトリか `.ugoe` バンドル (`.ugoemod` モジュールも可)。
+    /// モデル・モジュールの JSON も可 (画像は JSON の隣の `textures/<name>.png`)。
     input: PathBuf,
     /// 書き出す `.ugoe` バンドル (入力がモジュールなら `.ugoemod`)。
     #[arg(short, long)]
@@ -463,6 +466,7 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
 ///
 /// バンドルから作るときは、物理・モーション・表情・法線マップ・`META` をそのまま引き継ぐ。
 /// 入力が着せ替えのモジュールなら、モジュールとして書き直す ([`rebuild_module`])。
+/// モデル・モジュールの JSON からも書ける ([`read_json_source`])。
 fn run_build(args: BuildArgs) -> anyhow::Result<()> {
     use ugoe_editor_core::Project;
 
@@ -471,11 +475,21 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
             .with_context(|| format!("loading {}", args.input.display()))?;
         (project, None)
     } else {
+        // 利用者が渡すパスなので、`load` と同じく FIFO (`/dev/stdin` など) も読む。
         let bytes = std::fs::read(&args.input)
             .with_context(|| format!("reading {}", args.input.display()))?;
-        match read_container(&args.input, &bytes)? {
-            Container::Bundle(bundle) => project_from_bundle(*bundle)?,
-            Container::Module(file) => return rebuild_module(&args, &file),
+        if bytes.starts_with(&ugoe_format::MAGIC) {
+            match read_container(&args.input, &bytes)? {
+                Container::Bundle(bundle) => project_from_bundle(*bundle)?,
+                Container::Module(file) => return rebuild_module(&args, &file),
+            }
+        } else {
+            match read_json_source(&args.input, bytes)? {
+                JsonSource::Model(model) => (project_from_json(&args.input, *model)?, None),
+                JsonSource::Module(module) => {
+                    return rebuild_module(&args, &module_file_from_json(&args.input, *module)?);
+                }
+            }
         }
     };
 
@@ -579,6 +593,58 @@ fn project_from_bundle(
     project.motions = bundle.motions;
     project.expressions = bundle.expressions;
     Ok((project, bundle.meta))
+}
+
+/// `ugoe build` の入力の JSON (モデルかモジュール) を読む ([`json_source::parse`])。検証に通らなければ、
+/// バンドルと同じ形 (各エラーを `error: ...`、最後に件数) で失敗する。
+fn read_json_source(path: &Path, bytes: Vec<u8>) -> anyhow::Result<JsonSource> {
+    let json = String::from_utf8(bytes).with_context(|| {
+        format!(
+            "{} is neither a .ugoe bundle, a .ugoemod module nor UTF-8 JSON",
+            path.display()
+        )
+    })?;
+    match json_source::parse(path, &json)? {
+        Ok(source) => Ok(source),
+        Err(error) => Err(validation_failure(path, &error).unwrap_or_else(|| error.into())),
+    }
+}
+
+/// モデルの JSON を、`ugoe build` が扱うプロジェクトにする。画像は JSON の隣の `textures/<name>.png`
+/// ([`json_source::images`])。
+fn project_from_json(path: &Path, model: Model) -> anyhow::Result<ugoe_editor_core::Project> {
+    use ugoe_editor_core::{Project, ProjectMeta};
+
+    let textures = json_source::images(path, &model.textures)?;
+    Ok(Project::new(
+        ProjectMeta::new(model.meta.name.clone()),
+        model,
+        textures,
+    ))
+}
+
+/// モジュールの JSON を、画像 (JSON の隣の `textures/<name>.png`) を付けたモジュールのファイルにする。
+fn module_file_from_json(
+    path: &Path,
+    module: ugoe_model::module::Module,
+) -> anyhow::Result<ugoe_format::ModuleFile> {
+    let images = json_source::images(path, &module.textures)?;
+    let image = |name: &str| TextureData {
+        format: TextureFormat::Png,
+        bytes: images.get(name).map(|png| png.to_vec()).unwrap_or_default(),
+    };
+    let textures = module.textures.iter().map(|t| image(&t.name)).collect();
+    // 法線マップは `normal_map` を持つテクスチャごとに 1 つずつ (同じ名前でも並べる)。
+    let normal_maps = module
+        .textures
+        .iter()
+        .filter_map(|t| t.normal_map.as_deref())
+        .map(image)
+        .collect();
+    let mut file = ugoe_format::ModuleFile::new(module);
+    file.textures = textures;
+    file.normal_maps = normal_maps;
+    Ok(file)
 }
 
 /// `ugoe build <module>.ugoemod`: 着せ替えのモジュールを読み直して書き出す。`--atlas` ではモジュールの
@@ -842,23 +908,35 @@ fn read_container(path: &Path, bytes: &[u8]) -> anyhow::Result<Container> {
     };
     if let Err(e) = &result
         && let Some(format_error) = e.downcast_ref::<FormatError>()
-        && let Some(errors) = format_error.validation_errors()
+        && let Some(failure) = validation_failure(path, format_error)
     {
-        // モーションと表情のエラーは名前を前に付ける。
-        let prefix = match format_error {
-            FormatError::InvalidMotion { name, .. }
-            | FormatError::InvalidExpression { name, .. } => {
-                format!("{name}: ")
-            }
-            _ => String::new(),
-        };
-        for error in errors {
-            eprintln!("error: {prefix}{error}");
-        }
-        // 各エラーは上で上限なしに書いたので、最後の文は件数だけにする (`validate` のモデルの検査と同じ形)。
-        bail!("{}: {} validation error(s)", path.display(), errors.len());
+        return Err(failure);
     }
     result
+}
+
+/// 検証エラーの列を持つ `error` なら、各エラーを標準エラーに `error: ...` で書き、件数で失敗するエラーを返す。
+/// ほかの種類は `None`。
+fn validation_failure(path: &Path, error: &ugoe_format::FormatError) -> Option<anyhow::Error> {
+    use ugoe_format::FormatError;
+
+    let errors = error.validation_errors()?;
+    // モーションと表情のエラーは名前を前に付ける。
+    let prefix = match error {
+        FormatError::InvalidMotion { name, .. } | FormatError::InvalidExpression { name, .. } => {
+            format!("{name}: ")
+        }
+        _ => String::new(),
+    };
+    for error in errors {
+        eprintln!("error: {prefix}{error}");
+    }
+    // 各エラーは上で上限なしに書いたので、最後の文は件数だけにする (`validate` のモデルの検査と同じ形)。
+    Some(anyhow::anyhow!(
+        "{}: {} validation error(s)",
+        path.display(),
+        errors.len()
+    ))
 }
 
 /// `fixture:<name>`、`.ugoe` バンドル・`.ugoemod` モジュール (先頭のマジックで判別)、モデル JSON のいずれかを読む。

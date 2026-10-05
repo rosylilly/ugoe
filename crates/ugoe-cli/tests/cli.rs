@@ -640,3 +640,190 @@ fn build_packs_module_textures_into_an_atlas() {
     assert_eq!(after.module.physics, before.module.physics);
     assert_eq!(after.meta, before.meta);
 }
+
+/// 手で書いた資料の置き場 (`spec/examples/bundles/`・`bindings/unity/tests/Fixtures/`)。
+fn repo_file(path: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+}
+
+/// `ugoe build <file>.model.json`: JSON の隣の `textures/<name>.png` を画像に使い、無い画像は 1x1 で埋める。
+/// 読み直すと同じモデルになる。
+#[test]
+fn build_writes_a_bundle_from_model_json() {
+    use ugoe_editor_core::texture::solid_png;
+
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let json = tmp.join("lit-quads.model.json");
+    std::fs::copy(
+        repo_file("spec/examples/bundles/lit-quads.model.json"),
+        &json,
+    )
+    .expect("copy model");
+    std::fs::create_dir(tmp.join("textures")).expect("create textures");
+    let (base, bumps) = (
+        solid_png(2, 2, [200, 160, 120, 255]),
+        solid_png(2, 2, [100, 140, 230, 255]),
+    );
+    std::fs::write(tmp.join("textures/base.png"), &base).expect("write base");
+    std::fs::write(tmp.join("textures/bumps_a.png"), &bumps).expect("write bumps_a");
+
+    let bundle = tmp.join("lit-quads.ugoe");
+    let output = ugoe(&["build", &path(&json), "-o", &path(&bundle)]);
+    stdout(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["texture `flat`", "texture `cloth`", "normal map `bumps_b`"] {
+        assert!(
+            stderr.contains(&format!("warning: {name} has no image")),
+            "{stderr}"
+        );
+    }
+    assert!(!stderr.contains("`base`"), "{stderr}");
+
+    let read =
+        ugoe_format::read_bundle(&std::fs::read(&bundle).expect("read bundle")).expect("bundle");
+    let expected =
+        ugoe_format::model_from_json(&std::fs::read_to_string(&json).expect("read json"))
+            .expect("model");
+    assert_eq!(read.model, expected);
+    assert_eq!(read.textures.len(), 4);
+    assert_eq!(read.textures[0].bytes, base);
+    let white = solid_png(1, 1, [255, 255, 255, 255]);
+    assert!(read.textures[1..].iter().all(|t| t.bytes == white));
+    // 法線マップは `normal_map` を持つテクスチャごとに 1 つ (base → bumps_a、cloth と cloth_dark → bumps_b)。
+    let flat = solid_png(1, 1, [128, 128, 255, 255]);
+    let normals: Vec<&[u8]> = read
+        .normal_maps
+        .iter()
+        .map(|t| t.bytes.as_slice())
+        .collect();
+    assert_eq!(normals, [bumps.as_slice(), &flat, &flat]);
+
+    // `--atlas`: 法線マップの無いテクスチャだけをまとめ、法線マップのあるものは警告して残す。
+    let atlased = tmp.join("lit-quads-atlas.ugoe");
+    let output = ugoe(&["build", &path(&json), "-o", &path(&atlased), "--atlas"]);
+    let out = stdout(&output);
+    assert!(
+        out.contains("packed 1 texture(s) into 1 atlas(es)"),
+        "{out}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: texture `base` was not packed (it has a normal map)"),
+        "{stderr}"
+    );
+    assert_eq!(stdout(&ugoe(&["validate", &path(&atlased)])).trim(), "ok");
+}
+
+/// `ugoe build <file>.module.json`: モジュールとして書き、読み直すと同じモジュールになる (`--atlas`・`--compress` とも)。
+/// Unity の資料 (`unknown-mask.ugoemod`) と公開仕様の例 (`short-hair.ugoemod`) のモジュールも作れる。
+#[test]
+fn build_writes_a_module_from_module_json() {
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let read = |p: &std::path::Path| {
+        ugoe_format::read_module(&std::fs::read(p).expect("read module")).expect("module")
+    };
+    for (json, made) in [
+        (
+            "bindings/unity/tests/Fixtures/unknown-mask.module.json",
+            "bindings/unity/tests/Fixtures/unknown-mask.ugoemod",
+        ),
+        (
+            "spec/examples/bundles/short-hair.module.json",
+            "spec/examples/bundles/short-hair.ugoemod",
+        ),
+    ] {
+        let json = repo_file(json);
+        let expected = read(&repo_file(made));
+        let module =
+            ugoe_format::module_from_json(&std::fs::read_to_string(&json).expect("read json"))
+                .expect("module");
+        assert_eq!(expected.module, module, "{made}");
+
+        let out = tmp.join("plain.ugoemod");
+        stdout(&ugoe(&["build", &path(&json), "-o", &path(&out)]));
+        let built = read(&out);
+        assert_eq!(built.module, module, "{made}");
+        assert_eq!(built.textures.len(), module.textures.len());
+
+        let out = tmp.join("atlas.ugoemod");
+        let printed = stdout(&ugoe(&[
+            "build",
+            &path(&json),
+            "-o",
+            &path(&out),
+            "--atlas",
+            "--compress",
+        ]));
+        assert!(printed.contains("into 1 atlas(es)"), "{printed}");
+        let built = read(&out);
+        assert_eq!(built.module.parts, module.parts, "{made}");
+        assert_eq!(built.module.physics, module.physics, "{made}");
+        assert_eq!(built.module.textures[0].name, "atlas-0");
+    }
+}
+
+/// `ugoe build` に渡した JSON が壊れている・検証に通らない・画像が PNG でないときは、バンドルと同じ形で失敗する。
+#[test]
+fn build_rejects_broken_or_invalid_json() {
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let out = path(&tmp.join("out.ugoe"));
+    let fails = |json: &std::path::Path| {
+        let output = ugoe(&["build", &path(json), "-o", &out]);
+        assert!(!output.status.success());
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+
+    let broken = tmp.join("broken.model.json");
+    std::fs::write(&broken, "{\"schema_version\": 0,").expect("write broken");
+    let stderr = fails(&broken);
+    assert!(stderr.contains("parsing"), "{stderr}");
+
+    // メッシュが無いテクスチャを指すモデル。
+    let mut model: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_file(
+            "bindings/unity/tests/Fixtures/mask-base.model.json",
+        ))
+        .expect("read model"),
+    )
+    .expect("model json");
+    model["meshes"][0]["texture"] = 7.into();
+    let invalid = tmp.join("invalid.model.json");
+    std::fs::write(&invalid, model.to_string()).expect("write invalid model");
+    let stderr = fails(&invalid);
+    assert!(stderr.contains("error: "), "{stderr}");
+    assert!(stderr.contains("1 validation error(s)"), "{stderr}");
+
+    // 名前に `/` を含むモジュール。
+    let mut module: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_file("spec/examples/bundles/short-hair.module.json"))
+            .expect("read module"),
+    )
+    .expect("module json");
+    module["name"] = "hair/short".into();
+    let invalid = tmp.join("invalid.module.json");
+    std::fs::write(&invalid, module.to_string()).expect("write invalid module");
+    let stderr = fails(&invalid);
+    assert!(stderr.contains("error: "), "{stderr}");
+    assert!(stderr.contains("1 validation error(s)"), "{stderr}");
+
+    // 隣の画像が PNG でない。
+    let dir = tmp.join("not-png");
+    std::fs::create_dir_all(dir.join("textures")).expect("create textures");
+    let json = dir.join("mask-base.model.json");
+    std::fs::copy(
+        repo_file("bindings/unity/tests/Fixtures/mask-base.model.json"),
+        &json,
+    )
+    .expect("copy model");
+    std::fs::write(dir.join("textures/white.png"), b"not a png").expect("write image");
+    let stderr = fails(&json);
+    assert!(stderr.contains("is not a PNG"), "{stderr}");
+}
