@@ -1,11 +1,11 @@
 ---
 id: T1629
 title: "エディタ: 分類のキャッシュのあるプロジェクトを開くときの PSD の読み直しを、開いた後のバックグラウンドに回す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1629
 ---
 
 # T1629: エディタ: 分類のキャッシュのあるプロジェクトを開くときの PSD の読み直しを、開いた後のバックグラウンドに回す

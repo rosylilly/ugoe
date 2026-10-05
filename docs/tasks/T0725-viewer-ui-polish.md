@@ -1,11 +1,11 @@
 ---
 id: T0725
 title: ビューア UI: 配置・レイアウト・アクセシビリティの見直し
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/viewer, packages, docs]
 depends_on: [T0916, T0917, T0724]
-assignee:
+assignee: claude-worker-T0725
 ---
 
 # T0725: ビューア UI: 配置・レイアウト・アクセシビリティの見直し
