@@ -26,8 +26,8 @@ use ugoe::model::{BlendMode, MaskMode};
 use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
-    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, front_facing,
-    ktx2_as_stored, ktx2_is_bc1_rgb, premultiply,
+    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, decode_png,
+    front_facing, ktx2_as_stored, ktx2_is_bc1_rgb, premultiply,
 };
 use crate::shader::{self, ShaderKind};
 
@@ -242,22 +242,35 @@ fn vec2(p: UVec2) -> Vector2 {
     Vector2::new(p.x, p.y)
 }
 
-/// 画像をデコードする。読めなければ `None`。KTX2 は保存された値のまま読む ([`ktx2_as_stored`])。
+/// 画像をデコードする。読めなければ `None`。PNG は参照と同じデコーダで RGBA8 にし ([`decode_png`])、
+/// KTX2 は Godot で保存された値のまま読む ([`ktx2_as_stored`])。
 fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
-    let mut image = Image::new_gd();
-    let bytes = PackedByteArray::from(data.bytes.as_slice());
-    let err = match data.format {
-        TextureFormat::Png => image.load_png_from_buffer(&bytes),
-        TextureFormat::Ktx2 => match ktx2_as_stored(&data.bytes) {
-            Some(patched) => image.load_ktx_from_buffer(&PackedByteArray::from(patched.as_slice())),
-            None => image.load_ktx_from_buffer(&bytes),
-        },
+    let image = match data.format {
+        TextureFormat::Png => decode_png(&data.bytes).ok().and_then(|png| {
+            Image::create_from_data(
+                i32::try_from(png.width).ok()?,
+                i32::try_from(png.height).ok()?,
+                false,
+                Format::RGBA8,
+                &PackedByteArray::from(png.pixels.as_slice()),
+            )
+        }),
+        TextureFormat::Ktx2 => {
+            let mut image = Image::new_gd();
+            let err = match ktx2_as_stored(&data.bytes) {
+                Some(patched) => {
+                    image.load_ktx_from_buffer(&PackedByteArray::from(patched.as_slice()))
+                }
+                None => image.load_ktx_from_buffer(&PackedByteArray::from(data.bytes.as_slice())),
+            };
+            (err == godot::global::Error::OK).then_some(image)
+        }
     };
-    if err != godot::global::Error::OK || image.is_empty() {
+    let image = image.filter(|i| !i.is_empty());
+    if image.is_none() {
         godot_warn!("ugoe: failed to decode a {what} ({:?})", data.format);
-        return None;
     }
-    Some(image)
+    image
 }
 
 /// 画像を Godot のテクスチャにする。読めなければ `None` (白で描く)。

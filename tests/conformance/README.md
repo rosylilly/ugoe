@@ -123,8 +123,9 @@ Forward+ (lavapipe) でも実行する (T0467)。落ちたら `target/conformanc
 8 ビットの RGBA ではない PNG のケース (T0473。`src/bundles.rs`):
 
 - `png-16bit`: `masks-nested` のテクスチャを 16 ビットの RGBA にしたもの (上位の 8 ビットが元の画素、下位は位置で変わる値)。
-  参照は上位の 8 ビットを使うので、`masks-nested` と同じ画素になる。ガンマのチャンク (`gAMA`) は書かない
-  (Godot の PNG の読み込みは `gAMA` で値を変え、ガンマ 1.0 では参照と画像が合わない。T0473 で確かめた)。
+  ガンマ 1.0 の `gAMA` を持つ。参照は上位の 8 ビットを使い、ガンマや色のチャンクを見ない ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提)) ので、
+  `masks-nested` と同じ画素になる (ガンマを補正するデコーダでは大きく変わる。Godot の `Image.load_png_from_buffer` では 87.5% の画素しか
+  一致しなかったので、Godot も参照と同じデコーダで PNG を読む。T0477)。
 - `png-palette`: 16 色のパレット (`PLTE`) と色ごとのアルファ (`tRNS`) の PNG。
 
 KTX2 は `ugoe_headless::image::encode_ktx2` で書く (乗算済みの印 `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てない。ブロック圧縮は

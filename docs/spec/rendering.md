@@ -22,8 +22,8 @@
     広げる前の値) が一致する画素のアルファを 0、ほかを 255 にします。
   - インターレース (Adam7) の画像は行の順の画像に戻します。APNG は既定の画像 (`IDAT`) だけを使い、アニメーションの枠
     (`fcTL`・`fdAT`) は見ません。
-  - 参照の実装は `ugoe_format::image::decode_png` で、C ABI の `ugoe_image_decode` と wasm も同じ関数を使います。
-    Godot は今は Godot の PNG の読み込みを使い、`gAMA` で値が変わります (上の決まりを満たさない。T0477)。
+  - 参照の実装は `ugoe_format::image::decode_png` で、C ABI の `ugoe_image_decode`・wasm・Godot のバインディングも同じ関数を使います
+    (Godot の PNG の読み込みは `gAMA` で値を変えるので使わない。T0477)。
 
   KTX2 では:
   - KTX2 のデータ形式の記述の `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` は見ません (立っていても乗算していないとみなす。書き出しは立てない)。

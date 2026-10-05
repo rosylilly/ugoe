@@ -184,8 +184,8 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `max_total_decompressed` | 1073741824 (1 GiB) | 1 つのファイルで展開したバイトの合計の上限 |
 | `max_image_side` | 16384 | テクスチャと法線マップの画像 (PNG・KTX2) の幅と高さそれぞれの上限 (画素)。wasm の `max_image_side` と同じ |
 
-負の値 (と `max_image_side` の 2^32 以上) は拒む (エラーを出して前の値を保つ)。画像は Godot がデコードするので、デコードする前に
-PNG の `IHDR` と KTX2 の見出しの大きさで調べる (見出しを読めない画像は調べず、今までどおり Godot に任せる。読めなければ白で描く)。
+負の値 (と `max_image_side` の 2^32 以上) は拒む (エラーを出して前の値を保つ)。画像はデコードする前 (読み込みのとき) に
+PNG の `IHDR` と KTX2 の見出しの大きさで調べる (見出しを読めない画像は調べず、デコーダに任せる。読めなければ白で描く)。
 モデルの JSON (`load_model_from_json`) は展開も画像も無いので上限を使わない。
 
 上限を超えると読み込みは失敗し (モデルは外れ、モジュールは付かない)、`get_load_error()` が種類と補足の値を返す。
@@ -296,6 +296,14 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   足し直すと、RenderingServer が呼ぶたびにポリゴンを作り直す)。キャンバスアイテムの矩形 (画面の外の選別) は位置から設定し直す。
   裏面カリングの要素は描く三角形 (頂点番号) が変わるので、変わるたびに三角形の配列を足し直す。
 - テクスチャは読み込み時に乗算済みアルファに変換する (法線マップは変換しない)。式・合成モードの表し方は `src/shader.rs` の冒頭を参照。
+- PNG は Godot の `Image.load_png_from_buffer` ではなく、参照と同じデコーダ (`ugoe_format::image::decode_png`。feature `png`) で
+  乗算していない RGBA8 にし、`Image.create_from_data` で Godot の画像にする (`src/model.rs` の `decode_png`。T0477)。
+  Godot の読み込み (libpng の簡易 API) は `gAMA` のガンマを sRGB に補正して値を変える (適合テストの `png-16bit` にガンマ 1.0 の
+  `gAMA` を書くと 87.5% の画素しか一致しなかった) が、仕様ではガンマや色のチャンク (`gAMA`・`sRGB`・`iCCP`・`cHRM`) を見ずに
+  保存された値のまま使い、16 ビットは上位の 8 ビットにする ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。
+  読む前にチャンクを取り除く方法は選ばなかった: 16 ビットの丸めやパレットの展開も libpng の決まりに頼ることになり、
+  参照と同じになることを Godot の版ごとに確かめる必要が残るため。同じ関数を C ABI・wasm・Unity も使う。
+  Godot の挙動は [drivers/png/png_driver_common.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/drivers/png/png_driver_common.cpp) で調べた。
 - KTX2 は Godot の `Image.load_ktx_from_buffer` で読み、PNG と同じく乗算する ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。
   - Godot 4.7 は `R8G8B8(A8)_SRGB` をリニアに変換して読み (8 ビットのまま。戻せない)、`R8G8B8(A8)_UNORM` は読めず、
     転送関数が sRGB の Basis Universal は RGBA8 に展開してリニアに変換する。仕様では値をそのまま使うので、読む前にヘッダを
@@ -305,7 +313,7 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   - 圧縮した形式は `Image.decompress` で展開してから乗算する (GPU では圧縮しないで持つ)。展開できない形式は警告を出し、
     乗算せずにそのまま描く。Godot は BC1 をアルファのあるもの (`FORMAT_DXT1`) として展開し、3 色のモード (`color0 <= color1`) の
     4 つ目の色を透明にするので、アルファの無い `BC1_RGB_*` は展開した後でアルファを 255 にする (`src/model.rs` の `ktx2_is_bc1_rgb`。
-    参照と同じ。T0467)。法線マップは RGB だけを読むので変えない。Godot が読めない形式 (`B8G8R8A8_*` など) は、PNG と同じく警告を出して白で描く。
+    参照と同じ。T0467)。法線マップは RGB だけを読むので変えない。Godot が読めない形式 (`B8G8R8A8_*` など) は、読めない PNG と同じく警告を出して白で描く。
   - ミップマップは捨てて最初の段だけを使う。
   - 確かめたもの: 適合テストの `ktx2-*` のケース (参照と比べる) で `R8G8B8A8_SRGB`・`R8G8B8A8_UNORM` (ミップマップ付き・zstd の超圧縮)・
     `BC3_UNORM_BLOCK`・`BC7_SRGB_BLOCK` (zstd)・法線マップの `BC1_RGB_UNORM_BLOCK`・すべてのブロックが 3 色のモードの

@@ -87,7 +87,7 @@ results within the tolerances of [Conformance](#conformance).
     default image (`IDAT`) is used; the animation frames (`fcTL`, `fdAT`) are ignored.
 
   *Informative:* the reference implementation's PNG decoder follows these rules for every host that
-  uses it (the command-line tool, the C ABI and WebAssembly).
+  uses it (the command-line tool, the C ABI, WebAssembly and the Godot binding).
 - KTX2 texture images ([bundle.md](bundle.md#textures-and-normal-maps)) are non-premultiplied as
   well. A renderer:
   - ignores `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` in the KTX2 data format descriptor (writers do not

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ugoe::core::{Rgb, Vec2};
+use ugoe::format::image::{ImageError, ImageLimits, Rgba8};
 use ugoe::format::module_file::read_module_with;
 use ugoe::format::{Bundle, FormatError, TextureData, TextureFormat};
 use ugoe::lighting::{Light, Lighting, MAX_LIGHTS};
@@ -27,7 +28,7 @@ pub const DEFAULT_MAX_IMAGE_SIDE: u32 = 16384;
 /// 読み込みの上限 (`docs/spec/file-formats.md#読み込みの上限`)。上限はファイル形式の決まりではなく、組み込む側の方針。
 ///
 /// 展開の上限 (`read`) は SDK・C ABI と同じ。画像の一辺の上限 (`max_image_side`) は wasm の `max_image_side` と同じ意味で、
-/// 画像は Godot がデコードするので、デコードする前に PNG と KTX2 の見出しの大きさで調べる ([`image_size`])。
+/// 画像はデコードする前に (読み込みのときに) PNG と KTX2 の見出しの大きさで調べる ([`image_size`])。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LoadLimits {
     pub read: ReadLimits,
@@ -175,7 +176,7 @@ const KTX2_IDENTIFIER: [u8; 12] = [
 ];
 
 /// 画像の幅と高さを見出しから読む (デコードしない)。PNG は最初のチャンク `IHDR`、KTX2 は `pixelWidth`・`pixelHeight`。
-/// 見出しが読めなければ `None` (上限は調べず、Godot のデコーダに任せる。読めなければ白で描く)。
+/// 見出しが読めなければ `None` (上限は調べず、デコーダに任せる。読めなければ白で描く)。
 pub fn image_size(format: TextureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
     let read = |at: usize, big_endian: bool| -> Option<u32> {
         let b: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
@@ -199,6 +200,17 @@ pub fn image_size(format: TextureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
             Some((read(20, false)?, read(24, false)?))
         }
     }
+}
+
+/// PNG をデコードして、乗算していないアルファの RGBA8 にする。
+///
+/// Godot の `Image.load_png_from_buffer` は使わず、参照と同じデコーダ (`ugoe::format::image::decode_png`) で読む。
+/// Godot の読み込み (libpng の簡易 API) は `gAMA` のガンマを sRGB に補正して値を変え、16 ビットも上位のバイトを
+/// そのまま取るとは限らない。仕様ではガンマや色のチャンクを見ずに保存された値のまま使い、16 ビットは上位の 8 ビットにする
+/// (`docs/spec/rendering.md#前提`。T0477)。
+/// 一辺の上限は読み込みのときに見出しで調べてある ([`check_image_sizes`]) ので、ここでは制限しない。
+pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, ImageError> {
+    ugoe::format::image::decode_png(bytes, ImageLimits::default().with_max_side(u32::MAX))
 }
 
 /// テクスチャ (`textures`) と法線マップ (`normal_maps`。どちらもテクスチャの番号の順) の一辺が `max` を超えないか調べる。
@@ -1153,6 +1165,32 @@ mod tests {
         bytes.extend_from_slice(&height.to_be_bytes());
         bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
         bytes
+    }
+
+    /// PNG はガンマのチャンク (`gAMA` 1.0・`sRGB`) で値を変えず、16 ビットは上位の 8 ビットにする (参照と同じ。T0477)。
+    #[test]
+    fn png_ignores_gamma_and_takes_the_high_byte() {
+        let mut bytes = Vec::new();
+        let mut encoder = png::Encoder::new(&mut bytes, 2, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Sixteen);
+        encoder.set_source_gamma(png::ScaledFloat::new(1.0));
+        encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+        let mut writer = encoder.write_header().expect("header");
+        writer
+            .write_image_data(&[
+                0x12, 0xff, 0x80, 0x7f, 0xab, 0x01, 0xff, 0xff, //
+                0x40, 0x00, 0xc0, 0x99, 0x01, 0xfe, 0x80, 0x80,
+            ])
+            .expect("data");
+        writer.finish().expect("finish");
+        let image = decode_png(&bytes).expect("decode");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(
+            image.pixels,
+            [0x12, 0x80, 0xab, 0xff, 0x40, 0xc0, 0x01, 0x80]
+        );
+        assert!(decode_png(&png_header(1, 1)).is_err());
     }
 
     #[test]

@@ -27,6 +27,7 @@
 //! 8 ビットの RGBA ではない PNG のバンドルも作る (T0473。参照の `ugoe_format::image` と C ABI のデコーダは、16 ビットの上位の
 //! 8 ビットを使い、パレットを展開する)。
 //! - `png-16bit`: `nested-masks` のテクスチャ (PNG) を 16 ビットの RGBA にしたもの (上位の 8 ビットは元の画素、下位は位置で変わる値)。
+//!   ガンマ 1.0 の `gAMA` を持つ (値は変えない。T0477)。
 //! - `png-palette`: `nested-masks` のモデルに、16 色のパレットと `tRNS` (色ごとのアルファ) の PNG のテクスチャを付けたもの。
 
 use std::path::{Path, PathBuf};
@@ -303,8 +304,8 @@ fn three_color_bc1() -> Result<TextureData, Error> {
 }
 
 /// `straight` (乗算していないアルファ) の 16 ビットの RGBA の PNG。上位の 8 ビットは元の値、下位の 8 ビットは画素の位置で変わる
-/// (丸めて 8 ビットにするデコーダとは 1 違うことがある)。`gAMA` は書かない (Godot の PNG の読み込みはガンマで値を変えるので、
-/// 画像が参照と合わなくなる。ガンマのチャンクを無視することは bindings/unity の tests/ImageTests.cs で C ABI を確かめる)。
+/// (丸めて 8 ビットにするデコーダとは 1 違うことがある)。ガンマ 1.0 の `gAMA` を書く (仕様では見ないので値は変わらない。
+/// ガンマを補正するデコーダでは画素が大きく変わる。`docs/spec/rendering.md#前提`。Godot の PNG の読み込みはこれで値を変えていた。T0477)。
 fn sixteen_bit_png(straight: &Rgba8) -> Result<Vec<u8>, Error> {
     let data: Vec<u8> = straight
         .pixels
@@ -318,6 +319,7 @@ fn sixteen_bit_png(straight: &Rgba8) -> Result<Vec<u8>, Error> {
         |encoder| {
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Sixteen);
+            encoder.set_source_gamma(png::ScaledFloat::new(1.0));
         },
         &data,
     )
@@ -653,5 +655,22 @@ mod tests {
             .filter(|p| p[..3] == [0, 0, 0])
             .count();
         assert!(black >= 64 * 64 / 4, "{black}");
+    }
+
+    /// 16 ビットの PNG はガンマ 1.0 の `gAMA` を持ち、元の PNG と同じ画素にデコードされる (T0477)。
+    #[test]
+    fn sixteen_bit_png_has_gamma_and_decodes_like_the_eight_bit_one() {
+        let straight =
+            image::decode_image(TextureFormat::Png, &encode_png(&texture()).unwrap()).unwrap();
+        let sixteen = sixteen_bit_png(&straight).unwrap();
+        let info = png::Decoder::new(std::io::Cursor::new(&sixteen))
+            .read_info()
+            .unwrap()
+            .info()
+            .clone();
+        assert_eq!(info.bit_depth, png::BitDepth::Sixteen);
+        assert_eq!(info.gama_chunk, Some(png::ScaledFloat::new(1.0)));
+        let sixteen = image::decode_image(TextureFormat::Png, &sixteen).unwrap();
+        assert_eq!(sixteen, straight);
     }
 }
