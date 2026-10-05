@@ -10,7 +10,10 @@
 //! - 光源はシーンの光源を出力ウィンドウと同じ規則でレンダラに渡し ([`crate::lighting`])、モデルとモジュールの法線マップも渡す (T0808)。
 //! - 止めている間は、このスレッドも受け手も作らない (GPU を使わない)。GPU (`Gpu`) は一度作ったら破棄しない
 //!   (`crates/ugoe-headless/README.md#gpu`)。GPU を待つ時間の上限を超えたら (止めるときの待ち・動いている間に読み戻しが
-//!   [`STALL_LIMIT`] 来ない)、その GPU を手放して次の開始で作り直す (T0832)。
+//!   [`STALL_LIMIT`] 来ない)、その GPU を手放して次の開始で作り直す (T0832)。描画中に GPU がエラーを返したときも
+//!   (`gpuError`。デバイスの喪失など) 手放す (T0836)。
+//! - シーンのモデル・モジュール・背景の画像を読めなくても止まらず、出力ウィンドウの受け手と同じ報告 ([`Event::LoadFailure`]) で
+//!   知らせる (T0836、`docs/studio.md#受け手が読めなかったとき`)。
 //! - OS の部品 (`VirtualCamera`) は、作ったスレッドで使って落とす (Windows の COM)。
 
 use std::path::PathBuf;
@@ -19,22 +22,27 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use ugoe::format::TextureFormat;
+use ugoe::format::TextureData;
+use ugoe::format::image::ImageError;
 use ugoe::model::module::Module;
 use ugoe::render::View;
 use ugoe::{Puppet, TextureSource};
-use ugoe_headless::image::{self, decode_png, decode_png_premultiplied};
+use ugoe_headless::image::{
+    self, decode_image, decode_image_premultiplied, decode_png_premultiplied,
+};
 use ugoe_headless::yuv::{self, PixelFormat};
 use ugoe_headless::{
     DEFAULT_SLOTS, Gpu, Readback, Resident, ResidentOptions, Rgba8, Scene as HeadlessScene,
-    Shading, Wait, placeholder_texture, resolve_normal_maps, resolve_textures,
+    Shading, Wait, placeholder_texture, texture_count,
 };
 use ugoe_studio_vcam::{Config, Delivery, PixelLayout, VirtualCamera};
 
 use crate::conductor;
 use crate::follower::{Follower, Received};
 use crate::lighting::scene_lighting;
+use crate::load_failure::{LoadFailure, LoadFailureCode};
 use crate::profile::{Background, Transform};
+use crate::stage::Asset;
 use crate::stream::{Frame, Look, Scene as StreamScene};
 
 /// 負荷の報告に使う、この出力のラベル (`report_render_stats` の出力ウィンドウの `output` と並ぶ)。
@@ -104,7 +112,9 @@ pub enum Status {
         late: bool,
     },
     /// 止まった (始められなかった・途中で失敗した)。`code` は `ugoe_studio_vcam::Error::code` か
-    /// `gpu`・`gpuTimeout` (GPU が止まった)・`model`・`os`。
+    /// `gpu` (GPU が無い)・`gpuError` (描画中に GPU がエラーを返した)・`gpuTimeout` (GPU が止まった)・
+    /// `model` (フレームをモデルに当てられない)・`os`。シーンのファイルを読めなかったことは止まる理由にせず、
+    /// [`Event::LoadFailure`] で知らせる。
     #[serde(rename = "failed", rename_all = "camelCase")]
     Failed {
         settings: Settings,
@@ -139,8 +149,8 @@ pub struct SceneFiles {
     pub scene: StreamScene,
     /// モデルのバイト列 (モデルの無いシーンでは `None`)。
     pub model: Option<Arc<Vec<u8>>>,
-    /// 付けるモジュールのバイト列 (合成の順。`scene.modules` と同じ順)。
-    pub modules: Vec<Arc<Vec<u8>>>,
+    /// 付けるモジュールのバイト列 (合成の順。`scene.modules` と同じ順。受け取れないものは `None`)。
+    pub modules: Vec<Option<Arc<Vec<u8>>>>,
     /// 背景の画像のバイト列 (画像の背景のシーンだけ。`scene_background`)。
     pub background: Option<Arc<Vec<u8>>>,
 }
@@ -156,6 +166,30 @@ pub enum Event {
         render_max_ms: f32,
         dropped: u64,
     },
+    /// 今のシーンのファイルを読めなかった (`load_failure.rs`。受け手のラベルは [`LABEL`])。
+    LoadFailure(LoadFailure),
+}
+
+/// 受け手と描画のエラー (仮想カメラを止める理由)。
+#[derive(Debug, thiserror::Error)]
+pub enum FeedError {
+    /// 描画の準備・描画・読み戻しの失敗 (検証エラー・デバイスの喪失・待つ時間の上限を超えたなど)。
+    #[error(transparent)]
+    Gpu(#[from] ugoe_headless::Error),
+    /// フレームをモデルに当てられない (値の並びが違うなど)。
+    #[error("{0}")]
+    Model(String),
+}
+
+impl FeedError {
+    /// 止まった理由のコード ([`Status::Failed`] の `code`)。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Gpu(e) if e.is_gpu_wait_timeout() => "gpuTimeout",
+            Self::Gpu(_) => "gpuError",
+            Self::Model(_) => "model",
+        }
+    }
 }
 
 /// 仮想カメラが受け取る画素の形。
@@ -213,11 +247,11 @@ pub struct Feed {
     resident: Option<Resident>,
     /// 読んだモデル (`model_revision`・キャンバスの大きさ・本体のテクスチャ)。
     model: Option<LoadedModel>,
-    /// 付けたモジュールの版。
-    modules_revision: u32,
+    /// 付けたモジュールの版 (読めなかったモジュールがあれば `None`。次のシーンの通知で付け直す)。
+    modules_revision: Option<u32>,
     /// 今のシーンの見せ方。
     look: Look,
-    /// デコードした背景の画像 (パスと、乗算済みの画)。読めなかった画像は `None` の画で覚える (何度も読まない)。
+    /// デコードした背景の画像 (パスと、乗算済みの画)。読めなかった画像は `None` の画 (次のシーンの通知で読み直す)。
     image: Option<(PathBuf, Option<Rgba8>)>,
     /// 出力を覆うように置いて透過のところを埋めた背景の画像 (画像の背景で、読めたときだけ)。
     backdrop: Option<Rgba8>,
@@ -249,7 +283,7 @@ impl Feed {
             follower: Follower::new(),
             resident: None,
             model: None,
-            modules_revision: 0,
+            modules_revision: None,
             look: Look::default(),
             image: None,
             backdrop: None,
@@ -259,86 +293,105 @@ impl Feed {
         }
     }
 
-    /// シーンの通知を受ける。
-    pub fn set_scene(&mut self, gpu: &Gpu, files: &SceneFiles) -> Result<(), String> {
+    /// シーンの通知を受ける。今のシーンのモデル・モジュール・背景の画像を読めなければ、そのことを返す
+    /// (出力ウィンドウの受け手と同じ扱い。`docs/studio.md#受け手が読めなかったとき`)。読めなかったことが
+    /// いくつかあれば、モデル・モジュール・背景の画像の順に最初のもの (受け手ごとに 1 つ覚えるため)。
+    ///
+    /// - モデルを読めなければ前のモデルを残し、このシーンのフレームを当てない (見せ方も変えない)。次のシーンの通知で読み直す。
+    /// - モジュールを読めなければ、モデルと読めたモジュールで出す。次のシーンの通知で付け直す。
+    /// - 背景の画像を読めなければ設定の色で埋める。次のシーンの通知で読み直す。
+    pub fn set_scene(
+        &mut self,
+        gpu: &Gpu,
+        files: &SceneFiles,
+    ) -> Result<Option<LoadFailure>, FeedError> {
         let scene = &files.scene;
+        let failure = |asset, index, code| LoadFailure {
+            revision: scene.revision,
+            asset,
+            index,
+            code,
+        };
+        let mut unread = None;
         if scene.model_revision == 0 {
             self.follower.clear();
             self.resident = None;
             self.model = None;
+            self.modules_revision = Some(scene.modules_revision);
         } else if self.model.as_ref().map(|m| m.revision) != Some(scene.model_revision) {
-            let bytes = files
-                .model
-                .as_deref()
-                .ok_or("the scene has no model file")?;
-            let bundle = conductor::read_model(bytes).map_err(|e| e.to_string())?;
-            let physics = bundle.physics.clone();
-            let headless = HeadlessScene::from_bundle(bundle);
-            let mut warnings = Vec::new();
-            let textures =
-                resolve_textures(&headless.model, &headless.textures, &[], &mut warnings)
-                    .map_err(|e| e.to_string())?;
-            let normal_maps = resolve_normal_maps(&headless.normal_maps, &mut warnings)
-                .map_err(|e| e.to_string())?;
-            let canvas = (
-                headless.model.meta.canvas.width,
-                headless.model.meta.canvas.height,
-            );
-            let mut puppet = Puppet::new(headless.model).map_err(|e| e.to_string())?;
-            if let Some(physics) = physics {
-                puppet = puppet.with_physics(physics);
-            }
-            let modules = read_modules(&files.modules)?;
-            if !modules.is_empty() {
-                puppet
-                    .set_modules(modules.iter().map(|m| Arc::clone(&m.module)).collect())
-                    .map_err(|e| e.to_string())?;
-            }
-            let model = LoadedModel {
-                revision: scene.model_revision,
-                canvas,
-                textures,
-                normal_maps,
+            let Some(bytes) = files.model.as_deref() else {
+                return Ok(Some(failure(
+                    Asset::Model,
+                    None,
+                    LoadFailureCode::Unavailable,
+                )));
             };
+            let Some((mut puppet, model)) = read_model(bytes, scene.model_revision) else {
+                return Ok(Some(failure(
+                    Asset::Model,
+                    None,
+                    LoadFailureCode::Unreadable,
+                )));
+            };
+            let (modules, module_failure) = attach_modules(&mut puppet, &files.modules);
+            unread = module_failure.map(|(index, code)| failure(Asset::Module, Some(index), code));
             self.look = scene.look.clone();
             self.resident = Some(self.resident_for(gpu, &puppet, &model, &modules)?);
             self.model = Some(model);
             self.follower.set_scene(scene.revision, puppet);
             self.last_seq = None;
+            self.modules_revision = unread.is_none().then_some(scene.modules_revision);
         } else {
-            if self.modules_revision != scene.modules_revision {
-                let modules = read_modules(&files.modules)?;
-                self.follower
+            if self.modules_revision != Some(scene.modules_revision) {
+                let puppet = self
+                    .follower
                     .puppet_mut()
-                    .ok_or("no model is loaded")?
-                    .set_modules(modules.iter().map(|m| Arc::clone(&m.module)).collect())
-                    .map_err(|e| e.to_string())?;
+                    .ok_or_else(|| FeedError::Model("no model is loaded".to_owned()))?;
+                let (modules, module_failure) = attach_modules(puppet, &files.modules);
+                unread =
+                    module_failure.map(|(index, code)| failure(Asset::Module, Some(index), code));
                 self.look = scene.look.clone();
                 // 物理のリセットは、指揮役がフレームの印で揃える。テクスチャの並びが変わるので描画は作り直す。
-                let puppet = self.follower.puppet().ok_or("no model is loaded")?;
-                let model = self.model.as_ref().ok_or("no model is loaded")?;
+                let (Some(puppet), Some(model)) = (self.follower.puppet(), self.model.as_ref())
+                else {
+                    return Err(FeedError::Model("no model is loaded".to_owned()));
+                };
                 let resident = self.resident_for(gpu, puppet, model, &modules)?;
                 self.resident = Some(resident);
+                self.modules_revision = unread.is_none().then_some(scene.modules_revision);
             }
             self.follower.continue_scene(scene.revision);
         }
-        self.modules_revision = scene.modules_revision;
         self.look = scene.look.clone();
-        self.read_image(files.background.as_deref());
-        self.apply_look(gpu)
+        let background = self
+            .read_image(files.background.as_deref())
+            .map(|code| failure(Asset::Background, None, code));
+        self.apply_look(gpu)?;
+        Ok(unread.or(background))
     }
 
-    /// 画像の背景をデコードする (同じパスなら読み直さない)。読めない画像は設定の色で埋める。
-    fn read_image(&mut self, bytes: Option<&Vec<u8>>) {
+    /// 画像の背景をデコードする (同じパスで読めたものは読み直さない)。読めない画像は設定の色で埋め、その理由を返す。
+    fn read_image(&mut self, bytes: Option<&Vec<u8>>) -> Option<LoadFailureCode> {
         let Background::Image { path } = &self.look.background else {
             self.image = None;
-            return;
+            return None;
         };
-        if self.image.as_ref().is_some_and(|(p, _)| p == path) {
-            return;
+        if self
+            .image
+            .as_ref()
+            .is_some_and(|(p, image)| p == path && image.is_some())
+        {
+            return None;
         }
-        let decoded = bytes.and_then(|b| decode_background(b).ok());
+        let (decoded, code) = match bytes {
+            None => (None, Some(LoadFailureCode::Unavailable)),
+            Some(bytes) => match decode_background(bytes) {
+                Ok(image) => (Some(image), None),
+                Err(_) => (None, Some(LoadFailureCode::Unreadable)),
+            },
+        };
         self.image = Some((path.clone(), decoded));
+        code
     }
 
     /// 合成したモデルのテクスチャを揃えて、常駐の描画を作る。
@@ -348,7 +401,7 @@ impl Feed {
         puppet: &Puppet,
         model: &LoadedModel,
         modules: &[LoadedModule],
-    ) -> Result<Resident, String> {
+    ) -> Result<Resident, ugoe_headless::Error> {
         let (textures, normal_maps): (Vec<_>, Vec<_>) = puppet
             .texture_sources()
             .into_iter()
@@ -390,12 +443,14 @@ impl Feed {
                 cpu_yuv: false,
             },
         )
-        .map_err(|e| e.to_string())
     }
 
     /// フレームを 1 つ適用する。まだ知らないシーンのフレームは捨てる (シーンの知らせが先に届くので、ふつうは起きない)。
-    pub fn receive(&mut self, frame: &Frame) -> Result<Received, String> {
-        let received = self.follower.receive(frame).map_err(|e| e.to_string())?;
+    pub fn receive(&mut self, frame: &Frame) -> Result<Received, FeedError> {
+        let received = self
+            .follower
+            .receive(frame)
+            .map_err(|e| FeedError::Model(e.to_string()))?;
         if matches!(received, Received::Applied | Received::AppliedAfterGap) {
             self.last_seq = Some(frame.seq);
         }
@@ -403,13 +458,13 @@ impl Feed {
     }
 
     /// 透過のところを埋める色を変える (次の描画から)。
-    pub fn set_fill(&mut self, gpu: &Gpu, rgb: [u8; 3]) -> Result<(), String> {
+    pub fn set_fill(&mut self, gpu: &Gpu, rgb: [u8; 3]) -> Result<(), ugoe_headless::Error> {
         self.fill = rgb;
         self.apply_look(gpu)
     }
 
     /// 見せ方 (背景・配置・光源) を描画に当てる。
-    fn apply_look(&mut self, gpu: &Gpu) -> Result<(), String> {
+    fn apply_look(&mut self, gpu: &Gpu) -> Result<(), ugoe_headless::Error> {
         self.blank = None;
         self.backdrop = match &self.image {
             Some((_, Some(image))) => {
@@ -429,9 +484,7 @@ impl Feed {
             resident.set_background(background);
             resident.set_view(view);
             resident.set_lighting(lighting.as_ref());
-            resident
-                .set_backdrop(gpu, self.backdrop.as_ref())
-                .map_err(|e| e.to_string())?;
+            resident.set_backdrop(gpu, self.backdrop.as_ref())?;
         }
         Ok(())
     }
@@ -604,35 +657,133 @@ struct LoadedModule {
     normal_maps: Vec<Option<Rgba8>>,
 }
 
-/// `.ugoemod` を読み、テクスチャと法線マップをデコードする (合成の順)。
-fn read_modules(files: &[Arc<Vec<u8>>]) -> Result<Vec<LoadedModule>, String> {
-    files
+/// モデル (`.ugoe`・JSON) を読み、物理を有効にした `Puppet` と、デコードしたテクスチャ・法線マップを返す。読めなければ `None`。
+fn read_model(bytes: &[u8], revision: u32) -> Option<(Puppet, LoadedModel)> {
+    let bundle = conductor::read_model(bytes).ok()?;
+    let physics = bundle.physics.clone();
+    let headless = HeadlessScene::from_bundle(bundle);
+    let count = texture_count(&headless.model);
+    let normal_maps = headless
+        .normal_maps
         .iter()
-        .map(|bytes| {
-            let file = ugoe::format::read_module(bytes).map_err(|e| e.to_string())?;
-            let count = file.module.textures.len();
-            let textures = (0..count)
-                .map(|i| match file.textures.get(i) {
-                    Some(data) if data.format == TextureFormat::Png => {
-                        decode_png_premultiplied(&data.bytes)
-                            .unwrap_or_else(|_| placeholder_texture())
-                    }
-                    _ => placeholder_texture(),
-                })
-                .collect();
-            let normal_maps = (0..count)
-                .map(|i| match file.normal_map(i) {
-                    Some(data) if data.format == TextureFormat::Png => decode_png(&data.bytes).ok(),
-                    _ => None,
-                })
-                .collect();
-            Ok(LoadedModule {
-                module: Arc::new(file.module),
-                textures,
-                normal_maps,
-            })
+        .map(Option::as_ref)
+        .chain(std::iter::repeat(None));
+    let (textures, normal_maps) = decode_textures(headless.textures.iter().map(Some), normal_maps)
+        .take(count)
+        .collect::<Option<(Vec<_>, Vec<_>)>>()?;
+    let canvas = (
+        headless.model.meta.canvas.width,
+        headless.model.meta.canvas.height,
+    );
+    let mut puppet = Puppet::new(headless.model).ok()?;
+    if let Some(physics) = physics {
+        puppet = puppet.with_physics(physics);
+    }
+    Some((
+        puppet,
+        LoadedModel {
+            revision,
+            canvas,
+            textures,
+            normal_maps,
+        },
+    ))
+}
+
+/// テクスチャと法線マップを番号順にデコードする (PNG と、圧縮していない KTX2。`ugoe_headless::image::decode_image*`)。
+/// 無いテクスチャと読めない形式の KTX2 (ブロック圧縮など) は不透明な白、法線マップは無しで描く (wasm の受け手と同じ)。
+/// 壊れた画像があれば、その番号で `None`。
+fn decode_textures<'a>(
+    textures: impl Iterator<Item = Option<&'a TextureData>>,
+    normal_maps: impl Iterator<Item = Option<&'a TextureData>>,
+) -> impl Iterator<Item = Option<(Rgba8, Option<Rgba8>)>> {
+    let unsupported = |e: &ugoe_headless::Error| {
+        matches!(
+            e,
+            ugoe_headless::Error::ImageDecode(ImageError::UnsupportedKtx2(_))
+        )
+    };
+    textures
+        .chain(std::iter::repeat(None))
+        .zip(normal_maps)
+        .map(move |(texture, normal_map)| {
+            let texture = match texture.map(|d| decode_image_premultiplied(d.format, &d.bytes)) {
+                None => placeholder_texture(),
+                Some(Ok(image)) => image,
+                Some(Err(e)) if unsupported(&e) => placeholder_texture(),
+                Some(Err(_)) => return None,
+            };
+            let normal_map = match normal_map.map(|d| decode_image(d.format, &d.bytes)) {
+                None => None,
+                Some(Ok(image)) => Some(image),
+                Some(Err(e)) if unsupported(&e) => None,
+                Some(Err(_)) => return None,
+            };
+            Some((texture, normal_map))
         })
-        .collect()
+}
+
+/// `.ugoemod` を読み、テクスチャと法線マップをデコードする。読めなければ `None`。
+fn read_module(bytes: &[u8]) -> Option<LoadedModule> {
+    let file = ugoe::format::read_module(bytes).ok()?;
+    let count = file.module.textures.len();
+    let (textures, normal_maps) = decode_textures(
+        file.textures.iter().map(Some),
+        (0..count).map(|i| file.normal_map(i)),
+    )
+    .take(count)
+    .collect::<Option<(Vec<_>, Vec<_>)>>()?;
+    Some(LoadedModule {
+        module: Arc::new(file.module),
+        textures,
+        normal_maps,
+    })
+}
+
+/// シーンのモジュール (合成の順。受け取れなかったものは `None`) を読んで `puppet` に付ける。読めない・付けられない
+/// ものは飛ばして、残りを付ける (出力ウィンドウの受け手と同じ)。付けたモジュールと、飛ばした最初のものの番号と理由を返す。
+fn attach_modules(
+    puppet: &mut Puppet,
+    files: &[Option<Arc<Vec<u8>>>],
+) -> (Vec<LoadedModule>, Option<(usize, LoadFailureCode)>) {
+    let mut failure = None;
+    let mut loaded = Vec::new();
+    for (i, bytes) in files.iter().enumerate() {
+        match bytes.as_deref().map(|b| read_module(b)) {
+            None => {
+                failure.get_or_insert((i, LoadFailureCode::Unavailable));
+            }
+            Some(None) => {
+                failure.get_or_insert((i, LoadFailureCode::Unreadable));
+            }
+            Some(Some(module)) => loaded.push((i, module)),
+        }
+    }
+    let modules = |loaded: &[(usize, LoadedModule)]| {
+        loaded
+            .iter()
+            .map(|(_, m)| Arc::clone(&m.module))
+            .collect::<Vec<_>>()
+    };
+    // ふつうはすべて付けられる。付けられなければ、1 つずつ足して付けられないもの (合成できない組) を見つける。
+    if puppet.set_modules(modules(&loaded)).is_err() {
+        let mut attached: Vec<(usize, LoadedModule)> = Vec::new();
+        for (i, module) in loaded {
+            let mut trial = modules(&attached);
+            trial.push(Arc::clone(&module.module));
+            if puppet.set_modules(trial).is_ok() {
+                attached.push((i, module));
+            } else if failure.is_none_or(|(first, _)| i < first) {
+                failure = Some((i, LoadFailureCode::Unreadable));
+            }
+        }
+        loaded = attached;
+        // 最後に足せなかったときは、付けられた組のまま (失敗した `set_modules` は何も変えない)。
+        if loaded.is_empty() {
+            let _ = puppet.set_modules(Vec::new());
+        }
+    }
+    (loaded.into_iter().map(|(_, m)| m).collect(), failure)
 }
 
 /// `#rrggbb` を RGB にする。
@@ -739,18 +890,22 @@ fn drain<T>(
     }
 }
 
-/// 知らせを 1 つ適用する。止めるなら `Ok(false)`。
-fn apply(feed: &mut Feed, gpu: &Gpu, command: Command) -> Result<bool, (&'static str, String)> {
+/// 知らせを 1 つ適用する。止めるなら `Ok(false)`。今のシーンのファイルを読めなければ `report` で知らせる。
+fn apply(
+    feed: &mut Feed,
+    gpu: &Gpu,
+    command: Command,
+    report: impl FnOnce(LoadFailure),
+) -> Result<bool, FeedError> {
     match command {
-        Command::Frame(frame) => feed.receive(&frame).map(|_| true).map_err(|e| ("model", e)),
-        Command::Scene(files) => feed
-            .set_scene(gpu, &files)
-            .map(|()| true)
-            .map_err(|e| ("model", e)),
-        Command::Background(rgb) => feed
-            .set_fill(gpu, rgb)
-            .map(|()| true)
-            .map_err(|e| ("model", e)),
+        Command::Frame(frame) => feed.receive(&frame).map(|_| true),
+        Command::Scene(files) => {
+            if let Some(failure) = feed.set_scene(gpu, &files)? {
+                report(failure);
+            }
+            Ok(true)
+        }
+        Command::Background(rgb) => Ok(feed.set_fill(gpu, rgb).map(|()| true)?),
         Command::Stop => Ok(false),
     }
 }
@@ -806,10 +961,16 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
             Err(RecvTimeoutError::Disconnected) => break,
         };
         for command in first.into_iter().chain(commands.try_iter()) {
-            match apply(&mut feed, gpu, command) {
+            match apply(&mut feed, gpu, command, |f| events(Event::LoadFailure(f))) {
                 Ok(true) => {}
                 Ok(false) => break 'outer,
-                Err((code, detail)) => return failed(code, detail),
+                Err(e) => {
+                    if matches!(e, FeedError::Gpu(_)) {
+                        // デバイスを失ったなら使い回せないので、次の開始で作り直す (手放すだけで破棄はしない)。
+                        GPU.discard(gpu);
+                    }
+                    return failed(e.code(), e.to_string());
+                }
             }
         }
         if Instant::now() < next {
@@ -817,12 +978,16 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
         }
         let started = Instant::now();
         next = (next + interval).max(started);
+        // GPU のエラー (描画・読み戻し。検証エラー・デバイスの喪失など) は `gpuError`、OS の部品のエラーは `os`。
         let sent = feed
             .render(gpu)
             .and_then(|_| feed.poll(gpu, Wait::No))
-            .map_err(|e| e.to_string())
+            .map_err(|e| ("gpuError", e.to_string()))
             .and_then(|frame| match frame {
-                Some(frame) => camera.send(&frame).map(Some).map_err(|e| e.to_string()),
+                Some(frame) => camera
+                    .send(&frame)
+                    .map(Some)
+                    .map_err(|e| ("os", e.to_string())),
                 None => Ok(None),
             });
         let received = matches!(sent, Ok(Some(_)));
@@ -843,7 +1008,12 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
                 meter.record(started.elapsed());
             }
             Ok(None) => {}
-            Err(e) => return failed("os", e),
+            Err((code, detail)) => {
+                if code == "gpuError" {
+                    GPU.discard(gpu);
+                }
+                return failed(code, detail);
+            }
         }
         let now = Instant::now();
         let elapsed = now.duration_since(meter.start);
@@ -1124,6 +1294,177 @@ mod tests {
         assert!(!stall.check(at(31), true, false, limit));
         assert!(!stall.check(at(40), true, false, limit));
         assert!(stall.check(at(41), true, false, limit));
+    }
+
+    /// 不透明な画 (乗算済みとストレートが同じなので、PNG と KTX2 の書き方の違いを気にしなくてよい)。
+    fn rgba() -> Rgba8 {
+        Rgba8 {
+            width: 2,
+            height: 1,
+            pixels: vec![200, 100, 50, 255, 10, 20, 30, 255],
+        }
+    }
+
+    fn png_texture() -> TextureData {
+        TextureData {
+            format: ugoe::format::TextureFormat::Png,
+            bytes: image::encode_png_unpremultiplied(&rgba()).unwrap(),
+        }
+    }
+
+    fn ktx2_texture() -> TextureData {
+        TextureData {
+            format: ugoe::format::TextureFormat::Ktx2,
+            bytes: image::encode_ktx2(&[rgba()], image::Ktx2Options::default()).unwrap(),
+        }
+    }
+
+    /// 読めない形式の KTX2 (`vkFormat` をブロック圧縮の BC3 (137) に書き換えたもの)。
+    fn bc3_texture() -> TextureData {
+        let mut texture = ktx2_texture();
+        texture.bytes[12..16].copy_from_slice(&137u32.to_le_bytes());
+        texture
+    }
+
+    fn broken_texture() -> TextureData {
+        TextureData {
+            format: ugoe::format::TextureFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\nbroken".to_vec(),
+        }
+    }
+
+    fn module_bytes(module: ugoe::model::module::Module, texture: TextureData) -> Arc<Vec<u8>> {
+        let count = module.textures.len();
+        Arc::new(
+            ugoe::format::write_module(&ugoe::format::ModuleFile {
+                module,
+                textures: vec![texture; count],
+                normal_maps: Vec::new(),
+                meta: None,
+            })
+            .unwrap(),
+        )
+    }
+
+    fn model_bytes(texture: TextureData) -> Vec<u8> {
+        let mut bundle = ugoe::format::Bundle::new(ugoe::model::fixtures::dress_up_base());
+        bundle.textures = vec![texture; texture_count(&bundle.model)];
+        ugoe::format::write_bundle(&bundle).unwrap()
+    }
+
+    /// モデルとモジュールのテクスチャは PNG と、圧縮していない KTX2 を読む (T0836)。読めない形式の KTX2 は白で描き、
+    /// 壊れた画像のあるモデル・モジュールは読めない。
+    #[test]
+    fn models_and_modules_read_png_and_ktx2_textures() {
+        let premultiplied = decode_png_premultiplied(&png_texture().bytes).unwrap();
+        assert_eq!(premultiplied, rgba());
+
+        let (_, model) = read_model(&model_bytes(ktx2_texture()), 3).unwrap();
+        assert_eq!(model.revision, 3);
+        assert!(!model.textures.is_empty());
+        assert!(model.textures.iter().all(|t| *t == premultiplied));
+        let (_, model) = read_model(&model_bytes(bc3_texture()), 3).unwrap();
+        assert!(model.textures.iter().all(|t| *t == placeholder_texture()));
+        assert!(read_model(&model_bytes(broken_texture()), 3).is_none());
+        assert!(read_model(b"not a model", 3).is_none());
+
+        let hair = ugoe::model::fixtures::long_hair_module;
+        let module = read_module(&module_bytes(hair(), ktx2_texture())).unwrap();
+        assert!(!module.textures.is_empty());
+        assert!(module.textures.iter().all(|t| *t == premultiplied));
+        let module = read_module(&module_bytes(hair(), png_texture())).unwrap();
+        assert!(module.textures.iter().all(|t| *t == premultiplied));
+        let module = read_module(&module_bytes(hair(), bc3_texture())).unwrap();
+        assert!(module.textures.iter().all(|t| *t == placeholder_texture()));
+        assert!(read_module(&module_bytes(hair(), broken_texture())).is_none());
+    }
+
+    /// 受け取れない・読めない・付けられないモジュールは飛ばして、残りを付ける。知らせるのは最初のもの (T0836)。
+    #[test]
+    fn unreadable_modules_are_skipped_and_the_first_is_reported() {
+        use ugoe::model::fixtures;
+        let hair = module_bytes(fixtures::long_hair_module(), png_texture());
+        let dress = module_bytes(fixtures::dress_module(), png_texture());
+        let garbage = Arc::new(b"not a module".to_vec());
+        let base = || Puppet::new(fixtures::dress_up_base()).unwrap();
+        let names = |puppet: &Puppet| {
+            puppet
+                .modules()
+                .iter()
+                .map(|m| m.name.clone())
+                .collect::<Vec<_>>()
+        };
+
+        let mut puppet = base();
+        let (attached, failure) = attach_modules(
+            &mut puppet,
+            &[
+                Some(Arc::clone(&hair)),
+                Some(Arc::clone(&garbage)),
+                None,
+                Some(Arc::clone(&dress)),
+            ],
+        );
+        assert_eq!(failure, Some((1, LoadFailureCode::Unreadable)));
+        assert_eq!(attached.len(), 2);
+        assert_eq!(names(&puppet).len(), 2);
+
+        let mut puppet = base();
+        let (attached, failure) = attach_modules(&mut puppet, &[None, Some(Arc::clone(&garbage))]);
+        assert_eq!(failure, Some((0, LoadFailureCode::Unavailable)));
+        assert!(attached.is_empty());
+
+        // 本体にスロットが無いモジュールは付けられない (読めないものとして知らせる)。前に付けていた組は外す。
+        let mut puppet = Puppet::new(fixtures::single_quad()).unwrap();
+        let (attached, failure) = attach_modules(&mut puppet, &[Some(Arc::clone(&hair))]);
+        assert_eq!(failure, Some((0, LoadFailureCode::Unreadable)));
+        assert!(attached.is_empty());
+        let mut puppet = base();
+        attach_modules(&mut puppet, &[Some(Arc::clone(&hair))]);
+        assert_eq!(names(&puppet).len(), 1);
+        let (_, failure) = attach_modules(&mut puppet, &[Some(Arc::clone(&garbage))]);
+        assert_eq!(failure, Some((0, LoadFailureCode::Unreadable)));
+        assert!(names(&puppet).is_empty());
+    }
+
+    /// 背景の画像を受け取れない・読めないことを返す。読めなかった画像は次のシーンの通知で読み直す (T0836)。
+    #[test]
+    fn unreadable_backgrounds_are_reported_until_they_are_read() {
+        let mut feed = Feed::new(&Settings::default(), PixelFormat::Rgba8);
+        feed.look.background = Background::Image {
+            path: PathBuf::from("/bg.png"),
+        };
+        let garbage = b"not an image".to_vec();
+        let png = image::encode_png_unpremultiplied(&rgba()).unwrap();
+        assert_eq!(feed.read_image(None), Some(LoadFailureCode::Unavailable));
+        assert_eq!(
+            feed.read_image(Some(&garbage)),
+            Some(LoadFailureCode::Unreadable)
+        );
+        assert_eq!(
+            feed.read_image(Some(&garbage)),
+            Some(LoadFailureCode::Unreadable)
+        );
+        assert_eq!(feed.read_image(Some(&png)), None);
+        // 読めた画像は、同じパスなら読み直さない。
+        assert_eq!(feed.read_image(None), None);
+        assert!(matches!(&feed.image, Some((_, Some(_)))));
+        feed.look.background = Background::Transparent;
+        assert_eq!(feed.read_image(None), None);
+        assert!(feed.image.is_none());
+    }
+
+    /// 描画中の GPU のエラーは `os` でなく `gpuError` (止まったときは `gpuTimeout`) で止まる (T0836)。
+    #[test]
+    fn gpu_errors_have_their_own_codes() {
+        let gpu = FeedError::from(ugoe_headless::Error::Gpu {
+            context: "submitting",
+            detail: "device lost".into(),
+        });
+        assert_eq!(gpu.code(), "gpuError");
+        let timeout = FeedError::from(ugoe_headless::Error::gpu_wait_timeout(Duration::ZERO));
+        assert_eq!(timeout.code(), "gpuTimeout");
+        assert_eq!(FeedError::Model("values".into()).code(), "model");
     }
 
     /// 仮想カメラが始められない環境 (CI・WSL) では、失敗を知らせて止まる (GPU を使わない)。

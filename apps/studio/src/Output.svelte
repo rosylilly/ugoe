@@ -9,13 +9,14 @@
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
   出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
-  今のシーンのモデル・モジュール・背景を取れない・読めないときも、バックエンドへ返して操作ウィンドウに出す
+  今のシーンのモデル・モジュール・背景を取れない・読めない (背景の画像はデコードできない) ときも、バックエンドへ返して操作ウィンドウに出す
   (次のシーンに移ったための失敗は返さない。失敗したものは次のシーンの通知で取り直す。docs/studio.md#受け手が読めなかったとき)。
 -->
 <script lang="ts">
 import { decodeFrame, type ModelFile, Player } from "@ugoe/player";
 import { onMount } from "svelte";
 import { englishErrorText } from "./lib/commandMessage";
+import { decodeImage } from "./lib/decodeImage";
 import type { OutputFeed } from "./lib/feed";
 import type { LoadFailure, StudioScene } from "./lib/host";
 import {
@@ -193,13 +194,23 @@ function attachModules(modules: readonly ModelFile[]): number | null {
 async function showLook(scene: StudioScene): Promise<void> {
   if (scene.background.kind === "image" && image?.path !== scene.background.path) {
     const path = scene.background.path;
+    let url: string | null = null;
     try {
       const bytes = await (await feed()).sceneBackground(scene.revision);
-      if (image !== null) URL.revokeObjectURL(image.url);
-      image = { path, url: URL.createObjectURL(new Blob([bytes as BlobPart])) };
+      url = URL.createObjectURL(new Blob([bytes as BlobPart]));
     } catch {
       // 次のシーンの通知で取り直す。
       fail(scene, { asset: "background", index: null, code: "unavailable" });
+    }
+    if (url !== null) {
+      if (await decodeImage(url)) {
+        if (image !== null) URL.revokeObjectURL(image.url);
+        image = { path, url };
+      } else {
+        // 壊れた画像は出さない (前の画像はこのシーンの背景でないので出ない)。次のシーンの通知で取り直す。
+        URL.revokeObjectURL(url);
+        fail(scene, { asset: "background", index: null, code: "unreadable" });
+      }
     }
   }
   if (scene.revision !== latest) return;

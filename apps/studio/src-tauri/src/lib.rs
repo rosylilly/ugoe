@@ -664,7 +664,7 @@ impl Studio {
     fn camera_scene(stage: &Stage, conductor: &Conductor) -> Option<SceneFiles> {
         let scene = conductor.scene()?.clone();
         let modules = (0..scene.modules.len())
-            .filter_map(|i| stage.module_bytes(i))
+            .map(|i| stage.module_bytes(i))
             .collect();
         Some(SceneFiles {
             model: stage.model_bytes(),
@@ -690,10 +690,20 @@ impl Studio {
                 if !matches!(status, virtual_camera::Status::Running { .. }) {
                     lock(&self.renders).remove(virtual_camera::LABEL);
                 }
+                // 止まった (止めた・失敗した) 受け手の報告は捨てる。始め直したら今のシーンを読み直して知らせる。
+                if matches!(
+                    status,
+                    virtual_camera::Status::Stopped { .. } | virtual_camera::Status::Failed { .. }
+                ) {
+                    self.forget_load_failure(virtual_camera::LABEL);
+                }
                 if let Some(body) = Self::json(&Monitor::VirtualCamera(&status)) {
                     self.monitors.send_all(&body);
                 }
                 *lock(&self.camera_status) = Some(status);
+            }
+            CameraEvent::LoadFailure(failure) => {
+                self.report_load_failure(virtual_camera::LABEL, failure);
             }
             CameraEvent::Stats {
                 fps: measured,
@@ -721,7 +731,10 @@ impl Studio {
 
     /// 仮想カメラを止め、スレッドが終わるのを待つ。
     fn stop_camera(&self) {
-        if let Some(camera) = lock(&self.camera).take() {
+        // 仮想カメラのスレッドは知らせ (`report_load_failure`) で指揮役を握ることがあり、指揮役を握ったまま `camera` を
+        // 握る経路 (`send_scene`・刻み) があるので、`camera` を放してから終わりを待つ。
+        let camera = lock(&self.camera).take();
+        if let Some(camera) = camera {
             let _ = camera.commands.send(CameraCommand::Stop);
             let _ = camera.thread.join();
         }

@@ -5,6 +5,7 @@
 import type { ModelFile } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { decodeImage } from "./lib/decodeImage";
 import type { OutputFeed } from "./lib/feed";
 import type { LoadFailure, StreamMessage, StudioScene } from "./lib/host";
 import Output from "./Output.svelte";
@@ -66,6 +67,8 @@ vi.mock("@ugoe/player", async (importOriginal) => {
 });
 
 vi.mock("./lib/wasm/load", () => ({ loadWasm: async () => null }));
+// 背景の画像をデコードできるか (happy-dom はデコードしない)。既定はできる。
+vi.mock("./lib/decodeImage", () => ({ decodeImage: vi.fn(async () => true) }));
 
 interface Fake {
   status: string;
@@ -237,6 +240,37 @@ describe("Output load failures", () => {
         { revision: 1, asset: "background", index: null, code: "unavailable" },
       ]),
     );
+  });
+
+  // 受け取れても描けない (壊れた) 画像も知らせ、出さない。次のシーンの通知で取り直す (T0836)。
+  it("reports a background image it cannot decode and fetches it again on the next scene", async () => {
+    const created: string[] = [];
+    const create = vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      created.push(`blob:${created.length + 1}`);
+      return created.at(-1) as string;
+    });
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    cleanups.push(() => {
+      create.mockRestore();
+      revoke.mockRestore();
+    });
+    vi.mocked(decodeImage).mockResolvedValueOnce(false);
+    const background = vi.fn(async () => GOOD);
+    const r = receiver({ background });
+    const look = { modelRevision: 0, background: { kind: "image" as const, path: "/bg.png" } };
+    await r.send(scene(1, look));
+    await vi.waitFor(() =>
+      expect(r.failures).toEqual([
+        { revision: 1, asset: "background", index: null, code: "unreadable" },
+      ]),
+    );
+    expect(r.output()?.style.background ?? "").not.toContain("blob:1");
+    expect(revoke.mock.calls).toEqual([["blob:1"]]);
+    // 次のシーンの通知 (同じ画像) で取り直し、描けたら出す。
+    await r.send(scene(2, look));
+    await vi.waitFor(() => expect(r.output()?.style.background).toContain("blob:2"));
+    expect(background).toHaveBeenCalledTimes(2);
+    expect(r.failures).toHaveLength(1);
   });
 
   it("reports that it cannot render without fetching the model", async () => {

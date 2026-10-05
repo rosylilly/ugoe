@@ -3,6 +3,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import type { StudioHost } from "./lib/host";
+import { t } from "./lib/i18n";
 import {
   DEFAULT_CAMERA_PROFILE,
   type VirtualCameraProfile,
@@ -106,5 +107,21 @@ describe("VirtualCameraPanel", () => {
     flushSync();
     await new Promise((r) => setTimeout(r, 0));
     expect(started()).toBe(1);
+  });
+
+  // 描画中の GPU のエラーは、OS のエラーでなく GPU の理由として出す (T0836)。
+  it("tells a GPU error apart from an OS error", () => {
+    const { target, props } = setup();
+    props.status = {
+      state: "failed",
+      settings: { width: 1280, height: 720, fps: 30, background: [240, 240, 240] },
+      code: "gpuError",
+      detail: "device lost",
+    };
+    flushSync();
+    const text = target.textContent ?? "";
+    expect(t("virtualCamera.errors.gpuError")).not.toBe("virtualCamera.errors.gpuError");
+    expect(text).toContain(t("virtualCamera.errors.gpuError"));
+    expect(text).not.toContain(t("virtualCamera.errors.os"));
   });
 });

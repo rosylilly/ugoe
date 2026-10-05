@@ -51,6 +51,7 @@ src/lib/errors.ts             バックエンドのコマンドのエラー (コ
 src/lib/commandMessage.ts     コマンドのエラーの形と英語の文 (@ugoe/i18n を読まない出力ウィンドウとブラウザソースも使う)
 src/lib/labels.ts             シーンの表示名
 src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文
+src/lib/decodeImage.ts        受け手が受け取った背景の画像をデコードできるか (壊れた画像を知らせる。T0836)
 src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
@@ -68,7 +69,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
-  src/load_failure.rs           受け手が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、操作ウィンドウに配る。T0825)
+  src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、操作ウィンドウに配る。T0825・T0836)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知

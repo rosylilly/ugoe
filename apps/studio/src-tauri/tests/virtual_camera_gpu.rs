@@ -5,6 +5,7 @@
 //! 動的物理で揺れる髪のモデルで、頭を振ってから比べる (物理が効いた形で比べる)。
 //! シーンの光源・法線マップ・背景の画像も、出力ウィンドウと同じ規則で当てる (T0808): 光源は `lighting::scene_lighting`、
 //! 背景の画像は出力を覆うように置いて (`cover`) 透過のところを設定の色で埋めたものの上にモデルを重ねた画と比べる。
+//! 読めなかったモデル・モジュール・背景の画像は、止まらずに知らせる (T0836)。
 #![cfg(feature = "gpu-tests")]
 #![allow(clippy::unwrap_used)]
 
@@ -17,8 +18,11 @@ use ugoe::{Puppet, Toggles};
 use ugoe_headless::yuv::{self, PixelFormat};
 use ugoe_headless::{Fit, Gpu, Rgba8, Shading, Wait, fit_view, image, texture_count};
 use ugoe_studio_lib::conductor::Conductor;
+use ugoe_studio_lib::follower::Received;
 use ugoe_studio_lib::lighting::scene_lighting;
+use ugoe_studio_lib::load_failure::{LoadFailure, LoadFailureCode};
 use ugoe_studio_lib::profile::Background;
+use ugoe_studio_lib::stage::Asset;
 use ugoe_studio_lib::virtual_camera::{Feed, SceneFiles, Settings};
 
 const SIZE: (u32, u32) = (96, 64);
@@ -130,7 +134,7 @@ fn the_camera_feed_matches_a_single_puppet() {
             modules: Vec::new(),
             background: None,
         };
-        feed.set_scene(gpu(), &files).unwrap();
+        assert_eq!(feed.set_scene(gpu(), &files).unwrap(), None);
         for i in 0..90 {
             let value = 30.0 * (i as f32 * 0.2).sin();
             assert!(conductor.set_parameter("AngleX", value));
@@ -246,7 +250,7 @@ fn the_camera_feed_uses_the_scene_lighting_and_background_image() {
         modules: Vec::new(),
         background: Some(Arc::new(background_png.clone())),
     };
-    feed.set_scene(gpu(), &files).unwrap();
+    assert_eq!(feed.set_scene(gpu(), &files).unwrap(), None);
     let mut reference = puppet(&source, true);
     for i in 0..20 {
         let value = 20.0 * (i as f32 * 0.3).sin();
@@ -325,4 +329,107 @@ fn the_camera_feed_uses_the_scene_lighting_and_background_image() {
         differs(&back.pixels, &solid) > solid.len() / 2,
         "the backdrop is not the plain fill"
     );
+}
+
+/// 今のシーンのモデル・モジュール・背景の画像を読めなければ、止まらずに知らせる。モデルを読めなければ前のモデルを残し、
+/// このシーンのフレームは当てない。読めなかったものは次のシーンの通知で読み直す (T0836)。
+#[test]
+fn the_camera_feed_reports_what_it_cannot_read() {
+    let (source, bytes) = bundle();
+    let garbage = Arc::new(b"garbage".to_vec());
+    let mut conductor = Conductor::new();
+    let first = conductor.load("hair.ugoe", source.clone()).unwrap().clone();
+    let mut feed = Feed::new(&settings(), PixelFormat::Rgba8);
+    let fill = feed.poll(gpu(), Wait::All).unwrap().unwrap();
+    let files = |scene: &ugoe_studio_lib::stream::Scene, model, modules, background| SceneFiles {
+        scene: scene.clone(),
+        model,
+        modules,
+        background,
+    };
+    let failure = |scene: &ugoe_studio_lib::stream::Scene, asset, index, code| {
+        Some(LoadFailure {
+            revision: scene.revision,
+            asset,
+            index,
+            code,
+        })
+    };
+
+    // モデルを受け取れない・読めない。モデルが無いままなので背景だけを出す。
+    let result = feed.set_scene(gpu(), &files(&first, None, Vec::new(), None));
+    assert_eq!(
+        result.unwrap(),
+        failure(&first, Asset::Model, None, LoadFailureCode::Unavailable)
+    );
+    let result = feed.set_scene(
+        gpu(),
+        &files(&first, Some(Arc::clone(&garbage)), Vec::new(), None),
+    );
+    assert_eq!(
+        result.unwrap(),
+        failure(&first, Asset::Model, None, LoadFailureCode::Unreadable)
+    );
+    assert_eq!(feed.poll(gpu(), Wait::All).unwrap().unwrap(), fill);
+
+    // 読めないモジュールは飛ばしてモデルを出す。背景の画像を読めなければ設定の色で埋める (知らせるのはモジュール)。
+    let mut scene = first.clone();
+    scene.look.background = Background::Image {
+        path: PathBuf::from("/backgrounds/broken.png"),
+    };
+    let model = Some(Arc::new(bytes.clone()));
+    let result = feed.set_scene(
+        gpu(),
+        &files(
+            &scene,
+            model.clone(),
+            vec![Some(Arc::clone(&garbage))],
+            Some(Arc::clone(&garbage)),
+        ),
+    );
+    assert_eq!(
+        result.unwrap(),
+        failure(&scene, Asset::Module, Some(0), LoadFailureCode::Unreadable)
+    );
+    let frame = conductor.tick(1.0 / 60.0).unwrap();
+    assert_eq!(feed.receive(&frame).unwrap(), Received::Applied);
+    feed.render(gpu()).unwrap();
+    let drawn = feed.poll(gpu(), Wait::All).unwrap().unwrap();
+    assert_ne!(drawn, fill, "the model was not drawn");
+
+    // 見せ方だけが変わった次のシーンでも、読めなかったものを読み直して知らせる (前のシーンの報告は捨てられるため)。
+    let scene = conductor
+        .present(None, None, scene.look.clone())
+        .unwrap()
+        .clone();
+    assert_eq!(scene.model_revision, first.model_revision);
+    let result = feed.set_scene(
+        gpu(),
+        &files(
+            &scene,
+            model.clone(),
+            Vec::new(),
+            Some(Arc::clone(&garbage)),
+        ),
+    );
+    assert_eq!(
+        result.unwrap(),
+        failure(&scene, Asset::Background, None, LoadFailureCode::Unreadable)
+    );
+
+    // 次のモデルを読めなければ、前のモデルを残して新しいシーンのフレームは当てない。
+    let second = conductor.load("hair.ugoe", source).unwrap().clone();
+    assert!(second.model_revision > scene.model_revision);
+    let result = feed.set_scene(
+        gpu(),
+        &files(&second, Some(Arc::clone(&garbage)), Vec::new(), None),
+    );
+    assert_eq!(
+        result.unwrap(),
+        failure(&second, Asset::Model, None, LoadFailureCode::Unreadable)
+    );
+    let frame = conductor.tick(1.0 / 60.0).unwrap();
+    assert_eq!(feed.receive(&frame).unwrap(), Received::Ahead);
+    feed.render(gpu()).unwrap();
+    assert_ne!(feed.poll(gpu(), Wait::All).unwrap().unwrap(), fill);
 }

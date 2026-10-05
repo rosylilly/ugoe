@@ -1883,6 +1883,74 @@ fn load_failures_are_kept_for_the_current_scene_only() {
     assert!(studio.load_failures_view().is_empty());
 }
 
+/// 仮想カメラの受け手が読めなかったことも、同じ報告として操作ウィンドウに出す。止まったら捨てる (T0836)。
+#[test]
+fn virtual_camera_load_failures_are_reported_like_the_output_window() {
+    use crate::virtual_camera::{Event, LABEL, Settings, Status};
+    let dir = Dir::new();
+    let model = dir.model();
+    let studio = studio();
+    stage_scenes(&studio, &model, &[]);
+    let revision = lock(&studio.conductor).scene().unwrap().revision;
+    let failure = LoadFailure {
+        revision,
+        asset: Asset::Module,
+        index: None,
+        code: LoadFailureCode::Unreadable,
+    };
+    // シーンに無いモジュールの番号は、出力ウィンドウと同じく捨てる。
+    studio.camera_event(Event::LoadFailure(failure), 30);
+    assert!(studio.load_failures_view().is_empty());
+    let failure = LoadFailure {
+        asset: Asset::Model,
+        ..failure
+    };
+    studio.camera_event(Event::LoadFailure(failure), 30);
+    let failures = studio.load_failures_view();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].label, LABEL);
+    assert_eq!(failures[0].failure, failure);
+    // 動いている間の状態の知らせでは捨てない。止まったら (失敗も) 捨てる。
+    let settings = Settings::default();
+    studio.camera_event(
+        Event::Status(Status::Running {
+            settings,
+            device: "/dev/video10".into(),
+            consumer: true,
+            late: false,
+        }),
+        30,
+    );
+    assert_eq!(studio.load_failures_view().len(), 1);
+    studio.camera_event(
+        Event::Status(Status::Failed {
+            settings,
+            code: "gpuError".into(),
+            detail: String::new(),
+        }),
+        30,
+    );
+    assert!(studio.load_failures_view().is_empty());
+}
+
+/// 仮想カメラに渡すモジュールは、シーンの番号のまま並べる (受け取れないものは `None`。T0836)。
+#[test]
+fn the_camera_scene_keeps_module_indices() {
+    let dir = Dir::new();
+    let model = dir.model();
+    let hair = dir.module("hair.ugoemod", fixtures::long_hair_module());
+    let studio = studio();
+    let (_, game) = stage_scenes(&studio, &model, &[hair]);
+    studio.with_stage(|stage, conductor| stage.activate(&game, conductor).unwrap());
+    let stage = lock(&studio.stage);
+    let conductor = lock(&studio.conductor);
+    let files = Studio::camera_scene(&stage, &conductor).unwrap();
+    assert_eq!(files.modules.len(), 1);
+    assert_eq!(files.scene.modules.len(), 1);
+    assert!(files.modules.iter().all(Option::is_some));
+    assert!(files.model.is_some());
+}
+
 #[test]
 fn a_page_that_stops_reading_is_dropped() {
     let (studio, _port, _token) = source_studio();

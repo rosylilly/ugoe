@@ -388,6 +388,7 @@
       "busy": "Every v4l2loopback device is in use by another program.",
       "invalidConfig": "This resolution or frame rate is not supported.",
       "gpu": "No GPU is available for drawing the camera image.",
+      "gpuError": "The GPU reported an error while drawing the camera image (for example, the graphics driver was reset), so the virtual camera was stopped. Starting it again sets up the GPU again.",
       "gpuTimeout": "The GPU stopped responding, so the virtual camera was stopped. Starting it again sets up the GPU again.",
       "model": "The camera could not draw the model.",
       "os": "The OS reported an error."
