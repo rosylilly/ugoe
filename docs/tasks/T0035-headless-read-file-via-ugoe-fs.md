@@ -1,11 +1,11 @@
 ---
 id: T0035
 title: ugoe-headless の read_file を ugoe-fs に寄せるか決める (依存方向の判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-headless, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0035
 ---
 
 # T0035: ugoe-headless の read_file を ugoe-fs に寄せるか決める (依存方向の判断が要る)

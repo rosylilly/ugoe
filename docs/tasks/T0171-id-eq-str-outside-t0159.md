@@ -1,11 +1,11 @@
 ---
 id: T0171
 title: T0159 の範囲の外の Id の as_str() == を id == "..." に置き換える
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, ugoe-format, ugoe-motion, ugoe-physics, ugoe-render, ugoe-wasm, ugoe, tests/conformance, bindings/godot]
 depends_on: []
-assignee:
+assignee: claude-worker-T0171
 ---
 
 # T0171: T0159 の範囲の外の Id の as_str() == を id == "..." に置き換える

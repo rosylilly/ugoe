@@ -1,11 +1,11 @@
 ---
 id: T0033
 title: cargo doc の出力先の衝突・wasm32 の cargo doc・cross-check の --all-features
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, scripts, justfile, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0033
 ---
 
 # T0033: cargo doc の出力先の衝突・wasm32 の cargo doc・cross-check の --all-features

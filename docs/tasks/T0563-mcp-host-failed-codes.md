@@ -1,11 +1,11 @@
 ---
 id: T0563
 title: "ugoe-mcp: 持ち主の失敗 (HostError::Failed) と、コードの無いツールのエラーにもコードを付ける (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0563
 ---
 
 # T0563: ugoe-mcp: 持ち主の失敗 (HostError::Failed) と、コードの無いツールのエラーにもコードを付ける (判断が要る)

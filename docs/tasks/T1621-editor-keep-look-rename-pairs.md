@@ -1,11 +1,11 @@
 ---
 id: T1621
 title: "editor-core: keep_look で名前も変えたとき、check_reparented_pairs が前のモデルと突き合わせられるようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core]
 depends_on: []
-assignee:
+assignee: claude-worker-T1621
 ---
 
 # T1621: editor-core: keep_look で名前も変えたとき、check_reparented_pairs が前のモデルと突き合わせられるようにする

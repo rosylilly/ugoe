@@ -1,11 +1,11 @@
 ---
 id: T0841
 title: "スタジオ: ホットキー・外部 API が始めた切り替えにも読み込み中を出し、重いモジュールの合成をロックの外で行う"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0839, T0840]
-assignee:
+assignee: claude-worker-T0841
 ---
 
 # T0841: スタジオ: ホットキー・外部 API が始めた切り替えにも読み込み中を出し、重いモジュールの合成をロックの外で行う

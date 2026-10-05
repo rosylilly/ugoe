@@ -1,11 +1,11 @@
 ---
 id: T0464
 title: "Unity: 読み込みのエラーの説明とテストを直し、補足の値のキーを C ABI から列挙するか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, ugoe-ffi, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0464
 ---
 
 # T0464: Unity: 読み込みのエラーの説明とテストを直し、補足の値のキーを C ABI から列挙するか決める (判断が要る)
