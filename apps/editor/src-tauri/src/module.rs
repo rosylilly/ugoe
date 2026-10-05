@@ -334,7 +334,7 @@ pub async fn open_module_with_base(
     slot: Option<String>,
     drop_colliders: bool,
 ) -> IpcResult<ProjectStatus> {
-    blocking(app, move |state| {
+    let (status, restore) = blocking(app.clone(), move |state| {
         let dir = crate::access::readable_path(state, &path)?;
         let disk = ProjectFingerprint::read(&dir)?;
         let base = base
@@ -355,9 +355,14 @@ pub async fn open_module_with_base(
             ProjectSession::from_project(project, Some((dir, disk))),
         );
         session.mark_meta_modified();
-        Ok(status(&session, &document))
+        Ok((
+            status(&session, &document),
+            session.classification_restore(),
+        ))
     })
-    .await
+    .await?;
+    crate::proposals::restore_in_background(&app, restore);
+    Ok(status)
 }
 
 /// `path` がモジュールのプロジェクトで、本体の問題 (見つからない・読めない・スロットがない・合わない) で
@@ -661,7 +666,7 @@ mod tests {
         // 本体はモジュールが指すので開ける
         crate::project::open_at(&state, &base_dir.display().to_string()).unwrap();
         crate::access::readable_path(&state, &module_text).unwrap();
-        let status = crate::project::open_at(&state, &module_text).unwrap();
+        let (status, _) = crate::project::open_at(&state, &module_text).unwrap();
         assert_eq!(status.path.as_deref(), Some(module_text.as_str()));
 
         // モジュールでないプロジェクト (本体) から別のプロジェクトを開いても、閉じたフォルダーは加えない

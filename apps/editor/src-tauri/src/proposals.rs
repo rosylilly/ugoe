@@ -20,15 +20,16 @@
 //!   ([`ProposalState::stale_rigs`])。採用したときの形の指紋は `project.json` の `editor.rigged_meshes` に残し
 //!   (保存するまでファイルには書かない)、開き直しても知らせる (`docs/editor.md#モジュールのプロジェクトでの-ai-の提案`)。
 //! - 分類の答えは、プロジェクトの `.ugoe-cache/classification.json` に分類した PSD の識別と一緒に残し
-//!   (`ugoe_editor_core::classification_cache`)、開いたときに PSD が合えば戻す。分類したとき (保存先があれば) と
-//!   保存したときに書く。キャッシュなので Undo の対象にせず、`project.json` も変えない
+//!   (`ugoe_editor_core::classification_cache`)、開いた後にバックグラウンドで PSD を読み直し、合えば戻す
+//!   ([`restore_in_background`]。戻したら [`CLASSIFICATION_RESTORED_EVENT`] で画面に知らせる)。分類したとき
+//!   (保存先があれば) と保存したときに書く。キャッシュなので Undo の対象にせず、`project.json` も変えない
 //!   (`docs/editor.md#分類の答えのキャッシュ`)。
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
     ClassifyGuidance, ClassifyOptions, Label, LayerLabel, cached_labels,
@@ -71,6 +72,9 @@ pub struct ProposalSession {
     /// 提案の元にする PSD (「New from PSD…」「Import PSD…」で取り込んだもの、または分類で選んだもの)。
     psd: Option<PathBuf>,
     classification: Option<Classified>,
+    /// 提案の元にする PSD か分類を変えるたびに増える世代の番号。キャッシュの分類を戻し始めた後で変わったら、
+    /// 遅れて終わった戻しで上書きしない ([`ClassificationRestore`])。
+    epoch: u64,
     proposals: Proposals,
     /// 最後にプレビューした提案を適用した複製 (`get_proposal_preview_bundle` で渡す)。
     preview: Option<Document>,
@@ -169,6 +173,13 @@ impl ProposalSession {
             self.classification = None;
         }
         self.psd = Some(path);
+        self.epoch += 1;
+    }
+
+    /// 分類の結果を置き、その PSD を提案の元にする。
+    fn set_classification(&mut self, classified: Classified) {
+        self.set_psd(classified.psd.clone());
+        self.classification = Some(classified);
     }
 
     /// 提案の元にする PSD (読めるパスの 1 つ。`crate::access`)。
@@ -204,16 +215,13 @@ impl ProposalSession {
         })
     }
 
-    /// プロジェクトのディレクトリ `dir` のキャッシュから分類を戻す (開いたとき)。キャッシュの PSD が今もあり、
-    /// 識別とレイヤーが合うときだけ戻し、その PSD を提案の元にする。合わない・読めないときは何もしない。
-    pub(crate) fn restore_classification(&mut self, dir: &Path) {
-        match restored_classification(dir) {
-            Ok(Some(classified)) => {
-                self.psd = Some(classified.psd.clone());
-                self.classification = Some(classified);
-            }
-            Ok(None) => {}
-            Err(e) => eprintln!("could not restore the layer classification: {e}"),
+    /// プロジェクトのディレクトリ `dir` のキャッシュから分類を戻す仕事 (開いたときに作り、ロックの外で
+    /// [`restore_classification_in`] に渡す)。`session` は開いたセッションの番号。
+    pub(crate) fn restore_from(&self, dir: PathBuf, session: u64) -> ClassificationRestore {
+        ClassificationRestore {
+            dir,
+            session,
+            epoch: self.epoch,
         }
     }
 
@@ -473,7 +481,59 @@ fn read_psd_with(path: &Path, limits: ImportLimits) -> IpcResult<(LayerTree, Psd
     Ok((tree, PsdIdentity::of(&bytes)))
 }
 
-/// プロジェクトのディレクトリ `dir` のキャッシュの分類 ([`ProposalSession::restore_classification`])。
+/// 開いたプロジェクトのキャッシュの分類を戻す仕事 ([`ProposalSession::restore_from`])。PSD を読み直して
+/// ハッシュを求めるので、開く処理の後にロックの外で行う ([`restore_in_background`])。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClassificationRestore {
+    /// プロジェクトのディレクトリ (`.ugoeproj`)。
+    dir: PathBuf,
+    /// 開いたセッションの番号 (`ProjectSession::id`)。ほかのプロジェクトを開いた・閉じたら変わる。
+    session: u64,
+    /// 開いたときの [`ProposalSession::epoch`]。分類し直した・PSD を取り込んだら変わる。
+    epoch: u64,
+}
+
+/// キャッシュの分類を戻したことを画面に知らせるイベントの名前 (中身はない)。画面は `get_proposals` を読み直す。
+pub(crate) const CLASSIFICATION_RESTORED_EVENT: &str = "classification-restored";
+
+/// `restore` をメインのスレッドの外で行い、戻したら [`CLASSIFICATION_RESTORED_EVENT`] を送る。待たない。
+/// 戻せない (キャッシュがない・PSD が合わない・その間にプロジェクトや分類が変わった) ときは何もしない (標準エラーに書くだけ)。
+pub(crate) fn restore_in_background(app: &AppHandle, restore: Option<ClassificationRestore>) {
+    let Some(restore) = restore else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match restore_classification_in(&app.state::<AppState>(), restore) {
+            Ok(true) => {
+                if let Err(e) = app.emit(CLASSIFICATION_RESTORED_EVENT, ()) {
+                    eprintln!("could not notify the window about the restored classification: {e}");
+                }
+            }
+            Ok(false) => {}
+            Err(e) => eprintln!("could not restore the layer classification: {e}"),
+        }
+    });
+}
+
+/// [`restore_in_background`] の本体 (テストから呼ぶ)。PSD はロックの外で読み、開いたときと同じセッション・世代の
+/// ときだけ分類を置いて、その PSD を提案の元にする。置いたら `true`。
+pub(crate) fn restore_classification_in(
+    state: &AppState,
+    restore: ClassificationRestore,
+) -> IpcResult<bool> {
+    let Some(classified) = restored_classification(&restore.dir)? else {
+        return Ok(false);
+    };
+    let mut session = lock_project(state)?;
+    if session.id() != restore.session || session.proposals.epoch != restore.epoch {
+        return Ok(false);
+    }
+    session.proposals.set_classification(classified);
+    Ok(true)
+}
+
+/// プロジェクトのディレクトリ `dir` のキャッシュの分類。
 /// キャッシュがない・PSD がない・PSD の大きさや中身が違う・レイヤーが合わないときは `None`。
 fn restored_classification(dir: &Path) -> IpcResult<Option<Classified>> {
     let Some(cache) = read_classification_cache::<LayerLabel>(dir)? else {
@@ -1052,8 +1112,7 @@ pub(crate) fn classify_guided_in(
     if session.id() != opened {
         return Err(EditorError::ProposalModelChanged.into());
     }
-    session.proposals.set_psd(path);
-    session.proposals.classification = Some(classified);
+    session.proposals.set_classification(classified);
     // 保存先があれば、開き直しても分類し直さずに済むようキャッシュに残す (ファイルはロックの外で書く)。
     let cache = session
         .path()

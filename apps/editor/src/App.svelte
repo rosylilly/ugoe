@@ -110,6 +110,14 @@ onMount(() => {
   };
 });
 
+// 開いた後にバックグラウンドで戻した分類の答え (docs/editor.md#分類の答えのキャッシュ) を AI タブに出す。
+onMount(() => {
+  const unlisten = ipc.onClassificationRestored(() => void proposals.refresh());
+  return () => {
+    void unlisten.then((stop) => stop());
+  };
+});
+
 /** AI タブを開く。 */
 function openProposals(): void {
   proposals.active = true;

@@ -36,7 +36,7 @@ const FOLDER: &str = "ugoe-dress-up-sample";
 /// (確認はフロントエンドで行う)。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
 pub async fn open_sample_project(app: AppHandle, parent: String) -> IpcResult<ProjectStatus> {
-    blocking(app, move |state| {
+    let (status, restore) = blocking(app.clone(), move |state| {
         // 書き出す先は、開くダイアログで選んだフォルダーの中だけ (`crate::access`)
         let dir = new_folder(&crate::access::readable_path(state, &parent)?)?;
         let base = write_projects(&dir)?
@@ -50,9 +50,14 @@ pub async fn open_sample_project(app: AppHandle, parent: String) -> IpcResult<Pr
             &mut document,
             ProjectSession::from_project(project, Some((base, disk))),
         );
-        Ok(status(&session, &document))
+        Ok((
+            status(&session, &document),
+            session.classification_restore(),
+        ))
     })
-    .await
+    .await?;
+    crate::proposals::restore_in_background(&app, restore);
+    Ok(status)
 }
 
 /// `parent` の中の、まだ無いフォルダーを作る。

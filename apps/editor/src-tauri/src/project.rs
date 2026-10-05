@@ -23,7 +23,9 @@ use crate::AppState;
 use crate::ai::ConsentMemory;
 use crate::commands::blocking;
 use crate::error::{EditorError, IpcResult};
-use crate::proposals::{ProposalSession, RIGGED_MESHES_KEY};
+use crate::proposals::{
+    ClassificationRestore, ProposalSession, RIGGED_MESHES_KEY, restore_in_background,
+};
 
 /// 開いているプロジェクトのうち、`Document` の外にあるもの (保存先・メタ情報)。
 /// モデル・物理・モーション・表情は `Document` が持つ (編集コマンドと Undo の対象)。
@@ -55,8 +57,8 @@ pub struct ProjectSession {
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
 impl ProjectSession {
-    /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。`path` があれば、そこの分類の答えのキャッシュを
-    /// 戻す (分類した PSD が今も同じときだけ。PSD を読むので、キャッシュがあれば時間がかかる)。
+    /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。分類の答えのキャッシュはここでは戻さない
+    /// (PSD を読み直すので、開いた後に [`Self::classification_restore`] でバックグラウンドで戻す)。
     pub(crate) fn from_project(
         project: Project,
         path: Option<(PathBuf, ProjectFingerprint)>,
@@ -65,9 +67,6 @@ impl ProjectSession {
         let (path, disk) = path.unzip();
         let mut proposals = ProposalSession::default();
         proposals.restore_rigged(project.meta.editor.get(RIGGED_MESHES_KEY));
-        if let Some(dir) = &path {
-            proposals.restore_classification(dir);
-        }
         let session = Self {
             id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
             path,
@@ -84,6 +83,13 @@ impl ProjectSession {
     /// セッションの番号 (開く・作るたびに変わる)。
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+
+    /// 保存先の分類の答えのキャッシュを戻す仕事 (開いた後に `crate::proposals::restore_in_background` に渡す)。
+    /// 保存先がなければ `None`。
+    pub(crate) fn classification_restore(&self) -> Option<ClassificationRestore> {
+        let dir = self.path.clone()?;
+        Some(self.proposals.restore_from(dir, self.id))
     }
 
     /// `Document` の外の設定 (本体の参照の付け替えなど) を変えたことにする (未保存の印を付ける)。
@@ -530,12 +536,18 @@ pub async fn new_project_from_psd(
 /// 開いているプロジェクトが指すもの (モジュールの本体など。`crate::access`)。
 #[tauri::command]
 pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
-    blocking(app, move |state| open_at(state, &path)).await
+    let (status, restore) = blocking(app.clone(), move |state| open_at(state, &path)).await?;
+    restore_in_background(&app, restore);
+    Ok(status)
 }
 
 /// [`open_project`] の中身 (テストから呼ぶ)。閉じるのが保存したモジュールのプロジェクトなら、そのフォルダーを読めるパスに
 /// 加える (本体を「Open base project」で開いて直した後、モジュールに戻るため。T1622。`docs/editor.md#読み書きできるパス`)。
-pub(crate) fn open_at(state: &AppState, path: &str) -> IpcResult<ProjectStatus> {
+/// 分類の答えのキャッシュは戻さず、戻す仕事を返す (`crate::proposals::restore_in_background`)。
+pub(crate) fn open_at(
+    state: &AppState,
+    path: &str,
+) -> IpcResult<(ProjectStatus, Option<ClassificationRestore>)> {
     let dir = crate::access::readable_path(state, path)?;
     let (project, disk) = Project::load_tracked(&dir)?;
     let (mut document, mut session) = lock_both(state)?;
@@ -546,7 +558,10 @@ pub(crate) fn open_at(state: &AppState, path: &str) -> IpcResult<ProjectStatus> 
         ProjectSession::from_project(project, Some((dir, disk))),
     );
     state.files.grant_readable(closing_module);
-    Ok(status(&session, &document))
+    Ok((
+        status(&session, &document),
+        session.classification_restore(),
+    ))
 }
 
 /// 開いているプロジェクトを保存先から開き直す (外で書き換えられたとき)。未保存の変更は破棄する
@@ -554,7 +569,7 @@ pub(crate) fn open_at(state: &AppState, path: &str) -> IpcResult<ProjectStatus> 
 /// AI の提案は前のドキュメントに対するものなので消す。失敗したら今のプロジェクトはそのまま。
 #[tauri::command]
 pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
-    blocking(app, |state| {
+    let (status, restore) = blocking(app.clone(), |state| {
         // 書きかけのプロジェクトを読まないよう、保存が終わるのを待つ
         let _saving = lock_saving(state);
         let (mut document, mut session) = lock_both(state)?;
@@ -567,9 +582,14 @@ pub async fn reload_project(app: AppHandle) -> IpcResult<ProjectStatus> {
             ProjectSession::from_project(project, Some((dir, disk))),
         );
         *session.ai_consent_mut() = consent;
-        Ok(status(&session, &document))
+        Ok((
+            status(&session, &document),
+            session.classification_restore(),
+        ))
     })
-    .await
+    .await?;
+    restore_in_background(&app, restore);
+    Ok(status)
 }
 
 /// 開いたとき (または最後に保存したとき) から、保存先のファイルが外で変わったか。変わっていなければ `null`。

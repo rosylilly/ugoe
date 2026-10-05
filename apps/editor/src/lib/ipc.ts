@@ -274,6 +274,12 @@ export const ipc = {
    */
   getProposals: () => invoke<ProposalState>("get_proposals"),
   /**
+   * apps/editor/src-tauri/src/proposals.rs。保存先のあるプロジェクトを開いた後、分類の答えのキャッシュをバックグラウンドで
+   * 戻したとき (docs/editor.md#分類の答えのキャッシュ)。受けたら `getProposals` を読み直す。戻り値で購読をやめる。
+   */
+  onClassificationRestored: (handler: () => void): Promise<UnlistenFn> =>
+    listen("classification-restored", () => handler()),
+  /**
    * PSD のレイヤーを分類して覚える。`psd` を省略すると取り込んだ PSD。`useAi` なら画像を外部に送るので
    * `withConsent` で呼ぶ (偽なら名前の規則だけで、何も送らない)。`instructions` は AI に添える利用者の注文、
    * `revise` なら今の分類を前の答えとして送る (分類の作り直し)。

@@ -1124,16 +1124,10 @@ fn rigged_costume_shapes_are_kept_in_the_project() {
     assert!(session.proposals.rigged_value().is_none());
 }
 
-/// 分類の答えはプロジェクトのキャッシュ (`.ugoe-cache/classification.json`) に残り、開き直すと分類し直さずに戻る。
-/// PSD が変わっていれば戻さない。`project.json` は変えない (T0567)。
-#[test]
-fn the_classification_is_restored_when_the_project_is_reopened() {
-    use crate::project::ProjectSession;
-    use ugoe_editor_core::Project;
-    use ugoe_editor_core::classification_cache::classification_cache_path;
-
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().join("bustup.ugoeproj");
+/// 保存先のある PSD のプロジェクト (`<tmp>/bustup.ugoeproj`。PSD は中の `sources/bustup.psd`) を作って名前の規則で
+/// 分類した状態と、プロジェクトのディレクトリ・PSD・分類の結果。
+fn classified_project(tmp: &Path) -> (AppState, PathBuf, PathBuf, Classification) {
+    let dir = tmp.join("bustup.ugoeproj");
     let psd = dir.join("sources").join("bustup.psd");
     // 保存するのでテクスチャも要る (`from_psd` の複製はモデルだけ)。
     let state = state(None);
@@ -1149,10 +1143,36 @@ fn the_classification_is_restored_when_the_project_is_reopened() {
     }
     std::fs::create_dir_all(psd.parent().unwrap()).unwrap();
     std::fs::copy(bustup_path(), &psd).unwrap();
-
-    // 保存先のあるプロジェクトで分類すると、すぐにキャッシュに書く。
     let classified =
         done(classify_in(&state, Some(psd.display().to_string()), false, None).unwrap());
+    (state, dir, psd, classified)
+}
+
+/// `dir` のプロジェクトを開いて `state` に置き、キャッシュの分類を戻す仕事を返す。開いた時点ではまだ戻っていない
+/// (PSD を読み直さずに開き終わる。T1629)。
+fn reopen_in(state: &AppState, dir: &Path) -> crate::proposals::ClassificationRestore {
+    use crate::project::ProjectSession;
+    use ugoe_editor_core::Project;
+
+    let (project, disk) = Project::load_tracked(dir).unwrap();
+    let (session, document) = ProjectSession::from_project(project, Some((dir.to_owned(), disk)));
+    assert!(session.proposals.classification.is_none());
+    assert!(session.proposals.psd().is_none());
+    let restore = session.classification_restore().unwrap();
+    *state.document.lock().unwrap() = document;
+    *state.project.lock().unwrap() = session;
+    restore
+}
+
+/// 分類の答えはプロジェクトのキャッシュ (`.ugoe-cache/classification.json`) に残り、開き直すと分類し直さずに
+/// (開いた後のバックグラウンドで) 戻る。PSD が変わっていれば戻さない。`project.json` は変えない (T0567・T1629)。
+#[test]
+fn the_classification_is_restored_when_the_project_is_reopened() {
+    use ugoe_editor_core::classification_cache::classification_cache_path;
+
+    let tmp = tempfile::tempdir().unwrap();
+    // 保存先のあるプロジェクトで分類すると、すぐにキャッシュに書く。
+    let (state, dir, psd, classified) = classified_project(tmp.path());
     let cache = classification_cache_path(&dir);
     let written: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
@@ -1190,34 +1210,117 @@ fn the_classification_is_restored_when_the_project_is_reopened() {
     assert!(!project_json.contains("by_ai"), "{project_json}");
 
     // 開き直すと、PSD を分類し直さずに同じ答えが戻り、その PSD が提案の元になる。
-    let reopen = || {
-        let (project, disk) = Project::load_tracked(&dir).unwrap();
-        ProjectSession::from_project(project, Some((dir.clone(), disk)))
-    };
-    let (session, document) = reopen();
-    assert_eq!(session.proposals.psd(), Some(psd.as_path()));
-    let view = session.proposals.state(&document).classification.unwrap();
-    assert!(view.by_ai);
-    assert_eq!(view.instructions.as_deref(), Some("the ribbon is hair"));
-    assert_eq!(view.layers.len(), classified.layers.len());
-    assert_eq!(view.layers[changed].label, "neck");
-    assert!((view.layers[changed].confidence - 0.5).abs() < 1e-6);
-    // 名前の規則との食い違いの印は、開いたときに付け直す。
-    assert!(view.layers[changed].name_disagreement.is_some());
+    let restore = reopen_in(&state, &dir);
+    assert!(restore_classification_in(&state, restore).unwrap());
+    {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        assert_eq!(session.proposals.psd(), Some(psd.as_path()));
+        let view = session.proposals.state(&document).classification.unwrap();
+        assert!(view.by_ai);
+        assert_eq!(view.instructions.as_deref(), Some("the ribbon is hair"));
+        assert_eq!(view.layers.len(), classified.layers.len());
+        assert_eq!(view.layers[changed].label, "neck");
+        assert!((view.layers[changed].confidence - 0.5).abs() < 1e-6);
+        // 名前の規則との食い違いの印は、開いたときに付け直す。
+        assert!(view.layers[changed].name_disagreement.is_some());
+    }
 
     // PSD が変わっていれば戻さない (キャッシュは消さない)。
     let mut bytes = std::fs::read(&psd).unwrap();
     let last = bytes.len() - 1;
     bytes[last] ^= 0xff;
     std::fs::write(&psd, &bytes).unwrap();
-    let (session, _) = reopen();
-    assert!(session.proposals.classification.is_none());
-    assert!(session.proposals.psd().is_none());
+    let restore = reopen_in(&state, &dir);
+    assert!(!restore_classification_in(&state, restore).unwrap());
+    {
+        let session = state.project.lock().unwrap();
+        assert!(session.proposals.classification.is_none());
+        assert!(session.proposals.psd().is_none());
+    }
     assert!(cache.exists());
     // PSD が消えていても戻さない。
     std::fs::remove_file(&psd).unwrap();
-    let (session, _) = reopen();
-    assert!(session.proposals.classification.is_none());
+    let restore = reopen_in(&state, &dir);
+    assert!(!restore_classification_in(&state, restore).unwrap());
+    assert!(
+        state
+            .project
+            .lock()
+            .unwrap()
+            .proposals
+            .classification
+            .is_none()
+    );
+}
+
+/// キャッシュの分類を戻し終える前に、ほかのプロジェクトを開いた・閉じた・分類し直した・PSD を取り込んだときは、
+/// 遅れて終わった戻しで今の状態を上書きしない (T1629)。
+#[test]
+fn a_late_classification_restore_does_not_overwrite_the_current_state() {
+    use crate::project::initial_state;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (state, dir, psd, _) = classified_project(tmp.path());
+
+    // ほかのプロジェクトを開いた (同じプロジェクトを開き直しても、セッションが替わる)。
+    let stale = reopen_in(&state, &dir);
+    let current = reopen_in(&state, &dir);
+    assert!(!restore_classification_in(&state, stale).unwrap());
+    assert!(
+        state
+            .project
+            .lock()
+            .unwrap()
+            .proposals
+            .classification
+            .is_none()
+    );
+    assert!(restore_classification_in(&state, current).unwrap());
+
+    // 閉じた (新しいプロジェクトにした)。
+    let stale = reopen_in(&state, &dir);
+    {
+        let (mut document, mut session) = crate::project::lock_both(&state).unwrap();
+        crate::project::replace_document(&mut session, &mut document, initial_state());
+    }
+    assert!(!restore_classification_in(&state, stale).unwrap());
+    {
+        let session = state.project.lock().unwrap();
+        assert!(session.proposals.classification.is_none());
+        assert!(session.proposals.psd().is_none());
+    }
+
+    // 分類し直した (分類し直した結果を残す)。
+    let stale = reopen_in(&state, &dir);
+    let other = tmp.path().join("other.psd");
+    std::fs::copy(bustup_path(), &other).unwrap();
+    let mine = done(classify_in(&state, Some(other.display().to_string()), false, None).unwrap());
+    assert!(!restore_classification_in(&state, stale).unwrap());
+    {
+        let session = state.project.lock().unwrap();
+        assert_eq!(session.proposals.psd(), Some(other.as_path()));
+        let classification = session.proposals.classification.as_ref().unwrap();
+        assert_eq!(classification.psd, other);
+        assert_eq!(classification.labels.len(), mine.layers.len());
+    }
+
+    // PSD を取り込んだ (提案の元にする PSD を変えた)。
+    let stale = reopen_in(&state, &dir);
+    state
+        .project
+        .lock()
+        .unwrap()
+        .proposals
+        .set_psd(other.clone());
+    assert!(!restore_classification_in(&state, stale).unwrap());
+    {
+        let session = state.project.lock().unwrap();
+        assert_eq!(session.proposals.psd(), Some(other.as_path()));
+        assert!(session.proposals.classification.is_none());
+    }
+    // キャッシュの PSD は今もある (戻せなかったのは状態が変わったから)。
+    assert!(psd.exists());
 }
 
 /// T0570: つないだエージェントの提案に添えた分類の直し (`set_layer_correction`) は、採用するとドキュメントの直しになり、
@@ -1225,7 +1328,6 @@ fn the_classification_is_restored_when_the_project_is_reopened() {
 #[test]
 fn an_agent_proposal_keeps_its_labels_after_reopening() {
     use crate::project::ProjectSession;
-    use ugoe_editor_core::Project;
 
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("bustup.ugoeproj");
@@ -1300,8 +1402,10 @@ fn an_agent_proposal_keeps_its_labels_after_reopening() {
         session.save_to(&mut document, dir.clone()).unwrap();
     }
 
-    let (project, disk) = Project::load_tracked(&dir).unwrap();
-    let (session, document) = ProjectSession::from_project(project, Some((dir.clone(), disk)));
+    let restore = reopen_in(&state, &dir);
+    assert!(restore_classification_in(&state, restore).unwrap());
+    let document = state.document.lock().unwrap();
+    let session = state.project.lock().unwrap();
     let reopened = layer(&session, &document);
     assert!(reopened.corrected);
     assert_eq!(
