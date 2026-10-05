@@ -2279,6 +2279,10 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `mcp.bridge_start_failed` / `mcp.bundle_write_failed` | `detail` |
 | `mcp.open_failed` | `path`・`detail` |
 
+MCP サーバ (`ugoe-mcp`) のツールのエラーにも `mcp.*` のコード (`mcp.invalid_arguments`・`mcp.outside_root` など) があるが、
+エージェントが見分けるためのもので画面には出さないので、この表と訳の表には入れない。一覧は
+[crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#ツールのエラー) (名前は上の表と重ならないようにする)。
+
 ## 型の生成
 
 Rust の型を正として、次のファイルを生成します。**生成物はリポジトリにコミットします** (Rust をビルドしなくてもフロントエンドを検査・ビルドでき、変更の差分がレビューで見えるように)。手で編集しません。

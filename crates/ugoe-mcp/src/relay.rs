@@ -42,6 +42,7 @@
 //! エージェントが渡す WSL のパスは、`--wsl-distro <名前>` (または作業ディレクトリが
 //! `\\wsl.localhost\<名前>\…` のとき) で Windows のパスに変える。
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -50,6 +51,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use ugoe_editor_core::message::Coded;
 
 use crate::discovery::{self, Discovery, DiscoveryError};
 use crate::server::META_PROTOCOL_VERSION;
@@ -108,6 +110,19 @@ pub enum RelayError {
     Http { status: u16, body: String },
     #[error("failed to talk to the ugoe editor: {0}")]
     Transport(String),
+}
+
+/// ツールの呼び出しへの答えに載せるコード (MCP だけの `mcp.*`。README の「ツールのエラー」。T0563)。
+impl Coded for RelayError {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
+            Self::NotFound { .. } | Self::Discovery(_) => "mcp.editor_not_found",
+            Self::Unreachable { .. }
+            | Self::Unauthorized(_)
+            | Self::Http { .. }
+            | Self::Transport(_) => "mcp.editor_unreachable",
+        })
+    }
 }
 
 /// WSL の中から Windows のエディタにつながらないときの案内。
@@ -176,10 +191,13 @@ impl PathMap {
         if self.wsl.is_none() {
             return;
         }
+        let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
         if let Some(structured) = result.get_mut("structuredContent") {
             self.value(structured);
+            if is_error {
+                self.messages(structured);
+            }
         }
-        let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
         let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) else {
             return;
         };
@@ -221,6 +239,23 @@ impl PathMap {
             }
             Value::Array(items) => items.iter_mut().for_each(|item| self.value(item)),
             _ => {}
+        }
+    }
+
+    /// エラーの `structuredContent` (エディタの `Message` の形) の文を、`content` の文と同じく戻す
+    /// (原因 `cause` と一覧 `items` の文も)。
+    fn messages(&self, message: &mut Value) {
+        let Value::Object(map) = message else {
+            return;
+        };
+        if let Some(Value::String(text)) = map.get_mut("message") {
+            *text = self.quoted(text);
+        }
+        if let Some(cause) = map.get_mut("cause") {
+            self.messages(cause);
+        }
+        if let Some(Value::Array(items)) = map.get_mut("items") {
+            items.iter_mut().for_each(|item| self.messages(item));
         }
     }
 
@@ -813,6 +848,7 @@ fn error_reply(message: &Value, error: &RelayError) -> Option<Value> {
             "id": id,
             "result": {
                 "content": [{ "type": "text", "text": text }],
+                "structuredContent": error.to_message(),
                 "isError": true,
             },
         }));
@@ -918,15 +954,25 @@ mod tests {
         assert_eq!(text, expected);
         assert_eq!(result["content"][1]["data"], "AAAA");
 
+        let text = "`C:\\work\\a.ugoeproj` has unsaved changes; `x` stays";
         let mut error = json!({
-            "content": [{ "type": "text", "text": "`C:\\work\\a.ugoeproj` has unsaved changes; `x` stays" }],
+            "content": [{ "type": "text", "text": text }],
+            "structuredContent": {
+                "code": "mcp.unsaved_changes",
+                "args": { "path": "C:\\work\\a.ugoeproj" },
+                "message": text,
+                "cause": { "code": "x", "args": {}, "message": text },
+            },
             "isError": true,
         });
         map.result(&mut error);
-        assert_eq!(
-            error["content"][0]["text"],
-            "`/mnt/c/work/a.ugoeproj` has unsaved changes; `x` stays"
-        );
+        let mapped = "`/mnt/c/work/a.ugoeproj` has unsaved changes; `x` stays";
+        assert_eq!(error["content"][0]["text"], mapped);
+        // 構造の文と引数のパスも戻す (`message` は `content` の文と同じ)。
+        let structured = &error["structuredContent"];
+        assert_eq!(structured["message"], mapped);
+        assert_eq!(structured["cause"]["message"], mapped);
+        assert_eq!(structured["args"]["path"], "/mnt/c/work/a.ugoeproj");
     }
 
     #[test]
@@ -974,6 +1020,9 @@ mod tests {
                 .unwrap()
                 .contains("not running")
         );
+        let structured = &reply["result"]["structuredContent"];
+        assert_eq!(structured["code"], "mcp.editor_not_found");
+        assert_eq!(structured["message"], reply["result"]["content"][0]["text"]);
         let list = json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" });
         let reply = error_reply(&list, &error).unwrap();
         assert_eq!(reply["error"]["code"], RELAY_ERROR);

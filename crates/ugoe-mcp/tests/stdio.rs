@@ -117,9 +117,20 @@ impl Client {
 
     /// 失敗するはずのツールを呼び、エラーの文を返す。
     fn call_err(&mut self, name: &str, arguments: Value) -> String {
+        self.call_coded(name, arguments).0
+    }
+
+    /// 失敗するはずのツールを呼び、エラーの文とコードを返す。どのエラーも `structuredContent` にコードを持ち、
+    /// その `message` は文と同じ (T0563)。
+    fn call_coded(&mut self, name: &str, arguments: Value) -> (String, String) {
         let result = self.call(name, arguments);
         assert_eq!(result["isError"], true, "{name}: {result}");
-        result["content"][0]["text"].as_str().unwrap().to_owned()
+        let text = result["content"][0]["text"].as_str().unwrap().to_owned();
+        let structured = &result["structuredContent"];
+        assert_eq!(structured["message"], text, "{name}: {result}");
+        let code = structured["code"].as_str().unwrap_or_default().to_owned();
+        assert!(!code.is_empty(), "{name}: {result}");
+        (text, code)
     }
 }
 
@@ -286,10 +297,16 @@ fn propose_apply_undo_and_save() {
         json!({ "path": path, "kind": "mesh", "id": "Quad" }),
     );
     assert_eq!(quad["id"], "Quad");
-    client.call_err(
+    let (_, code) = client.call_coded(
         "get_element",
         json!({ "path": path, "kind": "mesh", "id": "Nope" }),
     );
+    assert_eq!(code, "mcp.element_not_found");
+    let (_, code) = client.call_coded(
+        "get_element",
+        json!({ "path": path, "kind": "nope", "id": "Quad" }),
+    );
+    assert_eq!(code, "mcp.unknown_kind");
 
     let commands = json!([
         {
@@ -378,13 +395,23 @@ fn propose_apply_undo_and_save() {
         json!({ "path": path, "title": "bad", "commands": [{ "op": "no_such_op" }] }),
     );
     assert!(err.contains("invalid arguments"), "{err}");
-    // コードの無いエラーは今までどおり文だけ。
+    // エディタのコードの無いエラーは MCP だけのコード (`mcp.*`) を持つ (T0563)。
     let invalid = client.call(
         "propose_edit",
         json!({ "path": path, "title": "bad", "commands": [{ "op": "no_such_op" }] }),
     );
     assert_eq!(invalid["isError"], true, "{invalid}");
-    assert!(invalid.get("structuredContent").is_none(), "{invalid}");
+    assert_eq!(
+        invalid["structuredContent"]["code"], "mcp.invalid_arguments",
+        "{invalid}"
+    );
+    assert!(
+        invalid["structuredContent"]["args"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no_such_op"),
+        "{invalid}"
+    );
 
     // 提案の後にモデルが変わったら、その提案は適用できない。
     let stale = client.call_ok(
@@ -412,15 +439,17 @@ fn propose_apply_undo_and_save() {
     assert_eq!(redone["can_redo"], false);
 
     // 未保存の変更があれば閉じられない。
-    client.call_err("close_project", json!({ "path": path }));
+    let (_, code) = client.call_coded("close_project", json!({ "path": path }));
+    assert_eq!(code, "mcp.unsaved_changes");
 
     // 書き出し先に書けなければ、何も保存しない。
     let unwritable = tmp.path().join("missing").join("quad.ugoe");
-    let error = client.call_err(
+    let (error, code) = client.call_coded(
         "save_project",
         json!({ "path": path, "bundle": unwritable.to_str().unwrap() }),
     );
     assert!(error.ends_with("nothing was saved"), "{error}");
+    assert_eq!(code, "mcp.export_write_failed");
     let listed = client.call_ok("list_proposals", json!({ "path": path }));
     assert_eq!(listed["project"]["modified"], true);
     assert!(!tmp.path().join("missing").exists());
@@ -516,8 +545,9 @@ fn create_new_project() {
     );
     let saved = client.call_ok("save_project", json!({ "path": path }));
     assert_eq!(saved["on_disk"], true);
-    let err = client.call_err("open_project", json!({ "path": path, "create": true }));
+    let (err, code) = client.call_coded("open_project", json!({ "path": path, "create": true }));
     assert!(err.contains("already a project"), "{err}");
+    assert_eq!(code, "mcp.project_exists");
     assert_eq!(
         Project::load(&project).unwrap().model.parameters[0]
             .id
@@ -547,11 +577,12 @@ fn read_only_hides_edit_tools() {
             "commands": [{ "op": "rename_parameter", "id": "X", "name": "Renamed" }],
         }),
     );
-    let err = client.call_err(
+    let (err, code) = client.call_coded(
         "apply_proposal",
         json!({ "path": path, "proposal": proposal["proposal"] }),
     );
     assert!(err.contains("--read-only"), "{err}");
+    assert_eq!(code, "mcp.read_only");
 }
 
 #[test]
@@ -566,8 +597,10 @@ fn render_reports_bad_arguments_before_touching_the_gpu() {
         json!({ "path": path, "params": { "Nope": 1 } }),
     );
     assert!(err.contains("unknown parameter `Nope` (known: X)"), "{err}");
-    let err = client.call_err("render_png", json!({ "path": path, "background": "#fff" }));
+    let (err, code) =
+        client.call_coded("render_png", json!({ "path": path, "background": "#fff" }));
     assert!(err.contains("invalid background"), "{err}");
+    assert_eq!(code, "mcp.invalid_render");
     // スキーマの `maximum` (4096 と 3600 秒) をサーバも確かめる。
     let err = client.call_err("render_png", json!({ "path": path, "width": 4097 }));
     assert!(err.contains("width must be in 1..=4096, got 4097"), "{err}");
@@ -764,13 +797,15 @@ fn agent_driven_auto_rig_from_psd() {
         sets["items"],
         ugoe_ai::classify::output_schema()["properties"]["variant_sets"]["items"]
     );
-    let err = client.call_err("set_layer_labels", json!({ "path": path }));
+    let (err, code) = client.call_coded("set_layer_labels", json!({ "path": path }));
     assert!(err.contains("variant_sets"), "{err}");
-    let err = client.call_err(
+    assert_eq!(code, "mcp.invalid_arguments");
+    let (err, code) = client.call_coded(
         "set_layer_labels",
         json!({ "path": path, "variant_sets": [[1, 2], [2, 3]] }),
     );
     assert!(err.contains("more than one variant set"), "{err}");
+    assert_eq!(code, "mcp.invalid_labels");
     let summary = client.call_ok(
         "set_layer_labels",
         json!({ "path": path, "variant_sets": [[3, 1], [5]] }),
@@ -818,8 +853,9 @@ fn agent_driven_auto_rig_from_psd() {
         "mouth_open_height": 0.4,
         "reason": "large anime eyes; keep the turn small",
     });
-    let err = client.call_err("propose_rig", json!({ "path": path, "params": params }));
+    let (err, code) = client.call_coded("propose_rig", json!({ "path": path, "params": params }));
     assert!(err.contains("turn_angle_scale is 2.5"), "{err}");
+    assert_eq!(code, "mcp.rig_failed");
     let err = client.call_err(
         "propose_rig",
         json!({ "path": path, "params": { "turn_angle_scale": 0.6 } }),
@@ -883,8 +919,9 @@ fn agent_driven_auto_rig_from_psd() {
 
     // 保存したプロジェクトを開き直すと PSD は覚えていないので、get_psd_layers に渡す。
     client.call_ok("close_project", json!({ "path": path }));
-    let err = client.call_err("get_rig_guide", json!({ "path": path }));
+    let (err, code) = client.call_coded("get_rig_guide", json!({ "path": path }));
     assert!(err.contains("no PSD"), "{err}");
+    assert_eq!(code, "mcp.no_psd");
     let err = client.call_err(
         "import_psd",
         json!({ "path": path, "psd": psd.to_str().unwrap() }),
@@ -931,11 +968,12 @@ fn agent_driven_module_rig_from_psd() {
     assert!(tools.iter().any(|t| t["name"] == "get_module_rig_guide"));
 
     // 本体とスロットは一緒に渡す。
-    let err = client.call_err(
+    let (err, code) = client.call_coded(
         "import_psd",
         json!({ "path": path, "psd": psd, "base": base }),
     );
     assert!(err.contains("`base` and `slot` together"), "{err}");
+    assert_eq!(code, "mcp.invalid_arguments");
     let err = client.call_err(
         "import_psd",
         json!({ "path": path, "psd": psd, "base": base, "slot": "Nope" }),
@@ -952,8 +990,9 @@ fn agent_driven_module_rig_from_psd() {
     assert!(!parameters.is_empty());
 
     // 本体向けのリグのツールは、モジュールのツールへ案内する。
-    let err = client.call_err("get_rig_guide", json!({ "path": path }));
+    let (err, code) = client.call_coded("get_rig_guide", json!({ "path": path }));
     assert!(err.contains("get_module_rig_guide"), "{err}");
+    assert_eq!(code, "mcp.module_project");
     let err = client.call_err("propose_rig", json!({ "path": path }));
     assert!(err.contains("propose_module_rig"), "{err}");
 
@@ -1054,11 +1093,12 @@ fn agent_driven_module_rig_from_psd() {
 
     // モジュールのプロジェクトでなければ、本体向けのツールへ案内する。
     let quad = save_fixture_project(tmp.path());
-    let err = client.call_err(
+    let (err, code) = client.call_coded(
         "get_module_rig_guide",
         json!({ "path": quad.to_str().unwrap() }),
     );
     assert!(err.contains("not a module project"), "{err}");
+    assert_eq!(code, "mcp.not_a_module");
 }
 
 /// `--root` で、ツールが触れるパスを 1 つのディレクトリの下に限る。相対パスは root から解決し、
@@ -1118,11 +1158,12 @@ fn root_confines_tool_paths() {
             json!({ "path": "quad.ugoeproj", "bundle": "sub/../../outside/quad.ugoe" }),
         ),
     ] {
-        let err = client.call_err(tool, arguments.clone());
+        let (err, code) = client.call_coded(tool, arguments.clone());
         assert!(
             err.contains("outside the root"),
             "{tool} {arguments}: {err}"
         );
+        assert_eq!(code, "mcp.outside_root", "{tool} {arguments}: {err}");
     }
     assert!(!outside.join("new.ugoeproj").exists());
     assert!(!outside.join("quad.ugoe").exists());
@@ -1133,11 +1174,12 @@ fn root_confines_tool_paths() {
     );
     assert!(err.contains("outside the root"), "{err}");
     // 名前でもファイルでもなければ、作業ディレクトリから読もうとせずに断る。
-    let err = client.call_err(
+    let (err, code) = client.call_coded(
         "render_png",
         json!({ "path": "quad.ugoeproj", "expression": "smile.expression.json" }),
     );
     assert!(err.contains("no expression named"), "{err}");
+    assert_eq!(code, "mcp.unknown_name");
     assert!(err.contains("is not a file"), "{err}");
 
     // root の下なら書き出せる。
@@ -1305,8 +1347,9 @@ fn root_confines_module_bases() {
         );
         let err = client.call_err("open_project", json!({ "path": "chain.ugoeproj" }));
         assert!(err.contains("not a module project"), "{err}");
-        let err = client.call_err("import_psd", import("rel.ugoeproj"));
+        let (err, code) = client.call_coded("import_psd", import("rel.ugoeproj"));
         assert!(err.contains("not a module project"), "{err}");
+        assert_eq!(code, "project.base_is_module");
     }
     assert!(!root.join("costume.ugoeproj").exists());
 

@@ -37,12 +37,14 @@ use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, export_bundle};
+use ugoe_editor_core::message::{Coded, Message, MessageArgs};
+use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, export_bundle, message_args};
 use ugoe_fs::{Access, StagedFile};
 
 use crate::root::Root;
 
-/// 持ち主が断った・失敗した。ツールのエラー (`isError`) の文になる。
+/// 持ち主が断った・失敗した。ツールのエラー (`isError`) の文になり、コード (`host.*`、[`HostError::Failed`] は
+/// その [`Message`] のコード) は結果の `structuredContent` に載る (README の「ツールのエラー」)。
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
     /// 持ち主が許さない (利用者が拒否した・エディタではできない操作)。
@@ -54,15 +56,76 @@ pub enum HostError {
     /// 利用者の答えを待つうちに、クライアントが要求を取り消した (モジュールの説明の「取り消し」)。
     #[error("the client cancelled the request")]
     Cancelled,
-    /// 読み書きの失敗など。
+    /// 読み書きの失敗など。コードと引数 (エディタの `project.*`・MCP だけの `mcp.*` など) を持ち、文は
+    /// [`Message::message`] (T0563)。大きいので箱に入れる (`Result` の `Err` を小さく保つ)。
     #[error("{0}")]
-    Failed(String),
+    Failed(Box<Message>),
 }
 
-impl From<String> for HostError {
-    fn from(message: String) -> Self {
-        Self::Failed(message)
+impl From<Message> for HostError {
+    fn from(message: Message) -> Self {
+        Self::Failed(Box::new(message))
     }
+}
+
+impl HostError {
+    /// 文 `message` とコード・引数 (`detail`。その `message` は `message` に置き換える) の失敗。
+    pub fn failed(message: impl Into<String>, mut detail: Message) -> Self {
+        detail.message = message.into();
+        detail.into()
+    }
+}
+
+/// MCP だけのコード (`mcp.*`。README の「ツールのエラー」) のメッセージ。
+pub(crate) fn mcp_message(code: &str, args: MessageArgs, message: impl Into<String>) -> Message {
+    Message::new(code, args, message)
+}
+
+/// 保存の前に `.ugoe` のバイト列を作れなかった (何も保存していない)。コードは `error` のもの。
+pub fn export_failed(bundle: &Path, error: &impl Coded) -> HostError {
+    HostError::failed(
+        format!(
+            "failed to export `{}`: {error}; nothing was saved",
+            bundle.display()
+        ),
+        error.to_message(),
+    )
+}
+
+/// 保存の前に `.ugoe` の一時ファイルを書けなかった (何も保存していない。`mcp.export_write_failed`)。
+pub fn export_write_failed(bundle: &Path, error: &std::io::Error) -> HostError {
+    mcp_message(
+        "mcp.export_write_failed",
+        message_args! { "path" => bundle.display().to_string(), "detail" => error.to_string() },
+        format!(
+            "failed to write `{}`: {error}; nothing was saved",
+            bundle.display()
+        ),
+    )
+    .into()
+}
+
+/// プロジェクトを保存した後に `.ugoe` を置き換えられなかった (保存済み。前の `.ugoe` は残る。
+/// `mcp.export_replace_failed`)。
+pub fn export_replace_failed(bundle: &Path, error: &std::io::Error) -> HostError {
+    mcp_message(
+        "mcp.export_replace_failed",
+        message_args! { "path" => bundle.display().to_string(), "detail" => error.to_string() },
+        format!(
+            "saved the project, but failed to write `{}`: {error}; the previous file is left as it was",
+            bundle.display()
+        ),
+    )
+    .into()
+}
+
+/// 開いていないプロジェクトを指した (`mcp.project_not_open`)。
+pub(crate) fn not_open(message: String, project: &Path) -> Message {
+    mcp_message(
+        "mcp.project_not_open",
+        message_args! { "path" => project.display().to_string() },
+        message,
+    )
 }
 
 /// 持ち主が貸す、開いているプロジェクト。
@@ -286,19 +349,22 @@ impl FileHost {
         &self,
         project: &Path,
         state: &'a mut SlotState,
-    ) -> Result<&'a mut FileProject, String> {
+    ) -> Result<&'a mut FileProject, Message> {
         if !matches!(state, SlotState::Open(_)) {
             *state = SlotState::Open(Box::new(self.load(project)?));
         }
         match state {
             SlotState::Open(open) => Ok(open),
-            _ => Err(format!("project `{}` is not open", project.display())),
+            _ => Err(not_open(
+                format!("project `{}` is not open", project.display()),
+                project,
+            )),
         }
     }
 
     /// `--root` があれば、プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を
     /// 指していないことを確かめる ([`Root::check_project_dir`])。
-    fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
+    fn check_project_dir(&self, dir: &Path) -> Result<(), Message> {
         match &self.root {
             Some(root) => root.check_project_dir(dir),
             None => Ok(()),
@@ -306,23 +372,29 @@ impl FileHost {
     }
 
     /// ディスクからプロジェクトを読む。モジュールなら本体も読む。
-    fn load(&self, dir: &Path) -> Result<FileProject, String> {
+    fn load(&self, dir: &Path) -> Result<FileProject, Message> {
         self.check_project_dir(dir)?;
         // モジュールのプロジェクトの本体も、読む前に root の下かを確かめる (T0524)。
         let project = match &self.root {
-            Some(root) => Project::load_checking_base(dir, &|base| root.check_base(base)),
+            Some(root) => Project::load_checking_base(dir, &|base| {
+                root.check_base(base).map_err(|e| e.message)
+            }),
             None => Project::load(dir),
-        }
-        .map_err(|e| e.to_string())?;
+        }?;
         Ok(FileProject::new(project.meta.clone(), project.document()))
     }
 }
 
 fn unsaved(project: &Path) -> HostError {
-    HostError::Failed(format!(
-        "`{}` has unsaved changes; save it or pass discard_changes=true",
-        project.display()
-    ))
+    mcp_message(
+        "mcp.unsaved_changes",
+        message_args! { "path" => project.display().to_string() },
+        format!(
+            "`{}` has unsaved changes; save it or pass discard_changes=true",
+            project.display()
+        ),
+    )
+    .into()
 }
 
 impl DocumentHost for FileHost {
@@ -363,10 +435,9 @@ impl DocumentHost for FileHost {
     fn close(&self, project: &Path, discard_changes: bool) -> Result<(), HostError> {
         self.with_slot(project, |state| {
             let SlotState::Open(open) = state else {
-                return Err(HostError::Failed(format!(
-                    "`{}` is not open",
-                    project.display()
-                )));
+                return Err(
+                    not_open(format!("`{}` is not open", project.display()), project).into(),
+                );
             };
             if open.document.is_modified() && !discard_changes {
                 return Err(unsaved(project));
@@ -386,33 +457,21 @@ impl DocumentHost for FileHost {
             let data = Project::from_document(open.meta.clone(), &open.document);
             let staged = match bundle {
                 Some(bundle) => {
-                    let bytes = export_bundle(&data).map_err(|e| {
-                        format!(
-                            "failed to export `{}`: {e}; nothing was saved",
-                            bundle.display()
-                        )
-                    })?;
-                    let staged = StagedFile::write(bundle, &bytes, Access::Default).map_err(|e| {
-                        format!(
-                            "failed to write `{}`: {e}; nothing was saved",
-                            bundle.display()
-                        )
-                    })?;
+                    let bytes = export_bundle(&data).map_err(|e| export_failed(bundle, &e))?;
+                    let staged = StagedFile::write(bundle, &bytes, Access::Default)
+                        .map_err(|e| export_write_failed(bundle, &e))?;
                     Some(staged)
                 }
                 None => None,
             };
             // 失敗すれば、書いておいた一時ファイルは捨てる (`StagedFile` の drop)。
-            data.save(project).map_err(|e| e.to_string())?;
+            data.save(project).map_err(Message::from)?;
             open.document.mark_saved();
             if let Some(staged) = staged {
                 let target = staged.target().to_path_buf();
-                staged.commit().map_err(|e| {
-                    format!(
-                        "saved the project, but failed to write `{}`: {e}; the previous file is left as it was",
-                        target.display()
-                    )
-                })?;
+                staged
+                    .commit()
+                    .map_err(|e| export_replace_failed(&target, &e))?;
             }
             Ok(())
         })
@@ -605,6 +664,35 @@ mod tests {
     use super::*;
     use std::sync::Barrier;
 
+    /// `src/` の MCP だけのコード (`"mcp.…"`) と README の「ツールのエラー」の表が食い違わない (T0563)。
+    #[test]
+    fn mcp_codes_match_the_readme() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+        let documented: std::collections::BTreeSet<String> = readme
+            .lines()
+            .filter_map(|line| line.strip_prefix("| `mcp."))
+            .map(|rest| format!("mcp.{}", &rest[..rest.find('`').unwrap()]))
+            .collect();
+        let mut used = std::collections::BTreeSet::new();
+        for entry in std::fs::read_dir(dir.join("src")).unwrap() {
+            let source = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            for (at, _) in source.match_indices("\"mcp.") {
+                let rest = &source[at + 1..];
+                let code = &rest[..rest.find('"').unwrap()];
+                // 文の中の言及 (`mcp.*` など) ではなく、コードの文字列だけ。
+                if !code.ends_with('.')
+                    && code
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
+                {
+                    used.insert(code.to_owned());
+                }
+            }
+        }
+        assert_eq!(used, documented);
+    }
+
     use ugoe_editor_core::Command;
 
     /// テスト用の一時ディレクトリ。`path` は正規化したパスで、破棄時に消す。
@@ -779,7 +867,8 @@ mod tests {
             .save(&project, Some(&tmp.path.join("missing/a.ugoe")))
             .unwrap_err();
         assert!(
-            matches!(&err, HostError::Failed(m) if m.contains("nothing was saved")),
+            matches!(&err, HostError::Failed(m) if m.message.contains("nothing was saved")
+                && m.code == "mcp.export_write_failed"),
             "{err}"
         );
         assert!(modified(&host, &project));
@@ -809,7 +898,10 @@ mod tests {
         edit(&host, &project, "Second");
         let err = host.save(&project, Some(&blocked)).unwrap_err();
         assert!(
-            matches!(&err, HostError::Failed(m) if m.starts_with("saved the project, but failed to write")),
+            matches!(&err, HostError::Failed(m)
+                if m.message.starts_with("saved the project, but failed to write")
+                    && m.code == "mcp.export_replace_failed"
+                    && m.args["path"] == blocked.display().to_string().into()),
             "{err}"
         );
         assert!(!modified(&host, &project));

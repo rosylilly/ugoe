@@ -20,6 +20,20 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use ugoe_editor_core::message::Message;
+use ugoe_editor_core::message_args;
+
+use crate::host::mcp_message;
+
+/// 使えないパス (`mcp.invalid_path`)。`path` はツールが受け取ったパスか、確かめたパス。
+fn invalid(path: &str, message: String) -> Message {
+    mcp_message(
+        "mcp.invalid_path",
+        message_args! { "path" => path },
+        message,
+    )
+}
+
 /// ツールが触れるパスの根。正規化した既存のディレクトリ。
 #[derive(Debug, Clone)]
 pub struct Root {
@@ -55,34 +69,51 @@ impl Root {
 
     /// ツールが受け取ったパスを、root の下の正規化した絶対パスにする。外を指せばエラー。
     /// パスはまだ無くてもよい (保存先)。
-    pub fn resolve(&self, path: &str) -> Result<PathBuf, String> {
+    /// エラーは `mcp.invalid_path` か `mcp.outside_root` (README の「ツールのエラー」)。
+    pub fn resolve(&self, path: &str) -> Result<PathBuf, Message> {
         if path.is_empty() {
-            return Err("the path is empty".to_owned());
+            return Err(invalid(path, "the path is empty".to_owned()));
         }
         let joined = self.dir.join(path);
-        let resolved = canonicalize_lenient(&joined).map_err(|e| format!("`{path}`: {e}"))?;
+        let resolved = canonicalize_lenient(&joined)
+            .map_err(|e| invalid(path, format!("`{path}`: {}", e.message)))?;
         if !resolved.starts_with(&self.dir) {
-            return Err(format!(
-                "`{path}` is outside the root directory `{}` (the server runs with --root; use a \
-                 path under it, relative paths are resolved from it)",
-                self.dir.display()
+            return Err(self.outside(
+                path,
+                format!(
+                    "`{path}` is outside the root directory `{}` (the server runs with --root; use a \
+                     path under it, relative paths are resolved from it)",
+                    self.dir.display()
+                ),
             ));
         }
         Ok(resolved)
+    }
+
+    /// root の外を指す (`mcp.outside_root`)。
+    fn outside(&self, path: &str, message: String) -> Message {
+        mcp_message(
+            "mcp.outside_root",
+            message_args! { "path" => path, "root" => self.dir.display().to_string() },
+            message,
+        )
     }
 
     /// モジュールのプロジェクトが参照する本体 (`project.json` の `module.base` を絶対パスにしたもの) を、読む前に
     /// 確かめる (T0524。[`ugoe_editor_core::project::BaseCheck`])。正規化して root の下にあり、`.ugoeproj` なら
     /// その中のシンボリックリンクも外を指さないときに、正規化したパス (読むパス) を返す。本体がまだ無くても、
     /// root の下なら受ける (見つからないことは読む側が伝える)。
-    pub(crate) fn check_base(&self, path: &Path) -> Result<PathBuf, String> {
+    pub(crate) fn check_base(&self, path: &Path) -> Result<PathBuf, Message> {
         // エラーは本体のパスを前に付けて伝わる (`ProjectError::BaseRefused`)。
         let resolved = canonicalize_lenient(path)?;
         if !resolved.starts_with(&self.dir) {
-            return Err(format!(
-                "outside the root directory `{}` (the server runs with --root; the module project's \
-                 `module.base` in project.json must point under it)",
-                self.dir.display()
+            return Err(self.outside(
+                &path.display().to_string(),
+                format!(
+                    "outside the root directory `{}` (the server runs with --root; the module project's \
+                     `module.base` in project.json must point under it)",
+                    self.dir.display()
+                ),
             ));
         }
         if resolved.is_dir() {
@@ -94,16 +125,20 @@ impl Root {
     /// プロジェクトのディレクトリの中の (読み書きする) シンボリックリンクが root の外を指していないことを
     /// 確かめる。直下と `motions/`・`expressions/`・`textures/` の中を見る (`Project::load`・`Project::save` が
     /// 触れる場所)。
-    pub(crate) fn check_project_dir(&self, dir: &Path) -> Result<(), String> {
+    pub(crate) fn check_project_dir(&self, dir: &Path) -> Result<(), Message> {
+        let io = |path: &Path, e: io::Error| {
+            let path = path.display().to_string();
+            invalid(&path, format!("`{path}`: {e}"))
+        };
         for sub in ["", "motions", "expressions", "textures"] {
             let Ok(entries) = fs::read_dir(dir.join(sub)) else {
                 continue;
             };
             for entry in entries {
-                let entry = entry.map_err(|e| format!("`{}`: {e}", dir.display()))?;
+                let entry = entry.map_err(|e| io(dir, e))?;
                 let is_link = entry
                     .file_type()
-                    .map_err(|e| format!("`{}`: {e}", entry.path().display()))?
+                    .map_err(|e| io(&entry.path(), e))?
                     .is_symlink();
                 if is_link {
                     self.contains_existing(&entry.path())?;
@@ -114,24 +149,28 @@ impl Root {
     }
 
     /// 既存のパスを正規化し、root の下にあることを確かめる (プロジェクトの中のシンボリックリンクなど)。
-    pub(crate) fn contains_existing(&self, path: &Path) -> Result<(), String> {
+    pub(crate) fn contains_existing(&self, path: &Path) -> Result<(), Message> {
+        let shown = path.display().to_string();
         let resolved = path
             .canonicalize()
-            .map_err(|e| format!("`{}`: {e}", path.display()))?;
+            .map_err(|e| invalid(&shown, format!("`{shown}`: {e}")))?;
         if resolved.starts_with(&self.dir) {
             Ok(())
         } else {
-            Err(format!(
-                "`{}` leads outside the root directory `{}` (a symbolic link)",
-                path.display(),
-                self.dir.display()
+            Err(self.outside(
+                &shown,
+                format!(
+                    "`{shown}` leads outside the root directory `{}` (a symbolic link)",
+                    self.dir.display()
+                ),
             ))
         }
     }
 }
 
-/// 存在する最も深い祖先を正規化し、無い部分を結合する。
-pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+/// 存在する最も深い祖先を正規化し、無い部分を結合する。エラーは `mcp.invalid_path` (`path` は `path`)。
+pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, Message> {
+    let invalid = |message: String| invalid(&path.display().to_string(), message);
     let mut existing = path.to_path_buf();
     let mut missing: Vec<std::ffi::OsString> = Vec::new();
     loop {
@@ -146,27 +185,27 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 // 行き先の無いシンボリックリンクは、無いものとして扱わない (書くとリンクの先に作られる)。
                 if fs::symlink_metadata(&existing).is_ok() {
-                    return Err(format!(
+                    return Err(invalid(format!(
                         "`{}` is a symbolic link whose target does not exist",
                         existing.display()
-                    ));
+                    )));
                 }
                 match existing.components().next_back() {
                     Some(Component::Normal(name)) => missing.push(name.to_owned()),
                     Some(Component::ParentDir | Component::CurDir) => {
-                        return Err(
+                        return Err(invalid(
                             "`..` and `.` are only allowed in the part of the path that exists"
                                 .to_owned(),
-                        );
+                        ));
                     }
                     // 根 (`/`・`C:\`) が無い。
-                    _ => return Err(e.to_string()),
+                    _ => return Err(invalid(e.to_string())),
                 }
                 if !existing.pop() {
-                    return Err(e.to_string());
+                    return Err(invalid(e.to_string()));
                 }
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(invalid(e.to_string())),
         }
     }
 }
@@ -235,11 +274,11 @@ mod tests {
             "../../../../../../../../etc/passwd",
         ] {
             let err = root.resolve(path).unwrap_err();
-            assert!(err.contains("outside the root"), "{path}: {err}");
+            assert!(err.message.contains("outside the root"), "{path}: {err}");
         }
         let absolute = tmp.path.join("outside/secret.psd");
         let err = root.resolve(absolute.to_str().unwrap()).unwrap_err();
-        assert!(err.contains("outside the root"), "{err}");
+        assert!(err.message.contains("outside the root"), "{err}");
         // 名前が root で始まるだけの隣のディレクトリ (`root-other`) は外。
         fs::create_dir_all(tmp.path.join("root-other")).unwrap();
         let sibling = tmp.path.join("root-other");
@@ -254,9 +293,9 @@ mod tests {
         let (_tmp, root) = layout();
         // `nope` は無いので、その後の `..` の意味を決められない。
         let err = root.resolve("nope/../a.ugoeproj").unwrap_err();
-        assert!(err.contains("`..`"), "{err}");
+        assert!(err.message.contains("`..`"), "{err}");
         let err = root.resolve("nope/../../outside").unwrap_err();
-        assert!(err.contains("`..`"), "{err}");
+        assert!(err.message.contains("`..`"), "{err}");
     }
 
     /// Windows はパスを開く前に `..` を字面で解く (無い部分の `..` も) ので、正規化の結果も字面で解いた
@@ -268,7 +307,7 @@ mod tests {
         let inside = root.resolve("nope/../a.ugoeproj").unwrap();
         assert_eq!(inside, root.dir().join("a.ugoeproj"));
         let err = root.resolve("nope/../../outside").unwrap_err();
-        assert!(err.contains("outside the root"), "{err}");
+        assert!(err.message.contains("outside the root"), "{err}");
     }
 
     #[cfg(unix)]
@@ -298,11 +337,11 @@ mod tests {
             "secret.psd",
         ] {
             let err = root.resolve(path).unwrap_err();
-            assert!(err.contains("outside the root"), "{path}: {err}");
+            assert!(err.message.contains("outside the root"), "{path}: {err}");
         }
         for path in ["dangling.ugoe", "dangling-dir/x.ugoe"] {
             let err = root.resolve(path).unwrap_err();
-            assert!(err.contains("symbolic link"), "{path}: {err}");
+            assert!(err.message.contains("symbolic link"), "{path}: {err}");
         }
         assert_eq!(
             root.resolve("alias.ugoeproj").unwrap(),

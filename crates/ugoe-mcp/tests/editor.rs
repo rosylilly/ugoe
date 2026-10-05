@@ -15,9 +15,11 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use ugoe_editor_core::texture::solid_png;
-use ugoe_editor_core::{Document, Project, ProjectMeta, Proposals, Textures, export_bundle};
+use ugoe_editor_core::{
+    Document, Message, Project, ProjectMeta, Proposals, Textures, export_bundle,
+};
 use ugoe_mcp::discovery::{self, DISCOVERY_ENV, Discovery};
-use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
+use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening, export_replace_failed};
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 use ugoe_model::fixtures;
 
@@ -185,10 +187,11 @@ impl DocumentHost for FakeEditor {
         let mut document = self.document.lock().unwrap();
         let session = self.session.lock().unwrap();
         let data = Project::from_document(session.meta.clone(), &document);
-        data.save(project).map_err(|e| e.to_string())?;
+        data.save(project).map_err(Message::from)?;
         document.mark_saved();
         if let Some(bundle) = bundle {
-            fs::write(bundle, export_bundle(&data).unwrap()).map_err(|e| e.to_string())?;
+            fs::write(bundle, export_bundle(&data).unwrap())
+                .map_err(|e| export_replace_failed(bundle, &e))?;
         }
         Ok(())
     }

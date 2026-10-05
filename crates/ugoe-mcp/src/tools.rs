@@ -23,7 +23,9 @@ use ugoe_editor_core::{Command, Document, Project, ProposalError, ProposalView, 
 
 use crate::autorig::{self, PsdSource};
 use crate::diff;
-use crate::host::{Action, Change, DocumentHost, FileHost, HostError, Lent, Opening};
+use crate::host::{
+    Action, Change, DocumentHost, FileHost, HostError, Lent, Opening, mcp_message, not_open,
+};
 use crate::render::{self, RenderRequest, Renderer};
 use crate::root::Root;
 use crate::schema::{CommandSchema, object_schema};
@@ -106,45 +108,67 @@ impl From<Value> for Output {
 
 pub(crate) type ToolResult = Result<Output, ToolError>;
 
-/// ツールの失敗。`message` は結果の文 (`content` の text)。コードの分かる失敗は `detail` を持ち、
-/// 結果の `structuredContent` にエディタの [`Message`] の形 (`code`・`args`・`message`・`cause`・`items`) で載せる
-/// (エージェントが文を読まずに見分けられるように。`docs/ai-integration.md`)。
+/// ツールの失敗。すべてコードを持ち、結果の文 (`content` の text) に加えて `structuredContent` にエディタの
+/// [`Message`] の形 (`code`・`args`・`message`・`cause`・`items`) で載せる (エージェントが文を読まずに見分けられるように。
+/// `docs/ai-integration.md`)。エディタのコードの無い失敗は MCP だけのコード (`mcp.*`。README の「ツールのエラー」。T0563)。
 #[derive(Debug)]
-pub(crate) struct ToolError {
-    pub(crate) message: String,
+pub(crate) struct ToolError(
     /// 大きいので箱に入れる (`Result` の `Err` を小さく保つ)。
-    pub(crate) detail: Option<Box<Message>>,
-}
+    Box<Message>,
+);
 
 impl ToolError {
     /// 文 `message` とコード・引数 (`detail`。その `message` は `message` に置き換える) の失敗。
     pub(crate) fn coded(message: String, mut detail: Message) -> Self {
-        detail.message.clone_from(&message);
-        Self {
-            message,
-            detail: Some(Box::new(detail)),
-        }
+        detail.message = message;
+        detail.into()
+    }
+
+    /// MCP だけのコード (`mcp.*`) の失敗。
+    pub(crate) fn mcp(code: &str, args: MessageArgs, message: impl Into<String>) -> Self {
+        mcp_message(code, args, message).into()
+    }
+
+    /// 引数の誤り (`mcp.invalid_arguments`)。
+    pub(crate) fn invalid_arguments(message: impl Into<String>) -> Self {
+        Self::mcp("mcp.invalid_arguments", MessageArgs::new(), message)
+    }
+
+    /// 結果の文。
+    pub(crate) fn message(&self) -> &str {
+        &self.0.message
+    }
+
+    /// `structuredContent` に載せるコード・引数。
+    #[cfg(test)]
+    pub(crate) fn detail(&self) -> &Message {
+        &self.0
     }
 }
 
 impl fmt::Display for ToolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
+        f.write_str(self.message())
     }
 }
 
-impl From<String> for ToolError {
-    fn from(message: String) -> Self {
-        Self {
-            message,
-            detail: None,
-        }
+impl From<Message> for ToolError {
+    fn from(message: Message) -> Self {
+        Self(Box::new(message))
     }
 }
 
-impl From<&str> for ToolError {
-    fn from(message: &str) -> Self {
-        message.to_owned().into()
+/// 持ち主の失敗。断った・時間切れ・取り消しはコード (`host.denied`・`host.timed_out`・`host.cancelled`)、
+/// 失敗 ([`HostError::Failed`]) は持ち主が付けたコード。
+impl From<HostError> for ToolError {
+    fn from(e: HostError) -> Self {
+        let code = match e {
+            HostError::Failed(message) => return Self(message),
+            HostError::Denied(_) => "host.denied",
+            HostError::TimedOut => "host.timed_out",
+            HostError::Cancelled => "host.cancelled",
+        };
+        Self::coded(e.to_string(), Message::new(code, MessageArgs::new(), ""))
     }
 }
 
@@ -208,18 +232,6 @@ pub(crate) fn tool_def(
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     // ツールの panic は描画の中で受け止めているが、万一毒されても状態は使い続ける。
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// 持ち主の失敗。断った・時間切れ・取り消しはコード (`host.denied`・`host.timed_out`・`host.cancelled`) を付ける。
-fn host_error(e: HostError) -> ToolError {
-    let code = match &e {
-        HostError::Denied(_) => "host.denied",
-        HostError::TimedOut => "host.timed_out",
-        HostError::Cancelled => "host.cancelled",
-        HostError::Failed(_) => return e.to_string().into(),
-    };
-    let message = e.to_string();
-    ToolError::coded(message, Message::new(code, MessageArgs::new(), ""))
 }
 
 impl Tools {
@@ -478,9 +490,11 @@ impl Tools {
                 let draft = autorig::propose_module_rig(&doc, &lock(&slot), a)?;
                 self.add_proposal(&key, draft)
             }),
-            _ if edit_tool && self.options.read_only => {
-                Err(format!("`{name}` is disabled (the server runs with --read-only)").into())
-            }
+            _ if edit_tool && self.options.read_only => Err(ToolError::mcp(
+                "mcp.read_only",
+                message_args! { "tool" => name },
+                format!("`{name}` is disabled (the server runs with --read-only)"),
+            )),
             "apply_proposal" => parse(arguments).and_then(|a| self.apply_proposal(a)),
             "undo" => parse(arguments).and_then(|a| self.undo(a, true)),
             "redo" => parse(arguments).and_then(|a| self.undo(a, false)),
@@ -492,11 +506,18 @@ impl Tools {
 
     /// ツールが受け取ったパスを絶対パスにする (あれば正規化する)。開いているプロジェクトの鍵にも使う。
     /// `--root` があれば root から解決し、root の外ならエラー (`crate::root`)。
-    pub(crate) fn resolve(&self, path: &str) -> Result<PathBuf, String> {
+    /// エラーは `mcp.invalid_path`・`mcp.outside_root`。
+    pub(crate) fn resolve(&self, path: &str) -> Result<PathBuf, ToolError> {
         if let Some(root) = &self.options.root {
-            return root.resolve(path);
+            return Ok(root.resolve(path)?);
         }
-        let path = std::path::absolute(path).map_err(|e| format!("invalid path `{path}`: {e}"))?;
+        let path = std::path::absolute(path).map_err(|e| {
+            ToolError::mcp(
+                "mcp.invalid_path",
+                message_args! { "path" => path },
+                format!("invalid path `{path}`: {e}"),
+            )
+        })?;
         // まだ無いパスも、ある祖先を正規化して結合する (作って保存した後も同じ鍵になるように)。
         Ok(crate::root::canonicalize_lenient(&path).unwrap_or(path))
     }
@@ -507,18 +528,16 @@ impl Tools {
     fn with<R>(&self, key: &Path, f: impl FnOnce(Lent<'_>) -> R) -> Result<R, ToolError> {
         let mut f = Some(f);
         let mut out = None;
-        self.host
-            .with_project(key, &mut |lent| {
-                if let Some(f) = f.take() {
-                    out = Some(f(lent));
-                }
-            })
-            .map_err(host_error)?;
-        out.ok_or_else(|| format!("project `{}` is not open", key.display()).into())
+        self.host.with_project(key, &mut |lent| {
+            if let Some(f) = f.take() {
+                out = Some(f(lent));
+            }
+        })?;
+        out.ok_or_else(|| not_open(format!("project `{}` is not open", key.display()), key).into())
     }
 
     fn authorize(&self, action: Action<'_>) -> Result<(), ToolError> {
-        self.host.authorize(&action).map_err(host_error)
+        Ok(self.host.authorize(&action)?)
     }
 
     fn extras(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Extra>> {
@@ -562,11 +581,13 @@ impl Tools {
     fn open_project(&self, args: OpenArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
         if args.create && key.join("project.json").exists() {
-            return Err(format!(
-                "`{}` is already a project; open it without create",
-                key.display()
-            )
-            .into());
+            return Err(project_exists(
+                &key,
+                format!(
+                    "`{}` is already a project; open it without create",
+                    key.display()
+                ),
+            ));
         }
         self.authorize(Action::Open {
             project: &key,
@@ -587,9 +608,7 @@ impl Tools {
         } else {
             Opening::Load
         };
-        self.host
-            .open(&key, opening, args.discard_changes)
-            .map_err(host_error)?;
+        self.host.open(&key, opening, args.discard_changes)?;
         self.forget(&key);
         self.host.changed(&Change::Opened { project: &key });
         let (state, name, counts) = self.with(&key, |lent| {
@@ -617,9 +636,7 @@ impl Tools {
             project: &key,
             discard_changes: args.discard_changes,
         })?;
-        self.host
-            .close(&key, args.discard_changes)
-            .map_err(host_error)?;
+        self.host.close(&key, args.discard_changes)?;
         self.forget(&key);
         self.host.changed(&Change::Closed { project: &key });
         Ok(json!({ "closed": key }).into())
@@ -636,18 +653,31 @@ impl Tools {
 
     fn get_element(&self, args: ElementArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
-        let found = self.with(&key, |lent| {
-            element(lent.document, &args.kind, &args.id).map(|v| v.map_err(|e| e.to_string()))
-        })?;
+        let found = self.with(&key, |lent| element(lent.document, &args.kind, &args.id))?;
         match found {
-            Some(value) => Ok(value?.into()),
-            None if !ELEMENT_KINDS.contains(&args.kind.as_str()) => Err(format!(
-                "unknown kind `{}` (expected one of {})",
-                args.kind,
-                ELEMENT_KINDS.join(", ")
-            )
-            .into()),
-            None => Err(format!("{} `{}` not found", args.kind, args.id).into()),
+            Some(value) => Ok(value
+                .map_err(|e| {
+                    ToolError::mcp(
+                        "mcp.internal",
+                        message_args! { "detail" => e.to_string() },
+                        e.to_string(),
+                    )
+                })?
+                .into()),
+            None if !ELEMENT_KINDS.contains(&args.kind.as_str()) => Err(ToolError::mcp(
+                "mcp.unknown_kind",
+                message_args! { "kind" => args.kind.as_str() },
+                format!(
+                    "unknown kind `{}` (expected one of {})",
+                    args.kind,
+                    ELEMENT_KINDS.join(", ")
+                ),
+            )),
+            None => Err(ToolError::mcp(
+                "mcp.element_not_found",
+                message_args! { "kind" => args.kind.as_str(), "id" => args.id.as_str() },
+                format!("{} `{}` not found", args.kind, args.id),
+            )),
         }
     }
 
@@ -743,11 +773,13 @@ impl Tools {
     fn import_psd(&self, args: autorig::ImportArgs) -> ToolResult {
         let key = self.resolve(&args.path)?;
         if key.join("project.json").exists() {
-            return Err(format!(
-                "`{}` is already a project; open it and pass `psd` to get_psd_layers instead",
-                key.display()
-            )
-            .into());
+            return Err(project_exists(
+                &key,
+                format!(
+                    "`{}` is already a project; open it and pass `psd` to get_psd_layers instead",
+                    key.display()
+                ),
+            ));
         }
         let psd = self.resolve(&args.psd)?;
         let base = args.base.as_deref().map(|b| self.resolve(b)).transpose()?;
@@ -763,16 +795,14 @@ impl Tools {
         })?;
         let discard_changes = args.discard_changes;
         let imported = autorig::import_psd(args, psd, base)?;
-        self.host
-            .open(
-                &key,
-                Opening::New {
-                    meta: imported.meta,
-                    document: Box::new(imported.document),
-                },
-                discard_changes,
-            )
-            .map_err(host_error)?;
+        self.host.open(
+            &key,
+            Opening::New {
+                meta: imported.meta,
+                document: Box::new(imported.document),
+            },
+            discard_changes,
+        )?;
         self.forget(&key);
         *lock(&self.extras().entry(key.clone()).or_default().psd) = Some(imported.source);
         self.host.changed(&Change::Opened { project: &key });
@@ -819,9 +849,7 @@ impl Tools {
             project: &key,
             bundle: bundle.as_deref(),
         })?;
-        self.host
-            .save(&key, bundle.as_deref())
-            .map_err(host_error)?;
+        self.host.save(&key, bundle.as_deref())?;
         self.host.changed(&Change::Saved { project: &key });
         let state = self.with(&key, |lent| DocState::of(lent.document))?;
         let mut status = self.status(&key, state);
@@ -838,7 +866,7 @@ impl Tools {
         arg: Option<String>,
         names: &[&str],
         what: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, ToolError> {
         let Some(arg) = arg else {
             return Ok(None);
         };
@@ -846,12 +874,19 @@ impl Tools {
             return Ok(Some(arg));
         }
         let unknown = format!("no {what} named `{arg}` (known: {})", names.join(", "));
+        let not_found = |message: String| {
+            ToolError::mcp(
+                "mcp.unknown_name",
+                message_args! { "kind" => what, "name" => arg.as_str() },
+                message,
+            )
+        };
         let path = self
             .resolve(&arg)
-            .map_err(|e| format!("{unknown}, and it is not a usable path: {e}"))?;
+            .map_err(|e| not_found(format!("{unknown}, and it is not a usable path: {e}")))?;
         // 無いパスを元の文字列のまま渡すと、描画が作業ディレクトリから読もうとするので、ここで断る。
         if !path.is_file() {
-            return Err(format!("{unknown}, and `{arg}` is not a file"));
+            return Err(not_found(format!("{unknown}, and `{arg}` is not a file")));
         }
         Ok(Some(path.to_string_lossy().into_owned()))
     }
@@ -881,7 +916,7 @@ impl Tools {
         };
         let rendered = lock(&self.renderer)
             .render(&project, &request)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| ToolError::from(e.to_message()))?;
         Ok(Output {
             value: json!({ "log": rendered.log, "bytes": rendered.png.len() }),
             content: vec![Content::Png(rendered.png)],
@@ -1004,21 +1039,31 @@ fn tool_result(result: ToolResult) -> Value {
                 "isError": false,
             })
         }
-        Err(ToolError { message, detail }) => {
-            let mut result = json!({
-                "content": [{ "type": "text", "text": message }],
-                "isError": true,
-            });
-            if let Some(detail) = detail {
-                result["structuredContent"] = json!(detail);
-            }
-            result
-        }
+        Err(ToolError(detail)) => json!({
+            "content": [{ "type": "text", "text": detail.message }],
+            "structuredContent": detail,
+            "isError": true,
+        }),
     }
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(arguments: Value) -> Result<T, ToolError> {
-    serde_json::from_value(arguments).map_err(|e| format!("invalid arguments: {e}").into())
+    serde_json::from_value(arguments).map_err(|e| {
+        ToolError::mcp(
+            "mcp.invalid_arguments",
+            message_args! { "detail" => e.to_string() },
+            format!("invalid arguments: {e}"),
+        )
+    })
+}
+
+/// もうプロジェクトがある (`mcp.project_exists`)。
+fn project_exists(key: &Path, message: String) -> ToolError {
+    ToolError::mcp(
+        "mcp.project_exists",
+        message_args! { "path" => key.display().to_string() },
+        message,
+    )
 }
 
 #[derive(Deserialize)]

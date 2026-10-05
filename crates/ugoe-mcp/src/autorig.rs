@@ -42,7 +42,8 @@ use ugoe_ai::rig::{
     rig_output_schema, rig_request,
 };
 use ugoe_editor_core::import::{layer_tree_command, read_layer_tree};
-use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions};
+use ugoe_editor_core::message::MessageArgs;
+use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions, message_args};
 use ugoe_fs::read_regular_file;
 use ugoe_model::SlotId;
 use ugoe_psd::{ImportLimits, LayerTree};
@@ -52,15 +53,15 @@ use crate::tools::{
     Content, Draft, Kind, Output, PATH_NOTE, ToolError, ToolResult, path_property, tool_def,
 };
 
-/// PSD がまだ分からないときの断りの文。
+/// PSD がまだ分からないときの断りの文 (`mcp.no_psd`)。
 const NO_PSD: &str = "no PSD is associated with this project: call import_psd, or pass `psd` \
                       (the PSD this model was imported from) to get_psd_layers";
 
-/// モジュールのプロジェクトで本体向けのリグのツールを呼んだときの断りの文。
+/// モジュールのプロジェクトで本体向けのリグのツールを呼んだときの断りの文 (`mcp.module_project`)。
 const USE_MODULE_RIG: &str = "this is a module project, which cannot add parameters: use \
                               get_module_rig_guide and propose_module_rig instead";
 
-/// モジュールのプロジェクトでないときにモジュールのリグのツールを呼んだときの断りの文。
+/// モジュールのプロジェクトでないときにモジュールのリグのツールを呼んだときの断りの文 (`mcp.not_a_module`)。
 const NOT_A_MODULE: &str = "this is not a module project: use get_rig_guide and propose_rig, or \
                             create a module project with import_psd and `base` and `slot`";
 
@@ -106,8 +107,15 @@ impl PsdSource {
     fn load_with(path: PathBuf, max_bytes: u64, limits: ImportLimits) -> Result<Self, ToolError> {
         // 装置 (`/dev/zero`)・FIFO・ディレクトリは開かず、上限より大きいファイルは読まない (終わらない読み込みで
         // メモリを使い果たさないように)。開いた後にも通常のファイルかを確かめる (`ugoe_fs::read_regular_file`)。
-        let bytes =
-            read_regular_file(&path, max_bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        // コードはエディタの PSD の読み込みと同じ `psd.read_file_failed`。
+        let bytes = read_regular_file(&path, max_bytes).map_err(|e| {
+            let shown = path.display().to_string();
+            ToolError::mcp(
+                "psd.read_file_failed",
+                message_args! { "path" => shown.as_str(), "detail" => e.to_string() },
+                format!("{shown}: {e}"),
+            )
+        })?;
         let tree = read_layer_tree(&bytes, limits).map_err(|e| {
             ToolError::coded(
                 format!("{}: {e} (code: {})", path.display(), e.code()),
@@ -382,6 +390,27 @@ fn ai_error(e: AiError) -> String {
     }
 }
 
+/// 自動リギングの処理の失敗を、コード `code` (`mcp.*`) のツールのエラーにする。
+fn ai(code: &'static str) -> impl Fn(AiError) -> ToolError {
+    move |e| ToolError::mcp(code, MessageArgs::new(), ai_error(e))
+}
+
+fn no_psd() -> ToolError {
+    ToolError::mcp("mcp.no_psd", MessageArgs::new(), NO_PSD)
+}
+
+fn use_module_rig() -> ToolError {
+    ToolError::mcp("mcp.module_project", MessageArgs::new(), USE_MODULE_RIG)
+}
+
+fn not_a_module() -> ToolError {
+    ToolError::mcp("mcp.not_a_module", MessageArgs::new(), NOT_A_MODULE)
+}
+
+fn rig_failed(message: String) -> ToolError {
+    ToolError::mcp("mcp.rig_failed", MessageArgs::new(), message)
+}
+
 /// PSD から取り込んだ新しいプロジェクト (まだ持ち主に渡していない)。
 pub(crate) struct Imported {
     pub(crate) meta: ProjectMeta,
@@ -413,7 +442,11 @@ pub(crate) fn import_psd(
                     e.to_message(),
                 )
             })?,
-        _ => return Err("pass `base` and `slot` together to create a module project".into()),
+        _ => {
+            return Err(ToolError::invalid_arguments(
+                "pass `base` and `slot` together to create a module project",
+            ));
+        }
     };
     let source = PsdSource::load(psd.clone())?;
     let mut document = project.document();
@@ -470,7 +503,7 @@ fn source(slot: &mut Option<PsdSource>, psd: Option<PathBuf>) -> Result<&mut Psd
     {
         *slot = Some(PsdSource::load(path)?);
     }
-    slot.as_mut().ok_or_else(|| NO_PSD.into())
+    slot.as_mut().ok_or_else(no_psd)
 }
 
 /// `doc` はプロジェクトの文書 (の複製)、`slot` は覚えている PSD、`psd` は `args.psd` を解決したパス
@@ -490,23 +523,31 @@ pub(crate) fn get_psd_layers(
     let selected: Vec<usize> = match &args.indices {
         Some(indices) => {
             if indices.len() > per_call {
-                return Err(format!("at most {per_call} layers per call").into());
+                return Err(ToolError::mcp(
+                    "mcp.too_many_layers",
+                    message_args! { "max" => per_call },
+                    format!("at most {per_call} layers per call"),
+                ));
             }
-            if let Some(i) = indices.iter().find(|&&i| i >= total) {
-                return Err(format!(
-                    "layer {i} does not exist (there are {total} layers, numbered from 0)"
-                )
-                .into());
+            if let Some(&i) = indices.iter().find(|&&i| i >= total) {
+                return Err(ToolError::mcp(
+                    "mcp.layer_out_of_range",
+                    message_args! { "index" => i, "count" => total },
+                    format!("layer {i} does not exist (there are {total} layers, numbered from 0)"),
+                ));
             }
             indices.clone()
         }
         None => {
             if args.start >= total && total > 0 {
-                return Err(format!(
-                    "start {} is past the last layer (there are {total} layers, numbered from 0)",
-                    args.start
-                )
-                .into());
+                return Err(ToolError::mcp(
+                    "mcp.layer_out_of_range",
+                    message_args! { "index" => args.start, "count" => total },
+                    format!(
+                        "start {} is past the last layer (there are {total} layers, numbered from 0)",
+                        args.start
+                    ),
+                ));
             }
             let count = args.count.unwrap_or(DEFAULT_COUNT).clamp(1, per_call);
             (args.start..args.start.saturating_add(count).min(total)).collect()
@@ -532,7 +573,8 @@ pub(crate) fn get_psd_layers(
             options.overview_max_side, source.tree.width, source.tree.height
         )));
         content.push(Content::Png(
-            overview_png(&source.tree, options.overview_max_side).map_err(ai_error)?,
+            overview_png(&source.tree, options.overview_max_side)
+                .map_err(ai("mcp.image_failed"))?,
         ));
     }
     let mut listed = Vec::with_capacity(selected.len());
@@ -540,7 +582,8 @@ pub(crate) fn get_psd_layers(
         let info = &infos[i];
         let label = &source.labels[i];
         if args.images && info.has_pixels {
-            let png = layer_thumbnail_png(&source.tree, i, &options).map_err(ai_error)?;
+            let png =
+                layer_thumbnail_png(&source.tree, i, &options).map_err(ai("mcp.image_failed"))?;
             if let Some(png) = png {
                 content.push(Content::Text(format!(
                     "layer {i}: {}",
@@ -611,7 +654,9 @@ pub(crate) fn set_layer_labels(
     args: LabelsArgs,
 ) -> ToolResult {
     if args.layers.is_none() && args.variant_sets.is_none() {
-        return Err("pass `layers`, `variant_sets` or both".into());
+        return Err(ToolError::invalid_arguments(
+            "pass `layers`, `variant_sets` or both",
+        ));
     }
     let source = source(slot, None)?;
     let mut labels = if args.reset {
@@ -631,8 +676,8 @@ pub(crate) fn set_layer_labels(
     if let Some(sets) = args.variant_sets {
         answer["variant_sets"] = sets;
     }
-    let updated = apply_answer(&mut labels, answer).map_err(ai_error)?;
-    mark_name_disagreements(&source.tree, &mut labels).map_err(ai_error)?;
+    let updated = apply_answer(&mut labels, answer).map_err(ai("mcp.invalid_labels"))?;
+    mark_name_disagreements(&source.tree, &mut labels).map_err(ai("mcp.invalid_labels"))?;
     source.labels = labels;
     if args.reset {
         source.by_agent.clear();
@@ -725,15 +770,15 @@ fn variant_sets(labels: &[LayerLabel]) -> Vec<Vec<usize>> {
 
 pub(crate) fn get_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
     if doc.module().is_some() {
-        return Err(USE_MODULE_RIG.into());
+        return Err(use_module_rig());
     }
-    let source = slot.as_ref().ok_or(NO_PSD)?;
+    let source = slot.as_ref().ok_or_else(no_psd)?;
     let model = doc.model();
     let parts = mesh_parts(model, &source.labels);
     let max_side = ClassifyOptions::default().overview_max_side;
-    let image = overview_png(&source.tree, max_side).map_err(ai_error)?;
+    let image = overview_png(&source.tree, max_side).map_err(ai("mcp.image_failed"))?;
     // エディタが API に送るリクエストと同じ文 (システムプロンプトが値の説明、プロンプトが位置)。
-    let request = rig_request(model, &parts, &image, &[]).map_err(ai_error)?;
+    let request = rig_request(model, &parts, &image, &[]).map_err(ai("mcp.rig_not_ready"))?;
     Ok(Output {
         value: json!({
             "instructions": request.system,
@@ -757,25 +802,26 @@ pub(crate) fn propose_rig(
     doc: &Document,
     slot: &Option<PsdSource>,
     args: RigArgs,
-) -> Result<Draft, String> {
+) -> Result<Draft, ToolError> {
     if doc.module().is_some() {
-        return Err(USE_MODULE_RIG.into());
+        return Err(use_module_rig());
     }
-    let source = slot.as_ref().ok_or(NO_PSD)?;
+    let source = slot.as_ref().ok_or_else(no_psd)?;
     let model = doc.model();
     let (params, reason) = match &args.params {
         Some(answer) => {
-            let (params, reason) = params_from_answer(answer).map_err(ai_error)?;
+            let (params, reason) =
+                params_from_answer(answer).map_err(ai("mcp.invalid_rig_params"))?;
             (params, Some(reason))
         }
         None => (RigParams::default(), None),
     };
     let parts = mesh_parts(model, &source.labels);
     let proposal = template_rig(model, &parts, &params, &RigOptions::default()).map_err(|e| {
-        format!(
+        rig_failed(format!(
             "the rig could not be built: {}; fix it and call propose_rig again",
             ai_error(e)
-        )
+        ))
     })?;
     let values = format!(
         "turn {:.2}, eye close line {:.2}, bend {:+.2}, mouth open {:.2}",
@@ -813,11 +859,14 @@ pub(crate) fn propose_rig(
 }
 
 /// モジュールのリグのツールの入力: モジュールのプロジェクトであることと、覚えている PSD を確かめる。
-fn module_source<'a>(doc: &Document, slot: &'a Option<PsdSource>) -> Result<&'a PsdSource, String> {
+fn module_source<'a>(
+    doc: &Document,
+    slot: &'a Option<PsdSource>,
+) -> Result<&'a PsdSource, ToolError> {
     if doc.module().is_none() {
-        return Err(NOT_A_MODULE.into());
+        return Err(not_a_module());
     }
-    slot.as_ref().ok_or_else(|| NO_PSD.to_owned())
+    slot.as_ref().ok_or_else(no_psd)
 }
 
 pub(crate) fn get_module_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> ToolResult {
@@ -825,11 +874,11 @@ pub(crate) fn get_module_rig_guide(doc: &Document, slot: &Option<PsdSource>) -> 
     let parts = module_mesh_parts(doc, &source.labels);
     let max_side = ClassifyOptions::default().overview_max_side;
     // エディタが API に送るものと同じく、衣装の PSD の原画 (`docs/ai-integration.md#モジュールの自動リギング`)。
-    let image = overview_png(&source.tree, max_side).map_err(ai_error)?;
+    let image = overview_png(&source.tree, max_side).map_err(ai("mcp.image_failed"))?;
     let request =
         module_rig_request_guided(doc, &parts, &image, &[], &ModuleRigGuidance::default())
-            .map_err(ai_error)?;
-    let context = doc.module().ok_or(NOT_A_MODULE)?;
+            .map_err(ai("mcp.rig_not_ready"))?;
+    let context = doc.module().ok_or_else(not_a_module)?;
     Ok(Output {
         value: json!({
             "instructions": request.system,
@@ -856,11 +905,12 @@ pub(crate) fn propose_module_rig(
     doc: &Document,
     slot: &Option<PsdSource>,
     args: ModuleRigArgs,
-) -> Result<Draft, String> {
+) -> Result<Draft, ToolError> {
     let source = module_source(doc, slot)?;
     let (params, reason) = match &args.params {
         Some(answer) => {
-            let (params, reason) = module_params_from_answer(answer).map_err(ai_error)?;
+            let (params, reason) =
+                module_params_from_answer(answer).map_err(ai("mcp.invalid_rig_params"))?;
             (params, Some(reason))
         }
         None => (ModuleRigParams::default(), None),
@@ -873,10 +923,10 @@ pub(crate) fn propose_module_rig(
     };
     let parts = module_mesh_parts(doc, &source.labels);
     let proposal = template_module_rig(doc, &parts, &params, &options).map_err(|e| {
-        format!(
+        rig_failed(format!(
             "the module rig could not be built: {}; fix it and call propose_module_rig again",
             ai_error(e)
-        )
+        ))
     })?;
     let values = format!(
         "sway {:.2}, pendulum length {:.2}",
@@ -923,9 +973,9 @@ mod tests {
     #[test]
     fn refuses_to_read_a_psd_that_is_not_a_regular_file() {
         let err = PsdSource::load(PathBuf::from("/dev/null")).unwrap_err();
-        assert!(err.message.contains("not a regular file"), "{err}");
+        assert!(err.message().contains("not a regular file"), "{err}");
         let err = PsdSource::load(std::env::temp_dir()).unwrap_err();
-        assert!(err.message.contains("not a regular file"), "{err}");
+        assert!(err.message().contains("not a regular file"), "{err}");
         // FIFO は開くだけで書き手を待って止まるので、開かずに拒む。
         let dir = tempfile::tempdir().unwrap();
         let fifo = dir.path().join("x.psd");
@@ -935,7 +985,7 @@ mod tests {
             .is_ok_and(|s| s.success());
         if made {
             let err = PsdSource::load(fifo).unwrap_err();
-            assert!(err.message.contains("not a regular file"), "{err}");
+            assert!(err.message().contains("not a regular file"), "{err}");
         }
     }
 
@@ -946,9 +996,9 @@ mod tests {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd");
         let len = std::fs::metadata(&psd).unwrap().len();
         let err = PsdSource::load_with(psd.clone(), len - 1, ImportLimits::default()).unwrap_err();
-        assert!(err.message.contains("file is too large"), "{err}");
+        assert!(err.message().contains("file is too large"), "{err}");
         assert!(
-            err.message
+            err.message()
                 .contains(&format!("the limit is {} bytes", len - 1)),
             "{err}"
         );
@@ -962,7 +1012,7 @@ mod tests {
         let limits = ImportLimits::default().with_max_channel_decompressed(100);
         let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
         assert!(
-            err.message.ends_with(
+            err.message().ends_with(
                 "a PSD channel decompresses to more than the import limit of 100 bytes \
                  (code: psd.channel_limit_exceeded)"
             ),
@@ -971,14 +1021,14 @@ mod tests {
         let limits = ImportLimits::default().with_max_total_decompressed(5000);
         let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
         assert!(
-            err.message.ends_with("(code: psd.total_limit_exceeded)"),
+            err.message().ends_with("(code: psd.total_limit_exceeded)"),
             "{err}"
         );
         // コードと引数は構造でも返す (`structuredContent`)。
-        let detail = err.detail.unwrap();
+        let detail = err.detail();
         assert_eq!(detail.code, "psd.total_limit_exceeded");
         assert_eq!(detail.args["max"], 5000u32.into());
-        assert_eq!(detail.message, err.message);
+        assert_eq!(detail.message, err.message());
         PsdSource::load(psd).unwrap();
     }
 

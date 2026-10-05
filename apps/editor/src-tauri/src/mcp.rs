@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use ts_rs::TS;
 use ugoe_editor_core::{Coded, Document, Message, export_bundle_with_settings};
-use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening};
+use ugoe_mcp::host::{
+    Action, Approvals, Change, HostError, Lent, Opening, export_failed, export_replace_failed,
+    export_write_failed,
+};
 use ugoe_mcp::http::generate_token;
 use ugoe_mcp::mcpb::{Bundle, Platform};
 use ugoe_mcp::wsl::WslPaths;
@@ -549,9 +552,10 @@ fn same_path(a: &Path, b: &Path) -> bool {
     a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
 }
 
-/// エディタのエラーを MCP の持ち主のエラーにする (英語の文をそのまま使う)。
+/// エディタのエラーを MCP の持ち主のエラーにする (コード・引数・英語の文をそのまま使う。結果の
+/// `structuredContent` に載る。T0563)。
 fn failed(error: Message) -> HostError {
-    HostError::Failed(error.message)
+    error.into()
 }
 
 /// 保存していないプロジェクトを指せないときの文。
@@ -566,11 +570,11 @@ impl EditorHost {
         let document = state
             .document
             .lock()
-            .map_err(|_| HostError::Failed("document lock poisoned".into()))?;
+            .map_err(|_| failed(EditorError::LockPoisoned { what: "document" }.into()))?;
         let session = state
             .project
             .lock()
-            .map_err(|_| HostError::Failed("project lock poisoned".into()))?;
+            .map_err(|_| failed(EditorError::LockPoisoned { what: "project" }.into()))?;
         Ok((document, session))
     }
 
@@ -692,18 +696,9 @@ impl DocumentHost for EditorHost {
         let staged = match bundle {
             Some(bundle) => {
                 let (bytes, _) = export_bundle_with_settings(pending.project(), &settings)
-                    .map_err(|e| {
-                        format!(
-                            "failed to export `{}`: {e}; nothing was saved",
-                            bundle.display()
-                        )
-                    })?;
-                let staged = StagedFile::write(bundle, &bytes, Access::Default).map_err(|e| {
-                    format!(
-                        "failed to write `{}`: {e}; nothing was saved",
-                        bundle.display()
-                    )
-                })?;
+                    .map_err(|e| export_failed(bundle, &e))?;
+                let staged = StagedFile::write(bundle, &bytes, Access::Default)
+                    .map_err(|e| export_write_failed(bundle, &e))?;
                 Some(staged)
             }
             None => None,
@@ -716,12 +711,9 @@ impl DocumentHost for EditorHost {
         }
         if let Some(staged) = staged {
             let target = staged.target().to_path_buf();
-            staged.commit().map_err(|e| {
-                format!(
-                    "saved the project, but failed to write `{}`: {e}; the previous file is left as it was",
-                    target.display()
-                )
-            })?;
+            staged
+                .commit()
+                .map_err(|e| export_replace_failed(&target, &e))?;
         }
         Ok(())
     }

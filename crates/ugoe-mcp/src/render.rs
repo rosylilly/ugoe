@@ -19,10 +19,12 @@
 //! ドライバの中の SIGSEGV のように、プロセスごと落ちる不調は防げない。そのときは MCP クライアントが
 //! サーバを起動し直す (開いていたプロジェクトの未保存の変更は失われる)。
 
+use std::borrow::Cow;
 use std::mem::ManuallyDrop;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
+use ugoe_editor_core::message::{Coded, Message};
 use ugoe_editor_core::{Project, ProjectError, export_bundle};
 use ugoe_headless::{Gpu, RenderOptions, Scene};
 
@@ -175,6 +177,27 @@ pub enum RenderError {
         error_chain(.0)
     )]
     TimedOut(ugoe_headless::Error),
+}
+
+/// ツールのエラーのコード (MCP だけの `mcp.*`。README の「ツールのエラー」。T0563)。書き出し・読み戻しの失敗は、
+/// エディタのコード (`project.*`・`format.*`) を原因 (`cause`) に持つ。
+impl Coded for RenderError {
+    fn code(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
+            Self::Invalid(_) | Self::Background(_) => "mcp.invalid_render",
+            Self::Export(_) | Self::Bundle(_) | Self::Headless(_) => "mcp.render_failed",
+            Self::Panicked(_) => "mcp.render_panicked",
+            Self::TimedOut(_) => "mcp.render_timed_out",
+        })
+    }
+
+    fn cause(&self) -> Option<Message> {
+        match self {
+            Self::Export(e) => Some(e.to_message()),
+            Self::Bundle(e) => Some(e.to_message()),
+            _ => None,
+        }
+    }
 }
 
 /// 原因をたどって `: ` でつなぐ (`anyhow` の `{:#}` と同じ形。エージェントが原因まで読めるように)。

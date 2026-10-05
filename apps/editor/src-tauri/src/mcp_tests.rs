@@ -179,9 +179,17 @@ impl Client {
     }
 
     fn err(&mut self, name: &str, arguments: Value) -> String {
+        self.coded(name, arguments).0
+    }
+
+    /// 失敗するはずのツールを呼び、文と `structuredContent` (コードと引数。`message` は文と同じ) を返す。
+    fn coded(&mut self, name: &str, arguments: Value) -> (String, Value) {
         let result = self.call(name, arguments);
         assert_eq!(result["isError"], true, "{name}: {result}");
-        result["content"][0]["text"].as_str().unwrap().to_owned()
+        let text = result["content"][0]["text"].as_str().unwrap().to_owned();
+        let structured = result["structuredContent"].clone();
+        assert_eq!(structured["message"], text, "{name}: {result}");
+        (text, structured)
     }
 }
 
@@ -420,7 +428,13 @@ fn approval_outcomes_follow_the_error_kind() {
         );
     }
     assert_eq!(
-        ApprovalOutcome::of(&Err(HostError::Failed("io".to_owned()))),
+        ApprovalOutcome::of(&Err(failed(
+            EditorError::Io {
+                path: "a".to_owned(),
+                detail: "io".to_owned(),
+            }
+            .into()
+        ))),
         ApprovalOutcome::Declined
     );
     assert_eq!(
@@ -467,22 +481,65 @@ fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
 
     // 一時ファイルを作れなければ、何も保存しない。
     let missing = out.join("missing").join("quad.ugoe");
-    let err = client.err(
+    let (err, detail) = client.coded(
         "save_project",
         json!({ "path": path, "bundle": missing.display().to_string() }),
     );
-    assert!(err.to_string().contains("nothing was saved"), "{err}");
+    assert!(err.contains("nothing was saved"), "{err}");
+    assert_eq!(detail["code"], "mcp.export_write_failed");
+    assert_eq!(detail["args"]["path"], missing.display().to_string());
 
     // 置き換えられなければ (行き先が中身のあるディレクトリ)、前のものを残し、一時ファイルを消す。
     let blocked = out.join("blocked.ugoe");
     std::fs::create_dir_all(blocked.join("inside")).unwrap();
-    let err = client.err(
+    let (err, detail) = client.coded(
         "save_project",
         json!({ "path": path, "bundle": blocked.display().to_string() }),
     );
-    assert!(err.to_string().contains("previous file is left"), "{err}");
+    assert!(err.contains("previous file is left"), "{err}");
+    assert_eq!(detail["code"], "mcp.export_replace_failed");
     assert!(blocked.join("inside").is_dir());
     assert_eq!(names(&out), ["blocked.ugoe", "quad.ugoe"]);
+}
+
+/// エディタがプロジェクトを保存できなければ、エディタのエラーのコード (`project.*`) と引数がツールの結果の
+/// `structuredContent` に載る (`HostError::Failed` がコードを持つ。T0563)。
+#[test]
+fn a_failed_save_reports_the_editor_error_code() {
+    let tmp = TempDir::new();
+    let project = save_fixture_project(&tmp.path);
+    let path = project.display().to_string();
+    let discovery = tmp.path.join("editor-mcp.json");
+    let app = TestApp::open(Some(&project), &discovery);
+    app.enable();
+    let mut client = Client::new(&discovery);
+    client.initialize();
+    client.ok("propose_edit", add_angle(&path));
+    client.ok("apply_proposal", json!({ "path": path, "proposal": "p1" }));
+
+    // 外の変更の検査と写しの後、書く前に止め、テクスチャのディレクトリをファイルに置き換える: 保存は
+    // テクスチャを書けずに失敗する。
+    let (reached_tx, reached) = std::sync::mpsc::channel();
+    let (resume, resume_rx) = std::sync::mpsc::channel::<()>();
+    *app.state.mcp.shared.pause_saving.lock().unwrap() = Some((reached_tx, resume_rx));
+    let textures = project.join("textures");
+    let (err, detail) = std::thread::scope(|scope| {
+        let saving = scope.spawn(|| client.coded("save_project", json!({ "path": path })));
+        reached.recv_timeout(Duration::from_secs(10)).unwrap();
+        std::fs::remove_dir_all(&textures).unwrap();
+        std::fs::write(&textures, b"not a directory").unwrap();
+        drop(resume);
+        saving.join().unwrap()
+    });
+    assert_eq!(detail["code"], "project.io", "{err}");
+    assert!(
+        detail["args"]["path"]
+            .as_str()
+            .unwrap()
+            .starts_with(&textures.display().to_string()),
+        "{detail}"
+    );
+    assert!(detail["args"]["detail"].is_string(), "{detail}");
 }
 
 /// 保存はドキュメントのロックの外で書く: 書いている間もほかのクライアントの読むだけのツールが答え、

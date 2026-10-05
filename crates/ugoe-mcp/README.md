@@ -526,20 +526,8 @@ Claude Code に次のように頼む:
   (`undo`・`redo` で戻せる・進められるか。持ち主の文書の履歴から。エディタなら利用者の編集も含む。T0557)。
   `can_undo` が `false` なら `undo` を呼んでも何も変わらない (エディタにつないでいても確認を出す前に分かる)。
 - 失敗 (検証を通らない提案、未知の ID、引数の誤り) はツールの実行エラー (`isError: true`) で返し、
-  エージェントが読んで直せるようにする。コードの分かる失敗は、文 (`content` の text。今までと同じ) に加えて
-  `structuredContent` にエディタのメッセージと同じ形 (`code`・`args`・`message`・省略できる `cause`・`items`。
-  [docs/editor.md](../../docs/editor.md#エラーと警告のコード)) で載せる (T0557)。`message` は `content` の文と同じ。
-  コードの無い失敗 (引数の誤りなど) は今までどおり文だけ (`structuredContent` を持たない)。
-
-  | コード | いつ | `args` |
-  | --- | --- | --- |
-  | `proposal.not_found` / `proposal.stale` / `proposal.rejected` (`cause` は `edit.*` など) / … | 提案の置き・適用 | エディタと同じ |
-  | `psd.*` / `project.*` / `module.*` / `edit.*` | PSD の読み込み・取り込み (`import_psd`・`get_psd_layers`) | エディタと同じ |
-  | `host.denied` | 持ち主が断った (利用者が拒否した・エディタではできない操作) | なし |
-  | `host.timed_out` | 利用者が時間内に答えなかった | なし |
-  | `host.cancelled` | 確認を待つ間にクライアントが要求を取り消した (ふつうクライアントには届かない) | なし |
-
-  `host.*` は MCP だけのコードで、エディタの画面のカタログには無い。ツールや持ち主の不具合で panic したときは、サーバを落とさずに JSON-RPC の
+  エージェントが読んで直せるようにする。どの失敗も、文 (`content` の text) に加えて `structuredContent` に
+  コードと引数を載せる (下の「[ツールのエラー](#ツールのエラー)」)。ツールや持ち主の不具合で panic したときは、サーバを落とさずに JSON-RPC の
   `-32603` (internal error) で答える (stdio のサーバごと落ちて未保存の変更を失わないように)。
 - PSD (`import_psd`・`get_psd_layers` の `psd`) は通常のファイルだけを、2 GiB まで読む (`ugoe_fs::read_regular_file`。
   `/dev/zero` のような装置・FIFO・ディレクトリは開かずにエラー、2 GiB より大きいファイルは読まずにエラー。終わらない
@@ -549,6 +537,62 @@ Claude Code に次のように頼む:
 - 自動リギングのツール (`src/autorig.rs`) の入力の型 (分類の語彙と左右、リグの値) は `ugoe_ai` の JSON Schema
   (`classify::output_schema`・`rig::rig_output_schema`) から作る。画像の大きさの上限は `ClassifyOptions` の既定値。
   PSD と分類はプロジェクトごとにメモリに持つ (プロジェクトには保存しない)。
+
+### ツールのエラー
+
+ツールの実行エラー (`isError: true`) は、文 (`content` の text) に加えて `structuredContent` にエディタのメッセージと
+同じ形 (`code`・`args`・`message`・省略できる `cause`・`items`。[docs/editor.md](../../docs/editor.md#エラーと警告のコード)) で
+コードと引数を載せる (T0557)。`message` は `content` の文と同じ (`--editor` の WSL の中継では、どちらのパスも同じく戻す)。
+エディタのコードの無い失敗にも MCP だけのコード (`mcp.*`) を付け、すべてのツールのエラーがコードを持つ (T0563)。
+エージェントは文を読まずにコードで見分けてよい。文は今までと同じで、コードの名前は変えない (足すだけ)。
+
+エディタと同じコード (意味と `args` はエディタと同じ):
+
+| コード | いつ |
+| --- | --- |
+| `proposal.not_found` / `proposal.stale` / `proposal.rejected` (`cause` は `edit.*` など) / … | 提案の置き・適用 |
+| `psd.*` / `project.*` / `module.*` / `edit.*` | PSD の読み込み・取り込み (`import_psd`・`get_psd_layers`。PSD のファイルを読めないときは `psd.read_file_failed`) |
+| `project.*` / `export.*` | プロジェクトの読み込み・保存 (`open_project`・`save_project` など。エディタにつないだときは、エディタの保存の失敗のコード。`HostError::Failed` が持つ) |
+
+MCP だけのコード (エディタの画面のカタログ・wasm の `codes.json` には無い。エディタの画面の `mcp.*` (ブリッジや `.mcpb` の失敗) とは別のもの):
+
+| コード | いつ | `args` |
+| --- | --- | --- |
+| `host.denied` | 持ち主が断った (利用者が拒否した・エディタではできない操作) | なし |
+| `host.timed_out` | 利用者が時間内に答えなかった | なし |
+| `host.cancelled` | 確認を待つ間にクライアントが要求を取り消した (ふつうクライアントには届かない) | なし |
+| `mcp.invalid_arguments` | 引数が入力の型に合わない・組み合わせが誤り (`base` と `slot` の片方だけなど) | `detail` (型に合わないとき) |
+| `mcp.read_only` | `--read-only` で止めたツールを呼んだ | `tool` |
+| `mcp.invalid_path` | パスを解決できない (空・行き先の無いシンボリックリンク・無い部分の `..` など) | `path` |
+| `mcp.outside_root` | パスが `--root` の外を指す (外を指すシンボリックリンクを含む) | `path`・`root` |
+| `mcp.project_exists` | 作ろうとした場所 (`open_project` の `create`・`import_psd`) がもうプロジェクト | `path` |
+| `mcp.project_not_open` | 開いていないプロジェクトを閉じようとした | `path` |
+| `mcp.unsaved_changes` | 未保存の変更があるのに開き直す・閉じる (`discard_changes` が要る) | `path` |
+| `mcp.unknown_kind` | `get_element` の `kind` が知らない種類 | `kind` |
+| `mcp.element_not_found` | `get_element` の要素が無い | `kind`・`id` |
+| `mcp.unknown_name` | `render_png` の `motion`・`expression` が名前でもファイルでもない | `kind` (`motion`・`expression`)・`name` |
+| `mcp.invalid_render` | `render_png` の値が範囲の外・背景の色が読めないなど (GPU を使う前に分かる) | なし |
+| `mcp.render_failed` | 描画に失敗した (GPU を用意できない・書き出しの失敗など。書き出しの失敗は `cause` が `project.*`・`format.*`) | なし |
+| `mcp.render_panicked` | 描画が panic した (GPU は次の呼び出しで作り直す) | なし |
+| `mcp.render_timed_out` | GPU が `--gpu-timeout` までに答えなかった (GPU は次の呼び出しで作り直す) | なし |
+| `mcp.export_write_failed` | `save_project` の `.ugoe` の一時ファイルを書けない (何も保存していない) | `path`・`detail` |
+| `mcp.export_replace_failed` | プロジェクトを保存した後に `.ugoe` を置き換えられない (前の `.ugoe` は残る) | `path`・`detail` |
+| `mcp.no_psd` | プロジェクトの元の PSD が分からない (`import_psd` か `get_psd_layers` の `psd` が要る) | なし |
+| `mcp.too_many_layers` | `get_psd_layers` の `indices` が 1 回の上限より多い | `max` |
+| `mcp.layer_out_of_range` | `get_psd_layers` のレイヤーの番号・`start` が無いレイヤーを指す | `index`・`count` |
+| `mcp.invalid_labels` | `set_layer_labels` の分類が通らない | なし |
+| `mcp.image_failed` | PSD の画像 (全体・サムネイル) を作れない | なし |
+| `mcp.rig_not_ready` | 分類からリグの案内を作れない (`get_rig_guide`・`get_module_rig_guide`) | なし |
+| `mcp.invalid_rig_params` | `propose_rig`・`propose_module_rig` の `params` が型に合わない | なし |
+| `mcp.rig_failed` | リグを組めない (値が範囲の外・組んだリグが検証を通らないなど) | なし |
+| `mcp.module_project` | モジュールのプロジェクトで本体向けのリグのツールを呼んだ | なし |
+| `mcp.not_a_module` | モジュールのプロジェクトでないのにモジュールのリグのツールを呼んだ | なし |
+| `mcp.editor_not_found` | `--editor` の中継: エディタが動いていない・ブリッジが切れている (発見用のファイルが無い・読めない) | なし |
+| `mcp.editor_unreachable` | `--editor` の中継: エディタにつながらない・トークンを拒まれた・エディタが HTTP のエラーを返した | なし |
+| `mcp.internal` | 起きないはずの失敗 (結果を JSON にできないなど) | `detail` |
+
+`mcp.*` は ugoe-mcp のサーバだけが返す。エディタの画面の訳の表 ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md)) には入れない
+(画面に出すものではなく、エージェントが見分けるためのもの)。足したら、この表と `src/` の両方を直す (`tests` がこの表に無い `mcp.*` を見つける)。
 
 ### 入力の型
 
@@ -671,3 +715,4 @@ GPU を使わないテストでは、GPU に触る前に引数の誤り (未知�
 - T0643 (`docs/tasks/T0643-editor-claude-desktop-mcpb.md`): Claude Desktop 用の MCP Bundle (`--mcpb`・`src/mcpb.rs`)
 - T0551 (`docs/tasks/T0551-mcp-relay-concurrency.md`): `--editor` の中継で要求を並行に送り、取り消しを伝える
 - T0557 (`docs/tasks/T0557-mcp-structured-results-and-cancel-kind.md`): エラーのコードを `structuredContent` で返す・状態の `can_undo`・`can_redo`・`HostError::Cancelled`
+- T0563 (`docs/tasks/T0563-mcp-host-failed-codes.md`): すべてのツールのエラーにコード (`mcp.*`)・`HostError::Failed` がコードを持つ
