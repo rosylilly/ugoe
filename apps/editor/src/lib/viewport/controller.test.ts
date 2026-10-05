@@ -1,5 +1,6 @@
 // ViewportController の WebPuppet の作成と破棄 (attach・detach・作り直し)。wasm と canvas は偽物。
 
+import { setLocale } from "@ugoe/i18n";
 import { MAX_RESTARTS } from "@ugoe/player";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../i18n";
@@ -176,6 +177,41 @@ describe("ViewportController", () => {
     } finally {
       warn.mockRestore();
       clock.mockRestore();
+    }
+  });
+
+  it("translates the load error of the model from its code", async () => {
+    const controller = new ViewportController();
+    const attached = controller.attach(fakeContainer());
+    await settle();
+    const { puppet } = fakePuppet();
+    let error: Error = new Error("unused");
+    Object.assign(puppet, {
+      load_json: () => {
+        throw error;
+      },
+    });
+    pending[0]?.resolve(puppet);
+    await attached;
+    setLocale("ja");
+    try {
+      error = Object.assign(new Error("newer version"), {
+        name: "LoadError",
+        code: "unsupported_version",
+        found: 9,
+        supported: 3,
+      });
+      controller.setModel({ json: "{}", bundle: null });
+      expect(controller.status).toBe("error");
+      expect(controller.message).toBe(
+        "新しい版の ugoe で保存されたファイルです (ファイルの版 9。このアプリが読めるのは版 3 まで)。アプリを更新してから開いてください",
+      );
+      // 知らないコードは wasm の文 (英語) のまま。
+      error = Object.assign(new Error("something new"), { name: "LoadError", code: "future" });
+      controller.setModel({ json: "{}", bundle: null });
+      expect(controller.message).toBe("something new");
+    } finally {
+      setLocale("en");
     }
   });
 

@@ -8,7 +8,12 @@
 // - WebPuppet と canvas の寿命 (作成・WebGL2 への切り替え・GPU を失ったときの作り直し・破棄・devicePixelRatio の追従) は
 //   @ugoe/player の PuppetSurface に任せる (Player と共有。T0932)。
 
-import { GpuLostRepeatedlyError, PuppetSurface, type Screenshot } from "@ugoe/player";
+import {
+  describeLoadError,
+  GpuLostRepeatedlyError,
+  PuppetSurface,
+  type Screenshot,
+} from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
@@ -495,8 +500,9 @@ export class ViewportController {
       }
       this.requestRender();
     } catch (e) {
+      // 読み込みの失敗 (`LoadError`。T0434) はビューアと同じ訳 (@ugoe/player のカタログ) にする (T1611)。
       this.status = "error";
-      this.message = errorText(e);
+      this.message = describeLoadError(e);
     }
   }
 

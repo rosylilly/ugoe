@@ -1841,6 +1841,10 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   前の作り直しから 1 分以内に失うことが続き 4 回目になったら、作り直さずにビューポートに「GPU を続けて失った」と出します (T0935)。
   devicePixelRatio だけが変わったとき (倍率の違う画面へ移したなど) も、描画バッファの大きさを合わせ直します。
   WebPuppet と canvas の寿命はビューアと同じ `@ugoe/player` の `PuppetSurface` が持ちます ([ui.md](ui.md#webpuppet-の寿命)。T0932)。
+- モデルの読み込み (`load_bundle`・`load_json`) の失敗は、wasm の `LoadError` の `code` と補足の値から今の言語の文にします
+  (ビューアと同じ `@ugoe/player` の `describeLoadError`。訳はそのカタログ (名前空間 `player`) の `loadError`。T1611)。
+  編集中もプレビューモードも同じ `ViewportController` で読むので、どちらにも出ます。知らない `code` と `LoadError` でない例外は
+  wasm の文 (英語) のままです。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
 
 ### スクリーンショット
