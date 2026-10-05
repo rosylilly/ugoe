@@ -367,7 +367,8 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   `apps/editor/src/lib/viewport/controller.test.ts` が確かめます。ブラウザで動かすには、`@ugoe/player` のテストがアプリ (`apps/editor`) の
   コードを読むか (パッケージからアプリへ向きが逆になる)、エディタの側に同じ仕組みを作り直し、エディタの wasm の読み込み
   (`import.meta.glob` の `generated/`) と文言のカタログを差し替える必要があり、得られる確かさに比べて手間が大きいためです。
-  エディタが作り直しのまわりに自分の処理を持つようになったら (諦めた後に作り直すボタン (T0938) など)、エディタの側に足すことを考えます。
+  T0938 で足した「作り直す」ボタン (`ViewportController.restart`) も、状態を変えて `PuppetSurface.restart` を呼ぶだけなので、本物の wasm の部分は
+  `restart-after-giving-up` で通り、エディタの側には足していません (T0038)。エディタが作り直しのまわりに本物の wasm に頼る自分の処理を持ったら、足すことを考えます。
 - **置き場所:** `packages/player/browser-test/` (GPL-3.0-only)。テストは GPL の `surface.ts`・`player.svelte.ts` を読むので、MIT の
   `tests/conformance` (と、ライセンスを書いていないのでリポジトリの既定の MIT になる `tests/ui-audit`) には置きません。Chrome の起動は
   `just ui-audit` と同じ playwright-core (ルートの devDependencies)。`@ugoe/player` を Vite (アプリと同じ版を `@ugoe/player` の
