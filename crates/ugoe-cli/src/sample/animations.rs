@@ -2,7 +2,8 @@
 //!
 //! 中身は `animations/` の JSON (`docs/spec/file-formats.md` の `<name>.motion.json`・`<name>.expression.json`)
 //! で、手で書いたもの。モーションは標準パラメータの頭と体の向き・目玉だけを動かすので、見本のアバターと
-//! 着せ替えの本体で共有する。表情は使えるパラメータが違うので、モデルごとに分ける。
+//! 着せ替えの本体で共有する。表情は使えるパラメータが違うので、モデルごとに分ける。着せ替えの本体には、
+//! ポーズを切り替えるモーション (`wave`。パーツの不透明度のカーブ) も入れる (T0474)。
 
 use anyhow::Context;
 use ugoe_model::Model;
@@ -28,6 +29,13 @@ const MOTIONS: &[(&str, &str)] = &[
         include_str!("animations/motions/tilt.motion.json"),
     ),
 ];
+
+/// 着せ替えの本体 (`dress-up.ugoe`) だけのモーション (名前の順。共有するモーションの後ろに並べる)。
+/// `wave` はポーズの要素 `Wave` を表示し、終わりに `HandsDown` へ戻す。
+const DRESS_UP_MOTIONS: &[(&str, &str)] = &[(
+    "wave.motion.json",
+    include_str!("animations/dress-up/wave.motion.json"),
+)];
 
 /// 見本のアバター (`avatar.ugoe`・`avatar-lit.ugoe`) の表情 (名前の順)。
 const AVATAR_EXPRESSIONS: &[(&str, &str)] = &[
@@ -65,9 +73,20 @@ const DRESS_UP_EXPRESSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-/// 見本のモーション。
+/// 見本で共有するモーション。
 pub fn motions() -> anyhow::Result<Vec<Motion>> {
-    MOTIONS
+    parse_motions(MOTIONS)
+}
+
+/// 着せ替えの本体のモーション (共有するものと `wave`)。
+pub fn dress_up_motions() -> anyhow::Result<Vec<Motion>> {
+    let mut motions = motions()?;
+    motions.extend(parse_motions(DRESS_UP_MOTIONS)?);
+    Ok(motions)
+}
+
+fn parse_motions(files: &[(&str, &str)]) -> anyhow::Result<Vec<Motion>> {
+    files
         .iter()
         .map(|(file, json)| ugoe_format::motion_from_json(json).with_context(|| file.to_string()))
         .collect()
@@ -92,14 +111,16 @@ fn expressions(files: &[(&str, &str)]) -> anyhow::Result<Vec<Expression>> {
         .collect()
 }
 
-/// モーションと表情が `model` に無いパラメータを動かさないこと (無いものはランタイムが黙って無視するので、
+/// モーションと表情が `model` に無いパラメータやパーツを動かさないこと (無いものはランタイムが黙って無視するので、
 /// 見本では誤りにする)。
 pub fn check(model: &Model, motions: &[Motion], expressions: &[Expression]) -> anyhow::Result<()> {
     let has = |id: &str| model.parameters.iter().any(|p| p.id == id);
+    let has_part = |id: &str| model.parts.iter().any(|p| p.id == id);
     for motion in motions {
         for curve in &motion.curves {
             match &curve.target {
                 CurveTarget::Parameter(id) if has(id.as_str()) => {}
+                CurveTarget::PartOpacity(id) if has_part(id.as_str()) => {}
                 target => anyhow::bail!("motion `{}` targets {target:?}", motion.name),
             }
         }
@@ -126,7 +147,10 @@ mod tests {
     /// (プロジェクトに保存すると名前がファイル名になる)。
     #[test]
     fn file_names_match_the_names() {
-        for ((file, _), motion) in MOTIONS.iter().zip(motions().unwrap()) {
+        let files = MOTIONS.iter().chain(DRESS_UP_MOTIONS);
+        let all = dress_up_motions().unwrap();
+        assert_eq!(all.len(), MOTIONS.len() + DRESS_UP_MOTIONS.len());
+        for ((file, _), motion) in files.zip(all) {
             assert_eq!(*file, format!("{}.motion.json", motion.name));
         }
         for (files, expressions) in [

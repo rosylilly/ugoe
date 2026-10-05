@@ -25,7 +25,7 @@ use ugoe_editor_core::{
 use ugoe_model::module::{DrawOrderRange, ModuleRequirements};
 use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{ColliderShape, PhysicsCollider};
-use ugoe_model::pose::{Pose, PoseEntry, PoseGroup};
+use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::{KeyformGrid, Model, Part, Slot, SlotId};
 use ugoe_psd::{Layer, LayerNode, LayerTree};
 use ugoe_runtime::{CompiledModel, ModelInstance, compose, compose_physics};
@@ -336,24 +336,21 @@ fn base_with_arms(expose: bool) -> Document {
         arm.part = id.into();
         base.apply(Command::AddMesh { mesh: arm }).unwrap();
     }
-    base.apply(Command::SetPose {
-        pose: Pose {
-            groups: vec![PoseGroup {
-                entries: vec![
-                    PoseEntry {
-                        part: "ArmA".into(),
-                        links: Vec::new(),
-                    },
-                    PoseEntry {
-                        part: "ArmB".into(),
-                        links: Vec::new(),
-                    },
-                ],
-            }],
-            ..Pose::default()
-        },
-    })
-    .unwrap();
+    // 見本の本体のポーズ (手を振る差分。スロット `Outfit` が公開している) は残し、腕の差分のグループを後ろに足す。
+    let mut pose = base.model().pose.clone();
+    pose.groups.push(PoseGroup {
+        entries: vec![
+            PoseEntry {
+                part: "ArmA".into(),
+                links: Vec::new(),
+            },
+            PoseEntry {
+                part: "ArmB".into(),
+                links: Vec::new(),
+            },
+        ],
+    });
+    base.apply(Command::SetPose { pose }).unwrap();
     let mut sleeves = slot("Sleeves", "BodyWarp", (350.0, 380.0));
     if expose {
         sleeves.pose_parts = vec!["ArmA".into(), "ArmB".into()];
@@ -419,7 +416,11 @@ fn variants_become_poses() {
         .collect();
     assert_eq!(badges, ["badge A", "badge B"]);
     let composed = compose(base.model(), &[&module]).unwrap();
-    assert_eq!(composed.pose.groups.len(), 2);
+    // 本体のグループ (手を振る差分と腕の差分) の後ろに、バッジの差分が加わる。
+    assert_eq!(
+        composed.pose.groups.len(),
+        base.model().pose.groups.len() + 1
+    );
 
     // ポーズにしない組み方で、ほかに組むものがなければ断る。
     let off = ModuleRigOptions {

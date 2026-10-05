@@ -505,7 +505,7 @@ npm start          # http://localhost:8080/ (?backend=webgl2 で WebGL2 に固�
 URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU の失敗を ([上](#webgpu-と-webgl2)) 変えられます。
 
 見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/dress-up.ugoe`) はモーション (待機の `idle`・うなずく `nod`・
-首を振る `shake`・首をかしげる `tilt`) と表情 (`avatar.ugoe` は `smile`・`surprised`・`sad`・`angry`、`dress-up.ugoe` は
+首を振る `shake`・首をかしげる `tilt`。`dress-up.ugoe` には手を振る `wave` (ポーズを切り替える。T0474) も) と表情 (`avatar.ugoe` は `smile`・`surprised`・`sad`・`angry`、`dress-up.ugoe` は
 `smile`・`surprised`・`sad`) を持つので、`motion` / `expression` 属性をそのまま試せます
 ([assets/samples/README.md](../../assets/samples/README.md#モーションと表情)。T0719)。
 

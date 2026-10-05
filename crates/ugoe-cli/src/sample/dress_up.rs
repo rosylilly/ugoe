@@ -95,6 +95,12 @@ const SHIRT_LINE: Color = rgb(0x8a92a8);
 /// (`ugoe render` の時間を進めない描画など) でも見えない。ポーズが表示するときは不透明度を上書きする (重み 1)。
 const HANDS_DOWN: &str = "HandsDown";
 const WAVE: &str = "Wave";
+/// 振る手の袖 (既定の服の色。T0474)。`Wave` の `links` で手と一緒に表示し、既定の服 (`Clothes`) の子にして、
+/// スロット `Outfit` のモジュールが服を置き換えると一緒に隠れる。スロットは `Wave` を `pose_parts` で公開し、
+/// モジュール (`Sailor`) は自分の袖を `Wave` に追従させる。
+const WAVE_SLEEVE: &str = "WaveSleeve";
+/// 振る手の袖の上の端 (キャンバスの y)。前腕はここで切り、袖が肩の側を覆う。
+const CUFF: f32 = 430.0;
 
 /// 本体のスロットの描画順の範囲。髪は顔 (500) と目・眉を挟む (後ろ髪は顔の奥、前髪は眉の手前)。
 const HAIR_RANGE: (f32, f32) = (420.0, 680.0);
@@ -148,7 +154,7 @@ fn kebab_case(name: &str) -> String {
 /// 見本の本体とモジュールを作り、検証と合成を確かめる。
 pub fn build_dress_up() -> anyhow::Result<DressUpSample> {
     let mut base = base();
-    base.motions = super::animations::motions()?;
+    base.motions = super::animations::dress_up_motions()?;
     base.expressions = super::animations::dress_up_expressions()?;
     super::animations::check(&base.model, &base.motions, &base.expressions)?;
     let modules = vec![long_hair(), twin_tails(), cat_ears(), sailor()];
@@ -257,6 +263,14 @@ fn part(id: &str, parent: Option<&str>) -> Part {
         name: id.into(),
         parent: parent.map(Into::into),
         keyforms: KeyformGrid::constant(PartKeyform { opacity: 1.0 }),
+    }
+}
+
+/// 不透明度 0 のパーツ (ポーズで表示する差分)。ポーズを効かせない描画でも見えない。
+fn hidden_part(id: &str, parent: Option<&str>) -> Part {
+    Part {
+        keyforms: KeyformGrid::constant(PartKeyform { opacity: 0.0 }),
+        ..part(id, parent)
     }
 }
 
@@ -539,10 +553,8 @@ fn base() -> Bundle {
         part("Hair", Some("Head")),
         part("Clothes", Some("Body")),
         part(HANDS_DOWN, Some("Body")),
-        Part {
-            keyforms: KeyformGrid::constant(PartKeyform { opacity: 0.0 }),
-            ..part(WAVE, Some("Body"))
-        },
+        hidden_part(WAVE, Some("Body")),
+        hidden_part(WAVE_SLEEVE, Some("Clothes")),
     ];
 
     // 体: 上ほど `BodyAngleX` で横に、`Breath`・`BodyAngleY` で上下に動き、`BodyAngleZ` で腰の下を軸に傾く。
@@ -718,10 +730,14 @@ fn base() -> Bundle {
     let art = bangs(&hair, &bob_bangs());
     let t = textures.add("hair-front", &art);
     meshes.push(Sheet::head("HairFront", "Hair", 650.0, (4, 4)).still(t, &art));
-    // 振る手は髪 (スロット `Hair` の範囲) より手前、頭の飾り (`Headwear`) より奥。
+    // 振る手は髪 (スロット `Hair` の範囲) より手前、頭の飾り (`Headwear`) より奥。袖は服と同じく髪より奥
+    // (服のスロット `Outfit` のモジュールの袖と同じ並び)。
     let art = waving_hand();
     let t = textures.add("hand-wave", &art);
     meshes.push(Sheet::body("HandWave", WAVE, 700.0).still(t, &art));
+    let art = wave_sleeve(SHIRT, SHIRT_LINE);
+    let t = textures.add("sleeve-wave", &art);
+    meshes.push(Sheet::body("SleeveWave", WAVE_SLEEVE, 255.0).still(t, &art));
 
     let slot = |id: &str, anchor: &str, (min, max): (f32, f32), part: &str| Slot {
         id: id.into(),
@@ -746,6 +762,8 @@ fn base() -> Bundle {
         slot("Headwear", "HeadWarp", HEADWEAR_RANGE, "Head"),
         Slot {
             replaces: vec!["Clothes".into()],
+            // 振る手に合わせて袖を替えられる (`Sailor`)。
+            pose_parts: vec![WAVE.into()],
             ..slot("Outfit", "BodyWarp", OUTFIT_RANGE, "Body")
         },
     ];
@@ -779,12 +797,16 @@ fn base() -> Bundle {
         ],
         pose: Pose {
             groups: vec![PoseGroup {
-                entries: [HANDS_DOWN, WAVE]
-                    .map(|part| PoseEntry {
-                        part: part.into(),
+                entries: vec![
+                    PoseEntry {
+                        part: HANDS_DOWN.into(),
                         links: Vec::new(),
-                    })
-                    .to_vec(),
+                    },
+                    PoseEntry {
+                        part: WAVE.into(),
+                        links: vec![WAVE_SLEEVE.into()],
+                    },
+                ],
             }],
             ..Pose::default()
         },
@@ -911,7 +933,7 @@ fn shirt() -> Layer {
     layer
 }
 
-/// 顔の横 (画面の右) に上げて振る手 (ポーズ `Wave`)。前腕は肩の外から上がり、袖は既定の服の色。
+/// 顔の横 (画面の右) に上げて振る手 (ポーズ `Wave`)。前腕は肩の外から上がり、袖 (`wave_sleeve`) の上の端で切る。
 fn waving_hand() -> Layer {
     let fingers = [
         (Vec2::new(357.0, 282.0), Vec2::new(355.0, 262.0)),
@@ -926,14 +948,26 @@ fn waving_hand() -> Layer {
             .chain([
                 Shape::ellipse(Vec2::new(368.0, 292.0), 15.0, 16.0),
                 Shape::capsule(Vec2::new(356.0, 300.0), Vec2::new(346.0, 286.0), 5.0),
-                Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 11.0),
+                // 輪郭線 (形の外側に付く) が袖の上の端の輪郭線に重なるところで切る。
+                Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 11.0)
+                    .intersect(Shape::above(CUFF - LINE)),
             ]),
     );
-    let sleeve = Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 15.0)
-        .intersect(Shape::below(430.0));
-    let mut layer = Layer::new(Vec2::new(334.0, 246.0), Vec2::new(392.0, 512.0));
+    let mut layer = Layer::new(Vec2::new(334.0, 246.0), Vec2::new(392.0, CUFF + 2.0));
     layer.paint(&hand, SKIN, SKIN_LINE, LINE);
-    layer.paint(&sleeve, SHIRT, SHIRT_LINE, LINE);
+    layer
+}
+
+/// 振る手の袖の形 (前腕を覆う、`CUFF` より下)。
+fn wave_sleeve_shape() -> Shape {
+    Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 15.0)
+        .intersect(Shape::below(CUFF))
+}
+
+/// 振る手の袖 (色 `fill`、輪郭線 `line`)。
+fn wave_sleeve(fill: Color, line: Color) -> Layer {
+    let mut layer = Layer::new(Vec2::new(344.0, CUFF - 4.0), Vec2::new(390.0, 512.0));
+    layer.paint(&wave_sleeve_shape(), fill, line, LINE);
     layer
 }
 
@@ -1418,6 +1452,7 @@ fn cat_ears() -> ModuleFile {
 }
 
 /// `Sailor` (スロット `Outfit`): セーラー服。体のワープに付き、既定のシャツ (`Clothes`) を置き換える。
+/// 振る手の袖 (パーツ `WaveSleeve`) を本体のポーズの要素 `Wave` に追従させる (T0474)。
 fn sailor() -> ModuleFile {
     let mut builder = ModuleBuilder::new("Sailor", "Outfit", "Sailor");
     let on_body = |id, draw_order, cells| Sheet {
@@ -1471,6 +1506,32 @@ fn sailor() -> ModuleFile {
     let mut art = Layer::new(Vec2::new(228.0, 388.0), Vec2::new(284.0, 458.0));
     art.paint(&scarf, rgb(0xd8404f), rgb(0x7e1f2a), 2.0);
     builder.add(on_body("Scarf", 1000.0, (1, 1)), &art);
+
+    // 振る手の袖: 白に紺の袖口と白い線。本体の `Wave` を表示すると一緒に表示される。
+    let navy = rgb(0x26335f);
+    let mut art = wave_sleeve(SHIRT, SHIRT_LINE);
+    let cuff = wave_sleeve_shape().intersect(Shape::above(CUFF + 16.0));
+    art.fill(&cuff, navy);
+    art.fill(
+        &wave_sleeve_shape()
+            .grow(-1.0)
+            .intersect(Shape::below(CUFF + 9.0))
+            .intersect(Shape::above(CUFF + 11.0)),
+        WHITE,
+    );
+    builder
+        .module
+        .parts
+        .push(hidden_part(WAVE_SLEEVE, Some("Sailor")));
+    let sheet = Sheet {
+        part: WAVE_SLEEVE,
+        ..on_body("SleeveWave", 250.0, (2, 4))
+    };
+    builder.add(sheet, &art);
+    builder.module.pose.links = vec![PoseEntry {
+        part: WAVE.into(),
+        links: vec![WAVE_SLEEVE.into()],
+    }];
     builder.finish()
 }
 
@@ -1573,6 +1634,105 @@ mod tests {
                 puppet.update(1.0 / 60.0);
             }
             assert_eq!(opacity(&puppet), 1.0);
+        }
+    }
+
+    /// 合成したモデルのメッシュ `id` の描画の不透明度が `expected` に近いこと。
+    #[track_caller]
+    fn assert_opacity(puppet: &ugoe::Puppet, id: &str, expected: f32) {
+        let meshes = &puppet.instance().compiled().model().meshes;
+        let i = meshes.iter().position(|m| m.id == id).unwrap();
+        let opacity = puppet.instance().drawables()[i].opacity;
+        assert!((opacity - expected).abs() < 1e-4, "{id}: {opacity}");
+    }
+
+    /// 見本の本体に、名前が `names` のモジュールを付けた Puppet。
+    fn puppet_with(names: &[&str]) -> ugoe::Puppet {
+        let sample = build_dress_up().unwrap();
+        let mut puppet = ugoe::Puppet::new(sample.base.model.clone()).unwrap();
+        let modules = names
+            .iter()
+            .map(|name| {
+                let file = sample.modules.iter().find(|f| f.module.name == *name);
+                std::sync::Arc::new(file.unwrap().module.clone())
+            })
+            .collect();
+        puppet.set_modules(modules).unwrap();
+        puppet
+    }
+
+    /// スロット `Outfit` はポーズの要素 `Wave` を公開し、`Sailor` の袖 (`Sailor/SleeveWave`) が `Wave` に追従する。
+    /// 既定の袖 (`SleeveWave`) は本体だけのときに手と一緒に出て、`Sailor` を付けると服と一緒に隠れる (T0474)。
+    #[test]
+    fn sailor_sleeve_follows_the_waving_hand() {
+        let sample = build_dress_up().unwrap();
+        let outfit = sample.base.model.slots.iter().find(|s| s.id == "Outfit");
+        assert_eq!(outfit.unwrap().pose_parts, [ugoe_model::PartId::from(WAVE)]);
+        let sailor = sample.modules.iter().find(|f| f.module.name == "Sailor");
+        assert_eq!(sailor.unwrap().module.pose.links[0].part, WAVE);
+
+        // ポーズのフェード (0.5 秒) を終えるまで進める。
+        let run = |puppet: &mut ugoe::Puppet| {
+            for _ in 0..45 {
+                puppet.update(1.0 / 30.0);
+            }
+        };
+        let base_sleeve = "SleeveWave";
+        let sailor_sleeve = "Sailor/SleeveWave";
+
+        let mut puppet = puppet_with(&[]);
+        run(&mut puppet);
+        assert_opacity(&puppet, base_sleeve, 0.0);
+        assert!(puppet.pose_mut().show(&WAVE.into()));
+        run(&mut puppet);
+        assert_opacity(&puppet, "HandWave", 1.0);
+        assert_opacity(&puppet, base_sleeve, 1.0);
+
+        let mut puppet = puppet_with(&["Sailor"]);
+        run(&mut puppet);
+        assert_opacity(&puppet, sailor_sleeve, 0.0);
+        assert!(puppet.pose_mut().show(&WAVE.into()));
+        run(&mut puppet);
+        assert_opacity(&puppet, "HandWave", 1.0);
+        assert_opacity(&puppet, sailor_sleeve, 1.0);
+        assert_opacity(&puppet, base_sleeve, 0.0);
+        // 手を下ろすと袖も消える。
+        assert!(puppet.pose_mut().show(&HANDS_DOWN.into()));
+        run(&mut puppet);
+        assert_opacity(&puppet, "HandWave", 0.0);
+        assert_opacity(&puppet, sailor_sleeve, 0.0);
+    }
+
+    /// モーション `wave` は再生中に手を上げ (ポーズの `Wave` を表示し)、終わると手を下ろす (`HandsDown`)。
+    /// `Sailor` を付けていれば袖も一緒に切り替わる (T0474)。
+    #[test]
+    fn wave_motion_switches_the_pose() {
+        let sample = build_dress_up().unwrap();
+        let wave = sample.base.motions.iter().find(|m| m.name == "wave");
+        let wave = wave.unwrap().clone();
+        for (modules, sleeve) in [
+            (&[][..], "SleeveWave"),
+            (&["Sailor"][..], "Sailor/SleeveWave"),
+        ] {
+            let mut puppet = puppet_with(modules);
+            assert!(puppet.start_motion(wave.clone(), ugoe::motion::Priority::Normal));
+            let dt = 1.0 / 60.0;
+            let mut t = 0.0;
+            let mut step = |puppet: &mut ugoe::Puppet, until: f32| {
+                while t < until {
+                    puppet.update(dt);
+                    t += dt;
+                }
+            };
+            // ポーズのフェード (0.5 秒) を終えた後。
+            step(&mut puppet, 1.5);
+            assert_opacity(&puppet, "HandWave", 1.0);
+            assert_opacity(&puppet, sleeve, 1.0);
+            // モーションが終わり、手を下ろしたフェードも終えた後。
+            step(&mut puppet, 3.5);
+            assert!(!puppet.motions().is_playing(), "{modules:?}");
+            assert_opacity(&puppet, "HandWave", 0.0);
+            assert_opacity(&puppet, sleeve, 0.0);
         }
     }
 

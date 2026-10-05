@@ -1,0 +1,43 @@
+{
+  "name": "wave",
+  "duration": 2.5,
+  "fade_in": 0.2,
+  "fade_out": 0.3,
+  "curves": [
+    {
+      "target": { "kind": "part_opacity", "id": "Wave" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 1.0 } },
+        { "type": "linear", "to": { "t": 2.0, "v": 1.0 } },
+        { "type": "inverse_stepped", "to": { "t": 2.5, "v": 0.0 } }
+      ]
+    },
+    {
+      "target": { "kind": "part_opacity", "id": "HandsDown" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "linear", "to": { "t": 2.0, "v": 0.0 } },
+        { "type": "inverse_stepped", "to": { "t": 2.5, "v": 1.0 } }
+      ]
+    },
+    {
+      "target": { "kind": "parameter", "id": "AngleZ" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "bezier", "c1": { "t": 0.2, "v": 0.0 }, "c2": { "t": 0.3, "v": -12.0 }, "to": { "t": 0.5, "v": -12.0 } },
+        { "type": "linear", "to": { "t": 1.9, "v": -12.0 } },
+        { "type": "bezier", "c1": { "t": 2.1, "v": -12.0 }, "c2": { "t": 2.2, "v": 0.0 }, "to": { "t": 2.4, "v": 0.0 } }
+      ]
+    },
+    {
+      "target": { "kind": "parameter", "id": "MouthForm" },
+      "segments": [
+        { "type": "start", "p": { "t": 0.0, "v": 0.0 } },
+        { "type": "linear", "to": { "t": 0.4, "v": 1.0 } },
+        { "type": "linear", "to": { "t": 2.0, "v": 1.0 } },
+        { "type": "linear", "to": { "t": 2.4, "v": 0.0 } }
+      ]
+    }
+  ],
+  "events": [{ "t": 2.5, "value": "wave-end" }]
+}
