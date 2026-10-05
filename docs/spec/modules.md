@@ -210,7 +210,7 @@ wasm (`ugoe-wasm` の `WebPuppet`) は、`.ugoemod` の読み込み (`load_modul
 (`crates/ugoe-wasm/README.md#着せ替え-t0123`)。`DressUpChange` に従ってテクスチャと法線マップを登録し直し、使わなくなった番号の画像は
 1x1 の白に置き換えて捨てます。モデルを読み直すと、付けていたモジュールを付け直します (付けられないものは外して警告します)。
 失敗は `name` が `DressUpError` の `Error` で、`code` (`unknown_slot`・`missing_parameter` など) と `module`・`slot` などを持ちます。
-補足の値のキーは SDK の `DressUpError::fields` が決め、C ABI (`ugoe_last_error_field`) と同じです。番号 (`texture`・`required`・`actual`・`errors`) は数で持ちます
+補足の値のキーは SDK の `DressUpError::fields` が決め、C ABI (`ugoe_last_error_field`) と同じです。番号 (`texture`・`required`・`actual`・`errors`) は数で、検査のエラーの種類の一覧 (`error_codes`) は `, ` でつないだ文字列で持ちます
 (C ABI では 10 進の文字列。一覧は `crates/ugoe/README.md#着せ替えの失敗の補足の値`、T0157)。
 ビューア (`apps/viewer`) はこれを使い、`.ugoemod` を開いてスロットごとに付ける・外す・差し替えることができます。
 エラーの `code` は利用者に分かる文にして出します (`apps/viewer/README.md#着せ替え-t0706`、T0706)。

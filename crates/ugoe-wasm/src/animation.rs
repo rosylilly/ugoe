@@ -411,8 +411,16 @@ pub fn carry_over(old: &Puppet, new: &mut Puppet, keep_physics: bool) -> Vec<Loa
         && let Some(physics) = old.base_physics()
         && let Err(e) = set_physics(new, Some(physics.clone()))
     {
+        // 検査のエラーの種類は、着せ替えの `invalid_physics` と同じく補足の値に載せる (T0168)。
+        let codes = match &e {
+            AnimationError::InvalidPhysics(errors) => {
+                errors.iter().map(ValidationError::code).collect()
+            }
+            _ => Vec::new(),
+        };
         warnings.push(LoadWarning::PhysicsRemoved {
             reason: e.to_string(),
+            codes,
         });
     }
     warnings
@@ -1006,13 +1014,14 @@ mod tests {
         let mut new = Puppet::new(fixtures::single_quad()).unwrap();
         let warnings = carry_over(&old, &mut new, true);
         assert!(
-            matches!(&warnings[..], [LoadWarning::PhysicsRemoved { reason }] if reason.contains("failed validation")),
+            matches!(&warnings[..], [LoadWarning::PhysicsRemoved { reason, codes }] if reason.contains("failed validation") && !codes.is_empty()),
             "{warnings:?}"
         );
-        assert_eq!(
-            crate::load::warning_json(&warnings[0])["code"],
-            "physics_removed"
-        );
+        let json = crate::load::warning_json(&warnings[0]);
+        assert_eq!(json["code"], "physics_removed");
+        // 外した理由の検査のエラーの種類が、補足の値に入る (T0168)。
+        assert_eq!(json["error_codes"], "unknown_reference", "{json}");
+        assert!(json["errors"].as_u64().is_some_and(|n| n >= 1), "{json}");
         assert!(new.physics().is_none());
 
         let mut new = Puppet::new(fixtures::physics_hair()).unwrap();

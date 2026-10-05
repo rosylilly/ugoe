@@ -563,15 +563,29 @@ mod tests {
                     ("actual", None),
                 ],
             ),
+            // 検査のエラーの種類の一覧は、出た順に重なりを除いて `, ` でつないだ文字列 (wasm と同じ。T0168)。
             (
-                DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+                DressUpError::Physics(vec![
+                    invalid.clone(),
+                    ValidationError::DuplicateId {
+                        kind: "slot",
+                        id: s("s"),
+                    },
+                    invalid.clone(),
+                ]),
                 "invalid_physics",
-                vec![("errors", Some("2"))],
+                vec![
+                    ("errors", Some("3")),
+                    ("error_codes", Some("invalid_module_name, duplicate_id")),
+                ],
             ),
             (
                 ComposeError::Invalid(vec![invalid]).into(),
                 "invalid_composition",
-                vec![("errors", Some("1"))],
+                vec![
+                    ("errors", Some("1")),
+                    ("error_codes", Some("invalid_module_name")),
+                ],
             ),
         ];
         let text = |p: *const c_char| {

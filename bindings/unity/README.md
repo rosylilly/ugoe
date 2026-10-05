@@ -160,7 +160,7 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
 `Fields` は C ABI の `ugoe_last_error_field` で、`UgoeException.FieldKeys` のキーを 1 つずつ読む (C ABI にはキーを列挙する関数が無い)。
 `FieldKeys` は `crates/ugoe-wasm/codes.json` の `dress_up_error` と `load_error` のすべてのキー (`module`・`slot`・`mask`・`rig`・`collider`・
-`part`・`texture`・`required`・`actual`・`errors`・`limit`・`chunk`・`max` など) で、食い違いは `tests/ResultTests.cs` が検出する
+`part`・`texture`・`required`・`actual`・`errors`・`error_codes`・`limit`・`chunk`・`max` など) で、食い違いは `tests/ResultTests.cs` が検出する
 (種類やキーが増えて `codes.json` を書き直したら、`FieldKeys` も直す。T0458)。
 
 ### 読み込みの上限

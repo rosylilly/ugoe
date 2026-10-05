@@ -438,15 +438,29 @@ fn numbered_and_referenced_fields_reach_js() {
             "avatar_level",
             vec![("module", "m".into()), ("required", 2.into())],
         ),
+        // 検査のエラーの種類の一覧は、出た順に重なりを除いて `, ` でつないだ文字列 (T0168)。
         (
-            DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+            DressUpError::Physics(vec![
+                invalid.clone(),
+                ValidationError::DuplicateId {
+                    kind: "slot",
+                    id: s("s"),
+                },
+                invalid.clone(),
+            ]),
             "invalid_physics",
-            vec![("errors", 2.into())],
+            vec![
+                ("errors", 3.into()),
+                ("error_codes", "invalid_module_name, duplicate_id".into()),
+            ],
         ),
         (
             ComposeError::Invalid(vec![invalid]).into(),
             "invalid_composition",
-            vec![("errors", 1.into())],
+            vec![
+                ("errors", 1.into()),
+                ("error_codes", "invalid_module_name".into()),
+            ],
         ),
     ];
     for (error, code, fields) in cases {

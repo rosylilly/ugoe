@@ -261,6 +261,7 @@ function describe(w: UgoeLoadWarning): string {
     case "normal_map_ktx2":
       return `テクスチャ ${w.texture} を代用しました`;
     case "physics_removed":
+      // 理由が検査のエラーなら w.error_codes に種類 ("unknown_reference" など) が入る
       return "物理を外しました";
     case "module_detached":
       return `${w.module} を外しました (${w.error.code})`;
@@ -281,7 +282,8 @@ try {
   // e.code: UgoeDressUpErrorCode ("slot_occupied" など。知らない値もありうる)
   // 補足の値 (無ければ undefined): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied)・e.mask (unknown_mask)・
   // e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・e.texture (texture_out_of_range。数)・
-  // e.required・e.actual (avatar_level。数)・e.errors (invalid_physics・invalid_composition の検査のエラーの数)
+  // e.required・e.actual (avatar_level。数)・e.errors (invalid_physics・invalid_composition の検査のエラーの数)・
+  // e.error_codes (同じく検査のエラーの種類を ", " でつないだ文字列。T0168)
   if (e.code === "slot_occupied") console.warn(`${e.slot} には ${e.attached} が付いています`);
 }
 ```

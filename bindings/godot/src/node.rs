@@ -1094,6 +1094,8 @@ fn field_variant(value: FieldValue<'_>) -> Variant {
     match value {
         FieldValue::Index(i) => i64::try_from(i).unwrap_or(i64::MAX).to_variant(),
         FieldValue::Text(t) => t.to_variant(),
+        // 種類の一覧は wasm・C ABI と同じく `, ` でつないだ文 (T0168)。
+        FieldValue::Codes(_) => value.to_string().to_variant(),
     }
 }
 

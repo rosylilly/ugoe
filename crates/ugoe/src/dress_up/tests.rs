@@ -341,6 +341,10 @@ fn invalid_base_physics_changes_nothing() {
     // スロットが公開する `Chest` が無い。
     let err = puppet.set_base_physics(Some(empty_physics())).unwrap_err();
     assert_eq!(err.code(), "invalid_physics");
+    assert_eq!(
+        err.fields()[1],
+        ("error_codes", FieldValue::Codes(vec!["unknown_reference"]))
+    );
     // 文は検証エラーの列の共通の形 (T0015。Debug の表記ではない)。
     let DressUpError::Physics(errors) = &err else {
         panic!("not physics: {err}");
@@ -473,6 +477,11 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
     let s = |v: &str| v.to_owned();
     type Fields = Vec<(&'static str, FieldValue<'static>)>;
     let invalid = ValidationError::InvalidModuleName { name: s("") };
+    let duplicate = ValidationError::DuplicateId {
+        kind: "slot",
+        id: s("s"),
+    };
+    let codes = |list: &[&'static str]| FieldValue::Codes(list.to_vec());
     let cases: Vec<(DressUpError, &str, Fields)> = vec![
         (
             DressUpError::NotAttached(s("m")),
@@ -485,9 +494,16 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
             vec![],
         ),
         (
-            DressUpError::Physics(vec![invalid.clone(), invalid.clone()]),
+            // 種類の一覧は出た順で、重なりを除く (T0168)。
+            DressUpError::Physics(vec![invalid.clone(), duplicate.clone(), invalid.clone()]),
             "invalid_physics",
-            vec![("errors", Index(2))],
+            vec![
+                ("errors", Index(3)),
+                (
+                    "error_codes",
+                    codes(&["invalid_module_name", "duplicate_id"]),
+                ),
+            ],
         ),
         (
             ComposeError::InvalidModuleName(s("m")).into(),
@@ -638,7 +654,10 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
         (
             ComposeError::Invalid(vec![invalid.clone()]).into(),
             "invalid_composition",
-            vec![("errors", Index(1))],
+            vec![
+                ("errors", Index(1)),
+                ("error_codes", codes(&["invalid_module_name"])),
+            ],
         ),
     ];
     for (error, code, fields) in &cases {

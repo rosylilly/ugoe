@@ -38,9 +38,9 @@
 
 ## 着せ替えの失敗の補足の値
 
-`DressUpError::fields` は `(キー, FieldValue)` の列を返す。値は ID・名前なら `FieldValue::Text`、番号・数なら `FieldValue::Index`
-(読み込みの警告 `LoadWarning::fields` と同じ型)。wasm の `DressUpError` は文字列と数、C ABI の `ugoe_last_error_field` は
-10 進の文字列にする。キーは種類ごとに決まり、無い値はキーごと出さない (T0412・T0157)。
+`DressUpError::fields` は `(キー, FieldValue)` の列を返す。値は ID・名前なら `FieldValue::Text`、番号・数なら `FieldValue::Index`、
+種類 (`code`) の一覧なら `FieldValue::Codes` (読み込みの警告 `LoadWarning::fields` と同じ型)。wasm の `DressUpError` は文字列と数
+(一覧は `, ` でつないだ文字列)、C ABI の `ugoe_last_error_field` は文字列 (番号は 10 進、一覧は `, ` でつないだもの) にする。キーは種類ごとに決まり、無い値はキーごと出さない (T0412・T0157)。
 
 | `code` | キー |
 | --- | --- |
@@ -54,10 +54,15 @@
 | `unknown_collider` | `module`・`rig`・`collider` |
 | `pose_not_exposed` | `module`・`slot`・`part` (ポーズの要素) |
 | `avatar_level` | `module`・`required` (モジュールが求めるレベル)・`actual` (本体のレベル。本体がアバタープロファイルを持たなければ無い) |
-| `invalid_physics`・`invalid_composition` | `errors` (検査のエラーの数。個々のエラーは文 `Display` にだけある) |
+| `invalid_physics`・`invalid_composition` | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類の一覧) |
 | `compile` | なし |
 
-検査のエラー (`ValidationError`) には機械が読む種類が無いので、個々のエラーは補足の値にしない (数だけを出す)。
+`error_codes` は検査のエラーの種類 (`ValidationError::code`。`unknown_reference`・`duplicate_id` など) を出た順に、
+重なりを除いて並べたもの。外に出すときは `, ` でつなぐ (例: `"unknown_reference, duplicate_id"`。読み込みの失敗の `features` と同じつなぎ方)。
+個々のエラーの中身 (どの ID か) は文 (`Display`) にだけある (T0168)。
+
+読み込みの警告 `physics_removed` (wasm の `load_json` で読み直したとき、引き継いだ物理の設定を外した) も、外した理由が
+検査のエラーなら `reason` に加えて同じ `errors`・`error_codes` を持つ (`LoadWarning::PhysicsRemoved` の `codes`。T0168)。
 
 ## 関連タスク
 

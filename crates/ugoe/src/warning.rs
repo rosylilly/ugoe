@@ -38,6 +38,9 @@ pub enum LoadWarning {
     PhysicsRemoved {
         /// 検査の結果 (英語)。
         reason: String,
+        /// 検査のエラーの種類 ([`ValidationError::code`](ugoe_model::validate::ValidationError::code)。エラーの順で、重なりを除かない)。
+        /// 外した理由が検査のエラーでなければ空。
+        codes: Vec<&'static str>,
     },
     /// 知らない任意の機能を宣言したファイル。仕様の定めるフォールバックで読んだ
     /// (`ugoe_format::ReadWarning::UnknownOptionalFeature`)。
@@ -56,12 +59,28 @@ pub enum LoadWarning {
 }
 
 /// 警告 ([`LoadWarning::fields`]) と着せ替えの失敗 ([`crate::DressUpError::fields`]) の補足の値。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldValue<'a> {
     /// 番号 (テクスチャの番号など)。
     Index(usize),
     /// 文 (理由・機能の名前・場所など)。
     Text(&'a str),
+    /// 種類 (`code`) の一覧 (検査のエラーの種類など。出た順で、重なりを除いたもの)。
+    /// 組み込み先 (wasm・C ABI) には、`Display` と同じ `, ` でつないだ文として出す (T0168)。
+    Codes(Vec<&'static str>),
+}
+
+impl FieldValue<'_> {
+    /// 検査のエラーの種類の一覧 ([`ValidationError::code`](ugoe_model::validate::ValidationError::code) を出た順に、重なりを除いて並べる)。
+    pub fn validation_codes(codes: impl IntoIterator<Item = &'static str>) -> Self {
+        let mut list: Vec<&'static str> = Vec::new();
+        for code in codes {
+            if !list.contains(&code) {
+                list.push(code);
+            }
+        }
+        Self::Codes(list)
+    }
 }
 
 impl fmt::Display for FieldValue<'_> {
@@ -69,6 +88,7 @@ impl fmt::Display for FieldValue<'_> {
         match self {
             Self::Index(i) => write!(f, "{i}"),
             Self::Text(s) => f.write_str(s),
+            Self::Codes(codes) => f.write_str(&codes.join(", ")),
         }
     }
 }
@@ -86,13 +106,24 @@ impl LoadWarning {
         }
     }
 
-    /// 補足の値 (キーと値)。キーは `texture`・`reason`・`feature`・`path`。
+    /// 補足の値 (キーと値)。キーは `texture`・`reason`・`feature`・`path`。`physics_removed` は、外した理由が
+    /// 検査のエラーなら `errors` (数) と `error_codes` (種類の一覧) も持つ (着せ替えの `invalid_physics` と同じ。T0168)。
     pub fn fields(&self) -> Vec<(&'static str, FieldValue<'_>)> {
         match self {
             Self::TextureKtx2 { texture }
             | Self::TextureMissing { texture }
             | Self::NormalMapKtx2 { texture } => vec![("texture", FieldValue::Index(*texture))],
-            Self::PhysicsRemoved { reason } => vec![("reason", FieldValue::Text(reason))],
+            Self::PhysicsRemoved { reason, codes } => {
+                let mut fields = vec![("reason", FieldValue::Text(reason))];
+                if !codes.is_empty() {
+                    fields.push(("errors", FieldValue::Index(codes.len())));
+                    fields.push((
+                        "error_codes",
+                        FieldValue::validation_codes(codes.iter().copied()),
+                    ));
+                }
+                fields
+            }
             Self::UnknownOptionalFeature { feature } => {
                 vec![("feature", FieldValue::Text(feature))]
             }
@@ -142,5 +173,32 @@ mod tests {
         let warning = LoadWarning::TextureMissing { texture: 3 };
         assert_eq!(warning.fields(), [("texture", FieldValue::Index(3))]);
         assert_eq!(warning.fields()[0].1.to_string(), "3");
+    }
+
+    #[test]
+    fn removed_physics_lists_the_validation_codes() {
+        let warning = LoadWarning::PhysicsRemoved {
+            reason: "r".into(),
+            codes: vec!["unknown_id", "duplicate_id", "unknown_id"],
+        };
+        let fields = warning.fields();
+        assert_eq!(
+            fields,
+            [
+                ("reason", FieldValue::Text("r")),
+                ("errors", FieldValue::Index(3)),
+                (
+                    "error_codes",
+                    FieldValue::Codes(vec!["unknown_id", "duplicate_id"])
+                ),
+            ]
+        );
+        assert_eq!(fields[2].1.to_string(), "unknown_id, duplicate_id");
+
+        let warning = LoadWarning::PhysicsRemoved {
+            reason: "r".into(),
+            codes: vec![],
+        };
+        assert_eq!(warning.fields(), [("reason", FieldValue::Text("r"))]);
     }
 }

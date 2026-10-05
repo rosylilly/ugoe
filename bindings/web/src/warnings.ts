@@ -74,8 +74,13 @@ export interface UgoeDressUpErrorFields extends UgoeLimitErrorFields {
   required?: number;
   /** `avatar_level` で、本体のレベル。本体がアバタープロファイルを持たなければ無い。 */
   actual?: number;
-  /** `invalid_physics`・`invalid_composition` で、検査のエラーの数 (個々のエラーは `message` にだけある)。 */
+  /** `invalid_physics`・`invalid_composition` で、検査のエラーの数。 */
   errors?: number;
+  /**
+   * `invalid_physics`・`invalid_composition` で、検査のエラーの種類 (`ValidationError::code`) を出た順に、重なりを除いて
+   * `, ` でつないだ文字列 (例: `"unknown_reference, duplicate_id"`。T0168)。個々のエラーの中身は `message` にだけある。
+   */
+  error_codes?: string;
 }
 
 /**
@@ -121,6 +126,10 @@ export interface UgoePhysicsRemovedWarning extends LoadWarningBase {
   code: "physics_removed";
   /** 英語の理由。 */
   reason: string;
+  /** 外した理由が検査のエラーなら、その数 (着せ替えの `invalid_physics` と同じ。T0168)。 */
+  errors?: number;
+  /** 外した理由が検査のエラーなら、その種類を `, ` でつないだ文字列 (`UgoeDressUpErrorFields.error_codes` と同じ形)。 */
+  error_codes?: string;
 }
 
 /** 付けていたモジュールを付け直せないので外した (`detached_modules_json()` の要素と同じ)。 */

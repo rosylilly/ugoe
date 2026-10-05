@@ -12,7 +12,7 @@ import {
 import type { WebPuppet } from "./wasm/ugoe_wasm.js";
 
 /** wasm-bindgen が投げる `DressUpError` と同じ形 (`name`・`code`・補足の値を持つ `Error`)。 */
-function dressUpError(code: string, fields: Record<string, string> = {}): Error {
+function dressUpError(code: string, fields: Record<string, string | number> = {}): Error {
   const e = new Error(`failed: ${code}`);
   e.name = "DressUpError";
   return Object.assign(e, { code }, fields);
@@ -40,6 +40,16 @@ describe("isDressUpError", () => {
     ]);
   });
 
+  it("reads the validation error codes as a comma separated string", () => {
+    const e: unknown = dressUpError("invalid_composition", {
+      errors: 3,
+      error_codes: "unknown_reference, duplicate_id",
+    });
+    if (!isDressUpError(e)) throw new Error("not a DressUpError");
+    expectTypeOf(e.error_codes).toEqualTypeOf<string | undefined>();
+    expect(e.error_codes?.split(", ")).toEqual(["unknown_reference", "duplicate_id"]);
+  });
+
   it("accepts codes from a newer runtime", () => {
     expect(isDressUpError(dressUpError("future_code"))).toBe(true);
   });
@@ -63,7 +73,8 @@ function describeWarning(w: UgoeLoadWarning): string {
       expectTypeOf(w.texture).toEqualTypeOf<number>();
       return `texture ${w.texture}`;
     case "physics_removed":
-      return `physics ${w.reason}`;
+      expectTypeOf(w.error_codes).toEqualTypeOf<string | undefined>();
+      return `physics ${w.reason} ${w.error_codes ?? "-"}`;
     case "module_detached":
       return `detached ${w.module} ${w.error.code} ${w.error.slot}`;
     case "unknown_optional_feature":
@@ -76,7 +87,13 @@ function describeWarning(w: UgoeLoadWarning): string {
 describe("loadWarnings", () => {
   const warnings = [
     { code: "texture_ktx2", warning: "a", texture: 2 },
-    { code: "physics_removed", warning: "b", reason: "r" },
+    {
+      code: "physics_removed",
+      warning: "b",
+      reason: "r",
+      errors: 1,
+      error_codes: "unknown_reference",
+    },
     {
       code: "module_detached",
       warning: "c",
@@ -95,7 +112,7 @@ describe("loadWarnings", () => {
     const described = parsed.map(describeWarning);
     expect(described).toEqual([
       "texture 2",
-      "physics r",
+      "physics r unknown_reference",
       "detached Hat missing_slot Head",
       "feature f",
       "value MODL/x",

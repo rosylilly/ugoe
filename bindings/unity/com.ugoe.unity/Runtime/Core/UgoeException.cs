@@ -63,8 +63,9 @@ namespace Ugoe
         /// </summary>
         internal static readonly string[] FieldKeys =
         {
-            "actual", "attached", "chunk", "collider", "errors", "features", "found", "height", "image", "limit", "mask",
-            "max", "mesh", "module", "parameter", "part", "required", "rig", "slot", "supported", "texture", "width",
+            "actual", "attached", "chunk", "collider", "error_codes", "errors", "features", "found", "height", "image",
+            "limit", "mask", "max", "mesh", "module", "parameter", "part", "required", "rig", "slot", "supported", "texture",
+            "width",
         };
 
         /// <summary>結果が失敗なら、同じスレッドの最後のエラーから例外を作って投げる。</summary>

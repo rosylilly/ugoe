@@ -301,11 +301,13 @@ pub fn warning_json(warning: &LoadWarning) -> serde_json::Value {
     json
 }
 
-/// 補足の値 (警告と着せ替えの失敗の `fields`) の JSON。番号は数、文は文字列。
+/// 補足の値 (警告と着せ替えの失敗の `fields`) の JSON。番号は数、文は文字列。種類の一覧は `, ` でつないだ文字列
+/// (C ABI の `ugoe_last_error_field` と同じ文。T0168)。
 pub fn field_json(value: FieldValue<'_>) -> serde_json::Value {
     match value {
         FieldValue::Index(i) => i.into(),
         FieldValue::Text(s) => s.into(),
+        FieldValue::Codes(_) => value.to_string().into(),
     }
 }
 
@@ -807,6 +809,7 @@ mod tests {
         assert_eq!(textures, vec![placeholder(); 2]);
         warnings.push(LoadWarning::PhysicsRemoved {
             reason: "bad rig".into(),
+            codes: vec!["unknown_reference", "duplicate_id", "unknown_reference"],
         });
         let json = warnings_json(&warnings, &[]);
         assert_eq!(json[1]["code"], "texture_missing");
@@ -821,6 +824,8 @@ mod tests {
                 "code": "physics_removed",
                 "warning": "physics settings were removed: bad rig",
                 "reason": "bad rig",
+                "errors": 3,
+                "error_codes": "unknown_reference, duplicate_id",
             })
         );
     }

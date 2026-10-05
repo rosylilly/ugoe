@@ -232,7 +232,10 @@ fn load_warnings() -> Vec<LoadWarning> {
         LoadWarning::TextureKtx2 { texture: 0 },
         LoadWarning::TextureMissing { texture: 0 },
         LoadWarning::NormalMapKtx2 { texture: 0 },
-        LoadWarning::PhysicsRemoved { reason: "r".into() },
+        LoadWarning::PhysicsRemoved {
+            reason: "r".into(),
+            codes: vec!["invalid_module_name"],
+        },
         LoadWarning::UnknownOptionalFeature {
             feature: "f".into(),
         },

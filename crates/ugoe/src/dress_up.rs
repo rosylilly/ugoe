@@ -86,18 +86,19 @@ impl DressUpError {
     /// - `texture`: `texture_out_of_range` のテクスチャの番号 (モジュールの `Module::textures` の添字)。
     /// - `required`・`actual`: `avatar_level` で、モジュールが求めるレベルと本体のレベル。本体がアバタープロファイルを
     ///   持たなければ `actual` は無い。
-    /// - `errors`: `invalid_physics`・`invalid_composition` の検査のエラーの数 (1 以上)。個々のエラーは文
-    ///   (`Display`) にだけある (検査のエラーには機械が読む種類が無い)。
+    /// - `errors`: `invalid_physics`・`invalid_composition` の検査のエラーの数 (1 以上)。
+    /// - `error_codes`: `invalid_physics`・`invalid_composition` の検査のエラーの種類 ([`ValidationError::code`]) の一覧
+    ///   ([`FieldValue::Codes`]。出た順で、重なりを除く。T0168)。個々のエラーの中身 (ID など) は文 (`Display`) にだけある。
     pub fn fields(&self) -> Vec<(&'static str, FieldValue<'_>)> {
         self.info().1
     }
 
     fn info(&self) -> (&'static str, Vec<(&'static str, FieldValue<'_>)>) {
-        use FieldValue::{Index, Text};
+        use FieldValue::Text;
         match self {
             Self::NotAttached(name) => ("not_attached", vec![("module", Text(name))]),
             Self::Compile(_) => ("compile", vec![]),
-            Self::Physics(errors) => ("invalid_physics", vec![("errors", Index(errors.len()))]),
+            Self::Physics(errors) => ("invalid_physics", validation_fields(errors)),
             // 種類は ugoe-runtime の `ComposeError::code` (エディタの `compose.*` と同じ名前)。
             Self::Compose(e) => (e.code(), compose_fields(e)),
         }
@@ -176,8 +177,19 @@ fn compose_fields(error: &ComposeError) -> Vec<(&'static str, FieldValue<'_>)> {
             ("slot", Text(slot)),
             ("part", Text(part)),
         ],
-        C::Invalid(errors) => vec![("errors", Index(errors.len()))],
+        C::Invalid(errors) => validation_fields(errors),
     }
+}
+
+/// 検査の失敗 (`invalid_physics`・`invalid_composition`) の補足の値: エラーの数と種類の一覧。
+fn validation_fields(errors: &[ValidationError]) -> Vec<(&'static str, FieldValue<'static>)> {
+    vec![
+        ("errors", FieldValue::Index(errors.len())),
+        (
+            "error_codes",
+            FieldValue::validation_codes(errors.iter().map(ValidationError::code)),
+        ),
+    ]
 }
 
 /// 着せ替えの状態: 本体と、取り付けているモジュール。

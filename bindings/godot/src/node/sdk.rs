@@ -508,6 +508,7 @@ fn warning_dictionaries(warnings: &[LoadWarning]) -> Array<VarDictionary> {
                 match value {
                     FieldValue::Index(i) => d.set(key, i as i64),
                     FieldValue::Text(t) => d.set(key, t),
+                    FieldValue::Codes(_) => d.set(key, &GString::from(&value.to_string())),
                 }
             }
             d

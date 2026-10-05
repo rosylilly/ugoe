@@ -248,7 +248,8 @@ try {
   // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)・
   // e.mask (unknown_mask)・e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・
   // e.texture (texture_out_of_range。数)・e.required・e.actual (avatar_level。数。本体がプロファイルを持たなければ actual は無い)・
-  // e.errors (invalid_physics・invalid_composition の検査のエラーの数)。キーの意味は crates/ugoe/README.md#着せ替えの失敗の補足の値 (T0157)
+  // e.errors (invalid_physics・invalid_composition の検査のエラーの数)・
+  // e.error_codes (同じく検査のエラーの種類を ", " でつないだ文字列。例: "unknown_reference, duplicate_id"。T0168)。キーの意味は crates/ugoe/README.md#着せ替えの失敗の補足の値 (T0157)
   // TypeScript の型は @ugoe/runtime の UgoeDressUpError・isDressUpError (一覧の検査は下の「code の一覧」)
 }
 ```
@@ -289,7 +290,7 @@ JSON.parse(puppet.load_warnings_json());           // 同じ警告の構造 (同
 | `texture_ktx2` | `texture` (テクスチャの番号) | テクスチャが、デコードしない形式 (ETC2・ASTC・Basis Universal など。圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 以外) の KTX2 なので白のプレースホルダで代用した |
 | `texture_missing` | `texture` | テクスチャの画像が無いので白で代用した (`read_bundle` が数を検査するので通常は起きない) |
 | `normal_map_ktx2` | `texture` | 法線マップが、デコードしない形式の KTX2 なので、法線マップなしで描く |
-| `physics_removed` | `reason` (英語の理由) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |
+| `physics_removed` | `reason` (英語の理由)・`errors`・`error_codes` (理由が検査のエラーなら、その数と種類。着せ替えの `invalid_physics` と同じ形。T0168) | `load_json` で読み直したとき、引き継いだ物理の設定が新しいモデルと合わないので外した |
 | `module_detached` | `module`・`slot`・`error` (`detached_modules_json()` の要素と同じ) | 付けていたモジュールを付け直せないので外した |
 | `unknown_optional_feature` | `feature` (機能の ID) | 知らない任意の機能を宣言したファイル (新しい版で書かれたもの)。フォールバックで読んだ (T0412) |
 | `unknown_value` | `path` (チャンクとその中の場所) | 知らない列挙の値をフォールバックで読んだ (T0412) |
