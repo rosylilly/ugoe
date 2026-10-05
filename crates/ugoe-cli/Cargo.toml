@@ -31,6 +31,10 @@ workspace = true
 # 実 GPU (またはソフトウェアラスタライザ) を必要とする描画テストを有効にする。
 gpu-tests = []
 
+# bin の名前が SDK (`ugoe` クレート) の lib と同じなので、`cargo doc --workspace` では出力先 (`target/doc/ugoe/`) が衝突する。
+# cargo は rustdoc の前に `target/doc/<クレート>` を消すので、並行する 2 つの rustdoc が互いの出力を消しうる
+# (<https://github.com/rust-lang/cargo/issues/6313>)。CLI の使い方は `ugoe --help` と README にあるので、bin の API ドキュメントは作らない (T0033)
 [[bin]]
 name = "ugoe"
 path = "src/main.rs"
+doc = false

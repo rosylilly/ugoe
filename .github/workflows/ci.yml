@@ -143,6 +143,7 @@ jobs:
       - name: ugoe without render
         if: matrix.group == 'runtime'
         run: just sdk-no-render-check
+      # wasm32 の clippy と、wasm32 でだけコンパイルするコード (`WebPuppet` など) の rustdoc の警告 (T0033)
       - name: wasm32
         if: matrix.group == 'bindings'
         run: just wasm-check

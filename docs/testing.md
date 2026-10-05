@@ -15,7 +15,7 @@
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと Unity の宣言の過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・npm のライセンスの例外・worktree の cargo の設定) | `just script-check` |
-| API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`) |
+| API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps`。wasm32 でだけコンパイルするコード (`ugoe-wasm` の `src/web.rs`・`src/web/`) は wasm32 のターゲットで `cargo doc -p ugoe-wasm` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`)。wasm32 の分は `just wasm-check` |
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
@@ -39,7 +39,7 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 | --- | --- |
 | `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just refs`・`just groups`・`just licenses`・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
 | `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature)) |
-| `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 (`just wasm-check`)、C ABI (`just ffi-check`) |
+| `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |
 | `rust (tools)` | `ugoe-fs`・`ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
 | `rust (apps)` | エディタ・ビューア・スタジオ (Tauri) の clippy とテスト、生成物の検査 (`just gen && git diff --exit-code`)。Tauri のシステムの依存はこのジョブでだけ入れる |
@@ -49,6 +49,8 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 
 - 手元では `just lint-group <グループ>` と `just test-group <グループ>` で、CI の 1 つのジョブと同じ clippy とテストを走らせられます。`just ci` は今までどおりワークスペース全体を検査します。
 - `rust (<グループ>)` の各ジョブは、clippy とテストの後に `just doc-group <グループ>` で、そのグループのクレートの API ドキュメントを rustdoc の警告をエラーにして作ります (`just ci` の `just doc-check` のグループの分。T0027)。依存はテストのビルドと同じ check の成果物を使うので、ディスクはあまり増えません。角括弧 (`[0,1]²` など) は intra-doc link と読まれるので、バッククォートで囲むか `\[` と書きます。非公開の項目は公開の文書からリンクせず、バッククォートだけで書きます。
+- `ugoe-cli` の bin は名前が `ugoe` で SDK (`ugoe` クレート) の lib と出力先 (`target/doc/ugoe/`) が同じなので、`doc = false` で API ドキュメントを作りません。cargo は rustdoc の前に `target/doc/<クレート>` を消すため、衝突したままだと `cargo doc --workspace` の中で 2 つの rustdoc が互いの出力を消し、`just doc-check` がまれに失敗し、`just doc` で開く `ugoe` のページが CLI のものになることがありました (T0033。[cargo#6313](https://github.com/rust-lang/cargo/issues/6313))。bin の名前を lib と同じにするときは同じく `doc = false` を付けます。
+- `ugoe-wasm` の `src/web.rs`・`src/web/` (`WebPuppet` など) は `cfg(target_arch = "wasm32")` の中にあり、ホストの `doc-check` ではコンパイルされません。`just wasm-check` が wasm32 のターゲットで `cargo doc -p ugoe-wasm --no-deps` を rustdoc の警告をエラーにして流します (CI は `rust (bindings)`。T0033)。ホストの文書から wasm32 だけの項目へはリンクできない (ホストの `doc-check` で壊れたリンクになる) ので、バッククォートだけで書きます。
 - `just script-check` (scripts/ の単体テスト) は Node だけで動くので、ワークスペースをビルドしない `rust-checks` のジョブで流します (T0027)。`just groups`・`just app-build-check` が流すテストは、それぞれのレシピの側に入っています。
 - clippy (`just lint`・`just lint-group`) は、既定の feature と、すべての feature (`--all-features`) の 2 回流します。`gpu-tests` などの feature の下のコード (GPU のテストなど) は既定の feature ではコンパイルされず、警告が溜まっていたためです (T0211・T0013)。グループでの `--all-features` は、選んだクレートの feature だけを有効にします。
 - `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。
@@ -73,12 +75,15 @@ clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など
 `--target` を変えて `cargo clippy --all-targets -- -D warnings` を流します (T0829)。リンクはしないので、ターゲットの標準ライブラリ
 (`rustup target add`) だけがあればよく、Windows や macOS の SDK は要りません。テストは動かせません。
 
-- 定義の正は `scripts/cross-check.mjs` の `CHECKS` (検査の名前・クレート・ターゲット)。CI のジョブは `CHECKS` が要るターゲットを
+- 定義の正は `scripts/cross-check.mjs` の `CHECKS` (検査の名前・クレート・ターゲット・feature)。CI のジョブは `CHECKS` が要るターゲットを
   `node scripts/cross-check.mjs targets` で足し、すべての検査を流します。
 - 手元では `just cross-check` (すべて) か `just cross-check <名前>`。仮想カメラは `just vcam-check`
   (`ugoe-studio-vcam` を `x86_64-pc-windows-msvc` と `aarch64-apple-darwin` で)。ターゲットが入っていなければ `rustup target add …` の
   入れ方を出して止まります。`just ci` には含めないので、cfg で OS を分けたコードを触ったら実行してください。
 - 検査を足すときは `CHECKS` に書くだけでジョブに入ります。定義のクレートがワークスペースにあるかは `just groups` が検査します。
+- feature は `just lint` の 2 回目と同じく、すべて (`allFeatures: true` で `--all-features`。選んだクレートの feature だけが有効になる) を
+  使います。クレートに feature を足しても書き足す必要はありません。一部の feature だけにしたいときは `features` に `クレート/feature` を
+  並べます (両方は書けない。T0033)。
 - 依存のビルドスクリプトがターゲット向けに C やリソースをコンパイルするときは、そのツールが要ります。`CHECKS` の `commands` に
   コマンドを、`apt` に apt のパッケージを書くと、`just cross-check` は無いときに入れ方を出して止まり、CI のジョブは
   `node scripts/cross-check.mjs apt` のパッケージを入れます。

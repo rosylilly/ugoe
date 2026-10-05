@@ -53,6 +53,34 @@ test("clippy の引数はクレート・feature・ターゲットを並べ、警
   ]);
 });
 
+test("allFeatures は --all-features を渡し、無ければ渡さない", () => {
+  assert.deepEqual(clippyArgs({ crates: ["x"], targets: ["t"], allFeatures: true }, "t"), [
+    "clippy",
+    "-p",
+    "x",
+    "--all-features",
+    "--all-targets",
+    "--target",
+    "t",
+    "--",
+    "-D",
+    "warnings",
+  ]);
+  assert.deepEqual(clippyArgs(checks.a, "t1").includes("--all-features"), false);
+});
+
+test("allFeatures と features を両方書いた定義は誤り", () => {
+  const metadata = { packages: [{ name: "x" }] };
+  const both = { crates: ["x"], targets: ["t"], allFeatures: true, features: ["x/f"] };
+  assert.deepEqual(validate({ both }, metadata), [
+    "both: allFeatures と features は両方を書けない",
+  ]);
+  assert.deepEqual(
+    validate({ all: { crates: ["x"], targets: ["t"], allFeatures: true } }, metadata),
+    [],
+  );
+});
+
 test("ワークスペースにないクレートと、空のクレート・ターゲットを見つける", () => {
   const metadata = { packages: [{ name: "x" }] };
   assert.deepEqual(validate({ a: checks.a }, metadata), []);
@@ -73,7 +101,8 @@ test("仮想カメラは Windows と macOS のターゲットで検査する", (
 test("ugoe-ai と ugoe-mcp は MinGW のある windows-gnu で、すべての feature で検査する", () => {
   assert.deepEqual(CHECKS.tools.crates, ["ugoe-ai", "ugoe-mcp"]);
   assert.deepEqual(CHECKS.tools.targets, ["x86_64-pc-windows-gnu"]);
-  assert.deepEqual(CHECKS.tools.features, ["ugoe-ai/gpu-tests", "ugoe-mcp/gpu-tests"]);
+  assert.equal(CHECKS.tools.allFeatures, true);
+  assert.equal(CHECKS.tools.features, undefined);
   assert.ok(CHECKS.tools.commands?.includes("x86_64-w64-mingw32-gcc"));
 });
 
@@ -90,7 +119,8 @@ test("ツールのコマンドと apt のパッケージは重なりを除いて
   assert.deepEqual(requiredTools(select(defs, ["a"])), { commands: [], apt: [] });
 });
 
-test("アプリの src-tauri は MinGW の windows-gnu で検査する", () => {
+test("アプリの src-tauri は MinGW の windows-gnu で、すべての feature で検査する", () => {
   assert.deepEqual(CHECKS.apps.targets, ["x86_64-pc-windows-gnu"]);
+  assert.equal(CHECKS.apps.allFeatures, true);
   assert.deepEqual(CHECKS.apps.apt, ["gcc-mingw-w64-x86-64"]);
 });

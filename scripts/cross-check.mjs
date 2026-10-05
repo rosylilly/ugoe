@@ -16,10 +16,17 @@ import { delimiter, join } from "node:path";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 /**
+ * @typedef {{ crates: string[], targets: string[], features?: string[], allFeatures?: boolean, commands?: string[], apt?: string[] }} CheckDef
+ */
+
+/**
  * 検査の定義。`crates` を `targets` のそれぞれで `cargo clippy --all-targets -- -D warnings` する。
+ * feature は、すべて (`--all-features`。選んだクレートの feature をすべて有効にする) なら `allFeatures: true`、
+ * 一部だけなら `features` に `クレート/feature` を並べる (両方は書けない)。すべてで足りるなら `allFeatures` を使う
+ * (feature を足したときの書き漏れが無い)。
  * 依存のビルドスクリプトがターゲット向けの C などをコンパイルするなら、そのツールのコマンドを `commands` に、
  * 入れる apt のパッケージを `apt` に書く (無ければ run が入れ方を出して失敗する)。
- * @type {Record<string, { crates: string[], targets: string[], features?: string[], commands?: string[], apt?: string[] }>}
+ * @type {Record<string, CheckDef>}
  */
 export const CHECKS = {
   // スタジオの仮想カメラ (apps/studio/vcam、ADR 0028 の 8.)。unsafe の大半は Windows (Media Foundation) と
@@ -35,7 +42,7 @@ export const CHECKS = {
   apps: {
     crates: ["ugoe-editor", "ugoe-viewer", "ugoe-studio"],
     targets: ["x86_64-pc-windows-gnu"],
-    features: ["ugoe-studio/gpu-tests"],
+    allFeatures: true,
     commands: ["x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-windres"],
     apt: ["gcc-mingw-w64-x86-64"],
   },
@@ -45,7 +52,7 @@ export const CHECKS = {
   tools: {
     crates: ["ugoe-ai", "ugoe-mcp"],
     targets: ["x86_64-pc-windows-gnu"],
-    features: ["ugoe-ai/gpu-tests", "ugoe-mcp/gpu-tests"],
+    allFeatures: true,
     commands: ["x86_64-w64-mingw32-gcc"],
     apt: ["gcc-mingw-w64-x86-64"],
   },
@@ -85,14 +92,15 @@ export function missingTargets(required, installed) {
 /** 1 つのターゲットでの `cargo clippy` の引数。 */
 export function clippyArgs(def, target) {
   const args = ["clippy", ...def.crates.flatMap((name) => ["-p", name])];
-  if (def.features?.length) args.push("--features", def.features.join(","));
+  if (def.allFeatures) args.push("--all-features");
+  else if (def.features?.length) args.push("--features", def.features.join(","));
   args.push("--all-targets", "--target", target, "--", "-D", "warnings");
   return args;
 }
 
 /**
  * 定義を `cargo metadata --no-deps` の結果と比べ、問題を文字列の配列で返す (空なら問題なし)。
- * @param {Record<string, { crates: string[], targets: string[] }>} checks
+ * @param {Record<string, CheckDef>} checks
  * @param {{ packages: Array<{ name: string }> }} metadata
  */
 export function validate(checks, metadata) {
@@ -103,6 +111,9 @@ export function validate(checks, metadata) {
     if (def.targets.length === 0) errors.push(`${name}: ターゲットが 1 つもない`);
     for (const krate of def.crates) {
       if (!packages.has(krate)) errors.push(`${name}: ${krate} はワークスペースのクレートではない`);
+    }
+    if (def.allFeatures && def.features?.length) {
+      errors.push(`${name}: allFeatures と features は両方を書けない`);
     }
   }
   return errors;

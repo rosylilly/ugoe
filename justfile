@@ -183,9 +183,11 @@ cross-check *names:
 # 仮想カメラ (apps/studio/vcam) の Windows と macOS のコードの clippy (x86_64-pc-windows-msvc・aarch64-apple-darwin)
 vcam-check: (cross-check "vcam")
 
-# wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)
+# wasm ターゲットでビルドできるか (ブラウザ専用のコード `src/web.rs` も clippy で検査する)。
+# `src/web.rs`・`src/web/` の doc コメントはホストの `just doc-check` ではコンパイルされないので、wasm32 の rustdoc の警告もエラーにする (T0033)
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
+    RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc -p ugoe-wasm --no-deps --target wasm32-unknown-unknown
 
 # 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
 # (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)
