@@ -3,7 +3,7 @@
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe } from "node:test";
@@ -11,6 +11,7 @@ import { SAMPLES_DIR, sampleProfile } from "../../../apps/studio/scripts/sample-
 import {
   captureLogs,
   checkNoCspViolations,
+  configHome,
   invoke,
   launch,
   shot,
@@ -94,7 +95,25 @@ function rpcClient(url) {
   };
 }
 
+/**
+ * 見本のプロファイルを書き、最近のプロファイルに置く (起動の前に)。開くダイアログは OS のもので、バックエンドのコマンドは
+ * ダイアログで選んだパスと最近のプロファイルしか開かない (src-tauri/src/access.rs、T0838) ので、起動したスタジオが最後の
+ * プロファイルとして開く。
+ */
+function placeSampleProfile() {
+  const profile = sampleProfile(SAMPLES_DIR, "en");
+  // ホットキーは OS 全体に登録されるので、テストでは持たない (--headed で利用者の画面を使うときのため)
+  profile.hotkeys = [];
+  const path = join(work(), "sample-profile.json");
+  writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`);
+  const config = join(configHome(), "app.ugoe.studio");
+  mkdirSync(config, { recursive: true });
+  writeFileSync(join(config, "recent-profiles.json"), JSON.stringify({ profiles: [path] }));
+  return path;
+}
+
 describe("studio", () => {
+  const profilePath = placeSampleProfile();
   const app = launch({ name: "studio" });
   const names = { chat: "Chat", evening: "Evening (lighting)" };
 
@@ -112,16 +131,19 @@ describe("studio", () => {
     );
   });
 
-  step(app, "opens the sample profile", async () => {
+  step(app, "opens the last profile at startup", async () => {
     const s = app.session;
-    const profile = sampleProfile(SAMPLES_DIR, "en");
-    // ホットキーは OS 全体に登録されるので、テストでは持たない (--headed で利用者の画面を使うときのため)
-    profile.hotkeys = [];
-    const path = join(work(), "sample-profile.json");
-    writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`);
-    // 開くダイアログは OS のものなので、ダイアログが返すパスでバックエンドのコマンドを呼ぶ
-    await invoke(s, "open_profile", { path });
     await waitFor(async () => (await liveScene(s)) === names.chat, { message: "Chat on air" });
+    // 選んでいないパスは開けない (T0838)
+    const code = await s.run(
+      (path) =>
+        window.__TAURI_INTERNALS__.invoke("open_profile", { path }).then(
+          () => null,
+          (e) => e.code,
+        ),
+      join(work(), "not-chosen.json"),
+    );
+    assert.equal(code, "file.not_chosen");
     const scenes = await s.execute(
       `return [...document.querySelectorAll(".scenes__item .scenes__name")].map((e) => e.textContent.trim())`,
     );
@@ -373,7 +395,7 @@ describe("studio", () => {
     const s = app.session;
     const add = await s.waitFindText(".scenes__actions button", "Add");
     await add.click();
-    const path = join(work(), "sample-profile.json");
+    const path = profilePath;
     // 保存先のあるプロファイルは、変えた後に自動で保存される
     await waitFor(
       () => JSON.parse(readFileSync(path, "utf8")).scenes.some((sc) => sc.name === "Scene 5"),

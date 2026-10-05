@@ -338,6 +338,8 @@ for (const app of only) {
           E2E_APP: join(bin, APPS[app].binary),
           E2E_OUT: dir,
           E2E_WORK: work,
+          // アプリの設定の場所 (起動の前に置くもの。スタジオの最近のプロファイルなど)
+          E2E_CONFIG_HOME: appEnv.XDG_CONFIG_HOME,
           E2E_DISPLAY: display,
         },
       },

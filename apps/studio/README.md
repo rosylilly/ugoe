@@ -122,6 +122,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 
 | コマンド | ウィンドウ | 内容 |
 | --- | --- | --- |
+| `open_file_dialog(filterName, extensions)` / `save_file_dialog(filterName, defaultName)` | 操作 | OS の開く・保存のダイアログ (プロファイルの保存は `.json` を付ける)。選ばれたパスを返し、コマンドが読み書きできるパスに加える (下の「ファイルの読み書きの許可」) |
 | `restore_profile()` | 操作 | 起動して最初の 1 回だけ、最後に使ったプロファイルを開く |
 | `new_profile()` / `open_profile(path)` / `save_profile(path?)` / `forget_recent_profile(path)` | 操作 | プロファイル (`save_profile` は省くと今の保存先) |
 | `add_scene(name)` / `duplicate_scene(id, name)` / `move_scene(id, index)` / `remove_scene(id)` | 操作 | シーンの一覧 |
@@ -154,7 +155,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 - コマンドのエラーは `{ code, args, message }` の形 (下の「コマンドのエラー」)。
 
 - 出力ウィンドウは閉じる操作で隠すだけにする (受け手を作り直さない)。操作ウィンドウを閉じるとアプリを終える (仮想カメラも止める)。
-- 権限 (`src-tauri/capabilities/`): 操作ウィンドウはファイルを開く・保存先を選ぶダイアログと OS の言語、出力ウィンドウはウィンドウのドラッグだけ。
+- 権限 (`src-tauri/capabilities/`): 操作ウィンドウは OS の言語、出力ウィンドウはウィンドウのドラッグだけ。ファイルのダイアログの権限は
+  webview に渡さない (バックエンドが開く。下の「ファイルの読み書きの許可」。`src/acl.rs` のテストが検査する)。
   アプリのコマンドも、ウィンドウごとに呼べるものを絞る (T0820): `build.rs` が `src/acl.rs` の `COMMANDS` を
   `tauri_build::AppManifest::commands` に渡して `allow-<コマンド>` の許可を作り、出力ウィンドウ (`output.json`) は受け手のコマンド
   (`OUTPUT_COMMANDS`: 上の表の「出力」) だけ、操作ウィンドウ (`control.json`) はそれ以外のすべてを許す。コマンドを足したら
@@ -172,6 +174,34 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   `api` (操作 API の様子。待ち受け・承認したアプリ・承認を待つアプリ) がある。
 - 出力ウィンドウの背景の透過は、macOS では `macOSPrivateApi` (tauri の `macos-private-api` feature) が要る (Mac App Store では配布できなくなる)。
 
+### ファイルの読み書きの許可 (T0838)
+
+webview で思わぬスクリプトが動いても、利用者が選んでいないファイルを読み書きできないようにする (ビューアの `FileAccess` (T0727) と同じ考え。
+`src-tauri/src/access.rs`)。ファイルのダイアログはバックエンドが開き (`open_file_dialog`・`save_file_dialog`)、選ばれたパスを覚える。
+
+- **読める:** 開くダイアログで選んだパス (このセッションの間。覚えておかない)・今のプロファイルにあるパス (シーンのモデル・モジュール・
+  背景の画像と、ホットキーの着せ替えのモジュール)・最近のプロファイル (`recent-profiles.json`。バックエンドが書いたもの)。
+  プロファイルにあるパスは、利用者がそのプロファイルを選んで開いた (または自分で選んで保存した) ものとして扱う。
+- **書ける:** 保存のダイアログで選んだパスに 1 回だけ。今の保存先 (`save_profile` の `path` を省いたとき。自動の保存) はバックエンドが持つ。
+- 許していないパスは `file.not_chosen` (読む)・`file.not_chosen_for_save` (書く) のエラーにする。
+
+| コマンド | 受けるパス | 確かめること |
+| --- | --- | --- |
+| `open_profile(path)` | プロファイル | 読めるパス (選んだ・最近のプロファイル) |
+| `save_profile(path?)` | 保存先 | `path` を渡したら、保存のダイアログで選んだもの (1 回だけ)。省けば今の保存先 |
+| `update_scene(scene)` | シーンのモデル・モジュール・背景の画像 | すべて読めるパス (選んだ・今のプロファイルにある) |
+| `set_hotkeys(hotkeys)` | 着せ替えのモジュール | すべて読めるパス |
+| `module_slot(path)` | モジュール | 読めるパス |
+
+例外 (パスを受けるが絞らないもの、パスを受けずにファイルを読み書きするもの):
+
+- `forget_recent_profile(path)`: 最近の一覧から外すだけで、`path` は読み書きしない。
+- `restore_profile`・`activate_scene`・`duplicate_scene`・ホットキーの操作・`scene_model` などの受け手のコマンド: パスを受けず、
+  今のプロファイル (と最近のプロファイル) にあるパスだけを読む。
+- 操作 API (`docs/studio-api.md`) はパスを受けない。シーンは ID、着せ替えのモジュールは `dressup.list` が返す ID (今のプロファイルにある
+  モジュールだけ) で指す ([docs/studio.md](../../docs/studio.md#外部-api) の「着せ替え」)。
+- アプリが自分で決めた場所 (最近のプロファイル・操作 API の設定) は webview からパスを受けない。
+
 ### コマンドのエラー (T0835)
 
 コマンドは失敗すると、[ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md) の形 `{ code, args, message }` で reject する
@@ -188,6 +218,9 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | コード | 引数 | いつ |
 | --- | --- | --- |
 | `internal` | `reason` | 別のスレッドの処理が終わらなかった (パニックした)・スレッドを作れなかった。ビューアと同じコード |
+| `file.not_chosen` | `path` | 読もうとしたパスを利用者が選んでいない (上の「ファイルの読み書きの許可」)。ビューアと同じコード |
+| `file.not_chosen_for_save` | `path` | 書こうとしたパスを保存のダイアログで選んでいない。ビューアと同じコード |
+| `dialog.failed` | `reason` | OS のファイルのダイアログが失敗した。ビューアと同じコード |
 | `profile.io` | `path`・`reason` | プロファイルを読み書きできない |
 | `profile.too_large` | `path`・`size` (バイト) | プロファイルが大きすぎる (16 MiB まで) |
 | `profile.not_json` | `path`・`reason` | JSON でない |

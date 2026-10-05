@@ -51,6 +51,8 @@ pub const COMMANDS: &[&str] = &[
     "set_hotkeys",
     "suspend_hotkeys",
     "module_slot",
+    "open_file_dialog",
+    "save_file_dialog",
     "virtual_camera_state",
     "start_virtual_camera",
     "stop_virtual_camera",
@@ -146,6 +148,24 @@ mod tests {
             .map(|c| c.to_string())
             .collect();
         assert_eq!(control, expected);
+    }
+
+    #[test]
+    fn webview_cannot_open_file_dialogs_by_itself() {
+        // ダイアログはバックエンドが開き、選ばれたパスだけを読み書きできるようにする (src/access.rs。T0838)
+        for capability in [
+            include_str!("../capabilities/control.json"),
+            include_str!("../capabilities/output.json"),
+        ] {
+            let json: serde_json::Value = serde_json::from_str(capability).unwrap();
+            let permissions = json["permissions"].as_array().unwrap();
+            assert!(
+                permissions
+                    .iter()
+                    .filter_map(|p| p.as_str())
+                    .all(|p| !p.starts_with("dialog:"))
+            );
+        }
     }
 
     #[test]

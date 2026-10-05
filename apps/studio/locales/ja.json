@@ -28,6 +28,13 @@
   "errors": {
     "internal": "スタジオの中で処理が失敗しました: {{reason}}",
     "chooseAgain": "選び直す…",
+    "file": {
+      "not_chosen": "{{path}} は選ばれていないので読めません (ダイアログで選び直してください)。",
+      "not_chosen_for_save": "{{path}} は保存のダイアログで選ばれていないので書けません。"
+    },
+    "dialog": {
+      "failed": "ファイルのダイアログが失敗しました: {{reason}}"
+    },
     "profile": {
       "io": "{{path}} を読み書きできません: {{reason}}",
       "too_large": "{{path}} は大きすぎます ({{size}} バイト)。",

@@ -28,6 +28,13 @@
   "errors": {
     "internal": "Something went wrong in the studio: {{reason}}",
     "chooseAgain": "Choose again…",
+    "file": {
+      "not_chosen": "{{path}} cannot be read because it was not chosen. Choose it again in the dialog.",
+      "not_chosen_for_save": "{{path}} cannot be written because it was not chosen in the save dialog."
+    },
+    "dialog": {
+      "failed": "The file dialog failed: {{reason}}"
+    },
     "profile": {
       "io": "Could not read or write {{path}}: {{reason}}",
       "too_large": "{{path}} is too large ({{size}} bytes).",

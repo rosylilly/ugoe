@@ -13,13 +13,7 @@ import type {
   InputSettings,
   MotionSettings,
 } from "./inputs";
-import {
-  type Background,
-  type ProfileView,
-  type SceneSettings,
-  type Transform,
-  withExtension,
-} from "./profile";
+import type { Background, ProfileView, SceneSettings, Transform } from "./profile";
 import type { VirtualCameraProfile, VirtualCameraStatus } from "./virtualCamera";
 
 /** 操作ウィンドウに出すパラメータの定義 (lib.rs の `ParameterInfo`)。 */
@@ -161,9 +155,9 @@ export const FILE_EXTENSIONS: Record<FileKind, string[]> = {
 
 export interface StudioHost {
   // --- 操作ウィンドウ ---
-  /** OS のダイアログでファイルを選ぶ。やめたら `null`。 */
+  /** OS のダイアログでファイルを選ぶ。やめたら `null`。選んだパスはコマンドが読める (src-tauri/src/access.rs)。 */
   pickFile(kind: FileKind, filterName: string): Promise<string | null>;
-  /** OS のダイアログで保存先を選ぶ (プロファイル)。拡張子 `.json` が無ければ付ける。やめたら `null`。 */
+  /** OS のダイアログで保存先を選ぶ (プロファイル)。拡張子 `.json` が無ければ付ける。やめたら `null`。選んだパスは `saveProfile` で 1 回だけ書ける。 */
   pickSavePath(filterName: string, defaultName: string): Promise<string | null>;
   // プロファイル (コマンドはどれも、失敗すると commandMessage.ts の `CommandMessage` を投げる)
   restoreProfile(): Promise<void>;
@@ -282,24 +276,11 @@ async function tauriHost(): Promise<StudioHost> {
     await invoke(command, { channel });
   }
   return {
-    async pickFile(kind, filterName) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const path = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: filterName, extensions: FILE_EXTENSIONS[kind] }],
-      });
-      return typeof path === "string" ? path : null;
-    },
-    async pickSavePath(filterName, defaultName) {
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const path = await save({
-        defaultPath: defaultName,
-        filters: [{ name: filterName, extensions: ["json"] }],
-      });
-      // Linux のダイアログはフィルタの拡張子を付けずに返すことがある。
-      return path && withExtension(path, "json");
-    },
+    // ダイアログはバックエンドが開き、選ばれたパスだけをコマンドが読み書きできるようにする (src-tauri/src/access.rs。T0838)
+    pickFile: (kind, filterName) =>
+      invoke("open_file_dialog", { filterName, extensions: FILE_EXTENSIONS[kind] }),
+    pickSavePath: (filterName, defaultName) =>
+      invoke("save_file_dialog", { filterName, defaultName }),
     restoreProfile: () => invoke("restore_profile"),
     newProfile: () => invoke("new_profile"),
     openProfile: (path) => invoke("open_profile", { path }),

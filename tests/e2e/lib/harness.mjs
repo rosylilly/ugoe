@@ -24,6 +24,8 @@ function env(name) {
 
 export const out = () => env("E2E_OUT");
 export const work = () => env("E2E_WORK");
+/** アプリの設定の場所 (`XDG_CONFIG_HOME`)。起動の前に設定を置くときに使う。 */
+export const configHome = () => env("E2E_CONFIG_HOME");
 
 /**
  * ページの console と例外を `window.__E2E_LOG__` に、CSP が止めたものを `window.__E2E_CSP__` に溜める (起動の後に入れる)。

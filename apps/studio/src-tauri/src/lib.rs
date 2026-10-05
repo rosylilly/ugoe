@@ -16,6 +16,7 @@
 //!
 //! 出力ウィンドウとブラウザソースの描画はしない (出力ウィンドウの WebView の wasm が受け手として描く)。
 
+mod access;
 // コマンドの許可の表 (build.rs が読む)。ここではその検査だけを行う (T0820)。
 #[cfg(test)]
 mod acl;
@@ -46,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use tauri::webview::{PermissionKind, PermissionResponse};
 use tauri::{AppHandle, Manager, PhysicalSize, WebviewWindow, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::animation::{AnimationError, AnimationView};
@@ -276,6 +278,8 @@ struct Studio {
     sources: api::source::Sources,
     /// `dressup.list` が読んだ付けていないモジュールの概要 (T0833)。ほかのロックを握らずに取る。
     module_summaries: Mutex<api::ModuleSummaries>,
+    /// webview に読み書きを許したパス (T0838)。舞台のロックを握ったまま取ってよい (ほかのロックを握らない)。
+    files: access::FileAccess,
 }
 
 /// 登録しているホットキー。
@@ -318,6 +322,11 @@ struct CameraThread {
 }
 
 impl Studio {
+    /// webview から受けたパスを読んでよいか (`access::FileAccess::check_readable`)。
+    fn check_readable(&self, path: &Path) -> Result<(), CommandError> {
+        self.files.check_readable(path, &lock(&self.stage))
+    }
+
     fn json(value: &impl Serialize) -> Option<InvokeResponseBody> {
         serde_json::to_string(value)
             .ok()
@@ -827,11 +836,13 @@ async fn new_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), Comman
 }
 
 /// プロファイルを開き、最後に使ったシーンにする。シーンを出せなくてもプロファイルは開く (エラーは返す)。
+/// 開けるのは、開くダイアログで選んだパスと最近のプロファイル (`access::FileAccess`)。
 #[tauri::command]
 async fn open_profile(
     studio: tauri::State<'_, Arc<Studio>>,
     path: PathBuf,
 ) -> Result<(), CommandError> {
+    studio.check_readable(&path)?;
     blocking(&studio, move |studio| {
         studio.restored.store(true, Ordering::SeqCst);
         open_profile_at(studio, &path)
@@ -840,12 +851,19 @@ async fn open_profile(
 }
 
 /// 保存する。`path` を省くと今の保存先 (無ければ何もせず `null`)。保存先を返す。
+/// `path` は `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
 #[tauri::command]
-fn save_profile(
+async fn save_profile(
     studio: tauri::State<'_, Arc<Studio>>,
     path: Option<PathBuf>,
 ) -> Result<Option<PathBuf>, CommandError> {
-    Ok(studio.with_stage(|stage, _| stage.save_profile(path.as_deref()))?)
+    if let Some(path) = &path {
+        studio.files.take_writable(path)?;
+    }
+    blocking(&studio, move |studio| {
+        Ok(studio.with_stage(|stage, _| stage.save_profile(path.as_deref()))?)
+    })
+    .await?
 }
 
 /// 最近のプロファイルの一覧から外す。
@@ -887,11 +905,13 @@ fn remove_scene(studio: tauri::State<'_, Arc<Studio>>, id: String) -> Result<(),
 }
 
 /// シーンの設定を置き換える。出しているシーンなら出し直す (出せなければ元に戻してエラー)。
+/// シーンが指すファイルは、開くダイアログで選んだものか今のプロファイルにあるものだけ (`access::FileAccess`)。
 #[tauri::command]
 async fn update_scene(
     studio: tauri::State<'_, Arc<Studio>>,
     scene: SceneSettings,
 ) -> Result<(), CommandError> {
+    studio.files.check_scene(&scene, &lock(&studio.stage))?;
     blocking(&studio, |studio| {
         Ok(studio.switch_scene(|stage, conductor| stage.begin_update_scene(scene, conductor))?)
     })
@@ -1136,10 +1156,16 @@ fn set_input_settings(studio: tauri::State<'_, Arc<Studio>>, settings: InputSett
     studio.with_stage(|stage, _| stage.set_input_settings(settings));
 }
 
-/// ホットキーの割り当て (プロファイルに持ち、登録し直す)。
+/// ホットキーの割り当て (プロファイルに持ち、登録し直す)。着せ替えのモジュールは、開くダイアログで選んだものか
+/// 今のプロファイルにあるものだけ (`access::FileAccess`)。
 #[tauri::command]
-fn set_hotkeys(studio: tauri::State<'_, Arc<Studio>>, hotkeys: Vec<Hotkey>) {
+fn set_hotkeys(
+    studio: tauri::State<'_, Arc<Studio>>,
+    hotkeys: Vec<Hotkey>,
+) -> Result<(), CommandError> {
+    studio.files.check_hotkeys(&hotkeys, &lock(&studio.stage))?;
     studio.with_stage(|stage, _| stage.set_hotkeys(hotkeys));
+    Ok(())
 }
 
 /// 割り当ての画面でキーを押している間、ホットキーの登録を外す (押したキーが操作を行わないように)。
@@ -1156,10 +1182,95 @@ fn suspend_hotkeys(studio: tauri::State<'_, Arc<Studio>>, suspended: bool) {
     studio.sync_hotkeys(&list, true);
 }
 
-/// モジュール (`.ugoemod`) が付くスロットの名前 (ホットキーの着せ替えの割り当て)。
+/// モジュール (`.ugoemod`) が付くスロットの名前 (ホットキーの着せ替えの割り当て)。読めるのは、開くダイアログで選んだものか
+/// 今のプロファイルにあるものだけ (`access::FileAccess`)。
 #[tauri::command]
-async fn module_slot(path: PathBuf) -> Result<String, CommandError> {
+async fn module_slot(
+    studio: tauri::State<'_, Arc<Studio>>,
+    path: PathBuf,
+) -> Result<String, CommandError> {
+    studio.check_readable(&path)?;
     tauri::async_runtime::spawn_blocking(move || read_module_slot(&path)).await?
+}
+
+/// 開くダイアログを開き、選ばれたファイルのパスを返す (取り消したら `null`)。選ばれたパスは読めるパスに加える
+/// (`access::FileAccess`)。拡張子のフィルタと名前は画面が渡す。ダイアログをバックエンドで開くのは、利用者が選んだパスを
+/// バックエンドが知るため (T0838。ビューアの `open_file_dialog` と同じ。複数は選ばない)。
+#[tauri::command]
+async fn open_file_dialog(
+    window: WebviewWindow,
+    studio: tauri::State<'_, Arc<Studio>>,
+    filter_name: String,
+    extensions: Vec<String>,
+) -> Result<Option<String>, CommandError> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        let dialog = window.dialog().file().add_filter(filter_name, &extensions);
+        // tauri-plugin-dialog の `open` と同じく、親のウィンドウは Windows と macOS でだけ付ける。
+        #[cfg(any(windows, target_os = "macos"))]
+        let dialog = dialog.set_parent(&window);
+        dialog
+            .blocking_pick_file()
+            .map(|p| p.into_path().map_err(CommandError::dialog_failed))
+            .transpose()
+    })
+    .await??;
+    let Some(path) = picked.map(path_string) else {
+        return Ok(None);
+    };
+    studio.files.grant_readable([PathBuf::from(&path)]);
+    Ok(Some(path))
+}
+
+/// プロファイルの保存のダイアログを開き、選ばれたパスを返す (取り消したら `null`)。拡張子 `.json` が無ければ付ける
+/// (Linux のダイアログはフィルタの拡張子を付けずに返すことがある。T0011)。返したパスは `save_profile` で 1 回だけ書ける。
+#[tauri::command]
+async fn save_file_dialog(
+    window: WebviewWindow,
+    studio: tauri::State<'_, Arc<Studio>>,
+    filter_name: String,
+    default_name: String,
+) -> Result<Option<String>, CommandError> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        window
+            .dialog()
+            .file()
+            .set_file_name(default_name)
+            .add_filter(filter_name, &[PROFILE_EXTENSION])
+            .set_parent(&window)
+            .blocking_save_file()
+            .map(|p| p.into_path().map_err(CommandError::dialog_failed))
+            .transpose()
+    })
+    .await??;
+    let Some(path) = picked.map(|p| path_string(with_extension(p, PROFILE_EXTENSION))) else {
+        return Ok(None);
+    };
+    studio.files.grant_writable(PathBuf::from(&path));
+    Ok(Some(path))
+}
+
+/// プロファイルの拡張子。
+const PROFILE_EXTENSION: &str = "json";
+
+/// 拡張子 (大文字小文字は区別しない) が無ければ付け足す。
+fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case(extension))
+    {
+        return path;
+    }
+    let mut name = path.into_os_string();
+    name.push(".");
+    name.push(extension);
+    PathBuf::from(name)
+}
+
+/// 画面に渡すパスの文字列。画面はこの文字列のまま返してくるので、許したパスもこの文字列から作る。
+fn path_string(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 fn read_module_slot(path: &Path) -> Result<String, CommandError> {
@@ -1554,6 +1665,8 @@ pub fn run() {
             set_hotkeys,
             suspend_hotkeys,
             module_slot,
+            open_file_dialog,
+            save_file_dialog,
             virtual_camera_state,
             start_virtual_camera,
             stop_virtual_camera,
@@ -1580,6 +1693,22 @@ mod tests {
     use super::*;
 
     /// メインのスレッドの外で行った処理の結果を返す。中でパニックしたら、`internal` のコードのエラーにする (T0819)。
+    #[test]
+    fn adds_the_extension_the_save_dialog_left_out() {
+        assert_eq!(
+            with_extension(PathBuf::from("/a/stream"), "json"),
+            PathBuf::from("/a/stream.json")
+        );
+        assert_eq!(
+            with_extension(PathBuf::from("/a/stream.JSON"), "json"),
+            PathBuf::from("/a/stream.JSON")
+        );
+        assert_eq!(
+            with_extension(PathBuf::from("/a/stream.ugoe"), "json"),
+            PathBuf::from("/a/stream.ugoe.json")
+        );
+    }
+
     #[test]
     fn blocking_work_returns_its_result_or_an_internal_error() {
         let studio = Arc::new(Studio::default());

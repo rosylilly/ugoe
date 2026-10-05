@@ -118,6 +118,34 @@ impl CommandError {
         .arg("fps", config.fps)
     }
 
+    /// 読もうとしたパスを、利用者が選んでいない (ダイアログで選んだ・今のプロファイルにある・最近のプロファイルのどれでもない。
+    /// T0838)。ビューアと同じコード。
+    pub(crate) fn not_chosen(path: &Path) -> Self {
+        Self::new(
+            "file.not_chosen",
+            format!("{}: the file was not chosen by the user", path.display()),
+        )
+        .path(path)
+    }
+
+    /// 書こうとしたパスを、保存のダイアログで選んでいない (選んだパスにも 1 回しか書けない。T0838)。ビューアと同じコード。
+    pub(crate) fn not_chosen_for_save(path: &Path) -> Self {
+        Self::new(
+            "file.not_chosen_for_save",
+            format!(
+                "{}: the path was not chosen in the save dialog",
+                path.display()
+            ),
+        )
+        .path(path)
+    }
+
+    /// OS のファイルのダイアログが失敗した (`reason` は英語の文)。ビューアと同じコード。
+    pub(crate) fn dialog_failed(reason: impl std::fmt::Display) -> Self {
+        let reason = reason.to_string();
+        Self::new("dialog.failed", format!("the dialog failed: {reason}")).arg("reason", reason)
+    }
+
     /// 操作 API のポートが 1024 未満。
     pub(crate) fn unsupported_api_port(port: u16, min: u16) -> Self {
         Self::new("api.unsupported_port", format!("unsupported port: {port}"))
@@ -358,6 +386,9 @@ mod tests {
             CommandError::too_many_api_clients(64),
             CommandError::random_failed("x"),
             CommandError::motion_rejected(),
+            CommandError::not_chosen(&path),
+            CommandError::not_chosen_for_save(&path),
+            CommandError::dialog_failed("x"),
             ProfileError::Io {
                 path: path.clone(),
                 message: "x".into(),

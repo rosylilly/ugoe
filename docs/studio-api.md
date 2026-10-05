@@ -86,6 +86,9 @@ Calling a `control` method with `read` permission fails with `-32001`.
   connect.
   The browser source page is such a page, but it never calls `/api`; it only reads frames from its own path.
 - Tokens and keys are 256-bit random values and are compared in constant time.
+- No method takes a file path. Scenes are named by ID and dress-up modules by the IDs `dressup.list` returns, which
+  only cover modules already in the open profile. A client cannot make the studio read a file the user did not
+  choose in the studio.
 - Parameter overrides expire (see `parameter.set`), so a crashed client cannot leave the avatar stuck.
 
 ## Messages

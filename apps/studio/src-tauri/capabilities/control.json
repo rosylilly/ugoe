@@ -1,14 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "control",
-  "description": "操作ウィンドウの権限 (モデル・モジュール・背景・プロファイルのファイルを選ぶ・プロファイルの保存先を選ぶ・OS の言語を読む。アプリのコマンドは出力ウィンドウだけのもの (src/acl.rs の OUTPUT_COMMANDS) を除いてすべて)",
+  "description": "操作ウィンドウの権限 (OS の言語を読む。ファイルのダイアログはバックエンドが開く (open_file_dialog・save_file_dialog、T0838)。アプリのコマンドは出力ウィンドウだけのもの (src/acl.rs の OUTPUT_COMMANDS) を除いてすべて)",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:allow-open",
-    "dialog:allow-save",
     "os:allow-locale",
     "allow-restore-profile",
     "allow-new-profile",
@@ -48,6 +46,8 @@
     "allow-set-hotkeys",
     "allow-suspend-hotkeys",
     "allow-module-slot",
+    "allow-open-file-dialog",
+    "allow-save-file-dialog",
     "allow-virtual-camera-state",
     "allow-start-virtual-camera",
     "allow-stop-virtual-camera",
