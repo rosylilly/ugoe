@@ -120,9 +120,18 @@ pub(crate) fn modules(session: &ProjectSession) -> Vec<PreviewModule> {
 
 /// 保存先を `project` (`.ugoeproj`) に替える前に、一覧を `project` のフォルダーからの相対パスで書き直す (Save As)。
 pub(crate) fn move_to(session: &mut ProjectSession, project: &Path) {
+    let (key, value) = moved(session, project);
+    session.set_editor_value(key, value);
+}
+
+/// 保存先を `project` に替えたときの一覧 (`editor` の項目の名前と値)。`session` は変えない (Save As の写しを作るため。
+/// `ProjectSession::begin_save_as`)。
+pub(crate) fn moved(
+    session: &ProjectSession,
+    project: &Path,
+) -> (&'static str, Option<serde_json::Value>) {
     let modules = modules(session);
-    let value = write_modules(&modules, project.parent());
-    session.set_editor_value(DRESS_UP_KEY, value);
+    (DRESS_UP_KEY, write_modules(&modules, project.parent()))
 }
 
 /// `session` に一覧を残す (パスは絶対パス。保存先のフォルダーの中なら相対パスで書く)。

@@ -1368,7 +1368,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `save_project(overwrite?)` | 開いた (前回保存した) 場所に保存する。保存先がなければエラー。開いた後で外で書き換えられていたら、`overwrite` が真でない限り書かずにエラー ([外での書き換え](#外での書き換え)) |
 | `reload_project` | 開いているプロジェクトを保存先から開き直す。未保存の変更は破棄する (確認はフロントエンドで行う) |
 | `check_external_change` | 開いた (最後に保存した) 後で保存先のファイルが外で変わったか (`ExternalChange \| null`) |
-| `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする |
+| `save_project_as(path)` | 別の場所に保存し、以後の保存先にする。拡張子 `.ugoeproj` がなければ付け、名前をディレクトリ名にする。ファイルはロックの外で書き、失敗したら名前と保存先は元のまま ([外での書き換え](#外での書き換え)) |
 | `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
 | `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
 | `get_normal_map_group(texture)` / `get_normal_map_groups` | 1 枚のテクスチャのまとまりと既定の設定 / すべての対象のまとまりの一覧 (AI タブ。[法線マップの提案](#法線マップの提案))。`NormalMapGroupView` (`with_normal_map` はすでに法線マップを持つテクスチャ)。`src-tauri/src/lighting.rs` |
@@ -1436,13 +1436,16 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - **比べ方:** 開いた (保存した) ときの指紋を `ProjectSession` が覚え、`ProjectFingerprint::reread` で取り直して比べる。中身が同じなら更新日時が変わっても
   変更としない (`touch`・同じ内容の書き直し)。JSON は毎回読んでハッシュし、PNG は大きさと更新日時が前と同じなら前のハッシュを使い回す
   (大きな画像を 5 秒ごとに読まないため。大きさも日時も同じまま PNG の中身だけを変えられると気づかない)。ハッシュは `std` の `DefaultHasher` で、ファイルには残さない。
-- **自分の保存を外の変更と取り違えない:** 保存の直後に指紋を取り直す (`ProjectSession::save_to`)。確かめる処理 (`check_external_change`)・開き直し・保存は
+- **自分の保存を外の変更と取り違えない:** 保存の直後に指紋を取り直す (`PendingSave::write`)。確かめる処理 (`check_external_change`)・開き直し・保存は
   保存の順番の印 (`AppState::saving`) を取ってから行うので、書きかけのファイルを外の変更として見ない。
 - **保存はロックの外で書く (T0025):** `save_project` とブリッジの `save_project` は、ドキュメントのロックの中では写しを取るだけで
   (`ProjectSession::begin_save`・`Document::begin_save`)、ファイル (と `.ugoe`) はロックの外で書き、書けたらロックを取り直して書いた状態に保存の印を付ける
   (`Document::mark_saved_state`)。書いている間も画面とほかのツールは待たない。書いている間の編集・設定の変更は未保存のまま残り、Undo で保存した状態に
-  戻れば変更なしになる。書いている間にプロジェクトを替えたら (開く・新規)、新しいプロジェクトには印を付けない。`save_project_as` は名前と保存先を
-  変えるので、ロックを持ったまま書く。
+  戻れば変更なしになる。書いている間にプロジェクトを替えたら (開く・新規)、新しいプロジェクトには印を付けない。
+- **「名前を付けて保存」もロックの外で書く (T1620):** `save_project_as` は、名前 (ディレクトリ名) と着せ替えの一覧 (新しい保存先からの相対パス) を
+  付け替えたメタ情報を写しの側だけで作り (`ProjectSession::begin_save_as`)、ロックの外で書く。書けたらロックを取り直し、名前と一覧をセッションでも
+  付け替えてから保存先・指紋・保存の印を戻す (`WrittenSave::finish`)。書いている間の編集と設定の変更は残り (一覧の変更も新しい保存先から指し直す)、
+  保存の印は書いた版にだけ付く。書けなければセッションは変えないので、名前・保存先・保存済みの印は元のまま。
   開くときの指紋は読み込みの **前** に取る (`Project::load_tracked`)。読み込みの途中で書き換えられたら、次に確かめたときに変更として見える (見逃すより開き直しを促す)。
 - **応じ方 (`src/lib/externalChange.ts`、Vitest):** 変わっていれば `ExternalChangeDialog` を出す。未保存の変更がなければ「Reload」・「Later」、
   未保存の変更がある (または保存しようとした) ときは「Reload and discard my changes」・「Overwrite with my version」・「Save As…」・「Later」、
@@ -1857,7 +1860,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
     時間切れまで待つ (拒否・時間切れはツールのエラー)。確認は `ApprovalRequest` (操作・最後に握手したクライアントの名前・提案の番号と題名・
     外すコマンド・書き出し先) を Tauri のイベントで画面に送る。確認の間も錠は握らないので、利用者は編集を続けられる (その場合は提案が
     古いというエラーになり、承認した差分と違う結果にしない)。**画面から「Adopt」するときは確認しない** (利用者自身の操作)。
-  - **保存:** エディタの保存と同じ `ProjectSession::save_to` (指紋を取り直すので、自分の保存を外の変更と取り違えない)。書き出し先 (`bundle`)
+  - **保存:** エディタの保存と同じ `ProjectSession::begin_save` (ロックの外で書き、指紋を取り直すので、自分の保存を外の変更と取り違えない)。書き出し先 (`bundle`)
     はプロジェクトの書き出しの設定 (アトラス化) で書く。`ugoe-mcp` と同じく、`.ugoe` は先に一時ファイルへ書き、プロジェクトを保存できて
     から置き換える (どこで失敗しても前の `.ugoe` は残る)。開いた後で外で書き換えられていたら、エージェントの保存は断る (利用者が
     [外での書き換え](#外での書き換え)のダイアログで決める)。

@@ -121,14 +121,9 @@ impl ProjectSession {
 
     /// `editor` の項目 `key` を `value` にする (`None` なら消す)。変われば未保存の印を付ける。
     pub(crate) fn set_editor_value(&mut self, key: &str, value: Option<serde_json::Value>) {
-        if self.meta.editor.get(key) == value.as_ref() {
-            return;
+        if set_editor_entry(&mut self.meta, key, value) {
+            self.meta_modified = true;
         }
-        match value {
-            Some(value) => self.meta.editor.insert(key.to_owned(), value),
-            None => self.meta.editor.remove(key),
-        };
-        self.meta_modified = true;
     }
 
     /// エディタにつないだエージェント (`crate::mcp`) に貸す、メタ情報と提案の置き場。
@@ -208,7 +203,8 @@ impl ProjectSession {
     }
 
     /// `dir` に保存し、保存先と指紋を覚え直す (自分の保存を外の変更と取り違えないよう、書いた直後に取る)。
-    /// ロックを持ったまま書く。ロックの外で書くなら [`ProjectSession::begin_save`]。
+    /// ロックを持ったまま書く (テストの準備用。コマンドはロックの外で書く [`ProjectSession::begin_save`] を使う)。
+    #[cfg(test)]
     pub(crate) fn save_to(&mut self, document: &mut Document, dir: PathBuf) -> IpcResult<()> {
         self.begin_save(document, dir)
             .write()?
@@ -221,6 +217,32 @@ impl ProjectSession {
     ///
     /// 同じプロジェクトへの書き込みが重ならないよう、写しを取る前から印を付け終えるまで [`AppState::saving`] を持つこと。
     pub(crate) fn begin_save(&self, document: &mut Document, dir: PathBuf) -> PendingSave {
+        self.pending_save(document, dir, self.meta.clone(), false)
+    }
+
+    /// 別の場所 `dir` への保存 (Save As) の写しを取る (ロックの中)。名前を `dir` のディレクトリ名にし、着せ替えの一覧を
+    /// 新しい保存先から指し直したメタ情報は写しの側だけで作る。セッションは書けるまで変えないので、書けなければ名前も保存先も
+    /// 元のまま。書けたら [`WrittenSave::finish`] が同じ付け替えをセッションにも行う。
+    ///
+    /// [`ProjectSession::begin_save`] と同じく、写しを取る前から印を付け終えるまで [`AppState::saving`] を持つこと。
+    pub(crate) fn begin_save_as(&self, document: &mut Document, dir: PathBuf) -> PendingSave {
+        let mut meta = self.meta.clone();
+        if let Some(name) = stem(&dir) {
+            meta.name = name;
+        }
+        // 前の保存先からの相対パスで残したものを、新しい保存先から指し直す
+        let (key, value) = crate::dress_up::moved(self, &dir);
+        set_editor_entry(&mut meta, key, value);
+        self.pending_save(document, dir, meta, true)
+    }
+
+    fn pending_save(
+        &self,
+        document: &mut Document,
+        dir: PathBuf,
+        meta: ProjectMeta,
+        moved: bool,
+    ) -> PendingSave {
         // PNG のハッシュを使い回すため、同じ場所なら前の指紋から取り直す
         let disk = match (&self.path, &self.disk) {
             (Some(path), Some(disk)) if *path == dir => Some(disk.clone()),
@@ -229,12 +251,25 @@ impl ProjectSession {
         PendingSave {
             session: self.id,
             state: document.begin_save(),
-            meta: self.meta.clone(),
-            project: self.to_project(document),
+            project: Project::from_document(meta.clone(), document),
+            meta,
             dir,
             disk,
+            moved,
         }
     }
+}
+
+/// `meta` の `editor` の項目 `key` を `value` にする (`None` なら消す)。変わったら真。
+fn set_editor_entry(meta: &mut ProjectMeta, key: &str, value: Option<serde_json::Value>) -> bool {
+    if meta.editor.get(key) == value.as_ref() {
+        return false;
+    }
+    match value {
+        Some(value) => meta.editor.insert(key.to_owned(), value),
+        None => meta.editor.remove(key),
+    };
+    true
 }
 
 /// ロックの外で書く保存の写し ([`ProjectSession::begin_save`])。
@@ -249,6 +284,8 @@ pub(crate) struct PendingSave {
     dir: PathBuf,
     /// 同じ場所への保存なら、前の指紋。
     disk: Option<ProjectFingerprint>,
+    /// 別の場所への保存 (Save As)。書けたら名前と着せ替えの一覧をセッションでも付け替える。
+    moved: bool,
 }
 
 impl PendingSave {
@@ -274,6 +311,7 @@ impl PendingSave {
             meta: self.meta,
             dir: self.dir,
             disk,
+            moved: self.moved,
         })
     }
 }
@@ -285,14 +323,21 @@ pub(crate) struct WrittenSave {
     meta: ProjectMeta,
     dir: PathBuf,
     disk: Option<ProjectFingerprint>,
+    moved: bool,
 }
 
 impl WrittenSave {
     /// 保存先と指紋を覚え直し、書いた状態を保存済みにする (ロックを取り直して呼ぶ)。書いている間にプロジェクトを
     /// 替えていれば何もしない。書いている間に変えたもの (ドキュメント・メタ情報) は未保存の印が残る。
+    /// Save As なら、書いている間に変えたメタ情報を残したまま名前と着せ替えの一覧を新しい保存先に合わせる
+    /// (保存先を替える前に。一覧は今の保存先からの相対パスで残っている)。
     pub(crate) fn finish(self, session: &mut ProjectSession, document: &mut Document) {
         if session.id != self.session {
             return;
+        }
+        if self.moved {
+            session.meta.name.clone_from(&self.meta.name);
+            crate::dress_up::move_to(session, &self.dir);
         }
         session.disk = self.disk;
         session.path = Some(self.dir);
@@ -552,33 +597,33 @@ fn save_current(state: &AppState, overwrite: bool) -> IpcResult<ProjectStatus> {
 
 /// 別の場所に保存し、以後の保存先をそこにする。拡張子 `.ugoeproj` がなければ付ける。
 /// プロジェクト名はディレクトリ名 (拡張子を除く) にする。`path` は `save_file_dialog` で利用者が選んだもの (1 回だけ書ける)。
+/// ロックの中では写しを取るだけで、ファイルはロックの外で書く (`ProjectSession::begin_save_as`)。
 #[tauri::command]
 pub async fn save_project_as(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
     blocking(app, move |state| {
         crate::access::writable_path(state, &path)?;
         let dir = project_dir(&path)?;
-        // 名前と保存先を変えるので、ロックを持ったまま書く (ほかの保存とは重ねない)
-        let _saving = lock_saving(state);
-        let (mut document, mut session) = lock_both(state)?;
-        save_as(&mut document, &mut session, dir)?;
-        Ok(status(&session, &document))
+        save_as(state, dir, PendingSave::write)
     })
     .await
 }
 
-/// [`save_project_as`] の中身 (テストから呼ぶ)。失敗したらメタ情報は元のまま。
-fn save_as(document: &mut Document, session: &mut ProjectSession, dir: PathBuf) -> IpcResult<()> {
-    let (old_meta, old_modified) = (session.meta.clone(), session.meta_modified);
-    if let Some(name) = stem(&dir) {
-        session.meta.name = name;
-    }
-    // 前の保存先からの相対パスで残したものを、新しい保存先から指し直す
-    crate::dress_up::move_to(session, &dir);
-    if let Err(e) = session.save_to(document, dir) {
-        (session.meta, session.meta_modified) = (old_meta, old_modified);
-        return Err(e);
-    }
-    Ok(())
+/// [`save_project_as`] の中身 (テストから呼ぶ)。`write` はロックの外で呼ぶ書き込み (テストでは書く間に編集を挟む)。
+/// 失敗したら名前と保存先は元のまま。
+fn save_as(
+    state: &AppState,
+    dir: PathBuf,
+    write: impl FnOnce(PendingSave) -> IpcResult<WrittenSave>,
+) -> IpcResult<ProjectStatus> {
+    let _saving = lock_saving(state);
+    let pending = {
+        let (mut document, session) = lock_both(state)?;
+        session.begin_save_as(&mut document, dir)
+    };
+    let written = write(pending)?;
+    let (mut document, mut session) = lock_both(state)?;
+    written.finish(&mut session, &mut document);
+    Ok(status(&session, &document))
 }
 
 /// 今のドキュメントを `.ugoe` バンドルのバイト列で返す (ビューポートがテクスチャ付きで表示するため)。
@@ -856,27 +901,100 @@ mod tests {
     fn save_as_keeps_the_dress_up_modules() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("save-as");
-        let (mut session, mut document) = initial_state();
-        save_as(&mut document, &mut session, root.join("work/a.ugoeproj")).unwrap();
+        let state = crate::ai::tests::state(None);
+        save_as(&state, root.join("work/a.ugoeproj"), PendingSave::write).unwrap();
         let hair = root.join("work/mods/hair.ugoemod").display().to_string();
         let modules = vec![crate::dress_up::PreviewModule {
             path: hair,
             attached: true,
         }];
-        crate::dress_up::set_modules(&mut session, &modules);
-        save_as(
-            &mut document,
-            &mut session,
+        crate::dress_up::set_modules(&mut state.project.lock().unwrap(), &modules);
+        let saved = save_as(
+            &state,
             root.join("elsewhere/deeper/b.ugoeproj"),
+            PendingSave::write,
         )
         .unwrap();
+        assert_eq!(saved.name, "b");
+        assert!(!saved.modified);
+        let session = state.project.lock().unwrap();
         assert_eq!(crate::dress_up::modules(&session), modules);
-        assert_eq!(status(&session, &document).name, "b");
         // 開き直しても同じ
         let (project, disk) = Project::load_tracked(session.path().unwrap()).unwrap();
         let path = session.path().unwrap().to_path_buf();
         let (reopened, _) = ProjectSession::from_project(project, Some((path, disk)));
         assert_eq!(crate::dress_up::modules(&reopened), modules);
+    }
+
+    /// Save As もロックの外で書く: 書いている間もほかのコマンドが進み、その編集は未保存のまま残る。保存の印は書いた版に
+    /// だけ付き、名前・保存先・着せ替えの一覧は新しい保存先に合わせる (T1620)。
+    #[test]
+    fn save_as_writes_outside_the_lock_and_keeps_changes_made_while_writing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("b.ugoeproj");
+        let hair = tmp.path().join("mods/hair.ugoemod").display().to_string();
+        let modules = vec![crate::dress_up::PreviewModule {
+            path: hair,
+            attached: true,
+        }];
+        let state = crate::ai::tests::state(None);
+        let saved = save_as(&state, dir.clone(), |pending| {
+            // ロックを握っていないので、ほかのコマンドが進める
+            let (mut document, mut session) = lock_both(&state).unwrap();
+            document
+                .apply(ugoe_editor_core::Command::AddParameter {
+                    parameter: ugoe_model::fixtures::single_quad().parameters[0].clone(),
+                })
+                .unwrap();
+            crate::dress_up::set_modules(&mut session, &modules);
+            drop((document, session));
+            pending.write()
+        })
+        .unwrap();
+        assert_eq!(saved.name, "b");
+        assert_eq!(saved.path, Some(dir.display().to_string()));
+        assert!(saved.modified);
+
+        let written = Project::load(&dir).unwrap();
+        assert_eq!(written.meta.name, "b");
+        assert!(written.model.parameters.is_empty());
+        assert_eq!(written.meta.editor.get("dress_up"), None);
+
+        let (mut document, session) = lock_both(&state).unwrap();
+        // 書いている間に足した一覧も、新しい保存先から同じファイルを指す
+        assert_eq!(crate::dress_up::modules(&session), modules);
+        assert_eq!(session.external_change().unwrap(), None);
+        // ドキュメントの編集を戻せば、書いた版 (保存済み) に戻る (一覧の変更はまだ未保存)
+        assert!(document.undo());
+        assert!(!document.is_modified() && session.meta_modified);
+    }
+
+    /// Save As に失敗したら、名前・保存先・保存済みの印は元のまま (T1620)。
+    #[test]
+    fn failed_save_as_keeps_the_path_and_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = crate::ai::tests::state(None);
+        let first = tmp.path().join("a.ugoeproj");
+        save_as(&state, first.clone(), PendingSave::write).unwrap();
+
+        // 親がファイルなので書けない
+        let file = tmp.path().join("file");
+        std::fs::write(&file, b"").unwrap();
+        assert!(save_as(&state, file.join("b.ugoeproj"), PendingSave::write).is_err());
+        // 書き込みの失敗 (書く途中で失敗したとき) も同じ
+        assert!(
+            save_as(&state, tmp.path().join("c.ugoeproj"), |_| {
+                Err(EditorError::EmptyPath.into())
+            })
+            .is_err()
+        );
+
+        let (document, session) = lock_both(&state).unwrap();
+        let now = status(&session, &document);
+        assert_eq!(now.name, "a");
+        assert_eq!(now.path, Some(first.display().to_string()));
+        assert!(!now.modified);
+        assert_eq!(session.external_change().unwrap(), None);
     }
 
     fn character_psd() -> Vec<u8> {
