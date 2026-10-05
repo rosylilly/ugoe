@@ -1,11 +1,11 @@
 ---
 id: T1622
 title: "エディタ: 「Open base project」で本体を直した後、モジュールに戻る道を作る"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1622
 ---
 
 # T1622: エディタ: 「Open base project」で本体を直した後、モジュールに戻る道を作る
