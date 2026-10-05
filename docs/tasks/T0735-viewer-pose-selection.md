@@ -1,11 +1,11 @@
 ---
 id: T0735
 title: "ビューア: ポーズの要素を選ぶ画面"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, docs]
 depends_on: [T0734]
-assignee:
+assignee: claude-worker-T0735
 ---
 
 # T0735: ビューア: ポーズの要素を選ぶ画面
