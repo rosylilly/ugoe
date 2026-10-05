@@ -129,7 +129,10 @@
   },
   "viewport": {
     "aria": "モデルの表示",
-    "empty": ".ugoe か model.json をドロップするか、「開く」で選んでください",
+    "emptyTitle": "モデルを開いていません",
+    "empty": "モデル (.ugoe・model.json) をここにドロップするか、開くファイルを選んでください。サンプルでも試せます。",
+    "open": "ファイルを選ぶ…",
+    "samples": "サンプルを開く",
     "starting": "準備しています…",
     "gpuWaiting": "GPU の復元を待っています…",
     "restart": "作り直す"
@@ -154,9 +157,10 @@
     },
     "empty": "このモデルにはパラメータがありません",
     "noModel": "モデルを開くと表示されます",
+    "noMatch": "「{{query}}」に合うパラメータはありません",
     "filter": {
       "aria": "パラメータを絞り込む",
-      "placeholder": "絞り込み (名前・ID)"
+      "placeholder": "絞り込み (名前・ID・グループ)"
     },
     "showInternal": {
       "label_other": "中継用のパラメータも表示 ({{count}})",

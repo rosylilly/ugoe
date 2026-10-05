@@ -53,24 +53,32 @@ export function groupParameters(list: ParameterList, ungroupedName: string): Par
 }
 
 /**
- * スライダーの一覧に出す区切り。`query` (前後の空白を除いて空でなければ) を ID か名前に含むパラメータだけを残し、
- * `showInternal` が偽なら中継用のパラメータを隠す。空になった区切りは出さない。
+ * スライダーの一覧に出す区切り。`query` を空白で語に分け、どの語も ID・名前・区切りの名前のどれかに含む
+ * (大文字と小文字は区別しない) パラメータだけを残す (語が無ければすべて)。`showInternal` が偽なら中継用のパラメータを隠す。
+ * 空になった区切りは出さない。パラメータの多いモデルで、グループの名前と語の組み合わせで絞り込めるようにする (T0725)。
  */
 export function visibleSections(
   sections: readonly ParameterSection[],
   query: string,
   showInternal: boolean,
 ): ParameterSection[] {
-  const q = query.trim().toLowerCase();
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== "");
   return sections
-    .map((s) => ({
-      ...s,
-      parameters: s.parameters.filter(
-        (p) =>
-          (showInternal || !p.internal) &&
-          (q === "" || p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)),
-      ),
-    }))
+    .map((s) => {
+      const section = s.name.toLowerCase();
+      return {
+        ...s,
+        parameters: s.parameters.filter((p) => {
+          if (!showInternal && p.internal) return false;
+          const id = p.id.toLowerCase();
+          const name = p.name.toLowerCase();
+          return words.every((w) => id.includes(w) || name.includes(w) || section.includes(w));
+        }),
+      };
+    })
     .filter((s) => s.parameters.length > 0);
 }
 

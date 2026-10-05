@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 // モデルを描く領域 (Viewport.svelte) の GPU を失ったときの表示: 戻るのを待つ間は「GPU の復元を待っています」を出し、
 // 続けて失って諦めたら「作り直す」ボタンを出して Player.restart を呼ぶこと (T0938)。
+// 空の状態に呼び手の中身 (開く・サンプル) を出し、拡大・縮小の道具を重ね、操作できる部品を role="img" の中に入れないこと (T0725)。
 import { setLocale } from "@ugoe/i18n";
 import type { Player } from "@ugoe/player";
-import { flushSync, mount, unmount } from "svelte";
+import { createRawSnippet, flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Viewport from "./Viewport.svelte";
 
@@ -37,7 +38,14 @@ function setup() {
     transparent: false,
     modelName: "a.ugoe",
     usesLighting: false,
+    zoom: 1,
     resize() {},
+    zoomBy(factor: number) {
+      calls.push(`zoomBy ${factor}`);
+    },
+    fit() {
+      calls.push("fit");
+    },
     attach: async () => {},
     detach() {},
     restart: async () => {
@@ -46,7 +54,13 @@ function setup() {
   });
   const target = document.createElement("div");
   document.body.append(target);
-  const instance = mount(Viewport, { target, props: { player: player as unknown as Player } });
+  const empty = createRawSnippet(() => ({
+    render: () => '<div class="empty-content"><button type="button">開く</button></div>',
+  }));
+  const instance = mount(Viewport, {
+    target,
+    props: { player: player as unknown as Player, empty },
+  });
   cleanups.push(() => {
     unmount(instance);
     target.remove();
@@ -83,5 +97,27 @@ describe("Viewport", () => {
     expect(target.textContent).toContain("GPU を続けて失ったので");
     button?.click();
     expect(calls).toEqual(["restart"]);
+  });
+
+  it("shows the empty state from the caller and no view tools without a model", () => {
+    const { target, player } = setup();
+    player.status = "empty";
+    flushSync();
+    expect(target.querySelector(".empty-content button")?.textContent).toBe("開く");
+    expect(target.querySelector('[role="toolbar"]')).toBeNull();
+  });
+
+  it("overlays the view tools and keeps controls out of the picture", () => {
+    const { target, calls } = setup();
+    const toolbar = target.querySelector('[role="toolbar"]');
+    expect(toolbar).not.toBeNull();
+    const fit = toolbar?.querySelector<HTMLButtonElement>('button[aria-label="全体を表示"]');
+    fit?.click();
+    expect(calls).toContain("fit");
+    const picture = target.querySelector('[role="img"]');
+    expect(picture?.getAttribute("aria-label")).toBe("a.ugoe");
+    // 絵の名前を持つ要素は、操作できる部品を中に持たない (axe の nested-interactive)
+    expect(picture?.querySelector("button, [tabindex], input")).toBeNull();
+    expect(picture?.contains(toolbar ?? null)).toBe(false);
   });
 });

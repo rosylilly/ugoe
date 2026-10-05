@@ -310,12 +310,8 @@ function expressionOverlap(e: ExpressionInfo): string[] {
 </div>
 
 <style>
-  /* 縦が足りないときは、見出しが見える高さまで縮んで中を送る (パラメータの一覧の高さを残す)。 */
+  /* 高さは中身のまま (右の列の上の段 (App.svelte) がまとめて送る。T0725)。 */
   .motions {
-    flex: 0 1 auto;
-    min-height: calc(var(--ugoe-control-height) + var(--ugoe-space-3));
-    max-height: 40%;
-    overflow-y: auto;
     font-size: var(--ugoe-font-size-sm);
   }
   .motions :global(.ugoe-toggle),

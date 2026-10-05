@@ -137,7 +137,10 @@
   },
   "viewport": {
     "aria": "Model view",
-    "empty": "Drop a .ugoe or model.json here, or choose one with Open",
+    "emptyTitle": "No model is open",
+    "empty": "Drop a model (.ugoe, model.json) here or choose a file to open. You can also try a sample.",
+    "open": "Choose a file…",
+    "samples": "Open a sample",
     "starting": "Getting ready…",
     "gpuWaiting": "Waiting for the GPU to be restored…",
     "restart": "Try again"
@@ -162,9 +165,10 @@
     },
     "empty": "This model has no parameters",
     "noModel": "Open a model to show its parameters",
+    "noMatch": "No parameters match “{{query}}”",
     "filter": {
       "aria": "Filter the parameters",
-      "placeholder": "Filter (name, ID)"
+      "placeholder": "Filter (name, ID, group)"
     },
     "showInternal": {
       "label_one": "Show the relay parameter ({{count}})",

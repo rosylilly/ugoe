@@ -93,4 +93,28 @@ describe("visibleSections", () => {
     expect(visibleSections(sections, " relay ", true).map((s) => s.parameters.length)).toEqual([1]);
     expect(visibleSections(sections, "relay", false)).toEqual([]);
   });
+
+  it("matches the group name and every word of the query (T0725)", () => {
+    const many = groupParameters(
+      {
+        parameters: [
+          { ...param("EyeLOpen", "Eye"), name: "Left eye open" },
+          { ...param("EyeROpen", "Eye"), name: "Right eye open" },
+          param("AngleX", "Face"),
+        ],
+        groups: [
+          { id: "Eye", name: "Eyes" },
+          { id: "Face", name: "Head" },
+        ],
+      },
+      "Other",
+    );
+    const ids = (q: string) =>
+      visibleSections(many, q, false).flatMap((s) => s.parameters.map((p) => p.id));
+    expect(ids("head")).toEqual(["AngleX"]);
+    expect(ids("eyes")).toEqual(["EyeLOpen", "EyeROpen"]);
+    expect(ids("eye left")).toEqual(["EyeLOpen"]);
+    expect(ids("  open   RIGHT ")).toEqual(["EyeROpen"]);
+    expect(ids("head left")).toEqual([]);
+  });
 });

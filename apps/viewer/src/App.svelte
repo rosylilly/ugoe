@@ -1,6 +1,5 @@
 <script lang="ts">
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
-import { formatNumber } from "@ugoe/i18n";
 import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
   Button,
@@ -12,7 +11,6 @@ import {
   showToast,
   Toaster,
   Toggle,
-  Toolbar,
   Tooltip,
   TooltipProvider,
 } from "@ugoe/ui";
@@ -245,18 +243,6 @@ function onKeyDown(e: KeyboardEvent) {
       </Tooltip>
       <span class="name">{player.modelName ?? t("toolbar.noModel")}</span>
       <span class="spacer"></span>
-      <Toolbar label={t("toolbar.view.aria")}>
-        <IconButton label={t("toolbar.zoomOut.aria")} onclick={() => player.zoomBy(1 / 1.25)}>
-          <Icon name="minus" />
-        </IconButton>
-        <span class="zoom">{formatNumber(player.zoom, { style: "percent", maximumFractionDigits: 0 })}</span>
-        <IconButton label={t("toolbar.zoomIn.aria")} onclick={() => player.zoomBy(1.25)}>
-          <Icon name="plus" />
-        </IconButton>
-        <IconButton label={t("toolbar.fit.aria")} shortcut="F" onclick={() => player.fit()}>
-          <Icon name="fit" />
-        </IconButton>
-      </Toolbar>
       <ColorPicker
         label={t("toolbar.background.label")}
         value={player.background}
@@ -282,7 +268,17 @@ function onKeyDown(e: KeyboardEvent) {
     </header>
 
     <main>
-      <Viewport {player} />
+      <Viewport {player}>
+        {#snippet empty()}
+          <!-- 空の状態: 何が無いかと次の操作 (docs/ui.md#デザイン。T0725) -->
+          <p class="empty-title">{t("viewport.emptyTitle")}</p>
+          <p>{t("viewport.empty")}</p>
+          <div class="empty-actions">
+            <Button onclick={openDialog}>{t("viewport.open")}</Button>
+            <Menu label={t("viewport.samples")} entries={sampleEntries} />
+          </div>
+        {/snippet}
+      </Viewport>
       {#if dropping}
         <!--
           落とすときの枠。ビューポートの canvas の上にも見えるように、main の上に重ねる (T0717)。
@@ -295,26 +291,30 @@ function onKeyDown(e: KeyboardEvent) {
         </div>
       {/if}
       <!--
-        右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
+        右のパネル。上の段に機能のパネル (フェイストラッキング → モデルの機能ごとのパネル) を、下の段にパラメータを置く。
         モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情) は、そのモデルが使うときだけ出す
         (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき。
         ポーズはグループがあるとき (付けたモジュールのグループも数える))。
-        畳めるまとまり (@ugoe/ui の Section) にして、高さの上限 (max-height) を付ける。
+        機能のパネルは畳めるまとまり (@ugoe/ui の Section) で、それぞれの中身の高さのまま縦に並べ、上の段ごと送る
+        (パネルごとに高さの上限を付けると、トラッキングを開いたときにライティングなどが潰れた。T0725)。
+        パラメータは残りの高さで、一覧の中を送る (見出しと絞り込みは送らずに残す)。狭い幅では右の列の全体を 1 つで送る。
       -->
       <aside class="sidebar">
-        <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
-        {#if visibleSlots(player.slots, player.publishedSlots).length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
-          <DressUpPanel {player} hasModel={player.status === "ready"} />
-        {/if}
-        {#if player.usesLighting}
-          <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
-        {/if}
-        {#if player.motions.length > 0 || player.expressions.length > 0}
-          <MotionPanel {player} />
-        {/if}
-        {#if player.poseGroups.length > 0}
-          <PosePanel {player} />
-        {/if}
+        <div class="features">
+          <TrackingPanel {tracker} parameterIds={player.trackingParameterIds} values={player.values} />
+          {#if visibleSlots(player.slots, player.publishedSlots).length > 0 || player.modules.length > 0 || player.dressUpError || player.restoreOffer || player.dressUpRemembered}
+            <DressUpPanel {player} hasModel={player.status === "ready"} />
+          {/if}
+          {#if player.usesLighting}
+            <LightingPanel {player} onshowmemory={() => memoryDialog?.open()} />
+          {/if}
+          {#if player.motions.length > 0 || player.expressions.length > 0}
+            <MotionPanel {player} />
+          {/if}
+          {#if player.poseGroups.length > 0}
+            <PosePanel {player} />
+          {/if}
+        </div>
         <ParameterPanel {player} />
       </aside>
     </main>
@@ -326,8 +326,10 @@ function onKeyDown(e: KeyboardEvent) {
         <span class="warning" title={player.warnings.join("\n")}>
           {t("status.warnings", { count: player.warnings.length, first: player.warnings[0] })}
         </span>
-      {:else if !dropNotice}
-        <span>{player.status === "ready" ? t("status.loaded") : ""}</span>
+      {:else if !dropNotice && player.status === "ready"}
+        <span class="loaded">{t("status.loaded")}</span>
+        <!-- 狭い幅ではツールバーに名前を出さないので、ここに出す -->
+        <span class="name">{player.modelName}</span>
       {/if}
       {#if dropNotice}
         <span class="warning drop-notice" role="status" title={dropNotice}>{dropNotice}</span>
@@ -400,18 +402,12 @@ function onKeyDown(e: KeyboardEvent) {
   .spacer {
     flex: 1;
   }
-  .name {
+  .toolbar .name {
     font-weight: var(--ugoe-font-weight-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 30ch;
-  }
-  .zoom {
-    min-width: 5ch;
-    text-align: center;
-    font-size: var(--ugoe-font-size-sm);
-    font-variant-numeric: tabular-nums;
   }
   main {
     position: relative;
@@ -424,33 +420,114 @@ function onKeyDown(e: KeyboardEvent) {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--ugoe-space-3);
-    padding: var(--ugoe-space-3) var(--ugoe-space-4);
     background: var(--ugoe-color-surface);
     border-left: 1px solid var(--ugoe-color-border);
     min-height: 0;
     overflow: hidden;
   }
-  /* 狭い幅 (docs/ui.md#そのほか の 360px) では、パネルをビューポートの下に置く。 */
+  /* 上の段 (機能のパネル)。中身が少なければその高さ、多ければ右の列の 6 割までにして中を送る。
+     パネルは縮めない (各パネルの高さの上限と中の送りは付けない。トラッキングのパネルは @ugoe/face-tracking の上限を外す)。 */
+  .features {
+    flex: 0 1 auto;
+    max-height: 60%;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ugoe-space-3);
+    padding: var(--ugoe-space-3) var(--ugoe-space-4);
+  }
+  .features > :global(*) {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+  /* 下の段 (パラメータ)。残りの高さで、最低でも右の列の 4 割を残す。 */
+  .sidebar > :global(.parameters) {
+    flex: 1 1 0;
+    min-height: 40%;
+    padding: var(--ugoe-space-3) var(--ugoe-space-4) 0;
+    border-top: 1px solid var(--ugoe-color-border);
+  }
+  /* 十分に広い幅では、機能のパネルとパラメータを横に 2 列に並べ、どちらも上から下まで使う。 */
+  @media (min-width: 1200px) {
+    .sidebar {
+      flex-direction: row;
+      width: 660px;
+    }
+    .features {
+      flex: none;
+      width: 330px;
+      max-height: none;
+      border-right: 1px solid var(--ugoe-color-border);
+    }
+    .sidebar > :global(.parameters) {
+      min-height: 0;
+      min-width: 0;
+      border-top: none;
+    }
+  }
+  /* 狭い幅 (docs/ui.md#そのほか の 360px) では、パネルをビューポートの下に置き、右の列の全体を 1 つで送る。
+     モデルの表示に高さを多く残すため、ツールバーを 2 行に収め (モデルの名前は下の帯へ)、パネルは 45% にする。 */
   @media (max-width: 720px) {
     main {
       flex-direction: column;
     }
     .sidebar {
       width: auto;
-      height: 55%;
-      flex-shrink: 0;
+      height: 45%;
       border-left: none;
       border-top: 1px solid var(--ugoe-color-border);
       overflow-y: auto;
     }
-    /* 縦に積んだパネルを縮めず、パネルの列ごと送る (縮めるとライティングなどの中身がほぼ見えなくなる。T0907)。
-       各パネルの高さの上限と中のスクロールより強くするため、クラスを重ねて詳細度を上げる。 */
-    .sidebar.sidebar > :global(*) {
-      flex: none;
+    .features {
       max-height: none;
       overflow: visible;
     }
+    /* 縦に積んだ段を縮めず、右の列ごと送る (縮めるとライティングなどの中身がほぼ見えなくなる。T0907)。
+       パラメータの高さの下限と一覧の中の送りより強くするため、クラスを重ねて詳細度を上げる。 */
+    .sidebar.sidebar > :global(*) {
+      flex: none;
+      min-height: 0;
+      max-height: none;
+      overflow: visible;
+    }
+    /* パラメータの一覧も中で送らない (グループの見出しが右の列の送りに対して上に残るように)。 */
+    .sidebar :global(.parameters .list) {
+      overflow: visible;
+    }
+    .toolbar {
+      row-gap: var(--ugoe-space-2);
+    }
+    .toolbar .name {
+      display: none;
+    }
+  }
+  .status .name {
+    display: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .status .name {
+      display: inline;
+      min-width: 0;
+    }
+    .status .loaded {
+      display: none;
+    }
+  }
+  .empty-title {
+    font-size: var(--ugoe-font-size-lg);
+    font-weight: var(--ugoe-font-weight-strong);
+    color: var(--ugoe-color-text);
+  }
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--ugoe-space-2);
   }
   .error {
     color: var(--ugoe-color-danger);

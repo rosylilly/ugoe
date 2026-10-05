@@ -136,8 +136,12 @@ export const APPS = {
       );
       await page.waitForTimeout(500);
       await ctx.scene("empty");
+      // 空の状態にも「サンプルを開く」があるので、ツールバーのものを名前の全体で選ぶ
       await page
-        .getByRole("button", { name: text("viewer", ctx.lang, "toolbar.samples.label") })
+        .getByRole("button", {
+          name: text("viewer", ctx.lang, "toolbar.samples.label"),
+          exact: true,
+        })
         .click();
       await page.getByRole("menu").first().waitFor({ timeout: 5000 });
       await ctx.scene("samples-menu", { aria: false });

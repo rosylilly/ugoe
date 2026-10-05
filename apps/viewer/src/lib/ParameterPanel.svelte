@@ -1,5 +1,7 @@
 <script lang="ts">
 // パラメータのスライダーの一覧 (グループごと)。中継用 (internal) のパラメータは既定で隠し、切り替えて出せる。
+// 絞り込みは名前・ID・グループの名前を空白で区切った語で引く (visibleSections)。一覧の中を送り、グループの見出しは
+// 送っても上に残す。長い名前は 1 行で省略し、全体と ID は行の title で出す (T0725)。
 import { formatValue, internalCount, type Player, sliderStep, visibleSections } from "@ugoe/player";
 import { Button, Section, Slider, TextField, Toggle } from "@ugoe/ui";
 import { t } from "./i18n";
@@ -46,6 +48,9 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
       </div>
     {/if}
     <div class="list">
+      {#if sections.length === 0 && filter.trim() !== ""}
+        <p class="empty" role="status">{t("parameters.noMatch", { query: filter.trim() })}</p>
+      {/if}
       {#each sections as section (section.id ?? "")}
         <Section title={section.id === null ? t("parameters.ungrouped") : section.name}>
           {#snippet actions()}
@@ -60,6 +65,7 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
               class="row"
               class:internal={p.internal}
               data-parameter={p.id}
+              title={name === p.id ? name : `${name} (${p.id})`}
               role="presentation"
               ondblclick={() => {
                 if (!driven) player.resetParameter(p.id);
@@ -129,6 +135,13 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+  }
+  /* 送っている間も、いまどのグループかが分かるように見出しを上に残す。 */
+  .list :global(.ugoe-section__header) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--ugoe-color-surface);
   }
   .row {
     padding: var(--ugoe-space-1) 0 var(--ugoe-space-2) var(--ugoe-space-2);

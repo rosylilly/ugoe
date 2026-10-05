@@ -396,8 +396,13 @@ function rays(x: number, y: number): string {
     pointer-events: auto;
     cursor: grab;
   }
+  /* 見える輪は .focus-ring の円で描く (四角い outline は丸い印に合わない)。透明の outline は、強制色のモード
+     (forced-colors) で色が付いて輪になるのと、フォーカスの印を outline で見る検査 (`just ui-audit`) のため (T0725)。 */
   .handle:focus {
     outline: none;
+  }
+  .handle:focus-visible {
+    outline: 2px solid transparent;
   }
   .handle.offscreen {
     stroke-dasharray: 3 2;
