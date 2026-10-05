@@ -1,11 +1,11 @@
 ---
 id: T0476
 title: "wasm: set_base_physics_json の合成の失敗に着せ替えの種類と補足の値を付ける (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-wasm, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0476
 ---
 
 # T0476: wasm: set_base_physics_json の合成の失敗に着せ替えの種類と補足の値を付ける (判断が要る)
