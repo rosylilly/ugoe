@@ -33,6 +33,8 @@ normative; where a schema and the text disagree, the text is correct.
 - Numbers carry `"format"` annotations for their type in the text: `float` for `f32`, and
   `uint8` … `uint64` for the unsigned integer types. Validators that do not know these formats
   ignore them; the integer ranges are also given by `minimum` (and `maximum` where it matters).
+- An enumeration of strings is always written as `oneOf` a list of `{"type": "string", "const": …}`,
+  one per value, not with the `enum` keyword.
 - The schemas carry no descriptions. The meaning of each field is in [model.md](../model.md).
 - `$id` is an identifier for the schema of this version. It points to the file in the repository
   while the specification is a draft; the location will be fixed with version 1.0.

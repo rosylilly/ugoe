@@ -228,6 +228,41 @@ mod tests {
     }
 
     #[test]
+    fn curves_ignored_by_playback_are_validated() {
+        // 未知の対象・未知のエフェクトグループ名・未知のセグメントを含むカーブも、フェードと既知のセグメントの点を検査する
+        // (`docs/spec/model.md#モーションと表情の検証`)。
+        let mut m = motion(vec![
+            curve(vec![Segment::Start {
+                p: point(f32::NAN, 0.0),
+            }]),
+            curve(vec![Segment::Start {
+                p: point(0.0, f32::INFINITY),
+            }]),
+            curve(vec![
+                Segment::Start { p: point(0.0, 0.0) },
+                Segment::Unknown,
+                Segment::Linear {
+                    to: point(1.0, f32::NAN),
+                },
+            ]),
+        ]);
+        m.curves[0].target = CurveTarget::Unknown;
+        m.curves[0].fade_in = Some(f32::NAN);
+        m.curves[1].target = CurveTarget::EffectGroup("Unknown".to_owned());
+        m.curves[2].fade_out = Some(f32::INFINITY);
+        assert_eq!(
+            fields(&validate_motion(&m)),
+            [
+                "curves[0].fade_in",
+                "curves[0].segments[0].p.t",
+                "curves[1].segments[0].p.v",
+                "curves[2].fade_out",
+                "curves[2].segments[2].to.v",
+            ]
+        );
+    }
+
+    #[test]
     fn duration_must_not_be_negative() {
         let mut m = motion(Vec::new());
         m.duration = -1.0;

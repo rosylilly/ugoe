@@ -1362,7 +1362,10 @@ Motions and expressions are validated on their own, not against a model.
 1. Motions: `duration` is finite and at least 0; `fade_in`, `fade_out` and the `fade_in` and
    `fade_out` of every curve (if present) are finite; both components (`t` and `v`) of every point
    of every segment (`p`, `to`, and the `c1` and `c2` of `bezier`) are finite; the `t` of every
-   event is finite.
+   event is finite. "Every curve" includes the curves that playback ignores (an unknown target
+   `kind`, an unknown effect group name, or a segment of an unknown `type`): their fades and the
+   points of their known segments are checked like any other. The fields of a segment of an
+   unknown `type`, and the `id` of an unknown target `kind`, are not checked.
 2. Expressions: `fade_in`, `fade_out` and the `value` of every adjustment (including adjustments
    with an unknown `op`) are finite.
 

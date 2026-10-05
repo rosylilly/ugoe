@@ -7,6 +7,7 @@
 //! - スキーマは読み込み側の形 (省略できるフィールドは必須にしない) で、この版の書き手が書く値だけを受け付ける。
 //!   未知の値 (`Unknown`) と未知のフィールドの扱いは仕様の文書が決める (スキーマは未知のフィールドを拒まない)。
 //! - 生成物は公開仕様の一部なので CC BY 4.0。`$comment` にその旨を書く。
+//! - 文字列の enum は `oneOf` の `const` の並びの形に揃える (`string_enum_to_one_of`)。
 
 use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
@@ -76,6 +77,7 @@ fn schema<T: JsonSchema>(
     let mut schema = SchemaSettings::draft2020_12()
         .with_transform(RecursiveTransform(|schema: &mut Schema| {
             schema.remove("description");
+            string_enum_to_one_of(schema);
             if let Some(default) = schema.get_mut("default") {
                 shorten_f32(default);
             }
@@ -108,6 +110,27 @@ fn schema<T: JsonSchema>(
     Ok((file, schema))
 }
 
+/// 文字列の enum を `{"oneOf": [{"type": "string", "const": …}, …]}` の形にする。
+///
+/// schemars は doc コメントの付いた unit の variant を `oneOf` の `const` に分け、付いていない enum を
+/// `{"type": "string", "enum": […]}` にする。doc コメントの有無で生成物の形が変わらないように、前者に揃える
+/// (`spec/schema/README.md`)。
+fn string_enum_to_one_of(schema: &mut Schema) {
+    let Some(Value::Array(values)) = schema.get("enum") else {
+        return;
+    };
+    if schema.get("type") != Some(&json!("string")) || !values.iter().all(Value::is_string) {
+        return;
+    }
+    let one_of = values
+        .iter()
+        .map(|value| json!({"type": "string", "const": value}))
+        .collect::<Vec<_>>();
+    schema.remove("enum");
+    schema.remove("type");
+    schema.insert("oneOf".into(), Value::Array(one_of));
+}
+
 /// 既定値の `f32` を、`f64` に広げたときの長い 10 進 (`0.05000000074505806`) ではなく、
 /// `f32` として往復する最短の 10 進 (`0.05`) で書く。
 fn shorten_f32(value: &mut Value) {
@@ -124,5 +147,45 @@ fn shorten_f32(value: &mut Value) {
         Value::Array(items) => items.iter_mut().for_each(shorten_f32),
         Value::Object(map) => map.values_mut().for_each(shorten_f32),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(JsonSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(dead_code)]
+    enum Undocumented {
+        First,
+        Second,
+    }
+
+    /// 説明のための enum。
+    #[derive(JsonSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(dead_code)]
+    enum Documented {
+        /// 1 つ目。
+        First,
+        /// 2 つ目。
+        Second,
+    }
+
+    #[test]
+    fn string_enums_have_the_same_shape_with_or_without_doc_comments() {
+        let undocumented = schema::<Undocumented>("a.schema.json", "A", false)
+            .unwrap()
+            .1;
+        let documented = schema::<Documented>("a.schema.json", "A", false).unwrap().1;
+        let expected = json!([
+            {"type": "string", "const": "first"},
+            {"type": "string", "const": "second"},
+        ]);
+        assert_eq!(undocumented.get("oneOf"), Some(&expected));
+        assert_eq!(documented.get("oneOf"), Some(&expected));
+        assert_eq!(undocumented.get("enum"), None);
+        assert_eq!(undocumented.get("type"), None);
     }
 }

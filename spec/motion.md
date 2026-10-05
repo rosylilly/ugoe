@@ -135,6 +135,10 @@ A runtime MAY limit the number of loops one advance handles, so that a huge `dt`
 cannot stall it. What an advance does beyond the limit is not specified, except that `time` stays in
 `[0, duration)`.
 
+*Informative:* the reference implementation handles at most 1000 loops in one advance. Beyond that
+it fires no more events and sets `time` to the remaining time modulo `duration` (0 if that rounds to
+`duration`).
+
 **Fade weight.** For a fade-in length `fi` and fade-out length `fo`:
 
 ```
@@ -279,6 +283,9 @@ loop:
 Phases of length 0 are passed through. One advance may pass several phases. A runtime MAY limit the
 number of phases one advance passes, so that a huge `dt` or tiny lengths cannot stall it; what an
 advance does beyond the limit is not specified.
+
+*Informative:* the reference implementation passes at most 4000 phases (1000 blinks) in one advance
+and discards the rest of `dt`, staying at the start of the phase it has reached.
 
 **Applying** with effect-group strength `s` ([Effect groups](#effect-groups)): each target parameter
 is set to `v × (1 + (openness − 1) × s)`. The blink **multiplies** the current value, so eyes that a

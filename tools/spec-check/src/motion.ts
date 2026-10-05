@@ -4,6 +4,21 @@
 import type { ParameterValues, PartOverrides } from "./evaluate.ts";
 import type * as M from "./types.ts";
 
+/** 有限の `dt > 0` だけが時間を進める (spec/motion.md#host-supplied-numbers)。 */
+const advances = (dt: number): boolean => dt > 0 && Number.isFinite(dt);
+
+/**
+ * 1 回の advance で扱うループの周回の上限 (spec/motion.md#motion-playback は上限を許すだけで値を決めない)。
+ * 値と、超えた分の扱い (発火せず、再生位置を残りの時間の剰余にする) は同じ節の参考 (Informative) に書かれた参照実装のもの。
+ */
+export const MAX_LAPS_PER_ADVANCE = 1000;
+
+/**
+ * 1 回の advance で進める目パチの段の数の上限 (まばたき 1000 回分。spec/motion.md#eye-blink は上限を許すだけ)。
+ * 値と、超えた分の時間を捨てることは同じ節の参考 (Informative) に書かれた参照実装のもの。
+ */
+export const MAX_BLINK_PHASES_PER_ADVANCE = 4000;
+
 const clamp = (x: number, lo: number, hi: number): number => Math.min(Math.max(x, lo), hi);
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
@@ -124,7 +139,7 @@ export class PlayingMotion {
   /** 時間を進め、発火したイベントの value を返す。 */
   advance(dt0: number): string[] {
     const fired: string[] = [];
-    if (this.finished || !(dt0 > 0)) return fired;
+    if (this.finished || !advances(dt0)) return fired;
     const m = this.motion;
     let dt = dt0;
     if (this.end !== null) dt = Math.min(dt, this.end - this.elapsed);
@@ -144,6 +159,7 @@ export class PlayingMotion {
       this.time = to;
     } else {
       let remaining = dt;
+      let laps = 0;
       for (;;) {
         if (this.time + remaining < m.duration) {
           fire(this.time, this.time + remaining);
@@ -155,6 +171,12 @@ export class PlayingMotion {
         this.time = 0;
         this.inclusive = true;
         if (remaining <= 0) break;
+        if (++laps >= MAX_LAPS_PER_ADVANCE) {
+          // 上限を超えた分は発火せず、再生位置だけを合わせる
+          const time = remaining % m.duration;
+          this.time = time < m.duration ? time : 0;
+          break;
+        }
       }
     }
     return fired;
@@ -284,7 +306,7 @@ export class ExpressionManager {
 
   frame(model: M.Model, values: ParameterValues, dt: number): void {
     for (const a of this.active) {
-      if (dt > 0) {
+      if (advances(dt)) {
         a.elapsed += dt;
         if (a.end !== null) a.elapsed = Math.min(a.elapsed, a.end);
       }
@@ -366,9 +388,9 @@ export class EyeBlink {
   }
 
   advance(dt0: number): void {
-    if (!(dt0 > 0) || !(this.settings.interval > 0)) return;
+    if (!advances(dt0) || !(this.settings.interval > 0)) return;
     let dt = dt0;
-    for (;;) {
+    for (let i = 0; i < MAX_BLINK_PHASES_PER_ADVANCE; i++) {
       const len = this.length(this.phase);
       if (this.t + dt < len) {
         this.t += dt;
@@ -379,6 +401,7 @@ export class EyeBlink {
       this.phase = NEXT[this.phase];
       if (this.phase === "open") this.interval = this.draw();
     }
+    // 段の数の上限に達した。残りの時間は捨てる (今の段の始めに留まる)
   }
 
   get openness(): number {
@@ -409,7 +432,7 @@ export class Breath {
   }
 
   advance(dt: number): void {
-    if (!(dt > 0)) return;
+    if (!advances(dt)) return;
     this.settings.forEach((b, i) => {
       if (!(b.cycle > 0)) {
         this.phase[i] = 0;
