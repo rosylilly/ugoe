@@ -37,3 +37,12 @@ T0426 (bindings/unity のレビュー) で、Unity に依存する部分 (`Runti
   - BCn の KTX2 のバンドル (適合テストの `avatar-bc3`・`avatar-lit-bc`) の見え方を、参照の画像 (`ugoe render`) と比べる。
   - KTX2 を `LoadRawTextureData` で渡すときの行の向き (上下が逆にならないか) と、`Texture2D` の作り方 (RGBA32・`linear: true`) で色が合うか。
   - T0473 (PNG も C ABI のデコーダで読む) の後なら、`LoadImage` で読んでいたときと見え方が変わらないか (16 ビット・パレットの PNG を含む)。
+- T0473 から書き足した (PNG も `EncodedTexture.Decode` で読み、行を入れ替えて `LoadRawTextureData` で渡すようにした。Unity では未確認):
+  - 見本 (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up.ugoe`) を T0473 より前の版 (`LoadImage`) と今の版で並べ、見え方が同じか (上下が逆でないか・
+    色・半透明の縁)。法線マップ (`avatar-lit.ugoe`) の陰影の向きが変わらないか。
+  - 適合テストの `png-16bit`・`png-palette` のバンドル (`just conformance --only unity` が `target/conformance/models/` に書く) を表示し、
+    参照の画像 (`target/conformance/reference/png-16bit.png` など) と比べる。比べのために `LoadImage` で読むと、16 ビットの扱いや
+    `gAMA` のある PNG (適合テストには無い。`tests/ImageTests.cs` の `Png` の形で作る。Godot は `gAMA` で値を変えた) で値が変わるか (変わるなら C ABI に変えた理由の裏付けとして README に書く)。
+  - 読み込みの時間: 大きなアトラス (`avatar-atlas.ugoe`) で `LoadImage` (Unity のネイティブ) と C ABI のデコード + 行の入れ替え + `LoadRawTextureData`
+    の時間とメモリの差 (目に見えて遅ければ起票する)。
+  - 壊れた PNG を入れたバンドルで、警告を 1 回出して白 (法線マップは平ら) になるか (警告の文に `invalid_texture` が出る)。

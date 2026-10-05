@@ -10,6 +10,8 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+# 8 ビットの RGBA ではない PNG のテクスチャを書く (16 ビット・パレット。T0473)
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

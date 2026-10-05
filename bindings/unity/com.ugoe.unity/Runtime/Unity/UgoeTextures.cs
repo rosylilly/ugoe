@@ -11,9 +11,9 @@ namespace Ugoe.Unity
     /// - 画像は乗算済みアルファにしてから渡す (参照実装と同じ整数の丸め)。バイリニア・端で止める・ミップマップなし。
     /// - 色は sRGB の値をそのまま使う約束なので、sRGB のデコードをしない (<c>linear: true</c>) で作る。
     /// - 法線マップはアルファを掛けずに、sRGB のデコードもしない。
-    /// - PNG は Unity の <c>LoadImage</c> で読む。KTX2 は Unity の標準では読めないので、C ABI のデコーダ
-    ///   (<see cref="EncodedTexture.Decode(bool)"/>。参照と同じ画素) で読む (T0466)。デコードしない形式 (ETC2・ASTC など) や
-    ///   壊れた画像は、白 (法線マップなら平ら) で代用して警告を出す。
+    /// - PNG と KTX2 は C ABI のデコーダ (<see cref="EncodedTexture.Decode(bool)"/>。参照と同じ画素で、乗算もそこで行う) で読む
+    ///   (KTX2 は T0466、PNG は T0473。Unity の <c>LoadImage</c> は 16 ビット・パレット・ガンマのチャンクの扱いが参照と同じとは限らない)。
+    ///   デコードしない形式 (ETC2・ASTC など) や壊れた画像は、白 (法線マップなら平ら) で代用して警告を出す。
     /// </remarks>
     internal sealed class UgoeTextures
     {
@@ -93,44 +93,12 @@ namespace Ugoe.Unity
                 case EncodedTextureFormat.None:
                     return null;
                 case EncodedTextureFormat.Png:
-                    break;
                 case EncodedTextureFormat.Ktx2:
                     return DecodeWithRuntime(encoded, premultiply, name);
                 default:
                     Debug.LogWarning($"ugoe: {name} is {encoded.Format}, which this package cannot decode; drawing it as white");
                     return null;
             }
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false, true)
-            {
-                name = name,
-                hideFlags = HideFlags.DontSave,
-            };
-            if (!texture.LoadImage(encoded.Data, false))
-            {
-                Debug.LogWarning($"ugoe: could not decode {name}");
-                Destroy(texture);
-                return null;
-            }
-            if (premultiply)
-            {
-                var pixels = texture.GetPixels32();
-                for (var i = 0; i < pixels.Length; i++)
-                {
-                    var p = pixels[i];
-                    if (p.a == 255) continue;
-                    pixels[i] = new Color32(
-                        TextureConversion.Premultiply(p.r, p.a),
-                        TextureConversion.Premultiply(p.g, p.a),
-                        TextureConversion.Premultiply(p.b, p.a),
-                        p.a);
-                }
-                texture.SetPixels32(pixels);
-            }
-            texture.filterMode = FilterMode.Bilinear;
-            texture.wrapMode = TextureWrapMode.Clamp;
-            texture.anisoLevel = 0;
-            texture.Apply(false, true);
-            return texture;
         }
 
         /// <summary>C ABI のデコーダで読む (乗算もそこで行う)。読めなければ警告を出して null (白か平らな法線で代用)。</summary>

@@ -229,7 +229,7 @@ if (r == UGOE_OK) {
 6,302,904 → 6,496,256 バイト (約 189 KiB、3% 増。T0466 で測った)。
 
 テストは `src/image.rs` (PNG・BC1 の KTX2・上限・種類)、C の見本 (`examples/c/sample.c`)、Unity (`bindings/unity/tests/ImageTests.cs`)、
-適合テストの KTX2 のケース (Unity の C# の層の結果の `textures` を参照のデコードと比べる。[tests/conformance/README.md](../../tests/conformance/README.md))。
+適合テストのテクスチャを持つバンドルのケース (PNG・KTX2。Unity の C# の層の結果の `textures` を参照のデコードと比べる。[tests/conformance/README.md](../../tests/conformance/README.md))。
 
 ## ライティング (T0409)
 

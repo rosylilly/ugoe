@@ -23,6 +23,11 @@
 //! - `bc1-three-color`: `nested-masks` のテクスチャを不透明にして斜めの黒い線を引き、すべてのブロックを BC1 の 3 色のモードで
 //!   書いた `VK_FORMAT_BC1_RGB_UNORM_BLOCK` にしたもの。黒い画素は 4 つ目の色 (添字 3) になり、アルファのない BC1 なので
 //!   不透明な黒に読む (アルファのある BC1 のように透明にすると、背景が透ける。T0467)。
+//!
+//! 8 ビットの RGBA ではない PNG のバンドルも作る (T0473。参照の `ugoe_format::image` と C ABI のデコーダは、16 ビットの上位の
+//! 8 ビットを使い、パレットを展開する)。
+//! - `png-16bit`: `nested-masks` のテクスチャ (PNG) を 16 ビットの RGBA にしたもの (上位の 8 ビットは元の画素、下位は位置で変わる値)。
+//! - `png-palette`: `nested-masks` のモデルに、16 色のパレットと `tRNS` (色ごとのアルファ) の PNG のテクスチャを付けたもの。
 
 use std::path::{Path, PathBuf};
 
@@ -38,7 +43,7 @@ use ugoe_headless::{Rgba8, image};
 use crate::Error;
 
 /// 作るモデルの名前 (`<名前>.ugoe` に書く)。
-pub const NAMES: [&str; 14] = [
+pub const NAMES: [&str; 16] = [
     "nested-masks",
     "mixed-masks",
     "intersection-masks",
@@ -53,6 +58,8 @@ pub const NAMES: [&str; 14] = [
     "avatar-bc3",
     "avatar-lit-bc",
     "bc1-three-color",
+    "png-16bit",
+    "png-palette",
 ];
 
 /// 圧縮していない sRGB の KTX2 (`R8G8B8A8_SRGB`)。
@@ -119,6 +126,24 @@ pub fn write_all(dir: &Path) -> Result<Vec<PathBuf>, Error> {
         } else if name == "bc1-three-color" {
             let mut bundle = Bundle::new(model("nested-masks")?);
             bundle.textures = vec![three_color_bc1()?];
+            bundle
+        } else if name == "png-16bit" || name == "png-palette" {
+            let mut bundle = Bundle::new(model("nested-masks")?);
+            let bytes = if name == "png-16bit" {
+                let straight = image::decode_image(TextureFormat::Png, &png).map_err(|source| {
+                    Error::Headless {
+                        context: "decoding the texture of the generated bundles".to_owned(),
+                        source,
+                    }
+                })?;
+                sixteen_bit_png(&straight)?
+            } else {
+                palette_png()?
+            };
+            bundle.textures = vec![TextureData {
+                format: TextureFormat::Png,
+                bytes,
+            }];
             bundle
         } else {
             let mut bundle = Bundle::new(model(name)?);
@@ -275,6 +300,66 @@ fn three_color_bc1() -> Result<TextureData, Error> {
             compression: Ktx2Compression::Bc1ThreeColor,
         },
     )
+}
+
+/// `straight` (乗算していないアルファ) の 16 ビットの RGBA の PNG。上位の 8 ビットは元の値、下位の 8 ビットは画素の位置で変わる
+/// (丸めて 8 ビットにするデコーダとは 1 違うことがある)。`gAMA` は書かない (Godot の PNG の読み込みはガンマで値を変えるので、
+/// 画像が参照と合わなくなる。ガンマのチャンクを無視することは bindings/unity の tests/ImageTests.cs で C ABI を確かめる)。
+fn sixteen_bit_png(straight: &Rgba8) -> Result<Vec<u8>, Error> {
+    let data: Vec<u8> = straight
+        .pixels
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &v)| [v, (i * 37) as u8])
+        .collect();
+    write_png(
+        straight.width,
+        straight.height,
+        |encoder| {
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Sixteen);
+        },
+        &data,
+    )
+}
+
+/// 64x64 の、16 色のパレット (`PLTE`) と色ごとのアルファ (`tRNS`。最後の 4 色は不透明) の PNG。番号は 8x8 の升目ごとに変わる。
+fn palette_png() -> Result<Vec<u8>, Error> {
+    const SIZE: u32 = 64;
+    let palette: Vec<u8> = (0..16u16)
+        .flat_map(|i| [i * 16, 255 - i * 12, i * 89 % 256].map(|c| c as u8))
+        .collect();
+    let alpha: Vec<u8> = (0..12u8).map(|i| 32 + i * 18).collect();
+    let indices: Vec<u8> = (0..SIZE * SIZE)
+        .map(|i| (((i % SIZE) / 8 + (i / SIZE) / 8 * 3) % 16) as u8)
+        .collect();
+    write_png(
+        SIZE,
+        SIZE,
+        |encoder| {
+            encoder.set_color(png::ColorType::Indexed);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.set_palette(palette);
+            encoder.set_trns(alpha);
+        },
+        &indices,
+    )
+}
+
+fn write_png(
+    width: u32,
+    height: u32,
+    configure: impl FnOnce(&mut png::Encoder<'_, &mut Vec<u8>>),
+    data: &[u8],
+) -> Result<Vec<u8>, Error> {
+    let error = |e: png::EncodingError| Error::Invalid(format!("encoding a PNG texture: {e}"));
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    configure(&mut encoder);
+    let mut writer = encoder.write_header().map_err(error)?;
+    writer.write_image_data(data).map_err(error)?;
+    writer.finish().map_err(error)?;
+    Ok(out)
 }
 
 fn tint(mesh: &mut Mesh, multiply: Rgb, screen: Rgb) {

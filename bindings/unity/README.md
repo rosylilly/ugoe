@@ -249,9 +249,11 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
   要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形 (表示とカリング) を送り直す (`FrameSync`)。
   マスクも、関わる要素の頂点かマスクの効き具合が変わったときだけ描き直す。
 - テクスチャは読み込み時に乗算済みアルファ (参照実装と同じ `(c × a + 127) div 255`) にし、バイリニア・端で止める・
-  ミップマップなし・sRGB のデコードなし (`linear: true`) で作る。法線マップはアルファを掛けない。PNG は Unity の `LoadImage` で読み、KTX2 (圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7) は
+  ミップマップなし・sRGB のデコードなし (`linear: true`) で作る。法線マップはアルファを掛けない。PNG と KTX2 (圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7) は
   C ABI のデコーダ (`EncodedTexture.Decode`・`ugoe_image_decode`。参照の `ugoe render`・wasm と同じ画素。乗算もそこで行う) で読んで、
-  行を上下に入れ替えて (`TextureConversion.FlipRows`。`Texture2D` は下の行が先) `LoadRawTextureData` で渡す (T0466)。
+  行を上下に入れ替えて (`TextureConversion.FlipRows`。`Texture2D` は下の行が先) `LoadRawTextureData` で渡す (KTX2 は T0466、PNG は T0473)。
+  PNG を Unity の `LoadImage` で読まないのは、16 ビット・パレット・ガンマのチャンク (`gAMA`) の扱いが参照と同じとは限らないため
+  (16 ビットは上位の 8 ビットを使い、ガンマで値を変えない。`tests/ImageTests.cs`。適合テストでは PNG のテクスチャも参照のデコードと比べる)。
   デコードしない形式 (ETC2・ASTC・Basis Universal など。[ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md)) と壊れた画像は、
   白 (法線マップなら平ら) で代用して警告する。
 - シェーダ (`UgoeDrawable.shader`) は spec/rendering.md の式 (乗算色・スクリーン色・ライティング・不透明度・マスク) を

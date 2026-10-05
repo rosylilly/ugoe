@@ -26,11 +26,10 @@ pub fn evaluate(case: &Case) -> Result<Frame, Error> {
     Ok(frame)
 }
 
-/// テクスチャの番号 (`Puppet::texture_sources` の順) ごとのデコードの結果 (T0466)。KTX2 のテクスチャを持つバンドルの
-/// ケースだけ (ほかは `None`)。描画するテクスチャは乗算済み、法線マップはアルファを掛けずにデコードする。
+/// テクスチャの番号 (`Puppet::texture_sources` の順) ごとのデコードの結果 (T0466)。テクスチャを持つバンドルのケースだけ
+/// (PNG も KTX2 も。T0473。ほかは `None`)。描画するテクスチャは乗算済み、法線マップはアルファを掛けずにデコードする。
 fn textures(case: &Case, puppet: &Puppet) -> Result<Option<Vec<TextureFrame>>, Error> {
     use ugoe::TextureSource;
-    use ugoe_format::TextureFormat;
     use ugoe_format::image::{ImageLimits, decode_image, decode_image_premultiplied};
 
     if !case.bundle {
@@ -68,11 +67,7 @@ fn textures(case: &Case, puppet: &Puppet) -> Result<Option<Vec<TextureFrame>>, E
             }
         })
         .collect();
-    let ktx2 = sources
-        .iter()
-        .flat_map(|(t, n)| [t, n])
-        .any(|t| t.is_some_and(|t| t.format == TextureFormat::Ktx2));
-    if !ktx2 {
+    if sources.iter().all(|(t, n)| t.is_none() && n.is_none()) {
         return Ok(None);
     }
     let digest = |t: Option<&ugoe_format::TextureData>, premultiply: bool| {
@@ -364,10 +359,10 @@ mod tests {
         }
     }
 
-    /// KTX2 のテクスチャを持つケースの参照は、テクスチャごとのデコードの結果を書く (T0466)。BCn も読め、PNG だけの
-    /// ケースは書かない。
+    /// テクスチャを持つバンドルのケースの参照は、テクスチャごとのデコードの結果を書く (KTX2 は T0466、PNG は T0473)。
+    /// BCn・16 ビットとパレットの PNG も読め、JSON のモデルのケースは書かない。
     #[test]
-    fn ktx2_cases_record_decoded_textures() {
+    fn bundle_cases_record_decoded_textures() {
         let plan = plan();
         let case = |name: &str| plan.cases.iter().find(|c| c.name == name).unwrap();
         let lit = evaluate(case("ktx2-bc-avatar-lit"))
@@ -389,12 +384,22 @@ mod tests {
                 .textures
                 .is_some()
         );
-        let png = plan
-            .cases
-            .iter()
-            .find(|c| c.bundle && !c.name.contains("ktx2"))
-            .unwrap();
-        assert_eq!(evaluate(png).unwrap().textures, None, "{}", png.name);
+        for name in ["masks-nested", "png-16bit", "png-palette", "avatar-default"] {
+            let textures = evaluate(case(name)).unwrap().textures.unwrap();
+            assert!(
+                textures
+                    .iter()
+                    .all(|t| t.color.as_deref().is_some_and(|c| c.contains(':'))),
+                "{name}: {textures:?}"
+            );
+        }
+        // 16 ビットの PNG は上位の 8 ビットを使い、ガンマで値を変えないので、8 ビットの PNG のバンドルと同じ画素になる。
+        assert_eq!(
+            evaluate(case("png-16bit")).unwrap().textures,
+            evaluate(case("masks-nested")).unwrap().textures
+        );
+        let json = plan.cases.iter().find(|c| !c.bundle).unwrap();
+        assert_eq!(evaluate(json).unwrap().textures, None, "{}", json.name);
     }
 
     /// `motions` のケースの参照は、発火したイベントとその出どころを書く (T0462)。フェードアウト中の idle のイベントは
@@ -442,7 +447,11 @@ mod tests {
                     && c.motions.is_empty()
             })
             .unwrap();
-        let expected = evaluate(case).unwrap();
+        // テクスチャのデコードの結果は `ModelInstance` から作らないので比べない。
+        let expected = Frame {
+            textures: None,
+            ..evaluate(case).unwrap()
+        };
         let mut stepped = case.clone();
         stepped.steps.clear();
         let mut puppet = puppet(&stepped).unwrap();
@@ -566,7 +575,10 @@ mod tests {
                     )
                     .unwrap();
             }
-            let expected = evaluate(case).unwrap();
+            let expected = Frame {
+                textures: None,
+                ..evaluate(case).unwrap()
+            };
             assert_eq!(
                 Frame::from_instance(follower.instance()),
                 expected,

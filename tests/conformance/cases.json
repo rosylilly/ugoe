@@ -195,6 +195,16 @@
       "summary": "Nested masks with an opaque BC1_RGB_UNORM KTX2 texture whose blocks all use the three-color mode; the fourth color (black) is opaque because the format has no alpha.",
       "generated": "bc1-three-color"
     },
+    {
+      "name": "png-16bit",
+      "summary": "Nested masks with a 16-bit RGBA PNG texture whose high bytes are the texture of masks-nested (decoded to the same pixels).",
+      "generated": "png-16bit"
+    },
+    {
+      "name": "png-palette",
+      "summary": "Nested masks with an indexed PNG texture of 16 colors whose alphas come from a tRNS chunk.",
+      "generated": "png-palette"
+    },
     { "spec": "spec/examples/single-quad" },
     { "spec": "spec/examples/warp-grid" },
     { "spec": "spec/examples/rotation-chain" },
