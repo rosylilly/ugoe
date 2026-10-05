@@ -1,11 +1,11 @@
 ---
 id: T0468
 title: 見本のモデルにパラメータのグループとポーズを持たせるか決める
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, assets/samples, bindings/web, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0468
 ---
 
 # T0468: 見本のモデルにパラメータのグループとポーズを持たせるか決める
