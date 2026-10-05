@@ -1,11 +1,11 @@
 ---
 id: T1618
 title: "editor-core: Coded::code を元のクレートのコードから組み立て、手で並べたコードの一覧をなくす"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: [T0168]
-assignee:
+assignee: claude-worker-T1618
 ---
 
 # T1618: editor-core: Coded::code を元のクレートのコードから組み立て、手で並べたコードの一覧をなくす
