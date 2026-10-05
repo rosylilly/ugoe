@@ -18,9 +18,9 @@ use serde_json::json;
 use ugoe_ai::ApiKey;
 use ugoe_ai::classify::{
     ClassifyGuidance, ClassifyOptions, Label, LayerLabel, NameDisagreement, Side, apply_answer,
-    classification_instructions, classification_requests, classification_requests_guided,
-    classify_by_name, classify_layers, classify_layers_guided, layer_thumbnail_png, layers,
-    mark_name_disagreements, output_schema,
+    cached_labels, classification_instructions, classification_requests,
+    classification_requests_guided, classify_by_name, classify_layers, classify_layers_guided,
+    layer_thumbnail_png, layers, mark_name_disagreements, output_schema,
 };
 use ugoe_ai::claude::{ClaudeConfig, ClaudeProvider};
 use ugoe_ai::instructions::Instructions;
@@ -790,4 +790,34 @@ fn a_previous_classification_must_cover_every_layer() {
         .unwrap_err();
     assert!(matches!(err, AiError::InvalidRequest(_)), "{err}");
     assert!(fake.calls().is_empty());
+}
+
+/// ファイルに残した分類は、PSD のレイヤーと数・パスが合い、確からしさが 0..=1 のときだけ使う。食い違いの印は付け直す
+/// (T0567)。
+#[test]
+fn cached_labels_must_fit_the_psd() {
+    let tree = small_tree();
+    let mut saved = classify_by_name(&tree);
+    // 名前の規則に食い違う答え (「白目_右」を左に) と、残した印にない食い違い。
+    saved[3].side = Side::Left;
+    saved[0].name_disagreement = Some(NameDisagreement {
+        label: Some(Label::Eye),
+        side: None,
+    });
+    let restored = cached_labels(&tree, saved.clone()).unwrap();
+    assert_eq!(restored[3].side, Side::Left);
+    assert!(restored[3].name_disagreement.is_some());
+    assert!(restored[0].name_disagreement.is_none());
+
+    let mut short = saved.clone();
+    short.pop();
+    assert!(cached_labels(&tree, short).is_none());
+    let mut renamed = saved.clone();
+    renamed[1].layer_path = vec!["目".into(), "別の名前".into()];
+    assert!(cached_labels(&tree, renamed).is_none());
+    for confidence in [f32::NAN, f32::INFINITY, -0.1, 1.5] {
+        let mut odd = saved.clone();
+        odd[2].confidence = confidence;
+        assert!(cached_labels(&tree, odd).is_none(), "{confidence}");
+    }
 }

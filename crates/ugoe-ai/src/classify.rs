@@ -1014,6 +1014,23 @@ pub fn corrected_labels(labels: &[LayerLabel], corrections: &LayerCorrections) -
         .collect()
 }
 
+/// ファイルに残した分類 (`ugoe_editor_core::classification_cache`。`docs/editor.md#分類の答えのキャッシュ`) が、
+/// PSD `tree` のレイヤーと合うかを確かめて返す。レイヤーの数とパスが [`classify_by_name`] と同じ並びで合い、
+/// 確からしさが 0..=1 の有限の値でなければ `None`。名前の規則との食い違いの印は今の規則で付け直す
+/// (残した印は信じない)。エディタと MCP サーバが使う。
+pub fn cached_labels(tree: &LayerTree, mut labels: Vec<LayerLabel>) -> Option<Vec<LayerLabel>> {
+    let rules = classify_by_name(tree);
+    let fits = rules.len() == labels.len()
+        && rules.iter().zip(&labels).all(|(rule, label)| {
+            rule.layer_path == label.layer_path && (0.0..=1.0).contains(&label.confidence)
+        });
+    if !fits {
+        return None;
+    }
+    mark_name_disagreements(tree, &mut labels).ok()?;
+    Some(labels)
+}
+
 /// [`output_schema`] の形の答え (外部のエージェントが決めた分類) を `labels` に書き込む。
 ///
 /// `labels` は [`classify_by_name`] の結果など、すべてのレイヤーを同じ並びで持つもの。答えにない

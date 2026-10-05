@@ -263,6 +263,7 @@ fn name_disagreements_reach_the_view_and_the_rationale() {
     let labels = classify(&tree, Some(&fake), &ClassifyGuidance::default()).unwrap();
     let view = Classified {
         psd: bustup_path(),
+        identity: PsdIdentity::of(&[]),
         labels: labels.clone(),
         by_ai: true,
         instructions: None,
@@ -303,6 +304,7 @@ fn corrections_overlay_the_classification_and_undo() {
     let path = labels[eye].layer_path.clone();
     state.project.lock().unwrap().proposals.classification = Some(Classified {
         psd: bustup_path(),
+        identity: PsdIdentity::of(&[]),
         labels,
         by_ai: true,
         instructions: None,
@@ -841,6 +843,7 @@ fn module_state() -> (AppState, Vec<LayerLabel>) {
         session.proposals = ProposalSession::default();
         session.proposals.classification = Some(Classified {
             psd: PathBuf::from("/costume.psd"),
+            identity: PsdIdentity::of(&[]),
             labels: classify_by_name(&tree),
             by_ai: false,
             instructions: None,
@@ -1119,6 +1122,102 @@ fn rigged_costume_shapes_are_kept_in_the_project() {
         .insert(RIGGED_MESHES_KEY.into(), json!(["hat"]));
     let (session, _) = ProjectSession::from_project(old, None);
     assert!(session.proposals.rigged_value().is_none());
+}
+
+/// 分類の答えはプロジェクトのキャッシュ (`.ugoe-cache/classification.json`) に残り、開き直すと分類し直さずに戻る。
+/// PSD が変わっていれば戻さない。`project.json` は変えない (T0567)。
+#[test]
+fn the_classification_is_restored_when_the_project_is_reopened() {
+    use crate::project::ProjectSession;
+    use ugoe_editor_core::Project;
+    use ugoe_editor_core::classification_cache::classification_cache_path;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("bustup.ugoeproj");
+    let psd = dir.join("sources").join("bustup.psd");
+    // 保存するのでテクスチャも要る (`from_psd` の複製はモデルだけ)。
+    let state = state(None);
+    let (bytes, options) =
+        crate::psd::read_psd(&bustup_path().display().to_string(), None).unwrap();
+    let (session, document, _) = crate::project::from_psd(&bytes, &options).unwrap();
+    *state.document.lock().unwrap() = document;
+    *state.project.lock().unwrap() = session;
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        session.save_to(&mut document, dir.clone()).unwrap();
+    }
+    std::fs::create_dir_all(psd.parent().unwrap()).unwrap();
+    std::fs::copy(bustup_path(), &psd).unwrap();
+
+    // 保存先のあるプロジェクトで分類すると、すぐにキャッシュに書く。
+    let classified =
+        done(classify_in(&state, Some(psd.display().to_string()), false, None).unwrap());
+    let cache = classification_cache_path(&dir);
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
+    assert_eq!(written["psd"]["path"], "sources/bustup.psd");
+    assert_eq!(written["by_ai"], false);
+
+    // AI の答え (名前の規則と違うラベル・注文) を置いて保存すると、それをキャッシュに書く。
+    let mut labels = state
+        .project
+        .lock()
+        .unwrap()
+        .proposals
+        .classification
+        .as_ref()
+        .unwrap()
+        .labels
+        .clone();
+    let changed = labels.iter().position(|l| l.label == Label::Face).unwrap();
+    labels[changed].label = Label::Neck;
+    labels[changed].confidence = 0.5;
+    {
+        let mut document = state.document.lock().unwrap();
+        let mut session = state.project.lock().unwrap();
+        let identity = session.proposals.classification.as_ref().unwrap().identity;
+        session.proposals.classification = Some(Classified {
+            psd: psd.clone(),
+            identity,
+            labels: labels.clone(),
+            by_ai: true,
+            instructions: Instructions::new("the ribbon is hair").unwrap(),
+        });
+        session.save_to(&mut document, dir.clone()).unwrap();
+    }
+    let project_json = std::fs::read_to_string(dir.join("project.json")).unwrap();
+    assert!(!project_json.contains("by_ai"), "{project_json}");
+
+    // 開き直すと、PSD を分類し直さずに同じ答えが戻り、その PSD が提案の元になる。
+    let reopen = || {
+        let (project, disk) = Project::load_tracked(&dir).unwrap();
+        ProjectSession::from_project(project, Some((dir.clone(), disk)))
+    };
+    let (session, document) = reopen();
+    assert_eq!(session.proposals.psd(), Some(psd.as_path()));
+    let view = session.proposals.state(&document).classification.unwrap();
+    assert!(view.by_ai);
+    assert_eq!(view.instructions.as_deref(), Some("the ribbon is hair"));
+    assert_eq!(view.layers.len(), classified.layers.len());
+    assert_eq!(view.layers[changed].label, "neck");
+    assert!((view.layers[changed].confidence - 0.5).abs() < 1e-6);
+    // 名前の規則との食い違いの印は、開いたときに付け直す。
+    assert!(view.layers[changed].name_disagreement.is_some());
+
+    // PSD が変わっていれば戻さない (キャッシュは消さない)。
+    let mut bytes = std::fs::read(&psd).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xff;
+    std::fs::write(&psd, &bytes).unwrap();
+    let (session, _) = reopen();
+    assert!(session.proposals.classification.is_none());
+    assert!(session.proposals.psd().is_none());
+    assert!(cache.exists());
+    // PSD が消えていても戻さない。
+    std::fs::remove_file(&psd).unwrap();
+    let (session, _) = reopen();
+    assert!(session.proposals.classification.is_none());
 }
 
 /// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、

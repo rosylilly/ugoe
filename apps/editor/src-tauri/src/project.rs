@@ -9,6 +9,8 @@ use std::sync::{MutexGuard, PoisonError};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use ts_rs::TS;
+use ugoe_ai::classify::LayerLabel;
+use ugoe_editor_core::classification_cache::CachedClassification;
 use ugoe_editor_core::lighting::PreviewLighting;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::project::ProjectError;
@@ -44,7 +46,8 @@ pub struct ProjectSession {
     /// AI への送信の「今後は確かめない」。プロジェクトを替えると消え、ファイルには残さない。
     ai_consent: ConsentMemory,
     /// AI の提案と、提案の元にする PSD。プロジェクトを替えると消え、ファイルには残さない (本体の変形を写した衣装の
-    /// メッシュの形の指紋だけは `editor.rigged_meshes` に残す。`crate::proposals`)。
+    /// メッシュの形の指紋は `editor.rigged_meshes` に、分類の答えはキャッシュ `.ugoe-cache/classification.json` に
+    /// 残す。`crate::proposals`)。
     pub(crate) proposals: ProposalSession,
 }
 
@@ -52,7 +55,8 @@ pub struct ProjectSession {
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
 impl ProjectSession {
-    /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。
+    /// `disk` は `path` のファイルの指紋 (`path` と一緒に渡す)。`path` があれば、そこの分類の答えのキャッシュを
+    /// 戻す (分類した PSD が今も同じときだけ。PSD を読むので、キャッシュがあれば時間がかかる)。
     pub(crate) fn from_project(
         project: Project,
         path: Option<(PathBuf, ProjectFingerprint)>,
@@ -61,6 +65,9 @@ impl ProjectSession {
         let (path, disk) = path.unzip();
         let mut proposals = ProposalSession::default();
         proposals.restore_rigged(project.meta.editor.get(RIGGED_MESHES_KEY));
+        if let Some(dir) = &path {
+            proposals.restore_classification(dir);
+        }
         let session = Self {
             id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
             path,
@@ -253,6 +260,7 @@ impl ProjectSession {
             state: document.begin_save(),
             project: Project::from_document(meta.clone(), document),
             meta,
+            classification: self.proposals.cache(),
             dir,
             disk,
             moved,
@@ -281,6 +289,8 @@ pub(crate) struct PendingSave {
     /// 保存するメタ情報 (書いている間に変われば未保存の印を残す)。
     meta: ProjectMeta,
     project: Project,
+    /// 分類の答え (保存先のキャッシュに書く。分類していなければ `None` で、前のキャッシュに触れない)。
+    classification: Option<CachedClassification<LayerLabel>>,
     dir: PathBuf,
     /// 同じ場所への保存なら、前の指紋。
     disk: Option<ProjectFingerprint>,
@@ -297,6 +307,9 @@ impl PendingSave {
     /// プロジェクトを書き、指紋を取る (ロックの外で呼ぶ)。
     pub(crate) fn write(self) -> IpcResult<WrittenSave> {
         self.project.save(&self.dir)?;
+        if let Some(cache) = &self.classification {
+            crate::proposals::write_cache(&self.dir, cache);
+        }
         let known = match &self.disk {
             Some(disk) => disk.reread(&self.dir),
             None => ProjectFingerprint::read(&self.dir),

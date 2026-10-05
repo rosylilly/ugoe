@@ -17,18 +17,22 @@
 //! 4・5 の代わりに `get_module_rig_guide` と `propose_module_rig` を使う (`ugoe_ai::module_rig`。パラメータを足さず、
 //! 衣装を本体に追従させ、揺らし、差分の組 (`variant_sets`) と名前・絵の重なりで見つけた差分をポーズにする)。
 //!
+//! エディタがプロジェクトに残した分類の答え (`.ugoe-cache/classification.json`。`ugoe_editor_core::classification_cache`) は、
+//! 同じ PSD (識別が合うもの) を読むときに名前の規則の案の代わりに使い、PSD を渡されていなければそのキャッシュの PSD を読む
+//! (書くのはエディタだけ。`docs/ai-integration.md#エージェントに任せる自動リギング`)。
+//!
 //! 提案の適用は `apply_proposal` (利用者の確認を通す。ADR 0006)。画像の大きさと 1 回に返す枚数は、
 //! API で分類するときと同じ上限 (`ClassifyOptions` の既定値) に合わせる。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 use ugoe_ai::AiError;
 use ugoe_ai::classify::{
-    ClassifyOptions, Label, LayerLabel, apply_answer, classification_instructions,
+    ClassifyOptions, Label, LayerLabel, apply_answer, cached_labels, classification_instructions,
     classify_by_name, corrected_labels, correction_label, layer_thumbnail_png, layers,
     mark_name_disagreements, output_schema, overview_png,
 };
@@ -41,6 +45,7 @@ use ugoe_ai::rig::{
     RigOptions, RigParams, mesh_parts, params_from_answer, propose_rig as template_rig,
     rig_output_schema, rig_request,
 };
+use ugoe_editor_core::classification_cache::{CachedClassification, read_classification_cache};
 use ugoe_editor_core::import::{layer_tree_command, read_layer_tree};
 use ugoe_editor_core::message::MessageArgs;
 use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions, message_args};
@@ -83,11 +88,13 @@ const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) struct PsdSource {
     path: PathBuf,
     tree: LayerTree,
-    /// 分類 (`classify_by_name` と同じ並び)。エージェントが決めていないレイヤーは名前の規則の案。
-    /// 利用者の直しは含まない。
+    /// 分類 (`classify_by_name` と同じ並び)。エージェントが決めていないレイヤーは、エディタが残した AI の分類
+    /// ([`PsdSource::saved`]) か名前の規則の案。利用者の直しは含まない。
     labels: Vec<LayerLabel>,
     /// エージェントが決めたレイヤーの番号。
     by_agent: BTreeSet<usize>,
+    /// 分類がエディタの残した AI の分類 (`.ugoe-cache/classification.json`) から始まったか。
+    saved: bool,
 }
 
 impl fmt::Debug for PsdSource {
@@ -97,6 +104,7 @@ impl fmt::Debug for PsdSource {
             .field("path", &self.path)
             .field("layers", &self.labels.len())
             .field("by_agent", &self.by_agent.len())
+            .field("saved", &self.saved)
             .finish()
     }
 }
@@ -106,10 +114,40 @@ impl PsdSource {
         Self::load_with(path, MAX_PSD_BYTES, ImportLimits::default())
     }
 
+    /// PSD を読み、プロジェクトのディレクトリ `project` にエディタが残した分類の答えが同じ PSD (識別が合う) の
+    /// ものなら、名前の規則の案の代わりにそれを使う。キャッシュが読めない・合わないときは名前の規則の案。
+    fn load_for(path: PathBuf, project: &Path) -> Result<Self, ToolError> {
+        let (mut source, bytes) = Self::read_with(path, MAX_PSD_BYTES, ImportLimits::default())?;
+        if let Ok(Some(cache)) = read_classification_cache::<LayerLabel>(project) {
+            source.restore(cache, &bytes);
+        }
+        Ok(source)
+    }
+
+    /// エディタが残した分類 `cache` が、読んだ PSD (`bytes`) と合えば使う。
+    fn restore(&mut self, cache: CachedClassification<LayerLabel>, bytes: &[u8]) {
+        if !cache.identity.matches(bytes) {
+            return;
+        }
+        if let Some(labels) = cached_labels(&self.tree, cache.layers) {
+            self.labels = labels;
+            self.saved = cache.by_ai;
+        }
+    }
+
     /// PSD を、ファイルの大きさの上限 `max_bytes` と展開の上限 `limits` で読む。読めなければ、エラーのコード
     /// (`psd.total_limit_exceeded` など。`docs/editor.md#エラーと警告のコード`) を文の後ろに付け、コードと引数
     /// ([`ToolError::coded`]) も添えて返す (どの上限を超えたかをエージェントが見分けられるように)。
     fn load_with(path: PathBuf, max_bytes: u64, limits: ImportLimits) -> Result<Self, ToolError> {
+        Self::read_with(path, max_bytes, limits).map(|(source, _)| source)
+    }
+
+    /// [`PsdSource::load_with`] と同じだが、読んだ PSD のバイト列も返す (分類のキャッシュと比べるため)。
+    fn read_with(
+        path: PathBuf,
+        max_bytes: u64,
+        limits: ImportLimits,
+    ) -> Result<(Self, Vec<u8>), ToolError> {
         // 装置 (`/dev/zero`)・FIFO・ディレクトリは開かず、上限より大きいファイルは読まない (終わらない読み込みで
         // メモリを使い果たさないように)。開いた後にも通常のファイルかを確かめる (`ugoe_fs::read_regular_file`)。
         // コードはエディタの PSD の読み込みと同じ `psd.read_file_failed`。
@@ -127,12 +165,14 @@ impl PsdSource {
                 e.to_message(),
             )
         })?;
-        Ok(Self {
+        let source = Self {
             labels: classify_by_name(&tree),
             by_agent: BTreeSet::new(),
+            saved: false,
             path,
             tree,
-        })
+        };
+        Ok((source, bytes))
     }
 }
 
@@ -144,6 +184,8 @@ struct Labels {
     corrected: BTreeSet<usize>,
     /// エージェントが決めたレイヤーのうち、利用者が直していないものの数。
     by_agent: usize,
+    /// 残りのレイヤーがエディタの残した AI の分類 ([`PsdSource::saved`]) か (偽なら名前の規則)。
+    saved: bool,
 }
 
 impl PsdSource {
@@ -167,17 +209,20 @@ impl PsdSource {
         Labels {
             labels: corrected_labels(&self.labels, corrections),
             by_agent: self.by_agent.difference(&corrected).count(),
+            saved: self.saved,
             corrected,
         }
     }
 }
 
-/// レイヤー `i` の分類を決めたもの (利用者の直し・エージェント・名前の規則)。
+/// レイヤー `i` の分類を決めたもの (利用者の直し・エージェント・エディタが残した AI の分類・名前の規則)。
 fn set_by(source: &PsdSource, labels: &Labels, i: usize) -> &'static str {
     if labels.corrected.contains(&i) {
         "user"
     } else if source.by_agent.contains(&i) {
         "agent"
+    } else if source.saved {
+        "editor"
     } else {
         "rules"
     }
@@ -317,13 +362,15 @@ pub(crate) fn tools() -> Vec<Value> {
                  set_layer_labels で渡す。name_disagreement は、渡した分類が名前の規則の確からしい答えと \
                  食い違うときの名前の規則のラベル (label) か左右 (side) で、needs_review になる \
                  (画像で確かめ、名前が正しければ直す)。set_by=user は利用者がエディタで直したレイヤー \
-                 (プロジェクトの editor.classification) で、確からしさ 1。set_layer_labels でも変わらない。",
+                 (プロジェクトの editor.classification) で、確からしさ 1。set_layer_labels でも変わらない。\
+                 set_by=editor はエディタが AI で分類してプロジェクトに残した答え (.ugoe-cache/classification.json。\
+                 同じ PSD のときだけ使う。psd を渡さなければその PSD を読む)。",
                 options.overview_max_side, options.thumbnail_max_side
             ),
             object_schema(
                 json!({
                     "path": path_property(),
-                    "psd": { "type": "string", "description": format!("このモデルの元の PSD のパス (import_psd で作ったプロジェクトでは不要。一度渡せば覚える)。{PATH_NOTE}") },
+                    "psd": { "type": "string", "description": format!("このモデルの元の PSD のパス (import_psd で作ったプロジェクトと、エディタで分類したプロジェクトでは不要。一度渡せば覚える)。{PATH_NOTE}") },
                     "start": { "type": "integer", "minimum": 0, "description": "最初のレイヤーの番号 (既定 0)" },
                     "count": { "type": "integer", "minimum": 1, "maximum": per_call, "description": format!("返すレイヤーの数 (既定 {DEFAULT_COUNT})") },
                     "indices": {
@@ -551,14 +598,53 @@ pub(crate) fn import_psd(
     })
 }
 
-/// 覚えている PSD。`psd` (解決したパス) を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案に戻す。
-fn source(slot: &mut Option<PsdSource>, psd: Option<PathBuf>) -> Result<&mut PsdSource, ToolError> {
-    if let Some(path) = psd
-        && slot.as_ref().is_none_or(|s| s.path != path)
-    {
-        *slot = Some(PsdSource::load(path)?);
+/// 覚えている PSD。`psd` (解決したパス) を渡されたら (違う PSD なら) 読み直し、分類を名前の規則の案
+/// (プロジェクト `project` にエディタが残した同じ PSD の分類があればそれ) に戻す。渡されず、覚えてもいなければ、
+/// エディタが残した分類の PSD を読む ([`recall`])。
+fn source<'a>(
+    slot: &'a mut Option<PsdSource>,
+    psd: Option<PathBuf>,
+    project: &Path,
+    resolve: &dyn Fn(&Path) -> Result<PathBuf, ToolError>,
+) -> Result<&'a mut PsdSource, ToolError> {
+    match psd {
+        Some(path) => {
+            if slot.as_ref().is_none_or(|s| s.path != path) {
+                *slot = Some(PsdSource::load_for(path, project)?);
+            }
+        }
+        None => recall(slot, project, resolve),
     }
     slot.as_mut().ok_or_else(no_psd)
+}
+
+/// PSD を覚えていなければ、プロジェクトのディレクトリ `project` にエディタが残した分類 (`.ugoe-cache/classification.json`)
+/// の PSD を読んで覚える (パスは `resolve` で確かめる。`--root` の外なら読まない)。キャッシュがない・読めない・PSD が
+/// 変わったときは何もしない (覚えていないまま。ツールは `mcp.no_psd` を返す)。
+pub(crate) fn recall(
+    slot: &mut Option<PsdSource>,
+    project: &Path,
+    resolve: &dyn Fn(&Path) -> Result<PathBuf, ToolError>,
+) {
+    if slot.is_some() {
+        return;
+    }
+    let Ok(Some(cache)) = read_classification_cache::<LayerLabel>(project) else {
+        return;
+    };
+    let Ok(path) = resolve(&cache.psd) else {
+        return;
+    };
+    let Ok((mut source, bytes)) =
+        PsdSource::read_with(path, MAX_PSD_BYTES, ImportLimits::default())
+    else {
+        return;
+    };
+    if !cache.identity.matches(&bytes) {
+        return;
+    }
+    source.restore(cache, &bytes);
+    *slot = Some(source);
 }
 
 /// `doc` はプロジェクトの文書 (の複製)、`slot` は覚えている PSD、`psd` は `args.psd` を解決したパス
@@ -568,11 +654,13 @@ pub(crate) fn get_psd_layers(
     slot: &mut Option<PsdSource>,
     args: LayersArgs,
     psd: Option<PathBuf>,
+    project: &Path,
+    resolve: &dyn Fn(&Path) -> Result<PathBuf, ToolError>,
 ) -> ToolResult {
     let defaults = ClassifyOptions::default();
     let per_call = defaults.max_layers_per_request;
     let meshes = unique_mesh_names(doc);
-    let source = source(slot, psd)?;
+    let source = source(slot, psd, project, resolve)?;
     let effective = source.labels_for(doc);
     let infos = layers(&source.tree);
     let total = infos.len();
@@ -708,13 +796,15 @@ pub(crate) fn set_layer_labels(
     doc: &Document,
     slot: &mut Option<PsdSource>,
     args: LabelsArgs,
+    project: &Path,
+    resolve: &dyn Fn(&Path) -> Result<PathBuf, ToolError>,
 ) -> ToolResult {
     if args.layers.is_none() && args.variant_sets.is_none() {
         return Err(ToolError::invalid_arguments(
             "pass `layers`, `variant_sets` or both",
         ));
     }
-    let source = source(slot, None)?;
+    let source = source(slot, None, project, resolve)?;
     let mut labels = if args.reset {
         classify_by_name(&source.tree)
     } else {
@@ -737,6 +827,7 @@ pub(crate) fn set_layer_labels(
     source.labels = labels;
     if args.reset {
         source.by_agent.clear();
+        source.saved = false;
     }
     source.by_agent.extend(indices.iter().copied());
     let effective = source.labels_for(doc);
@@ -814,6 +905,7 @@ fn labels_summary(doc: &Document, effective: &Labels) -> Value {
         "layers": labels.len(),
         "set_by_agent": effective.by_agent,
         "corrected_by_user": effective.corrected,
+        "saved_by_editor": effective.saved,
         "meshes": meshes,
         "variant_sets": variant_sets(labels),
         "unmatched_layers": unmatched,
@@ -829,6 +921,7 @@ fn labels_count(effective: &Labels) -> Value {
         "layers": effective.labels.len(),
         "set_by_agent": effective.by_agent,
         "corrected_by_user": effective.corrected.len(),
+        "saved_by_editor": effective.saved,
     })
 }
 
@@ -836,13 +929,16 @@ fn labels_count(effective: &Labels) -> Value {
 fn labels_note(effective: &Labels) -> String {
     let total = effective.labels.len();
     let by_agent = effective.by_agent;
+    let rest = if effective.saved {
+        "the classification the editor saved"
+    } else {
+        "the name rules"
+    };
     match effective.corrected.len() {
-        0 => {
-            format!("the agent chose {by_agent} of {total} layers; the rest follow the name rules")
-        }
+        0 => format!("the agent chose {by_agent} of {total} layers; the rest follow {rest}"),
         corrected => format!(
             "the user corrected {corrected} and the agent chose {by_agent} of {total} layers; \
-             the rest follow the name rules"
+             the rest follow {rest}"
         ),
     }
 }
@@ -1133,6 +1229,7 @@ mod tests {
             path: PathBuf::from("empty.psd"),
             labels: classify_by_name(&tree),
             by_agent: BTreeSet::new(),
+            saved: false,
             tree,
         });
         let args: LayersArgs =
@@ -1143,6 +1240,8 @@ mod tests {
             &mut slot,
             args,
             None,
+            Path::new("."),
+            &|p: &Path| Ok(p.to_path_buf()),
         )
         .unwrap();
         assert_eq!(page.value["layers"], json!([]));

@@ -9,6 +9,7 @@ pub mod automesh;
 pub mod avatar;
 pub mod bundle_project;
 pub mod classification;
+pub mod classification_cache;
 mod cleanup;
 pub mod codegen;
 pub mod command;
@@ -78,6 +79,8 @@ mod avatar_tests;
 mod blend_shape_tests;
 #[cfg(test)]
 mod bundle_project_tests;
+#[cfg(test)]
+mod classification_cache_tests;
 #[cfg(test)]
 mod classification_tests;
 #[cfg(test)]

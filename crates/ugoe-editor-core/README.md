@@ -46,3 +46,4 @@
 - T1618 (`Coded::code` を `Cow<'static, str>` にし、`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*` を元のクレートのコードから組み立てる。手で並べた一覧をなくした)
 - T1609 (`SetModuleSettings` の `keep_look` の作り直しの警告を `ApplyReport` で返す)
 - T1615 (PSD のレイヤーの分類の直し `Command::SetLayerCorrection`。`src/classification.rs`。直しは `Document` のスナップショットに持ち、`project.json` の `editor.classification` に残す)
+- T0567 (PSD のレイヤーの分類の答えのキャッシュ `.ugoe-cache/classification.json`。`src/classification_cache.rs`。`project.json` は変えず、Undo の対象にしない。分類した PSD の大きさと FNV-1a のハッシュを添え、使う側 (エディタ・MCP サーバ) が今の PSD と比べる。[docs/spec/file-formats.md#分類のキャッシュ](../../docs/spec/file-formats.md#分類のキャッシュ))

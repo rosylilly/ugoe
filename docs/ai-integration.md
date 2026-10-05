@@ -457,7 +457,7 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
 | 適用する | `apply_proposal` (利用者の確認) → `render_png` で確かめる → `save_project` | 提案のパネルの Adopt |
 
 - **同じ部品を使う:** 画像は API に送るものと同じ作り方と上限 (`ClassifyOptions` の既定値。合成画像は長い辺 1024 画素、サムネイルは 256 画素まで) で、指示の文は API に送るシステムプロンプトと同じ (`classify::classification_instructions`・`rig_request` の `system`) です。答えの読み方と確かめ方も同じ関数 (`classify::apply_answer`・`rig::params_from_answer`・`propose_rig` の範囲と検証) を通します。ツールの入力の型は ugoe-ai の JSON Schema から作り、語彙や値の範囲を手で写しません。
-- **既定の案:** 分類は名前の規則 (`classify_by_name`) の結果を既定の案として持ち、エージェントは画像を見て直すレイヤーだけを渡せばよいようにします (`set_by` が `rules` か `agent` か)。値を渡さなければ `RigParams` の既定値で組みます。
+- **既定の案:** 分類は名前の規則 (`classify_by_name`) の結果 (エディタが残した同じ PSD の分類があればそれ。下の「エディタが残した分類」) を既定の案として持ち、エージェントは画像を見て直すレイヤーだけを渡せばよいようにします (`set_by` が `rules`・`editor` か `agent` か)。値を渡さなければ `RigParams` の既定値で組みます。
 - **利用者の直し (T0566):** 利用者がエディタで直した分類 (`project.json` の `editor.classification`。[editor.md#分類の直し](editor.md#分類の直し)) は、
   名前の規則とエージェントの答えの **上に** 重ねます。重ね方はエディタと同じ `classify::corrected_labels` (レイヤーのパスで対応させ、直したレイヤーは
   確からしさ 1・名前の規則との食い違いの印なし。語彙にないラベルの直しは重ねない) です。`get_psd_layers` では直したレイヤーの `set_by` を `user` にし、
@@ -466,13 +466,22 @@ ADR 0022 の「外部のエージェントに判断を任せる経路」(T0513)�
   リグのガイドと提案 (`get_rig_guide`・`propose_rig`・`get_module_rig_guide`・`propose_module_rig`) も重ねた分類で組み、提案の理由に
   直したレイヤーの数を書きます。直しは文書の状態 (Undo の対象) なので、サーバのメモリの分類には入れず、使うたびに今の文書から重ねます
   (エディタにつないだときはエディタの文書の直し)。MCP から直しを書くツールはありません (直すのはエディタの利用者)。
+- **エディタが残した分類 (T0567):** エディタが分類の答えをプロジェクトのキャッシュ `.ugoe-cache/classification.json`
+  ([editor.md#分類の答えのキャッシュ](editor.md#分類の答えのキャッシュ)・[file-formats.md#分類のキャッシュ](spec/file-formats.md#分類のキャッシュ)) に残していれば、
+  MCP サーバも同じファイルを読みます (書くのはエディタだけ)。PSD を読むとき (`get_psd_layers` の `psd`) に、キャッシュの PSD の識別 (大きさと
+  FNV-1a のハッシュ) が読んだ PSD と同じで、レイヤーが合えば (`classify::cached_labels`)、名前の規則の案の代わりにその答えを使います。
+  `psd` を渡されず PSD も覚えていなければ、キャッシュの PSD を読みます (`get_psd_layers`・`set_layer_labels`・リグのガイドと提案。
+  パスはツールの引数と同じく `--root` で確かめ、外なら読まない)。AI の答えなら、エージェントも利用者も決めていないレイヤーの `set_by` は
+  `editor` で、`set_layer_labels` とガイドの `saved_by_editor` が真、提案の理由は「the rest follow the classification the editor saved」です。
+  `set_layer_labels` の `reset` は名前の規則の案に戻します。PSD が変わっていれば (識別が違えば) 使わず、`psd` を渡さなければ `mcp.no_psd` です。
+  利用者の直しはこの上に重ねます。
 - **直して呼び直す:** 番号が範囲の外・語彙にないラベル・範囲の外の値・組んだリグが検証を通らないときは、ツールの実行エラー (`isError`) で理由を返します。エージェントはそれを読んで直し、呼び直します (API の経路の問い直しにあたります)。分類は誤りがあれば何も変えません。
 - **1 回に返す画像:** MCP クライアントは画像を含む結果の大きさに上限を設けることがある (Claude Code は既定で 25,000 トークン) ので、`get_psd_layers` は既定で 8 枚ずつ返し、`count` (32 枚まで)・`thumbnail_size`・`indices` で調整できます。サムネイルごとに `layer N: 名前` の文を直前に置き、画像と番号の対応が分かるようにします。
 - **PSD を読めないとき:** `import_psd`・`get_psd_layers` の PSD が読み込みの上限を超えるなど読めなければ、ツールの実行エラーの文の
   末尾にエラーのコードを `(code: psd.channel_limit_exceeded)` の形で付けます (T0554。コードは [docs/editor.md](editor.md#エラーと警告のコード)
   と同じ)。コードと引数は結果の `structuredContent` にも載ります (下の「エラーのコード」)。上限は既定の値で、MCP から変える引数はありません (エディタと同じ。[読み込みの上限](editor.md#読み込みの上限))。
   作業用の格子が大きすぎて飛ばしたレイヤーは、`import_psd` の結果の `warnings` に `psd.layer_too_large` で、画像がテクスチャの上限を超えて飛ばしたレイヤーは `psd.layer_texture_too_large` で出ます。
-- **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エディタと同じく、分類の答えはプロジェクトには保存しません。利用者の直しは上のとおりプロジェクトから読む)。開き直したら `get_psd_layers` に `psd` を渡します。
+- **覚えておくもの:** PSD のパスと分類は、サーバが開いているプロジェクトごとにメモリに持ちます (エージェントの答えはプロジェクトに保存しません。利用者の直しとエディタが残した分類は上のとおりプロジェクトから読む)。開き直したら `get_psd_layers` に `psd` を渡します (エディタが分類を残していれば不要)。
 - **深度:** 深度推定器は使わず、顔に内接する楕円体 (`TurnDepth::Rules`) で振り向かせます。
 - **モジュール (T0662):** モジュールのプロジェクト (`Document::module` があるもの) では、本体向けの `get_rig_guide`・`propose_rig` は
   パラメータを足すので使えず、モジュールのツールへ案内するエラーを返します (逆も同じ)。`set_layer_labels` の結果の `rig.ready` は、

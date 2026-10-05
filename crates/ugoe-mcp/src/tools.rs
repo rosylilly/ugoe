@@ -461,32 +461,34 @@ impl Tools {
                 let psd = a.psd.as_deref().map(|p| self.resolve(p)).transpose()?;
                 let key = self.resolve(&a.path)?;
                 let (doc, slot) = self.for_autorig(&key)?;
-                autorig::get_psd_layers(&doc, &mut lock(&slot), a, psd)
+                let resolve = |p: &Path| self.resolve_cached(p);
+                autorig::get_psd_layers(&doc, &mut lock(&slot), a, psd, &key, &resolve)
             }),
             "set_layer_labels" => parse(arguments).and_then(|a: autorig::LabelsArgs| {
                 let key = self.resolve(&a.path)?;
                 let (doc, slot) = self.for_autorig(&key)?;
-                autorig::set_layer_labels(&doc, &mut lock(&slot), a)
+                let resolve = |p: &Path| self.resolve_cached(p);
+                autorig::set_layer_labels(&doc, &mut lock(&slot), a, &key, &resolve)
             }),
             "get_rig_guide" => parse(arguments).and_then(|a: PathArgs| {
                 let key = self.resolve(&a.path)?;
-                let (doc, slot) = self.for_autorig(&key)?;
+                let (doc, slot) = self.recalled(&key)?;
                 autorig::get_rig_guide(&doc, &lock(&slot))
             }),
             "propose_rig" => parse(arguments).and_then(|a: autorig::RigArgs| {
                 let key = self.resolve(&a.path)?;
-                let (doc, slot) = self.for_autorig(&key)?;
+                let (doc, slot) = self.recalled(&key)?;
                 let draft = autorig::propose_rig(&doc, &lock(&slot), a)?;
                 self.add_proposal(&key, draft)
             }),
             "get_module_rig_guide" => parse(arguments).and_then(|a: PathArgs| {
                 let key = self.resolve(&a.path)?;
-                let (doc, slot) = self.for_autorig(&key)?;
+                let (doc, slot) = self.recalled(&key)?;
                 autorig::get_module_rig_guide(&doc, &lock(&slot))
             }),
             "propose_module_rig" => parse(arguments).and_then(|a: autorig::ModuleRigArgs| {
                 let key = self.resolve(&a.path)?;
-                let (doc, slot) = self.for_autorig(&key)?;
+                let (doc, slot) = self.recalled(&key)?;
                 let draft = autorig::propose_module_rig(&doc, &lock(&slot), a)?;
                 self.add_proposal(&key, draft)
             }),
@@ -576,6 +578,20 @@ impl Tools {
         let doc = self.with(key, |lent| lent.document.detached())?;
         let slot = Arc::clone(&self.extras().entry(key.to_path_buf()).or_default().psd);
         Ok((doc, slot))
+    }
+
+    /// [`Tools::for_autorig`] と同じだが、PSD を覚えていなければ、エディタがプロジェクトに残した分類の PSD を読む
+    /// (`autorig::recall`)。
+    fn recalled(&self, key: &Path) -> Result<(Document, PsdSlot), ToolError> {
+        let (doc, slot) = self.for_autorig(key)?;
+        autorig::recall(&mut lock(&slot), key, &|p: &Path| self.resolve_cached(p));
+        Ok((doc, slot))
+    }
+
+    /// エディタが残した分類のキャッシュに書かれた PSD のパス (絶対パス) を、ツールが受け取ったパスと同じく確かめる
+    /// (`--root` の外なら `mcp.outside_root`)。
+    fn resolve_cached(&self, path: &Path) -> Result<PathBuf, ToolError> {
+        self.resolve(&path.to_string_lossy())
     }
 
     fn open_project(&self, args: OpenArgs) -> ToolResult {

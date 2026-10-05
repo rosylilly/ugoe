@@ -419,7 +419,7 @@ Claude Code に次のように頼む:
 
 1. `import_psd { "path": "character.ugoeproj", "psd": "character.psd" }` (レイヤーごとのメッシュを持つ新しい
    プロジェクト。保存するまでディスクに書かない)。PSD から作った既存のプロジェクトなら `open_project` して、
-   次の `get_psd_layers` に `psd` を渡す
+   次の `get_psd_layers` に `psd` を渡す (エディタで分類したプロジェクトなら不要。[エディタが残した分類](#エディタが残した分類))
 2. `get_psd_layers { "path": ... }` → 最初のページ: 分類の指示と語彙 (`instructions`)・全体の合成画像・8 枚分の
    サムネイル (`layer N: 名前` の文の直後にその画像)。各レイヤーには名前の規則による案 (`label`・`side`・
    `set_by: "rules"`) と対応するメッシュ (`mesh`) が付く。`next_start` で続きを読む。利用者がエディタで直したレイヤー
@@ -468,6 +468,21 @@ Claude Code に次のように頼む:
 - `get_rig_guide`・`propose_rig`・`get_module_rig_guide`・`propose_module_rig`: 重ねた分類で組む。ガイドの `labels` に
   `corrected_by_user` (数)、提案の理由に `the user corrected N ...` と書く。
 - 直しは文書の状態 (エディタでは Undo の対象) なので、サーバは分類のメモリに入れず、呼ぶたびに今の文書から重ねる。
+
+### エディタが残した分類
+
+エディタはプロジェクトで分類した答え (名前の規則と AI の答え) を `.ugoe-cache/classification.json` に残す
+([docs/spec/file-formats.md#分類のキャッシュ](../../docs/spec/file-formats.md#分類のキャッシュ))。サーバは同じファイルを読む (書かない。T0567)。
+
+- PSD を読むとき (`get_psd_layers` の `psd`)、キャッシュの PSD の大きさとハッシュが読んだ PSD と同じで、レイヤーが合えば
+  (`ugoe_ai::classify::cached_labels`)、名前の規則の案の代わりにその答えを使う。
+- `psd` を渡されず PSD も覚えていなければ、キャッシュの PSD を読む (`get_psd_layers`・`set_layer_labels`・`get_rig_guide`・
+  `propose_rig`・`get_module_rig_guide`・`propose_module_rig`)。パスはツールの引数と同じく確かめ、`--root` の外なら読まない。
+  キャッシュがない・PSD が変わった・読めないときは今までどおり `mcp.no_psd`。
+- AI の答えなら、エージェントも利用者も決めていないレイヤーは `set_by: "editor"`。`set_layer_labels` の結果とガイドの `labels` に
+  `saved_by_editor: true`、提案の理由に `the rest follow the classification the editor saved`。`set_layer_labels` の `reset` は
+  名前の規則の案に戻す。利用者の直しはこの上に重ねる。
+- 同じ流れを `tests/stdio.rs` の `the_classification_saved_by_the_editor_is_used` が確かめている。
   エディタにつないだとき (`--editor`・組み込み) はエディタの文書の直しを使う。MCP には直しを書くツールはない。
 
 `tests/stdio.rs` の `layer_corrections_from_the_project_overlay_the_classification` が確かめている。

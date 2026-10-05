@@ -18,7 +18,7 @@ pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> ProjectErr
 
 /// 2 スペースで整形した JSON (末尾に改行)。フィールドは型定義の順になる。
 /// `path` は書き込み先 (エラーの表示用。プロジェクトからの相対パス)。
-pub(super) fn to_json<T: Serialize>(path: &Path, value: &T) -> Result<Vec<u8>, ProjectError> {
+pub(crate) fn to_json<T: Serialize>(path: &Path, value: &T) -> Result<Vec<u8>, ProjectError> {
     serde_json::to_string_pretty(value)
         .map(with_newline)
         .map_err(|source| ProjectError::Json {
@@ -139,7 +139,7 @@ pub(super) fn remove_if_exists(path: &Path) -> Result<(), ProjectError> {
 ///
 /// 今のファイルは、通常のファイルで書く中身と同じ大きさのときだけ読んで比べる (FIFO・装置を読んで止まらないように。T1607)。
 /// それ以外は比べずに置き換える。
-pub(super) fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
+pub(crate) fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), ProjectError> {
     let same_len = fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64);
     if same_len && read_regular_file(path, bytes.len() as u64).is_ok_and(|old| old == bytes) {
         return Ok(());

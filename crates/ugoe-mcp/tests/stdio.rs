@@ -1073,6 +1073,108 @@ fn layer_corrections_from_the_project_overlay_the_classification() {
     assert_ne!(proposal["commands"], proposal_before["commands"]);
 }
 
+/// エディタがプロジェクトに残した分類の答え (`.ugoe-cache/classification.json`) を、同じ PSD なら名前の規則の案の
+/// 代わりに使い (`set_by=editor`)、PSD を渡されなければそのキャッシュの PSD を読む。PSD が変わった・`--root` の外なら
+/// 使わない (T0567)。
+#[test]
+fn the_classification_saved_by_the_editor_is_used() {
+    use ugoe_editor_core::classification_cache::{
+        CachedClassification, PsdIdentity, write_classification_cache,
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("bustup.ugoeproj");
+    let path = project.to_str().unwrap();
+    let psd = bustup_psd();
+    let mut client = Client::spawn(&[]);
+    client.initialize();
+    client.call_ok(
+        "import_psd",
+        json!({ "path": path, "psd": psd.to_str().unwrap() }),
+    );
+    client.call_ok("save_project", json!({ "path": path }));
+    client.call_ok("close_project", json!({ "path": path }));
+
+    // エディタが AI で分類したことにする: 名前の規則の答えのうち服の 1 枚のラベルと確からしさを変える
+    // (リグを組めるように顔や目は変えない)。
+    use ugoe_ai::classify::Label;
+    let bytes = fs::read(&psd).unwrap();
+    let tree = ugoe_editor_core::import::read_layer_tree(&bytes, ugoe_psd::ImportLimits::default())
+        .unwrap();
+    let mut labels = ugoe_ai::classify::classify_by_name(&tree);
+    let changed = labels
+        .iter()
+        .position(|l| matches!(l.label, Label::Body | Label::Topwear))
+        .unwrap();
+    labels[changed].label = Label::Neckwear;
+    labels[changed].confidence = 0.5;
+    let mut cache = CachedClassification {
+        psd: psd.clone(),
+        identity: PsdIdentity::of(&bytes),
+        by_ai: true,
+        instructions: None,
+        layers: labels,
+    };
+    write_classification_cache(&project, &cache).unwrap();
+
+    // PSD を渡さなくても、キャッシュの PSD を読んでその答えを使う。
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "count": 64, "images": false, "overview": false }),
+    );
+    assert_eq!(page["psd"], json!(psd.canonicalize().unwrap()));
+    let layers = page["layers"].as_array().unwrap();
+    assert_eq!(layers[changed]["label"], "neckwear");
+    assert_eq!(layers[changed]["confidence"], 0.5);
+    assert!(layers.iter().all(|l| l["set_by"] == "editor"));
+    let summary = client.call_ok("set_layer_labels", json!({ "path": path, "layers": [] }));
+    assert_eq!(summary["saved_by_editor"], true);
+
+    // 開き直した後、PSD を読まずにリグのツールを呼んでも、キャッシュの分類で組む。
+    client.call_ok("close_project", json!({ "path": path }));
+    let guide = client.call_ok("get_rig_guide", json!({ "path": path }));
+    assert_eq!(guide["labels"]["saved_by_editor"], true);
+    let proposal = client.call_ok("propose_rig", json!({ "path": path }));
+    let rationale = proposal["rationale"].as_str().unwrap();
+    assert!(
+        rationale.contains("the rest follow the classification the editor saved"),
+        "{rationale}"
+    );
+    // reset で名前の規則の案に戻す。
+    let summary = client.call_ok(
+        "set_layer_labels",
+        json!({ "path": path, "layers": [], "reset": true }),
+    );
+    assert_eq!(summary["saved_by_editor"], false);
+
+    // PSD が変わっていれば (識別が合わなければ) 使わない。
+    cache.identity.size += 1;
+    write_classification_cache(&project, &cache).unwrap();
+    client.call_ok("close_project", json!({ "path": path }));
+    let (_, code) = client.call_coded("get_rig_guide", json!({ "path": path }));
+    assert_eq!(code, "mcp.no_psd");
+    let page = client.call_ok(
+        "get_psd_layers",
+        json!({ "path": path, "psd": psd.to_str().unwrap(), "count": 64, "images": false }),
+    );
+    let layers = page["layers"].as_array().unwrap();
+    assert_ne!(layers[changed]["label"], "neckwear");
+    assert!(layers.iter().all(|l| l["set_by"] == "rules"));
+    drop(client);
+
+    // `--root` の外の PSD は、キャッシュに書いてあっても読まない。
+    cache.identity = PsdIdentity::of(&bytes);
+    write_classification_cache(&project, &cache).unwrap();
+    let mut client = Client::spawn(&["--root", tmp.path().to_str().unwrap()]);
+    client.initialize();
+    let (_, code) = client.call_coded(
+        "get_psd_layers",
+        json!({ "path": "bustup.ugoeproj", "images": false }),
+    );
+    assert_eq!(code, "mcp.no_psd");
+    drop(client);
+}
+
 /// 着せ替えの見本の本体 (`assets/samples/dress-up/`)。
 fn dress_up_base() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/samples/dress-up/dress-up.ugoe")

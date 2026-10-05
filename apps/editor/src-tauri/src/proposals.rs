@@ -19,6 +19,10 @@
 //!   そのメッシュの形 (頂点・三角形・親) を編集したら、写した変形が合わなくなるので、提案し直すよう知らせる
 //!   ([`ProposalState::stale_rigs`])。採用したときの形の指紋は `project.json` の `editor.rigged_meshes` に残し
 //!   (保存するまでファイルには書かない)、開き直しても知らせる (`docs/editor.md#モジュールのプロジェクトでの-ai-の提案`)。
+//! - 分類の答えは、プロジェクトの `.ugoe-cache/classification.json` に分類した PSD の識別と一緒に残し
+//!   (`ugoe_editor_core::classification_cache`)、開いたときに PSD が合えば戻す。分類したとき (保存先があれば) と
+//!   保存したときに書く。キャッシュなので Undo の対象にせず、`project.json` も変えない
+//!   (`docs/editor.md#分類の答えのキャッシュ`)。
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -27,8 +31,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
-    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, classification_requests_guided,
-    classify_by_name, classify_layers_guided, corrected_labels, correction_label, overview_png,
+    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, cached_labels,
+    classification_requests_guided, classify_by_name, classify_layers_guided, corrected_labels,
+    correction_label, overview_png,
 };
 use ugoe_ai::instructions::Instructions;
 use ugoe_ai::module_rig::{
@@ -41,9 +46,12 @@ use ugoe_ai::rig::{
     propose_rig_with_ai_guided, rig_request_guided,
 };
 use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
+use ugoe_editor_core::classification_cache::{
+    CachedClassification, PsdIdentity, read_classification_cache, write_classification_cache,
+};
 use ugoe_editor_core::{
-    ApplyReport, Command, Document, KeyformTarget, LayerCorrections, ProposalOrigin, ProposalView,
-    Proposals, PsdImportError, import,
+    ApplyReport, Command, Document, KeyformTarget, LayerCorrections, Message, ProposalOrigin,
+    ProposalView, Proposals, PsdImportError, import,
 };
 use ugoe_model::{Mesh, MeshId};
 use ugoe_psd::{ImportLimits, LayerTree};
@@ -147,6 +155,8 @@ fn mesh_writes(commands: &[Command]) -> Vec<(usize, MeshId)> {
 #[derive(Debug, Clone)]
 struct Classified {
     psd: PathBuf,
+    /// 分類したときの PSD の識別 (キャッシュに残し、開いたときに今の PSD と比べる)。
+    identity: PsdIdentity,
     labels: Vec<LayerLabel>,
     by_ai: bool,
     /// AI で分類したときに添えた注文。
@@ -181,6 +191,31 @@ impl ProposalSession {
             labels: corrected_labels(&c.labels, document.layer_corrections()),
             ..c.clone()
         })
+    }
+
+    /// 最後の分類を、キャッシュ (`.ugoe-cache/classification.json`) に書く形にしたもの。直しは重ねない
+    /// (直しは `project.json` に残る)。分類していなければ `None`。
+    pub(crate) fn cache(&self) -> Option<CachedClassification<LayerLabel>> {
+        self.classification.as_ref().map(|c| CachedClassification {
+            psd: c.psd.clone(),
+            identity: c.identity,
+            by_ai: c.by_ai,
+            instructions: c.instructions.as_ref().map(|i| i.as_str().to_owned()),
+            layers: c.labels.clone(),
+        })
+    }
+
+    /// プロジェクトのディレクトリ `dir` のキャッシュから分類を戻す (開いたとき)。キャッシュの PSD が今もあり、
+    /// 識別とレイヤーが合うときだけ戻し、その PSD を提案の元にする。合わない・読めないときは何もしない。
+    pub(crate) fn restore_classification(&mut self, dir: &Path) {
+        match restored_classification(dir) {
+            Ok(Some(classified)) => {
+                self.psd = Some(classified.psd.clone());
+                self.classification = Some(classified);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("could not restore the layer classification: {e}"),
+        }
     }
 
     /// 提案の置き場 (エディタにつないだエージェントの提案もここに置く。`crate::mcp`)。
@@ -415,14 +450,63 @@ fn read_tree(path: &Path) -> IpcResult<LayerTree> {
     read_tree_with(path, ImportLimits::default())
 }
 
+/// PSD を読み、レイヤーの木と PSD の識別 (分類のキャッシュに残す) を返す。
+fn read_psd(path: &Path) -> IpcResult<(LayerTree, PsdIdentity)> {
+    read_psd_with(path, ImportLimits::default())
+}
+
 /// PSD を展開の上限 `limits` で読む。上限の超過は、どの上限かが分かるコード (`psd.channel_limit_exceeded`・
 /// `psd.total_limit_exceeded`) のまま返し、ほかの読み込みのエラーはパス付きの `psd.read_file_failed` にする。
 fn read_tree_with(path: &Path, limits: ImportLimits) -> IpcResult<LayerTree> {
+    read_psd_with(path, limits).map(|(tree, _)| tree)
+}
+
+/// [`read_tree_with`] と同じだが、PSD の識別も返す。
+fn read_psd_with(path: &Path, limits: ImportLimits) -> IpcResult<(LayerTree, PsdIdentity)> {
     let bytes = read_regular_file(path, MAX_PSD_BYTES).map_err(|e| EditorError::io(path, e))?;
-    import::read_layer_tree(&bytes, limits).map_err(|e| match e {
-        PsdImportError::Psd(error) => EditorError::psd_read(path, error).into(),
-        e => e.into(),
-    })
+    let tree = import::read_layer_tree(&bytes, limits).map_err(|e| -> Message {
+        match e {
+            PsdImportError::Psd(error) => EditorError::psd_read(path, error).into(),
+            e => e.into(),
+        }
+    })?;
+    Ok((tree, PsdIdentity::of(&bytes)))
+}
+
+/// プロジェクトのディレクトリ `dir` のキャッシュの分類 ([`ProposalSession::restore_classification`])。
+/// キャッシュがない・PSD がない・PSD の大きさや中身が違う・レイヤーが合わないときは `None`。
+fn restored_classification(dir: &Path) -> IpcResult<Option<Classified>> {
+    let Some(cache) = read_classification_cache::<LayerLabel>(dir)? else {
+        return Ok(None);
+    };
+    // 大きさが違えば (消えていれば) 読まない。
+    if std::fs::metadata(&cache.psd).map(|m| m.len()).ok() != Some(cache.identity.size) {
+        return Ok(None);
+    }
+    let (tree, identity) = read_psd(&cache.psd)?;
+    if identity != cache.identity {
+        return Ok(None);
+    }
+    let Some(labels) = cached_labels(&tree, cache.layers) else {
+        return Ok(None);
+    };
+    Ok(Some(Classified {
+        psd: cache.psd,
+        identity,
+        labels,
+        by_ai: cache.by_ai,
+        // 今の上限を超える注文は捨てる (分類は戻す)。
+        instructions: cache
+            .instructions
+            .and_then(|text| Instructions::new(&text).ok().flatten()),
+    }))
+}
+
+/// 分類の答えをプロジェクトのディレクトリ `dir` のキャッシュに書く。書けなくても分類や保存は失敗させない。
+pub(crate) fn write_cache(dir: &Path, cache: &CachedClassification<LayerLabel>) {
+    if let Err(e) = write_classification_cache(dir, cache) {
+        eprintln!("could not write the layer classification cache: {e}");
+    }
 }
 
 /// レイヤーを分類する。`provider` があれば AI で (注文と前の分類を添えて)、なければ名前の規則で。
@@ -922,7 +1006,7 @@ pub(crate) fn classify_guided_in(
         };
         (path, session.id())
     };
-    let tree = read_tree(&path)?;
+    let (tree, identity) = read_psd(&path)?;
     let mut guidance = ClassifyGuidance::default();
     let labels = if use_ai {
         guidance.instructions = instructions(ask.instructions)?;
@@ -956,6 +1040,7 @@ pub(crate) fn classify_guided_in(
     .map_err(EditorError::Ai)?;
     let classified = Classified {
         psd: path.clone(),
+        identity,
         labels,
         by_ai: use_ai,
         instructions: guidance.instructions,
@@ -969,6 +1054,16 @@ pub(crate) fn classify_guided_in(
     }
     session.proposals.set_psd(path);
     session.proposals.classification = Some(classified);
+    // 保存先があれば、開き直しても分類し直さずに済むようキャッシュに残す (ファイルはロックの外で書く)。
+    let cache = session
+        .path()
+        .map(Path::to_path_buf)
+        .zip(session.proposals.cache());
+    drop(session);
+    drop(document);
+    if let Some((dir, cache)) = cache {
+        write_cache(&dir, &cache);
+    }
     Ok(AiReply::Done { value })
 }
 

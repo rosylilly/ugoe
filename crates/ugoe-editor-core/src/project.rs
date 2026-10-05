@@ -35,16 +35,14 @@ mod module;
 mod paths;
 mod read;
 
-pub(crate) use files::{io_error, list_files};
-use files::{
-    known, read_json, read_json_dir, remove_if_exists, remove_stale, to_json, with_newline,
-    write_if_changed,
-};
+pub(crate) use files::{io_error, list_files, to_json, write_if_changed};
+use files::{known, read_json, read_json_dir, remove_if_exists, remove_stale, with_newline};
 pub use module::{
     BaseCheck, load_base, load_base_checked, load_base_with_limits, read_module_link,
 };
 use module::{module_meta_with, unchecked};
-use paths::{absolute, normalize_path, relative_path};
+pub(crate) use paths::normalize_path;
+use paths::{absolute, relative_path};
 pub use read::{
     DEFAULT_MAX_BUNDLE_BYTES, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_JSON_BYTES, ProjectReadLimits,
 };

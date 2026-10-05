@@ -27,7 +27,8 @@ character.ugoeproj/
                         と法線マップの画像 (<name> は TextureRef::normal_map)
   sources/*.psd         取り込み元の PSD (任意。保存では触れない)
   .gitignore            `.ugoe-cache/` を書く
-  .ugoe-cache/          サムネイルなどのキャッシュ (git 管理外。保存・読み込みでは触れない)
+  .ugoe-cache/          キャッシュ (git 管理外。保存・読み込みでは触れない)
+    classification.json PSD のレイヤーの分類の答え (任意。[分類のキャッシュ](#分類のキャッシュ))
 ```
 
 読み書きは `ugoe_editor_core::project` (`Project::save` / `Project::load`) が行います。読み込みではモーションと表情の数値も検証します ([model.md#モーションと表情の検証](model.md#モーションと表情の検証))。
@@ -47,7 +48,7 @@ character.ugoeproj/
 | `editor.lighting` | object | エディタのビューポートとプレビューで当てる光源 (`PreviewLighting`。モデルには入らない)。`enabled` (bool)・`ambient` (RGB 0〜1)・`ambient_intensity`・`lights` (最大 8 個。`{"type": "directional", "direction", "color", "intensity"}` か `{"type": "point", "position", "color", "intensity", "range"}`)。すべて既定値なら書かない。足りないフィールドは既定値、読めない・範囲の外ならすべて既定値で読む ([editor.md#ライティングの画面](../editor.md#ライティングの画面)) |
 | `editor.dress_up` | object | エディタのプレビューで試す着せ替えのモジュール。`modules` (`[{"path": string, "attached": bool}]`。`.ugoemod` のパスと、プレビューで付けるか)。パスは `.ugoeproj` と同じフォルダの中なら相対パス (`/` 区切り)、それ以外は絶対パス。空なら書かない。読めなければ空、`attached` の欠けは `false` で読む ([editor.md#プレビューの着せ替え](../editor.md#プレビューの着せ替え)) |
 | `editor.rigged_meshes` | object | AI のモジュールのリグの提案が本体の変形を写した衣装のメッシュの、採用した (または知らせを消した) ときの形の指紋 (`{"<メッシュの ID>": "<16 桁の 16 進>"}`。形は親のデフォーマの ID・UV・三角形の FNV-1a 64 ビット)。形を編集したら提案し直すよう知らせるために比べる ([editor.md](../editor.md#モジュールのプロジェクトでの-ai-の提案))。ID はファイルの中の ID。覚えたものがなければ書かない。読めない値・文字列でない値は捨てる |
-| `editor.classification` | object | エディタで利用者が直した (または「これでよい」と認めた) PSD のレイヤーの分類 (`{"corrections": [{"path": ["<グループ>", "<レイヤー>"], "label": "eye_white", "side": "left"}]}`。`path` は外側のグループから順のレイヤーの名前、`side` は `left`・`right`・`center`)。分類の答えそのものは書かない。直しがなければ書かない。形の違う件・正しくない件 (空のパス・小文字の英数字と `_` でないラベルなど) と同じパスの 2 件目以降は捨てる ([editor.md#分類の直し](../editor.md#分類の直し)) |
+| `editor.classification` | object | エディタで利用者が直した (または「これでよい」と認めた) PSD のレイヤーの分類 (`{"corrections": [{"path": ["<グループ>", "<レイヤー>"], "label": "eye_white", "side": "left"}]}`。`path` は外側のグループから順のレイヤーの名前、`side` は `left`・`right`・`center`)。分類の答えそのものは書かない。直しがなければ書かない。形の違う件・正しくない件 (空のパス・小文字の英数字と `_` でないラベルなど) と同じパスの 2 件目以降は捨てる ([editor.md#分類の直し](../editor.md#分類の直し))。分類の答えは [分類のキャッシュ](#分類のキャッシュ)に置く |
 | `editor.export` | object | 書き出しの設定 (`ExportSettings`)。`atlas` (bool、既定 `false`)・`atlas_max_size` (1〜16384、既定 2048)・`atlas_padding` (0〜64、既定 2)。すべて既定値なら書かない。足りないフィールドは既定値、読めなければすべて既定値で読む ([editor.md#書き出し](../editor.md#書き出し)) |
 
 - `format_version` が読める版より新しければ、読み込みをエラーにします。
@@ -99,6 +100,42 @@ cat_ears.ugoeproj/
 - 保存すると、`model.json`・`physics.json` を消します (本体のプロジェクトとして保存し直したときは、逆に `module.json` を消します)。
 - `.ugoemod` への書き出し (`ugoe_editor_core::export_module`) は、`validate_module` と本体との合成 (`compose`・`compose_physics`) を確かめてから、
   テクスチャを `Module::textures` の順に `TEXR` に、法線マップを `NRML` に入れます。
+
+### 分類のキャッシュ
+
+`.ugoe-cache/classification.json` は、エディタが PSD のレイヤーを分類した答え (名前の規則と AI の答え) を残すキャッシュです (T0567)。
+開き直したときに分類し直さず (AI を呼び直さず) に済むよう、エディタが書き、エディタと MCP サーバが読みます
+([editor.md#分類の答えのキャッシュ](../editor.md#分類の答えのキャッシュ))。プロジェクトの一部ではないので、消しても失われるのは答えだけで
+(分類し直せば戻る)、`PROJECT_FORMAT_VERSION` とは別に `version` で形を区別します。読み書きは `ugoe_editor_core::classification_cache`。
+
+```json
+{
+  "version": 1,
+  "psd": { "path": "sources/character.psd", "size": 1048576, "hash": "9f1c0e5a7b3d2e41" },
+  "by_ai": true,
+  "instructions": "the ribbon is a hair accessory",
+  "layers": [
+    { "layer_path": ["Face", "Eye L"], "label": "eye_white", "side": "left", "confidence": 0.92, "variant": 3 }
+  ]
+}
+```
+
+| フィールド | 型 | 内容 |
+| --- | --- | --- |
+| `version` | u32 | キャッシュの形の版 (`CLASSIFICATION_CACHE_VERSION`、現在 1)。違う版のファイルは無いものとする |
+| `psd.path` | string | 分類した PSD。プロジェクトのディレクトリの中なら相対パス (`/` 区切り)、外なら絶対パス |
+| `psd.size` | u64 | 分類した PSD のバイト数 |
+| `psd.hash` | string | 分類した PSD の中身の FNV-1a (64 ビット。オフセット `0xcbf29ce484222325`・素数 `0x100000001b3`) の 16 桁の 16 進 |
+| `by_ai` | bool | AI で分類したか (偽なら名前の規則だけ) |
+| `instructions` | string | AI で分類したときに添えた注文 (任意) |
+| `layers` | array | レイヤーごとの答え (`ugoe_ai::classify::LayerLabel`。`layer_path`・`label`・`side`・`confidence` (0..=1)・任意の `variant` と `name_disagreement`)。並びは名前の規則の分類と同じ (PSD の上から順) で、65536 件まで |
+
+- 書くときは、内容が変わらなければ書き直さず、変わったら一時ファイルを経て置き換えます ([出力の安定性](#出力の安定性)と同じ)。
+- 読むときは、通常のファイルだけを 64 MiB まで読みます (それ以外はエラーで、使う側は無視する)。JSON として読めない・形や版が違う・
+  `layers` が多すぎるファイルは無いものとします。
+- 使う側は、`psd.path` の PSD を読み、大きさとハッシュが同じで、`layers` の数とパスがその PSD のレイヤーと合い、確からしさが 0..=1 の
+  ときだけ使います。`name_disagreement` は信じず、読んだ側が付け直します。利用者の直し (`project.json` の `editor.classification`) は
+  ここには書かず、使うときに上に重ねます。
 
 ### テクスチャのアトラス化
 

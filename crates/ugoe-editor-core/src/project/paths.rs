@@ -18,7 +18,7 @@ pub(super) fn absolute(path: &Path) -> PathBuf {
 }
 
 /// `.` と `..` を字面の上で取り除く (ファイルシステムは見ない)。
-pub(super) fn normalize_path(path: &Path) -> PathBuf {
+pub(crate) fn normalize_path(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
     for component in absolute(path).components() {
