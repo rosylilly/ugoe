@@ -1,11 +1,11 @@
 ---
 id: T0734
 title: "ビューア: モーションのイベントの欄に、発火したモーションの名前と番号を出す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0734
 ---
 
 # T0734: ビューア: モーションのイベントの欄に、発火したモーションの名前と番号を出す

@@ -1,11 +1,11 @@
 ---
 id: T0473
 title: "Unity: PNG のテクスチャも C ABI のデコーダで読み、参照と画素を揃える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0473
 ---
 
 # T0473: Unity: PNG のテクスチャも C ABI のデコーダで読み、参照と画素を揃える

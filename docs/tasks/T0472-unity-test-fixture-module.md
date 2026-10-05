@@ -1,11 +1,11 @@
 ---
 id: T0472
 title: "Unity: unknown_mask のテストを Unity のテスト専用の小さなモジュールで行う"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/unity]
 depends_on: []
-assignee:
+assignee: claude-worker-T0472
 ---
 
 # T0472: Unity: unknown_mask のテストを Unity のテスト専用の小さなモジュールで行う

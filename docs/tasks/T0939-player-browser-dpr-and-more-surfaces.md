@@ -1,11 +1,11 @@
 ---
 id: T0939
 title: "PuppetSurface のブラウザのテスト: 倍率の変化のシナリオと、エディタの ViewportController・Player への広げ方"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0939
 ---
 
 # T0939: PuppetSurface のブラウザのテスト: 倍率の変化のシナリオと、エディタの ViewportController・Player への広げ方

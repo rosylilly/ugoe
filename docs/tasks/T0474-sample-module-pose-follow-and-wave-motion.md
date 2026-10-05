@@ -1,11 +1,11 @@
 ---
 id: T0474
 title: "見本: 着せ替えのスロットのポーズの公開と追従、ポーズを要求するモーション"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, assets/samples, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0474
 ---
 
 # T0474: 見本: 着せ替えのスロットのポーズの公開と追従、ポーズを要求するモーション

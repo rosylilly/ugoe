@@ -1,11 +1,11 @@
 ---
 id: T0566
 title: "ugoe-mcp: レイヤーの分類に project.json の editor.classification の直しを重ねる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0566
 ---
 
 # T0566: ugoe-mcp: レイヤーの分類に project.json の editor.classification の直しを重ねる
