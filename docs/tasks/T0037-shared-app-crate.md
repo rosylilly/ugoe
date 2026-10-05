@@ -3,7 +3,7 @@ id: T0037
 title: "3 つのアプリで写しになっている FileAccess・ダイアログの組み立てを共有する置き場を作るか (判断が要る)"
 status: todo
 milestone: M9
-crates: [apps/editor, apps/viewer, apps/studio, Cargo.toml, scripts, docs]
+crates: [ugoe-fs, apps/editor, apps/viewer, apps/studio, Cargo.toml, scripts, docs]
 depends_on: [T1620, T1625]
 assignee:
 ---
@@ -40,3 +40,4 @@ T1616 でエディタもビューア・スタジオと同じく、ファイル�
 ## メモ
 
 - T0036 で起票した (元の候補: T1616 (共有の置き場))。
+- 判断 (2026-10-05、利用者の判断): 案 A。`FileAccess` と `with_extension` を MIT の `ugoe-fs` に移し (std だけで書く)、Tauri に依存するダイアログの組み立ては各アプリに残す。
