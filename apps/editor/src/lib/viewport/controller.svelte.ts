@@ -8,8 +8,9 @@
 // - WebPuppet と canvas の寿命 (作成・WebGL2 への切り替え・GPU を失ったときの作り直し・破棄・devicePixelRatio の追従) は
 //   @ugoe/player の PuppetSurface に任せる (Player と共有。T0932)。
 
-import { PuppetSurface, type Screenshot } from "@ugoe/player";
+import { GpuLostRepeatedlyError, PuppetSurface, type Screenshot } from "@ugoe/player";
 import { errorText } from "../errors";
+import { t } from "../i18n";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
 /** ビューポートに表示するモデル。bundle があればテクスチャ付きで、無ければ JSON (白いテクスチャ) で表示する。 */
@@ -91,7 +92,8 @@ export class ViewportController {
     created: (puppet) => this.#setUp(puppet),
     failed: (e) => {
       this.status = "error";
-      this.message = errorText(e);
+      this.message =
+        e instanceof GpuLostRepeatedlyError ? t("viewport.gpuLostRepeatedly") : errorText(e);
     },
     pixelRatioChanged: () => this.requestRender(),
   });
@@ -394,7 +396,8 @@ export class ViewportController {
 
   #render(): void {
     const puppet = this.#puppet;
-    // GPU を失った (GPU プロセスのクラッシュ・WebGL2 のコンテキストの喪失など)。canvas ごと作り直す。
+    // GPU を失った (GPU プロセスのクラッシュ・WebGL2 のコンテキストの喪失など)。canvas ごと作り直す
+    // (WebGL2 はコンテキストの復元を待つ)。
     if (!puppet || this.#surface.checkLost()) return;
     try {
       puppet.render();

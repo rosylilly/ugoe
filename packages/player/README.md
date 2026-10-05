@@ -53,8 +53,10 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   アプリが決める。`src/wasm.ts` の `WebPuppet` は Player が使うメソッドだけを書いた構造の型で、アプリの生成物
   (`ugoe_wasm.d.ts`) がそれを満たすかはアプリの型検査で確かめる。Player が新しいメソッドを使うときは `src/wasm.ts` に足す。
 - `attach` は前の `attach` を先に `detach` する。WebPuppet を作っている間に `detach` か次の `attach` があれば、遅れて
-  できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU も WebGL2 も `is_lost`。
-  WebGL2 は canvas の `webglcontextlost` でもすぐ) canvas ごと作り直してモデルを読み直す。devicePixelRatio だけが変わったときも
+  できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU も WebGL2 も `is_lost`)
+  canvas ごと作り直してモデルを読み直す。WebGL2 はコンテキストの復元 (`webglcontextrestored`) を待ってから作り直す。前の作り直しから
+  1 分以内に失うことが続き 4 回目になったら、作り直さずに `status` を `unavailable`、`error` を `errors.gpuLostRepeatedly` にする
+  (`<ugoe-avatar>` と同じ数と時間。T0935)。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
 - `Player` は `@ugoe/face-tracking` の `TrackingTarget` を満たす (`new FaceTracker(player, …)`)。

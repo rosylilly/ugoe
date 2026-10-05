@@ -65,7 +65,7 @@ import {
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import type { Screenshot } from "./screenshot";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
-import { PuppetSurface } from "./surface";
+import { GpuLostRepeatedlyError, PuppetSurface } from "./surface";
 import type { UgoeWasmModule, WebPuppet } from "./wasm";
 
 /** プレーヤーを使うアプリが渡すもの (wasm の読み込みとファイルの読み直し)。 */
@@ -283,7 +283,10 @@ export class Player {
       created: (puppet, recovered) => this.#setUp(puppet, recovered),
       failed: (e) => {
         this.status = "unavailable";
-        this.error = t("errors.renderStart", { message: message(e) });
+        this.error =
+          e instanceof GpuLostRepeatedlyError
+            ? t("errors.gpuLostRepeatedly")
+            : t("errors.renderStart", { message: message(e) });
       },
       lost: () => {
         this.#carry = { ...this.values };

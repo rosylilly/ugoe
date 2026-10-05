@@ -1,5 +1,8 @@
 // ViewportController の WebPuppet の作成と破棄 (attach・detach・作り直し)。wasm と canvas は偽物。
+
+import { MAX_RESTARTS } from "@ugoe/player";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../i18n";
 import type { ViewportController as ViewportControllerType } from "./controller.svelte";
 import type { WebPuppet } from "./wasm";
 
@@ -121,10 +124,15 @@ describe("ViewportController", () => {
     await attached;
     const canvas = pending[0]?.canvas;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // wasm は canvas の webglcontextlost で is_lost を立てる。描くのを待たずに作り直す。
+    // wasm は canvas の webglcontextlost で is_lost を立てる。復元を待ってから、描くのを待たずに作り直す。
     puppet.lost = true;
-    canvas?.dispatchEvent(new Event("webglcontextlost"));
+    canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
     warn.mockRestore();
+    controller.requestRender();
+    await settle();
+    expect(pending).toHaveLength(1);
+    expect(calls).toEqual([]);
+    canvas?.dispatchEvent(new Event("webglcontextrestored"));
     expect(controller.puppet).toBeNull();
     expect(calls).toEqual(["free"]);
     expect(canvas?.removed).toBe(true);
@@ -136,9 +144,39 @@ describe("ViewportController", () => {
     expect(controller.puppet).toBe(next.puppet);
     expect(controller.status).toBe("ready");
     // 作り直した後の古い canvas の知らせは無視する。
-    canvas?.dispatchEvent(new Event("webglcontextlost"));
+    canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    canvas?.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     expect(pending).toHaveLength(2);
+  });
+
+  it("stops drawing and says so after losing the WebGL context repeatedly", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      pending[0]?.resolve(fakePuppet().puppet);
+      await attached;
+      for (let i = 0; i <= MAX_RESTARTS; i++) {
+        now += 1000;
+        const canvas = pending[i]?.canvas;
+        canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+        canvas?.dispatchEvent(new Event("webglcontextrestored"));
+        await settle();
+        pending[i + 1]?.resolve(fakePuppet().puppet);
+        await settle();
+      }
+      expect(pending).toHaveLength(MAX_RESTARTS + 1);
+      expect(controller.puppet).toBeNull();
+      expect(controller.status).toBe("error");
+      expect(controller.message).toBe(t("viewport.gpuLostRepeatedly"));
+    } finally {
+      warn.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   it("recreates the canvas when the GPU device is lost while rendering", async () => {

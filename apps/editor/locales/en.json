@@ -2663,6 +2663,7 @@
   },
   "viewport": {
     "loading": "Loading viewport…",
+    "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Restart the editor to draw again.",
     "screenshot": {
       "label": "Screenshot",
       "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",

@@ -102,6 +102,7 @@
     "wasmMissing": "ugoe-wasm がビルドされていません",
     "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",
     "renderStart": "描画を始められません: {{message}}",
+    "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。描き直すには、アプリを起動し直してください (ブラウザではページを読み込み直してください)",
     "noFollowerApi": "ugoe-wasm に受け手の口 (WebPuppet.follow) がありません。ugoe-wasm をビルドし直してください"
   },
   "remembered": {

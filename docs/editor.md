@@ -1817,7 +1817,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - パラメータスライダーの操作はフロントエンドの wasm の中だけで完結させます (IPC を往復しない)。これにより 60fps を保ちます。スライダーの値はドキュメントの状態ではなく、表示の状態です。
 - WebGPU が使えない WebView (Linux の WebKitGTK など) では、wgpu の WebGL2 バックエンドにフォールバックします。
 - GPU を失ったら canvas ごと作り直します。WebGPU のデバイスの喪失も WebGL2 のコンテキストの喪失も `WebPuppet.is_lost()` で分かり
-  (WebGL2 は wasm が canvas の `webglcontextlost` で印を立てる)、要求されたときだけ描くので、WebGL2 は canvas のイベントですぐ作り直します。
+  (WebGL2 は wasm が canvas の `webglcontextlost` で印を立てる)、WebGL2 は `webglcontextrestored` を待ってから、次に描くのを待たずに作り直します。
+  前の作り直しから 1 分以内に失うことが続き 4 回目になったら、作り直さずにビューポートに「GPU を続けて失った」と出します (T0935)。
   devicePixelRatio だけが変わったとき (倍率の違う画面へ移したなど) も、描画バッファの大きさを合わせ直します。
   WebPuppet と canvas の寿命はビューアと同じ `@ugoe/player` の `PuppetSurface` が持ちます ([ui.md](ui.md#webpuppet-の寿命)。T0932)。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。

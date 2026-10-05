@@ -1,7 +1,8 @@
 // Player の作成と破棄 (attach・detach・GPU を失ったときの作り直し。T0914)。wasm と DOM は偽物 (src/testing/)。
 // 着せ替え・モーション・ドライバとトラッキング・受け手のモード・光源は player*.test.ts に流れごとに分ける (T0931・T0933)。
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { t } from "./i18n";
+import { MAX_RESTARTS } from "./surface";
 import { bundle, fakePuppet } from "./testing/fakePuppet";
 import { container, pending, player, settle, setupPlayer } from "./testing/player";
 
@@ -55,7 +56,12 @@ describe("Player", () => {
     expect(first.loaded).toEqual([model.bytes]);
 
     const lost = pending[0]?.canvas;
-    lost?.dispatchEvent(new Event("webglcontextlost"));
+    lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    await settle();
+    // 復元を待つ間は作り直さない。
+    expect(pending).toHaveLength(1);
+    expect(first.calls).toEqual([]);
+    lost?.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     expect(first.calls).toEqual(["free"]);
     expect(lost?.removed).toBe(true);
@@ -66,9 +72,37 @@ describe("Player", () => {
     expect(second.loaded).toEqual([model.bytes]);
     expect(p.status).toBe("ready");
     // 作り直した後の古い canvas の知らせは無視する。
-    lost?.dispatchEvent(new Event("webglcontextlost"));
+    lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    lost?.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     expect(pending).toHaveLength(2);
+  });
+
+  it("stops drawing and says so after losing the GPU repeatedly", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    onTestFinished(() => {
+      warn.mockRestore();
+      clock.mockRestore();
+    });
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+    for (let i = 0; i <= MAX_RESTARTS; i++) {
+      now += 1000;
+      const canvas = pending[i]?.canvas;
+      canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      canvas?.dispatchEvent(new Event("webglcontextrestored"));
+      await settle();
+      pending[i + 1]?.resolve(fakePuppet().puppet);
+      await settle();
+    }
+    expect(pending).toHaveLength(MAX_RESTARTS + 1);
+    expect(p.status).toBe("unavailable");
+    expect(p.error).toBe(t("errors.gpuLostRepeatedly"));
   });
 
   it("reloads the model that is shown, not one that failed to open, after a lost GPU", async () => {
@@ -90,7 +124,8 @@ describe("Player", () => {
     );
     await p.load({ name: "notes.txt", bytes: new Uint8Array([1, 2, 3]) });
 
-    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost"));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     const second = fakePuppet();
     pending[1]?.resolve(second.puppet);
