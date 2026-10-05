@@ -481,10 +481,9 @@ export class UgoeAvatarElement extends BaseElement {
       if (this.#recovering) {
         console.warn("ugoe-avatar: could not recreate the puppet; retrying:", e);
         this.#waitForGpu();
-        this.#restoreTimer = setTimeout(() => {
-          this.#restoreTimer = null;
+        this.#setRestoreTimer(() => {
           if (session === this.#session) this.#onLost();
-        }, RESTORE_TIMEOUT_MS);
+        });
         return;
       }
       this.#fail(e);
@@ -549,12 +548,11 @@ export class UgoeAvatarElement extends BaseElement {
       if (this.#frame) cancelAnimationFrame(this.#frame);
       this.#frame = 0;
       // 復元が届かないまま待ち続けないよう、時間が来たら新しい canvas で作り直しを試す
-      this.#restoreTimer = setTimeout(() => {
-        this.#restoreTimer = null;
+      this.#setRestoreTimer(() => {
         if (canvas !== this.#canvas || !this.#contextLost) return;
         console.warn("ugoe-avatar: the WebGL context was not restored in time; recreating");
         this.#onLost();
-      }, RESTORE_TIMEOUT_MS);
+      });
       this.#waitForGpu();
     });
     canvas.addEventListener("webglcontextrestored", () => {
@@ -564,6 +562,18 @@ export class UgoeAvatarElement extends BaseElement {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver?.observe(canvas);
     return canvas;
+  }
+
+  /**
+   * 復元の時間切れ・試し直しのタイマーを置く。前のタイマーは消す (失ったまま作り直しに失敗すると、新しい canvas の
+   * `webglcontextlost` と `#start` の失敗の両方が置くため。T0480)。
+   */
+  #setRestoreTimer(callback: () => void): void {
+    if (this.#restoreTimer !== null) clearTimeout(this.#restoreTimer);
+    this.#restoreTimer = setTimeout(() => {
+      this.#restoreTimer = null;
+      callback();
+    }, RESTORE_TIMEOUT_MS);
   }
 
   #observe(): void {

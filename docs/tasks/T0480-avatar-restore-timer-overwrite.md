@@ -1,7 +1,7 @@
 ---
 id: T0480
 title: "<ugoe-avatar>: 作り直しが CreateError で失敗すると、復元の時間切れのタイマーを消さずに上書きする"
-status: in-progress
+status: done
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: []
@@ -19,9 +19,9 @@ T0479 の適合テストを書く途中で、`<ugoe-avatar>` (bindings/web) の�
 
 ## 受け入れ条件
 
-- [ ] 先に失敗するテスト (avatar の単体テスト) で、作り直しの失敗の後に時間切れのタイマーが 1 つだけであることを確かめる
-- [ ] タイマーを置き直す前に前のものを消す。作り直しの回数の数え方 (T0938) は変えない
-- [ ] `just conformance` (avatar のシナリオ) と `just ci` が通る
+- [x] 先に失敗するテスト (avatar の単体テスト) で、作り直しの失敗の後に時間切れのタイマーが 1 つだけであることを確かめる
+- [x] タイマーを置き直す前に前のものを消す。作り直しの回数の数え方 (T0938) は変えない
+- [x] `just conformance` (avatar のシナリオ) と `just ci` が通る
 
 ## 参考
 
@@ -30,3 +30,9 @@ T0479 の適合テストを書く途中で、`<ugoe-avatar>` (bindings/web) の�
 ## メモ
 
 - オーケストレーターが直接起票した (小さなバグなので候補の一覧を待たずに起票)。
+- やったこと: `#setRestoreTimer` を足し、`#start` の失敗と `webglcontextlost` の両方の時間切れをここで置く (前のタイマーを `clearTimeout` してから置く)。
+  `#onLost` (作り直しの回数の数え方) は変えていない。
+- テスト: avatar.test.ts の偽の `createPuppet` に、失敗する前に新しい canvas の `webglcontextlost` を送る口 (`loseOnFailure`) を足し、
+  作り直しの失敗の後に `vi.getTimerCount()` が 1 であること、残った時間切れで作り直せることを確かめた。直す前は 2 で落ちることを確かめた。
+- 確かめたこと: `just conformance --only avatar` (7 of 7)・`just ci`。
+- 起票の候補: なし。

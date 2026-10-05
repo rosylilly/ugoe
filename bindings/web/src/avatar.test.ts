@@ -75,6 +75,8 @@ const runtime = vi.hoisted(() => ({
    * (`code` が `context_unavailable`。T0475) を投げる。
    */
   failing: false,
+  /** 真の間は、失敗する作成の前に新しい canvas の WebGL2 のコンテキストを失わせる (失った GPU で作ろうとしたブラウザと同じ)。 */
+  loseOnFailure: false,
   contextUnavailable(): Error {
     const e = new Error("the canvas could not provide a GPU context: the WebGL2 context is lost");
     e.name = "CreateError";
@@ -92,7 +94,11 @@ vi.mock("./runtime.js", () => ({
       runtime.createError = null;
       throw e;
     }
-    if (runtime.failing) throw runtime.contextUnavailable();
+    if (runtime.failing) {
+      if (runtime.loseOnFailure)
+        canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      throw runtime.contextUnavailable();
+    }
     const puppet = new FakePuppet(canvas, options.backend ?? "auto");
     return puppet;
   },
@@ -142,6 +148,7 @@ function newAvatar(attributes: Record<string, string> = {}): Avatar {
 beforeEach(() => {
   runtime.createError = null;
   runtime.failing = false;
+  runtime.loseOnFailure = false;
 });
 
 afterEach(() => {
@@ -338,6 +345,28 @@ describe("<ugoe-avatar>", () => {
     expect(puppet.values.get("AngleX")).toBe(15);
     expect(avatar.waitingForGpu).toBe(false);
     expect(errors).toEqual([]);
+  });
+
+  it("keeps one restore timer when a recreation fails on a canvas whose context is lost", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const avatar = newAvatar({ backend: "webgl2" });
+    document.body.append(avatar);
+    const first = fake(await avatar.ready);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    runtime.failing = true;
+    runtime.loseOnFailure = true;
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(avatar.puppet).toBeNull();
+    expect(avatar.waitingForGpu).toBe(true);
+    // 新しい canvas の `webglcontextlost` と作成の失敗の両方が時間切れを置くが、残るのは 1 つだけ。
+    expect(vi.getTimerCount()).toBe(1);
+    // 残った時間切れで試し直し、GPU が戻っていれば作り直せる。
+    runtime.failing = false;
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    expect(fake(await avatar.ready)).not.toBe(first);
+    expect(avatar.waitingForGpu).toBe(false);
   });
 
   it("gives up when the recreation keeps failing", async () => {
