@@ -201,6 +201,80 @@ namespace Ugoe
             Format = format;
             Data = data;
         }
+
+        /// <summary>既定の上限 (<see cref="UgoeImageLimits.Default"/>) で <see cref="Decode(bool, UgoeImageLimits)"/> する。</summary>
+        public DecodedImage Decode(bool premultiply) => Decode(premultiply, UgoeImageLimits.Default);
+
+        /// <summary>
+        /// C ABI のデコーダ (<c>ugoe_image_decode</c>。参照の <c>ugoe render</c>・wasm と同じ) で 8bit RGBA にする (T0466)。
+        /// PNG と、KTX2 の圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 を読み、参照と同じ画素になる。
+        /// </summary>
+        /// <param name="premultiply">true なら乗算済みアルファにする (描画するテクスチャ)。法線マップは false。</param>
+        /// <param name="limits">デコードの上限。</param>
+        /// <exception cref="UgoeException">
+        /// 読めない。<see cref="UgoeException.Kind"/> は <c>"unsupported_texture"</c> (読める KTX2 だがデコードしない形式。ETC2・ASTC など)・
+        /// <c>"invalid_texture"</c> (壊れている)・<c>"image_limit_exceeded"</c> (<see cref="UgoeResult.LimitExceeded"/>。一辺が上限を超える)。
+        /// <see cref="EncodedTextureFormat.None"/> は <see cref="UgoeResult.InvalidArgument"/>。
+        /// </exception>
+        public DecodedImage Decode(bool premultiply, UgoeImageLimits limits)
+        {
+            UgoeRuntime.EnsureCompatible();
+            var data = Data ?? Array.Empty<byte>();
+            UgoeException.Check(Native.ugoe_image_decode((uint)Format, data, (UIntPtr)data.Length, ref limits, premultiply ? (byte)1 : (byte)0, out var image));
+            try
+            {
+                UgoeException.Check(Native.ugoe_image_size(image, out var width, out var height));
+                UgoeException.Check(Native.ugoe_image_pixels(image, out var pixels, out var len));
+                var copy = new byte[checked((int)len.ToUInt64())];
+                if (copy.Length > 0) Marshal.Copy(pixels, copy, 0, copy.Length);
+                return new DecodedImage((int)width, (int)height, copy);
+            }
+            finally
+            {
+                Native.ugoe_image_destroy(image);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 画像のデコードの上限 (C ABI の <c>UgoeImageLimits</c>。docs/spec/file-formats.md#読み込みの上限)。
+    /// 値は <see cref="Default"/> から始めて変え、<see cref="EncodedTexture.Decode(bool, UgoeImageLimits)"/> に渡す。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct UgoeImageLimits
+    {
+        /// <summary>画像の幅と高さそれぞれの上限 (画素)。既定は 16384。</summary>
+        public uint MaxSide;
+
+        /// <summary>既定の上限。ネイティブライブラリから読む。</summary>
+        public static UgoeImageLimits Default
+        {
+            get
+            {
+                UgoeRuntime.EnsureCompatible();
+                return Native.ugoe_image_limits_default();
+            }
+        }
+    }
+
+    /// <summary>デコードした 8bit RGBA の画像 (<see cref="EncodedTexture.Decode(bool)"/>)。</summary>
+    public sealed class DecodedImage
+    {
+        public int Width { get; }
+        public int Height { get; }
+
+        /// <summary>
+        /// 画素 (1 画素 4 バイトで R・G・B・A、<see cref="Width"/> × <see cref="Height"/> 画素)。**上の行が先**
+        /// (Unity の <c>Texture2D</c> は下の行が先なので、<see cref="TextureConversion.FlipRows"/> で並べ替えて渡す)。
+        /// </summary>
+        public byte[] Pixels { get; }
+
+        public DecodedImage(int width, int height, byte[] pixels)
+        {
+            Width = width;
+            Height = height;
+            Pixels = pixels;
+        }
     }
 
     /// <summary>読み込みの警告 (<c>code</c> は wasm の <c>load_warnings_json</c> と同じ)。</summary>

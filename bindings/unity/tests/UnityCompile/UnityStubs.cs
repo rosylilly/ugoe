@@ -267,6 +267,7 @@ namespace UnityEngine
         public Color32[] GetPixels32() => null;
         public void SetPixels32(Color32[] colors) { }
         public void SetPixel(int x, int y, Color color) { }
+        public void LoadRawTextureData(byte[] data) { }
         public void Apply(bool updateMipmaps, bool makeNoLongerReadable) { }
     }
 

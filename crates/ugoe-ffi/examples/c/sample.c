@@ -392,6 +392,35 @@ int main(int argc, char **argv) {
            canvas.width, canvas.height, parameters, drawables, textures, motions);
     EXPECT(drawables > 0);
 
+    /* テクスチャのデコード (T0466): エンジンが読めない形式 (KTX2 の BCn など) は、参照と同じデコーダで RGBA8 にできる。 */
+    size_t decoded_pixels = 0;
+    for (uint32_t t = 0; t < textures; t++) {
+        UgoeTexture texture;
+        CHECK(ugoe_puppet_texture(puppet, t, &texture));
+        if (texture.format == UGOE_TEXTURE_NONE) {
+            continue;
+        }
+        UgoeImage *image = NULL;
+        CHECK(ugoe_image_decode(texture.format, texture.data, texture.len, NULL, true, &image));
+        uint32_t width = 0, height = 0;
+        const uint8_t *pixels = NULL;
+        size_t pixels_len = 0;
+        CHECK(ugoe_image_size(image, &width, &height));
+        CHECK(ugoe_image_pixels(image, &pixels, &pixels_len)); /* 乗算済みの RGBA8、上の行が先 */
+        EXPECT(pixels_len == (size_t)width * height * 4);
+        decoded_pixels += (size_t)width * height;
+        ugoe_image_destroy(image);
+    }
+    printf("decoded %u textures: %zu pixels\n", textures, decoded_pixels);
+    UgoeImageLimits image_limits = ugoe_image_limits_default();
+    image_limits.max_side = 1;
+    UgoeTexture first;
+    UgoeImage *too_large = NULL;
+    CHECK(ugoe_puppet_texture(puppet, 0, &first));
+    EXPECT(ugoe_image_decode(first.format, first.data, first.len, &image_limits, true, &too_large) ==
+           UGOE_ERROR_LIMIT_EXCEEDED);
+    EXPECT(too_large == NULL && strcmp(ugoe_last_error_kind(), "image_limit_exceeded") == 0);
+
     /* すべてのパラメータを最大値にして 1 秒ぶん進める。 */
     for (uint32_t i = 0; i < parameters; i++) {
         UgoeParameterInfo info;

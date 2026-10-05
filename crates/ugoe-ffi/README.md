@@ -42,7 +42,8 @@ ugoe_puppet_destroy(puppet);
 - 頂点位置はホストのバッファへのコピー (`ugoe_puppet_copy_positions`) と、内部のバッファの借用
   (`ugoe_puppet_positions`。次の `ugoe_puppet_update` か破棄まで有効) の両方がある。
 - テクスチャはエンコードされたままのバイト列 (PNG・KTX2) を渡す。デコードと乗算済みアルファへの変換はホストが行う
-  ([docs/spec/rendering.md](../../docs/spec/rendering.md))。
+  ([docs/spec/rendering.md](../../docs/spec/rendering.md))。エンジンが読めない形式 (KTX2 の BCn など) は、参照と同じデコーダ
+  `ugoe_image_decode` で RGBA8 にできる ([テクスチャのデコード](#テクスチャのデコード-t0466))。
 - 1 つの `UgoePuppet` を複数のスレッドから同時に使ってはならない。
 
 ## ヘッダの生成
@@ -145,7 +146,8 @@ ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同
 - 種類 (`ugoe_last_error_kind()`) は `"read_limit_exceeded"`、補足の値は `"limit"` (`"chunk_decompressed"` | `"total_decompressed"`)・
   `"chunk"` (展開をやめたチャンクのタグ。`"TEXR"` など)・`"max"` (超えた上限のバイト数、10 進)。値は SDK の
   `ugoe::limits::ReadLimitExceeded` で、wasm の読み込みのエラーの `code` と同じ。
-- PNG の大きさの上限 (wasm の `max_image_side`) は無い。C ABI は画像をデコードせず、エンコードされたまま渡すので、デコードの上限はホストが決める。
+- PNG の大きさの上限 (wasm の `max_image_side`) は読み込みには無い。読み込みは画像をデコードせず、エンコードされたまま渡すので、デコードの上限はホストが決める
+  (`ugoe_image_decode` を使うなら `UgoeImageLimits`。[テクスチャのデコード](#テクスチャのデコード-t0466))。
 - JSON から作る `ugoe_puppet_create_from_json` は展開をしないので、上限を取らない (大きさは入力の長さで決まる)。
 - Unity (`bindings/unity`) は `UgoeReadLimits` と `Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` で出す (T0458)。Godot は C ABI ではなく SDK を使う。
 
@@ -174,12 +176,60 @@ if (r != UGOE_OK) {
 | `compile` | `UGOE_ERROR_INVALID_MODEL` | | 検査は通ったが評価できない構造 |
 | `read_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` | `limit`・`chunk`・`max` | [読み込みの上限](#読み込みの上限-t0152) を超えた |
 
-- wasm の `image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost` は C ABI では起きない (画像をデコードせず、
-  レンダラを持たない)。
+- wasm の `image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost` はモデルの読み込みでは起きない (画像をデコードせず、
+  レンダラを持たない)。`image_limit_exceeded`・`invalid_texture` は `ugoe_image_decode` の失敗の種類にある ([テクスチャのデコード](#テクスチャのデコード-t0466))。
 - 引数の誤り (NULL・UTF-8 でない JSON) は種類を持たない (`ugoe_last_error_kind()` は NULL)。
 - `.ugoemod` の読み込み (`ugoe_module_create`) は今までどおり、上限を超えたものだけ `read_limit_exceeded` で、ほかは `invalid_file`
   ([着せ替え](#着せ替え-t0409)。wasm の `load_module` と同じ)。
 - テストは `tests/load_errors.rs`。
+
+## テクスチャのデコード (T0466)
+
+```c
+UgoeTexture texture;
+ugoe_puppet_texture(puppet, index, &texture);            /* エンコードされたまま (PNG・KTX2) */
+UgoeImage *image = NULL;
+UgoeResult r = ugoe_image_decode(texture.format, texture.data, texture.len,
+                                 NULL /* 既定の上限 */, true /* 乗算済みにする */, &image);
+if (r == UGOE_OK) {
+    uint32_t w, h; const uint8_t *rgba; size_t len;
+    ugoe_image_size(image, &w, &h);
+    ugoe_image_pixels(image, &rgba, &len);               /* w * h * 4 バイト、上の行が先。ugoe_image_destroy まで有効 */
+    upload(rgba, w, h);
+    ugoe_image_destroy(image);
+} else if (strcmp(ugoe_last_error_kind(), "unsupported_texture") == 0) {
+    /* ETC2・ASTC など。白 (法線マップなら平ら) で代用する */
+}
+```
+
+- 参照 (`ugoe render`)・wasm と同じ `ugoe_format::image` のデコーダで、同じ画素になる (`docs/spec/rendering.md#前提`)。
+  PNG と、KTX2 の圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7 を読む ([ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md))。
+  色はリニア化せず、KTX2 のミップマップは最初の段だけを使う。`premultiply` が true なら乗算済みアルファ (参照と同じ整数の丸め)、
+  法線マップは false (アルファを掛けない)。
+- バイト列と形式 (`UgoeTexture` の `format` と `data`・`len`) を受け取るだけの関数で、`UgoePuppet` を変えない。法線マップ
+  (`ugoe_puppet_normal_map`)・モジュールのテクスチャにも同じに使う。PNG を自分のエンジンで読むホストは、読めない形式にだけ使えばよい。
+- 上限は `UgoeImageLimits` (`max_side`、既定は一辺 16384。`ugoe_image_limits_default`)。NULL なら既定値。超える画像は画素を確保する前に失敗にする。
+- 結果は不透明な `UgoeImage` で、`ugoe_image_destroy` で解放する (画素のポインタはそこまで有効)。
+
+| 種類 (`ugoe_last_error_kind()`) | 戻り値 | 補足の値 | いつ |
+| --- | --- | --- | --- |
+| `image_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` | `width`・`height`・`max` | 一辺が上限を超える (wasm の同じ種類はさらに `image`・`texture` を持つ) |
+| `unsupported_texture` | `UGOE_ERROR_FORMAT` | | 読める KTX2 だが、デコードしない形式 (ETC2・ASTC・BC6H・Basis Universal など)。wasm では読み込みの警告 `texture_ktx2`・`normal_map_ktx2` |
+| `invalid_texture` | `UGOE_ERROR_FORMAT` | | 画像が壊れている |
+
+`format` が `UGOE_TEXTURE_PNG`・`UGOE_TEXTURE_KTX2` でなければ `UGOE_ERROR_INVALID_ARGUMENT` (種類なし)。
+
+**形を決めた理由:** ABI の版の規則 ([ABI の版](#abi-の版)) どおり関数と型を足すだけにし、既存の関数 (`ugoe_puppet_texture` などのエンコードされた
+バイト列と、読み込み) の意味は変えない。読み込みでデコードまで済ませる形は、使わないホスト (PNG を自分のエンジンで読む) にもデコードの時間と
+メモリを払わせ、読み込みの関数に画像の上限の引数を足すことになる (T0152 で、デコードと上限はホストの責務とした)。テクスチャの番号で
+デコードする形は、法線マップとモジュールのテクスチャに別の関数が要る。結果の受け渡しは、大きさを先に知る関数が無いので、ホストの
+バッファに書く形 (`capacity` で数を聞いて呼び直す) では 2 度デコードすることになるため、`UgoeModule` と同じ不透明なオブジェクトにした。
+
+**共有ライブラリの大きさ:** PNG のデコーダ (`png`) と BCn の展開 (`bcdec_rs`) が入る。Linux x86_64 の release の `libugoe_ffi.so` で
+6,302,904 → 6,496,256 バイト (約 189 KiB、3% 増。T0466 で測った)。
+
+テストは `src/image.rs` (PNG・BC1 の KTX2・上限・種類)、C の見本 (`examples/c/sample.c`)、Unity (`bindings/unity/tests/ImageTests.cs`)、
+適合テストの KTX2 のケース (Unity の C# の層の結果の `textures` を参照のデコードと比べる。[tests/conformance/README.md](../../tests/conformance/README.md))。
 
 ## ライティング (T0409)
 
@@ -225,7 +275,8 @@ if (r != UGOE_OK) {
 
 `code` と補足の値は SDK の `ugoe::LoadWarning` (`code()`・`fields()`) が決め、wasm の `load_warnings_json` も同じものを使う (T0412)。
 
-- wasm の `texture_ktx2`・`normal_map_ktx2` は C ABI では出さない (画像のデコードはホストが行うので、KTX2 を扱えるかはホストが決める)。
+- wasm の `texture_ktx2`・`normal_map_ktx2` は C ABI では出さない (画像のデコードはホストが行うので、KTX2 を扱えるかはホストが決める。
+  `ugoe_image_decode` では、読めない形式は失敗の種類 `unsupported_texture` になる)。
   `physics_removed`・`module_detached` はモデルの読み直しで起きるもので、C ABI には読み直しが無いので起きない。
 - JSON から作ったときは警告を出さない (JSON はもともとテクスチャを持たない)。
 - `message` は英語の文で、安定した値として扱わない。知らない `code` は `message` をそのまま出せばよい。

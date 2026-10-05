@@ -14,7 +14,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ugoe.workspace = true
-ugoe-format.workspace = true
+# テクスチャのデコードの結果を比べる (`ugoe_format::image`。T0466)
+ugoe-format = { workspace = true, features = ["png"] }
 ugoe-headless.workspace = true
 ugoe-model.workspace = true
 

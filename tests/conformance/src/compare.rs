@@ -38,7 +38,29 @@ pub fn frames(reference: &Frame, actual: &Frame) -> Vec<String> {
     }
     render_order(reference, actual, &mut errors);
     motion_events(reference, actual, &mut errors);
+    textures(reference, actual, &mut errors);
     errors
+}
+
+/// テクスチャのデコードの結果 (T0466)。両方にあるときだけ比べ、番号ごとに完全に一致すること
+/// (書くのは画像をデコードするバインディングだけ。今は Unity)。
+fn textures(reference: &Frame, actual: &Frame, errors: &mut Vec<String>) {
+    let (Some(expected), Some(textures)) = (&reference.textures, &actual.textures) else {
+        return;
+    };
+    if expected.len() != textures.len() {
+        errors.push(format!(
+            "textures: {} textures, expected {}",
+            textures.len(),
+            expected.len()
+        ));
+        return;
+    }
+    for (i, (e, a)) in expected.iter().zip(textures).enumerate() {
+        if e != a {
+            errors.push(format!("texture {i}: {a:?}, expected {e:?}"));
+        }
+    }
 }
 
 /// 発火したモーションのイベントと出どころ (T0462)。参照にあればバインディングも書くこと。値・名前・番号・`update` の番号は
@@ -264,6 +286,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::frame::TextureFrame;
 
     fn mesh(x: f32, draw_order: f32, opacity: f32) -> MeshFrame {
         MeshFrame {
@@ -289,6 +312,7 @@ mod tests {
                 .collect::<BTreeMap<_, _>>(),
             render_order: order.iter().map(|s| (*s).to_owned()).collect(),
             motion_events: None,
+            textures: None,
         }
     }
 
@@ -322,6 +346,28 @@ mod tests {
         assert_eq!(frames(&reference, &actual), ["motion_events: missing"]);
         // 参照に無ければ比べない
         reference.motion_events = None;
+        assert!(frames(&reference, &actual).is_empty());
+    }
+
+    #[test]
+    fn textures_must_match_when_both_have_them() {
+        let texture = |color: &str| TextureFrame {
+            color: Some(color.to_owned()),
+            normal_map: None,
+        };
+        let mut reference = frame(&[("A", mesh(0.0, 500.0, 1.0))], &["A"]);
+        reference.textures = Some(vec![texture("4x4:00")]);
+        let mut actual = reference.clone();
+        assert!(frames(&reference, &actual).is_empty());
+        actual.textures = Some(vec![texture("4x4:01")]);
+        assert_eq!(frames(&reference, &actual).len(), 1);
+        actual.textures = Some(Vec::new());
+        assert_eq!(
+            frames(&reference, &actual),
+            ["textures: 0 textures, expected 1"]
+        );
+        // 書かないバインディング (C ABI の実行器・wasm・Godot) は比べない
+        actual.textures = None;
         assert!(frames(&reference, &actual).is_empty());
     }
 

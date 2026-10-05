@@ -93,6 +93,9 @@
 // ARKit のブレンドシェイプの数 (`UgoeTrackingInput::blend_shapes` の長さ)。
 #define UGOE_BLEND_SHAPE_COUNT 52
 
+// デコードした画像 (8bit RGBA)。`ugoe_image_decode` で作り、`ugoe_image_destroy` で解放する。
+typedef struct UgoeImage UgoeImage;
+
 // 読み込んだ `.ugoemod` 1 つ (着せ替えのモジュール)。不透明な型。
 //
 // `ugoe_module_create` で作り、`ugoe_module_destroy` で破棄する。`UgoePuppet` に付けたモジュールは、
@@ -215,6 +218,14 @@ typedef struct UgoePartOpacityInput {
   // フェードを含めた重み (0〜1)。
   float weight;
 } UgoePartOpacityInput;
+
+// 画像のデコードの上限 (Rust の `ugoe_format::image::ImageLimits`)。値は `ugoe_image_limits_default` から始めて変える。
+//
+// 上限を足すときは、この構造体を変えずに別の構造体と関数を足す (crates/ugoe-ffi/README.md#abi-の版)。
+typedef struct UgoeImageLimits {
+  // 画像の幅と高さそれぞれの上限 (画素)。既定は 16384。超える画像は画素を確保する前に失敗にする。
+  uint32_t max_side;
+} UgoeImageLimits;
 
 // 光源 1 つ。座標はキャンバス座標 (ピクセル単位・Y 下向き) + 奥行き (z、キャンバスから手前向き)。
 typedef struct UgoeLight {
@@ -932,6 +943,62 @@ UgoeResult ugoe_puppet_hit_test_standard(const struct UgoePuppet *puppet,
                                          float x,
                                          float y,
                                          bool *out);
+
+// 既定の画像のデコードの上限 (`limits` に NULL を渡したときの値)。
+struct UgoeImageLimits ugoe_image_limits_default(void);
+
+// エンコードされた画像 (`ugoe_puppet_texture` / `ugoe_puppet_normal_map` のバイト列) を 8bit RGBA にデコードする。
+//
+// 参照 (`ugoe render`)・wasm と同じデコーダで、同じ画素になる (`docs/spec/rendering.md#前提`)。PNG と、KTX2 の
+// 圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 を読む。色はリニア化せず、KTX2 のミップマップは最初の段だけを使う。
+// 画素は左上から行の順 (上の行が先)。
+//
+// - `format`: `UGOE_TEXTURE_PNG` か `UGOE_TEXTURE_KTX2` (`UgoeTexture::format`)。ほかは `UGOE_ERROR_INVALID_ARGUMENT`。
+// - `limits`: NULL なら既定値 (`ugoe_image_limits_default`)。
+// - `premultiply`: true なら乗算済みアルファにする (描画するテクスチャ。参照と同じ整数の丸め)。法線マップは false
+//   (アルファを掛けない)。
+//
+// 失敗したときの戻り値と種類 (`ugoe_last_error_kind`):
+//
+// - `UGOE_ERROR_LIMIT_EXCEEDED`・`"image_limit_exceeded"`: 一辺が上限を超える (補足の値 `width`・`height`・`max`)。
+// - `UGOE_ERROR_FORMAT`・`"unsupported_texture"`: 読める KTX2 だが、デコードしない形式 (ETC2・ASTC など)。白で代用するとよい。
+// - `UGOE_ERROR_FORMAT`・`"invalid_texture"`: 画像が壊れている。
+//
+// # Safety
+//
+// `data` は `len` バイトを読める領域 (`len` が 0 なら NULL でよい)、`limits` は NULL か `UgoeImageLimits` を
+// 読める領域、`out` は `UgoeImage*` を書き込める領域を指すこと。
+UgoeResult ugoe_image_decode(uint32_t format,
+                             const uint8_t *data,
+                             size_t len,
+                             const struct UgoeImageLimits *limits,
+                             bool premultiply,
+                             struct UgoeImage **out);
+
+// `ugoe_image_decode` で作った画像を解放する。NULL なら何もしない。
+//
+// # Safety
+//
+// `image` は NULL か、`ugoe_image_decode` で作ってまだ解放していない `UgoeImage` であること。
+void ugoe_image_destroy(struct UgoeImage *image);
+
+// 画像の幅と高さ (画素)。
+//
+// # Safety
+//
+// `image` は有効な `UgoeImage`、`out_width` と `out_height` は書き込める領域を指すこと。
+UgoeResult ugoe_image_size(const struct UgoeImage *image,
+                           uint32_t *out_width,
+                           uint32_t *out_height);
+
+// 画像の画素 (`width * height * 4` バイト。R・G・B・A の順で、左上から行の順)。ポインタは `UgoeImage` を解放するまで有効。
+//
+// # Safety
+//
+// `image` は有効な `UgoeImage`、`out` と `out_len` は書き込める領域を指すこと。
+UgoeResult ugoe_image_pixels(const struct UgoeImage *image,
+                             const uint8_t **out,
+                             size_t *out_len);
 
 // 光源の組を検査し、シェーダに渡す形 (`UgoeLightingUniform`) にする。陰影の式は
 // `docs/spec/rendering.md#ライティング` (参照シェーダと同じ)。

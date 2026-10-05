@@ -10,6 +10,11 @@ license.workspace = true
 [dependencies]
 serde_json.workspace = true
 ugoe = { workspace = true, default-features = false }
+# テクスチャのデコード (`ugoe_image_decode`。参照・wasm と同じ `ugoe_format::image`。T0466)
+ugoe-format = { workspace = true, features = ["png"] }
+
+[dev-dependencies]
+png.workspace = true
 
 [lints]
 workspace = true

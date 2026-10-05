@@ -200,6 +200,11 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_texture_count(PuppetHandle puppet, out uint count);
         [DllImport(Library)] internal static extern int ugoe_puppet_texture(PuppetHandle puppet, uint index, out Texture texture);
         [DllImport(Library)] internal static extern int ugoe_puppet_normal_map(PuppetHandle puppet, uint index, out Texture texture);
+        [DllImport(Library)] internal static extern UgoeImageLimits ugoe_image_limits_default();
+        [DllImport(Library)] internal static extern int ugoe_image_decode(uint format, byte[] data, UIntPtr len, ref UgoeImageLimits limits, byte premultiply, out IntPtr image);
+        [DllImport(Library)] internal static extern void ugoe_image_destroy(IntPtr image);
+        [DllImport(Library)] internal static extern int ugoe_image_size(IntPtr image, out uint width, out uint height);
+        [DllImport(Library)] internal static extern int ugoe_image_pixels(IntPtr image, out IntPtr data, out UIntPtr len);
 
         // --- モーション・表情 ---
 

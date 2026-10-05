@@ -26,6 +26,22 @@ namespace Ugoe
                 rgba[i + 2] = Premultiply(rgba[i + 2], a);
             }
         }
+
+        /// <summary>
+        /// RGBA8 の画素の行を上下に入れ替えた写しを返す。<see cref="DecodedImage.Pixels"/> (上の行が先) を、下の行が先の
+        /// Unity の <c>Texture2D.LoadRawTextureData</c> に渡すときに使う (<c>LoadImage</c> で読んだ PNG と同じ向きになる)。
+        /// </summary>
+        public static byte[] FlipRows(byte[] rgba, int width, int height)
+        {
+            if (rgba == null) throw new ArgumentNullException(nameof(rgba));
+            var stride = checked(width * 4);
+            if (width < 0 || height < 0 || checked(stride * height) != rgba.Length)
+                throw new ArgumentException($"expected {width}x{height} RGBA8 pixels", nameof(rgba));
+            var flipped = new byte[rgba.Length];
+            for (var y = 0; y < height; y++)
+                Buffer.BlockCopy(rgba, y * stride, flipped, (height - 1 - y) * stride, stride);
+            return flipped;
+        }
     }
 
     /// <summary>裏面カリング (docs/spec/rendering.md の Back-face culling)。</summary>

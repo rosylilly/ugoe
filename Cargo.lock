@@ -5417,8 +5417,10 @@ dependencies = [
 name = "ugoe-ffi"
 version = "0.0.0"
 dependencies = [
+ "png 0.18.1",
  "serde_json",
  "ugoe",
+ "ugoe-format",
 ]
 
 [[package]]

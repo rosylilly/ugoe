@@ -16,6 +16,8 @@
 // - motions があるケース (T0462) は、その番号の Update の直前に StartMotion で始め、各 Update の後に発火したイベントと
 //   出どころ (MotionEvents の Value・Time・Motion・Number) を結果の motion_events に書く。
 // - before は使わない (同期して評価するので、値を変えてから反映するまでの遅れが無い)。
+// - KTX2 のテクスチャを持つケース (T0466) は、すべてのテクスチャと法線マップを EncodedTexture.Decode (C ABI の
+//   ugoe_image_decode。Unity の UgoeTextures が KTX2 を読む経路) でデコードし、結果を textures に書く。
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -122,6 +124,8 @@ namespace Ugoe.Conformance
                 }
                 var frame = Frame(puppet);
                 if (c["motions"] != null) frame["motion_events"] = events;
+                var textures = Textures(puppet);
+                if (textures != null) frame["textures"] = textures;
                 return frame;
             }
             finally
@@ -242,6 +246,57 @@ namespace Ugoe.Conformance
             var renderOrder = new JsonArray();
             foreach (var i in order) renderOrder.Add(drawables[i].Id);
             return new JsonObject { ["meshes"] = meshes, ["render_order"] = renderOrder };
+        }
+
+        /// <summary>
+        /// テクスチャの番号ごとのデコードの結果 (tests/conformance/src/frame.rs の TextureFrame)。KTX2 のテクスチャが無ければ null
+        /// (参照も書かない)。描画するテクスチャは乗算済み、法線マップはアルファを掛けずにデコードする (UgoeTextures と同じ)。
+        /// </summary>
+        private static JsonArray Textures(Puppet puppet)
+        {
+            var count = puppet.TextureCount;
+            var textures = new List<(EncodedTexture Color, EncodedTexture Normal)>();
+            var ktx2 = false;
+            for (var i = 0; i < count; i++)
+            {
+                var color = puppet.GetTexture(i);
+                var normal = puppet.GetNormalMap(i);
+                ktx2 |= color.Format == EncodedTextureFormat.Ktx2 || normal.Format == EncodedTextureFormat.Ktx2;
+                textures.Add((color, normal));
+            }
+            if (!ktx2) return null;
+            var result = new JsonArray();
+            foreach (var (color, normal) in textures)
+            {
+                result.Add(new JsonObject
+                {
+                    ["color"] = Digest(color, true),
+                    ["normal_map"] = Digest(normal, false),
+                });
+            }
+            return result;
+        }
+
+        /// <summary>デコードした画像の <c>"幅x高さ:画素の FNV-1a 64"</c>、読めなければ種類 (frame.rs の image_digest)。画像が無ければ null。</summary>
+        private static string Digest(EncodedTexture texture, bool premultiply)
+        {
+            if (texture.Format == EncodedTextureFormat.None) return null;
+            DecodedImage image;
+            try
+            {
+                image = texture.Decode(premultiply);
+            }
+            catch (UgoeException e)
+            {
+                return e.Kind ?? e.Result.ToString();
+            }
+            var hash = 0xcbf29ce484222325UL;
+            foreach (var b in image.Pixels)
+            {
+                hash ^= b;
+                hash = unchecked(hash * 0x100000001b3UL);
+            }
+            return $"{image.Width}x{image.Height}:{hash:x16}";
         }
 
         private static JsonObject Color(float r, float g, float b) =>

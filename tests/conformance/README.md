@@ -12,7 +12,7 @@
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
 | `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
 | 問い合わせの JSON (npm パッケージ `@ugoe/runtime` の `*_json()`、`queries`) | 参照とは比べない。出力のキーを、パッケージの型のキーの一覧と比べる (下の「問い合わせの JSON のキー」) | なし (ヘッドレスの Chrome の WebGL2 で `WebPuppet` を作るだけ) | [`web/queries.js`](web/queries.js) |
-| Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値 | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
+| Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値。KTX2 のケースはテクスチャのデコードの結果 (`textures`) も | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
 | Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。`--godot-renderer forward_plus` で Forward+ (RenderingDevice の Vulkan。GPU が無ければ lavapipe)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
 ## 実行
@@ -122,7 +122,10 @@ Forward+ (lavapipe) でも実行する (T0467)。落ちたら `target/conformanc
 
 KTX2 は `ugoe_headless::image::encode_ktx2` で書く (乗算済みの印 `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` を立てない。ブロック圧縮は
 `Ktx2Compression` の簡単な圧縮で、画質は求めない)。ETC2・ASTC・Basis Universal は参照と wasm がデコードしないので、ここでは比べない。
-C ABI と Unity の C# の層は画像を扱わないので、頂点だけを比べる。
+C ABI と Unity の C# の層は描画しないので、頂点を比べる。Unity は KTX2 を C ABI のデコーダ (`ugoe_image_decode`) で読むので (T0466)、
+KTX2 のテクスチャを持つケースでは、参照と Unity の実行器がテクスチャと法線マップを番号ごとにデコードし (描画するテクスチャは乗算済み、
+法線マップはアルファを掛けない)、`"<幅>x<高さ>:<画素の FNV-1a 64>"` (読めなければ失敗の種類) を結果の `textures` に書いて、
+完全に一致することを確かめる (`src/frame.rs` の `TextureFrame`。書かないバインディングとは比べない)。
 
 ### 実行器の約束 (計画)
 

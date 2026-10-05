@@ -17,7 +17,7 @@
 
 ## feature
 
-- `png` (既定で無効): テクスチャの PNG と KTX2 のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`) と WebAssembly (`ugoe-wasm`) が共有する
+- `png` (既定で無効): テクスチャの PNG と KTX2 のデコード `image` モジュール。ヘッドレス描画 (`ugoe-headless`)・WebAssembly (`ugoe-wasm`)・C ABI (`ugoe-ffi` の `ugoe_image_decode`) が共有する
   (`docs/spec/file-formats.md#読み込みの上限`)。KTX2 は圧縮していない 8bit の RGB / RGBA と、ブロック圧縮の BC1〜BC5・BC7
   (`_UNORM`・`_SRGB`。超圧縮は無しか zstd。BCn の展開は依存の `bcdec_rs`。[ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md)) を
   保存された値のまま読み、レベル 0 だけを使う。ほかの形式 (ETC2・ASTC・Basis Universal など) は `ImageError::UnsupportedKtx2`

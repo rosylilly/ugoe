@@ -10,7 +10,7 @@ use ugoe::Puppet;
 use ugoe::motion::Priority;
 use ugoe_headless::animate;
 
-use crate::frame::{Frame, MotionEventFrame};
+use crate::frame::{Frame, MotionEventFrame, TextureFrame, image_digest, image_error_kind};
 use crate::plan::Case;
 use crate::{Error, read};
 
@@ -22,7 +22,82 @@ pub fn evaluate(case: &Case) -> Result<Frame, Error> {
     if !case.motions.is_empty() {
         frame.motion_events = Some(events);
     }
+    frame.textures = textures(case, &puppet)?;
     Ok(frame)
+}
+
+/// テクスチャの番号 (`Puppet::texture_sources` の順) ごとのデコードの結果 (T0466)。KTX2 のテクスチャを持つバンドルの
+/// ケースだけ (ほかは `None`)。描画するテクスチャは乗算済み、法線マップはアルファを掛けずにデコードする。
+fn textures(case: &Case, puppet: &Puppet) -> Result<Option<Vec<TextureFrame>>, Error> {
+    use ugoe::TextureSource;
+    use ugoe_format::TextureFormat;
+    use ugoe_format::image::{ImageLimits, decode_image, decode_image_premultiplied};
+
+    if !case.bundle {
+        return Ok(None);
+    }
+    let bundle = ugoe_format::read_bundle(&read(&case.model)?).map_err(|source| Error::Format {
+        context: format!("reading {}", case.model.display()),
+        source,
+    })?;
+    let modules = case
+        .modules
+        .iter()
+        .map(|path| {
+            ugoe_format::read_module(&read(path)?).map_err(|source| Error::Format {
+                context: format!("reading {}", path.display()),
+                source,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let sources: Vec<_> = puppet
+        .texture_sources()
+        .into_iter()
+        .map(|source| match source {
+            TextureSource::Base(i) => {
+                let i = i as usize;
+                (bundle.textures.get(i), bundle.normal_map(i))
+            }
+            TextureSource::Module { module, index } => {
+                let file = modules.iter().find(|f| f.module.name == module);
+                let i = index as usize;
+                (
+                    file.and_then(|f| f.textures.get(i)),
+                    file.and_then(|f| f.normal_map(i)),
+                )
+            }
+        })
+        .collect();
+    let ktx2 = sources
+        .iter()
+        .flat_map(|(t, n)| [t, n])
+        .any(|t| t.is_some_and(|t| t.format == TextureFormat::Ktx2));
+    if !ktx2 {
+        return Ok(None);
+    }
+    let digest = |t: Option<&ugoe_format::TextureData>, premultiply: bool| {
+        t.map(|t| {
+            let limits = ImageLimits::default();
+            let image = if premultiply {
+                decode_image_premultiplied(t.format, &t.bytes, limits)
+            } else {
+                decode_image(t.format, &t.bytes, limits)
+            };
+            match image {
+                Ok(image) => image_digest(image.width, image.height, &image.pixels),
+                Err(e) => image_error_kind(&e).to_owned(),
+            }
+        })
+    };
+    Ok(Some(
+        sources
+            .into_iter()
+            .map(|(t, n)| TextureFrame {
+                color: digest(t, true),
+                normal_map: digest(n, false),
+            })
+            .collect(),
+    ))
 }
 
 /// 受け手として進めるケースの 1 フレーム分の入力 (`Puppet::follow` の引数)。
@@ -287,6 +362,39 @@ mod tests {
                 case.name
             );
         }
+    }
+
+    /// KTX2 のテクスチャを持つケースの参照は、テクスチャごとのデコードの結果を書く (T0466)。BCn も読め、PNG だけの
+    /// ケースは書かない。
+    #[test]
+    fn ktx2_cases_record_decoded_textures() {
+        let plan = plan();
+        let case = |name: &str| plan.cases.iter().find(|c| c.name == name).unwrap();
+        let lit = evaluate(case("ktx2-bc-avatar-lit"))
+            .unwrap()
+            .textures
+            .unwrap();
+        assert!(!lit.is_empty());
+        for t in &lit {
+            let color = t.color.as_deref().unwrap();
+            assert!(color.contains(':'), "{color}");
+        }
+        assert!(
+            lit.iter()
+                .any(|t| t.normal_map.as_deref().is_some_and(|n| n.contains(':')))
+        );
+        assert!(
+            evaluate(case("ktx2-bc3-avatar"))
+                .unwrap()
+                .textures
+                .is_some()
+        );
+        let png = plan
+            .cases
+            .iter()
+            .find(|c| c.bundle && !c.name.contains("ktx2"))
+            .unwrap();
+        assert_eq!(evaluate(png).unwrap().textures, None, "{}", png.name);
     }
 
     /// `motions` のケースの参照は、発火したイベントとその出どころを書く (T0462)。フェードアウト中の idle のイベントは

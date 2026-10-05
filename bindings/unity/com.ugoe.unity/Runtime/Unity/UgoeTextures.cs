@@ -11,7 +11,9 @@ namespace Ugoe.Unity
     /// - 画像は乗算済みアルファにしてから渡す (参照実装と同じ整数の丸め)。バイリニア・端で止める・ミップマップなし。
     /// - 色は sRGB の値をそのまま使う約束なので、sRGB のデコードをしない (<c>linear: true</c>) で作る。
     /// - 法線マップはアルファを掛けずに、sRGB のデコードもしない。
-    /// - KTX2 は Unity の標準ではデコードできないので、白 (法線マップなら平ら) で代用して警告を出す。
+    /// - PNG は Unity の <c>LoadImage</c> で読む。KTX2 は Unity の標準では読めないので、C ABI のデコーダ
+    ///   (<see cref="EncodedTexture.Decode(bool)"/>。参照と同じ画素) で読む (T0466)。デコードしない形式 (ETC2・ASTC など) や
+    ///   壊れた画像は、白 (法線マップなら平ら) で代用して警告を出す。
     /// </remarks>
     internal sealed class UgoeTextures
     {
@@ -92,6 +94,8 @@ namespace Ugoe.Unity
                     return null;
                 case EncodedTextureFormat.Png:
                     break;
+                case EncodedTextureFormat.Ktx2:
+                    return DecodeWithRuntime(encoded, premultiply, name);
                 default:
                     Debug.LogWarning($"ugoe: {name} is {encoded.Format}, which this package cannot decode; drawing it as white");
                     return null;
@@ -122,6 +126,32 @@ namespace Ugoe.Unity
                 }
                 texture.SetPixels32(pixels);
             }
+            texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.anisoLevel = 0;
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        /// <summary>C ABI のデコーダで読む (乗算もそこで行う)。読めなければ警告を出して null (白か平らな法線で代用)。</summary>
+        private static Texture2D DecodeWithRuntime(EncodedTexture encoded, bool premultiply, string name)
+        {
+            DecodedImage image;
+            try
+            {
+                image = encoded.Decode(premultiply);
+            }
+            catch (UgoeException e)
+            {
+                Debug.LogWarning($"ugoe: could not decode {name} ({encoded.Format}, {e.Kind ?? e.Result.ToString()}): {e.Message}; drawing it as white");
+                return null;
+            }
+            var texture = new Texture2D(image.Width, image.Height, TextureFormat.RGBA32, false, true)
+            {
+                name = name,
+                hideFlags = HideFlags.DontSave,
+            };
+            texture.LoadRawTextureData(TextureConversion.FlipRows(image.Pixels, image.Width, image.Height));
             texture.filterMode = FilterMode.Bilinear;
             texture.wrapMode = TextureWrapMode.Clamp;
             texture.anisoLevel = 0;
