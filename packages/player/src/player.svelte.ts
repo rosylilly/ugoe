@@ -254,6 +254,13 @@ export class Player {
   #lastTime: number | null = null;
   /** GPU を失ったときのパラメータの値 (作り直した WebPuppet に戻す)。 */
   #carry: Record<string, number> | null = null;
+  /**
+   * 作り直した WebPuppet にモデルを読み直す (`#setUp`)。PuppetSurface が渡し直したビューを保つので、次の `#afterLoad` は
+   * fit しない (T0942)。
+   */
+  #keepView = false;
+  /** 作り直しを待つ間に利用者がモデルを開いた (作り直した後は、そのモデルを fit で見せる)。 */
+  #openedWhileDown = false;
   /** 次のフレームで渡すトラッキングの入力 (渡したら `null`)。 */
   #pendingTracking: TrackingFrame | null = null;
   #lastTracking: TrackingFrame | null = null;
@@ -404,6 +411,7 @@ export class Player {
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#setUp)。
     if (puppet === null) {
+      this.#openedWhileDown = true;
       this.#file = file;
       this.#pendingModules.push(...modules);
       return;
@@ -489,7 +497,15 @@ export class Player {
     this.status = "ready";
     const size = puppet.canvas_size();
     this.canvasSize = [size[0] ?? 1, size[1] ?? 1];
-    this.fit();
+    // 作り直しで保つのは、作り直した直後の 1 回の読み込みだけ (その間に利用者が開いたモデルは fit で見せる)。
+    const keepView = this.#keepView;
+    this.#keepView = false;
+    if (keepView) {
+      this.zoom = puppet.zoom();
+      this.#syncView();
+    } else {
+      this.fit();
+    }
   }
 
   /**
@@ -1410,11 +1426,15 @@ export class Player {
     const known = [...this.#moduleFiles.values()].map((m) => m.file);
     this.#moduleFiles.clear();
     if (recovered) this.#quiet++;
+    // 作り直しでは、PuppetSurface が渡し直したビュー (利用者のズームとパン) を保つ。待つ間に開いたモデルは fit で見せる。
+    this.#keepView = recovered && !this.#openedWhileDown;
+    this.#openedWhileDown = false;
     try {
       if (this.#file !== null) await this.load(this.#file, pending);
       else for (const m of pending) this.loadModule(m.file, m.attach);
       this.#reloadModules(known, attached);
     } finally {
+      this.#keepView = false;
       if (recovered) this.#quiet--;
     }
     const carry = this.#carry;

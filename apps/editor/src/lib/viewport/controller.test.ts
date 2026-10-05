@@ -62,8 +62,22 @@ function fakePuppet() {
     set_lighting_json() {},
     resize() {},
     has_model: () => false,
+    view: [1, 0, 0],
+    zoom: () => puppet.view[0] ?? 1,
+    pan_x: () => puppet.view[1] ?? 0,
+    pan_y: () => puppet.view[2] ?? 0,
+    set_view: (zoom: number, x: number, y: number) => {
+      puppet.view = [zoom, x, y];
+    },
+    zoom_at: (factor: number) => {
+      puppet.view[0] = (puppet.view[0] ?? 1) * factor;
+    },
+    pan_by: (dx: number, dy: number) => {
+      puppet.view[1] = (puppet.view[1] ?? 0) + dx;
+      puppet.view[2] = (puppet.view[2] ?? 0) + dy;
+    },
   };
-  return { puppet: puppet as unknown as WebPuppet & { lost: boolean }, calls };
+  return { puppet: puppet as unknown as WebPuppet & { lost: boolean; view: number[] }, calls };
 }
 
 /** canvas を置く要素 (canvas は ViewportController が作る)。 */
@@ -149,6 +163,34 @@ describe("ViewportController", () => {
     canvas?.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     expect(pending).toHaveLength(2);
+  });
+
+  it("keeps the zoom and the pan when the WebPuppet is recreated", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      const first = fakePuppet();
+      pending[0]?.resolve(first.puppet);
+      await attached;
+      controller.zoomAt(2, 0, 0);
+      controller.panBy(5, -5);
+      expect(first.puppet.view).toEqual([2, 5, -5]);
+      const canvas = pending[0]?.canvas;
+      first.puppet.lost = true;
+      canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      canvas?.dispatchEvent(new Event("webglcontextrestored"));
+      await settle();
+      const next = fakePuppet();
+      pending[1]?.resolve(next.puppet);
+      await settle();
+      expect(controller.puppet).toBe(next.puppet);
+      // 作り直しは利用者の操作ではないので、見ている場所を変えない (PuppetSurface が渡し直す。T0942)。
+      expect(next.puppet.view).toEqual([2, 5, -5]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("says it is waiting for the GPU until the WebGL context is restored", async () => {

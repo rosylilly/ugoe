@@ -65,6 +65,8 @@ export function fakePuppet(options: FakeOptions = {}) {
      * モデルを読むと空になり、付け外しでは要素の並びが同じグループの分が残る (Puppet と同じ)。
      */
     visible: new Map<string, string>(),
+    /** ビュー (fit に対する倍率と、fit の位置からのずれ。偽物の変換は `scale = zoom`・`offset = pan`)。 */
+    view: { zoom: 1, pan: [0, 0] as [number, number] },
   };
   /** 今のポーズのグループ (本体 → 付けたモジュールの順)。 */
   const poseGroups = (): string[][] => [
@@ -188,8 +190,27 @@ export function fakePuppet(options: FakeOptions = {}) {
     uses_lighting: () => false,
     set_lighting_json: (json?: string | null) => void state.lighting.push(json),
     canvas_size: () => new Float32Array([100, 100]),
-    view_transform: () => new Float32Array([1, 0, 0]),
-    zoom: () => 1,
+    view_transform: () => new Float32Array([state.view.zoom, state.view.pan[0], state.view.pan[1]]),
+    fit: () => {
+      state.view = { zoom: 1, pan: [0, 0] };
+    },
+    zoom: () => state.view.zoom,
+    pan_x: () => state.view.pan[0],
+    pan_y: () => state.view.pan[1],
+    set_view: (zoom: number, x: number, y: number) => {
+      state.view = { zoom, pan: [x, y] };
+    },
+    zoom_at: (factor: number, x: number, y: number) => {
+      // 点 (x, y) が動かないようにずらす (偽物の変換で)。
+      const [px, py] = state.view.pan;
+      state.view = {
+        zoom: state.view.zoom * factor,
+        pan: [x - (x - px) * factor, y - (y - py) * factor],
+      };
+    },
+    pan_by: (dx: number, dy: number) => {
+      state.view.pan = [state.view.pan[0] + dx, state.view.pan[1] + dy];
+    },
     render: () => log.push("render"),
     follow: (values: Float32Array, dt: number) => log.push(`follow ${[...values]} ${dt}`),
     reset_physics: () => log.push("reset_physics"),

@@ -24,7 +24,7 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
 - **置き場所:** `@ugoe/player` (GPL-3.0-only)。エディタは T0730 から `@ugoe/player` に依存している。MIT の `bindings/web` の
   `<ugoe-avatar>` は GPL のコードを使えないので、同じ振る舞いを自分で持つ (下の「`<ugoe-avatar>` との関係」)。
 - **型の受け方:** WebPuppet の型 (wasm-bindgen の生成物) はアプリごとに違うので、`PuppetSurface<P extends SurfacePuppet>` は使うメソッド
-  (`free`・`is_lost`・`resize`) だけの構造の型で受け、`created(puppet)` にはアプリの型のまま渡す。wasm の読み込みも `loadWasm` で受ける。
+  (`free`・`is_lost`・`resize` と、ビューを渡し直す `zoom`・`pan_x`・`pan_y`・`set_view`) だけの構造の型で受け、`created(puppet)` にはアプリの型のまま渡す。wasm の読み込みも `loadWasm` で受ける。
 - **canvas:** `PuppetSurface` が作り、`attach(container)` の要素の先頭に置く。エディタは T0672 まで `generation` を増やして Svelte の
   `{#key}` で canvas を作り直していたが、canvas を作るのを `PuppetSurface` に移したので `generation` は除いた (Viewport.svelte は
   canvas を置く要素を渡すだけ。canvas の見た目は `:global(canvas)`・`canvasClass` で決める)。
@@ -76,6 +76,15 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
 - **devicePixelRatio:** ResizeObserver は倍率だけの変化を知らせないので、`PuppetSurface` が `matchMedia("(resolution: …dppx)")` で聞き、
   描画バッファの大きさを合わせ直して `pixelRatioChanged` で知らせる。CSS ピクセルと描画バッファの画素の換算には `pixelRatio` を使う。
 - **作り直した後の状態:** 背景・光源・モデル・パラメータの値を渡し直すのは使う側 (`created(puppet, recovered)`。値は `lost` で控える)。
+- **作り直しでのビュー (T0942):** 作り直しは利用者の操作ではないので、見ている場所 (ズームとパン) を変えない。`PuppetSurface` が失った
+  WebPuppet のビュー (`zoom`・`pan_x`・`pan_y`。ビューは CPU の側の状態なので GPU を失っても読める) を、パンを CSS ピクセルに直して覚え、
+  作り直した WebPuppet に `created(puppet, true)` の前に `set_view` で渡す (作り直すまでに devicePixelRatio が変わっても、CSS ピクセルで
+  同じ場所を見せる)。続けて失ったときと、諦めた後の `restart` でも同じビューを渡す。`attach` (作り直しでない作成) と `detach` で忘れる。
+  - **Player:** モデルを読むたびに fit するが、作り直しの読み直し (`#setUp` の最初の読み込み) では fit せず、渡し直したビューを保つ
+    (`view`・`zoom` は WebPuppet から読み直す)。作り直しを待つ間 (WebPuppet が無い) に利用者が開いたモデルと、作り直しの後に開いた
+    モデルは、今までどおり fit で見せる。
+  - **エディタのビューポート:** モデルを読んでもビューを変えない (fit は「全体を表示」と、別のモデルになったときの App.svelte) ので、
+    `PuppetSurface` が渡し直すだけで保たれる。
 
 `<ugoe-avatar>` との関係: GPU の喪失は同じく `is_lost()` で分かり、devicePixelRatio も同じく `matchMedia` で聞く。WebGL2 の
 コンテキストの喪失で復元を待つこと、復元が 5 秒届かなければ作り直しを試すこと、作れなければ待って試し直すこと、続けて失ったときに諦める

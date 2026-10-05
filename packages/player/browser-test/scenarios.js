@@ -132,6 +132,22 @@ function near(a, b, epsilon = 1e-3) {
   return Math.abs(a - b) <= epsilon * Math.max(1, Math.abs(a), Math.abs(b));
 }
 
+/** Player の `view` (CSS ピクセル) が `expected` と同じか。 */
+function isView(view, expected) {
+  return (
+    view !== null &&
+    expected !== null &&
+    near(view.scale, expected.scale) &&
+    near(view.x, expected.x) &&
+    near(view.y, expected.y)
+  );
+}
+
+/** 失敗の文に出す `view`。 */
+function describeView(view) {
+  return view === null ? "null" : `{scale: ${view.scale}, x: ${view.x}, y: ${view.y}}`;
+}
+
 /** 描く領域 (PuppetSurface の container) を作る。 */
 function stage() {
   const el = document.createElement("div");
@@ -568,7 +584,8 @@ const scenarios = {
 
   /**
    * Player (player.svelte.ts) が WebGL2 のコンテキストを失ったら、新しい canvas の WebPuppet でモデルを読み直し、
-   * 付けていたモジュールを付け直し、パラメータの値を戻して描く (T0939)。
+   * 付けていたモジュールを付け直し、パラメータの値を戻して描く (T0939)。利用者のズームとパン (`view`) も保ち、
+   * 作り直しの後に利用者が開いたモデルは fit で見せる (T0942)。
    */
   async "player-loss-restore"() {
     const container = stage();
@@ -592,6 +609,15 @@ const scenarios = {
     await frames(2);
     check(near(player.values.MouthForm, 0.7), `MouthForm is ${player.values.MouthForm}`);
     await expectCaptured(player, "after load");
+    const fitted = player.view;
+    check(fitted !== null, "no view after load");
+    player.zoomBy(2, 40, 30);
+    player.panBy(12, -8);
+    const view = player.view;
+    check(
+      view !== null && near(view.scale, fitted.scale * 2),
+      `view after the zoom: ${describeView(view)}`,
+    );
 
     for (let round = 1; round <= 2; round++) {
       const oldCanvas = canvasesIn(container)[0];
@@ -619,16 +645,27 @@ const scenarios = {
         near(player.values.MouthForm, 0.7),
         `round ${round}: MouthForm is ${player.values.MouthForm} after the recreation`,
       );
+      check(
+        isView(player.view, view),
+        `round ${round}: view ${describeView(player.view)}, expected ${describeView(view)}`,
+      );
+      check(near(player.zoom, 2), `round ${round}: zoom ${player.zoom}`);
       check(live.size === 1, `round ${round}: ${live.size} live puppets`);
       await expectCaptured(player, `round ${round}`);
     }
+    // 利用者が開き直したモデルは fit で見せる
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) });
+    check(
+      isView(player.view, fitted),
+      `view after reopening ${describeView(player.view)}, expected ${describeView(fitted)}`,
+    );
     player.detach();
     check(canvasesIn(container).length === 0, "the canvas remains after detach");
   },
 
   /**
    * Player は WebGL2 のコンテキストを失ったら `waitingForGpu` になり、復元が届かなければ時間切れで作り直して描く。
-   * 続けて失って諦めたら `canRestart` になり、`restart` でモデル・モジュール・値を戻して描く (T0938)。
+   * 続けて失って諦めたら `canRestart` になり、`restart` でモデル・モジュール・値・ビューを戻して描く (T0938・T0942)。
    */
   async "player-timeout-restart"() {
     const container = stage();
@@ -647,8 +684,11 @@ const scenarios = {
     check(moduleName !== undefined, "no module is attached");
     player.setParameter("MouthForm", 0.7);
     await frames(2);
+    player.zoomBy(1.5, 100, 20);
+    player.panBy(-6, 9);
+    const view = player.view;
 
-    /** モデル・モジュール・値が戻って描いている。 */
+    /** モデル・モジュール・値・ビューが戻って描いている。 */
     const expectRestored = async (when) => {
       check(player.status === "ready", `${when}: status ${player.status} (${player.error})`);
       check(player.modelName === "dress-up.ugoe", `${when}: model ${player.modelName}`);
@@ -658,6 +698,10 @@ const scenarios = {
       );
       await frames(2);
       check(near(player.values.MouthForm, 0.7), `${when}: MouthForm is ${player.values.MouthForm}`);
+      check(
+        isView(player.view, view),
+        `${when}: view ${describeView(player.view)}, expected ${describeView(view)}`,
+      );
       check(live.size === 1, `${when}: ${live.size} live puppets`);
       await expectCaptured(player, when);
     };

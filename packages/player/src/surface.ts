@@ -15,12 +15,26 @@
 //   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` か `restart` まで作らない)。
 // - devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
 //   `matchMedia` で聞いて描画バッファの大きさを合わせ直す。
+// - GPU を失って作り直すときは、失った WebPuppet のビュー (ズームとパン) を覚えて、作り直した WebPuppet に `created` の前に
+//   渡す (作り直しは利用者の操作ではないので、見ている場所を変えない。T0942)。パンは CSS ピクセルで覚え、作り直したときの
+//   devicePixelRatio で描画バッファの画素に直す。`attach` (作り直しでない作成) では既定のビュー (fit) から始める。
 
 /** PuppetSurface が使う WebPuppet のメソッド (構造の型。アプリと Player の `WebPuppet` の型はこれを満たす)。 */
 export interface SurfacePuppet {
   free(): void;
   is_lost(): boolean;
   resize(width: number, height: number): void;
+  zoom(): number;
+  pan_x(): number;
+  pan_y(): number;
+  set_view(zoom: number, pan_x: number, pan_y: number): void;
+}
+
+/** 作り直しで渡し直すビュー。`zoom` は fit に対する倍率、パンは fit の位置からのずれ (CSS ピクセル)。 */
+interface SavedView {
+  zoom: number;
+  panX: number;
+  panY: number;
 }
 
 /** WebPuppet を作る口 (初期化した ugoe-wasm のモジュール)。 */
@@ -115,6 +129,8 @@ export class PuppetSurface<P extends SurfacePuppet> {
   /** 続けて作り直した回数と、前に作り直し始めた時刻 (`performance.now()`)。`attach` で戻す。 */
   #restarts = 0;
   #restartedAt: number | null = null;
+  /** GPU を失った WebPuppet のビュー (作り直した WebPuppet に渡す)。`attach`・`detach` で忘れる。 */
+  #savedView: SavedView | null = null;
 
   constructor(host: SurfaceHost<P>) {
     this.#host = host;
@@ -150,6 +166,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
     this.#container = container;
     this.#restarts = 0;
     this.#restartedAt = null;
+    this.#savedView = null;
     const wasm = await this.#host.loadWasm();
     if (token !== this.#token) return "superseded";
     if (wasm === null) return "missing";
@@ -166,6 +183,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
     this.#release();
     this.#wasm = null;
     this.#container = null;
+    this.#savedView = null;
   }
 
   /** 描く領域の大きさ (CSS ピクセル) が変わった。描画バッファは今の devicePixelRatio を掛けた画素にする。 */
@@ -197,6 +215,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
     const token = this.#token;
     this.#recovering = token;
     try {
+      this.#saveView(puppet);
       this.#host.lost?.(puppet);
       this.#release();
       await this.#recreate(token);
@@ -218,7 +237,10 @@ export class PuppetSurface<P extends SurfacePuppet> {
     this.#restarts = 0;
     this.#restartedAt = null;
     try {
-      if (this.#puppet !== null) this.#host.lost?.(this.#puppet);
+      if (this.#puppet !== null) {
+        this.#saveView(this.#puppet);
+        this.#host.lost?.(this.#puppet);
+      }
       this.#release();
       await this.#recreate(token);
     } finally {
@@ -285,12 +307,34 @@ export class PuppetSurface<P extends SurfacePuppet> {
       canvas.addEventListener("webglcontextlost", this.#onContextLost);
       canvas.addEventListener("webglcontextrestored", this.#onContextRestored);
       puppet.resize(...this.#pixelSize());
+      if (recovered) this.#restoreView(puppet);
       await this.#host.created(puppet, recovered);
       return token === this.#token ? "ready" : "superseded";
     }
     // 作り直しで作れなかったときは、`#recreate` が試し直す。
     if (!recovered) this.#host.failed(lastError);
     return "failed";
+  }
+
+  /** 失った WebPuppet のビューを覚える (ビューは CPU の側の状態なので、GPU を失っても読める)。 */
+  #saveView(puppet: P): void {
+    const dpr = this.#pixelRatio;
+    this.#savedView = {
+      zoom: puppet.zoom(),
+      panX: puppet.pan_x() / dpr,
+      panY: puppet.pan_y() / dpr,
+    };
+  }
+
+  /**
+   * 覚えたビューを作り直した WebPuppet に渡す。続けて失ったとき・諦めた後の `restart` でも同じビューを渡すので、
+   * `attach`・`detach` まで覚えておく。
+   */
+  #restoreView(puppet: P): void {
+    const view = this.#savedView;
+    if (view === null) return;
+    const dpr = this.#pixelRatio;
+    puppet.set_view(view.zoom, view.panX * dpr, view.panY * dpr);
   }
 
   #release(): void {

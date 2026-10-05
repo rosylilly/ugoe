@@ -250,6 +250,58 @@ describe("Player", () => {
     expect(p.modelName).toBe("good.ugoe");
   });
 
+  it("keeps the zoom and the pan after a lost GPU and fits a model opened later", async () => {
+    const p = player();
+    p.resize(200, 100);
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+    await p.load(bundle("a.ugoe", 1));
+    p.zoomBy(2, 50, 20);
+    p.panBy(5, -5);
+    const view = p.view;
+    expect(view).toEqual({ scale: 2, x: -45, y: -25 });
+
+    // 作り直しは利用者の操作ではないので、見ている場所を変えない (T0942)。
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(p.status).toBe("ready");
+    expect(p.view).toEqual(view);
+    expect(p.zoom).toBe(2);
+
+    // 利用者が開き直したモデルは fit で見せる。
+    await p.load(bundle("b.ugoe", 2));
+    expect(p.view).toEqual({ scale: 1, x: 0, y: 0 });
+    expect(p.zoom).toBe(1);
+  });
+
+  it("fits a model opened while the WebPuppet is being recreated", async () => {
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+    await p.load(bundle("a.ugoe", 1));
+    p.zoomBy(3);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    // 作り直している間 (WebPuppet が無い) に開いた。
+    const other = bundle("b.ugoe", 2);
+    await p.load(other);
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([other.bytes]);
+    expect(p.view).toEqual({ scale: 1, x: 0, y: 0 });
+    expect(p.zoom).toBe(1);
+  });
+
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {
     const queries: { media: string; target: EventTarget }[] = [];
     globalThis.matchMedia = (media: string) => {

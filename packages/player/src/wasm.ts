@@ -78,6 +78,9 @@ export interface WebPuppet extends TrackingPuppet {
 
   fit(): void;
   zoom(): number;
+  pan_x(): number;
+  pan_y(): number;
+  set_view(zoom: number, pan_x: number, pan_y: number): void;
   zoom_at(factor: number, x: number, y: number): void;
   pan_by(dx: number, dy: number): void;
   view_transform(): Float32Array;

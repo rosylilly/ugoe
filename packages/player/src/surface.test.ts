@@ -53,6 +53,13 @@ function fakePuppet() {
     free: () => void calls.push("free"),
     is_lost: () => puppet.lost,
     resize: (width: number, height: number) => void calls.push(`resize ${width}x${height}`),
+    view: [1, 0, 0],
+    zoom: () => puppet.view[0] ?? 1,
+    pan_x: () => puppet.view[1] ?? 0,
+    pan_y: () => puppet.view[2] ?? 0,
+    set_view: (zoom: number, x: number, y: number) => {
+      puppet.view = [zoom, x, y];
+    },
   };
   return { puppet, calls };
 }
@@ -374,6 +381,46 @@ describe("PuppetSurface", () => {
     expect(log).toEqual(["created", "lost", "released", "recovered"]);
   });
 
+  it("gives the recreated WebPuppet the view of the lost one", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    const views: number[][] = [];
+    const { host: h } = host({
+      created: (puppet) =>
+        void views.push([...(puppet as ReturnType<typeof fakePuppet>["puppet"]).view]),
+    });
+    const surface = new PuppetSurface(h);
+    surface.resize(200, 100);
+    const attached = surface.attach(container);
+    await settle();
+    const first = fakePuppet();
+    pending[0]?.resolve(first.puppet);
+    await attached;
+    // 利用者がズームとパンを動かした (パンは描画バッファの画素)。
+    first.puppet.view = [3, 40, -20];
+    first.puppet.lost = true;
+    surface.checkLost();
+    // 作り直す前に倍率が変わっても、CSS ピクセルで同じ場所を見せる。
+    vi.stubGlobal("devicePixelRatio", 1);
+    surface.resize(200, 100);
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    // `created` の前に渡す (Player はモデルを読み直す前にビューを読む)。
+    expect(views).toEqual([
+      [1, 0, 0],
+      [3, 20, -10],
+    ]);
+
+    // 作り直しでない作成 (次の attach) は既定のビューから始める。
+    const reattached = surface.attach(container);
+    await settle();
+    const third = fakePuppet();
+    pending[2]?.resolve(third.puppet);
+    await reattached;
+    expect(third.puppet.view).toEqual([1, 0, 0]);
+  });
+
   it("frees the recreated WebPuppet when detached while recreating", async () => {
     const { host: h, log } = host();
     const surface = new PuppetSurface(h);
@@ -532,6 +579,7 @@ describe("PuppetSurface", () => {
     let current = fakePuppet();
     pending[0]?.resolve(current.puppet);
     await attached;
+    current.puppet.view = [2, 10, 5];
     for (let i = 0; i <= MAX_RESTARTS; i++) {
       now += 1;
       current.puppet.lost = true;
@@ -552,6 +600,8 @@ describe("PuppetSurface", () => {
     await restarting;
     expect(surface.puppet).toBe(restarted.puppet);
     expect(log[log.length - 1]).toBe("recovered");
+    // 諦めた後の作り直しでも、失う前のビューを渡す。
+    expect(restarted.puppet.view).toEqual([2, 10, 5]);
     // 回数は数え直す (もう一度失っても作り直す)。
     restarted.puppet.lost = true;
     surface.checkLost();

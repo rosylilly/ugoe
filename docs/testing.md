@@ -343,9 +343,10 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
   WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
 - **シナリオ (`Player`):** 着せ替えの見本 (`dress-up.ugoe` とモジュール 1 つ) を開いてパラメータを動かし、WebGL2 のコンテキストを失って復元したら、
-  新しい WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描く (`capture` の読み戻しで確かめる。2 回続けて。`player-loss-restore`)。
+  新しい WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描き (`capture` の読み戻しで確かめる。2 回続けて)、利用者のズームとパン
+  (`view`) を保ち、その後に開き直したモデルは fit で見せる (`player-loss-restore`。T0942)。
   失ったら `waitingForGpu` になり、復元が届かなければ時間切れで作り直し、続けて失って諦めたら `canRestart` になり、`restart` で
-  モデル・モジュール・値を戻して描く (`player-timeout-restart`)。
+  モデル・モジュール・値・ビューを戻して描く (`player-timeout-restart`)。
   devicePixelRatio だけが変わったら、canvas と読み戻しの大きさが新しい倍率になり、CSS ピクセルで見たビュー (`view`) は動かず、
   CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
@@ -361,6 +362,7 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 - **テストが壊れを見つけること (T0939 で確かめた):** `surface.ts` で、倍率の問い合わせを `attach` で作らない・`change` の後に聞き直さない・
   `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
   作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。
+  `surface.ts` で作り直した WebPuppet にビューを渡さない (T0942) と、`player-loss-restore`・`player-timeout-restart` が落ちます。
 - **エディタの `ViewportController` は対象にしていません (T0939 で決めた):** `PuppetSurface` を通る経路 (作り直しで表示の設定とモデルを渡し直す・
   諦めたら状態と文を出す・倍率の変化で描き直しを頼む・CSS ピクセルと描画バッファの画素の換算) は Player と同じ形で薄く、本物の wasm で
   確かめたい部分 (作り直し・倍率・換算) は上の `PuppetSurface` と `Player` のシナリオで通ります。順序は偽の wasm の
