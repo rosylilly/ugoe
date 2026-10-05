@@ -37,7 +37,7 @@ import {
   type ProjectStatus,
   type PsdImportWarning,
 } from "./ipc";
-import { droppedCollidersNotice } from "./moduleProject";
+import { baseIsProject, droppedCollidersNotice } from "./moduleProject";
 
 /** ファイルダイアログでパスを選んで行う操作。 */
 export type PathAction =
@@ -510,6 +510,21 @@ export class FileMenuFlow {
   async openBase(): Promise<void> {
     const base = this.problem?.problem.base;
     if (!base || this.busy) return;
+    await this.#openBaseProject(base);
+  }
+
+  /**
+   * 適用のエラーの案内の「Open base project」(T1609。docs/editor.md#モジュールの適用のエラーの案内): 開いている
+   * モジュールの本体のプロジェクトを開く。保存していない変更があれば確かめる。設定の画面は先に閉じる。
+   */
+  async openModuleBase(): Promise<void> {
+    const base = this.moduleInfo?.base;
+    if (!base || !baseIsProject(base) || this.busy) return;
+    this.settingsOpen = false;
+    await this.#openBaseProject(base);
+  }
+
+  async #openBaseProject(base: string): Promise<void> {
     await this.#withDiscard(() =>
       this.#exclusive(async () => {
         if (await this.#run(() => ipc.openProject(base), "replaced")) {

@@ -51,6 +51,11 @@ export function refresh(): Promise<void> {
   return flow.refresh();
 }
 
+/** 開いているモジュールの本体のプロジェクトを開く (適用のエラーの案内から。T1609)。 */
+export function openModuleBase(): Promise<void> {
+  return flow.openModuleBase();
+}
+
 $effect(() => {
   const timer = setInterval(() => {
     if (document.visibilityState === "visible") void flow.checkExternal();
@@ -173,6 +178,7 @@ flow.refresh();
   open={flow.settingsOpen}
   module={flow.moduleInfo}
   onapply={(command) => flow.applyModuleSettings(command)}
+  onopenbase={() => flow.openModuleBase()}
   onclose={() => flow.closeSettings()}
 />
 <BaseChangeDialog

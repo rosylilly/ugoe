@@ -1,6 +1,7 @@
 // モジュールのプロジェクト (ADR 0024、docs/editor.md#モジュールのプロジェクト) の表示の補助。
 // 作業用のモデルは本体と合成したもので、本体の要素は読み取り専用の下敷き。
 import { formatList } from "@ugoe/i18n";
+import { isMessage } from "./errors";
 import { t } from "./i18n";
 import type { ColliderReference, ModuleProblem, ModuleStatus, SlotSummary } from "./ipc";
 import type { ElementRef } from "./selection.svelte";
@@ -228,6 +229,62 @@ export function moduleProblemFixes(problem: ModuleProblem): ProblemFix[] {
   }
   fixes.push("locate_project", "locate_bundle");
   return fixes;
+}
+
+/** モジュールのプロジェクトで適用を拒否されたときの直し方の案内 (文と、本体のプロジェクトを開けるか)。 */
+export interface ModuleErrorHelp {
+  hint: string;
+  /** 「Open base project」を出す (本体が `.ugoeproj` のときだけ)。 */
+  openBase: boolean;
+}
+
+/** 合成のエラーの原因 (`compose.*`) のうち、スロットが公開していないもの。 */
+const NOT_EXPOSED = new Set([
+  "compose.parameter_not_exposed",
+  "compose.unknown_mask",
+  "compose.unknown_collider",
+  "compose.pose_not_exposed",
+]);
+
+/** 合成のエラーの原因のうち、本体に無いもの (条件・使うパラメータ)。 */
+const MISSING_IN_BASE = new Set([
+  "compose.missing_parameter",
+  "compose.missing_slot",
+  "compose.avatar_level",
+]);
+
+/**
+ * 適用のエラーの直し方の案内 (T1609。docs/editor.md#モジュールの適用のエラーの案内)。本体を直せば済むエラーにだけ案内を返し、
+ * それ以外 (名前が使えない・モジュールとして表せないなど、エラーの文で足りるもの) は `null`。`base` は本体のパス
+ * (モジュールのプロジェクトでなければ `null` で、案内しない)。
+ */
+export function moduleErrorHelp(error: unknown, base: string | null): ModuleErrorHelp | null {
+  if (!base || !isMessage(error)) return null;
+  let key: "readOnlyBase" | "needsBasePhysics" | "notExposed" | "missingInBase";
+  const cause = error.cause?.code ?? "";
+  switch (error.code) {
+    case "edit.read_only_base":
+    case "module.read_only_base":
+      key = "readOnlyBase";
+      break;
+    case "module.collider_needs_base_physics":
+      key = "needsBasePhysics";
+      break;
+    case "module.compose_failed":
+      if (NOT_EXPOSED.has(cause)) key = "notExposed";
+      else if (MISSING_IN_BASE.has(cause)) key = "missingInBase";
+      else return null;
+      break;
+    default:
+      return null;
+  }
+  const openBase = baseIsProject(base);
+  // 書き出した .ugoe の本体は開けないので、直す場所 (本体のプロジェクト) だけを言う。
+  const hint =
+    openBase || key === "notExposed" || key === "missingInBase"
+      ? t(`module.errorHelp.${key}`)
+      : t("module.errorHelp.bundleBase");
+  return { hint, openBase };
 }
 
 /**

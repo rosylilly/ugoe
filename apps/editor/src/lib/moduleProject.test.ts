@@ -12,6 +12,7 @@ import {
   isBaseRig,
   isBaseTexture,
   isValidModuleName,
+  moduleErrorHelp,
   moduleLabel,
   moduleProblemFixes,
   moduleTitle,
@@ -161,6 +162,47 @@ describe("module problems", () => {
     expect(describeModuleProblem(problem("unknown_slot", "/p/moved.ugoeproj"))).toMatch(
       /^The base model "moved\.ugoeproj" no longer has slot "Hair"\./,
     );
+  });
+});
+
+describe("guidance for refused edits in a module project (T1609)", () => {
+  const message = (code: string, cause?: string) => ({
+    code,
+    args: {},
+    message: "x",
+    ...(cause ? { cause: { code: cause, args: {}, message: "y" } } : {}),
+  });
+  const base = "/p/avatar.ugoeproj";
+  it("guides the errors that the base project fixes and offers to open it", () => {
+    expect(moduleErrorHelp(message("edit.read_only_base"), base)).toEqual({
+      hint: expect.stringContaining("read-only"),
+      openBase: true,
+    });
+    expect(moduleErrorHelp(message("module.collider_needs_base_physics"), base)?.hint).toContain(
+      "Physics tab",
+    );
+    expect(
+      moduleErrorHelp(message("module.compose_failed", "compose.parameter_not_exposed"), base)
+        ?.hint,
+    ).toContain("doesn't expose");
+    expect(
+      moduleErrorHelp(message("module.compose_failed", "compose.missing_parameter"), base)?.hint,
+    ).toContain("doesn't have");
+  });
+  it("does not open an exported base and says where to fix it", () => {
+    expect(moduleErrorHelp(message("edit.read_only_base"), "/p/avatar.ugoe")).toEqual({
+      hint: expect.stringContaining("export it again"),
+      openBase: false,
+    });
+  });
+  it("leaves the errors whose sentence is enough, and projects that are not modules", () => {
+    expect(moduleErrorHelp(message("module.invalid_name"), base)).toBeNull();
+    expect(moduleErrorHelp(message("edit.module_shape"), base)).toBeNull();
+    expect(
+      moduleErrorHelp(message("module.compose_failed", "compose.slot_occupied"), base),
+    ).toBeNull();
+    expect(moduleErrorHelp(message("edit.read_only_base"), null)).toBeNull();
+    expect(moduleErrorHelp(new Error("x"), base)).toBeNull();
   });
 });
 

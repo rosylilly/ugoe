@@ -349,4 +349,30 @@ describe("FileMenuFlow: module settings", () => {
     expect(flow.busy).toBe(false);
     expect(host.onrenamemodule).not.toHaveBeenCalled();
   });
+
+  it("opens the base project from the guidance of a refused edit, closing the settings first", async () => {
+    const flow = await flowWith(saved, moduleInfo);
+    flow.openSettings();
+    ipc.openProject.mockResolvedValueOnce(saved);
+    ipc.moduleStatus.mockResolvedValue(null);
+    await flow.openModuleBase();
+    expect(flow.settingsOpen).toBe(false);
+    expect(ipc.openProject).toHaveBeenCalledExactlyOnceWith("/work/Base.ugoeproj");
+    expect(host.onchange).toHaveBeenCalledExactlyOnceWith(true, false);
+    expect(host.inform).toHaveBeenCalledOnce();
+  });
+
+  it("asks before discarding the module's changes and does not open a .ugoe base", async () => {
+    const flow = await flowWith({ ...saved, modified: true }, moduleInfo);
+    ipc.openProject.mockResolvedValueOnce(saved);
+    void flow.openModuleBase();
+    expect(flow.pendingDiscard).not.toBeNull();
+    expect(ipc.openProject).not.toHaveBeenCalled();
+    flow.confirmDiscard();
+    await vi.waitFor(() => expect(ipc.openProject).toHaveBeenCalledOnce());
+
+    const bundle = await flowWith(saved, { ...moduleInfo, base: "/work/Base.ugoe" });
+    await bundle.openModuleBase();
+    expect(ipc.openProject).toHaveBeenCalledOnce();
+  });
 });

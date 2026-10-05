@@ -264,7 +264,18 @@
     },
     "baseEditHint": "This belongs to the base model and can't be edited here. Edit it in the base project.",
     "unavailableColliders_one": "Slot \"{{slot}}\" exposes the base collider {{colliders}}, but the base model has no physics, so this module's rigs can't collide with it. To use it, open the base project and add physics with it in the Physics tab, then reload the base.",
-    "unavailableColliders_other": "Slot \"{{slot}}\" exposes the base colliders {{colliders}}, but the base model has no physics, so this module's rigs can't collide with them. To use them, open the base project and add physics with them in the Physics tab, then reload the base."
+    "unavailableColliders_other": "Slot \"{{slot}}\" exposes the base colliders {{colliders}}, but the base model has no physics, so this module's rigs can't collide with them. To use them, open the base project and add physics with them in the Physics tab, then reload the base.",
+    "errorHelp": {
+      "readOnlyBase": "Base elements are read-only in a module project. Change them in the base project and save it; this module uses the new base when it is opened again or reloads the base.",
+      "needsBasePhysics": "Add the physics in the Physics tab of the base project and save it; this module can use it when it is opened again or reloads the base.",
+      "notExposed": "The slot doesn't expose what this module uses. Choose a slot that does, stop using it in the module, or expose it in the slot in the base project (Slots tab).",
+      "missingInBase": "The base model doesn't have what this module requires or uses. Remove it from the requirements or the module, or add it in the base project.",
+      "bundleBase": "The base is an exported .ugoe bundle, so it can't be opened for editing. Change the base's project and export it again; this module uses the new base when it is opened again or reloads the base.",
+      "openBase": {
+        "label": "Open base project",
+        "tooltip": "Open the base project to fix it (asks first if this module has unsaved changes)"
+      }
+    }
   },
   "moduleProblem": {
     "kind": {

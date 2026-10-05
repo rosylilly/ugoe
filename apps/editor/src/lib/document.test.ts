@@ -145,6 +145,23 @@ describe("EditorDocument.applyWith", () => {
     expect(doc.error).toBe("refused");
   });
 
+  it("keeps the backend message of the failure for the guidance and keeps the warnings of the report", async () => {
+    const doc = new EditorDocument();
+    const refused = { code: "edit.read_only_base", args: { element: "mesh `Face`" }, message: "x" };
+    await doc.applyWith(() => Promise.reject(refused));
+    expect(doc.failure).toBe(refused);
+    // `keep_look` のモジュールの設定の警告も、ほかの編集と同じく `warnings` に入る (T1609)。
+    const warning = {
+      target: { kind: "mesh", id: "Dress/SkirtR" },
+      source: { kind: "mesh", id: "Dress/Skirt" },
+      code: "inference.mirror_failed",
+      args: {},
+      message: "no mirrored source vertex",
+    };
+    await doc.applyWith(async () => ({ warnings: [warning], mirrored: [] }) as never);
+    expect(doc.warnings).toEqual([warning]);
+  });
+
   it("returns the failure to the caller with rethrow", async () => {
     const doc = new EditorDocument();
     await expect(

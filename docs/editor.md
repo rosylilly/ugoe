@@ -783,6 +783,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - `keep_look` (画面の「Keep where it appears」、既定で入) なら、合成し直した作業用のモデルで、モジュールの最上位のデフォーマとメッシュの親を
     いったん前の取り付け先に戻し、`ReparentPreservingLook` と同じ写し方 (`deformer_edit::reparent`。基準の姿で見た目を保つ) で新しい取り付け先の
     下へ移します (`ModuleContext::keep_look`、T0651)。推定のセルは作り直し (`inference::rederive`)、検証とモジュールへの分割を確かめてから採用します。
+    ミラーし直せなかった左右の対 (`inference.mirror_failed`) は、ほかの編集と同じく拒否せずに `ApplyReport.warnings` で返し、画面がインスペクタの
+    警告に出します (付け替えで親が変わった対の確かめ `check_reparented_pairs` も行う。名前を変えたときは ID が変わるので、前のモデルと突き合わせない。T1609)。
     物理の衝突体のうち、モジュールのもので取り付け先に付くもの (モジュールの中では `attach` なし) は、形状の位置 (`center`・`a`・`b`) を同じく
     基準の姿で前の取り付け先の局所座標 → キャンバス → 新しい取り付け先の局所座標と写し直します (半径はピクセルなので変えない。T0653)。
     リグの粒子は写し直しません。モジュールのリグの根元はモジュールのデフォーマ (出力先か `frame`) の局所座標かキャンバス座標で表され
@@ -791,6 +793,24 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - `keep_look` でなければ局所座標のままで、見た目の位置が変わります (画面が注意を出す)。
   スロットが公開していないパラメータ・マスク・衝突体・ポーズのパーツを使っていれば拒否されます。
 - **条件:** アバタープロファイルのレベル (本体が名乗るレベルまで)、ほかのスロット、パラメータを本体のものから選びます。付けるスロットは書きません。
+
+### モジュールの適用のエラーの案内
+
+モジュールのプロジェクトで適用を拒否されたとき、本体を直せば済むエラーには、エラーの文の下に直し方の案内を出します (T1609。
+`ModuleErrorHelp.svelte`・`moduleErrorHelp` (`src/lib/moduleProject.ts`))。出す場所は、インスペクタの上のエラー (ほかの編集) と
+[モジュールの設定](#モジュールの設定) の画面です。本体が `.ugoeproj` なら「Open base project」で本体のプロジェクトを開けます
+(保存していない変更があれば先に確かめる。設定の画面は閉じる。開いた後の流れは本体の問題の「Open base project」と同じ)。
+本体が書き出した `.ugoe` なら開けないので、本体のプロジェクトで変えて書き出し直すよう案内します。
+
+| コード (`cause` のコード) | 案内 |
+| --- | --- |
+| `edit.read_only_base`・`module.read_only_base` | 本体の要素は本体のプロジェクトで変えて保存し、開き直すか本体を読み直す |
+| `module.collider_needs_base_physics` | 本体のプロジェクトの物理のタブで物理を足して保存する |
+| `module.compose_failed` (`compose.parameter_not_exposed`・`compose.unknown_mask`・`compose.unknown_collider`・`compose.pose_not_exposed`) | 公開しているスロットを選ぶ・モジュールで使うのをやめる・本体のスロットで公開する |
+| `module.compose_failed` (`compose.missing_parameter`・`compose.missing_slot`・`compose.avatar_level`) | 条件やモジュールから外す・本体に足す |
+
+ほかのコード (`module.invalid_name`・`module.unknown_slot`・`edit.module_shape`・`edit.not_module`・上に無い `compose.*` など) は、
+エラーの文が直し方まで言うか、本体ではなくモジュールの側を直すものなので、案内を付けません。
 
 ### 本体のものの表示
 

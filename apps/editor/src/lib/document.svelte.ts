@@ -68,6 +68,11 @@ export class EditorDocument {
   physics = $state.raw<PhysicsSettings | null>(null);
   error = $state<string | null>(null);
   /**
+   * `error` の元のエラー (バックエンドの `Message` など)。モジュールのプロジェクトで適用を拒否されたときの直し方の案内を
+   * コードから選ぶ (ModuleErrorHelp。T1609)。
+   */
+  failure = $state.raw<unknown>(null);
+  /**
    * 適用したコマンドの自動の作り直しで失敗したこと (ミラーのやり直しなど。docs/editor.md#推定とミラー)。
    * 利用者が閉じるまで残す。同じ格子とミラー元の組は新しいもので置き換える。
    */
@@ -130,9 +135,10 @@ export class EditorDocument {
       this.parameters = parsed.parameters;
       this.empty = isEmptyModel(parsed);
       this.error = null;
+      this.failure = null;
       this.revision += 1;
     } catch (e) {
-      if (generation === this.#generation) this.error = errorText(e);
+      if (generation === this.#generation) this.#fail(e);
     }
   }
 
@@ -233,7 +239,7 @@ export class EditorDocument {
     try {
       command = build();
     } catch (e) {
-      this.error = errorText(e);
+      this.#fail(e);
       return null;
     }
     if (!command) return null;
@@ -273,12 +279,18 @@ export class EditorDocument {
     return applied;
   }
 
+  /** 失敗を画面に出す (`error` と `failure`)。 */
+  #fail(error: unknown): void {
+    this.error = errorText(error);
+    this.failure = error;
+  }
+
   async #run(action: () => Promise<unknown>, rethrow = false): Promise<void> {
     try {
       await action();
     } catch (e) {
       if (rethrow) throw e;
-      this.error = errorText(e);
+      this.#fail(e);
       return;
     }
     await this.refresh();

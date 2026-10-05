@@ -34,6 +34,7 @@ import HelpButton from "./lib/HelpButton.svelte";
 import { t } from "./lib/i18n";
 import { type AppInfo, type DifferenceItem, ipc } from "./lib/ipc";
 import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
+import ModuleErrorHelp from "./lib/ModuleErrorHelp.svelte";
 import { renamePrefix } from "./lib/moduleProject";
 import GluesPanel from "./lib/panels/glues/GluesPanel.svelte";
 import { GlueView } from "./lib/panels/glues/glueView.svelte";
@@ -357,7 +358,11 @@ $effect(() => {
           onselect={(tab) => (tab === "ai" ? openProposals() : openTab(tab))}
         />
       </div>
-      {#if doc.error}<p class="error ugoe-selectable">{doc.error}</p>{/if}
+      {#if doc.error}
+        <p class="error ugoe-selectable">{doc.error}</p>
+        <ModuleErrorHelp error={doc.failure} base={doc.module?.base ?? null}
+          onopenbase={() => void fileMenu?.openModuleBase()} />
+      {/if}
       {#if proposals.active}
         <ProposalsPanel
           view={proposals}

@@ -3,6 +3,7 @@
   ファイルメニューの `Module: <スロット>` の印を押すと開く。「Apply」で set_module_settings を 1 つ送る (1 回の Undo で戻る)。
   本体がスロットや条件を満たさなければ、バックエンドが拒否し、理由をここに出す。Esc で閉じる。
   取り付け先の違うスロットに移すときは、見た目を保って移すか (`keep_look`、既定) 局所座標のまま移すかを選ぶ (T0651)。
+  本体を直せば済む拒否 (スロットが公開していない・本体に無いなど) には、直し方の案内と「Open base project」を出す (T1609)。
 -->
 <script lang="ts">
 import { Button, Checkbox, Dialog, Select } from "@ugoe/ui";
@@ -10,6 +11,7 @@ import { untrack } from "svelte";
 import { errorText } from "./errors";
 import { t } from "./i18n";
 import type { Command, ModuleStatus } from "./ipc";
+import ModuleErrorHelp from "./ModuleErrorHelp.svelte";
 import {
   anchorName,
   isValidModuleName,
@@ -23,10 +25,12 @@ interface Props {
   module: ModuleStatus | null;
   /** コマンドを適用する (失敗すると例外。メッセージを出してダイアログは開いたまま)。 */
   onapply: (command: Command) => Promise<void>;
+  /** 本体のプロジェクトを開く (拒否の理由の案内から)。 */
+  onopenbase: () => void;
   onclose: () => void;
 }
 
-let { open, module, onapply, onclose }: Props = $props();
+let { open, module, onapply, onopenbase, onclose }: Props = $props();
 
 let name = $state("");
 let slot = $state("");
@@ -36,6 +40,8 @@ let parameters = $state<string[]>([]);
 /** 取り付け先の違うスロットに移すとき、見た目 (基準の姿) を保つ。 */
 let keepLook = $state(true);
 let error = $state<string | null>(null);
+/** 拒否の理由 (`Message`。直し方の案内を選ぶ)。 */
+let failure = $state.raw<unknown>(null);
 let busy = $state(false);
 const nameId = $props.id();
 
@@ -55,6 +61,7 @@ function reset(): void {
   parameters = r.parameters;
   keepLook = true;
   error = null;
+  failure = null;
 }
 
 const baseSlotIds = $derived(module?.base_slots.map((s) => s.id) ?? []);
@@ -91,8 +98,10 @@ async function apply(): Promise<void> {
       keep_look: anchorChanges && keepLook,
     });
     error = null;
+    failure = null;
   } catch (e) {
     error = errorText(e);
+    failure = e;
   } finally {
     busy = false;
   }
@@ -167,7 +176,10 @@ async function apply(): Promise<void> {
       </div>
     </fieldset>
   {/if}
-  {#if error}<p class="error ugoe-selectable" role="alert">{error}</p>{/if}
+  {#if error}
+    <p class="error ugoe-selectable" role="alert">{error}</p>
+    <ModuleErrorHelp error={failure} base={module?.base ?? null} {busy} {onopenbase} />
+  {/if}
   {#snippet actions()}
     <Button onclick={onclose}>{t("moduleSettings.cancel.label")}</Button>
     <Button variant="primary" onclick={apply} disabled={busy || !isValidModuleName(name) || !slot}>

@@ -247,6 +247,74 @@ fn module_settings_keep_the_look_when_the_anchor_changes() {
     );
 }
 
+/// `keep_look` の写し直しでミラーし直せなかった左右の対は、拒否せずに `ApplyReport` の警告で返す (T1609)。
+#[test]
+fn module_settings_keep_look_reports_failed_remirrors() {
+    let mut module = dress_module();
+    module.requires = ModuleRequirements::default();
+    let rest = module.meshes[0].keyforms.keyforms[0].clone();
+    module.meshes[0].keyforms = KeyformGrid::constant(rest);
+    // `Skirt` をミラー元にする `SkirtR`。頂点を対称軸から離しておくので、ミラーし直すと対応する頂点がない。
+    let mut right = module.meshes[0].clone();
+    right.id = "SkirtR".into();
+    for keyform in right.keyforms.all_keyforms_mut() {
+        for p in &mut keyform.positions {
+            p.x += 5.0;
+        }
+    }
+    right.keyforms.origins = vec![ugoe_model::KeyformOrigin::Mirror];
+    right.keyforms.mirror_source = Some(MirrorSource {
+        id: "Skirt".into(),
+        axis: None,
+        tolerance: None,
+    });
+    module.meshes.push(right);
+
+    let mut document = self::document(&module);
+    let right_before = document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id == "Dress/SkirtR")
+        .unwrap()
+        .keyforms
+        .clone();
+    let mut command = settings("Dress", "Hair", ModuleRequirements::default());
+    let Command::SetModuleSettings { keep_look, .. } = &mut command else {
+        unreachable!()
+    };
+    *keep_look = true;
+    let report = document.apply_with_report(command.clone()).unwrap();
+    assert_eq!(document.module().unwrap().slot().id.as_str(), "Hair");
+    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    let warning = &report.warnings[0];
+    assert_eq!(warning.code, "inference.mirror_failed");
+    assert_eq!(
+        warning.target,
+        crate::KeyformTarget::Mesh("Dress/SkirtR".into())
+    );
+    assert_eq!(
+        warning.source,
+        crate::KeyformTarget::Mesh("Dress/Skirt".into())
+    );
+    // ミラーのセルはミラーし直さず、付け替えで写し直した値になる (前の局所座標のままではない)。
+    let right_after = &document
+        .model()
+        .meshes
+        .iter()
+        .find(|m| m.id == "Dress/SkirtR")
+        .unwrap()
+        .keyforms;
+    assert_ne!(*right_after, right_before);
+
+    // `keep_look` でなければ写し直さないので、警告はない。
+    let mut document = self::document(&module);
+    let report = document
+        .apply_with_report(settings("Dress", "Hair", ModuleRequirements::default()))
+        .unwrap();
+    assert_eq!(report.warnings, vec![]);
+}
+
 /// `keep_look` で取り付け先を替えると、モジュールの衝突体 (取り付け先に付くもの) も見た目の位置を保ち、
 /// リグの根元 (モジュールの回転デフォーマに付く) も同じ位置に残る。Undo で戻る。
 #[test]

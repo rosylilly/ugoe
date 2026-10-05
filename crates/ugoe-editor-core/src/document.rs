@@ -318,8 +318,11 @@ impl Document {
             keep_look,
         } = command
         {
-            self.set_module_settings(name, &slot, requires, keep_look)?;
-            return Ok(ApplyReport::default());
+            let warnings = self.set_module_settings(name, &slot, requires, keep_look)?;
+            return Ok(ApplyReport {
+                warnings,
+                mirrored: Vec::new(),
+            });
         }
         let mut next = self.current.edited();
         let mut touched = Vec::new();
@@ -389,16 +392,19 @@ impl Document {
     /// 本体と合成し直す (`docs/editor.md#モジュールの設定`)。モジュールの要素の座標は取り付け先の局所座標のまま
     /// なので、取り付け先の違うスロットに移すと見た目の位置が変わる。`keep_look` なら新しい取り付け先の局所座標に
     /// 写し直して見た目を保つ ([`ModuleContext::keep_look`])。変わらなければ何もしない。
+    ///
+    /// 写し直しでミラーし直せなかった左右の対の警告を返す (`keep_look` でなければ空。
+    /// [`Document::apply_with_report`] と同じく拒否はしない)。
     fn set_module_settings(
         &mut self,
         name: String,
         slot: &SlotId,
         requires: ModuleRequirements,
         keep_look: bool,
-    ) -> Result<(), EditError> {
+    ) -> Result<Vec<RederiveWarning>, EditError> {
         let context = self.current.module.as_ref().ok_or(EditError::NotModule)?;
         if context.name() == name && &context.slot().id == slot && *context.requires() == requires {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let (module, images) = context.split(
             &self.current.model,
@@ -408,6 +414,7 @@ impl Document {
         let reconfigured = context.reconfigured(slot, name, requires)?;
         let mut workspace = reconfigured.workspace(&module, &images)?;
         let mut problems = OnceLock::new();
+        let mut warnings = Vec::new();
         if keep_look {
             let mut touched = Vec::new();
             reconfigured.keep_look(
@@ -416,7 +423,9 @@ impl Document {
                 context.slot().anchor.as_ref(),
                 &mut touched,
             )?;
-            inference::rederive(&mut workspace.model, &touched)?;
+            warnings = inference::rederive(&mut workspace.model, &touched)?;
+            // 名前を替えたときは ID が変わるので、前のモデルと突き合わせられる要素だけを確かめる。
+            inference::check_reparented_pairs(&self.current.model, &workspace.model, &mut warnings);
             let before = &self.current.problems().model;
             let after = Problems::of(&workspace.model, workspace.physics.as_ref());
             let introduced: Vec<_> = after
@@ -447,7 +456,7 @@ impl Document {
         self.next_state += 1;
         self.history
             .record(std::mem::replace(&mut self.current, next));
-        Ok(())
+        Ok(warnings)
     }
 
     /// モジュールのプロジェクトの本体を `base` に替える (本体のファイルが外で変わったときの読み直し。
