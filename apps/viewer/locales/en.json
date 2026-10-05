@@ -407,6 +407,14 @@
       }
     }
   },
+  "poses": {
+    "title": "Pose",
+    "status_one": "{{count}} group",
+    "status_other": "{{count}} groups",
+    "hint": "Choose the part to show in each group (it fades in). While a motion switches the same group, the motion takes precedence.",
+    "group": "Group {{n}}",
+    "moduleGroup": "{{module}} group {{n}}"
+  },
   "memory": {
     "title": "Remembered for each model",
     "description": "Lights, dress-up sets and idle motion choices are remembered for each model in this browser (app). Forgetting them does not change the current lights, the attached modules or the playing idle motion.",

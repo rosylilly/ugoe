@@ -27,6 +27,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/LightingPanel.svelte   光源のパネル (ライティングを使うモデルのときだけ出す)。LightPad.svelte は向き・位置の面
   lib/DressUpPanel.svelte  着せ替えのパネル (スロットのあるモデルか、モジュールを読み込んだときだけ出す)
   lib/MotionPanel.svelte  モーションと表情のパネル (バンドルにモーションか表情があるときだけ出す。T0720)
+  lib/PosePanel.svelte  ポーズのパネル (ポーズのグループがあるときだけ出す。T0735)
   lib/MemoryDialog.svelte  モデルごとに覚えたもの (光源・着せ替えの組・待機モーション) の一覧の画面 (T0714)
   lib/drop.ts           ドロップしたファイルの開き方 (モデルとモジュールを一緒に落としたとき。T0713)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
@@ -41,7 +42,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 モデルの再生の層 (`Player`。読み込み・パラメータ・モーションと表情・トラッキング・ライティング・着せ替え・モデルごとに
 覚えるもの) は、スタジオと共有するパッケージ `@ugoe/player` ([packages/player/](../../packages/player/)) にある (T0904)。
 このファイルで `player.svelte.ts`・`drivers.ts`・`lighting.ts`・`dressUp.ts`・`dressUpMemory.ts`・`animation.ts`・
-`loadWarnings.ts`・`modelMemory.ts`・`rememberedModels.ts`・`modelFile.ts` と書いているものは、そのパッケージの `src/` にある。
+`pose.ts`・`loadWarnings.ts`・`modelMemory.ts`・`rememberedModels.ts`・`modelFile.ts` と書いているものは、そのパッケージの `src/` にある。
 ビューアは `App.svelte` で `new Player({ loadWasm, readFile: readFileAt })` を作る。
 
 フェイストラッキング (T0703) の部品 (MediaPipe の結果の変換・キャリブレーション・平滑化・記録・`FaceTracker`・
@@ -576,6 +577,21 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   トラッキングが見えなくなるため。待機モーションを優先させたいときは、優先度を「通常」にして ▶ で再生する。
 - 印: 優先する間は、待機以外のモーションに「トラッキングで隠れる」「一部トラッキング」を出さない (自動で流す待機モーションには出す)。
 - 切った場合は T0720 のまま (上の表)。トラッキングの対象をパラメータごとに絞る設定 (`avatar.tracking` の上書き) とは別のもの。
+
+## ポーズ (T0735)
+
+開いたモデルにポーズ (排他的なパーツの切り替え。[docs/spec/model.md#ポーズ](../../docs/spec/model.md#ポーズ)) のグループがあると、
+右のパネルに「ポーズ」が出る。グループごとに表示する要素 (パーツの ID) を選ぶと、`Player.showPose` が WebPuppet の `show_pose` を呼び、
+次のフレームからフェードで切り替わる。要素が 2〜4 個のグループは `SegmentedControl`、5 個以上は `Select` で選ぶ (docs/ui.md#部品の一覧)。
+規則は [docs/spec/motion.md#ポーズ](../../docs/spec/motion.md#ポーズ)、使い方は [docs/manual/dress-up.md](../../docs/manual/dress-up.md#ビューアでポーズを切り替える)。
+
+- グループは WebPuppet の合成したポーズ (`pose_json()`) から読む (`pose.ts` の `parsePose`)。着せ替えで付けたモジュールのグループ
+  (`<モジュール>/<パーツ>`) も入り、「Hat のグループ 1」のようにモジュールごとに数える。要素の名前はモジュールの名前を除いて出す。
+- `Player.poseGroups`・`poseShown` (グループごとに表示している要素) は、モデルを読んだときと着せ替えの付け外しのたびに読み直す。
+  モデルを読むと先頭の要素に戻り、付け外しでは要素の並びが同じグループの選択を保つ (Puppet がポーズを作り直すときの引き継ぎと同じ規則。
+  `carryPoseShown`)。読み直した後は、選んでいる要素を WebPuppet に `show_pose` で渡し直し、欄と描く姿を食い違わせない。
+- モーションが同じグループの要素を要求している間はモーションが勝つ。wasm には表示中の要素を読む口が無いので、欄はモーションに追従しない。
+- ヘッドレスのブラウザからは `window.__UGOE_VIEWER__` の `poseGroups`・`poseShown`・`showPose(part)` を触れる。
 
 ## フェイストラッキング (T0703)
 

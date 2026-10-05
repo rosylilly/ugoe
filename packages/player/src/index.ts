@@ -13,6 +13,7 @@ export * from "./modelFile";
 export * from "./modelMemory";
 export * from "./parameters";
 export * from "./player.svelte";
+export * from "./pose";
 export * from "./rememberedModels";
 export * from "./screenshot";
 export * from "./storage";

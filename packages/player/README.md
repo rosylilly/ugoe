@@ -19,6 +19,7 @@ src/drivers.ts           パラメータを毎フレーム外から動かす仕�
 src/parameters.ts        パラメータの一覧 (parameters_json) の読み取り・グループ分け・スライダーの刻み
 src/animation.ts         モーションと表情の一覧・発火したイベント (motion_events_json。T0734) の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
 src/lighting.ts          光源の設定・既定の組・set_lighting_json の JSON・localStorage への保存・光源の印の幾何 (T0708・T0709)
+src/pose.ts              ポーズのグループ (pose_json) の読み取り・付け外しの後の選択の引き継ぎ・要素の表示名 (T0735)
 src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)
 src/dressUpMemory.ts     付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
@@ -33,7 +34,7 @@ browser-test/            PuppetSurface と Player を本物の wasm とヘッド
 src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備。T0933。localStorage の代わりは `@ugoe/i18n/testing` の `MemoryStorage`)。index.ts から出さない
 ```
 
-画面の部品 (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
+画面の部品 (パラメータ・ライティング・着せ替え・モーション・ポーズのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
 ある (`apps/viewer/src/lib/*.svelte`)。`@ugoe/ui` ができた後で、部品に作り直してここへ移す。
 
 ## 使い方

@@ -64,6 +64,7 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
+import { carryPoseShown, type PoseGroupInfo, parsePose } from "./pose";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import type { Screenshot } from "./screenshot";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
@@ -211,6 +212,16 @@ export class Player {
    * (モデルによらない)。WebPuppet の `set_tracking_kept` に渡す。
    */
   trackingKept = $state<string[]>([]);
+  /**
+   * 開いているモデルのポーズのグループ (WebPuppet の `pose_json`。着せ替えで付けたモジュールのグループも入る。T0735)。
+   * モデルを読んだときと、着せ替えの付け外しのたびに読み直す。
+   */
+  poseGroups = $state<PoseGroupInfo[]>([]);
+  /**
+   * グループごとに表示している要素のパーツ (`poseGroups` と同じ順)。モデルを読むと先頭の要素になり、付け外しでは要素の並びが
+   * 同じグループの選択を保つ (Puppet と同じ規則。pose.ts の `carryPoseShown`)。
+   */
+  poseShown = $state<string[]>([]);
 
   /** パラメータを毎フレーム外から動かすもの (drivers.ts)。 */
   readonly drivers = new DriverSet();
@@ -434,6 +445,9 @@ export class Player {
     this.usesLighting = puppet.uses_lighting();
     this.#applyLighting();
     this.dressUpError = null;
+    // ポーズは読み直すと先頭の要素から始まる (付けていたモジュールのグループも)。前のモデルの選択は引き継がない。
+    this.poseGroups = [];
+    this.poseShown = [];
     this.#syncDressUp();
     // 再生の状態は読み直すと初めからになる (crates/ugoe-wasm/README.md)。
     this.#syncAnimations(puppet);
@@ -785,6 +799,44 @@ export class Player {
       this.motionNotice = message(e);
     }
     this.activeExpressions = puppet.active_expressions();
+  }
+
+  // --- ポーズ (T0735)。規則は docs/spec/motion.md#ポーズ ---
+
+  /**
+   * ポーズの要素 `part` (`poseGroups` の要素のパーツ) を、そのグループの表示中の要素にする (`show_pose`。次のフレームから
+   * フェードで切り替わる)。要素でなければ何もせず `false`。
+   */
+  showPose(part: string): boolean {
+    const puppet = this.#puppet;
+    if (puppet?.has_model() !== true) return false;
+    const index = this.poseGroups.findIndex((g) => g.parts.includes(part));
+    if (index < 0 || !puppet.show_pose(part)) return false;
+    this.poseShown = this.poseShown.map((shown, i) => (i === index ? part : shown));
+    return true;
+  }
+
+  /**
+   * ポーズのグループを WebPuppet から読み直す (着せ替えの一覧と一緒に)。要素の並びが前と同じグループは選択を保ち、ほかは
+   * 先頭の要素にする。選んだ要素は WebPuppet にも渡し直す (読み直した後で、欄と描く姿が食い違わないように)。
+   */
+  #syncPose(puppet: WebPuppet): void {
+    let groups: PoseGroupInfo[] = [];
+    try {
+      if (puppet.has_model()) groups = parsePose(puppet.pose_json());
+    } catch (e) {
+      console.warn("ugoe:", e);
+    }
+    const shown = carryPoseShown(groups, this.poseGroups, this.poseShown);
+    for (const part of shown) {
+      try {
+        puppet.show_pose(part);
+      } catch {
+        // モデルが無ければ何もしない。
+      }
+    }
+    this.poseGroups = groups;
+    this.poseShown = shown;
   }
 
   // --- 受け手のモード (スタジオの出力ウィンドウ。follower.ts、ADR 0028 の 3.) ---
@@ -1164,6 +1216,7 @@ export class Player {
     }
     this.#attached = puppet.attached_modules();
     if (puppet.has_model()) this.usesLighting = puppet.uses_lighting();
+    this.#syncPose(puppet);
     // 利用者が着せ替えを操作した: 尋ねている組は取り消し、いまの組を覚える。
     if (this.#quiet === 0) {
       this.restoreOffer = null;

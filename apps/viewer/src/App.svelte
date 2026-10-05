@@ -39,6 +39,7 @@ import LightingPanel from "./lib/LightingPanel.svelte";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
 import MotionPanel from "./lib/MotionPanel.svelte";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
+import PosePanel from "./lib/PosePanel.svelte";
 import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
 import { screenshotFileName } from "./lib/screenshot";
@@ -310,7 +311,8 @@ function onKeyDown(e: KeyboardEvent) {
       <!--
         右のパネル。縦にパネルを積む: フェイストラッキング → モデルの機能ごとのパネル → パラメータ (残りの高さ)。
         モデルの機能ごとのパネル (着せ替え・ライティング・モーションと表情) は、そのモデルが使うときだけ出す
-        (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき)。
+        (着せ替えはスロットがあるか、モジュールを読み込んだとき。モーションと表情はバンドルにどちらかがあるとき。
+        ポーズはグループがあるとき (付けたモジュールのグループも数える))。
         畳めるまとまり (@ugoe/ui の Section) にして、高さの上限 (max-height) を付ける。
       -->
       <aside class="sidebar">
@@ -323,6 +325,9 @@ function onKeyDown(e: KeyboardEvent) {
         {/if}
         {#if player.motions.length > 0 || player.expressions.length > 0}
           <MotionPanel {player} />
+        {/if}
+        {#if player.poseGroups.length > 0}
+          <PosePanel {player} />
         {/if}
         <ParameterPanel {player} />
       </aside>

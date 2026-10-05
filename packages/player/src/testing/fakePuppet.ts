@@ -22,6 +22,10 @@ export interface FakeOptions {
   trackingIds?: string[];
   /** 受け手の口 (`follow`・`reset_physics`) を持つか (省くと持つ)。 */
   follower?: boolean;
+  /** 本体のポーズのグループ (要素のパーツの並び)。 */
+  pose?: string[][];
+  /** モジュールのポーズのグループ (名前 → 要素のパーツの並び。付けると `<名前>/<パーツ>` で本体のグループの後に入る)。 */
+  modulePoses?: Record<string, string[][]>;
 }
 
 /**
@@ -56,7 +60,19 @@ export function fakePuppet(options: FakeOptions = {}) {
     lighting: [] as (string | null | undefined)[],
     /** 次にモデルを読んだとき、付けられずに外れるモジュール (モデルが書き換わって合わなくなった)。 */
     unfit: [] as string[],
+    /**
+     * ポーズのグループごとに表示している要素 (要素の並びを `,` でつないだもの → パーツ)。無いグループは先頭の要素。
+     * モデルを読むと空になり、付け外しでは要素の並びが同じグループの分が残る (Puppet と同じ)。
+     */
+    visible: new Map<string, string>(),
   };
+  /** 今のポーズのグループ (本体 → 付けたモジュールの順)。 */
+  const poseGroups = (): string[][] => [
+    ...(options.pose ?? []),
+    ...state.attached.flatMap((name) =>
+      (options.modulePoses?.[name] ?? []).map((g) => g.map((part) => `${name}/${part}`)),
+    ),
+  ];
   const resetValues = () => {
     for (const p of parameters) state.values.set(p.id, p.default);
   };
@@ -76,6 +92,7 @@ export function fakePuppet(options: FakeOptions = {}) {
       state.hasModel = true;
       state.playing = false;
       resetValues();
+      state.visible.clear();
       state.attached = state.attached.filter((n) => !state.unfit.includes(n));
       return [];
     },
@@ -153,6 +170,20 @@ export function fakePuppet(options: FakeOptions = {}) {
       const fired = state.events;
       state.events = [];
       return JSON.stringify(fired);
+    },
+    pose_json: () =>
+      state.hasModel
+        ? JSON.stringify({
+            fade_duration: 0.5,
+            groups: poseGroups().map((g) => ({ entries: g.map((part) => ({ part, links: [] })) })),
+          })
+        : undefined,
+    show_pose: (part: string) => {
+      if (!state.hasModel) throw new Error("no model");
+      const group = poseGroups().find((g) => g.includes(part));
+      if (group === undefined) return false;
+      state.visible.set(group.join(","), part);
+      return true;
     },
     uses_lighting: () => false,
     set_lighting_json: (json?: string | null) => void state.lighting.push(json),
