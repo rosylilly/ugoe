@@ -1,11 +1,11 @@
 ---
 id: T0470
 title: "Godot: set_*_json の失敗の種類を返す口を持つか (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: [T0469]
-assignee:
+assignee: claude-worker-T0470
 ---
 
 # T0470: Godot: set_*_json の失敗の種類を返す口を持つか (判断が要る)

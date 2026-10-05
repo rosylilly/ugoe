@@ -1,11 +1,11 @@
 ---
 id: T0558
 title: PSD の読み込みと自動メッシュのエラーに構造とコードを付け、エディタで訳す (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-psd, ugoe-mesher, ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0558
 ---
 
 # T0558: PSD の読み込みと自動メッシュのエラーに構造とコードを付け、エディタで訳す (判断が要る)
