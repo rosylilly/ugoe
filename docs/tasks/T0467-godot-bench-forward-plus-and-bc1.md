@@ -1,11 +1,11 @@
 ---
 id: T0467
 title: "Godot: bench.gd の計測・Forward+ の経路の適合テスト・BC1 の 3 色の形のケース"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0467
 ---
 
 # T0467: Godot: bench.gd の計測・Forward+ の経路の適合テスト・BC1 の 3 色の形のケース
