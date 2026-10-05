@@ -2648,6 +2648,88 @@
         "op",
         "path"
       ]
+    },
+    {
+      "description": "パラメータのグループを `parameter_groups` の末尾に足す。ID がほかのグループと重なれば拒否する。",
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/ParameterGroup"
+        },
+        "op": {
+          "type": "string",
+          "const": "add_parameter_group"
+        }
+      },
+      "required": [
+        "op",
+        "group"
+      ]
+    },
+    {
+      "description": "パラメータのグループを消す。属していたパラメータの割り当てを外す (パラメータは消さない)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "remove_parameter_group"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
+    },
+    {
+      "description": "パラメータのグループの表示名を変える (ID は変えない)。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "rename_parameter_group"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "name"
+      ]
+    },
+    {
+      "description": "`parameter_groups` の中でグループを `before` の直前へ移す (`None` なら末尾)。エディタの一覧の並び順になる。",
+      "type": "object",
+      "properties": {
+        "before": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "要素の ID。新しい要素には `[A-Za-z0-9_]+` の形式を使う。",
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "reorder_parameter_group"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ]
     }
   ],
   "$defs": {
@@ -4787,6 +4869,24 @@
         "min",
         "max",
         "default"
+      ]
+    },
+    "ParameterGroup": {
+      "description": "エディタ表示用のパラメータグループ。ランタイムの挙動には影響しない。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "モデルの中で一意な ID。",
+          "type": "string"
+        },
+        "name": {
+          "description": "表示名。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ]
     },
     "ParameterKind": {

@@ -1,11 +1,33 @@
 //! 要素の削除の連鎖 (`docs/editor.md#削除の連鎖と拒否`)。
 
 use ugoe_model::deformer::DeformerKind;
-use ugoe_model::{DeformerId, MeshId, Model, ParamId, PartId};
+use ugoe_model::{DeformerId, MeshId, Model, ParamId, ParameterGroupId, PartId};
 
 use super::EditError;
 use super::lookup::ensure_no_children;
 use crate::{grid, slot_edit};
+
+/// パラメータのグループを削除し、属するパラメータの割り当てを外す。
+pub(super) fn remove_parameter_group(
+    model: &mut Model,
+    id: &ParameterGroupId,
+) -> Result<(), EditError> {
+    let index = model
+        .parameter_groups
+        .iter()
+        .position(|g| &g.id == id)
+        .ok_or_else(|| EditError::NotFound {
+            kind: "parameter group",
+            id: id.to_string(),
+        })?;
+    model.parameter_groups.remove(index);
+    for parameter in &mut model.parameters {
+        if parameter.group.as_ref() == Some(id) {
+            parameter.group = None;
+        }
+    }
+    Ok(())
+}
 
 /// パラメータを削除し、キーフォーム格子の軸を既定値の断面に畳む。
 /// 他の要素からの参照は適用の後に [`crate::cleanup::forget_removed`] が外す。

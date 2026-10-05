@@ -493,6 +493,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(lighting_samples())
     .chain(slot_samples())
     .chain(classification_samples())
+    .chain(parameter_group_samples())
     .collect()
 }
 
@@ -882,6 +883,31 @@ pub(crate) fn classification_samples() -> Vec<Command> {
             path,
             correction: None,
         },
+    ]
+}
+
+/// パラメータのグループのコマンドの見本 (`docs/editor.md#パラメータのグループ`)。
+pub(crate) fn parameter_group_samples() -> Vec<Command> {
+    vec![
+        Command::AddParameterGroup {
+            group: ugoe_model::ParameterGroup {
+                id: "Face".into(),
+                name: "Face".into(),
+            },
+        },
+        Command::RenameParameterGroup {
+            id: "Face".into(),
+            name: "Head".into(),
+        },
+        Command::ReorderParameterGroup {
+            id: "Face".into(),
+            before: Some("Body".into()),
+        },
+        Command::ReorderParameterGroup {
+            id: "Face".into(),
+            before: None,
+        },
+        Command::RemoveParameterGroup { id: "Face".into() },
     ]
 }
 

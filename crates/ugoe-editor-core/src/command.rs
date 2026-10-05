@@ -19,8 +19,8 @@ use ugoe_model::physics::{
 use ugoe_model::pose::Pose;
 use ugoe_model::{
     BlendMode, Deformer, DeformerId, GlueId, HitArea, KeyformGrid, KeyformInference,
-    KeyformInterpolation, MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, ParameterGroupId,
-    Part, PartId,
+    KeyformInterpolation, MaskMode, MaskRef, Mesh, MeshId, ParamId, Parameter, ParameterGroup,
+    ParameterGroupId, Part, PartId,
 };
 
 use crate::automesh::AutoMeshOptions;
@@ -786,6 +786,25 @@ pub enum Command {
     SetLayerCorrection {
         path: Vec<String>,
         correction: Option<LayerCorrection>,
+    },
+    // ---- パラメータのグループ (T1626)。規則は `docs/editor.md#パラメータのグループ` ----
+    /// パラメータのグループを `parameter_groups` の末尾に足す。ID がほかのグループと重なれば拒否する。
+    AddParameterGroup {
+        group: ParameterGroup,
+    },
+    /// パラメータのグループを消す。属していたパラメータの割り当てを外す (パラメータは消さない)。
+    RemoveParameterGroup {
+        id: ParameterGroupId,
+    },
+    /// パラメータのグループの表示名を変える (ID は変えない)。
+    RenameParameterGroup {
+        id: ParameterGroupId,
+        name: String,
+    },
+    /// `parameter_groups` の中でグループを `before` の直前へ移す (`None` なら末尾)。エディタの一覧の並び順になる。
+    ReorderParameterGroup {
+        id: ParameterGroupId,
+        before: Option<ParameterGroupId>,
     },
 }
 

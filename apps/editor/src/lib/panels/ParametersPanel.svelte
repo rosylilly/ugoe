@@ -5,6 +5,8 @@
   値の欄に数を入力するとスライダーをその値にする (値域の外は拒否)。◆ はその値にキーを足す。
   中継用 (Parameter::internal) のパラメータは名前を斜体にして「relay」を付ける。編集欄で切り替える
   (set_parameter_internal。docs/spec/model.md#パラメータ)。
+  編集欄の「Group」でパラメータをグループに入れ、一覧の下の「Groups」でグループを作る・名前を変える・消す・並べ替える
+  (docs/editor.md#パラメータのグループ)。
 -->
 <script lang="ts">
 import { Button, Checkbox, IconButton, NumberField, Tooltip } from "@ugoe/ui";
@@ -22,6 +24,8 @@ import {
   modelData,
   snapToKeys,
 } from "./inspector/keyforms/keyforms";
+import ParameterGroupSelect from "./parameters/ParameterGroupSelect.svelte";
+import ParameterGroups from "./parameters/ParameterGroups.svelte";
 import ParameterMirror from "./parameters/ParameterMirror.svelte";
 import { duplicateKeyError, formatValue, parseValue } from "./parameterValue";
 
@@ -325,6 +329,7 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
                 size={5}
               />
             </span>
+            <ParameterGroupSelect {doc} parameter={p} groups={doc.parsedModel?.parameter_groups ?? []} />
             <ParameterMirror {doc} parameter={p} {parameters} />
             <Checkbox
               label={t("parameters.relay.label")}
@@ -345,6 +350,8 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
     </li>
   {/each}
 </ul>
+
+<ParameterGroups {doc} {parameters} />
 
 <style>
 .head,

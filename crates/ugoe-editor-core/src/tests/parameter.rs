@@ -276,6 +276,144 @@ fn set_parameter_group() {
     );
 }
 
+fn group(id: &str, name: &str) -> ParameterGroup {
+    ParameterGroup {
+        id: id.into(),
+        name: name.into(),
+    }
+}
+
+fn group_ids(model: &Model) -> Vec<&str> {
+    model
+        .parameter_groups
+        .iter()
+        .map(|g| g.id.as_str())
+        .collect()
+}
+
+#[test]
+fn add_parameter_group() {
+    let model = fixtures::single_quad();
+    let after = applied(
+        &model,
+        Command::AddParameterGroup {
+            group: group("Face", "顔"),
+        },
+    );
+    assert_eq!(after.parameter_groups, vec![group("Face", "顔")]);
+    assert_eq!(
+        rejected(
+            &after,
+            Command::AddParameterGroup {
+                group: group("Face", "Other"),
+            },
+        ),
+        EditError::DuplicateId {
+            kind: "parameter group",
+            id: "Face".into(),
+        }
+    );
+}
+
+#[test]
+fn remove_parameter_group_unassigns_its_parameters() {
+    let mut model = fixtures::single_quad();
+    model.parameter_groups = vec![group("Face", "Face"), group("Body", "Body")];
+    model.parameters[0].group = Some("Face".into());
+    let after = applied(&model, Command::RemoveParameterGroup { id: "Face".into() });
+    assert_eq!(group_ids(&after), ["Body"]);
+    // パラメータは残り、割り当てだけが外れる。
+    assert_eq!(after.parameters.len(), 1);
+    assert_eq!(after.parameters[0].group, None);
+    assert_eq!(
+        rejected(&model, Command::RemoveParameterGroup { id: "Nope".into() }),
+        not_found("parameter group", "Nope")
+    );
+}
+
+#[test]
+fn rename_parameter_group() {
+    let mut model = fixtures::single_quad();
+    model.parameter_groups = vec![group("Face", "Face")];
+    let after = applied(
+        &model,
+        Command::RenameParameterGroup {
+            id: "Face".into(),
+            name: "顔".into(),
+        },
+    );
+    assert_eq!(after.parameter_groups, vec![group("Face", "顔")]);
+    assert_eq!(
+        rejected(
+            &model,
+            Command::RenameParameterGroup {
+                id: "Nope".into(),
+                name: "N".into(),
+            },
+        ),
+        not_found("parameter group", "Nope")
+    );
+}
+
+#[test]
+fn reorder_parameter_group() {
+    let mut model = fixtures::single_quad();
+    model.parameter_groups = vec![group("A", "A"), group("B", "B"), group("C", "C")];
+    let reorder = |id: &str, before: Option<&str>| Command::ReorderParameterGroup {
+        id: id.into(),
+        before: before.map(Into::into),
+    };
+    assert_eq!(
+        group_ids(&applied(&model, reorder("C", Some("A")))),
+        ["C", "A", "B"]
+    );
+    assert_eq!(
+        group_ids(&applied(&model, reorder("A", None))),
+        ["B", "C", "A"]
+    );
+    assert_eq!(
+        rejected(&model, reorder("A", Some("A"))),
+        EditError::SelfReference {
+            kind: "parameter group",
+            id: "A".into(),
+            field: "before",
+        }
+    );
+    assert_eq!(
+        rejected(&model, reorder("Nope", None)),
+        not_found("parameter group", "Nope")
+    );
+    assert_eq!(
+        rejected(&model, reorder("A", Some("Nope"))),
+        not_found("parameter group", "Nope")
+    );
+}
+
+#[test]
+fn parameter_group_commands_undo() {
+    let model = fixtures::single_quad();
+    let mut doc = Document::new(model.clone());
+    doc.apply(Command::AddParameterGroup {
+        group: group("Face", "Face"),
+    })
+    .unwrap();
+    doc.apply(Command::SetParameterGroup {
+        id: "X".into(),
+        group: Some("Face".into()),
+    })
+    .unwrap();
+    let assigned = doc.model().clone();
+    doc.apply(Command::RemoveParameterGroup { id: "Face".into() })
+        .unwrap();
+    assert!(doc.model().parameter_groups.is_empty());
+    // 消す前に戻すと、グループと割り当てがそろって戻る。
+    assert!(doc.undo());
+    assert_eq!(doc.model(), &assigned);
+    assert!(doc.undo());
+    assert!(doc.undo());
+    assert_eq!(doc.model(), &model);
+}
+
 #[test]
 fn set_parameter_mirror() {
     let model = fixtures::pose_and_effects();

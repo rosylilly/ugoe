@@ -38,10 +38,10 @@ pub use error::EditError;
 pub(crate) use history::checks;
 pub use history::{COALESCE_WINDOW, Coalesce, DEFAULT_UNDO_LIMIT};
 use history::{History, Problems};
-use lookup::{deformer, ensure_new, mesh, parameter, part};
+use lookup::{deformer, ensure_new, find_mut, mesh, parameter, part};
 use pair::{pair, set_mirror_pair};
-use remove::{remove_deformer, remove_mesh, remove_parameter, remove_part};
-use reorder::reorder_mesh;
+use remove::{remove_deformer, remove_mesh, remove_parameter, remove_parameter_group, remove_part};
+use reorder::{reorder_mesh, reorder_parameter_group};
 use texture_edit::{add_texture, remove_texture, set_normal_map, set_texture_image};
 
 /// [`Document::apply_with_report`] の結果: コマンドは適用したが、利用者に知らせたいこと。
@@ -1145,6 +1145,22 @@ fn apply_to(
             return Err(EditError::InvalidLayerCorrection {
                 reason: "layer corrections must be set on their own, not in a batch".into(),
             });
+        }
+        Command::AddParameterGroup { group } => {
+            ensure_new(&model.parameter_groups, "parameter group", &group.id, |g| {
+                &g.id
+            })?;
+            model.parameter_groups.push(group);
+        }
+        Command::RemoveParameterGroup { id } => remove_parameter_group(model, &id)?,
+        Command::RenameParameterGroup { id, name } => {
+            find_mut(&mut model.parameter_groups, "parameter group", &id, |g| {
+                &g.id
+            })?
+            .name = name;
+        }
+        Command::ReorderParameterGroup { id, before } => {
+            reorder_parameter_group(model, &id, before.as_ref())?;
         }
     }
     Ok(())

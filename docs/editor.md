@@ -47,6 +47,7 @@
 | 対象 | `op` |
 | --- | --- |
 | パラメータ | `add_parameter`、`remove_parameter`、`set_parameter_range`、`rename_parameter`、`set_parameter_group` (`null` で外す)、`set_parameter_mirror` (`null` で外す。対は双方向に張り、どちらかと対になっていたパラメータの対は外す (`set_mirror_pair` と同じ)。自分自身と対にすると値の符号を反転して対応させる)、`set_parameter_internal` (中継用のパラメータにする・戻す。[model.md#パラメータ](spec/model.md#パラメータ)) |
+| パラメータのグループ | `add_parameter_group`、`remove_parameter_group`、`rename_parameter_group`、`reorder_parameter_group` ([パラメータのグループ](#パラメータのグループ)) |
 | パーツ | `add_part`、`remove_part`、`rename_part`、`set_part_parent`、`set_part_keyforms` |
 | デフォーマ | `add_deformer`、`remove_deformer`、`rename_deformer`、`set_deformer_parent`、`set_deformer_part`、`set_warp_keyforms` (`rows` / `cols` は変えない)、`set_rotation_keyforms`、`create_warp_deformer`・`create_rotation_deformer`・`reparent_preserving_look`・`move_rotation_origin`・`unwrap_deformer` ([デフォーマの編集](#デフォーマの編集)) |
 | メッシュ | `add_mesh` (`meshes` の末尾に追加)、`remove_mesh`、`rename_mesh`、`set_mesh_properties`、`set_mesh_parent`、`set_mesh_keyforms`、`set_mesh_keyform`、`reorder_mesh`、`regenerate_mesh` ([メッシュの再生成](#メッシュの再生成))、`move_mesh_vertices`・`add_mesh_vertex`・`remove_mesh_vertices`・`retriangulate_mesh` ([メッシュの編集](#メッシュの編集))、`create_draw_clone`・`sync_draw_clone` ([描画用の複製](#描画用の複製)) |
@@ -144,6 +145,26 @@
 
 - コマンドの組み立てと色は `inspector/depth/depth.ts` の純粋な関数で、Vitest で検査します。
 
+### パラメータのグループ
+
+パラメータのグループ (`Model::parameter_groups`。[model.md#パラメータ](spec/model.md#パラメータ)) は、プレビューとビューアでスライダーを区切る見出しです。
+ランタイムの挙動には影響しません。グループそのものを足す・消す・名前を変える・並べ替えるコマンドと、パラメータを入れる `set_parameter_group` があります。
+
+| コマンド | すること | 拒否 |
+| --- | --- | --- |
+| `add_parameter_group { group }` | `{ id, name }` のグループを `parameter_groups` の末尾に足す | ほかのグループと ID が重なれば `edit.duplicate_id` (`kind` は `parameter group`) |
+| `remove_parameter_group { id }` | グループを消し、属していたパラメータの `group` を `null` にする (パラメータは消さない) | 無いグループは `edit.not_found` |
+| `rename_parameter_group { id, name }` | 表示名だけを変える (ID は変えない) | 無いグループは `edit.not_found` |
+| `reorder_parameter_group { id, before }` | `parameter_groups` の中でグループを `before` の直前 (`null` なら末尾) へ移す。並びはプレビューとビューアの区切りの順になる | 無いグループ (`id`・`before`) は `edit.not_found`、`before` が自分なら `edit.self_reference` |
+
+- どれも 1 つで Undo の 1 単位です。グループを消して Undo すると、グループとパラメータの割り当てがそろって戻ります。
+- `set_parameter_group` で無いグループを指すと、適用後の検証 (`validation.unknown_reference`) で拒否します。
+- モジュールのプロジェクトでは、グループは本体のものなので変えられません (`edit.read_only_base`)。
+- **画面:** パラメータのパネル (`ParametersPanel.svelte`) の一覧の下の「Groups」(`panels/parameters/ParameterGroups.svelte`。折りたためる節で、
+  見出しに数を出す)。「+」(空なら「New group」) で ID と名前を入れて作り、名前を押して名前の変更と削除、▲▼ で並べ替えます。
+  行にはグループに入っているパラメータの数を出します。パラメータをグループに入れるのは、各パラメータの編集欄の「Group」
+  (`ParameterGroupSelect.svelte`。選ぶとすぐ `set_parameter_group`。「(none)」で外す) です。コマンドの組み立ては `parameters/groups.ts` (Vitest)。
+
 ### 削除の連鎖と拒否
 
 要素を消すコマンドは、要素そのもの (と、それに従属して消える要素) だけを消すか、他の要素が依存していれば拒否します。
@@ -157,6 +178,7 @@
 | `unwrap_deformer` | 直接の子を親へ付け替えてから、`remove_deformer` と同じ規則で消す |
 | `remove_mesh` | **連鎖して消す。** このメッシュを使うグルーと当たり判定を削除する。描画用の複製の元を消すと、複製はつなぐグルーを失って普通のメッシュ (基準の形) として残る |
 | `remove_glue`・`remove_slot`・`set_hit_areas`・`remove_physics_collider` | 要素を消す (置き換える) だけ |
+| `remove_parameter_group` | 属していたパラメータの `group` を `null` にする (パラメータは消さない) |
 
 **参照の後始末** (`crates/ugoe-editor-core/src/cleanup.rs`)。`Document::apply` は、コマンド (`batch` なら全体) を適用した直後に、
 適用の前後のモデルと物理を比べ、**前にあって後にない ID** を指す次の参照を外します。
@@ -1135,7 +1157,7 @@ Live2D のリギング作業の中心: パラメータを作り、要素にキ�
 
 | 場所 | 操作 |
 | --- | --- |
-| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)、左右の対の「Mirror」(なし / 自分自身 / 相手。選ぶとすぐ `set_parameter_mirror`。標準の命名から対を提案する。`panels/parameters/`)、「Relay (internal)」(切り替えるとすぐ `set_parameter_internal`)。中継用のパラメータは一覧に残し、名前を斜体にして「relay」の印を付ける。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。スライダーは表示の状態なので IPC を通らない |
+| パラメータ一覧 (`ParametersPanel.svelte`) | 「+」でパラメータを作る (ID・名前・最小・既定・最大)。名前を押すと名前・値域・既定値の編集と削除 (`rename_parameter` と `set_parameter_range` を `batch` で 1 つの Undo に)、グループの「Group」(選ぶとすぐ `set_parameter_group`)、左右の対の「Mirror」(なし / 自分自身 / 相手。選ぶとすぐ `set_parameter_mirror`。標準の命名から対を提案する。`panels/parameters/`)、「Relay (internal)」(切り替えるとすぐ `set_parameter_internal`)。中継用のパラメータは一覧に残し、名前を斜体にして「relay」の印を付ける。スライダーの下に、主な選択の要素のキーを ◆ で示し (押すとそのキーへ)、「Snap to keys」で要素のすべての軸を最も近いキーへ動かす。行の値の欄に数を入力して Enter (またはフォーカスを外す) でスライダーをその値にする (数でない・値域の外なら理由を出して拒否)。行の ◆ ボタンで、今の値にキーを追加 (今の値がキーならそのキーを削除。キーの上とみなす許容差の中に別のキーがあれば拒否)。一覧の下の「Groups」でグループを作る・名前を変える・消す・並べ替える ([パラメータのグループ](#パラメータのグループ))。スライダーは表示の状態なので IPC を通らない |
 | インスペクタ (`inspector/keyforms/KeyformInspector.svelte`) | 主な選択の要素の軸とキー (× で削除、押すとそのキーへ移動、「+ 値」で今の値にキーを追加)、軸のないパラメータへの軸の追加、セルの格子 (1 軸は 1 行、2 軸は表、3 軸目以降は今の値に最も近いキーの断面)。メッシュでは描画順を表示し、「Set for all cells」で `set_mesh_draw_order` を送る。メッシュ・ワープ・回転では「Smooth curve between keys」のチェックで `set_keyform_interpolation` (`smooth` / `linear`) を送る (未知の値なら線形として扱うことを添える。ブレンドシェイプ格子の切り替えはまだ画面にない)。セルは記号と色で由来を示し ([推定の画面での操作](#推定の画面での操作))、今の値がすべての軸でキーの上にあればそのセルを枠で示す。キーの上になければ「Move to nearest key」を出す |
 | ビューポート (`viewport/tools/form/FormTool.svelte`) | 「Form edit」で切り替える。主な選択の要素のうち、メッシュは頂点、ワープは制御点、回転デフォーマは原点をハンドルで示す (主な選択がデフォーマのときは、代わりに [デフォーマのギズモ](#デフォーマの編集) を出す)。点のクリックで選び (Shift で追加・解除)、要素の内側 (メッシュの三角形・ワープの格子) の何もない所からのドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。要素の外側のクリックは下の選択レイヤー (メッシュの選択) に通す。「All」/ Ctrl + A ですべて、Esc で解く。選んだ点のドラッグで選んだ点をまとめて同じだけ動かす (選んでいない点を押すと、その点だけを選んで動かす)。ドラッグ中はオーバーレイだけでプレビューし、離したときに `canvas_to_local` で親の座標系に直してから `set_keyform_cell` を 1 つ送る (Undo の 1 単位)。選択は要素ごとにフォーム編集の中だけで持つ (選択の補助は `viewport/tools/form/form.ts`) |
 

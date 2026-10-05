@@ -262,9 +262,7 @@ const EYES: [EyeSide; 2] = [
 
 /// PSD から見本のモデルのプロジェクトを作る。
 pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
-    let mut empty = Project::empty(NAME);
-    // パラメータのグループを足すコマンドがまだ無いので、空のモデルに書いておき、割り当ては `SetParameterGroup` で行う
-    empty.model.parameter_groups = parameter_groups();
+    let empty = Project::empty(NAME);
     let mut document = empty.document();
     let import =
         ugoe_editor_core::import::import_psd(document.model(), psd, &PsdImportOptions::new(NAME))
@@ -627,6 +625,9 @@ impl Rig {
     }
 
     fn add_parameters(&mut self) -> anyhow::Result<()> {
+        for group in parameter_groups() {
+            self.apply(Command::AddParameterGroup { group })?;
+        }
         for id in PARAMETERS {
             let (min, default, max) =
                 sp::range(id).ok_or_else(|| anyhow!("`{id}` is not a standard parameter"))?;

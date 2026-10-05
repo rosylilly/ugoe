@@ -110,10 +110,14 @@ fn op_name(command: &Command) -> &'static str {
         Command::SetGlue { .. } => "set_glue",
         Command::RemoveGlue { .. } => "remove_glue",
         Command::SetLayerCorrection { .. } => "set_layer_correction",
+        Command::AddParameterGroup { .. } => "add_parameter_group",
+        Command::RemoveParameterGroup { .. } => "remove_parameter_group",
+        Command::RenameParameterGroup { .. } => "rename_parameter_group",
+        Command::ReorderParameterGroup { .. } => "reorder_parameter_group",
     }
 }
 
-const OP_COUNT: usize = 105;
+const OP_COUNT: usize = 109;
 
 fn json_samples() -> Vec<Command> {
     let quad = fixtures::single_quad();
@@ -369,6 +373,7 @@ fn json_samples() -> Vec<Command> {
     .chain(crate::codegen::lighting_samples())
     .chain(crate::codegen::slot_samples())
     .chain(crate::codegen::classification_samples())
+    .chain(crate::codegen::parameter_group_samples())
     .collect()
 }
 

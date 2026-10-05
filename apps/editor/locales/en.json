@@ -2284,6 +2284,7 @@
   },
   "errorArgs": {
     "parameter": "parameter",
+    "parameter group": "parameter group",
     "part": "part",
     "deformer": "deformer",
     "mesh": "mesh",
@@ -2979,6 +2980,36 @@
       "itself": "Itself (flip the sign)",
       "self": "itself",
       "suggest": "Pair with {{name}}"
+    },
+    "group": {
+      "label": "Group",
+      "none": "(none)"
+    },
+    "groups": {
+      "title_one": "Groups ({{count}})",
+      "title_other": "Groups ({{count}})",
+      "description": "Groups divide the parameter sliders into sections in the preview and in viewers. Put a parameter in a group with Group in its settings.",
+      "empty": "No groups yet. Create one to sort the sliders into sections.",
+      "add": {
+        "label": "New group",
+        "aria": "New parameter group"
+      },
+      "baseHint": "Parameter groups belong to the base model and can't be edited here. Edit them in the base project.",
+      "edit": {
+        "tooltip": "Rename or delete {{id}}"
+      },
+      "members_one": "{{count}} parameter",
+      "members_other": "{{count}} parameters",
+      "moveUp": {
+        "aria": "Move {{name}} up"
+      },
+      "moveDown": {
+        "aria": "Move {{name}} down"
+      },
+      "delete": {
+        "label": "Delete group",
+        "description": "Deleting a group keeps its parameters. They just leave the group."
+      }
     }
   },
   "timeline": {

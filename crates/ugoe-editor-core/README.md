@@ -47,3 +47,4 @@
 - T1609 (`SetModuleSettings` の `keep_look` の作り直しの警告を `ApplyReport` で返す)
 - T1615 (PSD のレイヤーの分類の直し `Command::SetLayerCorrection`。`src/classification.rs`。直しは `Document` のスナップショットに持ち、`project.json` の `editor.classification` に残す)
 - T0567 (PSD のレイヤーの分類の答えのキャッシュ `.ugoe-cache/classification.json`。`src/classification_cache.rs`。`project.json` は変えず、Undo の対象にしない。分類した PSD の大きさと FNV-1a のハッシュを添え、使う側 (エディタ・MCP サーバ) が今の PSD と比べる。[docs/spec/file-formats.md#分類のキャッシュ](../../docs/spec/file-formats.md#分類のキャッシュ))
+- T1626 (パラメータのグループを足す・消す・名前を変える・並べ替えるコマンド `AddParameterGroup`・`RemoveParameterGroup`・`RenameParameterGroup`・`ReorderParameterGroup`。消すと属していたパラメータの割り当てを外す。`src/document/remove.rs`・`src/document/reorder.rs`。[docs/editor.md#パラメータのグループ](../../docs/editor.md#パラメータのグループ))

@@ -119,6 +119,21 @@ fn base_elements_are_read_only() {
             element: "mesh `Face`".into()
         }
     );
+    // パラメータのグループも本体のもの。
+    let error = document
+        .apply(Command::AddParameterGroup {
+            group: ugoe_model::ParameterGroup {
+                id: "Hair".into(),
+                name: "Hair".into(),
+            },
+        })
+        .unwrap_err();
+    assert_eq!(
+        error,
+        EditError::ReadOnlyBase {
+            element: "parameter group `Hair`".into()
+        }
+    );
     assert!(!document.is_modified());
 }
 

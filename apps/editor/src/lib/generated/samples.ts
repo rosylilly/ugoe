@@ -6676,5 +6676,31 @@ export const commands: Command[] = [
       "Eye L"
     ],
     "correction": null
+  },
+  {
+    "op": "add_parameter_group",
+    "group": {
+      "id": "Face",
+      "name": "Face"
+    }
+  },
+  {
+    "op": "rename_parameter_group",
+    "id": "Face",
+    "name": "Head"
+  },
+  {
+    "op": "reorder_parameter_group",
+    "id": "Face",
+    "before": "Body"
+  },
+  {
+    "op": "reorder_parameter_group",
+    "id": "Face",
+    "before": null
+  },
+  {
+    "op": "remove_parameter_group",
+    "id": "Face"
   }
 ];
