@@ -1,11 +1,11 @@
 ---
 id: T1614
 title: "エディタ: ツリーが畳んだ祖先を開き直す・法線マップの節の取り直し・着せ替えの比べる途中の結果を直す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1614
 ---
 
 # T1614: エディタ: ツリーが畳んだ祖先を開き直す・法線マップの節の取り直し・着せ替えの比べる途中の結果を直す
