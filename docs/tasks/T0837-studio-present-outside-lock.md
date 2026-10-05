@@ -1,11 +1,11 @@
 ---
 id: T0837
 title: "スタジオ: パペットの組み立て (Conductor::present) を舞台のロックの外で行い、操作ウィンドウに読み込み中を出す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: [T0836]
-assignee:
+assignee: claude-worker-T0837
 ---
 
 # T0837: スタジオ: パペットの組み立て (Conductor::present) を舞台のロックの外で行い、操作ウィンドウに読み込み中を出す
