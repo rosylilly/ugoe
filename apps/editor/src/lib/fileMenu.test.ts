@@ -5,6 +5,7 @@ import type { FileDialogs } from "./fileDialogs";
 import { FileMenuFlow, type FileMenuHost } from "./fileMenu.svelte";
 import type {
   ApplyReport,
+  Command,
   ExternalChange,
   ModuleProblem,
   ModuleStatus,
@@ -374,5 +375,130 @@ describe("FileMenuFlow: module settings", () => {
     const bundle = await flowWith(saved, { ...moduleInfo, base: "/work/Base.ugoe" });
     await bundle.openModuleBase();
     expect(ipc.openProject).toHaveBeenCalledOnce();
+  });
+});
+
+describe("FileMenuFlow: returning to the module after opening its base (T1622)", () => {
+  const hair: ProjectStatus = { name: "Hair", path: "/work/Hair.ugoeproj", modified: false };
+  const base: ProjectStatus = { name: "Base", path: "/work/Base.ugoeproj", modified: false };
+  const settings: Command = {
+    op: "set_module_settings",
+    name: "Hair",
+    slot: "Hat",
+    requires: { avatar_level: null, slots: [], parameters: [] },
+    keep_look: false,
+  };
+
+  /** 開いているモジュールから、適用のエラーの案内で本体を開いたファイルメニュー。 */
+  async function inBase(rejected: Command | null = null) {
+    const flow = await flowWith(hair, moduleInfo);
+    ipc.openProject.mockResolvedValueOnce(base);
+    ipc.moduleStatus.mockResolvedValue(null);
+    await flow.openModuleBase(rejected);
+    expect(ipc.openProject).toHaveBeenLastCalledWith("/work/Base.ugoeproj");
+    return flow;
+  }
+
+  it("offers to reopen the module and reopens it", async () => {
+    const flow = await inBase();
+    expect(flow.returnTo).toEqual({ project: "/work/Hair.ugoeproj", name: "Hair", settings: null });
+    ipc.openProject.mockResolvedValueOnce(hair);
+    ipc.moduleStatus.mockResolvedValue(moduleInfo);
+    await flow.returnToModule();
+    expect(ipc.openProject).toHaveBeenLastCalledWith("/work/Hair.ugoeproj");
+    expect(flow.returnTo).toBeNull();
+    expect(flow.moduleInfo).toEqual(moduleInfo);
+    expect(ipc.applyCommand).not.toHaveBeenCalled();
+    expect(host.inform).toHaveBeenLastCalledWith("Reopened Hair on the saved base.", false);
+  });
+
+  it("applies the refused module settings again after returning", async () => {
+    const flow = await inBase(settings);
+    ipc.openProject.mockResolvedValueOnce(hair);
+    ipc.moduleStatus.mockResolvedValue(moduleInfo);
+    ipc.applyCommand.mockResolvedValueOnce({ warnings: [] });
+    await flow.returnToModule();
+    expect(ipc.applyCommand).toHaveBeenCalledExactlyOnceWith(settings);
+    expect(flow.settingsOpen).toBe(false);
+    expect(flow.settingsRetry).toBeNull();
+    expect(host.inform).toHaveBeenLastCalledWith(
+      "Reopened Hair on the saved base and applied the module settings again.",
+      false,
+    );
+  });
+
+  it("shows the settings and the error when they are refused again", async () => {
+    const flow = await inBase(settings);
+    ipc.openProject.mockResolvedValueOnce(hair);
+    ipc.moduleStatus.mockResolvedValue(moduleInfo);
+    const refused = new Error("still not exposed");
+    ipc.applyCommand.mockRejectedValueOnce(refused);
+    await flow.returnToModule();
+    expect(flow.settingsOpen).toBe(true);
+    expect(flow.settingsRetry).toEqual({ command: settings, error: refused });
+    // 設定の画面を開き直したら、今の設定に戻す
+    flow.closeSettings();
+    flow.openSettings();
+    expect(flow.settingsRetry).toBeNull();
+  });
+
+  it("asks before discarding unsaved changes to the base", async () => {
+    const flow = await inBase();
+    ipc.projectStatus.mockResolvedValue({ ...base, modified: true });
+    await flow.refresh();
+    ipc.openProject.mockResolvedValueOnce(hair);
+    void flow.returnToModule();
+    expect(flow.pendingDiscard).not.toBeNull();
+    expect(ipc.openProject).toHaveBeenCalledOnce();
+    flow.confirmDiscard();
+    await vi.waitFor(() => expect(flow.returnTo).toBeNull());
+    expect(ipc.openProject).toHaveBeenLastCalledWith("/work/Hair.ugoeproj");
+  });
+
+  it("keeps the way back when the module can't be opened on the base", async () => {
+    const flow = await inBase();
+    ipc.openProject.mockRejectedValueOnce(new Error("no slot"));
+    ipc.moduleOpenProblem.mockResolvedValue(unknownSlot("/work/Base.ugoeproj"));
+    await flow.returnToModule();
+    expect(flow.problem?.project).toBe("/work/Hair.ugoeproj");
+    expect(flow.returnTo).not.toBeNull();
+  });
+
+  it("forgets the way back when another project is opened or the band is dismissed", async () => {
+    const flow = await inBase();
+    vi.mocked(dialogs.openDirectory).mockResolvedValueOnce("/work/Other.ugoeproj");
+    ipc.openProject.mockResolvedValueOnce({ ...base, name: "Other", path: "/work/Other.ugoeproj" });
+    await flow.pick("open");
+    expect(flow.returnTo).toBeNull();
+
+    const again = await inBase();
+    again.dismissReturn();
+    expect(again.returnTo).toBeNull();
+  });
+
+  it("offers the way back from the base problem band, named after the folder", async () => {
+    const flow = await flowWith(saved);
+    vi.mocked(dialogs.openDirectory).mockResolvedValueOnce("/work/Hair.ugoeproj");
+    ipc.openProject.mockRejectedValueOnce(new Error("no slot"));
+    ipc.moduleOpenProblem.mockResolvedValue(unknownSlot("/work/Base.ugoeproj"));
+    await flow.pick("open");
+    ipc.openProject.mockResolvedValueOnce(base);
+    await flow.openBase();
+    expect(flow.returnTo).toEqual({ project: "/work/Hair.ugoeproj", name: "Hair", settings: null });
+    expect(host.inform).toHaveBeenLastCalledWith(
+      "Opened the base project. Fix it and save it, then press Return to module to go back to Hair.",
+      true,
+    );
+  });
+
+  it("has no way back for an unsaved module", async () => {
+    const flow = await flowWith({ ...hair, path: null }, moduleInfo);
+    ipc.openProject.mockResolvedValueOnce(base);
+    await flow.openModuleBase();
+    expect(flow.returnTo).toBeNull();
+    expect(host.inform).toHaveBeenLastCalledWith(
+      "Opened the base project. Fix it, save, then open the module again.",
+      true,
+    );
   });
 });

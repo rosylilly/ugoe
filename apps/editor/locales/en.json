@@ -156,6 +156,9 @@
       "usingBase": "Using the new base. Save to remember it.",
       "movedToSlot": "Moved to slot {{slot}}. Save to remember it.",
       "openedBase": "Opened the base project. Fix it, save, then open the module again.",
+      "openedBaseReturn": "Opened the base project. Fix it and save it, then press Return to module to go back to {{name}}.",
+      "returnedToModule": "Reopened {{name}} on the saved base.",
+      "returnedAndApplied": "Reopened {{name}} on the saved base and applied the module settings again.",
       "baseReloaded": "Reloaded the base model",
       "baseReloadedAuto": "Reloaded the base model: it was changed outside the editor",
       "reloaded": "Reloaded the project from disk",
@@ -276,6 +279,17 @@
         "tooltip": "Open the base project to fix it (asks first if this module has unsaved changes)"
       }
     }
+  },
+  "moduleReturn": {
+    "title": "Editing the base of module {{name}}",
+    "hint": "Fix the base and save it, then return to the module. It is reopened on the saved base.",
+    "hintSettings": "Fix the base and save it, then return to the module. It is reopened on the saved base and the module settings that were refused are applied again.",
+    "unsaved": "The base has unsaved changes. Save them first; returning without saving discards them.",
+    "return": {
+      "label": "Return to module",
+      "tooltip": "Reopen the module project {{path}} (asks first if the base has unsaved changes)"
+    },
+    "dismiss": "Stay in the base project"
   },
   "moduleProblem": {
     "kind": {

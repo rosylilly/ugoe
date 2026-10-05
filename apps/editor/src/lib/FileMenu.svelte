@@ -5,7 +5,8 @@
 // モジュールのプロジェクトでは、本体の変化も同じ機会に確かめ (BaseChangeDialog。「Reload automatically」なら
 // 尋ねずに読み直す)、本体の問題で開けない・読み直せないときは直し方を出す (ModuleProblemBar)。開いている
 // モジュールの本体・スロットの付け替えは、開き直さずに reload_base で行う (保存していない編集を保つ)。
-// `Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。
+// `Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。「Open base project」で本体を開いている間は、
+// モジュールに戻る帯 (ModuleReturnBar) を出す。
 // 保存・書き出しの結果は Toast、失敗はヘッダーの下の知らせの帯 (Notice)、保存していない変更を捨てる操作は確かめのダイアログ。
 // 流れ (操作を重ねないことも) は fileMenu.svelte.ts の FileMenuFlow が持ち、ここは表示と呼び出しだけ。
 import { AlertDialog, Button, Notice, Popover, showToast, Tooltip } from "@ugoe/ui";
@@ -19,6 +20,7 @@ import { FileMenuFlow } from "./fileMenu.svelte";
 import { parentDir } from "./filePaths";
 import { t } from "./i18n";
 import ModuleProblemBar from "./ModuleProblemBar.svelte";
+import ModuleReturnBar from "./ModuleReturnBar.svelte";
 import ModuleSettingsDialog from "./ModuleSettingsDialog.svelte";
 import { moduleLabel, moduleTitle } from "./moduleProject";
 import NewModuleDialog from "./NewModuleDialog.svelte";
@@ -146,9 +148,18 @@ flow.refresh();
     </Popover>
   {/if}
 </nav>
-<!-- 知らせの帯: ヘッダーの下に重ねる (本体の問題と、失敗の文)。 -->
-{#if flow.problem || flow.message}
+<!-- 知らせの帯: ヘッダーの下に重ねる (モジュールに戻る道・本体の問題・失敗の文)。 -->
+{#if flow.returnTo || flow.problem || flow.message}
 <div class="bands">
+{#if flow.returnTo}
+  <ModuleReturnBar
+    back={flow.returnTo}
+    modified={flow.status?.modified ?? false}
+    busy={flow.busy}
+    onreturn={() => flow.returnToModule()}
+    ondismiss={() => flow.dismissReturn()}
+  />
+{/if}
 {#if flow.problem}
   <ModuleProblemBar
     problem={flow.problem.problem}
@@ -178,8 +189,9 @@ flow.refresh();
   open={flow.settingsOpen}
   module={flow.moduleInfo}
   onapply={(command) => flow.applyModuleSettings(command)}
-  onopenbase={() => flow.openModuleBase()}
+  onopenbase={(rejected) => flow.openModuleBase(rejected)}
   onclose={() => flow.closeSettings()}
+  retry={flow.settingsRetry}
 />
 <BaseChangeDialog
   change={flow.baseChange}

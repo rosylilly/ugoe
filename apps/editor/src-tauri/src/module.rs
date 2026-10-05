@@ -635,6 +635,55 @@ mod tests {
         base_dir
     }
 
+    /// 開いているモジュールのプロジェクトから本体を開くと、モジュールのフォルダーは閉じた後も読める (戻るため。T1622)。
+    /// モジュールでないプロジェクトを閉じても、そのフォルダーは読めるパスに残らない。
+    #[test]
+    fn opening_the_base_keeps_the_module_folder_readable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("return");
+        let base_dir = save_base(&dir);
+        let module_dir = dir.join("hat.ugoeproj");
+        Project::new_module("Hat", &base_dir, &"Hair".into())
+            .unwrap()
+            .save(&module_dir)
+            .unwrap();
+        let state = crate::ai::tests::state(None);
+        {
+            let (project, disk) = Project::load_tracked(&module_dir).unwrap();
+            let (mut document, mut session) = lock_both(&state).unwrap();
+            crate::project::replace_document(
+                &mut session,
+                &mut document,
+                ProjectSession::from_project(project, Some((module_dir.clone(), disk))),
+            );
+        }
+        let module_text = module_dir.display().to_string();
+        // 本体はモジュールが指すので開ける
+        crate::project::open_at(&state, &base_dir.display().to_string()).unwrap();
+        crate::access::readable_path(&state, &module_text).unwrap();
+        let status = crate::project::open_at(&state, &module_text).unwrap();
+        assert_eq!(status.path.as_deref(), Some(module_text.as_str()));
+
+        // モジュールでないプロジェクト (本体) から別のプロジェクトを開いても、閉じたフォルダーは加えない
+        let other = dir.join("other.ugoeproj");
+        Project::empty("other").save(&other).unwrap();
+        let state = crate::ai::tests::state(None);
+        {
+            let (project, disk) = Project::load_tracked(&base_dir).unwrap();
+            let (mut document, mut session) = lock_both(&state).unwrap();
+            crate::project::replace_document(
+                &mut session,
+                &mut document,
+                ProjectSession::from_project(project, Some((base_dir.clone(), disk))),
+            );
+        }
+        state.files.grant_readable([other.clone()]);
+        crate::project::open_at(&state, &other.display().to_string()).unwrap();
+        let err =
+            crate::access::readable_path(&state, &base_dir.display().to_string()).unwrap_err();
+        assert_eq!(err.code, "file.not_chosen");
+    }
+
     /// 本体が変わったことに気づき、読み直せる。スロットがなくなれば、直し方を選べる問題になる。
     #[test]
     fn base_changes_are_detected_and_diagnosed() {

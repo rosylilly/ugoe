@@ -39,6 +39,16 @@ import {
 } from "./ipc";
 import { baseIsProject, droppedCollidersNotice } from "./moduleProject";
 
+/** プロジェクトの場所から、帯に出す名前 (フォルダー名から `.ugoeproj` を除いたもの)。 */
+function projectName(path: string): string {
+  const name =
+    path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? path;
+  return name.replace(/\.ugoeproj$/i, "") || name;
+}
+
 /** ファイルダイアログでパスを選んで行う操作。 */
 export type PathAction =
   | "newFromPsd"
@@ -68,6 +78,23 @@ export interface ModuleProblemState {
   problem: ModuleProblem;
   opening: boolean;
   base: string | null;
+}
+
+/**
+ * 「Open base project」で本体を開いたときの、戻るモジュールのプロジェクト (T1622。docs/editor.md#モジュールに戻る)。
+ * `project` はモジュールのプロジェクトの場所、`name` は帯に出す名前。`settings` は本体を開くきっかけになった、
+ * 拒否されたモジュールの設定 (戻った後に適用し直す。設定の画面からでなければ null)。
+ */
+export interface ModuleReturn {
+  project: string;
+  name: string;
+  settings: Command | null;
+}
+
+/** 戻った後に適用し直して、また拒否されたモジュールの設定と、そのエラー (設定の画面に入れて出す)。 */
+export interface SettingsRetry {
+  command: Command;
+  error: unknown;
 }
 
 /** ファイルメニューの外へのつながり (画面とドキュメント)。 */
@@ -101,6 +128,10 @@ export class FileMenuFlow {
   problem = $state<ModuleProblemState | null>(null);
   /** モジュールの設定の画面を開いているか。 */
   settingsOpen = $state(false);
+  /** 本体を「Open base project」で開いているときの、戻るモジュール (別のプロジェクトに替わったら消す)。 */
+  returnTo = $state<ModuleReturn | null>(null);
+  /** モジュールに戻って適用し直した設定が、また拒否されたとき (設定の画面がこれを欄に入れて開く)。 */
+  settingsRetry = $state.raw<SettingsRetry | null>(null);
   /** 本体の変化 (確認のダイアログを開いている間だけ)。 */
   baseChange = $state<ExternalChange | null>(null);
   /** ダイアログを開いているか、その後の処理の途中か (利用者の操作を 1 つずつ行う)。 */
@@ -179,6 +210,8 @@ export class FileMenuFlow {
         // 別のプロジェクトの設定と結果を見せないよう、書き出しの欄を閉じる
         this.exportOpen = false;
         this.exportLines = null;
+        // 本体から別のプロジェクトに替わったら、モジュールに戻る帯は消す (戻ったときも)
+        this.returnTo = null;
       }
       if (reload !== "none") this.#host.onchange(reload === "replaced", reload === "reloaded");
       return true;
@@ -506,33 +539,83 @@ export class FileMenuFlow {
     });
   }
 
-  /** 本体の問題の枠の「Open base project」: 本体のプロジェクトを開いて直す (モジュールは後で開き直す)。 */
+  /**
+   * 本体の問題の枠の「Open base project」: 本体のプロジェクトを開いて直す。モジュールのプロジェクトの場所が
+   * 分かれば、後で「Return to module」で開き直せる (T1622)。
+   */
   async openBase(): Promise<void> {
     const base = this.problem?.problem.base;
     if (!base || this.busy) return;
-    await this.#openBaseProject(base);
+    const project = this.problem?.project ?? null;
+    await this.#openBaseProject(
+      base,
+      project ? { project, name: projectName(project), settings: null } : null,
+    );
   }
 
   /**
    * 適用のエラーの案内の「Open base project」(T1609。docs/editor.md#モジュールの適用のエラーの案内): 開いている
    * モジュールの本体のプロジェクトを開く。保存していない変更があれば確かめる。設定の画面は先に閉じる。
+   * `settings` は設定の画面で拒否された設定 (モジュールに戻った後に適用し直す。T1622)。
    */
-  async openModuleBase(): Promise<void> {
+  async openModuleBase(settings: Command | null = null): Promise<void> {
     const base = this.moduleInfo?.base;
     if (!base || !baseIsProject(base) || this.busy) return;
     this.settingsOpen = false;
-    await this.#openBaseProject(base);
+    const project = this.status?.path ?? null;
+    await this.#openBaseProject(
+      base,
+      project ? { project, name: this.moduleInfo?.name ?? projectName(project), settings } : null,
+    );
   }
 
-  async #openBaseProject(base: string): Promise<void> {
+  async #openBaseProject(base: string, back: ModuleReturn | null): Promise<void> {
     await this.#withDiscard(() =>
       this.#exclusive(async () => {
         if (await this.#run(() => ipc.openProject(base), "replaced")) {
           this.problem = null;
-          this.#inform(t("fileMenu.notice.openedBase"), true);
+          this.returnTo = back;
+          this.#inform(
+            back
+              ? t("fileMenu.notice.openedBaseReturn", { name: back.name })
+              : t("fileMenu.notice.openedBase"),
+            true,
+          );
         }
       }),
     );
+  }
+
+  /**
+   * モジュールに戻る帯の「Return to module」(T1622。docs/editor.md#モジュールに戻る): 本体の保存していない変更が
+   * あれば確かめてから、モジュールのプロジェクトを開き直す (保存した本体の上に組み直す)。本体を開くきっかけが
+   * 設定の画面で拒否された設定なら、それを適用し直す。また拒否されたら、その設定とエラーを設定の画面に出す。
+   * 本体の問題で開けなければ、ほかの「Open…」と同じく本体の問題の枠を出す (帯は残る)。
+   */
+  async returnToModule(): Promise<void> {
+    const back = this.returnTo;
+    if (!back || this.busy) return;
+    await this.#withDiscard(() =>
+      this.#exclusive(async () => {
+        if (!(await this.#perform("open", back.project))) return;
+        if (!back.settings) {
+          this.#inform(t("fileMenu.notice.returnedToModule", { name: back.name }));
+          return;
+        }
+        try {
+          await this.#applySettings(back.settings);
+          this.#inform(t("fileMenu.notice.returnedAndApplied", { name: back.name }));
+        } catch (error) {
+          this.settingsRetry = { command: back.settings, error };
+          this.settingsOpen = true;
+        }
+      }),
+    );
+  }
+
+  /** モジュールに戻る帯を閉じる (戻らない)。 */
+  dismissReturn(): void {
+    this.returnTo = null;
   }
 
   dismissProblem(): void {
@@ -546,11 +629,13 @@ export class FileMenuFlow {
   // --- モジュールの設定 ---
 
   openSettings(): void {
+    this.settingsRetry = null;
     this.settingsOpen = true;
   }
 
   closeSettings(): void {
     this.settingsOpen = false;
+    this.settingsRetry = null;
   }
 
   /**
@@ -558,21 +643,24 @@ export class FileMenuFlow {
    * を通す (適用の報告の警告を出し、ドキュメントを読み直す)。名前を変えたら、読み直す前に選択を付け替える。
    */
   async applyModuleSettings(command: Command): Promise<void> {
-    await this.#exclusive(async () => {
-      const from = this.moduleInfo?.name;
-      await this.#host.applyWith(
-        async () => {
-          const report = await ipc.applyCommand(command);
-          if (command.op === "set_module_settings" && from && from !== command.name) {
-            this.#host.onrenamemodule?.(from, command.name);
-          }
-          return report;
-        },
-        { rethrow: true },
-      );
-      this.settingsOpen = false;
-      await this.#run(ipc.projectStatus, "reloaded");
-    });
+    await this.#exclusive(() => this.#applySettings(command));
+  }
+
+  async #applySettings(command: Command): Promise<void> {
+    const from = this.moduleInfo?.name;
+    await this.#host.applyWith(
+      async () => {
+        const report = await ipc.applyCommand(command);
+        if (command.op === "set_module_settings" && from && from !== command.name) {
+          this.#host.onrenamemodule?.(from, command.name);
+        }
+        return report;
+      },
+      { rethrow: true },
+    );
+    this.settingsOpen = false;
+    this.settingsRetry = null;
+    await this.#run(ipc.projectStatus, "reloaded");
   }
 
   // --- 保存と外での書き換え ---

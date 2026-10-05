@@ -517,18 +517,23 @@ pub async fn new_project_from_psd(
 /// 開いているプロジェクトが指すもの (モジュールの本体など。`crate::access`)。
 #[tauri::command]
 pub async fn open_project(app: AppHandle, path: String) -> IpcResult<ProjectStatus> {
-    blocking(app, move |state| {
-        let dir = crate::access::readable_path(state, &path)?;
-        let (project, disk) = Project::load_tracked(&dir)?;
-        let (mut document, mut session) = lock_both(state)?;
-        replace_document(
-            &mut session,
-            &mut document,
-            ProjectSession::from_project(project, Some((dir, disk))),
-        );
-        Ok(status(&session, &document))
-    })
-    .await
+    blocking(app, move |state| open_at(state, &path)).await
+}
+
+/// [`open_project`] の中身 (テストから呼ぶ)。閉じるのが保存したモジュールのプロジェクトなら、そのフォルダーを読めるパスに
+/// 加える (本体を「Open base project」で開いて直した後、モジュールに戻るため。T1622。`docs/editor.md#読み書きできるパス`)。
+pub(crate) fn open_at(state: &AppState, path: &str) -> IpcResult<ProjectStatus> {
+    let dir = crate::access::readable_path(state, path)?;
+    let (project, disk) = Project::load_tracked(&dir)?;
+    let (mut document, mut session) = lock_both(state)?;
+    let closing_module = session.path.clone().filter(|_| document.module().is_some());
+    replace_document(
+        &mut session,
+        &mut document,
+        ProjectSession::from_project(project, Some((dir, disk))),
+    );
+    state.files.grant_readable(closing_module);
+    Ok(status(&session, &document))
 }
 
 /// 開いているプロジェクトを保存先から開き直す (外で書き換えられたとき)。未保存の変更は破棄する

@@ -4,11 +4,13 @@
   本体がスロットや条件を満たさなければ、バックエンドが拒否し、理由をここに出す。Esc で閉じる。
   取り付け先の違うスロットに移すときは、見た目を保って移すか (`keep_look`、既定) 局所座標のまま移すかを選ぶ (T0651)。
   本体を直せば済む拒否 (スロットが公開していない・本体に無いなど) には、直し方の案内と「Open base project」を出す (T1609)。
+  本体を直してモジュールに戻り、適用し直した設定がまた拒否されたら (`retry`)、その設定とエラーを欄に入れて開く (T1622)。
 -->
 <script lang="ts">
 import { Button, Checkbox, Dialog, Select } from "@ugoe/ui";
 import { untrack } from "svelte";
 import { errorText } from "./errors";
+import type { SettingsRetry } from "./fileMenu.svelte";
 import { t } from "./i18n";
 import type { Command, ModuleStatus } from "./ipc";
 import ModuleErrorHelp from "./ModuleErrorHelp.svelte";
@@ -25,12 +27,14 @@ interface Props {
   module: ModuleStatus | null;
   /** コマンドを適用する (失敗すると例外。メッセージを出してダイアログは開いたまま)。 */
   onapply: (command: Command) => Promise<void>;
-  /** 本体のプロジェクトを開く (拒否の理由の案内から)。 */
-  onopenbase: () => void;
+  /** 本体のプロジェクトを開く (拒否の理由の案内から)。`rejected` は拒否された設定 (モジュールに戻った後に適用し直す)。 */
+  onopenbase: (rejected: Command | null) => void;
   onclose: () => void;
+  /** モジュールに戻って適用し直し、また拒否された設定 (開いたときに今の設定の代わりに欄に入れる)。 */
+  retry?: SettingsRetry | null;
 }
 
-let { open, module, onapply, onopenbase, onclose }: Props = $props();
+let { open, module, onapply, onopenbase, onclose, retry = null }: Props = $props();
 
 let name = $state("");
 let slot = $state("");
@@ -42,6 +46,8 @@ let keepLook = $state(true);
 let error = $state<string | null>(null);
 /** 拒否の理由 (`Message`。直し方の案内を選ぶ)。 */
 let failure = $state.raw<unknown>(null);
+/** 拒否された設定 (「Open base project」で本体を開くとき、戻った後に適用し直すために渡す)。 */
+let rejected = $state.raw<Command | null>(null);
 let busy = $state(false);
 const nameId = $props.id();
 
@@ -62,6 +68,22 @@ function reset(): void {
   keepLook = true;
   error = null;
   failure = null;
+  rejected = null;
+  if (retry?.command.op === "set_module_settings") fill(retry.command, retry.error);
+}
+
+/** 拒否された設定とエラーを欄に入れる (`retry`)。 */
+function fill(command: Extract<Command, { op: "set_module_settings" }>, cause: unknown): void {
+  name = command.name;
+  slot = command.slot;
+  avatarLevel = command.requires.avatar_level;
+  slots = [...command.requires.slots];
+  parameters = [...command.requires.parameters];
+  // 取り付け先が変わらない設定では keep_look は false なので、既定 (保つ) のままにする
+  keepLook = anchorChanges ? command.keep_look : true;
+  error = errorText(cause);
+  failure = cause;
+  rejected = command;
 }
 
 const baseSlotIds = $derived(module?.base_slots.map((s) => s.id) ?? []);
@@ -84,24 +106,27 @@ const levelOptions = $derived([
 async function apply(): Promise<void> {
   if (!module || !isValidModuleName(name) || !slot) return;
   busy = true;
+  const command: Command = {
+    op: "set_module_settings",
+    name: name.trim(),
+    slot,
+    requires: {
+      avatar_level: avatarLevel,
+      // 付けるスロットは条件に書かなくてよい
+      slots: slots.filter((s) => s !== slot),
+      parameters,
+    },
+    keep_look: anchorChanges && keepLook,
+  };
   try {
-    await onapply({
-      op: "set_module_settings",
-      name: name.trim(),
-      slot,
-      requires: {
-        avatar_level: avatarLevel,
-        // 付けるスロットは条件に書かなくてよい
-        slots: slots.filter((s) => s !== slot),
-        parameters,
-      },
-      keep_look: anchorChanges && keepLook,
-    });
+    await onapply(command);
     error = null;
     failure = null;
+    rejected = null;
   } catch (e) {
     error = errorText(e);
     failure = e;
+    rejected = command;
   } finally {
     busy = false;
   }
@@ -178,7 +203,7 @@ async function apply(): Promise<void> {
   {/if}
   {#if error}
     <p class="error ugoe-selectable" role="alert">{error}</p>
-    <ModuleErrorHelp error={failure} base={module?.base ?? null} {busy} {onopenbase} />
+    <ModuleErrorHelp error={failure} base={module?.base ?? null} {busy} onopenbase={() => onopenbase(rejected)} />
   {/if}
   {#snippet actions()}
     <Button onclick={onclose}>{t("moduleSettings.cancel.label")}</Button>
