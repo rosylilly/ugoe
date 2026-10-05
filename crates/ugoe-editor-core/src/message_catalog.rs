@@ -896,7 +896,7 @@ fn normal_map_errors() -> Vec<NormalMapError> {
 }
 
 /// モジュールの合成のエラー (`compose.*`)。省けるもの (`actual`) は、ある見本と無い見本の両方。
-fn compose_errors() -> Vec<ComposeError> {
+pub(crate) fn compose_errors() -> Vec<ComposeError> {
     let module = || "hat".to_owned();
     vec![
         ComposeError::InvalidModuleName("a/b".into()),

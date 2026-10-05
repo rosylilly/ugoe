@@ -1988,10 +1988,10 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   カタログは MIT のクレートからは読みません。
 - **警告・問題:** `PsdImportWarning`・`RederiveWarning` は `code`・`args`・`message` のフィールドを持ちます。`ModuleProblem` は `Message` のフィールドを平らに含みます (`kind` は直し方を選ぶ分類、`code` は元のエラー)。`AvatarCheck` の `errors`・`warnings`、`.ugoemod` の書き出しの `warnings`、エージェントの接続の状態の `error` は `Message` です。
 - **実装:** editor-core のエラーは `ugoe_editor_core::Coded` を実装し (`src/message_codes.rs`)、`?` で `Message` に変わります。Tauri だけで起きるエラーは `src-tauri/src/error.rs` の `EditorError` にまとめます。ほかのクレートのエラー (検証・合成・推定・自動メッシュ・PSD の読み込み・AI のプロバイダなど) を含むものは、その英語の文を `detail` (検証の一覧は `count` と `details`。`details` は先頭の 10 件 (`DESCRIBED_ERRORS_MAX`) までを `; ` でつなぎ、残りは `; and {残り} more` にまとめる) で渡します。
-- **元のエラーのコード (T0163):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`) は
-  元のクレートが機械の読むコードを持ち、editor-core はそれに領域の名前を付けたコード (`validation.*`・`infer.*`・`world.*`・`normal_map.*`) で
-  `cause` (検証の一覧は `items`) に載せます。合成 (`ComposeError`) は `ugoe-runtime` にコードが無いので、editor-core が SDK の `DressUpError::code` と
-  同じ名前で `compose.*` を付けます。`detail`・`details` の英語の文は互換のために残します (MCP・CLI・古い画面)。
+- **元のエラーのコード (T0163・T0167):** 検証 (`ValidationError::code`)・推定 (`InferError::code`・`WorldError::code`)・法線マップ (`NormalMapError::code`)・
+  合成 (`ComposeError::code`) は元のクレートが機械の読むコードを持ち、editor-core はそれに領域の名前を付けたコード
+  (`validation.*`・`infer.*`・`world.*`・`normal_map.*`・`compose.*`) で `cause` (検証の一覧は `items`) に載せます
+  (`source_error_codes_follow_the_crate_codes` が元のコードと一致することを確かめる)。合成のコードは SDK の `DressUpError::code` とも同じです。`detail`・`details` の英語の文は互換のために残します (MCP・CLI・古い画面)。
 - 自由な文の引数のうち、editor-core が自分で組む理由 (`edit.invalid_physics`・`edit.invalid_motion`・`edit.deformer_edit_failed` などの `reason`)、
   自動メッシュ (`edit.automesh_failed`・`psd.automesh_failed`)・PSD の読み込み・AI のプロバイダの `detail` はまだ英語のままです。
 

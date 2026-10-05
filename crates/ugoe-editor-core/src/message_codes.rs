@@ -1143,8 +1143,11 @@ impl Coded for NormalMapError {
     }
 }
 
-/// モジュールの合成のエラー (`compose.*`)。コードの後ろの部分と引数の名前は SDK の `DressUpError::code`・`fields` と同じ。
+/// モジュールの合成のエラー (`compose.*`)。コードの後ろの部分は ugoe-runtime の `ComposeError::code`、引数の名前は
+/// SDK の `DressUpError::fields` と同じ。
 impl Coded for ComposeError {
+    /// `&'static str` を返すので、領域の名前を付けた値をここに並べる (`source_error_codes_follow_the_crate_codes` が
+    /// `ComposeError::code` と一致することを確かめる)。
     fn code(&self) -> &'static str {
         match self {
             Self::InvalidModuleName(_) => "compose.invalid_module_name",

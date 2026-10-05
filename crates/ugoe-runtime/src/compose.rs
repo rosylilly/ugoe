@@ -128,6 +128,30 @@ pub enum ComposeError {
     Invalid(Vec<ValidationError>),
 }
 
+impl ComposeError {
+    /// 機械が読む種類 (`"unknown_slot"` など。バリアントの名前の `snake_case`。ただし [`ComposeError::Invalid`] は
+    /// `"invalid_composition"`)。補足の値はバリアントのフィールドそのもの。SDK の `DressUpError::code` とエディタの
+    /// `compose.*` はこの値を使う。値は組み込み先 (wasm・C ABI・エディタの翻訳など) が照らし合わせるので **変えない**。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidModuleName(_) => "invalid_module_name",
+            Self::DuplicateModule(_) => "duplicate_module",
+            Self::UnknownSlot { .. } => "unknown_slot",
+            Self::SlotOccupied { .. } => "slot_occupied",
+            Self::AvatarLevel { .. } => "avatar_level",
+            Self::MissingSlot { .. } => "missing_slot",
+            Self::MissingParameter { .. } => "missing_parameter",
+            Self::ParameterNotExposed { .. } => "parameter_not_exposed",
+            Self::UnknownMask { .. } => "unknown_mask",
+            Self::TextureOutOfRange { .. } => "texture_out_of_range",
+            Self::UnknownCollider { .. } => "unknown_collider",
+            Self::PoseNotExposed { .. } => "pose_not_exposed",
+            // SDK の `DressUpError` の一覧で、物理の検査の失敗 (`invalid_physics`) と区別するための名前。
+            Self::Invalid(_) => "invalid_composition",
+        }
+    }
+}
+
 /// 本体 `base` にモジュール `modules` を取り付けたモデルを作る (`docs/spec/modules.md#合成`)。
 ///
 /// 本体の要素の並びと ID は変えず、モジュールの要素を後ろに加える (本体のパーツ・デフォーマ・メッシュの
@@ -530,6 +554,117 @@ mod tests {
 
     fn composed() -> Model {
         compose(&dress_up_base(), &[&long_hair_module(), &dress_module()]).unwrap()
+    }
+
+    #[test]
+    fn codes_are_fixed() {
+        let s = |v: &str| v.to_owned();
+        let cases = [
+            (
+                ComposeError::InvalidModuleName(s("a/b")),
+                "invalid_module_name",
+            ),
+            (ComposeError::DuplicateModule(s("m")), "duplicate_module"),
+            (
+                ComposeError::UnknownSlot {
+                    module: s("m"),
+                    slot: s("S"),
+                },
+                "unknown_slot",
+            ),
+            (
+                ComposeError::SlotOccupied {
+                    slot: s("S"),
+                    first: s("a"),
+                    second: s("b"),
+                },
+                "slot_occupied",
+            ),
+            (
+                ComposeError::AvatarLevel {
+                    module: s("m"),
+                    required: 2,
+                    actual: None,
+                },
+                "avatar_level",
+            ),
+            (
+                ComposeError::MissingSlot {
+                    module: s("m"),
+                    slot: s("S"),
+                },
+                "missing_slot",
+            ),
+            (
+                ComposeError::MissingParameter {
+                    module: s("m"),
+                    parameter: s("P"),
+                },
+                "missing_parameter",
+            ),
+            (
+                ComposeError::ParameterNotExposed {
+                    module: s("m"),
+                    slot: s("S"),
+                    parameter: s("P"),
+                },
+                "parameter_not_exposed",
+            ),
+            (
+                ComposeError::UnknownMask {
+                    module: s("m"),
+                    mesh: s("M"),
+                    mask: s("K"),
+                },
+                "unknown_mask",
+            ),
+            (
+                ComposeError::TextureOutOfRange {
+                    module: s("m"),
+                    mesh: s("M"),
+                    texture: 3,
+                },
+                "texture_out_of_range",
+            ),
+            (
+                ComposeError::UnknownCollider {
+                    module: s("m"),
+                    rig: s("R"),
+                    collider: s("C"),
+                },
+                "unknown_collider",
+            ),
+            (
+                ComposeError::PoseNotExposed {
+                    module: s("m"),
+                    slot: s("S"),
+                    part: s("P"),
+                },
+                "pose_not_exposed",
+            ),
+            (ComposeError::Invalid(Vec::new()), "invalid_composition"),
+        ];
+        for (error, code) in &cases {
+            // バリアントを足したら、ここで止まる (コードの付け忘れを防ぐ)。
+            match error {
+                ComposeError::InvalidModuleName(_)
+                | ComposeError::DuplicateModule(_)
+                | ComposeError::UnknownSlot { .. }
+                | ComposeError::SlotOccupied { .. }
+                | ComposeError::AvatarLevel { .. }
+                | ComposeError::MissingSlot { .. }
+                | ComposeError::MissingParameter { .. }
+                | ComposeError::ParameterNotExposed { .. }
+                | ComposeError::UnknownMask { .. }
+                | ComposeError::TextureOutOfRange { .. }
+                | ComposeError::UnknownCollider { .. }
+                | ComposeError::PoseNotExposed { .. }
+                | ComposeError::Invalid(_) => {}
+            }
+            assert_eq!(error.code(), *code, "{error:?}");
+        }
+        let codes: HashSet<_> = cases.iter().map(|(e, _)| e.code()).collect();
+        assert_eq!(codes.len(), cases.len(), "codes must be distinct");
     }
 
     fn mesh<'a>(model: &'a Model, id: &str) -> &'a ugoe_model::Mesh {

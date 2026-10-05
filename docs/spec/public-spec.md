@@ -35,7 +35,7 @@
 | [Motions](../../spec/model.md#motions) | [motion.md#カーブ](motion.md#カーブ)、[motion.md#対象](motion.md#対象) | データだけ。再生は [spec/motion.md](../../spec/motion.md#motion-playback) |
 | [Expressions](../../spec/model.md#expressions) | [motion.md#表情](motion.md#表情) | データだけ |
 | [Modules](../../spec/model.md#modules) | [modules.md#モジュール](modules.md#モジュール)、[modules.md#ポーズ](modules.md#ポーズ) | |
-| [Composition](../../spec/model.md#composition) | [modules.md#合成](modules.md#合成) | `Puppet` の API ([modules.md#puppet-での着せ替え](modules.md#puppet-での着せ替え)) は含めない |
+| [Composition](../../spec/model.md#composition) | [modules.md#合成](modules.md#合成) | `Puppet` の API ([modules.md#puppet-での着せ替え](modules.md#puppet-での着せ替え)) と `ComposeError::code` (Rust の API) は含めない |
 | [Unknown values](../../spec/model.md#unknown-values) | [model.md#未知の値](model.md#未知の値)、[file-formats.md#未知の値の読み込み](file-formats.md#未知の値の読み込み) | |
 | [Model validation](../../spec/model.md#model-validation) | [model.md#検証](model.md#検証) | 検証エラーの文 (`describe_errors`) とコード (`ValidationError::code`) は日本語版だけ |
 | [Physics validation](../../spec/model.md#physics-validation) | [model.md#物理の検証](model.md#物理の検証) | |

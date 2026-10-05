@@ -352,7 +352,7 @@ fn interpolation_is_passed_by_its_json_name() {
 /// 領域の名前を付けたもの (元のクレートでコードを固定し、ここはそれに揃える)。
 #[test]
 fn source_error_codes_follow_the_crate_codes() {
-    use crate::message_catalog::{infer_errors, validation_errors};
+    use crate::message_catalog::{compose_errors, infer_errors, validation_errors};
     for error in validation_errors() {
         assert_eq!(
             Coded::code(&error),
@@ -367,6 +367,17 @@ fn source_error_codes_follow_the_crate_codes() {
             "{error:?}"
         );
     }
+    let compose = compose_errors();
+    for error in &compose {
+        assert_eq!(
+            Coded::code(error),
+            format!("compose.{}", error.code()),
+            "{error:?}"
+        );
+    }
+    // 合成のエラーの見本はすべてのバリアントを含む (コードの値は ugoe-runtime の `codes_are_fixed` が固定する)。
+    let kinds: std::collections::HashSet<_> = compose.iter().map(|e| e.code()).collect();
+    assert_eq!(kinds.len(), 13, "{kinds:?}");
     let world = ugoe_rigging::WorldError::NotConverged {
         index: 0,
         residual: 1.0,

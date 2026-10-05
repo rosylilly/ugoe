@@ -644,6 +644,10 @@ fn every_error_kind_has_a_fixed_code_and_fields() {
     for (error, code, fields) in &cases {
         assert_eq!(error.code(), *code);
         assert_eq!(&error.fields(), fields, "{code}");
+        // 合成の失敗の種類は ugoe-runtime の `ComposeError::code` そのもの (T0167)。
+        if let DressUpError::Compose(e) = error {
+            assert_eq!(e.code(), *code);
+        }
     }
     assert_eq!(DressUpError::INVALID_FILE, "invalid_file");
 }

@@ -128,6 +128,13 @@ compose_physics_without_base(base: &Model, composed: &mut Model, settings: &Phys
    この順は評価の結果を変えないが、合成したモデルを 1 つに決める。モジュールの順はホストが決める ([Puppet での着せ替え](#puppet-での着せ替え) の `attach_module` の規則)。
 7. 合成したモデルを検証 (`validate`) し、エラーがあれば `ComposeError::Invalid` を返す。ランタイムはこれを通常どおりコンパイルする。
 
+`ComposeError::code()` は機械が読む種類を返します (T0167)。値はバリアントの名前の `snake_case`
+(`invalid_module_name`・`duplicate_module`・`unknown_slot`・`slot_occupied`・`avatar_level`・`missing_slot`・`missing_parameter`・
+`parameter_not_exposed`・`unknown_mask`・`texture_out_of_range`・`unknown_collider`・`pose_not_exposed`) で、`Invalid` だけは
+物理の検査の失敗と区別するため `invalid_composition` です。補足の値はバリアントのフィールドそのものです。SDK の `DressUpError::code`
+(wasm の `DressUpError` の `code`・C ABI の `ugoe_last_error_kind`) とエディタの `compose.*` ([editor.md#エラーと警告のコード](../editor.md#エラーと警告のコード))
+はこの値を使うので、**名前を変えません**。公開仕様 (`spec/`) には書きません (Rust の API なので)。
+
 物理は `compose_physics` で、同じモジュールの組を本体の物理に加えます。リグと衝突体は本体のものの後ろに加わり、本体のリグが先に評価されます。
 リグの衝突体の参照は、モジュールの衝突体なら付け替え、そうでなければスロットの `colliders` にあって本体の物理にある衝突体として
 そのまま残します。どちらでもなければ `ComposeError::UnknownCollider` です。
