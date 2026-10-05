@@ -192,9 +192,6 @@ const skipped = {};
 const reference = [...only].some((b) => !NO_REFERENCE.has(b));
 if (reference) {
   run("cargo", ["build", "-q", "-p", "ugoe-cli", "-p", "ugoe-conformance", "-p", "ugoe-ffi"]);
-} else if (only.has("queries")) {
-  // queries はポーズを持つフィクスチャを `ugoe fixture` で書き出して読む (見本のモデルはポーズを持たない)
-  run("cargo", ["build", "-q", "-p", "ugoe-cli"]);
 }
 const images = [...only].some((b) => IMAGES.has(b));
 if (images) {
@@ -293,15 +290,6 @@ if (web) {
   // 問い合わせの JSON のキー (T0463)。出力の形はバックエンドによらないので WebGL2 だけで
   if (only.has("queries")) {
     mkdirSync(join(out, "queries"), { recursive: true });
-    const fixture = spawnSync(exe("ugoe"), ["fixture", "pose_and_effects"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    if (fixture.status !== 0) {
-      console.error(`ugoe fixture pose_and_effects failed:\n${fixture.stderr}`);
-      process.exit(2);
-    }
-    writeFileSync(join(out, "queries", "pose_and_effects.json"), fixture.stdout);
     results.queries = await runWeb(dist, "queries", "webgl2", "queries.html");
   }
 }
@@ -411,8 +399,8 @@ async function runWeb(dist, binding, backend, page) {
       });
       return;
     }
-    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールと、見本のモデルとモジュール (avatar.html・queries.html)、
-    // queries.html のフィクスチャだけを配る。
+    // GET: ページ・パッケージ・計画・計画にあるモデルとモジュールと、見本のモデルとモジュール (avatar.html・queries.html)
+    // だけを配る。
     let file;
     const m = url.pathname.match(/^\/file\/(\d+)\/(model|\d+)$/);
     const sample = url.pathname.match(/^\/samples\/((?:dress-up\/)?[\w-]+\.ugoe(?:mod)?)$/);
@@ -425,8 +413,6 @@ async function runWeb(dist, binding, backend, page) {
     )
       file = join(here, "web", url.pathname.slice(1));
     else if (url.pathname === "/plan.json") file = join(out, "plan.json");
-    else if (url.pathname === "/fixture/pose_and_effects.json")
-      file = join(out, "queries", "pose_and_effects.json");
     else if (sample) {
       // `?delay=ミリ秒` で応答を遅らせる (取得中の切り離しと `backend` の変更を確かめるため)
       file = join(root, "assets", "samples", sample[1]);

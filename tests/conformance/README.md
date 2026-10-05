@@ -22,7 +22,7 @@ just conformance                          # = node tests/conformance/run.mjs (�
 just conformance --only c                 # C ABI だけ (Chrome も GPU も要らない)
 just conformance --only wasm,wasm-webgpu  # wasm だけ (WebGL2 と WebGPU)
 just conformance --only avatar            # <ugoe-avatar> のシナリオだけ (参照を作らないので cargo のビルドも要らない)
-just conformance --only queries           # 問い合わせの JSON のキーだけ (参照を作らない。フィクスチャを書き出す ugoe-cli だけビルドする)
+just conformance --only queries           # 問い合わせの JSON のキーだけ (参照を作らないので cargo のビルドも要らない)
 just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
 just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
 just conformance --only godot --godot-renderer forward_plus   # Godot を Forward+ (Vulkan) で描く (既定は compatibility = opengl3)
@@ -41,8 +41,7 @@ target/conformance/
   wasm/<ケース>.json .png       wasm (WebGL2) の結果。画像が合わなければ <ケース>.diff.png (違う画素が赤)。chrome.log (ページのコンソールを含む)
   wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
   avatar/avatar.json           <ugoe-avatar> のシナリオごとの結果 ("ok" か失敗の理由)。chrome.log
-  queries/queries.json         問い合わせの JSON のキーの項目ごとの結果 ("ok" か食い違いの一覧) と、形ごとに比べた数。
-                               pose_and_effects.json (ページが読むフィクスチャ)。chrome.log
+  queries/queries.json         問い合わせの JSON のキーの項目ごとの結果 ("ok" か食い違いの一覧) と、形ごとに比べた数。chrome.log
   unity/<ケース>.json           Unity の C# の層の結果
   godot/<ケース>.json .png      Godot の結果。skipped.json (扱わなかったケースと理由。今は空)
 ```
@@ -217,10 +216,9 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 | --- | --- |
 | `no-model` | モデルの無い `WebPuppet` (空の一覧) |
 | `sample-motion` | 3 種類の対象 (`parameter`・`part_opacity`・`effect_group`) のカーブを持つモーションを `sampleMotion` (`sample_motion_json`) と `MotionSampler` で評価する |
-| `pose-and-groups` | フィクスチャ `pose_and_effects` (`run.mjs` が `ugoe fixture` で書き出す) にパラメータのグループを足した JSON のモデル。見本はポーズとグループを持たないため |
-| `motion-events` | フィクスチャ `pose_and_effects` の JSON のモデルで、イベントを持つモーションを `start_motion_json` で再生し、`motion_events_json` を出させる (T0462)。見本はイベントを持つモーションを含まないため |
-| `avatar`・`avatar-lit` | 見本のモデル (モーション・表情・アバタープロファイル) |
-| `dress-up` | 着せ替えの見本。`long-hair`・`cat-ears`・`sailor` を付け、`twin-tails` は読むだけ (`attached: false`) |
+| `motion-events` | 見本のアバターで、最初の `update` で発火するイベントを持つモーションを `start_motion_json` で再生し、`motion_events_json` を出させる (T0462) |
+| `avatar`・`avatar-lit` | 見本のモデル (モーション・表情・アバタープロファイル・パラメータのグループ・ポーズ) |
+| `dress-up` | 着せ替えの見本 (パラメータのグループ・ポーズ)。`long-hair`・`cat-ears`・`sailor` を付け、`twin-tails` は読むだけ (`attached: false`) |
 | `coverage` | 上のどれかで、一覧のすべての形を 1 度は比べたか |
 
 - 無い必須のキーと、一覧に無いキー (型に無いキー) を食い違いとする。型が `[key: string]: unknown` を持つ形 (パラメータ・スロット) でも、

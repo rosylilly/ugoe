@@ -624,7 +624,7 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 - **問い合わせの JSON のキーの突き合わせ (T0463):** `src/queries.ts` の型ごとのキー (必須と省略できるもの) の一覧を
   `src/query-keys.ts` の `QUERY_KEYS` に値で持ちます (入口からは出さない)。一覧と型が同じことは `src/query-keys.test.ts` が
   `expectTypeOf` で確かめ (`pnpm check`)、本物の wasm の出力と一覧を比べるのは適合テストの `queries`
-  (`just conformance --only queries`。`tests/conformance/web/queries.js`) です。見本のモデルとフィクスチャを読み、すべての `*_json()`
+  (`just conformance --only queries`。`tests/conformance/web/queries.js`) です。見本のモデル (ポーズとパラメータのグループも持つ。T0468) を読み、すべての `*_json()`
   (警告と物理を除く) と `sample_motion_json`・`MotionSampler.sample` について、無い必須のキーと一覧に無いキーで落ち、1 度も出なかった形があっても落ちます。
   型にキーを足したら一覧にも足し (足さないと `pnpm check` が落ちる)、ugoe-wasm の出力にキーを足したら型と一覧に足します (足さないと `queries` が落ちる)。
 - このパッケージは MIT です。`apps/`・`packages/` (GPL-3.0-only) のコードを import したり写したりしないでください ([ADR 0025](../../docs/adr/0025-web-runtime-package.md))。

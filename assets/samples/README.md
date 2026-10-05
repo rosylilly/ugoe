@@ -4,12 +4,12 @@
 
 | ファイル | 内容 | 大きさ | 出所 / ライセンス |
 | --- | --- | --- | --- |
-| `avatar.ugoe` | アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した胸から上のモデル。キャンバス 1024x1024、パラメータ 27、メッシュ 24、デフォーマ 12、動的物理のリグ 5 (前髪・後ろ髪・耳飾りの揺れ)、モーション 4・表情 4 ([下](#モーションと表情)) | 約 1.3MB | `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (AI 生成、MIT) から `ugoe sample avatar` で生成 / MIT |
+| `avatar.ugoe` | アバタープロファイル ([docs/spec/avatar-profile.md](../../docs/spec/avatar-profile.md)) のレベル 3 に準拠した胸から上のモデル。キャンバス 1024x1024、パラメータ 27、メッシュ 24、デフォーマ 12、動的物理のリグ 5 (前髪・後ろ髪・耳飾りの揺れ)、モーション 4・表情 4 ([下](#モーションと表情))、パラメータのグループ 5・ポーズ (耳飾りの有無。[下](#パラメータのグループとポーズ)) | 約 1.3MB | `assets/fixtures/psd-real/comfyui-see-through-bustup-parts.psd` (AI 生成、MIT) から `ugoe sample avatar` で生成 / MIT |
 | `avatar-params.jpg` | `avatar.ugoe` を各パラメータの端と途中の値 (と表情の組み合わせ) で `ugoe render` した顔の拡大の一覧 | 約 270KB | 同上 |
 | `avatar-smooth.jpg` | 頭の向き (`AngleX` = `AngleY` = 15) の顔の拡大を、深度からの回転のワープ (`FaceWarp`・`BackHairWarp`) を線形で補間した場合 (T0314 より前の見本)・曲線補間 (今の見本)・キーを 7.5 度ごとに足して作り直した正解で並べ、下の段に正解との差を示したもの。頂点のずれの最大は線形 5.88px、曲線 0.52px ([evaluation.md#曲線補間](../../docs/spec/evaluation.md#曲線補間)) | 約 130KB | 同上 |
 | `avatar-lit.ugoe` | `avatar.ugoe` のすべてのテクスチャに法線マップ (テクスチャの半分の解像度) を付け、ライティングを有効にした版 ([下](#avatar-litugoe))。リグ・物理・メタデータは `avatar.ugoe` と同じ | 約 1.5MB (法線マップは合わせて約 180KB) | `ugoe sample avatar --lit` で生成 / MIT |
 | `avatar-lit.jpg` | 左から `avatar.ugoe` (ライティングなし)、`avatar-lit.ugoe` に左・右・上から光を当てたもの (環境光 0.55、平行光源 0.6、高さ 45°) | 約 110KB | 同上 |
-| `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` (モーション 4・表情 3) と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 135KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
+| `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` (モーション 4・表情 3、パラメータのグループ 5・ポーズ (手を振る)) と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 165KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
 | `dress-up.jpg` | `dress-up/` を `ugoe render --module` で描いたもの (左から本体だけ、`LongHair`+`CatEars`+`Sailor`、`TwinTails`+`Sailor` (向き・片目・口)、`LongHair` (向き・体)) | 約 40KB | 同上 |
 | `avatar-physics.jpg` | 頭を振る (`AngleX` 0→25→-25→0 を 0.8 秒) モーションと傾ける (`AngleZ` 0→30→0) モーションの途中を `ugoe render --motion --time` で描いたもの (上 4 つが振る、下 4 つが傾ける。0.3/0.5/0.7/0.9 秒) | 約 100KB | 同上 |
 
@@ -43,6 +43,43 @@ npm パッケージの `<ugoe-avatar motion="nod" expression="smile">` (`binding
 `dress-up.ugoe` の表情はレベル 2 のパラメータだけを使います (`EyeLSmile` などを持たないため)。
 `sample::animations::check` が、モーションと表情がモデルに無いパラメータを動かさないことを確かめます。
 
+## パラメータのグループとポーズ
+
+見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`avatar-atlas.ugoe`・`dress-up/dress-up.ugoe`) は、パラメータのグループとポーズを持ちます (T0468)。
+アプリ・npm パッケージの例・適合テスト (`queries`) で、グループとポーズを扱う画面や問い合わせ (`parameters_json` の `groups`・`pose_json`) を
+見本のまま確かめるためです。
+
+| グループ | パラメータ (モデルにあるものだけ) |
+| --- | --- |
+| `Head` | `AngleX/Y/Z` |
+| `Body` | `BodyAngleX/Y/Z`・`Breath` |
+| `Eyes` | `EyeLOpen`・`EyeROpen`・`EyeLSmile`・`EyeRSmile`・`EyeLWide`・`EyeRWide`・`EyeBallX/Y` |
+| `Brows` | `BrowLY`・`BrowRY`・`BrowLAngle`・`BrowRAngle`・`BrowInnerUp` |
+| `Mouth` | `MouthOpenY`・`MouthForm`・`MouthX`・`JawX`・`MouthPucker`・`MouthPress`・`MouthShrug` |
+
+グループはエディタ・ビューアのスライダーの区切りで、評価には効きません。2 つのモデルで同じ表 (`crates/ugoe-cli/src/sample.rs` の
+`PARAMETER_GROUPS`) を使います。
+
+| モデル | ポーズのグループ (先頭が最初に表示される) |
+| --- | --- |
+| `avatar.ugoe` | `earwear` (耳飾り `earwear-l`・`earwear-r` を耳のパーツから移したもの) / `no_earwear` (中身の無いパーツ。耳飾りを外した姿) |
+| `dress-up.ugoe` | `HandsDown` (中身の無いパーツ。手は絵の外) / `Wave` (顔の横で手を振る `HandWave`。袖は既定の服の色) |
+
+どちらも先頭の要素が既定の姿なので、ポーズを効かせても効かせなくても既定の見た目は前と同じです (`avatar-*.jpg`・`dress-up.jpg` は
+作り直していません)。`Wave` はパーツの不透明度を 0 にしてあるので、ポーズの段を通らない描画 (`ugoe render` の時間を進めない描画、
+エディタの編集中のビューポート) でも見えません。ポーズで表示すると、不透明度を上書き (重み 1) して見せます。
+切り替えはエディタの「Pose」の節 (プレビューモード) や「Poses」タブの「Show the pose in the viewport」、ランタイムの `show_pose`
+(`Puppet::pose_mut().show`) で、`ugoe render` ではパーツの不透明度のカーブを持つモーション (ポーズへの表示の要求になる) で試せます:
+
+```sh
+cat > wave.motion.json <<'JSON'
+{"name":"wave","duration":1,"looping":false,"fade_in":0,"fade_out":0,"events":[],
+ "curves":[{"target":{"kind":"part_opacity","id":"Wave"},
+            "segments":[{"type":"start","p":{"t":0,"v":1}},{"type":"linear","to":{"t":1,"v":1}}]}]}
+JSON
+just cli render assets/samples/dress-up/dress-up.ugoe -o wave.png --motion wave.motion.json --time 0.9
+```
+
 ## avatar.ugoe
 
 作り直し (リポジトリのルートで):
@@ -75,9 +112,11 @@ PSD を取り込み、エディタと同じ `ugoe_editor_core::Command` の列�
 | 口の切り替え | メッシュ `mouth-open` / `mouth-close` の不透明度と形 | `MouthOpenY` | 開いた口は閉じた口の幅・半分の高さの細い隙間から開く (0→0.12 で現れ、0.12→1 で広がる)。閉じた口は 0.12→0.3 で消える |
 | 口の形 | 両方の口のメッシュ | `MouthForm` | 口角を閉じた口の高さの 45% だけ上げ下げする (開いた口も同じ量。開きとの組み合わせのセルはすべて書いた) |
 | 口のまわり | ワープ `MouthWarp` | `MouthX`・`JawX`・`MouthPucker`・`MouthPress`・`MouthShrug` | 左右・あご (下ほど横)・すぼめ・押し付け・口元の持ち上げ |
+| 耳飾りのポーズ | パーツ `earwear` (顔のパーツの子)・`no_earwear` | なし | 耳飾りを耳のパーツ (`ear-l`・`ear-r`) から `earwear` へ移し (`SetMeshProperties`)、`no_earwear` と 1 つのポーズのグループにする (`SetPose`) |
 | 揺れもの (動的物理) | ワープ `FrontHairSwayWarp` (顔のワープの子)・`BackHairSwayWarp` (後ろ髪のワープの子)・メッシュ `earwear-l/r` | なし (物理の入力は `AngleX`) | 振り子の先の粒子の横の変位を、制御点・頂点に重み付きで足す (`vertices`)。根元は頭の回転デフォーマ (`frame`) に付くので、`AngleZ` と体の動きでも揺れる。前髪は毛先だけ (上 40% は 0、下端で 0.5) を小さく、後ろ髪は顔の中ほどから 2 区間で大きくゆっくり (下端で 0.8)、耳飾りは金具 (上 35%) を動かさず飾りを速く (加速度 4)。衝突体は使わない |
 
 `Model.avatar` (メタデータ・許諾・`Head` / `Body` の当たり判定) は、設定するコマンドがまだないので組み終えたモデルに直接書いています。
+パラメータのグループの定義も、足すコマンドがまだないので組み始める前の空のモデルに書き、パラメータの割り当ては `SetParameterGroup` で行います。
 
 ![各パラメータの端と途中の値](avatar-params.jpg)
 
@@ -160,8 +199,9 @@ just cli render assets/samples/dress-up/dress-up.ugoe -o dressed.png \
 
 | 要素 | 内容 |
 | --- | --- |
-| パラメータ | アバタープロファイルのレベル 2 の分 (T0715): `AngleX/Y/Z`・`BodyAngleX/Y/Z`・`Breath`・`EyeLOpen`・`EyeROpen`・`EyeBallX/Y`・`BrowLY`・`BrowRY`・`MouthOpenY`・`MouthForm` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定 |
-| パーツ | `Body` → `Head` → `Hair` (既定の髪)、`Body` → `Clothes` (既定のシャツ) |
+| パラメータ | アバタープロファイルのレベル 2 の分 (T0715): `AngleX/Y/Z`・`BodyAngleX/Y/Z`・`Breath`・`EyeLOpen`・`EyeROpen`・`EyeBallX/Y`・`BrowLY`・`BrowRY`・`MouthOpenY`・`MouthForm` (標準の値域)。目パチ・呼吸・リップシンクは標準の設定。グループは [上](#パラメータのグループとポーズ) |
+| パーツ | `Body` → `Head` → `Hair` (既定の髪)、`Body` → `Clothes` (既定のシャツ)、`Body` → `HandsDown`・`Wave` (ポーズ) |
+| ポーズ | `HandsDown` (中身なし) / `Wave` の 1 グループ。`Wave` の手 `HandWave` は体のワープの子で、描画順 700 (髪のスロットより手前、頭の飾りのスロットより奥)。パーツの不透明度は 0 ([上](#パラメータのグループとポーズ)) |
 | `BodyWarp` (ワープ 2x2) | 上ほど `BodyAngleX` で横に、`Breath` で上に、`BodyAngleY` で上下 (±4px) に動き、`BodyAngleZ` ±10 で腰の下を軸に上の辺が ±5 度傾く (下の辺は動かない) |
 | `HeadRotation` (回転) | 首の付け根が中心。`AngleZ` ±30 で ±10 度、`BodyAngleZ` ±10 で ±5 度を足す。`BodyAngleX/Y/Z` で中心が体と一緒に動く |
 | `HeadWarp` (ワープ 8x8、`HeadRotation` の子) | 顔の中ほどを頂点にした丸みの分だけ `AngleX` で横 (最大 16px)、`AngleY` で縦 (最大 12px) に動かす。目・口は大きく、輪郭と後ろ髪は小さく動く |

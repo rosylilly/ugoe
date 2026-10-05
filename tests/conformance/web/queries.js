@@ -4,9 +4,8 @@
 // `sample_motion_json`・`MotionSampler.sample` の出力のキーを、パッケージの型 (bindings/web/src/queries.ts) のキーの一覧
 // (`QUERY_KEYS`、bindings/web/src/query-keys.ts) と比べる。一覧と型が同じことは bindings/web の `pnpm check` が確かめる。
 //
-// - 見本のモデル (/samples/。assets/samples) を読み、着せ替えのモジュールも付けて、すべての形を出させる。見本が持たない
-//   ポーズとパラメータのグループは、フィクスチャ `pose_and_effects` (run.mjs が `ugoe fixture` で書き出す。/fixture/) に
-//   グループを足した JSON のモデルで出させる。
+// - 見本のモデル (/samples/。assets/samples) を読み、着せ替えのモジュールも付けて、すべての形を出させる (ポーズと
+//   パラメータのグループも見本が持つ。T0468)。
 //   どれかの形を 1 度も比べなかったら失敗にする (見本が変わって確かめられなくなったことに気づくため)。
 // - 結果は /result/queries.json (項目ごとに "ok" か食い違いの一覧と、形ごとに比べた数)。
 
@@ -93,21 +92,10 @@ const items = {
     }
   },
 };
-items["pose-and-groups"] = () =>
-  withPuppet(async (puppet) => {
-    const model = await (await fetch("/fixture/pose_and_effects.json")).json();
-    // 見本もフィクスチャもパラメータのグループを持たないので足す (表示用で、評価には効かない)
-    model.parameter_groups = [{ id: "Group", name: "Group" }];
-    model.parameters[0].group = "Group";
-    loadModel(puppet, JSON.stringify(model));
-    puppet.update(1 / 60);
-    check.puppet(puppet, "pose-and-groups");
-  });
-// 直前の update のイベント (`motion_events_json`。T0462)。見本はイベントを持つモーションを含まないので、フィクスチャで
-// イベントを持つモーションを再生する
+// 直前の update のイベント (`motion_events_json`。T0462)。最初の update で発火するイベントを持つモーションを見本で再生する
 items["motion-events"] = () =>
   withPuppet(async (puppet) => {
-    loadModel(puppet, await (await fetch("/fixture/pose_and_effects.json")).text());
+    loadModel(puppet, await bytes("/samples/avatar.ugoe"));
     const motion = {
       name: "events",
       duration: 1,

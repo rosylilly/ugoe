@@ -37,6 +37,7 @@ use ugoe_model::physics::{
     PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSettings,
     PhysicsSource, PhysicsTarget,
 };
+use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::standard as sp;
 use ugoe_model::validate::describe_errors;
 use ugoe_model::{
@@ -88,6 +89,12 @@ const IRIS: Color = rgb(0x7b63b8);
 const WHITE: Color = rgb(0xffffff);
 const SHIRT: Color = rgb(0xf4f6fa);
 const SHIRT_LINE: Color = rgb(0x8a92a8);
+
+/// ポーズの見本 (T0468): 手を下ろした姿 (中身の無いパーツ。手は絵の外) と、顔の横で手を振る姿 (`Wave`)。
+/// 先頭の `HandsDown` が最初に表示される。`Wave` はパーツの不透明度を 0 にしておくので、ポーズを効かせない描画
+/// (`ugoe render` の時間を進めない描画など) でも見えない。ポーズが表示するときは不透明度を上書きする (重み 1)。
+const HANDS_DOWN: &str = "HandsDown";
+const WAVE: &str = "Wave";
 
 /// 本体のスロットの描画順の範囲。髪は顔 (500) と目・眉を挟む (後ろ髪は顔の奥、前髪は眉の手前)。
 const HAIR_RANGE: (f32, f32) = (420.0, 680.0);
@@ -239,7 +246,7 @@ fn parameter(id: &str) -> Parameter {
         default,
         kind: ParameterKind::Normal,
         mirror: None,
-        group: None,
+        group: super::parameter_group(id),
         internal: false,
     }
 }
@@ -531,6 +538,11 @@ fn base() -> Bundle {
         part("Head", Some("Body")),
         part("Hair", Some("Head")),
         part("Clothes", Some("Body")),
+        part(HANDS_DOWN, Some("Body")),
+        Part {
+            keyforms: KeyformGrid::constant(PartKeyform { opacity: 0.0 }),
+            ..part(WAVE, Some("Body"))
+        },
     ];
 
     // 体: 上ほど `BodyAngleX` で横に、`Breath`・`BodyAngleY` で上下に動き、`BodyAngleZ` で腰の下を軸に傾く。
@@ -706,6 +718,10 @@ fn base() -> Bundle {
     let art = bangs(&hair, &bob_bangs());
     let t = textures.add("hair-front", &art);
     meshes.push(Sheet::head("HairFront", "Hair", 650.0, (4, 4)).still(t, &art));
+    // 振る手は髪 (スロット `Hair` の範囲) より手前、頭の飾り (`Headwear`) より奥。
+    let art = waving_hand();
+    let t = textures.add("hand-wave", &art);
+    meshes.push(Sheet::body("HandWave", WAVE, 700.0).still(t, &art));
 
     let slot = |id: &str, anchor: &str, (min, max): (f32, f32), part: &str| Slot {
         id: id.into(),
@@ -745,7 +761,7 @@ fn base() -> Bundle {
             },
         },
         parameters,
-        parameter_groups: Vec::new(),
+        parameter_groups: super::parameter_groups(),
         parts,
         deformers: vec![body_warp, head_rotation, head_warp, hair_sway],
         meshes,
@@ -761,7 +777,17 @@ fn base() -> Bundle {
                 mesh: "Skin".into(),
             },
         ],
-        pose: Pose::default(),
+        pose: Pose {
+            groups: vec![PoseGroup {
+                entries: [HANDS_DOWN, WAVE]
+                    .map(|part| PoseEntry {
+                        part: part.into(),
+                        links: Vec::new(),
+                    })
+                    .to_vec(),
+            }],
+            ..Pose::default()
+        },
         effects: Effects::standard(),
         avatar: Some(avatar_profile(&slots)),
         slots,
@@ -882,6 +908,32 @@ fn shirt() -> Layer {
     let shape = torso().subtract(Shape::ellipse(Vec2::new(256.0, 334.0), 30.0, 22.0));
     let mut layer = Layer::new(Vec2::new(160.0, 326.0), Vec2::new(352.0, 512.0));
     layer.paint(&shape, SHIRT, SHIRT_LINE, LINE);
+    layer
+}
+
+/// 顔の横 (画面の右) に上げて振る手 (ポーズ `Wave`)。前腕は肩の外から上がり、袖は既定の服の色。
+fn waving_hand() -> Layer {
+    let fingers = [
+        (Vec2::new(357.0, 282.0), Vec2::new(355.0, 262.0)),
+        (Vec2::new(365.0, 280.0), Vec2::new(365.0, 256.0)),
+        (Vec2::new(373.0, 281.0), Vec2::new(375.0, 258.0)),
+        (Vec2::new(380.0, 285.0), Vec2::new(383.0, 268.0)),
+    ];
+    let hand = Shape::union_all(
+        fingers
+            .into_iter()
+            .map(|(a, b)| Shape::capsule(a, b, 4.5))
+            .chain([
+                Shape::ellipse(Vec2::new(368.0, 292.0), 15.0, 16.0),
+                Shape::capsule(Vec2::new(356.0, 300.0), Vec2::new(346.0, 286.0), 5.0),
+                Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 11.0),
+            ]),
+    );
+    let sleeve = Shape::capsule(Vec2::new(369.0, 300.0), Vec2::new(364.0, 540.0), 15.0)
+        .intersect(Shape::below(430.0));
+    let mut layer = Layer::new(Vec2::new(334.0, 246.0), Vec2::new(392.0, 512.0));
+    layer.paint(&hand, SKIN, SKIN_LINE, LINE);
+    layer.paint(&sleeve, SHIRT, SHIRT_LINE, LINE);
     layer
 }
 
@@ -1477,6 +1529,51 @@ mod tests {
             ["Hair", "Headwear", "Outfit"].map(ugoe_model::SlotId::from)
         );
         assert_eq!(avatar.hit_areas.len(), 2);
+    }
+
+    /// パラメータはすべてグループに入る。振る手 (`Wave`) はポーズを効かせない評価では見えず、ポーズで表示すると
+    /// 見え、モジュールを付けても同じように切り替わる (T0468)。
+    #[test]
+    fn parameters_are_grouped_and_the_pose_raises_a_hand() {
+        let sample = build_dress_up().unwrap();
+        let model = &sample.base.model;
+        assert_eq!(model.parameter_groups, super::super::parameter_groups());
+        for p in &model.parameters {
+            assert!(p.group.is_some(), "{} has no group", p.id);
+        }
+
+        let hand = model
+            .meshes
+            .iter()
+            .position(|m| m.id == "HandWave")
+            .unwrap();
+        let mut instance = ModelInstance::new(CompiledModel::compile(model.clone()).unwrap());
+        instance.update();
+        assert_eq!(instance.drawables()[hand].opacity, 0.0);
+
+        let modules: Vec<std::sync::Arc<Module>> = sample
+            .modules
+            .iter()
+            .filter(|f| f.module.name != "TwinTails")
+            .map(|f| std::sync::Arc::new(f.module.clone()))
+            .collect();
+        for attached in [Vec::new(), modules] {
+            let mut puppet = ugoe::Puppet::new(model.clone()).unwrap();
+            puppet.set_modules(attached).unwrap();
+            // モジュールを付けるとメッシュの並びが変わるので、合成したモデルで探す
+            let opacity = |puppet: &ugoe::Puppet| {
+                let meshes = &puppet.instance().compiled().model().meshes;
+                let i = meshes.iter().position(|m| m.id == "HandWave").unwrap();
+                puppet.instance().drawables()[i].opacity
+            };
+            puppet.update(1.0 / 60.0);
+            assert_eq!(opacity(&puppet), 0.0);
+            assert!(puppet.pose_mut().show(&WAVE.into()));
+            for _ in 0..60 {
+                puppet.update(1.0 / 60.0);
+            }
+            assert_eq!(opacity(&puppet), 1.0);
+        }
     }
 
     /// 書き出したプロジェクトをエディタの中核で開ける: 本体は見本の本体と同じモデル、モジュールのプロジェクトは

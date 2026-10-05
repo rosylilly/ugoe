@@ -31,14 +31,17 @@ use ugoe_model::avatar::{
 };
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
+use ugoe_model::part::PartKeyform;
 use ugoe_model::physics::{
     NormalizationRange, PhysicsBlend, PhysicsInput, PhysicsNormalization, PhysicsOutput,
     PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget, VertexOwner,
 };
+use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::standard as sp;
 use ugoe_model::{
     AvatarProfile, DeformerId, DeformerKind, DepthRotation, HitArea, KeyformGrid, KeyformInference,
-    KeyformInterpolation, MaskRef, MeshId, Model, ParamId, Parameter,
+    KeyformInterpolation, MaskRef, MeshId, Model, ParamId, Parameter, ParameterGroup,
+    ParameterGroupId, Part, PartId, Pose,
 };
 
 /// 既定の入力 (リポジトリのルートからの相対パス)。
@@ -93,6 +96,81 @@ const MIRRORS: &[(&str, &str)] = &[
     (sp::BROW_L_Y, sp::BROW_R_Y),
     (sp::BROW_L_ANGLE, sp::BROW_R_ANGLE),
 ];
+
+/// パラメータのグループ (エディタ・ビューアのスライダーの区切り。T0468) と、それぞれに入れる標準パラメータ。
+/// 見本のアバターと着せ替えの本体 ([`dress_up`]) で共有する (モデルに無いパラメータは入らないだけ)。
+const PARAMETER_GROUPS: &[(&str, &[&str])] = &[
+    ("Head", &[sp::ANGLE_X, sp::ANGLE_Y, sp::ANGLE_Z]),
+    (
+        "Body",
+        &[
+            sp::BODY_ANGLE_X,
+            sp::BODY_ANGLE_Y,
+            sp::BODY_ANGLE_Z,
+            sp::BREATH,
+        ],
+    ),
+    (
+        "Eyes",
+        &[
+            sp::EYE_L_OPEN,
+            sp::EYE_R_OPEN,
+            sp::EYE_L_SMILE,
+            sp::EYE_R_SMILE,
+            sp::EYE_L_WIDE,
+            sp::EYE_R_WIDE,
+            sp::EYE_BALL_X,
+            sp::EYE_BALL_Y,
+        ],
+    ),
+    (
+        "Brows",
+        &[
+            sp::BROW_L_Y,
+            sp::BROW_R_Y,
+            sp::BROW_L_ANGLE,
+            sp::BROW_R_ANGLE,
+            sp::BROW_INNER_UP,
+        ],
+    ),
+    (
+        "Mouth",
+        &[
+            sp::MOUTH_OPEN_Y,
+            sp::MOUTH_FORM,
+            sp::MOUTH_X,
+            sp::JAW_X,
+            sp::MOUTH_PUCKER,
+            sp::MOUTH_PRESS,
+            sp::MOUTH_SHRUG,
+        ],
+    ),
+];
+
+/// [`PARAMETER_GROUPS`] のグループの定義 (ID と表示名が同じ)。
+fn parameter_groups() -> Vec<ParameterGroup> {
+    PARAMETER_GROUPS
+        .iter()
+        .map(|(id, _)| ParameterGroup {
+            id: ParameterGroupId::new(*id),
+            name: (*id).to_owned(),
+        })
+        .collect()
+}
+
+/// パラメータ `id` を入れるグループ ([`PARAMETER_GROUPS`])。
+fn parameter_group(id: &str) -> Option<ParameterGroupId> {
+    PARAMETER_GROUPS
+        .iter()
+        .find(|(_, members)| members.contains(&id))
+        .map(|(group, _)| ParameterGroupId::new(*group))
+}
+
+/// ポーズの見本 (T0468): 耳飾り (`earwear-l`・`earwear-r`) を付けるか外すか。耳飾りをパーツ `earwear` にまとめ、
+/// 中身の無いパーツ `no_earwear` (外した姿) と 1 つのグループにする。先頭の `earwear` が最初に表示されるので、
+/// 既定の見た目は変わらない。
+const EARWEAR_PART: &str = "earwear";
+const NO_EARWEAR_PART: &str = "no_earwear";
 
 /// 頭に属するレイヤー (頭の回転で傾く)。`back hair` 以外は顔のワープに入る。
 const HEAD_LAYERS: &[&str] = &[
@@ -184,7 +262,9 @@ const EYES: [EyeSide; 2] = [
 
 /// PSD から見本のモデルのプロジェクトを作る。
 pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
-    let empty = Project::empty(NAME);
+    let mut empty = Project::empty(NAME);
+    // パラメータのグループを足すコマンドがまだ無いので、空のモデルに書いておき、割り当ては `SetParameterGroup` で行う
+    empty.model.parameter_groups = parameter_groups();
     let mut document = empty.document();
     let import =
         ugoe_editor_core::import::import_psd(document.model(), psd, &PsdImportOptions::new(NAME))
@@ -202,6 +282,7 @@ pub fn build_avatar(psd: &[u8]) -> anyhow::Result<Project> {
     rig.add_parameters()?;
     rig.rig_body(&layout)?;
     rig.rig_head(&layout)?;
+    rig.add_pose()?;
 
     let face = rig.mesh("face")?;
     let body = rig.mesh("topwear")?;
@@ -563,12 +644,68 @@ impl Rig {
                 },
             })?;
         }
+        for id in PARAMETERS {
+            self.apply(Command::SetParameterGroup {
+                id: ParamId::new(*id),
+                group: parameter_group(id),
+            })?;
+        }
         for (id, mirror) in MIRRORS {
             self.apply(Command::SetParameterMirror {
                 id: ParamId::new(*id),
                 mirror: Some(ParamId::new(*mirror)),
             })?;
         }
+        Ok(())
+    }
+
+    /// ポーズ: 耳飾りを付けた姿 (先頭) と外した姿のグループ ([`EARWEAR_PART`])。耳飾りは今の耳のパーツ
+    /// (`ear-l`・`ear-r`) から、顔のパーツの下の新しいパーツへ移す (描画順と変形は変わらない)。
+    fn add_pose(&mut self) -> anyhow::Result<()> {
+        let face = self
+            .model()
+            .parts
+            .iter()
+            .find(|p| p.name == "face")
+            .map(|p| p.id.clone())
+            .ok_or_else(|| anyhow!("the PSD has no group named `face`"))?;
+        for (id, name) in [(EARWEAR_PART, "earwear"), (NO_EARWEAR_PART, "no-earwear")] {
+            self.apply(Command::AddPart {
+                part: Part {
+                    id: PartId::new(id),
+                    name: name.to_owned(),
+                    parent: Some(face.clone()),
+                    keyforms: KeyformGrid::constant(PartKeyform { opacity: 1.0 }),
+                },
+            })?;
+        }
+        for name in ["earwear-l", "earwear-r"] {
+            self.apply(Command::SetMeshProperties {
+                id: self.mesh(name)?,
+                part: Some(PartId::new(EARWEAR_PART)),
+                texture: None,
+                texture_name: None,
+                blend: None,
+                culling: None,
+                masks: None,
+                mask_mode: None,
+                mask_only: None,
+                lit: None,
+            })?;
+        }
+        self.apply(Command::SetPose {
+            pose: Pose {
+                groups: vec![PoseGroup {
+                    entries: [EARWEAR_PART, NO_EARWEAR_PART]
+                        .map(|part| PoseEntry {
+                            part: PartId::new(part),
+                            links: Vec::new(),
+                        })
+                        .to_vec(),
+                }],
+                ..Pose::default()
+            },
+        })?;
         Ok(())
     }
 
@@ -1429,6 +1566,32 @@ mod tests {
         assert_eq!(moved("eyeclose-r"), (0.0, 0.0));
     }
 
+    /// パラメータはすべてグループに入り、ポーズで耳飾りを外せる (T0468)。外していない既定の見た目は耳飾りが見える。
+    #[test]
+    fn parameters_are_grouped_and_the_pose_hides_the_earrings() {
+        let project = build();
+        let model = &project.model;
+        assert_eq!(model.parameter_groups, parameter_groups());
+        for p in &model.parameters {
+            assert!(p.group.is_some(), "{} has no group", p.id);
+        }
+        assert!(ugoe_model::validate::validate(model).is_empty());
+
+        let earrings = [index(model, "earwear-l"), index(model, "earwear-r")];
+        let still = evaluate(model, &[]);
+        assert!(earrings.iter().all(|i| still[*i].1 > 0.99));
+        let mut puppet = ugoe::Puppet::new(model.clone()).unwrap();
+        let opacities =
+            |puppet: &ugoe::Puppet| earrings.map(|i| puppet.instance().drawables()[i].opacity);
+        puppet.update(1.0 / 60.0);
+        assert_eq!(opacities(&puppet), [1.0, 1.0]);
+        assert!(puppet.pose_mut().show(&PartId::new(NO_EARWEAR_PART)));
+        for _ in 0..60 {
+            puppet.update(1.0 / 60.0);
+        }
+        assert_eq!(opacities(&puppet), [0.0, 0.0]);
+    }
+
     /// コミットした `assets/samples/avatar.ugoe` が、今のジェネレータの出力と (浮動小数点の誤差を除いて) 同じこと。
     /// 違えば `just cli sample avatar -o assets/samples/avatar.ugoe` で作り直す。
     #[test]
@@ -1447,10 +1610,14 @@ mod tests {
             (
                 m.parameters
                     .iter()
-                    .map(|p| p.id.clone())
+                    .map(|p| (p.id.clone(), p.group.clone()))
                     .collect::<Vec<_>>(),
+                m.parts.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
                 m.deformers.iter().map(|d| d.id.clone()).collect::<Vec<_>>(),
-                m.meshes.iter().map(|m| m.id.clone()).collect::<Vec<_>>(),
+                m.meshes
+                    .iter()
+                    .map(|m| (m.id.clone(), m.part.clone()))
+                    .collect::<Vec<_>>(),
             )
         };
         assert_eq!(
@@ -1459,6 +1626,11 @@ mod tests {
             "regenerate assets/samples/avatar.ugoe"
         );
         assert_eq!(committed.avatar, fresh.avatar);
+        assert_eq!(
+            (&committed.parameter_groups, &committed.pose),
+            (&fresh.parameter_groups, &fresh.pose),
+            "regenerate assets/samples/avatar.ugoe"
+        );
         assert_eq!(
             (&bundle.motions, &bundle.expressions),
             (&project.motions, &project.expressions),

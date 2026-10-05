@@ -612,9 +612,11 @@ fn overlapping_hidden_alternatives_become_poses() {
     );
     apply(&mut doc, &proposal);
     let model = doc.model();
-    assert_eq!(model.pose.groups.len(), 1, "{:?}", model.pose);
+    // 作業用のモデルのポーズは、本体のグループ (見本の `HandsDown` / `Wave`。T0468) の後ろにモジュールのグループを並べる
+    let base_groups = base.model().pose.groups.len();
+    assert_eq!(model.pose.groups.len(), base_groups + 1, "{:?}", model.pose);
     let part = |id: &ugoe_model::PartId| model.parts.iter().find(|p| &p.id == id).unwrap();
-    let entries: Vec<(&str, f32)> = model.pose.groups[0]
+    let entries: Vec<(&str, f32)> = model.pose.groups[base_groups]
         .entries
         .iter()
         .map(|e| {
@@ -832,8 +834,9 @@ fn ai_variant_hints_become_poses() {
     );
     apply(&mut doc, &proposal);
     let model = doc.model();
-    assert_eq!(model.pose.groups.len(), 1, "{:?}", model.pose);
-    let entries: Vec<(&str, f32)> = model.pose.groups[0]
+    let base_groups = base.model().pose.groups.len();
+    assert_eq!(model.pose.groups.len(), base_groups + 1, "{:?}", model.pose);
+    let entries: Vec<(&str, f32)> = model.pose.groups[base_groups]
         .entries
         .iter()
         .map(|e| {
