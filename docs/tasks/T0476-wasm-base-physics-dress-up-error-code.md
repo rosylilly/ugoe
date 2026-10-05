@@ -38,3 +38,4 @@ C ABI は `UGOE_ERROR_DRESS_UP` と着せ替えの種類を返し、Godot は T0
 ## メモ
 
 - T0038 で起票した (元の候補: T0469 (wasm の合成の失敗))。
+- 判断 (2026-10-06、利用者の判断): 案 A。`name` = `"DressUpError"`、`code` と補足の値は着せ替えの失敗と同じ (C ABI・Godot と同じ種類)。
