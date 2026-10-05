@@ -47,13 +47,28 @@ const KEYS: [&str; 7] = [
 
 fn last_failure(code: UgoeResult) -> Failure {
     assert_ne!(code, UGOE_OK);
+    let fields: Vec<_> = KEYS
+        .iter()
+        .filter_map(|&k| field(k).map(|v| (k, v)))
+        .collect();
+    // 番号での列挙 (T0464) も、キーで読んだものと同じ組を返す。
+    let mut listed: Vec<_> = (0..ugoe_last_error_field_count())
+        .map(|i| {
+            let key = text(ugoe_last_error_field_key_at(i)).unwrap();
+            (key, text(ugoe_last_error_field_value_at(i)).unwrap())
+        })
+        .collect();
+    let mut by_key: Vec<_> = fields
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect();
+    listed.sort();
+    by_key.sort();
+    assert_eq!(listed, by_key);
     Failure {
         code,
         kind: text(ugoe_last_error_kind()),
-        fields: KEYS
-            .iter()
-            .filter_map(|&k| field(k).map(|v| (k, v)))
-            .collect(),
+        fields,
     }
 }
 

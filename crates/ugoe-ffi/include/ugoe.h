@@ -766,6 +766,20 @@ const char *ugoe_last_error_kind(void);
 // `key` は NULL か、NUL 終端の文字列を指すこと。
 const char *ugoe_last_error_field(const char *key);
 
+// このスレッドで最後に失敗した関数の補足の値の数。補足の値を持たない失敗や、失敗がまだないときは 0 (T0464)。
+//
+// 補足の値は `ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at` で 0 から順に読める。
+// キーを知らなくても (新しい版でキーが増えても) すべての補足の値を得られる。並びは SDK の `fields` の順。
+size_t ugoe_last_error_field_count(void);
+
+// このスレッドで最後に失敗した関数の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
+// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+const char *ugoe_last_error_field_key_at(size_t index);
+
+// このスレッドで最後に失敗した関数の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_last_error_field` と同じ書き方。T0464)。
+// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+const char *ugoe_last_error_field_value_at(size_t index);
+
 // パラメータの値 `values` (`count` 個。パラメータの番号の順) を、すべて **基準値として** 書く (範囲に丸める)。
 //
 // `ugoe_puppet_set_parameter` で書いた値は、前のフレームの出力と同じなら基準値にならないが、これは同じでも基準値にする。

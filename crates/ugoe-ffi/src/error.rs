@@ -190,6 +190,39 @@ pub unsafe extern "C" fn ugoe_last_error_field(key: *const c_char) -> *const c_c
     })
 }
 
+/// このスレッドで最後に失敗した関数の補足の値の数。補足の値を持たない失敗や、失敗がまだないときは 0 (T0464)。
+///
+/// 補足の値は `ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at` で 0 から順に読める。
+/// キーを知らなくても (新しい版でキーが増えても) すべての補足の値を得られる。並びは SDK の `fields` の順。
+#[unsafe(no_mangle)]
+pub extern "C" fn ugoe_last_error_field_count() -> usize {
+    LAST_ERROR.with(|last| last.borrow().fields.len())
+}
+
+/// このスレッドで最後に失敗した関数の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
+/// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+#[unsafe(no_mangle)]
+pub extern "C" fn ugoe_last_error_field_key_at(index: usize) -> *const c_char {
+    LAST_ERROR.with(|last| {
+        last.borrow()
+            .fields
+            .get(index)
+            .map_or(std::ptr::null(), |(k, _)| k.as_ptr())
+    })
+}
+
+/// このスレッドで最後に失敗した関数の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_last_error_field` と同じ書き方。T0464)。
+/// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+#[unsafe(no_mangle)]
+pub extern "C" fn ugoe_last_error_field_value_at(index: usize) -> *const c_char {
+    LAST_ERROR.with(|last| {
+        last.borrow()
+            .fields
+            .get(index)
+            .map_or(std::ptr::null(), |(_, v)| v.as_ptr())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,10 +272,20 @@ mod tests {
             assert!(ugoe_last_error_field(c"module".as_ptr()).is_null());
             assert!(ugoe_last_error_field(std::ptr::null()).is_null());
 
+            // 番号でも読める (T0464)。
+            assert_eq!(ugoe_last_error_field_count(), 1);
+            assert_eq!(text(ugoe_last_error_field_key_at(0)), "slot");
+            assert_eq!(text(ugoe_last_error_field_value_at(0)), "Hair");
+            assert!(ugoe_last_error_field_key_at(1).is_null());
+            assert!(ugoe_last_error_field_value_at(usize::MAX).is_null());
+
             // 種類を持たない失敗で消える。
             guard(|| Err(Error::null("x")));
             assert!(ugoe_last_error_kind().is_null());
             assert!(ugoe_last_error_field(c"slot".as_ptr()).is_null());
+            assert_eq!(ugoe_last_error_field_count(), 0);
+            assert!(ugoe_last_error_field_key_at(0).is_null());
+            assert!(ugoe_last_error_field_value_at(0).is_null());
         }
     }
 }

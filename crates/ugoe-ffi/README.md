@@ -35,6 +35,9 @@ ugoe_puppet_destroy(puppet);
 法線マップ付きの `avatar-lit.ugoe`・着せ替えの `dress-up/` (本体とモジュール) で実行する)。
 
 - 関数は `UgoeResult` (`UGOE_OK` = 0) を返し、失敗したら同じスレッドの `ugoe_last_error()` でメッセージを得る。
+  種類を持つ失敗 (着せ替え・読み込み) は `ugoe_last_error_kind()` と補足の値を持つ。補足の値はキーで読む (`ugoe_last_error_field("slot")`) ほか、
+  `ugoe_last_error_field_count()` と `ugoe_last_error_field_key_at(i)`・`ugoe_last_error_field_value_at(i)` で、キーを知らなくても
+  すべてを列挙できる (新しい版でキーが増えても、ホストにキーの一覧を写さずに済む。T0464。足しただけなので ABI の版は上げない)。
 - 内部でパニックが起きたら `UGOE_ERROR_PANIC` を返す。そのオブジェクトの状態は不定なので破棄する。
 - 頂点位置はホストのバッファへのコピー (`ugoe_puppet_copy_positions`) と、内部のバッファの借用
   (`ugoe_puppet_positions`。次の `ugoe_puppet_update` か破棄まで有効) の両方がある。

@@ -14,9 +14,17 @@ namespace Ugoe
         InvalidArgument = 2,
         OutOfRange = 3,
         BufferTooSmall = 4,
-        /// <summary>ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。</summary>
+        /// <summary>
+        /// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。<see cref="UgoeException.Kind"/> は
+        /// モデルの読み込み (<see cref="Puppet.FromBundle(byte[])"/>・<see cref="Puppet.FromJson"/> など) では <c>"invalid_file"</c>・<c>"unsupported_version"</c>・
+        /// <c>"unsupported_features"</c>・<c>"invalid_model"</c> のどれか、モジュールの読み込み (<see cref="Module.FromBytes(byte[])"/>) では
+        /// <c>"invalid_file"</c> (crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457)。
+        /// </summary>
         Format = 5,
-        /// <summary>モデルの検証やコンパイルに失敗した。</summary>
+        /// <summary>
+        /// モデルの検証やコンパイルに失敗した。モデルの読み込みでは <see cref="UgoeException.Kind"/> が <c>"invalid_model"</c>
+        /// (<see cref="UgoeException.Fields"/> の <c>"errors"</c> は検査のエラーの数) か <c>"compile"</c>。
+        /// </summary>
         InvalidModel = 6,
         NotFound = 7,
         /// <summary>ugoe の内部でパニックが起きた。そのオブジェクトは破棄して作り直す。</summary>
@@ -31,8 +39,9 @@ namespace Ugoe
     }
 
     /// <summary>
-    /// ugoe の C ABI の呼び出しが失敗した。<see cref="Kind"/> と <see cref="Fields"/> は着せ替えの失敗で、
-    /// wasm の <c>DressUpError</c> と同じ種類と補足の値を持つ (crates/ugoe-ffi/README.md#着せ替え-t0409)。
+    /// ugoe の C ABI の呼び出しが失敗した。<see cref="Kind"/> と <see cref="Fields"/> は、着せ替えの失敗では wasm の
+    /// <c>DressUpError</c> と (crates/ugoe-ffi/README.md#着せ替え-t0409)、モデルの読み込みの失敗では wasm の <c>LoadError</c> と
+    /// (crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457)、同じ種類と補足の値を持つ。
     /// </summary>
     public sealed class UgoeException : Exception
     {
@@ -44,8 +53,9 @@ namespace Ugoe
 
         /// <summary>
         /// 補足の値 (着せ替えでは <c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mask"</c> など、
-        /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c> のうち持つもの)。種類ごとのキーは
-        /// crates/ugoe-wasm/codes.json の <c>dress_up_error</c> と <c>load_error</c> と同じ。
+        /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c>、モデルの読み込みでは <c>"found"</c>・<c>"supported"</c>・
+        /// <c>"features"</c>・<c>"errors"</c> のうち持つもの)。種類ごとのキーは crates/ugoe-wasm/codes.json の
+        /// <c>dress_up_error</c> と <c>load_error</c> と同じ。C ABI が列挙する値をすべて入れるので、新しい版で増えたキーも入る。
         /// </summary>
         public IReadOnlyDictionary<string, string> Fields { get; }
 
@@ -57,17 +67,6 @@ namespace Ugoe
             Fields = fields ?? new Dictionary<string, string>();
         }
 
-        /// <summary>
-        /// 読みに行く補足の値のキー。crates/ugoe-wasm/codes.json の <c>dress_up_error</c> と <c>load_error</c> のすべてのキー
-        /// (C ABI にはキーを列挙する関数が無いので、ここに写す)。食い違いは tests/ResultTests.cs が検出する。
-        /// </summary>
-        internal static readonly string[] FieldKeys =
-        {
-            "actual", "attached", "chunk", "collider", "error_codes", "errors", "features", "found", "height", "image",
-            "limit", "mask", "max", "mesh", "module", "parameter", "part", "required", "rig", "slot", "supported", "texture",
-            "width",
-        };
-
         /// <summary>結果が失敗なら、同じスレッドの最後のエラーから例外を作って投げる。</summary>
         internal static void Check(int result)
         {
@@ -78,14 +77,14 @@ namespace Ugoe
         {
             var message = Utf8.Decode(Native.ugoe_last_error()) ?? $"ugoe error {result}";
             var kind = Utf8.Decode(Native.ugoe_last_error_kind());
+            // 補足の値は C ABI が列挙するものをすべて読む (キーの一覧をここに写さない。T0464)。
             var fields = new Dictionary<string, string>();
-            if (kind != null)
+            var count = (ulong)Native.ugoe_last_error_field_count();
+            for (ulong i = 0; i < count; i++)
             {
-                foreach (var key in FieldKeys)
-                {
-                    var value = Utf8.Decode(Native.ugoe_last_error_field(Utf8.Encode(key)));
-                    if (value != null) fields[key] = value;
-                }
+                var key = Utf8.Decode(Native.ugoe_last_error_field_key_at((UIntPtr)i));
+                var value = Utf8.Decode(Native.ugoe_last_error_field_value_at((UIntPtr)i));
+                if (key != null && value != null) fields[key] = value;
             }
             return new UgoeException((UgoeResult)result, message, kind, fields);
         }

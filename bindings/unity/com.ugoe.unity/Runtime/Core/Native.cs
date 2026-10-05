@@ -145,6 +145,9 @@ namespace Ugoe
         [DllImport(Library)] internal static extern IntPtr ugoe_last_error();
         [DllImport(Library)] internal static extern IntPtr ugoe_last_error_kind();
         [DllImport(Library)] internal static extern IntPtr ugoe_last_error_field(byte[] key);
+        [DllImport(Library)] internal static extern UIntPtr ugoe_last_error_field_count();
+        [DllImport(Library)] internal static extern IntPtr ugoe_last_error_field_key_at(UIntPtr index);
+        [DllImport(Library)] internal static extern IntPtr ugoe_last_error_field_value_at(UIntPtr index);
 
         // --- 作成と破棄 ---
 

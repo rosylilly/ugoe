@@ -469,7 +469,10 @@ mod tests {
     use ugoe::runtime::ComposeError;
 
     use super::*;
-    use crate::error::{ugoe_last_error_field, ugoe_last_error_kind};
+    use crate::error::{
+        ugoe_last_error_field, ugoe_last_error_field_count, ugoe_last_error_field_key_at,
+        ugoe_last_error_field_value_at, ugoe_last_error_kind,
+    };
 
     /// 補足の値は wasm (`crates/ugoe-wasm/src/dress_up/tests.rs` の `numbered_and_referenced_fields_reach_js`) と同じキーで出る。
     /// 番号は 10 進の文字列 (wasm では数)。無い値 (本体がプロファイルを持たないときの `actual`) は NULL。
@@ -595,6 +598,18 @@ mod tests {
         for (error, code, fields) in cases {
             assert_eq!(guard(|| Err(dress_up_error(error))), UGOE_ERROR_DRESS_UP);
             assert_eq!(text(ugoe_last_error_kind()).as_deref(), Some(code));
+            // 番号で列挙すると、値を持つ補足の値だけが同じ順に並ぶ (T0464)。
+            let listed: Vec<_> = (0..ugoe_last_error_field_count())
+                .map(|i| {
+                    let key = text(ugoe_last_error_field_key_at(i));
+                    (key, text(ugoe_last_error_field_value_at(i)))
+                })
+                .collect();
+            let expected: Vec<_> = fields
+                .iter()
+                .filter_map(|(k, v)| v.map(|v| (Some(k.to_string()), Some(v.to_owned()))))
+                .collect();
+            assert_eq!(listed, expected, "{code}");
             for (key, value) in fields {
                 let key = CString::new(key).unwrap();
                 // SAFETY: `key` は NUL 終端の文字列。

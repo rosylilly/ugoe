@@ -156,12 +156,16 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 | イベント `ModelLoaded` / `MotionEventFired` | 読み込んだとき / モーションのイベントが発火したとき (評価の直後)。`MotionEvent` は値と時刻のほかに、発火したモーションの名前 (`Motion`) と始めた番号 (`Number`。開始したモーションに 1 から振る。T0462) を持ち、クロスフェードでフェードアウト中のモーションのイベントはそのモーションのもの (C ABI の `ugoe_puppet_motion_event_source`) |
 
 `Ugoe.Puppet` などの `Runtime/Core` の型は Unity に依存しないので、Unity の外 (dotnet のサーバなど) でも使える。
-失敗は `UgoeException` (`Result`・着せ替えと読み込みの上限 (`UgoeResult.LimitExceeded`) では `Kind` と `Fields`。種類は crates/ugoe-ffi/README.md と同じ)。
+失敗は `UgoeException` (`Result`・`Kind`・`Fields`)。種類 (`Kind`) と補足の値 (`Fields`) を持つのは、主に着せ替えの失敗 (`UgoeResult.DressUp` と、
+`.ugoemod` を読めなかったときの `UgoeResult.Format` の `"invalid_file"`)、モデルの読み込みの失敗 (`Puppet.FromBundle`・`Puppet.FromJson`・
+`UgoeModel.CreatePuppet` の `UgoeResult.Format` と `UgoeResult.InvalidModel`。種類は `"invalid_file"`・`"unsupported_version"`・
+`"unsupported_features"`・`"invalid_model"`・`"compile"`)、読み込みの上限 (`UgoeResult.LimitExceeded` の `"read_limit_exceeded"`) で、
+種類と補足の値は crates/ugoe-ffi/README.md (wasm の `DressUpError`・`LoadError`) と同じ。種類を持たない失敗 (NULL・範囲外の引数など) では `Kind` は null、`Fields` は空。
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
-`Fields` は C ABI の `ugoe_last_error_field` で、`UgoeException.FieldKeys` のキーを 1 つずつ読む (C ABI にはキーを列挙する関数が無い)。
-`FieldKeys` は `crates/ugoe-wasm/codes.json` の `dress_up_error` と `load_error` のすべてのキー (`module`・`slot`・`mask`・`rig`・`collider`・
-`part`・`texture`・`required`・`actual`・`errors`・`error_codes`・`limit`・`chunk`・`max` など) で、食い違いは `tests/ResultTests.cs` が検出する
-(種類やキーが増えて `codes.json` を書き直したら、`FieldKeys` も直す。T0458)。
+`Fields` は C ABI が列挙する補足の値 (`ugoe_last_error_field_count`・`ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at`) を
+すべて入れる。キーの一覧を C# に写さないので、新しい版で種類やキーが増えても、このパッケージを直さずに入る (T0464)。
+実際の失敗 (壊れたバンドル・知らない必須の機能・新しいスキーマの版・検査を通らないモデル・上限の超過・`unknown_mask` の着せ替え) の
+種類とキーが `crates/ugoe-wasm/codes.json` と揃っていることは `tests/ResultTests.cs` が確かめる。
 
 ### 読み込みの上限
 

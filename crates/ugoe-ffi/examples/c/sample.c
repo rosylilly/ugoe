@@ -240,6 +240,11 @@ static void dress_up(UgoePuppet *puppet, int count, char **paths) {
     EXPECT(ugoe_puppet_detach_module(puppet, "NoSuchModule") == UGOE_ERROR_DRESS_UP);
     EXPECT(strcmp(ugoe_last_error_kind(), "not_attached") == 0);
     EXPECT(strcmp(ugoe_last_error_field("module"), "NoSuchModule") == 0);
+    /* キーを知らなくても、補足の値は番号で列挙できる。 */
+    EXPECT(ugoe_last_error_field_count() == 1);
+    EXPECT(strcmp(ugoe_last_error_field_key_at(0), "module") == 0);
+    EXPECT(strcmp(ugoe_last_error_field_value_at(0), "NoSuchModule") == 0);
+    EXPECT(ugoe_last_error_field_key_at(1) == NULL);
 
     if (attached > 0) {
         const char *name = NULL;
