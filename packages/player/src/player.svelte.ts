@@ -119,6 +119,13 @@ export class Player {
   modelName = $state<string | null>(null);
   /** 描画に使っている API (`webgpu` / `webgl2`)。 */
   backend = $state<string | null>(null);
+  /**
+   * GPU を失って、戻るのを待っている (WebGL2 の復元を待つ・作り直しを試し直すのを待つ。surface.ts)。待っている間は描かない。
+   * 画面には「GPU の復元を待っています」を出す (T0938)。
+   */
+  waitingForGpu = $state(false);
+  /** GPU を続けて失って描画を止めた。`restart()` で作り直せる (画面には「作り直す」ボタンを出す。T0938)。 */
+  canRestart = $state(false);
   sections = $state<ParameterSection[]>([]);
   /** パラメータの現在値 (ID → 値)。 */
   values = $state<Record<string, number>>({});
@@ -296,8 +303,13 @@ export class Player {
     this.trackingKept = loadTrackingKept(store);
     this.#surface = new PuppetSurface<WebPuppet>({
       loadWasm: () => host.loadWasm(),
-      created: (puppet, recovered) => this.#setUp(puppet, recovered),
+      created: (puppet, recovered) => {
+        this.waitingForGpu = false;
+        return this.#setUp(puppet, recovered);
+      },
       failed: (e) => {
+        this.waitingForGpu = false;
+        this.canRestart = e instanceof GpuLostRepeatedlyError;
         this.status = "unavailable";
         this.error =
           e instanceof GpuLostRepeatedlyError
@@ -306,6 +318,9 @@ export class Player {
       },
       lost: () => {
         this.#carry = { ...this.values };
+      },
+      waiting: () => {
+        this.waitingForGpu = true;
       },
       released: () => {
         // 作り直した WebPuppet は既定 (`false` と空) から始まる。
@@ -342,6 +357,22 @@ export class Player {
     cancelAnimationFrame(this.#frame);
     this.#surface.detach();
     this.#lastTime = null;
+    this.waitingForGpu = false;
+    this.canRestart = false;
+  }
+
+  /**
+   * GPU を続けて失って描画を止めた後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。開いていたモデルと
+   * 付けていたモジュールを読み直し、パラメータの値を戻す (GPU を失ったときの作り直しと同じ)。作り直しの回数は数え直す。
+   */
+  async restart(): Promise<void> {
+    this.canRestart = false;
+    this.error = null;
+    this.status = "starting";
+    cancelAnimationFrame(this.#frame);
+    this.#lastTime = null;
+    this.#frame = requestAnimationFrame(this.#tick);
+    await this.#surface.restart();
   }
 
   /**

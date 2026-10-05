@@ -64,6 +64,11 @@ export class ViewportController {
   message = $state<string | null>(null);
   /** 使っているバックエンド ("webgpu" / "webgl2")。 */
   backend = $state<string | null>(null);
+  /**
+   * GPU を続けて失って描画を止めた (`status` は `error`)。`restart()` で作り直せる (ビューポートに「作り直す」ボタンを出す。
+   * docs/ui.md#webpuppet-の寿命。T0938)。
+   */
+  canRestart = $state(false);
   /** パラメータの表示中の値 (ID → 値)。モデルを読み直しても同じ ID の値は保たれる。 */
   parameterValues = $state<Record<string, number>>({});
   /** オーバーレイ用の変換。ビュー・大きさ・モデルが変わるたびに更新される。 */
@@ -96,9 +101,15 @@ export class ViewportController {
     loadWasm: loadUgoeWasm,
     created: (puppet) => this.#setUp(puppet),
     failed: (e) => {
+      this.canRestart = e instanceof GpuLostRepeatedlyError;
       this.status = "error";
       this.message =
         e instanceof GpuLostRepeatedlyError ? t("viewport.gpuLostRepeatedly") : errorText(e);
+    },
+    // GPU が戻るのを待つ間 (WebGL2 の復元・作り直しの試し直し) は描かず、そう出す。作り直せたら `#setUp` が消す。
+    waiting: () => {
+      this.status = "loading";
+      this.message = t("viewport.gpuWaiting");
     },
     pixelRatioChanged: () => this.requestRender(),
   });
@@ -138,6 +149,17 @@ export class ViewportController {
     }
   }
 
+  /**
+   * GPU を続けて失って描画を止めた後 (`canRestart`) に、同じ場所で作り直す (「作り直す」ボタン)。表示しているモデルと
+   * パラメータの値は `#setUp` が渡し直す。作り直しの回数は数え直す。
+   */
+  async restart(): Promise<void> {
+    this.canRestart = false;
+    this.status = "loading";
+    this.message = null;
+    await this.#surface.restart();
+  }
+
   /** WebPuppet を作った (attach と、GPU を失った後の作り直し)。今の表示の設定とモデルを渡す。 */
   #setUp(puppet: WebPuppet): void {
     this.backend = puppet.backend();
@@ -158,6 +180,7 @@ export class ViewportController {
     cancelAnimationFrame(this.#animation);
     this.#animation = 0;
     this.#surface.detach();
+    this.canRestart = false;
   }
 
   /** 表示するモデルを設定する。モデルが変わるたびに呼ぶ (編集・Undo・Redo・新規・開くの後)。 */

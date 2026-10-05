@@ -127,7 +127,9 @@
   "viewport": {
     "aria": "モデルの表示",
     "empty": ".ugoe か model.json をドロップするか、「開く」で選んでください",
-    "starting": "準備しています…"
+    "starting": "準備しています…",
+    "gpuWaiting": "GPU の復元を待っています…",
+    "restart": "作り直す"
   },
   "settings": {
     "title": "設定",

@@ -2668,7 +2668,9 @@
   },
   "viewport": {
     "loading": "ビューポートを読み込んでいます…",
-    "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。描き直すには、エディタを起動し直してください",
+    "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。GPU が戻ったら「作り直す」を押してください",
+    "gpuWaiting": "GPU の復元を待っています…",
+    "restart": "作り直す",
     "screenshot": {
       "label": "スクリーンショット",
       "tooltip": "今の表示を PNG の画像で保存します (ギズモなどの重ね描きは写りません)",

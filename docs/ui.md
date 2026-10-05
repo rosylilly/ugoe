@@ -40,19 +40,30 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
     本物の GPU のリセットでは、復元の前に新しいコンテキストを作れないことがある (T0932 までのすぐ作り直す方式では「描画を始められない」に
     なり得た) ため、`<ugoe-avatar>` (T0425・T0439) に揃えた。復元はイベントで始めるので、要求されたときだけ描くエディタも次に操作するまで
     待たない。
+  - **復元が届かないとき (T0938):** 喪失に気づいたらすぐ `waiting` で知らせ、`RESTORE_TIMEOUT_MS` (5 秒) 待っても復元が届かなければ、
+    新しい canvas で作り直しを試す (ブラウザが復元を送らないまま待ち続けないため)。作り直しで作れなければ (GPU がまだ戻っていない)、
+    `waiting` で知らせて同じだけ待って試し直す。試し直しも作り直しの 1 回に数えるので、続けて失敗すれば下の上限で諦める。
+    遅れて届いた古い canvas の復元は無視する。
   - 作り直しは一度に 1 つで、捨てた WebPuppet の印と古い canvas のイベントは見ないので、2 つの知らせが重なっても作り直しは 1 回。
-  - **続けて失ったとき (T0935):** 前の作り直しから 1 分 (`RESTART_WINDOW_MS`) 以内に失うことが続き、作り直しが `MAX_RESTARTS` (3) 回を
+  - **続けて失ったとき (T0935):** 前の作り直しから 1 分 (`RESTART_WINDOW_MS`) 以内に失う・作れないことが続き、作り直しが `MAX_RESTARTS` (3) 回を
     超えたら (4 回目)、作り直さずに `failed(GpuLostRepeatedlyError)` で知らせる (数と時間は `<ugoe-avatar>` と同じ)。GPU が戻らない間に
-    作り直しを繰り返して資源と時間を使い続けないため。次の `attach` で数え直す。画面の知らせは、Player は `status` を `unavailable` にして
-    `error` にカタログの `errors.gpuLostRepeatedly` を、エディタはビューポートの `status` を `error` にして `viewport.gpuLostRepeatedly` を出す
-    (どちらも「起動し直す (ブラウザでは読み込み直す)」ことを案内する。作り直しのボタンは置かない)。
+    作り直しを繰り返して資源と時間を使い続けないため。次の `attach` と `restart` で数え直す。
+  - **画面の知らせと「作り直す」(T0938):** 待つ間 (`waiting` から次の `created`・`failed` まで) は「GPU の復元を待っています」を出す
+    (Player は `waitingForGpu`、エディタはビューポートの `status` を `loading` にして `viewport.gpuWaiting`)。諦めたら、Player は `status` を
+    `unavailable` にして `error` にカタログの `errors.gpuLostRepeatedly` を、エディタは `status` を `error` にして `viewport.gpuLostRepeatedly`
+    を出し、どちらも「作り直す」ボタンを出す (Player の `canRestart`・ViewportController の `canRestart`。ボタンはビューアの描く領域と
+    エディタのビューポートの右上)。押すと `PuppetSurface.restart()` が同じ container で作り直し (回数は数え直す)、`created(puppet, true)` で
+    GPU を失ったときの作り直しと同じく、開いていたモデル・付けていたモジュール・パラメータの値を戻す。作れなければ上と同じく待って試し直し、
+    続けば諦めてまたボタンを出す。描画を始められないだけ (wasm が無い・WebGL2 も無い) のときはボタンを出さない (押しても変わらないため)。
+    スタジオの出力ウィンドウは画面に知らせを出さないので、ボタンも置かない。
 - **devicePixelRatio:** ResizeObserver は倍率だけの変化を知らせないので、`PuppetSurface` が `matchMedia("(resolution: …dppx)")` で聞き、
   描画バッファの大きさを合わせ直して `pixelRatioChanged` で知らせる。CSS ピクセルと描画バッファの画素の換算には `pixelRatio` を使う。
 - **作り直した後の状態:** 背景・光源・モデル・パラメータの値を渡し直すのは使う側 (`created(puppet, recovered)`。値は `lost` で控える)。
 
 `<ugoe-avatar>` との関係: GPU の喪失は同じく `is_lost()` で分かり、devicePixelRatio も同じく `matchMedia` で聞く。WebGL2 の
-コンテキストの喪失で復元を待つことと、続けて失ったときに諦める数と時間も同じ (T0935 で揃えた)。違うのは知らせ方で、要素は `error` を送り
-`ready` を reject し、`restart()` で作り直せる。
+コンテキストの喪失で復元を待つこと、復元が 5 秒届かなければ作り直しを試すこと、作れなければ待って試し直すこと、続けて失ったときに諦める
+数と時間も同じ (T0935・T0938 で揃えた)。違うのは知らせ方で、要素は待ち始めたら `gpulost` を送って `waitingForGpu` を真にし、諦めたら
+`error` を送り `ready` を reject し、`restart()` で作り直せる (文言とボタンは要素を使うページが出す)。
 
 ## デザイントークン
 

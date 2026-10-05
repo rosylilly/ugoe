@@ -1,8 +1,11 @@
 <script lang="ts">
 // モデルを描く領域。ホイールでズーム、ドラッグでパン、ダブルクリックでフィット。
 // ライティングを使うモデルでは光源の印を重ね、印をドラッグすると光源が動く (LightMarkers.svelte、T0708)。
+// GPU を失って戻るのを待つ間は「GPU の復元を待っています」を、続けて失って諦めたら「作り直す」ボタンを出す
+// (docs/ui.md#webpuppet-の寿命。T0938)。
 
 import type { Player } from "@ugoe/player";
+import { Button } from "@ugoe/ui";
 import { onMount } from "svelte";
 import { t } from "./i18n";
 import LightMarkers from "./LightMarkers.svelte";
@@ -72,8 +75,16 @@ function onPointerUp(e: PointerEvent) {
     <p class="hint">{t("viewport.empty")}</p>
   {:else if player.status === "starting"}
     <p class="hint">{t("viewport.starting")}</p>
+  {:else if player.status === "unavailable" && player.canRestart}
+    <!-- ボタンを押すのを、領域のドラッグ (ポインタの捕捉) に取られないようにする -->
+    <div class="hint failure" role="presentation" onpointerdown={(e) => e.stopPropagation()}>
+      <p class="error ugoe-selectable">{player.error}</p>
+      <Button onclick={() => void player.restart()}>{t("viewport.restart")}</Button>
+    </div>
   {:else if player.status === "unavailable"}
     <p class="hint error ugoe-selectable">{player.error}</p>
+  {:else if player.waitingForGpu}
+    <p class="hint" role="status">{t("viewport.gpuWaiting")}</p>
   {/if}
   {#if player.status === "ready" && player.usesLighting && player.lighting.enabled && player.lightMarkers}
     <LightMarkers {player} />
@@ -126,7 +137,17 @@ function onPointerUp(e: PointerEvent) {
     color: var(--ugoe-color-text-muted);
     pointer-events: none;
   }
-  .hint.error {
+  .hint.error,
+  .failure .error {
     color: var(--ugoe-color-danger);
+  }
+  .failure {
+    place-content: center;
+    gap: var(--ugoe-space-3);
+    pointer-events: auto;
+    cursor: default;
+  }
+  .failure p {
+    margin: 0;
   }
 </style>

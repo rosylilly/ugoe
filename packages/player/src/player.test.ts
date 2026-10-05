@@ -3,8 +3,8 @@
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { t } from "./i18n";
 import { MAX_RESTARTS } from "./surface";
-import { bundle, fakePuppet } from "./testing/fakePuppet";
-import { container, pending, player, settle, setupPlayer } from "./testing/player";
+import { bundle, fakePuppet, moduleFile } from "./testing/fakePuppet";
+import { container, moduleRows, pending, player, settle, setupPlayer } from "./testing/player";
 
 // 画面の部品と MediaPipe まで読み込むと遅いので、Player が使う関数だけにする。
 vi.mock("@ugoe/face-tracking", () => import("./testing/faceTracking"));
@@ -103,6 +103,79 @@ describe("Player", () => {
     expect(pending).toHaveLength(MAX_RESTARTS + 1);
     expect(p.status).toBe("unavailable");
     expect(p.error).toBe(t("errors.gpuLostRepeatedly"));
+  });
+
+  it("says it is waiting for the GPU while the WebGL context is lost", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+    expect(p.waitingForGpu).toBe(false);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    expect(p.waitingForGpu).toBe(true);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    expect(p.waitingForGpu).toBe(true);
+    pending[1]?.resolve(fakePuppet().puppet);
+    await settle();
+    expect(p.waitingForGpu).toBe(false);
+    expect(p.canRestart).toBe(false);
+  });
+
+  it("restarts with the model, the modules and the values after giving up", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    onTestFinished(() => {
+      warn.mockRestore();
+      clock.mockRestore();
+    });
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    const options = { parameters: [{ id: "AngleX" }] };
+    pending[0]?.resolve(fakePuppet(options).puppet);
+    await attached;
+    const model = bundle("a.ugoe", 1);
+    const hat = moduleFile("hat", "head");
+    await p.load(model, [{ file: hat, attach: true }]);
+    p.setParameter("AngleX", 0.5);
+    for (let i = 0; i <= MAX_RESTARTS; i++) {
+      now += 1000;
+      const canvas = pending[i]?.canvas;
+      canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      canvas?.dispatchEvent(new Event("webglcontextrestored"));
+      await settle();
+      pending[i + 1]?.resolve(fakePuppet(options).puppet);
+      await settle();
+    }
+    expect(p.status).toBe("unavailable");
+    expect(p.canRestart).toBe(true);
+    expect(p.waitingForGpu).toBe(false);
+
+    const restarting = p.restart();
+    expect(p.canRestart).toBe(false);
+    expect(p.error).toBeNull();
+    expect(p.status).toBe("starting");
+    await settle();
+    const restarted = fakePuppet(options);
+    pending[MAX_RESTARTS + 1]?.resolve(restarted.puppet);
+    await restarting;
+    await settle();
+    expect(p.status).toBe("ready");
+    expect(restarted.loaded).toEqual([model.bytes]);
+    expect(moduleRows(p)).toEqual([["hat", true]]);
+    expect(restarted.puppet.parameter("AngleX")).toBe(0.5);
+  });
+
+  it("does not offer a restart when drawing could not start", async () => {
+    const p = player({ loadWasm: async () => null });
+    await p.attach(container);
+    expect(p.status).toBe("unavailable");
+    expect(p.canRestart).toBe(false);
   });
 
   it("reloads the model that is shown, not one that failed to open, after a lost GPU", async () => {

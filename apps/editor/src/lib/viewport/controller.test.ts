@@ -151,6 +151,30 @@ describe("ViewportController", () => {
     expect(pending).toHaveLength(2);
   });
 
+  it("says it is waiting for the GPU until the WebGL context is restored", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      pending[0]?.resolve(fakePuppet().puppet);
+      await attached;
+      const canvas = pending[0]?.canvas;
+      canvas?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      expect(controller.status).toBe("loading");
+      expect(controller.message).toBe(t("viewport.gpuWaiting"));
+      canvas?.dispatchEvent(new Event("webglcontextrestored"));
+      await settle();
+      pending[1]?.resolve(fakePuppet().puppet);
+      await settle();
+      expect(controller.status).toBe("ready");
+      expect(controller.message).toBeNull();
+      expect(controller.canRestart).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("stops drawing and says so after losing the WebGL context repeatedly", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let now = 0;
@@ -174,6 +198,20 @@ describe("ViewportController", () => {
       expect(controller.puppet).toBeNull();
       expect(controller.status).toBe("error");
       expect(controller.message).toBe(t("viewport.gpuLostRepeatedly"));
+      expect(controller.canRestart).toBe(true);
+
+      // 「作り直す」で同じ場所に作り直す (回数は数え直す)。
+      const restarting = controller.restart();
+      expect(controller.canRestart).toBe(false);
+      expect(controller.status).toBe("loading");
+      await settle();
+      expect(pending).toHaveLength(MAX_RESTARTS + 2);
+      const restarted = fakePuppet();
+      pending[MAX_RESTARTS + 1]?.resolve(restarted.puppet);
+      await restarting;
+      expect(controller.puppet).toBe(restarted.puppet);
+      expect(controller.status).toBe("ready");
+      expect(controller.message).toBeNull();
     } finally {
       warn.mockRestore();
       clock.mockRestore();

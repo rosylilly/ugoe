@@ -70,7 +70,24 @@ avatar.clearTracking();
 - 画面外にあるとき (IntersectionObserver) と `paused` の間は `requestAnimationFrame` を回しません。
 - GPU を失ったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直してモデルを読み直します (パラメータの値は引き継ぐ)。
   WebGL2 では、canvas の `webglcontextlost` で描くのを止め、`webglcontextrestored` を待ってから作り直します
-  (`puppet.is_lost()` も `true` になりますが、復元を待つために `preventDefault` するので、要素も canvas のイベントを聞きます)。前の作り直しから 1 分以内に失うことが続き、4 回目になったら、作り直さずに `error` を送ります。
+  (`puppet.is_lost()` も `true` になりますが、復元を待つために `preventDefault` するので、要素も canvas のイベントを聞きます)。
+  復元が 5 秒待っても届かなければ、新しい canvas で作り直しを試します。作り直しで作れなければ (GPU がまだ戻っていない)、
+  5 秒ごとに試し直します。前の作り直しから 1 分以内に失う・作れないことが続き、4 回目になったら、作り直さずに `error` を送ります。
+- GPU を失って戻るのを待ち始めたら (WebGL2 の復元を待つ・作り直しを試し直すのを待つ)、`gpulost` を送り、`waitingForGpu` が
+  `true` になります。作り直せたら (`ready` が解決したら) と諦めたら (`error`) `false` に戻ります。待つ間に
+  「GPU の復元を待っています」などを出すのに使います。
+
+  ```ts
+  avatar.addEventListener("gpulost", async () => {
+    showMessage("GPU の復元を待っています");
+    try {
+      await avatar.ready; // 作り直せた
+      hideMessage();
+    } catch {
+      showRetryButton(() => avatar.restart()); // 続けて失って諦めた
+    }
+  });
+  ```
 - ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
   `src` を変えたり `load()` を呼んだりして置き換わった取得は中断します (`AbortController`)。
 - 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
@@ -81,7 +98,7 @@ avatar.clearTracking();
   - その状態では、作成を待つ `load()` も reject し、後から呼んだ `load()` も待たずに reject します。`src` などの属性は覚えておきます。
   - やり直すには `avatar.restart()` を呼ぶか、`backend` を変えるか、ページから外して戻します。最後に読み込めたモデル
     (取得中の `src` があればその結果) を読み直し、パラメータの値は引き継ぎます。`restart()` は作り直しの回数も数え直します。
-  - 作り直しを始めると、`ready` は新しい `WebPuppet` を待つ Promise に変わります (`await avatar.ready` は作り直すたびに取り直す)。
+  - 作り直しを始めると (`gpulost` を送ったときも)、`ready` は新しい `WebPuppet` を待つ Promise に変わります (`await avatar.ready` は作り直すたびに取り直す)。
 
   ```ts
   try {
@@ -92,7 +109,8 @@ avatar.clearTracking();
   ```
 
 - 別の名前で登録するなら、`@ugoe/runtime/element` の代わりに `defineUgoeAvatar("my-avatar")` を呼びます。
-- イベントの型は `UgoeAvatarElementEventMap` (`load`: `CustomEvent<UgoeAvatarLoadDetail>`、`error`: `CustomEvent<UgoeAvatarErrorDetail>`)。
+- イベントの型は `UgoeAvatarElementEventMap` (`load`: `CustomEvent<UgoeAvatarLoadDetail>`、`error`: `CustomEvent<UgoeAvatarErrorDetail>`、
+  `gpulost`: `CustomEvent<null>`)。
   `UgoeAvatarElement` の `addEventListener` / `removeEventListener` はこれで `e.detail` を型付けします
   (要素を `HTMLElement` として持っているときは `UgoeAvatarElement` にしてから呼びます)。
 

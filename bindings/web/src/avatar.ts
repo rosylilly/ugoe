@@ -14,6 +14,8 @@
 // JS からは `setParameter` / `parameters` / `load` / `setTracking` / `restart` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
 // 作成に失敗したときと GPU を続けて失って諦めたときは、`error` を送って `ready` を reject する。`restart()`・`backend` の変更・
 // 繋ぎ直しで作り直す。
+// GPU を失って戻るのを待ち始めたら `gpulost` を送る (WebGL2 の復元を待つ・作り直しで作れずに試し直しを待つ)。WebGL2 の
+// 復元が `RESTORE_TIMEOUT_MS` 待っても届かなければ、新しい canvas で作り直しを試す (T0938。@ugoe/player の PuppetSurface と同じ)。
 // フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
 
@@ -54,6 +56,8 @@ export interface UgoeAvatarErrorDetail {
 export interface UgoeAvatarElementEventMap extends Omit<HTMLElementEventMap, "load" | "error"> {
   load: CustomEvent<UgoeAvatarLoadDetail>;
   error: CustomEvent<UgoeAvatarErrorDetail>;
+  /** GPU を失って、戻るのを待ち始めた (`detail` は無い。戻ったら `ready` が解決する)。 */
+  gpulost: CustomEvent<null>;
 }
 
 type ModelData = ArrayBuffer | Uint8Array | string;
@@ -62,6 +66,11 @@ type ModelData = ArrayBuffer | Uint8Array | string;
 const MAX_RESTARTS = 3;
 /** 前の作り直しからこれ (ミリ秒) より後に失ったら、続けて失ったとは数えない (スリープからの復帰などで時々失うため)。 */
 const RESTART_WINDOW_MS = 60_000;
+/**
+ * WebGL2 のコンテキストを失ってから復元を待つ時間 (ミリ秒)。届かなければ新しい canvas で作り直しを試す。作り直しで
+ * 作れなかったときに、次に試すまで待つ時間も同じ (T0938)。
+ */
+const RESTORE_TIMEOUT_MS = 5_000;
 /** 1 フレームで進める時間の上限 (秒)。タブが裏にあった後などに物理が飛ばないようにする。 */
 const MAX_DT = 0.1;
 
@@ -166,6 +175,12 @@ export class UgoeAvatarElement extends BaseElement {
   #restartedAt: number | null = null;
   /** WebGL2 のコンテキストを失って、復元を待っている (wgpu は WebGL2 の喪失を `is_lost` で知らせないため、canvas のイベントで知る)。 */
   #contextLost = false;
+  /** 復元を待つ時間切れ・作り直しを試し直すまでのタイマー。 */
+  #restoreTimer: ReturnType<typeof setTimeout> | null = null;
+  /** GPU を失った後の作り直しの途中 (作れなければ待って試し直す)。 */
+  #recovering = false;
+  /** GPU を失って、戻るのを待っている (`waitingForGpu`)。 */
+  #waitingForGpu = false;
   /** 最後に渡されたトラッキングの入力。モデルを読み直したら渡し直す。 */
   #tracking: TrackingInput | null = null;
   /** トラッキングの入力を渡してから、まだ `update` していない (`paused` の間も反映するため)。 */
@@ -229,11 +244,19 @@ export class UgoeAvatarElement extends BaseElement {
 
   /**
    * `WebPuppet` ができたら解決する。作成に失敗したときと、GPU を続けて失って作り直しを諦めたときは、その理由で reject する
-   * (`error` イベントも送る)。作り直し (`restart()`・`backend` の変更・GPU の喪失) や切断で、新しい `WebPuppet` を待つ
-   * Promise に変わる (前の Promise が解決か reject していたとき)。
+   * (`error` イベントも送る)。作り直し (`restart()`・`backend` の変更・GPU の喪失) や切断と、GPU が戻るのを待ち始めたとき
+   * (`gpulost`) に、新しい `WebPuppet` を待つ Promise に変わる (前の Promise が解決か reject していたとき)。
    */
   get ready(): Promise<WebPuppet> {
     return this.#ready.promise;
+  }
+
+  /**
+   * GPU を失って、戻るのを待っている (WebGL2 の復元を待つ・作り直しで作れずに試し直しを待つ)。待ち始めたら `gpulost` を
+   * 送る。作り直せたら (`ready` が解決したら) と、諦めたら (`error`) 偽に戻る。
+   */
+  get waitingForGpu(): boolean {
+    return this.#waitingForGpu;
   }
 
   /** 描画に使っている API (`"webgpu"` | `"webgl2"`)。作成前は `null`。 */
@@ -405,6 +428,8 @@ export class UgoeAvatarElement extends BaseElement {
   disconnectedCallback(): void {
     this.#connected = false;
     this.#failure = null;
+    this.#recovering = false;
+    this.#waitingForGpu = false;
     this.#stop();
   }
 
@@ -451,13 +476,26 @@ export class UgoeAvatarElement extends BaseElement {
     try {
       puppet = await this.#create(session);
     } catch (e) {
-      if (session === this.#session) this.#fail(e);
+      if (session !== this.#session) return;
+      // GPU を失った後の作り直しで作れなければ (GPU がまだ戻っていない)、待って試し直す (`#onLost` が回数を数える)。
+      if (this.#recovering) {
+        console.warn("ugoe-avatar: could not recreate the puppet; retrying:", e);
+        this.#waitForGpu();
+        this.#restoreTimer = setTimeout(() => {
+          this.#restoreTimer = null;
+          if (session === this.#session) this.#onLost();
+        }, RESTORE_TIMEOUT_MS);
+        return;
+      }
+      this.#fail(e);
       return;
     }
     if (session !== this.#session) {
       puppet.free();
       return;
     }
+    this.#recovering = false;
+    this.#waitingForGpu = false;
     this.#puppet = puppet;
     // WebPuppet はモデルを読み直しても保つので、作ったときに渡す。
     this.#applyMotionOverTracking();
@@ -506,13 +544,22 @@ export class UgoeAvatarElement extends BaseElement {
       if (canvas !== this.#canvas) return;
       // 既定の動作 (復元しない) を止めて、復元を待つ。失ったコンテキストには描かない
       e.preventDefault();
+      if (this.#contextLost) return;
       this.#contextLost = true;
       if (this.#frame) cancelAnimationFrame(this.#frame);
       this.#frame = 0;
+      // 復元が届かないまま待ち続けないよう、時間が来たら新しい canvas で作り直しを試す
+      this.#restoreTimer = setTimeout(() => {
+        this.#restoreTimer = null;
+        if (canvas !== this.#canvas || !this.#contextLost) return;
+        console.warn("ugoe-avatar: the WebGL context was not restored in time; recreating");
+        this.#onLost();
+      }, RESTORE_TIMEOUT_MS);
+      this.#waitForGpu();
     });
     canvas.addEventListener("webglcontextrestored", () => {
       // wgpu の資源は戻らないので、新しい canvas で作り直す
-      if (canvas === this.#canvas) this.#onLost();
+      if (canvas === this.#canvas && this.#contextLost) this.#onLost();
     });
     this.#resizeObserver?.disconnect();
     this.#resizeObserver?.observe(canvas);
@@ -575,6 +622,8 @@ export class UgoeAvatarElement extends BaseElement {
 
   #stop(): void {
     this.#session++;
+    if (this.#restoreTimer !== null) clearTimeout(this.#restoreTimer);
+    this.#restoreTimer = null;
     if (this.#frame) cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     this.#last = null;
@@ -591,11 +640,24 @@ export class UgoeAvatarElement extends BaseElement {
     if (this.#ready.settled) this.#ready = deferred();
   }
 
-  /** `WebPuppet` を作り直す。モデルは読み直し、パラメータの値は引き継ぐ。 */
-  #recreate(): void {
+  /**
+   * `WebPuppet` を作り直す。モデルは読み直し、パラメータの値は引き継ぐ。`recovering` は GPU を失った後の作り直し
+   * (作れなければ待って試し直す)。
+   */
+  #recreate(recovering = false): void {
     if (this.#puppet?.has_model()) this.#carry = this.parameters;
     this.#stop();
+    this.#recovering = recovering;
+    if (!recovering) this.#waitingForGpu = false;
     void this.#start();
+  }
+
+  /** GPU が戻るのを待ち始めた (`gpulost` を送る。`ready` は作り直した `WebPuppet` を待つ Promise に変える)。 */
+  #waitForGpu(): void {
+    if (this.#waitingForGpu) return;
+    this.#waitingForGpu = true;
+    if (this.#ready.settled) this.#ready = deferred();
+    this.dispatchEvent(new CustomEvent("gpulost", { detail: null }));
   }
 
   /** GPU を失ったので作り直す。続けて失ったら諦める (`restart()` までは作らない)。 */
@@ -608,11 +670,13 @@ export class UgoeAvatarElement extends BaseElement {
       // `restart()` で作り直したときに戻せるように、パラメータの値は覚えておく
       if (this.#puppet?.has_model()) this.#carry = this.parameters;
       this.#stop();
+      this.#recovering = false;
+      this.#waitingForGpu = false;
       this.#fail(new Error("the GPU device was lost repeatedly"));
       return;
     }
     this.#restarts++;
-    this.#recreate();
+    this.#recreate(true);
   }
 
   /** 作成の失敗・諦めたことを知らせる (`ready` と作成を待つ `load` を reject し、`error` を送る)。 */

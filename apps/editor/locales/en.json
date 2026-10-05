@@ -2731,7 +2731,9 @@
   },
   "viewport": {
     "loading": "Loading viewport…",
-    "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Restart the editor to draw again.",
+    "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Press “Try again” once the GPU is back.",
+    "gpuWaiting": "Waiting for the GPU to be restored…",
+    "restart": "Try again",
     "screenshot": {
       "label": "Screenshot",
       "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",

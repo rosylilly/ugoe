@@ -69,6 +69,8 @@ class FakePuppet {
 const runtime = vi.hoisted(() => ({
   /** 次の作成で投げる例外 (1 回だけ)。 */
   createError: null as Error | null,
+  /** 真の間は作成がいつも失敗する (GPU が戻っていない)。 */
+  failing: false,
   /** 読み込むと例外を投げるモデル。 */
   badModel: "bad",
 }));
@@ -81,6 +83,7 @@ vi.mock("./runtime.js", () => ({
       runtime.createError = null;
       throw e;
     }
+    if (runtime.failing) throw new Error("context lost");
     const puppet = new FakePuppet(canvas, options.backend ?? "auto");
     return puppet;
   },
@@ -129,9 +132,11 @@ function newAvatar(attributes: Record<string, string> = {}): Avatar {
 
 beforeEach(() => {
   runtime.createError = null;
+  runtime.failing = false;
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.replaceChildren();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -250,6 +255,119 @@ describe("<ugoe-avatar>", () => {
       await flush();
     }
     expect(errors.map((e) => e.message)).toEqual(["the GPU device was lost repeatedly"]);
+    expect(avatar.puppet).toBeNull();
+  });
+
+  /** 復元を待つ時間 (avatar.ts の `RESTORE_TIMEOUT_MS`)。 */
+  const RESTORE_TIMEOUT_MS = 5_000;
+
+  it("recreates on a new canvas when the WebGL context is not restored in time", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const avatar = newAvatar({ backend: "webgl2" });
+    let waits = 0;
+    avatar.addEventListener("gpulost", (e) => {
+      expectTypeOf(e).toEqualTypeOf<CustomEvent<null>>();
+      waits++;
+    });
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    const first = fake(avatar.puppet);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    // 待ち始めたことはすぐ知らせ、`ready` は作り直した WebPuppet を待つ。
+    expect(waits).toBe(1);
+    expect(avatar.waitingForGpu).toBe(true);
+    const recreated = avatar.ready;
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS - 1);
+    expect(avatar.puppet).toBe(first);
+    await vi.advanceTimersByTimeAsync(1);
+    const second = fake(await recreated);
+    expect(second).not.toBe(first);
+    expect(second.canvas).not.toBe(first.canvas);
+    expect(first.freed).toBe(true);
+    expect(second.model).toBe("model-a");
+    expect(avatar.waitingForGpu).toBe(false);
+    // 遅れて届いた古い canvas の復元は無視する。
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    expect(avatar.puppet).toBe(second);
+  });
+
+  it("does not time out once the WebGL context is restored", async () => {
+    const avatar = newAvatar({ backend: "webgl2" });
+    document.body.append(avatar);
+    const first = fake(await avatar.ready);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    const second = fake(await avatar.ready);
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 2);
+    expect(avatar.puppet).toBe(second);
+  });
+
+  it("retries a recreation that fails until the GPU is back", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: Error[] = [];
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    avatar.setParameter("AngleX", 15);
+    const first = fake(avatar.puppet);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    runtime.failing = true;
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(avatar.puppet).toBeNull();
+    expect(avatar.waitingForGpu).toBe(true);
+    expect(errors).toEqual([]);
+    runtime.failing = false;
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    const puppet = fake(await avatar.ready);
+    expect(puppet.model).toBe("model-a");
+    expect(puppet.values.get("AngleX")).toBe(15);
+    expect(avatar.waitingForGpu).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("gives up when the recreation keeps failing", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: Error[] = [];
+    let waits = 0;
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    avatar.addEventListener("gpulost", () => waits++);
+    document.body.append(avatar);
+    const first = fake(await avatar.ready);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    runtime.failing = true;
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    // 時間切れで 1 回、試し直しで 2 回作ろうとして、4 回目で諦める (1 分に 4 回)。
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 4);
+    expect(errors.map((e) => e.message)).toEqual(["the GPU device was lost repeatedly"]);
+    expect(waits).toBe(1);
+    expect(avatar.waitingForGpu).toBe(false);
+    await expect(avatar.ready).rejects.toThrow("the GPU device was lost repeatedly");
+    // 諦めた後は試さない。
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 4);
+    expect(errors).toHaveLength(1);
+
+    runtime.failing = false;
+    avatar.restart();
+    expect(fake(await avatar.ready)).not.toBeNull();
+  });
+
+  it("stops waiting for the GPU when disconnected", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const avatar = newAvatar({ backend: "webgl2" });
+    document.body.append(avatar);
+    const first = fake(await avatar.ready);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    avatar.remove();
+    expect(avatar.waitingForGpu).toBe(false);
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 2);
     expect(avatar.puppet).toBeNull();
   });
 

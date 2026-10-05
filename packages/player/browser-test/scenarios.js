@@ -1,9 +1,9 @@
-// PuppetSurface と Player のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936・T0939)。
+// PuppetSurface と Player のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936・T0939・T0938)。
 //
 // 本物の wasm (/wasm/ugoe_wasm.js) とヘッドレスの Chrome の WebGL2 (SwiftShader) で、PuppetSurface (/player.js。
-// @ugoe/player を Vite でまとめたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935)・諦め・破棄・
-// devicePixelRatio の追従を確かめる。Player は、作り直しでモデル・モジュール・値を戻すことと、倍率が変わったときの
-// ビューと読み戻しを確かめる (`player-*`)。順序の細部は src/surface.test.ts・player*.test.ts が偽の wasm で
+// @ugoe/player を Vite でまとめたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935。復元が届かなければ
+// 時間切れで作り直す。T0938)・諦めと `restart`・破棄・devicePixelRatio の追従を確かめる。Player は、作り直しと
+// 「作り直す」(`restart`) でモデル・モジュール・値を戻すことと、倍率が変わったときのビューと読み戻しを確かめる (`player-*`)。順序の細部は src/surface.test.ts・player*.test.ts が偽の wasm で
 // 確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
 // - `WebPuppet.create` と `free` を包んで、生きている WebPuppet を数える (GPU の資源が残らないことを確かめる)。
@@ -12,7 +12,13 @@
 // - devicePixelRatio だけの変化は、run.mjs が出す `setDevicePixelRatio` (CDP の `Emulation.setDeviceMetricsOverride`) で起こす (T0939)。
 // - `window.runScenarios(names)` が結果 ([{name, ok, error}]) を返す (names が null ならすべて)。
 
-import { GpuLostRepeatedlyError, MAX_RESTARTS, Player, PuppetSurface } from "/player.js";
+import {
+  GpuLostRepeatedlyError,
+  MAX_RESTARTS,
+  Player,
+  PuppetSurface,
+  RESTORE_TIMEOUT_MS,
+} from "/player.js";
 import init, { WebPuppet } from "/wasm/ugoe_wasm.js";
 
 const MODEL = "/samples/avatar.ugoe";
@@ -22,7 +28,7 @@ const DRESS_UP_MODULE = "/samples/dress-up/cat-ears.ugoemod";
 /** Player が覚えるものの localStorage の接頭辞 (シナリオの後に消す)。 */
 const STORAGE_PREFIX = "player-browser-test";
 /** 1 つの待ち (作成・作り直し) の上限 (ミリ秒)。SwiftShader の作成は数秒かかることがある。 */
-const WAIT_MS = 30_000;
+const WAIT_MS = 30_000 + RESTORE_TIMEOUT_MS;
 
 // --- 生きている WebPuppet を数える ---
 
@@ -131,7 +137,7 @@ function stage() {
  */
 async function surfaceWithHost() {
   const bytes = await modelBytes();
-  const log = { created: [], failed: [], lost: 0, released: 0, pixelRatioChanged: 0 };
+  const log = { created: [], failed: [], lost: 0, waiting: 0, released: 0, pixelRatioChanged: 0 };
   const surface = new PuppetSurface({
     loadWasm: async () => ({ WebPuppet }),
     created(puppet, recovered) {
@@ -145,6 +151,9 @@ async function surfaceWithHost() {
     },
     lost() {
       log.lost++;
+    },
+    waiting() {
+      log.waiting++;
     },
     released() {
       log.released++;
@@ -221,6 +230,7 @@ async function loseContext(container) {
 async function loseAndRestore(surface, container, log) {
   const before = surface.puppet;
   const createdBefore = log.created.length;
+  const failedBefore = log.failed.length;
   const ext = await loseContext(container);
   await until(() => surface.awaitingRestore, "webglcontextlost");
   check(before.is_lost(), "is_lost() is false after the context was lost");
@@ -231,7 +241,7 @@ async function loseAndRestore(surface, container, log) {
   check(log.created.length === createdBefore, "created was called before the restore");
   ext.restoreContext();
   await until(
-    () => (surface.puppet !== before && !surface.recovering) || log.failed.length > 0,
+    () => (surface.puppet !== before && !surface.recovering) || log.failed.length > failedBefore,
     "the recreation after webglcontextrestored",
   );
   return surface.puppet;
@@ -358,6 +368,62 @@ const scenarios = {
     surface.detach();
   },
 
+  /**
+   * WebGL2 のコンテキストを失ったまま復元が届かなければ、すぐ `waiting` で知らせ、`RESTORE_TIMEOUT_MS` の後に新しい
+   * canvas で作り直して描く (T0938)。
+   */
+  async "context-loss-timeout"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    check((await surface.attach(container)) === "ready", "attach failed");
+    const before = surface.puppet;
+    const oldCanvas = canvasesIn(container)[0];
+    await loseContext(container);
+    await until(() => surface.awaitingRestore, "webglcontextlost");
+    check(log.waiting === 1, `waiting was called ${log.waiting} times`);
+    const lostAt = performance.now();
+    // 復元しない。時間切れまでは作り直さない
+    await until(
+      () => surface.puppet !== before && !surface.recovering,
+      "the recreation on timeout",
+    );
+    const waited = performance.now() - lostAt;
+    check(waited >= RESTORE_TIMEOUT_MS - 100, `recreated after ${waited.toFixed(0)} ms`);
+    check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+    check(log.lost === 1, `lost was called ${log.lost} times`);
+    const last = log.created.at(-1);
+    check(log.created.length === 2 && last.recovered, "not recovered");
+    const canvases = canvasesIn(container);
+    check(canvases.length === 1 && canvases[0] !== oldCanvas, "the canvas was not replaced");
+    check(!surface.puppet.is_lost() && surface.puppet.has_model(), "the new puppet is not usable");
+    check(live.size === 1, `${live.size} live puppets`);
+    expectDrawn(surface, container, "after the timeout");
+    surface.detach();
+  },
+
+  /** 続けて失って諦めた後、`restart` で同じ container に作り直して描く (回数は数え直す。T0938)。 */
+  async "restart-after-giving-up"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    check((await surface.attach(container)) === "ready", "attach failed");
+    for (let round = 0; round <= MAX_RESTARTS; round++)
+      await loseAndRestore(surface, container, log);
+    check(log.failed[0] instanceof GpuLostRepeatedlyError, `failed with ${log.failed[0]}`);
+    check(surface.puppet === null, "the puppet remains after giving up");
+
+    await surface.restart();
+    check(log.failed.length === 1, `failed was called ${log.failed.length} times`);
+    check(surface.puppet !== null && log.created.at(-1).recovered, "not restarted");
+    check(canvasesIn(container).length === 1, `${canvasesIn(container).length} canvases`);
+    check(live.size === 1, `${live.size} live puppets`);
+    expectDrawn(surface, container, "after restart");
+    // 回数は数え直したので、もう一度失っても作り直す
+    await loseAndRestore(surface, container, log);
+    check(log.failed.length === 1, "gave up right after restart");
+    expectDrawn(surface, container, "after a loss after restart");
+    surface.detach();
+  },
+
   /** 作っている間の `detach` と、続けての `attach`。遅れてできた WebPuppet と canvas は残らない。 */
   async "detach-while-creating"() {
     const container = stage();
@@ -441,6 +507,84 @@ const scenarios = {
     }
     player.detach();
     check(canvasesIn(container).length === 0, "the canvas remains after detach");
+  },
+
+  /**
+   * Player は WebGL2 のコンテキストを失ったら `waitingForGpu` になり、復元が届かなければ時間切れで作り直して描く。
+   * 続けて失って諦めたら `canRestart` になり、`restart` でモデル・モジュール・値を戻して描く (T0938)。
+   */
+  async "player-timeout-restart"() {
+    const container = stage();
+    const player = newPlayer();
+    player.setAutoIdle(false);
+    player.setAutoEyeBlink(false);
+    player.setBackground("#000000", true);
+    await player.attach(container);
+    const module = { name: "cat-ears.ugoemod", bytes: await fileBytes(DRESS_UP_MODULE) };
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) }, [
+      { file: module, attach: true },
+    ]);
+    check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+    const attached = () => player.modules.filter((m) => m.attached).map((m) => m.name);
+    const moduleName = attached()[0];
+    check(moduleName !== undefined, "no module is attached");
+    player.setParameter("MouthForm", 0.7);
+    await frames(2);
+
+    /** モデル・モジュール・値が戻って描いている。 */
+    const expectRestored = async (when) => {
+      check(player.status === "ready", `${when}: status ${player.status} (${player.error})`);
+      check(player.modelName === "dress-up.ugoe", `${when}: model ${player.modelName}`);
+      check(
+        attached().length === 1 && attached()[0] === moduleName,
+        `${when}: attached modules: ${attached().join(", ")}`,
+      );
+      await frames(2);
+      check(near(player.values.MouthForm, 0.7), `${when}: MouthForm is ${player.values.MouthForm}`);
+      check(live.size === 1, `${when}: ${live.size} live puppets`);
+      await expectCaptured(player, when);
+    };
+
+    // 復元が届かない: すぐ待っていると出し、時間切れで作り直す
+    const oldCanvas = canvasesIn(container)[0];
+    await loseContext(container);
+    await until(() => player.waitingForGpu, "waitingForGpu after the loss");
+    await until(
+      () =>
+        canvasesIn(container)[0] !== oldCanvas &&
+        player.status === "ready" &&
+        !player.waitingForGpu,
+      "the recreation of the player on timeout",
+    );
+    await expectRestored("after the timeout");
+
+    // 続けて失って諦める (復元はすぐ届く)
+    for (let round = 0; round < MAX_RESTARTS; round++) {
+      const canvas = canvasesIn(container)[0];
+      const ext = await loseContext(container);
+      await until(() => player.waitingForGpu, `round ${round}: waitingForGpu`);
+      ext.restoreContext();
+      // 待つ間も status は ready のままなので、待ち終わった (`waitingForGpu` が偽) ことも見る
+      await until(
+        () =>
+          !player.waitingForGpu &&
+          ((canvasesIn(container)[0] !== canvas && player.status === "ready") ||
+            player.status === "unavailable"),
+        `round ${round}: the recreation`,
+      );
+    }
+    check(player.status === "unavailable", `status after giving up is ${player.status}`);
+    check(player.canRestart, "canRestart is false after giving up");
+    check(!player.waitingForGpu, "still waiting after giving up");
+    check(canvasesIn(container).length === 0, "the canvas remains after giving up");
+
+    // 「作り直す」
+    await player.restart();
+    await until(() => player.status === "ready" || player.status === "unavailable", "restart");
+    check(!player.canRestart, "canRestart remains after restart");
+    check(player.error === null, `error after restart: ${player.error}`);
+    await expectRestored("after restart");
+    player.detach();
   },
 
   /**

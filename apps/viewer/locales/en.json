@@ -135,7 +135,9 @@
   "viewport": {
     "aria": "Model view",
     "empty": "Drop a .ugoe or model.json here, or choose one with Open",
-    "starting": "Getting ready…"
+    "starting": "Getting ready…",
+    "gpuWaiting": "Waiting for the GPU to be restored…",
+    "restart": "Try again"
   },
   "settings": {
     "title": "Settings",

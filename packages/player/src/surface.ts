@@ -8,9 +8,11 @@
 //   `is_lost()` で分かる (WebGL2 は ugoe-wasm が canvas の `webglcontextlost` で印を立てる)。WebGPU は描くたびの
 //   `checkLost` で気づいてすぐ作り直す。WebGL2 は canvas の `webglcontextlost` を `preventDefault` して
 //   `webglcontextrestored` を待ってから作り直す (`<ugoe-avatar>` と同じ。T0935)。待っている間は描かない。
+//   `RESTORE_TIMEOUT_MS` 待っても復元が届かなければ、新しい canvas で作り直しを試す (T0938)。作り直しで作れなければ
+//   (GPU がまだ戻っていない)、同じだけ待って試し直す。待ち始めたら `waiting` で知らせる。
 //   作り直しは一度に 1 つだけで、捨てた WebPuppet の印やイベントは見ないので、2 つの知らせで 2 回作り直すことはない。
 // - 前の作り直しから `RESTART_WINDOW_MS` 以内に失うことが続き、`MAX_RESTARTS` 回を超えたら、作り直さずに
-//   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` まで作らない)。
+//   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` か `restart` まで作らない)。
 // - devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
 //   `matchMedia` で聞いて描画バッファの大きさを合わせ直す。
 
@@ -44,6 +46,11 @@ export interface SurfaceHost<P extends SurfacePuppet> {
   failed(error: unknown): void;
   /** GPU を失ったので作り直す (`puppet` はまだ捨てていない。値を読むことはできる)。 */
   lost?(puppet: P): void;
+  /**
+   * GPU を失って、戻るのを待ち始めた (WebGL2 の復元を待つ・作り直しで作れずに試し直しを待つ)。次の `created` か
+   * `failed` まで描かない。
+   */
+  waiting?(): void;
   /** WebPuppet を捨てた (`detach` と作り直し)。 */
   released?(): void;
   /** devicePixelRatio だけが変わり、描画バッファの大きさを合わせ直した。 */
@@ -56,6 +63,11 @@ export interface SurfaceHost<P extends SurfacePuppet> {
 export const MAX_RESTARTS = 3;
 /** 前の作り直しからこれ (ミリ秒) より後に失ったら、続けて失ったとは数えない (スリープからの復帰などで時々失うため)。 */
 export const RESTART_WINDOW_MS = 60_000;
+/**
+ * WebGL2 のコンテキストを失ってから復元 (`webglcontextrestored`) を待つ時間 (ミリ秒)。届かなければ新しい canvas で作り直しを
+ * 試す。作り直しで作れなかったときに、次に試すまで待つ時間も同じ (`<ugoe-avatar>` と同じ。T0938)。
+ */
+export const RESTORE_TIMEOUT_MS = 5_000;
 
 /** GPU を続けて失ったので、作り直しを諦めた (`SurfaceHost.failed` に渡す)。 */
 export class GpuLostRepeatedlyError extends Error {
@@ -67,6 +79,11 @@ export class GpuLostRepeatedlyError extends Error {
 
 /** `attach` の結果。`superseded` は待っている間に `detach` か次の `attach` があった。 */
 export type AttachResult = "ready" | "missing" | "failed" | "superseded";
+
+/** `ms` ミリ秒待つ。 */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** 今の devicePixelRatio (無ければ 1)。 */
 function currentPixelRatio(): number {
@@ -93,6 +110,8 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #pixelRatioQuery: MediaQueryList | null = null;
   /** WebGL2 のコンテキストを失って、`webglcontextrestored` を待っている。 */
   #awaitingRestore = false;
+  /** 復元を待つ時間切れ (`RESTORE_TIMEOUT_MS`) のタイマー。 */
+  #restoreTimer: ReturnType<typeof setTimeout> | null = null;
   /** 続けて作り直した回数と、前に作り直し始めた時刻 (`performance.now()`)。`attach` で戻す。 */
   #restarts = 0;
   #restartedAt: number | null = null;
@@ -180,14 +199,47 @@ export class PuppetSurface<P extends SurfacePuppet> {
     try {
       this.#host.lost?.(puppet);
       this.#release();
-      if (!this.#countRestart()) {
-        this.#host.failed(new GpuLostRepeatedlyError());
-        return;
-      }
-      await this.#create(token, true);
+      await this.#recreate(token);
     } finally {
       if (this.#recovering === token) this.#recovering = null;
     }
+  }
+
+  /**
+   * 作り直しを諦めた後 (`failed(GpuLostRepeatedlyError)`) に、同じ container で作り直す (利用者の「作り直す」ボタン)。
+   * 作り直しの回数は数え直し、`created(puppet, true)` で知らせる (使う側はモデルなどを渡し直す)。WebPuppet があれば
+   * `lost` で知らせてから捨てる。`attach` していなければ何もしない。
+   */
+  async restart(): Promise<void> {
+    if (this.#wasm === null || this.#container === null) return;
+    this.#token++;
+    const token = this.#token;
+    this.#recovering = token;
+    this.#restarts = 0;
+    this.#restartedAt = null;
+    try {
+      if (this.#puppet !== null) this.#host.lost?.(this.#puppet);
+      this.#release();
+      await this.#recreate(token);
+    } finally {
+      if (this.#recovering === token) this.#recovering = null;
+    }
+  }
+
+  /**
+   * 捨てた WebPuppet の代わりを新しい canvas で作る。作れなければ (GPU がまだ戻っていない) `RESTORE_TIMEOUT_MS` 待って
+   * 試し直す。続けて `MAX_RESTARTS` 回を超えたら `failed(GpuLostRepeatedlyError)` で知らせる。
+   */
+  async #recreate(token: number): Promise<void> {
+    // 試し直しは `#countRestart` が数えるが、時計に頼らずに回数でも止める。
+    for (let attempt = 0; attempt <= MAX_RESTARTS; attempt++) {
+      if (!this.#countRestart()) break;
+      if ((await this.#create(token, true)) !== "failed") return;
+      this.#host.waiting?.();
+      await sleep(RESTORE_TIMEOUT_MS);
+      if (token !== this.#token) return;
+    }
+    this.#host.failed(new GpuLostRepeatedlyError());
   }
 
   /** 作り直しを 1 回数える。続けて失って上限を超えたら `false` (諦める)。 */
@@ -218,6 +270,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
         canvas.remove();
         if (token !== this.#token) return "superseded";
         if (backend === "auto") console.warn("ugoe: falling back to WebGL2:", e);
+        else if (recovered) console.warn("ugoe: could not recreate the WebPuppet:", e);
         lastError = e;
         continue;
       }
@@ -235,7 +288,8 @@ export class PuppetSurface<P extends SurfacePuppet> {
       await this.#host.created(puppet, recovered);
       return token === this.#token ? "ready" : "superseded";
     }
-    this.#host.failed(lastError);
+    // 作り直しで作れなかったときは、`#recreate` が試し直す。
+    if (!recovered) this.#host.failed(lastError);
     return "failed";
   }
 
@@ -243,6 +297,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
     const puppet = this.#puppet;
     this.#puppet = null;
     this.#awaitingRestore = false;
+    this.#clearRestoreTimer();
     this.#canvas?.removeEventListener("webglcontextlost", this.#onContextLost);
     this.#canvas?.removeEventListener("webglcontextrestored", this.#onContextRestored);
     this.#canvas?.remove();
@@ -260,9 +315,26 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #onContextLost = (event: Event): void => {
     if (event.target !== this.#canvas || this.recovering) return;
     event.preventDefault();
+    if (this.#awaitingRestore) return;
     this.#awaitingRestore = true;
     console.warn("ugoe: WebGL context lost; waiting for it to be restored");
+    this.#restoreTimer = setTimeout(this.#onRestoreTimeout, RESTORE_TIMEOUT_MS);
+    this.#host.waiting?.();
   };
+
+  /** 復元が `RESTORE_TIMEOUT_MS` 待っても届かない。新しい canvas で作り直しを試す。 */
+  #onRestoreTimeout = (): void => {
+    this.#restoreTimer = null;
+    if (!this.#awaitingRestore) return;
+    console.warn("ugoe: WebGL context was not restored in time; recreating");
+    this.#awaitingRestore = false;
+    void this.recover();
+  };
+
+  #clearRestoreTimer(): void {
+    if (this.#restoreTimer !== null) clearTimeout(this.#restoreTimer);
+    this.#restoreTimer = null;
+  }
 
   /**
    * WebGL2 のコンテキストが戻った。wgpu の資源は戻らないので、新しい canvas で作り直す (要求されたときだけ描くホスト
@@ -271,6 +343,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #onContextRestored = (event: Event): void => {
     if (event.target !== this.#canvas || !this.#awaitingRestore) return;
     this.#awaitingRestore = false;
+    this.#clearRestoreTimer();
     void this.recover();
   };
 

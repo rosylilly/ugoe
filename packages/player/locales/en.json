@@ -102,7 +102,7 @@
     "wasmMissing": "ugoe-wasm is not built.",
     "notModel": "{{name}}: this is not a .ugoe or JSON model or a .ugoemod module.",
     "renderStart": "Cannot start drawing: {{message}}",
-    "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Restart the app (or reload the page) to draw again.",
+    "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Press “Try again” once the GPU is back.",
     "noFollowerApi": "ugoe-wasm has no follower API (WebPuppet.follow). Rebuild ugoe-wasm."
   },
   "remembered": {

@@ -124,7 +124,13 @@ const browser = await chromium.launch({
   headless: true,
   // GPU の無い環境 (CI・WSL) でも同じように動くよう、WebGL2 はソフトウェアの実装 (SwiftShader) で描く。
   // WebGPU は有効にしないので、PuppetSurface の "auto" は WebGL2 で作る。
-  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+  // 作り直しを繰り返すシナリオは、捨てた canvas のコンテキストが GC されるまで数に入るので、上限 (16) に当たって
+  // 今のコンテキストを失わないよう、上限を上げる (T0938)。
+  args: [
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--max-active-webgl-contexts=256",
+  ],
 });
 let failed = 0;
 /** ページのコンソール (wgpu の警告が多いので、画面には出さずに <out>/page.log に書く)。 */

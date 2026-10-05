@@ -335,11 +335,14 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 ```
 
 - **シナリオ (`PuppetSurface`):** 作って描いて大きさを変えて捨てる・WebGL2 のコンテキストを失ったら復元を待って新しい canvas で作り直す (2 回続けて)・
-  続けて失って諦め、次の `attach` で作れる・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
+  復元が届かなければ `waiting` で知らせ、`RESTORE_TIMEOUT_MS` の後に新しい canvas で作り直す (`context-loss-timeout`)・
+  続けて失って諦め、次の `attach` で作れる・諦めた後の `restart` で作り直し、回数も数え直す (`restart-after-giving-up`)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
   描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
   WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
 - **シナリオ (`Player`):** 着せ替えの見本 (`dress-up.ugoe` とモジュール 1 つ) を開いてパラメータを動かし、WebGL2 のコンテキストを失って復元したら、
   新しい WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描く (`capture` の読み戻しで確かめる。2 回続けて。`player-loss-restore`)。
+  失ったら `waitingForGpu` になり、復元が届かなければ時間切れで作り直し、続けて失って諦めたら `canRestart` になり、`restart` で
+  モデル・モジュール・値を戻して描く (`player-timeout-restart`)。
   devicePixelRatio だけが変わったら、canvas と読み戻しの大きさが新しい倍率になり、CSS ピクセルで見たビュー (`view`) は動かず、
   CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
@@ -348,6 +351,9 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   メディアの型を `""` と `"screen"` (どちらも画面) で交互に切り替えて評価し直させます。届いた `change` で聞き直す (`{once: true}` の後に
   新しい倍率の問い合わせを作る) 処理と描画バッファの大きさは本物で確かめますが、倍率の違う画面へウィンドウを移したときに本物の
   ブラウザ (と Tauri の WebView) が `change` を届けることは確かめていません (MDN の `matchMedia` の例にある、ブラウザの振る舞い)。
+- **WebGL のコンテキストの数 (T0938):** Chrome は生きている WebGL のコンテキストを 16 までにし、超えると古いものから失わせます。作り直しを
+  繰り返すシナリオでは、捨てた canvas のコンテキストも GC されるまで数に入り (復元したものは生き返る)、今のコンテキストが失われて
+  落ちることがあるので、run.mjs は Chrome を `--max-active-webgl-contexts=256` で起動します。
 - **テストが壊れを見つけること (T0939 で確かめた):** `surface.ts` で、倍率の問い合わせを `attach` で作らない・`change` の後に聞き直さない・
   `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
   作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。

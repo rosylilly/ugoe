@@ -5,6 +5,7 @@ import {
   MAX_RESTARTS,
   PuppetSurface,
   RESTART_WINDOW_MS,
+  RESTORE_TIMEOUT_MS,
   type SurfaceHost,
   type SurfacePuppet,
 } from "./surface";
@@ -64,6 +65,7 @@ function host(overrides: Partial<SurfaceHost<SurfacePuppet>> = {}) {
     created: (_puppet, recovered) => void log.push(recovered ? "recovered" : "created"),
     failed: (e) => void log.push(`failed ${e instanceof Error ? e.message : String(e)}`),
     lost: () => void log.push("lost"),
+    waiting: () => void log.push("waiting"),
     released: () => void log.push("released"),
     pixelRatioChanged: () => void log.push("pixelRatio"),
     canvasClass: "viewport-canvas",
@@ -89,6 +91,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -216,7 +219,8 @@ describe("PuppetSurface", () => {
     expect(pending).toHaveLength(1);
     expect(first.calls).toEqual(["resize 1x1"]);
     expect(surface.puppet).toBe(first.puppet);
-    expect(log).toEqual(["created"]);
+    // 待ち始めたことはすぐ知らせる (「GPU の復元を待っています」を出すため)。
+    expect(log).toEqual(["created", "waiting"]);
 
     lost?.dispatchEvent(new Event("webglcontextrestored"));
     expect(first.calls).toEqual(["resize 1x1", "free"]);
@@ -234,7 +238,7 @@ describe("PuppetSurface", () => {
     await settle();
     expect(surface.puppet).toBe(second.puppet);
     expect(surface.recovering).toBe(false);
-    expect(log).toEqual(["created", "lost", "released", "recovered"]);
+    expect(log).toEqual(["created", "waiting", "lost", "released", "recovered"]);
     // 作り直した後の古い canvas の知らせは無視する。
     lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
     lost?.dispatchEvent(new Event("webglcontextrestored"));
@@ -288,7 +292,8 @@ describe("PuppetSurface", () => {
     expect(surface.puppet).toBeNull();
     expect(surface.recovering).toBe(false);
     expect(pending[MAX_RESTARTS]?.canvas.removed).toBe(true);
-    expect(log.slice(-3)).toEqual([
+    expect(log.slice(-4)).toEqual([
+      "waiting",
       "lost",
       "released",
       "failed the GPU device was lost repeatedly",
@@ -388,6 +393,187 @@ describe("PuppetSurface", () => {
     expect(surface.puppet).toBeNull();
     expect(surface.recovering).toBe(false);
     expect(log).toEqual(["created", "lost", "released"]);
+  });
+
+  it("recreates on a new canvas when the WebGL context is not restored in time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+
+    const lost = pending[0]?.canvas;
+    lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    expect(log).toEqual(["created", "waiting"]);
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS - 1);
+    expect(pending).toHaveLength(1);
+    expect(surface.awaitingRestore).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(surface.awaitingRestore).toBe(false);
+    expect(lost?.removed).toBe(true);
+    expect(pending).toHaveLength(2);
+    pending[1]?.resolve(fakePuppet().puppet);
+    await settle();
+    expect(log).toEqual(["created", "waiting", "lost", "released", "recovered"]);
+    // 遅れて届いた古い canvas の復元は無視する。
+    lost?.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    expect(pending).toHaveLength(2);
+  });
+
+  it("does not time out once the WebGL context is restored", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet().puppet);
+    await attached;
+    const lost = pending[0]?.canvas;
+    lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    lost?.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    pending[1]?.resolve(fakePuppet().puppet);
+    await settle();
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 2);
+    expect(pending).toHaveLength(2);
+  });
+
+  it("retries a recreation that fails and gives up after the limit", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    // WebGL2 に落ちておく (作り直しは 1 回に 1 つの canvas)。
+    pending[0]?.reject(new Error("no WebGPU"));
+    await settle();
+    pending[1]?.resolve(fakePuppet().puppet);
+    await attached;
+
+    pending[1]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    for (let i = 0; i < MAX_RESTARTS; i++) {
+      expect(pending).toHaveLength(3 + i);
+      expect(pending[2 + i]?.backend).toBe("webgl2");
+      pending[2 + i]?.reject(new Error("context lost"));
+      await settle();
+      expect(pending[2 + i]?.canvas.removed).toBe(true);
+      // 次に試すまで待つ間も「待っている」。
+      expect(log[log.length - 1]).toBe("waiting");
+      await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    }
+    expect(pending).toHaveLength(2 + MAX_RESTARTS);
+    expect(log.slice(-1)).toEqual(["failed the GPU device was lost repeatedly"]);
+    expect(log.filter((entry) => entry.startsWith("failed"))).toHaveLength(1);
+    expect(surface.recovering).toBe(false);
+  });
+
+  it("recovers when a retried recreation succeeds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    const first = fakePuppet();
+    pending[0]?.resolve(first.puppet);
+    await attached;
+    first.puppet.lost = true;
+    expect(surface.checkLost()).toBe(true);
+    await settle();
+    // WebGPU も WebGL2 も、まだ作れない。
+    pending[1]?.reject(new Error("no device"));
+    await settle();
+    pending[2]?.reject(new Error("no context"));
+    await settle();
+    expect(log.slice(-1)).toEqual(["waiting"]);
+    expect(surface.recovering).toBe(true);
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    pending[3]?.resolve(fakePuppet().puppet);
+    await settle();
+    expect(surface.puppet).not.toBeNull();
+    expect(log).toEqual(["created", "lost", "released", "waiting", "recovered"]);
+  });
+
+  it("stops retrying when detached while waiting", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    const first = fakePuppet();
+    pending[0]?.resolve(first.puppet);
+    await attached;
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    surface.detach();
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS * 2);
+    expect(pending).toHaveLength(1);
+    expect(log).toEqual(["created", "waiting", "released"]);
+  });
+
+  it("restarts on the same container after giving up and counts again", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    // attach の前は何もしない。
+    await surface.restart();
+    expect(pending).toHaveLength(0);
+    const attached = surface.attach(container);
+    await settle();
+    let current = fakePuppet();
+    pending[0]?.resolve(current.puppet);
+    await attached;
+    for (let i = 0; i <= MAX_RESTARTS; i++) {
+      now += 1;
+      current.puppet.lost = true;
+      surface.checkLost();
+      await settle();
+      current = fakePuppet();
+      pending[i + 1]?.resolve(current.puppet);
+      await settle();
+    }
+    expect(surface.puppet).toBeNull();
+    expect(log[log.length - 1]).toBe("failed the GPU device was lost repeatedly");
+
+    const restarting = surface.restart();
+    await settle();
+    expect(pending).toHaveLength(MAX_RESTARTS + 2);
+    const restarted = fakePuppet();
+    pending[MAX_RESTARTS + 1]?.resolve(restarted.puppet);
+    await restarting;
+    expect(surface.puppet).toBe(restarted.puppet);
+    expect(log[log.length - 1]).toBe("recovered");
+    // 回数は数え直す (もう一度失っても作り直す)。
+    restarted.puppet.lost = true;
+    surface.checkLost();
+    await settle();
+    expect(pending).toHaveLength(MAX_RESTARTS + 3);
+  });
+
+  it("frees the current WebPuppet when restarting", async () => {
+    const { host: h, log } = host();
+    const surface = new PuppetSurface(h);
+    const attached = surface.attach(container);
+    await settle();
+    const first = fakePuppet();
+    pending[0]?.resolve(first.puppet);
+    await attached;
+    const restarting = surface.restart();
+    expect(first.calls).toEqual(["resize 1x1", "free"]);
+    expect(pending[0]?.canvas.removed).toBe(true);
+    await settle();
+    pending[1]?.resolve(fakePuppet().puppet);
+    await restarting;
+    expect(log).toEqual(["created", "lost", "released", "recovered"]);
   });
 
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {
