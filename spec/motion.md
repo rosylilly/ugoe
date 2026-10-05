@@ -338,9 +338,10 @@ Every frame, given the part opacity requests of motions for the parts of pose en
 1. In each group, among the entries whose part has a request with a value greater than 0, the entry
    with the largest value becomes the shown entry (the earlier entry on a tie). Without such requests
    the shown entry does not change (it may have been chosen by the host, below).
-2. The shown entry's opacity increases by `max(dt, 0) / fade_duration` (to 1 at once if
-   `fade_duration ≤ 0`), up to 1. Every other entry's opacity is limited to at most
-   `1 − (the shown entry's opacity)`.
+2. The shown entry's opacity increases by `dt / fade_duration` if `dt` is a finite number greater
+   than 0, and by nothing otherwise ([Host-supplied numbers](#host-supplied-numbers)); it becomes 1
+   at once if `fade_duration ≤ 0`, whatever `dt` is. It goes up to at most 1. Every other entry's
+   opacity is limited to at most `1 − (the shown entry's opacity)` (also when `dt` advances nothing).
 3. Each entry's opacity is written as a part opacity override with weight 1 to its `part` and to
    every part in its `links`.
 
@@ -453,9 +454,9 @@ part opacities and vertex positions are finite. A runtime handles these numbers 
 - A runtime that reports errors to the host (for example with result codes) MAY instead reject such
   a number: the call fails and changes nothing. Rejecting is only a different way of reporting; for
   the numbers it accepts, such a runtime follows the rules of this specification.
-- The players of motions, expressions, the eye blink and breathing advance only by a finite `dt`
-  greater than 0 ([Motion playback](#motion-playback), [Eye blink](#eye-blink),
-  [Breathing](#breathing)), and physics accumulates only a finite positive `dt`
+- The players of motions, expressions, the eye blink and breathing, and the fade of the pose, advance
+  only by a finite `dt` greater than 0 ([Motion playback](#motion-playback), [Eye blink](#eye-blink),
+  [Breathing](#breathing), [Pose](#pose)), and physics accumulates only a finite positive `dt`
   ([physics.md](physics.md#advancing-time)). The rule for `dt` above makes a frame consistent: every
   stage sees the same `dt`.
 - Values read from files are validated to be finite ([model.md](model.md#data-conventions)); the

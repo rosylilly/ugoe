@@ -505,7 +505,7 @@ export class PoseState {
       if (best >= 0) this.shown[gi] = best;
       const op = this.opacity[gi];
       const s = this.shown[gi];
-      op[s] = fade <= 0 ? 1 : Math.min(op[s] + Math.max(dt, 0) / fade, 1);
+      op[s] = fade <= 0 ? 1 : Math.min(op[s] + (advances(dt) ? dt / fade : 0), 1);
       op.forEach((o, i) => {
         if (i !== s) op[i] = Math.min(o, 1 - op[s]);
       });

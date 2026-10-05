@@ -100,7 +100,8 @@ impl PosePlayer {
             .filter_map(|(g, s)| g.entries.get(s.visible).map(|e| &e.part))
     }
 
-    /// `dt` 秒進める。
+    /// `dt` 秒進める。`dt` が 0 以下か有限値でない (NaN・無限大) ときはフェードを進めない
+    /// (表示する要素の選択と、ほかの要素の不透明度を抑えることは行う。spec/motion.md#pose)。
     ///
     /// `requests` はパーツごとの表示の要求 (モーションのパーツの不透明度のカーブの値)。
     /// 各グループで、要求の値が 0 より大きい要素のうち最大のもの (同じなら先の要素) を表示する。
@@ -115,7 +116,11 @@ impl PosePlayer {
     /// 要求の列を作らずに済む (`Puppet` が毎フレーム使う)。
     pub fn update_by(&mut self, dt: f32, mut request: impl FnMut(&PartId) -> Option<f32>) {
         let rate = if self.pose.fade_duration > 0.0 {
-            dt.max(0.0) / self.pose.fade_duration
+            if dt > 0.0 && dt.is_finite() {
+                dt / self.pose.fade_duration
+            } else {
+                0.0
+            }
         } else {
             f32::INFINITY
         };
@@ -193,6 +198,21 @@ mod tests {
         assert_eq!(opacity(&p, "ArmB"), 0.0);
         assert!(p.contains(&"ArmB".into()));
         assert!(!p.contains(&"SleeveA".into()));
+    }
+
+    /// 負か有限でない `dt` ではフェードを進めない (spec/motion.md#pose)。
+    #[test]
+    fn non_finite_or_negative_dt_does_not_advance_the_fade() {
+        for dt in [f32::INFINITY, f32::NAN, -1.0, 0.0] {
+            let mut p = player();
+            assert!(p.show(&"ArmB".into()));
+            p.update(0.125, &[]);
+            p.update(dt, &[]);
+            assert!(close(opacity(&p, "ArmB"), 0.25), "dt {dt}");
+            assert!(close(opacity(&p, "ArmA"), 0.75), "dt {dt}");
+            p.update(0.375, &[]);
+            assert_eq!(opacity(&p, "ArmB"), 1.0, "dt {dt}");
+        }
     }
 
     /// 切り替えは fade_duration (0.5 秒) でクロスフェードする。

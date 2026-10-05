@@ -4,12 +4,14 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { PartOverrides } from "../src/evaluate.ts";
 import {
   Breath,
   EyeBlink,
   MAX_BLINK_PHASES_PER_ADVANCE,
   MAX_LAPS_PER_ADVANCE,
   PlayingMotion,
+  PoseState,
 } from "../src/motion.ts";
 import type * as M from "../src/types.ts";
 
@@ -80,5 +82,56 @@ test("モーションは有限でない dt では進まない", () => {
     assert.deepEqual(m.advance(dt), []);
     assert.equal(m.time, 0);
     assert.equal(m.elapsed, 0);
+  }
+});
+
+test("ポーズは有限でない dt や負の dt ではフェードを進めない", () => {
+  const pose: M.Pose = {
+    fade_duration: 0.5,
+    groups: [
+      {
+        entries: [
+          { part: "A", links: [] },
+          { part: "B", links: ["B2"] },
+        ],
+      },
+    ],
+  };
+  for (const dt of [Number.POSITIVE_INFINITY, Number.NaN, -1, 0]) {
+    const p = new PoseState(pose);
+    // 半分までフェードしてから、有限でない dt のフレームを当てる。
+    p.frame(new Map([["B", 1]]), 0.25, new Map());
+    const overrides: PartOverrides = new Map();
+    p.frame(new Map([["B", 1]]), dt, overrides);
+    assert.deepEqual(p.opacity, [[0.5, 0.5]], `dt ${dt}`);
+    for (const [part, value] of [
+      ["A", 0.5],
+      ["B", 0.5],
+      ["B2", 0.5],
+    ] as const) {
+      assert.deepEqual(overrides.get(part), { value, weight: 1 }, `dt ${dt} ${part}`);
+    }
+    // 有限の dt が来れば続きからフェードする。
+    p.frame(new Map(), 0.25, new Map());
+    assert.deepEqual(p.opacity, [[0, 1]], `dt ${dt}`);
+  }
+});
+
+test("ポーズは fade_duration が 0 なら dt によらずすぐに切り替える", () => {
+  const pose: M.Pose = {
+    fade_duration: 0,
+    groups: [
+      {
+        entries: [
+          { part: "A", links: [] },
+          { part: "B", links: [] },
+        ],
+      },
+    ],
+  };
+  for (const dt of [Number.POSITIVE_INFINITY, Number.NaN, -1, 0, 1 / 60]) {
+    const p = new PoseState(pose);
+    p.frame(new Map([["B", 1]]), dt, new Map());
+    assert.deepEqual(p.opacity, [[0, 1]], `dt ${dt}`);
   }
 });
