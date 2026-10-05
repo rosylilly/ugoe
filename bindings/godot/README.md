@@ -252,6 +252,10 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 
 - 評価 (`ugoe::Puppet::update`) の結果を、描画可能要素ごとのキャンバスアイテム (`RenderingServer`) と `ShaderMaterial` で描く。
   描画順は draw index で決め、頂点位置は変わった要素だけ送り直す。
+- 要素とマスクのカバレッジは、読み込み時に `RenderingServer.mesh_*` でメッシュ (UV と頂点番号) を作ってキャンバスアイテムに 1 度だけ足し、
+  毎フレームは頂点の位置だけを `mesh_surface_update_vertex_region` で書き換える (T0460。`canvas_item_add_triangle_array` で
+  足し直すと、RenderingServer が呼ぶたびにポリゴンを作り直す)。キャンバスアイテムの矩形 (画面の外の選別) は位置から設定し直す。
+  裏面カリングの要素は描く三角形 (頂点番号) が変わるので、変わるたびに三角形の配列を足し直す。
 - テクスチャは読み込み時に乗算済みアルファに変換する (法線マップは変換しない)。式・合成モードの表し方は `src/shader.rs` の冒頭を参照。
 - KTX2 は Godot の `Image.load_ktx_from_buffer` で読み、PNG と同じく乗算する ([docs/spec/rendering.md#前提](../../docs/spec/rendering.md#前提))。
   - Godot 4.7 は `R8G8B8(A8)_SRGB` をリニアに変換して読み (8 ビットのまま。戻せない)、`R8G8B8(A8)_UNORM` は読めず、

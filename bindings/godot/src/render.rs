@@ -11,7 +11,9 @@
 //! - 裏面カリングは CPU で三角形を選んで行う (キャンバス座標の向きだけで決まるため)。
 
 use godot::classes::image::Format;
-use godot::classes::rendering_server::{CanvasItemTextureFilter, CanvasItemTextureRepeat};
+use godot::classes::rendering_server::{
+    ArrayType, CanvasItemTextureFilter, CanvasItemTextureRepeat, PrimitiveType,
+};
 use godot::classes::sub_viewport::UpdateMode;
 use godot::classes::{
     Image, ImageTexture, Node, Node2D, RenderingServer, Shader, ShaderMaterial, SubViewport,
@@ -45,6 +47,7 @@ struct MaskItem {
     /// マスクとして使うメッシュの番号。
     mesh: usize,
     item: Rid,
+    vertices: Option<VertexMesh>,
     material: Gd<ShaderMaterial>,
     area: Option<MaskArea>,
     /// アトラスでの左上の画素。
@@ -54,7 +57,94 @@ struct MaskItem {
 /// 描画可能要素 1 つ分。
 struct DrawItem {
     item: Rid,
+    /// 頂点だけを書き換えるメッシュ。`None` なら毎回三角形の配列を足し直す (裏面カリングで頂点番号が変わる要素など)。
+    vertices: Option<VertexMesh>,
     material: Gd<ShaderMaterial>,
+}
+
+/// 位置だけを書き換えるメッシュ (T0460)。UV と頂点番号は変わらないので、メッシュとキャンバスアイテムへの
+/// 描画の命令は 1 度だけ作り、毎フレームは頂点のバッファを `mesh_surface_update_vertex_region` で書き換える。
+/// `canvas_item_add_triangle_array` で足し直すと、RenderingServer が呼ぶたびにポリゴン (頂点・UV・頂点番号のバッファ) を作り直す。
+struct VertexMesh {
+    mesh: Rid,
+    /// 頂点の数。
+    count: usize,
+    /// 送る頂点の作業用 (`f32` の x, y の並び)。
+    bytes: PackedByteArray,
+}
+
+impl VertexMesh {
+    /// 2D の頂点の大きさ (`f32` の x, y)。
+    const STRIDE: usize = 8;
+
+    /// `item` に描くメッシュを作る。頂点番号が空か、頂点のバッファが `f32` の x, y の並びでなければ `None`。
+    fn new(
+        item: Rid,
+        uvs: &PackedVector2Array,
+        indices: &PackedInt32Array,
+        texture: Rid,
+    ) -> Option<Self> {
+        if indices.is_empty() || uvs.is_empty() {
+            return None;
+        }
+        let count = uvs.len();
+        let mut rs = rs();
+        let mut arrays = VarArray::new();
+        arrays.resize(ArrayType::MAX.ord() as usize, &Variant::nil());
+        let zeros: PackedVector2Array = (0..count).map(|_| Vector2::ZERO).collect();
+        arrays.set(ArrayType::VERTEX.ord() as usize, &zeros.to_variant());
+        arrays.set(ArrayType::TEX_UV.ord() as usize, &uvs.to_variant());
+        arrays.set(ArrayType::INDEX.ord() as usize, &indices.to_variant());
+        let mesh = rs.mesh_create();
+        rs.mesh_add_surface_from_arrays(mesh, PrimitiveType::TRIANGLES, &arrays);
+        // 頂点のバッファの並びは Godot の内部の形式なので、書き換える前に大きさで確かめる (違えば三角形の配列で描く)。
+        let size = rs
+            .mesh_get_surface(mesh, 0)
+            .get("vertex_data")
+            .and_then(|v| v.try_to::<PackedByteArray>().ok())
+            .map_or(0, |b| b.len());
+        if rs.mesh_get_surface_count(mesh) != 1 || size != count * Self::STRIDE {
+            godot_warn!("ugoe: unexpected mesh vertex format; drawing with triangle arrays");
+            rs.free_rid(mesh);
+            return None;
+        }
+        rs.canvas_item_add_mesh_ex(item, mesh)
+            .texture(texture)
+            .done();
+        Some(Self {
+            mesh,
+            count,
+            bytes: PackedByteArray::new(),
+        })
+    }
+
+    /// 頂点を `positions − offset` に書き換える。
+    fn update(&mut self, item: Rid, positions: &[UVec2], offset: UVec2) {
+        if positions.len() != self.count {
+            return;
+        }
+        self.bytes.resize(self.count * Self::STRIDE);
+        for (dst, &p) in self
+            .bytes
+            .as_mut_slice()
+            .as_chunks_mut::<{ Self::STRIDE }>()
+            .0
+            .iter_mut()
+            .zip(positions)
+        {
+            let p = p - offset;
+            dst[..4].copy_from_slice(&p.x.to_ne_bytes());
+            dst[4..].copy_from_slice(&p.y.to_ne_bytes());
+        }
+        let mut rs = rs();
+        rs.mesh_surface_update_vertex_region(self.mesh, 0, 0, &self.bytes);
+        // キャンバスアイテムの矩形 (画面の外の選別に使う) はメッシュを足したときの AABB のままなので、今の位置から設定する。
+        if let Some((min, max)) = bounds(positions) {
+            rs.canvas_item_set_custom_rect_ex(item, true)
+                .rect(Rect2::new(vec2(min - offset), vec2(max - min)))
+                .done();
+        }
+    }
 }
 
 /// テクスチャの番号ごとの、デコードしたテクスチャと法線マップ。
@@ -336,6 +426,17 @@ impl Renderer {
                 .done();
         }
 
+        let uvs: Vec<PackedVector2Array> = model
+            .drawables
+            .iter()
+            .map(|d| d.uvs.iter().map(|&p| vec2(p)).collect())
+            .collect();
+        let indices: Vec<PackedInt32Array> = model
+            .drawables
+            .iter()
+            .map(|d| d.indices.iter().map(|&i| i32::from(i)).collect())
+            .collect();
+
         let masks = if levels.len() == plan.level_count() {
             plan.sources
                 .iter()
@@ -356,9 +457,11 @@ impl Renderer {
                             info.mask_mode,
                         );
                     }
+                    let texture = texture_rid(&textures, info.texture);
                     MaskItem {
                         mesh,
                         item,
+                        vertices: VertexMesh::new(item, &uvs[mesh], &indices[mesh], texture),
                         material,
                         area: None,
                         slot: (0, 0),
@@ -412,19 +515,18 @@ impl Renderer {
                     set_light_params(&mut material, &names, &light);
                 }
                 rs().canvas_item_set_material(item, material.get_rid());
-                DrawItem { item, material }
+                let vertices = (!info.culling)
+                    .then(|| {
+                        let texture = texture_rid(&textures, info.texture);
+                        VertexMesh::new(item, &uvs[d], &indices[d], texture)
+                    })
+                    .flatten();
+                DrawItem {
+                    item,
+                    vertices,
+                    material,
+                }
             })
-            .collect();
-
-        let uvs = model
-            .drawables
-            .iter()
-            .map(|d| d.uvs.iter().map(|&p| vec2(p)).collect())
-            .collect();
-        let indices = model
-            .drawables
-            .iter()
-            .map(|d| d.indices.iter().map(|&i| i32::from(i)).collect())
             .collect();
 
         Self {
@@ -497,6 +599,10 @@ impl Renderer {
                 resized |= current != Some((area.width, area.height));
                 mask.area = Some(area);
                 moved[s] = true;
+            }
+            if let Some(vertices) = &mut mask.vertices {
+                vertices.update(mask.item, &state.positions, UVec2::ZERO);
+                continue;
             }
             self.points = state.positions.iter().map(|&p| vec2(p)).collect();
             rs.canvas_item_clear(mask.item);
@@ -584,7 +690,9 @@ impl Renderer {
             let redraw = fresh
                 || changed.contains(DrawableChanges::POSITIONS)
                 || changed.contains(DrawableChanges::VISIBILITY);
-            if redraw {
+            if redraw && let Some(vertices) = &mut item.vertices {
+                vertices.update(item.item, &state.positions, origin);
+            } else if redraw {
                 self.points = state.positions.iter().map(|&p| vec2(p - origin)).collect();
                 let indices = if info.culling {
                     front_facing(&state.positions, &info.indices, &mut self.culled);
@@ -712,6 +820,13 @@ impl Drop for Renderer {
         }
         for mask in &self.masks {
             rs.free_rid(mask.item);
+        }
+        let meshes = self.items.iter().map(|i| &i.vertices);
+        for vertices in meshes
+            .chain(self.masks.iter().map(|m| &m.vertices))
+            .flatten()
+        {
+            rs.free_rid(vertices.mesh);
         }
         for level in &self.levels {
             rs.free_rid(level.copy);
