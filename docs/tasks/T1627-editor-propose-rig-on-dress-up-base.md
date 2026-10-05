@@ -1,11 +1,11 @@
 ---
 id: T1627
 title: "エディタ: 着せ替えの本体に PSD を取り込んでから Propose rig すると、スロットの衝突体の参照で提案が作れない"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ai, ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1627
 ---
 
 # T1627: エディタ: 着せ替えの本体に PSD を取り込んでから Propose rig すると、スロットの衝突体の参照で提案が作れない

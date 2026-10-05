@@ -1,11 +1,11 @@
 ---
 id: T0569
 title: "ugoe-mcp: PSD の上限のエラーの文の末尾の (code: …) を外すか (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, docs]
 depends_on: [T0568]
-assignee:
+assignee: claude-worker-T0569
 ---
 
 # T0569: ugoe-mcp: PSD の上限のエラーの文の末尾の (code: …) を外すか (判断が要る)

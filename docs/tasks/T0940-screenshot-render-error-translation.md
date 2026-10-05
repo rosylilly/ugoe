@@ -1,11 +1,11 @@
 ---
 id: T0940
 title: "ビューアとエディタのスクリーンショットの失敗で RenderError を訳す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer, apps/editor, packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0940
 ---
 
 # T0940: ビューアとエディタのスクリーンショットの失敗で RenderError を訳す
