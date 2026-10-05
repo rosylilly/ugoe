@@ -251,7 +251,7 @@ fn effect_settings_can_be_replaced() {
 }
 
 /// 効果の設定はモデルの読み込みと同じに検査する。有限でない値・範囲の外の値・モデルにないパラメータは
-/// `UGOE_ERROR_INVALID_MODEL` (種類 `invalid_model`、補足の値 `errors`) で拒み、今の設定を変えない (T0461)。
+/// `UGOE_ERROR_INVALID_MODEL` (種類 `invalid_model`、補足の値 `errors`・`error_codes`) で拒み、今の設定を変えない (T0461・T0469)。
 #[test]
 fn invalid_effect_settings_are_rejected_without_changes() {
     let model = fixtures::pose_and_effects();
@@ -263,21 +263,40 @@ fn invalid_effect_settings_are_rejected_without_changes() {
     ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5) });
 
     let errors = CString::new("errors").unwrap();
-    for (json, count) in [
+    let error_codes = CString::new("error_codes").unwrap();
+    for (json, count, codes) in [
         // `1e39` は `f32` の無限大になる。
-        (r#"{ "eye_blink": { "interval": 1e39 } }"#, "1"),
-        (r#"{ "eye_blink": { "interval": 0, "closing": -1 } }"#, "2"),
+        (
+            r#"{ "eye_blink": { "interval": 1e39 } }"#,
+            "1",
+            "invalid_value",
+        ),
+        (
+            r#"{ "eye_blink": { "interval": 0, "closing": -1 } }"#,
+            "2",
+            "invalid_value",
+        ),
         (
             r#"{ "breath": { "parameters": [{ "parameter": "AngleX", "offset": 0, "peak": -1e39, "cycle": 3, "weight": 1 }] } }"#,
             "1",
+            "invalid_value",
         ),
-        (r#"{ "lip_sync": { "parameters": ["Missing"] } }"#, "1"),
+        (
+            r#"{ "lip_sync": { "parameters": ["Missing"] } }"#,
+            "1",
+            "unknown_reference",
+        ),
     ] {
         assert_eq!(set_effects(&p, json), UGOE_ERROR_INVALID_MODEL, "{json}");
         assert_eq!(text(ugoe_last_error_kind()), "invalid_model", "{json}");
         assert_eq!(
             text(unsafe { ugoe_last_error_field(errors.as_ptr()) }),
             count,
+            "{json}"
+        );
+        assert_eq!(
+            text(unsafe { ugoe_last_error_field(error_codes.as_ptr()) }),
+            codes,
             "{json}"
         );
         assert!(text(ugoe_last_error()).starts_with("effects failed validation"));

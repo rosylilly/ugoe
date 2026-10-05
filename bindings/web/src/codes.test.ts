@@ -8,6 +8,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import codes from "../../../crates/ugoe-wasm/codes.json" with { type: "json" };
 import { LOAD_ERROR_CODES, type UgoeLoadErrorFields } from "./limits.js";
 import { RENDER_ERROR_CODES } from "./render-errors.js";
+import { SETTINGS_ERROR_CODES, type UgoeSettingsErrorFields } from "./settings-errors.js";
 import {
   DRESS_UP_ERROR_CODES,
   LOAD_WARNING_CODES,
@@ -51,6 +52,7 @@ const LOAD_ERROR_FIELDS = [
   "supported",
   "features",
   "errors",
+  "error_codes",
   "limit",
   "chunk",
   "max",
@@ -59,6 +61,9 @@ const LOAD_ERROR_FIELDS = [
   "width",
   "height",
 ] as const;
+
+/** 設定の差し替えの検査の失敗の補足の値のキー (`UgoeSettingsErrorFields` のキーと同じ)。 */
+const SETTINGS_ERROR_FIELDS = ["errors", "error_codes"] as const;
 
 /** `code` に `C` を含む読み込みの警告の型 (`UgoeTextureLoadWarning` は 3 つの `code` を持つ)。 */
 type WarningOf<C extends string, W = UgoeKnownLoadWarning> = W extends { code: infer K }
@@ -101,6 +106,14 @@ describe("codes.json (Rust) and the TypeScript unions", () => {
   it("lists the same render error codes (without fields)", () => {
     expect(sorted(RENDER_ERROR_CODES)).toEqual(sorted(Object.keys(codes.render_error)));
     expect(allFields(codes.render_error)).toEqual([]);
+  });
+
+  it("lists the same settings error codes and fields", () => {
+    expectTypeOf<(typeof SETTINGS_ERROR_FIELDS)[number]>().toEqualTypeOf<
+      keyof UgoeSettingsErrorFields
+    >();
+    expect(sorted(SETTINGS_ERROR_CODES)).toEqual(sorted(Object.keys(codes.settings_error)));
+    expect(sorted(SETTINGS_ERROR_FIELDS)).toEqual(allFields(codes.settings_error));
   });
 
   it("lists the same load warning codes and fields per code", () => {

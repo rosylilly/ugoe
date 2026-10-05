@@ -162,8 +162,14 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
 - `set_effects_json` は設定をモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・
-  範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数) を持つ `Error` を投げ、
-  何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ値。T0461)。読めない JSON の例外は `code` を持たない。
+  範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数)・`error_codes`
+  (検査のエラーの種類を `", "` でつないだ文字列) を持つ `Error` を投げ、何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field`
+  と同じ値。T0461・T0469)。読めない JSON の例外は `code` を持たない。
+- `set_physics_json`・`set_base_physics_json` の検査の失敗は、`code` が `"invalid_physics"` で `errors`・`error_codes` を持つ `Error`
+  (着せ替えの `invalid_physics` と同じ値。C ABI の `ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` と同じ。T0469)。
+  読めない JSON と、`set_base_physics_json` で付けているモジュールと合成できない失敗の例外は `code` を持たない。
+  どちらの例外も `name` は `"Error"` (`LoadError`・`DressUpError` のような専用の名前を持たない)。種類の一覧は [`code` の一覧](#code-の一覧-t0452) の
+  `settings_error`。
 - `part_evaluated_opacity` は上書きを当てた自身の値に祖先の値を掛けたもの (`ModelInstance::part_opacity`、`docs/spec/evaluation.md` の 2.)。
   そのパーツのメッシュの不透明度に掛かる。必要なら評価してから読む。C ABI では `ugoe_puppet_part_evaluated_opacity` (T0416)。
 
@@ -374,7 +380,7 @@ try {
 | `invalid_file` | なし | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の構文や型の誤り・チャンクの誤りなど)。細かい理由は文にだけある |
 | `unsupported_version` | `found` (ファイルの版)・`supported` (読める版) | ファイルの版 (スキーマかコンテナ) が新しすぎる |
 | `unsupported_features` | `features` (知らない必須の機能の ID を `", "` でつないだ文字列) | 知らない必須の機能を宣言している |
-| `invalid_model` | `errors` (検査のエラーの数) | モデル・物理・モーション・表情が検査に通らない。個々のエラーは文にだけある |
+| `invalid_model` | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類を `", "` でつないだ文字列。着せ替えの `invalid_physics` と同じ形。T0469) | モデル・物理・モーション・表情が検査に通らない。個々のエラーの中身は文にだけある |
 | `compile` | なし | 検査は通ったが評価できない構造 |
 | `read_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | 展開の上限を超えた |
 | `image_limit_exceeded` | [読み込みの上限](#読み込みの上限-t0152) | PNG の一辺が `max_image_side` を超えた |
@@ -421,8 +427,9 @@ try {
 
 ### `code` の一覧 (T0452)
 
-読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`)・描画と読み戻しの失敗 (`render_error`。T0465) の
-`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError` と、その中の
+読み込みの警告 (`load_warning`)・着せ替えの失敗 (`dress_up_error`)・読み込みの失敗 (`load_error`)・描画と読み戻しの失敗 (`render_error`。T0465)・
+設定の差し替え (`set_effects_json`・`set_physics_json`・`set_base_physics_json`) の検査の失敗 (`settings_error`。T0469) の
+`code` と、種類ごとの補足の値のキーの一覧を `codes.json` に置く。`src/codes.rs` のテストが、すべての種類の見本 (`LoadWarning`・`WardrobeError`・`LoadError`・`FrameError`・`AnimationError` と、その中の
 `DressUpError`・`ComposeError`・`CompileError`) から一覧を作って比べる。種類を足すと、テストの網羅の `match` (`guard`) がコンパイルできなくなるので、
 見本を足してから `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で書き直す。
 

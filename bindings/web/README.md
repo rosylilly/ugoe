@@ -289,8 +289,8 @@ try {
 ```
 
 - `isKnownLoadWarning` で絞らずに `code` の文字列で比べることもできます (補足の値は `unknown` になる)。
-- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES` でも読めます
-  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeRenderErrorCode` はこの配列の要素)。
+- このパッケージが知っている `code` の一覧は、配列 `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` でも読めます
+  (訳の表が全種類を持つかのテストなどに。型 `UgoeDressUpErrorCode`・`UgoeLoadErrorCode`・`UgoeRenderErrorCode`・`UgoeSettingsErrorCode` はこの配列の要素)。
   ランタイムの `code` との突き合わせは下の「開発」。
 - `<ugoe-avatar>` の `load` イベントの `detail.warningDetails` と `avatar.warningDetails` は `loadWarnings(puppet)` と同じものです。
 - `isDressUpError` は `name` が `"DressUpError"` で `code` が文字列の `Error` を受けます。`message` は英語の文で、安定した値ではありません。
@@ -339,7 +339,7 @@ try {
 } catch (e) {
   if (!isLoadError(e)) throw e;
   // e.code: "invalid_file" | "unsupported_version" (e.found・e.supported) | "unsupported_features" (e.features) |
-  // "invalid_model" (e.errors) | "compile" | "read_limit_exceeded" | "image_limit_exceeded" |
+  // "invalid_model" (e.errors・e.error_codes) | "compile" | "read_limit_exceeded" | "image_limit_exceeded" |
   // "invalid_texture" (e.image・e.texture) | "texture_too_large" (e.image・e.texture・e.width・e.height・e.max) |
   // "texture" | "device_lost"
   showError(e.code === "unsupported_version" ? "このファイルは新しい版で作られています" : e.message);
@@ -349,6 +349,35 @@ try {
 - 一覧と意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの失敗-t0434)。型は `UgoeLoadError`・`UgoeLoadErrorCode`。
   新しい版のランタイムは知らない `code` を返しうるので、知らないものは `message` を出してください。
 - 失敗したときは何も変えません (前のモデルのまま)。
+
+### 設定の差し替えの失敗 (T0461・T0469)
+
+`WebPuppet` の `set_effects_json`・`set_physics_json`・`set_base_physics_json` は、渡した設定がモデルに対する検査を通らないと、`code` と
+補足の値を持つ例外を投げます (何も変えません)。`name` は `"Error"` のままなので、`isSettingsError` で `code` を見て見分けます。
+
+```ts
+import { isSettingsError } from "@ugoe/runtime";
+
+try {
+  puppet.set_physics_json(json); // set_base_physics_json・set_effects_json も同じ
+} catch (e) {
+  if (!isSettingsError(e)) throw e; // 読めない JSON などは code を持たない Error
+  // e.code: "invalid_physics" (set_physics_json・set_base_physics_json。着せ替えの invalid_physics と同じ) |
+  //         "invalid_model" (set_effects_json。読み込みの invalid_model と同じ)
+  // e.errors: 検査のエラーの数、e.error_codes: その種類を ", " でつないだ文字列 ("unknown_reference" など)
+  console.warn(`physics rejected: ${e.error_codes}`);
+}
+```
+
+| 関数 | `code` | 補足の値 |
+| --- | --- | --- |
+| `set_effects_json` | `invalid_model` | `errors`・`error_codes` |
+| `set_physics_json`・`set_base_physics_json` | `invalid_physics` | `errors`・`error_codes` |
+
+- 意味は [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#物理モーション表情エフェクト-t0309)。型は `UgoeSettingsError`・
+  `UgoeSettingsErrorCode`、一覧の配列は `SETTINGS_ERROR_CODES` (crates/ugoe-wasm/codes.json の `settings_error` と同じ)。
+- 読めない JSON と、`set_base_physics_json` で付けているモジュールと合成できない失敗は、`code` を持たない `Error` です。
+- `isSettingsError` は、このパッケージの知っている `code` だけを受けます (`name` で見分けられないため)。
 
 ### 描画と読み戻しの失敗 (T0465)
 
@@ -615,11 +644,11 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
   引数と戻り値の型まで含めたずれは、`just wasm` の後の `just wasm-types` (`scripts/check-wasm-types.mjs`。CI の web ジョブ) が報告します。
 - このスタブは、生成物の無い環境でのアプリ (エディタ・ビューア・スタジオ) の型検査でも使います (各アプリの `tsconfig.json` の `paths`)。
   型の宣言をアプリが読むだけで、このパッケージが GPL のコードを読むわけではありません。
-- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・描画と読み戻しの失敗 (T0465) の `code` と補足の値のキーの一覧は
+- **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・描画と読み戻しの失敗 (T0465)・設定の差し替えの失敗 (T0469) の `code` と補足の値のキーの一覧は
   `crates/ugoe-wasm/codes.json` にあります。ugoe-wasm のテスト (`src/codes.rs`。`just ci` の Rust のテスト) がすべての種類の見本から作った一覧と、
-  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES` と
-  補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
-  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts`・`src/render-errors.ts` も同じ PR で直します
+  このパッケージのテスト (`src/codes.test.ts`。`just ci` の `web-check`) が `LOAD_WARNING_CODES`・`DRESS_UP_ERROR_CODES`・`LOAD_ERROR_CODES`・`RENDER_ERROR_CODES`・`SETTINGS_ERROR_CODES` と
+  補足の値の型 (`UgoeDressUpErrorFields`・`UgoeLoadErrorFields`・`UgoeSettingsErrorFields`・`UgoeKnownLoadWarning` の各型) と比べます。Rust で種類やキーを足したら
+  `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直し、`src/warnings.ts`・`src/limits.ts`・`src/render-errors.ts`・`src/settings-errors.ts` も同じ PR で直します
   (片方だけでは、どちらかのテストが落ちる)。
 - **問い合わせの JSON のキーの突き合わせ (T0463):** `src/queries.ts` の型ごとのキー (必須と省略できるもの) の一覧を
   `src/query-keys.ts` の `QUERY_KEYS` に値で持ちます (入口からは出さない)。一覧と型が同じことは `src/query-keys.test.ts` が

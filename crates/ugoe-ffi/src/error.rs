@@ -23,6 +23,8 @@ pub const UGOE_ERROR_BUFFER_TOO_SMALL: UgoeResult = 4;
 /// `"unsupported_features"`・`"invalid_model"` のどれか (T0457)。
 pub const UGOE_ERROR_FORMAT: UgoeResult = 5;
 /// モデルの検証やコンパイルに失敗した。モデルの読み込みでは、種類が `"invalid_model"` か `"compile"` (T0457)。
+/// 物理の設定の差し替え (`ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json`) の検査の失敗では `"invalid_physics"`、
+/// エフェクトの設定の差し替え (`ugoe_puppet_set_effects_json`) では `"invalid_model"` (T0461・T0469)。
 pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 /// 指定した ID が見つからなかった。
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;

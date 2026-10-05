@@ -12,7 +12,7 @@ use ugoe::model::validate::{ValidationError, describe_errors};
 use ugoe::motion::Priority;
 use ugoe::motion::curve::SegmentIndex;
 
-use crate::load::{ErrorInfo, LoadWarning};
+use crate::load::{ErrorInfo, LoadWarning, field_json};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnimationError {
@@ -39,16 +39,23 @@ pub enum AnimationError {
 }
 
 impl AnimationError {
-    /// JS の例外に付ける種類と補足の値。エフェクトの設定の検査の失敗だけが持ち、読み込みの `invalid_model` と同じ
-    /// (`code` は `"invalid_model"`、`errors` は検査のエラーの数。C ABI の `ugoe_last_error_kind` と同じ)。
+    /// JS の例外に付ける種類と補足の値 (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ)。検査の失敗だけが持つ:
+    ///
+    /// - エフェクトの設定 (`set_effects_json`): 読み込みと同じ `"invalid_model"` (T0461)。
+    /// - 物理の設定 (`set_physics_json`・`set_base_physics_json`): 着せ替えと同じ `"invalid_physics"` (T0469)。
+    ///
+    /// 補足の値はどちらも `errors` (検査のエラーの数) と `error_codes` (種類を `, ` でつないだもの。`ugoe::validation_fields`)。
     pub fn info(&self) -> Option<ErrorInfo> {
-        match self {
-            Self::InvalidEffects(errors) => Some(ErrorInfo {
-                code: "invalid_model",
-                fields: vec![("errors", errors.len().into())],
-            }),
-            _ => None,
-        }
+        let (code, errors) = match self {
+            Self::InvalidEffects(errors) => ("invalid_model", errors),
+            Self::InvalidPhysics(errors) => ("invalid_physics", errors),
+            _ => return None,
+        };
+        let fields = ugoe::validation_fields(errors)
+            .into_iter()
+            .map(|(key, value)| (key, field_json(value)))
+            .collect();
+        Some(ErrorInfo { code, fields })
     }
 }
 
@@ -846,6 +853,22 @@ mod tests {
         let bad = ugoe::format::physics_to_json(&bad).unwrap();
         let err = set_physics_json(&mut puppet, Some(&bad)).unwrap_err();
         assert!(err.to_string().contains("Missing"), "{err}");
+        // 種類と補足の値は着せ替えの `invalid_physics` と同じ (C ABI と同じ。T0469)。
+        let info = err.info().unwrap();
+        assert_eq!(info.code, "invalid_physics");
+        assert_eq!(
+            info.fields,
+            vec![
+                ("errors", 1.into()),
+                ("error_codes", "unknown_reference".into())
+            ]
+        );
+        assert!(
+            set_physics_json(&mut puppet, Some("{"))
+                .unwrap_err()
+                .info()
+                .is_none()
+        );
         // 失敗しても前の設定のまま。
         assert!(puppet.physics().is_some());
 
@@ -897,7 +920,7 @@ mod tests {
     }
 
     /// 有限でない値・範囲の外の値・モデルにないパラメータは拒み、今の設定を変えない (T0461)。
-    /// 種類と補足の値は C ABI と同じ (`invalid_model`・`errors`)。
+    /// 種類と補足の値は C ABI と同じ (`invalid_model`・`errors`・`error_codes`)。
     #[test]
     fn invalid_effects_json_is_rejected_without_changes() {
         let mut puppet = quiet(fixtures::pose_and_effects());
@@ -907,11 +930,23 @@ mod tests {
         )
         .unwrap();
         puppet.set_lip_sync_level(Some(0.5));
-        for (json, count) in [
+        for (json, count, codes) in [
             // `1e39` は `f32` の無限大になる。
-            (r#"{ "eye_blink": { "interval": 1e39 } }"#, 1),
-            (r#"{ "eye_blink": { "interval": 0, "closing": -1 } }"#, 2),
-            (r#"{ "lip_sync": { "parameters": ["Missing"] } }"#, 1),
+            (
+                r#"{ "eye_blink": { "interval": 1e39 } }"#,
+                1,
+                "invalid_value",
+            ),
+            (
+                r#"{ "eye_blink": { "interval": 0, "closing": -1 } }"#,
+                2,
+                "invalid_value",
+            ),
+            (
+                r#"{ "lip_sync": { "parameters": ["Missing"] } }"#,
+                1,
+                "unknown_reference",
+            ),
         ] {
             let err = set_effects_json(&mut puppet, json).unwrap_err();
             let AnimationError::InvalidEffects(errors) = &err else {
@@ -921,7 +956,10 @@ mod tests {
             assert_eq!(err.to_string(), describe_errors("effects", errors));
             let info = err.info().unwrap();
             assert_eq!(info.code, "invalid_model");
-            assert_eq!(info.fields, vec![("errors", count.into())]);
+            assert_eq!(
+                info.fields,
+                vec![("errors", count.into()), ("error_codes", codes.into())]
+            );
             puppet.update(DT);
             assert!(
                 (param(&puppet, standard::MOUTH_OPEN_Y) - 0.5).abs() < 1e-5,
@@ -1016,6 +1054,15 @@ mod tests {
         };
         // 文は検証エラーの列の共通の形 (T0015。`docs/spec/model.md#検証エラーの文`)。
         assert_eq!(err.to_string(), describe_errors("physics settings", errors));
+        let info = err.info().unwrap();
+        assert_eq!(info.code, "invalid_physics");
+        assert_eq!(
+            info.fields,
+            vec![
+                ("errors", 1.into()),
+                ("error_codes", "unknown_reference".into())
+            ]
+        );
         assert!(set_base_physics_json(&mut puppet, Some("{")).is_err());
         assert_eq!(puppet.base_physics(), Some(&windy));
 

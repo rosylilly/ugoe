@@ -951,6 +951,30 @@ fn set_physics(p: &Handle, json: &str) -> UgoeResult {
     unsafe { ugoe_puppet_set_physics_json(p.0, json.as_ptr(), json.len()) }
 }
 
+/// 直前の失敗の種類と、番号で列挙した補足の値 (T0464)。
+fn last_kind_and_fields() -> (String, Vec<(String, String)>) {
+    let fields = (0..ugoe_last_error_field_count())
+        .map(|i| {
+            (
+                text(ugoe_last_error_field_key_at(i)),
+                text(ugoe_last_error_field_value_at(i)),
+            )
+        })
+        .collect();
+    (text(ugoe_last_error_kind()), fields)
+}
+
+/// 物理の設定の検査の失敗の種類と補足の値 (着せ替えの `invalid_physics` と同じ。T0469)。
+fn invalid_physics(errors: usize, codes: &str) -> (String, Vec<(String, String)>) {
+    (
+        "invalid_physics".into(),
+        vec![
+            ("errors".into(), errors.to_string()),
+            ("error_codes".into(), codes.into()),
+        ],
+    )
+}
+
 /// 物理の設定の差し替え (T0412) は `ugoe::Puppet::set_physics` と同じく検査し、失敗したら何も変えない。
 #[test]
 fn physics_settings_can_be_replaced() {
@@ -1005,6 +1029,10 @@ fn physics_settings_can_be_replaced() {
         ugoe::model::validate::describe_errors("physics settings", &errors)
     );
     assert!(text(ugoe_last_error()).contains("Missing"));
+    assert_eq!(
+        last_kind_and_fields(),
+        invalid_physics(errors.len(), "unknown_reference")
+    );
     assert_eq!(set_physics(&p, "{"), UGOE_ERROR_FORMAT);
     assert_eq!(
         ugoe::format::physics_from_json(&physics_json(&p)).unwrap(),
@@ -1171,6 +1199,10 @@ fn base_physics_survives_dress_up() {
     assert_eq!(
         set_base_physics(&p, &ugoe::format::physics_to_json(&bad).unwrap()),
         UGOE_ERROR_INVALID_MODEL
+    );
+    assert_eq!(
+        last_kind_and_fields(),
+        invalid_physics(1, "unknown_reference")
     );
     assert_eq!(set_base_physics(&p, "{"), UGOE_ERROR_FORMAT);
     assert_eq!(parse(&base_physics_json(&p)), windy);

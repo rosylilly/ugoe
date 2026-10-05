@@ -329,6 +329,8 @@ typedef struct UgoeTrackingInput {
 #define UGOE_ERROR_FORMAT 5
 
 // モデルの検証やコンパイルに失敗した。モデルの読み込みでは、種類が `"invalid_model"` か `"compile"` (T0457)。
+// 物理の設定の差し替え (`ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json`) の検査の失敗では `"invalid_physics"`、
+// エフェクトの設定の差し替え (`ugoe_puppet_set_effects_json`) では `"invalid_model"` (T0461・T0469)。
 #define UGOE_ERROR_INVALID_MODEL 6
 
 // 指定した ID が見つからなかった。
@@ -388,7 +390,8 @@ UgoeResult ugoe_puppet_motion_event_source(const struct UgoePuppet *puppet,
 // `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 //
 // JSON を読めなければ `UGOE_ERROR_FORMAT`、モデルに対する検査 (`docs/spec/physics.md`) を通らなければ
-// `UGOE_ERROR_INVALID_MODEL` を返し、何も変えない。
+// `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_physics"`、`ugoe_last_error_field` の `"errors"`・`"error_codes"` は
+// 検査のエラーの数と種類。着せ替えの `invalid_physics` と同じ。T0469) を返し、何も変えない。
 //
 // 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
 // 本体の設定から合成し直すので、ここで差し替えた設定は失われる。付けている間も保つ本体の設定は
@@ -409,7 +412,7 @@ UgoeResult ugoe_puppet_set_physics_json(struct UgoePuppet *puppet,
 // `ugoe_puppet_set_physics_json` と同じ。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 //
 // JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ
-// `UGOE_ERROR_INVALID_MODEL`、合成できなければ `UGOE_ERROR_DRESS_UP` を返し、何も変えない。本体の物理の有無が変わって
+// `UGOE_ERROR_INVALID_MODEL` (種類と補足の値は `ugoe_puppet_set_physics_json` と同じ `"invalid_physics"`)、合成できなければ `UGOE_ERROR_DRESS_UP` を返し、何も変えない。本体の物理の有無が変わって
 // モデルを差し替えたときは、着せ替えの操作と同じく ID の文字列のポインタが無効になる。
 //
 // # Safety
@@ -459,7 +462,7 @@ UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
 //
 // 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
 // パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
-// `ugoe_last_error_field` の `"errors"` は検査のエラーの数) を返し、何も変えない。
+// `ugoe_last_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
 //
 // # Safety
 //

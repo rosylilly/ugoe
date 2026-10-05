@@ -10,6 +10,15 @@ use wasm_bindgen::prelude::*;
 use super::{WebPuppet, coded_error, js_error};
 use crate::animation;
 
+/// 設定の差し替えの失敗を JS の値にする。検査の失敗は `code` と補足の値 ([`animation::AnimationError::info`]) を持つ
+/// `Error` (`name` は `"Error"`)、ほかは `code` を持たない `Error`。
+fn animation_error(e: animation::AnimationError) -> JsValue {
+    match e.info() {
+        Some(info) => coded_error("Error", &e.to_string(), info),
+        None => js_error(e).into(),
+    }
+}
+
 /// モーション (JSON) の各カーブを再生位置 `t` (秒) で評価した値 (フェードなし)。
 /// `[{"target": {"kind", "id"}, "value"}, …]` の JSON。エディタのタイムラインのシーク用。
 #[wasm_bindgen]
@@ -197,12 +206,10 @@ impl WebPuppet {
 
     /// 目パチ・呼吸・リップシンクの設定 (モデルの `effects` と同じ JSON) を差し替える。
     /// 再生状態は初めからになる。リップシンクの音量は保つ。
-    /// 検査を通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数) を持つ例外を投げ、何も変えない。
+    /// 検査を通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数)・`error_codes` (種類を `, ` でつないだもの)
+    /// を持つ例外を投げ、何も変えない。
     pub fn set_effects_json(&mut self, json: &str) -> Result<(), JsValue> {
-        animation::set_effects_json(self.puppet_mut()?, json).map_err(|e| match e.info() {
-            Some(info) => coded_error("Error", &e.to_string(), info),
-            None => js_error(e).into(),
-        })
+        animation::set_effects_json(self.puppet_mut()?, json).map_err(animation_error)
     }
 
     /// リップシンクの音量 (0〜1。範囲の外はクランプする)。`undefined` なら口のパラメータに触らない。音声の解析はホストが行う。
@@ -233,8 +240,10 @@ impl WebPuppet {
 
     /// 物理の設定 (`*.physics.json` の形) を差し替える。`undefined` で外す。
     /// モデルと合わせて `validate_physics` で検査し、エラーなら何も変えない。粒子は静止姿勢から始める。
-    pub fn set_physics_json(&mut self, json: Option<String>) -> Result<(), JsError> {
-        animation::set_physics_json(self.puppet_mut()?, json.as_deref()).map_err(js_error)?;
+    /// 検査を通らなければ `code` が `"invalid_physics"` で `errors`・`error_codes` を持つ例外を投げる (着せ替えの `invalid_physics` と同じ。T0469)。
+    pub fn set_physics_json(&mut self, json: Option<String>) -> Result<(), JsValue> {
+        animation::set_physics_json(self.puppet_mut()?, json.as_deref())
+            .map_err(animation_error)?;
         self.dirty = true;
         Ok(())
     }
@@ -242,8 +251,10 @@ impl WebPuppet {
     /// 本体の物理の設定 (`*.physics.json` の形) を差し替える。`undefined` で外す。着せ替えのモジュールを付けていれば
     /// 合成し直し、この後の付け外しでもこの設定から合成する (`set_physics_json` で渡した設定は次の付け外しで失われる)。
     /// 本体のモデルと合成したモデルに対して検査し、失敗すれば何も変えない。粒子は静止姿勢から始める。
-    pub fn set_base_physics_json(&mut self, json: Option<String>) -> Result<(), JsError> {
-        animation::set_base_physics_json(self.puppet_mut()?, json.as_deref()).map_err(js_error)?;
+    /// 検査の失敗の例外は `set_physics_json` と同じ (`code` が `"invalid_physics"`)。
+    pub fn set_base_physics_json(&mut self, json: Option<String>) -> Result<(), JsValue> {
+        animation::set_base_physics_json(self.puppet_mut()?, json.as_deref())
+            .map_err(animation_error)?;
         self.dirty = true;
         Ok(())
     }

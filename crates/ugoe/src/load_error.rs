@@ -7,10 +7,11 @@
 use std::fmt;
 
 use ugoe_format::FormatError;
+use ugoe_model::validate::ValidationError;
 use ugoe_runtime::CompileError;
 
-use crate::DressUpError;
 use crate::limits::ReadLimitExceeded;
+use crate::{DressUpError, FieldValue};
 
 /// モデルの読み込みの失敗。`.ugoe` バンドルやモデルの JSON を読めない ([`FormatError`]) か、
 /// 読んだモデルを評価できない ([`CompileError`])。
@@ -31,7 +32,7 @@ pub enum LoadError {
 pub enum LoadErrorValue {
     /// 番号・数・大きさ (版・検査のエラーの数・上限のバイト数)。
     Number(u64),
-    /// 文 (上限の名前・チャンクのタグ・機能の ID の列)。
+    /// 文 (上限の名前・チャンクのタグ・機能の ID の列・検査のエラーの種類の列)。
     Text(String),
 }
 
@@ -64,7 +65,8 @@ impl LoadError {
     ///
     /// - `unsupported_version`: `found` (ファイルの版)・`supported` (読める版)。
     /// - `unsupported_features`: `features` (知らない必須の機能の ID を `", "` でつないだもの)。
-    /// - `invalid_model`: `errors` (検査のエラーの数)。
+    /// - `invalid_model`: `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類 (`ValidationError::code`) を出た順に、
+    ///   重なりを除いて `", "` でつないだもの。着せ替えの `invalid_physics` と同じ。[`crate::validation_fields`]。T0469)。
     /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
     ///   値は [`ReadLimitExceeded::fields`] と同じ。
     /// - ほか: なし。
@@ -79,9 +81,21 @@ impl LoadError {
 
     fn info(&self) -> (&'static str, Vec<(&'static str, LoadErrorValue)>) {
         use LoadErrorValue::{Number, Text};
-        let invalid = |count: usize| ("invalid_model", vec![("errors", Number(count as u64))]);
+        let invalid = |errors: &[ValidationError]| {
+            let fields = crate::validation_fields(errors)
+                .into_iter()
+                .map(|(key, value)| {
+                    let value = match value {
+                        FieldValue::Index(n) => Number(n as u64),
+                        value => Text(value.to_string()),
+                    };
+                    (key, value)
+                })
+                .collect();
+            ("invalid_model", fields)
+        };
         match self {
-            Self::Compile(CompileError::Invalid(errors)) => invalid(errors.len()),
+            Self::Compile(CompileError::Invalid(errors)) => invalid(errors),
             Self::Compile(_) => ("compile", Vec::new()),
             Self::Format(e) => {
                 if let Some(exceeded) = ReadLimitExceeded::from_error(e) {
@@ -95,7 +109,7 @@ impl LoadError {
                     );
                 }
                 if let Some(errors) = e.validation_errors() {
-                    return invalid(errors.len());
+                    return invalid(errors);
                 }
                 match e {
                     &FormatError::UnsupportedVersion { found, supported }
@@ -121,7 +135,6 @@ impl LoadError {
 #[cfg(test)]
 mod tests {
     use ugoe_format::{ChunkTag, ReadLimit};
-    use ugoe_model::validate::ValidationError;
 
     use super::*;
 
@@ -164,7 +177,10 @@ mod tests {
             (
                 FormatError::InvalidPhysics(validation()).into(),
                 "invalid_model",
-                vec![("errors", Number(1))],
+                vec![
+                    ("errors", Number(1)),
+                    ("error_codes", text("invalid_module_name")),
+                ],
             ),
             (
                 FormatError::ReadLimitExceeded {
@@ -183,7 +199,10 @@ mod tests {
             (
                 CompileError::Invalid(validation()).into(),
                 "invalid_model",
-                vec![("errors", Number(1))],
+                vec![
+                    ("errors", Number(1)),
+                    ("error_codes", text("invalid_module_name")),
+                ],
             ),
             (
                 CompileError::UnknownParameter("p".into()).into(),
@@ -214,6 +233,28 @@ mod tests {
             .map(|(k, v)| (k, v.to_string()))
             .collect();
         assert_eq!(actual, expected);
+    }
+
+    /// `invalid_model` の種類の一覧は、出た順に重なりを除いて `, ` でつなぐ (着せ替えの `invalid_physics` と同じ。T0469)。
+    #[test]
+    fn invalid_model_lists_the_validation_codes() {
+        let duplicate = ValidationError::DuplicateId {
+            kind: "mesh",
+            id: "m".into(),
+        };
+        let errors = [validation(), vec![duplicate], validation()].concat();
+        let expected = vec![
+            ("errors", LoadErrorValue::Number(3)),
+            (
+                "error_codes",
+                LoadErrorValue::Text("invalid_module_name, duplicate_id".into()),
+            ),
+        ];
+        let compile = LoadError::from(CompileError::Invalid(errors.clone()));
+        assert_eq!(compile.fields(), expected);
+        let format = LoadError::from(FormatError::Invalid(errors));
+        assert_eq!(format.code(), "invalid_model");
+        assert_eq!(format.fields(), expected);
     }
 
     #[test]

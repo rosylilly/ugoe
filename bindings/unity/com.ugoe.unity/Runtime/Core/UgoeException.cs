@@ -23,7 +23,9 @@ namespace Ugoe
         Format = 5,
         /// <summary>
         /// モデルの検証やコンパイルに失敗した。モデルの読み込みでは <see cref="UgoeException.Kind"/> が <c>"invalid_model"</c>
-        /// (<see cref="UgoeException.Fields"/> の <c>"errors"</c> は検査のエラーの数) か <c>"compile"</c>。
+        /// (<see cref="UgoeException.Fields"/> の <c>"errors"</c> は検査のエラーの数、<c>"error_codes"</c> はその種類を <c>", "</c> でつないだもの)
+        /// か <c>"compile"</c>。物理の設定の差し替え (<see cref="Puppet.SetPhysicsJson"/>・<see cref="Puppet.SetBasePhysicsJson"/>) では
+        /// <c>"invalid_physics"</c>、エフェクトの設定の差し替え (<see cref="Puppet.SetEffectsJson"/>) では <c>"invalid_model"</c> (補足の値は同じ)。
         /// </summary>
         InvalidModel = 6,
         NotFound = 7,
@@ -54,8 +56,8 @@ namespace Ugoe
         /// <summary>
         /// 補足の値 (着せ替えでは <c>"module"</c>・<c>"slot"</c>・<c>"parameter"</c>・<c>"mask"</c> など、
         /// 読み込みの上限では <c>"limit"</c>・<c>"chunk"</c>・<c>"max"</c>、モデルの読み込みでは <c>"found"</c>・<c>"supported"</c>・
-        /// <c>"features"</c>・<c>"errors"</c> のうち持つもの)。種類ごとのキーは crates/ugoe-wasm/codes.json の
-        /// <c>dress_up_error</c> と <c>load_error</c> と同じ。C ABI が列挙する値をすべて入れるので、新しい版で増えたキーも入る。
+        /// <c>"features"</c>・<c>"errors"</c>・<c>"error_codes"</c> のうち持つもの)。種類ごとのキーは crates/ugoe-wasm/codes.json の
+        /// <c>dress_up_error</c> と <c>load_error</c> と <c>settings_error</c> (設定の差し替えの検査の失敗) と同じ。C ABI が列挙する値をすべて入れるので、新しい版で増えたキーも入る。
         /// </summary>
         public IReadOnlyDictionary<string, string> Fields { get; }
 

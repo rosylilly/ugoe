@@ -148,7 +148,8 @@ pub unsafe extern "C" fn ugoe_puppet_motion_event_source(
 /// `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 ///
 /// JSON を読めなければ `UGOE_ERROR_FORMAT`、モデルに対する検査 (`docs/spec/physics.md`) を通らなければ
-/// `UGOE_ERROR_INVALID_MODEL` を返し、何も変えない。
+/// `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_physics"`、`ugoe_last_error_field` の `"errors"`・`"error_codes"` は
+/// 検査のエラーの数と種類。着せ替えの `invalid_physics` と同じ。T0469) を返し、何も変えない。
 ///
 /// 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
 /// 本体の設定から合成し直すので、ここで差し替えた設定は失われる。付けている間も保つ本体の設定は
@@ -182,7 +183,7 @@ pub unsafe extern "C" fn ugoe_puppet_set_physics_json(
 /// `ugoe_puppet_set_physics_json` と同じ。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 ///
 /// JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ
-/// `UGOE_ERROR_INVALID_MODEL`、合成できなければ `UGOE_ERROR_DRESS_UP` を返し、何も変えない。本体の物理の有無が変わって
+/// `UGOE_ERROR_INVALID_MODEL` (種類と補足の値は `ugoe_puppet_set_physics_json` と同じ `"invalid_physics"`)、合成できなければ `UGOE_ERROR_DRESS_UP` を返し、何も変えない。本体の物理の有無が変わって
 /// モデルを差し替えたときは、着せ替えの操作と同じく ID の文字列のポインタが無効になる。
 ///
 /// # Safety
@@ -230,11 +231,22 @@ unsafe fn read_physics(json: *const u8, len: usize) -> Result<Option<PhysicsSett
         .map_err(|e| Error::new(UGOE_ERROR_FORMAT, e.to_string()))
 }
 
+/// 物理の設定の検査の失敗。戻り値は前と同じ `UGOE_ERROR_INVALID_MODEL` のまま、種類と補足の値は着せ替えの
+/// `invalid_physics` と同じ (`errors`・`error_codes`。T0469)。
 fn invalid_physics(errors: &[ValidationError]) -> Error {
     Error::new(
         UGOE_ERROR_INVALID_MODEL,
         describe_errors("physics settings", errors),
     )
+    .with_kind("invalid_physics", validation_fields(errors))
+}
+
+/// 検査の失敗の補足の値 (`errors`・`error_codes`。`ugoe::validation_fields` を 10 進と `, ` でつないだ文字列にする)。
+fn validation_fields(errors: &[ValidationError]) -> Vec<(&'static str, String)> {
+    ugoe::validation_fields(errors)
+        .into_iter()
+        .map(|(key, value)| (key, value.to_string()))
+        .collect()
 }
 
 /// 今の物理の設定の JSON (UTF-8。NUL 終端しない) を `out` (`capacity` バイト) に書き、`*out_len` にバイト数を書く。
@@ -340,7 +352,7 @@ pub unsafe extern "C" fn ugoe_puppet_reset_physics(puppet: *mut UgoePuppet) -> U
 ///
 /// 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
 /// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
-/// `ugoe_last_error_field` の `"errors"` は検査のエラーの数) を返し、何も変えない。
+/// `ugoe_last_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
 ///
 /// # Safety
 ///
@@ -371,5 +383,5 @@ pub unsafe extern "C" fn ugoe_puppet_set_effects_json(
 /// エフェクトの設定の検査の失敗。種類と補足の値は読み込みの `invalid_model` と同じ (`ugoe::LoadError::fields`)。
 fn invalid_effects(errors: &[ValidationError]) -> Error {
     Error::new(UGOE_ERROR_INVALID_MODEL, describe_errors("effects", errors))
-        .with_kind("invalid_model", vec![("errors", errors.len().to_string())])
+        .with_kind("invalid_model", validation_fields(errors))
 }

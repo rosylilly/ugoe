@@ -1,7 +1,8 @@
 //! JS に渡す `code` の一覧 (`codes.json`) の検査 (T0452)。
 //!
 //! 読み込みの警告 (`load_warnings_json` の要素)・着せ替えの失敗 (`DressUpError`)・読み込みの失敗 (`LoadError`)・
-//! 描画と読み戻しの失敗 (`RenderError`。T0465) の `code` と、その種類が持つ補足の値のキーを、すべての種類の見本から集めて `codes.json` と比べる。
+//! 描画と読み戻しの失敗 (`RenderError`。T0465)・設定の差し替えの失敗 (`set_effects_json`・`set_physics_json`・
+//! `set_base_physics_json` の検査の失敗。T0469) の `code` と、その種類が持つ補足の値のキーを、すべての種類の見本から集めて `codes.json` と比べる。
 //! `@ugoe/runtime` (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TypeScript の和型と比べるので、
 //! Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる。
 //!
@@ -16,6 +17,7 @@ use ugoe::render::RenderError;
 use ugoe::runtime::{CompileError, ComposeError};
 use ugoe::{DressUpError, LoadWarning};
 
+use crate::animation::AnimationError;
 use crate::dress_up::{Detached, WardrobeError, error_info};
 use crate::frame::FrameError;
 use crate::load::{ErrorInfo, LoadError, warning_json};
@@ -238,6 +240,37 @@ fn frame_errors() -> Vec<FrameError> {
     all
 }
 
+/// 設定の差し替えの失敗の見本 (`AnimationError` のすべての種類。`code` を持つのは検査の失敗だけ)。
+/// 種類を足すと、`match` が網羅の誤りになる。
+fn animation_errors() -> Vec<AnimationError> {
+    let s = |v: &str| v.to_owned();
+    let all = vec![
+        FormatError::BadMagic.into(),
+        serde_json::from_str::<()>("{").unwrap_err().into(),
+        AnimationError::InvalidPhysics(validation()),
+        AnimationError::InvalidEffects(validation()),
+        AnimationError::DressUp(DressUpError::NotAttached(s("m"))),
+        AnimationError::UnknownMotion(s("m")),
+        AnimationError::UnknownExpression(s("e")),
+        AnimationError::UnknownPriority(s("p")),
+        AnimationError::UnknownStage(s("s")),
+    ];
+    for error in &all {
+        match error {
+            AnimationError::Format(_)
+            | AnimationError::Json(_)
+            | AnimationError::InvalidPhysics(_)
+            | AnimationError::InvalidEffects(_)
+            | AnimationError::DressUp(_)
+            | AnimationError::UnknownMotion(_)
+            | AnimationError::UnknownExpression(_)
+            | AnimationError::UnknownPriority(_)
+            | AnimationError::UnknownStage(_) => {}
+        }
+    }
+    all
+}
+
 /// 読み込みの警告の見本 (`LoadWarning` のすべての種類)。
 fn load_warnings() -> Vec<LoadWarning> {
     vec![
@@ -305,11 +338,18 @@ fn actual() -> serde_json::Value {
     for error in frame_errors() {
         add(&mut render_error, &error.info());
     }
+    let mut settings_error = Codes::new();
+    for error in animation_errors() {
+        if let Some(info) = error.info() {
+            add(&mut settings_error, &info);
+        }
+    }
     serde_json::json!({
         "load_warning": load_warning,
         "dress_up_error": dress_up_error,
         "load_error": load_error,
         "render_error": render_error,
+        "settings_error": settings_error,
     })
 }
 
@@ -327,7 +367,7 @@ fn codes_json_lists_every_code_and_field() {
         actual,
         expected,
         "crates/ugoe-wasm/codes.json is out of date; run `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` \
-         and update bindings/web/src (warnings.ts・limits.ts・render-errors.ts)\n{}",
+         and update bindings/web/src (warnings.ts・limits.ts・render-errors.ts・settings-errors.ts)\n{}",
         serde_json::to_string_pretty(&actual).unwrap()
     );
 }

@@ -80,7 +80,8 @@ impl LoadError {
     /// - `invalid_file`: ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど)。
     /// - `unsupported_version`: `found` (ファイルの版)・`supported` (読める版)。
     /// - `unsupported_features`: `features` (知らない必須の機能の ID を `", "` でつないだもの)。
-    /// - `invalid_model`: `errors` (検査のエラーの数。モデル・物理・モーション・表情の検査)。
+    /// - `invalid_model`: `errors` (検査のエラーの数。モデル・物理・モーション・表情の検査)・`error_codes` (検査のエラーの種類を
+    ///   `", "` でつないだもの。着せ替えの `invalid_physics` と同じ。T0469)。
     /// - `compile`: 評価できない構造。
     /// - `read_limit_exceeded`: `limit` (`"chunk_decompressed"` | `"total_decompressed"`)・`chunk` (タグ)・`max` (バイト数)。
     /// - `image_limit_exceeded`: `image` (`"texture"` | `"normal_map"`)・`texture` (テクスチャの番号)・`width`・`height`・`max` (画素)。
@@ -1032,11 +1033,23 @@ mod tests {
             ),
             (
                 FormatError::InvalidPhysics(validation()).into(),
-                info("invalid_model", vec![("errors", 1.into())]),
+                info(
+                    "invalid_model",
+                    vec![
+                        ("errors", 1.into()),
+                        ("error_codes", "invalid_value".into()),
+                    ],
+                ),
             ),
             (
                 CompileError::Invalid(validation()).into(),
-                info("invalid_model", vec![("errors", 1.into())]),
+                info(
+                    "invalid_model",
+                    vec![
+                        ("errors", 1.into()),
+                        ("error_codes", "invalid_value".into()),
+                    ],
+                ),
             ),
             (
                 CompileError::Unsupported("zero-row warp").into(),

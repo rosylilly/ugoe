@@ -97,6 +97,7 @@
     ],
     "invalid_file": [],
     "invalid_model": [
+      "error_codes",
       "errors"
     ],
     "invalid_texture": [
@@ -153,5 +154,15 @@
   },
   "render_error": {
     "device_lost": []
+  },
+  "settings_error": {
+    "invalid_model": [
+      "error_codes",
+      "errors"
+    ],
+    "invalid_physics": [
+      "error_codes",
+      "errors"
+    ]
   }
 }

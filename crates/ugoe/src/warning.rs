@@ -6,6 +6,7 @@
 use std::fmt;
 
 use ugoe_format::ReadWarning;
+use ugoe_model::validate::ValidationError;
 
 /// 読み込めたが注意が要ること。`Display` は英語の文で、安定した値として扱わない
 /// (wasm の読み込みの戻り値に入る文。KTX2 の 2 つは T0222 で、対応しない形式だけに出すことに合わせて変えた)。
@@ -71,7 +72,7 @@ pub enum FieldValue<'a> {
 }
 
 impl FieldValue<'_> {
-    /// 検査のエラーの種類の一覧 ([`ValidationError::code`](ugoe_model::validate::ValidationError::code) を出た順に、重なりを除いて並べる)。
+    /// 検査のエラーの種類の一覧 ([`ValidationError::code`] を出た順に、重なりを除いて並べる)。
     pub fn validation_codes(codes: impl IntoIterator<Item = &'static str>) -> Self {
         let mut list: Vec<&'static str> = Vec::new();
         for code in codes {
@@ -81,6 +82,20 @@ impl FieldValue<'_> {
         }
         Self::Codes(list)
     }
+}
+
+/// 検査の失敗の補足の値: `errors` (エラーの数) と `error_codes` (種類の一覧。[`FieldValue::validation_codes`])。
+///
+/// 着せ替えの `invalid_physics`・`invalid_composition`、読み込みの `invalid_model` ([`crate::LoadError::fields`])、
+/// 組み込み先の設定の差し替え (物理・エフェクト) の検査の失敗が同じ形を使う (T0168・T0469)。
+pub fn validation_fields(errors: &[ValidationError]) -> Vec<(&'static str, FieldValue<'static>)> {
+    vec![
+        ("errors", FieldValue::Index(errors.len())),
+        (
+            "error_codes",
+            FieldValue::validation_codes(errors.iter().map(ValidationError::code)),
+        ),
+    ]
 }
 
 impl fmt::Display for FieldValue<'_> {

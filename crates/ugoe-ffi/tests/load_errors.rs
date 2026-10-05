@@ -35,11 +35,12 @@ struct Failure {
 }
 
 /// 補足の値のキー (`ugoe::LoadError::fields` の全部)。
-const KEYS: [&str; 7] = [
+const KEYS: [&str; 8] = [
     "found",
     "supported",
     "features",
     "errors",
+    "error_codes",
     "limit",
     "chunk",
     "max",
@@ -106,6 +107,10 @@ fn invalid_model() -> ugoe::model::Model {
     model
 }
 
+/// [`invalid_model`] の検査の失敗の補足の値 (数と種類。種類は着せ替えの `invalid_physics` と同じ形。T0469)。
+const INVALID_MODEL_FIELDS: &[(&str, &str)] =
+    &[("errors", "1"), ("error_codes", "indices_not_triangles")];
+
 #[test]
 fn bundle_failures_have_kinds() {
     assert_eq!(
@@ -139,7 +144,7 @@ fn bundle_failures_have_kinds() {
     let bytes = write_bundle(&bundle).unwrap();
     assert_eq!(
         from_bundle(&bytes),
-        failure(UGOE_ERROR_FORMAT, "invalid_model", &[("errors", "1")])
+        failure(UGOE_ERROR_FORMAT, "invalid_model", INVALID_MODEL_FIELDS)
     );
 }
 
@@ -173,7 +178,7 @@ fn json_failures_have_kinds() {
         failure(
             UGOE_ERROR_INVALID_MODEL,
             "invalid_model",
-            &[("errors", "1")]
+            INVALID_MODEL_FIELDS
         )
     );
 

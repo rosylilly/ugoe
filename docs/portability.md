@@ -130,7 +130,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 光源 | 向きが 0・有限でない値・`range` が正でない・負の色を拒む (`ugoe_lighting_uniform`) | `set_lighting_json` は同じ条件で例外 | `ambient_light` は色が有限で負でなければ受け付け、そうでなければ拒む。光源は C ABI と同じ条件で、通らないものは警告を出して使わない |
 | 当たり判定の点 | 下の層と同じ (当たらない) | 同じ | 同じ |
 | 表示 (wasm のビュー・Godot のマスク) | — | `set_view`・`pan_by`・`zoom_at`・`set_background` は有限でなければ何も変えない ([wasm の表](../crates/ugoe-wasm/README.md#有限でない値と-dt)) | `mask_scale` は有限でなければ拒む |
-| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json` は検証して拒む。`ugoe_puppet_set_effects_json` は検証して `UGOE_ERROR_INVALID_MODEL` で拒み、`ugoe_last_error_kind` は `invalid_model`、補足の値 `errors` は検査のエラーの数) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外。`set_effects_json` は `code` が `invalid_model` で `errors` を持つ例外) | 同じ (`set_effects_json` は C ABI と同じ文のエラーを出して false) |
+| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` は検証して `UGOE_ERROR_INVALID_MODEL` で拒み、`ugoe_last_error_kind` は `invalid_physics`。`ugoe_puppet_set_effects_json` も同じく拒み、種類は `invalid_model`。補足の値はどちらも `errors` (検査のエラーの数)・`error_codes` (その種類)。T0461・T0469) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外。`set_physics_json`・`set_base_physics_json` は `code` が `invalid_physics`、`set_effects_json` は `invalid_model` で、`errors`・`error_codes` を持つ例外) | 同じ (`set_effects_json` は C ABI と同じ文のエラーを出して false) |
 
 - C ABI が拒む値を下の層は「書かない」「0 とみなす」で受け付けるのは、上の層の表し方の違いで、前提の違いではない。C ABI は結果コードで知らせる流儀なので、
   ホストの誤りを早く見つけられるよう拒む (T0423)。

@@ -98,6 +98,11 @@ export interface UgoeLoadErrorFields extends UgoeLimitErrorFields {
   features?: string;
   /** `invalid_model`: 検査のエラーの数。 */
   errors?: number;
+  /**
+   * `invalid_model`: 検査のエラーの種類 (`ValidationError::code`) を出た順に、重なりを除いて `, ` でつないだ文字列
+   * (着せ替えの `invalid_physics` の `error_codes` と同じ形。T0469)。個々のエラーの中身は `message` にだけある。
+   */
+  error_codes?: string;
 }
 
 /**

@@ -15,7 +15,7 @@ use ugoe_runtime::{
     compose_physics, compose_physics_without_base,
 };
 
-use crate::{FieldValue, Puppet};
+use crate::{FieldValue, Puppet, validation_fields};
 
 /// 合成したモデルのテクスチャ (`Model::textures` の 1 つ) の出どころ。
 ///
@@ -179,17 +179,6 @@ fn compose_fields(error: &ComposeError) -> Vec<(&'static str, FieldValue<'_>)> {
         ],
         C::Invalid(errors) => validation_fields(errors),
     }
-}
-
-/// 検査の失敗 (`invalid_physics`・`invalid_composition`) の補足の値: エラーの数と種類の一覧。
-fn validation_fields(errors: &[ValidationError]) -> Vec<(&'static str, FieldValue<'static>)> {
-    vec![
-        ("errors", FieldValue::Index(errors.len())),
-        (
-            "error_codes",
-            FieldValue::validation_codes(errors.iter().map(ValidationError::code)),
-        ),
-    ]
 }
 
 /// 着せ替えの状態: 本体と、取り付けているモジュール。

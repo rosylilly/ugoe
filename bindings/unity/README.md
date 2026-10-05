@@ -159,12 +159,15 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 失敗は `UgoeException` (`Result`・`Kind`・`Fields`)。種類 (`Kind`) と補足の値 (`Fields`) を持つのは、主に着せ替えの失敗 (`UgoeResult.DressUp` と、
 `.ugoemod` を読めなかったときの `UgoeResult.Format` の `"invalid_file"`)、モデルの読み込みの失敗 (`Puppet.FromBundle`・`Puppet.FromJson`・
 `UgoeModel.CreatePuppet` の `UgoeResult.Format` と `UgoeResult.InvalidModel`。種類は `"invalid_file"`・`"unsupported_version"`・
-`"unsupported_features"`・`"invalid_model"`・`"compile"`)、読み込みの上限 (`UgoeResult.LimitExceeded` の `"read_limit_exceeded"`) で、
-種類と補足の値は crates/ugoe-ffi/README.md (wasm の `DressUpError`・`LoadError`) と同じ。種類を持たない失敗 (NULL・範囲外の引数など) では `Kind` は null、`Fields` は空。
+`"unsupported_features"`・`"invalid_model"`・`"compile"`)、読み込みの上限 (`UgoeResult.LimitExceeded` の `"read_limit_exceeded"`)、
+設定の差し替えの検査の失敗 (`UgoeResult.InvalidModel`。`SetPhysicsJson`・`SetBasePhysicsJson` は `"invalid_physics"`、`SetEffectsJson` は
+`"invalid_model"`。補足の値はどちらも `"errors"`・`"error_codes"`。T0469) で、
+種類と補足の値は crates/ugoe-ffi/README.md (wasm の `DressUpError`・`LoadError`・設定の差し替えの例外) と同じ。種類を持たない失敗 (NULL・範囲外の引数など) では `Kind` は null、`Fields` は空。
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
 `Fields` は C ABI が列挙する補足の値 (`ugoe_last_error_field_count`・`ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at`) を
 すべて入れる。キーの一覧を C# に写さないので、新しい版で種類やキーが増えても、このパッケージを直さずに入る (T0464)。
-実際の失敗 (壊れたバンドル・知らない必須の機能・新しいスキーマの版・検査を通らないモデル・上限の超過・`unknown_mask` の着せ替え) の
+実際の失敗 (壊れたバンドル・知らない必須の機能・新しいスキーマの版・検査を通らないモデル・上限の超過・`unknown_mask` の着せ替え・
+検査を通らない物理とエフェクトの設定) の
 種類とキーが `crates/ugoe-wasm/codes.json` と揃っていることは `tests/ResultTests.cs` が確かめる。
 
 ### 読み込みの上限

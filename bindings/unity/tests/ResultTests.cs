@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // UgoeResult が C ABI の結果の値 (crates/ugoe-ffi/include/ugoe.h の UGOE_OK・UGOE_ERROR_*) と揃っているか (T0455)。
-// 実際の失敗 (モデルの読み込み・着せ替え) の UgoeException の種類と補足の値が、crates/ugoe-wasm/codes.json と揃っているか
+// 実際の失敗 (モデルの読み込み・着せ替え・設定の差し替え) の UgoeException の種類と補足の値が、crates/ugoe-wasm/codes.json と揃っているか
 // (T0458・T0464。補足の値は C ABI が列挙するものをすべて読むので、キーの一覧は C# に写さない)。
 using System;
 using System.IO;
@@ -60,6 +60,8 @@ namespace Ugoe.Tests
             Assert.That(e.Result, Is.EqualTo(UgoeResult.Format), e.Message);
             AssertCodes("load_error", e, "invalid_model");
             Assert.That(int.Parse(e.Fields["errors"]), Is.GreaterThan(0));
+            // 検査のエラーの種類を ", " でつないだもの (着せ替えの invalid_physics と同じ。T0469)。
+            Assert.That(e.Fields["error_codes"], Is.Not.Empty);
 
             // 上限の超過 (Kind と Fields の値は tests/LimitsTests.cs が確かめる)。
             var limits = UgoeReadLimits.Default;
@@ -97,6 +99,33 @@ namespace Ugoe.Tests
             Assert.That(e.Fields["mesh"], Is.EqualTo("Back"));
             Assert.That(e.Fields["mask"], Is.EqualTo("Skin"));
             Assert.That(puppet.AttachedModuleNames, Is.Empty);
+        }
+
+        [Test]
+        public void SettingsValidationFailuresCarryKinds()
+        {
+            // 見本のアバターの物理の設定は、テスト用の本体 (tests/Fixtures/mask-base.model.json) に無いパラメータを参照する。
+            using var avatar = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            var physics = avatar.PhysicsJson();
+            using var puppet = Puppet.FromJson(File.ReadAllText(Fixture("mask-base.model.json")));
+
+            // 物理の設定の差し替えの検査の失敗は、結果は InvalidModel のまま、種類は着せ替えと同じ invalid_physics (T0469)。
+            foreach (var set in new Action<string>[] { puppet.SetPhysicsJson, puppet.SetBasePhysicsJson })
+            {
+                var e = Assert.Throws<UgoeException>(() => set(physics));
+                Assert.That(e.Result, Is.EqualTo(UgoeResult.InvalidModel), e.Message);
+                AssertCodes("settings_error", e, "invalid_physics");
+                Assert.That(int.Parse(e.Fields["errors"]), Is.GreaterThan(0));
+                Assert.That(e.Fields["error_codes"].Split(", "), Does.Contain("unknown_reference"));
+                Assert.That(puppet.PhysicsJson(), Is.Null, "a failed replacement changes nothing");
+            }
+
+            // エフェクトの設定は読み込みと同じ invalid_model (T0461)。
+            var effects = Assert.Throws<UgoeException>(() => puppet.SetEffectsJson("{\"lip_sync\": {\"parameters\": [\"Missing\"]}}"));
+            Assert.That(effects.Result, Is.EqualTo(UgoeResult.InvalidModel), effects.Message);
+            AssertCodes("settings_error", effects, "invalid_model");
+            Assert.That(effects.Fields["errors"], Is.EqualTo("1"));
+            Assert.That(effects.Fields["error_codes"], Is.EqualTo("unknown_reference"));
         }
 
         /// <summary>

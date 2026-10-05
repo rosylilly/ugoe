@@ -413,7 +413,7 @@ namespace Ugoe
         /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの <c>effects</c> と同じ形) で差し替える。省略したフィールドは既定値。
         /// 目パチと呼吸は初めから (同じ設定でも) になり、リップシンクの音量は保つ (docs/spec/motion.md#エフェクト設定の差し替え)。
         /// 読めなければ <see cref="UgoeResult.Format"/>、モデルの読み込みと同じ検査 (有限でない値・範囲の外の値・モデルにないパラメータ) を
-        /// 通らなければ <see cref="UgoeResult.InvalidModel"/> (種類は <c>invalid_model</c>、補足の値 <c>errors</c>。どちらも何も変えない)。
+        /// 通らなければ <see cref="UgoeResult.InvalidModel"/> (種類は <c>invalid_model</c>、補足の値 <c>errors</c>・<c>error_codes</c>。どちらも何も変えない)。
         /// </summary>
         public void SetEffectsJson(string json)
         {
@@ -470,7 +470,8 @@ namespace Ugoe
 
         /// <summary>
         /// 物理の設定を JSON (<c>*.physics.json</c> の形) で差し替える。null なら物理を外す。読めなければ
-        /// <see cref="UgoeResult.Format"/>、モデルに合わなければ <see cref="UgoeResult.InvalidModel"/> (何も変えない)。
+        /// <see cref="UgoeResult.Format"/>、モデルに合わなければ <see cref="UgoeResult.InvalidModel"/> (種類は着せ替えと同じ
+        /// <c>invalid_physics</c>、補足の値 <c>errors</c>・<c>error_codes</c>。何も変えない)。
         /// 着せ替えの付け外しをすると、差し替えた設定は失われる。
         /// </summary>
         public void SetPhysicsJson(string json)
@@ -483,7 +484,7 @@ namespace Ugoe
         /// 本体の物理の設定を JSON (<see cref="SetPhysicsJson"/> と同じ形) で差し替える。null なら外す。着せ替えのモジュールを
         /// 付けていれば、モジュールの組と合成し直した設定に差し替え、この後の付け外しでもこの設定から合成する
         /// (docs/spec/modules.md#puppet-での着せ替え)。読めなければ <see cref="UgoeResult.Format"/>、合わなければ
-        /// <see cref="UgoeResult.InvalidModel"/>、合成できなければ <see cref="UgoeResult.DressUp"/> (何も変えない)。
+        /// <see cref="UgoeResult.InvalidModel"/> (種類と補足の値は <see cref="SetPhysicsJson"/> と同じ)、合成できなければ <see cref="UgoeResult.DressUp"/> (何も変えない)。
         /// </summary>
         public void SetBasePhysicsJson(string json)
         {

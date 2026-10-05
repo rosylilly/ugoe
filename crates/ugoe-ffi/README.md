@@ -121,7 +121,7 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 | `invalid_module_name`・`duplicate_module`・`not_attached` | 同上 | `module` |
 | `invalid_composition` | 同上 | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類。例: `"unknown_reference, duplicate_id"`。T0168) |
 | `compile` | 同上 | |
-| `invalid_physics` | 同上 (`ugoe_puppet_set_base_physics` では `UGOE_ERROR_INVALID_MODEL` で、種類を持たない) | `errors`・`error_codes` |
+| `invalid_physics` | 同上 (物理の設定の差し替え `ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` では `UGOE_ERROR_INVALID_MODEL`。T0469) | `errors`・`error_codes` |
 
 wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きない (モジュールはポインタで渡し、`UgoePuppet` は常にモデルを持ち、
 画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。種類と補足の値の対応は SDK の
@@ -172,7 +172,7 @@ if (r != UGOE_OK) {
 | `invalid_file` | `UGOE_ERROR_FORMAT` | | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど。細かい理由は `ugoe_last_error()` にだけある) |
 | `unsupported_version` | 同上 | `found` (ファイルの版)・`supported` (読める版) | ファイルの版 (スキーマかコンテナ) が新しすぎる |
 | `unsupported_features` | 同上 | `features` (知らない必須の機能の ID を `", "` でつないだもの) | 知らない必須の機能を宣言している |
-| `invalid_model` | `UGOE_ERROR_FORMAT` (バンドルを読むときの検査)・`UGOE_ERROR_INVALID_MODEL` (コンパイルの前の検査。JSON はここ) | `errors` (検査のエラーの数) | モデル・物理・モーション・表情が検査に通らない |
+| `invalid_model` | `UGOE_ERROR_FORMAT` (バンドルを読むときの検査)・`UGOE_ERROR_INVALID_MODEL` (コンパイルの前の検査。JSON はここ) | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類を `", "` でつないだもの。着せ替えの `invalid_physics` と同じ。T0469) | モデル・物理・モーション・表情が検査に通らない |
 | `compile` | `UGOE_ERROR_INVALID_MODEL` | | 検査は通ったが評価できない構造 |
 | `read_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` | `limit`・`chunk`・`max` | [読み込みの上限](#読み込みの上限-t0152) を超えた |
 
@@ -311,11 +311,14 @@ ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (�
   `MotionEvent.Motion`・`Number`、Godot は `motion_event_fired` のシグナルと `get_motion_events()`。
 - `ugoe_puppet_set_physics_json` は `ugoe::Puppet::set_physics` と同じく、モデルに対して検査する。JSON を読めなければ `UGOE_ERROR_FORMAT`、
   検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
+  検査の失敗の種類 (`ugoe_last_error_kind`) は `"invalid_physics"`、補足の値は `"errors"` (検査のエラーの数)・`"error_codes"`
+  (種類を `, ` でつないだもの) で、着せ替えの `invalid_physics` と同じ (T0469。戻り値は前のまま、種類を足しただけなので ABI の版は上げない)。
 - 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。
   差し替えた設定を保たないことは T0414 で決めた (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
 - 付けている間も保つ設定は `ugoe_puppet_set_base_physics_json` で本体の設定として渡す (`ugoe::Puppet::set_base_physics`、T0416)。
   付けているモジュールの組と合成し直し、この後の付け外しでもこの設定から合成する。付けたことがなければ `ugoe_puppet_set_physics_json` と同じ。
-  JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ `UGOE_ERROR_INVALID_MODEL`、
+  JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ `UGOE_ERROR_INVALID_MODEL`
+  (種類と補足の値は `ugoe_puppet_set_physics_json` と同じ `"invalid_physics"`)、
   合成できなければ `UGOE_ERROR_DRESS_UP` (種類は `ugoe_last_error_kind`) で、何も変えない。本体の物理の有無が変わってスロットの
   衝突体の扱いが変わるとモデルを差し替えるので、そのときは着せ替えの操作と同じく ID のポインタが無効になる。
 - `ugoe_puppet_base_physics_json` は合成する前の本体の設定 (付けたことがなければ今の設定)。モデルを読み直すホストが引き継ぐために使う。
@@ -350,8 +353,8 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
   設定はモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・範囲の外の値
   (目パチの `interval` と呼吸の `cycle` が 0 以下、目パチの `closing`・`closed`・`opening` が負)・モデルにないパラメータ)。
-  通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、`ugoe_last_error_field("errors")` は検査のエラーの数。
-  読み込みの `invalid_model` と同じ) を返し、何も変えない (T0461)。
+  通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、`ugoe_last_error_field("errors")` は検査のエラーの数、
+  `"error_codes"` は種類を `, ` でつないだもの。読み込みの `invalid_model` と同じ) を返し、何も変えない (T0461・T0469)。
 - パーツの ID のポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効 (当たり判定の ID と同じ)。
 
 ## 受け手として進める (T0133・T0134・T0135)

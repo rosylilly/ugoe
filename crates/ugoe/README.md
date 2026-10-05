@@ -28,7 +28,8 @@
 - モデルの読み込みの失敗の種類 (`LoadError::code`・`fields`。`src/load_error.rs`)。`.ugoe`・JSON を読めない (`FormatError`) かコンパイルできない
   (`CompileError`) ときの `invalid_file`・`unsupported_version`・`unsupported_features`・`invalid_model`・`compile`・`read_limit_exceeded`。
   wasm の `LoadError` と C ABI の `ugoe_puppet_create_from_*` が同じ値を返すためにここで決める (T0457)。補足の値は `LoadErrorValue`
-  (数か文。上限のバイト数が `usize` に収まらないことがあるので `FieldValue` とは別)
+  (数か文。上限のバイト数が `usize` に収まらないことがあるので `FieldValue` とは別)。`invalid_model` は `errors`・`error_codes`
+  (着せ替えの `invalid_physics` と同じ値。`error_codes` は文。T0469)
 - [docs/spec/file-formats.md#読み込みの上限](../../docs/spec/file-formats.md#読み込みの上限) (`limits`: 上限は `ugoe::format::read_bundle_with` /
   `ugoe::format::module_file::read_module_with` に `ReadLimits` を渡して指定する。超えたときの種類と補足の値 `ReadLimitExceeded` は
   wasm と C ABI が同じ値を返すためにここで決める。T0152)
@@ -60,6 +61,9 @@
 `error_codes` は検査のエラーの種類 (`ValidationError::code`。`unknown_reference`・`duplicate_id` など) を出た順に、
 重なりを除いて並べたもの。外に出すときは `, ` でつなぐ (例: `"unknown_reference, duplicate_id"`。読み込みの失敗の `features` と同じつなぎ方)。
 個々のエラーの中身 (どの ID か) は文 (`Display`) にだけある (T0168)。
+
+検査の失敗の `errors`・`error_codes` は `ugoe::validation_fields` が作る。読み込みの `invalid_model` (`LoadError::fields`) と、
+組み込み先 (wasm・C ABI) の設定の差し替え (物理の `invalid_physics`・エフェクトの `invalid_model`) も同じ値を使う (T0469)。
 
 読み込みの警告 `physics_removed` (wasm の `load_json` で読み直したとき、引き継いだ物理の設定を外した) も、外した理由が
 検査のエラーなら `reason` に加えて同じ `errors`・`error_codes` を持つ (`LoadWarning::PhysicsRemoved` の `codes`。T0168)。

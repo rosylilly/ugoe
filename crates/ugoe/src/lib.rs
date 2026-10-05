@@ -35,7 +35,7 @@ pub use follow::{LipSyncInput, ParameterValuesError, PartOpacityInput};
 // 読み込みの警告の種類 (T0412)。
 mod warning;
 
-pub use warning::{FieldValue, LoadWarning};
+pub use warning::{FieldValue, LoadWarning, validation_fields};
 
 // 読み込みの上限と、超えたときの種類 (T0152)。
 pub mod limits;
