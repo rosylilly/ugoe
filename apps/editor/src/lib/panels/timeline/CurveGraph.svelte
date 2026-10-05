@@ -2,6 +2,7 @@
   選んだ行のカーブのグラフ: キー (円) とベジェの取っ手 (四角) をドラッグで編集し、離したときに Command を 1 つ送る
   (キーは move_motion_key、取っ手は set_motion_segment。送る直前のカーブから組み立てる。docs/editor.md#パネルからの編集)。ダブルクリックでその位置にキーを打つ。
   左の欄: 選んだキーの時刻と値、そのキーに入る区間の種類 (直線・ベジェ・ステップ)、カーブ個別のフェード、カーブの削除。
+  欄の確定・区間の種類・フェードも、送る直前のカーブから組み立てる。
 -->
 <script lang="ts">
 import { NumberField } from "@ugoe/ui";
@@ -258,29 +259,52 @@ function setKeyField(field: "t" | "v", value: number) {
     });
 }
 
-async function setKind(kind: SegmentKind) {
-  if (selectedT === null) return;
-  await apply({
-    op: "set_motion_segment",
-    motion: motion.name,
-    target: row.target,
-    t: selectedT,
-    segment: segmentShape(kind),
-  });
+function setKind(kind: SegmentKind) {
+  const from = selectedT;
+  if (from === null) return;
+  const name = motion.name;
+  const moves = timeline.keyMoves;
+  // 押したときの選択はまだ前の時刻を指していることがあるので、送った時刻の変更をたどって今の時刻のキーで終わる区間を変える。
+  void moves.track(
+    doc.send(() => {
+      const curve = currentCurve();
+      const key = curve ? moves.follow(name, curve, from) : null;
+      const segment = curve && key ? segmentEndingAt(curve, key.t) : null;
+      if (!key || !segment || segment.type === kind) return null;
+      onmessage(null);
+      // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+      return {
+        op: "set_motion_segment",
+        motion: name,
+        target: row.target,
+        t: key.t,
+        segment: segmentShape(kind),
+      };
+    }),
+  );
 }
 
-async function setFade(field: "fade_in" | "fade_out", e: Event) {
-  const curve = row.curve;
-  if (!curve) return;
+function setFade(field: "fade_in" | "fade_out", e: Event) {
   const input = e.currentTarget as HTMLInputElement;
   const value = input.value.trim() === "" ? null : input.valueAsNumber;
   if (value !== null && !Number.isFinite(value)) return;
-  const fades = {
-    fade_in: curve.fade_in ?? null,
-    fade_out: curve.fade_out ?? null,
-    [field]: value,
-  };
-  await apply({ op: "set_motion_curve_fade", motion: motion.name, target: row.target, ...fades });
+  const name = motion.name;
+  // もう一方のフェードは、送る直前の (前に確定したフェードを読み直した後の) カーブから取る。
+  void doc.send(() => {
+    const curve = currentCurve();
+    if (!curve) return null;
+    const fades = {
+      fade_in: curve.fade_in ?? null,
+      fade_out: curve.fade_out ?? null,
+      [field]: value,
+    };
+    if (fades.fade_in === (curve.fade_in ?? null) && fades.fade_out === (curve.fade_out ?? null)) {
+      return null;
+    }
+    onmessage(null);
+    // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+    return { op: "set_motion_curve_fade", motion: name, target: row.target, ...fades };
+  });
 }
 
 async function removeCurve() {

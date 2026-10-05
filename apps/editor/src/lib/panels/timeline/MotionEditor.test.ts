@@ -63,6 +63,18 @@ function setup() {
   const doc = new FakeDocument();
   doc.motions = [motion()];
   doc.onApply = (command) => {
+    if (command.op === "remove_motion_key") {
+      const current = doc.motions[0];
+      const c = current ? findCurve(current, TARGET) : null;
+      const index = c
+        ? c.segments.findIndex((s) => s.type !== "start" && s.to.t === command.t)
+        : -1;
+      if (!current || !c || index < 0) return false;
+      doc.motions = [
+        { ...current, curves: [{ ...c, segments: c.segments.filter((_, i) => i !== index) }] },
+      ];
+      return true;
+    }
     if (command.op !== "move_motion_key") return true;
     const current = doc.motions[0];
     const c = current ? findCurve(current, TARGET) : null;
@@ -96,6 +108,13 @@ function dx(dt: number): number {
 
 async function settleAll(): Promise<void> {
   for (let i = 0; i < 10; i++) await settle();
+}
+
+/** パネルで Delete を押す (選んだキーの削除)。 */
+function pressDelete(target: HTMLElement): void {
+  const panel = target.querySelector(".motion-editor");
+  if (!panel) throw new Error("no panel");
+  panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
 }
 
 describe("MotionEditor dope sheet drags while sending", () => {
@@ -147,5 +166,48 @@ describe("MotionEditor dope sheet drags while sending", () => {
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.6, v: 10 } },
     ]);
     expect(timeline.selectedKey?.t).toBe(1.6);
+  });
+});
+
+describe("MotionEditor key removal while sending", () => {
+  it("removes the key moved by a pending drag", async () => {
+    const { doc, timeline, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    drag(diamond(target), [
+      [100, 10],
+      [100 + dx(0.5), 10],
+    ]);
+    await settle();
+    // 選択はまだ時刻 1 を指している。
+    pressDelete(target);
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      { op: "remove_motion_key", motion: "Nod", target: TARGET, t: 1.5 },
+    ]);
+    expect(timeline.selectedKey).toBeNull();
+  });
+
+  it("does not send the removal when the key is gone", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    drag(diamond(target), [
+      [100, 10],
+      [100 + dx(0.5), 10],
+    ]);
+    await settle();
+    // 同じキーを 2 度消す (1 度目の削除を送っている間に、もう一度押す)。
+    pressDelete(target);
+    await settle();
+    pressDelete(target);
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      { op: "remove_motion_key", motion: "Nod", target: TARGET, t: 1.5 },
+    ]);
   });
 });

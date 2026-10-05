@@ -199,13 +199,34 @@ async function keyChanged() {
   await apply(command);
 }
 
-async function removeSelectedKey() {
+function removeSelectedKey() {
   const key = timeline.selectedKey;
   const row = rows.find((r) => targetKey(r.target) === key?.track);
   if (!motion || !key || !row) return;
-  if (await apply({ op: "remove_motion_key", motion: motion.name, target: row.target, t: key.t })) {
-    timeline.selectedKey = null;
-  }
+  const name = motion.name;
+  const moves = timeline.keyMoves;
+  let removed: number | null = null;
+  // 押したときの選択はまだ前の時刻を指していることがあるので、送った時刻の変更をたどって今の時刻のキーを消す。
+  void moves
+    .track(
+      doc.send(() => {
+        const m = doc.motions.find((x) => x.name === name);
+        const curve = m ? findCurve(m, row.target) : null;
+        const current = curve ? moves.follow(name, curve, key.t) : null;
+        if (!current) return null;
+        message = null;
+        removed = current.t;
+        // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+        return { op: "remove_motion_key", motion: name, target: row.target, t: current.t };
+      }),
+    )
+    .then((report) => {
+      // 送っている間に別のキーを選び直していれば、その選択は残す。
+      const sent: number | null = removed;
+      const selected = timeline.selectedKey;
+      if (!report || sent === null || selected?.track !== key.track) return;
+      if (selected.t === key.t || selected.t === sent) timeline.selectedKey = null;
+    });
 }
 
 // --- ドープシートのドラッグ ---

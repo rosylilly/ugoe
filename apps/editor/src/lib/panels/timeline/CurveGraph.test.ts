@@ -71,11 +71,21 @@ function setup() {
   const doc = new FakeDocument();
   doc.motions = [motion(curve())];
   doc.onApply = (command) => {
-    if (command.op !== "move_motion_key") return true;
     const current = doc.motions[0];
     const c = current ? findCurve(current, TARGET) : null;
-    const next = c ? moveKey(c, command) : null;
-    if (!current || !next) return false;
+    if (!current || !c) return false;
+    if (command.op === "set_motion_curve_fade") {
+      doc.motions = [
+        {
+          ...current,
+          curves: [{ ...c, fade_in: command.fade_in ?? null, fade_out: command.fade_out ?? null }],
+        },
+      ];
+      return true;
+    }
+    if (command.op !== "move_motion_key") return true;
+    const next = moveKey(c, command);
+    if (!next) return false;
     doc.motions = [{ ...current, curves: [next] }];
     return true;
   };
@@ -220,6 +230,81 @@ describe("CurveGraph drags while sending", () => {
     expect(doc.commands).toEqual([
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.6, v: 10 } },
+    ]);
+  });
+});
+
+/** 区間の種類のボタン (直線・ベジェ・ステップ・逆ステップの順)。 */
+function kindButton(target: HTMLElement, index: number): HTMLButtonElement {
+  const button = target.querySelectorAll<HTMLButtonElement>(".kinds button")[index];
+  if (!button) throw new Error("no kind button");
+  return button;
+}
+
+/** カーブのフェードの欄 (0 = フェードイン、1 = フェードアウト) に値を入れて確定する。 */
+function setFade(target: HTMLElement, index: number, text: string): void {
+  const input = target.querySelectorAll<HTMLInputElement>("label.inline input")[index];
+  if (!input) throw new Error("no fade field");
+  input.value = text;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  flushSync();
+}
+
+describe("CurveGraph segment and fade edits while sending", () => {
+  it("sets the kind of the segment ending at the key moved by a pending drag", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
+    await settle();
+    // 表示 (選択) はまだ時刻 1 を指している。
+    kindButton(target, 2).click();
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
+      {
+        op: "set_motion_segment",
+        motion: "Nod",
+        target: TARGET,
+        t: 1.5,
+        segment: { type: "stepped" },
+      },
+    ]);
+  });
+
+  it("does not send the kind when the key is gone", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    // 先に並べた編集 (ドープシートの削除など) が、選んだキーを消す。
+    const remove: Command = { op: "remove_motion_key", motion: "Nod", target: TARGET, t: 1 };
+    doc.onApply = (command) => {
+      if (command.op !== "remove_motion_key") return true;
+      const segments = curve().segments.filter((s) => s.type !== "bezier");
+      doc.motions = [motion({ ...curve(), segments })];
+      return true;
+    };
+    void doc.send(() => remove);
+    kindButton(target, 2).click();
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([remove]);
+  });
+
+  it("keeps the other fade committed while sending", async () => {
+    const { doc, target } = setup();
+    const gate = deferred();
+    doc.pending = gate.promise;
+    setFade(target, 0, "0.5");
+    await settle();
+    // 表示のカーブはまだフェードインが無い。
+    setFade(target, 1, "0.3");
+    gate.resolve();
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: 0.5, fade_out: null },
+      { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: 0.5, fade_out: 0.3 },
     ]);
   });
 });
