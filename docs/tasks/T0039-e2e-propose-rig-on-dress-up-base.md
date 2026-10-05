@@ -1,11 +1,11 @@
 ---
 id: T0039
 title: "e2e: 提案のプレビューの筋書きを、見本の着せ替えの本体に取り込んだ PSD で通す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0039
 ---
 
 # T0039: e2e: 提案のプレビューの筋書きを、見本の着せ替えの本体に取り込んだ PSD で通す

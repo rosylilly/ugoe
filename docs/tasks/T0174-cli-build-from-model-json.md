@@ -1,11 +1,11 @@
 ---
 id: T0174
 title: "CLI: ugoe build がモデル・モジュールの JSON からバンドル・モジュールを書けるようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0174
 ---
 
 # T0174: CLI: ugoe build がモデル・モジュールの JSON からバンドル・モジュールを書けるようにする

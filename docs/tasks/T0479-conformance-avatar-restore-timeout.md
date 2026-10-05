@@ -1,11 +1,11 @@
 ---
 id: T0479
 title: "適合テスト: <ugoe-avatar> で復元が届かないときの作り直しのシナリオ"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0479
 ---
 
 # T0479: 適合テスト: <ugoe-avatar> で復元が届かないときの作り直しのシナリオ

@@ -1,11 +1,11 @@
 ---
 id: T0328
 title: "見本: アバターにポーズを切り替えるモーションと、振る手を回転デフォーマで揺らす"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, assets, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0328
 ---
 
 # T0328: 見本: アバターにポーズを切り替えるモーションと、振る手を回転デフォーマで揺らす

@@ -1,11 +1,11 @@
 ---
 id: T0842
 title: "スタジオ: プロファイルやシーンでポーズの要素を選んで覚える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0842
 ---
 
 # T0842: スタジオ: プロファイルやシーンでポーズの要素を選んで覚える

@@ -1,11 +1,11 @@
 ---
 id: T0173
 title: "仕様: PNG のテクスチャの読み方 (16 ビット・パレット・ガンマや色のチャンク) を書く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0173
 ---
 
 # T0173: 仕様: PNG のテクスチャの読み方 (16 ビット・パレット・ガンマや色のチャンク) を書く
