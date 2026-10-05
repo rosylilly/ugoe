@@ -1,11 +1,11 @@
 ---
 id: T0733
 title: "ビューア: Windows・Linux で起動中に開いたファイルを今のウィンドウで開く (single-instance)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0733
 ---
 
 # T0733: ビューア: Windows・Linux で起動中に開いたファイルを今のウィンドウで開く (single-instance)
