@@ -236,6 +236,8 @@ ugoe_puppet_motion_event_count(puppet, &n);          /* 直前の update で発�
 for (uint32_t i = 0; i < n; i++) {
     UgoeMotionEvent e;
     ugoe_puppet_motion_event(puppet, i, &e);          /* e.time (モーションの中の秒)・e.value (次の update まで有効) */
+    UgoeMotionEventSource s;
+    ugoe_puppet_motion_event_source(puppet, i, &s);   /* 発火したモーション: s.motion (名前)・s.number (始めた番号。T0462) */
 }
 
 size_t len = 0;
@@ -247,6 +249,12 @@ ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (�
 ```
 
 - イベントは `ugoe::Puppet::motion_events` と同じ (開始した順のモーションごとに、発火した順)。wasm の `motion_events()` は値だけを返す。
+- **イベントの出どころ (T0462):** `ugoe_puppet_motion_event_source` は同じ番号のイベントを発火したモーションの名前と、始めた番号
+  (`ugoe::Puppet::motion_event_sources`。この `UgoePuppet` で開始したモーションに 1 から振り、開始しなかった要求では進まない)。
+  クロスフェードでフェードアウト中のモーションのイベントはそのモーションのもので、同じ名前を始め直したものは番号で見分ける
+  (`docs/spec/motion.md#モーションマネージャ`)。**口の形:** `UgoeMotionEvent` にフィールドを足すと構造体の大きさが変わって ABI を壊すので、
+  [ABI の版](#abi-の版) の規則どおり別の構造体と関数を足した (ABI の版は上げない)。wasm は `motion_events_json()`、Unity は
+  `MotionEvent.Motion`・`Number`、Godot は `motion_event_fired` のシグナルと `get_motion_events()`。
 - `ugoe_puppet_set_physics_json` は `ugoe::Puppet::set_physics` と同じく、モデルに対して検査する。JSON を読めなければ `UGOE_ERROR_FORMAT`、
   検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
 - 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。

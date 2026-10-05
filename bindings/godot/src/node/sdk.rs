@@ -175,6 +175,34 @@ impl UgoePuppet2D {
             .collect()
     }
 
+    // --- モーションのイベント
+
+    /// 直前の `advance` で発火したモーションのイベント (T0462)。要素は `{ "value", "time", "motion", "number" }` で、
+    /// `time` はモーションの中の秒、`motion` と `number` はイベントを発火したモーションの名前と始めた番号 (このノードで開始した
+    /// モーションに 1 から振る。開始しなかった要求では進まず、モデルを読み直すと 1 からになる)。クロスフェードでフェードアウト中の
+    /// モーションのイベントはそのモーションのもの。並びは開始した順のモーションごとに発火した順で、wasm の `motion_events_json()`・
+    /// C ABI の `ugoe_puppet_motion_event`・`ugoe_puppet_motion_event_source` と同じ。`follow` はイベントを変えない。モデルが無ければ空。
+    #[func]
+    pub fn get_motion_events(&self) -> Array<VarDictionary> {
+        let Some(loaded) = &self.loaded else {
+            return Array::new();
+        };
+        let puppet = &loaded.puppet;
+        puppet
+            .motion_events()
+            .iter()
+            .zip(puppet.motion_event_sources())
+            .map(|(e, source)| {
+                let mut d = VarDictionary::new();
+                d.set("value", e.value.as_str());
+                d.set("time", e.t);
+                d.set("motion", source.name.as_str());
+                d.set("number", super::to_i64(source.number));
+                d
+            })
+            .collect()
+    }
+
     // --- 標準の当たり判定 (docs/spec/avatar-profile.md#アプリ向けの情報)
 
     /// 標準の当たり判定の名前 (`"Head"`・`"Body"`。`Model.avatar.hit_areas`) に対応する当たり判定の ID。無ければ空。

@@ -142,5 +142,27 @@ namespace Ugoe.Tests
             Assert.That(puppet.MotionEvents().Select(e => e.Value),
                 Is.EqualTo(new[] { "idle-start", "idle-half", "idle-start", "idle-half", "idle-start" }));
         }
+
+        // 同じ例のフレーム 4〜9: wave に替えた後も、フェードアウト中の idle のイベントは idle (1 番目) のもの (T0462)。
+        [Test]
+        public void MotionEventsNameTheMotionThatFired()
+        {
+            using var puppet = Puppet.FromBundle(File.ReadAllBytes(Paths.Example("bundles", "motion-crossfade.ugoe")));
+            Assert.That(puppet.StartMotion("idle", MotionPriority.Idle), Is.True);
+            puppet.Update(0.25f);
+            Assert.That(puppet.MotionEvents().Select(e => (e.Value, e.Motion, e.Number)),
+                Is.EqualTo(new[] { ("idle-start", "idle", 1UL) }));
+            foreach (var dt in new[] { 0.25f, 0.25f, 2.5f }) puppet.Update(dt);
+            Assert.That(puppet.StartMotion("wave", MotionPriority.Normal), Is.True);
+            puppet.Update(0.25f);
+            Assert.That(puppet.MotionEvents().Select(e => (e.Value, e.Motion, e.Number)),
+                Is.EqualTo(new[] { ("idle-half", "idle", 1UL) }));
+            // 優先度の低い要求は始まらないので、番号は進まない。
+            Assert.That(puppet.StartMotion("idle", MotionPriority.Idle), Is.False);
+            foreach (var dt in new[] { 0.25f, 0.25f, 0.25f, 0.25f }) puppet.Update(dt);
+            puppet.Update(0.25f);
+            Assert.That(puppet.MotionEvents().Select(e => (e.Value, e.Motion, e.Number)),
+                Is.EqualTo(new[] { ("wave-end", "wave", 2UL) }));
+        }
     }
 }

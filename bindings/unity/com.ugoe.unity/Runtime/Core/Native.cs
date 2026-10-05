@@ -94,6 +94,13 @@ namespace Ugoe
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        internal struct MotionEventSource
+        {
+            public IntPtr Motion;
+            public ulong Number;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         internal struct PartOpacity
         {
             public float Value;
@@ -202,6 +209,7 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_stop_expressions(PuppetHandle puppet);
         [DllImport(Library)] internal static extern int ugoe_puppet_motion_event_count(PuppetHandle puppet, out uint count);
         [DllImport(Library)] internal static extern int ugoe_puppet_motion_event(PuppetHandle puppet, uint index, out MotionEvent motionEvent);
+        [DllImport(Library)] internal static extern int ugoe_puppet_motion_event_source(PuppetHandle puppet, uint index, out MotionEventSource source);
         [DllImport(Library)] internal static extern int ugoe_puppet_set_effects_json(PuppetHandle puppet, byte[] json, UIntPtr len);
 
         // --- パーツ・ポーズ ---

@@ -99,6 +99,14 @@ impl WebPuppet {
             .unwrap_or_default()
     }
 
+    /// 直前の `update` で発火したモーションのイベントと、それを発火したモーションの JSON (T0462)。
+    /// `[{"value", "time", "motion", "number"}]` (並びは `motion_events` と同じ)。モデルが無ければ `[]`。
+    pub fn motion_events_json(&self) -> String {
+        self.puppet
+            .as_ref()
+            .map_or_else(|| "[]".to_owned(), animation::motion_events_json)
+    }
+
     // --- 表情 ---
 
     /// 読み込んだバンドルの表情の名前 (チャンクの順)。

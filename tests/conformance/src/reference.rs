@@ -7,16 +7,22 @@
 use std::sync::Arc;
 
 use ugoe::Puppet;
+use ugoe::motion::Priority;
 use ugoe_headless::animate;
 
-use crate::frame::Frame;
+use crate::frame::{Frame, MotionEventFrame};
 use crate::plan::Case;
 use crate::{Error, read};
 
 /// `case` の参照の結果。
 pub fn evaluate(case: &Case) -> Result<Frame, Error> {
-    let puppet = puppet(case)?;
-    Ok(Frame::from_instance(puppet.instance()))
+    let mut events = Vec::new();
+    let puppet = run(case, &mut events)?;
+    let mut frame = Frame::from_instance(puppet.instance());
+    if !case.motions.is_empty() {
+        frame.motion_events = Some(events);
+    }
+    Ok(frame)
 }
 
 /// 受け手として進めるケースの 1 フレーム分の入力 (`Puppet::follow` の引数)。
@@ -100,7 +106,7 @@ fn drive(
     });
     if let Some(name) = &case.motion {
         let motion = bundle_motion(case, name)?;
-        conductor.start_motion(motion, ugoe::motion::Priority::Normal);
+        conductor.start_motion(motion, Priority::Normal);
     }
     for (i, &dt) in case.steps.iter().enumerate() {
         if lip_sync {
@@ -123,13 +129,47 @@ fn toggles(case: &Case) -> ugoe::Toggles {
 
 /// `case` のとおりに作って評価した `Puppet`。
 pub fn puppet(case: &Case) -> Result<Puppet, Error> {
+    run(case, &mut Vec::new())
+}
+
+/// [`puppet`] と同じ。計画の `motions` を始め、発火したモーションのイベントを `events` に足す (T0462)。
+fn run(case: &Case, events: &mut Vec<MotionEventFrame>) -> Result<Puppet, Error> {
     let mut puppet = loaded(case)?;
     if !case.steps.is_empty() {
         // 計画の列は `advance` と同じ (`plan::steps`)。バインディングと同じく、列のとおりに進める。
         puppet.set_toggles(toggles(case));
         if case.follow.is_empty() {
-            for &dt in &case.steps {
+            for (i, &dt) in case.steps.iter().enumerate() {
+                for m in case.motions.iter().filter(|m| m.step == i) {
+                    let priority = match m.priority.as_str() {
+                        "idle" => Priority::Idle,
+                        "force" => Priority::Force,
+                        _ => Priority::Normal,
+                    };
+                    let accepted = puppet.start_motion(bundle_motion(case, &m.name)?, priority);
+                    if accepted != m.accepted {
+                        return Err(invalid(
+                            case,
+                            format!("starting `{}` at step {i} gave {accepted}", m.name),
+                        ));
+                    }
+                }
                 puppet.update(dt);
+                if !case.motions.is_empty() {
+                    events.extend(
+                        puppet
+                            .motion_events()
+                            .iter()
+                            .zip(puppet.motion_event_sources())
+                            .map(|(e, source)| MotionEventFrame {
+                                step: i,
+                                value: e.value.clone(),
+                                time: e.t,
+                                motion: source.name.clone(),
+                                number: source.number,
+                            }),
+                    );
+                }
             }
         } else {
             for (i, (&dt, values)) in case.steps.iter().zip(&case.follow).enumerate() {
@@ -249,6 +289,36 @@ mod tests {
         }
     }
 
+    /// `motions` のケースの参照は、発火したイベントとその出どころを書く (T0462)。フェードアウト中の idle のイベントは
+    /// 1 番目のもので、始まらなかった要求は番号を取らない (`spec/examples/motion-crossfade/timeline.json`)。
+    #[test]
+    fn motion_cases_record_the_motion_that_fired() {
+        let plan = plan();
+        let case = plan
+            .cases
+            .iter()
+            .find(|c| c.name == "motion-events-crossfade")
+            .unwrap();
+        let events = evaluate(case).unwrap().motion_events.unwrap();
+        let at = |step: usize| -> Vec<(&str, &str, u64)> {
+            events
+                .iter()
+                .filter(|e| e.step == step)
+                .map(|e| (e.value.as_str(), e.motion.as_str(), e.number))
+                .collect()
+        };
+        assert_eq!(at(0), [("idle-start", "idle", 1)]);
+        // wave (2 番目) に替えた後、フェードアウト中の idle のイベント
+        assert_eq!(at(4), [("idle-start", "idle", 1)]);
+        assert_eq!(at(5), [("idle-half", "idle", 1)]);
+        assert_eq!(at(9), [("wave-end", "wave", 2)]);
+        assert_eq!(at(10), [("idle-start", "idle", 3)]);
+        assert!(events.iter().all(|e| e.motion != "wave" || e.number == 2));
+        // ほかのケースは書かない
+        let other = plan.cases.iter().find(|c| c.motions.is_empty()).unwrap();
+        assert_eq!(evaluate(other).unwrap().motion_events, None);
+    }
+
     /// 計画の `update` の列で進めた結果が、`ugoe render --time` (`animate::advance`) と同じになる。
     #[test]
     fn steps_match_advance() {
@@ -257,7 +327,11 @@ mod tests {
             .cases
             .iter()
             .find(|c| {
-                !c.steps.is_empty() && c.modules.is_empty() && c.bundle && c.follow.is_empty()
+                !c.steps.is_empty()
+                    && c.modules.is_empty()
+                    && c.bundle
+                    && c.follow.is_empty()
+                    && c.motions.is_empty()
             })
             .unwrap();
         let expected = evaluate(case).unwrap();

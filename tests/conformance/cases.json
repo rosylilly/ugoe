@@ -302,6 +302,20 @@
       "motion": "switch",
       "conduct": true,
       "image": false
+    },
+    {
+      "name": "motion-events-crossfade",
+      "summary": "Where motion events come from (T0462): spec/examples/motion-crossfade in steps of 0.25 s. idle (number 1) loops and fires its events; wave (number 2) replaces it at step 4 while idle fades out and still fires `idle-start` and `idle-half` (steps 4 and 5) as idle number 1; an idle request at step 5 is refused and takes no number; a force idle at step 10 is number 3. The runner writes every fired event with the motion name and number.",
+      "model": "spec/examples/bundles/motion-crossfade.ugoe",
+      "time": 3,
+      "fps": 4,
+      "motions": [
+        { "step": 0, "name": "idle", "priority": "idle", "accepted": true },
+        { "step": 4, "name": "wave", "priority": "normal", "accepted": true },
+        { "step": 5, "name": "idle", "priority": "idle", "accepted": false },
+        { "step": 10, "name": "idle", "priority": "force", "accepted": true }
+      ],
+      "image": false
     }
   ]
 }

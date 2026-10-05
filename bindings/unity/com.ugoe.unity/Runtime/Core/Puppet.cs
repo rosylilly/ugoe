@@ -393,6 +393,7 @@ namespace Ugoe
 
         /// <summary>
         /// 直前の <see cref="Update"/> で発火したモーションのイベント (開始した順のモーションごとに、発火した順)。
+        /// 発火したモーションの名前と始めた番号 (<see cref="MotionEvent.Motion"/>・<see cref="MotionEvent.Number"/>) も持つ。
         /// </summary>
         public MotionEvent[] MotionEvents()
         {
@@ -402,7 +403,8 @@ namespace Ugoe
             for (uint i = 0; i < count; i++)
             {
                 UgoeException.Check(Native.ugoe_puppet_motion_event(handle, i, out var e));
-                result[i] = new MotionEvent(e.Time, Utf8.Decode(e.Value));
+                UgoeException.Check(Native.ugoe_puppet_motion_event_source(handle, i, out var source));
+                result[i] = new MotionEvent(e.Time, Utf8.Decode(e.Value), Utf8.Decode(source.Motion), source.Number);
             }
             return result;
         }

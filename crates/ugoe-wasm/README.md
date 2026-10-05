@@ -138,6 +138,7 @@ puppet.pose_json();                    // 今のポーズ (モデルの pose の
 puppet.part_evaluated_opacity("ArmB"); // 評価後のパーツの不透明度 (祖先を掛けた値。T0416)。パーツが無ければ undefined
 puppet.update(dt);                     // Puppet::update と同じ順で 1 フレーム進める
 puppet.motion_events();                // 直前の update で発火したイベントの値
+puppet.motion_events_json();           // [{value, time, motion, number}] 発火したモーションの名前と始めた番号も (T0462)
 puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の名前で当たり判定
 ```
 
@@ -148,6 +149,12 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
   `active_expressions` は同じ名前を重ねても 1 つと数える。Rust の `ExpressionManager::players` はフェードアウト中のものも含み、止めたかを
   返さないので、`WebPuppet` が表情の操作 (`set_expression`・`set_expression_json`・`add_expression`・`stop_expression`・`stop_expressions`) を写して
   持ち、再生中の表情が無い名前は除いて返す (`crate::animation::ActiveExpressions`)。モデルを読み直すと空になる。
+- `motion_events_json` の `motion`・`number` はイベントを発火したモーションの名前と始めた番号 (`ugoe::Puppet::motion_event_sources`。
+  この `WebPuppet` で開始したモーションに 1 から振り、開始しなかった要求では進まない)。クロスフェードでフェードアウト中のモーションの
+  イベントはそのモーションのもので、同じ名前を始め直したものは番号で見分ける。`time` はモーションの中の秒。
+  **口の形 (T0462):** `motion_events()` の戻り値 (`string[]`) は変えずに関数を足した (使っている利用者とビューアを壊さないため。
+  形のある値は `*_json()` で返す既存の口に揃えた)。C ABI では `ugoe_puppet_motion_event`・`ugoe_puppet_motion_event_source`、
+  `@ugoe/runtime` では `motionEvents(puppet)` (`UgoeMotionEvent[]`)。
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。

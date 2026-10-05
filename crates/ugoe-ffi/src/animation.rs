@@ -26,9 +26,31 @@ pub struct UgoeMotionEvent {
     pub value: *const c_char,
 }
 
+/// モーションのイベントを発火したモーション (T0462。`ugoe::Puppet::motion_event_sources`)。
+///
+/// `UgoeMotionEvent` は ABI を保つために変えず、別の構造体にした (crates/ugoe-ffi/README.md#abi-の版)。
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UgoeMotionEventSource {
+    /// モーションの名前 (UTF-8、NUL 終端)。次の `ugoe_puppet_update` まで有効。
+    pub motion: *const c_char,
+    /// モーションを始めた番号 (この `UgoePuppet` で開始したモーションに 1 から振る。開始しなかった要求では進まない)。
+    /// 同じ名前のモーションを始め直したものを見分けるのに使う。
+    pub number: u64,
+}
+
 /// 直前の `ugoe_puppet_update` で発火したモーションのイベント (C の文字列にしたもの)。
 #[derive(Debug, Default)]
-pub(crate) struct MotionEvents(Vec<(f32, CString)>);
+pub(crate) struct MotionEvents(Vec<MotionEventEntry>);
+
+/// 発火したイベント 1 つ (値と、発火したモーション)。
+#[derive(Debug)]
+struct MotionEventEntry {
+    time: f32,
+    value: CString,
+    number: u64,
+    motion: CString,
+}
 
 impl MotionEvents {
     /// `puppet` の直前の `update` のイベントで作り直す。
@@ -36,8 +58,20 @@ impl MotionEvents {
         self.0 = puppet
             .motion_events()
             .iter()
-            .map(|e| (e.t, c_string(&e.value)))
+            .zip(puppet.motion_event_sources())
+            .map(|(e, source)| MotionEventEntry {
+                time: e.t,
+                value: c_string(&e.value),
+                number: source.number,
+                motion: c_string(&source.name),
+            })
             .collect();
+    }
+
+    fn get(&self, index: u32) -> Result<&MotionEventEntry, Error> {
+        self.0
+            .get(index as usize)
+            .ok_or_else(|| Error::out_of_range("motion event", index as usize, self.0.len()))
     }
 }
 
@@ -74,16 +108,39 @@ pub unsafe extern "C" fn ugoe_puppet_motion_event(
     guard(|| {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
-        let events = &p.motion_events.0;
-        let (time, value) = events
-            .get(index as usize)
-            .ok_or_else(|| Error::out_of_range("motion event", index as usize, events.len()))?;
+        let entry = p.motion_events.get(index)?;
         let event = UgoeMotionEvent {
-            time: *time,
-            value: value.as_ptr(),
+            time: entry.time,
+            value: entry.value.as_ptr(),
         };
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", event) }
+    })
+}
+
+/// 直前の `ugoe_puppet_update` で発火した `index` 番目のモーションのイベントを発火したモーション (T0462)。
+/// `index` は `ugoe_puppet_motion_event` と同じ並び。クロスフェードでフェードアウト中のモーションのイベントは、
+/// そのモーションの名前と番号になる (今のモーションとは限らない)。文字列は次の `ugoe_puppet_update` まで有効。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_motion_event_source(
+    puppet: *const UgoePuppet,
+    index: u32,
+    out: *mut UgoeMotionEventSource,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let entry = p.motion_events.get(index)?;
+        let source = UgoeMotionEventSource {
+            motion: entry.motion.as_ptr(),
+            number: entry.number,
+        };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", source) }
     })
 }
 

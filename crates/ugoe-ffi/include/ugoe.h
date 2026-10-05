@@ -116,6 +116,17 @@ typedef struct UgoeMotionEvent {
   const char *value;
 } UgoeMotionEvent;
 
+// モーションのイベントを発火したモーション (T0462。`ugoe::Puppet::motion_event_sources`)。
+//
+// `UgoeMotionEvent` は ABI を保つために変えず、別の構造体にした (crates/ugoe-ffi/README.md#abi-の版)。
+typedef struct UgoeMotionEventSource {
+  // モーションの名前 (UTF-8、NUL 終端)。次の `ugoe_puppet_update` まで有効。
+  const char *motion;
+  // モーションを始めた番号 (この `UgoePuppet` で開始したモーションに 1 から振る。開始しなかった要求では進まない)。
+  // 同じ名前のモーションを始め直したものを見分けるのに使う。
+  uint64_t number;
+} UgoeMotionEventSource;
+
 // 描画可能要素の、評価で変わらない情報。
 typedef struct UgoeDrawableInfo {
   // ID (UTF-8、NUL 終端)。着せ替えの操作か `UgoePuppet` の破棄まで有効。
@@ -350,6 +361,17 @@ UgoeResult ugoe_puppet_motion_event_count(const struct UgoePuppet *puppet, uint3
 UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
                                     uint32_t index,
                                     struct UgoeMotionEvent *out);
+
+// 直前の `ugoe_puppet_update` で発火した `index` 番目のモーションのイベントを発火したモーション (T0462)。
+// `index` は `ugoe_puppet_motion_event` と同じ並び。クロスフェードでフェードアウト中のモーションのイベントは、
+// そのモーションの名前と番号になる (今のモーションとは限らない)。文字列は次の `ugoe_puppet_update` まで有効。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_motion_event_source(const struct UgoePuppet *puppet,
+                                           uint32_t index,
+                                           struct UgoeMotionEventSource *out);
 
 // 物理の設定を JSON (`*.physics.json` の形。UTF-8、`len` バイト。NUL 終端は要らない) で差し替える。
 // `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。

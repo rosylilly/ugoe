@@ -286,6 +286,11 @@ impl UgoePuppet2D {
     #[signal]
     fn motion_event(value: GString);
 
+    /// 再生中のモーションのイベントが発火した (T0462)。`motion_event` と同じイベントごとに、その後に出す。`time` はモーションの中の秒、
+    /// `motion` と `number` はイベントを発火したモーションの名前と始めた番号 (`get_motion_events()` と同じ)。
+    #[signal]
+    fn motion_event_fired(value: GString, time: f32, motion: GString, number: i64);
+
     /// 表示するモデルを変える。木の中にあればすぐに読み込む (null ならモデルを外す)。
     #[func]
     pub fn set_model(&mut self, model: Option<Gd<Resource>>) {
@@ -1056,9 +1061,9 @@ fn light_from_dictionary(d: &VarDictionary) -> Option<Light> {
     }
 }
 
-/// 上限のバイト数をプロパティの整数にする (`i64` に収まらなければ最大値)。
-fn to_i64(bytes: u64) -> i64 {
-    i64::try_from(bytes).unwrap_or(i64::MAX)
+/// 上限のバイト数やモーションの番号を GDScript の整数にする (`i64` に収まらなければ最大値)。
+fn to_i64(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 /// `get_load_error()` の辞書: `{ "code", "error", ...fields }`。
@@ -1547,15 +1552,26 @@ impl UgoePuppet2D {
             return;
         };
         loaded.puppet.update(dt);
-        let events: Vec<GString> = loaded
+        let events: Vec<(GString, f32, GString, i64)> = loaded
             .puppet
             .motion_events()
             .iter()
-            .map(|e| GString::from(e.value.as_str()))
+            .zip(loaded.puppet.motion_event_sources())
+            .map(|(e, source)| {
+                (
+                    GString::from(e.value.as_str()),
+                    e.t,
+                    GString::from(source.name.as_str()),
+                    to_i64(source.number),
+                )
+            })
             .collect();
         self.draw();
-        for value in events {
+        for (value, time, motion, number) in events {
             self.signals().motion_event().emit(&value);
+            self.signals()
+                .motion_event_fired()
+                .emit(&value, time, &motion, number);
         }
     }
 

@@ -67,6 +67,7 @@ export class WebPuppet {
   load_warnings_json(): string;
   modules_json(): string;
   motion_events(): string[];
+  motion_events_json(): string;
   motion_names(): string[];
   motions_json(): string;
   pan_by(dx: number, dy: number): void;

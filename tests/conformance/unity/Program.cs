@@ -13,6 +13,8 @@
 //   パーツの不透明度, dt) を順に呼ぶ。
 // - conduct があるケース (T0454) は、同じモデルで指揮役の Puppet をもう 1 つ作って Update で進め、指揮役の口
 //   (ValuesBeforePhysics・LipSyncApplied・PartOpacitiesApplied) で読んだ値で受け手を Follow で進める。
+// - motions があるケース (T0462) は、その番号の Update の直前に StartMotion で始め、各 Update の後に発火したイベントと
+//   出どころ (MotionEvents の Value・Time・Motion・Number) を結果の motion_events に書く。
 // - before は使わない (同期して評価するので、値を変えてから反映するまでの遅れが無い)。
 using System;
 using System.Collections.Generic;
@@ -89,6 +91,7 @@ namespace Ugoe.Conformance
         private static JsonObject Run(JsonNode c)
         {
             var modules = new List<Module>();
+            var events = new JsonArray();
             Puppet conductor = null;
             try
             {
@@ -107,15 +110,19 @@ namespace Ugoe.Conformance
                     puppet.SetStageEnabled(UpdateStage.EyeBlink, effects);
                     puppet.SetStageEnabled(UpdateStage.Breath, effects);
                     var follow = c["follow"]?.AsArray();
+                    var motions = c["motions"]?.AsArray();
                     for (var i = 0; i < steps.Count; i++)
                     {
                         var dt = (float)steps[i];
                         if (conductor != null) Lead(conductor, puppet, conduct, i, dt);
-                        else if (follow == null) puppet.Update(dt);
-                        else Follow(puppet, c, follow, i, dt);
+                        else if (follow != null) Follow(puppet, c, follow, i, dt);
+                        else if (motions == null) puppet.Update(dt);
+                        else UpdateWithMotions(puppet, motions, events, i, dt);
                     }
                 }
-                return Frame(puppet);
+                var frame = Frame(puppet);
+                if (c["motions"] != null) frame["motion_events"] = events;
+                return frame;
             }
             finally
             {
@@ -149,6 +156,40 @@ namespace Ugoe.Conformance
             conductor.Update(dt);
             var lipSync = conductor.LipSyncApplied();
             puppet.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Strength ?? 0, conductor.PartOpacitiesApplied(), dt);
+        }
+
+        /// <summary>
+        /// 計画の <c>motions</c> のうち <paramref name="i"/> 番目の Update の直前のものを始めて進め、発火したイベントと出どころを
+        /// <paramref name="events"/> に足す (T0462)。
+        /// </summary>
+        private static void UpdateWithMotions(Puppet puppet, JsonArray motions, JsonArray events, int i, float dt)
+        {
+            foreach (var m in motions)
+            {
+                if ((int)m["step"] != i) continue;
+                var name = (string)m["name"];
+                var priority = (string)m["priority"] switch
+                {
+                    "idle" => MotionPriority.Idle,
+                    "force" => MotionPriority.Force,
+                    _ => MotionPriority.Normal,
+                };
+                var started = puppet.StartMotion(name, priority);
+                if (started != (bool)m["accepted"])
+                    throw new InvalidOperationException($"starting {name} at step {i} gave {started}");
+            }
+            puppet.Update(dt);
+            foreach (var e in puppet.MotionEvents())
+            {
+                events.Add(new JsonObject
+                {
+                    ["step"] = i,
+                    ["value"] = e.Value,
+                    ["time"] = e.Time,
+                    ["motion"] = e.Motion,
+                    ["number"] = e.Number,
+                });
+            }
         }
 
         /// <summary>計画の <c>follow</c>・<c>follow_lip_sync</c>・<c>follow_part_opacities</c> の <paramref name="i"/> 番目で受け手として進める。</summary>

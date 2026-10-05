@@ -67,6 +67,10 @@ pub struct CaseSpec {
     /// 受け手として進めるとき、指揮役も実行器の中で進めるか (計画の [`Case::conduct`]。T0454)。`follow` が要る。
     #[serde(default)]
     pub conduct: bool,
+    /// 時間を進めるときに始めるバンドルのモーション (計画の [`Case::motions`]。T0462)。`time`・バンドル・`"image": false` が要り、
+    /// `follow` とは一緒に使えない。
+    #[serde(default)]
+    pub motions: Vec<MotionStart>,
     /// 光源 (描画だけに効く)。
     pub lighting: Option<Lighting>,
     /// 画像も比べるか (既定は比べる)。
@@ -80,6 +84,20 @@ fn yes() -> bool {
 
 fn white() -> [f32; 3] {
     [1.0; 3]
+}
+
+/// 時間を進める途中で始めるモーション ([`Case::motions`])。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MotionStart {
+    /// この番号の `update` (`steps` の番号) の直前に始める。
+    pub step: usize,
+    /// バンドルのモーションの名前。
+    pub name: String,
+    /// 優先度 (`"idle"`・`"normal"`・`"force"`)。
+    pub priority: String,
+    /// 始まるか (優先度が低くて始まらない要求も試す)。実行器は、要求の結果がこれと違えば失敗にする。
+    pub accepted: bool,
 }
 
 /// 光源。形は wasm の `WebPuppet::set_lighting_json` と同じ (`crates/ugoe-wasm/src/lighting.rs`)。
@@ -170,6 +188,11 @@ pub struct Case {
     /// (`follow` の値は、同じ指揮役を参照の側で進めて作ったもの)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conduct: Option<Conduct>,
+    /// 時間を進める途中で始めるモーション (`step` の順。T0462)。空でなければ、実行器は各 `update(steps[i])` の直前に
+    /// `step == i` のモーションを書かれた順に始め (`accepted` と結果が違えば失敗)、各 `update` の後に発火したモーションのイベントと
+    /// その出どころ (値・モーションの中の時刻・発火したモーションの名前と始めた番号) を結果の `motion_events` に書く。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub motions: Vec<MotionStart>,
     pub lighting: Option<Lighting>,
     /// 画像も比べるか。
     pub image: bool,
@@ -243,8 +266,11 @@ impl Plan {
     /// conduct [<モーションの名前>]
     /// conduct_effects <効果の設定の JSON (1 行)>
     /// lead <dt> <リップシンクの音量 (設定しなければ -1)>
+    /// start <step> <idle|normal|force> <0|1 (始まるか)> <モーションの名前>
     /// end
     /// ```
+    ///
+    /// `start` の行 ([`Case::motions`]) は `update` の行より前に、`step` の順に書く。
     ///
     /// `conduct` のケース ([`Case::conduct`]) は、`follow` の行の代わりに `conduct` の行と、フレームごとの `lead` の行を書く。
     ///
@@ -262,6 +288,10 @@ impl Plan {
                 let _ = writeln!(s, "param {id} {value}");
             }
             let _ = writeln!(s, "effects {}", u8::from(case.effects));
+            for m in &case.motions {
+                let accepted = u8::from(m.accepted);
+                let _ = writeln!(s, "start {} {} {accepted} {}", m.step, m.priority, m.name);
+            }
             if let Some(conduct) = &case.conduct {
                 match &conduct.motion {
                     Some(motion) => {
@@ -421,6 +451,7 @@ fn case(
         follow_part_opacities: Vec::new(),
         motion: spec.motion.clone(),
         conduct: None,
+        motions: spec.motions.clone(),
         lighting: spec.lighting.clone(),
         image: spec.image,
         render_args: Vec::new(),
@@ -437,6 +468,25 @@ fn case(
             "case `{}`: `motion` needs `follow` and a bundle",
             case.name
         )));
+    }
+    if !spec.motions.is_empty() {
+        if spec.follow || !case.bundle || case.image {
+            return Err(Error::Invalid(format!(
+                "case `{}`: `motions` needs a bundle and `\"image\": false`, and cannot be used with `follow`",
+                case.name
+            )));
+        }
+        let ordered = spec.motions.windows(2).all(|w| w[0].step <= w[1].step);
+        let known = spec
+            .motions
+            .iter()
+            .all(|m| matches!(m.priority.as_str(), "idle" | "normal" | "force"));
+        if !ordered || !known || spec.motions.iter().any(|m| m.step >= case.steps.len()) {
+            return Err(Error::Invalid(format!(
+                "case `{}`: `motions` must be in step order, within the steps and with a known priority",
+                case.name
+            )));
+        }
     }
     if spec.conduct && !spec.follow {
         return Err(Error::Invalid(format!(

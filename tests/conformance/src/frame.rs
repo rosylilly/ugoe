@@ -15,6 +15,24 @@ use ugoe::runtime::ModelInstance;
 pub struct Frame {
     pub meshes: BTreeMap<String, MeshFrame>,
     pub render_order: Vec<String>,
+    /// 時間を進める間に発火したモーションのイベント (計画の `motions` のあるケースだけ。T0462)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_events: Option<Vec<MotionEventFrame>>,
+}
+
+/// 発火したモーションのイベント 1 つと、それを発火したモーション (`ugoe::Puppet::motion_event_sources`)。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MotionEventFrame {
+    /// 発火した `update` の番号 (計画の `steps` の番号)。
+    pub step: usize,
+    pub value: String,
+    /// モーションの中の時刻 (秒)。
+    pub time: f32,
+    /// 発火したモーションの名前。
+    pub motion: String,
+    /// 発火したモーションを始めた番号 (1 から)。
+    pub number: u64,
 }
 
 /// メッシュ 1 つの出力 (`docs/spec/evaluation.md#8-出力`)。
@@ -86,6 +104,7 @@ impl Frame {
         Self {
             meshes,
             render_order,
+            motion_events: None,
         }
     }
 }

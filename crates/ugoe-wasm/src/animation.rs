@@ -399,6 +399,26 @@ pub fn motion_events(puppet: &Puppet) -> Vec<String> {
         .collect()
 }
 
+/// 直前の `update` で発火したモーションのイベントと、それを発火したモーションの JSON (T0462)。
+/// `[{"value", "time", "motion", "number"}]` (並びは [`motion_events`] と同じ)。`time` はモーションの中の秒、
+/// `motion` と `number` は発火したモーションの名前と始めた番号 (`Puppet::motion_event_sources`。1 から振る)。
+pub fn motion_events_json(puppet: &Puppet) -> String {
+    let list: Vec<serde_json::Value> = puppet
+        .motion_events()
+        .iter()
+        .zip(puppet.motion_event_sources())
+        .map(|(e, source)| {
+            serde_json::json!({
+                "value": e.value,
+                "time": e.t,
+                "motion": source.name,
+                "number": source.number,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(list).to_string()
+}
+
 /// モデルを読み直したとき (`load_json`) に、前の `Puppet` の設定を新しい `Puppet` へ写す。
 ///
 /// 段の有効・無効は常に引き継ぐ。`keep_physics` なら物理の設定も引き継ぐが、新しいモデルと
@@ -511,6 +531,11 @@ mod tests {
         assert!(motion_events(&puppet).is_empty());
         puppet.update(0.5);
         assert_eq!(motion_events(&puppet), vec!["half"]);
+        let events: serde_json::Value = serde_json::from_str(&motion_events_json(&puppet)).unwrap();
+        assert_eq!(
+            events,
+            serde_json::json!([{ "value": "half", "time": 0.5, "motion": "nod", "number": 1 }])
+        );
         // 優先度の低いモーションは再生中なら始まらない。
         assert!(!start_motion_json(&mut puppet, MOTION, Some("idle")).unwrap());
         assert!(matches!(
@@ -520,6 +545,37 @@ mod tests {
         assert!(start_motion_json(&mut puppet, "{", None).is_err());
         puppet.motions_mut().stop_all();
         assert!(!puppet.motions().is_playing());
+    }
+
+    /// フェードアウト中のモーションのイベントは、そのモーションの名前と始めた番号を持つ (T0462)。
+    #[test]
+    fn motion_events_json_names_the_motion_that_fired() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let json = MOTION.replace(r#""fade_out": 0.0"#, r#""fade_out": 1.0"#);
+        let sources = |puppet: &Puppet| -> Vec<(String, String, u64)> {
+            let events: Vec<serde_json::Value> =
+                serde_json::from_str(&motion_events_json(puppet)).unwrap();
+            events
+                .iter()
+                .map(|e| {
+                    (
+                        e["value"].as_str().unwrap().to_owned(),
+                        e["motion"].as_str().unwrap().to_owned(),
+                        e["number"].as_u64().unwrap(),
+                    )
+                })
+                .collect()
+        };
+        assert!(start_motion_json(&mut puppet, &json, Some("force")).unwrap());
+        puppet.update(0.25);
+        assert!(sources(&puppet).is_empty());
+        // 始め直すと 1 番目はフェードアウトしながら進む。
+        assert!(start_motion_json(&mut puppet, &json, Some("force")).unwrap());
+        puppet.update(0.3);
+        let nod = |value: &str, number| (value.to_owned(), "nod".to_owned(), number);
+        assert_eq!(sources(&puppet), [nod("half", 1)]);
+        puppet.update(0.3);
+        assert_eq!(sources(&puppet), [nod("half", 2)]);
     }
 
     #[test]

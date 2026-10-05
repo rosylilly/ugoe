@@ -226,14 +226,25 @@ namespace Ugoe
         /// <summary>モーションの中の時刻 (秒)。</summary>
         public readonly float Time;
         public readonly string Value;
+        /// <summary>
+        /// イベントを発火したモーションの名前 (T0462)。クロスフェードでフェードアウト中のモーションのこともある。
+        /// </summary>
+        public readonly string Motion;
+        /// <summary>
+        /// イベントを発火したモーションを始めた番号 (この <see cref="Puppet"/> で開始したモーションに 1 から振る。開始しなかった要求では
+        /// 進まない。T0462)。同じ名前のモーションを始め直したものを見分けるのに使う。
+        /// </summary>
+        public readonly ulong Number;
 
-        public MotionEvent(float time, string value)
+        public MotionEvent(float time, string value, string motion = null, ulong number = 0)
         {
             Time = time;
             Value = value;
+            Motion = motion;
+            Number = number;
         }
 
-        public override string ToString() => $"{Value} @ {Time}";
+        public override string ToString() => $"{Value} @ {Time} ({Motion} #{Number})";
     }
 
     /// <summary>

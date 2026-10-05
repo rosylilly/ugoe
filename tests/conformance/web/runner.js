@@ -12,6 +12,8 @@
 //   (T0133・T0134・T0135)。
 // - `conduct` のあるケースは、同じモデルで指揮役の WebPuppet をもう 1 つ作って `update` で進め、指揮役の口
 //   (`values_before_physics`・`lip_sync_applied`・`part_opacities_applied_*`) で読んだ値で受け手を `follow` で進める (T0454)。
+// - `motions` のあるケースは、その番号の `update` の直前に `start_motion` で始め、各 `update` の後に発火したイベントと出どころ
+//   (`motion_events_json`) を結果の `motion_events` に書く (T0462)。
 
 import { createPuppet, loadModel } from "/pkg/index.js";
 
@@ -138,6 +140,7 @@ async function runCase(plan, index) {
   canvas.height = 1;
   document.body.append(canvas);
   let puppet;
+  const events = [];
   try {
     puppet = await load(c, index, canvas);
     if (c.steps.length === 0) {
@@ -162,10 +165,22 @@ async function runCase(plan, index) {
           );
         });
       } else {
-        for (const dt of c.steps) puppet.update(dt);
+        c.steps.forEach((dt, i) => {
+          for (const m of (c.motions ?? []).filter((m) => m.step === i)) {
+            const started = puppet.start_motion(m.name, m.priority);
+            if (started !== m.accepted)
+              throw new Error(`starting ${m.name} at step ${i} gave ${started}`);
+          }
+          puppet.update(dt);
+          if (c.motions?.length) {
+            for (const e of JSON.parse(puppet.motion_events_json())) events.push({ step: i, ...e });
+          }
+        });
       }
     }
-    await post(`/result/${c.name}.json`, JSON.stringify(frame(puppet)));
+    const result = frame(puppet);
+    if (c.motions?.length) result.motion_events = events;
+    await post(`/result/${c.name}.json`, JSON.stringify(result));
     if (c.image) {
       const [w, h] = puppet.canvas_size();
       puppet.resize(Math.round(w), Math.round(h));

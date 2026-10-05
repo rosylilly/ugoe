@@ -11,6 +11,8 @@
  * - update の行があるケースは、目パチと呼吸を effects のとおりにし、ほかの段を動かして、その dt で順に呼ぶ。
  * - follow の行 (受け手として進めるケース。T0133・T0134・T0135) は、update の代わりに
  *   ugoe_puppet_follow(値, リップシンクの音量, 強さ, パーツの不透明度, dt) を順に呼ぶ。
+ * - start の行 (時間を進める途中で始めるモーション。T0462) があれば、その番号の update の直前に ugoe_puppet_start_motion で始め、
+ *   各 update の後に発火したイベントと出どころ (ugoe_puppet_motion_event・ugoe_puppet_motion_event_source) を結果の motion_events に書く。
  * - conduct の行 (実行器の中で指揮役を進めるケース。T0454) があれば、同じモデルで指揮役の UgoePuppet をもう 1 つ作り、
  *   lead の行ごとに指揮役を ugoe_puppet_update で進め、指揮役の口 (ugoe_puppet_values_before_physics・
  *   ugoe_puppet_lip_sync_applied・ugoe_puppet_part_opacities_applied) で読んだ値で受け手を ugoe_puppet_follow で進める。
@@ -65,7 +67,37 @@ typedef struct {
     char conduct_motion[256];
     char *conduct_effects;
     float lead_lip_sync[MAX_STEPS];
+    /* start の行 (step の順): update の番号・優先度・始まるはずか・モーションの名前。 */
+    size_t start_steps[MAX_ITEMS];
+    uint32_t start_priorities[MAX_ITEMS];
+    bool start_accepted[MAX_ITEMS];
+    char *start_names[MAX_ITEMS];
+    size_t start_count;
 } Case;
+
+/* 発火したモーションのイベント 1 つ (文字列は複製したもの)。 */
+typedef struct {
+    size_t step;
+    char *value;
+    float time;
+    char *motion;
+    uint64_t number;
+} Event;
+
+typedef struct {
+    Event *items;
+    size_t len;
+    size_t cap;
+} Events;
+
+static void clear_events(Events *events) {
+    for (size_t i = 0; i < events->len; i++) {
+        free(events->items[i].value);
+        free(events->items[i].motion);
+    }
+    free(events->items);
+    memset(events, 0, sizeof *events);
+}
 
 static void clear_case(Case *c) {
     for (size_t i = 0; i < c->module_count; i++) free(c->modules[i]);
@@ -75,6 +107,7 @@ static void clear_case(Case *c) {
         free(c->follow_parts[i]);
     }
     free(c->conduct_effects);
+    for (size_t i = 0; i < c->start_count; i++) free(c->start_names[i]);
     memset(c, 0, sizeof *c);
 }
 
@@ -187,6 +220,56 @@ done:
     return ok;
 }
 
+/* バンドルのモーションの番号 (無ければエラーを出して false)。 */
+static bool motion_index(const Case *c, UgoePuppet *puppet, const char *name, uint32_t *out) {
+    bool ok = true;
+    uint32_t count = 0;
+    CHECK(ugoe_puppet_motion_count(puppet, &count));
+    for (uint32_t i = 0; i < count; i++) {
+        const char *motion = NULL;
+        CHECK(ugoe_puppet_motion_name(puppet, i, &motion));
+        if (strcmp(motion, name) == 0) {
+            *out = i;
+            return true;
+        }
+    }
+    fprintf(stderr, "%s: no motion `%s`\n", c->name, name);
+    ok = false;
+done:
+    return ok;
+}
+
+/* 直前の update で発火したイベントと出どころを events に足す (T0462)。 */
+static bool record_events(const Case *c, UgoePuppet *puppet, size_t step, Events *events) {
+    bool ok = true;
+    uint32_t count = 0;
+    CHECK(ugoe_puppet_motion_event_count(puppet, &count));
+    for (uint32_t i = 0; i < count; i++) {
+        UgoeMotionEvent e;
+        UgoeMotionEventSource source;
+        CHECK(ugoe_puppet_motion_event(puppet, i, &e));
+        CHECK(ugoe_puppet_motion_event_source(puppet, i, &source));
+        if (events->len == events->cap) {
+            size_t cap = events->cap ? events->cap * 2 : 16;
+            Event *items = realloc(events->items, cap * sizeof *items);
+            if (!items) {
+                ok = false;
+                goto done;
+            }
+            events->items = items;
+            events->cap = cap;
+        }
+        Event *event = &events->items[events->len++];
+        event->step = step;
+        event->value = duplicate(e.value);
+        event->time = e.time;
+        event->motion = duplicate(source.motion);
+        event->number = source.number;
+    }
+done:
+    return ok;
+}
+
 /* 指揮役を作る (T0454): 効果の設定を書き、物理の段を止め、目パチと呼吸は効果の設定があるときだけ動かし、モーションを再生する。 */
 static bool create_conductor(const Case *c, const unsigned char *bytes, size_t len, UgoeModule **modules,
                              UgoePuppet **out) {
@@ -201,16 +284,8 @@ static bool create_conductor(const Case *c, const unsigned char *bytes, size_t l
     CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_EYE_BLINK, c->conduct_effects != NULL));
     CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_BREATH, c->conduct_effects != NULL));
     if (c->conduct_motion[0] != '\0') {
-        uint32_t count = 0;
-        CHECK(ugoe_puppet_motion_count(conductor, &count));
-        uint32_t index = count;
-        for (uint32_t i = 0; i < count; i++) {
-            const char *name = NULL;
-            CHECK(ugoe_puppet_motion_name(conductor, i, &name));
-            if (strcmp(name, c->conduct_motion) == 0) index = i;
-        }
-        if (index == count) {
-            fprintf(stderr, "%s: no motion `%s`\n", c->name, c->conduct_motion);
+        uint32_t index = 0;
+        if (!motion_index(c, conductor, c->conduct_motion, &index)) {
             ok = false;
             goto done;
         }
@@ -272,6 +347,7 @@ static bool run_case(const Case *c, const char *out_dir) {
     UgoePuppet *puppet = NULL;
     UgoePuppet *conductor = NULL;
     UgoeModule *modules[MAX_ITEMS] = {0};
+    Events events = {0};
     FILE *f = NULL;
     size_t len = 0;
     unsigned char *bytes = read_file(c->model, &len);
@@ -307,7 +383,27 @@ static bool run_case(const Case *c, const char *out_dir) {
                                          c->follow_parts[i], c->follow_part_count[i],
                                          c->steps[i]));
             } else {
+                for (size_t k = 0; k < c->start_count; k++) {
+                    if (c->start_steps[k] != i) continue;
+                    uint32_t index = 0;
+                    bool started = false;
+                    if (!motion_index(c, puppet, c->start_names[k], &index)) {
+                        ok = false;
+                        goto done;
+                    }
+                    CHECK(ugoe_puppet_start_motion(puppet, index, c->start_priorities[k], &started));
+                    if (started != c->start_accepted[k]) {
+                        fprintf(stderr, "%s: starting `%s` at step %zu gave %d\n", c->name,
+                                c->start_names[k], i, (int)started);
+                        ok = false;
+                        goto done;
+                    }
+                }
                 CHECK(ugoe_puppet_update(puppet, c->steps[i]));
+                if (c->start_count > 0 && !record_events(c, puppet, i, &events)) {
+                    ok = false;
+                    goto done;
+                }
             }
         }
     }
@@ -364,10 +460,27 @@ static bool run_case(const Case *c, const char *out_dir) {
         if (i > 0) fputc(',', f);
         write_string(f, info.id);
     }
-    fputs("]}\n", f);
+    fputc(']', f);
+    if (c->start_count > 0) {
+        fputs(",\"motion_events\":[", f);
+        for (size_t i = 0; i < events.len; i++) {
+            const Event *e = &events.items[i];
+            if (i > 0) fputc(',', f);
+            fprintf(f, "{\"step\":%zu,\"value\":", e->step);
+            write_string(f, e->value);
+            fputs(",\"time\":", f);
+            write_float(f, e->time);
+            fputs(",\"motion\":", f);
+            write_string(f, e->motion);
+            fprintf(f, ",\"number\":%llu}", (unsigned long long)e->number);
+        }
+        fputc(']', f);
+    }
+    fputs("}\n", f);
 
 done:
     if (f) fclose(f);
+    clear_events(&events);
     for (size_t i = 0; i < c->module_count; i++) ugoe_module_destroy(modules[i]);
     ugoe_puppet_destroy(conductor);
     ugoe_puppet_destroy(puppet);
@@ -487,6 +600,27 @@ int main(int argc, char **argv) {
             *level++ = '\0';
             c.lead_lip_sync[c.step_count] = parse_float(level);
             c.steps[c.step_count++] = parse_float(arg);
+        } else if (strcmp(line, "start") == 0 && arg) {
+            /* start <step> <idle|normal|force> <0|1> <モーションの名前> */
+            if (c.start_count == MAX_ITEMS || c.follow_count > 0 || c.conduct) goto invalid;
+            char *priority = strchr(arg, ' ');
+            if (!priority) goto invalid;
+            *priority++ = '\0';
+            char *accepted = strchr(priority, ' ');
+            if (!accepted) goto invalid;
+            *accepted++ = '\0';
+            char *name = strchr(accepted, ' ');
+            if (!name) goto invalid;
+            *name++ = '\0';
+            uint32_t value;
+            if (strcmp(priority, "idle") == 0) value = UGOE_PRIORITY_IDLE;
+            else if (strcmp(priority, "normal") == 0) value = UGOE_PRIORITY_NORMAL;
+            else if (strcmp(priority, "force") == 0) value = UGOE_PRIORITY_FORCE;
+            else goto invalid;
+            c.start_steps[c.start_count] = strtoul(arg, NULL, 10);
+            c.start_priorities[c.start_count] = value;
+            c.start_accepted[c.start_count] = strcmp(accepted, "1") == 0;
+            c.start_names[c.start_count++] = duplicate(name);
         } else if (strcmp(line, "end") == 0) {
             total++;
             if (!run_case(&c, argv[2])) failed++;

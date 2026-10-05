@@ -5,7 +5,7 @@
 //! - 画像: 描画の互換の基準 (`spec/rendering.md#conformance`、`docs/spec/rendering.md#互換の基準`)。
 //!   すべてのチャンネルの差が 3/255 以下の画素が 99% 以上。
 
-use crate::frame::{Frame, MeshFrame, Rgb};
+use crate::frame::{Frame, MeshFrame, MotionEventFrame, Rgb};
 
 /// 頂点の位置の許容誤差 (キャンバスの px)。
 pub const POSITION_TOLERANCE: f32 = 0.01;
@@ -37,7 +37,45 @@ pub fn frames(reference: &Frame, actual: &Frame) -> Vec<String> {
         }
     }
     render_order(reference, actual, &mut errors);
+    motion_events(reference, actual, &mut errors);
     errors
+}
+
+/// 発火したモーションのイベントと出どころ (T0462)。参照にあればバインディングも書くこと。値・名前・番号・`update` の番号は
+/// 一致し、モーションの中の時刻は [`VALUE_TOLERANCE`] まで。
+fn motion_events(reference: &Frame, actual: &Frame, errors: &mut Vec<String>) {
+    let Some(expected) = &reference.motion_events else {
+        return;
+    };
+    let Some(events) = &actual.motion_events else {
+        errors.push("motion_events: missing".to_owned());
+        return;
+    };
+    let same = |e: &MotionEventFrame, a: &MotionEventFrame| {
+        e.step == a.step
+            && e.value == a.value
+            && e.motion == a.motion
+            && e.number == a.number
+            && !exceeds((e.time - a.time).abs(), VALUE_TOLERANCE)
+    };
+    if events.len() != expected.len() || !expected.iter().zip(events).all(|(e, a)| same(e, a)) {
+        let show = |list: &[MotionEventFrame]| {
+            list.iter()
+                .map(|e| {
+                    format!(
+                        "{}:{}@{}({}#{})",
+                        e.step, e.value, e.time, e.motion, e.number
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        errors.push(format!(
+            "motion_events: [{}], expected [{}]",
+            show(events),
+            show(expected)
+        ));
+    }
 }
 
 fn mesh_errors(id: &str, expected: &MeshFrame, actual: &MeshFrame, errors: &mut Vec<String>) {
@@ -250,7 +288,41 @@ mod tests {
                 .map(|(id, m)| ((*id).to_owned(), m.clone()))
                 .collect::<BTreeMap<_, _>>(),
             render_order: order.iter().map(|s| (*s).to_owned()).collect(),
+            motion_events: None,
         }
+    }
+
+    fn event(step: usize, value: &str, time: f32, motion: &str, number: u64) -> MotionEventFrame {
+        MotionEventFrame {
+            step,
+            value: value.to_owned(),
+            time,
+            motion: motion.to_owned(),
+            number,
+        }
+    }
+
+    #[test]
+    fn motion_events_must_match_the_reference() {
+        let mut reference = frame(&[("A", mesh(0.0, 500.0, 1.0))], &["A"]);
+        reference.motion_events = Some(vec![
+            event(0, "start", 0.0, "idle", 1),
+            event(4, "half", 0.5, "idle", 1),
+        ]);
+        let mut actual = reference.clone();
+        actual.motion_events.as_mut().unwrap()[1].time += 5e-5;
+        assert!(frames(&reference, &actual).is_empty());
+        // 出どころの番号が違う
+        actual.motion_events.as_mut().unwrap()[1].number = 2;
+        let errors = frames(&reference, &actual);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("4:half@0.50005(idle#2)"), "{errors:?}");
+        // 書かなかった
+        actual.motion_events = None;
+        assert_eq!(frames(&reference, &actual), ["motion_events: missing"]);
+        // 参照に無ければ比べない
+        reference.motion_events = None;
+        assert!(frames(&reference, &actual).is_empty());
     }
 
     #[test]

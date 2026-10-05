@@ -12,6 +12,7 @@ import type {
   UgoeExpressionParameter,
   UgoeModuleInfo,
   UgoeModuleRequirements,
+  UgoeMotionEvent,
   UgoeMotionInfo,
   UgoeParameterDefinition,
   UgoeParameterDefinitions,
@@ -42,6 +43,7 @@ type TypeOf = {
   parameter: UgoeParameterDefinition;
   parameter_group: UgoeParameterGroup;
   motion_info: UgoeMotionInfo;
+  motion_event: UgoeMotionEvent;
   expression_info: UgoeExpressionInfo;
   expression_parameter: UgoeExpressionParameter;
   module_info: UgoeModuleInfo;
@@ -103,6 +105,7 @@ const outputs = () => ({
       events: [],
     },
   ] as Record<string, unknown>[],
+  motion_events_json: [{ value: "wave", time: 0.5, motion: "idle", number: 1 }],
   expressions_json: [
     {
       name: "smile",
@@ -166,10 +169,11 @@ describe("QueryKeyCheck", () => {
   it("reports shapes that were not seen", () => {
     const check = new QueryKeyCheck();
     check.puppet(
-      puppetWith({ ...outputs(), modules_json: [], pose_json: undefined }),
+      puppetWith({ ...outputs(), modules_json: [], motion_events_json: [], pose_json: undefined }),
       "without modules",
     );
     expect(check.unseen()).toEqual([
+      "motion_event",
       "module_info",
       "module_requirements",
       "pose",

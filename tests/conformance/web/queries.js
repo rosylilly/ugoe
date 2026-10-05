@@ -103,6 +103,27 @@ items["pose-and-groups"] = () =>
     puppet.update(1 / 60);
     check.puppet(puppet, "pose-and-groups");
   });
+// 直前の update のイベント (`motion_events_json`。T0462)。見本はイベントを持つモーションを含まないので、フィクスチャで
+// イベントを持つモーションを再生する
+items["motion-events"] = () =>
+  withPuppet(async (puppet) => {
+    loadModel(puppet, await (await fetch("/fixture/pose_and_effects.json")).text());
+    const motion = {
+      name: "events",
+      duration: 1,
+      looping: false,
+      fade_in: 0,
+      fade_out: 0,
+      curves: [],
+      events: [{ t: 0, value: "start" }],
+    };
+    if (!puppet.start_motion_json(JSON.stringify(motion)))
+      throw new Error("the motion did not start");
+    puppet.update(1 / 60);
+    const events = JSON.parse(puppet.motion_events_json());
+    if (events.length !== 1) throw new Error(`motion_events_json gave ${events.length} events`);
+    check.puppet(puppet, "motion-events");
+  });
 for (const model of MODELS) {
   items[model.name] = () =>
     withPuppet(async (puppet) => {

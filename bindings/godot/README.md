@@ -82,6 +82,8 @@ puppet.start_motion("idle", 0)                    # 0 = 待機、1 = 普通、2 
 puppet.set_expression("smile")
 puppet.set_lip_sync_level(0.8)                    # 負の値か clear_lip_sync_level() で口の入力をやめる
 puppet.motion_event.connect(func(value): print(value))
+# 発火したモーションの名前と始めた番号も (T0462)
+puppet.motion_event_fired.connect(func(value, time, motion, number): print(value, " from ", motion, " #", number))
 
 # 着せ替え (docs/spec/modules.md#puppet-での着せ替え)
 puppet.attach_module(load("res://models/sailor.ugoemod"))   # 同じスロットのモジュールとは差し替える
@@ -122,6 +124,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `get_load_warnings()` | 直前に読み込んだモデルの読み込みの警告 (`{ "code", "warning", "texture"? / "feature"? / "path"? }` の配列)。`code` と補足のキーは wasm の `load_warnings_json`・C ABI の `ugoe_puppet_load_warning_*` と同じ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#読み込みの警告-t0125))。`warning` は英語の文で、安定した値ではない |
 | `get_module_load_warnings(name)` | 取り付けている名前が `name` の着せ替えのモジュール (`.ugoemod`) の読み込みの警告 (T0456)。要素の形は `get_load_warnings()` と同じで、wasm の `modules_json()` の `warning_details`・C ABI の `ugoe_module_warning_*` に揃える。付いているモジュールの探し方は `get_module_names()` と同じで、付いていなければ空 |
 | `get_motion_names()` / `start_motion(name, priority)` / `stop_motions()` / `is_motion_playing()` | モーション |
+| `get_motion_events()` | 直前の `advance` で発火したモーションのイベント (T0462)。`{ "value", "time", "motion", "number" }` の配列で、`time` はモーションの中の秒、`motion`・`number` は発火したモーションの名前と始めた番号 (このノードで開始したモーションに 1 から振る。開始しなかった要求では進まず、モデルを読み直すと 1 から)。クロスフェードでフェードアウト中のモーションのイベントはそのモーションのもの。wasm の `motion_events_json()`・C ABI の `ugoe_puppet_motion_event_source` と同じ |
 | `get_expression_names()` / `set_expression(name)` / `stop_expressions()` | 表情 (`stop_expressions` はフェードアウトをかけてすべて止める) |
 | `set_lip_sync_level(level)` / `clear_lip_sync_level()` / `reset_physics()` | リップシンク・物理。`set_lip_sync_level` に負の値 (`-INF` を含む) を渡すと、`clear_lip_sync_level()` と同じく口の入力をやめる (C ABI・wasm・Unity と同じ。T0459 より前は 0 にしていた) |
 | `set_effects_json(json)` | 目パチ・呼吸・リップシンクの設定をモデルの `effects` と同じ形の JSON で差し替える (再生の状態は初めから、リップシンクの音量は保つ。[docs/spec/motion.md#エフェクト設定の差し替え](../../docs/spec/motion.md#エフェクト設定の差し替え))。読めないか、モデルの読み込みと同じ検査 (有限でない値・範囲の外の値・モデルにないパラメータ) を通らなければ、エラー (検査の文は C ABI の `UGOE_ERROR_INVALID_MODEL` と同じ) を出して何も変えずに false |
@@ -139,7 +142,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `get_slot_ids()` / `get_tracking_targets()` | 本体のモデルの着せ替えのスロットの ID (`UgoeModule` のスロットと比べる) / トラッキングが書き込むパラメータの ID (モデルの `avatar.tracking` から決まる) |
 | `get_canvas_size()` / `get_canvas_origin()` | キャンバスの大きさと原点 |
 | `get_drawable_ids()` / `get_drawable_positions(index)` / `get_drawable_state(index)` / `get_render_order()` | 直前の評価の結果の読み戻し (`docs/spec/evaluation.md#8-出力`。適合テストで使う)。番号は `get_drawable_ids()` の順 (モデルのメッシュの順)。位置は **キャンバス座標** (ノードの座標は `get_canvas_origin()` を引く)。`get_drawable_state` は `{ "opacity", "draw_order", "multiply_color" (Color), "screen_color" (Color), "mask_strength", "visible" }`。`get_render_order` は奥から手前への番号。範囲の外の番号は空 |
-| シグナル `model_loaded` / `motion_event(value)` | 読み込み / モーションのイベント |
+| シグナル `model_loaded` / `motion_event(value)` / `motion_event_fired(value, time, motion, number)` | 読み込み / モーションのイベント / 同じイベントを、発火したモーションの名前と始めた番号とともに (`motion_event` の後に出す。T0462。引数を変えると `motion_event` につないだ 1 引数の関数が動かなくなるので、シグナルを足した) |
 
 有限でない値 (GDScript の `NAN`・`INF`) は C ABI と同じく受け付けない: `advance(delta)` と `speed` は有限で負でない値、
 `set_parameter`・`set_lip_sync_level` は NaN 以外 (`+INF` は 1、負は入力をやめる)、`set_tracking_head` と `mask_scale` は有限、

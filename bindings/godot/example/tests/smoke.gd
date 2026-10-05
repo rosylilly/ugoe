@@ -289,6 +289,28 @@ func _sdk_features(puppet: Node2D) -> void:
 	_check(not puppet.set_physics_json(physics), "physics that does not fit the model fails")
 	_check(not puppet.set_base_physics_json(physics), "base physics that does not fit the model fails")
 
+	# モーションのイベントと、それを発火したモーション (T0462。spec/examples/motion-crossfade/timeline.json のフレーム 0〜4)
+	_check(puppet.load_model_from_buffer(FileAccess.get_file_as_bytes(_repo("spec/examples/bundles/motion-crossfade.ugoe"))), "load motion-crossfade")
+	var fired := []
+	var on_fired := func(value: String, time: float, motion: String, number: int) -> void:
+		fired.append([value, time, motion, number])
+	puppet.motion_event_fired.connect(on_fired)
+	_check(puppet.start_motion("idle", 0), "start idle")
+	puppet.advance(0.25)
+	var events: Array = puppet.get_motion_events()
+	_check(events.size() == 1 and events[0]["value"] == "idle-start" and events[0]["motion"] == "idle" and events[0]["number"] == 1 and is_zero_approx(events[0]["time"]), "get_motion_events names the motion (%s)" % [events])
+	_check(fired == [["idle-start", 0.0, "idle", 1]], "motion_event_fired carries the motion (%s)" % [fired])
+	for dt in [0.25, 0.25, 2.5]:
+		puppet.advance(dt)
+	fired.clear()
+	_check(puppet.start_motion("wave", 1), "start wave")
+	puppet.advance(0.25)
+	events = puppet.get_motion_events()
+	# wave に替えた後も、フェードアウト中の idle のイベントは idle (1 番目) のもの
+	_check(events.size() == 1 and events[0]["value"] == "idle-half" and events[0]["motion"] == "idle" and events[0]["number"] == 1, "a fading motion keeps its number (%s)" % [events])
+	_check(fired.size() == 1 and fired[0][2] == "idle" and fired[0][3] == 1, "motion_event_fired for the fading motion (%s)" % [fired])
+	puppet.motion_event_fired.disconnect(on_fired)
+
 
 # 木の中で試すため、最初のフレームで始める (`_initialize` の間は root がまだ木に入っていない)。
 func _process(_delta: float) -> bool:

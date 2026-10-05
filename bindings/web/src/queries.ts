@@ -64,6 +64,29 @@ export function motionInfos(puppet: WebPuppet): UgoeMotionInfo[] {
   return JSON.parse(puppet.motions_json()) as UgoeMotionInfo[];
 }
 
+/** 直前の `update` で発火したモーションのイベント (`motion_events_json()` の要素。T0462)。 */
+export interface UgoeMotionEvent {
+  /** イベントの値。 */
+  value: string;
+  /** モーションの中の時刻 (秒)。 */
+  time: number;
+  /** イベントを発火したモーションの名前 (クロスフェードでフェードアウト中のモーションのこともある)。 */
+  motion: string;
+  /**
+   * イベントを発火したモーションを始めた番号 (この `WebPuppet` で開始したモーションに 1 から振る。開始しなかった要求では進まない)。
+   * 同じ名前のモーションを始め直したものを見分けるのに使う。
+   */
+  number: number;
+}
+
+/**
+ * 直前の `update` で発火したモーションのイベントと、それを発火したモーション (`motion_events_json()`。T0462)。
+ * 開始した順のモーションごとに、発火した順。値だけなら `puppet.motion_events()`。
+ */
+export function motionEvents(puppet: WebPuppet): UgoeMotionEvent[] {
+  return JSON.parse(puppet.motion_events_json()) as UgoeMotionEvent[];
+}
+
 /** 表情のパラメータの値と合成の方法 (`*.expression.json` の `parameters` の要素)。 */
 export interface UgoeExpressionParameter {
   parameter: string;

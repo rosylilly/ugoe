@@ -14,6 +14,8 @@ extends SceneTree
 ##   `advance(dt)` を `steps` の順に呼ぶ。計画に `follow` があれば、`advance` の代わりに受け手の口 `follow` を呼ぶ (T0449)。
 ## - 計画に `conduct` があれば、同じモデルで指揮役のノードをもう 1 つ作って `advance` で進め、指揮役の口
 ##   (`get_values_before_physics`・`get_lip_sync_applied`・`get_part_opacities_applied`) で読んだ値で受け手を `follow` させる (T0454)。
+## - 計画に `motions` があれば、その番号の `advance` の直前に `start_motion` で始め、各 `advance` の後に発火したイベントと出どころ
+##   (`get_motion_events`) を結果の `motion_events` に書く (T0462)。
 ## - `before` があれば、まずその値で数フレーム描き、次のフレームで `parameters` に変えて、その直後のフレームを書く
 ##   (アニメーション中にマスクが 1 フレーム遅れないかを確かめる)。
 ## - モデルは `.ugoe` バンドルなら `load_model_from_buffer`、違えば (モデルの JSON) `load_model_from_json` で読む。
@@ -22,6 +24,7 @@ extends SceneTree
 ## - キャンバスと同じ大きさ (倍率 1) のビューポートに、不透明な背景 (plan.background) を敷いて描く。
 
 const STAGES := ["physics", "eye_blink", "breath", "lip_sync", "pose"]
+const PRIORITIES := {"idle": 0, "normal": 1, "force": 2}
 const WARMUP_FRAMES := 4
 
 var _plan: Dictionary
@@ -35,6 +38,8 @@ var _viewport: SubViewport
 var _puppet: Node2D
 var _frames := 0
 var _capture_at := WARMUP_FRAMES
+## 計画の `motions` のあるケースで発火したモーションのイベント (結果の `motion_events`)。
+var _events := []
 
 
 func _vector3(values: Array) -> Vector3:
@@ -172,9 +177,20 @@ func _advance() -> void:
 		# ノードは読み込みの直後に 1 度評価して物理の粒子を置くので、置き直して最初の `follow` の値から始める
 		# (参照と C ABI は作ったばかりの `Puppet` で `follow` を呼ぶ)。
 		_puppet.reset_physics()
+	var motions: Array = _case.get("motions", [])
+	_events = []
 	for i in steps.size():
 		if follow.is_empty():
+			for m: Dictionary in motions:
+				if int(m["step"]) != i:
+					continue
+				var started: bool = _puppet.start_motion(m["name"], PRIORITIES[m["priority"]])
+				if started != m["accepted"]:
+					printerr("%s: starting %s at step %d gave %s" % [_case["name"], m["name"], i, started])
 			_puppet.advance(steps[i])
+			for e: Dictionary in _puppet.get_motion_events():
+				if not motions.is_empty():
+					_events.append({"step": i, "value": e["value"], "time": e["time"], "motion": e["motion"], "number": e["number"]})
 			continue
 		var level := -1.0
 		var strength := 0.0
@@ -277,7 +293,10 @@ func _write_frame() -> void:
 	var order := []
 	for i in _puppet.get_render_order():
 		order.append(ids[i])
+	var frame := {"meshes": meshes, "render_order": order}
+	if not _case.get("motions", []).is_empty():
+		frame["motion_events"] = _events
 	var file := FileAccess.open(_out.path_join("%s.json" % _case["name"]), FileAccess.WRITE)
 	# 位置の許容誤差は 0.01 px なので、浮動小数点を丸めずに書く。
-	file.store_string(JSON.stringify({"meshes": meshes, "render_order": order}, "", false, true))
+	file.store_string(JSON.stringify(frame, "", false, true))
 	file.close()

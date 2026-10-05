@@ -12,6 +12,7 @@ import {
   drawableStates,
   expressionInfos,
   moduleInfos,
+  motionEvents,
   motionInfos,
   parameterDefinitions,
   slotDefinitions,
@@ -48,6 +49,8 @@ export const QUERY_KEYS = {
     required: ["name", "duration", "looping", "fade_in", "fade_out", "parameters", "events"],
     optional: [],
   },
+  /** `UgoeMotionEvent` (`motion_events_json()` の要素。T0462) */
+  motion_event: { required: ["value", "time", "motion", "number"], optional: [] },
   /** `UgoeExpressionInfo` (`expressions_json()` の要素) */
   expression_info: {
     required: ["name", "fade_in", "fade_out", "parameters"],
@@ -167,6 +170,7 @@ export class QueryKeyCheck {
   puppet(puppet: WebPuppet, name: string): void {
     this.check(parameterDefinitions(puppet), "parameter_definitions", `${name}.parameters_json()`);
     this.list(motionInfos(puppet), "motion_info", `${name}.motions_json()`);
+    this.list(motionEvents(puppet), "motion_event", `${name}.motion_events_json()`);
     this.list(expressionInfos(puppet), "expression_info", `${name}.expressions_json()`);
     this.list(moduleInfos(puppet), "module_info", `${name}.modules_json()`);
     this.list(slotDefinitions(puppet), "slot", `${name}.slots_json()`);

@@ -362,6 +362,7 @@ import {
   drawableStates,
   expressionInfos,
   moduleInfos,
+  motionEvents,
   motionInfos,
   parameterDefinitions,
   sampleMotion,
@@ -370,6 +371,7 @@ import {
 
 parameterDefinitions(puppet); // parameters_json():       { parameters: UgoeParameterDefinition[], groups: UgoeParameterGroup[] }
 motionInfos(puppet);          // motions_json():          UgoeMotionInfo[] (name・duration・looping・fade_in・fade_out・parameters・events)
+motionEvents(puppet);         // motion_events_json():    UgoeMotionEvent[] (直前の update のイベント。value・time と、発火したモーションの motion・number。T0462)
 expressionInfos(puppet);      // expressions_json():      UgoeExpressionInfo[] (name・fade_in・fade_out・parameters: [{ parameter, value, op }])
 moduleInfos(puppet);          // modules_json():          UgoeModuleInfo[] (warning_details は UgoeLoadWarning[])
 slotDefinitions(puppet);      // slots_json():            UgoeSlot[] (空の一覧と無い値はキーごと無い)
@@ -383,7 +385,7 @@ sampleMotion(sampler, t);     // MotionSampler.sample():  同じ形 (下の「�
 | `*_json()` | 型と補助 |
 | --- | --- |
 | `load_warnings_json`・`detached_modules_json` | `loadWarnings`・`detachedModules` (上の「読み込みの警告と着せ替えの失敗の型」) |
-| `parameters_json`・`motions_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`sample_motion_json` | 上の例 |
+| `parameters_json`・`motions_json`・`motion_events_json`・`expressions_json`・`modules_json`・`slots_json`・`avatar_slots_json`・`drawable_states_json`・`pose_json`・`sample_motion_json` | 上の例 |
 | `physics_json`・`base_physics_json` | **型を出さない。** 中身は `*.physics.json` の形 (リグ・粒子・入力・出力・衝突体などモデルの JSON 形式の大きな一部。[spec/schema/physics.schema.json](../../spec/schema/physics.schema.json)) で、主な使い道は保存して `set_physics_json`・`set_base_physics_json` に戻すこと。中を読むなら JSON Schema から型を作ってください |
 | `MotionSampler.sample` | 形は `sample_motion_json` と同じ。`sampleMotion(sampler, t)` で `UgoeCurveValue[]` にする |
 

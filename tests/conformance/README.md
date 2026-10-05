@@ -90,6 +90,7 @@ CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just confor
 | `follow` | 受け手として進めるか (既定 `false`。T0133)。`time` と `"image": false` が要る。計画は、物理を切った指揮役の `Puppet` (`effects` なら標準の目パチと呼吸を使う) を `time` の列で進めた各フレームの値を `follow` に持ち、実行器は `update` の代わりに `follow(値, dt)` を呼ぶ (下の「実行器の約束」の 3) |
 | `lip_sync` | `follow` のケースで、指揮役がモデルのリップシンクの設定にフレームごとに変わる音量を当てるか (既定 `false`。T0134)。計画の `follow_lip_sync` に各フレームの `[音量, 強さ]` が入る |
 | `motion` | `follow` のケースで、指揮役が最初に再生するバンドルのモーションの名前 (T0135)。パーツの不透明度のカーブがあれば、計画の `follow_part_opacities` に各フレームの `[パーツの番号, 値, 重み]` の並びが入る |
+| `motions` | 時間を進める途中で始めるバンドルのモーション `[{"step", "name", "priority", "accepted"}]` (`step` の順。T0462)。`time`・バンドル・`"image": false` が要り、`follow` とは一緒に使えない。下の「実行器の約束」の 3 |
 | `lighting` | 光源 (画像だけに効く)。形は `WebPuppet::set_lighting_json` と同じ |
 | `image` | 画像も比べるか (既定 `true`) |
 
@@ -143,6 +144,12 @@ C ABI と Unity の C# の層は画像を扱わないので、頂点だけを比
    参照は計画の `follow` の値 (参照の側で同じ指揮役を進めて作ったもの) で進めるので、指揮役の口が返す値と受け手に渡す形が合っていることを確かめる。
    受け手の口を持つバインディングは `src/main.rs` の `FOLLOW_BINDINGS` に挙げる (今はすべて: C ABI・wasm・Unity の `Puppet.Follow` (T0455)・Godot)。
    挙げていないバインディングは比べ合わせが `skip` にする。
+   計画に `motions` (T0462) があれば、各 `update(steps[i])` の直前に `step == i` のモーションを書かれた順に `priority`
+   (`idle`・`normal`・`force`) で始め (始まったかが `accepted` と違えば失敗)、各 `update` の後に発火したモーションのイベントと出どころ
+   (C ABI の `ugoe_puppet_motion_event`・`ugoe_puppet_motion_event_source`、wasm の `motion_events_json`、Unity の `MotionEvents`、
+   Godot の `get_motion_events`) を結果の `motion_events` に `{"step", "value", "time", "motion", "number"}` で足す
+   (`plan.txt` では `update` の行より前の `start <step> <priority> <0|1> <名前>` の行)。比べ合わせは、参照に `motion_events` があれば
+   バインディングにも求め、値・名前・始めた番号・`step` の一致と時刻 (1e-4) を比べる。
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
    (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
@@ -205,6 +212,7 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 | `no-model` | モデルの無い `WebPuppet` (空の一覧) |
 | `sample-motion` | 3 種類の対象 (`parameter`・`part_opacity`・`effect_group`) のカーブを持つモーションを `sampleMotion` (`sample_motion_json`) と `MotionSampler` で評価する |
 | `pose-and-groups` | フィクスチャ `pose_and_effects` (`run.mjs` が `ugoe fixture` で書き出す) にパラメータのグループを足した JSON のモデル。見本はポーズとグループを持たないため |
+| `motion-events` | フィクスチャ `pose_and_effects` の JSON のモデルで、イベントを持つモーションを `start_motion_json` で再生し、`motion_events_json` を出させる (T0462)。見本はイベントを持つモーションを含まないため |
 | `avatar`・`avatar-lit` | 見本のモデル (モーション・表情・アバタープロファイル) |
 | `dress-up` | 着せ替えの見本。`long-hair`・`cat-ears`・`sailor` を付け、`twin-tails` は読むだけ (`attached: false`) |
 | `coverage` | 上のどれかで、一覧のすべての形を 1 度は比べたか |

@@ -7,6 +7,7 @@ import {
   drawableStates,
   expressionInfos,
   moduleInfos,
+  motionEvents,
   motionInfos,
   parameterDefinitions,
   slotDefinitions,
@@ -86,6 +87,21 @@ describe("motionInfos and expressionInfos", () => {
     expectTypeOf(parsed[0]?.parameters[0]?.op).toEqualTypeOf<
       "add" | "multiply" | "overwrite" | undefined
     >();
+  });
+});
+
+describe("motionEvents", () => {
+  it("reads the events with the motion that fired them", () => {
+    // 始め直した idle (2 番目) がフェードインする間、フェードアウト中の 1 番目もイベントを発火する。
+    const events = [
+      { value: "half", time: 0.5, motion: "idle", number: 1 },
+      { value: "start", time: 0, motion: "idle", number: 2 },
+    ];
+    const parsed = motionEvents(puppetWith({ motion_events_json: events }));
+    expect(parsed).toEqual(events);
+    expect(parsed.map((e) => `${e.motion}#${e.number}`)).toEqual(["idle#1", "idle#2"]);
+    expectTypeOf(parsed[0]?.number).toEqualTypeOf<number | undefined>();
+    expect(motionEvents(puppetWith({ motion_events_json: [] }))).toEqual([]);
   });
 });
 

@@ -861,6 +861,78 @@ fn motion_events_follow_the_puppet() {
     );
 }
 
+fn motion_event_sources(p: &Handle) -> Vec<(String, u64)> {
+    (0..count(p, ugoe_puppet_motion_event_count))
+        .map(|i| {
+            let mut s = UgoeMotionEventSource {
+                motion: ptr::null(),
+                number: u64::MAX,
+            };
+            ok(unsafe { ugoe_puppet_motion_event_source(p.0, i, &mut s) });
+            (text(s.motion), s.number)
+        })
+        .collect()
+}
+
+/// イベントを発火したモーション (T0462) は `ugoe::Puppet::motion_event_sources` と同じ。始め直してフェードアウト中の
+/// モーションのイベントは、前に始めた番号を持つ。
+#[test]
+fn motion_event_sources_name_the_motion_that_fired() {
+    // 始め直すと前の再生は 1 秒かけてフェードアウトし、その間も時間が進んでイベントを発火する。
+    let motion =
+        ugoe::format::motion_from_json(&MOTION.replace(r#""fade_out": 0.0"#, r#""fade_out": 1.0"#))
+            .unwrap();
+    let model = fixtures::pose_and_effects();
+    let mut bundle = Bundle::new(model.clone());
+    bundle.textures = model.textures.iter().map(|_| png(0)).collect();
+    bundle.motions = vec![motion.clone()];
+    let p = from_bundle(&bundle);
+    let mut rust = Puppet::new(fixtures::pose_and_effects()).unwrap();
+    let start = |rust: &mut Puppet| {
+        ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut()) });
+        rust.start_motion(motion.clone(), ugoe::motion::Priority::Force);
+    };
+    start(&mut rust);
+    let nod = |number| ("nod".to_owned(), number);
+    for (restart, dt, expected) in [
+        (false, 0.25, vec![]),
+        (true, 0.3, vec![("half", nod(1))]),
+        (false, 0.3, vec![("late", nod(1)), ("half", nod(2))]),
+    ] {
+        if restart {
+            start(&mut rust);
+        }
+        ok(unsafe { ugoe_puppet_update(p.0, dt) });
+        rust.update(dt);
+        let values: Vec<_> = motion_events(&p).into_iter().map(|(_, v)| v).collect();
+        let sources = motion_event_sources(&p);
+        let actual: Vec<_> = values
+            .iter()
+            .map(String::as_str)
+            .zip(sources.iter().cloned())
+            .collect();
+        assert_eq!(actual, expected);
+        let from_rust: Vec<_> = rust
+            .motion_event_sources()
+            .iter()
+            .map(|s| (s.name.clone(), s.number))
+            .collect();
+        assert_eq!(sources, from_rust);
+    }
+    let mut s = UgoeMotionEventSource {
+        motion: ptr::null(),
+        number: 0,
+    };
+    assert_eq!(
+        unsafe { ugoe_puppet_motion_event_source(p.0, 2, &mut s) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_motion_event_source(p.0, 0, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+}
+
 fn physics_json(p: &Handle) -> String {
     let mut len = usize::MAX;
     let code = unsafe { ugoe_puppet_physics_json(p.0, ptr::null_mut(), 0, &mut len) };
