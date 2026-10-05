@@ -5,8 +5,9 @@
 // T0812 の不具合 (検出が刻みより重いと刻みが溜まり、invoke の応答が何秒も遅れる) は、この重さで再現する。
 //
 // 本物の MediaPipe を通す手順は、カメラの代わりに顔の画像をトラッキングのパネルの「File…」に入れる (`checkImageTracking`。
-// tests/e2e/README.md#画像からのトラッキング)。
+// tests/e2e/README.md#画像からのトラッキング)。MediaPipe の利用状況の送信を断っていることもそこで確かめる。
 
+import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { out, shot } from "./harness.mjs";
@@ -143,6 +144,15 @@ export async function checkImageTracking(
     { timeout, message: "MediaPipe to load and find the face in the image" },
   );
   if (started.failed) throw new Error(`the tracking failed: ${JSON.stringify(started.failed)}`);
+  // MediaPipe の利用状況の送信 (60 秒ごと) を、ページの fetch が断る (@ugoe/face-tracking の usage-logging.ts、T0943)。
+  // 断らずにネットワークへ出すと CSP (`connect-src`) が止め、最後の手順 `has no CSP violations` で落ちる
+  const usageLog = await session.run(() =>
+    fetch("https://odml.pa.googleapis.com/v1/log", { method: "POST" }).then(
+      () => "sent",
+      (e) => `${e.name}: ${e.message}`,
+    ),
+  );
+  assert.match(usageLog, /^TypeError: MediaPipe usage logging is disabled/);
   // 値は平滑化を通って少しずつ近づく
   const after = await waitFor(
     async () => {

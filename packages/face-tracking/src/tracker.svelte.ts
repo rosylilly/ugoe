@@ -7,7 +7,7 @@
 //      → applyCalibration → FrameSmoother → TrackingTarget.setTracking → WebPuppet.set_tracking (Rust)
 //
 // MediaPipe の wasm とモデルはアプリに同梱し (public/mediapipe/。scripts/mediapipe-assets.mjs)、
-// 実行時にネットワークへ取りに行かない。
+// 実行時にネットワークへ取りに行かない。MediaPipe の利用状況の送信も止める (usage-logging.ts)。
 import type { FaceLandmarker, NormalizedLandmark, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { applyCalibration, averageFrames } from "./calibration";
 import { FrameInterval, FrameSmoother } from "./filter";
@@ -22,6 +22,7 @@ import {
   recordingDuration,
   serializeRecording,
 } from "./recording";
+import { blockMediaPipeUsageLogging } from "./usage-logging";
 
 /**
  * トラッキングの値を受け取るもの (ビューアの Player、エディタのプレビューモード)。値は次のフレームの
@@ -479,6 +480,8 @@ export class FaceTracker {
       if (!head?.ok) {
         throw new Error(t("errors.modelMissing"));
       }
+      // Landmarker を作ると MediaPipe が利用状況を送り始めるので、その前に送り先を断る
+      blockMediaPipeUsageLogging();
       const vision = await import("@mediapipe/tasks-vision");
       this.#drawing = vision;
       const fileset = await vision.FilesetResolver.forVisionTasks(assetUrl("wasm"));
@@ -516,6 +519,7 @@ export class FaceTracker {
       const modelUrl = assetUrl("pose_landmarker_lite.task");
       const head = await fetch(modelUrl, { method: "HEAD" }).catch(() => null);
       if (!head?.ok) throw new Error(t("errors.poseModelMissing"));
+      blockMediaPipeUsageLogging();
       const vision = await import("@mediapipe/tasks-vision");
       const fileset = await vision.FilesetResolver.forVisionTasks(assetUrl("wasm"));
       // 顔と同じく、WebKitGTK のためにふつうの canvas を渡す。

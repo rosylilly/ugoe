@@ -135,6 +135,9 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 人の写真をリポジトリに入れずに済み、MediaPipe が顔を見つけて `jawOpen` が 0.5 ほどになる (WSL2 の WebKitGTK で検出は 1 回/秒ほど。
 MediaPipe を読んで顔を見つけるまで 10〜15 秒)。
 MediaPipe の wasm は主スレッドで読むので、CSP が止めれば最後の手順の「CSP の違反」で気づける。
+MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状況の送り先 (`https://odml.pa.googleapis.com/v1/log`) への要求を
+ネットワークに出さずに断ることも確かめる (@ugoe/face-tracking の `usage-logging.ts`、T0943)。断らずに出すと CSP (`connect-src`) が止め、
+最後の手順で落ちる。
 
 ### CSP の違反
 
@@ -154,9 +157,8 @@ MediaPipe の wasm は主スレッドで読むので、CSP が止めれば最後
 見逃すもの: 起動の直後に起きて、イベントも報告も画面の文も残らないもの・アプリが握りつぶした例外・Worker の中の違反 (Worker に届く)。
 主な機能が動くこと (エディタのビューポートが wasm を読んで描ける、など) は、それぞれの手順でも確かめる。
 
-止まって正しいもの (`lib/harness.mjs` の `EXPECTED_BLOCKS`) は数えない (console.json には残る)。今は MediaPipe
-(@mediapipe/tasks-vision) の利用状況の送信だけ: 検出を始めてから 60 秒ごとと閉じたときに `https://odml.pa.googleapis.com/v1/log` へ
-送ろうとし、止める設定が無いので、アプリの CSP (`connect-src`) が止める。画像からのトラッキングが 60 秒を超える遅い機械で起きる (T0029)。
+止まって正しいものも数える。MediaPipe (@mediapipe/tasks-vision) の利用状況の送信 (60 秒ごとに `https://odml.pa.googleapis.com/v1/log` へ)
+は、以前は CSP が止めて数えないことにしていた (T0029) が、今は @ugoe/face-tracking が送る前に断るので CSP の違反にならない (T0943)。
 
 わざと CSP に止めさせる手順 (スタジオの出力ウィンドウで `new Function` が止まることを確かめる) は、止まったことを
 `takeCspViolations` で確かめて取り除く (最後の手順で数えないように)。

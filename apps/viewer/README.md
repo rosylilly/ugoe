@@ -141,7 +141,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | `style-src` | `'self' 'unsafe-inline'` | Svelte の `style:` と部品の `style` 属性。Tauri が style-src に nonce を足すと `'unsafe-inline'` が効かなくなるので、`dangerousDisableAssetCspModification: ["style-src"]` で style-src だけは書き換えさせない |
 | `img-src` | `'self' blob: data:` | トラッキングに画像のファイルを使うとき (`URL.createObjectURL`)・CSS の `data:` |
 | `media-src` | `'self' blob:` | トラッキングに動画のファイルを使うとき。カメラ (`srcObject` の MediaStream) は CSP の対象外 |
-| `connect-src` | `ipc: http://ipc.localhost 'self'` | 同梱のファイルの `fetch` と Tauri の IPC (Linux・macOS は `ipc:`、Windows は `http://ipc.localhost`) |
+| `connect-src` | `ipc: http://ipc.localhost 'self'` | 同梱のファイルの `fetch` と Tauri の IPC (Linux・macOS は `ipc:`、Windows は `http://ipc.localhost`)。外へは出さない (MediaPipe の利用状況の送り先 `odml.pa.googleapis.com` も許さない。下の「利用状況の送信」) |
 | `object-src` | `'none'` | |
 | `base-uri` | `'self'` | |
 | `form-action` | `'none'` | フォームを送らない |
@@ -640,6 +640,13 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   (トラッキングを始めると「モデルが同梱されていません」と表示する)。手で用意するときは `pnpm mediapipe`。
 - ライセンスは両方とも Apache-2.0。表記は `public/third-party-notices.txt` にあり、アプリのステータスバーの「ライセンス」で表示する
   (MediaPipe の節は `packages/face-tracking/third-party-notices.txt` から生成する。[docs/release.md](../../docs/release.md#同梱物のライセンスの表記))。
+
+### 利用状況の送信
+
+カメラの映像と画像はこの計算機の中で処理し、どこにも送らない。MediaPipe は利用状況 (タスクの種類・OS・版・処理時間の統計。
+映像やランドマークは含まない) を 60 秒ごとに `https://odml.pa.googleapis.com/v1/log` へ送る仕組みを持ち、止める設定が無いが、
+`@ugoe/face-tracking` がページの `fetch` を包んで送る前に断る (T0943)。CSP の `connect-src` も送り先を許さないので、二重に止まる。
+調べたことと止め方は [packages/face-tracking](../../packages/face-tracking/README.md#利用状況の送信-t0943)。
 
 ### カメラの許可 (OS ごと)
 

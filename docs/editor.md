@@ -601,6 +601,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     (`face_landmarker.task`・`pose_landmarker_lite.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
     パネルの「Third-party licenses」は、MediaPipe とバンドルに入る JS のライブラリのライセンスの表記 (`public/third-party-notices.txt`。
     ビューア・スタジオと同じ形) を表示します。生成と検査は [release.md](release.md#同梱物のライセンスの表記)。
+  - 映像と画像はこの計算機の中で処理し、どこにも送りません。MediaPipe が 60 秒ごとに送ろうとする利用状況
+    (`https://odml.pa.googleapis.com/v1/log`) は、`@ugoe/face-tracking` が送る前に断り、CSP の `connect-src` も許しません
+    ([packages/face-tracking](../packages/face-tracking/README.md#利用状況の送信-t0943)、T0943)。
   - Tauri 側 (`src-tauri/src/tracking.rs`): webview からのカメラの許可の要求だけを許し (`on_permission_request`)、
     記録の保存は `write_json_file` (保存のダイアログで選んだパスの `.json` だけ。[読み書きできるパス](#読み書きできるパス))。macOS は `Info.plist` の
     `NSCameraUsageDescription` と `Entitlements.plist` の `com.apple.security.device.camera`。
@@ -2131,7 +2134,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
   wasm (`ugoe-wasm` と MediaPipe。`script-src 'wasm-unsafe-eval'`)・Tauri の IPC (`connect-src ipc: http://ipc.localhost`)・
   同梱した MediaPipe のスクリプト・wasm・モデル (`public/mediapipe/`。`'self'`)・blob と data の画像 (法線マップの表示・トラッキングの画像)・
   blob の動画 (`media-src blob:`。カメラの `srcObject` は CSP の対象外) です。`eval` と外への `fetch` は拒まれます
-  (AI のプロバイダへの通信はバックエンドが行うので、ページからは要らない)。値は 3 つのアプリで同じです (T0024。
+  (AI のプロバイダへの通信はバックエンドが行うので、ページからは要らない。MediaPipe の利用状況の送信も止まる。上の「フェイストラッキング」)。値は 3 つのアプリで同じです (T0024。
   [architecture.md](architecture.md#webview-の-csp-とコマンドの許可))。
   - `index.html` のテーマを先に付けるインラインのスクリプトは、Tauri がビルド時に hash を `script-src` に足すので動きます。
   - Svelte が書く `style` 属性のため `style-src` は `'unsafe-inline'` にし、Tauri が `style-src` に hash を足さないようにします

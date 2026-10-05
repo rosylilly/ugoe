@@ -502,6 +502,9 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 ビューアと同じく、カメラを使えるのは操作ウィンドウだけ (バックエンドの `on_permission_request` が操作ウィンドウのカメラとマイクの要求だけを許す。
 macOS は `Info.plist` の `NSCameraUsageDescription`・`NSMicrophoneUsageDescription` と `Entitlements.plist`)。
 MediaPipe の wasm とモデルはアプリに同梱する (`pnpm mediapipe`。ビューアと同じ `ugoe-mediapipe-assets`)。
+映像と音はこの計算機の中で処理し、どこにも送らない。MediaPipe が 60 秒ごとに送ろうとする利用状況 (`https://odml.pa.googleapis.com/v1/log`)
+は、`@ugoe/face-tracking` が送る前に断り、CSP の `connect-src` も許さない
+([packages/face-tracking](../packages/face-tracking/README.md#利用状況の送信-t0943)、T0943)。
 
 ### マイクの口パク
 

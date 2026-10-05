@@ -165,7 +165,9 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   `generate_handler!`・`COMMANDS`・どちらかの capability の 3 か所に書く (`src/acl.rs` のテストが食い違いを検査する)。
 - CSP (`tauri.conf.json` の `app.security.csp`): 同梱したものだけを読む (`default-src 'self'`)。wasm (`'wasm-unsafe-eval'`)・
   Tauri の IPC (`ipc:`・`http://ipc.localhost`)・blob の画像と動画 (背景・トラッキングのファイル) を許し、ほかのページの枠には入れさせない
-  (`frame-ancestors 'none'`)。カメラ (`srcObject` の MediaStream) は CSP の対象外。値はエディタ・ビューアと同じ (T0024。
+  (`frame-ancestors 'none'`)。カメラ (`srcObject` の MediaStream) は CSP の対象外。外への `fetch` は許さない (MediaPipe の利用状況の
+  送り先 `odml.pa.googleapis.com` も。送信は `@ugoe/face-tracking` が送る前に断る。
+  [packages/face-tracking](../../packages/face-tracking/README.md#利用状況の送信-t0943)、T0943)。値はエディタ・ビューアと同じ (T0024。
   [docs/architecture.md](../../docs/architecture.md#webview-の-csp-とコマンドの許可)。`src/acl.rs` のテストが 3 つの一致を検査する)。
   Svelte が書く `style` 属性のため `style-src` は `'unsafe-inline'` にし、Tauri が `style-src` に hash を足さないようにする
   (`dangerousDisableAssetCspModification`。hash があると `'unsafe-inline'` が効かなくなる)。

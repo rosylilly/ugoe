@@ -14,6 +14,7 @@ src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
 src/TrackingPanel.svelte  パネル (入力の選択・映像とランドマーク・調整・記録・値の表示)
+src/usage-logging.ts    MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)
 src/i18n.ts             画面の文言 (@ugoe/i18n の名前空間 `face-tracking`。カタログは locales/<言語>.json、原文は英語)
 scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: MediaPipe の wasm を写し、モデルを取得して
                         SHA-256 を検証し、ライセンスの表記を写す
@@ -34,6 +35,7 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
   アプリは `@ugoe/ui` の `tokens.css` を読んでおく。
 - アプリの `pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe` を実行する (`dev` は `--optional`)。
   `public/mediapipe/` はコミットしない。実行時は `document.baseURI` からの `mediapipe/` を読む。
+- `FaceTracker` は MediaPipe を読む前に、ページの `fetch` を包んで MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)。
 
 ## コマンド
 
@@ -55,3 +57,34 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
   キャリブレーションした後だけ渡す (`calibration.ts`)。
 - モデル `pose_landmarker_lite.task` (5.5 MiB) も `ugoe-mediapipe-assets` が取得・検証する。無ければ顔だけでトラッキングを続ける。
 - 記録の形式は版 2 (`body` が増えた。版 1 も読める)。
+
+## 利用状況の送信 (T0943)
+
+カメラの映像・画像・ランドマークはこの計算機の中で処理し、どこにも送らない。MediaPipe (`@mediapipe/tasks-vision` 1.0.1) は
+利用状況 (メトリクス) を Google へ送る仕組みを持つが、このパッケージが断るので送られない。
+
+MediaPipe がすること (npm パッケージの `vision_bundle.mjs` を読んで確かめた。出典は
+[MediaPipe Tasks のプライバシーの説明](https://goo.gle/mediapipe-privacy)・npm パッケージの README の「Privacy Notice」):
+
+- いつ: `FaceLandmarker`・`PoseLandmarker` などを `createFromOptions` で作ると、必ず記録を始める (作った直後に 1 件溜まる)。
+  溜めた記録を 60 秒ごとと、Landmarker を `close()` したときに送る。送るのに 1 回失敗すると、溜めた記録を捨て、以後は送らない。
+- 何を: タスクの種類 (`FaceLandmarker` など)・実行モード (`VIDEO` など)・OS の種類 (user agent から)・MediaPipe の版・
+  検出の回数と処理時間の統計・落としたフレームの数。映像・画像・ランドマーク・ブレンドシェイプの値は含まない。
+- どこへ: `https://odml.pa.googleapis.com/v1/log` に `fetch` で POST する (protobuf。API キーは wasm から取る)。
+- 止める設定: 無い。オプション (`baseOptions` など) にも `FilesetResolver` にも無く、送り先と送る処理は JS の側に決め打ちなので、
+  wasm の版 (SIMD・SIMD 無し・`module`) や `ModuleFactory` の差し替えでも止まらない。
+
+止め方: `src/usage-logging.ts` の `blockMediaPipeUsageLogging()` が、グローバルの `fetch` を包み、`https://odml.pa.googleapis.com`
+への要求だけをネットワークの失敗 (`TypeError`) として断る (ほかの要求はそのまま通す)。MediaPipe は送るたびにグローバルの `fetch` を
+引くので包んだものを呼び、失敗として扱って以後は送らない。要求はネットワークに出ないので、CSP の違反にもならない。
+`FaceTracker` が Landmarker を作る前に呼ぶ (何度呼んでも包むのは 1 回)。
+
+二重の守りとして、3 つのアプリの CSP (`connect-src`) は `odml.pa.googleapis.com` を許していない (仮に包みが外れても CSP が止める)。
+e2e の画像からのトラッキングの手順は、ページの `fetch` がこの送り先を断ることと、CSP の違反が 0 件であることを確かめる
+([tests/e2e/README.md](../../tests/e2e/README.md#画像からのトラッキング))。
+
+MediaPipe を自分で使うページ (`@ugoe/runtime` の `<ugoe-avatar>` に MediaPipe の結果を渡すホストなど) は、このパッケージを通らないので
+送信が止まらない。止めるには、そのページで同じように `fetch` を包むか、CSP の `connect-src` で送り先を許さない
+([bindings/web/README.md](../../bindings/web/README.md#mediapipe-の利用状況の送信))。
+
+MediaPipe の版を上げたら、`vision_bundle.mjs` で送り先 (`odml.pa.googleapis.com`) と送る処理 (`fetch` を使うか) が変わっていないかを確かめる。

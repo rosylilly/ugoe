@@ -162,6 +162,37 @@ function track() {
   毎フレーム渡します (カメラを使わない。`?tracking-filter=off` で平滑化しない)。「camera (MediaPipe)」は本物のカメラの入力を渡します
   ([下](#平滑化の係数を実際の顔で調整する))。
 
+### MediaPipe の利用状況の送信
+
+MediaPipe (`@mediapipe/tasks-vision`。1.0.1 で確かめた) は、映像や画像をこの計算機の中で処理しますが、利用状況 (タスクの種類・
+実行モード・OS・版・処理時間の統計。映像やランドマークは含まない) を、Landmarker を作ってから 60 秒ごとと `close()` したときに
+`https://odml.pa.googleapis.com/v1/log` へ `fetch` で送ります。止める設定はありません
+([MediaPipe Tasks のプライバシーの説明](https://goo.gle/mediapipe-privacy)。送るなら利用者の同意を得るのはアプリの責任とされています)。
+このパッケージは MediaPipe に依存しないので、送るかどうかはホストが決めます。送らせないなら次のどちらか (両方でもよい) を使います。
+
+- CSP の `connect-src` で送り先を許さない (MediaPipe の wasm とモデルを読む場所だけを許す)。送ろうとするたびに CSP の違反が報告されます。
+
+  ```html
+  <meta http-equiv="Content-Security-Policy"
+        content="connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com">
+  ```
+
+- Landmarker を作る前に `fetch` を包み、送り先への要求をネットワークの失敗として断る。MediaPipe は送るたびにグローバルの `fetch` を
+  呼び、1 回失敗すると以後は送りません。要求はネットワークに出ないので、CSP の違反も出ません。
+
+  ```js
+  const pageFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+    return url.hostname === "odml.pa.googleapis.com"
+      ? Promise.reject(new TypeError("MediaPipe usage logging is disabled"))
+      : pageFetch(input, init);
+  };
+  ```
+
+ugoe のアプリ (エディタ・ビューア・スタジオ) は両方を使っています ([packages/face-tracking](../../packages/face-tracking/README.md#利用状況の送信-t0943))。
+見本 (`examples/basic`) の「camera (MediaPipe)」はどちらも使わないので、60 秒を超えて使うと送られます。
+
 ### 平滑化とキャリブレーション
 
 ```js
