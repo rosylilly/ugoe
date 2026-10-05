@@ -118,7 +118,12 @@ describe("glue pairs and intensity axes (T0661)", () => {
   });
 
   it("removes a pair", () => {
-    expect(withoutPair(glue(), 0).pairs).toEqual([{ a: 2, b: 3, weight: 0.5 }]);
+    const g = glue();
+    const [first] = g.pairs;
+    if (!first) throw new Error("no pair");
+    expect(withoutPair(g, first.a, first.b)?.pairs).toEqual([{ a: 2, b: 3, weight: 0.5 }]);
+    // 無い組は外さない。
+    expect(withoutPair(g, first.a, 3)).toBeNull();
   });
 
   it("adds and removes keys of the intensity grid", () => {

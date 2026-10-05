@@ -14,6 +14,7 @@ import {
   newSlotId,
   overlapping,
   rangesOverlap,
+  resolveSlot,
   setSlotCommand,
   toggled,
 } from "./slots";
@@ -110,6 +111,43 @@ describe("setSlotCommand", () => {
       colliders: [],
       pose_parts: [],
     });
+  });
+});
+
+describe("resolveSlot", () => {
+  const slots = [slot("Cap", 100, 200), slot("Hair", 550, 650)];
+
+  it("finds the slot by its ID first", () => {
+    expect(resolveSlot(slots, "Hair", new Map([["Hair", "Cap"]]))?.id).toBe("Hair");
+  });
+
+  it("follows the renames sent after the ID was taken", () => {
+    expect(resolveSlot(slots, "Hat", new Map([["Hat", "Cap"]]))?.id).toBe("Cap");
+    expect(
+      resolveSlot(
+        slots,
+        "Hat",
+        new Map([
+          ["Hat", "Beret"],
+          ["Beret", "Cap"],
+        ]),
+      )?.id,
+    ).toBe("Cap");
+  });
+
+  it("returns null for a missing slot and stops on a cycle", () => {
+    expect(resolveSlot(slots, null, new Map())).toBeNull();
+    expect(resolveSlot(slots, "Hat", new Map())).toBeNull();
+    expect(
+      resolveSlot(
+        slots,
+        "A",
+        new Map([
+          ["A", "B"],
+          ["B", "A"],
+        ]),
+      ),
+    ).toBeNull();
   });
 });
 

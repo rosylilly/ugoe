@@ -12,7 +12,7 @@ import { formatList } from "@ugoe/i18n";
 import { Button, NumberField, Select, Toggle, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
-import type { Command } from "../../ipc";
+import type { Command, Slot } from "../../ipc";
 import { elementLabel, elementOptions, labelOf } from "../../labels";
 import type { Selection } from "../../selection.svelte";
 import TipButton from "../../ui/TipButton.svelte";
@@ -24,12 +24,14 @@ import {
   DRAW_ORDER_MIN,
   drawOrderRows,
   exposeCommand,
+  type FullSlot,
   finite,
   fullSlot,
   isValidSlotId,
   meshesInRange,
   newSlot,
   overlapping,
+  resolveSlot,
   setSlotCommand,
 } from "./slots";
 import type { SlotsView } from "./slotsView.svelte";
@@ -51,7 +53,12 @@ const index = $derived.by((): ModelIndex | null => {
   }
 });
 const slots = $derived(model?.slots ?? []);
-const current = $derived(slots.find((s) => s.id === view.slot) ?? null);
+/**
+ * 送った名前の変更 (前の ID → 新しい ID)。名前を変えた後に並べた編集は、送る直前にこれをたどって今の ID を引く。
+ * 送っている編集が無くなったら空にする。
+ */
+const renames = new Map<string, string>();
+const current = $derived(resolveSlot(slots, view.slot, renames));
 const slot = $derived(current ? fullSlot(current) : null);
 const exposed = $derived(model?.avatar ? model.avatar.slots : null);
 const rows = $derived(index ? drawOrderRows(index, slots) : []);
@@ -66,46 +73,85 @@ $effect(() => {
   if (model && !current) view.slot = slots[0]?.id ?? null;
 });
 
-let busy = $state(false);
 let message = $state<string | null>(null);
+/** 送っていてまだ終わっていない編集の数。 */
+let sending = 0;
 
-async function send(command: Command | null): Promise<boolean> {
-  if (!command || busy) return false;
-  busy = true;
+/**
+ * 前の編集を読み直した後で `build` でコマンドを組み立てて送る (docs/editor.md#パネルからの編集)。
+ * 適用できたら `done` を呼ぶ。失敗の理由は doc.error (パネルの上) に出る。
+ */
+async function send(build: () => Command | null, done?: () => void): Promise<boolean> {
+  sending++;
   try {
-    // 失敗の理由は doc.error (パネルの上) に出る。
-    const ok = (await doc.apply(command)) !== null;
-    if (ok) message = null;
+    const ok = (await doc.send(build)) !== null;
+    if (ok) {
+      message = null;
+      done?.();
+    }
     return ok;
   } finally {
-    busy = false;
+    sending--;
+    if (sending === 0) renames.clear();
   }
 }
 
-function patch(p: Parameters<typeof setSlotCommand>[1]): Promise<boolean> {
-  return slot ? send(setSlotCommand(slot, p)) : Promise.resolve(false);
+/** 送る直前のスロット `id` (名前の変更をたどる)。 */
+function slotOf(id: string): FullSlot | null {
+  const found = resolveSlot(slots, id, renames);
+  return found ? fullSlot(found) : null;
 }
 
-async function addSlot(): Promise<void> {
-  const created = newSlot(slots);
-  if (!created) {
-    message = t("slots.noFreeRange");
-    return;
-  }
-  if (await send({ op: "add_slot", slot: created })) view.slot = created.id;
+/** 今選んでいるスロットの一部を、送る直前のスロットに `change` を当てて変える。 */
+function patch(change: Partial<Slot> | ((s: FullSlot) => Partial<Slot>)): Promise<boolean> {
+  const id = slot?.id;
+  if (id === undefined) return Promise.resolve(false);
+  return send(() => {
+    const s = slotOf(id);
+    return s ? setSlotCommand(s, typeof change === "function" ? change(s) : change) : null;
+  });
 }
 
-async function rename(event: Event): Promise<void> {
+function addSlot(): void {
+  let created: FullSlot | null = null;
+  void send(
+    () => {
+      created = newSlot(slots);
+      if (!created) {
+        message = t("slots.noFreeRange");
+        return null;
+      }
+      return { op: "add_slot", slot: created };
+    },
+    () => {
+      if (created) view.slot = created.id;
+    },
+  );
+}
+
+function rename(event: Event): void {
   const input = event.currentTarget as HTMLInputElement;
   const id = input.value.trim();
-  if (!slot || id === slot.id) return;
+  const from = slot?.id;
+  if (from === undefined || id === from) return;
   if (!isValidSlotId(id)) {
     message = t("slots.name.invalid");
-    input.value = slot.id;
+    input.value = from;
     return;
   }
-  if (await patch({ id })) view.slot = id;
-  else input.value = slot.id;
+  void send(
+    () => {
+      const s = slotOf(from);
+      const command = s ? setSlotCommand(s, { id }) : null;
+      if (s && command) renames.set(s.id, id);
+      return command;
+    },
+    () => {
+      view.slot = id;
+    },
+  ).then((ok) => {
+    if (!ok && slot) input.value = slot.id;
+  });
 }
 
 /** 範囲の欄を今の値に戻すために作り直す (送れなかったとき)。 */
@@ -116,17 +162,37 @@ function setRange(edge: "min" | "max", value: number): void {
     rangeKey++;
     return;
   }
-  void patch({ draw_order: { ...slot.draw_order, [edge]: value } }).then((ok) => {
+  void patch((s) => ({ draw_order: { ...s.draw_order, [edge]: value } })).then((ok) => {
     if (!ok) rangeKey++;
   });
 }
 
-async function removeSlot(): Promise<void> {
-  if (!slot) return;
-  const i = slots.findIndex((s) => s.id === slot.id);
-  if (await send({ op: "remove_slot", id: slot.id })) {
-    view.slot = slots[i + 1]?.id ?? slots[i - 1]?.id ?? null;
-  }
+function expose(checked: boolean): void {
+  const id = slot?.id;
+  if (id === undefined) return;
+  void send(() => {
+    const s = slotOf(id);
+    const shown = model?.avatar ? model.avatar.slots : null;
+    return s ? exposeCommand(shown, s.id, checked) : null;
+  });
+}
+
+function removeSlot(): void {
+  const id = slot?.id;
+  if (id === undefined) return;
+  let next: string | null = null;
+  void send(
+    () => {
+      const s = slotOf(id);
+      if (!s) return null;
+      const i = slots.findIndex((x) => x.id === s.id);
+      next = slots[i + 1]?.id ?? slots[i - 1]?.id ?? null;
+      return { op: "remove_slot", id: s.id };
+    },
+    () => {
+      view.slot = next;
+    },
+  );
 }
 
 function selectInRange(): void {
@@ -184,7 +250,7 @@ const ids = $props.id();
     <p class="ed-hint">{t("slots.empty")}</p>
   {/if}
   <div class="ed-buttons row">
-    <TipButton disabled={busy} onclick={addSlot} tooltip={t("slots.add.tooltip")}>{t("slots.add.label")}</TipButton>
+    <TipButton onclick={addSlot} tooltip={t("slots.add.tooltip")}>{t("slots.add.label")}</TipButton>
   </div>
   {#if message}<p class="error ugoe-selectable">{message}</p>{/if}
 
@@ -194,7 +260,7 @@ const ids = $props.id();
         <h3>{t("slots.slot.title")}</h3>
         <div class="field">
           <label for="{ids}-name">{t("slots.name.label")}</label>
-          <input id="{ids}-name" value={slot.id} disabled={busy} onchange={rename} />
+          <input id="{ids}-name" value={slot.id} onchange={rename} />
         </div>
         <p class="help">{t("slots.name.help")}</p>
 
@@ -205,7 +271,6 @@ const ids = $props.id();
               aria-labelledby="{ids}-anchor"
               value={slot.anchor ?? NONE}
               options={anchorOptions}
-              disabled={busy}
               onchange={(v) => patch({ anchor: selectValue(v) })}
             />
           </span>
@@ -219,7 +284,6 @@ const ids = $props.id();
               aria-labelledby="{ids}-part"
               value={slot.part ?? NONE}
               options={partOptions}
-              disabled={busy}
               onchange={(v) => patch({ part: selectValue(v) })}
             />
           </span>
@@ -237,7 +301,6 @@ const ids = $props.id();
                 step={1}
                 size={5}
                 value={slot.draw_order.min}
-                disabled={busy}
                 onchange={(v) => setRange("min", v)}
               />
               –
@@ -246,7 +309,6 @@ const ids = $props.id();
                 step={1}
                 size={5}
                 value={slot.draw_order.max}
-                disabled={busy}
                 onchange={(v) => setRange("max", v)}
               />
             </span>
@@ -260,7 +322,6 @@ const ids = $props.id();
           options={elementOptions(model.parts)}
           selected={slot.replaces}
           empty={t("slots.replaces.empty")}
-          disabled={busy}
           onchange={(replaces) => patch({ replaces })}
         />
         <PickList
@@ -269,7 +330,6 @@ const ids = $props.id();
           options={elementOptions(model.parameters)}
           selected={slot.parameters}
           empty={t("slots.parameters.empty")}
-          disabled={busy}
           onchange={(parameters) => patch({ parameters })}
         />
         <PickList
@@ -278,7 +338,6 @@ const ids = $props.id();
           options={elementOptions(model.meshes)}
           selected={slot.mask_sources}
           empty={t("slots.maskSources.empty")}
-          disabled={busy}
           onchange={(mask_sources) => patch({ mask_sources })}
         />
         <PickList
@@ -287,7 +346,6 @@ const ids = $props.id();
           options={colliders.map((c) => ({ id: c.id, label: elementLabel(c.name, c.id) }))}
           selected={slot.colliders}
           empty={t("slots.colliders.empty")}
-          disabled={busy}
           onchange={(colliders) => patch({ colliders })}
         />
         <PickList
@@ -296,16 +354,15 @@ const ids = $props.id();
           options={posePartIds.map((id) => ({ id, label: labelOf(model.parts, id) }))}
           selected={slot.pose_parts}
           empty={t("slots.poseParts.empty")}
-          disabled={busy}
           onchange={(pose_parts) => patch({ pose_parts })}
         />
 
         <div class="check">
           <Toggle
             label={t("slots.showToApps.label")}
-            disabled={busy || exposed === null}
+            disabled={exposed === null}
             checked={exposed?.includes(slot.id) ?? false}
-            onchange={(checked) => send(exposeCommand(exposed, slot.id, checked))}
+            onchange={expose}
           />
         </div>
         <p class="help">
@@ -313,11 +370,11 @@ const ids = $props.id();
         </p>
 
         <div class="ed-buttons row">
-          <TipButton disabled={busy || !index} onclick={selectInRange} tooltip={t("slots.selectInRange.tooltip")}
+          <TipButton disabled={!index} onclick={selectInRange} tooltip={t("slots.selectInRange.tooltip")}
             >{t("slots.selectInRange.label")}</TipButton
           >
           <span class="remove">
-            <Button disabled={busy} onclick={removeSlot}>{t("slots.remove.label")}</Button>
+            <Button onclick={removeSlot}>{t("slots.remove.label")}</Button>
           </span>
         </div>
       </section>

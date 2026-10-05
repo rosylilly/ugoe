@@ -9,10 +9,10 @@
 // - グルー Seam: Quad の頂点 1 と 0 の組 1 つ。
 // - キャンバス座標 → CSS ピクセル: `(10, 20) + 2 * p`。happy-dom の getBoundingClientRect は 0 なので、
 //   イベントの clientX / clientY がそのままツールの座標になる。
-import { type Component, flushSync, mount, unmount } from "svelte";
+import { type Component, flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, vi } from "vitest";
 import { type EditorDocument, parseModelJson } from "../../../document.svelte";
-import type { ApplyReport, Command, PhysicsSettings } from "../../../ipc";
+import type { ApplyReport, Command, Motion, PhysicsSettings } from "../../../ipc";
 import type { ViewportController, ViewTransform } from "../../controller.svelte";
 import type { WebPuppet } from "../../wasm";
 import type { Point } from "../geometry";
@@ -166,7 +166,7 @@ export class FakeController {
   }
 }
 
-/** EditorDocument の代わり。`apply` に送られたコマンドを `commands` に記録する。 */
+/** EditorDocument の代わり。`apply`・`send` で送られたコマンドを `commands` に記録する。 */
 export class FakeDocument {
   model = $state.raw<{ json: string; bundle: Uint8Array | null } | null>({
     json: testModel(),
@@ -175,17 +175,40 @@ export class FakeDocument {
   /** 解析したモデル (`EditorDocument.parsedModel` と同じく `model.json` から作る)。 */
   readonly parsedModel = $derived(parseModelJson(this.model?.json));
   physics = $state.raw<PhysicsSettings | null>(null);
+  motions = $state.raw<Motion[]>([]);
   module = $state.raw(null);
   error = $state<string | null>(null);
   readonly commands: Command[] = [];
   /** 設定すると、`apply` はこの約束が解けるまで終わらない (送っている間の操作を試す)。 */
   pending: Promise<void> | null = null;
+  /**
+   * 設定すると、`apply` は待ち終えた後でこれを呼んで写し (`model`・`motions`) を書き換える (本物の読み直しの代わり)。
+   * false を返すと適用に失敗したことにする。
+   */
+  onApply: ((command: Command) => boolean | undefined) | null = null;
+  /** `send` の列の末尾。 */
+  #queue: Promise<unknown> = Promise.resolve();
 
   /** 本物の `apply` と同じく、適用できたら報告を返す (失敗は null。部品は戻り値で成否を見る)。 */
   apply = vi.fn(async (command: Command): Promise<ApplyReport | null> => {
     this.commands.push(command);
     if (this.pending) await this.pending;
+    if (this.onApply?.(command) === false) return null;
     return { warnings: [], mirrored: [] };
+  });
+
+  /**
+   * 本物の `send` と同じく、前に並べた送信が終わってから (読み直した後の写しで) `build` を呼んで組み立て、
+   * `apply` で送る。null なら送らない。数値の欄の確定を畳む動きは真似しない。
+   */
+  send = vi.fn((build: () => Command | null): Promise<ApplyReport | null> => {
+    const result = this.#queue.then(async () => {
+      await tick();
+      const command = build();
+      return command ? this.apply(command) : null;
+    });
+    this.#queue = result.catch(() => undefined);
+    return result;
   });
 
   get asDocument(): EditorDocument {

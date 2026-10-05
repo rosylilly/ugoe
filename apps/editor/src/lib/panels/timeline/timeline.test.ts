@@ -6,6 +6,7 @@ import {
   clampHandle,
   curveKeys,
   curvePath,
+  followKey,
   isValidName,
   keyValuesCommand,
   newMotion,
@@ -113,6 +114,32 @@ describe("curves", () => {
     expect(canMoveKey(curve, 1, 0)).toBe(false);
     expect(canMoveKey(curve, 2, 5)).toBe(true);
     expect(canMoveKey(curve, 0.5, 0.6)).toBe(false);
+  });
+
+  it("follows the key times moved by pending commits", () => {
+    expect(followKey(curve, 1, new Map([[1, 0.5]]))?.t).toBe(1);
+    expect(followKey(curve, 0.8, new Map([[0.8, 1.5]]))?.t).toBe(1.5);
+    expect(
+      followKey(
+        curve,
+        0.7,
+        new Map([
+          [0.7, 0.8],
+          [0.8, 2],
+        ]),
+      )?.t,
+    ).toBe(2);
+    expect(followKey(curve, 0.7, new Map())).toBeNull();
+    expect(
+      followKey(
+        curve,
+        0.7,
+        new Map([
+          [0.7, 0.8],
+          [0.8, 0.7],
+        ]),
+      ),
+    ).toBeNull();
   });
 
   it("keeps handles inside their segment", () => {

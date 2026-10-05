@@ -153,7 +153,11 @@ export function withPair(glue: Glue, a: number, b: number): Glue | null {
   return { ...glue, pairs };
 }
 
-/** `index` 番目の組を外したグルー。 */
-export function withoutPair(glue: Glue, index: number): Glue {
-  return { ...glue, pairs: glue.pairs.filter((_, i) => i !== index) };
+/**
+ * A の頂点 `a` と B の頂点 `b` の組を外したグルー。その組が無ければ null。番号でなく頂点で指すので、前の削除を
+ * 読み直す前に押した組も、送る直前のグルーから外せる。
+ */
+export function withoutPair(glue: Glue, a: number, b: number): Glue | null {
+  const pairs = glue.pairs.filter((p) => p.a !== a || p.b !== b);
+  return pairs.length === glue.pairs.length ? null : { ...glue, pairs };
 }

@@ -40,7 +40,6 @@ const glue = $derived(
   view.active && view.glue !== null ? (model?.glues.find((g) => g.id === view.glue) ?? null) : null,
 );
 const readOnly = $derived(glue !== null && (isBaseGlue(glue, doc.module) || isDrawCloneGlue(glue)));
-let busy = $state(false);
 
 // グルーを替えたら・読み取り専用ならモードを抜ける。
 $effect(() => {
@@ -90,14 +89,16 @@ const drawn = $derived.by(() => {
   };
 });
 
-async function replace(next: Glue): Promise<void> {
-  if (busy) return;
-  busy = true;
-  try {
-    await doc.apply(setGlueCommand(next));
-  } finally {
-    busy = false;
-  }
+/**
+ * 前の編集を読み直した後のグルーに `change` を当てて set_glue で送る (null なら送らない)。押した時点のグルーから
+ * 組み立てると、送っている間に押した組の変更が前の変更を戻してしまう (docs/editor.md#パネルからの編集)。
+ */
+function update(id: string, change: (current: Glue) => Glue | null): void {
+  void doc.send(() => {
+    const current = doc.parsedModel?.glues.find((g) => g.id === id);
+    const next = current ? change(current) : null;
+    return next ? setGlueCommand(next) : null;
+  });
 }
 
 function onVertex(e: PointerEvent, side: "a" | "b", index: number): void {
@@ -110,14 +111,14 @@ function onVertex(e: PointerEvent, side: "a" | "b", index: number): void {
   }
   view.pending = null;
   const [a, b] = side === "a" ? [index, pending.index] : [pending.index, index];
-  const next = withPair(glue, a, b);
-  if (next) void replace(next);
+  update(glue.id, (g) => withPair(g, a, b));
 }
 
 function onPair(e: PointerEvent, index: number): void {
-  if (e.button !== 0 || e.altKey || !glue || view.pairMode !== "remove") return;
+  const pair = glue?.pairs[index];
+  if (e.button !== 0 || e.altKey || !glue || !pair || view.pairMode !== "remove") return;
   e.stopPropagation();
-  void replace(withoutPair(glue, index));
+  update(glue.id, (g) => withoutPair(g, pair.a, pair.b));
 }
 
 function setMode(mode: PairMode): void {
@@ -212,14 +213,14 @@ const hint = $derived(
     <TipButton
       small
       pressed={view.pairMode === "add"}
-      disabled={readOnly || busy || !drawn}
+      disabled={readOnly || !drawn}
       onclick={() => setMode("add")}
       tooltip={t("viewport.glue.add.tooltip")}>{t("viewport.glue.add.label")}</TipButton
     >
     <TipButton
       small
       pressed={view.pairMode === "remove"}
-      disabled={readOnly || busy || !drawn || glue.pairs.length === 0}
+      disabled={readOnly || !drawn || glue.pairs.length === 0}
       onclick={() => setMode("remove")}
       tooltip={t("viewport.glue.remove.tooltip")}>{t("viewport.glue.remove.label")}</TipButton
     >

@@ -350,6 +350,28 @@ export function canMoveKey(curve: Curve, from: number, to: number): boolean {
   return (!prev || prev.t < to) && (!next || to < next.t);
 }
 
+/**
+ * 時刻 `t` のキー。無ければ、送ったキーの時刻の変更 (`moved`: 前の時刻 → 新しい時刻) をたどった先のキー。
+ * 時刻を変える確定の後に並べた確定を、送る直前に今の時刻のキーへ向けるのに使う (docs/editor.md#パネルからの編集)。
+ */
+export function followKey(
+  curve: Curve,
+  t: number,
+  moved: ReadonlyMap<number, number>,
+): Point | null {
+  const keys = curveKeys(curve);
+  const seen = new Set<number>();
+  let current: number | undefined = t;
+  while (current !== undefined && !seen.has(current)) {
+    const at = current;
+    const key = keys.find((k) => k.t === at);
+    if (key) return key;
+    seen.add(at);
+    current = moved.get(at);
+  }
+  return null;
+}
+
 /** 時刻 `t` のキーで終わるベジェの区間の取っ手 (ベジェでなければ null)。 */
 export function segmentHandle(curve: Curve, t: number, which: "c1" | "c2"): Point | null {
   const segment = segmentEndingAt(curve, t);

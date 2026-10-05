@@ -15,6 +15,8 @@ import {
   curveKeys,
   curvePath,
   endPoint,
+  findCurve,
+  followKey,
   type GraphView,
   keyCommand,
   type SegmentKind,
@@ -192,21 +194,58 @@ async function onDoubleClick(e: MouseEvent) {
 
 // --- 左の欄 ---
 
-async function setKeyField(field: "t" | "v", value: number) {
-  const p = selectedPoint;
-  if (!p || !row.curve) return;
-  const to = field === "t" ? { t: value, v: p.v } : { t: p.t, v: value };
-  if (field === "t" && !canMoveKey(row.curve, p.t, value)) {
-    onmessage(t("timeline.keyBlocked"));
-    fieldsKey++;
-    return;
-  }
-  if (await apply({ op: "move_motion_key", motion: motion.name, target: row.target, t: p.t, to })) {
-    timeline.selectKey(row.target, to.t);
-    timeline.seek(to.t);
-  } else {
-    fieldsKey++;
-  }
+/**
+ * 送ったキーの時刻の変更 (前の時刻 → 新しい時刻)。前の確定の適用を待つ間に欄を続けて確定したとき、送る直前にこれを
+ * たどって今の時刻のキーを動かす (確定したときの選択はまだ前の時刻を指している)。送っている確定が無くなったら空にする。
+ */
+const moved = new Map<number, number>();
+/** 送っていてまだ終わっていない欄の確定の数。 */
+let sending = 0;
+
+/** 送る直前の (前の編集を読み直した後の) このカーブ。 */
+function currentCurve(): Curve | null {
+  const m = doc.motions.find((x) => x.name === motion.name);
+  return m ? findCurve(m, row.target) : null;
+}
+
+function setKeyField(field: "t" | "v", value: number) {
+  const from = selectedPoint?.t;
+  if (from === undefined) return;
+  // 組み立てたコマンドの行き先 (組み立てを数値の欄の次の確定に置き換えられたら null のまま)。
+  let to: Point | null = null;
+  sending++;
+  void doc
+    .send(() => {
+      const curve = currentCurve();
+      const p = curve ? followKey(curve, from, moved) : null;
+      if (!curve || !p) return null;
+      const next = field === "t" ? { t: value, v: p.v } : { t: p.t, v: value };
+      if (next.t === p.t && next.v === p.v) return null;
+      if (field === "t" && !canMoveKey(curve, p.t, value)) {
+        onmessage(t("timeline.keyBlocked"));
+        fieldsKey++;
+        return null;
+      }
+      onmessage(null);
+      if (next.t !== p.t) moved.set(p.t, next.t);
+      to = next;
+      // 失敗の理由は doc.error (タイムラインの見出し) に出る。
+      return { op: "move_motion_key", motion: motion.name, target: row.target, t: p.t, to: next };
+    })
+    .then((report) => {
+      const sent: Point | null = to;
+      if (sent === null) return;
+      if (report) {
+        timeline.selectKey(row.target, sent.t);
+        timeline.seek(sent.t);
+      } else {
+        fieldsKey++;
+      }
+    })
+    .finally(() => {
+      sending--;
+      if (sending === 0) moved.clear();
+    });
 }
 
 async function setKind(kind: SegmentKind) {

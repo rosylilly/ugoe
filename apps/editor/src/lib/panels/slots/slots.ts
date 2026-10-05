@@ -93,6 +93,26 @@ export function setSlotCommand(slot: Slot, patch: Partial<Slot>): Command | null
   return { op: "set_slot", id: slot.id, slot: after };
 }
 
+/**
+ * ID が `id` のスロット。無ければ、送った名前の変更 (`renames`: 前の ID → 新しい ID) をたどった先のスロット。
+ * 名前の変更の後に並べた編集を、送る直前に今の ID のスロットへ向けるのに使う (docs/editor.md#パネルからの編集)。
+ */
+export function resolveSlot(
+  slots: readonly Slot[],
+  id: string | null,
+  renames: ReadonlyMap<string, string>,
+): Slot | null {
+  const seen = new Set<string>();
+  let current = id;
+  while (current !== null && !seen.has(current)) {
+    const found = slots.find((s) => s.id === current);
+    if (found) return found;
+    seen.add(current);
+    current = renames.get(current) ?? null;
+  }
+  return null;
+}
+
 /** `list` に `id` を入れる・外す (並びは保つ。入れるときは末尾)。 */
 export function toggled(list: readonly string[], id: string, on: boolean): string[] {
   const without = list.filter((x) => x !== id);
