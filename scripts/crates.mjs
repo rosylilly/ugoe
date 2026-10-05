@@ -19,6 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { exportMbxPath } from "./lib/mbx.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -238,6 +239,8 @@ function sync() {
 }
 
 if (import.meta.main) {
+  // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+  exportMbxPath();
   const [command, arg] = process.argv.slice(2);
   if (command === "check") check(arg);
   else if (command === "sync") sync();

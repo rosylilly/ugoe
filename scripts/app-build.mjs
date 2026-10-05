@@ -28,6 +28,7 @@ import {
   statSync,
 } from "node:fs";
 import { delimiter, join } from "node:path";
+import { exportMbxPath } from "./lib/mbx.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -434,6 +435,8 @@ function formatSize(bytes) {
 }
 
 function main(argv) {
+  // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+  exportMbxPath();
   const host = hostPlatform();
   if (!host) {
     console.error(`error: unsupported host OS ${process.platform}`);

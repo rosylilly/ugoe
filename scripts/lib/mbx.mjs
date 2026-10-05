@@ -79,3 +79,20 @@ export function cargoEnvWithMbx(
   }
   return { env, viaMbx: false, installed };
 }
+
+/**
+ * just を通らずに cargo を呼ぶスクリプトの始めに呼ぶ。`cargoEnvWithMbx` と同じ判定で、mbx を通すなら `env` (既定は process.env) の
+ * PATH に shim を足す (justfile の `export PATH` と同じ)。process.env を書き換えると、`env` を渡さずに起動する子プロセスの
+ * cargo も、cargo を呼ぶ pnpm・tauri・cargo-xwin なども mbx を通る。
+ *
+ * 返す値: その環境の cargo が mbx を通るか。shim が無い・`MBX_DISABLE` がある・Windows では何も変えずに false を返す
+ * (PATH の cargo がすでに shim なら何も変えずに true)。
+ */
+export function exportMbxPath(
+  env = process.env,
+  { isFile = defaultIsFile, platform = process.platform, home = homedir() } = {},
+) {
+  const { env: next, viaMbx } = cargoEnvWithMbx(env, { isFile, platform, home });
+  if (next !== env) env.PATH = next.PATH;
+  return viaMbx;
+}

@@ -10,6 +10,10 @@
 
 import { execFileSync } from "node:child_process";
 import { GROUPS } from "./ci-groups.mjs";
+import { exportMbxPath } from "./lib/mbx.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const FEATURE = "gpu-tests";
 

@@ -21,6 +21,7 @@
 // 型検査と lint をするため (T0013)。
 
 import { execFileSync } from "node:child_process";
+import { exportMbxPath } from "./lib/mbx.mjs";
 
 /**
  * グループの定義。`tauri` が true のグループだけ、CI で Tauri のシステムの依存 (webkit など) を入れる。
@@ -177,6 +178,8 @@ function metadata() {
 }
 
 function main([command, group, ...rest]) {
+  // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+  exportMbxPath();
   switch (command) {
     case "check": {
       const meta = metadata();

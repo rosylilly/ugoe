@@ -280,7 +280,7 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs)
 script-check:
     @node --test --test-reporter=dot scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/worktree-cargo-config.test.mjs
 

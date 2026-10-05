@@ -22,7 +22,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { exportMbxPath } from "./lib/mbx.mjs";
 import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer", "ugoe-studio", "ugoe-studio-vcam"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };

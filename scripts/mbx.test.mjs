@@ -1,9 +1,12 @@
 // scripts/lib/mbx.mjs の単体テスト (`just script-check` が実行する)。
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { describe, it } from "node:test";
 import {
   cargoEnvWithMbx,
+  exportMbxPath,
   findCargoDir,
   mbxDisabledValue,
   mbxEnabled,
@@ -116,5 +119,59 @@ describe("cargoEnvWithMbx", () => {
       viaMbx: false,
       installed: false,
     });
+  });
+});
+
+describe("exportMbxPath", () => {
+  const opts = { isFile: withShim, platform: "linux", home: join("/home", "me") };
+
+  it("shim が PATH に無ければ、渡した環境の PATH の先頭に足す", () => {
+    const env = { PATH: path(RUSTUP) };
+    assert.equal(exportMbxPath(env, opts), true);
+    assert.equal(env.PATH, path(SHIM, RUSTUP));
+  });
+
+  it("PATH の cargo がすでに shim なら変えない", () => {
+    const env = { PATH: path(SHIM, RUSTUP) };
+    assert.equal(exportMbxPath(env, opts), true);
+    assert.equal(env.PATH, path(SHIM, RUSTUP));
+  });
+
+  it("MBX_DISABLE があるか shim が無ければ変えない", () => {
+    const disabled = { PATH: path(RUSTUP), MBX_DISABLE: "1" };
+    assert.equal(exportMbxPath(disabled, opts), false);
+    assert.equal(disabled.PATH, path(RUSTUP));
+    const none = { PATH: path(RUSTUP) };
+    assert.equal(exportMbxPath(none, { ...opts, isFile: files(join(RUSTUP, "cargo")) }), false);
+    assert.equal(none.PATH, path(RUSTUP));
+  });
+
+  it("Windows では変えない", () => {
+    const env = { PATH: path(RUSTUP) };
+    assert.equal(exportMbxPath(env, { ...opts, platform: "win32" }), false);
+    assert.equal(env.PATH, path(RUSTUP));
+  });
+});
+
+// just を通らずに cargo を呼ぶスクリプトが mbx を通すか (T0034)。cargo を子プロセスで呼ぶ (`"cargo", ...` を
+// spawnSync・execFileSync などに渡す) か、cargo を呼ぶ `tauri build` を動かすスクリプトは、`exportMbxPath` か
+// `cargoEnvWithMbx` を呼ぶ。新しいスクリプトがこれを忘れると、ここで失敗する。
+describe("cargo を呼ぶスクリプト", () => {
+  const root = join(import.meta.dirname, "..");
+  const CALLS_CARGO = /[([]\s*["']cargo["']\s*,|["']tauri["']\s*,\s*["']build["']/;
+  const USES_MBX = /\b(exportMbxPath|cargoEnvWithMbx)\(/;
+  const scripts = execFileSync("git", ["ls-files", "-z", "--", "*.mjs", "*.js", "*.cjs"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((f) => f && !f.endsWith(".test.mjs") && !f.startsWith("scripts/lib/mbx.mjs"));
+
+  it("どれも mbx を通す", () => {
+    const callers = scripts.filter((f) => CALLS_CARGO.test(readFileSync(join(root, f), "utf8")));
+    // 検出の正規表現が古くなって何も見つけなくなったら気づけるように
+    assert.ok(callers.includes("tests/conformance/run.mjs"), callers.join(", "));
+    const missing = callers.filter((f) => !USES_MBX.test(readFileSync(join(root, f), "utf8")));
+    assert.deepEqual(missing, [], `exportMbxPath を呼んでいない: ${missing.join(", ")}`);
   });
 });

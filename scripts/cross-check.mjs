@@ -13,6 +13,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { exportMbxPath } from "./lib/mbx.mjs";
 
 /**
  * 検査の定義。`crates` を `targets` のそれぞれで `cargo clippy --all-targets -- -D warnings` する。
@@ -161,6 +162,8 @@ function run(selected) {
 }
 
 function main([command, ...names]) {
+  // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+  exportMbxPath();
   switch (command) {
     case "run":
     case "targets":

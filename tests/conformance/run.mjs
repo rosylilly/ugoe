@@ -32,6 +32,10 @@ import {
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
+import { exportMbxPath } from "../../scripts/lib/mbx.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const here = import.meta.dirname;
 const root = resolve(here, "..", "..");

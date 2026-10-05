@@ -11,6 +11,10 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { exportMbxPath } from "./lib/mbx.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const CBINDGEN_VERSION = "0.29.4";
 

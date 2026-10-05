@@ -11,6 +11,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { exportMbxPath } from "./lib/mbx.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const root = join(import.meta.dirname, "..");
 

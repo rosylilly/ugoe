@@ -4,6 +4,10 @@
 // 新しいクレートを追加したら ALLOWED にエントリを追加すること (未登録クレートはエラー)。
 
 import { execFileSync } from "node:child_process";
+import { exportMbxPath } from "./lib/mbx.mjs";
+
+// mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
+exportMbxPath();
 
 const union = (...sets) => new Set(sets.flatMap((s) => [...s]));
 const without = (set, ...names) => new Set([...set].filter((n) => !names.includes(n)));

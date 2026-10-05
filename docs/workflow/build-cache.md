@@ -45,9 +45,13 @@ mbx doctor                   # 確認する。`cargo on PATH` が shim を指し
   成果物は混ざるが、多くの場合はそのまま動く。下の「注意点」の読み取り専用の失敗が起きたら `mbx clean` で直す。
   エージェントは、反復には `just crate`・`just test-group` など just のレシピを使う。
   セッションの途中で起動ファイルを直した場合、すでに開いているシェルには反映されないので、`export PATH="$HOME/.local/share/mbx/bin:$PATH"` を先頭に付けて呼ぶ。
-- **just を通らずに cargo を呼ぶスクリプトのうち `bindings/godot/build.mjs` は、自分で mbx を通す** (T0028)。ワークスペースの外 (ADR 0026) で
-  直接 `node bindings/godot/build.mjs` と呼ばれることがあるので、shim が入っていれば justfile と同じく PATH の先頭に足す
-  (`scripts/lib/mbx.mjs` の `cargoEnvWithMbx`)。`MBX_DISABLE` で mbx を通さないときは、共有の `target/` を避けて `bindings/godot/target/` でビルドする。
+- **cargo を子プロセスで呼ぶリポジトリのスクリプトは、自分で mbx を通す** (T0028・T0034)。`node tests/conformance/run.mjs`・
+  `pnpm --filter @ugoe/runtime build`・Tauri の beforeBuildCommand のように just を通らずに呼ばれることがあるので、shim が入っていれば
+  justfile と同じく PATH の先頭に足す。始めに `scripts/lib/mbx.mjs` の `exportMbxPath()` を呼び、process.env の PATH を書き換える
+  (子プロセスの cargo も、cargo を呼ぶ pnpm・tauri・cargo-xwin も mbx を通る)。shim が無い・`MBX_DISABLE` がある・Windows では何も変えない。
+  新しいスクリプトで忘れると `just script-check` (`scripts/mbx.test.mjs`) が失敗する (`"cargo", ...` を子プロセスに渡すか `tauri build` を動かすファイルを探す)。
+  - `bindings/godot/build.mjs` はワークスペースの外 (ADR 0026) をビルドするので `cargoEnvWithMbx` で環境を作り、`MBX_DISABLE` で mbx を
+    通さないときは、共有の `target/` を避けて `bindings/godot/target/` でビルドする。
 
 ## 注意点
 
