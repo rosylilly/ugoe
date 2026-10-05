@@ -99,6 +99,7 @@
     "allow-get-normal-map-groups",
     "allow-generate-texture-normal-map",
     "allow-assign-texture-normal-map",
-    "allow-get-texture-png"
+    "allow-get-texture-png",
+    "allow-get-texture-versions"
   ]
 }

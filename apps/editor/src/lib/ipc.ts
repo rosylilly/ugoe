@@ -200,6 +200,11 @@ export const ipc = {
   getTexturePng: async (name: string) =>
     new Uint8Array(await invoke<ArrayBuffer>("get_texture_png", { name })),
   /**
+   * テクスチャか法線マップの画像の版 (中身のハッシュ。無い画像は null)。版が変わったときだけ PNG を読み直す (T1614)。
+   */
+  getTextureVersions: (names: string[]) =>
+    invoke<(string | null)[]>("get_texture_versions", { names }),
+  /**
    * apps/editor/src-tauri/src/psd.rs。PSD を今のドキュメントに取り込み、警告を返す。`meshOptions` の省略した
    * フィールドは既定値。
    */

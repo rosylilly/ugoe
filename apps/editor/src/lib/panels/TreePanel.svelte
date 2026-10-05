@@ -78,15 +78,26 @@ $effect(() => {
   if (i) untrack(() => selection.retain((r) => exists(i, r)));
 });
 
+/** 最後に祖先を開いて見せた主な選択 (表示の種類と key)。同じ要素では開き直さない。 */
+let revealed: string | null = null;
+
 // 外 (ビューポートなど) で選択された要素を、祖先を開いて見える位置までスクロールする。
+// ツリーは読み直しのたびに作り直すので、主な選択が変わったとき (と表示の種類を替えたとき) だけ開く。
+// 利用者が畳んだ祖先を、編集の後に開き直さない (T1614)。まだツリーに無い要素 (足した直後) は、現れたときに開く。
 $effect(() => {
   const primary = selection.primary;
   const tree = roots;
-  if (!primary) return;
+  if (!primary) {
+    revealed = null;
+    return;
+  }
   const key = refKey(primary);
   untrack(() => {
+    const target = `${view}/${key}`;
+    if (revealed === target) return;
     const path = pathTo(tree, key);
     if (!path) return;
+    revealed = target;
     if (path.some((k) => collapsed.has(k))) {
       const next = new Set(collapsed);
       for (const k of path) next.delete(k);

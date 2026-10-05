@@ -12,6 +12,7 @@
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
 import { Button, Checkbox, Slider } from "@ugoe/ui";
+import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { errorText } from "../../errors";
 import { fileDialogs } from "../../fileDialogs";
@@ -57,12 +58,20 @@ let flipGreen = $state(false);
 const busy = $derived(doc.pending > 0);
 let error = $state<string | null>(null);
 
-// 画像の表示 (blob の URL)。モデルが変わるたびに取り直す。
-let textureUrl = $state<string | null>(null);
-let normalUrl = $state<string | null>(null);
+/** 表示している画像 (名前と版。読めなかったら `url` が null)。 */
+interface Shown {
+  name: string;
+  version: string;
+  url: string | null;
+}
 
-async function imageUrl(name: string | null | undefined): Promise<string | null> {
-  if (!name) return null;
+// 画像の表示 (blob の URL)。同じ名前の画像の差し替え (法線マップの作り直し・Undo) も映すよう編集のたびに版を問い合わせ、
+// 名前か版が変わった画像だけを読み直す (T1614)。
+let shown = $state.raw<[Shown | null, Shown | null]>([null, null]);
+const textureUrl = $derived(shown[0]?.url ?? null);
+const normalUrl = $derived(shown[1]?.url ?? null);
+
+async function imageUrl(name: string): Promise<string | null> {
   try {
     const bytes = await ipc.getTexturePng(name);
     return URL.createObjectURL(new Blob([bytes as BlobPart], { type: "image/png" }));
@@ -71,23 +80,43 @@ async function imageUrl(name: string | null | undefined): Promise<string | null>
   }
 }
 
+function revoke(image: Shown | null): void {
+  if (image?.url) URL.revokeObjectURL(image.url);
+}
+
 $effect(() => {
   void doc.revision;
-  const names = [ref?.name, ref?.normal_map];
+  const names = [ref?.name ?? null, ref?.normal_map ?? null] as const;
   let cancelled = false;
-  let urls: (string | null)[] = [];
-  void Promise.all(names.map(imageUrl)).then((got) => {
-    urls = got;
+  void (async () => {
+    const wanted = names.filter((n) => n !== null);
+    const got = await ipc.getTextureVersions(wanted).catch(() => wanted.map(() => null));
+    const versions = new Map(wanted.map((n, i) => [n, got[i] ?? null]));
+    const next = await Promise.all(
+      names.map(async (name, i): Promise<Shown | null> => {
+        const version = name === null ? null : (versions.get(name) ?? null);
+        if (name === null || version === null) return null;
+        const current = untrack(() => shown[i]);
+        if (current?.name === name && current.version === version) return current;
+        return { name, version, url: await imageUrl(name) };
+      }),
+    );
+    const current = untrack(() => shown);
     if (cancelled) {
-      for (const u of got) if (u) URL.revokeObjectURL(u);
+      for (const image of next) if (!current.includes(image)) revoke(image);
       return;
     }
-    [textureUrl, normalUrl] = got as [string | null, string | null];
-  });
+    for (const image of current) if (!next.includes(image)) revoke(image);
+    shown = next as [Shown | null, Shown | null];
+  })();
   return () => {
     cancelled = true;
-    for (const u of urls) if (u) URL.revokeObjectURL(u);
   };
+});
+
+// 閉じるときに表示している画像の URL を捨てる。
+$effect(() => () => {
+  for (const image of untrack(() => shown)) revoke(image);
 });
 
 /** 設定をまとまりの既定に戻す。 */

@@ -1231,7 +1231,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - 右の列の「Lighting」タブ。モデルの「Receive lighting」(`set_lighting`) と、メッシュごとの「Lit」(`set_mesh_properties { lit }`。
   選んだメッシュか、選んでいなければすべてを「Light selected」「All on」などでまとめて `batch` で変える) を置きます。
   モデルがライティングを受けない (`Model::lighting` が偽か、`lit` のメッシュがない) ときは、光源を動かしても見た目が変わらない理由を出します。
-- **法線マップ:** 主な選択のメッシュのテクスチャについて、テクスチャと法線マップの画像を並べて出し (`get_texture_png(name)` で PNG を読む)、
+- **法線マップ:** 主な選択のメッシュのテクスチャについて、テクスチャと法線マップの画像を並べて出し (`get_texture_png(name)` で PNG を読む。編集のたびに `get_texture_versions(names)` で画像の版 (中身のハッシュ) を問い合わせ、変わった画像だけを読み直す)、
   - 「Generate」(`generate_texture_normal_map(texture, settings, whole_group)`): 部位のまとまりの形のふくらみ (`ugoe_ai::normal::propose_bulge_normal_maps`。
     AI は使わない。[ai-integration.md#まとまりでふくらませる](ai-integration.md#まとまりでふくらませる))。まとまりは意味ラベルから決めます。ラベルはメッシュの名前の規則
     (`ugoe_ai::classify::label_meshes_by_name`) に、AI の提案のパネルで PSD を分類していればその結果 (`rig::mesh_parts`) を重ねたものです (T0518)。
@@ -1370,7 +1370,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 | `get_export_settings` / `set_export_settings(settings)` | 書き出しの設定 (`ExportSettings`) を読む / プロジェクトに残す ([書き出し](#書き出し))。範囲の外はエラー |
 | `get_preview_lighting` / `set_preview_lighting(lighting)` | プレビューの光源 (`PreviewLighting`) を読む / プロジェクトに残す ([ライティングの画面](#ライティングの画面))。範囲の外はエラー |
 | `get_normal_map_group(texture)` / `get_normal_map_groups` | 1 枚のテクスチャのまとまりと既定の設定 / すべての対象のまとまりの一覧 (AI タブ。[法線マップの提案](#法線マップの提案))。`NormalMapGroupView` (`with_normal_map` はすでに法線マップを持つテクスチャ)。`src-tauri/src/lighting.rs` |
-| `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG。`src-tauri/src/lighting.rs` |
+| `generate_texture_normal_map(texture, settings)` / `assign_texture_normal_map(texture, path, flip_green)` / `get_texture_png(name)` / `get_texture_versions(names)` | 法線マップの生成・PNG の割り当て (どちらも 1 回の Undo) と、テクスチャか法線マップの画像の PNG と版 (中身のハッシュ。無い画像は null)。`src-tauri/src/lighting.rs` |
 | `write_png_file` (本文 = PNG のバイト列、ヘッダー `x-ugoe-path` = パス) | ビューポートのスクリーンショットを書く ([スクリーンショット](#スクリーンショット))。`src-tauri/src/screenshot.rs` |
 | `export_bundle(path)` | プロジェクトの書き出しの設定で `.ugoe` ファイルに書き出し (アトラス化は任意)、`ExportReport` を返す。保存状態は変えない |
 | `open_sample_project(parent)` | 着せ替えの見本 (`assets/samples/dress-up/` をバイナリに埋め込んだもの) を、`parent` の中の新しいフォルダー `ugoe-dress-up-sample` (あれば `-2`・`-3`…。既にあるフォルダーには書かない) に本体 `dress-up.ugoeproj` とモジュールのプロジェクト 4 つとして書き出し、本体を開く (T0715)。変換は `ugoe sample dress-up --project` と同じ `ugoe_editor_core::bundle_project::save_bundle_projects` で、本体の物理・モーション・表情も入る (T0655)。`src-tauri/src/sample.rs` |

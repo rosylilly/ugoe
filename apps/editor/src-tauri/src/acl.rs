@@ -86,6 +86,7 @@ pub const COMMANDS: &[&str] = &[
     "generate_texture_normal_map",
     "assign_texture_normal_map",
     "get_texture_png",
+    "get_texture_versions",
 ];
 
 #[cfg(test)]

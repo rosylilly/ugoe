@@ -15,7 +15,7 @@ import { DressUp } from "./dressUp.svelte";
 
 const saved: unknown[] = [];
 /** `comparePreviewModule` の結果 (バイト列はモジュールの名前)。 */
-let compared: (bytes: Uint8Array) => ModuleDifference[] = () => [];
+let compared: (bytes: Uint8Array) => ModuleDifference[] | Promise<ModuleDifference[]> = () => [];
 const files: Record<string, string> = {};
 
 vi.mock("../ipc", () => ({
@@ -537,5 +537,42 @@ describe("DressUp in a module project", () => {
     dressUp.toggleHighlight("Hat", item);
     dressUp.setOwn(null, "", false);
     expect(dressUp.highlight).toBeNull();
+  });
+
+  it("drops the comparison in progress when the project is opened again (T1614)", async () => {
+    const editing = editingName("Hat");
+    const fake = fakePuppet({ [editing]: "Hair", Hat: "Hair" });
+    const dressUp = new DressUp({
+      puppet: () => fake.puppet,
+      active: () => true,
+      changed: vi.fn(),
+      ownSlot: () => null,
+    });
+    const brim = (text: string): ModuleDifference => ({
+      text: "Meshes: 2 → 2 (changed: Brim)",
+      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"], parts: [] }],
+    });
+    compared = () => [brim("vertices 4 → 6")];
+    dressUp.setOwn(bytes(editing), editing, false, "Hat");
+    dressUp.loaded(fake.puppet);
+    await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
+    await vi.waitFor(() => expect(entry(dressUp, "Hat")?.differences).toHaveLength(1));
+    const item = entry(dressUp, "Hat")?.differences?.[0]?.items[0];
+    if (!item) throw new Error("no item");
+    dressUp.toggleHighlight("Hat", item);
+    // 比べ直している途中でプロジェクトを開き直す。
+    let finish: (d: ModuleDifference[]) => void = () => {};
+    compared = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    dressUp.setOwn(bytes(editing), editing, true, "Hat");
+    await dressUp.load();
+    expect(dressUp.highlight).toBeNull();
+    // 遅れて届いた古い結果は、強調を書き換えない (同じ名前の行を強調していても)。
+    dressUp.toggleHighlight("Hat", item);
+    finish([brim("vertices 4 → 7")]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dressUp.highlight).toEqual({ module: "Hat", item });
   });
 });

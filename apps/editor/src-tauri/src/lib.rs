@@ -178,6 +178,7 @@ pub fn run() {
             lighting::generate_texture_normal_map,
             lighting::assign_texture_normal_map,
             lighting::get_texture_png,
+            lighting::get_texture_versions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

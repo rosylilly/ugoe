@@ -178,6 +178,8 @@ export class FakeDocument {
   motions = $state.raw<Motion[]>([]);
   module = $state.raw(null);
   error = $state<string | null>(null);
+  /** 読み直しの回数 (`EditorDocument.revision`)。テストが増やして編集の後の読み直しの代わりにする。 */
+  revision = $state(0);
   readonly commands: Command[] = [];
   /** 設定すると、`apply` はこの約束が解けるまで終わらない (送っている間の操作を試す)。 */
   pending: Promise<void> | null = null;

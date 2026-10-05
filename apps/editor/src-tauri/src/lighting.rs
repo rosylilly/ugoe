@@ -6,6 +6,7 @@
 //! 引数・戻り値の型を変えたら `apps/editor/src/lib/ipc.ts` も同じ PR で更新すること。
 
 use std::collections::BTreeMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -385,6 +386,31 @@ pub fn get_texture_png(
     Ok(tauri::ipc::Response::new(png.to_vec()))
 }
 
+/// テクスチャか法線マップの画像 `names` の版 (中身のハッシュ。無い画像は `None`)。画面は編集のたびに PNG を
+/// 読み直さず、版が変わったときだけ `get_texture_png` で読む (同じ名前の画像の差し替えも映す。T1614)。
+#[tauri::command]
+pub fn get_texture_versions(
+    state: State<'_, AppState>,
+    names: Vec<String>,
+) -> IpcResult<Vec<Option<String>>> {
+    let document = lock(&state)?;
+    Ok(texture_versions(&document, &names))
+}
+
+fn texture_versions(document: &Document, names: &[String]) -> Vec<Option<String>> {
+    names
+        .iter()
+        .map(|name| document.texture(name).map(texture_version))
+        .collect()
+}
+
+/// PNG のバイト列の版。同じプロセスの中で比べるだけなので `std` の `DefaultHasher` を使う。
+fn texture_version(png: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    png.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -478,6 +504,47 @@ mod tests {
             .count();
         assert_eq!(count, view.textures.len());
         assert!(!is_flat(&doc, &eye));
+    }
+
+    #[test]
+    fn texture_versions_change_with_the_image() {
+        let mut doc = bustup();
+        let eye = texture_of(&doc, "eyewhite-l");
+        let face = texture_of(&doc, "face");
+        let flat = BulgeSettings {
+            strength: 0.0,
+            ..BulgeSettings::default()
+        };
+        let command = generate_normal_map_in(&doc, None, &eye, Some(flat), false).unwrap();
+        doc.apply(command).unwrap();
+        let map = doc.model().textures.iter().find(|t| t.name == eye).unwrap();
+        let names = vec![
+            eye.clone(),
+            map.normal_map.clone().unwrap(),
+            face,
+            "missing".to_owned(),
+        ];
+        let before = texture_versions(&doc, &names);
+        assert!(before[..3].iter().all(Option::is_some));
+        assert_eq!(before[3], None);
+        // 同じ名前の法線マップを作り直すと、その版だけが変わる。
+        let command = generate_normal_map_in(&doc, None, &eye, None, false).unwrap();
+        doc.apply(command).unwrap();
+        let after = texture_versions(&doc, &names);
+        assert_eq!(
+            doc.model()
+                .textures
+                .iter()
+                .find(|t| t.name == eye)
+                .unwrap()
+                .normal_map,
+            Some(names[1].clone())
+        );
+        assert_ne!(after[1], before[1]);
+        assert_eq!(after[0], before[0]);
+        assert_eq!(after[2], before[2]);
+        assert!(doc.undo());
+        assert_eq!(texture_versions(&doc, &names), before);
     }
 
     #[test]

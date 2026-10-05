@@ -151,6 +151,9 @@ export class DressUp {
     this.#bytes.clear();
     this.#ownName = null;
     this.#ownLabel = null;
+    // 比べている途中の結果は前のプロジェクトのもの。届いても捨てる (T1614)。
+    this.#compareToken++;
+    this.highlight = null;
     this.notices = [];
     this.error = null;
     try {
