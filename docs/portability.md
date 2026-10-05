@@ -90,9 +90,9 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | `dt` | `Puppet::update`・`Puppet::follow` | 0 とみなす (時間を進めずに各段を当てて評価する) | 0 とみなす | 負は 0 とみなす |
 | `dt` (再生器を直接使う) | `ugoe_motion` の `MotionPlayer`・`ExpressionPlayer`・`EyeBlinkPlayer`・`BreathPlayer` の `advance`、`PhysicsSystem::update` | 何も進めない | 何も進めない | 何も進めない |
 | パラメータの値 | `ParameterValues::set`・`blend` (ホストの書き込み、モーション・表情・目パチ・呼吸・物理・リップシンクの書き込みもここを通る) | 書かない (前の値のまま) | 値域の端にクランプ | 値域にクランプ |
-| 基準値の列 | `Puppet::set_base_values`・`Puppet::follow` の `values` | エラー (何も変えない) | 値域にクランプ | 値域にクランプ。数が違えばエラー |
+| 基準値の列 | `Puppet::set_base_values`・`Puppet::follow` の `values` | エラー (`ParameterValuesError::NaN`。何も変えない) | 値域にクランプ | 値域にクランプ。数が違えばエラー |
 | リップシンクの音量 | `Puppet::set_lip_sync_level` | 音量なし (`None` と同じ) | 0〜1 にクランプ | 0〜1 にクランプ |
-| 受け手のリップシンクの音量と強さ、パーツの不透明度の値と重み | `Puppet::follow` | エラー | エラー (強さが無限大だと `lerp` が `0 × ∞` で NaN を書くため) | 音量は 0〜1 にクランプ。重みは 0〜1 にクランプ |
+| 受け手のリップシンクの音量と強さ、パーツの不透明度の値と重み | `Puppet::follow` | エラー (`ParameterValuesError::NonFiniteLipSync`・`NonFinitePartOpacity`。何も変えない) | NaN と同じエラー (強さが無限大だと `lerp` が `0 × ∞` で NaN を書くため) | 音量は 0〜1 にクランプ。重みは 0〜1 にクランプ |
 | パーツの不透明度の上書き | `ModelInstance::set_part_opacity_override` | 書かない (前の上書きのまま) | 書かない | 重みは 0〜1 にクランプ |
 | 動的物理の加算量 | `DynamicOffsets` (`ModelInstance::dynamic_offsets_mut`) | 評価で 0 とみなす (書いた値は残る) | 0 とみなす | (意味どおり) |
 | トラッキングの入力 | `Puppet::set_tracking` (`TrackingInput`) | 式の値が有限でないパラメータには書かない ([avatar-profile.md](spec/avatar-profile.md#フェイストラッキングとの対応)) | 同じ | 値域にクランプ |
@@ -107,6 +107,8 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 - `Puppet::update` でモーションのパーツの不透明度のカーブとリップシンクの強さを使わない値は、指揮役が配る記録
   (`part_opacities_applied`・`lip_sync_applied`) にも入れない。受け手の `follow` は有限でないものを拒むので、指揮役の出力はいつも受け手に通る
   (`crates/ugoe/tests/host_numbers.rs`)。
+- `ParameterValuesError` のバリアントは上の層で区別しない。C ABI は `UGOE_ERROR_INVALID_ARGUMENT` とエラーの文 (`Display`)、
+  wasm は文だけの例外 (`code` を持たない) で表す。バリアントの名前は文にも結果コードにも出ない (T0165 の改名で上の層の値は変わっていない)。
 
 ### 入口ごとの表し方
 

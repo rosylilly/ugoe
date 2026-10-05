@@ -59,10 +59,10 @@ pub enum ParameterValuesError {
     },
     /// リップシンクの音量か強さが有限でない (NaN か無限大)。
     #[error("the lip sync level or strength is not finite")]
-    LipSyncNaN,
+    NonFiniteLipSync,
     /// `index` 番目のパーツの不透明度の入力の値か重みが有限でない (NaN か無限大)。
     #[error("part opacity input {index} is not finite")]
-    PartOpacityNaN {
+    NonFinitePartOpacity {
         /// 渡した並びの中の添字。
         index: usize,
     },
@@ -141,13 +141,13 @@ impl Puppet {
         dt: f32,
     ) -> Result<(), ParameterValuesError> {
         if lip_sync.is_some_and(|l| !l.level.is_finite() || !l.strength.is_finite()) {
-            return Err(ParameterValuesError::LipSyncNaN);
+            return Err(ParameterValuesError::NonFiniteLipSync);
         }
         if let Some(index) = part_opacities
             .iter()
             .position(|p| !p.value.is_finite() || !p.weight.is_finite())
         {
-            return Err(ParameterValuesError::PartOpacityNaN { index });
+            return Err(ParameterValuesError::NonFinitePartOpacity { index });
         }
         self.set_base_values(values)?;
         let dt = crate::sanitize_dt(dt);
@@ -518,7 +518,7 @@ mod tests {
         };
         assert_eq!(
             puppet.follow(&sent, None, &[root, nan], DT),
-            Err(ParameterValuesError::PartOpacityNaN { index: 1 })
+            Err(ParameterValuesError::NonFinitePartOpacity { index: 1 })
         );
         assert_eq!(puppet.instance().update_count(), count);
         let unknown = PartOpacityInput {
@@ -565,7 +565,7 @@ mod tests {
         };
         assert_eq!(
             puppet.follow(&sent, Some(nan), &[], DT),
-            Err(ParameterValuesError::LipSyncNaN)
+            Err(ParameterValuesError::NonFiniteLipSync)
         );
     }
 
@@ -584,7 +584,7 @@ mod tests {
             let lip_sync = Some(LipSyncInput { level, strength });
             assert_eq!(
                 puppet.follow(&sent, lip_sync, &[], DT),
-                Err(ParameterValuesError::LipSyncNaN),
+                Err(ParameterValuesError::NonFiniteLipSync),
                 "{level} {strength}"
             );
         }
@@ -596,7 +596,7 @@ mod tests {
             };
             assert_eq!(
                 puppet.follow(&sent, None, &[part], DT),
-                Err(ParameterValuesError::PartOpacityNaN { index: 0 }),
+                Err(ParameterValuesError::NonFinitePartOpacity { index: 0 }),
                 "{value} {weight}"
             );
         }
