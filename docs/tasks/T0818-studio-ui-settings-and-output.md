@@ -1,11 +1,11 @@
 ---
 id: T0818
 title: スタジオ UI: 設定の流れ (シーン・プロファイル・入力・ホットキー・API) と出力ウィンドウ
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/studio, docs]
 depends_on: [T0817]
-assignee:
+assignee: claude-worker-T0818
 ---
 
 # T0818: スタジオ UI: 設定の流れ (シーン・プロファイル・入力・ホットキー・API) と出力ウィンドウ
