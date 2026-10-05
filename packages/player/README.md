@@ -29,6 +29,7 @@ src/modelMemory.ts       モデルを見分ける鍵と、モデルごとの値�
 src/rememberedModels.ts  モデルごとに覚えたものを 1 モデル 1 行にまとめる (T0714)
 src/screenshot.ts        スクリーンショットの画素の検査・RGBA から PNG への変換・既定の名前の日時・パスのヘッダー (エディタとも共有。T0730)
 src/storage.ts           覚えるものの localStorage の読み書き (PlayerStorage: 接頭辞と Storage の組。T0930)
+browser-test/            PuppetSurface を本物の wasm とヘッドレスの Chrome で確かめるテスト (`just player-browser`。下の「ブラウザのテスト」)
 src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備。T0933。localStorage の代わりは `@ugoe/i18n/testing` の `MemoryStorage`)。index.ts から出さない
 ```
 
@@ -132,3 +133,17 @@ player.pushFrame(decodeFrame(buffer));
 - `src/wasm.ts` の `follow`・`reset_physics` は省ける (受け手のモードを使わないビューアの型の宣言に無くてよいように)。
   受け手のモードで無ければ `error` に書いて進めない。
 - フレームのバイト列の形はスタジオのバックエンド (`apps/studio/src-tauri/src/stream.rs`) と同じで、両方のテストが同じバイト列を読む。
+
+## ブラウザのテスト
+
+`browser-test/` は `PuppetSurface` を本物の wasm (`just wasm` の生成物) とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・
+WebGL2 の喪失からの作り直し (復元を待つ。T0935)・続けて失ったときの諦め・作っている間の破棄を確かめる (T0936)。
+`just player-browser` で流す (Chrome と wasm-bindgen-cli が要る。`just ci` には入れず、CI の `conformance` ジョブで流す)。
+回し方とシナリオは [docs/testing.md](../../docs/testing.md#puppetsurface-のブラウザのテスト)。
+
+- `run.mjs` (Node): ugoe-wasm をビルドし (`--no-build` で省く)、`src/surface.ts` を TypeScript の `transpileModule` で JS にし、
+  小さなサーバで配って playwright-core で Chrome を開く。結果の置き場は `target/player-browser/` (ページのコンソールは `page.log`)。
+- `scenarios.js` (ページ): シナリオ。足すときは `scenarios` に関数を足す (失敗は例外で知らせる)。
+- **置き場所をここにした理由 (ライセンス):** テストは GPL-3.0-only の `surface.ts` をそのまま読むので、GPL のパッケージの中に置く。
+  MIT の `tests/conformance` に置くと、MIT と書いた場所が GPL のコードを読み込むことになる (AGENTS.md の「外部のコードとライセンス」)。
+  `tests/ui-audit` もライセンスを書いておらず、リポジトリの既定 (ルートの LICENSE。MIT) になるので使わない。

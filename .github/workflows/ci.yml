@@ -343,6 +343,7 @@ jobs:
   # 配布物の適合テスト (tests/conformance/README.md、`just conformance`)。C ABI と wasm (npm パッケージ) の
   # 頂点と画像を、ModelInstance と `ugoe render` の参照と比べる。参照の画像は Mesa の lavapipe で、
   # wasm はヘッドレスの Chrome (ランナーに入っている) の WebGL2 (SwiftShader) で描く。
+  # 続けて、エディタと Player が共有する PuppetSurface をヘッドレスの Chrome で確かめる (`just player-browser`)。
   conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -380,13 +381,20 @@ jobs:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       - name: Conformance
         run: just conformance
-      # 落ちたときに画像 (参照・各バインディング・違いの画像) と Chrome のログを見られるように残す
+      # PuppetSurface (packages/player。GPL なので tests/conformance の外) を同じ Chrome と wasm で確かめる (T0936)。
+      # 適合テストが落ちても流す (別のものを確かめるため)
+      - name: PuppetSurface in the browser
+        if: success() || failure()
+        run: just player-browser
+      # 落ちたときに画像 (参照・各バインディング・違いの画像) と Chrome・ページのログを見られるように残す
       - name: Upload results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: conformance
-          path: target/conformance
+          path: |
+            target/conformance
+            target/player-browser/page.log
 
   # フロントエンドは `just wasm` の生成物 (ugoe-wasm の JS バインディング) を読むので、
   # 先に wasm をビルドしてから、本物の型で検査・ビルドする。

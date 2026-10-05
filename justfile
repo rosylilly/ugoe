@@ -310,6 +310,12 @@ doc-group name:
 ui-shots out:
     node packages/ui/scripts/shots.mjs {{out}}
 
+# PuppetSurface (packages/player/src/surface.ts) を本物の wasm とヘッドレスの Chrome の WebGL2 で確かめる (packages/player/README.md。T0936):
+# 作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄。wasm をビルドし Chrome が要るので `just ci` には含めない (CI の conformance ジョブで流す)。
+# 例: `just player-browser --no-build --only context-loss-restore`
+player-browser *args:
+    @node packages/player/browser-test/run.mjs {{args}}
+
 # 3 つのアプリの UI の監査 (tests/ui-audit/README.md): ビルドした画面を偽のホストとヘッドレスの Chrome で開き、ライト・ダーク × 日英 ×
 # 幅 × devicePixelRatio で撮って、コントラスト・はみ出し・重なり・押せる大きさ・名前・Tab の順を報告する。重いので `just ci` には含めない。
 # 例: `just ui-audit --only editor --quick`・`just ui-audit --no-build --compare target/ui-audit-before`
