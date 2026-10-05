@@ -24,6 +24,10 @@
 - [docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え) (`Puppet::attach_module` / `detach_module` / `set_modules` / `set_base_physics`。`src/dress_up.rs`)
 - 着せ替えの失敗と読み込みの警告の種類 (`DressUpError::code`・`fields`、`LoadWarning`。`src/warning.rs`)。wasm と C ABI が同じ値を返すために
   ここで決める。値は組み込み先が照らし合わせるので変えない (T0412)
+- モデルの読み込みの失敗の種類 (`LoadError::code`・`fields`。`src/load_error.rs`)。`.ugoe`・JSON を読めない (`FormatError`) かコンパイルできない
+  (`CompileError`) ときの `invalid_file`・`unsupported_version`・`unsupported_features`・`invalid_model`・`compile`・`read_limit_exceeded`。
+  wasm の `LoadError` と C ABI の `ugoe_puppet_create_from_*` が同じ値を返すためにここで決める (T0457)。補足の値は `LoadErrorValue`
+  (数か文。上限のバイト数が `usize` に収まらないことがあるので `FieldValue` とは別)
 - [docs/spec/file-formats.md#読み込みの上限](../../docs/spec/file-formats.md#読み込みの上限) (`limits`: 上限は `ugoe::format::read_bundle_with` /
   `ugoe::format::module_file::read_module_with` に `ReadLimits` を渡して指定する。超えたときの種類と補足の値 `ReadLimitExceeded` は
   wasm と C ABI が同じ値を返すためにここで決める。T0152)
@@ -67,3 +71,4 @@
 - T0135 (受け手でもモーションのパーツの不透明度のカーブを当てる)
 - T0152 (読み込みの上限)
 - T0156 (`render` feature)
+- T0457 (モデルの読み込みの失敗の種類)

@@ -6,6 +6,7 @@
       "required"
     ],
     "compile": [],
+    "device_lost": [],
     "duplicate_module": [
       "module"
     ],

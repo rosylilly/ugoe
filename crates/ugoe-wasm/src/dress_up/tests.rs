@@ -119,7 +119,7 @@ fn reads_module_files_with_normal_maps() {
     );
     assert!(matches!(
         from_module_file(b"not a module"),
-        Err(LoadError::Format(_))
+        Err(LoadError::Model(ugoe::LoadError::Format(_)))
     ));
 }
 
@@ -329,6 +329,22 @@ fn failed_attach_changes_nothing_and_reports_a_code() {
     assert_eq!(error_info(&error).code, "not_attached");
     let error = wardrobe.attach(&mut puppet, "Nope", &mut sink).unwrap_err();
     assert_eq!(error_info(&error).code, "not_loaded");
+}
+
+/// GPU を失った後の付け外し (`with_wardrobe!`) は、ほかの着せ替えの失敗と同じ `DressUpError` で `code` が `device_lost` (T0457)。
+#[test]
+fn device_lost_is_a_coded_dress_up_error() {
+    assert_eq!(WardrobeError::NAME, "DressUpError");
+    let error = WardrobeError::DeviceLost;
+    assert_eq!(
+        error_info(&error),
+        ErrorInfo {
+            code: "device_lost",
+            fields: vec![],
+        }
+    );
+    // 文は T0457 の前の例外 (コード無しの `JsError`) と同じ。
+    assert_eq!(error.to_string(), "the GPU device was lost");
 }
 
 /// 補足の値は C ABI (`crates/ugoe-ffi/src/dress_up.rs` の `numbered_and_referenced_fields_reach_the_c_abi`) と同じキーで出る。

@@ -24,25 +24,30 @@ type Codes = BTreeMap<String, BTreeSet<String>>;
 
 /// 見本の種類がすべて網羅されているかをコンパイルで確かめる (種類を足すと、ここが網羅の誤りになる)。
 /// `FormatError` と `RenderError` は、ほかの種類が `invalid_file`・`texture` にまとまるので網羅しない
-/// (`load::format_error_info`・`LoadError::info` で新しい `code` を割り当てたら、見本を足す)。
+/// (`ugoe::LoadError::code`・`LoadError::info` で新しい `code` を割り当てたら、見本を足す)。
 fn guard(error: &WardrobeError) {
     match error {
         WardrobeError::Load(e) => match e {
-            LoadError::Format(_)
-            | LoadError::Render(_)
+            LoadError::Render(_)
             | LoadError::Texture { .. }
             | LoadError::NormalMap { .. }
             | LoadError::TextureTooLarge { .. }
             | LoadError::NormalMapTooLarge { .. }
             | LoadError::Register(_)
             | LoadError::DeviceLost => {}
-            LoadError::Compile(e) => match e {
-                CompileError::Invalid(_)
-                | CompileError::UnknownParameter(_)
-                | CompileError::Unsupported(_) => {}
+            LoadError::Model(e) => match e {
+                ugoe::LoadError::Format(_) => {}
+                ugoe::LoadError::Compile(e) => match e {
+                    CompileError::Invalid(_)
+                    | CompileError::UnknownParameter(_)
+                    | CompileError::Unsupported(_) => {}
+                },
             },
         },
-        WardrobeError::NoModel | WardrobeError::NotLoaded(_) | WardrobeError::Texture(_) => {}
+        WardrobeError::NoModel
+        | WardrobeError::NotLoaded(_)
+        | WardrobeError::Texture(_)
+        | WardrobeError::DeviceLost => {}
         WardrobeError::DressUp(e) => match e {
             DressUpError::Compile(_) | DressUpError::Physics(_) | DressUpError::NotAttached(_) => {}
             DressUpError::Compose(e) => match e {
@@ -215,6 +220,7 @@ fn wardrobe_errors() -> Vec<WardrobeError> {
             WardrobeError::NoModel,
             WardrobeError::NotLoaded(s("m")),
             WardrobeError::Texture(s("t")),
+            WardrobeError::DeviceLost,
         ])
         .chain(dress_up.map(WardrobeError::DressUp))
         .collect()

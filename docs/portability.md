@@ -60,8 +60,10 @@ cargo add ugoe --no-default-features
 - 外から来るファイルの読み込みの上限 (展開するバイト) は、組み込む側が `UgoeReadLimits` で指定できます (指定しない関数は既定値)。
   超えたら `UGOE_ERROR_LIMIT_EXCEEDED` で、種類 `read_limit_exceeded` と補足の値は wasm と同じです (T0152。`docs/spec/file-formats.md#読み込みの上限`)。
 - wasm のモデルの読み込み (`load_json` / `load_bundle`) の失敗は、すべて `name` が `"LoadError"` で `code` と補足の値を持ちます (T0434。
-  一覧は [crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#読み込みの失敗-t0434))。C ABI と同じ意味のもの (`invalid_file`・`compile`・
-  `read_limit_exceeded`) は同じ値にし、利用者に見せる文は組み込み先が `code` から作ります ([ADR 0029](adr/0029-shared-ui-and-i18n.md))。
+  一覧は [crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#読み込みの失敗-t0434))。ファイルとモデルの失敗 (`invalid_file`・
+  `unsupported_version`・`invalid_model`・`compile` など) の種類は SDK の `ugoe::LoadError` が決め、C ABI の `ugoe_puppet_create_from_*` も
+  `ugoe_last_error_kind()` で同じ値を返します (T0457。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457))。
+  利用者に見せる文は組み込み先が `code` から作ります ([ADR 0029](adr/0029-shared-ui-and-i18n.md))。
 
 ## ホストから来る数
 

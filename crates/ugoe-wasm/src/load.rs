@@ -6,10 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 use ugoe::format::{Bundle, TextureData};
-use ugoe::limits::{ReadLimitExceeded, ReadLimits};
+use ugoe::limits::ReadLimits;
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::render::RenderError;
-use ugoe::{DressUpError, FieldValue};
+use ugoe::{FieldValue, LoadErrorValue};
 use ugoe_format::image::{ImageError, ImageLimits, decode_image, decode_image_premultiplied};
 
 use crate::animation::Library;
@@ -20,10 +20,10 @@ use ugoe::runtime::ModelInstance;
 /// `code` と補足の値は [`LoadError::info`] (`crates/ugoe-wasm/README.md#読み込みの失敗-t0434`)。
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
+    /// ファイルを読めないか、モデルをコンパイルできない。種類と補足の値は SDK の [`ugoe::LoadError`] が決め、
+    /// C ABI の `ugoe_puppet_create_from_*` と同じ (T0457)。
     #[error(transparent)]
-    Format(#[from] ugoe::format::FormatError),
-    #[error("model does not compile: {0}")]
-    Compile(#[from] ugoe::runtime::CompileError),
+    Model(#[from] ugoe::LoadError),
     #[error("decoding texture {index}: {message}")]
     Texture { index: usize, message: String },
     #[error("decoding the normal map of texture {index}: {message}")]
@@ -57,12 +57,25 @@ pub enum LoadError {
     DeviceLost,
 }
 
+impl From<ugoe::format::FormatError> for LoadError {
+    fn from(e: ugoe::format::FormatError) -> Self {
+        Self::Model(e.into())
+    }
+}
+
+impl From<ugoe::runtime::CompileError> for LoadError {
+    fn from(e: ugoe::runtime::CompileError) -> Self {
+        Self::Model(e.into())
+    }
+}
+
 impl LoadError {
     /// 読み込みの上限を超えたときの種類 (JS の `Error` の `code`)。展開の上限は SDK の値 (C ABI と同じ)。
     pub const IMAGE_LIMIT_EXCEEDED: &'static str = "image_limit_exceeded";
 
     /// 機械が読む種類と補足の値 (JS の `Error` の `code` とプロパティ)。値は組み込み先が照らし合わせるので変えない。
-    /// `invalid_file`・`compile`・`read_limit_exceeded` は C ABI の `ugoe_last_error_kind` と同じ値。
+    /// ファイルとモデルの失敗 (`invalid_file`〜`read_limit_exceeded`) は SDK の [`ugoe::LoadError::code`]・`fields` で、
+    /// C ABI の `ugoe_last_error_kind` と同じ値 (T0457)。
     ///
     /// - `invalid_file`: ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど)。
     /// - `unsupported_version`: `found` (ファイルの版)・`supported` (読める版)。
@@ -101,12 +114,7 @@ impl LoadError {
             fields: Vec::new(),
         };
         match self {
-            Self::Format(e) => format_error_info(e),
-            Self::Compile(ugoe::runtime::CompileError::Invalid(errors)) => ErrorInfo {
-                code: "invalid_model",
-                fields: vec![("errors", field_json(Index(errors.len())))],
-            },
-            Self::Compile(_) => plain("compile"),
+            Self::Model(e) => model_error_info(e),
             &Self::Texture { index, .. } => decode("texture", index),
             &Self::NormalMap { index, .. } => decode("normal_map", index),
             &Self::TextureTooLarge {
@@ -172,45 +180,28 @@ impl LoadError {
         matches!(
             self,
             Self::TextureTooLarge { .. } | Self::NormalMapTooLarge { .. }
-        ) || matches!(self, Self::Format(e) if ReadLimitExceeded::from_error(e).is_some())
+        ) || matches!(self, Self::Model(e) if e.exceeds_limit())
     }
 }
 
-/// ファイルの読み込みの失敗 ([`ugoe::format::FormatError`]) の種類と補足の値 ([`LoadError::info`])。
-fn format_error_info(error: &ugoe::format::FormatError) -> ErrorInfo {
-    use FieldValue::{Index, Text};
-    use ugoe::format::FormatError as E;
-    if let Some(exceeded) = ReadLimitExceeded::from_error(error) {
-        return ErrorInfo {
-            code: ReadLimitExceeded::CODE,
-            fields: vec![
-                ("limit", field_json(Text(exceeded.limit.as_str()))),
-                ("chunk", field_json(Text(&exceeded.chunk.to_string()))),
-                // バイト数は wasm32 の `usize` に収まらないことがあるので、`Index` を通さずに数にする。
-                ("max", exceeded.max.into()),
-            ],
-        };
+/// ファイルとモデルの失敗 ([`ugoe::LoadError`]) の種類と補足の値。SDK の値を JS の値にする:
+/// 数 ([`LoadErrorValue::Number`]) は数、文は文字列 ([`LoadError::info`])。
+fn model_error_info(error: &ugoe::LoadError) -> ErrorInfo {
+    ErrorInfo {
+        code: error.code(),
+        fields: error
+            .fields()
+            .into_iter()
+            .map(|(key, value)| {
+                let value = match value {
+                    // 上限のバイト数は wasm32 の `usize` に収まらないことがあるので、`u64` のまま数にする。
+                    LoadErrorValue::Number(n) => n.into(),
+                    LoadErrorValue::Text(s) => s.into(),
+                };
+                (key, value)
+            })
+            .collect(),
     }
-    if let Some(errors) = error.validation_errors() {
-        return ErrorInfo {
-            code: "invalid_model",
-            fields: vec![("errors", field_json(Index(errors.len())))],
-        };
-    }
-    let (code, fields) = match error {
-        &E::UnsupportedVersion { found, supported }
-        | &E::UnsupportedContainerVersion { found, supported } => (
-            "unsupported_version",
-            vec![("found", found.into()), ("supported", supported.into())],
-        ),
-        E::UnsupportedFeatures(features) => (
-            "unsupported_features",
-            vec![("features", field_json(Text(&features.join(", "))))],
-        ),
-        // 壊れたファイル (マジック・チャンク表・圧縮・JSON・MessagePack・テクスチャの数など)。細かい理由は文にある。
-        _ => (DressUpError::INVALID_FILE, Vec::new()),
-    };
-    ErrorInfo { code, fields }
 }
 
 /// JS に渡すエラーの中身: 機械が読む `code` と、補足の値 (`module`・`slot`・`max` など)。

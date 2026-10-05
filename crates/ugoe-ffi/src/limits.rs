@@ -5,10 +5,11 @@
 //! 超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、種類と補足の値は SDK の `ugoe::limits::ReadLimitExceeded` で、
 //! wasm の読み込みのエラーの `code` と同じ。
 
+use ugoe::LoadError;
 use ugoe::format::FormatError;
 use ugoe::limits::{ReadLimitExceeded, ReadLimits};
 
-use crate::error::{Error, UGOE_ERROR_FORMAT, UGOE_ERROR_LIMIT_EXCEEDED};
+use crate::error::{Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_MODEL, UGOE_ERROR_LIMIT_EXCEEDED};
 
 /// 読み込みの上限 (Rust の `ugoe::limits::ReadLimits`)。値は `ugoe_read_limits_default` から始めて変える。
 ///
@@ -70,9 +71,53 @@ pub(crate) fn format_error(error: &FormatError, other_kind: Option<&'static str>
     }
 }
 
+/// モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗をエラーにする (T0457)。種類と補足の値は SDK の
+/// [`ugoe::LoadError::code`]・`fields` (wasm の `LoadError` と同じ。数は 10 進の文字列)。戻り値は T0457 の前と同じで、
+/// 上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED`、ほかのファイルの失敗は `UGOE_ERROR_FORMAT`、コンパイルの失敗は
+/// `UGOE_ERROR_INVALID_MODEL`。
+pub(crate) fn load_error(error: LoadError) -> Error {
+    // 文も T0457 の前と同じ (コンパイルの失敗に SDK の前置きを付けない)。
+    let (code, message) = match &error {
+        e if e.exceeds_limit() => (UGOE_ERROR_LIMIT_EXCEEDED, e.to_string()),
+        LoadError::Format(e) => (UGOE_ERROR_FORMAT, e.to_string()),
+        LoadError::Compile(e) => (UGOE_ERROR_INVALID_MODEL, e.to_string()),
+    };
+    let fields = error
+        .fields()
+        .into_iter()
+        .map(|(key, value)| (key, value.to_string()))
+        .collect();
+    Error::new(code, message).with_kind(error.code(), fields)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 入力からは作りにくいコンパイルの失敗 (検査を通るが評価できない) も、SDK の種類で `UGOE_ERROR_INVALID_MODEL`。
+    #[test]
+    fn compile_errors_keep_their_code_and_text() {
+        use std::ffi::CStr;
+
+        use ugoe::runtime::CompileError;
+
+        use crate::error::{guard, ugoe_last_error, ugoe_last_error_kind};
+
+        let code = guard(|| Err(load_error(CompileError::Unsupported("x").into())));
+        assert_eq!(code, UGOE_ERROR_INVALID_MODEL);
+        // SAFETY: 失敗の直後なので、どちらも NUL 終端の文字列を指す。
+        let (kind, message) = unsafe {
+            (
+                CStr::from_ptr(ugoe_last_error_kind()),
+                CStr::from_ptr(ugoe_last_error()),
+            )
+        };
+        assert_eq!(kind.to_str().unwrap(), "compile");
+        assert_eq!(
+            message.to_str().unwrap(),
+            CompileError::Unsupported("x").to_string()
+        );
+    }
 
     #[test]
     fn default_limits_match_the_sdk() {

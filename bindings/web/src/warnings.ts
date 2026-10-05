@@ -32,6 +32,8 @@ export const DRESS_UP_ERROR_CODES = [
   "no_model",
   "invalid_file",
   "texture",
+  // GPU のデバイスを失った後の付け外し (T0457)。新しい canvas で作り直す。
+  "device_lost",
   // `load_module` が読み込みの上限を超えたとき (T0152)。補足の値は `UgoeLimitErrorFields` (`isLimitError` で絞る)。
   "read_limit_exceeded",
   "image_limit_exceeded",

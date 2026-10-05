@@ -146,6 +146,38 @@ ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同
 - JSON から作る `ugoe_puppet_create_from_json` は展開をしないので、上限を取らない (大きさは入力の長さで決まる)。
 - Unity (`bindings/unity`) は `UgoeReadLimits` と `Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` で出す (T0458)。Godot は C ABI ではなく SDK を使う。
 
+## モデルの読み込みの失敗 (T0457)
+
+```c
+UgoeResult r = ugoe_puppet_create_from_bundle(bytes, len, &puppet);
+if (r != UGOE_OK) {
+    const char *kind = ugoe_last_error_kind(); /* "unsupported_version" など。NULL なら種類なし */
+    if (kind && strcmp(kind, "unsupported_version") == 0)
+        printf("version %s > %s\n", ugoe_last_error_field("found"), ugoe_last_error_field("supported"));
+}
+```
+
+`ugoe_puppet_create_from_bundle`・`ugoe_puppet_create_from_bundle_with_limits`・`ugoe_puppet_create_from_json` の失敗は、種類
+(`ugoe_last_error_kind()`) と補足の値 (`ugoe_last_error_field`) を持つ。値は wasm の `LoadError` の `code` と同じで
+([crates/ugoe-wasm/README.md](../ugoe-wasm/README.md#読み込みの失敗-t0434))、SDK の `ugoe::LoadError` (`code()`・`fields()`) の 1 か所で決める。
+補足の値は 10 進の文字列 (wasm では数)。戻り値は T0457 の前と同じ (種類を足しただけなので ABI の版は上げない)。
+
+| 種類 | 戻り値 | 補足の値 | いつ |
+| --- | --- | --- | --- |
+| `invalid_file` | `UGOE_ERROR_FORMAT` | | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど。細かい理由は `ugoe_last_error()` にだけある) |
+| `unsupported_version` | 同上 | `found` (ファイルの版)・`supported` (読める版) | ファイルの版 (スキーマかコンテナ) が新しすぎる |
+| `unsupported_features` | 同上 | `features` (知らない必須の機能の ID を `", "` でつないだもの) | 知らない必須の機能を宣言している |
+| `invalid_model` | `UGOE_ERROR_FORMAT` (バンドルを読むときの検査)・`UGOE_ERROR_INVALID_MODEL` (コンパイルの前の検査。JSON はここ) | `errors` (検査のエラーの数) | モデル・物理・モーション・表情が検査に通らない |
+| `compile` | `UGOE_ERROR_INVALID_MODEL` | | 検査は通ったが評価できない構造 |
+| `read_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` | `limit`・`chunk`・`max` | [読み込みの上限](#読み込みの上限-t0152) を超えた |
+
+- wasm の `image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost` は C ABI では起きない (画像をデコードせず、
+  レンダラを持たない)。
+- 引数の誤り (NULL・UTF-8 でない JSON) は種類を持たない (`ugoe_last_error_kind()` は NULL)。
+- `.ugoemod` の読み込み (`ugoe_module_create`) は今までどおり、上限を超えたものだけ `read_limit_exceeded` で、ほかは `invalid_file`
+  ([着せ替え](#着せ替え-t0409)。wasm の `load_module` と同じ)。
+- テストは `tests/load_errors.rs`。
+
 ## ライティング (T0409)
 
 - `ugoe_puppet_uses_lighting` (光源の操作を出すか)、`ugoe_puppet_drawable_lit` (その要素に陰影を掛けるか)、
@@ -309,3 +341,4 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt)
 - T0133 (受け手として進める: 基準値として書く口)
 - T0134 (受け手でもリップシンクを物理の後に当てる)
 - T0454 (指揮役の側の値を読む口)
+- T0457 (モデルの読み込みの失敗の種類)

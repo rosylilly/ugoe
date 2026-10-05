@@ -78,6 +78,14 @@ pub enum WardrobeError {
     /// レンダラへの登録に失敗した (付け外し自体は済んでいる)。
     #[error("registering the textures failed: {0}")]
     Texture(String),
+    /// GPU のデバイスを失った (`WebPuppet::is_lost`)。何も変えていない。新しい canvas で作り直す必要がある (T0457)。
+    #[error("the GPU device was lost")]
+    DeviceLost,
+}
+
+impl WardrobeError {
+    /// JS の `Error` の `name` (着せ替えの失敗はすべてこの名前で、種類は `code`。[`error_info`])。
+    pub const NAME: &'static str = "DressUpError";
 }
 
 /// 読み込んだモジュールの一覧 (`modules_json`) の要素。
@@ -386,7 +394,7 @@ fn texture_error(e: impl std::fmt::Display) -> WardrobeError {
 
 /// エラーの種類を JS で分けられるように、コードと補足の値にする (`docs/spec/modules.md#puppet-での着せ替え`)。
 /// 付け外しの失敗 (`DressUpError`) と `invalid_file` は SDK の値 (`ugoe::DressUpError::code`・`fields`) を使い、
-/// C ABI と揃える (T0412)。番号の補足の値 (`texture`・`required`・`actual`・`errors`) は数にする (T0157)。`no_model`・`not_loaded`・`texture` は wasm だけのもの。
+/// C ABI と揃える (T0412)。番号の補足の値 (`texture`・`required`・`actual`・`errors`) は数にする (T0157)。`no_model`・`not_loaded`・`texture`・`device_lost` (T0457) は wasm だけのもの。
 /// 読み込みの上限を超えたものは、`invalid_file` ではなく [`LoadError::info`] の種類 (`read_limit_exceeded` など。T0152)。
 /// ほかの読み込みの失敗は、`load_bundle` の `LoadError` のように細かく分けず `invalid_file` のまま (C ABI と同じ。T0434)。
 pub fn error_info(error: &WardrobeError) -> ErrorInfo {
@@ -396,6 +404,7 @@ pub fn error_info(error: &WardrobeError) -> ErrorInfo {
         WardrobeError::NoModel => ("no_model", vec![]),
         WardrobeError::NotLoaded(name) => ("not_loaded", vec![("module", name.as_str().into())]),
         WardrobeError::Texture(_) => ("texture", vec![]),
+        WardrobeError::DeviceLost => ("device_lost", vec![]),
         WardrobeError::DressUp(e) => (
             e.code(),
             e.fields()

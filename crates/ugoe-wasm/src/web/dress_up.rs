@@ -54,14 +54,14 @@ impl TextureSink for RendererSink<'_> {
 /// `WardrobeError` を JS の `Error` にする (`name` = `"DressUpError"`、`code` と補足の値を持つ)。
 fn dress_up_error(error: WardrobeError) -> JsValue {
     let info = dress_up::error_info(&error);
-    super::coded_error("DressUpError", &error.to_string(), info)
+    super::coded_error(WardrobeError::NAME, &error.to_string(), info)
 }
 
 /// `WebPuppet` のフィールドを分けて借り、付け外しを 1 つ行う。
 macro_rules! with_wardrobe {
     ($self:ident, |$wardrobe:ident, $puppet:ident, $sink:ident| $body:expr) => {{
         if $self.is_lost() {
-            return Err(JsError::new("the GPU device was lost").into());
+            return Err(dress_up_error(WardrobeError::DeviceLost));
         }
         let $wardrobe = &mut $self.wardrobe;
         let $puppet = &mut $self.puppet;

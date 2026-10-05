@@ -140,7 +140,8 @@ fn modules_over_the_limits_are_rejected() {
     unsafe { ugoe_module_destroy(m) };
 }
 
-/// 上限の外の読み込みの失敗は、上限を指定してもしなくても今までどおり `UGOE_ERROR_FORMAT` (種類なし)。
+/// 上限の外の読み込みの失敗は、上限を指定してもしなくても今までどおり `UGOE_ERROR_FORMAT`。種類は `invalid_file`
+/// (T0457。ほかの種類は `tests/load_errors.rs`)。
 #[test]
 fn bundle_format_errors_keep_their_code() {
     let garbage = b"not a bundle";
@@ -160,6 +161,5 @@ fn bundle_format_errors_keep_their_code() {
         },
         UGOE_ERROR_FORMAT
     );
-    // 種類を持たない失敗。
-    assert!(ugoe_last_error_kind().is_null());
+    assert_eq!(text(ugoe_last_error_kind()), "invalid_file");
 }

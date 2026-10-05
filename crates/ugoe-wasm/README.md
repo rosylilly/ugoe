@@ -236,7 +236,8 @@ try {
   // e.name === "DressUpError"。e.code は "unknown_slot" | "missing_slot" | "missing_parameter" |
   // "parameter_not_exposed" | "avatar_level" | "slot_occupied" | "unknown_mask" | "unknown_collider" |
   // "pose_not_exposed" | "texture_out_of_range" | "invalid_composition" | "invalid_module_name" | "duplicate_module" |
-  // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture"
+  // "compile" | "invalid_physics" | "not_attached" | "not_loaded" | "no_model" | "invalid_file" | "texture" |
+  // "device_lost" (GPU を失った後の付け外し。T0457)
   // (load_module が読み込みの上限を超えたときは "read_limit_exceeded" | "image_limit_exceeded"。下の「読み込みの上限」)。
   // 補足の値 (あれば): e.module・e.slot・e.parameter・e.mesh・e.attached (slot_occupied で付いているモジュール)・
   // e.mask (unknown_mask)・e.rig・e.collider (unknown_collider)・e.part (pose_not_exposed)・
@@ -247,7 +248,9 @@ try {
 ```
 
 `code` と補足の値のうち、付け外しの失敗と `invalid_file` は SDK の `ugoe::DressUpError::code`・`fields`・`INVALID_FILE` が決め、
-C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`・`texture` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
+C ABI の `ugoe_last_error_kind` と同じ (T0412)。`not_loaded`・`no_model`・`texture`・`device_lost` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
+GPU のデバイスを失った (`is_lost()`) 後の `load_module`・`attach_module`・`detach_module`・`set_modules`・`unload_module` は、何も変えずに
+`code` が `device_lost` の `DressUpError` を投げる (T0457。それまではコードを持たない `Error`)。新しい canvas で作り直す。
 
 - 規則は `docs/spec/modules.md#puppet-での着せ替え`。付け外しで、パラメータの値・ポーズ・トラッキング・モーションは続きから動き、物理はリセットされる。失敗したときは何も変えない。
 - テクスチャ (と法線マップ) は本体、モジュールの順に並ぶ。付け外しで番号がずれたものは登録し直し、使わなくなった番号の画像は 1x1 の白に置き換えて捨てる。
@@ -364,9 +367,11 @@ try {
 | `device_lost` | なし | GPU のデバイスを失った (`is_lost()`)。新しい canvas で作り直す |
 
 - コードは公開の約束として扱い、名前を変えない (意味が変わるなら新しいコードにする)。知らない `code` (将来の種類) は `message` を出せばよい。
-- `invalid_file`・`compile`・`read_limit_exceeded` は C ABI の `ugoe_last_error_kind` と同じ値 (着せ替えの `invalid_file`・`compile` と
-  同じ意味)。ほかは wasm だけ (C ABI のモデルの読み込みは、上限のほかに種類を持たない)。対応は `src/load.rs` の `LoadError::info` と
-  そのテスト (`every_load_error_has_a_code`)。
+- ファイルとモデルの失敗 (`invalid_file`・`unsupported_version`・`unsupported_features`・`invalid_model`・`compile`・`read_limit_exceeded`) の
+  種類と補足の値は SDK の `ugoe::LoadError` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_create_from_*` の `ugoe_last_error_kind` と
+  同じ値 (T0457。[crates/ugoe-ffi/README.md](../ugoe-ffi/README.md#モデルの読み込みの失敗-t0457)。C ABI では数も 10 進の文字列)。
+  画像とレンダラの失敗 (`image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost`) は wasm だけ
+  (C ABI は画像をデコードせず、レンダラを持たない)。対応は `src/load.rs` の `LoadError::info` とそのテスト (`every_load_error_has_a_code`)。
 - `.ugoemod` の読み込み (`load_module`) の失敗は `DressUpError` のまま: 上限を超えたものだけ上の 2 つのコードで、ほかは `invalid_file`
   (C ABI と同じ)。
 - 上限の JSON の形の誤り (`invalid limits: ...`) と、`WebPuppet.create` の失敗は `code` を持たない `Error` (組み込みの誤りで、利用者に見せる文ではない)。
@@ -382,7 +387,7 @@ try {
 
 `@ugoe/runtime` のテスト (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TS の `code` の配列と補足の値の型と比べるので、
 Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる (どちらも `just ci` で流れる)。
-`FormatError`・`RenderError` の種類は網羅しない (ほかは `invalid_file`・`texture` にまとまる)。`format_error_info`・`LoadError::info` で
+`FormatError`・`RenderError` の種類は網羅しない (ほかは `invalid_file`・`texture` にまとまる)。`ugoe::LoadError::code`・`LoadError::info` で
 新しい `code` を割り当てたら、`src/codes.rs` に見本を足す。
 
 ## ビルド
@@ -413,3 +418,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0418 (描画結果の読み戻しと評価の結果の取り出し)
 - T0152 (読み込みの上限)
 - T0434 (読み込みの失敗のコード)
+- T0457 (読み込みの失敗の種類を SDK で決めて C ABI と揃える・着せ替えの `device_lost`)

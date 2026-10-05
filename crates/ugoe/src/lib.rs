@@ -40,6 +40,11 @@ pub use warning::{FieldValue, LoadWarning};
 // 読み込みの上限と、超えたときの種類 (T0152)。
 pub mod limits;
 
+// モデルの読み込みの失敗の種類 (T0457)。
+mod load_error;
+
+pub use load_error::{LoadError, LoadErrorValue};
+
 // ライティングの補助 (T0210)。
 pub mod lighting;
 

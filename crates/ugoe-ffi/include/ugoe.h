@@ -301,10 +301,12 @@ typedef struct UgoeTrackingInput {
 // ホストが渡したバッファが小さすぎた。バッファには何も書き込んでいない (可変長の結果では、要る数か長さだけを書く)。
 #define UGOE_ERROR_BUFFER_TOO_SMALL 4
 
-// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。
+// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。モデルの読み込み
+// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_last_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
+// `"unsupported_features"`・`"invalid_model"` のどれか (T0457)。
 #define UGOE_ERROR_FORMAT 5
 
-// モデルの検証やコンパイルに失敗した。
+// モデルの検証やコンパイルに失敗した。モデルの読み込みでは、種類が `"invalid_model"` か `"compile"` (T0457)。
 #define UGOE_ERROR_INVALID_MODEL 6
 
 // 指定した ID が見つからなかった。
@@ -722,13 +724,16 @@ const char *ugoe_last_error(void);
 //
 // 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 // wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
-// 読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
+// モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗 (`UGOE_ERROR_FORMAT`・`UGOE_ERROR_INVALID_MODEL`) では、
+// wasm の `LoadError` の `code` と同じ値 (`"invalid_file"`・`"unsupported_version"`・`"unsupported_features"`・
+// `"invalid_model"`・`"compile"`。T0457)。読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
 // 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
 const char *ugoe_last_error_kind(void);
 
 // このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
 // `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
-// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
+// 番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
 //
 // # Safety
 //
@@ -997,6 +1002,8 @@ UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
 // バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 // 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
 // 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
+// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_last_error_kind`) と
+// 補足の値は wasm の `LoadError` と同じ (crates/ugoe-ffi/README.md の「モデルの読み込みの失敗」。T0457)。
 //
 // # Safety
 //
@@ -1022,7 +1029,9 @@ UgoeResult ugoe_puppet_create_from_bundle_with_limits(const uint8_t *bytes,
 
 // モデルの JSON (UTF-8、`len` バイト。NUL 終端は要らない) から `UgoePuppet` を作る。
 //
-// JSON はテクスチャを持たないので、テクスチャはすべて「画像なし」になる。
+// JSON はテクスチャを持たないので、テクスチャはすべて「画像なし」になる。失敗の種類は `ugoe_puppet_create_from_bundle` と同じ
+// (JSON は読むときに検査しないので、検査を通らないモデルは `UGOE_ERROR_INVALID_MODEL` で種類が `"invalid_model"`)。
+// UTF-8 でなければ `UGOE_ERROR_INVALID_ARGUMENT` (種類なし)。
 //
 // # Safety
 //

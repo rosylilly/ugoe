@@ -13,10 +13,9 @@ use ugoe::{Puppet, TextureSource};
 use crate::animation::MotionEvents;
 use crate::dress_up::ModuleData;
 use crate::error::{
-    Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_INVALID_MODEL,
-    UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
+    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
 };
-use crate::limits::{UgoeReadLimits, format_error, read_limits};
+use crate::limits::{UgoeReadLimits, load_error, read_limits};
 use crate::warning::{
     UgoeWarning, Warning, missing_textures, read_warnings, write_warning, write_warning_field,
 };
@@ -170,8 +169,7 @@ impl UgoePuppet {
             textures,
             ..
         } = bundle;
-        let compiled = CompiledModel::compile(model)
-            .map_err(|e| Error::new(UGOE_ERROR_INVALID_MODEL, e.to_string()))?;
+        let compiled = CompiledModel::compile(model).map_err(|e| load_error(e.into()))?;
         let mut puppet = Puppet::from_compiled(compiled);
         if let Some(physics) = physics {
             // `read_bundle` は物理の設定を検査済みで返す。
@@ -192,11 +190,9 @@ impl UgoePuppet {
     }
 
     fn from_json(json: &str) -> Result<Self, Error> {
-        let model = ugoe::format::model_from_json(json)
-            .map_err(|e| Error::new(UGOE_ERROR_FORMAT, e.to_string()))?;
+        let model = ugoe::format::model_from_json(json).map_err(|e| load_error(e.into()))?;
         let count = texture_count(&model);
-        let puppet =
-            Puppet::new(model).map_err(|e| Error::new(UGOE_ERROR_INVALID_MODEL, e.to_string()))?;
+        let puppet = Puppet::new(model).map_err(|e| load_error(e.into()))?;
         Ok(Self::new(
             puppet,
             Vec::new(),
@@ -350,6 +346,8 @@ unsafe fn create(
 /// バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 /// 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
 /// 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
+/// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_last_error_kind`) と
+/// 補足の値は wasm の `LoadError` と同じ (crates/ugoe-ffi/README.md の「モデルの読み込みの失敗」。T0457)。
 ///
 /// # Safety
 ///
@@ -387,7 +385,7 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle_with_limits(
             let limits = read_limits(limits);
             let (bundle, report) =
                 ugoe::format::read_bundle_with(self::bytes(bytes, len, "bytes")?, limits)
-                    .map_err(|e| format_error(&e, None))?;
+                    .map_err(|e| load_error(e.into()))?;
             UgoePuppet::from_bundle(bundle, report)
         })
     }
@@ -395,7 +393,9 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle_with_limits(
 
 /// モデルの JSON (UTF-8、`len` バイト。NUL 終端は要らない) から `UgoePuppet` を作る。
 ///
-/// JSON はテクスチャを持たないので、テクスチャはすべて「画像なし」になる。
+/// JSON はテクスチャを持たないので、テクスチャはすべて「画像なし」になる。失敗の種類は `ugoe_puppet_create_from_bundle` と同じ
+/// (JSON は読むときに検査しないので、検査を通らないモデルは `UGOE_ERROR_INVALID_MODEL` で種類が `"invalid_model"`)。
+/// UTF-8 でなければ `UGOE_ERROR_INVALID_ARGUMENT` (種類なし)。
 ///
 /// # Safety
 ///

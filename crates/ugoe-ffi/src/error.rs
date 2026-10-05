@@ -18,9 +18,11 @@ pub const UGOE_ERROR_INVALID_ARGUMENT: UgoeResult = 2;
 pub const UGOE_ERROR_OUT_OF_RANGE: UgoeResult = 3;
 /// ホストが渡したバッファが小さすぎた。バッファには何も書き込んでいない (可変長の結果では、要る数か長さだけを書く)。
 pub const UGOE_ERROR_BUFFER_TOO_SMALL: UgoeResult = 4;
-/// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。
+/// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。モデルの読み込み
+/// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_last_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
+/// `"unsupported_features"`・`"invalid_model"` のどれか (T0457)。
 pub const UGOE_ERROR_FORMAT: UgoeResult = 5;
-/// モデルの検証やコンパイルに失敗した。
+/// モデルの検証やコンパイルに失敗した。モデルの読み込みでは、種類が `"invalid_model"` か `"compile"` (T0457)。
 pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 /// 指定した ID が見つからなかった。
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;
@@ -150,7 +152,9 @@ pub extern "C" fn ugoe_last_error() -> *const c_char {
 ///
 /// 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 /// wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
-/// 読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
+/// モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗 (`UGOE_ERROR_FORMAT`・`UGOE_ERROR_INVALID_MODEL`) では、
+/// wasm の `LoadError` の `code` と同じ値 (`"invalid_file"`・`"unsupported_version"`・`"unsupported_features"`・
+/// `"invalid_model"`・`"compile"`。T0457)。読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
 /// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
 #[unsafe(no_mangle)]
 pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
@@ -164,7 +168,8 @@ pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
 
 /// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
 /// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
-/// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`)。番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
+/// 番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
 ///
 /// # Safety
 ///
