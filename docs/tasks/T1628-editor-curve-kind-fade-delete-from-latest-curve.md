@@ -1,11 +1,11 @@
 ---
 id: T1628
 title: "エディタ: カーブの区間の種類・フェード・ドープシートのキーの削除も送る直前のカーブから組み立てる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1628
 ---
 
 # T1628: エディタ: カーブの区間の種類・フェード・ドープシートのキーの削除も送る直前のカーブから組み立てる

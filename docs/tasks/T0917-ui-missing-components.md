@@ -1,11 +1,11 @@
 ---
 id: T0917
 title: UI 品質: 足りない部品と口を足す (TextField・tooltip・Menu の説明の行)
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages, docs, apps/editor, apps/viewer, apps/studio]
 depends_on: [T0915, T0912]
-assignee:
+assignee: claude-worker-T0917
 ---
 
 # T0917: UI 品質: 足りない部品と口を足す (TextField・tooltip・Menu の説明の行)
