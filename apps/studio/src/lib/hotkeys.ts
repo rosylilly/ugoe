@@ -101,7 +101,14 @@ export function displayKeys(keys: string): string {
 /** 種類を替えたときの操作の既定 (引数は選択肢の先頭)。 */
 export function defaultAction(
   kind: HotkeyKind,
-  options: { scenes: string[]; expressions: string[]; motions: string[]; slots: string[] },
+  options: {
+    scenes: string[];
+    expressions: string[];
+    motions: string[];
+    slots: string[];
+    /** ポーズの要素のパーツ (T0842)。 */
+    poses: string[];
+  },
 ): HotkeyAction {
   switch (kind) {
     case "scene":
@@ -112,6 +119,8 @@ export function defaultAction(
       return { kind, motion: options.motions[0] ?? "", priority: "normal" };
     case "dressUp":
       return { kind, slot: options.slots[0] ?? "", module: null };
+    case "pose":
+      return { kind, part: options.poses[0] ?? "" };
     default:
       return { kind } as HotkeyAction;
   }
@@ -125,6 +134,7 @@ export const HOTKEY_KINDS: readonly HotkeyKind[] = [
   "motion",
   "stopMotions",
   "dressUp",
+  "pose",
   "trackingPause",
   "trackingCalibrate",
   "lipSyncPause",

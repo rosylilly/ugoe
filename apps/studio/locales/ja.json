@@ -51,7 +51,8 @@
       "unreadable": "{{path}} を読めません: {{reason}}",
       "wrong_type": "{{path}} は使えないファイルです。",
       "too_large": "{{path}} は大きすぎます ({{size}} バイト)。",
-      "dress_up": "着せ替えのモジュールを付けられません: {{reason}}"
+      "dress_up": "着せ替えのモジュールを付けられません: {{reason}}",
+      "unknown_pose": "出しているモデルに {{part}} というポーズの要素がありません。"
     },
     "scene_file": {
       "not_current": "シーン {{revision}} はもう出していません。",
@@ -275,6 +276,13 @@
     "overTrackingHint": "トラッキング中に再生したモーション (待機モーションを除く) は、トラッキングの代わりに自分のパラメータを動かします。",
     "keptHeading": "トラッキングのままにするもの"
   },
+  "poses": {
+    "heading": "ポーズ",
+    "empty": "配信しているモデルにポーズがありません。",
+    "hint": "配信しているシーンで、グループごとに表示するパーツを選びます (フェードで切り替わります)。選んだものはそのシーンに覚えます。モーションが同じグループを切り替えている間は、モーションが優先されます。",
+    "group": "グループ {{n}}",
+    "moduleGroup": "{{module}} のグループ {{n}}"
+  },
   "inputs": {
     "heading": "入力",
     "camera": "カメラ (フェイストラッキング)",
@@ -327,6 +335,8 @@
     "motion": "モーション",
     "noMotions": "モーションがありません",
     "priority": "優先度",
+    "pose": "ポーズの要素",
+    "noPoses": "ポーズの要素がありません",
     "dressMode": "着せ替え",
     "dressAttach": "モジュールを付ける",
     "dressRemove": "スロットを空ける",
@@ -344,6 +354,7 @@
       "motion": "モーションの再生",
       "stopMotions": "モーションを止める",
       "dressUp": "着せ替え",
+      "pose": "ポーズの切り替え",
       "trackingPause": "トラッキングの一時停止・再開",
       "trackingCalibrate": "トラッキングのキャリブレーション",
       "lipSyncPause": "口パクの一時停止・再開",

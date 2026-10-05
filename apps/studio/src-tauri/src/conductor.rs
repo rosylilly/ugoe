@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use serde::Serialize;
 use ugoe::format::Bundle;
 use ugoe::model::Parameter;
 use ugoe::model::expression::Expression;
@@ -79,6 +80,41 @@ pub fn assemble(model: NewModel, modules: &[Arc<Module>]) -> Result<Assembled, L
         motions: bundle.motions,
         expressions: bundle.expressions,
     })
+}
+
+/// ポーズのグループ 1 つ (操作ウィンドウのポーズの欄。`@ugoe/player` の `PoseGroupInfo` と同じ形。T0842)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PoseGroupInfo {
+    /// 要素のパーツの ID (グループの順)。モジュールのパーツは `<モジュール>/<パーツ>`。
+    pub parts: Vec<String>,
+    /// 着せ替えで付けたモジュールのグループなら、そのモジュールの名前 (先頭の要素の接頭辞)。本体のグループは `None`。
+    pub module: Option<String>,
+}
+
+/// シーンの設定のポーズの要素 `wanted` を表示する要素にし、グループごとに表示する要素を返す (合成したポーズのグループの順。T0842)。
+///
+/// グループの要素が `wanted` に無ければ先頭の要素にする (同じグループの要素がいくつもあれば後のもの)。モデルに無い要素は捨てる。
+/// 要素の無いグループは飛ばす。
+fn show_pose(puppet: &mut Puppet, wanted: &[String]) -> Vec<String> {
+    let shown: Vec<_> = puppet
+        .pose()
+        .pose()
+        .groups
+        .iter()
+        .filter_map(|group| {
+            wanted
+                .iter()
+                .rev()
+                .find_map(|w| group.entries.iter().find(|e| e.part.as_str() == w))
+                .or_else(|| group.entries.first())
+                .map(|e| e.part.clone())
+        })
+        .collect();
+    for part in &shown {
+        puppet.pose_mut().show(part);
+    }
+    shown.iter().map(|p| p.as_str().to_owned()).collect()
 }
 
 /// `a` と `b` が同じモジュールの組か (`Arc` で見分ける)。
@@ -180,14 +216,15 @@ impl Conductor {
     ///   `None` なら今のモデルのまま、パラメータの値・再生中のモーションなどを引き継ぐ (`docs/studio.md#シーンとプロファイル`)。
     /// - `modules` が `Some` なら付けるモジュールの組をそれにする (合成の順)。今のモデルのまま組が変わったときは、
     ///   次のフレームに物理のリセットを載せる (受け手どうしの物理を揃える)。`None` なら変えない。
-    /// - 見せ方 (`look`) は受け手に配るだけで、指揮役は使わない。
+    /// - 見せ方 (`look`) は受け手に配るだけで、指揮役は使わない。ただしポーズの要素 (`look.pose`) は指揮役のパペットにも表示させ、
+    ///   モデルにある要素と、挙がっていないグループの先頭の要素で埋め直して配る (受け手のポーズを指揮役と揃える。T0842)。
     ///
     /// モデルが無ければ ([`Conductor::clear`] の後など) `model` が要る。
     pub fn present(
         &mut self,
         model: Option<Assembled>,
         modules: Option<Vec<Arc<Module>>>,
-        look: Look,
+        mut look: Look,
     ) -> Result<&Scene, LoadError> {
         let revision = self.revision + 1;
         let previous = self.scene.as_ref();
@@ -226,9 +263,10 @@ impl Conductor {
                 }
             }
         }
-        let Some(puppet) = &self.puppet else {
+        let Some(puppet) = &mut self.puppet else {
             return Err(LoadError::NoModel);
         };
+        look.pose = show_pose(puppet, &look.pose);
         self.revision = revision;
         self.reset = reset || (self.reset && model_revision != revision);
         let parameter_ids = puppet
@@ -252,7 +290,8 @@ impl Conductor {
     }
 
     /// モデルを外す (モデルの無いシーン)。`revision` が上がり、以後は [`Conductor::tick`] がフレームを作らない。
-    pub fn clear(&mut self, look: Look) -> &Scene {
+    pub fn clear(&mut self, mut look: Look) -> &Scene {
+        look.pose.clear();
         self.revision += 1;
         self.puppet = None;
         self.animation.unload();
@@ -278,6 +317,32 @@ impl Conductor {
     /// 付けているモジュール (合成の順)。
     pub fn modules(&self) -> &[Arc<Module>] {
         self.puppet.as_ref().map_or(&[], |p| p.modules())
+    }
+
+    /// 今のモデル (と付けているモジュール) のポーズのグループ (合成したポーズの順。要素の無いグループは飛ばす。T0842)。
+    pub fn pose_groups(&self) -> Vec<PoseGroupInfo> {
+        let Some(puppet) = &self.puppet else {
+            return Vec::new();
+        };
+        puppet
+            .pose()
+            .pose()
+            .groups
+            .iter()
+            .filter(|g| !g.entries.is_empty())
+            .map(|g| {
+                let parts: Vec<String> = g
+                    .entries
+                    .iter()
+                    .map(|e| e.part.as_str().to_owned())
+                    .collect();
+                let module = parts
+                    .first()
+                    .and_then(|p| p.split_once('/'))
+                    .map(|(m, _)| m.to_owned());
+                PoseGroupInfo { parts, module }
+            })
+            .collect()
     }
 
     /// 今のシーン。モデルを読んでいなければ `None`。
@@ -595,6 +660,82 @@ mod tests {
         let frame = conductor.tick(0.016).unwrap();
         assert!(frame.reset);
         assert_eq!((frame.revision, frame.values[index]), (3, 20.0));
+    }
+
+    fn visible_parts(conductor: &Conductor) -> Vec<String> {
+        let pose = conductor.puppet.as_ref().unwrap().pose();
+        pose.visible_parts()
+            .map(|p| p.as_str().to_owned())
+            .collect()
+    }
+
+    /// シーンのポーズの要素を指揮役のパペットに表示させ、モデルにある要素と先頭の要素で埋め直して配る (T0842)。
+    #[test]
+    fn presenting_shows_the_scenes_pose() {
+        let mut conductor = Conductor::new();
+        let model = assemble(
+            NewModel {
+                name: "pose.ugoe".into(),
+                bundle: Bundle::new(fixtures::pose_and_effects()),
+            },
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            conductor.pose_groups(),
+            Vec::<PoseGroupInfo>::new(),
+            "no model yet"
+        );
+        let look = Look {
+            pose: vec!["Nope".into(), "ArmB".into()],
+            ..Look::default()
+        };
+        let scene = conductor.present(Some(model), None, look).unwrap();
+        // モデルに無い要素は捨てる。
+        assert_eq!(scene.look.pose, ["ArmB"]);
+        assert_eq!(visible_parts(&conductor), ["ArmB"]);
+        assert_eq!(
+            conductor.pose_groups(),
+            [PoseGroupInfo {
+                parts: vec!["ArmA".into(), "ArmB".into()],
+                module: None
+            }]
+        );
+        // 同じグループの要素がいくつもあれば後のもの。
+        let look = Look {
+            pose: vec!["ArmB".into(), "ArmA".into()],
+            ..Look::default()
+        };
+        assert_eq!(
+            conductor.present(None, None, look).unwrap().look.pose,
+            ["ArmA"]
+        );
+        conductor
+            .present(
+                None,
+                None,
+                Look {
+                    pose: vec!["ArmB".into()],
+                    ..Look::default()
+                },
+            )
+            .unwrap();
+        // 挙がっていないグループは先頭の要素に戻す (シーンが姿を決める)。
+        assert_eq!(
+            conductor
+                .present(None, None, Look::default())
+                .unwrap()
+                .look
+                .pose,
+            ["ArmA"]
+        );
+        assert_eq!(visible_parts(&conductor), ["ArmA"]);
+        // モデルの無いシーンには要素が無い。
+        let cleared = conductor.clear(Look {
+            pose: vec!["ArmB".into()],
+            ..Look::default()
+        });
+        assert!(cleared.look.pose.is_empty());
     }
 
     #[test]

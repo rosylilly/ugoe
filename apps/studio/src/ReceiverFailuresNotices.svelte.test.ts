@@ -24,6 +24,7 @@ const scene = {
   lighting: null,
   transform: { x: 0, y: 0, scale: 1, rotation: 0 },
   background: { kind: "image", path: "/bg.png" },
+  pose: [],
 } as StudioScene;
 
 function failure(patch: Partial<ReceiverFailure>): ReceiverFailure {

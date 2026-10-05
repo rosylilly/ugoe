@@ -18,6 +18,7 @@ pub const COMMANDS: &[&str] = &[
     "remove_scene",
     "update_scene",
     "activate_scene",
+    "show_pose",
     "set_output_preset",
     "scene_module",
     "scene_background",

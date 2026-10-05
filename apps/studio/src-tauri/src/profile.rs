@@ -29,6 +29,8 @@ pub const SCALE_RANGE: (f64, f64) = (0.05, 20.0);
 pub const ROTATION_LIMIT: f64 = 360.0;
 /// 名前の長さの上限 (文字)。
 const MAX_NAME_CHARS: usize = 100;
+/// シーンが覚えるポーズの要素の数の上限 (プロファイルを手で書き換えたとき。T0842)。
+pub const MAX_POSE_ENTRIES: usize = 256;
 
 /// プロファイル。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,6 +79,10 @@ pub struct SceneSettings {
     pub transform: Transform,
     #[serde(default)]
     pub background: Background,
+    /// ポーズのグループごとに表示する要素のパーツの ID (着せ替えで付けたモジュールのパーツは `<モジュール>/<パーツ>`。T0842)。
+    /// 出すときに、モデルに無い要素は捨てる (`Conductor::present`)。挙がっていないグループは先頭の要素を表示する。
+    #[serde(default)]
+    pub pose: Vec<String>,
 }
 
 /// モデルの位置と大きさと回転。出力の大きさに対する割合で持ち、出力の大きさを変えても構図を保つ。
@@ -401,10 +407,11 @@ impl SceneSettings {
             lighting: None,
             transform: Transform::default(),
             background: Background::default(),
+            pose: Vec::new(),
         }
     }
 
-    /// 値の範囲を外れたものを収め直す (名前の長さ・位置・大きさ・回転・色)。
+    /// 値の範囲を外れたものを収め直す (名前の長さ・位置・大きさ・回転・色・ポーズの要素の空と重複と数)。
     pub fn sanitize(&mut self) {
         if self.name.chars().count() > MAX_NAME_CHARS {
             self.name = self.name.chars().take(MAX_NAME_CHARS).collect();
@@ -422,6 +429,10 @@ impl SceneSettings {
         if self.lighting.as_ref().is_some_and(|l| !l.is_object()) {
             self.lighting = None;
         }
+        let mut seen = std::collections::HashSet::new();
+        self.pose
+            .retain(|part| !part.is_empty() && seen.insert(part.clone()));
+        self.pose.truncate(MAX_POSE_ENTRIES);
     }
 }
 
@@ -531,6 +542,7 @@ mod tests {
         scene.background = Background::Image {
             path: "/m/bg.png".into(),
         };
+        scene.pose = vec!["ArmB".into(), "CatEars/EarsUp".into()];
         profile.output.size = "1280x720".into();
         profile.output.tick_rate = 120;
         profile.output.virtual_camera = VirtualCameraSettings {
@@ -619,7 +631,8 @@ mod tests {
                   "modules": ["/home/me/avatars/cat-ears.ugoemod"],
                   "lighting": null,
                   "transform": { "x": 0, "y": 0.05, "scale": 1.2, "rotation": 0 },
-                  "background": { "kind": "transparent" }
+                  "background": { "kind": "transparent" },
+                  "pose": ["ArmB"]
                 },
                 {
                   "id": "scene-2",
@@ -642,6 +655,8 @@ mod tests {
         assert_eq!(profile.scenes[0].transform.scale, 1.2);
         assert_eq!(profile.scenes[1].transform, Transform::default());
         assert!(profile.scenes[1].modules.is_empty());
+        assert_eq!(profile.scenes[0].pose, ["ArmB"]);
+        assert!(profile.scenes[1].pose.is_empty());
         assert_eq!(
             profile.scenes[1].background,
             Background::Chroma {
@@ -691,7 +706,8 @@ mod tests {
             r##"{"format": "ugoe-studio-profile", "version": 1, "activeScene": "nope", "scenes": [
               {"id": "a", "name": "A", "transform": {"x": 9, "y": -9, "scale": 0, "rotation": 720},
                "background": {"kind": "color", "color": "red"}, "lighting": 3},
-              {"id": "a", "name": "B", "background": {"kind": "chroma", "color": "#00FF00"}},
+              {"id": "a", "name": "B", "background": {"kind": "chroma", "color": "#00FF00"},
+               "pose": ["ArmB", "", "Hat/Off", "ArmB"]},
               {"id": " ", "name": "C"}
             ]}"##,
         )
@@ -722,6 +738,12 @@ mod tests {
                 color: "#00ff00".into()
             }
         );
+        // ポーズの要素は空と重複を除く (T0842)。
+        assert_eq!(profile.scenes[1].pose, ["ArmB", "Hat/Off"]);
+        let mut many = SceneSettings::new("m".into(), String::new());
+        many.pose = (0..MAX_POSE_ENTRIES + 5).map(|i| format!("P{i}")).collect();
+        many.sanitize();
+        assert_eq!(many.pose.len(), MAX_POSE_ENTRIES);
     }
 
     #[test]

@@ -161,7 +161,9 @@ impl Frame {
 /// 受け手は版の番号を比べて、することを決める (`docs/studio.md#シーンの切り替えと受け手`)。
 /// - `model_revision` が変わった: モデルを読み直し、`revision` のフレームを最初から適用する (物理は新しく始まる)。
 /// - `modules_revision` だけが変わった: モジュールを付け直す。物理のリセットはフレームの印で揃える。
-/// - どちらも同じ: 見せ方 (ライティング・配置・背景) だけを変え、前のシーンのフレームも続けて適用する。
+/// - どちらも同じ: 見せ方 (ライティング・配置・背景・ポーズの要素) だけを変え、前のシーンのフレームも続けて適用する。
+///
+/// どの場合も、読み直し・付け直しの後に `pose` の要素を表示する要素にする (受け手のポーズは受け手が進めるため。T0842)。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind", rename = "scene")]
 pub struct Scene {
@@ -190,6 +192,9 @@ pub struct Look {
     pub lighting: Option<serde_json::Value>,
     pub transform: Transform,
     pub background: Background,
+    /// ポーズのグループごとに表示する要素のパーツ (合成したモデルのポーズのグループの順。T0842)。
+    /// 指揮役が、シーンの設定のうちモデルにある要素と、挙がっていないグループの先頭の要素で埋めて配る。
+    pub pose: Vec<String>,
 }
 
 #[cfg(test)]
@@ -304,7 +309,8 @@ mod tests {
                 "modules": ["cat-ears"],
                 "lighting": null,
                 "transform": { "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0 },
-                "background": { "kind": "transparent" }
+                "background": { "kind": "transparent" },
+                "pose": []
             })
         );
     }

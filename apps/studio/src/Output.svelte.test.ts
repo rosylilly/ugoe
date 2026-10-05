@@ -23,6 +23,8 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     followed: number[] = [];
     continued: number[] = [];
     lightings = 0;
+    /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`)。 */
+    calls: string[] = [];
     constructor() {
       players.push(this);
     }
@@ -50,9 +52,15 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     }
     followScene(revision: number) {
       this.followed.push(revision);
+      this.calls.push(`follow:${revision}`);
     }
     continueScene(revision: number) {
       this.continued.push(revision);
+      this.calls.push(`continue:${revision}`);
+    }
+    showPose(part: string) {
+      this.calls.push(`pose:${part}`);
+      return true;
     }
     updateLighting() {
       this.lightings++;
@@ -77,6 +85,7 @@ interface Fake {
   continued: number[];
   lightings: number;
   modules: { name: string }[];
+  calls: string[];
 }
 
 const cleanups: (() => void)[] = [];
@@ -98,6 +107,7 @@ function scene(revision: number, patch: Partial<StudioScene> = {}): StudioScene 
     lighting: null,
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
     background: { kind: "transparent" },
+    pose: [],
     ...patch,
   } as StudioScene;
 }
@@ -449,5 +459,24 @@ describe("Output scene changes", () => {
     // 閉じたら今の画像も解放する。
     r.close();
     expect(revoke.mock.calls).toEqual([["blob:1"], ["blob:2"]]);
+  });
+});
+
+// ポーズの要素は、読み直し・付け直しの後、そのシーンのフレームを当てる前に表示させる (T0842)。
+describe("Output pose", () => {
+  it("shows the scene's pose parts before following the scene", async () => {
+    const r = receiver({ model: async () => GOOD, module: async () => GOOD });
+    await r.send(scene(1, { pose: ["ArmB", "Hat/Off"] }));
+    await vi.waitFor(() => expect(r.player.followed).toEqual([1]));
+    expect(r.player.calls).toEqual(["pose:ArmB", "pose:Hat/Off", "follow:1"]);
+    // 見せ方だけが変わったシーン (ポーズを選び直した) でも当て直す。
+    await r.send(scene(2, { modelRevision: 1, modulesRevision: 1, pose: ["ArmA"] }));
+    await vi.waitFor(() => expect(r.player.continued).toEqual([2]));
+    expect(r.player.calls.slice(3)).toEqual(["pose:ArmA", "continue:2"]);
+    // モジュールを付け直したシーンでも、付けた後に当てる。
+    await r.send(scene(3, { modelRevision: 1, modules: ["Hat"], pose: ["ArmA", "Hat/On"] }));
+    await vi.waitFor(() => expect(r.player.continued).toEqual([2, 3]));
+    expect(r.player.modules.map((m) => m.name)).toEqual(["Hat.ugoemod"]);
+    expect(r.player.calls.slice(5)).toEqual(["pose:ArmA", "pose:Hat/On", "continue:3"]);
   });
 });

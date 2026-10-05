@@ -51,7 +51,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::animation::{AnimationError, AnimationView};
-use crate::conductor::Conductor;
+use crate::conductor::{Conductor, PoseGroupInfo};
 use crate::error::CommandError;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
@@ -101,6 +101,8 @@ enum Monitor<'a> {
         parameters: Vec<ParameterInfo>,
         /// モデル (と付けているモジュール) にライティングを受けるメッシュがあるか。
         uses_lighting: bool,
+        /// モデル (と付けているモジュール) のポーズのグループ (T0842)。表示している要素は `scene` の `pose`。
+        pose_groups: Vec<PoseGroupInfo>,
     },
     /// 間引いた今の値と負荷。
     #[serde(rename = "status", rename_all = "camelCase")]
@@ -359,6 +361,7 @@ impl Studio {
             scene,
             parameters,
             uses_lighting: conductor.uses_lighting(),
+            pose_groups: conductor.pose_groups(),
         })
     }
 
@@ -623,6 +626,12 @@ impl Studio {
                     .switch_scene(|stage, conductor| {
                         stage.begin_dress_up(slot, module.as_deref(), conductor)
                     })
+                    .err()
+                    .map(CommandError::from);
+            }
+            HotkeyAction::Pose { part } => {
+                return self
+                    .switch_scene(|stage, conductor| stage.begin_show_pose(part, conductor))
                     .err()
                     .map(CommandError::from);
             }
@@ -947,6 +956,19 @@ async fn activate_scene(
     blocking(&studio, move |studio| {
         Ok(studio
             .switch_scene(|stage, conductor| stage.begin_activate(&id, conductor).map(Some))?)
+    })
+    .await?
+}
+
+/// 出しているシーンのポーズで、要素 `part` をそのグループの表示する要素にし、シーンに覚える (T0842)。
+/// 出しているシーンが無ければ何もしない。要素がモデルに無ければエラー。
+#[tauri::command]
+async fn show_pose(
+    studio: tauri::State<'_, Arc<Studio>>,
+    part: String,
+) -> Result<(), CommandError> {
+    blocking(&studio, move |studio| {
+        Ok(studio.switch_scene(|stage, conductor| stage.begin_show_pose(&part, conductor))?)
     })
     .await?
 }
@@ -1641,6 +1663,7 @@ pub fn run() {
             remove_scene,
             update_scene,
             activate_scene,
+            show_pose,
             set_output_preset,
             scene_module,
             scene_background,

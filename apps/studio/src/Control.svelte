@@ -1,7 +1,7 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
   様子はパラメータの値・刻みの番号・負荷の数値で示す (負荷と刻みの速さは LoadPanel.svelte)。左にシーンの一覧、
-  右のパネルにシーンの編集 (T0802)、表情とモーション・入力 (カメラ・マイク)・ホットキー (T0803)・操作 API (T0805)。
+  右のパネルにシーンの編集 (T0802)、表情とモーション・ポーズ (T0842)・入力 (カメラ・マイク)・ホットキー (T0803)・操作 API (T0805)。
   操作 API に初めて接続したクライアントの承認は、どのパネルを開いていても上の知らせ (ApiApproval.svelte) で行う。
   カメラとマイクはこのウィンドウの WebView で取り、バックエンドの刻み (`subscribe_pulse`) で処理する (最小化しても止まらない)。
   プロファイルはバックエンドが持ち、変わるたびに `profile` の通知で届く。保存先があれば、変えた後に自動で保存する。
@@ -9,7 +9,7 @@
 <script lang="ts">
 import { FaceTracker, type TrackingFrame } from "@ugoe/face-tracking";
 import { formatNumber } from "@ugoe/i18n";
-import type { MotionPriority } from "@ugoe/player";
+import type { MotionPriority, PoseGroupInfo } from "@ugoe/player";
 import {
   AlertDialog,
   Button,
@@ -73,6 +73,7 @@ import {
 } from "./lib/settings";
 import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
+import PosePanel from "./PosePanel.svelte";
 import ReceiverFailuresNotices from "./ReceiverFailuresNotices.svelte";
 import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
@@ -89,6 +90,8 @@ let host = $state<StudioHost | null>(null);
 let scene = $state<StudioScene | null>(null);
 /** 配信しているモデルがライティングを受けるか。 */
 let usesLighting = $state(false);
+/** 配信しているモデル (と付けているモジュール) のポーズのグループ (T0842)。 */
+let poseGroups = $state<PoseGroupInfo[]>([]);
 let profile = $state<ProfileView | null>(null);
 /** 編集しているシーンの ID。 */
 let selected = $state<string | null>(null);
@@ -222,6 +225,7 @@ function onMonitor(message: MonitorMessage) {
     case "scene":
       scene = message.scene;
       usesLighting = message.usesLighting;
+      poseGroups = message.poseGroups;
       parameters = message.parameters;
       values = Object.fromEntries(message.parameters.map((p) => [p.id, p.default]));
       edited.clear();
@@ -786,6 +790,16 @@ onMount(() => {
           onsettings={(settings) => run((h) => h.setMotionSettings(settings))}
         />
       </Section>
+      {#if poseGroups.length > 0}
+        <Section title={t("poses.heading")}>
+          <PosePanel
+            groups={poseGroups}
+            shown={scene?.pose ?? []}
+            disabled={host === null}
+            onchange={(part) => run((h) => h.showPose(part))}
+          />
+        </Section>
+      {/if}
       <Section title={t("inputs.heading")}>
         <InputPanel
           {tracker}
@@ -810,6 +824,7 @@ onMount(() => {
           expressions={animation.expressions}
           motions={animation.motions.map((m) => m.name)}
           slots={animation.slots}
+          poses={poseGroups.flatMap((g) => g.parts)}
           disabled={host === null}
           onchange={(list) => run((h) => h.setHotkeys(list))}
           onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}

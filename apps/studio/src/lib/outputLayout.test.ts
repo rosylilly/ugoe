@@ -14,6 +14,7 @@ function scene(revision: number, modelRevision: number, modulesRevision: number)
     lighting: null,
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
     background: { kind: "transparent" },
+    pose: [],
   };
 }
 

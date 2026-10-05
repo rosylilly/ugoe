@@ -128,6 +128,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `new_profile()` / `open_profile(path)` / `save_profile(path?)` / `forget_recent_profile(path)` | 操作 | プロファイル (`save_profile` は省くと今の保存先) |
 | `add_scene(name)` / `duplicate_scene(id, name)` / `move_scene(id, index)` / `remove_scene(id)` | 操作 | シーンの一覧 |
 | `update_scene(scene)` / `activate_scene(id)` | 操作 | シーンの設定を置き換える (配信中なら出し直す) / 切り替える (ファイルの拡張子と大きさを確かめる) |
+| `show_pose(part)` | 操作 | 出しているシーンのポーズで、要素 `part` をそのグループの表示する要素にし、シーンの `pose` に覚えて出し直す (T0842。docs/studio.md#ポーズの要素) |
 | `set_output_preset(preset)` | 操作 | 出力ウィンドウの大きさのプリセットをプロファイルに持つ |
 | `subscribe_status(channel)` | 操作 | プロファイル・シーン・値・負荷・出力ウィンドウの状態・受け手が読めなかったことを受け取る |
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
@@ -234,6 +235,7 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
 | `scene.wrong_type` | `asset`・`path` | 拡張子が違う |
 | `scene.too_large` | `asset`・`path`・`size` (バイト) | シーンのファイルが大きすぎる |
 | `scene.dress_up` | `reason` | モジュールを付けられない (スロットが無いなど) |
+| `scene.unknown_pose` | `part` | 出しているモデル (と付けているモジュール) のポーズに、その要素が無い (`show_pose`・ホットキーのポーズの切り替え) |
 | `scene_file.not_current` / `scene_file.not_found` | `revision` | 受け手が取ろうとしたファイル: 今のシーンでない・そのファイルが無い |
 | `animation.no_model` | | 出しているモデルが無い |
 | `animation.unknown_motion` / `animation.unknown_expression` | `name` | その名前のモーション・表情がモデルに無い |

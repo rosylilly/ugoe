@@ -57,6 +57,7 @@ export type HotkeyAction =
   | { kind: "motion"; motion: string; priority: MotionPriority }
   | { kind: "stopMotions" }
   | { kind: "dressUp"; slot: string; module: string | null }
+  | { kind: "pose"; part: string }
   | { kind: "trackingPause" }
   | { kind: "trackingCalibrate" }
   | { kind: "lipSyncPause" }

@@ -131,9 +131,15 @@ export function studioPageInit({ osLocale, fixture }) {
           lighting: active.lighting,
           transform: active.transform,
           background: active.background,
+          pose: ["ArmsDown", "Hat/On"],
         },
         parameters,
         usesLighting: false,
+        // ポーズのパネル (T0842) を出すための偽のグループ。
+        poseGroups: [
+          { parts: ["ArmsDown", "ArmsUp", "Wave"], module: null },
+          { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
+        ],
       });
       onMessage({
         kind: "animation",

@@ -51,7 +51,8 @@
       "unreadable": "Could not read {{path}}: {{reason}}",
       "wrong_type": "{{path}} is not a supported file.",
       "too_large": "{{path}} is too large ({{size}} bytes).",
-      "dress_up": "Could not attach the dress-up modules: {{reason}}"
+      "dress_up": "Could not attach the dress-up modules: {{reason}}",
+      "unknown_pose": "The live model has no pose part {{part}}."
     },
     "scene_file": {
       "not_current": "Scene {{revision}} is no longer on air.",
@@ -277,6 +278,13 @@
     "overTrackingHint": "While tracking, a playing motion (other than the idle motion) moves its own parameters instead of the tracking.",
     "keptHeading": "Keep tracking for"
   },
+  "poses": {
+    "heading": "Pose",
+    "empty": "The live model has no pose.",
+    "hint": "Choose the part to show in each group of the live scene (it fades in). The choice is remembered in the scene. While a motion switches the same group, the motion takes precedence.",
+    "group": "Group {{n}}",
+    "moduleGroup": "{{module}} group {{n}}"
+  },
   "inputs": {
     "heading": "Inputs",
     "camera": "Camera (face tracking)",
@@ -329,6 +337,8 @@
     "motion": "Motion",
     "noMotions": "No motions",
     "priority": "Priority",
+    "pose": "Pose part",
+    "noPoses": "No pose parts",
     "dressMode": "Dress-up",
     "dressAttach": "Attach a module",
     "dressRemove": "Empty a slot",
@@ -346,6 +356,7 @@
       "motion": "Play motion",
       "stopMotions": "Stop motions",
       "dressUp": "Dress up",
+      "pose": "Switch the pose",
       "trackingPause": "Pause / resume tracking",
       "trackingCalibrate": "Calibrate tracking",
       "lipSyncPause": "Pause / resume lip sync",

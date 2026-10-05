@@ -473,6 +473,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   欄の表示はモーションに追従しないので、モーションが終わった後に欄で選び直してください。
 - 見本の「アバター」は耳飾りの有無 (`earwear` / `no_earwear`)、「着せ替え」の本体は手を振る差分 (`HandsDown` / `Wave`) のポーズを持ちます
   ([見本のファイル](../../assets/samples/README.md#パラメータのグループとポーズ))。
+- スタジオでは、配信しているシーンごとに差分を選んで覚えられます ([スタジオ: ポーズ](studio.md#ポーズ))。
 
 ### 見本で試す
 

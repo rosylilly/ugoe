@@ -19,6 +19,7 @@
     "allow-remove-scene",
     "allow-update-scene",
     "allow-activate-scene",
+    "allow-show-pose",
     "allow-set-output-preset",
     "allow-subscribe-status",
     "allow-set-parameter",

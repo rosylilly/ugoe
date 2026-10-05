@@ -1,7 +1,7 @@
 // バックエンド (src-tauri/src/lib.rs) との口。Tauri の外 (ヘッドレスのブラウザでの確認) では
 // `window.__UGOE_STUDIO_HOST__` に置いたものを使う (README.md#ヘッドレスのブラウザで確かめる)。
 import type { TrackingFrame } from "@ugoe/face-tracking";
-import type { LightingSettings, MotionPriority, SceneMessage } from "@ugoe/player";
+import type { LightingSettings, MotionPriority, PoseGroupInfo, SceneMessage } from "@ugoe/player";
 import type { ApiPermission, ApiView } from "./api";
 import { safeChannelHandler } from "./channel";
 import type { CommandMessage } from "./commandMessage";
@@ -112,11 +112,23 @@ export interface StudioScene extends SceneMessage {
   lighting: LightingSettings | null;
   transform: Transform;
   background: Background;
+  /**
+   * ポーズのグループごとに表示する要素のパーツ (合成したモデルのポーズのグループの順。T0842)。受け手は読み直し・付け直しの後に
+   * これを表示する要素にする。
+   */
+  pose: string[];
 }
 
 /** 操作ウィンドウへの通知 (lib.rs の `Monitor`)。 */
 export type MonitorMessage =
-  | { kind: "scene"; scene: StudioScene; parameters: ParameterInfo[]; usesLighting: boolean }
+  | {
+      kind: "scene";
+      scene: StudioScene;
+      parameters: ParameterInfo[];
+      usesLighting: boolean;
+      /** モデル (と付けているモジュール) のポーズのグループ (T0842。表示している要素は `scene.pose`)。 */
+      poseGroups: PoseGroupInfo[];
+    }
   | ({ kind: "profile" } & ProfileView)
   | StatusMessage
   | ({ kind: "output" } & OutputState)
@@ -185,6 +197,8 @@ export interface StudioHost {
   removeScene(id: string): Promise<void>;
   updateScene(scene: SceneSettings): Promise<void>;
   activateScene(id: string): Promise<void>;
+  /** 出しているシーンのポーズで、要素 `part` をそのグループの表示する要素にし、シーンに覚える (T0842)。 */
+  showPose(part: string): Promise<void>;
   subscribeStatus(onMessage: (message: MonitorMessage) => void): Promise<void>;
   setParameter(id: string, value: number): Promise<boolean>;
   resetParameters(): Promise<void>;
@@ -304,6 +318,7 @@ async function tauriHost(): Promise<StudioHost> {
     removeScene: (id) => invoke("remove_scene", { id }),
     updateScene: (scene) => invoke("update_scene", { scene }),
     activateScene: (id) => invoke("activate_scene", { id }),
+    showPose: (part) => invoke("show_pose", { part }),
     subscribeStatus: (onMessage) => subscribe("subscribe_status", onMessage),
     setParameter: (id, value) => invoke("set_parameter", { id, value }),
     resetParameters: () => invoke("reset_parameters"),

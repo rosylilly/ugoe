@@ -30,6 +30,8 @@ interface Props {
   expressions: string[];
   motions: string[];
   slots: string[];
+  /** 配信しているモデルのポーズの要素のパーツ (T0842)。 */
+  poses: string[];
   disabled?: boolean;
   /** 割り当てを送る (送り終えるまで、送った割り当てを画面に出し、次の変更の基にする)。 */
   onchange: (hotkeys: Hotkey[]) => Promise<unknown>;
@@ -49,6 +51,7 @@ let {
   expressions,
   motions,
   slots,
+  poses,
   disabled = false,
   onchange,
   onsuspend,
@@ -67,6 +70,7 @@ const KIND_KEYS: Record<Exclude<HotkeyKind, "unknown">, string> = {
   motion: "hotkeys.kinds.motion",
   stopMotions: "hotkeys.kinds.stopMotions",
   dressUp: "hotkeys.kinds.dressUp",
+  pose: "hotkeys.kinds.pose",
   trackingPause: "hotkeys.kinds.trackingPause",
   trackingCalibrate: "hotkeys.kinds.trackingCalibrate",
   lipSyncPause: "hotkeys.kinds.lipSyncPause",
@@ -125,7 +129,7 @@ function setAction(index: number, action: HotkeyAction) {
 function setKind(index: number, kind: HotkeyKind) {
   setAction(
     index,
-    defaultAction(kind, { scenes: scenes.map((s) => s.id), expressions, motions, slots }),
+    defaultAction(kind, { scenes: scenes.map((s) => s.id), expressions, motions, slots, poses }),
   );
 }
 
@@ -138,6 +142,7 @@ function add() {
       expressions,
       motions,
       slots,
+      poses,
     }),
   });
   void edit.submit(next);
@@ -333,6 +338,15 @@ function problemText(problem: HotkeyProblem): string {
               onchange={(slot) => setAction(index, { ...action, slot })}
             />
           {/if}
+        {:else if action.kind === "pose"}
+          <Select
+            aria-label={t("hotkeys.pose")}
+            value={action.part}
+            options={choices(poses, action.part)}
+            placeholder={t("hotkeys.noPoses")}
+            {disabled}
+            onchange={(part) => setAction(index, { ...action, part })}
+          />
         {/if}
         {#if problem !== undefined}
           <p class="hotkeys__problem" id={`hotkey-problem-${index}`}>{problemText(problem)}</p>

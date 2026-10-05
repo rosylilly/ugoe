@@ -369,6 +369,12 @@ impl Feed {
             self.follower.continue_scene(scene.revision);
         }
         self.look = scene.look.clone();
+        // ポーズの要素は読み直し・付け直しの後に表示させる (受け手のポーズは受け手が進める。T0842)。
+        if let Some(puppet) = self.follower.puppet_mut() {
+            for part in &scene.look.pose {
+                puppet.pose_mut().show(&part.as_str().into());
+            }
+        }
         if let Some(code) = self.read_image(files.background.as_deref()) {
             unread.push(failure(Asset::Background, None, code));
         }

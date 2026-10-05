@@ -34,7 +34,13 @@ describe("hotkey keys", () => {
   });
 
   it("fills the arguments of a new action with the first choice", () => {
-    const options = { scenes: ["scene-1"], expressions: ["Smile"], motions: [], slots: ["Hair"] };
+    const options = {
+      scenes: ["scene-1"],
+      expressions: ["Smile"],
+      motions: [],
+      slots: ["Hair"],
+      poses: ["ArmA", "ArmB"],
+    };
     expect(defaultAction("scene", options)).toEqual({ kind: "scene", scene: "scene-1" });
     expect(defaultAction("expression", options)).toEqual({
       kind: "expression",
@@ -51,6 +57,8 @@ describe("hotkey keys", () => {
       slot: "Hair",
       module: null,
     });
+    expect(defaultAction("pose", options)).toEqual({ kind: "pose", part: "ArmA" });
+    expect(defaultAction("pose", { ...options, poses: [] })).toEqual({ kind: "pose", part: "" });
     expect(defaultAction("trackingPause", options)).toEqual({ kind: "trackingPause" });
   });
 });

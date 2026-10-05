@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 /** 割り当ての画面を描く。送った割り当ては、`notify` を呼ぶまで props に戻らない (バックエンドの通知を待つ)。 */
-function setup(initial: Hotkey[]) {
+function setup(initial: Hotkey[], poses: string[] = []) {
   const sent: Hotkey[][] = [];
   const finish: (() => void)[] = [];
   const props = $state({
@@ -24,6 +24,7 @@ function setup(initial: Hotkey[]) {
     expressions: [],
     motions: [],
     slots: [],
+    poses,
     onchange: (list: Hotkey[]) => {
       sent.push(list);
       return new Promise<void>((resolve) => finish.push(resolve));
@@ -101,5 +102,17 @@ describe("HotkeysPanel", () => {
     expect(sent).toHaveLength(2);
     expect(sent.at(-1)?.map((h) => h.keys)).toEqual(["Ctrl+KeyB", "Ctrl+KeyC"]);
     expect(target.querySelectorAll(".hotkeys__item")).toHaveLength(2);
+  });
+
+  // ポーズの切り替え (T0842): 選択肢は配信しているモデルのポーズの要素。
+  it("chooses a pose part of the live model", () => {
+    const { target } = setup(
+      [{ keys: "F9", action: { kind: "pose", part: "ArmB" } }],
+      ["ArmA", "ArmB"],
+    );
+    const item = target.querySelector(".hotkeys__item");
+    expect(item?.textContent).toContain(t("hotkeys.kinds.pose"));
+    const selects = item?.querySelectorAll(".ugoe-select") ?? [];
+    expect(selects[selects.length - 1]?.textContent).toContain("ArmB");
   });
 });

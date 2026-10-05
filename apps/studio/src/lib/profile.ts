@@ -34,6 +34,11 @@ export interface SceneSettings {
   lighting: LightingSettings | null;
   transform: Transform;
   background: Background;
+  /**
+   * ポーズのグループごとに表示する要素のパーツの ID (モジュールのパーツは `<モジュール>/<パーツ>`。T0842)。
+   * 出すときにモデルに無い要素は捨て、挙がっていないグループは先頭の要素にする。
+   */
+  pose: string[];
 }
 
 /** 出力の設定 (profile.rs の `OutputSettings`)。 */

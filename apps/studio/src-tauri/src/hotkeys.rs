@@ -97,6 +97,9 @@ pub enum HotkeyAction {
         #[serde(default)]
         module: Option<PathBuf>,
     },
+    /// 出しているシーンのポーズで、要素 `part` (パーツの ID) をそのグループの表示する要素にする (T0842)。
+    #[serde(rename_all = "camelCase")]
+    Pose { part: String },
     /// トラッキングを一時停止する・再開する (押すたびに切り替える)。
     TrackingPause,
     /// トラッキングのキャリブレーション (今の顔を中立にする)。
@@ -202,7 +205,8 @@ mod tests {
               { "keys": "Ctrl+KeyM", "action": { "kind": "motion", "motion": "Wave" } },
               { "keys": "Ctrl+KeyH", "action": { "kind": "dressUp", "slot": "Hair", "module": "/m/long.ugoemod" } },
               { "keys": "Ctrl+KeyP", "action": { "kind": "trackingPause" } },
-              { "keys": "Ctrl+KeyX", "action": { "kind": "somethingNew", "value": 1 } }
+              { "keys": "Ctrl+KeyX", "action": { "kind": "somethingNew", "value": 1 } },
+              { "keys": "Ctrl+KeyW", "action": { "kind": "pose", "part": "Wave" } }
             ]"#,
         )
         .unwrap();
@@ -232,6 +236,12 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&list[4].action).unwrap(),
             serde_json::json!({ "kind": "trackingPause" })
+        );
+        assert_eq!(
+            list[6].action,
+            HotkeyAction::Pose {
+                part: "Wave".into()
+            }
         );
     }
 

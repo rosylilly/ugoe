@@ -75,6 +75,10 @@ pub enum SceneError {
     #[error("cannot dress up: {message}")]
     #[serde(rename = "dressUp")]
     DressUp { message: String },
+    /// 出しているモデル (と付けているモジュール) のポーズに、その要素が無い (T0842)。
+    #[error("the model has no pose part `{part}`")]
+    #[serde(rename = "unknownPose")]
+    UnknownPose { part: String },
 }
 
 /// 操作ウィンドウに出すプロファイルの状態。
@@ -450,6 +454,43 @@ impl Stage {
         self.plan(&id, kind, conductor).map(Some)
     }
 
+    /// 出しているシーンのポーズで、要素 `part` をそのグループの表示する要素にする (操作ウィンドウ・ホットキー、T0842)。
+    ///
+    /// シーンの設定の `pose` を、指揮役が今表示させている要素 (モデルにある要素だけ) の `part` のグループを `part` に替えたものにして、
+    /// [`Stage::begin_update_scene`] と同じく出し直す (見せ方だけの変更なので、ファイルは読まない)。このときモデルに無い要素は
+    /// 設定からも消える。出しているシーンが無ければ何もしない。`part` が出しているモデルのポーズの要素でなければエラー。
+    pub fn begin_show_pose(
+        &mut self,
+        part: &str,
+        conductor: &Conductor,
+    ) -> Result<Option<Pending>, SceneError> {
+        let Some(id) = self.live.clone() else {
+            return Ok(None);
+        };
+        let groups = conductor.pose_groups();
+        let Some(group) = groups.iter().find(|g| g.parts.iter().any(|p| p == part)) else {
+            return Err(SceneError::UnknownPose {
+                part: part.to_owned(),
+            });
+        };
+        let shown = conductor
+            .scene()
+            .map(|s| s.look.pose.as_slice())
+            .unwrap_or_default();
+        let mut scene = self.profile.scenes[self.index_of(&id)?].clone();
+        scene.pose = shown
+            .iter()
+            .map(|p| {
+                if group.parts.contains(p) {
+                    part.to_owned()
+                } else {
+                    p.clone()
+                }
+            })
+            .collect();
+        self.begin_update_scene(scene, conductor)
+    }
+
     /// 番号を進めて切り替えを始める。
     fn plan(&mut self, id: &str, kind: Kind, conductor: &Conductor) -> Result<Pending, SceneError> {
         self.index_of(id)?;
@@ -632,6 +673,15 @@ impl Stage {
         conductor: &mut Conductor,
     ) -> Result<(), SceneError> {
         match self.begin_update_scene(scene, conductor)? {
+            Some(pending) => self.settle(pending, conductor, LOADING),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Stage::begin_show_pose`] と差し込みを続けて行う (テスト用)。
+    #[cfg(test)]
+    pub fn show_pose(&mut self, part: &str, conductor: &mut Conductor) -> Result<(), SceneError> {
+        match self.begin_show_pose(part, conductor)? {
             Some(pending) => self.settle(pending, conductor, LOADING),
             None => Ok(()),
         }
@@ -892,6 +942,7 @@ impl Loader<'_> {
             lighting: scene.lighting.clone(),
             transform: scene.transform,
             background: scene.background.clone(),
+            pose: scene.pose.clone(),
         };
         let background = match &scene.background {
             Background::Image { path } => match self.background(path) {
@@ -1215,6 +1266,45 @@ mod tests {
         let third = conductor.scene().unwrap().clone();
         assert_eq!(third.modules_revision, second.modules_revision);
         assert!(third.revision > second.revision);
+    }
+
+    /// ポーズの要素はシーンに覚え、出すときにモデルに無い要素を捨てて表示させる。開き直すと戻る (T0842)。
+    #[test]
+    fn the_scene_remembers_the_chosen_pose() {
+        let dir = Dir::new();
+        let model = dir.model("pose.json", fixtures::pose_and_effects());
+        let path = dir.0.path().join("p.json");
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        // 出しているシーンが無ければ何もしない。
+        stage.show_pose("ArmB", &mut conductor).unwrap();
+
+        let mut a = scene(&mut stage, Some(&model), &[]);
+        a.pose = vec!["Gone".into(), "ArmA".into()];
+        stage.update_scene(a.clone(), &mut conductor).unwrap();
+        stage.activate(&a.id, &mut conductor).unwrap();
+        // モデルに無い要素は表示させない (設定はそのまま)。
+        assert_eq!(conductor.scene().unwrap().look.pose, ["ArmA"]);
+        stage.save_profile(Some(&path)).unwrap();
+
+        let revision = conductor.scene().unwrap().revision;
+        stage.show_pose("ArmB", &mut conductor).unwrap();
+        let shown = conductor.scene().unwrap();
+        assert!(shown.revision > revision);
+        assert_eq!(shown.look.pose, ["ArmB"]);
+        // 選び直すと、設定はモデルにある要素だけになる。
+        assert_eq!(stage.profile().scene(&a.id).unwrap().pose, ["ArmB"]);
+        assert!(stage.dirty());
+        assert!(matches!(
+            stage.show_pose("Nope", &mut conductor),
+            Err(SceneError::UnknownPose { part }) if part == "Nope"
+        ));
+        assert_eq!(stage.profile().scene(&a.id).unwrap().pose, ["ArmB"]);
+
+        stage.save_profile(None).unwrap();
+        stage.new_profile(&mut conductor);
+        stage.open_profile(&path, &mut conductor).unwrap();
+        assert_eq!(conductor.scene().unwrap().look.pose, ["ArmB"]);
     }
 
     #[test]

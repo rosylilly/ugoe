@@ -122,6 +122,7 @@ mod tests {
             lighting: None,
             transform: Default::default(),
             background: Background::Transparent,
+            pose: Vec::new(),
         }
     }
 

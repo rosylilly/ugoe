@@ -14,6 +14,7 @@ const scene = {
   lighting: null,
   transform: { x: 0, y: 0, scale: 1, rotation: 0 },
   background: { kind: "transparent" },
+  pose: [],
 } as StudioScene;
 
 function failure(patch: Partial<ReceiverFailure> = {}): ReceiverFailure {

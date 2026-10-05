@@ -22,6 +22,7 @@ function scene(id: string, name: string, model: string): SceneSettings {
     lighting: null,
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
     background: { kind: "transparent" },
+    pose: [],
   };
 }
 

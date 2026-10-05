@@ -266,6 +266,9 @@ impl From<SceneError> for CommandError {
             SceneError::DressUp { message: reason } => {
                 Self::new("scene.dress_up", message).arg("reason", reason)
             }
+            SceneError::UnknownPose { part } => {
+                Self::new("scene.unknown_pose", message).arg("part", part)
+            }
         }
     }
 }
@@ -454,6 +457,7 @@ mod tests {
                 message: "x".into(),
             }
             .into(),
+            SceneError::UnknownPose { part: "p".into() }.into(),
             AnimationError::UnknownMotion { name: "m".into() }.into(),
             AnimationError::UnknownExpression { name: "e".into() }.into(),
         ];
