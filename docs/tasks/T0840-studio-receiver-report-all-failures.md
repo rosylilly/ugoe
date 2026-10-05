@@ -1,11 +1,11 @@
 ---
 id: T0840
 title: "スタジオ: 受け手ごとに読めなかったものを 1 つでなくすべて知らせる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0840
 ---
 
 # T0840: スタジオ: 受け手ごとに読めなかったものを 1 つでなくすべて知らせる
