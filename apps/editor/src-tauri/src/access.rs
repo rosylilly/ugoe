@@ -10,9 +10,7 @@
 //! - 書ける: 保存のダイアログで選んだパス。1 回書いたら忘れる。今の保存先への保存 (`save_project`) はバックエンドが
 //!   保存先を持つので、選び直さずに書ける。
 
-use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use ugoe_editor_core::Document;
 
@@ -20,29 +18,25 @@ use crate::AppState;
 use crate::error::{EditorError, IpcResult};
 use crate::project::{ProjectSession, absolute_path, lock_both};
 
-/// webview に読み書きを許したパス。
+/// webview に読み書きを許したパス。ダイアログで選んだパスの扱いはビューア・スタジオと同じ `ugoe_fs::FileAccess` で、
+/// ここではエディタの規則 (開いているプロジェクトの中とプロジェクトが指すファイルも読める) とエラーのコードを足す。
 #[derive(Debug, Default)]
-pub struct FileAccess {
-    /// 開くダイアログで選んだ・ドロップしたパス。
-    chosen: Mutex<HashSet<PathBuf>>,
-    /// 保存のダイアログで選び、まだ書いていないパス。
-    writable: Mutex<HashSet<PathBuf>>,
-}
+pub struct FileAccess(ugoe_fs::FileAccess);
 
 impl FileAccess {
     /// 開くダイアログで選んだ・ドロップしたパスを、読めるパスに加える。
     pub(crate) fn grant_readable(&self, paths: impl IntoIterator<Item = PathBuf>) {
-        lock(&self.chosen).extend(paths);
+        self.0.grant_readable(paths);
     }
 
     /// 保存のダイアログで選んだパスを、1 回だけ書けるパスにする。
     pub(crate) fn grant_writable(&self, path: PathBuf) {
-        lock(&self.writable).insert(path);
+        self.0.grant_writable(path);
     }
 
     /// 書けるパスなら、書けるパスから除いて `Ok` を返す (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
     pub(crate) fn take_writable(&self, path: &Path) -> IpcResult<()> {
-        if lock(&self.writable).remove(path) {
+        if self.0.take_writable(path) {
             Ok(())
         } else {
             Err(EditorError::not_chosen_for_save(path).into())
@@ -56,7 +50,7 @@ impl FileAccess {
         document: &Document,
         session: &ProjectSession,
     ) -> IpcResult<()> {
-        let allowed = lock(&self.chosen).contains(path)
+        let allowed = self.0.is_chosen(path)
             || session.path().is_some_and(|dir| inside(path, dir))
             || project_references(document, session).any(|p| p == path);
         if allowed {
@@ -119,11 +113,6 @@ fn project_references<'a>(
         .map(|m| PathBuf::from(m.path));
     let psd = session.proposals.psd().map(Path::to_path_buf);
     base.into_iter().chain(modules).chain(psd)
-}
-
-/// ロックを取る。ほかのスレッドがロック中に panic していても、中身 (パスの一覧) はそのまま使う。
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[cfg(test)]

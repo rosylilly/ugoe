@@ -6,7 +6,6 @@
 mod acl;
 mod error;
 
-use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -17,7 +16,7 @@ use tauri::{DragDropEvent, Emitter, Manager, State, WebviewEvent, WebviewWindow}
 use tauri_plugin_dialog::DialogExt;
 
 use error::CommandError;
-use ugoe_fs::{ReadError, read_regular_file, write_atomic};
+use ugoe_fs::{ReadError, WritablePaths, read_regular_file, write_atomic};
 
 /// 読み込むファイルの大きさの上限 (誤って巨大なファイルを選んだときにメモリを使い果たさないため)。
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
@@ -253,7 +252,7 @@ async fn save_file_dialog(
                     .map_err(|e| CommandError::dialog_failed(e.to_string()))
             })
             .transpose()
-            .map(|p| p.map(|p| with_extension(p, &extension)))
+            .map(|p| p.map(|p| ugoe_fs::with_extension(p, &extension)))
     })
     .await?;
     let Some(path) = picked else {
@@ -266,17 +265,6 @@ async fn save_file_dialog(
 
 /// 保存のダイアログで選べる (書ける) 拡張子。
 const WRITABLE_EXTENSIONS: &[&str] = &["json", "png"];
-
-/// 拡張子 (大文字小文字は区別しない) が無ければ付け足す。
-fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
-    if has_extension(&path, &[extension]) {
-        return path;
-    }
-    let mut name = path.into_os_string();
-    name.push(".");
-    name.push(extension);
-    PathBuf::from(name)
-}
 
 /// 画面に渡すパスの文字列。画面はこの文字列のまま返してくるので、許したパスもこの文字列から作る。
 fn path_string(path: PathBuf) -> String {
@@ -296,7 +284,8 @@ const MAX_READABLE_PATHS: usize = 1000;
 #[derive(Default)]
 struct FileAccess {
     readable: Mutex<ReadableFiles>,
-    writable: Mutex<HashSet<PathBuf>>,
+    /// 保存のダイアログで選び、まだ書いていないパス (エディタ・スタジオと同じ `ugoe_fs::WritablePaths`)。
+    writable: WritablePaths,
 }
 
 /// 読めるパスの一覧 (古い順) と、それを覚えるファイル。
@@ -330,7 +319,7 @@ impl FileAccess {
         };
         Self {
             readable: Mutex::new(ReadableFiles { paths, store }),
-            writable: Mutex::default(),
+            writable: WritablePaths::default(),
         }
     }
 
@@ -357,12 +346,12 @@ impl FileAccess {
     }
 
     fn grant_writable(&self, path: PathBuf) {
-        lock(&self.writable).insert(path);
+        self.writable.grant(path);
     }
 
     /// 書けるパスなら、書けるパスから除いて `Ok` を返す (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
     fn take_writable(&self, path: &Path) -> Result<(), CommandError> {
-        if lock(&self.writable).remove(path) {
+        if self.writable.take(path) {
             Ok(())
         } else {
             Err(CommandError::not_chosen_for_save(path))
@@ -768,22 +757,6 @@ mod tests {
         assert!(access.take_writable(&shot).is_err());
         // 書けるパスは読めるパスにならない。
         assert!(access.check_readable(&shot).is_err());
-    }
-
-    #[test]
-    fn adds_the_extension_of_the_save_dialog() {
-        assert_eq!(
-            with_extension(PathBuf::from("/home/u/rec"), "json"),
-            PathBuf::from("/home/u/rec.json")
-        );
-        assert_eq!(
-            with_extension(PathBuf::from("/home/u/shot.PNG"), "png"),
-            PathBuf::from("/home/u/shot.PNG")
-        );
-        assert_eq!(
-            with_extension(PathBuf::from("/a/shot.png.txt"), "png"),
-            PathBuf::from("/a/shot.png.txt.png")
-        );
     }
 
     #[test]

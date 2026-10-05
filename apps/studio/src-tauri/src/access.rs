@@ -10,39 +10,32 @@
 //! - 書ける: 保存のダイアログで選んだパス。1 回書いたら忘れる。今の保存先 (`save_profile` の `path` を省いたとき) は
 //!   バックエンドが持つので、選び直さずに書ける。
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use crate::error::CommandError;
 use crate::hotkeys::{Hotkey, HotkeyAction};
-use crate::lock;
 use crate::profile::{Background, Profile, SceneSettings};
 use crate::stage::Stage;
 
-/// webview に読み書きを許したパス。
+/// webview に読み書きを許したパス。ダイアログで選んだパスの扱いはエディタ・ビューアと同じ `ugoe_fs::FileAccess` で、
+/// ここではスタジオの規則 (プロファイルにあるパス・最近のプロファイルも読める) とエラーのコードを足す。
 #[derive(Debug, Default)]
-pub(crate) struct FileAccess {
-    /// 開くダイアログで選んだパス。
-    chosen: Mutex<HashSet<PathBuf>>,
-    /// 保存のダイアログで選び、まだ書いていないパス。
-    writable: Mutex<HashSet<PathBuf>>,
-}
+pub(crate) struct FileAccess(ugoe_fs::FileAccess);
 
 impl FileAccess {
     /// 開くダイアログで選んだパスを、読めるパスに加える。
     pub(crate) fn grant_readable(&self, paths: impl IntoIterator<Item = PathBuf>) {
-        lock(&self.chosen).extend(paths);
+        self.0.grant_readable(paths);
     }
 
     /// 保存のダイアログで選んだパスを、1 回だけ書けるパスにする。
     pub(crate) fn grant_writable(&self, path: PathBuf) {
-        lock(&self.writable).insert(path);
+        self.0.grant_writable(path);
     }
 
     /// 書けるパスなら、書けるパスから除いて `Ok` を返す (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
     pub(crate) fn take_writable(&self, path: &Path) -> Result<(), CommandError> {
-        if lock(&self.writable).remove(path) {
+        if self.0.take_writable(path) {
             Ok(())
         } else {
             Err(CommandError::not_chosen_for_save(path))
@@ -51,7 +44,7 @@ impl FileAccess {
 
     /// `path` を読んでよいか (ダイアログで選んだ・`stage` のプロファイルにある・最近のプロファイル)。
     pub(crate) fn check_readable(&self, path: &Path, stage: &Stage) -> Result<(), CommandError> {
-        let allowed = lock(&self.chosen).contains(path)
+        let allowed = self.0.is_chosen(path)
             || profile_paths(stage.profile()).any(|p| p == path)
             || stage.recent().iter().any(|p| p == path);
         if allowed {

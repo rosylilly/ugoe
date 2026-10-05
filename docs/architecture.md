@@ -43,7 +43,7 @@
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
 | T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
 | T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層と `ugoe-fs` (`ugoe render` と `ugoe-mcp` の `render_png` が共有する。`ugoe-fs` は下の理由) |
-| T1 ファイルの補助 | `ugoe-fs` | なし (std だけ。一時ファイルを経た置き換えと通常のファイルだけの読み込みを、アプリ・`ugoe-mcp`・`ugoe-editor-core`・`ugoe-headless` で共有する。T0025) |
+| T1 ファイルの補助 | `ugoe-fs` | なし (std だけ。一時ファイルを経た置き換え・通常のファイルだけの読み込み・アプリが webview に読み書きを許したパスを、アプリ・`ugoe-mcp`・`ugoe-editor-core`・`ugoe-headless` で共有する。T0025) |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
@@ -167,6 +167,8 @@
 
 - **dialog (3 つとも無し):** 利用者が選んだパスだけを読み書きできるよう、ダイアログをバックエンドが開いて選ばれたパスを覚える
   (`open_file_dialog`・`save_file_dialog`。ビューアは `FileAccess` (T0727)、スタジオは `access.rs` (T0838)、エディタは `access.rs` (T1616))。
+  ダイアログで選んだパスを覚える部分と、保存のダイアログが返したパスに拡張子を補う規則は 3 つで共通なので `ugoe-fs` に置き
+  (`ugoe_fs::FileAccess`・`WritablePaths`・`with_extension`。T0037)、アプリごとの規則とダイアログの組み立て (Tauri に依存する) は各アプリに置く。
   スタジオは開いているプロファイルにあるパスも、エディタは開いているプロジェクトの中とプロジェクトが指すファイルも読める
   ([editor.md#読み書きできるパス](editor.md#読み書きできるパス))。
 - **エディタの opener:** ヘルプと AI の規約のリンクを OS のブラウザで開くため。開ける URL を絞っている。

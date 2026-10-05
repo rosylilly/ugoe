@@ -1266,7 +1266,8 @@ async fn save_file_dialog(
             .transpose()
     })
     .await??;
-    let Some(path) = picked.map(|p| path_string(with_extension(p, PROFILE_EXTENSION))) else {
+    let Some(path) = picked.map(|p| path_string(ugoe_fs::with_extension(p, PROFILE_EXTENSION)))
+    else {
         return Ok(None);
     };
     studio.files.grant_writable(PathBuf::from(&path));
@@ -1275,21 +1276,6 @@ async fn save_file_dialog(
 
 /// プロファイルの拡張子。
 const PROFILE_EXTENSION: &str = "json";
-
-/// 拡張子 (大文字小文字は区別しない) が無ければ付け足す。
-fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
-    if path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case(extension))
-    {
-        return path;
-    }
-    let mut name = path.into_os_string();
-    name.push(".");
-    name.push(extension);
-    PathBuf::from(name)
-}
 
 /// 画面に渡すパスの文字列。画面はこの文字列のまま返してくるので、許したパスもこの文字列から作る。
 fn path_string(path: PathBuf) -> String {
@@ -1716,22 +1702,6 @@ mod tests {
     use super::*;
 
     /// メインのスレッドの外で行った処理の結果を返す。中でパニックしたら、`internal` のコードのエラーにする (T0819)。
-    #[test]
-    fn adds_the_extension_the_save_dialog_left_out() {
-        assert_eq!(
-            with_extension(PathBuf::from("/a/stream"), "json"),
-            PathBuf::from("/a/stream.json")
-        );
-        assert_eq!(
-            with_extension(PathBuf::from("/a/stream.JSON"), "json"),
-            PathBuf::from("/a/stream.JSON")
-        );
-        assert_eq!(
-            with_extension(PathBuf::from("/a/stream.ugoe"), "json"),
-            PathBuf::from("/a/stream.ugoe.json")
-        );
-    }
-
     #[test]
     fn blocking_work_returns_its_result_or_an_internal_error() {
         let studio = Arc::new(Studio::default());

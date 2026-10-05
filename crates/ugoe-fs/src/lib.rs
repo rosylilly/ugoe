@@ -4,12 +4,16 @@
 //! - [`write_atomic`]・[`write_atomic_private`]・[`StagedFile`]: 同じディレクトリの一時ファイルに書いてから名前を変えて
 //!   置き換える。途中で失敗しても前のファイルは残る (`atomic` モジュール)。
 //! - [`read_regular_file`]: 通常のファイルだけを、大きさの上限までで読む (`read` モジュール)。
+//! - [`FileAccess`]・[`WritablePaths`]・[`with_extension`] は、アプリが webview に読み書きを許したパスと、保存のダイアログが
+//!   返したパスの拡張子の補い (`access` モジュール。T0037)。
 //!
 //! ツール層の葉のクレートで、ほかの ugoe のクレートにも外部のクレートにも依存しない (std だけ)。ランタイム層は
 //! ファイル I/O を持たないので使わない。置き場所を決めた理由は `README.md`。
 
+mod access;
 mod atomic;
 mod read;
 
+pub use access::{FileAccess, WritablePaths, with_extension};
 pub use atomic::{Access, StagedFile, write_atomic, write_atomic_private};
 pub use read::{ReadError, read_regular_file};

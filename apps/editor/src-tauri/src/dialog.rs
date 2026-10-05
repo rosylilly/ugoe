@@ -83,12 +83,13 @@ pub async fn save_file_dialog(
             .transpose()
     })
     .await?;
-    let Some(mut path) = picked.map(path_string) else {
+    let Some(mut path) = picked else {
         return Ok(None);
     };
     if let Some(extension) = extension {
-        path = with_extension(path, &extension);
+        path = ugoe_fs::with_extension(path, &extension);
     }
+    let path = path_string(path);
     state.files.grant_writable(PathBuf::from(&path));
     Ok(Some(path))
 }
@@ -137,17 +138,6 @@ fn dialog_failed(error: impl ToString) -> Message {
     EditorError::DialogFailed(error.to_string()).into()
 }
 
-/// 拡張子 (大文字小文字は区別しない) が無ければ付け足す。画面の `withExtension` (`src/lib/filePaths.ts`) と同じ規則
-/// (画面が付け直しても同じパスになり、書けるパスと食い違わない)。
-fn with_extension(path: String, extension: &str) -> String {
-    let suffix = format!(".{}", extension.to_lowercase());
-    if path.to_lowercase().ends_with(&suffix) {
-        path
-    } else {
-        format!("{path}.{extension}")
-    }
-}
-
 /// 画面に渡すパスの文字列。画面はこの文字列のまま返してくるので、許したパスもこの文字列から作る。
 fn path_string(path: PathBuf) -> String {
     path.to_string_lossy().into_owned()
@@ -173,21 +163,4 @@ fn test_answer(kind: &str) -> Option<Option<PathBuf>> {
 #[cfg(not(debug_assertions))]
 fn test_answer(_kind: &str) -> Option<Option<PathBuf>> {
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn adds_the_extension_the_save_dialog_left_out() {
-        assert_eq!(with_extension("/a/shot".into(), "png"), "/a/shot.png");
-        assert_eq!(with_extension("/a/shot.PNG".into(), "png"), "/a/shot.PNG");
-        assert_eq!(
-            with_extension("/a/b.ugoe".into(), "ugoeproj"),
-            "/a/b.ugoe.ugoeproj"
-        );
-        // 名前が拡張子だけでも、画面の `withExtension` と同じく付けない
-        assert_eq!(with_extension("/a/.json".into(), "json"), "/a/.json");
-    }
 }

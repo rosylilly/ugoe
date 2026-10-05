@@ -1,6 +1,6 @@
 [package]
 name = "ugoe-fs"
-description = "ファイルの読み書きの補助: 一時ファイルを経た置き換えと、通常のファイルだけを読む読み込み (アプリ・MCP サーバ・エディタの中核で共有)"
+description = "ファイルの読み書きの補助: 一時ファイルを経た置き換えと、通常のファイルだけを読む読み込み・アプリが webview に読み書きを許したパス (アプリ・MCP サーバ・エディタの中核で共有)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
