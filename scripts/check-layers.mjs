@@ -56,7 +56,9 @@ const ALLOWED = {
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,
   "ugoe-rigging": union(EVAL, ["ugoe-mesher"]),
-  "ugoe-headless": RUNTIME_TIER,
+  // ugoe-headless は外から渡されたパス (--texture・--motion など) を ugoe-fs の read_regular_file で読む (T0035)。
+  // ugoe-fs は std だけに依存する葉なので、ランタイム層だけに依存するという性格は変わらない
+  "ugoe-headless": union(RUNTIME_TIER, FS),
   "ugoe-fs": new Set(),
   "ugoe-editor-core": union(RUNTIME_TIER, ASSETS, RIGGING, FS),
   "ugoe-ai": TOOL_BASE,

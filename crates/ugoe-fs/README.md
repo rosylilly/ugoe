@@ -3,7 +3,7 @@
 **層:** ツール層 (内部のクレートに依存しない葉。依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 ファイルの読み書きの補助。エディタ・ビューア・スタジオ (`apps/*/src-tauri`)・MCP サーバ (`ugoe-mcp`)・
-エディタの中核 (`ugoe-editor-core`) が同じ実装を使う。公開はしない (`publish = false`)。依存は std だけ。
+エディタの中核 (`ugoe-editor-core`)・ヘッドレス描画 (`ugoe-headless`。外から渡されたテクスチャ・JSON の読み込み。T0035) が同じ実装を使う。公開はしない (`publish = false`)。依存は std だけ。
 
 | 項目 | 内容 |
 | --- | --- |

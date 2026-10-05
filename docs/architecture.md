@@ -42,8 +42,8 @@
 | L5 バインディング | `ugoe-ffi`, `ugoe-wasm` | L0〜L4 |
 | T1 素材処理 | `ugoe-psd`, `ugoe-mesher` | core |
 | T1 リギング | `ugoe-rigging` | core, model, runtime, mesher |
-| T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層 (`ugoe render` と `ugoe-mcp` の `render_png` が共有する) |
-| T1 ファイルの補助 | `ugoe-fs` | なし (std だけ。一時ファイルを経た置き換えと通常のファイルだけの読み込みを、アプリ・`ugoe-mcp`・`ugoe-editor-core` で共有する。T0025) |
+| T1 ヘッドレス描画 | `ugoe-headless` | ランタイム層と `ugoe-fs` (`ugoe render` と `ugoe-mcp` の `render_png` が共有する。`ugoe-fs` は下の理由) |
+| T1 ファイルの補助 | `ugoe-fs` | なし (std だけ。一時ファイルを経た置き換えと通常のファイルだけの読み込みを、アプリ・`ugoe-mcp`・`ugoe-editor-core`・`ugoe-headless` で共有する。T0025) |
 | T2 エディタ中核 | `ugoe-editor-core` | ランタイム層, T1 (`ugoe-rigging` を含む) |
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
@@ -60,6 +60,11 @@
   利用者が決めた置き場所は `ugoe` の `lighting` モジュールだが、`ugoe` は (`render` feature で) `ugoe-render` に依存するので、
   `ugoe-render` は `ugoe` の型を使えない。両方が依存できる最も低い層が `ugoe-core` (光源の色が `Rgb`) で、モデルのデータではないので
   `ugoe-model` には置かない。これで C ABI (`ugoe-ffi`) と GDExtension (`bindings/godot`) は `ugoe` を `render` 無しで使え、wgpu を含まない (T0166)。
+- **`ugoe-headless` は `ugoe-fs` に依存してよい。** `ugoe-headless` は外から渡されたパス (`--texture`・`--motion`・`--expression`・`--physics`。
+  MCP サーバではエージェントが渡す) のファイルを読むので、アプリ・`ugoe-mcp` と同じ `ugoe_fs::read_regular_file` (通常のファイルだけを、
+  開いた後にも種類と大きさを見直して上限まで読む) を使い、検査の写しを持たない。`ugoe-fs` は std だけに依存する葉なので、
+  ランタイム層だけに依存するという `ugoe-headless` の性格 (スタジオ・適合テスト (`tests/conformance`) が使っても、ツール層の重いクレートを
+  引き込まない) は変わらない。`ugoe-headless` はファイル I/O と GPU を持つネイティブのクレートで、wasm32 では使わない (利用者の判断。T0035)。
 
 ## 1 フレームのデータフロー
 

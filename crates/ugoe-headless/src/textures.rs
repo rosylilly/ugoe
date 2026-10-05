@@ -49,7 +49,7 @@ pub fn resolve_textures(
     (0..count)
         .map(|i| {
             if let Some((_, path)) = overrides.iter().rev().find(|(j, _)| *j as usize == i) {
-                let bytes = crate::read_file(path)?;
+                let bytes = crate::read_file(path, crate::MAX_TEXTURE_FILE_BYTES)?;
                 // シグネチャで分からなければ PNG として読む (PNG のエラーを出す)。
                 let format = TextureFormat::detect(&bytes).unwrap_or(TextureFormat::Png);
                 return image::decode_image_premultiplied(format, &bytes).map_err(|e| {

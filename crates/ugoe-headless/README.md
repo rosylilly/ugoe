@@ -1,6 +1,6 @@
 # ugoe-headless
 
-**層:** ツール層 (ランタイム層だけに依存する。依存してよいクレートは `scripts/check-layers.mjs` を参照)
+**層:** ツール層 (ランタイム層と、std だけに依存する葉の `ugoe-fs` に依存する。依存してよいクレートは `scripts/check-layers.mjs` を参照)
 
 ヘッドレス描画。`ugoe render` (`ugoe-cli`) と MCP サーバの `render_png` (`ugoe-mcp`) が同じ関数を呼ぶので、
 描画の規則 (出力の大きさと `fit`・背景・パラメータのクランプ・テクスチャ・時間の進め方) が 2 つでずれない。
@@ -36,6 +36,9 @@ gpu.leak();                                // 破棄しない (下の「GPU」)
 - **ライティング:** `Scene::from_bundle` がバンドルの法線マップを持ち、`prepare` がデコードして `Prepared::shading` に入れる。
   光源は `RenderOptions::lighting` (`None` ならレンダラに渡さないので、出力は法線マップが無いのと同じ)。
   `Gpu::render` が `Renderer::set_normal_map` と `set_lighting` を呼ぶ。規則は `ugoe render` の節の「ライティング」。
+- **外から渡されたファイル** (`--texture`・`--motion`・`--expression`・`--physics`) は `ugoe_fs::read_regular_file` で読む。
+  装置・FIFO・ディレクトリは開かずに、上限 (テクスチャは 1 GiB + 1 MiB、JSON は 256 MiB) より大きいファイルは読まずに
+  `Error::Io` を返す (MCP サーバではエージェントがパスを渡すので。T0035)。
 - feature `clap`: `Fit` に `clap::ValueEnum` を付ける (`ugoe-cli` が使う)。
 - エラーは `ugoe_headless::Error` (thiserror)。原因 (`source`) をたどると `anyhow` の `Caused by` と同じ情報になる。
 

@@ -119,26 +119,28 @@ impl Error {
     }
 }
 
-/// 外から渡されたパスのファイルを読む。通常のファイルでなければ (装置・FIFO・ディレクトリ) 読まずにエラーにする
-/// (`/dev/zero` や FIFO を読み続けてメモリを使い果たしたり、止まったりしないように。MCP サーバではエージェントがパスを渡す)。
-pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>, Error> {
-    let error = |source| Error::Io {
+/// テクスチャのファイル (`--texture`) の大きさの上限。画像の一辺の上限 (`ugoe_format::image::DEFAULT_MAX_IMAGE_SIDE`
+/// = 16384) の圧縮していない RGBA の KTX2 (1 GiB) に、ヘッダとメタデータの余裕 (1 MiB) を足した大きさ。
+pub(crate) const MAX_TEXTURE_FILE_BYTES: u64 = 1024 * 1024 * 1024 + 1024 * 1024;
+
+/// JSON のファイル (`--motion`・`--expression`・`--physics`) の大きさの上限。バンドルの中のモーションなどは 1 チャンクの
+/// 展開後の上限 (`ugoe_format::bundle::MAX_DECOMPRESSED_CHUNK_LEN` = 256 MiB) に収まるので、外のファイルも同じ上限にする。
+pub(crate) const MAX_JSON_FILE_BYTES: u64 = ugoe_format::bundle::MAX_DECOMPRESSED_CHUNK_LEN as u64;
+
+/// 外から渡されたパスのファイルを、`max` バイトまで読む。通常のファイルでなければ (装置・FIFO・ディレクトリ) 開かずに
+/// エラーにし、`max` より大きければ読まずにエラーにする (`/dev/zero` や FIFO・巨大なファイルを読み続けてメモリを使い果たしたり、
+/// 止まったりしないように。MCP サーバではエージェントがパスを渡す)。検査はアプリ・MCP サーバと同じ `ugoe_fs::read_regular_file`
+/// (開いた後にも通常のファイルかと大きさを見直す。T0035)。
+pub(crate) fn read_file(path: &Path, max: u64) -> Result<Vec<u8>, Error> {
+    ugoe_fs::read_regular_file(path, max).map_err(|e| Error::Io {
         context: format!("reading {}", path.display()),
-        source,
-    };
-    let metadata = std::fs::metadata(path).map_err(error)?;
-    if !metadata.is_file() {
-        return Err(error(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "not a regular file",
-        )));
-    }
-    std::fs::read(path).map_err(error)
+        source: e.into(),
+    })
 }
 
-/// [`read_file`] で読み、UTF-8 の文字列にする。
+/// [`read_file`] で JSON の上限 ([`MAX_JSON_FILE_BYTES`]) まで読み、UTF-8 の文字列にする。
 pub(crate) fn read_text(path: &Path) -> Result<String, Error> {
-    String::from_utf8(read_file(path)?).map_err(|e| Error::Io {
+    String::from_utf8(read_file(path, MAX_JSON_FILE_BYTES)?).map_err(|e| Error::Io {
         context: format!("reading {}", path.display()),
         source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.utf8_error()),
     })
@@ -415,6 +417,43 @@ mod tests {
     use ugoe_model::fixtures;
 
     use super::*;
+
+    /// 外から渡されたパスは、通常のファイルだけを上限まで読む。装置・FIFO・ディレクトリは開かずに、
+    /// 上限より大きいファイルは読まずにエラーにする (T0035)。
+    #[cfg(unix)]
+    #[test]
+    fn read_file_refuses_non_regular_files_and_files_over_the_limit() {
+        let chain = |e: Error| format!("{e}: {}", std::error::Error::source(&e).unwrap());
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        let err = chain(read_file(Path::new("/dev/zero"), 1024).unwrap_err());
+        assert!(err.contains("not a regular file"), "{err}");
+        let err = chain(read_file(dir, 1024).unwrap_err());
+        assert!(err.contains("not a regular file"), "{err}");
+        let fifo = dir.join("motion.json");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let err = chain(read_file(&fifo, 1024).unwrap_err());
+        assert!(err.contains("not a regular file"), "{err}");
+
+        let file = dir.join("texture.png");
+        std::fs::write(&file, b"12345").unwrap();
+        assert_eq!(read_file(&file, 5).unwrap(), b"12345");
+        let err = read_file(&file, 4).unwrap_err();
+        let Error::Io { context, source } = &err else {
+            panic!("{err:?}");
+        };
+        assert_eq!(context, &format!("reading {}", file.display()));
+        assert_eq!(source.kind(), std::io::ErrorKind::FileTooLarge);
+        assert!(
+            source.to_string().contains("the limit is 4 bytes"),
+            "{source}"
+        );
+    }
 
     /// モデルの検査 (コンパイル) をテクスチャを揃える前に行う。範囲の外のテクスチャの番号
     /// (`u32::MAX` なら 40 億枚の仮のテクスチャ) を作り始めないように。
