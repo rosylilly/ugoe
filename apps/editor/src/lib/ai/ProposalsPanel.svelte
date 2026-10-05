@@ -16,6 +16,9 @@
     「Regenerate with instructions」は前の答えと注文を送って作り直し、新しい提案を後ろに並べる (前の提案は残る)。
     提案には添えた注文と、AI が反映できないと答えた注文 (「Not applied」) を出す。注文はプロジェクトに保存しない
     (docs/editor.md#ai-への注文と作り直し)。
+  - 分類の確認の一覧 (確からしさが低い・名前と食い違う・直したレイヤー) では、ラベルと左右を直すか「Looks right」で
+    今の答えを認める (印が消える)。直したものは「Reset」で分類の答えに戻す。どれも 1 回の Undo で戻り、プロジェクトに残る
+    (`view.correctLayer`・`resetLayer`。docs/editor.md#分類の直し)。
   - AI に送っている間は進み具合の隣に「Cancel」を出す (`view.cancel`。応答を待たずに止め、「Cancelled」と出す。
     docs/ai-integration.md#取り消しと時間の上限)。
   - 「Normal maps from the shapes」(モデルのプロジェクトだけ): 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから
@@ -25,8 +28,9 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, Checkbox, Notice, Slider, Tooltip } from "@ugoe/ui";
+import { Button, Checkbox, Notice, SegmentedControl, Select, Slider, Tooltip } from "@ugoe/ui";
 import { t } from "../i18n";
+import type { LayerSide } from "../ipc";
 import { bulgeForm, bulgeLimits, bulgeUnit } from "../panels/lighting/lighting";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
@@ -66,7 +70,20 @@ const panel = $derived(view.value);
 const summary = $derived(
   panel?.classification ? classificationSummary(panel.classification) : null,
 );
-const review = $derived(panel?.classification?.layers.filter((l) => l.needs_review) ?? []);
+/** 確かめる・直したレイヤー (直すと確かめる印は消えるが、戻せるように一覧に残す)。 */
+const review = $derived(
+  panel?.classification?.layers.filter((l) => l.needs_review || l.corrected) ?? [],
+);
+/** 直すときに選べるラベル。 */
+const labelOptions = $derived(
+  (panel?.classification?.label_choices ?? []).map((l) => ({ value: l, label: l })),
+);
+/** 直すときの左右。 */
+const sideOptions = $derived<{ value: LayerSide; label: string }[]>([
+  { value: "left", label: t("proposals.correct.side.left") },
+  { value: "center", label: t("proposals.correct.side.center") },
+  { value: "right", label: t("proposals.correct.side.right") },
+]);
 const busy = $derived(view.busy !== null);
 
 /** AI を使えない理由 (使えるなら null)。 */
@@ -286,10 +303,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       {/if}
       {#if review.length > 0}
         <p class="ed-hint">{t("proposals.summary.toReview")}</p>
-        <ul class="labels">
-          {#each review as layer, i (i)}
+        <p class="ed-hint">{t("proposals.correct.hint")}</p>
+        <ul class="review">
+          {#each review as layer (layer.path.join("\u0000"))}
+            {@const name = layer.path.join(" / ")}
             <li>
-              {layer.path.join(" / ")} → <code>{layer.label}</code> / {sideText(layer.side)} ({Math.round(layer.confidence * 100)}%)
+              <span class="ugoe-selectable">{name}</span>
+              {#if layer.corrected}
+                {" · "}<span class="muted">{t("proposals.correct.corrected")}</span>
+              {:else}
+                ({Math.round(layer.confidence * 100)}%)
+              {/if}
               {#if layer.name_disagreement}
                 {@const byName = layer.name_disagreement}
                 {" · "}<span class="warn">{t("proposals.summary.nameSays", {
@@ -297,6 +321,37 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                   side: sideText(byName.side ?? layer.side),
                 })}</span>
               {/if}
+              <div class="correct">
+                <Select
+                  aria-label={t("proposals.correct.label.aria", { layer: name })}
+                  value={layer.label}
+                  options={labelOptions}
+                  disabled={busy}
+                  onchange={(label) => view.correctLayer(layer.path, label, layer.side as LayerSide)}
+                />
+                <SegmentedControl
+                  aria-label={t("proposals.correct.side.aria", { layer: name })}
+                  value={layer.side as LayerSide}
+                  options={sideOptions}
+                  disabled={busy}
+                  onchange={(side) => view.correctLayer(layer.path, layer.label, side)}
+                />
+                {#if layer.corrected}
+                  <TipButton
+                    small
+                    disabled={busy}
+                    onclick={() => view.resetLayer(layer.path)}
+                    tooltip={t("proposals.correct.reset.tooltip")}
+                  >{t("proposals.correct.reset.label")}</TipButton>
+                {:else}
+                  <TipButton
+                    small
+                    disabled={busy}
+                    onclick={() => view.correctLayer(layer.path, layer.label, layer.side as LayerSide)}
+                    tooltip={t("proposals.correct.accept.tooltip")}
+                  >{t("proposals.correct.accept.label")}</TipButton>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>
@@ -676,6 +731,24 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     margin: 4px 0;
     padding-left: 18px;
     font-size: 12px;
+  }
+  .review {
+    list-style: none;
+    margin: 4px 0;
+    padding: 0;
+    font-size: 12px;
+  }
+  .review li {
+    padding: 4px 0;
+    border-top: 1px solid var(--ugoe-color-border);
+    overflow-wrap: anywhere;
+  }
+  .review .correct {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
   }
   .proposal {
     border: 1px solid var(--ugoe-color-border);

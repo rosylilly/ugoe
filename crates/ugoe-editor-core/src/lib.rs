@@ -8,6 +8,7 @@ pub mod atlas;
 pub mod automesh;
 pub mod avatar;
 pub mod bundle_project;
+pub mod classification;
 mod cleanup;
 pub mod codegen;
 pub mod command;
@@ -43,6 +44,7 @@ pub mod texture;
 
 pub use atlas::{AtlasOptions, AtlasReport, build_atlas, build_module_atlas};
 pub use automesh::AutoMeshOptions;
+pub use classification::{LayerCorrection, LayerCorrections, LayerSide};
 pub use command::{ChildRef, Command, InferMethod, KeyformCell, KeyformTarget, VertexMove};
 pub use depth::DepthPreset;
 pub use document::{ApplyReport, COALESCE_WINDOW, Coalesce, Document, EditError};
@@ -76,6 +78,8 @@ mod avatar_tests;
 mod blend_shape_tests;
 #[cfg(test)]
 mod bundle_project_tests;
+#[cfg(test)]
+mod classification_tests;
 #[cfg(test)]
 mod cleanup_tests;
 #[cfg(test)]

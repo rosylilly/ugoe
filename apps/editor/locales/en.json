@@ -1754,6 +1754,28 @@
         "center": "center"
       }
     },
+    "correct": {
+      "hint": "Change the label or side to fix a layer, or choose “Looks right” to keep the answer. Your choices are used for the rig and normal maps, are saved with the project, and can be undone.",
+      "corrected": "checked by you",
+      "failed": "Could not change the classification.",
+      "label": {
+        "aria": "Label of {{layer}}"
+      },
+      "side": {
+        "aria": "Side of {{layer}} (the character's own)",
+        "left": "Left",
+        "center": "Center",
+        "right": "Right"
+      },
+      "accept": {
+        "label": "Looks right",
+        "tooltip": "Keep this label and side, and clear the review mark (Undo reverts)"
+      },
+      "reset": {
+        "label": "Reset",
+        "tooltip": "Forget your choice and use the classification's answer again (Undo reverts)"
+      }
+    },
     "groups": {
       "face": "Face, eyes, nose, mouth, brows",
       "body": "Neck, body, arms, clothes",
@@ -1910,7 +1932,8 @@
       "read_only_base": "The base model's {{element}} cannot be edited here. Edit it in the base project.",
       "not_module": "This is not a module project.",
       "texture_too_large": "The image of the texture {{texture}} ({{width}}×{{height}}) is too large. Each side must be at most {{max}} pixels.",
-      "conflicting_texture": "The texture of the mesh {{id}} was given both by name and by the old number. Give it by name only."
+      "conflicting_texture": "The texture of the mesh {{id}} was given both by name and by the old number. Give it by name only.",
+      "invalid_layer_correction": "The classification of the layer cannot be changed ({{reason}})."
     },
     "cell": {
       "missing_axis": "The cell does not specify the axis {{parameter}}.",

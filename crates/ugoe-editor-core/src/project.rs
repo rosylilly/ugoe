@@ -347,7 +347,9 @@ impl Project {
     }
 
     /// 編集中のドキュメントの現在の状態から、保存・書き出し用のプロジェクトを作る。
-    pub fn from_document(meta: ProjectMeta, document: &Document) -> Self {
+    /// 分類の直しは `meta` の `editor.classification` に書く。
+    pub fn from_document(mut meta: ProjectMeta, document: &Document) -> Self {
+        meta.set_layer_corrections(document.layer_corrections());
         Self {
             meta,
             model: document.model().clone(),
@@ -359,11 +361,13 @@ impl Project {
         }
     }
 
-    /// モデル・テクスチャ・物理・モーション・表情から編集用のドキュメントを作る (保存済みの状態として)。
+    /// モデル・テクスチャ・物理・モーション・表情と、`editor.classification` の分類の直しから
+    /// 編集用のドキュメントを作る (保存済みの状態として)。
     pub fn document(&self) -> Document {
         let document = Document::with_textures(self.model.clone(), self.textures.clone())
             .with_animations(self.motions.clone(), self.expressions.clone())
-            .with_physics(self.physics.clone());
+            .with_physics(self.physics.clone())
+            .with_layer_corrections(self.meta.layer_corrections());
         match &self.module {
             Some(context) => document.with_module(context.clone()),
             None => document,

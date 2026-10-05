@@ -2618,6 +2618,36 @@
         "op",
         "id"
       ]
+    },
+    {
+      "description": "PSD のレイヤー `path` (外側のグループから順に、最後がレイヤー自身の名前) の分類を利用者の答え `correction`\n(ラベルと左右) にする。`null` なら直しを消し、分類の答えに戻す。モデルは変えず、`project.json` の\n`editor.classification` に残す。ラベルは小文字の英数字と `_` (語彙にないものはエディタが重ねない)。\n同じ値なら何もしない。`Batch` の中では使えない。",
+      "type": "object",
+      "properties": {
+        "correction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerCorrection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "type": "string",
+          "const": "set_layer_correction"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "op",
+        "path"
+      ]
     }
   ],
   "$defs": {
@@ -4245,6 +4275,32 @@
             "id"
           ]
         }
+      ]
+    },
+    "LayerCorrection": {
+      "description": "利用者が決めた 1 枚のレイヤーの分類 (直したもの・認めたもの)。分類の答えより優先する。",
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "意味ラベル (`face`・`eye_white` など。`docs/ai-integration.md#レイヤーの意味分類`)。",
+          "type": "string"
+        },
+        "side": {
+          "$ref": "#/$defs/LayerSide"
+        }
+      },
+      "required": [
+        "label",
+        "side"
+      ]
+    },
+    "LayerSide": {
+      "description": "左右 (キャラクター自身の左右。`ugoe_ai::classify::Side` と同じ値)。",
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "center"
       ]
     },
     "LipSync": {

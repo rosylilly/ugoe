@@ -24,6 +24,7 @@ use ugoe_model::{
 };
 
 use crate::automesh::AutoMeshOptions;
+use crate::classification::LayerCorrection;
 use crate::depth::DepthPreset;
 use crate::keyform::Keyform;
 use crate::motion_edit::SegmentShape;
@@ -776,6 +777,15 @@ pub enum Command {
     /// グルーを消す。
     RemoveGlue {
         id: GlueId,
+    },
+    // ---- 分類の直し (T1615)。規則は `docs/editor.md#分類の直し` ----
+    /// PSD のレイヤー `path` (外側のグループから順に、最後がレイヤー自身の名前) の分類を利用者の答え `correction`
+    /// (ラベルと左右) にする。`null` なら直しを消し、分類の答えに戻す。モデルは変えず、`project.json` の
+    /// `editor.classification` に残す。ラベルは小文字の英数字と `_` (語彙にないものはエディタが重ねない)。
+    /// 同じ値なら何もしない。`Batch` の中では使えない。
+    SetLayerCorrection {
+        path: Vec<String>,
+        correction: Option<LayerCorrection>,
     },
 }
 

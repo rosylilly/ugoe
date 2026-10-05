@@ -200,3 +200,42 @@ describe("ProposalsView cancel", () => {
     expect(cancelled).not.toHaveBeenCalled();
   });
 });
+
+describe("ProposalsView layer corrections", () => {
+  /** `send` で組み立てたコマンドを覚える偽のドキュメント。 */
+  const fakeDoc = (ok = true) => {
+    const sent: unknown[] = [];
+    const doc = {
+      revision: 1,
+      error: ok ? null : "rejected",
+      send: vi.fn(async (build: () => unknown) => {
+        sent.push(build());
+        return ok ? { warnings: [], mirrored: [] } : null;
+      }),
+    } as unknown as EditorDocument;
+    return { doc, sent };
+  };
+
+  it("sends a correction and an acknowledgement as one command each", async () => {
+    const { doc, sent } = fakeDoc();
+    const view = new ProposalsView(doc);
+    await view.correctLayer(["Face", "Eye R"], "eye_white", "right");
+    await view.resetLayer(["Face", "Eye R"]);
+    expect(sent).toEqual([
+      {
+        op: "set_layer_correction",
+        path: ["Face", "Eye R"],
+        correction: { label: "eye_white", side: "right" },
+      },
+      { op: "set_layer_correction", path: ["Face", "Eye R"], correction: null },
+    ]);
+    expect(view.error).toBeNull();
+  });
+
+  it("shows why a correction was rejected", async () => {
+    const { doc } = fakeDoc(false);
+    const view = new ProposalsView(doc);
+    await view.correctLayer(["x"], "eye", "left");
+    expect(view.error).toBe("rejected");
+  });
+});

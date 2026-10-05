@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::{
-    ClassifyGuidance, ClassifyOptions, LayerLabel, classification_requests_guided,
+    ClassifyGuidance, ClassifyOptions, Label, LayerLabel, Side, classification_requests_guided,
     classify_by_name, classify_layers_guided, overview_png,
 };
 use ugoe_ai::instructions::Instructions;
@@ -42,8 +42,8 @@ use ugoe_ai::rig::{
 };
 use ugoe_ai::{AiError, Proposal, Provider, ProviderRequest};
 use ugoe_editor_core::{
-    ApplyReport, Command, Document, KeyformTarget, ProposalOrigin, ProposalView, Proposals,
-    PsdImportError, import,
+    ApplyReport, Command, Document, KeyformTarget, LayerCorrection, LayerCorrections, LayerSide,
+    ProposalOrigin, ProposalView, Proposals, PsdImportError, import,
 };
 use ugoe_model::{Mesh, MeshId};
 use ugoe_psd::{ImportLimits, LayerTree};
@@ -162,9 +162,20 @@ impl ProposalSession {
         self.psd = Some(path);
     }
 
-    /// 最後に分類した PSD のレイヤーのラベル (法線マップのまとまりに使う。`crate::lighting`)。
-    pub(crate) fn layer_labels(&self) -> Option<Vec<LayerLabel>> {
-        self.classification.as_ref().map(|c| c.labels.clone())
+    /// 最後に分類した PSD のレイヤーのラベルに、`document` の分類の直しを重ねたもの (法線マップのまとまりに使う。
+    /// `crate::lighting`)。
+    pub(crate) fn layer_labels(&self, document: &Document) -> Option<Vec<LayerLabel>> {
+        self.classification
+            .as_ref()
+            .map(|c| corrected_labels(&c.labels, document.layer_corrections()))
+    }
+
+    /// 最後の分類に `document` の分類の直しを重ねたもの。
+    fn corrected(&self, document: &Document) -> Option<Classified> {
+        self.classification.as_ref().map(|c| Classified {
+            labels: corrected_labels(&c.labels, document.layer_corrections()),
+            ..c.clone()
+        })
     }
 
     /// 提案の置き場 (エディタにつないだエージェントの提案もここに置く。`crate::mcp`)。
@@ -264,7 +275,10 @@ impl ProposalSession {
                 .collect(),
             proposals,
             psd: self.psd.as_ref().map(|p| p.display().to_string()),
-            classification: self.classification.as_ref().map(Classified::view),
+            classification: self
+                .classification
+                .as_ref()
+                .map(|c| c.view(document.layer_corrections())),
         }
     }
 }
@@ -288,6 +302,9 @@ pub struct LayerLabelView {
     /// AI の分類が名前の規則の確からしい答えと食い違うときの、名前の規則の答え
     /// (`LayerLabel::name_disagreement`)。なければ `null`。
     pub name_disagreement: Option<NameDisagreementView>,
+    /// 利用者が直した (または「これでよい」と認めた) か (`docs/editor.md#分類の直し`)。直したレイヤーは
+    /// `label`・`side` が直した値で、確からしさは 1、食い違いの印はない。
+    pub corrected: bool,
 }
 
 /// 名前の規則と AI の分類の食い違い (`ugoe_ai::classify::NameDisagreement`)。食い違う項目にだけ名前の規則の答えが入る。
@@ -309,17 +326,54 @@ pub struct Classification {
     /// AI で分類したときに添えた注文。
     pub instructions: Option<String>,
     pub layers: Vec<LayerLabelView>,
+    /// 直すときに選べるラベル (`ugoe_ai::classify::Label` の語彙。`docs/ai-integration.md#レイヤーの意味分類` の順)。
+    pub label_choices: Vec<String>,
+}
+
+/// 分類の直しのラベルと左右 (語彙にないラベルなら `None` で、重ねない)。
+fn correction_of(correction: &LayerCorrection) -> Option<(Label, Side)> {
+    let label = correction.label.parse().ok()?;
+    let side = match correction.side {
+        LayerSide::Left => Side::Left,
+        LayerSide::Right => Side::Right,
+        LayerSide::Center => Side::Center,
+    };
+    Some((label, side))
+}
+
+/// 分類 `labels` に利用者の直し `corrections` を重ねる (`docs/editor.md#分類の直し`)。直したレイヤーは
+/// 人が確かめたものとして、確からしさを 1 にし、名前の規則との食い違いの印を消す (差分の組は保つ)。
+pub(crate) fn corrected_labels(
+    labels: &[LayerLabel],
+    corrections: &LayerCorrections,
+) -> Vec<LayerLabel> {
+    labels
+        .iter()
+        .map(
+            |l| match corrections.get(&l.layer_path).and_then(correction_of) {
+                Some((label, side)) => LayerLabel {
+                    label,
+                    side,
+                    confidence: 1.0,
+                    name_disagreement: None,
+                    ..l.clone()
+                },
+                None => l.clone(),
+            },
+        )
+        .collect()
 }
 
 impl Classified {
-    fn view(&self) -> Classification {
+    /// 画面に渡す形。`corrections` の直しを重ねる。
+    fn view(&self, corrections: &LayerCorrections) -> Classification {
         let options = ClassifyOptions::default();
+        let labels = corrected_labels(&self.labels, corrections);
         Classification {
             psd: self.psd.display().to_string(),
             by_ai: self.by_ai,
             instructions: self.instructions.as_ref().map(|i| i.as_str().to_owned()),
-            layers: self
-                .labels
+            layers: labels
                 .iter()
                 .map(|l| LayerLabelView {
                     path: l.layer_path.clone(),
@@ -332,8 +386,13 @@ impl Classified {
                         label: d.label.map(|l| l.as_str().to_owned()),
                         side: d.side.map(|s| s.as_str().to_owned()),
                     }),
+                    corrected: corrections
+                        .get(&l.layer_path)
+                        .and_then(correction_of)
+                        .is_some(),
                 })
                 .collect(),
+            label_choices: Label::ALL.iter().map(|l| l.as_str().to_owned()).collect(),
         }
     }
 }
@@ -843,7 +902,11 @@ pub(crate) fn propose_normal_maps_in(
         let document = lock_document(state)?;
         let session = lock_project(state)?;
         let base = Base::of(&document, &session);
-        (document.detached(), base, session.proposals.layer_labels())
+        (
+            document.detached(),
+            base,
+            session.proposals.layer_labels(&document),
+        )
     };
     let (proposal, sections) =
         normal_map_proposal_in(&document, layers.as_deref(), choices, replace_existing)?;
@@ -889,14 +952,15 @@ pub(crate) fn classify_guided_in(
     let labels = if use_ai {
         guidance.instructions = instructions(ask.instructions)?;
         if ask.revise {
+            // 前の答えには利用者の直しを重ねたものを送る。
+            let document = lock_document(state)?;
             let session = lock_project(state)?;
             let current = session
                 .proposals
-                .classification
-                .as_ref()
+                .corrected(&document)
                 .filter(|c| c.psd == path)
                 .ok_or(EditorError::NotClassified)?;
-            guidance.previous = Some(current.labels.clone());
+            guidance.previous = Some(current.labels);
         }
         let requests =
             classification_requests_guided(&tree, &ClassifyOptions::default(), &guidance)
@@ -921,7 +985,8 @@ pub(crate) fn classify_guided_in(
         by_ai: use_ai,
         instructions: guidance.instructions,
     };
-    let value = classified.view();
+    let document = lock_document(state)?;
+    let value = classified.view(document.layer_corrections());
     let mut session = lock_project(state)?;
     // 分類する間に別のプロジェクトに替わったら、そのプロジェクトには残さない
     if session.id() != opened {
@@ -987,10 +1052,10 @@ fn make_rig(
     let (document, base, classified) = {
         let document = lock_document(state)?;
         let session = lock_project(state)?;
+        // 利用者の直しを重ねた分類から作る。
         let classified = session
             .proposals
-            .classification
-            .clone()
+            .corrected(&document)
             .ok_or(EditorError::NotClassified)?;
         (
             document.detached(),

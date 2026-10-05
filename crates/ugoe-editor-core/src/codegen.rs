@@ -492,6 +492,7 @@ fn sample_commands() -> Vec<Command> {
     .chain(avatar_samples())
     .chain(lighting_samples())
     .chain(slot_samples())
+    .chain(classification_samples())
     .collect()
 }
 
@@ -862,6 +863,24 @@ pub(crate) fn slot_samples() -> Vec<Command> {
                 parameters: vec!["BodySway".into()],
             },
             keep_look: true,
+        },
+    ]
+}
+
+/// 分類の直しのコマンドの見本 (`docs/editor.md#分類の直し`)。
+pub(crate) fn classification_samples() -> Vec<Command> {
+    let path = vec!["Face".to_owned(), "Eye L".to_owned()];
+    vec![
+        Command::SetLayerCorrection {
+            path: path.clone(),
+            correction: Some(crate::LayerCorrection {
+                label: "eye_white".into(),
+                side: crate::LayerSide::Left,
+            }),
+        },
+        Command::SetLayerCorrection {
+            path,
+            correction: None,
         },
     ]
 }

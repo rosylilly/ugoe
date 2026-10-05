@@ -9,6 +9,8 @@
 //   (エディタを開いている間だけ。docs/editor.md#ai-への注文と作り直し)。
 // - 法線マップの提案 (AI なし): まとまりの一覧 (`normalGroups`) を読み、まとまりごとに含めるか・強さを選んで
 //   (`normalPicks`) 提案する。提案のコマンドはまとまりごとに区切って出す (docs/editor.md#法線マップの提案)。
+// - 分類の直し (`correctLayer`・`resetLayer`): ラベル・左右を直す・「これでよい」と認めるのは `set_layer_correction` の
+//   コマンドで、1 回の Undo で戻り、プロジェクトに残る (docs/editor.md#分類の直し)。
 // - AI に送っている間 (`sending`) は「取り消す」(`cancel`) で止められる。取り消したらエラーではなく「取り消しました」と
 //   出す (`notice`。docs/ai-integration.md#取り消しと時間の上限)。
 
@@ -20,6 +22,7 @@ import { t } from "../i18n";
 import {
   type ConsentAnswer,
   ipc,
+  type LayerSide,
   type Model,
   type ModuleRigChoice,
   type NormalMapGroupView,
@@ -378,6 +381,34 @@ export class ProposalsView {
     await this.#task(t("proposals.busy.applying"), async () => {
       const report = await this.#doc.applyWith(() => ipc.adoptProposal(id, excluded));
       if (!report) throw new Error(this.#doc.error ?? t("proposals.adoptFailed"));
+      this.value = await ipc.getProposals();
+    });
+  }
+
+  /**
+   * レイヤー `path` の分類を `label`・`side` にする (直す・今の答えを「これでよい」と認める)。1 回の Undo で戻る。
+   * 直したレイヤーは確からしさ 1 になり、食い違いの印が消える。
+   */
+  async correctLayer(path: string[], label: string, side: LayerSide): Promise<void> {
+    await this.#setCorrection(path, { label, side });
+  }
+
+  /** レイヤー `path` の直しを消し、分類の答えに戻す。1 回の Undo で戻る。 */
+  async resetLayer(path: string[]): Promise<void> {
+    await this.#setCorrection(path, null);
+  }
+
+  async #setCorrection(
+    path: string[],
+    correction: { label: string; side: LayerSide } | null,
+  ): Promise<void> {
+    await this.#task(null, async () => {
+      const report = await this.#doc.send(() => ({
+        op: "set_layer_correction",
+        path,
+        correction,
+      }));
+      if (!report) throw new Error(this.#doc.error ?? t("proposals.correct.failed"));
       this.value = await ipc.getProposals();
     });
   }

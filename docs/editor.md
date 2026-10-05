@@ -58,6 +58,7 @@
 | ポーズ | `set_pose` (`Model::pose` を丸ごと置き換える。[ポーズの編集](#ポーズの編集)) |
 | 着せ替えのスロット | `add_slot`、`set_slot`、`remove_slot` ([スロットの編集](#スロットの編集)) |
 | モジュールのプロジェクト | `set_module_settings` (名前・スロット・条件と、取り付け先の違うスロットへ見た目を保って移すか `keep_look`。[モジュールの設定](#モジュールの設定)) |
+| PSD のレイヤーの分類 | `set_layer_correction` (レイヤーのパスの分類を利用者の答えにする・`null` で消す。モデルは変えない。[分類の直し](#分類の直し)) |
 | キャンバス | `set_canvas` (`width`・`height`・`origin`。大きさは 0 より大きい有限の値。要素の座標は変えない) |
 | キーフォームの推定 | `infer_keyforms`、`mirror_keyforms`、`mark_keyform_authored`、`mark_keyform_derived`、`set_keyform_inference`、`set_mirror_pair` (下の「推定とミラー」)、`set_depth`・`apply_depth_preset` ([深度の編集](#深度の編集)) |
 | モーション・表情 | `add_motion`、`remove_motion`、`rename_motion`、`set_motion_properties`、`add_motion_curve`、`remove_motion_curve`、`set_motion_curve_fade`、`set_motion_key`、`move_motion_key`、`remove_motion_key`、`set_motion_segment`、`set_motion_events`、`add_expression`、`remove_expression`、`rename_expression`、`set_expression_properties`、`set_expression_parameters` ([モーションと表情の編集](#モーションと表情の編集)) |
@@ -1638,10 +1639,11 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
     `RigParams::default`) で、何も送りません。キーがなくても使えます。
   - 深度推定 (T0505) の実際の推定器はまだないので、顔の振り向きは深度マップなし (顔の外接矩形に内接する楕円体。
     `TurnDepth::Rules`) で組みます。推定器ができたら、同じ流れに「深度を推定する」段階を足します。
-  - 分類とその PSD はプロジェクトを開いている間だけ持ちます (ファイルには残さない)。確からしさの低いレイヤーと、
+  - 分類とその PSD はプロジェクトを開いている間だけ持ちます (分類の答えはファイルには残さない)。利用者が直したラベル・左右と
+    「これでよい」と認めた答えは、ドキュメントの状態として持ち、`project.json` に残します ([分類の直し](#分類の直し))。確からしさの低いレイヤーと、
     AI の分類が名前の規則の確からしい答えと食い違うレイヤー (`needs_review`。食い違いは `LayerLabelView.name_disagreement` に
     名前の規則のラベルか左右。T0546、[ai-integration.md](ai-integration.md#レイヤーの意味分類)) は、パネルと提案の理由の末尾に
-    出します (食い違いには「名前では eye_white / キャラクターの右」のように名前の規則の答えを並べる)。分類の結果を画面で直す機能はまだありません。
+    出します (食い違いには「名前では eye_white / キャラクターの右」のように名前の規則の答えを並べる)。パネルの一覧ではその場で直せます。
     AI が同じ部品の別の絵 (差分) とした組 (`LayerLabelView.variant`。[ai-integration.md](ai-integration.md#レイヤーの意味分類))
     は、パネルの「Labels」の中に「Alternative drawings of the same part」として並べます (T0523)。
 - **外部に送るとき:** 送る IPC コマンド (`classify_psd_layers`・`propose_rig_from_psd`) は、[送る前の確認](#ai-の設定と送信の同意)を
@@ -1681,7 +1683,7 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 
 | コマンド | 内容 |
 | --- | --- |
-| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections, stale_rigs }` (一覧・元にする PSD・最後の分類 (レイヤーごとの `LayerLabelView { path, label, side, confidence, needs_review, variant, name_disagreement }`)・作り直せる提案・コマンドの区切り・作り直しの知らせ) |
+| `get_proposals` | `ProposalState { proposals, psd, classification, regenerable, sections, stale_rigs }` (一覧・元にする PSD・最後の分類 (分類の直しを重ねたもの。レイヤーごとの `LayerLabelView { path, label, side, confidence, needs_review, variant, name_disagreement, corrected }` と、直すときに選べるラベル `label_choices`)・作り直せる提案・コマンドの区切り・作り直しの知らせ) |
 | `classify_psd_layers(psd?, use_ai, instructions?, revise, consent?)` | 分類して覚える。`AiReply<Classification>`。`psd` を省くと取り込んだ PSD。`revise` なら今の分類を前の答えとして送る |
 | `propose_rig_from_psd(use_ai, instructions?, consent?, module_options?)` | 分類からリグを提案し、一覧に置く。`AiReply<ProposalView>`。`module_options` はモジュールのプロジェクトの組み方 (`ModuleRigChoice`。省略すると既定) |
 | `regenerate_rig_proposal(id, instructions?, consent?, module_options?)` | 提案を前の答えと注文を添えて作り直し、後ろに並べる (いつも AI)。`AiReply<ProposalView>` |
@@ -1691,6 +1693,30 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 | `adopt_proposal(id, excluded)` | 外したコマンドを除いて採用する (1 回の Undo で戻る)。`ApplyReport` |
 | `reject_proposal(id)` | 提案を捨てる。`ProposalState` |
 | `dismiss_stale_rigs()` | 本体の変形を写した後に形を編集した衣装のメッシュの知らせ (`ProposalState.stale_rigs`) を消す (今の形を覚え直し、`editor.rigged_meshes` に書く)。`ProposalState` |
+
+### 分類の直し
+
+AI タブの分類の確認の一覧で、レイヤーのラベル・左右を直し、名前の規則との食い違いを「これでよい」と認めて印を消します (T1615)。
+操作の手順は [マニュアル](manual/ai.md#分類を直す)。
+
+- **一覧:** 確かめたほうがよいレイヤー (`needs_review`) と、直したレイヤー (`LayerLabelView.corrected`) を並べます。各行でラベル
+  (`Classification.label_choices`。[ai-integration.md](ai-integration.md#レイヤーの意味分類)の語彙) と左右 (キャラクター自身の左右) を選ぶと直し、
+  「Looks right」で今の答えをそのまま利用者の答えにします。直した行は「checked by you」と出し、「Reset」で直しを消して分類の答えに戻します。
+- **コマンド:** どれも `set_layer_correction { path, correction }` (`correction` は `{ label, side }` か、消すなら `null`) を 1 つ送り、
+  **1 回の Undo で戻ります**。直しは `Document` のスナップショット (`LayerCorrections`) に入り、モデルは変えません (検証もしない)。
+  同じ値なら何もしません (Undo を積まない)。`batch` の中では使えません (`edit.invalid_layer_correction`)。
+  - 受け付ける形: パスは 1〜64 段で、名前は 1024 文字まで。ラベルは 1〜64 バイトの小文字の英数字と `_`。直しは 65536 件まで。
+    外れれば `edit.invalid_layer_correction` で拒み、何も変えません。ラベルの語彙は ugoe-editor-core は知らない (`ugoe-ai` に依存しない) ので、
+    語彙にないラベルの直しは受け付けますが、重ねる側 (エディタ) が無視します。
+  - 直しもドキュメントの状態を変えるので、未保存の印が付き、置いてある提案は古く (stale) なります (直した分類でリグを提案し直す)。
+- **重ね方 (`src-tauri/src/proposals.rs` の `corrected_labels`):** 分類の答えのうち、パス (`LayerLabel::layer_path`) が同じレイヤーのラベルと
+  左右を直しで置き換え、人が確かめたものとして確からしさを 1 にし、名前の規則との食い違いの印を消します (差分の組は保つ)。
+  画面の一覧 (`get_proposals`)・リグの提案 (`propose_rig_from_psd`・`regenerate_rig_proposal`)・分類の作り直しで送る前の答え (`revise`)・
+  法線マップのまとまり (`get_normal_map_groups` など) は、どれも重ねた分類を使います。分類し直しても直しは残り、新しい答えの上に重ねます。
+- **保存:** `project.json` の `editor.classification` (`{"corrections": [{"path": [...], "label": "...", "side": "left"}]}`。
+  [file-formats.md](spec/file-formats.md#プロジェクト-ugoeproj)) に、保存したときに書きます。PSD のパスは持たず、レイヤーのパスだけで対応させるので、
+  同じ構成で書き出し直した PSD にも効きます。直しがなければ項目を書きません。読めない件は捨てます。
+  `.ugoe` には書き出しません。外部のエージェント (MCP の `get_psd_layers`・`set_layer_labels`) はまだこの直しを読みません。
 
 ### 法線マップの提案
 
@@ -2070,6 +2096,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `module.*` (モジュールのプロジェクトで作業用のモデルを作り直せない。`EditError::Module`) | 中の `ModuleError` のコードと引数 (下の「プロジェクト・モジュール」の表。本体の要素の編集は `edit.read_only_base`、モジュールとして表せないものは `edit.module_shape`、モジュールでないものは `edit.not_module`) |
 | `edit.texture_too_large` (テクスチャ・法線マップの追加・差し替えとメッシュの作り直しで、画像の一辺がデコードの上限を超える。`texture` は法線マップならその画像の名前) | `texture`・`width`・`height`・`max` (画素) |
 | `edit.conflicting_texture` (`set_mesh_properties` でテクスチャを `texture_name` と非推奨の `texture` の両方で指定した) | `id` (メッシュ) |
+| `edit.invalid_layer_correction` (分類の直し `set_layer_correction` が正しくない・`batch` の中で使った。[分類の直し](#分類の直し)) | `reason` |
 
 **キーフォームのセル (`CellError`)**
 

@@ -300,6 +300,9 @@ export const messageCodes: Record<string, readonly string[]> = {
     "id",
     "reason"
   ],
+  "edit.invalid_layer_correction": [
+    "reason"
+  ],
   "edit.invalid_model": [
     "count",
     "details"

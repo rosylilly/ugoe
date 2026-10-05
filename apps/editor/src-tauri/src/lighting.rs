@@ -24,7 +24,6 @@ use ugoe_editor_core::{ApplyReport, Command, Document};
 use ugoe_model::{MeshId, Model};
 
 use crate::AppState;
-use crate::ai::lock_project;
 use crate::commands::{blocking, lock};
 use crate::error::{EditorError, IpcResult};
 use crate::project::{absolute_path, lock_both};
@@ -71,9 +70,13 @@ fn mesh_labels(model: &Model, layers: Option<&[LayerLabel]>) -> BTreeMap<MeshId,
     labels
 }
 
-/// 最後に分類した PSD のレイヤーのラベル (ドキュメントのロックより先に取る)。
-fn layer_labels(state: &AppState) -> IpcResult<Option<Vec<LayerLabel>>> {
-    Ok(lock_project(state)?.proposals.layer_labels())
+/// ドキュメントと、最後に分類した PSD のレイヤーのラベル (分類の直しを重ねたもの)。
+fn document_and_labels(
+    state: &AppState,
+) -> IpcResult<(std::sync::MutexGuard<'_, Document>, Option<Vec<LayerLabel>>)> {
+    let (document, session) = lock_both(state)?;
+    let layers = session.proposals.layer_labels(&document);
+    Ok((document, layers))
 }
 
 impl NormalMapGroupView {
@@ -301,8 +304,7 @@ pub fn get_normal_map_group(
     state: State<'_, AppState>,
     texture: String,
 ) -> IpcResult<NormalMapGroupView> {
-    let layers = layer_labels(&state)?;
-    let document = lock(&state)?;
+    let (document, layers) = document_and_labels(&state)?;
     normal_map_group_in(&document, layers.as_deref(), &texture)
 }
 
@@ -310,8 +312,7 @@ pub fn get_normal_map_group(
 /// 単独でふくらませるもの (`alone` と、ラベルのない `null`) はそれぞれ 1 行にまとめて最後に置く。
 #[tauri::command]
 pub fn get_normal_map_groups(state: State<'_, AppState>) -> IpcResult<Vec<NormalMapGroupView>> {
-    let layers = layer_labels(&state)?;
-    let document = lock(&state)?;
+    let (document, layers) = document_and_labels(&state)?;
     normal_map_groups_in(&document, layers.as_deref())
 }
 
@@ -343,7 +344,11 @@ pub(crate) fn generate_texture_normal_map_in(
     let (document, base, layers) = {
         let (document, session) = lock_both(state)?;
         let base = Base::of(&document, &session);
-        (document.detached(), base, session.proposals.layer_labels())
+        (
+            document.detached(),
+            base,
+            session.proposals.layer_labels(&document),
+        )
     };
     let command =
         generate_normal_map_in(&document, layers.as_deref(), texture, settings, whole_group)?;

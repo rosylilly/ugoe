@@ -6657,5 +6657,24 @@ export const commands: Command[] = [
       ]
     },
     "keep_look": true
+  },
+  {
+    "op": "set_layer_correction",
+    "path": [
+      "Face",
+      "Eye L"
+    ],
+    "correction": {
+      "label": "eye_white",
+      "side": "left"
+    }
+  },
+  {
+    "op": "set_layer_correction",
+    "path": [
+      "Face",
+      "Eye L"
+    ],
+    "correction": null
   }
 ];

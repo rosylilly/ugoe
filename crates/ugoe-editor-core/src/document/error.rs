@@ -180,6 +180,10 @@ pub enum EditError {
         "mesh `{id}`: give the texture by `texture_name` only, not together with the deprecated `texture` index"
     )]
     ConflictingTexture { id: String },
+    /// 分類の直し (`Command::SetLayerCorrection`) が正しくない (空のパス・形の違うラベル・数の上限など。
+    /// `docs/editor.md#分類の直し`)。`Batch` の中で使ったときも。
+    #[error("layer correction: {reason}")]
+    InvalidLayerCorrection { reason: String },
 }
 
 fn join(errors: &[ValidationError]) -> String {

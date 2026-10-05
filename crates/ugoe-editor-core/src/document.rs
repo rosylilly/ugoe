@@ -12,6 +12,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{Canvas, KeyformOrigin, Model, Module};
 use ugoe_rigging::{InferScope, MirrorOptions};
 
+use crate::classification::LayerCorrections;
 use crate::command::KeyformTarget;
 use crate::grid;
 use crate::inference::{MirrorReport, RederiveWarning};
@@ -84,6 +85,9 @@ struct Snapshot {
     /// このときモデルは本体と合成した作業用のモデルで、本体の部分は読み取り専用。
     /// 名前・スロット・条件は [`Command::SetModuleSettings`] で変わるので、Undo の単位に含める。
     module: Option<Arc<ModuleContext>>,
+    /// PSD のレイヤーの分類の直し (`docs/editor.md#分類の直し`)。モデルの外のデータだが、
+    /// [`Command::SetLayerCorrection`] で変わるので Undo の単位に含める。
+    corrections: Arc<LayerCorrections>,
     state: u64,
     /// この状態の検証の結果 (初めて要ったときに求める)。状態を変えたら空に戻す ([`Snapshot::edited`])。
     problems: OnceLock<Problems>,
@@ -120,6 +124,7 @@ impl Document {
                 animations: Animations::default(),
                 physics: None,
                 module: None,
+                corrections: Arc::default(),
                 state: 0,
                 problems: OnceLock::new(),
             },
@@ -172,6 +177,17 @@ impl Document {
     /// 表情 (保存・書き出しの順)。
     pub fn expressions(&self) -> &[Expression] {
         &self.current.animations.expressions
+    }
+
+    /// 作ったばかりのドキュメントに、分類の直しを持たせる (保存済みの状態のまま)。
+    pub fn with_layer_corrections(mut self, corrections: LayerCorrections) -> Self {
+        self.current.corrections = Arc::new(corrections);
+        self
+    }
+
+    /// PSD のレイヤーの分類の直し (`docs/editor.md#分類の直し`)。
+    pub fn layer_corrections(&self) -> &LayerCorrections {
+        &self.current.corrections
     }
 
     /// 物理の設定を持たせる (作った時点の状態として。保存済みのまま)。
@@ -324,6 +340,10 @@ impl Document {
                 mirrored: Vec::new(),
             });
         }
+        if let Command::SetLayerCorrection { path, correction } = command {
+            self.set_layer_correction(path, correction, merge)?;
+            return Ok(ApplyReport::default());
+        }
         let mut next = self.current.edited();
         let mut touched = Vec::new();
         let mut mirrored = Vec::new();
@@ -393,6 +413,32 @@ impl Document {
         Ok(ApplyReport { warnings, mirrored })
     }
 
+    /// [`Command::SetLayerCorrection`]: 分類の直しだけを変えた状態を作る (モデルは変えないので検証し直さない)。
+    /// 変わらなければ何もしない。
+    fn set_layer_correction(
+        &mut self,
+        path: Vec<String>,
+        correction: Option<crate::LayerCorrection>,
+        merge: bool,
+    ) -> Result<(), EditError> {
+        let mut corrections = (*self.current.corrections).clone();
+        let changed = corrections
+            .set(path, correction)
+            .map_err(|reason| EditError::InvalidLayerCorrection { reason })?;
+        if !changed {
+            return Ok(());
+        }
+        let mut next = self.current.clone();
+        next.corrections = Arc::new(corrections);
+        next.state = self.next_state;
+        self.next_state += 1;
+        let prev = std::mem::replace(&mut self.current, next);
+        if !merge {
+            self.history.record(prev);
+        }
+        Ok(())
+    }
+
     /// [`Command::SetModuleSettings`]: 作業用のモデルをモジュールに分け、新しい名前・スロット・条件で
     /// 本体と合成し直す (`docs/editor.md#モジュールの設定`)。モジュールの要素の座標は取り付け先の局所座標のまま
     /// なので、取り付け先の違うスロットに移すと見た目の位置が変わる。`keep_look` なら新しい取り付け先の局所座標に
@@ -460,6 +506,7 @@ impl Document {
             animations: self.current.animations.clone(),
             physics: workspace.physics,
             module: Some(Arc::new(reconfigured)),
+            corrections: self.current.corrections.clone(),
             state: self.next_state,
             problems,
         };
@@ -511,6 +558,7 @@ impl Document {
             animations: self.current.animations.clone(),
             physics: workspace.physics,
             module: Some(Arc::new(rebased)),
+            corrections: self.current.corrections.clone(),
             state: self.next_state,
             problems: OnceLock::new(),
         };
@@ -1090,6 +1138,12 @@ fn apply_to(
         Command::SetModuleSettings { .. } => {
             return Err(EditError::ModuleShape {
                 reason: "module settings must be changed on their own, not in a batch".into(),
+            });
+        }
+        // モデルの外 (`Snapshot::corrections`) を変えるので、`Document::apply_with_report` が単独で受ける。
+        Command::SetLayerCorrection { .. } => {
+            return Err(EditError::InvalidLayerCorrection {
+                reason: "layer corrections must be set on their own, not in a batch".into(),
             });
         }
     }

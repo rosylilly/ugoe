@@ -266,7 +266,7 @@ fn name_disagreements_reach_the_view_and_the_rationale() {
         by_ai: true,
         instructions: None,
     }
-    .view();
+    .view(&LayerCorrections::default());
     let layer = &view.layers[eye];
     assert!(layer.needs_review);
     assert_eq!(
@@ -282,6 +282,109 @@ fn name_disagreements_reach_the_view_and_the_rationale() {
         note.contains("eyewhite-r (eye_white left; the name says eye_white right)"),
         "{note}"
     );
+}
+
+/// T1615: 分類の確認の一覧で直したラベル・左右と「これでよい」と認めた答えは、ドキュメントの `SetLayerCorrection` で
+/// 分類に重なり (確からしさ 1・食い違いの印なし)、Undo で戻る。リグと法線マップのまとまりも直した分類を使う。
+#[test]
+fn corrections_overlay_the_classification_and_undo() {
+    let state = from_psd(None);
+    let tree = read_tree(&bustup_path()).unwrap();
+    let eye = ugoe_ai::classify::classify_by_name(&tree)
+        .iter()
+        .position(|l| l.layer_path.last().unwrap() == "eyewhite-r")
+        .unwrap();
+    let fake = FakeProvider::new();
+    fake.push(json!({ "layers": [
+        { "index": eye, "label": "eye_white", "side": "left", "confidence": 0.95 }
+    ]}));
+    let labels = classify(&tree, Some(&fake), &ClassifyGuidance::default()).unwrap();
+    let path = labels[eye].layer_path.clone();
+    state.project.lock().unwrap().proposals.classification = Some(Classified {
+        psd: bustup_path(),
+        labels,
+        by_ai: true,
+        instructions: None,
+    });
+    let view = |state: &AppState| {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        let mut layers = session
+            .proposals
+            .state(&document)
+            .classification
+            .unwrap()
+            .layers;
+        layers.swap_remove(eye)
+    };
+    let apply = |state: &AppState, correction: Option<LayerCorrection>| {
+        state
+            .document
+            .lock()
+            .unwrap()
+            .apply(Command::SetLayerCorrection {
+                path: path.clone(),
+                correction,
+            })
+            .unwrap();
+    };
+    let before = view(&state);
+    assert!(before.needs_review && before.name_disagreement.is_some() && !before.corrected);
+
+    // 認める (今の答えのまま): 印が消える。
+    apply(
+        &state,
+        Some(LayerCorrection {
+            label: "eye_white".into(),
+            side: LayerSide::Left,
+        }),
+    );
+    let acknowledged = view(&state);
+    assert!(acknowledged.corrected);
+    assert!(!acknowledged.needs_review);
+    assert_eq!(acknowledged.name_disagreement, None);
+    assert_eq!(
+        (acknowledged.label.as_str(), acknowledged.side.as_str()),
+        ("eye_white", "left")
+    );
+    assert_eq!(acknowledged.confidence, 1.0);
+
+    // 直す: 左右を名前のとおりにする。リグに渡すラベルも直る。
+    apply(
+        &state,
+        Some(LayerCorrection {
+            label: "eye_white".into(),
+            side: LayerSide::Right,
+        }),
+    );
+    assert_eq!(view(&state).side, "right");
+    {
+        let document = state.document.lock().unwrap();
+        let labels = state
+            .project
+            .lock()
+            .unwrap()
+            .proposals
+            .layer_labels(&document)
+            .unwrap();
+        assert_eq!(labels[eye].side, Side::Right);
+    }
+
+    // Undo で 1 つずつ戻る。
+    assert!(state.document.lock().unwrap().undo());
+    assert_eq!(view(&state).side, "left");
+    assert!(state.document.lock().unwrap().undo());
+    assert_eq!(view(&state), before);
+
+    // 語彙にないラベルの直しは重ねない。
+    apply(
+        &state,
+        Some(LayerCorrection {
+            label: "wing".into(),
+            side: LayerSide::Left,
+        }),
+    );
+    assert_eq!(view(&state), before);
 }
 
 /// ADR 0022: 分類とリギングの提案は、選んだプロバイダ (ここでは OpenAI 互換の API の録画) でも同じ流れで動く。
@@ -1139,7 +1242,7 @@ fn proposals_made_for_another_project_are_not_placed() {
         .lock()
         .unwrap()
         .proposals
-        .layer_labels()
+        .layer_labels(&document)
         .unwrap();
     let rigged = rig(&document, &labels, &[], None, &RigAsk::default()).unwrap();
     // 別のプロジェクトを開く (`open_project` と同じ置き換え)。

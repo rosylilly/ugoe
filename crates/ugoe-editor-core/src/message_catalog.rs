@@ -248,6 +248,7 @@ fn edit_errors() -> Vec<EditError> {
             max: 16384,
         },
         EditError::ConflictingTexture { id: id() },
+        EditError::InvalidLayerCorrection { reason: reason() },
     ]
 }
 

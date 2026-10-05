@@ -431,7 +431,11 @@ by_ai: boolean,
 /**
  * AI で分類したときに添えた注文。
  */
-instructions: string | null, layers: Array<LayerLabelView>, };
+instructions: string | null, layers: Array<LayerLabelView>, 
+/**
+ * 直すときに選べるラベル (`ugoe_ai::classify::Label` の語彙。`docs/ai-integration.md#レイヤーの意味分類` の順)。
+ */
+label_choices: Array<string>, };
 
 /**
  * Claude の設定。
@@ -521,7 +525,7 @@ look_at?: LookAt | null, hit_areas?: Array<AvatarHitArea> | null, slots?: Array<
 /**
  * 法線マップの画像 (PNG)。JSON では数値の配列になるので、主にバックエンド内 (生成の提案など) から使う。
  */
-png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, } | { "op": "create_glue", id?: string | null, mesh_a: string, mesh_b: string, distance: number, } | { "op": "set_glue", glue: Glue, distance?: number | null, } | { "op": "remove_glue", id: string, };
+png?: Array<number> | null, } | { "op": "set_lighting", enabled: boolean, } | { "op": "set_effects", effects: Effects, } | { "op": "add_slot", slot: Slot, } | { "op": "set_slot", id: string, slot: Slot, } | { "op": "remove_slot", id: string, } | { "op": "set_module_settings", name: string, slot: string, requires: ModuleRequirements, keep_look: boolean, } | { "op": "set_pose", pose: Pose, } | { "op": "create_glue", id?: string | null, mesh_a: string, mesh_b: string, distance: number, } | { "op": "set_glue", glue: Glue, distance?: number | null, } | { "op": "remove_glue", id: string, } | { "op": "set_layer_correction", path: Array<string>, correction: LayerCorrection | null, };
 
 /**
  * 提案のコマンドを、画面でまとめて出す区切り (法線マップの提案のまとまりごと)。
@@ -1120,6 +1124,15 @@ export type KeyformOrigin = "authored" | "derived" | "additive" | "depth_rotatio
 export type KeyformTarget = { "kind": "part", "id": string } | { "kind": "mesh", "id": string } | { "kind": "deformer", "id": string } | { "kind": "glue", "id": string };
 
 /**
+ * 利用者が決めた 1 枚のレイヤーの分類 (直したもの・認めたもの)。分類の答えより優先する。
+ */
+export type LayerCorrection = { 
+/**
+ * 意味ラベル (`face`・`eye_white` など。`docs/ai-integration.md#レイヤーの意味分類`)。
+ */
+label: string, side: LayerSide, };
+
+/**
  * 1 枚のレイヤーの分類 (`ugoe_ai::classify::LayerLabel`)。
  */
 export type LayerLabelView = { 
@@ -1147,7 +1160,17 @@ variant: number | null,
  * AI の分類が名前の規則の確からしい答えと食い違うときの、名前の規則の答え
  * (`LayerLabel::name_disagreement`)。なければ `null`。
  */
-name_disagreement: NameDisagreementView | null, };
+name_disagreement: NameDisagreementView | null, 
+/**
+ * 利用者が直した (または「これでよい」と認めた) か (`docs/editor.md#分類の直し`)。直したレイヤーは
+ * `label`・`side` が直した値で、確からしさは 1、食い違いの印はない。
+ */
+corrected: boolean, };
+
+/**
+ * 左右 (キャラクター自身の左右。`ugoe_ai::classify::Side` と同じ値)。
+ */
+export type LayerSide = "left" | "right" | "center";
 
 /**
  * リップシンク。外部から与えた音量 (0〜1) を対象パラメータに書き込む。

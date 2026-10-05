@@ -139,6 +139,7 @@ impl Coded for EditError {
             Self::Module(error) => return error.code(),
             Self::TextureTooLarge { .. } => "edit.texture_too_large",
             Self::ConflictingTexture { .. } => "edit.conflicting_texture",
+            Self::InvalidLayerCorrection { .. } => "edit.invalid_layer_correction",
         })
     }
 
@@ -206,7 +207,8 @@ impl Coded for EditError {
             Self::DeformerEdit { reason }
             | Self::InvalidPhysics { reason }
             | Self::InvalidAvatarProfile { reason }
-            | Self::ModuleShape { reason } => args! { "reason" => reason },
+            | Self::ModuleShape { reason }
+            | Self::InvalidLayerCorrection { reason } => args! { "reason" => reason },
             Self::DepthLength {
                 target,
                 expected,

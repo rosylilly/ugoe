@@ -96,11 +96,13 @@ describe("classificationSummary", () => {
       needs_review,
       variant: null as number | null,
       name_disagreement: null,
+      corrected: false,
     });
     const c: Classification = {
       psd: "/a.psd",
       by_ai: false,
       instructions: null,
+      label_choices: [],
       layers: [layer("eye_white", false), layer("face", true), layer("eye_white", false)],
     };
     expect(classificationSummary(c)).toEqual({
@@ -123,11 +125,13 @@ describe("classificationSummary", () => {
       needs_review: false,
       variant,
       name_disagreement: null,
+      corrected: false,
     });
     const c: Classification = {
       psd: "/a.psd",
       by_ai: true,
       instructions: null,
+      label_choices: [],
       layers: [
         layer("sleeve b", 3),
         layer("hat", 0),
