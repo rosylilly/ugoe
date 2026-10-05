@@ -1,11 +1,11 @@
 ---
 id: T0562
 title: "ugoe-mcp: 接続の数の上限を超えたときの 503 も、読み残しで RST になって失われないようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
-assignee:
+assignee: claude-worker-T0562
 ---
 
 # T0562: ugoe-mcp: 接続の数の上限を超えたときの 503 も、読み残しで RST になって失われないようにする

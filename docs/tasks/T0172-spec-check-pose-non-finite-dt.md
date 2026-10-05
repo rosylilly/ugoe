@@ -1,11 +1,11 @@
 ---
 id: T0172
 title: spec-check のポーズが有限でない dt でパーツの不透明度を NaN にしないようにする
-status: todo
+status: in-progress
 milestone: M9
 crates: [tools/spec-check, spec, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0172
 ---
 
 # T0172: spec-check のポーズが有限でない dt でパーツの不透明度を NaN にしないようにする
