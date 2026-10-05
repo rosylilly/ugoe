@@ -37,3 +37,4 @@ T0457 で C ABI のモデルの読み込みの失敗にも種類 (`Kind`) が付
 ## メモ
 
 - T0032 で起票した (元の候補: T0457 (Unity)・T0458 (2 つ))。
+- 判断 (2026-10-05、利用者の判断): C ABI に補足の値のキーを列挙する関数 (`ugoe_last_error_field_count`・`ugoe_last_error_field_at` など) を足す (足すだけで ABI の互換は保つ)。Unity は `FieldKeys` の写しをやめてこれを使う。

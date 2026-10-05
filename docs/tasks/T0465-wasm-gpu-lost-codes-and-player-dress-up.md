@@ -33,3 +33,4 @@ T0457 で wasm の着せ替えの GPU の喪失に `device_lost` のコードを
 ## メモ
 
 - T0032 で起票した (元の候補: T0457 (player・wasm の GPU の喪失))。
+- 判断 (2026-10-05、利用者の判断): wasm の `render`・`read_pixels` などの GPU の喪失の例外にもコードと JS のエラーの名前を付ける (`@ugoe/runtime` の型も足す)。

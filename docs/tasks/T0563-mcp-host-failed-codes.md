@@ -33,3 +33,4 @@ T0557 で MCP のツールのエラーに構造 (`structuredContent` の `code`�
 ## メモ
 
 - T0032 で起票した (元の候補: T0557 (2 つ))。
+- 判断 (2026-10-05、利用者の判断): コードの無いツールのエラーに MCP だけのコード (`mcp.invalid_arguments` など、`mcp.*`) を付け、ugoe-mcp の README の表に載せる。wasm の codes.json とエディタの訳の表には入れない。

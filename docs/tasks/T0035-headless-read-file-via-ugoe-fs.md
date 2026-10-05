@@ -35,3 +35,4 @@ T0025 で、ファイルの読み込みを `ugoe-fs` の `read_regular_file` (�
 ## メモ
 
 - T0032 で起票した (元の候補: T0025 (ugoe-headless の read_file))。
+- 判断 (2026-10-05、利用者の判断): (a) `ugoe-headless` が `ugoe-fs` に依存してよいことにする (check-layers で許し、理由を docs/architecture.md に書く)。
