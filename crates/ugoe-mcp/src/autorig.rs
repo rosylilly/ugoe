@@ -43,6 +43,7 @@ use ugoe_ai::rig::{
 };
 use ugoe_editor_core::import::{layer_tree_command, read_layer_tree};
 use ugoe_editor_core::{Coded, Document, Project, ProjectMeta, PsdImportOptions};
+use ugoe_fs::read_regular_file;
 use ugoe_model::SlotId;
 use ugoe_psd::{ImportLimits, LayerTree};
 
@@ -68,6 +69,11 @@ const NOT_A_MODULE: &str = "this is not a module project: use get_rig_guide and 
 /// 25,000 トークン。画像も数える) ので、既定では小分けにし、多く返すのは `count` で頼まれたときだけにする。
 const DEFAULT_COUNT: usize = 8;
 
+/// 読む PSD の大きさの上限 (PSD の形式の上限は 2 GB。PSB は読まない)。エディタの PSD の読み込みの上限
+/// (`apps/editor/src-tauri/src/psd.rs` の `MAX_PSD_BYTES`) と同じ値。GPL のアプリの定数は MIT のこのクレートから
+/// 参照できないので、値を写して揃える (変えるときは両方を直す)。
+const MAX_PSD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 /// 自動リギングの元にする PSD と、レイヤーの分類。
 pub(crate) struct PsdSource {
     path: PathBuf,
@@ -91,19 +97,17 @@ impl fmt::Debug for PsdSource {
 
 impl PsdSource {
     fn load(path: PathBuf) -> Result<Self, ToolError> {
-        Self::load_with(path, ImportLimits::default())
+        Self::load_with(path, MAX_PSD_BYTES, ImportLimits::default())
     }
 
-    /// PSD を展開の上限 `limits` で読む。読めなければ、エラーのコード (`psd.total_limit_exceeded` など。
-    /// `docs/editor.md#エラーと警告のコード`) を文の後ろに付け、コードと引数 ([`ToolError::coded`]) も添えて返す
-    /// (どの上限を超えたかをエージェントが見分けられるように)。
-    fn load_with(path: PathBuf, limits: ImportLimits) -> Result<Self, ToolError> {
-        // 装置 (`/dev/zero`)・FIFO・ディレクトリは読まない (終わらない読み込みでメモリを使い果たさないように)。
-        let metadata = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if !metadata.is_file() {
-            return Err(format!("{}: not a regular file", path.display()).into());
-        }
-        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    /// PSD を、ファイルの大きさの上限 `max_bytes` と展開の上限 `limits` で読む。読めなければ、エラーのコード
+    /// (`psd.total_limit_exceeded` など。`docs/editor.md#エラーと警告のコード`) を文の後ろに付け、コードと引数
+    /// ([`ToolError::coded`]) も添えて返す (どの上限を超えたかをエージェントが見分けられるように)。
+    fn load_with(path: PathBuf, max_bytes: u64, limits: ImportLimits) -> Result<Self, ToolError> {
+        // 装置 (`/dev/zero`)・FIFO・ディレクトリは開かず、上限より大きいファイルは読まない (終わらない読み込みで
+        // メモリを使い果たさないように)。開いた後にも通常のファイルかを確かめる (`ugoe_fs::read_regular_file`)。
+        let bytes =
+            read_regular_file(&path, max_bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         let tree = read_layer_tree(&bytes, limits).map_err(|e| {
             ToolError::coded(
                 format!("{}: {e} (code: {})", path.display(), e.code()),
@@ -922,6 +926,33 @@ mod tests {
         assert!(err.message.contains("not a regular file"), "{err}");
         let err = PsdSource::load(std::env::temp_dir()).unwrap_err();
         assert!(err.message.contains("not a regular file"), "{err}");
+        // FIFO は開くだけで書き手を待って止まるので、開かずに拒む。
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("x.psd");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .is_ok_and(|s| s.success());
+        if made {
+            let err = PsdSource::load(fifo).unwrap_err();
+            assert!(err.message.contains("not a regular file"), "{err}");
+        }
+    }
+
+    /// 上限より大きい PSD は読まない (ファイルの大きさで拒み、展開まで進まない)。
+    #[test]
+    fn refuses_to_read_a_psd_larger_than_the_limit() {
+        let psd =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd");
+        let len = std::fs::metadata(&psd).unwrap().len();
+        let err = PsdSource::load_with(psd.clone(), len - 1, ImportLimits::default()).unwrap_err();
+        assert!(err.message.contains("file is too large"), "{err}");
+        assert!(
+            err.message
+                .contains(&format!("the limit is {} bytes", len - 1)),
+            "{err}"
+        );
+        PsdSource::load_with(psd, len, ImportLimits::default()).unwrap();
     }
 
     #[test]
@@ -929,7 +960,7 @@ mod tests {
         let psd =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/layers.psd");
         let limits = ImportLimits::default().with_max_channel_decompressed(100);
-        let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
+        let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
         assert!(
             err.message.ends_with(
                 "a PSD channel decompresses to more than the import limit of 100 bytes \
@@ -938,7 +969,7 @@ mod tests {
             "{err}"
         );
         let limits = ImportLimits::default().with_max_total_decompressed(5000);
-        let err = PsdSource::load_with(psd.clone(), limits).unwrap_err();
+        let err = PsdSource::load_with(psd.clone(), MAX_PSD_BYTES, limits).unwrap_err();
         assert!(
             err.message.ends_with("(code: psd.total_limit_exceeded)"),
             "{err}"
