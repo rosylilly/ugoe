@@ -1,11 +1,11 @@
 ---
 id: T0466
 title: "Unity: KTX2 のテクスチャを C ABI のデコーダで読む (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-ffi, bindings/unity, docs]
 depends_on: [T0464]
-assignee:
+assignee: claude-worker-T0466
 ---
 
 # T0466: Unity: KTX2 のテクスチャを C ABI のデコーダで読む (判断が要る)
