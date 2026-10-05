@@ -140,6 +140,14 @@ export type MonitorMessage =
        * すべて並ぶ (ラベルの順。同じ受け手ではモデル・モジュール (番号の順)・背景の画像の順。T0840)。
        */
       failures: ReceiverFailure[];
+    }
+  | {
+      kind: "sceneLoading";
+      /**
+       * 読んでいる切り替えのシーンの ID (どこから始めたものも。最後に始めた切り替え)。終わった (失敗・捨てたものも含む) ら `null`
+       * (T0841。docs/studio.md#シーンの切り替えと舞台のロック)。
+       */
+      scene: string | null;
     };
 
 /** 出力ウィンドウへの配信: シーンの通知 (JSON) かフレームのバイト列 (@ugoe/player の `decodeFrame`)。 */

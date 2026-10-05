@@ -155,6 +155,10 @@ enum Monitor<'a> {
     LoadFailures {
         failures: Vec<load_failure::ReceiverFailure>,
     },
+    /// 舞台のロックの外で読んでいる切り替えのうち最後に始めたもののシーンの ID。終われば `None` (`Stage::loading`。
+    /// ホットキー・外部 API が始めたものも含む。変わったときと接続したときに送る。T0841)。
+    #[serde(rename = "sceneLoading")]
+    SceneLoading { scene: Option<&'a str> },
 }
 
 /// ファイルを読む・スレッドを待つ処理を、メインのスレッド (イベントループ) と非同期の実行器のワーカーの外で行う
@@ -448,6 +452,18 @@ impl Studio {
         }
     }
 
+    fn scene_loading_message(stage: &Stage) -> Option<InvokeResponseBody> {
+        Self::json(&Monitor::SceneLoading {
+            scene: stage.loading(),
+        })
+    }
+
+    fn send_scene_loading(&self, stage: &Stage) {
+        if let Some(body) = Self::scene_loading_message(stage) {
+            self.monitors.send_all(&body);
+        }
+    }
+
     fn send_profile(&self, stage: &Stage) {
         if let Some(body) = Self::json(&Monitor::Profile(stage.view())) {
             self.monitors.send_all(&body);
@@ -459,6 +475,7 @@ impl Studio {
         let mut stage = lock(&self.stage);
         let mut conductor = lock(&self.conductor);
         let before = conductor.scene().map(|s| s.revision);
+        let loading = stage.loading().map(str::to_owned);
         let snapshot = api::StageSnapshot::of(&stage);
         let result = action(&mut stage, &mut conductor);
         if conductor.scene().map(|s| s.revision) != before {
@@ -467,6 +484,9 @@ impl Studio {
         drop(conductor);
         self.api_stage_changed(&snapshot, &api::StageSnapshot::of(&stage));
         self.send_profile(&stage);
+        if stage.loading() != loading.as_deref() {
+            self.send_scene_loading(&stage);
+        }
         self.sync_hotkeys(&stage.profile().hotkeys, false);
         self.tick_rate
             .store(stage.profile().output.tick_rate().hz(), Ordering::Relaxed);
@@ -1003,6 +1023,9 @@ fn subscribe_status(
 ) {
     let stage = lock(&studio.stage);
     if let Some(body) = Studio::json(&Monitor::Profile(stage.view())) {
+        let _ = channel.send(body);
+    }
+    if let Some(body) = Studio::scene_loading_message(&stage) {
         let _ = channel.send(body);
     }
     let conductor = lock(&studio.conductor);
@@ -1735,6 +1758,17 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Monitor::Output(state)).unwrap(),
             r#"{"kind":"output","visible":true,"onTop":false,"width":1920,"height":1080}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Monitor::SceneLoading {
+                scene: Some("scene-2")
+            })
+            .unwrap(),
+            r#"{"kind":"sceneLoading","scene":"scene-2"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Monitor::SceneLoading { scene: None }).unwrap(),
+            r#"{"kind":"sceneLoading","scene":null}"#
         );
         let status = Monitor::Status {
             seq: 3,

@@ -121,6 +121,8 @@ pub struct Stage {
     recent_path: Option<PathBuf>,
     /// 最後に始めた切り替えの番号 (読んでいる間に後から始めた切り替えがあれば、読んだものを捨てる。T0834)。
     tickets: u64,
+    /// 最後に始めた切り替えの番号とシーンの ID (終わるまで。操作ウィンドウの読み込み中、T0841)。
+    loading: Option<(u64, String)>,
 }
 
 impl Stage {
@@ -156,6 +158,15 @@ impl Stage {
 
     pub fn recent(&self) -> &[PathBuf] {
         &self.recent.profiles
+    }
+
+    /// 読んでいる (始めてまだ差し込んでいない) 切り替えのうち、最後に始めたもののシーンの ID (T0841)。
+    /// 差し込んだ・読めなかった・後から始めた切り替えや新しいプロファイルに捨てられたら `None`。
+    pub fn loading(&self) -> Option<&str> {
+        self.loading
+            .as_ref()
+            .filter(|(ticket, _)| *ticket == self.tickets)
+            .map(|(_, id)| id.as_str())
     }
 
     pub fn view(&self) -> ProfileView<'_> {
@@ -443,6 +454,7 @@ impl Stage {
     fn plan(&mut self, id: &str, kind: Kind, conductor: &Conductor) -> Result<Pending, SceneError> {
         self.index_of(id)?;
         self.tickets = self.tickets.wrapping_add(1);
+        self.loading = Some((self.tickets, id.to_owned()));
         self.pending(self.tickets, id, kind, conductor)
     }
 
@@ -480,6 +492,20 @@ impl Stage {
     ///   ([`Finish::Superseded`])。差し込むのは最後に始めた切り替えだけ。
     /// - 読んでいる間にシーンの設定が変わったら: 切り替えは今の設定で読み直す ([`Finish::Again`])。編集と着せ替えは捨てる。
     pub fn finish(
+        &mut self,
+        loaded: Loaded,
+        conductor: &mut Conductor,
+    ) -> Result<Finish, SceneError> {
+        let ticket = loaded.ticket;
+        let finish = self.finish_loaded(loaded, conductor);
+        // 最後に始めた切り替えが終わった (読み直すときはまだ読んでいる)。
+        if ticket == self.tickets && !matches!(finish, Ok(Finish::Again(_))) {
+            self.loading = None;
+        }
+        finish
+    }
+
+    fn finish_loaded(
         &mut self,
         loaded: Loaded,
         conductor: &mut Conductor,
@@ -1337,6 +1363,71 @@ mod tests {
         ));
         assert_eq!(stage.live(), None);
         assert_eq!(conductor.scene().unwrap().model_revision, 0);
+    }
+
+    /// 読んでいる切り替えは、最後に始めたものが終わるまで `loading` に出る (操作ウィンドウの読み込み中、T0841)。
+    #[test]
+    fn the_latest_switch_is_loading_until_it_ends() {
+        let dir = Dir::new();
+        let base = dir.model("base.json", fixtures::dress_up_base());
+        let lone = dir.model("lone.json", fixtures::single_quad());
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        let a = scene(&mut stage, Some(&base), &[]);
+        let b = scene(&mut stage, Some(&lone), &[]);
+        let gone = scene(&mut stage, Some(&dir.0.path().join("gone.ugoe")), &[]);
+        for s in [&a, &b, &gone] {
+            stage.update_scene(s.clone(), &mut conductor).unwrap();
+        }
+        assert_eq!(stage.loading(), None);
+
+        // 後から始めた切り替えに替わり、先の切り替えが読み終えても変わらない。
+        let earlier = stage.begin_activate(&a.id, &conductor).unwrap();
+        assert_eq!(stage.loading(), Some(a.id.as_str()));
+        let later = stage.begin_activate(&b.id, &conductor).unwrap();
+        assert_eq!(stage.loading(), Some(b.id.as_str()));
+        assert!(matches!(
+            stage.finish(earlier.load(), &mut conductor),
+            Ok(Finish::Superseded)
+        ));
+        assert_eq!(stage.loading(), Some(b.id.as_str()));
+        assert!(matches!(
+            stage.finish(later.load(), &mut conductor),
+            Ok(Finish::Done)
+        ));
+        assert_eq!(stage.loading(), None);
+
+        // 読めなくても終わる。
+        let failed = stage.begin_activate(&gone.id, &conductor).unwrap();
+        assert_eq!(stage.loading(), Some(gone.id.as_str()));
+        assert!(stage.finish(failed.load(), &mut conductor).is_err());
+        assert_eq!(stage.loading(), None);
+
+        // 先の切り替えが読めなくても、後の切り替えは読んでいるまま。
+        let failed = stage.begin_activate(&gone.id, &conductor).unwrap();
+        let later = stage.begin_activate(&a.id, &conductor).unwrap();
+        assert!(stage.finish(failed.load(), &mut conductor).is_err());
+        assert_eq!(stage.loading(), Some(a.id.as_str()));
+        stage.finish(later.load(), &mut conductor).unwrap();
+        assert_eq!(stage.loading(), None);
+
+        // 読み直す間は読んでいるまま。
+        let mut edited = a.clone();
+        let pending = stage.begin_activate(&b.id, &conductor).unwrap().load();
+        edited.id = b.id.clone();
+        edited.name = b.name.clone();
+        stage.update_scene(edited, &mut conductor).unwrap();
+        let Ok(Finish::Again(again)) = stage.finish(pending, &mut conductor) else {
+            panic!("expected to read the scene again");
+        };
+        assert_eq!(stage.loading(), Some(b.id.as_str()));
+        stage.finish(again.load(), &mut conductor).unwrap();
+        assert_eq!(stage.loading(), None);
+
+        // 新しいプロファイルは読んでいる切り替えを捨てる。
+        let _pending = stage.begin_activate(&a.id, &conductor).unwrap();
+        stage.new_profile(&mut conductor);
+        assert_eq!(stage.loading(), None);
     }
 
     /// 読んでいる間にシーンの設定が変わったら、切り替えは今の設定で読み直す。出しているシーンの編集は、後の切り替えに捨てられても設定は残す (T0834)。

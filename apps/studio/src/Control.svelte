@@ -105,7 +105,7 @@ let tickMs = $state<number | null>(null);
 let receivers = $state(0);
 let output = $state<OutputState | null>(null);
 /** 送っている途中の刻みの速さ (プロファイルに持つ。T0827)。 */
-/** 操作ウィンドウが始めたシーンの切り替えの読み込み中 (T0837)。 */
+/** シーンの切り替えの読み込み中 (T0837。ホットキー・外部 API が始めたものはバックエンドの通知で、T0841)。 */
 const sceneLoading = new SceneLoading();
 const tickRateEdit = new PendingEdit<TickRate>((rate) => run((h) => h.setTickRate(rate)));
 const tickRate = $derived(tickRateEdit.current(parseTickRate(profile?.profile.output.tickRate)));
@@ -276,6 +276,9 @@ function onMonitor(message: MonitorMessage) {
     }
     case "loadFailures":
       loadFailures = message.failures;
+      break;
+    case "sceneLoading":
+      sceneLoading.notice(message.scene);
       break;
   }
 }

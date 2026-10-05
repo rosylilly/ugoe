@@ -885,6 +885,95 @@ fn answers_while_a_puppet_is_assembled_and_drops_the_stale_one() {
     );
 }
 
+/// 操作ウィンドウが受けた `sceneLoading` の通知の `scene` を、届いた順に取り出す。
+fn scene_loading_notices(studio: &Studio) -> Receiver<Value> {
+    let (tx, rx) = mpsc::channel();
+    let channel = tauri::ipc::Channel::new(move |body| {
+        if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+            let value: Value = serde_json::from_str(&json).unwrap();
+            if value["kind"] == "sceneLoading" {
+                let _ = tx.send(value["scene"].clone());
+            }
+        }
+        Ok(())
+    });
+    studio.monitors.insert("main", channel);
+    rx
+}
+
+/// ホットキーと外部 API が始めた切り替えも、読み始めと終わり (失敗・捨てたものも) を操作ウィンドウに知らせる (T0841)。
+#[test]
+fn tells_the_control_window_while_a_switch_is_loading() {
+    let dir = Dir::new();
+    let model = dir.model();
+    let other = dir.0.path().join("other.ugoe");
+    std::fs::copy(&model, &other).unwrap();
+    let studio = studio();
+    let (chat, game) = stage_scenes(&studio, &model, &[]);
+    let add = |name: &str, path: &Path| {
+        studio.with_stage(|stage, conductor| {
+            let id = stage.add_scene(name);
+            let mut scene = stage.profile().scene(&id).unwrap().clone();
+            scene.model = Some(path.to_owned());
+            stage.update_scene(scene, conductor).unwrap();
+            id
+        })
+    };
+    let far = add("Far", &other);
+    let gone = add("Gone", &dir.0.path().join("gone.ugoe"));
+    let notices = scene_loading_notices(&studio);
+    let drain = || notices.try_iter().collect::<Vec<_>>();
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+
+    // 読むファイルが無い (同じモデル) なら、握ったまま差し込むので知らせない。
+    client.call("scene.activate", json!({ "scene": game }));
+    assert_eq!(drain(), Vec::<Value>::new());
+    // 外部 API の切り替え: 読み始めと終わり。
+    client.call("scene.activate", json!({ "scene": far }));
+    assert_eq!(drain(), [json!(far), Value::Null]);
+
+    // ホットキーの切り替え: 読めなくても終わりを知らせる。
+    let error = studio.perform_hotkey(&HotkeyAction::Scene {
+        scene: gone.clone(),
+    });
+    assert!(error.is_some());
+    assert_eq!(drain(), [json!(gone), Value::Null]);
+    assert!(
+        studio
+            .perform_hotkey(&HotkeyAction::Scene {
+                scene: chat.clone()
+            })
+            .is_none()
+    );
+    assert_eq!(drain(), [json!(chat), Value::Null]);
+
+    // 読んでいる間に後から始めた切り替えが済んだら、そこで終わりを知らせ、先の切り替えの終わりでは知らせない。
+    let read = |asset: Asset, path: &Path, extensions: &[&str], max: u64| {
+        assert_eq!(notices.try_recv().unwrap(), json!(far));
+        assert!(
+            studio
+                .perform_hotkey(&HotkeyAction::Scene {
+                    scene: chat.clone()
+                })
+                .is_none()
+        );
+        assert_eq!(notices.try_recv().unwrap(), Value::Null);
+        crate::stage::read_asset(asset, path, extensions, max)
+    };
+    studio
+        .switch_scene_with(
+            |stage, conductor| stage.begin_activate(&far, conductor).map(Some),
+            Loading {
+                read: &read,
+                ..LOADING
+            },
+        )
+        .unwrap();
+    assert_eq!(lock(&studio.stage).live(), Some(chat.as_str()));
+    assert_eq!(drain(), Vec::<Value>::new());
+}
+
 /// `dressup.list` は付けていないモジュールの概要を覚え、ファイルの時刻と大きさが変わらなければ読み直さない (T0833)。
 #[test]
 fn remembers_the_wardrobe_until_the_file_changes() {

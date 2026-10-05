@@ -76,4 +76,50 @@ describe("SceneLoading", () => {
     await expect(done).rejects.toThrow("missing");
     expect(loading.active).toBe(false);
   });
+
+  it("shows a switch the backend reports (hotkeys and the API) until it ends", () => {
+    const loading = new SceneLoading();
+    loading.notice("a");
+    expect(loading.active).toBe(false);
+    vi.advanceTimersByTime(LOADING_DELAY_MS);
+    expect(loading.scene).toBe("a");
+    // 後から始めた切り替えに替わる。
+    loading.notice("b");
+    expect(loading.scene).toBe("b");
+    loading.notice(null);
+    expect(loading.active).toBe(false);
+    // 早く終われば出さない。
+    loading.notice("c");
+    loading.notice(null);
+    vi.advanceTimersByTime(LOADING_DELAY_MS * 2);
+    expect(loading.active).toBe(false);
+  });
+
+  it("lets the later switch win between commands and backend notices", async () => {
+    const loading = new SceneLoading();
+    // ホットキーの切り替えを読んでいる間に、操作ウィンドウでシーンを押す。
+    loading.notice("hotkey");
+    const work = deferred();
+    const done = loading.track("clicked", () => work.promise);
+    vi.advanceTimersByTime(LOADING_DELAY_MS);
+    expect(loading.scene).toBe("clicked");
+    // 通知の後に始めたコマンドの表示は、通知の終わりでは消さない。
+    loading.notice(null);
+    expect(loading.scene).toBe("clicked");
+    work.finish();
+    await done;
+    expect(loading.active).toBe(false);
+
+    // 操作ウィンドウの切り替えを読んでいる間に、ホットキーで切り替える。
+    const second = deferred();
+    const pending = loading.track("clicked", () => second.promise);
+    loading.notice("hotkey");
+    vi.advanceTimersByTime(LOADING_DELAY_MS);
+    // 先のコマンドが返っても、ホットキーの切り替えを出し続ける。
+    second.finish();
+    await pending;
+    expect(loading.scene).toBe("hotkey");
+    loading.notice(null);
+    expect(loading.active).toBe(false);
+  });
 });
