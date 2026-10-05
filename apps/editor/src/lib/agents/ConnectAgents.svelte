@@ -10,7 +10,7 @@ import { RichText } from "@ugoe/i18n";
 import { Button, Section, Toggle } from "@ugoe/ui";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
-import { joinPath, withExtension } from "../filePaths";
+import { joinPath } from "../filePaths";
 import { openExternal } from "../help";
 import { t } from "../i18n";
 import { ipc } from "../ipc";
@@ -99,14 +99,12 @@ async function installInClaudeDesktop(): Promise<void> {
 async function saveBundle(): Promise<void> {
   const dialogs = fileDialogs();
   const dir = await dialogs.defaultDirectory();
-  const picked = await dialogs.saveFile({
+  const path = await dialogs.saveFile({
     title: t("agents.desktop.save.title"),
     defaultPath: dir ? joinPath(dir, "ugoe-editor.mcpb") : "ugoe-editor.mcpb",
     filters: [{ name: t("agents.desktop.save.filter"), extensions: ["mcpb"] }],
   });
-  if (!picked) return;
-  // Linux のダイアログはフィルタの拡張子を付けずに返すことがある (バックエンドは `.mcpb` でない名前を断る)。
-  const path = withExtension(picked, "mcpb");
+  if (!path) return;
   bundleBusy = true;
   try {
     bundle = { kind: "saved", path: await ipc.saveClaudeDesktopBundle(path) };

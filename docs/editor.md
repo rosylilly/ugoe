@@ -1511,8 +1511,9 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
   プロジェクト名のうちファイル名に使えない文字は `_` にする。
 - 保存のダイアログで選んだ名前に拡張子 (`.ugoeproj` / `.ugoe` / `.ugoemod`) がなければ付け足す (`save_project_as` も `.ugoeproj` を付ける)。
   Linux のダイアログはフィルタの拡張子を付けずにパスを返すことがあるため。付けるのはバックエンドの `save_file_dialog` (最初のフィルタの
-  最初の拡張子。画面の `withExtension` と同じ規則なので、画面が付け直しても同じパスになる)。ファイルメニューの外の保存のダイアログ
-  (スクリーンショットの `.png`・トラッキングの記録の `.json`・Claude Desktop の拡張の `.mcpb`) も同じ。
+  最初の拡張子。大文字小文字は区別しない) と、下の差し替えの経路 (`fileDialogs()` が同じ規則で付ける) だけで、画面はダイアログの答えを
+  そのまま使う (T1625)。ファイルメニューの外の保存のダイアログ (スクリーンショットの `.png`・トラッキングの記録の `.json`・
+  Claude Desktop の拡張の `.mcpb`) も同じ。
 - ダイアログを閉じた (取り消した) ときは何もしない。ダイアログを開いている間はメニューのボタンを押せない。
 - 権限 (`capabilities/default.json`) に `dialog:` のものは無い (webview はダイアログを開けない。`acl.rs` のテストが確かめる)。
   ダイアログはアプリのコマンド `open_file_dialog`・`save_file_dialog` で開く。既定の場所を得る `@tauri-apps/api/path` は `core:default` に含まれる。
@@ -1520,6 +1521,7 @@ Open…・Open Sample…・本体の問題の枠の「Open base project」) は�
   パスの整形は `src/lib/filePaths.ts` (Vitest)。
 - **差し替え (テスト用):** `window.__UGOE_FILE_DIALOGS__` に `FileDialogs` (`openFile`・`openDirectory`・`saveFile`・`defaultDirectory`) を置くと、
   ダイアログの代わりにそれを呼ぶ。ヘッドレスのブラウザでは、IPC の差し替え (`window.__TAURI_INTERNALS__`) と一緒に固定のパスを返すものを置く。
+  差し替えの `saveFile` が拡張子の無い名前を返したら、`fileDialogs()` がバックエンドと同じ規則で拡張子を付ける (`fileDialogs.test.ts`)。
   本物のアプリではこの差し替えのパスをバックエンドが知らないので、コマンドは `file.not_chosen` で断る。e2e (tests/e2e) はデバッグビルドの
   バックエンドの差し替えを使う: 環境変数 `UGOE_EDITOR_DIALOG_ANSWERS` にディレクトリを渡すと、ダイアログは OS のものを開かず、そこの
   `open-file`・`open-directory`・`save-file` のファイルに書いたパスを選んだことにする (読んだら消す。無ければ取り消し)。環境変数はアプリを
@@ -1534,7 +1536,7 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
   (`..` を含むパスは除く)・開いているプロジェクトが指すファイル (モジュールの本体・プレビューの着せ替えの一覧・提案の元の PSD)・
   `open_project` で閉じたモジュールのプロジェクトのフォルダー ([モジュールに戻る](#モジュールに戻る) ため。T1622)。
   どれもこのセッションの間だけ覚える (エディタには最近のファイルの一覧が無いので、ファイルには残さない)。
-- **書ける:** 保存のダイアログで選んだパス。1 回書いたら忘れる (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
+- **書ける:** 保存のダイアログで選んだパス (拡張子を付けた後のもの。画面はダイアログが返したパスをそのまま渡す)。1 回書いたら忘れる (同じパスにもう 1 回書くには、またダイアログで選ぶ)。
   今の保存先への保存 (`save_project`・`reload_project`) はバックエンドが保存先を持つので、選び直さずに書ける。
 - 選んでいないパスは、ファイルに触る前に `file.not_chosen` (読む) か `file.not_chosen_for_save` (書く) で断る (ビューア・スタジオと同じコード)。
 
@@ -1996,7 +1998,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   メッシュ編集の頂点・深度の点・光源の取っ手・違いの強調・提案の帯) と HUD。
 - 読み戻してから保存のダイアログ (`fileDialogs().saveFile`、フィルタ `.png`) を開くので、写るのは押したときの姿です。
   最初の場所はプロジェクトの隣 (保存していなければドキュメント、なければホーム)、既定の名前は `<プロジェクト名>-<年月日>-<時分秒>.png`。
-  拡張子が無ければ `.png` を付けます。保存した場所は Toast で知らせ、失敗の理由はビューポートの右上に閉じるまで出します (`Notice`。T0664)。
+  拡張子が無ければ `.png` を付けます (保存のダイアログが付ける。[ファイルダイアログ](#ファイルダイアログ))。保存した場所は Toast で知らせ、失敗の理由はビューポートの右上に閉じるまで出します (`Notice`。T0664)。
   読み戻しで GPU が止まった (`RenderError` の `device_lost`。T0465) ときの理由は、エディタのカタログの文 (`viewport.screenshot.deviceLost`。
   起動し直す案内) にします (`saveScreenshot.ts` の `screenshotErrorText`。T0940)。
 - PNG への変換はフロントエンドの 2D canvas (`toBlob`) で行い、バックエンドの `write_png_file` (`src-tauri/src/screenshot.rs`) が

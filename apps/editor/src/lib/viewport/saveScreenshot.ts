@@ -5,7 +5,7 @@
 import { describeRenderError, encodePng, errorCode } from "@ugoe/player";
 import { errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
-import { joinPath, PNG_FILTER, parentDir, withExtension } from "../filePaths";
+import { joinPath, PNG_FILTER, parentDir } from "../filePaths";
 import { t } from "../i18n";
 import { ipc } from "../ipc";
 import type { ViewportController } from "./controller.svelte";
@@ -26,13 +26,12 @@ export async function saveViewportScreenshot(
   // 最初の場所: 開いているプロジェクトの隣、なければドキュメント (なければホーム)。
   const dir = (status.path ? parentDir(status.path) : null) ?? (await dialogs.defaultDirectory());
   const name = screenshotFileName(status.name, new Date());
-  const picked = await dialogs.saveFile({
+  const path = await dialogs.saveFile({
     title: t("viewport.screenshot.dialogTitle"),
     defaultPath: dir === null ? name : joinPath(dir, name),
     filters: [PNG_FILTER],
   });
-  if (picked === null) return null;
-  const path = withExtension(picked, "png");
+  if (path === null) return null;
   await ipc.writePngFile(path, png);
   return path;
 }

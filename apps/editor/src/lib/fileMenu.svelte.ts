@@ -24,7 +24,6 @@ import {
   PSD_FILTER,
   parentDir,
   safeFileName,
-  withExtension,
 } from "./filePaths";
 import { t } from "./i18n";
 import {
@@ -312,22 +311,18 @@ export class FileMenuFlow {
         return dialogs.openDirectory({ title: t("fileMenu.dialog.open"), defaultPath: dir });
       case "openSample":
         return dialogs.openDirectory({ title: t("fileMenu.dialog.openSample"), defaultPath: dir });
-      case "saveAs": {
-        const path = await dialogs.saveFile({
+      case "saveAs":
+        return dialogs.saveFile({
           title: t("fileMenu.dialog.saveAs"),
           defaultPath: suggest(`${name}.ugoeproj`),
           filters: [PROJECT_FILTER],
         });
-        return path && withExtension(path, "ugoeproj");
-      }
-      case "exportModule": {
-        const path = await dialogs.saveFile({
+      case "exportModule":
+        return dialogs.saveFile({
           title: t("fileMenu.dialog.exportModule"),
           defaultPath: suggest(`${safeFileName(this.moduleInfo?.name ?? name)}.ugoemod`),
           filters: [MODULE_FILTER],
         });
-        return path && withExtension(path, "ugoemod");
-      }
       case "locateBaseProject":
         return dialogs.openDirectory({
           title: t("fileMenu.dialog.locateProject"),
@@ -339,14 +334,12 @@ export class FileMenuFlow {
           defaultPath: dir,
           filters: [BUNDLE_FILTER],
         });
-      case "export": {
-        const path = await dialogs.saveFile({
+      case "export":
+        return dialogs.saveFile({
           title: t("fileMenu.dialog.export"),
           defaultPath: suggest(`${name}.ugoe`),
           filters: [BUNDLE_FILTER],
         });
-        return path && withExtension(path, "ugoe");
-      }
     }
   }
 

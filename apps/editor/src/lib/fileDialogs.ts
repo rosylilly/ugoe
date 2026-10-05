@@ -1,9 +1,10 @@
 // OS のファイルダイアログと既定の場所 (ドキュメント、なければホーム)。ダイアログはバックエンドが開き
 // (`open_file_dialog`・`save_file_dialog`)、選ばれたパスだけをコマンドが読み書きできる (src-tauri/src/access.rs。T1616)。
 // ヘッドレスのブラウザでの確認のため差し替えられる: `window.__UGOE_FILE_DIALOGS__` に
-// `FileDialogs` を置くと、ダイアログの代わりにそれを呼ぶ (docs/editor.md#ファイルダイアログ)。
+// `FileDialogs` を置くと、ダイアログの代わりにそれを呼ぶ (docs/editor.md#ファイルダイアログ)。保存のダイアログの答えに
+// 拡張子を付けるのは、本物はバックエンド (`save_file_dialog`)、差し替えはここ (`withStubExtension`) で、画面は付けない (T1625)。
 import { documentDir, homeDir } from "@tauri-apps/api/path";
-import type { FileFilter } from "./filePaths";
+import { type FileFilter, withExtension } from "./filePaths";
 import { ipc } from "./ipc";
 
 export interface FileDialogOptions {
@@ -27,7 +28,7 @@ export interface FileDialogs {
 
 declare global {
   interface Window {
-    /** テスト用の差し替え。 */
+    /** テスト用の差し替え。`saveFile` は拡張子の無い名前を返してよい (`fileDialogs` が付ける)。 */
     __UGOE_FILE_DIALOGS__?: FileDialogs;
   }
 }
@@ -51,7 +52,22 @@ const tauriDialogs: FileDialogs = {
   },
 };
 
-/** 今使うダイアログ。差し替えがあればそれ。 */
+/** 差し替えの保存のダイアログの答えに、バックエンドと同じ規則 (最初のフィルタの最初の拡張子) で拡張子を付ける。 */
+function withStubExtension(stub: FileDialogs): FileDialogs {
+  return {
+    openFile: (options) => stub.openFile(options),
+    openDirectory: (options) => stub.openDirectory(options),
+    async saveFile(options) {
+      const path = await stub.saveFile(options);
+      const extension = options.filters?.[0]?.extensions[0];
+      return path === null || extension === undefined ? path : withExtension(path, extension);
+    },
+    defaultDirectory: () => stub.defaultDirectory(),
+  };
+}
+
+/** 今使うダイアログ。差し替えがあればそれ (保存の答えには拡張子を付ける)。 */
 export function fileDialogs(): FileDialogs {
-  return window.__UGOE_FILE_DIALOGS__ ?? tauriDialogs;
+  const stub = window.__UGOE_FILE_DIALOGS__;
+  return stub ? withStubExtension(stub) : tauriDialogs;
 }
