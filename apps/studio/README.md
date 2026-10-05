@@ -12,10 +12,12 @@ T0805 で外から操作する API (ループバックの WebSocket。[docs/stud
 
 ```
 index.html / src/control.ts   操作ウィンドウの入口 (@ugoe/ui のトークン・言語の設定)
-src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ
+src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・出力ウィンドウの表示/最前面/大きさ・いまの状態・パラメータ。
+                              列の並び (シーン・配信中に触るもの・設定) と狭い幅の積み方 (T0817)
+src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。中身は lib/status.ts。T0817)
 src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
 src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
-src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除)
+src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除 (確かめてから)・切り替えのホットキーの表示)
 src/SceneEditor.svelte        シーンの編集 (名前・モデル・モジュール・位置と大きさと回転・背景・ライティング)
 src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源・点光源)
 src/MotionPanel.svelte        表情とモーション (表情の付け外し・モーションの再生と優先度・待機モーション・トラッキング中のモーションの優先)
@@ -36,6 +38,7 @@ src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウ�
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
 src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット。出力ウィンドウの Player のキーの接頭辞
                               (`ugoe-studio.player`。T0930 より前にビューアの接頭辞で覚えたものは操作ウィンドウを開いたときに消す)
+src/lib/status.ts             「いまの状態」の印 (トラッキング・口パク・ホットキー・負荷・操作 API・ブラウザソース) の形と文と説明 (T0817)
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)

@@ -1,0 +1,160 @@
+// 操作ウィンドウの「いまの状態」の印 (docs/studio.md#操作ウィンドウ、T0817)。トラッキング・口パク・ホットキー・負荷・操作 API・
+// ブラウザソースの様子を、印の形 (StatusBadge.svelte) と短い文と Tooltip の説明にする。色だけで伝えないよう、形は tone ごとに変える。
+import { formatNumber } from "@ugoe/i18n";
+import type { ApiView } from "./api";
+import { apiUrl } from "./api";
+import type { StatusMessage } from "./host";
+import { t } from "./i18n";
+import { loadWarnings } from "./load";
+
+/** 印の種類。`ok` は動いている、`off` は切っている、`warning` は注意が要る、`danger` は動かせない。 */
+export type StatusTone = "ok" | "off" | "warning" | "danger";
+
+export type StatusId = "tracking" | "lipSync" | "hotkeys" | "load" | "api" | "source";
+
+export interface StatusBadgeView {
+  id: StatusId;
+  tone: StatusTone;
+  /** 印の横に出す短い文。 */
+  label: string;
+  /** Tooltip の説明 (どこで変えるか・数値の意味)。 */
+  tooltip: string;
+}
+
+/** トラッキングの様子 (@ugoe/face-tracking の FaceTracker から写す)。 */
+export interface TrackingState {
+  status: "idle" | "loading" | "running" | "error";
+  faceFound: boolean;
+  fps: number;
+  /** ホットキーなどで一時停止している (指揮役の様子)。 */
+  paused: boolean;
+}
+
+export interface StatusInputs {
+  tracking: TrackingState;
+  lipSync: { running: boolean; paused: boolean };
+  hotkeys: { count: number; problems: number; wayland: boolean };
+  /** 最新の負荷 (まだ届いていなければ `null`。負荷の印を出さない)。 */
+  load: StatusMessage | null;
+  api: ApiView;
+}
+
+function badge(id: StatusId, tone: StatusTone, label: string, tooltip: string): StatusBadgeView {
+  return { id, tone, label, tooltip };
+}
+
+export function trackingBadge(state: TrackingState): StatusBadgeView {
+  if (state.paused)
+    return badge(
+      "tracking",
+      "warning",
+      t("status.tracking.paused"),
+      t("status.tracking.pausedTip"),
+    );
+  switch (state.status) {
+    case "idle":
+      return badge("tracking", "off", t("status.tracking.off"), t("status.tracking.offTip"));
+    case "loading":
+      return badge(
+        "tracking",
+        "off",
+        t("status.tracking.loading"),
+        t("status.tracking.loadingTip"),
+      );
+    case "error":
+      return badge("tracking", "danger", t("status.tracking.error"), t("status.tracking.errorTip"));
+    case "running":
+      return state.faceFound
+        ? badge(
+            "tracking",
+            "ok",
+            t("status.tracking.face", { fps: state.fps }),
+            t("status.tracking.faceTip"),
+          )
+        : badge("tracking", "warning", t("status.tracking.noFace"), t("status.tracking.noFaceTip"));
+  }
+}
+
+export function lipSyncBadge(state: StatusInputs["lipSync"]): StatusBadgeView {
+  if (state.paused)
+    return badge("lipSync", "warning", t("status.lipSync.paused"), t("status.lipSync.pausedTip"));
+  return state.running
+    ? badge("lipSync", "ok", t("status.lipSync.on"), t("status.lipSync.onTip"))
+    : badge("lipSync", "off", t("status.lipSync.off"), t("status.lipSync.offTip"));
+}
+
+export function hotkeysBadge(state: StatusInputs["hotkeys"]): StatusBadgeView {
+  if (state.count === 0)
+    return badge("hotkeys", "off", t("status.hotkeys.none"), t("status.hotkeys.noneTip"));
+  if (state.problems > 0)
+    return badge(
+      "hotkeys",
+      "warning",
+      t("status.hotkeys.problems", { count: state.problems }),
+      t("status.hotkeys.problemsTip", { count: state.problems }),
+    );
+  if (state.wayland)
+    return badge("hotkeys", "warning", t("status.hotkeys.wayland"), t("status.hotkeys.waylandTip"));
+  return badge(
+    "hotkeys",
+    "ok",
+    t("status.hotkeys.on", { count: state.count }),
+    t("status.hotkeys.onTip", { count: state.count }),
+  );
+}
+
+export function loadBadge(status: StatusMessage): StatusBadgeView {
+  const label = t("load.summary", {
+    tick: t("load.ms", { value: formatNumber(status.tickMs, { maximumFractionDigits: 2 }) }),
+    rate: t("load.rateValue", { value: status.tickRate }),
+  });
+  const warnings = loadWarnings(status).length;
+  return warnings === 0
+    ? badge("load", "ok", label, t("status.load.okTip", { count: status.outputs }))
+    : badge("load", "warning", label, t("status.load.warningTip", { count: warnings }));
+}
+
+export function apiBadge(api: ApiView): StatusBadgeView {
+  if (!api.enabled) return badge("api", "off", t("status.api.off"), t("status.api.offTip"));
+  if (!api.listening)
+    return badge("api", "danger", t("status.api.error"), t("status.api.errorTip"));
+  if (api.pending.length > 0)
+    return badge(
+      "api",
+      "warning",
+      t("status.api.pending", { count: api.pending.length }),
+      t("status.api.pendingTip", { count: api.pending.length }),
+    );
+  return badge(
+    "api",
+    "ok",
+    t("status.api.on"),
+    t("status.api.onTip", { url: apiUrl(api.port), count: api.connections }),
+  );
+}
+
+export function sourceBadge(api: ApiView): StatusBadgeView {
+  const source = api.source;
+  if (!source.enabled)
+    return badge("source", "off", t("status.source.off"), t("status.source.offTip"));
+  if (!source.listening)
+    return badge("source", "danger", t("status.source.error"), t("status.source.errorTip"));
+  return badge(
+    "source",
+    "ok",
+    t("status.source.on"),
+    t("status.source.onTip", { count: source.connections }),
+  );
+}
+
+/** 「いまの状態」に並べる印 (配信中に気にする順)。 */
+export function statusBadges(inputs: StatusInputs): StatusBadgeView[] {
+  const out = [
+    trackingBadge(inputs.tracking),
+    lipSyncBadge(inputs.lipSync),
+    hotkeysBadge(inputs.hotkeys),
+  ];
+  if (inputs.load !== null) out.push(loadBadge(inputs.load));
+  out.push(apiBadge(inputs.api), sourceBadge(inputs.api));
+  return out;
+}

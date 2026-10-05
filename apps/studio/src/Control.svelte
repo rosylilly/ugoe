@@ -1,14 +1,14 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
-  様子はパラメータの値・刻みの番号・負荷の数値で示す (負荷と刻みの速さは LoadPanel.svelte)。左にシーンの一覧、
-  右のパネルにシーンの編集 (T0802)、表情とモーション・ポーズ (T0842)・入力 (カメラ・マイク)・ホットキー (T0803)・操作 API (T0805)。
+  左にシーンの一覧、中央に配信中に触るもの (いまの状態の印・配信しているシーン・表情とモーション・ポーズ (T0842))、
+  右のパネルに設定 (シーンの編集 (T0802)・入力 (カメラ・マイク)・ホットキー (T0803)・出力・操作 API (T0805)・負荷 (LoadPanel.svelte)・パラメータ)。
+  幅が 960px 以下では列を積んで画面の全体を送る (T0817)。
   操作 API に初めて接続したクライアントの承認は、どのパネルを開いていても上の知らせ (ApiApproval.svelte) で行う。
   カメラとマイクはこのウィンドウの WebView で取り、バックエンドの刻み (`subscribe_pulse`) で処理する (最小化しても止まらない)。
   プロファイルはバックエンドが持ち、変わるたびに `profile` の通知で届く。保存先があれば、変えた後に自動で保存する。
 -->
 <script lang="ts">
 import { FaceTracker, type TrackingFrame } from "@ugoe/face-tracking";
-import { formatNumber } from "@ugoe/i18n";
 import type { MotionPriority, PoseGroupInfo } from "@ugoe/player";
 import {
   AlertDialog,
@@ -23,7 +23,6 @@ import {
   Slider,
   Toggle,
   Toolbar,
-  Tooltip,
 } from "@ugoe/ui";
 import { onMount } from "svelte";
 import ApiApproval from "./ApiApproval.svelte";
@@ -31,7 +30,13 @@ import ApiPanel from "./ApiPanel.svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
 import InputPanel from "./InputPanel.svelte";
 import LoadPanel from "./LoadPanel.svelte";
-import { type ApiView, apiUrl, EMPTY_API, pendingToShow } from "./lib/api";
+import {
+  type ApiPendingClient,
+  type ApiPermission,
+  type ApiView,
+  EMPTY_API,
+  pendingToShow,
+} from "./lib/api";
 import { describeError, isSceneError } from "./lib/errors";
 import type {
   FileKind,
@@ -72,6 +77,7 @@ import {
   presetSize,
   type TickRate,
 } from "./lib/settings";
+import { statusBadges } from "./lib/status";
 import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import PosePanel from "./PosePanel.svelte";
@@ -80,6 +86,7 @@ import SceneEditor from "./SceneEditor.svelte";
 import ScenesPanel from "./ScenesPanel.svelte";
 import SettingsDialog from "./SettingsDialog.svelte";
 import SourcePanel from "./SourcePanel.svelte";
+import StatusBadge from "./StatusBadge.svelte";
 import VirtualCameraPanel from "./VirtualCameraPanel.svelte";
 
 /** スライダーを動かした後、指揮役からの値で表示を上書きしない時間 (ミリ秒)。 */
@@ -104,9 +111,6 @@ let discarding = $state<(() => void) | null>(null);
 let sceneError = $state<{ id: string; message: string; missingModel: boolean } | null>(null);
 let parameters = $state<ParameterInfo[]>([]);
 let values = $state<Record<string, number>>({});
-let seq = $state<number | null>(null);
-let tickMs = $state<number | null>(null);
-let receivers = $state(0);
 let output = $state<OutputState | null>(null);
 /** 送っている途中の刻みの速さ (プロファイルに持つ。T0827)。 */
 /** シーンの切り替えの読み込み中 (T0837。ホットキー・外部 API が始めたものはバックエンドの通知で、T0841)。 */
@@ -138,9 +142,15 @@ let hotkeyError = $state<string | null>(null);
 // --- 操作 API (T0805) ---
 
 let api = $state<ApiView>(EMPTY_API);
+/** 承認したばかりのクライアント (取り消せる知らせを出す。誤って承認したときのため)。 */
+let approved = $state<{ id: string; name: string; permission: ApiPermission } | null>(null);
 /** 承認の知らせで「後で」を押したクライアント。 */
 let postponed = $state<ReadonlySet<string>>(new Set());
 const approvals = $derived(pendingToShow(api, postponed));
+/** 承認の取り消しの知らせ (承認した一覧に載っている間だけ)。 */
+const approvedClient = $derived(
+  approved !== null && api.clients.some((c) => c.id === approved?.id) ? approved : null,
+);
 /** カメラとマイクの処理を回す刻み (バックエンドの刻みのスレッドから届く)。 */
 const pulse = new Pulse();
 const sendTracking = latestOnly((frame: TrackingFrame | null) =>
@@ -166,6 +176,34 @@ let appliedInput = "";
 const inputSettings = $derived<InputSettings>(profile?.profile.input ?? DEFAULT_INPUT);
 const motionSettings = $derived<MotionSettings>(profile?.profile.motion ?? DEFAULT_MOTION);
 const hotkeys = $derived<Hotkey[]>(profile?.profile.hotkeys ?? []);
+/** シーンの ID → 切り替えのホットキー (シーンの一覧に並べて示す。同じシーンに複数あれば先のもの)。 */
+const sceneHotkeys = $derived.by(() => {
+  const out = new Map<string, string>();
+  for (const hotkey of hotkeys) {
+    if (hotkey.action.kind === "scene" && hotkey.keys !== "" && !out.has(hotkey.action.scene))
+      out.set(hotkey.action.scene, hotkey.keys);
+  }
+  return out;
+});
+/** 「いまの状態」の印 (lib/status.ts)。 */
+const badges = $derived(
+  statusBadges({
+    tracking: {
+      status: tracker.status,
+      faceFound: tracker.faceFound,
+      fps: tracker.fps,
+      paused: animation.trackingPaused,
+    },
+    lipSync: { running: microphone.running, paused: animation.lipSyncPaused },
+    hotkeys: {
+      count: hotkeys.filter((h) => h.keys !== "").length,
+      problems: hotkeyProblems.length,
+      wayland,
+    },
+    load: status,
+    api,
+  }),
+);
 
 const shownParameters = $derived(parameters.filter((p) => showInternal || !p.internal));
 const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
@@ -235,9 +273,6 @@ function onMonitor(message: MonitorMessage) {
       break;
     case "status": {
       status = message;
-      seq = message.seq;
-      tickMs = message.tickMs;
-      receivers = message.outputs;
       const ids = scene?.parameterIds ?? [];
       const now = performance.now();
       ids.forEach((id, i) => {
@@ -556,6 +591,23 @@ function parameterStep(p: ParameterInfo): number {
   return (p.max - p.min) / 200;
 }
 
+async function approveClient(client: ApiPendingClient, permission: ApiPermission) {
+  if (host === null) return;
+  try {
+    await host.approveApiClient(client.id, permission);
+    approved = { id: client.id, name: client.name, permission };
+  } catch (e) {
+    error = describeError(e);
+  }
+}
+
+/** 承認したばかりのクライアントの承認を取り消す (知らせの「取り消す」)。 */
+function undoApproval() {
+  const client = approved;
+  approved = null;
+  if (client !== null) void run((h) => h.revokeApiClient(client.id));
+}
+
 function setParameter(id: string, value: number) {
   edited.set(id, performance.now());
   values[id] = value;
@@ -620,7 +672,8 @@ onMount(() => {
   <header class="studio__toolbar">
     <Menu label={t("toolbar.profile")} entries={profileEntries} disabled={host === null} />
     <span class="studio__profile">
-      <span class="studio__profile-name">{profileName}</span>
+      <!-- 狭い幅では省略するので、全体 (保存先の場所) を title に出す -->
+      <span class="studio__profile-name" title={profile?.path ?? profileName}>{profileName}</span>
       {#if profile !== null}
         <span class="studio__saved" class:studio__saved--dirty={profile.dirty}>
           {profile.dirty ? t("profile.unsaved") : t("profile.saved")}
@@ -638,27 +691,13 @@ onMount(() => {
       </Button>
     </Toolbar>
     <div class="studio__spacer"></div>
-    {#if api.listening}
-      {@render badge(t("api.toolbar"), t("api.toolbarOn", { url: apiUrl(api.port) }))}
-    {/if}
-    {#if api.source.listening}
-      {@render badge(t("source.toolbar"), t("source.toolbarOn", { count: api.source.connections }))}
-    {/if}
-    {#if status !== null}
-      <span class="studio__load">
-        {t("load.summary", {
-          tick: t("load.ms", { value: formatNumber(status.tickMs, { maximumFractionDigits: 2 }) }),
-          rate: t("load.rateValue", { value: status.tickRate }),
-        })}
-      </span>
-    {/if}
     <IconButton label={t("toolbar.settings")} onclick={() => (settingsOpen = true)}>
       <Icon name="settings" />
     </IconButton>
   </header>
 
   {#if error !== null}
-    <p class="studio__error ugoe-selectable" role="alert">{error}</p>
+    <Notice tone="danger" ondismiss={() => (error = null)}>{error}</Notice>
   {/if}
   {#if profile !== null && profile.path === null && profile.dirty}
     <Notice tone="warning">
@@ -677,11 +716,23 @@ onMount(() => {
     <ApiApproval
       {client}
       disabled={host === null}
-      onapprove={(permission) => void run((h) => h.approveApiClient(client.id, permission))}
+      onapprove={(permission) => void approveClient(client, permission)}
       ondeny={() => void run((h) => h.denyApiClient(client.id))}
       onlater={() => (postponed = new Set([...postponed, client.id]))}
     />
   {/each}
+
+  {#if approvedClient !== null}
+    <Notice tone="success" ondismiss={() => (approved = null)}>
+      {t("api.approved", {
+        name: approvedClient.name,
+        permission: t(approvedClient.permission === "control" ? "api.permissionControl" : "api.permissionRead"),
+      })}
+      {#snippet actions()}
+        <Button small onclick={undoApproval}>{t("api.undoApproval")}</Button>
+      {/snippet}
+    </Notice>
+  {/if}
 
   {#if sceneError !== null}
     <Notice tone="danger" ondismiss={() => (sceneError = null)}>
@@ -707,6 +758,7 @@ onMount(() => {
       {selected}
       loading={sceneLoading.active ? { scene: sceneLoading.scene } : null}
       disabled={host === null}
+      hotkeys={sceneHotkeys}
       onactivate={activateScene}
       onadd={addScene}
       onduplicate={duplicateScene}
@@ -714,68 +766,39 @@ onMount(() => {
       onremove={(id) => void run((h) => h.removeScene(id))}
     />
 
-    <section class="studio__state" aria-labelledby="state-heading">
-      <h2 id="state-heading">{t("state.heading")}</h2>
-      {#if scene === null || scene.modelRevision === 0}
-        <p class="studio__empty">{t("state.noModel")}</p>
-      {:else}
-        <dl class="studio__facts">
-          <dt>{t("state.scene")}</dt>
-          <dd>{liveName}</dd>
-          <dt>{t("state.model")}</dt>
-          <dd>{scene.modelName}</dd>
-          <dt>{t("state.frame")}</dt>
-          <dd class="studio__number">{seq === null ? "—" : formatNumber(seq)}</dd>
-          <dt>{t("state.tick")}</dt>
-          <dd class="studio__number">
-            {tickMs === null
-              ? "—"
-              : t("state.tickValue", { value: formatNumber(tickMs, { maximumFractionDigits: 2 }) })}
-          </dd>
-          <dt>{t("state.receivers")}</dt>
-          <dd class="studio__number">{formatNumber(receivers)}</dd>
-          <dt>{t("state.tracking")}</dt>
-          <dd>
-            {animation.trackingPaused
-              ? t("state.trackingPaused")
-              : !tracker.running
-                ? t("state.trackingOff")
-                : tracker.faceFound
-                  ? t("state.trackingFace", { fps: tracker.fps })
-                  : t("state.trackingNoFace")}
-          </dd>
-          <dt>{t("state.lipSync")}</dt>
-          <dd class="studio__lip">
-            {#if animation.lipSyncPaused}
-              {t("state.lipSyncPaused")}
-            {:else if microphone.running}
-              <meter min="0" max="1" value={microphone.level} aria-label={t("state.lipSync")}></meter>
-            {:else}
-              {t("state.lipSyncOff")}
-            {/if}
-          </dd>
-          <dt>{t("state.motion")}</dt>
-          <dd>{animation.current?.name ?? "—"}</dd>
-          <dt>{t("state.expressions")}</dt>
-          <dd>{animation.activeExpressions.length === 0 ? "—" : animation.activeExpressions.join(", ")}</dd>
-        </dl>
-      {/if}
-    </section>
+    <div class="studio__center">
+      <section class="studio__now" aria-labelledby="state-heading">
+        <h2 id="state-heading">{t("state.heading")}</h2>
+        <ul class="studio__status" aria-label={t("status.label")}>
+          {#each badges as view (view.id)}
+            <li>
+              <StatusBadge {view}>
+                {#if view.id === "lipSync" && view.tone === "ok"}
+                  <meter min="0" max="1" value={microphone.level} aria-label={t("status.meter")}></meter>
+                {/if}
+              </StatusBadge>
+            </li>
+          {/each}
+        </ul>
+        {#if scene === null || scene.modelRevision === 0}
+          <p class="studio__empty">{t("state.noModel")}</p>
+          <div>
+            <Button onclick={chooseModel} disabled={host === null}>{t("toolbar.open")}</Button>
+          </div>
+        {:else}
+          <dl class="studio__facts">
+            <dt>{t("state.scene")}</dt>
+            <dd class="studio__live-name">{liveName}</dd>
+            <dt>{t("state.model")}</dt>
+            <dd>{scene.modelName}</dd>
+            <dt>{t("state.motion")}</dt>
+            <dd>{animation.current?.name ?? "—"}</dd>
+            <dt>{t("state.expressions")}</dt>
+            <dd>{animation.activeExpressions.length === 0 ? "—" : animation.activeExpressions.join(", ")}</dd>
+          </dl>
+        {/if}
+      </section>
 
-    <aside class="studio__panels">
-      {#if selectedScene !== null}
-        <Section title={t("editor.heading")}>
-          <SceneEditor
-            scene={selectedScene}
-            live={profile?.live === selectedScene.id}
-            usesLighting={profile?.live === selectedScene.id ? usesLighting : null}
-            disabled={host === null}
-            onchange={updateScene}
-            onactivate={() => selectedScene && activateScene(selectedScene.id)}
-            onpick={pickFile}
-          />
-        </Section>
-      {/if}
       <Section title={t("motion.heading")}>
         <MotionPanel
           {animation}
@@ -794,6 +817,22 @@ onMount(() => {
             shown={scene?.pose ?? []}
             disabled={host === null}
             onchange={(part) => run((h) => h.showPose(part))}
+          />
+        </Section>
+      {/if}
+    </div>
+
+    <aside class="studio__panels">
+      {#if selectedScene !== null}
+        <Section title={t("editor.heading")}>
+          <SceneEditor
+            scene={selectedScene}
+            live={profile?.live === selectedScene.id}
+            usesLighting={profile?.live === selectedScene.id ? usesLighting : null}
+            disabled={host === null}
+            onchange={updateScene}
+            onactivate={() => selectedScene && activateScene(selectedScene.id)}
+            onpick={pickFile}
           />
         </Section>
       {/if}
@@ -948,16 +987,6 @@ onMount(() => {
 
 <SettingsDialog bind:open={settingsOpen} />
 
-<!-- ツールバーの印。説明は Tooltip で出す (キーボードでも出せるよう、印をフォーカスできるようにする) -->
-{#snippet badge(label: string, tooltip: string)}
-  <Tooltip text={tooltip}>
-    {#snippet trigger(attrs)}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <span {...attrs} class="studio__api" tabindex="0">{label}</span>
-    {/snippet}
-  </Tooltip>
-{/snippet}
-
 <AlertDialog
   open={discarding !== null}
   title={t("profile.discardTitle")}
@@ -1008,54 +1037,47 @@ onMount(() => {
     flex: 1;
   }
 
-  .studio__load {
-    color: var(--ugoe-color-text-muted);
-    font-size: var(--ugoe-font-size-sm);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .studio__api:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 2px;
-  }
-
-  .studio__api {
-    padding: 0 var(--ugoe-space-2);
-    border-radius: var(--ugoe-radius-sm);
-    background: var(--ugoe-color-accent-soft);
-    color: var(--ugoe-color-text);
-    font-size: var(--ugoe-font-size-sm);
-  }
-
-  .studio__error {
-    margin: 0;
-    padding: var(--ugoe-space-2) var(--ugoe-space-4);
-    background: var(--ugoe-color-danger-soft);
-    color: var(--ugoe-color-text);
-    border-bottom: 1px solid var(--ugoe-color-border);
-  }
-
+  /*
+    列の幅 (T0817): シーンの一覧は名前とホットキーが 1 行に収まる幅、中央 (配信中に触るもの) を最も広く、右の設定のパネルは
+    スライダーと数値の欄が並ぶ幅で止める。960px 以下では、シーンと中央を 2 列にして設定のパネルをその下に、640px 以下では 1 列に積み、
+    画面の全体を送る (列ごとの送りをやめる)。
+  */
   .studio__main {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr) minmax(18rem, 26rem);
+    grid-template-columns: minmax(13rem, 17rem) minmax(20rem, 1fr) minmax(20rem, 28rem);
   }
 
   @media (max-width: 960px) {
     .studio__main {
-      grid-template-columns: minmax(0, 1fr);
-      /* 縦に積んだ列を中身の高さにして、列ごと送る (auto の行は中のスクロールに合わせて縮み、列が重なっていた。T0907) */
+      grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+      /* 縦に積んだ列を中身の高さにして、画面の全体を送る (auto の行は中のスクロールに合わせて縮み、列が重なっていた。T0907) */
       grid-auto-rows: max-content;
       overflow: auto;
     }
+
+    .studio__panels {
+      grid-column: 1 / -1;
+      border-left: none;
+      border-top: 1px solid var(--ugoe-color-border);
+    }
   }
 
+  @media (max-width: 640px) {
+    .studio__main {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* 狭い幅でも名前を次の行へ送らず、省略して「プロファイル」と同じ行に置く (ヘッダーを 2 行に収める。T0817) */
   .studio__profile {
     display: flex;
+    flex: 1 1 8rem;
     align-items: baseline;
     gap: var(--ugoe-space-2);
     min-width: 0;
+    max-width: max-content;
   }
 
   .studio__profile-name {
@@ -1075,21 +1097,45 @@ onMount(() => {
     color: var(--ugoe-color-warning);
   }
 
-  .studio__state {
+  .studio__center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ugoe-space-4);
+    min-width: 0;
     padding: var(--ugoe-space-4) var(--ugoe-space-5);
     overflow: auto;
   }
 
-  .studio__state h2 {
-    margin: 0 0 var(--ugoe-space-4);
-    font-size: var(--ugoe-font-size-xl);
+  .studio__now {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ugoe-space-3);
+  }
+
+  .studio__now h2 {
+    margin: 0;
+    font-size: var(--ugoe-font-size-lg);
     font-weight: var(--ugoe-font-weight-strong);
+  }
+
+  .studio__status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ugoe-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .studio__status meter {
+    width: 4rem;
   }
 
   .studio__facts {
     display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--ugoe-space-2) var(--ugoe-space-5);
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--ugoe-space-1) var(--ugoe-space-4);
     margin: 0;
   }
 
@@ -1099,14 +1145,12 @@ onMount(() => {
 
   .studio__facts dd {
     margin: 0;
+    overflow-wrap: anywhere;
   }
 
-  .studio__number {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .studio__lip meter {
-    width: 8rem;
+  .studio__live-name {
+    font-size: var(--ugoe-font-size-xl);
+    font-weight: var(--ugoe-font-weight-strong);
   }
 
   .studio__panels {

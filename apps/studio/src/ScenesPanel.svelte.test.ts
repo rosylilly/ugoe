@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // シーンの一覧 (ScenesPanel.svelte): 読み込んでいるシーンに印を付け、読み込み中を知らせる (T0837)。
+// 切り替えのホットキーを並べて示し、削除は確かめてから行う (T0817)。
 import { flushSync, mount, unmount } from "svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { t } from "./lib/i18n";
 import type { SceneSettings } from "./lib/profile";
 import ScenesPanel from "./ScenesPanel.svelte";
@@ -26,7 +27,10 @@ function scene(id: string, name: string, model: string): SceneSettings {
   };
 }
 
-function setup(loading: { scene: string | null } | null) {
+function setup(
+  loading: { scene: string | null } | null,
+  hotkeys: ReadonlyMap<string, string> = new Map(),
+) {
   const scenes: SceneSettings[] = [
     scene("a", "Chat", "/m/avatar.ugoe"),
     scene("b", "Game", "/m/other.ugoe"),
@@ -36,6 +40,7 @@ function setup(loading: { scene: string | null } | null) {
     live: "a" as string | null,
     selected: "b" as string | null,
     loading,
+    hotkeys,
     onactivate: (_id: string) => {},
     onadd: () => {},
     onduplicate: (_id: string) => {},
@@ -55,7 +60,9 @@ function setup(loading: { scene: string | null } | null) {
       b.textContent?.includes(name),
     );
   const status = () => target.querySelector('[role="status"]')?.textContent?.trim();
-  return { props, item, status };
+  const button = (label: string) =>
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  return { props, item, status, button };
 }
 
 describe("ScenesPanel", () => {
@@ -83,5 +90,30 @@ describe("ScenesPanel", () => {
     expect(status()).toBe(t("scenes.loadingStatus"));
     expect(item("Chat")?.getAttribute("aria-busy")).toBeNull();
     expect(item("Game")?.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("shows the hotkey that switches to each scene", () => {
+    const { item } = setup(null, new Map([["b", "Ctrl+Shift+Digit2"]]));
+    expect(item("Game")?.querySelector(".ugoe-kbd")?.textContent).toContain("2");
+    expect(item("Chat")?.querySelector(".ugoe-kbd")).toBeNull();
+  });
+
+  it("asks before deleting the selected scene", async () => {
+    const { props, button } = setup(null);
+    const onremove = vi.fn();
+    props.onremove = onremove;
+    flushSync();
+    button(t("scenes.removeLabel"))?.click();
+    const dialog = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="alertdialog"]');
+      if (found === null) throw new Error("no dialog");
+      return found;
+    });
+    expect(onremove).not.toHaveBeenCalled();
+    const confirm = [...dialog.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === t("scenes.remove"),
+    );
+    confirm?.click();
+    await vi.waitFor(() => expect(onremove).toHaveBeenCalledWith("b"));
   });
 });

@@ -1,9 +1,11 @@
 <!--
   シーンの一覧 (docs/studio.md#操作ウィンドウ の左)。押すとそのシーンに切り替え、編集の対象にする。
-  追加・複製・並べ替え・削除。配信しているシーンと、読み込んでいるシーンに印を付ける。
+  追加・複製・並べ替え・削除。配信しているシーンと、読み込んでいるシーンに印を付け、切り替えのホットキーを並べて示す。
+  操作のボタンは狭い列でも 1 行に収まるよう、追加のほかはアイコンにする (名前は Tooltip。T0817)。削除は確かめてから行う。
 -->
 <script lang="ts">
-import { AlertDialog, Button } from "@ugoe/ui";
+import { AlertDialog, Button, Icon, IconButton, Kbd } from "@ugoe/ui";
+import { displayKeys } from "./lib/hotkeys";
 import { t } from "./lib/i18n";
 import { sceneLabel } from "./lib/labels";
 import { fileName, type SceneSettings } from "./lib/profile";
@@ -16,6 +18,8 @@ interface Props {
   selected: string | null;
   /** 切り替えを読み込んでいるか (`scene` は読み込んでいるシーンの ID。分からなければ `null`)。 */
   loading?: { scene: string | null } | null;
+  /** シーンの ID → 切り替えのホットキー (`Ctrl+Shift+Digit1` の形。割り当てたものだけ)。 */
+  hotkeys?: ReadonlyMap<string, string>;
   disabled?: boolean;
   onactivate: (id: string) => void;
   onadd: () => void;
@@ -29,6 +33,7 @@ let {
   live,
   selected,
   loading = null,
+  hotkeys = new Map(),
   disabled = false,
   onactivate,
   onadd,
@@ -61,15 +66,22 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
             {disabled}
             onclick={() => onactivate(scene.id)}
           >
-            <span class="scenes__name">{sceneLabel(scene, i)}</span>
-            <span class="scenes__model">
-              {scene.model === null ? t("scenes.noModel") : fileName(scene.model)}
+            <span class="scenes__row">
+              <span class="scenes__name">{sceneLabel(scene, i)}</span>
+              {#if scene.id === loading?.scene}
+                <span class="scenes__loading">{t("scenes.loading")}</span>
+              {:else if scene.id === live}
+                <span class="scenes__live">{t("scenes.live")}</span>
+              {/if}
             </span>
-            {#if scene.id === loading?.scene}
-              <span class="scenes__loading">{t("scenes.loading")}</span>
-            {:else if scene.id === live}
-              <span class="scenes__live">{t("scenes.live")}</span>
-            {/if}
+            <span class="scenes__row">
+              <span class="scenes__model">
+                {scene.model === null ? t("scenes.noModel") : fileName(scene.model)}
+              </span>
+              {#if hotkeys.has(scene.id)}
+                <span class="scenes__key"><Kbd keys={displayKeys(hotkeys.get(scene.id) ?? "")} /></span>
+              {/if}
+            </span>
           </button>
         </li>
       {/each}
@@ -80,25 +92,43 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     </p>
   {/if}
   <div class="scenes__actions">
-    <Button {disabled} onclick={onadd}>{t("scenes.add")}</Button>
-    <Button disabled={disabled || current === null} onclick={() => current && onduplicate(current.id)}>
-      {t("scenes.duplicate")}
-    </Button>
-    <Button
+    <Button {disabled} onclick={onadd}><Icon name="plus" />{t("scenes.add")}</Button>
+    <span class="scenes__spacer"></span>
+    <IconButton
+      label={t("scenes.duplicate")}
+      disabled={disabled || current === null}
+      onclick={() => current && onduplicate(current.id)}
+    >
+      <!-- 複製: 重ねた 2 枚 (Icon に無い 1 か所だけの印) -->
+      <svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="5.5" y="5.5" width="8" height="8" rx="1" /><path d="M10.5 3.5v-.75a.75.75 0 0 0-.75-.75h-6.5a.75.75 0 0 0-.75.75v6.5c0 .41.34.75.75.75h.75" />
+      </svg>
+    </IconButton>
+    <IconButton
+      label={t("scenes.moveUp")}
       disabled={disabled || current === null || index <= 0}
       onclick={() => current && onmove(current.id, index - 1)}
     >
-      {t("scenes.moveUp")}
-    </Button>
-    <Button
+      <Icon name="arrowUp" />
+    </IconButton>
+    <IconButton
+      label={t("scenes.moveDown")}
       disabled={disabled || current === null || index >= scenes.length - 1}
       onclick={() => current && onmove(current.id, index + 1)}
     >
-      {t("scenes.moveDown")}
-    </Button>
-    <Button variant="danger" disabled={disabled || current === null} onclick={() => (removing = true)}>
-      {t("scenes.remove")}
-    </Button>
+      <Icon name="arrowDown" />
+    </IconButton>
+    <IconButton
+      label={t("scenes.removeLabel")}
+      variant="danger"
+      disabled={disabled || current === null}
+      onclick={() => (removing = true)}
+    >
+      <!-- 削除: ごみ箱 (Icon に無い 1 か所だけの印) -->
+      <svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.6 9h6.3l.6-9M6.75 6.75v4M9.25 6.75v4" />
+      </svg>
+    </IconButton>
   </div>
 </section>
 
@@ -143,9 +173,8 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   }
 
   .scenes__item {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0 var(--ugoe-space-2);
+    display: flex;
+    flex-direction: column;
     width: 100%;
     padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border: 1px solid transparent;
@@ -158,7 +187,11 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   }
 
   .scenes__item:hover:not(:disabled) {
-    background: var(--ugoe-color-sunken);
+    background-image: var(--ugoe-overlay-hover);
+  }
+
+  .scenes__item:active:not(:disabled) {
+    background-image: var(--ugoe-overlay-active);
   }
 
   .scenes__item:focus-visible {
@@ -175,7 +208,17 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     border-color: var(--ugoe-color-accent);
   }
 
+  /* 1 行目は名前と配信中の印、2 行目はモデルとホットキー。名前とモデルを省略し、印とキーは縮めない */
+  .scenes__row {
+    display: flex;
+    align-items: center;
+    gap: var(--ugoe-space-2);
+    min-width: 0;
+  }
+
   .scenes__name {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -183,7 +226,8 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   }
 
   .scenes__model {
-    grid-column: 1;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -191,10 +235,14 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     font-size: var(--ugoe-font-size-sm);
   }
 
+  .scenes__key {
+    flex: none;
+    color: var(--ugoe-color-text-muted);
+    font-size: var(--ugoe-font-size-sm);
+  }
+
   .scenes__live {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
+    flex: none;
     padding: 0 var(--ugoe-space-2);
     border-radius: var(--ugoe-radius-sm);
     background: var(--ugoe-color-accent);
@@ -203,9 +251,7 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   }
 
   .scenes__loading {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
+    flex: none;
     padding: 0 var(--ugoe-space-2);
     border: 1px solid var(--ugoe-color-control-border);
     border-radius: var(--ugoe-radius-sm);
@@ -216,7 +262,12 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   .scenes__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--ugoe-space-2);
+    align-items: center;
+    gap: var(--ugoe-space-1);
+  }
+
+  .scenes__spacer {
+    flex: 1;
   }
 
   .scenes__empty,

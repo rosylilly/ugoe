@@ -89,21 +89,77 @@
     "heading": "Now",
     "noModel": "No model is on air. Choose a model for the scene to show it in the output window.",
     "model": "Model",
-    "frame": "Frame",
-    "tick": "Time per tick",
-    "tickValue": "{{value}} ms",
-    "receivers": "Receivers",
     "scene": "Scene",
-    "tracking": "Tracking",
-    "trackingPaused": "Paused",
-    "trackingOff": "Off",
-    "trackingFace": "Face found ({{fps}} fps)",
-    "trackingNoFace": "No face",
-    "lipSync": "Lip sync",
-    "lipSyncPaused": "Paused",
-    "lipSyncOff": "Off",
     "motion": "Motion",
     "expressions": "Expressions"
+  },
+  "status": {
+    "label": "Status",
+    "meter": "Microphone level",
+    "tracking": {
+      "off": "Tracking off",
+      "offTip": "Face tracking with the camera is off. Start it in Inputs.",
+      "loading": "Starting tracking",
+      "loadingTip": "The camera and the face tracking are starting.",
+      "error": "Tracking stopped",
+      "errorTip": "Face tracking could not start or stopped. See Inputs for the reason.",
+      "face": "Tracking {{fps}} fps",
+      "faceTip": "Face tracking is running and sees a face. The number is how many camera frames are tracked per second.",
+      "noFace": "No face",
+      "noFaceTip": "Tracking is running, but the camera does not see a face. The model keeps its last pose.",
+      "paused": "Tracking paused",
+      "pausedTip": "Tracking is paused (by a hotkey or in Inputs). The model keeps its pose until you resume."
+    },
+    "lipSync": {
+      "on": "Lip sync on",
+      "onTip": "The microphone moves the mouth. Adjust the sensitivity in Inputs.",
+      "off": "Lip sync off",
+      "offTip": "Lip sync with the microphone is off. Start it in Inputs.",
+      "paused": "Lip sync paused",
+      "pausedTip": "Lip sync is paused (by a hotkey or in Inputs). The microphone does not move the mouth until you resume."
+    },
+    "hotkeys": {
+      "none": "No hotkeys",
+      "noneTip": "No hotkeys are assigned. Add them in Hotkeys.",
+      "on_one": "{{count, number}} hotkey",
+      "on_other": "{{count, number}} hotkeys",
+      "onTip_one": "{{count, number}} hotkey is registered. It works even when another app is in front.",
+      "onTip_other": "{{count, number}} hotkeys are registered. They work even when another app is in front.",
+      "problems_one": "{{count, number}} hotkey not set",
+      "problems_other": "{{count, number}} hotkeys not set",
+      "problemsTip_one": "{{count, number}} hotkey could not be registered. See Hotkeys for the reason.",
+      "problemsTip_other": "{{count, number}} hotkeys could not be registered. See Hotkeys for the reason.",
+      "wayland": "Hotkeys in front only",
+      "waylandTip": "On Wayland, hotkeys work only while the studio window is in front."
+    },
+    "load": {
+      "okTip_one": "Time per tick and the tick rate. {{count, number}} receiver is showing the model. Details are in Frame rate and load.",
+      "okTip_other": "Time per tick and the tick rate. {{count, number}} receivers are showing the model. Details are in Frame rate and load.",
+      "warningTip_one": "{{count, number}} load warning. See Frame rate and load.",
+      "warningTip_other": "{{count, number}} load warnings. See Frame rate and load."
+    },
+    "api": {
+      "off": "API off",
+      "offTip": "The studio API is off. Turn it on in Studio API to let tools such as Stream Deck control the studio.",
+      "error": "API not listening",
+      "errorTip": "The studio API is on, but cannot listen on its port. See Studio API.",
+      "pending_one": "{{count, number}} app waiting",
+      "pending_other": "{{count, number}} apps waiting",
+      "pendingTip_one": "{{count, number}} app is waiting for approval. Approve or deny it in the notice at the top.",
+      "pendingTip_other": "{{count, number}} apps are waiting for approval. Approve or deny them in the notices at the top.",
+      "on": "API on",
+      "onTip_one": "Listening on {{url}}. {{count, number}} connection open.",
+      "onTip_other": "Listening on {{url}}. {{count, number}} connections open."
+    },
+    "source": {
+      "off": "Source off",
+      "offTip": "The page for the OBS browser source is off. Turn it on in Browser source (OBS).",
+      "error": "Source not served",
+      "errorTip": "The browser source is on, but the studio cannot listen on its port. See Studio API.",
+      "on": "Source on",
+      "onTip_one": "Serving the page for the OBS browser source ({{count, number}} page open).",
+      "onTip_other": "Serving the page for the OBS browser source ({{count, number}} pages open)."
+    }
   },
   "output": {
     "heading": "Output window",
@@ -186,6 +242,7 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "remove": "Delete",
+    "removeLabel": "Delete scene",
     "defaultName": "Scene {{n}}",
     "copyName": "{{name}} (copy)",
     "live": "On air",
@@ -436,8 +493,6 @@
   },
   "api": {
     "heading": "Studio API",
-    "toolbar": "API",
-    "toolbarOn": "API on: {{url}}",
     "enable": "Let other apps on this computer control the studio",
     "hint": "Tools such as Stream Deck or chat bots can switch scenes, expressions and motions. Only apps on this computer can connect, and you approve each new app here.",
     "error": "The studio API is not available: {{message}}",
@@ -474,12 +529,12 @@
     "approveBody": "Approve only apps you started yourself. Read only lets the app see scenes and expressions; read and control also lets it switch them and move parameters.",
     "approve": "Approve",
     "deny": "Deny",
-    "later": "Later"
+    "later": "Later",
+    "approved": "Approved {{name}} ({{permission}}).",
+    "undoApproval": "Undo"
   },
   "source": {
     "heading": "Browser source (OBS)",
-    "toolbar": "Source",
-    "toolbarOn": "Serving the page for the OBS browser source (open pages: {{count, number}})",
     "enable": "Serve a page for the OBS browser source",
     "hint": "Paste the URL into an OBS browser source to bring in the avatar with a transparent background. Only apps on this computer can open the page, and the page can only watch, not control.",
     "error": "Cannot serve the browser source: {{message}}",

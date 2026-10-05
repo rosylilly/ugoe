@@ -89,21 +89,67 @@
     "heading": "いまの状態",
     "noModel": "配信しているモデルはありません。シーンのモデルを選ぶと、出力ウィンドウに出ます。",
     "model": "モデル",
-    "frame": "フレーム",
-    "tick": "1 刻みの時間",
-    "tickValue": "{{value}} ms",
-    "receivers": "受け手",
     "scene": "シーン",
-    "tracking": "トラッキング",
-    "trackingPaused": "一時停止中",
-    "trackingOff": "切",
-    "trackingFace": "顔あり ({{fps}} fps)",
-    "trackingNoFace": "顔なし",
-    "lipSync": "口パク",
-    "lipSyncPaused": "一時停止中",
-    "lipSyncOff": "切",
     "motion": "モーション",
     "expressions": "表情"
+  },
+  "status": {
+    "label": "状態",
+    "meter": "マイクの音量",
+    "tracking": {
+      "off": "トラッキング 切",
+      "offTip": "カメラのフェイストラッキングは切です。「入力」で始めます。",
+      "loading": "トラッキングを準備中",
+      "loadingTip": "カメラとフェイストラッキングを準備しています。",
+      "error": "トラッキング 停止",
+      "errorTip": "フェイストラッキングを始められないか、止まりました。理由は「入力」に出ています。",
+      "face": "トラッキング {{fps}} fps",
+      "faceTip": "フェイストラッキングが動いていて、顔が見えています。数はカメラの映像を 1 秒に何回読んでいるかです。",
+      "noFace": "顔なし",
+      "noFaceTip": "トラッキングは動いていますが、カメラに顔が映っていません。モデルは最後の姿勢のままです。",
+      "paused": "トラッキング 一時停止中",
+      "pausedTip": "トラッキングを一時停止しています (ホットキーか「入力」で)。再開するまでモデルは今の姿勢のままです。"
+    },
+    "lipSync": {
+      "on": "口パク 入",
+      "onTip": "マイクの音で口が動きます。感度は「入力」で変えます。",
+      "off": "口パク 切",
+      "offTip": "マイクの口パクは切です。「入力」で始めます。",
+      "paused": "口パク 一時停止中",
+      "pausedTip": "口パクを一時停止しています (ホットキーか「入力」で)。再開するまでマイクの音で口は動きません。"
+    },
+    "hotkeys": {
+      "none": "ホットキーなし",
+      "noneTip": "ホットキーを割り当てていません。「ホットキー」で足します。",
+      "on_other": "ホットキー {{count, number}} 個",
+      "onTip_other": "ホットキーを {{count, number}} 個登録しています。ほかのアプリが前面にあっても効きます。",
+      "problems_other": "ホットキー {{count, number}} 個が未登録",
+      "problemsTip_other": "ホットキーのうち {{count, number}} 個を登録できませんでした。理由は「ホットキー」に出ています。",
+      "wayland": "ホットキーは前面でだけ",
+      "waylandTip": "Wayland では、スタジオのウィンドウが前面にあるときだけホットキーが効きます。"
+    },
+    "load": {
+      "okTip_other": "1 刻みの時間と刻みの速さです。受け手 {{count, number}} つがモデルを出しています。詳しくは「フレームレートと負荷」にあります。",
+      "warningTip_other": "負荷の注意が {{count, number}} 件あります。「フレームレートと負荷」を見てください。"
+    },
+    "api": {
+      "off": "API 切",
+      "offTip": "操作 API は切です。Stream Deck などのツールから操作させるときは「操作 API」で入にします。",
+      "error": "API が待ち受けられない",
+      "errorTip": "操作 API は入ですが、ポートで待ち受けられません。「操作 API」を見てください。",
+      "pending_other": "承認待ち {{count, number}} 件",
+      "pendingTip_other": "{{count, number}} 個のアプリが承認を待っています。上の知らせで承認するか拒否します。",
+      "on": "API 入",
+      "onTip_other": "{{url}} で待ち受けています。接続中: {{count, number}}。"
+    },
+    "source": {
+      "off": "ソース 切",
+      "offTip": "OBS のブラウザソース用のページは切です。「ブラウザソース (OBS)」で入にします。",
+      "error": "ソースを出せない",
+      "errorTip": "ブラウザソースは入ですが、ポートで待ち受けられません。「操作 API」を見てください。",
+      "on": "ソース 入",
+      "onTip_other": "OBS のブラウザソース用のページを出しています (開いているページ: {{count, number}})。"
+    }
   },
   "output": {
     "heading": "出力ウィンドウ",
@@ -184,6 +230,7 @@
     "moveUp": "上へ",
     "moveDown": "下へ",
     "remove": "削除",
+    "removeLabel": "シーンを削除",
     "defaultName": "シーン {{n}}",
     "copyName": "{{name}} (複製)",
     "live": "配信中",
@@ -434,8 +481,6 @@
   },
   "api": {
     "heading": "操作 API",
-    "toolbar": "API",
-    "toolbarOn": "API を受け付け中: {{url}}",
     "enable": "この計算機のほかのアプリからスタジオを操作させる",
     "hint": "Stream Deck やチャットのボットなどから、シーン・表情・モーションを切り替えられます。接続できるのはこの計算機のアプリだけで、新しいアプリはここで承認します。",
     "error": "操作 API を使えません: {{message}}",
@@ -471,12 +516,12 @@
     "approveBody": "自分で起動したアプリだけを承認してください。「読むだけ」はシーンや表情を見られるだけです。「読む・操作する」は切り替えやパラメータの操作もできます。",
     "approve": "承認",
     "deny": "拒否",
-    "later": "後で"
+    "later": "後で",
+    "approved": "{{name}} を承認しました ({{permission}})。",
+    "undoApproval": "取り消す"
   },
   "source": {
     "heading": "ブラウザソース (OBS)",
-    "toolbar": "ソース",
-    "toolbarOn": "OBS のブラウザソース用のページを出しています (開いているページ: {{count, number}})",
     "enable": "OBS のブラウザソース用のページを出す",
     "hint": "OBS のブラウザソースに URL を入れるだけで、背景を透過したアバターを取り込めます。ページを開けるのはこの計算機のアプリだけで、ページからは見るだけで操作はできません。",
     "error": "ブラウザソースを出せません: {{message}}",
