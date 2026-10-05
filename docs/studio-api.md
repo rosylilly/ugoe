@@ -115,6 +115,17 @@ request's response.
 `unknownScene`, `missing` (a file of the scene was not found), `unreadable`, `wrongType`, `tooLarge`, `dressUp`
 (the module does not fit the slot). Other fields in `data` give details (`name`, `path`, `message`).
 
+`data` also has `messageCode` and `args`, the same error in the shape the studio's own screens use
+(ADR 0029): `messageCode` is a stable dotted code (`scene.unknown`, `scene.model_missing`, `animation.no_model`, …)
+and `args` holds the values to put into the text (`id`, `name`, `path`, `asset`, `size`, `reason`). A client can
+look up `errors.<messageCode>` in the studio's catalogs (`apps/studio/locales/*.json`) and fill in `args` to show the
+studio's own translated text. A `messageCode` the client does not know falls back to `error.message`.
+
+```text
+← {"jsonrpc":"2.0","id":3,"error":{"code":-32010,"message":"no scene `nope`",
+    "data":{"code":"unknownScene","id":"nope","messageCode":"scene.unknown","args":{"id":"nope"}}}}
+```
+
 `error.message` is English text meant for logs; show your own text to your users based on `code` and `data.code`.
 
 ### Close codes
@@ -272,5 +283,5 @@ Notifications have the form `{"jsonrpc":"2.0","method":"<event>","params":{…}}
 
 ## Versioning
 
-`apiVersion` is `1`. New methods, new optional parameters, new result fields and new events may be added without
+`apiVersion` is `1`. New methods, new optional parameters, new result fields, new fields in `error.data` and new events may be added without
 changing it; clients should ignore fields and events they do not know. Incompatible changes raise `apiVersion`.

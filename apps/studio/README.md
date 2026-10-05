@@ -257,6 +257,8 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
 コマンドのエラーとは事情が違うため、名前と形は変えない (`error.message` が英語の文で、`message` に当たる)。
 同じエラーから両方を作るので、意味は対応する (`unknownScene` ↔ `scene.unknown`、`missing` ↔ `scene.<asset>_missing`、
 `noModel` ↔ `animation.no_model` など。対応は `src-tauri/src/error.rs` の `From` の実装)。
+元のフィールドはそのまま残し、コマンドのエラーと同じコードと引数を `messageCode`・`args` として足している (T0839。
+`src-tauri/src/api/rpc.rs` の `RpcError::failed`)。外のツールもカタログの `errors.<messageCode>` で同じ訳を使える。
 
 ## 仮想カメラ
 

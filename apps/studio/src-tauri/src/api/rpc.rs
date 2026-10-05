@@ -5,6 +5,8 @@
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+use crate::error::CommandError;
+
 /// JSON として読めない。
 pub const PARSE_ERROR: i64 = -32700;
 /// JSON-RPC の要求の形でない。
@@ -65,9 +67,27 @@ impl RpcError {
     }
 
     /// 操作を行えなかった。`error` は `code` を持つ形 (`SceneError`・`AnimationError` など)。
-    pub fn failed(error: &(impl Serialize + std::fmt::Display)) -> Self {
-        Self::new(OPERATION_FAILED, error.to_string())
-            .with_data(serde_json::to_value(error).unwrap_or(Value::Null))
+    ///
+    /// `data` は `error` をそのまま書いた形 (camelCase の `code` と平らなフィールド) に、コマンドのエラーと同じ
+    /// ADR 0029 のコード (`messageCode`) と引数 (`args`) を足したもの (T0839)。元のフィールドは公開の約束なので変えない。
+    pub(crate) fn failed<E>(error: &E) -> Self
+    where
+        E: Serialize + std::fmt::Display + Clone + Into<CommandError>,
+    {
+        let mut data = serde_json::to_value(error).unwrap_or(Value::Null);
+        if let Value::Object(fields) = &mut data {
+            let CommandError { code, args, .. } = error.clone().into();
+            fields.insert("messageCode".into(), Value::from(code));
+            fields.insert(
+                "args".into(),
+                Value::Object(
+                    args.into_iter()
+                        .map(|(name, value)| (name.to_owned(), value))
+                        .collect(),
+                ),
+            );
+        }
+        Self::new(OPERATION_FAILED, error.to_string()).with_data(data)
     }
 }
 
@@ -169,6 +189,57 @@ mod tests {
                 .1
                 .code,
             INVALID_PARAMS
+        );
+    }
+
+    /// `-32010` の `data` は元のフィールドをそのまま持ち、ADR 0029 のコードと引数を足す (T0839)。
+    #[test]
+    fn failed_keeps_the_fields_and_adds_the_message_code_and_args() {
+        use crate::animation::AnimationError;
+        use crate::stage::{Asset, SceneError};
+        use std::path::PathBuf;
+
+        let error = RpcError::failed(&SceneError::Missing {
+            asset: Asset::Module,
+            path: PathBuf::from("/m/hat.ugoemod"),
+        });
+        assert_eq!(error.code, OPERATION_FAILED);
+        assert_eq!(error.message, "/m/hat.ugoemod: not found");
+        assert_eq!(
+            error.data,
+            Some(json!({
+                "code": "missing",
+                "asset": "module",
+                "path": "/m/hat.ugoemod",
+                "messageCode": "scene.module_missing",
+                "args": { "asset": "module", "path": "/m/hat.ugoemod" },
+            }))
+        );
+        assert_eq!(
+            RpcError::failed(&SceneError::UnknownScene { id: "s".into() }).data,
+            Some(json!({
+                "code": "unknownScene",
+                "id": "s",
+                "messageCode": "scene.unknown",
+                "args": { "id": "s" },
+            }))
+        );
+        // 引数の無いエラーも `args` を (空で) 持つ。
+        assert_eq!(
+            RpcError::failed(&AnimationError::NoModel).data,
+            Some(json!({ "code": "noModel", "messageCode": "animation.no_model", "args": {} }))
+        );
+        assert_eq!(
+            RpcError::failed(&AnimationError::UnknownMotion {
+                name: "Wave".into()
+            })
+            .data,
+            Some(json!({
+                "code": "unknownMotion",
+                "name": "Wave",
+                "messageCode": "animation.unknown_motion",
+                "args": { "name": "Wave" },
+            }))
         );
     }
 

@@ -4,6 +4,7 @@
 //!
 //! 操作 API (`docs/studio-api.md`) の `-32010` の `data` は、これとは別の形 (`ProfileError`・`SceneError`・
 //! `AnimationError` をそのまま書いた `{ code, ...フィールド }`。コードも別の名前) で、外のツールとの約束なので変えない。
+//! そこへこの型の `code`・`args` を `messageCode`・`args` として足す (`api::rpc::RpcError::failed`。T0839)。
 
 use std::collections::BTreeMap;
 use std::path::Path;

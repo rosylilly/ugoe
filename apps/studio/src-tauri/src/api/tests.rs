@@ -510,6 +510,9 @@ fn operates_scenes_expressions_motions_and_parameters() {
     };
     assert_eq!(error["code"], OPERATION_FAILED);
     assert_eq!(error["data"]["code"], "unknownScene");
+    assert_eq!(error["data"]["id"], "nope");
+    assert_eq!(error["data"]["messageCode"], "scene.unknown");
+    assert_eq!(error["data"]["args"], json!({ "id": "nope" }));
 
     // 表情
     assert_eq!(
