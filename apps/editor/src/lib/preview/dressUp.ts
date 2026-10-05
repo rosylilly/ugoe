@@ -1,5 +1,6 @@
 // プレビューの着せ替え (docs/editor.md#プレビューの着せ替え) の、DOM と wasm に依存しない部分 (dressUp.test.ts)。
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
+import { describeLimitError } from "@ugoe/player";
 import { t } from "../i18n";
 import type { Slot } from "../ipc";
 import { describeModuleWarnings } from "./loadWarnings";
@@ -99,6 +100,9 @@ export function describeProblem(error: unknown): DressUpProblem {
   const parameter = text(fields.parameter, "?");
   const mesh = text(fields.mesh, "?");
   const summary = ((): string => {
+    // 読み込みの上限を超えたもの (`read_limit_exceeded`・`image_limit_exceeded`) は、モデルの読み込みと同じ文 (T0934)。
+    const limit = describeLimitError(error);
+    if (limit !== null) return limit;
     switch (code) {
       case "unknown_slot":
         return t("preview.dressUp.problem.unknownSlot", { module, slot });
@@ -143,6 +147,8 @@ export function describeProblem(error: unknown): DressUpProblem {
         return t("preview.dressUp.problem.invalidFile");
       case "texture":
         return t("preview.dressUp.problem.texture");
+      case "device_lost":
+        return t("preview.dressUp.problem.deviceLost");
       default:
         return detail;
     }

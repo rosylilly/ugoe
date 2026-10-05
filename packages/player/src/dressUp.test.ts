@@ -50,7 +50,7 @@ describe("parseModules", () => {
     expect(modules[1]?.requires).toEqual({ parameters: ["BodySway"], avatar_level: 2 });
     // 構造のある警告は日本語にし、構造の無い文はそのまま残す。
     expect(modules[1]?.warnings).toEqual([
-      "テクスチャ 0 は KTX2 の画像で、まだ表示できないため白で代わりに描いています",
+      "テクスチャ 0 は読めない形式 (ETC2・ASTC・Basis など) の KTX2 の画像なので、白で代わりに描いています",
       "texture 1: odd",
     ]);
   });

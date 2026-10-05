@@ -37,8 +37,8 @@ describe("parseLoadWarnings", () => {
 describe("describeLoadWarnings", () => {
   it("describes each code in English and leaves detached modules to the dress-up section", () => {
     expect(describeLoadWarnings(parseLoadWarnings(json), false)).toEqual([
-      "The normal map of texture 0 is a KTX2 image, which the preview can't use yet, so it is lit without it.",
-      "Texture 0 is a KTX2 image, which the preview can't show yet, so it is drawn white.",
+      "The normal map of texture 0 is a KTX2 image in a format the preview can't read yet (such as ETC2, ASTC or Basis), so it is lit without it.",
+      "Texture 0 is a KTX2 image in a format the preview can't read yet (such as ETC2, ASTC or Basis), so it is drawn white.",
       "Texture 2 has no image, so it is drawn white.",
       "The physics settings no longer fit this model and were turned off (bad).",
       'This file uses the feature "test.optional" from a newer version, so the preview shows a fallback for it.',
@@ -62,7 +62,7 @@ describe("describeModuleWarnings", () => {
     expect(describeModuleWarnings(["m", "other", "n"], details)).toEqual([
       "Texture 0 has no image, so it is drawn white.",
       "other",
-      "The normal map of texture 1 is a KTX2 image, which the preview can't use yet, so it is lit without it.",
+      "The normal map of texture 1 is a KTX2 image in a format the preview can't read yet (such as ETC2, ASTC or Basis), so it is lit without it.",
     ]);
     expect(describeModuleWarnings(["m"], undefined)).toEqual(["m"]);
   });

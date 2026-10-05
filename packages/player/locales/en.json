@@ -74,9 +74,9 @@
     }
   },
   "loadWarning": {
-    "textureKtx2": "Texture {{texture}} is a KTX2 image, which cannot be shown yet, so it is drawn in white instead.",
+    "textureKtx2": "Texture {{texture}} is a KTX2 image in a format that cannot be read yet (such as ETC2, ASTC or Basis), so it is drawn in white instead.",
     "textureMissing": "The image of texture {{texture}} is missing from the file, so it is drawn in white instead.",
-    "normalMapKtx2": "The normal map of texture {{texture}} is a KTX2 image, which cannot be used yet, so it is drawn without the normal map.",
+    "normalMapKtx2": "The normal map of texture {{texture}} is a KTX2 image in a format that cannot be read yet (such as ETC2, ASTC or Basis), so it is drawn without the normal map.",
     "physicsRemoved": "Removed the physics settings because they do not fit this model ({{reason}}).",
     "unknownOptionalFeature": "This file uses the feature \"{{feature}}\" from a newer version. This version shows it in another way.",
     "unknownValue": "This file has a value that this version does not know ({{path}}). It is shown with the default handling."

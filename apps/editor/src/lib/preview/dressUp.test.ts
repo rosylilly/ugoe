@@ -226,7 +226,7 @@ describe("dressUp helpers", () => {
         attached: true,
         textures: 2,
         warnings: [
-          "Texture 0 is a KTX2 image, which the preview can't show yet, so it is drawn white.",
+          "Texture 0 is a KTX2 image in a format the preview can't read yet (such as ETC2, ASTC or Basis), so it is drawn white.",
           "an old warning without details",
         ],
       },

@@ -189,6 +189,8 @@ const DRESS_UP_ERROR_KEYS = {
   no_model: "dressUp.error.noModel",
   invalid_file: "dressUp.error.invalidFile",
   texture: "dressUp.error.texture",
+  // GPU が止まったのはモデルの読み込みと同じ文 (T0934)。
+  device_lost: "loadError.deviceLost",
 } as const;
 
 /**

@@ -74,9 +74,9 @@
     }
   },
   "loadWarning": {
-    "textureKtx2": "テクスチャ {{texture}} は KTX2 の画像で、まだ表示できないため白で代わりに描いています",
+    "textureKtx2": "テクスチャ {{texture}} は読めない形式 (ETC2・ASTC・Basis など) の KTX2 の画像なので、白で代わりに描いています",
     "textureMissing": "テクスチャ {{texture}} の画像がファイルに無いため、白で代わりに描いています",
-    "normalMapKtx2": "テクスチャ {{texture}} の法線マップは KTX2 の画像で、まだ使えないため法線マップなしで描いています",
+    "normalMapKtx2": "テクスチャ {{texture}} の法線マップは読めない形式 (ETC2・ASTC・Basis など) の KTX2 の画像なので、法線マップなしで描いています",
     "physicsRemoved": "物理の設定がこのモデルに合わないため外しました ({{reason}})",
     "unknownOptionalFeature": "このファイルは新しい版の機能「{{feature}}」を使っています。この版では代わりの方法で表示しています",
     "unknownValue": "このファイルには、この版が知らない値があります ({{path}})。既定の扱いで表示しています"

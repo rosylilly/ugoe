@@ -52,10 +52,10 @@ describe("parseLoadWarnings", () => {
 describe("describeLoadWarning", () => {
   it("describes textures, normal maps and physics in Japanese", () => {
     expect(describeLoadWarning({ code: "texture_ktx2", warning: "", texture: 1 })).toBe(
-      "テクスチャ 1 は KTX2 の画像で、まだ表示できないため白で代わりに描いています",
+      "テクスチャ 1 は読めない形式 (ETC2・ASTC・Basis など) の KTX2 の画像なので、白で代わりに描いています",
     );
     expect(describeLoadWarning({ code: "normal_map_ktx2", warning: "", texture: 0 })).toBe(
-      "テクスチャ 0 の法線マップは KTX2 の画像で、まだ使えないため法線マップなしで描いています",
+      "テクスチャ 0 の法線マップは読めない形式 (ETC2・ASTC・Basis など) の KTX2 の画像なので、法線マップなしで描いています",
     );
     expect(describeLoadWarning({ code: "physics_removed", warning: "w", reason: "r" })).toBe(
       "物理の設定がこのモデルに合わないため外しました (r)",
