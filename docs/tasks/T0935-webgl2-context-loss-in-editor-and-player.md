@@ -1,11 +1,11 @@
 ---
 id: T0935
 title: エディタと Player でも WebGL2 の喪失で復元を待つか、続けて失敗したときの諦め方を決める (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0935
 ---
 
 # T0935: エディタと Player でも WebGL2 の喪失で復元を待つか、続けて失敗したときの諦め方を決める (判断が要る)

@@ -1,11 +1,11 @@
 ---
 id: T0165
 title: ParameterValuesError の LipSyncNaN・PartOpacityNaN を有限でない値の名前にする (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-ffi, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0165
 ---
 
 # T0165: ParameterValuesError の LipSyncNaN・PartOpacityNaN を有限でない値の名前にする (判断が要る)

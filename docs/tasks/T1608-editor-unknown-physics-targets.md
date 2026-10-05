@@ -1,11 +1,11 @@
 ---
 id: T1608
 title: エディタのコマンドで、物理の未知の出力先・対象を受け付けるか拒むかを揃える (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1608
 ---
 
 # T1608: エディタのコマンドで、物理の未知の出力先・対象を受け付けるか拒むかを揃える (判断が要る)

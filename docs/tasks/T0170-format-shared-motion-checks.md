@@ -1,11 +1,11 @@
 ---
 id: T0170
 title: ugoe-format の check_motion・check_expression を公開し、editor-core の写しを置き換える
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, ugoe-editor-core, docs]
 depends_on: [T1607]
-assignee:
+assignee: claude-worker-T0170
 ---
 
 # T0170: ugoe-format の check_motion・check_expression を公開し、editor-core の写しを置き換える

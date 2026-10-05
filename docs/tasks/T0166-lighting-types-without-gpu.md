@@ -1,11 +1,11 @@
 ---
 id: T0166
 title: 光源の型を GPU に依存しない場所へ移し、C ABI と GDExtension から wgpu を外す (判断が要る)
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-render, ugoe, ugoe-ffi, bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0166
 ---
 
 # T0166: 光源の型を GPU に依存しない場所へ移し、C ABI と GDExtension から wgpu を外す (判断が要る)
