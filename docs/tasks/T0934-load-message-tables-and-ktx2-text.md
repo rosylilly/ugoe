@@ -1,11 +1,11 @@
 ---
 id: T0934
 title: 読み込みの警告・エラーの訳の表を codes.json と比べるテストと、KTX2 の警告の訳文の直し
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, docs]
 depends_on: [T1611]
-assignee:
+assignee: claude-worker-T0934
 ---
 
 # T0934: 読み込みの警告・エラーの訳の表を codes.json と比べるテストと、KTX2 の警告の訳文の直し
