@@ -1,11 +1,11 @@
 ---
 id: T0034
 title: just を通らずに cargo を呼ぶスクリプト (tests/conformance/run.mjs など) も mbx を通す
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/conformance, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0034
 ---
 
 # T0034: just を通らずに cargo を呼ぶスクリプト (tests/conformance/run.mjs など) も mbx を通す
