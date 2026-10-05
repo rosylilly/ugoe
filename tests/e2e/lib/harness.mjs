@@ -221,8 +221,23 @@ export function takeCspViolations(session) {
 }
 
 /**
+ * CSP が止めるべきもの (止まって正しいもの)。`has no CSP violations` で数えない (console.json には残る)。
+ * - MediaPipe (@mediapipe/tasks-vision 1.0.1) の利用状況の送信: 検出を始めてから 60 秒ごと (と閉じたとき) に
+ *   `https://odml.pa.googleapis.com/v1/log` へ送ろうとする。止める設定が無く、アプリの CSP (`connect-src`) が止める (T0029)。
+ *   画像からのトラッキングが遅い機械で 60 秒を超えると起きる。
+ */
+const EXPECTED_BLOCKS = [{ directive: "connect-src", blocked: "https://odml.pa.googleapis.com/" }];
+
+function expectedBlock(violation) {
+  return EXPECTED_BLOCKS.some(
+    (e) => violation.directive === e.directive && violation.blocked?.startsWith(e.blocked),
+  );
+}
+
+/**
  * 筋書きの最後の手順: すべてのウィンドウで、CSP が止めたものが 0 件であることを確かめる (tests/e2e/README.md#csp-の違反)。
  * CSP が要るもの (wasm・Worker・blob の画像・IPC) を止めても、画面の一部が静かに動かなくなるだけで、ほかの手順では気づけないため。
+ * 止まって正しいもの (`EXPECTED_BLOCKS`) は数えない。
  */
 export function checkNoCspViolations(app) {
   step(app, "has no CSP violations", async () => {
@@ -245,7 +260,8 @@ export function checkNoCspViolations(app) {
           .map((line) => ({ shown: line.trim().slice(0, 500) }));
         return [...window.__E2E_CSP__, ...shown];
       `);
-      if (violations.length > 0) found[label ?? handle] = violations;
+      const unexpected = violations.filter((v) => !expectedBlock(v));
+      if (unexpected.length > 0) found[label ?? handle] = unexpected;
     }
     await s.switchToWindow(current);
     assert.deepEqual(found, {}, `CSP blocked something:\n${JSON.stringify(found, null, 2)}`);

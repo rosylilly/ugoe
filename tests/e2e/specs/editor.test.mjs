@@ -1,11 +1,13 @@
 // エディタ (apps/editor) の主な流れ: 見本のプロジェクトを開く・パラメータを動かす・保存する・PSD を取り込む・`.ugoe` を書き出す・
-// プレビューでモジュールを付け外しし、画像からトラッキングする・言語を切り替える。
+// 偽の AI のプロバイダで提案を作ってプレビューする・プレビューでモジュールを付け外しし、画像からトラッキングする・
+// モジュールのプロジェクトを開いて `.ugoemod` を書き出す・言語を切り替える。
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe } from "node:test";
+import { after, before, describe } from "node:test";
+import { FAKE_REASON, startFakeAi } from "../lib/fake-ai.mjs";
 import {
   checkNoCspViolations,
   dialogAnswers,
@@ -16,7 +18,7 @@ import {
   step,
   work,
 } from "../lib/harness.mjs";
-import { installPageHelpers } from "../lib/page.mjs";
+import { countInvokes, installPageHelpers, invokeStats } from "../lib/page.mjs";
 import { checkImageTracking } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
@@ -74,9 +76,23 @@ function slotValue(session, slot) {
   );
 }
 
+/** 画面の通知 (トースト) に `text` を含むものが出ているか。 */
+function hasToast(session, text) {
+  return session.execute(
+    `return [...document.querySelectorAll(".ugoe-toast__message")].some((el) => el.textContent.includes(arguments[0]))`,
+    text,
+  );
+}
+
 describe("editor", () => {
   const app = launch({ name: "editor" });
   const project = join(work(), "ugoe-dress-up-sample", "dress-up.ugoeproj");
+  /** 偽の AI のプロバイダ (lib/fake-ai.mjs)。 */
+  let ai;
+  before(async () => {
+    ai = await startFakeAi();
+  });
+  after(() => ai?.close());
 
   step(app, "starts", async () => {
     const s = app.session;
@@ -302,6 +318,155 @@ describe("editor", () => {
     await waitFor(async () => (await s.findAll(".preview-panel")).length === 0, {
       message: "the preview to close",
     });
+  });
+
+  step(app, "opens a module project and exports a .ugoemod", async () => {
+    const s = app.session;
+    // 見本のモジュールのプロジェクト (見本を開いたときに本体の隣に書き出したもの)。取り込んだ PSD は保存していないので、
+    // 開く前に変更を捨てるかを訊かれる
+    const moduleProject = join(work(), "ugoe-dress-up-sample", "cat-ears.ugoeproj");
+    answerDialog("open-directory", moduleProject);
+    await s.clickText("nav.file-menu button", "Open…");
+    await s.clickText("[role=alertdialog] button, [role=dialog] button", "Discard and continue");
+    await s.waitFind("nav.file-menu button.module", 20_000);
+    await waitFor(async () => (await s.findAll("nav.file-menu .project .dirty")).length === 0, {
+      message: "the module project to open without changes",
+    });
+
+    const dir = join(work(), "export-module");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, "cat-ears.ugoemod");
+    answerDialog("save-file", path);
+    await s.clickText("nav.file-menu button", "Export Module…");
+    await s.clickText(".export-panel button", "Export .ugoemod");
+    await waitFor(() => hasToast(s, `Exported to ${path}`), {
+      timeout: 30_000,
+      message: "the exported notice",
+    });
+    // 一時ファイルに書いてから名前を変える (T0687)。一時ファイルが残らない
+    assert.deepEqual(readdirSync(dir), ["cat-ears.ugoemod"]);
+    // 見本の本体の上で、見本のモジュールのプロジェクトをそのまま書き出すので、見本の `.ugoemod` と同じバイト列になる
+    // (apps/editor/src-tauri/src/sample.rs のテストと同じ)
+    const sample = readFileSync(join(root, "assets", "samples", "dress-up", "cat-ears.ugoemod"));
+    assert.ok(
+      readFileSync(path).equals(sample),
+      `${path} differs from the sample cat-ears.ugoemod`,
+    );
+    await shot(s, "editor-module-export");
+    await s.keys(Keys.Escape);
+  });
+
+  step(app, "proposes a rig from a PSD with a fake AI provider and previews it", async () => {
+    const s = app.session;
+    // 「New from PSD…」で character.psd から新しいプロジェクトを作る (AI の提案の元にする PSD になる)。
+    // 見本の本体に取り込んだ PSD では、リグの提案が本体の物理の衝突体を外してしまい使えない (T0029 のメモ)
+    answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
+    await s.clickText("nav.file-menu button", "New from PSD…");
+    await waitFor(() => treeRow(s, "character"), {
+      timeout: 30_000,
+      message: "the new project from the PSD in the tree",
+    });
+    // 設定の「AI provider」で、OpenAI 互換の API の送り先を偽のプロバイダ (127.0.0.1) にする (モデルは既定のまま)。
+    // ループバックなので送る前の確認も API キーも要らない
+    await s.clickText("button", "Settings");
+    await s.clickText("[role=dialog] [role=tab]", "AI provider");
+    await s.clickWhen(() => s.find('[role=dialog] input[type=radio][value="openai_compatible"]'), {
+      message: "the OpenAI-compatible choice",
+    });
+    const field = (label) =>
+      waitFor(
+        () =>
+          s.execute(
+            `const label = [...document.querySelectorAll("[role=dialog] form.provider label")]
+               .find((l) => l.textContent.trim() === arguments[0]);
+             return label?.control ?? null;`,
+            label,
+          ),
+        { message: `the ${label} field` },
+      );
+    // 打った後の Enter で設定の欄を送る (「Apply」と同じ)
+    await (await field("Base URL")).replace(ai.baseUrl);
+    await waitFor(
+      async () => {
+        const settings = await invoke(s, "ai_settings");
+        return settings.local && settings.provider.openai.base_url === ai.baseUrl;
+      },
+      { message: "the fake provider to be applied" },
+    );
+    await s.keys(Keys.Escape);
+
+    // AI タブ: 取り込んだ PSD (character.psd) を、偽のプロバイダで分類してリグを提案する
+    await waitFor(async () => (await s.findAll("[role=dialog]")).length === 0, {
+      message: "the settings to close",
+    });
+    await s.clickWhen(
+      () => s.execute(`return __e2e.byText(".right [role=tab]", "^AI( \\(\\d+\\))?$")`),
+      { message: "the AI tab" },
+    );
+    await s.waitFindText(".psd", "character.psd");
+    await s.clickWhen(
+      () =>
+        s.execute(
+          `const label = __e2e.byText(".ugoe-checkbox__label", "sends images to a server on this computer");
+           const box = label && document.getElementById(label.htmlFor);
+           return box && !box.disabled && box.getAttribute("aria-checked") !== "true" ? box : null;`,
+        ),
+      { message: "the Use AI checkbox" },
+    );
+    await s.clickText("button", "Propose rig");
+    // 提案が一覧に出るか、パネルにエラーが出るまで待つ
+    const made = await waitFor(
+      () =>
+        s.execute(`
+          if (document.querySelector("article.proposal")) return { made: true };
+          const error = [...document.querySelectorAll(".right .error")].find((el) => el.closest("section"));
+          return error ? { error: error.textContent.trim() } : null;
+        `),
+      { timeout: 60_000, message: "the proposal" },
+    );
+    assert.equal(made.error, undefined, `the proposal failed: ${made.error}`);
+    const kinds = ai.requests.map((r) => r.kind);
+    assert.ok(
+      kinds.includes("classify"),
+      `no classification request: ${JSON.stringify(ai.requests)}`,
+    );
+    assert.ok(kinds.includes("values"), `no rig request: ${JSON.stringify(ai.requests)}`);
+    // 分類はレイヤーのサムネイル、リグは原画の全体を送る
+    assert.ok(
+      ai.requests.every((r) => r.images > 0),
+      JSON.stringify(ai.requests),
+    );
+    const state = await invoke(s, "get_proposals");
+    assert.equal(state.classification?.by_ai, true, "the layers were not classified by the AI");
+    const proposal = state.proposals.at(-1);
+    assert.ok(proposal.commands.length > 0, JSON.stringify(proposal));
+    assert.ok(proposal.rationale.includes(FAKE_REASON), proposal.rationale);
+
+    // プレビュー: 提案を複製に適用した姿 (`get_proposal_preview_bundle`) をビューポートに出す。ドキュメントは変えない
+    const before = await invoke(s, "get_model_json");
+    await countInvokes(s, ["preview_proposal", "get_proposal_preview_bundle"]);
+    await s.clickText("article.proposal button", "Preview");
+    await s.waitFind(".viewport .proposal-banner", 30_000);
+    await waitFor(
+      () =>
+        s.execute(`return document.querySelector("article.proposal.previewing .sliders") !== null`),
+      { message: "the proposal to be previewed" },
+    );
+    const stats = await invokeStats(s);
+    assert.equal(stats.done.get_proposal_preview_bundle, 1, JSON.stringify(stats));
+    assert.deepEqual(stats.errors, {}, JSON.stringify(stats));
+    const hud = await s.execute(
+      `return document.querySelector(".viewport .hud .error")?.textContent.trim() ?? null`,
+    );
+    assert.equal(hud, null, `the viewport failed: ${hud}`);
+    await shot(s, "editor-proposal-preview");
+
+    // プレビューをやめる。ビューポートは元のモデルに戻り、ドキュメントは変わっていない
+    await s.clickText("article.proposal.previewing button", "End preview");
+    await waitFor(async () => (await s.findAll(".viewport .proposal-banner")).length === 0, {
+      message: "the preview to end",
+    });
+    assert.equal(await invoke(s, "get_model_json"), before);
   });
 
   step(app, "switches the language to Japanese and keeps it", async () => {

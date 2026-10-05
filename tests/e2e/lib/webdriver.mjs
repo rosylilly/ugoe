@@ -220,6 +220,46 @@ export class Session {
     );
   }
 
+  /**
+   * `find` (要素か null を返す) で探した要素を押す。押せなければ (「element not interactable」: 閉じかけのダイアログの
+   * 覆いの下・押す前に画面が組み替わった) 探し直して押し直す。
+   */
+  clickWhen(find, { timeout = 10_000, message = "an element" } = {}) {
+    return waitFor(
+      async () => {
+        const el = await find();
+        if (!el) return null;
+        try {
+          await el.click();
+          return true;
+        } catch (e) {
+          if (/not interactable/.test(e.message)) return null;
+          throw e;
+        }
+      },
+      { timeout, message: `${message} to be clicked` },
+    );
+  }
+
+  /**
+   * `css` に合い文字が `text` を含む、無効でない最初の要素を押す (`clickWhen`。操作の直後のボタンは、処理が終わるまで
+   * 無効のことがある)。
+   */
+  clickText(css, text, timeout = 10_000) {
+    return this.clickWhen(
+      () =>
+        this.execute(
+          `for (const el of document.querySelectorAll(arguments[0])) {
+             if (!el.disabled && (el.textContent ?? "").replace(/\\s+/g, " ").includes(arguments[1])) return el;
+           }
+           return null;`,
+          css,
+          text,
+        ),
+      { timeout, message: `an enabled ${css} with text "${text}"` },
+    );
+  }
+
   title() {
     return this.call("GET", "/title");
   }
