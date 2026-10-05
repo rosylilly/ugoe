@@ -315,6 +315,136 @@ fn module_settings_keep_look_reports_failed_remirrors() {
     assert_eq!(report.warnings, vec![]);
 }
 
+/// `keep_look` の付け替えでミラー元が動かず、ミラー先だけが付け替わって対が壊れたときも警告を返す。
+/// 名前を同時に変えても、前のモデルと突き合わせて確かめる (T1621)。
+#[test]
+fn module_settings_keep_look_checks_reparented_pairs_when_renamed() {
+    use ugoe_model::deformer::DeformerKind;
+
+    // `Torso` を台形 (下が広い) にして、写像を双線形の非線形なものにする。`x = 128` で左右対称。
+    let mut base = base();
+    let torso = base.model.deformers.iter_mut().find(|d| d.id == "Torso");
+    let DeformerKind::Warp(torso) = &mut torso.unwrap().kind else {
+        unreachable!()
+    };
+    torso.keyforms.keyforms[0].points = vec![
+        Vec2::new(64.0, 128.0),
+        Vec2::new(192.0, 128.0),
+        Vec2::new(0.0, 256.0),
+        Vec2::new(256.0, 256.0),
+    ];
+    // 最上位のワープ `Frame` (`Torso` の UV で台形) の中に `Skirt`、その左右の反転の `SkirtR` は最上位に置く。
+    // 付け替えでは `Frame` の制御点と `SkirtR` の頂点が写し直されるが、`Frame` の中の `Skirt` は双線形の
+    // 補間が変わるので見た目が数ピクセルずれ、`SkirtR` と対応しなくなる (`Skirt` は変わらないので
+    // ミラーし直さず、付け替えの確かめだけが見つける)。
+    let mut module = dress_module();
+    module.requires = ModuleRequirements::default();
+    let frame_points = [
+        Vec2::new(0.3, 0.5),
+        Vec2::new(0.7, 0.5),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 1.0),
+    ];
+    let mut frame = dress_up_base()
+        .deformers
+        .into_iter()
+        .find(|d| d.id == "Torso")
+        .unwrap();
+    frame.id = "Frame".into();
+    frame.name = "Frame".into();
+    frame.part = "Dress".into();
+    let DeformerKind::Warp(warp) = &mut frame.kind else {
+        unreachable!()
+    };
+    warp.keyforms.keyforms[0].points = frame_points.to_vec();
+    module.deformers.push(frame);
+    let mut rest = module.meshes[0].keyforms.keyforms[0].clone();
+    rest.positions = [(0.1, 0.2), (0.4, 0.2), (0.4, 0.8), (0.1, 0.8)]
+        .map(|(x, y)| Vec2::new(x, y))
+        .to_vec();
+    let skirt = &mut module.meshes[0];
+    skirt.parent = Some("Frame".into());
+    skirt.mirror = Some("SkirtR".into());
+    skirt.keyforms = KeyformGrid::constant(rest.clone());
+    let mut right = skirt.clone();
+    right.id = "SkirtR".into();
+    right.parent = None;
+    right.mirror = Some("Skirt".into());
+    right.keyforms = KeyformGrid::constant(rest);
+    right.keyforms.origins = vec![ugoe_model::KeyformOrigin::Mirror];
+    right.keyforms.mirror_source = Some(MirrorSource {
+        id: "Skirt".into(),
+        axis: None,
+        tolerance: None,
+    });
+    module.meshes.push(right);
+    let document_of = |module: &Module| {
+        let context = ModuleContext::new(
+            base.clone(),
+            &module.slot,
+            module.name.clone(),
+            module.requires.clone(),
+        )
+        .unwrap();
+        let workspace = context.workspace(module, &images(module)).unwrap();
+        Document::with_textures(workspace.model, workspace.textures)
+            .with_physics(workspace.physics)
+            .with_module(Arc::new(context))
+    };
+    // `SkirtR` の頂点を、`Skirt` のキャンバスでの位置を `x = 128` (キャンバスの原点。親が異なる対の既定の
+    // 対称軸) で反転した位置にする。
+    let model = document_of(&module).model().clone();
+    let mesh = |id: &str| crate::KeyformTarget::Mesh(id.into());
+    let local = |id: &str| -> Vec<Vec2> {
+        let mesh = model.meshes.iter().find(|m| m.id == id).unwrap();
+        mesh.keyforms.keyforms[0].positions.clone()
+    };
+    let values = Default::default();
+    let canvas =
+        crate::space::local_to_canvas(&model, &mesh("Dress/Skirt"), &values, &local("Dress/Skirt"))
+            .unwrap();
+    let reflected: Vec<Vec2> = canvas.iter().map(|p| Vec2::new(256.0 - p.x, p.y)).collect();
+    let guesses = local("Dress/SkirtR");
+    module.meshes[1].keyforms.keyforms[0].positions =
+        crate::space::canvas_to_local(&model, &mesh("Dress/SkirtR"), &values, &reflected, &guesses)
+            .unwrap();
+
+    for name in ["Dress", "Robe"] {
+        let mut document = document_of(&module);
+        // 付け替えの前は対応している。
+        let mirror = Command::MirrorKeyforms {
+            source: crate::KeyformTarget::Mesh("Dress/Skirt".into()),
+            target: crate::KeyformTarget::Mesh("Dress/SkirtR".into()),
+            axis: None,
+            tolerance: None,
+            overwrite_authored: false,
+        };
+        document.apply(mirror).unwrap();
+        assert!(document.undo());
+
+        let mut command = settings(name, "Hair", ModuleRequirements::default());
+        let Command::SetModuleSettings { keep_look, .. } = &mut command else {
+            unreachable!()
+        };
+        *keep_look = true;
+        let report = document.apply_with_report(command).unwrap();
+        assert_eq!(document.module().unwrap().name(), name);
+        assert_eq!(
+            report
+                .warnings
+                .iter()
+                .map(|w| (w.code.as_str(), &w.target, &w.source))
+                .collect::<Vec<_>>(),
+            vec![(
+                "inference.mirror_failed",
+                &crate::KeyformTarget::Mesh(format!("{name}/SkirtR").as_str().into()),
+                &crate::KeyformTarget::Mesh(format!("{name}/Skirt").as_str().into()),
+            )],
+            "name: {name}"
+        );
+    }
+}
+
 /// `keep_look` で取り付け先を替えると、モジュールの衝突体 (取り付け先に付くもの) も見た目の位置を保ち、
 /// リグの根元 (モジュールの回転デフォーマに付く) も同じ位置に残る。Undo で戻る。
 #[test]

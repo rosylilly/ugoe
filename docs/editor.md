@@ -790,7 +790,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     いったん前の取り付け先に戻し、`ReparentPreservingLook` と同じ写し方 (`deformer_edit::reparent`。基準の姿で見た目を保つ) で新しい取り付け先の
     下へ移します (`ModuleContext::keep_look`、T0651)。推定のセルは作り直し (`inference::rederive`)、検証とモジュールへの分割を確かめてから採用します。
     ミラーし直せなかった左右の対 (`inference.mirror_failed`) は、ほかの編集と同じく拒否せずに `ApplyReport.warnings` で返し、画面がインスペクタの
-    警告に出します (付け替えで親が変わった対の確かめ `check_reparented_pairs` も行う。名前を変えたときは ID が変わるので、前のモデルと突き合わせない。T1609)。
+    警告に出します (付け替えで親が変わった対の確かめ `check_reparented_pairs` も行う。名前を変えたときは作業用の ID の接頭辞 `<名前>/` が変わるので、モジュールの要素の接頭辞を前の名前に付け替えて前のモデルと
+    突き合わせる (`ModuleContext::previous_target`)。T1609・T1621)。
     物理の衝突体のうち、モジュールのもので取り付け先に付くもの (モジュールの中では `attach` なし) は、形状の位置 (`center`・`a`・`b`) を同じく
     基準の姿で前の取り付け先の局所座標 → キャンバス → 新しい取り付け先の局所座標と写し直します (半径はピクセルなので変えない。T0653)。
     リグの粒子は写し直しません。モジュールのリグの根元はモジュールのデフォーマ (出力先か `frame`) の局所座標かキャンバス座標で表され

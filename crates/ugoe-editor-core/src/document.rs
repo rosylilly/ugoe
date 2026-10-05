@@ -348,7 +348,12 @@ impl Document {
         // 形・テクスチャ・親が変わった元のメッシュに、描画用の複製を追従させる。
         draw_clone::follow(&self.current.model, &mut next.model)?;
         let mut warnings = inference::rederive(&mut next.model, &touched)?;
-        inference::check_reparented_pairs(&self.current.model, &next.model, &mut warnings);
+        inference::check_reparented_pairs(
+            &self.current.model,
+            &next.model,
+            KeyformTarget::clone,
+            &mut warnings,
+        );
         // 適用前の状態の検証の結果は、状態ごとに覚えたものを使う。
         let before = self.current.problems();
         let after = Problems::of(&next.model, next.physics.as_ref());
@@ -424,8 +429,13 @@ impl Document {
                 &mut touched,
             )?;
             warnings = inference::rederive(&mut workspace.model, &touched)?;
-            // 名前を替えたときは ID が変わるので、前のモデルと突き合わせられる要素だけを確かめる。
-            inference::check_reparented_pairs(&self.current.model, &workspace.model, &mut warnings);
+            // 名前を替えたときは ID の接頭辞が変わるので、付け替えて前のモデルと突き合わせる。
+            inference::check_reparented_pairs(
+                &self.current.model,
+                &workspace.model,
+                |target| reconfigured.previous_target(context, target),
+                &mut warnings,
+            );
             let before = &self.current.problems().model;
             let after = Problems::of(&workspace.model, workspace.physics.as_ref());
             let introduced: Vec<_> = after

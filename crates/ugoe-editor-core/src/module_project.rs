@@ -362,6 +362,30 @@ impl ModuleContext {
         format!("{}/{id}", self.name)
     }
 
+    /// この情報の作業用のモデルの要素 `target` の、名前を替える前の情報 `previous` の作業用のモデルでの ID
+    /// (接頭辞を付け替える。本体の要素はそのまま)。`keep_look` の付け替えの確かめで、前のモデルと突き合わせるのに使う。
+    pub(crate) fn previous_target(&self, previous: &Self, target: &KeyformTarget) -> KeyformTarget {
+        let renamed = |id: &str, base: bool| {
+            id.strip_prefix(self.name.as_str())
+                .and_then(|rest| rest.strip_prefix('/'))
+                .filter(|_| !base)
+                .map(|rest| previous.prefixed(rest))
+        };
+        match target {
+            KeyformTarget::Part(id) => renamed(id.as_str(), self.is_base_part(id))
+                .map(|id| KeyformTarget::Part(id.as_str().into())),
+            KeyformTarget::Mesh(id) => renamed(id.as_str(), self.is_base_mesh(id))
+                .map(|id| KeyformTarget::Mesh(id.as_str().into())),
+            KeyformTarget::Deformer(id) => renamed(id.as_str(), self.is_base_deformer(id))
+                .map(|id| KeyformTarget::Deformer(id.as_str().into())),
+            KeyformTarget::Glue(id) => {
+                let base = self.base.model.glues.iter().any(|g| &g.id == id);
+                renamed(id.as_str(), base).map(|id| KeyformTarget::Glue(id.as_str().into()))
+            }
+        }
+        .unwrap_or_else(|| target.clone())
+    }
+
     /// 作業用の ID からモジュールの中の ID を作る (接頭辞を外す)。
     fn unprefixed<'a>(&self, id: &'a str) -> &'a str {
         id.strip_prefix(self.name.as_str())

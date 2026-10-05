@@ -420,24 +420,32 @@ fn enqueue(queue: &mut VecDeque<(KeyformTarget, bool)>, target: &KeyformTarget, 
 /// 親が変わった要素の左右の対が、まだミラーし直せるかを確かめる
 /// (`docs/spec/keyform-inference.md#自動の作り直し`)。
 ///
-/// `before` はコマンドの前、`after` は作り直しの後のモデル。親が変わったメッシュ・デフォーマごとに、
+/// `before` はコマンドの前、`after` は作り直しの後のモデル。`previous` は `after` の要素の `before` での ID
+/// (モジュールの名前を替えたときは接頭辞が変わる。ほかは同じ ID)。親が変わったメッシュ・デフォーマごとに、
 /// 対の相手とのミラー (どちらかの格子が相手を `mirror_source` にし、`mirror` のセルを持つもの) を
 /// 記録した `axis` / `tolerance` で試す。前はミラーできたのに後はできなくなった組を `warnings` に
 /// 積む (すでに積んだ組は積まない)。モデルは変えない。
 pub(crate) fn check_reparented_pairs(
     before: &Model,
     after: &Model,
+    previous: impl Fn(&KeyformTarget) -> KeyformTarget,
     warnings: &mut Vec<RederiveWarning>,
 ) {
-    let parents: HashMap<KeyformTarget, Option<&ugoe_model::DeformerId>> = before
+    let deformer = |id: &ugoe_model::DeformerId| KeyformTarget::Deformer(id.clone());
+    let parents: HashMap<KeyformTarget, Option<KeyformTarget>> = before
         .meshes
         .iter()
-        .map(|m| (KeyformTarget::Mesh(m.id.clone()), m.parent.as_ref()))
+        .map(|m| {
+            (
+                KeyformTarget::Mesh(m.id.clone()),
+                m.parent.as_ref().map(deformer),
+            )
+        })
         .chain(
             before
                 .deformers
                 .iter()
-                .map(|d| (KeyformTarget::Deformer(d.id.clone()), d.parent.as_ref())),
+                .map(|d| (deformer(&d.id), d.parent.as_ref().map(deformer))),
         )
         .collect();
     let moved = after
@@ -457,7 +465,10 @@ pub(crate) fn check_reparented_pairs(
                 d.mirror.as_ref().map(|id| id.to_string()),
             )
         }))
-        .filter(|(target, parent, _)| parents.get(target).is_some_and(|p| p != parent));
+        .filter(|(target, parent, _)| {
+            let parent = parent.map(|p| previous(&deformer(p)));
+            parents.get(&previous(target)).is_some_and(|p| *p != parent)
+        });
     let mut pairs: Vec<(KeyformTarget, KeyformTarget)> = Vec::new();
     for (element, _, mirror) in moved {
         let Some(partner) = mirror.filter(|m| *m != element_id(&element)) else {
@@ -485,7 +496,8 @@ pub(crate) fn check_reparented_pairs(
             scope: InferScope::Own,
         };
         let (rigging_from, rigging_to) = ((&from).into(), (&to).into());
-        if check_mirror(before, &rigging_from, &rigging_to, &options).is_err() {
+        let (before_from, before_to) = ((&previous(&from)).into(), (&previous(&to)).into());
+        if check_mirror(before, &before_from, &before_to, &options).is_err() {
             continue; // 前からミラーできなかった (そのときに警告済み)。
         }
         if let Err(error) = check_mirror(after, &rigging_from, &rigging_to, &options) {
