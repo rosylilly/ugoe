@@ -1,11 +1,11 @@
 ---
 id: T0953
 title: "@ugoe/ui: Dialog に初めのフォーカスを選ぶ口と、Button に form の口を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0953
 ---
 
 # T0953: @ugoe/ui: Dialog に初めのフォーカスを選ぶ口と、Button に form の口を足す
