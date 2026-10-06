@@ -634,10 +634,13 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
      この順に左から横に並べて 1 枚にする (画像の説明のとおり)。
   3. `studio-virtual-camera.png`: 右の列の「仮想カメラ」のパネルで「仮想カメラに出す」を入れ、`/dev/video10` に出ている状態のパネルだけを撮る
      (ほかのパネルの画像と同じく、1280 × 1000 の窓でパネルを切り出す)。
-  4. `convert <撮った画像> -strip -dither None -colors 256 png8:docs/manual/images/<名前>.png` で 256 色にして置き換える
+     出す先は手順 1 のとおり `/dev/video10` にする (マニュアルの Linux の手順と画像の説明が `/dev/video10`)。
+  4. 画像に撮った機械のもの (ユーザー名の入ったパス・ほかのウィンドウ・デスクトップの壁紙) が写っていないことを確かめる
+     (`studio-output.png` は出力ウィンドウだけを、市松模様の画像の上で撮る)。
+  5. `convert <撮った画像> -strip -dither None -colors 256 png8:docs/manual/images/<名前>.png` で 256 色にして置き換える
      (`just e2e --update-images` と同じ減らし方。[tests/e2e/README.md#マニュアルの画像](../tests/e2e/README.md#マニュアルの画像))。
 - 期待: 画像が今のスタジオの画面と同じ並び・文言で、[manual/studio.md](manual/studio.md) の画像の説明と合う。
-- 元: T0968 (T0919 で撮らなかった画像)
+- 元: T0968 (T0919 で撮らなかった画像)・T0977 (写ってよいものの点検)
 - 結果: L 未
 
 ### A. AI とエージェント (エディタ)

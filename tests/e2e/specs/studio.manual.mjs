@@ -13,14 +13,24 @@ import { installPageHelpers } from "../lib/page.mjs";
 import { startFakeTracking } from "../lib/tracking.mjs";
 import { Keys, waitFor } from "../lib/webdriver.mjs";
 
-/** 空いている TCP のポート (操作 API に使う)。 */
-function freePort() {
-  return new Promise((resolve) => {
+/**
+ * 操作 API とブラウザソースのポート。画像の接続先・URL・ポートの欄がマニュアルの文 (既定は `ws://127.0.0.1:28451/api`) と
+ * 合い、撮るたびに変わらないように、筋書き (specs/studio.test.mjs) の空いているポートではなく既定のポートで開く (T0977)。
+ */
+const API_PORT = 28451;
+
+/** `API_PORT` が空いていることを確かめる (利用者のスタジオなどが使っていれば、理由を出して止める)。 */
+function checkApiPortFree() {
+  return new Promise((resolve, reject) => {
     const server = createServer();
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
+    server.once("error", () =>
+      reject(
+        new Error(
+          `port ${API_PORT} (the studio's default API port) is in use; quit the studio using it before taking the manual images`,
+        ),
+      ),
+    );
+    server.listen(API_PORT, "127.0.0.1", () => server.close(() => resolve()));
   });
 }
 
@@ -117,6 +127,7 @@ describe("studio manual images", () => {
 
   step(app, "starts in Japanese with the sample profile", async () => {
     const s = app.session;
+    await checkApiPortFree();
     await switchToTauriWindow(s, "main");
     await waitFor(() => s.execute("return !!window.__UGOE_TRACKER__"), {
       message: "the control window to start",
@@ -192,7 +203,9 @@ describe("studio manual images", () => {
       message: "the output window to be shown",
     });
     await switchToTauriWindow(s, "main");
-    // Xvfb にはコンポジタが無く透過が効かないので、「背景」の欄に注意と「背景をクロマキーにする」が出る
+    // Xvfb にはコンポジタが無く透過が効かないので、「背景」の欄に注意と「背景をクロマキーにする」が出る。マニュアルは
+    // 「はじめての配信の準備」でこの注意を説明し、画像はその例なので、出ていることを確かめる (T0977)
+    await s.waitFindText(".ugoe-notice", "透過が効いていません");
     await panelShot(s, "出力ウィンドウ", "studio-output-panel");
   });
 
@@ -204,7 +217,33 @@ describe("studio manual images", () => {
 
   step(app, "studio-load", async () => {
     const s = app.session;
-    await panelShot(s, "フレームレートと負荷", "studio-load");
+    // 数値は撮った計算機の測定のまま。注意は読者の画面 (GPU で描く) ではふつう出ないので、出ていない時に撮る。
+    // Xvfb はソフトウェアで描くので、出力ウィンドウの描画の遅れの注意が出たり消えたりする。撮った後も出ていなければよし (T0977)
+    const section = await panel(s, "フレームレートと負荷");
+    const calm = async () => {
+      const state = await s.execute(
+        (section) => ({
+          rows: [...section.querySelectorAll("dt")].map((dt) => dt.textContent.trim()),
+          warnings: [...section.querySelectorAll(".ugoe-notice")].map((n) => n.textContent.trim()),
+        }),
+        section,
+      );
+      return state.rows.includes("出力ウィンドウ") && state.warnings.length === 0 ? true : state;
+    };
+    let last = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      last = await waitFor(async () => (await calm()) === true, {
+        timeout: 10_000,
+        message: "the load panel without warnings",
+      }).catch((e) => e);
+      if (last !== true) continue;
+      await manualShot(s, "studio-load", { clip: section, pad: PANEL_PAD });
+      last = await calm();
+      if (last === true) return;
+    }
+    throw new Error(
+      `the load panel kept warnings (last: ${last instanceof Error ? last.message : JSON.stringify(last)}). Retake on a less busy machine`,
+    );
   });
 
   step(app, "studio-source", async () => {
@@ -223,8 +262,6 @@ describe("studio manual images", () => {
   step(app, "studio-api-approval", async () => {
     const s = app.session;
     await resizeTo(s, 1280, 800);
-    const port = await freePort();
-    await invoke(s, "set_api_port", { port });
     await panel(s, "操作 API");
     const sw = await s.execute(`return __e2e.toggle("^この計算機のほかのアプリから")`);
     await sw.click();
@@ -233,7 +270,7 @@ describe("studio manual images", () => {
       message: "the API to start",
     }).catch(() => {});
     const token = await invoke(s, "api_token");
-    const client = connectClient(`ws://127.0.0.1:${port}/api`, {
+    const client = connectClient(`ws://127.0.0.1:${API_PORT}/api`, {
       name: "Chat bot",
       token,
       permission: "control",
