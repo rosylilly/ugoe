@@ -296,12 +296,14 @@ for (const app of only) {
       await ctx.scene("main");
       if (!v.mainOnly) {
         if (v.tab) {
-          const stops = await tabWalk(page, 120);
+          const started = performance.now();
+          const stops = await tabWalk(page, 120, { shots: join(dir, `${v.name}-focus`) });
           tabText.push(`## ${v.name}\n\n${formatWalk(stops)}\n`);
-          scenes.push({
-            name: `${v.name}-tab`,
-            findings: walkProblems(stops).map((p) => ({ check: "focus", ...p })),
-          });
+          const findings = walkProblems(stops).map((p) => ({ check: "focus", ...p }));
+          scenes.push({ name: `${v.name}-tab`, findings });
+          console.log(
+            `  ${v.name}-tab: ${findings.length} finding(s), ${stops.length} stops in ${((performance.now() - started) / 1000).toFixed(1)}s`,
+          );
           await page.keyboard.press("Escape");
           await page.mouse.click(1, 1);
         }

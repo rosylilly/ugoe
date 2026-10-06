@@ -9,10 +9,11 @@ import {
   STRUCTURE_RULES,
 } from "../lib/audit.mjs";
 import { CHECKS, compare, countsTable, formatCompare, kindOf, summarize } from "../lib/report.mjs";
-import { formatWalk, walkProblems } from "../lib/walk.mjs";
+import { focusRegion, formatWalk, imageRing, walkProblems } from "../lib/walk.mjs";
 import "../lib/page-checks.js";
 
-const { parseColor, over, contrastRatio, requiredRatio, pixelContrast } = globalThis.__ugoeAudit;
+const { parseColor, over, contrastRatio, requiredRatio, pixelContrast, focusChange } =
+  globalThis.__ugoeAudit;
 
 const hex = (h) => ({
   r: Number.parseInt(h.slice(1, 3), 16),
@@ -303,15 +304,48 @@ test("前の結果と比べて、増えた・消えた・数が変わった種�
   assert.match(formatCompare(diff), /^editor: \+1 -1 ~1/);
 });
 
-test("Tab の止まりのうち、印・名前が無いもの・画面の外のものを拾う", () => {
+test("Tab の止まりのうち、印・名前が無いもの・画面の外のものを拾う (印は画像の判定、測れなければ CSS の判定)", () => {
+  const ring = { changed: 200, strong: 200, maxRatio: 4.8, mark: "ring", lost: false };
   const stops = [
-    { tag: "button", role: null, name: "Open", ring: true, offscreen: false },
+    { tag: "button", role: null, name: "Open", ring: true, image: ring, offscreen: false },
     { body: true },
-    { tag: "div", role: "separator", name: "", ring: false, offscreen: true },
-    { tag: "button", role: null, name: "Open", ring: true, offscreen: false, wrapped: true },
+    { tag: "div", role: "separator", name: "", ring: false, image: null, offscreen: true },
+    // CSS は輪を見つけたが、画像は変わらない (常に影を持つ祖先の中など)
+    {
+      tag: "input",
+      role: null,
+      name: "Speed",
+      ring: true,
+      image: { changed: 4, strong: 0, maxRatio: 1.2, mark: "none", lost: false },
+      offscreen: false,
+    },
+    // 地の色だけを変える印: CSS は見つけないが画像は変わる。3:1 に届かない
+    {
+      tag: "button",
+      role: "tab",
+      name: "Physics",
+      ring: false,
+      image: { changed: 900, strong: 0, maxRatio: 1.31, mark: "faint", lost: false },
+      offscreen: false,
+    },
+    { tag: "a", role: null, name: "Docs", ring: false, image: ring, offscreen: false },
+    {
+      tag: "button",
+      role: null,
+      name: "Open",
+      ring: true,
+      image: null,
+      offscreen: false,
+      wrapped: true,
+    },
   ];
   assert.deepEqual(walkProblems(stops), [
     { target: 'div[separator] ""', detail: "no focus ring, no name, off screen (stop 3)" },
+    { target: 'input "Speed"', detail: "no focus ring (stop 4)" },
+    {
+      target: 'button[tab] "Physics"',
+      detail: "faint focus ring (1.31:1 at most, needs 3:1) (stop 5)",
+    },
   ]);
   assert.equal(
     formatWalk(stops),
@@ -319,7 +353,49 @@ test("Tab の止まりのうち、印・名前が無いもの・画面の外の�
       '1. button "Open"',
       "2. (body)",
       '3. div[separator] "" NO-RING NO-NAME OFFSCREEN',
-      '4. button "Open" (wrapped)',
+      '4. input "Speed" NO-RING (css: ring)',
+      '5. button[tab] "Physics" FAINT-RING',
+      '6. a "Docs" (css: none)',
+      '7. button "Open" (wrapped)',
     ].join("\n"),
+  );
+});
+
+test("フォーカスの前と後の画像の差: 変わった画素と、3:1 以上変わった画素を数える", () => {
+  const white = hex("#ffffff");
+  const before = image(10, 10, white);
+  // 2px の濃い輪 (外周の 2 画素) と、中の薄い地の変化 (#f4f4f5)
+  const after = image(10, 10, white, (x, y) => {
+    if (x < 2 || y < 2 || x >= 8 || y >= 8) return hex("#2563eb");
+    if (x < 4) return hex("#f4f4f5");
+    return null;
+  });
+  const r = focusChange(before, after);
+  assert.equal(r.strong, 64);
+  // #f4f4f5 は白との差が 11 で、描き方の揺れとして数えない
+  assert.equal(r.changed, 64);
+  assert.equal(r.maxRatio.toFixed(2), "5.17");
+  const tinted = image(10, 10, white, (x) => (x < 5 ? hex("#e4e4e7") : null));
+  assert.deepEqual(focusChange(before, tinted), {
+    changed: 50,
+    strong: 0,
+    maxRatio: contrastRatio(white, hex("#e4e4e7")),
+  });
+});
+
+test("画像の差から印を決める: 幅と高さの和の面積が要る", () => {
+  const rect = { width: 80, height: 24 };
+  assert.equal(imageRing({ changed: 400, strong: 400 }, rect), "ring");
+  assert.equal(imageRing({ changed: 400, strong: 60 }, rect), "faint");
+  // カーソルの 1 本ほど
+  assert.equal(imageRing({ changed: 20, strong: 20 }, rect), "none");
+  // 止まりの周りは窓で切る
+  assert.deepEqual(
+    focusRegion({ x: 2, y: 100, width: 80, height: 24 }, { width: 1440, height: 900 }),
+    { x: 0, y: 94, width: 88, height: 36 },
+  );
+  assert.equal(
+    focusRegion({ x: 0, y: 950, width: 80, height: 24 }, { width: 1440, height: 900 }),
+    null,
   );
 });

@@ -10,6 +10,7 @@
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
 // - エラー: 画面に出ているエラーの文 (role="alert"・.error など)。
 // - 動き: prefers-reduced-motion: reduce の下で、長さが 0 でない動き (CSS の animation・transition) が動いていないか。
+// - フォーカスの印: Tab の止まりの前と後の画像の差 (focusChange。lib/walk.mjs が撮る。T0045)。
 (() => {
   /** `rgb(1 2 3 / 0.5)`・`rgba(1, 2, 3, 0.5)` を {r, g, b, a} に。読めなければ null。 */
   function parseColor(text) {
@@ -297,13 +298,57 @@
 
   /** 文字を消して撮った画面 (PNG の base64) で、contrastAudit が集めた文字を測る。 */
   async function pixelAudit(png) {
+    const image = await decodePng(png);
+    return pixelContrast(pending, image, image.width / innerWidth);
+  }
+
+  /** 画素が「変わった」とみなす色の差 (RGB のどれかの差。描き方の揺れ・縁のなめらかさの数を数えないため)。 */
+  const FOCUS_CHANGE_DELTA = 16;
+
+  /**
+   * フォーカスの前と後の同じ範囲の画像 ({width, height, data}) を比べ、変わった画素の数 (`changed`)・前と後の色の
+   * コントラスト比が 3:1 以上の画素の数 (`strong`)・比の最大 (`maxRatio`) を返す (Tab の止まりの印。lib/walk.mjs の imageRing)。
+   */
+  function focusChange(before, after) {
+    let changed = 0;
+    let strong = 0;
+    let maxRatio = 1;
+    const n = Math.min(before.data.length, after.data.length);
+    for (let i = 0; i < n; i += 4) {
+      const a = before.data;
+      const b = after.data;
+      const delta = Math.max(
+        Math.abs(a[i] - b[i]),
+        Math.abs(a[i + 1] - b[i + 1]),
+        Math.abs(a[i + 2] - b[i + 2]),
+      );
+      if (delta < FOCUS_CHANGE_DELTA) continue;
+      changed++;
+      const ratio = contrastRatio(
+        { r: a[i], g: a[i + 1], b: a[i + 2] },
+        { r: b[i], g: b[i + 1], b: b[i + 2] },
+      );
+      if (ratio >= 3) strong++;
+      if (ratio > maxRatio) maxRatio = ratio;
+    }
+    return { changed, strong, maxRatio };
+  }
+
+  /** PNG (base64) を {width, height, data} に。 */
+  async function decodePng(png) {
     const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
     const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const g = canvas.getContext("2d");
     g.drawImage(bitmap, 0, 0);
-    const image = g.getImageData(0, 0, bitmap.width, bitmap.height);
-    return pixelContrast(pending, image, bitmap.width / innerWidth);
+    return g.getImageData(0, 0, bitmap.width, bitmap.height);
+  }
+
+  /** フォーカスの前と後に撮った PNG (base64) を比べる。数は CSS px² に直す (`scale` は devicePixelRatio)。 */
+  async function focusDiff(beforePng, afterPng, scale) {
+    const r = focusChange(await decodePng(beforePng), await decodePng(afterPng));
+    const area = scale * scale;
+    return { changed: r.changed / area, strong: r.strong / area, maxRatio: r.maxRatio };
   }
 
   function overflowAudit() {
@@ -738,6 +783,8 @@
     pageAudit,
     hideText,
     pixelAudit,
+    focusChange,
+    focusDiff,
     structureOutline,
   };
 })();
