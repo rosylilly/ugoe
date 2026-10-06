@@ -47,14 +47,20 @@ function dressUpError(code: string, fields: Record<string, string>): Error {
 /**
  * 着せ替えの WebPuppet の偽物。バイト列はモジュールの名前の文字列で、`slots` にスロットを持つ。
  * `broken` のスロットのモジュールは付けられない (付けた後にスロットが消えた、などの代わり)。
+ * `state.lost` の間は GPU を失った WebPuppet で、読み込みと付け外しが `device_lost` を投げる (ugoe-wasm と同じ)。
  */
 function fakePuppet(slotOf: Record<string, string>) {
   const loaded: string[] = [];
   let attached: string[] = [];
   const broken = new Set<string>();
+  const state = { lost: false };
   /** 直前の `reload` で付け直せなかったもの (`detached_modules_json`)。 */
   let detached: unknown[] = [];
+  const lost = () => {
+    if (state.lost) throw dressUpError("device_lost", {});
+  };
   const check = (names: string[]) => {
+    lost();
     for (const name of names) {
       if (!loaded.includes(name)) throw dressUpError("not_loaded", { module: name });
       const slot = slotOf[name] ?? "?";
@@ -63,13 +69,16 @@ function fakePuppet(slotOf: Record<string, string>) {
   };
   const puppet = {
     has_model: () => true,
+    is_lost: () => state.lost,
     load_module(bytes: Uint8Array) {
+      lost();
       const name = new TextDecoder().decode(bytes);
       if (!(name in slotOf)) throw dressUpError("invalid_file", {});
       if (!loaded.includes(name)) loaded.push(name);
       return name;
     },
     unload_module(name: string) {
+      lost();
       attached = attached.filter((n) => n !== name);
       const i = loaded.indexOf(name);
       if (i >= 0) loaded.splice(i, 1);
@@ -79,6 +88,7 @@ function fakePuppet(slotOf: Record<string, string>) {
       attached = [...attached.filter((n) => slotOf[n] !== slotOf[name] && n !== name), name];
     },
     detach_module(name: string) {
+      lost();
       if (!attached.includes(name)) throw dressUpError("not_attached", { module: name });
       attached = attached.filter((n) => n !== name);
     },
@@ -120,20 +130,37 @@ function fakePuppet(slotOf: Record<string, string>) {
       }
     }
   };
-  return { puppet: puppet as unknown as WebPuppet, broken, reload, attached: () => attached };
+  return {
+    puppet: puppet as unknown as WebPuppet,
+    broken,
+    state,
+    reload,
+    attached: () => attached,
+    loaded: () => [...loaded],
+  };
 }
 
+const SLOTS = { LongHair: "Hair", ShortHair: "Hair", Dress: "Outfit" };
+
 function setup() {
-  const fake = fakePuppet({ LongHair: "Hair", ShortHair: "Hair", Dress: "Outfit" });
+  let fake = fakePuppet(SLOTS);
   let active = true;
   const changed = vi.fn();
   const dressUp = new DressUp({ puppet: () => fake.puppet, active: () => active, changed });
   return {
     dressUp,
-    fake,
+    get fake() {
+      return fake;
+    },
     changed,
     setActive: (a: boolean) => {
       active = a;
+    },
+    /** GPU を失った WebPuppet を作り直す (ViewportController の `#setUp` → `PreviewMode.loaded`)。 */
+    recreate() {
+      fake = fakePuppet(SLOTS);
+      dressUp.loaded(fake.puppet);
+      return fake;
     },
   };
 }
@@ -355,27 +382,30 @@ describe("DressUp", () => {
     expect(fake.attached()).toEqual(["LongHair"]);
     // 付け直しを試し直さない (理由は WebPuppet の code から)。
     expect(setModules).not.toHaveBeenCalled();
-    expect(dressUp.notices).toHaveLength(1);
-    expect(dressUp.notices[0]).toMatch(/^Dress was taken off: Dress goes in slot "Outfit"/);
+    // 外れたことと理由は、その行に 1 回だけ出す (パネルの頭に同じ理由を重ねない。T1644)。
     expect(entry(dressUp, "Dress")).toMatchObject({ wanted: false, attached: false });
     expect(entry(dressUp, "Dress")?.problem).toMatchObject({
       code: "unknown_slot",
       detail: "unknown_slot happened",
     });
+    expect(entry(dressUp, "Dress")?.problem?.summary).toMatch(
+      /^Dress was taken off: Dress goes in slot "Outfit"/,
+    );
+    expect(dressUp).not.toHaveProperty("notices");
     // 同じ読み込みの一覧をもう一度渡されても (読み込みを伴わない loaded)、付け直したものは知らせない。
     fake.broken.delete("Outfit");
     dressUp.attach("Dress");
     dressUp.loaded(fake.puppet);
-    expect(dressUp.notices).toHaveLength(1);
     expect(fake.attached()).toEqual(["LongHair", "Dress"]);
-    dressUp.dismissNotice(0);
-    expect(dressUp.notices).toEqual([]);
+    expect(entry(dressUp, "Dress")?.problem).toBeNull();
     // プレビューに入り直したとき (WebPuppet が付け直していない) は、1 つずつ試した理由で知らせる。
     dressUp.takeOff();
     fake.broken.add("Outfit");
     dressUp.loaded(fake.puppet);
     expect(fake.attached()).toEqual(["LongHair"]);
-    expect(dressUp.notices[0]).toMatch(/^Dress was taken off: Dress goes in slot "Outfit"/);
+    expect(entry(dressUp, "Dress")?.problem?.summary).toMatch(
+      /^Dress was taken off: Dress goes in slot "Outfit"/,
+    );
   });
 
   it("loads the kept bytes again into a new WebPuppet", async () => {
@@ -384,6 +414,85 @@ describe("DressUp", () => {
     const other = fakePuppet({ LongHair: "Hair" });
     dressUp.loaded(other.puppet);
     expect(other.attached()).toEqual(["LongHair"]);
+  });
+});
+
+describe("DressUp when the GPU is lost during a load (T1644)", () => {
+  it("loads a module given while the GPU is lost into the new WebPuppet, and puts it on", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([{ path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") }]);
+    t.fake.state.lost = true;
+    await dressUp.add([
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: null, bytes: bytes("Dress"), name: "Dress.ugoemod" },
+    ]);
+    // 失敗の文を出さない (作り直せば読める)。
+    expect(dressUp.error).toBeNull();
+    expect(dressUp.entries.map((e) => [e.name, e.problem])).toEqual([["LongHair", null]]);
+    // 作り直した WebPuppet に、前から持っていたものと、失っている間に渡されたものを読んで付ける
+    // (同じスロットは後から渡されたものに差し替わる)。
+    const fresh = t.recreate();
+    expect(fresh.loaded()).toEqual(["LongHair", "ShortHair", "Dress"]);
+    expect(fresh.attached()).toEqual(["ShortHair", "Dress"]);
+    expect(dressUp.entries.map((e) => [e.name, e.attached, e.wanted, e.problem])).toEqual([
+      ["LongHair", false, false, null],
+      ["ShortHair", true, true, null],
+      ["Dress", true, true, null],
+    ]);
+    await vi.waitFor(() =>
+      expect(saved.at(-1)).toEqual([
+        { path: "/work/LongHair.ugoemod", attached: false },
+        { path: "/work/ShortHair.ugoemod", attached: true },
+      ]),
+    );
+  });
+
+  it("keeps the wanted set when putting on or taking off while the GPU is lost", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([
+      { path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") },
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: "/work/Dress.ugoemod", bytes: bytes("Dress") },
+    ]);
+    expect(t.fake.attached()).toEqual(["ShortHair", "Dress"]);
+    t.fake.state.lost = true;
+    dressUp.setSlot("Outfit", null);
+    // 同じスロットのものは、付けたい組でも差し替える。
+    dressUp.attach("LongHair");
+    expect(dressUp.entries.map((e) => e.problem)).toEqual([null, null, null]);
+    const fresh = t.recreate();
+    expect(fresh.attached()).toEqual(["LongHair"]);
+    expect(dressUp.entries.map((e) => [e.name, e.wanted, e.problem])).toEqual([
+      ["LongHair", true, null],
+      ["ShortHair", false, null],
+      ["Dress", false, null],
+    ]);
+  });
+
+  it("reads a file again while the GPU is lost and loads it after the WebPuppet is made again", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    files["/work/LongHair.ugoemod"] = "LongHair";
+    await dressUp.load();
+    t.fake.state.lost = true;
+    await dressUp.refresh();
+    expect(entry(dressUp, "LongHair")).toMatchObject({ problem: null, wanted: true });
+    const fresh = t.recreate();
+    expect(fresh.attached()).toEqual(["LongHair"]);
+    expect(entry(dressUp, "missing")?.problem?.summary).toContain("No such file");
+  });
+
+  it("does not take modules off when the new WebPuppet is lost again while putting them on", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([{ path: "/work/Dress.ugoemod", bytes: bytes("Dress") }]);
+    const again = fakePuppet(SLOTS);
+    again.state.lost = true;
+    dressUp.loaded(again.puppet);
+    expect(entry(dressUp, "Dress")).toMatchObject({ wanted: true, problem: null });
+    expect(t.recreate().attached()).toEqual(["Dress"]);
   });
 });
 

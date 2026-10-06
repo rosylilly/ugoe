@@ -25,6 +25,7 @@ function fakePuppet(loadWarnings: unknown[] = []) {
   const values: Record<string, number> = { AngleX: 0, EyeLOpen: 1, Other: 0.5 };
   const puppet = {
     has_model: () => true,
+    is_lost: () => false,
     has_physics: () => true,
     set_parameter(id: string, value: number) {
       values[id] = value;

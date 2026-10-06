@@ -4,9 +4,13 @@
 // - モジュールはプレビューの間だけ付ける。出るときに外し (`takeOff`)、入るときに付け直す。編集の画面には本体だけが出る。
 // - 付け外しでパラメータの値・ポーズ・トラッキング・モーションは続きから動く (Puppet の規則。物理はリセットされる)。
 // - エディタは編集のたびにモデルを読み直す。WebPuppet は付けていたモジュールを付け直し (T0123)、付けられないものは
-//   外す。`loaded` で外れたもの (`detached_modules_json`。T0124) を `notices` で知らせ、付けたい組と比べる
+//   外す。`loaded` で外れたもの (`detached_modules_json`。T0124) をその行の `problem` で知らせ、付けたい組と比べる
 //   (プレビューに入ったときなど、付け直しを WebPuppet に任せていないときは、1 つずつ試した DressUpError が理由)。
+//   パネルの頭には重ねて出さない (同じ理由が 2 回出るため。T1644)。
 // - 読み込んだバイト列を持っておき、WebPuppet を作り直したとき (GPU の喪失など) に読み込み直す。
+// - 読み込みや付け外しの途中に GPU を失った (`device_lost`。`is_lost()` が真) ら、失敗の文を出さない。読み込もうとした
+//   バイト列は `#pending` に取っておき、付け外しは付けたい組 (`wanted`) だけを変え、作り直した WebPuppet に `loaded` で
+//   読み込んで付ける (T1644。Player とビューポートと同じ。docs/ui.md#webpuppet-の寿命)。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
@@ -108,8 +112,6 @@ export function ownSlotProblem(slot: string): DressUpProblem {
 
 export class DressUp {
   entries = $state<DressUpEntry[]>([]);
-  /** 自動で外れたことの知らせ (モデルを読み直した後など)。利用者が閉じるまで残す。 */
-  notices = $state<string[]>([]);
   /** 読み込みの失敗 (一覧の行にならないもの)。 */
   error = $state<DressUpProblem | null>(null);
   /** ファイルを読んでいる間。 */
@@ -131,6 +133,8 @@ export class DressUp {
   #ownLabel: string | null = null;
   /** 違いを比べた回数 (古い結果を捨てる)。 */
   #compareToken = 0;
+  /** GPU を失っていて読み込めなかったもの (作り直した WebPuppet に `loaded` で読み込む)。 */
+  #pending: PendingModule[] = [];
 
   constructor(host: DressUpHost) {
     this.#host = host;
@@ -149,12 +153,12 @@ export class DressUp {
       }
     }
     this.#bytes.clear();
+    this.#pending = [];
     this.#ownName = null;
     this.#ownLabel = null;
     // 比べている途中の結果は前のプロジェクトのもの。届いても捨てる (T1614)。
     this.#compareToken++;
     this.highlight = null;
-    this.notices = [];
     this.error = null;
     try {
       const stored = await ipc.getPreviewModules();
@@ -200,7 +204,7 @@ export class DressUp {
     this.busy = true;
     try {
       for (const source of sources) {
-        const name = await this.#load(source);
+        const name = await this.#load(source, undefined, true);
         if (name !== null) this.attach(name, false);
       }
     } finally {
@@ -225,8 +229,17 @@ export class DressUp {
       entry.problem = null;
       this.#afterChange(puppet);
     } catch (e) {
-      entry.problem = describeProblem(e);
-      entry.wanted = false;
+      // GPU を失っていたら、付けたい組にだけ入れる (同じスロットのものとは差し替える)。作り直した WebPuppet に
+      // `loaded` で付ける。
+      if (puppet.is_lost()) {
+        for (const other of this.entries) {
+          if (other.slot !== null && other.slot === entry.slot) other.wanted = false;
+        }
+        entry.wanted = true;
+      } else {
+        entry.problem = describeProblem(e);
+        entry.wanted = false;
+      }
     }
     if (save) void this.#save();
   }
@@ -241,7 +254,7 @@ export class DressUp {
       entry.problem = null;
       this.#afterChange(puppet);
     } catch (e) {
-      entry.problem = describeProblem(e);
+      if (!puppet.is_lost()) entry.problem = describeProblem(e);
     }
     entry.wanted = false;
     void this.#save();
@@ -332,7 +345,8 @@ export class DressUp {
         try {
           active.load_module(bytes);
         } catch (e) {
-          row.problem = describeProblem(e);
+          // GPU を失っていたら、作り直した WebPuppet に `loaded` が持っているバイト列から読み込む。
+          if (!active.is_lost()) row.problem = describeProblem(e);
         }
       }
     }
@@ -351,10 +365,6 @@ export class DressUp {
       current?.module === module && sameItem(current.item, item) ? null : { module, item };
   }
 
-  dismissNotice(index: number): void {
-    this.notices = this.notices.filter((_, i) => i !== index);
-  }
-
   /** プレビューを出る前に、付けているモジュールをすべて外す (付けたい組は覚えておく)。 */
   takeOff(): void {
     const puppet = this.#host.puppet();
@@ -368,16 +378,19 @@ export class DressUp {
   }
 
   /**
-   * プレビュー中にモデルを読み込んだ直後 (入った時・読み直し・WebPuppet の作り直し)。持っているモジュールを
-   * 読み込み直し、付けたい組に揃える。付けられなかったものは `notices` で知らせる。
+   * プレビュー中にモデルを読み込んだ直後 (入った時・読み直し・WebPuppet の作り直し)。持っているモジュールと、GPU を
+   * 失っていて読み込めなかったもの (`#pending`) を読み込み、付けたい組に揃える。付けられなかったものはその行で知らせる。
+   * また GPU を失っていたら何もしない (次の作り直しでまた呼ばれる)。
    */
   loaded(puppet: WebPuppet): void {
+    if (puppet.is_lost()) return;
     const known = new Set(this.#infos(puppet).map((m) => m.name));
     for (const [name, bytes] of this.#bytes) {
       if (known.has(name)) continue;
       try {
         puppet.load_module(bytes);
       } catch (e) {
+        if (puppet.is_lost()) return;
         const entry = this.#entry(name);
         if (entry) entry.problem = describeProblem(e);
       }
@@ -393,6 +406,7 @@ export class DressUp {
       }
     }
     this.#reconcile(puppet);
+    this.#loadPending(puppet);
   }
 
   // --- 内部 ---
@@ -424,17 +438,35 @@ export class DressUp {
     }
   }
 
-  /** 付けられなかったモジュールを付けたい組から外し、知らせる。 */
+  /**
+   * 付けられなかったモジュールを付けたい組から外し、その行で知らせる (自動で外れたことと理由を 1 つの文で。パネルの頭には
+   * 重ねない。T1644)。
+   */
   #takenOff(name: string, problem: DressUpProblem): void {
     const entry = this.#entry(name);
-    if (entry) {
-      entry.wanted = false;
-      entry.problem = problem;
+    if (!entry) {
+      console.warn("ugoe:", `${name} was taken off: ${problem.detail}`);
+      return;
     }
-    this.notices = [
-      ...this.notices,
-      t("preview.dressUp.takenOff", { name, summary: problem.summary }),
-    ];
+    entry.wanted = false;
+    entry.problem = {
+      ...problem,
+      summary: t("preview.dressUp.takenOff", { name, summary: problem.summary }),
+    };
+  }
+
+  /** GPU を失っていて読み込めなかったものを読み込み、付ける (`loaded` の後半)。 */
+  #loadPending(puppet: WebPuppet): void {
+    if (this.#pending.length === 0 || puppet.is_lost() || !this.#host.active()) return;
+    const pending = this.#pending;
+    this.#pending = [];
+    for (const { source, entry, attach } of pending) {
+      const name = this.#loadInto(puppet, source.bytes, source, entry, attach);
+      if (name !== null && attach) this.attach(name, false);
+    }
+    // ファイルから読み直していた行 (`entry`) は、付けたい組のまま付ける。
+    if (pending.some((p) => p.entry)) this.#reconcile(puppet);
+    void this.#save();
   }
 
   /** `entry.path` から読み直す。読めなければ `entry.problem`。 */
@@ -450,28 +482,54 @@ export class DressUp {
 
   /**
    * バイト列を WebPuppet に読み込み、一覧の行を作るか更新する。読み込めたらモジュールの名前を返す。
-   * `entry` (ファイルから読み直す行) がなければ、同じ名前か同じパスの行を置き換える。
+   * `entry` (ファイルから読み直す行) がなければ、同じ名前か同じパスの行を置き換える。GPU を失っていたら
+   * `#pending` に取っておき (`attach` は読み込んだら付けるか)、`null` を返す。
    */
-  async #load(source: ModuleSource, entry?: DressUpEntry): Promise<string | null> {
+  async #load(source: ModuleSource, entry?: DressUpEntry, attach = false): Promise<string | null> {
     const puppet = this.#host.puppet();
     if (!puppet) return null;
     let bytes: Uint8Array;
-    let name: string;
     try {
       bytes =
         source.bytes ?? (source.path ? await ipc.readModuleFile(source.path) : new Uint8Array());
+    } catch (e) {
+      this.#loadFailed(source, entry, e);
+      return null;
+    }
+    return this.#loadInto(puppet, bytes, source, entry, attach);
+  }
+
+  /** 読み込めなかったことを、行 (`entry`) かパネルの頭 (`error`) に出す。 */
+  #loadFailed(source: ModuleSource, entry: DressUpEntry | undefined, e: unknown): void {
+    const problem = describeProblem(e);
+    if (entry) entry.problem = problem;
+    else
+      this.error = {
+        ...problem,
+        summary: t("preview.dressUp.fileProblem", {
+          file: fileStem(source.path ?? source.name ?? t("preview.dressUp.file")),
+          summary: problem.summary,
+        }),
+      };
+  }
+
+  /** `#load` の、読んだバイト列 `bytes` を WebPuppet に読み込む所。 */
+  #loadInto(
+    puppet: WebPuppet,
+    bytes: Uint8Array,
+    source: ModuleSource,
+    entry: DressUpEntry | undefined,
+    attach: boolean,
+  ): string | null {
+    let name: string;
+    try {
       name = puppet.load_module(bytes);
     } catch (e) {
-      const problem = describeProblem(e);
-      if (entry) entry.problem = problem;
-      else
-        this.error = {
-          ...problem,
-          summary: t("preview.dressUp.fileProblem", {
-            file: fileStem(source.path ?? source.name ?? t("preview.dressUp.file")),
-            summary: problem.summary,
-          }),
-        };
+      if (puppet.is_lost()) {
+        this.#pending.push({ source: { ...source, bytes }, entry, attach });
+        return null;
+      }
+      this.#loadFailed(source, entry, e);
       return null;
     }
     // 今の編集と同じ名前なら、今の編集を読み込み直して、このファイルは付けない (同じ名前は 1 つしか持てない)。
@@ -579,6 +637,8 @@ export class DressUp {
       try {
         puppet.set_modules(wanted);
       } catch {
+        // GPU を失っていたら付けたい組を変えない (作り直した WebPuppet に `loaded` で付ける)。
+        if (puppet.is_lost()) return;
         // 1 つずつ試し、付けられないものだけを外す (理由は DressUpError の code から)。
         const accepted: string[] = [];
         for (const name of wanted) {
@@ -586,6 +646,7 @@ export class DressUp {
             puppet.set_modules([...accepted, name]);
             accepted.push(name);
           } catch (e) {
+            if (puppet.is_lost()) return;
             this.#takenOff(name, describeProblem(e));
           }
         }
@@ -643,6 +704,15 @@ export class DressUp {
       this.error = describeProblem(e);
     }
   }
+}
+
+/** GPU を失っていて読み込めなかったもの (`DressUp.#pending`)。 */
+interface PendingModule {
+  source: ModuleSource & { bytes: Uint8Array };
+  /** ファイルから読み直していた行 (無ければ新しく読み込むもの)。 */
+  entry: DressUpEntry | undefined;
+  /** 読み込んだら付けるか (`add`)。 */
+  attach: boolean;
 }
 
 /** 違いの要素が同じものか (種類と ID)。 */

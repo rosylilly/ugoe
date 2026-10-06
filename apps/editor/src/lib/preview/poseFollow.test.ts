@@ -32,6 +32,7 @@ function fakePuppet() {
   const counts = { reads: 0 };
   const puppet = {
     has_model: () => true,
+    is_lost: () => false,
     has_physics: () => true,
     set_parameter: () => true,
     parameter: () => undefined,

@@ -63,6 +63,8 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
     - **エディタのビューポート:** 表示するモデル (`setModel`) は読む前に覚えるので、文を出さずに `requestRender` で次のフレームの
       `checkLost()` へ回せば、作り直した WebPuppet に `#setUp` が今のモデルを読む。WebGL2 の復元を待つ間は「GPU の復元を待っています」の
       ままにする。
+    - **エディタのプレビューの着せ替え (T1644):** 読み込もうとした `.ugoemod` のバイト列を取っておき、付け外しは付けたい組だけを変えて、
+      作り直した WebPuppet に `PreviewMode.loaded` → `DressUp.loaded` で読み込んで付ける (文を出さない。[docs/editor.md](editor.md#プレビューの着せ替え))。
   - **続けて失ったとき (T0935):** 前の作り直しから 1 分 (`RESTART_WINDOW_MS`) 以内に失う・作れないことが続き、作り直しが `MAX_RESTARTS` (3) 回を
     超えたら (4 回目)、作り直さずに `failed(GpuLostRepeatedlyError)` で知らせる (数と時間は `<ugoe-avatar>` と同じ)。GPU が戻らない間に
     作り直しを繰り返して資源と時間を使い続けないため。次の `attach` と `restart` で数え直す。

@@ -8,7 +8,8 @@
   添える (T0656)。要素の ID を押すと、プレビューのままビューポートで強調し (もう一度押すとやめる。T0657)、
   「Select」でプレビューを出てツリーか Physics タブで選ぶ。
   知らせの形はプレビューのパネルとそろえる (T0676): 読み込みの失敗 (パネルの頭) と付けられないこと (行) は `Notice` の danger
-  (元の文言は「Details」)、自動で外れたことと行の読み込みの警告は `Notice` の warning。行のファイルは名前だけを出す (全体は `title`)。
+  (元の文言は「Details」)、行の読み込みの警告は `Notice` の warning。自動で外れたことは、その行の danger に「… was taken off: 理由」
+  として 1 回だけ出す (パネルの頭に同じ理由を重ねない。T1644)。行のファイルは名前だけを出す (全体は `title`)。
   違いの一覧は、行の文の下に要素の表 (ID・何が違うか・選ぶ) を置き、要素が多ければ絞り込みの欄を出し、1 行の要素は
   `DIFFERENCE_ROWS` 件まで出して残りは「さらに N 件」で開く (パネルの中に縦の送りを重ねない)。閉じている間は中を描かない。
 -->
@@ -184,11 +185,6 @@ onMount(() => {
       >{dropError}</Notice
     >
   {/if}
-  {#each dressUp.notices as notice, i (i)}
-    <Notice tone="warning" dismissLabel={t("preview.dressUp.dismiss")} ondismiss={() => dressUp.dismissNotice(i)}
-      >{notice}</Notice
-    >
-  {/each}
 
   <h4>{t("preview.dressUp.slots.title")}</h4>
   {#if slots.length === 0}
