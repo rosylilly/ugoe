@@ -1,11 +1,11 @@
 ---
 id: T0918
 title: UI 品質: スクリーンリーダーと OS の設定 (3 つのアプリ横断)
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: [T0673, T0674, T0675, T0676, T0725, T0818]
-assignee:
+assignee: claude-worker-T0918
 ---
 
 # T0918: UI 品質: スクリーンリーダーと OS の設定 (3 つのアプリ横断)
