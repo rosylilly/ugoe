@@ -1,11 +1,11 @@
 ---
 id: T0963
 title: "headless: CI の gpu (gl) で、読み戻しのコールバックが呼ばれないまま受け取ろうとして失敗する (readback callback was not called)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-headless, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0963
 ---
 
 # T0963: headless: CI の gpu (gl) で、読み戻しのコールバックが呼ばれないまま受け取ろうとして失敗する (readback callback was not called)
