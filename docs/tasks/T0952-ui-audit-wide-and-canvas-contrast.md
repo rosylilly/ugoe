@@ -1,11 +1,11 @@
 ---
 id: T0952
 title: "ui-audit: 1600px の広い幅の組と、ビューポートの上の文字のコントラストの検査を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0952
 ---
 
 # T0952: ui-audit: 1600px の広い幅の組と、ビューポートの上の文字のコントラストの検査を足す
