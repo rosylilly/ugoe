@@ -1,11 +1,11 @@
 ---
 id: T1638
 title: "エディタ: パーツ・デフォーマの行のホバーでも輪郭を出し、畳んだ祖先にビューポートのホバーの印を出す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1638
 ---
 
 # T1638: エディタ: パーツ・デフォーマの行のホバーでも輪郭を出し、畳んだ祖先にビューポートのホバーの印を出す
