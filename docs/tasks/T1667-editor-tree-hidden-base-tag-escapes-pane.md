@@ -1,11 +1,11 @@
 ---
 id: T1667
 title: "エディタ: T1654 の後、200% の拡大でツリーの見えない「本体」の札の文が左の列の外へはみ出す (ui-audit の escapes)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1667
 ---
 
 # T1667: エディタ: T1654 の後、200% の拡大でツリーの見えない「本体」の札の文が左の列の外へはみ出す (ui-audit の escapes)
