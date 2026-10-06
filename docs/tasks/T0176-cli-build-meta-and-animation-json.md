@@ -1,11 +1,11 @@
 ---
 id: T0176
 title: "CLI: ugoe build に META と物理・モーション・表情の JSON を添える口を足し、Unity の資料の作り直しを寄せる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-cli, ugoe-format, bindings/unity, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0176
 ---
 
 # T0176: CLI: ugoe build に META と物理・モーション・表情の JSON を添える口を足し、Unity の資料の作り直しを寄せる
