@@ -20,6 +20,7 @@ import {
   exists,
   flatten,
   indexModel,
+  nearestVisible,
   pathTo,
   refKey,
   type TreeRow,
@@ -69,6 +70,17 @@ const roots = $derived(index ? buildTree(index, view) : []);
 const rows = $derived(flatten(roots, collapsed));
 const rowIndex = $derived(new Map(rows.map((r, i) => [r.node.key, i])));
 const selectedKeys = $derived(new Set(selection.items.map(refKey)));
+/**
+ * ポインタが乗っている要素 (ビューポートのメッシュ) が畳んだ祖先の下にあるとき、印を付けるいちばん近い見えている祖先の行
+ * (docs/editor.md#選択とホバーの見せ方)。見えている行ならその行自身に hover の地が付くので null。
+ */
+const hoverWithin = $derived.by(() => {
+  const hover = selection.hover;
+  if (!hover) return null;
+  const key = refKey(hover);
+  const at = nearestVisible(roots, rowIndex, key);
+  return at === key ? null : at;
+});
 const rowId = (key: string) => `tree-row-${key}`;
 /** 行が無いときの案内。木 (role="tree") の外に出す (項目の無い木にしない)。 */
 const emptyState = $derived(treeEmptyState({ model: index !== null, empty: doc.empty, view }));
@@ -444,6 +456,7 @@ const dragHint = $derived.by(() => {
           selected={selectedKeys.has(row.node.key)}
           primary={selection.primary !== null && refKey(selection.primary) === row.node.key}
           hovered={selection.hovered(row.node.ref)}
+          hoveredWithin={hoverWithin === row.node.key}
           active={cursor === row.node.key}
           expanded={!collapsed.has(row.node.key)}
           renaming={renaming === row.node.key}

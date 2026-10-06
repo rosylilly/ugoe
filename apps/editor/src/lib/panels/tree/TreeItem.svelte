@@ -16,6 +16,8 @@ interface Props {
   primary?: boolean;
   /** ポインタが乗っている (この行かビューポートのメッシュに)。 */
   hovered?: boolean;
+  /** ポインタが乗っている要素 (ビューポートのメッシュ) が、畳んだこの行の下にある。 */
+  hoveredWithin?: boolean;
   active: boolean;
   expanded: boolean;
   renaming: boolean;
@@ -37,6 +39,7 @@ let {
   selected,
   primary = false,
   hovered = false,
+  hoveredWithin = false,
   active,
   expanded,
   renaming,
@@ -105,6 +108,7 @@ function insideRename(e: Event): boolean {
   class:selected
   class:primary
   class:hovered
+  class:hovered-within={hoveredWithin}
   class:active
   class:hidden={node.hidden}
   class:mask-only={node.maskOnly}
@@ -184,6 +188,11 @@ function insideRename(e: Event): boolean {
 .row:hover,
 .row.hovered {
   background-image: var(--ugoe-overlay-hover);
+}
+/* 畳んだ中のメッシュに乗っている: hover の地に、左端の縦の線を足す (行そのものに乗っているのと見分ける) */
+.row.hovered-within {
+  background-image: var(--ugoe-overlay-hover);
+  box-shadow: inset 3px 0 0 var(--ugoe-color-accent);
 }
 .row.selected {
   background-color: var(--ugoe-color-accent-soft);

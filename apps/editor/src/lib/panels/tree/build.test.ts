@@ -6,6 +6,8 @@ import {
   exists,
   flatten,
   indexModel,
+  meshesWithin,
+  nearestVisible,
   pathTo,
   type TreeNode,
 } from "./build";
@@ -94,6 +96,52 @@ describe("flatten / pathTo", () => {
     expect(pathTo(tree, "mesh:EyeL")).toEqual(["part:Eyes", "part:Face", "part:Root"]);
     expect(pathTo(tree, "part:Root")).toEqual([]);
     expect(pathTo(tree, "mesh:Nope")).toBeNull();
+  });
+});
+
+describe("meshesWithin / nearestVisible", () => {
+  it("collects the meshes inside a part or a deformer front to back", () => {
+    const index = indexModel(testModel());
+    expect(meshesWithin(index, { kind: "part", id: "Root" })).toEqual([
+      "EyeR",
+      "EyeMask",
+      "EyeL",
+      // 描画順が同じなら `meshes` で後ろのものが手前
+      "Ghost",
+      "Skin",
+    ]);
+    expect(meshesWithin(index, { kind: "part", id: "Eyes" })).toEqual(["EyeR", "EyeMask", "EyeL"]);
+    // デフォーマは子孫のデフォーマを親に持つメッシュも含む (パーツの表示の種類で平らに並べていても)。
+    expect(meshesWithin(index, { kind: "deformer", id: "HeadRot" })).toEqual([
+      "EyeR",
+      "EyeMask",
+      "EyeL",
+    ]);
+    expect(meshesWithin(index, { kind: "deformer", id: "FaceWarp" })).toHaveLength(4);
+    expect(meshesWithin(index, { kind: "mesh", id: "Skin" })).toEqual(["Skin"]);
+    expect(meshesWithin(index, { kind: "mesh", id: "Nope" })).toEqual([]);
+    expect(meshesWithin(index, { kind: "parameter", id: "Angle" })).toEqual([]);
+  });
+
+  it("does not loop on cyclic parts", () => {
+    const model = testModel();
+    model.parts = model.parts.map((p) => (p.id === "Root" ? { ...p, parent: "Eyes" } : p));
+    // Root → Eyes → Face → Root の循環なので、Hidden の Ghost も Face の中になる
+    expect(meshesWithin(indexModel(model), { kind: "part", id: "Face" })).toHaveLength(5);
+  });
+
+  it("finds the nearest visible ancestor of a node under a collapsed one", () => {
+    const tree = buildPartTree(indexModel(testModel()));
+    const visible = (collapsed: string[]) =>
+      new Set(flatten(tree, new Set(collapsed)).map((r) => r.node.key));
+    expect(nearestVisible(tree, visible([]), "mesh:EyeL")).toBe("mesh:EyeL");
+    expect(nearestVisible(tree, visible(["part:Eyes"]), "mesh:EyeL")).toBe("part:Eyes");
+    // 畳んだ祖先の中に、さらに畳んだ節があっても外側の見えている行
+    expect(nearestVisible(tree, visible(["part:Eyes", "part:Face"]), "mesh:EyeL")).toBe(
+      "part:Face",
+    );
+    expect(nearestVisible(tree, visible(["part:Root"]), "mesh:Ghost")).toBe("part:Root");
+    expect(nearestVisible(tree, visible([]), "mesh:Nope")).toBeNull();
   });
 });
 

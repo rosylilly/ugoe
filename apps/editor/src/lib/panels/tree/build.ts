@@ -268,3 +268,44 @@ export function pathTo(roots: TreeNode[], key: string): string[] | null {
   }
   return null;
 }
+
+/**
+ * 要素の中のメッシュ (手前から奥へ)。メッシュはそれ自身、パーツは子孫のパーツを含めて属するメッシュ、
+ * デフォーマは子孫のデフォーマを含めて親に持つメッシュ (どちらの表示の種類でも同じ)。
+ * ツリーの行のホバーでビューポートに輪郭を出すのに使う (docs/editor.md#選択とホバーの見せ方)。
+ */
+export function meshesWithin(index: ModelIndex, ref: ElementRef): string[] {
+  switch (ref.kind) {
+    case "mesh":
+      return index.meshes.has(ref.id) ? [ref.id] : [];
+    case "part":
+      return frontToBack(
+        index,
+        index.model.meshes
+          .filter((m) => ancestors(index.parts, m.part).includes(ref.id))
+          .map((m) => m.id),
+      );
+    case "deformer":
+      return frontToBack(
+        index,
+        index.model.meshes
+          .filter((m) => ancestors(index.deformers, m.parent).includes(ref.id))
+          .map((m) => m.id),
+      );
+    case "parameter":
+      return [];
+  }
+}
+
+/**
+ * `key` の節が見えていればその key、畳んだ祖先の下にあればいちばん近い見えている祖先の key。
+ * ツリーに無ければ null。`visible` は今並んでいる行の key (`flatten` の結果)。
+ */
+export function nearestVisible(
+  roots: TreeNode[],
+  visible: ReadonlySet<string> | ReadonlyMap<string, unknown>,
+  key: string,
+): string | null {
+  if (visible.has(key)) return key;
+  return pathTo(roots, key)?.find((k) => visible.has(k)) ?? null;
+}

@@ -12,10 +12,12 @@ import {
   dialogButton,
   FakeController,
   FakeDocument,
+  fakePuppet,
   pointer,
   press,
   render,
   settle,
+  testModel,
 } from "./tools/test/harness.svelte";
 
 // メッシュ編集モードでは IPC を呼ばない (フォーム編集・ギズモ・はみ出しの表示は出ない)。
@@ -119,18 +121,19 @@ describe("ToolOverlay mesh edit keys", () => {
 });
 
 describe("ToolOverlay hover", () => {
-  function setupHover(selected: boolean) {
+  function setupHover(selected: boolean, controller = new FakeController()) {
     const selection = new Selection();
     if (selected) selection.set([{ kind: "mesh", id: "Quad" }]);
+    const doc = new FakeDocument();
     const { target } = render(ToolOverlay, {
-      controller: new FakeController().asController,
-      doc: new FakeDocument().asDocument,
+      controller: controller.asController,
+      doc: doc.asDocument,
       selection,
       physics: new PhysicsView(),
       verify: new VerifyView(),
       glue: new GlueView(),
     });
-    return { selection, target };
+    return { selection, target, doc };
   }
 
   it("outlines the mesh under the pointer and shares it with the tree", async () => {
@@ -154,6 +157,51 @@ describe("ToolOverlay hover", () => {
     selection.clear();
     await settle();
     expect(target.querySelectorAll("path.outline.hover")).toHaveLength(1);
+  });
+
+  it("outlines every mesh inside a hovered part or deformer row in one path", async () => {
+    // 偽の評価結果に 2 つ目のメッシュ (Quad と同じ形) を足す
+    const controller = new FakeController();
+    const puppet = fakePuppet();
+    controller.puppet = Object.assign(puppet, {
+      drawable_ids: () => ["Quad", "Quad2"],
+      drawable_positions: (i: number) => (i < 2 ? fakePuppet().drawable_positions(0) : undefined),
+    });
+    const { selection, target, doc } = setupHover(false, controller);
+    // Body (パーツ) に Quad と Quad2、Quad2 は Warp (デフォーマ) の下
+    const model = JSON.parse(testModel());
+    const quad = model.meshes[0];
+    model.parts = [
+      {
+        id: "Body",
+        name: "Body",
+        parent: null,
+        keyforms: { bindings: [], keyforms: [{ opacity: 1 }] },
+      },
+    ];
+    model.meshes = [
+      { ...quad, part: "Body" },
+      { ...quad, id: "Quad2", name: "Quad2", part: "Body", parent: "Warp" },
+    ];
+    doc.model = { json: JSON.stringify(model), bundle: null };
+    const paths = () => [...target.querySelectorAll("path.outline.hover")];
+    /** パスの中の線分の数 (四角形 1 つで 4 本)。 */
+    const segments = () => paths().map((p) => (p.getAttribute("d") ?? "").split("M").length - 1);
+    selection.hover = { kind: "part", id: "Body" };
+    await settle();
+    expect(segments()).toEqual([8]);
+    selection.hover = { kind: "deformer", id: "Warp" };
+    await settle();
+    expect(segments()).toEqual([4]);
+    // 選んでいるメッシュは選択の輪郭だけ
+    selection.hover = { kind: "part", id: "Body" };
+    selection.set([{ kind: "mesh", id: "Quad" }]);
+    await settle();
+    expect(segments()).toEqual([4]);
+    // 中にメッシュの無いデフォーマ
+    selection.hover = { kind: "deformer", id: "Rot" };
+    await settle();
+    expect(paths()).toHaveLength(0);
   });
 
   it("does not change the hover while a button is held", async () => {

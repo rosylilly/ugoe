@@ -4,6 +4,7 @@
 
   - 選択モード: クリックで手前のメッシュを選ぶ (Shift / Ctrl で追加・解除)。Alt + クリックは重なった
     メッシュを手前から順に選ぶ。選択中のメッシュには輪郭を描く。ダブルクリックでメッシュ編集モードに入る。
+    ポインタが乗っている要素 (`Selection.hover`。ツリーの行と共有) の中のメッシュには細い破線の輪郭を描く。
   - メッシュ編集モード (T0606): tools/MeshEditTool.svelte。Esc で抜ける。
   - フォーム編集 (T0608): tools/form/FormTool.svelte。今のセルのキーフォームを編集する (メッシュ編集中は出さない)。
   - デフォーマのギズモ (T0607): tools/deformer/DeformerGizmo.svelte。主な選択がデフォーマのとき、
@@ -28,6 +29,8 @@ import { t } from "../i18n";
 import { baseElements, isBaseElement } from "../moduleProject";
 import type { GlueView } from "../panels/glues/glueView.svelte";
 import type { PhysicsView } from "../panels/physics/physicsView.svelte";
+import { indexModel, meshesWithin } from "../panels/tree/build";
+import { treeModel } from "../panels/tree/model";
 import type { VerifyView } from "../panels/verify/verifyView.svelte";
 import type { Selection } from "../selection.svelte";
 import TipButton from "../ui/TipButton.svelte";
@@ -110,14 +113,20 @@ $effect(() => {
   if (selection.meshEdit !== null && editing === null) selection.meshEdit = null;
 });
 
+/** 三角形の列ごとの境界の辺 (モデルを読み直すまで同じ配列なので、ポインタの移動や再生のたびに数え直さない)。 */
+const edgeCache = new WeakMap<ArrayLike<number>, [number, number][]>();
+
 /** メッシュ `id` の今の輪郭 (SVG のパス)。 */
 function outlineOf(id: string): string | null {
   const mesh = scene.mesh(id);
   const p = scene.screenPositions(id);
   if (!mesh || !p) return null;
-  return boundaryEdges(mesh.indices)
-    .map(([a, b]) => `M${p[2 * a]},${p[2 * a + 1]}L${p[2 * b]},${p[2 * b + 1]}`)
-    .join("");
+  let edges = edgeCache.get(mesh.indices);
+  if (!edges) {
+    edges = boundaryEdges(mesh.indices);
+    edgeCache.set(mesh.indices, edges);
+  }
+  return edges.map(([a, b]) => `M${p[2 * a]},${p[2 * a + 1]}L${p[2 * b]},${p[2 * b + 1]}`).join("");
 }
 
 /** 選択中のメッシュの輪郭。本体の要素は `base` (灰色の破線)。 */
@@ -132,15 +141,35 @@ const outlines = $derived(
     }),
 );
 
+/** ツリーと同じ索引 (パーツ・デフォーマの中のメッシュを引く)。読めないモデルなら null。 */
+const treeIndex = $derived.by(() => {
+  if (!doc.parsedModel) return null;
+  try {
+    return indexModel(treeModel(doc.parsedModel));
+  } catch {
+    return null;
+  }
+});
+
 /**
- * ポインタが乗っているメッシュ (ツリーの行かビューポート) の輪郭。選んでいるものには選択の輪郭があるので重ねない
+ * ポインタが乗っている要素 (ツリーの行かビューポートのメッシュ) の中のメッシュの輪郭。パーツ・デフォーマの行なら
+ * 子孫のメッシュすべてを 1 本のパスにまとめる (本体の要素は別のパス)。選んでいるメッシュには選択の輪郭があるので重ねない
  * (docs/editor.md#選択とホバーの見せ方)。
  */
-const hoverOutline = $derived.by(() => {
+const hoverOutlines = $derived.by(() => {
   const hover = selection.hover;
-  if (hover?.kind !== "mesh" || selection.has(hover)) return null;
-  const d = outlineOf(hover.id);
-  return d === null ? null : { d, base: isBaseElement(base, hover) };
+  if (!hover || !treeIndex) return [];
+  const parts = { own: [] as string[], base: [] as string[] };
+  for (const id of meshesWithin(treeIndex, hover)) {
+    const ref = { kind: "mesh" as const, id };
+    if (selection.has(ref)) continue;
+    const d = outlineOf(id);
+    if (d !== null) (isBaseElement(base, ref) ? parts.base : parts.own).push(d);
+  }
+  return [
+    { d: parts.own.join(""), base: false },
+    { d: parts.base.join(""), base: true },
+  ].filter((o) => o.d !== "");
 });
 
 /** モジュールのプロジェクトで、モジュールのメッシュすべての輪郭 (本体と見分けるため)。 */
@@ -253,9 +282,9 @@ function onKeyDown(e: KeyboardEvent): void {
   {#each moduleOutlines as o (o.id)}
     <path class="module-outline" d={o.d} />
   {/each}
-  {#if hoverOutline}
-    <path class="outline hover" class:base={hoverOutline.base} d={hoverOutline.d} />
-  {/if}
+  {#each hoverOutlines as o (o.base)}
+    <path class="outline hover" class:base={o.base} d={o.d} />
+  {/each}
   {#each outlines as o (o.id)}
     <path class="outline" class:primary={o.primary} class:base={o.base} d={o.d} />
   {/each}

@@ -135,3 +135,30 @@ describe("TreePanel empty state", () => {
     expect(onfileaction).toHaveBeenCalledWith("importPsd");
   });
 });
+
+describe("TreePanel hover", () => {
+  it("marks the nearest visible ancestor of a hovered mesh under collapsed rows", () => {
+    const { selection } = setup();
+    selection.hover = { kind: "mesh", id: "EyeL" };
+    flushSync();
+    // 見えている行はその行に hover の地
+    expect(row("mesh:EyeL")?.classList.contains("hovered")).toBe(true);
+    expect(document.querySelectorAll(".row.hovered-within")).toHaveLength(0);
+    toggle("part:Eyes");
+    expect(row("part:Eyes")?.classList.contains("hovered-within")).toBe(true);
+    toggle("part:Face");
+    expect(row("part:Face")?.classList.contains("hovered-within")).toBe(true);
+    expect(document.querySelectorAll(".row.hovered-within")).toHaveLength(1);
+    selection.hover = null;
+    flushSync();
+    expect(document.querySelectorAll(".row.hovered-within")).toHaveLength(0);
+  });
+
+  it("shares a part row hover with the viewport", () => {
+    const { selection } = setup();
+    row("part:Face")?.dispatchEvent(new PointerEvent("pointerenter"));
+    expect(selection.hover).toEqual({ kind: "part", id: "Face" });
+    row("part:Face")?.dispatchEvent(new PointerEvent("pointerleave"));
+    expect(selection.hover).toBeNull();
+  });
+});
