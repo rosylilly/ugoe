@@ -309,7 +309,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 
 | 部品 | 使う場面 | 土台 | キーボード | 段 |
 | --- | --- | --- | --- | --- |
-| `Button` | 操作を 1 つ実行する。種類は `primary` (画面に 1 つまで)・`secondary` (既定)・`danger`・`ghost` (ツールバーの中) | Bits UI `Button` | Enter・Space | 1 |
+| `Button` | 操作を 1 つ実行する。種類は `primary` (画面に 1 つまで)・`secondary` (既定)・`danger`・`ghost` (ツールバーの中)。`form` (フォームの id) でフォームの外から送れる (ダイアログの `actions` に置いた決定のボタンなど) | Bits UI `Button` | Enter・Space | 1 |
 | `IconButton` | 文字を出す場所が無いときの操作。**`label` (読み上げとツールチップに使う) を必ず渡す** | Bits UI `Button` と `Tooltip` | Enter・Space | 1 |
 | `Checkbox` | 決定 (保存・OK) を押すまで効かない選択肢、または一覧の中の選択 | Bits UI `Checkbox` | Space | 1 |
 | `Toggle` | すぐに効く入・切 (「鏡像で表示」など)。説明は `tooltip` (スイッチに Tooltip を付ける) | Bits UI `Switch` | Space・Enter | 1 |
@@ -323,7 +323,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Tabs` | 同じ場所の中身を切り替える (中身が別の画面のとき) | Bits UI `Tabs` | 左右の矢印・Home/End | 1 |
 | `Section` | 折りたためるまとまり (パネルの中) | Bits UI `Collapsible` | Enter・Space | 1 |
 | `Toolbar` | ボタンの並び。中は 1 つのタブ止まりにする | Bits UI `Toolbar` | 左右の矢印 (roving tabindex) | 1 |
-| `Dialog` | 作業を止めて確認・入力させる (モーダル)。取り消せない操作の確認は `AlertDialog` | Bits UI `Dialog`・`AlertDialog` | Esc で閉じる・中でフォーカスが回る・閉じたら開いた元にフォーカスを戻す | 2 |
+| `Dialog` | 作業を止めて確認・入力させる (モーダル)。取り消せない操作の確認は `AlertDialog`。開いたときのフォーカスは中の最初の部品で、`initialFocus` (要素の id) で選べる (その部品の `Tooltip` は開いたときには出さない。最初の Esc で閉じるように) | Bits UI `Dialog`・`AlertDialog` | Esc で閉じる・中でフォーカスが回る・閉じたら開いた元にフォーカスを戻す | 2 |
 | `Notice` | 画面に残る知らせ (読み込みの警告など)。`ondismiss` を渡すと閉じるボタンを出す | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
 | `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする。`showToast()` で出し、アプリの根元の `Toaster` が描く | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない。ポインタやフォーカスが乗っている間は消えない | 2 |
 | `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |

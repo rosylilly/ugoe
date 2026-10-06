@@ -2,6 +2,7 @@
   説明 (Tooltip) 付きの文字のボタン (docs/ui.md#エディタの中の共通の形)。`title` 属性の代わりに使う。
   `tooltip` を省くと @ugoe/ui の Button と同じ。無効のボタンには説明が出ないので、押せない理由は近くに書く。
   Popover・Menu のトリガーの属性 (rest に入る) も、Tooltip の属性と重ねて渡す (同じイベントは両方呼ぶ)。
+  `id` は Tooltip のトリガーの id にもする (Bits UI がトリガーを id で探すので、ボタンの id とそろえる)。
 -->
 <script lang="ts">
 import { Button, type ButtonBaseProps, mergeAttributes, Tooltip } from "@ugoe/ui";
@@ -19,7 +20,7 @@ let { tooltip, shortcut, onclick, children, ...rest }: Props = $props();
 </script>
 
 {#if tooltip}
-  <Tooltip text={tooltip} {shortcut}>
+  <Tooltip text={tooltip} {shortcut} id={rest.id}>
     {#snippet trigger(attrs)}
       <Button {...mergeAttributes(attrs, rest, { onclick }) as ButtonBaseProps}>{@render label()}</Button>
     {/snippet}

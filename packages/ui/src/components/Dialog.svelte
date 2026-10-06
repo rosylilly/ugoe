@@ -4,12 +4,14 @@
   取り消せない操作の確認は AlertDialog を使う。利用者の判断が要らない知らせには使わない (Notice)。
 
   - 開くとフォーカスは中の最初の操作できる要素へ移る。閉じるボタンは右上に出すが、並びの最後に置く
-    (最初の入力欄や決定のボタンに先にフォーカスが行くように)。
+    (最初の入力欄や決定のボタンに先にフォーカスが行くように)。`initialFocus` に要素の id を渡すと、そこへ移す
+    (不意に出る確認で「後で」に置くなど。見つからなければ最初の要素へ)。
   - `onclose` は利用者が閉じたとき (Esc・外のクリック・閉じるボタン) に呼ぶ。`open` を外から false にしたときは呼ばない。
 -->
 <script lang="ts">
 import { Dialog } from "bits-ui";
 import type { Snippet } from "svelte";
+import { focusQuietly } from "../context";
 import { t } from "../i18n";
 import Icon from "./Icon.svelte";
 import IconButton from "./IconButton.svelte";
@@ -27,6 +29,11 @@ interface Props {
   dismissible?: boolean;
   /** 閉じるボタンの名前。省くと @ugoe/ui のカタログの「閉じる」(`common.close`)。 */
   closeLabel?: string;
+  /**
+   * 開いたときにフォーカスを移す要素の id (中の部品に `id` を渡しておく)。省くか見つからないときは、中の最初の操作できる要素。
+   * 不意に開く確認では、うっかり Enter で決まらないように取り消し側 (「後で」など) を選ぶ。
+   */
+  initialFocus?: string;
   /** 利用者が閉じたとき。 */
   onclose?: () => void;
   children?: Snippet;
@@ -41,6 +48,7 @@ let {
   size = "md",
   dismissible = true,
   closeLabel,
+  initialFocus,
   onclose,
   children,
   actions,
@@ -60,6 +68,13 @@ let {
       class={`ugoe-dialog ugoe-dialog--${size}${dismissible ? " ugoe-dialog--dismissible" : ""}`}
       escapeKeydownBehavior={dismissible ? "close" : "ignore"}
       interactOutsideBehavior={dismissible ? "close" : "ignore"}
+      onOpenAutoFocus={(event) => {
+        const target = initialFocus ? document.getElementById(initialFocus) : null;
+        if (!target) return;
+        event.preventDefault();
+        // 選んだ要素の説明 (Tooltip) は出さない。出すと最初の Esc が説明を消すだけになる
+        focusQuietly(target);
+      }}
     >
       <Dialog.Title class="ugoe-dialog__title" level={2}>{title}</Dialog.Title>
       {#if description}

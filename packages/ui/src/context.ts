@@ -25,3 +25,24 @@ export function setInTooltipProvider(): void {
 export function isInTooltipProvider(): boolean {
   return getContext<boolean | undefined>(TOOLTIP_PROVIDER) === true;
 }
+
+/** ツールチップを出さずにフォーカスを移している要素 (`focusQuietly` の間だけ入る)。 */
+const quietFocus = new WeakSet<Element>();
+
+/**
+ * ツールチップを出さずにフォーカスを移す (Dialog の `initialFocus`)。開いたとたんに説明が重なり、最初の Esc が説明を
+ * 消すだけになる (ダイアログを閉じない) のを防ぐ。focus イベントは `focus()` の中で同期に届くので、その間だけ印を付ける。
+ */
+export function focusQuietly(el: HTMLElement): void {
+  quietFocus.add(el);
+  try {
+    el.focus();
+  } finally {
+    quietFocus.delete(el);
+  }
+}
+
+/** `focusQuietly` でフォーカスを受けているところか (Tooltip がフォーカスで出るのを止める)。 */
+export function isQuietlyFocused(el: EventTarget | null): boolean {
+  return el instanceof Element && quietFocus.has(el);
+}

@@ -16,6 +16,7 @@ import Slider from "./components/Slider.svelte";
 import Tabs from "./components/Tabs.svelte";
 import TextField from "./components/TextField.svelte";
 import Toggle from "./components/Toggle.svelte";
+import ButtonFormHarness from "./test/ButtonFormHarness.svelte";
 import ExternalValueHarness from "./test/ExternalValueHarness.svelte";
 import { click, get, html, labelledByText, press, render } from "./test/render";
 import TextFieldHarness from "./test/TextFieldHarness.svelte";
@@ -69,6 +70,16 @@ describe("Button", () => {
   it("is not busy by default", () => {
     const root = render(Button, { children: html("<span>Save</span>") });
     expect(get(root, "button").hasAttribute("aria-busy")).toBe(false);
+  });
+
+  it("submits a form it is not inside of through the form attribute", () => {
+    const onsubmit = vi.fn();
+    const root = render(ButtonFormHarness, { onsubmit });
+    const button = get<HTMLButtonElement>(root, "#submit");
+    expect(button.getAttribute("form")).toBe("rename-form");
+    expect(button.form).toBe(get(root, "#rename-form"));
+    click(button);
+    expect(onsubmit).toHaveBeenCalledOnce();
   });
 });
 

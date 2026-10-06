@@ -4,7 +4,7 @@
   - 本体が変わった: 本体を読み直す (保存していないモジュールの編集は保つ。Undo の履歴は消える)・後で。
     「Reload automatically」(外での書き換えと同じ設定) を入れると、次からは尋ねずに読み直す。
   - 本体が見つからない: 本体を選び直す (開き直さないので、保存していない編集は残る)・後で
-  Esc・閉じるボタンは「後で」。
+  Esc・閉じるボタンは「後で」。開いたときのフォーカスも「後で」に置く (外での書き換えと同じく不意に出るので)。
 -->
 <script lang="ts">
 import { RichText } from "@ugoe/i18n";
@@ -29,11 +29,15 @@ interface Props {
 }
 
 let { change, base, autoReload, onautoreload, onreload, onlocate, ondismiss }: Props = $props();
+
+const id = $props.id();
+const laterId = `${id}-later`;
 </script>
 
 <Dialog
   open={change !== null}
   title={change?.missing ? t("baseChange.missing.title") : t("baseChange.changed.title")}
+  initialFocus={laterId}
   onclose={ondismiss}
 >
   {#if change}
@@ -61,7 +65,7 @@ let { change, base, autoReload, onautoreload, onreload, onlocate, ondismiss }: P
     {/if}
   {/if}
   {#snippet actions()}
-    <TipButton tooltip={t("baseChange.later.tooltip")} onclick={ondismiss}>
+    <TipButton id={laterId} tooltip={t("baseChange.later.tooltip")} onclick={ondismiss}>
       {t("baseChange.later.label")}
     </TipButton>
     {#if change?.missing}

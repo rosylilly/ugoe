@@ -4,7 +4,8 @@
   - 未保存の変更がない: 開き直す・今のまま (後で)
   - 未保存の変更がある (または保存しようとした): 開き直す (自分の変更を捨てる)・自分の版で上書き・別名で保存・後で
   - プロジェクトが消された: その場所に保存し直す・別名で保存・後で
-  Esc・閉じるボタンは「後で」。
+  Esc・閉じるボタンは「後で」。開いたときのフォーカスも「後で」に置く (不意に出るので、打っていた Enter や
+  Space で開き直し・上書き・自動で開き直す設定の切り替えにならないように。docs/editor.md#ダイアログ)。
 -->
 <script lang="ts">
 import { RichText } from "@ugoe/i18n";
@@ -42,11 +43,14 @@ let {
 }: Props = $props();
 
 const canOverwrite = $derived(modified || saving);
+const id = $props.id();
+const laterId = `${id}-later`;
 </script>
 
 <Dialog
   open={change !== null}
   title={change?.missing ? t("externalChange.missing.title") : t("externalChange.changed.title")}
+  initialFocus={laterId}
   onclose={ondismiss}
 >
   {#if change}
@@ -71,7 +75,7 @@ const canOverwrite = $derived(modified || saving);
     {/if}
   {/if}
   {#snippet actions()}
-    <TipButton tooltip={t("externalChange.later.tooltip")} onclick={ondismiss}>
+    <TipButton id={laterId} tooltip={t("externalChange.later.tooltip")} onclick={ondismiss}>
       {t("externalChange.later.label")}
     </TipButton>
     {#if canOverwrite || change?.missing}

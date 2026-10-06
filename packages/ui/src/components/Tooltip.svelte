@@ -10,12 +10,13 @@
     </Tooltip>
 
   開いている間、トリガーの aria-describedby が説明を指す (IconButton は説明がラベルと同じなので外す)。
+  Dialog の `initialFocus` で移ったフォーカス (`focusQuietly`) では出さない (開いてすぐの Esc がダイアログを閉じるように)。
   Bits UI 2.19.4 の Tooltip.Content は role="tooltip" を付けないので、ここで付ける (APG の Tooltip パターン)。
 -->
 <script lang="ts">
 import { Tooltip } from "bits-ui";
 import type { Snippet } from "svelte";
-import { isInTooltipProvider } from "../context";
+import { isInTooltipProvider, isQuietlyFocused } from "../context";
 import type { TriggerAttributes } from "../props";
 import type { Side } from "../types";
 import Kbd from "./Kbd.svelte";
@@ -40,13 +41,25 @@ interface Props {
 let { text, shortcut, side = "bottom", disabled = false, id, delay, trigger }: Props = $props();
 
 const inProvider = isInTooltipProvider();
+
+/** `focusQuietly` で移ってきたフォーカスでは出さない (Dialog の `initialFocus`。ポインタと、次からのフォーカスでは出る)。 */
+function quietOnFocus(props: TriggerAttributes): TriggerAttributes {
+  const onfocus = props.onfocus;
+  if (typeof onfocus !== "function") return props;
+  return {
+    ...props,
+    onfocus: (event: FocusEvent) => {
+      if (!isQuietlyFocused(event.currentTarget)) onfocus(event);
+    },
+  };
+}
 </script>
 
 {#snippet tooltip()}
   <Tooltip.Root {disabled} delayDuration={delay}>
     <Tooltip.Trigger {id} {disabled}>
       {#snippet child({ props })}
-        {@render trigger(props)}
+        {@render trigger(quietOnFocus(props))}
       {/snippet}
     </Tooltip.Trigger>
     <Tooltip.Portal>

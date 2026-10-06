@@ -22,6 +22,8 @@ export interface ButtonBaseProps {
   /** 実行中 (押すと二重になる操作の待ち)。無効にし、`aria-busy` を付ける。文言 (「保存しています…」) は呼び手が変える。 */
   busy?: boolean;
   type?: "button" | "submit" | "reset";
+  /** 送る `<form>` の id。フォームの外 (ダイアログの操作の並びなど) に置いた `type="submit"` のボタンで送るとき。 */
+  form?: string;
   id?: string;
   class?: string;
   /** 補足の説明を持つ要素の id (無効の理由など)。 */

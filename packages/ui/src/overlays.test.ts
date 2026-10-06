@@ -46,6 +46,26 @@ describe("Dialog", () => {
     expect(close.getAttribute("aria-label")).toBe("Close");
   });
 
+  it("moves the first focus to the element named by initialFocus", async () => {
+    const { dialog } = await open({ initialFocus: "cancel" });
+    await vi.waitFor(() => expect(focused()).toBe(get(dialog, "#cancel")));
+  });
+
+  it("does not show the tooltip of the initial focus, so the first Escape closes", async () => {
+    const onclose = vi.fn();
+    const { root, dialog } = await open({ initialFocus: "help", onclose });
+    await vi.waitFor(() => expect(focused()).toBe(get(dialog, "#help")));
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    press(focused() as HTMLElement, "Escape");
+    await vi.waitFor(() => expect(get(root, "#state").textContent).toBe("closed"));
+    expect(onclose).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the first control when initialFocus is not found", async () => {
+    await open({ initialFocus: "missing" });
+    await vi.waitFor(() => expect(focused()?.getAttribute("role")).toBe("spinbutton"));
+  });
+
   it("keeps the focus inside with Tab", async () => {
     const { dialog } = await open();
     await vi.waitFor(() => expect(dialog.contains(focused())).toBe(true));
