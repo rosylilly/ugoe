@@ -315,6 +315,21 @@ describe("Slider", () => {
     expect(thumb.getAttribute("aria-valuenow")).toBe("1");
   });
 
+  it("keeps the hidden label as the name of the thumb and the field", () => {
+    const root = render(Slider, { label: "Intensity", hideLabel: true, value: 1, max: 2 });
+    const label = get(root, ".ugoe-slider__label");
+    expect(label.classList.contains("ugoe-visually-hidden")).toBe(true);
+    expect(labelledByText(get(root, '[role="slider"]'))).toBe("Intensity");
+    expect(labelledByText(get(root, '[role="spinbutton"]'))).toBe("Intensity");
+    expect(get(root, ".ugoe-slider").hasAttribute("data-label-hidden")).toBe(true);
+  });
+
+  it("shows the label by default", () => {
+    const root = render(Slider, { label: "Intensity", value: 1 });
+    expect(get(root, ".ugoe-slider__label").classList.contains("ugoe-visually-hidden")).toBe(false);
+    expect(get(root, ".ugoe-slider").hasAttribute("data-label-hidden")).toBe(false);
+  });
+
   it("takes the default reset label from the ui catalog", () => {
     const root = render(Slider, { label: "Smoothing", value: 0.5, defaultValue: 0 });
     const reset = () => get(root, "button").getAttribute("aria-label");

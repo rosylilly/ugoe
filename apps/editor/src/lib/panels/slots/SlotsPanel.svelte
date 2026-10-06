@@ -457,7 +457,9 @@ const ids = $props.id();
   min-width: 0;
 }
 
+/* 見せない欄の名前 (.ugoe-visually-hidden) の位置の基準にもなる (docs/ui.md#レイアウト の「送り」) */
 .range {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--ugoe-space-2);

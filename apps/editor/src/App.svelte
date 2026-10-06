@@ -592,9 +592,7 @@ $effect(() => {
     padding: 0;
     overflow: hidden;
   }
-  /* 送る枠は位置の基準にする (中の absolute の要素 (見せずに読ませる文字など) が、文書の全体を送れるようにしないため) */
   .pane {
-    position: relative;
     min-height: 0;
     min-width: 0;
     overflow-x: hidden;

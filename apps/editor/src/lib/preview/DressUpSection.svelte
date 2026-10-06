@@ -520,8 +520,9 @@ section :global(.ugoe-notice) {
   font-weight: var(--ugoe-font-weight-strong);
 }
 
-/* 要素の表: ID・何が違うか・選ぶ。何が違うかは折り返す */
+/* 要素の表: ID・何が違うか・選ぶ。何が違うかは折り返す。見せない見出し (thead) の位置の基準にもなる (docs/ui.md#レイアウト の「送り」) */
 .items {
+  position: relative;
   width: 100%;
   border-collapse: collapse;
   font-size: var(--ugoe-font-size-sm);

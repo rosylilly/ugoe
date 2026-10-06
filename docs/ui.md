@@ -333,7 +333,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `IconButton` | 文字を出す場所が無いときの操作。**`label` (読み上げとツールチップに使う) を必ず渡す** | Bits UI `Button` と `Tooltip` | Enter・Space | 1 |
 | `Checkbox` | 決定 (保存・OK) を押すまで効かない選択肢、または一覧の中の選択 | Bits UI `Checkbox` | Space | 1 |
 | `Toggle` | すぐに効く入・切 (「鏡像で表示」など)。説明は `tooltip` (スイッチに Tooltip を付ける) | Bits UI `Switch` | Space・Enter | 1 |
-| `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。説明は `tooltip` (つまみに Tooltip を付ける) | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
+| `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。説明は `tooltip` (つまみに Tooltip を付ける)。行が狭いときは `hideLabel` で名前を見せずに読み上げにだけ使う | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
 | `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す。誤りは `invalid`、説明は `tooltip`。空 (既定を使う) を持てる欄は `optional` (下の「空を持てる数値の欄」)。打つたびに読めた値を知りたいときは `oninput` | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
 | `TextField` | 1 行の文字 (名前・ID・URL・検索。`type` は `text`・`search`・`url`)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は `TextArea`、秘密は `SecretField` | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
 | `TextArea` | 複数行の文字 (名前の一覧・注文の文など)。ラベル・補足・誤りの文・`tooltip`・確定の約束は `TextField` と同じ。綴りの印は既定で出す (`spellcheck`) | 自作 (`<textarea>`) | Enter は改行・Mod+Enter かフォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0949 |
@@ -349,7 +349,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
 | `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く)。名前の下に説明の行 (`description`。項目の説明として読む) を出せる (見本の中身・最近のファイルの場所など) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
 | `Popover` | 部品の近くに出す小さな編集の枠 (色の選択など) | Bits UI `Popover` | Esc で閉じ、開いた元に戻る | 2 |
-| `ColorPicker` | 光源などの色 | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
+| `ColorPicker` | 光源などの色。行が狭いときは `hideValue` でトリガーの 16 進の値を見せずに見本の色だけを出す (読み上げの名前には値が入る) | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
 | `DropZone` | ファイルを落とす領域。**同じことができるボタン (「ファイル…」) を必ず並べる** | 自作 (`<div>` と `Button`) | ボタンで開く | 2 |
 | `Icon` | 線のアイコン (閉じる・上下・再生・停止・キー・設定など、名前で選ぶ)。ボタンの中の印に文字の記号を使わずこれを使う (上の「アイコン」) | 自作 (`<svg>`) | | T0916 |
 | `Kbd` | ショートカットの表記 (macOS は ⌘、ほかは Ctrl) | 自作 (`<kbd>`) | | 2 |
@@ -523,9 +523,10 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
 - **送り:** 1 つの領域に縦の送りは 1 つにします (送る領域の中に、また縦に送る領域を入れない)。横の送りは表とタイムラインだけにします。
   送れることが分かるように、領域の端で行を途中で切って見せるか、見出しを固定 (`position: sticky`) にします。選んだもの・フォーカスしたものは、見える所まで送ります。
   送る枠の中の `position: absolute` の要素 (見せずに読ませる文字 `.ugoe-visually-hidden` など) は、送る枠かその内側を位置の基準にします
-  (`position` の無い送る枠の外の祖先を基準にすると、枠で切り取られずに外の祖先を送れるようにしてしまう)。`Notice` は自分を基準にする (`position: relative`) ので、
-  どこに置いてもよいです。アプリが自分で置く見せずに読ませる文字 (表の見出し・欄の名前など) は、送る枠に `position: relative` を付けるか、
-  文字を包む要素を基準にします (エディタはパネルの送る枠に付けている。T0954)。
+  (`position` の無い送る枠の外の祖先を基準にすると、枠で切り取られずに外の祖先を送れるようにしてしまう)。`Notice`・`hideLabel` の `Slider`・
+  `hideValue` の `ColorPicker` は自分を基準にする (`position: relative`) ので、どこに置いてもよいです。アプリが自分で置く見せずに読ませる文字
+  (表の見出し・欄の名前など) は、文字を包む要素 (表・欄の並び) を基準にします (送る枠ごとに打ち消すと、新しい送る枠で同じ誤りが起きうる。T1657)。
+  部品の中の文字を見せなくするときは、アプリの CSS で部品の中の要素に `position: absolute` などを書かず、部品の口 (`hideLabel`・`hideValue`) を使います。
   縦に送る枠は、行末 (右) の padding を `--ugoe-scrollbar-gap` (16px) 以上にして、スクロールバーの分を中身から空けます。
   WebKitGTK (Linux)・macOS のスクロールバーは幅を取らずに中身の上に重ねて描き (WebKitGTK は細い印が 3px、指を乗せると 8px に太り、
   右端から 14px まで掛かる)、`scrollbar-gutter` はこの形のスクロールバーには幅を空けないためです (T0970)。中身が右の端まで届く一覧
@@ -533,7 +534,7 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   幅を取る形のスクロールバー (ヘッドレスの Chrome・Windows) では、空けた幅はスクロールバーの左に余白として残るだけです。
   確かめ方: 人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。ビューアとスタジオの送る枠の規則が
   `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることは packages/ui の `tokens.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
-  `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`。
+  `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`・`Slider`・`ColorPicker`。
 - **分割:** 大きさを変えられる境 (`role="separator"`) は、ポインタとキーボード (矢印・Home・End) の両方で動かせ、フォーカスの印を出し、
   変えた大きさを覚えます。最小の大きさで中身が潰れない (見出しと 1 行が見える) ようにします。
   確かめ方: `just ui-audit` (Tab の止まりの印) と人。
@@ -823,9 +824,12 @@ T0917 で部品が無くて残した 3 種類の欄は、T0949 で部品を足�
   T1638 で、パーツ・デフォーマの行に乗るとその中のメッシュすべてに輪郭を出し、乗ったメッシュの行が畳んだ祖先の下にあるときは、
   いちばん近い見えている祖先の行に hover の地と左端の強調色の縦線 (3px。行そのものの hover と見分ける) を付けるようにしました。
 - **送り:** パネルの中の見せずに読ませる文字 (`Notice` の中の `.ugoe-visually-hidden` など。`position: absolute`) が送る枠の外を位置の基準にして、
-  文書の全体が縦に 300px ほど送れていた (`-bottom` の場面でヘッダーごと上にずれていた)。送る枠 (左の列・右の列の区画) を `position: relative` にしました。
-  T0954 で `Notice` は自分を位置の基準にしましたが、この打ち消しは残します。パネルが自分で置く見せずに読ませる文字 (描く順の欄の名前・
-  プレビューの表の見出し・光の欄の色の値とスライダーの名前) も同じ形で外へ出るためです (外すと `just ui-audit` の `overflow` に 4 種類出る)。
+  文書の全体が縦に 300px ほど送れていた (`-bottom` の場面でヘッダーごと上にずれていた)。T0674 では送る枠 (左の列・右の列の区画) を
+  `position: relative` にして打ち消しましたが、T1657 でこの打ち消しを外し、見せずに読ませる文字を包む要素 (か部品) を位置の基準にしました。
+  `Notice` は T0954 で自分を基準にし、パネルが自分で書いていた形は次のようにそろえました。
+  光の欄の色の値 (`LightColor`) は `ColorPicker` の `hideValue` (トリガーが基準)、光の強さのスライダー (`PreviewLightsSection`) と
+  AI の提案の法線マップの強さのスライダー (`ProposalsPanel`) は `Slider` の `hideLabel` (`.ugoe-slider` が基準)、描く順の欄の名前
+  (`SlotsPanel`。前から `.ugoe-visually-hidden`) は欄の並び (`.range`) を、プレビューの表の見出し (`DressUpSection` の `thead`。同じく) は表を基準にしました。
 - **インスペクタ:** キーフォーム (と推定) をデフォーマの概要のすぐ後に上げ、メッシュの属性・デフォーマで包む操作・描画用の複製・深度を後ろにしました。
 - **`just ui-audit --only editor`:** 前 (T0673 の後) の 12 種類 (重なり 3・24px 未満 8・ARIA 1) が消えて、すべての検査で 0 件です。
   パーツを 200 個・パラメータを 100 個に増やし、長い名前を混ぜた見本でも 0 件でした (見本の model.json を書き換えて `--no-build` で流した。場面の追加はしていない)。

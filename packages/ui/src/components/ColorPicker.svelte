@@ -2,6 +2,7 @@
   ColorPicker: 光源などの色を選ぶ (docs/ui.md#部品の一覧)。自作。
   トリガーは色の見本と 16 進の値を出すボタンで、押すと Popover の中に、OS の色の選択 (<input type="color">)・
   16 進の欄・R・G・B の NumberField を出す。色は `#rrggbb` (小文字) で受け渡す。
+  `hideValue` でトリガーの 16 進の値を見せずに見本の色だけを出す (読み上げの名前には値が入る。行が狭いとき)。
 -->
 <script lang="ts">
 import { hexToRgb, parseHexColor, type Rgb, rgbToHex } from "../color";
@@ -20,6 +21,8 @@ interface Props {
   "aria-labelledby"?: string;
   /** 見えるラベルを置けないときの読み上げの名前。 */
   "aria-label"?: string;
+  /** トリガーの 16 進の値を見せない (読み上げの名前には入る)。既定は false。 */
+  hideValue?: boolean;
   disabled?: boolean;
   /** 選ぶ枠 (Popover) が開いているか。 */
   open?: boolean;
@@ -32,6 +35,7 @@ let {
   label,
   "aria-labelledby": labelledby,
   "aria-label": ariaLabel,
+  hideValue = false,
   disabled = false,
   open = $bindable(false),
   onchange,
@@ -87,7 +91,9 @@ const channels = $derived([
         aria-label={ariaLabel ? `${ariaLabel} ${color}` : undefined}
       >
         <span class="ugoe-color-picker__swatch" style:background={color}></span>
-        <span class="ugoe-color-picker__value" id={`${id}-value`}>{color}</span>
+        <span class={["ugoe-color-picker__value", hideValue && "ugoe-visually-hidden"]} id={`${id}-value`}
+          >{color}</span
+        >
       </Button>
     {/snippet}
     <div class="ugoe-color-picker__panel">
@@ -152,7 +158,9 @@ const channels = $derived([
       opacity: var(--ugoe-opacity-disabled);
     }
 
+    /* 見せない値 (.ugoe-visually-hidden) の位置の基準にもなる (docs/ui.md#レイアウト の「送り」) */
     .ugoe-button.ugoe-color-picker__trigger {
+      position: relative;
       padding-left: var(--ugoe-space-2);
     }
 

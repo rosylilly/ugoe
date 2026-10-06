@@ -50,9 +50,7 @@ header {
   flex: 1;
 }
 
-/* 送る枠は位置の基準にする (中の absolute の要素が、文書の全体を送れるようにしないため) */
 aside {
-  position: relative;
   padding: var(--ugoe-space-3) var(--ugoe-space-4);
   background: var(--ugoe-color-surface);
   overflow: auto;

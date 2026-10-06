@@ -42,17 +42,4 @@ function change(hex: string): void {
 </script>
 
 <!-- 行が狭いので、色の値 (#rrggbb) は見せずに見本の色だけを出す (読み上げの名前には値が入る)。 -->
-<span class="light-color">
-  <ColorPicker value={rgbToHex(value)} aria-label={ariaLabel} bind:open onchange={change} />
-</span>
-
-<style>
-.light-color :global(.ugoe-color-picker__value) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-</style>
+<ColorPicker value={rgbToHex(value)} aria-label={ariaLabel} hideValue bind:open onchange={change} />

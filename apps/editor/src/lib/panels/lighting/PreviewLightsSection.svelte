@@ -108,6 +108,7 @@ function lightName(light: PreviewLight, index: number): string {
       <span class="slider">
         <Slider
           label={t("lighting.lights.ambient.intensity.aria")}
+          hideLabel
           value={settings.ambient_intensity}
           min={0}
           max={2}
@@ -135,6 +136,7 @@ function lightName(light: PreviewLight, index: number): string {
         <span class="slider">
           <Slider
             label={t("lighting.lights.intensity.aria", { index: i + 1 })}
+            hideLabel
             value={light.intensity}
             min={0}
             max={3}
@@ -253,16 +255,6 @@ function lightName(light: PreviewLight, index: number): string {
 .slider {
   flex: 1;
   min-width: 0;
-}
-
-/* 行の中のスライダーは名前を見せない (読み上げの名前には使う)。 */
-.slider :global(.ugoe-slider__label) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 .slider :global(.ugoe-slider__root) {

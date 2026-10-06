@@ -58,6 +58,8 @@ import "@ugoe/ui/tokens.css";
   名前の props (`closeLabel`・`cancelLabel`・`resetLabel`・`prompt`・`buttonLabel` など) があるものは上書きできる。
   言語はアプリが @ugoe/i18n の `setLocale()` で決める。
 - **見せずに読み上げだけさせる文字** には `class="ugoe-visually-hidden"` を付ける (tokens.css にある。アプリで同じ CSS を書き直さない)。
+  部品の中の文字を見せなくするときは、部品の口を使う (`Slider` の `hideLabel`・`ColorPicker` の `hideValue`)。どちらも部品の中を位置の基準にするので、
+  送る枠の外へ出ない ([docs/ui.md](../../docs/ui.md#レイアウト) の「送り」)。
 - `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
   (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。

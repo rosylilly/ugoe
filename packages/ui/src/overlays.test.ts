@@ -561,6 +561,28 @@ describe("ColorPicker", () => {
     expect(onchange).toHaveBeenLastCalledWith("#01aaff");
   });
 
+  it("keeps the hidden value in the name of the trigger", () => {
+    const root = render(ColorPicker, {
+      "aria-label": "Ambient color",
+      hideValue: true,
+      value: "#336699",
+    });
+    const trigger = get(root, "button");
+    expect(trigger.getAttribute("aria-label")).toBe("Ambient color #336699");
+    const value = get(trigger, ".ugoe-color-picker__value");
+    expect(value.classList.contains("ugoe-visually-hidden")).toBe(true);
+    expect(value.textContent).toBe("#336699");
+  });
+
+  it("shows the value by default", () => {
+    const root = render(ColorPicker, { label: "Rim color", value: "#336699" });
+    const trigger = get(root, "button");
+    expect(labelledByText(trigger)).toBe("Rim color #336699");
+    expect(
+      get(trigger, ".ugoe-color-picker__value").classList.contains("ugoe-visually-hidden"),
+    ).toBe(false);
+  });
+
   it("reverts an unreadable hex value", async () => {
     const { panel, onchange } = await setup();
     const hex = get<HTMLInputElement>(panel, 'input[type="text"]:not([role])');

@@ -443,6 +443,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
               <span class="strength inline-slider">
                 <Slider
                   label={t("proposals.normal.strength.aria", { group: name })}
+                  hideLabel
                   bind:value={pick.strength}
                   min={0}
                   max={2}
@@ -809,15 +810,6 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     list-style: disc;
     margin: var(--ugoe-space-1) 0 0;
     padding-left: 1.5em;
-  }
-  /* 行の中のスライダーは名前を見せない (読み上げの名前には使う)。 */
-  .inline-slider :global(.ugoe-slider__label) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .inline-slider :global(.ugoe-slider__root) {
     min-width: 60px;

@@ -397,10 +397,13 @@ const swatches = [
           </Notice>
         {/if}
         <Notice tone="danger" title={s.noticeDangerTitle}>{s.noticeDanger}</Notice>
-        <!-- position を持たない送る枠の中の Notice (見せずに読ませる文字が枠の外を位置の基準にしないこと。main.ts で測る。T0954) -->
+        <!-- position を持たない送る枠の中の Notice・名前を見せない Slider・値を見せない ColorPicker
+             (見せずに読ませる文字が枠の外を位置の基準にしないこと。main.ts で測る。T0954・T1657) -->
         <div class="gallery__scroller">
           <p class="gallery__spacer">{s.noticeScroller}</p>
           <Notice tone="info">{s.noticeInfo}</Notice>
+          <Slider label={s.smoothing} hideLabel value={0.5} min={0} max={1} step={0.05} />
+          <ColorPicker label={s.rimColor} hideValue value={rimColor} />
         </div>
       </div>
     </section>

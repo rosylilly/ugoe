@@ -4,6 +4,7 @@
   onchange と oncommit は利用者の操作 (ドラッグ・キー・欄・リセット) のときだけ呼ぶ。外から渡した値を Bits UI が刻みの格子に
   寄せても呼ばない (docs/ui.md#数値の部品と-onchange)。
   `tooltip` を渡すと、つまみに Tooltip で説明を出す (`title` 属性の代わり)。
+  `hideLabel` で名前を見せずに読み上げにだけ使う (行が狭く、名前を行の頭などに別に見せているとき)。
 -->
 <script lang="ts">
 import { Slider } from "bits-ui";
@@ -23,6 +24,8 @@ interface Props {
   decimals?: number;
   /** 見えるラベル。翻訳を通した文言を渡す。 */
   label: string;
+  /** ラベルを見せない (読み上げの名前には使う)。既定は false。 */
+  hideLabel?: boolean;
   /** 単位 (翻訳を通した文言)。数値の欄の後ろに出す。 */
   unit?: string;
   /** 数値の欄を並べるか。既定は true。 */
@@ -49,6 +52,7 @@ let {
   step = 1,
   decimals,
   label,
+  hideLabel = false,
   unit,
   field = true,
   defaultValue,
@@ -94,8 +98,12 @@ function set(next: number, commit: boolean) {
 
 <svelte:document onpointerup={endPointer} onpointercancel={endPointer} onpointerleave={endPointer} />
 
-<div class="ugoe-slider" data-disabled={disabled ? "" : undefined}>
-  <span class="ugoe-slider__label" id={`${id}-label`}>{label}</span>
+<div
+  class="ugoe-slider"
+  data-disabled={disabled ? "" : undefined}
+  data-label-hidden={hideLabel ? "" : undefined}
+>
+  <span class={["ugoe-slider__label", hideLabel && "ugoe-visually-hidden"]} id={`${id}-label`}>{label}</span>
   <Slider.Root
     type="single"
     class="ugoe-slider__root"
@@ -158,7 +166,9 @@ function set(next: number, commit: boolean) {
 
 <style>
   :global {
+    /* 見せないラベル (.ugoe-visually-hidden) の位置の基準にもなる (docs/ui.md#レイアウト の「送り」) */
     .ugoe-slider {
+      position: relative;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto auto;
       grid-template-areas: "label label label" "slider field reset";
@@ -169,6 +179,10 @@ function set(next: number, commit: boolean) {
       font-family: var(--ugoe-font-sans);
       font-size: var(--ugoe-font-size-md);
       line-height: var(--ugoe-line-height-control);
+    }
+
+    .ugoe-slider[data-label-hidden] {
+      grid-template-areas: "slider field reset";
     }
 
     .ugoe-slider[data-disabled] {
