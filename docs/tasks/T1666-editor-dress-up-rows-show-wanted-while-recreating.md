@@ -1,11 +1,11 @@
 ---
 id: T1666
 title: "エディタ: プレビューの着せ替えで、GPU を失っている間・作り直しの途中の付け外しを、すぐ一覧のチェックとスロットの選択に出す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1666
 ---
 
 # T1666: エディタ: プレビューの着せ替えで、GPU を失っている間・作り直しの途中の付け外しを、すぐ一覧のチェックとスロットの選択に出す

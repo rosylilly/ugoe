@@ -1,11 +1,11 @@
 ---
 id: T0976
 title: "@ugoe/ui: Select・Menu の一覧が送るときだけ、行末をスクロールバーの分空ける"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, docs]
 depends_on: [T1662]
-assignee:
+assignee: claude-worker-T0976
 ---
 
 # T0976: @ugoe/ui: Select・Menu の一覧が送るときだけ、行末をスクロールバーの分空ける
