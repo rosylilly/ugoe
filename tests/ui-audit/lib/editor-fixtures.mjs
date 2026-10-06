@@ -401,6 +401,19 @@ export function manyParametersModel(model, { count = 100, groups = 10 } = {}) {
 }
 
 /**
+ * マスク専用かつ非表示のメッシュを 1 つ足したモデル (T1670。見本の `ugoe sample dress-up` にはマスク専用のメッシュが無い)。
+ * 非表示のパーツ (見本の `Wave`) の手 (`HandWave`) を写し、マスク専用にしてすぐ後に置く (ツリーにマスクと非表示の札を持つ行が出る)。
+ * 写すメッシュが無ければそのまま返す。描くのは見本の .ugoe のまま (このメッシュは無い)。
+ */
+export function maskOnlyHiddenModel(model) {
+  const meshes = model.meshes ?? [];
+  const i = meshes.findIndex((m) => m.id === "HandWave");
+  if (i < 0) return model;
+  const mask = { ...meshes[i], id: "HandWaveMask", name: "HandWaveMask", mask_only: true };
+  return { ...model, meshes: [...meshes.slice(0, i + 1), mask, ...meshes.slice(i + 1)] };
+}
+
+/**
  * グルーを 1 つ足したモデル (T0949。見本の `ugoe sample dress-up` はグルーを持たない)。袖 (`SleeveWave`) と手 (`HandWave`)
  * をつなぎ、強さは `ArmWave` の 3 つのキーで変える (グルーのパネルの強さの欄・軸のキー・軸を足す欄を出す)。見本に無いメッシュ・
  * パラメータなら先頭のものを使い、メッシュが 2 つ無ければそのまま返す。描くのは見本の .ugoe のまま (グルーは無い)。

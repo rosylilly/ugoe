@@ -9,7 +9,8 @@
 // - 見本に無い状態 (AI の提案・送る前の確認・送信中・着せ替え・モジュールのプロジェクト) は `host.set({...})` で切り替える
 //   (場面は lib/apps.mjs。中身は lib/editor-fixtures.mjs。T0676)。AI への送信 (`classify_psd_layers` に同意を付けたもの) は
 //   答えを返さずに待ち、`cancel_ai_requests` で `ai.cancelled` で終わる (送信中と取り消しの画面を撮るため)。
-// - 見本のモデルにはグルーを 1 つ足す (`glueModel`。グルーのパネルの編集の欄を撮るため。T0044)。
+// - 見本のモデルにはグルーを 1 つ足す (`glueModel`。グルーのパネルの編集の欄を撮るため。T0044)。マスク専用かつ非表示の
+//   メッシュも 1 つ足す (`maskOnlyHiddenModel`。ツリーの札が 2 つの行を撮るため。T1670)。
 // - バックエンドが送るイベント (`listen` で待つもの) は、ページの `window.__uiAuditEmit(event, payload)` で送る
 //   (エージェントが提案を置いた知らせなど)。
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -22,6 +23,7 @@ import {
   externalChangeFixture,
   glueModel,
   manyParametersModel,
+  maskOnlyHiddenModel,
   moduleStatusFixture,
   proposalStateFixture,
   renameModule,
@@ -66,7 +68,9 @@ function readJsonDir(dir, suffix) {
 export function createEditorHost({ project, bundle }) {
   const sample = {
     name: JSON.parse(readFileSync(join(project, "project.json"), "utf8")).name,
-    model: JSON.stringify(glueModel(JSON.parse(readFileSync(join(project, "model.json"), "utf8")))),
+    model: JSON.stringify(
+      maskOnlyHiddenModel(glueModel(JSON.parse(readFileSync(join(project, "model.json"), "utf8")))),
+    ),
     physics: (() => {
       try {
         return JSON.parse(readFileSync(join(project, "physics.json"), "utf8"));

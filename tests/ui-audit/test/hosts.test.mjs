@@ -8,6 +8,7 @@ import { pattern, text } from "../lib/apps.mjs";
 import {
   classificationFixture,
   glueModel,
+  maskOnlyHiddenModel,
   proposalsFixture,
   renameModule,
 } from "../lib/editor-fixtures.mjs";
@@ -273,6 +274,27 @@ test("エディタの偽のホスト: 見本にグルーを 1 つ足す (T0044)"
   // メッシュが 2 つ無ければそのまま
   const one = { meshes: [{ id: "Face", uvs }], parameters: [] };
   assert.equal(glueModel(one), one);
+});
+
+test("エディタの偽のホスト: 見本にマスク専用かつ非表示のメッシュを 1 つ足す (T1670)", () => {
+  const model = maskOnlyHiddenModel({
+    meshes: [
+      { id: "Face", part: "Head" },
+      { id: "HandWave", part: "Wave" },
+      { id: "SleeveWave", part: "WaveSleeve" },
+    ],
+  });
+  assert.deepEqual(
+    model.meshes.map((m) => [m.id, m.part, m.mask_only ?? false]),
+    [
+      ["Face", "Head", false],
+      ["HandWave", "Wave", false],
+      ["HandWaveMask", "Wave", true],
+      ["SleeveWave", "WaveSleeve", false],
+    ],
+  );
+  const none = { meshes: [{ id: "Face" }] };
+  assert.equal(maskOnlyHiddenModel(none), none);
 });
 
 test("エディタの偽のホスト: 外での書き換えと本体の変化は、切り替えたときだけ答える (T0044)", () => {

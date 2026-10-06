@@ -55,18 +55,27 @@ let {
 
 const node = $derived(row.node);
 /**
- * 本体の札のほかの札 (マスク・非表示)。本体の札とほかの札が並ぶと名前が 1 文字まで縮むので、そのときは本体の札を
- * ほかの札の破線の枠にまとめ、文字は見せずに読ませる (docs/ui.md#エディタのツリーの札と選んだ行-t1654)。
+ * 行の札 (本体・マスク・非表示)。札が 2 つ以上並ぶと名前が 1 文字まで縮むので、見せる札は最後の 1 つ (非表示 > マスク > 本体) にし、
+ * ほかの札は文字を見せずにその札の中で読ませる。まとめた本体は札の破線の枠、まとめたマスクは行の印と斜体の名前で見える
+ * (docs/ui.md#エディタのツリーの札と選んだ行-t1654 と docs/ui.md#エディタのツリーの行の札と強制色-t1670)。
  */
-const tags = $derived.by(() => {
+const tag = $derived.by(() => {
   const list: { label: string; tooltip: string }[] = [];
+  if (base) list.push({ label: t("tree.row.base.label"), tooltip: t("tree.row.base.tooltip") });
   if (node.maskOnly)
     list.push({ label: t("tree.row.mask.label"), tooltip: t("tree.row.mask.tooltip") });
   if (node.hidden)
     list.push({ label: t("tree.row.hidden.label"), tooltip: t("tree.row.hidden.tooltip") });
-  return list;
+  const shown = list.at(-1);
+  if (!shown) return null;
+  const folded = list.slice(0, -1);
+  return {
+    label: shown.label,
+    folded: folded.map((f) => `${f.label} `).join(""),
+    tooltip: list.map((f) => f.tooltip).join("\n"),
+    baseMerged: base && folded.length > 0,
+  };
 });
-const baseMerged = $derived(base && tags.length > 0);
 const hasChildren = $derived(node.children.length > 0);
 let done = false;
 /** 名前の変更の欄の文字と要素。 */
@@ -178,14 +187,11 @@ function insideRename(e: Event): boolean {
     <span class="name" title={node.ref.id}>{node.name}</span>
   {/if}
   <!-- 行はフォーカスを受けない (木が aria-activedescendant で受ける) ので、印の説明は Tooltip ではなく title で出す。 -->
-  {#if base && !baseMerged}<span class="ed-tag" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
-  {#each tags as tag (tag.label)}
-    <span
-      class="ed-tag"
-      class:base-merged={baseMerged}
-      title={baseMerged ? `${t("tree.row.base.tooltip")}\n${tag.tooltip}` : tag.tooltip}
-    >{#if baseMerged}<span class="ugoe-visually-hidden">{`${t("tree.row.base.label")} `}</span>{/if}{tag.label}</span>
-  {/each}
+  {#if tag}
+    <span class="ed-tag" class:base-merged={tag.baseMerged} title={tag.tooltip}
+      >{#if tag.folded}<span class="ugoe-visually-hidden">{tag.folded}</span>{/if}{tag.label}</span
+    >
+  {/if}
   {#if node.drawOrder !== undefined}<span class="order" title={t("tree.row.drawOrder")}>{node.drawOrder}</span>{/if}
 </div>
 
@@ -239,15 +245,15 @@ function insideRename(e: Event): boolean {
   /* 薄くするのは不透明度ではなく控えめな文字の色で (opacity では 4.5:1 に届かない。T0907) */
   color: var(--tree-muted);
 }
+/*
+ * 札は、中の見せない文字 (まとめた札) の位置の基準にもなる (送る枠の外を基準にしない。docs/ui.md#レイアウト の「送り」。T1667)
+ */
 .ed-tag {
+  position: relative;
   color: var(--tree-muted);
 }
-/*
- * 本体の札をまとめた札は、本体の要素の選択と同じ破線の枠。中の見せない「本体」の文字の位置の基準にもなる
- * (送る枠の外を基準にしない。docs/ui.md#レイアウト の「送り」。T1667)
- */
+/* 本体の札をまとめた札は、本体の要素の選択と同じ破線の枠 */
 .ed-tag.base-merged {
-  position: relative;
   border-style: dashed;
   border-color: var(--tree-muted);
 }
@@ -268,6 +274,66 @@ function insideRename(e: Event): boolean {
   border-color: var(--ugoe-color-danger);
   box-shadow: none;
   background: color-mix(in srgb, var(--ugoe-color-danger) 10%, transparent);
+}
+/*
+ * 強制色: 地の色・影は消え、透明な枠は文字の色の線になる (docs/ui.md#強制色)。行の枠は地の色にして、印は系統の色の地と枠で描き直す。
+ * 選んだ行は Highlight の地、キーボードの位置は CanvasText の枠 (選んだ行では内側の線も)、ドロップの位置は Highlight の破線の枠と上下の太い線、
+ * 落とせない所は GrayText の点線 (理由の文も出る) (docs/ui.md#エディタのツリーの行の札と強制色-t1670)
+ */
+@media (forced-colors: active) {
+  .row {
+    border-color: Canvas;
+  }
+  /*
+   * 選んだ行: 強制色のままでは文字の後ろに地の色の板 (backplate) が敷かれて Highlight の地の上で黒い箱になるので、
+   * 強制をやめて (`forced-color-adjust: none`。子孫も受け継ぐ) 中のものすべてを系統の色で描く。名前の変更の欄は強制に戻す
+   */
+  .row.selected {
+    --tree-muted: HighlightText;
+    forced-color-adjust: none;
+    background-color: Highlight;
+    background-image: none;
+    box-shadow: none;
+    color: HighlightText;
+  }
+  .row.selected :is(.twisty, .ed-tag, .order) {
+    color: HighlightText;
+    border-color: HighlightText;
+  }
+  .row.selected :global(svg.icon) {
+    color: HighlightText;
+  }
+  .row.selected :global(.rename) {
+    forced-color-adjust: auto;
+  }
+  .row.base.selected {
+    background-color: Highlight;
+    border-color: HighlightText;
+  }
+  .row.active,
+  .row.base.selected.active {
+    border-color: CanvasText;
+  }
+  /* 選んだ行のキーボードの位置は、Highlight の地と CanvasText の枠の差が小さい (ライト) ので、内側に HighlightText の線も引く */
+  .row.selected.active {
+    outline: 1px solid HighlightText;
+    outline-offset: -3px;
+  }
+  .row.drop-into {
+    border-style: dashed;
+    border-color: Highlight;
+  }
+  .row.drop-above {
+    border-top: 2px solid Highlight;
+  }
+  .row.drop-below {
+    border-bottom: 2px solid Highlight;
+  }
+  .row.drop-bad {
+    border-width: 1px;
+    border-style: dotted;
+    border-color: GrayText;
+  }
 }
 /* 開閉の印: 並びの幅は 14px のまま、押せる範囲を 24×24 に広げる (左右に 5px ずつはみ出す。T0907) */
 .twisty {
