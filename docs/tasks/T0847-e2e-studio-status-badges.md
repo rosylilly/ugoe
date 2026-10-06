@@ -1,11 +1,11 @@
 ---
 id: T0847
 title: "e2e: スタジオの API とブラウザソースの手順が、T0817 で消えた .studio__api を待って時間切れになる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests/e2e, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0847
 ---
 
 # T0847: e2e: スタジオの API とブラウザソースの手順が、T0817 で消えた .studio__api を待って時間切れになる
