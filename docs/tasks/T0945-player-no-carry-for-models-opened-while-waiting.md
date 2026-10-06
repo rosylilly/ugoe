@@ -1,11 +1,11 @@
 ---
 id: T0945
 title: "@ugoe/player: 作り直しを待つ間に開いたモデルに、前のモデルのパラメータの値を戻さない"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0945
 ---
 
 # T0945: @ugoe/player: 作り直しを待つ間に開いたモデルに、前のモデルのパラメータの値を戻さない
