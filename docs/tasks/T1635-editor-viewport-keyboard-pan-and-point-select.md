@@ -1,11 +1,11 @@
 ---
 id: T1635
 title: "エディタ: ビューポートの移動と、フォーム編集・ワープの点の選択をキーボードでもできるようにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1635
 ---
 
 # T1635: エディタ: ビューポートの移動と、フォーム編集・ワープの点の選択をキーボードでもできるようにする
