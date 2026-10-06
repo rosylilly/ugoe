@@ -1,11 +1,11 @@
 ---
 id: T1630
 title: "エディタ: パラメータの一覧をグループごとに区切り、グループをドラッグで並べ替える"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0674]
-assignee:
+assignee: claude-worker-T1630
 ---
 
 # T1630: エディタ: パラメータの一覧をグループごとに区切り、グループをドラッグで並べ替える
