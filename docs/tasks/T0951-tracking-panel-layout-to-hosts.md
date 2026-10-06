@@ -1,11 +1,11 @@
 ---
 id: T0951
 title: "@ugoe/face-tracking: TrackingPanel から高さの上限と送りの指定を外し、置く側のアプリに任せる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/face-tracking, apps/viewer, apps/studio, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0951
 ---
 
 # T0951: @ugoe/face-tracking: TrackingPanel から高さの上限と送りの指定を外し、置く側のアプリに任せる
