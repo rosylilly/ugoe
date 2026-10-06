@@ -273,8 +273,9 @@ for (const app of only) {
       osLocale: v.lang === "en" ? "en-US" : "ja-JP",
       home: join(out, "sample", "project"),
       sample,
-      // `errors`: 失敗の出し方を撮る場面 (画面のエラーの文を数えない)
-      async scene(name, { aria = true, errors = false } = {}) {
+      // `errors`: 失敗の出し方を撮る場面 (画面のエラーの文を数えない)。`overlay`: ダイアログ・メニュー・Popover を開いて撮る場面
+      // (ほかの場面で開いていれば、前の場面の閉じ忘れとして数える。T0053)
+      async scene(name, { aria = true, errors = false, overlay = false } = {}) {
         const full = name === "main" ? v.name : `${v.name}-${name}`;
         await page.waitForTimeout(400);
         await page.screenshot({ path: join(dir, `${full}.png`) });
@@ -283,7 +284,11 @@ for (const app of only) {
           const outline = await page.evaluate(() => globalThis.__ugoeAudit.structureOutline());
           writeFileSync(join(dir, `${full}.outline.txt`), `${outline.join("\n")}\n`);
         }
-        const r = await auditScene(page, { lang: v.lang, expectErrors: errors });
+        const r = await auditScene(page, {
+          lang: v.lang,
+          expectErrors: errors,
+          expectOverlay: overlay,
+        });
         scenes.push({ name: full, findings: r.findings, stats: r.stats });
         console.log(
           `  ${full}: ${r.findings.length} finding(s), text ${r.stats.textChecked} checked / ${r.stats.textByPixels} by pixels / ${r.stats.textUnmeasured} unmeasured`,

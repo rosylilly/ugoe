@@ -34,21 +34,38 @@ export function pattern(value) {
   return new RegExp(`^${parts.join("[\\d,.]+")}$`);
 }
 
+/**
+ * 開いたダイアログ・メニュー・Popover (`overlay`) を Esc で閉じ、閉じたのを待つ (T0053)。開いたときにフォーカスした部品の
+ * Tooltip が先に Esc を受けることがあるので、閉じるまで 3 回まで押す。閉じるとフォーカスが開いたボタンに戻ってその Tooltip が
+ * 出るので、フォーカスとポインタを外す (後の場面の部品に重なって押せなくならないように)。閉じられなければ場面の失敗にする。
+ */
+async function closeOverlay(page, overlay) {
+  const shown = overlay.first();
+  for (let i = 0; i < 3 && (await shown.isVisible()); i++) {
+    await page.keyboard.press("Escape");
+    await shown.waitFor({ state: "hidden", timeout: 2000 }).catch(() => {});
+  }
+  if (await shown.isVisible()) throw new Error("the dialog, menu or popover did not close");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.mouse.move(1, 300);
+  await page.waitForTimeout(300);
+}
+
 /** 設定のダイアログを開いて撮り、Esc で閉じる。 */
 async function settingsScene(page, ctx, name) {
   await page.getByRole("button", { name, exact: true }).first().click();
   await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
-  await ctx.scene("settings");
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  await ctx.scene("settings", { overlay: true });
+  await closeOverlay(page, page.getByRole("dialog"));
 }
 
 /**
  * 要素を送れる祖先 (右の列か、狭い幅では画面の全体) の頭まで送る (ページの中で動く)。scrollIntoView は送らない祖先 (body)
  * まで動かすので、送れる祖先だけを送る。送った後に枠の頭に固定された要素 (sticky。右の列のタブ・ツリーの頭) があれば、その下に
- * 隠れないよう、その下端と 8px の分だけ戻す (T0048)。
+ * 隠れないよう、その下端と 8px の分だけ戻す (T0048)。`end` なら要素の下端を枠の下端から 8px 上に合わせる (枠の終わりまでを
+ * 写す。T0053)。
  */
-function scrollInBox(el) {
+function scrollInBox(el, end = false) {
   const scrolls = (node) => {
     const o = getComputedStyle(node).overflowY;
     return o === "auto" || o === "scroll";
@@ -59,6 +76,10 @@ function scrollInBox(el) {
     box = box.parentElement;
   }
   if (box === null) return;
+  if (end) {
+    box.scrollTop += el.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom + 8;
+    return;
+  }
   box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
   const top = box.getBoundingClientRect().top;
   // 送った後の位置は画素に丸められるので、頭ではなく下端と比べる
@@ -90,9 +111,9 @@ async function scrollToSection(page, name) {
     .evaluate(scrollInBox);
 }
 
-/** `locator` の要素を、送れる祖先の頭まで送る (`scrollInBox`)。 */
-async function scrollToElement(locator) {
-  await locator.first().evaluate(scrollInBox);
+/** `locator` の要素を、送れる祖先の頭 (`end` なら下端) まで送る (`scrollInBox`)。 */
+async function scrollToElement(locator, { end = false } = {}) {
+  await locator.first().evaluate(scrollInBox, end);
 }
 
 /** エディタの右の列の AI のタブを開き直す (パネルを作り直して、偽のホストの状態を読み直させる)。 */
@@ -165,9 +186,8 @@ async function aiScenes(page, ctx) {
     .getByRole("tab", { name: text("editor", ctx.lang, "settings.ai.tab"), exact: true })
     .click();
   await page.waitForTimeout(400);
-  await ctx.scene("settings-ai");
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  await ctx.scene("settings-ai", { overlay: true });
+  await closeOverlay(page, page.getByRole("dialog"));
 
   // タブを開いていない間にエージェントが提案を置いた: AI のタブに数と見てほしい変化の印 (T1632)
   await page.evaluate(() => document.activeElement?.blur());
@@ -202,7 +222,7 @@ async function aiScenes(page, ctx) {
     .getByRole("button", { name: text("editor", ctx.lang, "proposals.classify"), exact: true })
     .click();
   await page.getByRole("alertdialog").first().waitFor({ timeout: 5000 });
-  await ctx.scene("consent");
+  await ctx.scene("consent", { overlay: true });
   await page
     .getByRole("button", { name: text("editor", ctx.lang, "consent.send.label"), exact: true })
     .click();
@@ -251,9 +271,8 @@ async function dressUpScenes(page, ctx) {
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
   await page.waitForTimeout(300);
-  await ctx.scene("base-change");
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  await ctx.scene("base-change", { overlay: true });
+  await closeOverlay(page, page.getByRole("dialog"));
   host.set({ baseChange: false });
   // 本体の要素 (見本の Head) を選んだ行に乗せた (T0851)
   await treeSelectedHoverScene(page, ctx, "part:Head", "tree-base-hover");
@@ -306,7 +325,11 @@ async function manyParametersScenes(page, ctx) {
   host.set({ manyParameters: false });
 }
 
-/** グルーのパネルで見本のグルーを選び、編集の欄 (強さ・軸のキー・軸を足す欄) を撮る (T0949)。選んだのを外して戻す。 */
+/**
+ * グルーのパネルで見本のグルーを選び、編集の欄 (強さ・軸のキー・軸を足す欄) を撮る (T0949)。編集の欄の終わり (「Remove glue」)
+ * まで送って組の一覧・組を足す行・組の作り直しの行を撮り、組の一覧の頭へ戻して組の行 (2 つ目の組の「×」) にフォーカスし、
+ * 行とビューポートのその組を強調した所を撮る (T0053)。選んだのを外して戻す。
+ */
 async function glueScene(page, ctx) {
   const item = page.getByRole("button", { name: /^SleeveHandGlue\b/ }).first();
   await item.click();
@@ -317,6 +340,22 @@ async function glueScene(page, ctx) {
   });
   await scrollToElement(axes);
   await ctx.scene("glue-edit", { aria: false });
+  const pairs = page.getByRole("group", {
+    name: text("editor", ctx.lang, "glues.pairs.title"),
+    exact: true,
+  });
+  await scrollToElement(
+    page.getByRole("button", { name: text("editor", ctx.lang, "glues.remove.label"), exact: true }),
+    { end: true },
+  );
+  await ctx.scene("glue-edit-pairs", { aria: false });
+  await scrollToElement(pairs);
+  // 組の行の「×」にフォーカスすると、行とビューポートのその組が強調される (T1651)
+  await pairs.first().locator("li").nth(1).getByRole("button").focus();
+  await page.locator(".pair-list li.highlighted").first().waitFor({ timeout: 5000 });
+  await page.waitForTimeout(300);
+  await ctx.scene("glue-pair-focus", { aria: false });
+  await page.evaluate(() => document.activeElement?.blur());
   await scrollToTop(page);
   await item.click();
   await page.waitForTimeout(300);
@@ -428,9 +467,8 @@ export const APPS = {
         .first()
         .click();
       await page.getByRole("menu").first().waitFor({ timeout: 5000 });
-      await ctx.scene("file-menu", { aria: false });
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(300);
+      await ctx.scene("file-menu", { aria: false, overlay: true });
+      await closeOverlay(page, page.getByRole("menu"));
       await page
         .getByRole("button", {
           name: text("editor", ctx.lang, "fileMenu.export.label"),
@@ -438,10 +476,10 @@ export const APPS = {
         })
         .first()
         .click();
-      await page.waitForTimeout(600);
-      await ctx.scene("export");
-      await page.keyboard.press("Escape");
+      await page.locator(".ugoe-popover").first().waitFor({ timeout: 5000 });
       await page.waitForTimeout(300);
+      await ctx.scene("export", { overlay: true });
+      await closeOverlay(page, page.locator(".ugoe-popover"));
       // 外での書き換え: 保存の前の確かめで見つかった (上書き・別名で保存を選べる) ダイアログ (T0953)
       ctx.editorHost.set({ externalChange: true });
       await page
@@ -450,11 +488,10 @@ export const APPS = {
         .click();
       await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
       await page.waitForTimeout(300);
-      await ctx.scene("external-change");
-      await page.keyboard.press("Escape");
-      await page.getByRole("dialog").first().waitFor({ state: "hidden", timeout: 5000 });
-      await page.waitForTimeout(300);
+      await ctx.scene("external-change", { overlay: true });
+      // 閉じる前に外の変化を消す (閉じた後の確かめ (一定の間隔・ウィンドウに戻ったとき) で開き直さないように)
       ctx.editorHost.set({ externalChange: false });
+      await closeOverlay(page, page.getByRole("dialog"));
       await treeHoverScenes(page, ctx);
       // 非表示の要素 (見本の Wave は不透明度 0) を選んだ行に乗せた
       await treeSelectedHoverScene(page, ctx, "part:Wave", "tree-hidden-hover");
@@ -498,9 +535,8 @@ export const APPS = {
         })
         .click();
       await page.locator(".ugoe-popover").first().waitFor({ timeout: 5000 });
-      await ctx.scene("motion-settings", { aria: false });
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(300);
+      await ctx.scene("motion-settings", { aria: false, overlay: true });
+      await closeOverlay(page, page.locator(".ugoe-popover"));
       // ビューポートの道具: ワープのギズモと、メッシュの編集 (見本の HeadWarp・Face。T0675)
       await page
         .getByRole("treeitem", { name: /^HeadWarp\b/ })
@@ -576,7 +612,7 @@ export const APPS = {
         })
         .click();
       await page.getByRole("menu").first().waitFor({ timeout: 5000 });
-      await ctx.scene("samples-menu", { aria: false });
+      await ctx.scene("samples-menu", { aria: false, overlay: true });
       await page
         .getByRole("menuitem", {
           name: text("viewer", ctx.lang, "samples.avatarLit.label"),
@@ -605,9 +641,8 @@ export const APPS = {
         .focus();
       await page.keyboard.press("Enter");
       await page.locator(".ugoe-popover").waitFor({ timeout: 5000 });
-      await ctx.scene("background", { aria: false });
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(300);
+      await ctx.scene("background", { aria: false, overlay: true });
+      await closeOverlay(page, page.locator(".ugoe-popover"));
       await settingsScene(page, ctx, text("viewer", ctx.lang, "toolbar.settings.aria"));
     },
   },
@@ -636,9 +671,8 @@ export const APPS = {
         .getByRole("button", { name: text("studio", ctx.lang, "toolbar.profile"), exact: true })
         .click();
       await page.getByRole("menu").first().waitFor({ timeout: 5000 });
-      await ctx.scene("profile-menu", { aria: false });
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(300);
+      await ctx.scene("profile-menu", { aria: false, overlay: true });
+      await closeOverlay(page, page.getByRole("menu"));
 
       // 「入力」のパネル (カメラのフェイストラッキングとマイク。T0951)
       await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));

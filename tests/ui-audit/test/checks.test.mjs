@@ -179,6 +179,30 @@ test("ページの検査の結果を検査ごとの見つけたものにする",
   assert.equal(found[0].detail, "3.20 < 4.5 (fg ...)");
 });
 
+test("開いたままのダイアログ・メニューは、開いて撮る場面のほかでは前の場面の閉じ忘れとして数える", () => {
+  const empty = {
+    contrast: { checked: 0, unknown: 0, failures: [], disabled: [] },
+    overflow: { document: null, beyond: [] },
+    overlap: [],
+    small: [],
+    motion: [],
+    errors: [],
+    lang: "en",
+  };
+  // T1655: 外での変更のダイアログ (-external-change) が次の場面に残った形
+  const left = { ...empty, overlays: ['div.ugoe-dialog "The project changed outside"'] };
+  assert.deepEqual(pageFindings(left, "en"), [
+    {
+      check: "error",
+      target: 'div.ugoe-dialog "The project changed outside"',
+      detail: "left open by an earlier scene",
+    },
+  ]);
+  // ダイアログを開いて撮る場面 (`ctx.scene(name, { overlay: true })`) では数えない
+  assert.deepEqual(pageFindings(left, "en", { expectOverlay: true }), []);
+  assert.deepEqual(pageFindings({ ...empty, overlays: [] }, "en"), []);
+});
+
 /**
  * 押せる部品の重なりを判定する。`boxes` は {el: {name, parent?, overlay?}, rect}。上に描かれるのは後に並べた方 (流れの中の
  * 部品の描く順) で、`overlay` の付いた要素 (意図して重ねた印) を上に重ねた組は数えない。

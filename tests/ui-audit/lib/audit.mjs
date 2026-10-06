@@ -90,8 +90,9 @@ export function axeFindings(violations) {
 /**
  * page-checks.js の結果を {check, target, detail} の列に。`lang` は期待する言語 (en・ja)。
  * `expectErrors` なら画面に出たエラーの文を数えない (失敗の出し方を撮る場面。スクリプトのエラーは run.mjs が別に数える)。
+ * `expectOverlay` でなければ、開いているダイアログ・メニュー・Popover を前の場面の閉じ忘れとして数える (T0053)。
  */
-export function pageFindings(r, lang, { expectErrors = false } = {}) {
+export function pageFindings(r, lang, { expectErrors = false, expectOverlay = false } = {}) {
   const out = [];
   const split = (item) => {
     // `tag.class "名前" 残り` の形 (page-checks.js の describe)
@@ -113,6 +114,12 @@ export function pageFindings(r, lang, { expectErrors = false } = {}) {
   for (const item of r.forced ?? []) out.push({ check: "forced", ...split(item) });
   for (const item of expectErrors ? [] : r.errors)
     out.push({ check: "error", target: split(item).target, detail: "shown on the screen" });
+  for (const item of expectOverlay ? [] : (r.overlays ?? []))
+    out.push({
+      check: "error",
+      target: split(item).target,
+      detail: "left open by an earlier scene",
+    });
   if (lang && !r.lang?.startsWith(lang)) {
     out.push({ check: "aria", target: "html", detail: `lang is "${r.lang}" (expected ${lang})` });
   }
@@ -120,7 +127,10 @@ export function pageFindings(r, lang, { expectErrors = false } = {}) {
 }
 
 /** 場面を検査する。axe は `axe` が真のときだけ (重いので Tab などの補助の場面では切れる)。 */
-export async function auditScene(page, { lang, axe = true, expectErrors = false }) {
+export async function auditScene(
+  page,
+  { lang, axe = true, expectErrors = false, expectOverlay = false },
+) {
   const r = await page.evaluate(() => globalThis.__ugoeAudit.pageAudit());
   let pixels = { checked: 0, unknown: 0, failures: [], disabled: [] };
   // 強制色では文字を透明にできない (透明も OS の文字の色に置き換わる) ので、画素では測らない (測れない数に入れる)
@@ -138,7 +148,7 @@ export async function auditScene(page, { lang, axe = true, expectErrors = false 
     r.contrast.failures.push(...pixels.failures);
     r.contrast.disabled.push(...pixels.disabled);
   }
-  const findings = pageFindings(r, lang, { expectErrors });
+  const findings = pageFindings(r, lang, { expectErrors, expectOverlay });
   if (axe) {
     const loaded = await page.evaluate(() => typeof globalThis.axe !== "undefined");
     if (!loaded) await page.addScriptTag({ content: axeScript() });

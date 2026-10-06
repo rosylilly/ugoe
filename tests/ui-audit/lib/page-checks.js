@@ -655,6 +655,21 @@
     return out;
   }
 
+  /**
+   * 開いている重ねもの (ダイアログ・メニュー・Popover)。開いたままにする場面のほかで見つかれば、前の場面が閉じ忘れた
+   * (後の操作がその下で押せない) ことになる (T0053)。ツールチップと選択欄の一覧は数えない (フォーカス・ポインタで開くもの)。
+   */
+  function openOverlays() {
+    const selector = "[role=dialog], [role=alertdialog], [role=menu], dialog[open], .ugoe-popover";
+    const out = [];
+    for (const el of document.querySelectorAll(selector)) {
+      // 重ねものの中の重ねもの (Popover の中のメニューなど) は外側で数える
+      if (!visible(el) || el.parentElement?.closest(selector)) continue;
+      out.push(describe(el));
+    }
+    return out;
+  }
+
   /** 読み上げから外れているか (`display: none`・`visibility: hidden`・`aria-hidden`・`inert`・閉じた `<dialog>` の中)。 */
   function hiddenFromReaders(el) {
     if (el.closest('[aria-hidden="true"], [inert], dialog:not([open])')) return true;
@@ -853,6 +868,7 @@
       motion: motionAudit(),
       forced: forcedStateAudit(),
       errors: shownErrors(),
+      overlays: openOverlays(),
       lang: document.documentElement.lang,
       theme: document.documentElement.dataset.theme ?? null,
     };
