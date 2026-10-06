@@ -2,7 +2,7 @@
 // 付け外しの失敗は ugoe-wasm の DressUpError (`code` と補足の値。crates/ugoe-wasm/README.md#着せ替え-t0123)。
 import { describeLimitError } from "@ugoe/player";
 import { t } from "../i18n";
-import type { Slot } from "../ipc";
+import type { ModuleDifference, Slot } from "../ipc";
 import { describeModuleWarnings } from "./loadWarnings";
 
 /** 着せ替えのモジュールのファイル名か (拡張子 `.ugoemod`。大文字小文字は区別しない)。 */
@@ -203,4 +203,38 @@ export function sameNames(a: readonly string[], b: readonly string[]): boolean {
  */
 export function editingName(name: string): string {
   return `${name} (editing)`;
+}
+
+/** 違いの一覧で、絞り込みの欄を出す要素の行の数 (これより多いとき)。 */
+export const DIFFERENCE_FILTER_FROM = 8;
+/** 違いの 1 行の下に、開かずに出す要素の行の数 (残りは「さらに N 件」で出す)。 */
+export const DIFFERENCE_ROWS = 8;
+
+/** 違いの一覧の要素の行の数。 */
+export function differenceItemCount(lines: readonly ModuleDifference[]): number {
+  return lines.reduce((n, line) => n + line.items.length, 0);
+}
+
+/**
+ * 違いの一覧を `query` で絞る (空白で区切った語のすべてを、大文字と小文字を区別せずに含むもの)。行の文が合えばその行の要素を
+ * すべて残し、合わなければ合う要素 (ID か違いの文) だけを残す。何も合わない行は除く。`query` が空ならそのまま。
+ */
+export function filterDifferences(
+  lines: readonly ModuleDifference[],
+  query: string,
+): ModuleDifference[] {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== "");
+  if (words.length === 0) return [...lines];
+  const matches = (text: string) => {
+    const lower = text.toLowerCase();
+    return words.every((w) => lower.includes(w));
+  };
+  return lines.flatMap((line) => {
+    if (matches(line.text)) return [line];
+    const items = line.items.filter((item) => matches(`${item.id} ${item.text}`));
+    return items.length > 0 ? [{ ...line, items }] : [];
+  });
 }

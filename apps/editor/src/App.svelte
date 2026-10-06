@@ -113,9 +113,10 @@ onMount(() => {
   };
 });
 
-// 開いた後にバックグラウンドで戻した分類の答え (docs/editor.md#分類の答えのキャッシュ) を AI タブに出す。
+// 開いた後にバックグラウンドで戻した分類の答え (docs/editor.md#分類の答えのキャッシュ) を AI タブに出す
+// (戻している間の印も、戻せなかったときに下ろす)。
 onMount(() => {
-  const unlisten = ipc.onClassificationRestored(() => void proposals.refresh());
+  const unlisten = ipc.onClassificationRestoreFinished(() => void proposals.refresh());
   return () => {
     void unlisten.then((stop) => stop());
   };

@@ -65,12 +65,177 @@ async function scrollToSection(page, name) {
     });
 }
 
+/** `locator` の要素を、送れる祖先の頭まで送る (scrollIntoView は送らない祖先まで動かすので使わない)。 */
+async function scrollToElement(locator) {
+  await locator.first().evaluate((el) => {
+    let box = el.parentElement;
+    while (box !== null) {
+      const o = getComputedStyle(box).overflowY;
+      if (box.scrollHeight > box.clientHeight && (o === "auto" || o === "scroll")) break;
+      box = box.parentElement;
+    }
+    if (box !== null)
+      box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  });
+}
+
+/** エディタの右の列の AI のタブを開き直す (パネルを作り直して、偽のホストの状態を読み直させる)。 */
+async function reopenAiTab(page, ctx) {
+  // ヘッダーのボタンの Tooltip (ダイアログを閉じてフォーカスが戻ると出る) がタブに重ならないよう、フォーカスとポインタを外す
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.mouse.move(1, 300);
+  await page.waitForTimeout(300);
+  await page
+    .getByRole("tab", { name: text("editor", ctx.lang, "app.tabs.inspector.label"), exact: true })
+    .click();
+  await page.waitForTimeout(200);
+  await page
+    .getByRole("tab", { name: new RegExp(`^${text("editor", ctx.lang, "app.tabs.ai.label")}`) })
+    .first()
+    .click();
+  await page.waitForTimeout(600);
+}
+
+/** エディタで見本のプロジェクトを開き直す (偽のホストの状態を変えた後、モジュールの一覧などを読み直させる)。 */
+async function reopenEditorProject(page, ctx) {
+  await page.evaluate((p) => {
+    window.__uiAuditNextPath = p;
+  }, ctx.sample.project);
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "fileMenu.menu.label"), exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: new RegExp(`^${text("editor", ctx.lang, "fileMenu.open.label")}`),
+    })
+    .first()
+    .click();
+  await page.waitForTimeout(1500);
+}
+
+/** エディタのプレビューに入る・出る (ヘッダーのボタン)。 */
+async function togglePreview(page, ctx, enter) {
+  const key = enter ? "app.preview.label" : "app.preview.exit";
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, key), exact: true })
+    .first()
+    .click();
+  await page.waitForTimeout(enter ? 2500 : 800);
+}
+
 /** 送った所をすべて頭に戻す。 */
 async function scrollToTop(page) {
   await page.evaluate(() => {
     for (const el of [document.scrollingElement, ...document.querySelectorAll("*")])
       if (el) el.scrollTop = 0;
   });
+}
+
+/**
+ * エディタの AI の場面 (T0676): 設定の AI のタブ、提案と分類のある AI のタブ (頭と提案の一覧)、分類のキャッシュを戻している最中、
+ * 送る前の確認、送っている最中、取り消した後、失敗。
+ */
+async function aiScenes(page, ctx) {
+  const host = ctx.editorHost;
+  host.set({ ai: true });
+  // 設定の「AI provider」(キーを保存した状態)
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "app.settings.label"), exact: true })
+    .first()
+    .click();
+  await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+  await page
+    .getByRole("tab", { name: text("editor", ctx.lang, "settings.ai.tab"), exact: true })
+    .click();
+  await page.waitForTimeout(400);
+  await ctx.scene("settings-ai");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  await reopenAiTab(page, ctx);
+  await ctx.scene("ai");
+  await scrollToElement(
+    page.getByRole("heading", {
+      name: text("editor", ctx.lang, "proposals.list.title"),
+      exact: true,
+    }),
+  );
+  await ctx.scene("ai-list", { aria: false });
+  await scrollToTop(page);
+
+  host.set({ restoring: true });
+  await reopenAiTab(page, ctx);
+  await ctx.scene("ai-restoring", { aria: false });
+  host.set({ restoring: false });
+  await reopenAiTab(page, ctx);
+
+  // 送る前の確認 → 送っている最中 → 取り消した → 失敗
+  await page
+    .getByRole("checkbox", { name: /Claude/ })
+    .first()
+    .check();
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "proposals.classify"), exact: true })
+    .click();
+  await page.getByRole("alertdialog").first().waitFor({ timeout: 5000 });
+  await ctx.scene("consent");
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "consent.send.label"), exact: true })
+    .click();
+  await page.waitForTimeout(1500);
+  await ctx.scene("ai-sending", { aria: false });
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "proposals.cancel.label"), exact: true })
+    .first()
+    .click();
+  await page.waitForTimeout(500);
+  await ctx.scene("ai-cancelled", { aria: false });
+  await page
+    .getByRole("button", { name: text("editor", ctx.lang, "proposals.propose"), exact: true })
+    .click();
+  await page.waitForTimeout(600);
+  await ctx.scene("ai-error", { aria: false, errors: true });
+  await page
+    .getByRole("checkbox", { name: /Claude/ })
+    .first()
+    .uncheck();
+  host.set({ ai: false });
+}
+
+/**
+ * エディタの着せ替えの場面 (T0676): 本体のプレビューの着せ替え (見本のモジュールと読めないファイル)、モジュールのプロジェクトの
+ * AI のタブとプレビュー (今の編集とファイルの違いの一覧)。
+ */
+async function dressUpScenes(page, ctx) {
+  const host = ctx.editorHost;
+  const dressUpTitle = page.getByRole("heading", {
+    name: text("editor", ctx.lang, "preview.dressUp.title"),
+    exact: true,
+  });
+  host.set({ dressUp: true });
+  await reopenEditorProject(page, ctx);
+  await togglePreview(page, ctx, true);
+  await scrollToElement(dressUpTitle);
+  await ctx.scene("preview-dress-up", { errors: true });
+  await scrollToTop(page);
+  await togglePreview(page, ctx, false);
+
+  host.set({ module: true });
+  await reopenEditorProject(page, ctx);
+  await reopenAiTab(page, ctx);
+  await ctx.scene("module-ai", { aria: false });
+  await togglePreview(page, ctx, true);
+  // 違いを比べ終えるのを待って開く
+  const differences = page.locator(".differences summary, .differences-toggle").first();
+  await differences.waitFor({ timeout: 10000 }).catch(() => {});
+  if ((await differences.count()) > 0) await differences.click();
+  await page.waitForTimeout(400);
+  await scrollToElement(dressUpTitle);
+  await ctx.scene("module-preview", { errors: true });
+  await scrollToTop(page);
+  await togglePreview(page, ctx, false);
+  host.set({ module: false, dressUp: false });
 }
 
 /**
@@ -199,6 +364,8 @@ export const APPS = {
         .click();
       await page.waitForTimeout(400);
       await ctx.scene("deformers-expressions", { aria: false });
+      await aiScenes(page, ctx);
+      await dressUpScenes(page, ctx);
     },
   },
   viewer: {

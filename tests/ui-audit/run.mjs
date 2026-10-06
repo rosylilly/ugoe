@@ -245,13 +245,14 @@ for (const app of only) {
       osLocale: v.lang === "en" ? "en-US" : "ja-JP",
       home: join(out, "sample", "project"),
       sample,
-      async scene(name, { aria = true } = {}) {
+      // `errors`: 失敗の出し方を撮る場面 (画面のエラーの文を数えない)
+      async scene(name, { aria = true, errors = false } = {}) {
         const full = name === "main" ? v.name : `${v.name}-${name}`;
         await page.waitForTimeout(400);
         await page.screenshot({ path: join(dir, `${full}.png`) });
         if (aria)
           writeFileSync(join(dir, `${full}.aria.yml`), await page.locator("body").ariaSnapshot());
-        const r = await auditScene(page, { lang: v.lang });
+        const r = await auditScene(page, { lang: v.lang, expectErrors: errors });
         scenes.push({ name: full, findings: r.findings, stats: r.stats });
         console.log(
           `  ${full}: ${r.findings.length} finding(s), text ${r.stats.textChecked} checked / ${r.stats.textByPixels} by pixels / ${r.stats.textUnmeasured} unmeasured`,

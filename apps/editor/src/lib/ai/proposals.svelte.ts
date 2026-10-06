@@ -13,6 +13,8 @@
 //   コマンドで、1 回の Undo で戻り、プロジェクトに残る (docs/editor.md#分類の直し)。
 // - AI に送っている間 (`sending`) は「取り消す」(`cancel`) で止められる。取り消したらエラーではなく「取り消しました」と
 //   出す (`notice`。docs/ai-integration.md#取り消しと時間の上限)。
+// - 待ち・知らせ・失敗は、操作を始めた場所に出す (`scope`: 提案のカードの操作ならその番号、パネルの頭の操作なら null)。
+//   送り始めた時刻 (`sentAt`) から経った時間を出す (docs/editor.md#読み込み中と失敗の見せ方)。
 
 import type { EditorDocument } from "../document.svelte";
 import { errorCode, errorText } from "../errors";
@@ -80,6 +82,10 @@ export class ProposalsView {
   notice = $state<string | null>(null);
   /** AI に送っている (取り消せる) 間。 */
   sending = $state(false);
+  /** 最後に AI へ送り始めた時刻 (`Date.now()`。送っている間の経った時間を出す)。送る前の確認の後に送り直すと替わる。 */
+  sentAt = $state<number | null>(null);
+  /** 実行中・最後の操作を始めた場所 (提案のカードならその番号、パネルの頭なら null)。`busy`・`notice`・`error` をそこに出す。 */
+  scope = $state<number | null>(null);
   /** 取り消しを頼んだ後、送信が終わるまで。 */
   cancelling = $state(false);
   /** 分類と提案に外部の AI を使うか (偽なら名前の規則とテンプレートの既定値)。 */
@@ -239,7 +245,11 @@ export class ProposalsView {
    * PSD のレイヤーを分類する (`psd` を省略すると取り込んだ PSD)。`revise` なら今の分類を前の答えとして AI に送る
    * (作り直しで「レイヤーも分類し直す」とき)。
    */
-  async classify(psd: string | null = null, revise = false): Promise<boolean> {
+  async classify(
+    psd: string | null = null,
+    revise = false,
+    scope: number | null = null,
+  ): Promise<boolean> {
     const useAi = this.useAi;
     const instructions = instructionsToSend(this.instructions, useAi);
     return this.#task(
@@ -248,8 +258,9 @@ export class ProposalsView {
         : t("proposals.busy.classifyingNames"),
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) =>
+          this.#timed((consent: ConsentAnswer | null) =>
             ipc.classifyPsdLayers(psd, useAi, instructions, revise, consent),
+          ),
           consentPrompt.ask,
         );
         if (!reply) return false;
@@ -258,7 +269,7 @@ export class ProposalsView {
         await this.loadNormalGroups();
         return true;
       },
-      useAi,
+      { sending: useAi, scope },
     );
   }
 
@@ -274,14 +285,15 @@ export class ProposalsView {
       useAi ? t("proposals.busy.askingAi", { name: aiName() }) : t("proposals.busy.building"),
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) =>
+          this.#timed((consent: ConsentAnswer | null) =>
             ipc.proposeRigFromPsd(useAi, instructions, consent, { ...this.moduleOptions }),
+          ),
           consentPrompt.ask,
         );
         if (!reply) return;
         this.value = await ipc.getProposals();
       },
-      useAi,
+      { sending: useAi },
     );
   }
 
@@ -293,21 +305,22 @@ export class ProposalsView {
     if (!this.useAi) return;
     const instructions = instructionsToSend(this.instructions, true);
     if (this.reclassify) {
-      const ok = await this.classify(null, true);
+      const ok = await this.classify(null, true, id);
       if (!ok) return;
     }
     await this.#task(
       t("proposals.busy.revising", { name: aiName(), id }),
       async () => {
         const reply = await withConsent(
-          (consent: ConsentAnswer | null) =>
+          this.#timed((consent: ConsentAnswer | null) =>
             ipc.regenerateRigProposal(id, instructions, consent, { ...this.moduleOptions }),
+          ),
           consentPrompt.ask,
         );
         if (!reply) return;
         this.value = await ipc.getProposals();
       },
-      true,
+      { sending: true, scope: id },
     );
   }
 
@@ -337,24 +350,28 @@ export class ProposalsView {
   async showPreview(id: number): Promise<void> {
     const revision = this.#doc.revision;
     const generation = ++this.#previewGeneration;
-    await this.#task(t("proposals.busy.preparing"), async () => {
-      const result = await ipc.previewProposal(id, excludedList(this.excludedOf(id)));
-      const bundle = await ipc.getProposalPreviewBundle().catch(() => null);
-      // 後から始めたプレビューがあれば、それに任せる (バックエンドの複製もそちらで置き換わる)。
-      if (generation !== this.#previewGeneration) return;
-      // 作る間にドキュメントが変わった (エージェントの適用・Undo など) なら、古いドキュメントの姿は出さない。
-      if (this.#doc.revision !== revision) {
-        ipc.clearProposalPreview().catch(() => {});
-        return;
-      }
-      const parsed = JSON.parse(result.model_json) as Model;
-      this.#previewRevision = revision;
-      this.preview = {
-        id,
-        model: { json: result.model_json, bundle },
-        parameters: parsed.parameters,
-      };
-    });
+    await this.#task(
+      t("proposals.busy.preparing"),
+      async () => {
+        const result = await ipc.previewProposal(id, excludedList(this.excludedOf(id)));
+        const bundle = await ipc.getProposalPreviewBundle().catch(() => null);
+        // 後から始めたプレビューがあれば、それに任せる (バックエンドの複製もそちらで置き換わる)。
+        if (generation !== this.#previewGeneration) return;
+        // 作る間にドキュメントが変わった (エージェントの適用・Undo など) なら、古いドキュメントの姿は出さない。
+        if (this.#doc.revision !== revision) {
+          ipc.clearProposalPreview().catch(() => {});
+          return;
+        }
+        const parsed = JSON.parse(result.model_json) as Model;
+        this.#previewRevision = revision;
+        this.preview = {
+          id,
+          model: { json: result.model_json, bundle },
+          parameters: parsed.parameters,
+        };
+      },
+      { scope: id },
+    );
   }
 
   endPreview(): void {
@@ -378,11 +395,15 @@ export class ProposalsView {
   async adopt(id: number): Promise<void> {
     const excluded = excludedList(this.excludedOf(id));
     this.endPreview();
-    await this.#task(t("proposals.busy.applying"), async () => {
-      const report = await this.#doc.applyWith(() => ipc.adoptProposal(id, excluded));
-      if (!report) throw new Error(this.#doc.error ?? t("proposals.adoptFailed"));
-      this.value = await ipc.getProposals();
-    });
+    await this.#task(
+      t("proposals.busy.applying"),
+      async () => {
+        const report = await this.#doc.applyWith(() => ipc.adoptProposal(id, excluded));
+        if (!report) throw new Error(this.#doc.error ?? t("proposals.adoptFailed"));
+        this.value = await ipc.getProposals();
+      },
+      { scope: id },
+    );
   }
 
   /**
@@ -415,9 +436,13 @@ export class ProposalsView {
 
   async reject(id: number): Promise<void> {
     if (this.preview?.id === id) this.endPreview();
-    await this.#task(null, async () => {
-      this.value = await ipc.rejectProposal(id);
-    });
+    await this.#task(
+      null,
+      async () => {
+        this.value = await ipc.rejectProposal(id);
+      },
+      { scope: id },
+    );
   }
 
   /**
@@ -435,15 +460,31 @@ export class ProposalsView {
     }
   }
 
+  /** 失敗と知らせを消す (知らせの閉じるボタン)。 */
+  dismiss(): void {
+    this.error = null;
+    this.notice = null;
+  }
+
+  /** AI に送る呼び出し: 呼ぶたびに送り始めた時刻を覚える (送る前の確認の後の呼び直しで経った時間を数え直す)。 */
+  #timed<A extends unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+    return (...args) => {
+      this.sentAt = Date.now();
+      return call(...args);
+    };
+  }
+
   /**
    * 失敗を `error` に出す。`label` があれば実行中に `busy` に出す。`sending` なら AI に送る操作で、実行中は取り消せる
-   * (取り消して終わったら、エラーではなく `notice` に出す)。
+   * (取り消して終わったら、エラーではなく `notice` に出す)。`scope` は始めた場所 (提案の番号。パネルの頭なら null)。
    */
   async #task<T>(
     label: string | null,
     action: () => Promise<T>,
-    sending = false,
+    { sending = false, scope = null }: { sending?: boolean; scope?: number | null } = {},
   ): Promise<T | false> {
+    // 読み直しなど場所の無い操作は、前の操作の場所を変えない
+    if (label || sending || scope !== null) this.scope = scope;
     if (label) {
       this.busy = label;
       this.notice = null;
@@ -451,6 +492,7 @@ export class ProposalsView {
     if (sending) {
       this.sending = true;
       this.cancelling = false;
+      this.sentAt = null;
     }
     try {
       const result = await action();
@@ -469,6 +511,7 @@ export class ProposalsView {
       if (sending) {
         this.sending = false;
         this.cancelling = false;
+        this.sentAt = null;
       }
     }
   }

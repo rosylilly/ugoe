@@ -20,8 +20,15 @@
   - 分類の確認の一覧 (確からしさが低い・名前と食い違う・直したレイヤー) では、ラベルと左右を直すか「Looks right」で
     今の答えを認める (印が消える)。直したものは「Reset」で分類の答えに戻す。どれも 1 回の Undo で戻り、プロジェクトに残る
     (`view.correctLayer`・`resetLayer`。docs/editor.md#分類の直し)。
-  - AI に送っている間は進み具合の隣に「Cancel」を出す (`view.cancel`。応答を待たずに止め、「Cancelled」と出す。
-    docs/ai-integration.md#取り消しと時間の上限)。
+  - 待ち・知らせ・失敗は、操作を始めた場所 (パネルの頭か提案のカード。`view.scope`) に同じ形で出す (`status` のスニペット):
+    実行中は進み具合の文 (`role="status"`)、AI に送っている間は経った秒数と「Cancel」(`view.cancel`。応答を待たずに止める。
+    docs/ai-integration.md#取り消しと時間の上限)、送る前の確認を待つ間は「確かめるのを待っています」、取り消したら
+    閉じられる `Notice` (info)、失敗は閉じられる `Notice` (danger)。開いたプロジェクトの分類のキャッシュを戻している間
+    (`ProposalState.restoring`) は、PSD の行の下に戻していることを出す (docs/editor.md#分類の答えのキャッシュ)。
+  - 提案のカード: 題名と印・理由・注文・「採用で変わるもの」(選んだコマンドの種類ごとの数)・コマンドの一覧・ボタン
+    (却下・作り直し・プレビュー・採用。決定の採用が並びの最後) と、採用が 1 回の Undo で戻る 1 つの編集になることの文。
+    古くなった提案は印でなく `Notice` (warning) で理由と戻し方を出す。`primary` は画面に 1 つ: 提案が無ければ「Propose rig」、
+    あればプレビュー中か最初の採用できる提案の「Adopt」。
   - 「Normal maps from the shapes」(モデルのプロジェクトだけ): 部位のまとまり (顔と目口鼻眉・首と体と腕・髪など。意味ラベルから
     決める) ごとに含めるか・強さ・縁の丸み・ならしを選び、すべてのテクスチャの法線マップを 1 つの提案にする (AI なし。何も送らない)。
     縁の幅とならしはキャンバスの px で見せる (単独でふくらませるものはテクスチャの px。panels/lighting/lighting.ts)。
@@ -39,13 +46,15 @@ import {
   TextArea,
   Tooltip,
 } from "@ugoe/ui";
+import { onDestroy } from "svelte";
 import { t } from "../i18n";
 import type { LayerSide } from "../ipc";
 import { bulgeForm, bulgeLimits, bulgeUnit } from "../panels/lighting/lighting";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
-import { aiSettings } from "./ai.svelte";
+import { aiSettings, consentPrompt } from "./ai.svelte";
 import {
+  changeSummary,
   classificationSummary,
   commandLabel,
   groupState,
@@ -95,6 +104,47 @@ const sideOptions = $derived<{ value: LayerSide; label: string }[]>([
   { value: "right", label: t("proposals.correct.side.right") },
 ]);
 const busy = $derived(view.busy !== null);
+/** 送る前の確認のダイアログに答えるのを待っている。 */
+const confirming = $derived(view.sending && consentPrompt.pending !== null);
+
+/** 送っている間の今の時刻 (1 秒ごと。経った時間を出す)。 */
+let now = $state(Date.now());
+let ticker: ReturnType<typeof setInterval> | null = null;
+$effect(() => {
+  if (!view.sending) return;
+  now = Date.now();
+  ticker = setInterval(() => {
+    now = Date.now();
+  }, 1000);
+  return () => {
+    if (ticker) clearInterval(ticker);
+    ticker = null;
+  };
+});
+onDestroy(() => {
+  if (ticker) clearInterval(ticker);
+});
+/** 送り始めてから経った秒数 (送っていなければ null)。 */
+const elapsed = $derived(
+  view.sending && view.sentAt !== null && !confirming
+    ? Math.max(0, Math.floor((now - view.sentAt) / 1000))
+    : null,
+);
+
+/** 待ち・知らせ・失敗を出す場所 (`view.scope` の提案が一覧に無ければパネルの頭)。 */
+const statusScope = $derived(
+  view.scope !== null && panel?.proposals.some((p) => p.id === view.scope) ? view.scope : null,
+);
+
+/** `primary` にする採用のボタンの提案 (プレビュー中のもの、無ければ最初の採用できるもの)。 */
+const primaryAdopt = $derived(
+  view.preview?.id ?? panel?.proposals.find((p) => !p.stale)?.id ?? null,
+);
+
+/** 開いた「Labels」・コマンドの一覧 (閉じている間は中を描かない。閉じた中身が重なりとして数えられないように)。 */
+let labelsOpen = $state(false);
+let commandsOpen = $state<Record<number, boolean>>({});
+let innerOpen = $state<Record<string, boolean>>({});
 
 /** AI を使えない理由 (使えるなら null)。 */
 const aiBlocked = $derived.by((): string | null => {
@@ -222,6 +272,9 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     {/if}
     <Button onclick={() => view.choosePsd()} disabled={busy}>{t("proposals.psd.choose")}</Button>
   </div>
+  {#if panel?.restoring}
+    <p class="ed-hint progress" role="status">{t("proposals.restoring")}</p>
+  {/if}
   <Checkbox
     bind:checked={view.useAi}
     disabled={!!aiBlocked || busy}
@@ -266,29 +319,14 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       {t("proposals.classify")}
     </Button>
     <Button
-      variant="primary"
+      variant={(panel?.proposals.length ?? 0) === 0 ? "primary" : "secondary"}
       onclick={() => view.propose()}
       disabled={busy || !panel?.psd || (view.useAi && tooLong)}
     >
       {t("proposals.propose")}
     </Button>
   </div>
-  {#if view.busy}
-    <div class="progress-row">
-      <p class="progress" role="status">
-        {view.cancelling ? t("proposals.cancel.cancelling") : view.busy}
-      </p>
-      {#if view.sending}
-        <TipButton
-          onclick={() => view.cancel()}
-          disabled={view.cancelling}
-          tooltip={t("proposals.cancel.tooltip")}
-        >{t("proposals.cancel.label")}</TipButton>
-      {/if}
-    </div>
-  {/if}
-  {#if view.notice}<p class="muted" role="status">{view.notice}</p>{/if}
-  {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
+  {#if statusScope === null}{@render status()}{/if}
   {#if summary && panel?.classification}
     <p class="muted">
       {classifiedText(summary.layers, panel.classification.by_ai, !!panel.classification.instructions)}
@@ -299,8 +337,9 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
         {t("proposals.summary.instructions", { instructions: panel.classification.instructions })}
       </p>
     {/if}
-    <details>
+    <details bind:open={labelsOpen}>
       <summary>{t("proposals.summary.labels")}</summary>
+      {#if labelsOpen}
       <ul class="labels">
         {#each summary.labels as [label, count] (label)}
           <li><code>{label}</code> × {count}</li>
@@ -366,6 +405,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
             </li>
           {/each}
         </ul>
+      {/if}
       {/if}
     </details>
   {/if}
@@ -459,7 +499,6 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       />
       <div class="ed-buttons row">
         <TipButton
-          variant="primary"
           onclick={() => view.proposeNormalMaps()}
           disabled={busy || normalTargets === 0}
           tooltip={t("proposals.normal.propose.tooltip")}
@@ -481,27 +520,26 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
       {@const selected = proposal.commands.length - excluded.size}
       {@const previewing = view.preview?.id === proposal.id}
       {@const regenerable = panel.regenerable.includes(proposal.id)}
+      {@const changes = changeSummary(proposal.commands, excluded)}
       <article class="proposal" class:previewing aria-label={t("proposals.list.aria", { id: proposal.id })}>
         <header>
           <strong><span class="index">#{proposal.id}</span> {proposal.title}</strong>
           {#if proposal.revises !== null}
             {@render badge(
-              "source",
               t("proposals.list.revision.label", { id: proposal.revises }),
               t("proposals.list.revision.tooltip", { id: proposal.revises }),
             )}
           {/if}
           {#if proposal.source}
             {@render badge(
-              "source",
               t("proposals.list.from.label", { name: proposal.source }),
               t("proposals.list.from.tooltip", { name: proposal.source }),
             )}
           {/if}
-          {#if proposal.stale}
-            {@render badge("warn", t("proposals.list.outdated.label"), t("proposals.list.outdated.tooltip"))}
-          {/if}
         </header>
+        {#if proposal.stale}
+          <Notice tone="warning" title={t("proposals.list.outdated.title")}>{t("proposals.list.outdated.body")}</Notice>
+        {/if}
         {#if proposal.instructions}
           <p class="note sent"><span class="muted">{t("proposals.list.instructions")}</span> {proposal.instructions}</p>
         {/if}
@@ -516,37 +554,58 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
           </div>
         {/if}
         <p class="rationale">{proposal.rationale}</p>
-        <details>
+        <p class="changes">
+          <span class="muted">{t("proposals.list.changes")}</span>
+          {#if changes.length === 0}
+            {t("proposals.list.noChanges")}
+          {:else}
+            {#each changes as change, i (change.op)}{#if i > 0}{" · "}{/if}<code>{change.op}</code> × {change.count}{/each}
+          {/if}
+        </p>
+        <details
+          open={commandsOpen[proposal.id] ?? false}
+          ontoggle={(e) => (commandsOpen[proposal.id] = e.currentTarget.open)}
+        >
           <summary>
             {t("proposals.list.selected", { selected, count: proposal.commands.length })}
           </summary>
+          {#if commandsOpen[proposal.id]}
           <ul class="groups">
             {#each view.commandGroups(proposal.id) as group (group.indices[0])}
               {@const state = groupState(group, excluded)}
               {@const single =
                 group.indices.length === 1 && !group.section ? proposal.commands[group.indices[0] as number] : null}
+              {@const innerKey = `${proposal.id}:${group.indices[0]}`}
               <li>
                 <div class="group">
-                  <!-- 一覧の行の入・切は、番号とコマンドの表記 (code) を並べるため標準のチェックボックスのまま。 -->
-                  <input
-                    type="checkbox"
-                    aria-label={t("proposals.list.include", { name: single ? commandLabel(single) : group.label })}
-                    checked={state !== "none"}
-                    indeterminate={state === "some"}
-                    disabled={busy || proposal.stale}
-                    onchange={() => view.toggleGroup(proposal.id, group)}
-                  />
+                  <!-- 一覧の行の入・切は、番号とコマンドの表記 (code) を並べるため標準のチェックボックスのまま。
+                       押せる範囲は箱を包む 24px の label -->
+                  <label class="box">
+                    <input
+                      type="checkbox"
+                      aria-label={t("proposals.list.include", { name: single ? commandLabel(single) : group.label })}
+                      checked={state !== "none"}
+                      indeterminate={state === "some"}
+                      disabled={busy || proposal.stale}
+                      onchange={() => view.toggleGroup(proposal.id, group)}
+                    />
+                  </label>
                   {#if single}
                     <span class="index">#{group.indices[0]}</span>
                     <code>{commandLabel(single)}</code>
                   {:else}
-                    <details class="inner">
+                    <details
+                      class="inner"
+                      open={innerOpen[innerKey] ?? false}
+                      ontoggle={(e) => (innerOpen[innerKey] = e.currentTarget.open)}
+                    >
                       {#if group.labels}
                         <!-- 添えた分類の直しは、名前に件数が入る (中の行はレイヤーのパス)。 -->
                         <summary>{group.label}</summary>
                       {:else}
                         <summary><code>{group.label}</code> · {t("proposals.list.commands", { count: group.indices.length })}</summary>
                       {/if}
+                      {#if innerOpen[innerKey]}
                       <ol class="commands">
                         {#each group.indices as i (i)}
                           {@const command = proposal.commands[i]}
@@ -571,28 +630,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                           {/if}
                         {/each}
                       </ol>
+                      {/if}
                     </details>
                   {/if}
                 </div>
               </li>
             {/each}
           </ul>
+          {/if}
         </details>
+        <!-- 却下・作り直し (保留) が先、決定の採用が並びの最後 -->
         <div class="ed-buttons row">
-          <TipButton
-            pressed={previewing}
-            onclick={() => view.togglePreview(proposal.id)}
-            disabled={busy || proposal.stale || selected === 0}
-            tooltip={t("proposals.list.preview.tooltip")}
-          >{previewing ? t("proposals.list.preview.end") : t("proposals.list.preview.label")}</TipButton>
-          <TipButton
-            variant="primary"
-            onclick={() => view.adopt(proposal.id)}
-            disabled={busy || proposal.stale || selected === 0}
-            tooltip={t("proposals.list.adopt.tooltip")}
-          >{selected < proposal.commands.length
-              ? t("proposals.list.adopt.labelCount", { count: selected })
-              : t("proposals.list.adopt.label")}</TipButton>
           <Button onclick={() => view.reject(proposal.id)} disabled={busy}>{t("proposals.list.reject")}</Button>
           {#if regenerable}
             <TipButton
@@ -602,10 +650,33 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
               tooltip={t("proposals.regenerate.tooltip", { name: aiName })}
             >{t("proposals.regenerate.label")}</TipButton>
           {/if}
+          <TipButton
+            pressed={previewing}
+            onclick={() => view.togglePreview(proposal.id)}
+            disabled={busy || proposal.stale || selected === 0}
+            tooltip={t("proposals.list.preview.tooltip")}
+          >{previewing ? t("proposals.list.preview.end") : t("proposals.list.preview.label")}</TipButton>
+          <TipButton
+            variant={primaryAdopt === proposal.id ? "primary" : "secondary"}
+            onclick={() => view.adopt(proposal.id)}
+            disabled={busy || proposal.stale || selected === 0}
+            aria-describedby={`${uid}-adopt-${proposal.id}`}
+            tooltip={t("proposals.list.adopt.tooltip")}
+          >{selected < proposal.commands.length
+              ? t("proposals.list.adopt.labelCount", { count: selected })
+              : t("proposals.list.adopt.label")}</TipButton>
         </div>
+        <p class="ed-hint" id={`${uid}-adopt-${proposal.id}`}>
+          {proposal.stale
+            ? t("proposals.list.adopt.staleNote")
+            : selected === 0
+              ? t("proposals.list.adopt.noneNote")
+              : t("proposals.list.adopt.note", { selected, count: proposal.commands.length })}
+        </p>
         {#if regenerable && regenerateBlocked && !busy}
           <p class="ed-hint" id={`${uid}-regen-${proposal.id}`}>{regenerateBlocked}</p>
         {/if}
+        {#if statusScope === proposal.id}{@render status()}{/if}
         {#if previewing && view.preview}
           <p class="ed-hint">{t("proposals.list.previewing")}</p>
           <div class="ed-buttons row">
@@ -635,11 +706,46 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   {/if}
 </section>
 
-{#snippet badge(kind: "source" | "warn", text: string, tooltip: string)}
+<!-- 待ち (進み具合・経った時間・取り消し)・知らせ (取り消した)・失敗を、操作を始めた場所に同じ形で出す -->
+{#snippet status()}
+  {#if view.busy}
+    <div class="progress-row">
+      <p class="progress" role="status">
+        {#if confirming}
+          {t("proposals.busy.confirming")}
+        {:else if view.cancelling}
+          {t("proposals.cancel.cancelling")}
+        {:else}
+          {view.busy}{#if elapsed !== null}<span class="elapsed">{t("proposals.elapsed", { seconds: elapsed })}</span>{/if}
+        {/if}
+      </p>
+      {#if view.sending && !confirming}
+        <TipButton
+          onclick={() => view.cancel()}
+          disabled={view.cancelling}
+          tooltip={t("proposals.cancel.tooltip")}
+        >{t("proposals.cancel.label")}</TipButton>
+      {/if}
+    </div>
+  {/if}
+  {#if view.notice}
+    <Notice dismissLabel={t("proposals.dismiss")} ondismiss={() => view.dismiss()}>{view.notice}</Notice>
+  {/if}
+  {#if view.error}
+    <Notice
+      tone="danger"
+      title={t("proposals.failed")}
+      dismissLabel={t("proposals.dismiss")}
+      ondismiss={() => view.dismiss()}
+    >{view.error}</Notice>
+  {/if}
+{/snippet}
+
+{#snippet badge(text: string, tooltip: string)}
   <Tooltip text={tooltip}>
     {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <span {...attrs} class={kind} tabindex="0">{text}</span>
+      <span {...attrs} class="source" tabindex="0">{text}</span>
     {/snippet}
   </Tooltip>
 {/snippet}
@@ -662,6 +768,16 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     display: flex;
     align-items: center;
     gap: var(--ugoe-space-2);
+    min-height: var(--ugoe-target-min);
+  }
+  /* まとまりのチェックボックスの押せる範囲 (24px) */
+  .box {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--ugoe-target-min);
+    height: var(--ugoe-target-min);
   }
   .requires {
     font-size: var(--ugoe-font-size-sm);
@@ -725,6 +841,21 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   .progress {
     color: var(--ugoe-color-accent);
   }
+  .elapsed {
+    margin-left: var(--ugoe-space-2);
+    white-space: nowrap;
+    color: var(--ugoe-color-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .changes {
+    margin: var(--ugoe-space-2) 0;
+    font-size: var(--ugoe-font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .proposal :global(.ugoe-notice),
+  section > :global(.ugoe-notice) {
+    margin: var(--ugoe-space-2) 0;
+  }
   .progress-row {
     display: flex;
     align-items: center;
@@ -783,9 +914,8 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     font-size: var(--ugoe-font-size-xs);
     white-space: nowrap;
   }
+  /* 理由は送らずに全体を出す (パネルの中に縦の送りを重ねない) */
   .rationale {
-    max-height: 10em;
-    overflow-y: auto;
     white-space: pre-wrap;
     font-size: var(--ugoe-font-size-sm);
     margin: var(--ugoe-space-2) 0;
@@ -799,14 +929,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     list-style: none;
     margin: var(--ugoe-space-2) 0;
     padding: 0;
-    max-height: 320px;
-    overflow-y: auto;
     font-size: var(--ugoe-font-size-sm);
   }
   .group {
     display: flex;
     align-items: flex-start;
-    gap: var(--ugoe-space-2);
+    gap: var(--ugoe-space-1);
+  }
+  .group > code,
+  .group > .index,
+  .inner summary {
+    line-height: var(--ugoe-target-min);
   }
   .inner summary {
     cursor: pointer;

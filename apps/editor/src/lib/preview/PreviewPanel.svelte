@@ -164,7 +164,7 @@ const expressionOptions = $derived([
       values={preview.values}
       open={false}
     />
-    <button class="link" type="button" onclick={() => void licenses?.open()}
+    <button class="ed-link licenses" type="button" onclick={() => void licenses?.open()}
       >{t("preview.licenses.open")}</button
     >
   </section>
@@ -319,21 +319,11 @@ section {
   gap: var(--ugoe-space-2);
 }
 
-.link {
+/* ライセンスの口は控えめな文字の色 (形は app.css の .ed-link) */
+.licenses {
   margin-top: var(--ugoe-space-2);
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--ugoe-color-text-muted);
-  font: inherit;
   font-size: var(--ugoe-font-size-sm);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.link:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 .stage {

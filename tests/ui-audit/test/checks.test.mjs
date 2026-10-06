@@ -142,6 +142,21 @@ test("ページの検査の結果を検査ごとの見つけたものにする",
       ["aria", "html"],
     ],
   );
+  // 失敗の出し方を撮る場面では、画面のエラーの文を数えない
+  const expected = pageFindings(
+    {
+      contrast: { checked: 0, unknown: 0, failures: [], disabled: [] },
+      overflow: { document: null, beyond: [] },
+      overlap: [],
+      small: [],
+      motion: [],
+      errors: ['p.studio__error "boom"'],
+      lang: "en",
+    },
+    "en",
+    { expectErrors: true },
+  );
+  assert.deepEqual(expected, []);
   assert.equal(found[0].detail, "3.20 < 4.5 (fg ...)");
 });
 

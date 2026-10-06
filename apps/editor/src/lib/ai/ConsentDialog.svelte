@@ -1,8 +1,8 @@
 <!--
   外部の AI サービスに送る前の確認 (docs/editor.md#ai-の設定と送信の同意)。App に 1 つ置き、
   `consentPrompt.ask` (lib/ai/ai.svelte.ts) の問い合わせがあれば開く。送り先・モデル・画像の枚数と
-  バイト数・テキストのバイト数 (利用者の注文の文字数と、答えが検証を通らなければ送り直す回数の上限も) と、送り先の規約へのリンク
-  (知っている送り先だけ。lib/ai/consent.ts の `termsFor`) を示す。
+  バイト数・テキストのバイト数 (利用者の注文の文字数と、答えが検証を通らなければ送り直す回数の上限も)、送るのはそれだけで
+  API キーは送り先の認証にだけ使うこと、送り先の規約へのリンク (知っている送り先だけ。lib/ai/consent.ts の `termsFor`) を示す。
   送ると取り消せないので @ugoe/ui の AlertDialog (開くとフォーカスは「Cancel」)。Esc と「Cancel」は送らない。
   設定のダイアログ (SettingsDialog の「Test connection」) の上に重なって開くこともある。Bits UI のフォーカスと Esc の層は
   重なった順に積まれるので、Esc で閉じるのはこの確認だけで、閉じるとフォーカスは設定のダイアログに戻る。
@@ -78,17 +78,19 @@ async function openTerms(url: string): Promise<void> {
     {#if d.retries > 0}
       <p class="ed-hint">{t("consent.retries", { count: d.retries })}</p>
     {/if}
-    <p class="ed-hint">
-      {#if terms}
-        {t("consent.terms.intro", { org: terms.org })}
-        {#each terms.links as term, i (term.url)}
-          {#if i > 0}{" · "}{/if}
-          <a href={term.url} onclick={(e) => (e.preventDefault(), openTerms(term.url))}>{term.label}</a>
+    <!-- 送るのは上の表のものだけで、API キーは送り先の認証にだけ使うこと -->
+    <p class="ed-hint">{t("consent.only")}</p>
+    {#if terms}
+      <p class="ed-hint terms">{t("consent.terms.intro", { org: terms.org })}</p>
+      <!-- 押せる高さ 24px のリンクを並べる -->
+      <ul class="links">
+        {#each terms.links as term (term.url)}
+          <li><a href={term.url} onclick={(e) => (e.preventDefault(), openTerms(term.url))}>{term.label}</a></li>
         {/each}
-      {:else}
-        {t("consent.terms.unknown")}
-      {/if}
-    </p>
+      </ul>
+    {:else}
+      <p class="ed-hint">{t("consent.terms.unknown")}</p>
+    {/if}
     {#if linkError}<p class="error ugoe-selectable" role="alert">{linkError}</p>{/if}
     <Checkbox bind:checked={remember} label={t("consent.remember.label")} />
   {/if}
@@ -111,8 +113,27 @@ async function openTerms(url: string): Promise<void> {
   p {
     margin: 0 0 var(--ugoe-space-3);
   }
+  .terms {
+    margin-bottom: 0;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--ugoe-space-4);
+    margin: 0 0 var(--ugoe-space-3);
+    padding: 0;
+    list-style: none;
+    font-size: var(--ugoe-font-size-sm);
+  }
   a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--ugoe-target-min);
     color: var(--ugoe-color-accent);
+  }
+  a:focus-visible {
+    outline: var(--ugoe-focus-ring);
+    outline-offset: var(--ugoe-focus-offset);
   }
   .error {
     overflow-wrap: anywhere;

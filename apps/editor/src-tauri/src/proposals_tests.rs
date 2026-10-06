@@ -1168,7 +1168,8 @@ fn reopen_in(state: &AppState, dir: &Path) -> crate::proposals::ClassificationRe
     use ugoe_editor_core::Project;
 
     let (project, disk) = Project::load_tracked(dir).unwrap();
-    let (session, document) = ProjectSession::from_project(project, Some((dir.to_owned(), disk)));
+    let (mut session, document) =
+        ProjectSession::from_project(project, Some((dir.to_owned(), disk)));
     assert!(session.proposals.classification.is_none());
     assert!(session.proposals.psd().is_none());
     let restore = session.classification_restore().unwrap();
@@ -1334,6 +1335,54 @@ fn a_late_classification_restore_does_not_overwrite_the_current_state() {
     }
     // キャッシュの PSD は今もある (戻せなかったのは状態が変わったから)。
     assert!(psd.exists());
+}
+
+/// 戻している間は `ProposalState::restoring` が立ち、戻し終えた・戻せなかった・PSD を選び直したら下りる。
+/// キャッシュが無ければ戻す仕事を作らない (印も立てない。T0676)。
+#[test]
+fn the_panel_shows_while_the_classification_is_being_restored() {
+    use ugoe_editor_core::classification_cache::classification_cache_path;
+
+    let restoring = |state: &AppState| {
+        let document = state.document.lock().unwrap();
+        let session = state.project.lock().unwrap();
+        session.proposals.state(&document).restoring
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let (state, dir, psd, _) = classified_project(tmp.path());
+    assert!(!restoring(&state));
+
+    // 戻し終えたら下りる
+    let restore = reopen_in(&state, &dir);
+    assert!(restoring(&state));
+    assert!(restore_classification_in(&state, restore).unwrap());
+    assert!(!restoring(&state));
+
+    // 戻せなくても (PSD が変わった) 下りる
+    let mut bytes = std::fs::read(&psd).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xff;
+    std::fs::write(&psd, &bytes).unwrap();
+    let restore = reopen_in(&state, &dir);
+    assert!(restoring(&state));
+    assert!(!restore_classification_in(&state, restore).unwrap());
+    assert!(!restoring(&state));
+
+    // 戻している途中で PSD を選び直したら、すぐに下りる。遅れて終えた戻しはほかのセッションの印を下ろさない
+    let stale = reopen_in(&state, &dir);
+    state.project.lock().unwrap().proposals.set_psd(psd.clone());
+    assert!(!restoring(&state));
+    let _current = reopen_in(&state, &dir);
+    assert!(!restore_classification_in(&state, stale).unwrap());
+    assert!(restoring(&state));
+
+    // キャッシュが無ければ戻す仕事も印も無い
+    std::fs::remove_file(classification_cache_path(&dir)).unwrap();
+    let (project, disk) = ugoe_editor_core::Project::load_tracked(&dir).unwrap();
+    let (mut session, _) =
+        crate::project::ProjectSession::from_project(project, Some((dir.clone(), disk)));
+    assert!(session.classification_restore().is_none());
+    assert!(!session.proposals.restoring);
 }
 
 /// T0570: つないだエージェントの提案に添えた分類の直し (`set_layer_correction`) は、採用するとドキュメントの直しになり、

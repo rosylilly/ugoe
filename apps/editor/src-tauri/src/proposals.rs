@@ -21,7 +21,8 @@
 //!   (保存するまでファイルには書かない)、開き直しても知らせる (`docs/editor.md#モジュールのプロジェクトでの-ai-の提案`)。
 //! - 分類の答えは、プロジェクトの `.ugoe-cache/classification.json` に分類した PSD の識別と一緒に残し
 //!   (`ugoe_editor_core::classification_cache`)、開いた後にバックグラウンドで PSD を読み直し、合えば戻す
-//!   ([`restore_in_background`]。戻したら [`CLASSIFICATION_RESTORED_EVENT`] で画面に知らせる)。分類したとき
+//!   ([`restore_in_background`]。戻している間は [`ProposalState::restoring`]、終えたら戻せなくても
+//!   [`CLASSIFICATION_RESTORE_FINISHED_EVENT`] で画面に知らせる)。分類したとき
 //!   (保存先があれば) と保存したときに書く。キャッシュなので Undo の対象にせず、`project.json` も変えない
 //!   (`docs/editor.md#分類の答えのキャッシュ`)。
 
@@ -75,6 +76,8 @@ pub struct ProposalSession {
     /// 提案の元にする PSD か分類を変えるたびに増える世代の番号。キャッシュの分類を戻し始めた後で変わったら、
     /// 遅れて終わった戻しで上書きしない ([`ClassificationRestore`])。
     epoch: u64,
+    /// キャッシュの分類を戻している最中 (開いたときに立て、戻し終えた・戻せなかった・分類や PSD を変えたら下ろす)。
+    restoring: bool,
     proposals: Proposals,
     /// 最後にプレビューした提案を適用した複製 (`get_proposal_preview_bundle` で渡す)。
     preview: Option<Document>,
@@ -174,6 +177,8 @@ impl ProposalSession {
         }
         self.psd = Some(path);
         self.epoch += 1;
+        // 戻している途中の分類は捨てる (遅れて終えても置かない) ので、戻している印も下ろす。
+        self.restoring = false;
     }
 
     /// 分類の結果を置き、その PSD を提案の元にする。
@@ -216,8 +221,10 @@ impl ProposalSession {
     }
 
     /// プロジェクトのディレクトリ `dir` のキャッシュから分類を戻す仕事 (開いたときに作り、ロックの外で
-    /// [`restore_classification_in`] に渡す)。`session` は開いたセッションの番号。
-    pub(crate) fn restore_from(&self, dir: PathBuf, session: u64) -> ClassificationRestore {
+    /// [`restore_classification_in`] に渡す)。`session` は開いたセッションの番号。戻し終えるまで
+    /// [`ProposalState::restoring`] を立てる。
+    pub(crate) fn restore_from(&mut self, dir: PathBuf, session: u64) -> ClassificationRestore {
+        self.restoring = true;
         ClassificationRestore {
             dir,
             session,
@@ -322,6 +329,7 @@ impl ProposalSession {
                 .collect(),
             proposals,
             psd: self.psd.as_ref().map(|p| p.display().to_string()),
+            restoring: self.restoring,
             classification: self
                 .classification
                 .as_ref()
@@ -426,6 +434,9 @@ pub struct ProposalState {
     /// 採用したモジュールのリグの提案が本体の変形を写した衣装のメッシュのうち、その後に形 (頂点・三角形・親) を
     /// 編集したもの。写した変形が合わないので、提案し直すよう知らせる。
     pub stale_rigs: Vec<StaleRig>,
+    /// 開いたプロジェクトの分類の答えのキャッシュを、バックグラウンドで戻している最中か (PSD を読み直すので、
+    /// 大きな PSD では時間がかかる)。終えたら [`CLASSIFICATION_RESTORE_FINISHED_EVENT`] を送る。
+    pub restoring: bool,
 }
 
 /// 本体の変形を写した後に形を編集した衣装のメッシュ。
@@ -493,40 +504,44 @@ pub(crate) struct ClassificationRestore {
     epoch: u64,
 }
 
-/// キャッシュの分類を戻したことを画面に知らせるイベントの名前 (中身はない)。画面は `get_proposals` を読み直す。
-pub(crate) const CLASSIFICATION_RESTORED_EVENT: &str = "classification-restored";
+/// キャッシュの分類を戻し終えた (戻せなかったときも) ことを画面に知らせるイベントの名前 (中身はない)。
+/// 画面は `get_proposals` を読み直す (戻した分類と、下ろした [`ProposalState::restoring`] が出る)。
+pub(crate) const CLASSIFICATION_RESTORE_FINISHED_EVENT: &str = "classification-restore-finished";
 
-/// `restore` をメインのスレッドの外で行い、戻したら [`CLASSIFICATION_RESTORED_EVENT`] を送る。待たない。
-/// 戻せない (キャッシュがない・PSD が合わない・その間にプロジェクトや分類が変わった) ときは何もしない (標準エラーに書くだけ)。
+/// `restore` をメインのスレッドの外で行い、終えたら (戻せなくても) [`CLASSIFICATION_RESTORE_FINISHED_EVENT`] を送る。待たない。
+/// 戻せない (PSD が合わない・その間にプロジェクトや分類が変わった) ときは分類を置かない。読めないときは標準エラーに書く。
 pub(crate) fn restore_in_background(app: &AppHandle, restore: Option<ClassificationRestore>) {
     let Some(restore) = restore else {
         return;
     };
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        match restore_classification_in(&app.state::<AppState>(), restore) {
-            Ok(true) => {
-                if let Err(e) = app.emit(CLASSIFICATION_RESTORED_EVENT, ()) {
-                    eprintln!("could not notify the window about the restored classification: {e}");
-                }
-            }
-            Ok(false) => {}
-            Err(e) => eprintln!("could not restore the layer classification: {e}"),
+        if let Err(e) = restore_classification_in(&app.state::<AppState>(), restore) {
+            eprintln!("could not restore the layer classification: {e}");
+        }
+        if let Err(e) = app.emit(CLASSIFICATION_RESTORE_FINISHED_EVENT, ()) {
+            eprintln!("could not notify the window about the classification restore: {e}");
         }
     });
 }
 
 /// [`restore_in_background`] の本体 (テストから呼ぶ)。PSD はロックの外で読み、開いたときと同じセッション・世代の
-/// ときだけ分類を置いて、その PSD を提案の元にする。置いたら `true`。
+/// ときだけ分類を置いて、その PSD を提案の元にする。置いたら `true`。開いたときと同じセッションなら、置けなくても
+/// (読めなくても) 戻している印 ([`ProposalState::restoring`]) を下ろす。
 pub(crate) fn restore_classification_in(
     state: &AppState,
     restore: ClassificationRestore,
 ) -> IpcResult<bool> {
-    let Some(classified) = restored_classification(&restore.dir)? else {
+    let restored = restored_classification(&restore.dir);
+    let mut session = lock_project(state)?;
+    if session.id() != restore.session {
+        return Ok(false);
+    }
+    session.proposals.restoring = false;
+    let Some(classified) = restored? else {
         return Ok(false);
     };
-    let mut session = lock_project(state)?;
-    if session.id() != restore.session || session.proposals.epoch != restore.epoch {
+    if session.proposals.epoch != restore.epoch {
         return Ok(false);
     }
     session.proposals.set_classification(classified);

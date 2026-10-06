@@ -359,10 +359,12 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   同じスロットで書き出したファイル (「CatEars」) と選び直して、どこを変えたかを見比べられます。一覧では、いまの編集は `editing` の印の付いた行です。
   ファイルの行には、いまの編集との違いが「3 differences from your current edits」のように出て、開くと「Meshes: 5 → 4 (removed: EarL)」
   「Textures: …」「Required slots: …」のような行 (ファイル → いまの編集の向き) が並びます。同じなら「Same as your current edits.」と出ます。
-  足したり変えたり除いたりしたメッシュ・デフォーマ・パーツ・グルー・物理のリグ・衝突体・ポーズのグループと追従は、行の下に
+  足したり変えたり除いたりしたメッシュ・デフォーマ・パーツ・グルー・物理のリグ・衝突体・ポーズのグループと追従は、行の下の表 (名前・違い・「Select」) に
   「Band: vertices 4 → 6; draw order 500 → 520」「Sway: settings of 1 particle」「Collar: radius 8 → 12」
   「HairB / HairA: entries HairA / HairB → HairB / HairA」「ArmA: links (added: Sleeve)」のように何が違うかが出ます
   (ポーズのグループは差分のパーツを ` / ` でつないだ名前、追従は本体の差分のパーツの名前で出ます)。
+  1 つの行の要素は 8 件まで出て、残りは「Show N more」で出ます。要素が多いときは「Filter the differences」に名前や語
+  (「Ribbon vertices」など) を入れると、合う行と要素だけに絞れます。
   名前を押すと、プレビューのままビューポートでその要素が強調されます (メッシュは輪郭、物理のリグは粒子の鎖、衝突体は円やカプセル)。
   強調されるのは、いまスロットに付いている方 (いまの編集かファイル) の要素です。除いた要素は、ファイルの方を付けると見えます。
   いまの編集で除いた要素 (ポーズのグループなど) のメッシュがいまの編集に残っていれば、その輪郭を破線で描き、下の知らせに
@@ -389,7 +391,9 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 ### プレビューで付けられないとき
 
-付けられないモジュールは、その行の下に理由が赤い字で出ます。「Details」を開くと元のメッセージが出ます。
+付けられないモジュールは、その行の下に理由が赤い枠の知らせで出ます。「Details」を開くと元のメッセージが出ます。
+読み込めないファイルはパネルの上に、自動で外れたモジュールと読み込みの注意 (代わりの画像を使ったテクスチャなど) は黄色い枠の知らせで出ます。
+一覧の行にはファイルの名前だけが出ます (ポインタを乗せると場所の全体が出ます)。
 
 ![付けられないモジュールの理由](images/dress-up-errors.png)
 

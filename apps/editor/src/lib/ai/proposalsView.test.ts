@@ -186,6 +186,47 @@ describe("ProposalsView cancel", () => {
     expect(view.busy).toBeNull();
   });
 
+  it("remembers when the request was sent, and starts again after the confirmation", async () => {
+    const view = new ProposalsView({ revision: 1 } as EditorDocument);
+    view.value = state;
+    view.useAi = true;
+    let agree: (a: ConsentAnswer | null) => void = () => {};
+    const ask = vi.spyOn(consentPrompt, "ask").mockImplementation(
+      (disclosure) =>
+        new Promise((r) => {
+          agree = (a) => r(a ?? { disclosure, remember: false });
+        }),
+    );
+    let finish: (r: AiReply<unknown>) => void = () => {};
+    proposed.mockImplementationOnce(
+      async () => ({ status: "needs_consent", disclosure: {} }) as AiReply<unknown>,
+    );
+    proposed.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finish = r;
+        }),
+    );
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      expect(view.sentAt).toBeNull();
+      const running = view.propose();
+      await vi.waitFor(() => expect(ask).toHaveBeenCalledOnce());
+      expect(view.sentAt).toBe(1000);
+      // 確認に答えて送り直したら、その時刻から数える
+      now.mockReturnValue(5000);
+      agree(null);
+      await vi.waitFor(() => expect(proposed).toHaveBeenCalledTimes(2));
+      expect(view.sentAt).toBe(5000);
+      finish({ status: "done", value: {} } as AiReply<unknown>);
+      await running;
+      expect(view.sentAt).toBeNull();
+    } finally {
+      ask.mockRestore();
+      now.mockRestore();
+    }
+  });
+
   it("cannot cancel what does not send to the AI", async () => {
     const view = new ProposalsView({ revision: 1 } as EditorDocument);
     view.value = state;
@@ -198,6 +239,34 @@ describe("ProposalsView cancel", () => {
     await view.cancel();
     await running;
     expect(cancelled).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProposalsView status place", () => {
+  it("shows the waiting and the failure of a proposal's action on that proposal", async () => {
+    const applyWith = vi.fn(async () => null);
+    const doc = { revision: 1, applyWith, error: "boom" } as unknown as EditorDocument;
+    const view = new ProposalsView(doc);
+    view.value = state;
+    const adopting = view.adopt(7);
+    expect(view.scope).toBe(7);
+    expect(view.busy).not.toBeNull();
+    await adopting;
+    expect(view.scope).toBe(7);
+    expect(view.error).toBe("boom");
+    // 読み直し (場所の無い操作) は、失敗を出す場所を変えない
+    await view.refresh();
+    expect(view.scope).toBe(7);
+    // パネルの頭の操作に移る
+    view.useAi = false;
+    proposed.mockImplementationOnce(
+      async () => ({ status: "done", value: {} }) as AiReply<unknown>,
+    );
+    await view.propose();
+    expect(view.scope).toBeNull();
+    view.dismiss();
+    expect(view.error).toBeNull();
+    expect(view.notice).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Classification, NormalMapGroupView, ProposalCommand } from "../ipc";
 import {
+  changeSummary,
   classificationSummary,
   commandLabel,
   excludeCommand,
@@ -27,6 +28,25 @@ const commands: ProposalCommand[] = [
   { op: "set_keyform_cell", subject: "deformer `Head`", requires: [1, 2] },
   { op: "rename_mesh", subject: null, requires: [] },
 ];
+
+describe("changeSummary", () => {
+  it("counts the selected commands by kind in the order they appear", () => {
+    const more = [...commands, { op: "add_parameter", subject: "AngleY", requires: [] }];
+    expect(changeSummary(more, new Set())).toEqual([
+      { op: "add_parameter", count: 2 },
+      { op: "create_warp_deformer", count: 1 },
+      { op: "add_keyform_key", count: 1 },
+      { op: "set_keyform_cell", count: 1 },
+      { op: "rename_mesh", count: 1 },
+    ]);
+    // 外したコマンドは数えない (すべて外した種類は出さない)
+    expect(changeSummary(more, new Set([0, 2, 3, 4]))).toEqual([
+      { op: "create_warp_deformer", count: 1 },
+      { op: "add_parameter", count: 1 },
+    ]);
+    expect(changeSummary(more, new Set([0, 1, 2, 3, 4, 5]))).toEqual([]);
+  });
+});
 
 describe("excludeCommand", () => {
   it("also leaves out the commands that use what it creates", () => {

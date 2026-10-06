@@ -2402,7 +2402,12 @@ sections: Array<ProposalSections>,
  * 採用したモジュールのリグの提案が本体の変形を写した衣装のメッシュのうち、その後に形 (頂点・三角形・親) を
  * 編集したもの。写した変形が合わないので、提案し直すよう知らせる。
  */
-stale_rigs: Array<StaleRig>, };
+stale_rigs: Array<StaleRig>, 
+/**
+ * 開いたプロジェクトの分類の答えのキャッシュを、バックグラウンドで戻している最中か (PSD を読み直すので、
+ * 大きな PSD では時間がかかる)。終えたら [`CLASSIFICATION_RESTORE_FINISHED_EVENT`] を送る。
+ */
+restoring: boolean, };
 
 /**
  * 画面に出す提案。

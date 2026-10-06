@@ -107,3 +107,10 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
     「モーションを作る」に足すとよい (`-motion-settings` の場面)。
   - expressions.png: 名前とフェードが「Settings…」へ移り、上の段が短くなった。
   - 設定の「General」の画像を足すなら、「About the ugoe editor」にビューポートの描画の方式が出る。
+- T0676 から書き足した: エディタの AI のタブ・AI の設定・送る前の確認・プレビューの着せ替えを直した (docs/ui.md#エディタの-aiモジュール着せ替え-t0676)。
+  docs/manual/ai.md・dress-up.md の文は T0676 で直した。撮り直す画像: ai-settings.png (API キーの欄に見えるラベルと、キーの扱いの文。
+  削除の確かめ)、ai-consent.png (送るのは表のものだけ・キーは認証だけの文。規約のリンクが 1 行に並ぶ)、AI のタブを写した画像があれば
+  (提案のカードに「Adopting changes:」と採用の文、ボタンの順が Reject・Preview・Adopt、古い提案は知らせ。待ちの秒数と Cancel、失敗の知らせ)、
+  module-compare-details.png・module-compare-differences.png (違いの一覧が要素の表になり、多いと絞り込みの欄と「Show N more」)、
+  dress-up-errors.png (付けられない理由が赤い枠の知らせ、行はファイルの名前だけ)。`just ui-audit` の `-settings-ai`・`-consent`・`-ai-list`・
+  `-ai-sending`・`-ai-error`・`-preview-dress-up`・`-module-preview` の場面が見本になる。

@@ -4,8 +4,10 @@ import type { ModuleDifference } from "../ipc";
 import type { WebPuppet } from "../viewport/wasm";
 import {
   describeProblem,
+  differenceItemCount,
   editingName,
   fileStem,
+  filterDifferences,
   isModuleFile,
   parseModules,
   sameNames,
@@ -142,6 +144,45 @@ const entry = (d: DressUp, name: string) => d.entries.find((e) => e.name === nam
 beforeEach(() => {
   saved.length = 0;
   for (const k of Object.keys(files)) delete files[k];
+});
+
+describe("filterDifferences", () => {
+  const item = (id: string, text: string) => ({
+    kind: "mesh" as const,
+    id,
+    text,
+    element: null,
+    meshes: [],
+    parts: [],
+  });
+  const lines: ModuleDifference[] = [
+    {
+      text: "Meshes: 2 → 3 (added: Band)",
+      items: [item("Band", "added"), item("Ears", "vertices 12 → 14")],
+    },
+    { text: "Textures: image changed: Ears", items: [] },
+    { text: "Deformers: 1 → 1", items: [item("EarWarp", "keyforms: 1 of 2 changed")] },
+  ];
+
+  it("keeps everything for an empty query, and counts the element rows", () => {
+    expect(filterDifferences(lines, "  ")).toEqual(lines);
+    expect(differenceItemCount(lines)).toBe(3);
+  });
+
+  it("keeps a matching line whole, and only the matching elements of other lines", () => {
+    expect(filterDifferences(lines, "ears").map((l) => [l.text, l.items.map((i) => i.id)])).toEqual(
+      [
+        ["Meshes: 2 → 3 (added: Band)", ["Ears"]],
+        ["Textures: image changed: Ears", []],
+      ],
+    );
+    // 語のすべてを含むもの (大文字と小文字は区別しない)
+    expect(
+      filterDifferences(lines, "KEYFORMS earwarp").map((l) => l.items.map((i) => i.id)),
+    ).toEqual([["EarWarp"]]);
+    expect(filterDifferences(lines, "meshes")[0]?.items).toHaveLength(2);
+    expect(filterDifferences(lines, "nothing")).toEqual([]);
+  });
 });
 
 describe("dressUp helpers", () => {

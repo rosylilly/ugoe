@@ -236,6 +236,26 @@ select:not([class*="ugoe-"]) {
   background-color: var(--ugoe-color-accent-soft);
 }
 
+/* 文のように見せるボタン (要素の ID・ライセンスの口など)。押せる高さは 24px (docs/ui.md#そのほか)。 */
+.ed-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ugoe-target-min);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ugoe-color-accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ed-link:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: 1px;
+}
+
 /* 一覧の行の札 (「本体」「app」など)。意味のある札は .accent・.danger で色と枠を付ける。 */
 .ed-tag {
   flex: none;

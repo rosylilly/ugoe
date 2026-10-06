@@ -132,6 +132,20 @@ export function excludedList(excluded: ReadonlySet<number>): number[] {
   return [...excluded].sort((a, b) => a - b);
 }
 
+/**
+ * 採用すると変わるもの: 選んだ (外していない) コマンドの種類ごとの数 (最初に現れた順)。提案のカードの「採用で変わるもの」に出す。
+ */
+export function changeSummary(
+  commands: ProposalCommand[],
+  excluded: ReadonlySet<number>,
+): { op: string; count: number }[] {
+  const counts = new Map<string, number>();
+  commands.forEach((c, i) => {
+    if (!excluded.has(i)) counts.set(c.op, (counts.get(c.op) ?? 0) + 1);
+  });
+  return [...counts].map(([op, count]) => ({ op, count }));
+}
+
 /** 一覧に出すコマンドの 1 行 (`add_parameter AngleX`)。 */
 export function commandLabel(command: ProposalCommand): string {
   return command.subject ? `${command.op} ${command.subject}` : command.op;

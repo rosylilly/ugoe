@@ -1,0 +1,331 @@
+// エディタの偽のホストが返す、見本のプロジェクトに無い状態 (T0676): AI の提案・分類・送る前の確認・着せ替えの
+// モジュール・モジュールのプロジェクトと違いの一覧。形は apps/editor/src/lib/generated/types.ts に合わせる。
+// 中身は画面を撮るための作りもので、バックエンドの答えと同じである必要はない (行の長さ・数・種類が混ざることを優先)。
+
+/** 提案の元にした PSD (見本のプロジェクトの中にあることにする)。 */
+export const FIXTURE_PSD =
+  "/home/audit/ugoe-dress-up-sample/sources/bustup-with-a-long-file-name.psd";
+
+/** 分類の結果 (確かめたほうがよいレイヤー・直したレイヤー・名前との食い違い・差分の組を含む)。 */
+export function classificationFixture() {
+  const layer = (path, label, side, confidence, extra = {}) => ({
+    path,
+    label,
+    side,
+    confidence,
+    needs_review: false,
+    variant: null,
+    name_disagreement: null,
+    corrected: false,
+    ...extra,
+  });
+  return {
+    psd: FIXTURE_PSD,
+    by_ai: true,
+    instructions: "The ribbon is neckwear.",
+    layers: [
+      layer(["Head", "Face"], "face", "center", 0.98),
+      layer(["Head", "Eye R", "White"], "eye_white", "right", 0.52, {
+        needs_review: true,
+        name_disagreement: { label: null, side: "left" },
+      }),
+      layer(["Head", "Eye L", "White"], "eye_white", "left", 0.95),
+      layer(["Head", "Mouth"], "mouth", "center", 0.61, { needs_review: true }),
+      layer(["Head", "Hair", "Front"], "hair_front", "center", 1, { corrected: true }),
+      layer(["Body", "Sleeve A"], "clothes", "center", 0.9, { variant: 0 }),
+      layer(["Body", "Sleeve B"], "clothes", "center", 0.9, { variant: 0 }),
+    ],
+    label_choices: [
+      "face",
+      "eye_white",
+      "iris",
+      "eyelid",
+      "brow",
+      "mouth",
+      "nose",
+      "hair_front",
+      "hair_side",
+      "hair_back",
+      "neck",
+      "body",
+      "clothes",
+      "neckwear",
+      "other",
+    ],
+  };
+}
+
+const command = (op, subject = null, requires = []) => ({ op, subject, requires });
+
+/** 提案の一覧 (エディタのリグ・エージェントのリグと添えた分類の直し・古くなった法線マップ)。 */
+export function proposalsFixture() {
+  const rig = [
+    command("add_parameter", "AngleX"),
+    command("add_parameter", "AngleY"),
+    command("add_parameter", "EyeLOpen"),
+    command("add_parameter", "EyeROpen"),
+    command("add_parameter", "MouthOpenY"),
+    command("add_deformer", "deformer `FaceWarp`"),
+    command("set_keyform_bindings", "deformer `FaceWarp`", [0, 1, 5]),
+    command("set_keyform_cell", "deformer `FaceWarp`", [6]),
+    command("set_keyform_cell", "deformer `FaceWarp`", [6]),
+    command("set_keyform_bindings", "mesh `EyeL`", [2]),
+    command("set_keyform_cell", "mesh `EyeL`", [9]),
+    command("set_keyform_bindings", "mesh `EyeR`", [3]),
+    command("set_keyform_cell", "mesh `EyeR`", [11]),
+    command("set_keyform_bindings", "mesh `Mouth`", [4]),
+    command("set_keyform_cell", "mesh `Mouth`", [13]),
+  ];
+  const agent = [
+    command("set_layer_correction", "Head / Eye R / White"),
+    command("set_layer_correction", "Head / Mouth"),
+    command("set_layer_correction", "Body / Sleeve A"),
+    ...rig.map((c) => ({ ...c, requires: c.requires.map((i) => i + 3) })),
+  ];
+  return [
+    {
+      id: 1,
+      title: "Rig the face (head turn, eye blinks, mouth)",
+      rationale:
+        "Head turn: the face is a warp with 3 × 3 keys over AngleX and AngleY (±30°).\nEye blinks: each eye closes along its lid (EyeLOpen, EyeROpen).\nMouth: one mouth layer opens downward (MouthOpenY).\nTo review: Head / Eye R / White (the AI says right, the name says left).",
+      commands: rig,
+      stale: false,
+      source: null,
+      revises: null,
+      instructions: "Keep head turns subtle. Close the eyes a little narrower.",
+      unapplied: ["Make the hair bounce when the head turns"],
+    },
+    {
+      id: 2,
+      title: "Rig from the agent's classification",
+      rationale:
+        "The agent classified the layers, kept its labels for three layers, and built the same face rig from them.",
+      commands: agent,
+      stale: false,
+      source: "Claude Code",
+      revises: null,
+      instructions: null,
+      unapplied: [],
+    },
+    {
+      id: 3,
+      title: "Normal maps from the shapes",
+      rationale: "Face (3 textures) and body (2 textures) bulge as one surface each.",
+      commands: [
+        command("set_normal_map", "Face"),
+        command("set_normal_map", "EyeL"),
+        command("set_normal_map", "EyeR"),
+        command("set_normal_map", "Body"),
+        command("set_normal_map", "Shirt"),
+        command("set_lighting", null),
+      ],
+      stale: true,
+      source: null,
+      revises: null,
+      instructions: null,
+      unapplied: [],
+    },
+  ];
+}
+
+/** `get_proposals` の答え。`restoring` は分類のキャッシュを戻している最中か (T0676)。 */
+export function proposalStateFixture({ restoring = false } = {}) {
+  return {
+    proposals: proposalsFixture(),
+    psd: FIXTURE_PSD,
+    classification: classificationFixture(),
+    regenerable: [1],
+    sections: [
+      {
+        id: 3,
+        sections: [
+          { label: "face", indices: [0, 1, 2] },
+          { label: "body", indices: [3, 4] },
+          { label: "lighting", indices: [5] },
+        ],
+      },
+    ],
+    stale_rigs: [],
+    restoring,
+  };
+}
+
+/** 送る前の確認に示す内容 (`needs_consent` の答え)。 */
+export function disclosureFixture() {
+  return {
+    service: "Anthropic Claude API",
+    endpoint: "https://api.anthropic.com/v1/messages",
+    model: "claude-opus-5-5",
+    image_count: 24,
+    image_bytes: 1_843_200,
+    text_bytes: 6_480,
+    instruction_chars: 38,
+    retries: 0,
+  };
+}
+
+/** AI の設定 (`ai_settings`)。`ready` なら外部に送れる (キーを保存し、プロジェクトが送ってよい)。 */
+export function aiSettingsFixture({ ready = false } = {}) {
+  return {
+    provider: {
+      provider: "claude",
+      claude: { model: "claude-opus-5-5" },
+      openai: { base_url: "http://localhost:11434/v1", model: "", output: "json_schema" },
+      time_limit_minutes: 10,
+    },
+    service: "Anthropic Claude",
+    local: false,
+    key: ready ? "stored" : "not_stored",
+    key_required: true,
+    key_env: "ANTHROPIC_API_KEY",
+    env_key: false,
+    send_externally: ready,
+    consent_remembered: false,
+  };
+}
+
+/** モジュールのプロジェクトの状態 (`module_status`)。本体は見本、スロットは `Outfit`。 */
+export function moduleStatusFixture({ name, base, model }) {
+  const ids = (list) => (list ?? []).map((e) => e.id);
+  const slots = (model.slots ?? []).map((s) => ({
+    id: s.id,
+    anchor: s.anchor ?? null,
+    part: s.part ?? null,
+    draw_order_min: s.draw_order?.min ?? 0,
+    draw_order_max: s.draw_order?.max ?? 1000,
+    replaces: s.replaces ?? [],
+    parameters: s.parameters ?? [],
+    pose_parts: s.pose_parts ?? [],
+  }));
+  return {
+    name,
+    base,
+    slot: slots.find((s) => s.id === "Outfit") ?? slots[0],
+    base_parts: ids(model.parts),
+    base_deformers: ids(model.deformers),
+    base_meshes: ids(model.meshes),
+    base_textures: (model.textures ?? []).map((t) => t.name ?? t.id ?? ""),
+    base_rigs: [],
+    base_colliders: [],
+    unavailable_colliders: [],
+    requires: { avatar_level: null, slots: [], parameters: [] },
+    base_slots: slots,
+    base_parameters: ids(model.parameters),
+    base_avatar_level: model.avatar?.level ?? null,
+    base_revision: 1,
+    base_pose_groups: model.pose?.groups?.length ?? 0,
+  };
+}
+
+/**
+ * 今の編集と書き出したファイルの違い (`compare_preview_module`)。長い一覧 (要素の行が多い) で、送りと絞り込みを撮る。
+ */
+export function differencesFixture() {
+  const item = (kind, id, text, element = `Sailor/${id}`) => ({
+    kind,
+    id,
+    text,
+    element,
+    meshes: kind === "mesh" ? [id] : [],
+    parts: [],
+  });
+  const meshes = Array.from({ length: 14 }, (_, i) =>
+    item(
+      "mesh",
+      `Ribbon${String(i + 1).padStart(2, "0")}`,
+      i % 3 === 0
+        ? "vertices 12 → 14; keyforms: 2 of 3 changed; draw order 300 → 310"
+        : i % 3 === 1
+          ? "added"
+          : "texture Sailor → SailorRibbon; opacity and color changed",
+    ),
+  );
+  return [
+    { text: "Meshes: 14 → 25 (added 5; changed 9)", items: meshes },
+    {
+      text: "Deformers: 3 → 4 (added: CollarWarp; changed: WaveRotation)",
+      items: [
+        item("deformer", "CollarWarp", "added"),
+        item("deformer", "WaveRotation", "keyforms: 1 of 2 changed; pivot moved"),
+      ],
+    },
+    {
+      text: "Parts: 2 → 2 (changed: WaveSleeve)",
+      items: [item("part", "WaveSleeve", "keyform opacity changed")],
+    },
+    {
+      text: "Physics rigs: 0 → 1 (added: RibbonSway)",
+      items: [item("physics_rig", "RibbonSway", "added", "Sailor/RibbonSway")],
+    },
+    {
+      text: "Pose: groups 1 → 1 (changed: Sleeve A / Sleeve B)",
+      items: [
+        item(
+          "pose_group",
+          "Sleeve A / Sleeve B",
+          "entries Sleeve A / Sleeve B → Sleeve B / Sleeve A",
+          null,
+        ),
+      ],
+    },
+    { text: "Textures: 2 → 3 (added: SailorRibbon; image changed: Sailor)", items: [] },
+    { text: "Requirements: avatar profile level none → 1", items: [] },
+  ];
+}
+
+/**
+ * `.ugoe`・`.ugoemod` のコンテナ (docs/spec/file-formats.md の「コンテナ」) の、モジュールの名前 (`MODU` の最上位の `name`) を
+ * `name` に書き換えたもの。モジュールのプロジェクトのプレビューは、今の編集を `<名前> (editing)` で読み込む
+ * (apps/editor/src/lib/preview/preview.ts の `editingName`) ので、見本の `.ugoemod` からその名前のものを作る。
+ */
+export function renameModule(bytes, name) {
+  const buf = Buffer.from(bytes);
+  if (buf.toString("latin1", 0, 4) !== "UGOE") throw new Error("not a ugoe container");
+  const count = buf.readUInt32LE(12);
+  const chunks = [];
+  for (let i = 0; i < count; i++) {
+    const at = 16 + i * 24;
+    const offset = Number(buf.readBigUInt64LE(at + 8));
+    const length = Number(buf.readBigUInt64LE(at + 16));
+    chunks.push({
+      tag: buf.subarray(at, at + 4),
+      flags: buf.readUInt32LE(at + 4),
+      data: buf.subarray(offset, offset + length),
+    });
+  }
+  const modu = chunks.find((c) => c.tag.toString("latin1") === "MODU");
+  if (!modu || modu.flags & 1) throw new Error("no uncompressed MODU chunk");
+  // 最上位のマップの `name` の値 (fixstr か str8)
+  const key = Buffer.from([0xa4, ...Buffer.from("name")]);
+  const at = modu.data.indexOf(key);
+  if (at < 0) throw new Error("no name in MODU");
+  const start = at + key.length;
+  const head = modu.data[start];
+  let end;
+  if (head >= 0xa0 && head <= 0xbf) end = start + 1 + (head - 0xa0);
+  else if (head === 0xd9) end = start + 2 + modu.data[start + 1];
+  else throw new Error("unexpected name encoding");
+  const text = Buffer.from(name);
+  const value =
+    text.length < 32
+      ? Buffer.concat([Buffer.from([0xa0 + text.length]), text])
+      : Buffer.concat([Buffer.from([0xd9, text.length]), text]);
+  modu.data = Buffer.concat([modu.data.subarray(0, start), value, modu.data.subarray(end)]);
+
+  // 並べ直す (チャンクは 16 バイト境界)
+  const align = (n) => Math.ceil(n / 16) * 16;
+  const header = Buffer.from(buf.subarray(0, 16 + count * 24));
+  let offset = align(header.length);
+  const parts = [header];
+  let written = header.length;
+  chunks.forEach((c, i) => {
+    const at = 16 + i * 24;
+    header.writeBigUInt64LE(BigInt(offset), at + 8);
+    header.writeBigUInt64LE(BigInt(c.data.length), at + 16);
+    parts.push(Buffer.alloc(offset - written));
+    parts.push(c.data);
+    written = offset + c.data.length;
+    offset = align(written);
+  });
+  return Buffer.concat(parts);
+}

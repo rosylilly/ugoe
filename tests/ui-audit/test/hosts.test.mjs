@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pattern, text } from "../lib/apps.mjs";
+import { renameModule } from "../lib/editor-fixtures.mjs";
 import { createEditorHost, ipcBinding } from "../lib/editor-host.mjs";
 import { contentType, resolvePath, serve } from "../lib/serve.mjs";
 import {
@@ -75,12 +76,67 @@ test("エディタの偽のホスト: 編集は読むだけのエラー、知ら
   assert.deepEqual([...host.unknown], ["some_new_command"]);
 });
 
-test("エディタの偽のホスト: ページへはバイト列を base64 で渡す", () => {
+test("エディタの偽のホスト: ページへはバイト列を base64 で渡す", async () => {
   const host = createEditorHost(fakeProject());
   const call = ipcBinding(host);
   host.handle("open_project", { path: "/p" });
-  assert.deepEqual(JSON.parse(call("get_model_bundle", "{}")), { bytes: "AQID" });
-  assert.deepEqual(JSON.parse(call("app_info", "{}")), { value: { version: "0.0.0-ui-audit" } });
+  assert.deepEqual(JSON.parse(await call("get_model_bundle", "{}")), { bytes: "AQID" });
+  assert.deepEqual(JSON.parse(await call("app_info", "{}")), {
+    value: { version: "0.0.0-ui-audit" },
+  });
+});
+
+test("エディタの偽のホスト: AI の状態では確認を求め、同意の後の送信は取り消すまで答えない", async () => {
+  const host = createEditorHost(fakeProject());
+  assert.equal(host.handle("get_proposals").value.proposals.length, 0);
+  host.set({ ai: true, restoring: true });
+  const state = host.handle("get_proposals").value;
+  assert.ok(state.proposals.length > 0);
+  assert.equal(state.restoring, true);
+  assert.equal(host.handle("ai_settings").value.key, "stored");
+  const ask = host.handle("classify_psd_layers", { useAi: true, consent: null });
+  assert.equal(ask.value.status, "needs_consent");
+  const sent = host.handle("classify_psd_layers", { useAi: true, consent: { remember: false } });
+  assert.ok(sent instanceof Promise);
+  assert.equal(host.handle("cancel_ai_requests").value, 1);
+  assert.equal((await sent).error.code, "ai.cancelled");
+  assert.equal(host.handle("propose_rig_from_psd", {}).error.code, "ai.time_limit");
+});
+
+/** 小さなコンテナ (MODU と TEXR の 2 つのチャンク)。 */
+function container(name) {
+  const modu = Buffer.concat([
+    Buffer.from([0x82, 0xae]),
+    Buffer.from("schema_version"),
+    Buffer.from([0x00, 0xa4]),
+    Buffer.from("name"),
+    Buffer.from([0xa0 + name.length]),
+    Buffer.from(name),
+  ]);
+  const texr = Buffer.from([1, 2, 3, 4, 5]);
+  const header = Buffer.alloc(16 + 2 * 24);
+  header.write("UGOE", 0, "latin1");
+  header.writeUInt32LE(2, 12);
+  const at = [64, 64 + Math.ceil(modu.length / 16) * 16];
+  [
+    ["MODU", modu],
+    ["TEXR", texr],
+  ].forEach(([tag, data], i) => {
+    header.write(tag, 16 + i * 24, "latin1");
+    header.writeBigUInt64LE(BigInt(at[i]), 16 + i * 24 + 8);
+    header.writeBigUInt64LE(BigInt(data.length), 16 + i * 24 + 16);
+  });
+  const out = Buffer.alloc(at[1] + texr.length);
+  header.copy(out, 0);
+  modu.copy(out, at[0]);
+  texr.copy(out, at[1]);
+  return out;
+}
+
+test("エディタの偽のホスト: モジュールの名前を書き換え、チャンクを 16 バイト境界に並べ直す", () => {
+  const renamed = renameModule(container("Sailor"), "Sailor (editing)");
+  assert.deepEqual(renamed, container("Sailor (editing)"));
+  assert.throws(() => renameModule(Buffer.from("nope"), "x"), /not a ugoe container/);
 });
 
 test("スタジオの偽のホスト: StudioHost のメソッドをすべて置き、見本のプロファイルに既定値を足す", async () => {

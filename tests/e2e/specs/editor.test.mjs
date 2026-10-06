@@ -128,7 +128,9 @@ async function proposeAndPreview(s, ai) {
     () =>
       s.execute(`
         if (document.querySelector("article.proposal")) return { made: true };
-        const error = [...document.querySelectorAll(".right .error")].find((el) => el.closest("section"));
+        const error = [
+          ...document.querySelectorAll(".right .error, .right .ugoe-notice[data-tone=danger]"),
+        ].find((el) => el.closest("section"));
         return error ? { error: error.textContent.trim() } : null;
       `),
     { timeout: 60_000, message: "the proposal" },

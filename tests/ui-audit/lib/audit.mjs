@@ -48,8 +48,11 @@ export function axeFindings(violations) {
   return out;
 }
 
-/** page-checks.js の結果を {check, target, detail} の列に。`lang` は期待する言語 (en・ja)。 */
-export function pageFindings(r, lang) {
+/**
+ * page-checks.js の結果を {check, target, detail} の列に。`lang` は期待する言語 (en・ja)。
+ * `expectErrors` なら画面に出たエラーの文を数えない (失敗の出し方を撮る場面。スクリプトのエラーは run.mjs が別に数える)。
+ */
+export function pageFindings(r, lang, { expectErrors = false } = {}) {
   const out = [];
   const split = (item) => {
     // `tag.class "名前" 残り` の形 (page-checks.js の describe)
@@ -67,7 +70,7 @@ export function pageFindings(r, lang) {
   for (const item of r.overlap) out.push({ check: "overlap", ...split(item) });
   for (const item of r.small) out.push({ check: "target-size", ...split(item) });
   for (const item of r.motion) out.push({ check: "motion", ...split(item) });
-  for (const item of r.errors)
+  for (const item of expectErrors ? [] : r.errors)
     out.push({ check: "error", target: split(item).target, detail: "shown on the screen" });
   if (lang && !r.lang?.startsWith(lang)) {
     out.push({ check: "aria", target: "html", detail: `lang is "${r.lang}" (expected ${lang})` });
@@ -76,7 +79,7 @@ export function pageFindings(r, lang) {
 }
 
 /** 場面を検査する。axe は `axe` が真のときだけ (重いので Tab などの補助の場面では切れる)。 */
-export async function auditScene(page, { lang, axe = true }) {
+export async function auditScene(page, { lang, axe = true, expectErrors = false }) {
   const r = await page.evaluate(() => globalThis.__ugoeAudit.pageAudit());
   let pixels = { checked: 0, unknown: 0, failures: [], disabled: [] };
   if (r.contrast.pending > 0) {
@@ -91,7 +94,7 @@ export async function auditScene(page, { lang, axe = true }) {
     r.contrast.failures.push(...pixels.failures);
     r.contrast.disabled.push(...pixels.disabled);
   }
-  const findings = pageFindings(r, lang);
+  const findings = pageFindings(r, lang, { expectErrors });
   if (axe) {
     const loaded = await page.evaluate(() => typeof globalThis.axe !== "undefined");
     if (!loaded) await page.addScriptTag({ content: axeScript() });

@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 use ugoe_ai::classify::LayerLabel;
-use ugoe_editor_core::classification_cache::CachedClassification;
+use ugoe_editor_core::classification_cache::{CachedClassification, classification_cache_path};
 use ugoe_editor_core::lighting::PreviewLighting;
 use ugoe_editor_core::project::PROJECT_EXTENSION;
 use ugoe_editor_core::project::ProjectError;
@@ -86,9 +86,13 @@ impl ProjectSession {
     }
 
     /// 保存先の分類の答えのキャッシュを戻す仕事 (開いた後に `crate::proposals::restore_in_background` に渡す)。
-    /// 保存先がなければ `None`。
-    pub(crate) fn classification_restore(&self) -> Option<ClassificationRestore> {
+    /// 保存先かキャッシュがなければ `None`。
+    pub(crate) fn classification_restore(&mut self) -> Option<ClassificationRestore> {
         let dir = self.path.clone()?;
+        // キャッシュが無ければ戻す仕事を作らない (戻している印を立てない)。
+        if !classification_cache_path(&dir).is_file() {
+            return None;
+        }
         Some(self.proposals.restore_from(dir, self.id))
     }
 

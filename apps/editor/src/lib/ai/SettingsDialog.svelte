@@ -4,7 +4,8 @@
   「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 3 つのタブ。
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
-  API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする)、
+  API キーの保存・削除 (OS の資格情報の保存先。キーは画面に出さず、入力欄も保存したら空にする。キーの扱い (保存先・送り先・
+  書かない所) を欄の下の文で示し、削除は取り消せないので AlertDialog で確かめる)、
   開いているプロジェクトの「外部の AI に送らない」、「今後は確かめない」の取り消し、接続の確認 (確かめている間は取り消せる)。
   1 回の提案の時間の上限 (分。プロバイダに関わらない。docs/ai-integration.md#取り消しと時間の上限) もプロバイダの設定と一緒に適用する。
   @ugoe/ui の Dialog。接続の確認では、外部の AI に送る前の確認 (ConsentDialog。AlertDialog) がこの上に重なって開く
@@ -13,8 +14,10 @@
 <script lang="ts">
 import { RichText } from "@ugoe/i18n";
 import {
+  AlertDialog,
   Button,
   Dialog,
+  Notice,
   NumberField,
   type Option,
   SecretField,
@@ -67,6 +70,8 @@ let tab = $state<SettingsTab>("general");
 /** エディタの版 (読めなければ null)。 */
 let version = $state<string | null>(null);
 let licenses = $state<LicenseDialog | null>(null);
+/** API キーの削除を確かめている。 */
+let confirmDelete = $state(false);
 const id = $props.id();
 
 type SettingsTab = "general" | "ai" | "agents";
@@ -169,7 +174,8 @@ async function testConnection(): Promise<void> {
     const result = await withConsent(ipc.testAiConnection, consentPrompt.ask);
     testResult = result
       ? { ok: true, text: t("settings.ai.test.connected") }
-      : { ok: false, text: t("settings.ai.test.notSent") };
+      : // 送らないことを選んだ (失敗ではない)
+        { ok: true, text: t("settings.ai.test.notSent") };
   } catch (e) {
     testResult =
       errorCode(e) === "ai.cancelled"
@@ -230,7 +236,14 @@ function keyPlaceholder(s: AiSettings): string {
   {:else}
   <section>
     <h3>{t("settings.ai.tab")}</h3>
-    {#if aiSettings.error}<p class="error ugoe-selectable">{aiSettings.error}</p>{/if}
+    {#if aiSettings.error}
+      <Notice
+        tone="danger"
+        title={t("settings.ai.failed")}
+        dismissLabel={t("settings.ai.dismiss")}
+        ondismiss={() => (aiSettings.error = null)}
+      >{aiSettings.error}</Notice>
+    {/if}
     {#if draft}
       <form class="provider" onsubmit={applyProvider}>
         <div class="choices" role="radiogroup" aria-label={t("settings.ai.provider.aria")}>
@@ -327,6 +340,12 @@ function keyPlaceholder(s: AiSettings): string {
       {@const s = aiSettings.value}
       <h3>{t("settings.ai.key.title", { service: s.service })}</h3>
       <p data-key-status={s.key}>{keyStatus(s)}</p>
+      <!-- キーの扱い (どこに置き、どこへ送り、どこに書かないか) -->
+      <p class="ed-hint note" id={`${id}-key-secret`}>
+        {s.key !== "stored" && (s.env_key || s.key === "unavailable")
+          ? t("settings.ai.key.secretEnv", { service: s.service })
+          : t("settings.ai.key.secret", { service: s.service })}
+      </p>
       {#if s.env_key && s.key_env}
         <p class="ed-hint">
           {s.key === "stored"
@@ -335,20 +354,24 @@ function keyPlaceholder(s: AiSettings): string {
         </p>
       {/if}
       {#if s.key !== "unavailable"}
-        <form class="row key" onsubmit={saveKey}>
-          <SecretField
-            bind:this={keyInput}
-            bind:filled={hasKeyInput}
-            class="key-field"
-            placeholder={keyPlaceholder(s)}
-            aria-label={t("settings.ai.key.aria", { service: s.service })}
-          />
-          <Button type="submit" disabled={busy || !hasKeyInput || dirty}>{t("settings.ai.key.save.label")}</Button>
-          {#if s.key === "stored"}
-            <Button variant="danger" disabled={busy || dirty} onclick={() => run(ipc.deleteApiKey)}>
-              {t("settings.ai.key.delete.label")}
-            </Button>
-          {/if}
+        <form class="key" onsubmit={saveKey}>
+          <label for={`${id}-key`}>{t("settings.ai.key.label")}</label>
+          <div class="row">
+            <SecretField
+              bind:this={keyInput}
+              bind:filled={hasKeyInput}
+              id={`${id}-key`}
+              class="key-field"
+              placeholder={keyPlaceholder(s)}
+              aria-describedby={`${id}-key-secret`}
+            />
+            <Button type="submit" disabled={busy || !hasKeyInput || dirty}>{t("settings.ai.key.save.label")}</Button>
+            {#if s.key === "stored"}
+              <Button variant="danger" disabled={busy || dirty} onclick={() => (confirmDelete = true)}>
+                {t("settings.ai.key.delete.label")}
+              </Button>
+            {/if}
+          </div>
         </form>
         {#if dirty}<p class="ed-hint note">{t("settings.ai.key.applyFirst")}</p>{/if}
       {/if}
@@ -382,10 +405,25 @@ function keyPlaceholder(s: AiSettings): string {
         {#if testing}
           <Button onclick={() => ipc.cancelAiRequests().catch(() => {})}>{t("settings.ai.test.cancel")}</Button>
         {/if}
-        {#if testResult}
-          <span class:error={!testResult.ok} role="status">{testResult.text}</span>
+        {#if testResult?.ok}
+          <span role="status">{testResult.text}</span>
         {/if}
       </div>
+      {#if testResult && !testResult.ok}
+        <Notice
+          tone="danger"
+          title={t("settings.ai.test.failed")}
+          dismissLabel={t("settings.ai.dismiss")}
+          ondismiss={() => (testResult = null)}
+        >{testResult.text}</Notice>
+      {/if}
+      <AlertDialog
+        bind:open={confirmDelete}
+        title={t("settings.ai.key.deleteConfirm.title", { service: s.service })}
+        description={t("settings.ai.key.deleteConfirm.description")}
+        confirmLabel={t("settings.ai.key.delete.label")}
+        onconfirm={() => void run(ipc.deleteApiKey)}
+      />
     {/if}
   </section>
   {/if}
@@ -406,10 +444,12 @@ function keyPlaceholder(s: AiSettings): string {
   p {
     margin: var(--ugoe-space-2) 0;
   }
+  /* ラジオの行は押せる高さを 24px に (名前まで押せる) */
   .check {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--ugoe-space-2);
+    min-height: var(--ugoe-target-min);
   }
   .check input {
     accent-color: var(--ugoe-color-accent);
@@ -427,6 +467,10 @@ function keyPlaceholder(s: AiSettings): string {
     align-items: center;
     gap: var(--ugoe-space-3);
   }
+  .key {
+    display: grid;
+    gap: var(--ugoe-space-1);
+  }
   /* API キーの欄 (SecretField。キーを Svelte の状態に持たない) は残りの幅に広げる */
   .key :global(.key-field) {
     flex: 1;
@@ -434,9 +478,8 @@ function keyPlaceholder(s: AiSettings): string {
   .test {
     margin-top: var(--ugoe-space-3);
   }
-  .error {
-    color: var(--ugoe-color-danger);
-    overflow-wrap: anywhere;
+  section > :global(.ugoe-notice) {
+    margin: var(--ugoe-space-2) 0;
   }
   .theme,
   .undo-limit {
