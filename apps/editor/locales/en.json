@@ -36,38 +36,42 @@
     },
     "tabs": {
       "aria": "Inspector panels",
+      "tooltip": "{{label}}: {{description}}",
       "inspector": {
-        "label": "Inspector"
+        "label": "Inspector",
+        "tooltip": "properties of the selected element"
       },
       "physics": {
-        "label": "Physics"
+        "label": "Physics",
+        "tooltip": "pendulum rigs that sway hair and clothes"
       },
       "glue": {
         "label": "Glue",
-        "tooltip": "Glues: keep the seams of two meshes together"
+        "tooltip": "keep the seams of two meshes together"
       },
       "lighting": {
         "label": "Lighting",
-        "tooltip": "Lighting, normal maps and preview lights"
+        "tooltip": "lighting, normal maps and preview lights"
       },
       "slots": {
         "label": "Slots",
-        "tooltip": "Dress-up slots: where outfit and accessory modules attach"
+        "tooltip": "dress-up slots where outfit and accessory modules attach"
       },
       "poses": {
         "label": "Poses",
-        "tooltip": "Pose groups: variants that switch (arms A / B)"
+        "tooltip": "pose groups: variants that switch (arms A / B)"
       },
       "verify": {
-        "label": "Verify"
+        "label": "Verify",
+        "tooltip": "find points that leave their warp's lattice on any cell"
       },
       "ai": {
         "label": "AI",
         "count_one": "AI ({{count}})",
         "count_other": "AI ({{count}})",
-        "tooltip": "Classify PSD layers and review rig proposals",
-        "fresh": "An agent made a new proposal",
-        "stale": "Costume meshes were edited after the rig was proposed: propose the rig again",
+        "tooltip": "classify PSD layers and review rig proposals",
+        "fresh": "an agent made a new proposal",
+        "stale": "costume meshes were edited after the rig was proposed: propose the rig again",
         "attention": "needs attention"
       }
     }

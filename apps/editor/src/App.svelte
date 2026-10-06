@@ -198,33 +198,46 @@ const currentTab = $derived<PaneTab>(
                 : "inspector",
 );
 
-const paneTabs = $derived<TabItem<PaneTab>[]>([
-  { value: "inspector", label: t("app.tabs.inspector.label") },
-  { value: "physics", label: t("app.tabs.physics.label") },
-  { value: "glue", label: t("app.tabs.glue.label"), tooltip: t("app.tabs.glue.tooltip") },
-  {
-    value: "lighting",
-    label: t("app.tabs.lighting.label"),
-    tooltip: t("app.tabs.lighting.tooltip"),
-  },
-  { value: "slots", label: t("app.tabs.slots.label"), tooltip: t("app.tabs.slots.tooltip") },
-  { value: "poses", label: t("app.tabs.poses.label"), tooltip: t("app.tabs.poses.tooltip") },
-  { value: "verify", label: t("app.tabs.verify.label") },
-  {
-    value: "ai",
-    label:
-      proposals.count > 0
-        ? t("app.tabs.ai.count", { count: proposals.count })
-        : t("app.tabs.ai.label"),
-    tooltip:
-      proposals.staleRigs.length > 0
-        ? t("app.tabs.ai.stale")
-        : proposals.fresh
-          ? t("app.tabs.ai.fresh")
-          : t("app.tabs.ai.tooltip"),
-    attention: proposals.fresh || proposals.staleRigs.length > 0,
-  },
-]);
+/** 右の列のタブはアイコンだけなので、Tooltip に名前と何をするタブかを出す (docs/editor.md#画面の配置)。 */
+function paneTab(value: Exclude<PaneTab, "ai">): TabItem<PaneTab> {
+  const label = t(`app.tabs.${value}.label`);
+  return {
+    value,
+    icon: value,
+    label,
+    tooltip: t("app.tabs.tooltip", { label, description: t(`app.tabs.${value}.tooltip`) }),
+  };
+}
+
+const paneTabs = $derived.by<TabItem<PaneTab>[]>(() => {
+  const aiLabel =
+    proposals.count > 0
+      ? t("app.tabs.ai.count", { count: proposals.count })
+      : t("app.tabs.ai.label");
+  const aiDescription =
+    proposals.staleRigs.length > 0
+      ? t("app.tabs.ai.stale")
+      : proposals.fresh
+        ? t("app.tabs.ai.fresh")
+        : t("app.tabs.ai.tooltip");
+  return [
+    paneTab("inspector"),
+    paneTab("physics"),
+    paneTab("glue"),
+    paneTab("lighting"),
+    paneTab("slots"),
+    paneTab("poses"),
+    paneTab("verify"),
+    {
+      value: "ai",
+      icon: "ai",
+      label: aiLabel,
+      tooltip: t("app.tabs.tooltip", { label: aiLabel, description: aiDescription }),
+      badge: proposals.count > 0 ? proposals.count : undefined,
+      attention: proposals.fresh || proposals.staleRigs.length > 0,
+    },
+  ];
+});
 
 const mac = isMac(navigator.platform);
 
@@ -385,6 +398,7 @@ $effect(() => {
           value={currentTab}
           aria-label={t("app.tabs.aria")}
           attentionLabel={t("app.tabs.ai.attention")}
+          icons
           onselect={(tab) => (tab === "ai" ? openProposals() : openTab(tab))}
         />
       </div>

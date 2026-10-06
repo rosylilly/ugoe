@@ -122,3 +122,8 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   ボタンの並び (SegmentedControl) で選ぶ (5 つ以上は選択欄のまま。見出しと差分の名前は変わらない)。docs/manual/preview.md の文は T1640 で直した。
   撮り直す画像: preview-module-pose.png (Sailor の襟のグループがボタンの並びになる)、プレビューの右の列の「Pose」を写した画像があれば
   (preview.png・dress-up-preview.png など。見本の「着せ替え」の本体は `HandsDown` / `Wave` のボタンになる)。
+- T1632 から書き足した: エディタの右の列の 8 つのタブが文字からアイコンだけになった (名前はポインタを乗せる・フォーカスで出る Tooltip。
+  AI の提案の数はアイコンの右の数字、見てほしい変化は右上の点)。既定の幅でも 200% の拡大でも 1 行。docs/manual/screen.md の「インスペクタ」
+  (タブとアイコンの表)・mcp.md の文は T1632 で直した。撮り直す画像: 右の列の頭 (タブ) を写したもの (screen.png・physics-rig.png・
+  physics-templates.png・physics-preview.png・slots.png・slots-draw-order.png・lighting.png・lighting-point.png・verify.png・ai-*.png・
+  module-glue*.png・module-compare-pose.png など。写っているかは画像ごとに確かめる)。`just ui-audit` の `-tab-<physics/glue/…>` の場面が見本になる。

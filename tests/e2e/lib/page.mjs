@@ -42,6 +42,14 @@ function pageHelpers() {
       for (const el of document.querySelectorAll(selector)) if (re.test(text(el))) return el;
       return null;
     },
+    /** 役割 (role 属性) と名前 (aria-label、無ければ文字) が pattern に合う最初の要素 (アイコンだけのタブなど)。 */
+    byRole(role, pattern) {
+      const re = new RegExp(pattern, "i");
+      for (const el of document.querySelectorAll(`[role="${role}"]`)) {
+        if (re.test(el.getAttribute("aria-label") ?? text(el))) return el;
+      }
+      return null;
+    },
     /**
      * 名前 (aria-label か aria-labelledby) が listName に合うリストの中で、文字が pattern に合う最初の項目。
      * クラス名に頼らず、役割と名前で探す (スタジオの「いまの状態」の印など)。

@@ -104,7 +104,7 @@ function hasShoulders(physics) {
 async function proposeAndPreview(s, ai) {
   const sent = ai.requests.length;
   await s.clickWhen(
-    () => s.execute(`return __e2e.byText(".right [role=tab]", "^AI( \\(\\d+\\))?$")`),
+    () => s.execute(`return __e2e.byRole("tab", "^AI( \\(\\d+\\))?( needs attention)?$")`),
     { message: "the AI tab" },
   );
   await s.waitFindText(".psd", "character.psd");

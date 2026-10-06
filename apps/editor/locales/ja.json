@@ -35,15 +35,18 @@
     },
     "tabs": {
       "aria": "インスペクタのパネル",
+      "tooltip": "{{label}}: {{description}}",
       "inspector": {
-        "label": "インスペクタ"
+        "label": "インスペクタ",
+        "tooltip": "選んでいる要素の設定"
       },
       "physics": {
-        "label": "物理"
+        "label": "物理",
+        "tooltip": "髪や服を揺らす振り子のリグ"
       },
       "glue": {
         "label": "グルー",
-        "tooltip": "グルー: 2 つのメッシュの継ぎ目を離さない"
+        "tooltip": "2 つのメッシュの継ぎ目を離さない"
       },
       "lighting": {
         "label": "ライティング",
@@ -51,14 +54,15 @@
       },
       "slots": {
         "label": "スロット",
-        "tooltip": "着せ替えのスロット: 衣装や小物のモジュールを付ける場所"
+        "tooltip": "衣装や小物のモジュールを付ける着せ替えの場所"
       },
       "poses": {
         "label": "ポーズ",
-        "tooltip": "ポーズのグループ: 切り替える変形 (腕の A / B など)"
+        "tooltip": "切り替える変形のグループ (腕の A / B など)"
       },
       "verify": {
-        "label": "検証"
+        "label": "検証",
+        "tooltip": "どのセルでも点がワープの格子の外に出ていないかを確かめる"
       },
       "ai": {
         "label": "AI",

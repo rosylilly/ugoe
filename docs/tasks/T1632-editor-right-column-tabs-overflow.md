@@ -1,7 +1,7 @@
 ---
 id: T1632
 title: "エディタ: 右の列の 8 つのタブが既定の幅で 2 行になるのを直す (判断が要る)"
-status: in-progress
+status: done
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0676]
@@ -25,11 +25,11 @@ assignee: claude-worker-T1632
 
 ## 受け入れ条件
 
-- [ ] 案と推奨をメモに書き、利用者の判断を得た
-- [ ] 決めた形で、右の列が既定の幅 (320px)・日英・200% の拡大でタブを 1 行に収める。キーボードでタブを選べ (`@ugoe/ui` の `Tabs` の約束を保つ)、部品のテストがある
-- [ ] `just ui-audit --only editor` の指摘が増えず、前と後の画像を比べてメモに書いた
-- [ ] docs/editor.md・docs/ui.md を直し、画面が変わったところを T0919 のメモに書き足した
-- [ ] `just e2e --only editor` と `just ci` が通る
+- [x] 案と推奨をメモに書き、利用者の判断を得た
+- [x] 決めた形で、右の列が既定の幅 (320px)・日英・200% の拡大でタブを 1 行に収める。キーボードでタブを選べ (`@ugoe/ui` の `Tabs` の約束を保つ)、部品のテストがある
+- [x] `just ui-audit --only editor` の指摘が増えず、前と後の画像を比べてメモに書いた
+- [x] docs/editor.md・docs/ui.md を直し、画面が変わったところを T0919 のメモに書き足した
+- [x] `just e2e --only editor` と `just ci` が通る
 
 ## 参考
 
@@ -39,3 +39,54 @@ assignee: claude-worker-T1632
 ## メモ
 
 - T0041 で起票した (元の候補: T0673 (右の列のタブの並び))。T0676 (作業中) が右の列の AI・モジュールのパネルを触るので、その後に着手する。
+
+- **判断待ち (blocked):** 案 A・B・C を試作して比べた。利用者の判断を得てから、決めた案を本実装する (試作は main に入れない)。
+  - **調べたこと:**
+    - 使う頻度 (docs/editor.md・docs/manual): Inspector はどのモデルでも使う (チュートリアルはここだけで終わる)。Physics は髪などでほぼ
+      どのモデルでも、AI は PSD から作る流れの次の段 (提案の数と「見てほしい変化」の印を出す)、Verify は書き出しの前の確かめ。
+      Lighting は使うモデルだけ、Slots・Poses・Glue は着せ替え (モジュール) を作るときだけ (manual の言及も dress-up.md・avatar.md に集まる)。
+    - 名前の幅 (13px、左右の余白 8px ずつ): 英語は 8 つで約 470px、日本語は約 500px (インスペクタ・ライティングが 6 文字)。並びに使える幅は
+      既定の 320px で 296px、200% の拡大 (CSS で 720px の窓) では列が 36vw に抑えられて 259px、中は約 235px。
+      英語で「Inspector・Physics・Verify・AI (3)・More」は 296px に入らない (AI に数が付くと広がる)。
+  - **試作 (ブランチ。どれも `just ui-audit --only editor` は前と比べて +0 -0):**
+    - A `proto/T1632-a` (8fa0a009): 並びを使う頻度の順 (Inspector・Physics・AI・Verify・Lighting・Poses・Slots・Glue) にし、幅を測って
+      収まるだけ並べ、残りを「その他」の `Menu` に送る。選んだタブと見てほしいタブは必ず並びに出す。320px で日本語は 4 つ + その他、
+      英語は 3〜4 つ + More、200% では 2 つ + その他。名前は読める。幅で並ぶ数が変わる。
+    - B `proto/T1632-b` (b7e2e313): 8 つともアイコンと Tooltip (名前は読み上げの名前)。200% でも 1 行で全部見える。アイコンは試作の
+      仮の絵 (本採用なら `@ugoe/ui` の Icon に 8 つ足す)。物理・グルー・スロットなどは絵だけでは分かりにくく、Tooltip を見ないと選べない。
+      e2e は AI のタブを文字で探しているので直しが要る。
+    - C `proto/T1632-c` (4a100798): 1 行のまま横に送り、はみ出す側に矢印のボタン (ポインタ向け。キーボードは矢印キーで送る)。
+      320px でも 4 つ目 (ライティング) が途中で切れ、200% では 3 つほどしか見えない。後ろのタブ (Verify・AI) があることに気づきにくい。
+  - **推奨: A。** 名前を日英で読めたまま、よく使うタブ (Inspector・Physics・AI) が既定の幅でも 200% でも 1 回で押せ、使う人が限られる
+    着せ替えのタブだけが 1 手増える。選んだタブは並びに出るので、ほかのパネルからの移動 (Verify の行 → Physics など) も見失わない。
+    B は全部が 1 行に入るが名前が読めず、C は切れて隠れるタブに気づきにくい。A の影響: 並びの順が変わる (manual の screen.md の並びの書き方)、
+    「Slots タブで足す」などの案内は「その他」の中を指す言い方に直す、`TabStrip` に幅の測りが入る (部品のテストを足す)。
+  - **比べる画像** (前・A・B・C を横に並べ、右の列の頭を切り出した。worktree の外へは出していない):
+    `/home/rosylilly/src/github.com/rosylilly/ugoe/.worktrees/T1632/target/ui-audit-t1632/compare/overview.png` (日本語 1024px・
+    グルーを選んだ日本語・AI (3) の英語・200% の英語 2 つ)。場面ごとは同じ所の `<組>[-tab-glue|-ai].png` (en/ja-light-narrow・
+    ja-dark-narrow・en-light-zoom200・ja-light-wide)。元の撮影は `target/ui-audit-t1632/{before,a,b,c}/editor/`。
+  - 日本語の 200% の拡大の場面は ui-audit に無い (en-light-zoom200 だけ)。幅の計算では A の日本語の 200% は「インスペクタ・物理・その他」。
+- **利用者の判断: 案 B** (8 つのタブをすべてアイコンと Tooltip にして 1 行に並べる。名前は見せずに読ませる)。注文: 絵だけで分かりにくいもの
+  (物理・グルー・スロットなど) のアイコンの選び方を docs/ui.md に理由付きで書く。Tooltip はホバーとキーボードのフォーカスの両方で出し、
+  各タブに読み上げの名前を付ける。AI の数や変化の印は残す。AI のタブを文字で探している e2e を役割と名前で探す形に直す。マニュアルのタブの説明も直す。
+  試作の proto/T1632-a・-c は消す。
+- **やったこと (案 B の本実装):**
+  - 右の列の 8 つのタブをアイコンだけにした (`TabStrip` の `icons`、絵は `lib/ui/PaneIcon.svelte`。試作から振り子の絵を描き直した)。
+    1 つ 24px と間 2px で、既定の幅 (320px) でも 200% の拡大 (列の中 約 235px) でも 1 行。
+  - 各タブに読み上げの名前 (`aria-label`。見てほしい変化があれば「要確認」を足す)。Tooltip はポインタとキーボードのフォーカスの両方で出て、
+    「名前: 何をするタブか」を出す (`app.tabs.tooltip`。説明の文言は名前を含まない形に書き直し、Inspector・Physics・Verify にも説明を足した)。
+  - AI の提案の数はアイコンの右の数字 (`badge`)、見てほしい変化は右上の点と強調色。キーボードは前と同じ (1 つのタブ止まり・矢印・Home・End)。
+  - 部品のテスト `lib/ui/TabStrip.test.ts` (名前・数と点・タブ止まりとキー・フォーカスで出る Tooltip・文字のタブ)。
+  - 文書: docs/editor.md (画面の配置の右の列・「右の列のタブ (T1632)」)、docs/ui.md (「アイコン」に絵と選んだ理由の表、部品の表の `TabStrip`、
+    見直しの節「エディタの右の列のタブ (T1632)」、T0673 の節の追記)、マニュアル (screen.md のタブとアイコンの表、mcp.md の印の言い方)。
+    T0919 のメモに撮り直す画像を書き足した。
+  - 範囲外の小さな変更: `tests/e2e/lib/page.mjs` に `__e2e.byRole(role, pattern)` を足し、`tests/e2e/specs/editor.test.mjs` の AI のタブを
+    役割と名前で探す形に直した (README にも 1 行)。
+  - 試作のブランチ proto/T1632-a・-b・-c は消した (-b は本実装に取り込んだ)。
+- **`just ui-audit --only editor` (`--compare target/ui-audit-t1632/before`):** +0 -0 (前も後も 0 件、273 場面)。前と後の画像
+  (`target/ui-audit-t1632/compare/final-*.png`): 日本語 1024px で 2 行の文字のタブが 1 行のアイコンに、AI (3) は「きらめき + 3」に、
+  英語の 200% で 3 行だったタブが 1 行に。ダークでもアイコンと選んだタブの下線が見える。
+- **`just e2e --only editor`:** 15 件すべて通った (rebase の前)。**`just ci`:** 通った (main 6b3aaee2 に rebase した後)。
+- **やらなかったこと・確かめていないこと:** ui-audit に日本語の 200% の拡大と、見てほしい変化 (点) の出た場面は無い (点は部品のテストで確かめた)。
+  実物の WebView2・WKWebView での見た目。マニュアルの画像の撮り直し (T0919)。
+- **起票の候補:** ui-audit に日本語の 200% の拡大の組を足す。AI のタブの見てほしい変化 (新しい提案) の場面を ui-audit に足す。
