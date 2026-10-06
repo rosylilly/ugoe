@@ -200,6 +200,18 @@ export const APPS = {
       await page.waitForTimeout(1000);
     },
     async extras(page, ctx) {
+      // 背景の色と「透明」の Popover (T0737)。キーボードで開く
+      await page
+        .getByRole("button", {
+          name: text("viewer", ctx.lang, "toolbar.background.label"),
+          exact: true,
+        })
+        .focus();
+      await page.keyboard.press("Enter");
+      await page.locator(".ugoe-popover").waitFor({ timeout: 5000 });
+      await ctx.scene("background", { aria: false });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
       await settingsScene(page, ctx, text("viewer", ctx.lang, "toolbar.settings.aria"));
     },
   },

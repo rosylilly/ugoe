@@ -25,7 +25,8 @@
       "aria": "全体を表示"
     },
     "background": {
-      "label": "背景"
+      "label": "背景",
+      "color": "色"
     },
     "transparent": {
       "label": "透明"

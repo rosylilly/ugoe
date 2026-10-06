@@ -4,17 +4,16 @@ import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
   Button,
   type ButtonBaseProps,
-  ColorPicker,
   Icon,
   IconButton,
   Menu,
   showToast,
   Toaster,
-  Toggle,
   Tooltip,
   TooltipProvider,
 } from "@ugoe/ui";
 import { onMount } from "svelte";
+import BackgroundPopover from "./lib/BackgroundPopover.svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
 import {
   type DropPreview,
@@ -243,15 +242,10 @@ function onKeyDown(e: KeyboardEvent) {
       </Tooltip>
       <span class="name">{player.modelName ?? t("toolbar.noModel")}</span>
       <span class="spacer"></span>
-      <ColorPicker
-        label={t("toolbar.background.label")}
-        value={player.background}
-        onchange={(color) => player.setBackground(color, player.transparent)}
-      />
-      <Toggle
-        label={t("toolbar.transparent.label")}
-        checked={player.transparent}
-        onchange={(on) => player.setBackground(player.background, on)}
+      <BackgroundPopover
+        color={player.background}
+        transparent={player.transparent}
+        onchange={(color, transparent) => player.setBackground(color, transparent)}
       />
       <Tooltip text={t("toolbar.screenshot.tooltip")}>
         {#snippet trigger(attrs)}

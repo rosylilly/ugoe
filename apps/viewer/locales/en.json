@@ -25,7 +25,8 @@
       "aria": "Fit the whole model"
     },
     "background": {
-      "label": "Background"
+      "label": "Background",
+      "color": "Color"
     },
     "transparent": {
       "label": "Transparent"
