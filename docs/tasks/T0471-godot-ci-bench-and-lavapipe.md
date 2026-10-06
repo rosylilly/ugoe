@@ -1,11 +1,11 @@
 ---
 id: T0471
 title: "Godot: CI の bench.gd の結果を README に記録し、CI の lavapipe で Forward+ が動くか確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0471
 ---
 
 # T0471: Godot: CI の bench.gd の結果を README に記録し、CI の lavapipe で Forward+ が動くか確かめる
