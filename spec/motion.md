@@ -113,7 +113,7 @@ greater than 0, such as NaN or infinity):
 dt = min(dt, end − elapsed)                   if there is an end
 elapsed += dt
 if not looping, or not duration > 0 (NaN included):
-    to = min(time + dt, max(duration, 0))
+    to = min(elapsed, max(duration, 0))
     fire the events in (time, to];  time = to
 else:
     remaining = dt
@@ -124,6 +124,11 @@ else:
         remaining −= duration − time;  time = 0
         if remaining ≤ 0: stop
 ```
+
+A non-looping motion takes its position from `elapsed` rather than adding `dt` to `time`, so that
+rounding cannot leave `time` short of `duration` when the motion reaches its end: the advance that
+reaches the end of a non-looping motion moves `time` to exactly `duration` and fires an event at
+`t = duration` exactly once.
 
 **Events.** The events of a range are fired in order of their time `t`. The range is `(from, to]`,
 except that it is `[from, to]` for the first range after the motion starts and for the first range

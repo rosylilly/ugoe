@@ -194,7 +194,9 @@ impl MotionPlayer {
         let duration = self.motion.duration;
         // NaN の長さも 0 以下と同じに扱う (ループさせると周回が終わらない)。
         if !self.motion.looping || duration.is_nan() || duration <= 0.0 {
-            let to = (self.time + dt).min(duration.max(0.0));
+            // 再生位置は経過時間 (終了時刻で切ったもの) と同じ。`f32` の再生位置に `dt` を足していくと、
+            // 丸めで長さに届かないまま終わり、t = 長さのイベントを逃すことがあったので、`f64` の経過時間から求める (T0331)。
+            let to = self.elapsed.min(f64::from(duration.max(0.0))) as f32;
             self.fire_range(self.time, to);
             self.time = to;
             return;
@@ -594,6 +596,69 @@ mod tests {
         assert_eq!(e, 10);
         // 開始時の 1 回 + 折り返し 9〜10 回 (累積誤差で 10 秒ちょうどの折り返しが次の枠にずれうる)。
         assert!((10..=11).contains(&zero), "zero={zero}");
+    }
+
+    /// 長さを割り切れない刻みで再生しても、t = 長さのイベントは終わる前の `advance` でちょうど 1 回発火する
+    /// (再生位置を `f32` で足していくと、丸めで長さに届かないまま終わることがあった。T0331)。
+    #[test]
+    fn end_event_fires_once_regardless_of_rounding() {
+        let dts = [1.0 / 60.0, 1.0 / 30.0, 1.0 / 144.0, 0.1, 0.007, 0.0333];
+        let durations = [0.7, 1.0, 1.3, 1.5, 2.2, 3.1, 4.7, 10.3];
+        for duration in durations {
+            for dt in dts {
+                let mut m = motion(duration, false, vec![]);
+                m.events = vec![event(duration, "end")];
+                let mut player = MotionPlayer::new(m);
+                let mut count = 0;
+                let mut finished_at = None;
+                for frame in 0..100_000 {
+                    player.advance(dt);
+                    count += fired(&player).len();
+                    if player.is_finished() {
+                        finished_at = Some(frame);
+                        break;
+                    }
+                }
+                assert!(finished_at.is_some(), "duration={duration} dt={dt}");
+                assert_eq!(count, 1, "duration={duration} dt={dt}");
+                assert_eq!(player.time(), duration, "duration={duration} dt={dt}");
+                player.advance(dt);
+                assert!(fired(&player).is_empty(), "duration={duration} dt={dt}");
+            }
+        }
+    }
+
+    /// ループするモーションでも、t = 長さのイベントは周回ごとにちょうど 1 回発火する (T0331)。
+    #[test]
+    fn loop_end_event_fires_once_per_lap_regardless_of_rounding() {
+        let dts = [1.0 / 60.0, 1.0 / 30.0, 1.0 / 144.0, 0.1, 0.007, 0.0333];
+        let durations = [0.7, 1.0, 1.3, 1.5, 2.2, 3.1];
+        for duration in durations {
+            for dt in dts {
+                let mut m = motion(duration, true, vec![]);
+                m.events = vec![event(duration, "end"), event(0.0, "zero")];
+                let mut player = MotionPlayer::new(m);
+                let (mut end, mut zero) = (0, 0);
+                let mut laps = 0;
+                let mut prev = player.time();
+                // 10 周より少し手前まで進める (周回の境目の丸めで数がぶれないように、境目から離れたところで止める)。
+                let frames = ((10.0 * f64::from(duration) - f64::from(duration) / 2.0)
+                    / f64::from(dt)) as usize;
+                for _ in 0..frames {
+                    player.advance(dt);
+                    let names = fired(&player);
+                    end += names.iter().filter(|n| **n == "end").count();
+                    zero += names.iter().filter(|n| **n == "zero").count();
+                    if player.time() < prev {
+                        laps += 1;
+                    }
+                    prev = player.time();
+                }
+                assert_eq!(laps, 9, "duration={duration} dt={dt}");
+                assert_eq!(end, laps, "duration={duration} dt={dt}");
+                assert_eq!(zero, laps + 1, "duration={duration} dt={dt}");
+            }
+        }
     }
 
     #[test]
