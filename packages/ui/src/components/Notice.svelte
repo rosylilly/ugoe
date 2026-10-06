@@ -4,6 +4,7 @@
   - 種類は色に加えて印と読み上げの言葉 (「警告:」など) で示す (色だけで伝えない)。
   - エラー (`danger`) のときだけ、見出しと本文 (`.ugoe-notice__body`) を選択できる (`.ugoe-selectable`)。
   - `ondismiss` を渡すと閉じるボタンを出す。消すのは呼び手 (Notice を描かなくする)。
+  - 自分を位置の基準 (`position: relative`) にする。中の見せずに読ませる文字が、送る枠の外を基準にしないように (T0954)。
 -->
 <script lang="ts">
 import type { Snippet } from "svelte";
@@ -50,6 +51,9 @@ const selectable = $derived(tone === "danger");
 <style>
   :global {
     .ugoe-notice {
+      /* 中の見せずに読ませる文字 (absolute) の位置の基準にする。position を持たない送る枠の中に置いても、
+         枠の外の祖先を基準にして余計な送りを生まないように (docs/ui.md#レイアウト の送り。T0954) */
+      position: relative;
       display: flex;
       align-items: flex-start;
       gap: var(--ugoe-space-3);

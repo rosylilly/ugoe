@@ -5,7 +5,7 @@
 // - コントラスト: 文字を直に持つ要素ごとに、文字の色と、祖先をたどって重ねた地の色 (半透明は合成) を比べる (WCAG 2.x の式)。
 //   祖先に画像の地・グラデーションがある、canvas の上に半透明で重なっているもの (ビューポートの上の知らせなど) は、
 //   文字を消して撮った画面の画素を地として測る (pixelAudit。T0952)。無効の部品は基準の外 (別に数える)。
-// - はみ出し: 文書の横のスクロールと、画面の右端を越える要素 (スクロールする祖先の中は除く)。
+// - はみ出し: 文書の横のスクロールと、画面の右端を越える要素 (スクロールする祖先の中は除く)。送る枠の外を位置の基準にする absolute の要素。
 // - 重なりと切れ: 別の要素の文字が透けて重なる・`overflow: hidden` で文字が切れる (省略記号を付けたものは除く)。
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
 // - エラー: 画面に出ているエラーの文 (role="alert"・.error など)。
@@ -328,7 +328,31 @@
       }
       if (!clipped) beyond.push(`${describe(el)} right=${Math.round(r.right)}`);
     }
-    return { document: document_, beyond };
+    // 送る (切り取る) 枠の外を位置の基準にし、枠の外へ出ている absolute の要素: 枠で切り取られず、枠の外の祖先を送れるようにする
+    // (見せずに読ませる文字を position の無い送る枠に置いたときなど。docs/ui.md#レイアウト の送り。T0954)。
+    // 枠に重ねて置いた絵 (ビューポートの上の SVG など) は枠の内側にあるので数えない。
+    const escaped = [];
+    for (const el of document.querySelectorAll("body *")) {
+      if (el.getClientRects().length === 0 || getComputedStyle(el).position !== "absolute")
+        continue;
+      const base = el.offsetParent;
+      for (let n = el.parentElement; n && n !== base && n !== document.body; n = n.parentElement) {
+        const s = getComputedStyle(n);
+        if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+        const r = el.getBoundingClientRect();
+        const box = n.getBoundingClientRect();
+        if (
+          r.left < box.left - 1 ||
+          r.top < box.top - 1 ||
+          r.right > box.right + 1 ||
+          r.bottom > box.bottom + 1
+        ) {
+          escaped.push(`${describe(el)} escapes ${describe(n)}`);
+        }
+        break;
+      }
+    }
+    return { document: document_, beyond, escaped };
   }
 
   /** 要素と祖先のうち、はみ出しを切り取る (overflow が visible でない) ものと窓で切り取った、見える範囲。 */

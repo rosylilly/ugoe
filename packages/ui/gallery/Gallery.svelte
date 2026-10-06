@@ -397,6 +397,11 @@ const swatches = [
           </Notice>
         {/if}
         <Notice tone="danger" title={s.noticeDangerTitle}>{s.noticeDanger}</Notice>
+        <!-- position を持たない送る枠の中の Notice (見せずに読ませる文字が枠の外を位置の基準にしないこと。main.ts で測る。T0954) -->
+        <div class="gallery__scroller">
+          <p class="gallery__spacer">{s.noticeScroller}</p>
+          <Notice tone="info">{s.noticeInfo}</Notice>
+        </div>
       </div>
     </section>
 
@@ -504,6 +509,18 @@ const swatches = [
     width: 7rem;
     padding: var(--ugoe-space-1);
     border: 1px dashed var(--ugoe-color-border);
+  }
+
+  .gallery__scroller {
+    height: 6rem;
+    overflow: auto;
+    border: 1px dashed var(--ugoe-color-border);
+  }
+
+  .gallery__spacer {
+    height: 12rem;
+    margin: 0;
+    padding: var(--ugoe-space-1);
   }
 
   .gallery__card--wide {

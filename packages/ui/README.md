@@ -187,5 +187,6 @@ just ui-shots /tmp/ugoe-ui-shots      # 見本の画面を 21 通り撮って検
 動きの途中を撮らないよう、Chrome に `--force-prefers-reduced-motion` を渡す。
 それぞれで、描き終わったこと・スクリプトのエラーが無いこと・`<html>` の属性・操作できる部品のすべてに読み上げの名前があること・
 描いた形の問題が無いことを確かめる。描いた形は見本の画面が描き終えたときに測る (`gallery/main.ts`。`SegmentedControl` の名前と選択肢が
-字の途中で折れていないか、狭い所の `SegmentedControl` がはみ出さずに次の行へ送られたか)。
+字の途中で折れていないか、狭い所の `SegmentedControl` がはみ出さずに次の行へ送られたか、`position` を持たない送る枠の中の
+`Notice` の見せずに読ませる文字が枠の外を位置の基準にしていないか)。
 Chrome は環境変数 `CHROME` で指定できる (無ければ PATH の `google-chrome` / `chromium`)。

@@ -106,6 +106,7 @@ export function pageFindings(r, lang, { expectErrors = false } = {}) {
       detail: `scrollWidth ${r.overflow.document}`,
     });
   for (const item of r.overflow.beyond) out.push({ check: "overflow", ...split(item) });
+  for (const item of r.overflow.escaped ?? []) out.push({ check: "overflow", ...split(item) });
   for (const item of r.overlap) out.push({ check: "overlap", ...split(item) });
   for (const item of r.small) out.push({ check: "target-size", ...split(item) });
   for (const item of r.motion) out.push({ check: "motion", ...split(item) });

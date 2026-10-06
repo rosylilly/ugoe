@@ -42,6 +42,15 @@ const checkLayout = () => {
     );
     if (tops.size < 2) problems.push("狭い所の SegmentedControl が次の行へ送られていない");
   }
+  // 送る枠の中の見せずに読ませる文字は、枠の外を位置の基準にしない (枠の外の送りを生むため。T0954)
+  for (const scroller of document.querySelectorAll(".gallery__scroller")) {
+    for (const el of scroller.querySelectorAll<HTMLElement>(".ugoe-visually-hidden")) {
+      const base = el.offsetParent;
+      if (!base || !scroller.contains(base)) {
+        problems.push(`送る枠の外を位置の基準にした: ${el.textContent?.trim()}`);
+      }
+    }
+  }
   if (problems.length > 0) root.dataset.galleryLayout = problems.join("; ");
 };
 
