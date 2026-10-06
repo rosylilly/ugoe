@@ -1,11 +1,11 @@
 ---
 id: T0488
 title: "bindings/web: 見本の window.ugoeExample を、操作の処理をすべて付けた後に置く (自動のテストが待つ印)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0488
 ---
 
 # T0488: bindings/web: 見本の window.ugoeExample を、操作の処理をすべて付けた後に置く (自動のテストが待つ印)

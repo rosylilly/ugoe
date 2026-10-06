@@ -1,11 +1,11 @@
 ---
 id: T0956
 title: "@ugoe/ui: TextField の type から password を外し、秘密の欄は SecretField だけにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0956
 ---
 
 # T0956: @ugoe/ui: TextField の type から password を外し、秘密の欄は SecretField だけにする

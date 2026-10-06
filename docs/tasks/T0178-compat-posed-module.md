@@ -1,11 +1,11 @@
 ---
 id: T0178
 title: "互換性テスト: ポーズを持つモジュール (jacket_module) の .ugoemod を assets/compat/dev に足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-format, assets/compat, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0178
 ---
 
 # T0178: 互換性テスト: ポーズを持つモジュール (jacket_module) の .ugoemod を assets/compat/dev に足す
