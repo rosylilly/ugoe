@@ -34,6 +34,8 @@ scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: 
 - パネルは `import { TrackingPanel } from "@ugoe/face-tracking"` (`index.ts` から。サブパスで import すると
   svelte-check が同じ型を別物として扱うため)。パネルの部品と見た目は `@ugoe/ui` (Section・Select・Toggle・Slider・Button・Tooltip。T0907)。
   アプリは `@ugoe/ui` の `tokens.css` を読んでおく。
+- パネルは高さの上限と中の送りを持たず、中身の高さで伸びる (T0951)。置く側のアプリが、並べるほかの部品と合わせて
+  高さと送りを決める (ビューアは右の列の上の段がまとめて送り、スタジオの右の列・エディタのプレビューの列はそれぞれ列ごと送る)。
 - アプリの `pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe` を実行する (`dev` は `--optional`)。
   `public/mediapipe/` はコミットしない。実行時は `document.baseURI` からの `mediapipe/` を読む。
 - `FaceTracker` は MediaPipe を読む前に、ページの `fetch` を包んで MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)。

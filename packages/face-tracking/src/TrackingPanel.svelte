@@ -290,11 +290,6 @@ let cameraOptions = $derived(
 {/snippet}
 
 <style>
-  .tracking {
-    flex-shrink: 0;
-    max-height: 45%;
-    overflow-y: auto;
-  }
   .status {
     color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);

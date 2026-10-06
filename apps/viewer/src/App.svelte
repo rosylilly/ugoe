@@ -420,7 +420,7 @@ function onKeyDown(e: KeyboardEvent) {
     overflow: hidden;
   }
   /* 上の段 (機能のパネル)。中身が少なければその高さ、多ければ右の列の 6 割までにして中を送る。
-     パネルは縮めない (各パネルの高さの上限と中の送りは付けない。トラッキングのパネルは @ugoe/face-tracking の上限を外す)。 */
+     パネルは縮めない (各パネルは高さの上限と中の送りを持たず、この段がまとめて送る)。 */
   .features {
     flex: 0 1 auto;
     max-height: 60%;
@@ -433,8 +433,6 @@ function onKeyDown(e: KeyboardEvent) {
   }
   .features > :global(*) {
     flex: none;
-    max-height: none;
-    overflow: visible;
   }
   /* 下の段 (パラメータ)。残りの高さで、最低でも右の列の 4 割を残す。 */
   .sidebar > :global(.parameters) {

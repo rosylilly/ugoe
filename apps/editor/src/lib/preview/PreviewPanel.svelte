@@ -299,21 +299,6 @@ section {
   color: var(--ugoe-color-text-muted);
 }
 
-/* トラッキングのパネルは <details> で開閉する。見出しを他の節に揃える。 */
-.tracking :global(details.tracking > summary h2) {
-  margin: var(--ugoe-space-2) 0;
-  font-size: var(--ugoe-font-size-md);
-  font-weight: var(--ugoe-font-weight-strong);
-  color: var(--ugoe-color-text);
-}
-
-/* エディタの label は縦に並べる (app.css) ので、チェックボックスと文言を横に並べ直す。 */
-.tracking :global(details.tracking .options label) {
-  display: flex;
-  align-items: center;
-  gap: var(--ugoe-space-2);
-}
-
 /* ライセンスの口は控えめな文字の色 (形は app.css の .ed-link) */
 .licenses {
   margin-top: var(--ugoe-space-2);
