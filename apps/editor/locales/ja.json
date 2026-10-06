@@ -2584,6 +2584,10 @@
         "label": "今の値にキーを足す"
       },
       "slice": "{{cell}} の断面を表示しています。",
+      "rotation": {
+        "angle": "角度 (このセル)",
+        "scale": "拡大率 (このセル)"
+      },
       "drawOrder": {
         "label": "描画順",
         "setAll": {

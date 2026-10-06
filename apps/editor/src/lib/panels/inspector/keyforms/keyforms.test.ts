@@ -11,6 +11,7 @@ import {
   type ModelData,
   nearestKey,
   type ParameterData,
+  rotationCellCommand,
   snapToKeys,
   supportsSmooth,
   withPoint,
@@ -160,5 +161,43 @@ describe("gridInterpolation / supportsSmooth", () => {
     expect(supportsSmooth("warp")).toBe(true);
     expect(supportsSmooth("rotation")).toBe(true);
     expect(supportsSmooth("part")).toBe(false);
+  });
+});
+
+describe("rotationCellCommand", () => {
+  const keyform = { origin: [1, 2], angle: 10, scale: 1, reflect_x: true, reflect_y: false };
+  const model: ModelData = {
+    parameters: params,
+    parts: [],
+    deformers: [
+      {
+        id: "Neck",
+        kind: {
+          type: "rotation",
+          keyforms: {
+            bindings: [{ parameter: "AngleX", keys: [-30, 30] }],
+            keyforms: [keyform, { ...keyform, angle: 20 }],
+          },
+        },
+      },
+      { id: "Face", kind: { type: "warp", rows: 1, cols: 1, keyforms: { keyforms: [] } } },
+    ],
+    meshes: [],
+  };
+
+  it("sets one field of the cell and keeps the others", () => {
+    expect(rotationCellCommand(model, "Neck", { AngleX: 30 }, "scale", 2)).toEqual({
+      op: "set_keyform_cell",
+      target: { kind: "deformer", id: "Neck" },
+      cell: { AngleX: 30 },
+      keyform: { ...keyform, angle: 20, scale: 2, kind: "rotation" },
+    });
+  });
+
+  it("sends nothing without the rotation deformer or the cell", () => {
+    expect(rotationCellCommand(model, "Neck", { AngleX: 0 }, "angle", 5)).toBeNull();
+    expect(rotationCellCommand(model, "Face", {}, "angle", 5)).toBeNull();
+    expect(rotationCellCommand(model, "Gone", {}, "angle", 5)).toBeNull();
+    expect(rotationCellCommand(null, "Neck", { AngleX: 30 }, "angle", 5)).toBeNull();
   });
 });

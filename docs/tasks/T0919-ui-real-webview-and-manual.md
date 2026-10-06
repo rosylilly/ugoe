@@ -136,3 +136,7 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   1 つずつ選べるようになった。1 つだけ選んだ点は輪で囲まれ、説明の帯に「Point 3 of 12」が出る。メッシュ編集の帯の説明に「[ ]: pick next / previous」が
   増えて長くなった。docs/manual/tools.md・screen.md の文は T1635 で直した。撮り直す画像: メッシュ編集の帯を写したもの (あれば)。
   ギズモ・フォーム編集の画像を足すなら、1 つだけ選んだ点の輪と帯の「Point … of …」も写すとよい。
+- T1636 から書き足した: エディタのインスペクタの「Keyforms」で、回転デフォーマを選ぶと状態の行の下に「Angle (this cell)」(°) と
+  「Scale (this cell)」の数値の欄が出る (キーの間では空で押せない)。docs/manual/tools.md (回転のギズモ) と tutorial.md (7.2) の文は T1636 で直した。
+  撮り直す画像: 回転デフォーマを選んだインスペクタを写したもの (tutorial の頭の回転の画像など。写っているかは画像ごとに確かめる)。
+  `just ui-audit` の `-rotation` (キーの上の HairSway) と `-rotation-between` (キーの間の HeadRotation) の場面が見本になる。

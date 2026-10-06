@@ -360,6 +360,19 @@ export const APPS = {
         .click();
       await page.waitForTimeout(600);
       await ctx.scene("gizmo", { aria: false });
+      // 回転のギズモとインスペクタの角度・拡大率の欄: キーの上 (軸の無い HairSway) と、キーの間 (HeadRotation。T1636)
+      await page
+        .getByRole("treeitem", { name: /^HairSway\b/ })
+        .first()
+        .click();
+      await page.waitForTimeout(600);
+      await ctx.scene("rotation", { aria: false });
+      await page
+        .getByRole("treeitem", { name: /^HeadRotation\b/ })
+        .first()
+        .click();
+      await page.waitForTimeout(600);
+      await ctx.scene("rotation-between", { aria: false });
       await page
         .getByRole("treeitem", { name: /^Face\b/ })
         .first()

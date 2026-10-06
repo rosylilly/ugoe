@@ -2643,6 +2643,10 @@
         "label": "Add key at current value"
       },
       "slice": "Showing the slice at {{cell}}.",
+      "rotation": {
+        "angle": "Angle (this cell)",
+        "scale": "Scale (this cell)"
+      },
       "drawOrder": {
         "label": "Draw order",
         "setAll": {

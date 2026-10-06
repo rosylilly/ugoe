@@ -3,6 +3,7 @@
   軸とキー・セルの由来 (authored / 推定の方法ごと)・今のパラメータ値がどのセルの上にあるかを示し、
   今のスライダーの値でキーを追加・削除する。セルを押すとスライダーをそのセルへ動かしてそのセルを選び、
   Shift / Ctrl で押すと選択に加える (選んだセルは推定の操作 inference/InferenceSection.svelte が使う)。
+  回転デフォーマでは今のセルの角度と拡大率を数値の欄で入れる (ギズモの取っ手の代わり。キーの間では空にして押せなくする)。
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
@@ -12,6 +13,7 @@ import { t } from "../../../i18n";
 import type { Selection } from "../../../selection.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../../viewport/controller.svelte";
+import { MIN_SCALE } from "../../../viewport/tools/deformer/gizmo";
 import { cellSelection } from "../inference/cellSelection.svelte";
 import { originStyle, originTitle } from "../inference/inference";
 import OriginLegend from "../inference/OriginLegend.svelte";
@@ -27,6 +29,9 @@ import {
   modelData,
   type ParameterData,
   parameterValue,
+  type RotationField,
+  type RotationKeyformData,
+  rotationCellCommand,
   snapToKeys,
   supportsSmooth,
 } from "./keyforms";
@@ -61,6 +66,24 @@ let drawOrderInput = $state<number | null>(null);
 $effect(() => {
   drawOrderInput = drawOrder;
 });
+
+/** 回転デフォーマの今のセルのキーフォーム (キーの間なら null)。 */
+const rotationKeyform = $derived.by(() => {
+  if (element?.kind !== "rotation" || !current) return null;
+  const keyform = element.grid.keyforms[cellIndex(bindings, current)];
+  return (keyform as (RotationKeyformData & { scale: number }) | undefined) ?? null;
+});
+
+/**
+ * 回転デフォーマの今のセルの角度か拡大率を変える (ギズモと同じ set_keyform_cell。Undo の 1 単位)。
+ * 送る直前の最新のモデルから組み立てる (続けて確定したもう一方の欄の値を戻さないため)。
+ */
+function setRotation(field: RotationField, value: number) {
+  if (element?.kind !== "rotation" || !current || !Number.isFinite(value)) return;
+  const id = element.target.id;
+  const cell = { ...current };
+  void doc.send(() => rotationCellCommand(modelData(doc.parsedModel), id, cell, field, value));
+}
 
 const interpolation = $derived(element ? gridInterpolation(element.grid) : "linear");
 
@@ -199,6 +222,33 @@ async function removeKey(parameter: string, key: number) {
           >{t("inspector.keyforms.moveToNearest.label")}</Button
         >
       </p>
+    {/if}
+
+    {#if element.kind === "rotation"}
+      <div class="rotation">
+        {#if rotationKeyform}
+          <NumberField
+            label={t("inspector.keyforms.rotation.angle")}
+            step={1}
+            decimals={3}
+            unit="°"
+            value={rotationKeyform.angle}
+            onchange={(v) => setRotation("angle", v)}
+          />
+          <NumberField
+            label={t("inspector.keyforms.rotation.scale")}
+            min={MIN_SCALE}
+            step={0.01}
+            decimals={3}
+            value={rotationKeyform.scale}
+            onchange={(v) => setRotation("scale", v)}
+          />
+        {:else}
+          <!-- キーの間: 補間した値は書き込めないので、空にして押せなくする (上の「Move to nearest key」で移る) -->
+          <NumberField label={t("inspector.keyforms.rotation.angle")} optional value={null} unit="°" disabled />
+          <NumberField label={t("inspector.keyforms.rotation.scale")} optional value={null} disabled />
+        {/if}
+      </div>
     {/if}
 
     <ul class="axes">
@@ -346,6 +396,13 @@ async function removeKey(parameter: string, key: number) {
 <style>
 .status {
   margin: var(--ugoe-space-2) 0;
+}
+
+.rotation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ugoe-space-2) var(--ugoe-space-3);
+  margin-bottom: var(--ugoe-space-3);
 }
 
 .axes li {

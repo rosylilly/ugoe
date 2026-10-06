@@ -1,6 +1,8 @@
 // キーフォーム格子を読む補助 (docs/editor.md#キーフォームの編集)。DOM や IPC に依存しない純粋な関数だけを置く
 // (keyforms.test.ts で検査する)。モデルの JSON (ugoe_model::Model) のうち、ここで使う部分だけを型にする。
 import type {
+  Command,
+  Keyform,
   KeyformInference,
   KeyformTarget,
   MirrorSource,
@@ -305,4 +307,30 @@ export function withPoint(
     default:
       return keyform;
   }
+}
+
+/** 数値の欄で書き換えられる回転デフォーマのキーフォームの値 (角度は度)。 */
+export type RotationField = "angle" | "scale";
+
+/**
+ * 回転デフォーマ `id` のセル `cell` の角度か拡大率を `value` にする set_keyform_cell (ギズモと同じコマンド)。
+ * ほかの値 (原点・反転) はモデルのそのセルのまま。デフォーマ・セルが無ければ null (送らない)。
+ */
+export function rotationCellCommand(
+  model: ModelData | null,
+  id: string,
+  cell: Cell,
+  field: RotationField,
+  value: number,
+): Command | null {
+  const element = model ? elementGrid(model, { kind: "deformer", id }) : null;
+  if (element?.kind !== "rotation") return null;
+  const keyform = element.grid.keyforms[cellIndex(element.grid.bindings ?? [], cell)];
+  if (!keyform) return null;
+  return {
+    op: "set_keyform_cell",
+    target: element.target,
+    cell,
+    keyform: { ...keyform, [field]: value, kind: "rotation" } as unknown as Keyform,
+  };
 }
