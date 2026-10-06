@@ -2270,8 +2270,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 
 ### 覚える値
 
-表示と設定のうちプロジェクトに入れないものは、WebView の `localStorage` に覚えます。キーはすべて `ugoe.editor.<名前>` の形で、
-一覧 (`src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使います (形と重なりは `storageKeys.test.ts` で検査する。T1633)。
+表示と設定のうちプロジェクトに入れないものは、WebView の `localStorage` に覚えます。キーはすべて `ugoe.editor.<名前>` の形で
+(名前は camelCase。`.` は分野の区切りにだけ使う。[docs/ui.md](ui.md#名前と切り替え))、一覧 (`src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使います (形と重なりは `storageKeys.test.ts` で検査する。T1633)。
 読み書きは `@ugoe/i18n` の `readStoredItem` などを通し、使えない localStorage では覚えずに既定値で動きます ([docs/ui.md](ui.md#名前と切り替え))。
 
 | キー | 値 | 既定 | 場所 |

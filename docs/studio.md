@@ -184,15 +184,15 @@
 ### 覚える値
 
 操作ウィンドウの表示の設定は WebView の `localStorage` に覚える。キーはすべて `ugoe.studio.<名前>` の形 (エディタの `ugoe.editor.*`・
-ビューアの `ugoe.viewer.*` と同じ形) で、一覧 (`apps/studio/src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使う
-(形と重なり、`index.html` が読むテーマのキーとの一致は `storageKeys.test.ts` で検査する。T0957)。プロファイルに持つもの
+ビューアの `ugoe.viewer.*` と同じ形。名前は camelCase で、`.` は分野の区切りにだけ使う。[docs/ui.md](ui.md#名前と切り替え)) で、一覧 (`apps/studio/src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使う
+(形 (Player の名前も含めて名前の形の正規表現) と重なり、`index.html` が読むテーマのキーとの一致は `storageKeys.test.ts` で検査する。T0957)。プロファイルに持つもの
 (出力の大きさ・刻みの速さ・仮想カメラなど) は覚えない ([プロファイルの形式](#プロファイルの形式))。
 
 | キー | 値 | 既定 | 場所 |
 | --- | --- | --- | --- |
 | `ugoe.studio.locale` | `system`・`en`・`ja` | `system` | 設定のダイアログの言語 (`@ugoe/i18n` の `initLocale`。`src/control.ts`) |
 | `ugoe.studio.theme` | `system`・`light`・`dark` | `system` | 設定のダイアログのテーマ (`@ugoe/ui` の `initTheme`。`index.html` の `<head>` も読む)。操作ウィンドウだけに効く |
-| `ugoe.studio.player.<名前>` | @ugoe/player の `STORAGE_NAMES` | — | 出力ウィンドウの Player の接頭辞 (`PLAYER_STORAGE_PREFIX`)。受け手のモードではほぼ何も覚えない (`packages/player/README.md`) |
+| `ugoe.studio.player.<名前>` | @ugoe/player の `STORAGE_NAMES` (`ugoe.studio.player.autoIdle`・`ugoe.studio.player.dressUp.autoRestore` など) | — | 出力ウィンドウの Player の接頭辞 (`PLAYER_STORAGE_PREFIX`)。受け手のモードではほぼ何も覚えない (`packages/player/README.md`) |
 
 ## 出力ウィンドウ
 

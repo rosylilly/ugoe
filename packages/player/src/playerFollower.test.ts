@@ -149,7 +149,7 @@ describe("Player follower mode", () => {
     const { p: viewer } = await ready();
     await viewer.load(first, [{ file: hat, attach: true }]);
     viewer.detach();
-    const saved = localStorage.getItem("ugoe.viewer.dress-up");
+    const saved = localStorage.getItem("ugoe.viewer.dressUp");
     const lighting = localStorage.getItem("ugoe.viewer.lighting");
 
     const { p } = await ready({}, { readFile: async () => hat });
@@ -163,7 +163,7 @@ describe("Player follower mode", () => {
     });
     expect(p.lighting.ambient.intensity).toBe(2);
     expect(p.lightingRemembered).toBe(false);
-    expect(localStorage.getItem("ugoe.viewer.dress-up")).toBe(saved);
+    expect(localStorage.getItem("ugoe.viewer.dressUp")).toBe(saved);
     expect(localStorage.getItem("ugoe.viewer.lighting")).toBe(lighting);
   });
 

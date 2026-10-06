@@ -13,13 +13,13 @@ describe("PlayerStorage", () => {
       "ugoe.viewer.lighting",
       "ugoe.viewer.lighting.models",
       "ugoe.viewer.lighting.markers",
-      "ugoe.viewer.dress-up",
-      "ugoe.viewer.dress-up.auto-restore",
-      "ugoe.viewer.idle-motion.models",
-      "ugoe.viewer.auto-idle",
-      "ugoe.viewer.motion-over-tracking",
-      "ugoe.viewer.motion-over-tracking.kept",
-      "ugoe.viewer.remembered-order",
+      "ugoe.viewer.dressUp",
+      "ugoe.viewer.dressUp.autoRestore",
+      "ugoe.viewer.idleMotion.models",
+      "ugoe.viewer.autoIdle",
+      "ugoe.viewer.motionOverTracking",
+      "ugoe.viewer.motionOverTracking.kept",
+      "ugoe.viewer.rememberedOrder",
     ]);
   });
 
@@ -30,7 +30,7 @@ describe("PlayerStorage", () => {
     viewer.set(STORAGE_NAMES.rememberedOrder, "name");
     expect(studio.get(STORAGE_NAMES.rememberedOrder)).toBeNull();
     studio.setJson(STORAGE_NAMES.trackingKept, ["EyeLOpen"]);
-    expect(storage.getItem("ugoe.studio.player.motion-over-tracking.kept")).toBe('["EyeLOpen"]');
+    expect(storage.getItem("ugoe.studio.player.motionOverTracking.kept")).toBe('["EyeLOpen"]');
     expect(viewer.getJson(STORAGE_NAMES.trackingKept)).toBeUndefined();
     expect(studio.getJson(STORAGE_NAMES.trackingKept)).toEqual(["EyeLOpen"]);
   });
@@ -66,7 +66,7 @@ describe("PlayerStorage", () => {
     vi.stubGlobal("localStorage", storage);
     const store = new PlayerStorage();
     store.set(STORAGE_NAMES.rememberedOrder, "name");
-    expect(storage.getItem("ugoe.viewer.remembered-order")).toBe("name");
+    expect(storage.getItem("ugoe.viewer.rememberedOrder")).toBe("name");
 
     // 引くだけで例外になる環境。
     Object.defineProperty(globalThis, "localStorage", {

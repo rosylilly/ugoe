@@ -82,7 +82,7 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   これと `PuppetSurface`)。例外の文はカタログの `screenshot.*`。
 - 覚えるもの (光源・着せ替えの組・待機モーションなど) の `localStorage` のキーは「接頭辞 + `.` + 名前」(`src/storage.ts`。T0930)。
   接頭辞はアプリのキーと同じ `ugoe.<アプリ>` の形で、`PlayerHost.storagePrefix` で渡し、省くとビューアの `ugoe.viewer`
-  (`DEFAULT_STORAGE_PREFIX`)。スタジオの出力ウィンドウは `ugoe.studio.player`。名前の一覧は `STORAGE_NAMES` (下の表)。`PlayerHost.storage` で覚える先 (`Storage`) も差し替えられる (テスト)。
+  (`DEFAULT_STORAGE_PREFIX`)。スタジオの出力ウィンドウは `ugoe.studio.player`。名前の一覧は `STORAGE_NAMES` (下の表。名前は camelCase で、`.` は分野の区切りにだけ使う。[docs/ui.md](../../docs/ui.md#名前と切り替え)。T0971)。`PlayerHost.storage` で覚える先 (`Storage`) も差し替えられる (テスト)。
   - 読み書きはすべて `PlayerStorage` (`player.storage`) を通す (中は `@ugoe/i18n` の `readStoredItem` など。T0937)。localStorage を引くだけで例外になる環境・壊れた JSON・容量の超過では、
     覚えていないものとして動き、例外を出さない。`load*`・`save*` の関数と `ModelMemory` はこれを受け取る。
   - Player の外で覚えるもの (ビューアの「覚えたもの」の一覧の並び `loadRememberedOrder`・`saveRememberedOrder`) も
@@ -99,13 +99,13 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   | `lighting` | `lighting` | 最後に使った光源の設定 (`{version, settings}`) |
   | `modelLighting` | `lighting.models` | モデルごとの光源の設定 (`ModelMemory`) |
   | `lightMarkers` | `lighting.markers` | 光源の印を出すか (`on`・`off`) |
-  | `dressUp` | `dress-up` | モデルごとの着せ替えの組 (`ModelMemory`) |
-  | `autoRestore` | `dress-up.auto-restore` | 組を尋ねずに戻すか (`true`・`false`) |
-  | `idleMotion` | `idle-motion.models` | モデルごとの待機モーションの選択 (`ModelMemory`) |
-  | `autoIdle` | `auto-idle` | 待機モーションを自動で流すか (`on`・`off`) |
-  | `motionOverTracking` | `motion-over-tracking` | トラッキング中もモーションを優先するか (`on`・`off`) |
-  | `trackingKept` | `motion-over-tracking.kept` | トラッキングのままにするパラメータ (JSON の文字列の配列) |
-  | `rememberedOrder` | `remembered-order` | 覚えたものの一覧の並び (`recent`・`name`) |
+  | `dressUp` | `dressUp` | モデルごとの着せ替えの組 (`ModelMemory`) |
+  | `autoRestore` | `dressUp.autoRestore` | 組を尋ねずに戻すか (`true`・`false`) |
+  | `idleMotion` | `idleMotion.models` | モデルごとの待機モーションの選択 (`ModelMemory`) |
+  | `autoIdle` | `autoIdle` | 待機モーションを自動で流すか (`on`・`off`) |
+  | `motionOverTracking` | `motionOverTracking` | トラッキング中もモーションを優先するか (`on`・`off`) |
+  | `trackingKept` | `motionOverTracking.kept` | トラッキングのままにするパラメータ (JSON の文字列の配列) |
+  | `rememberedOrder` | `rememberedOrder` | 覚えたものの一覧の並び (`recent`・`name`) |
 - 文言は `@ugoe/i18n` の名前空間 `player` (`locales/`。T0723)。言語はアプリが `setLocale()` で決める。
   `describe*`・`lightingLabel` などの関数と、`MOTION_PRIORITIES`・`TRACKING_GROUPS`・`PRESETS` の `label`・`title`・`name` (読むたびに引く) は、
   呼んだときの言語の文を返すので、画面のテンプレートや `$derived` の中で使えば言語の切り替えに追従する。

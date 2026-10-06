@@ -56,7 +56,7 @@ describe("model identity", () => {
 
 describe("ModelMemory", () => {
   const NAME = STORAGE_NAMES.dressUp;
-  const KEY = "p.dress-up";
+  const KEY = "p.dressUp";
   const store = (storage: Storage) => new PlayerStorage("p", storage);
   const id = (n: number, location?: string): ModelIdentity =>
     location === undefined

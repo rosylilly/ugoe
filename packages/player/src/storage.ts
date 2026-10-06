@@ -9,7 +9,7 @@ import { readStoredItem, removeStoredItem, writeStoredItem } from "@ugoe/i18n";
 /** 接頭辞を省いたときの接頭辞 (ビューア)。 */
 export const DEFAULT_STORAGE_PREFIX = "ugoe.viewer";
 
-/** Player が覚えるものの名前 (キーの接頭辞の後ろ)。 */
+/** Player が覚えるものの名前 (キーの接頭辞の後ろ)。名前は camelCase で、`.` は分野の区切りにだけ使う (docs/ui.md)。 */
 export const STORAGE_NAMES = {
   /** 最後に使った光源の設定 (lighting.ts)。 */
   lighting: "lighting",
@@ -18,19 +18,19 @@ export const STORAGE_NAMES = {
   /** ビューポートに光源の印を出すか (T0708)。 */
   lightMarkers: "lighting.markers",
   /** モデルごとの着せ替えの組 (T0711)。 */
-  dressUp: "dress-up",
+  dressUp: "dressUp",
   /** 着せ替えの組を尋ねずに戻すか。 */
-  autoRestore: "dress-up.auto-restore",
+  autoRestore: "dressUp.autoRestore",
   /** モデルごとの待機モーションの選択 (T0722)。 */
-  idleMotion: "idle-motion.models",
+  idleMotion: "idleMotion.models",
   /** 待機モーションを自動で流すか (T0721)。 */
-  autoIdle: "auto-idle",
+  autoIdle: "autoIdle",
   /** トラッキング中もモーションを優先するか (T0721)。 */
-  motionOverTracking: "motion-over-tracking",
+  motionOverTracking: "motionOverTracking",
   /** モーションを優先しても、トラッキングのままにするパラメータ (T0722)。 */
-  trackingKept: "motion-over-tracking.kept",
+  trackingKept: "motionOverTracking.kept",
   /** 覚えたものの一覧の並び (T0718)。 */
-  rememberedOrder: "remembered-order",
+  rememberedOrder: "rememberedOrder",
 } as const;
 
 export type StorageName = (typeof STORAGE_NAMES)[keyof typeof STORAGE_NAMES];

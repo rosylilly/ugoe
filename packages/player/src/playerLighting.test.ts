@@ -19,7 +19,7 @@ describe("Player lighting", () => {
       LAST,
       JSON.stringify({ version: 1, settings: { ambient: { color: "#ffffff", intensity: 3 } } }),
     );
-    localStorage.setItem("ugoe.viewer.auto-idle", "off");
+    localStorage.setItem("ugoe.viewer.autoIdle", "off");
     const { p } = await ready({}, { storagePrefix: "ugoe.studio.player" });
     expect(p.storage.prefix).toBe("ugoe.studio.player");
     expect(p.lighting.ambient.intensity).not.toBe(3);
@@ -29,7 +29,7 @@ describe("Player lighting", () => {
       s.ambient.intensity = 2;
     });
     p.setAutoIdle(false);
-    expect(localStorage.getItem("ugoe.studio.player.auto-idle")).toBe("off");
+    expect(localStorage.getItem("ugoe.studio.player.autoIdle")).toBe("off");
     const saved = JSON.parse(localStorage.getItem("ugoe.studio.player.lighting") ?? "null");
     expect(saved?.settings?.ambient?.intensity).toBe(2);
     expect(localStorage.getItem("ugoe.studio.player.lighting.models")).not.toBeNull();

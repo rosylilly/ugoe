@@ -192,7 +192,7 @@ describe("idle motion memory (T0722)", () => {
     expect(idleMemory(store).get({ name: "b.ugoe", fingerprint: "fb" })).toEqual({
       motion: null,
     });
-    expect(items.has("ugoe.viewer.idle-motion.models")).toBe(true);
+    expect(items.has("ugoe.viewer.idleMotion.models")).toBe(true);
   });
 });
 
@@ -235,7 +235,7 @@ describe("motion over tracking per parameter (T0722)", () => {
     expect(loadTrackingKept(store)).toEqual([]);
     saveTrackingKept(["EyeLOpen", "EyeROpen"], store);
     expect(loadTrackingKept(store)).toEqual(["EyeLOpen", "EyeROpen"]);
-    const key = "ugoe.viewer.motion-over-tracking.kept";
+    const key = "ugoe.viewer.motionOverTracking.kept";
     items.set(key, '["A", 3, "A"]');
     expect(loadTrackingKept(store)).toEqual(["A"]);
     items.set(key, "{broken");
