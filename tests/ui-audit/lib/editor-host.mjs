@@ -341,6 +341,30 @@ export function editorPageInit({ osLocale, home }) {
   window.__uiAuditEmit = (event, payload) => {
     for (const id of listeners.get(event) ?? []) callbacks.get(id)?.({ event, id, payload });
   };
+  // WebGL2 のコンテキストを canvas ごとに覚える (着せ替えで作り直しを待っている場面で、ビューポートの canvas のコンテキストを
+  // `WEBGL_lose_context` で失わせるため。apps/editor/browser-test と同じ。T0060)
+  const contexts = new WeakMap();
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+    const context = getContext.call(this, type, ...rest);
+    if (type === "webgl2" && context) contexts.set(this, context);
+    return context;
+  };
+  /** 描いている canvas のコンテキストを失わせる (失わせたものは `restoreGpu` で戻す)。失わせられなければ偽。 */
+  let lost = null;
+  window.__uiAuditLoseGpu = () => {
+    const canvas = [...document.querySelectorAll("canvas")].find((c) => {
+      const gl = contexts.get(c);
+      return gl !== undefined && !gl.isContextLost();
+    });
+    lost = canvas ? contexts.get(canvas).getExtension("WEBGL_lose_context") : null;
+    lost?.loseContext();
+    return lost !== null;
+  };
+  window.__uiAuditRestoreGpu = () => {
+    lost?.restoreContext();
+    lost = null;
+  };
   window.__uiAuditNextPath = null;
   const nextPath = async () => window.__uiAuditNextPath;
   window.__UGOE_FILE_DIALOGS__ = {

@@ -275,9 +275,12 @@ for (const app of only) {
     });
     const page = await context.newPage();
     const errors = [];
+    /** 場面が意図して起こした失敗のコンソールのエラー (`ctx.ignoreErrors`)。 */
+    const ignored = new Set();
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => {
-      if (m.type() === "error" && !m.location().url.endsWith("favicon.ico")) errors.push(m.text());
+      if (m.type() !== "error" || m.location().url.endsWith("favicon.ico")) return;
+      if (![...ignored].some((re) => re.test(m.text()))) errors.push(m.text());
     });
     await page.addInitScript(PAGE_CHECKS);
     // 前の場面の設定 (言語・テーマ) を残さない
@@ -293,6 +296,14 @@ for (const app of only) {
       osLocale: v.lang === "en" ? "en-US" : "ja-JP",
       home: join(out, "sample", "project"),
       sample,
+      /**
+       * `re` に合うコンソールのエラーを、返した関数を呼ぶまで数えない (GPU を失わせる場面の `ugoe: WebGL context lost` など、
+       * 場面が意図して起こした失敗。T0060)。
+       */
+      ignoreErrors(re) {
+        ignored.add(re);
+        return () => ignored.delete(re);
+      },
       // `errors`: 失敗の出し方を撮る場面 (画面のエラーの文を数えない)。`overlay`: ダイアログ・メニュー・Popover を開いて撮る場面
       // (ほかの場面で開いていれば、前の場面の閉じ忘れとして数える。T0053)
       async scene(name, { aria = true, errors = false, overlay = false } = {}) {

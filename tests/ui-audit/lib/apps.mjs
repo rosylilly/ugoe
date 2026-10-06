@@ -261,6 +261,7 @@ async function dressUpScenes(page, ctx) {
   await togglePreview(page, ctx, true);
   await scrollToElement(dressUpTitle);
   await ctx.scene("preview-dress-up", { errors: true });
+  await dressUpWaitingScene(page, ctx, dressUpTitle);
   await scrollToTop(page);
   await togglePreview(page, ctx, false);
 
@@ -289,6 +290,57 @@ async function dressUpScenes(page, ctx) {
   await scrollToTop(page);
   await togglePreview(page, ctx, false);
   host.set({ module: false, dressUp: false });
+}
+
+/**
+ * 着せ替えで作り直しを待っている行 (T0060): プレビューの着せ替えで、ビューポートの WebGL2 のコンテキストを `WEBGL_lose_context` で
+ * 失わせ (偽のホストの `__uiAuditLoseGpu`。ビューポートが「GPU の復元を待っています」を出す)、その間に付いている行のチェックを
+ * 外し、付いていない行にチェックを付ける。行のチェックは付けたい組を写し、まだ WebPuppet に届いていない行に待っている文
+ * (`preview.dressUp.modules.waiting.on`・`.off`) が出る (T1666)。両方の文が出ていなければ場面の失敗にする。撮った後は
+ * コンテキストを戻し、作り直した WebPuppet に届いて文が消えるのを待つ。
+ */
+async function dressUpWaitingScene(page, ctx, dressUpTitle) {
+  const section = page.getByRole("region", {
+    name: text("editor", ctx.lang, "preview.dressUp.title"),
+    exact: true,
+  });
+  const gpuWaiting = page
+    .getByRole("main")
+    .getByText(text("editor", ctx.lang, "viewport.gpuWaiting"), { exact: true });
+  const waiting = [
+    text("editor", ctx.lang, "preview.dressUp.modules.waiting.on"),
+    text("editor", ctx.lang, "preview.dressUp.modules.waiting.off"),
+  ];
+  const stopIgnoring = ctx.ignoreErrors(/^ugoe: WebGL context lost/);
+  if (!(await page.evaluate(() => window.__uiAuditLoseGpu())))
+    throw new Error("no canvas with a live WebGL2 context to lose");
+  await gpuWaiting.first().waitFor({ timeout: 20000 });
+  // 読めないファイルの行 (押せない) を除き、付いている行と付いていない行を 1 つずつ切り替える
+  const boxes = section.locator(".modules [role=checkbox]:not(:disabled)");
+  const states = await boxes.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("aria-checked") === "true"),
+  );
+  const off = states.indexOf(true);
+  const on = states.indexOf(false);
+  if (off < 0 || on < 0)
+    throw new Error(`the dress-up rows have no checked and unchecked pair (${states})`);
+  await boxes.nth(off).click();
+  await boxes.nth(on).click();
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.mouse.move(1, 300);
+  for (const note of waiting)
+    await section.getByText(note, { exact: true }).first().waitFor({ timeout: 5000 });
+  await scrollToElement(dressUpTitle);
+  // 見本の読めないファイルと付けられないモジュールの行の失敗の文は `-preview-dress-up` と同じ
+  await ctx.scene("preview-dress-up-waiting", { errors: true });
+  await page.evaluate(() => window.__uiAuditRestoreGpu());
+  await gpuWaiting.first().waitFor({ state: "hidden", timeout: 60000 });
+  for (const note of waiting)
+    await section
+      .getByText(note, { exact: true })
+      .first()
+      .waitFor({ state: "hidden", timeout: 60000 });
+  stopIgnoring();
 }
 
 /**

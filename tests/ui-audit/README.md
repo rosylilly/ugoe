@@ -20,7 +20,7 @@ just ui-audit --jobs 1                 # 組を 1 つずつ流す (既定は 3 �
 
 **時間と並行の数 (T0054):** 組 (下の「場面」) ごとに別のブラウザのコンテキストとページ (と偽のホスト) を開くので、組どうしは
 互いに影響しません。既定では 3 つの組を並行に流します (`--jobs N` で変える)。結果 (報告・`summary.json`・`tab.txt`) は並行の数に
-よらず組の順に並びます。エディタの 13 の組 (556 の場面) は、3 つの並行で 5 分半ほど、1 つずつでは 16 分ほどかかります
+よらず組の順に並びます。エディタの 13 の組 (568 の場面) は、3 つの並行で 5 分半ほど、1 つずつでは 16 分ほどかかります
 (ほかの作業でロードアベレージが 5〜10 の 24 コアの機械。ビルドを除く)。エージェントが前面で流す Bash の上限 (600 秒) に収まります。
 機械が混んでいて場面の待ち (`waitForTimeout`) が足りなくなるときは、並行の数を減らします。
 
@@ -46,6 +46,8 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      `ugoe_model::fixtures` と `ugoe sample` は変えない。T0044)。マスク専用かつ非表示のメッシュも 1 つ足す (非表示のパーツ「Wave」の手を写した
      `HandWaveMask`。ツリーにマスクと非表示の札を持つ行を出すため。T1670)。バックエンドが送るイベント (`listen` で待つもの) は、ページの
      `window.__uiAuditEmit(event, payload)` で送る (エージェントが提案を置いた `mcp-bridge` の `proposals` など)。
+     GPU を失った状態は、ページの `window.__uiAuditLoseGpu()` (描いている canvas の WebGL2 のコンテキストを `WEBGL_lose_context` で
+     失わせる) と `window.__uiAuditRestoreGpu()` (戻す) で作る (apps/editor/browser-test と同じやり方。T0060)。
      見本に無い状態 (T0676) は `host.set({ ai, restoring, dressUp, module, manyParameters, externalChange, baseChange })` で切り替える (中身は `lib/editor-fixtures.mjs`。
      作りものだが、提案のコマンドの種類 (`op`) と分類のラベルは本物にあるものだけを使う。`hosts.test.mjs` が
      `crates/ugoe-editor-core/src/command.rs` と `crates/ugoe-ai/src/classify.rs` に照らして確かめる。T0047):
@@ -91,7 +93,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 
 | アプリ | 場面 |
 | --- | --- |
-| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-external-change` (保存の前の確かめで外での書き換えが見つかったダイアログ。T0953)、`-tree-hover` (ツリーの「Head」のパーツの行に乗せた: ビューポートに中のメッシュの破線の輪郭)、`-tree-hover-collapsed` (「Head」を畳んでビューポートのメッシュに乗せた: 畳んだ行の地の重ねと左端の縦線。T1638)、`-tree-hidden-hover` (非表示の要素 (見本の不透明度 0 のパーツ「Wave」) を選んだ行に乗せた: 控えめな文字の名前が選んだ地と hover の重ねの上に乗る。T0851。その下にマスク専用かつ非表示の行「HandWaveMask」。T1670)、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-glue-edit` (見本のグルーを選んだグルーのパネルの編集の欄: 強さ・軸のキー・軸を足す欄。T0949)、`-glue-edit-pairs` (同じパネルを編集の欄の終わりまで送った: 組の一覧・組を足す行・組の作り直しの行。T0053)、`-glue-pair-focus` (2 つ目の組の行の「×」にフォーカスした: 行とビューポートのその組の強調。T0053)、`-timeline-graph` (タイムラインの行とキーを選んでグラフを出した)、`-motion-settings` (モーションの「Settings…」)、`-gizmo` (ワープのギズモ)、`-rotation` と `-rotation-between` (回転のギズモとインスペクタの角度・拡大率の欄。キーの上とキーの間。T1636)、`-mesh-edit` (メッシュの編集)、`-deformers-expressions`、`-settings-ai` (キーを保存した AI の設定)、`-ai-fresh` (タブを開いていない間にエージェントが提案を置いた: AI のタブの数と見てほしい変化の印。T1632)、`-ai` と `-ai-list` (提案と分類のある AI のタブの頭と提案の一覧)、`-ai-restoring` (分類のキャッシュを戻している最中)、`-consent` (送る前の確認)、`-ai-sending`・`-ai-cancelled`・`-ai-error` (送信中・取り消した・失敗)、`-preview-dress-up` (プレビューの着せ替え)、`-base-change` (モジュールのプロジェクトで、ウィンドウに戻ったときの確かめで本体の変化が見つかったダイアログ。T0953)、`-tree-base-hover` (モジュールのプロジェクトで本体の要素「Head」を選んだ行に乗せた。T0851)、`-module-ai` (モジュールのプロジェクトの AI のタブ)、`-module-preview` (今の編集とファイルの違いの一覧)、`-many-parameters` と `-many-parameters-groups` (パラメータ 100 個・グループ 10 個のモデルのパラメータのパネルの頭と、開いた「Groups」。T1630)、`-parameter-filter` と `-parameter-filter-none` (同じモデルで一覧の上の絞り込みの欄に語を入れた: 絞った一覧と、一致なしの文。T1646) |
+| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-external-change` (保存の前の確かめで外での書き換えが見つかったダイアログ。T0953)、`-tree-hover` (ツリーの「Head」のパーツの行に乗せた: ビューポートに中のメッシュの破線の輪郭)、`-tree-hover-collapsed` (「Head」を畳んでビューポートのメッシュに乗せた: 畳んだ行の地の重ねと左端の縦線。T1638)、`-tree-hidden-hover` (非表示の要素 (見本の不透明度 0 のパーツ「Wave」) を選んだ行に乗せた: 控えめな文字の名前が選んだ地と hover の重ねの上に乗る。T0851。その下にマスク専用かつ非表示の行「HandWaveMask」。T1670)、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-glue-edit` (見本のグルーを選んだグルーのパネルの編集の欄: 強さ・軸のキー・軸を足す欄。T0949)、`-glue-edit-pairs` (同じパネルを編集の欄の終わりまで送った: 組の一覧・組を足す行・組の作り直しの行。T0053)、`-glue-pair-focus` (2 つ目の組の行の「×」にフォーカスした: 行とビューポートのその組の強調。T0053)、`-timeline-graph` (タイムラインの行とキーを選んでグラフを出した)、`-motion-settings` (モーションの「Settings…」)、`-gizmo` (ワープのギズモ)、`-rotation` と `-rotation-between` (回転のギズモとインスペクタの角度・拡大率の欄。キーの上とキーの間。T1636)、`-mesh-edit` (メッシュの編集)、`-deformers-expressions`、`-settings-ai` (キーを保存した AI の設定)、`-ai-fresh` (タブを開いていない間にエージェントが提案を置いた: AI のタブの数と見てほしい変化の印。T1632)、`-ai` と `-ai-list` (提案と分類のある AI のタブの頭と提案の一覧)、`-ai-restoring` (分類のキャッシュを戻している最中)、`-consent` (送る前の確認)、`-ai-sending`・`-ai-cancelled`・`-ai-error` (送信中・取り消した・失敗)、`-preview-dress-up` (プレビューの着せ替え)、`-preview-dress-up-waiting` (同じ着せ替えで、GPU を失っている間に付いている行のチェックを外し、付いていない行にチェックを付けた: 行のチェックが付けたい組を写し、まだ届いていない行に「Puts this on / Takes this off when the preview is back.」の文が出る。両方の文が出ていなければ場面の失敗。撮った後はコンテキストを戻し、作り直しで文が消えるのを待つ。T0060)、`-base-change` (モジュールのプロジェクトで、ウィンドウに戻ったときの確かめで本体の変化が見つかったダイアログ。T0953)、`-tree-base-hover` (モジュールのプロジェクトで本体の要素「Head」を選んだ行に乗せた。T0851)、`-module-ai` (モジュールのプロジェクトの AI のタブ)、`-module-preview` (今の編集とファイルの違いの一覧)、`-many-parameters` と `-many-parameters-groups` (パラメータ 100 個・グループ 10 個のモデルのパラメータのパネルの頭と、開いた「Groups」。T1630)、`-parameter-filter` と `-parameter-filter-none` (同じモデルで一覧の上の絞り込みの欄に語を入れた: 絞った一覧と、一致なしの文。T1646) |
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-background` (ツールバーの「背景」の Popover)、`-settings` |
 | スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-inputs` (「入力」のパネルまで送った: カメラのフェイストラッキングとマイク。T0951)、`-output` (「出力ウィンドウ」のパネルまで送った)、`-opaque` (透過が画面で効かない様子にした出力ウィンドウのパネル: 「背景」の欄の注意と「背景をクロマキーにする」のボタン、「いまの状態」の出力の注意の印)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 
@@ -101,6 +103,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 場面を足すときは `lib/apps.mjs` の `extras` (読み込んだ後) か `load` (読み込みの途中) で、操作してから `ctx.scene("名前")` を呼ぶ。
 送る枠の中の要素まで送るときは `scrollToElement`・`scrollToSection` を使う (送る枠だけを送り、枠の頭に固定された (sticky) タブや見出しの下に隠れないよう、その高さを引く。T0048)。
 失敗の出し方を撮る場面は `ctx.scene("名前", { errors: true })` にすると、画面に出たエラーの文を数えない (スクリプトのエラーは数える)。
+場面が意図して起こした失敗のコンソールのエラー (GPU を失わせたときの `ugoe: WebGL context lost` など) は、`ctx.ignoreErrors(正規表現)` が返す関数を呼ぶまで数えない (T0060)。
 ダイアログ・メニュー・Popover を開いて撮る場面は `ctx.scene("名前", { overlay: true })` にし、撮った後は `closeOverlay` で閉じる
 (閉じるまで Esc を押して待ち、戻ったフォーカスとポインタの Tooltip が残らないよう外す。閉じられなければ場面の失敗)。
 ほかの場面で開いている重ねものは、前の場面の閉じ忘れ (`left open by an earlier scene`) として `error` に数える (T0053)。
