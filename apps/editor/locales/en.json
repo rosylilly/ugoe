@@ -2885,7 +2885,11 @@
       "slice": "Showing the slice at {{cell}}.",
       "rotation": {
         "angle": "Angle (this cell)",
-        "scale": "Scale (this cell)"
+        "scale": "Scale (this cell)",
+        "originX": "Origin X (this cell)",
+        "originY": "Origin Y (this cell)",
+        "originXAll": "Origin X (all cells)",
+        "originYAll": "Origin Y (all cells)"
       },
       "drawOrder": {
         "label": "Draw order",

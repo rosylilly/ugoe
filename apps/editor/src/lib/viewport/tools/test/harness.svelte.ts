@@ -154,6 +154,7 @@ export class FakeController {
   animationFrame = $state(0);
   previewingPhysics = $state(false);
   showDepth = $state(false);
+  originAllCells = $state(false);
   posePreview = $state.raw<readonly string[] | null>(null);
   puppet: WebPuppet | null = fakePuppet();
 

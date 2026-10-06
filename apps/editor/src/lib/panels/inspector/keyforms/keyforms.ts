@@ -334,3 +334,48 @@ export function rotationCellCommand(
     keyform: { ...keyform, [field]: value, kind: "rotation" } as unknown as Keyform,
   };
 }
+
+/**
+ * 回転デフォーマ `id` の原点の欄の刻み (親の座標系の単位)。親がワープなら原点は親の UV ([0,1]) なので 0.01、
+ * 親が回転デフォーマ (その局所座標) か無い (キャンバス) ならピクセルなので 1。
+ */
+export function rotationOriginStep(model: ModelData | null, id: string): number {
+  const parent = model?.deformers.find((d) => d.id === id)?.parent;
+  const kind = parent ? model?.deformers.find((d) => d.id === parent)?.kind.type : null;
+  return kind === "warp" ? 0.01 : 1;
+}
+
+/**
+ * 回転デフォーマ `id` の原点の X (`axis` 0) か Y (`axis` 1) を、セル `cell` で `value` にするコマンド (親の座標系)。
+ * `all` なら矢印キーの「Origin: all cells」と同じく、そのセルとの差をすべてのセルに足す move_rotation_origin
+ * (子の見た目は保つ)。そうでなければギズモと同じ set_keyform_cell (ほかの値はそのセルのまま)。
+ * デフォーマ・セルが無い、またはすべてのセルで差が 0 なら null (送らない)。
+ */
+export function rotationOriginCommand(
+  model: ModelData | null,
+  id: string,
+  cell: Cell,
+  axis: 0 | 1,
+  value: number,
+  all: boolean,
+): Command | null {
+  const element = model ? elementGrid(model, { kind: "deformer", id }) : null;
+  if (element?.kind !== "rotation") return null;
+  const keyform = element.grid.keyforms[cellIndex(element.grid.bindings ?? [], cell)] as
+    | RotationKeyformData
+    | undefined;
+  if (!keyform) return null;
+  const origin: Point = [...keyform.origin];
+  if (all) {
+    const delta: Point = [0, 0];
+    delta[axis] = value - origin[axis];
+    return delta[axis] === 0 ? null : { op: "move_rotation_origin", id, delta };
+  }
+  origin[axis] = value;
+  return {
+    op: "set_keyform_cell",
+    target: element.target,
+    cell,
+    keyform: { ...keyform, origin, kind: "rotation" } as unknown as Keyform,
+  };
+}

@@ -2716,7 +2716,11 @@
       "slice": "{{cell}} の断面を表示しています。",
       "rotation": {
         "angle": "角度 (このセル)",
-        "scale": "拡大率 (このセル)"
+        "scale": "拡大率 (このセル)",
+        "originX": "原点 X (このセル)",
+        "originY": "原点 Y (このセル)",
+        "originXAll": "原点 X (すべてのセル)",
+        "originYAll": "原点 Y (すべてのセル)"
       },
       "drawOrder": {
         "label": "描画順",

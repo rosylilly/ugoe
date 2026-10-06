@@ -4,6 +4,8 @@
   今のスライダーの値でキーを追加・削除する。セルを押すとスライダーをそのセルへ動かしてそのセルを選び、
   Shift / Ctrl で押すと選択に加える (選んだセルは推定の操作 inference/InferenceSection.svelte が使う)。
   回転デフォーマでは今のセルの角度と拡大率を数値の欄で入れる (ギズモの取っ手の代わり。キーの間では空にして押せなくする)。
+  原点の X・Y (親の座標系) も数値で入れ、ギズモの「Origin: all cells」(ViewportController.originAllCells) が入なら
+  矢印キーと同じくすべてのセルに同じ差を足す。
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
@@ -32,6 +34,8 @@ import {
   type RotationField,
   type RotationKeyformData,
   rotationCellCommand,
+  rotationOriginCommand,
+  rotationOriginStep,
   snapToKeys,
   supportsSmooth,
 } from "./keyforms";
@@ -84,6 +88,34 @@ function setRotation(field: RotationField, value: number) {
   const cell = { ...current };
   void doc.send(() => rotationCellCommand(modelData(doc.parsedModel), id, cell, field, value));
 }
+
+/**
+ * 回転デフォーマの原点の X (0) か Y (1) を変える (親の座標系。Undo の 1 単位)。「Origin: all cells」が入なら
+ * 今のセルとの差をすべてのセルに足す (move_rotation_origin)。そうでなければ今のセルだけ (set_keyform_cell)。
+ */
+function setOrigin(axis: 0 | 1, value: number) {
+  if (element?.kind !== "rotation" || !current || !Number.isFinite(value)) return;
+  const id = element.target.id;
+  const cell = { ...current };
+  const all = viewport.originAllCells;
+  void doc.send(() =>
+    rotationOriginCommand(modelData(doc.parsedModel), id, cell, axis, value, all),
+  );
+}
+
+const ORIGIN_AXES = [0, 1] as const;
+/** 原点の欄の刻みと小数の桁 (親がワープなら UV なので細かく)。 */
+const originStep = $derived(
+  element?.kind === "rotation" ? rotationOriginStep(model, element.target.id) : 1,
+);
+const originDecimals = $derived(originStep < 1 ? 4 : 3);
+
+/** 原点の欄のラベル (「Origin: all cells」に従って、書き込む範囲を示す)。 */
+const originLabels = $derived(
+  viewport.originAllCells
+    ? [t("inspector.keyforms.rotation.originXAll"), t("inspector.keyforms.rotation.originYAll")]
+    : [t("inspector.keyforms.rotation.originX"), t("inspector.keyforms.rotation.originY")],
+);
 
 const interpolation = $derived(element ? gridInterpolation(element.grid) : "linear");
 
@@ -243,10 +275,22 @@ async function removeKey(parameter: string, key: number) {
             value={rotationKeyform.scale}
             onchange={(v) => setRotation("scale", v)}
           />
+          {#each ORIGIN_AXES as axis (axis)}
+            <NumberField
+              label={originLabels[axis]}
+              step={originStep}
+              decimals={originDecimals}
+              value={rotationKeyform.origin[axis]}
+              onchange={(v) => setOrigin(axis, v)}
+            />
+          {/each}
         {:else}
           <!-- キーの間: 補間した値は書き込めないので、空にして押せなくする (上の「Move to nearest key」で移る) -->
           <NumberField label={t("inspector.keyforms.rotation.angle")} optional value={null} unit="°" disabled />
           <NumberField label={t("inspector.keyforms.rotation.scale")} optional value={null} disabled />
+          {#each originLabels as label (label)}
+            <NumberField {label} optional value={null} disabled />
+          {/each}
         {/if}
       </div>
     {/if}

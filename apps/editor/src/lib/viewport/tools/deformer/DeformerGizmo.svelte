@@ -9,7 +9,8 @@
     何番目かを出す)、矢印キーで選んだ点を動かす。
   - 回転デフォーマ: 原点 (円) のドラッグで移動、上の取っ手で回転 (Shift で 15 度刻み)、右の四角で拡大率。
     原点は今のセルだけを動かす。「All cells」を付けるか Shift を押しながらドラッグすると、すべてのセルの原点を
-    同じだけ動かし、子の絵は動かさない (回転の中心だけを動かす。move_rotation_origin)。
+    同じだけ動かし、子の絵は動かさない (回転の中心だけを動かす。move_rotation_origin)。「All cells」は
+    ViewportController に持つ (インスペクタの原点の欄も従う。デフォーマを選び直しても残る)。
 
   形は wasm (WebPuppet.warp_points / rotation_frame) で評価した今のパラメータ値でのキャンバス座標。
   書き込む点はバックエンドで親の座標系に直す (ipc.canvasToLocal)。
@@ -84,8 +85,6 @@ type Drag =
 let svg = $state<SVGSVGElement>();
 let drag = $state<Drag | null>(null);
 let busy = $state(false);
-/** 原点のドラッグをすべてのセルに適用する (Shift を押しながらのドラッグも同じ)。 */
-let originAllCells = $state(false);
 let error = $state<string | null>(null);
 /** WebPuppet が新しいモデル・パラメータを反映した後に読み直すための印。 */
 let tick = $state(0);
@@ -217,7 +216,7 @@ function onPointerDown(e: PointerEvent): void {
     capture(e);
     drag =
       kind === "origin"
-        ? { kind, id, start: p, delta: [0, 0], all: originAllCells || e.shiftKey }
+        ? { kind, id, start: p, delta: [0, 0], all: controller.originAllCells || e.shiftKey }
         : kind === "rotate"
           ? { kind, id, start: p, now: p, turn: 0, far: false, snap: e.shiftKey }
           : { kind, id, start: p, now: p };
@@ -418,7 +417,7 @@ function nudge(e: KeyboardEvent): void {
     void commit({ kind: "points", id: -1, start: [0, 0], delta });
   } else if (rotationCanvas) {
     e.preventDefault();
-    void commit({ kind: "origin", id: -1, start: [0, 0], delta, all: originAllCells });
+    void commit({ kind: "origin", id: -1, start: [0, 0], delta, all: controller.originAllCells });
   }
 }
 </script>
@@ -449,7 +448,7 @@ function nudge(e: KeyboardEvent): void {
       <Tooltip text={t("viewport.gizmo.originAllCells.tooltip")}>
         {#snippet trigger(attrs)}
           <span class="check" {...attrs}>
-            <Checkbox label={t("viewport.gizmo.originAllCells.label")} bind:checked={originAllCells} />
+            <Checkbox label={t("viewport.gizmo.originAllCells.label")} bind:checked={controller.originAllCells} />
           </span>
         {/snippet}
       </Tooltip>

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // インスペクタのキーフォームの軸: 「キーへ移る」はスライダーをそのキーへ動かし、「キーを消す」は軸のキーを消すコマンドを送る
 // (docs/editor.md#キーフォームの編集、docs/testing.md#エディタの部品のテスト)。押せる範囲は 24px (docs/ui.md#そのほか。T1634)。
-// 回転デフォーマの角度と拡大率の欄は、確定で今のセルに set_keyform_cell を送る (T1636)。
+// 回転デフォーマの角度と拡大率の欄は、確定で今のセルに set_keyform_cell を送る (T1636)。原点の欄は「Origin: all cells」が
+// 入ならすべてのセルに move_rotation_origin を送る (T1649)。
 import { flushSync } from "svelte";
 import { describe, expect, it } from "vitest";
 import type { Command } from "../../../ipc";
@@ -166,7 +167,12 @@ describe("KeyformInspector rotation fields", () => {
   it("disables the empty fields between keys", () => {
     const { doc, target } = setup("Rot");
     withRotAxis(doc);
-    for (const label of ["Angle (this cell)", "Scale (this cell)"]) {
+    for (const label of [
+      "Angle (this cell)",
+      "Scale (this cell)",
+      "Origin X (this cell)",
+      "Origin Y (this cell)",
+    ]) {
       const input = rotationField(target, label);
       expect(input.disabled).toBe(true);
       expect(input.value).toBe("");
@@ -176,5 +182,50 @@ describe("KeyformInspector rotation fields", () => {
   it("has no rotation fields for a mesh", () => {
     const { target } = setup();
     expect(all(target, ".rotation")).toEqual([]);
+  });
+});
+
+describe("KeyformInspector rotation origin fields", () => {
+  it("shows the origin of the current cell", () => {
+    const { target } = setup("Rot");
+    expect(rotationField(target, "Origin X (this cell)").value).toBe("50");
+    expect(rotationField(target, "Origin Y (this cell)").value).toBe("50");
+  });
+
+  it("sends set_keyform_cell with the committed origin of the current cell", async () => {
+    const { doc, viewport, target } = setup("Rot");
+    withRotAxis(doc);
+    viewport.setParameter("AngleX", 30);
+    flushSync();
+    enter(target, "Origin Y (this cell)", "62.5");
+    await settle();
+    expect(doc.commands).toEqual([
+      {
+        op: "set_keyform_cell",
+        target: { kind: "deformer", id: "Rot" },
+        cell: { AngleX: 30 },
+        keyform: { ...ROT_KEYFORM, origin: [50, 62.5], angle: 20, scale: 2, kind: "rotation" },
+      },
+    ]);
+  });
+
+  it("adds the difference to every cell with Origin: all cells", async () => {
+    const { doc, viewport, target } = setup("Rot");
+    viewport.originAllCells = true;
+    flushSync();
+    enter(target, "Origin X (all cells)", "40");
+    await settle();
+    expect(doc.commands).toEqual([{ op: "move_rotation_origin", id: "Rot", delta: [-10, 0] }]);
+  });
+
+  it("disables the empty all-cells fields between keys", () => {
+    const { doc, viewport, target } = setup("Rot");
+    viewport.originAllCells = true;
+    withRotAxis(doc);
+    for (const label of ["Origin X (all cells)", "Origin Y (all cells)"]) {
+      const input = rotationField(target, label);
+      expect(input.disabled).toBe(true);
+      expect(input.value).toBe("");
+    }
   });
 });

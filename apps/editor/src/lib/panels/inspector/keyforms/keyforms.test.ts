@@ -12,6 +12,8 @@ import {
   nearestKey,
   type ParameterData,
   rotationCellCommand,
+  rotationOriginCommand,
+  rotationOriginStep,
   snapToKeys,
   supportsSmooth,
   withPoint,
@@ -194,10 +196,44 @@ describe("rotationCellCommand", () => {
     });
   });
 
+  it("sets one coordinate of the origin of the cell", () => {
+    expect(rotationOriginCommand(model, "Neck", { AngleX: 30 }, 1, 7, false)).toEqual({
+      op: "set_keyform_cell",
+      target: { kind: "deformer", id: "Neck" },
+      cell: { AngleX: 30 },
+      keyform: { ...keyform, origin: [1, 7], angle: 20, kind: "rotation" },
+    });
+    // 元のキーフォームは変えない
+    expect(keyform.origin).toEqual([1, 2]);
+  });
+
+  it("moves the origin of every cell by the difference from the cell", () => {
+    expect(rotationOriginCommand(model, "Neck", { AngleX: -30 }, 0, 4.5, true)).toEqual({
+      op: "move_rotation_origin",
+      id: "Neck",
+      delta: [3.5, 0],
+    });
+    expect(rotationOriginCommand(model, "Neck", { AngleX: -30 }, 1, 2, true)).toBeNull();
+  });
+
+  it("steps the origin in UV under a warp and in pixels otherwise", () => {
+    const deformers = [
+      ...model.deformers,
+      { id: "Hair", parent: "Face", kind: { type: "rotation" } },
+      { id: "Tip", parent: "Neck", kind: { type: "rotation" } },
+    ];
+    const nested = { ...model, deformers };
+    expect(rotationOriginStep(nested, "Hair")).toBe(0.01);
+    expect(rotationOriginStep(nested, "Tip")).toBe(1);
+    expect(rotationOriginStep(nested, "Neck")).toBe(1);
+  });
+
   it("sends nothing without the rotation deformer or the cell", () => {
     expect(rotationCellCommand(model, "Neck", { AngleX: 0 }, "angle", 5)).toBeNull();
     expect(rotationCellCommand(model, "Face", {}, "angle", 5)).toBeNull();
     expect(rotationCellCommand(model, "Gone", {}, "angle", 5)).toBeNull();
     expect(rotationCellCommand(null, "Neck", { AngleX: 30 }, "angle", 5)).toBeNull();
+    expect(rotationOriginCommand(model, "Neck", { AngleX: 0 }, 0, 5, false)).toBeNull();
+    expect(rotationOriginCommand(model, "Face", {}, 0, 5, true)).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // デフォーマのギズモ: ポインタの操作から送るコマンド (docs/testing.md#エディタの部品のテスト)。
+import { flushSync } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../../../i18n";
 import { Selection } from "../../../selection.svelte";
@@ -286,6 +287,17 @@ describe("DeformerGizmo keys", () => {
         keyform: { ...ROT_KEYFORM, origin: [55, 50], kind: "rotation" },
       },
     ]);
+  });
+
+  it("keeps Origin: all cells on the controller and moves every cell with the arrow keys", async () => {
+    const { controller, doc, target } = setup("Rot");
+    get<HTMLElement>(target, '.vp-band [role="checkbox"]').click();
+    flushSync();
+    expect(controller.originAllCells).toBe(true);
+    press(document.body, "ArrowDown");
+    await settle();
+    // 1 ピクセルは表示の倍率 2 でキャンバスの 0.5
+    expect(doc.commands).toEqual([{ op: "move_rotation_origin", id: "Rot", delta: [0, 0.5] }]);
   });
 
   it("does not take the keys pressed inside a dialog", () => {

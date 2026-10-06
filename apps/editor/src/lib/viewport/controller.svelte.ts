@@ -78,6 +78,11 @@ export class ViewportController {
   /** 選択中のメッシュ・ワープの深度を色の点で重ねるか (インスペクタの深度の節で切り替える)。 */
   showDepth = $state(false);
   /**
+   * 回転デフォーマの原点の移動をすべてのセルに適用するか (ギズモの帯の「Origin: all cells」で切り替え、ギズモの矢印キーと
+   * インスペクタの原点の欄が従う。docs/editor.md#デフォーマの編集)。
+   */
+  originAllCells = $state(false);
+  /**
    * 物理のプレビュー中か (docs/editor.md#物理のプレビュー)。プレビュー中は毎フレーム `update(dt)` で
    * 物理を進めて描き続ける。止めると物理を外し、編集中の姿 (スライダーの値) に戻す。
    */
