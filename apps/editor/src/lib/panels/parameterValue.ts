@@ -37,3 +37,40 @@ export function duplicateKeyError(value: number, keys: number[], range: Range): 
   const existing = keyAt(keys, value, keyTolerance(range));
   return existing === undefined ? null : t("parameters.key.duplicate", { key: existing });
 }
+
+/** スライダーのつまみの幅の半分 (CSS px)。キーの印は、つまみの中心が動く範囲 (両端から 8px 内側) に置く。 */
+const THUMB_HALF = 8;
+
+/** キー `key` の、値域の中での割合 (0〜1。値域が空なら真ん中)。 */
+function keyFraction(range: Range, key: number): number {
+  const span = range.max - range.min;
+  return span > 0 ? (key - range.min) / span : 0.5;
+}
+
+/** キーの印の `left` (スライダーの幅に対する CSS の式)。 */
+export function markerLeft(range: Range, key: number): string {
+  return `calc(${THUMB_HALF}px + (100% - ${2 * THUMB_HALF}px) * ${keyFraction(range, key)})`;
+}
+
+/**
+ * 印の帯の左端から `x` (CSS px) の所を押したときに移るキー: 中心が最も近い印のキー (帯の幅は `width`)。
+ * 印の押せる範囲 (24px) は、近いキーどうしで重なる。重なった所では、上に描かれた印ではなく近い方のキーを選ぶ。
+ */
+export function nearestMarkerKey(
+  range: Range,
+  keys: readonly number[],
+  x: number,
+  width: number,
+): number | undefined {
+  let best: number | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const key of keys) {
+    const center = THUMB_HALF + (width - 2 * THUMB_HALF) * keyFraction(range, key);
+    const distance = Math.abs(center - x);
+    if (distance < bestDistance) {
+      best = key;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}

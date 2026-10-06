@@ -27,7 +27,13 @@ import {
 import ParameterGroupSelect from "./parameters/ParameterGroupSelect.svelte";
 import ParameterGroups from "./parameters/ParameterGroups.svelte";
 import ParameterMirror from "./parameters/ParameterMirror.svelte";
-import { duplicateKeyError, formatValue, parseValue } from "./parameterValue";
+import {
+  duplicateKeyError,
+  formatValue,
+  markerLeft,
+  nearestMarkerKey,
+  parseValue,
+} from "./parameterValue";
 
 interface Props {
   parameters: ParameterDef[];
@@ -83,11 +89,17 @@ function keysOf(id: string): number[] {
   return bindings.find((b) => b.parameter === id)?.keys ?? [];
 }
 
-/** キーの印の位置。スライダーのつまみ (幅 16px ほど) の中心が動く範囲に合わせる。 */
-function position(p: ParameterDef, key: number): string {
-  const span = p.max - p.min;
-  const at = span > 0 ? (key - p.min) / span : 0.5;
-  return `calc(8px + (100% - 16px) * ${at})`;
+/**
+ * キーの印を押したとき: 押した所に中心が最も近い印のキーへ移る (押せる範囲が隣の印と重なる所では近い方。
+ * docs/ui.md#そのほか)。キーボードで押した (`detail` が 0) ときは、その印のキー。
+ */
+function goToMarker(p: ParameterDef, keys: number[], key: number, event: MouseEvent) {
+  const strip = (event.currentTarget as HTMLElement).parentElement;
+  if (event.detail > 0 && strip) {
+    const rect = strip.getBoundingClientRect();
+    key = nearestMarkerKey(p, keys, event.clientX - rect.left, rect.width) ?? key;
+  }
+  viewport.setParameter(p.id, key);
 }
 
 function snap() {
@@ -298,23 +310,27 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
           aria-label={p.name}
           oninput={(e) => onInput(p.id, e)}
         />
-        {#each keys as key (key)}
-          <Tooltip text={t("parameters.key.marker", { key })}>
-            {#snippet trigger(attrs)}
-              <button
-                {...attrs}
-                class="marker"
-                class:current={key === onKey}
-                style:left={position(p, key)}
-                aria-label={t("parameters.key.goTo", { key })}
-                onclick={(e) => {
-                  (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
-                  viewport.setParameter(p.id, key);
-                }}
-              ></button>
-            {/snippet}
-          </Tooltip>
-        {/each}
+        {#if keys.length > 0}
+          <span class="markers">
+            {#each keys as key (key)}
+              <Tooltip text={t("parameters.key.marker", { key })}>
+                {#snippet trigger(attrs)}
+                  <button
+                    {...attrs}
+                    class="marker"
+                    class:current={key === onKey}
+                    style:left={markerLeft(p, key)}
+                    aria-label={t("parameters.key.goTo", { key })}
+                    onclick={(e) => {
+                      (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                      goToMarker(p, keys, key, e);
+                    }}
+                  ></button>
+                {/snippet}
+              </Tooltip>
+            {/each}
+          </span>
+        {/if}
       </span>
       {#if valueError?.id === p.id}<p class="error ugoe-selectable" id="{ids}-value-error">{valueError.message}</p>{/if}
       {#if editing === p.id}
@@ -440,21 +456,50 @@ li {
   width: 100%;
 }
 
-.marker {
-  position: absolute;
-  bottom: -2px;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  padding: 0;
-  border: none;
-  transform: rotate(45deg);
-  background: var(--ugoe-color-text-muted);
-  cursor: pointer;
+/*
+ * キーの印の帯: スライダーの下に重ねる。印の押せる範囲は 24×24 で、見た目の◆は上端の 6px (::before)。
+ * 帯の上の 4px はスライダーの下の余白に、下の 8px は行の間の余白 (li の margin) に重ねる。
+ * 帯そのものは押せない (重なったスライダーを押せるように)。
+ */
+.markers {
+  position: relative;
+  display: block;
+  height: var(--ugoe-target-min);
+  margin: -4px 0 -8px;
+  pointer-events: none;
 }
 
-.marker.current {
+.marker {
+  position: absolute;
+  top: 0;
+  width: var(--ugoe-target-min);
+  height: var(--ugoe-target-min);
+  margin-left: calc(var(--ugoe-target-min) / -2);
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.marker::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  background: var(--ugoe-color-text-muted);
+}
+
+.marker.current::before {
   background: var(--ugoe-color-accent);
+}
+
+.marker:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: -2px;
 }
 
 .editor {

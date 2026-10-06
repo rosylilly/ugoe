@@ -372,7 +372,10 @@ async function removeKey(parameter: string, key: number) {
   border-color: var(--ugoe-color-accent);
 }
 
+/* 「キーへ移る」「キーを消す」: 押せる範囲は 24×24 以上 (docs/ui.md#そのほか)。 */
 .chip button {
+  min-width: var(--ugoe-target-min);
+  min-height: var(--ugoe-target-min);
   border: none;
   background: none;
   color: inherit;

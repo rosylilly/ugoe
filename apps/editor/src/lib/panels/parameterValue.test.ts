@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { duplicateKeyError, formatValue, parseValue } from "./parameterValue";
+import {
+  duplicateKeyError,
+  formatValue,
+  markerLeft,
+  nearestMarkerKey,
+  parseValue,
+} from "./parameterValue";
 
 const range = { min: -30, max: 30 };
 
@@ -41,5 +47,23 @@ describe("duplicateKeyError", () => {
   it("allows a new value", () => {
     expect(duplicateKeyError(15, [-30, 0, 30], range)).toBeNull();
     expect(duplicateKeyError(0, [], range)).toBeNull();
+  });
+});
+
+describe("key markers", () => {
+  it("places markers where the slider thumb's center travels", () => {
+    expect(markerLeft(range, -30)).toBe("calc(8px + (100% - 16px) * 0)");
+    expect(markerLeft(range, 15)).toBe("calc(8px + (100% - 16px) * 0.75)");
+    expect(markerLeft({ min: 1, max: 1 }, 1)).toBe("calc(8px + (100% - 16px) * 0.5)");
+  });
+
+  it("picks the key whose marker center is nearest", () => {
+    // 幅 216: キー -30・0・30 の中心は 8・108・208。
+    expect(nearestMarkerKey(range, [-30, 0, 30], 97, 216)).toBe(0);
+    expect(nearestMarkerKey(range, [-30, 0, 30], 219, 216)).toBe(30);
+    // 中心が 108 と 118 の 2 つの印の重なり
+    expect(nearestMarkerKey(range, [0, 3], 112, 216)).toBe(0);
+    expect(nearestMarkerKey(range, [0, 3], 114, 216)).toBe(3);
+    expect(nearestMarkerKey(range, [], 0, 216)).toBeUndefined();
   });
 });
