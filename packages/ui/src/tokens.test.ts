@@ -133,4 +133,15 @@ describe("tokens.css", () => {
     expect(checked).toBeGreaterThan(5);
     expect(missing).toEqual([]);
   });
+
+  it("keeps the dialog close button out of the overlay scrollbar", () => {
+    // ダイアログの全体が送るとき (200% の拡大)、右上の閉じるボタンは送る枠 (.ugoe-dialog) の中にあるので、
+    // 右の空きが --ugoe-scrollbar-gap に足りないと指を乗せたスクロールバーの下に入る (T0979)
+    const dialog = readFileSync(join(here, "components/Dialog.svelte"), "utf8");
+    const close = blockAfter(dialog, dialog.indexOf(".ugoe-dialog .ugoe-dialog__close {"));
+    const right = close.match(/\bright\s*:\s*([^;]+);/)?.[1]?.trim() ?? "";
+    const inset =
+      declarations(dialog).get(right.replace(/^var\((--ugoe-[a-z0-9-]+)\)$/, "$1")) ?? right;
+    expect(inset).toMatch(/^max\(.*var\(--ugoe-scrollbar-gap\)/);
+  });
 });

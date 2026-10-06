@@ -127,6 +127,11 @@ let {
       max-height: calc(100vh - 2 * var(--ugoe-space-4));
       /* 行末の padding (space-5 は 16px 以上) がスクロールバーの分 (--ugoe-scrollbar-gap) を空ける */
       padding: var(--ugoe-space-5);
+      /*
+       * 閉じるボタンの右の空き。ダイアログの全体が送るとき (200% の拡大の大きいダイアログ) に重ねて描くスクロールバーの
+       * 下に入らないように、送るかどうかに依らず --ugoe-scrollbar-gap 以上空ける (T0979)
+       */
+      --ugoe-dialog-close-inset: max(var(--ugoe-space-4), var(--ugoe-scrollbar-gap));
       overflow: auto;
       border: 1px solid var(--ugoe-color-border);
       border-radius: var(--ugoe-radius-lg);
@@ -164,9 +169,12 @@ let {
       line-height: var(--ugoe-line-height-control);
     }
 
-    /* 閉じるボタンと重ならないように */
+    /* 閉じるボタンと重ならないように (ボタンの左から space-3 空ける) */
     .ugoe-dialog--dismissible .ugoe-dialog__title {
-      padding-right: calc(var(--ugoe-target-min) + var(--ugoe-space-2));
+      padding-right: calc(
+        var(--ugoe-dialog-close-inset) + max(var(--ugoe-control-height), var(--ugoe-target-min)) +
+          var(--ugoe-space-3) - var(--ugoe-space-5)
+      );
     }
 
     .ugoe-dialog__description {
@@ -185,7 +193,7 @@ let {
     .ugoe-dialog .ugoe-dialog__close {
       position: absolute;
       top: var(--ugoe-space-4);
-      right: var(--ugoe-space-4);
+      right: var(--ugoe-dialog-close-inset);
     }
   }
 </style>
