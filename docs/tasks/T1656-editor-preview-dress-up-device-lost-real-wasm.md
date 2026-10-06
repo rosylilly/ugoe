@@ -1,11 +1,11 @@
 ---
 id: T1656
 title: "エディタ: プレビューの着せ替えの「読み込みの途中に GPU を失う → 作り直して付け直す」を本物の wasm で通すシナリオを足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1656
 ---
 
 # T1656: エディタ: プレビューの着せ替えの「読み込みの途中に GPU を失う → 作り直して付け直す」を本物の wasm で通すシナリオを足す
