@@ -1,11 +1,11 @@
 ---
 id: T0062
 title: "web-check (pre-push と just ci) の前に、アプリの wasm の生成物が古いかを確かめ、古ければ作り直すか分かるエラーで止める"
-status: todo
+status: in-progress
 milestone: M10
 crates: [scripts, justfile, lefthook.yml, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0062
 ---
 
 # T0062: web-check (pre-push と just ci) の前に、アプリの wasm の生成物が古いかを確かめ、古ければ作り直すか分かるエラーで止める
