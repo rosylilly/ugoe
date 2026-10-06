@@ -459,6 +459,13 @@ try {
   glow (0.17) に渡し、glow は失ったコンテキストの `getSupportedExtensions()` が返す `null` を `unwrap` して panic する
   (`glow-0.17.0/src/web_sys.rs` の `build_extensions!`)。そこで WebGL2 で作るときは、サーフェスを作った直後 (アダプタを求める前) に
   同じ canvas の `getContext("webgl2")` (wgpu が受け取ったものと同じコンテキスト) の `isContextLost()` を確かめ、失っていれば `context_unavailable` を投げる。
+- 作成の途中の喪失 (T0944): GPU プロセスが落ちると、同期的に進む作成の途中 (glow の初期化・シェーダーのリンクの後など) でもコンテキストを失う。
+  glow と wgpu-hal は、失ったコンテキストが返す値のいくつかを `unwrap` するので (`getSupportedExtensions()` の `null`・`getParameter(VERSION)` の
+  `null`・`getUniformBlockIndex()` の `INVALID_INDEX`)、WebGL2 で作るときはそのコンテキストのオブジェクトの上でこの 3 つを包み、panic する値を
+  panic しない値に置き換える (`src/web/lost_context.rs`。生きているコンテキストでは返らない値だけなので、振る舞いは変わらない)。GPU プロセスが落ちた
+  直後は、既定の値が返っても `isContextLost()` が偽のままのことがあるので、失ったかどうかでは見分けない。作成の最後にもう一度
+  `isContextLost()` を確かめ、途中で失っていれば (別の段の失敗も含めて) `context_unavailable` を投げる (`webglcontextlost` は後で届くので、
+  作れたことにすると `is_lost()` がまだ偽の WebPuppet を渡してしまう)。確かめ方は [docs/testing.md](../../docs/testing.md#puppetsurface-のブラウザのテスト)。
 - 知らない `backend` (`unknown backend ...`) と、起きないはずの失敗 (canvas のサーフェスが形式を 1 つも持たない・`webglcontextlost` を聞けない) は、
   組み込みの誤りなので `code` を持たない `Error` のまま。
 - 種類は `src/create.rs` の `CreateError`。使う側: `@ugoe/player` の `PuppetSurface` と `<ugoe-avatar>` は、作り直しの途中の失敗を

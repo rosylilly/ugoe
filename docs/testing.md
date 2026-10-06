@@ -326,7 +326,7 @@ just conformance --only c   # C ABI だけ
 ## PuppetSurface のブラウザのテスト
 
 エディタのビューポートと Player が共有する `PuppetSurface` (`packages/player/src/surface.ts`。[docs/ui.md](ui.md#webpuppet-の寿命)) と、
-それを使う `Player` (`player.svelte.ts`) を、本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で確かめます (T0936・T0939)。
+それを使う `Player` (`player.svelte.ts`) を、本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で確かめます (T0936・T0939・T0944)。
 順序の細部は偽の wasm の Vitest (`surface.test.ts`・`player*.test.ts`) が確かめるので、ここでは本物の GPU と wasm でも通ることを見ます。
 
 ```sh
@@ -342,6 +342,14 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   作り直しでそうなれば待って試し直し、作り直しの回数に数える (`recreate-on-lost-context`。T0475)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
   描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
   WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
+- **シナリオ (GPU プロセスの喪失。T0944):** 描いている間に GPU プロセスが落ちたら、`PuppetSurface` は WebGL2 の喪失として復元を待ち、新しい canvas で
+  作り直して描く (2 回続けて。`gpu-process-crash`)。`Player` はモデル・モジュール・値を戻して描く (`player-gpu-process-crash`)。
+  作成の途中の喪失は 3 つで確かめます: 作成の WebGL2 の呼び出しを数え、そのどの呼び出しの前で失っても `WebPuppet.create` が `CreateError`
+  (`context_unavailable`) で失敗する (`lose-context-during-create`。決まった時機で、走るたびに同じ)・GPU プロセスが落ちた直後の Chrome のように、
+  リンクできたプログラムの `getUniformBlockIndex` が `INVALID_INDEX` を返しても panic しない (`invalid-block-index-during-create`)・
+  Node の側から時機をずらして GPU プロセスを落とし、その間は作って読み込んで描くことを繰り返しても、失敗はコードを持つ例外だけで panic しない
+  (`gpu-process-crash-during-create`。どの段に当たるかは走るたびに変わる)。**wasm の panic** (`console_error_panic_hook` の `panicked at`) が
+  1 つでもあれば、どのシナリオも失敗します。
 - **シナリオ (`Player`):** 着せ替えの見本 (`dress-up.ugoe` とモジュール 1 つ) を開いてパラメータを動かし、WebGL2 のコンテキストを失って復元したら、
   新しい WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描き (`capture` の読み戻しで確かめる。2 回続けて)、利用者のズームとパン
   (`view`) を保ち、その後に開き直したモデルは fit で見せる (`player-loss-restore`。T0942)。
@@ -359,6 +367,21 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   繰り返すシナリオでは、捨てた canvas のコンテキストも GC されるまで数に入り (復元したものは生き返る)、今のコンテキストが失われて
   落ちることがあるので、run.mjs は Chrome を `--max-active-webgl-contexts=256` で起動します (`--max-webgl-contexts N` で変えられる)。
   失ったコンテキストを `getContext` が返す状態は、シナリオが canvas のコンテキストを先に作って `WEBGL_lose_context` で失わせて作ります (T0475)。
+- **GPU プロセスの落とし方 (T0944):** run.mjs がブラウザの CDP の `Browser.crashGpuProcess` で落とし、ページに `crashGpuProcess(delay?)` として
+  出します (`delay` を渡すと待たずに戻り、Node の側から落とすので、ページの JS が同期的に動いている間 (wasm の作成の途中) にも落とせる)。
+  ヘッドレスの Chrome (154) と SwiftShader で落とせ、落ちた canvas には `webglcontextlost` が届き、約 1 秒後に `webglcontextrestored` が届きます。
+  Chrome は GPU プロセスが続けて落ちると GPU を諦め (SwiftShader の後に代わりが無いので、6 回ほどでブラウザごと終わる)、落ちたときに
+  WebGL を使っていたページの WebGL を止めます (以後 `getContext` が `null`)。何度も落とすため、run.mjs は Chrome を
+  `--disable-gpu-process-crash-limit` と `--disable-domain-blocking-for-3d-apis` で起動します (本物の Chrome では、続けて落ちると
+  `context_unavailable` で作れなくなる。`PuppetSurface` は待って試し直し、上限で諦める)。
+  作成の途中の決まった時機の喪失は、シナリオが `WebGL2RenderingContext` のプロトタイプのメソッドを包んで呼び出しを数え、N 回目の前に
+  `loseContext` を呼んで起こします (wasm-bindgen のグルーはその場でメソッドを引くので包める)。
+- **GPU プロセスの喪失で見つけた panic (T0944):** 作成の途中で失うと、glow の `from_webgl2_context` (`getSupportedExtensions()`・`getParameter(VERSION)`
+  の `unwrap`) と wgpu-hal の `create_render_pipeline` (`getUniformBlockIndex()` の `unwrap`) で panic していました (panic の後は作成の Promise が
+  決着しない)。後のものは `loseContext` では起きず (失ったコンテキストの `getUniformBlockIndex` は 0 を返す)、GPU プロセスを落としたときだけ、
+  `isContextLost()` が偽のまま `INVALID_INDEX` が返って起きます。ugoe-wasm がこの 3 つを包んで直しました
+  ([crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#作成の失敗-t0475))。直す前は、作成だけを 120 回ほど落としながら繰り返すと数回 panic し、
+  直した後は (作成・読み込み・描画を繰り返しても) 0 回でした (T0944 のメモ)。
 - **テストが壊れを見つけること (T0939 で確かめた):** `surface.ts` で、倍率の問い合わせを `attach` で作らない・`change` の後に聞き直さない・
   `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
   作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。
@@ -377,7 +400,8 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   devDependencies に入れた) と Svelte のプラグインで 1 つの ES モジュールにまとめて配ります (runes と依存を含むため)。
 - **CI:** `conformance` ジョブ (Chrome と wasm-bindgen-cli が入っている) で、適合テストの後に流します。落ちたときはページのコンソールを
   `target/player-browser/page.log` に残します。
-- WebGPU のデバイスの喪失は、ヘッドレスの Chrome で起こす手段が無いので確かめていません (偽の wasm のテストだけ)。
+- WebGPU のデバイスの喪失は、ヘッドレスの Chrome で WebGPU を有効にしていないので確かめていません (偽の wasm のテストだけ。
+  `Browser.crashGpuProcess` で起こせる見込みはあるが試していない)。本物の GPU (ドライバのリセットなど) での喪失は docs/manual-check.md の D09。
 
 ## エディタの部品のテスト
 

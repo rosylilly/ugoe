@@ -146,6 +146,7 @@ player.pushFrame(decodeFrame(buffer));
 `browser-test/` は `PuppetSurface` と `Player` を本物の wasm (`just wasm` の生成物) とヘッドレスの Chrome の WebGL2 で動かす (T0936・T0939)。
 `PuppetSurface` は作成・描画・WebGL2 の喪失からの作り直し (復元を待つ。T0935)・続けて失ったときの諦め・作っている間の破棄・
 失ったコンテキストしか取れないときの作成の失敗 (`CreateError`。T0475)・
+作成の途中・描画中に GPU プロセスごと失ったときの作り直しと、wasm が panic しないこと (T0944)・
 devicePixelRatio だけが変わったときの追従を、`Player` は作り直しでモデル・モジュール・パラメータの値を戻すことと、倍率が変わったときの
 ビュー・ズームの換算・読み戻しの大きさを確かめる。
 `just player-browser` で流す (Chrome と wasm-bindgen-cli が要る。`just ci` には入れず、CI の `conformance` ジョブで流す)。

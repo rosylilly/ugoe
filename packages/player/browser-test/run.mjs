@@ -130,10 +130,14 @@ const browser = await chromium.launch({
   // WebGPU は有効にしないので、PuppetSurface の "auto" は WebGL2 で作る。
   // 作り直しを繰り返すシナリオは、捨てた canvas のコンテキストが GC されるまで数に入るので、上限 (16) に当たって
   // 今のコンテキストを失わないよう、上限を上げる (T0938)。
+  // GPU プロセスを何度も落とすシナリオ (T0944) のため、落ちた回数の上限 (超えると Chrome は GPU を諦め、ソフトウェアの
+  // 代わりも無ければブラウザごと終わる) と、落ちたときにページの WebGL を止める仕組み (`getContext` が `null` を返す) を外す。
   args: [
     "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader",
     `--max-active-webgl-contexts=${maxWebglContexts}`,
+    "--disable-gpu-process-crash-limit",
+    "--disable-domain-blocking-for-3d-apis",
   ],
 });
 let failed = 0;
@@ -158,6 +162,18 @@ try {
     });
     mediaToggle = !mediaToggle;
     await cdp.send("Emulation.setEmulatedMedia", { media: mediaToggle ? "screen" : "" });
+  });
+  // GPU プロセスを落とす (CDP の `Browser.crashGpuProcess`。T0944)。`delay` (ミリ秒) を渡すと、待たずに戻って、その後で
+  // Node の側から落とす (ページの JS が同期的に動いている間 (wasm の作成の途中など) にも落とせる)。
+  const browserCdp = await browser.newBrowserCDPSession();
+  await page.exposeFunction("crashGpuProcess", async (delay) => {
+    if (delay === undefined || delay === null) {
+      await browserCdp.send("Browser.crashGpuProcess");
+      return;
+    }
+    setTimeout(() => {
+      browserCdp.send("Browser.crashGpuProcess").catch(() => {});
+    }, delay);
   });
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.waitForFunction(() => typeof window.runScenarios === "function");

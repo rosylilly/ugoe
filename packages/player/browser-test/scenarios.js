@@ -1,4 +1,4 @@
-// PuppetSurface と Player のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936・T0939・T0938)。
+// PuppetSurface と Player のブラウザのテストのシナリオ (run.mjs が配るページで動く。T0936・T0939・T0938・T0944)。
 //
 // 本物の wasm (/wasm/ugoe_wasm.js) とヘッドレスの Chrome の WebGL2 (SwiftShader) で、PuppetSurface (/player.js。
 // @ugoe/player を Vite でまとめたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935。復元が届かなければ
@@ -9,6 +9,9 @@
 // - `WebPuppet.create` と `free` を包んで、生きている WebPuppet を数える (GPU の資源が残らないことを確かめる)。
 // - 描いたことは、描いた直後に canvas を 2D の canvas に写して、透明でない画素があるかで確かめる (背景は透明)。
 // - コンテキストの喪失と復元は `WEBGL_lose_context` の `loseContext`・`restoreContext` で起こす。
+// - GPU プロセスごと失うのは、run.mjs が出す `crashGpuProcess` (CDP の `Browser.crashGpuProcess`) で起こす (T0944)。
+//   作成の途中の決まった時機での喪失は、WebGL2 の呼び出しを数えて、N 回目の前に `loseContext` を呼んで起こす。
+// - wasm の panic (`console_error_panic_hook` がコンソールに出す `panicked at`) が 1 つでもあれば、そのシナリオは失敗する。
 // - devicePixelRatio だけの変化は、run.mjs が出す `setDevicePixelRatio` (CDP の `Emulation.setDeviceMetricsOverride`) で起こす (T0939)。
 // - `window.runScenarios(names)` が結果 ([{name, ok, error}]) を返す (names が null ならすべて)。
 
@@ -40,6 +43,41 @@ let onCreating = null;
  * (Chrome が失ったコンテキストを返すとき (描画バッファを作れない・上限に当たったなど) と同じ状態。T0475)。
  */
 let loseContextsBeforeCreate = 0;
+/**
+ * WebGL2 の呼び出し (WebGL2RenderingContext のプロトタイプのメソッド。wasm-bindgen のグルーはその場でメソッドを引くので、
+ * 包めば数えられる) の数。`loseAtCall` 回目の呼び出しの前に、そのコンテキストを失わせる (作成の途中の喪失。T0944)。
+ * `invalidBlockIndex` なら `getUniformBlockIndex` が `INVALID_INDEX` を返す (GPU プロセスが落ちた直後の Chrome と同じ。
+ * そのとき `isContextLost()` はまだ偽。`loseContext` では起きない)。
+ */
+const glCalls = { count: 0, loseAtCall: 0, invalidBlockIndex: false };
+for (const name of Object.getOwnPropertyNames(WebGL2RenderingContext.prototype)) {
+  const original = Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, name).value;
+  if (typeof original !== "function" || name === "constructor") continue;
+  WebGL2RenderingContext.prototype[name] = function (...args) {
+    if (++glCalls.count === glCalls.loseAtCall) {
+      WebGL2RenderingContext.prototype.getExtension.call(this, "WEBGL_lose_context")?.loseContext();
+    }
+    const result = original.apply(this, args);
+    return name === "getUniformBlockIndex" && glCalls.invalidBlockIndex ? 0xffffffff : result;
+  };
+}
+
+// --- wasm の panic ---
+
+/** 今のシナリオで見た panic (`console_error_panic_hook` の `console.error`)。 */
+const panics = [];
+/** panic を待つもの (`within`。panic の後は作成の Promise が決着しないので、時間切れを待たずに失敗する)。 */
+const panicWaiters = new Set();
+const consoleError = console.error;
+console.error = (...args) => {
+  const text = args.map(String).join(" ");
+  if (text.includes("panicked at")) {
+    panics.push(text.split("\n")[0]);
+    for (const reject of panicWaiters) reject(new Error(`wasm panicked: ${panics.at(-1)}`));
+  }
+  consoleError.apply(console, args);
+};
+
 const create = WebPuppet.create;
 WebPuppet.create = async function (...args) {
   if (loseContextsBeforeCreate > 0) {
@@ -253,15 +291,74 @@ function loseContextOf(canvas) {
   return ext;
 }
 
-/** `promise` を待つ。`WAIT_MS` を過ぎたら失敗する (wasm が panic すると、作成の Promise は決着しない)。 */
+/**
+ * `promise` を待つ。`WAIT_MS` を過ぎるか wasm が panic したら失敗する (wasm が panic すると、作成の Promise は
+ * 決着しない)。
+ */
 function within(promise, what) {
   let timer;
+  let waiter;
   return Promise.race([
     promise,
     new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`timed out waiting for ${what}`)), WAIT_MS);
+      waiter = reject;
+      panicWaiters.add(waiter);
     }),
-  ]).finally(() => clearTimeout(timer));
+  ]).finally(() => {
+    clearTimeout(timer);
+    panicWaiters.delete(waiter);
+  });
+}
+
+/** GPU プロセスを落として、新しい GPU プロセスで WebGL2 を作れるようになるまで待つ (T0944)。 */
+async function crashGpuProcessAndWait() {
+  await window.crashGpuProcess();
+  await untilGpuIsBack();
+}
+
+/** 新しい canvas の WebGL2 のコンテキストを作れて、失っていない状態になるまで待つ。 */
+async function untilGpuIsBack() {
+  await until(() => {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2");
+    const ok = gl !== null && !gl.isContextLost();
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    return ok;
+  }, "the GPU process to come back");
+}
+
+/**
+ * `WebPuppet.create` で作ったものを読み込んで描き、大きさを変えて描く (どこかで GPU を失ってもよい)。失敗はコードを持つ
+ * 例外 (`CreateError`・`LoadError`・`RenderError`) だけを許し、何が起きたかを返す。
+ */
+async function createLoadRender(canvas, bytes) {
+  let puppet;
+  try {
+    puppet = await within(WebPuppet.create(canvas, "webgl2"), "create");
+  } catch (e) {
+    check(
+      e instanceof Error && e.name === "CreateError" && typeof e.code === "string",
+      `create failed without a CreateError: ${e?.name}: ${e}`,
+    );
+    return `create failed (${e.code})`;
+  }
+  try {
+    puppet.load_bundle(bytes);
+    puppet.fit();
+    puppet.render();
+    puppet.resize(100, 80);
+    puppet.render();
+    return "drawn";
+  } catch (e) {
+    check(
+      e instanceof Error && typeof e.code === "string",
+      `using the puppet failed without a code: ${e?.name}: ${e}`,
+    );
+    return `${e.name} (${e.code})`;
+  } finally {
+    puppet.free();
+  }
 }
 
 /** 作成の失敗が、コンテキストを作れなかったことを示す `CreateError` である (T0475)。 */
@@ -557,6 +654,174 @@ const scenarios = {
     check(live.size === 0, `${live.size} live puppets after giving up`);
   },
 
+  /**
+   * 作成の途中で WebGL2 のコンテキストを失っても (作成の WebGL2 の呼び出しのどの前でも)、`WebPuppet.create` は panic
+   * せずに `CreateError` (`context_unavailable`) で失敗する。その後も作って描ける (T0944)。
+   */
+  async "lose-context-during-create"() {
+    const bytes = await modelBytes();
+    // 作成の呼び出しの数を数える (失わずに 1 回作る)
+    glCalls.count = 0;
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    const counted = await within(WebPuppet.create(canvas, "webgl2"), "create");
+    const calls = glCalls.count;
+    counted.free();
+    check(calls > 10, `create made only ${calls} WebGL2 calls`);
+    for (let n = 1; n <= calls; n++) {
+      const canvas = document.createElement("canvas");
+      document.body.append(canvas);
+      glCalls.count = 0;
+      glCalls.loseAtCall = n;
+      let error = null;
+      try {
+        (await within(WebPuppet.create(canvas, "webgl2"), `create (lost before call ${n})`)).free();
+      } catch (e) {
+        error = e;
+      } finally {
+        glCalls.loseAtCall = 0;
+        canvas.remove();
+      }
+      expectContextUnavailable(error, `lost before call ${n} of ${calls}`);
+    }
+    check(live.size === 0, `${live.size} live puppets after the failures`);
+    // 失わなければ作って描ける
+    const fresh = document.createElement("canvas");
+    document.body.append(fresh);
+    const result = await createLoadRender(fresh, bytes);
+    check(result === "drawn", `after the losses: ${result}`);
+  },
+
+  /**
+   * GPU プロセスが落ちた直後のように、リンクできたプログラムの `getUniformBlockIndex` が `INVALID_INDEX` を返しても
+   * (`isContextLost()` は偽のまま)、`WebPuppet.create` は panic しない (T0944)。
+   */
+  async "invalid-block-index-during-create"() {
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    glCalls.invalidBlockIndex = true;
+    try {
+      (await within(WebPuppet.create(canvas, "webgl2"), "create")).free();
+    } catch (e) {
+      // 作れなくてもよい (コードを持つ失敗なら)
+      check(e instanceof Error && e.name === "CreateError", `create failed with ${e?.name}: ${e}`);
+    } finally {
+      glCalls.invalidBlockIndex = false;
+    }
+    // 戻せば作って描ける
+    const fresh = document.createElement("canvas");
+    document.body.append(fresh);
+    const result = await createLoadRender(fresh, await modelBytes());
+    check(result === "drawn", `after the invalid indices: ${result}`);
+  },
+
+  /**
+   * 作って描いている間に GPU プロセスごと失っても (Node の側から時機をずらして落とし、その間は作って描くことを
+   * 繰り返す)、wasm は panic せず、失敗はコードを持つ例外で返る。落ちた時機は決まらない (どの段に当たるかは走るたびに
+   * 変わる) ので、panic が無いことと、最後に作って描けることだけを確かめる (T0944)。
+   */
+  async "gpu-process-crash-during-create"() {
+    const bytes = await modelBytes();
+    const outcomes = new Map();
+    for (const delay of [0, 30, 60, 100, 150, 200, 300, 400]) {
+      await window.crashGpuProcess(delay);
+      const until = performance.now() + delay + 600;
+      while (performance.now() < until) {
+        const canvas = document.createElement("canvas");
+        document.body.append(canvas);
+        const outcome = await createLoadRender(canvas, bytes);
+        outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
+        canvas.remove();
+      }
+      await untilGpuIsBack();
+    }
+    console.log(
+      `gpu-process-crash-during-create: ${[...outcomes].map(([k, v]) => `${k} x${v}`).join(", ")}`,
+    );
+    check(live.size === 0, `${live.size} live puppets`);
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    const result = await createLoadRender(canvas, bytes);
+    check(result === "drawn", `after the crashes: ${result}`);
+  },
+
+  /**
+   * 描いている途中で GPU プロセスが落ちたら、`PuppetSurface` は WebGL2 のコンテキストの喪失として復元を待ち、新しい
+   * canvas で作り直して描く (2 回続けて。T0944)。
+   */
+  async "gpu-process-crash"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    check((await surface.attach(container)) === "ready", "attach failed");
+    for (let round = 1; round <= 2; round++) {
+      const before = surface.puppet;
+      const oldCanvas = canvasesIn(container)[0];
+      await crashGpuProcessAndWait();
+      await until(
+        () => (surface.puppet !== before && !surface.recovering) || log.failed.length > 0,
+        `round ${round}: the recreation after the GPU process crashed`,
+      );
+      check(log.failed.length === 0, `round ${round}: failed: ${log.failed[0]}`);
+      check(log.lost === round, `round ${round}: lost was called ${log.lost} times`);
+      const last = log.created.at(-1);
+      check(log.created.length === round + 1 && last.recovered, `round ${round}: not recovered`);
+      const canvases = canvasesIn(container);
+      check(
+        canvases.length === 1 && canvases[0] !== oldCanvas,
+        `round ${round}: the canvas was not replaced`,
+      );
+      check(live.size === 1, `round ${round}: ${live.size} live puppets`);
+      expectDrawn(surface, container, `round ${round}`);
+    }
+    surface.detach();
+  },
+
+  /**
+   * GPU プロセスが落ちたら、Player は新しい canvas の WebPuppet でモデルを読み直し、モジュールを付け直し、値を戻して描く
+   * (T0944)。
+   */
+  async "player-gpu-process-crash"() {
+    const container = stage();
+    const player = newPlayer();
+    player.setAutoIdle(false);
+    player.setAutoEyeBlink(false);
+    player.setBackground("#000000", true);
+    await player.attach(container);
+    const module = { name: "cat-ears.ugoemod", bytes: await fileBytes(DRESS_UP_MODULE) };
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) }, [
+      { file: module, attach: true },
+    ]);
+    check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+    const attached = () => player.modules.filter((m) => m.attached).map((m) => m.name);
+    const moduleName = attached()[0];
+    check(moduleName !== undefined, "no module is attached");
+    player.setParameter("MouthForm", 0.7);
+    await frames(2);
+    const oldCanvas = canvasesIn(container)[0];
+    await crashGpuProcessAndWait();
+    await until(() => {
+      const canvases = canvasesIn(container);
+      return (
+        (canvases.length === 1 &&
+          canvases[0] !== oldCanvas &&
+          player.status === "ready" &&
+          !player.waitingForGpu) ||
+        player.status === "unavailable"
+      );
+    }, "the recreation of the player after the GPU process crashed");
+    check(player.status === "ready", `status ${player.status} (${player.error})`);
+    check(player.modelName === "dress-up.ugoe", `model ${player.modelName}`);
+    check(
+      attached().length === 1 && attached()[0] === moduleName,
+      `attached modules: ${attached().join(", ")}`,
+    );
+    await frames(2);
+    check(near(player.values.MouthForm, 0.7), `MouthForm is ${player.values.MouthForm}`);
+    check(live.size === 1, `${live.size} live puppets`);
+    await expectCaptured(player, "after the crash");
+    player.detach();
+  },
+
   /** 作っている間の `detach` と、続けての `attach`。遅れてできた WebPuppet と canvas は残らない。 */
   async "detach-while-creating"() {
     const container = stage();
@@ -809,16 +1074,20 @@ window.runScenarios = async (names) => {
   const results = [];
   for (const [name, run] of Object.entries(scenarios)) {
     if (names && !names.includes(name)) continue;
+    panics.length = 0;
     try {
       await run();
       // シナリオの後に WebPuppet が残っていない (GPU の資源を捨てた)
       check(live.size === 0, `${live.size} live puppets after the scenario`);
+      check(panics.length === 0, `wasm panicked: ${panics[0]}`);
       results.push({ name, ok: true });
     } catch (e) {
       results.push({ name, ok: false, error: e instanceof Error ? e.message : String(e) });
     } finally {
       onCreating = null;
       loseContextsBeforeCreate = 0;
+      glCalls.loseAtCall = 0;
+      glCalls.invalidBlockIndex = false;
       for (const surface of surfaces.splice(0)) surface.detach();
       for (const player of players.splice(0)) player.detach();
       for (let i = localStorage.length - 1; i >= 0; i--) {

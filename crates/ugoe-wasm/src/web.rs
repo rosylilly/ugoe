@@ -36,6 +36,8 @@ mod dress_up;
 mod readback;
 // 受け手の口: 届いた値を基準値として書き、物理だけを進める (T0133)。
 mod follow;
+// 失った WebGL2 のコンテキストで glow・wgpu が panic しないようにする包み (T0944)。
+mod lost_context;
 
 fn js_error(e: impl Display) -> JsError {
     JsError::new(&e.to_string())
@@ -73,20 +75,19 @@ fn create_error(e: CreateError) -> JsValue {
     coded_error(CreateError::NAME, &e.to_string(), e.info())
 }
 
-/// `canvas` の WebGL2 のコンテキストを既に失っている (wgpu が `getContext` で受け取ったものと同じコンテキストを見る)。
+/// `canvas` の WebGL2 のコンテキスト (wgpu が `getContext` で受け取ったものと同じコンテキスト)。取れなければ `None`。
+fn webgl2_context(canvas: &HtmlCanvasElement) -> Option<web_sys::WebGl2RenderingContext> {
+    canvas.get_context("webgl2").ok()??.dyn_into().ok()
+}
+
+/// `gl` を失っている (取れなかった `None` も失ったものとして扱う)。
 ///
 /// Chrome は失ったコンテキストを `getContext` から返すことがある (前に失った canvas・作れなかったときなど)。
-/// wgpu の GL のバックエンド (wgpu-hal 30) はそれを確かめずに glow (0.17) へ渡し、glow は失ったコンテキストの
-/// `getSupportedExtensions()` が返す `null` を `unwrap` して panic するので、アダプタを求める前にここで確かめる (T0475)。
-fn webgl2_context_lost(canvas: &HtmlCanvasElement) -> bool {
-    match canvas.get_context("webgl2") {
-        Ok(Some(context)) => match context.dyn_into::<web_sys::WebGl2RenderingContext>() {
-            Ok(gl) => gl.is_context_lost(),
-            Err(_) => true,
-        },
-        // wgpu が取れたものを取れないなら、使えるコンテキストは無い。
-        _ => true,
-    }
+/// wgpu の GL のバックエンド (wgpu-hal 30) はそれを確かめずに glow (0.17) へ渡すので、アダプタを求める前に確かめて、
+/// 分かりやすい失敗 (`context_unavailable`) にする (T0475)。その後に失ったときは [`lost_context`] の包みが panic を防ぎ、
+/// 作成の最後にもう一度確かめる (T0944)。
+fn webgl2_context_lost(gl: Option<&web_sys::WebGl2RenderingContext>) -> bool {
+    gl.is_none_or(|gl| gl.is_context_lost())
 }
 
 /// `limits_json` を読む (`load_bundle` / `load_module`)。形の誤りは例外。
@@ -136,6 +137,31 @@ pub struct WebPuppet {
     tracking_kept: Vec<String>,
     /// 使っている表情の名前 (`active_expressions`。T0721)。
     active_expressions: crate::animation::ActiveExpressions,
+    /// WebGL2 で作ったときの、失ったコンテキストの包み (T0944)。wgpu の資源を捨てるときにも呼ばれうるので、最後に捨てる。
+    _lost_context: Option<lost_context::LostContextGuard>,
+}
+
+/// `WebPuppet::create_with` の失敗。
+enum CreateFailure {
+    /// コードを持つ失敗 ([`CreateError`])。
+    Create(CreateError),
+    /// コードを持たない失敗 (起きないはずのもの)。
+    Other(JsValue),
+}
+
+impl From<CreateError> for CreateFailure {
+    fn from(e: CreateError) -> Self {
+        Self::Create(e)
+    }
+}
+
+impl From<CreateFailure> for JsValue {
+    fn from(e: CreateFailure) -> Self {
+        match e {
+            CreateFailure::Create(e) => create_error(e),
+            CreateFailure::Other(e) => e,
+        }
+    }
 }
 
 #[wasm_bindgen]
@@ -177,18 +203,49 @@ impl WebPuppet {
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
             .map_err(|e| create_error(CreateError::ContextUnavailable(e.to_string())))?;
         // WebGPU が無ければ wgpu は WebGL2 を使う (`wgpu::Instance::new`)。
-        if !backends.contains(wgpu::Backends::BROWSER_WEBGPU) && webgl2_context_lost(&canvas) {
+        let webgl2 = !backends.contains(wgpu::Backends::BROWSER_WEBGPU);
+        let gl = webgl2.then(|| webgl2_context(&canvas)).flatten();
+        if webgl2 && webgl2_context_lost(gl.as_ref()) {
             return Err(create_error(CreateError::ContextUnavailable(
                 "the WebGL2 context of the canvas is lost".into(),
             )));
         }
+        // 作成の途中 (と描画中) に GPU プロセスが落ちても panic しないように包む (T0944)。
+        let lost_context = gl.as_ref().map(lost_context::LostContextGuard::install);
+        Self::create_with(canvas, instance, surface, lost_context)
+            .await
+            .map_err(|e| match (&gl, e) {
+                // 途中で失って別の段で失敗したときも、コンテキストを失ったことを理由にする (作り直せば作れる)。
+                (Some(gl), CreateFailure::Create(e)) if gl.is_context_lost() => {
+                    create_error(CreateError::ContextUnavailable(e.to_string()))
+                }
+                (_, e) => e.into(),
+            })
+            .and_then(|puppet| match &gl {
+                // 作り終えるまでに失ったものは渡さない (`webglcontextlost` は後で届くので、`is_lost()` はまだ偽)。
+                Some(gl) if gl.is_context_lost() => {
+                    Err(create_error(CreateError::ContextUnavailable(
+                        "the WebGL2 context was lost while creating".into(),
+                    )))
+                }
+                _ => Ok(puppet),
+            })
+    }
+
+    /// `create` の残り (サーフェスを作った後)。
+    async fn create_with(
+        canvas: HtmlCanvasElement,
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'static>,
+        lost_context: Option<lost_context::LostContextGuard>,
+    ) -> Result<WebPuppet, CreateFailure> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
             .await
-            .map_err(|e| create_error(CreateError::AdapterUnavailable(e.to_string())))?;
+            .map_err(|e| CreateError::AdapterUnavailable(e.to_string()))?;
         // レンダラは WebGL2 で使える機能だけを使う。テクスチャの大きさだけはアダプタの上限まで使う。
         let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
         let (device, queue) = adapter
@@ -198,7 +255,7 @@ impl WebPuppet {
                 ..Default::default()
             })
             .await
-            .map_err(|e| create_error(CreateError::DeviceUnavailable(e.to_string())))?;
+            .map_err(|e| CreateError::DeviceUnavailable(e.to_string()))?;
         // canvas がデバイスの扱える大きさを超えていれば、`resize` と同じく上限に収める
         // (超えたままではサーフェスを作れない)。
         let (width, height) = view::surface_size(
@@ -230,7 +287,11 @@ impl WebPuppet {
             .copied()
             .find(|f| !f.is_srgb())
             .or_else(|| caps.formats.first().copied())
-            .ok_or_else(|| JsError::new("the canvas surface supports no texture format"))?;
+            .ok_or_else(|| {
+                CreateFailure::Other(
+                    JsError::new("the canvas surface supports no texture format").into(),
+                )
+            })?;
         let view_format = format.remove_srgb_suffix();
         // 乗算済みアルファで合成できれば、透明な背景でページの上に重ねられる。
         // WebGPU の canvas は常に `premultiplied` に対応するが、wgpu は対応を `Opaque` だけと報告するので
@@ -266,7 +327,8 @@ impl WebPuppet {
         // 描画も失敗しない (何も描かれない) ので、canvas のイベントで `lost` を立てる (T0932)。
         let context_lost = (backend == wgpu::Backend::Gl)
             .then(|| listen_context_lost(&canvas, lost.clone()))
-            .transpose()?;
+            .transpose()
+            .map_err(|e| CreateFailure::Other(e.into()))?;
 
         Ok(Self {
             canvas,
@@ -290,6 +352,7 @@ impl WebPuppet {
             motion_over_tracking: false,
             tracking_kept: Vec::new(),
             active_expressions: Default::default(),
+            _lost_context: lost_context,
         })
     }
 
