@@ -9,12 +9,18 @@
 // - 見本に無い状態 (AI の提案・送る前の確認・送信中・着せ替え・モジュールのプロジェクト) は `host.set({...})` で切り替える
 //   (場面は lib/apps.mjs。中身は lib/editor-fixtures.mjs。T0676)。AI への送信 (`classify_psd_layers` に同意を付けたもの) は
 //   答えを返さずに待ち、`cancel_ai_requests` で `ai.cancelled` で終わる (送信中と取り消しの画面を撮るため)。
+// - 見本のモデルにはグルーを 1 つ足す (`glueModel`。グルーのパネルの編集の欄を撮るため。T0044)。
+// - バックエンドが送るイベント (`listen` で待つもの) は、ページの `window.__uiAuditEmit(event, payload)` で送る
+//   (エージェントが提案を置いた知らせなど)。
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
   aiSettingsFixture,
+  baseChangeFixture,
   differencesFixture,
   disclosureFixture,
+  externalChangeFixture,
+  glueModel,
   manyParametersModel,
   moduleStatusFixture,
   proposalStateFixture,
@@ -60,7 +66,7 @@ function readJsonDir(dir, suffix) {
 export function createEditorHost({ project, bundle }) {
   const sample = {
     name: JSON.parse(readFileSync(join(project, "project.json"), "utf8")).name,
-    model: readFileSync(join(project, "model.json"), "utf8"),
+    model: JSON.stringify(glueModel(JSON.parse(readFileSync(join(project, "model.json"), "utf8")))),
     physics: (() => {
       try {
         return JSON.parse(readFileSync(join(project, "physics.json"), "utf8"));
@@ -113,6 +119,10 @@ export function createEditorHost({ project, bundle }) {
     module: false,
     /** パラメータを 100 個・グループを 10 個にしたモデル (T1630)。描くのは見本の .ugoe のまま。 */
     manyParameters: false,
+    /** 開いているプロジェクトが外で書き換えられた (`check_external_change` が答える。T0044)。 */
+    externalChange: false,
+    /** モジュールのプロジェクトの本体が変わった (`check_base_change` が答える。T0044)。 */
+    baseChange: false,
   };
   /** 答えを待たせている AI への送信 (取り消すと `ai.cancelled` で終わる)。 */
   const pending = [];
@@ -151,8 +161,10 @@ export function createEditorHost({ project, bundle }) {
       return status();
     },
     reload_project: status,
-    check_external_change: () => null,
-    check_base_change: () => null,
+    check_external_change: () =>
+      state.open && state.externalChange ? externalChangeFixture() : null,
+    check_base_change: () =>
+      state.open && state.module && state.baseChange ? baseChangeFixture() : null,
     module_status: () =>
       state.open && state.module && moduleFile
         ? moduleStatusFixture({ name: "Sailor", base: project, model: JSON.parse(sample.model) })
@@ -262,7 +274,9 @@ export function createEditorHost({ project, bundle }) {
   return {
     unknown,
     calls,
-    /** 見本に無い状態を切り替える (`ai`・`restoring`・`dressUp`・`module`・`manyParameters`)。 */
+    /**
+     * 見本に無い状態を切り替える (`ai`・`restoring`・`dressUp`・`module`・`manyParameters`・`externalChange`・`baseChange`)。
+     */
     set(changes) {
       Object.assign(state, changes);
     },
@@ -316,6 +330,13 @@ export function createEditorHost({ project, bundle }) {
  */
 export function editorPageInit({ osLocale, home }) {
   let callbackId = 1;
+  /** transformCallback で預かった関数 (番号 → 関数) と、`listen` で待つイベント (名前 → 関数の番号)。 */
+  const callbacks = new Map();
+  const listeners = new Map();
+  /** バックエンドのイベントを送ったことにする (`listen` の関数に `{ event, id, payload }` を渡す)。 */
+  window.__uiAuditEmit = (event, payload) => {
+    for (const id of listeners.get(event) ?? []) callbacks.get(id)?.({ event, id, payload });
+  };
   window.__uiAuditNextPath = null;
   const nextPath = async () => window.__uiAuditNextPath;
   window.__UGOE_FILE_DIALOGS__ = {
@@ -330,7 +351,11 @@ export function editorPageInit({ osLocale, home }) {
     return btoa(s);
   };
   window.__TAURI_INTERNALS__ = {
-    transformCallback: () => callbackId++,
+    transformCallback: (callback) => {
+      const id = callbackId++;
+      callbacks.set(id, callback);
+      return id;
+    },
     unregisterCallback: () => {},
     convertFileSrc: (p) => p,
     metadata: {
@@ -340,7 +365,10 @@ export function editorPageInit({ osLocale, home }) {
     invoke: async (cmd, args) => {
       if (cmd === "plugin:os|locale") return osLocale;
       if (cmd === "plugin:path|resolve_directory") return home;
-      if (cmd === "plugin:event|listen") return callbackId++;
+      if (cmd === "plugin:event|listen") {
+        listeners.set(args.event, [...(listeners.get(args.event) ?? []), args.handler]);
+        return callbackId++;
+      }
       if (cmd.startsWith("plugin:")) return null;
       const body =
         args instanceof Uint8Array || args instanceof ArrayBuffer

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pattern, text } from "../lib/apps.mjs";
-import { renameModule } from "../lib/editor-fixtures.mjs";
+import { glueModel, renameModule } from "../lib/editor-fixtures.mjs";
 import { createEditorHost, ipcBinding } from "../lib/editor-host.mjs";
 import { contentType, resolvePath, serve } from "../lib/serve.mjs";
 import {
@@ -242,4 +242,46 @@ test("エディタの偽のホスト: パラメータの多いモデル (T1630)"
   assert.ok(model.parameters.some((p) => p.group === null));
   host.set({ manyParameters: false });
   assert.equal(JSON.parse(host.handle("get_model_json").value).parameters.length, 1);
+});
+
+test("エディタの偽のホスト: 見本にグルーを 1 つ足す (T0044)", () => {
+  const uvs = Array.from({ length: 25 }, () => [0, 0]);
+  const model = glueModel({
+    meshes: [
+      { id: "Face", uvs },
+      { id: "HandWave", uvs },
+      { id: "SleeveWave", uvs },
+    ],
+    parameters: [{ id: "ArmWave", min: -1, max: 1, default: 0 }],
+    glues: [],
+  });
+  assert.equal(model.glues.length, 1);
+  const [glue] = model.glues;
+  assert.deepEqual([glue.mesh_a, glue.mesh_b], ["SleeveWave", "HandWave"]);
+  assert.deepEqual(glue.keyforms.bindings, [{ parameter: "ArmWave", keys: [-1, 0, 1] }]);
+  // キーフォームの数は軸のキーの数、頂点の番号はメッシュの中
+  assert.equal(glue.keyforms.keyforms.length, 3);
+  assert.ok(glue.pairs.length > 0);
+  assert.ok(glue.pairs.every((p) => p.a < 25 && p.b < 25));
+  // メッシュが 2 つ無ければそのまま
+  const one = { meshes: [{ id: "Face", uvs }], parameters: [] };
+  assert.equal(glueModel(one), one);
+});
+
+test("エディタの偽のホスト: 外での書き換えと本体の変化は、切り替えたときだけ答える (T0044)", () => {
+  const host = createEditorHost(fakeProject());
+  host.handle("open_project", { path: "/somewhere/x.ugoeproj" });
+  assert.equal(host.handle("check_external_change").value, null);
+  host.set({ externalChange: true });
+  const change = host.handle("check_external_change").value;
+  assert.ok(change.files.length > 3);
+  assert.equal(change.missing, false);
+  // 本体の変化はモジュールのプロジェクトのときだけ
+  host.set({ baseChange: true });
+  assert.equal(host.handle("check_base_change").value, null);
+  host.set({ module: true });
+  assert.ok(host.handle("check_base_change").value.files.length > 0);
+  host.set({ externalChange: false, baseChange: false, module: false });
+  assert.equal(host.handle("check_external_change").value, null);
+  assert.equal(host.handle("check_base_change").value, null);
 });

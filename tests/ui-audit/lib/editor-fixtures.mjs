@@ -357,3 +357,74 @@ export function manyParametersModel(model, { count = 100, groups = 10 } = {}) {
   }
   return { ...model, parameters, parameter_groups: parameterGroups };
 }
+
+/**
+ * グルーを 1 つ足したモデル (T0949。見本の `ugoe sample dress-up` はグルーを持たない)。袖 (`SleeveWave`) と手 (`HandWave`)
+ * をつなぎ、強さは `ArmWave` の 3 つのキーで変える (グルーのパネルの強さの欄・軸のキー・軸を足す欄を出す)。見本に無いメッシュ・
+ * パラメータなら先頭のものを使い、メッシュが 2 つ無ければそのまま返す。描くのは見本の .ugoe のまま (グルーは無い)。
+ */
+export function glueModel(model) {
+  const meshes = model.meshes ?? [];
+  const pick = (id, skip) =>
+    meshes.find((m) => m.id === id) ?? meshes.find((m) => m.id !== skip?.id);
+  const a = pick("SleeveWave");
+  const b = pick("HandWave", a);
+  if (!a || !b || a === b) return model;
+  const parameter =
+    (model.parameters ?? []).find((p) => p.id === "ArmWave") ?? model.parameters?.[0];
+  const vertices = (m) => m.uvs?.length ?? 0;
+  const count = Math.min(5, vertices(a), vertices(b));
+  const pairs = Array.from({ length: count }, (_, i) => ({
+    a: vertices(a) - count + i,
+    b: i,
+    weight: 0.5,
+  }));
+  // 値域の両端と既定値 (重なれば 1 つに)。強さは両端で半分
+  const keys = parameter
+    ? [...new Set([parameter.min ?? -1, parameter.default ?? 0, parameter.max ?? 1])].sort(
+        (x, y) => x - y,
+      )
+    : [];
+  const glue = {
+    id: "SleeveHandGlue",
+    mesh_a: a.id,
+    mesh_b: b.id,
+    pairs,
+    keyforms: parameter
+      ? {
+          bindings: [{ parameter: parameter.id, keys }],
+          keyforms: keys.map((_, i) => ({
+            intensity: i === 0 || i === keys.length - 1 ? 0.5 : 1,
+          })),
+        }
+      : { bindings: [], keyforms: [{ intensity: 1 }] },
+  };
+  return { ...model, glues: [...(model.glues ?? []), glue] };
+}
+
+/**
+ * 外での書き換え (`check_external_change`) と本体の変化 (`check_base_change`) の答え (T0953)。ファイルは 3 つを超えて
+ * 「ほか N 件」を出す。
+ */
+export function externalChangeFixture() {
+  return {
+    files: [
+      "model.json",
+      "physics.json",
+      "motions/idle-with-a-long-name.motion.json",
+      "expressions/smile.expression.json",
+      "textures/body.png",
+    ],
+    missing: false,
+    token: "ui-audit-external",
+  };
+}
+
+/** モジュールのプロジェクトの本体の変化 (`check_base_change`)。 */
+export function baseChangeFixture() {
+  return {
+    files: ["model.json", "textures/face.png"],
+    missing: false,
+    token: "ui-audit-base",
+  };
+}

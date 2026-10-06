@@ -153,6 +153,13 @@ async function aiScenes(page, ctx) {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
 
+  // タブを開いていない間にエージェントが提案を置いた: AI のタブに数と見てほしい変化の印 (T1632)
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.mouse.move(1, 300);
+  await page.evaluate(() => window.__uiAuditEmit("mcp-bridge", { kind: "proposals" }));
+  await page.waitForTimeout(600);
+  await ctx.scene("ai-fresh", { aria: false });
+
   await reopenAiTab(page, ctx);
   await ctx.scene("ai");
   await scrollToElement(
@@ -223,6 +230,15 @@ async function dressUpScenes(page, ctx) {
 
   host.set({ module: true });
   await reopenEditorProject(page, ctx);
+  // 本体の変化: ウィンドウに戻ったときの確かめで見つかったダイアログ (T0953)
+  host.set({ baseChange: true });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+  await page.waitForTimeout(300);
+  await ctx.scene("base-change");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  host.set({ baseChange: false });
   await reopenAiTab(page, ctx);
   await ctx.scene("module-ai", { aria: false });
   await togglePreview(page, ctx, true);
@@ -255,6 +271,64 @@ async function manyParametersScenes(page, ctx) {
   await ctx.scene("many-parameters-groups", { aria: false });
   await scrollToTop(page);
   host.set({ manyParameters: false });
+}
+
+/** グルーのパネルで見本のグルーを選び、編集の欄 (強さ・軸のキー・軸を足す欄) を撮る (T0949)。選んだのを外して戻す。 */
+async function glueScene(page, ctx) {
+  const item = page.getByRole("button", { name: /^SleeveHandGlue\b/ }).first();
+  await item.click();
+  await page.waitForTimeout(400);
+  const axes = page.getByRole("group", {
+    name: text("editor", ctx.lang, "glues.axes.aria"),
+    exact: true,
+  });
+  await scrollToElement(axes);
+  // 右の列の頭のタブ (sticky) の下に隠れた分だけ戻す
+  await axes.first().evaluate((el) => {
+    const pane = el.closest(".pane");
+    const tabs = pane?.querySelector(".tabs");
+    if (pane && tabs) pane.scrollTop -= tabs.getBoundingClientRect().height + 8;
+  });
+  await ctx.scene("glue-edit", { aria: false });
+  await scrollToTop(page);
+  await item.click();
+  await page.waitForTimeout(300);
+}
+
+/**
+ * ツリーのホバー (T1638): パーツの行に乗せた (ビューポートにパーツの中のメッシュの破線の輪郭) 場面と、パーツの行を畳んで
+ * ビューポートのメッシュに乗せた (畳んだ祖先の行に地の重ねと左端の縦線) 場面。
+ */
+async function treeHoverScenes(page, ctx) {
+  const head = page.locator('[role=treeitem][data-key="part:Head"]').first();
+  await head.hover();
+  await page.waitForTimeout(500);
+  await ctx.scene("tree-hover", { aria: false });
+  const twisty = head.locator("button.twisty");
+  await twisty.click();
+  await page.waitForTimeout(300);
+  // 畳んだパーツの中のメッシュに乗るまで、ビューポートの上で場所を変えて乗せる
+  const box = await page.locator(".viewport .surface").first().boundingBox();
+  let found = false;
+  if (box) {
+    for (const y of [0.3, 0.4, 0.2, 0.5, 0.35, 0.25, 0.45]) {
+      for (const x of [0.5, 0.45, 0.55, 0.4, 0.6]) {
+        await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
+        await page.waitForTimeout(150);
+        if ((await page.locator("[role=treeitem].hovered-within").count()) > 0) {
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+  }
+  if (!found) throw new Error("no mesh of the collapsed part under the pointer");
+  await page.waitForTimeout(300);
+  await ctx.scene("tree-hover-collapsed", { aria: false });
+  await page.mouse.move(1, 300);
+  await twisty.click();
+  await page.waitForTimeout(300);
 }
 
 /**
@@ -320,6 +394,20 @@ export const APPS = {
       await ctx.scene("export");
       await page.keyboard.press("Escape");
       await page.waitForTimeout(300);
+      // 外での書き換え: 保存の前の確かめで見つかった (上書き・別名で保存を選べる) ダイアログ (T0953)
+      ctx.editorHost.set({ externalChange: true });
+      await page
+        .getByRole("button", { name: text("editor", ctx.lang, "fileMenu.save.label"), exact: true })
+        .first()
+        .click();
+      await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+      await page.waitForTimeout(300);
+      await ctx.scene("external-change");
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog").first().waitFor({ state: "hidden", timeout: 5000 });
+      await page.waitForTimeout(300);
+      ctx.editorHost.set({ externalChange: false });
+      await treeHoverScenes(page, ctx);
       // パーツを選んだ状態 (インスペクタに中身が出る)
       await page.locator("[role=treeitem]").nth(1).click();
       await page.waitForTimeout(600);
@@ -331,6 +419,7 @@ export const APPS = {
           .click();
         await page.waitForTimeout(400);
         await ctx.scene(`tab-${id}`, { aria: false });
+        if (id === "glue") await glueScene(page, ctx);
       }
       await page
         .getByRole("tab", {
@@ -500,6 +589,11 @@ export const APPS = {
       await ctx.scene("profile-menu", { aria: false });
       await page.keyboard.press("Escape");
       await page.waitForTimeout(300);
+
+      // 「入力」のパネル (カメラのフェイストラッキングとマイク。T0951)
+      await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));
+      await ctx.scene("inputs", { aria: false });
+      await scrollToTop(page);
 
       // 出力ウィンドウの様子 (大きさ・枠・背景。T0818)
       await scrollToSection(page, text("studio", ctx.lang, "output.heading"));

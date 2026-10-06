@@ -34,12 +34,17 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      「開く…」で見本のプロジェクト (model.json・physics.json・motions・expressions と `.ugoe`) を開いたことにする。編集のコマンドは
      `ui_audit.read_only` のエラー、知らないコマンドは `null` を返して報告に名前を出す (バックエンドのコマンドが増えたら足す)。
      ファイルのダイアログは `window.__UGOE_FILE_DIALOGS__` で差し替える。
-     見本に無い状態 (T0676) は `host.set({ ai, restoring, dressUp, module, manyParameters })` で切り替える (中身は `lib/editor-fixtures.mjs`):
+     見本のモデルにはグルーを 1 つ足す (袖と手を `ArmWave` の 3 つのキーでつなぐ `SleeveHandGlue`。グルーのパネルの編集の欄を撮るため。
+     `ugoe_model::fixtures` と `ugoe sample` は変えない。T0044)。バックエンドが送るイベント (`listen` で待つもの) は、ページの
+     `window.__uiAuditEmit(event, payload)` で送る (エージェントが提案を置いた `mcp-bridge` の `proposals` など)。
+     見本に無い状態 (T0676) は `host.set({ ai, restoring, dressUp, module, manyParameters, externalChange, baseChange })` で切り替える (中身は `lib/editor-fixtures.mjs`):
      `ai` は提案と分類があり外部に送れる設定 (分類は同意が無ければ確認を求め、同意の後は `cancel_ai_requests` まで答えない。
      リグの提案は `ai.time_limit` で失敗する)、`restoring` は分類のキャッシュを戻している最中、`dressUp` はプレビューの着せ替えに
      見本の `.ugoemod` と読めないファイル、`module` はモジュールのプロジェクト (本体は見本、モジュールは Sailor。今の編集は
      `.ugoemod` の `MODU` の名前を `Sailor (editing)` に書き換えて作る) と、今の編集とファイルの違いの長い一覧、`manyParameters` は
-     パラメータを 100 個・グループを 10 個に増やしたモデル (`get_model_json` だけを変え、描くのは見本の `.ugoe` のまま。T1630)。
+     パラメータを 100 個・グループを 10 個に増やしたモデル (`get_model_json` だけを変え、描くのは見本の `.ugoe` のまま。T1630)、
+     `externalChange` は外での書き換え (`check_external_change` が 5 つのファイルの変化を答える)、`baseChange` はモジュールのプロジェクトの
+     本体の変化 (`check_base_change`。T0044)。
    - スタジオ (`lib/studio-host.mjs`): `window.__UGOE_STUDIO_HOST__` に、`StudioHost` (apps/studio/src/lib/host.ts) のすべてのメソッドを置く。
      見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を足して送る。
      ページの `window.__uiAuditStudio` の `emit` (指揮役の通知を送る)・`setStatus` (負荷の数値を変える)・`setOutput` (出力ウィンドウの様子を変えて送る) で、
@@ -71,9 +76,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 
 | アプリ | 場面 |
 | --- | --- |
-| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-timeline-graph` (タイムラインの行とキーを選んでグラフを出した)、`-motion-settings` (モーションの「Settings…」)、`-gizmo` (ワープのギズモ)、`-rotation` と `-rotation-between` (回転のギズモとインスペクタの角度・拡大率の欄。キーの上とキーの間。T1636)、`-mesh-edit` (メッシュの編集)、`-deformers-expressions`、`-settings-ai` (キーを保存した AI の設定)、`-ai` と `-ai-list` (提案と分類のある AI のタブの頭と提案の一覧)、`-ai-restoring` (分類のキャッシュを戻している最中)、`-consent` (送る前の確認)、`-ai-sending`・`-ai-cancelled`・`-ai-error` (送信中・取り消した・失敗)、`-preview-dress-up` (プレビューの着せ替え)、`-module-ai` (モジュールのプロジェクトの AI のタブ)、`-module-preview` (今の編集とファイルの違いの一覧)、`-many-parameters` と `-many-parameters-groups` (パラメータ 100 個・グループ 10 個のモデルのパラメータのパネルの頭と、開いた「Groups」。T1630) |
+| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-external-change` (保存の前の確かめで外での書き換えが見つかったダイアログ。T0953)、`-tree-hover` (ツリーの「Head」のパーツの行に乗せた: ビューポートに中のメッシュの破線の輪郭)、`-tree-hover-collapsed` (「Head」を畳んでビューポートのメッシュに乗せた: 畳んだ行の地の重ねと左端の縦線。T1638)、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-glue-edit` (見本のグルーを選んだグルーのパネルの編集の欄: 強さ・軸のキー・軸を足す欄。T0949)、`-timeline-graph` (タイムラインの行とキーを選んでグラフを出した)、`-motion-settings` (モーションの「Settings…」)、`-gizmo` (ワープのギズモ)、`-rotation` と `-rotation-between` (回転のギズモとインスペクタの角度・拡大率の欄。キーの上とキーの間。T1636)、`-mesh-edit` (メッシュの編集)、`-deformers-expressions`、`-settings-ai` (キーを保存した AI の設定)、`-ai-fresh` (タブを開いていない間にエージェントが提案を置いた: AI のタブの数と見てほしい変化の印。T1632)、`-ai` と `-ai-list` (提案と分類のある AI のタブの頭と提案の一覧)、`-ai-restoring` (分類のキャッシュを戻している最中)、`-consent` (送る前の確認)、`-ai-sending`・`-ai-cancelled`・`-ai-error` (送信中・取り消した・失敗)、`-preview-dress-up` (プレビューの着せ替え)、`-base-change` (モジュールのプロジェクトで、ウィンドウに戻ったときの確かめで本体の変化が見つかったダイアログ。T0953)、`-module-ai` (モジュールのプロジェクトの AI のタブ)、`-module-preview` (今の編集とファイルの違いの一覧)、`-many-parameters` と `-many-parameters-groups` (パラメータ 100 個・グループ 10 個のモデルのパラメータのパネルの頭と、開いた「Groups」。T1630) |
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-background` (ツールバーの「背景」の Popover)、`-settings` |
-| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-opaque` (透過が画面で効かない様子にした出力ウィンドウのパネル: 「背景」の欄の注意と「背景をクロマキーにする」のボタン、「いまの状態」の出力の注意の印)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
+| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-inputs` (「入力」のパネルまで送った: カメラのフェイストラッキングとマイク。T0951)、`-output` (「出力ウィンドウ」のパネルまで送った)、`-opaque` (透過が画面で効かない様子にした出力ウィンドウのパネル: 「背景」の欄の注意と「背景をクロマキーにする」のボタン、「いまの状態」の出力の注意の印)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 
 広い幅のライトの英語と `en-dark-forced-wide` では、Tab を最大 120 回押してフォーカスをたどる (`-tab`。強制色では影 (`box-shadow`) で
 描いたフォーカスの印が消えるので、印の無い止まりが見つかる)。
@@ -104,6 +109,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 画面のすべての文字を透明にして撮った PNG を地とし、文字の行の矩形の中の画素ごとに、文字の色を重ねた色との比を求めます。下から 1 割の比
 (9 割の地の画素で届く比) を文字の比とします (縁や模様の数画素で落とさないため)。報告の `on pixels such as rgb(…)` は最も比の低かった地の画素です。
 場面ごとのログの `by pixels` が画素で測った文字の数、`unmeasured` が矩形が無く測れなかった数です。
+ビューポートの背景色を白・黒に変えた場面は撮りません (T0044): 今の画面で画素で測る文字は hover の重ねの上の文字と、エディタの空のプロジェクトの
+案内 (地はテーマの `sunken`。エディタの背景色はテーマで決まり、変えられない) だけです。背景色を変えられるビューアのビューポートの上の知らせは
+自分の地の札 (`surface`) を持ち、背景色に依りません。地の札なしで描画の上に文字を置くときは、背景色を変えた場面を足します。
 
 同じ部品の行 (メッシュの一覧の 14 個のボタンなど) は 1 つの「種類」にまとめて数えます。種類は、クラスの付いた要素なら `tag.class`、
 クラスが無ければ 3 つ上までの祖先のクラス (`tag@.class`)、どちらも無ければ名前まで含めた要素です。報告の数は「種類 (延べ)」で、
