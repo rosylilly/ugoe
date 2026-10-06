@@ -1,11 +1,11 @@
 ---
 id: T0973
 title: "mcp: Windows の CI で root_confines_module_bases が、一時ディレクトリの短い名前 (RUNNER~1) と正規化した名前の違いで落ちる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
-assignee:
+assignee: claude-worker-T0973
 ---
 
 # T0973: mcp: Windows の CI で root_confines_module_bases が、一時ディレクトリの短い名前 (RUNNER~1) と正規化した名前の違いで落ちる
