@@ -1,6 +1,8 @@
 // Tab でフォーカスをたどり、止まった所の名前・フォーカスの印・画面の外かを記録する (tests/ui-audit/README.md)。
 // 印は、止まりの周りをフォーカスの前と後で撮った画像の差で決める (T0045)。CSS の outline・box-shadow による判定は比べるために残す。
 import { writeFileSync } from "node:fs";
+import { decodePng } from "./png.mjs";
+import "./page-checks.js";
 
 /** 止まりの周りに含める幅 (CSS px)。outline の幅と outline-offset (2px と 2px ほど) が収まり、隣の部品をあまり含まない。 */
 export const FOCUS_MARGIN = 6;
@@ -69,7 +71,17 @@ export function focusRegion(rect, viewport, margin = FOCUS_MARGIN) {
 }
 
 /**
- * 画像の差 (page-checks.js の focusDiff。CSS px²) から印を決める。要るのは要素の幅と高さの和の面積 (1 CSS px の線で周りの半分を
+ * フォーカスの前と後に撮った PNG (Buffer) を Node の側で読んで比べる (page-checks.js の focusChange)。数は CSS px² に直す
+ * (`scale` は devicePixelRatio)。ページの中で読むと、止まりごとに base64 で送る分も含めて 40ms ほどかかるため (T0054)。
+ */
+export function focusDiff(beforePng, afterPng, scale) {
+  const r = globalThis.__ugoeAudit.focusChange(decodePng(beforePng), decodePng(afterPng));
+  const area = scale * scale;
+  return { changed: r.changed / area, strong: r.strong / area, maxRatio: r.maxRatio };
+}
+
+/**
+ * 画像の差 (focusDiff。CSS px²) から印を決める。要るのは要素の幅と高さの和の面積 (1 CSS px の線で周りの半分を
  * なぞる量。2px の輪なら周りの 4 分の 1 で足りる): 前と後のコントラスト比が 3:1 以上の画素がそれだけあれば `ring`、
  * 3:1 に届かない変化だけがそれだけあれば `faint` (見えるが WCAG 1.4.11 の 3:1 に届かない)、どちらでもなければ `none`。
  * `rect` は窓の中に見える範囲の大きさ。
@@ -100,15 +112,12 @@ async function measureFocus(page, info) {
   const after = await page.screenshot({ clip, caret: "initial" });
   await page.evaluate(() => globalThis.__uiAuditFocused?.blur());
   const before = await page.screenshot({ clip, caret: "initial" });
-  const { lost, ...diff } = await page.evaluate(
-    async ([b, a]) => {
-      const el = globalThis.__uiAuditFocused;
-      el?.focus({ preventScroll: true });
-      const lost = document.activeElement !== el;
-      return { lost, ...(await globalThis.__ugoeAudit.focusDiff(b, a, devicePixelRatio)) };
-    },
-    [before.toString("base64"), after.toString("base64")],
-  );
+  const { lost, scale } = await page.evaluate(() => {
+    const el = globalThis.__uiAuditFocused;
+    el?.focus({ preventScroll: true });
+    return { lost: document.activeElement !== el, scale: devicePixelRatio };
+  });
+  const diff = focusDiff(before, after, scale);
   const visible = {
     width: Math.max(
       0,

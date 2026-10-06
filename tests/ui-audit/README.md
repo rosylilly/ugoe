@@ -7,7 +7,7 @@
 ## 実行
 
 ```sh
-just ui-audit                          # 3 つのアプリをビルドしてすべての場面を撮る (5 分ほど)
+just ui-audit                          # 3 つのアプリをビルドしてすべての場面を撮る (10 分ほど)
 just ui-audit --only editor,viewer     # アプリを選ぶ
 just ui-audit --quick                  # ライトの英語の広い幅と狭い幅だけ (反復中に)
 just ui-audit --variants forced,zoom200   # 組の名前の一部で絞る (反復中に)
@@ -15,7 +15,14 @@ just ui-audit --no-build               # 前にビルドした dist と見本を
 just ui-audit --out target/ui-audit-before   # 結果の置き場 (既定 target/ui-audit)
 just ui-audit --compare target/ui-audit-before  # 前の summary.json と比べて、増えた・消えた・数が変わった種類を出す
 just ui-audit --strict                 # 見つけたものがあれば終了コード 1 (既定は、場面が開けなかったときだけ 1)
+just ui-audit --jobs 1                 # 組を 1 つずつ流す (既定は 3 つの組を並行に。下)
 ```
+
+**時間と並行の数 (T0054):** 組 (下の「場面」) ごとに別のブラウザのコンテキストとページ (と偽のホスト) を開くので、組どうしは
+互いに影響しません。既定では 3 つの組を並行に流します (`--jobs N` で変える)。結果 (報告・`summary.json`・`tab.txt`) は並行の数に
+よらず組の順に並びます。エディタの 13 の組 (556 の場面) は、3 つの並行で 5 分半ほど、1 つずつでは 16 分ほどかかります
+(ほかの作業でロードアベレージが 5〜10 の 24 コアの機械。ビルドを除く)。エージェントが前面で流す Bash の上限 (600 秒) に収まります。
+機械が混んでいて場面の待ち (`waitForTimeout`) が足りなくなるときは、並行の数を減らします。
 
 直す前に `--out target/ui-audit-before` で撮っておき、直した後に `--compare target/ui-audit-before` で比べると、
 M10 のタスクの「見直しの前と後」の比較になります。
@@ -29,6 +36,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 1. **ビルド:** アプリごとに `just wasm <出力先>` と `vite build` (出力は `<out>/dist/<アプリ>`)。エディタには `ugoe sample dress-up --project` で
    見本のプロジェクトと、同じモデルの `.ugoe` を作る (`<out>/sample/`)。
 2. **配る:** dist を小さな静的サーバ (`lib/serve.mjs`。空いているポート) で配る。並行に流してもぶつからない。
+   組 (下の「場面」) は既定で 3 つずつ並行に、それぞれ別のページで開く (`--jobs`。上の「時間と並行の数」)。
 3. **偽のホスト:** Tauri の代わりを置く。画面を見るための偽物で、編集や保存はしない。
    - エディタ (`lib/editor-host.mjs`): `window.__TAURI_INTERNALS__.invoke` を Node の側の読むだけの偽物に中継する。開く前は空のプロジェクト、
      「開く…」で見本のプロジェクト (model.json・physics.json・motions・expressions と `.ugoe`) を開いたことにする。編集のコマンドは
@@ -132,7 +140,10 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 - `tab.txt` では、CSS の判定と食い違う止まりに `(css: ring)`・`(css: none)` を付けます。印ありでない止まりと食い違う止まりは、
   前と後の画像を `<組>-focus-<止まりの番号>-before.png`・`-after.png` に書きます。フォーカスを戻せなかった止まりには `FOCUS-LOST` を付けます
   (その後の Tab の順は信じられない)。
-- 1 回のたどりは 120 の止まりで 25〜30 秒ほどかかります (画像を撮る前は 5 秒ほど。止まりごとに 2 回撮り、ページの中で PNG を読むため)。
+- 撮った PNG は Node の側で読みます (`lib/png.mjs`。zlib で展開してフィルタを戻す小さな読み手。Chrome の撮る 8 ビットの PNG だけを読む。T0054)。
+  ページの中で読む (`createImageBitmap`) と、止まりごとに base64 で送り返す分も含めて 40ms ほどかかったためです。
+- 1 回のたどりは 120 の止まりで 15〜20 秒ほどかかります (画像を撮る前は 5 秒ほど。ほとんどは止まりごとに 2 回撮る時間で、1 回 40〜50ms。
+  ロードアベレージ 10 ほどの機械)。
 - 見ないこと: 範囲の外 (止まりから 6px より離れた所) に出る印 (祖先の大きな枠の遠い辺など。範囲の中の辺で足りることが多い)。
   フォーカスで開くもの (メニュー・Popover) は範囲に入れば変化に数えます。
 

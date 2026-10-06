@@ -2,7 +2,7 @@
 // 3 つのアプリの UI を監査する (`just ui-audit`。tests/ui-audit/README.md)。
 //
 //   node tests/ui-audit/run.mjs [--only editor,viewer,studio] [--quick] [--variants forced,zoom200] [--no-build] [--out DIR]
-//                               [--compare DIR] [--strict]
+//                               [--compare DIR] [--strict] [--jobs N]
 //
 // 1. アプリのフロントエンドをビルドする (`just wasm` と `vite build`)。エディタには見本のプロジェクトも作る (`ugoe sample dress-up`)。
 // 2. ビルドした画面を小さな静的サーバで配り、ヘッドレスの Chrome (playwright-core) で開く。Tauri の代わりに偽のホストを置く
@@ -10,6 +10,7 @@
 // 3. ライト・ダーク × 英語・日本語 × 広い幅・狭い幅、と devicePixelRatio 2・200% の拡大・強制色で、場面ごとに撮って検査する
 //    (コントラスト・横のはみ出し・24px 未満の押せるもの・名前の無い部品 (axe-core)・ランドマークと見出し・reduced motion の下の動き・
 //    強制色で見分けられない状態)。広い幅のライトの英語と強制色の暗い組では Tab でフォーカスをたどる。
+//    組ごとに別のページで開き、`--jobs` (既定 3) の組を並行に流す (T0054)。
 // 4. <out>/<アプリ>/ に画像 (.png)・アクセシビリティの木 (.aria.yml)・骨組み (.outline.txt)・Tab の順 (tab.txt)・報告 (report.md) を、
 //    <out>/summary.md と summary.json にまとめを書く。`--compare` は前の summary.json と比べて増減を出す。
 //
@@ -45,6 +46,12 @@ const quick = args.includes("--quick");
 const variantFilter = option("--variants", null)?.split(",") ?? null;
 const build = !args.includes("--no-build");
 const strict = args.includes("--strict");
+// 組を並行に流す数 (組ごとに別のページ。T0054)。1 なら 1 組ずつ
+const jobs = Number(option("--jobs", "3"));
+if (!(Number.isInteger(jobs) && jobs >= 1)) {
+  console.error(`--jobs must be a positive integer (got ${option("--jobs")})`);
+  process.exit(2);
+}
 const out = resolve(option("--out", join(target, "ui-audit")));
 const compareDir = option("--compare", null);
 // 比べる前の結果は、書き換える前に読んでおく (同じ場所に出すときのため)
@@ -78,6 +85,20 @@ const sample = {
   project: join(out, "sample", "project", "dress-up.ugoeproj"),
   bundle: join(out, "sample", "bundle", "dress-up.ugoe"),
 };
+
+/** `items` のそれぞれに `fn` を、同時に `limit` 個まで流す。結果は `items` の順。 */
+async function inParallel(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 // --- 1. ビルド ---
 
@@ -237,14 +258,13 @@ for (const app of only) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const server = await serve(dist(app));
-  const scenes = [];
-  const tabText = [];
-  const unknownCommands = new Set();
-  console.log(`\n== ${app} (${server.url})`);
+  const appStarted = performance.now();
+  console.log(`\n== ${app} (${server.url}, ${jobs} job(s))`);
 
-  for (const v of variants(app, quick).filter(
-    (v) => variantFilter === null || variantFilter.some((f) => v.name.includes(f)),
-  )) {
+  /** 1 つの組を開いて場面を撮る。組ごとに別のブラウザのコンテキスト (と偽のホスト) を使うので、組どうしを並行に流せる。 */
+  async function auditVariant(v) {
+    const scenes = [];
+    let tabText = null;
     const context = await browser.newContext({
       viewport: { width: v.size[0], height: v.size[1] },
       deviceScaleFactor: v.dpr,
@@ -303,7 +323,7 @@ for (const app of only) {
         if (v.tab) {
           const started = performance.now();
           const stops = await tabWalk(page, 120, { shots: join(dir, `${v.name}-focus`) });
-          tabText.push(`## ${v.name}\n\n${formatWalk(stops)}\n`);
+          tabText = `## ${v.name}\n\n${formatWalk(stops)}\n`;
           const findings = walkProblems(stops).map((p) => ({ check: "focus", ...p }));
           scenes.push({ name: `${v.name}-tab`, findings });
           console.log(
@@ -351,10 +371,23 @@ for (const app of only) {
         findings: errors.map((m) => ({ check: "error", target: m.slice(0, 160), detail: "" })),
       });
     }
-    for (const c of ctx.editorHost?.unknown ?? []) unknownCommands.add(c);
     await context.close();
+    return { scenes, tabText, unknown: [...(ctx.editorHost?.unknown ?? [])] };
   }
+
+  const results = await inParallel(
+    variants(app, quick).filter(
+      (v) => variantFilter === null || variantFilter.some((f) => v.name.includes(f)),
+    ),
+    jobs,
+    auditVariant,
+  );
   await server.close();
+  console.log(`  (${app}: ${((performance.now() - appStarted) / 1000).toFixed(0)}s)`);
+  // 組の順に並べる (並行に流しても報告が同じ順になるように)
+  const scenes = results.flatMap((r) => r.scenes);
+  const tabText = results.flatMap((r) => (r.tabText === null ? [] : [r.tabText]));
+  const unknownCommands = new Set(results.flatMap((r) => r.unknown));
 
   const summary = summarize(scenes);
   summaries[app] = summary;

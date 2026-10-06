@@ -565,6 +565,8 @@ just ui-audit --no-build --compare target/ui-audit-before   # 直した後: 前�
   どれも `prefers-reduced-motion: reduce` で開く。
 - **検査:** 文字のコントラスト (canvas・画像の上の文字は、文字を消して撮った画素で測る)・横のはみ出し (送る枠の外を位置の基準にする absolute の要素も)・文字と押せる部品の重なりと切れ・24px 未満の押せるもの・名前の無い部品 (axe-core)・そのほかの ARIA の規則
   (axe-core)・ランドマークと見出しの階層 (axe-core)・reduced motion の下の動き・強制色で見分けられない状態・画面に出たエラー・Tab の止まり (印・名前・画面の外)。同じ部品の行は 1 つの種類にまとめて数える。
+- **時間:** 組 (テーマ × 言語 × 窓) ごとに別のページで開き、既定で 3 つの組を並行に流す (`--jobs N`)。エディタの 13 の組は 5 分半ほどで、
+  エージェントが前面で流す Bash の上限 (600 秒) に収まる。Tab のたどりで撮った画像は Node の側で読む (T0054)。
 - **結果:** `target/ui-audit/<アプリ>/` に PNG・アクセシビリティの木 (`.aria.yml`)・骨組み (`.outline.txt`)・Tab の順・報告 (`report.md`)、`target/ui-audit/summary.md` と
   `summary.json`。既定の終了コードは場面を開けなかったときだけ 1 (`--strict` なら見つけたものがあっても 1)。
 - **確かめないこと:** 実物の WebView (WebKitGTK は `just e2e` の側。T0919)・実際のスクリーンリーダー・ビューポートの中身・配置の良し悪し。

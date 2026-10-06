@@ -11,7 +11,7 @@
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
 // - エラー: 画面に出ているエラーの文 (role="alert"・.error など)。
 // - 動き: prefers-reduced-motion: reduce の下で、長さが 0 でない動き (CSS の animation・transition) が動いていないか。
-// - フォーカスの印: Tab の止まりの前と後の画像の差 (focusChange。lib/walk.mjs が撮る。T0045)。
+// - フォーカスの印: Tab の止まりの前と後の画像の差 (focusChange。lib/walk.mjs が撮り、Node の側で読んで呼ぶ。T0045・T0054)。
 (() => {
   /** `rgb(1 2 3 / 0.5)`・`rgba(1, 2, 3, 0.5)` を {r, g, b, a} に。読めなければ null。 */
   function parseColor(text) {
@@ -343,13 +343,6 @@
     const g = canvas.getContext("2d");
     g.drawImage(bitmap, 0, 0);
     return g.getImageData(0, 0, bitmap.width, bitmap.height);
-  }
-
-  /** フォーカスの前と後に撮った PNG (base64) を比べる。数は CSS px² に直す (`scale` は devicePixelRatio)。 */
-  async function focusDiff(beforePng, afterPng, scale) {
-    const r = focusChange(await decodePng(beforePng), await decodePng(afterPng));
-    const area = scale * scale;
-    return { changed: r.changed / area, strong: r.strong / area, maxRatio: r.maxRatio };
   }
 
   function overflowAudit() {
@@ -886,7 +879,6 @@
     hideText,
     pixelAudit,
     focusChange,
-    focusDiff,
     structureOutline,
   };
 })();
