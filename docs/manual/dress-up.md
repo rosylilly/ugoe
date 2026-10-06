@@ -144,7 +144,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 ![本体を下敷きにした衣装](images/module-workspace.png)
 
-左のツリーでは、本体の要素に `base` の印が付いて薄く表示されます。本体の要素は選んで確かめられますが、編集はできません。
+左のツリーでは、本体の要素に `base` の印が付いて薄く表示されます。非表示 (`hidden`) などほかの印もある行では `base` の印は出さず、
+その印の枠が破線になります (行の名前を縮めないため。読み上げでは「base hidden」のように両方を読みます)。本体の要素は選んで確かめられますが、編集はできません。
 
 - 本体の要素を選ぶと、インスペクタの欄が薄くなって押せなくなり、「This belongs to the base model and can't be edited here. Edit it in the
   base project.」と出ます。ビューポートでは選択の枠が灰色の破線になり、形を変えるツール (フォームの編集・ギズモ・「Edit mesh」) は出ません。
@@ -221,7 +222,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 右の列の「Glue」タブで、2 つのメッシュの頂点を引き寄せるグルーを作り、直せます。袖と腕の境目のように、動くと隙間が開く継ぎ目に使います。
 
-- 「New glue」で Mesh A と Mesh B を選び、「Distance (px)」(基準の姿で、この距離より近い頂点どうしをつなぐ) を決めて「+ Glue」を押します。
+- 「New glue」で Mesh A と Mesh B を選び、「Distance」(基準の姿で、この距離 (キャンバスの px) より近い頂点どうしをつなぐ) を決めて「+ Glue」を押します。
   ツリーで 2 つのメッシュを選んでおくと、それが最初から入っています。近い頂点が 1 つも無いと、パネルの上に理由が出ます。
 - 一覧のグルーを押すと、下に編集の欄が出ます。「Weight」は寄せる先 (0 で A に、1 で B に、0.5 で真ん中)、「Intensity」は引き寄せる強さ
   (1 で完全に重なる)。「Swap」で A と B を入れ替え (見た目は同じ)、「Pair again within … px」で頂点の組を作り直し、「Remove glue」で消します。
@@ -242,11 +243,11 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 - モジュールのプロジェクトでは、本体のグルー (「base」の印) は変えられず、つなげるのは衣装のメッシュどうしだけです。描画用の複製のグルー
   (「clone」の印) は、インスペクタの「Sync」で作り直してください。
 
-![Glue タブ。衣装の Back と Front をつなぐグルーを作り、重みを 0.25 にした](images/module-glue.png)
+![Glue タブ。衣装の Back と Front をつなぐグルーを作り、重みを 0.25 にした。編集の欄の下の「Pairs」に頂点の組が並ぶ](images/module-glue.png)
 
 ![ビューポートに重なったグルーの組。「Add pairs」で A の頂点を押し、B の頂点を待っている](images/module-glue-pairs.png)
 
-![本体の要素を選んだところ。インスペクタが無効になり、ビューポートに「Base model」と出る](images/module-base-readonly.png)
+![本体の要素 (Head) を選んだところ。インスペクタが無効になり、ビューポートに「Base model」と出る。ツリーの本体の行には base の印 (非表示の行は hidden の印の枠が破線)](images/module-base-readonly.png)
 
 それでも本体を変える操作をすると、`… belongs to the base model and can't be edited here. Edit it in the base project` と出て、何も変わりません。
 
@@ -386,11 +387,11 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   パーツ) でその要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の
   テクスチャと UV に戻して比べるので、変えていなければ「Same as your current edits.」と出ます。
 
-  ![違いの行の下に、変えたメッシュの頂点と描画順が出る。「Select」でプレビューを出てツリーで選ばれる](images/module-compare-details.png)
+  ![違いの行の下に、変えたメッシュ (Band) の頂点と描画順と、消したメッシュ (Ears) が出る。「Select」でプレビューを出てツリーで選ばれる](images/module-compare-details.png)
 
-  ![違いの名前を押すと、プレビューのままビューポートでその要素が強調される](images/module-compare-highlight.png)
+  ![違いの名前 (Band) を押すと、プレビューのままビューポートでその要素が強調される。いまスロットに付いているファイルの方の Band](images/module-compare-highlight.png)
 
-  ![ポーズのグループの違いを強調して「Fit」でビューポートを寄せた](images/module-compare-pose.png)
+  ![ポーズの追従の違い (Sailor の袖 WaveSleeve を本体の差分 Wave に付けるのをやめた) を強調し、「Fit」で寄せてから少し縮小した。プレビューの「Pose」で Wave を見せている](images/module-compare-pose.png)
 
   ![書き出した cat-ears.ugoemod の行に、耳を消したいまの編集との違いが出る](images/module-compare-differences.png)
 
@@ -399,7 +400,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   編集中の姿のままプレビューします。このときは、そのモジュールのスロットは「Slots」に出ず、そのスロットのモジュールを読み込むと
   「This project is the module for slot …」と出て付きません。
 
-![モジュールのプロジェクトのプレビュー。いまの編集 (CatEars) と同じスロットの BunnyEars を差し替えて比べる](images/module-compare-preview.png)
+![モジュールのプロジェクトのプレビュー。いまの編集 (LongHair) と同じスロットの TwinTails を差し替えて比べる。服のスロットには Sailor を付けている](images/module-compare-preview.png)
 
 ### プレビューで付けられないとき
 

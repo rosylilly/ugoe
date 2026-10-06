@@ -35,6 +35,10 @@ export async function resizeTo(session, width, height) {
   if (inner[0] !== width || inner[1] !== height) {
     throw new Error(`the page is ${inner[0]}x${inner[1]}, not ${width}x${height}`);
   }
+  // 窓を小さくすると、ページの全体が少し送られたまま残ることがある (ヘッダーが上に欠ける)。頭に戻す
+  await session.execute(() => {
+    document.scrollingElement.scrollTop = 0;
+  });
 }
 
 /**

@@ -1,6 +1,7 @@
 // W3C WebDriver の小さなクライアント (tests/e2e/README.md)。
 //
-// e2e で使う範囲だけを持つ: セッション・要素の検索と操作・スクリプトの実行・ウィンドウの切り替え・スクリーンショット。
+// e2e で使う範囲だけを持つ: セッション・要素の検索と操作・スクリプトの実行・ウィンドウの切り替え・スクリーンショット・
+// キーとマウスの操作 (Perform Actions)。
 // 相手は tauri-driver (Linux では WebKitWebDriver に中継する)。仕様: https://www.w3.org/TR/webdriver2/
 
 /** 要素の参照の鍵 (W3C WebDriver の web element identifier)。 */
@@ -310,6 +311,57 @@ export class Session {
     for (const k of [...keys].reverse()) actions.push({ type: "keyUp", value: k });
     return this.call("POST", "/actions", { actions: [{ type: "key", id: "keyboard", actions }] });
   }
+
+  /** マウスのポインタを、押さずに表示域の点 `[x, y]` (CSS px) へ動かす。 */
+  moveTo([x, y]) {
+    return this.call("POST", "/actions", {
+      actions: [
+        {
+          type: "pointer",
+          id: "mouse",
+          parameters: { pointerType: "mouse" },
+          actions: [
+            { type: "pointerMove", origin: "viewport", x: Math.round(x), y: Math.round(y) },
+          ],
+        },
+      ],
+    });
+  }
+
+  /**
+   * マウスで `path` (ページの表示域の CSS px の点の列) をたどる: 最初の点で押し、残りの点へ順に動かして、最後の点で離す。
+   * 点が 1 つならその場で押して離す (クリック)。`shift` なら Shift を押したまま行う (選択に加える)。ギズモの点のドラッグなど、
+   * 要素ではなく位置で操作するときに使う (W3C WebDriver の Perform Actions の pointer)。
+   */
+  async pointer(path, { shift = false, duration = 120 } = {}) {
+    const [first, ...rest] = path.map(([x, y]) => [Math.round(x), Math.round(y)]);
+    const pointer = [
+      { type: "pointerMove", origin: "viewport", x: first[0], y: first[1], duration: 0 },
+      { type: "pointerDown", button: 0 },
+      ...rest.map(([x, y]) => ({ type: "pointerMove", origin: "viewport", x, y, duration })),
+      { type: "pointerUp", button: 0 },
+    ];
+    const actions = [
+      { type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: pointer },
+    ];
+    if (shift) {
+      // 時刻 (tick) をそろえる: 最初の tick で Shift を押し、ポインタの操作の間は待って、最後に離す
+      const pause = { type: "pause", duration: 0 };
+      pointer.unshift(pause);
+      pointer.push(pause);
+      actions.push({
+        type: "key",
+        id: "keyboard",
+        actions: [
+          { type: "keyDown", value: Keys.Shift },
+          ...pointer.slice(2).map(() => pause),
+          { type: "keyUp", value: Keys.Shift },
+        ],
+      });
+    }
+    await this.call("POST", "/actions", { actions });
+    await this.call("DELETE", "/actions");
+  }
 }
 
 /** スクリプトの戻り値の中の要素の参照を `Element` にする。 */
@@ -326,9 +378,14 @@ function wrap(session, value) {
 export const Keys = {
   /** 押している修飾キーをすべて離す。 */
   Null: "\uE000",
+  Backspace: "\uE003",
   Enter: "\uE007",
   Escape: "\uE00C",
   Control: "\uE009",
   Shift: "\uE008",
   Alt: "\uE00A",
+  End: "\uE010",
+  Home: "\uE011",
+  ArrowUp: "\uE013",
+  ArrowRight: "\uE014",
 };

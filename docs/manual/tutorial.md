@@ -7,9 +7,10 @@
 <!--
 確認の記録 (T0624、T0627 でやり直し): 手順は、ビルドしたエディタの画面 (vite build) をヘッドレスの Chrome で開き、
 Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する使い捨てのブリッジにつないで、1 から 12 まで実際に操作して確かめた。
-ファイルダイアログは window.__UGOE_FILE_DIALOGS__ の差し替え (固定のパスを返す) で代えた。画面の画像もそのときのもの
-(ブリッジは本物と同じ版 v0.0.0 を返す)。確かめていないこと:
-- 実際の Tauri のウィンドウ (WebView) での操作と、OS のファイルダイアログの見た目・ボタンの名前。
+ファイルダイアログは window.__UGOE_FILE_DIALOGS__ の差し替え (固定のパスを返す) で代えた。
+T0968: 1 から 10 は、本物の Tauri のアプリ (Linux の WebKitGTK) で `just e2e --manual` の筋書き (tests/e2e/specs/editor.manual.mjs) が
+この手順のとおりに操作し、途中の画像 (tutorial-import・mesh-edit・keyform-grid・mirror・depth-rotation) もそこで撮っている。確かめていないこと:
+- OS のファイルダイアログの見た目・ボタンの名前 (e2e ではダイアログの答えを差し替える)。
 -->
 
 所要時間はおよそ 30 分です。途中で失敗したら、ヘッダーの「Undo」(Ctrl + Z、macOS は Cmd + Z) で 1 操作ずつ戻せます。
@@ -60,7 +61,7 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 | 上 (ヘッダー) | 「File」のメニュー (「New」「New from PSD…」「Open…」「Save As…」「Import PSD…」など)、「Save」「Export…」「Undo」「Redo」、プロジェクト名、右端に「Preview」「Settings」「Help」 ([画面とパネル](screen.md#ヘッダー)) |
 | 左 (ツリー) | 「Parts」タブはパーツの階層、「Deformers」タブはデフォーマの階層。行を押すと選択します |
 | 中央 (ビューポート) | モデルの表示と編集。左上に「Edit mesh」「Form edit」、右上に「Screenshot」、右下に拡大・縮小と「全体を表示」 |
-| 右上 (インスペクタ) | 選んだ要素の設定。「Inspector」の見出しの下に `mesh: 顔 (Layer8)` のように種類・名前・ID が出ます |
+| 右上 (インスペクタ) | 選んだ要素の設定。先頭に `Mesh: 顔 (Layer8)` のように種類・名前・ID が出ます |
 | 右下 (パラメータ) | 「Parameters」の見出しの下に、パラメータのスライダーが並びます |
 
 右の列のインスペクタとパラメータは別々にスクロールします。間の区切りを上下にドラッグすると (区切りを押して ↑ / ↓ キーでも)、
@@ -112,7 +113,7 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 4. 「Rows」と「Cols」が `3` になっていることを確かめる (格子の行数と列数です)。
 5. 「Warp」を押す。8 つのメッシュを包むワープができ、そのワープが選ばれます。ビューポートに格子が出ます。
 
-- インスペクタの先頭に `deformer: 顔のワープ (WarpGroup18)` と、名前と ID が出ます。ID は英数字だけなので、日本語の名前からは作れません。
+- インスペクタの先頭に `Deformer: 顔のワープ (WarpGroup18)` と、名前と ID が出ます。ID は英数字だけなので、日本語の名前からは作れません。
   そのときは種類と包んだもの (ここでは **頭** のパーツ `Group18`) から作ります。名前を後で「Rename」(F2 キー) で変えても、ID は変わりません。
 - 「Name」を空のままにすると、選んだもの (最初に選んだもの) の名前から自動で付きます (ここでは `頭のワープ`)。
 - パーツではなく、メッシュを Ctrl を押しながら 1 つずつ選んで包むこともできます。

@@ -621,6 +621,25 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
 - 元: T0919 (M10 のまとめ。T0673・T0674・T0675・T0725・T0817・T0818・T1632・T1638 などのメモの「実物の WebView で確かめる」)
 - 結果: W 未 ・ M 未 ・ L 自動 (T0919 の `just e2e --manual` で撮った。2 の名前の変更・ホバーの重さ・光源の印は未)
 
+#### U06 スタジオの出力と仮想カメラのマニュアルの画像を撮る [C: L]
+
+`just e2e --manual` は Xvfb で動くので、コンポジタ (透過) と v4l2loopback (仮想カメラ) の要るスタジオの画像 2 枚は撮れない (T0968)。
+[manual/studio.md](manual/studio.md) の `studio-output.png`・`studio-virtual-camera.png` は前の画面のままなので、画面が今の形になるように手で撮り直す。
+
+- 手順:
+  1. コンポジタのある Linux の X11 のセッション (GNOME・KDE、i3 なら picom を起動) で、`v4l2loopback` を `video_nr=10` で読み込む
+     ([manual/studio.md の仮想カメラ](manual/studio.md#仮想カメラ) の Linux の手順)。言語は日本語、窓は 1280 × 800 (e2e の画像と同じ)。
+  2. `studio-output.png`: スタジオで見本のプロファイル (`ugoe-sample-profile.json`) を開き、出力ウィンドウを撮る。「雑談」(背景を透過。
+     後ろに市松模様の画像を置いて撮る)、「着せ替え」(クロマキーの緑)、「ゲーム (右下)」(位置と大きさを変えたシーン) の 3 つを撮り、
+     この順に左から横に並べて 1 枚にする (画像の説明のとおり)。
+  3. `studio-virtual-camera.png`: 右の列の「仮想カメラ」のパネルで「仮想カメラに出す」を入れ、`/dev/video10` に出ている状態のパネルだけを撮る
+     (ほかのパネルの画像と同じく、1280 × 1000 の窓でパネルを切り出す)。
+  4. `convert <撮った画像> -strip -dither None -colors 256 png8:docs/manual/images/<名前>.png` で 256 色にして置き換える
+     (`just e2e --update-images` と同じ減らし方。[tests/e2e/README.md#マニュアルの画像](../tests/e2e/README.md#マニュアルの画像))。
+- 期待: 画像が今のスタジオの画面と同じ並び・文言で、[manual/studio.md](manual/studio.md) の画像の説明と合う。
+- 元: T0968 (T0919 で撮らなかった画像)
+- 結果: L 未
+
 ### A. AI とエージェント (エディタ)
 
 #### A01 AI のキーの保存と提案 [C: WML]

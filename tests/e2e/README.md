@@ -194,16 +194,26 @@ MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状�
 (Linux の WebKitGTK) で撮る (T0919)。撮った画像は `<out>/<アプリ>/manual/<名前>.png` に置く。`--update-images` を付けると、
 256 色に減らして (`convert -dither None -colors 256`) `docs/manual/images/<名前>.png` に写す。画面を変えたら撮り直して、差分の画像を見て確かめる。
 
-- 窓の大きさは筋書きが決める (`lib/manual.mjs` の `resizeTo`。Xvfb は devicePixelRatio 1)。エディタ 1280×800、ビューア 1300×820・1100×760、
-  スタジオ 1280×800 (パネルの画像は 1280×1000 の窓でパネルだけを切り出す)。
+- 窓の大きさは筋書きが決める (`lib/manual.mjs` の `resizeTo`。Xvfb は devicePixelRatio 1)。エディタ 1280×800 (スロットとグルーの画像は
+  1280×1000 の窓で右の列だけを切り出す)、ビューア 1300×820・1100×760、スタジオ 1280×800 (パネルの画像は 1280×1000 の窓でパネルだけを切り出す)。
+  エディタは撮る前にポインタをヘッダーの空いた所へ動かす (Tooltip とホバーの輪郭を写さない)。
 - 言語: エディタは英語 (マニュアルが英語の名前で書く)、ビューアとスタジオは日本語 (localStorage の言語の設定を変えて読み込み直す)。
   スタジオは日本語の見本のプロファイル (`sample-ja.json`。ホットキーは Xvfb の画面にだけ登録する。`--headed` では外す)。
 - 中身: エディタは「Open Sample…」の見本の着せ替えと `character.psd`、ライティングと検証は `ugoe sample avatar --lit` で作ったプロジェクト、
-  モジュールは見本の `cat-ears.ugoeproj`。トラッキングは偽のカメラ (記録の再生)。
-- 撮らないもの (前の画像のまま): チュートリアルの途中の姿 (`keyform-grid`・`mesh-edit`・`mirror`・`depth-rotation`。手順を通して作る必要がある)、
-  MCP (`mcp-*`。エージェントの接続が要る)、AI の提案・注文・作り直し・法線マップ・送る前の確認 (`ai-proposal`・`ai-instructions`・`ai-revision`・
-  `ai-normal-maps`・`ai-consent`)、モジュールの作成と比較 (`module-*` のうち `module-workspace` 以外)、スタジオの出力の例 (`studio-output`。
-  Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ (`studio-virtual-camera`。v4l2loopback が要る)、点光源 (`lighting-point`)。
+  モジュールは見本の `cat-ears`・`sailor`・`long-hair` のプロジェクト。トラッキングは偽のカメラ (記録の再生)。
+- チュートリアル (docs/manual/tutorial.md) の途中の姿 (`mesh-edit`・`keyform-grid`・`mirror`・`depth-rotation`) は、`character.psd` から
+  3〜10 章の手順のとおりに画面で操作して撮る (T0968)。チュートリアルに書いた ID や表示 (`WarpGroup18`・`Mirrored 1 cell …`・
+  `16 control points · 0 – 35.28 px`) が出るのを確かめるので、手順の文と画面がずれると失敗する。ギズモの点・光源の取っ手・
+  グルーの頂点は、位置を測ってマウスで操作する (`session.pointer`。W3C WebDriver の Perform Actions)。
+- モジュールの作成と比較 (`module-*`): 設定とスロットの移し替え・アトラスでの書き出し・書き出したファイルといまの編集の比較
+  (耳を消し、Band の頂点と描画順を変える・Sailor の袖のポーズの追従を外す)・グルーと組・本体の要素の選択・新しいモジュールの欄。
+  本体の問題 (`module-problem`・`module-problem-drop`) は、見本の本体の写しからスロット `Headwear` を消したもの・物理を消したものを
+  作業の場所に作り、その隣に写したモジュールを開いて撮る。点光源 (`lighting-point`) は、ライティングのプロジェクトで「Add point」を押し、
+  取っ手を右の肩のそばへドラッグする。
+- 撮らないもの (前の画像のまま): MCP (`mcp-*`。エージェントの接続が要る)、AI の提案・注文・作り直し・法線マップ・送る前の確認
+  (`ai-proposal`・`ai-instructions`・`ai-revision`・`ai-normal-maps`・`ai-consent`。T0969)、スタジオの出力の例 (`studio-output`。
+  Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ (`studio-virtual-camera`。v4l2loopback が要る)。この 2 枚は手で撮る
+  ([docs/manual-check.md](../../docs/manual-check.md) の U06)。
 - AI の設定 (`ai-settings`) は、OpenRouter を選んで適用し、送り先の欄と API キーの欄を撮る。API キーの欄は鍵の保管庫が要る
   (上の「鍵の保管庫」。無ければ「Apply」の行までを撮る)。
 
