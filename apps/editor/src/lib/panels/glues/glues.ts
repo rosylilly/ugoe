@@ -151,7 +151,7 @@ export function keyStep(parameter: Pick<Parameter, "min" | "max">): number {
  * 置き換える。重みはグルーの重み (先頭の組。`glueWeight`)。同じ組がもうあれば `null`。
  */
 export function withPair(glue: Glue, a: number, b: number): Glue | null {
-  if (glue.pairs.some((p) => p.a === a && p.b === b)) return null;
+  if (hasPair(glue, a, b)) return null;
   const pair: GluePair = { a, b, weight: glueWeight(glue) };
   const index = glue.pairs.findIndex((p) => p.b === b);
   const pairs =
@@ -166,4 +166,20 @@ export function withPair(glue: Glue, a: number, b: number): Glue | null {
 export function withoutPair(glue: Glue, a: number, b: number): Glue | null {
   const pairs = glue.pairs.filter((p) => p.a !== a || p.b !== b);
   return pairs.length === glue.pairs.length ? null : { ...glue, pairs };
+}
+
+// --- 頂点の組をパネルで 1 組ずつ編集する (T1648) ---
+
+/**
+ * パネルの欄の頂点の番号 (1 から数える。メッシュの編集の「Point 3 of 12」と同じ) を、`count` 個の頂点の
+ * メッシュの頂点の番号 (0 から) にする。空・整数でない・範囲の外なら null。
+ */
+export function pairVertex(value: number | null, count: number): number | null {
+  if (value === null || !Number.isInteger(value) || value < 1 || value > count) return null;
+  return value - 1;
+}
+
+/** 組 `(a, b)` がもうあるか (足すボタンを押せなくする)。 */
+export function hasPair(glue: Pick<Glue, "pairs">, a: number, b: number): boolean {
+  return glue.pairs.some((p) => p.a === a && p.b === b);
 }

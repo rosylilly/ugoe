@@ -676,7 +676,19 @@
       "tooltip": "Make the intensity follow this parameter (the current intensity is kept at this key)"
     },
     "pairs": {
-      "description": "The pairs are shown in the viewport. Use Add pairs / Remove pairs there to pair vertices by hand."
+      "description": "The pairs are shown in the viewport. Pair vertices by hand there with Add pairs / Remove pairs, or with the list below.",
+      "title": "Pairs",
+      "listAria": "Vertex pairs of {{id}}",
+      "empty": "No pairs yet.",
+      "row": "A {{a}} ↔ B {{b}}",
+      "legend": "A is {{a}} and B is {{b}}. Vertex numbers start at 1, as in the mesh editor.",
+      "removeAria": "Remove the pair of vertex {{a}} of {{meshA}} and vertex {{b}} of {{meshB}}",
+      "vertexOf": "Vertex of {{mesh}}",
+      "add": {
+        "label": "Add pair",
+        "tooltip": "Pair the two vertices. A vertex of B pairs with one vertex of A only, so its old pair is replaced"
+      },
+      "exists": "These vertices are already a pair."
     },
     "px": "px",
     "repair": {
@@ -3095,8 +3107,12 @@
       "retriangulate": "Retriangulate",
       "deleteVertices": "Delete vertices",
       "done": "Done",
-      "hint": "Drag: move / box select · Shift: add · Ctrl+click: add vertex · [ ]: pick next / previous · Del: remove · Esc: exit",
-      "aria": "Mesh editor"
+      "hint": "Drag: move / box select · Shift: add · Ctrl+click: add vertex · [ ]: pick next / previous · Shift+[ ]: pick a second · I: add midpoint · Del: remove · Esc: exit",
+      "aria": "Mesh editor",
+      "addMidpoint": {
+        "label": "Add midpoint",
+        "tooltip": "Add a vertex halfway between the two selected vertices (splits their edge). Pick them with ] and Shift+]"
+      }
     },
     "cell": {
       "noAxes": "(no axes)",
@@ -3116,7 +3132,8 @@
       "empty": "Select a mesh or deformer"
     },
     "point": {
-      "current": "Point {{index}} of {{total}}"
+      "current": "Point {{index}} of {{total}}",
+      "pair": "Points {{a}} and {{b}} of {{total}}"
     },
     "gizmo": {
       "title": "{{kind}}: {{id}}",

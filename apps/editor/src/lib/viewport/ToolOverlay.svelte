@@ -40,7 +40,14 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import GlueOverlay from "./tools/glue/GlueOverlay.svelte";
-import { acceptsNudgeKey, acceptsToolKey, nudgeOf, pointStepOf } from "./tools/keys";
+import {
+  acceptsNudgeKey,
+  acceptsToolKey,
+  isSplitKey,
+  nudgeOf,
+  pointExtendOf,
+  pointStepOf,
+} from "./tools/keys";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
@@ -99,13 +106,28 @@ const editing = $derived(
   selection.meshEdit !== null && selection.meshEdit === primaryMesh ? selection.meshEdit : null,
 );
 
-/** メッシュ編集で 1 つだけ選んだ頂点が何番目か (帯の読み上げの領域。`]` `[` で選ぶとき)。 */
+/** メッシュ編集で選んでいる頂点 (メッシュの頂点の数より小さいもの)。 */
+const pickedVertices = $derived.by(() => {
+  if (editing === null) return [];
+  const total = scene.mesh(editing)?.vertices ?? 0;
+  return (selection.vertices[editing] ?? []).filter((i) => i < total);
+});
+
+/**
+ * メッシュ編集で選んだ頂点が何番目か (帯の読み上げの領域)。1 つなら `]` `[` で選ぶ点、2 つなら Shift + `]` `[` で選んで
+ * 中点に頂点を足す (`I`) 2 つ。
+ */
 const currentVertexText = $derived.by(() => {
   if (editing === null) return "";
   const total = scene.mesh(editing)?.vertices ?? 0;
-  const picked = (selection.vertices[editing] ?? []).filter((i) => i < total);
-  const index = picked.length === 1 ? picked[0] : undefined;
-  return index === undefined ? "" : t("viewport.point.current", { index: index + 1, total });
+  const [a, b] = pickedVertices;
+  if (pickedVertices.length === 1 && a !== undefined) {
+    return t("viewport.point.current", { index: a + 1, total });
+  }
+  if (pickedVertices.length === 2 && a !== undefined && b !== undefined) {
+    return t("viewport.point.pair", { a: a + 1, b: b + 1, total });
+  }
+  return "";
 });
 
 // 選択が別の要素に移ったり、メッシュが消えたりしたらモードを抜ける。
@@ -254,10 +276,16 @@ function onKeyDown(e: KeyboardEvent): void {
     e.preventDefault();
     meshTool?.selectAll();
   } else if (acceptsNudgeKey(e.target)) {
-    // `]` `[` で頂点を 1 つずつ選び、矢印キーで動かす (docs/editor.md#ビューポートの操作と代わりの手段)
+    // `]` `[` で頂点を 1 つずつ選び (Shift で 2 つ目)、`I` で 2 つの中点に足し、矢印キーで動かす
+    // (docs/editor.md#ビューポートの操作と代わりの手段)
+    const extend = pointExtendOf(e);
     const dir = pointStepOf(e);
     const step = nudgeOf(e);
-    if (dir && meshTool?.step(dir)) {
+    if (extend && meshTool?.extend(extend)) {
+      e.preventDefault();
+    } else if (isSplitKey(e) && meshTool?.addMidpoint()) {
+      e.preventDefault();
+    } else if (dir && meshTool?.step(dir)) {
       e.preventDefault();
     } else if (step) {
       e.preventDefault();
@@ -325,6 +353,13 @@ function onKeyDown(e: KeyboardEvent): void {
         >
       {/if}
     {:else}
+      <TipButton
+        small
+        disabled={pickedVertices.length !== 2}
+        shortcut="I"
+        onclick={() => meshTool?.addMidpoint()}
+        tooltip={t("viewport.meshEdit.addMidpoint.tooltip")}>{t("viewport.meshEdit.addMidpoint.label")}</TipButton
+      >
       <Button small onclick={() => meshTool?.retriangulate()}>{t("viewport.meshEdit.retriangulate")}</Button>
       <Button small onclick={() => meshTool?.removeSelected()}>{t("viewport.meshEdit.deleteVertices")}</Button>
       <Button small onclick={() => (selection.meshEdit = null)}>{t("viewport.meshEdit.done")}</Button>

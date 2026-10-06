@@ -8,6 +8,8 @@
     どれも set_glue でグルーを丸ごと置き換えるので、送る直前のグルーから組み立てる (updateGlue)。
   - 強さの軸 (T0661): パラメータとキーを選んで「+ Axis」、軸ごとにキーを足す・外す (add_keyform_key・remove_keyform_key)。
   - 頂点の組はビューポートに重ね、ビューポートの「Add pairs」「Remove pairs」で組を足す・外す (viewport/tools/glue/GlueOverlay.svelte)。
+  - 組の一覧 (T1648): 組ごとに「外す」、2 つのメッシュの頂点の番号 (1 から) を入れて「Pair」で 1 組足す。ビューポートで
+    頂点を押す操作の、マウスを使わない代わり。どちらも set_glue を 1 つ送る (withPair・withoutPair)。
   - モジュールのプロジェクトでは、本体のグルー (どちらかの端が本体のメッシュ) は読み取り専用 (BaseLock)。つなげるのは
     モジュールのメッシュだけ。描画用の複製のグルーは、インスペクタの「Sync」が作り直すので編集しない。
 -->
@@ -27,11 +29,13 @@ import {
   distanceValue,
   glueableMeshes,
   glueWeight,
+  hasPair,
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
   keyStep,
   keyValue,
+  pairVertex,
   removeGlueKeyCommand,
   selectedPair,
   setGlueCommand,
@@ -39,6 +43,8 @@ import {
   unboundParameters,
   uniformWeight,
   withIntensity,
+  withoutPair,
+  withPair,
   withWeight,
 } from "./glues";
 import type { GlueView } from "./glueView.svelte";
@@ -96,6 +102,40 @@ const createDistance = $derived(distanceValue(String(distance)));
 const canCreate = $derived(
   meshA !== "" && meshB !== "" && meshA !== meshB && createDistance !== null,
 );
+
+/** 組を足す欄の頂点の番号 (1 から。空は null)。 */
+let pairA = $state<number | null>(null);
+let pairB = $state<number | null>(null);
+
+function vertexCount(id: string): number {
+  return meshes.find((m) => m.id === id)?.uvs.length ?? 0;
+}
+
+/** 欄の番号から足す組 (メッシュの頂点の番号)。どちらかが空・範囲の外なら null。 */
+const newPair = $derived.by(() => {
+  if (!glue) return null;
+  const a = pairVertex(pairA, vertexCount(glue.mesh_a));
+  const b = pairVertex(pairB, vertexCount(glue.mesh_b));
+  return a === null || b === null ? null : { a, b, exists: hasPair(glue, a, b) };
+});
+
+/** 送る直前のグルー `id` に `change` を当てて set_glue を送る (null なら送らない)。 */
+function updatePairs(id: string, change: (current: Glue) => Glue | null): Promise<boolean> {
+  return send(() => {
+    const current = model?.glues.find((g) => g.id === id);
+    const next = current ? change(current) : null;
+    return next ? setGlueCommand(next) : null;
+  });
+}
+
+async function addPair(id: string): Promise<void> {
+  const pair = newPair;
+  if (pair === null || pair.exists) return;
+  if (await updatePairs(id, (g) => withPair(g, pair.a, pair.b))) {
+    pairA = null;
+    pairB = null;
+  }
+}
 
 /** 前の編集を読み直した後に `build` でコマンドを組み立てて送る。失敗の理由は doc.error (パネルの上) に出る。 */
 async function send(build: () => Command | null): Promise<boolean> {
@@ -330,6 +370,7 @@ const axisKeyValue = $derived(
           <p class="ed-help">{t("glues.axes.description")}</p>
         </div>
         <p class="ed-help">{t("glues.pairs.description")}</p>
+        {@render pairList(glue, locked)}
         <div class="row">
           <NumberField
             label={t("glues.repair.label")}
@@ -413,6 +454,72 @@ const axisKeyValue = $derived(
     {/if}
   </section>
 {/if}
+
+{#snippet pairList(g: Glue, locked: boolean)}
+  <div class="pairs" role="group" aria-labelledby="{ids}-pairs">
+    <h4 id="{ids}-pairs">{t("glues.pairs.title")}</h4>
+    <p class="ed-help">
+      {t("glues.pairs.legend", { a: meshLabel(g.mesh_a), b: meshLabel(g.mesh_b) })}
+    </p>
+    {#if g.pairs.length === 0}
+      <p class="ed-hint">{t("glues.pairs.empty")}</p>
+    {:else}
+      <ul class="pair-list" aria-label={t("glues.pairs.listAria", { id: g.id })}>
+        {#each g.pairs as pair, i (i)}
+          <li>
+            <span>{t("glues.pairs.row", { a: pair.a + 1, b: pair.b + 1 })}</span>
+            <IconButton
+              small
+              variant="ghost"
+              disabled={busy || locked}
+              label={t("glues.pairs.removeAria", {
+                a: pair.a + 1,
+                b: pair.b + 1,
+                meshA: meshLabel(g.mesh_a),
+                meshB: meshLabel(g.mesh_b),
+              })}
+              onclick={() => updatePairs(g.id, (current) => withoutPair(current, pair.a, pair.b))}
+              ><Icon name="close" /></IconButton
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <div class="row">
+      <NumberField
+        optional
+        label={t("glues.pairs.vertexOf", { mesh: "A" })}
+        min={1}
+        max={Math.max(1, vertexCount(g.mesh_a))}
+        step={1}
+        size={4}
+        value={pairA}
+        disabled={locked}
+        oninput={(v) => (pairA = v)}
+        onchange={(v) => (pairA = v)}
+      />
+      <NumberField
+        optional
+        label={t("glues.pairs.vertexOf", { mesh: "B" })}
+        min={1}
+        max={Math.max(1, vertexCount(g.mesh_b))}
+        step={1}
+        size={4}
+        value={pairB}
+        disabled={locked}
+        oninput={(v) => (pairB = v)}
+        onchange={(v) => (pairB = v)}
+      />
+      <TipButton
+        small
+        disabled={busy || locked || newPair === null || newPair.exists}
+        tooltip={t("glues.pairs.add.tooltip")}
+        onclick={() => addPair(g.id)}><Icon name="plus" />{t("glues.pairs.add.label")}</TipButton
+      >
+    </div>
+    {#if newPair?.exists}<p class="ed-hint" role="status">{t("glues.pairs.exists")}</p>{/if}
+  </div>
+{/snippet}
 
 {#snippet tag(text: string, tooltip: string)}
   <Tooltip text={tooltip}>
@@ -515,6 +622,44 @@ const axisKeyValue = $derived(
   flex-wrap: wrap;
   gap: var(--ugoe-space-2);
   align-items: center;
+}
+
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ugoe-space-2);
+}
+
+.pairs h4 {
+  margin: 0;
+  font-size: var(--ugoe-font-size-sm);
+}
+
+.pairs .ed-help,
+.pairs .ed-hint {
+  margin: 0;
+}
+
+/* 組の多いグルーでもパネルを押し広げないよう、一覧だけをスクロールする (中のボタンでキーボードでも動く) */
+.pair-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ugoe-space-1) var(--ugoe-space-2);
+  max-height: 12rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.pair-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ugoe-space-1);
+  padding-left: var(--ugoe-space-2);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
+  font-variant-numeric: tabular-nums;
 }
 
 .chip {

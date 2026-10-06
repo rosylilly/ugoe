@@ -7,7 +7,9 @@
     離したときに move_mesh_vertices を 1 つ送る。
   - Ctrl (Cmd) + クリック: その位置に頂点を足す。Delete / Backspace: 選択中の頂点を消す。
   - Esc: モードを抜ける (ToolOverlay が処理する)。
-  - `]` `[`: 次・前の頂点を 1 つ選ぶ。矢印キー: 選択中の頂点を動かす (キーは ToolOverlay が受けて呼ぶ)。
+  - `]` `[`: 次・前の頂点を 1 つ選ぶ。Shift + `]` `[`: 1 つ目を残して 2 つ目の頂点を次・前へ。
+    `I`・「Add midpoint」: 選んだ 2 つの頂点の中点に頂点を足す (辺を分ける。Ctrl + クリックの代わり)。
+    矢印キー: 選択中の頂点を動かす (キーは ToolOverlay が受けて呼ぶ)。
   頂点位置は wasm で評価した今のパラメータでの位置。コマンドは既定値の姿を基準にするので、
   モードに入るときにパラメータを既定値に戻す (ToolOverlay)。
 -->
@@ -19,10 +21,11 @@ import {
   type Box,
   meshEdges,
   nearestVertex,
+  type Point,
   updateVertexSelection,
   verticesInBox,
 } from "./geometry";
-import { steppedPoint } from "./keys";
+import { extendedPoints, steppedPoint } from "./keys";
 import type { ViewportScene } from "./scene.svelte";
 
 interface Props {
@@ -160,6 +163,10 @@ function onPointerUp(e: PointerEvent): void {
 
 function addVertex(x: number, y: number): void {
   const p = scene.toCanvas(x, y);
+  addVertexAt(p);
+}
+
+function addVertexAt(p: Point | null): void {
   if (!p || !mesh) return;
   const added = mesh.vertices;
   run(async () => {
@@ -202,6 +209,35 @@ export function step(dir: 1 | -1): boolean {
     const [x, y] = point(next);
     if (positions) reveal?.(x, y);
   }
+  return true;
+}
+
+/**
+ * 1 つ目を残して 2 つ目の頂点を次 (`dir` = 1)・前 (-1) へ (Shift + `]` `[`。中点に足す 2 つの頂点を選ぶ)。選んだら true。
+ */
+export function extend(dir: 1 | -1): boolean {
+  const next = extendedPoints(selected, mesh?.vertices ?? 0, dir);
+  if (next === null) return false;
+  if (drag === null) {
+    setVertices(next);
+    const [x, y] = point(next.at(-1) ?? 0);
+    if (positions) reveal?.(x, y);
+  }
+  return true;
+}
+
+/**
+ * 選んだ 2 つの頂点の中点に頂点を 1 つ足す (`I`・「Add midpoint」。2 つが辺で結ばれていれば、その辺を分ける)。
+ * Ctrl + クリックで頂点を足す操作の、マウスを使わない代わり。add_mesh_vertex を 1 つ送り、足した頂点を選ぶ。
+ * 2 つを選んでいなければ何もしない (false)。
+ */
+export function addMidpoint(): boolean {
+  const [a, b] = selected;
+  if (selected.length !== 2 || a === undefined || b === undefined) return false;
+  if (busy || drag !== null || !positions) return true;
+  const [ax, ay] = point(a);
+  const [bx, by] = point(b);
+  addVertexAt(scene.toCanvas((ax + bx) / 2, (ay + by) / 2));
   return true;
 }
 

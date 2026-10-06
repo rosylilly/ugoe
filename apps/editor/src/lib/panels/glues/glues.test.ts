@@ -6,11 +6,13 @@ import {
   distanceValue,
   glueableMeshes,
   glueWeight,
+  hasPair,
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
   keyStep,
   keyValue,
+  pairVertex,
   removeGlueKeyCommand,
   selectedPair,
   setGlueCommand,
@@ -170,5 +172,30 @@ describe("glue pairs and intensity axes (T0661)", () => {
     // f32 を経由したキー (0.1 は 0.10000000149011612 になる) も同じキーとみなす。
     expect(keyValue(0.1, { min: -1, max: 1 }, [Math.fround(0.1)])).toBeNull();
     expect(keyValue(0.2, { min: -1, max: 1 }, [Math.fround(0.1)])).toBe(0.2);
+  });
+});
+
+describe("pairVertex", () => {
+  it("turns a vertex number counted from 1 into the mesh's index", () => {
+    expect(pairVertex(1, 4)).toBe(0);
+    expect(pairVertex(4, 4)).toBe(3);
+  });
+
+  it("rejects empty, fractional and out-of-range numbers", () => {
+    expect(pairVertex(null, 4)).toBeNull();
+    expect(pairVertex(2.5, 4)).toBeNull();
+    expect(pairVertex(0, 4)).toBeNull();
+    expect(pairVertex(5, 4)).toBeNull();
+    expect(pairVertex(Number.NaN, 4)).toBeNull();
+    expect(pairVertex(1, 0)).toBeNull();
+  });
+});
+
+describe("hasPair", () => {
+  it("finds the same pair only", () => {
+    const g = { pairs: [{ a: 1, b: 0, weight: 0.5 }] };
+    expect(hasPair(g, 1, 0)).toBe(true);
+    expect(hasPair(g, 0, 1)).toBe(false);
+    expect(hasPair(g, 1, 2)).toBe(false);
   });
 });

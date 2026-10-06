@@ -281,3 +281,64 @@ describe("GluesPanel committed fields", () => {
     expect(view.glue).toBe("Glue2");
   });
 });
+
+describe("GluesPanel pair list (T1648)", () => {
+  // Seam は Quad の頂点 2 (番号は 1 から) と Quad2 の頂点 1 の組を持つ。両方のメッシュは 4 頂点。
+  function vertexField(target: HTMLElement, side: "A" | "B"): HTMLInputElement {
+    return labelledField(target, `Vertex of ${side}`);
+  }
+
+  it("lists each pair with its vertex numbers counted from 1", () => {
+    const { target } = setup(null);
+    const rows = all(target, 'ul[aria-label="Vertex pairs of Seam"] li');
+    expect(rows.map((r) => r.textContent?.trim())).toEqual(["A 2 ↔ B 1"]);
+  });
+
+  it("removes one pair with one set_glue", async () => {
+    const { doc, target } = setup(null);
+    const remove = get<HTMLButtonElement>(
+      target,
+      'button[aria-label="Remove the pair of vertex 2 of Quad and vertex 1 of Quad2"]',
+    );
+    await click(remove);
+    expect(doc.commands).toHaveLength(1);
+    const [command] = doc.commands;
+    if (command?.op !== "set_glue") throw new Error("not set_glue");
+    expect(command.glue.pairs).toEqual([]);
+    expect(command.distance).toBeUndefined();
+  });
+
+  it("adds a pair from the two vertex numbers with one set_glue and empties the fields", async () => {
+    const { doc, target } = setup(null);
+    const add = button(target, "Add pair");
+    expect(add.disabled).toBe(true);
+    type(vertexField(target, "A"), "4");
+    expect(add.disabled).toBe(true);
+    type(vertexField(target, "B"), "3");
+    expect(add.disabled).toBe(false);
+    await click(add);
+    expect(doc.commands).toHaveLength(1);
+    const [command] = doc.commands;
+    if (command?.op !== "set_glue") throw new Error("not set_glue");
+    expect(command.glue.pairs).toEqual([
+      { a: 1, b: 0, weight: 1 },
+      { a: 3, b: 2, weight: 1 },
+    ]);
+    expect(vertexField(target, "A").value).toBe("");
+    expect(vertexField(target, "B").value).toBe("");
+  });
+
+  it("does not add a pair that exists or a vertex the mesh does not have", () => {
+    const { target } = setup(null);
+    const add = button(target, "Add pair");
+    type(vertexField(target, "A"), "2");
+    type(vertexField(target, "B"), "1");
+    expect(add.disabled).toBe(true);
+    expect(target.textContent).toContain("These vertices are already a pair.");
+    // 整数でない番号は送らない (範囲の外は欄が 1..4 に収める)
+    type(vertexField(target, "B"), "1.5");
+    expect(add.disabled).toBe(true);
+    type(vertexField(target, "B"), "9");
+    expect(add.disabled).toBe(false);
+  });
+});

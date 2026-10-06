@@ -108,6 +108,52 @@ describe("ToolOverlay mesh edit keys", () => {
     expect(doc.apply).not.toHaveBeenCalled();
   });
 
+  it("picks a second vertex with Shift + ] and adds their midpoint with I (T1648)", async () => {
+    const { doc, selection, target } = setup();
+    const status = () => target.querySelector(".vp-band [role=status]")?.textContent?.trim();
+    const button = () =>
+      [...target.querySelectorAll<HTMLButtonElement>(".toolbar button")].find(
+        (b) => b.textContent?.trim() === t("viewport.meshEdit.addMidpoint.label"),
+      );
+    // 1 つだけ選んでいる間は足せない
+    expect(button()?.disabled).toBe(true);
+    expect(press(document.body, "i").defaultPrevented).toBe(false);
+    expect(press(document.body, "}", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(selection.vertices.Quad).toEqual([0, 1]);
+    expect(status()).toBe(t("viewport.point.pair", { a: 1, b: 2, total: 4 }));
+    expect(button()?.disabled).toBe(false);
+    // 2 つ目だけを次へ (1 つ目は残す)
+    press(document.body, "}", { shiftKey: true });
+    expect(selection.vertices.Quad).toEqual([0, 2]);
+    press(document.body, "{", { shiftKey: true });
+    expect(selection.vertices.Quad).toEqual([0, 1]);
+    expect(doc.apply).not.toHaveBeenCalled();
+    // 頂点 0 (0, 0) と 1 (100, 0) の中点。足した頂点 (4 番) を選ぶ
+    doc.onApply = () => {
+      const model = JSON.parse(doc.model?.json ?? "{}");
+      model.meshes[0].uvs.push([50, 0]);
+      for (const k of model.meshes[0].keyforms.keyforms) k.positions.push([50, 0]);
+      doc.model = { json: JSON.stringify(model), bundle: null };
+      return true;
+    };
+    expect(press(document.body, "i").defaultPrevented).toBe(true);
+    await settle();
+    expect(doc.commands).toEqual([{ op: "add_mesh_vertex", id: "Quad", position: [50, 0] }]);
+    expect(selection.vertices.Quad).toEqual([4]);
+  });
+
+  it("adds the midpoint from the toolbar button", async () => {
+    const { doc, selection, target } = setup();
+    selection.vertices = { Quad: [1, 2] };
+    flushSync();
+    const button = [...target.querySelectorAll<HTMLButtonElement>(".toolbar button")].find(
+      (b) => b.textContent?.trim() === t("viewport.meshEdit.addMidpoint.label"),
+    );
+    button?.click();
+    await settle();
+    expect(doc.commands).toEqual([{ op: "add_mesh_vertex", id: "Quad", position: [100, 50] }]);
+  });
+
   it("does not take Esc, Delete or Ctrl + A pressed inside a dialog", async () => {
     const { doc, selection } = setup();
     const inDialog = dialogButton();

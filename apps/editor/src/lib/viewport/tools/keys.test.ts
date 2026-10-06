@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   acceptsNudgeKey,
   acceptsToolKey,
+  extendedPoints,
+  isSplitKey,
   NUDGE,
   NUDGE_LARGE,
   nudgeOf,
   PAN,
   PAN_LARGE,
   panOf,
+  pointExtendOf,
   pointStepOf,
   REVEAL_MARGIN,
   revealPanOf,
@@ -129,6 +132,56 @@ describe("steppedPoint", () => {
     expect(steppedPoint([9], 4, 1)).toBe(0);
     expect(steppedPoint([], 0, 1)).toBeNull();
     expect(steppedPoint([0], 0, -1)).toBeNull();
+  });
+});
+
+describe("pointExtendOf", () => {
+  it("picks a second point with Shift + ] and Shift + [ on any layout", () => {
+    expect(pointExtendOf(key("}", { shiftKey: true }))).toBe(1);
+    expect(pointExtendOf(key("{", { shiftKey: true }))).toBe(-1);
+    expect(pointExtendOf(key("]", { shiftKey: true }))).toBe(1);
+    expect(pointExtendOf(key("[", { shiftKey: true }))).toBe(-1);
+  });
+
+  it("ignores ] [ without Shift and with other modifiers", () => {
+    expect(pointExtendOf(key("]"))).toBeNull();
+    expect(pointExtendOf(key("}", { shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(pointExtendOf(key("{", { shiftKey: true, altKey: true }))).toBeNull();
+    expect(pointExtendOf(key("A", { shiftKey: true }))).toBeNull();
+  });
+});
+
+describe("extendedPoints", () => {
+  it("keeps the first point and steps the second from it", () => {
+    expect(extendedPoints([1], 4, 1)).toEqual([1, 2]);
+    expect(extendedPoints([1], 4, -1)).toEqual([1, 0]);
+    expect(extendedPoints([1, 2], 4, 1)).toEqual([1, 3]);
+    // 3 つ以上選んでいても、先頭と末尾から 2 つにする
+    expect(extendedPoints([0, 3, 2], 4, -1)).toEqual([0, 1]);
+  });
+
+  it("skips the first point when going round", () => {
+    expect(extendedPoints([0, 3], 4, 1)).toEqual([0, 1]);
+    expect(extendedPoints([2, 3], 4, 1)).toEqual([2, 0]);
+    expect(extendedPoints([1, 2], 4, -1)).toEqual([1, 0]);
+  });
+
+  it("picks one point like ] [ when nothing is picked", () => {
+    expect(extendedPoints([], 4, 1)).toEqual([0]);
+    expect(extendedPoints([9], 4, -1)).toEqual([3]);
+    expect(extendedPoints([0], 1, 1)).toEqual([0]);
+    expect(extendedPoints([], 0, 1)).toBeNull();
+  });
+});
+
+describe("isSplitKey", () => {
+  it("is I without modifiers", () => {
+    expect(isSplitKey(key("i"))).toBe(true);
+    expect(isSplitKey(key("I"))).toBe(true);
+    expect(isSplitKey(key("i", { ctrlKey: true }))).toBe(false);
+    expect(isSplitKey(key("I", { shiftKey: true }))).toBe(false);
+    expect(isSplitKey(key("i", { metaKey: true }))).toBe(false);
+    expect(isSplitKey(key("j"))).toBe(false);
   });
 });
 

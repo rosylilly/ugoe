@@ -102,6 +102,57 @@ export function steppedPoint(picked: readonly number[], count: number, dir: 1 | 
   return (anchor + dir + count) % count;
 }
 
+/**
+ * 2 つ目の点を選ぶキー: Shift + `]` で次、Shift + `[` で前 (メッシュ編集。Shift + `]` `[` の `key` は配列によって
+ * `}` `{` になるので両方を受ける)。それ以外は null。
+ */
+export function pointExtendOf(e: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): 1 | -1 | null {
+  if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.key === "}" || e.key === "]") return 1;
+  if (e.key === "{" || e.key === "[") return -1;
+  return null;
+}
+
+/**
+ * Shift + `]` `[` で選ぶ 2 つの点の番号。1 つ目 (`picked` の先頭) を残し、2 つ目 (`picked` の末尾。1 つしか無ければ
+ * 1 つ目) の次・前の点を 2 つ目にする (1 つ目は飛ばす)。選んだ点が無ければ `steppedPoint` と同じ 1 つ。
+ * 点が 2 つ未満なら 1 つ目だけ、点が無ければ null。メッシュ編集で辺を分ける 2 つの頂点を選ぶ (`I`)。
+ */
+export function extendedPoints(
+  picked: readonly number[],
+  count: number,
+  dir: 1 | -1,
+): number[] | null {
+  const valid = picked.filter((i) => i >= 0 && i < count);
+  const first = valid[0];
+  if (first === undefined) {
+    const only = steppedPoint([], count, dir);
+    return only === null ? null : [only];
+  }
+  if (count < 2) return [first];
+  const last = valid.length >= 2 ? (valid.at(-1) ?? first) : first;
+  let next = (last + dir + count) % count;
+  if (next === first) next = (next + dir + count) % count;
+  return [first, next];
+}
+
+/** 選んだ 2 つの頂点の中点に頂点を足すキー: `I` (修飾キー無し。メッシュ編集で辺を分ける)。 */
+export function isSplitKey(e: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): boolean {
+  return !(e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) && (e.key === "i" || e.key === "I");
+}
+
 /** `]` `[` で選んだ点を見える所へ送るとき、ビューの端から空ける幅 (CSS ピクセル)。 */
 export const REVEAL_MARGIN = 48;
 
