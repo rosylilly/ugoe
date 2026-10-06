@@ -57,6 +57,7 @@ import {
   changeSummary,
   classificationSummary,
   commandLabel,
+  correctionLabel,
   groupState,
   instructionChars,
   MAX_INSTRUCTION_CHARS,
@@ -600,7 +601,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                       ontoggle={(e) => (innerOpen[innerKey] = e.currentTarget.open)}
                     >
                       {#if group.labels}
-                        <!-- 添えた分類の直しは、名前に件数が入る (中の行はレイヤーのパス)。 -->
+                        <!-- 添えた分類の直しは、名前に件数が入る (中の行はレイヤーのパスと残すラベル・左右)。 -->
                         <summary>{group.label}</summary>
                       {:else}
                         <summary><code>{group.label}</code> · {t("proposals.list.commands", { count: group.indices.length })}</summary>
@@ -619,7 +620,13 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                                   onchange={() => view.toggleCommand(proposal.id, i)}
                                 />
                                 <span class="index">#{i}</span>
-                                <code>{group.section || group.labels ? commandLabel(command) : command.op}</code>
+                                <code
+                                  >{group.labels
+                                    ? correctionLabel(command)
+                                    : group.section
+                                      ? commandLabel(command)
+                                      : command.op}</code
+                                >
                                 {#if command.requires.length > 0}
                                   <span class="muted requires"
                                     >{t("proposals.list.dependsOn", { list: command.requires.join(", #") })}</span
@@ -924,6 +931,11 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     list-style: none;
     margin: var(--ugoe-space-1) 0;
     padding: 0;
+  }
+  /* 長いレイヤーのパスやラベルは折り返す (パネルの幅を超えて横に送らない) */
+  .commands code {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .groups {
     list-style: none;

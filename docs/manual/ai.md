@@ -136,7 +136,8 @@ AI を使うときは、「Instructions for Claude」(選んだプロバイダ�
 
 提案の「117 of 117 commands selected」を開くと、提案の中身 (コマンド) の一覧が出ます。同じ対象 (デフォーマやメッシュ) への
 続いたコマンドは 1 行にまとまっていて、▶ を押すと 1 つずつ出ます。つないだエージェントのリグの提案では、先頭にエージェントが決めた
-レイヤーの分類が「Keep the classification of 12 layers」の 1 行にまとまっていて、開くとレイヤーごとの行が出ます。
+レイヤーの分類が「Keep the classification of 12 layers」の 1 行にまとまっていて、開くとレイヤーごとに残す分類の行
+(`Face / Eye R → eye_white (right)` のように、レイヤー → ラベル (左右)) が出ます。
 
 1. 採用しないコマンド (またはまとまり) の印を外す。例: 口のリグだけ要らないなら `MouthOpenY` と `mouth_open`・`mouth_close` の行。
 2. 「Preview」で確かめる (プレビュー中なら、印を変えるたびに作り直されます)。

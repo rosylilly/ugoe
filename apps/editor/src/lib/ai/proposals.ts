@@ -146,9 +146,24 @@ export function changeSummary(
   return [...counts].map(([op, count]) => ({ op, count }));
 }
 
-/** 一覧に出すコマンドの 1 行 (`add_parameter AngleX`)。 */
+/**
+ * 一覧に出すコマンドの 1 行 (`add_parameter AngleX`)。分類の直しは残すラベルと左右も添える
+ * (`set_layer_correction Face / Eye R → eye_white (right)`)。
+ */
 export function commandLabel(command: ProposalCommand): string {
+  if (command.op === LAYER_CORRECTION) return `${command.op} ${correctionLabel(command)}`;
   return command.subject ? `${command.op} ${command.subject}` : command.op;
+}
+
+/**
+ * 分類の直し (`set_layer_correction`) の中身: レイヤーのパスと、残すラベル・左右 (`Face / Eye R → eye_white (right)`)。
+ * ラベルと左右はコマンドの値のまま (`ProposalCommand.correction`)。直しを消すコマンドは分類の答えに戻す旨を出す。
+ */
+export function correctionLabel(command: ProposalCommand): string {
+  const kept = command.correction
+    ? `${command.correction.label} (${command.correction.side})`
+    : t("proposals.list.correctionCleared");
+  return `${command.subject ?? ""} → ${kept}`;
 }
 
 /** 分類の要約 (レイヤー数・確かめたほうがよいレイヤー数・ラベルごとの数)。 */

@@ -19,7 +19,7 @@ use serde::Serialize;
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::{ApplyReport, Command, Document, EditError};
+use crate::{ApplyReport, Command, Document, EditError, LayerCorrection};
 
 /// 提案の 1 つのコマンドの要約 (画面の一覧に出す)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -31,6 +31,11 @@ pub struct ProposalCommand {
     /// このコマンドが頼る、前のコマンドの番号 (提案の中の 0 始まり。使う要素を作る・同じ要素を先に変える。
     /// 規則は [`analyze`])。これを外すと、このコマンドは適用できないか、結果が変わる。
     pub requires: Vec<usize>,
+    /// 分類の直し (`set_layer_correction`) が残すラベルと左右 (一覧に `Face / Eye R → eye_white (right)` と出す。
+    /// レイヤーのパスは [`subject`](Self::subject))。直しを消すコマンドとほかの種類のコマンドでは省く。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub correction: Option<LayerCorrection>,
 }
 
 /// 画面に出す提案。
@@ -290,8 +295,9 @@ pub fn analyze(doc: &Document, commands: &[Command]) -> Vec<ProposalCommand> {
         .collect();
     jsons
         .iter()
+        .zip(commands)
         .enumerate()
-        .map(|(i, json)| {
+        .map(|(i, (json, command))| {
             let mut refs = BTreeSet::new();
             strings(json, &mut refs);
             let requires = touched[..i]
@@ -308,6 +314,10 @@ pub fn analyze(doc: &Document, commands: &[Command]) -> Vec<ProposalCommand> {
                     .to_owned(),
                 subject: subject(json),
                 requires,
+                correction: match command {
+                    Command::SetLayerCorrection { correction, .. } => correction.clone(),
+                    _ => None,
+                },
             }
         })
         .collect()

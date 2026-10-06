@@ -1480,6 +1480,52 @@ fn an_agent_proposal_keeps_its_labels_after_reopening() {
     assert_eq!(cached.layers[eye].side, Side::Right);
 }
 
+/// T1639: 提案の一覧 (`get_proposals` の `ProposalState`) は、エージェントの提案に添えた分類の直しのコマンドに
+/// レイヤーのパス (`subject`) と残すラベル・左右 (`correction`) を添える (画面は `Face / Eye R → eye_white (right)` と出す)。
+#[test]
+fn proposal_list_summarizes_layer_corrections() {
+    let state = state(None);
+    let document = state.document.lock().unwrap();
+    let mut session = state.project.lock().unwrap();
+    session
+        .lend()
+        .1
+        .add(
+            &document,
+            "rig",
+            "",
+            vec![
+                Command::SetLayerCorrection {
+                    path: vec!["Face".into(), "Eye R".into()],
+                    correction: Some(LayerCorrection {
+                        label: "eye_white".into(),
+                        side: LayerSide::Right,
+                    }),
+                },
+                Command::SetLayerCorrection {
+                    path: vec!["Face".into(), "Mouth".into()],
+                    correction: None,
+                },
+                Command::SetLighting { enabled: true },
+            ],
+        )
+        .unwrap();
+    let listed = serde_json::to_value(session.proposals.state(&document)).unwrap();
+    assert_eq!(
+        listed["proposals"][0]["commands"],
+        json!([
+            {
+                "op": "set_layer_correction",
+                "subject": "Face / Eye R",
+                "requires": [],
+                "correction": { "label": "eye_white", "side": "right" },
+            },
+            { "op": "set_layer_correction", "subject": "Face / Mouth", "requires": [] },
+            { "op": "set_lighting", "subject": null, "requires": [] },
+        ])
+    );
+}
+
 /// 法線マップの提案 (AI なし): まとまりごとに設定を選び、コマンドはまとまりごとに区切られる。まとまりを外して採用でき、
 /// 1 回の Undo で戻る (T0520)。
 #[test]

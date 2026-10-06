@@ -477,7 +477,8 @@ Claude Code に次のように頼む:
 - `propose_rig`・`propose_module_rig` は、エージェントが決めたレイヤー (利用者が直したものを除く) の今の分類を、
   分類の直し `set_layer_correction` としてリグの提案の **先頭** に添える。結果の `label_commands` が添えたコマンドの番号
   (`[0, 1, …]`)、提案の理由に `commands 0-N keep the agent's labels of M layer(s)`、差分 (`changes`) に `layer_corrections`
-  (レイヤーのパスを ` / ` でつないだもの) が出る。リグのコマンドは添えた直しに頼らない (`requires` に入らない)。
+  (レイヤーのパスを ` / ` でつないだもの) が出る。添えたコマンドの要約 (`commands`) は、対象 (`subject`) がレイヤーのパスで、
+  残すラベルと左右を `correction` (`{ label, side }`) に持つ (T1639)。リグのコマンドは添えた直しに頼らない (`requires` に入らない)。
 - 承認されたら `apply_proposal` で適用する。直しもリグと同じ 1 回の `undo` で戻る。`exclude` に `label_commands` を渡せば
   リグだけを入れられる。`keep_labels: false` なら添えない。
 - 適用した直しは利用者の直しと同じ扱いになる (`set_by: "user"`・確からしさ 1。後の `set_layer_labels` は上書きしない)。

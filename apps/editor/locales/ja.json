@@ -1870,6 +1870,7 @@
       "include": "{{name}} を含める",
       "commands_other": "{{count}} 個のコマンド",
       "keepLabels_other": "{{count}} 個のレイヤーの分類を残す",
+      "correctionCleared": "分類の答えに戻す",
       "dependsOn": "#{{list}} に頼ります",
       "preview": {
         "label": "プレビュー",

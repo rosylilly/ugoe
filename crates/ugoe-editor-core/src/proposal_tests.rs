@@ -342,3 +342,47 @@ fn proposals_can_carry_layer_corrections() {
     assert!(doc.layer_corrections().is_empty());
     assert!(doc.model().lighting);
 }
+
+/// T1639: 分類の直しの要約は、残すラベルと左右を持つ (一覧に出す)。直しを消すコマンドとほかの種類は持たない。
+#[test]
+fn layer_correction_commands_summarize_the_kept_label() {
+    let doc = Document::new(fixtures::single_quad());
+    let kept = crate::LayerCorrection {
+        label: "eye_white".into(),
+        side: crate::LayerSide::Right,
+    };
+    let commands = vec![
+        Command::SetLayerCorrection {
+            path: vec!["Face".into(), "Eye R".into()],
+            correction: Some(kept.clone()),
+        },
+        Command::SetLayerCorrection {
+            path: vec!["Face".into(), "Mouth".into()],
+            correction: None,
+        },
+        Command::SetLighting { enabled: true },
+    ];
+    let mut proposals = Proposals::new();
+    let view = proposals.add(&doc, "rig", "", commands).unwrap();
+    let summary: Vec<(Option<&str>, Option<&crate::LayerCorrection>)> = view
+        .commands
+        .iter()
+        .map(|c| (c.subject.as_deref(), c.correction.as_ref()))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (Some("Face / Eye R"), Some(&kept)),
+            (Some("Face / Mouth"), None),
+            (None, None),
+        ]
+    );
+    // 画面に渡す JSON: 直しのラベルと左右は `correction` に入り、無いものは鍵ごと省く。
+    let json = serde_json::to_value(&view.commands).unwrap();
+    assert_eq!(
+        json[0]["correction"],
+        serde_json::json!({ "label": "eye_white", "side": "right" })
+    );
+    assert!(json[1].get("correction").is_none());
+    assert!(json[2].get("correction").is_none());
+}

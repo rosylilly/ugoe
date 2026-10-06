@@ -1147,7 +1147,12 @@ fn agent_labels_are_kept_when_the_rig_is_approved() {
     assert_eq!(proposal["label_commands"], json!([0]));
     assert_eq!(
         proposal["commands"][0],
-        json!({ "op": "set_layer_correction", "subject": "face / eye-r / eyewhite-r", "requires": [] })
+        json!({
+            "op": "set_layer_correction",
+            "subject": "face / eye-r / eyewhite-r",
+            "requires": [],
+            "correction": { "label": "eye_white", "side": "left" },
+        })
     );
     assert_eq!(
         proposal["changes"]["layer_corrections"],

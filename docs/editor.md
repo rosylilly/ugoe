@@ -1818,9 +1818,13 @@ PSD の取り込みから「レイヤーの分類 → リギングの提案」�
 - **一部だけの採用 (コマンドの単位):** コマンドごとにチェックを外せます。一覧は、同じ対象への続いたコマンドを 1 つのまとまりに
   まとめ (まとまりのチェックで全部を切り替える)、開くと 1 つずつ選べます。
   - 2 つ以上続いた分類の直し (`set_layer_correction`。エージェントがリグの提案に添えたもの。[分類の直し](#分類の直し)) は、対象 (レイヤー) が
-    違っても 1 つのまとまり「Keep the classification of N layers」にし、開くと各行 (`set_layer_correction <レイヤーのパス>`) が出ます (T1631)。
+    違っても 1 つのまとまり「Keep the classification of N layers」にし、開くと各行が出ます (T1631)。
     ほかの種類のコマンドとは同じ対象でもまとめません。直しはリグのコマンドが頼らない (`requires` に入らない) ので、まとまりを外してもリグは残ります。
-  - 一覧に出す対象 (`ProposalCommand::subject`) は `id`・`target`/`element`・要素そのもの (`parameter` など) の ID・テクスチャの名前 (`set_normal_map` の `texture`。T0522)・`name` の順に探します。
+  - 分類の直しの行は、レイヤーのパスと残すラベル・左右を `Face / Eye R → eye_white (right)` の形で出します (T1639)。ラベルと左右は
+    コマンドの値のまま (`ProposalCommand::correction`。直しを消すコマンドでは省き、行は「→ back to the classification」)。まとめない 1 つだけの
+    直しは `set_layer_correction Face / Eye R → eye_white (right)` の 1 行です。まとまりは閉じて出し、開いたときだけ中の行を描くので、
+    レイヤーが多くても一覧は長くなりません (開いた中はすべての行を出し、長いパスやラベルは折り返します)。
+  - 一覧に出す対象 (`ProposalCommand::subject`) は `id`・`target`/`element`・要素そのもの (`parameter` など) の ID・テクスチャの名前 (`set_normal_map` の `texture`。T0522)・レイヤーのパス (`set_layer_correction` の `path` を ` / ` でつなぐ)・`name` の順に探します。
   - 各コマンドの依存 (`ProposalCommand::requires`) は `proposal::analyze` が、コマンドの JSON が前のコマンドの **作った要素** か
     **主に変える要素** (`id`・`target`・`element`) の ID を指すかで決めます。同じ要素への後の編集は前の編集に依存するとみなします
     (推定の設定の後の推定、キーの追加の後のセルの置き換えなど、前の結果に頼るため)。種類ごとの規則を持たない近似で、

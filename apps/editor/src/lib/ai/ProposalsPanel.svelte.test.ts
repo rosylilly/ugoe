@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // 提案の一覧 (ProposalsPanel.svelte) の、リグの提案に添えた分類の直し: 続いた `set_layer_correction` を 1 つのまとまり
-// (「分類を残す N 件」) で出し、開くと各行が見えること。まとまりのチェックでまとめて外す・戻し (リグは残る)、
+// (「分類を残す N 件」) で出し、開くと各行 (レイヤーのパスと残すラベル・左右。T1639) が見えること。まとまりのチェックでまとめて外す・戻し (リグは残る)、
 // 行のチェックで 1 つだけ外せること (T1631。docs/editor.md#ai-の提案)。IPC は偽物。
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +10,7 @@ import type { ViewportController } from "../viewport/controller.svelte";
 import ProposalsPanel from "./ProposalsPanel.svelte";
 import { ProposalsView } from "./proposals.svelte";
 
-/** 0–2: 添えた分類の直し、3–4: リグ (4 は 3 を使う)。 */
+/** 0–2: 添えた分類の直し (2 は直しを消す)、3–4: リグ (4 は 3 を使う)。 */
 const state = {
   proposals: [
     {
@@ -18,8 +18,19 @@ const state = {
       title: "Rig from layers",
       rationale: "",
       commands: [
-        { op: "set_layer_correction", subject: "Face / Eye L", requires: [] },
-        { op: "set_layer_correction", subject: "Face / Eye R", requires: [] },
+        {
+          op: "set_layer_correction",
+          subject: "Face / Eye L",
+          requires: [],
+          correction: { label: "eye_white", side: "left" },
+        },
+        {
+          op: "set_layer_correction",
+          subject: "Face / Eye R",
+          requires: [],
+          correction: { label: "eye_white", side: "right" },
+        },
+        // 直しを消すコマンド (`correction` が無い)
         { op: "set_layer_correction", subject: "Face / Mouth", requires: [] },
         { op: "add_parameter", subject: "EyeOpen", requires: [] },
         { op: "add_keyform_key", subject: "EyeOpen", requires: [3] },
@@ -107,7 +118,7 @@ function rowBoxes(row: HTMLElement): HTMLInputElement[] {
 }
 
 describe("ProposalsPanel layer corrections", () => {
-  it("shows the attached corrections as one group with a row per layer", async () => {
+  it("shows the attached corrections as one group with the kept label and side per layer", async () => {
     const { target } = await setup();
     const rows = groups(target);
     expect(rows).toHaveLength(2);
@@ -116,9 +127,9 @@ describe("ProposalsPanel layer corrections", () => {
       "Keep the classification of 3 layers",
     );
     expect([...labels.querySelectorAll(".commands code")].map((c) => c.textContent)).toEqual([
-      "set_layer_correction Face / Eye L",
-      "set_layer_correction Face / Eye R",
-      "set_layer_correction Face / Mouth",
+      "Face / Eye L → eye_white (left)",
+      "Face / Eye R → eye_white (right)",
+      "Face / Mouth → back to the classification",
     ]);
     expect(rig.querySelector("summary code")?.textContent).toBe("EyeOpen");
   });

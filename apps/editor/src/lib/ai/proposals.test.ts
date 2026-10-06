@@ -4,6 +4,7 @@ import {
   changeSummary,
   classificationSummary,
   commandLabel,
+  correctionLabel,
   excludeCommand,
   excludedList,
   groupCommands,
@@ -157,6 +158,19 @@ describe("commandLabel", () => {
   it("adds the subject when there is one", () => {
     expect(commandLabel(commands[0] as ProposalCommand)).toBe("add_parameter AngleX");
     expect(commandLabel(commands[4] as ProposalCommand)).toBe("rename_mesh");
+  });
+
+  it("shows the label and side a layer correction keeps", () => {
+    const kept: ProposalCommand = {
+      op: "set_layer_correction",
+      subject: "Face / Eye R",
+      requires: [],
+      correction: { label: "eye_white", side: "right" },
+    };
+    expect(correctionLabel(kept)).toBe("Face / Eye R → eye_white (right)");
+    expect(commandLabel(kept)).toBe("set_layer_correction Face / Eye R → eye_white (right)");
+    const cleared: ProposalCommand = { op: "set_layer_correction", subject: "Hair", requires: [] };
+    expect(correctionLabel(cleared)).toBe("Hair → back to the classification");
   });
 });
 

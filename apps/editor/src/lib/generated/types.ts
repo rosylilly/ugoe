@@ -2357,7 +2357,12 @@ subject: string | null,
  * このコマンドが頼る、前のコマンドの番号 (提案の中の 0 始まり。使う要素を作る・同じ要素を先に変える。
  * 規則は [`analyze`])。これを外すと、このコマンドは適用できないか、結果が変わる。
  */
-requires: Array<number>, };
+requires: Array<number>, 
+/**
+ * 分類の直し (`set_layer_correction`) が残すラベルと左右 (一覧に `Face / Eye R → eye_white (right)` と出す。
+ * レイヤーのパスは [`subject`](Self::subject))。直しを消すコマンドとほかの種類のコマンドでは省く。
+ */
+correction?: LayerCorrection, };
 
 /**
  * 提案を複製に適用した姿 (`preview_proposal` の戻り値)。
