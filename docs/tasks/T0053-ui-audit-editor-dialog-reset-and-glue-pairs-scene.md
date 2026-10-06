@@ -1,11 +1,11 @@
 ---
 id: T0053
 title: "ui-audit: エディタの場面ごとに外での変更のダイアログを閉じ、グルーの組の一覧と作り直しの行を撮る場面を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0053
 ---
 
 # T0053: ui-audit: エディタの場面ごとに外での変更のダイアログを閉じ、グルーの組の一覧と作り直しの行を撮る場面を足す

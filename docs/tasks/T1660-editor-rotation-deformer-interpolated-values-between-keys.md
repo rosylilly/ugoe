@@ -1,11 +1,11 @@
 ---
 id: T1660
 title: "エディタ: キーの間でも、補間した今の回転デフォーマの角度・拡大率・原点を押せない欄に出す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [ugoe-wasm, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1660
 ---
 
 # T1660: エディタ: キーの間でも、補間した今の回転デフォーマの角度・拡大率・原点を押せない欄に出す

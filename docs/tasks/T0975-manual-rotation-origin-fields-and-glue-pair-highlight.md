@@ -1,11 +1,11 @@
 ---
 id: T0975
 title: "マニュアル: 回転デフォーマの原点の数値の欄・「Origin: all cells」が残ること・グルーの組の行の強調を書き足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0975
 ---
 
 # T0975: マニュアル: 回転デフォーマの原点の数値の欄・「Origin: all cells」が残ること・グルーの組の行の強調を書き足す

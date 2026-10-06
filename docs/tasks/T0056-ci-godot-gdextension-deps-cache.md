@@ -1,11 +1,11 @@
 ---
 id: T0056
 title: "CI: godot のジョブで GDExtension の依存 (godot-rust) をキャッシュに残す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [bindings/godot, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0056
 ---
 
 # T0056: CI: godot のジョブで GDExtension の依存 (godot-rust) をキャッシュに残す
