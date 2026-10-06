@@ -1,11 +1,11 @@
 ---
 id: T1637
 title: "エディタ: 空のプロジェクトと 200% の拡大で、タイムラインと左右の列の大きさを決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1637
 ---
 
 # T1637: エディタ: 空のプロジェクトと 200% の拡大で、タイムラインと左右の列の大きさを決める (判断が要る)
