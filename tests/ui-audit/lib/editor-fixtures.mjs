@@ -1,6 +1,9 @@
 // エディタの偽のホストが返す、見本のプロジェクトに無い状態 (T0676): AI の提案・分類・送る前の確認・着せ替えの
 // モジュール・モジュールのプロジェクトと違いの一覧。形は apps/editor/src/lib/generated/types.ts に合わせる。
 // 中身は画面を撮るための作りもので、バックエンドの答えと同じである必要はない (行の長さ・数・種類が混ざることを優先)。
+// ただし、コマンドの種類 (`op`) と分類のラベルは本物にあるものだけを使う (無い種類は画面が利用者の言葉で出せず、本物では
+// 出ない出し方を撮ることになる。T0047)。`hosts.test.mjs` が crates/ugoe-editor-core/src/command.rs と
+// crates/ugoe-ai/src/classify.rs に照らして確かめる。
 
 /** 提案の元にした PSD (見本のプロジェクトの中にあることにする)。 */
 export const FIXTURE_PSD =
@@ -32,54 +35,93 @@ export function classificationFixture() {
       layer(["Head", "Eye L", "White"], "eye_white", "left", 0.95),
       layer(["Head", "Mouth"], "mouth", "center", 0.61, { needs_review: true }),
       layer(["Head", "Hair", "Front"], "hair_front", "center", 1, { corrected: true }),
-      layer(["Body", "Sleeve A"], "clothes", "center", 0.9, { variant: 0 }),
-      layer(["Body", "Sleeve B"], "clothes", "center", 0.9, { variant: 0 }),
+      layer(["Body", "Sleeve A"], "topwear", "center", 0.9, { variant: 0 }),
+      layer(["Body", "Sleeve B"], "topwear", "center", 0.9, { variant: 0 }),
     ],
+    // crates/ugoe-ai/src/classify.rs の `Label::ALL` (宣言順)
     label_choices: [
       "face",
+      "ear",
+      "nose",
+      "cheek",
+      "neck",
+      "eye",
       "eye_white",
       "iris",
-      "eyelid",
-      "brow",
+      "eye_highlight",
+      "eyelash_upper",
+      "eyelash_lower",
+      "eye_closed",
+      "eyebrow",
       "mouth",
-      "nose",
+      "mouth_open",
+      "mouth_closed",
+      "mouth_inner",
+      "teeth",
+      "tongue",
       "hair_front",
       "hair_side",
       "hair_back",
-      "neck",
       "body",
-      "clothes",
+      "arm",
+      "hand",
+      "leg",
+      "foot",
+      "tail",
+      "topwear",
+      "bottomwear",
+      "legwear",
+      "footwear",
+      "handwear",
       "neckwear",
+      "headwear",
+      "earwear",
+      "eyewear",
+      "accessory",
+      "background",
       "other",
     ],
   };
 }
 
-const command = (op, subject = null, requires = []) => ({ op, subject, requires });
+const command = (op, subject = null, requires = [], extra = {}) => ({
+  op,
+  subject,
+  requires,
+  ...extra,
+});
 
 /** 提案の一覧 (エディタのリグ・エージェントのリグと添えた分類の直し・古くなった法線マップ)。 */
 export function proposalsFixture() {
+  // crates/ugoe-ai/src/rig.rs の形: ワープを作り、格子の軸にキーを足して (既定値のキーを先に)、セルを置く
+  const face = "deformer `FaceWarp`";
   const rig = [
     command("add_parameter", "AngleX"),
     command("add_parameter", "AngleY"),
     command("add_parameter", "EyeLOpen"),
     command("add_parameter", "EyeROpen"),
     command("add_parameter", "MouthOpenY"),
-    command("add_deformer", "deformer `FaceWarp`"),
-    command("set_keyform_bindings", "deformer `FaceWarp`", [0, 1, 5]),
-    command("set_keyform_cell", "deformer `FaceWarp`", [6]),
-    command("set_keyform_cell", "deformer `FaceWarp`", [6]),
-    command("set_keyform_bindings", "mesh `EyeL`", [2]),
-    command("set_keyform_cell", "mesh `EyeL`", [9]),
-    command("set_keyform_bindings", "mesh `EyeR`", [3]),
-    command("set_keyform_cell", "mesh `EyeR`", [11]),
-    command("set_keyform_bindings", "mesh `Mouth`", [4]),
-    command("set_keyform_cell", "mesh `Mouth`", [13]),
+    command("create_warp_deformer", "FaceWarp"),
+    command("add_keyform_key", face, [0, 5]),
+    command("add_keyform_key", face, [0, 5, 6]),
+    command("add_keyform_key", face, [1, 5, 7]),
+    command("add_keyform_key", face, [1, 5, 8]),
+    command("set_keyform_cell", face, [9]),
+    command("set_keyform_cell", face, [10]),
+    command("add_keyform_key", "mesh `EyeL`", [2]),
+    command("set_keyform_cell", "mesh `EyeL`", [12]),
+    command("add_keyform_key", "mesh `EyeR`", [3]),
+    command("set_keyform_cell", "mesh `EyeR`", [14]),
+    command("add_keyform_key", "mesh `Mouth`", [4]),
+    command("set_keyform_cell", "mesh `Mouth`", [16]),
   ];
+  // エージェントが残したラベル (分類の直し。一覧に `Head / Mouth → mouth (center)` と出す)
+  const keep = (subject, label, side) =>
+    command("set_layer_correction", subject, [], { correction: { label, side } });
   const agent = [
-    command("set_layer_correction", "Head / Eye R / White"),
-    command("set_layer_correction", "Head / Mouth"),
-    command("set_layer_correction", "Body / Sleeve A"),
+    keep("Head / Eye R / White", "eye_white", "right"),
+    keep("Head / Mouth", "mouth", "center"),
+    keep("Body / Sleeve A", "topwear", "center"),
     ...rig.map((c) => ({ ...c, requires: c.requires.map((i) => i + 3) })),
   ];
   return [

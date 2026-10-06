@@ -2,6 +2,8 @@
 //
 // - プロファイルは見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に、画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を
 //   足したもの。シーン・パラメータ・モーション・負荷の表示・操作の API の状態を、本物の指揮役が送る形で送る。
+// - 配信中のシーン「雑談」のモデル (assets/samples/avatar.ugoe) のパラメータ・モーション・表情・ポーズのグループは、見本を作る
+//   ソース (crates/ugoe-cli/src/sample.rs と sample/animations/) から読む (本物の見本と同じにする。T0047)。
 // - 書き換えの操作は何もしない (Promise を返すだけ)。知らないメソッドも何もしない。操作 API の承認・拒否・取り消しだけは、
 //   承認の後の知らせを撮るために様子を変えて送り直す。
 // - 場面を足すために、ページの `window.__uiAuditStudio` に通知を送る口 (`emit`)、負荷の数値を変える口 (`setStatus`)、
@@ -27,33 +29,13 @@ export async function studioFixture(lang) {
   };
   profile.input = inputs.DEFAULT_INPUT;
   profile.motion = inputs.DEFAULT_MOTION;
-  const motion = (name, duration, looping, parameters) => ({
-    name,
-    duration,
-    looping,
-    fadeIn: 0.2,
-    fadeOut: 0.3,
-    parameters,
-  });
+  const avatar = sampleAvatar();
   return {
     methods: hostMethods(readFileSync(join(root, "apps/studio/src/lib/host.ts"), "utf8")),
     profile,
-    path: join(SAMPLES_DIR, "..", "sample-profile.ugoestudio"),
-    parameters: [
-      { id: "AngleX", name: "Angle X", min: -30, max: 30, default: 0, internal: false },
-      { id: "AngleY", name: "Angle Y", min: -30, max: 30, default: 0, internal: false },
-      { id: "AngleZ", name: "Angle Z", min: -30, max: 30, default: 0, internal: false },
-      { id: "EyeLOpen", name: "Eye L open", min: 0, max: 1, default: 1, internal: false },
-      { id: "EyeROpen", name: "Eye R open", min: 0, max: 1, default: 1, internal: false },
-      { id: "MouthOpenY", name: "Mouth open", min: 0, max: 1, default: 0, internal: false },
-    ],
-    motions: [
-      motion("idle", 4, true, ["AngleX", "BodyAngleZ"]),
-      motion("nod", 1.2, false, ["AngleY"]),
-      motion("shake", 1.6, false, ["AngleX"]),
-      motion("tilt", 1.5, false, ["AngleZ", "EyeBallX"]),
-    ],
-    expressions: ["sad", "smile", "surprised"],
+    // docs/manual/studio.md#見本のプロファイル の例と同じ名前。拡張子は保存のダイアログが付けるもの (lib.rs の PROFILE_EXTENSION)
+    path: join(SAMPLES_DIR, "..", `ugoe-sample-profile.${profileExtension()}`),
+    ...avatar,
     api: {
       enabled: true,
       listening: true,
@@ -65,6 +47,81 @@ export async function studioFixture(lang) {
       source: { enabled: true, listening: true, connections: 1 },
     },
   };
+}
+
+/** スタジオがプロファイルに付ける拡張子 (apps/studio/src-tauri/src/lib.rs の `PROFILE_EXTENSION`)。 */
+export function profileExtension() {
+  const source = readFileSync(join(root, "apps/studio/src-tauri/src/lib.rs"), "utf8");
+  const m = source.match(/^const PROFILE_EXTENSION: &str = "(\w+)";$/m);
+  if (!m) throw new Error("PROFILE_EXTENSION is not found in apps/studio/src-tauri/src/lib.rs");
+  return m[1];
+}
+
+/**
+ * 見本のアバター (`ugoe sample avatar` の avatar.ugoe) を読んだ指揮役が送るもの: パラメータ (名前は ID、値域は標準の値)・
+ * モーション・表情・ポーズのグループ。ソース (crates/ugoe-cli/src/sample.rs・sample/animations/、ugoe-model の standard.rs) から作る。
+ */
+export function sampleAvatar() {
+  const read = (path) => readFileSync(join(root, path), "utf8");
+  const sample = read("crates/ugoe-cli/src/sample.rs");
+  const standard = read("crates/ugoe-model/src/standard.rs");
+  const section = (source, start) => {
+    const at = source.indexOf(start);
+    if (at < 0) throw new Error(`${start} is not found`);
+    return source.slice(at, source.indexOf("];", at));
+  };
+  // 標準パラメータの定数 (`ANGLE_X` → `AngleX`) と値域 (`(ANGLE_X, -30.0, 0.0, 30.0)`)
+  const ids = new Map(
+    [...standard.matchAll(/^pub const ([A-Z0-9_]+): &str = "(\w+)";$/gm)].map((m) => [m[1], m[2]]),
+  );
+  const ranges = new Map(
+    [...standard.matchAll(/^ {4}\(([A-Z0-9_]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\),$/gm)].map(
+      (m) => [ids.get(m[1]), { min: Number(m[2]), default: Number(m[3]), max: Number(m[4]) }],
+    ),
+  );
+  const parameters = [
+    ...section(sample, "const PARAMETERS: &[&str] = &[").matchAll(/sp::([A-Z0-9_]+),/g),
+  ].map((m) => {
+    const id = ids.get(m[1]);
+    const range = ranges.get(id);
+    if (!range) throw new Error(`no standard range for ${m[1]}`);
+    // sample.rs の add_parameters: 名前は ID のまま
+    return {
+      id,
+      name: id,
+      min: range.min,
+      max: range.max,
+      default: range.default,
+      internal: false,
+    };
+  });
+  const constant = (name) => {
+    const m = sample.match(new RegExp(`^const ${name}: &str = "([\\w-]+)";$`, "m"));
+    if (!m) throw new Error(`${name} is not found in crates/ugoe-cli/src/sample.rs`);
+    return m[1];
+  };
+  const animations = read("crates/ugoe-cli/src/sample/animations.rs");
+  const files = (start) =>
+    [...section(animations, start).matchAll(/include_str!\("([^"]+)"\)/g)].map((m) =>
+      JSON.parse(read(join("crates/ugoe-cli/src/sample", m[1]))),
+    );
+  // apps/studio/src-tauri/src/animation.rs の MotionInfo::of (動かすパラメータは重なりなし、カーブの順)
+  const motions = files("const MOTIONS:").map((m) => ({
+    name: m.name,
+    duration: m.duration,
+    looping: m.looping ?? false,
+    fadeIn: m.fade_in,
+    fadeOut: m.fade_out,
+    parameters: [
+      ...new Set(m.curves.filter((c) => c.target.kind === "parameter").map((c) => c.target.id)),
+    ],
+  }));
+  const expressions = files("const AVATAR_EXPRESSIONS:").map((e) => e.name);
+  // 先頭の要素が最初に表示される (conductor.rs の pose_groups。モジュールの要素ではない)
+  const poseGroups = [
+    { parts: [constant("EARWEAR_PART"), constant("NO_EARWEAR_PART")], module: null },
+  ];
+  return { parameters, motions, expressions, poseGroups };
 }
 
 /**
@@ -174,7 +231,7 @@ export function hostMethods(source) {
 
 /** ページの中で動かす初期化 (page.addInitScript に渡す)。 */
 export function studioPageInit({ osLocale, fixture }) {
-  const { methods, profile, path, parameters, motions, expressions } = fixture;
+  const { methods, profile, path, parameters, motions, expressions, poseGroups } = fixture;
   let output = {
     visible: true,
     onTop: false,
@@ -289,6 +346,9 @@ export function studioPageInit({ osLocale, fixture }) {
     sceneBackground: async () => new Uint8Array(),
     async subscribeStatus(onMessage) {
       listener = onMessage;
+      // シーンを出すと、ポーズの選択はグループごとの先頭の要素で埋まる (conductor.rs の present)
+      const shown = poseGroups.map((g) => g.parts[0]);
+      const idle = motions.find((m) => m.name.toLowerCase() === "idle")?.name ?? null;
       lastProfile = {
         kind: "profile",
         profile,
@@ -312,24 +372,21 @@ export function studioPageInit({ osLocale, fixture }) {
           lighting: active.lighting,
           transform: active.transform,
           background: active.background,
-          pose: ["ArmsDown", "Hat/On"],
+          pose: shown,
         },
         parameters,
         usesLighting: false,
-        // ポーズのパネル (T0842) を出すための偽のグループ。
-        poseGroups: [
-          { parts: ["ArmsDown", "ArmsUp", "Wave"], module: null },
-          { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
-        ],
-        poseShown: ["ArmsDown", "Hat/On"],
+        poseGroups,
+        poseShown: shown,
       });
       onMessage({
         kind: "animation",
         motions,
         expressions,
-        current: null,
+        // 既定の設定 (autoIdle) では、名前が idle のモーションを待機として流す (animation.rs の default_idle_motion)
+        current: idle ? { name: idle, priority: "idle" } : null,
         activeExpressions: [],
-        idleMotion: null,
+        idleMotion: idle,
         tracking: false,
         trackingPaused: false,
         lipSyncPaused: false,

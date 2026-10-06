@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pattern, text } from "../lib/apps.mjs";
-import { glueModel, renameModule } from "../lib/editor-fixtures.mjs";
+import {
+  classificationFixture,
+  glueModel,
+  proposalsFixture,
+  renameModule,
+} from "../lib/editor-fixtures.mjs";
 import { createEditorHost, ipcBinding } from "../lib/editor-host.mjs";
 import { contentType, resolvePath, serve } from "../lib/serve.mjs";
 import {
@@ -13,6 +18,8 @@ import {
   firstRunMessages,
   hostMethods,
   PENDING_CLIENT,
+  profileExtension,
+  sampleAvatar,
   studioFixture,
 } from "../lib/studio-host.mjs";
 
@@ -284,4 +291,95 @@ test("エディタの偽のホスト: 外での書き換えと本体の変化は
   host.set({ externalChange: false, baseChange: false, module: false });
   assert.equal(host.handle("check_external_change").value, null);
   assert.equal(host.handle("check_base_change").value, null);
+});
+
+/** `ugoe_editor_core::Command` の種類 (`#[serde(tag = "op", rename_all = "snake_case")]`。apps/editor の proposals.test.ts と同じ読み方)。 */
+function commandKinds() {
+  const source = readFileSync(join(root, "crates/ugoe-editor-core/src/command.rs"), "utf8");
+  const body = source.slice(source.indexOf("pub enum Command {"));
+  return new Set(
+    [...body.slice(0, body.indexOf("\n}\n")).matchAll(/^ {4}([A-Z][A-Za-z]+)\b/gm)].map((m) =>
+      m[1].replace(/[A-Z]/g, (c, i) => (i === 0 ? "" : "_") + c.toLowerCase()),
+    ),
+  );
+}
+
+/** 分類のラベル (crates/ugoe-ai/src/classify.rs の `Label::as_str`)。 */
+function classificationLabels() {
+  const source = readFileSync(join(root, "crates/ugoe-ai/src/classify.rs"), "utf8");
+  const body = source.slice(source.indexOf("pub const fn as_str"));
+  return new Set(
+    [...body.slice(0, body.indexOf("\n    }\n")).matchAll(/Label::\w+ => "(\w+)",/g)].map(
+      (m) => m[1],
+    ),
+  );
+}
+
+test("エディタの偽のホスト: 提案の見本は実在するコマンドの種類だけを使う (T0047)", () => {
+  const kinds = commandKinds();
+  assert.ok(kinds.has("add_parameter") && kinds.has("set_layer_correction"));
+  assert.ok(!kinds.has("set_keyform_bindings"));
+  for (const proposal of proposalsFixture()) {
+    for (const [i, c] of proposal.commands.entries()) {
+      assert.ok(kinds.has(c.op), `proposal ${proposal.id}: ${c.op} is not an editor command`);
+      // 頼るのは前のコマンドだけ
+      assert.ok(
+        c.requires.every((r) => r < i),
+        `proposal ${proposal.id}: command ${i} requires a later one`,
+      );
+    }
+  }
+});
+
+test("エディタの偽のホスト: 分類の見本は実在するラベルだけを使う (T0047)", () => {
+  const labels = classificationLabels();
+  assert.equal(labels.size, 40);
+  const c = classificationFixture();
+  // 選択欄は本物と同じくすべてのラベル
+  assert.deepEqual(new Set(c.label_choices), labels);
+  for (const layer of c.layers) assert.ok(labels.has(layer.label), layer.label);
+  for (const proposal of proposalsFixture()) {
+    for (const command of proposal.commands) {
+      if (command.correction) assert.ok(labels.has(command.correction.label));
+    }
+  }
+});
+
+test("スタジオの偽のホスト: 雑談のシーンのモデルとプロファイルの拡張子は本物の見本と同じ (T0047)", async () => {
+  // 保存のダイアログが付ける拡張子
+  assert.equal(profileExtension(), "json");
+  const fixture = await studioFixture("en");
+  assert.ok(fixture.path.endsWith(".json"));
+  // 配信中のシーンは見本のアバター
+  const active = fixture.profile.scenes.find((s) => s.id === fixture.profile.activeScene);
+  assert.ok(active.model.endsWith("avatar.ugoe"));
+  const avatar = sampleAvatar();
+  // assets/samples/README.md: パラメータ 27、ポーズは耳飾りの有無、モーション 4・表情 4
+  assert.equal(avatar.parameters.length, 27);
+  assert.deepEqual(avatar.parameters[0], {
+    id: "AngleX",
+    name: "AngleX",
+    min: -30,
+    max: 30,
+    default: 0,
+    internal: false,
+  });
+  assert.equal(avatar.parameters.find((p) => p.id === "EyeLOpen").default, 1);
+  assert.deepEqual(avatar.poseGroups, [{ parts: ["earwear", "no_earwear"], module: null }]);
+  assert.deepEqual(
+    avatar.motions.map((m) => [m.name, m.looping, m.parameters]),
+    [
+      ["idle", true, ["AngleX", "BodyAngleZ"]],
+      ["nod", false, ["AngleY"]],
+      ["shake", false, ["AngleX"]],
+      ["tilt", false, ["AngleZ", "EyeBallX"]],
+    ],
+  );
+  assert.deepEqual(avatar.expressions, ["angry", "sad", "smile", "surprised"]);
+  assert.deepEqual(fixture.poseGroups, avatar.poseGroups);
+  // ホットキーが指すモーションと表情は見本にある (着せ替えのシーンだけのものは除く)
+  for (const { action } of fixture.profile.hotkeys) {
+    if (action.kind === "motion") assert.ok(avatar.motions.some((m) => m.name === action.motion));
+    if (action.kind === "expression") assert.ok(avatar.expressions.includes(action.expression));
+  }
 });

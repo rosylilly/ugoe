@@ -37,7 +37,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      見本のモデルにはグルーを 1 つ足す (袖と手を `ArmWave` の 3 つのキーでつなぐ `SleeveHandGlue`。グルーのパネルの編集の欄を撮るため。
      `ugoe_model::fixtures` と `ugoe sample` は変えない。T0044)。バックエンドが送るイベント (`listen` で待つもの) は、ページの
      `window.__uiAuditEmit(event, payload)` で送る (エージェントが提案を置いた `mcp-bridge` の `proposals` など)。
-     見本に無い状態 (T0676) は `host.set({ ai, restoring, dressUp, module, manyParameters, externalChange, baseChange })` で切り替える (中身は `lib/editor-fixtures.mjs`):
+     見本に無い状態 (T0676) は `host.set({ ai, restoring, dressUp, module, manyParameters, externalChange, baseChange })` で切り替える (中身は `lib/editor-fixtures.mjs`。
+     作りものだが、提案のコマンドの種類 (`op`) と分類のラベルは本物にあるものだけを使う。`hosts.test.mjs` が
+     `crates/ugoe-editor-core/src/command.rs` と `crates/ugoe-ai/src/classify.rs` に照らして確かめる。T0047):
      `ai` は提案と分類があり外部に送れる設定 (分類は同意が無ければ確認を求め、同意の後は `cancel_ai_requests` まで答えない。
      リグの提案は `ai.time_limit` で失敗する)、`restoring` は分類のキャッシュを戻している最中、`dressUp` はプレビューの着せ替えに
      見本の `.ugoemod` と読めないファイル、`module` はモジュールのプロジェクト (本体は見本、モジュールは Sailor。今の編集は
@@ -47,6 +49,10 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      本体の変化 (`check_base_change`。T0044)。
    - スタジオ (`lib/studio-host.mjs`): `window.__UGOE_STUDIO_HOST__` に、`StudioHost` (apps/studio/src/lib/host.ts) のすべてのメソッドを置く。
      見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を足して送る。
+     プロファイルの場所は `assets/ugoe-sample-profile.json` (拡張子は保存のダイアログが付けるもの。`src-tauri/src/lib.rs` の `PROFILE_EXTENSION`)。
+     配信中のシーン「雑談」のモデル (`avatar.ugoe`) のパラメータ (27。名前は ID)・モーション・表情・ポーズのグループ (`earwear` / `no_earwear`) は、
+     見本を作るソース (`crates/ugoe-cli/src/sample.rs`・`sample/animations/`、`ugoe-model` の `standard.rs`) から読み、本物の指揮役と同じく
+     ポーズは各グループの先頭を表示し、待機のモーション `idle` を流している様子で送る (T0047)。
      ページの `window.__uiAuditStudio` の `emit` (指揮役の通知を送る)・`setStatus` (負荷の数値を変える)・`setOutput` (出力ウィンドウの様子を変えて送る) で、
      読み込んだ後に状態を変えて撮る (初めて起動した画面・承認を待つアプリ・登録できないホットキー・負荷の注意・透過が効かない出力。
      通知の組は `firstRunMessages`・`attentionMessages`。T0818・T0849)。出力ウィンドウの透過は、ふだんは `supported` (効く) にしておく。
