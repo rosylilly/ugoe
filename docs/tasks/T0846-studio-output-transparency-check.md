@@ -1,11 +1,11 @@
 ---
 id: T0846
 title: "スタジオ: 出力ウィンドウの透過が効いているかを調べ、効かない環境で注意を出す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0846
 ---
 
 # T0846: スタジオ: 出力ウィンドウの透過が効いているかを調べ、効かない環境で注意を出す
