@@ -1,11 +1,11 @@
 ---
 id: T0977
 title: "マニュアル: スタジオの画像に撮った機械の状態 (透過の警告・負荷の数値・ポート・デバイス) が写るのを点検し、撮り方を決める"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests/e2e, docs]
 depends_on: [T0059]
-assignee:
+assignee: claude-worker-T0977
 ---
 
 # T0977: マニュアル: スタジオの画像に撮った機械の状態 (透過の警告・負荷の数値・ポート・デバイス) が写るのを点検し、撮り方を決める
