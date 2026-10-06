@@ -13,14 +13,21 @@ vi.mock("../ipc", () => ({
   ipc: {
     setPreviewModules: vi.fn(async () => ({ name: "p", path: null, modified: true })),
     comparePreviewModule: vi.fn(async () => []),
+    getPreviewModules: vi.fn(async () => [{ path: "/work/missing.ugoemod", attached: true }]),
+    readModuleFile: vi.fn(async (path: string) => {
+      throw `${path}: No such file or directory`;
+    }),
   },
 }));
 
 const SLOTS = { LongHair: "Hair", ShortHair: "Hair", Dress: "Outfit" };
 const bytes = (name: string) => new TextEncoder().encode(name);
 
-/** 3 つのモジュールを読み込み (ShortHair と Dress が付く)、節を描く。 */
-async function draw() {
+/**
+ * 3 つのモジュールを読み込み (ShortHair と Dress が付く)、節を描く。`missing` なら、その前にプロジェクトに残した
+ * 読めないファイル (付けたい組に入っている) の行を置く。
+ */
+async function draw(missing = false) {
   let fake = fakePuppet(SLOTS);
   /** 作り直しの途中 (`host.puppet()` が `null`)。 */
   let gone = false;
@@ -29,6 +36,10 @@ async function draw() {
     active: () => true,
     changed: () => {},
   });
+  if (missing) {
+    await dressUp.load();
+    await dressUp.refresh();
+  }
   await dressUp.add(
     ["LongHair", "ShortHair", "Dress"].map((name) => ({
       path: `/work/${name}.ugoemod`,
@@ -187,5 +198,40 @@ describe("DressUpSection while waiting for the WebPuppet (T1666)", () => {
     ]);
     const alerts = [...t.target.querySelectorAll(".modules > li")][0]?.textContent ?? "";
     expect(alerts).toContain("LongHair was taken off");
+  });
+
+  it("shows no change for a row whose file could not be read (T1674)", async () => {
+    const t = await draw(true);
+    t.lose();
+    checkbox(t.target, "Dress").click();
+    flushSync();
+    await settle();
+    expect(rows(t.target)).toEqual([
+      ["missing", false, null],
+      ["LongHair", false, null],
+      ["ShortHair", true, null],
+      ["Dress", false, OFF],
+    ]);
+    expect(checkbox(t.target, "missing").getAttribute("aria-disabled") ?? "").not.toBe("false");
+  });
+
+  it("clears the earlier failure of a row put on again while waiting (T1674)", async () => {
+    const t = await draw();
+    t.lose();
+    await choose(slotTrigger(t.target, "Hair"), "LongHair");
+    await t.recreate(["Hair"]);
+    const longHair = () => [...t.target.querySelectorAll(".modules > li")][0]?.textContent ?? "";
+    expect(longHair()).toContain("LongHair was taken off");
+
+    t.lose();
+    checkbox(t.target, "LongHair").click();
+    flushSync();
+    await settle();
+    expect(rows(t.target)[0]).toEqual(["LongHair", true, ON]);
+    expect(longHair()).not.toContain("was taken off");
+
+    await t.recreate(["Hair"]);
+    expect(rows(t.target)[0]).toEqual(["LongHair", false, null]);
+    expect(longHair()).toContain("LongHair was taken off");
   });
 });

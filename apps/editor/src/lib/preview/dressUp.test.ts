@@ -1,6 +1,6 @@
 // プレビューの着せ替え (T0649): 説明の文言・スロットの一覧と、DressUp の付け外し (WebPuppet と IPC は偽物)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModuleDifference } from "../ipc";
+import { ipc, type ModuleDifference } from "../ipc";
 import {
   describeProblem,
   differenceItemCount,
@@ -618,6 +618,64 @@ describe("DressUp rows while waiting for the WebPuppet (T1666)", () => {
       ["ShortHair", false, null],
       ["Dress", true, null],
     ]);
+    expect(entry(dressUp, "LongHair")?.problem?.summary).toContain("LongHair was taken off");
+  });
+
+  it("does not show a change for a row whose file could not be read (T1674)", async () => {
+    const { dressUp, fake } = setup();
+    vi.mocked(ipc.getPreviewModules).mockResolvedValueOnce([
+      { path: "/work/LongHair.ugoemod", attached: true },
+      { path: "/work/missing.ugoemod", attached: true },
+    ]);
+    files["/work/LongHair.ugoemod"] = "LongHair";
+    await dressUp.load();
+    await dressUp.refresh();
+    expect(entry(dressUp, "missing")).toMatchObject({ loaded: false, wanted: true });
+    fake.state.lost = true;
+    dressUp.detach("LongHair");
+    expect(dressUp.waiting).toBe(true);
+    // 読めなかった行は作り直しても付かないので、チェックも待っている文も出さない (前の状態のまま)。
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", false, "off"],
+      ["missing", false, null],
+    ]);
+    expect(entry(dressUp, "missing")?.problem?.summary).toContain("No such file");
+  });
+
+  it("shows a row read again while there is no WebPuppet as waiting to be put on (T1674)", async () => {
+    // 作り直しの途中に読み直したもの (`#pending`) は、作り直した WebPuppet に読み込んで付ける。
+    const t = setup();
+    files["/work/LongHair.ugoemod"] = "LongHair";
+    await t.dressUp.load();
+    t.drop();
+    await t.dressUp.refresh();
+    expect(t.dressUp.waiting).toBe(true);
+    expect(rows(t.dressUp)).toEqual([
+      ["LongHair", true, "on"],
+      ["missing", false, null],
+    ]);
+    expect(t.recreate().attached()).toEqual(["LongHair"]);
+    expect(rows(t.dressUp)).toEqual([
+      ["LongHair", true, null],
+      ["missing", false, null],
+    ]);
+  });
+
+  it("clears the earlier failure of a row put on again while waiting (T1674)", async () => {
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    dressUp.setSlot("Hair", "LongHair");
+    t.recreate(["Hair"]);
+    expect(entry(dressUp, "LongHair")?.problem?.summary).toContain("LongHair was taken off");
+    // また GPU を失った間に付け直すと、前の失敗の文は消える。
+    t.fake.state.lost = true;
+    dressUp.attach("LongHair");
+    expect(rows(dressUp)[0]).toEqual(["LongHair", true, "on"]);
+    expect(entry(dressUp, "LongHair")?.problem).toBeNull();
+    // 作り直した WebPuppet にまた付けられなければ、その時の理由をまた出す。
+    t.recreate(["Hair"]);
+    expect(rows(dressUp)[0]).toEqual(["LongHair", false, null]);
     expect(entry(dressUp, "LongHair")?.problem?.summary).toContain("LongHair was taken off");
   });
 

@@ -14,7 +14,9 @@
 //   WebPuppet を捨ててから新しいものができるまで。`host.puppet()` が `null`) に読み込んだものも `#pending` に取っておき
 //   (T1658)、その間の付け外しも付けたい組だけを変える (T1659)。そうして待っている間 (`waiting`) は、行のチェックと
 //   スロットの選択に付けたい組を出し (`shown`)、まだ WebPuppet に届いていない付け外しを行に文字で出す
-//   (`pendingChange`。T1666)。作り直した WebPuppet に付けられなかったものは、付けたい組から外して行で知らせる。
+//   (`pendingChange`。T1666)。作り直しても読み込まない行 (ファイルを読めなかったものなど) は今の状態のまま出し、
+//   待っている間に付け直した行は前の失敗の文を消す (T1674)。作り直した WebPuppet に付けられなかったものは、付けたい組から
+//   外して行で知らせる。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
@@ -146,7 +148,7 @@ export class DressUp {
    * GPU を失っていたか、作り直しの途中で WebPuppet が無くて読み込めなかったもの (作り直した WebPuppet に `loaded` で
    * 読み込む)。
    */
-  #pending: PendingModule[] = [];
+  #pending = $state.raw<PendingModule[]>([]);
 
   constructor(host: DressUpHost) {
     this.#host = host;
@@ -388,10 +390,11 @@ export class DressUp {
   /**
    * 行のチェックとスロットの選択に出す「付けるか」。ふだんは今付いているか (`attached`)。作り直した WebPuppet を待っている
    * 間 (`waiting`) は、利用者が選んだ付けたい組 (`wanted`) を出す (押した付け外しがすぐ出るように。T1666)。モジュールの
-   * プロジェクトの自分のスロットの行は、付けたい組に残っていても付けないので `attached` のまま。
+   * プロジェクトの自分のスロットの行と、作り直しても読み込まない行 (ファイルを読めなかったものなど。T1674) は、付けたい組に
+   * 残っていても付けないので `attached` のまま。
    */
   shown(entry: DressUpEntry): boolean {
-    if (!this.waiting) return entry.attached;
+    if (!this.waiting || !this.#willLoad(entry)) return entry.attached;
     const own = this.#host.ownSlot?.() ?? null;
     return own !== null && entry.slot === own ? entry.attached : entry.wanted;
   }
@@ -514,10 +517,24 @@ export class DressUp {
    */
   #want(entry: DressUpEntry): void {
     this.waiting = true;
+    // 前に付けられなかった理由は消す (作り直した WebPuppet にまた付けられなければ、その時の理由を出す。T1674)。
+    // 読み込まない行の理由 (ファイルを読めないなど) は残す。
+    if (this.#willLoad(entry)) entry.problem = null;
     for (const other of this.entries) {
       if (other.slot !== null && other.slot === entry.slot) other.wanted = false;
     }
     entry.wanted = true;
+  }
+
+  /**
+   * 作り直した WebPuppet に `loaded` で読み込む行か: 読み込んである (`#bytes`) か、読み込みを待っている (`#pending`)。
+   * 今の編集と同じ名前のファイルの行は読み込まない。
+   */
+  #willLoad(entry: DressUpEntry): boolean {
+    if (!entry.own && entry.name === this.#ownName) return false;
+    return (
+      entry.loaded || this.#bytes.has(entry.name) || this.#pending.some((p) => p.entry === entry)
+    );
   }
 
   /** GPU を失っていて読み込めなかったものを読み込み、付ける (`loaded` の後半)。 */
@@ -563,7 +580,7 @@ export class DressUp {
     // ファイルを読んでいる間に作り直しが始まることもあるので、読んだ後で WebPuppet を見る。
     const puppet = this.#host.puppet();
     if (!puppet) {
-      this.#pending.push({ source: { ...source, bytes }, entry, attach });
+      this.#pending = [...this.#pending, { source: { ...source, bytes }, entry, attach }];
       this.waiting = true;
       return null;
     }
@@ -597,7 +614,7 @@ export class DressUp {
       name = puppet.load_module(bytes);
     } catch (e) {
       if (puppet.is_lost()) {
-        this.#pending.push({ source: { ...source, bytes }, entry, attach });
+        this.#pending = [...this.#pending, { source: { ...source, bytes }, entry, attach }];
         this.waiting = true;
         return null;
       }
