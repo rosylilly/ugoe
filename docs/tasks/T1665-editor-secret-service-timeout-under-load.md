@@ -1,11 +1,11 @@
 ---
 id: T1665
 title: "エディタ: 重い負荷の下で Secret Service の呼び出しが 2 秒で諦め、API キーの保存・読み出しが失敗するのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1665
 ---
 
 # T1665: エディタ: 重い負荷の下で Secret Service の呼び出しが 2 秒で諦め、API キーの保存・読み出しが失敗するのを直す
