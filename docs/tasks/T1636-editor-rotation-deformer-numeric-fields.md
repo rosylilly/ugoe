@@ -1,11 +1,11 @@
 ---
 id: T1636
 title: "エディタ: 回転デフォーマの今のセルの角度と拡大率を数値の欄で入れる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1636
 ---
 
 # T1636: エディタ: 回転デフォーマの今のセルの角度と拡大率を数値の欄で入れる
