@@ -1,11 +1,11 @@
 ---
 id: T1669
 title: "エディタ: ドープシートのキーの印で、押せる範囲が重なる所は近いキーをつかみ、Enter・Space でもキーを選べるようにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1669
 ---
 
 # T1669: エディタ: ドープシートのキーの印で、押せる範囲が重なる所は近いキーをつかみ、Enter・Space でもキーを選べるようにする
