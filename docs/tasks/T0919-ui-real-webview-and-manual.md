@@ -1,11 +1,11 @@
 ---
 id: T0919
 title: UI 品質: 実機の WebView での確認とマニュアルの画像の更新
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs, tests, apps/editor, apps/viewer, apps/studio]
 depends_on: [T0918]
-assignee:
+assignee: claude-worker-T0919
 ---
 
 # T0919: UI 品質: 実機の WebView での確認とマニュアルの画像の更新
