@@ -1,11 +1,11 @@
 ---
 id: T0954
 title: "@ugoe/ui: Notice の中の見せずに読ませる文字が、送る枠の外を位置の基準にしないようにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0954
 ---
 
 # T0954: @ugoe/ui: Notice の中の見せずに読ませる文字が、送る枠の外を位置の基準にしないようにする
