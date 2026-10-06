@@ -1,11 +1,11 @@
 ---
 id: T1648
 title: "エディタ: メッシュの頂点を足す操作とグルーの 1 組ずつの編集に、ポインタ以外の代わりの手段を作る (判断が要る)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T1647, T1642]
-assignee:
+assignee: claude-worker-T1648
 ---
 
 # T1648: エディタ: メッシュの頂点を足す操作とグルーの 1 組ずつの編集に、ポインタ以外の代わりの手段を作る (判断が要る)
