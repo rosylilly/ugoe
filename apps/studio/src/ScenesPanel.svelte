@@ -172,7 +172,12 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     list-style: none;
   }
 
+  /*
+   * 行の中の控えめな文字の色。選んだ行は accent-soft の地に hover・押下の重ねが乗っても 4.5:1 に届くように、
+   * 本文の色へ寄せる (ダークの hover で 4.29 → 5.39。docs/ui.md#スタジオのシーンの一覧の選んだ行-t0851)
+   */
   .scenes__item {
+    --scenes-muted: var(--ugoe-color-text-muted);
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -200,6 +205,7 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
   }
 
   .scenes__item--selected {
+    --scenes-muted: color-mix(in srgb, var(--ugoe-color-text) 30%, var(--ugoe-color-text-muted));
     border-color: var(--ugoe-color-control-border);
     background: var(--ugoe-color-accent-soft);
   }
@@ -231,14 +237,18 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--ugoe-color-text-muted);
+    color: var(--scenes-muted);
     font-size: var(--ugoe-font-size-sm);
   }
 
   .scenes__key {
     flex: none;
-    color: var(--ugoe-color-text-muted);
+    color: var(--scenes-muted);
     font-size: var(--ugoe-font-size-sm);
+  }
+
+  .scenes__key :global(.ugoe-kbd__plus) {
+    color: inherit;
   }
 
   .scenes__live {
@@ -255,7 +265,7 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     padding: 0 var(--ugoe-space-2);
     border: 1px solid var(--ugoe-color-control-border);
     border-radius: var(--ugoe-radius-sm);
-    color: var(--ugoe-color-text-muted);
+    color: var(--scenes-muted);
     font-size: var(--ugoe-font-size-sm);
   }
 
