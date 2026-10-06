@@ -1,11 +1,11 @@
 ---
 id: T0966
 title: "mcp: T0965 の後も Windows の CI で .mcpb の中継のテストが InvalidFilename で落ちる (wine で再現して直す)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0966
 ---
 
 # T0966: mcp: T0965 の後も Windows の CI で .mcpb の中継のテストが InvalidFilename で落ちる (wine で再現して直す)
