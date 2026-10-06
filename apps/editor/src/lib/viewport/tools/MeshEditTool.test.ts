@@ -114,7 +114,7 @@ describe("MeshEditTool", () => {
   it("ignores presses while the previous edit is being sent", async () => {
     const { doc, selection, svg, vertices } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     const start = screen(1);
     drag(svg, [start, shift(start, 20, 0)]);
     expect(doc.apply).toHaveBeenCalledTimes(1);

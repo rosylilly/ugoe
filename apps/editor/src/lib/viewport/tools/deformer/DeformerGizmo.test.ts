@@ -192,7 +192,7 @@ describe("DeformerGizmo (rotation)", () => {
   it("ignores presses while the previous edit is being sent", async () => {
     const { doc, svg, at } = setup("Rot");
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     const origin = at("circle.origin");
     drag(svg, [at("rect.scale"), shift(origin, 90, 0)]);
     await settle();

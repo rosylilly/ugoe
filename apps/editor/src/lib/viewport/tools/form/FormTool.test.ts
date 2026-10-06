@@ -153,7 +153,7 @@ describe("FormTool", () => {
   it("ignores pointer events while the previous edit is being sent", async () => {
     const { doc, handle } = await setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     const start = screen(1);
     drag(handle(1), [start, shift(start, 20, 0)]);
     await settle();

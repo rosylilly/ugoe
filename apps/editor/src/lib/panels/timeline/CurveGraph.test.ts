@@ -5,12 +5,12 @@ import { flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import type { Command, Curve, CurveTarget, Motion } from "../../ipc";
 import {
+  choose,
   deferred,
   drag,
   FakeController,
   FakeDocument,
   get,
-  press,
   render,
   settle,
 } from "../../viewport/tools/test/harness.svelte";
@@ -128,7 +128,7 @@ describe("CurveGraph key fields while sending", () => {
   it("moves the key from where the previous commit put it", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     enter(field(target, "-t"), "1.5");
     await settle();
     enter(field(target, "-t"), "1.6");
@@ -144,7 +144,7 @@ describe("CurveGraph key fields while sending", () => {
   it("sets the value of the key moved by a pending time commit", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     enter(field(target, "-t"), "1.5");
     await settle();
     enter(field(target, "-v"), "4");
@@ -184,7 +184,7 @@ describe("CurveGraph drags while sending", () => {
   it("moves the key again from where the previous drag put it", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     // 表示は読み直していない (時刻 1 のまま) ので、同じ印をもう一度つかむ。
     drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
     await settle();
@@ -201,7 +201,7 @@ describe("CurveGraph drags while sending", () => {
   it("moves the handle of the key moved by a pending drag", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
     await settle();
     drag(handleHit(target), [at(0.7, 8), at(0.9, 5)]);
@@ -222,7 +222,7 @@ describe("CurveGraph drags while sending", () => {
   it("drags the key moved by a pending field commit", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     enter(field(target, "-t"), "1.5");
     await settle();
     drag(keyHit(target), [at(1, 10), at(1.6, 10)]);
@@ -235,25 +235,9 @@ describe("CurveGraph drags while sending", () => {
   });
 });
 
-/**
- * 区間の種類の Select で、`kind` (直線・ベジェ・ステップ・逆ステップ) を選ぶ。今の種類から矢印で移って Enter で選ぶ
- * (packages/ui の Select のテストと同じ操作)。
- */
-async function chooseKind(target: HTMLElement, kind: string): Promise<void> {
-  const trigger = get<HTMLElement>(target, '.side [aria-haspopup="listbox"]');
-  trigger.focus();
-  press(trigger, "ArrowDown");
-  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
-  const items = [...document.querySelectorAll('[role="option"]')];
-  const labels: Record<string, string> = { stepped: "Step" };
-  const index = items.findIndex((i) => i.textContent?.trim() === labels[kind]);
-  await vi.waitFor(() => expect(items.some((i) => i.hasAttribute("data-highlighted"))).toBe(true));
-  // 選んでいる項目 (今の種類) から目当ての項目まで下へ移る
-  for (let i = 0; i < 4 && !items[index]?.hasAttribute("data-highlighted"); i++) {
-    press(document.activeElement ?? trigger, "ArrowDown");
-  }
-  press(document.activeElement ?? trigger, "Enter");
-  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"));
+/** 区間の種類の Select で、文字が `label` (Linear・Bezier・Step・Inverse step) の種類を選ぶ。 */
+async function chooseKind(target: HTMLElement, label: string): Promise<void> {
+  await choose(get<HTMLElement>(target, '.side [aria-haspopup="listbox"]'), label);
 }
 
 /** カーブのフェードの欄 (0 = フェードイン、1 = フェードアウト) に値を入れて確定する。 */
@@ -266,11 +250,11 @@ describe("CurveGraph segment and fade edits while sending", () => {
   it("sets the kind of the segment ending at the key moved by a pending drag", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
     await settle();
     // 表示 (選択) はまだ時刻 1 を指している。
-    await chooseKind(target, "stepped");
+    await chooseKind(target, "Step");
     gate.resolve();
     await settleAll();
     expect(doc.commands).toEqual([
@@ -288,7 +272,7 @@ describe("CurveGraph segment and fade edits while sending", () => {
   it("does not send the kind when the key is gone", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     // 先に並べた編集 (ドープシートの削除など) が、選んだキーを消す。
     const remove: Command = { op: "remove_motion_key", motion: "Nod", target: TARGET, t: 1 };
     doc.onApply = (command) => {
@@ -298,7 +282,7 @@ describe("CurveGraph segment and fade edits while sending", () => {
       return true;
     };
     void doc.send(() => remove);
-    await chooseKind(target, "stepped");
+    await chooseKind(target, "Step");
     gate.resolve();
     await settleAll();
     expect(doc.commands).toEqual([remove]);
@@ -307,7 +291,7 @@ describe("CurveGraph segment and fade edits while sending", () => {
   it("keeps the other fade committed while sending", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     setFade(target, "fade_in", "0.5");
     await settle();
     // 表示のカーブはまだフェードインが無い。

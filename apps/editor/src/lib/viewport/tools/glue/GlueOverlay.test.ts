@@ -82,7 +82,7 @@ describe("GlueOverlay pairs while sending", () => {
   it("adds a pair made while the previous one is applied to the latest glue", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     vertex(target, "a", 2);
     vertex(target, "b", 3);
     await settle();
@@ -112,7 +112,7 @@ describe("GlueOverlay pairs while sending", () => {
     view.setPairMode("remove");
     await settle();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     const markers = all(target, "rect.marker");
     expect(markers).toHaveLength(2);
     pointer(markers[0] as Element, "pointerdown", [0, 0]);

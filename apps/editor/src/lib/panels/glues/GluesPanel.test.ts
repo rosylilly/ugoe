@@ -8,6 +8,7 @@ import type { ParameterDef } from "../../document.svelte";
 import { Selection } from "../../selection.svelte";
 import {
   all,
+  deferred,
   FakeDocument,
   get,
   press,
@@ -401,5 +402,35 @@ describe("GluesPanel pair highlight (T1651)", () => {
     view.glue = null;
     flushSync();
     expect(view.highlightedPair).toBeNull();
+  });
+});
+
+describe("GluesPanel while sending (T1652)", () => {
+  it("cannot add a key, an axis or a pair until the sent edit is applied", async () => {
+    const { doc, target } = setup();
+    type(field(target, "New key of AngleX"), "12");
+    type(labelledField(target, "Vertex of A"), "4");
+    type(labelledField(target, "Vertex of B"), "3");
+    expect(button(target, "Axis").disabled).toBe(false);
+    expect(button(target, "Add pair").disabled).toBe(false);
+    const gate = deferred();
+    doc.gate = gate.promise;
+    await click(button(target, "Key"));
+    expect(doc.pending).toBe(1);
+    expect(button(target, "Key").disabled).toBe(true);
+    expect(button(target, "Axis").disabled).toBe(true);
+    expect(button(target, "Add pair").disabled).toBe(true);
+    // 押せないボタンを押しても送らない
+    await click(button(target, "Axis"));
+    await click(button(target, "Add pair"));
+    expect(doc.commands).toHaveLength(1);
+
+    gate.resolve();
+    await settle();
+    expect(doc.pending).toBe(0);
+    expect(button(target, "Axis").disabled).toBe(false);
+    expect(button(target, "Add pair").disabled).toBe(false);
+    type(field(target, "New key of AngleX"), "5");
+    expect(button(target, "Key").disabled).toBe(false);
   });
 });

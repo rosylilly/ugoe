@@ -121,7 +121,7 @@ describe("MotionEditor dope sheet drags while sending", () => {
   it("moves the key again from where the previous drag put it", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     drag(diamond(target), [
       [100, 10],
       [100 + dx(0.5), 10],
@@ -144,7 +144,7 @@ describe("MotionEditor dope sheet drags while sending", () => {
   it("drags the key in the curve graph after a pending dope sheet drag", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     // ドープシートの印を押すとその行を選び、下にカーブのグラフを出す。
     drag(diamond(target), [
       [100, 10],
@@ -173,7 +173,7 @@ describe("MotionEditor key removal while sending", () => {
   it("removes the key moved by a pending drag", async () => {
     const { doc, timeline, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     drag(diamond(target), [
       [100, 10],
       [100 + dx(0.5), 10],
@@ -193,7 +193,7 @@ describe("MotionEditor key removal while sending", () => {
   it("does not send the removal when the key is gone", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     drag(diamond(target), [
       [100, 10],
       [100 + dx(0.5), 10],

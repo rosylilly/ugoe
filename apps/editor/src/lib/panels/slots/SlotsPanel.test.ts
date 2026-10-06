@@ -95,7 +95,7 @@ describe("SlotsPanel edits while sending", () => {
   it("keeps a range commit made while the previous one is applied", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     enter(field(target, "-from"), "120");
     await settle();
     enter(field(target, "-to"), "180");
@@ -111,7 +111,7 @@ describe("SlotsPanel edits while sending", () => {
   it("sends edits after a rename to the new ID", async () => {
     const { doc, view, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     rename(target, "Cap");
     await settle();
     enter(field(target, "-to"), "180");
@@ -127,7 +127,7 @@ describe("SlotsPanel edits while sending", () => {
   it("does not disable the fields while sending", async () => {
     const { doc, target } = setup();
     const gate = deferred();
-    doc.pending = gate.promise;
+    doc.gate = gate.promise;
     enter(field(target, "-from"), "120");
     await settle();
     expect(field(target, "-to").disabled).toBe(false);

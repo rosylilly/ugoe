@@ -444,10 +444,11 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 - **環境:** ファイルの先頭に `// @vitest-environment happy-dom` を書き、そのファイルだけ happy-dom (ノードの DOM の実装) で動かします。
   テストのときは Svelte のブラウザ向けの実装を読みます (`vite.config.ts` の `resolve.conditions`。`packages/ui` の部品のテストと同じ)。
 - **描く:** svelte の `mount` で body に描き、テストの後で片付けます。ビューポートのツールの道具は
-  `apps/editor/src/lib/viewport/tools/test/harness.svelte.ts` にあります (`render`・`pointer`・`drag`・`press`・`dialogButton`)。
+  `apps/editor/src/lib/viewport/tools/test/harness.svelte.ts` にあります (`render`・`pointer`・`drag`・`press`・`dialogButton`・Select の項目を選ぶ `choose`)。
 - **偽物:** `ViewportController`・`EditorDocument`・`WebPuppet` は偽物 (`FakeController`・`FakeDocument`・`fakePuppet`) を渡します。
-  `FakeDocument.apply` は送られたコマンドを `commands` に記録するので、コマンドの列をそのまま比べます。`pending` に約束を入れると、
-  送っている間の操作を試せます。バックエンドの座標変換 (`ipc.localToCanvas`・`ipc.canvasToLocal`) は `vi.mock` で恒等写像にします。
+  `FakeDocument.apply` は送られたコマンドを `commands` に記録するので、コマンドの列をそのまま比べます。`gate` に約束を入れると、
+  `apply` がそれを待つので送っている間の操作を試せます。送っている数は本物と同じく `pending` に数えます
+  (パネルが `pending > 0` の間ボタンを無効にするのを確かめられる)。バックエンドの座標変換 (`ipc.localToCanvas`・`ipc.canvasToLocal`) は `vi.mock` で恒等写像にします。
 - **wasm:** テストは本物の wasm (`just wasm` の生成物) を読みません。`src/test-setup.ts` が `viewport/wasm` の `loadUgoeWasm` を
   null を返す偽物にします (生成物があると、部品が読みに行った fetch がテストの片付けで中断され、処理されない rejection で Vitest が落ちるため。T1641)。
   wasm の型が要るテストは、ファイルの中で偽物を返す `vi.mock` を書き直します (`panels/timeline/timeline-state.test.ts` の `MotionSampler`)。

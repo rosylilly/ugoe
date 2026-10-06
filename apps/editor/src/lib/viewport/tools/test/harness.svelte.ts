@@ -10,7 +10,7 @@
 // - キャンバス座標 → CSS ピクセル: `(10, 20) + 2 * p`。happy-dom の getBoundingClientRect は 0 なので、
 //   イベントの clientX / clientY がそのままツールの座標になる。
 import { type Component, flushSync, mount, tick, unmount } from "svelte";
-import { afterEach, vi } from "vitest";
+import { afterEach, expect, vi } from "vitest";
 import { type EditorDocument, type ParameterDef, parseModelJson } from "../../../document.svelte";
 import type {
   ApplyReport,
@@ -226,8 +226,10 @@ export class FakeDocument {
   /** 読み直しの回数 (`EditorDocument.revision`)。テストが増やして編集の後の読み直しの代わりにする。 */
   revision = $state(0);
   readonly commands: Command[] = [];
+  /** 送っていてまだ終わっていない編集の数 (`EditorDocument.pending`)。`send` は並べたときから数える。 */
+  pending = $state(0);
   /** 設定すると、`apply` はこの約束が解けるまで終わらない (送っている間の操作を試す)。 */
-  pending: Promise<void> | null = null;
+  gate: Promise<void> | null = null;
   /**
    * 設定すると、`apply` は待ち終えた後でこれを呼んで写し (`model`・`motions`) を書き換える (本物の読み直しの代わり)。
    * false を返すと適用に失敗したことにする。
@@ -239,9 +241,14 @@ export class FakeDocument {
   /** 本物の `apply` と同じく、適用できたら報告を返す (失敗は null。部品は戻り値で成否を見る)。 */
   apply = vi.fn(async (command: Command): Promise<ApplyReport | null> => {
     this.commands.push(command);
-    if (this.pending) await this.pending;
-    if (this.onApply?.(command) === false) return null;
-    return { warnings: [], mirrored: [] };
+    this.pending += 1;
+    try {
+      if (this.gate) await this.gate;
+      if (this.onApply?.(command) === false) return null;
+      return { warnings: [], mirrored: [] };
+    } finally {
+      this.pending -= 1;
+    }
   });
 
   /**
@@ -249,9 +256,16 @@ export class FakeDocument {
    * `apply` で送る。null なら送らない。数値の欄の確定を畳む動きは真似しない。
    */
   send = vi.fn((build: () => Command | null): Promise<ApplyReport | null> => {
+    this.pending += 1;
     const result = this.#queue.then(async () => {
-      await tick();
-      const command = build();
+      let command: Command | null;
+      try {
+        await tick();
+        command = build();
+      } finally {
+        // ここからは `apply` が数える
+        this.pending -= 1;
+      }
       return command ? this.apply(command) : null;
     });
     this.#queue = result.catch(() => undefined);
@@ -336,6 +350,29 @@ export function dialogButton(): HTMLButtonElement {
 export async function settle(): Promise<void> {
   for (let i = 0; i < 5; i++) await Promise.resolve();
   flushSync();
+}
+
+/**
+ * Select (`trigger` はその開くボタン) で、文字が `option` の項目を選ぶ。今の項目から矢印で移って Enter で選ぶ
+ * (packages/ui の Select のテストと同じ操作)。一覧が body から消えるまで待つ (次に開く Select の項目と混ざらないよう)。
+ */
+export async function choose(trigger: HTMLElement, option: string): Promise<void> {
+  trigger.focus();
+  press(trigger, "ArrowDown");
+  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+  const items = all(document, '[role="option"]');
+  const wanted = items.find((i) => i.textContent?.trim() === option);
+  if (!wanted) throw new Error(`no option: ${option}`);
+  await vi.waitFor(() => expect(items.some((i) => i.hasAttribute("data-highlighted"))).toBe(true));
+  // 下へ回って目当ての項目まで移る (一覧の端で止まるなら上へ)
+  for (const key of ["ArrowDown", "ArrowUp"]) {
+    for (let i = 0; i < items.length && !wanted.hasAttribute("data-highlighted"); i++) {
+      press(document.activeElement ?? trigger, key);
+    }
+  }
+  press(document.activeElement ?? trigger, "Enter");
+  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"));
+  await vi.waitFor(() => expect(document.querySelector('[role="option"]')).toBeNull());
 }
 
 /** `selector` に合う要素 (無ければ例外)。 */

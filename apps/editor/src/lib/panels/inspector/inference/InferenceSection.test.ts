@@ -3,11 +3,12 @@
 // 推定の設定は誤りがあれば適用できない、ミラーの軸と許す差は空なら送らない、左右の対の軸は打つたびに (oninput)
 // 「Set partner」の可否を決める。どれも確定で送るコマンドとその値を確かめる。
 import { flushSync } from "svelte";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Command } from "../../../ipc";
 import { Selection } from "../../../selection.svelte";
 import {
   all,
+  choose,
   FakeController,
   FakeDocument,
   get,
@@ -88,29 +89,9 @@ async function click(el: HTMLElement): Promise<void> {
   await settle();
 }
 
-/**
- * ラベルが `label` の Select で `option` を選ぶ。今の項目から矢印で移って Enter で選ぶ
- * (packages/ui の Select のテストと同じ操作)。
- */
-async function choose(target: HTMLElement, label: string, option: string): Promise<void> {
-  const trigger = labelled<HTMLElement>(target, '[aria-haspopup="listbox"]', label);
-  trigger.focus();
-  press(trigger, "ArrowDown");
-  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
-  const items = [...document.querySelectorAll('[role="option"]')];
-  const wanted = items.find((i) => i.textContent?.trim() === option);
-  if (!wanted) throw new Error(`no option: ${option}`);
-  await vi.waitFor(() => expect(items.some((i) => i.hasAttribute("data-highlighted"))).toBe(true));
-  // 下へ回って目当ての項目まで移る (一覧の端で止まるなら上へ)
-  for (const key of ["ArrowDown", "ArrowUp"]) {
-    for (let i = 0; i < items.length && !wanted.hasAttribute("data-highlighted"); i++) {
-      press(document.activeElement ?? trigger, key);
-    }
-  }
-  press(document.activeElement ?? trigger, "Enter");
-  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"));
-  // 次に開く Select の項目と混ざらないよう、一覧が body から消えるのを待つ
-  await vi.waitFor(() => expect(document.querySelector('[role="option"]')).toBeNull());
+/** ラベルが `label` の Select で `option` を選ぶ。 */
+async function chooseIn(target: HTMLElement, label: string, option: string): Promise<void> {
+  await choose(labelled<HTMLElement>(target, '[aria-haspopup="listbox"]', label), option);
 }
 
 describe("InferenceSection inference settings", () => {
@@ -121,7 +102,7 @@ describe("InferenceSection inference settings", () => {
 
   it("applies depth rotation with the committed numbers", async () => {
     const { doc, target } = setup();
-    await choose(target, "Method", "Depth rotation");
+    await chooseIn(target, "Method", "Depth rotation");
     // 既定: 拡大 1、中心は点の外接矩形の中心、yaw は格子の軸の AngleX
     expect(field(target, "Pivot x").value).toBe("50");
     expect(button(target, "Apply settings").disabled).toBe(false);
@@ -145,7 +126,7 @@ describe("InferenceSection inference settings", () => {
 
   it("keeps the previous number when a field is emptied", async () => {
     const { doc, target } = setup();
-    await choose(target, "Method", "Depth rotation");
+    await chooseIn(target, "Method", "Depth rotation");
     const scale = field(target, "Angle scale");
     enter(scale, "3");
     // 空を持てない欄なので、空や読めない文字は確定前の値に戻る (NaN を送らない)
@@ -162,11 +143,11 @@ describe("InferenceSection inference settings", () => {
 
   it("cannot apply depth rotation without a yaw or pitch", async () => {
     const { doc, target } = setup();
-    await choose(target, "Method", "Depth rotation");
-    await choose(target, "Yaw", "(none)");
+    await chooseIn(target, "Method", "Depth rotation");
+    await chooseIn(target, "Yaw", "(none)");
     expect(get(target, ".error").textContent?.trim()).toBe("Choose a yaw or pitch parameter");
     expect(button(target, "Apply settings").disabled).toBe(true);
-    await choose(target, "Pitch", "Angle X");
+    await chooseIn(target, "Pitch", "Angle X");
     expect(target.querySelector(".error")).toBeNull();
     await click(button(target, "Apply settings"));
     const [command] = doc.commands;
@@ -256,7 +237,7 @@ describe("InferenceSection mirror partner", () => {
 
   it("sends the chosen partner", async () => {
     const { doc, target } = setup();
-    await choose(target, "Partner", "QuadR");
+    await chooseIn(target, "Partner", "QuadR");
     expect(button(target, "Set partner").disabled).toBe(false);
     await click(button(target, "Set partner"));
     expect(doc.commands).toEqual<Command[]>([
@@ -279,7 +260,7 @@ describe("InferenceSection mirror partner", () => {
 
   it("unpairs when (none) is chosen", async () => {
     const { doc, target } = setup({ mirror: "QuadR", axis: 50 });
-    await choose(target, "Partner", "(none, symmetric)");
+    await chooseIn(target, "Partner", "(none, symmetric)");
     await click(button(target, "Set partner"));
     expect(doc.commands).toEqual<Command[]>([{ op: "set_mirror_pair", target: QUAD, axis: 50 }]);
   });
