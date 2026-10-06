@@ -1,8 +1,8 @@
 // 部品のキーボード操作と aria の検査 (docs/ui.md#アクセシビリティの基準)。happy-dom の上で描く。
 
 import { setLocale } from "@ugoe/i18n";
-import { createRawSnippet, flushSync } from "svelte";
-import { describe, expect, it, vi } from "vitest";
+import { type ComponentProps, createRawSnippet, flushSync } from "svelte";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { numberFieldCommit } from "./commit";
 import Button from "./components/Button.svelte";
 import Checkbox from "./components/Checkbox.svelte";
@@ -663,6 +663,13 @@ describe("TextField", () => {
     const named = get(render(TextField, { "aria-label": "Filter", type: "search" }), "input");
     expect(named.getAttribute("aria-label")).toBe("Filter");
     expect(named.getAttribute("type")).toBe("search");
+  });
+
+  it("has no password type (secrets use SecretField)", () => {
+    // 型だけの検査 (svelte-check が見る)。秘密の欄を 2 通りに作れないように
+    expectTypeOf<NonNullable<ComponentProps<typeof TextField>["type"]>>().toEqualTypeOf<
+      "text" | "search" | "url"
+    >();
   });
 
   it("reports typing and commits on Enter only when the value changed", () => {

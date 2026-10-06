@@ -330,9 +330,9 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Toggle` | すぐに効く入・切 (「鏡像で表示」など)。説明は `tooltip` (スイッチに Tooltip を付ける) | Bits UI `Switch` | Space・Enter | 1 |
 | `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。説明は `tooltip` (つまみに Tooltip を付ける) | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
 | `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す。誤りは `invalid`、説明は `tooltip`。空 (既定を使う) を持てる欄は `optional` (下の「空を持てる数値の欄」)。打つたびに読めた値を知りたいときは `oninput` | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
-| `TextField` | 1 行の文字 (名前・ID・URL・検索)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は `TextArea`、秘密は `SecretField` | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
+| `TextField` | 1 行の文字 (名前・ID・URL・検索。`type` は `text`・`search`・`url`)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は `TextArea`、秘密は `SecretField` | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
 | `TextArea` | 複数行の文字 (名前の一覧・注文の文など)。ラベル・補足・誤りの文・`tooltip`・確定の約束は `TextField` と同じ。綴りの印は既定で出す (`spellcheck`) | 自作 (`<textarea>`) | Enter は改行・Mod+Enter かフォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0949 |
-| `SecretField` | API キーなどの秘密 (`TextField` と同じ見た目)。値を Svelte の状態に持たない: 呼び手は `bind:filled` (空白を除いて空でないか) だけを受け、送るときに `bind:this` の `take()` で取り出す (取り出すと欄を空にする)。捨てるのは `clear()` | 自作 (`<input type="password">`) | Enter は標準のまま (`<form>` なら送る)・Esc で入れかけを消す | T0949 |
+| `SecretField` | API キーなどの秘密 (`TextField` と同じ見た目。秘密の欄はこの部品だけで作る)。値を Svelte の状態に持たない: 呼び手は `bind:filled` (空白を除いて空でないか) だけを受け、送るときに `bind:this` の `take()` で取り出す (取り出すと欄を空にする)。捨てるのは `clear()` | 自作 (`<input type="password">`) | Enter は標準のまま (`<form>` なら送る)・Esc で入れかけを消す | T0949 |
 | `Select` | 5 個以上の選択肢から 1 つ。誤りは `invalid` (選べなくなった値など)、説明は `tooltip` | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
 | `SegmentedControl` | 2〜4 個の選択肢から 1 つ (すべて見せたいとき)。名前と選択肢は字の途中で折らず、幅が足りなければ選択肢ごと次の行へ送る (T0950) | Bits UI `RadioGroup` (または `ToggleGroup` の単一選択) | 矢印で移り、選ぶ | 1 |
 | `Tabs` | 同じ場所の中身を切り替える (中身が別の画面のとき) | Bits UI `Tabs` | 左右の矢印・Home/End | 1 |

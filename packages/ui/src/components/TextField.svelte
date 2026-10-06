@@ -11,8 +11,8 @@ import Tooltip from "./Tooltip.svelte";
 interface Props {
   /** 値。打つたびに更新される (`bind:value`)。 */
   value?: string;
-  /** 欄の種類。既定は `text`。 */
-  type?: "text" | "search" | "password" | "url";
+  /** 欄の種類。既定は `text`。秘密 (API キーなど) は `SecretField` を使う。 */
+  type?: "text" | "search" | "url";
   /** 見えるラベル。`aria-labelledby` か `aria-label` を渡すとき、または外の `<label for={id}>` を使うときは省ける。 */
   label?: string;
   /** 見えるラベルを別の要素に置くときの、その要素の id。 */
