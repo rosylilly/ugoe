@@ -202,15 +202,20 @@ pub fn image_size(format: TextureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-/// PNG をデコードして、乗算していないアルファの RGBA8 にする。
+/// テクスチャや法線マップの画像 (PNG・KTX2) をデコードして、乗算していないアルファの RGBA8 にする。
 ///
-/// Godot の `Image.load_png_from_buffer` は使わず、参照と同じデコーダ (`ugoe::format::image::decode_png`) で読む。
-/// Godot の読み込み (libpng の簡易 API) は `gAMA` のガンマを sRGB に補正して値を変え、16 ビットも上位のバイトを
-/// そのまま取るとは限らない。仕様ではガンマや色のチャンクを見ずに保存された値のまま使い、16 ビットは上位の 8 ビットにする
-/// (`docs/spec/rendering.md#前提`。T0477)。
+/// Godot の読み込み (`Image.load_png_from_buffer`・`load_ktx_from_buffer`) は使わず、参照と同じデコーダ
+/// (`ugoe::format::image::decode_image`) で読む。仕様では PNG のガンマや色のチャンクも KTX2 の
+/// `_SRGB` や転送関数も見ずに保存された値のまま使い、PNG の 16 ビットは上位の 8 ビットに、KTX2 の BCn は CPU で展開する
+/// (`docs/spec/rendering.md#前提`)。Godot の読み込みは PNG の `gAMA` や KTX2 の sRGB で値を変え、アルファの無い BC1 の
+/// 3 色のモードの 4 つ目の色を透明にする (T0477・T0481)。
 /// 一辺の上限は読み込みのときに見出しで調べてある ([`check_image_sizes`]) ので、ここでは制限しない。
-pub fn decode_png(bytes: &[u8]) -> Result<Rgba8, ImageError> {
-    ugoe::format::image::decode_png(bytes, ImageLimits::default().with_max_side(u32::MAX))
+pub fn decode_image(format: TextureFormat, bytes: &[u8]) -> Result<Rgba8, ImageError> {
+    ugoe::format::image::decode_image(
+        format,
+        bytes,
+        ImageLimits::default().with_max_side(u32::MAX),
+    )
 }
 
 /// テクスチャ (`textures`) と法線マップ (`normal_maps`。どちらもテクスチャの番号の順) の一辺が `max` を超えないか調べる。
@@ -993,97 +998,6 @@ pub fn directional_from_light2d(down: [f32; 2], height: f32) -> Option<[f32; 3]>
     Some([v[0] / n, v[1] / n, v[2] / n])
 }
 
-/// 乗算していないアルファの RGBA8 を乗算済みにする (`docs/spec/rendering.md#前提`)。
-///
-/// 色のチャンネルごとに `c' = (c × a + 127) / 255` (整数の割り算、切り捨て)。
-pub fn premultiply(rgba: &mut [u8]) {
-    for px in rgba.as_chunks_mut::<4>().0 {
-        let a = u32::from(px[3]);
-        for c in &mut px[..3] {
-            *c = ((u32::from(*c) * a + 127) / 255) as u8;
-        }
-    }
-}
-
-/// KTX2 のヘッダの `vkFormat` の場所 (識別子 12 バイトの後)。
-const KTX2_VK_FORMAT: usize = 12;
-/// KTX2 のヘッダの `dfdByteOffset` の場所。
-const KTX2_DFD_OFFSET: usize = 48;
-/// データ形式の記述 (`dfdTotalSize` から数える) の基本ブロックの `transferFunction` の場所。
-const DFD_TRANSFER: usize = 4 + 8 + 2;
-/// `KHR_DF_TRANSFER_LINEAR`・`KHR_DF_TRANSFER_SRGB`。
-const DF_TRANSFER_LINEAR: u8 = 1;
-const DF_TRANSFER_SRGB: u8 = 2;
-
-/// `vkFormat` と、Godot が値を変えずに読む形式の組。
-///
-/// Godot 4.7 の KTX2 の読み込みは、`R8G8B8(A8)_SRGB` を読むとリニアに変換し (8 ビットのまま。戻せない)、
-/// `R8G8B8(A8)_UNORM` は読めない。どちらも同じ大きさの `*_UINT` (Godot は RGB8 / RGBA8 として読む) に書き換える。
-/// ブロック圧縮の `BC*_SRGB_BLOCK` は読めないので、同じブロックの `*_UNORM_BLOCK` にする (値は保存されたまま展開される。
-/// 参照の実装は BC1〜BC5・BC7 を読む。`docs/adr/0030-compressed-ktx2-decoding.md`)。
-const KTX2_AS_STORED_FORMATS: [(u32, u32); 9] = [
-    (23, 27),   // R8G8B8_UNORM → R8G8B8_UINT
-    (29, 27),   // R8G8B8_SRGB → R8G8B8_UINT
-    (37, 41),   // R8G8B8A8_UNORM → R8G8B8A8_UINT
-    (43, 41),   // R8G8B8A8_SRGB → R8G8B8A8_UINT
-    (132, 131), // BC1_RGB_SRGB_BLOCK → BC1_RGB_UNORM_BLOCK
-    (134, 133), // BC1_RGBA_SRGB_BLOCK → BC1_RGBA_UNORM_BLOCK
-    (136, 135), // BC2_SRGB_BLOCK → BC2_UNORM_BLOCK
-    (138, 137), // BC3_SRGB_BLOCK → BC3_UNORM_BLOCK
-    (146, 145), // BC7_SRGB_BLOCK → BC7_UNORM_BLOCK
-];
-
-/// アルファの無い BC1 の `vkFormat` (`VK_FORMAT_BC1_RGB_UNORM_BLOCK`・`_SRGB_BLOCK`)。
-const KTX2_BC1_RGB_FORMATS: [u32; 2] = [131, 132];
-
-/// KTX2 がアルファの無い BC1 (`VK_FORMAT_BC1_RGB_*_BLOCK`) か。
-///
-/// Godot は BC1 をアルファのあるもの (`Image.FORMAT_DXT1`) として読み、3 色のモード (`color0 <= color1`) の
-/// 4 つ目の色を透明な黒にする。アルファの無い BC1 ではその色も不透明 (Khronos Data Format Specification の S3TC の節。
-/// 参照の実装も不透明に読む) なので、展開した後でアルファを 255 にする (`render.rs` の `load_texture`。T0467)。
-pub fn ktx2_is_bc1_rgb(bytes: &[u8]) -> bool {
-    bytes.starts_with(&KTX2_IDENTIFIER)
-        && bytes
-            .get(KTX2_VK_FORMAT..KTX2_VK_FORMAT + 4)
-            .and_then(|b| b.try_into().ok())
-            .is_some_and(|b| KTX2_BC1_RGB_FORMATS.contains(&u32::from_le_bytes(b)))
-}
-
-/// KTX2 の画素を保存された値のまま (sRGB からリニアへ変換せずに) Godot に読ませるため、ヘッダを書き換える
-/// (`docs/spec/rendering.md#前提`: KTX2 の値は転送関数によらずそのまま使う)。
-///
-/// - 8 ビットの非圧縮の形式は同じ大きさの `*_UINT` に、ブロック圧縮の `_SRGB` は `_UNORM` にする ([`KTX2_AS_STORED_FORMATS`])。
-/// - データ形式の記述の転送関数が sRGB なら、リニアにする (Basis Universal を、Godot が sRGB のときだけ
-///   RGBA8 に展開してリニアに変換するため。リニアなら GPU の圧縮形式に変換し、値は変えない)。
-///
-/// 書き換えなければ `None`。KTX2 として読めない列も `None` (Godot がエラーにする)。
-pub fn ktx2_as_stored(bytes: &[u8]) -> Option<Vec<u8>> {
-    let u32_at = |at: usize| -> Option<u32> {
-        let b = bytes.get(at..at + 4)?;
-        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    };
-    let vk_format = u32_at(KTX2_VK_FORMAT)?;
-    let dfd = usize::try_from(u32_at(KTX2_DFD_OFFSET)?).ok()?;
-    let format = KTX2_AS_STORED_FORMATS
-        .iter()
-        .find(|(from, _)| *from == vk_format)
-        .map(|&(_, to)| to);
-    let transfer = dfd
-        .checked_add(DFD_TRANSFER)
-        .filter(|&at| bytes.get(at) == Some(&DF_TRANSFER_SRGB));
-    if format.is_none() && transfer.is_none() {
-        return None;
-    }
-    let mut out = bytes.to_vec();
-    if let Some(format) = format {
-        out[KTX2_VK_FORMAT..KTX2_VK_FORMAT + 4].copy_from_slice(&format.to_le_bytes());
-    }
-    if let Some(at) = transfer {
-        out[at] = DF_TRANSFER_LINEAR;
-    }
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1184,13 +1098,13 @@ mod tests {
             ])
             .expect("data");
         writer.finish().expect("finish");
-        let image = decode_png(&bytes).expect("decode");
+        let image = decode_image(TextureFormat::Png, &bytes).expect("decode");
         assert_eq!((image.width, image.height), (2, 1));
         assert_eq!(
             image.pixels,
             [0x12, 0x80, 0xab, 0xff, 0x40, 0xc0, 0x01, 0x80]
         );
-        assert!(decode_png(&png_header(1, 1)).is_err());
+        assert!(decode_image(TextureFormat::Png, &png_header(1, 1)).is_err());
     }
 
     #[test]
@@ -1784,68 +1698,48 @@ mod tests {
         assert!((shrink.factor - low / MaskShrink::STEP).abs() < 1e-6);
     }
 
-    #[test]
-    fn premultiply_matches_the_spec() {
-        let mut px = [255, 128, 0, 128, 10, 20, 30, 0, 200, 100, 50, 255];
-        premultiply(&mut px);
-        assert_eq!(px, [128, 64, 0, 128, 0, 0, 0, 0, 200, 100, 50, 255]);
-    }
-
-    /// ヘッダとデータ形式の記述 (転送関数まで) だけの KTX2。
-    fn ktx2_header(vk_format: u32, transfer: u8) -> Vec<u8> {
-        let mut bytes = vec![
-            0xAB, b'K', b'T', b'X', b' ', b'2', b'0', 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
-        ];
-        bytes.extend_from_slice(&vk_format.to_le_bytes());
-        bytes.resize(KTX2_DFD_OFFSET, 0);
-        bytes.extend_from_slice(&104u32.to_le_bytes());
-        bytes.resize(104, 0);
-        bytes.extend_from_slice(&[28, 0, 0, 0, 0, 0, 0, 0, 2, 0, 24, 0, 1, 1, transfer, 0]);
+    /// 見出しとレベル 0 だけの KTX2 (超圧縮なし、データ形式の記述なし)。
+    fn ktx2(vk_format: u32, width: u32, height: u32, level: &[u8]) -> Vec<u8> {
+        let mut bytes = KTX2_IDENTIFIER.to_vec();
+        for v in [vk_format, 1, width, height, 0, 0, 1, 1, 0] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.resize(80, 0);
+        let len = level.len() as u64;
+        for v in [104, len, len] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.extend_from_slice(level);
         bytes
     }
 
+    /// KTX2 は参照のデコーダで読む (T0481): `_SRGB` の値は変えず、アルファの無い BC1 は 3 色のモードの 4 つ目の色も不透明。
     #[test]
-    fn ktx2_as_stored_rewrites_8_bit_formats_and_srgb() {
-        let patched = ktx2_as_stored(&ktx2_header(43, DF_TRANSFER_SRGB)).expect("rewritten");
-        assert_eq!(patched, ktx2_header(41, DF_TRANSFER_LINEAR));
-        let patched = ktx2_as_stored(&ktx2_header(23, DF_TRANSFER_LINEAR)).expect("rewritten");
-        assert_eq!(patched, ktx2_header(27, DF_TRANSFER_LINEAR));
-        // BC7_SRGB_BLOCK は BC7_UNORM_BLOCK に (Godot は BC の sRGB の形式を読めない)
-        let patched = ktx2_as_stored(&ktx2_header(146, DF_TRANSFER_SRGB)).expect("rewritten");
-        assert_eq!(patched, ktx2_header(145, DF_TRANSFER_LINEAR));
-        // Basis Universal (VK_FORMAT_UNDEFINED) は転送関数だけを書き換える
-        let patched = ktx2_as_stored(&ktx2_header(0, DF_TRANSFER_SRGB)).expect("rewritten");
-        assert_eq!(patched, ktx2_header(0, DF_TRANSFER_LINEAR));
-    }
-
-    #[test]
-    fn ktx2_is_bc1_rgb_reads_the_format() {
-        let with_identifier = |vk_format: u32| {
-            let mut bytes = KTX2_IDENTIFIER.to_vec();
-            bytes.extend_from_slice(&vk_format.to_le_bytes());
-            bytes
-        };
-        assert!(ktx2_is_bc1_rgb(&with_identifier(131)));
-        assert!(ktx2_is_bc1_rgb(&with_identifier(132)));
-        // アルファのある BC1・BC3・RGBA8
-        for other in [133, 134, 137, 37] {
-            assert!(!ktx2_is_bc1_rgb(&with_identifier(other)), "{other}");
-        }
-        assert!(!ktx2_is_bc1_rgb(&with_identifier(131)[..14]));
-        assert!(!ktx2_is_bc1_rgb(&FAKE_PNG));
-    }
-
-    #[test]
-    fn ktx2_as_stored_keeps_other_files() {
-        // BC3_UNORM_BLOCK (リニア) はそのまま
-        assert_eq!(ktx2_as_stored(&ktx2_header(137, DF_TRANSFER_LINEAR)), None);
-        // 短すぎる列は書き換えない
-        assert_eq!(ktx2_as_stored(&[0xAB, b'K']), None);
-        let mut short = ktx2_header(43, DF_TRANSFER_SRGB);
-        short.truncate(KTX2_DFD_OFFSET + 4);
-        assert_eq!(
-            ktx2_as_stored(&short),
-            Some(ktx2_header(41, 0)[..KTX2_DFD_OFFSET + 4].to_vec())
+    fn ktx2_keeps_stored_values() {
+        // VK_FORMAT_R8G8B8A8_SRGB
+        let texels = [0x12, 0x80, 0xab, 0xff, 0x40, 0xc0, 0x01, 0x80];
+        let image = decode_image(TextureFormat::Ktx2, &ktx2(43, 2, 1, &texels)).expect("decode");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(image.pixels, texels);
+        // 端点が color0 <= color1 で、すべての画素が 4 つ目の色 (黒) のブロック
+        let block = [0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        let rgb = decode_image(TextureFormat::Ktx2, &ktx2(131, 4, 4, &block)).expect("BC1_RGB");
+        assert!(
+            rgb.pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == [0, 0, 0, 255])
         );
+        let rgba = decode_image(TextureFormat::Ktx2, &ktx2(133, 4, 4, &block)).expect("BC1_RGBA");
+        assert!(
+            rgba.pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == [0, 0, 0, 0])
+        );
+        // 参照が読まない形式 (VK_FORMAT_UNDEFINED = Basis Universal など) はエラー
+        assert!(decode_image(TextureFormat::Ktx2, &ktx2(0, 4, 4, &block)).is_err());
     }
 }

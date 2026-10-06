@@ -21,13 +21,14 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use ugoe::core::Vec2 as UVec2;
-use ugoe::format::{TextureData, TextureFormat};
+use ugoe::format::TextureData;
+use ugoe::format::image::premultiply;
 use ugoe::model::{BlendMode, MaskMode};
 use ugoe::runtime::{DrawableChanges, DrawableState};
 
 use crate::model::{
-    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, decode_png,
-    front_facing, ktx2_as_stored, ktx2_is_bc1_rgb, premultiply,
+    AtlasLayout, LightUniforms, LoadedModel, MaskArea, MaskShrink, MaskTable, bounds, decode_image,
+    front_facing,
 };
 use crate::shader::{self, ShaderKind};
 
@@ -242,79 +243,46 @@ fn vec2(p: UVec2) -> Vector2 {
     Vector2::new(p.x, p.y)
 }
 
-/// 画像をデコードする。読めなければ `None`。PNG は参照と同じデコーダで RGBA8 にし ([`decode_png`])、
-/// KTX2 は Godot で保存された値のまま読む ([`ktx2_as_stored`])。
-fn decode(data: &TextureData, what: &str) -> Option<Gd<Image>> {
-    let image = match data.format {
-        TextureFormat::Png => decode_png(&data.bytes).ok().and_then(|png| {
-            Image::create_from_data(
-                i32::try_from(png.width).ok()?,
-                i32::try_from(png.height).ok()?,
-                false,
-                Format::RGBA8,
-                &PackedByteArray::from(png.pixels.as_slice()),
-            )
-        }),
-        TextureFormat::Ktx2 => {
-            let mut image = Image::new_gd();
-            let err = match ktx2_as_stored(&data.bytes) {
-                Some(patched) => {
-                    image.load_ktx_from_buffer(&PackedByteArray::from(patched.as_slice()))
-                }
-                None => image.load_ktx_from_buffer(&PackedByteArray::from(data.bytes.as_slice())),
-            };
-            (err == godot::global::Error::OK).then_some(image)
+/// 画像を参照と同じデコーダで乗算していない RGBA8 にし ([`decode_image`])、`pixels` で変えてから Godot のテクスチャにする。
+/// 読めなければ警告を出して `None`。
+fn load_image(
+    data: &TextureData,
+    what: &str,
+    pixels: impl FnOnce(&mut [u8]),
+) -> Option<Gd<ImageTexture>> {
+    let mut image = match decode_image(data.format, &data.bytes) {
+        Ok(image) => image,
+        Err(error) => {
+            godot_warn!(
+                "ugoe: failed to decode a {what} ({:?}): {error}",
+                data.format
+            );
+            return None;
         }
     };
-    let image = image.filter(|i| !i.is_empty());
-    if image.is_none() {
-        godot_warn!("ugoe: failed to decode a {what} ({:?})", data.format);
-    }
-    image
+    pixels(&mut image.pixels);
+    let image = Image::create_from_data(
+        i32::try_from(image.width).ok()?,
+        i32::try_from(image.height).ok()?,
+        false,
+        Format::RGBA8,
+        &PackedByteArray::from(image.pixels.as_slice()),
+    )?;
+    ImageTexture::create_from_image(&image)
 }
 
 /// 画像を Godot のテクスチャにする。読めなければ `None` (白で描く)。
 ///
-/// PNG も KTX2 も乗算していないアルファなので、RGBA8 にして乗算済みにする (`docs/spec/rendering.md#前提`)。
-/// 圧縮した KTX2 は展開してから乗算する。展開できなければ警告を出し、乗算せずにそのまま使う。
-/// アルファの無い BC1 は、Godot が透明にする 3 色のモードの 4 つ目の色も不透明にする ([`ktx2_is_bc1_rgb`])。
+/// PNG も KTX2 も乗算していないアルファなので、乗算済みにする (`docs/spec/rendering.md#前提`)。
+/// 圧縮した KTX2 は参照のデコーダが展開してある。
 fn load_texture(data: &TextureData) -> Option<Gd<ImageTexture>> {
-    let mut image = decode(data, "texture")?;
-    if image.is_compressed() && image.decompress() != godot::global::Error::OK {
-        godot_warn!(
-            "ugoe: cannot decompress a KTX2 texture ({:?}); drawing it without premultiplying",
-            image.get_format()
-        );
-        return ImageTexture::create_from_image(&image);
-    }
-    // ミップマップは使わない (`docs/spec/rendering.md#前提`)。
-    image.clear_mipmaps();
-    if image.get_format() != Format::RGBA8 {
-        image.convert(Format::RGBA8);
-    }
-    let mut rgba = image.get_data().to_vec();
-    if data.format == TextureFormat::Ktx2 && ktx2_is_bc1_rgb(&data.bytes) {
-        for px in rgba.as_chunks_mut::<4>().0 {
-            px[3] = 255;
-        }
-    }
-    premultiply(&mut rgba);
-    let (w, h) = (image.get_width(), image.get_height());
-    image.set_data(
-        w,
-        h,
-        false,
-        Format::RGBA8,
-        &PackedByteArray::from(rgba.as_slice()),
-    );
-    ImageTexture::create_from_image(&image)
+    load_image(data, "texture", premultiply)
 }
 
 /// 法線マップを Godot のテクスチャにする。アルファは掛けない (`docs/spec/rendering.md#ホストでのライティング`)。
 /// 読めなければ `None` (法線 `(0, 0, 1)`)。
 fn load_normal_map(data: &TextureData) -> Option<Gd<ImageTexture>> {
-    let image = decode(data, "normal map")?;
-    ImageTexture::create_from_image(&image)
+    load_image(data, "normal map", |_| {})
 }
 
 fn texture_rid(textures: &TextureCache, index: usize) -> Rid {
