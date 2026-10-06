@@ -338,7 +338,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `TextField` | 1 行の文字 (名前・ID・URL・検索。`type` は `text`・`search`・`url`)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は `TextArea`、秘密は `SecretField` | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
 | `TextArea` | 複数行の文字 (名前の一覧・注文の文など)。ラベル・補足・誤りの文・`tooltip`・確定の約束は `TextField` と同じ。綴りの印は既定で出す (`spellcheck`) | 自作 (`<textarea>`) | Enter は改行・Mod+Enter かフォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0949 |
 | `SecretField` | API キーなどの秘密 (`TextField` と同じ見た目。秘密の欄はこの部品だけで作る)。値を Svelte の状態に持たない: 呼び手は `bind:filled` (空白を除いて空でないか) だけを受け、送るときに `bind:this` の `take()` で取り出す (取り出すと欄を空にする)。捨てるのは `clear()` | 自作 (`<input type="password">`) | Enter は標準のまま (`<form>` なら送る)・Esc で入れかけを消す | T0949 |
-| `Select` | 5 個以上の選択肢から 1 つ。誤りは `invalid` (選べなくなった値など)、説明は `tooltip` | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
+| `Select` | 5 個以上の選択肢から 1 つ。誤りは `invalid` (選べなくなった値など)、説明は `tooltip`。一覧が窓に収まらないときは一覧の枠を送り、スクロールバーを見せる (Bits UI が隠す中の送りは使わない。T0976) | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
 | `SegmentedControl` | 2〜4 個の選択肢から 1 つ (すべて見せたいとき)。名前と選択肢は字の途中で折らず、幅が足りなければ選択肢ごと次の行へ送る (T0950) | Bits UI `RadioGroup` (または `ToggleGroup` の単一選択) | 矢印で移り、選ぶ | 1 |
 | `Tabs` | 同じ場所の中身を切り替える (中身が別の画面のとき) | Bits UI `Tabs` | 左右の矢印・Home/End | 1 |
 | `Section` | 折りたためるまとまり (パネルの中) | Bits UI `Collapsible` | Enter・Space | 1 |
@@ -347,7 +347,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Notice` | 画面に残る知らせ (読み込みの警告など)。`ondismiss` を渡すと閉じるボタンを出す | 自作 (`role="status"`。エラーは `role="alert"`) | 閉じるボタンに届く | 2 |
 | `Toast` | すぐ消えてよい知らせ (「保存しました」)。操作を含むなら `Notice` にする。`showToast()` で出し、アプリの根元の `Toaster` が描く | 自作 (`role="status"`、`popover="manual"`) | フォーカスを奪わない。ポインタやフォーカスが乗っている間は消えない。`Toaster` は `announce()` の見えない領域も持つ ([状態の変化の知らせ](#状態の変化の知らせ)) | 2 |
 | `Tooltip` | ボタンやアイコンの短い説明。`IconButton` は `label` を既定で出す。根元に `TooltipProvider` を置くと、続けて出すときに待たない | Bits UI `Tooltip` | フォーカスでも出る・Esc で消える | 2 |
-| `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く)。名前の下に説明の行 (`description`。項目の説明として読む) を出せる (見本の中身・最近のファイルの場所など) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
+| `Menu` / `ContextMenu` | 操作の一覧 (ファイルのメニュー・「その他」のボタン / 右クリック)。選択肢を選ぶなら `Select`。項目にショートカットを出せる (`aria-keyshortcuts` も付く)。名前の下に説明の行 (`description`。項目の説明として読む) を出せる (見本の中身・最近のファイルの場所など)。一覧が送るときだけ行末をスクロールバーの分空ける (下の「レイアウト」の「送り」) | Bits UI `DropdownMenu`・`ContextMenu` (メニューバー (`Menubar`) は使う画面ができたときに足す) | 上下の矢印・Enter・Esc・頭文字で移る | 2 |
 | `Popover` | 部品の近くに出す小さな編集の枠 (色の選択など) | Bits UI `Popover` | Esc で閉じ、開いた元に戻る | 2 |
 | `ColorPicker` | 光源などの色。行が狭いときは `hideValue` でトリガーの 16 進の値を見せずに見本の色だけを出す (読み上げの名前には値が入る) | 自作 (`Popover` の中に `<input type="color">` と `NumberField`) | 標準の操作 | 2 |
 | `DropZone` | ファイルを落とす領域。**同じことができるボタン (「ファイル…」) を必ず並べる** | 自作 (`<div>` と `Button`) | ボタンで開く | 2 |
@@ -536,9 +536,15 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   (ビューアのパラメータの一覧) は、置く側のパネルの右の padding まで一覧を広げ (`margin-inline-end` を負に)、その padding の中に描かせます。
   中身を中央に置く枠 (エディタのビューポートの空の案内) は両側を同じだけ空け、全体と中の段の両方が送る枠 (エディタのモーションの表) は
   中の段が行末を空けます (T1662)。
+  @ugoe/ui の `Select`・`Menu`・`ContextMenu` の一覧は、低い窓でしか送らず、いつも空けるとすべての一覧が 14px 広がるので、
+  送るとき (中身が枠より高いとき) だけ一覧の枠に `data-scrolling` を付けて、枠の行末の padding を `--ugoe-scrollbar-gap` にします
+  (packages/ui の `scrollGap.ts`。枠と項目の大きさ・項目の増減で測り直す)。行の右の要素 (ショートカット・チェック・下の段の印・
+  選択肢の名前の終わり) ごとではなく枠で空けるのは、どの行末も、選んだ行の枠も同じだけ空くためです。空けると中身は狭く高くなるだけなので、
+  送るかどうかが行き来しません (T0976)。
   幅を取る形のスクロールバー (ヘッドレスの Chrome・Windows) では、空けた幅はスクロールバーの左に余白として残るだけです。
   確かめ方: 人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
-  `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることは packages/ui の `tokens.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
+  `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることは packages/ui の `tokens.test.ts` (@ugoe/ui の部品の送る枠も見る)。
+  一覧が送るときだけ印を付けることは packages/ui の `scrollGap.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
   `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`・`Slider`・`ColorPicker`。
 - **分割:** 大きさを変えられる境 (`role="separator"`) は、ポインタとキーボード (矢印・Home・End) の両方で動かせ、フォーカスの印を出し、
   変えた大きさを覚えます。最小の大きさで中身が潰れない (見出しと 1 行が見える) ようにします。

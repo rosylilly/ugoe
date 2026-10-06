@@ -125,6 +125,7 @@ let {
       box-sizing: border-box;
       width: min(var(--ugoe-dialog-width), calc(100vw - 2 * var(--ugoe-space-4)));
       max-height: calc(100vh - 2 * var(--ugoe-space-4));
+      /* 行末の padding (space-5 は 16px 以上) がスクロールバーの分 (--ugoe-scrollbar-gap) を空ける */
       padding: var(--ugoe-space-5);
       overflow: auto;
       border: 1px solid var(--ugoe-color-border);

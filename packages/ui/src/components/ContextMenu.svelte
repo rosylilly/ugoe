@@ -5,6 +5,7 @@
 <script lang="ts">
 import { ContextMenu } from "bits-ui";
 import type { Snippet } from "svelte";
+import { markScrolling } from "../scrollGap";
 import type { MenuEntry } from "../types";
 import MenuEntries from "./MenuEntries.svelte";
 
@@ -34,7 +35,12 @@ let {
     {@render children()}
   </ContextMenu.Trigger>
   <ContextMenu.Portal>
-    <ContextMenu.Content class="ugoe-menu" aria-label={label} collisionPadding={8}>
+    <ContextMenu.Content
+      class="ugoe-menu"
+      aria-label={label}
+      collisionPadding={8}
+      {@attach markScrolling}
+    >
       <MenuEntries {entries} />
     </ContextMenu.Content>
   </ContextMenu.Portal>

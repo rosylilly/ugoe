@@ -16,6 +16,7 @@ src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)
 src/commit.ts           数値の欄の確定の印 (numberFieldCommit。同じ欄の続けての確定を受け手がまとめるため)
 src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・aria-keyshortcuts
+src/scrollGap.ts        一覧が送るときだけ行末をスクロールバーの分空ける印 (markScrolling。Select・Menu・ContextMenu)
 src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
 src/toast.svelte.ts     Toast の列 (showToast を出す。列と閉じる関数は Toaster が使う)
@@ -63,6 +64,9 @@ import "@ugoe/ui/tokens.css";
 - `IconButton` の `label` は必須で、空だとコンソールにエラーを出す。`title` 属性は付けず、同じ文言を `Tooltip` で出す
   (`tooltip={false}` で消せる。`shortcut="Mod+Z"` でツールチップにショートカットを出し、`aria-keyshortcuts` を付ける)。
 - `Select` の一覧は body に出す (Portal) ので、`data-theme`・`data-density` は `<html>` に付ける。
+- `Select`・`Menu`・`ContextMenu` の一覧は、送るとき (中身が枠より高いとき) だけ `data-scrolling` を付けて行末を `--ugoe-scrollbar-gap` 空ける
+  (`src/scrollGap.ts`。重ねて描くスクロールバーが行末に掛からないように。[docs/ui.md](../../docs/ui.md#レイアウト) の「送り」)。
+  送らないときの幅は変わらない。`Select` は Bits UI が隠す中の送り (viewport) を使わず、一覧の枠を送ってスクロールバーを見せる。
 - **文字の欄は `TextField`:** 見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を渡すと欄と結ぶ (`aria-describedby`・`aria-invalid`・
   `aria-errormessage`)。行の左に名前を置くときは `id` と外の `<label for>`。`oninput` は打つたび、`onchange` は確定 (Enter・フォーカスを外す) で
   値が変わったときだけ呼ぶ (外から渡した値では呼ばない)。Esc で確定前の値に戻す。

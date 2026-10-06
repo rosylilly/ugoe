@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 import { DropdownMenu } from "bits-ui";
+import { markScrolling } from "../scrollGap";
 import { ariaKeyShortcuts, formatShortcut } from "../shortcut";
 import type { MenuEntry } from "../types";
 import Icon from "./Icon.svelte";
@@ -69,7 +70,12 @@ function described(entry: { description?: string }, i: number) {
         {@render text(entry, i)}
         <Icon name="chevronRight" />
       </DropdownMenu.SubTrigger>
-      <DropdownMenu.SubContent class="ugoe-menu" aria-label={entry.label} sideOffset={2}>
+      <DropdownMenu.SubContent
+        class="ugoe-menu"
+        aria-label={entry.label}
+        sideOffset={2}
+        {@attach markScrolling}
+      >
         <Self entries={entry.entries} />
       </DropdownMenu.SubContent>
     </DropdownMenu.Sub>
@@ -99,6 +105,7 @@ function described(entry: { description?: string }, i: number) {
       max-width: min(28rem, var(--bits-dropdown-menu-content-available-width, calc(100vw - 16px)));
       max-height: var(--bits-dropdown-menu-content-available-height, 80vh);
       padding: var(--ugoe-space-1);
+      /* 送るときの行末は、下の [data-scrolling] がスクロールバーの分空ける */
       overflow: auto;
       border: 1px solid var(--ugoe-color-border);
       border-radius: var(--ugoe-radius-lg);
@@ -109,6 +116,11 @@ function described(entry: { description?: string }, i: number) {
       font-size: var(--ugoe-font-size-md);
       line-height: var(--ugoe-line-height-control);
       animation: ugoe-fade-in var(--ugoe-duration-fast) ease-out;
+    }
+
+    /* 送るときだけ、行末 (ショートカット・チェック・下の段の印) をスクロールバーの分空ける (markScrolling。T0976) */
+    .ugoe-menu[data-scrolling] {
+      padding-inline-end: var(--ugoe-scrollbar-gap);
     }
 
     .ugoe-menu:focus-visible {

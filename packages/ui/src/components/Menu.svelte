@@ -13,6 +13,7 @@
 import { DropdownMenu } from "bits-ui";
 import type { Snippet } from "svelte";
 import type { TriggerAttributes } from "../props";
+import { markScrolling } from "../scrollGap";
 import type { ButtonBaseProps, ButtonVariant, MenuEntry, Side } from "../types";
 import Button from "./Button.svelte";
 import Icon from "./Icon.svelte";
@@ -74,6 +75,7 @@ let {
       {align}
       sideOffset={4}
       collisionPadding={8}
+      {@attach markScrolling}
     >
       <MenuEntries {entries} />
     </DropdownMenu.Content>

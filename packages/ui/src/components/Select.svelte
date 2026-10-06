@@ -7,6 +7,7 @@
 <script lang="ts" generics="T extends string">
 import { Select } from "bits-ui";
 import type { TriggerAttributes } from "../props";
+import { markScrolling } from "../scrollGap";
 import type { Option } from "../types";
 import Tooltip from "./Tooltip.svelte";
 
@@ -101,7 +102,7 @@ const items = $derived(
       {@render triggerButton({})}
     {/if}
     <Select.Portal>
-      <Select.Content class="ugoe-select__content" sideOffset={4}>
+      <Select.Content class="ugoe-select__content" sideOffset={4} {@attach markScrolling}>
         <Select.Viewport class="ugoe-select__viewport">
           {#each options as option (option.value)}
             <Select.Item
@@ -196,6 +197,7 @@ const items = $derived(
       min-width: var(--bits-select-anchor-width);
       max-height: var(--bits-select-content-available-height);
       padding: var(--ugoe-space-1);
+      /* 送るときの行末は、下の [data-scrolling] がスクロールバーの分空ける */
       overflow: auto;
       border: 1px solid var(--ugoe-color-border);
       border-radius: var(--ugoe-radius-lg);
@@ -205,6 +207,18 @@ const items = $derived(
       font-family: var(--ugoe-font-sans);
       font-size: var(--ugoe-font-size-md);
       line-height: var(--ugoe-line-height-control);
+    }
+
+    /* 送るときだけ、行末 (選択肢の名前の終わり) をスクロールバーの分空ける (markScrolling。T0976) */
+    .ugoe-select__content[data-scrolling] {
+      padding-inline-end: var(--ugoe-scrollbar-gap);
+    }
+
+    /* Bits UI は中の viewport を送ってスクロールバーを隠す (scrollbar-width: none)。ほかの送る枠と同じく送れることが
+       見えるように、viewport は伸ばすだけにして外の枠 (.ugoe-select__content) を送る (T0976) */
+    .ugoe-select__viewport {
+      flex: none !important;
+      overflow: visible !important;
     }
 
     .ugoe-select__item {

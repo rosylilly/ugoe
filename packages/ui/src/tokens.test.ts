@@ -104,10 +104,14 @@ describe("tokens.css", () => {
     expect(names.filter((name) => !used.has(name))).toEqual([]);
   });
 
-  it("leaves the scrollbar gap in the scroll containers of the apps", () => {
+  it("leaves the scrollbar gap in the scroll containers of the apps and the components", () => {
     // WebKitGTK のスクロールバーは中身の上に重なる (T0970。docs/ui.md#レイアウト の「送り」)。送る枠の規則は、行末を
-    // --ugoe-scrollbar-gap だけ空けるか、空けなくてよい理由 (中の段が空ける・padding が足りる) をスクロールバーの言葉で書く
-    const apps = ["editor", "viewer", "studio"].map((app) => join(root, `apps/${app}/src`));
+    // --ugoe-scrollbar-gap だけ空けるか、空けなくてよい理由 (中の段が空ける・padding が足りる・送るときだけ空ける) を
+    // スクロールバーの言葉で書く。@ugoe/ui の部品 (Menu・Select の一覧・Dialog) も見る (T0976)
+    const apps = [
+      ...["editor", "viewer", "studio"].map((app) => join(root, `apps/${app}/src`)),
+      join(here, "components"),
+    ];
     const missing: string[] = [];
     let checked = 0;
     for (const { path, text } of files) {
