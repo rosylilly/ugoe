@@ -1,11 +1,11 @@
 ---
 id: T0045
 title: "ui-audit: Tab の止まりのフォーカスの印を、フォーカスの前と後の画像の差で判定する"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0044]
-assignee:
+assignee: claude-worker-T0045
 ---
 
 # T0045: ui-audit: Tab の止まりのフォーカスの印を、フォーカスの前と後の画像の差で判定する
