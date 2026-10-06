@@ -1,11 +1,11 @@
 ---
 id: T0041
 title: M9 の後続のタスクの「起票の候補」をまとめて起票する (7 回目)
-status: todo
+status: in-progress
 milestone: M9
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0041
 ---
 
 # T0041: M9 の後続のタスクの「起票の候補」をまとめて起票する (7 回目)
