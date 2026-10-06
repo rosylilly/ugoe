@@ -1,11 +1,11 @@
 ---
 id: T0674
 title: エディタ UI: パネル (ツリー・インスペクタ・パラメータ・物理・ライティングなど)
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0673, T0671]
-assignee:
+assignee: claude-worker-T0674
 ---
 
 # T0674: エディタ UI: パネル (ツリー・インスペクタ・パラメータ・物理・ライティングなど)
