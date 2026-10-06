@@ -1,11 +1,11 @@
 ---
 id: T1642
 title: "エディタ: グルーのパネル (GluesPanel) と推定の節 (InferenceSection) の部品のテストを足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1642
 ---
 
 # T1642: エディタ: グルーのパネル (GluesPanel) と推定の節 (InferenceSection) の部品のテストを足す

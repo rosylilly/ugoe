@@ -1,11 +1,11 @@
 ---
 id: T0957
 title: "ビューア・スタジオ: localStorage のキーの名前を ugoe.viewer.*・ugoe.studio.* にそろえる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/viewer, apps/studio, packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0957
 ---
 
 # T0957: ビューア・スタジオ: localStorage のキーの名前を ugoe.viewer.*・ugoe.studio.* にそろえる

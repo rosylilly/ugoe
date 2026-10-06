@@ -1,11 +1,11 @@
 ---
 id: T0044
 title: "ui-audit: 撮られていない場面 (グルーの欄・外での書き換え・本体の変化・AI のタブの印・ツリーのホバー・スタジオの入力) を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0044
 ---
 
 # T0044: ui-audit: 撮られていない場面 (グルーの欄・外での書き換え・本体の変化・AI のタブの印・ツリーのホバー・スタジオの入力) を足す
