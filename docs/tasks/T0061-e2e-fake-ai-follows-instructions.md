@@ -1,11 +1,11 @@
 ---
 id: T0061
 title: "e2e: 偽の AI のプロバイダが、注文に従うときに実際にリグの値を変え、ai-revision.png を撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests/e2e, docs]
 depends_on: [T0059]
-assignee:
+assignee: claude-worker-T0061
 ---
 
 # T0061: e2e: 偽の AI のプロバイダが、注文に従うときに実際にリグの値を変え、ai-revision.png を撮り直す
