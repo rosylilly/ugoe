@@ -62,11 +62,11 @@ export class FakePreview implements TrackingTarget {
   resetPhysics(): void {
     this.calls.push("resetPhysics");
   }
-  showPose(_group: PoseGroup, _part: string): void {
-    this.calls.push("showPose");
+  showPose(_group: PoseGroup, part: string): void {
+    this.calls.push(`showPose:${part}`);
   }
-  showModulePose(_group: PoseGroup, _part: string): void {
-    this.calls.push("showModulePose");
+  showModulePose(_group: PoseGroup, part: string): void {
+    this.calls.push(`showModulePose:${part}`);
   }
   playMotion(): void {
     this.calls.push("playMotion");

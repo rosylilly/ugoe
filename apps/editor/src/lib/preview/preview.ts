@@ -1,5 +1,6 @@
 // プレビューモード (docs/editor.md#プレビューモード) の、DOM と wasm に依存しない部分 (preview.test.ts)。
 // スライダーのグループ分けはビューア (packages/player/src/parameters.ts) と同じ規則。
+import type { PoseGroupInfo } from "@ugoe/player";
 import { t } from "../i18n";
 import type { Model, Parameter, ParameterGroup, Pose, PoseGroup } from "../ipc";
 import { showEntry, shownEntry } from "../panels/poses/poses";
@@ -196,14 +197,35 @@ export function followShown(
   return next;
 }
 
-/** モジュールのグループの見出し (`LongHair group 1`。モジュールごとに数える)。 */
-export function modulePoseLabels(groups: readonly ModulePoseGroup[]): string[] {
-  const counts = new Map<string, number>();
-  return groups.map(({ module }) => {
-    const n = (counts.get(module) ?? 0) + 1;
-    counts.set(module, n);
-    return module
-      ? t("preview.pose.moduleGroup", { module, n })
-      : t("preview.pose.moduleGroupUnnamed", { n });
-  });
+/**
+ * プレビューのポーズの欄 (@ugoe/player の PosePicker) のグループ: 編集中のモデルのグループ (`module: null`) の後に、
+ * 着せ替えで付けたモジュールのグループ。`shown` はグループごとに表示している要素 (`groups` と同じ順)。
+ */
+export function previewPoseGroups(
+  own: readonly PoseGroup[],
+  modules: readonly ModulePoseGroup[],
+  ownShown: readonly string[],
+  moduleShown: readonly string[],
+): { groups: PoseGroupInfo[]; shown: string[] } {
+  const parts = (group: PoseGroup) => group.entries.map((e) => e.part);
+  const current = (group: PoseGroup, shown: readonly string[]) =>
+    group.entries[shownEntry(group, shown)]?.part ?? "";
+  return {
+    groups: [
+      ...own.map((group) => ({ parts: parts(group), module: null })),
+      ...modules.map(({ module, group }) => ({ parts: parts(group), module })),
+    ],
+    shown: [
+      ...own.map((group) => current(group, ownShown)),
+      ...modules.map(({ group }) => current(group, moduleShown)),
+    ],
+  };
+}
+
+/** ポーズの欄のグループの見出し (`Group 1`・`LongHair group 1`。`n` は本体とモジュールごとに数えた番号)。 */
+export function previewPoseGroupLabel(group: PoseGroupInfo, n: number): string {
+  if (group.module === null) return t("preview.pose.group", { n });
+  return group.module
+    ? t("preview.pose.moduleGroup", { module: group.module, n })
+    : t("preview.pose.moduleGroupUnnamed", { n });
 }

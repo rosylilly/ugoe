@@ -1,3 +1,4 @@
+import { poseGroupNumbers } from "@ugoe/player";
 import { describe, expect, it } from "vitest";
 import type { Model, Parameter } from "../ipc";
 import {
@@ -7,8 +8,9 @@ import {
   followShown,
   groupParameters,
   modulePoseGroups,
-  modulePoseLabels,
   previewPart,
+  previewPoseGroupLabel,
+  previewPoseGroups,
   pushEvents,
   sliderStep,
   stageAvailability,
@@ -164,7 +166,26 @@ describe("modulePoseGroups (T0661)", () => {
       "Sailor/CollarA",
       "Sailor/CollarB",
     ]);
-    expect(modulePoseLabels(groups)).toEqual([
+    // ポーズの欄には本体のグループの後に並べ、見出しはモジュールごとに数える。
+    const picker = previewPoseGroups(own, groups, ["ArmB"], ["Sailor/CollarB"]);
+    expect(picker.groups.map((g) => g.module)).toEqual([
+      null,
+      null,
+      "Sailor",
+      "Sailor",
+      "LongHair",
+    ]);
+    expect(picker.shown).toEqual([
+      "ArmB",
+      "Hat/BrimA",
+      "Sailor/CollarB",
+      "Sailor/TieA",
+      "LongHair/Tip",
+    ]);
+    const numbers = poseGroupNumbers(picker.groups);
+    expect(picker.groups.map((g, i) => previewPoseGroupLabel(g, numbers[i] ?? 0))).toEqual([
+      "Group 1",
+      "Group 2",
       "Sailor group 1",
       "Sailor group 2",
       "LongHair group 1",

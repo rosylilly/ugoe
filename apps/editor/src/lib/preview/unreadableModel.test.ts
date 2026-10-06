@@ -159,7 +159,7 @@ describe("PreviewPanel with an unreadable model", () => {
 
   /** ポーズのグループの選択欄 (モデルのポーズから作る) の数。 */
   const poseSelects = (target: HTMLElement) =>
-    target.querySelectorAll('section[aria-label="Pose"] .pose').length;
+    target.querySelectorAll('section[aria-label="Pose"] .ugoe-pose-picker__group').length;
 
   it("draws the panel", async () => {
     const { doc, controller, preview, target } = draw(UNREADABLE);

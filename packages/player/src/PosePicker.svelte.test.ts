@@ -20,15 +20,30 @@ afterEach(() => {
  * 欄を描く。`sync` なら選んだ要素をその場で `shown` に書く (ビューアの Player)。そうでなければ Promise を返し、`notify` を呼ぶまで
  * `shown` に戻らない (スタジオのバックエンドの通知を待つ)。
  */
-function setup(groups: PoseGroupInfo[], { sync = false } = {}) {
+function setup(
+  groups: PoseGroupInfo[],
+  {
+    sync = false,
+    labels = {},
+  }: {
+    sync?: boolean;
+    labels?: {
+      groupLabel?: (group: PoseGroupInfo, n: number) => string;
+      entryLabel?: (group: PoseGroupInfo, part: string) => string;
+    };
+  } = {},
+) {
   const sent: string[] = [];
+  const indices: number[] = [];
   const finish: (() => void)[] = [];
   const props = $state({
     groups,
     shown: groups.map((g) => g.parts[0] ?? ""),
     disabled: false,
-    onchange: (part: string): unknown => {
+    ...labels,
+    onchange: (part: string, index: number): unknown => {
       sent.push(part);
+      indices.push(index);
       if (sync) {
         const i = props.groups.findIndex((g) => g.parts.includes(part));
         props.shown = props.shown.map((p, j) => (j === i ? part : p));
@@ -52,7 +67,7 @@ function setup(groups: PoseGroupInfo[], { sync = false } = {}) {
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
   };
-  return { target, props, sent, notify };
+  return { target, props, sent, indices, notify };
 }
 
 /** グループの欄の見出しと、選んでいる要素の表示名。 */
@@ -99,6 +114,40 @@ describe("PosePicker", () => {
     flushSync();
     expect(sent).toEqual(["Wave"]);
     expect(rows(target)).toEqual([["グループ 1", "Wave"]]);
+  });
+
+  it("passes the index of the chosen group to onchange", () => {
+    const { target, sent, indices } = setup([
+      { parts: ["ArmA", "ArmB"], module: null },
+      { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
+    ]);
+    item(target, "Off").click();
+    item(target, "ArmB").click();
+    flushSync();
+    expect(sent).toEqual(["Hat/Off", "ArmB"]);
+    expect(indices).toEqual([1, 0]);
+  });
+
+  it("uses the labels the caller passes", () => {
+    const names: Record<string, string> = { ArmA: "腕 A", ArmB: "腕 B" };
+    const { target } = setup(
+      [
+        { parts: ["ArmA", "ArmB"], module: null },
+        { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
+        { parts: ["Hat/Brim", "Hat/NoBrim"], module: "Hat" },
+      ],
+      {
+        labels: {
+          groupLabel: (group, n) => `${group.module ?? "Body"} #${n}`,
+          entryLabel: (_, part) => names[part] ?? part.toLowerCase(),
+        },
+      },
+    );
+    expect(rows(target)).toEqual([
+      ["Body #1", "腕 A"],
+      ["Hat #1", "hat/on"],
+      ["Hat #2", "hat/brim"],
+    ]);
   });
 
   it("follows the shown entries the caller passes", () => {

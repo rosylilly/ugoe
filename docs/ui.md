@@ -340,7 +340,7 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | 部品 | パッケージ | 使う場面 | 使うアプリ |
 | --- | --- | --- | --- |
 | `TrackingPanel` | `@ugoe/face-tracking` | フェイストラッキングの入力・調整・記録 | ビューア・スタジオ・エディタのプレビュー |
-| `PosePicker` | `@ugoe/player` | ポーズのグループごとに表示する要素を選ぶ (要素が 2〜4 個なら `SegmentedControl`、5 個以上なら `Select`)。`shown` をそのまま出すので、呼び手が表示中の要素に合わせれば追従し、`onchange` が Promise を返す間は選んだ要素を先に出す (T0948) | ビューア・スタジオ |
+| `PosePicker` | `@ugoe/player` | ポーズのグループごとに表示する要素を選ぶ (要素が 2〜4 個なら `SegmentedControl`、5 個以上なら `Select`)。`shown` をそのまま出すので、呼び手が表示中の要素に合わせれば追従し、`onchange` が Promise を返す間は選んだ要素を先に出す (T0948)。見出しと要素の表示名は `groupLabel`・`entryLabel` で差し替えられる (T1640) | ビューア・スタジオ・エディタのプレビュー |
 
 Bits UI を包むときの約束:
 

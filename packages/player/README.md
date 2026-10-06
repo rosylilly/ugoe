@@ -20,7 +20,7 @@ src/parameters.ts        パラメータの一覧 (parameters_json) の読み取
 src/animation.ts         モーションと表情の一覧・発火したイベント (motion_events_json。T0734) の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
 src/lighting.ts          光源の設定・既定の組・set_lighting_json の JSON・localStorage への保存・光源の印の幾何 (T0708・T0709)
 src/pose.ts              ポーズのグループ (pose_json) の読み取り・付け外しの後の選択の引き継ぎ・表示中の要素 (pose_visible_json) への追従 (T0736)・要素の表示名 (T0735)
-src/PosePicker.svelte    ポーズの要素を選ぶ欄 (ビューアとスタジオのポーズのパネルで共有。T0948。下の「画面の部品」)
+src/PosePicker.svelte    ポーズの要素を選ぶ欄 (ビューア・スタジオのポーズのパネルとエディタのプレビューで共有。T0948・T1640。下の「画面の部品」)
 src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)
 src/dressUpMemory.ts     付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
@@ -35,7 +35,7 @@ browser-test/            PuppetSurface と Player を本物の wasm とヘッド
 src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備。T0933。localStorage の代わりは `@ugoe/i18n/testing` の `MemoryStorage`)。index.ts から出さない
 ```
 
-画面の部品のうち、ビューアとスタジオで同じ形のものはここに置く (いまはポーズの欄 `PosePicker` だけ。下の「画面の部品」)。
+画面の部品のうち、アプリをまたいで同じ形のものはここに置く (いまはポーズの欄 `PosePicker` だけ。下の「画面の部品」)。
 ほか (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) はビューアにある (`apps/viewer/src/lib/*.svelte`)。
 2 つ以上のアプリで同じ形が要るものになったら、ここへ移す。
 
@@ -134,7 +134,9 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - **`PosePicker` (T0948):** ポーズのグループごとに表示する要素を選ぶ欄。要素が 2〜4 個なら `SegmentedControl`、5 個以上なら `Select`
   ([docs/ui.md](../../docs/ui.md#部品の一覧))。見出しは「グループ n」(モジュールのグループは「<モジュール> のグループ n」。`poseGroupNumbers`)、
   要素の表示名はモジュールの接頭辞を除いたもの (`poseEntryLabel`)。props は `groups` (`PoseGroupInfo[]`)・`shown` (グループごとに表示している
-  要素)・`disabled`・`onchange(part)`。欄は `shown` をそのまま出すので、呼び手が表示中の要素に合わせれば追従する (ビューアは `Player.poseShown`
+  要素)・`disabled`・`onchange(part, index)` (`index` は選んだグループの `groups` での位置) と、見出しと表示名を差し替える
+  `groupLabel(group, n)`・`entryLabel(group, part)` (省くと上の既定。エディタのプレビューはエディタの文言の見出しと、本体の要素を
+  パーツの名前で出す。T1640)。欄は `shown` をそのまま出すので、呼び手が表示中の要素に合わせれば追従する (ビューアは `Player.poseShown`
   を渡し、モーションによる切り替えに追従する。T0736)。`onchange` が Promise を返す間は、届いた `shown` より選んだ要素を先に出す
   (スタジオはバックエンドの `show_pose` を待ち、`scene` の通知で `shown` が届く。T0842)。パネルの見出し・説明の文はアプリが持つ。
 

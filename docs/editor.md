@@ -548,7 +548,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   ほかは有効です (リップシンクは音量を与えると口のパラメータを上書きするため)。リップシンクの音量はパネルの
   スライダー (0〜1) で与え、段を止めると `set_lip_sync_level(undefined)` に戻します。モデル (`effects`・`pose`) や
   物理の設定の無い段には「(not set up)」と出します。物理の「Reset」は `reset_physics`。
-- **ポーズ (T0660):** 編集中のモデル (`doc.model`) にポーズのグループがあれば「Pose」の節を出し、グループごとの選択で表示する要素を
+- **ポーズ (T0660):** 編集中のモデル (`doc.model`) にポーズのグループがあれば「Pose」の節を出し、グループごとの欄で表示する要素を
   `show_pose` で切り替えます (`PreviewMode.showPose`。クロスフェードはポーズの時間で、毎フレームの `update` が進める)。表示する要素は
   `PreviewMode.poseShown` (グループに 1 つまで。`poses.ts` の `showEntry`) に持ち、入るときは編集中のビューポートで見ていた要素
   (`ViewportController.posePreview`) から始め、モデルを読み直すたびに渡し直します。ポーズの段を止めている間は選べません。
@@ -565,6 +565,10 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   (`preview.ts` の `followShown`。編集中のモデルの要素は `previewPart` で WebPuppet の ID にして突き合わせる)。選んだ要素は
   `show_pose` の直後から、モーションが要求した要素は次の `update` から表示中になるので、後から来たほうが欄に出ます (モーションが
   要求している間はモーションが勝つ。[docs/spec/motion.md](spec/motion.md#ポーズ))。
+  欄はビューア・スタジオと同じ `@ugoe/player` の `PosePicker` で (T1640)、要素が 2〜4 個のグループは `SegmentedControl`、5 個以上は
+  `Select` です。`preview.ts` の `previewPoseGroups` が編集中のモデルのグループ (`module: null`) の後にモジュールのグループを並べ、
+  見出し (`previewPoseGroupLabel`。「Group N」「`<モジュール>` group N」) と、編集中のモデルの要素の表示名 (パーツの名前と ID。
+  モジュールの要素は接頭辞を除いたもの) をエディタの側で渡します。選んだグループの位置で `showPose`・`showModulePose` に振り分けます。
 - **モーション・表情:** ドキュメントのもの (`EditorDocument.motions` / `expressions`、保存前のものも) を JSON で
   `start_motion_json(json, "force")`・`set_expression_json` に渡します。モーションはフェード・ループ・イベント込みで
   再生し (発火したイベントを最近の 5 つまで出す)、「Stop」は `stop_motions` (フェードアウト)。表情は 1 つだけ選び、

@@ -1,11 +1,13 @@
 <!--
   プレビューモードの右の列 (docs/editor.md#プレビューモード)。段 (物理・目パチ・呼吸・リップシンク・ポーズ) の切り替え、
-  ポーズの表示する要素の切り替え (T0660。着せ替えで付けたモジュールのグループも。T0661)、着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
+  ポーズの表示する要素の切り替え (T0660。着せ替えで付けたモジュールのグループも。T0661。欄は @ugoe/player の PosePicker で、
+  見出しと本体の要素の表示名 (パーツの名前) だけを差し替える。T1640)、着せ替え (DressUpSection、T0649)、フェイストラッキング (@ugoe/face-tracking、T0636)、プロジェクトのモーション・表情の再生、すべてのパラメータの
   スライダー (グループごと)。
   状態と WebPuppet の操作は PreviewMode (preview.svelte.ts)。コマンドは送らない。
 -->
 <script lang="ts">
 import { TrackingPanel } from "@ugoe/face-tracking";
+import { PosePicker, poseEntryLabel } from "@ugoe/player";
 import { Button, Icon, Notice, Section, Select, Slider, TextField, Toggle } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
@@ -15,14 +17,14 @@ import { labelOf } from "../labels";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
 import { formatValue } from "../panels/parameterValue";
-import { shownEntry } from "../panels/poses/poses";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
 import {
   filterSections,
   groupParameters,
-  modulePoseLabels,
+  previewPoseGroupLabel,
+  previewPoseGroups,
   STAGES,
   sliderStep,
   stageAvailability,
@@ -59,7 +61,20 @@ const available = $derived.by(() => {
   return preview.modulePoses.length > 0 ? { ...found, pose: true } : found;
 });
 const poseGroups = $derived(model?.pose.groups ?? []);
-const moduleLabels = $derived(modulePoseLabels(preview.modulePoses));
+const posePicker = $derived(
+  previewPoseGroups(poseGroups, preview.modulePoses, preview.poseShown, preview.modulePoseShown),
+);
+
+/** 欄のグループ (`posePicker.groups` での位置) で要素を選んだ: 本体のグループの後にモジュールのグループが並ぶ。 */
+function choosePose(part: string, index: number) {
+  const own = poseGroups[index];
+  if (own !== undefined) preview.showPose(own, part);
+  else {
+    const found = preview.modulePoses[index - poseGroups.length];
+    if (found !== undefined) preview.showModulePose(found.group, part);
+  }
+}
+
 const expressionOptions = $derived([
   { value: NO_EXPRESSION, label: t("preview.expressions.none") },
   ...doc.expressions.map((e) => ({ value: e.name, label: e.name })),
@@ -117,34 +132,14 @@ const expressionOptions = $derived([
       {:else}
         <p class="ed-hint">{t("preview.pose.hint")}</p>
       {/if}
-      {#each poseGroups as group, gi (gi)}
-        {@const current = group.entries[shownEntry(group, preview.poseShown)]?.part ?? ""}
-        <div class="pose">
-          <Select
-            label={t("preview.pose.group", { n: gi + 1 })}
-            value={current}
-            options={group.entries.map((entry) => ({ value: entry.part, label: labelOf(model?.parts, entry.part) }))}
-            disabled={!preview.stages.pose}
-            onchange={(v) => preview.showPose(group, v)}
-          />
-        </div>
-      {/each}
-      {#each preview.modulePoses as { module, group }, mi (mi)}
-        {@const current = group.entries[shownEntry(group, preview.modulePoseShown)]?.part ?? ""}
-        {@const label = moduleLabels[mi] ?? t("preview.pose.moduleGroupUnnamed", { n: mi + 1 })}
-        <div class="pose">
-          <Select
-            {label}
-            value={current}
-            options={group.entries.map((entry) => ({
-              value: entry.part,
-              label: entry.part.startsWith(`${module}/`) ? entry.part.slice(module.length + 1) : entry.part,
-            }))}
-            disabled={!preview.stages.pose}
-            onchange={(v) => preview.showModulePose(group, v)}
-          />
-        </div>
-      {/each}
+      <PosePicker
+        groups={posePicker.groups}
+        shown={posePicker.shown}
+        disabled={!preview.stages.pose}
+        groupLabel={previewPoseGroupLabel}
+        entryLabel={(group, part) => (group.module === null ? labelOf(model?.parts, part) : poseEntryLabel(group, part))}
+        onchange={choosePose}
+      />
     </section>
   {/if}
 
@@ -336,10 +331,6 @@ section {
 
 .level {
   padding-left: var(--ugoe-space-5);
-}
-
-.pose {
-  margin: var(--ugoe-space-1) 0;
 }
 
 .list {

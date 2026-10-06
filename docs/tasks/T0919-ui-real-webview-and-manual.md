@@ -118,3 +118,7 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   ボタンが付いた (押すと配信しているシーンの背景がクロマキーの緑になり、知らせが消える)。docs/manual/studio.md の文 (「はじめての配信の準備」・
   「困ったとき」) は T0849 で直した。今のマニュアルにこの知らせを写した画像は無い。足すなら `just ui-audit` の `-opaque` の場面が見本になる
   (偽のホストで透過を `unsupported` にした画面)。実物の WebKitGTK では `just e2e --only studio` (Xvfb にはコンポジタが無い) で同じ知らせが出る。
+- T1640 から書き足した: エディタのプレビューの「Pose」の欄がビューア・スタジオと同じ部品になり、差分が 2〜4 つのグループは選択欄ではなく
+  ボタンの並び (SegmentedControl) で選ぶ (5 つ以上は選択欄のまま。見出しと差分の名前は変わらない)。docs/manual/preview.md の文は T1640 で直した。
+  撮り直す画像: preview-module-pose.png (Sailor の襟のグループがボタンの並びになる)、プレビューの右の列の「Pose」を写した画像があれば
+  (preview.png・dress-up-preview.png など。見本の「着せ替え」の本体は `HandsDown` / `Wave` のボタンになる)。

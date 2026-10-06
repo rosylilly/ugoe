@@ -23,25 +23,26 @@ vi.mock("../ipc", () => ({
 const entry = (part: string) => ({ part, links: [] as string[] });
 
 /** 手を振る差分 (`HandsDown` / `Wave`) のポーズを持つモデル。 */
-function poseModel(): string {
+function poseModel(arms = false): string {
   const model = JSON.parse(testModel());
-  const part = (id: string) => ({
+  const part = (id: string, name = id) => ({
     id,
-    name: id,
+    name,
     parent: null,
     keyforms: { bindings: [], keyforms: [{ opacity: 1 }] },
   });
   model.meta = { canvas: { width: 200, height: 100 } };
   const effect = { parameters: ["AngleX"] };
   model.effects = { eye_blink: effect, breath: effect, lip_sync: effect };
-  model.parts = [part("HandsDown"), part("Wave")];
+  model.parts = [part("HandsDown"), part("Wave"), part("ArmA", "腕 A"), part("ArmB", "腕 B")];
   model.pose = { fade_duration: 0.5, groups: [{ entries: [entry("HandsDown"), entry("Wave")] }] };
+  if (arms) model.pose.groups.push({ entries: [entry("ArmA"), entry("ArmB")] });
   return JSON.stringify(model);
 }
 
-async function draw() {
+async function draw({ arms = false } = {}) {
   const doc = new FakeDocument();
-  doc.model = { json: poseModel(), bundle: null };
+  doc.model = { json: poseModel(arms), bundle: null };
   const controller = new FakeController();
   controller.puppet = fakePuppet();
   const preview = new FakePreview(controller.asController);
@@ -55,9 +56,13 @@ async function draw() {
   return { preview, target };
 }
 
-/** ポーズのグループの欄の選んでいる要素。 */
-const shown = (target: HTMLElement) =>
-  [...target.querySelectorAll(".pose .ugoe-select__value")].map((v) => v.textContent?.trim());
+/** ポーズのグループの欄 (@ugoe/player の PosePicker。要素が 2〜4 個なので SegmentedControl) の見出しと選んでいる要素。 */
+const rows = (target: HTMLElement) =>
+  [...target.querySelectorAll(".ugoe-pose-picker__group")].map((g) => [
+    g.querySelector(".ugoe-segmented__label")?.textContent?.trim(),
+    g.querySelector('[data-state="checked"]')?.textContent?.trim(),
+  ]);
+const shown = (target: HTMLElement) => rows(target).map(([, part]) => part);
 
 describe("PreviewPanel pose choices", () => {
   it("follows the entries the preview shows", async () => {
@@ -78,5 +83,35 @@ describe("PreviewPanel pose choices", () => {
     preview.modulePoseShown = ["Hat/Off"];
     flushSync();
     expect(shown(target)).toEqual(["Wave", "Off"]);
+  });
+
+  it("labels the groups and entries and shows the chosen entry", async () => {
+    const { preview, target } = await draw({ arms: true });
+    preview.modulePoses = [
+      { module: "Hat", group: { entries: [entry("Hat/On"), entry("Hat/Off")] } },
+    ];
+    flushSync();
+    // 本体の要素はパーツの名前 (と ID)、モジュールの要素は接頭辞を除いたもの。
+    expect(rows(target)).toEqual([
+      ["Group 1", "HandsDown"],
+      ["Group 2", "腕 A (ArmA)"],
+      ["Hat group 1", "On"],
+    ]);
+    const item = (text: string) => {
+      const found = [...target.querySelectorAll<HTMLButtonElement>(".ugoe-segmented__item")].find(
+        (b) => b.textContent?.trim() === text,
+      );
+      if (found === undefined) throw new Error(`no item ${text}`);
+      return found;
+    };
+    item("腕 B (ArmB)").click();
+    item("Off").click();
+    flushSync();
+    expect(preview.calls).toEqual(["showPose:ArmB", "showModulePose:Hat/Off"]);
+
+    // ポーズの段を切ると選べない。
+    preview.stages = { ...preview.stages, pose: false };
+    flushSync();
+    expect(item("Wave").disabled).toBe(true);
   });
 });
