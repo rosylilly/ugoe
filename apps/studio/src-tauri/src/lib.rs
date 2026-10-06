@@ -183,6 +183,61 @@ struct OutputState {
     /// 中身の大きさ (物理ピクセル。配信ソフトが取り込む大きさ)。
     width: u32,
     height: u32,
+    /// 透過が画面で効くか (docs/studio.md#出力ウィンドウの透過)。
+    transparency: Transparency,
+}
+
+/// 出力ウィンドウの透過が画面で効くか (docs/studio.md#出力ウィンドウの透過、T0846)。
+/// 配信ソフトの取り込みが透過を拾うかはスタジオから知れないので、ここでは画面の合成だけを見る。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum Transparency {
+    /// 画面を合成していて、ウィンドウが透過の色を持つ (Windows・macOS は常に合成する)。
+    Supported,
+    /// 画面を合成していない (X11 でコンポジタが無い) か、ウィンドウが透過の色を持たない。透過の所は黒などで埋まる。
+    Unsupported,
+    /// 知れない (GTK のウィンドウが取れなかった・調べていない OS)。
+    #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+    Unknown,
+}
+
+impl Transparency {
+    /// 画面を合成しているか (`composited`) と、ウィンドウが透過の色 (アルファ付きのビジュアル) を持つか (`rgba`) から決める。
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    fn from_compositing(composited: bool, rgba: bool) -> Self {
+        if composited && rgba {
+            Self::Supported
+        } else {
+            Self::Unsupported
+        }
+    }
+}
+
+/// 出力ウィンドウの透過が画面で効くか。Linux は GDK に聞く (X11 は `_NET_WM_CM_S<n>` の選択の持ち主の有無、Wayland は常に合成)。
+/// GTK のものはメインのスレッドでしか使えないので、メインのスレッド (同期のコマンド・ウィンドウのイベント) から呼ぶ。
+#[cfg(target_os = "linux")]
+fn output_transparency(window: &WebviewWindow) -> Transparency {
+    use gtk::prelude::{GtkWindowExt, WidgetExt};
+    let Ok(gtk_window) = window.gtk_window() else {
+        return Transparency::Unknown;
+    };
+    let Some(screen) = GtkWindowExt::screen(&gtk_window) else {
+        return Transparency::Unknown;
+    };
+    // tao は作るときに画面のアルファ付きのビジュアルを当てる (無ければ当てない)。
+    let rgba = WidgetExt::visual(&gtk_window).is_some_and(|visual| visual.depth() == 32);
+    Transparency::from_compositing(screen.is_composited(), rgba)
+}
+
+/// Windows (8 以降は DWM が常に合成する) と macOS (常に合成し、透過には tauri.conf.json の macOSPrivateApi を使う)。
+#[cfg(any(windows, target_os = "macos"))]
+fn output_transparency(_window: &WebviewWindow) -> Transparency {
+    Transparency::Supported
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+fn output_transparency(_window: &WebviewWindow) -> Transparency {
+    Transparency::Unknown
 }
 
 /// 出力ウィンドウが報告する描画の負荷 (直近の約 1 秒)。
@@ -1497,6 +1552,30 @@ async fn stop_virtual_camera(studio: tauri::State<'_, Arc<Studio>>) -> Result<()
     Ok(blocking(&studio, |studio| studio.stop_camera()).await?)
 }
 
+/// 画面の合成が始まった・止まった (コンポジタの起動・終了) ら、出力ウィンドウの様子を操作ウィンドウへ送り直す (T0846)。
+#[cfg(target_os = "linux")]
+fn watch_compositing(app: &AppHandle) {
+    use gtk::prelude::GtkWindowExt;
+    let Some(screen) = app
+        .get_webview_window(OUTPUT)
+        .and_then(|window| window.gtk_window().ok())
+        .and_then(|window| GtkWindowExt::screen(&window))
+    else {
+        return;
+    };
+    let app = app.clone();
+    screen.connect_composited_changed(move |_| {
+        if let Some(window) = app.get_webview_window(OUTPUT)
+            && let Ok(state) = read_output_state(&window)
+        {
+            app.state::<Arc<Studio>>().send_output_state(state);
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn watch_compositing(_app: &AppHandle) {}
+
 fn output_window(app: &AppHandle) -> Result<WebviewWindow, CommandError> {
     app.get_webview_window(OUTPUT)
         .ok_or_else(CommandError::output_window_missing)
@@ -1515,6 +1594,7 @@ fn read_output_state(window: &WebviewWindow) -> Result<OutputState, CommandError
             .map_err(CommandError::output_window_failed)?,
         width: size.width,
         height: size.height,
+        transparency: output_transparency(window),
     })
 }
 
@@ -1627,6 +1707,7 @@ pub fn run() {
                 (html == path.ends_with(".html")).then_some(asset.bytes)
             });
             staging.load_api(api_settings);
+            watch_compositing(app.handle());
             std::thread::Builder::new()
                 .name("ugoe-studio-conductor".into())
                 .spawn(move || run_ticks(ticking))?;
@@ -1741,16 +1822,38 @@ mod tests {
     }
 
     #[test]
+    fn transparency_needs_compositing_and_an_alpha_visual() {
+        assert_eq!(
+            Transparency::from_compositing(true, true),
+            Transparency::Supported
+        );
+        // X11 でコンポジタが無い。
+        assert_eq!(
+            Transparency::from_compositing(false, true),
+            Transparency::Unsupported
+        );
+        // 作ったときにアルファ付きのビジュアルが無かった (後からコンポジタを起動しても透過しない)。
+        assert_eq!(
+            Transparency::from_compositing(true, false),
+            Transparency::Unsupported
+        );
+    }
+
+    #[test]
     fn monitor_messages_are_tagged() {
         let state = OutputState {
             visible: true,
             on_top: false,
             width: 1920,
             height: 1080,
+            transparency: Transparency::Unsupported,
         };
         assert_eq!(
             serde_json::to_string(&Monitor::Output(state)).unwrap(),
-            r#"{"kind":"output","visible":true,"onTop":false,"width":1920,"height":1080}"#
+            concat!(
+                r#"{"kind":"output","visible":true,"onTop":false,"width":1920,"height":1080,"#,
+                r#""transparency":"unsupported"}"#
+            )
         );
         assert_eq!(
             serde_json::to_string(&Monitor::SceneLoading {

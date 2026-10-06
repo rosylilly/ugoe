@@ -49,6 +49,7 @@ dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 encoding_rs = "0.8"
 getrandom = "0.3"
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
+gtk = "0.18"
 image-webp = "0.2"
 insta = { version = "1", features = ["json"] }
 js-sys = "0.3"

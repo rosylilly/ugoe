@@ -137,6 +137,7 @@
       "on": "Output {{width}} × {{height}}",
       "onTip": "The output window is shown (no frame, background: {{background}}). Your streaming app captures this window. Change its size in Output window.",
       "scaledTip": "The OS kept the output window smaller than the chosen size (it may not fit on the screen). See Output window.",
+      "opaqueTip": "The live scene is transparent, but the screen is not composited, so the transparent parts show up black. See Output window.",
       "hidden": "Output hidden",
       "hiddenTip": "The output window is hidden, so a window capture shows nothing. Show it with Output window in the toolbar."
     },
@@ -186,6 +187,8 @@
     "backgroundValue": "{{kind}} ({{detail}})",
     "backgroundHint": "The background of the live scene. Change it under Background in Scene.",
     "backgroundNoScene": "No scene is live",
+    "opaqueTitle": "Transparency is not working",
+    "opaque": "The screen is not composited (for example, no compositor is running), so the transparent parts of the output window show up black. Set the scene background to chroma key and key it out in your streaming app, or capture with Browser source (OBS).",
     "capture": "Capture this window in your streaming app with a window capture. You can also use Browser source (OBS) or Virtual camera."
   },
   "parameters": {

@@ -173,7 +173,13 @@ export function hostMethods(source) {
 /** ページの中で動かす初期化 (page.addInitScript に渡す)。 */
 export function studioPageInit({ osLocale, fixture }) {
   const { methods, profile, path, parameters, motions, expressions } = fixture;
-  let output = { visible: true, onTop: false, width: 1920, height: 1080 };
+  let output = {
+    visible: true,
+    onTop: false,
+    width: 1920,
+    height: 1080,
+    transparency: "supported",
+  };
   const active = profile.scenes.find((s) => s.id === profile.activeScene) ?? profile.scenes[0];
   let api = fixture.api;
   /** 指揮役の通知を受ける画面の口 (`subscribeStatus` で受け取る)。 */

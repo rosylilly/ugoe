@@ -33,6 +33,11 @@ export interface OutputState {
   onTop: boolean;
   width: number;
   height: number;
+  /**
+   * 透過が画面で効くか (lib.rs の `Transparency`。docs/studio.md#出力ウィンドウの透過)。`unsupported` は画面を合成していない
+   * (X11 でコンポジタが無いなど) か、ウィンドウが透過の色を持たない。配信ソフトの取り込みが透過を拾うかは含まない。
+   */
+  transparency: "supported" | "unsupported" | "unknown";
 }
 
 /** 出力が報告する描画の負荷 (lib.rs の `RenderStats`。直近の約 1 秒)。 */

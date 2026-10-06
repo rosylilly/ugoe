@@ -170,7 +170,7 @@
 | トラッキング | 顔あり (fps) | 切・準備中 | 顔なし・一時停止中 | 始められない・止まった |
 | 口パク | 入 (音量のメーター) | 切 | 一時停止中 | — |
 | ホットキー | 登録した数 | 割り当てなし | 登録できないものがある・Wayland (前面でだけ効く) | — |
-| 出力 | 表示中 (大きさ。Tooltip に枠なしと背景) | 隠している | OS が選んだ大きさより小さくした | — |
+| 出力 | 表示中 (大きさ。Tooltip に枠なしと背景) | 隠している | OS が選んだ大きさより小さくした・透過のシーンなのに透過が効かない ([出力ウィンドウの透過](#出力ウィンドウの透過)) | — |
 | 負荷 | 1 刻みの時間 / 刻みの速さ | — | 負荷の注意がある ([負荷の表示](#負荷の表示)) | — |
 | 操作 API | 入 | 切 | 承認を待つアプリがある | 入なのに待ち受けられない |
 | ブラウザソース | 入 | 切 | — | 入なのに待ち受けられない |
@@ -189,6 +189,7 @@
 
 - 出力ウィンドウには何も重ねないので、様子は操作ウィンドウに出す (T0818): 「いまの状態」の出力の印 (表示中か・大きさ・Tooltip に枠と背景) と、
   「出力ウィンドウ」のパネルの「いまの大きさ」「枠」(なし。中をドラッグすると動かせる)「背景」(配信しているシーンの背景: 透過・単色・クロマキー・画像と、色やファイル名)。
+  透過のシーンなのに透過が画面で効かないと分かるときは、「背景」の欄に注意と代わりの案を出す ([出力ウィンドウの透過](#出力ウィンドウの透過))。
   パネルの下に、配信ソフトへの取り込み方 (このウィンドウのキャプチャ・ブラウザソース・仮想カメラ) を案内する。
 - モデルの位置と大きさと回転はシーンが持つ (出力の大きさに対する割合で持ち、大きさを変えても構図が保たれる)。
 - バックグラウンドの抑制を切り、隠れても最小化されても止まらない ([隠れても止まらない](#隠れても止まらない)、T0804)。
@@ -201,6 +202,42 @@
   どちらのウィンドウも CSP で同梱したもの以外を読まない (多層の防御。T0820、`apps/studio/README.md`)。
 - 背景の透過は、macOS では Tauri の `macOSPrivateApi` (`macos-private-api` feature) が要る。これを使うと Mac App Store では配布できない (T0801)。
   **使う** (2026-10-02、利用者の判断。Mac App Store では配布しない。Developer ID による直接配布には影響しない)。
+
+### 出力ウィンドウの透過
+
+出力ウィンドウは常に透過で、背景はシーンが決める。透過が画面で効かないと、透過のシーンでは透けるはずの所が黒などで埋まって配信に乗る (T0846)。
+バックエンドは出力ウィンドウの様子 (`OutputState`) に `transparency` (`supported`・`unsupported`・`unknown`) を付けて送り、
+操作ウィンドウは **透過のシーン** (`kind: "transparent"`) を配信していて `unsupported` のときだけ、「出力ウィンドウ」のパネルの「背景」の欄に
+注意 (`Notice`。代わりの案: シーンの背景をクロマキーにして配信ソフトで抜く・ブラウザソースで取り込む) を出し、出力の印を三角にする
+(`apps/studio/src/lib/status.ts` の `transparencyLost`)。単色・クロマキー・画像の背景は透過に頼らないので注意しない。`unknown` でも注意しない。
+
+OS ごとに、透過が効かない場合とスタジオが知る方法 (調べた結果):
+
+| OS | 透過が効かない場合 | スタジオが知る方法 | `transparency` |
+| --- | --- | --- | --- |
+| Linux (X11) | コンポジタが無い (i3・Openbox などのウィンドウマネージャだけ、Xfce や KDE で合成を切った、Xvfb など)。ウィンドウを作ったときに画面にアルファ付きのビジュアルが無かった | GDK の `gdk_screen_is_composited` (X11 では、画面の番号 n の `_NET_WM_CM_S<n>` の選択に持ち主がいるか。EWMH の「Compositing Managers」) と、出力ウィンドウのビジュアルの深さ (32 ならアルファ付き。tao は作るときに画面のアルファ付きのビジュアルを当てる) | 合成していてアルファ付きなら `supported`、それ以外は `unsupported` |
+| Linux (Wayland) | 画面は常に合成される (コンポジタがディスプレイサーバ)。GDK も常に合成とする | GDK の同じ関数 (常に真) | `supported` |
+| Windows | 8 以降は DWM が常に合成する (`DwmIsCompositionEnabled` は常に TRUE)。WebView2 の透過は wry が背景色のアルファを 0 にして行う | 調べない (常に合成) | `supported` |
+| macOS | Quartz Compositor が常に合成する。WKWebView の透過には Tauri の `macOSPrivateApi` が要る (入れている。上) | 調べない (常に合成) | `supported` |
+| ほか (BSD など) | — | 調べていない | `unknown` |
+
+- **知れないもの:** 配信ソフトの取り込みが透過 (アルファ) を拾うか。Windows の OBS の「BitBlt」は WebView2 を黒く取り込み、ウィンドウキャプチャやゲームキャプチャの
+  設定で変わる。macOS の画面キャプチャ、Linux の Xcomposite と PipeWire も、どの設定でアルファが届くかは配信ソフトが決め、スタジオからは見えない
+  ([OBS でのウィンドウの取り込み](#obs-でのウィンドウの取り込み) の各 OS の「未確認」)。WebView が透過を描くか (WebKitGTK・WebView2・WKWebView の不具合や設定) も知れない。
+  これらは注意を出さず、パネルの取り込み方の案内とマニュアルの「困ったとき」で扱う。
+- Linux は、画面の合成が始まった・止まった (コンポジタの起動・終了) ときの GDK の知らせ (`composited-changed`) で、出力ウィンドウの様子を送り直す。
+- GTK のものはメインのスレッドでしか使えないので、様子はメインのスレッド (同期のコマンドとウィンドウのイベント) で読む (`apps/studio/src-tauri/src/lib.rs` の `output_transparency`)。
+- WSL2 (WSLg) の上で確かめたこと: WSLg の Wayland と XWayland ではどちらも合成していて、Xvfb (コンポジタなし) では `gdk_screen_is_composited` が偽、
+  アルファ付きのビジュアル (深さ 32) はある (後からコンポジタを起動すれば透過になるはず。実機で確かめる: [実機の確認表](manual-check.md) の S28)。
+
+出典:
+
+- EWMH (Extended Window Manager Hints) の「Compositing Managers」(`_NET_WM_CM_Sn`): https://specifications.freedesktop.org/wm-spec/latest/
+- GDK 3 の `gdk_screen_is_composited`: https://docs.gtk.org/gdk3/method.Screen.is_composited.html 、
+  X11 の実装 (`_NET_WM_CM_S%d` の選択の持ち主): https://gitlab.gnome.org/GNOME/gtk/-/blob/gtk-3-24/gdk/x11/gdkscreen-x11.c 、
+  Wayland の実装 (常に真): https://gitlab.gnome.org/GNOME/gtk/-/blob/gtk-3-24/gdk/wayland/gdkscreen-wayland.c
+- `DwmIsCompositionEnabled` (Windows 8 以降は常に有効): https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmiscompositionenabled
+- Tauri の `macOSPrivateApi` (macOS の透過): https://v2.tauri.app/reference/config/#macosprivateapi
 
 ## シーンとプロファイル
 
@@ -1068,7 +1105,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 ### Linux
 
 - **X11:** ソースに「ウィンドウキャプチャ (Xcomposite)」を足し、「ウィンドウ」に `ugoe studio output` を選ぶ。透過にはコンポジタ (GNOME・KDE は標準、
-  i3 などでは picom など) が要る。コンポジタが無いと背景は黒くなる。
+  i3 などでは picom など) が要る。コンポジタが無いと背景は黒くなる (操作ウィンドウの「背景」の欄に注意が出る。[出力ウィンドウの透過](#出力ウィンドウの透過))。
 - **Wayland:** ソースに「画面キャプチャ (PipeWire)」を足し、「ウィンドウを選択」から出力ウィンドウを選ぶ (デスクトップのポータルが選ぶ画面を出す)。
   OBS を開き直すたびに選び直しを求められることがある。
 - 最小化すると WebKitGTK はページを描かなくなる ([隠れても止まらない](#隠れても止まらない))。最小化せずに裏に置く。
@@ -1086,6 +1123,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | Tauri のウィンドウ (T0801・T0802・T0804・T0907・T0811) | WebKitGTK・WebView2・WKWebView での操作ウィンドウの表示、枠の無い出力ウィンドウと背景の透過、ドラッグで動かすこと、閉じる操作で隠れること、操作ウィンドウを閉じるとアプリが終わること、大きさのプリセットが物理ピクセルになること、ファイルのダイアログ、ライセンスの表示 | [出力ウィンドウ](#出力ウィンドウ) |
 | 隠れても止まらない (T0804) | 出力ウィンドウを裏に置いても描き続けること (Windows・macOS)、macOS の App Nap、Windows の刻みの揺れ | [隠れても止まらない](#隠れても止まらない) |
 | ウィンドウの取り込み (T0804) | OBS の取り込みで透過がアルファとして届くか、裏に隠れても取り込みが止まらないか (Windows・macOS・Linux の X11 と Wayland) | [OBS でのウィンドウの取り込み](#obs-でのウィンドウの取り込み) の各 OS の「未確認」 |
+| 透過が効かないときの注意 (T0846) | Linux の X11 でコンポジタが無いと「背景」の欄に注意が出て、コンポジタを起動すると消えて透けること。Wayland・Windows・macOS では出ないこと | [出力ウィンドウの透過](#出力ウィンドウの透過) |
 | ブラウザソース (T0808) | 実際の OBS (CEF) で描けること (WebGL2)・透過・つなぎ直し、Tauri に入れた `dist/` からページを出せること | [OBS での設定](#obs-での設定) |
 | 入力 (T0803) | 実際のカメラで顔が動くこと、実際のマイク、操作ウィンドウを最小化してもカメラとマイクを取り続けるか、macOS のカメラとマイクの許可 | [入力](#入力) |
 | ホットキー (T0803) | OS へのグローバルなショートカットの登録と、スタジオが前面に無いときに効くこと (Windows・macOS・Linux の X11)、ほかのアプリが使うキーの登録の失敗、Wayland の知らせ | [ホットキー](#ホットキー) |

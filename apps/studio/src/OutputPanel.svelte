@@ -1,6 +1,6 @@
 <!--
   出力ウィンドウ (docs/studio.md#出力ウィンドウ、T0804): 表示・最前面・大きさのプリセットと、出力ウィンドウの様子
-  (いまの大きさ・枠 (なし。ドラッグで動かす、T0813)・背景 (配信しているシーンの背景。透過など))。出力ウィンドウには何も重ねないので、
+  (いまの大きさ・枠 (なし。ドラッグで動かす、T0813)・背景 (配信しているシーンの背景。透過など。透過が画面で効かなければ注意と代わりの案、T0846))。出力ウィンドウには何も重ねないので、
   様子は操作ウィンドウのここと「いまの状態」の印で示す (T0818)。配信ソフトへの取り込み方の案内も置く。
 -->
 <script lang="ts">
@@ -10,6 +10,7 @@ import { t } from "./lib/i18n";
 import { backgroundLabel } from "./lib/labels";
 import type { Background } from "./lib/profile";
 import { OUTPUT_SIZE_PRESETS, type OutputSizePreset, presetOf, presetSize } from "./lib/settings";
+import { transparencyLost } from "./lib/status";
 
 interface Props {
   /** 出力ウィンドウの様子 (まだ分からなければ `null`。部品を無効にする)。 */
@@ -44,6 +45,8 @@ const sizeOptions = $derived(
 const scaled = $derived(
   output !== null && size !== "free" && presetOf(output.width, output.height) !== size,
 );
+/** 透過のシーンなのに、透過が画面で効かない (T0846)。 */
+const opaque = $derived(transparencyLost(output, background));
 </script>
 
 <div class="output-panel">
@@ -80,6 +83,9 @@ const scaled = $derived(
     <dd>
       {background === null ? t("output.backgroundNoScene") : backgroundLabel(background)}
       <span class="output-panel__hint">{t("output.backgroundHint")}</span>
+      {#if opaque}
+        <Notice tone="warning" title={t("output.opaqueTitle")}>{t("output.opaque")}</Notice>
+      {/if}
     </dd>
   </dl>
   <p class="output-panel__hint">{t("output.capture")}</p>
@@ -107,6 +113,7 @@ const scaled = $derived(
   .output-panel__facts dd {
     display: flex;
     flex-direction: column;
+    gap: var(--ugoe-space-1);
     margin: 0;
     overflow-wrap: anywhere;
   }

@@ -116,12 +116,25 @@ export function hotkeysBadge(state: StatusInputs["hotkeys"]): StatusBadgeView {
   );
 }
 
+/**
+ * 透過のシーンを出しているのに、出力ウィンドウの透過が画面で効かない (docs/studio.md#出力ウィンドウの透過、T0846)。
+ * 透過の所が黒などで埋まって配信に乗る。単色・クロマキー・画像の背景は透過に頼らないので注意しない。
+ */
+export function transparencyLost(
+  output: OutputState | null,
+  background: Background | null,
+): boolean {
+  return output?.transparency === "unsupported" && background?.kind === "transparent";
+}
+
 export function outputBadge(state: OutputBadgeState): StatusBadgeView {
   const { window } = state;
   if (!window.visible)
     return badge("output", "off", t("status.output.hidden"), t("status.output.hiddenTip"));
   const label = t("status.output.on", { width: window.width, height: window.height });
   if (state.scaled) return badge("output", "warning", label, t("status.output.scaledTip"));
+  if (transparencyLost(window, state.background))
+    return badge("output", "warning", label, t("status.output.opaqueTip"));
   const background =
     state.background === null ? t("output.backgroundNoScene") : backgroundLabel(state.background);
   return badge("output", "ok", label, t("status.output.onTip", { background }));

@@ -15,6 +15,7 @@ index.html / src/control.ts   操作ウィンドウの入口 (@ugoe/ui のトー
 src/Control.svelte            操作ウィンドウ: プロファイルのメニュー・モデルを選ぶ・いまの状態・パラメータ。
                               列の並び (シーン・配信中に触るもの・設定) と狭い幅の積み方 (T0817)、設定の並び (準備の順。T0818)
 src/OutputPanel.svelte        操作ウィンドウの「出力ウィンドウ」: 表示・最前面・大きさと、様子 (いまの大きさ・枠・背景)・取り込み方の案内 (T0818)
+                              透過のシーンなのに透過が画面で効かないときの「背景」の欄の注意 (T0846)
 src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。中身は lib/status.ts。T0817)
 src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
 src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
@@ -41,6 +42,7 @@ src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri �
 src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット。出力ウィンドウの Player のキーの接頭辞
                               (`ugoe-studio.player`。T0930 より前にビューアの接頭辞で覚えたものは操作ウィンドウを開いたときに消す)
 src/lib/status.ts             「いまの状態」の印 (トラッキング・口パク・ホットキー・負荷・操作 API・ブラウザソース) の形と文と説明 (T0817)
+                              透過が効かないかの判定 (`transparencyLost`。T0846)
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
@@ -73,7 +75,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/follower.rs               ネイティブの受け手 (一致の検査と仮想カメラが使う)
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
-  src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作
+  src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作と、透過が画面で効くか (Linux は GDK に聞く。T0846)
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
   src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、受け手ごとにすべて覚えて操作ウィンドウに配る。T0825・T0836・T0840)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)

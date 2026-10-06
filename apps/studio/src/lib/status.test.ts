@@ -12,6 +12,7 @@ import {
   sourceBadge,
   statusBadges,
   trackingBadge,
+  transparencyLost,
 } from "./status";
 
 const idle = { status: "idle", faceFound: false, fps: 0, paused: false } as const;
@@ -64,7 +65,13 @@ describe("status badges", () => {
   });
 
   it("shows whether the output window is shown, its size and its background", () => {
-    const window = { visible: true, onTop: false, width: 1920, height: 1080 };
+    const window = {
+      visible: true,
+      onTop: false,
+      width: 1920,
+      height: 1080,
+      transparency: "supported",
+    } as const;
     const shown = outputBadge({ window, scaled: false, background: { kind: "transparent" } });
     expect(shown).toMatchObject({
       tone: "ok",
@@ -81,6 +88,40 @@ describe("status badges", () => {
     expect(
       outputBadge({ window: { ...window, visible: false }, scaled: false, background: null }),
     ).toMatchObject({ tone: "off", label: t("status.output.hidden") });
+  });
+
+  it("warns only when a transparent scene is live and transparency does not work", () => {
+    const output = {
+      visible: true,
+      onTop: false,
+      width: 1920,
+      height: 1080,
+      transparency: "unsupported",
+    } as const;
+    const transparent = { kind: "transparent" } as const;
+    expect(transparencyLost(output, transparent)).toBe(true);
+    // 透過に頼らない背景・配信していない・透過が効く・知れないときは注意しない。
+    expect(transparencyLost(output, { kind: "chroma", color: "#00ff00" })).toBe(false);
+    expect(transparencyLost(output, { kind: "color", color: "#000000" })).toBe(false);
+    expect(transparencyLost(output, { kind: "image", path: "/stage.png" })).toBe(false);
+    expect(transparencyLost(output, null)).toBe(false);
+    expect(transparencyLost({ ...output, transparency: "supported" }, transparent)).toBe(false);
+    expect(transparencyLost({ ...output, transparency: "unknown" }, transparent)).toBe(false);
+    expect(transparencyLost(null, transparent)).toBe(false);
+
+    const opaque = outputBadge({ window: output, scaled: false, background: transparent });
+    expect(opaque).toMatchObject({
+      tone: "warning",
+      label: t("status.output.on", { width: 1920, height: 1080 }),
+      tooltip: t("status.output.opaqueTip"),
+    });
+    expect(
+      outputBadge({
+        window: output,
+        scaled: false,
+        background: { kind: "chroma", color: "#00ff00" },
+      }).tone,
+    ).toBe("ok");
   });
 
   it("warns about load with the same numbers", () => {
@@ -126,7 +167,13 @@ describe("status badges", () => {
       "source",
     ]);
     const output = {
-      window: { visible: true, onTop: false, width: 1280, height: 720 },
+      window: {
+        visible: true,
+        onTop: false,
+        width: 1280,
+        height: 720,
+        transparency: "supported",
+      } as const,
       scaled: false,
       background: null,
     };

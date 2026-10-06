@@ -234,6 +234,25 @@ describe("studio", () => {
     );
   });
 
+  step(app, "warns in Background when transparency does not work (T0846)", async () => {
+    const s = app.session;
+    // Xvfb にはコンポジタが無いので `unsupported`。`--headed` で合成する画面に出したときは `supported`。
+    const { transparency } = await invoke(s, "output_state");
+    assert.ok(
+      ["supported", "unsupported"].includes(transparency),
+      `Linux should know whether the screen is composited: ${transparency}`,
+    );
+    // 「雑談」は透過のシーン。効かなければ「出力ウィンドウ」のパネルの「背景」の欄に注意を出す
+    const notice = () =>
+      s.execute(`
+        const facts = document.querySelector(".output-panel__facts");
+        return facts ? /Transparency is not working/.test(facts.textContent) : null;
+      `);
+    await waitFor(async () => (await notice()) === (transparency === "unsupported"), {
+      message: `the transparency notice to match ${transparency}`,
+    });
+  });
+
   step(
     app,
     "tracking under heavy detection reaches the control and the output (T0812)",
