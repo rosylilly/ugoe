@@ -11,7 +11,8 @@
 // - 読み込みや付け外しの途中に GPU を失った (`device_lost`。`is_lost()` が真) ら、失敗の文を出さない。読み込もうとした
 //   バイト列は `#pending` に取っておき、付け外しは付けたい組 (`wanted`) だけを変え、作り直した WebPuppet に `loaded` で
 //   読み込んで付ける (T1644。Player とビューポートと同じ。docs/ui.md#webpuppet-の寿命)。作り直しの途中 (古い
-//   WebPuppet を捨ててから新しいものができるまで。`host.puppet()` が `null`) に読み込んだものも `#pending` に取っておく (T1658)。
+//   WebPuppet を捨ててから新しいものができるまで。`host.puppet()` が `null`) に読み込んだものも `#pending` に取っておき
+//   (T1658)、その間の付け外しも付けたい組だけを変える (T1659)。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
@@ -217,51 +218,55 @@ export class DressUp {
     await this.#save();
   }
 
-  /** モジュールを付ける。同じスロットに付いているモジュールは外れる。 */
+  /**
+   * モジュールを付ける。同じスロットに付いているモジュールは外れる。プレビュー中で WebPuppet が無い (作り直しの途中)
+   * か GPU を失っていたら、付けたい組だけを変える (T1644・T1659)。
+   */
   attach(name: string, save = true): void {
     const puppet = this.#puppet();
     const entry = this.#entry(name);
-    if (!puppet || !entry) return;
+    if (!entry || (!puppet && !this.#host.active())) return;
     if (entry.slot !== null && entry.slot === this.#host.ownSlot?.()) {
       entry.problem = ownSlotProblem(entry.slot);
       entry.wanted = false;
       if (save) void this.#save();
       return;
     }
-    try {
-      puppet.attach_module(name);
-      entry.problem = null;
-      this.#afterChange(puppet);
-    } catch (e) {
-      // GPU を失っていたら、付けたい組にだけ入れる (同じスロットのものとは差し替える)。作り直した WebPuppet に
-      // `loaded` で付ける。
-      if (puppet.is_lost()) {
-        for (const other of this.entries) {
-          if (other.slot !== null && other.slot === entry.slot) other.wanted = false;
+    if (!puppet) {
+      this.#want(entry);
+    } else {
+      try {
+        puppet.attach_module(name);
+        entry.problem = null;
+        this.#afterChange(puppet);
+      } catch (e) {
+        if (puppet.is_lost()) {
+          this.#want(entry);
+        } else {
+          entry.problem = describeProblem(e);
+          entry.wanted = false;
         }
-        entry.wanted = true;
-      } else {
-        entry.problem = describeProblem(e);
-        entry.wanted = false;
       }
     }
     if (save) void this.#save();
   }
 
-  /** モジュールを外す。 */
-  detach(name: string): void {
+  /** モジュールを外す。WebPuppet が無いか GPU を失っていたら、付けたい組だけを変える (T1644・T1659)。 */
+  detach(name: string, save = true): void {
     const puppet = this.#puppet();
     const entry = this.#entry(name);
-    if (!puppet || !entry) return;
-    try {
-      if (entry.attached) puppet.detach_module(name);
-      entry.problem = null;
-      this.#afterChange(puppet);
-    } catch (e) {
-      if (!puppet.is_lost()) entry.problem = describeProblem(e);
+    if (!entry || (!puppet && !this.#host.active())) return;
+    if (puppet) {
+      try {
+        if (entry.attached) puppet.detach_module(name);
+        entry.problem = null;
+        this.#afterChange(puppet);
+      } catch (e) {
+        if (!puppet.is_lost()) entry.problem = describeProblem(e);
+      }
     }
     entry.wanted = false;
-    void this.#save();
+    if (save) void this.#save();
   }
 
   /** スロットに付けるモジュールを選ぶ。`null` でそのスロットのモジュールを外す。 */
@@ -270,8 +275,11 @@ export class DressUp {
       this.attach(name);
       return;
     }
-    const current = this.entries.find((e) => e.slot === slot && e.attached);
-    if (current) this.detach(current.name);
+    // WebPuppet が無いか GPU を失っている間は、付いているものと付けたい組が食い違うので、どちらも外す。
+    const current = this.entries.filter((e) => e.slot === slot && (e.attached || e.wanted));
+    if (current.length === 0) return;
+    for (const entry of current) this.detach(entry.name, false);
+    void this.#save();
   }
 
   /** ファイルから読み直す (書き出し直したとき)。付いていれば新しい版に付け替わる。 */
@@ -298,6 +306,8 @@ export class DressUp {
       this.#afterChange(puppet);
     }
     this.#bytes.delete(name);
+    // 作り直しの途中に読み直していたものも、作り直した WebPuppet に読み込まない。
+    this.#pending = this.#pending.filter((p) => p.entry !== entry);
     this.entries = this.entries.filter((e) => e !== entry);
     void this.#save();
   }
@@ -457,6 +467,17 @@ export class DressUp {
       ...problem,
       summary: t("preview.dressUp.takenOff", { name, summary: problem.summary }),
     };
+  }
+
+  /**
+   * WebPuppet で付けられないとき (作り直しの途中か GPU を失っている間)、付けたい組にだけ入れる (同じスロットのものとは
+   * 差し替える)。作り直した WebPuppet に `loaded` で付ける。
+   */
+  #want(entry: DressUpEntry): void {
+    for (const other of this.entries) {
+      if (other.slot !== null && other.slot === entry.slot) other.wanted = false;
+    }
+    entry.wanted = true;
   }
 
   /** GPU を失っていて読み込めなかったものを読み込み、付ける (`loaded` の後半)。 */

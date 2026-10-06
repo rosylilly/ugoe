@@ -554,6 +554,67 @@ describe("DressUp while the WebPuppet is being made again (T1658)", () => {
     });
   });
 
+  it("keeps the wanted set when putting on or taking off while there is no WebPuppet (T1659)", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([
+      { path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") },
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: "/work/Dress.ugoemod", bytes: bytes("Dress") },
+    ]);
+    expect(t.fake.attached()).toEqual(["ShortHair", "Dress"]);
+    t.fake.state.lost = true;
+    t.drop();
+    dressUp.setSlot("Outfit", null);
+    // 同じスロットのものは、付けたい組でも差し替える。
+    dressUp.setSlot("Hair", "LongHair");
+    expect(dressUp.entries.map((e) => [e.name, e.wanted, e.problem])).toEqual([
+      ["LongHair", true, null],
+      ["ShortHair", false, null],
+      ["Dress", false, null],
+    ]);
+    await vi.waitFor(() =>
+      expect(saved.at(-1)).toEqual([
+        { path: "/work/LongHair.ugoemod", attached: true },
+        { path: "/work/ShortHair.ugoemod", attached: false },
+        { path: "/work/Dress.ugoemod", attached: false },
+      ]),
+    );
+    const fresh = t.recreate();
+    expect(fresh.attached()).toEqual(["LongHair"]);
+    expect(dressUp.entries.map((e) => [e.name, e.attached, e.wanted])).toEqual([
+      ["LongHair", true, true],
+      ["ShortHair", false, false],
+      ["Dress", false, false],
+    ]);
+  });
+
+  it("takes a module off by name while there is no WebPuppet (T1659)", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: "/work/Dress.ugoemod", bytes: bytes("Dress") },
+    ]);
+    t.drop();
+    dressUp.detach("ShortHair");
+    expect(t.recreate().attached()).toEqual(["Dress"]);
+    expect(entry(dressUp, "ShortHair")).toMatchObject({ wanted: false, problem: null });
+  });
+
+  it("does not load a removed row that was read again while there is no WebPuppet (T1659)", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    files["/work/LongHair.ugoemod"] = "LongHair";
+    await dressUp.load();
+    t.drop();
+    await dressUp.refresh();
+    dressUp.remove("LongHair");
+    const fresh = t.recreate();
+    expect(fresh.loaded()).toEqual([]);
+    expect(dressUp.entries.map((e) => e.name)).toEqual(["missing"]);
+  });
+
   it("drops what it kept when the project is opened again", async () => {
     const t = setup();
     const { dressUp } = t;

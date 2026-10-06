@@ -203,6 +203,33 @@ async function restoreAndRecreate(page) {
   await untilDrawing(page, "the recreated WebPuppet to draw");
 }
 
+/**
+ * コンテキストを失わせて戻し、作り直しの途中 (古い WebPuppet を `free` し、新しいものをまだ作り終えていない。ビューポートの
+ * `puppet` が `null`) になるのを待つ。作成の遅れ (`createDelayMs`) は呼ぶ前に長くしておく。
+ */
+async function loseAndStartRecreating(page) {
+  await loseContext(page);
+  await page.evaluate(() => window.__editorBrowser.lost.restoreContext());
+  await until(
+    page,
+    () => {
+      const state = window.__editorBrowser;
+      return state.current === null && !state.live.has(state.before) && state.live.size === 0;
+    },
+    "the old WebPuppet to be freed before the new one is made",
+  );
+}
+
+/** まだ作り直しの途中 (WebPuppet が無い)。でなければ `message` で落とす。 */
+async function expectRecreating(page, message) {
+  check(
+    await page.evaluate(
+      () => window.__editorBrowser.current === null && window.__editorBrowser.live.size === 0,
+    ),
+    message,
+  );
+}
+
 /** 着せ替えの一覧の行 (名前・チェック) と、パネルの中の失敗の文 (`role=alert`)。 */
 function panelState(page) {
   return dressUpSection(page).evaluate((section) => ({
@@ -331,24 +358,9 @@ export const SCENARIOS = {
       window.__editorBrowser.createDelayMs = ms;
     }, RECREATION_DELAY_MS);
 
-    await loseContext(page);
-    await page.evaluate(() => window.__editorBrowser.lost.restoreContext());
-    // 古い WebPuppet を捨て (`free`)、新しいものをまだ作り終えていない
-    await until(
-      page,
-      () => {
-        const state = window.__editorBrowser;
-        return state.current === null && !state.live.has(state.before) && state.live.size === 0;
-      },
-      "the old WebPuppet to be freed before the new one is made",
-    );
+    await loseAndStartRecreating(page);
     await loadModule(page, ctx, "cat-ears.ugoemod");
-    check(
-      await page.evaluate(
-        () => window.__editorBrowser.current === null && window.__editorBrowser.live.size === 0,
-      ),
-      "the new WebPuppet was made before the module was loaded",
-    );
+    await expectRecreating(page, "the new WebPuppet was made before the module was loaded");
     expectNoAlerts(await panelState(page), "while the WebPuppet is being made again");
 
     await untilDrawing(page, "the recreated WebPuppet to draw");
@@ -376,52 +388,92 @@ export const SCENARIOS = {
    * その組で付く (T1644・T1656)。
    */
   async "dress-up-change-while-lost"(page, ctx) {
-    await openSample(page, ctx);
-    await enterPreview(page);
-    for (const file of ["cat-ears.ugoemod", "long-hair.ugoemod", "twin-tails.ugoemod"]) {
-      await loadModule(page, ctx, file);
-    }
-    // 同じスロット (Hair) は後から読み込んだもの (TwinTails) に差し替わる
-    let attached = await attachedModules(page);
-    check(attached.join() === "CatEars,TwinTails", `attached before the loss: ${attached.join()}`);
-    const before = await panelState(page);
-    expectNoAlerts(before, "before the loss");
-    const withEars = await drawn(page);
-    expectRows(before, { CatEars: true, LongHair: false, TwinTails: true }, "before the loss");
+    const withEars = await putOnThree(page, ctx);
     await page.evaluate((ms) => {
       window.__editorBrowser.createDelayMs = ms;
     }, CREATE_DELAY_MS);
 
     await loseContext(page);
-    const section = dressUpSection(page);
-    await section.getByRole("checkbox", { name: "CatEars", exact: true }).click();
-    await section
-      .locator(`[aria-label="${en("preview.dressUp.slots.aria").replace("{{slot}}", "Hair")}"]`)
-      .click();
-    await page.getByRole("option", { name: "LongHair", exact: true }).click();
-    await page.waitForTimeout(200);
+    await takeOffEarsAndSwapHair(page);
     expectNoAlerts(await panelState(page), "after changing the modules while the context is lost");
 
     await restoreAndRecreate(page);
-    await until(
-      page,
-      () => {
-        const names = [...window.__editorBrowser.current.attached_modules()];
-        return names.length === 1 && names[0] === "LongHair";
-      },
-      "only LongHair to be put on the recreated WebPuppet",
+    await expectOnlyLongHair(page, withEars);
+  },
+
+  /**
+   * 作り直しの途中 (古い WebPuppet を捨て、新しいものを作っている間。ビューポートの `puppet` が `null`) の付け外しも、付けたい組
+   * だけを変え、作り直した WebPuppet にその組で付く (T1659)。作成を長く遅らせて、その間に付け外す。
+   */
+  async "dress-up-change-during-recreation"(page, ctx) {
+    const withEars = await putOnThree(page, ctx);
+    await page.evaluate((ms) => {
+      window.__editorBrowser.createDelayMs = ms;
+    }, RECREATION_DELAY_MS);
+
+    await loseAndStartRecreating(page);
+    await takeOffEarsAndSwapHair(page);
+    await expectRecreating(page, "the new WebPuppet was made before the modules were changed");
+    expectNoAlerts(
+      await panelState(page),
+      "after changing the modules while there is no WebPuppet",
     );
-    const after = await panelState(page);
-    expectNoAlerts(after, "after the recreation");
-    expectRows(after, { CatEars: false, LongHair: true, TwinTails: false }, "after the recreation");
-    attached = await attachedModules(page);
-    check(attached.join() === "LongHair", `attached after the recreation: ${attached.join()}`);
-    const shot = await drawn(page);
-    check(shot.fraction > 0.01, `the recreated preview is empty (${shot.fraction})`);
-    check(
-      shot.top > withEars.top + 5,
-      `the cat ears are still drawn: the top row is ${shot.top} (${withEars.top} with them)`,
-    );
-    await expectLivePuppets(page, "after the recreation");
+
+    await untilDrawing(page, "the recreated WebPuppet to draw");
+    await expectOnlyLongHair(page, withEars);
   },
 };
+
+/**
+ * 見本を開いてプレビューに入り、猫耳・長い髪・ツインテールを読み込む (猫耳とツインテールが付く)。猫耳を付けて描いた
+ * 読み戻しを返す。
+ */
+async function putOnThree(page, ctx) {
+  await openSample(page, ctx);
+  await enterPreview(page);
+  for (const file of ["cat-ears.ugoemod", "long-hair.ugoemod", "twin-tails.ugoemod"]) {
+    await loadModule(page, ctx, file);
+  }
+  // 同じスロット (Hair) は後から読み込んだもの (TwinTails) に差し替わる
+  const attached = await attachedModules(page);
+  check(attached.join() === "CatEars,TwinTails", `attached before the loss: ${attached.join()}`);
+  const before = await panelState(page);
+  expectNoAlerts(before, "before the loss");
+  expectRows(before, { CatEars: true, LongHair: false, TwinTails: true }, "before the loss");
+  return drawn(page);
+}
+
+/** 猫耳のチェックを外し、スロット `Hair` の選択で長い髪に替える。 */
+async function takeOffEarsAndSwapHair(page) {
+  const section = dressUpSection(page);
+  await section.getByRole("checkbox", { name: "CatEars", exact: true }).click();
+  await section
+    .locator(`[aria-label="${en("preview.dressUp.slots.aria").replace("{{slot}}", "Hair")}"]`)
+    .click();
+  await page.getByRole("option", { name: "LongHair", exact: true }).click();
+  await page.waitForTimeout(200);
+}
+
+/** 作り直した WebPuppet に長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない (`withEars` は猫耳を付けた読み戻し)。 */
+async function expectOnlyLongHair(page, withEars) {
+  await until(
+    page,
+    () => {
+      const names = [...window.__editorBrowser.current.attached_modules()];
+      return names.length === 1 && names[0] === "LongHair";
+    },
+    "only LongHair to be put on the recreated WebPuppet",
+  );
+  const after = await panelState(page);
+  expectNoAlerts(after, "after the recreation");
+  expectRows(after, { CatEars: false, LongHair: true, TwinTails: false }, "after the recreation");
+  const attached = await attachedModules(page);
+  check(attached.join() === "LongHair", `attached after the recreation: ${attached.join()}`);
+  const shot = await drawn(page);
+  check(shot.fraction > 0.01, `the recreated preview is empty (${shot.fraction})`);
+  check(
+    shot.top > withEars.top + 5,
+    `the cat ears are still drawn: the top row is ${shot.top} (${withEars.top} with them)`,
+  );
+  await expectLivePuppets(page, "after the recreation");
+}

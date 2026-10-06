@@ -686,7 +686,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   (`wanted`) だけを変え、作り直した `WebPuppet` で `PreviewMode.loaded` → `DressUp.loaded` が読み込んで付けます。作り直した `WebPuppet` を
   付けている途中にまた失っても、付けたい組は変えません (次の作り直しで付ける)。作り直しの途中 (古い `WebPuppet` を捨ててから新しいものが
   できるまで。ビューポートの `puppet` が `null`) に読み込んだモジュールも、ファイルを読んでからバイト列を同じように取っておき、作り直した
-  `WebPuppet` に読み込んで (「Load .ugoemod…」で読み込んだものなら) 付けます (T1658)。Player (`@ugoe/player`) の読み込みの途中の喪失 (T0955) と
+  `WebPuppet` に読み込んで (「Load .ugoemod…」で読み込んだものなら) 付けます (T1658)。その間の付け外し (チェック・スロットの選択) も
+  付けたい組だけを変え (同じスロットのものとは差し替える)、作り直した `WebPuppet` にその組で付けます (T1659)。その間に一覧から除いた行は、
+  読み直していたバイト列も捨てます。Player (`@ugoe/player`) の読み込みの途中の喪失 (T0955) と
   同じ扱いです。作り直しを諦めたときはビューポートが文を出します。
 - **エラー:** `DressUpError` の `code` を分かる言葉にします (`describeProblem`。「スロットがない → Slots タブで足す」
   「公開していないパラメータ → スロットの Parameters に入れる」など)。元の文言は「Details」に出します。
