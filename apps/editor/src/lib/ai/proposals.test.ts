@@ -79,6 +79,60 @@ describe("groupCommands", () => {
   });
 });
 
+describe("layer corrections attached to a rig", () => {
+  /** 0–2: 添えた分類の直し、3: パラメータ、4: キー (3 を使う)、5: 後から 1 つだけの直し。 */
+  const rig: ProposalCommand[] = [
+    { op: "set_layer_correction", subject: "Face / Eye L", requires: [] },
+    { op: "set_layer_correction", subject: "Face / Eye R", requires: [] },
+    { op: "set_layer_correction", subject: "Face / Mouth", requires: [] },
+    { op: "add_parameter", subject: "EyeOpen", requires: [] },
+    { op: "add_keyform_key", subject: "EyeOpen", requires: [3] },
+    { op: "set_layer_correction", subject: "Hair", requires: [] },
+  ];
+
+  it("shows consecutive corrections as one group", () => {
+    expect(groupCommands(rig)).toEqual([
+      { label: "Keep the classification of 3 layers", indices: [0, 1, 2], labels: true },
+      { label: "EyeOpen", indices: [3, 4] },
+      { label: "Hair", indices: [5] },
+    ]);
+  });
+
+  it("leaves out all corrections at once and keeps the rig", () => {
+    const [labels, params] = groupCommands(rig);
+    if (!labels || !params) throw new Error("groups");
+    const out = toggleGroup(rig, new Set(), labels);
+    expect(excludedList(out)).toEqual([0, 1, 2]);
+    expect(groupState(labels, out)).toBe("none");
+    expect(groupState(params, out)).toBe("all");
+    expect(excludedList(toggleGroup(rig, out, labels))).toEqual([]);
+  });
+
+  it("leaves out one correction on its own", () => {
+    const [labels] = groupCommands(rig);
+    if (!labels) throw new Error("groups");
+    const out = toggleCommand(rig, new Set(), 1);
+    expect(excludedList(out)).toEqual([1]);
+    expect(groupState(labels, out)).toBe("some");
+    // 一部だけ外したまとまりの切り替えは、残りもすべて外す
+    expect(excludedList(toggleGroup(rig, out, labels))).toEqual([0, 1, 2]);
+  });
+
+  it("does not merge corrections with other commands on the same subject", () => {
+    const mixed: ProposalCommand[] = [
+      { op: "rename_mesh", subject: "Hair", requires: [] },
+      { op: "set_layer_correction", subject: "Hair", requires: [] },
+      { op: "set_layer_correction", subject: "Hair", requires: [] },
+      { op: "rename_mesh", subject: "Hair", requires: [] },
+    ];
+    expect(groupCommands(mixed)).toEqual([
+      { label: "Hair", indices: [0] },
+      { label: "Keep the classification of 2 layers", indices: [1, 2], labels: true },
+      { label: "Hair", indices: [3] },
+    ]);
+  });
+});
+
 describe("commandLabel", () => {
   it("adds the subject when there is one", () => {
     expect(commandLabel(commands[0] as ProposalCommand)).toBe("add_parameter AngleX");

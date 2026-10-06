@@ -68,18 +68,39 @@ export interface CommandGroup {
   indices: number[];
   /** 提案の区切り (`ProposalState.sections`) から作ったか。1 つだけでも名前を付けて出し、中のコマンドは対象 (`subject`) 付きで出す。 */
   section?: boolean;
+  /**
+   * リグの提案に添えた分類の直し (続いた `set_layer_correction`) のまとまりか。中のコマンドは対象 (レイヤーのパス) 付きで出す。
+   * 直しはリグのコマンドが頼らない (`requires` に入らない) ので、まとめて外してもリグは残る。
+   */
+  labels?: boolean;
 }
 
-/** 続いたコマンドを対象ごとにまとめる (順序は変えない)。 */
+/** 分類の直しのコマンド (crates/ugoe-mcp/README.md のエージェントの分類を残す)。 */
+const LAYER_CORRECTION = "set_layer_correction";
+
+/**
+ * 続いたコマンドを対象ごとにまとめる (順序は変えない)。2 つ以上続いた分類の直し (`set_layer_correction`) は、
+ * 対象が違っても 1 つのまとまり (「分類を残す N 件」) にする。
+ */
 export function groupCommands(commands: ProposalCommand[]): CommandGroup[] {
   const groups: CommandGroup[] = [];
   let lastSubject: string | null | undefined;
   commands.forEach((c, i) => {
     const last = groups.at(-1);
-    if (last && c.subject !== null && c.subject === lastSubject) last.indices.push(i);
-    else groups.push({ label: c.subject ?? c.op, indices: [i] });
+    const correction = c.op === LAYER_CORRECTION;
+    // 直しと直しはまとめ、直しとほかの種類は同じ対象でもまとめない
+    const join =
+      correction === (commands[i - 1]?.op === LAYER_CORRECTION) &&
+      (correction || (c.subject !== null && c.subject === lastSubject));
+    if (last && join) {
+      last.indices.push(i);
+      if (correction) last.labels = true;
+    } else groups.push({ label: c.subject ?? c.op, indices: [i] });
     lastSubject = c.subject;
   });
+  for (const g of groups) {
+    if (g.labels) g.label = t("proposals.list.keepLabels", { count: g.indices.length });
+  }
   return groups;
 }
 

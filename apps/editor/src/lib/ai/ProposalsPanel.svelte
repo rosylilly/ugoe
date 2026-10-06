@@ -8,7 +8,8 @@
     「Use <プロバイダ>」なら選んだ AI のプロバイダに画像を送る (外部に出るなら送る前に確認のダイアログ)。
     使えないときは理由と設定への案内を出す。
   - エディタにつないだエージェント (lib/agents/) の提案は「from <名前>」の印を付けて同じ一覧に出す。
-  - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる) を出す。コマンド (まとまり) の
+  - 提案ごとに題名・理由・コマンドの一覧 (同じ対象への続いたコマンドはまとめる。エージェントがリグに添えた分類の直しは
+    「Keep the classification of N layers」の 1 つのまとまり) を出す。コマンド (まとまり) の
     チェックを外すと、それに頼るコマンドも外れる (lib/ai/proposals.ts)。「Preview」は提案を複製に適用した姿をビューポートに出し (ドキュメントは変えない)、
     提案が足したパラメータのスライダーをここに出す。「Run physics」でプレビューの物理を動かす (揺れを確かめる)。
     「Adopt」は 1 回の Undo で戻る編集として適用する。
@@ -530,7 +531,12 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                     <code>{commandLabel(single)}</code>
                   {:else}
                     <details class="inner">
-                      <summary><code>{group.label}</code> · {t("proposals.list.commands", { count: group.indices.length })}</summary>
+                      {#if group.labels}
+                        <!-- 添えた分類の直しは、名前に件数が入る (中の行はレイヤーのパス)。 -->
+                        <summary>{group.label}</summary>
+                      {:else}
+                        <summary><code>{group.label}</code> · {t("proposals.list.commands", { count: group.indices.length })}</summary>
+                      {/if}
                       <ol class="commands">
                         {#each group.indices as i (i)}
                           {@const command = proposal.commands[i]}
@@ -544,7 +550,7 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
                                   onchange={() => view.toggleCommand(proposal.id, i)}
                                 />
                                 <span class="index">#{i}</span>
-                                <code>{group.section && command.subject ? `${command.op} ${command.subject}` : command.op}</code>
+                                <code>{group.section || group.labels ? commandLabel(command) : command.op}</code>
                                 {#if command.requires.length > 0}
                                   <span class="muted requires"
                                     >{t("proposals.list.dependsOn", { list: command.requires.join(", #") })}</span

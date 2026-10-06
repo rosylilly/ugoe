@@ -1845,6 +1845,7 @@
       "selected_other": "{{count}} 個のコマンドのうち {{selected}} 個を選択",
       "include": "{{name}} を含める",
       "commands_other": "{{count}} 個のコマンド",
+      "keepLabels_other": "{{count}} 個のレイヤーの分類を残す",
       "dependsOn": "#{{list}} に頼ります",
       "preview": {
         "label": "プレビュー",

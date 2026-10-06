@@ -1888,6 +1888,8 @@
       "include": "Include {{name}}",
       "commands_one": "{{count}} command",
       "commands_other": "{{count}} commands",
+      "keepLabels_one": "Keep the classification of {{count}} layer",
+      "keepLabels_other": "Keep the classification of {{count}} layers",
       "dependsOn": "Depends on #{{list}}",
       "preview": {
         "label": "Preview",
