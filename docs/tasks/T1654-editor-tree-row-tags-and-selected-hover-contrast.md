@@ -1,11 +1,11 @@
 ---
 id: T1654
 title: "エディタ: ツリーで base と hidden の札を両方持つ行の名前が 1 文字に縮むのと、選んだ非表示・本体の行のホバーのコントラストを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0048]
-assignee:
+assignee: claude-worker-T1654
 ---
 
 # T1654: エディタ: ツリーで base と hidden の札を両方持つ行の名前が 1 文字に縮むのと、選んだ非表示・本体の行のホバーのコントラストを直す
