@@ -238,9 +238,9 @@ async function openExample({
 
 /** 見本を操作して確かめる。 */
 async function check(evaluate, mode, usageLogRequests) {
-  // `window.ugoeExample` はチェックボックスの処理を付ける前にできるので、<ugoe-avatar> の `load` (付けた後に届く) を待つ
-  await waitFor("the example to load", 60_000, () =>
-    evaluate("window.ugoeExample?.element ?? null"),
+  // 見本が操作の処理をすべて付けた印 (`ready`) を待つ
+  await waitFor("the example to be ready", 60_000, () =>
+    evaluate("window.ugoeExample?.ready || null"),
   );
   // 「camera (MediaPipe)」: Face Landmarker を作り (createFromOptions)、偽のカメラの映像を調べ始める
   await evaluate('document.getElementById("camera").click()');

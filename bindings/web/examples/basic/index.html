@@ -162,17 +162,16 @@
         };
       }
       const status = document.getElementById("status");
-      const result = { version: null, element: null, plain: null, errors: [] };
+      // ヘッドレスのブラウザでの確認用。`ready` は操作の処理 (選択・チェックボックス・欄) をすべて付け、
+      // <ugoe-avatar> を登録した後に true になる (自動のテストはこれを待ってから操作する。README の「見本」)
+      const result = { version: null, ready: false, element: null, plain: null, errors: [] };
+      window.ugoeExample = result;
       await initRuntime();
       result.version = version();
-      // ヘッドレスのブラウザでの確認用
-      window.ugoeExample = result;
 
       const backendSelect = document.getElementById("backend");
       backendSelect.value = backend;
       avatar.setAttribute("backend", backend);
-      // 属性を決めてから登録する (登録の後に backend を変えると作り直しになる)
-      await import("@ugoe/runtime/element");
       backendSelect.addEventListener("change", () =>
         avatar.setAttribute("backend", backendSelect.value),
       );
@@ -402,6 +401,10 @@
         result.errors.push(String(e.detail.error));
         status.textContent = `エラー: ${e.detail.error.message}`;
       });
+
+      // 属性と `load`・`error` の処理を決めてから登録する (登録の後に backend を変えると作り直しになる)
+      await import("@ugoe/runtime/element");
+      result.ready = true;
 
       // 低い層の API: canvas と WebPuppet をホストが持ち、ループも自分で回す
       async function startPlain() {

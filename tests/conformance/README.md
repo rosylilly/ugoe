@@ -288,6 +288,8 @@ Face Landmarker を作った (`FaceLandmarker.createFromOptions` の) 後に、M
 
 - **配り方:** 見本は書き換えずに `run.mjs` (example.mjs) のサーバーが配る。import map の `./node_modules/@ugoe/runtime/` は bindings/web
   (`dist/`)、`/samples/` は `assets/samples` を指す (tgz を作らない)。`?backend=webgl2` で開く。
+- **待つもの:** 見本が操作の処理をすべて付けた印 `window.ugoeExample.ready` が true になってから「camera (MediaPipe)」を押す
+  (T0488。[bindings/web/README.md](../../bindings/web/README.md#見本-examplesbasic))。
 - **ネットワークに頼らない:** 見本が CDN から読む MediaPipe (jsdelivr の `@mediapipe/tasks-vision`) とモデル (storage.googleapis.com) は、
   CDP の `Fetch.enable` (`https://*`) で止めて手元のファイルで応える。MediaPipe は packages/face-tracking が入れている
   `@mediapipe/tasks-vision` (見本の `MEDIAPIPE` の版と違えば止まる)、モデルは packages/face-tracking の `mediapipe-assets.mjs` が取得して

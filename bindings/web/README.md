@@ -616,6 +616,11 @@ npm start          # http://localhost:8080/ (?backend=webgl2 で WebGL2 に固�
 `createPuppet` で canvas に直接描く例を並べています。モデルはリポジトリの `assets/samples/` (MIT) を配ります。
 URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU の失敗を ([上](#webgpu-と-webgl2)) 変えられます。
 
+ヘッドレスのブラウザで確かめるために、見本はページの状態を `window.ugoeExample` に置きます (`version`・`<ugoe-avatar>` の `load` の結果の
+`element`・低い層の例の `plain`・`errors`・トラッキングの `cameraFrames` や `usageLogsRefused` など)。`ready` は、操作の処理
+(バックエンドの選択・チェックボックス・係数の欄) をすべて付け、`<ugoe-avatar>` を登録した後に `true` になる印です。自動のテスト
+(`just conformance --only example`) はこれを待ってから操作します (モデルの読み込みは待たない。読み込みの完了は `element` で分かります)。
+
 見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up/dress-up.ugoe`) はモーション (待機の `idle`・うなずく `nod`・
 首を振る `shake`・首をかしげる `tilt`。`dress-up.ugoe` には手を振る `wave` (ポーズを切り替え、上げた手を揺らす。T0474・T0328) も) と表情 (`avatar.ugoe` は `smile`・`surprised`・`sad`・`angry`、`dress-up.ugoe` は
 `smile`・`surprised`・`sad`) を持つので、`motion` / `expression` 属性をそのまま試せます
