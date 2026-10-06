@@ -981,6 +981,9 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 
 本体の問題でモジュールのプロジェクトを開けない・本体を読み直せないとき、問題と直し方を枠で出します (`ModuleProblemBar.svelte`、T0650)。
 問題の種類はバックエンドが `ProjectError` から決めます (`ModuleProblemKind`)。
+枠は、別のプロジェクトに替わったとき (New・New from PSD…・Open…・Open Sample…・New Module… などが成功したとき) に消えます。
+替える操作が失敗したとき (PSD を読めなかったなど) は、開いているプロジェクトが替わらず直し方も使えるので残します (T1672)。
+ただし「Open…」は失敗しても、前の枠を消して、開こうとしたプロジェクトの問題があればそれを出します。
 
 | 種類 | 何が起きたか | 直し方のボタン |
 | --- | --- | --- |

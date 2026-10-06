@@ -22,6 +22,8 @@ const { ipc } = vi.hoisted(() => ({
     reloadProject: vi.fn(),
     reloadBase: vi.fn(),
     openProject: vi.fn(),
+    newProject: vi.fn(),
+    newProjectFromPsd: vi.fn(),
     moduleOpenProblem: vi.fn(),
     openModuleWithBase: vi.fn(),
     applyCommand: vi.fn(),
@@ -329,6 +331,44 @@ describe("FileMenuFlow: a module project the base keeps from opening", () => {
     flow.confirmDiscard();
     await vi.waitFor(() => expect(flow.problem).toBeNull());
     expect(ipc.openProject).toHaveBeenLastCalledWith("/work/Base.ugoeproj");
+  });
+
+  /** 本体の問題で開けなかったモジュールの知らせを出したファイルメニュー。 */
+  async function withProblem() {
+    const flow = await flowWith(saved);
+    vi.mocked(dialogs.openDirectory).mockResolvedValueOnce("/work/Hair.ugoeproj");
+    ipc.openProject.mockRejectedValueOnce(new Error("no slot"));
+    ipc.moduleOpenProblem.mockResolvedValue(unknownSlot("/work/Base.ugoeproj"));
+    await flow.pick("open");
+    expect(flow.problem).not.toBeNull();
+    return flow;
+  }
+
+  it("hides the fixes when another project is made from a PSD (T1672)", async () => {
+    const flow = await withProblem();
+    vi.mocked(dialogs.openFile).mockResolvedValueOnce("/work/Face.psd");
+    ipc.newProjectFromPsd.mockResolvedValueOnce([]);
+    ipc.projectStatus.mockResolvedValue({ name: "Face", path: null, modified: true });
+    await flow.pick("newFromPsd");
+    expect(ipc.newProjectFromPsd).toHaveBeenCalledWith("/work/Face.psd");
+    expect(flow.problem).toBeNull();
+  });
+
+  it("keeps the fixes when the PSD can't be read (T1672)", async () => {
+    const flow = await withProblem();
+    vi.mocked(dialogs.openFile).mockResolvedValueOnce("/work/Broken.psd");
+    ipc.newProjectFromPsd.mockRejectedValueOnce(new Error("not a PSD"));
+    await flow.pick("newFromPsd");
+    // 開いているプロジェクトは替わっていないので、知らせとその直し方は使えるまま残す
+    expect(flow.problem).toMatchObject({ project: "/work/Hair.ugoeproj", opening: true });
+    expect(flow.message).toBe("not a PSD");
+  });
+
+  it("hides the fixes when a new project is made (T1672)", async () => {
+    const flow = await withProblem();
+    ipc.newProject.mockResolvedValueOnce({ name: "Untitled", path: null, modified: false });
+    await flow.newProject();
+    expect(flow.problem).toBeNull();
   });
 });
 

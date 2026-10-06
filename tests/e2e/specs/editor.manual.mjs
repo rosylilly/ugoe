@@ -1555,8 +1555,6 @@ describe("editor manual images", () => {
   // 外への要求を見張る)。提案・作り直しは偽の AI のプロバイダ (127.0.0.1) で作る
   step(app, "ai: a project from character.psd", async () => {
     const s = app.session;
-    // 前の手順の本体の問題 (`module-problem-drop`) の知らせを閉じる (「New from PSD…」では消えない)
-    if ((await s.findAll(".problem")).length > 0) await clickButton(s, "^Close", ".problem");
     answerDialog("open-file", psd);
     await fileMenu(s, "New from PSD…");
     await discardIfAsked(s);
@@ -1565,6 +1563,7 @@ describe("editor manual images", () => {
       message: "the PSD in the tree",
     });
     await viewportReady(s);
+    // 前の手順の本体の問題 (`module-problem-drop`) の知らせは、PSD から別のプロジェクトを作ると消える (T1672)
     await waitFor(async () => (await s.findAll(".problem")).length === 0, {
       timeout: 5_000,
       message: "the problem of the base to close",

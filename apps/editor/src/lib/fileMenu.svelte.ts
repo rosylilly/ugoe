@@ -219,6 +219,9 @@ export class FileMenuFlow {
         this.exportLines = null;
         // 本体から別のプロジェクトに替わったら、モジュールに戻る帯は消す (戻ったときも)
         this.returnTo = null;
+        // 開けなかったモジュールの知らせも、別のプロジェクトに替わったら消す (T1672)。替える操作が失敗したとき
+        // (PSD を読めなかったなど) は、開いているプロジェクトが替わらず直し方も使えるので残す
+        this.problem = null;
       }
       if (reload !== "none") this.#host.onchange(reload === "replaced", reload === "reloaded");
       return true;
@@ -278,7 +281,6 @@ export class FileMenuFlow {
       this.status = await ipc.newModuleProject(base, slot, name);
       this.newModuleOpen = false;
       this.warnings = [];
-      this.problem = null;
       await this.#run(async () => undefined, "replaced");
     });
   }
@@ -383,7 +385,6 @@ export class FileMenuFlow {
         // 選んだフォルダーの中に新しいフォルダーを作って書き出し、本体を開く (docs/manual/dress-up.md#見本のプロジェクトを開く)
         const ok = await this.#run(() => ipc.openSampleProject(path), "replaced");
         if (ok) {
-          this.problem = null;
           const folder = this.status?.path ? parentDir(this.status.path) : null;
           this.#inform(
             folder
@@ -472,7 +473,6 @@ export class FileMenuFlow {
       "replaced",
     );
     if (ok) {
-      this.problem = null;
       this.#inform(
         dropColliders
           ? droppedCollidersNotice(dropped)
@@ -574,7 +574,6 @@ export class FileMenuFlow {
     await this.#withDiscard(() =>
       this.#exclusive(async () => {
         if (await this.#run(() => ipc.openProject(base), "replaced")) {
-          this.problem = null;
           this.returnTo = back;
           this.#inform(
             back
