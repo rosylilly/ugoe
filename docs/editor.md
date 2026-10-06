@@ -174,6 +174,15 @@
   (`preview/preview.ts` の `groupParameters`。グループの定義順、区切りの中はモデルの定義順、空のグループは出さず、グループの無いものと
   定義に無いグループを指すものは最後の「Other」)。区切りは折りたためる見出し (`Section`) で、右に区切りのパラメータの数を出します。
   どのパラメータもグループに入っていなければ、見出しを出さずに並べます (グループの無いモデルで「Other」だけが出ないように)。
+  区切りの開閉は localStorage の `ugoe.editor.parameterSectionsClosed` に覚えます ([覚える値](#覚える値)。T1646)。
+  覚えるのは閉じた区切りのグループの ID (「Other」は空の文字列) だけで、既定は開きます。プロジェクトごとには分けないので、同じ ID の
+  グループはどのプロジェクトでも同じ開閉になります (よく使うグループの ID はモデルをまたいでそろうことが多く、プロジェクトのファイルに
+  表示の状態を入れないため)。数は新しく閉じたものから 200 個まで (`src/lib/panels/parameters/sections.ts`)。
+- **絞り込み (T1646):** パラメータがあると、一覧の上に絞り込みの欄 (検索の欄。読み上げの名前は「Filter the parameters」) を出し、
+  名前か ID に語を含むパラメータだけを出します (大文字と小文字を区別しない。プレビューと同じ `preview/preview.ts` の `filterSections`)。
+  絞り込み中は覚えた開閉によらず一致した行のある区切りを開いて出し、一致の無い区切りは出しません。絞り込み中に閉じた区切りは覚えず、
+  語を変えると開き直します。語を消すと覚えた開閉に戻ります。一致が無ければ「No parameter matches "…".」を `role="status"` で出します。
+  グループの無いモデルでは、見出しの無い一覧をそのまま絞ります。
   - **一覧の中のドラッグでグループを変えることはしない:** 一覧の行はスライダー・値の欄・キーの印でほとんど埋まり、ポインタの操作
     (スライダーのドラッグ・印を押す) と重なるので、行をつかむ場所が取れません (つかみの印を足すと、100 個のパラメータの一覧の幅を
     さらに狭める)。グループを変えるのは編集欄の「Group」で、キーボードでもそのまま使えます。
@@ -2256,6 +2265,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `ugoe.editor.theme` | `system`・`light`・`dark` | `system` | [言語](#言語)の「General」のテーマ (`@ugoe/ui` の `initTheme`。`index.html` の `<head>` も読む) |
 | `ugoe.editor.autoReload` | `true`・`false` | 切 | [外での書き換え](#外での書き換え) (`src/lib/externalChange.ts`) |
 | `ugoe.editor.timelineOpen` | `open`・`closed` | 開く | [タイムライン](#タイムライン)の開閉 (`src/lib/panels/timeline/timeline.ts`)。空のプロジェクトと狭い窓で自動で畳んだことは覚えない |
+| `ugoe.editor.parameterSectionsClosed` | 閉じた区切りのグループの ID の JSON の配列 (「Other」は `""`) | すべて開く | [パラメータのグループ](#パラメータのグループ)の一覧の区切り (`src/lib/panels/parameters/sections.ts`)。絞り込み中の開閉は覚えない |
 | `ugoe.editor.leftWidth` | 左の列の幅 (px) | 240 | 上の「大きさの変更」(`src/lib/layout.ts`) |
 | `ugoe.editor.rightWidth` | 右の列の幅 (px) | 320 | 同上 |
 | `ugoe.editor.timelineHeight` | タイムラインの高さ (px) | 窓の高さに合わせる (覚えない) | 同上 |

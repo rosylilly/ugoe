@@ -15,6 +15,8 @@ export const STORAGE_KEYS = {
   autoReload: "ugoe.editor.autoReload",
   /** タイムラインのパネルを開いておくか (panels/timeline/timeline.ts)。 */
   timelineOpen: "ugoe.editor.timelineOpen",
+  /** パラメータの一覧の閉じた区切り (グループの ID の JSON の配列。panels/parameters/sections.ts)。 */
+  parameterSectionsClosed: "ugoe.editor.parameterSectionsClosed",
   /** 左の列の幅 (lib/layout.ts)。 */
   leftWidth: "ugoe.editor.leftWidth",
   /** 右の列の幅 (lib/layout.ts)。 */

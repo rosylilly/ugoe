@@ -7,7 +7,8 @@
   (set_parameter_internal。docs/spec/model.md#パラメータ)。
   編集欄の「Group」でパラメータをグループに入れ、一覧の下の「Groups」でグループを作る・名前を変える・消す・並べ替える
   (docs/editor.md#パラメータのグループ)。グループのあるモデルでは、一覧をプレビュー・ビューアと同じ規則でグループごとに
-  区切る (折りたためる見出しと、グループの無いパラメータの「Other」)。
+  区切る (折りたためる見出しと、グループの無いパラメータの「Other」)。区切りの開閉は localStorage に覚える
+  (parameters/sections.ts)。一覧の上の絞り込みの欄で名前と ID から絞る (絞り込み中は開閉によらず一致した行を出す)。
 -->
 <script lang="ts">
 import {
@@ -24,7 +25,7 @@ import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
 import { t } from "../i18n";
 import { baseElements, isBaseElement } from "../moduleProject";
-import { groupParameters } from "../preview/preview";
+import { filterSections, groupParameters } from "../preview/preview";
 import type { Selection } from "../selection.svelte";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
@@ -38,6 +39,12 @@ import {
 import ParameterGroupSelect from "./parameters/ParameterGroupSelect.svelte";
 import ParameterGroups from "./parameters/ParameterGroups.svelte";
 import ParameterMirror from "./parameters/ParameterMirror.svelte";
+import {
+  loadClosedSections,
+  saveClosedSections,
+  sectionKey,
+  withSectionOpen,
+} from "./parameters/sections";
 import {
   duplicateKeyError,
   formatValue,
@@ -71,6 +78,35 @@ const sections = $derived(
 );
 /** グループに入ったパラメータが無ければ (グループの無いモデル)、見出しを出さずに並べる。 */
 const grouped = $derived(sections.some((s) => s.id !== null));
+
+/** 絞り込みの語 (名前か ID に含むもの。preview.ts の filterSections)。 */
+let filter = $state("");
+const filtering = $derived(filter.trim() !== "");
+const shown = $derived(filterSections(sections, filter));
+/** 閉じた区切り (覚えておく)。 */
+let closed = $state(loadClosedSections());
+/** 絞り込み中に閉じた区切り (覚えない。語を変えると開き直す)。 */
+let closedWhileFiltering = $state(new Set<string>());
+
+function isOpen(id: string | null): boolean {
+  const key = sectionKey(id);
+  return filtering ? !closedWhileFiltering.has(key) : !closed.has(key);
+}
+
+function setOpen(id: string | null, open: boolean) {
+  const key = sectionKey(id);
+  if (filtering) {
+    closedWhileFiltering = withSectionOpen(closedWhileFiltering, key, open);
+    return;
+  }
+  closed = withSectionOpen(closed, key, open);
+  saveClosedSections(closed);
+}
+
+function onFilterInput(value: string) {
+  filter = value;
+  closedWhileFiltering = new Set();
+}
 
 /** 定義を編集中のパラメータ (null なら閉じている)。 */
 let editing = $state<string | null>(null);
@@ -263,15 +299,30 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   </div>
 {/if}
 
+{#if parameters.length > 0}
+  <div class="filter">
+    <TextField
+      type="search"
+      placeholder={t("parameters.filter.placeholder")}
+      aria-label={t("parameters.filter.aria")}
+      value={filter}
+      oninput={onFilterInput}
+    />
+  </div>
+  {#if filtering && shown.length === 0}
+    <p class="ed-hint" role="status">{t("parameters.filter.none", { query: filter.trim() })}</p>
+  {/if}
+{/if}
+
 {#if grouped}
-  {#each sections as section (section.id ?? "")}
-    <Section title={section.name}>
+  {#each shown as section (section.id ?? "")}
+    <Section title={section.name} open={isOpen(section.id)} onchange={(open) => setOpen(section.id, open)}>
       {#snippet actions()}<span class="count">{section.parameters.length}</span>{/snippet}
       {@render rows(section.parameters)}
     </Section>
   {/each}
 {:else}
-  {@render rows(parameters)}
+  {@render rows(shown.flatMap((s) => s.parameters))}
 {/if}
 
 <ParameterGroups {doc} {parameters} />
@@ -429,6 +480,10 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
 ul {
   list-style: none;
   padding: 0;
+}
+
+.filter {
+  margin-bottom: var(--ugoe-space-2);
 }
 
 .count {

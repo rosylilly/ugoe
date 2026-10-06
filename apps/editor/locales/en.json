@@ -3250,6 +3250,11 @@
   "parameters": {
     "title": "Parameters",
     "ungrouped": "Other",
+    "filter": {
+      "placeholder": "Filter (name or ID)",
+      "aria": "Filter the parameters",
+      "none": "No parameter matches \"{{query}}\"."
+    },
     "snap": {
       "label": "Snap to keys",
       "tooltip": "Move the selected element's parameters to their nearest keys"

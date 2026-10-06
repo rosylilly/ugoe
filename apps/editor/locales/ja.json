@@ -3070,6 +3070,11 @@
   "parameters": {
     "title": "パラメータ",
     "ungrouped": "その他",
+    "filter": {
+      "placeholder": "絞り込み (名前か ID)",
+      "aria": "パラメータを絞り込む",
+      "none": "「{{query}}」に一致するパラメータはありません。"
+    },
     "snap": {
       "label": "キーに合わせる",
       "tooltip": "選んでいる要素のパラメータを、いちばん近いキーに動かします"

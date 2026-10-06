@@ -2,8 +2,10 @@
 // パラメータのスライダーの下のキーの印: 押せる範囲 (24px) のどこを押してもそのキーへ移り、隣の印と範囲が重なる所では
 // 近い方のキーへ移る (docs/ui.md#そのほか、docs/testing.md#エディタの部品のテスト。T1634)。
 // 一覧のグループの区切り: グループの順に見出しを出し、グループの無いパラメータは最後の「Other」にまとめる (T1630)。
+// 区切りの開閉を覚える・絞り込みの欄 (T1646)。
+import { MemoryStorage, useLocalStorage } from "@ugoe/i18n/testing";
 import { flushSync } from "svelte";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Selection } from "../selection.svelte";
 import {
   all,
@@ -105,6 +107,12 @@ describe("ParametersPanel key markers", () => {
 });
 
 describe("ParametersPanel groups", () => {
+  let storage: MemoryStorage;
+  beforeEach(() => {
+    storage = new MemoryStorage();
+    useLocalStorage(storage);
+  });
+
   const param = (id: string, group: string | null) => ({
     id,
     name: id,
@@ -183,5 +191,106 @@ describe("ParametersPanel groups", () => {
     expect(
       all<HTMLInputElement>(target, "input[type=range]").map((r) => r.getAttribute("aria-label")),
     ).toEqual(["A", "B"]);
+  });
+
+  function trigger(target: HTMLElement, title: string): HTMLButtonElement {
+    const found = all<HTMLButtonElement>(target, ".ugoe-section__trigger").find(
+      (b) => b.textContent?.trim() === title,
+    );
+    if (!found) throw new Error(`no section ${title}`);
+    return found;
+  }
+
+  function type(target: HTMLElement, text: string): void {
+    const input = target.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!input) throw new Error("no filter");
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+  }
+
+  const model = () =>
+    [
+      [
+        { id: "Face", name: "Face" },
+        { id: "Body", name: "Body" },
+      ],
+      [
+        param("AngleX", "Face"),
+        param("EyeL", "Face"),
+        param("BodyX", "Body"),
+        param("Loose", null),
+      ],
+    ] as const;
+
+  it("remembers closed sections across opening the panel again", () => {
+    const [groups, parameters] = model();
+    const first = setupGroups([...groups], [...parameters]);
+    trigger(first, "Face").click();
+    trigger(first, "Other").click();
+    flushSync();
+    expect(storage.getItem("ugoe.editor.parameterSectionsClosed")).toBe('["Face",""]');
+    first.remove();
+
+    const again = setupGroups([...groups], [...parameters]);
+    expect(
+      ["Face", "Body", "Other"].map((title) => trigger(again, title).getAttribute("aria-expanded")),
+    ).toEqual(["false", "true", "false"]);
+    trigger(again, "Face").click();
+    flushSync();
+    expect(storage.getItem("ugoe.editor.parameterSectionsClosed")).toBe('[""]');
+  });
+
+  it("filters by name and ID and shows the matches in closed sections too", () => {
+    storage.setItem("ugoe.editor.parameterSectionsClosed", '["Face"]');
+    const [groups, parameters] = model();
+    const target = setupGroups(
+      [...groups],
+      [...parameters.map((p) => (p.id === "EyeL" ? { ...p, name: "Left eye" } : p))],
+    );
+    const filter = target.querySelector<HTMLInputElement>('input[type="search"]');
+    expect(filter?.getAttribute("aria-label")).toBe("Filter the parameters");
+    expect(trigger(target, "Face").getAttribute("aria-expanded")).toBe("false");
+
+    // 名前で
+    type(target, "left");
+    expect(sections(target)).toEqual([["Face", ["Left eye"]]]);
+    expect(trigger(target, "Face").getAttribute("aria-expanded")).toBe("true");
+    // ID で (大文字と小文字を区別しない)
+    type(target, "bodyx");
+    expect(sections(target)).toEqual([["Body", ["BodyX"]]]);
+
+    // 絞り込み中に閉じても覚えない
+    type(target, "e");
+    trigger(target, "Face").click();
+    flushSync();
+    expect(storage.getItem("ugoe.editor.parameterSectionsClosed")).toBe('["Face"]');
+
+    // 語を消すと覚えた開閉に戻る
+    type(target, "");
+    expect(
+      ["Face", "Body", "Other"].map((title) =>
+        trigger(target, title).getAttribute("aria-expanded"),
+      ),
+    ).toEqual(["false", "true", "true"]);
+    expect(target.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it("says when nothing matches", () => {
+    const [groups, parameters] = model();
+    const target = setupGroups([...groups], [...parameters]);
+    type(target, "nothing");
+    expect(sections(target)).toEqual([]);
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(
+      'No parameter matches "nothing".',
+    );
+  });
+
+  it("filters the list without headings too", () => {
+    const target = setupGroups([], [param("AngleX", null), param("BodyX", null)]);
+    type(target, "angle");
+    expect(
+      all<HTMLInputElement>(target, "input[type=range]").map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["AngleX"]);
   });
 });
