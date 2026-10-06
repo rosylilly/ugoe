@@ -58,7 +58,10 @@
     "loaded": "Loaded",
     "warnings_one": "{{count}} warning: {{first}}",
     "warnings_other": "{{count}} warnings: {{first}}",
-    "license": "License"
+    "license": "License",
+    "loadedAnnounce": "Opened {{name}}.",
+    "loadedAnnounceWarnings_one": "Opened {{name}} with {{count}} warning.",
+    "loadedAnnounceWarnings_other": "Opened {{name}} with {{count}} warnings."
   },
   "screenshot": {
     "saved": "Saved the image: {{path}}",
@@ -466,5 +469,8 @@
       "description_other": "Forgets everything remembered for {{count}} models. This cannot be undone.",
       "confirm": "Forget everything"
     }
+  },
+  "app": {
+    "title": "ugoe viewer"
   }
 }

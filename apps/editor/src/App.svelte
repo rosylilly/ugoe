@@ -313,7 +313,9 @@ $effect(() => {
 <TooltipProvider>
 <div class="shell" class:previewing={preview.active} style:--left-width="{leftWidth}px" style:--right-width="{rightWidth}px">
   <header>
-    <strong class="brand">ugoe</strong>
+    <!-- 画面の名前 (見出しの移動の起点。見た目には印の「ugoe」だけを出す) -->
+    <h1 class="ugoe-visually-hidden">{t("app.title")}</h1>
+    <strong class="brand" aria-hidden="true">ugoe</strong>
     <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。外での書き換えの後の開き直しでは保つ。 -->
     <FileMenu
       bind:this={fileMenu}
@@ -367,7 +369,7 @@ $effect(() => {
     >
     <HelpButton />
   </header>
-  <aside class="left" id="editor-left">
+  <aside class="left" id="editor-left" aria-label={t("app.columns.left")}>
     <TreePanel {doc} {selection} onfileaction={(action) => void fileMenu?.pick(action)} />
   </aside>
   <div class="column-splitter left-splitter">
@@ -407,7 +409,7 @@ $effect(() => {
     <Splitter label={t("app.splitter.right")} orientation="vertical" reverse range={RIGHT_WIDTH}
       bind:value={rightWidth} controls="editor-right" />
   </div>
-  <aside class="right" id="editor-right" bind:clientHeight={rightColumnHeight}>
+  <aside class="right" id="editor-right" aria-label={t("app.columns.right")} bind:clientHeight={rightColumnHeight}>
     <div class="pane inspector" id="editor-inspector" style:flex-basis="{(split ?? RIGHT_SPLIT.min) * 100}%">
       <div class="tabs">
         <TabStrip

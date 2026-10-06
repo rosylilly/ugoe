@@ -91,6 +91,8 @@ function goToPhysics(rig: string, collider: string): void {
 }
 </script>
 
+<!-- タブと同じ名前の見出し (見た目では隠し、読み上げと見出しの移動に残す。App.svelte の右の列) -->
+<h2 class="ugoe-visually-hidden">{t("app.tabs.verify.label")}</h2>
 <section>
   <h3>{t("verify.overflow.title")}</h3>
   <p class="ed-hint">{t("verify.overflow.description")}</p>

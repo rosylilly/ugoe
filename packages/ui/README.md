@@ -19,6 +19,7 @@ src/shortcut.ts         ショートカットの表記 (Mod → ⌘ / Ctrl)・ar
 src/color.ts            色 (#rrggbb) と RGB
 src/files.ts            DropZone の accept による選り分け
 src/toast.svelte.ts     Toast の列 (showToast を出す。列と閉じる関数は Toaster が使う)
+src/announce.svelte.ts  読み上げだけの知らせ (announce を出す。見えない live region は Toaster が描く。docs/ui.md#状態の変化の知らせ)
 src/theme.svelte.ts     テーマの設定 (initTheme・currentTheme を出す。設定の読み書きは ThemeSetting が使う)
 src/props.ts            Bits UI のトリガーの属性と ugoe の props を重ねる (mergeAttributes。自前のトリガーを作るときに使う)
 src/i18n.ts             部品の既定の文言 (@ugoe/i18n の名前空間 `ui`。カタログは locales/)
@@ -80,7 +81,7 @@ import "@ugoe/ui/tokens.css";
   <Select aria-label={t("camera.select.aria")} {options} bind:value={camera} />
   <Toggle label={t("view.mirror.label")} aria-describedby="{ids}-mirror-note" bind:checked={mirror} />
   ```
-- **公開の範囲:** `index.ts` は部品と、アプリやほかのパッケージが使う関数 (`initTheme`・`currentTheme`・`showToast`・`numberFieldCommit`・
+- **公開の範囲:** `index.ts` は部品と、アプリやほかのパッケージが使う関数 (`initTheme`・`currentTheme`・`showToast`・`announce`・`numberFieldCommit`・
   `mergeAttributes`) と型だけを出す。部品の内部の関数 (`number.ts`・`files.ts`・`shortcut.ts` など) は出さない。アプリで要るものになったら名前を足す。
 ## 重ねて出す部品 (T0903)
 

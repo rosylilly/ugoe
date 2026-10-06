@@ -18,9 +18,12 @@ interface Props {
    * 属性が書き戻され、利用者が開閉した状態が戻ってしまうため。
    */
   open?: boolean;
+  /** パネルの見出しの段 (置く場所の見出しの 1 つ下。既定は 2)。中の見出しはその 1 つ下になる。 */
+  level?: 2 | 3 | 4;
 }
 
-let { tracker, parameterIds, values, open = $bindable(true) }: Props = $props();
+let { tracker, parameterIds, values, open = $bindable(true), level = 2 }: Props = $props();
+const innerLevel = $derived((level + 1) as 3 | 4 | 5);
 
 /** 入力の種類の名前のキー。 */
 const SOURCE_KIND = {
@@ -111,7 +114,7 @@ let cameraOptions = $derived(
 </script>
 
 <div class="tracking">
-  <Section title={t("title")} level={2} bind:open>
+  <Section title={t("title")} {level} bind:open>
     {#snippet actions()}
       <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
     {/snippet}
@@ -235,7 +238,7 @@ let cameraOptions = $derived(
 
     {#if tracker.output}
       {@const head = tracker.output.head}
-      <Section title={t("values.headAndBlendShapes")} level={3} open={false}>
+      <Section title={t("values.headAndBlendShapes")} level={innerLevel} open={false}>
         {#snippet actions()}<span class="count">{blendShapes.length}</span>{/snippet}
         <dl class="values">
           <dt>yaw</dt>
@@ -263,7 +266,7 @@ let cameraOptions = $derived(
       </Section>
     {/if}
     {#if parameterIds.length > 0}
-      <Section title={t("values.parameters")} level={3} open={false}>
+      <Section title={t("values.parameters")} level={innerLevel} open={false}>
         {#snippet actions()}<span class="count">{parameterIds.length}</span>{/snippet}
         <dl class="values">
           {#each parameterIds as id (id)}

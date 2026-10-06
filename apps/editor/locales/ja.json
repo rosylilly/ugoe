@@ -72,6 +72,11 @@
         "stale": "リグを提案した後に衣装のメッシュが編集されました。リグをもう一度提案してください",
         "attention": "要確認"
       }
+    },
+    "title": "ugoe エディタ",
+    "columns": {
+      "left": "パーツとデフォーマ",
+      "right": "プロパティとパラメータ"
     }
   },
   "help": {
@@ -1919,7 +1924,9 @@
     "restoring": "このプロジェクトに残したレイヤーの分類を読んでいます… 大きな PSD では少しかかります。",
     "elapsed": "{{seconds}} 秒",
     "failed": "最後まで行えませんでした",
-    "dismiss": "この知らせを閉じる"
+    "dismiss": "この知らせを閉じる",
+    "arrived": "新しい提案が届きました: {{title}}",
+    "arrivedMany_other": "新しい提案が {{count}} 件届きました。最初の提案: {{title}}"
   },
   "errorCause": "{{message}} 原因: {{cause}}",
   "errorListMore": "ほか {{count}} 件",

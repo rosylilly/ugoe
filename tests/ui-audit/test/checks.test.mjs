@@ -1,8 +1,14 @@
 // UI の監査の計算と、まとめ・比べ方のテスト (`just ui-audit-check`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { axeFindings, isNameRule, pageFindings } from "../lib/audit.mjs";
-import { compare, countsTable, formatCompare, kindOf, summarize } from "../lib/report.mjs";
+import {
+  AXE_STRUCTURE_OPTIONS,
+  axeFindings,
+  isNameRule,
+  pageFindings,
+  STRUCTURE_RULES,
+} from "../lib/audit.mjs";
+import { CHECKS, compare, countsTable, formatCompare, kindOf, summarize } from "../lib/report.mjs";
 import { formatWalk, walkProblems } from "../lib/walk.mjs";
 import "../lib/page-checks.js";
 
@@ -179,6 +185,46 @@ test("axe の違反は名前の規則と、ほかの ARIA に分ける", () => {
       ["aria", ".tree"],
     ],
   );
+});
+
+test("ランドマークと見出しの規則は structure に分け、名指しで流す (axe では best-practice の札)", () => {
+  assert.deepEqual(AXE_STRUCTURE_OPTIONS.runOnly, { type: "rule", values: STRUCTURE_RULES });
+  for (const rule of ["landmark-one-main", "heading-order", "page-has-heading-one", "region"])
+    assert.ok(STRUCTURE_RULES.includes(rule), rule);
+  const found = axeFindings([
+    { id: "heading-order", help: "order", nodes: [{ target: ["#h4"], html: "<h4>" }] },
+    { id: "landmark-unique", help: "unique", nodes: [{ target: ["aside"], html: "<aside>" }] },
+  ]);
+  assert.deepEqual(
+    found.map((f) => [f.check, f.target]),
+    [
+      ["structure", "#h4"],
+      ["structure", "aside"],
+    ],
+  );
+});
+
+test("強制色で見分けられない状態は forced として数え、報告の見出しがある", () => {
+  const found = pageFindings(
+    {
+      contrast: { checked: 0, unknown: 0, failures: [], disabled: [] },
+      overflow: { document: null, beyond: [] },
+      overlap: [],
+      small: [],
+      motion: [],
+      forced: ['span.ugoe-toggle__thumb "" looks the same as its off state in forced colors'],
+      errors: [],
+      lang: "en",
+    },
+    "en",
+  );
+  assert.deepEqual(
+    found.map((f) => [f.check, f.target, f.detail]),
+    [["forced", 'span.ugoe-toggle__thumb ""', "looks the same as its off state in forced colors"]],
+  );
+  const titles = Object.fromEntries(CHECKS);
+  assert.ok(titles.forced);
+  assert.ok(titles.structure);
 });
 
 test("要素の種類: クラスがあれば tag.class (祖先のクラスなら tag@.class)、無ければ全体", () => {

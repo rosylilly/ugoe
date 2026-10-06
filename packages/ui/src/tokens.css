@@ -372,3 +372,69 @@
 :where([draggable="true"]) {
   -webkit-user-drag: element;
 }
+
+/*
+ * 強制色 (`forced-colors: active`。Windows の高コントラストなど。docs/ui.md#強制色)。強制色では、地の色・影 (box-shadow)・
+ * グラデーションが消え、文字と枠の色は OS の色に置き換わる (透明な枠も見える線になる)。地の色や影だけで描いた印と、
+ * 状態を地の色で示す部品を、系統の色 (system color。強制色でも残る) で描き直す。
+ * 部品の CSS より後に読まれても勝つよう、`:root` を前に付けて詳しさを上げる。
+ */
+@media (forced-colors: active) {
+  /* 入れた・押した・選んだ状態は Highlight の地と HighlightText の文字 (形の印はそのまま残る) */
+  :root .ugoe-button[aria-pressed="true"],
+  :root .ugoe-segmented__item[data-state="checked"],
+  :root .ugoe-checkbox__box:is([data-state="checked"], [data-state="indeterminate"]),
+  :root .ugoe-toggle__switch[data-state="checked"] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* 選んでいない区切りの項目とタブの下線は、透明の枠が線にならないよう地と同じ色にする */
+  :root .ugoe-segmented__item:not([data-state="checked"]) {
+    border-color: ButtonFace;
+  }
+
+  :root .ugoe-tabs__trigger {
+    border-bottom-color: Canvas;
+  }
+
+  :root .ugoe-tabs__trigger[data-state="active"] {
+    border-bottom-color: Highlight;
+  }
+
+  /* スイッチのつまみとスライダーの溝は地の色だけで描いているので、系統の色で描く */
+  :root .ugoe-toggle__thumb {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
+
+  :root .ugoe-toggle__thumb[data-state="checked"] {
+    background: HighlightText;
+  }
+
+  :root .ugoe-slider__track {
+    forced-color-adjust: none;
+    background: GrayText;
+  }
+
+  :root .ugoe-slider__range {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  :root .ugoe-slider__thumb {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Canvas;
+  }
+
+  /* 入力の誤りは内側の影が消えるので、枠を太い破線にする */
+  :root :is(input, textarea)[aria-invalid="true"],
+  :root .ugoe-number-field[data-invalid] .ugoe-number-field__box,
+  :root .ugoe-select[data-invalid] .ugoe-select__trigger {
+    border-width: 2px;
+    border-style: dashed;
+  }
+}

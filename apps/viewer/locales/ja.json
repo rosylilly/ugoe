@@ -57,7 +57,9 @@
   "status": {
     "loaded": "読み込みました",
     "warnings_other": "警告 {{count}} 件: {{first}}",
-    "license": "ライセンス"
+    "license": "ライセンス",
+    "loadedAnnounce": "{{name}} を開きました。",
+    "loadedAnnounceWarnings_other": "{{name}} を開きました (警告 {{count}} 件)。"
   },
   "screenshot": {
     "saved": "画像を保存しました: {{path}}",
@@ -450,5 +452,8 @@
       "description_other": "{{count}} 体のモデルに覚えたものをすべて忘れます。元に戻せません。",
       "confirm": "すべて忘れる"
     }
+  },
+  "app": {
+    "title": "ugoe ビューア"
   }
 }

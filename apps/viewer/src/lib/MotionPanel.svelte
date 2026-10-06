@@ -123,13 +123,14 @@ function expressionOverlap(e: ExpressionInfo): string[] {
     {/if}
 
     <section aria-labelledby="motions-heading">
-      <h3>
-        <span id="motions-heading">{t("motions.motions.title")}</span>
+      <!-- ボタンは見出しの外に置く (見出しの名前にボタンの文が混ざらないように) -->
+      <div class="heading">
+        <h3 id="motions-heading">{t("motions.motions.title")}</h3>
         <span class="spacer"></span>
         <Button small onclick={() => player.stopMotions()} disabled={player.currentMotion === null}
           >{t("motions.stop.label")}</Button
         >
-      </h3>
+      </div>
       {#if player.motions.length === 0}
         <p class="hint">{t("motions.motions.empty")}</p>
       {:else}
@@ -264,15 +265,15 @@ function expressionOverlap(e: ExpressionInfo): string[] {
     {/if}
 
     <section aria-labelledby="expressions-heading">
-      <h3>
-        <span id="expressions-heading">{t("motions.expressions.title")}</span>
+      <div class="heading">
+        <h3 id="expressions-heading">{t("motions.expressions.title")}</h3>
         <span class="spacer"></span>
         <Button
           small
           onclick={() => player.stopExpressions()}
           disabled={player.activeExpressions.length === 0}>{t("motions.expressions.stopAll.label")}</Button
         >
-      </h3>
+      </div>
       {#if player.expressions.length === 0}
         <p class="hint">{t("motions.expressions.empty")}</p>
       {:else}
@@ -320,13 +321,15 @@ function expressionOverlap(e: ExpressionInfo): string[] {
   .motions :global(.ugoe-segmented) {
     font-size: var(--ugoe-font-size-sm);
   }
+  .heading {
+    display: flex;
+    align-items: center;
+    gap: var(--ugoe-space-2);
+  }
   h3 {
     margin: 0;
     font-size: var(--ugoe-font-size-sm);
     font-weight: var(--ugoe-font-weight-strong);
-    display: flex;
-    align-items: center;
-    gap: var(--ugoe-space-2);
   }
   .spacer {
     flex: 1;

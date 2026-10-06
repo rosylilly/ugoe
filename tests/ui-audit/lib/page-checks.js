@@ -501,6 +501,194 @@
     return out;
   }
 
+  /** 読み上げから外れているか (`display: none`・`visibility: hidden`・`aria-hidden`・`inert`・閉じた `<dialog>` の中)。 */
+  function hiddenFromReaders(el) {
+    if (el.closest('[aria-hidden="true"], [inert], dialog:not([open])')) return true;
+    const s = getComputedStyle(el);
+    return s.display === "none" || s.visibility === "hidden";
+  }
+
+  const LANDMARKS = {
+    header: "banner",
+    nav: "navigation",
+    main: "main",
+    aside: "complementary",
+    footer: "contentinfo",
+    form: "form",
+    search: "search",
+  };
+  const LANDMARK_ROLES = new Set([
+    "banner",
+    "navigation",
+    "main",
+    "complementary",
+    "contentinfo",
+    "form",
+    "search",
+    "region",
+  ]);
+  const LIVE_ROLES = new Set(["status", "alert", "log", "timer", "marquee"]);
+
+  /** 要素の読み上げの名前のおおよそ (aria-label・aria-labelledby の文)。 */
+  function regionName(el) {
+    const ids = el.getAttribute("aria-labelledby");
+    const text = ids
+      ? ids
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent ?? "")
+          .join(" ")
+      : (el.getAttribute("aria-label") ?? "");
+    return text.trim().replace(/\s+/g, " ").slice(0, 60);
+  }
+
+  /** ランドマークの役割 (無ければ null)。header・footer は <main>・<section>・<aside> などの中ではランドマークにならない。 */
+  function landmarkRole(el) {
+    const explicit = el.getAttribute("role");
+    if (explicit) return LANDMARK_ROLES.has(explicit) ? explicit : null;
+    const tag = el.tagName.toLowerCase();
+    if (
+      (tag === "header" || tag === "footer") &&
+      el.parentElement?.closest("main, section, aside, article, nav")
+    )
+      return null;
+    if (tag === "section") return regionName(el) ? "region" : null;
+    return LANDMARKS[tag] ?? null;
+  }
+
+  /**
+   * 画面の骨組み (ランドマーク・見出し・live region) を、文書の順に 1 行ずつ並べる (`<場面>.outline.txt`)。
+   * ランドマークの入れ子は字下げで、見出しは `h2 名前`、live region は `[status] 今の文` で示す。
+   * 読み上げから外れたもの (隠したもの・閉じたダイアログ・aria-hidden) は除く。見た目で隠した見出し (`.ugoe-visually-hidden`) は残す。
+   */
+  function structureOutline() {
+    const lines = [];
+    const walk = (node, depth) => {
+      for (const el of node.children) {
+        if (hiddenFromReaders(el)) continue;
+        const indent = "  ".repeat(depth);
+        const role = landmarkRole(el);
+        const heading = /^H[1-6]$/.exec(el.tagName) ? Number(el.tagName[1]) : null;
+        const live =
+          el.getAttribute("aria-live") ??
+          (LIVE_ROLES.has(el.getAttribute("role")) ? el.getAttribute("role") : null);
+        if (role) {
+          const name = regionName(el);
+          lines.push(`${indent}${role}${name ? ` "${name}"` : ""}`);
+        }
+        if (heading !== null) {
+          lines.push(
+            `${indent}h${heading} ${el.textContent.trim().replace(/\s+/g, " ").slice(0, 60)}`,
+          );
+          continue;
+        }
+        if (live && live !== "off") {
+          const text = (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
+          lines.push(`${indent}[${live}] ${text || "(empty)"}`);
+        }
+        walk(el, role ? depth + 1 : depth);
+      }
+    };
+    walk(document.body, 0);
+    return lines;
+  }
+
+  const STATE_ATTRS = ["aria-selected", "aria-pressed", "aria-checked", "aria-current"];
+
+  /** 部品の状態 ("on"・"off"・null)。aria の状態の属性か、Bits UI の data-state で決める。 */
+  function stateOf(el) {
+    for (const a of STATE_ATTRS) {
+      const v = el.getAttribute(a);
+      if (v === null) continue;
+      if (a === "aria-current") return v === "false" ? "off" : "on";
+      if (v === "true") return "on";
+      if (v === "false") return "off";
+    }
+    const s = el.getAttribute("data-state");
+    if (s === "active" || s === "checked" || s === "on") return "on";
+    if (s === "inactive" || s === "unchecked" || s === "off") return "off";
+    return null;
+  }
+
+  /** 状態の印になる見た目 (色・枠・線・太さ・位置)。強制色のもとでは、強制された後の値が返る。 */
+  function paintSignature(el, base) {
+    const s = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const sides = ["Top", "Right", "Bottom", "Left"].map((side) => {
+      const w = Number.parseFloat(s[`border${side}Width`]);
+      const style = s[`border${side}Style`];
+      return w > 0 && style !== "none" && style !== "hidden"
+        ? `${w}${style}${s[`border${side}Color`]}`
+        : "-";
+    });
+    const outline =
+      s.outlineStyle !== "none" && Number.parseFloat(s.outlineWidth) > 0
+        ? `${s.outlineWidth}${s.outlineStyle}${s.outlineColor}`
+        : "-";
+    return [
+      el.tagName,
+      sides.join("/"),
+      outline,
+      s.backgroundColor,
+      s.color,
+      s.fontWeight,
+      s.textDecorationLine,
+      s.boxShadow,
+      base ? `${Math.round(r.left - base.left)},${Math.round(r.top - base.top)}` : "",
+    ].join("|");
+  }
+
+  /** 要素と、その中の 2 段までの子孫の見た目。子孫は部品の左上からの位置も含める (スイッチのつまみの位置)。 */
+  function stateSignature(el) {
+    const base = el.getBoundingClientRect();
+    const parts = [paintSignature(el, null)];
+    const visit = (node, depth) => {
+      for (const child of node.children) {
+        if (!visible(child)) continue;
+        parts.push(paintSignature(child, base));
+        if (depth < 2) visit(child, depth + 1);
+      }
+    };
+    visit(el, 1);
+    return parts.join("\n");
+  }
+
+  /**
+   * 強制色 (`forced-colors: active`。Windows の高コントラスト) のもとで、選んだ・押した・入れた状態が見分けられない部品。
+   * 同じ種類 (タグとクラス) の部品のうち、状態が「入」のものと「切」のものの見た目 (地・枠・文字の色・太さ・下線・子孫の位置) が
+   * 同じなら数える。強制色では地の色・影 (box-shadow)・グラデーションが消え、色は系統の色に置き換わるので、地の色や影だけで
+   * 状態を示す部品が見つかる。強制色でないときは何もしない (空の列)。
+   */
+  function forcedStateAudit() {
+    if (!matchMedia("(forced-colors: active)").matches) return [];
+    const groups = new Map();
+    const selector = [...STATE_ATTRS.map((a) => `[${a}]`), "[data-state]"].join(", ");
+    for (const el of document.querySelectorAll(selector)) {
+      if (!visible(el) || hiddenFromReaders(el)) continue;
+      const state = stateOf(el);
+      if (state === null) continue;
+      if (el.closest('[aria-disabled="true"], [data-disabled]') || el.disabled) continue;
+      const kind = `${el.tagName.toLowerCase()}.${classes(el)}[${el.getAttribute("role") ?? ""}]`;
+      let g = groups.get(kind);
+      if (!g) {
+        g = { on: [], off: [] };
+        groups.set(kind, g);
+      }
+      g[state].push(el);
+    }
+    const out = [];
+    for (const g of groups.values()) {
+      if (g.on.length === 0 || g.off.length === 0) continue;
+      const off = new Set(g.off.map(stateSignature));
+      for (const el of g.on) {
+        if (off.has(stateSignature(el))) {
+          out.push(`${describe(el)} looks the same as its off state in forced colors`);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   /** ページの検査の一式。page.evaluate(() => __ugoeAudit.pageAudit()) で呼ぶ。 */
   function pageAudit() {
     return {
@@ -509,6 +697,7 @@
       overlap: overlapAudit(),
       small: targetAudit(),
       motion: motionAudit(),
+      forced: forcedStateAudit(),
       errors: shownErrors(),
       lang: document.documentElement.lang,
       theme: document.documentElement.dataset.theme ?? null,
@@ -525,5 +714,6 @@
     pageAudit,
     hideText,
     pixelAudit,
+    structureOutline,
   };
 })();

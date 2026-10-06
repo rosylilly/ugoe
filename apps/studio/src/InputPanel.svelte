@@ -104,7 +104,7 @@ function percent(value: number): string {
 <div class="inputs">
   <section class="inputs__group" aria-labelledby="inputs-camera">
     <div class="inputs__heading">
-      <h4 id="inputs-camera">{t("inputs.camera")}</h4>
+      <h3 id="inputs-camera">{t("inputs.camera")}</h3>
       <Button
         small
         pressed={trackingPaused}
@@ -116,12 +116,12 @@ function percent(value: number): string {
     {#if trackingPaused}
       <Notice tone="warning">{t("inputs.trackingPaused")}</Notice>
     {/if}
-    <TrackingPanel {tracker} parameterIds={trackingParameters} {values} />
+    <TrackingPanel {tracker} parameterIds={trackingParameters} {values} level={4} />
   </section>
 
   <section class="inputs__group" aria-labelledby="inputs-microphone">
     <div class="inputs__heading">
-      <h4 id="inputs-microphone">{t("inputs.microphone")}</h4>
+      <h3 id="inputs-microphone">{t("inputs.microphone")}</h3>
       <Button
         small
         pressed={lipSyncPaused}
@@ -213,7 +213,7 @@ function percent(value: number): string {
     gap: var(--ugoe-space-2);
   }
 
-  .inputs__heading h4 {
+  .inputs__heading h3 {
     margin: 0;
     font-size: var(--ugoe-font-size-md);
     font-weight: var(--ugoe-font-weight-strong);

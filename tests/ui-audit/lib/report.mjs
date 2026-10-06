@@ -10,7 +10,9 @@ export const CHECKS = [
   ["name", "名前の無い操作できる部品"],
   ["focus", "Tab の止まりの問題 (印・名前・画面の外)"],
   ["aria", "そのほかの ARIA・言語 (axe-core)"],
+  ["structure", "ランドマークと見出しの階層 (axe-core)"],
   ["motion", "reduced motion の下の動き"],
+  ["forced", "強制色で見分けられない状態"],
   ["error", "エラー (画面に出たもの・スクリプト・場面の失敗)"],
 ];
 

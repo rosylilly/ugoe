@@ -3,6 +3,7 @@
 // アプリは Bits UI を直接 import せず、ここから出す部品だけを使う。
 // 出すのは部品と、アプリやほかのパッケージが使う関数と型だけ (名前で出す。部品の内部の関数は出さない。T0920)。
 
+export { type AnnounceOptions, announce } from "./announce.svelte";
 export { numberFieldCommit } from "./commit";
 export { default as AlertDialog } from "./components/AlertDialog.svelte";
 export { default as Button } from "./components/Button.svelte";

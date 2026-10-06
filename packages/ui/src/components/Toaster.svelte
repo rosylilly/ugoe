@@ -6,8 +6,10 @@
   - 全体が `role="status"` の領域で、フォーカスを奪わない。ポインタかフォーカスが乗っている間は消えるまでの時間を止める。
   - 操作を含む知らせは Toast にしない (Notice にする)。閉じるボタンだけを持つ。
   - エラー (`danger`) の文は、写して報告に貼れるよう選択できる (`.ugoe-selectable`)。
+  - 読み上げだけの知らせ (`announce()`。src/announce.svelte.ts) の領域 (polite と assertive) も、見えない形でここに置く。
 -->
 <script lang="ts">
+import { announcements } from "../announce.svelte";
 import { t } from "../i18n";
 import { dismissToast, pauseToasts, resumeToasts, toasts } from "../toast.svelte";
 import Icon from "./Icon.svelte";
@@ -15,6 +17,7 @@ import IconButton from "./IconButton.svelte";
 
 let region = $state<HTMLElement>();
 const list = $derived(toasts());
+const spoken = announcements();
 let lastCount = -1;
 // ポインタとフォーカスのどちらかが乗っている間は止める (片方が離れただけでは進めない)
 let hovered = false;
@@ -81,6 +84,8 @@ $effect(() => {
     </div>
   {/each}
 </div>
+<div class="ugoe-visually-hidden ugoe-announcer" role="status">{spoken.polite}</div>
+<div class="ugoe-visually-hidden ugoe-announcer" aria-live="assertive" aria-atomic="true">{spoken.assertive}</div>
 
 <style>
   :global {

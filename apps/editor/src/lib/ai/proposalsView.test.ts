@@ -1,5 +1,6 @@
 // ProposalsView (IPC は偽物): プレビューを作る間にドキュメントが変わったら古い姿を出さないこと、
 // 提案と送信の確認はドキュメントを変えず、採用だけがドキュメントの適用を通ること。AI に送っている間は取り消せること。
+import { announce } from "@ugoe/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorDocument } from "../document.svelte";
 import type { AiReply, ConsentAnswer, ProposalPreview, ProposalState } from "../ipc";
@@ -35,6 +36,11 @@ vi.mock("../ipc", () => ({
     getNormalMapGroups: vi.fn(async () => []),
     cancelAiRequests: () => cancelled(),
   },
+}));
+
+vi.mock("@ugoe/ui", async (original) => ({
+  ...(await original<typeof import("@ugoe/ui")>()),
+  announce: vi.fn(),
 }));
 
 const preview = (): ProposalPreview =>
@@ -306,5 +312,30 @@ describe("ProposalsView layer corrections", () => {
     const view = new ProposalsView(doc);
     await view.correctLayer(["x"], "eye", "left");
     expect(view.error).toBe("rejected");
+  });
+});
+
+describe("ProposalsView announcements", () => {
+  const listOf = (...items: [number, string][]) =>
+    ({
+      ...state,
+      proposals: items.map(([id, title]) => ({ id, title })),
+    }) as unknown as ProposalState;
+
+  beforeEach(() => vi.mocked(announce).mockClear());
+
+  it("reads out proposals that arrive after the first list, once each", () => {
+    const view = new ProposalsView({ revision: 1 } as EditorDocument);
+    // 開いたときからある提案は読まない
+    view.value = listOf([1, "Face rig"]);
+    expect(announce).not.toHaveBeenCalled();
+    view.value = listOf([1, "Face rig"], [2, "Eye rig"]);
+    expect(announce).toHaveBeenLastCalledWith("A new proposal is ready: Eye rig");
+    view.value = listOf([1, "Face rig"], [2, "Eye rig"], [3, "Mouth"], [4, "Hair"]);
+    expect(announce).toHaveBeenLastCalledWith("2 new proposals are ready. The first one: Mouth");
+    // 採用して隠れた提案が Undo で戻っても、届いたことにはしない
+    view.value = listOf([1, "Face rig"]);
+    view.value = listOf([1, "Face rig"], [2, "Eye rig"]);
+    expect(announce).toHaveBeenCalledTimes(2);
   });
 });

@@ -296,7 +296,8 @@ flow.refresh();
     flex: 1 1 0;
     align-items: center;
     gap: var(--ugoe-space-2);
-    min-width: 0;
+    /* 縮めるのは名前 (省略記号) まで。モジュールのボタンなどが入らなければ、重ねずにヘッダーを折り返す (日本語の 200% の拡大。T0918) */
+    min-width: min-content;
   }
   .project-info > :global(*) {
     flex-shrink: 0;

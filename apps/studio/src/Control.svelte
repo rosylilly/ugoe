@@ -13,6 +13,7 @@ import { FaceTracker, type TrackingFrame } from "@ugoe/face-tracking";
 import type { MotionPriority, PoseGroupInfo } from "@ugoe/player";
 import {
   AlertDialog,
+  announce,
   Button,
   Icon,
   IconButton,
@@ -24,7 +25,7 @@ import {
   Toggle,
   Toolbar,
 } from "@ugoe/ui";
-import { onMount, tick } from "svelte";
+import { onMount, tick, untrack } from "svelte";
 import ApiApproval from "./ApiApproval.svelte";
 import ApiPanel from "./ApiPanel.svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
@@ -62,6 +63,7 @@ import {
 } from "./lib/inputs";
 import { sceneLabel } from "./lib/labels";
 import { latestOnly } from "./lib/latest";
+import { LiveSceneWatch } from "./lib/liveScene";
 import { Microphone } from "./lib/microphone.svelte";
 import { PendingEdit } from "./lib/pendingEdit.svelte";
 import { fileName, type ProfileView, type SceneSettings, withBackgroundKind } from "./lib/profile";
@@ -259,6 +261,16 @@ const liveName = $derived.by(() => {
   const live = scenes[index];
   return live === undefined ? "—" : sceneLabel(live, index);
 });
+// 出しているシーンが変わったら読み上げる (クリック・ホットキー・API のどれでも。最初に開いたときは読まない。
+// docs/ui.md#状態の変化の知らせ)。名前だけ変えたときは読まない
+const liveWatch = new LiveSceneWatch();
+$effect(() => {
+  const live = profile?.live ?? null;
+  const name = liveName;
+  untrack(() => {
+    if (liveWatch.changed(live)) announce(t("scenes.liveAnnounce", { name }));
+  });
+});
 const profileName = $derived(
   profile?.path == null ? t("profile.untitled") : fileName(profile.path),
 );
@@ -443,7 +455,12 @@ async function saveProfile(saveAs: boolean) {
     if (picked === null || picked === undefined) return;
     path = picked;
   }
-  await run((h) => h.saveProfile(path));
+  const saved = await run(async (h) => {
+    await h.saveProfile(path);
+    return true;
+  });
+  // 保存の印 (「保存済み」) は文が変わるだけなので、自分で保存したときは読み上げでも知らせる (自動の保存は知らせない)
+  if (saved) announce(t("profile.savedAnnounce"));
 }
 
 /**
@@ -714,6 +731,8 @@ onMount(() => {
 
 <div class="studio">
   <header class="studio__toolbar">
+    <!-- 画面の名前 (見出しの移動の起点。見た目にはツールバーがあるので隠す) -->
+    <h1 class="ugoe-visually-hidden">{t("app.title")}</h1>
     <Menu label={t("toolbar.profile")} entries={profileEntries} disabled={host === null} />
     <span class="studio__profile">
       <!-- 狭い幅では省略するので、全体 (保存先の場所) を title に出す -->
@@ -844,7 +863,7 @@ onMount(() => {
         {/if}
       </section>
 
-      <Section title={t("motion.heading")}>
+      <Section level={2} title={t("motion.heading")}>
         <MotionPanel
           {animation}
           settings={motionSettings}
@@ -855,7 +874,7 @@ onMount(() => {
         />
       </Section>
       {#if poseGroups.length > 0}
-        <Section title={t("poses.heading")}>
+        <Section level={2} title={t("poses.heading")}>
           <PosePanel
             groups={poseGroups}
             shown={poseShown}
@@ -868,7 +887,7 @@ onMount(() => {
 
     <aside class="studio__panels">
       {#if selectedScene !== null}
-        <Section title={t("editor.heading")}>
+        <Section level={2} title={t("editor.heading")}>
           <SceneEditor
             scene={selectedScene}
             defaultName={selectedDefaultName}
@@ -882,7 +901,7 @@ onMount(() => {
         </Section>
       {/if}
       <div data-panel="inputs">
-        <Section title={t("inputs.heading")} bind:open={panelsOpen.inputs}>
+        <Section level={2} title={t("inputs.heading")} bind:open={panelsOpen.inputs}>
           <InputPanel
             {tracker}
             {microphone}
@@ -899,7 +918,7 @@ onMount(() => {
         </Section>
       </div>
       <div data-panel="output">
-        <Section title={t("output.heading")} bind:open={panelsOpen.output}>
+        <Section level={2} title={t("output.heading")} bind:open={panelsOpen.output}>
           <OutputPanel
             {output}
             size={outputSize}
@@ -913,7 +932,7 @@ onMount(() => {
       </div>
 
       <div data-panel="source">
-        <Section title={t("source.heading")} bind:open={panelsOpen.source}>
+        <Section level={2} title={t("source.heading")} bind:open={panelsOpen.source}>
           <SourcePanel
             {api}
             size={sourceSize}
@@ -929,7 +948,7 @@ onMount(() => {
         </Section>
       </div>
 
-      <Section title={t("virtualCamera.heading")}>
+      <Section level={2} title={t("virtualCamera.heading")}>
         <VirtualCameraPanel
           {host}
           status={camera}
@@ -938,7 +957,7 @@ onMount(() => {
       </Section>
 
       <div data-panel="hotkeys">
-        <Section title={t("hotkeys.heading")} bind:open={panelsOpen.hotkeys}>
+        <Section level={2} title={t("hotkeys.heading")} bind:open={panelsOpen.hotkeys}>
           <HotkeysPanel
             {hotkeys}
             problems={hotkeyProblems}
@@ -964,7 +983,7 @@ onMount(() => {
           />
         </Section>
       </div>
-      <Section title={t("motion.settingsHeading")}>
+      <Section level={2} title={t("motion.settingsHeading")}>
         <MotionSettingsPanel
           {animation}
           settings={motionSettings}
@@ -974,7 +993,7 @@ onMount(() => {
       </Section>
 
       <div data-panel="api">
-        <Section title={t("api.heading")} bind:open={panelsOpen.api}>
+        <Section level={2} title={t("api.heading")} bind:open={panelsOpen.api}>
           <ApiPanel
             {api}
             disabled={host === null}
@@ -997,12 +1016,12 @@ onMount(() => {
       </div>
 
       <div data-panel="load">
-        <Section title={t("load.heading")} bind:open={panelsOpen.load}>
+        <Section level={2} title={t("load.heading")} bind:open={panelsOpen.load}>
           <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
         </Section>
       </div>
 
-      <Section title={t("parameters.heading")}>
+      <Section level={2} title={t("parameters.heading")}>
         {#snippet actions()}
           <Button small disabled={scene === null || scene.modelRevision === 0} onclick={resetParameters}>{t("parameters.reset")}</Button>
         {/snippet}

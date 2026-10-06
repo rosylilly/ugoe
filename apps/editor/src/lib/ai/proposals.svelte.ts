@@ -16,6 +16,7 @@
 // - 待ち・知らせ・失敗は、操作を始めた場所に出す (`scope`: 提案のカードの操作ならその番号、パネルの頭の操作なら null)。
 //   送り始めた時刻 (`sentAt`) から経った時間を出す (docs/editor.md#読み込み中と失敗の見せ方)。
 
+import { announce } from "@ugoe/ui";
 import type { EditorDocument } from "../document.svelte";
 import { errorCode, errorText } from "../errors";
 import { fileDialogs } from "../fileDialogs";
@@ -71,7 +72,32 @@ export interface ProposalPreviewState {
 export class ProposalsView {
   /** 「AI」のタブを開いているか。 */
   active = $state(false);
-  value = $state.raw<ProposalState | null>(null);
+  #value = $state.raw<ProposalState | null>(null);
+  /** 一度でも一覧に出た提案の番号 (新しく届いた提案だけを読み上げる。Undo で再び出たものは読まない)。 */
+  #seen = new Set<number>();
+  /** 最初の一覧を受け取ったか (開いたときからある提案は読まない)。 */
+  #primed = false;
+
+  /** バックエンドの提案の一覧 (読む前は null)。 */
+  get value(): ProposalState | null {
+    return this.#value;
+  }
+
+  /** 一覧を置き換える。新しく届いた提案 (AI・エージェント・作り直し) があれば読み上げる (docs/ui.md#状態の変化の知らせ)。 */
+  set value(next: ProposalState | null) {
+    const arrived = (next?.proposals ?? []).filter((p) => !this.#seen.has(p.id));
+    for (const p of arrived) this.#seen.add(p.id);
+    if (this.#primed && arrived.length > 0) {
+      const title = arrived[0]?.title ?? "";
+      announce(
+        arrived.length === 1
+          ? t("proposals.arrived", { title })
+          : t("proposals.arrivedMany", { count: arrived.length, title }),
+      );
+    }
+    if (next !== null) this.#primed = true;
+    this.#value = next;
+  }
   /** 提案ごとの、外したコマンドの番号 (採用して隠れた提案の分も残す。Undo で再び出たときに使う)。 */
   excluded = $state.raw<Record<number, ReadonlySet<number>>>({});
   preview = $state.raw<ProposalPreviewState | null>(null);

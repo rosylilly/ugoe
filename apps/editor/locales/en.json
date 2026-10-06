@@ -74,6 +74,11 @@
         "stale": "costume meshes were edited after the rig was proposed: propose the rig again",
         "attention": "needs attention"
       }
+    },
+    "title": "ugoe editor",
+    "columns": {
+      "left": "Parts and deformers",
+      "right": "Properties and parameters"
     }
   },
   "help": {
@@ -1965,7 +1970,10 @@
     "restoring": "Reading the layer classification saved with this project… Large PSDs take a moment.",
     "elapsed": "{{seconds}} s",
     "failed": "Could not finish",
-    "dismiss": "Close this message"
+    "dismiss": "Close this message",
+    "arrived": "A new proposal is ready: {{title}}",
+    "arrivedMany_one": "{{count}} new proposal is ready.",
+    "arrivedMany_other": "{{count}} new proposals are ready. The first one: {{title}}"
   },
   "errorCause": "{{message}} Cause: {{cause}}",
   "errorListMore": "and {{count}} more",

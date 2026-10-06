@@ -221,6 +221,8 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
 }
 </script>
 
+<!-- タブと同じ名前の見出し (見た目では隠し、読み上げと見出しの移動に残す。App.svelte の右の列) -->
+<h2 class="ugoe-visually-hidden">{t("app.tabs.ai.label")}</h2>
 <section>
   <h3>{module ? t("proposals.autoRig.titleModule") : t("proposals.autoRig.title")}</h3>
   {#if view.staleRigs.length > 0}
@@ -717,14 +719,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
 {#snippet status()}
   {#if view.busy}
     <div class="progress-row">
-      <p class="progress" role="status">
-        {#if confirming}
-          {t("proposals.busy.confirming")}
-        {:else if view.cancelling}
-          {t("proposals.cancel.cancelling")}
-        {:else}
-          {view.busy}{#if elapsed !== null}<span class="elapsed">{t("proposals.elapsed", { seconds: elapsed })}</span>{/if}
-        {/if}
+      <!-- 経った秒数は毎秒変わるので、読み上げの領域 (role="status") の外に置く (うるさくしない) -->
+      <p class="progress">
+        <span role="status">
+          {#if confirming}
+            {t("proposals.busy.confirming")}
+          {:else if view.cancelling}
+            {t("proposals.cancel.cancelling")}
+          {:else}
+            {view.busy}
+          {/if}
+        </span>{#if elapsed !== null && !confirming && !view.cancelling}<span class="elapsed">{t("proposals.elapsed", { seconds: elapsed })}</span>{/if}
       </p>
       {#if view.sending && !confirming}
         <TipButton

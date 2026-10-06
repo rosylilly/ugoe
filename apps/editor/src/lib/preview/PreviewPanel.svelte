@@ -158,6 +158,7 @@ const expressionOptions = $derived([
       parameterIds={preview.trackingParameterIds}
       values={preview.values}
       open={false}
+      level={3}
     />
     <button class="ed-link licenses" type="button" onclick={() => void licenses?.open()}
       >{t("preview.licenses.open")}</button

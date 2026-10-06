@@ -3,6 +3,7 @@
 import { setLocale } from "@ugoe/i18n";
 import { flushSync } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { announce, clearAnnouncements } from "./announce.svelte";
 import ColorPicker from "./components/ColorPicker.svelte";
 import DropZone from "./components/DropZone.svelte";
 import Kbd from "./components/Kbd.svelte";
@@ -259,6 +260,32 @@ describe("Toast", () => {
     vi.advanceTimersByTime(1000);
     flushSync();
     expect(region.querySelectorAll(".ugoe-toast")).toHaveLength(0);
+  });
+
+  it("keeps live regions for announcements that are only read aloud", () => {
+    const root = render(Toaster, {});
+    const polite = get(root, '.ugoe-announcer[role="status"]');
+    const assertive = get(root, '.ugoe-announcer[aria-live="assertive"]');
+    // 知らせより前から領域を置いておく (後から足した live region を読まない読み上げソフトがある)
+    expect(polite.getAttribute("role")).toBe("status");
+    expect(polite.textContent).toBe("");
+    expect(assertive.getAttribute("aria-live")).toBe("assertive");
+    expect(polite.classList.contains("ugoe-visually-hidden")).toBe(true);
+    announce("Scene 2 is live");
+    flushSync();
+    expect(polite.textContent).toBe("Scene 2 is live");
+    expect(assertive.textContent).toBe("");
+    // 同じ文が続いても変わる (読み直される)
+    announce("Scene 2 is live");
+    flushSync();
+    expect(polite.textContent).not.toBe("Scene 2 is live");
+    expect(polite.textContent?.trim()).toBe("Scene 2 is live");
+    announce("Could not save", { assertive: true });
+    announce("   ");
+    flushSync();
+    expect(assertive.textContent).toBe("Could not save");
+    expect(polite.textContent?.trim()).toBe("Scene 2 is live");
+    clearAnnouncements();
   });
 
   it("closes from its button and can stay", () => {

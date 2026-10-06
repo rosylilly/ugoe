@@ -33,13 +33,52 @@ export const AXE_OPTIONS = {
   resultTypes: ["violations"],
 };
 
+/**
+ * 画面の骨組み (ランドマークと見出しの階層) を見る axe-core の規則 (報告の「structure」)。axe では best-practice の札なので、
+ * 上の WCAG の札の組とは別に、規則を名指しして流す (T0918)。
+ */
+export const STRUCTURE_RULES = [
+  "landmark-one-main",
+  "landmark-no-duplicate-main",
+  "landmark-no-duplicate-banner",
+  "landmark-no-duplicate-contentinfo",
+  "landmark-main-is-top-level",
+  "landmark-banner-is-top-level",
+  "landmark-complementary-is-top-level",
+  "landmark-contentinfo-is-top-level",
+  "landmark-unique",
+  "page-has-heading-one",
+  "heading-order",
+  "empty-heading",
+  "region",
+];
+
+/**
+ * 骨組みの規則で見ない所: 重ねて出すもの (メニュー・Popover・ツールチップ・ダイアログ・Toast)。
+ * 2 つのランドマークの間の大きさを変える境 (`role="separator"`。どちらの領域にも属さず、`aria-controls` で動かす領域を指す) は、
+ * それだけを包む要素も含めて `region` の違反から外す (`onlySeparators`)。
+ */
+export const STRUCTURE_EXCLUDE = [
+  ["[data-bits-floating-content-wrapper]"],
+  ["[popover]"],
+  ["dialog"],
+  ['[role="dialog"]'],
+  ['[role="alertdialog"]'],
+];
+
+/** 骨組みの規則を流す axe.run の設定。 */
+export const AXE_STRUCTURE_OPTIONS = {
+  runOnly: { type: "rule", values: STRUCTURE_RULES },
+  resultTypes: ["violations"],
+};
+
 /** axe の違反を {check, target, detail} の列に。 */
 export function axeFindings(violations) {
   const out = [];
   for (const v of violations) {
     for (const node of v.nodes) {
       out.push({
-        check: isNameRule(v.id) ? "name" : "aria",
+        check: STRUCTURE_RULES.includes(v.id) ? "structure" : isNameRule(v.id) ? "name" : "aria",
         target: `${node.target.join(" ")}`,
         detail: `${v.id}: ${v.help}${node.html ? ` — ${node.html.replace(/\s+/g, " ").slice(0, 120)}` : ""}`,
       });
@@ -70,6 +109,7 @@ export function pageFindings(r, lang, { expectErrors = false } = {}) {
   for (const item of r.overlap) out.push({ check: "overlap", ...split(item) });
   for (const item of r.small) out.push({ check: "target-size", ...split(item) });
   for (const item of r.motion) out.push({ check: "motion", ...split(item) });
+  for (const item of r.forced ?? []) out.push({ check: "forced", ...split(item) });
   for (const item of expectErrors ? [] : r.errors)
     out.push({ check: "error", target: split(item).target, detail: "shown on the screen" });
   if (lang && !r.lang?.startsWith(lang)) {
@@ -82,7 +122,10 @@ export function pageFindings(r, lang, { expectErrors = false } = {}) {
 export async function auditScene(page, { lang, axe = true, expectErrors = false }) {
   const r = await page.evaluate(() => globalThis.__ugoeAudit.pageAudit());
   let pixels = { checked: 0, unknown: 0, failures: [], disabled: [] };
-  if (r.contrast.pending > 0) {
+  // 強制色では文字を透明にできない (透明も OS の文字の色に置き換わる) ので、画素では測らない (測れない数に入れる)
+  const forced = await page.evaluate(() => matchMedia("(forced-colors: active)").matches);
+  if (forced) pixels.unknown = r.contrast.pending;
+  else if (r.contrast.pending > 0) {
     // canvas・画像の上の文字: 文字を消して撮り、その画素を地として測る
     await page.evaluate(() => globalThis.__ugoeAudit.hideText(true));
     const png = await page.screenshot();
@@ -103,6 +146,34 @@ export async function auditScene(page, { lang, axe = true, expectErrors = false 
       AXE_OPTIONS,
     );
     findings.push(...axeFindings(result.violations));
+    // メニュー・Popover・ダイアログは開いた元の外 (body の直下) に描くので、骨組みの規則からは外す
+    const structure = await page.evaluate(
+      ({ exclude, options }) => globalThis.axe.run({ include: [["body"]], exclude }, options),
+      { exclude: STRUCTURE_EXCLUDE, options: AXE_STRUCTURE_OPTIONS },
+    );
+    for (const v of structure.violations) {
+      if (v.id !== "region") continue;
+      const targets = v.nodes.map((n) => n.target[0]);
+      const keep = await page.evaluate(
+        (list) =>
+          list.map((selector) => {
+            const el = document.querySelector(selector);
+            // 中身が境 (separator) だけの要素
+            const onlySeparators =
+              el !== null &&
+              (el.getAttribute("role") === "separator" ||
+                ((el.textContent ?? "").trim() === "" &&
+                  el.querySelector('[role="separator"]') !== null &&
+                  el.querySelector(
+                    'button, a[href], input, select, textarea, [tabindex]:not([role="separator"])',
+                  ) === null));
+            return !onlySeparators;
+          }),
+        targets,
+      );
+      v.nodes = v.nodes.filter((_, i) => keep[i]);
+    }
+    findings.push(...axeFindings(structure.violations));
   }
   return {
     findings,

@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // 3 つのアプリの UI を監査する (`just ui-audit`。tests/ui-audit/README.md)。
 //
-//   node tests/ui-audit/run.mjs [--only editor,viewer,studio] [--quick] [--no-build] [--out DIR] [--compare DIR] [--strict]
+//   node tests/ui-audit/run.mjs [--only editor,viewer,studio] [--quick] [--variants forced,zoom200] [--no-build] [--out DIR]
+//                               [--compare DIR] [--strict]
 //
 // 1. アプリのフロントエンドをビルドする (`just wasm` と `vite build`)。エディタには見本のプロジェクトも作る (`ugoe sample dress-up`)。
 // 2. ビルドした画面を小さな静的サーバで配り、ヘッドレスの Chrome (playwright-core) で開く。Tauri の代わりに偽のホストを置く
 //    (エディタ: lib/editor-host.mjs、スタジオ: lib/studio-host.mjs。ビューアはブラウザの口のまま)。
-// 3. ライト・ダーク × 英語・日本語 × 広い幅・狭い幅、と devicePixelRatio 2・200% の拡大で、場面ごとに撮って検査する
-//    (コントラスト・横のはみ出し・24px 未満の押せるもの・名前の無い部品 (axe-core)・reduced motion の下の動き)。
-//    広い幅のライトの英語では Tab でフォーカスをたどる。
-// 4. <out>/<アプリ>/ に画像 (.png)・アクセシビリティの木 (.aria.yml)・Tab の順 (tab.txt)・報告 (report.md) を、
+// 3. ライト・ダーク × 英語・日本語 × 広い幅・狭い幅、と devicePixelRatio 2・200% の拡大・強制色で、場面ごとに撮って検査する
+//    (コントラスト・横のはみ出し・24px 未満の押せるもの・名前の無い部品 (axe-core)・ランドマークと見出し・reduced motion の下の動き・
+//    強制色で見分けられない状態)。広い幅のライトの英語と強制色の暗い組では Tab でフォーカスをたどる。
+// 4. <out>/<アプリ>/ に画像 (.png)・アクセシビリティの木 (.aria.yml)・骨組み (.outline.txt)・Tab の順 (tab.txt)・報告 (report.md) を、
 //    <out>/summary.md と summary.json にまとめを書く。`--compare` は前の summary.json と比べて増減を出す。
 //
 // `--strict` なら見つけたものがあれば終了コード 1 (既定は、場面が開けなかったときだけ 1)。`just ci` には含めない (重いので)。
@@ -40,6 +41,8 @@ for (const app of only) {
   }
 }
 const quick = args.includes("--quick");
+// 組の名前の一部で絞る (例: `--variants forced,zoom200`。反復中に)
+const variantFilter = option("--variants", null)?.split(",") ?? null;
 const build = !args.includes("--no-build");
 const strict = args.includes("--strict");
 const out = resolve(option("--out", join(target, "ui-audit")));
@@ -179,14 +182,36 @@ function variants(app, quickRun) {
       dpr: 2,
       mainOnly: true,
     });
-    // 200% の拡大: CSS の窓の幅が半分になり、1 CSS px を 2 つの画素で描く
+    // 200% の拡大: CSS の窓の幅が半分になり、1 CSS px を 2 つの画素で描く。日本語は折り返し方が違うので両方 (T0918)
+    for (const lang of ["en", "ja"]) {
+      list.push({
+        name: `${lang}-light-zoom200`,
+        theme: "light",
+        lang,
+        width: "zoom200",
+        size: [wide[0] / 2, wide[1] / 2],
+        dpr: 2,
+      });
+    }
+    // 強制色 (Windows の高コントラスト): 暗い組と明るい組。暗い組では Tab もたどる (影で描いたフォーカスの印は消える。T0918)
     list.push({
-      name: "en-light-zoom200",
-      theme: "light",
+      name: "en-dark-forced-wide",
+      theme: "dark",
       lang: "en",
-      width: "zoom200",
-      size: [wide[0] / 2, wide[1] / 2],
-      dpr: 2,
+      width: "wide",
+      size: wide,
+      dpr: 1,
+      forced: true,
+      tab: true,
+    });
+    list.push({
+      name: "ja-light-forced-narrow",
+      theme: "light",
+      lang: "ja",
+      width: "narrow",
+      size: narrow,
+      dpr: 1,
+      forced: true,
     });
   }
   return list;
@@ -217,13 +242,16 @@ for (const app of only) {
   const unknownCommands = new Set();
   console.log(`\n== ${app} (${server.url})`);
 
-  for (const v of variants(app, quick)) {
+  for (const v of variants(app, quick).filter(
+    (v) => variantFilter === null || variantFilter.some((f) => v.name.includes(f)),
+  )) {
     const context = await browser.newContext({
       viewport: { width: v.size[0], height: v.size[1] },
       deviceScaleFactor: v.dpr,
       colorScheme: v.theme,
       locale: v.lang === "en" ? "en-US" : "ja-JP",
       reducedMotion: "reduce",
+      forcedColors: v.forced ? "active" : "none",
     });
     const page = await context.newPage();
     const errors = [];
@@ -250,8 +278,11 @@ for (const app of only) {
         const full = name === "main" ? v.name : `${v.name}-${name}`;
         await page.waitForTimeout(400);
         await page.screenshot({ path: join(dir, `${full}.png`) });
-        if (aria)
+        if (aria) {
           writeFileSync(join(dir, `${full}.aria.yml`), await page.locator("body").ariaSnapshot());
+          const outline = await page.evaluate(() => globalThis.__ugoeAudit.structureOutline());
+          writeFileSync(join(dir, `${full}.outline.txt`), `${outline.join("\n")}\n`);
+        }
         const r = await auditScene(page, { lang: v.lang, expectErrors: errors });
         scenes.push({ name: full, findings: r.findings, stats: r.stats });
         console.log(

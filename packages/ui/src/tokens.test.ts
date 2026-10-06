@@ -92,4 +92,15 @@ describe("tokens.css", () => {
     }
     expect(missing).toEqual([]);
   });
+
+  it("redraws only classes that the components still use in forced colors", () => {
+    // 強制色の節 (docs/ui.md#強制色) が指す部品のクラスが、名前を変えて効かなくなっていないか
+    const forced = blockAfter(tokens, tokens.indexOf("@media (forced-colors: active)"));
+    const used = new Set(
+      files.flatMap(({ text }) => [...text.matchAll(/\.(ugoe-[a-z0-9_-]+)/g)].map((m) => m[1])),
+    );
+    const names = [...new Set([...forced.matchAll(/\.(ugoe-[a-z0-9_-]+)/g)].map((m) => m[1]))];
+    expect(names.length).toBeGreaterThan(5);
+    expect(names.filter((name) => !used.has(name))).toEqual([]);
+  });
 });

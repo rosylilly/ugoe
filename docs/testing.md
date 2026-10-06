@@ -468,11 +468,11 @@ just ui-audit --no-build --compare target/ui-audit-before   # 直した後: 前�
   Tauri の代わりに偽のホストを置く (エディタは読むだけの IPC の偽物と `ugoe sample dress-up` の見本、スタジオは `StudioHost` の偽物と
   見本のプロファイル、ビューアはブラウザの口のまま)。偽物は画面を見るためのもので、編集・保存の流れは Vitest と実機の e2e が確かめる。
 - **場面:** ライト・ダーク × 英語・日本語 × 広い幅・狭い幅 (エディタ 1440 と 1024、ほか 1280 と 360) と、devicePixelRatio 2・200% の拡大
-  (CSS の窓の幅が半分)、ビューアとスタジオの 1600px。それぞれで空の状態・見本を開いた画面・下まで送った画面・設定・メニュー・エディタの右の列のタブなどを撮る。
+  (CSS の窓の幅が半分。英語と日本語)・強制色 (Windows の高コントラストのエミュレーション。暗い広い幅と明るい狭い幅)、ビューアとスタジオの 1600px。それぞれで空の状態・見本を開いた画面・下まで送った画面・設定・メニュー・エディタの右の列のタブなどを撮る。
   どれも `prefers-reduced-motion: reduce` で開く。
 - **検査:** 文字のコントラスト (canvas・画像の上の文字は、文字を消して撮った画素で測る)・横のはみ出し・文字の重なりと切れ・24px 未満の押せるもの・名前の無い部品 (axe-core)・そのほかの ARIA の規則
-  (axe-core)・reduced motion の下の動き・画面に出たエラー・Tab の止まり (印・名前・画面の外)。同じ部品の行は 1 つの種類にまとめて数える。
-- **結果:** `target/ui-audit/<アプリ>/` に PNG・アクセシビリティの木 (`.aria.yml`)・Tab の順・報告 (`report.md`)、`target/ui-audit/summary.md` と
+  (axe-core)・ランドマークと見出しの階層 (axe-core)・reduced motion の下の動き・強制色で見分けられない状態・画面に出たエラー・Tab の止まり (印・名前・画面の外)。同じ部品の行は 1 つの種類にまとめて数える。
+- **結果:** `target/ui-audit/<アプリ>/` に PNG・アクセシビリティの木 (`.aria.yml`)・骨組み (`.outline.txt`)・Tab の順・報告 (`report.md`)、`target/ui-audit/summary.md` と
   `summary.json`。既定の終了コードは場面を開けなかったときだけ 1 (`--strict` なら見つけたものがあっても 1)。
 - **確かめないこと:** 実物の WebView (WebKitGTK は `just e2e` の側。T0919)・実際のスクリーンリーダー・ビューポートの中身・配置の良し悪し。
 - **`just ui-shots` との関係:** `just ui-shots` は `@ugoe/ui` の部品の見本の画面 (packages/ui/README.md) を撮る。部品を変えたときはそれを、

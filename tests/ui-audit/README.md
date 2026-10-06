@@ -10,6 +10,7 @@
 just ui-audit                          # 3 つのアプリをビルドしてすべての場面を撮る (5 分ほど)
 just ui-audit --only editor,viewer     # アプリを選ぶ
 just ui-audit --quick                  # ライトの英語の広い幅と狭い幅だけ (反復中に)
+just ui-audit --variants forced,zoom200   # 組の名前の一部で絞る (反復中に)
 just ui-audit --no-build               # 前にビルドした dist と見本を使う (アプリのコードを変えていないとき)
 just ui-audit --out target/ui-audit-before   # 結果の置き場 (既定 target/ui-audit)
 just ui-audit --compare target/ui-audit-before  # 前の summary.json と比べて、増えた・消えた・数が変わった種類を出す
@@ -48,7 +49,8 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
    - ビューア: Tauri の外の口 (ブラウザの口) のまま。ツールバーの「サンプル」で見本を開く。
 4. **撮って検査する:** 下の「場面」ごとに PNG を撮り、下の「検査」を流す。
 5. **まとめる:** `<out>/<アプリ>/report.md` (見つけたものと Tab の順)・`<アプリ>/tab.txt`・`<アプリ>/*.aria.yml`
-   (アクセシビリティの木。スクリーンリーダーが読むものの近似)、`<out>/summary.md` と `summary.json` (数の表と、比べるためのデータ)。
+   (アクセシビリティの木。スクリーンリーダーが読むものの近似)・`<アプリ>/*.outline.txt` (骨組み: ランドマーク・見出し・live region を
+   文書の順に並べ、ランドマークの入れ子を字下げで示したもの。docs/ui.md#骨組み-ランドマークと見出し の表と比べる)、`<out>/summary.md` と `summary.json` (数の表と、比べるためのデータ)。
 
 ## 場面
 
@@ -59,11 +61,13 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | `<en/ja>-<light/dark>-wide` | ライト・ダーク | 英語・日本語 | エディタ 1440×900、ほか 1280×800 | 1 |
 | `<en/ja>-<light/dark>-narrow` | 同上 | 同上 | エディタ 1024×720、ほか 360×740 (docs/ui.md の下限) | 1 |
 | `ja-light-wide-dpr2` | ライト | 日本語 | 広い幅 | 2 (開いた画面だけ) |
-| `en-light-zoom200` | ライト | 英語 | 広い幅の半分 (200% の拡大と同じ CSS の幅) | 2 |
+| `<en/ja>-light-zoom200` | ライト | 英語・日本語 | 広い幅の半分 (200% の拡大と同じ CSS の幅) | 2 |
+| `en-dark-forced-wide`・`ja-light-forced-narrow` | ダーク・ライト | 英語・日本語 | 広い幅・狭い幅 | 1 (強制色。下) |
 | `en-light-half` (スタジオだけ) | ライト | 英語 | 960×800 (1920 の画面の半分。列の並びが変わる幅) | 1 |
 | `en-light-xwide`・`ja-dark-xwide` (ビューアとスタジオ) | ライト・ダーク | 英語・日本語 | 1600×900 (ビューアの 2 列の右の列・スタジオの中央の列が伸びる幅) | 1 |
 
-どの組も `prefers-reduced-motion: reduce` で開く (動きの途中を撮らないため。動きの検査も兼ねる)。組ごとに次の場面を撮る (名前は組の名前の後ろに付く)。
+どの組も `prefers-reduced-motion: reduce` で開く (動きの途中を撮らないため。動きの検査も兼ねる)。`-forced-` の組は、さらに強制色
+(`forcedColors: "active"`。Windows の高コントラストのエミュレーション。T0918) で開く。強制色では `getComputedStyle` が強制した後の色を返す。組ごとに次の場面を撮る (名前は組の名前の後ろに付く)。
 
 | アプリ | 場面 |
 | --- | --- |
@@ -71,7 +75,8 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-background` (ツールバーの「背景」の Popover)、`-settings` |
 | スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-opaque` (透過が画面で効かない様子にした出力ウィンドウのパネル: 「背景」の欄の注意と「背景をクロマキーにする」のボタン、「いまの状態」の出力の注意の印)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 
-広い幅のライトの英語では、Tab を最大 120 回押してフォーカスをたどる (`-tab`)。
+広い幅のライトの英語と `en-dark-forced-wide` では、Tab を最大 120 回押してフォーカスをたどる (`-tab`。強制色では影 (`box-shadow`) で
+描いたフォーカスの印が消えるので、印の無い止まりが見つかる)。
 
 場面を足すときは `lib/apps.mjs` の `extras` (読み込んだ後) か `load` (読み込みの途中) で、操作してから `ctx.scene("名前")` を呼ぶ。
 失敗の出し方を撮る場面は `ctx.scene("名前", { errors: true })` にすると、画面に出たエラーの文を数えない (スクリプトのエラーは数える)。
@@ -89,7 +94,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | `name` (名前の無い操作できる部品) | 読み上げの名前が無い操作できる部品 | axe-core の名前の規則 (`*-name`・`label` など) |
 | `focus` (Tab の止まりの問題) | フォーカスの印が無い (自分と 2 つ上の祖先に outline・box-shadow が無い)・名前が無い・画面の外の止まり | 自前 (`lib/walk.mjs`) |
 | `aria` (そのほかの ARIA・言語) | WCAG 2.0〜2.2 の A・AA の axe-core の規則の違反と、`<html lang>` が画面の言語でないこと | axe-core (`color-contrast` と `target-size` は自前の検査と重なるので切る) |
+| `structure` (ランドマークと見出しの階層) | main が 1 つ・ランドマークの入れ子と名前の重なり・`<h1>` があること・見出しの段の飛び・空の見出し・ランドマークの外の中身 | axe-core の `landmark-*`・`page-has-heading-one`・`heading-order`・`empty-heading`・`region` (best-practice の札なので名指しで流す。T0918)。重ねて出すもの (メニュー・Popover・ダイアログ)・大きさを変える境 (`role="separator"`) は見ない |
 | `motion` (reduced motion の下の動き) | `prefers-reduced-motion: reduce` で動いている 1ms を超える CSS の animation・transition | 自前 (`document.getAnimations()`) |
+| `forced` (強制色で見分けられない状態) | 強制色の組で、同じ種類 (タグとクラスと役割) の部品のうち、入 (`aria-pressed`・`aria-checked`・`aria-selected`・`aria-current`・Bits UI の `data-state`) と切の見た目が同じもの | 自前。自分と 2 段までの子孫の枠・輪郭線・地・文字の色・太さ・下線・影と、子孫の位置 (スイッチのつまみ) を比べる。無効の部品は除く |
 | `error` (エラー) | 画面に出たエラーの文 (`role="alert"`・`.error` など)・スクリプトのエラー・場面を開けなかったこと | 自前 |
 
 **canvas・画像の上の文字 (T0952):** 不透明な地の祖先の中に文字に重なる canvas・video・img がある文字 (ビューポートの上の知らせ・道具の札など)、
@@ -111,7 +118,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 ### 確かめないこと
 
 - 実物の WebView (WebView2・WKWebView・WebKitGTK) での表示。WebKitGTK は `just e2e` (T0006) の側で撮る (T0919)。
-- 実際のスクリーンリーダーの読み上げ (`.aria.yml` は近似。docs/ui.md#確かめ方)。OS の高コントラスト (`forced-colors`)。
+- 実際のスクリーンリーダーの読み上げ (`.aria.yml` と `.outline.txt` は近似。docs/ui.md#確かめ方。実物は docs/manual-check.md の U03)。
+  強制色の実物 (Windows のコントラスト テーマ。U04) と、強制色の場面の canvas の上の文字のコントラスト (文字を透明にして撮れないので、
+  画素では測らずに `unmeasured` に数える)。
 - ビューポート (モデルの描画) の中身・ギズモの見分けやすさ (上に重ねた文字のコントラストは測る)。偽のホストが返さない状態 (エラーの知らせの帯・
   接続中のクライアントなど。AI の提案・モジュールのプロジェクト・着せ替えは T0676 で足した) の画面。要るなら場面と偽のホストの答えを足す。
 - 配置・余白・階層などの見た目の良し悪し (撮った画像を人が見る。docs/ui.md#ui-の品質の基準)。

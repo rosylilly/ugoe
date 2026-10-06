@@ -2,6 +2,7 @@
 import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
 import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
+  announce,
   Button,
   type ButtonBaseProps,
   Icon,
@@ -12,7 +13,7 @@ import {
   Tooltip,
   TooltipProvider,
 } from "@ugoe/ui";
-import { onMount } from "svelte";
+import { onMount, untrack } from "svelte";
 import BackgroundPopover from "./lib/BackgroundPopover.svelte";
 import DressUpPanel from "./lib/DressUpPanel.svelte";
 import {
@@ -34,6 +35,7 @@ import {
 import { t } from "./lib/i18n";
 import LicenseDialog from "./lib/LicenseDialog.svelte";
 import LightingPanel from "./lib/LightingPanel.svelte";
+import { LoadedModelWatch } from "./lib/loadedModel";
 import MemoryDialog from "./lib/MemoryDialog.svelte";
 import MotionPanel from "./lib/MotionPanel.svelte";
 import ParameterPanel from "./lib/ParameterPanel.svelte";
@@ -64,6 +66,21 @@ let dropPreview = $state<DropPreview | null>(null);
 let dropNotice = $state<string | null>(null);
 /** OS からのドロップをホストがパスで受け取るか (Tauri)。そのときは HTML のドロップを扱わない。 */
 let nativeDrop = false;
+// モデルを開き終えたら読み上げる (足元の「読み込みました」は文が出るだけなので。docs/ui.md#状態の変化の知らせ)。
+// 同じモデルを読み直したとき (着せ替え・作り直し) は読まない
+const loadedWatch = new LoadedModelWatch();
+$effect(() => {
+  const name = player.status === "ready" ? player.modelName : null;
+  const warnings = player.warnings.length;
+  untrack(() => {
+    if (!loadedWatch.changed(name) || name === null) return;
+    announce(
+      warnings > 0
+        ? t("status.loadedAnnounceWarnings", { name, count: warnings })
+        : t("status.loadedAnnounce", { name }),
+    );
+  });
+});
 let licenseOpen = $state(false);
 let settingsOpen = $state(false);
 let memoryDialog = $state<MemoryDialog | null>(null);
@@ -225,6 +242,8 @@ function onKeyDown(e: KeyboardEvent) {
 <TooltipProvider>
   <div class="app">
     <header class="toolbar">
+      <!-- 画面の名前 (見出しの移動の起点。見た目にはツールバーがあるので隠す) -->
+      <h1 class="ugoe-visually-hidden">{t("app.title")}</h1>
       <Tooltip text={t("toolbar.open.tooltip")} shortcut="Mod+O">
         {#snippet trigger(attrs)}
           <Button {...attrs as ButtonBaseProps} variant="primary" onclick={openDialog}
