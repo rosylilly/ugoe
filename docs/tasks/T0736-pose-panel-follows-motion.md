@@ -1,11 +1,11 @@
 ---
 id: T0736
 title: "ビューアとエディタのプレビュー: ポーズの欄をモーションによる切り替えに追従させる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, apps/editor, docs]
 depends_on: [T0478]
-assignee:
+assignee: claude-worker-T0736
 ---
 
 # T0736: ビューアとエディタのプレビュー: ポーズの欄をモーションによる切り替えに追従させる
