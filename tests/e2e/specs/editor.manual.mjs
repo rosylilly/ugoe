@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe } from "node:test";
-import { dialogAnswers, launch, root, step, work } from "../lib/harness.mjs";
+import { dialogAnswers, keyringSkip, launch, root, step, work } from "../lib/harness.mjs";
 import { manualShot, resizeTo } from "../lib/manual.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
 import { startFakeTracking } from "../lib/tracking.mjs";
@@ -455,21 +455,54 @@ describe("editor manual images", () => {
       { message: "the Service field" },
     );
     await s.clickText("[role=option]", "OpenRouter");
+    // モデルを入れて適用し、OpenRouter の API キーの欄を出す (適用する前は「Save」が押せず、先に適用する案内が出る)
+    const model = await waitFor(
+      () =>
+        s.execute(
+          () =>
+            [...document.querySelectorAll("[role=dialog] label")].find(
+              (l) => l.textContent.trim() === "Model",
+            )?.control ?? null,
+        ),
+      { message: "the Model field" },
+    );
+    // 打った後の Enter で設定の欄を送る (「Apply」と同じ)
+    await model.replace("openai/gpt-4o");
+    await waitFor(
+      () =>
+        s.execute(() =>
+          [...document.querySelectorAll("[role=dialog] h3")].some(
+            (h) => h.textContent.trim() === "API key for OpenRouter",
+          ),
+        ),
+      { message: "the OpenRouter API key section" },
+    );
     await settle(s, 400);
-    // 送り先の欄 (「Apply」の行まで)。API キーの欄は OS の鍵の保管庫が要り、e2e のセッションには無いので撮らない
-    const rect = await s.execute((dialog) => {
-      const apply = [...dialog.querySelectorAll("button")].find(
-        (b) => b.textContent.trim() === "Apply",
-      );
-      const d = dialog.getBoundingClientRect();
-      const bottom = (apply ?? dialog).getBoundingClientRect().bottom + 12;
-      return {
-        x: Math.floor(d.left),
-        y: Math.floor(d.top),
-        width: Math.ceil(d.width),
-        height: Math.ceil(bottom - d.top),
-      };
-    }, dialog);
+    // 送り先の欄と API キーの欄。API キーの欄は鍵の保管庫が要る (run.mjs がテストの D-Bus のセッションで動かす。
+    // 無ければ「保管庫が無い」の案内になるので、「Apply」の行までにする)
+    const withKey = !keyringSkip();
+    const rect = await s.execute(
+      (dialog, withKey) => {
+        const apply = [...dialog.querySelectorAll("button")].find(
+          (b) => b.textContent.trim() === "Apply",
+        );
+        const keyForm = withKey
+          ? [...dialog.querySelectorAll("label")]
+              .find((l) => l.textContent.trim() === "API key")
+              ?.closest("form")
+          : null;
+        const d = dialog.getBoundingClientRect();
+        const bottom = (keyForm ?? apply ?? dialog).getBoundingClientRect().bottom + 12;
+        return {
+          x: Math.floor(d.left),
+          y: Math.floor(d.top),
+          width: Math.ceil(d.width),
+          height: Math.ceil(Math.min(bottom, d.bottom) - d.top),
+        };
+      },
+      dialog,
+      withKey,
+    );
     await manualShot(s, "ai-settings", { clip: rect });
     await s.keys(Keys.Escape);
   });

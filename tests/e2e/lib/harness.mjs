@@ -6,6 +6,7 @@
 //   E2E_OUT     このアプリの結果を置くディレクトリ (スクリーンショット・ログ)
 //   E2E_WORK    テストが作ってよいファイルの置き場 (見本の写し・保存先など)
 //   E2E_DISPLAY 画面全体のスクリーンショットを撮る X のディスプレイ (無ければ撮らない)
+//   E2E_KEYRING D-Bus のセッションで使い捨ての鍵の保管庫が動いていれば `1` (無ければ E2E_KEYRING_SKIP に理由)
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -28,6 +29,12 @@ export const work = () => env("E2E_WORK");
 export const configHome = () => env("E2E_CONFIG_HOME");
 /** エディタのファイルのダイアログの答えを置く場所 (`UGOE_EDITOR_DIALOG_ANSWERS`。apps/editor/src-tauri/src/dialog.rs)。 */
 export const dialogAnswers = () => env("E2E_DIALOG_ANSWERS");
+/**
+ * 鍵の保管庫 (Secret Service) が無いときの、保管庫の要る手順を飛ばす理由。保管庫があれば `false` (`step` の `skip` に渡す)。
+ * 保管庫は run.mjs がテストの D-Bus のセッションで動かす使い捨てのもの (tests/e2e/README.md#鍵の保管庫)。
+ */
+export const keyringSkip = () =>
+  process.env.E2E_KEYRING === "1" ? false : (process.env.E2E_KEYRING_SKIP ?? "no keyring");
 
 /**
  * ページの console と例外を `window.__E2E_LOG__` に、CSP が止めたものを `window.__E2E_CSP__` に溜める (起動の後に入れる)。
@@ -126,10 +133,11 @@ async function writeLogs(session, path) {
 
 /**
  * 筋書きの 1 つの手順。失敗したら、各ウィンドウのスクリーンショット・画面全体のスクリーンショット・ページのログを
- * `E2E_OUT/failures/<手順>/` に残してから失敗にする。
+ * `E2E_OUT/failures/<手順>/` に残してから失敗にする。`skip` に理由の文を渡すと、流さずに飛ばした印にする。
+ * @param {{ skip?: string | false }} [options]
  */
-export function step(app, name, fn) {
-  it(name, async () => {
+export function step(app, name, fn, { skip = false } = {}) {
+  it(name, { skip }, async () => {
     // 前の手順でアプリが応答しなくなっていたら、待たずに失敗にする (要求ごとにタイムアウトまで待つと何分もかかる)
     if (app.unresponsive) throw new Error(`the app stopped responding in "${app.unresponsive}"`);
     try {

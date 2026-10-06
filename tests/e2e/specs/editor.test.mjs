@@ -1,7 +1,7 @@
 // エディタ (apps/editor) の主な流れ: 見本のプロジェクトを開く・パラメータを動かす・保存する・PSD を取り込む・`.ugoe` を書き出す・
 // プレビューでモジュールを付け外しし、画像からトラッキングする・モジュールのプロジェクトを開いて `.ugoemod` を書き出す・
 // 偽の AI のプロバイダで、見本の着せ替えの本体に取り込んだ PSD と「New from PSD…」の新しいプロジェクトから提案を作って
-// プレビューする・言語を切り替える。
+// プレビューする・API キーを使い捨ての鍵の保管庫に保存して消す・言語を切り替える。
 // 流し方は tests/e2e/README.md。
 
 import assert from "node:assert/strict";
@@ -13,6 +13,7 @@ import {
   checkNoCspViolations,
   dialogAnswers,
   invoke,
+  keyringSkip,
   launch,
   root,
   shot,
@@ -452,6 +453,122 @@ describe("editor", () => {
     await shot(s, "editor-module-export");
     await s.keys(Keys.Escape);
   });
+
+  step(
+    app,
+    "saves an API key in the keyring, still has it after reopening and deletes it",
+    async () => {
+      const s = app.session;
+      // 設定の「AI provider」の API キーの欄 (既定のプロバイダの Claude)。保管庫は run.mjs がテストの D-Bus のセッションで
+      // 動かす使い捨てのもの (tests/e2e/README.md#鍵の保管庫)。キーは本物ではなく、どこにも送らない
+      const key = "sk-ant-e2e-not-a-real-key";
+      const openSettings = async () => {
+        await s.clickText("button", "Settings");
+        await s.clickText("[role=dialog] [role=tab]", "AI provider");
+      };
+      const closeSettings = async () => {
+        await s.keys(Keys.Escape);
+        await waitFor(async () => (await s.findAll("[role=dialog]")).length === 0, {
+          message: "the settings to close",
+        });
+      };
+      const waitKeyStatus = (status, message) =>
+        waitFor(
+          async () =>
+            (await s.execute(
+              () =>
+                document.querySelector("[role=dialog] [data-key-status]")?.dataset.keyStatus ??
+                null,
+            )) === status && (await invoke(s, "ai_settings")).key === status,
+          { message },
+        );
+      /**
+       * `act` (保管庫に書く操作) の後、キーの状態が `status` になるのを待つ。保管庫の答えが遅れて失敗した (dbus-secret-service は
+       * Secret Service の呼び出しを 2 秒で諦める。重い負荷の下 (並行のビルド) では gnome-keyring の答えが間に合わないことがある) ときは、
+       * 知らせを閉じて 1 回だけやり直す (T0050 のメモ)。
+       */
+      const untilKeyStatus = async (act, status, message) => {
+        for (let attempt = 0; ; attempt++) {
+          await act();
+          const result = await waitFor(
+            async () => {
+              const [shown, timedOut] = await s.execute(() => [
+                document.querySelector("[role=dialog] [data-key-status]")?.dataset.keyStatus ??
+                  null,
+                (document.querySelector("[role=dialog]")?.innerText ?? "").includes(
+                  "Did not receive a reply",
+                ),
+              ]);
+              if (timedOut) return "timed out";
+              return shown === status && (await invoke(s, "ai_settings")).key === status
+                ? "done"
+                : null;
+            },
+            { message },
+          );
+          if (result === "done") return;
+          assert.equal(attempt, 0, `${message}: the keyring did not answer in time twice`);
+          console.warn(`${message}: the keyring did not answer in time; trying again`);
+          await s.clickWhen(() => s.find('[role=dialog] button[aria-label="Close this message"]'), {
+            message: "the button closing the error",
+          });
+        }
+      };
+
+      await openSettings();
+      await waitKeyStatus(
+        "not_stored",
+        "the API key to be not stored (if it is unavailable, the keyring of the test session did not start: see driver.log)",
+      );
+      const field = await waitFor(
+        () =>
+          s.execute(
+            () =>
+              [...document.querySelectorAll("[role=dialog] label")].find(
+                (l) => l.textContent.trim() === "API key",
+              )?.control ?? null,
+          ),
+        { message: "the API key field" },
+      );
+      await untilKeyStatus(
+        async () => {
+          await field.type(key);
+          await s.clickText("[role=dialog] button[type=submit]", "Save");
+        },
+        "stored",
+        "the API key to be stored",
+      );
+      // 保存したら欄を空にし、キーは画面のどこにも出さない
+      assert.equal(await field.property("value"), "");
+      assert.equal(
+        await s.execute(
+          (key) =>
+            document.documentElement.outerHTML.includes(key) ||
+            [...document.querySelectorAll("input")].some((i) => i.value.includes(key)),
+          key,
+        ),
+        false,
+        "the saved key is shown on the page",
+      );
+      await shot(s, "editor-api-key-stored");
+      await closeSettings();
+
+      // 開き直しても保存済み (バックエンドが保管庫から読み直す)
+      await openSettings();
+      await waitKeyStatus("stored", "the API key to be still stored after reopening");
+      // 削除は確かめてから
+      await untilKeyStatus(
+        async () => {
+          await s.clickText("[role=dialog] button", "Delete");
+          await s.clickText("[role=alertdialog] button", "Delete");
+        },
+        "not_stored",
+        "the API key to be deleted",
+      );
+      await closeSettings();
+    },
+    { skip: keyringSkip() },
+  );
 
   step(app, "points the AI provider at a fake one", async () => {
     const s = app.session;

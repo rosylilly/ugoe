@@ -11,6 +11,7 @@
 // 2. 画面を用意する: 既定では Xvfb を起動する (利用者の画面にウィンドウを出さない)。`--headed` なら今の DISPLAY を使う。
 // 3. アプリごとに、テスト用の XDG のディレクトリ (設定・データ・キャッシュ) と D-Bus のセッションで tauri-driver を起動し、
 //    specs/<アプリ>.test.mjs を node:test で流す。利用者の設定・プロファイル・WebView のデータ・鍵の保管庫には触らない。
+//    エディタの D-Bus のセッションでは、使い捨ての鍵の保管庫 (gnome-keyring-daemon) を動かす (API キーの保存の筋書き。T0050)。
 //
 // 結果は <out> (既定 target/e2e) に残る: <アプリ>/driver.log (アプリと WebKitWebDriver の出力)、
 // <アプリ>/*.console.json (ページの console)、<アプリ>/failures/<手順>/ (失敗したときのスクリーンショットとログ)、
@@ -18,7 +19,7 @@
 //
 // 要るもの (Linux): tauri-driver (`cargo install tauri-driver --locked`。TAURI_DRIVER で指定できる)、
 // WebKitWebDriver (Debian・Ubuntu の webkit2gtk-driver。WEBKIT_WEBDRIVER で指定できる)、Xvfb (--headed でなければ)、
-// dbus-run-session、アプリのビルドに要るもの (apps/editor/README.md)。
+// dbus-run-session、アプリのビルドに要るもの (apps/editor/README.md)。あれば gnome-keyring-daemon (無ければ、保管庫の要る筋書きを飛ばす)。
 // Windows と macOS では流さない (macOS の WKWebView には WebDriver が無い。docs/testing.md#実機の-e2e-テスト)。
 
 import { spawn, spawnSync } from "node:child_process";
@@ -27,13 +28,14 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { exportMbxPath } from "../../scripts/lib/mbx.mjs";
 
@@ -46,9 +48,9 @@ const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 /** マニュアルの画像の置き場 (`--update-images` が写す先)。 */
 const manualImages = join(root, "docs", "manual", "images");
 
-/** アプリの名前と、pnpm のパッケージ・実行ファイル。 */
+/** アプリの名前と、pnpm のパッケージ・実行ファイル。`keyring`: D-Bus のセッションで鍵の保管庫を動かす (API キーの保存)。 */
 const APPS = {
-  editor: { package: "@ugoe/editor", binary: "ugoe-editor" },
+  editor: { package: "@ugoe/editor", binary: "ugoe-editor", keyring: true },
   viewer: { package: "@ugoe/viewer", binary: "ugoe-viewer" },
   studio: { package: "@ugoe/studio", binary: "ugoe-studio" },
 };
@@ -93,6 +95,8 @@ const tools = {
   webkitDriver: process.env.WEBKIT_WEBDRIVER ?? which("WebKitWebDriver"),
   xvfb: headed ? "-" : which("Xvfb"),
   dbus: which("dbus-run-session"),
+  // 無くても流せる (保管庫の要る筋書きを飛ばす)。GNOME_KEYRING_DAEMON を空にすると、あっても使わない
+  keyring: process.env.GNOME_KEYRING_DAEMON ?? which("gnome-keyring-daemon"),
 };
 const missing = [
   [tools.tauriDriver, "tauri-driver: cargo install tauri-driver --locked (or set TAURI_DRIVER)"],
@@ -107,6 +111,13 @@ if (missing.length > 0) {
   console.error("missing tools:");
   for (const [, hint] of missing) console.error(`  ${hint}`);
   process.exit(2);
+}
+/** 保管庫が無いので飛ばす筋書きの理由 (保管庫があれば null)。 */
+const keyringSkip = tools.keyring
+  ? null
+  : "no gnome-keyring-daemon: sudo apt-get install gnome-keyring (or set GNOME_KEYRING_DAEMON)";
+if (keyringSkip && only.some((app) => APPS[app].keyring)) {
+  console.warn(`skipping the scenarios that need a keyring (${keyringSkip})`);
 }
 if (headed && !process.env.DISPLAY) {
   console.error("--headed needs DISPLAY");
@@ -236,6 +247,8 @@ if (!headed) {
 let driverGroup = null;
 /** 動いている筋書き (node --test)。 */
 let testProcess = null;
+/** 鍵の保管庫に使わせている XDG_RUNTIME_DIR (終わったら消す)。 */
+let runtimeDir = null;
 function stopDriver() {
   if (driverGroup === null) return;
   try {
@@ -246,9 +259,25 @@ function stopDriver() {
   }
   driverGroup = null;
 }
+/**
+ * 鍵の保管庫に使わせた XDG_RUNTIME_DIR を消す。消せたら true。D-Bus のセッションで起動されたもの (xdg-document-portal は
+ * FUSE で `doc` をつなぐ) がまだ止まっていなければ消せない。`warn` なら消せなかったことを出して諦める (/tmp の下に残るだけ)。
+ */
+function removeRuntimeDir(warn) {
+  if (runtimeDir === null) return true;
+  try {
+    rmSync(runtimeDir, { recursive: true, force: true });
+  } catch (e) {
+    if (!warn) return false;
+    console.warn(`could not remove ${runtimeDir}: ${e.message}`);
+  }
+  runtimeDir = null;
+  return true;
+}
 process.on("exit", () => {
   testProcess?.kill();
   stopDriver();
+  removeRuntimeDir(true);
   xvfb?.kill();
 });
 process.on("SIGINT", () => process.exit(130));
@@ -282,6 +311,9 @@ async function waitForDriver(url, driver) {
   }
   throw new Error("tauri-driver did not start");
 }
+
+/** 使い捨ての鍵の保管庫のパスワード (保管庫はテストの間だけのもので、秘密ではない)。 */
+const KEYRING_PASSWORD = "ugoe-e2e";
 
 const results = [];
 for (const app of only) {
@@ -319,19 +351,40 @@ for (const app of only) {
   const port = await freePort();
   const nativePort = await freePort();
   const log = createWriteStream(join(dir, "driver.log"));
+  const driverCommand = [
+    tools.tauriDriver,
+    "--port",
+    String(port),
+    "--native-port",
+    String(nativePort),
+    "--native-driver",
+    tools.webkitDriver,
+  ];
+  const keyring = Boolean(APPS[app].keyring && tools.keyring);
+  if (keyring) {
+    // 使い捨ての鍵の保管庫 (README の「鍵の保管庫」)。XDG_RUNTIME_DIR を新しいディレクトリにする: gnome-keyring は
+    // そこの keyring/control で動いている保管庫を探すので、利用者の保管庫 (/run/user/<uid>/keyring) を見つけて使わないように。
+    // 制御のソケットのパスは 108 バイトまでなので、短い一時ディレクトリに置く (target/ の下は長すぎることがある)
+    runtimeDir = mkdtempSync(join(tmpdir(), "ugoe-e2e-"));
+    appEnv.XDG_RUNTIME_DIR = runtimeDir;
+  }
   // dbus-run-session: 新しい D-Bus のセッションで動かす (利用者の鍵の保管庫やアクセシビリティのバスに触らない)
   const driver = spawn(
     tools.dbus,
-    [
-      "--",
-      tools.tauriDriver,
-      "--port",
-      String(port),
-      "--native-port",
-      String(nativePort),
-      "--native-driver",
-      tools.webkitDriver,
-    ],
+    keyring
+      ? [
+          "--",
+          "sh",
+          "-c",
+          // 保管庫 (データは XDG_DATA_HOME/keyrings。毎回消す) を決まったパスワードで作って解錠し、Secret Service だけを動かす。
+          // gnome-keyring は空のパスワードではログインの保管庫を作らない。D-Bus のセッションが終わると止まる
+          'printf %s "$2" | "$1" --unlock --components=secrets --control-directory="$XDG_RUNTIME_DIR/keyring" >/dev/null || exit 3; shift 2; exec "$@"',
+          "sh",
+          tools.keyring,
+          KEYRING_PASSWORD,
+          ...driverCommand,
+        ]
+      : ["--", ...driverCommand],
     { env: { ...process.env, ...appEnv }, stdio: ["ignore", "pipe", "pipe"], detached: true },
   );
   driverGroup = driver.pid;
@@ -364,6 +417,8 @@ for (const app of only) {
           // エディタのファイルのダイアログの答えを置く場所
           E2E_DIALOG_ANSWERS: appEnv.UGOE_EDITOR_DIALOG_ANSWERS,
           E2E_DISPLAY: display,
+          // 鍵の保管庫が動いているか (`1`)、飛ばす理由 (README の「鍵の保管庫」)
+          ...(keyring ? { E2E_KEYRING: "1" } : { E2E_KEYRING_SKIP: keyringSkip ?? "no keyring" }),
           // 利用者の画面に出しているか (マニュアルの画像の筋書きが、OS 全体に効くホットキーを外す)
           ...(headed ? { E2E_HEADED: "1" } : {}),
         },
@@ -376,6 +431,10 @@ for (const app of only) {
     status = 1;
   } finally {
     stopDriver();
+  }
+  // D-Bus のセッションで起動されたもの (FUSE の `doc`) が止まるまで、少し待ちながら消し直す
+  for (let attempt = 0; attempt < 40 && !removeRuntimeDir(attempt === 39); attempt++) {
+    await new Promise((r) => setTimeout(r, 250));
   }
   const seconds = Math.round((Date.now() - started) / 1000);
   results.push({ app, ok: status === 0, seconds });

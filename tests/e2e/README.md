@@ -24,10 +24,11 @@ just e2e --update-images    # 撮った画像の色を減らして docs/manual/i
 | WebKitWebDriver | Debian・Ubuntu の `webkit2gtk-driver` (`WEBKIT_WEBDRIVER` で場所を指定できる) |
 | Xvfb | `xvfb` (`--headed` なら要らない) |
 | dbus-run-session | `dbus` |
+| (あれば) gnome-keyring-daemon | `gnome-keyring` (`GNOME_KEYRING_DAEMON` で場所を指定できる。空にすると使わない)。無ければ鍵の保管庫の要る筋書き (エディタの API キー) を飛ばし、理由を出す (下の「鍵の保管庫」) |
 | アプリのビルドに要るもの | [apps/editor/README.md](../../apps/editor/README.md) (Tauri のシステムの依存・wasm-bindgen-cli など) |
 | (あれば) xwd と ImageMagick | 失敗したときに画面全体のスクリーンショットを撮る |
 
-足りないものがあれば、入れ方を出して止まる (終了コード 2)。`just ci` には含めない (道具が要り、アプリのビルドが重いため)。
+足りないものがあれば、入れ方を出して止まる (終了コード 2)。gnome-keyring-daemon だけは無くても流せる (飛ばした筋書きは node:test の skip になる)。`just ci` には含めない (道具が要り、アプリのビルドが重いため)。
 CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/testing.md#実機の-e2e-テスト))。
 
 ## 流れ
@@ -36,7 +37,7 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
    (配布物と同じ読み込み方)。できた実行ファイルは `target/e2e/bin/` に写す。
 2. Xvfb を起動する (空いている番号を選ぶ。下の「Xvfb の番号」)。利用者の画面にはウィンドウを出さない。
 3. アプリごとに、新しい D-Bus のセッション (`dbus-run-session`) の中で tauri-driver を起動し、`specs/<アプリ>.test.mjs` を
-   node:test で流す。tauri-driver は WebKitWebDriver に中継し、WebKitWebDriver がアプリを起動する。
+   node:test で流す。エディタのセッションでは、先に使い捨ての鍵の保管庫を動かす (下の「鍵の保管庫」)。tauri-driver は WebKitWebDriver に中継し、WebKitWebDriver がアプリを起動する。
 4. 結果をまとめて表示する。どれかが失敗すれば終了コード 1。
 
 ### Xvfb の番号
@@ -58,10 +59,27 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
   アプリの設定 (エディタの AI の設定・スタジオの前回のプロファイル)・データ (スタジオの API の鍵 `studio-api.json`)・
   WebView の localStorage (言語などの設定) はすべてここに入り、毎回消してから始める。
 - `dbus-run-session` で新しいセッションバスを使う。利用者の鍵の保管庫 (Secret Service。エディタの API キー) に触らない。
+  エディタの API キーは、そのセッションで動かす使い捨ての保管庫に入る (下の「鍵の保管庫」)。
 - 言語は `LANG=en_US.UTF-8` に固定する (OS の言語に合わせる画面を、どの環境でも英語にする)。
 - テストが書くファイル (スタジオの見本のプロファイル・エディタの見本のプロジェクト) は `target/e2e/<アプリ>/work/` に置く。
 - スタジオの操作 API は空いているポートで開く (利用者のスタジオの既定のポート 28451 とぶつけない)。見本のプロファイルの
   ホットキー (OS 全体に登録される) は外してから開く。
+
+### 鍵の保管庫
+
+エディタは API キーを OS の資格情報の保存先 (Linux では Secret Service) に置く (apps/editor/src-tauri/src/ai.rs)。保管庫が無いと
+設定の「AI provider」は「保管庫が無い」の案内になり、API キーの欄を確かめられない。そこで run.mjs は、エディタの D-Bus のセッションの中で
+gnome-keyring-daemon を動かす (T0050)。
+
+- `gnome-keyring-daemon --unlock --components=secrets` に決まったパスワード (`ugoe-e2e`。秘密ではない) を渡し、ログインの保管庫を作って解錠する。
+  gnome-keyring は空のパスワードではログインの保管庫を作らないので、空にはしない。Secret Service だけを動かす (SSH・PKCS#11 は動かさない)。
+- 保管庫のファイルは `XDG_DATA_HOME` (`target/e2e/editor/xdg/data/keyrings/`) に作られ、毎回消してから始める。
+- `XDG_RUNTIME_DIR` を新しい一時ディレクトリ (`/tmp/ugoe-e2e-*`。終わったら消す) にする。gnome-keyring は `$XDG_RUNTIME_DIR/keyring` で
+  動いている保管庫を探し、見つけるとそれを使うので、利用者の保管庫 (`/run/user/<uid>/keyring`) につながないように。
+  制御のソケットのパスは 108 バイトまでなので、`target/` の下ではなく短い一時ディレクトリに置く。
+- 保管庫は D-Bus のセッションが終わると止まる。
+- gnome-keyring-daemon が無ければ保管庫を動かさず、保管庫の要る手順を `step(..., { skip: keyringSkip() })` で飛ばす
+  (`lib/harness.mjs`。理由と入れ方が node:test の結果に出る)。動かせなかったとき (起動に失敗した) は driver.log に出て、手順が失敗する。
 
 ### 結果
 
@@ -81,7 +99,7 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 
 | アプリ | 手順 |
 | --- | --- |
-| エディタ (`specs/editor.test.mjs`) | 起動 → ダイアログで選んでいないパスを渡したコマンド (`import_psd`・`export_bundle`) が `file.not_chosen`・`file.not_chosen_for_save` で断られる → 「Open Sample…」で見本のプロジェクトを書き出して開き、ビューポートが描ける → パラメータ (AngleX) の値を入力する → メタデータの Version を変えて保存し、ファイルに書かれ未保存の印が消える → 「Import PSD…」で `assets/fixtures/character.psd` を取り込み、ツリーにレイヤーが出る → 「Export…」で `.ugoe` を書き出し、ファイルができて一時ファイルが残らない → プレビューで見本の `cat-ears.ugoemod` を読み込んで付き、チェックで外し、スロットの選択欄で付け直す → 画像からトラッキングし、MediaPipe が顔を見つけて口の開きが動く → 見本のモジュールのプロジェクト `cat-ears.ugoeproj` を開き (保存していない変更を捨てる確認を通る)、「Export Module…」で `.ugoemod` を書き出し、見本の `cat-ears.ugoemod` と同じバイト列で一時ファイルが残らない → 設定の AI の送り先を偽の AI のプロバイダにする → 見本の着せ替えの本体を開き直して「Import PSD…」で `character.psd` を取り込み、AI タブの「Propose rig」で分類とリグの提案を作り、「Preview」で提案を適用した姿 (`get_proposal_preview_bundle`) がビューポートに出て、「End preview」で戻りドキュメントが変わらず、「Adopt」で本体の物理に髪揺れのリグが足されて衝突体 `Shoulders` とスロット `Hair` の参照が残る (T1627 の回帰) → 「New from PSD…」で `character.psd` から作った物理の無いプロジェクトでも、同じく提案を作ってプレビューする → 設定で日本語に切り替え、読み込み直しても日本語のまま → CSP の違反が無い |
+| エディタ (`specs/editor.test.mjs`) | 起動 → ダイアログで選んでいないパスを渡したコマンド (`import_psd`・`export_bundle`) が `file.not_chosen`・`file.not_chosen_for_save` で断られる → 「Open Sample…」で見本のプロジェクトを書き出して開き、ビューポートが描ける → パラメータ (AngleX) の値を入力する → メタデータの Version を変えて保存し、ファイルに書かれ未保存の印が消える → 「Import PSD…」で `assets/fixtures/character.psd` を取り込み、ツリーにレイヤーが出る → 「Export…」で `.ugoe` を書き出し、ファイルができて一時ファイルが残らない → プレビューで見本の `cat-ears.ugoemod` を読み込んで付き、チェックで外し、スロットの選択欄で付け直す → 画像からトラッキングし、MediaPipe が顔を見つけて口の開きが動く → 見本のモジュールのプロジェクト `cat-ears.ugoeproj` を開き (保存していない変更を捨てる確認を通る)、「Export Module…」で `.ugoemod` を書き出し、見本の `cat-ears.ugoemod` と同じバイト列で一時ファイルが残らない → 設定の「AI provider」で API キーを保存し (欄は空になり、キーは画面に出ない)、設定を開き直しても保存済みで、確かめてから削除する (鍵の保管庫。無ければ飛ばす) → 設定の AI の送り先を偽の AI のプロバイダにする → 見本の着せ替えの本体を開き直して「Import PSD…」で `character.psd` を取り込み、AI タブの「Propose rig」で分類とリグの提案を作り、「Preview」で提案を適用した姿 (`get_proposal_preview_bundle`) がビューポートに出て、「End preview」で戻りドキュメントが変わらず、「Adopt」で本体の物理に髪揺れのリグが足されて衝突体 `Shoulders` とスロット `Hair` の参照が残る (T1627 の回帰) → 「New from PSD…」で `character.psd` から作った物理の無いプロジェクトでも、同じく提案を作ってプレビューする → 設定で日本語に切り替え、読み込み直しても日本語のまま → CSP の違反が無い |
 | ビューア (`specs/viewer.test.mjs`) | 起動 → 「Samples」のメニューから見本を開く → トラッキングの記録を流し、AngleX が動く → 画像からトラッキングし、口の開きが動く → 設定を開いて閉じる → CSP の違反が無い |
 | スタジオ (`specs/studio.test.mjs`) | 起動 → 見本のプロファイルを開く → シーンをクリックで切り替える → 出力ウィンドウを出し、「いまの状態」に見本の大きさ (1920 × 1080) が出て、フレームが届く → 透過が効かない (Xvfb にコンポジタは無い) と「背景」の欄に注意が出て、注意のボタンで背景がクロマキーになり注意が消え、「シーンの編集」で透過に戻すとまた出る (T0846・T0849) → 重い検出の下でトラッキングが操作ウィンドウと出力に届く (T0812 の回帰) → 出力ウィンドウを隠してもフレームが届き続ける → 画像からトラッキングし、口の開きが動く → 操作 API を入れると「いまの状態」に「API on」の印が出て、クライアントを承認し (承認の後の「取り消す」の知らせが出る)、シーンを切り替える → ブラウザソースを入れると「Source on」の印が出て、ページとフレームが届く → シーンを足すとプロファイルに自動で保存され、開き直しても残る → CSP の違反が無い |
 
@@ -186,7 +204,8 @@ MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状�
   MCP (`mcp-*`。エージェントの接続が要る)、AI の提案・注文・作り直し・法線マップ・送る前の確認 (`ai-proposal`・`ai-instructions`・`ai-revision`・
   `ai-normal-maps`・`ai-consent`)、モジュールの作成と比較 (`module-*` のうち `module-workspace` 以外)、スタジオの出力の例 (`studio-output`。
   Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ (`studio-virtual-camera`。v4l2loopback が要る)、点光源 (`lighting-point`)。
-- AI の設定 (`ai-settings`) は送り先の欄だけを撮る。API キーの欄は OS の鍵の保管庫が要り、e2e の D-Bus のセッションには無い。
+- AI の設定 (`ai-settings`) は、OpenRouter を選んで適用し、送り先の欄と API キーの欄を撮る。API キーの欄は鍵の保管庫が要る
+  (上の「鍵の保管庫」。無ければ「Apply」の行までを撮る)。
 
 ### ヘッドレスの Chrome (`just ui-audit`) との違い
 

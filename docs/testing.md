@@ -505,17 +505,19 @@ just e2e --update-images  # マニュアルの画像 (docs/manual/images) を本
 ```
 
 - 道具: [tauri-driver](https://crates.io/crates/tauri-driver) **2.1.0** (`cargo install tauri-driver --version 2.1.0 --locked`。
-  CI の `e2e.yml` の `TAURI_DRIVER_VERSION` と揃える)・WebKitWebDriver (Debian・Ubuntu の `webkit2gtk-driver`)・Xvfb・dbus-run-session。
+  CI の `e2e.yml` の `TAURI_DRIVER_VERSION` と揃える)・WebKitWebDriver (Debian・Ubuntu の `webkit2gtk-driver`)・Xvfb・dbus-run-session・
+  (あれば) gnome-keyring-daemon (無ければエディタの API キーの筋書きを飛ばす。CI では入れる)。
   WebDriver のクライアントは npm の依存を足さず、使う分だけの小さなもの (`tests/e2e/lib/webdriver.mjs`) を持ち、筋書きは node:test で書く
   (利用者の決定 2026-10-03)。
 - 利用者の環境を汚さない: アプリの `XDG_CONFIG_HOME`・`XDG_DATA_HOME`・`XDG_CACHE_HOME`・`XDG_STATE_HOME` を `target/e2e/<アプリ>/xdg/` に向け、
-  新しい D-Bus のセッションで動かす。画面は既定で Xvfb (利用者の画面にウィンドウを出さない)。Xvfb の番号は空いているものを選ぶので、
+  新しい D-Bus のセッションで動かす。エディタの API キーは、そのセッションで動かす使い捨ての鍵の保管庫に保存する (利用者の保管庫に触らない。T0050)。
+  画面は既定で Xvfb (利用者の画面にウィンドウを出さない)。Xvfb の番号は空いているものを選ぶので、
   同じ機械で並行に流せる (T0022)。
 - CSP: 各アプリの筋書きの最後に、CSP が止めたもの (`securitypolicyviolation` など) が 0 件であることを確かめる (T0022)。
   CSP が wasm や画像を止めても画面の一部が静かに動かなくなるだけなので、ほかの手順では気づけないため。数えない例外は持たない
   (MediaPipe の利用状況の送信は @ugoe/face-tracking が送る前に断る。T0943)。
 - 筋書き: エディタ (見本のプロジェクトを開く・パラメータを動かす・編集して保存・PSD の取り込み・`.ugoe` の書き出し・プレビューの着せ替え・
-  モジュールのプロジェクトの `.ugoemod` の書き出し・偽の AI のプロバイダ (この計算機の OpenAI 互換のサーバ) での提案とそのプレビュー (見本の着せ替えの本体に取り込んだ PSD と、「New from PSD…」の新しいプロジェクト)・
+  モジュールのプロジェクトの `.ugoemod` の書き出し・API キーの保存と削除 (鍵の保管庫)・偽の AI のプロバイダ (この計算機の OpenAI 互換のサーバ) での提案とそのプレビュー (見本の着せ替えの本体に取り込んだ PSD と、「New from PSD…」の新しいプロジェクト)・
   言語の切り替え)、ビューア (見本を開く・トラッキングの記録でパラメータが動く・設定)、スタジオ (見本のプロファイル・シーンの切り替え・
   出力ウィンドウ・重い検出の下のトラッキング (T0812 の回帰)・出力ウィンドウを隠しても止まらない・操作 API・ブラウザソース・
   プロファイルの自動保存と開き直し)。カメラは記録の再生で代え、重い検出は刻みの処理を 200ms 塞いで模す。3 つのアプリとも、
