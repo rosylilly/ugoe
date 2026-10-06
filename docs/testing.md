@@ -92,10 +92,16 @@ clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など
 | --- | --- | --- | --- |
 | `vcam` | `ugoe-studio-vcam` | `x86_64-pc-windows-msvc`・`aarch64-apple-darwin` | ターゲットの標準ライブラリだけ |
 | `apps` | `ugoe-editor`・`ugoe-viewer`・`ugoe-studio` | `x86_64-pc-windows-gnu` | MinGW の gcc と windres (`gcc-mingw-w64-x86-64`) |
-| `tools` | `ugoe-ai`・`ugoe-mcp` | `x86_64-pc-windows-gnu` | MinGW の gcc (`gcc-mingw-w64-x86-64`。依存の ring の C) |
+| `tools` | `ugoe-ai` と `OS_CRATES` (`ugoe-format`・`ugoe-fs`・`ugoe-editor-core`・`ugoe-cli`・`ugoe-mcp`) | `x86_64-pc-windows-gnu` | MinGW の gcc (`gcc-mingw-w64-x86-64`。依存の ring の C) |
 
 アプリ (`apps`) は Tauri と `ugoe-ai` の依存の C (ring) と、tauri-build のリソース (`.rc`) をターゲット向けにコンパイルするので、
-ターゲットの標準ライブラリだけでは検査できません (T0013)。`tools` (`ugoe-ai`・`ugoe-mcp`。T0027) も ring の C をコンパイルするので、同じく `windows-gnu` で検査します。
+ターゲットの標準ライブラリだけでは検査できません (T0013)。`tools` (T0027) も ring の C をコンパイルするので、同じく `windows-gnu` で検査します。
+
+- `tools` のクレートは、`ugoe-ai` (`rust (windows)` に入らない) と、`rust (windows)` の Clippy (`just lint-os`) が見る `scripts/ci-groups.mjs` の
+  `OS_CRATES` です。一覧は `OS_CRATES` から読むので、`OS_CRATES` にクレートを足せばここにも入ります。`rust (windows)` を待たずに、
+  unix だけのテスト (`#[cfg(unix)]`) が使う補助が Windows で未使用になる誤りなどを手元で見つけるためです (T0962。T0959 の誤りは
+  `just cross-check tools` で見つかります)。macOS のターゲットは ring の C に Apple の SDK が要り ubuntu では検査できないので、
+  `rust (macos)` のジョブ (`just lint-os`) に任せます。
 
 - **Windows:** msvc のターゲットは MSVC の SDK (cargo-xwin などで Microsoft の SDK を落とす) が要るので、MinGW で済む `windows-gnu` で
   検査します。アプリの Windows のコードは `cfg(windows)`・`target_os = "windows"` で分けていて、msvc と gnu の違い (`target_env`) に
@@ -115,7 +121,7 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
   どちらも Node から cargo を呼ぶので、Windows の PowerShell からも動きます。手元の Linux でも流せます。
 - macOS では、アプリの src-tauri の macOS のコード (エディタの資格情報の保存先など) と仮想カメラを、macOS の上の
   `just lint-group apps` で検査します (上の「別のターゲットの検査」)。
-- ファイルを扱うクレートを足したら `OS_CRATES` に足します。GPU も Tauri のシステムの依存も入れないので、それらが要るクレートは入れません。
+- ファイルを扱うクレートを足したら `OS_CRATES` に足します (`just cross-check` の `tools` にも入る。上の「別のターゲットの検査」)。GPU も Tauri のシステムの依存も入れないので、それらが要るクレートは入れません。
 - 手元の Linux で Windows のテストを近似するには、MinGW と Wine で `x86_64-pc-windows-gnu` のテストを流せます (CI の代わりにはならない。
   Wine のソケットやファイルシステムは本物の Windows と細部が違う):
 

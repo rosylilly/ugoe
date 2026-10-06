@@ -13,6 +13,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { OS_CRATES } from "./ci-groups.mjs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 /**
@@ -46,11 +47,13 @@ export const CHECKS = {
     commands: ["x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-windres"],
     apt: ["gcc-mingw-w64-x86-64"],
   },
-  // ugoe-ai と ugoe-mcp の Windows のコード (ugoe-mcp のルートの扱いなど。T0027)。ugoe-mcp のテストは rust (windows) の
-  // ランナーでも流れるが、ugoe-ai はそこに入らない。依存の ring (ugoe-ai の rustls) の C をコンパイルするので、
-  // apps と同じく MinGW の gcc がある windows-gnu で検査する。feature は `just lint` の --all-features に揃える
+  // ugoe-ai と、CI の rust (windows) の clippy が見るクレート (ci-groups.mjs の OS_CRATES) の Windows のコード
+  // (ugoe-mcp のルートの扱い・unix だけのテストの補助など。T0027・T0962)。OS_CRATES は rust (windows) のランナーでも
+  // --all-targets で検査されるが、手元の Linux で同じ誤りを先に見つけるためにここでも検査する。ugoe-ai は rust (windows) に入らない。
+  // 依存の ring (ugoe-ai の rustls) の C をコンパイルするので、apps と同じく MinGW の gcc がある windows-gnu で検査する。
+  // feature は `just lint` と `just lint-os` の --all-features に揃える
   tools: {
-    crates: ["ugoe-ai", "ugoe-mcp"],
+    crates: ["ugoe-ai", ...OS_CRATES.filter((name) => name !== "ugoe-ai")],
     targets: ["x86_64-pc-windows-gnu"],
     allFeatures: true,
     commands: ["x86_64-w64-mingw32-gcc"],

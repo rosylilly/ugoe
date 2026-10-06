@@ -1,6 +1,7 @@
 // scripts/cross-check.mjs のテスト (`just groups`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { OS_CRATES } from "./ci-groups.mjs";
 import {
   CHECKS,
   clippyArgs,
@@ -98,8 +99,10 @@ test("仮想カメラは Windows と macOS のターゲットで検査する", (
   assert.deepEqual(CHECKS.vcam.targets, ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]);
 });
 
-test("ugoe-ai と ugoe-mcp は MinGW のある windows-gnu で、すべての feature で検査する", () => {
-  assert.deepEqual(CHECKS.tools.crates, ["ugoe-ai", "ugoe-mcp"]);
+test("ugoe-ai と OS_CRATES (CI の rust (windows) の clippy) は MinGW のある windows-gnu で、すべての feature で検査する", () => {
+  assert.equal(CHECKS.tools.crates[0], "ugoe-ai");
+  for (const name of OS_CRATES) assert.ok(CHECKS.tools.crates.includes(name), name);
+  assert.equal(new Set(CHECKS.tools.crates).size, CHECKS.tools.crates.length);
   assert.deepEqual(CHECKS.tools.targets, ["x86_64-pc-windows-gnu"]);
   assert.equal(CHECKS.tools.allFeatures, true);
   assert.equal(CHECKS.tools.features, undefined);

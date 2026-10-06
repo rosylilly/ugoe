@@ -65,6 +65,7 @@ export const GROUPS = {
 /**
  * Windows と macOS のランナーでも clippy とテストを流すクレート (CI の rust (windows)・rust (macos)。docs/testing.md#ci-のジョブ)。
  * ファイルを書き出す・パスを扱うクレート。大文字小文字だけが違う名前やパスの区切りの違いの誤りは、Linux では見つからない (T0667)。
+ * scripts/cross-check.mjs の `tools` も、この一覧を Windows のターゲットで clippy にかける (T0962)。
  */
 export const OS_CRATES = ["ugoe-format", "ugoe-fs", "ugoe-editor-core", "ugoe-cli", "ugoe-mcp"];
 
