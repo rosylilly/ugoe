@@ -1,11 +1,11 @@
 ---
 id: T0845
 title: "スタジオ: ホットキーの削除に取り消しを付け、状態の印からその設定のパネルへ送る"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0845
 ---
 
 # T0845: スタジオ: ホットキーの削除に取り消しを付け、状態の印からその設定のパネルへ送る
