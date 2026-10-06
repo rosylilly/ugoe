@@ -95,8 +95,9 @@ pub struct PoseGroupInfo {
 /// シーンの設定のポーズの要素 `wanted` を表示する要素にし、グループごとに表示する要素を返す (合成したポーズのグループの順。T0842)。
 ///
 /// グループの要素が `wanted` に無ければ先頭の要素にする (同じグループの要素がいくつもあれば後のもの)。モデルに無い要素は捨てる。
-/// 要素の無いグループは飛ばす。
-fn show_pose(puppet: &mut Puppet, wanted: &[String]) -> Vec<String> {
+/// 要素の無いグループは飛ばす。`immediately` ならフェードせずに表示する (モデルを読み直した・モジュールを付け直した直後。
+/// 受け手も同じ時にフェードを飛ばす。T0844)。そうでなければ次の `update` からフェードで切り替わる。
+fn show_pose(puppet: &mut Puppet, wanted: &[String], immediately: bool) -> Vec<String> {
     let shown: Vec<_> = puppet
         .pose()
         .pose()
@@ -112,7 +113,11 @@ fn show_pose(puppet: &mut Puppet, wanted: &[String]) -> Vec<String> {
         })
         .collect();
     for part in &shown {
-        puppet.pose_mut().show(part);
+        if immediately {
+            puppet.pose_mut().show_immediately(part);
+        } else {
+            puppet.pose_mut().show(part);
+        }
     }
     shown.iter().map(|p| p.as_str().to_owned()).collect()
 }
@@ -218,6 +223,7 @@ impl Conductor {
     ///   次のフレームに物理のリセットを載せる (受け手どうしの物理を揃える)。`None` なら変えない。
     /// - 見せ方 (`look`) は受け手に配るだけで、指揮役は使わない。ただしポーズの要素 (`look.pose`) は指揮役のパペットにも表示させ、
     ///   モデルにある要素と、挙がっていないグループの先頭の要素で埋め直して配る (受け手のポーズを指揮役と揃える。T0842)。
+    ///   モデルを読み直した・モジュールの組が変わったときはフェードせずに表示し、同じモデルと組のままならフェードで切り替える (T0844)。
     ///
     /// モデルが無ければ ([`Conductor::clear`] の後など) `model` が要る。
     pub fn present(
@@ -266,7 +272,8 @@ impl Conductor {
         let Some(puppet) = &mut self.puppet else {
             return Err(LoadError::NoModel);
         };
-        look.pose = show_pose(puppet, &look.pose);
+        // モデルを読み直したか、モジュールの組が変わったときは `modules_revision` がこのシーンの版になる。
+        look.pose = show_pose(puppet, &look.pose, modules_revision == revision);
         self.revision = revision;
         self.reset = reset || (self.reset && model_revision != revision);
         let parameter_ids = puppet
@@ -736,6 +743,54 @@ mod tests {
             ..Look::default()
         });
         assert!(cleared.look.pose.is_empty());
+    }
+
+    /// モデルを読み直したシーンは選んだ要素からフェードせずに始め、同じモデルのままの切り替えはフェードする (T0844)。
+    #[test]
+    fn a_reloaded_scene_shows_its_pose_without_a_fade() {
+        let opacity = |conductor: &Conductor, id: &str| {
+            let pose = conductor.puppet.as_ref().unwrap().pose();
+            pose.opacities()
+                .find(|(part, _)| *part == id)
+                .map(|(_, o)| o)
+                .unwrap()
+        };
+        let model = || {
+            assemble(
+                NewModel {
+                    name: "pose.ugoe".into(),
+                    bundle: Bundle::new(fixtures::pose_and_effects()),
+                },
+                &[],
+            )
+            .unwrap()
+        };
+        let look = |part: &str| Look {
+            pose: vec![part.into()],
+            ..Look::default()
+        };
+        let mut conductor = Conductor::new();
+        conductor
+            .present(Some(model()), Some(Vec::new()), look("ArmB"))
+            .unwrap();
+        assert_eq!(
+            (opacity(&conductor, "ArmA"), opacity(&conductor, "ArmB")),
+            (0.0, 1.0)
+        );
+        // 同じモデルのまま: 次の刻みからフェードで切り替わる。
+        conductor.present(None, None, look("ArmA")).unwrap();
+        assert_eq!(opacity(&conductor, "ArmB"), 1.0);
+        conductor.tick(1.0 / 60.0).unwrap();
+        let fading = opacity(&conductor, "ArmA");
+        assert!(fading > 0.0 && fading < 1.0, "{fading}");
+        // 読み直し: すぐに選んだ要素になる。
+        conductor
+            .present(Some(model()), Some(Vec::new()), look("ArmB"))
+            .unwrap();
+        assert_eq!(
+            (opacity(&conductor, "ArmA"), opacity(&conductor, "ArmB")),
+            (0.0, 1.0)
+        );
     }
 
     #[test]

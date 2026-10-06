@@ -6,6 +6,7 @@
   シーンの通知を受けたら、版の番号を比べてモデルの読み直し・モジュールの付け直し・見せ方の変更を選ぶ
   (lib/outputLayout.ts の `planScene`、docs/studio.md#シーンの切り替えと受け手)。
   ポーズの要素 (`scene.pose`) は、モデルの読み直し・モジュールの付け直しの後に表示する要素にする (受け手のポーズは受け手が進める。T0842)。
+  読み直し・付け直しの直後はフェードせずに表示する (T0844)。
   背景はシーンに従って要素の CSS で描き (透過・単色・クロマキー・画像)、モデルの canvas は常に透過にする。
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
   出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
@@ -148,7 +149,7 @@ async function applyScene(scene: StudioScene): Promise<void> {
       return;
     }
     const skipped = attachModules(scene, modules);
-    showPose(scene);
+    showPose(scene, true);
     // 読んだモデルには前のシーンのフレームを当てない (値の数が違う)。見せ方を待たずに、このシーンのフレームへ移る。
     followed = {
       modelRevision: scene.modelRevision,
@@ -166,7 +167,7 @@ async function applyScene(scene: StudioScene): Promise<void> {
       modulesRevision: skipped ? -1 : scene.modulesRevision,
     };
   }
-  showPose(scene);
+  showPose(scene, plan === "modules");
   await showLook(scene);
   // 背景の画像を取っている間に次のシーンが届いたら、このシーンには移らない (次のシーンが移る)。
   if (scene.revision !== latest) return;
@@ -188,9 +189,12 @@ function attachModules(scene: StudioScene, modules: readonly (ModelFile | null)[
   return skipped;
 }
 
-/** シーンのポーズの要素を、それぞれのグループの表示する要素にする (次のフレームからフェードで切り替わる)。 */
-function showPose(scene: StudioScene) {
-  for (const part of scene.pose) player.showPose(part);
+/**
+ * シーンのポーズの要素を、それぞれのグループの表示する要素にする。モデルを読み直した・モジュールを付け直した直後
+ * (`immediately`) はフェードせずに表示し、同じモデルのままの切り替えは次のフレームからフェードで切り替わる (指揮役と同じ。T0844)。
+ */
+function showPose(scene: StudioScene, immediately: boolean) {
+  for (const part of scene.pose) player.showPose(part, { immediately });
 }
 
 /** 見せ方 (ライティング・配置・背景) を当てる。 */

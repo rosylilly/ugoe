@@ -23,7 +23,7 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     followed: number[] = [];
     continued: number[] = [];
     lightings = 0;
-    /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`)。 */
+    /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`。フェードせずに表示させたものは `pose!:<パーツ>`)。 */
     calls: string[] = [];
     constructor() {
       players.push(this);
@@ -58,8 +58,8 @@ vi.mock("@ugoe/player", async (importOriginal) => {
       this.continued.push(revision);
       this.calls.push(`continue:${revision}`);
     }
-    showPose(part: string) {
-      this.calls.push(`pose:${part}`);
+    showPose(part: string, options: { immediately?: boolean } = {}) {
+      this.calls.push(`${options.immediately ? "pose!" : "pose"}:${part}`);
       return true;
     }
     updateLighting() {
@@ -462,21 +462,26 @@ describe("Output scene changes", () => {
   });
 });
 
-// ポーズの要素は、読み直し・付け直しの後、そのシーンのフレームを当てる前に表示させる (T0842)。
+// ポーズの要素は、読み直し・付け直しの後、そのシーンのフレームを当てる前に表示させる (T0842)。読み直し・付け直しの直後は
+// フェードせずに表示させ、同じモデルのままの切り替えはフェードさせる (T0844)。
 describe("Output pose", () => {
   it("shows the scene's pose parts before following the scene", async () => {
     const r = receiver({ model: async () => GOOD, module: async () => GOOD });
     await r.send(scene(1, { pose: ["ArmB", "Hat/Off"] }));
     await vi.waitFor(() => expect(r.player.followed).toEqual([1]));
-    expect(r.player.calls).toEqual(["pose:ArmB", "pose:Hat/Off", "follow:1"]);
-    // 見せ方だけが変わったシーン (ポーズを選び直した) でも当て直す。
+    expect(r.player.calls).toEqual(["pose!:ArmB", "pose!:Hat/Off", "follow:1"]);
+    // 見せ方だけが変わったシーン (ポーズを選び直した) でも当て直す。フェードで切り替える。
     await r.send(scene(2, { modelRevision: 1, modulesRevision: 1, pose: ["ArmA"] }));
     await vi.waitFor(() => expect(r.player.continued).toEqual([2]));
     expect(r.player.calls.slice(3)).toEqual(["pose:ArmA", "continue:2"]);
-    // モジュールを付け直したシーンでも、付けた後に当てる。
+    // モジュールを付け直したシーンでも、付けた後にフェードせずに当てる。
     await r.send(scene(3, { modelRevision: 1, modules: ["Hat"], pose: ["ArmA", "Hat/On"] }));
     await vi.waitFor(() => expect(r.player.continued).toEqual([2, 3]));
     expect(r.player.modules.map((m) => m.name)).toEqual(["Hat.ugoemod"]);
-    expect(r.player.calls.slice(5)).toEqual(["pose:ArmA", "pose:Hat/On", "continue:3"]);
+    expect(r.player.calls.slice(5)).toEqual(["pose!:ArmA", "pose!:Hat/On", "continue:3"]);
+    // モデルを読み直したシーンは、選んだ要素からフェードせずに始める。
+    await r.send(scene(4, { modelRevision: 4, modules: ["Hat"], pose: ["ArmB", "Hat/Off"] }));
+    await vi.waitFor(() => expect(r.player.followed).toEqual([1, 4]));
+    expect(r.player.calls.slice(8)).toEqual(["pose!:ArmB", "pose!:Hat/Off", "follow:4"]);
   });
 });

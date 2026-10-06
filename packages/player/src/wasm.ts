@@ -65,6 +65,7 @@ export interface WebPuppet extends TrackingPuppet {
   stop_expression(name: string): void;
   stop_expressions(): void;
   show_pose(part: string): boolean;
+  show_pose_immediately(part: string): boolean;
   pose_json(): string | undefined;
   pose_visible_json(): string | undefined;
 

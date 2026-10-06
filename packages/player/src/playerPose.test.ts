@@ -44,6 +44,19 @@ describe("Player poses", () => {
     expect(p.poseShown).toEqual(["no_earwear"]);
   });
 
+  it("shows an entry without a fade when asked", async () => {
+    const { p, state } = await ready(options);
+    await p.load(model);
+    expect(p.showPose("no_earwear")).toBe(true);
+    expect(state.immediate).toEqual([]);
+
+    expect(p.showPose("earwear", { immediately: true })).toBe(true);
+    expect(state.immediate).toEqual(["earwear"]);
+    expect(p.poseShown).toEqual(["earwear"]);
+    expect(p.showPose("Face", { immediately: true })).toBe(false);
+    expect(state.immediate).toEqual(["earwear"]);
+  });
+
   it("adds and removes module groups and keeps the choices of the other groups", async () => {
     const { p, state } = await ready(options);
     await p.load(model);

@@ -63,7 +63,8 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   値も既定から始める (前のモデルの値を同じ ID のパラメータに戻さない。T0945)。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
-- ポーズ (T0735): `poseGroups` (グループ) と `poseShown` (グループごとに表示している要素) を持ち、`showPose(part)` で選ぶ。
+- ポーズ (T0735): `poseGroups` (グループ) と `poseShown` (グループごとに表示している要素) を持ち、`showPose(part)` で選ぶ (次のフレームからフェード。
+  `showPose(part, { immediately: true })` はフェードせずにすぐに表示する (`show_pose_immediately`。読み込みの直後など。T0844))。
   `poseShown` はモーションによる切り替えに追従する (T0736): ふつうのモードでは毎フレーム `update` の後で表示中の要素
   (`pose_visible_json()`) を読み、前のフレームから変わったときだけ合わせる (`followPoseShown`。グループは要素のパーツで突き合わせる)。
   利用者の選択 (`show_pose`) はすぐに表示中になり、モーションの要求は次の `update` で表示中になるので、後から来たほうが欄に出る

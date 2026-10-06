@@ -38,7 +38,7 @@ use ugoe_headless::{
 use ugoe_studio_vcam::{Config, Delivery, PixelLayout, VirtualCamera};
 
 use crate::conductor;
-use crate::follower::{Follower, Received};
+use crate::follower::{self, Follower, Received};
 use crate::lighting::scene_lighting;
 use crate::load_failure::{LoadFailure, LoadFailureCode};
 use crate::profile::{Background, Transform};
@@ -320,6 +320,8 @@ impl Feed {
                 .collect::<Vec<_>>()
         };
         let mut unread = Vec::new();
+        // モデルを読み直したか、モジュールを付け直したか (ポーズの要素をフェードせずに表示する)。
+        let mut reloaded = false;
         if scene.model_revision == 0 {
             self.follower.clear();
             self.resident = None;
@@ -347,6 +349,7 @@ impl Feed {
             self.model = Some(model);
             self.follower.set_scene(scene.revision, puppet);
             self.last_seq = None;
+            reloaded = true;
             self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
         } else {
             if self.modules_revision != Some(scene.modules_revision) {
@@ -365,15 +368,15 @@ impl Feed {
                 let resident = self.resident_for(gpu, puppet, model, &modules)?;
                 self.resident = Some(resident);
                 self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
+                reloaded = true;
             }
             self.follower.continue_scene(scene.revision);
         }
         self.look = scene.look.clone();
         // ポーズの要素は読み直し・付け直しの後に表示させる (受け手のポーズは受け手が進める。T0842)。
+        // 読み直し・付け直しの直後はフェードせずに表示する (T0844)。
         if let Some(puppet) = self.follower.puppet_mut() {
-            for part in &scene.look.pose {
-                puppet.pose_mut().show(&part.as_str().into());
-            }
+            follower::show_pose(puppet, &scene.look.pose, reloaded);
         }
         if let Some(code) = self.read_image(files.background.as_deref()) {
             unread.push(failure(Asset::Background, None, code));

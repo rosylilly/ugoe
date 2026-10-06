@@ -65,6 +65,8 @@ export function fakePuppet(options: FakeOptions = {}) {
      * モデルを読むと空になり、付け外しでは要素の並びが同じグループの分が残る (Puppet と同じ)。
      */
     visible: new Map<string, string>(),
+    /** `show_pose_immediately` で表示させた要素 (呼んだ順)。 */
+    immediate: [] as string[],
     /** ビュー (fit に対する倍率と、fit の位置からのずれ。偽物の変換は `scale = zoom`・`offset = pan`)。 */
     view: { zoom: 1, pan: [0, 0] as [number, number] },
   };
@@ -185,6 +187,14 @@ export function fakePuppet(options: FakeOptions = {}) {
       const group = poseGroups().find((g) => g.includes(part));
       if (group === undefined) return false;
       state.visible.set(group.join(","), part);
+      return true;
+    },
+    show_pose_immediately: (part: string) => {
+      if (!state.hasModel) throw new Error("no model");
+      const group = poseGroups().find((g) => g.includes(part));
+      if (group === undefined) return false;
+      state.visible.set(group.join(","), part);
+      state.immediate.push(part);
       return true;
     },
     // 表示中の要素 (グループの順。テストが `state.visible` を書き換えると、モーションが切り替えたことになる)。

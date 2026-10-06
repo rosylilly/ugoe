@@ -872,13 +872,16 @@ export class Player {
 
   /**
    * ポーズの要素 `part` (`poseGroups` の要素のパーツ) を、そのグループの表示中の要素にする (`show_pose`。次のフレームから
-   * フェードで切り替わる)。要素でなければ何もせず `false`。
+   * フェードで切り替わる)。`immediately` なら、フェードを飛ばしてすぐに表示する (`show_pose_immediately`。読み込みの直後など、
+   * 切り替えの途中を見せたくないとき。docs/spec/motion.md#ポーズ)。要素でなければ何もせず `false`。
    */
-  showPose(part: string): boolean {
+  showPose(part: string, options: { immediately?: boolean } = {}): boolean {
     const puppet = this.#puppet;
     if (puppet?.has_model() !== true) return false;
     const index = this.poseGroups.findIndex((g) => g.parts.includes(part));
-    if (index < 0 || !puppet.show_pose(part)) return false;
+    if (index < 0) return false;
+    const shown = options.immediately ? puppet.show_pose_immediately(part) : puppet.show_pose(part);
+    if (!shown) return false;
     this.poseShown = this.poseShown.map((shown, i) => (i === index ? part : shown));
     return true;
   }

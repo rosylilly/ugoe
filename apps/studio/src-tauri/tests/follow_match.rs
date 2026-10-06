@@ -5,6 +5,8 @@
 //! リップシンクの対象は物理の入力 (`AngleX`) にする (受け手が物理の後にリップシンクを当てることの確かめ。T0134)。
 //! ポーズのモデルでは、指揮役がパーツを切り替えるモーションを再生する (受け手がモーションのパーツの不透明度のカーブを当てることの確かめ。T0135)。
 //! 受け手の描画の頻度に依らないこと (まとめて適用してから比べても同じ) も確かめる。
+//! シーンのポーズの要素を替えた出し直し (同じモデルのままはフェード、読み直しはフェードせずに) で、指揮役と受け手のパーツの
+//! 不透明度が揃うことも確かめる (T0844)。
 #![allow(clippy::unwrap_used)]
 
 use ugoe::Puppet;
@@ -14,9 +16,9 @@ use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{Model, fixtures};
 use ugoe::motion::Priority;
-use ugoe_studio_lib::conductor::Conductor;
-use ugoe_studio_lib::follower::{Follower, Received};
-use ugoe_studio_lib::stream::Frame;
+use ugoe_studio_lib::conductor::{Conductor, NewModel, assemble};
+use ugoe_studio_lib::follower::{self, Follower, Received};
+use ugoe_studio_lib::stream::{Frame, Look, Scene};
 
 const EPSILON: f32 = 1e-3;
 
@@ -311,4 +313,105 @@ fn physics_actually_moves_the_follower() {
         shape(follower.puppet().unwrap()),
         shape(still.puppet().unwrap())
     );
+}
+
+/// ポーズの不透明度 (要素の順) と、比べる状態。
+fn pose_shape(puppet: &Puppet) -> Vec<f32> {
+    puppet
+        .pose()
+        .opacities()
+        .map(|(_, o)| o)
+        .chain(shape(puppet))
+        .collect()
+}
+
+/// 仮想カメラの受け手 (`virtual_camera.rs` の `Feed::set_scene`) と同じ規則でシーンの通知を受ける: モデルの版が変わったら
+/// 読み直し、そうでなければ続ける。読み直し・付け直しの直後だけポーズの要素をフェードせずに表示させる。
+fn receive_scene(
+    follower: &mut Follower,
+    followed: &mut Option<(u32, u32)>,
+    scene: &Scene,
+    source: &Bundle,
+) {
+    let reloaded = match *followed {
+        Some((model, modules)) if model == scene.model_revision => {
+            follower.continue_scene(scene.revision);
+            modules != scene.modules_revision
+        }
+        _ => {
+            follower.set_scene(scene.revision, single(source));
+            true
+        }
+    };
+    *followed = Some((scene.model_revision, scene.modules_revision));
+    follower::show_pose(follower.puppet_mut().unwrap(), &scene.look.pose, reloaded);
+}
+
+/// シーンの `pose` を替えた出し直しで、指揮役と受け手のポーズの不透明度と形が各フレームで揃う (T0844)。
+/// 同じモデルのまま選び直すとフェードし、モデルを読み直したシーンは選んだ要素からフェードせずに始める。
+#[test]
+fn pose_switches_of_the_scene_match_the_conductor() {
+    let source = bundle(&fixtures::pose_and_effects(), None);
+    let model = || {
+        assemble(
+            NewModel {
+                name: "pose.ugoe".into(),
+                bundle: source.clone(),
+            },
+            &[],
+        )
+        .unwrap()
+    };
+    let look = |part: &str| Look {
+        pose: vec![part.into()],
+        ..Look::default()
+    };
+    let arm = |puppet: &Puppet, id: &str| {
+        puppet
+            .pose()
+            .opacities()
+            .find(|(part, _)| *part == id)
+            .map(|(_, o)| o)
+            .unwrap()
+    };
+    let mut conductor = Conductor::new();
+    let mut follower = Follower::new();
+    let mut followed = None;
+    let mut faded = false;
+    for frame in 0..120 {
+        let switch = match frame {
+            // モデルを読んだシーン: 選んだ要素 (ArmB) から始める。
+            0 => Some((Some(model()), Some(Vec::new()), look("ArmB"))),
+            // 同じモデルのまま選び直す: フェードで切り替える。
+            30 => Some((None, None, look("ArmA"))),
+            // モデルを読み直したシーン: 選んだ要素 (ArmB) からフェードせずに始める。
+            80 => Some((Some(model()), Some(Vec::new()), look("ArmB"))),
+            _ => None,
+        };
+        if let Some((model, modules, look)) = switch {
+            let scene = conductor.present(model, modules, look).unwrap().clone();
+            receive_scene(&mut follower, &mut followed, &scene, &source);
+        }
+        let sent = conductor.tick(dt_at(frame)).unwrap();
+        let sent = Frame::decode(&sent.encode()).unwrap();
+        assert_eq!(
+            follower.receive(&sent),
+            Ok(Received::Applied),
+            "frame {frame}"
+        );
+        let puppet = follower.puppet().unwrap();
+        let expected = conductor.perform(|_, conducted| pose_shape(conducted.unwrap()));
+        assert_close(&pose_shape(puppet), &expected, &format!("frame {frame}"));
+        if frame == 0 || frame == 80 {
+            assert_eq!(
+                (arm(puppet, "ArmA"), arm(puppet, "ArmB")),
+                (0.0, 1.0),
+                "frame {frame}"
+            );
+        }
+        let a = arm(puppet, "ArmA");
+        faded |= (30..80).contains(&frame) && a > 0.0 && a < 1.0;
+    }
+    // 同じモデルのままの切り替えは実際にフェードしている (上の検査が空振りしていない)。
+    assert!(faded);
 }

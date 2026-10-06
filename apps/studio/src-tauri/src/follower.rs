@@ -21,6 +21,22 @@ pub fn apply_frame(puppet: &mut Puppet, frame: &Frame) -> Result<(), ParameterVa
     )
 }
 
+/// シーンの通知のポーズの要素 `parts` (`Look::pose`) を、それぞれのグループの表示する要素にする (T0842)。
+///
+/// 受け手はモデルの読み直し・モジュールの付け直しの後に呼ぶ。その直後 (`immediately`) はフェードせずに表示し、
+/// 同じモデルのままの切り替えは次のフレームからフェードで切り替える (指揮役と同じ。`docs/studio.md#ポーズの要素`、T0844)。
+/// モデルに無い要素は何もしない。
+pub fn show_pose(puppet: &mut Puppet, parts: &[String], immediately: bool) {
+    for part in parts {
+        let part = part.as_str().into();
+        if immediately {
+            puppet.pose_mut().show_immediately(&part);
+        } else {
+            puppet.pose_mut().show(&part);
+        }
+    }
+}
+
 /// フレームを受け取った結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Received {
