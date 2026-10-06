@@ -1,11 +1,11 @@
 ---
 id: T0060
 title: "ui-audit: エディタに「着せ替えで作り直しを待っている」場面 (待っている文の出る行) を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0055]
-assignee:
+assignee: claude-worker-T0060
 ---
 
 # T0060: ui-audit: エディタに「着せ替えで作り直しを待っている」場面 (待っている文の出る行) を足す
