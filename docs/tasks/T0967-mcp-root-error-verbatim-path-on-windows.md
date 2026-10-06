@@ -1,11 +1,11 @@
 ---
 id: T0967
 title: "mcp: Windows で --root の外を指す本体のエラーが \\\\?\\ の付いたパスを出し、テスト root_confines_module_bases が落ちる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0967
 ---
 
 # T0967: mcp: Windows で --root の外を指す本体のエラーが `\\?\` の付いたパスを出し、テスト root_confines_module_bases が落ちる
