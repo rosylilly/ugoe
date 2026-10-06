@@ -1,11 +1,11 @@
 ---
 id: T1674
 title: "エディタ: 着せ替えで GPU を待っている間、読めなかった行に待っている文が出ることと、付け直した行に前の失敗の文が残ること"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1674
 ---
 
 # T1674: エディタ: 着せ替えで GPU を待っている間、読めなかった行に待っている文が出ることと、付け直した行に前の失敗の文が残ること
