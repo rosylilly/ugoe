@@ -421,9 +421,7 @@
     "title": "Pose",
     "status_one": "{{count}} group",
     "status_other": "{{count}} groups",
-    "hint": "Choose the part to show in each group (it fades in). While a motion switches the same group, the motion takes precedence and the choice follows it.",
-    "group": "Group {{n}}",
-    "moduleGroup": "{{module}} group {{n}}"
+    "hint": "Choose the part to show in each group (it fades in). While a motion switches the same group, the motion takes precedence and the choice follows it."
   },
   "memory": {
     "title": "Remembered for each model",

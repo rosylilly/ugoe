@@ -11,6 +11,7 @@ export * from "./loadError";
 export * from "./loadWarnings";
 export * from "./modelFile";
 export * from "./modelMemory";
+export { default as PosePicker } from "./PosePicker.svelte";
 export * from "./parameters";
 export * from "./player.svelte";
 export * from "./pose";

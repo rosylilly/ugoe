@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // ポーズのパネル (PosePanel.svelte): グループごとに要素を選ぶ欄を出し、選ぶと Player.showPose を呼ぶこと (T0735)。
 // モーションが要素を切り替えると (Player が poseShown を表示中の要素に合わせる)、欄も追従すること (T0736)。
+// 欄そのもの (見出し・表示名・5 個以上なら Select) のテストは @ugoe/player の PosePicker.svelte.test.ts (T0948)。
 import { setLocale } from "@ugoe/i18n";
 import type { Player, PoseGroupInfo } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
@@ -42,7 +43,7 @@ function setup(groups: PoseGroupInfo[]) {
 
 /** グループの欄の見出しと、選んでいる要素の表示名。 */
 function rows(target: HTMLElement): [string, string][] {
-  return [...target.querySelectorAll(".group")].map((g) => [
+  return [...target.querySelectorAll(".ugoe-pose-picker__group")].map((g) => [
     g.querySelector(".ugoe-segmented__label")?.textContent?.trim() ?? "",
     g.querySelector('[data-state="checked"]')?.textContent?.trim() ?? "",
   ]);
@@ -96,12 +97,5 @@ describe("PosePanel", () => {
     down?.click();
     flushSync();
     expect(rows(target)[0]).toEqual(["グループ 1", "HandsDown"]);
-  });
-
-  it("uses a select for groups with five or more entries", () => {
-    const { target } = setup([{ parts: ["A", "B", "C", "D", "E"], module: null }]);
-    expect(target.querySelector(".ugoe-segmented")).toBeNull();
-    expect(target.querySelector(".ugoe-select")).not.toBeNull();
-    expect(target.querySelector(".ugoe-select")?.textContent).toContain("A");
   });
 });

@@ -124,5 +124,9 @@
     "pixelCount": "画素の数が大きさと合いません ({{bytes}} バイト、{{width}}×{{height}} の RGBA は {{expected}} バイト)",
     "noCanvas": "PNG に変換できません (2D の canvas を使えません)",
     "encodeFailed": "PNG に変換できません"
+  },
+  "pose": {
+    "group": "グループ {{n}}",
+    "moduleGroup": "{{module}} のグループ {{n}}"
   }
 }

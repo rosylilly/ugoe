@@ -125,5 +125,9 @@
     "pixelCount": "The pixel data does not match the size ({{bytes}} bytes; {{width}}×{{height}} RGBA needs {{expected}} bytes)",
     "noCanvas": "Cannot convert the image to PNG (2D canvas is not available)",
     "encodeFailed": "Cannot convert the image to PNG"
+  },
+  "pose": {
+    "group": "Group {{n}}",
+    "moduleGroup": "{{module}} group {{n}}"
   }
 }

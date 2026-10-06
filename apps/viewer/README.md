@@ -587,7 +587,8 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 
 開いたモデルにポーズ (排他的なパーツの切り替え。[docs/spec/model.md#ポーズ](../../docs/spec/model.md#ポーズ)) のグループがあると、
 右のパネルに「ポーズ」が出る。グループごとに表示する要素 (パーツの ID) を選ぶと、`Player.showPose` が WebPuppet の `show_pose` を呼び、
-次のフレームからフェードで切り替わる。要素が 2〜4 個のグループは `SegmentedControl`、5 個以上は `Select` で選ぶ (docs/ui.md#部品の一覧)。
+次のフレームからフェードで切り替わる。欄は `@ugoe/player` の `PosePicker` (スタジオと共有。T0948) で、要素が 2〜4 個のグループは
+`SegmentedControl`、5 個以上は `Select` で選ぶ (docs/ui.md#部品の一覧)。
 規則は [docs/spec/motion.md#ポーズ](../../docs/spec/motion.md#ポーズ)、使い方は [docs/manual/dress-up.md](../../docs/manual/dress-up.md#ビューアでポーズを切り替える)。
 
 - グループは WebPuppet の合成したポーズ (`pose_json()`) から読む (`pose.ts` の `parsePose`)。着せ替えで付けたモジュールのグループ

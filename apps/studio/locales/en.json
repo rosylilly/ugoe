@@ -357,9 +357,7 @@
   "poses": {
     "heading": "Pose",
     "empty": "The live model has no pose.",
-    "hint": "Choose the part to show in each group of the live scene (it fades in). The choice is remembered in the scene. While a motion switches the same group, the motion takes precedence.",
-    "group": "Group {{n}}",
-    "moduleGroup": "{{module}} group {{n}}"
+    "hint": "Choose the part to show in each group of the live scene (it fades in). The choice is remembered in the scene. While a motion switches the same group, the motion takes precedence."
   },
   "inputs": {
     "heading": "Inputs",

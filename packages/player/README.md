@@ -3,7 +3,7 @@
 モデルの再生の層 (npm パッケージ `@ugoe/player`、pnpm のワークスペース)。ビューア (`apps/viewer`) とスタジオ (`apps/studio`、
 [ADR 0028](../../docs/adr/0028-studio.md)) で共有する。T0904 でビューアから切り出した ([ADR 0029](../../docs/adr/0029-shared-ui-and-i18n.md))。
 
-**ライセンスは GPL-3.0-only** (使うアプリと同じ)。依存は `@ugoe/face-tracking` と `@ugoe/i18n`。`@ugoe/ui` には、パネルをここへ移すときに依存する。
+**ライセンスは GPL-3.0-only** (使うアプリと同じ)。依存は `@ugoe/face-tracking`・`@ugoe/i18n`・`@ugoe/ui` (画面の部品。下の `PosePicker`)。
 
 ```
 locales/                 利用者に見せる文 (エラー・警告・既定の光源の組の名前など) のカタログ (名前空間 `player`。en.json が原文)
@@ -20,6 +20,7 @@ src/parameters.ts        パラメータの一覧 (parameters_json) の読み取
 src/animation.ts         モーションと表情の一覧・発火したイベント (motion_events_json。T0734) の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
 src/lighting.ts          光源の設定・既定の組・set_lighting_json の JSON・localStorage への保存・光源の印の幾何 (T0708・T0709)
 src/pose.ts              ポーズのグループ (pose_json) の読み取り・付け外しの後の選択の引き継ぎ・表示中の要素 (pose_visible_json) への追従 (T0736)・要素の表示名 (T0735)
+src/PosePicker.svelte    ポーズの要素を選ぶ欄 (ビューアとスタジオのポーズのパネルで共有。T0948。下の「画面の部品」)
 src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)
 src/dressUpMemory.ts     付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
@@ -34,8 +35,9 @@ browser-test/            PuppetSurface と Player を本物の wasm とヘッド
 src/testing/              テスト用の部品 (偽の WebPuppet・Player を動かす準備。T0933。localStorage の代わりは `@ugoe/i18n/testing` の `MemoryStorage`)。index.ts から出さない
 ```
 
-画面の部品 (パラメータ・ライティング・着せ替え・モーション・ポーズのパネル、ビューポート、覚えたものの一覧) は、いまはビューアに
-ある (`apps/viewer/src/lib/*.svelte`)。`@ugoe/ui` ができた後で、部品に作り直してここへ移す。
+画面の部品のうち、ビューアとスタジオで同じ形のものはここに置く (いまはポーズの欄 `PosePicker` だけ。下の「画面の部品」)。
+ほか (パラメータ・ライティング・着せ替え・モーションのパネル、ビューポート、覚えたものの一覧) はビューアにある (`apps/viewer/src/lib/*.svelte`)。
+2 つ以上のアプリで同じ形が要るものになったら、ここへ移す。
 
 ## 使い方
 
@@ -116,6 +118,19 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - 作り直しを諦めた `GpuLostRepeatedlyError` が `cause` (作り直しで作れなかった最後の失敗) を持つときは、その理由の文 (`createError.*`、
   ほかの例外は `errors.renderStart`) を `errors.recreateFailed` に埋めて `error` に入れる (「GPU を続けて失った」の文にしない。T0946)。
 - テストは Svelte のプラグインを通す (`vitest.config.ts`。@ugoe/i18n が runes を使うため)。文を確かめるテストは `setLocale("ja")` で言語を決めてから比べる。
+
+## 画面の部品
+
+部品の見た目は `@ugoe/ui` の部品とトークンで付ける (アプリは `@ugoe/ui` の `tokens.css` を読んでおく)。部品の文言はカタログの名前空間 `player`。
+`index.ts` から名前で出す (`import { PosePicker } from "@ugoe/player"`)。部品のテスト (`*.svelte.test.ts`) は happy-dom の上で、svelte を
+ブラウザ向けの版で解決して走らせる (`vitest.config.ts`)。
+
+- **`PosePicker` (T0948):** ポーズのグループごとに表示する要素を選ぶ欄。要素が 2〜4 個なら `SegmentedControl`、5 個以上なら `Select`
+  ([docs/ui.md](../../docs/ui.md#部品の一覧))。見出しは「グループ n」(モジュールのグループは「<モジュール> のグループ n」。`poseGroupNumbers`)、
+  要素の表示名はモジュールの接頭辞を除いたもの (`poseEntryLabel`)。props は `groups` (`PoseGroupInfo[]`)・`shown` (グループごとに表示している
+  要素)・`disabled`・`onchange(part)`。欄は `shown` をそのまま出すので、呼び手が表示中の要素に合わせれば追従する (ビューアは `Player.poseShown`
+  を渡し、モーションによる切り替えに追従する。T0736)。`onchange` が Promise を返す間は、届いた `shown` より選んだ要素を先に出す
+  (スタジオはバックエンドの `show_pose` を待ち、`scene` の通知で `shown` が届く。T0842)。パネルの見出し・説明の文はアプリが持つ。
 
 ## 受け手のモード (T0801)
 

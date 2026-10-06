@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // ポーズのパネル (PosePanel.svelte): グループごとに要素を選ぶ欄を出し、選んだ要素を送ること。送っている間は選んだ要素を
-// 先に出し、送り終えたら届いた通知の値に戻すこと (T0842)。
+// 先に出し、送り終えたら届いた通知の値に戻すこと (T0842)。グループが無ければその旨を出すこと。
+// 欄そのもの (見出し・表示名・5 個以上なら Select・送っている間の表示) のテストは @ugoe/player の PosePicker.svelte.test.ts (T0948)。
 import { setLocale } from "@ugoe/i18n";
 import type { PoseGroupInfo } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
@@ -47,7 +48,7 @@ function setup(groups: PoseGroupInfo[]) {
 
 /** グループの欄の見出しと、選んでいる要素の表示名。 */
 function rows(target: HTMLElement): [string, string][] {
-  return [...target.querySelectorAll(".poses__group")].map((g) => [
+  return [...target.querySelectorAll(".ugoe-pose-picker__group")].map((g) => [
     g.querySelector(".ugoe-segmented__label")?.textContent?.trim() ?? "",
     g.querySelector('[data-state="checked"]')?.textContent?.trim() ?? "",
   ]);
@@ -62,42 +63,19 @@ function item(target: HTMLElement, text: string): HTMLButtonElement {
 }
 
 describe("PosePanel", () => {
-  it("shows a choice for each group of the model and of attached modules", () => {
-    const { target } = setup([
-      { parts: ["ArmA", "ArmB"], module: null },
-      { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
-    ]);
-    expect(rows(target)).toEqual([
-      ["グループ 1", "ArmA"],
-      ["Hat のグループ 1", "On"],
-    ]);
-  });
-
   it("sends the chosen part and shows it until the notice arrives", async () => {
-    const { target, sent, notify } = setup([
-      { parts: ["ArmA", "ArmB"], module: null },
-      { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
-    ]);
+    const { target, sent, notify } = setup([{ parts: ["ArmA", "ArmB"], module: null }]);
     item(target, "ArmB").click();
     flushSync();
-    // 通知の前に別のグループを選んでも、先に選んだものを消さない。
-    item(target, "Off").click();
-    flushSync();
-    expect(sent).toEqual(["ArmB", "Hat/Off"]);
-    expect(rows(target)).toEqual([
-      ["グループ 1", "ArmB"],
-      ["Hat のグループ 1", "Off"],
-    ]);
-    await notify(["ArmB", "Hat/Off"]);
-    expect(rows(target)).toEqual([
-      ["グループ 1", "ArmB"],
-      ["Hat のグループ 1", "Off"],
-    ]);
+    expect(sent).toEqual(["ArmB"]);
+    expect(rows(target)).toEqual([["グループ 1", "ArmB"]]);
+    await notify(["ArmB"]);
+    expect(rows(target)).toEqual([["グループ 1", "ArmB"]]);
   });
 
-  it("uses a select for groups with five or more entries", () => {
-    const { target } = setup([{ parts: ["A", "B", "C", "D", "E"], module: null }]);
-    expect(target.querySelector(".ugoe-segmented")).toBeNull();
-    expect(target.querySelector(".ugoe-select")?.textContent).toContain("A");
+  it("says so when the live model has no pose", () => {
+    const { target } = setup([]);
+    expect(target.textContent).toContain("ポーズがありません");
+    expect(target.querySelector(".ugoe-pose-picker")).toBeNull();
   });
 });
