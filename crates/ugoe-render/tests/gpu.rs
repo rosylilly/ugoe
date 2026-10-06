@@ -4,6 +4,8 @@
 //! 黙って飛ばさずに失敗する (feature を明示的に有効にしたときだけ実行されるため)。
 #![cfg(feature = "gpu-tests")]
 
+mod common;
+
 use std::sync::OnceLock;
 
 use ugoe_core::{Rgb, Vec2};
@@ -220,10 +222,7 @@ fn render_frame(
         target.size(),
     );
     queue.submit([encoder.finish()]);
-    readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
+    common::map_read(device, &readback);
     let pixels = readback
         .get_mapped_range(..)
         .expect("mapped range")
@@ -328,6 +327,25 @@ fn normal_blend_covers_quad() {
     image.assert_pixel((47, 47), [1.0; 4]);
     image.assert_pixel((15, 16), [0.0; 4]);
     image.assert_pixel((48, 47), [0.0; 4]);
+}
+
+/// 1 つのデバイスを複数のスレッドが同時に使って読み戻しても、どれも描いた画素を読める (T0964)。
+///
+/// ほかのスレッドの `poll` がこちらのマップのコールバックを集めて、まだ呼んでいないうちに、こちらの `poll` が戻ることがある。
+/// 読み戻しはコールバックが呼ばれたことを確かめてから読む (`common::map_read`)。
+#[test]
+fn readbacks_from_many_threads_share_one_device() {
+    std::thread::scope(|s| {
+        for _ in 0..8 {
+            s.spawn(|| {
+                for _ in 0..16 {
+                    let image = Scene::new(fixtures::single_quad()).render();
+                    image.assert_pixel(INSIDE, [1.0; 4]);
+                    image.assert_pixel(OUTSIDE, [0.0; 4]);
+                }
+            });
+        }
+    });
 }
 
 #[test]

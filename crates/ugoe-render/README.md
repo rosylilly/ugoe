@@ -23,6 +23,9 @@ wgpu による参照レンダラと参照シェーダ (WGSL)。
   (目で確かめる・変更の前後で画素を比べるため)。
 - アダプタが見つからなければ失敗する。GPU がない環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
   バックエンドは `WGPU_BACKEND=vulkan` / `WGPU_BACKEND=gl` などで選べる。
+- テストは 1 つのデバイスをスレッドの間で共有する。読み戻しは `tests/common/mod.rs` の `map_read` で、
+  マップのコールバックが呼ばれるまで poll し直してから読む (ほかのスレッドの `poll` がコールバックを持ったまま戻ることがある。
+  [docs/testing.md](../../docs/testing.md#描画テスト))。
 
 ## 関連タスク
 

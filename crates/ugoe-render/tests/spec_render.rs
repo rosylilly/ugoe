@@ -5,6 +5,8 @@
 //! 参照レンダラと食い違う画素は [`KNOWN_MISMATCHES`] に理由を付けて挙げる。
 #![cfg(feature = "gpu-tests")]
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -469,10 +471,7 @@ fn render(
         target.size(),
     );
     queue.submit([encoder.finish()]);
-    readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
+    common::map_read(device, &readback);
     let mapped = readback.get_mapped_range(..).expect("mapped range");
     let pixels = mapped
         .chunks_exact(padded_row as usize)

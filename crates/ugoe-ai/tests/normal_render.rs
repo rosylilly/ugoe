@@ -4,6 +4,10 @@
 #![cfg(feature = "gpu-tests")]
 #![allow(clippy::unwrap_used)]
 
+/// 読み戻しの補助は ugoe-render の描画テストと共有する (共有したデバイスでコールバックを待つ。T0964)。
+#[path = "../../ugoe-render/tests/common/mod.rs"]
+mod readback;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -189,10 +193,7 @@ fn render(doc: &Document, lighting: &Lighting, width: u32) -> Image {
         target.size(),
     );
     queue.submit([encoder.finish()]);
-    readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
+    readback::map_read(device, &readback);
     let pixels = readback
         .get_mapped_range(..)
         .expect("mapped range")

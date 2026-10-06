@@ -283,7 +283,7 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 - アダプタが見つからないときは、飛ばさずに失敗させます (feature を明示的に有効にしたときだけ動くため)。
 - 期待画像は `crates/ugoe-render/tests/golden/` に置きます。更新するときは PR に新旧の画像を載せます。
 - `just test-gpu -- --nocapture` とすると、テストが選んだアダプタ (名前・ドライバ・バックエンド) が表示されます。
-- テストは 1 つのデバイスをテストのスレッドの間で共有して並行に使うことが多いです。読み戻しで `Device::poll` が戻っても、`map_async` のコールバックはほかのスレッドの `poll` が集めたまま、まだ呼ばれていないことがあります (wgpu はロックを外してから呼ぶ)。待ち終わったらコールバックが呼ばれている、と決めつけず、呼ばれるまで上限のある回数で poll し直します (`ugoe-headless` の `Gpu::render` が例。T0963)。手元で GL の揺れを確かめるときは `WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1` を付け、`-- --test-threads=16` などで並行を増やして何度か流します。
+- テストは 1 つのデバイスをテストのスレッドの間で共有して並行に使うことが多いです。読み戻しで `Device::poll` が戻っても、`map_async` のコールバックはほかのスレッドの `poll` が集めたまま、まだ呼ばれていないことがあります (wgpu はロックを外してから呼ぶ)。待ち終わったらコールバックが呼ばれている、と決めつけず、呼ばれるまで上限のある回数で poll し直します (`ugoe-headless` の `Gpu::render` と、ugoe-render・ugoe-ai の描画テストの `tests/common/mod.rs` の `map_read` が例。T0963・T0964)。wgpu-core 30 はマップの状態をロックの中で変えるので、コールバックの前でも `get_mapped_range` は読めてしまいますが、それは文書にない実装の都合なので頼りません。手元で GL の揺れを確かめるときは `WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1` を付け、`-- --test-threads=16` などで並行を増やして何度か流します。
 
 ### CI での実行
 
