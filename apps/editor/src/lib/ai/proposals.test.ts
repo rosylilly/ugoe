@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { setLocale } from "@ugoe/i18n";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Classification, NormalMapGroupView, ProposalCommand } from "../ipc";
 import {
+  CHANGE_KINDS,
+  changeLabel,
   changeSummary,
   classificationSummary,
   commandLabel,
@@ -34,18 +38,59 @@ describe("changeSummary", () => {
   it("counts the selected commands by kind in the order they appear", () => {
     const more = [...commands, { op: "add_parameter", subject: "AngleY", requires: [] }];
     expect(changeSummary(more, new Set())).toEqual([
-      { op: "add_parameter", count: 2 },
-      { op: "create_warp_deformer", count: 1 },
-      { op: "add_keyform_key", count: 1 },
-      { op: "set_keyform_cell", count: 1 },
-      { op: "rename_mesh", count: 1 },
+      { op: "add_parameter", count: 2, label: "add 2 parameters" },
+      { op: "create_warp_deformer", count: 1, label: "create 1 warp deformer" },
+      { op: "add_keyform_key", count: 1, label: "add 1 keyform key" },
+      { op: "set_keyform_cell", count: 1, label: "place 1 keyform" },
+      { op: "rename_mesh", count: 1, label: "rename 1 mesh" },
     ]);
     // 外したコマンドは数えない (すべて外した種類は出さない)
     expect(changeSummary(more, new Set([0, 2, 3, 4]))).toEqual([
-      { op: "create_warp_deformer", count: 1 },
-      { op: "add_parameter", count: 1 },
+      { op: "create_warp_deformer", count: 1, label: "create 1 warp deformer" },
+      { op: "add_parameter", count: 1, label: "add 1 parameter" },
     ]);
     expect(changeSummary(more, new Set([0, 1, 2, 3, 4, 5]))).toEqual([]);
+  });
+
+  it("leaves a kind missing from the catalog without a label", () => {
+    const unknown = [...commands, { op: "future_command", subject: null, requires: [] }];
+    expect(changeSummary(unknown, new Set([0, 1, 2, 3, 4]))).toEqual([
+      { op: "future_command", count: 1, label: null },
+    ]);
+  });
+});
+
+describe("changeLabel", () => {
+  afterEach(() => setLocale("en"));
+
+  it("says the change in the user's words with the count", () => {
+    expect(changeLabel("add_parameter", 1)).toBe("add 1 parameter");
+    expect(changeLabel("add_parameter", 5)).toBe("add 5 parameters");
+    expect(changeLabel("set_keyform_cell", 12)).toBe("place 12 keyforms");
+    setLocale("ja");
+    expect(changeLabel("add_parameter", 5)).toBe("パラメータを足す × 5");
+    expect(changeLabel("set_keyform_cell", 12)).toBe("キーフォームを置く × 12");
+  });
+
+  it("has a label for every kind of editor command", () => {
+    // `ugoe_editor_core::Command` の種類 (`#[serde(tag = "op", rename_all = "snake_case")]`)
+    const source = readFileSync(
+      new URL("../../../../../crates/ugoe-editor-core/src/command.rs", import.meta.url),
+      "utf8",
+    );
+    const body = source.slice(source.indexOf("pub enum Command {"));
+    const kinds = [
+      ...body.slice(0, body.indexOf("\n}\n")).matchAll(/^ {4}([A-Z][A-Za-z]+)\b/gm),
+    ].map((m) => String(m[1]).replace(/[A-Z]/g, (c, i) => (i === 0 ? "" : "_") + c.toLowerCase()));
+    expect(kinds).toContain("add_parameter");
+    expect(Object.keys(CHANGE_KINDS).sort()).toEqual([...new Set(kinds)].sort());
+  });
+
+  it("returns null for a kind missing from the catalog", () => {
+    expect(changeLabel("future_command", 2)).toBeNull();
+    // オブジェクトの元から来る名前を種類と取り違えない
+    expect(changeLabel("constructor", 1)).toBeNull();
+    expect(changeLabel("toString", 1)).toBeNull();
   });
 });
 

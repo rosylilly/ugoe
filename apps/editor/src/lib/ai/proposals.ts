@@ -133,17 +133,147 @@ export function excludedList(excluded: ReadonlySet<number>): number[] {
 }
 
 /**
+ * コマンドの種類 (`ProposalCommand.op`、`ugoe_editor_core::Command` の `op`) ごとの、「採用で変わるもの」に出す利用者の言葉の
+ * キー (数を取る形)。キーを組み立てずに並べる (docs/translation.md の「文言を足す・変える」)。コマンドを足したらここにも足す
+ * (proposals.test.ts が `command.rs` の種類と照らし合わせる)。
+ */
+export const CHANGE_KINDS = {
+  add_parameter: "proposals.changeKinds.addParameter",
+  remove_parameter: "proposals.changeKinds.removeParameter",
+  set_parameter_range: "proposals.changeKinds.setParameterRange",
+  batch: "proposals.changeKinds.batch",
+  rename_parameter: "proposals.changeKinds.renameParameter",
+  set_parameter_group: "proposals.changeKinds.setParameterGroup",
+  set_parameter_mirror: "proposals.changeKinds.setParameterMirror",
+  add_part: "proposals.changeKinds.addPart",
+  remove_part: "proposals.changeKinds.removePart",
+  rename_part: "proposals.changeKinds.renamePart",
+  set_part_parent: "proposals.changeKinds.setPartParent",
+  set_part_keyforms: "proposals.changeKinds.setPartKeyforms",
+  add_deformer: "proposals.changeKinds.addDeformer",
+  remove_deformer: "proposals.changeKinds.removeDeformer",
+  rename_deformer: "proposals.changeKinds.renameDeformer",
+  set_deformer_parent: "proposals.changeKinds.setDeformerParent",
+  set_deformer_part: "proposals.changeKinds.setDeformerPart",
+  set_warp_keyforms: "proposals.changeKinds.setWarpKeyforms",
+  set_rotation_keyforms: "proposals.changeKinds.setRotationKeyforms",
+  add_mesh: "proposals.changeKinds.addMesh",
+  remove_mesh: "proposals.changeKinds.removeMesh",
+  rename_mesh: "proposals.changeKinds.renameMesh",
+  set_mesh_properties: "proposals.changeKinds.setMeshProperties",
+  set_mesh_parent: "proposals.changeKinds.setMeshParent",
+  set_mesh_keyforms: "proposals.changeKinds.setMeshKeyforms",
+  set_mesh_keyform: "proposals.changeKinds.setMeshKeyform",
+  reorder_mesh: "proposals.changeKinds.reorderMesh",
+  add_texture: "proposals.changeKinds.addTexture",
+  set_texture_image: "proposals.changeKinds.setTextureImage",
+  remove_texture: "proposals.changeKinds.removeTexture",
+  set_canvas: "proposals.changeKinds.setCanvas",
+  regenerate_mesh: "proposals.changeKinds.regenerateMesh",
+  infer_keyforms: "proposals.changeKinds.inferKeyforms",
+  mirror_keyforms: "proposals.changeKinds.mirrorKeyforms",
+  mark_keyform_authored: "proposals.changeKinds.markKeyformAuthored",
+  mark_keyform_derived: "proposals.changeKinds.markKeyformDerived",
+  move_mesh_vertices: "proposals.changeKinds.moveMeshVertices",
+  add_mesh_vertex: "proposals.changeKinds.addMeshVertex",
+  remove_mesh_vertices: "proposals.changeKinds.removeMeshVertices",
+  retriangulate_mesh: "proposals.changeKinds.retriangulateMesh",
+  add_keyform_key: "proposals.changeKinds.addKeyformKey",
+  remove_keyform_key: "proposals.changeKinds.removeKeyformKey",
+  set_keyform_cell: "proposals.changeKinds.setKeyformCell",
+  set_mesh_draw_order: "proposals.changeKinds.setMeshDrawOrder",
+  create_warp_deformer: "proposals.changeKinds.createWarpDeformer",
+  create_rotation_deformer: "proposals.changeKinds.createRotationDeformer",
+  reparent_preserving_look: "proposals.changeKinds.reparentPreservingLook",
+  set_keyform_inference: "proposals.changeKinds.setKeyformInference",
+  set_mirror_pair: "proposals.changeKinds.setMirrorPair",
+  set_depth: "proposals.changeKinds.setDepth",
+  apply_depth_preset: "proposals.changeKinds.applyDepthPreset",
+  move_rotation_origin: "proposals.changeKinds.moveRotationOrigin",
+  unwrap_deformer: "proposals.changeKinds.unwrapDeformer",
+  add_motion: "proposals.changeKinds.addMotion",
+  remove_motion: "proposals.changeKinds.removeMotion",
+  rename_motion: "proposals.changeKinds.renameMotion",
+  set_motion_properties: "proposals.changeKinds.setMotionProperties",
+  add_motion_curve: "proposals.changeKinds.addMotionCurve",
+  remove_motion_curve: "proposals.changeKinds.removeMotionCurve",
+  set_motion_curve_fade: "proposals.changeKinds.setMotionCurveFade",
+  set_motion_key: "proposals.changeKinds.setMotionKey",
+  move_motion_key: "proposals.changeKinds.moveMotionKey",
+  remove_motion_key: "proposals.changeKinds.removeMotionKey",
+  set_motion_segment: "proposals.changeKinds.setMotionSegment",
+  set_motion_events: "proposals.changeKinds.setMotionEvents",
+  add_expression: "proposals.changeKinds.addExpression",
+  remove_expression: "proposals.changeKinds.removeExpression",
+  rename_expression: "proposals.changeKinds.renameExpression",
+  set_expression_properties: "proposals.changeKinds.setExpressionProperties",
+  set_expression_parameters: "proposals.changeKinds.setExpressionParameters",
+  set_physics_world: "proposals.changeKinds.setPhysicsWorld",
+  add_physics_rig: "proposals.changeKinds.addPhysicsRig",
+  create_physics_rig: "proposals.changeKinds.createPhysicsRig",
+  remove_physics_rig: "proposals.changeKinds.removePhysicsRig",
+  rename_physics_rig: "proposals.changeKinds.renamePhysicsRig",
+  set_physics_inputs: "proposals.changeKinds.setPhysicsInputs",
+  set_physics_outputs: "proposals.changeKinds.setPhysicsOutputs",
+  set_physics_particles: "proposals.changeKinds.setPhysicsParticles",
+  set_physics_normalization: "proposals.changeKinds.setPhysicsNormalization",
+  set_physics_rig_colliders: "proposals.changeKinds.setPhysicsRigColliders",
+  set_physics_frame: "proposals.changeKinds.setPhysicsFrame",
+  add_physics_collider: "proposals.changeKinds.addPhysicsCollider",
+  remove_physics_collider: "proposals.changeKinds.removePhysicsCollider",
+  set_physics_collider: "proposals.changeKinds.setPhysicsCollider",
+  set_keyform_interpolation: "proposals.changeKinds.setKeyformInterpolation",
+  reorder_physics_rig: "proposals.changeKinds.reorderPhysicsRig",
+  set_parameter_internal: "proposals.changeKinds.setParameterInternal",
+  create_draw_clone: "proposals.changeKinds.createDrawClone",
+  sync_draw_clone: "proposals.changeKinds.syncDrawClone",
+  apply_physics_template: "proposals.changeKinds.applyPhysicsTemplate",
+  set_avatar_profile: "proposals.changeKinds.setAvatarProfile",
+  update_avatar_profile: "proposals.changeKinds.updateAvatarProfile",
+  set_hit_areas: "proposals.changeKinds.setHitAreas",
+  set_normal_map: "proposals.changeKinds.setNormalMap",
+  set_lighting: "proposals.changeKinds.setLighting",
+  set_effects: "proposals.changeKinds.setEffects",
+  add_slot: "proposals.changeKinds.addSlot",
+  set_slot: "proposals.changeKinds.setSlot",
+  remove_slot: "proposals.changeKinds.removeSlot",
+  set_module_settings: "proposals.changeKinds.setModuleSettings",
+  set_pose: "proposals.changeKinds.setPose",
+  create_glue: "proposals.changeKinds.createGlue",
+  set_glue: "proposals.changeKinds.setGlue",
+  remove_glue: "proposals.changeKinds.removeGlue",
+  set_layer_correction: "proposals.changeKinds.setLayerCorrection",
+  add_parameter_group: "proposals.changeKinds.addParameterGroup",
+  remove_parameter_group: "proposals.changeKinds.removeParameterGroup",
+  rename_parameter_group: "proposals.changeKinds.renameParameterGroup",
+  reorder_parameter_group: "proposals.changeKinds.reorderParameterGroup",
+} as const;
+
+/** 「採用で変わるもの」の 1 つ: コマンドの種類と数。`label` は利用者の言葉で、カタログに無い種類なら `null` (種類名のまま出す)。 */
+export interface Change {
+  op: string;
+  count: number;
+  label: string | null;
+}
+
+/**
  * 採用すると変わるもの: 選んだ (外していない) コマンドの種類ごとの数 (最初に現れた順)。提案のカードの「採用で変わるもの」に出す。
  */
 export function changeSummary(
   commands: ProposalCommand[],
   excluded: ReadonlySet<number>,
-): { op: string; count: number }[] {
+): Change[] {
   const counts = new Map<string, number>();
   commands.forEach((c, i) => {
     if (!excluded.has(i)) counts.set(c.op, (counts.get(c.op) ?? 0) + 1);
   });
-  return [...counts].map(([op, count]) => ({ op, count }));
+  return [...counts].map(([op, count]) => ({ op, count, label: changeLabel(op, count) }));
+}
+
+/** 種類 `op` のコマンド `count` 個で変わるものを利用者の言葉で (`add 5 parameters`)。カタログに無い種類なら `null`。 */
+export function changeLabel(op: string, count: number): string | null {
+  if (!Object.hasOwn(CHANGE_KINDS, op)) return null;
+  return t(CHANGE_KINDS[op as keyof typeof CHANGE_KINDS], { count });
 }
 
 /**

@@ -25,7 +25,7 @@
     docs/ai-integration.md#取り消しと時間の上限)、送る前の確認を待つ間は「確かめるのを待っています」、取り消したら
     閉じられる `Notice` (info)、失敗は閉じられる `Notice` (danger)。開いたプロジェクトの分類のキャッシュを戻している間
     (`ProposalState.restoring`) は、PSD の行の下に戻していることを出す (docs/editor.md#分類の答えのキャッシュ)。
-  - 提案のカード: 題名と印・理由・注文・「採用で変わるもの」(選んだコマンドの種類ごとの数)・コマンドの一覧・ボタン
+  - 提案のカード: 題名と印・理由・注文・「採用で変わるもの」(選んだコマンドの種類ごとの数を利用者の言葉で)・コマンドの一覧・ボタン
     (却下・作り直し・プレビュー・採用。決定の採用が並びの最後) と、採用が 1 回の Undo で戻る 1 つの編集になることの文。
     古くなった提案は印でなく `Notice` (warning) で理由と戻し方を出す。`primary` は画面に 1 つ: 提案が無ければ「Propose rig」、
     あればプレビュー中か最初の採用できる提案の「Adopt」。
@@ -562,7 +562,8 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
           {#if changes.length === 0}
             {t("proposals.list.noChanges")}
           {:else}
-            {#each changes as change, i (change.op)}{#if i > 0}{" · "}{/if}<code>{change.op}</code> × {change.count}{/each}
+            <!-- カタログに無い種類 (新しいコマンドなど) は種類名のまま出す -->
+            {#each changes as change, i (change.op)}{#if i > 0}{" · "}{/if}{#if change.label !== null}{change.label}{:else}<code>{change.op}</code> × {change.count}{/if}{/each}
           {/if}
         </p>
         <details

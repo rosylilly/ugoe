@@ -167,7 +167,7 @@ describe("ProposalsPanel proposal cards", () => {
     const { target } = await setup();
     const card = target.querySelector(".proposal") as HTMLElement;
     expect(card.querySelector(".changes")?.textContent?.replace(/\s+/g, " ")).toContain(
-      "set_layer_correction × 3 · add_parameter × 1 · add_keyform_key × 1",
+      "Adopting changes: correct the classification of 3 layers · add 1 parameter · add 1 keyform key",
     );
     expect(card.textContent).toContain(
       "Adopt applies 5 of 5 commands as one edit. One Undo reverts it.",
@@ -175,6 +175,31 @@ describe("ProposalsPanel proposal cards", () => {
     // 決定 (採用) は並びの最後
     const buttons = [...card.querySelectorAll(".row button")].map((b) => b.textContent?.trim());
     expect(buttons.at(-1)).toBe("Adopt");
+  });
+
+  it("shows a command kind missing from the catalog by its name", async () => {
+    const [proposal] = state.proposals;
+    current = {
+      ...state,
+      proposals: [
+        {
+          ...proposal,
+          commands: [
+            { op: "add_parameter", subject: "AngleX", requires: [] },
+            { op: "add_parameter", subject: "AngleY", requires: [] },
+            { op: "future_command", subject: null, requires: [] },
+          ],
+        },
+      ],
+    } as unknown as ProposalState;
+    const { target } = await setup();
+    const changes = target.querySelector(".proposal .changes") as HTMLElement;
+    expect(changes.textContent?.replace(/\s+/g, " ")).toContain(
+      "add 2 parameters · future_command × 1",
+    );
+    expect([...changes.querySelectorAll("code")].map((c) => c.textContent)).toEqual([
+      "future_command",
+    ]);
   });
 
   it("explains an outdated proposal and keeps a single primary button", async () => {

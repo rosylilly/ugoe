@@ -110,7 +110,7 @@ AI を使うときは、「Instructions for Claude」(選んだプロバイダ�
 ## 提案を確かめる
 
 「Proposals」に、提案の題名 (AI を使ったものは「— AI」、使わなかったものは「— rules」)・理由 (決めた値と、組んだもの)・
-「Adopting changes:」(採用すると足したり変えたりするものの種類と数)・コマンドの一覧が出ます。ボタンは「Reject」「Preview」「Adopt」の順で、
+「Adopting changes:」(採用すると足したり変えたりするものと数。例「add 5 parameters · place 12 keyforms」、日本語の画面では「パラメータを足す × 5 · キーフォームを置く × 12」)・コマンドの一覧が出ます。ボタンは「Reject」「Preview」「Adopt」の順で、
 その下に、採用が 1 回の「Undo」で戻る 1 つの編集になることが書いてあります。
 
 1. 「Preview」を押す。ビューポートに、提案を適用した姿が出ます (上に「Previewing an AI proposal…」と出ます)。
