@@ -49,6 +49,7 @@ let failure = $state.raw<unknown>(null);
 /** 拒否された設定 (「Open base project」で本体を開くとき、戻った後に適用し直すために渡す)。 */
 let rejected = $state.raw<Command | null>(null);
 let busy = $state(false);
+const id = $props.id();
 
 // 開くたびに今の設定を欄に入れる。
 $effect(() => {
@@ -133,8 +134,8 @@ async function apply(): Promise<void> {
 </script>
 
 <Dialog {open} title={t("moduleSettings.title")} size="md" {onclose}>
-  <!-- 名前の欄の Enter で適用する (既定のボタン。docs/editor.md#ダイアログ) -->
-  <form class="form" onsubmit={(e) => (e.preventDefault(), void apply())}>
+  <!-- 名前の欄の Enter で適用する (既定のボタン。docs/editor.md#ダイアログ)。「Apply」も `form` でこれを送る -->
+  <form id={`${id}-form`} class="form" onsubmit={(e) => (e.preventDefault(), void apply())}>
   {#if module}
     <TextField
       label={t("moduleSettings.name.label")}
@@ -208,15 +209,21 @@ async function apply(): Promise<void> {
   </form>
   {#snippet actions()}
     <Button onclick={onclose}>{t("moduleSettings.cancel.label")}</Button>
-    <Button variant="primary" onclick={apply} disabled={busy || !isValidModuleName(name) || !slot}>
+    <Button
+      variant="primary"
+      type="submit"
+      form={`${id}-form`}
+      disabled={busy || !isValidModuleName(name) || !slot}
+    >
       {t("moduleSettings.apply.label")}
     </Button>
   {/snippet}
 </Dialog>
 
 <style>
-  /* 中身の並びは Dialog の本文のまま。form は文字の欄の Enter で決定するためだけに置く
-     (送信のボタンの無い form は、文字の欄が 1 つだけなら Enter で送られる: HTML の implicit submission) */
+  /* 中身の並びは Dialog の本文のまま。form は送る道を 1 つにするために置く: 決定のボタン (操作の並びの
+     `type="submit"`・`form`) が form の既定のボタンになり、文字の欄の Enter はそれを押したのと同じに送る
+     (HTML の implicit submission)。既定のボタンが押せない (disabled) あいだは Enter でも送られない */
   .form {
     display: contents;
   }

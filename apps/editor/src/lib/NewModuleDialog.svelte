@@ -2,7 +2,7 @@
   着せ替えのモジュールのプロジェクトの新規作成 (File > New Module…、docs/editor.md#モジュールのプロジェクト)。
   本体 (.ugoeproj のフォルダーか .ugoe) を選ぶとスロットの一覧を読み、スロットとモジュールの名前を決めて作る。
   スロットのない本体は、本体のプロジェクトの「Slots」タブでスロットを足してから選ぶ。Esc で閉じる。名前の欄の Enter で作る
-  (既定のボタン。docs/editor.md#ダイアログ)。
+  (既定のボタン。docs/editor.md#ダイアログ)。「Create」は `form` で中の `<form>` を送る (Enter と同じ 1 つの道)。
 -->
 <script lang="ts">
 import { Button, Dialog, TextField } from "@ugoe/ui";
@@ -102,7 +102,7 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
 </script>
 
 <Dialog {open} title={t("newModule.title")} description={t("newModule.description")} {onclose}>
-  <form class="form" onsubmit={(e) => (e.preventDefault(), void create())}>
+  <form id={`${id}-form`} class="form" onsubmit={(e) => (e.preventDefault(), void create())}>
   <details class="features">
     <summary>{t("newModule.features.summary")}</summary>
     <div class="columns">
@@ -162,13 +162,14 @@ const ready = $derived(basePath !== null && slot !== null && isValidModuleName(n
   </form>
   {#snippet actions()}
     <Button onclick={onclose}>{t("newModule.cancel.label")}</Button>
-    <Button variant="primary" onclick={create} disabled={!ready}>{t("newModule.create.label")}</Button>
+    <Button variant="primary" type="submit" form={`${id}-form`} disabled={!ready}>{t("newModule.create.label")}</Button>
   {/snippet}
 </Dialog>
 
 <style>
-  /* 中身の並びは Dialog の本文のまま。form は文字の欄の Enter で決定するためだけに置く
-     (送信のボタンの無い form は、文字の欄が 1 つだけなら Enter で送られる: HTML の implicit submission) */
+  /* 中身の並びは Dialog の本文のまま。form は送る道を 1 つにするために置く: 決定のボタン (操作の並びの
+     `type="submit"`・`form`) が form の既定のボタンになり、文字の欄の Enter はそれを押したのと同じに送る
+     (HTML の implicit submission)。既定のボタンが押せない (disabled) あいだは Enter でも送られない */
   .form {
     display: contents;
   }
