@@ -1033,6 +1033,52 @@ fn check_manifest(manifest: &Value, files: &[&str]) {
     }
 }
 
+/// Claude Desktop が `${__dirname}` に入れる形の、展開したディレクトリのパス (`dir` は絶対パス)。
+///
+/// Windows の `canonicalize` ([`TempDir`]) は `\\?\C:\…` (verbatim) のパスを返す。verbatim のパスは `/` を
+/// 区切りとして受け付けない (Windows は `\\?\` の後を正規化しない) ので、manifest のコマンド
+/// `${__dirname}/server/ugoe-mcp.exe` をそのままつなぐと起動できない (`InvalidFilename`)。Claude Desktop が
+/// 渡す展開先は `C:\Users\…` の通常の形なので、`\\?\` を外してそれに合わせる。
+fn desktop_dirname(dir: &str) -> String {
+    if let Some(rest) = dir.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = dir.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        dir.to_owned()
+    }
+}
+
+/// manifest の `mcp_config` の文字列の `${__dirname}` を `dirname` で置き換える。
+fn expand_dirname(template: &str, dirname: &str) -> String {
+    template.replace("${__dirname}", dirname)
+}
+
+#[test]
+fn the_bundle_dirname_is_the_plain_form_of_the_directory() {
+    // Windows の canonicalize の形 (verbatim) は通常の形にする。
+    assert_eq!(
+        desktop_dirname(r"\\?\C:\Users\a\AppData\Local\Temp\x\installed"),
+        r"C:\Users\a\AppData\Local\Temp\x\installed"
+    );
+    assert_eq!(
+        desktop_dirname(r"\\?\UNC\server\share\installed"),
+        r"\\server\share\installed"
+    );
+    // 通常の形はそのまま。
+    for dir in [r"C:\Users\a\installed", "/tmp/x/installed"] {
+        assert_eq!(desktop_dirname(dir), dir);
+    }
+    // 置き換えたコマンドは verbatim でない絶対パスに `/` 区切りの残りが続く形 (Windows の通常のパスは
+    // `/` も区切りとして受け付ける)。
+    let command = expand_dirname(
+        "${__dirname}/server/ugoe-mcp.exe",
+        &desktop_dirname(r"\\?\C:\x\installed"),
+    );
+    assert_eq!(command, r"C:\x\installed/server/ugoe-mcp.exe");
+    assert!(!command.starts_with(r"\\?\"), "{command}");
+}
+
 #[test]
 fn the_mcp_bundle_relays_to_a_running_editor() {
     let tmp = TempDir::new();
@@ -1109,15 +1155,13 @@ fn the_mcp_bundle_relays_to_a_running_editor() {
         );
     }
     let config = &manifest["server"]["mcp_config"];
-    let dirname = dir.to_str().unwrap();
-    let mut command = Command::new(
-        config["command"]
-            .as_str()
-            .unwrap()
-            .replace("${__dirname}", dirname),
-    );
+    let dirname = desktop_dirname(dir.to_str().unwrap());
+    let mut command = Command::new(expand_dirname(
+        config["command"].as_str().unwrap(),
+        &dirname,
+    ));
     for arg in config["args"].as_array().unwrap() {
-        command.arg(arg.as_str().unwrap().replace("${__dirname}", dirname));
+        command.arg(expand_dirname(arg.as_str().unwrap(), &dirname));
     }
     // 発見用のファイルは既定の場所の代わりにテストのディレクトリ (manifest には書かない)。
     let discovery_file = tmp.path.join("state").join("editor-mcp.json");
