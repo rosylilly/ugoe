@@ -7,7 +7,9 @@ use std::sync::Arc;
 use ugoe_model::fixtures;
 
 use crate::message::Coded;
-use crate::project::{load_base_checked, load_base_with_limits};
+#[cfg(unix)]
+use crate::project::load_base_checked;
+use crate::project::load_base_with_limits;
 use crate::texture::solid_png;
 use crate::{
     Project, ProjectError, ProjectFingerprint, ProjectMeta, ProjectReadLimits, Textures,
@@ -38,6 +40,7 @@ fn save_model_project(dir: &Path) -> PathBuf {
 }
 
 /// 着せ替えの本体のプロジェクトと、その `Hair` のスロットのモジュールのプロジェクトを保存する (本体, モジュール)。
+#[cfg(unix)]
 fn save_module_project(dir: &Path) -> (PathBuf, PathBuf) {
     let model = fixtures::dress_up_base();
     let textures: Textures = model
