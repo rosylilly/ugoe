@@ -1,11 +1,11 @@
 ---
 id: T0961
 title: "スタジオ: api のテスト turning_the_api_on_saves_the_choice_and_listens が負荷の高いときに落ちる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio]
 depends_on: []
-assignee:
+assignee: claude-worker-T0961
 ---
 
 # T0961: スタジオ: api のテスト turning_the_api_on_saves_the_choice_and_listens が負荷の高いときに落ちる
