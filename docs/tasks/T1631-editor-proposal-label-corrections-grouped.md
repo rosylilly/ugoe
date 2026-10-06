@@ -1,11 +1,11 @@
 ---
 id: T1631
 title: "エディタ: 提案に添えた分類の直しを 1 つのまとまりで出し、まとめて外せるようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1631
 ---
 
 # T1631: エディタ: 提案に添えた分類の直しを 1 つのまとまりで出し、まとめて外せるようにする
