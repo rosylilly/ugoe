@@ -168,9 +168,16 @@ export class Session {
     await request(this.base, "DELETE", `/session/${this.id}`).catch(() => {});
   }
 
-  /** ページの中で同期のスクリプトを実行する。`script` は関数の本体 (引数は `arguments`)。 */
+  /**
+   * ページの中で同期のスクリプトを実行する。`script` は関数か、関数の本体の文字列 (引数は `arguments`)。
+   * 関数はソース (`Function.prototype.toString`) をページに送り、`args` を引数にして呼んだ値を返す。Node の側の変数は
+   * 閉じ込められないので、ページで要るものは `args` で渡す。正規表現を含むコードは関数で書く (文字列の中ではエスケープが
+   * 二重になり、整形で書き換わることがある。T0042)。
+   */
   async execute(script, ...args) {
-    return wrap(this, await this.call("POST", "/execute/sync", { script, args }));
+    const body =
+      typeof script === "function" ? `return (${script}).apply(null, arguments);` : script;
+    return wrap(this, await this.call("POST", "/execute/sync", { script: body, args }));
   }
 
   /**
@@ -209,10 +216,12 @@ export class Session {
     return waitFor(
       () =>
         this.execute(
-          `for (const el of document.querySelectorAll(arguments[0])) {
-             if ((el.textContent ?? "").replace(/\\s+/g, " ").includes(arguments[1])) return el;
-           }
-           return null;`,
+          (css, text) => {
+            for (const el of document.querySelectorAll(css)) {
+              if ((el.textContent ?? "").replace(/\s+/g, " ").includes(text)) return el;
+            }
+            return null;
+          },
           css,
           text,
         ),
@@ -249,10 +258,13 @@ export class Session {
     return this.clickWhen(
       () =>
         this.execute(
-          `for (const el of document.querySelectorAll(arguments[0])) {
-             if (!el.disabled && (el.textContent ?? "").replace(/\\s+/g, " ").includes(arguments[1])) return el;
-           }
-           return null;`,
+          (css, text) => {
+            for (const el of document.querySelectorAll(css)) {
+              const t = (el.textContent ?? "").replace(/\s+/g, " ");
+              if (!el.disabled && t.includes(text)) return el;
+            }
+            return null;
+          },
           css,
           text,
         ),

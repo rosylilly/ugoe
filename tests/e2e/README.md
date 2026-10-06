@@ -176,6 +176,11 @@ MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状�
 - 部品は表示の文字 (英語) と `@ugoe/ui` の部品のクラス・ARIA の属性で探す (`lib/page.mjs` の `window.__e2e`)。
   表示の文字を変えたら筋書きも直す。アプリの中のクラス (`.studio__…` など) には頼らない。並びを変えると消えるので、
   リストの項目は役割と名前で探す (`__e2e.listItem("^Status$", "^API on$")`: 名前が Status のリストの中の「API on」の項目。T0847)。
+- ページの中で動かすコードは関数で書き、関数のまま `session.execute(fn, ...args)` / `session.run(fn, ...args)` に渡す
+  (`lib/webdriver.mjs` が関数のソースをページに送り、`args` を引数にして呼ぶ)。関数はページで動くので、Node の側の変数は使えない。
+  要るものは `args` で渡す (JSON にできる値と、`find` などで得た要素)。コードを文字列で書くと、正規表現のエスケープが二重になり
+  (`/\\s+/`)、整形 (Biome) が書き換えて意味が変わることがある (T0042)。`window.__e2e` の道具を足すときは `lib/page.mjs` の
+  `pageHelpers` に足す。
 - 待つときは決まった時間眠らず、`waitFor` で条件を待つ。
 - 操作の直後に押すボタン・閉じかけのダイアログの下の部品は、`session.clickText`・`session.clickWhen` で押す。無効なあいだ待ち、
   「element not interactable」(覆いの下・押す前に画面が組み替わった) なら探し直して押し直す。重い負荷の下 (並行のビルドなど) では、
