@@ -33,6 +33,7 @@ import {
   isValidName,
   keyCommand,
   keyValuesCommand,
+  nearestMark,
   newMotion,
   roundTime,
   shapedKeys,
@@ -238,13 +239,43 @@ function removeSelectedKey() {
 
 let drag = $state<{ target: CurveTarget; t: number; x0: number; dt: number } | null>(null);
 
-function onKeyDown(e: PointerEvent, target: CurveTarget, key: Point) {
-  e.stopPropagation();
+/** キーの印の押せる範囲の一辺 (CSS px。`.diamond` の `--ugoe-target-min`)。 */
+const HIT = 24;
+
+/** キーを選んで再生位置をその時刻にする (印をポインタで押した・Enter / Space)。 */
+function pickKey(target: CurveTarget, key: Point) {
   timeline.stop();
   timeline.selectKey(target, key.t);
   timeline.seek(key.t);
+}
+
+/**
+ * 印を押した: 押せる範囲が重なる所では、上に描かれた印 (`pressed`) ではなく押した所に中心が近い印をつかむ
+ * (docs/ui.md#そのほか。T1669)。行の中の印は縦に並ばないので、横の位置だけで比べる。
+ */
+function onKeyDown(e: PointerEvent, target: CurveTarget, pressed: Point, keys: readonly Point[]) {
+  e.stopPropagation();
+  const lane = (e.currentTarget as HTMLElement).closest(".lane");
+  const rect = lane?.getBoundingClientRect();
+  const near = rect
+    ? nearestMark(
+        keys.map((k) => ({ key: k, x: keyX(target, k), y: 0 })),
+        { x: e.clientX - rect.left, y: 0 },
+        HIT,
+      )
+    : null;
+  const key = near?.key ?? pressed;
+  pickKey(target, key);
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   drag = { target, t: key.t, x0: e.clientX, dt: 0 };
+}
+
+/** 印のボタンを Enter・Space で押した: ポインタで押したのと同じくキーを選ぶ (パネルの Space の再生・停止にしない)。 */
+function onKeyPress(e: KeyboardEvent, target: CurveTarget, key: Point) {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  e.stopPropagation();
+  pickKey(target, key);
 }
 
 function onKeyMove(e: PointerEvent) {
@@ -602,13 +633,15 @@ function label(m: Motion): string {
           >
             <span class="playhead" style:left="{timeToX(timeline.time, view)}px"></span>
             {#if row.curve}
-              {#each shapedKeys(row.curve) as k (k.t)}
+              {@const keys = shapedKeys(row.curve)}
+              {#each keys as k (k.t)}
                 {@const selected = timeline.selectedKey?.track === key && timeline.selectedKey.t === k.t}
                 <Tooltip text={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}>
                   {#snippet trigger(attrs)}
                     <button
                       {...mergeAttributes(attrs, {
-                        onpointerdown: (e: PointerEvent) => onKeyDown(e, row.target, k),
+                        onpointerdown: (e: PointerEvent) => onKeyDown(e, row.target, k, keys),
+                        onkeydown: (e: KeyboardEvent) => onKeyPress(e, row.target, k),
                         onpointermove: onKeyMove,
                         onpointerup: onKeyUp,
                         onpointercancel: () => (drag = null),

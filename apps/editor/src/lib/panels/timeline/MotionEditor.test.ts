@@ -8,6 +8,7 @@ import {
   drag,
   FakeController,
   FakeDocument,
+  press,
   render,
   settle,
 } from "../../viewport/tools/test/harness.svelte";
@@ -57,9 +58,9 @@ function moveKey(c: Curve, command: Extract<Command, { op: "move_motion_key" }>)
   return { ...c, segments };
 }
 
-function setup() {
-  // happy-dom は幅を測れない (0) ので、レーン (目盛りの行) の幅を 600 にする。
-  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+function setup(width = 600) {
+  // happy-dom は幅を測れない (0) ので、レーン (目盛りの行) の幅を決める (既定は 600)。
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
   const doc = new FakeDocument();
   doc.motions = [motion()];
   doc.onApply = (command) => {
@@ -209,5 +210,39 @@ describe("MotionEditor key removal while sending", () => {
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
       { op: "remove_motion_key", motion: "Nod", target: TARGET, t: 1.5 },
     ]);
+  });
+});
+
+describe("MotionEditor dope sheet keys with overlapping hit areas", () => {
+  it("picks the key nearest to the pointer, not the one drawn on top", async () => {
+    // 幅 44px に -0.04..2.04 秒: 0 秒と 1 秒のキーは 21px ほど離れ、押せる範囲 (24px) が 3px ほど重なる
+    // (docs/ui.md#そのほか)。happy-dom の位置は 0 なので、clientX がそのままレーンの中の位置。
+    const { doc, timeline, target } = setup(44);
+    // 重なりの中の 0 秒のキー (x = 0.85) に近い所を、上に描かれた 1 秒のキー (x = 22) の押せる範囲で押す。
+    drag(diamond(target), [[10.5, 10]]);
+    await settleAll();
+    expect(timeline.selectedKey?.t).toBe(0);
+    expect(timeline.time).toBe(0);
+    // ドラッグも近いキーを動かす (1 秒のキーの手前まで)。
+    drag(diamond(target), [
+      [10.5, 10],
+      [20.5, 10],
+    ]);
+    await settleAll();
+    expect(doc.commands).toHaveLength(1);
+    expect(doc.commands[0]).toMatchObject({ op: "move_motion_key", target: TARGET, t: 0 });
+  });
+});
+
+describe("MotionEditor dope sheet keys from the keyboard", () => {
+  it.each(["Enter", " "])("selects the key with %j like a press", (key) => {
+    const { timeline, target } = setup();
+    const event = press(diamond(target), key);
+    expect(timeline.selectedKey).toEqual({ track: "parameter:AngleX", t: 1 });
+    expect(timeline.time).toBe(1);
+    // Space はパネルの再生・停止にしない (キーを選ぶ)。
+    expect(timeline.playing).toBe(false);
+    timeline.stop();
+    expect(event.defaultPrevented).toBe(true);
   });
 });
