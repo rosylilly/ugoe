@@ -579,7 +579,7 @@ describe("editor", () => {
       },
     );
     await s.keys(Keys.Escape);
-    assert.equal(await s.execute(`return localStorage.getItem("ugoe-editor.locale")`), "ja");
+    assert.equal(await s.execute(`return localStorage.getItem("ugoe.editor.locale")`), "ja");
     // 読み込み直しても日本語のまま (WebView のデータはテスト用の XDG_DATA_HOME の下)
     await s.call("POST", "/refresh", {});
     await s.waitFindText("nav.file-menu button", "保存", 20_000);

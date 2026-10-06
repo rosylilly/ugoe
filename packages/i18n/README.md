@@ -64,13 +64,13 @@ export const t = translator("face-tracking");
 
   ```ts
   // main.ts (mount の前に 1 回)。覚えた設定を使い、OS の言語を取る関数があれば取って setSystemLanguages() に渡す。
-  void initLocale("ugoe-editor.locale", systemLocale); // 最初の画面から OS の言語で出すなら await する (ビューア)
+  void initLocale("ugoe.editor.locale", systemLocale); // 最初の画面から OS の言語で出すなら await する (ビューア)
   ```
 
   設定の画面は `getLocalePreference()` を選択の値にし、`setLocalePreference(value)` で切り替えて `initLocale()` のキーに覚える。
   キーを指定して読み書きするだけなら `loadLocalePreference(key, storage?)`・`saveLocalePreference(key, value, storage?)`。
   使えない localStorage (例外を出す・無い) では覚えず、覚えていない・知らない値は `"system"` として読む。
-  キーはアプリの前からのもの (`ugoe-editor.locale`・`ugoe-viewer.locale`・`ugoe-studio.locale`) で、値も前と同じ (`system`・`en`・`ja`)。
+  キーはアプリごと (`ugoe.editor.locale`・`ugoe-viewer.locale`・`ugoe-studio.locale`) で、値は `system`・`en`・`ja`。
 - `<html lang>` は今の言語に合わせる。
 
 ### localStorage の読み書き (T0937)

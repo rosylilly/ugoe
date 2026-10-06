@@ -2,10 +2,11 @@
 // 区切り (lib/ui/Splitter.svelte) のポインタとキーで変え、localStorage に覚える (使えない環境では既定値)。
 // DOM に依存しない部分だけを置く。layout.test.ts で検査する。
 import { readStoredItem, removeStoredItem, writeStoredItem } from "@ugoe/i18n";
+import { STORAGE_KEYS } from "./storageKeys";
 
 /** 区切りで変える大きさの範囲 (CSS px か割合) と、覚えるキー。 */
 export interface SizeRange {
-  /** localStorage のキー。 */
+  /** localStorage のキー (storageKeys.ts)。 */
   key: string;
   min: number;
   max: number;
@@ -17,7 +18,7 @@ export interface SizeRange {
 
 /** 左の列 (ツリー) の幅。 */
 export const LEFT_WIDTH: SizeRange = {
-  key: "ugoe.editor.leftWidth",
+  key: STORAGE_KEYS.leftWidth,
   min: 180,
   max: 420,
   default: 240,
@@ -26,7 +27,7 @@ export const LEFT_WIDTH: SizeRange = {
 
 /** 右の列 (インスペクタとパラメータ) の幅。 */
 export const RIGHT_WIDTH: SizeRange = {
-  key: "ugoe.editor.rightWidth",
+  key: STORAGE_KEYS.rightWidth,
   min: 280,
   max: 560,
   default: 320,
@@ -35,7 +36,7 @@ export const RIGHT_WIDTH: SizeRange = {
 
 /** タイムライン (開いているとき) の高さ。既定は CSS の `clamp(280px, 42vh, 520px)`。 */
 export const TIMELINE_HEIGHT: SizeRange = {
-  key: "ugoe.editor.timelineHeight",
+  key: STORAGE_KEYS.timelineHeight,
   min: 160,
   max: 800,
   default: null,
@@ -44,7 +45,7 @@ export const TIMELINE_HEIGHT: SizeRange = {
 
 /** 右の列の上下の分け方 (インスペクタの高さの割合。残りがパラメータ)。 */
 export const RIGHT_SPLIT: SizeRange = {
-  key: "ugoe.editor.rightSplit",
+  key: STORAGE_KEYS.rightSplit,
   min: 0.15,
   max: 0.85,
   default: 0.6,

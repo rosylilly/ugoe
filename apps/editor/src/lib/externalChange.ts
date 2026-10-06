@@ -4,6 +4,7 @@ import { readStoredItem, writeStoredItem } from "@ugoe/i18n";
 import { errorCode } from "./errors";
 import { t } from "./i18n";
 import type { ExternalChange } from "./ipc";
+import { STORAGE_KEYS } from "./storageKeys";
 
 /** 一定の間隔で確かめる間隔 (ミリ秒)。ウィンドウが見えているときだけ確かめる。 */
 export const CHECK_INTERVAL_MS = 5000;
@@ -57,14 +58,12 @@ export function isExternalChangeError(error: unknown): boolean {
   return errorCode(error) === "editor.external_change";
 }
 
-const AUTO_RELOAD_KEY = "ugoe.editor.autoReload";
-
 /** 「未保存の変更がなければ自動で開き直す」(既定は切。localStorage に覚える。使えない環境では切)。 */
 export function loadAutoReload(): boolean {
-  return readStoredItem(AUTO_RELOAD_KEY) === "true";
+  return readStoredItem(STORAGE_KEYS.autoReload) === "true";
 }
 
 /** 覚えられなくても、この画面では今の値を使い続ける。 */
 export function saveAutoReload(enabled: boolean): void {
-  writeStoredItem(AUTO_RELOAD_KEY, String(enabled));
+  writeStoredItem(STORAGE_KEYS.autoReload, String(enabled));
 }

@@ -311,7 +311,7 @@
 
 ### タイムライン
 
-画面はビューポートの下のパネル (`src/lib/panels/timeline/`) です。「Motions」「Expressions」のタブを持ち、畳める (`localStorage`)。操作はすべて上のコマンドを送るだけで、表示の状態 (選んだモーション・再生位置・再生中・選んだ行とキー・表情のプレビュー) は `TimelineState` (`timeline.svelte.ts`) にあり、Undo の対象ではありません。
+画面はビューポートの下のパネル (`src/lib/panels/timeline/`) です。「Motions」「Expressions」のタブを持ち、畳める (開閉は[覚える値](#覚える値))。操作はすべて上のコマンドを送るだけで、表示の状態 (選んだモーション・再生位置・再生中・選んだ行とキー・表情のプレビュー) は `TimelineState` (`timeline.svelte.ts`) にあり、Undo の対象ではありません。
 
 | 場所 | 操作 |
 | --- | --- |
@@ -1522,7 +1522,7 @@ T0646。コードは `src/lib/panels/lighting/` (パネル)・`src/lib/viewport/
 - **応じ方 (`src/lib/externalChange.ts`、Vitest):** 変わっていれば `ExternalChangeDialog` を出す。未保存の変更がなければ「Reload」・「Later」、
   未保存の変更がある (または保存しようとした) ときは「Reload and discard my changes」・「Overwrite with my version」・「Save As…」・「Later」、
   `project.json` がなければ (移された・消された)「Save here again」・「Save As…」・「Later」。「Later」を選んだ外の状態 (`ExternalChange.token`) は、
-  間隔の確認では二度尋ねない (保存の前は尋ねる)。「Reload automatically when there are no unsaved changes」(localStorage に覚える、既定は切) を入れると、
+  間隔の確認では二度尋ねない (保存の前は尋ねる)。「Reload automatically when there are no unsaved changes」([覚える値](#覚える値)、既定は切) を入れると、
   未保存の変更がないときは尋ねずに開き直す。
 - **開き直し (`reload_project`):** 保存先から `Project::load_tracked` で読み直す。AI への送信の「今後は確かめない」は同じプロジェクトなので残し、
   AI の提案は前のドキュメントに対するものなので消す。ビューポートの表示の位置とパラメータの値は保つ (新規・開くと違い Fit しない)。
@@ -1652,7 +1652,7 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
 ### 言語
 
 画面の言語は、ヘッダーの「Settings」の「General」で「OS に合わせる」(既定)・言語自身の名前で書いた言語 (「English」・「日本語」) から選びます
-([ADR 0029](adr/0029-shared-ui-and-i18n.md) の 3、T0663)。選ぶとすぐに画面全体が切り替わり、`localStorage` (`ugoe-editor.locale`) に覚えます
+([ADR 0029](adr/0029-shared-ui-and-i18n.md) の 3、T0663)。選ぶとすぐに画面全体が切り替わり、`localStorage` (`ugoe.editor.locale`。[覚える値](#覚える値)) に覚えます
 (`@ugoe/i18n` の `initLocale`・`setLocalePreference`。キーと OS の言語の取り方は `src/lib/locale.ts`、画面は `src/lib/LanguageSetting.svelte`。
 選択肢が 4 つまでの間は SegmentedControl)。
 
@@ -1662,7 +1662,7 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
   Tauri の外 (ヘッドレスのブラウザでの確認) では `navigator.languages` のまま。
 
 「General」にはテーマ (「OS に合わせる」(既定)・ライト・ダーク) も置きます (`@ugoe/ui` の `ThemeSetting`、T0909)。`localStorage`
-(`ugoe-editor.theme`) に覚え、ビューポートの背景もテーマに合わせて読み直します ([docs/ui.md](ui.md#名前と切り替え))。
+(`ugoe.editor.theme`) に覚え、ビューポートの背景もテーマに合わせて読み直します ([docs/ui.md](ui.md#名前と切り替え))。
 - **文言:** 画面の文言はカタログ `apps/editor/locales/<言語>.json` (名前空間 `editor`。原文は英語) から `src/lib/i18n.ts` の `t()` で引きます
   ([docs/ui.md の「文言の書き方」](ui.md#文言の書き方))。バックエンドのエラーの訳は [エラーと警告のコード](#エラーと警告のコード)。
 - MCP・CLI・ログの文言は英語のまま変えません。マニュアルは日本語だけです。
@@ -2144,7 +2144,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - **大きさの変更:** 左右の列の幅 (左 180〜420px・既定 240px、右 280〜560px・既定 320px)、タイムラインの高さ (160〜800px。既定は窓の高さに
   合わせて 280〜520px。ビューポートを 120px は残す)、右の列の上下の配分 (15〜85%・既定 60%) を、間の区切り (`role="separator"`。
   `src/lib/ui/Splitter.svelte`) で変えます。ポインタのドラッグか、区切りにフォーカスして矢印 (列の間は ← / →、上下の間は ↑ / ↓)・Home (最小)・
-  End (最大)。ダブルクリックか Enter で既定に戻します。大きさは表示の状態で、`localStorage` に覚えます (`src/lib/layout.ts`)。
+  End (最大)。ダブルクリックか Enter で既定に戻します。大きさは表示の状態で、`localStorage` に覚えます (`src/lib/layout.ts`。[覚える値](#覚える値))。
   狭い窓でビューポートが潰れないよう、左右の列は窓の幅の 28%・36% でも抑えます。タイムラインの開閉も覚えます。
 - **空の状態:** 空のプロジェクトはビューポートの中央に「何が無いか」と次の操作のボタン、パラメータの無いモデルはパラメータ一覧に
   「パラメータを追加」を出します ([docs/ui.md の「空の状態」](ui.md#デザイン))。
@@ -2155,6 +2155,23 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - **部品と文言:** 画面の部品は `@ugoe/ui`、文言は `@ugoe/i18n` を使います (ADR 0029)。エディタの中の共通の形 (パネルの見出し・行のレイアウト・
   タブの並び・説明付きのボタン) は [docs/ui.md の「エディタの中の共通の形」](ui.md#エディタの中の共通の形) にあります。
 - **要素の表記:** 要素を選ぶ選択欄 (ミラーの相手・ミラー元・マスク・テクスチャ) と見出し (インスペクタの先頭・デフォーマの親) は、表示名と ID を `顔 (Layer8)` の形で出します (名前が ID と同じなら ID だけ。テクスチャは使っているメッシュの名前を添える)。`src/lib/labels.ts` (Vitest)。
+
+### 覚える値
+
+表示と設定のうちプロジェクトに入れないものは、WebView の `localStorage` に覚えます。キーはすべて `ugoe.editor.<名前>` の形で、
+一覧 (`src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使います (形と重なりは `storageKeys.test.ts` で検査する。T1633)。
+読み書きは `@ugoe/i18n` の `readStoredItem` などを通し、使えない localStorage では覚えずに既定値で動きます ([docs/ui.md](ui.md#名前と切り替え))。
+
+| キー | 値 | 既定 | 場所 |
+| --- | --- | --- | --- |
+| `ugoe.editor.locale` | `system`・`en`・`ja` | `system` | [言語](#言語) (`@ugoe/i18n` の `initLocale`) |
+| `ugoe.editor.theme` | `system`・`light`・`dark` | `system` | [言語](#言語)の「General」のテーマ (`@ugoe/ui` の `initTheme`。`index.html` の `<head>` も読む) |
+| `ugoe.editor.autoReload` | `true`・`false` | 切 | [外での書き換え](#外での書き換え) (`src/lib/externalChange.ts`) |
+| `ugoe.editor.timelineOpen` | `open`・`closed` | 開く | [タイムライン](#タイムライン)の開閉 (`src/lib/panels/timeline/timeline.ts`) |
+| `ugoe.editor.leftWidth` | 左の列の幅 (px) | 240 | 上の「大きさの変更」(`src/lib/layout.ts`) |
+| `ugoe.editor.rightWidth` | 右の列の幅 (px) | 320 | 同上 |
+| `ugoe.editor.timelineHeight` | タイムラインの高さ (px) | 窓の高さに合わせる (覚えない) | 同上 |
+| `ugoe.editor.rightSplit` | 右の列のインスペクタの高さの割合 | 0.6 | 同上 |
 
 ### ダイアログ
 

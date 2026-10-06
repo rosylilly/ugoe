@@ -267,13 +267,13 @@ describe("remembered panel state", () => {
     useLocalStorage(storage);
     expect(loadPanelOpen()).toBe(true);
     savePanelOpen(false);
-    expect(storage.getItem("ugoe.timeline")).toBe("closed");
+    expect(storage.getItem("ugoe.editor.timelineOpen")).toBe("closed");
     expect(loadPanelOpen()).toBe(false);
     savePanelOpen(true);
-    expect(storage.getItem("ugoe.timeline")).toBe("open");
+    expect(storage.getItem("ugoe.editor.timelineOpen")).toBe("open");
     expect(loadPanelOpen()).toBe(true);
     // 知らない値は開く
-    storage.setItem("ugoe.timeline", "?");
+    storage.setItem("ugoe.editor.timelineOpen", "?");
     expect(loadPanelOpen()).toBe(true);
   });
 

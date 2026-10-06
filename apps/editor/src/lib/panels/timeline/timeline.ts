@@ -13,6 +13,7 @@ import type {
   Segment,
   SegmentShape,
 } from "../../ipc";
+import { STORAGE_KEYS } from "../../storageKeys";
 
 /** 区間の種類 (`Segment` の `type` のうち `start` 以外)。 */
 export type SegmentKind = Exclude<Segment["type"], "start">;
@@ -49,16 +50,14 @@ export const FPS = 30;
 /** 新しいモーションの長さ (秒)。 */
 export const DEFAULT_DURATION = 2;
 
-const PANEL_STORAGE_KEY = "ugoe.timeline";
-
 /** パネルを開いておくか (localStorage に覚える。覚えていない・読めなければ開く)。 */
 export function loadPanelOpen(): boolean {
-  return readStoredItem(PANEL_STORAGE_KEY) !== "closed";
+  return readStoredItem(STORAGE_KEYS.timelineOpen) !== "closed";
 }
 
 /** 覚えられなくても表示は変える。 */
 export function savePanelOpen(open: boolean): void {
-  writeStoredItem(PANEL_STORAGE_KEY, open ? "open" : "closed");
+  writeStoredItem(STORAGE_KEYS.timelineOpen, open ? "open" : "closed");
 }
 
 /** カーブの対象を 1 つの文字列にする (表の行や選択のキー)。 */
