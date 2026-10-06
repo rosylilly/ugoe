@@ -44,7 +44,42 @@ async function settingsScene(page, ctx, name) {
 }
 
 /**
- * 折りたためるまとまり (`Section`) の見出しのボタンを、送れる祖先 (右の列か、狭い幅では画面の全体) の頭まで送る。
+ * 要素を送れる祖先 (右の列か、狭い幅では画面の全体) の頭まで送る (ページの中で動く)。scrollIntoView は送らない祖先 (body)
+ * まで動かすので、送れる祖先だけを送る。送った後に枠の頭に固定された要素 (sticky。右の列のタブ・ツリーの頭) があれば、その下に
+ * 隠れないよう、その下端と 8px の分だけ戻す (T0048)。
+ */
+function scrollInBox(el) {
+  const scrolls = (node) => {
+    const o = getComputedStyle(node).overflowY;
+    return o === "auto" || o === "scroll";
+  };
+  let box = el.parentElement;
+  while (box !== null) {
+    if (box.scrollHeight > box.clientHeight && scrolls(box)) break;
+    box = box.parentElement;
+  }
+  if (box === null) return;
+  box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  const top = box.getBoundingClientRect().top;
+  // 送った後の位置は画素に丸められるので、頭ではなく下端と比べる
+  const bottom = el.getBoundingClientRect().bottom;
+  let cover = 0;
+  for (const s of box.querySelectorAll("*")) {
+    if (s.contains(el)) continue;
+    const style = getComputedStyle(s);
+    if (style.position !== "sticky" || style.top === "auto") continue;
+    // 間に別の送る枠があれば、その枠に固定される
+    let p = s.parentElement;
+    while (p !== null && p !== box && !scrolls(p)) p = p.parentElement;
+    if (p !== box) continue;
+    const r = s.getBoundingClientRect();
+    if (r.height > 0 && r.top < bottom) cover = Math.max(cover, r.bottom - top);
+  }
+  if (cover > 0) box.scrollTop -= cover + 8;
+}
+
+/**
+ * 折りたためるまとまり (`Section`) の見出しのボタンを、送れる祖先の頭まで送る。
  * ツールバーの同じ名前のボタン (「出力ウィンドウ」) を拾わないよう、`main` の中で探す。
  */
 async function scrollToSection(page, name) {
@@ -52,31 +87,12 @@ async function scrollToSection(page, name) {
     .locator("main")
     .getByRole("button", { name, exact: true })
     .first()
-    .evaluate((el) => {
-      // scrollIntoView は送らない祖先 (body) まで動かすので、送れる祖先だけを送る
-      let box = el.parentElement;
-      while (box !== null) {
-        const o = getComputedStyle(box).overflowY;
-        if (box.scrollHeight > box.clientHeight && (o === "auto" || o === "scroll")) break;
-        box = box.parentElement;
-      }
-      if (box !== null)
-        box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
-    });
+    .evaluate(scrollInBox);
 }
 
-/** `locator` の要素を、送れる祖先の頭まで送る (scrollIntoView は送らない祖先まで動かすので使わない)。 */
+/** `locator` の要素を、送れる祖先の頭まで送る (`scrollInBox`)。 */
 async function scrollToElement(locator) {
-  await locator.first().evaluate((el) => {
-    let box = el.parentElement;
-    while (box !== null) {
-      const o = getComputedStyle(box).overflowY;
-      if (box.scrollHeight > box.clientHeight && (o === "auto" || o === "scroll")) break;
-      box = box.parentElement;
-    }
-    if (box !== null)
-      box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
-  });
+  await locator.first().evaluate(scrollInBox);
 }
 
 /** エディタの右の列の AI のタブを開き直す (パネルを作り直して、偽のホストの状態を読み直させる)。 */
@@ -239,6 +255,8 @@ async function dressUpScenes(page, ctx) {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
   host.set({ baseChange: false });
+  // 本体の要素 (見本の Head) を選んだ行に乗せた (T0851)
+  await treeSelectedHoverScene(page, ctx, "part:Head", "tree-base-hover");
   await reopenAiTab(page, ctx);
   await ctx.scene("module-ai", { aria: false });
   await togglePreview(page, ctx, true);
@@ -270,6 +288,21 @@ async function manyParametersScenes(page, ctx) {
   await scrollToElement(groups);
   await ctx.scene("many-parameters-groups", { aria: false });
   await scrollToTop(page);
+  // 一覧の上の絞り込みの欄 (T1646): 語で絞った一覧 (閉じたグループも開いて出る) と、一致なしの文
+  const filter = page.getByRole("searchbox", {
+    name: text("editor", ctx.lang, "parameters.filter.aria"),
+    exact: true,
+  });
+  await filter.first().fill("long");
+  await page.waitForTimeout(400);
+  await ctx.scene("parameter-filter", { aria: false });
+  await filter.first().fill("no-such-parameter");
+  await page.getByRole("status").filter({ hasText: "no-such-parameter" }).first().waitFor({
+    timeout: 5000,
+  });
+  await ctx.scene("parameter-filter-none");
+  await filter.first().fill("");
+  await page.waitForTimeout(300);
   host.set({ manyParameters: false });
 }
 
@@ -283,12 +316,6 @@ async function glueScene(page, ctx) {
     exact: true,
   });
   await scrollToElement(axes);
-  // 右の列の頭のタブ (sticky) の下に隠れた分だけ戻す
-  await axes.first().evaluate((el) => {
-    const pane = el.closest(".pane");
-    const tabs = pane?.querySelector(".tabs");
-    if (pane && tabs) pane.scrollTop -= tabs.getBoundingClientRect().height + 8;
-  });
   await ctx.scene("glue-edit", { aria: false });
   await scrollToTop(page);
   await item.click();
@@ -329,6 +356,27 @@ async function treeHoverScenes(page, ctx) {
   await page.mouse.move(1, 300);
   await twisty.click();
   await page.waitForTimeout(300);
+}
+
+/**
+ * ツリーの選んだ行に乗せた場面 (T0851): 控えめな文字の名前 (非表示・本体の要素) が、選んだ地と hover の重ねの上に乗る。
+ * `key` の行 (`data-key`) を選んで乗せて撮り、ポインタを外す。選んだのはそのまま (後の場面が選び直す)。
+ */
+async function treeSelectedHoverScene(page, ctx, key, name) {
+  // 左の列をパーツの木に (前の場面がデフォーマの木にしている)
+  await page
+    .getByRole("tab", { name: text("editor", ctx.lang, "tree.view.parts"), exact: true })
+    .click();
+  await page.waitForTimeout(200);
+  const row = page.locator(`[role=treeitem][data-key="${key}"]`).first();
+  await scrollToElement(row);
+  await row.click();
+  await page.waitForTimeout(400);
+  await row.hover();
+  await page.waitForTimeout(400);
+  await ctx.scene(name, { aria: false });
+  await page.mouse.move(1, 300);
+  await page.waitForTimeout(200);
 }
 
 /**
@@ -408,6 +456,8 @@ export const APPS = {
       await page.waitForTimeout(300);
       ctx.editorHost.set({ externalChange: false });
       await treeHoverScenes(page, ctx);
+      // 非表示の要素 (見本の Wave は不透明度 0) を選んだ行に乗せた
+      await treeSelectedHoverScene(page, ctx, "part:Wave", "tree-hidden-hover");
       // パーツを選んだ状態 (インスペクタに中身が出る)
       await page.locator("[role=treeitem]").nth(1).click();
       await page.waitForTimeout(600);
