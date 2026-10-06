@@ -1,11 +1,11 @@
 ---
 id: T1676
 title: "エディタ: ツリーの下の欄 (sticky) が左の列の余白の分だけ下端から浮き、その下に木の行が覗く"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1676
 ---
 
 # T1676: エディタ: ツリーの下の欄 (sticky) が左の列の余白の分だけ下端から浮き、その下に木の行が覗く
