@@ -3,7 +3,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createEditorHost, editorPageInit, ipcBinding } from "./editor-host.mjs";
-import { studioFixture, studioPageInit } from "./studio-host.mjs";
+import {
+  attentionMessages,
+  firstRunMessages,
+  studioFixture,
+  studioPageInit,
+} from "./studio-host.mjs";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 
@@ -39,8 +44,39 @@ async function settingsScene(page, ctx, name) {
 }
 
 /**
+ * 折りたためるまとまり (`Section`) の見出しのボタンを、送れる祖先 (右の列か、狭い幅では画面の全体) の頭まで送る。
+ * ツールバーの同じ名前のボタン (「出力ウィンドウ」) を拾わないよう、`main` の中で探す。
+ */
+async function scrollToSection(page, name) {
+  await page
+    .locator("main")
+    .getByRole("button", { name, exact: true })
+    .first()
+    .evaluate((el) => {
+      // scrollIntoView は送らない祖先 (body) まで動かすので、送れる祖先だけを送る
+      let box = el.parentElement;
+      while (box !== null) {
+        const o = getComputedStyle(box).overflowY;
+        if (box.scrollHeight > box.clientHeight && (o === "auto" || o === "scroll")) break;
+        box = box.parentElement;
+      }
+      if (box !== null)
+        box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    });
+}
+
+/** 送った所をすべて頭に戻す。 */
+async function scrollToTop(page) {
+  await page.evaluate(() => {
+    for (const el of [document.scrollingElement, ...document.querySelectorAll("*")])
+      if (el) el.scrollTop = 0;
+  });
+}
+
+/**
  * アプリの定義。
  * - `wide`・`narrow`: 広い幅・狭い幅の窓の大きさ (CSS px)。狭い幅は docs/ui.md#そのほか の下限。
+ * - `half` (省ける): 画面の半分に置いたときの窓の大きさ。ライトの英語で 1 組だけ撮る (`en-light-half`)。
  * - `wasm`: `just wasm` の出力先。`package`: pnpm のパッケージ。
  * - `setup(page, ctx)`: 読み込む前の用意 (偽のホスト)。`load(page, ctx)`: 開いて、空の状態を撮り、モデルを読む。
  * - `extras(page, ctx)`: モデルを読んだ後の場面 (ダイアログなど)。
@@ -172,8 +208,11 @@ export const APPS = {
     wasm: "apps/studio/src/lib/wasm/generated",
     wide: [1280, 800],
     narrow: [360, 740],
+    // 1920 の画面の半分に置いた操作ウィンドウ (列の並びが 3 列から 2 列 + 下に設定に変わる幅。docs/studio.md#操作ウィンドウ)
+    half: [960, 800],
     async setup(page, ctx) {
       const fixture = await studioFixture(ctx.lang);
+      ctx.fixture = fixture;
       await page.addInitScript(studioPageInit, { osLocale: ctx.osLocale, fixture });
     },
     async load(page, ctx) {
@@ -189,6 +228,37 @@ export const APPS = {
       await page.getByRole("menu").first().waitFor({ timeout: 5000 });
       await ctx.scene("profile-menu", { aria: false });
       await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+
+      // 出力ウィンドウの様子 (大きさ・枠・背景。T0818)
+      await scrollToSection(page, text("studio", ctx.lang, "output.heading"));
+      await ctx.scene("output", { aria: false });
+      await scrollToTop(page);
+
+      // 注意の要る状態 (承認を待つアプリ・登録できないホットキー・負荷の注意。T0818)
+      await page.evaluate(({ messages, status }) => {
+        window.__uiAuditStudio.setStatus(status);
+        for (const m of messages) window.__uiAuditStudio.emit(m);
+      }, attentionMessages(ctx.fixture));
+      await page.waitForTimeout(600);
+      await ctx.scene("attention");
+      await scrollToSection(page, text("studio", ctx.lang, "hotkeys.heading"));
+      await ctx.scene("attention-hotkeys", { aria: false });
+      await scrollToTop(page);
+      // 承認した後の「取り消す」の知らせ
+      await page
+        .getByRole("button", { name: text("studio", ctx.lang, "api.approve"), exact: true })
+        .click();
+      await page.waitForTimeout(300);
+      await ctx.scene("approved", { aria: false });
+
+      // 初めて起動した画面 (新しいプロファイル。モデルの無いシーンが 1 つ)
+      await page.evaluate((messages) => {
+        window.__uiAuditStudio.setStatus({});
+        for (const m of messages) window.__uiAuditStudio.emit(m);
+      }, firstRunMessages(ctx.fixture));
+      await page.waitForTimeout(600);
+      await ctx.scene("first-run");
     },
   },
 };

@@ -4,7 +4,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import HotkeysPanel from "./HotkeysPanel.svelte";
 import { t } from "./lib/i18n";
-import type { Hotkey } from "./lib/inputs";
+import type { Hotkey, HotkeyProblem } from "./lib/inputs";
 
 const cleanups: (() => void)[] = [];
 
@@ -13,12 +13,12 @@ afterEach(() => {
 });
 
 /** 割り当ての画面を描く。送った割り当ては、`notify` を呼ぶまで props に戻らない (バックエンドの通知を待つ)。 */
-function setup(initial: Hotkey[], poses: string[] = []) {
+function setup(initial: Hotkey[], poses: string[] = [], problems: [number, HotkeyProblem][] = []) {
   const sent: Hotkey[][] = [];
   const finish: (() => void)[] = [];
   const props = $state({
     hotkeys: initial,
-    problems: [],
+    problems,
     wayland: false,
     scenes: [{ id: "a", label: "A" }],
     expressions: [],
@@ -114,5 +114,40 @@ describe("HotkeysPanel", () => {
     expect(item?.textContent).toContain(t("hotkeys.kinds.pose"));
     const selects = item?.querySelectorAll(".ugoe-select") ?? [];
     expect(selects[selects.length - 1]?.textContent).toContain("ArmB");
+  });
+
+  // 登録できない割り当て (T0818): 頭に数、その行に印と理由。ぶつかりは相手を操作の名前で示す。
+  it("marks the hotkeys that could not be registered and names the clashing one", () => {
+    const { target } = setup(
+      [
+        { keys: "Ctrl+KeyA", action: { kind: "scene", scene: "a" } },
+        { keys: "Ctrl+KeyA", action: { kind: "stopMotions" } },
+        { keys: "Ctrl+KeyB", action: { kind: "trackingPause" } },
+      ],
+      [],
+      [
+        [1, { code: "duplicate", other: 0 }],
+        [2, { code: "registerFailed", message: "taken" }],
+      ],
+    );
+    expect(target.querySelector(".ugoe-notice")?.textContent).toContain(
+      t("hotkeys.problemsSummary", { count: 2 }),
+    );
+    const items = [...target.querySelectorAll(".hotkeys__item")];
+    expect(items.map((i) => i.classList.contains("hotkeys__item--problem"))).toEqual([
+      false,
+      true,
+      true,
+    ]);
+    const clash = items[1]?.querySelector(".hotkeys__problem");
+    expect(clash?.textContent).toContain(
+      t("hotkeys.problems.duplicate", {
+        action: t("hotkeys.describe", { kind: t("hotkeys.kinds.scene"), target: "A" }),
+      }),
+    );
+    // 印 (三角) が付き、キーのボタンから理由を読める。
+    expect(clash?.querySelector("svg")).not.toBeNull();
+    const keyButton = items[1]?.querySelector("button");
+    expect(keyButton?.getAttribute("aria-describedby")).toBe(clash?.id);
   });
 });

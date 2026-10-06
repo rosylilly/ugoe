@@ -2,7 +2,10 @@
 //
 // - プロファイルは見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に、画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を
 //   足したもの。シーン・パラメータ・モーション・負荷の表示・操作の API の状態を、本物の指揮役が送る形で送る。
-// - 書き換えの操作は何もしない (Promise を返すだけ)。知らないメソッドも何もしない。
+// - 書き換えの操作は何もしない (Promise を返すだけ)。知らないメソッドも何もしない。操作 API の承認・拒否・取り消しだけは、
+//   承認の後の知らせを撮るために様子を変えて送り直す。
+// - 場面を足すために、ページの `window.__uiAuditStudio` に通知を送る口 (`emit`) と、負荷の数値を変える口 (`setStatus`) を置く。
+//   送る通知の組 (初めて起動した画面・注意の要る状態) は下の `firstRunMessages`・`attentionMessages` で Node の側で作る (T0818)。
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -50,6 +53,112 @@ export async function studioFixture(lang) {
       motion("tilt", 1.5, false, ["AngleZ", "EyeBallX"]),
     ],
     expressions: ["sad", "smile", "surprised"],
+    api: {
+      enabled: true,
+      listening: true,
+      port: 28451,
+      error: null,
+      clients: [],
+      pending: [],
+      connections: 1,
+      source: { enabled: true, listening: true, connections: 1 },
+    },
+  };
+}
+
+/**
+ * 初めて起動した画面の通知 (新しいプロファイル: 名前の無いモデルの無いシーンが 1 つ、保存先なし、ホットキーなし、配信していない。
+ * apps/studio/src-tauri/src/profile.rs の `Profile::new` と stage.rs の `new_profile`)。
+ */
+export function firstRunMessages(fixture) {
+  const base = fixture.profile.scenes[0];
+  const scene = {
+    ...base,
+    id: "scene-1",
+    name: "",
+    model: null,
+    modules: [],
+    lighting: null,
+    transform: { x: 0, y: 0, scale: 1, rotation: 0 },
+    background: { kind: "transparent" },
+    pose: [],
+  };
+  const profile = { ...fixture.profile, scenes: [scene], activeScene: "scene-1", hotkeys: [] };
+  return [
+    { kind: "profile", profile, path: null, dirty: false, live: null, recent: [] },
+    // 承認したクライアントは無い (前の場面の「取り消す」の知らせを残さない)
+    { kind: "api", ...fixture.api },
+    {
+      kind: "scene",
+      scene: {
+        kind: "scene",
+        revision: 2,
+        modelRevision: 0,
+        modulesRevision: 0,
+        modelName: "",
+        parameterIds: [],
+        modules: [],
+        lighting: null,
+        transform: scene.transform,
+        background: scene.background,
+        pose: [],
+      },
+      parameters: [],
+      usesLighting: false,
+      poseGroups: [],
+    },
+    {
+      kind: "animation",
+      motions: [],
+      expressions: [],
+      current: null,
+      activeExpressions: [],
+      idleMotion: null,
+      tracking: false,
+      trackingPaused: false,
+      lipSyncPaused: false,
+      trackingParameters: [],
+      slots: [],
+    },
+    { kind: "hotkeys", problems: [], suspended: false, wayland: false },
+  ];
+}
+
+/** 承認を待つクライアント (`attentionMessages` と、承認の後の知らせを撮る場面で使う)。 */
+export const PENDING_CLIENT = { id: "ui-audit-deck", name: "Stream Deck", permission: "control" };
+
+/**
+ * 注意の要る状態の通知 (T0818): 承認を待つクライアント・登録できないホットキー (同じキーの 2 つ目と、OS が使っているもの)・
+ * 負荷の注意 (刻みが遅れ、間隔が揺れる)。`status` は `setStatus` に渡す負荷の数値。
+ */
+export function attentionMessages(fixture) {
+  const hotkeys = structuredClone(fixture.profile.hotkeys);
+  // 2 つ目のシーンの切り替えを 1 つ目と同じキーにする (バックエンドは前のものだけを登録し、後のものに `duplicate` を出す)
+  hotkeys[1].keys = hotkeys[0].keys;
+  const profile = { ...fixture.profile, hotkeys };
+  const active = profile.scenes.find((s) => s.id === profile.activeScene) ?? profile.scenes[0];
+  return {
+    messages: [
+      {
+        kind: "profile",
+        profile,
+        path: fixture.path,
+        dirty: false,
+        live: active.id,
+        recent: [fixture.path],
+      },
+      { kind: "api", ...fixture.api, pending: [PENDING_CLIENT] },
+      {
+        kind: "hotkeys",
+        problems: [
+          [1, { code: "duplicate", other: 0 }],
+          [8, { code: "registerFailed", message: "HotKey already registered" }],
+        ],
+        suspended: false,
+        wayland: false,
+      },
+    ],
+    status: { measuredRate: 51.2, maxIntervalMs: 48.5 },
   };
 }
 
@@ -66,15 +175,26 @@ export function studioPageInit({ osLocale, fixture }) {
   const { methods, profile, path, parameters, motions, expressions } = fixture;
   let output = { visible: true, onTop: false, width: 1920, height: 1080 };
   const active = profile.scenes.find((s) => s.id === profile.activeScene) ?? profile.scenes[0];
-  const api = {
-    enabled: true,
-    listening: true,
-    port: 28451,
-    error: null,
-    clients: [],
-    pending: [],
-    connections: 1,
-    source: { enabled: true, listening: true, connections: 1 },
+  let api = fixture.api;
+  /** 指揮役の通知を受ける画面の口 (`subscribeStatus` で受け取る)。 */
+  let listener = null;
+  /** 負荷の数値に重ねるもの (`setStatus`)。 */
+  let statusPatch = {};
+  const sendApi = () => {
+    listener?.({ kind: "api", ...api });
+    return api;
+  };
+  window.__uiAuditStudio = {
+    emit(message) {
+      if (message.kind === "api") {
+        const { kind: _, ...view } = message;
+        api = view;
+      }
+      listener?.(message);
+    },
+    setStatus(patch) {
+      statusPatch = patch;
+    },
   };
   const ids = parameters.map((p) => p.id);
   const given = {
@@ -104,6 +224,34 @@ export function studioPageInit({ osLocale, fixture }) {
     playMotion: async () => true,
     virtualCameraState: async () => ({ state: "stopped", unavailable: null }),
     apiState: async () => api,
+    async approveApiClient(id, permission) {
+      const client = api.pending.find((c) => c.id === id);
+      if (client === undefined) return;
+      api = {
+        ...api,
+        pending: api.pending.filter((c) => c.id !== id),
+        clients: [
+          ...api.clients,
+          {
+            id,
+            name: client.name,
+            permission,
+            approvedAt: 1767225600,
+            lastSeen: null,
+            connections: 1,
+          },
+        ],
+      };
+      sendApi();
+    },
+    async denyApiClient(id) {
+      api = { ...api, pending: api.pending.filter((c) => c.id !== id) };
+      sendApi();
+    },
+    async revokeApiClient(id) {
+      api = { ...api, clients: api.clients.filter((c) => c.id !== id) };
+      sendApi();
+    },
     setApiEnabled: async () => api,
     setApiPort: async () => api,
     setSourceEnabled: async () => api,
@@ -116,6 +264,7 @@ export function studioPageInit({ osLocale, fixture }) {
     sceneModule: async () => new Uint8Array(),
     sceneBackground: async () => new Uint8Array(),
     async subscribeStatus(onMessage) {
+      listener = onMessage;
       onMessage({ kind: "profile", profile, path, dirty: true, live: active.id, recent: [path] });
       onMessage({ kind: "api", ...api });
       onMessage({
@@ -178,6 +327,7 @@ export function studioPageInit({ osLocale, fixture }) {
               targetFps: null,
             },
           ],
+          ...statusPatch,
         });
       };
       status();

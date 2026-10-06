@@ -1,7 +1,8 @@
 <!--
   操作ウィンドウ (docs/studio.md#操作ウィンドウ)。モデルは描かない (描画は出力ウィンドウに任せる)。
   左にシーンの一覧、中央に配信中に触るもの (いまの状態の印・配信しているシーン・表情とモーション・ポーズ (T0842))、
-  右のパネルに設定 (シーンの編集 (T0802)・入力 (カメラ・マイク)・ホットキー (T0803)・出力・操作 API (T0805)・負荷 (LoadPanel.svelte)・パラメータ)。
+  右のパネルに設定。並びは初めての配信の準備の順 (シーンの編集 (T0802)・入力 (カメラ・マイク)・出力 (出力ウィンドウ・ブラウザソース・仮想カメラ)) の後に、
+  一度決めれば触らないもの (ホットキー (T0803)・モーションの設定・操作 API (T0805)・負荷 (LoadPanel.svelte)・パラメータ) を置く (T0818)。
   幅が 960px 以下では列を積んで画面の全体を送る (T0817)。
   操作 API に初めて接続したクライアントの承認は、どのパネルを開いていても上の知らせ (ApiApproval.svelte) で行う。
   カメラとマイクはこのウィンドウの WebView で取り、バックエンドの刻み (`subscribe_pulse`) で処理する (最小化しても止まらない)。
@@ -19,7 +20,6 @@ import {
   type MenuEntry,
   Notice,
   Section,
-  Select,
   Slider,
   Toggle,
   Toolbar,
@@ -69,7 +69,6 @@ import { Pulse } from "./lib/pulse";
 import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
   forgetLegacySettings,
-  OUTPUT_SIZE_PRESETS,
   type OutputSizePreset,
   parseOutputSize,
   parseTickRate,
@@ -80,6 +79,8 @@ import {
 import { statusBadges } from "./lib/status";
 import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
+import MotionSettingsPanel from "./MotionSettingsPanel.svelte";
+import OutputPanel from "./OutputPanel.svelte";
 import PosePanel from "./PosePanel.svelte";
 import ReceiverFailuresNotices from "./ReceiverFailuresNotices.svelte";
 import SceneEditor from "./SceneEditor.svelte";
@@ -185,6 +186,9 @@ const sceneHotkeys = $derived.by(() => {
   }
   return out;
 });
+const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
+/** 出力ウィンドウに出している背景 (配信しているシーンのもの。配信していなければ `null`)。 */
+const liveBackground = $derived(profile?.live == null ? null : (scene?.background ?? null));
 /** 「いまの状態」の印 (lib/status.ts)。 */
 const badges = $derived(
   statusBadges({
@@ -200,13 +204,20 @@ const badges = $derived(
       problems: hotkeyProblems.length,
       wayland,
     },
+    output:
+      output === null
+        ? null
+        : {
+            window: output,
+            scaled: outputSize !== "free" && presetOf(output.width, output.height) !== outputSize,
+            background: liveBackground,
+          },
     load: status,
     api,
   }),
 );
 
 const shownParameters = $derived(parameters.filter((p) => showInternal || !p.internal));
-const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
 /** ブラウザソースの手順で案内する大きさ (出力ウィンドウの大きさのプリセット)。 */
 const sourceSize = $derived.by(() => {
   const size = presetSize(outputSize);
@@ -214,6 +225,11 @@ const sourceSize = $derived.by(() => {
 });
 const scenes = $derived(profile?.profile.scenes ?? []);
 const sceneChoices = $derived(scenes.map((s, i) => ({ id: s.id, label: sceneLabel(s, i) })));
+/** 編集しているシーンの、名前が空のときの表示名 (「シーン 1」など)。 */
+const selectedDefaultName = $derived.by(() => {
+  const index = scenes.findIndex((s) => s.id === selected);
+  return index < 0 ? "" : t("scenes.defaultName", { n: index + 1 });
+});
 const selectedScene = $derived.by(() => {
   const found = scenes.find((s) => s.id === selected) ?? null;
   return editing !== null && editing.id === found?.id ? editing : found;
@@ -245,22 +261,6 @@ const profileEntries = $derived<MenuEntry[]>([
     })),
   },
 ]);
-const sizeOptions = $derived(
-  OUTPUT_SIZE_PRESETS.map((preset) => {
-    const size = presetSize(preset);
-    return {
-      value: preset,
-      label:
-        size === null
-          ? t("output.sizeFree")
-          : t(size[1] > size[0] ? "output.sizePortrait" : "output.sizeValue", {
-              width: size[0],
-              height: size[1],
-            }),
-    };
-  }),
-);
-
 function onMonitor(message: MonitorMessage) {
   switch (message.kind) {
     case "scene":
@@ -486,9 +486,15 @@ async function updateScene(next: SceneSettings) {
     const scene = queued;
     queued = null;
     // 出しているシーンの編集は、読み直すことがある (モデル・モジュール・背景の画像を替えた)。
+    // どのシーンも出していない (新しいプロファイル) ときにモデルを選んだら、そのシーンを出す
+    // (「シーンの編集」から選んでも、出力ウィンドウにモデルが出るように。T0818)。
+    const start = profile?.live == null && scene.model !== null;
     await sceneOp(scene.id, (h) =>
-      profile?.live === scene.id
-        ? sceneLoading.track(scene.id, () => h.updateScene(scene))
+      profile?.live === scene.id || start
+        ? sceneLoading.track(scene.id, async () => {
+            await h.updateScene(scene);
+            if (start) await h.activateScene(scene.id);
+          })
         : h.updateScene(scene),
     );
   }
@@ -675,8 +681,9 @@ onMount(() => {
       <!-- 狭い幅では省略するので、全体 (保存先の場所) を title に出す -->
       <span class="studio__profile-name" title={profile?.path ?? profileName}>{profileName}</span>
       {#if profile !== null}
+        <!-- 一度も保存していないプロファイルは、変えていなくても「未保存」(保存済みに見せない。T0818) -->
         <span class="studio__saved" class:studio__saved--dirty={profile.dirty}>
-          {profile.dirty ? t("profile.unsaved") : t("profile.saved")}
+          {profile.dirty || profile.path === null ? t("profile.unsaved") : t("profile.saved")}
         </span>
       {/if}
     </span>
@@ -807,7 +814,6 @@ onMount(() => {
           onplay={(name, priority) => void playMotion(name, priority)}
           onstop={() => void run((h) => h.stopMotions())}
           onexpression={onExpression}
-          onsettings={(settings) => run((h) => h.setMotionSettings(settings))}
         />
       </Section>
       {#if poseGroups.length > 0}
@@ -827,6 +833,7 @@ onMount(() => {
         <Section title={t("editor.heading")}>
           <SceneEditor
             scene={selectedScene}
+            defaultName={selectedDefaultName}
             live={profile?.live === selectedScene.id}
             usesLighting={profile?.live === selectedScene.id ? usesLighting : null}
             disabled={host === null}
@@ -851,6 +858,40 @@ onMount(() => {
           onlipsyncpause={(paused) => void run((h) => h.setLipSyncPaused(paused))}
         />
       </Section>
+      <Section title={t("output.heading")}>
+        <OutputPanel
+          {output}
+          size={outputSize}
+          background={liveBackground}
+          onvisible={setOutputVisible}
+          ontop={setOutputOnTop}
+          onsize={applyOutputSize}
+        />
+      </Section>
+
+      <Section title={t("source.heading")}>
+        <SourcePanel
+          {api}
+          size={sourceSize}
+          disabled={host === null}
+          onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
+          url={async () => {
+            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
+            if (host === null) throw new Error("no host");
+            return host.sourceUrl();
+          }}
+          onregenerate={async () => (await run((h) => h.regenerateSourceToken())) ?? null}
+        />
+      </Section>
+
+      <Section title={t("virtualCamera.heading")}>
+        <VirtualCameraPanel
+          {host}
+          status={camera}
+          settings={profile?.profile.output.virtualCamera ?? DEFAULT_CAMERA_PROFILE}
+        />
+      </Section>
+
       <Section title={t("hotkeys.heading")}>
         <HotkeysPanel
           {hotkeys}
@@ -876,59 +917,12 @@ onMount(() => {
           }}
         />
       </Section>
-      <Section title={t("output.heading")}>
-        <div class="studio__stack">
-          <Toggle
-            label={t("output.show")}
-            checked={output?.visible ?? false}
-            disabled={output === null}
-            onchange={setOutputVisible}
-          />
-          <Toggle
-            label={t("output.onTop")}
-            checked={output?.onTop ?? false}
-            disabled={output === null}
-            onchange={setOutputOnTop}
-          />
-          <Select
-            label={t("output.size")}
-            value={outputSize}
-            options={sizeOptions}
-            disabled={output === null}
-            onchange={applyOutputSize}
-          />
-          {#if output !== null}
-            <p class="studio__hint">
-              {t("output.current", { width: output.width, height: output.height })}
-              {#if presetOf(output.width, output.height) !== outputSize && outputSize !== "free"}
-                <br />{t("output.scaled")}
-              {/if}
-            </p>
-          {/if}
-          <p class="studio__hint">{t("output.moveHint")}</p>
-        </div>
-      </Section>
-
-      <Section title={t("virtualCamera.heading")}>
-        <VirtualCameraPanel
-          {host}
-          status={camera}
-          settings={profile?.profile.output.virtualCamera ?? DEFAULT_CAMERA_PROFILE}
-        />
-      </Section>
-
-      <Section title={t("source.heading")}>
-        <SourcePanel
-          {api}
-          size={sourceSize}
+      <Section title={t("motion.settingsHeading")}>
+        <MotionSettingsPanel
+          {animation}
+          settings={motionSettings}
           disabled={host === null}
-          onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
-          url={async () => {
-            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
-            if (host === null) throw new Error("no host");
-            return host.sourceUrl();
-          }}
-          onregenerate={async () => (await run((h) => h.regenerateSourceToken())) ?? null}
+          onsettings={(settings) => run((h) => h.setMotionSettings(settings))}
         />
       </Section>
 
@@ -1166,8 +1160,7 @@ onMount(() => {
     gap: var(--ugoe-space-3);
   }
 
-  .studio__empty,
-  .studio__hint {
+  .studio__empty {
     margin: 0;
     color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);

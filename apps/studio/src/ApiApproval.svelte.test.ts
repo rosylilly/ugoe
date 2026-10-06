@@ -53,4 +53,27 @@ describe("ApiApproval", () => {
     flushSync();
     expect(approved).toEqual(["read"]);
   });
+
+  it("puts the approval last, after later and deny (the order of the editor's dialogs)", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const instance = mount(ApiApproval, {
+      target,
+      props: {
+        client: { id: "deck", name: "Deck", permission: "read" },
+        onapprove: () => {},
+        ondeny: () => {},
+        onlater: () => {},
+      },
+    });
+    cleanups.push(() => {
+      unmount(instance);
+      target.remove();
+    });
+    flushSync();
+    const labels = [...target.querySelectorAll(".ugoe-notice__actions button")].map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(labels).toEqual([t("api.later"), t("api.deny"), t("api.approve")]);
+  });
 });

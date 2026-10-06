@@ -1,11 +1,12 @@
 <!--
   ホットキー (docs/studio.md#ホットキー、T0803): 操作ごとのキーの割り当て。キーの欄を押してからキーを押すと割り当てる
   (押している間はホットキーの登録を外す)。割り当てはプロファイルに持ち、バックエンドがグローバルなショートカットとして登録する
-  (アプリが前面に無くても効く)。登録できなかったもの (ぶつかり・OS が使っている) は理由を出す。
+  (アプリが前面に無くても効く)。登録できなかったもの (ぶつかり・OS が使っている) は、パネルの頭に数を、その行に印と理由を出す
+  (ぶつかりは、相手の割り当てを操作の名前で示す。T0818)。
 -->
 <script lang="ts">
 import { MOTION_PRIORITIES, type MotionPriority } from "@ugoe/player";
-import { Button, Kbd, Notice, SegmentedControl, Select } from "@ugoe/ui";
+import { Button, Icon, Kbd, Notice, SegmentedControl, Select } from "@ugoe/ui";
 import { onDestroy } from "svelte";
 import { describeError } from "./lib/errors";
 import {
@@ -207,6 +208,23 @@ async function pickModule(index: number) {
   }
 }
 
+/** 割り当ての操作の名前 (「シーンの切り替え: 雑談」。ぶつかりの相手を示す)。 */
+function describe(hotkey: Hotkey | undefined): string {
+  if (hotkey === undefined) return "";
+  const action = hotkey.action;
+  if (action.kind === "unknown") return t("hotkeys.kinds.unknown");
+  const kind = t(KIND_KEYS[action.kind] as "hotkeys.kinds.scene");
+  let target: string | null = null;
+  if (action.kind === "scene")
+    target = scenes.find((s) => s.id === action.scene)?.label ?? t("hotkeys.missingScene");
+  else if (action.kind === "expression") target = action.expression;
+  else if (action.kind === "motion") target = action.motion;
+  else if (action.kind === "pose") target = action.part;
+  else if (action.kind === "dressUp")
+    target = action.module === null ? action.slot : fileName(action.module);
+  return target === null || target === "" ? kind : t("hotkeys.describe", { kind, target });
+}
+
 function problemText(problem: HotkeyProblem): string {
   switch (problem.code) {
     case "unassigned":
@@ -214,7 +232,7 @@ function problemText(problem: HotkeyProblem): string {
     case "invalidKeys":
       return t("hotkeys.problems.invalidKeys");
     case "duplicate":
-      return t("hotkeys.problems.duplicate", { n: problem.other + 1 });
+      return t("hotkeys.problems.duplicate", { action: describe(current[problem.other]) });
     case "registerFailed":
       return t("hotkeys.problems.registerFailed", { message: problem.message });
     case "unknownAction":
@@ -229,6 +247,9 @@ function problemText(problem: HotkeyProblem): string {
   {#if wayland}
     <Notice tone="warning">{t("hotkeys.wayland")}</Notice>
   {/if}
+  {#if problems.length > 0}
+    <Notice tone="warning">{t("hotkeys.problemsSummary", { count: problems.length })}</Notice>
+  {/if}
   {#if pickError !== null}
     <Notice tone="danger" ondismiss={() => (pickError = null)}>{pickError}</Notice>
   {/if}
@@ -239,7 +260,11 @@ function problemText(problem: HotkeyProblem): string {
     {#each current as hotkey, index (index)}
       {@const problem = problemAt.get(index)}
       {@const action = hotkey.action}
-      <li class="hotkeys__item" aria-label={t("hotkeys.itemLabel", { n: index + 1 })}>
+      <li
+        class="hotkeys__item"
+        class:hotkeys__item--problem={problem !== undefined}
+        aria-label={t("hotkeys.itemLabel", { n: index + 1 })}
+      >
         <div class="hotkeys__row">
           <Button
             small
@@ -349,7 +374,10 @@ function problemText(problem: HotkeyProblem): string {
           />
         {/if}
         {#if problem !== undefined}
-          <p class="hotkeys__problem" id={`hotkey-problem-${index}`}>{problemText(problem)}</p>
+          <p class="hotkeys__problem" id={`hotkey-problem-${index}`}>
+            <Icon name="warning" />
+            <span class="ugoe-selectable">{problemText(problem)}</span>
+          </p>
         {:else if hotkey.keys !== "" && !hasModifier(hotkey.keys)}
           <p class="hotkeys__hint">{t("hotkeys.noModifier")}</p>
         {/if}
@@ -412,7 +440,21 @@ function problemText(problem: HotkeyProblem): string {
     color: var(--ugoe-color-text-muted);
   }
 
+  /* 登録できない行: 色に加えて、左の線と印 (三角) で示す (色だけで伝えない) */
+  .hotkeys__item--problem {
+    padding-left: var(--ugoe-space-2);
+    border-left: 3px solid var(--ugoe-color-warning);
+  }
+
   .hotkeys__problem {
-    color: var(--ugoe-color-danger);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ugoe-space-1);
+    color: var(--ugoe-color-text);
+  }
+
+  .hotkeys__problem :global(.ugoe-icon) {
+    flex: none;
+    color: var(--ugoe-color-warning);
   }
 </style>

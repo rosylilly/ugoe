@@ -43,14 +43,24 @@ const options = $derived(
     <SegmentedControl label={t("api.permission")} {options} bind:value={permission} {disabled} />
   </div>
   {#snippet actions()}
-    <Button small variant="primary" {disabled} onclick={() => onapprove(permission)}>{t("api.approve")}</Button>
-    <Button small {disabled} onclick={ondeny}>{t("api.deny")}</Button>
+    <!-- 並びはエディタのダイアログ・知らせと同じく、保留 → 断る → 決定 (primary は並びの最後。docs/ui.md#エディタの中の共通の形) -->
     <Button small onclick={onlater}>{t("api.later")}</Button>
+    <Button small {disabled} onclick={ondeny}>{t("api.deny")}</Button>
+    <Button small variant="primary" {disabled} onclick={() => onapprove(permission)}>{t("api.approve")}</Button>
   {/snippet}
 </Notice>
 
 <style>
   .approval__permission {
     margin-top: var(--ugoe-space-2);
+  }
+
+  /* 狭い幅 (360px) で「権限」の名前が字の途中で折れないよう、名前は折らずに選択肢を次の行へ送る (T0818) */
+  .approval__permission :global(.ugoe-segmented) {
+    flex-wrap: wrap;
+  }
+
+  .approval__permission :global(.ugoe-segmented__label) {
+    white-space: nowrap;
   }
 </style>

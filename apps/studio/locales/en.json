@@ -8,6 +8,7 @@
   },
   "settings": {
     "title": "Settings",
+    "close": "Close",
     "language": {
       "label": "Language",
       "system": "Match the OS",
@@ -132,6 +133,13 @@
       "wayland": "Hotkeys in front only",
       "waylandTip": "On Wayland, hotkeys work only while the studio window is in front."
     },
+    "output": {
+      "on": "Output {{width}} × {{height}}",
+      "onTip": "The output window is shown (no frame, background: {{background}}). Your streaming app captures this window. Change its size in Output window.",
+      "scaledTip": "The OS kept the output window smaller than the chosen size (it may not fit on the screen). See Output window.",
+      "hidden": "Output hidden",
+      "hiddenTip": "The output window is hidden, so a window capture shows nothing. Show it with Output window in the toolbar."
+    },
     "load": {
       "okTip_one": "Time per tick and the tick rate. {{count, number}} receiver is showing the model. Details are in Frame rate and load.",
       "okTip_other": "Time per tick and the tick rate. {{count, number}} receivers are showing the model. Details are in Frame rate and load.",
@@ -169,9 +177,16 @@
     "sizeFree": "Free",
     "sizeValue": "{{width}} × {{height}}",
     "sizePortrait": "{{width}} × {{height}} (portrait)",
-    "current": "Current size: {{width}} × {{height}} px",
     "scaled": "The OS kept the window smaller than the chosen size (it may not fit on the screen).",
-    "moveHint": "The output window has no frame. Drag it to move it."
+    "currentLabel": "Current size",
+    "currentValue": "{{width}} × {{height}} px",
+    "frame": "Frame",
+    "frameNone": "None. Drag inside the output window to move it.",
+    "background": "Background",
+    "backgroundValue": "{{kind}} ({{detail}})",
+    "backgroundHint": "The background of the live scene. Change it under Background in Scene.",
+    "backgroundNoScene": "No scene is live",
+    "capture": "Capture this window in your streaming app with a window capture. You can also use Browser source (OBS) or Virtual camera."
   },
   "parameters": {
     "heading": "Parameters",
@@ -314,6 +329,7 @@
   },
   "motion": {
     "heading": "Expressions and motions",
+    "settingsHeading": "Motion settings",
     "empty": "The model has no expressions or motions.",
     "expressions": "Expressions",
     "clearExpressions": "Clear all",
@@ -406,6 +422,9 @@
     "noModifier": "This key has no modifier, so other apps cannot receive it while the studio runs.",
     "add": "Add hotkey",
     "hint": "Hotkeys work even when the studio is not in front. Press Backspace while setting keys to clear them.",
+    "describe": "{{kind}}: {{target}}",
+    "problemsSummary_one": "{{count, number}} hotkey is not registered. See the reason on the marked row and change its keys.",
+    "problemsSummary_other": "{{count, number}} hotkeys are not registered. See the reasons on the marked rows and change their keys.",
     "kinds": {
       "scene": "Switch scene",
       "expression": "Expression",
@@ -422,7 +441,7 @@
     "problems": {
       "unassigned": "No keys yet.",
       "invalidKeys": "These keys cannot be used.",
-      "duplicate": "The same keys as hotkey {{n}}. Only the first one works.",
+      "duplicate": "The same keys as “{{action}}”. Only the earlier one works.",
       "registerFailed": "Could not register the keys (another app or the OS may use them): {{message}}",
       "unknownAction": "This studio does not know the action."
     }

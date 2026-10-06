@@ -7,7 +7,13 @@ import { after, test } from "node:test";
 import { pattern, text } from "../lib/apps.mjs";
 import { createEditorHost, ipcBinding } from "../lib/editor-host.mjs";
 import { contentType, resolvePath, serve } from "../lib/serve.mjs";
-import { hostMethods, studioFixture } from "../lib/studio-host.mjs";
+import {
+  attentionMessages,
+  firstRunMessages,
+  hostMethods,
+  PENDING_CLIENT,
+  studioFixture,
+} from "../lib/studio-host.mjs";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const work = mkdtempSync(join(tmpdir(), "ugoe-ui-audit-test-"));
@@ -90,6 +96,35 @@ test("スタジオの偽のホスト: StudioHost のメソッドをすべて置�
   assert.equal(typeof fixture.profile.motion.autoIdle, "boolean");
   assert.ok(fixture.profile.output.virtualCamera);
   assert.equal(fixture.profile.scenes[0].name, "Chat");
+});
+
+test("スタジオの偽のホスト: 初めて起動した画面と注意の要る状態の通知", async () => {
+  const fixture = await studioFixture("ja");
+  const first = firstRunMessages(fixture);
+  const profile = first.find((m) => m.kind === "profile");
+  // profile.rs の Profile::new と同じ: 名前もモデルも無いシーンが 1 つ、保存先なし、配信していない
+  assert.equal(profile.path, null);
+  assert.equal(profile.live, null);
+  assert.deepEqual(
+    profile.profile.scenes.map((s) => [s.id, s.name, s.model]),
+    [["scene-1", "", null]],
+  );
+  assert.deepEqual(profile.profile.hotkeys, []);
+  assert.equal(first.find((m) => m.kind === "scene").scene.modelRevision, 0);
+  assert.deepEqual(first.find((m) => m.kind === "api").clients, []);
+  // 見本のプロファイルを書き換えない
+  assert.equal(fixture.profile.scenes.length, 4);
+
+  const { messages, status } = attentionMessages(fixture);
+  const hotkeys = messages.find((m) => m.kind === "profile").profile.hotkeys;
+  const problems = messages.find((m) => m.kind === "hotkeys").problems;
+  // ぶつかりは、本当に同じキーの 2 つ目に出す
+  const [index, problem] = problems.find(([, p]) => p.code === "duplicate");
+  assert.equal(hotkeys[index].keys, hotkeys[problem.other].keys);
+  assert.notEqual(fixture.profile.hotkeys[1].keys, fixture.profile.hotkeys[0].keys);
+  for (const [i] of problems) assert.ok(i < hotkeys.length);
+  assert.deepEqual(messages.find((m) => m.kind === "api").pending, [PENDING_CLIENT]);
+  assert.ok(status.measuredRate < 60);
 });
 
 test("アプリの定義が使う文言のキーが、英語と日本語のカタログにある", () => {

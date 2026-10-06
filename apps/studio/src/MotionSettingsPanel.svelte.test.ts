@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// モーションの設定 (MotionPanel.svelte): プロファイルの通知を待たずに続けて変えても、変更が消えないこと。
+// モーションの設定 (MotionSettingsPanel.svelte): プロファイルの通知を待たずに続けて変えても、変更が消えないこと。
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_MOTION, EMPTY_ANIMATION, type MotionSettings } from "./lib/inputs";
-import MotionPanel from "./MotionPanel.svelte";
+import MotionSettingsPanel from "./MotionSettingsPanel.svelte";
 
 const cleanups: (() => void)[] = [];
 
@@ -17,9 +17,6 @@ function setup(initial: MotionSettings, trackingParameters: string[]) {
   const props = $state({
     animation: { ...EMPTY_ANIMATION, trackingParameters },
     settings: initial,
-    onplay: () => {},
-    onstop: () => {},
-    onexpression: () => {},
     onsettings: (settings: MotionSettings) => {
       sent.push(settings);
       return new Promise<void>((resolve) => finish.push(resolve));
@@ -27,7 +24,7 @@ function setup(initial: MotionSettings, trackingParameters: string[]) {
   });
   const target = document.createElement("div");
   document.body.append(target);
-  const instance = mount(MotionPanel, { target, props });
+  const instance = mount(MotionSettingsPanel, { target, props });
   cleanups.push(() => {
     unmount(instance);
     target.remove();
@@ -55,7 +52,7 @@ function checkbox(root: Element, label: string): HTMLElement {
   return box;
 }
 
-describe("MotionPanel", () => {
+describe("MotionSettingsPanel", () => {
   it("keeps every group toggled before the profile notification arrives", async () => {
     const { target, props, sent, notify } = setup(
       { ...DEFAULT_MOTION, overTracking: true, trackingKept: [] },

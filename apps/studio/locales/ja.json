@@ -8,6 +8,7 @@
   },
   "settings": {
     "title": "設定",
+    "close": "閉じる",
     "language": {
       "label": "言語",
       "system": "OS に合わせる",
@@ -128,6 +129,13 @@
       "wayland": "ホットキーは前面でだけ",
       "waylandTip": "Wayland では、スタジオのウィンドウが前面にあるときだけホットキーが効きます。"
     },
+    "output": {
+      "on": "出力 {{width}} × {{height}}",
+      "onTip": "出力ウィンドウを表示しています (枠なし・背景は{{background}})。配信ソフトはこのウィンドウを取り込みます。大きさは「出力ウィンドウ」で変えます。",
+      "scaledTip": "OS が出力ウィンドウを、選んだ大きさより小さくしました (画面に収まらないことがあります)。「出力ウィンドウ」を見てください。",
+      "hidden": "出力 非表示",
+      "hiddenTip": "出力ウィンドウを隠しています。ウィンドウキャプチャには何も映りません。ツールバーの「出力ウィンドウ」で表示します。"
+    },
     "load": {
       "okTip_other": "1 刻みの時間と刻みの速さです。受け手 {{count, number}} つがモデルを出しています。詳しくは「フレームレートと負荷」にあります。",
       "warningTip_other": "負荷の注意が {{count, number}} 件あります。「フレームレートと負荷」を見てください。"
@@ -159,9 +167,16 @@
     "sizeFree": "自由",
     "sizeValue": "{{width}} × {{height}}",
     "sizePortrait": "{{width}} × {{height}} (縦)",
-    "current": "いまの大きさ: {{width}} × {{height}} px",
     "scaled": "OS が、選んだ大きさより小さくしました (画面に収まらないことがあります)。",
-    "moveHint": "出力ウィンドウには枠がありません。ドラッグすると動かせます。"
+    "currentLabel": "いまの大きさ",
+    "currentValue": "{{width}} × {{height}} px",
+    "frame": "枠",
+    "frameNone": "なし。出力ウィンドウの中をドラッグすると動かせます。",
+    "background": "背景",
+    "backgroundValue": "{{kind}} ({{detail}})",
+    "backgroundHint": "配信しているシーンの背景です。「シーンの編集」の「背景」で変えます。",
+    "backgroundNoScene": "配信しているシーンはありません",
+    "capture": "配信ソフトには、このウィンドウをウィンドウキャプチャで取り込みます。「ブラウザソース (OBS)」か「仮想カメラ」でも出せます。"
   },
   "parameters": {
     "heading": "パラメータ",
@@ -302,6 +317,7 @@
   },
   "motion": {
     "heading": "表情とモーション",
+    "settingsHeading": "モーションの設定",
     "empty": "モデルに表情もモーションもありません。",
     "expressions": "表情",
     "clearExpressions": "すべて外す",
@@ -394,6 +410,8 @@
     "noModifier": "修飾キーの無いキーです。スタジオを動かしている間、ほかのアプリはこのキーを受け取れません。",
     "add": "ホットキーを足す",
     "hint": "ホットキーはスタジオが前面に無くても効きます。キーを決めている間に Backspace を押すとキーを消します。",
+    "describe": "{{kind}}: {{target}}",
+    "problemsSummary_other": "{{count, number}} 個のホットキーを登録できません。印の付いた行の理由を見て、キーを変えてください。",
     "kinds": {
       "scene": "シーンの切り替え",
       "expression": "表情",
@@ -410,7 +428,7 @@
     "problems": {
       "unassigned": "キーをまだ決めていません。",
       "invalidKeys": "このキーは使えません。",
-      "duplicate": "ホットキー {{n}} と同じキーです。前のものだけが効きます。",
+      "duplicate": "「{{action}}」と同じキーです。前の割り当てだけが効きます。",
       "registerFailed": "キーを登録できません (ほかのアプリや OS が使っているかもしれません): {{message}}",
       "unknownAction": "このスタジオは、この操作を知りません。"
     }

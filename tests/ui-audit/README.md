@@ -35,6 +35,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      ファイルのダイアログは `window.__UGOE_FILE_DIALOGS__` で差し替える。
    - スタジオ (`lib/studio-host.mjs`): `window.__UGOE_STUDIO_HOST__` に、`StudioHost` (apps/studio/src/lib/host.ts) のすべてのメソッドを置く。
      見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を足して送る。
+     ページの `window.__uiAuditStudio` の `emit` (指揮役の通知を送る) と `setStatus` (負荷の数値を変える) で、読み込んだ後に状態を変えて撮る
+     (初めて起動した画面・承認を待つアプリ・登録できないホットキー・負荷の注意。通知の組は `firstRunMessages`・`attentionMessages`。T0818)。
+     操作 API の承認・拒否・取り消しは、様子を変えて送り直す (承認の後の「取り消す」の知らせを撮るため)。
    - ビューア: Tauri の外の口 (ブラウザの口) のまま。ツールバーの「サンプル」で見本を開く。
 4. **撮って検査する:** 下の「場面」ごとに PNG を撮り、下の「検査」を流す。
 5. **まとめる:** `<out>/<アプリ>/report.md` (見つけたものと Tab の順)・`<アプリ>/tab.txt`・`<アプリ>/*.aria.yml`
@@ -50,6 +53,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | `<en/ja>-<light/dark>-narrow` | 同上 | 同上 | エディタ 1024×720、ほか 360×740 (docs/ui.md の下限) | 1 |
 | `ja-light-wide-dpr2` | ライト | 日本語 | 広い幅 | 2 (開いた画面だけ) |
 | `en-light-zoom200` | ライト | 英語 | 広い幅の半分 (200% の拡大と同じ CSS の幅) | 2 |
+| `en-light-half` (スタジオだけ) | ライト | 英語 | 960×800 (1920 の画面の半分。列の並びが変わる幅) | 1 |
 
 どの組も `prefers-reduced-motion: reduce` で開く (動きの途中を撮らないため。動きの検査も兼ねる)。組ごとに次の場面を撮る (名前は組の名前の後ろに付く)。
 
@@ -57,7 +61,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | --- | --- |
 | エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-export`、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-deformers-expressions` |
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-settings` |
-| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu` |
+| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 
 広い幅のライトの英語では、Tab を最大 120 回押してフォーカスをたどる (`-tab`)。
 

@@ -23,6 +23,8 @@ import {
 
 interface Props {
   scene: SceneSettings;
+  /** 名前が空のときの表示名 (「シーン 1」など。名前の欄の placeholder に出す)。 */
+  defaultName?: string;
   /** このシーンを配信しているか。 */
   live: boolean;
   /** 配信しているモデルがライティングを受けるか (配信していなければ `null`)。 */
@@ -34,7 +36,16 @@ interface Props {
   onpick: (kind: "model" | "module" | "image") => Promise<string | null>;
 }
 
-let { scene, live, usesLighting, disabled = false, onchange, onactivate, onpick }: Props = $props();
+let {
+  scene,
+  defaultName = "",
+  live,
+  usesLighting,
+  disabled = false,
+  onchange,
+  onactivate,
+  onpick,
+}: Props = $props();
 
 const nameId = $props.id();
 const lighting = $derived(sceneLighting(scene));
@@ -103,7 +114,8 @@ async function chooseImage() {
 </script>
 
 <div class="editor">
-  {#if !live}
+  <!-- モデルの無いシーンは、切り替えても何も出ないので知らせない (新しいプロファイルの最初のシーンなど。T0818) -->
+  {#if !live && scene.model !== null}
     <Notice tone="info">
       {t("editor.notLive")}
       {#snippet actions()}
@@ -117,6 +129,7 @@ async function chooseImage() {
     <TextField
       id={nameId}
       value={scene.name}
+      placeholder={defaultName}
       maxlength={100}
       {disabled}
       onchange={(value) => {

@@ -1,16 +1,18 @@
-// 操作ウィンドウの「いまの状態」の印 (docs/studio.md#操作ウィンドウ、T0817)。トラッキング・口パク・ホットキー・負荷・操作 API・
-// ブラウザソースの様子を、印の形 (StatusBadge.svelte) と短い文と Tooltip の説明にする。色だけで伝えないよう、形は tone ごとに変える。
+// 操作ウィンドウの「いまの状態」の印 (docs/studio.md#操作ウィンドウ、T0817)。トラッキング・口パク・ホットキー・出力ウィンドウ (T0818)・
+// 負荷・操作 API・ブラウザソースの様子を、印の形 (StatusBadge.svelte) と短い文と Tooltip の説明にする。色だけで伝えないよう、形は tone ごとに変える。
 import { formatNumber } from "@ugoe/i18n";
 import type { ApiView } from "./api";
 import { apiUrl } from "./api";
-import type { StatusMessage } from "./host";
+import type { OutputState, StatusMessage } from "./host";
 import { t } from "./i18n";
+import { backgroundLabel } from "./labels";
 import { loadWarnings } from "./load";
+import type { Background } from "./profile";
 
 /** 印の種類。`ok` は動いている、`off` は切っている、`warning` は注意が要る、`danger` は動かせない。 */
 export type StatusTone = "ok" | "off" | "warning" | "danger";
 
-export type StatusId = "tracking" | "lipSync" | "hotkeys" | "load" | "api" | "source";
+export type StatusId = "tracking" | "lipSync" | "hotkeys" | "output" | "load" | "api" | "source";
 
 export interface StatusBadgeView {
   id: StatusId;
@@ -34,9 +36,20 @@ export interface StatusInputs {
   tracking: TrackingState;
   lipSync: { running: boolean; paused: boolean };
   hotkeys: { count: number; problems: number; wayland: boolean };
+  /** 出力ウィンドウ (まだ分からなければ `null`。出力の印を出さない)。 */
+  output: OutputBadgeState | null;
   /** 最新の負荷 (まだ届いていなければ `null`。負荷の印を出さない)。 */
   load: StatusMessage | null;
   api: ApiView;
+}
+
+/** 出力ウィンドウの印に要るもの。 */
+export interface OutputBadgeState {
+  window: OutputState;
+  /** 選んだ大きさより OS が小さくした。 */
+  scaled: boolean;
+  /** 配信しているシーンの背景 (配信していなければ `null`)。 */
+  background: Background | null;
 }
 
 function badge(id: StatusId, tone: StatusTone, label: string, tooltip: string): StatusBadgeView {
@@ -103,6 +116,17 @@ export function hotkeysBadge(state: StatusInputs["hotkeys"]): StatusBadgeView {
   );
 }
 
+export function outputBadge(state: OutputBadgeState): StatusBadgeView {
+  const { window } = state;
+  if (!window.visible)
+    return badge("output", "off", t("status.output.hidden"), t("status.output.hiddenTip"));
+  const label = t("status.output.on", { width: window.width, height: window.height });
+  if (state.scaled) return badge("output", "warning", label, t("status.output.scaledTip"));
+  const background =
+    state.background === null ? t("output.backgroundNoScene") : backgroundLabel(state.background);
+  return badge("output", "ok", label, t("status.output.onTip", { background }));
+}
+
 export function loadBadge(status: StatusMessage): StatusBadgeView {
   const label = t("load.summary", {
     tick: t("load.ms", { value: formatNumber(status.tickMs, { maximumFractionDigits: 2 }) }),
@@ -154,6 +178,7 @@ export function statusBadges(inputs: StatusInputs): StatusBadgeView[] {
     lipSyncBadge(inputs.lipSync),
     hotkeysBadge(inputs.hotkeys),
   ];
+  if (inputs.output !== null) out.push(outputBadge(inputs.output));
   if (inputs.load !== null) out.push(loadBadge(inputs.load));
   out.push(apiBadge(inputs.api), sourceBadge(inputs.api));
   return out;

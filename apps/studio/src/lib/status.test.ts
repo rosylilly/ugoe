@@ -7,6 +7,7 @@ import {
   hotkeysBadge,
   lipSyncBadge,
   loadBadge,
+  outputBadge,
   type StatusInputs,
   sourceBadge,
   statusBadges,
@@ -62,6 +63,26 @@ describe("status badges", () => {
     expect(hotkeysBadge({ count: 3, problems: 0, wayland: true }).tone).toBe("warning");
   });
 
+  it("shows whether the output window is shown, its size and its background", () => {
+    const window = { visible: true, onTop: false, width: 1920, height: 1080 };
+    const shown = outputBadge({ window, scaled: false, background: { kind: "transparent" } });
+    expect(shown).toMatchObject({
+      tone: "ok",
+      label: t("status.output.on", { width: 1920, height: 1080 }),
+    });
+    expect(shown.tooltip).toContain(t("editor.bgTransparent"));
+    const chroma = outputBadge({
+      window,
+      scaled: false,
+      background: { kind: "chroma", color: "#00ff00" },
+    });
+    expect(chroma.tooltip).toContain("#00ff00");
+    expect(outputBadge({ window, scaled: true, background: null }).tone).toBe("warning");
+    expect(
+      outputBadge({ window: { ...window, visible: false }, scaled: false, background: null }),
+    ).toMatchObject({ tone: "off", label: t("status.output.hidden") });
+  });
+
   it("warns about load with the same numbers", () => {
     const fine = loadBadge(load());
     expect(fine.tone).toBe("ok");
@@ -93,6 +114,7 @@ describe("status badges", () => {
       tracking: idle,
       lipSync: { running: false, paused: false },
       hotkeys: { count: 0, problems: 0, wayland: false },
+      output: null,
       load: null,
       api: EMPTY_API,
     };
@@ -103,15 +125,22 @@ describe("status badges", () => {
       "api",
       "source",
     ]);
-    expect(statusBadges({ ...inputs, load: load() }).map((b) => b.id)).toEqual([
+    const output = {
+      window: { visible: true, onTop: false, width: 1280, height: 720 },
+      scaled: false,
+      background: null,
+    };
+    expect(statusBadges({ ...inputs, output, load: load() }).map((b) => b.id)).toEqual([
       "tracking",
       "lipSync",
       "hotkeys",
+      "output",
       "load",
       "api",
       "source",
     ]);
     // どの印にも説明 (Tooltip) がある。
-    for (const b of statusBadges({ ...inputs, load: load() })) expect(b.tooltip).not.toBe("");
+    for (const b of statusBadges({ ...inputs, output, load: load() }))
+      expect(b.tooltip).not.toBe("");
   });
 });

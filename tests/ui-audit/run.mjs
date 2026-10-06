@@ -143,6 +143,16 @@ function variants(app, quickRun) {
       }
     }
   }
+  if (!quickRun && APPS[app].half) {
+    list.push({
+      name: "en-light-half",
+      theme: "light",
+      lang: "en",
+      width: "half",
+      size: APPS[app].half,
+      dpr: 1,
+    });
+  }
   if (!quickRun) {
     list.push({
       name: "ja-light-wide-dpr2",
