@@ -600,9 +600,11 @@ const axisKeyValue = $derived(
   align-items: center;
 }
 
+/* 選択欄の幅 (中身の幅か、Select の最小の幅) より狭くは縮めず、収まらなければ数値の欄を次の行へ送る
+   (min-width: 0 だと選択欄が枠の外へはみ出して数値の欄の下に隠れる。T1650)。列より長い名前は列の幅で止める */
 .grow {
   flex: 1;
-  min-width: 0;
+  max-width: 100%;
 }
 
 .axis {
