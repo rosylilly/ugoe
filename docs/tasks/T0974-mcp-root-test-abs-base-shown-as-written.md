@@ -1,11 +1,11 @@
 ---
 id: T0974
 title: "mcp: T0973 の後、macOS の CI で root_confines_module_bases が落ちる (絶対パスで書いた本体は書いたままの形で見せる)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
-assignee:
+assignee: claude-worker-T0974
 ---
 
 # T0974: mcp: T0973 の後、macOS の CI で root_confines_module_bases が落ちる (絶対パスで書いた本体は書いたままの形で見せる)
