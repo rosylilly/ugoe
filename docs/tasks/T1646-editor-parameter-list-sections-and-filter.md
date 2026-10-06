@@ -1,11 +1,11 @@
 ---
 id: T1646
 title: "エディタ: パラメータの一覧の区切りの開閉を覚え、絞り込みの欄を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1646
 ---
 
 # T1646: エディタ: パラメータの一覧の区切りの開閉を覚え、絞り込みの欄を足す
