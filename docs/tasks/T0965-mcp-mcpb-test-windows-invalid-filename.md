@@ -1,11 +1,11 @@
 ---
 id: T0965
 title: "mcp: Windows の CI で、展開した .mcpb の manifest のコマンドを起動するテストが InvalidFilename で落ちる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0965
 ---
 
 # T0965: mcp: Windows の CI で、展開した .mcpb の manifest のコマンドを起動するテストが InvalidFilename で落ちる
