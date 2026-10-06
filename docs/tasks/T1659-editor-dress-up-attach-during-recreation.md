@@ -1,11 +1,11 @@
 ---
 id: T1659
 title: "エディタ: プレビューの着せ替えで、GPU の作り直しの途中 (WebPuppet が無い間) の付け外し・スロットの選択が付けたい組に残らない"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1659
 ---
 
 # T1659: エディタ: プレビューの着せ替えで、GPU の作り直しの途中 (WebPuppet が無い間) の付け外し・スロットの選択が付けたい組に残らない
