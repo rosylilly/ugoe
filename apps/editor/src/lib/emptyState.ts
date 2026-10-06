@@ -16,7 +16,22 @@ export function isEmptyModel(
   );
 }
 
-/** 空のプロジェクトでツリーに出す案内。 */
-export function emptyTreeHint(): string {
-  return t("emptyState.tree", { action: t("fileMenu.newFromPsd.label") });
+/** ツリーの空の状態の次の操作 (「File」のメニューの項目)。 */
+export type TreeEmptyAction = "newFromPsd" | "importPsd";
+
+/**
+ * ツリーに行が無いときの案内: 何が無いかの 1 文と、次の操作 (docs/ui.md#デザイン の「空の状態」)。
+ * 空のプロジェクトは PSD から新規、パーツ (デフォーマ・メッシュ) の無いモデルは PSD の取り込み。モデルを読めないときは操作なし。
+ */
+export function treeEmptyState(state: {
+  model: boolean;
+  empty: boolean;
+  view: "parts" | "deformers";
+}): { text: string; action: TreeEmptyAction | null } {
+  if (!state.model) return { text: t("tree.empty.noModel"), action: null };
+  if (state.empty) return { text: t("emptyState.tree"), action: "newFromPsd" };
+  return {
+    text: state.view === "parts" ? t("tree.empty.parts") : t("tree.empty.deformers"),
+    action: "importPsd",
+  };
 }

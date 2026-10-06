@@ -20,9 +20,14 @@ import type { Selection } from "../../selection.svelte";
 interface Props {
   doc: EditorDocument;
   selection: Selection;
+  /**
+   * 出す節: 選んだデフォーマの概要 (`summary`。インスペクタの頭) か、選んだものを包む操作 (`wrap`。キーフォームの後)。
+   * インスペクタはよく触る欄を上に並べる (docs/editor.md#インスペクタの並び)。
+   */
+  show: "summary" | "wrap";
 }
 
-let { doc, selection }: Props = $props();
+let { doc, selection, show }: Props = $props();
 
 /** 行数・列数の上限 (ugoe_editor_core の MAX_WARP_DIVISIONS)。 */
 const MAX_DIVISIONS = 64;
@@ -105,7 +110,7 @@ async function unwrap(id: string): Promise<void> {
 }
 </script>
 
-{#if deformer}
+{#if show === "summary" && deformer}
   <section>
     <h3>{t("inspector.deformer.title")}</h3>
     <p class="muted">
@@ -143,7 +148,7 @@ async function unwrap(id: string): Promise<void> {
   </section>
 {/if}
 
-{#if children.length > 0 || parts.length > 0}
+{#if show === "wrap" && (children.length > 0 || parts.length > 0)}
   <section>
     <h3>{t("inspector.deformer.wrap.title")}</h3>
     <p class="muted hint">
@@ -151,7 +156,7 @@ async function unwrap(id: string): Promise<void> {
         ? t("inspector.deformer.wrap.summaryWithParts", { items: summary })
         : t("inspector.deformer.wrap.summary", { items: summary })}
     </p>
-    <div class="row name">
+    <div class="ed-field">
       <label for="{ids}-name">{t("inspector.deformer.wrap.name.label")}</label>
       <TextField id="{ids}-name" bind:value={name} placeholder={t("inspector.deformer.wrap.name.placeholder")} />
     </div>
@@ -182,11 +187,6 @@ async function unwrap(id: string): Promise<void> {
 
 .row :global(.ugoe-button) {
   flex-shrink: 0;
-}
-
-.name {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
 }
 
 h3 {

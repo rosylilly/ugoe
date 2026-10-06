@@ -72,7 +72,7 @@ function switchTab(next: "motions" | "expressions") {
       aria-expanded={open}
       onclick={toggleOpen}><Icon name={open ? "chevronDown" : "chevronRight"} /></IconButton
     >
-    <TabStrip {tabs} value={tab} ariaLabel={t("timeline.tabs.aria")} onselect={switchTab} />
+    <TabStrip {tabs} value={tab} aria-label={t("timeline.tabs.aria")} onselect={switchTab} />
     {#if doc.error && open}<span class="error ugoe-selectable" title={doc.error}>{doc.error}</span>{/if}
   </div>
   {#if open}

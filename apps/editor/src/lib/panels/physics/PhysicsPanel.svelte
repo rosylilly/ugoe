@@ -194,7 +194,7 @@ function togglePreview(): void {
         {@const relay = relayInputs(settings, i)}
         {@const name = elementLabel(r.name, r.id)}
         <li class="rig">
-          <button class="item" class:selected={r.id === view.rig} onclick={() => (view.rig = r.id)}>
+          <button class="ed-item item" class:selected={r.id === view.rig} onclick={() => (view.rig = r.id)}>
             {name}
             <span class="muted"
               >· {t("physics.rigs.particles", { count: r.particles.length })} · {t("physics.rigs.outputs", {
@@ -202,7 +202,7 @@ function togglePreview(): void {
               })}</span
             >
             {#if relay.length > 0}
-              <span class="relay" title={t("physics.rigs.relay.tooltip", { parameters: relay.join(", ") })}
+              <span class="ed-tag accent" title={t("physics.rigs.relay.tooltip", { parameters: relay.join(", ") })}
                 >{t("physics.rigs.relay.label")}</span
               >
             {/if}
@@ -230,13 +230,13 @@ function togglePreview(): void {
     <p class="ed-hint">{t("physics.rigs.empty")}</p>
   {/if}
   <div class="ed-buttons row">
-    <Button disabled={busy} onclick={addRig}>{t("physics.rigs.add")}</Button>
+    <Button disabled={busy} onclick={addRig}><Icon name="plus" />{t("physics.rigs.add")}</Button>
     <TipButton
       disabled={busy || chain.length === 0}
       onclick={addChain}
       tooltip={t("physics.rigs.fromSelection.tooltip")}
     >
-      {chain.length > 0
+      <Icon name="plus" />{chain.length > 0
         ? t("physics.rigs.fromSelection.labelCount", { count: chain.length })
         : t("physics.rigs.fromSelection.label")}
     </TipButton>
@@ -282,26 +282,6 @@ function togglePreview(): void {
   padding: 0;
 }
 
-.item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: var(--ugoe-radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  overflow-wrap: anywhere;
-}
-
-.item.selected {
-  border-color: var(--ugoe-color-accent);
-}
-
-.item:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
-}
-
 .rig {
   display: flex;
   align-items: center;
@@ -316,14 +296,5 @@ function togglePreview(): void {
 .order {
   display: flex;
   flex: none;
-}
-
-.relay {
-  margin-left: var(--ugoe-space-2);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-accent);
-  border-radius: var(--ugoe-radius-sm);
-  color: var(--ugoe-color-accent);
-  font-size: var(--ugoe-font-size-xs);
 }
 </style>

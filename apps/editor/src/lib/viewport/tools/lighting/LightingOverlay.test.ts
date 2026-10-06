@@ -72,8 +72,10 @@ function setup() {
     doc: doc.asDocument,
     view,
   });
-  const handles = () => all<SVGCircleElement>(target, "circle.handle");
-  return { doc, view, handles };
+  // 押すのは見える印に重ねた透明な円 (押せる範囲)
+  const handles = () => all<SVGCircleElement>(target, "circle.hit");
+  const marks = () => all<SVGCircleElement>(target, "circle.handle");
+  return { doc, view, handles, marks };
 }
 
 const DIAL_CENTER: Point = [110, 120];
@@ -97,6 +99,14 @@ describe("LightingOverlay", () => {
     // 正面から当てる光は円の中心
     expect(centerOf(sun)).toEqual(DIAL_CENTER);
     expect(centerOf(lamp)).toEqual(screenOf([20, 30]));
+  });
+
+  it("gives each handle a 24px target around the smaller mark", () => {
+    const { handles, marks } = setup();
+    expect(handles().map((h) => h.getAttribute("r"))).toEqual(["12", "12"]);
+    expect(handles().map((h) => h.getAttribute("role"))).toEqual(["button", "button"]);
+    expect(marks().map((m) => m.getAttribute("r"))).toEqual(["9", "9"]);
+    expect(marks().map(centerOf)).toEqual(handles().map(centerOf));
   });
 
   it("previews a directional drag and saves once on release", async () => {

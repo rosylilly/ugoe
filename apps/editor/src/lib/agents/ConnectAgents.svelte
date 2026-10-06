@@ -192,7 +192,7 @@ async function openManual(): Promise<void> {
         <TabStrip
           tabs={choices}
           value={section.id}
-          ariaLabel={t("agents.register.choices.aria")}
+          aria-label={t("agents.register.choices.aria")}
           onselect={(id) => ((chosen = id), (copied = null))}
         />
       </div>

@@ -103,26 +103,33 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
     <ul class="meshes">
       {#each meshes as mesh (mesh.id)}
         {@const base = isBaseMesh(doc.module, mesh.id)}
-        <li class:selected={selection.has({ kind: "mesh", id: mesh.id })} class:base>
-          <!-- 行の名前のボタンは選ぶ操作なので、見えるラベルを持つ Checkbox にせず、名前を aria-label で付ける。 -->
-          <input
-            type="checkbox"
-            aria-label={t("lighting.meshes.lit.aria", { name: elementLabel(mesh.name, mesh.id) })}
-            disabled={base}
-            checked={isLit(mesh)}
-            onchange={(e) => setLit([mesh.id], (e.currentTarget as HTMLInputElement).checked)}
-          />
-          <button class="link" onclick={() => selection.set([{ kind: "mesh", id: mesh.id }])}>
-            {elementLabel(mesh.name, mesh.id)}
+        <li class:base>
+          <!-- 行の名前のボタンは選ぶ操作なので、見えるラベルを持つ Checkbox にせず、名前を aria-label で付ける。
+               押せる範囲は箱を包む 24px の label (docs/ui.md#そのほか) -->
+          <label class="lit">
+            <input
+              type="checkbox"
+              aria-label={t("lighting.meshes.lit.aria", { name: elementLabel(mesh.name, mesh.id) })}
+              disabled={base}
+              checked={isLit(mesh)}
+              onchange={(e) => setLit([mesh.id], (e.currentTarget as HTMLInputElement).checked)}
+            />
+          </label>
+          <button
+            class="ed-item link"
+            class:selected={selection.has({ kind: "mesh", id: mesh.id })}
+            onclick={() => selection.set([{ kind: "mesh", id: mesh.id }])}
+          >
+            <span class="name">{elementLabel(mesh.name, mesh.id)}</span>
           </button>
           {#if base}
             <Tooltip text={t("lighting.meshes.base.tooltip")}>
-              {#snippet trigger(attrs)}<span {...attrs} class="badge">{t("lighting.meshes.base.label")}</span>{/snippet}
+              {#snippet trigger(attrs)}<span {...attrs} class="ed-tag">{t("lighting.meshes.base.label")}</span>{/snippet}
             </Tooltip>
           {/if}
           {#if model.textures[mesh.texture]?.normal_map}
             <Tooltip text={t("lighting.meshes.normalMap.tooltip")}>
-              {#snippet trigger(attrs)}<span {...attrs} class="badge"
+              {#snippet trigger(attrs)}<span {...attrs} class="ed-tag"
                   >{t("lighting.meshes.normalMap.label")}</span
                 >{/snippet}
             </Tooltip>
@@ -168,44 +175,43 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 180px;
+  /* メッシュが多いときは一覧の中で送る。行の途中で切って、送れることを見せる */
+  max-height: calc(var(--ugoe-target-min) * 9.5);
   overflow-y: auto;
   border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
 }
 
 .meshes li {
   display: flex;
   align-items: center;
-  gap: var(--ugoe-space-2);
-  padding: 1px var(--ugoe-space-2);
+  gap: var(--ugoe-space-1);
+  padding-right: var(--ugoe-space-2);
 }
 
 .meshes li.base {
   opacity: var(--ugoe-opacity-disabled);
 }
 
-.meshes li.selected {
-  background: color-mix(in srgb, var(--ugoe-color-accent) 15%, transparent);
+.lit {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--ugoe-target-min);
+  height: var(--ugoe-target-min);
+}
+
+.lit input {
+  margin: 0;
 }
 
 .link {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  border: none;
-  background: none;
-  padding: 0;
-  color: inherit;
 }
 
-.badge {
-  font-size: var(--ugoe-font-size-xs);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-sm);
+.link .name {
+  min-width: 0;
 }
 
 .note {

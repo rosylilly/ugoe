@@ -126,7 +126,7 @@ const ids = $props.id();
         >{t("inspector.avatar.create")}</Button
       >
     {:else}
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-level">{t("inspector.avatar.level")}</span>
         <Select
           aria-labelledby="{ids}-level"
@@ -137,7 +137,7 @@ const ids = $props.id();
       </div>
 
       <h4>{t("inspector.avatar.meta.title")}</h4>
-      <div class="row">
+      <div class="ed-field">
         <label for="{ids}-name">{t("inspector.avatar.meta.name")}</label>
         <TextField
           id="{ids}-name"
@@ -155,7 +155,7 @@ const ids = $props.id();
         ></textarea>
       </div>
       {#each optionalTexts as field (field.key)}
-        <div class="row">
+        <div class="ed-field">
           <label for="{ids}-{field.key}">{field.label}</label>
           <TextField
             id="{ids}-{field.key}"
@@ -174,7 +174,7 @@ const ids = $props.id();
           onchange={(e) => setMeta({ references: parseLines(inputValue(e)) })}
         ></textarea>
       </div>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-thumbnail">{t("inspector.avatar.meta.thumbnail")}</span>
         <Select
           aria-labelledby="{ids}-thumbnail"
@@ -185,7 +185,7 @@ const ids = $props.id();
       </div>
 
       <h4>{t("inspector.avatar.permissions.title")}</h4>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-avatar-permission">{t("inspector.avatar.permissions.avatar")}</span>
         <Select
           aria-labelledby="{ids}-avatar-permission"
@@ -194,7 +194,7 @@ const ids = $props.id();
           onchange={(v) => setMeta({ avatar_permission: v })}
         />
       </div>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-commercial">{t("inspector.avatar.permissions.commercial")}</span>
         <Select
           aria-labelledby="{ids}-commercial"
@@ -203,7 +203,7 @@ const ids = $props.id();
           onchange={(v) => setMeta({ commercial_usage: v })}
         />
       </div>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-credit">{t("inspector.avatar.permissions.credit")}</span>
         <Select
           aria-labelledby="{ids}-credit"
@@ -212,7 +212,7 @@ const ids = $props.id();
           onchange={(v) => setMeta({ credit_notation: v })}
         />
       </div>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-modification">{t("inspector.avatar.permissions.modification")}</span>
         <Select
           aria-labelledby="{ids}-modification"
@@ -248,7 +248,7 @@ const ids = $props.id();
         <p class="muted">{t("inspector.avatar.hitAreas.empty")}</p>
       {:else}
         {#each STANDARD_HIT_AREAS as name (name)}
-          <div class="row">
+          <div class="ed-field">
             <span id="{ids}-hit-{name}">{name}</span>
             <Select
               aria-labelledby="{ids}-hit-{name}"
@@ -292,20 +292,6 @@ const ids = $props.id();
 {/if}
 
 <style>
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ugoe-space-3);
-  margin: var(--ugoe-space-2) 0;
-}
-
-.row :global(.ugoe-text-field),
-.row :global(.ugoe-select__trigger) {
-  width: 12em;
-  min-width: 0;
-}
-
 .column textarea {
   min-height: var(--ugoe-control-height);
   padding: 0 var(--ugoe-space-2);

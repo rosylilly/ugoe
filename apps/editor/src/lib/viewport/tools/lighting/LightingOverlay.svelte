@@ -167,6 +167,13 @@ function rays(x: number, y: number): string {
       r="9"
       fill={h.behind ? "none" : h.color}
       stroke={h.behind ? h.color : undefined}
+    />
+    <!-- 押せる範囲: 見える印 (半径 9) より広い 24px の透明な円 (docs/ui.md#そのほか) -->
+    <circle
+      class="hit"
+      cx={h.x}
+      cy={h.y}
+      r="12"
       role="button"
       tabindex="-1"
       aria-label={t("viewport.light.aria", { index: h.index + 1 })}
@@ -224,6 +231,10 @@ function rays(x: number, y: number): string {
 .handle {
   stroke: #1f2937;
   stroke-width: 2;
+}
+
+.hit {
+  fill: transparent;
   pointer-events: auto;
   cursor: grab;
 }

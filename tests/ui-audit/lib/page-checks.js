@@ -326,8 +326,11 @@
       if (!visible(el)) continue;
       // つまみの大きさは手で見る
       if (el.type === "range" || el.getAttribute("role") === "slider") continue;
-      // 部品の押せる範囲: 数値の欄は枠の全体、チェックボックスとスイッチは見えるラベルまで (docs/ui.md#3-つのアプリの見直し-t0907)
-      const area = el.closest(".ugoe-number-field__box, .ugoe-checkbox, .ugoe-toggle") ?? el;
+      // 部品の押せる範囲: 数値の欄は枠の全体、チェックボックスとスイッチは見えるラベルまで (docs/ui.md#3-つのアプリの見直し-t0907)。
+      // 標準のチェックボックス・ラジオは、包む <label> (押すと切り替わる) までを押せる範囲とする
+      const label = el.type === "checkbox" || el.type === "radio" ? el.closest("label") : null;
+      const area =
+        el.closest(".ugoe-number-field__box, .ugoe-checkbox, .ugoe-toggle") ?? label ?? el;
       const r = area.getBoundingClientRect();
       if (r.width < 23.5 || r.height < 23.5)
         small.add(`${describe(el)} ${Math.round(r.width)}x${Math.round(r.height)}`);

@@ -295,7 +295,7 @@ const rangeFields = $derived([
   {/each}
   <div class="ed-buttons row">
     <Button disabled={busy} onclick={() => updateParticles(appendParticle)}
-      >{t("physics.particles.add")}</Button
+      ><Icon name="plus" />{t("physics.particles.add")}</Button
     >
   </div>
 </section>
@@ -332,7 +332,7 @@ const rangeFields = $derived([
     <p class="ed-hint">{t("physics.inputs.empty")}</p>
   {/each}
   <div class="ed-buttons row">
-    <Button disabled={busy || model.parameters.length === 0} onclick={addInput}>{t("physics.inputs.add")}</Button>
+    <Button disabled={busy || model.parameters.length === 0} onclick={addInput}><Icon name="plus" />{t("physics.inputs.add")}</Button>
   </div>
 </section>
 
@@ -403,7 +403,7 @@ const rangeFields = $derived([
     <p class="ed-hint">{t("physics.outputs.empty")}</p>
   {/each}
   <div class="ed-buttons row">
-    <Button disabled={busy} onclick={addOutput}>{t("physics.outputs.add")}</Button>
+    <Button disabled={busy} onclick={addOutput}><Icon name="plus" />{t("physics.outputs.add")}</Button>
   </div>
 </section>
 

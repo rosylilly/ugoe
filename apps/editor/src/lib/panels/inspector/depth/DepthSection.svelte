@@ -97,7 +97,7 @@ function applyPoints(): void {
     <Checkbox label={t("inspector.depth.show")} bind:checked={viewport.showDepth} />
 
     <div class="settings">
-      <div class="field">
+      <div class="ed-field">
         <span id="{ids}-uniform">{t("inspector.depth.uniform.label")}</span>
         <span class="row">
           <NumberField aria-labelledby="{ids}-uniform" size={4} bind:value={uniform} />
@@ -106,7 +106,7 @@ function applyPoints(): void {
           >
         </span>
       </div>
-      <div class="field">
+      <div class="ed-field">
         <span id="{ids}-peak">{t("inspector.depth.dome.label")}</span>
         <span class="row">
           <NumberField aria-labelledby="{ids}-peak" size={4} bind:value={peak} />
@@ -118,7 +118,7 @@ function applyPoints(): void {
           >
         </span>
       </div>
-      <div class="field">
+      <div class="ed-field">
         <span id="{ids}-points">{t("inspector.depth.selected.label", { count: picked.length })}</span>
         <span class="row">
           <NumberField aria-labelledby="{ids}-points" size={4} bind:value={pointValue} />
@@ -155,14 +155,11 @@ p {
   margin: var(--ugoe-space-3) 0;
 }
 
-.settings .field {
-  display: grid;
-  grid-template-columns: minmax(5em, auto) 1fr;
-  align-items: center;
-  gap: var(--ugoe-space-2);
+.settings .ed-field {
+  margin: 0;
 }
 
-.field .row {
+.ed-field .row {
   flex-wrap: nowrap;
   margin: 0;
 }

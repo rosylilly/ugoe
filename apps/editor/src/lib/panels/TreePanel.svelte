@@ -5,10 +5,10 @@
   デフォーマ・メッシュの親の付け替えは、見た目を保つ reparent_preserving_look で送る (tree/edit.ts)。
 -->
 <script lang="ts">
-import { AlertDialog, Notice } from "@ugoe/ui";
+import { AlertDialog, Button, Icon, Notice } from "@ugoe/ui";
 import { tick, untrack } from "svelte";
 import type { EditorDocument } from "../document.svelte";
-import { emptyTreeHint } from "../emptyState";
+import { type TreeEmptyAction, treeEmptyState } from "../emptyState";
 import { t } from "../i18n";
 import type { EditCommand } from "../ipc";
 import { baseElements, isBaseElement } from "../moduleProject";
@@ -41,9 +41,11 @@ import TreeItem from "./tree/TreeItem.svelte";
 interface Props {
   doc: EditorDocument;
   selection: Selection;
+  /** 空の状態の次の操作 (「File」のメニューの項目を選ぶ)。 */
+  onfileaction?: (action: TreeEmptyAction) => void;
 }
 
-let { doc, selection }: Props = $props();
+let { doc, selection, onfileaction }: Props = $props();
 
 let view = $state<TreeView>("parts");
 let collapsed = $state(new Set<string>());
@@ -68,6 +70,8 @@ const rows = $derived(flatten(roots, collapsed));
 const rowIndex = $derived(new Map(rows.map((r, i) => [r.node.key, i])));
 const selectedKeys = $derived(new Set(selection.items.map(refKey)));
 const rowId = (key: string) => `tree-row-${key}`;
+/** 行が無いときの案内。木 (role="tree") の外に出す (項目の無い木にしない)。 */
+const emptyState = $derived(treeEmptyState({ model: index !== null, empty: doc.empty, view }));
 /** モジュールのプロジェクトで、本体の要素 (読み取り専用)。 */
 const base = $derived(baseElements(doc.module));
 const isBase = (ref: ElementRef) => isBaseElement(base, ref);
@@ -370,80 +374,94 @@ const dragHint = $derived.by(() => {
 </script>
 
 <div class="panel">
-  <TabStrip
-    tabs={viewTabs}
-    value={view}
-    ariaLabel={t("tree.view.aria")}
-    onselect={(v) => (view = v)}
-  />
-  <div class="toolbar">
-    <TipButton small onclick={addPart} disabled={!index} tooltip={t("tree.addPart.tooltip")}
-      >{t("tree.addPart.label")}</TipButton
-    >
-    <TipButton
-      small
-      onclick={() => {
-        if (cursor && rowIndex.has(cursor)) renaming = cursor;
-      }}
-      disabled={!cursor || !rowIndex.has(cursor)}
-      tooltip={t("tree.rename.tooltip")}
-      shortcut="F2">{t("tree.rename.label")}</TipButton
-    >
-    <TipButton
-      small
-      onclick={askDelete}
-      disabled={selection.items.length === 0}
-      tooltip={t("tree.delete.tooltip")}
-      shortcut="Delete">{t("tree.delete.label")}</TipButton
-    >
+  <!-- 頭 (表示の切り替えと道具の並び) は、木を送っても上に残す (docs/ui.md#レイアウト の「高さの変化」) -->
+  <div class="head">
+    <TabStrip
+      tabs={viewTabs}
+      value={view}
+      aria-label={t("tree.view.aria")}
+      onselect={(v) => (view = v)}
+    />
+    <div class="toolbar">
+      <TipButton small onclick={addPart} disabled={!index} tooltip={t("tree.addPart.tooltip")}
+        ><Icon name="plus" />{t("tree.addPart.label")}</TipButton
+      >
+      <TipButton
+        small
+        onclick={() => {
+          if (cursor && rowIndex.has(cursor)) renaming = cursor;
+        }}
+        disabled={!cursor || !rowIndex.has(cursor)}
+        tooltip={t("tree.rename.tooltip")}
+        shortcut="F2">{t("tree.rename.label")}</TipButton
+      >
+      <TipButton
+        small
+        onclick={askDelete}
+        disabled={selection.items.length === 0}
+        tooltip={t("tree.delete.tooltip")}
+        shortcut="Delete">{t("tree.delete.label")}</TipButton
+      >
+    </div>
   </div>
 
-  <div
-    class="tree"
-    class:drop-root={rootDrop}
-    class:dragging={drag !== null}
-    role="tree"
-    aria-label={view === "parts" ? t("tree.view.parts") : t("tree.view.deformers")}
-    aria-multiselectable="true"
-    aria-activedescendant={cursor && rowIndex.has(cursor) ? rowId(cursor) : undefined}
-    tabindex="0"
-    bind:this={treeEl}
-    onkeydown={onKeydown}
-    onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointercancel={cancelDrag}
-    onlostpointercapture={() => {
-      if (drag) cancelDrag();
-    }}
-  >
-    {#each rows as row (row.node.key)}
-      <TreeItem
-        {row}
-        id={rowId(row.node.key)}
-        selected={selectedKeys.has(row.node.key)}
-        active={cursor === row.node.key}
-        expanded={!collapsed.has(row.node.key)}
-        renaming={renaming === row.node.key}
-        drop={dropMark(row.node.key)}
-        base={isBase(row.node.ref)}
-        onselect={(e) => onRowClick(row, e)}
-        ontoggle={() => toggle(row.node.key)}
-        onrenamestart={() => (renaming = row.node.key)}
-        onrename={(name) => rename(row.node.ref, name)}
-        onpointerdown={(e) => onRowPointerDown(row, e)}
-      />
-    {:else}
-      <p class="ed-hint empty">
-        {!index
-          ? t("tree.empty.noModel")
-          : doc.empty
-            ? emptyTreeHint()
-            : view === "parts"
-              ? t("tree.empty.parts")
-              : t("tree.empty.deformers")}
-      </p>
-    {/each}
-  </div>
+  {#if rows.length === 0}
+    <!-- 行が無いときは木を出さず、何が無いかと次の操作を出す (docs/ui.md#デザイン の「空の状態」) -->
+    <div class="empty">
+      <p class="ed-hint">{emptyState.text}</p>
+      {#if emptyState.action && onfileaction}
+        {@const action = emptyState.action}
+        <div class="ed-buttons">
+          <Button onclick={() => onfileaction(action)}
+            >{action === "newFromPsd" ? t("fileMenu.newFromPsd.label") : t("fileMenu.importPsd.label")}</Button
+          >
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <div
+      class="tree"
+      class:drop-root={rootDrop}
+      class:dragging={drag !== null}
+      role="tree"
+      aria-label={view === "parts" ? t("tree.view.parts") : t("tree.view.deformers")}
+      aria-multiselectable="true"
+      aria-activedescendant={cursor && rowIndex.has(cursor) ? rowId(cursor) : undefined}
+      tabindex="0"
+      bind:this={treeEl}
+      onkeydown={onKeydown}
+      onpointermove={onPointerMove}
+      onpointerup={onPointerUp}
+      onpointercancel={cancelDrag}
+      onlostpointercapture={() => {
+        if (drag) cancelDrag();
+      }}
+    >
+      {#each rows as row (row.node.key)}
+        <TreeItem
+          {row}
+          id={rowId(row.node.key)}
+          selected={selectedKeys.has(row.node.key)}
+          primary={selection.primary !== null && refKey(selection.primary) === row.node.key}
+          hovered={selection.hovered(row.node.ref)}
+          active={cursor === row.node.key}
+          expanded={!collapsed.has(row.node.key)}
+          renaming={renaming === row.node.key}
+          drop={dropMark(row.node.key)}
+          base={isBase(row.node.ref)}
+          onselect={(e) => onRowClick(row, e)}
+          ontoggle={() => toggle(row.node.key)}
+          onrenamestart={() => (renaming = row.node.key)}
+          onrename={(name) => rename(row.node.ref, name)}
+          onpointerdown={(e) => onRowPointerDown(row, e)}
+          onhover={(on) => {
+            if (on) selection.hover = row.node.ref;
+            else if (selection.hovered(row.node.ref)) selection.hover = null;
+          }}
+        />
+      {/each}
+    </div>
+  {/if}
   <!-- メッセージは木の下に出す (上に出すと行がずれ、ドラッグ中の落とし先が変わるため)。 -->
   <div class="footer">
     {#if message}
@@ -473,6 +491,18 @@ const dragHint = $derived.by(() => {
   flex-direction: column;
   gap: var(--ugoe-space-2);
   min-height: 100%;
+}
+.head {
+  position: sticky;
+  /* 左の列の内側の余白 (app.css の aside) の分だけ上に寄せ、列の上端に付ける */
+  top: calc(-1 * var(--ugoe-space-3));
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ugoe-space-2);
+  margin-top: calc(-1 * var(--ugoe-space-3));
+  padding: var(--ugoe-space-3) 0 var(--ugoe-space-1);
+  background: var(--ugoe-color-surface);
 }
 .toolbar {
   display: flex;
@@ -505,6 +535,10 @@ const dragHint = $derived.by(() => {
   border-style: dashed;
 }
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ugoe-space-2);
   padding: var(--ugoe-space-2);
 }
 .hint {

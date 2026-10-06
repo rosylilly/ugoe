@@ -6,7 +6,7 @@
   (T0651、docs/editor.md#本体のものの表示)。
 -->
 <script lang="ts">
-import { Checkbox, Select } from "@ugoe/ui";
+import { Checkbox, Icon, Select } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type { Model, ModuleStatus, PhysicsBlend, PhysicsTemplate } from "../../ipc";
 import { elementLabel } from "../../labels";
@@ -85,13 +85,15 @@ async function apply(template: PhysicsTemplate): Promise<void> {
       <p class="ed-hint" id="{ids}-create-missing">{t("physics.templates.createMissing.description")}</p>
     {/if}
   </div>
-  <div class="row">
-    <Select label={t("physics.templates.blend.label")} value={blend} options={blendOptions}
+  <div class="ed-field">
+    <span id="{ids}-blend">{t("physics.templates.blend.label")}</span>
+    <Select aria-labelledby="{ids}-blend" value={blend} options={blendOptions}
       tooltip={t("physics.templates.blend.tooltip")} onchange={(v) => (blend = v)} />
   </div>
-  <div class="row">
+  <div class="ed-field">
+    <span id="{ids}-neck">{t("physics.templates.neck.label")}</span>
     <Select
-      label={t("physics.templates.neck.label")}
+      aria-labelledby="{ids}-neck"
       value={neck ?? ""}
       options={neckOptions}
       placeholder={neckPlaceholder}
@@ -107,7 +109,7 @@ async function apply(template: PhysicsTemplate): Promise<void> {
       <TipButton
         disabled={busy || (tpl.template === "neck_follow" && !neck) || inBase.length > 0 || relays.length > 0}
         tooltip={tpl.title}
-        onclick={() => apply(tpl.template)}>{t("physics.templates.apply", { template: tpl.label })}</TipButton
+        onclick={() => apply(tpl.template)}><Icon name="plus" />{t("physics.templates.apply", { template: tpl.label })}</TipButton
       >
       {#if inBase.length > 0}
         <span class="ed-hint">{t("physics.templates.inBase", { rigs: inBase.join(", ") })}</span>

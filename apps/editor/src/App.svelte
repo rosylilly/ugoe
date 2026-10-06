@@ -340,7 +340,7 @@ $effect(() => {
     <HelpButton />
   </header>
   <aside class="left" id="editor-left">
-    <TreePanel {doc} {selection} />
+    <TreePanel {doc} {selection} onfileaction={(action) => void fileMenu?.pick(action)} />
   </aside>
   <div class="column-splitter left-splitter">
     <Splitter label={t("app.splitter.left")} orientation="vertical" range={LEFT_WIDTH} bind:value={leftWidth}
@@ -382,7 +382,7 @@ $effect(() => {
         <TabStrip
           tabs={paneTabs}
           value={currentTab}
-          ariaLabel={t("app.tabs.aria")}
+          aria-label={t("app.tabs.aria")}
           attentionLabel={t("app.tabs.ai.attention")}
           onselect={(tab) => (tab === "ai" ? openProposals() : openTab(tab))}
         />
@@ -558,7 +558,9 @@ $effect(() => {
     padding: 0;
     overflow: hidden;
   }
+  /* 送る枠は位置の基準にする (中の absolute の要素 (見せずに読ませる文字など) が、文書の全体を送れるようにしないため) */
   .pane {
+    position: relative;
     min-height: 0;
     min-width: 0;
     overflow-x: hidden;

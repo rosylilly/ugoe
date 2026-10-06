@@ -23,13 +23,13 @@ interface Props {
   tabs: TabItem<T>[];
   value: T;
   /** 並びの読み上げの名前。 */
-  ariaLabel: string;
+  "aria-label": string;
   /** `attention` のタブの読み上げに足す言葉。 */
   attentionLabel?: string;
   onselect: (value: T) => void;
 }
 
-let { tabs, value, ariaLabel, attentionLabel, onselect }: Props = $props();
+let { tabs, value, "aria-label": ariaLabel, attentionLabel, onselect }: Props = $props();
 
 let list = $state<HTMLElement>();
 

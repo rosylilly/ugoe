@@ -211,16 +211,17 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
 
 <!-- 右の列のタブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す。App.svelte) -->
 <h2 class="ugoe-visually-hidden">{t("poses.title")}</h2>
-<p class="help intro">{t("poses.intro")}</p>
+<p class="ed-help intro">{t("poses.intro")}</p>
 {#if module}
-  <p class="base-note" role="note">{t("poses.moduleNote")}</p>
+  <p class="ed-note" role="note">{t("poses.moduleNote")}</p>
 {/if}
 
 {#if model && pose}
-  <div class="field">
+  <div class="ed-field">
+    <span id="{ids}-fade-label">{t("poses.fade.label")}</span>
     {#key fadeKey}
       <NumberField
-        label={t("poses.fade.label")}
+        aria-labelledby="{ids}-fade-label"
         unit={t("poses.fade.unit")}
         min={0}
         step={0.1}
@@ -232,7 +233,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       />
     {/key}
   </div>
-  <p class="help" id="{ids}-fade">{module ? t("poses.fade.baseHint") : t("poses.fade.description")}</p>
+  <p class="ed-help" id="{ids}-fade">{module ? t("poses.fade.baseHint") : t("poses.fade.description")}</p>
 
   <div class="check">
     <Toggle
@@ -243,19 +244,19 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
       onchange={(on) => viewport.setPosePreview(on ? [] : null)}
     />
   </div>
-  <p class="help" id="{ids}-preview">{t("poses.preview.description")}</p>
+  <p class="ed-help" id="{ids}-preview">{t("poses.preview.description")}</p>
 
   {#if pose.groups.length === 0}
     <p class="ed-hint">{t("poses.empty")}</p>
   {/if}
   {#each pose.groups as group, gi (gi)}
     {@const base = isBaseGroup(module, gi)}
-    <section class="group" class:base aria-labelledby="{ids}-group-{gi}">
+    <section class="ed-card group" class:base aria-labelledby="{ids}-group-{gi}">
       <header>
         <h3 id="{ids}-group-{gi}">{t("poses.group.title", { index: gi + 1 })}</h3>
         {#if base}
           <Tooltip text={t("poses.group.base.tooltip")}>
-            {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("poses.group.base.label")}</span>{/snippet}
+            {#snippet trigger(attrs)}<span {...attrs} class="ed-tag">{t("poses.group.base.label")}</span>{/snippet}
           </Tooltip>
         {/if}
         <span class="remove">
@@ -268,9 +269,9 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         </span>
       </header>
       {#if base}
-        <p class="help">{t("poses.group.baseHint")}</p>
+        <p class="ed-help">{t("poses.group.baseHint")}</p>
       {:else if group.entries.length > 1}
-        <p class="help">{t("poses.entry.dragHint")}</p>
+        <p class="ed-help">{t("poses.entry.dragHint")}</p>
       {/if}
       <ol
         class="entries"
@@ -307,7 +308,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                 {#snippet trigger(attrs)}
                   <button
                     {...attrs}
-                    class="name"
+                    class="ed-item name"
                     class:selected={selection.has({ kind: "part", id: entry.part })}
                     onclick={(e) => {
                       (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
@@ -318,7 +319,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
               </Tooltip>
               {#if ei === 0}
                 <Tooltip text={t("poses.entry.first.tooltip")}>
-                  {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("poses.entry.first.label")}</span>{/snippet}
+                  {#snippet trigger(attrs)}<span {...attrs} class="ed-tag accent">{t("poses.entry.first.label")}</span>{/snippet}
                 </Tooltip>
               {/if}
               <span class="buttons">
@@ -354,7 +355,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
               </span>
             </div>
             {#if base && entry.links.some((l) => isBasePart(module, l))}
-              <p class="help">
+              <p class="ed-help">
                 {t("poses.entry.baseLinks", {
                   parts: formatList(entry.links.filter((l) => isBasePart(module, l)).map((l) => labelOf(parts, l))),
                 })}
@@ -370,7 +371,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
                 onchange={(links) => send((p) => setLinks(p, gi, ei, links, module))}
               />
             {:else}
-              <p class="help">{t("poses.links.notExposed")}</p>
+              <p class="ed-help">{t("poses.links.notExposed")}</p>
             {/if}
           </li>
         {/each}
@@ -392,14 +393,14 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
             onclick={() => {
               const part = pickOf(gi);
               void send((p) => addEntry(p, gi, part));
-            }}>{t("poses.entry.add.label")}</TipButton
+            }}><Icon name="plus" />{t("poses.entry.add.label")}</TipButton
           >
         </div>
       {/if}
     </section>
   {/each}
 
-  <section class="add" aria-labelledby="{ids}-new">
+  <section class="ed-card add" aria-labelledby="{ids}-new">
     <h3 id="{ids}-new">{t("poses.newGroup.title")}</h3>
     {#if free.length === 0}
       <p class="ed-hint">{module ? t("poses.newGroup.noModuleParts") : t("poses.newGroup.noParts")}</p>
@@ -416,7 +417,7 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
         <Button disabled={busy} onclick={() => {
           const part = pickOf(-1);
           void send((p) => addGroup(p, part));
-        }}>{t("poses.newGroup.add.label")}</Button>
+        }}><Icon name="plus" />{t("poses.newGroup.add.label")}</Button>
       </div>
       <div class="row">
         <TipButton
@@ -428,11 +429,11 @@ function linkOptions(current: readonly string[]): { id: string; label: string }[
             void send((current) =>
               rest.reduce((p, id) => addEntry(p, p.groups.length - 1, id), addGroup(current, first)),
             );
-          }}>{t("poses.newGroup.fromSelection.label")}</TipButton
+          }}><Icon name="plus" />{t("poses.newGroup.fromSelection.label")}</TipButton
         >
       </div>
       {#if selectedFree.length < 2}
-        <p class="help">{t("poses.newGroup.fromSelection.disabled")}</p>
+        <p class="ed-help">{t("poses.newGroup.fromSelection.disabled")}</p>
       {/if}
     {/if}
   </section>
@@ -443,35 +444,8 @@ h3 {
   margin: 0;
 }
 
-.help {
-  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
-  color: var(--ugoe-color-text-muted);
-  font-size: var(--ugoe-font-size-sm);
-  overflow-wrap: anywhere;
-}
-
 .intro {
-  margin-bottom: var(--ugoe-space-3);
-}
-
-.base-note {
-  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
-  padding: var(--ugoe-space-2) var(--ugoe-space-3);
-  border-left: 3px solid var(--ugoe-color-border);
-  color: var(--ugoe-color-text-muted);
-  font-size: var(--ugoe-font-size-sm);
-}
-
-.field {
-  margin: var(--ugoe-space-2) 0 0;
-}
-
-.group,
-.add {
-  margin: var(--ugoe-space-3) 0;
-  padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-md);
+  margin-top: 0;
 }
 
 .group.base {
@@ -482,7 +456,7 @@ h3 {
   display: flex;
   align-items: center;
   gap: var(--ugoe-space-2);
-  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
+  margin-bottom: var(--ugoe-space-2);
 }
 
 .remove {
@@ -532,33 +506,20 @@ h3 {
   min-width: 0;
 }
 
+/* 要素の名前は行の残りの幅を使い、長い名前は折り返す (ボタンの並びは右に残す) */
 .entry .name {
-  min-width: 0;
-  border: 1px solid transparent;
-  background: none;
-  padding: 0 var(--ugoe-space-1);
-  text-align: left;
-  overflow-wrap: anywhere;
+  flex: 1;
+  width: auto;
 }
 
-.entry .name.selected {
-  border-color: var(--ugoe-color-accent);
+.entry.grab .name {
+  cursor: inherit;
 }
 
 .buttons {
   display: flex;
   flex: none;
   gap: var(--ugoe-space-1);
-  margin-left: auto;
-}
-
-.tag {
-  flex: none;
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-accent);
-  border-radius: var(--ugoe-radius-sm);
-  color: var(--ugoe-color-accent);
-  font-size: var(--ugoe-font-size-xs);
 }
 
 .row {

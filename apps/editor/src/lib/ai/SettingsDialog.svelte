@@ -205,7 +205,7 @@ function keyPlaceholder(s: AiSettings): string {
 
 <Dialog bind:open={isOpen} title={t("settings.title")} size="lg" closeLabel={t("settings.close.label")} onclose={clearKeyInput}>
   <div class="tabs">
-    <TabStrip {tabs} value={tab} ariaLabel={t("settings.tabs.aria")} onselect={(v) => (tab = v)} />
+    <TabStrip {tabs} value={tab} aria-label={t("settings.tabs.aria")} onselect={(v) => (tab = v)} />
   </div>
   {#if tab === "general"}
     <section>

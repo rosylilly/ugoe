@@ -50,7 +50,9 @@ header {
   flex: 1;
 }
 
+/* 送る枠は位置の基準にする (中の absolute の要素が、文書の全体を送れるようにしないため) */
 aside {
+  position: relative;
   padding: var(--ugoe-space-3) var(--ugoe-space-4);
   background: var(--ugoe-color-surface);
   overflow: auto;
@@ -137,6 +139,20 @@ select:not([class*="ugoe-"]) {
   overflow-wrap: anywhere;
 }
 
+/* 選択欄は部品の列の幅に広げる (長い要素の名前を省略せずに出し、欄の右端をそろえる)。数値の欄は桁に合った幅のまま */
+.ed-field .ugoe-select,
+.ed-field .ugoe-select__trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.ed-field .ugoe-select__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ボタンの並び。 */
 .ed-buttons {
   display: flex;
@@ -150,4 +166,94 @@ select:not([class*="ugoe-"]) {
   margin: 0;
   color: var(--ugoe-color-text-muted);
   font-size: var(--ugoe-font-size-sm);
+}
+
+/* 欄の説明: 欄 (.ed-field) のすぐ下に置き、上の欄に寄せる (欄と説明の間は狭く、次の欄との間は広く)。 */
+.ed-help {
+  margin: var(--ugoe-space-1) 0 var(--ugoe-space-3);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* 本体のもの (モジュールのプロジェクト) などの、パネルの頭の注記。 */
+.ed-note {
+  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
+  padding: var(--ugoe-space-2) var(--ugoe-space-3);
+  border-left: 3px solid var(--ugoe-color-border);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
+}
+
+/* 枠で囲むまとまり (選んだものの編集・追加の欄など、一緒に変える欄の組)。枠の中に枠を重ねない。 */
+.ed-card {
+  margin: var(--ugoe-space-3) 0;
+  padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
+}
+
+.ed-card > h3:first-child,
+.ed-card > header:first-child {
+  margin-top: var(--ugoe-space-1);
+}
+
+/* 一覧の行のボタン (押すとそれを選ぶ)。押せる高さは 24px。hover は重ね、選択は accent-soft の地と強調色の枠 (docs/ui.md#デザイン)。 */
+.ed-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--ugoe-space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ugoe-target-min);
+  padding: 0 var(--ugoe-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--ugoe-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+
+.ed-item:hover:not(:disabled) {
+  background-image: var(--ugoe-overlay-hover);
+}
+
+.ed-item:active:not(:disabled) {
+  background-image: var(--ugoe-overlay-active);
+}
+
+.ed-item:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: -2px;
+}
+
+.ed-item.selected {
+  border-color: var(--ugoe-color-accent);
+  background-color: var(--ugoe-color-accent-soft);
+}
+
+/* 一覧の行の札 (「本体」「app」など)。意味のある札は .accent・.danger で色と枠を付ける。 */
+.ed-tag {
+  flex: none;
+  padding: 0 var(--ugoe-space-1);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-sm);
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-xs);
+  font-weight: var(--ugoe-font-weight-normal);
+  white-space: nowrap;
+}
+
+.ed-tag.accent {
+  border-color: var(--ugoe-color-accent);
+  color: var(--ugoe-color-accent);
+}
+
+.ed-tag.danger {
+  border-color: var(--ugoe-color-danger);
+  color: var(--ugoe-color-danger);
 }

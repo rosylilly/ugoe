@@ -5,7 +5,7 @@
   set_physics_collider は衝突体を丸ごと置き換えるので、送る直前の衝突体から組み立てる (updateCollider)。
 -->
 <script lang="ts">
-import { Button, Notice, NumberField, Select, TextField } from "@ugoe/ui";
+import { Button, Icon, Notice, NumberField, Select, TextField } from "@ugoe/ui";
 import BaseLock from "../../BaseLock.svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -153,7 +153,7 @@ const ids = $props.id();
     <ul class="list">
       {#each settings.colliders as c (c.id)}
         <li>
-          <button class="item" class:selected={c.id === view.collider}
+          <button class="ed-item" class:selected={c.id === view.collider}
             onclick={() => (view.collider = c.id === view.collider ? null : c.id)}>
             {elementLabel(c.name, c.id)}
             <span class="muted"
@@ -170,10 +170,10 @@ const ids = $props.id();
   {/if}
   <div class="ed-buttons row">
     <TipButton disabled={busy} onclick={() => add("circle")} tooltip={t("physics.colliders.addCircle.tooltip")}
-      >{t("physics.colliders.addCircle.label")}</TipButton
+      ><Icon name="plus" />{t("physics.colliders.addCircle.label")}</TipButton
     >
     <TipButton disabled={busy} onclick={() => add("capsule")} tooltip={t("physics.colliders.addCapsule.tooltip")}
-      >{t("physics.colliders.addCapsule.label")}</TipButton
+      ><Icon name="plus" />{t("physics.colliders.addCapsule.label")}</TipButton
     >
   </div>
 
@@ -247,25 +247,5 @@ const ids = $props.id();
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: var(--ugoe-radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  overflow-wrap: anywhere;
-}
-
-.item.selected {
-  border-color: var(--ugoe-color-accent);
-}
-
-.item:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 </style>

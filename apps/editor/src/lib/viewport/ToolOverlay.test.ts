@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // ビューポートのツールの切り替え: メッシュ編集モードのキー操作 (docs/testing.md#エディタの部品のテスト)。
+import { flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import { GlueView } from "../panels/glues/glueView.svelte";
 import { PhysicsView } from "../panels/physics/physicsView.svelte";
@@ -10,6 +11,7 @@ import {
   dialogButton,
   FakeController,
   FakeDocument,
+  pointer,
   press,
   render,
   settle,
@@ -79,5 +81,52 @@ describe("ToolOverlay mesh edit keys", () => {
     } finally {
       input.remove();
     }
+  });
+});
+
+describe("ToolOverlay hover", () => {
+  function setupHover(selected: boolean) {
+    const selection = new Selection();
+    if (selected) selection.set([{ kind: "mesh", id: "Quad" }]);
+    const { target } = render(ToolOverlay, {
+      controller: new FakeController().asController,
+      doc: new FakeDocument().asDocument,
+      selection,
+      physics: new PhysicsView(),
+      verify: new VerifyView(),
+      glue: new GlueView(),
+    });
+    return { selection, target };
+  }
+
+  it("outlines the mesh under the pointer and shares it with the tree", async () => {
+    const { selection, target } = setupHover(false);
+    await settle();
+    const svg = target.querySelector("svg.layer") as SVGSVGElement;
+    pointer(svg, "pointermove", [60, 60], { buttons: 0 });
+    expect(selection.hover).toEqual({ kind: "mesh", id: "Quad" });
+    await settle();
+    expect(target.querySelectorAll("path.outline.hover")).toHaveLength(1);
+    svg.dispatchEvent(new PointerEvent("pointerleave"));
+    flushSync();
+    expect(selection.hover).toBeNull();
+  });
+
+  it("draws a hover outline for a hovered tree row but not over a selected mesh", async () => {
+    const { selection, target } = setupHover(true);
+    selection.hover = { kind: "mesh", id: "Quad" };
+    await settle();
+    expect(target.querySelectorAll("path.outline.hover")).toHaveLength(0);
+    selection.clear();
+    await settle();
+    expect(target.querySelectorAll("path.outline.hover")).toHaveLength(1);
+  });
+
+  it("does not change the hover while a button is held", async () => {
+    const { selection, target } = setupHover(false);
+    await settle();
+    const svg = target.querySelector("svg.layer") as SVGSVGElement;
+    pointer(svg, "pointermove", [60, 60], { buttons: 1 });
+    expect(selection.hover).toBeNull();
   });
 });

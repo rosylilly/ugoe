@@ -116,6 +116,17 @@ const outlines = $derived(
     }),
 );
 
+/**
+ * ポインタが乗っているメッシュ (ツリーの行かビューポート) の輪郭。選んでいるものには選択の輪郭があるので重ねない
+ * (docs/editor.md#選択とホバーの見せ方)。
+ */
+const hoverOutline = $derived.by(() => {
+  const hover = selection.hover;
+  if (hover?.kind !== "mesh" || selection.has(hover)) return null;
+  const d = outlineOf(hover.id);
+  return d === null ? null : { d, base: isBaseElement(base, hover) };
+});
+
 /** モジュールのプロジェクトで、モジュールのメッシュすべての輪郭 (本体と見分けるため)。 */
 const moduleOutlines = $derived.by(() => {
   if (!doc.module || !moduleOutline) return [];
@@ -142,6 +153,20 @@ function onPointerDown(e: PointerEvent): void {
   if (e.button !== 0) return;
   const [x, y] = local(e);
   press = { id: e.pointerId, x, y, alt: e.altKey, toggle: e.shiftKey || e.ctrlKey || e.metaKey };
+}
+
+/** ポインタの下の手前のメッシュをホバーにする (ボタンを押していない間だけ。ツリーの行も薄く示す)。 */
+function onPointerMove(e: PointerEvent): void {
+  if (e.buttons !== 0 || e.pointerType === "touch") return;
+  const [x, y] = local(e);
+  const top = scene.hitAll(x, y)[0];
+  const current = selection.hover?.kind === "mesh" ? selection.hover.id : null;
+  if ((top ?? null) === current) return;
+  selection.hover = top ? { kind: "mesh", id: top } : null;
+}
+
+function onPointerLeave(): void {
+  if (selection.hover?.kind === "mesh") selection.hover = null;
 }
 
 // Alt + ドラッグはビューポートがパンのためにポインタを捕まえるので、離したときは window で受ける。
@@ -195,11 +220,16 @@ function onKeyDown(e: KeyboardEvent): void {
   class:interactive={editing === null}
   role="presentation"
   onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerleave={onPointerLeave}
   ondblclick={onDoubleClick}
 >
   {#each moduleOutlines as o (o.id)}
     <path class="module-outline" d={o.d} />
   {/each}
+  {#if hoverOutline}
+    <path class="outline hover" class:base={hoverOutline.base} d={hoverOutline.d} />
+  {/if}
   {#each outlines as o (o.id)}
     <path class="outline" class:primary={o.primary} class:base={o.base} d={o.d} />
   {/each}
@@ -283,6 +313,12 @@ function onKeyDown(e: KeyboardEvent): void {
 .outline.primary {
   stroke-width: 2;
   opacity: 1;
+}
+
+/* ホバー: 選択より薄い破線 (ツリーの行のホバーと対応する) */
+.outline.hover {
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
 }
 
 .outline.base {

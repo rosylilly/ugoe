@@ -96,12 +96,12 @@ function lightName(light: PreviewLight, index: number): string {
   <p class="ed-hint note">{t("lighting.lights.description")}</p>
   {#if view.error}<p class="error ugoe-selectable">{view.error}</p>{/if}
 
-  <div class="row">
+  <div class="ed-field">
     <span>{t("lighting.lights.ambient.label")}</span>
     <span class="controls">
       <LightColor
         value={settings.ambient}
-        ariaLabel={t("lighting.lights.ambient.color.aria")}
+        aria-label={t("lighting.lights.ambient.color.aria")}
         onpreview={(ambient) => update({ ...settings, ambient }, false)}
         oncommit={(ambient) => update({ ...settings, ambient }, true)}
       />
@@ -128,7 +128,7 @@ function lightName(light: PreviewLight, index: number): string {
         >
         <LightColor
           value={light.color}
-          ariaLabel={t("lighting.lights.color.aria", { index: i + 1 })}
+          aria-label={t("lighting.lights.color.aria", { index: i + 1 })}
           onpreview={(color) => updateLight(i, { ...light, color }, false)}
           oncommit={(color) => updateLight(i, { ...light, color }, true)}
         />
@@ -181,7 +181,7 @@ function lightName(light: PreviewLight, index: number): string {
     {:else}
       <p class="ed-hint note">{t("lighting.lights.point.description")}</p>
     {/if}
-    <div class="row">
+    <div class="ed-field">
       <span id={axesId}
         >{selected.type === "directional" ? t("lighting.lights.direction.label") : t("lighting.lights.position.label")}</span
       >
@@ -244,6 +244,7 @@ function lightName(light: PreviewLight, index: number): string {
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--ugoe-space-2);
   min-width: 0;

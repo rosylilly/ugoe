@@ -84,7 +84,7 @@
   },
   "emptyState": {
     "viewport": "This project is empty. Start from a PSD file, or open a project you saved.",
-    "tree": "No parts yet. Start with {{action}}"
+    "tree": "No parts yet. Start from a PSD file."
   },
   "fileMenu": {
     "aria": "File",
@@ -643,7 +643,7 @@
       "aria": "New key of {{parameter}}"
     },
     "addKey": {
-      "label": "+ Key",
+      "label": "Key",
       "tooltip": "Add a key between {{min}} and {{max}}"
     },
     "axisParameter": {
@@ -653,7 +653,7 @@
       "aria": "First key of the new axis"
     },
     "addAxis": {
-      "label": "+ Axis",
+      "label": "Axis",
       "tooltip": "Make the intensity follow this parameter (the current intensity is kept at this key)"
     },
     "pairs": {
@@ -679,7 +679,7 @@
         "description": "Vertices that are this close in the rest pose are paired (canvas pixels)."
       },
       "create": {
-        "label": "+ Glue",
+        "label": "Glue",
         "tooltip": "Glue the two meshes where their vertices are close"
       },
       "fromSelection": "From the selected meshes",
@@ -731,10 +731,10 @@
       "baseOrder": "The base model's rig order is set in the base project.",
       "moduleOrder": "A module's rigs run after the base model's rigs; they can only be reordered among themselves.",
       "empty": "No physics rigs.",
-      "add": "+ Rig",
+      "add": "Rig",
       "fromSelection": {
-        "label": "+ From selected deformers",
-        "labelCount": "+ From selected deformers ({{count}})",
+        "label": "From selected deformers",
+        "labelCount": "From selected deformers ({{count}})",
         "tooltip": "Select rotation deformers (root to tip, e.g. a hair strand's deformers) in the tree, then create a rig whose particles follow them and swing them"
       }
     },
@@ -755,7 +755,7 @@
       "hint": "Particle 0 is the root. It follows the first deformer output (or the gravity frame).",
       "aria": "Particle {{index}}",
       "remove": "Remove particle {{index}}",
-      "add": "+ Particle",
+      "add": "Particle",
       "fields": {
         "radius": {
           "label": "Length",
@@ -799,7 +799,7 @@
       "flip": "Flip",
       "remove": "Remove input {{index}}",
       "empty": "No inputs. The root still follows its deformer.",
-      "add": "+ Input"
+      "add": "Input"
     },
     "outputs": {
       "title": "Outputs",
@@ -829,7 +829,7 @@
       "weights_other": "{{count}} weights",
       "remove": "Remove output {{index}}",
       "empty": "No outputs. Add one to make the rig move something.",
-      "add": "+ Output"
+      "add": "Output"
     },
     "targetKinds": {
       "parameter": "Parameter",
@@ -877,7 +877,7 @@
         "noneModule": "(no rotation deformer of the module)",
         "none": "(no rotation deformer)"
       },
-      "apply": "+ {{template}}",
+      "apply": "{{template}}",
       "inBase": "the base model has {{rigs}}: edit it in the base project",
       "needsRelays": "needs {{parameters}} in the base model (a module can't add parameters)",
       "creates": "creates {{parameters}}",
@@ -906,11 +906,11 @@
       },
       "summaryAttached": "{{shape}} on {{deformer}}",
       "addCircle": {
-        "label": "+ Circle",
+        "label": "Circle",
         "tooltip": "Add a circle collider (attached to the selected deformer, if any)"
       },
       "addCapsule": {
-        "label": "+ Capsule",
+        "label": "Capsule",
         "tooltip": "Add a capsule collider (attached to the selected deformer, if any)"
       },
       "name": {
@@ -1159,7 +1159,7 @@
       }
     },
     "add": {
-      "label": "+ Slot",
+      "label": "Slot",
       "tooltip": "Add a slot in a free draw order range"
     },
     "slot": {
@@ -1296,7 +1296,7 @@
       },
       "baseLinks": "Base links: {{parts}}",
       "add": {
-        "label": "+ Entry",
+        "label": "Entry",
         "aria": "Part to add to group {{index}}",
         "tooltip": "Add the part as another variant in this group"
       }
@@ -1316,10 +1316,10 @@
         "aria": "First part of the new group"
       },
       "add": {
-        "label": "+ Group"
+        "label": "Group"
       },
       "fromSelection": {
-        "label": "+ Group from selection",
+        "label": "Group from selection",
         "tooltip_one": "Make a group of {{count}} selected part",
         "tooltip_other": "Make a group of {{count}} selected parts",
         "disabled": "Select two or more parts that aren't in the pose yet (in the tree)."
@@ -2878,7 +2878,7 @@
       "deformers": "Deformers"
     },
     "addPart": {
-      "label": "+ Part",
+      "label": "Part",
       "tooltip": "Add a part under the selected part"
     },
     "rename": {
@@ -2896,8 +2896,8 @@
     },
     "empty": {
       "noModel": "No model",
-      "parts": "No parts",
-      "deformers": "No deformers or meshes"
+      "parts": "No parts yet. Import a PSD file to turn its layers into parts.",
+      "deformers": "No deformers or meshes yet. Import a PSD file to get meshes, then wrap them in deformers from the inspector."
     },
     "kind": {
       "part": "part",

@@ -70,16 +70,18 @@ const primaryLabel = $derived.by(() => {
 {#if selection.primary}
   <p class="heading">
     {t("inspector.heading", { kind: kindLabel(selection.primary.kind), label: primaryLabel })}{#if primaryIsBase}<span
-        class="badge">{t("inspector.baseBadge")}</span
+        class="ed-tag">{t("inspector.baseBadge")}</span
       >{/if}
   </p>
   <StaleRigNotice {selection} {staleRigs} onopen={onopenai} />
   <BaseLock locked={primaryIsBase}>
-    <MeshProperties {doc} {selection} />
-    <DrawCloneSection {doc} {selection} {viewport} />
-    <DeformerProperties {doc} {selection} />
+    <!-- よく触る欄を上に: 概要 → キーフォーム (と推定) → 属性 → 作る操作 → まれな設定 (docs/editor.md#インスペクタの並び) -->
+    <DeformerProperties {doc} {selection} show="summary" />
     <KeyformInspector {doc} {selection} {viewport} />
     <InferenceSection {doc} {selection} {viewport} />
+    <MeshProperties {doc} {selection} />
+    <DeformerProperties {doc} {selection} show="wrap" />
+    <DrawCloneSection {doc} {selection} {viewport} />
     <DepthSection {doc} {selection} {viewport} />
   </BaseLock>
 {:else}
@@ -96,12 +98,7 @@ const primaryLabel = $derived.by(() => {
 .heading {
   overflow-wrap: anywhere;
 }
-.badge {
+.heading .ed-tag {
   margin-left: var(--ugoe-space-2);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-sm);
-  font-size: var(--ugoe-font-size-xs);
-  color: var(--ugoe-color-text-muted);
 }
 </style>

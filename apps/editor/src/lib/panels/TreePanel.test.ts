@@ -1,19 +1,21 @@
 // @vitest-environment happy-dom
 // ツリー: 選んだ要素を見せるために祖先を開くのは、主な選択が変わったときだけ (T1614)。
 // 編集の後の読み直しで、利用者が畳んだ祖先を開き直さない (docs/testing.md#エディタの部品のテスト)。
+// キーボード操作 (矢印・Home / End・F2・Delete) と空の状態 (docs/editor.md#ツリー-左、docs/ui.md#デザイン。T0674)。
 import { flushSync } from "svelte";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Selection } from "../selection.svelte";
-import { FakeDocument, render } from "../viewport/tools/test/harness.svelte";
+import { FakeDocument, press, render, settle } from "../viewport/tools/test/harness.svelte";
 import TreePanel from "./TreePanel.svelte";
 import { testModel } from "./tree/testModel";
 
-function setup() {
+function setup(model: object = testModel()) {
   const doc = new FakeDocument();
-  doc.model = { json: JSON.stringify(testModel()), bundle: null };
+  doc.model = { json: JSON.stringify(model), bundle: null };
   const selection = new Selection();
-  const { target } = render(TreePanel, { doc: doc.asDocument, selection });
-  return { doc, selection, target };
+  const onfileaction = vi.fn();
+  const { target } = render(TreePanel, { doc: doc.asDocument, selection, onfileaction });
+  return { doc, selection, target, onfileaction };
 }
 
 /** `key` の行 (無ければ null)。 */
@@ -64,5 +66,72 @@ describe("TreePanel reveal", () => {
     doc.model = { json: JSON.stringify(model), bundle: null };
     flushSync();
     expect(row("mesh:EyeNew")).not.toBeNull();
+  });
+});
+
+const selected = (selection: Selection) => selection.items.map((r) => `${r.kind}:${r.id}`);
+
+describe("TreePanel keyboard", () => {
+  it("moves the selection with the arrows, Home and End", async () => {
+    const { selection, target } = setup();
+    await settle();
+    const tree = target.querySelector("[role=tree]") as HTMLElement;
+    press(tree, "ArrowDown");
+    expect(selected(selection)).toEqual(["part:Root"]);
+    press(tree, "ArrowDown");
+    expect(selected(selection)).toEqual(["part:Face"]);
+    press(tree, "ArrowDown", { shiftKey: true });
+    expect(selected(selection)).toEqual(["part:Face", "part:Eyes"]);
+    press(tree, "End");
+    const rows = target.querySelectorAll("[role=treeitem]");
+    const last = rows[rows.length - 1] as HTMLElement;
+    expect(tree.getAttribute("aria-activedescendant")).toBe(last.id);
+    press(tree, "Home");
+    expect(selected(selection)).toEqual(["part:Root"]);
+  });
+
+  it("collapses and expands with left and right", async () => {
+    const { target } = setup();
+    await settle();
+    const tree = target.querySelector("[role=tree]") as HTMLElement;
+    const count = () => target.querySelectorAll("[role=treeitem]").length;
+    press(tree, "ArrowDown");
+    const open = count();
+    press(tree, "ArrowLeft");
+    expect(count()).toBe(1);
+    press(tree, "ArrowRight");
+    expect(count()).toBe(open);
+  });
+
+  it("starts renaming with F2 and asks before deleting with Delete", async () => {
+    const { target } = setup();
+    await settle();
+    const tree = target.querySelector("[role=tree]") as HTMLElement;
+    press(tree, "ArrowDown");
+    press(tree, "F2");
+    await settle();
+    expect(target.querySelector(".rename input")).not.toBeNull();
+    const input = target.querySelector(".rename input") as HTMLInputElement;
+    press(input, "Escape");
+    await settle();
+    expect(target.querySelector(".rename input")).toBeNull();
+    press(tree, "Delete");
+    await settle();
+    expect(document.querySelector("[role=alertdialog]")).not.toBeNull();
+  });
+});
+
+describe("TreePanel empty state", () => {
+  it("shows the next step outside the tree when there are no rows", async () => {
+    const model = { ...testModel(), parts: [], deformers: [], meshes: [] };
+    const { target, onfileaction } = setup(model);
+    await settle();
+    expect(target.querySelector("[role=tree]")).toBeNull();
+    const button = [...target.querySelectorAll("button")].find(
+      (b) => b.textContent === "Import PSD…",
+    );
+    if (!button) throw new Error("no Import PSD… button");
+    button.click();
+    expect(onfileaction).toHaveBeenCalledWith("importPsd");
   });
 });

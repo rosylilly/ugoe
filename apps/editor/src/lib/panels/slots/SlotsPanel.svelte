@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, NumberField, Select, TextField, Toggle, Tooltip } from "@ugoe/ui";
+import { Button, Icon, NumberField, Select, TextField, Toggle, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, Slot } from "../../ipc";
@@ -224,7 +224,7 @@ const ids = $props.id();
 
 <!-- 右の列のタブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す。App.svelte) -->
 <h2 class="ugoe-visually-hidden">{t("slots.title")}</h2>
-<p class="help intro">{t("slots.intro")}</p>
+<p class="ed-help intro">{t("slots.intro")}</p>
 
 {#if model}
   {#if slots.length > 0}
@@ -232,17 +232,17 @@ const ids = $props.id();
       {#each slots as s (s.id)}
         {@const overlaps = overlapping(s, slots)}
         <li>
-          <button class="item" class:selected={s.id === view.slot} onclick={() => (view.slot = s.id)}>
-            {s.id}
+          <button class="ed-item" class:selected={s.id === view.slot} onclick={() => (view.slot = s.id)}>
+            <span class="id">{s.id}</span>
             <span class="muted">· {s.draw_order.min}–{s.draw_order.max}{s.anchor ? ` · ${s.anchor}` : ""}</span>
             {#if exposed?.includes(s.id)}
               <Tooltip text={t("slots.tag.app.tooltip")}>
-                {#snippet trigger(attrs)}<span {...attrs} class="tag">{t("slots.tag.app.label")}</span>{/snippet}
+                {#snippet trigger(attrs)}<span {...attrs} class="ed-tag accent">{t("slots.tag.app.label")}</span>{/snippet}
               </Tooltip>
             {/if}
             {#if overlaps.length > 0}
               <Tooltip text={t("slots.tag.overlap.tooltip", { slots: formatList(overlaps) })}>
-                {#snippet trigger(attrs)}<span {...attrs} class="tag bad"
+                {#snippet trigger(attrs)}<span {...attrs} class="ed-tag danger"
                     >{t("slots.tag.overlap.label")}</span
                   >{/snippet}
               </Tooltip>
@@ -255,15 +255,15 @@ const ids = $props.id();
     <p class="ed-hint">{t("slots.empty")}</p>
   {/if}
   <div class="ed-buttons row">
-    <TipButton onclick={addSlot} tooltip={t("slots.add.tooltip")}>{t("slots.add.label")}</TipButton>
+    <TipButton onclick={addSlot} tooltip={t("slots.add.tooltip")}><Icon name="plus" />{t("slots.add.label")}</TipButton>
   </div>
   {#if message}<p class="error ugoe-selectable">{message}</p>{/if}
 
   {#if slot}
     {#key slot.id}
-      <section class="editor">
+      <section class="ed-card">
         <h3>{t("slots.slot.title")}</h3>
-        <div class="field">
+        <div class="ed-field">
           <label for="{ids}-name">{t("slots.name.label")}</label>
           <TextField
             id="{ids}-name"
@@ -273,9 +273,9 @@ const ids = $props.id();
             onchange={rename}
           />
         </div>
-        <p class="help" id="{ids}-name-help">{t("slots.name.help")}</p>
+        <p class="ed-help" id="{ids}-name-help">{t("slots.name.help")}</p>
 
-        <div class="field">
+        <div class="ed-field">
           <span id="{ids}-anchor">{t("slots.anchor.label")}</span>
           <span class="control">
             <Select
@@ -286,9 +286,9 @@ const ids = $props.id();
             />
           </span>
         </div>
-        <p class="help">{t("slots.anchor.help")}</p>
+        <p class="ed-help">{t("slots.anchor.help")}</p>
 
-        <div class="field">
+        <div class="ed-field">
           <span id="{ids}-part">{t("slots.part.label")}</span>
           <span class="control">
             <Select
@@ -299,9 +299,9 @@ const ids = $props.id();
             />
           </span>
         </div>
-        <p class="help">{t("slots.part.help")}</p>
+        <p class="ed-help">{t("slots.part.help")}</p>
 
-        <div class="field">
+        <div class="ed-field">
           <span>{t("slots.drawOrder.label")}</span>
           {#key rangeKey}
             <span class="range">
@@ -325,7 +325,7 @@ const ids = $props.id();
             </span>
           {/key}
         </div>
-        <p class="help">{t("slots.drawOrder.help", { min: DRAW_ORDER_MIN, max: DRAW_ORDER_MAX })}</p>
+        <p class="ed-help">{t("slots.drawOrder.help", { min: DRAW_ORDER_MIN, max: DRAW_ORDER_MAX })}</p>
 
         <PickList
           title={t("slots.replaces.title")}
@@ -376,7 +376,7 @@ const ids = $props.id();
             onchange={expose}
           />
         </div>
-        <p class="help">
+        <p class="ed-help">
           {exposed === null ? t("slots.showToApps.noProfile") : t("slots.showToApps.help")}
         </p>
 
@@ -394,7 +394,7 @@ const ids = $props.id();
 
   <section>
     <h3>{t("slots.drawOrderList.title")}</h3>
-    <p class="help">{t("slots.drawOrderList.description")}</p>
+    <p class="ed-help">{t("slots.drawOrderList.description")}</p>
     {#if rows.length === 0}
       <p class="ed-hint">{t("slots.drawOrderList.empty")}</p>
     {:else}
@@ -430,14 +430,8 @@ const ids = $props.id();
 {/if}
 
 <style>
-.help {
-  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
-  color: var(--ugoe-color-text-muted);
-  font-size: var(--ugoe-font-size-sm);
-}
-
 .intro {
-  margin-bottom: var(--ugoe-space-3);
+  margin-top: 0;
 }
 
 .row {
@@ -450,65 +444,24 @@ const ids = $props.id();
   padding: 0;
 }
 
-.item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: none;
-  overflow-wrap: anywhere;
+.id {
+  font-weight: var(--ugoe-font-weight-strong);
 }
 
-.item.selected {
-  border-color: var(--ugoe-color-accent);
-}
-
-.tag {
-  margin-left: var(--ugoe-space-2);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-accent);
-  border-radius: var(--ugoe-radius-sm);
-  color: var(--ugoe-color-accent);
-  font-size: var(--ugoe-font-size-xs);
-}
-
-.tag.bad {
-  border-color: var(--ugoe-color-danger);
-  color: var(--ugoe-color-danger);
-}
-
-.editor {
-  margin: var(--ugoe-space-3) 0;
-  padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-md);
-}
-
-.editor h3 {
-  margin-top: var(--ugoe-space-2);
-}
-
-.field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ugoe-space-3);
-  margin: var(--ugoe-space-2) 0 0;
-}
-
-.field :global(.ugoe-text-field),
-.control {
-  width: 12em;
-  min-width: 0;
+.ed-card h3 {
+  margin-bottom: var(--ugoe-space-2);
 }
 
 .control {
   display: grid;
+  min-width: 0;
 }
 
 .range {
   display: flex;
   align-items: center;
   gap: var(--ugoe-space-2);
+  min-width: 0;
 }
 
 .check {
@@ -536,15 +489,29 @@ const ids = $props.id();
   margin: 0;
 }
 
+/* 描く順の行: 押せる高さは 24px (docs/ui.md#そのほか)。範囲の帯は行の地と左の線で重ねる */
 .orders button {
   display: flex;
+  align-items: center;
   gap: var(--ugoe-space-3);
   width: 100%;
-  padding: 1px var(--ugoe-space-2);
+  min-height: var(--ugoe-target-min);
+  padding: 0 var(--ugoe-space-2);
   border: none;
   border-radius: 0;
   background: none;
+  color: inherit;
+  font: inherit;
   text-align: left;
+}
+
+.orders button:hover {
+  background-image: var(--ugoe-overlay-hover);
+}
+
+.orders button:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: -2px;
 }
 
 .mesh.inside {
@@ -560,6 +527,7 @@ const ids = $props.id();
 .mesh-button.selected {
   outline: 1px solid var(--ugoe-color-accent);
   outline-offset: -1px;
+  font-weight: var(--ugoe-font-weight-strong);
 }
 
 .orders .order {
@@ -567,6 +535,7 @@ const ids = $props.id();
   width: 3.5em;
   color: var(--ugoe-color-text-muted);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .mesh .name {
@@ -580,7 +549,7 @@ const ids = $props.id();
 
 .edge-button {
   color: var(--ugoe-color-accent);
-  font-size: var(--ugoe-font-size-xs);
+  font-size: var(--ugoe-font-size-sm);
 }
 
 .edge.current {

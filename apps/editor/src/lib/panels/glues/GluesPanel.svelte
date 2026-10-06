@@ -136,6 +136,7 @@ const axisChoice = $derived(unbound.find((p) => p.id === axisParameter) ?? unbou
 const meshOptions = $derived(
   glueable.map((m) => ({ value: m.id, label: elementLabel(m.name, m.id) })),
 );
+const ids = $props.id();
 const axisOptions = $derived(unbound.map((p) => ({ value: p.id, label: p.name || p.id })));
 const axisKeyValue = $derived(
   axisChoice ? keyValue(axisKey === "" ? String(axisChoice.default) : axisKey, axisChoice) : null,
@@ -146,7 +147,7 @@ const axisKeyValue = $derived(
 <h2 class="ugoe-visually-hidden">{t("glues.title")}</h2>
 <p class="ed-hint intro">{t("glues.intro")}</p>
 {#if module}
-  <p class="base-note" role="note">{t("glues.moduleNote")}</p>
+  <p class="ed-note" role="note">{t("glues.moduleNote")}</p>
 {/if}
 
 {#if model}
@@ -158,7 +159,7 @@ const axisKeyValue = $derived(
         {@const base = isBaseGlue(g, module)}
         <li>
           <button
-            class="row-button"
+            class="ed-item"
             class:selected={view.glue === g.id}
             aria-pressed={view.glue === g.id}
             onclick={() => (view.glue = view.glue === g.id ? null : g.id)}
@@ -183,7 +184,7 @@ const axisKeyValue = $derived(
     {@const base = isBaseGlue(glue, module)}
     {@const clone = isDrawCloneGlue(glue)}
     {@const locked = base || clone}
-    <section class="editor" aria-label={t("glues.editor.aria", { id: glue.id })}>
+    <section class="ed-card editor" aria-label={t("glues.editor.aria", { id: glue.id })}>
       <header>
         <h3>{glue.id}</h3>
         <TipButton
@@ -217,7 +218,7 @@ const axisKeyValue = $derived(
           disabled={locked || glue.pairs.length === 0}
           oncommit={(w) => updateGlue(glue.id, (g) => withWeight(g, w))}
         />
-        <p class="ed-hint help">
+        <p class="ed-help">
           {t("glues.weight.description", { a: meshLabel(glue.mesh_a), b: meshLabel(glue.mesh_b) })}
           {#if !uniformWeight(glue)}{t("glues.weight.mixed")}{/if}
         </p>
@@ -226,15 +227,15 @@ const axisKeyValue = $derived(
             {label}
             step={0.1}
             decimals={4}
-            aria-describedby="glue-intensity-hint"
+            aria-describedby="{ids}-intensity-hint"
             value={glue.keyforms.keyforms[i]?.intensity ?? 0}
             disabled={locked}
             onchange={(v) => updateGlue(glue.id, (g) => withIntensity(g, i, v))}
           />
         {/each}
-        <p class="ed-hint help" id="glue-intensity-hint">{t("glues.intensity.description")}</p>
+        <p class="ed-help" id="{ids}-intensity-hint">{t("glues.intensity.description")}</p>
         {#if glue.keyforms.bindings.length > 0}
-          <p class="ed-hint help">{t("glues.intensity.follows")}</p>
+          <p class="ed-help">{t("glues.intensity.follows")}</p>
         {/if}
         <div class="axes" role="group" aria-label={t("glues.axes.aria")}>
           {#each glue.keyforms.bindings as b (b.parameter)}
@@ -274,7 +275,7 @@ const axisKeyValue = $derived(
                     if (key !== null && (await send(() => addGlueKeyCommand(glue.id, b.parameter, key)))) {
                       newKeys = { ...newKeys, [b.parameter]: "" };
                     }
-                  }}>{t("glues.addKey.label")}</TipButton
+                  }}><Icon name="plus" />{t("glues.addKey.label")}</TipButton
                 >
               </span>
             </div>
@@ -309,13 +310,13 @@ const axisKeyValue = $derived(
                   if (parameter !== undefined && key !== null && (await send(() => addGlueKeyCommand(glue.id, parameter, key)))) {
                     axisKey = "";
                   }
-                }}>{t("glues.addAxis.label")}</TipButton
+                }}><Icon name="plus" />{t("glues.addAxis.label")}</TipButton
               >
             </div>
           {/if}
-          <p class="ed-hint help">{t("glues.axes.description")}</p>
+          <p class="ed-help">{t("glues.axes.description")}</p>
         </div>
-        <p class="ed-hint help">{t("glues.pairs.description")}</p>
+        <p class="ed-help">{t("glues.pairs.description")}</p>
         <div class="row">
           <NumberField
             label={t("glues.repair.label")}
@@ -350,39 +351,48 @@ const axisKeyValue = $derived(
     </section>
   {/if}
 
-  <section class="add">
+  <section class="ed-card add">
     <h3>{t("glues.new.title")}</h3>
     {#if glueable.length < 2}
       <p class="ed-hint">{module ? t("glues.new.emptyModule") : t("glues.new.empty")}</p>
     {:else}
-      <Select
-        label={t("glues.new.meshA")}
-        value={meshA}
-        options={meshOptions}
-        onchange={(v) => (pickA = v)}
-      />
-      <Select
-        label={t("glues.new.meshB")}
-        value={meshB}
-        options={meshOptions}
-        onchange={(v) => (pickB = v)}
-      />
-      <NumberField
-        label={t("glues.new.distance.label")}
-        unit={t("glues.px")}
-        min={0}
-        step={1}
-        size={4}
-        aria-describedby="glue-distance-hint"
-        bind:value={distance}
-      />
-      <p class="ed-hint help" id="glue-distance-hint">{t("glues.new.distance.description")}</p>
+      <div class="ed-field">
+        <span id="{ids}-mesh-a">{t("glues.new.meshA")}</span>
+        <Select
+          aria-labelledby="{ids}-mesh-a"
+          value={meshA}
+          options={meshOptions}
+          onchange={(v) => (pickA = v)}
+        />
+      </div>
+      <div class="ed-field">
+        <span id="{ids}-mesh-b">{t("glues.new.meshB")}</span>
+        <Select
+          aria-labelledby="{ids}-mesh-b"
+          value={meshB}
+          options={meshOptions}
+          onchange={(v) => (pickB = v)}
+        />
+      </div>
+      <div class="ed-field">
+        <span id="{ids}-distance">{t("glues.new.distance.label")}</span>
+        <NumberField
+          aria-labelledby="{ids}-distance"
+          unit={t("glues.px")}
+          min={0}
+          step={1}
+          size={4}
+          aria-describedby="{ids}-distance-hint"
+          bind:value={distance}
+        />
+      </div>
+      <p class="ed-help" id="{ids}-distance-hint">{t("glues.new.distance.description")}</p>
       <div class="ed-buttons">
         <TipButton
           small
           disabled={busy || !canCreate}
           tooltip={t("glues.new.create.tooltip")}
-          onclick={create}>{t("glues.new.create.label")}</TipButton
+          onclick={create}><Icon name="plus" />{t("glues.new.create.label")}</TipButton
         >
         {#if fromSelection}<span class="ed-hint">{t("glues.new.fromSelection")}</span>{/if}
         {#if meshA === meshB}<span class="ed-hint">{t("glues.new.sameMesh")}</span>{/if}
@@ -395,7 +405,7 @@ const axisKeyValue = $derived(
   <Tooltip text={tooltip}>
     {#snippet trigger(attrs)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <span {...attrs} class="tag" tabindex="0">{text}</span>
+      <span {...attrs} class="ed-tag accent" tabindex="0">{text}</span>
     {/snippet}
   </Tooltip>
 {/snippet}
@@ -406,21 +416,8 @@ const axisKeyValue = $derived(
   overflow-wrap: anywhere;
 }
 
-.help {
-  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
-  overflow-wrap: anywhere;
-}
-
 .intro {
   margin-bottom: var(--ugoe-space-3);
-}
-
-.base-note {
-  margin: var(--ugoe-space-2) 0 var(--ugoe-space-3);
-  padding: var(--ugoe-space-2) var(--ugoe-space-3);
-  border-left: 3px solid var(--ugoe-color-border);
-  color: var(--ugoe-color-text-muted);
-  font-size: var(--ugoe-font-size-sm);
 }
 
 .list {
@@ -436,44 +433,18 @@ const axisKeyValue = $derived(
   margin: var(--ugoe-space-1) 0;
 }
 
-.row-button {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: var(--ugoe-radius-md);
-  background: none;
-  color: inherit;
-  font: inherit;
-  padding: var(--ugoe-space-1) var(--ugoe-space-2);
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.row-button:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
-}
-
-.row-button.selected {
-  border-color: var(--ugoe-color-accent);
-}
-
-.muted {
-  color: var(--ugoe-color-text-muted);
-}
-
 .editor,
 .add {
   display: flex;
   flex-direction: column;
   gap: var(--ugoe-space-2);
-  margin: var(--ugoe-space-3) 0;
-  padding: var(--ugoe-space-2) var(--ugoe-space-3) var(--ugoe-space-3);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-md);
+}
+
+/* 縦の並びの間は gap で取る */
+.editor :global(.ed-field),
+.add :global(.ed-field),
+.add .ed-help {
+  margin: 0;
 }
 
 .add h3 {
@@ -546,14 +517,5 @@ const axisKeyValue = $derived(
   padding-left: var(--ugoe-space-2);
   border: 1px solid var(--ugoe-color-border);
   border-radius: var(--ugoe-radius-md);
-}
-
-.tag {
-  flex: none;
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-accent);
-  border-radius: var(--ugoe-radius-sm);
-  color: var(--ugoe-color-accent);
-  font-size: var(--ugoe-font-size-xs);
 }
 </style>

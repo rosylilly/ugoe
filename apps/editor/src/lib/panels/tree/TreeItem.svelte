@@ -2,7 +2,7 @@
   ツリーの 1 行。状態 (選択・展開・名前の変更・ドロップの表示) は TreePanel が持ち、ここは表示と入力の中継だけ。
 -->
 <script lang="ts">
-import { Icon } from "@ugoe/ui";
+import { Icon, TextField } from "@ugoe/ui";
 import { t } from "../../i18n";
 import type { TreeRow } from "./build";
 import type { DropMark } from "./edit";
@@ -12,6 +12,10 @@ interface Props {
   row: TreeRow;
   id: string;
   selected: boolean;
+  /** 主な選択 (インスペクタに出すもの。ビューポートでは太い輪郭)。 */
+  primary?: boolean;
+  /** ポインタが乗っている (この行かビューポートのメッシュに)。 */
+  hovered?: boolean;
   active: boolean;
   expanded: boolean;
   renaming: boolean;
@@ -23,12 +27,16 @@ interface Props {
   onrenamestart: () => void;
   onrename: (name: string | null) => void;
   onpointerdown: (e: PointerEvent) => void;
+  /** ポインタが行に乗った・離れた。 */
+  onhover?: (on: boolean) => void;
 }
 
 let {
   row,
   id,
   selected,
+  primary = false,
+  hovered = false,
   active,
   expanded,
   renaming,
@@ -39,17 +47,29 @@ let {
   onrenamestart,
   onrename,
   onpointerdown,
+  onhover,
 }: Props = $props();
 
 const node = $derived(row.node);
 const hasChildren = $derived(node.children.length > 0);
 let done = false;
+/** 名前の変更の欄の文字と要素。 */
+let draft = $state("");
+let input = $state<HTMLInputElement | null>(null);
 
-function focusInput(el: HTMLInputElement) {
-  done = false;
-  el.focus();
-  el.select();
-}
+// 名前の変更を始めたら、今の名前を入れて全体を選ぶ (打てばそのまま置き換わる)。
+$effect.pre(() => {
+  if (renaming) {
+    done = false;
+    draft = node.name;
+  }
+});
+$effect(() => {
+  if (renaming && input) {
+    input.focus();
+    input.select();
+  }
+});
 
 function finish(name: string | null) {
   // Enter の後の blur で 2 回呼ばれないようにする。
@@ -59,9 +79,21 @@ function finish(name: string | null) {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  // 木のキー操作 (矢印・Delete・F2) に渡さない。
   e.stopPropagation();
-  if (e.key === "Enter") finish((e.currentTarget as HTMLInputElement).value);
-  else if (e.key === "Escape") finish(null);
+  if (e.key === "Enter") {
+    e.preventDefault();
+    finish(draft);
+  } else if (e.key === "Escape") {
+    // 部品の「確定前に戻す」ではなく、変更そのものをやめる。
+    e.preventDefault();
+    finish(null);
+  }
+}
+
+/** 名前の欄の中の押下は行に渡さない (選択・ドラッグ・名前の変更の始まりにしない)。 */
+function insideRename(e: Event): boolean {
+  return e.target instanceof Element && e.target.closest(".rename") !== null;
 }
 </script>
 
@@ -71,6 +103,8 @@ function onKeydown(e: KeyboardEvent) {
   {id}
   class="row"
   class:selected
+  class:primary
+  class:hovered
   class:active
   class:hidden={node.hidden}
   class:mask-only={node.maskOnly}
@@ -86,9 +120,17 @@ function onKeydown(e: KeyboardEvent) {
   aria-expanded={hasChildren ? expanded : undefined}
   data-key={node.key}
   style:padding-left="{row.depth * 14 + 7}px"
-  onclick={onselect}
-  ondblclick={onrenamestart}
-  {onpointerdown}
+  onclick={(e) => {
+    if (!insideRename(e)) onselect(e);
+  }}
+  ondblclick={(e) => {
+    if (!insideRename(e)) onrenamestart();
+  }}
+  onpointerdown={(e) => {
+    if (!insideRename(e)) onpointerdown(e);
+  }}
+  onpointerenter={() => onhover?.(true)}
+  onpointerleave={() => onhover?.(false)}
 >
   {#if hasChildren}
     <button
@@ -107,23 +149,21 @@ function onKeydown(e: KeyboardEvent) {
   {/if}
   <NodeIcon icon={node.icon} />
   {#if renaming}
-    <input
+    <TextField
       class="rename"
-      value={node.name}
+      bind:value={draft}
+      bind:ref={input}
       aria-label={t("tree.row.name")}
-      use:focusInput
       onkeydown={onKeydown}
-      onblur={(e) => finish(e.currentTarget.value)}
-      onclick={(e) => e.stopPropagation()}
-      onpointerdown={(e) => e.stopPropagation()}
+      onblur={() => finish(draft)}
     />
   {:else}
     <span class="name" title={node.ref.id}>{node.name}</span>
   {/if}
   <!-- 行はフォーカスを受けない (木が aria-activedescendant で受ける) ので、印の説明は Tooltip ではなく title で出す。 -->
-  {#if base}<span class="badge" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
-  {#if node.maskOnly}<span class="badge" title={t("tree.row.mask.tooltip")}>{t("tree.row.mask.label")}</span>{/if}
-  {#if node.hidden}<span class="badge" title={t("tree.row.hidden.tooltip")}>{t("tree.row.hidden.label")}</span>{/if}
+  {#if base}<span class="ed-tag" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
+  {#if node.maskOnly}<span class="ed-tag" title={t("tree.row.mask.tooltip")}>{t("tree.row.mask.label")}</span>{/if}
+  {#if node.hidden}<span class="ed-tag" title={t("tree.row.hidden.tooltip")}>{t("tree.row.hidden.label")}</span>{/if}
   {#if node.drawOrder !== undefined}<span class="order" title={t("tree.row.drawOrder")}>{node.drawOrder}</span>{/if}
 </div>
 
@@ -140,14 +180,26 @@ function onKeydown(e: KeyboardEvent) {
   user-select: none;
   white-space: nowrap;
 }
-.row:hover {
-  background: color-mix(in srgb, var(--ugoe-color-accent) 8%, transparent);
+/* 状態の見せ方は docs/ui.md#デザイン、ビューポートとの対応は docs/editor.md#選択とホバーの見せ方 */
+.row:hover,
+.row.hovered {
+  background-image: var(--ugoe-overlay-hover);
 }
 .row.selected {
-  background: color-mix(in srgb, var(--ugoe-color-accent) 22%, transparent);
+  background-color: var(--ugoe-color-accent-soft);
+}
+/* 主な選択は太字 (ビューポートの太い輪郭に当たる) */
+.row.primary .name {
+  font-weight: var(--ugoe-font-weight-strong);
 }
 .row.active {
-  border-color: color-mix(in srgb, var(--ugoe-color-accent) 60%, transparent);
+  border-color: var(--ugoe-color-accent);
+}
+/* 本体の要素の選択は、ビューポートの輪郭と同じく灰色の破線 */
+.row.base.selected {
+  background-color: var(--ugoe-color-sunken);
+  border-color: var(--ugoe-color-text-muted);
+  border-style: dashed;
 }
 .row.base .name,
 .row.hidden .name {
@@ -190,21 +242,20 @@ function onKeydown(e: KeyboardEvent) {
   text-overflow: ellipsis;
   flex: 1;
 }
-.rename {
+/* 名前の変更の欄は行の高さ (24px) に収める */
+.row :global(.rename) {
   flex: 1;
   min-width: 0;
-  font: inherit;
+}
+.row :global(.rename .ugoe-text-field__input) {
+  height: var(--ugoe-target-min);
+  min-height: 0;
   padding: 0 var(--ugoe-space-1);
 }
-.badge,
 .order {
   flex: none;
   font-size: var(--ugoe-font-size-xs);
   color: var(--ugoe-color-text-muted);
-}
-.badge {
-  padding: 0 var(--ugoe-space-1);
-  border: 1px solid var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-sm);
+  font-variant-numeric: tabular-nums;
 }
 </style>

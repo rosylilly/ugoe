@@ -9,12 +9,12 @@ import { hexToRgb, type Rgb, rgbToHex } from "./lighting";
 interface Props {
   value: Rgb;
   /** 読み上げの名前 (翻訳を通した文言)。 */
-  ariaLabel: string;
+  "aria-label": string;
   onpreview: (color: Rgb) => void;
   oncommit: (color: Rgb) => void;
 }
 
-let { value, ariaLabel, onpreview, oncommit }: Props = $props();
+let { value, "aria-label": ariaLabel, onpreview, oncommit }: Props = $props();
 
 let open = $state(false);
 /** 枠を開いている間に選んだ、まだ残していない色。 */

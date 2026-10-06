@@ -92,7 +92,7 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
           {/snippet}
         </Notice>
       {/if}
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-opacity">{t("inspector.drawClone.opacity")}</span>
         <NumberField
           aria-labelledby="{ids}-opacity"
@@ -104,7 +104,7 @@ async function setCell(field: "opacity" | "draw_order", value: number | null): P
           onchange={(v) => setCell("opacity", v)}
         />
       </div>
-      <div class="row">
+      <div class="ed-field">
         <span id="{ids}-draw-order">{t("inspector.drawClone.drawOrder")}</span>
         <NumberField
           aria-labelledby="{ids}-draw-order"

@@ -22,41 +22,48 @@ interface Props {
 
 let { title, help, options, selected, empty, disabled = false, onchange }: Props = $props();
 
+/** 開いているか。閉じている間は中身を描かない (パーツ 200 個の一覧を、閉じた欄の数だけ持たない)。 */
+let open = $state(false);
+
 /** 一覧にない (消えた要素などの) 選択も、外せるように出す。 */
 const missing = $derived(selected.filter((id) => !options.some((o) => o.id === id)));
 </script>
 
-<details class="pick">
+<details class="pick" bind:open>
   <summary>
     <span>{title}</span>
     <span class="count" class:none={selected.length === 0}>
-      {selected.length === 0 ? t("slots.pickList.none") : formatList(selected)}
+      {selected.length === 0
+        ? t("slots.pickList.none")
+        : formatList(selected.map((id) => options.find((o) => o.id === id)?.label ?? id))}
     </span>
   </summary>
-  <p class="help">{help}</p>
-  {#if options.length === 0 && missing.length === 0}
-    <p class="help empty">{empty}</p>
-  {:else}
-    <div class="options">
-      {#each options as option (option.id)}
-        <Checkbox
-          label={option.label}
-          {disabled}
-          checked={selected.includes(option.id)}
-          onchange={(checked) => onchange(toggled(selected, option.id, checked))}
-        />
-      {/each}
-      {#each missing as id (id)}
-        <span class="missing">
+  {#if open}
+    <p class="ed-help">{help}</p>
+    {#if options.length === 0 && missing.length === 0}
+      <p class="ed-help empty">{empty}</p>
+    {:else}
+      <div class="options">
+        {#each options as option (option.id)}
           <Checkbox
-            label={t("slots.pickList.missing", { id })}
+            label={option.label}
             {disabled}
-            checked
-            onchange={() => onchange(toggled(selected, id, false))}
+            checked={selected.includes(option.id)}
+            onchange={(checked) => onchange(toggled(selected, option.id, checked))}
           />
-        </span>
-      {/each}
-    </div>
+        {/each}
+        {#each missing as id (id)}
+          <span class="missing">
+            <Checkbox
+              label={t("slots.pickList.missing", { id })}
+              {disabled}
+              checked
+              onchange={() => onchange(toggled(selected, id, false))}
+            />
+          </span>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </details>
 
@@ -71,8 +78,14 @@ const missing = $derived(selected.filter((id) => !options.some((o) => o.id === i
 summary {
   display: flex;
   gap: var(--ugoe-space-3);
-  align-items: baseline;
+  align-items: center;
+  min-height: var(--ugoe-target-min);
   cursor: pointer;
+}
+
+summary:focus-visible {
+  outline: var(--ugoe-focus-ring);
+  outline-offset: var(--ugoe-focus-offset);
 }
 
 summary > span:first-child {
@@ -91,17 +104,12 @@ summary > span:first-child {
   color: var(--ugoe-color-text-muted);
 }
 
-.help {
-  margin: var(--ugoe-space-1) 0 var(--ugoe-space-2);
-  color: var(--ugoe-color-text-muted);
-  font-size: var(--ugoe-font-size-sm);
-}
-
 .options {
   display: flex;
   flex-direction: column;
   gap: var(--ugoe-space-1);
-  max-height: 11em;
+  /* 選択肢が多いときは一覧の中で送る。行の途中で切って、送れることを見せる */
+  max-height: calc(var(--ugoe-target-min) * 7.5);
   overflow-y: auto;
   overflow-wrap: anywhere;
 }

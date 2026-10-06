@@ -22,7 +22,7 @@ const outer = useBaseLock();
 provideBaseLock(() => locked || outer());
 </script>
 
-{#if locked}<p class="base-note" role="note">{hint ?? baseEditHint()}</p>{/if}
+{#if locked}<p class="ed-note" role="note">{hint ?? baseEditHint()}</p>{/if}
 <fieldset class="base-lock" class:locked disabled={locked}>
   {@render children()}
 </fieldset>
@@ -36,12 +36,5 @@ provideBaseLock(() => locked || outer());
   }
   .base-lock.locked {
     opacity: var(--ugoe-opacity-disabled);
-  }
-  .base-note {
-    margin: var(--ugoe-space-2) 0;
-    padding: var(--ugoe-space-2) var(--ugoe-space-3);
-    border-left: 3px solid var(--ugoe-color-border);
-    color: var(--ugoe-color-text-muted);
-    font-size: var(--ugoe-font-size-sm);
   }
 </style>

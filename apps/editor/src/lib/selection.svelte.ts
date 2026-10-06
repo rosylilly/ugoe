@@ -21,6 +21,16 @@ export class Selection {
   controlPoints = $state<Record<string, number[]>>({});
   /** メッシュ編集モードで編集中のメッシュの ID (モードでなければ null)。 */
   meshEdit = $state<string | null>(null);
+  /**
+   * ポインタが乗っている要素 (ツリーの行・ビューポートのメッシュ)。表示だけの状態で、ツリーとビューポートが同じものを
+   * 薄く示すのに使う (docs/editor.md#選択とホバーの見せ方)。
+   */
+  hover = $state<ElementRef | null>(null);
+
+  /** ポインタが乗っている要素か。 */
+  hovered(ref: ElementRef): boolean {
+    return this.hover !== null && key(this.hover) === key(ref);
+  }
 
   get primary(): ElementRef | null {
     return this.items[0] ?? null;
