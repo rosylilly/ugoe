@@ -48,6 +48,10 @@ let capturing = $state(false);
 let hudWidth = $state(0);
 /** 右下の表示の道具の幅。左下に重ねる帯 (グルー・違いの知らせ) に `--viewport-view-tools-width` で渡す。 */
 let viewToolsWidth = $state(0);
+/** 右下の表示の道具の高さ (出していなければ 0)。下の端から隠す高さとして controller.setCovered("bottom") に渡す (T1653)。 */
+let viewToolsHeight = $state(0);
+/** 右下の表示の道具とビューの下の端の間 (CSS の `.view-tools` の `bottom`)。 */
+const VIEW_TOOLS_INSET = 8;
 /** 表示の道具の 1 回の拡大率 (ビューアと同じ)。 */
 const ZOOM_STEP = 1.25;
 /** 直近のスクリーンショットの失敗 (閉じるまで残す。保存した場所は Toast で出す)。 */
@@ -90,6 +94,12 @@ $effect(() => {
   });
   observer.observe(container);
   return () => observer.disconnect();
+});
+
+// `]` `[` で選んだ点を見せるとき、右下の表示の道具の上を見える所とする (controller.reveal)。
+$effect(() => {
+  const shown = controller.status === "ready" && !empty;
+  controller.setCovered("bottom", shown ? viewToolsHeight + VIEW_TOOLS_INSET : 0);
 });
 
 // テーマ (設定・OS) が変わったら背景を読み直す。
@@ -189,6 +199,7 @@ function onKeyDown(e: KeyboardEvent) {
       class="view-tools"
       role="presentation"
       bind:clientWidth={viewToolsWidth}
+      bind:offsetHeight={viewToolsHeight}
       onpointerdown={(e) => e.stopPropagation()}
       onwheel={(e) => e.stopPropagation()}
     >

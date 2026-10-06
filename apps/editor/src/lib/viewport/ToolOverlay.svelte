@@ -21,6 +21,7 @@
   その下に今の道具の説明の帯 (.vp-band。対象・セル・選んだ数・注意・操作の説明) を、テーマの地に載せて縦に積む。
   帯は ToolOverlay・FormTool・DeformerGizmo が描き、並びは右上の HUD の幅を空けて折り返す (重ならない)。
   ツールの svg は .strip の中にあっても `position: absolute` でオーバーレイ全体に広がる (.strip は位置の基準にしない)。
+  .strip の高さは controller.setCovered("top") で渡し、`]` `[` で選んだ点を帯の下へ見せる (T1653)。
 -->
 <script lang="ts">
 import { Button } from "@ugoe/ui";
@@ -82,6 +83,13 @@ $effect(() => {
   void controller.animationFrame;
   for (const value of Object.values(controller.parameterValues)) void value;
   queueMicrotask(() => scene.invalidate());
+});
+
+/** 左上の並び (.strip) の高さ。`]` `[` で選んだ点を見せるとき、その下を見える所とする (controller.reveal。T1653)。 */
+let stripHeight = $state(0);
+$effect(() => {
+  controller.setCovered("top", stripHeight);
+  return () => controller.setCovered("top", 0);
 });
 
 /** モジュールのプロジェクトの本体の要素 (読み取り専用)。本体のプロジェクトなら空。 */
@@ -319,7 +327,7 @@ function onKeyDown(e: KeyboardEvent): void {
 </svg>
 
 <!-- ツールの svg は下の表示の重ねより下に描く (DOM の順)。ボタンと帯は z-index で上 -->
-<div class="strip">
+<div class="strip" bind:offsetHeight={stripHeight}>
   <div class="toolbar">
     {#if controller.previewingPhysics}
       <TipButton

@@ -15,6 +15,7 @@ import {
   REVEAL_MARGIN,
   revealPanOf,
   steppedPoint,
+  visibleRectOf,
 } from "./keys";
 
 /** `closest` が `selector` のどれかに当たるかだけを返す偽の要素。 */
@@ -187,30 +188,61 @@ describe("isSplitKey", () => {
 
 describe("revealPanOf", () => {
   const m = REVEAL_MARGIN;
+  /** 帯も道具も無いビュー全体 (`width`×`height`)。 */
+  const whole = (width: number, height: number) =>
+    visibleRectOf([width, height], { top: 0, bottom: 0 });
 
   it("leaves a point inside the margins where it is", () => {
-    expect(revealPanOf([400, 300], [800, 600])).toBeNull();
-    expect(revealPanOf([m, 600 - m], [800, 600])).toBeNull();
+    expect(revealPanOf([400, 300], whole(800, 600))).toBeNull();
+    expect(revealPanOf([m, 600 - m], whole(800, 600))).toBeNull();
   });
 
   it("pans a point outside the view or in the margin just inside the edge", () => {
     // 左と上の外
-    expect(revealPanOf([-100, -20], [800, 600])).toEqual([100 + m, 20 + m]);
+    expect(revealPanOf([-100, -20], whole(800, 600))).toEqual([100 + m, 20 + m]);
     // 右の外 (縦はそのまま)
-    expect(revealPanOf([900, 300], [800, 600])).toEqual([800 - m - 900, 0]);
+    expect(revealPanOf([900, 300], whole(800, 600))).toEqual([800 - m - 900, 0]);
     // 下の余白の中
-    expect(revealPanOf([400, 590], [800, 600])).toEqual([0, 600 - m - 590]);
+    expect(revealPanOf([400, 590], whole(800, 600))).toEqual([0, 600 - m - 590]);
+  });
+
+  it("measures the margins from the visible rect below the strip and above the view tools", () => {
+    // 上の 100px を帯が、下の 50px を表示の道具が隠す (見える矩形は y = 100〜550)
+    const view = visibleRectOf([800, 600], { top: 100, bottom: 50 });
+    expect(view).toEqual({ left: 0, top: 100, width: 800, height: 450 });
+    // 見える矩形の内側では動かさない
+    expect(revealPanOf([400, 100 + m], view)).toBeNull();
+    expect(revealPanOf([400, 550 - m], view)).toBeNull();
+    // 帯の下に入る点は、帯の下の端から余白の所まで下げる (ビュー全体なら動かない位置)
+    expect(revealPanOf([400, 80], whole(800, 600))).toBeNull();
+    expect(revealPanOf([400, 80], view)).toEqual([0, 100 + m - 80]);
+    // 表示の道具に重なる点は、道具の上の端から余白の所まで上げる
+    expect(revealPanOf([700, 570], view)).toEqual([0, 550 - m - 570]);
   });
 
   it("centers the point on an axis narrower than both margins", () => {
-    expect(revealPanOf([0, 300], [60, 600])).toEqual([30, 0]);
-    expect(revealPanOf([30, 300], [60, 600])).toBeNull();
+    expect(revealPanOf([0, 300], whole(60, 600))).toEqual([30, 0]);
+    expect(revealPanOf([30, 300], whole(60, 600))).toBeNull();
+    // 帯と道具の間が余白の 2 倍より低いときは、その間の真ん中へ
+    const low = visibleRectOf([800, 200], { top: 100, bottom: 40 });
+    expect(revealPanOf([400, 10], low)).toEqual([0, 130 - 10]);
+    expect(revealPanOf([400, 130], low)).toBeNull();
   });
 
   it("does nothing for non-numbers or an empty view", () => {
-    expect(revealPanOf([Number.NaN, 0], [800, 600])).toBeNull();
-    expect(revealPanOf([0, Number.POSITIVE_INFINITY], [800, 600])).toBeNull();
-    expect(revealPanOf([-10, -10], [0, 0])).toBeNull();
-    expect(revealPanOf([-10, -10], [800, Number.NaN])).toBeNull();
+    expect(revealPanOf([Number.NaN, 0], whole(800, 600))).toBeNull();
+    expect(revealPanOf([0, Number.POSITIVE_INFINITY], whole(800, 600))).toBeNull();
+    expect(revealPanOf([-10, -10], whole(0, 0))).toBeNull();
+    expect(revealPanOf([-10, -10], whole(800, Number.NaN))).toBeNull();
+  });
+});
+
+describe("visibleRectOf", () => {
+  it("ignores covered heights that are not numbers, negative or swallow the whole view", () => {
+    const full = { left: 0, top: 0, width: 800, height: 600 };
+    expect(visibleRectOf([800, 600], { top: Number.NaN, bottom: -5 })).toEqual(full);
+    expect(visibleRectOf([800, 600], { top: Number.POSITIVE_INFINITY, bottom: 0 })).toEqual(full);
+    expect(visibleRectOf([800, 600], { top: 400, bottom: 200 })).toEqual(full);
+    expect(visibleRectOf([800, 600], { top: 0, bottom: 30 })).toEqual({ ...full, height: 570 });
   });
 });

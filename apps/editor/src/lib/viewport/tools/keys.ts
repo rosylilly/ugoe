@@ -153,30 +153,55 @@ export function isSplitKey(e: {
   return !(e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) && (e.key === "i" || e.key === "I");
 }
 
-/** `]` `[` で選んだ点を見える所へ送るとき、ビューの端から空ける幅 (CSS ピクセル)。 */
+/** `]` `[` で選んだ点を見える所へ送るとき、見える矩形の端から空ける幅 (CSS ピクセル)。 */
 export const REVEAL_MARGIN = 48;
+
+/** ビューポートで実際に見える矩形 (CSS ピクセル。ビューポート要素の左上原点)。 */
+export interface ViewRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * ビューポート要素の大きさ `size` (幅・高さ) から、上の端の `covered.top`・下の端の `covered.bottom` の高さを重ねた
+ * 道具が隠す分 (左上の道具の並びと説明の帯・右下の表示の道具) を除いた、見える矩形。隠す高さが数でない・負なら 0 とし、
+ * 上と下を合わせてビューの高さ以上を隠すときは除かない (ビュー全体)。
+ */
+export function visibleRectOf(
+  size: readonly [number, number],
+  covered: { readonly top: number; readonly bottom: number },
+): ViewRect {
+  const [width, height] = size;
+  const top = Number.isFinite(covered.top) ? Math.max(covered.top, 0) : 0;
+  const bottom = Number.isFinite(covered.bottom) ? Math.max(covered.bottom, 0) : 0;
+  if (!(top + bottom < height)) return { left: 0, top: 0, width, height };
+  return { left: 0, top, width, height: height - top - bottom };
+}
 
 /**
  * `]` `[` で選んだ点 (`point`、CSS ピクセル) を見える所へ送るためにビューを動かす量 (`ViewportController.panBy` に
- * 渡す CSS ピクセル)。点がビュー (`size` = 幅・高さ) の端から `margin` より内側にあれば動かさず (null)、外にあれば
- * 端から `margin` の所まで、軸ごとに足りない分だけ動かす。ビューが `2 * margin` より狭い軸は真ん中へ送る。
- * 拡大率は変えない。数でない値や大きさが 0 のビューでは null。
+ * 渡す CSS ピクセル)。点が見える矩形 (`view`。visibleRectOf) の端から `margin` より内側にあれば動かさず (null)、外に
+ * あれば端から `margin` の所まで、軸ごとに足りない分だけ動かす。矩形が `2 * margin` より狭い軸は真ん中へ送る。
+ * 拡大率は変えない。数でない値や大きさが 0 の矩形では null。
  */
 export function revealPanOf(
   point: readonly [number, number],
-  size: readonly [number, number],
+  view: ViewRect,
   margin = REVEAL_MARGIN,
 ): [number, number] | null {
-  const dx = revealAxis(point[0], size[0], margin);
-  const dy = revealAxis(point[1], size[1], margin);
+  const dx = revealAxis(point[0], view.left, view.width, margin);
+  const dy = revealAxis(point[1], view.top, view.height, margin);
   if (dx === null || dy === null || (dx === 0 && dy === 0)) return null;
   return [dx, dy];
 }
 
-function revealAxis(p: number, length: number, margin: number): number | null {
-  if (!Number.isFinite(p) || !(length > 0 && Number.isFinite(length))) return null;
+function revealAxis(p: number, start: number, length: number, margin: number): number | null {
+  if (!Number.isFinite(p) || !Number.isFinite(start)) return null;
+  if (!(length > 0 && Number.isFinite(length))) return null;
   const m = Math.min(Math.max(margin, 0), length / 2);
-  if (p < m) return m - p;
-  if (p > length - m) return length - m - p;
+  if (p < start + m) return start + m - p;
+  if (p > start + length - m) return start + length - m - p;
   return 0;
 }

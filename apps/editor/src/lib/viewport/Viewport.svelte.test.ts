@@ -39,6 +39,10 @@ function setup() {
     setModel() {},
     setBackground() {},
     fit() {},
+    covered: { top: 0, bottom: 0 },
+    setCovered(edge: "top" | "bottom", height: number) {
+      controller.covered[edge] = height;
+    },
     restart: async () => {
       calls.push("restart");
     },
@@ -111,5 +115,25 @@ describe("Viewport", () => {
     cleanups.push(() => outside.remove());
     expect(press(outside, "ArrowLeft", { altKey: true }).defaultPrevented).toBe(false);
     expect(calls).toEqual(["pan 40,0", "pan 0,-200"]);
+  });
+
+  it("tells the controller how much of the bottom edge the view tools cover (T1653)", () => {
+    // 右下の表示の道具の高さを 40px にする (happy-dom は大きさを測らない)
+    const height = vi
+      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("view-tools") ? 40 : 0;
+      });
+    try {
+      const { controller } = setup();
+      // 道具の高さと、道具とビューの下の端の間 (8px)
+      expect(controller.covered.bottom).toBe(48);
+      // 道具を出さない間 (描画できていない) は隠さない
+      controller.status = "loading";
+      flushSync();
+      expect(controller.covered.bottom).toBe(0);
+    } finally {
+      height.mockRestore();
+    }
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
-import { revealPanOf } from "./tools/keys";
+import { revealPanOf, visibleRectOf } from "./tools/keys";
 import { loadErrorText, surfaceFailureText } from "./viewportErrors";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
@@ -135,6 +135,8 @@ export class ViewportController {
   #lighting: string | null = null;
   /** ビューポート要素の大きさ (CSS ピクセル。resize)。 */
   #size: [number, number] | null = null;
+  /** 上と下の端から、重ねた道具が隠す高さ (CSS ピクセル。setCovered)。reveal は残りの見える矩形で判定する。 */
+  #covered = { top: 0, bottom: 0 };
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -403,11 +405,19 @@ export class ViewportController {
   }
 
   /**
-   * CSS ピクセルの点 `(x, y)` がビューの外 (か端の余白の中) にあれば、見える所までずらす (拡大率は変えない。
-   * `]` `[` で選んだ点を見せる。tools/keys.ts の revealPanOf)。中にあれば何もしない。
+   * ビューポートの上 (`top`。左上の道具の並びと説明の帯) か下 (`bottom`。右下の表示の道具) の端から、重ねた道具が隠す
+   * 高さ (CSS ピクセル) を覚える。道具の大きさが変わるたびに測り直して呼ぶ。reveal が見える矩形を求めるのに使う。
+   */
+  setCovered(edge: "top" | "bottom", height: number): void {
+    this.#covered[edge] = height;
+  }
+
+  /**
+   * CSS ピクセルの点 `(x, y)` が見える矩形 (上と下の道具が隠す所を除いたビュー) の外か端の余白の中にあれば、見える所まで
+   * ずらす (拡大率は変えない。`]` `[` で選んだ点を見せる。tools/keys.ts の visibleRectOf・revealPanOf)。中にあれば何もしない。
    */
   reveal(x: number, y: number): void {
-    const delta = this.#size ? revealPanOf([x, y], this.#size) : null;
+    const delta = this.#size ? revealPanOf([x, y], visibleRectOf(this.#size, this.#covered)) : null;
     if (delta) this.panBy(delta[0], delta[1]);
   }
 

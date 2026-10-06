@@ -75,6 +75,27 @@ describe("ToolOverlay mesh edit keys", () => {
     ]);
   });
 
+  it("pans a vertex hidden under a tall strip into view below it (T1653)", () => {
+    // 左上の並び (.strip) の高さを 200px にする (happy-dom は大きさを測らない)
+    const height = vi
+      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("strip") ? 200 : 0;
+      });
+    try {
+      const { controller, selection } = setup();
+      expect(controller.covered.top).toBe(200);
+      controller.size = [400, 300];
+      selection.vertices = { Quad: [1] };
+      // 頂点 2 の画面の位置は (210, 220)。ビュー全体の余白 (48) の内側だが、帯の下の端から 48 より上にある
+      press(document.body, "]");
+      expect(selection.vertices.Quad).toEqual([2]);
+      expect(controller.panBy.mock.calls).toEqual([[0, 200 + 48 - 220]]);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
   it("moves the selected vertices with the arrow keys", async () => {
     const { doc } = setup();
     const event = press(document.body, "ArrowLeft", { shiftKey: true });

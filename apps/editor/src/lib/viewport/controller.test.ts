@@ -183,6 +183,26 @@ describe("ViewportController", () => {
     expect(puppet.view).toEqual([1, 100 + REVEAL_MARGIN, 0]);
   });
 
+  it("reveals a point below the strip covering the top edge (T1653)", async () => {
+    const controller = new ViewportController();
+    const attached = controller.attach(fakeContainer());
+    await settle();
+    const { puppet } = fakePuppet();
+    pending[0]?.resolve(puppet);
+    await attached;
+    controller.resize(400, 300);
+    // ビュー全体では余白の内側の点も、上の 120px を帯が隠すと帯の下の端から余白の所まで下げる
+    controller.reveal(200, 60);
+    expect(puppet.view).toEqual([1, 0, 0]);
+    controller.setCovered("top", 120);
+    controller.reveal(200, 60);
+    expect(puppet.view).toEqual([1, 0, 120 + REVEAL_MARGIN - 60]);
+    // 帯を外せば (ToolOverlay を閉じた) 元の判定に戻る
+    controller.setCovered("top", 0);
+    controller.reveal(200, 60);
+    expect(puppet.view).toEqual([1, 0, 120 + REVEAL_MARGIN - 60]);
+  });
+
   it("keeps the zoom and the pan when the WebPuppet is recreated", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
