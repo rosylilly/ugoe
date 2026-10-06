@@ -437,6 +437,9 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
 - **偽物:** `ViewportController`・`EditorDocument`・`WebPuppet` は偽物 (`FakeController`・`FakeDocument`・`fakePuppet`) を渡します。
   `FakeDocument.apply` は送られたコマンドを `commands` に記録するので、コマンドの列をそのまま比べます。`pending` に約束を入れると、
   送っている間の操作を試せます。バックエンドの座標変換 (`ipc.localToCanvas`・`ipc.canvasToLocal`) は `vi.mock` で恒等写像にします。
+- **wasm:** テストは本物の wasm (`just wasm` の生成物) を読みません。`src/test-setup.ts` が `viewport/wasm` の `loadUgoeWasm` を
+  null を返す偽物にします (生成物があると、部品が読みに行った fetch がテストの片付けで中断され、処理されない rejection で Vitest が落ちるため。T1641)。
+  wasm の型が要るテストは、ファイルの中で偽物を返す `vi.mock` を書き直します (`panels/timeline/timeline-state.test.ts` の `MotionSampler`)。
 - **座標:** happy-dom の `getBoundingClientRect` は 0 を返すので、イベントの `clientX`・`clientY` がそのまま部品の座標 (CSS ピクセル) になります。
   偽のビューの変換 (`TRANSFORM`) は拡大率を 1 以外にして、CSS ピクセルとキャンバス座標の換算も確かめます。
 - **確かめること:** 離したときに送るコマンド (1 つの Undo の単位)、ドラッグ中はプレビューだけで何も送らないこと、`pointercancel` では送らずに
