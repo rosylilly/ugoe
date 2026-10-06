@@ -1,11 +1,11 @@
 ---
 id: T0980
 title: "マニュアル: T1662・T0979 などの後に、エディタのマニュアルの画像の残りを撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs, tests]
 depends_on: []
-assignee:
+assignee: claude-worker-T0980
 ---
 
 # T0980: マニュアル: T1662・T0979 などの後に、エディタのマニュアルの画像の残りを撮り直す

@@ -1,11 +1,11 @@
 ---
 id: T0064
 title: "ui-audit: scrollbar の検査で、帯の端のキーの印 (button.marker・button.diamond) を意図したものとして外す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, apps/editor, docs]
 depends_on: [T0979]
-assignee:
+assignee: claude-worker-T0064
 ---
 
 # T0064: ui-audit: scrollbar の検査で、帯の端のキーの印 (button.marker・button.diamond) を意図したものとして外す
