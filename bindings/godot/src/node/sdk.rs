@@ -312,6 +312,23 @@ impl UgoePuppet2D {
         shown
     }
 
+    /// ポーズのグループごとの表示中の要素のパーツの ID (`docs/spec/motion.md#ポーズ`)。グループごとに 1 つで、並びは wasm の
+    /// `pose_visible_json` (`pose_json` の `groups`。付けた着せ替えのモジュールのグループも入る) と同じ。要素の無いグループは空の文字列。
+    /// `show_pose` の選択はすぐに、モーションのパーツの不透明度のカーブの要求は次の更新の後に変わる (不透明度のフェードの途中でも
+    /// 選ばれた要素を返す)。モデルが無ければ空。
+    #[func]
+    pub fn get_visible_pose_parts(&self) -> PackedStringArray {
+        self.loaded
+            .as_ref()
+            .map(|l| {
+                visible_pose_parts(&l.puppet)
+                    .into_iter()
+                    .map(|part| GString::from(part.unwrap_or_default()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     // --- 目パチ・呼吸・リップシンクと物理の設定の差し替え
 
     /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。省いたフィールドは既定値) で差し替える
@@ -557,6 +574,25 @@ fn physics_json(settings: Option<&PhysicsSettings>) -> GString {
     }
 }
 
+/// ポーズのグループごとの表示中の要素のパーツ (要素の無いグループは `None`)。`ugoe-wasm` の `pose_visible_parts` と同じ並び
+/// (`PosePlayer::visible_parts` は要素の無いグループを飛ばすので、グループと突き合わせる)。
+fn visible_pose_parts(puppet: &ugoe::Puppet) -> Vec<Option<&str>> {
+    let player = puppet.pose();
+    let mut visible = player.visible_parts();
+    player
+        .pose()
+        .groups
+        .iter()
+        .map(|group| {
+            if group.entries.is_empty() {
+                None
+            } else {
+                visible.next().map(|part| part.as_str())
+            }
+        })
+        .collect()
+}
+
 /// 読み込みの警告を GDScript の辞書の配列にする: `{ "code", "warning", ... }`。補足のキーは `LoadWarning::fields`。
 fn warning_dictionaries(warnings: &[LoadWarning]) -> Array<VarDictionary> {
     warnings
@@ -575,4 +611,78 @@ fn warning_dictionaries(warnings: &[LoadWarning]) -> Array<VarDictionary> {
             d
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use ugoe::Puppet;
+    use ugoe::model::fixtures;
+    use ugoe::model::pose::{PoseEntry, PoseGroup};
+    use ugoe::motion::Priority;
+
+    use super::visible_pose_parts;
+
+    const DT: f32 = 1.0 / 60.0;
+
+    /// 表示中の要素は `show_pose` の選択 (すぐ) とモーションの要求 (次の更新の後) の両方に従う。
+    #[test]
+    fn visible_pose_parts_follow_show_pose_and_motions() {
+        let mut puppet = Puppet::new(fixtures::pose_and_effects()).expect("puppet");
+        assert_eq!(visible_pose_parts(&puppet), [Some("ArmA")]);
+
+        assert!(puppet.pose_mut().show(&"ArmB".into()));
+        assert_eq!(visible_pose_parts(&puppet), [Some("ArmB")]);
+        puppet.update(DT);
+        assert_eq!(visible_pose_parts(&puppet), [Some("ArmB")]);
+
+        let motion = ugoe::format::motion_from_json(
+            r#"{
+                "name": "arm_a",
+                "duration": 1.0,
+                "looping": true,
+                "fade_in": 0.0,
+                "fade_out": 0.0,
+                "curves": [{
+                    "target": { "kind": "part_opacity", "id": "ArmA" },
+                    "segments": [
+                        { "type": "start", "p": { "t": 0.0, "v": 1.0 } },
+                        { "type": "linear", "to": { "t": 1.0, "v": 1.0 } }
+                    ]
+                }]
+            }"#,
+        )
+        .expect("motion");
+        assert!(puppet.start_motion(motion, Priority::Normal));
+        assert_eq!(visible_pose_parts(&puppet), [Some("ArmB")]);
+        puppet.update(DT);
+        assert_eq!(visible_pose_parts(&puppet), [Some("ArmA")]);
+    }
+
+    /// 要素の無いグループは `None` で、ほかのグループの並びはずれない。付けたモジュールのグループも入る。
+    #[test]
+    fn visible_pose_parts_keep_empty_groups_and_include_modules() {
+        let mut model = fixtures::pose_and_effects();
+        model.pose.groups.insert(
+            0,
+            PoseGroup {
+                entries: Vec::new(),
+            },
+        );
+        let puppet = Puppet::new(model).expect("puppet");
+        assert_eq!(visible_pose_parts(&puppet), [None, Some("ArmA")]);
+
+        let mut puppet = Puppet::new(fixtures::dress_up_base()).expect("puppet");
+        assert!(visible_pose_parts(&puppet).is_empty());
+        let mut module = fixtures::long_hair_module();
+        module.pose.groups = vec![PoseGroup {
+            entries: vec![PoseEntry {
+                part: "Hair".into(),
+                links: Vec::new(),
+            }],
+        }];
+        puppet.attach_module(Arc::new(module)).expect("attach");
+        assert_eq!(visible_pose_parts(&puppet), [Some("LongHair/Hair")]);
+    }
 }
