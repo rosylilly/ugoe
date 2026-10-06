@@ -1,11 +1,11 @@
 ---
 id: T1645
 title: "エディタ: 新しいモジュールとモジュールの設定のダイアログの決定のボタンを、Button の form で送る形にする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1645
 ---
 
 # T1645: エディタ: 新しいモジュールとモジュールの設定のダイアログの決定のボタンを、Button の form で送る形にする
