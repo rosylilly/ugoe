@@ -638,6 +638,8 @@ function label(m: Motion): string {
                 {@const selected = timeline.selectedKey?.track === key && timeline.selectedKey.t === k.t}
                 <Tooltip text={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}>
                   {#snippet trigger(attrs)}
+                    <!-- 押せる範囲 (24px) を見た目の◆より広げて時刻の位置の中心に置くので、終わりのキーは範囲の端が表の行末の
+                         空き (--ugoe-scrollbar-gap) に出る。◆は空きの中にあるので意図したもの (data-ui-audit-overlay。T0064) -->
                     <button
                       {...mergeAttributes(attrs, {
                         onpointerdown: (e: PointerEvent) => onKeyDown(e, row.target, k, keys),
@@ -647,6 +649,7 @@ function label(m: Motion): string {
                         onpointercancel: () => (drag = null),
                       })}
                       class="diamond"
+                      data-ui-audit-overlay
                       data-shape={k.shape}
                       class:selected
                       style:left="{keyX(row.target, k)}px"

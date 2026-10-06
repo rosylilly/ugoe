@@ -611,8 +611,9 @@
    * (スクロールバーと枠の線を除く))、`items` は文字・押せる部品 ({el, right}。right は切り取られた後の見える右端)。
    * 今縦に送れて (`overflow-y` が auto・scroll で中身が枠より高い)、横には送っていない枠の中 (`inside(frame, item)`) で、
    * 右端が枠の右端から `gap` の中にある部品を {item, frame, room} (room は空き) の列で返す。部品ごとに、いちばん内側の枠で 1 つ。
+   * 意図して枠の端の先へ出したもの (`intentional(frame, item)`。省けば無し) は数えない。
    */
-  function underScrollbar(frames, items, { gap, inside }) {
+  function underScrollbar(frames, items, { gap, inside, intentional = () => false }) {
     const open = frames.filter(
       (f) =>
         scrolls(f.overflowY) &&
@@ -628,6 +629,7 @@
         // 枠は文書の順なので、後に見つかった枠ほど内側
         if (room < gap - SCROLLBAR_GAP_SLACK) hit = { item, frame, room };
       }
+      if (hit && intentional(hit.frame.el, hit.item.el)) continue;
       if (hit) out.push(hit);
     }
     return out;
@@ -701,8 +703,15 @@
         if (getComputedStyle(n).position === "fixed") return false;
       return true;
     };
+    // 押せる範囲を見た目の印より広げて帯の端に置いた印 (エディタのキーの印。T0064) は、部品から枠の手前までの
+    // `data-ui-audit-overlay` の印で外す (重なりの検査と同じ印。見た目の印は空きの中にある)
+    const intentional = (frame, el) => {
+      for (let n = el; n && n !== frame; n = n.parentElement)
+        if (n.hasAttribute("data-ui-audit-overlay")) return true;
+      return false;
+    };
     const name = (el) => describe(el).replace(/ "[^"]*"$/, "");
-    return underScrollbar(frames, items, { gap, inside }).map(
+    return underScrollbar(frames, items, { gap, inside, intentional }).map(
       ({ item, frame, room }) =>
         `${describe(item.el)} is under the overlay scrollbar of ${name(frame.el)} (${room.toFixed(1)}px < ${gap}px)`,
     );

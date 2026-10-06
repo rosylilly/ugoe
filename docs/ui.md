@@ -546,7 +546,7 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   `--ugoe-scrollbar-gap` 以上 (`space-4` との大きい方) 空けます。ボタンの右が中身と決定のボタンの右の端にそろい、変わるのは
   コンパクトの密度の 4px だけで (ゆったりは `space-4` が 16px で変わらない)、送るときだけ空けると窓の高さでボタンが動くためです (T0979)。
   幅を取る形のスクロールバー (ヘッドレスの Chrome・Windows) では、空けた幅はスクロールバーの左に余白として残るだけです。
-  確かめ方: `just ui-audit` の `scrollbar` (今送れる枠の中の文字・押せる部品の右端と枠の右端の空きが `--ugoe-scrollbar-gap` に足りないもの。T0055) と人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
+  確かめ方: `just ui-audit` の `scrollbar` (今送れる枠の中の文字・押せる部品の右端と枠の右端の空きが `--ugoe-scrollbar-gap` に足りないもの。T0055。押せる範囲を見た目より広げて、範囲の端だけが空きに出るキーの印には `data-ui-audit-overlay` を付けて外す。T0064) と人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
   `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることと、`Dialog` の閉じるボタンの右の空きは packages/ui の `tokens.test.ts` (@ugoe/ui の部品の送る枠も見る)。
   一覧が送るときだけ印を付けることは packages/ui の `scrollGap.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
   `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`・`Slider`・`ColorPicker`。

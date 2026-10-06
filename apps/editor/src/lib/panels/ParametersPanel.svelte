@@ -398,8 +398,11 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
               {#each keys as key (key)}
                 <Tooltip text={t("parameters.key.marker", { key })}>
                   {#snippet trigger(attrs)}
+                    <!-- 押せる範囲 (24px) を見た目の◆より広げて値の位置の中心に置くので、帯の端 (最大の値) のキーは範囲の端が
+                         行末の空き (--ugoe-scrollbar-gap) に出る。◆は空きの中にあるので意図したもの (data-ui-audit-overlay。T0064) -->
                     <button
                       {...attrs}
+                      data-ui-audit-overlay
                       class="marker"
                       class:current={key === onKey}
                       style:left={markerLeft(p, key)}

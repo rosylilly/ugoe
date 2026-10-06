@@ -359,6 +359,35 @@ test("重ねて描くスクロールバー: 入れ子の枠では、部品ごと
   assert.deepEqual(underBar([page, panel], [{ el: item, right: 330 }]), []);
 });
 
+test("重ねて描くスクロールバー: 意図して枠の端の先へ出した部品 (data-ui-audit-overlay) は数えない", () => {
+  // エディタのパラメータの最大の値のキーの印 (T0064): 押せる範囲 (24px) の端が帯の端の先に出る
+  const pane = frame("pane");
+  const marker = { name: "marker", frames: [pane.el], overlay: true };
+  const slider = { name: "slider", frames: [pane.el] };
+  const seen = [];
+  const found = underScrollbar(
+    [pane],
+    [
+      { el: marker, right: 288 },
+      { el: slider, right: 296 },
+    ],
+    {
+      gap: 16,
+      inside: (f, el) => el.frames.includes(f),
+      intentional: (f, el) => {
+        seen.push([f.name, el.name]);
+        return el.overlay === true;
+      },
+    },
+  ).map(({ item }) => item.el.name);
+  assert.deepEqual(found, ["slider"]);
+  // 印は、部品の掛かるいちばん内側の枠と部品で問う (掛からない部品には問わない)
+  assert.deepEqual(seen, [
+    ["pane", "marker"],
+    ["pane", "slider"],
+  ]);
+});
+
 test("重ねて描くスクロールバーの下の部品は scrollbar として数え、報告の見出しがある", () => {
   const found = pageFindings(
     {
