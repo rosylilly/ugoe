@@ -1708,6 +1708,22 @@ fn the_listener_checks_requests_and_speaks_websocket() {
     );
 }
 
+/// 止めた待ち受けは、`stop` から戻ったときにはポートを手放している (すぐに同じポートで待ち受け直せる。T0961)。
+#[test]
+fn a_stopped_listener_has_released_its_port() {
+    let studio = studio();
+    for _ in 0..50 {
+        let server = server::Server::start(Arc::clone(&studio), 0).unwrap();
+        let addrs = server.addrs().to_vec();
+        server.stop();
+        for addr in addrs {
+            if let Err(e) = std::net::TcpListener::bind(addr) {
+                panic!("{addr} is still held after stop: {e}");
+            }
+        }
+    }
+}
+
 #[test]
 fn turning_the_api_on_saves_the_choice_and_listens() {
     let dir = Dir::new();

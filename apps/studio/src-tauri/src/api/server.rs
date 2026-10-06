@@ -13,6 +13,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream}
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, TryRecvError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use tungstenite::protocol::frame::CloseFrame;
@@ -204,6 +205,8 @@ pub struct Server {
     stopping: Arc<AtomicBool>,
     /// 束ねたアドレス (止めるときに自分に接続して accept を起こす)。
     addrs: Vec<SocketAddr>,
+    /// accept のスレッド (アドレスと同じ順)。止めるときに終わるのを待つ (待ち受けの口はこのスレッドが持っている)。
+    threads: Vec<JoinHandle<()>>,
 }
 
 impl Server {
@@ -217,23 +220,39 @@ impl Server {
             .map_err(|e| format!("cannot listen on port {port}: {e}"))?
             .port();
         let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, port)).ok();
-        let stopping = Arc::new(AtomicBool::new(false));
         let reading = Arc::new(AtomicUsize::new(0));
-        let mut addrs = Vec::new();
+        let mut server = Self {
+            stopping: Arc::new(AtomicBool::new(false)),
+            addrs: Vec::new(),
+            threads: Vec::new(),
+        };
         for listener in std::iter::once(v4).chain(v6) {
-            let addr = listener
-                .local_addr()
-                .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
-            addrs.push(addr);
+            let addr = match listener.local_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    server.stop();
+                    return Err(format!("cannot listen on port {port}: {e}"));
+                }
+            };
             let studio = Arc::clone(&studio);
-            let stopping = Arc::clone(&stopping);
+            let stopping = Arc::clone(&server.stopping);
             let reading = Arc::clone(&reading);
-            std::thread::Builder::new()
+            let spawned = std::thread::Builder::new()
                 .name(format!("ugoe-studio-api-{addr}"))
-                .spawn(move || accept_loop(&listener, &studio, &stopping, &reading, port))
-                .map_err(|e| e.to_string())?;
+                .spawn(move || accept_loop(&listener, &studio, &stopping, &reading, port));
+            match spawned {
+                Ok(thread) => {
+                    server.addrs.push(addr);
+                    server.threads.push(thread);
+                }
+                Err(e) => {
+                    // 先に始めたスレッドが待ち受けたまま残らないように止める。
+                    server.stop();
+                    return Err(e.to_string());
+                }
+            }
         }
-        Ok(Self { stopping, addrs })
+        Ok(server)
     }
 
     /// 束ねたアドレス。
@@ -242,11 +261,19 @@ impl Server {
     }
 
     /// 待ち受けをやめる (今の接続は `Studio::sync_listener` が閉じる)。
+    ///
+    /// accept のスレッドが終わるまで待つので、戻ったときにはポートを手放している (すぐに同じポートで待ち受け直せる。
+    /// 待たずに戻ると、負荷が高いときに次の待ち受けが「使用中」で失敗する。T0961)。
     pub fn stop(self) {
         self.stopping.store(true, Ordering::SeqCst);
         for addr in &self.addrs {
-            // accept で待っているスレッドを起こす。
+            // accept で待っているスレッドを起こす。起こせなくても (接続の列が埋まっている) 列の接続で accept は戻る。
             let _ = TcpStream::connect_timeout(addr, Duration::from_millis(200));
+        }
+        for thread in self.threads {
+            // accept のスレッドは accept から戻るたびに止めるかを確かめ、API の錠を取らないので、錠を持ったまま
+            // (`Studio::sync_listener`) 待っても行き詰まらない。
+            let _ = thread.join();
         }
     }
 }
