@@ -158,6 +158,7 @@ godot-check *args:
 
 # 配布物の適合テスト (tests/conformance/README.md): C ABI・wasm (npm パッケージ、WebGL2 と WebGPU)・Unity の C# の層・Godot の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
 # `<ugoe-avatar>` (avatar) は作成・切り離し・コンテキストの喪失からの作り直しのシナリオを、queries は `*_json()` の出力のキーと TS の型を確かめる。
+# example は見本 (bindings/web/examples/basic) の MediaPipe の利用状況の送信がネットワークに出ないことを確かめる。
 # C コンパイラ・Chrome・wasm-bindgen-cli・GPU (無ければ Mesa) が要るので `just ci` には含めない (CI の conformance ジョブで実行する)。
 # 引数は run.mjs に渡す: `just conformance --only c`、`just conformance --only wasm-webgpu`、`just conformance --only avatar,queries`
 conformance *args:

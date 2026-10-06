@@ -196,7 +196,9 @@ MediaPipe (`@mediapipe/tasks-vision`。1.0.1 で確かめた) は、映像や画
 
 ugoe のアプリ (エディタ・ビューア・スタジオ) は両方を使っています ([packages/face-tracking](../../packages/face-tracking/README.md#利用状況の送信-t0943))。
 見本 (`examples/basic`) の「camera (MediaPipe)」も、Face Landmarker を作る前に上と同じように `fetch` を包むので送りません
-(断った回数は見本のページの `window.ugoeExample.usageLogsRefused`)。
+(断った回数は見本のページの `window.ugoeExample.usageLogsRefused`)。送り先への要求がネットワークに出ないことは、適合テストの
+`just conformance --only example` が、ヘッドレスの Chrome の偽のカメラで見本を開いて確かめます (CI の `conformance` ジョブ。
+[tests/conformance/README.md](../../tests/conformance/README.md#見本の-mediapipe-の利用状況の送信))。
 
 ### 平滑化とキャリブレーション
 

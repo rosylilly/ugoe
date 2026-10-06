@@ -333,6 +333,13 @@ just conformance --only c   # C ABI だけ
 playwright を使わずに WebSocket で送る)。wasm の panic があればそのシナリオは失敗します。シナリオの一覧は
 [tests/conformance/README.md](../tests/conformance/README.md#ugoe-avatar-のシナリオ)。
 
+見本 (`bindings/web/examples/basic`) の「camera (MediaPipe)」が Face Landmarker を作った後に、MediaPipe の利用状況の送信
+(`odml.pa.googleapis.com`) がネットワークに出ないことは `example` で確かめます (`just conformance --only example`。T0487)。
+ヘッドレスの Chrome の偽のカメラで見本を開き、CDP の `Network.requestWillBeSent` で要求を記録します。MediaPipe とモデルは CDP の
+`Fetch` で手元のファイル (packages/face-tracking の `@mediapipe/tasks-vision` と、`mediapipe-assets.mjs` が取得したモデル) から応え、
+送信の間隔 (60 秒) は 1 秒に縮めます。見本の包みを外した対照でも開き、要求が記録されることも確かめます。CI では `conformance` ジョブの
+`just conformance` で走ります。詳細は [tests/conformance/README.md](../tests/conformance/README.md#見本の-mediapipe-の利用状況の送信)。
+
 ## PuppetSurface のブラウザのテスト
 
 エディタのビューポートと Player が共有する `PuppetSurface` (`packages/player/src/surface.ts`。[docs/ui.md](ui.md#webpuppet-の寿命)) と、

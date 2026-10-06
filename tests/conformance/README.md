@@ -12,6 +12,7 @@
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
 | `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
 | 問い合わせの JSON (npm パッケージ `@ugoe/runtime` の `*_json()`、`queries`) | 参照とは比べない。出力のキーを、パッケージの型のキーの一覧と比べる (下の「問い合わせの JSON のキー」) | なし (ヘッドレスの Chrome の WebGL2 で `WebPuppet` を作るだけ) | [`web/queries.js`](web/queries.js) |
+| 見本の MediaPipe の利用状況の送信 (`bindings/web/examples/basic`、`example`) | 参照とは比べない。「camera (MediaPipe)」で Face Landmarker を作った後に、送り先 (`odml.pa.googleapis.com`) への要求がネットワークに出ないか (下の「見本の MediaPipe の利用状況の送信」) | なし (ヘッドレスの Chrome の WebGL2 と偽のカメラ) | [`example.mjs`](example.mjs) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値。テクスチャを持つバンドルのケースはテクスチャのデコードの結果 (`textures`) も | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
 | Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。`--godot-renderer forward_plus` で Forward+ (RenderingDevice の Vulkan。GPU が無ければ lavapipe)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
@@ -23,6 +24,7 @@ just conformance --only c                 # C ABI だけ (Chrome も GPU も要�
 just conformance --only wasm,wasm-webgpu  # wasm だけ (WebGL2 と WebGPU)
 just conformance --only avatar            # <ugoe-avatar> のシナリオだけ (参照を作らないので cargo のビルドも要らない)
 just conformance --only queries           # 問い合わせの JSON のキーだけ (参照を作らないので cargo のビルドも要らない)
+just conformance --only example           # 見本の MediaPipe の利用状況の送信だけ (pnpm install 済みの packages/face-tracking と、モデルの取得が要る)
 just conformance --only unity             # Unity の C# の層だけ (dotnet と C ABI のライブラリ)
 just conformance --only godot             # Godot だけ (= just godot-check の比べ合わせ)
 just conformance --only godot --godot-renderer forward_plus   # Godot を Forward+ (Vulkan) で描く (既定は compatibility = opengl3)
@@ -42,6 +44,7 @@ target/conformance/
   wasm-webgpu/                 wasm (WebGPU) の結果 (同じ形)
   avatar/avatar.json           <ugoe-avatar> のシナリオごとの結果 ("ok" か失敗の理由)。chrome.log
   queries/queries.json         問い合わせの JSON のキーの項目ごとの結果 ("ok" か食い違いの一覧) と、形ごとに比べた数。chrome.log
+  example/example.json         見本を開いた 2 回 (guarded・unguarded) の結果と、記録した送り先への要求。chrome-<guarded|unguarded>.log。
   unity/<ケース>.json           Unity の C# の層の結果
   godot/<ケース>.json .png      Godot の結果。skipped.json (扱わなかったケースと理由。今は空)
 ```
@@ -58,7 +61,7 @@ target/conformance/
   エンジンの道具は重く、C ABI と wasm だけを確かめたい人や CI のジョブが多いため。
 - `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
 
-CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオと問い合わせの JSON のキーも含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
+CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオ・問い合わせの JSON のキー・見本の MediaPipe の利用状況の送信も含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
 `godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を、続けて `--renderer forward_plus` で
 Forward+ (lavapipe) でも実行する (T0467)。落ちたら `target/conformance` を成果物として残す。
 このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。
@@ -275,6 +278,36 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 ### Unreal (`bindings/unreal`、T0407)
 
 まだ無い。できたら Unity と同じく、エンジンに依存しない層があればそれで頂点を、エンジンで描けるなら画像を比べる。
+
+## 見本の MediaPipe の利用状況の送信
+
+`example` は、npm パッケージの見本 ([`bindings/web/examples/basic`](../../bindings/web/examples/basic/index.html)) の「camera (MediaPipe)」が
+Face Landmarker を作った (`FaceLandmarker.createFromOptions` の) 後に、MediaPipe の利用状況の送信 (`https://odml.pa.googleapis.com/v1/log`。
+[bindings/web/README.md](../../bindings/web/README.md#mediapipe-の利用状況の送信)) がネットワークに出ないことを確かめる (T0487)。
+見本は `refuseMediaPipeUsageLog()` で `fetch` を包み、送り先への要求を断る (T0947)。[`example.mjs`](example.mjs) が動かす。
+
+- **配り方:** 見本は書き換えずに `run.mjs` (example.mjs) のサーバーが配る。import map の `./node_modules/@ugoe/runtime/` は bindings/web
+  (`dist/`)、`/samples/` は `assets/samples` を指す (tgz を作らない)。`?backend=webgl2` で開く。
+- **ネットワークに頼らない:** 見本が CDN から読む MediaPipe (jsdelivr の `@mediapipe/tasks-vision`) とモデル (storage.googleapis.com) は、
+  CDP の `Fetch.enable` (`https://*`) で止めて手元のファイルで応える。MediaPipe は packages/face-tracking が入れている
+  `@mediapipe/tasks-vision` (見本の `MEDIAPIPE` の版と違えば止まる)、モデルは packages/face-tracking の `mediapipe-assets.mjs` が取得して
+  SHA-256 を確かめたもの (`target/conformance-mediapipe/`。`target/conformance/` は毎回消すのでその外に置き、取得済みで SHA-256 が合えば取り直さない)。ほかの外への要求は断り、警告に出す。
+- **カメラ:** Chrome の偽の映像 (`--use-fake-device-for-media-stream`・`--use-fake-ui-for-media-stream`)。顔は映らないが、
+  `detectForVideo` は動く (見本の `cameraFrames` が 1 以上になるまで待つ)。
+- **ネットワークの記録:** ページに `Target.attachToTarget` (`flatten`) で繋ぎ、`Network.enable` の `Network.requestWillBeSent` で
+  ページが出した要求をすべて記録する (Fetch で止めた要求も記録される)。`fetch` の包みが断った要求はネットワークの層に届かないので
+  記録されない。送り先への要求が 1 件でもあれば失敗。
+- **時間を縮める:** MediaPipe は Landmarker を作ると、60 秒ごとの `setInterval` で送る (作ったときの記録が溜まっているので、最初の間隔で送る)。
+  ページを開く前に (`Page.addScriptToEvaluateOnNewDocument`) 60000 ミリ秒の `setInterval` を 1 秒に縮める。
+- **2 回開く:**
+  - `guarded` (見本のまま): 見本が送信を断った回数 (`window.ugoeExample.usageLogsRefused`) が 1 以上になるのを待ち (送ろうとしたことの確かめ)、
+    さらに 3 秒待って、送り先への要求が記録されていないことを確かめる。
+  - `unguarded` (対照): `refuseMediaPipeUsageLog()` は `fetch` がすでに包んだものなら何もしないので、ページを開く前に `fetch` に包んだ印
+    (`refusesMediaPipeUsageLog`) を付けて包みを外し、送り先への要求が記録されることを確かめる (このテストが送信を見つけられることの確かめ)。
+    要求は Fetch で止める (`BlockedByClient`) ので、実際には Google に送らない (手元では 1 回の送信で 2 件記録された)。
+- 見本の `refuseMediaPipeUsageLog()` の呼び出しを外すと `guarded` が落ちる (T0487 で確かめた)。
+- `@mediapipe/tasks-vision` の版を上げて送り方が変わったこと (送信の経路・間隔) は、packages/face-tracking の
+  `mediapipe-bundle.test.ts` (T0947) が見る。ここでは `guarded` で断った回数が 0 のまま 20 秒たつと落ちる。
 
 ## 確かめていないこと・制限
 

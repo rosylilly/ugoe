@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 配布物の適合テストを実行する (`just conformance`。tests/conformance/README.md)。
 //
-//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,queries,unity,godot] [--cases A,B] [--out DIR]
+//   node tests/conformance/run.mjs [--only c,wasm,wasm-webgpu,avatar,queries,example,unity,godot] [--cases A,B] [--out DIR]
 //                                  [--no-web-build] [--no-godot-build]
 //                                  [--godot-renderer compatibility|forward_plus]
 //
@@ -12,6 +12,8 @@
 //    `backend` の変更・コンテキストの喪失と GPU プロセスの喪失からの作り直し (復元の時間切れと諦めも) のシナリオを確かめる
 //    (web/avatar.js。参照とは比べない)。
 //    queries: 同じパッケージの `*_json()` の出力のキーを、パッケージの型のキーの一覧と比べる (web/queries.js。参照とは比べない)
+//    example: 見本 (bindings/web/examples/basic) の「camera (MediaPipe)」で Face Landmarker を作った後に、MediaPipe の
+//    利用状況の送信がネットワークに出ないことを確かめる (example.mjs。参照とは比べない)
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
 // 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
 //
@@ -35,6 +37,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { exportMbxPath } from "../../scripts/lib/mbx.mjs";
+import { browserCdp } from "./cdp.mjs";
+import { runExample } from "./example.mjs";
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
 exportMbxPath();
@@ -44,11 +48,11 @@ const root = resolve(here, "..", "..");
 const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 const exe = (name) => join(target, "debug", process.platform === "win32" ? `${name}.exe` : name);
 
-const BINDINGS = ["c", "wasm", "wasm-webgpu", "avatar", "queries", "unity", "godot"];
+const BINDINGS = ["c", "wasm", "wasm-webgpu", "avatar", "queries", "example", "unity", "godot"];
 /** ヘッドレスの Chrome と npm パッケージ (bindings/web/dist) で動かすバインディング。 */
-const WEB = ["wasm", "wasm-webgpu", "avatar", "queries"];
+const WEB = ["wasm", "wasm-webgpu", "avatar", "queries", "example"];
 /** 参照 (計画・評価の結果・画像) と比べないバインディング (シナリオの成否だけを見る)。 */
-const NO_REFERENCE = new Set(["avatar", "queries"]);
+const NO_REFERENCE = new Set(["avatar", "queries", "example"]);
 /** `--only` を付けないとき、道具が無ければ飛ばすバインディング。 */
 const OPTIONAL = new Set(["unity", "godot"]);
 /** 画像を比べるバインディング。 */
@@ -293,6 +297,15 @@ if (web) {
     mkdirSync(join(out, "queries"), { recursive: true });
     results.queries = await runWeb(dist, "queries", "webgl2", "queries.html");
   }
+  // 見本の MediaPipe の利用状況の送信 (T0487)
+  if (only.has("example")) {
+    results.example = await runExample({
+      chrome,
+      root,
+      out: join(out, "example"),
+      cache: join(target, "conformance-mediapipe"),
+    });
+  }
 }
 
 // --- 4. Unity (Runtime/Core を dotnet で) ---
@@ -506,57 +519,6 @@ async function runWeb(dist, binding, backend, page) {
     `${binding} (${backend}): passed ${result.total - result.failed} of ${result.total} ${unit}`,
   );
   return result.failed === 0;
-}
-
-/**
- * `--remote-debugging-port=0` で起動した Chrome のブラウザの CDP に WebSocket で繋ぎ、命令を送るもの。最初の `send` で
- * プロファイルの DevToolsActivePort (1 行目がポート、2 行目がブラウザの口のパス) を読んで繋ぐ。
- */
-function browserCdp(profile) {
-  let connection = null;
-  let id = 0;
-  const pending = new Map();
-  const connect = async () => {
-    const file = join(profile, "DevToolsActivePort");
-    for (let i = 0; !existsSync(file); i++) {
-      if (i >= 100) throw new Error("Chrome did not write DevToolsActivePort");
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    const [port, path] = readFileSync(file, "utf8").split("\n");
-    const socket = new WebSocket(`ws://127.0.0.1:${port.trim()}${path.trim()}`);
-    await new Promise((resolve, reject) => {
-      socket.addEventListener("open", resolve, { once: true });
-      socket.addEventListener("error", () => reject(new Error("could not connect to CDP")), {
-        once: true,
-      });
-    });
-    socket.addEventListener("message", (e) => {
-      const message = JSON.parse(String(e.data));
-      const request = pending.get(message.id);
-      if (!request) return;
-      pending.delete(message.id);
-      if (message.error) request.reject(new Error(`CDP: ${message.error.message}`));
-      else request.resolve(message.result);
-    });
-    socket.addEventListener("close", () => {
-      for (const request of pending.values()) request.reject(new Error("CDP was closed"));
-      pending.clear();
-    });
-    return socket;
-  };
-  return {
-    async send(method, params = {}) {
-      connection ??= connect();
-      const socket = await connection;
-      const request = ++id;
-      const result = new Promise((resolve, reject) => pending.set(request, { resolve, reject }));
-      socket.send(JSON.stringify({ id: request, method, params }));
-      return result;
-    },
-    close() {
-      connection?.then((socket) => socket.close()).catch(() => {});
-    },
-  };
 }
 
 /** 見つかった Chrome の名前。無ければ null。 */
