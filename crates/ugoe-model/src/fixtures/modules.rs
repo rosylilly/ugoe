@@ -14,9 +14,10 @@ use crate::physics::{
     ColliderShape, NormalizationRange, PhysicsBlend, PhysicsCollider, PhysicsInput,
     PhysicsNormalization, PhysicsOutput, PhysicsParticle, PhysicsRig, PhysicsSource, PhysicsTarget,
 };
+use crate::pose::{PoseEntry, PoseGroup};
 use crate::{KeyformGrid, Model, SCHEMA_VERSION, TextureRef, standard};
 
-/// スロット `Hair` と `Outfit` を公開する本体。[`long_hair_module`] と [`dress_module`] を取り付ける。
+/// スロット `Hair` と `Outfit` を公開する本体。[`long_hair_module`] と [`dress_module`] (または [`jacket_module`]) を取り付ける。
 ///
 /// - パラメータ: `AngleX` (標準)、`HairFront` (標準)、`BodySway` (0..1、`Outfit` が公開)、
 ///   `Secret` (0..1、どのスロットも公開しない)。
@@ -270,5 +271,56 @@ pub fn dress_module() -> Module {
         }],
         physics: ModulePhysics::default(),
         pose: ModulePose::default(),
+    }
+}
+
+/// スロット `Outfit` に取り付ける、ポーズのグループを持つモジュール `Jacket` ([`dress_module`] とは同じスロットなので一緒に付けられない)。
+///
+/// 着せ替えの直後 (モジュールのポーズのグループが現れたとき) に、選んだ要素をフェードせずに出すことを確かめるためのもの
+/// (T0850)。
+///
+/// - パーツ `Closed` と `Open` (どちらも不透明度 1。合成で `Jacket/Closed`・`Jacket/Open` になり、本体の `Body` の子になる)。
+/// - メッシュ `ClosedMesh` (パーツ `Closed`、UV `(0,0)`〜`(1,1)`) と `OpenMesh` (パーツ `Open`、UV `(0,0)`〜`(0.5,1)`)。
+///   どちらも親なし (= `Torso` の子)、描画順 500 (合成で 350 になる)。テクスチャはモジュールの 0 番 (`jacket`)。
+/// - ポーズ: グループ 1 つ (`Closed`, `Open` の順。最初は `Closed` を表示する)。クロスフェードの時間は本体のもの。
+pub fn jacket_module() -> Module {
+    let opaque = || KeyformGrid::constant(PartKeyform { opacity: 1.0 });
+    let mesh = |id: &str, part: &str, right: f32| {
+        quad_mesh(
+            id,
+            part,
+            None,
+            KeyformGrid::constant(mesh_keyform(rect(0.0, 0.0, right, 1.0), 1.0, 500.0)),
+        )
+    };
+    let entry = |part: &str| PoseEntry {
+        part: part.into(),
+        links: Vec::new(),
+    };
+    Module {
+        schema_version: SCHEMA_VERSION,
+        name: "Jacket".into(),
+        slot: "Outfit".into(),
+        requires: ModuleRequirements::default(),
+        parts: vec![part("Closed", None, opaque()), part("Open", None, opaque())],
+        deformers: Vec::new(),
+        meshes: vec![
+            mesh("ClosedMesh", "Closed", 1.0),
+            mesh("OpenMesh", "Open", 0.5),
+        ],
+        glues: Vec::new(),
+        textures: vec![TextureRef {
+            name: "jacket".into(),
+            width: 1,
+            height: 1,
+            normal_map: None,
+        }],
+        physics: ModulePhysics::default(),
+        pose: ModulePose {
+            groups: vec![PoseGroup {
+                entries: vec![entry("Closed"), entry("Open")],
+            }],
+            links: Vec::new(),
+        },
     }
 }

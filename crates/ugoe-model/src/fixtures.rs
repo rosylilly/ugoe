@@ -25,7 +25,7 @@ use crate::{Canvas, Effects, Model, ModelMeta, Pose, SCHEMA_VERSION, TextureRef}
 
 mod modules;
 
-pub use modules::{dress_module, dress_up_base, long_hair_module};
+pub use modules::{dress_module, dress_up_base, jacket_module, long_hair_module};
 
 /// 256×256 キャンバスに四角形メッシュ 1 枚。
 /// パラメータ `X` (-1..1) で四角形が左右に 64px 平行移動する。

@@ -6,12 +6,15 @@
 //! ポーズのモデルでは、指揮役がパーツを切り替えるモーションを再生する (受け手がモーションのパーツの不透明度のカーブを当てることの確かめ。T0135)。
 //! 受け手の描画の頻度に依らないこと (まとめて適用してから比べても同じ) も確かめる。
 //! シーンのポーズの要素を替えた出し直し (同じモデルのままはフェード、読み直しはフェードせずに) で、指揮役と受け手のパーツの
-//! 不透明度が揃うことも確かめる (T0844)。
+//! 不透明度が揃うことも確かめる (T0844)。着せ替えの直後 (モジュールのポーズのグループが現れた・組が変わった) も同じ (T0850)。
 #![allow(clippy::unwrap_used)]
+
+use std::sync::Arc;
 
 use ugoe::Puppet;
 use ugoe::format::Bundle;
 use ugoe::model::effects::{Breath, BreathParameter, LipSync};
+use ugoe::model::module::Module;
 use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{Model, fixtures};
@@ -326,20 +329,31 @@ fn pose_shape(puppet: &Puppet) -> Vec<f32> {
 }
 
 /// 仮想カメラの受け手 (`virtual_camera.rs` の `Feed::set_scene`) と同じ規則でシーンの通知を受ける: モデルの版が変わったら
-/// 読み直し、そうでなければ続ける。読み直し・付け直しの直後だけポーズの要素をフェードせずに表示させる。
+/// 読み直して `modules` を付け、モジュールの版が変わったら付け直し、そうでなければ続ける。
+/// 読み直し・付け直しの直後だけポーズの要素をフェードせずに表示させる。
 fn receive_scene(
     follower: &mut Follower,
     followed: &mut Option<(u32, u32)>,
     scene: &Scene,
     source: &Bundle,
+    modules: &[Arc<Module>],
 ) {
     let reloaded = match *followed {
-        Some((model, modules)) if model == scene.model_revision => {
+        Some((model, followed_modules)) if model == scene.model_revision => {
+            let dressed = followed_modules != scene.modules_revision;
+            if dressed {
+                let puppet = follower.puppet_mut().unwrap();
+                puppet.set_modules(modules.to_vec()).unwrap();
+            }
             follower.continue_scene(scene.revision);
-            modules != scene.modules_revision
+            dressed
         }
         _ => {
-            follower.set_scene(scene.revision, single(source));
+            let mut puppet = single(source);
+            if !modules.is_empty() {
+                puppet.set_modules(modules.to_vec()).unwrap();
+            }
+            follower.set_scene(scene.revision, puppet);
             true
         }
     };
@@ -390,7 +404,7 @@ fn pose_switches_of_the_scene_match_the_conductor() {
         };
         if let Some((model, modules, look)) = switch {
             let scene = conductor.present(model, modules, look).unwrap().clone();
-            receive_scene(&mut follower, &mut followed, &scene, &source);
+            receive_scene(&mut follower, &mut followed, &scene, &source, &[]);
         }
         let sent = conductor.tick(dt_at(frame)).unwrap();
         let sent = Frame::decode(&sent.encode()).unwrap();
@@ -413,5 +427,94 @@ fn pose_switches_of_the_scene_match_the_conductor() {
         faded |= (30..80).contains(&frame) && a > 0.0 && a < 1.0;
     }
     // 同じモデルのままの切り替えは実際にフェードしている (上の検査が空振りしていない)。
+    assert!(faded);
+}
+
+/// 着せ替えの直後のポーズの切り替えでも、指揮役と受け手のポーズの不透明度と形が各フレームで揃う (T0850)。
+/// モジュールを着せた・組を替えたシーンは選んだ要素からフェードせずに始め、同じ組のままの選び直しはフェードする。
+#[test]
+fn pose_switches_right_after_dressing_up_match_the_conductor() {
+    let source = bundle(&fixtures::dress_up_base(), None);
+    let model = assemble(
+        NewModel {
+            name: "dress_up.ugoe".into(),
+            bundle: source.clone(),
+        },
+        &[],
+    )
+    .unwrap();
+    let jacket = vec![Arc::new(fixtures::jacket_module())];
+    let with_hair = vec![
+        Arc::new(fixtures::long_hair_module()),
+        Arc::new(fixtures::jacket_module()),
+    ];
+    let look = |part: &str| Look {
+        pose: vec![part.into()],
+        ..Look::default()
+    };
+    let opacity = |puppet: &Puppet, id: &str| {
+        puppet
+            .pose()
+            .opacities()
+            .find(|(part, _)| *part == id)
+            .map(|(_, o)| o)
+            .unwrap()
+    };
+    let mut model = Some(model);
+    let mut conductor = Conductor::new();
+    let mut follower = Follower::new();
+    let mut followed = None;
+    // 指揮役に着せている組 (受け手も同じ組を付ける)。
+    let mut worn = Vec::new();
+    let mut faded = false;
+    for frame in 0..120 {
+        let switch = match frame {
+            // モジュールの無い本体を読む (ポーズのグループは無い)。
+            0 => Some((model.take(), Some(Vec::new()), Look::default())),
+            // 着せる: 選んだ要素 (Open) から始める。
+            20 => Some((None, Some(jacket.clone()), look("Jacket/Open"))),
+            // 同じ組のまま選び直す: フェードで切り替える。
+            50 => Some((None, None, look("Jacket/Closed"))),
+            // 組を替える (髪を足す): 選んだ要素 (Open) からフェードせずに始める。
+            90 => Some((None, Some(with_hair.clone()), look("Jacket/Open"))),
+            _ => None,
+        };
+        if let Some((model, modules, look)) = switch {
+            if let Some(modules) = &modules {
+                worn.clone_from(modules);
+            }
+            let scene = conductor.present(model, modules, look).unwrap().clone();
+            receive_scene(&mut follower, &mut followed, &scene, &source, &worn);
+        }
+        let sent = conductor.tick(dt_at(frame)).unwrap();
+        let sent = Frame::decode(&sent.encode()).unwrap();
+        assert_eq!(
+            follower.receive(&sent),
+            Ok(Received::Applied),
+            "frame {frame}"
+        );
+        let puppet = follower.puppet().unwrap();
+        let expected = conductor.perform(|_, conducted| pose_shape(conducted.unwrap()));
+        assert_close(&pose_shape(puppet), &expected, &format!("frame {frame}"));
+        if frame == 20 || frame == 90 {
+            assert_eq!(
+                (
+                    opacity(puppet, "Jacket/Closed"),
+                    opacity(puppet, "Jacket/Open")
+                ),
+                (0.0, 1.0),
+                "frame {frame}"
+            );
+        }
+        if frame == 89 {
+            // 組を替える直前は Closed に切り替わり終えている (90 で Open に戻るのが目に見える)。
+            assert_eq!(opacity(puppet, "Jacket/Closed"), 1.0, "frame {frame}");
+        }
+        if (50..90).contains(&frame) {
+            let closed = opacity(puppet, "Jacket/Closed");
+            faded |= closed > 0.0 && closed < 1.0;
+        }
+    }
+    // 同じ組のままの切り替えは実際にフェードしている (上の検査が空振りしていない)。
     assert!(faded);
 }

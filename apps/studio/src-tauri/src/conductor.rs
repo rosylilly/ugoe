@@ -793,6 +793,70 @@ mod tests {
         );
     }
 
+    /// 着せ替えの直後 (モジュールのポーズのグループが現れた・組が変わった) のシーンは、選んだ要素からフェードせずに始め、
+    /// 同じ組のままの切り替えはフェードする (T0850)。
+    #[test]
+    fn a_dressed_scene_shows_the_modules_pose_without_a_fade() {
+        let opacity = |conductor: &Conductor, id: &str| {
+            let pose = conductor.puppet.as_ref().unwrap().pose();
+            pose.opacities()
+                .find(|(part, _)| *part == id)
+                .map(|(_, o)| o)
+                .unwrap()
+        };
+        let jacket = |conductor: &Conductor| {
+            (
+                opacity(conductor, "Jacket/Closed"),
+                opacity(conductor, "Jacket/Open"),
+            )
+        };
+        let look = |part: &str| Look {
+            pose: vec![part.into()],
+            ..Look::default()
+        };
+        let model = assemble(
+            NewModel {
+                name: "dress_up.ugoe".into(),
+                bundle: dress_up(),
+            },
+            &[],
+        )
+        .unwrap();
+        let mut conductor = Conductor::new();
+        conductor
+            .present(Some(model), None, Look::default())
+            .unwrap();
+        // モジュールを着せる: 選んだ要素 (Open) がすぐに出る。
+        let scene = conductor
+            .present(
+                None,
+                Some(vec![Arc::new(fixtures::jacket_module())]),
+                look("Jacket/Open"),
+            )
+            .unwrap();
+        assert_eq!(scene.modules_revision, scene.revision);
+        assert_eq!(scene.look.pose, ["Jacket/Open"]);
+        assert_eq!(jacket(&conductor), (0.0, 1.0));
+        conductor.tick(1.0 / 60.0).unwrap();
+        assert_eq!(jacket(&conductor), (0.0, 1.0));
+        // 同じ組のまま: 次の刻みからフェードで切り替わる。
+        conductor
+            .present(None, None, look("Jacket/Closed"))
+            .unwrap();
+        conductor.tick(1.0 / 60.0).unwrap();
+        let (fading, _) = jacket(&conductor);
+        assert!(fading > 0.0 && fading < 1.0, "{fading}");
+        // 組を替える (ほかのモジュールを足す): フェードの途中でも、すぐに選んだ要素になる。
+        let modules = vec![
+            Arc::new(fixtures::long_hair_module()),
+            Arc::new(fixtures::jacket_module()),
+        ];
+        conductor
+            .present(None, Some(modules), look("Jacket/Open"))
+            .unwrap();
+        assert_eq!(jacket(&conductor), (0.0, 1.0));
+    }
+
     #[test]
     fn a_failed_switch_changes_nothing() {
         let mut conductor = Conductor::new();
