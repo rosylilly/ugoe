@@ -1,11 +1,11 @@
 ---
 id: T1655
 title: "エディタ: 空のプロジェクトでビューポートの「Screenshot」を押せないようにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1655
 ---
 
 # T1655: エディタ: 空のプロジェクトでビューポートの「Screenshot」を押せないようにする

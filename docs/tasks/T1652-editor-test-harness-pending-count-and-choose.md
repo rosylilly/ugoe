@@ -1,11 +1,11 @@
 ---
 id: T1652
 title: "エディタ: 部品のテストの FakeDocument に送っている数を持たせ、Select を選ぶ道具を harness にまとめる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor]
 depends_on: [T1651]
-assignee:
+assignee: claude-worker-T1652
 ---
 
 # T1652: エディタ: 部品のテストの FakeDocument に送っている数を持たせ、Select を選ぶ道具を harness にまとめる

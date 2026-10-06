@@ -1,11 +1,11 @@
 ---
 id: T0047
 title: "ui-audit: 偽のホストの見本 (スタジオのポーズのグループ・プロファイルの拡張子・AI の提案の種類) を本物にそろえる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0045]
-assignee:
+assignee: claude-worker-T0047
 ---
 
 # T0047: ui-audit: 偽のホストの見本 (スタジオのポーズのグループ・プロファイルの拡張子・AI の提案の種類) を本物にそろえる
