@@ -153,6 +153,22 @@ function variants(app, quickRun) {
       dpr: 1,
     });
   }
+  if (!quickRun && APPS[app].xwide) {
+    // 1600px ほどの広い窓 (ビューアの 2 列の右の列・スタジオの中央の列の伸び方を撮る。T0952)
+    for (const [theme, lang] of [
+      ["light", "en"],
+      ["dark", "ja"],
+    ]) {
+      list.push({
+        name: `${lang}-${theme}-xwide`,
+        theme,
+        lang,
+        width: "xwide",
+        size: APPS[app].xwide,
+        dpr: 1,
+      });
+    }
+  }
   if (!quickRun) {
     list.push({
       name: "ja-light-wide-dpr2",
@@ -238,7 +254,7 @@ for (const app of only) {
         const r = await auditScene(page, { lang: v.lang });
         scenes.push({ name: full, findings: r.findings, stats: r.stats });
         console.log(
-          `  ${full}: ${r.findings.length} finding(s), text ${r.stats.textChecked} checked / ${r.stats.textUnmeasured} unmeasured`,
+          `  ${full}: ${r.findings.length} finding(s), text ${r.stats.textChecked} checked / ${r.stats.textByPixels} by pixels / ${r.stats.textUnmeasured} unmeasured`,
         );
       },
     };

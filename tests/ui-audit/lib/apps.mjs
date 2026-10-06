@@ -77,6 +77,7 @@ async function scrollToTop(page) {
  * アプリの定義。
  * - `wide`・`narrow`: 広い幅・狭い幅の窓の大きさ (CSS px)。狭い幅は docs/ui.md#そのほか の下限。
  * - `half` (省ける): 画面の半分に置いたときの窓の大きさ。ライトの英語で 1 組だけ撮る (`en-light-half`)。
+ * - `xwide` (省ける): 1600px ほどの広い窓。ライトの英語とダークの日本語の 2 組を撮る (`en-light-xwide`・`ja-dark-xwide`)。
  * - `wasm`: `just wasm` の出力先。`package`: pnpm のパッケージ。
  * - `setup(page, ctx)`: 読み込む前の用意 (偽のホスト)。`load(page, ctx)`: 開いて、空の状態を撮り、モデルを読む。
  * - `extras(page, ctx)`: モデルを読んだ後の場面 (ダイアログなど)。
@@ -205,6 +206,8 @@ export const APPS = {
     wasm: "apps/viewer/src/lib/wasm/generated",
     wide: [1280, 800],
     narrow: [360, 740],
+    // 右の列を 2 列に並べる幅 (1200px 以上。apps/viewer/README.md) で、ビューポートがさらに広がったとき
+    xwide: [1600, 900],
     async setup() {},
     async load(page, ctx) {
       await page.goto(`${ctx.url}/`);
@@ -267,6 +270,8 @@ export const APPS = {
     narrow: [360, 740],
     // 1920 の画面の半分に置いた操作ウィンドウ (列の並びが 3 列から 2 列 + 下に設定に変わる幅。docs/studio.md#操作ウィンドウ)
     half: [960, 800],
+    // 中央の列 (1fr) だけが伸びる広い窓
+    xwide: [1600, 900],
     async setup(page, ctx) {
       const fixture = await studioFixture(ctx.lang);
       ctx.fixture = fixture;

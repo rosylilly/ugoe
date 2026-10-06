@@ -3,8 +3,8 @@
 // どちらでも `globalThis.__ugoeAudit` に関数を置く。
 //
 // - コントラスト: 文字を直に持つ要素ごとに、文字の色と、祖先をたどって重ねた地の色 (半透明は合成) を比べる (WCAG 2.x の式)。
-//   祖先に画像の地・グラデーションがある、canvas の上に半透明で重なっているものは「測れない」として数えるだけにする。
-//   無効の部品は基準の外 (別に数える)。
+//   祖先に画像の地・グラデーションがある、canvas の上に半透明で重なっているもの (ビューポートの上の知らせなど) は、
+//   文字を消して撮った画面の画素を地として測る (pixelAudit。T0952)。無効の部品は基準の外 (別に数える)。
 // - はみ出し: 文書の横のスクロールと、画面の右端を越える要素 (スクロールする祖先の中は除く)。
 // - 重なりと切れ: 別の要素の文字が透けて重なる・`overflow: hidden` で文字が切れる (省略記号を付けたものは除く)。
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
@@ -93,10 +93,18 @@
     return `${el.tagName.toLowerCase()}${cls} "${name}"`;
   }
 
-  /** 地の色: 自分から祖先へたどり、不透明な地まで重ねる。測れなければ {unknown}。 */
+  /** 見えている canvas・video・img と、その矩形 (contrastAudit の始めに集める)。 */
+  let media = [];
+
+  /**
+   * 地の色: 自分から祖先へたどり、不透明な地まで重ねる。測れなければ {unknown}。
+   * 不透明な地の祖先の中に、文字に重なる canvas・video・img があれば、その上に描かれているとみなして測れないとする
+   * (ビューポートの知らせのように、地の祖先と文字の間に描画が挟まる。T0952)。
+   */
   function background(el) {
     const layers = [];
     let opacity = 1;
+    let stop = null;
     for (let n = el; n; n = n.parentElement) {
       const s = getComputedStyle(n);
       opacity *= Number(s.opacity);
@@ -106,8 +114,24 @@
       const c = parseColor(s.backgroundColor);
       if (c && c.a > 0) {
         layers.push(c);
-        if (c.a >= 1) break;
+        if (c.a >= 1) {
+          stop = n;
+          break;
+        }
       }
+    }
+    if (stop !== null && media.length > 0) {
+      const r = el.getBoundingClientRect();
+      const hit = media.find(
+        (m) =>
+          stop.contains(m.el) &&
+          !el.contains(m.el) &&
+          m.rect.left < r.right &&
+          r.left < m.rect.right &&
+          m.rect.top < r.bottom &&
+          r.top < m.rect.bottom,
+      );
+      if (hit) return { unknown: `over ${describe(hit.el)}` };
     }
     const opaque = layers.length > 0 && layers[layers.length - 1].a >= 1;
     if (!opaque && el.closest("[data-ui-audit-canvas], .viewport, .viewport-area, .stage, main")) {
@@ -119,7 +143,42 @@
     return { bg, opacity };
   }
 
+  /** 要素が直に持つ文字の行ごとの矩形 (はみ出しを切り取る祖先と窓で切り取った、見える部分)。 */
+  function textRects(el) {
+    const clip = clipBox(el);
+    const rects = [];
+    for (const node of el.childNodes) {
+      if (node.nodeType !== 3 || node.textContent.trim() === "") continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        const box = {
+          left: Math.max(r.left, clip.left),
+          top: Math.max(r.top, clip.top),
+          right: Math.min(r.right, clip.right),
+          bottom: Math.min(r.bottom, clip.bottom),
+        };
+        if (box.right - box.left > 1 && box.bottom - box.top > 1) rects.push(box);
+      }
+    }
+    return rects;
+  }
+
+  /** 地を CSS から決められず、画素で測る文字 (contrastAudit が集め、pixelAudit が測る)。 */
+  let pending = [];
+
   function contrastAudit() {
+    pending = [];
+    media = [...document.querySelectorAll("canvas, video, img")]
+      .filter(visible)
+      .map((m) => ({ el: m, rect: m.getBoundingClientRect() }));
+    // モーダルのダイアログの後ろ (幕の下で操作できない) の文字は基準の外 (WCAG 1.4.3 の inactive)
+    const modals = [
+      ...document.querySelectorAll(
+        "dialog:modal, [role=dialog][aria-modal=true], [role=alertdialog][aria-modal=true]",
+      ),
+    ].filter(visible);
+    const behindModal = (el) => modals.length > 0 && !modals.some((m) => m.contains(el));
     const failures = [];
     const disabled = [];
     let checked = 0;
@@ -135,13 +194,30 @@
         !["checkbox", "radio", "range", "color", "hidden"].includes(el.type) &&
         el.value !== "";
       if (!hasText && !isInput) continue;
-      if (!visible(el)) continue;
+      if (!visible(el) || behindModal(el)) continue;
       const s = getComputedStyle(el);
       const fg = parseColor(s.color);
       if (!fg) continue;
       const b = background(el);
       if (b.unknown) {
-        unknown++;
+        // 地を CSS から決められない: 文字の矩形を覚えておき、文字を消して撮った画素で測る (pixelAudit)
+        const rects = isInput ? [el.getBoundingClientRect()] : textRects(el);
+        if (rects.length === 0) {
+          unknown++;
+          continue;
+        }
+        let opacity = 1;
+        for (let n = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
+        pending.push({
+          target: describe(el),
+          fg,
+          color: s.color,
+          opacity,
+          size: Number.parseFloat(s.fontSize),
+          weight: Number(s.fontWeight),
+          disabled: el.closest("[disabled], [aria-disabled=true], [data-disabled]") !== null,
+          rects: rects.map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom })),
+        });
         continue;
       }
       checked++;
@@ -154,7 +230,80 @@
       if (el.closest("[disabled], [aria-disabled=true], [data-disabled]")) disabled.push(item);
       else failures.push(item);
     }
+    return { checked, unknown, pending: pending.length, failures, disabled };
+  }
+
+  /**
+   * 画素で測るコントラスト。`items` は contrastAudit が集めた文字 (矩形は CSS px)、`image` は文字を消して撮った画面
+   * ({data: RGBA の列, width, height})、`scale` は CSS px あたりの画素。矩形の中の地の画素ごとに、文字の色を重ねた色との比を求め、
+   * 下から 1 割の比 (9 割の地の画素で届く比) を文字の比とする (縁や模様の数画素で落とさないため)。
+   */
+  function pixelContrast(items, image, scale) {
+    const failures = [];
+    const disabled = [];
+    let checked = 0;
+    let unknown = 0;
+    for (const item of items) {
+      const ratios = [];
+      let darkest = null;
+      for (const r of item.rects) {
+        const x0 = Math.max(0, Math.floor(r.left * scale));
+        const y0 = Math.max(0, Math.floor(r.top * scale));
+        const x1 = Math.min(image.width, Math.ceil(r.right * scale));
+        const y1 = Math.min(image.height, Math.ceil(r.bottom * scale));
+        // 大きな矩形でも 1 つあたり 2500 ほどの画素に間引く
+        const step = Math.max(1, Math.floor(Math.sqrt(((x1 - x0) * (y1 - y0)) / 2500)));
+        for (let y = y0; y < y1; y += step) {
+          for (let x = x0; x < x1; x += step) {
+            const i = (y * image.width + x) * 4;
+            const bg = { r: image.data[i], g: image.data[i + 1], b: image.data[i + 2], a: 1 };
+            const color = over({ ...item.fg, a: item.fg.a * item.opacity }, bg);
+            const ratio = contrastRatio(color, bg);
+            ratios.push(ratio);
+            if (darkest === null || ratio < darkest.ratio) darkest = { ratio, bg };
+          }
+        }
+      }
+      if (ratios.length === 0) {
+        unknown++;
+        continue;
+      }
+      checked++;
+      ratios.sort((a, b) => a - b);
+      const ratio = ratios[Math.floor(ratios.length * 0.1)];
+      const need = requiredRatio(item.size, item.weight);
+      if (ratio + 0.005 >= need) continue;
+      const bg = darkest.bg;
+      const line = `${item.target} ${ratio.toFixed(2)} < ${need} (fg ${item.color} on pixels such as rgb(${bg.r}, ${bg.g}, ${bg.b}), ${item.size}px)`;
+      if (item.disabled) disabled.push(line);
+      else failures.push(line);
+    }
     return { checked, unknown, failures, disabled };
+  }
+
+  /** 画素で測る前に、画面のすべての文字を透明にする (`on` が偽なら戻す)。描き終わるまで待つ。 */
+  async function hideText(on) {
+    const id = "ui-audit-hide-text";
+    document.getElementById(id)?.remove();
+    if (on) {
+      const style = document.createElement("style");
+      style.id = id;
+      style.textContent =
+        "*, *::before, *::after, *::placeholder { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; caret-color: transparent !important; transition: none !important; }";
+      document.head.append(style);
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
+  /** 文字を消して撮った画面 (PNG の base64) で、contrastAudit が集めた文字を測る。 */
+  async function pixelAudit(png) {
+    const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const g = canvas.getContext("2d");
+    g.drawImage(bitmap, 0, 0);
+    const image = g.getImageData(0, 0, bitmap.width, bitmap.height);
+    return pixelContrast(pending, image, bitmap.width / innerWidth);
   }
 
   function overflowAudit() {
@@ -214,21 +363,7 @@
         (n) => n.nodeType === 3 && n.textContent.trim() !== "",
       );
       if (nodes.length === 0 || !visible(el)) continue;
-      const clip = clipBox(el);
-      const rects = [];
-      for (const node of nodes) {
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        for (const r of range.getClientRects()) {
-          const box = {
-            left: Math.max(r.left, clip.left),
-            top: Math.max(r.top, clip.top),
-            right: Math.min(r.right, clip.right),
-            bottom: Math.min(r.bottom, clip.bottom),
-          };
-          if (box.right - box.left > 1 && box.bottom - box.top > 1) rects.push(box);
-        }
-      }
+      const rects = textRects(el);
       if (rects.length) boxes.push({ el, rects });
     }
     return boxes;
@@ -380,5 +515,15 @@
     };
   }
 
-  globalThis.__ugoeAudit = { parseColor, over, luminance, contrastRatio, requiredRatio, pageAudit };
+  globalThis.__ugoeAudit = {
+    parseColor,
+    over,
+    luminance,
+    contrastRatio,
+    requiredRatio,
+    pixelContrast,
+    pageAudit,
+    hideText,
+    pixelAudit,
+  };
 })();

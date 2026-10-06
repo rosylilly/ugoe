@@ -6,7 +6,7 @@ import { compare, countsTable, formatCompare, kindOf, summarize } from "../lib/r
 import { formatWalk, walkProblems } from "../lib/walk.mjs";
 import "../lib/page-checks.js";
 
-const { parseColor, over, contrastRatio, requiredRatio } = globalThis.__ugoeAudit;
+const { parseColor, over, contrastRatio, requiredRatio, pixelContrast } = globalThis.__ugoeAudit;
 
 const hex = (h) => ({
   r: Number.parseInt(h.slice(1, 3), 16),
@@ -47,6 +47,70 @@ test("大きい文字 (24px 以上、18.66px 以上の太字) は 3、ほかは 
   assert.equal(requiredRatio(24, 400), 3);
   assert.equal(requiredRatio(19, 700), 3);
   assert.equal(requiredRatio(19, 600), 4.5);
+});
+
+/** 1 色で塗った画像 ({data, width, height})。`paint(x, y)` が色を返せば、その画素だけ塗り替える。 */
+function image(width, height, color, paint = () => null) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const c = paint(x, y) ?? color;
+      data.set([c.r, c.g, c.b, 255], (y * width + x) * 4);
+    }
+  }
+  return { data, width, height };
+}
+
+test("canvas の上の文字は、文字を消して撮った画素を地として測る", () => {
+  // T0725 の前のビューアの知らせ: ダークの text-muted (#a1a1aa) が、ビューポートの地 (モデルの背景色 #ffffff) の上にある
+  const muted = {
+    target: 'p.hint "No model"',
+    fg: hex("#a1a1aa"),
+    color: "rgb(161, 161, 170)",
+    opacity: 1,
+    size: 13,
+    weight: 400,
+    disabled: false,
+    rects: [{ left: 2, top: 2, right: 8, bottom: 6 }],
+  };
+  const white = image(10, 10, hex("#ffffff"));
+  const r = pixelContrast([muted], white, 1);
+  assert.equal(r.checked, 1);
+  assert.equal(r.failures.length, 1);
+  assert.match(
+    r.failures[0],
+    /^p\.hint "No model" 2\.\d\d < 4\.5 \(fg rgb\(161, 161, 170\) on pixels such as rgb\(255, 255, 255\)/,
+  );
+  // 暗い地なら届く。DPR 2 では矩形を 2 倍にして画素を引く
+  const dark = image(20, 20, hex("#18181b"), (x) => (x >= 16 ? hex("#ffffff") : null));
+  assert.deepEqual(pixelContrast([muted], dark, 2).failures, []);
+  // 無効の部品は分け、矩形が画像の外なら測れない
+  const off = { ...muted, rects: [{ left: 40, top: 40, right: 50, bottom: 50 }] };
+  const r2 = pixelContrast([{ ...muted, disabled: true }, off], white, 1);
+  assert.equal(r2.disabled.length, 1);
+  assert.equal(r2.unknown, 1);
+});
+
+test("地の画素の 1 割までは届かなくてよい (縁や模様)", () => {
+  const text = {
+    target: 'span "x"',
+    fg: hex("#ffffff"),
+    color: "rgb(255, 255, 255)",
+    opacity: 1,
+    size: 13,
+    weight: 400,
+    disabled: false,
+    rects: [{ left: 0, top: 0, right: 10, bottom: 10 }],
+  };
+  // 10 列のうち 1 列が白い (地の 1 割)
+  const edge = image(10, 10, hex("#000000"), (x) => (x === 0 ? hex("#ffffff") : null));
+  assert.deepEqual(pixelContrast([text], edge, 1).failures, []);
+  // 2 列 (2 割) なら届かない
+  const wider = image(10, 10, hex("#000000"), (x) => (x <= 1 ? hex("#ffffff") : null));
+  assert.equal(pixelContrast([text], wider, 1).failures.length, 1);
+  // 半透明の文字 (opacity) は地に重ねてから比べる
+  const faint = { ...text, opacity: 0.3 };
+  assert.equal(pixelContrast([faint], image(10, 10, hex("#000000")), 1).failures.length, 1);
 });
 
 test("ページの検査の結果を検査ごとの見つけたものにする", () => {

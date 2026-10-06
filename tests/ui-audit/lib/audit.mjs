@@ -78,6 +78,19 @@ export function pageFindings(r, lang) {
 /** 場面を検査する。axe は `axe` が真のときだけ (重いので Tab などの補助の場面では切れる)。 */
 export async function auditScene(page, { lang, axe = true }) {
   const r = await page.evaluate(() => globalThis.__ugoeAudit.pageAudit());
+  let pixels = { checked: 0, unknown: 0, failures: [], disabled: [] };
+  if (r.contrast.pending > 0) {
+    // canvas・画像の上の文字: 文字を消して撮り、その画素を地として測る
+    await page.evaluate(() => globalThis.__ugoeAudit.hideText(true));
+    const png = await page.screenshot();
+    await page.evaluate(() => globalThis.__ugoeAudit.hideText(false));
+    pixels = await page.evaluate(
+      (b64) => globalThis.__ugoeAudit.pixelAudit(b64),
+      png.toString("base64"),
+    );
+    r.contrast.failures.push(...pixels.failures);
+    r.contrast.disabled.push(...pixels.disabled);
+  }
   const findings = pageFindings(r, lang);
   if (axe) {
     const loaded = await page.evaluate(() => typeof globalThis.axe !== "undefined");
@@ -92,7 +105,8 @@ export async function auditScene(page, { lang, axe = true }) {
     findings,
     stats: {
       textChecked: r.contrast.checked,
-      textUnmeasured: r.contrast.unknown,
+      textByPixels: pixels.checked,
+      textUnmeasured: r.contrast.unknown + pixels.unknown,
       disabledLowContrast: r.contrast.disabled.length,
     },
   };
