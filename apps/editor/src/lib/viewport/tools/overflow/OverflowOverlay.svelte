@@ -107,8 +107,8 @@ const dots = $derived.by(() => {
 
 /* ツールの点を隠さないように、塗りは薄くし、輪を太くする。 */
 circle {
-  fill: rgb(239 68 68 / 0.25);
-  stroke: #ef4444;
+  fill: color-mix(in srgb, var(--viewport-overflow) 25%, transparent);
+  stroke: var(--viewport-overflow);
   stroke-width: 2.5;
 }
 </style>

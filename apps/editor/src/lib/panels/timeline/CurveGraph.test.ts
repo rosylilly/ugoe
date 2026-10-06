@@ -10,6 +10,7 @@ import {
   FakeController,
   FakeDocument,
   get,
+  press,
   render,
   settle,
 } from "../../viewport/tools/test/harness.svelte";
@@ -162,7 +163,7 @@ describe("CurveGraph key fields while sending", () => {
  * 幅 200 で 0..2 秒、高さ 94 (上下に 8 の余白) で値は 0..10 (カーブの値の範囲)。
  */
 function at(t: number, v: number): [number, number] {
-  return [t * 100, 8 + 94 - (v / 10) * 94];
+  return [t * 100, 8 + 108 - (v / 10) * 108];
 }
 
 /** 時刻 1 のキー (2 番目の印) の押せる範囲。 */
@@ -234,11 +235,25 @@ describe("CurveGraph drags while sending", () => {
   });
 });
 
-/** 区間の種類のボタン (直線・ベジェ・ステップ・逆ステップの順)。 */
-function kindButton(target: HTMLElement, index: number): HTMLButtonElement {
-  const button = target.querySelectorAll<HTMLButtonElement>(".kinds button")[index];
-  if (!button) throw new Error("no kind button");
-  return button;
+/**
+ * 区間の種類の Select で、`kind` (直線・ベジェ・ステップ・逆ステップ) を選ぶ。今の種類から矢印で移って Enter で選ぶ
+ * (packages/ui の Select のテストと同じ操作)。
+ */
+async function chooseKind(target: HTMLElement, kind: string): Promise<void> {
+  const trigger = get<HTMLElement>(target, '.side [aria-haspopup="listbox"]');
+  trigger.focus();
+  press(trigger, "ArrowDown");
+  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+  const items = [...document.querySelectorAll('[role="option"]')];
+  const labels: Record<string, string> = { stepped: "Step" };
+  const index = items.findIndex((i) => i.textContent?.trim() === labels[kind]);
+  await vi.waitFor(() => expect(items.some((i) => i.hasAttribute("data-highlighted"))).toBe(true));
+  // 選んでいる項目 (今の種類) から目当ての項目まで下へ移る
+  for (let i = 0; i < 4 && !items[index]?.hasAttribute("data-highlighted"); i++) {
+    press(document.activeElement ?? trigger, "ArrowDown");
+  }
+  press(document.activeElement ?? trigger, "Enter");
+  await vi.waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("false"));
 }
 
 /** カーブのフェードの欄 (0 = フェードイン、1 = フェードアウト) に値を入れて確定する。 */
@@ -258,7 +273,7 @@ describe("CurveGraph segment and fade edits while sending", () => {
     drag(keyHit(target), [at(1, 10), at(1.5, 10)]);
     await settle();
     // 表示 (選択) はまだ時刻 1 を指している。
-    kindButton(target, 2).click();
+    await chooseKind(target, "stepped");
     gate.resolve();
     await settleAll();
     expect(doc.commands).toEqual([
@@ -286,7 +301,7 @@ describe("CurveGraph segment and fade edits while sending", () => {
       return true;
     };
     void doc.send(() => remove);
-    kindButton(target, 2).click();
+    await chooseKind(target, "stepped");
     gate.resolve();
     await settleAll();
     expect(doc.commands).toEqual([remove]);

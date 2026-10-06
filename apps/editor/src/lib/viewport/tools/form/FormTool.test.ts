@@ -32,7 +32,7 @@ beforeEach(() => {
   ipc.canvasToLocal.mockClear();
 });
 
-/** メッシュ Quad を選び、フォーム編集を有効にして点が出るまで待つ。 */
+/** メッシュ Quad を選び、フォーム編集を有効にして (ToolOverlay の「Form edit」) 点が出るまで待つ。 */
 async function setup() {
   const controller = new FakeController();
   const doc = new FakeDocument();
@@ -42,8 +42,8 @@ async function setup() {
     controller: controller.asController,
     doc: doc.asDocument,
     selection,
+    enabled: true,
   });
-  get<HTMLButtonElement>(target, ".bar button[aria-pressed]").click();
   await settle();
   const svg = get(target, "svg.form");
   const handles = () => all(svg, "circle.handle");
@@ -146,7 +146,7 @@ describe("FormTool", () => {
     controller.setParameter("AngleX", 10);
     await settle();
     expect(target.querySelector("svg.form")).toBeNull();
-    expect(target.querySelector(".bar .warn")).not.toBeNull();
+    expect(target.querySelector(".vp-band .warn")).not.toBeNull();
   });
 
   it("ignores pointer events while the previous edit is being sent", async () => {
@@ -175,6 +175,55 @@ describe("FormTool keys", () => {
     expect(selected()).toBe(4);
     press(document.body, "Escape");
     expect(selected()).toBe(0);
+  });
+
+  it("moves the picked points with the arrow keys, ten pixels with Shift", async () => {
+    const { doc, handle } = await setup();
+    pointer(handle(2), "pointerdown", screen(2));
+    pointer(handle(2), "pointerup", screen(2));
+    const event = press(document.body, "ArrowRight");
+    expect(event.defaultPrevented).toBe(true);
+    await settle();
+    press(document.body, "ArrowUp", { shiftKey: true });
+    await settle();
+    // 画面の 1px は偽のビューの拡大率 2 でキャンバスの 0.5
+    expect(doc.commands).toMatchObject([
+      {
+        op: "set_keyform_cell",
+        keyform: {
+          positions: [
+            [0, 0],
+            [100, 0],
+            [100.5, 100],
+            [0, 100],
+          ],
+        },
+      },
+      {
+        op: "set_keyform_cell",
+        keyform: {
+          positions: [
+            [0, 0],
+            [100, 0],
+            [100, 95],
+            [0, 100],
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("leaves the arrow keys alone without picked points or outside the viewport", async () => {
+    const { doc, handle } = await setup();
+    expect(press(document.body, "ArrowRight").defaultPrevented).toBe(false);
+    pointer(handle(2), "pointerdown", screen(2));
+    pointer(handle(2), "pointerup", screen(2));
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    expect(press(outside, "ArrowRight").defaultPrevented).toBe(false);
+    outside.remove();
+    await settle();
+    expect(doc.apply).not.toHaveBeenCalled();
   });
 
   it("does not take the keys pressed inside a dialog", async () => {

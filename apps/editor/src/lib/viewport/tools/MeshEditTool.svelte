@@ -171,6 +171,16 @@ export function removeSelected(): void {
   });
 }
 
+/** 選択中の頂点を画面の CSS ピクセルで `(dx, dy)` だけ動かす (矢印キー。ドラッグの代わり)。1 回が Undo の 1 単位。 */
+export function nudge(dx: number, dy: number): void {
+  if (busy || selected.length === 0) return;
+  const delta: [number, number] = [scene.canvasLength(dx), scene.canvasLength(dy)];
+  const moves = selected.map((index) => ({ index, delta }));
+  run(async () => {
+    await doc.apply({ op: "move_mesh_vertices", id: meshId, moves });
+  });
+}
+
 export function retriangulate(): void {
   run(async () => {
     await doc.apply({ op: "retriangulate_mesh", id: meshId });
@@ -241,25 +251,24 @@ function point(i: number): [number, number] {
 }
 
 .edges line {
-  stroke: var(--ugoe-color-accent);
+  stroke: var(--viewport-edit);
   stroke-width: 1;
-  opacity: 0.8;
 }
 
 .vertices rect {
-  fill: var(--ugoe-color-surface);
-  stroke: var(--ugoe-color-accent);
+  fill: var(--viewport-point);
+  stroke: var(--viewport-edit);
   stroke-width: 1.5;
 }
 
 .vertices rect.selected {
-  fill: #f59e0b;
-  stroke: #b45309;
+  fill: var(--viewport-picked);
+  stroke: var(--viewport-picked-edge);
 }
 
 .box {
-  fill: color-mix(in srgb, var(--ugoe-color-accent) 12%, transparent);
-  stroke: var(--ugoe-color-accent);
+  fill: color-mix(in srgb, var(--viewport-edit) 12%, transparent);
+  stroke: var(--viewport-edit);
   stroke-dasharray: 4 3;
 }
 </style>

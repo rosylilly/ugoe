@@ -15,7 +15,7 @@
   パラメータ値がどれかの軸でキーの上にないときは編集しない (フォーム編集と同じ。T0608)。
 -->
 <script lang="ts">
-import { Button, Checkbox, Tooltip } from "@ugoe/ui";
+import { Button, Checkbox, Icon, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText } from "../../../errors";
 import { t } from "../../../i18n";
@@ -30,7 +30,7 @@ import {
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { type Box, nearestVertex, updateVertexSelection, verticesInBox } from "../geometry";
-import { acceptsToolKey } from "../keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "../keys";
 import {
   addTurn,
   flatten,
@@ -378,14 +378,34 @@ function onKeyDown(e: KeyboardEvent): void {
   else if (e.key === "a" && (e.ctrlKey || e.metaKey) && warpCanvas) {
     e.preventDefault();
     selectAll();
+  } else {
+    nudge(e);
+  }
+}
+
+/**
+ * 矢印キーで、ワープの選んだ制御点か回転デフォーマの原点を動かす (ドラッグの代わり。
+ * docs/editor.md#ビューポートの操作と代わりの手段)。原点は「Origin: all cells」に従う。1 回が Undo の 1 単位。
+ */
+function nudge(e: KeyboardEvent): void {
+  if (busy || drag !== null || !cell || !acceptsNudgeKey(e.target)) return;
+  const delta = nudgeOf(e);
+  if (!delta) return;
+  if (warpCanvas && picked.length > 0) {
+    e.preventDefault();
+    void commit({ kind: "points", id: -1, start: [0, 0], delta });
+  } else if (rotationCanvas) {
+    e.preventDefault();
+    void commit({ kind: "origin", id: -1, start: [0, 0], delta, all: originAllCells });
   }
 }
 </script>
 
 <svelte:window onkeydown={onKeyDown} />
 
-<div class="bar">
-  <span class="muted"
+<!-- 説明の帯 (ToolOverlay の .strip の中で、道具の並びの下に積む) -->
+<div class="vp-band">
+  <span
     >{t("viewport.gizmo.title", {
       kind: element?.kind === "warp" ? t("viewport.gizmo.kind.warp") : t("viewport.gizmo.kind.rotation"),
       id: deformerId,
@@ -408,7 +428,7 @@ function onKeyDown(e: KeyboardEvent): void {
       </Tooltip>
     {/if}
   {:else if element}
-    <span class="warn">{t("viewport.cell.notOnKey")}</span>
+    <span class="warn"><Icon name="warning" />{t("viewport.cell.notOnKey")}</span>
     <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
   {/if}
   {#if error}<span class="error ugoe-selectable">{error}</span>{/if}
@@ -463,20 +483,11 @@ function onKeyDown(e: KeyboardEvent): void {
 </svg>
 
 <style>
-/* ToolOverlay のツールバーの下に置く (フォーム編集のバーと同じ位置。同時には出ない)。 */
-.bar {
-  position: absolute;
-  top: 40px;
-  left: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ugoe-space-3);
-  align-items: center;
-  pointer-events: auto;
-}
-
 .warn {
-  color: #b45309;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ugoe-space-1);
+  color: var(--ugoe-color-warning);
 }
 
 .check {
@@ -508,31 +519,30 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 .grid line {
-  stroke: #0ea5e9;
+  stroke: var(--viewport-warp);
   stroke-width: 1;
-  opacity: 0.8;
 }
 
 .points rect {
-  fill: var(--ugoe-color-surface);
-  stroke: #0ea5e9;
+  fill: var(--viewport-point);
+  stroke: var(--viewport-warp);
   stroke-width: 1.5;
 }
 
 .points rect.selected {
-  fill: #f59e0b;
-  stroke: #b45309;
+  fill: var(--viewport-picked);
+  stroke: var(--viewport-picked-edge);
 }
 
 .rotation line {
-  stroke: #a855f7;
+  stroke: var(--viewport-rotation);
   stroke-width: 1.5;
 }
 
 .rotation circle,
 .rotation rect {
-  fill: var(--ugoe-color-surface);
-  stroke: #a855f7;
+  fill: var(--viewport-point);
+  stroke: var(--viewport-rotation);
   stroke-width: 2;
 }
 
@@ -543,12 +553,12 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .rotation.active circle,
 .rotation.active rect {
-  fill: #a855f7;
+  fill: var(--viewport-rotation);
 }
 
 .box {
-  fill: color-mix(in srgb, #0ea5e9 12%, transparent);
-  stroke: #0ea5e9;
+  fill: color-mix(in srgb, var(--viewport-warp) 12%, transparent);
+  stroke: var(--viewport-warp);
   stroke-dasharray: 4 3;
 }
 </style>

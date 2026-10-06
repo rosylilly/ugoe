@@ -211,6 +211,41 @@ describe("DeformerGizmo keys", () => {
     expect(selection.controlPoints.Warp).toEqual([]);
   });
 
+  it("moves the picked control points with the arrow keys", async () => {
+    const { doc, selection } = setup("Warp");
+    selection.controlPoints = { Warp: [1] };
+    await settle();
+    expect(press(document.body, "ArrowDown").defaultPrevented).toBe(true);
+    await settle();
+    expect(doc.commands).toMatchObject([
+      {
+        op: "set_keyform_cell",
+        keyform: {
+          points: [
+            [0, 0],
+            [100, 0.5],
+            [100, 100],
+            [0, 100],
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("moves the rotation origin with the arrow keys", async () => {
+    const { doc } = setup("Rot");
+    press(document.body, "ArrowRight", { shiftKey: true });
+    await settle();
+    expect(doc.commands).toEqual([
+      {
+        op: "set_keyform_cell",
+        target: { kind: "deformer", id: "Rot" },
+        cell: {},
+        keyform: { ...ROT_KEYFORM, origin: [55, 50], kind: "rotation" },
+      },
+    ]);
+  });
+
   it("does not take the keys pressed inside a dialog", () => {
     const { selection } = setup("Warp");
     const inDialog = dialogButton();

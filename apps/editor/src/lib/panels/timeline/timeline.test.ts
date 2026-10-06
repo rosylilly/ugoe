@@ -17,6 +17,7 @@ import {
   segmentEndingAt,
   segmentHandle,
   segmentShape,
+  shapedKeys,
   snapToFrame,
   tickStep,
   timeToX,
@@ -110,6 +111,23 @@ describe("curves", () => {
     expect(curveKeys(curve).map((k) => k.t)).toEqual([0, 1, 1.5, 2]);
     expect(segmentEndingAt(curve, 1)?.type).toBe("bezier");
     expect(segmentEndingAt(curve, 0)).toBeNull();
+  });
+
+  it("shapes each key after the segment into it", () => {
+    expect(shapedKeys(curve).map((k) => [k.t, k.shape])).toEqual([
+      [0, "diamond"],
+      [1, "circle"],
+      [1.5, "square"],
+      [2, "square"],
+    ]);
+    const linear: Curve = {
+      ...curve,
+      segments: [
+        { type: "start", p: { t: 0, v: 0 } },
+        { type: "linear", to: { t: 1, v: 1 } },
+      ],
+    };
+    expect(shapedKeys(linear).map((k) => k.shape)).toEqual(["diamond", "diamond"]);
   });
 
   it("does not move keys past their neighbors", () => {

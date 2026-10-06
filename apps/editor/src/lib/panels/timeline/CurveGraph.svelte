@@ -5,7 +5,8 @@
   欄の確定・区間の種類・フェードも、送る直前のカーブから組み立てる。
 -->
 <script lang="ts">
-import { NumberField, Tooltip } from "@ugoe/ui";
+import { formatNumber } from "@ugoe/i18n";
+import { NumberField, Select, Tooltip } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, Curve, Motion, Point, Segment } from "../../ipc";
@@ -47,7 +48,7 @@ interface Props {
 
 let { doc, timeline, motion, row, view, onmessage }: Props = $props();
 
-const HEIGHT = 110;
+const HEIGHT = 124;
 const PAD = 8;
 /** 印を押せる範囲の一辺 (CSS px。docs/ui.md の 24×24)。 */
 const HIT = 24;
@@ -93,6 +94,15 @@ function preview(curve: Curve, d: Drag | null): Curve {
   });
   return { ...curve, segments };
 }
+
+/** 値の目盛りの文字: グラフの上端と下端の値 (既定値は破線で示す)。上は上の縁から、下は下の縁に基線を置く。 */
+const axisLabels = $derived.by(() => {
+  const fmt = (v: number) => formatNumber(v, { maximumFractionDigits: 2 });
+  return [
+    { key: "max", text: fmt(range[1]), y: 2, baseline: "hanging" },
+    { key: "min", text: fmt(range[0]), y: HEIGHT - 3, baseline: "auto" },
+  ];
+});
 
 function x(t: number): number {
   return timeToX(t, graph);
@@ -315,8 +325,16 @@ async function removeCurve() {
 </script>
 
 <div class="graph">
+  <!-- 左の欄は 4 行に収める (1024×720 でもグラフと表を送らずに出すため。docs/editor.md#タイムライン) -->
   <div class="side">
-    <strong class="title" title={row.label}>{row.label}</strong>
+    <div class="head">
+      <strong class="title" title={row.label}>{row.label}</strong>
+      {#if row.curve}
+        <TipButton small onclick={removeCurve} tooltip={t("timeline.curve.delete.tooltip")}
+          >{t("timeline.curve.delete.label")}</TipButton
+        >
+      {/if}
+    </div>
     {#if selectedPoint}
       <span class="fields">
         {#key fieldsKey}
@@ -344,22 +362,21 @@ async function removeCurve() {
           >
         {/key}
       </span>
-      <span class="kinds" role="group" aria-label={t("timeline.curve.segment.aria")}>
-        {#each kinds as k (k.kind)}
-          <TipButton
-            small
-            pressed={incoming?.type === k.kind}
-            disabled={!incoming}
-            onclick={() => setKind(k.kind)}
-            tooltip={k.description}>{k.label}</TipButton
-          >
-        {/each}
-      </span>
-      {#if !incoming}<span class="muted">{t("timeline.curve.firstKey")}</span>{/if}
+      {#if incoming && incoming.type !== "start"}
+        <Select
+          aria-label={t("timeline.curve.segment.aria")}
+          value={incoming.type}
+          options={kinds.map((k) => ({ value: k.kind, label: k.label }))}
+          tooltip={kinds.find((k) => k.kind === incoming.type)?.description}
+          onchange={(v) => setKind(v as SegmentKind)}
+        />
+      {:else}
+        <span class="muted hint">{t("timeline.curve.firstKey")}</span>
+      {/if}
     {:else if row.curve}
-      <span class="muted">{t("timeline.curve.hintKey")}</span>
+      <span class="muted hint">{t("timeline.curve.hintKey")}</span>
     {:else}
-      <span class="muted">{t("timeline.curve.hintEmpty")}</span>
+      <span class="muted hint">{t("timeline.curve.hintEmpty")}</span>
     {/if}
     {#if row.curve}
       <span class="fields">
@@ -397,9 +414,6 @@ async function removeCurve() {
             {/snippet}
           </Tooltip>
         </span>
-        <TipButton small onclick={removeCurve} tooltip={t("timeline.curve.delete.tooltip")}
-          >{t("timeline.curve.delete.label")}</TipButton
-        >
       </span>
     {/if}
   </div>
@@ -415,6 +429,10 @@ async function removeCurve() {
     <line class="bound" x1={x(0)} x2={x(0)} y1="0" y2={HEIGHT} />
     <line class="bound" x1={x(motion.duration)} x2={x(motion.duration)} y1="0" y2={HEIGHT} />
     <line class="playhead" x1={x(timeline.time)} x2={x(timeline.time)} y1="0" y2={HEIGHT} />
+    <!-- 値の目盛り: 上端と下端の値 (グラフの左端に) -->
+    {#each axisLabels as label (label.key)}
+      <text class="axis" x="4" y={label.y} dominant-baseline={label.baseline}>{label.text}</text>
+    {/each}
     {#if shown}
       <path class="curve" d={curvePath(shown, { ...graph, height: graph.height })} transform="translate(0 {PAD})" />
       {#each shown.segments as s, i (i)}
@@ -469,7 +487,7 @@ async function removeCurve() {
 <style>
   .graph {
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: var(--label-width, 200px) minmax(0, 1fr);
     border-top: 1px solid var(--ugoe-color-border);
     flex: none;
   }
@@ -482,7 +500,28 @@ async function removeCurve() {
     min-width: 0;
     overflow: hidden;
   }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ugoe-space-2);
+    min-width: 0;
+  }
+  .hint {
+    font-size: var(--ugoe-font-size-xs);
+  }
+  /* 線や点に重なっても読めるよう、グラフの地の色で縁取る */
+  .axis {
+    fill: var(--ugoe-color-text-muted);
+    stroke: var(--ugoe-color-sunken);
+    stroke-width: 3px;
+    paint-order: stroke;
+    font-size: var(--ugoe-font-size-xs);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
   .title {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -499,11 +538,6 @@ async function removeCurve() {
   }
   input[type="number"] {
     width: 56px;
-  }
-  .kinds {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--ugoe-space-1);
   }
   .plot {
     display: block;

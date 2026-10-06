@@ -41,9 +41,11 @@ interface Props {
   doc: EditorDocument;
   /** プロジェクトの設定を変えたとき (未保存の印を取り直すため)。 */
   onchange: () => void;
+  /** ビューポートの描画の方式 (`webgpu`・`webgl2`。まだ作っていなければ null)。開発者向けの情報なので「一般」に出す。 */
+  backend?: string | null;
 }
 
-let { doc, onchange }: Props = $props();
+let { doc, onchange, backend = null }: Props = $props();
 
 let isOpen = $state(false);
 let keyInput = $state<HTMLInputElement>();
@@ -216,6 +218,7 @@ function keyPlaceholder(s: AiSettings): string {
       <div class="undo-limit"><UndoLimitSetting {doc} /></div>
       <h3>{t("settings.about.title")}</h3>
       <p>{t("settings.about.version", { version: version ?? "…" })}</p>
+      {#if backend}<p>{t("settings.about.backend", { backend })}</p>{/if}
       <div class="ed-buttons">
         <Button onclick={() => void licenses?.open()}>{t("settings.about.licenses")}</Button>
       </div>

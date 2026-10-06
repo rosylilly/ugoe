@@ -227,26 +227,26 @@ async function onUp(e: PointerEvent): Promise<void> {
 
 /* 衝突体: 半透明の塗りの上を押して動かす。 */
 .collider .body {
-  fill: rgb(64 160 255 / 0.15);
-  stroke: rgb(64 160 255 / 0.9);
+  fill: color-mix(in srgb, var(--viewport-collider) 15%, transparent);
+  stroke: var(--viewport-collider);
   stroke-width: 1.5;
   pointer-events: visiblePainted;
   cursor: move;
 }
 
 .collider.selected .body {
-  fill: rgb(64 160 255 / 0.3);
+  fill: color-mix(in srgb, var(--viewport-collider) 30%, transparent);
   stroke-width: 2.5;
 }
 
 .collider .axis {
-  stroke: rgb(64 160 255 / 0.7);
+  stroke: var(--viewport-collider);
   stroke-dasharray: 4 3;
 }
 
 .collider .end {
-  fill: white;
-  stroke: rgb(64 160 255);
+  fill: var(--viewport-point);
+  stroke: var(--viewport-collider);
   stroke-width: 1.5;
   pointer-events: visiblePainted;
   cursor: grab;
@@ -260,24 +260,24 @@ async function onUp(e: PointerEvent): Promise<void> {
 
 .chain path {
   fill: none;
-  stroke: rgb(255 140 0 / 0.8);
+  stroke: var(--viewport-chain);
   stroke-width: 2;
 }
 
 .chain circle,
 .chain rect {
-  fill: rgb(255 140 0);
-  stroke: white;
+  fill: var(--viewport-chain);
+  stroke: var(--viewport-point);
   stroke-width: 1;
 }
 
 .chain.selected path {
-  stroke: rgb(255 80 0);
+  stroke: var(--viewport-chain-selected);
   stroke-width: 3;
 }
 
 .chain.selected circle,
 .chain.selected rect {
-  fill: rgb(255 80 0);
+  fill: var(--viewport-chain-selected);
 }
 </style>

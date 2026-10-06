@@ -425,6 +425,7 @@
     "about": {
       "title": "About the ugoe editor",
       "version": "Version {{version}}",
+      "backend": "Viewport drawing: {{backend}}",
       "licenses": "Show licenses…",
       "licensesDescription": "The license of the ugoe editor (GPL-3.0-only) and of the bundled software and models."
     },
@@ -1420,7 +1421,7 @@
       },
       "fit": {
         "label": "Fit",
-        "tooltip": "Zoom the viewport to {{id}} (the viewport's Fit shows the whole canvas again)"
+        "tooltip": "Zoom the viewport to {{id}} (“Fit the whole canvas” at the bottom right of the viewport shows the whole canvas again)"
       },
       "clear": {
         "label": "Clear",
@@ -2793,8 +2794,17 @@
       "failed": "Cannot save the screenshot: {{error}}",
       "dialogTitle": "Save Screenshot"
     },
+    "view": {
+      "aria": "View"
+    },
+    "zoomOut": {
+      "label": "Zoom out"
+    },
+    "zoomIn": {
+      "label": "Zoom in"
+    },
     "fit": {
-      "label": "Fit"
+      "label": "Fit the whole canvas"
     },
     "stopPhysics": {
       "label": "Stop physics",
@@ -3124,6 +3134,10 @@
         "label": "New motion",
         "tooltip": "Create a new motion"
       },
+      "settings": {
+        "label": "Settings…",
+        "aria": "Settings of {{name}}"
+      },
       "delete": {
         "tooltip": "Delete this motion"
       },
@@ -3144,7 +3158,7 @@
           "aria": "Event {{index}} value"
         },
         "remove": "Remove event {{index}}",
-        "add": "+ Event at {{time}} s"
+        "add": "Event at {{time}} s"
       },
       "play": {
         "label": "Play",
@@ -3230,6 +3244,9 @@
       }
     },
     "expression": {
+      "settings": {
+        "aria": "Settings of {{name}}"
+      },
       "select": {
         "aria": "Expression",
         "empty": "(no expressions)"

@@ -418,6 +418,7 @@
     "about": {
       "title": "ugoe のエディタについて",
       "version": "版 {{version}}",
+      "backend": "ビューポートの描画の方式: {{backend}}",
       "licenses": "ライセンスを表示…",
       "licensesDescription": "ugoe のエディタ (GPL-3.0-only) と、同梱したソフトウェアとモデルのライセンスです。"
     },
@@ -1395,7 +1396,7 @@
       },
       "fit": {
         "label": "合わせる",
-        "tooltip": "ビューポートを {{id}} に寄せる (キャンバスの全体に戻すにはビューポートの「全体」)"
+        "tooltip": "ビューポートを {{id}} に寄せる (キャンバスの全体に戻すにはビューポートの右下の「全体を表示」)"
       },
       "clear": {
         "label": "やめる",
@@ -2729,6 +2730,15 @@
       "failed": "スクリーンショットを保存できません: {{error}}",
       "dialogTitle": "スクリーンショットを保存"
     },
+    "view": {
+      "aria": "表示"
+    },
+    "zoomOut": {
+      "label": "縮小"
+    },
+    "zoomIn": {
+      "label": "拡大"
+    },
     "fit": {
       "label": "全体を表示"
     },
@@ -3054,6 +3064,10 @@
         "label": "新しいモーション",
         "tooltip": "新しいモーションを作ります"
       },
+      "settings": {
+        "label": "設定…",
+        "aria": "{{name}} の設定"
+      },
       "delete": {
         "tooltip": "このモーションを削除します"
       },
@@ -3074,7 +3088,7 @@
           "aria": "イベント {{index}} の値"
         },
         "remove": "イベント {{index}} を削除",
-        "add": "+ {{time}} 秒にイベント"
+        "add": "{{time}} 秒にイベント"
       },
       "play": {
         "label": "再生",
@@ -3158,6 +3172,9 @@
       }
     },
     "expression": {
+      "settings": {
+        "aria": "{{name}} の設定"
+      },
       "select": {
         "aria": "表情",
         "empty": "(表情がありません)"

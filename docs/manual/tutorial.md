@@ -59,7 +59,7 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 | --- | --- |
 | 上 (ヘッダー) | ファイル操作 (「New」「New from PSD…」「Open…」「Save」「Save As…」「Export…」「Import PSD…」)、プロジェクト名、「Undo」「Redo」「Help」 |
 | 左 (ツリー) | 「Parts」タブはパーツの階層、「Deformers」タブはデフォーマの階層。行を押すと選択します |
-| 中央 (ビューポート) | モデルの表示と編集。左上に「Edit mesh」「Form edit」、右上に「Fit」 |
+| 中央 (ビューポート) | モデルの表示と編集。左上に「Edit mesh」「Form edit」、右上に「Screenshot」、右下に拡大・縮小と「全体を表示」 |
 | 右上 (インスペクタ) | 選んだ要素の設定。「Inspector」の見出しの下に `mesh: 顔 (Layer8)` のように種類・名前・ID が出ます |
 | 右下 (パラメータ) | 「Parameters」の見出しの下に、パラメータのスライダーが並びます |
 
@@ -70,7 +70,7 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 
 - マウスホイール: カーソルの位置を中心に拡大・縮小する。
 - 中ボタンのドラッグ (または Alt を押しながら左ドラッグ): 表示を動かす。
-- 「Fit」: キャンバス全体を表示する。
+- 右下の「−」「+」: 拡大・縮小する。四隅の印 (「全体を表示」): キャンバス全体を表示する。
 
 各パネルの詳しい説明は [画面とパネル](screen.md) にあります。
 

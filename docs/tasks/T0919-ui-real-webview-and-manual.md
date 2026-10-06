@@ -95,3 +95,15 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   ホットキーを削除すると、パネルの頭に「削除しました」の知らせと「元に戻す」が出る。docs/manual/studio.md の文 (「画面」の状態の印・「ホットキー」・
   「困ったとき」) は T0845 で直した。撮り直す画像: studio-overview.png (印の枠の色)。「元に戻す」の知らせを写すなら `just ui-audit` の
   `-hotkey-removed` の場面が見本になる。
+- T0675 から書き足した: エディタのビューポートとタイムラインの並びが変わった (docs/ui.md#エディタのビューポートとタイムライン-t0675)。
+  docs/manual/tools.md・screen.md・tutorial.md・motions.md・preview.md・dress-up.md の文は T0675 で直した。撮り直す画像と足すとよい画像:
+  - ビューポートを写した画像のすべて (screen.png など): 右上の描画の方式 (`webgl2`) と「Fit」が消え、右下に縮小・拡大・全体を表示の道具が出る。
+    ギズモ・メッシュの点・選択の輪郭の色が変わった (点は白い中と色の縁。ワープは濃い青、回転はピンク)。
+  - ギズモ・フォーム編集・メッシュ編集を写した画像: 左上の 1 行目が道具のボタン (「Form edit」は並びの中)、その下に地の付いた説明の帯
+    (対象・セル・「All」・選んだ数・注意・操作の説明)。docs/manual/tools.md の各節に画像は無いので、`just ui-audit` の `-gizmo`・`-mesh-edit` の場面を
+    見本に足すとよい (フォーム編集とキーの間にいるときの注意の帯も)。
+  - timeline.png: 上の段が「+ New motion」「Settings…」「Events」「Delete」の 1 行、再生の段が再生・繰り返しのアイコンとコマ送りの組、
+    キーの印の形が区間の種類 (菱形・円・四角)、グラフの左端の値と左の欄の 4 行 (区間の種類は選択欄)。「Settings…」の Popover を開いた画像を
+    「モーションを作る」に足すとよい (`-motion-settings` の場面)。
+  - expressions.png: 名前とフェードが「Settings…」へ移り、上の段が短くなった。
+  - 設定の「General」の画像を足すなら、「About the ugoe editor」にビューポートの描画の方式が出る。

@@ -439,7 +439,7 @@ $effect(() => {
     </aside>
   {/if}
 </div>
-<SettingsDialog bind:this={settings} {doc} onchange={() => fileMenu?.refresh()} />
+<SettingsDialog bind:this={settings} {doc} backend={viewport.backend} onchange={() => fileMenu?.refresh()} />
 
 <ConsentDialog prompt={consentPrompt} />
 <ApprovalDialog

@@ -15,6 +15,11 @@
   - グルーの頂点の組 (T0661): tools/glue/GlueOverlay.svelte。「Glue」タブで選んだグルーの組を重ね、組を足す・外す。
   - モジュールのプロジェクト (T0650): 本体の要素の選択枠は灰色の破線にし、編集のツール (フォーム・ギズモ・メッシュ編集) を
     出さずに「本体のプロジェクトで直す」と示す。「Module outline」でモジュールのメッシュすべての輪郭を重ね、本体と見分ける。
+
+  左上の並び (.strip。docs/editor.md#ビューポートの並び): 1 行目が道具のボタン (メッシュ編集・フォーム編集・モジュールの輪郭・物理を止める)、
+  その下に今の道具の説明の帯 (.vp-band。対象・セル・選んだ数・注意・操作の説明) を、テーマの地に載せて縦に積む。
+  帯は ToolOverlay・FormTool・DeformerGizmo が描き、並びは右上の HUD の幅を空けて折り返す (重ならない)。
+  ツールの svg は .strip の中にあっても `position: absolute` でオーバーレイ全体に広がる (.strip は位置の基準にしない)。
 -->
 <script lang="ts">
 import { Button } from "@ugoe/ui";
@@ -32,7 +37,7 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import GlueOverlay from "./tools/glue/GlueOverlay.svelte";
-import { acceptsToolKey } from "./tools/keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "./tools/keys";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
@@ -76,6 +81,8 @@ const primaryIsBase = $derived(
 );
 /** モジュールのメッシュの輪郭を重ねるか (モジュールのプロジェクトだけ)。 */
 let moduleOutline = $state(true);
+/** フォーム編集を出しているか (道具の並びのボタンで切り替え、FormTool が描く)。 */
+let formEnabled = $state(false);
 
 const primaryMesh = $derived(
   selection.primary?.kind === "mesh" && scene.mesh(selection.primary.id)
@@ -208,6 +215,12 @@ function onKeyDown(e: KeyboardEvent): void {
   } else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     meshTool?.selectAll();
+  } else {
+    const step = acceptsNudgeKey(e.target) ? nudgeOf(e) : null;
+    if (step) {
+      e.preventDefault();
+      meshTool?.nudge(step[0], step[1]);
+    }
   }
 }
 </script>
@@ -235,60 +248,71 @@ function onKeyDown(e: KeyboardEvent): void {
   {/each}
 </svg>
 
-{#if editing !== null}
-  {#key editing}
-    <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
-  {/key}
-{:else if primaryIsBase}
-  <!-- 本体の要素は編集できないので、編集のツールを出さない -->
-{:else if primaryDeformer !== null}
-  {#key primaryDeformer}
-    <DeformerGizmo {controller} {doc} {selection} deformerId={primaryDeformer} />
-  {/key}
-{:else}
-  <FormTool {controller} {doc} {selection} />
-{/if}
+<!-- ツールの svg は下の表示の重ねより下に描く (DOM の順)。ボタンと帯は z-index で上 -->
+<div class="strip">
+  <div class="toolbar">
+    {#if controller.previewingPhysics}
+      <TipButton
+        small
+        class="previewing"
+        onclick={() => controller.stopPhysicsPreview()}
+        tooltip={t("viewport.stopPhysics.tooltip")}>{t("viewport.stopPhysics.label")}</TipButton
+      >
+    {/if}
+    {#if editing === null}
+      <TipButton
+        small
+        disabled={primaryMesh === null || primaryIsBase}
+        onclick={enterMeshEdit}
+        tooltip={t("viewport.editMesh.tooltip")}>{t("viewport.editMesh.label")}</TipButton
+      >
+      {#if !primaryIsBase && primaryDeformer === null}
+        <TipButton
+          small
+          pressed={formEnabled}
+          onclick={() => (formEnabled = !formEnabled)}
+          tooltip={t("viewport.form.toggle.tooltip")}>{t("viewport.form.toggle.label")}</TipButton
+        >
+      {/if}
+      {#if doc.module}
+        <TipButton
+          small
+          pressed={moduleOutline}
+          onclick={() => (moduleOutline = !moduleOutline)}
+          tooltip={t("viewport.moduleOutline.tooltip")}>{t("viewport.moduleOutline.label")}</TipButton
+        >
+      {/if}
+    {:else}
+      <Button small onclick={() => meshTool?.retriangulate()}>{t("viewport.meshEdit.retriangulate")}</Button>
+      <Button small onclick={() => meshTool?.removeSelected()}>{t("viewport.meshEdit.deleteVertices")}</Button>
+      <Button small onclick={() => (selection.meshEdit = null)}>{t("viewport.meshEdit.done")}</Button>
+    {/if}
+  </div>
+  {#if editing !== null}
+    <p class="vp-band">
+      <span>{t("viewport.meshEdit.title", { mesh: editing })}</span>
+      <span class="hint muted">{t("viewport.meshEdit.hint")}</span>
+    </p>
+    {#key editing}
+      <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
+    {/key}
+  {:else if primaryIsBase}
+    <!-- 本体の要素は編集できないので、編集のツールを出さない -->
+    <p class="vp-band base-note" role="note">{t("viewport.baseNote")}</p>
+  {:else if primaryDeformer !== null}
+    {#key primaryDeformer}
+      <DeformerGizmo {controller} {doc} {selection} deformerId={primaryDeformer} />
+    {/key}
+  {:else}
+    <FormTool {controller} {doc} {selection} enabled={formEnabled} />
+  {/if}
+</div>
 
+<!-- 表示の重ね (ツールの svg より上。物理の衝突体はほかのツールより上でドラッグを受ける) -->
 <DepthOverlay {controller} {doc} {selection} {scene} />
 <OverflowOverlay {controller} {doc} {scene} view={verify} />
 <PhysicsOverlay {controller} {doc} view={physics} />
 <GlueOverlay {doc} {scene} view={glue} />
-
-<div class="toolbar">
-  {#if controller.previewingPhysics}
-    <TipButton
-      small
-      class="previewing"
-      onclick={() => controller.stopPhysicsPreview()}
-      tooltip={t("viewport.stopPhysics.tooltip")}>{t("viewport.stopPhysics.label")}</TipButton
-    >
-  {/if}
-  {#if editing === null}
-    <TipButton
-      small
-      disabled={primaryMesh === null || primaryIsBase}
-      onclick={enterMeshEdit}
-      tooltip={t("viewport.editMesh.tooltip")}>{t("viewport.editMesh.label")}</TipButton
-    >
-    {#if doc.module}
-      <TipButton
-        small
-        pressed={moduleOutline}
-        onclick={() => (moduleOutline = !moduleOutline)}
-        tooltip={t("viewport.moduleOutline.tooltip")}>{t("viewport.moduleOutline.label")}</TipButton
-      >
-    {/if}
-    {#if primaryIsBase}
-      <span class="base-tag" role="note">{t("viewport.baseNote")}</span>
-    {/if}
-  {:else}
-    <span class="muted">{t("viewport.meshEdit.title", { mesh: editing })}</span>
-    <Button small onclick={() => meshTool?.retriangulate()}>{t("viewport.meshEdit.retriangulate")}</Button>
-    <Button small onclick={() => meshTool?.removeSelected()}>{t("viewport.meshEdit.deleteVertices")}</Button>
-    <Button small onclick={() => (selection.meshEdit = null)}>{t("viewport.meshEdit.done")}</Button>
-    <span class="hint muted">{t("viewport.meshEdit.hint")}</span>
-  {/if}
-</div>
 
 <style>
 .layer {
@@ -305,60 +329,78 @@ function onKeyDown(e: KeyboardEvent): void {
 
 .outline {
   fill: none;
-  stroke: var(--ugoe-color-accent);
+  stroke: var(--viewport-edit);
   stroke-width: 1;
-  opacity: 0.7;
 }
 
 .outline.primary {
   stroke-width: 2;
-  opacity: 1;
 }
 
-/* ホバー: 選択より薄い破線 (ツリーの行のホバーと対応する) */
+/* ホバー: 選択と同じ色の破線 (ツリーの行のホバーと対応する)。薄くすると地に 3:1 を割るので、形 (破線) で分ける */
 .outline.hover {
   stroke-dasharray: 3 3;
-  opacity: 0.6;
 }
 
 .outline.base {
-  stroke: var(--ugoe-color-text-muted);
+  stroke: var(--viewport-base);
   stroke-dasharray: 4 3;
 }
 
 .module-outline {
   fill: none;
-  stroke: var(--ugoe-color-accent);
+  stroke: var(--viewport-edit);
   stroke-width: 1;
   stroke-dasharray: 2 3;
-  opacity: 0.55;
 }
 
-.base-tag {
-  padding: var(--ugoe-space-1) var(--ugoe-space-2);
-  background: var(--ugoe-color-surface);
-  border: 1px dashed var(--ugoe-color-border);
-  border-radius: var(--ugoe-radius-md);
-}
-
-/* 右上の HUD (Viewport.svelte) と重ならないよう、その幅を空けて折り返す (T0907) */
-.toolbar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
+/* 左上の並び: 道具のボタンの行と説明の帯を縦に積む。右上の HUD (Viewport.svelte) の幅を空けて折り返す (T0907)。
+   位置の基準にしない (中のツールの svg がオーバーレイ全体に広がるように) ので、`position` を付けず、流れの中に置く */
+.strip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ugoe-space-1);
   max-width: calc(100% - var(--viewport-hud-width, 0px) - 24px);
+  padding: 8px;
+}
+
+/* 押せるものと帯だけがポインタを受け、ツールの svg より上に描く */
+.toolbar,
+.strip :global(.vp-band) {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ugoe-space-2);
-  pointer-events: auto;
 }
 
-/* モデルの上に重なるので、地を敷いて読めるようにする (T0907) */
-.hint {
-  padding: 0 var(--ugoe-space-1);
-  border-radius: var(--ugoe-radius-sm);
-  background: color-mix(in srgb, var(--ugoe-color-surface) 85%, transparent);
+/* 説明の帯: モデルの上に重なるので、テーマの地と枠に載せて読めるようにする (FormTool・DeformerGizmo も使う) */
+.strip :global(.vp-band) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ugoe-space-1) var(--ugoe-space-3);
+  max-width: 100%;
+  margin: 0;
+  padding: var(--ugoe-space-1) var(--ugoe-space-2);
+  background: var(--ugoe-color-surface);
+  border: 1px solid var(--ugoe-color-border);
+  border-radius: var(--ugoe-radius-md);
+  overflow-wrap: anywhere;
+}
+
+.base-note {
+  border-style: dashed;
+}
+
+/* 操作の説明は小さな字で (モデルを隠す範囲を減らす) */
+.strip :global(.vp-band .hint) {
   font-size: var(--ugoe-font-size-xs);
 }
 

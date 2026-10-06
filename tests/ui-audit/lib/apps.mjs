@@ -153,6 +153,42 @@ export const APPS = {
           exact: true,
         })
         .click();
+      // タイムラインのグラフ (カーブのある行とキーを選ぶ) と、モーションの「Settings…」の Popover (T0675)
+      await page.locator(".motion-editor .label.has-curve button.track").first().click();
+      await page.locator(".motion-editor .lane.selected button.diamond").nth(1).click();
+      await page.waitForTimeout(400);
+      await ctx.scene("timeline-graph", { aria: false });
+      await page
+        .getByRole("button", {
+          name: text("editor", ctx.lang, "timeline.motion.settings.label"),
+          exact: true,
+        })
+        .click();
+      await page.locator(".ugoe-popover").first().waitFor({ timeout: 5000 });
+      await ctx.scene("motion-settings", { aria: false });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+      // ビューポートの道具: ワープのギズモと、メッシュの編集 (見本の HeadWarp・Face。T0675)
+      await page
+        .getByRole("treeitem", { name: /^HeadWarp\b/ })
+        .first()
+        .click();
+      await page.waitForTimeout(600);
+      await ctx.scene("gizmo", { aria: false });
+      await page
+        .getByRole("treeitem", { name: /^Face\b/ })
+        .first()
+        .click();
+      await page
+        .getByRole("button", {
+          name: text("editor", ctx.lang, "viewport.editMesh.label"),
+          exact: true,
+        })
+        .click();
+      await page.waitForTimeout(600);
+      await ctx.scene("mesh-edit", { aria: false });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
       // 左の列のデフォーマ・タイムラインの表情
       await page
         .getByRole("tab", { name: text("editor", ctx.lang, "tree.view.deformers"), exact: true })

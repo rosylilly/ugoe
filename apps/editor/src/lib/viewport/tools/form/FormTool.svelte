@@ -14,7 +14,7 @@
   (ipc.localToCanvas / ipc.canvasToLocal、ugoe_editor_core::space)。
 -->
 <script lang="ts">
-import { Button } from "@ugoe/ui";
+import { Button, Icon } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText } from "../../../errors";
 import { t } from "../../../i18n";
@@ -34,18 +34,18 @@ import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { flatten, gridEdges, gridOutline, movePoints } from "../deformer/gizmo";
 import { type Box, meshEdges, updateVertexSelection, verticesInBox } from "../geometry";
-import { acceptsToolKey } from "../keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "../keys";
 import { pressPoint, trianglesPath, validIndices } from "./form";
 
 interface Props {
   controller: ViewportController;
   doc: EditorDocument;
   selection: Selection;
+  /** フォーム編集を出すか (ToolOverlay の道具の並びの「Form edit」で切り替える)。 */
+  enabled: boolean;
 }
 
-let { controller, doc, selection }: Props = $props();
-
-let enabled = $state(false);
+let { controller, doc, selection, enabled }: Props = $props();
 /** 今のセルの点のキャンバス座標 (バックエンドで変換した結果)。 */
 let canvasPoints = $state<Point[] | null>(null);
 let error = $state<string | null>(null);
@@ -201,25 +201,30 @@ async function onPointerUp(e: PointerEvent) {
     }
     return;
   }
+  if (Math.hypot(d.delta[0], d.delta[1]) < CLICK_SLOP) {
+    drag = null;
+    return;
+  }
+  await movePicked(d.delta);
+}
+
+/**
+ * 選んだ点を画面の CSS ピクセルで `delta` だけ動かし、今のセルに set_keyform_cell を 1 つ送る
+ * (ドラッグを離したときと、矢印キー)。送り終えたらドラッグのプレビューを消す。
+ */
+async function movePicked(delta: Point): Promise<void> {
   const scale = controller.transform?.scale ?? 1;
-  if (
-    Math.hypot(d.delta[0], d.delta[1]) < CLICK_SLOP ||
-    picked.length === 0 ||
-    !element ||
-    !cell ||
-    !keyform ||
-    !canvasPoints
-  ) {
+  if (busy || picked.length === 0 || !element || !cell || !keyform || !canvasPoints) {
     drag = null;
     return;
   }
   busy = true;
   try {
     const indices = picked;
-    const delta: Point = [d.delta[0] / scale, d.delta[1] / scale];
+    const moved: Point = [delta[0] / scale, delta[1] / scale];
     const targets = indices.map((i): Point => {
       const p = canvasPoints?.[i] ?? [0, 0];
-      return [p[0] + delta[0], p[1] + delta[1]];
+      return [p[0] + moved[0], p[1] + moved[1]];
     });
     const guesses = indices.map((i): Point => localPoints[i] ?? [0, 0]);
     const mapped = await ipc.canvasToLocal(
@@ -259,6 +264,13 @@ function onKeyDown(e: KeyboardEvent): void {
   else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     selectAll();
+  } else {
+    // 矢印キーで選んだ点を動かす (ドラッグの代わり。docs/editor.md#ビューポートの操作と代わりの手段)
+    const step = picked.length > 0 && acceptsNudgeKey(e.target) ? nudgeOf(e) : null;
+    if (step) {
+      e.preventDefault();
+      void movePicked(step);
+    }
   }
 }
 
@@ -273,40 +285,37 @@ function moveToNearestKey() {
 
 <svelte:window onkeydown={onKeyDown} />
 
-<div class="bar">
-  <TipButton
-    small
-    pressed={enabled}
-    onclick={() => (enabled = !enabled)}
-    tooltip={t("viewport.form.toggle.tooltip")}>{t("viewport.form.toggle.label")}</TipButton
-  >
-  {#if enabled && element}
-    {#if cell}
-      <span class="muted">
-        {element.target.id}
-        {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") ||
-          t("viewport.cell.noAxes")}
-      </span>
-      {#if localPoints.length > 1}
-        <TipButton
-          small
-          onclick={selectAll}
-          tooltip={t("viewport.form.selectAll.tooltip")}
-          shortcut="Mod+A">{t("viewport.cell.selectAll")}</TipButton
-        >
-        <span class="muted"
-          >{t("viewport.form.selected", { count: picked.length, total: localPoints.length })}</span
-        >
+{#if enabled}
+  <!-- 説明の帯 (ToolOverlay の .strip の中で、道具の並びの下に積む) -->
+  <div class="vp-band">
+    {#if element}
+      {#if cell}
+        <span>
+          {element.target.id}
+          {bindings.map((b) => `${b.parameter}=${cell[b.parameter]}`).join(" ") ||
+            t("viewport.cell.noAxes")}
+        </span>
+        {#if localPoints.length > 1}
+          <TipButton
+            small
+            onclick={selectAll}
+            tooltip={t("viewport.form.selectAll.tooltip")}
+            shortcut="Mod+A">{t("viewport.cell.selectAll")}</TipButton
+          >
+          <span class="muted"
+            >{t("viewport.form.selected", { count: picked.length, total: localPoints.length })}</span
+          >
+        {/if}
+      {:else}
+        <span class="warn"><Icon name="warning" />{t("viewport.cell.notOnKey")}</span>
+        <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
       {/if}
     {:else}
-      <span class="warn">{t("viewport.cell.notOnKey")}</span>
-      <Button small onclick={moveToNearestKey}>{t("viewport.cell.moveToNearestKey")}</Button>
+      <span class="muted">{t("viewport.form.empty")}</span>
     {/if}
-  {:else if enabled}
-    <span class="muted">{t("viewport.form.empty")}</span>
-  {/if}
-  {#if error}<span class="error ugoe-selectable">{error}</span>{/if}
-</div>
+    {#if error}<span class="error ugoe-selectable">{error}</span>{/if}
+  </div>
+{/if}
 
 {#if enabled && element && cell && canvasPoints}
   <svg class="form" role="presentation" onpointermove={onPointerMove} onpointerup={onPointerUp}>
@@ -351,19 +360,11 @@ function moveToNearestKey() {
 {/if}
 
 <style>
-/* ToolOverlay のツールバーの下に置く。 */
-.bar {
-  position: absolute;
-  top: 40px;
-  left: 8px;
-  display: flex;
-  gap: var(--ugoe-space-3);
-  align-items: center;
-  pointer-events: auto;
-}
-
 .warn {
-  color: #b45309;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ugoe-space-1);
+  color: var(--ugoe-color-warning);
 }
 
 .form {
@@ -376,22 +377,21 @@ function moveToNearestKey() {
 }
 
 line {
-  stroke: var(--ugoe-color-accent);
+  stroke: var(--viewport-edit);
   stroke-width: 1;
-  opacity: 0.6;
 }
 
 .handle {
-  fill: var(--ugoe-color-surface);
-  stroke: var(--ugoe-color-accent);
+  fill: var(--viewport-point);
+  stroke: var(--viewport-edit);
   stroke-width: 1.5;
   pointer-events: auto;
   cursor: move;
 }
 
 .handle.selected {
-  fill: #f59e0b;
-  stroke: #b45309;
+  fill: var(--viewport-picked);
+  stroke: var(--viewport-picked-edge);
 }
 
 .area {
@@ -401,8 +401,8 @@ line {
 }
 
 .box {
-  fill: color-mix(in srgb, var(--ugoe-color-accent) 12%, transparent);
-  stroke: var(--ugoe-color-accent);
+  fill: color-mix(in srgb, var(--viewport-edit) 12%, transparent);
+  stroke: var(--viewport-edit);
   stroke-dasharray: 4 3;
   pointer-events: none;
 }

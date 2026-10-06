@@ -246,11 +246,11 @@ const hint = $derived(
 }
 
 .a {
-  --glue: #22c55e;
+  --glue: var(--viewport-glue-a);
 }
 
 .b {
-  --glue: #a855f7;
+  --glue: var(--viewport-glue-b);
 }
 
 .outline.a,
@@ -259,7 +259,7 @@ const hint = $derived(
 }
 
 .pair {
-  stroke: #f59e0b;
+  stroke: var(--viewport-glue-pair);
   stroke-width: 1.5;
 }
 
@@ -268,7 +268,7 @@ const hint = $derived(
 }
 
 .vertex {
-  fill: var(--ugoe-color-surface);
+  fill: var(--viewport-point);
   stroke: var(--glue);
   stroke-width: 1.5;
   pointer-events: visiblePainted;
@@ -280,13 +280,13 @@ const hint = $derived(
 }
 
 .vertex.pending {
-  stroke: #f59e0b;
+  stroke: var(--viewport-glue-pair);
   stroke-width: 3;
 }
 
 .marker {
-  fill: #f59e0b;
-  stroke: var(--ugoe-color-surface);
+  fill: var(--viewport-glue-pair);
+  stroke: var(--viewport-point);
   stroke-width: 1;
   pointer-events: visiblePainted;
   cursor: pointer;
@@ -300,7 +300,7 @@ const hint = $derived(
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ugoe-space-2);
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - var(--viewport-view-tools-width, 0px) - 24px);
   padding: var(--ugoe-space-1) var(--ugoe-space-2);
   background: var(--ugoe-color-surface);
   border: 1px solid var(--ugoe-color-border);

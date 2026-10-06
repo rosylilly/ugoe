@@ -193,22 +193,24 @@ function rays(x: number, y: number): string {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  /* 黄色の線は明るい地に弱いので、暗い縁取りを付ける (docs/ui.md#ビューポートの上の図) */
+  filter: drop-shadow(0 0 1px var(--viewport-halo));
 }
 
 .dial {
   fill: none;
-  stroke: #facc15;
+  stroke: var(--viewport-light);
   stroke-width: 1;
   stroke-dasharray: 4 4;
   opacity: 0.8;
 }
 
 .center {
-  fill: #facc15;
+  fill: var(--viewport-light);
 }
 
 .beam {
-  stroke: #facc15;
+  stroke: var(--viewport-light);
   stroke-width: 1.5;
 }
 
@@ -218,18 +220,18 @@ function rays(x: number, y: number): string {
 
 .range {
   fill: none;
-  stroke: #facc15;
+  stroke: var(--viewport-light);
   stroke-dasharray: 6 4;
   opacity: 0.6;
 }
 
 .rays {
-  stroke: #facc15;
+  stroke: var(--viewport-light);
   stroke-width: 2;
 }
 
 .handle {
-  stroke: #1f2937;
+  stroke: var(--viewport-ink);
   stroke-width: 2;
 }
 
@@ -244,15 +246,15 @@ function rays(x: number, y: number): string {
 }
 
 .handle.current {
-  stroke: var(--ugoe-color-accent);
+  stroke: var(--viewport-edit);
   stroke-width: 3;
 }
 
 .label {
-  fill: #facc15;
+  fill: var(--viewport-light);
   font-size: var(--ugoe-font-size-xs);
   paint-order: stroke;
-  stroke: #0008;
+  stroke: var(--viewport-halo);
   stroke-width: 3px;
 }
 </style>

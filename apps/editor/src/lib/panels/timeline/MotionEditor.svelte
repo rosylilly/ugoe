@@ -2,6 +2,8 @@
   モーションの編集: モーションの選択と作成・削除・名前・長さ・ループ・フェード・イベント、再生・停止・シーク、
   パラメータごとの行とキー (ドープシート)、選んだ行のカーブ (CurveGraph)。
   キーは「今のスライダーの値」で打つ (行の ◆・「Key changed」)。操作はすべて Command (docs/editor.md#タイムライン)。
+  並び (T0675): 頭の行は選択・作成・「Settings…」(名前・長さ・ループ・フェード)・イベント・削除、次の行は再生・繰り返し・
+  コマ送りと時刻・キー。キーの形は入る区間の種類 (菱形・円・四角。timeline.ts の shapedKeys)。
 -->
 <script lang="ts">
 import {
@@ -26,7 +28,6 @@ import type { ViewportController } from "../../viewport/controller.svelte";
 import CurveGraph from "./CurveGraph.svelte";
 import {
   canMoveKey,
-  curveKeys,
   FPS,
   findCurve,
   isValidName,
@@ -34,6 +35,7 @@ import {
   keyValuesCommand,
   newMotion,
   roundTime,
+  shapedKeys,
   snapToFrame,
   targetKey,
   tickStep,
@@ -374,6 +376,7 @@ function label(m: Motion): string {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="motion-editor" onkeydown={onPanelKey}>
+  <!-- 頭の並び: モーションの選択と作成・まれに変える設定 (名前・長さ・ループ・フェード) とイベントは Popover の奥 (docs/editor.md#タイムライン) -->
   <div class="bar">
     <Select
       aria-label={t("timeline.motion.select.aria")}
@@ -383,50 +386,58 @@ function label(m: Motion): string {
       onchange={(v) => timeline.select(v || null)}
     />
     <TipButton small onclick={create} tooltip={t("timeline.motion.new.tooltip")}
-      >{t("timeline.motion.new.label")}</TipButton
+      ><Icon name="plus" />{t("timeline.motion.new.label")}</TipButton
     >
     {#if motion}
-      <TipButton small onclick={remove} tooltip={t("timeline.motion.delete.tooltip")}
-        >{t("timeline.delete")}</TipButton
-      >
-      <span class="sep"></span>
-      <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
-      <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
-      {#key fieldsKey}
-        <NumberField
-          label={t("timeline.motion.duration.label")}
-          min={0.01}
-          step={0.1}
-          decimals={3}
-          unit={t("timeline.unit.seconds")}
-          value={motion.duration}
-          onchange={(v) => setProperty("duration", v)}
-        />
-        <Checkbox
-          label={t("timeline.motion.loop.label")}
-          checked={motion.looping}
-          onchange={setLooping}
-        />
-        <NumberField
-          label={t("timeline.fadeIn.label")}
-          min={0}
-          step={0.1}
-          decimals={3}
-          unit={t("timeline.unit.seconds")}
-          value={motion.fade_in}
-          onchange={(v) => setProperty("fade_in", v)}
-        />
-        <NumberField
-          label={t("timeline.fadeOut.label")}
-          min={0}
-          step={0.1}
-          decimals={3}
-          unit={t("timeline.unit.seconds")}
-          value={motion.fade_out}
-          onchange={(v) => setProperty("fade_out", v)}
-        />
-      {/key}
-      <Popover label={t("timeline.motion.events.aria")} align="end">
+      <Popover label={t("timeline.motion.settings.aria", { name: motion.name })}>
+        {#snippet trigger(attrs)}
+          <Button small {...attrs as ButtonBaseProps}>{t("timeline.motion.settings.label")}</Button>
+        {/snippet}
+        <div class="popup">
+          {#key fieldsKey}
+            <div class="ed-field">
+              <label for="{ids}-name">{t("timeline.name.label")}</label>
+              <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
+              <span id="{ids}-duration">{t("timeline.motion.duration.label")}</span>
+              <NumberField
+                aria-labelledby="{ids}-duration"
+                min={0.01}
+                step={0.1}
+                decimals={3}
+                unit={t("timeline.unit.seconds")}
+                value={motion.duration}
+                onchange={(v) => setProperty("duration", v)}
+              />
+              <span id="{ids}-fade-in">{t("timeline.fadeIn.label")}</span>
+              <NumberField
+                aria-labelledby="{ids}-fade-in"
+                min={0}
+                step={0.1}
+                decimals={3}
+                unit={t("timeline.unit.seconds")}
+                value={motion.fade_in}
+                onchange={(v) => setProperty("fade_in", v)}
+              />
+              <span id="{ids}-fade-out">{t("timeline.fadeOut.label")}</span>
+              <NumberField
+                aria-labelledby="{ids}-fade-out"
+                min={0}
+                step={0.1}
+                decimals={3}
+                unit={t("timeline.unit.seconds")}
+                value={motion.fade_out}
+                onchange={(v) => setProperty("fade_out", v)}
+              />
+            </div>
+            <Checkbox
+              label={t("timeline.motion.loop.label")}
+              checked={motion.looping}
+              onchange={setLooping}
+            />
+          {/key}
+        </div>
+      </Popover>
+      <Popover label={t("timeline.motion.events.aria")}>
         {#snippet trigger(attrs)}
           <Button small {...attrs as ButtonBaseProps}
             >{t("timeline.motion.events.label", { count: motion.events.length })}</Button
@@ -461,56 +472,66 @@ function label(m: Motion): string {
               </div>
             {/each}
           {/key}
-          <Button small onclick={addEvent}
-            >{t("timeline.motion.events.add", { time: timeline.time })}</Button
-          >
+          <div>
+            <Button small onclick={addEvent}
+              ><Icon name="plus" />{t("timeline.motion.events.add", { time: timeline.time })}</Button
+            >
+          </div>
         </div>
       </Popover>
+      <TipButton small onclick={remove} tooltip={t("timeline.motion.delete.tooltip")}
+        >{t("timeline.delete")}</TipButton
+      >
     {/if}
   </div>
 
   {#if motion}
+    <!-- 再生の並び: 再生・繰り返し・コマ送りと時刻・キーを打つ / 消す -->
     <div class="bar transport">
-      <TipButton
+      <IconButton
         small
-        onclick={() => timeline.toggle()}
+        variant="secondary"
+        label={timeline.playing ? t("timeline.motion.stop.label") : t("timeline.motion.play.label")}
         tooltip={t("timeline.motion.play.tooltip")}
         shortcut="Space"
-        ><Icon name={timeline.playing ? "stop" : "play"} />
-        {timeline.playing ? t("timeline.motion.stop.label") : t("timeline.motion.play.label")}</TipButton
+        onclick={() => timeline.toggle()}><Icon name={timeline.playing ? "stop" : "play"} /></IconButton
       >
-      <span class="ugoe-visually-hidden" id="{ids}-repeat">{t("timeline.motion.repeat.description")}</span>
-      <Checkbox
+      <IconButton
+        small
+        variant="secondary"
         label={t("timeline.motion.repeat.label")}
-        aria-describedby="{ids}-repeat"
-        bind:checked={timeline.repeat}
-      />
-      <IconButton
-        small
-        variant="secondary"
-        label={t("timeline.motion.previousFrame")}
-        shortcut="ArrowLeft"
-        onclick={() => stepFrame(-1)}><Icon name="stepBack" /></IconButton
+        tooltip={t("timeline.motion.repeat.description")}
+        pressed={timeline.repeat}
+        onclick={() => (timeline.repeat = !timeline.repeat)}><Icon name="reload" /></IconButton
       >
-      <NumberField
-        min={0}
-        max={motion.duration}
-        step={1 / FPS}
-        decimals={3}
-        size={5}
-        value={roundTime(timeline.time)}
-        aria-labelledby="{ids}-time"
-        onchange={(v) => timeline.seek(v)}
-      />
-      <span class="ugoe-visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>
-      <IconButton
-        small
-        variant="secondary"
-        label={t("timeline.motion.nextFrame")}
-        shortcut="ArrowRight"
-        onclick={() => stepFrame(1)}><Icon name="stepForward" /></IconButton
-      >
-      <span class="muted">{t("timeline.motion.durationOf", { duration: motion.duration })}</span>
+      <span class="frames" role="group" aria-label={t("timeline.motion.time.aria")}>
+        <IconButton
+          small
+          variant="secondary"
+          label={t("timeline.motion.previousFrame")}
+          shortcut="ArrowLeft"
+          onclick={() => stepFrame(-1)}><Icon name="stepBack" /></IconButton
+        >
+        <NumberField
+          min={0}
+          max={motion.duration}
+          step={1 / FPS}
+          decimals={3}
+          size={4}
+          value={roundTime(timeline.time)}
+          aria-labelledby="{ids}-time"
+          onchange={(v) => timeline.seek(v)}
+        />
+        <span class="ugoe-visually-hidden" id="{ids}-time">{t("timeline.motion.time.aria")}</span>
+        <IconButton
+          small
+          variant="secondary"
+          label={t("timeline.motion.nextFrame")}
+          shortcut="ArrowRight"
+          onclick={() => stepFrame(1)}><Icon name="stepForward" /></IconButton
+        >
+        <span class="muted">{t("timeline.motion.durationOf", { duration: motion.duration })}</span>
+      </span>
       <span class="sep"></span>
       <TipButton small onclick={keyChanged} tooltip={t("timeline.motion.keyChanged.tooltip")}
         ><Icon name="key" />{t("timeline.motion.keyChanged.label")}</TipButton
@@ -581,7 +602,7 @@ function label(m: Motion): string {
           >
             <span class="playhead" style:left="{timeToX(timeline.time, view)}px"></span>
             {#if row.curve}
-              {#each curveKeys(row.curve) as k (k.t)}
+              {#each shapedKeys(row.curve) as k (k.t)}
                 {@const selected = timeline.selectedKey?.track === key && timeline.selectedKey.t === k.t}
                 <Tooltip text={t("timeline.motion.key.tooltip", { label: row.label, value: k.v, time: k.t })}>
                   {#snippet trigger(attrs)}
@@ -593,6 +614,7 @@ function label(m: Motion): string {
                         onpointercancel: () => (drag = null),
                       })}
                       class="diamond"
+                      data-shape={k.shape}
                       class:selected
                       style:left="{keyX(row.target, k)}px"
                       aria-label={t("timeline.motion.key.aria", { label: row.label, time: k.t })}
@@ -615,10 +637,20 @@ function label(m: Motion): string {
 </div>
 
 <style>
-  /* 低い画面では表 (3 行は残す) とグラフが収まらないので、全体を送る (T0907) */
+  /*
+   * 頭の並び (選択と再生) は送らずに残し、表を送る (docs/ui.md#レイアウト の「高さの変化」)。表は 2 行を残し、
+   * それでも収まらない低い画面 (200% の拡大) だけ全体を送る (T0907)。中の見せずに読ませる文字の位置の基準にもする。
+   */
   .motion-editor {
     /* 表の行の高さ: 押せる範囲 24px と下の区切りの線 1px */
     --row-height: calc(var(--ugoe-target-min) + 1px);
+    /*
+     * 行の名前の列 (表とグラフの左の欄で同じ幅にして、時刻の軸をそろえる)。狭いとき (200% の拡大など) は
+     * キーの列を残すために縮める。割合は表とグラフで同じ幅になるよう、この要素の幅 (cqw) から取る
+     */
+    container-type: inline-size;
+    --label-width: clamp(150px, 45cqw, 200px);
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -626,6 +658,7 @@ function label(m: Motion): string {
     overflow-y: auto;
   }
   .bar {
+    flex: none;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -633,8 +666,11 @@ function label(m: Motion): string {
     padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
   }
-  .inline {
-    display: inline;
+  /* コマ送りと時刻は 1 つの組 (間を詰める) */
+  .frames {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ugoe-space-1);
   }
   .sep {
     width: 1px;
@@ -646,6 +682,9 @@ function label(m: Motion): string {
     gap: var(--ugoe-space-2);
     min-width: 260px;
   }
+  .popup .ed-field {
+    margin: 0;
+  }
   .event {
     display: flex;
     align-items: center;
@@ -653,12 +692,12 @@ function label(m: Motion): string {
   }
   .sheet {
     flex: 1;
-    min-height: calc(21px + 3 * var(--row-height));
+    min-height: calc(21px + 2 * var(--row-height));
     overflow-y: auto;
   }
   .grid {
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: var(--label-width, 200px) minmax(0, 1fr);
   }
   .corner,
   .ruler {
@@ -772,6 +811,16 @@ function label(m: Motion): string {
   .diamond.selected::before {
     background: var(--ugoe-color-accent);
     border-color: var(--ugoe-color-accent);
+  }
+  /* 形は入る区間の種類 (timeline.ts の shapedKeys): ベジェは円、ステップは四角 */
+  .diamond[data-shape="circle"]::before {
+    inset: 7px;
+    border-radius: 50%;
+    transform: none;
+  }
+  .diamond[data-shape="square"]::before {
+    inset: 8px;
+    transform: none;
   }
   .diamond:focus-visible {
     outline: var(--ugoe-focus-ring);

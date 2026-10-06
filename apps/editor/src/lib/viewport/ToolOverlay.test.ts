@@ -57,6 +57,17 @@ describe("ToolOverlay mesh edit keys", () => {
     expect(selection.meshEdit).toBeNull();
   });
 
+  it("moves the selected vertices with the arrow keys", async () => {
+    const { doc } = setup();
+    const event = press(document.body, "ArrowLeft", { shiftKey: true });
+    expect(event.defaultPrevented).toBe(true);
+    await settle();
+    // 画面の 10px は偽のビューの拡大率 2 でキャンバスの 5
+    expect(doc.commands).toEqual([
+      { op: "move_mesh_vertices", id: "Quad", moves: [{ index: 0, delta: [-5, 0] }] },
+    ]);
+  });
+
   it("does not take Esc, Delete or Ctrl + A pressed inside a dialog", async () => {
     const { doc, selection } = setup();
     const inDialog = dialogButton();

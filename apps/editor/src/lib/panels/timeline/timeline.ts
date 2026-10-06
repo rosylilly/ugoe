@@ -76,6 +76,25 @@ export function curveKeys(curve: Curve): Point[] {
   return curve.segments.map(endPoint);
 }
 
+/**
+ * ドープシートのキーの形: そのキーに入る区間の種類 (グラフの左の欄で変えるもの) を、色に頼らず形で示す。
+ * 直線と最初のキーは菱形、ベジェは円、ステップ (と逆ステップ) は四角 (docs/editor.md#タイムライン)。
+ */
+export type KeyShape = "diamond" | "circle" | "square";
+
+/** カーブのキーと、その形 (`KeyShape`)。 */
+export function shapedKeys(curve: Curve): (Point & { shape: KeyShape })[] {
+  return curve.segments.map((s, i) => {
+    const shape: KeyShape =
+      i === 0 || s.type === "linear" || s.type === "start"
+        ? "diamond"
+        : s.type === "bezier"
+          ? "circle"
+          : "square";
+    return { ...endPoint(s), shape };
+  });
+}
+
 /** 時刻 `t` のキーで終わる区間 (最初のキーなら null)。 */
 export function segmentEndingAt(curve: Curve, t: number): Segment | null {
   const index = curve.segments.findIndex((s) => endPoint(s).t === t);

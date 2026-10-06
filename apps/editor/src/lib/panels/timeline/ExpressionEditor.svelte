@@ -4,7 +4,16 @@
   操作はすべて Command (docs/editor.md#表情)。
 -->
 <script lang="ts">
-import { Button, Icon, IconButton, NumberField, Select, TextField } from "@ugoe/ui";
+import {
+  Button,
+  type ButtonBaseProps,
+  Icon,
+  IconButton,
+  NumberField,
+  Popover,
+  Select,
+  TextField,
+} from "@ugoe/ui";
 import { untrack } from "svelte";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
@@ -196,29 +205,39 @@ function label(e: Expression): string {
           ? t("timeline.expression.endPreview.label")
           : t("timeline.expression.preview.label")}</TipButton
       >
+      <!-- まれに変える設定 (名前・フェード) は Popover の奥 (モーションと同じ。docs/editor.md#表情) -->
+      <Popover label={t("timeline.expression.settings.aria", { name: selected.name })}>
+        {#snippet trigger(attrs)}
+          <Button small {...attrs as ButtonBaseProps}>{t("timeline.motion.settings.label")}</Button>
+        {/snippet}
+        <div class="popup ed-field">
+          {#key fieldsKey}
+            <label for="{ids}-name">{t("timeline.name.label")}</label>
+            <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
+            <span id="{ids}-fade-in">{t("timeline.fadeIn.label")}</span>
+            <NumberField
+              aria-labelledby="{ids}-fade-in"
+              min={0}
+              step={0.1}
+              decimals={3}
+              unit={t("timeline.unit.seconds")}
+              value={selected.fade_in}
+              onchange={(v) => setFade("fade_in", v)}
+            />
+            <span id="{ids}-fade-out">{t("timeline.fadeOut.label")}</span>
+            <NumberField
+              aria-labelledby="{ids}-fade-out"
+              min={0}
+              step={0.1}
+              decimals={3}
+              unit={t("timeline.unit.seconds")}
+              value={selected.fade_out}
+              onchange={(v) => setFade("fade_out", v)}
+            />
+          {/key}
+        </div>
+      </Popover>
       <Button small onclick={remove}>{t("timeline.delete")}</Button>
-      <label class="inline" for="{ids}-name">{t("timeline.name.label")}</label>
-      <TextField id="{ids}-name" size={12} bind:value={renaming} onchange={rename} />
-      {#key fieldsKey}
-        <NumberField
-          label={t("timeline.fadeIn.label")}
-          min={0}
-          step={0.1}
-          decimals={3}
-          unit={t("timeline.unit.seconds")}
-          value={selected.fade_in}
-          onchange={(v) => setFade("fade_in", v)}
-        />
-        <NumberField
-          label={t("timeline.fadeOut.label")}
-          min={0}
-          step={0.1}
-          decimals={3}
-          unit={t("timeline.unit.seconds")}
-          value={selected.fade_out}
-          onchange={(v) => setFade("fade_out", v)}
-        />
-      {/key}
     {/if}
     {#if message}<span class="error ugoe-selectable">{message}</span>{/if}
   </div>
@@ -289,6 +308,7 @@ function label(e: Expression): string {
 
 <style>
   .expressions {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -302,8 +322,9 @@ function label(e: Expression): string {
     padding: var(--ugoe-space-2) var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
   }
-  .inline {
-    display: inline;
+  .popup {
+    min-width: 260px;
+    margin: 0;
   }
   .sep {
     width: 1px;

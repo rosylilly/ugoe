@@ -261,7 +261,7 @@ const found = $derived(
 .chain,
 .shape {
   fill: none;
-  stroke: var(--highlight, #ff9f1a);
+  stroke: var(--viewport-highlight);
   stroke-width: 2;
 }
 
@@ -270,16 +270,16 @@ const found = $derived(
 }
 
 .shape {
-  fill: color-mix(in srgb, var(--highlight, #ff9f1a) 20%, transparent);
+  fill: color-mix(in srgb, var(--viewport-highlight) 20%, transparent);
 }
 
 .axis {
-  stroke: var(--highlight, #ff9f1a);
+  stroke: var(--viewport-highlight);
   stroke-width: 1.5;
 }
 
 .point {
-  fill: var(--highlight, #ff9f1a);
+  fill: var(--viewport-highlight);
 }
 
 .notice {
@@ -289,10 +289,10 @@ const found = $derived(
   display: flex;
   align-items: center;
   gap: var(--ugoe-space-2);
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - var(--viewport-view-tools-width, 0px) - 24px);
   padding: var(--ugoe-space-1) var(--ugoe-space-2);
   background: var(--ugoe-color-surface);
-  border: 1px solid var(--highlight, #ff9f1a);
+  border: 1px solid var(--viewport-highlight);
   border-radius: var(--ugoe-radius-md);
   pointer-events: auto;
 }
