@@ -8,6 +8,8 @@
   - 「Remove pairs」: 組の線の中点の四角を押すと、その組を外す (withoutPair)。
   - どちらも set_glue でグルーを丸ごと置き換える (Undo の 1 単位)。Esc でモードを抜ける。
   - 本体のグルー・描画用の複製のグルーは読み取り専用 (重ねて見せるだけ)。
+  - パネルの組の一覧の行にポインタかフォーカスがある組 (view.highlightedPair。T1651) は、線と両端を太く・別の色で
+    いちばん上に描く。表示だけで、Command は送らない。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
@@ -78,9 +80,16 @@ const drawn = $derived.by(() => {
     if (!pa || !pb) return [];
     return [{ index, pa, pb, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2] as Point }];
   });
+  const key = view.highlightedPair;
+  const highlighted =
+    key === null
+      ? null
+      : (pairs.find((p) => glue.pairs[p.index]?.a === key.a && glue.pairs[p.index]?.b === key.b) ??
+        null);
   return {
     a,
     b,
+    highlighted,
     outlineA: outline(glue.mesh_a, a),
     outlineB: outline(glue.mesh_b, b),
     pairs,
@@ -189,6 +198,15 @@ const hint = $derived(
           <circle class="end b" cx={p.pb[0]} cy={p.pb[1]} r="2" />
         {/each}
       {/if}
+      {#if drawn.highlighted}
+        {@const h = drawn.highlighted}
+        <g class="highlight" data-pair={h.index}>
+          <line class="halo" x1={h.pa[0]} y1={h.pa[1]} x2={h.pb[0]} y2={h.pb[1]} />
+          <line class="pair" x1={h.pa[0]} y1={h.pa[1]} x2={h.pb[0]} y2={h.pb[1]} />
+          <circle class="end" cx={h.pa[0]} cy={h.pa[1]} r="5" />
+          <circle class="end" cx={h.pb[0]} cy={h.pb[1]} r="5" />
+        </g>
+      {/if}
       {#if view.pairMode === "remove"}
         {#each drawn.pairs as p (p.index)}
           <rect
@@ -282,6 +300,29 @@ const hint = $derived(
 .vertex.pending {
   stroke: var(--viewport-glue-pair);
   stroke-width: 3;
+}
+
+/* パネルで行を指している組 (T1651)。選んだ点と同じ色で、線を太く・両端を大きくして色だけに頼らない */
+.highlight {
+  pointer-events: none;
+}
+
+.highlight .halo {
+  stroke: var(--viewport-picked-edge);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.highlight .pair {
+  stroke: var(--viewport-picked);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.highlight .end {
+  fill: var(--viewport-picked);
+  stroke: var(--viewport-picked-edge);
+  stroke-width: 2;
 }
 
 .marker {

@@ -124,3 +124,44 @@ describe("GlueOverlay pairs while sending", () => {
     expect(sentPairs(doc)).toEqual([[{ a: 2, b: 3, weight: 1 }], []]);
   });
 });
+
+describe("GlueOverlay highlighted pair (T1651)", () => {
+  it("draws only the pair the panel points at, thicker and on top", () => {
+    const { view, target } = setup([
+      { a: 1, b: 0, weight: 1 },
+      { a: 2, b: 3, weight: 1 },
+    ]);
+    view.setPairMode("off");
+    flushSync();
+    expect(all(target, "g.highlight")).toHaveLength(0);
+    view.hoveredPair = { a: 2, b: 3 };
+    flushSync();
+    const groups = all(target, "g.highlight");
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.getAttribute("data-pair")).toBe("1");
+    // 線 (縁取りと本体) と両端の 2 つの点。ほかの組の線はそのまま。
+    expect(all(target, "g.highlight line")).toHaveLength(2);
+    expect(all(target, "g.highlight circle")).toHaveLength(2);
+    expect(all(target, "line.pair")).toHaveLength(3);
+    view.hoveredPair = null;
+    flushSync();
+    expect(all(target, "g.highlight")).toHaveLength(0);
+  });
+
+  it("prefers the hovered pair over the focused one and ignores pairs the glue lacks", () => {
+    const { view, target } = setup([
+      { a: 1, b: 0, weight: 1 },
+      { a: 2, b: 3, weight: 1 },
+    ]);
+    view.focusedPair = { a: 1, b: 0 };
+    view.hoveredPair = { a: 2, b: 3 };
+    flushSync();
+    expect(all(target, "g.highlight")[0]?.getAttribute("data-pair")).toBe("1");
+    view.hoveredPair = null;
+    flushSync();
+    expect(all(target, "g.highlight")[0]?.getAttribute("data-pair")).toBe("0");
+    view.focusedPair = { a: 3, b: 3 };
+    flushSync();
+    expect(all(target, "g.highlight")).toHaveLength(0);
+  });
+});

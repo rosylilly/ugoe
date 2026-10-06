@@ -342,3 +342,64 @@ describe("GluesPanel pair list (T1648)", () => {
     expect(add.disabled).toBe(false);
   });
 });
+
+describe("GluesPanel pair highlight (T1651)", () => {
+  // Seam の組は Quad の頂点 2 と Quad2 の頂点 1 (0 から数えて a 1・b 0)。
+  function row(target: HTMLElement): HTMLElement {
+    return get(target, 'ul[aria-label="Vertex pairs of Seam"] li');
+  }
+
+  function removeButton(target: HTMLElement): HTMLButtonElement {
+    return get<HTMLButtonElement>(
+      target,
+      'button[aria-label="Remove the pair of vertex 2 of Quad and vertex 1 of Quad2"]',
+    );
+  }
+
+  it("highlights the pair while its remove button has focus, without sending a command", () => {
+    const { doc, target, view } = setup(null);
+    expect(view.highlightedPair).toBeNull();
+    removeButton(target).focus();
+    flushSync();
+    expect(view.highlightedPair).toEqual({ a: 1, b: 0 });
+    expect(row(target).classList.contains("highlighted")).toBe(true);
+    removeButton(target).blur();
+    flushSync();
+    expect(view.highlightedPair).toBeNull();
+    expect(row(target).classList.contains("highlighted")).toBe(false);
+    expect(doc.commands).toEqual([]);
+  });
+
+  it("highlights the pair while the pointer is over its row", () => {
+    const { target, view } = setup(null);
+    row(target).dispatchEvent(new PointerEvent("pointerenter"));
+    flushSync();
+    expect(view.highlightedPair).toEqual({ a: 1, b: 0 });
+    row(target).dispatchEvent(new PointerEvent("pointerleave"));
+    flushSync();
+    expect(view.highlightedPair).toBeNull();
+  });
+
+  it("forgets the highlight when the pair goes away", async () => {
+    const { doc, target, view } = setup(null);
+    row(target).dispatchEvent(new PointerEvent("pointerenter"));
+    flushSync();
+    // 組を外した後の読み直し (行は pointerleave を出さずに消える)。
+    const model = JSON.parse(doc.model?.json ?? "{}");
+    model.glues[0].pairs = [];
+    doc.model = { json: JSON.stringify(model), bundle: null };
+    await settle();
+    flushSync();
+    expect(view.highlightedPair).toBeNull();
+  });
+
+  it("forgets the highlight when another glue is chosen", () => {
+    const { target, view } = setup(null);
+    removeButton(target).focus();
+    flushSync();
+    expect(view.highlightedPair).not.toBeNull();
+    view.glue = null;
+    flushSync();
+    expect(view.highlightedPair).toBeNull();
+  });
+});

@@ -10,6 +10,7 @@
   - 頂点の組はビューポートに重ね、ビューポートの「Add pairs」「Remove pairs」で組を足す・外す (viewport/tools/glue/GlueOverlay.svelte)。
   - 組の一覧 (T1648): 組ごとに「外す」、2 つのメッシュの頂点の番号 (1 から) を入れて「Pair」で 1 組足す。ビューポートで
     頂点を押す操作の、マウスを使わない代わり。どちらも set_glue を 1 つ送る (withPair・withoutPair)。
+    行 (と「×」) にポインタかフォーカスがある間は、ビューポートでその組を強調する (T1651。GlueView.highlightedPair。表示だけ)。
   - モジュールのプロジェクトでは、本体のグルー (どちらかの端が本体のメッシュ) は読み取り専用 (BaseLock)。つなげるのは
     モジュールのメッシュだけ。描画用の複製のグルーは、インスペクタの「Sync」が作り直すので編集しない。
 -->
@@ -66,6 +67,17 @@ const glue = $derived(glues.find((g) => g.id === view.glue) ?? null);
 
 $effect(() => {
   if (view.glue !== null && !glue) view.glue = null;
+});
+
+// 強調する組 (T1651) は、グルーを替えたら・組が無くなったら (「×」で外した行はフォーカスを外す事象を出さずに消える) 消す。
+// パネルを閉じたときも消す。
+$effect(() => {
+  void view.glue;
+  return () => view.clearHighlight();
+});
+$effect(() => {
+  const pair = view.highlightedPair;
+  if (pair !== null && !(glue && hasPair(glue, pair.a, pair.b))) view.clearHighlight();
 });
 
 /** ツリーで選んだメッシュのうち、つなげる 2 つ。 */
@@ -466,7 +478,14 @@ const axisKeyValue = $derived(
     {:else}
       <ul class="pair-list" aria-label={t("glues.pairs.listAria", { id: g.id })}>
         {#each g.pairs as pair, i (i)}
-          <li>
+          <li
+            class:highlighted={view.highlightedPair?.a === pair.a &&
+              view.highlightedPair.b === pair.b}
+            onpointerenter={() => (view.hoveredPair = { a: pair.a, b: pair.b })}
+            onpointerleave={() => (view.hoveredPair = null)}
+            onfocusin={() => (view.focusedPair = { a: pair.a, b: pair.b })}
+            onfocusout={() => (view.focusedPair = null)}
+          >
             <span>{t("glues.pairs.row", { a: pair.a + 1, b: pair.b + 1 })}</span>
             <IconButton
               small
@@ -662,6 +681,13 @@ const axisKeyValue = $derived(
   border: 1px solid var(--ugoe-color-border);
   border-radius: var(--ugoe-radius-md);
   font-variant-numeric: tabular-nums;
+}
+
+/* ビューポートで強調している組の行 (T1651)。枠の色と太さで示す (outline は強制色でも残る) */
+.pair-list li.highlighted {
+  border-color: var(--ugoe-color-accent);
+  outline: 1px solid var(--ugoe-color-accent);
+  outline-offset: -2px;
 }
 
 .chip {
