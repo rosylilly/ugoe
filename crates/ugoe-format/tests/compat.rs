@@ -226,6 +226,10 @@ fn dev_corpus() -> Vec<(&'static str, Vec<u8>)> {
         "dress.ugoemod",
         write_module_with(&module_file(fixtures::dress_module()), compressed).expect("dress"),
     ));
+    corpus.push((
+        "jacket.ugoemod",
+        write_module(&module_file(fixtures::jacket_module())).expect("jacket"),
+    ));
     corpus
 }
 
@@ -569,6 +573,40 @@ fn every_release_loads_without_warnings() {
             }
         }
     }
+}
+
+/// ポーズのグループを持つモジュール (`dev/jacket.ugoemod`) は、グループの要素とパーツを失わずに読め、
+/// 本体に取り付けるとグループが本体のグループの後ろに加わる (`docs/spec/modules.md#ポーズ`)。
+#[test]
+fn module_pose_groups_survive_and_compose() {
+    let (file, report) =
+        read_module_with_report(&dev_file("jacket.ugoemod")).expect("jacket module");
+    assert!(report.warnings.is_empty(), "{report:?}");
+    let expected = fixtures::jacket_module();
+    assert_eq!(file.module.pose, expected.pose);
+    assert_eq!(file.module.parts, expected.parts);
+    assert_eq!(file.module.pose.groups.len(), 1);
+
+    let (base, _) = read_bundle_with_report(&dev_file(MODULE_BASE)).expect("base");
+    let model = compose(&base.model, &[&file.module]).expect("compose jacket");
+    let groups = &model.pose.groups;
+    assert_eq!(groups.len(), base.model.pose.groups.len() + 1);
+    let entries: Vec<_> = groups[groups.len() - 1]
+        .entries
+        .iter()
+        .map(|e| (e.part.to_string(), e.links.len()))
+        .collect();
+    assert_eq!(
+        entries,
+        [
+            ("Jacket/Closed".to_string(), 0),
+            ("Jacket/Open".to_string(), 0)
+        ]
+    );
+    for (part, _) in &entries {
+        assert!(model.parts.iter().any(|p| p.id.as_str() == part), "{part}");
+    }
+    evaluate(model);
 }
 
 // --- 新しい版のファイルを劣化させて読む ---------------------------------------------------------

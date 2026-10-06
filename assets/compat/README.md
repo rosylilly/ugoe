@@ -3,7 +3,8 @@
 `.ugoe` と `.ugoemod` の互換性テスト (`crates/ugoe-format/tests/compat.rs`) が読むファイルです。
 ディレクトリの意味・名前の付け方・作り直しと追加の手順は [docs/testing.md#互換性テスト](../../docs/testing.md#互換性テスト) にあります。
 
-- `dev/`: 今のコードの書き出しで作ったもの。`UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-format --test compat` で作り直す
+- `dev/`: 今のコードの書き出しで作ったもの。`UGOE_UPDATE_FIXTURES=1 cargo test -p ugoe-format --test compat` で作り直す。
+  モジュール (`.ugoemod`) は本体 `dress-up-base.ugoe` に取り付けて試す (`long-hair` は物理、`dress` は圧縮、`jacket` はポーズのグループを持つ)
 - `<版>/` (例 `1.0.0/`): リリースの時点の `dev/` の写し。作り直さない、書き換えない (1.0 より前はない)
 - `future/`: 新しい版のファイルを模したもの (知らない機能・値・フィールド・チャンク、新しいスキーマの版を含む)。`dev/` と同じ手順で作り直す
 

@@ -175,6 +175,7 @@ ADR 0013 の「新しいファイルを古いランタイムで劣化させて�
 
 - ファイル名は中身を表す kebab-case で、拡張子はそのまま (`dynamic-hair.ugoe`・`long-hair.ugoemod`)。版のディレクトリの間で、同じ中身には同じ名前を使います。
 - 各版のディレクトリには、モジュールを取り付ける本体 `dress-up-base.ugoe` を必ず置きます (`.ugoemod` はこれに `compose` して評価する)。
+- `dev/` のモジュールは、物理を持つ `long-hair.ugoemod`・圧縮した `dress.ugoemod`・ポーズのグループを持つ `jacket.ugoemod` です。`jacket.ugoemod` は、読んだポーズのグループ (要素とパーツ) が書き出す前と同じで、本体に取り付けるとグループが本体のグループの後ろに加わることも確かめます (`module_pose_groups_survive_and_compose`)。本体の要素への追従 (`ModulePose` の `links`) を持つモジュールは、本体 `dress-up-base.ugoe` がポーズを持たないのでまだありません。
 - 1 ファイル数 KB に収めます。画像は 1×1 の PNG です。
 
 `future/` の資料:
