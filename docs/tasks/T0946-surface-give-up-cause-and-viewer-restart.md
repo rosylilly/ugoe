@@ -1,11 +1,11 @@
 ---
 id: T0946
 title: "@ugoe/player: 作り直しを諦めた理由を GpuLostRepeatedlyError に持たせて文に出し、ビューアの作り直しのボタンを確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/editor, apps/viewer, docs]
 depends_on: [T0945]
-assignee:
+assignee: claude-worker-T0946
 ---
 
 # T0946: @ugoe/player: 作り直しを諦めた理由を GpuLostRepeatedlyError に持たせて文に出し、ビューアの作り直しのボタンを確かめる
