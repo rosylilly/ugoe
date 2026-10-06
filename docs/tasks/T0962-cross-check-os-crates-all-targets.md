@@ -1,11 +1,11 @@
 ---
 id: T0962
 title: "just cross-check: Windows のターゲットの clippy に、OS ごとのクレートのテストのコード (--all-targets) を加える"
-status: todo
+status: in-progress
 milestone: M9
 crates: [scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0962
 ---
 
 # T0962: just cross-check: Windows のターゲットの clippy に、OS ごとのクレートのテストのコード (--all-targets) を加える
