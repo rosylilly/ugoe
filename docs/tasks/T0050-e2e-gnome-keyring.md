@@ -1,11 +1,11 @@
 ---
 id: T0050
 title: "e2e: D-Bus のセッションで鍵の保管庫 (gnome-keyring) を動かし、AI の API キーの欄と保存を確かめる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0050
 ---
 
 # T0050: e2e: D-Bus のセッションで鍵の保管庫 (gnome-keyring) を動かし、AI の API キーの欄と保存を確かめる
