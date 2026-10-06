@@ -1,11 +1,11 @@
 ---
 id: T1634
 title: "エディタ: キーフォームの軸のボタンとパラメータの下のキーの印を 24px の押せる範囲にする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1634
 ---
 
 # T1634: エディタ: キーフォームの軸のボタンとパラメータの下のキーの印を 24px の押せる範囲にする
