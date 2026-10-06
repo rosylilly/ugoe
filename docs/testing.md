@@ -55,8 +55,8 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 - clippy (`just lint`・`just lint-group`) は、既定の feature と、すべての feature (`--all-features`) の 2 回流します。`gpu-tests` などの feature の下のコード (GPU のテストなど) は既定の feature ではコンパイルされず、警告が溜まっていたためです (T0211・T0013)。グループでの `--all-features` は、選んだクレートの feature だけを有効にします。
 - `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。
 - 各ジョブは、最初にランナーの使わない SDK (.NET・Android SDK・Haskell・CodeQL) を消してディスクを空けます。
-- CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません。target がおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
-- `Swatinem/rust-cache` の key はグループごとに分け、キャッシュは main でだけ保存します (PR は main のキャッシュから始まる)。
+- CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません (ci.yml のワークフロー全体の `env`)。target とキャッシュがおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
+- 依存クレートの成果物は `Swatinem/rust-cache` で持ち越します。方針は下の「CI のキャッシュ」。
 
 各グループの target の大きさの目安 (T0002 で手元で測った値。`CARGO_PROFILE_DEV_DEBUG=0` で clippy とテストのビルドの後):
 
@@ -67,6 +67,41 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 | assets | 約 0.7GB |
 | tools | 約 1.4GB |
 | apps | 約 2.7GB (`just gen` を足して約 2.8GB) |
+
+### CI のキャッシュ
+
+依存クレートの成果物は [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) で持ち越します。リポジトリのキャッシュは合計 10GB が上限で、
+超えると使われていないものから消されます ([GitHub の文書](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#usage-limits-and-eviction-policy))。
+上限は引き上げず、キャッシュの数と大きさを抑えます (T0051)。
+
+- **キー:** rust-cache のキーは `v0-rust-<shared-key>-<OS>-<アーキテクチャ>-<環境のハッシュ>-<Cargo.toml と Cargo.lock のハッシュ>` です。
+  環境のハッシュは rustc の版と `CARGO`・`RUST`・`CC` などで始まる環境変数から作るので、キーを共有するジョブは環境変数を揃えます
+  (`CARGO_PROFILE_DEV_DEBUG` を ci.yml のワークフロー全体に置くのはこのため)。最後のハッシュは `Cargo.toml` が変わるたびに変わり、
+  そのときは最後のハッシュを除いた前方一致で、前のキャッシュから部分的に戻します。
+- **main でだけ保存する:** `save-if: ${{ github.ref == 'refs/heads/main' }}`。PR やタグの run が保存したキャッシュは、その ref
+  (と後の同じ ref の run) からしか読めず、容量を食うだけです ([GitHub の文書](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache))。
+  PR とタグの run は main のキャッシュから始まります。
+- **ビルドの重なるジョブはキーを共有し、保存は 1 つのジョブだけにする:** 同じキーで並んで動くジョブは、先に終わったものだけが保存します。
+  そこで、ビルドがほかのジョブのビルドに含まれるジョブは、そのキーを `save-if: false` で読むだけにします。
+
+  | 保存するジョブ (`shared-key`) | 読むだけのジョブ |
+  | --- | --- |
+  | `rust (tools)` (`group-tools`) | `gpu (vulkan)`・`gpu (gl)` (テストのビルドの依存が `rust (tools)` のテストのビルドに含まれることを手元で確かめた) |
+  | `conformance` (`conformance`) | `web` と web-runtime-release.yml (`ugoe-wasm` の release と web-dist)、`godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`) |
+
+  `godot` の GDExtension (`bindings/godot` はワークスペースの外) の依存 (godot-rust など) は、rust-cache が保存の前に
+  「ワークスペースの依存でないもの」として target から消すので、キャッシュしても残りません。
+- **失敗したジョブでも保存する (`cache-on-failure: true`) のは `rust (windows)`・`rust (macos)` だけ:** 成功するまで保存しないと、
+  テストが落ち続ける間は毎回依存をすべてビルドする (Windows で約 16 分) ためです。依存がそろってから保存されるように、
+  後の手順は前の手順が落ちても流します (`if: ${{ !cancelled() }}`)。ほかの Linux のジョブには付けません。
+  Linux のジョブは main で前に保存したキャッシュから前方一致で戻せ、コンパイルの誤りで途中で止まったビルドを保存すると、
+  次に `Cargo.toml` が変わるまでその不完全なキャッシュが完全一致で使われ続けるためです。
+- **キャッシュを使わないジョブ:** unity.yml (`check` と `native`。`ugoe-ffi` の依存は少なく、ビルドの時間の大半はキャッシュされない
+  ワークスペースのクレートなので、キャッシュがあっても速くならない)、editor-build.yml (タグか手での起動でだけ動く。アプリ × OS の
+  リリースビルドのキャッシュは大きく、上限を圧迫する)。
+- **容量の目安:** main の 1 組 (同じ `Cargo.toml` のハッシュのキャッシュ) が上限の半分 (5GB) 程度に収まるようにします
+  (`Cargo.toml` が変わった直後は新旧の 2 組が並ぶため)。測るには `gh api repos/{owner}/{repo}/actions/cache/usage` と
+  `gh cache list --limit 100`。T0051 の前 (2026-10-06) は 1 組が約 8.7GB (rust-cache が 21 個) で、2 組目で上限を超えていました。
 
 ### 別のターゲットの検査
 

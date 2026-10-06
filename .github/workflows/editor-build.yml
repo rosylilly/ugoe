@@ -58,9 +58,9 @@ jobs:
       - name: Add Rust targets
         if: matrix.rust-targets != ''
         run: rustup target add ${{ matrix.rust-targets }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ matrix.app }}-build-${{ matrix.label }}
+      # Rust のキャッシュ (Swatinem/rust-cache) は使わない。タグの run で保存したキャッシュはそのタグからしか読めず、
+      # アプリ × OS の 9 個のリリースビルドのキャッシュはリポジトリのキャッシュの上限 (10GB) を圧迫して ci.yml のキャッシュを
+      # 消してしまう (docs/testing.md#ci-のキャッシュ)
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

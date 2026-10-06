@@ -43,11 +43,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      # Rust のキャッシュは使わない (下の native と同じ理由)
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unity
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
@@ -59,6 +57,10 @@ jobs:
         run: just unity-check
 
   # 各プラットフォームの ugoe-ffi (リリースビルド)。成果物の名前と中の配置は build.mjs の PLUGINS の from と揃える。
+  # Rust のキャッシュ (Swatinem/rust-cache) は使わない。ugoe-ffi の依存は少なく、ビルドの時間の大半はキャッシュされない
+  # ワークスペースのクレートなので、キャッシュがあっても速くならない (キャッシュ無しで 1 分、キャッシュありで 46 秒〜1 分 54 秒。
+  # run 37468407995)。matrix の 1 つごとにキャッシュを持つと 7 個・約 1.5GB になり、リポジトリのキャッシュの上限 (10GB) を
+  # 圧迫して ci.yml のキャッシュを消してしまう (T0051。docs/testing.md#ci-のキャッシュ)
   native:
     name: native (${{ matrix.name }})
     strategy:
@@ -99,9 +101,6 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         shell: bash
         run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unity-${{ matrix.name }}
       - name: Build (host)
         if: matrix.rust_target == '' && matrix.name != 'macos-universal'
         shell: bash
