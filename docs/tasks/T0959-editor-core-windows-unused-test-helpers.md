@@ -1,11 +1,11 @@
 ---
 id: T0959
 title: "editor-core: Windows の clippy で、unix だけのテストが使う補助 (load_base_checked・save_module_project) が未使用になる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-editor-core]
 depends_on: []
-assignee:
+assignee: claude-worker-T0959
 ---
 
 # T0959: editor-core: Windows の clippy で、unix だけのテストが使う補助 (load_base_checked・save_module_project) が未使用になる

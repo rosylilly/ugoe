@@ -1,11 +1,11 @@
 ---
 id: T0960
 title: "Player: 適合テストの player-loss-during-load が CI で失敗する (コンテキストを失った後の load でモデルが開かれる)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0960
 ---
 
 # T0960: Player: 適合テストの player-loss-during-load が CI で失敗する (コンテキストを失った後の load でモデルが開かれる)
