@@ -25,8 +25,8 @@ abs.ugoeproj: base model /var/folders/.../outside/dress-up.ugoe: outside the roo
 
 ## 受け入れ条件
 
-- [ ] 相対の参照 (`rel`・`dots`) は canonicalize した通常の形、絶対の参照 (`abs`) は書いたままの形 (`outside_abs`) を期待値にした
-- [ ] `just crate ugoe-mcp`・`just ci` が通る。次の main の CI の `rust (macos)`・`rust (windows)` で確かめる
+- [x] 相対の参照 (`rel`・`dots`) は canonicalize した通常の形、絶対の参照 (`abs`) は書いたままの形 (`outside_abs`) を期待値にした
+- [x] `just crate ugoe-mcp`・`just ci` が通る。次の main の CI の `rust (macos)`・`rust (windows)` で確かめる
 
 ## 参考
 
@@ -35,3 +35,4 @@ abs.ugoeproj: base model /var/folders/.../outside/dress-up.ugoe: outside the roo
 ## メモ
 
 - CI の失敗から起票した (2026-10-06)。オーケストレーターの T0973 の直し方の誤り。
+- 直したこと: 期待値をプロジェクトごとに分けた (`rel`・`dots` は canonicalize した通常の形、`abs` は `outside_abs`)。Linux では両者が同じなので手元では違いが出ない。macOS・Windows は次の main の CI で確かめる。

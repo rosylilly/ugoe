@@ -1690,13 +1690,17 @@ fn root_confines_module_bases() {
         assert!(err.contains("module.base"), "{tool} {project}: {err}");
         err
     };
-    // サーバは canonicalize した本体のパスを通常の形で見せる (Windows の一時ディレクトリは
-    // `RUNNER~1` のような短い名前のことがあるので、`outside_abs` そのものとは比べない)。
+    // 相対の参照は canonicalize した root から解決した形 (通常の形) で、絶対の参照は書いたままの形で見せる。
+    // 一時ディレクトリは canonicalize すると形が変わることがある (Windows の `RUNNER~1`、macOS の `/var` → `/private/var`)。
     let outside_canonical = outside_base.canonicalize().unwrap();
-    let outside_shown = plain_path(outside_canonical.to_str().unwrap()).into_owned();
-    for project in ["rel.ugoeproj", "abs.ugoeproj", "dots.ugoeproj"] {
+    let outside_resolved = plain_path(outside_canonical.to_str().unwrap()).into_owned();
+    for (project, shown) in [
+        ("rel.ugoeproj", outside_resolved.as_str()),
+        ("abs.ugoeproj", outside_abs),
+        ("dots.ugoeproj", outside_resolved.as_str()),
+    ] {
         let err = refused(&mut client, "open_project", project);
-        assert!(err.contains(&outside_shown), "{project}: {err}");
+        assert!(err.contains(shown), "{project}: {err}");
         // 開いていないプロジェクトを直接指すツール (読み込みが遅れて走る) も同じ。
         refused(&mut client, "get_model_summary", project);
         refused(&mut client, "save_project", project);
