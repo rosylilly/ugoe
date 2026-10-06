@@ -136,7 +136,10 @@ pub fn validate_module(module: &Module) -> Vec<ValidationError> {
 mod tests {
     use super::*;
     use crate::MaskRef;
-    use crate::fixtures::{dress_module, dress_up_base, jacket_module, long_hair_module};
+    use crate::fixtures::{
+        dress_module, dress_up_base, jacket_module, long_hair_module, posed_dress_up_base,
+        sleeves_module,
+    };
 
     #[test]
     fn fixtures_are_valid() {
@@ -144,6 +147,8 @@ mod tests {
         assert_eq!(validate_module(&long_hair_module()), vec![]);
         assert_eq!(validate_module(&dress_module()), vec![]);
         assert_eq!(validate_module(&jacket_module()), vec![]);
+        assert_eq!(validate(&posed_dress_up_base()), vec![]);
+        assert_eq!(validate_module(&sleeves_module()), vec![]);
     }
 
     #[test]

@@ -13,7 +13,7 @@ import {
   readBundle,
   readModuleFile,
 } from "../src/bundle.ts";
-import { compose } from "../src/compose.ts";
+import { ComposeError, compose } from "../src/compose.ts";
 import { type EvaluationResult, evaluate, parameterValues } from "../src/evaluate.ts";
 import type * as M from "../src/types.ts";
 import { COMPAT } from "./paths.ts";
@@ -47,6 +47,10 @@ function assertFinite(results: EvaluationResult[]): void {
 
 const base = () => bundle("dev/dress-up-base.ugoe");
 
+/** モジュールを取り付ける本体。本体のポーズの要素に追従するモジュールは、要素をスロットに出す本体に付ける。 */
+const baseFor = (module: string) =>
+  module === "sleeves.ugoemod" ? bundle("dev/posed-dress-up-base.ugoe") : base();
+
 for (const file of readdirSync(join(COMPAT, "dev")).sort()) {
   test(`dev/${file} loads without warnings and evaluates`, () => {
     if (file.endsWith(".ugoe")) {
@@ -56,12 +60,28 @@ for (const file of readdirSync(join(COMPAT, "dev")).sort()) {
     } else {
       const m = moduleFile(`dev/${file}`);
       assert.deepEqual(m.warnings, []);
-      const b = base();
+      const b = baseFor(file);
       const composed = compose(b.model, b.physics, [m.module]);
       assertFinite(evaluateAll(composed.model));
     }
   });
 }
+
+test("dev/sleeves.ugoemod follows the pose entries of dev/posed-dress-up-base.ugoe", () => {
+  const m = moduleFile("dev/sleeves.ugoemod").module;
+  assert.throws(() => compose(base().model, base().physics, [m]), ComposeError);
+  const b = bundle("dev/posed-dress-up-base.ugoe");
+  const composed = compose(b.model, b.physics, [m]);
+  assert.deepEqual(
+    composed.model.pose.groups.map((g) => g.entries.map((e) => [e.part, e.links])),
+    [
+      [
+        ["ArmA", ["Sleeves/SleeveA"]],
+        ["ArmB", ["Sleeves/SleeveB"]],
+      ],
+    ],
+  );
+});
 
 test("dev modules compose together", () => {
   const b = base();

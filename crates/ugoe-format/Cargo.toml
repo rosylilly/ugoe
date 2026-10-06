@@ -28,6 +28,8 @@ ugoe-core.workspace = true
 # 結合テスト (tests/spec_bundles.rs) で `image` モジュールを使うために、自分の `png` feature を有効にする
 ugoe-format = { path = ".", features = ["png"] }
 # 互換性テスト (tests/compat.rs) で、未知の物理の出力を無視することを確かめる
+# 互換性テスト (tests/compat.rs) で、モジュールのパーツが本体のポーズの要素に追従することを確かめる
+ugoe-motion.workspace = true
 ugoe-physics.workspace = true
 ugoe-runtime.workspace = true
 

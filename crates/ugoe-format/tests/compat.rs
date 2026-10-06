@@ -24,8 +24,11 @@ use ugoe_model::expression::{Expression, ExpressionOp, ExpressionParameter};
 use ugoe_model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::{BlendMode, DeformerKind, MaskMode, Model, TextureRef, fixtures, standard};
+use ugoe_motion::PosePlayer;
 use ugoe_physics::PhysicsSystem;
-use ugoe_runtime::{CompiledModel, DrawableState, ModelInstance, compose, compose_physics};
+use ugoe_runtime::{
+    CompiledModel, ComposeError, DrawableState, ModelInstance, compose, compose_physics,
+};
 
 /// 資料を作り直すときに立てる環境変数。
 const REGENERATE: &str = "UGOE_UPDATE_FIXTURES";
@@ -38,6 +41,12 @@ const FUTURE: &str = "future";
 
 /// 着せ替えのモジュール (`.ugoemod`) を取り付ける本体。どの版のディレクトリにも置く。
 const MODULE_BASE: &str = "dress-up-base.ugoe";
+
+/// ポーズの要素をスロットに出す本体。本体の要素に追従するモジュールを取り付ける ([`module_base`])。
+const POSED_MODULE_BASE: &str = "posed-dress-up-base.ugoe";
+
+/// 本体のポーズの要素に追従する (`ModulePose` の `links`) モジュール。[`POSED_MODULE_BASE`] に取り付ける。
+const SLEEVES_MODULE: &str = "sleeves.ugoemod";
 
 /// 試験用の機能 ID。`test.` で始まる ID は試験のために予約されていて、本物の機能には使わない。
 const FUTURE_OPTIONAL: &str = "test.future_optional";
@@ -229,6 +238,14 @@ fn dev_corpus() -> Vec<(&'static str, Vec<u8>)> {
     corpus.push((
         "jacket.ugoemod",
         write_module(&module_file(fixtures::jacket_module())).expect("jacket"),
+    ));
+    corpus.push((
+        POSED_MODULE_BASE,
+        write_bundle(&bundle(fixtures::posed_dress_up_base())).expect(POSED_MODULE_BASE),
+    ));
+    corpus.push((
+        SLEEVES_MODULE,
+        write_module(&module_file(fixtures::sleeves_module())).expect(SLEEVES_MODULE),
     ));
     corpus
 }
@@ -542,8 +559,18 @@ fn release_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// モジュールを取り付ける本体の名前。本体の要素に追従するモジュールは [`POSED_MODULE_BASE`]、
+/// ほかは [`MODULE_BASE`] に取り付ける。
+fn module_base(module: &str) -> &'static str {
+    if module == SLEEVES_MODULE {
+        POSED_MODULE_BASE
+    } else {
+        MODULE_BASE
+    }
+}
+
 /// 各版のファイル (今の版を含む) を、今のランタイムが警告なしで読み、評価できる。
-/// モジュールは同じディレクトリの本体 ([`MODULE_BASE`]) に取り付けて評価する。
+/// モジュールは同じディレクトリの本体 ([`module_base`]) に取り付けて評価する。
 #[test]
 fn every_release_loads_without_warnings() {
     let dirs = release_dirs();
@@ -551,9 +578,16 @@ fn every_release_loads_without_warnings() {
     for dir in dirs {
         let names = corpus_names(&dir);
         assert!(!names.is_empty(), "{}: 資料がない", dir.display());
-        let base_path = dir.join(MODULE_BASE);
-        let (base, _) = read_bundle_with_report(&read_file(&base_path))
-            .unwrap_or_else(|e| panic!("{}: {e}", base_path.display()));
+        let read_base = |name: &str| {
+            let path = dir.join(name);
+            read_bundle_with_report(&read_file(&path))
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+                .0
+        };
+        let bases: BTreeMap<&str, Bundle> = [MODULE_BASE, POSED_MODULE_BASE]
+            .into_iter()
+            .map(|name| (name, read_base(name)))
+            .collect();
         for name in names {
             let path = dir.join(&name);
             let bytes = read_file(&path);
@@ -562,6 +596,7 @@ fn every_release_loads_without_warnings() {
                 let (file, report) =
                     read_module_with_report(&bytes).unwrap_or_else(|e| panic!("{context}: {e}"));
                 assert!(report.warnings.is_empty(), "{context}: {report:?}");
+                let base = &bases[module_base(&name)];
                 let model = compose(&base.model, &[&file.module])
                     .unwrap_or_else(|e| panic!("{context}: {e}"));
                 evaluate(model);
@@ -607,6 +642,82 @@ fn module_pose_groups_survive_and_compose() {
         assert!(model.parts.iter().any(|p| p.id.as_str() == part), "{part}");
     }
     evaluate(model);
+}
+
+/// 本体のポーズの要素に追従するモジュール (`dev/sleeves.ugoemod`) は、追従を失わずに読め、本体
+/// (`dev/posed-dress-up-base.ugoe`) に取り付けると本体の要素の `links` に加わる。本体のポーズの要素を
+/// 切り替えると、モジュールのパーツ (袖) が本体のパーツ (腕) と同じに出入りする (`docs/spec/modules.md#ポーズ`)。
+#[test]
+fn module_pose_links_follow_base_entries() {
+    let (file, report) =
+        read_module_with_report(&dev_file(SLEEVES_MODULE)).expect("sleeves module");
+    assert!(report.warnings.is_empty(), "{report:?}");
+    let expected = fixtures::sleeves_module();
+    assert_eq!(file.module.pose, expected.pose);
+    assert_eq!(file.module.parts, expected.parts);
+    assert_eq!(file.module.pose.links.len(), 2);
+
+    let (base, report) = read_bundle_with_report(&dev_file(POSED_MODULE_BASE)).expect("posed base");
+    assert!(report.warnings.is_empty(), "{report:?}");
+    assert_eq!(base.model, fixtures::posed_dress_up_base());
+    // 追従を持つモジュールは、ポーズを出さない本体には取り付けられない。
+    let (plain, _) = read_bundle_with_report(&dev_file(MODULE_BASE)).expect("base");
+    assert!(matches!(
+        compose(&plain.model, &[&file.module]),
+        Err(ComposeError::PoseNotExposed { .. })
+    ));
+
+    let model = compose(&base.model, &[&file.module]).expect("compose sleeves");
+    let groups = &model.pose.groups;
+    assert_eq!(groups.len(), base.model.pose.groups.len());
+    let entries: Vec<(&str, Vec<&str>)> = groups[0]
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                e.part.as_str(),
+                e.links.iter().map(|l| l.as_str()).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        entries,
+        [
+            ("ArmA", vec!["Sleeves/SleeveA"]),
+            ("ArmB", vec!["Sleeves/SleeveB"])
+        ]
+    );
+
+    // ポーズの不透明度を、`Puppet` と同じにパーツの不透明度の上書きとして渡す。
+    let mut player = PosePlayer::new(model.pose.clone());
+    let compiled = CompiledModel::compile(model).expect("compile");
+    let mesh = |id: &str| compiled.mesh_index(id).expect(id);
+    let meshes = [
+        mesh("ArmAMesh"),
+        mesh("ArmBMesh"),
+        mesh("Sleeves/SleeveAMesh"),
+        mesh("Sleeves/SleeveBMesh"),
+    ];
+    let mut instance = ModelInstance::new(compiled.clone());
+    let mut opacities = |player: &PosePlayer| {
+        for (part, opacity) in player.opacities() {
+            let index = compiled.part_index(part.as_str()).expect("pose part");
+            instance.set_part_opacity_override(index, opacity, 1.0);
+        }
+        instance.update();
+        meshes.map(|m| instance.drawables()[m].opacity)
+    };
+    // 最初は先頭の要素 (腕 A) を表示し、袖 A が追従する。
+    assert_eq!(opacities(&player), [1.0, 0.0, 1.0, 0.0]);
+    // 腕 B に切り替えると、袖 B に切り替わる。
+    assert!(player.show_immediately(&"ArmB".into()));
+    assert_eq!(opacities(&player), [0.0, 1.0, 0.0, 1.0]);
+    // フェードの途中でも、袖は腕と同じ不透明度になる。
+    assert!(player.show(&"ArmA".into()));
+    player.update(base.model.pose.fade_duration / 4.0, &[]);
+    let [arm_a, arm_b, sleeve_a, sleeve_b] = opacities(&player);
+    assert!(arm_a > 0.0 && arm_a < 1.0, "{arm_a}");
+    assert_eq!((sleeve_a, sleeve_b), (arm_a, arm_b));
 }
 
 // --- 新しい版のファイルを劣化させて読む ---------------------------------------------------------

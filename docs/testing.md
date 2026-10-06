@@ -180,8 +180,11 @@ ADR 0013 の「新しいファイルを古いランタイムで劣化させて�
 | `assets/compat/future/` | 新しい版で書き出したファイルを模したもの (下の表) | 劣化させて読める / 拒否される |
 
 - ファイル名は中身を表す kebab-case で、拡張子はそのまま (`dynamic-hair.ugoe`・`long-hair.ugoemod`)。版のディレクトリの間で、同じ中身には同じ名前を使います。
-- 各版のディレクトリには、モジュールを取り付ける本体 `dress-up-base.ugoe` を必ず置きます (`.ugoemod` はこれに `compose` して評価する)。
-- `dev/` のモジュールは、物理を持つ `long-hair.ugoemod`・圧縮した `dress.ugoemod`・ポーズのグループを持つ `jacket.ugoemod` です。`jacket.ugoemod` は、読んだポーズのグループ (要素とパーツ) が書き出す前と同じで、本体に取り付けるとグループが本体のグループの後ろに加わることも確かめます (`module_pose_groups_survive_and_compose`)。本体の要素への追従 (`ModulePose` の `links`) を持つモジュールは、本体 `dress-up-base.ugoe` がポーズを持たないのでまだありません。
+- 各版のディレクトリには、モジュールを取り付ける本体 `dress-up-base.ugoe` と `posed-dress-up-base.ugoe` を必ず置きます (`.ugoemod` はどちらかに `compose` して評価する)。
+  `posed-dress-up-base.ugoe` (`fixtures::posed_dress_up_base`) は `dress-up-base.ugoe` に腕の差分 `ArmA` / `ArmB` のポーズのグループを加え、スロット `Outfit` の `pose_parts` に出したもので、本体の要素に追従するモジュール (`sleeves.ugoemod`) を取り付けます。ほかのモジュールは `dress-up-base.ugoe` に取り付けます (`compat.rs` の `module_base`。`tools/spec-check` も同じ)。
+- `dev/` のモジュールは、物理を持つ `long-hair.ugoemod`・圧縮した `dress.ugoemod`・ポーズのグループを持つ `jacket.ugoemod`・本体のポーズの要素に追従する (`ModulePose` の `links`) `sleeves.ugoemod` です。
+  - `jacket.ugoemod` は、読んだポーズのグループ (要素とパーツ) が書き出す前と同じで、本体に取り付けるとグループが本体のグループの後ろに加わることも確かめます (`module_pose_groups_survive_and_compose`)。
+  - `sleeves.ugoemod` は、読んだ追従が書き出す前と同じで、ポーズを出さない `dress-up-base.ugoe` には取り付けられず (`PoseNotExposed`)、`posed-dress-up-base.ugoe` に取り付けると袖 `SleeveA` / `SleeveB` が本体の要素 `ArmA` / `ArmB` の `links` に加わり、要素を切り替えると (フェードの途中も) 袖の不透明度が腕と同じになることを確かめます (`module_pose_links_follow_base_entries`)。
 - 1 ファイル数 KB に収めます。画像は 1×1 の PNG です。
 
 `future/` の資料:

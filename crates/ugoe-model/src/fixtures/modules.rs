@@ -18,6 +18,7 @@ use crate::pose::{PoseEntry, PoseGroup};
 use crate::{KeyformGrid, Model, SCHEMA_VERSION, TextureRef, standard};
 
 /// スロット `Hair` と `Outfit` を公開する本体。[`long_hair_module`] と [`dress_module`] (または [`jacket_module`]) を取り付ける。
+/// ポーズを持つ版は [`posed_dress_up_base`]。
 ///
 /// - パラメータ: `AngleX` (標準)、`HairFront` (標準)、`BodySway` (0..1、`Outfit` が公開)、
 ///   `Secret` (0..1、どのスロットも公開しない)。
@@ -120,6 +121,44 @@ pub fn dress_up_base() -> Model {
             pose_parts: Vec::new(),
         },
     ];
+    model
+}
+
+/// [`dress_up_base`] に腕の差分のポーズを加え、スロット `Outfit` から追従できるようにした本体。
+/// [`sleeves_module`] を取り付ける (ほかのモジュールも [`dress_up_base`] と同じに取り付けられる)。
+///
+/// - パーツ `ArmA` と `ArmB` (`Body` の子、不透明度 1)。
+/// - メッシュ `ArmAMesh` (パーツ `ArmA`、UV `(0,0)`〜`(0.5,1)`) と `ArmBMesh` (パーツ `ArmB`、UV `(0.5,0)`〜`(1,1)`)。
+///   どちらも親 `Torso`、描画順 450。
+/// - ポーズ: グループ 1 つ (`ArmA`, `ArmB` の順。最初は `ArmA` を表示する)。
+/// - スロット `Outfit` の `pose_parts`: `ArmA`, `ArmB`。
+pub fn posed_dress_up_base() -> Model {
+    let mut model = dress_up_base();
+    model.meta.name = "posed_dress_up_base".into();
+    let opaque = || KeyformGrid::constant(PartKeyform { opacity: 1.0 });
+    let mesh = |id: &str, part: &str, left: f32| {
+        quad_mesh(
+            id,
+            part,
+            Some("Torso"),
+            KeyformGrid::constant(mesh_keyform(rect(left, 0.0, left + 0.5, 1.0), 1.0, 450.0)),
+        )
+    };
+    let entry = |part: &str| PoseEntry {
+        part: part.into(),
+        links: Vec::new(),
+    };
+    model.parts.extend([
+        part("ArmA", Some("Body"), opaque()),
+        part("ArmB", Some("Body"), opaque()),
+    ]);
+    model
+        .meshes
+        .extend([mesh("ArmAMesh", "ArmA", 0.0), mesh("ArmBMesh", "ArmB", 0.5)]);
+    model.pose.groups = vec![PoseGroup {
+        entries: vec![entry("ArmA"), entry("ArmB")],
+    }];
+    model.slots[1].pose_parts = vec!["ArmA".into(), "ArmB".into()];
     model
 }
 
@@ -321,6 +360,55 @@ pub fn jacket_module() -> Module {
                 entries: vec![entry("Closed"), entry("Open")],
             }],
             links: Vec::new(),
+        },
+    }
+}
+
+/// [`posed_dress_up_base`] のスロット `Outfit` に取り付ける、本体の腕の差分に袖を追従させるモジュール `Sleeves`。
+///
+/// - パーツ `SleeveA` と `SleeveB` (どちらも不透明度 1。合成で `Sleeves/SleeveA`・`Sleeves/SleeveB` になり、本体の `Body` の子になる)。
+/// - メッシュ `SleeveAMesh` (パーツ `SleeveA`、UV `(0,0)`〜`(0.5,0.5)`) と `SleeveBMesh` (パーツ `SleeveB`、UV `(0.5,0)`〜`(1,0.5)`)。
+///   どちらも親なし (= `Torso` の子)、描画順 500 (合成で 350 になる)。テクスチャはモジュールの 0 番 (`sleeves`)。
+/// - ポーズ: 追従 2 つ (本体の `ArmA` に `SleeveA`、`ArmB` に `SleeveB`)。グループは持たない。
+pub fn sleeves_module() -> Module {
+    let opaque = || KeyformGrid::constant(PartKeyform { opacity: 1.0 });
+    let mesh = |id: &str, part: &str, left: f32| {
+        quad_mesh(
+            id,
+            part,
+            None,
+            KeyformGrid::constant(mesh_keyform(rect(left, 0.0, left + 0.5, 0.5), 1.0, 500.0)),
+        )
+    };
+    let link = |arm: &str, sleeve: &str| PoseEntry {
+        part: arm.into(),
+        links: vec![sleeve.into()],
+    };
+    Module {
+        schema_version: SCHEMA_VERSION,
+        name: "Sleeves".into(),
+        slot: "Outfit".into(),
+        requires: ModuleRequirements::default(),
+        parts: vec![
+            part("SleeveA", None, opaque()),
+            part("SleeveB", None, opaque()),
+        ],
+        deformers: Vec::new(),
+        meshes: vec![
+            mesh("SleeveAMesh", "SleeveA", 0.0),
+            mesh("SleeveBMesh", "SleeveB", 0.5),
+        ],
+        glues: Vec::new(),
+        textures: vec![TextureRef {
+            name: "sleeves".into(),
+            width: 1,
+            height: 1,
+            normal_map: None,
+        }],
+        physics: ModulePhysics::default(),
+        pose: ModulePose {
+            groups: Vec::new(),
+            links: vec![link("ArmA", "SleeveA"), link("ArmB", "SleeveB")],
         },
     }
 }
