@@ -1,11 +1,11 @@
 ---
 id: T1662
 title: "エディタ: 送る枠の行末を --ugoe-scrollbar-gap にし、tokens.test.ts の検査の対象にエディタを足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, packages/ui, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1662
 ---
 
 # T1662: エディタ: 送る枠の行末を --ugoe-scrollbar-gap にし、tokens.test.ts の検査の対象にエディタを足す
