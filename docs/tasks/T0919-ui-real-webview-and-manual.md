@@ -114,3 +114,7 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   module-compare-details.png・module-compare-differences.png (違いの一覧が要素の表になり、多いと絞り込みの欄と「Show N more」)、
   dress-up-errors.png (付けられない理由が赤い枠の知らせ、行はファイルの名前だけ)。`just ui-audit` の `-settings-ai`・`-consent`・`-ai-list`・
   `-ai-sending`・`-ai-error`・`-preview-dress-up`・`-module-preview` の場面が見本になる。
+- T0849 から書き足した: スタジオの「出力ウィンドウ」のパネルの「背景」の欄に出る「透過が効いていません」の知らせに、「背景をクロマキーにする」の
+  ボタンが付いた (押すと配信しているシーンの背景がクロマキーの緑になり、知らせが消える)。docs/manual/studio.md の文 (「はじめての配信の準備」・
+  「困ったとき」) は T0849 で直した。今のマニュアルにこの知らせを写した画像は無い。足すなら `just ui-audit` の `-opaque` の場面が見本になる
+  (偽のホストで透過を `unsupported` にした画面)。実物の WebKitGTK では `just e2e --only studio` (Xvfb にはコンポジタが無い) で同じ知らせが出る。

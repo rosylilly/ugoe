@@ -4,7 +4,8 @@
 //   足したもの。シーン・パラメータ・モーション・負荷の表示・操作の API の状態を、本物の指揮役が送る形で送る。
 // - 書き換えの操作は何もしない (Promise を返すだけ)。知らないメソッドも何もしない。操作 API の承認・拒否・取り消しだけは、
 //   承認の後の知らせを撮るために様子を変えて送り直す。
-// - 場面を足すために、ページの `window.__uiAuditStudio` に通知を送る口 (`emit`) と、負荷の数値を変える口 (`setStatus`) を置く。
+// - 場面を足すために、ページの `window.__uiAuditStudio` に通知を送る口 (`emit`)、負荷の数値を変える口 (`setStatus`)、
+//   出力ウィンドウの様子を変えて送る口 (`setOutput`。透過が効かない画面、T0849) を置く。
 //   送る通知の組 (初めて起動した画面・注意の要る状態) は下の `firstRunMessages`・`attentionMessages` で Node の側で作る (T0818)。
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -204,6 +205,10 @@ export function studioPageInit({ osLocale, fixture }) {
     },
     setStatus(patch) {
       statusPatch = patch;
+    },
+    setOutput(patch) {
+      output = { ...output, ...patch };
+      listener?.({ kind: "output", ...output });
     },
   };
   const ids = parameters.map((p) => p.id);

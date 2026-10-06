@@ -1,10 +1,11 @@
 <!--
   出力ウィンドウ (docs/studio.md#出力ウィンドウ、T0804): 表示・最前面・大きさのプリセットと、出力ウィンドウの様子
-  (いまの大きさ・枠 (なし。ドラッグで動かす、T0813)・背景 (配信しているシーンの背景。透過など。透過が画面で効かなければ注意と代わりの案、T0846))。出力ウィンドウには何も重ねないので、
+  (いまの大きさ・枠 (なし。ドラッグで動かす、T0813)・背景 (配信しているシーンの背景。透過など。透過が画面で効かなければ注意と代わりの案、T0846。
+  注意のボタンで背景をクロマキーにする、T0849))。出力ウィンドウには何も重ねないので、
   様子は操作ウィンドウのここと「いまの状態」の印で示す (T0818)。配信ソフトへの取り込み方の案内も置く。
 -->
 <script lang="ts">
-import { Notice, Select, Toggle } from "@ugoe/ui";
+import { Button, Notice, Select, Toggle } from "@ugoe/ui";
 import type { OutputState } from "./lib/host";
 import { t } from "./lib/i18n";
 import { backgroundLabel } from "./lib/labels";
@@ -22,9 +23,11 @@ interface Props {
   onvisible: (visible: boolean) => void;
   ontop: (onTop: boolean) => void;
   onsize: (preset: OutputSizePreset) => void;
+  /** 配信しているシーンの背景をクロマキーにする (透過が効かない注意のボタン、T0849)。 */
+  onchroma: () => void;
 }
 
-let { output, size, background, onvisible, ontop, onsize }: Props = $props();
+let { output, size, background, onvisible, ontop, onsize, onchroma }: Props = $props();
 
 const sizeOptions = $derived(
   OUTPUT_SIZE_PRESETS.map((preset) => {
@@ -84,7 +87,12 @@ const opaque = $derived(transparencyLost(output, background));
       {background === null ? t("output.backgroundNoScene") : backgroundLabel(background)}
       <span class="output-panel__hint">{t("output.backgroundHint")}</span>
       {#if opaque}
-        <Notice tone="warning" title={t("output.opaqueTitle")}>{t("output.opaque")}</Notice>
+        <Notice tone="warning" title={t("output.opaqueTitle")}>
+          {t("output.opaque")}
+          {#snippet actions()}
+            <Button small variant="primary" onclick={onchroma}>{t("output.opaqueChroma")}</Button>
+          {/snippet}
+        </Notice>
       {/if}
     </dd>
   </dl>

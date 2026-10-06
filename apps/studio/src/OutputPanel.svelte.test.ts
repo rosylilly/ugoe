@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // 出力ウィンドウ (OutputPanel.svelte): 透過のシーンなのに透過が画面で効かないとき、「背景」の欄に注意と代わりの案を出す (T0846)。
+// 注意のボタンで背景をクロマキーにする (T0849)。
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import type { OutputState } from "./lib/host";
@@ -22,6 +23,7 @@ const OUTPUT: OutputState = {
 };
 
 function setup(output: OutputState | null, background: Background | null) {
+  const chroma = { calls: 0 };
   const props = $state({
     output,
     size: "1920x1080" as const,
@@ -29,6 +31,9 @@ function setup(output: OutputState | null, background: Background | null) {
     onvisible: () => {},
     ontop: () => {},
     onsize: () => {},
+    onchroma: () => {
+      chroma.calls += 1;
+    },
   });
   const target = document.createElement("div");
   document.body.append(target);
@@ -38,7 +43,7 @@ function setup(output: OutputState | null, background: Background | null) {
     unmount(component);
     target.remove();
   });
-  return { target, props };
+  return { target, props, chroma };
 }
 
 /** 「背景」の欄の注意 (無ければ `null`)。 */
@@ -54,6 +59,21 @@ describe("OutputPanel", () => {
     expect(notice?.dataset.tone).toBe("warning");
     expect(notice?.textContent).toContain(t("output.opaqueTitle"));
     expect(notice?.textContent).toContain(t("output.opaque"));
+  });
+
+  it("offers a button that switches the live scene to chroma key", () => {
+    const { target, props, chroma } = setup(OUTPUT, { kind: "transparent" });
+    const button = [...(opaqueNotice(target)?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent?.trim() === t("output.opaqueChroma"),
+    );
+    expect(button).toBeDefined();
+    button?.click();
+    flushSync();
+    expect(chroma.calls).toBe(1);
+    // 背景が替わったという通知が来ると注意は消える。
+    props.background = { kind: "chroma", color: "#00ff00" };
+    flushSync();
+    expect(opaqueNotice(target)).toBeNull();
   });
 
   it("does not warn when transparency works or the scene does not rely on it", () => {

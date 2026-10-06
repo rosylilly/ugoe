@@ -462,6 +462,17 @@ export const APPS = {
       // 出力ウィンドウの様子 (大きさ・枠・背景。T0818)
       await scrollToSection(page, text("studio", ctx.lang, "output.heading"));
       await ctx.scene("output", { aria: false });
+      // 透過が画面で効かない (コンポジタが無い X11 など): 「背景」の欄の注意と「背景をクロマキーにする」のボタン (T0846・T0849)
+      await page.evaluate(() => window.__uiAuditStudio.setOutput({ transparency: "unsupported" }));
+      const chroma = page.getByRole("button", {
+        name: text("studio", ctx.lang, "output.opaqueChroma"),
+        exact: true,
+      });
+      await chroma.waitFor({ timeout: 5000 });
+      await chroma.scrollIntoViewIfNeeded();
+      await ctx.scene("opaque");
+      await page.evaluate(() => window.__uiAuditStudio.setOutput({ transparency: "supported" }));
+      await page.waitForTimeout(300);
       await scrollToTop(page);
 
       // 「いまの状態」のホットキーの印からホットキーのパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ (T0845)

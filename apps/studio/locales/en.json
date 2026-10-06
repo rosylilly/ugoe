@@ -188,7 +188,8 @@
     "backgroundHint": "The background of the live scene. Change it under Background in Scene.",
     "backgroundNoScene": "No scene is live",
     "opaqueTitle": "Transparency is not working",
-    "opaque": "The screen is not composited (for example, no compositor is running), so the transparent parts of the output window show up black. Set the scene background to chroma key and key it out in your streaming app, or capture with Browser source (OBS).",
+    "opaque": "The screen is not composited (for example, no compositor is running), so the transparent parts of the output window show up black. Switch the scene background to chroma key with the button below and key it out in your streaming app, or capture with Browser source (OBS).",
+    "opaqueChroma": "Use chroma key background",
     "capture": "Capture this window in your streaming app with a window capture. You can also use Browser source (OBS) or Virtual camera."
   },
   "parameters": {

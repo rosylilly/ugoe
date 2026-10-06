@@ -40,8 +40,9 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      `.ugoemod` の `MODU` の名前を `Sailor (editing)` に書き換えて作る) と、今の編集とファイルの違いの長い一覧。
    - スタジオ (`lib/studio-host.mjs`): `window.__UGOE_STUDIO_HOST__` に、`StudioHost` (apps/studio/src/lib/host.ts) のすべてのメソッドを置く。
      見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を足して送る。
-     ページの `window.__uiAuditStudio` の `emit` (指揮役の通知を送る) と `setStatus` (負荷の数値を変える) で、読み込んだ後に状態を変えて撮る
-     (初めて起動した画面・承認を待つアプリ・登録できないホットキー・負荷の注意。通知の組は `firstRunMessages`・`attentionMessages`。T0818)。
+     ページの `window.__uiAuditStudio` の `emit` (指揮役の通知を送る)・`setStatus` (負荷の数値を変える)・`setOutput` (出力ウィンドウの様子を変えて送る) で、
+     読み込んだ後に状態を変えて撮る (初めて起動した画面・承認を待つアプリ・登録できないホットキー・負荷の注意・透過が効かない出力。
+     通知の組は `firstRunMessages`・`attentionMessages`。T0818・T0849)。出力ウィンドウの透過は、ふだんは `supported` (効く) にしておく。
      操作 API の承認・拒否・取り消しは、様子を変えて送り直す (承認の後の「取り消す」の知らせを撮るため)。
    - ビューア: Tauri の外の口 (ブラウザの口) のまま。ツールバーの「サンプル」で見本を開く。
 4. **撮って検査する:** 下の「場面」ごとに PNG を撮り、下の「検査」を流す。
@@ -67,7 +68,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 | --- | --- |
 | エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-timeline-graph` (タイムラインの行とキーを選んでグラフを出した)、`-motion-settings` (モーションの「Settings…」)、`-gizmo` (ワープのギズモ)、`-mesh-edit` (メッシュの編集)、`-deformers-expressions`、`-settings-ai` (キーを保存した AI の設定)、`-ai` と `-ai-list` (提案と分類のある AI のタブの頭と提案の一覧)、`-ai-restoring` (分類のキャッシュを戻している最中)、`-consent` (送る前の確認)、`-ai-sending`・`-ai-cancelled`・`-ai-error` (送信中・取り消した・失敗)、`-preview-dress-up` (プレビューの着せ替え)、`-module-ai` (モジュールのプロジェクトの AI のタブ)、`-module-preview` (今の編集とファイルの違いの一覧) |
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-background` (ツールバーの「背景」の Popover)、`-settings` |
-| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
+| スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-opaque` (透過が画面で効かない様子にした出力ウィンドウのパネル: 「背景」の欄の注意と「背景をクロマキーにする」のボタン、「いまの状態」の出力の注意の印)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-hotkey-removed` (「いまの状態」のホットキーの印を押して「ホットキー」のパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 
 広い幅のライトの英語では、Tab を最大 120 回押してフォーカスをたどる (`-tab`)。
 

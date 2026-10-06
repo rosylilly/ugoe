@@ -64,7 +64,7 @@ import { sceneLabel } from "./lib/labels";
 import { latestOnly } from "./lib/latest";
 import { Microphone } from "./lib/microphone.svelte";
 import { PendingEdit } from "./lib/pendingEdit.svelte";
-import { fileName, type ProfileView, type SceneSettings } from "./lib/profile";
+import { fileName, type ProfileView, type SceneSettings, withBackgroundKind } from "./lib/profile";
 import { Pulse } from "./lib/pulse";
 import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
@@ -526,6 +526,20 @@ async function updateScene(next: SceneSettings) {
   editing = null;
 }
 
+/**
+ * 配信しているシーンの背景をクロマキーにする (透過が効かない注意のボタン、T0849)。シーンの編集の背景を替えるのと同じに送る
+ * (保存され、戻すときは「シーンの編集」の背景で透過を選ぶ)。
+ */
+function chromaLiveBackground() {
+  const index = scenes.findIndex((s) => s.id === profile?.live);
+  const found = scenes[index];
+  if (found === undefined) return;
+  const current = editing !== null && editing.id === found.id ? editing : found;
+  const next = structuredClone($state.snapshot(current)) as SceneSettings;
+  next.background = withBackgroundKind(next.background, "chroma");
+  void updateScene(next);
+}
+
 async function pickFile(kind: FileKind): Promise<string | null> {
   const filters = {
     model: "file.filter",
@@ -893,6 +907,7 @@ onMount(() => {
             onvisible={setOutputVisible}
             ontop={setOutputOnTop}
             onsize={applyOutputSize}
+            onchroma={chromaLiveBackground}
           />
         </Section>
       </div>

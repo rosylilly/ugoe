@@ -234,7 +234,7 @@ describe("studio", () => {
     );
   });
 
-  step(app, "warns in Background when transparency does not work (T0846)", async () => {
+  step(app, "warns in Background when transparency does not work (T0846, T0849)", async () => {
     const s = app.session;
     // Xvfb にはコンポジタが無いので `unsupported`。`--headed` で合成する画面に出したときは `supported`。
     const { transparency } = await invoke(s, "output_state");
@@ -250,6 +250,24 @@ describe("studio", () => {
       `);
     await waitFor(async () => (await notice()) === (transparency === "unsupported"), {
       message: `the transparency notice to match ${transparency}`,
+    });
+    if (transparency !== "unsupported") return;
+    // 注意の「背景をクロマキーにする」で、配信しているシーンの背景がクロマキーになり、注意が消える (T0849)
+    const chroma = await s.waitFindText(".output-panel__facts button", "Use chroma key background");
+    await chroma.click();
+    await waitFor(
+      () =>
+        s.execute(`
+          const facts = document.querySelector(".output-panel__facts");
+          return facts !== null && /Chroma key/.test(facts.textContent) && !/Transparency is not working/.test(facts.textContent);
+        `),
+      { message: "the live scene background to become chroma key" },
+    );
+    // 「シーンの編集」の「背景」で透過に戻すと、注意がまた出る (後の手順は透過の「雑談」のまま進める)
+    const transparent = await s.waitFindText(".editor .ugoe-segmented__item", "Transparent");
+    await transparent.click();
+    await waitFor(async () => (await notice()) === true, {
+      message: "the transparency notice after going back to transparent",
     });
   });
 
