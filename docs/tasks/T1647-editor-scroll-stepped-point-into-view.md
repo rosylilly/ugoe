@@ -1,11 +1,11 @@
 ---
 id: T1647
 title: "エディタ: ] [ で選んだ点がビューの外にあるとき、見える所まで表示を動かす"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1647
 ---
 
 # T1647: エディタ: ] [ で選んだ点がビューの外にあるとき、見える所まで表示を動かす
