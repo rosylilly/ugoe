@@ -1,11 +1,11 @@
 ---
 id: T1671
 title: "エディタ: 細長い要素で「Fit」が画面いっぱいに寄せすぎるのを見直し、モジュールのマニュアルの画像を撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, tests/e2e, docs]
 depends_on: [T0061]
-assignee:
+assignee: claude-worker-T1671
 ---
 
 # T1671: エディタ: 細長い要素で「Fit」が画面いっぱいに寄せすぎるのを見直し、モジュールのマニュアルの画像を撮り直す
