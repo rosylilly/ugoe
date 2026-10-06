@@ -84,6 +84,14 @@ const runtime = vi.hoisted(() => ({
   },
   /** 読み込むと例外を投げるモデル。 */
   badModel: "bad",
+  /** 0 より大きければ、読み込みの途中に GPU を失わせる (1 回ごとに 1 減らす。印を立てて `device_lost` を投げる)。 */
+  loseOnLoad: 0,
+  /** ugoe-wasm と同じく、GPU を失った後の読み込みの失敗 (`LoadError` の `device_lost`。T0434)。 */
+  deviceLost(): Error {
+    const e = new Error("the GPU device was lost");
+    e.name = "LoadError";
+    return Object.assign(e, { code: "device_lost" });
+  },
 }));
 
 vi.mock("./runtime.js", () => ({
@@ -103,6 +111,11 @@ vi.mock("./runtime.js", () => ({
     return puppet;
   },
   loadModel: (puppet: FakePuppet, data: unknown, options: { limits?: unknown } = {}) => {
+    if (runtime.loseOnLoad > 0) {
+      runtime.loseOnLoad--;
+      puppet.lost = true;
+    }
+    if (puppet.lost) throw runtime.deviceLost();
     if (data === runtime.badModel) throw new Error("invalid model");
     puppet.limits = options.limits;
     puppet.model = typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array);
@@ -149,6 +162,7 @@ beforeEach(() => {
   runtime.createError = null;
   runtime.failing = false;
   runtime.loseOnFailure = false;
+  runtime.loseOnLoad = 0;
 });
 
 afterEach(() => {
@@ -441,6 +455,121 @@ describe("<ugoe-avatar>", () => {
     await flush();
     expect(fake(avatar.puppet).model).toBe("model-a");
     expect(errors).toEqual([]);
+  });
+
+  /** WebGL2 のコンテキストを失わせる (ugoe-wasm と同じく `is_lost()` も真にする)。 */
+  function loseContext(puppet: FakePuppet) {
+    puppet.lost = true;
+    puppet.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+  }
+
+  it("loads a model passed to load() while the context is lost after recreating (T0486)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: unknown[] = [];
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    avatar.setParameter("AngleX", 15);
+    const first = fake(avatar.puppet);
+    loseContext(first);
+    let settled = false;
+    const loading = avatar.load("model-b").finally(() => {
+      settled = true;
+    });
+    await flush();
+    // 失敗とせずに待つ (`error` を送らない)
+    expect(settled).toBe(false);
+    expect(errors).toEqual([]);
+    expect(avatar.puppet).toBe(first);
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await expect(loading).resolves.toEqual([]);
+    const second = fake(avatar.puppet);
+    expect(second).not.toBe(first);
+    expect(second.model).toBe("model-b");
+    // 別のモデルなので、前のモデルの値は引き継がない
+    expect(second.values.has("AngleX")).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("loads src fetched while the context is lost after recreating (T0486)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const respond = controlledFetch();
+    const errors: unknown[] = [];
+    const avatar = newAvatar({ backend: "webgl2", src: "a" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await flush();
+    respond("a", "model-a");
+    await flush();
+    const first = fake(avatar.puppet);
+    expect(first.model).toBe("model-a");
+    avatar.setAttribute("src", "b");
+    loseContext(first);
+    respond("b", "model-b");
+    await flush();
+    expect(errors).toEqual([]);
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await avatar.ready;
+    await flush();
+    // 前のモデル (model-a) に戻らず、`src` のモデルを読む
+    expect(fake(avatar.puppet).model).toBe("model-b");
+    expect(errors).toEqual([]);
+  });
+
+  it("recreates when the WebGPU device is lost while loading (T0486)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: unknown[] = [];
+    const avatar = newAvatar({ backend: "webgpu" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    const first = fake(await avatar.ready);
+    // WebGPU には canvas の知らせが無い。次のフレームの `is_lost()` で作り直す
+    runtime.loseOnLoad = 1;
+    await expect(avatar.load("model-a")).resolves.toEqual([]);
+    const second = fake(avatar.puppet);
+    expect(second).not.toBe(first);
+    expect(first.freed).toBe(true);
+    expect(second.model).toBe("model-a");
+    expect(errors).toEqual([]);
+  });
+
+  it("keeps the parameter values when the device is lost again while reloading (T0486)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: unknown[] = [];
+    const avatar = newAvatar({ backend: "webgl2" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await avatar.load("model-a");
+    avatar.setParameter("AngleX", 15);
+    const first = fake(avatar.puppet);
+    // 作り直した WebPuppet でモデルを読み直す途中にまた失う
+    runtime.loseOnLoad = 1;
+    loseContext(first);
+    first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await flush();
+    await avatar.ready;
+    await flush();
+    const third = fake(avatar.puppet);
+    expect(third.lost).toBe(false);
+    expect(third.model).toBe("model-a");
+    expect(third.values.get("AngleX")).toBe(15);
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects a load waiting for the recreation when it gives up (T0486)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors: Error[] = [];
+    const avatar = newAvatar({ backend: "webgpu" });
+    avatar.addEventListener("error", (e) => errors.push(e.detail.error));
+    document.body.append(avatar);
+    await avatar.ready;
+    // 作り直すたびに読み込みの途中で失う
+    runtime.loseOnLoad = Number.POSITIVE_INFINITY;
+    const loading = avatar.load("model-a");
+    await expect(loading).rejects.toThrow("the GPU device was lost repeatedly");
+    expect(errors.map((e) => e.message)).toEqual(["the GPU device was lost repeatedly"]);
+    expect(avatar.puppet).toBeNull();
   });
 
   it("rejects a load before connecting when the model fails to load", async () => {

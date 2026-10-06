@@ -91,11 +91,15 @@ avatar.clearTracking();
 - ページから外すと GPU の資源を捨て、戻すと作り直します。取得中の `src` は外しても続け、戻したらその結果を読み込みます。
   `src` を変えたり `load()` を呼んだりして置き換わった取得は中断します (`AbortController`)。
 - 読み込めなかったモデル (`load` の reject・`src` の `error`) は覚えず、作り直したときは最後に読み込めたモデルを読み直します。
+- 読み込みの途中に GPU を失ったとき (`load_bundle` などが `LoadError` の `device_lost` を投げたとき) は、読み込めなかったとは
+  しません。`error` を送らず、`load()` も reject せずに待ち、上の作り直しの後にそのモデルを読みます (`load()` はそこで解決し、
+  `load` を送ります)。`src` の取得が失っている間に終わったときも、作り直した後にその `src` を読みます。別のモデルなので、
+  前のモデルのパラメータの値は引き継ぎません。作り直しを諦めたときだけ、`error` を送って `load()` を reject します。
 - 失敗とやり直し:
   - `WebPuppet` の作成に失敗したとき (`auto` なら WebGL2 でも失敗したとき) と、GPU を続けて失って作り直しを諦めたとき
     (`the GPU device was lost repeatedly`) は、`error` を送り、`ready` をその理由で reject します。
     誰も `ready` を待っていなくても unhandledrejection にはなりません。
-  - その状態では、作成を待つ `load()` も reject し、後から呼んだ `load()` も待たずに reject します。`src` などの属性は覚えておきます。
+  - その状態では、作成 (作り直し) を待つ `load()` も reject し、後から呼んだ `load()` も待たずに reject します。`src` などの属性は覚えておきます。
   - やり直すには `avatar.restart()` を呼ぶか、`backend` を変えるか、ページから外して戻します。最後に読み込めたモデル
     (取得中の `src` があればその結果) を読み直し、パラメータの値は引き継ぎます。`restart()` は作り直しの回数も数え直します。
   - 作り直しを始めると (`gpulost` を送ったときも)、`ready` は新しい `WebPuppet` を待つ Promise に変わります (`await avatar.ready` は作り直すたびに取り直す)。

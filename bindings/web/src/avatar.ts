@@ -12,7 +12,8 @@
 // - `crossorigin`: `src` の取得の資格情報 (`use-credentials` で別のオリジンにも送る。次の取得から効く)
 //
 // JS からは `setParameter` / `parameters` / `load` / `setTracking` / `restart` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
-// 作成に失敗したときと GPU を続けて失って諦めたときは、`error` を送って `ready` を reject する。`restart()`・`backend` の変更・
+// 作成に失敗したときと GPU を続けて失って諦めたときは、`error` を送って `ready` を reject する。読み込みの途中に GPU を
+// 失ったら (`device_lost`)、`error` は送らずにそのモデルを作り直した後に読む (T0486)。`restart()`・`backend` の変更・
 // 繋ぎ直しで作り直す。
 // GPU を失って戻るのを待ち始めたら `gpulost` を送る (WebGL2 の復元を待つ・作り直しで作れずに試し直しを待つ)。WebGL2 の
 // 復元が `RESTORE_TIMEOUT_MS` 待っても届かなければ、新しい canvas で作り直しを試す (T0938。@ugoe/player の PuppetSurface と同じ)。
@@ -152,9 +153,12 @@ export class UgoeAvatarElement extends BaseElement {
   #fetching = false;
   /** 最後に読み込めたモデル。作り直したときに読み直す (読み込めなかったものは覚えない)。 */
   #model: ModelData | null = null;
-  /** `WebPuppet` ができたら読み込むモデル (`load` か `src` の取得が、作成の前や作り直しの途中に終わった)。 */
+  /**
+   * `WebPuppet` ができたら読み込むモデル (`load` か `src` の取得が、作成の前や作り直しの途中に終わった。読み込みの途中に
+   * GPU を失った)。
+   */
   #pendingModel: ModelData | null = null;
-  /** `WebPuppet` ができる前に呼ばれた `load` の結果を待つもの。 */
+  /** `WebPuppet` ができる前 (作り直しの途中・読み込みの途中に GPU を失った後) に呼ばれた `load` の結果を待つもの。 */
   #loadWaiters: LoadWaiter[] = [];
   #warnings: string[] = [];
   #warningDetails: UgoeLoadWarning[] = [];
@@ -355,14 +359,20 @@ export class UgoeAvatarElement extends BaseElement {
    * 接続前に呼ぶと、`WebPuppet` ができてから読み込む (作成や読み込みに失敗したら reject する。
    * その前に `src` を変えると `AbortError` で reject する)。作成に失敗した後や諦めた後 (`ready` が reject した後) は、
    * 待たずにその理由で reject する (`restart()` してから呼び直す)。読み込めなかったモデルは、作り直したときにも読み直さない。
+   * 読み込みの途中に GPU を失ったら (`device_lost`)、reject せずに作り直しを待ち、作り直した後に読んで解決する
+   * (作り直しを諦めたら reject する)。
    */
   async load(data: ModelData): Promise<string[]> {
     this.#fetch++; // 取得中の `src` があっても、こちらを優先する
     this.#fetching = false;
     this.#abortFetch();
-    if (this.#puppet) return this.#applyModelOrThrow(data);
-    if (this.#failure) throw this.#failure;
-    this.#pendingModel = data;
+    if (this.#puppet) {
+      const warnings = this.#applyModelOrDefer(data);
+      if (warnings !== null) return warnings;
+    } else {
+      if (this.#failure) throw this.#failure;
+      this.#pendingModel = data;
+    }
     return new Promise((resolve, reject) => this.#loadWaiters.push({ resolve, reject }));
   }
 
@@ -505,7 +515,8 @@ export class UgoeAvatarElement extends BaseElement {
     this.#pendingModel = null;
     if (model !== null) {
       try {
-        this.#resolveLoads(this.#applyModelOrThrow(model));
+        const warnings = this.#applyModelOrDefer(model);
+        if (warnings !== null) this.#resolveLoads(warnings);
       } catch (e) {
         // `load` で渡したモデルなら、その Promise で知らせる
         if (this.#loadWaiters.length > 0) this.#rejectLoads(e);
@@ -655,7 +666,8 @@ export class UgoeAvatarElement extends BaseElement {
    * (作れなければ待って試し直す)。
    */
   #recreate(recovering = false): void {
-    if (this.#puppet?.has_model()) this.#carry = this.parameters;
+    // 読み込みの途中に GPU を失ったモデル (`#pendingModel`) を読むときは、前のモデルの値を引き継がない。
+    if (this.#pendingModel === null && this.#puppet?.has_model()) this.#carry = this.parameters;
     this.#stop();
     this.#recovering = recovering;
     if (!recovering) this.#waitingForGpu = false;
@@ -728,7 +740,7 @@ export class UgoeAvatarElement extends BaseElement {
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (token !== this.#fetch) return;
-      if (this.#puppet) this.#applyModelOrThrow(bytes);
+      if (this.#puppet) this.#applyModelOrDefer(bytes);
       else this.#pendingModel = bytes;
     } catch (e) {
       if (token === this.#fetch) this.#dispatchError(e);
@@ -742,6 +754,28 @@ export class UgoeAvatarElement extends BaseElement {
   #abortFetch(): void {
     this.#fetchAbort?.abort();
     this.#fetchAbort = null;
+  }
+
+  /**
+   * `model` を読み込む (`#applyModelOrThrow`)。読み込みの途中に GPU を失った (`device_lost`) なら、失敗とせずに `model` を
+   * `#pendingModel` に置いて `null` を返す (作り直した後に読む。`load()` は待たせたまま)。作り直しは描画の喪失と同じ道で
+   * 始まる (WebGL2 は `webglcontextlost` の後の復元の待ち、WebGPU は次のフレームの `is_lost()`)。
+   */
+  #applyModelOrDefer(model: ModelData): string[] | null {
+    const puppet = this.#puppet;
+    try {
+      return this.#applyModelOrThrow(model);
+    } catch (e) {
+      // ugoe-wasm は `is_lost()` のときだけ `device_lost` を投げる (crates/ugoe-wasm/README.md#読み込みの失敗-t0434)。
+      if (!puppet?.is_lost()) throw e;
+      console.warn(
+        "ugoe-avatar: the GPU device was lost while loading; loading after recreating:",
+        e,
+      );
+      this.#pendingModel = model;
+      this.requestRender();
+      return null;
+    }
   }
 
   /** `model` を読み込み、属性の状態 (パラメータ・表情・モーション) を適用して `load` を送る。 */

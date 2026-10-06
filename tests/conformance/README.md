@@ -210,6 +210,7 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 | `load-and-draw` | `src` を読んで `load` (`detail.backend` が `webgl2`) を送り、`ready` が `puppet` で解決し、描く。`src` を変えると読み直す。外すと解放する |
 | `context-loss` | `WEBGL_lose_context` の `loseContext()` の間は作り直さず `error` も送らない。`restoreContext()` で新しい canvas に作り直し (古い canvas は外す)、モデルと `setParameter` の値が戻って描く。2 回続けて行う |
 | `context-loss-timeout` | `loseContext()` して復元させないと、`gpulost` を 1 回送って `waitingForGpu` が真になり、`ready` が新しい Promise に変わる。時間切れ (`RESTORE_TIMEOUT_MS` = 5 秒) の前は作り直さず、時間切れの後に新しい canvas で作り直して (`load`)、`ready` がその `WebPuppet` で解決し、モデルと値が戻って描く (T0938・T0479) |
+| `context-loss-during-load` | `loseContext()` の間に `load()` を呼ぶと、`device_lost` で失敗とせず `error` も送らずに待ち、`restoreContext()` で作り直した後にそのモデルを読んで解決する (前のモデルのパラメータの値は引き継がない)。`loseContext()` の間に `src` の取得が終わっても、作り直した後に前のモデルでなくその `src` を読む (T0486) |
 | `gpu-lost-repeatedly` | 作り直しで作れない (GPU が戻らない) とき: 失って戻すと作り直し (1 回目) で作れず、`error` を送らずに待ち、5 秒後の試し直し (2 回目) で作って描く。次の喪失の作り直し (3 回目 = 上限の `MAX_RESTARTS`) でも作れなければ、5 秒後の試し直しで上限を超えて諦め、`error` を 1 回送って待っていた `ready` を reject する (`WebPuppet` も canvas も残らない)。`restart()` で作り直して、モデルと値が戻って描く (T0479) |
 | `detach-while-creating` | 作成中に外して戻すのを繰り返しても、`WebPuppet` は 1 つだけ残り、canvas も 1 つで、描く。外したまま作成が終わっても残らない |
 | `detach-while-fetching` | 新しい `src` の取得中に外して戻すと、前のモデルではなく新しい `src` を読んで描く |
@@ -228,8 +229,8 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 - wasm の panic (`console_error_panic_hook` がコンソールに書く `panicked at`) が 1 つでもあれば、そのシナリオは失敗する (T0484)。
 - `gpu-process-crash-during-create` で落ちる時機は決まらないので、通っても全ての段で落としたとは言えない (どの段でも panic しないことの
   決定的な確かめは packages/player/browser-test の `lose-context-during-create`・`invalid-block-index-during-create`)。手元の走り
-  (WSL2・SwiftShader) では、作成で失敗して `restart()` したもの・読み込みの途中に失って `LoadError` (`device_lost`) を送った後に作り直したもの・
-  作り直したものが出た。
+  (WSL2・SwiftShader) では、作成で失敗して `restart()` したもの・作り直したものが出た (読み込みの途中に失ったときは、T0486 から
+  `error` を送らずに作り直して読む。決定的な確かめは `context-loss-during-load`)。
 - 復元の時間切れは本物の時間 (5 秒) を待つので、`context-loss-timeout` は約 5 秒、`gpu-lost-repeatedly` は約 10 秒かかる
   (T0479 で測った。`avatar` 全体は 12 秒ほどから 30 秒ほどになった)。
 - 作り直しを繰り返すと、捨てた canvas の WebGL のコンテキストも GC されるまで Chrome の上限 (16) に数えられ、今のコンテキストが失われる

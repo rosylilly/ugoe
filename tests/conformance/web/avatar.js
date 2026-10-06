@@ -404,6 +404,69 @@ const scenarios = {
   },
 
   /**
+   * WebGL2 のコンテキストを失っている間の読み込み (`load()` と `src` の取得の結果) は、`device_lost` で失敗とせず、`error` も
+   * 送らずに、復元して作り直した後にそのモデルを読む。`load()` はそこで解決し、前のモデルのパラメータの値は引き継がない (T0486)。
+   */
+  async "context-loss-during-load"() {
+    const el = avatar({ backend: "webgl2", src: MODEL_A });
+    const loaded = once(el, "load");
+    document.body.append(el);
+    await loaded;
+    const [id, value] = pickParameter(el);
+    check(el.setParameter(id, value), `setParameter(${id}) failed`);
+    const events = recordEvents(el);
+
+    // `load()`: 失っている間に呼ぶと待ち、作り直した後に読んで解決する
+    let old = canvasOf(el);
+    let ext = loseContextOf(old);
+    await until(() => el.waitingForGpu, "gpulost after losing the context");
+    const bytes = await (await fetch(MODEL_B)).arrayBuffer();
+    let settled = false;
+    const loading = el.load(bytes).finally(() => {
+      settled = true;
+    });
+    await frames(5);
+    check(!settled, "load() settled while the context is lost");
+    check(events.errors.length === 0, `error while lost: ${events.errors.map((e) => e.message)}`);
+    ext.restoreContext();
+    const warnings = await loading;
+    check(Array.isArray(warnings), "load() did not resolve to the warnings");
+    check(canvasOf(el) !== old, "the canvas was not replaced after load()");
+    check(signature(el) === signatures.b, "not the model passed to load() after restoring");
+    const def = el.parameterDefinitions.find((d) => d.id === id);
+    const got = el.getParameter(id);
+    check(
+      def === undefined || Math.abs(got - def.default) < 1e-6,
+      `${id} is ${got} after load(), expected the default (the previous model's value was carried)`,
+    );
+    await expectDrawn(el, "after load() while lost");
+
+    // `src`: 失っている間に取得が終わると、作り直した後にその `src` を読む (前のモデルに戻らない)
+    old = canvasOf(el);
+    ext = loseContextOf(old);
+    await frames(2);
+    const reloaded = once(el, "load", "the load of src after restoring");
+    // 取得が終わったことは Resource Timing で見る (前のシナリオの記録は消しておく)
+    performance.clearResourceTimings();
+    const src = `${MODEL_A}?delay=100`;
+    el.src = src;
+    const url = new URL(src, document.baseURI).href;
+    await until(() => performance.getEntriesByName(url).length > 0, "the fetch of src");
+    await frames(5);
+    check(events.errors.length === 0, `error while lost: ${events.errors.map((e) => e.message)}`);
+    ext.restoreContext();
+    await reloaded;
+    check(canvasOf(el) !== old, "the canvas was not replaced after src");
+    check(signature(el) === signatures.a, "not the model of src after restoring");
+    events.stop();
+    check(events.errors.length === 0, `error: ${events.errors.map((e) => e.message).join("; ")}`);
+    await expectDrawn(el, "after src while lost");
+    await expectLive(1, "after the loads while lost");
+    el.remove();
+    await expectLive(0, "after removing");
+  },
+
+  /**
    * 作り直しで作れなければ (GPU が戻らない)、`RESTORE_TIMEOUT_MS` ごとに試し直し、試し直しも作り直しの回数に数える。
    * 上限 (bindings/web/src/avatar.ts の `MAX_RESTARTS` = 3 回) で諦めて `error` を送り、`ready` を reject する。`restart()` で作り直して描く (T0938)。
    * 作れないことは、作成の前に新しい canvas のコンテキストを失わせて起こす (本物の wasm の `CreateError`。T0475)。
