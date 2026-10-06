@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ugoe_core::Vec2;
-use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
+use ugoe_mesher::{GeneratedMesh, MeshError, MeshOption, MeshOptions};
 use ugoe_model::validate::validate;
 use ugoe_model::{BlendMode, KeyformBinding, KeyformGrid, MaskRef, Mesh, MeshId, Model, fixtures};
 use ugoe_psd::{ImportLimits, Layer, LayerNode, LayerTree};
@@ -12,7 +12,7 @@ use ugoe_psd::{ImportLimits, Layer, LayerNode, LayerTree};
 use crate::import::{
     DRAW_ORDER_RANGE, PsdLimit, layer_tree_command, layer_tree_command_with, read_layer_tree,
 };
-use crate::message::Coded;
+use crate::message::{Coded, MessageArg};
 use crate::texture::{DEFAULT_MAX_IMAGE_SIDE, decode_rgba_png, huge_png_header, png_size};
 use crate::{
     AutoMeshOptions, Command, Document, EditError, Project, ProjectMeta, PsdImport, PsdImportError,
@@ -456,15 +456,33 @@ fn rejects_invalid_mesh_options() {
     options.mesh.edge_spacing = 0.0;
     let err = import_psd(&model, &fixture_bytes(), &options).unwrap_err();
     assert!(
-        matches!(err, PsdImportError::InvalidMeshOptions(_)),
+        matches!(
+            err,
+            PsdImportError::InvalidMeshOptions {
+                option: MeshOption::EdgeSpacing,
+                value: 0.0
+            }
+        ),
         "{err}"
     );
+    // 引数はフィールドの名前・値・受け付ける範囲 (画面で訳す)。
+    let message = err.to_message();
+    assert_eq!(message.code, "psd.invalid_mesh_options");
+    assert_eq!(message.args["option"], MessageArg::from("edge_spacing"));
+    assert_eq!(message.args["value"], MessageArg::from(0.0));
+    assert_eq!(message.args["range"], MessageArg::from("(0, inf)"));
     // `margin` の上限 (1024) は mesher と同じ検証で、レイヤーごとでなく最初に弾く。
     let mut options = PsdImportOptions::new("t");
     options.mesh.margin = 1025.0;
     let err = import_psd(&model, &fixture_bytes(), &options).unwrap_err();
     assert!(
-        matches!(err, PsdImportError::InvalidMeshOptions(_)),
+        matches!(
+            err,
+            PsdImportError::InvalidMeshOptions {
+                option: MeshOption::Margin,
+                value: 1025.0
+            }
+        ),
         "{err}"
     );
     let err = import_psd(&model, b"not a psd", &PsdImportOptions::new("t")).unwrap_err();
@@ -775,7 +793,9 @@ fn regenerate_mesh_rejects_deformed_keyforms() {
     assert_eq!(message.code, "edit.automesh_failed");
     let cause = message.cause.expect("the mesh error as the cause");
     assert_eq!(cause.code, "automesh.invalid_options");
-    assert!(cause.args.contains_key("reason"), "{:?}", cause.args);
+    assert_eq!(cause.args["option"], MessageArg::from("edge_spacing"));
+    assert_eq!(cause.args["value"], MessageArg::from(-1.0));
+    assert_eq!(cause.args["range"], MessageArg::from("(0, inf)"));
 }
 
 #[test]

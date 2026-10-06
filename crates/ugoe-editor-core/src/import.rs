@@ -10,7 +10,7 @@ use std::fmt;
 use serde::Serialize;
 use ts_rs::TS;
 use ugoe_core::{Rgb, Vec2};
-use ugoe_mesher::{GeneratedMesh, MeshError, MeshOptions};
+use ugoe_mesher::{GeneratedMesh, MeshError, MeshOption, MeshOptions};
 use ugoe_model::mesh::MeshKeyform;
 use ugoe_model::part::PartKeyform;
 use ugoe_model::{BlendMode, KeyformGrid, MaskMode, MaskRef, Mesh, MeshId, Model, Part, PartId};
@@ -94,8 +94,9 @@ pub enum PsdImportError {
         /// その上限 (バイト)。
         max: u64,
     },
-    #[error("invalid mesh options: {0}")]
-    InvalidMeshOptions(&'static str),
+    /// 自動メッシュの設定のフィールド `option` の値 `value` が範囲 ([`MeshOption::bounds`]) の外。
+    #[error("invalid mesh options: {option} is {value}, but must be finite and in {}", option.range_text())]
+    InvalidMeshOptions { option: MeshOption, value: f32 },
     #[error("layer `{layer}`: automatic meshing failed: {source}")]
     Mesh {
         layer: String,
@@ -198,10 +199,16 @@ pub(crate) fn layer_tree_command_with(
     options: &PsdImportOptions,
     mesher: Mesher,
 ) -> Result<PsdImport, PsdImportError> {
-    options
-        .mesh
-        .check()
-        .map_err(PsdImportError::InvalidMeshOptions)?;
+    options.mesh.check().map_err(|error| match error {
+        MeshError::InvalidOptions { option, value } => {
+            PsdImportError::InvalidMeshOptions { option, value }
+        }
+        // `check` はオプションの誤りしか返さない。
+        source => PsdImportError::Mesh {
+            layer: String::new(),
+            source,
+        },
+    })?;
     let mut builder = Builder::new(model, options.mesh, mesher);
     builder.warnings.extend(tree.warnings.iter().map(|w| {
         let text = w.to_string();

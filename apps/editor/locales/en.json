@@ -2077,7 +2077,7 @@
       "channel_limit_exceeded": "The PSD was not read: a channel decompresses to {{size}} bytes, more than the import limit of {{max}} bytes.",
       "total_limit_exceeded": "The PSD was not read: its channels decompress to at least {{size}} bytes, more than the import limit of {{max}} bytes in total.",
       "read_file_failed": "Could not read the PSD file {{path}} ({{detail}}).",
-      "invalid_mesh_options": "The mesh options cannot be used ({{reason}}).",
+      "invalid_mesh_options": "The mesh option {{option}} cannot be {{value}}. Use a finite number in {{range}}.",
       "automesh_failed": "Automatic meshing failed for the layer {{layer}} ({{detail}}).",
       "canvas_mismatch": "The PSD canvas ({{psd_width}} × {{psd_height}}) differs from the model canvas ({{model_width}} × {{model_height}}). The model canvas is kept and the layers are placed at their PSD pixel positions, so they may not line up with the canvas. To use the PSD canvas, import into an empty project.",
       "group_blend_mode_ignored": "The group blend mode {{blend_mode}} was ignored because parts have no blend mode.",
@@ -2271,7 +2271,7 @@
     "automesh": {
       "empty": "the image is fully transparent",
       "bad_image": "the image data ({{len}} bytes) does not match its size {{width}} × {{height}}",
-      "invalid_options": "the mesh options cannot be used: {{reason}}",
+      "invalid_options": "the mesh option {{option}} cannot be {{value}} (it must be a finite number in {{range}})",
       "too_complex": "the shape is too complex to fit in {{max}} vertices",
       "too_large": "the working grid of {{width}} × {{height}} cells is more than the limit of {{max}} cells"
     },

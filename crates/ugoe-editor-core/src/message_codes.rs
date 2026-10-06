@@ -9,7 +9,7 @@
 use std::borrow::Cow;
 
 use ugoe_format::{FormatError, ReadLimit};
-use ugoe_mesher::{MAX_GRID_CELLS, MAX_VERTICES, MeshError};
+use ugoe_mesher::{MAX_GRID_CELLS, MAX_VERTICES, MeshError, MeshOption};
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::{DESCRIBED_ERRORS_MAX, ValidationError};
@@ -632,7 +632,7 @@ impl Coded for PsdImportError {
                 limit: PsdLimit::Total,
                 ..
             } => "psd.total_limit_exceeded",
-            Self::InvalidMeshOptions(_) => "psd.invalid_mesh_options",
+            Self::InvalidMeshOptions { .. } => "psd.invalid_mesh_options",
             Self::Mesh { .. } => "psd.automesh_failed",
         })
     }
@@ -641,7 +641,7 @@ impl Coded for PsdImportError {
         match self {
             Self::Psd(error) => args! { "detail" => error.to_string() },
             Self::LimitExceeded { size, max, .. } => args! { "size" => *size, "max" => *max },
-            Self::InvalidMeshOptions(reason) => args! { "reason" => *reason },
+            Self::InvalidMeshOptions { option, value } => mesh_option_args(*option, *value),
             Self::Mesh { layer, source } => {
                 args! { "layer" => layer, "detail" => source.to_string() }
             }
@@ -652,7 +652,7 @@ impl Coded for PsdImportError {
         match self {
             Self::Psd(error) => Some(error.to_message()),
             Self::Mesh { source, .. } => Some(source.to_message()),
-            Self::LimitExceeded { .. } | Self::InvalidMeshOptions(_) => None,
+            Self::LimitExceeded { .. } | Self::InvalidMeshOptions { .. } => None,
         }
     }
 }
@@ -721,6 +721,17 @@ impl Coded for PsdError {
     }
 }
 
+/// 範囲の外の自動メッシュの設定の引数 (`automesh.invalid_options`・`psd.invalid_mesh_options`)。
+/// `option` はフィールドの名前 (`margin` など)、`value` はその値 (NaN・無限大は文字列)、
+/// `range` は受け付ける範囲を区間の記法で書いたもの (`[0, 1024]`・`(0, inf)`。言語によらない)。
+fn mesh_option_args(option: MeshOption, value: f32) -> MessageArgs {
+    args! {
+        "option" => option.as_str(),
+        "value" => value,
+        "range" => option.range_text(),
+    }
+}
+
 /// 自動メッシュの生成のエラー (`automesh.*`。[`MeshError::code`])。
 impl Coded for MeshError {
     fn code(&self) -> Cow<'static, str> {
@@ -733,7 +744,7 @@ impl Coded for MeshError {
             Self::BadImage { width, height, len } => {
                 args! { "width" => *width, "height" => *height, "len" => *len }
             }
-            Self::InvalidOptions(reason) => args! { "reason" => *reason },
+            Self::InvalidOptions { option, value } => mesh_option_args(*option, *value),
             Self::TooComplex => args! { "max" => MAX_VERTICES },
             Self::TooLarge { width, height } => {
                 args! { "width" => *width, "height" => *height, "max" => MAX_GRID_CELLS }

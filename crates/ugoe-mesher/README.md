@@ -58,8 +58,13 @@ let mesh = ugoe_mesher::generate(&rgba, width, height, &MeshOptions::default())?
 | `min_island_area` | 0 | 画素数がこれ未満の島を捨てる (0 と 1 は捨てない) |
 
 `margin` は 0 以上 1024 以下、`interior_spacing` は 0 以上、`edge_spacing` は 0 より大きい有限の値で
-なければ `MeshError::InvalidOptions` になる。この検証は `MeshOptions::validate()` として公開していて、
-呼び出し側がオプションを先に確かめるときもこれを使う (`ugoe-editor-core` の `AutoMeshOptions::check`)。
+なければ `MeshError::InvalidOptions { option, value }` になる。`option` は外れたフィールド (`MeshOption`。
+`margin`・`edge_spacing`・`interior_spacing` の順に確かめ、最初に外れたもの)、`value` はその値 (NaN を含む)。
+受け付ける範囲は `MeshOption::bounds()` (下限と上限の `std::ops::Bound`) で、`MeshOption::range_text()` は
+それを区間の記法 (`[0, 1024]`・`(0, inf)`・`[0, inf)`) で書いた文、`MeshOption::as_str()` はフィールドの名前
+(値は変えない)。エディタはこれらを `automesh.invalid_options` の引数 `option`・`value`・`range` にして訳す (T0572)。
+この検証は `MeshOptions::validate()` として公開していて、呼び出し側がオプションを先に確かめるときもこれを使う
+(`ugoe-editor-core` の `AutoMeshOptions::check`)。
 
 ## 保証
 

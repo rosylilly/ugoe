@@ -986,7 +986,7 @@ base project.」と示します (`BaseLock.svelte`。`fieldset` の `disabled` �
 
 - ID は名前から `ids` の規則で作ります。名前が英数字を 1 つも含まなければ (日本語だけの名前など)、PSD のレイヤー ID から `Layer12` / `Group8` (ID がなければ `Layer` / `Group`) にします。表示名 (`name`) には元の名前を残します。
 - テクスチャ名はメッシュの ID と同じにし、大文字小文字を区別せずに重なれば `_2`、… を付けます。
-- 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値 (`MeshOptions::validate` と同じ規則。`margin` の上限 1024 を含む) なら、レイヤーを処理する前に取り込みをエラー (`PsdImportError::InvalidMeshOptions`) にします。
+- 自動メッシュの設定 (`AutoMeshOptions`、JSON で省略したフィールドは既定値) は `ugoe_mesher::MeshOptions` と同じです。不正な値 (`MeshOptions::validate` と同じ規則。`margin` の上限 1024 を含む) なら、レイヤーを処理する前に取り込みをエラー (`PsdImportError::InvalidMeshOptions`。範囲の外のフィールドとその値を持つ) にします。
 
 ### 読み込みの上限
 
@@ -2346,7 +2346,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `psd.read_failed` | `detail` (原因は `psd_read.*`) |
 | `psd.channel_limit_exceeded` / `psd.total_limit_exceeded` (読み込みの上限。チャンネル 1 枚の展開後の大きさ / 展開の合計。[読み込みの上限](#読み込みの上限)) | `size` (展開しようとした大きさ。合計は超えたところまで)・`max` (上限)。どちらもバイト |
 | `psd.read_file_failed` | `path`・`detail` (原因は `psd_read.*`) |
-| `psd.invalid_mesh_options` | `reason` |
+| `psd.invalid_mesh_options` | `option`・`value`・`range` (`automesh.invalid_options` と同じ) |
 | `psd.automesh_failed` | `layer`・`detail` (原因は `automesh.*`) |
 | `psd.canvas_mismatch` | `psd_width`・`psd_height`・`model_width`・`model_height` |
 | `psd.group_blend_mode_ignored` / `psd.blend_mode_unsupported` | `blend_mode` |
@@ -2458,7 +2458,7 @@ Tauri v2 では `async` でない IPC コマンドはメインのスレッド (�
 | `psd_read.limit_exceeded` (読み込みの上限。editor-core は `psd.channel_limit_exceeded`・`psd.total_limit_exceeded` で返すので、ふつうは画面に出ない) | `limit` (`channel_decompressed`・`total_decompressed`)・`size`・`max` (バイト) |
 | `automesh.empty` (中身の画素が無い) | なし |
 | `automesh.bad_image` (画像の長さが大きさと合わない) | `width`・`height`・`len` (バイト) |
-| `automesh.invalid_options` | `reason` (範囲の外のオプションの説明。英語) |
+| `automesh.invalid_options` (範囲の外の設定。`MeshError::InvalidOptions`) | `option` (フィールドの名前。`margin`・`edge_spacing`・`interior_spacing`)・`value` (その値。NaN・無限大は文字列)・`range` (受け付ける範囲を区間の記法で書いたもの。`[0, 1024]`・`(0, inf)`・`[0, inf)`。言語によらない) |
 | `automesh.too_complex` (頂点数が上限に収まらない) | `max` (頂点数の上限) |
 | `automesh.too_large` (作業用の格子が大きすぎる) | `width`・`height` (格子のセル数)・`max` (セル数の上限) |
 

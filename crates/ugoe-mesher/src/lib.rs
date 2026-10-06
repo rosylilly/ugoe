@@ -12,6 +12,8 @@ mod mask;
 mod points;
 mod triangulate;
 
+use std::ops::{Bound, RangeBounds};
+
 use ugoe_core::Vec2;
 
 use crate::contour::P;
@@ -78,7 +80,7 @@ pub struct GeneratedMesh {
 ///
 /// 変種を足しても公開 API の破壊的な変更にならないよう `#[non_exhaustive]` にしている
 /// (外の `match` は `_` の腕が要る)。
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum MeshError {
     /// 中身 (`alpha_threshold` 以上の画素) が 1 つもない。
@@ -87,9 +89,9 @@ pub enum MeshError {
     /// `rgba` の長さが `width * height * 4` と合わない。
     #[error("rgba length {len} does not match {width}x{height}")]
     BadImage { width: u32, height: u32, len: usize },
-    /// オプションが範囲の外。
-    #[error("invalid mesh option: {0}")]
-    InvalidOptions(&'static str),
+    /// オプション `option` の値 `value` が、受け付ける範囲 ([`MeshOption::bounds`]) の外か、有限でない。
+    #[error("invalid mesh option: {option} is {value}, but must be finite and in {}", option.range_text())]
+    InvalidOptions { option: MeshOption, value: f32 },
     /// 間隔を広げてやり直しても、頂点数が [`MAX_VERTICES`] に収まらない。
     #[error("shape is too complex to fit in 65535 vertices")]
     TooComplex,
@@ -105,10 +107,68 @@ impl MeshError {
         match self {
             Self::Empty => "empty",
             Self::BadImage { .. } => "bad_image",
-            Self::InvalidOptions(_) => "invalid_options",
+            Self::InvalidOptions { .. } => "invalid_options",
             Self::TooComplex => "too_complex",
             Self::TooLarge { .. } => "too_large",
         }
+    }
+}
+
+/// 範囲を確かめる [`MeshOptions`] のフィールド ([`MeshError::InvalidOptions`])。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum MeshOption {
+    Margin,
+    EdgeSpacing,
+    InteriorSpacing,
+}
+
+impl MeshOption {
+    /// フィールドの名前 (`"margin"` など。[`MeshOptions`] のフィールド名)。値は **変えない**。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Margin => "margin",
+            Self::EdgeSpacing => "edge_spacing",
+            Self::InteriorSpacing => "interior_spacing",
+        }
+    }
+
+    /// 受け付ける値の範囲 (下限と上限)。値はこれに加えて有限でなければならない。
+    ///
+    /// `margin` は 0 以上 1024 以下、`edge_spacing` は 0 より大きく、`interior_spacing` は 0 以上。
+    pub fn bounds(self) -> (Bound<f32>, Bound<f32>) {
+        match self {
+            Self::Margin => (Bound::Included(0.0), Bound::Included(MAX_MARGIN)),
+            Self::EdgeSpacing => (Bound::Excluded(0.0), Bound::Unbounded),
+            Self::InteriorSpacing => (Bound::Included(0.0), Bound::Unbounded),
+        }
+    }
+
+    /// [`MeshOption::bounds`] を区間の記法で書いた文 (`[0, 1024]`・`(0, inf)` など)。言語によらない。
+    pub fn range_text(self) -> String {
+        let (start, end) = self.bounds();
+        let lower = match start {
+            Bound::Included(v) => format!("[{v}"),
+            Bound::Excluded(v) => format!("({v}"),
+            Bound::Unbounded => "(-inf".to_owned(),
+        };
+        let upper = match end {
+            Bound::Included(v) => format!("{v}]"),
+            Bound::Excluded(v) => format!("{v})"),
+            Bound::Unbounded => "inf)".to_owned(),
+        };
+        format!("{lower}, {upper}")
+    }
+
+    /// `value` を受け付けるか (有限で、[`MeshOption::bounds`] の内側)。NaN は受け付けない。
+    fn accepts(self, value: f32) -> bool {
+        value.is_finite() && self.bounds().contains(&value)
+    }
+}
+
+impl std::fmt::Display for MeshOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -242,25 +302,20 @@ fn generate_in(
 
 impl MeshOptions {
     /// [`generate`] が受け付ける値か確かめる (`margin` は 0 以上 1024 以下、`interior_spacing` は
-    /// 0 以上、`edge_spacing` は 0 より大きい有限の値)。範囲の外なら [`MeshError::InvalidOptions`]。
+    /// 0 以上、`edge_spacing` は 0 より大きい有限の値。[`MeshOption::bounds`])。範囲の外なら、
+    /// 最初に外れたフィールドとその値を持つ [`MeshError::InvalidOptions`]。
     ///
     /// 呼び出し側 (エディタの取り込みなど) がオプションを先に確かめるときも、これを使う
     /// (検証の規則を 1 か所に保つため)。
     pub fn validate(&self) -> Result<(), MeshError> {
-        if !(0.0..=MAX_MARGIN).contains(&self.margin) {
-            return Err(MeshError::InvalidOptions(
-                "margin must be between 0 and 1024",
-            ));
-        }
-        if !(self.edge_spacing.is_finite() && self.edge_spacing > 0.0) {
-            return Err(MeshError::InvalidOptions(
-                "edge_spacing must be finite and > 0",
-            ));
-        }
-        if !(self.interior_spacing.is_finite() && self.interior_spacing >= 0.0) {
-            return Err(MeshError::InvalidOptions(
-                "interior_spacing must be finite and >= 0",
-            ));
+        for (option, value) in [
+            (MeshOption::Margin, self.margin),
+            (MeshOption::EdgeSpacing, self.edge_spacing),
+            (MeshOption::InteriorSpacing, self.interior_spacing),
+        ] {
+            if !option.accepts(value) {
+                return Err(MeshError::InvalidOptions { option, value });
+            }
         }
         Ok(())
     }

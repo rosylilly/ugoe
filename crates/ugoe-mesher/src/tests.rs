@@ -130,7 +130,10 @@ fn error_codes_are_the_variant_names() {
             height: 2,
             len: 12,
         },
-        MeshError::InvalidOptions("margin"),
+        MeshError::InvalidOptions {
+            option: MeshOption::Margin,
+            value: -1.0,
+        },
         MeshError::TooComplex,
         MeshError::TooLarge {
             width: 1,
@@ -161,25 +164,103 @@ fn bad_image_size_is_rejected() {
 #[test]
 fn invalid_options_are_rejected() {
     let rgba = image(4, 4, |_, _| true);
-    for options in [
-        MeshOptions {
-            margin: -1.0,
-            ..MeshOptions::default()
-        },
-        MeshOptions {
-            edge_spacing: 0.0,
-            ..MeshOptions::default()
-        },
-        MeshOptions {
-            interior_spacing: f32::NAN,
-            ..MeshOptions::default()
-        },
+    for (options, option, value) in [
+        (
+            MeshOptions {
+                margin: -1.0,
+                ..MeshOptions::default()
+            },
+            MeshOption::Margin,
+            -1.0,
+        ),
+        (
+            MeshOptions {
+                edge_spacing: 0.0,
+                ..MeshOptions::default()
+            },
+            MeshOption::EdgeSpacing,
+            0.0,
+        ),
+        (
+            MeshOptions {
+                interior_spacing: -0.5,
+                ..MeshOptions::default()
+            },
+            MeshOption::InteriorSpacing,
+            -0.5,
+        ),
     ] {
-        assert!(matches!(
+        assert_eq!(
             generate(&rgba, 4, 4, &options),
-            Err(MeshError::InvalidOptions(_))
-        ));
+            Err(MeshError::InvalidOptions { option, value })
+        );
     }
+}
+
+/// 理由はどのフィールドがどの値で外れたかを持つ (NaN は値を比べられないので取り出して確かめる)。
+#[test]
+fn invalid_options_tell_the_field_and_the_value() {
+    let options = MeshOptions {
+        interior_spacing: f32::NAN,
+        ..MeshOptions::default()
+    };
+    let Err(MeshError::InvalidOptions { option, value }) = options.validate() else {
+        panic!("NaN must be rejected");
+    };
+    assert_eq!(option, MeshOption::InteriorSpacing);
+    assert!(value.is_nan());
+    // 複数のフィールドが外れていれば、最初 (`margin`・`edge_spacing`・`interior_spacing` の順) のもの。
+    let options = MeshOptions {
+        edge_spacing: f32::INFINITY,
+        interior_spacing: -1.0,
+        ..MeshOptions::default()
+    };
+    assert_eq!(
+        options.validate(),
+        Err(MeshError::InvalidOptions {
+            option: MeshOption::EdgeSpacing,
+            value: f32::INFINITY,
+        })
+    );
+}
+
+#[test]
+fn option_bounds_and_names() {
+    use std::ops::Bound;
+    assert_eq!(
+        MeshOption::Margin.bounds(),
+        (Bound::Included(0.0), Bound::Included(1024.0))
+    );
+    assert_eq!(
+        MeshOption::EdgeSpacing.bounds(),
+        (Bound::Excluded(0.0), Bound::Unbounded)
+    );
+    assert_eq!(
+        MeshOption::InteriorSpacing.bounds(),
+        (Bound::Included(0.0), Bound::Unbounded)
+    );
+    let names = [
+        MeshOption::Margin,
+        MeshOption::EdgeSpacing,
+        MeshOption::InteriorSpacing,
+    ]
+    .map(|o| (o.as_str(), o.range_text()));
+    assert_eq!(
+        names,
+        [
+            ("margin", "[0, 1024]".to_owned()),
+            ("edge_spacing", "(0, inf)".to_owned()),
+            ("interior_spacing", "[0, inf)".to_owned()),
+        ]
+    );
+    let error = MeshError::InvalidOptions {
+        option: MeshOption::Margin,
+        value: 1025.0,
+    };
+    assert_eq!(
+        error.to_string(),
+        "invalid mesh option: margin is 1025, but must be finite and in [0, 1024]"
+    );
 }
 
 #[test]
@@ -212,7 +293,10 @@ fn extreme_options_do_not_blow_up() {
         };
         assert!(matches!(
             generate(&rgba, 8, 8, &options),
-            Err(MeshError::InvalidOptions(_))
+            Err(MeshError::InvalidOptions {
+                option: MeshOption::Margin,
+                ..
+            })
         ));
     }
     // 間隔が小さすぎれば、広げても上限に収まらない。点を作り切る前に諦める。

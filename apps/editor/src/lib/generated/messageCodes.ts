@@ -85,7 +85,9 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "automesh.empty": [],
   "automesh.invalid_options": [
-    "reason"
+    "option",
+    "range",
+    "value"
   ],
   "automesh.too_complex": [
     "max"
@@ -841,7 +843,9 @@ export const messageCodes: Record<string, readonly string[]> = {
   ],
   "psd.group_clipping_unsupported": [],
   "psd.invalid_mesh_options": [
-    "reason"
+    "option",
+    "range",
+    "value"
   ],
   "psd.layer_effects_ignored": [],
   "psd.layer_mask_ignored": [],

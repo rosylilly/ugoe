@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use ugoe_format::{ChunkTag, FormatError, ReadLimit};
-use ugoe_mesher::MeshError;
+use ugoe_mesher::{MeshError, MeshOption};
 use ugoe_model::KeyformInterpolation;
 use ugoe_model::avatar::check::ProfileIssue;
 use ugoe_model::validate::ValidationError;
@@ -459,7 +459,10 @@ fn psd_import_errors() -> Vec<PsdImportError> {
             size: 5000,
             max: 4096,
         },
-        PsdImportError::InvalidMeshOptions("max_edge"),
+        PsdImportError::InvalidMeshOptions {
+            option: MeshOption::EdgeSpacing,
+            value: 0.0,
+        },
         PsdImportError::Mesh {
             layer: id(),
             source: MeshError::TooComplex,
@@ -914,7 +917,10 @@ pub(crate) fn mesh_errors() -> Vec<MeshError> {
             height: 2,
             len: 12,
         },
-        MeshError::InvalidOptions("margin"),
+        MeshError::InvalidOptions {
+            option: MeshOption::Margin,
+            value: 2048.0,
+        },
         MeshError::TooComplex,
         MeshError::TooLarge {
             width: 20_000,

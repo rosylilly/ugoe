@@ -2026,7 +2026,7 @@
       "channel_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、1 枚が {{size}} バイトになり、取り込みの上限の {{max}} バイトを超えます。",
       "total_limit_exceeded": "PSD を読みませんでした。チャンネルを展開すると、合計が {{size}} バイト以上になり、取り込みの上限の {{max}} バイトを超えます。",
       "read_file_failed": "PSD のファイル {{path}} を読めません ({{detail}})。",
-      "invalid_mesh_options": "メッシュの設定を使えません ({{reason}})。",
+      "invalid_mesh_options": "メッシュの設定 {{option}} に {{value}} は使えません。{{range}} の範囲の有限の値にしてください。",
       "automesh_failed": "レイヤー {{layer}} の自動メッシュの生成に失敗しました ({{detail}})。",
       "canvas_mismatch": "PSD のキャンバス ({{psd_width}} × {{psd_height}}) がモデルのキャンバス ({{model_width}} × {{model_height}}) と違います。モデルのキャンバスのまま、レイヤーを PSD のピクセルの位置に置くので、キャンバスと揃わないことがあります。PSD のキャンバスを使うには、空のプロジェクトに取り込んでください。",
       "group_blend_mode_ignored": "パーツは合成モードを持たないので、グループの合成モード {{blend_mode}} は使いませんでした。",
@@ -2220,7 +2220,7 @@
     "automesh": {
       "empty": "画像がすべて透明です",
       "bad_image": "画像のデータ ({{len}} バイト) が大きさ {{width}} × {{height}} と合いません",
-      "invalid_options": "メッシュの設定が使えません: {{reason}}",
+      "invalid_options": "メッシュの設定 {{option}} に {{value}} は使えません ({{range}} の範囲の有限の値)",
       "too_complex": "形が複雑で、頂点が上限の {{max}} 個に収まりません",
       "too_large": "作業用の格子 ({{width}} × {{height}} セル) が上限の {{max}} セルを超えます"
     },

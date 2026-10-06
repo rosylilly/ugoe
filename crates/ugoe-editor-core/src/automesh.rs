@@ -60,16 +60,13 @@ impl From<AutoMeshOptions> for MeshOptions {
 }
 
 impl AutoMeshOptions {
-    /// `ugoe_mesher::generate` が受け付ける値か。不正ならその理由。
+    /// `ugoe_mesher::generate` が受け付ける値か。不正なら [`MeshError::InvalidOptions`]
+    /// (範囲の外のフィールドとその値)。
     ///
     /// 規則は [`MeshOptions::validate`] と同じ (`margin` は 0 以上 1024 以下、`interior_spacing` は
     /// 0 以上、`edge_spacing` は 0 より大きい有限の値)。
-    pub fn check(&self) -> Result<(), &'static str> {
-        MeshOptions::from(*self).validate().map_err(|e| match e {
-            MeshError::InvalidOptions(reason) => reason,
-            // `validate` はオプションの誤りしか返さない。
-            _ => "invalid mesh options",
-        })
+    pub fn check(&self) -> Result<(), MeshError> {
+        MeshOptions::from(*self).validate()
     }
 }
 
@@ -271,7 +268,13 @@ mod tests {
             margin: 2048.0,
             ..AutoMeshOptions::default()
         };
-        assert_eq!(options.check(), Err("margin must be between 0 and 1024"));
+        assert_eq!(
+            options.check(),
+            Err(MeshError::InvalidOptions {
+                option: ugoe_mesher::MeshOption::Margin,
+                value: 2048.0,
+            })
+        );
     }
 
     #[test]
