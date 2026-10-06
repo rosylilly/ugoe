@@ -36,12 +36,14 @@ import HelpButton from "./lib/HelpButton.svelte";
 import { t } from "./lib/i18n";
 import { type DifferenceItem, ipc } from "./lib/ipc";
 import {
+  isNarrowWindow,
   LEFT_WIDTH,
   loadSize,
   loadSplit,
   RIGHT_SPLIT,
   RIGHT_WIDTH,
   TIMELINE_HEIGHT,
+  timelineOpen as timelineOpenFor,
 } from "./lib/layout";
 import ModuleErrorHelp from "./lib/ModuleErrorHelp.svelte";
 import { renamePrefix } from "./lib/moduleProject";
@@ -58,6 +60,7 @@ import SlotsPanel from "./lib/panels/slots/SlotsPanel.svelte";
 import { SlotsView } from "./lib/panels/slots/slotsView.svelte";
 import TreePanel from "./lib/panels/TreePanel.svelte";
 import TimelinePanel from "./lib/panels/timeline/TimelinePanel.svelte";
+import { loadPanelOpen } from "./lib/panels/timeline/timeline";
 import VerifyPanel from "./lib/panels/verify/VerifyPanel.svelte";
 import { VerifyView } from "./lib/panels/verify/verifyView.svelte";
 import DifferenceOverlay from "./lib/preview/DifferenceOverlay.svelte";
@@ -262,11 +265,22 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 // 左右の列の幅・タイムラインの高さ・右の列の上下の分け方 (lib/layout.ts。区切りで変えて覚える)。
+let innerWidth = $state(0);
+const narrowWindow = $derived(isNarrowWindow(innerWidth));
 let leftWidth = $state(loadSize(LEFT_WIDTH));
 let rightWidth = $state(loadSize(RIGHT_WIDTH));
 let timelineHeight = $state(loadSize(TIMELINE_HEIGHT));
 let split = $state<number | null>(loadSplit());
-let timelineOpen = $state(true);
+// タイムラインは、空のプロジェクトと狭い窓では利用者が開閉するまで畳む (timelineOpen。覚えた開閉は変えない)。
+let timelineStored = $state(loadPanelOpen());
+let timelineTouched = $state(false);
+const timelineOpen = $derived(
+  timelineOpenFor(timelineStored, {
+    empty: doc.empty,
+    narrow: narrowWindow,
+    touched: timelineTouched,
+  }),
+);
 let timelineMeasured = $state(0);
 let rightColumnHeight = $state(0);
 
@@ -294,7 +308,7 @@ $effect(() => {
   </div>
 {/snippet}
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} bind:innerWidth />
 
 <TooltipProvider>
 <div class="shell" class:previewing={preview.active} style:--left-width="{leftWidth}px" style:--right-width="{rightWidth}px">
@@ -383,7 +397,10 @@ $effect(() => {
         <Splitter label={t("app.splitter.timeline")} orientation="horizontal" reverse range={TIMELINE_HEIGHT}
           bind:value={timelineHeight} measure={() => timelineMeasured} controls="editor-timeline" />
       {/if}
-      <TimelinePanel {doc} {viewport} bind:open={timelineOpen} />
+      <TimelinePanel {doc} {viewport} open={timelineOpen} ontoggle={(open) => {
+        timelineStored = open;
+        timelineTouched = true;
+      }} />
     </div>
   </main>
   <div class="column-splitter right-splitter">

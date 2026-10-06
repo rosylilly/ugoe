@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   clampSplit,
   DEFAULT_SPLIT,
+  isNarrowWindow,
   LEFT_WIDTH,
   loadSize,
   loadSplit,
   MAX_SPLIT,
   MIN_SPLIT,
+  NARROW_WINDOW_WIDTH,
   RIGHT_WIDTH,
   SPLIT_STEP,
   saveSize,
@@ -16,6 +18,7 @@ import {
   splitAt,
   splitByKey,
   TIMELINE_HEIGHT,
+  timelineOpen,
 } from "./layout";
 
 describe("right column split", () => {
@@ -107,5 +110,28 @@ describe("column widths and the timeline height", () => {
     expect(loadSize(LEFT_WIDTH)).toBe(LEFT_WIDTH.max);
     storage.setItem(LEFT_WIDTH.key, "wide");
     expect(loadSize(LEFT_WIDTH)).toBe(LEFT_WIDTH.default);
+  });
+});
+
+describe("narrow windows and empty projects", () => {
+  it("treats the 200% zoom as narrow but not the lower limit", () => {
+    expect(isNarrowWindow(720)).toBe(true);
+    expect(isNarrowWindow(1024)).toBe(false);
+    expect(isNarrowWindow(NARROW_WINDOW_WIDTH)).toBe(false);
+    expect(isNarrowWindow(1440)).toBe(false);
+    // 測れない幅 (0・NaN) は狭くないとする
+    expect(isNarrowWindow(0)).toBe(false);
+    expect(isNarrowWindow(Number.NaN)).toBe(false);
+  });
+
+  it("collapses the timeline of an empty project or in a narrow window until the user toggles it", () => {
+    const context = { empty: true, narrow: false, touched: false };
+    expect(timelineOpen(true, context)).toBe(false);
+    expect(timelineOpen(true, { ...context, touched: true })).toBe(true);
+    expect(timelineOpen(false, { ...context, touched: true })).toBe(false);
+    expect(timelineOpen(true, { ...context, empty: false })).toBe(true);
+    expect(timelineOpen(false, { ...context, empty: false })).toBe(false);
+    expect(timelineOpen(true, { empty: false, narrow: true, touched: false })).toBe(false);
+    expect(timelineOpen(true, { empty: false, narrow: true, touched: true })).toBe(true);
   });
 });

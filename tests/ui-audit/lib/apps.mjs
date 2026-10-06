@@ -338,7 +338,16 @@ export const APPS = {
           exact: true,
         })
         .click();
-      // タイムラインのグラフ (カーブのある行とキーを選ぶ) と、モーションの「Settings…」の Popover (T0675)
+      // タイムラインのグラフ (カーブのある行とキーを選ぶ) と、モーションの「Settings…」の Popover (T0675)。
+      // 幅 900px 未満の窓 (200% の拡大) ではタイムラインが畳まれているので、先に開く (T1637)
+      const expandTimeline = page.getByRole("button", {
+        name: text("editor", ctx.lang, "timeline.expand"),
+        exact: true,
+      });
+      if ((await expandTimeline.count()) > 0) {
+        await expandTimeline.first().click();
+        await page.waitForTimeout(400);
+      }
       await page.locator(".motion-editor .label.has-curve button.track").first().click();
       await page.locator(".motion-editor .lane.selected button.diamond").nth(1).click();
       await page.waitForTimeout(400);

@@ -87,7 +87,11 @@ const PANELS: [string, (env: Env) => HTMLElement][] = [
         physics: new PhysicsView(),
       }).target,
   ],
-  ["TimelinePanel", ({ doc, viewport }) => render(TimelinePanel, { doc, viewport }).target],
+  [
+    "TimelinePanel",
+    ({ doc, viewport }) =>
+      render(TimelinePanel, { doc, viewport, open: true, ontoggle: () => {} }).target,
+  ],
 ];
 
 /** `json` を最初のモデルにし、メッシュ Quad を選んで `draw` で描く。 */

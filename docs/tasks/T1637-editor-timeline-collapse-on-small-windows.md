@@ -1,7 +1,7 @@
 ---
 id: T1637
 title: "エディタ: 空のプロジェクトと 200% の拡大で、タイムラインと左右の列の大きさを決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0675]
@@ -27,11 +27,11 @@ assignee: claude-worker-T1637
 
 ## 受け入れ条件
 
-- [ ] 案と推奨をメモに書き、利用者の判断を得た
-- [ ] 決めた形で直し、単体テスト (いつ畳む・狭めるか) がある。利用者が覚えた開閉と幅を上書きしない
-- [ ] `just ui-audit --only editor` の指摘が増えず、200% の拡大と空のプロジェクトの前と後の画像を比べてメモに書いた
-- [ ] docs/editor.md・docs/ui.md を直し、画面が変わったところを T0919 のメモに書き足した
-- [ ] `just e2e --only editor` と `just ci` が通る
+- [x] 案と推奨をメモに書き、利用者の判断を得た
+- [x] 決めた形で直し、単体テスト (いつ畳む・狭めるか) がある。利用者が覚えた開閉と幅を上書きしない
+- [x] `just ui-audit --only editor` の指摘が増えず、200% の拡大と空のプロジェクトの前と後の画像を比べてメモに書いた
+- [x] docs/editor.md・docs/ui.md を直し、画面が変わったところを T0919 のメモに書き足した
+- [x] `just e2e --only editor` と `just ci` が通る
 
 ## 参考
 
@@ -41,3 +41,41 @@ assignee: claude-worker-T1637
 ## メモ
 
 - T0041 で起票した (元の候補: T0673 (空のときにタイムラインを畳む)・T0675 (200% の拡大の中央の列))。
+
+- **判断待ち (blocked):** 案 A・B を試作し、`just ui-audit --only editor` で前 (= 案 C。main 376f1cd1) と比べた。試作はブランチ
+  `task/T1637-proto-a` (d05f785e)・`task/T1637-proto-b` (4af3832d) にあり、決まるまで main には入れない。
+  - 試作の共通部分: `lib/layout.ts` に `isNarrowWindow` (CSS の幅 1200px 未満。1024px と 200% の拡大の 720px が狭い、1440px は広い) と
+    `timelineOpen(stored, { empty, narrow, touched })`。開閉は App が決め、`TimelinePanel` は `open` と `ontoggle` を受ける。
+    利用者がこの画面で開閉のボタンを押した後は覚えた開閉 (`ugoe.editor.timelineOpen`) に従い、自動で畳んだことは覚えない。layout.test.ts に単体テスト。
+  - **案 A** (空なら畳む・狭い窓では覚えた幅の無い列を範囲の下限へ): 空のプロジェクトは 720×450 でも 3 つのボタンが見える。
+    ただし 720px では右の列が既に `36vw` (259px) で下限 280px より狭く、左の列が 201→180px になるだけで、タイムラインのキーの列は
+    約 22px しか広がらない。1024px では中央が約 100px 広がる代わりにツリーの名前が省略される (`Hai…`・`HeadRota…`)。
+    ui-audit は +0 -0 ~0。
+  - **案 B** (空でも狭い窓でも畳む・列はそのまま): 空のときは A と同じ。見本を開いた 720×450 と 1024×720 でビューポートが高くなり、
+    モデルの全身が見える。タイムラインは開閉のボタンを押すまで出ない (押せば前と同じ大きさ)。ui-audit は、監査の場面
+    (`tests/ui-audit/lib/apps.mjs` の `-timeline-graph` 以降) がタイムラインの行を探して狭い窓で待ちきれず +1 (場面の失敗。検査の数は 0)。
+    B にするなら、監査と e2e の手順で先にタイムラインを開く変更が要る。閾値を 900px 未満にすれば 1024px では今のまま開く。
+  - **案 C** (自動では何もしない): 画面は前のまま。200% の拡大の空のプロジェクトでは 3 つ目のボタン「Open Sample…」が
+    タイムラインに隠れる (送る必要がある)。マニュアルに「狭い画面ではタイムラインを畳む・区切りで列を狭める」を書くだけ。
+  - **推奨: B (閾値は 900px 未満。200% の拡大などの本当に狭い窓だけ)。** 理由: A の列を狭める効果は 720px ではほぼ無く
+    (`36vw` の上限が先に効く)、1024px ではツリーを削る。200% の拡大の中央の列では、タイムラインを開いても表は窮屈なので、
+    畳んでビューポートを確保し、要るときに 1 回押して開く方が損が少ない。空のプロジェクトを畳むのは A・B 共通で、どちらでも入れたい。
+  - 比べた画像 (前 (= C)・A・B を横に、空の 1024×720・見本の 1024×720・空の 720×450・見本の 720×450 を縦に並べた一覧):
+    `target/ui-audit-compare/T1637-compare.png` (worktree の中。gitignore)。個々の画像は `target/ui-audit-{before,A,B}/editor/en-light-{narrow,zoom200}{,-empty}.png`。
+    同じものをセッションの scratchpad の `T1637/` にも写した。
+- **利用者の判断: 案 B、狭い窓の境は 900px 未満。** 空のプロジェクトと幅 900px 未満の窓ではタイムラインを畳み、列はそのまま。1024px では今のまま開く。
+  利用者が開閉を押したらそれに従い、自動で畳んだことは覚えない。task/T1637-proto-b を元に本実装する。
+- **やったこと (案 B、境は 900px 未満):**
+  - `lib/layout.ts` の `NARROW_WINDOW_WIDTH` (900)・`isNarrowWindow`・`timelineOpen(stored, { empty, narrow, touched })`。App が窓の幅
+    (`svelte:window` の `innerWidth`)・`doc.empty`・覚えた開閉から開閉を決め、`TimelinePanel` は `open` と `ontoggle` を受ける (開閉を覚えるのは押したときだけ)。
+    この画面で開閉を押した後は押した開閉に従う。列の幅と高さには触れない。単体テストは layout.test.ts。
+  - 範囲外の小さな変更: `tests/ui-audit/lib/apps.mjs` で `-timeline-graph` の前に、畳まれていればタイムラインを開く。e2e (`tests/e2e/specs/editor.test.mjs`) は
+    タイムラインを操作しないので変更は要らなかった (`just e2e --only editor` は 15 件すべて通過)。
+  - 文書: docs/editor.md (画面の配置・タイムライン・覚える値)、docs/ui.md (「エディタの空のプロジェクトと狭い窓のタイムライン (T1637)」)、
+    マニュアル (motions.md・screen.md)、T0919 のメモ (撮り直す画像)。
+- **`just ui-audit --only editor`:** 前 (main 376f1cd1、`target/ui-audit-before`) と後 (main be65d868 に rebase した後、`target/ui-audit-after`) で +0 -0 ~0。
+  すべての検査で 0 件。前と後の画像の一覧は `target/ui-audit-compare/T1637-after.png` (1024×720 の空・見本、720×450 の空・見本・グラフ)。
+  1024×720 の見本は前と同じ。1024×720 の空と 720×450 の空ではタイムラインが畳まれ、空の状態の 3 つのボタンが中央に見える。
+  720×450 の見本はタイムラインが畳まれてモデルの全身が見え、グラフの場面 (開いた後) は前と同じ。
+- **やらなかったこと:** 実物の WebView での確かめ (T0919)。マニュアルの画像の撮り直し (T0919 のメモに書いた)。
+- `just ci` は通過。試作のブランチ (proto-a・proto-b) は消した。

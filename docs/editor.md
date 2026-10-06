@@ -324,7 +324,7 @@
 
 ### タイムライン
 
-画面はビューポートの下のパネル (`src/lib/panels/timeline/`) です。「Motions」「Expressions」のタブを持ち、畳める (開閉は[覚える値](#覚える値))。操作はすべて上のコマンドを送るだけで、表示の状態 (選んだモーション・再生位置・再生中・選んだ行とキー・表情のプレビュー) は `TimelineState` (`timeline.svelte.ts`) にあり、Undo の対象ではありません。
+画面はビューポートの下のパネル (`src/lib/panels/timeline/`) です。「Motions」「Expressions」のタブを持ち、畳める (開閉は[覚える値](#覚える値)。空のプロジェクトと狭い窓では自動で畳む。[画面の配置](#画面の配置))。操作はすべて上のコマンドを送るだけで、表示の状態 (選んだモーション・再生位置・再生中・選んだ行とキー・表情のプレビュー) は `TimelineState` (`timeline.svelte.ts`) にあり、Undo の対象ではありません。
 
 | 場所 | 操作 |
 | --- | --- |
@@ -2213,6 +2213,11 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   `src/lib/ui/Splitter.svelte`) で変えます。ポインタのドラッグか、区切りにフォーカスして矢印 (列の間は ← / →、上下の間は ↑ / ↓)・Home (最小)・
   End (最大)。ダブルクリックか Enter で既定に戻します。大きさは表示の状態で、`localStorage` に覚えます (`src/lib/layout.ts`。[覚える値](#覚える値))。
   狭い窓でビューポートが潰れないよう、左右の列は窓の幅の 28%・36% でも抑えます。タイムラインの開閉も覚えます。
+- **タイムラインを自動で畳む (T1637):** 空のプロジェクトと、幅 900px 未満の窓 (1440px の窓の 200% の拡大など) では、タイムラインを畳んで
+  ビューポート (空の状態の次の操作のボタン・モデル) に高さを渡します。1024px 以上の窓で中身のあるプロジェクトなら、覚えた開閉のままです。
+  利用者がこの画面で開閉のボタンを押した後は、押した開閉 (覚えた値) に従います。自動で畳んだことは覚えません (覚えた開閉と列の幅は上書きしない)。
+  判定は `src/lib/layout.ts` の `isNarrowWindow`・`timelineOpen` (layout.test.ts)。左右の列は狭い窓でも変えません
+  (200% の拡大では右の列が窓の幅の 36% で既に下限より狭く、狭めてもタイムラインの表はほとんど広がらないため。T1637 で比べた)。
 - **空の状態:** 空のプロジェクトはビューポートの中央に「何が無いか」と次の操作のボタン、パラメータの無いモデルはパラメータ一覧に
   「パラメータを追加」を出します ([docs/ui.md の「空の状態」](ui.md#デザイン))。
 - **ショートカット:** Undo / Redo は Ctrl + Z / Ctrl + Shift + Z / Ctrl + Y (macOS は Cmd + Z / Cmd + Shift + Z)、保存は Ctrl + S、
@@ -2234,7 +2239,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `ugoe.editor.locale` | `system`・`en`・`ja` | `system` | [言語](#言語) (`@ugoe/i18n` の `initLocale`) |
 | `ugoe.editor.theme` | `system`・`light`・`dark` | `system` | [言語](#言語)の「General」のテーマ (`@ugoe/ui` の `initTheme`。`index.html` の `<head>` も読む) |
 | `ugoe.editor.autoReload` | `true`・`false` | 切 | [外での書き換え](#外での書き換え) (`src/lib/externalChange.ts`) |
-| `ugoe.editor.timelineOpen` | `open`・`closed` | 開く | [タイムライン](#タイムライン)の開閉 (`src/lib/panels/timeline/timeline.ts`) |
+| `ugoe.editor.timelineOpen` | `open`・`closed` | 開く | [タイムライン](#タイムライン)の開閉 (`src/lib/panels/timeline/timeline.ts`)。空のプロジェクトと狭い窓で自動で畳んだことは覚えない |
 | `ugoe.editor.leftWidth` | 左の列の幅 (px) | 240 | 上の「大きさの変更」(`src/lib/layout.ts`) |
 | `ugoe.editor.rightWidth` | 右の列の幅 (px) | 320 | 同上 |
 | `ugoe.editor.timelineHeight` | タイムラインの高さ (px) | 窓の高さに合わせる (覚えない) | 同上 |

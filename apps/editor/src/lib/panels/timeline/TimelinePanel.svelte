@@ -1,5 +1,6 @@
 <!--
-  ビューポートの下のパネル: モーション (タイムライン) と表情のタブ。畳める (表示の状態、localStorage に覚える)。
+  ビューポートの下のパネル: モーション (タイムライン) と表情のタブ。畳める (開閉は localStorage に覚える。
+  開くかは App が覚えた開閉と画面の様子から決める。lib/layout.ts の timelineOpen)。
   開いているときの高さは CSS の変数 `--timeline-height` (App.svelte の区切りで変える。無ければ窓の高さに合わせる)。
   状態 (選択中のモーション・再生位置など) は TimelineState、編集は Command (docs/editor.md#タイムライン)。
 -->
@@ -12,17 +13,19 @@ import TabStrip, { type TabItem } from "../../ui/TabStrip.svelte";
 import type { ViewportController } from "../../viewport/controller.svelte";
 import ExpressionEditor from "./ExpressionEditor.svelte";
 import MotionEditor from "./MotionEditor.svelte";
-import { loadPanelOpen, savePanelOpen } from "./timeline";
+import { savePanelOpen } from "./timeline";
 import { TimelineState } from "./timeline.svelte";
 
 interface Props {
   doc: EditorDocument;
   viewport: ViewportController;
-  /** 開いているか (App が高さの区切りを出すかに使う)。 */
-  open?: boolean;
+  /** 開いているか (App が決める。lib/layout.ts の timelineOpen)。 */
+  open: boolean;
+  /** 利用者が開閉のボタンを押した (押した後の開閉。覚えるのはこのパネル)。 */
+  ontoggle: (open: boolean) => void;
 }
 
-let { doc, viewport, open = $bindable(loadPanelOpen()) }: Props = $props();
+let { doc, viewport, open, ontoggle }: Props = $props();
 
 // doc と viewport は App が作る 1 つだけのオブジェクトで、差し替わらない。
 // svelte-ignore state_referenced_locally
@@ -43,8 +46,8 @@ $effect(() => {
 let tab = $state<"motions" | "expressions">("motions");
 
 function toggleOpen() {
-  open = !open;
-  savePanelOpen(open);
+  savePanelOpen(!open);
+  ontoggle(!open);
 }
 
 type Tab = "motions" | "expressions";

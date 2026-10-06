@@ -127,3 +127,31 @@ export function loadSplit(): number {
 export function saveSplit(split: number): void {
   saveSize(RIGHT_SPLIT, split);
 }
+
+/**
+ * 狭い窓 (CSS px の幅がこれ未満)。200% の拡大 (1440px の窓で 720px) を含み、下限の 1024px の窓は含まない
+ * (docs/editor.md#画面の配置)。
+ * 狭い窓では、タイムラインを (利用者が開閉するまで) 畳む (`timelineOpen`)。
+ */
+export const NARROW_WINDOW_WIDTH = 900;
+
+/** 窓が狭いか (測れない幅は狭くないとする)。 */
+export function isNarrowWindow(width: number): boolean {
+  return Number.isFinite(width) && width > 0 && width < NARROW_WINDOW_WIDTH;
+}
+
+/** タイムラインの開閉を決める材料。 */
+export interface TimelineContext {
+  /** 空のプロジェクトか。 */
+  empty: boolean;
+  /** 窓が狭いか (`isNarrowWindow`)。 */
+  narrow: boolean;
+  /** この画面で利用者が開閉のボタンを押したか。押した後は覚えた開閉に従う。 */
+  touched: boolean;
+}
+
+/** タイムラインを開くか: 空のプロジェクトと狭い窓では (利用者が開閉するまで) 畳み、ほかは覚えた開閉 (`stored`) に従う。 */
+export function timelineOpen(stored: boolean, context: TimelineContext): boolean {
+  if (!context.touched && (context.empty || context.narrow)) return false;
+  return stored;
+}
