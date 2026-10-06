@@ -1,11 +1,11 @@
 ---
 id: T0482
 title: "Godot: UgoePuppet に表示中のポーズの要素を読む関数を足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0482
 ---
 
 # T0482: Godot: UgoePuppet に表示中のポーズの要素を読む関数を足す
