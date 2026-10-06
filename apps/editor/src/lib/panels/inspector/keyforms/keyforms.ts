@@ -379,3 +379,21 @@ export function rotationOriginCommand(
     keyform: { ...keyform, origin, kind: "rotation" } as unknown as Keyform,
   };
 }
+
+/** 今のパラメータ値で補間した回転デフォーマの局所の値 (原点は親の座標系、角度は度)。 */
+export interface RotationLocal {
+  origin: Point;
+  angle: number;
+  scale: number;
+}
+
+/**
+ * `WebPuppet.rotation_local_keyform` の `[ox, oy, angle, scale]` を読む。無い・長さが違う・有限でない値を含むなら null
+ * (インスペクタはキーの間で欄を空にする)。
+ */
+export function rotationLocal(flat: ArrayLike<number> | undefined): RotationLocal | null {
+  if (flat?.length !== 4) return null;
+  const [ox, oy, angle, scale] = Array.from(flat);
+  if (![ox, oy, angle, scale].every((v) => Number.isFinite(v))) return null;
+  return { origin: [ox as number, oy as number], angle: angle as number, scale: scale as number };
+}

@@ -130,6 +130,9 @@ export function fakePuppet(): WebPuppet {
     warp_points: (id: string) => (id === "Warp" ? flat(QUAD) : undefined),
     rotation_frame: (id: string) =>
       id === "Rot" ? Float32Array.from([50, 50, 1, 0, 0, 1]) : undefined,
+    // 補間した局所の値 [ox, oy, angle, scale] (Rot のキーフォームそのまま)。
+    rotation_local_keyform: (id: string) =>
+      id === "Rot" ? Float32Array.from([50, 50, 0, 1]) : undefined,
     // 取り付け先のデフォーマの写像: Rot は (20, 10) の平行移動、ほかは恒等写像。
     deformer_point: (id: string, x: number, y: number) =>
       Float32Array.from(id === "Rot" ? [x + 20, y + 10] : [x, y]),

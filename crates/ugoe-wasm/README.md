@@ -223,12 +223,16 @@ follower.follow(conductor.values_before_physics(), dt, lipSync?.[0], lipSync?.[1
 ```js
 puppet.warp_points("Cloth");              // ワープの制御点 (キャンバス座標)
 puppet.rotation_frame("Head");            // [ox, oy, ax, ay, bx, by]
+puppet.rotation_local_keyform("Head");    // [ox, oy, angle, scale] 補間した局所の値 (親の座標系。T1660)
 puppet.deformer_point("Head", 0, -40);    // デフォーマの局所座標の点 → キャンバス座標 [x, y]
 puppet.deformer_jacobian("Cloth", 0.5, 0.5); // その点でのヤコビ行列 [a, b, c, d] (列優先。逆写像用)
 puppet.physics_particles(0);              // リグ 0 の粒子の今の位置 [x0, y0, ...] (動的物理ならキャンバス座標)
 ```
 
 - どれも今のパラメータ値 (と最後の `update`) で評価した値を返す (`src/gizmo.rs`・`src/physics_view.rs`)。T0629 (エディタの物理の画面) で追加。
+- `rotation_local_keyform` はワールドの変換ではなく、今のパラメータ値でキーフォームを補間した (ブレンドシェイプも足した) 回転デフォーマの
+  局所の値 (原点は親の座標系、角度は度・時計回り正、拡大率)。キーの間でも値を返す (エディタのインスペクタがキーの間で補間した今の値を
+  押せない欄に出すのに使う。`ModelInstance::rotation_local_keyform`)。回転デフォーマでない・モデルが無ければ `undefined`。
 
 ### ライティング (T0210)
 

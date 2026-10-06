@@ -91,6 +91,7 @@ export class WebPuppet {
   reset_physics(): void;
   resize(width: number, height: number): void;
   rotation_frame(id: string): Float32Array | undefined;
+  rotation_local_keyform(id: string): Float32Array | undefined;
   screen_to_canvas(x: number, y: number): Float32Array;
   set_background(r: number, g: number, b: number, a: number): void;
   set_base_physics_json(json?: string | null): void;

@@ -5,6 +5,7 @@
 //!
 //! - ワープ: キャンバス座標の制御点。
 //! - 回転デフォーマ: ワールド変換 (アフィン) の原点と軸。
+//! - 回転デフォーマ: 今のパラメータ値で補間した局所の値 (親の座標系の原点・角度・拡大率)。
 
 use ugoe::model::Model;
 use ugoe::model::deformer::DeformerKind;
@@ -40,6 +41,15 @@ pub fn rotation_frame(instance: &ModelInstance, id: &str) -> Option<Vec<f32>> {
         frame.matrix2.y_axis,
     );
     Some(vec![o.x, o.y, a.x, a.y, b.x, b.y])
+}
+
+/// 回転デフォーマ `id` の今のパラメータ値で補間した局所の値 `[ox, oy, angle, scale]` (原点は親の座標系、角度は度、
+/// 時計回り正)。キーの間でもキーフォームの補間 (とブレンドシェイプ) をした値で、親の変換は掛けない
+/// (`ModelInstance::rotation_local_keyform`)。回転デフォーマでなければ `None`。
+pub fn rotation_local(instance: &ModelInstance, id: &str) -> Option<Vec<f32>> {
+    let index = instance.compiled().deformer_index(id)?;
+    let k = instance.rotation_local_keyform(index)?;
+    Some(vec![k.origin.x, k.origin.y, k.angle, k.scale])
 }
 
 #[cfg(test)]
@@ -95,6 +105,26 @@ mod tests {
         // Cloth (Arm の子のワープ) の制御点も回る。
         let cloth = warp_points(&instance, "Cloth").unwrap();
         assert!(close(&cloth[..2], &[128.0 - 20.0 * s, 128.0 + 20.0 * c]));
+    }
+
+    #[test]
+    fn rotation_local_interpolates_between_keys_without_parents() {
+        let mut instance = instance(fixtures::rotation_chain());
+        // Angle = 0 は Arm のキー -30・30 のちょうど間: 角度は補間した 0、原点は親の座標系のまま。
+        let arm = rotation_local(&instance, "Arm").unwrap();
+        assert!(close(&arm, &[128.0, 128.0, 0.0, 1.0]));
+        // Angle = 15 は 3/4 の位置で 15 度。
+        set(&mut instance, "Angle", 15.0);
+        let arm = rotation_local(&instance, "Arm").unwrap();
+        assert!(close(&arm, &[128.0, 128.0, 15.0, 1.0]));
+        // Hand は Arm の回転を掛けない局所の値 (rotation_frame はワールドで回っている)。
+        let hand = rotation_local(&instance, "Hand").unwrap();
+        assert!(close(&hand, &[64.0, 0.0, 0.0, 0.5]));
+        let world = rotation_frame(&instance, "Hand").unwrap();
+        assert!((world[0] - 192.0).abs() > 1.0);
+        // ワープ・知らない ID は None。
+        assert!(rotation_local(&instance, "Cloth").is_none());
+        assert!(rotation_local(&instance, "Nope").is_none());
     }
 
     #[test]

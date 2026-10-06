@@ -2889,7 +2889,8 @@
         "originX": "Origin X (this cell)",
         "originY": "Origin Y (this cell)",
         "originXAll": "Origin X (all cells)",
-        "originYAll": "Origin Y (all cells)"
+        "originYAll": "Origin Y (all cells)",
+        "interpolated": "Interpolated from the keys around the current parameter values (read only)."
       },
       "drawOrder": {
         "label": "Draw order",

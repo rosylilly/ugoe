@@ -12,6 +12,7 @@ import {
   nearestKey,
   type ParameterData,
   rotationCellCommand,
+  rotationLocal,
   rotationOriginCommand,
   rotationOriginStep,
   snapToKeys,
@@ -235,5 +236,21 @@ describe("rotationCellCommand", () => {
     expect(rotationCellCommand(null, "Neck", { AngleX: 30 }, "angle", 5)).toBeNull();
     expect(rotationOriginCommand(model, "Neck", { AngleX: 0 }, 0, 5, false)).toBeNull();
     expect(rotationOriginCommand(model, "Face", {}, 0, 5, true)).toBeNull();
+  });
+});
+
+describe("rotationLocal", () => {
+  it("reads [ox, oy, angle, scale]", () => {
+    expect(rotationLocal(Float32Array.from([1, 2, 30, 0.5]))).toEqual({
+      origin: [1, 2],
+      angle: 30,
+      scale: 0.5,
+    });
+  });
+
+  it("is null without a value, with a wrong length or a non-finite number", () => {
+    expect(rotationLocal(undefined)).toBeNull();
+    expect(rotationLocal(Float32Array.from([1, 2, 3]))).toBeNull();
+    expect(rotationLocal([1, 2, Number.NaN, 1])).toBeNull();
   });
 });

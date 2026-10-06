@@ -3,7 +3,8 @@
   軸とキー・セルの由来 (authored / 推定の方法ごと)・今のパラメータ値がどのセルの上にあるかを示し、
   今のスライダーの値でキーを追加・削除する。セルを押すとスライダーをそのセルへ動かしてそのセルを選び、
   Shift / Ctrl で押すと選択に加える (選んだセルは推定の操作 inference/InferenceSection.svelte が使う)。
-  回転デフォーマでは今のセルの角度と拡大率を数値の欄で入れる (ギズモの取っ手の代わり。キーの間では空にして押せなくする)。
+  回転デフォーマでは今のセルの角度と拡大率を数値の欄で入れる (ギズモの取っ手の代わり)。キーの間では押せなくし、
+  今のパラメータ値で補間した値 (WebPuppet.rotation_local_keyform) を出して「補間した値」の添え書きを結ぶ (T1660)。
   原点の X・Y (親の座標系) も数値で入れ、ギズモの「Origin: all cells」(ViewportController.originAllCells) が入なら
   矢印キーと同じくすべてのセルに同じ差を足す。
 -->
@@ -34,6 +35,7 @@ import {
   type RotationField,
   type RotationKeyformData,
   rotationCellCommand,
+  rotationLocal,
   rotationOriginCommand,
   rotationOriginStep,
   snapToKeys,
@@ -76,6 +78,28 @@ const rotationKeyform = $derived.by(() => {
   if (element?.kind !== "rotation" || !current) return null;
   const keyform = element.grid.keyforms[cellIndex(bindings, current)];
   return (keyform as (RotationKeyformData & { scale: number }) | undefined) ?? null;
+});
+
+/** パラメータ値・モデル・プレビューのフレームが変わるたびに増える (補間した値を wasm から読み直すため。DeformerGizmo と同じ)。 */
+let tick = $state(0);
+$effect(() => {
+  void doc.model;
+  void viewport.status;
+  void viewport.animationFrame;
+  for (const value of Object.values(viewport.parameterValues)) void value;
+  queueMicrotask(() => (tick += 1));
+});
+
+/**
+ * キーの間の回転デフォーマの、今のパラメータ値で補間した局所の値 (親の座標系。WebPuppet.rotation_local_keyform)。
+ * キーの上・回転デフォーマでない・WebPuppet が読めないなら null。
+ */
+const interpolated = $derived.by(() => {
+  void tick;
+  if (element?.kind !== "rotation" || current) return null;
+  const puppet = viewport.puppet;
+  if (!puppet || viewport.status !== "ready") return null;
+  return rotationLocal(puppet.rotation_local_keyform(element.target.id));
 });
 
 /**
@@ -285,12 +309,44 @@ async function removeKey(parameter: string, key: number) {
             />
           {/each}
         {:else}
-          <!-- キーの間: 補間した値は書き込めないので、空にして押せなくする (上の「Move to nearest key」で移る) -->
-          <NumberField label={t("inspector.keyforms.rotation.angle")} optional value={null} unit="°" disabled />
-          <NumberField label={t("inspector.keyforms.rotation.scale")} optional value={null} disabled />
-          {#each originLabels as label (label)}
-            <NumberField {label} optional value={null} disabled />
+          <!--
+            キーの間: 書き込むセルが無いので押せなくし、補間した今の値を出す (読めなければ空)。ラベルはキーの上と同じにして
+            (スライダーでキーをまたぐたびに並びが動かないように)、「補間した値」の添え書きを読み上げの説明に結ぶ。
+            上の「Move to nearest key」で移る
+          -->
+          {@const describedby = interpolated ? `${ids}-interpolated` : undefined}
+          <NumberField
+            label={t("inspector.keyforms.rotation.angle")}
+            optional
+            value={interpolated?.angle ?? null}
+            decimals={3}
+            unit="°"
+            disabled
+            aria-describedby={describedby}
+          />
+          <NumberField
+            label={t("inspector.keyforms.rotation.scale")}
+            optional
+            value={interpolated?.scale ?? null}
+            decimals={3}
+            disabled
+            aria-describedby={describedby}
+          />
+          {#each ORIGIN_AXES as axis (axis)}
+            <NumberField
+              label={originLabels[axis]}
+              optional
+              value={interpolated?.origin[axis] ?? null}
+              decimals={originDecimals}
+              disabled
+              aria-describedby={describedby}
+            />
           {/each}
+          {#if interpolated}
+            <p class="ed-hint interpolated" id="{ids}-interpolated">
+              {t("inspector.keyforms.rotation.interpolated")}
+            </p>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -447,6 +503,11 @@ async function removeKey(parameter: string, key: number) {
   flex-wrap: wrap;
   gap: var(--ugoe-space-2) var(--ugoe-space-3);
   margin-bottom: var(--ugoe-space-3);
+}
+
+.rotation .interpolated {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .axes li {

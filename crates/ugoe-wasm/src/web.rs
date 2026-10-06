@@ -777,6 +777,13 @@ impl WebPuppet {
         self.evaluate();
         gizmo::rotation_frame(self.puppet.as_ref()?.instance(), id)
     }
+
+    /// 回転デフォーマ `id` の今のパラメータ値で補間した局所の値 `[ox, oy, angle, scale]` (原点は親の座標系、
+    /// 角度は度。キーの間でも補間した値。親の変換は掛けない)。回転デフォーマでない・モデルが無ければ `undefined`。
+    pub fn rotation_local_keyform(&mut self, id: &str) -> Option<Vec<f32>> {
+        self.evaluate();
+        gizmo::rotation_local(self.puppet.as_ref()?.instance(), id)
+    }
 }
 
 impl WebPuppet {

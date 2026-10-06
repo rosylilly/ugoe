@@ -2720,7 +2720,8 @@
         "originX": "原点 X (このセル)",
         "originY": "原点 Y (このセル)",
         "originXAll": "原点 X (すべてのセル)",
-        "originYAll": "原点 Y (すべてのセル)"
+        "originYAll": "原点 Y (すべてのセル)",
+        "interpolated": "今のパラメータ値で前後のキーから補間した値です (書き込めません)。"
       },
       "drawOrder": {
         "label": "描画順",
