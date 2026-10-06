@@ -285,6 +285,23 @@
       const FACE_MODEL =
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
       let landmarker = null;
+      // MediaPipe は Landmarker を作ると、利用状況 (タスクの種類・処理時間の統計など。映像やランドマークは含まない) を
+      // 60 秒ごとに USAGE_LOG_HOST へ fetch で送る (止める設定は無い)。送るたびにグローバルの fetch を呼ぶので、
+      // Landmarker を作る前に fetch を包み、その送り先への要求をネットワークの失敗として断る (1 回失敗すると以後は送らない)。
+      // 要求はネットワークに出ない。ほかの要求 (wasm・モデル・見本のモデル) はそのまま通す (README の「MediaPipe の利用状況の送信」)
+      const USAGE_LOG_HOST = "odml.pa.googleapis.com";
+      function refuseMediaPipeUsageLog() {
+        if (window.fetch.refusesMediaPipeUsageLog) return;
+        const pageFetch = window.fetch.bind(window);
+        const guarded = (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+          if (url.hostname !== USAGE_LOG_HOST) return pageFetch(input, init);
+          result.usageLogsRefused = (result.usageLogsRefused ?? 0) + 1;
+          return Promise.reject(new TypeError("MediaPipe usage logging is disabled in this example"));
+        };
+        guarded.refusesMediaPipeUsageLog = true;
+        window.fetch = guarded;
+      }
       document.getElementById("camera").addEventListener("change", async (e) => {
         if (!e.target.checked) return endTracking();
         document.getElementById("tracking").checked = false;
@@ -292,6 +309,7 @@
         try {
           if (!landmarker) {
             statsElement.textContent = "MediaPipe を読み込み中…";
+            refuseMediaPipeUsageLog();
             const { FaceLandmarker, FilesetResolver } = await import(`${MEDIAPIPE}/vision_bundle.mjs`);
             const fileset = await FilesetResolver.forVisionTasks(`${MEDIAPIPE}/wasm`);
             landmarker = await FaceLandmarker.createFromOptions(fileset, {

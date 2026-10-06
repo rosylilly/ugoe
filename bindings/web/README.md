@@ -191,7 +191,8 @@ MediaPipe (`@mediapipe/tasks-vision`。1.0.1 で確かめた) は、映像や画
   ```
 
 ugoe のアプリ (エディタ・ビューア・スタジオ) は両方を使っています ([packages/face-tracking](../../packages/face-tracking/README.md#利用状況の送信-t0943))。
-見本 (`examples/basic`) の「camera (MediaPipe)」はどちらも使わないので、60 秒を超えて使うと送られます。
+見本 (`examples/basic`) の「camera (MediaPipe)」も、Face Landmarker を作る前に上と同じように `fetch` を包むので送りません
+(断った回数は見本のページの `window.ugoeExample.usageLogsRefused`)。
 
 ### 平滑化とキャリブレーション
 

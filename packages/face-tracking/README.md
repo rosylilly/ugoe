@@ -15,6 +15,7 @@ src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
 src/TrackingPanel.svelte  パネル (入力の選択・映像とランドマーク・調整・記録・値の表示)
 src/usage-logging.ts    MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)
+src/mediapipe-bundle.test.ts  入れている MediaPipe の配布物が、上の止め方の頼る形で送るままかを確かめる
 src/i18n.ts             画面の文言 (@ugoe/i18n の名前空間 `face-tracking`。カタログは locales/<言語>.json、原文は英語)
 scripts/mediapipe-assets.mjs  `ugoe-mediapipe-assets <出力先> [--optional]`: MediaPipe の wasm を写し、モデルを取得して
                         SHA-256 を検証し、ライセンスの表記を写す
@@ -87,4 +88,22 @@ MediaPipe を自分で使うページ (`@ugoe/runtime` の `<ugoe-avatar>` に M
 送信が止まらない。止めるには、そのページで同じように `fetch` を包むか、CSP の `connect-src` で送り先を許さない
 ([bindings/web/README.md](../../bindings/web/README.md#mediapipe-の利用状況の送信))。
 
-MediaPipe の版を上げたら、`vision_bundle.mjs` で送り先 (`odml.pa.googleapis.com`) と送る処理 (`fetch` を使うか) が変わっていないかを確かめる。
+### MediaPipe の版を上げるとき
+
+`src/mediapipe-bundle.test.ts` (Vitest。`just ci` の `web-check` で走る) が、入れている `@mediapipe/tasks-vision` の配布物
+(`vision_bundle.mjs`・`.cjs`・`.js` と `wasm/` の中身) を読み、止め方が頼っている形のままかを確かめる。
+
+- 配布物の中の URL が送り先 `https://odml.pa.googleapis.com/v1/log` の 1 つだけで、`usage-logging.ts` が断るオリジンであること
+- 送る処理がグローバルの `fetch` を呼ぶたびに引くこと (`fetch(<要求>.url, …)` があり、`fetch` を変数に取っておいたり
+  `bind` したりしていない)。`sendBeacon`・`XMLHttpRequest`・`WebSocket`・`EventSource` を使わないこと
+- `wasm/` の JS と wasm が送り先を持たないこと (送り先は JS の側だけ)
+
+版を上げる手順:
+
+1. `package.json` の版を上げて `pnpm install` し、`pnpm --filter @ugoe/face-tracking test` を流す。
+2. 落ちたら、その配布物を `node_modules` の中で読み (リポジトリには写さない)、送り先・送る時期・送り方を確かめる。
+   止め方が効かなくなったなら `src/usage-logging.ts` を直し、この節の「MediaPipe がすること」とテストの期待を合わせる。
+3. 通っても、[プライバシーの説明](https://goo.gle/mediapipe-privacy) と npm パッケージの README の「Privacy Notice」が
+   変わっていないかを読み、この節の版 (1.0.1) を書き換える。e2e (`just e2e`) で CSP の違反が無いことも確かめる。
+4. `bindings/web` の見本 (`examples/basic`) の MediaPipe の版 (CDN の URL) と、bindings/web/README.md の
+   「MediaPipe の利用状況の送信」の版も合わせる (見本は自分で `fetch` を包む。このパッケージには依存しない)。
