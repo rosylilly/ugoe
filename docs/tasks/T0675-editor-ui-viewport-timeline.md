@@ -1,11 +1,11 @@
 ---
 id: T0675
 title: エディタ UI: ビューポートとタイムライン
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0673, T0672]
-assignee:
+assignee: claude-worker-T0675
 ---
 
 # T0675: エディタ UI: ビューポートとタイムライン
