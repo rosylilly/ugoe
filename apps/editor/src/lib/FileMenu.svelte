@@ -340,7 +340,7 @@ flow.refresh();
     max-width: 480px;
     max-height: 50vh;
     margin: 0;
-    padding: 0 0 0 var(--ugoe-space-5);
+    padding: 0 var(--ugoe-scrollbar-gap) 0 var(--ugoe-space-5);
     overflow: auto;
     list-style: disc;
   }

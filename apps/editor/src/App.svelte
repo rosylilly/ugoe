@@ -597,7 +597,8 @@ $effect(() => {
     min-width: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    padding: 0 var(--ugoe-space-4) var(--ugoe-space-3);
+    /* 行末はスクロールバーの分 (docs/ui.md#レイアウト の「送り」) */
+    padding: 0 var(--ugoe-scrollbar-gap) var(--ugoe-space-3) var(--ugoe-space-4);
   }
   .pane.inspector {
     flex: 0 0 auto;

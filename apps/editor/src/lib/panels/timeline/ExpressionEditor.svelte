@@ -331,6 +331,7 @@ function label(e: Expression): string {
     align-self: stretch;
     background: var(--ugoe-color-border);
   }
+  /* 行末のスクロールバーの分は、中の表の右の margin (--ugoe-scrollbar-gap) で空ける */
   .table {
     flex: 1;
     min-height: 0;
@@ -338,7 +339,7 @@ function label(e: Expression): string {
   }
   table {
     border-collapse: collapse;
-    margin: var(--ugoe-space-2) var(--ugoe-space-3);
+    margin: var(--ugoe-space-2) var(--ugoe-scrollbar-gap) var(--ugoe-space-2) var(--ugoe-space-3);
   }
   th {
     text-align: left;

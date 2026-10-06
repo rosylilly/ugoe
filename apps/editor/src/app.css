@@ -50,8 +50,9 @@ header {
   flex: 1;
 }
 
+/* 行末はスクロールバーの分 (docs/ui.md#レイアウト の「送り」) */
 aside {
-  padding: var(--ugoe-space-3) var(--ugoe-space-4);
+  padding: var(--ugoe-space-3) var(--ugoe-scrollbar-gap) var(--ugoe-space-3) var(--ugoe-space-4);
   background: var(--ugoe-color-surface);
   overflow: auto;
 }

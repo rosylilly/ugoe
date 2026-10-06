@@ -110,6 +110,7 @@ summary > span:first-child {
   gap: var(--ugoe-space-1);
   /* 選択肢が多いときは一覧の中で送る。行の途中で切って、送れることを見せる */
   max-height: calc(var(--ugoe-target-min) * 7.5);
+  padding-inline-end: var(--ugoe-scrollbar-gap);
   overflow-y: auto;
   overflow-wrap: anywhere;
 }

@@ -47,6 +47,7 @@ export async function open(): Promise<void> {
   pre {
     max-height: 60vh;
     margin: 0;
+    padding-inline-end: var(--ugoe-scrollbar-gap);
     overflow: auto;
     font-family: var(--ugoe-font-mono);
     font-size: var(--ugoe-font-size-xs);

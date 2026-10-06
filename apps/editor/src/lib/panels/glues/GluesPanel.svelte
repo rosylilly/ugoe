@@ -668,7 +668,7 @@ const axisKeyValue = $derived(
   gap: var(--ugoe-space-1) var(--ugoe-space-2);
   max-height: 12rem;
   margin: 0;
-  padding: 0;
+  padding: 0 var(--ugoe-scrollbar-gap) 0 0;
   overflow-y: auto;
   list-style: none;
 }

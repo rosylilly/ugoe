@@ -296,6 +296,8 @@ function onKeyDown(e: KeyboardEvent) {
   align-items: center;
   justify-content: safe center;
   gap: var(--ugoe-space-3);
+  /* 行末はスクロールバーの分。中央に置くので両側を同じだけ空ける */
+  padding-inline: var(--ugoe-scrollbar-gap);
   overflow-y: auto;
   text-align: center;
 }

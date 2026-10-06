@@ -534,8 +534,10 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   WebKitGTK (Linux)・macOS のスクロールバーは幅を取らずに中身の上に重ねて描き (WebKitGTK は細い印が 3px、指を乗せると 8px に太り、
   右端から 14px まで掛かる)、`scrollbar-gutter` はこの形のスクロールバーには幅を空けないためです (T0970)。中身が右の端まで届く一覧
   (ビューアのパラメータの一覧) は、置く側のパネルの右の padding まで一覧を広げ (`margin-inline-end` を負に)、その padding の中に描かせます。
+  中身を中央に置く枠 (エディタのビューポートの空の案内) は両側を同じだけ空け、全体と中の段の両方が送る枠 (エディタのモーションの表) は
+  中の段が行末を空けます (T1662)。
   幅を取る形のスクロールバー (ヘッドレスの Chrome・Windows) では、空けた幅はスクロールバーの左に余白として残るだけです。
-  確かめ方: 人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。ビューアとスタジオの送る枠の規則が
+  確かめ方: 人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
   `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることは packages/ui の `tokens.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
   `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`・`Slider`・`ColorPicker`。
 - **分割:** 大きさを変えられる境 (`role="separator"`) は、ポインタとキーボード (矢印・Home・End) の両方で動かせ、フォーカスの印を出し、

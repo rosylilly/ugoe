@@ -640,6 +640,7 @@ function label(m: Motion): string {
   /*
    * 頭の並び (選択と再生) は送らずに残し、表を送る (docs/ui.md#レイアウト の「高さの変化」)。表は 2 行を残し、
    * それでも収まらない低い画面 (200% の拡大) だけ全体を送る (T0907)。中の見せずに読ませる文字の位置の基準にもする。
+   * 行末のスクロールバーの分は、中の段 (.bar・.sheet) が --ugoe-scrollbar-gap だけ空ける。
    */
   .motion-editor {
     /* 表の行の高さ: 押せる範囲 24px と下の区切りの線 1px */
@@ -663,7 +664,7 @@ function label(m: Motion): string {
     flex-wrap: wrap;
     align-items: center;
     gap: var(--ugoe-space-2);
-    padding: var(--ugoe-space-2) var(--ugoe-space-3);
+    padding: var(--ugoe-space-2) var(--ugoe-scrollbar-gap) var(--ugoe-space-2) var(--ugoe-space-3);
     border-bottom: 1px solid var(--ugoe-color-border);
   }
   /* コマ送りと時刻は 1 つの組 (間を詰める) */
@@ -693,6 +694,7 @@ function label(m: Motion): string {
   .sheet {
     flex: 1;
     min-height: calc(21px + 2 * var(--row-height));
+    padding-inline-end: var(--ugoe-scrollbar-gap);
     overflow-y: auto;
   }
   .grid {

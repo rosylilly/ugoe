@@ -174,7 +174,7 @@ const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").
 .meshes {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 var(--ugoe-scrollbar-gap) 0 0;
   /* メッシュが多いときは一覧の中で送る。行の途中で切って、送れることを見せる */
   max-height: calc(var(--ugoe-target-min) * 9.5);
   overflow-y: auto;
