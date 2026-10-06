@@ -1,11 +1,11 @@
 ---
 id: T1657
 title: "エディタ: 自前で書いた見せずに読ませる形 (光の色・光のスライダー・提案の表・描く順の欄・プレビューの表の見出し) をそろえ、T0674 の打ち消しを外す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, packages/ui, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1657
 ---
 
 # T1657: エディタ: 自前で書いた見せずに読ませる形 (光の色・光のスライダー・提案の表・描く順の欄・プレビューの表の見出し) をそろえ、T0674 の打ち消しを外す

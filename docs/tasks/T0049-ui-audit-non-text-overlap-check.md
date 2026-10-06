@@ -1,11 +1,11 @@
 ---
 id: T0049
 title: "ui-audit: 文字ではない部品どうしの重なり (選択欄の矢印が隣の欄の下に隠れるなど) を数える検査を足すか決める"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0045]
-assignee:
+assignee: claude-worker-T0049
 ---
 
 # T0049: ui-audit: 文字ではない部品どうしの重なり (選択欄の矢印が隣の欄の下に隠れるなど) を数える検査を足すか決める
