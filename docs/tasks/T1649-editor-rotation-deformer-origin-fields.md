@@ -1,11 +1,11 @@
 ---
 id: T1649
 title: "エディタ: 回転デフォーマの原点を数値の欄 (親の座標系の値) で入れる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1649
 ---
 
 # T1649: エディタ: 回転デフォーマの原点を数値の欄 (親の座標系の値) で入れる
