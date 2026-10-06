@@ -348,6 +348,12 @@ pub fn show_pose(puppet: &mut Puppet, part: &str) -> bool {
     puppet.pose_mut().show(&part.into())
 }
 
+/// [`show_pose`] と同じに要素を選び、フェードを飛ばしてすぐに表示する (そのグループのほかの要素の不透明度は 0)。
+/// どの要素の `part` でもなければ何も変えず `false` (`ugoe::motion::PosePlayer::show_immediately`、`docs/spec/motion.md#ポーズ`)。
+pub fn show_pose_immediately(puppet: &mut Puppet, part: &str) -> bool {
+    puppet.pose_mut().show_immediately(&part.into())
+}
+
 /// 今のポーズ (モデルの `pose` と同じ JSON)。着せ替えで付けたモジュールのグループ (`<モジュール>/<パーツ>`) と
 /// 本体の要素への追従も入る (合成したモデルのポーズ)。
 pub fn pose_json(puppet: &Puppet) -> Result<String, AnimationError> {
@@ -1037,6 +1043,24 @@ mod tests {
             puppet.update(DT);
         }
         assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+    }
+
+    /// フェードを飛ばした表示は、次の `update` で選んだ要素を不透明度 1 で書き込む。
+    #[test]
+    fn show_pose_immediately_skips_the_fade() {
+        let mut puppet = quiet(fixtures::pose_and_effects());
+        let arm_a = puppet.instance().compiled().part_index("ArmA").unwrap();
+        let arm_b = puppet.instance().compiled().part_index("ArmB").unwrap();
+        assert!(!show_pose_immediately(&mut puppet, "SleeveA"));
+        assert!(!show_pose_immediately(&mut puppet, "Missing"));
+        puppet.update(DT);
+        assert_eq!(puppet.instance().part_opacity_override(arm_b), (0.0, 1.0));
+
+        assert!(show_pose_immediately(&mut puppet, "ArmB"));
+        assert_eq!(pose_visible_parts(&puppet), [Some("ArmB")]);
+        puppet.update(DT);
+        assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+        assert_eq!(puppet.instance().part_opacity_override(arm_a), (0.0, 1.0));
     }
 
     /// 評価後のパーツの不透明度は祖先を掛けた値で、無いパーツは `None`。

@@ -354,6 +354,14 @@ requests pose parts the host's choice has no lasting effect. While the pose stag
 shown entry, but the opacities neither advance nor are written; when the stage is turned on again,
 the fade continues from the opacities the pose kept.
 
+**Showing an entry without a fade.** A runtime MAY also let a host show an entry without the
+fade (for example, right after loading a model, so that no part of a switch is seen). The entry is
+chosen as above, and between frames the opacities of its group change at once: 1 for that entry and
+0 for every other entry. The next frame follows the steps above; if motions request another entry of
+the group, the fade towards it starts from these opacities. While the pose stage is off, the
+opacities still change (they are not written), and the stage continues from them when it is turned
+on again.
+
 **Reading the shown entries.** A runtime SHOULD let a host read the shown entry of each group (for
 example, to keep a pose selector in step with motions). An entry the host shows is the shown entry at
 once; an entry that motions request becomes the shown entry in the next frame (step 1). The shown

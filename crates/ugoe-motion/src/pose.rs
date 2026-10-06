@@ -65,6 +65,25 @@ impl PosePlayer {
         found
     }
 
+    /// [`Self::show`] と同じに `part` を表示する要素にし、フェードを飛ばしてすぐに表示する。
+    ///
+    /// そのグループの不透明度は、選んだ要素を 1、ほかの要素を 0 にする (次の `update` を待たない)。
+    /// 読み込みの直後など、切り替えの途中を見せたくないときに使う。次の `update` でモーションが
+    /// 同じグループの要素を要求すれば、要求した要素へここからフェードする。どのグループの要素でもなければ何も変えず `false`。
+    pub fn show_immediately(&mut self, part: &PartId) -> bool {
+        let mut found = false;
+        for (group, state) in self.pose.groups.iter().zip(&mut self.groups) {
+            if let Some(i) = group.entries.iter().position(|e| &e.part == part) {
+                state.visible = i;
+                for (j, o) in state.opacities.iter_mut().enumerate() {
+                    *o = if j == i { 1.0 } else { 0.0 };
+                }
+                found = true;
+            }
+        }
+        found
+    }
+
     /// `previous` の再生状態 (表示中の要素と不透明度) を引き継ぐ。
     ///
     /// 要素のパーツの並びが同じグループの状態を写す (リンクは違ってよい)。着せ替えの組み替え
@@ -231,6 +250,52 @@ mod tests {
             p.visible_parts().map(|p| p.as_str()).collect::<Vec<_>>(),
             ["ArmB"]
         );
+    }
+
+    /// `show_immediately` は呼んだ直後に不透明度を切り替える (`show` は次の `update` からフェードする)。
+    #[test]
+    fn show_immediately_skips_the_fade() {
+        let mut faded = player();
+        assert!(faded.show(&"ArmB".into()));
+        assert_eq!(opacity(&faded, "ArmB"), 0.0);
+        assert_eq!(opacity(&faded, "ArmA"), 1.0);
+
+        let mut p = player();
+        assert!(p.show_immediately(&"ArmB".into()));
+        assert_eq!(opacity(&p, "ArmB"), 1.0);
+        assert_eq!(opacity(&p, "ArmA"), 0.0);
+        assert_eq!(opacity(&p, "SleeveA"), 0.0);
+        assert_eq!(
+            p.visible_parts().map(|p| p.as_str()).collect::<Vec<_>>(),
+            ["ArmB"]
+        );
+        p.update(0.125, &[]);
+        assert_eq!(opacity(&p, "ArmB"), 1.0);
+        assert_eq!(opacity(&p, "ArmA"), 0.0);
+
+        // フェードの途中でも、すぐに表示し切る。
+        let mut p = player();
+        p.show(&"ArmB".into());
+        p.update(0.125, &[]);
+        assert!(p.show_immediately(&"ArmA".into()));
+        assert_eq!(opacity(&p, "ArmA"), 1.0);
+        assert_eq!(opacity(&p, "ArmB"), 0.0);
+
+        // リンクのパーツや要素でないパーツは何も変えない。
+        assert!(!p.show_immediately(&"SleeveA".into()));
+        assert!(!p.show_immediately(&"Missing".into()));
+        assert_eq!(opacity(&p, "ArmA"), 1.0);
+    }
+
+    /// `show_immediately` の後の `update` は、モーションの要求があればそちらへフェードする。
+    #[test]
+    fn requests_after_show_immediately_fade_from_there() {
+        let mut p = player();
+        p.show_immediately(&"ArmB".into());
+        p.update(0.125, &[("ArmA".into(), 1.0)]);
+        assert!(close(opacity(&p, "ArmA"), 0.25));
+        assert!(close(opacity(&p, "ArmB"), 0.75));
+        assert_eq!(p.visible_parts().next().unwrap().as_str(), "ArmA");
     }
 
     #[test]

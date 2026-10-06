@@ -139,6 +139,7 @@ puppet.set_base_physics_json(json);    // 本体の物理を差し替える。�
 puppet.base_physics_json();            // 本体の物理 (モジュールを付ける前の設定)。無ければ undefined
 puppet.set_effects_json(json);         // 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) を差し替える
 puppet.show_pose("ArmB");              // ポーズの要素 (part の ID) を表示する (T0414)。要素でなければ false
+puppet.show_pose_immediately("ArmB");  // 同じだがフェードを飛ばしてすぐに表示する (T0329)
 puppet.pose_json();                    // 今のポーズ (モデルの pose の形。付けたモジュールのグループと追従も入る。T0661)
 puppet.pose_visible_json();            // 表示中の要素のパーツ (pose_json の groups の並びで string | null の配列。T0478)
 puppet.part_evaluated_opacity("ArmB"); // 評価後のパーツの不透明度 (祖先を掛けた値。T0416)。パーツが無ければ undefined
@@ -164,6 +165,10 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
 - `set_effects_json` は同じ設定でも目パチ・呼吸を初めからやり直し、リップシンクの音量は保つ。`show_pose` の不透明度は次の `update` からフェードし、
   モーションが同じグループの要素を要求すればそちらが勝つ (`docs/spec/motion.md#エフェクト設定の差し替え`・`#ポーズ`)。C ABI では
   `ugoe_puppet_set_effects_json`・`ugoe_puppet_show_pose` (T0414)。
+- `show_pose_immediately` は `show_pose` と同じに要素を選び、そのグループの不透明度を選んだ要素 1・ほかの要素 0 にする
+  (`PosePlayer::show_immediately`。描く姿には次の `update` で入る)。次の `update` でモーションが同じグループの要素を要求すれば、
+  そこからフェードする。**口の形 (T0329):** `show_pose` に引数を足さず別の関数にした (`show_pose` の意味と型を変えず、
+  JS で引数を省いたときにどちらになるかを気にさせないため。Rust の `PosePlayer` の関数とも 1 対 1 になる)。C ABI には無い。
 - `pose_visible_json` はグループごとの表示中の要素の `part` (`PosePlayer::visible_parts`。要素の無いグループは `null`)。`show_pose` で
   選んだ要素はフェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の `update` の後に入る。ポーズの段を
   止めている間も表示中の要素は変わる。C ABI では `ugoe_puppet_pose_group_count`・`ugoe_puppet_pose_visible_part` (T0478)。

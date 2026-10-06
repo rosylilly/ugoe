@@ -187,6 +187,13 @@ impl WebPuppet {
         Ok(animation::show_pose(self.puppet_mut()?, part))
     }
 
+    /// `show_pose` と同じに要素を選び、フェードを飛ばしてすぐに表示する (そのグループのほかの要素の不透明度は 0。
+    /// 描く姿には次の `update` で入る)。読み込みの直後など、切り替えの途中を見せたくないときに使う。
+    /// どの要素の `part` でもなければ何も変えず `false`。
+    pub fn show_pose_immediately(&mut self, part: &str) -> Result<bool, JsError> {
+        Ok(animation::show_pose_immediately(self.puppet_mut()?, part))
+    }
+
     /// パーツ `part` の評価後の不透明度 (上書きを当てた自身の値に祖先の値を掛けたもの。そのパーツのメッシュの
     /// 不透明度に掛かる)。必要なら評価してから読む。モデルかパーツが無ければ `undefined`。
     pub fn part_evaluated_opacity(&mut self, part: &str) -> Option<f32> {
