@@ -101,9 +101,14 @@ enum Monitor<'a> {
         parameters: Vec<ParameterInfo>,
         /// モデル (と付けているモジュール) にライティングを受けるメッシュがあるか。
         uses_lighting: bool,
-        /// モデル (と付けているモジュール) のポーズのグループ (T0842)。表示している要素は `scene` の `pose`。
+        /// モデル (と付けているモジュール) のポーズのグループ (T0842)。
         pose_groups: Vec<PoseGroupInfo>,
+        /// グループごとに今表示している要素 (モーションが切り替えた要素を含む。`scene` の `pose` はシーンに覚えた選択。T0848)。
+        pose_shown: Vec<String>,
     },
+    /// ポーズの表示中の要素か選択が変わった (モーションの切り替えを含む。T0848)。
+    #[serde(rename = "pose")]
+    Pose { shown: Vec<String> },
     /// 間引いた今の値と負荷。
     #[serde(rename = "status", rename_all = "camelCase")]
     Status {
@@ -398,6 +403,11 @@ impl Studio {
         conductor.scene().and_then(Self::json)
     }
 
+    /// 接続したばかりの受け手へのシーンの通知 (ポーズの要素は指揮役が今表示しているもの。[`Conductor::joining_scene`]、T0848)。
+    fn joining_scene_message(conductor: &Conductor) -> Option<InvokeResponseBody> {
+        conductor.joining_scene().and_then(|s| Self::json(&s))
+    }
+
     fn monitor_scene_message(conductor: &Conductor) -> Option<InvokeResponseBody> {
         let scene = conductor.scene()?;
         let parameters = conductor
@@ -417,6 +427,7 @@ impl Studio {
             parameters,
             uses_lighting: conductor.uses_lighting(),
             pose_groups: conductor.pose_groups(),
+            pose_shown: conductor.shown_pose(),
         })
     }
 
@@ -451,6 +462,7 @@ impl Studio {
         if view.is_some() || !fired.is_empty() {
             self.api_animation(view.as_ref(), &fired);
         }
+        self.notify_pose(&mut conductor);
         if let Some(view) = view
             && let Some(body) = Self::json(&Monitor::Animation(view))
         {
@@ -489,6 +501,19 @@ impl Studio {
         if let Some(body) = Self::json(&message) {
             self.monitors.send_all(&body);
         }
+    }
+
+    /// ポーズの表示中の要素か選択が変わっていれば、操作ウィンドウと外部 API (`pose.changed`) に知らせる (T0848)。
+    fn notify_pose(&self, conductor: &mut Conductor) {
+        if !conductor.take_pose_changed() {
+            return;
+        }
+        if let Some(body) = Self::json(&Monitor::Pose {
+            shown: conductor.shown_pose(),
+        }) {
+            self.monitors.send_all(&body);
+        }
+        self.api_pose_changed(conductor);
     }
 
     /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
@@ -539,8 +564,10 @@ impl Studio {
         if conductor.scene().map(|s| s.revision) != before {
             self.send_scene(&stage, &conductor);
         }
-        drop(conductor);
         self.api_stage_changed(&snapshot, &api::StageSnapshot::of(&stage));
+        // ポーズの変化は `scene.changed`・`dressup.changed` の後に送る (指揮役を握ったまま。刻みに先を越されないように)。
+        self.notify_pose(&mut conductor);
+        drop(conductor);
         self.send_profile(&stage);
         if stage.loading() != loading.as_deref() {
             self.send_scene_loading(&stage);
@@ -755,8 +782,9 @@ impl Studio {
     }
 
     /// 仮想カメラに渡す今のシーン (シーンの通知と、受け手が `scene_model` などで取るファイル)。
+    /// ポーズの要素は指揮役が今表示しているもの (始めたときに途中から揃える。シーンを出した直後は選択と同じ。T0848)。
     fn camera_scene(stage: &Stage, conductor: &Conductor) -> Option<SceneFiles> {
-        let scene = conductor.scene()?.clone();
+        let scene = conductor.joining_scene()?;
         let modules = (0..scene.modules.len())
             .map(|i| stage.module_bytes(i))
             .collect();
@@ -1042,7 +1070,7 @@ fn subscribe_frames(
     channel: Channel<InvokeResponseBody>,
 ) {
     let conductor = lock(&studio.conductor);
-    if let Some(body) = Studio::scene_message(&conductor) {
+    if let Some(body) = Studio::joining_scene_message(&conductor) {
         let _ = channel.send(body);
     }
     studio.outputs.insert(webview.label(), channel);

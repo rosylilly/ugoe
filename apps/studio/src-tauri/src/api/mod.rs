@@ -31,7 +31,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::animation::AnimationView;
-use crate::conductor::FiredEvent;
+use crate::conductor::{Conductor, FiredEvent};
 use crate::error::CommandError;
 use crate::stage::Stage;
 use crate::{Monitor, Studio, lock};
@@ -56,6 +56,7 @@ pub const EVENTS: &[&str] = &[
     "motion.finished",
     "motion.event",
     "dressup.changed",
+    "pose.changed",
     "tracking.changed",
 ];
 
@@ -779,6 +780,13 @@ impl Studio {
         }
         for (event, params) in events {
             self.api_notify(event, params);
+        }
+    }
+
+    /// ポーズの表示中の要素か選択が変わった: `pose.changed` を通知する (中身は `pose.list` と同じ。T0848)。
+    pub(crate) fn api_pose_changed(&self, conductor: &Conductor) {
+        if self.api_listening_for("pose.changed") {
+            self.api_notify("pose.changed", methods::pose_value(conductor));
         }
     }
 

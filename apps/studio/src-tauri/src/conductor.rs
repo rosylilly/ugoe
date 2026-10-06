@@ -158,6 +158,8 @@ pub struct Conductor {
     sent: Vec<f32>,
     /// 刻みで発火したモーションのイベント (読むと空になる)。
     motion_events: Vec<FiredEvent>,
+    /// 最後に知らせたポーズの表示中の要素と選択 ([`Conductor::take_pose_changed`]。T0848)。
+    pose_noticed: (Vec<String>, Vec<String>),
 }
 
 /// 刻みで発火したモーションのイベントと、それを発火したモーション (外部 API の `motion.event`)。
@@ -193,6 +195,7 @@ impl Default for Conductor {
             overrides: Vec::new(),
             sent: Vec::new(),
             motion_events: Vec::new(),
+            pose_noticed: (Vec::new(), Vec::new()),
         }
     }
 }
@@ -355,6 +358,54 @@ impl Conductor {
     /// 今のシーン。モデルを読んでいなければ `None`。
     pub fn scene(&self) -> Option<&Scene> {
         self.scene.as_ref()
+    }
+
+    /// ポーズのグループごとに今表示している要素 (合成したポーズのグループの順。モデルが無ければ空。T0848)。
+    ///
+    /// シーンを出した直後はシーンの `look.pose` (選択) と同じで、モーションがパーツの不透明度のカーブで要素を切り替えると
+    /// それに替わる (モーションが終わっても残る。`docs/studio.md#ポーズの要素`)。
+    pub fn shown_pose(&self) -> Vec<String> {
+        self.puppet.as_ref().map_or_else(Vec::new, |puppet| {
+            puppet
+                .pose()
+                .visible_parts()
+                .map(|p| p.as_str().to_owned())
+                .collect()
+        })
+    }
+
+    /// 途中から来た受け手に送るシーン: 今のシーンの `look.pose` を、表示している要素 ([`Conductor::shown_pose`]) にしたもの。
+    ///
+    /// モーションが切り替えた要素は受け手も前からのフレームで切り替えているので、後から来た受け手には選択ではなく
+    /// 表示している要素を表示させる (指揮役と揃える。T0848)。
+    pub fn joining_scene(&self) -> Option<Scene> {
+        let mut scene = self.scene.clone()?;
+        if self.puppet.is_some() {
+            scene.look.pose = self.shown_pose();
+        }
+        Some(scene)
+    }
+
+    /// ポーズの表示中の要素か選択 (シーンの `look.pose`) が、前に読んだときから変わったか (読むと戻る。操作ウィンドウと
+    /// 外部 API の `pose.changed` に知らせる。T0848)。変わっていなければ確保しない (刻みごとに呼ぶ)。
+    pub fn take_pose_changed(&mut self) -> bool {
+        let selected: &[String] = match (&self.puppet, &self.scene) {
+            (Some(_), Some(scene)) => &scene.look.pose,
+            _ => &[],
+        };
+        let shown_same = match &self.puppet {
+            Some(puppet) => puppet.pose().visible_parts().map(|p| p.as_str()).eq(self
+                .pose_noticed
+                .0
+                .iter()
+                .map(String::as_str)),
+            None => self.pose_noticed.0.is_empty(),
+        };
+        if shown_same && self.pose_noticed.1 == selected {
+            return false;
+        }
+        self.pose_noticed = (self.shown_pose(), selected.to_vec());
+        true
     }
 
     /// 今のモデルのパラメータの定義 (定義順)。
@@ -855,6 +906,89 @@ mod tests {
             .present(None, Some(modules), look("Jacket/Open"))
             .unwrap();
         assert_eq!(jacket(&conductor), (0.0, 1.0));
+    }
+
+    /// `ArmB` を表示させるモーション `wave` (0.5 秒。`pose_and_effects` の `ArmA` と `ArmB` のパーツの不透明度のカーブ)。
+    fn wave() -> Motion {
+        use ugoe::model::motion::{Curve, CurveTarget, Point, Segment};
+        let curve = |part: &str, v: f32| Curve {
+            target: CurveTarget::PartOpacity(part.into()),
+            segments: vec![
+                Segment::Start {
+                    p: Point { t: 0.0, v },
+                },
+                Segment::Linear {
+                    to: Point { t: 0.5, v },
+                },
+            ],
+            fade_in: None,
+            fade_out: None,
+        };
+        Motion {
+            name: "wave".into(),
+            duration: 0.5,
+            looping: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            curves: vec![curve("ArmA", 0.0), curve("ArmB", 1.0)],
+            events: vec![],
+        }
+    }
+
+    /// 表示中の要素はモーションの切り替えに追従し、選択 (シーンの `look.pose`) は変わらない。変化は 1 度だけ知らせ、
+    /// 途中から来た受け手に送るシーンは表示中の要素を持つ (T0848)。
+    #[test]
+    fn the_shown_pose_follows_motions_and_is_noticed_once() {
+        let mut bundle = Bundle::new(fixtures::pose_and_effects());
+        bundle.motions.push(wave());
+        let mut conductor = Conductor::new();
+        assert!(!conductor.take_pose_changed(), "nothing to tell yet");
+        assert!(conductor.shown_pose().is_empty());
+        assert!(conductor.joining_scene().is_none());
+        conductor.load("pose", bundle).unwrap();
+        assert_eq!(conductor.shown_pose(), ["ArmA"]);
+        assert!(conductor.take_pose_changed());
+        assert!(!conductor.take_pose_changed());
+        let played = conductor.perform(|animation, puppet| {
+            animation.play(puppet.unwrap(), "wave", ugoe::motion::Priority::Normal)
+        });
+        assert_eq!(played, Ok(true));
+        let mut noticed = 0;
+        for _ in 0..60 {
+            conductor.tick(1.0 / 60.0).unwrap();
+            noticed += usize::from(conductor.take_pose_changed());
+        }
+        // モーションが終わっても、モーションが表示させた要素が残る。
+        assert_eq!(noticed, 1);
+        assert_eq!(conductor.shown_pose(), ["ArmB"]);
+        assert_eq!(conductor.scene().unwrap().look.pose, ["ArmA"]);
+        assert_eq!(conductor.joining_scene().unwrap().look.pose, ["ArmB"]);
+        // シーンを出し直すと選択に戻る (指揮役と受け手で揃う)。
+        conductor.present(None, None, Look::default()).unwrap();
+        assert_eq!(conductor.shown_pose(), ["ArmA"]);
+        assert!(conductor.take_pose_changed());
+        // 表示している要素を選んだ (選択だけが変わった) ときも知らせる。
+        conductor
+            .perform(|animation, puppet| {
+                animation.play(puppet.unwrap(), "wave", ugoe::motion::Priority::Normal)
+            })
+            .unwrap();
+        for _ in 0..60 {
+            conductor.tick(1.0 / 60.0).unwrap();
+        }
+        assert!(conductor.take_pose_changed());
+        let look = Look {
+            pose: vec!["ArmB".into()],
+            ..Look::default()
+        };
+        conductor.present(None, None, look).unwrap();
+        assert_eq!(conductor.shown_pose(), ["ArmB"]);
+        assert!(conductor.take_pose_changed());
+        // モデルを外すと空になる。
+        conductor.clear(Look::default());
+        assert!(conductor.take_pose_changed());
+        assert!(conductor.shown_pose().is_empty());
+        assert!(conductor.joining_scene().unwrap().look.pose.is_empty());
     }
 
     #[test]

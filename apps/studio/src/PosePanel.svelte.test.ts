@@ -73,6 +73,16 @@ describe("PosePanel", () => {
     expect(rows(target)).toEqual([["グループ 1", "ArmB"]]);
   });
 
+  it("shows the parts on screen, also when a motion switched them (T0848)", async () => {
+    const { target, props } = setup([{ parts: ["ArmA", "ArmB"], module: null }]);
+    expect(rows(target)).toEqual([["グループ 1", "ArmA"]]);
+    // 指揮役のモーションが ArmB に切り替えた (`pose` の通知)。
+    props.shown = ["ArmB"];
+    flushSync();
+    expect(rows(target)).toEqual([["グループ 1", "ArmB"]]);
+    expect(target.textContent).toContain("モーションが切り替えたパーツも出します");
+  });
+
   it("says so when the live model has no pose", () => {
     const { target } = setup([]);
     expect(target.textContent).toContain("ポーズがありません");

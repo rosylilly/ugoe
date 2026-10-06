@@ -106,6 +106,7 @@ export function firstRunMessages(fixture) {
       parameters: [],
       usesLighting: false,
       poseGroups: [],
+      poseShown: [],
     },
     {
       kind: "animation",
@@ -312,6 +313,7 @@ export function studioPageInit({ osLocale, fixture }) {
           { parts: ["ArmsDown", "ArmsUp", "Wave"], module: null },
           { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
         ],
+        poseShown: ["ArmsDown", "Hat/On"],
       });
       onMessage({
         kind: "animation",

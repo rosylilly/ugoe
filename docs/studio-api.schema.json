@@ -125,6 +125,7 @@
         "motion.finished",
         "motion.event",
         "dressup.changed",
+        "pose.changed",
         "tracking.changed"
       ]
     },
@@ -722,7 +723,18 @@
                 "oneOf": [
                   {
                     "type": "string",
-                    "description": "The part the scene on air shows in this group."
+                    "description": "The part this group shows now: the selected part, or the part a motion switched to (it stays after the motion ends, until the scene is presented again)."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "selected": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "The part the scene on air remembers for this group (chosen in the control window, by a hotkey or with pose.set; the first part when nothing was chosen)."
                   },
                   {
                     "type": "null"
@@ -733,7 +745,8 @@
             "required": [
               "parts",
               "module",
-              "shown"
+              "shown",
+              "selected"
             ]
           },
           "description": "Pose groups of the model on air and its worn modules, in pose order. Empty when no avatar is on air."
@@ -965,6 +978,9 @@
       "required": [
         "modules"
       ]
+    },
+    "pose.changed.event": {
+      "$ref": "#/$defs/pose.list.result"
     },
     "tracking.changed.event": {
       "$ref": "#/$defs/trackingState"
@@ -1537,6 +1553,21 @@
             },
             "params": {
               "$ref": "#/$defs/dressup.changed.event"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "pose.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/pose.changed.event"
             }
           },
           "required": [

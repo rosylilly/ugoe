@@ -518,3 +518,46 @@ fn pose_switches_right_after_dressing_up_match_the_conductor() {
     // 同じ組のままの切り替えは実際にフェードしている (上の検査が空振りしていない)。
     assert!(faded);
 }
+
+/// モーションがポーズの要素を切り替えた後に接続した受け手も、指揮役と同じ要素を出す (T0848)。
+/// 途中から来た受け手には、シーンの選択ではなく指揮役が表示している要素を持つシーン (`Conductor::joining_scene`) を送る。
+#[test]
+fn a_follower_joining_after_a_pose_switch_matches_the_conductor() {
+    let mut source = bundle(&fixtures::pose_and_effects(), None);
+    source.motions.push(switch_parts());
+    let mut conductor = Conductor::new();
+    conductor.load("pose", source.clone()).unwrap();
+    let played = conductor
+        .perform(|animation, puppet| animation.play(puppet.unwrap(), "switch", Priority::Normal));
+    assert_eq!(played, Ok(true));
+    // モーション (1.5 秒) が終わるまで進める。
+    for frame in 0..120 {
+        conductor.tick(dt_at(frame)).unwrap();
+    }
+    let selected = conductor.scene().unwrap().clone();
+    let joining = conductor.joining_scene().unwrap();
+    assert_eq!(selected.look.pose, ["ArmA"]);
+    assert_eq!(joining.look.pose, ["ArmB"], "the motion's switch stays");
+
+    let mut follower = Follower::new();
+    let mut followed = None;
+    receive_scene(&mut follower, &mut followed, &joining, &source, &[]);
+    // シーンの選択で始めた受け手は食い違う (上の検査が空振りしていないことの確認)。
+    let mut stale = Follower::new();
+    let mut stale_followed = None;
+    receive_scene(&mut stale, &mut stale_followed, &selected, &source, &[]);
+    let mut differed = false;
+    for frame in 0..30 {
+        let sent = Frame::decode(&conductor.tick(dt_at(frame)).unwrap().encode()).unwrap();
+        follower.receive(&sent).unwrap();
+        stale.receive(&sent).unwrap();
+        let expected = conductor.perform(|_, conducted| pose_shape(conducted.unwrap()));
+        assert_close(
+            &pose_shape(follower.puppet().unwrap()),
+            &expected,
+            &format!("frame {frame}"),
+        );
+        differed |= pose_shape(stale.puppet().unwrap()) != expected;
+    }
+    assert!(differed);
+}

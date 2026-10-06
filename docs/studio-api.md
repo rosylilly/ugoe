@@ -238,14 +238,18 @@ Like `scene.activate`, a switch that starts while the modules load wins, and the
 
 ### Pose
 
-`pose.list` (read) returns `groups`: `[{parts, module, shown}]`, the pose groups of the avatar on air (the model and
+`pose.list` (read) returns `groups`: `[{parts, module, shown, selected}]`, the pose groups of the avatar on air (the model and
 its worn modules), in pose order. `parts` are the part IDs the group chooses between; parts of a dress-up module are
 `<module>/<part>`. `module` is the name of the module the group belongs to, or `null` for the model's own groups.
-`shown` is the part the scene shows in that group. `groups` is empty when no avatar is on air.
+`shown` is the part the group shows now (what is on screen): the selected part, or the part a motion switched to.
+A part a motion switched to stays after the motion ends, until the scene is presented again (switched to, edited or
+dressed up) or a part is chosen. `selected` is the part the scene on air remembers for that group (the first part when
+nothing was chosen). `groups` is empty when no avatar is on air.
 
 `pose.set` (control) takes `{part}` (a part ID from `pose.list`) and shows it in its group, like the control window's
 **Pose** panel and pose hotkeys. The choice is saved in the scene on air. A part the avatar does not have fails with
-`-32010` (`unknownPose`). A motion that animates the same parts still wins while it plays.
+`-32010` (`unknownPose`). Choosing a part also shows the selected parts of the other groups again (parts a motion
+switched to go back). A motion that animates the same parts still wins while it plays.
 
 ### Hotkey actions
 
@@ -278,6 +282,7 @@ Notifications have the form `{"jsonrpc":"2.0","method":"<event>","params":{…}}
 | `motion.finished` | `{motion}` | A motion ended or was replaced |
 | `motion.event` | `{motion, value, time}` | A motion reached one of its events (`value` as authored, `time` in seconds). `motion` is the motion that fired the event, also when it is fading out after another motion was started (then the event comes after its `motion.finished`). Otherwise sent after the motion's `motion.started` and before its `motion.finished` |
 | `dressup.changed` | `{modules}` (`[{id, name, slot}]`) | The worn modules of the scene on air changed (also after `scene.changed` when the new scene wears other modules) |
+| `pose.changed` | `{groups}` (as in `pose.list`) | The shown or selected part of a pose group changed: chosen with `pose.set`, the control window or a hotkey, switched by a motion, or another scene (or a scene without the pose) went on air. Sent after `scene.changed` and `dressup.changed` |
 | `tracking.changed` | `{tracking, trackingPaused, lipSyncPaused}` | Face tracking started or stopped, or tracking / lip sync was paused or resumed |
 
 ## Example session

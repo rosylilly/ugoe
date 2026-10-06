@@ -119,7 +119,8 @@ export interface StudioScene extends SceneMessage {
   background: Background;
   /**
    * ポーズのグループごとに表示する要素のパーツ (合成したモデルのポーズのグループの順。T0842)。受け手は読み直し・付け直しの後に
-   * これを表示する要素にする。
+   * これを表示する要素にする。シーンを出したときはシーンの選択、接続したときは指揮役が今表示している要素 (モーションが切り替えた
+   * 要素を含む。T0848)。
    */
   pose: string[];
 }
@@ -131,8 +132,15 @@ export type MonitorMessage =
       scene: StudioScene;
       parameters: ParameterInfo[];
       usesLighting: boolean;
-      /** モデル (と付けているモジュール) のポーズのグループ (T0842。表示している要素は `scene.pose`)。 */
+      /** モデル (と付けているモジュール) のポーズのグループ (T0842)。 */
       poseGroups: PoseGroupInfo[];
+      /** グループごとに今表示している要素 (モーションが切り替えた要素を含む。`scene.pose` はシーンの選択。T0848)。 */
+      poseShown: string[];
+    }
+  | {
+      kind: "pose";
+      /** ポーズの表示中の要素か選択が変わった: グループごとに今表示している要素 (T0848)。 */
+      shown: string[];
     }
   | ({ kind: "profile" } & ProfileView)
   | StatusMessage

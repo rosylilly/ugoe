@@ -101,6 +101,8 @@ let scene = $state<StudioScene | null>(null);
 let usesLighting = $state(false);
 /** 配信しているモデル (と付けているモジュール) のポーズのグループ (T0842)。 */
 let poseGroups = $state<PoseGroupInfo[]>([]);
+/** グループごとに指揮役が今表示している要素 (モーションが切り替えた要素を含む。T0848)。 */
+let poseShown = $state<string[]>([]);
 let profile = $state<ProfileView | null>(null);
 /** 編集しているシーンの ID。 */
 let selected = $state<string | null>(null);
@@ -285,9 +287,13 @@ function onMonitor(message: MonitorMessage) {
       scene = message.scene;
       usesLighting = message.usesLighting;
       poseGroups = message.poseGroups;
+      poseShown = message.poseShown;
       parameters = message.parameters;
       values = Object.fromEntries(message.parameters.map((p) => [p.id, p.default]));
       edited.clear();
+      break;
+    case "pose":
+      poseShown = message.shown;
       break;
     case "status": {
       status = message;
@@ -838,7 +844,7 @@ onMount(() => {
         <Section title={t("poses.heading")}>
           <PosePanel
             groups={poseGroups}
-            shown={scene?.pose ?? []}
+            shown={poseShown}
             disabled={host === null}
             onchange={(part) => run((h) => h.showPose(part))}
           />

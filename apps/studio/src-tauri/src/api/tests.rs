@@ -173,9 +173,10 @@ impl Dir {
         path
     }
 
-    /// ポーズのあるモデル (`.ugoe`。グループ `ArmA` / `ArmB`) を書く (T0843)。
+    /// ポーズのあるモデル (`.ugoe`。グループ `ArmA` / `ArmB`) を書く (T0843)。モーション `wave` は 0.5 秒 `ArmB` を表示させる (T0848)。
     fn pose_model(&self) -> PathBuf {
         let mut bundle = Bundle::new(fixtures::pose_and_effects());
+        bundle.motions.push(wave_motion());
         bundle.textures = vec![
             ugoe::format::TextureData {
                 format: ugoe::format::TextureFormat::Png,
@@ -739,7 +740,7 @@ fn lists_and_sets_the_pose_of_the_scene_on_air() {
     let (chat, _) = stage_scenes(&studio, &model, &[]);
     assert_eq!(
         reader.call("pose.list", json!({})),
-        json!({ "groups": [{ "parts": ["ArmA", "ArmB"], "module": null, "shown": "ArmA" }] })
+        json!({ "groups": [{ "parts": ["ArmA", "ArmB"], "module": null, "shown": "ArmA", "selected": "ArmA" }] })
     );
     assert_eq!(
         reader.fail("pose.set", json!({ "part": "ArmB" })),
@@ -750,9 +751,10 @@ fn lists_and_sets_the_pose_of_the_scene_on_air() {
         client.call("pose.set", json!({ "part": "ArmB" })),
         json!({})
     );
+    let group = &client.call("pose.list", json!({}))["groups"][0];
     assert_eq!(
-        client.call("pose.list", json!({}))["groups"][0]["shown"],
-        "ArmB"
+        (&group["shown"], &group["selected"]),
+        (&json!("ArmB"), &json!("ArmB"))
     );
     assert_eq!(
         lock(&studio.stage).profile().scene(&chat).unwrap().pose,
@@ -768,6 +770,89 @@ fn lists_and_sets_the_pose_of_the_scene_on_air() {
         json!({ "code": "unknownPose", "part": "Nope", "messageCode": "scene.unknown_pose", "args": { "part": "Nope" } })
     );
     assert_eq!(client.fail("pose.set", json!({})), INVALID_PARAMS);
+}
+
+/// `ArmB` を表示させるモーション `wave` (0.5 秒。`pose_and_effects` の `ArmA` と `ArmB` のパーツの不透明度のカーブ。T0848)。
+fn wave_motion() -> ugoe::model::motion::Motion {
+    use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
+    let curve = |part: &str, v: f32| Curve {
+        target: CurveTarget::PartOpacity(part.into()),
+        segments: vec![
+            Segment::Start {
+                p: Point { t: 0.0, v },
+            },
+            Segment::Linear {
+                to: Point { t: 0.5, v },
+            },
+        ],
+        fade_in: None,
+        fade_out: None,
+    };
+    Motion {
+        name: "wave".into(),
+        duration: 0.5,
+        looping: false,
+        fade_in: 0.0,
+        fade_out: 0.0,
+        curves: vec![curve("ArmA", 0.0), curve("ArmB", 1.0)],
+        events: vec![],
+    }
+}
+
+/// `pose.changed` は表示中の要素か選択が変わったときに送る: `pose.set`・モーションの切り替え (選択は変わらない)・
+/// シーンの出し直し (選択に戻る)。中身は `pose.list` と同じ (T0848)。
+#[test]
+fn pose_changes_are_reported_with_the_shown_and_selected_parts() {
+    let dir = Dir::new();
+    let model = dir.pose_model();
+    let studio = studio();
+    let (_, game) = stage_scenes(&studio, &model, &[]);
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+    client.call(
+        "events.subscribe",
+        json!({ "events": ["scene.changed", "pose.changed"] }),
+    );
+    let group = |shown: &str, selected: &str| json!({ "groups": [{ "parts": ["ArmA", "ArmB"], "module": null, "shown": shown, "selected": selected }] });
+
+    // 刻んでも変わらなければ送らない。
+    studio.tick(0.02, false);
+    assert!(drain(&mut client).is_empty());
+
+    client.call("motion.play", json!({ "motion": "wave" }));
+    for _ in 0..40 {
+        studio.tick(0.02, false);
+    }
+    let changes = drain(&mut client);
+    assert_eq!(
+        changes,
+        [("pose.changed".to_owned(), group("ArmB", "ArmA"))],
+        "the motion switched the arm once and it stays"
+    );
+    assert_eq!(client.call("pose.list", json!({})), group("ArmB", "ArmA"));
+
+    // 表示している要素を選ぶ: 選択だけが変わっても送る。
+    client.call("pose.set", json!({ "part": "ArmB" }));
+    assert_eq!(
+        drain(&mut client),
+        [("pose.changed".to_owned(), group("ArmB", "ArmB"))]
+    );
+    client.call("pose.set", json!({ "part": "ArmA" }));
+    assert_eq!(
+        drain(&mut client),
+        [("pose.changed".to_owned(), group("ArmA", "ArmA"))]
+    );
+
+    // モーションの後にシーンを切り替えると、`scene.changed` の後に新しいシーンの選択に戻ったことを送る。
+    client.call("motion.play", json!({ "motion": "wave" }));
+    for _ in 0..40 {
+        studio.tick(0.02, false);
+    }
+    drain(&mut client);
+    client.call("scene.activate", json!({ "scene": game }));
+    let methods: Vec<String> = drain(&mut client).into_iter().map(|(m, _)| m).collect();
+    assert_eq!(methods, ["scene.changed", "pose.changed"]);
+    assert_eq!(client.call("pose.list", json!({})), group("ArmA", "ArmA"));
 }
 
 /// `dressup.list` は付けていないモジュールを、舞台と指揮役のロックを放してから読む (シーンの切り替えを待たせない。T0819)。

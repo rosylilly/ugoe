@@ -13,6 +13,7 @@ use super::params;
 use super::rpc::RpcError;
 use super::store::Permission;
 use crate::animation::{AnimationError, AnimationView};
+use crate::conductor::Conductor;
 use crate::hotkeys::{HotkeyAction, MotionPriority};
 use crate::stage::{self, Stage};
 use crate::{Monitor, Studio, lock};
@@ -378,17 +379,29 @@ fn parameter_set(studio: &Studio, p: &Map<String, Value>) -> Result<Value, RpcEr
 
 /// `pose.list`: 出しているモデル (と付けているモジュール) のポーズのグループと、グループごとに表示している要素 (T0843)。
 fn pose_list(studio: &Studio) -> Value {
-    let conductor = lock(&studio.conductor);
-    let shown = conductor
+    pose_value(&lock(&studio.conductor))
+}
+
+/// `pose.list` の結果と `pose.changed` の引数: 配信しているモデルのポーズのグループごとに、要素 (`parts`)・モジュール (`module`)・
+/// 今表示している要素 (`shown`。モーションが切り替えた要素を含む)・シーンに覚えた選択 (`selected`) (T0848)。モデルが無ければ空。
+pub(crate) fn pose_value(conductor: &Conductor) -> Value {
+    let selected = conductor
         .scene()
         .map(|s| s.look.pose.as_slice())
         .unwrap_or_default();
+    let shown = conductor.shown_pose();
     let groups: Vec<Value> = conductor
         .pose_groups()
         .into_iter()
         .map(|group| {
-            let part = shown.iter().find(|p| group.parts.contains(p));
-            json!({ "parts": group.parts, "module": group.module, "shown": part })
+            let pick = |list: &[String]| list.iter().find(|p| group.parts.contains(p)).cloned();
+            let (shown, selected) = (pick(&shown), pick(selected));
+            json!({
+                "parts": group.parts,
+                "module": group.module,
+                "shown": shown,
+                "selected": selected,
+            })
         })
         .collect();
     json!({ "groups": groups })

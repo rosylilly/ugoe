@@ -207,8 +207,9 @@ impl Studio {
         if state.connections.len() >= MAX_CONNECTIONS {
             return None;
         }
-        if let Some(scene) = conductor.scene()
-            && let Ok(json) = serde_json::to_string(scene)
+        // ポーズの要素は指揮役が今表示しているもの (モーションが切り替えた後に開いたページも揃える。T0848)。
+        if let Some(scene) = conductor.joining_scene()
+            && let Ok(json) = serde_json::to_string(&scene)
         {
             let _ = sender.try_send(Push::Message(Message::text(json)));
         }
