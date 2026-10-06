@@ -44,6 +44,8 @@ jobs:
           dpkg-query -W libwebkit2gtk-4.1-0 webkit2gtk-driver xvfb gnome-keyring
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
+      # ci.yml の rust (apps) とは共有しない。tauri build はアプリごとに feature の統合が変わり、依存の成果物は半分ほどしか
+      # 揃わない (docs/testing.md#ci-のキャッシュ、T0057)
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: e2e
