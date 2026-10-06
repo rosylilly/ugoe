@@ -45,6 +45,11 @@ let onCreating = null;
  */
 let loseContextsBeforeCreate = 0;
 /**
+ * `WebPuppet.create` ができてから返すまでに待つ時間 (ミリ秒)。CI の SwiftShader のように作成が遅いときを再現する
+ * (作り直しの途中の、新しい canvas はあるが WebPuppet はまだ無い間を数フレーム続ける。T0960)。
+ */
+let createDelayMs = 0;
+/**
  * WebGL2 の呼び出し (WebGL2RenderingContext のプロトタイプのメソッド。wasm-bindgen のグルーはその場でメソッドを引くので、
  * 包めば数えられる) の数。`loseAtCall` 回目の呼び出しの前に、そのコンテキストを失わせる (作成の途中の喪失。T0944)。
  * `invalidBlockIndex` なら `getUniformBlockIndex` が `INVALID_INDEX` を返す (GPU プロセスが落ちた直後の Chrome と同じ。
@@ -90,6 +95,7 @@ WebPuppet.create = async function (...args) {
   onCreating = null;
   hook?.();
   const puppet = await pending;
+  if (createDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, createDelayMs));
   live.add(puppet);
   return puppet;
 };
@@ -254,6 +260,24 @@ function expectDrawn(surface, container, when) {
 
 function canvasesIn(container) {
   return [...container.querySelectorAll("canvas")];
+}
+
+/**
+ * Player が失ったコンテキストの後に作り直し終えるのを待つ (諦めて `unavailable` になったときも返る)。作り直しの途中も
+ * `status` は前のモデルの `ready` のままで、新しい canvas は WebPuppet ができる前に置かれるので、`waitingForGpu` が
+ * 下りる (`created`) まで待つ (T0960)。
+ */
+async function untilPlayerRecreated(player, container, oldCanvas, what) {
+  await until(() => {
+    const canvases = canvasesIn(container);
+    return (
+      (!player.waitingForGpu &&
+        canvases.length === 1 &&
+        canvases[0] !== oldCanvas &&
+        player.status === "ready") ||
+      player.status === "unavailable"
+    );
+  }, what);
 }
 
 /** devicePixelRatio を変える (run.mjs の CDP)。ページに届くまで待つ。 */
@@ -916,6 +940,8 @@ const scenarios = {
       view !== null && near(view.scale, fitted.scale * 2),
       `view after the zoom: ${describeView(view)}`,
     );
+    // CI の SwiftShader のように作り直しを遅くする (T0960)
+    createDelayMs = 500;
 
     for (let round = 1; round <= 2; round++) {
       const oldCanvas = canvasesIn(container)[0];
@@ -924,13 +950,12 @@ const scenarios = {
       // 復元を待っている間は作り直さない
       check(canvasesIn(container)[0] === oldCanvas, `round ${round}: recreated before the restore`);
       ext.restoreContext();
-      await until(() => {
-        const canvases = canvasesIn(container);
-        return (
-          (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
-          player.status === "unavailable"
-        );
-      }, `round ${round}: the recreation of the player`);
+      await untilPlayerRecreated(
+        player,
+        container,
+        oldCanvas,
+        `round ${round}: the recreation of the player`,
+      );
       check(player.status === "ready", `round ${round}: status ${player.status} (${player.error})`);
       check(player.error === null, `round ${round}: error ${player.error}`);
       check(player.modelName === "dress-up.ugoe", `round ${round}: model ${player.modelName}`);
@@ -972,6 +997,8 @@ const scenarios = {
     player.setBackground("#000000", true);
     await player.attach(container);
     check(player.status === "empty", `status after attach is ${player.status}`);
+    // CI の SwiftShader のように作り直しを遅くして、作り終える前に確かめないことを確かめる (T0960)
+    createDelayMs = 500;
 
     // 初めのモデルを開く途中に失った
     let oldCanvas = canvasesIn(container)[0];
@@ -981,13 +1008,12 @@ const scenarios = {
     check(player.error === null, `error while the context is lost: ${player.error}`);
     check(player.modelName !== "avatar.ugoe", "the model was opened while the context is lost");
     ext.restoreContext();
-    await until(() => {
-      const canvases = canvasesIn(container);
-      return (
-        (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
-        player.status === "unavailable"
-      );
-    }, "the first model after the recreation");
+    await untilPlayerRecreated(
+      player,
+      container,
+      oldCanvas,
+      "the first model after the recreation",
+    );
     check(player.status === "ready", `status ${player.status} (${player.error})`);
     check(player.error === null, `error after the recreation: ${player.error}`);
     check(player.modelName === "avatar.ugoe", `model ${player.modelName}`);
@@ -1006,13 +1032,12 @@ const scenarios = {
     check(player.dressUpError === null, `dress-up error while lost: ${player.dressUpError}`);
     check(player.modelName === "avatar.ugoe", `model while lost ${player.modelName}`);
     ext.restoreContext();
-    await until(() => {
-      const canvases = canvasesIn(container);
-      return (
-        (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
-        player.status === "unavailable"
-      );
-    }, "the second model after the recreation");
+    await untilPlayerRecreated(
+      player,
+      container,
+      oldCanvas,
+      "the second model after the recreation",
+    );
     check(player.status === "ready", `status ${player.status} (${player.error})`);
     check(player.error === null, `error after the recreation: ${player.error}`);
     check(player.dressUpError === null, `dress-up error: ${player.dressUpError}`);
@@ -1207,6 +1232,7 @@ window.runScenarios = async (names) => {
     } finally {
       onCreating = null;
       loseContextsBeforeCreate = 0;
+      createDelayMs = 0;
       glCalls.loseAtCall = 0;
       glCalls.invalidBlockIndex = false;
       for (const surface of surfaces.splice(0)) surface.detach();
