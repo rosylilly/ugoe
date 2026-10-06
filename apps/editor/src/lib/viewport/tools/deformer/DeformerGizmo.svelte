@@ -5,7 +5,8 @@
 
   - ワープ: 制御点のクリックで選ぶ (Shift で追加・解除)、何もない所からのドラッグで矩形選択 (Shift で追加)、
     選んだ点のドラッグでまとめて動かす。「All」ですべて選ぶ。選んだ点は Selection.controlPoints に持つ
-    (インスペクタの深度の節が「選んだ点の深度」に使う)。
+    (インスペクタの深度の節が「選んだ点の深度」に使う)。`]` `[` で次・前の点を 1 つ選び (帯の読み上げの領域に
+    何番目かを出す)、矢印キーで選んだ点を動かす。
   - 回転デフォーマ: 原点 (円) のドラッグで移動、上の取っ手で回転 (Shift で 15 度刻み)、右の四角で拡大率。
     原点は今のセルだけを動かす。「All cells」を付けるか Shift を押しながらドラッグすると、すべてのセルの原点を
     同じだけ動かし、子の絵は動かさない (回転の中心だけを動かす。move_rotation_origin)。
@@ -30,7 +31,7 @@ import {
 import type { Selection } from "../../../selection.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { type Box, nearestVertex, updateVertexSelection, verticesInBox } from "../geometry";
-import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "../keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf, pointStepOf, steppedPoint } from "../keys";
 import {
   addTurn,
   flatten,
@@ -148,6 +149,8 @@ const edges = $derived(
   element?.kind === "warp" ? gridEdges(element.cols ?? 0, element.rows ?? 0) : [],
 );
 const pickedSet = $derived(new Set(picked));
+/** 1 つだけ選んだ制御点 (`]` `[` で選ぶ点。囲みを描き、帯に何番目かを出す)。 */
+const current = $derived(picked.length === 1 ? (picked[0] ?? null) : null);
 /** 格子の外周 (この内側のドラッグで矩形選択。外側のクリックはメッシュの選択に通す)。 */
 const outline = $derived.by(() => {
   if (!warpScreen || element?.kind !== "warp") return "";
@@ -378,9 +381,20 @@ function onKeyDown(e: KeyboardEvent): void {
   else if (e.key === "a" && (e.ctrlKey || e.metaKey) && warpCanvas) {
     e.preventDefault();
     selectAll();
-  } else {
+  } else if (!step(e)) {
     nudge(e);
   }
+}
+
+/** `]` `[` でワープの次・前の制御点を 1 つ選ぶ (クリックの代わり)。キーを使ったら true。 */
+function step(e: KeyboardEvent): boolean {
+  const dir = pointStepOf(e);
+  if (!dir || !warpCanvas || !acceptsNudgeKey(e.target)) return false;
+  const next = steppedPoint(picked, warpCanvas.length, dir);
+  if (next === null) return false;
+  e.preventDefault();
+  if (!busy && drag === null) setPicked([next]);
+  return true;
 }
 
 /**
@@ -418,6 +432,11 @@ function nudge(e: KeyboardEvent): void {
     </span>
     {#if element?.kind === "warp"}
       <Button small onclick={selectAll}>{t("viewport.cell.selectAll")}</Button>
+      <span class="muted" role="status"
+        >{current !== null && warpCanvas
+          ? t("viewport.point.current", { index: current + 1, total: warpCanvas.length })
+          : ""}</span
+      >
     {:else if element?.kind === "rotation"}
       <Tooltip text={t("viewport.gizmo.originAllCells.tooltip")}>
         {#snippet trigger(attrs)}
@@ -459,6 +478,8 @@ function nudge(e: KeyboardEvent): void {
         <rect class="hit" class:selected={pickedSet.has(i)} x={p[0] - 3.5} y={p[1] - 3.5} width="7" height="7" />
       {/each}
     </g>
+    {@const c = current !== null ? warpScreen[current] : undefined}
+    {#if c}<rect class="ring" x={c[0] - 7} y={c[1] - 7} width="14" height="14" />{/if}
   {/if}
   {#if handles}
     {@const h = handles}
@@ -532,6 +553,13 @@ function nudge(e: KeyboardEvent): void {
 .points rect.selected {
   fill: var(--viewport-picked);
   stroke: var(--viewport-picked-edge);
+}
+
+/* 1 つだけ選んだ点 (`]` `[` で選ぶ点) の囲み。密な格子の中でも見つけやすくする */
+.ring {
+  fill: none;
+  stroke: var(--viewport-picked-edge);
+  stroke-width: 1.5;
 }
 
 .rotation line {

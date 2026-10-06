@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { acceptsNudgeKey, acceptsToolKey, NUDGE, NUDGE_LARGE, nudgeOf } from "./keys";
+import {
+  acceptsNudgeKey,
+  acceptsToolKey,
+  NUDGE,
+  NUDGE_LARGE,
+  nudgeOf,
+  PAN,
+  PAN_LARGE,
+  panOf,
+  pointStepOf,
+  steppedPoint,
+} from "./keys";
 
 /** `closest` が `selector` のどれかに当たるかだけを返す偽の要素。 */
 function at(matches: string | null): EventTarget {
@@ -37,19 +48,19 @@ describe("acceptsNudgeKey", () => {
   });
 });
 
-describe("nudgeOf", () => {
-  const key = (
-    k: string,
-    mods: Partial<Record<"shiftKey" | "ctrlKey" | "metaKey" | "altKey", boolean>> = {},
-  ) => ({
-    key: k,
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false,
-    altKey: false,
-    ...mods,
-  });
+const key = (
+  k: string,
+  mods: Partial<Record<"shiftKey" | "ctrlKey" | "metaKey" | "altKey", boolean>> = {},
+) => ({
+  key: k,
+  shiftKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  ...mods,
+});
 
+describe("nudgeOf", () => {
   it("moves by one pixel, or ten with Shift", () => {
     expect(nudgeOf(key("ArrowLeft"))).toEqual([-NUDGE, 0]);
     expect(nudgeOf(key("ArrowDown"))).toEqual([0, NUDGE]);
@@ -62,5 +73,59 @@ describe("nudgeOf", () => {
     expect(nudgeOf(key("ArrowLeft", { ctrlKey: true }))).toBeNull();
     expect(nudgeOf(key("ArrowLeft", { metaKey: true }))).toBeNull();
     expect(nudgeOf(key("ArrowLeft", { altKey: true }))).toBeNull();
+  });
+});
+
+describe("panOf", () => {
+  it("pans with Alt + arrows, farther with Shift, moving the picture like Alt + drag", () => {
+    expect(panOf(key("ArrowRight", { altKey: true }))).toEqual([PAN, 0]);
+    expect(panOf(key("ArrowUp", { altKey: true }))).toEqual([0, -PAN]);
+    expect(panOf(key("ArrowLeft", { altKey: true, shiftKey: true }))).toEqual([-PAN_LARGE, 0]);
+    expect(panOf(key("ArrowDown", { altKey: true, shiftKey: true }))).toEqual([0, PAN_LARGE]);
+  });
+
+  it("leaves plain arrows to the point nudge and ignores Ctrl, Cmd and other keys", () => {
+    expect(panOf(key("ArrowRight"))).toBeNull();
+    expect(panOf(key("ArrowRight", { shiftKey: true }))).toBeNull();
+    expect(panOf(key("ArrowRight", { altKey: true, ctrlKey: true }))).toBeNull();
+    expect(panOf(key("ArrowRight", { altKey: true, metaKey: true }))).toBeNull();
+    expect(panOf(key("a", { altKey: true }))).toBeNull();
+  });
+});
+
+describe("pointStepOf", () => {
+  it("steps forward with ] and back with [", () => {
+    expect(pointStepOf(key("]"))).toBe(1);
+    expect(pointStepOf(key("["))).toBe(-1);
+  });
+
+  it("ignores Tab, other keys and modifiers", () => {
+    expect(pointStepOf(key("Tab"))).toBeNull();
+    expect(pointStepOf(key("}"))).toBeNull();
+    expect(pointStepOf(key("]", { ctrlKey: true }))).toBeNull();
+    expect(pointStepOf(key("[", { metaKey: true }))).toBeNull();
+    expect(pointStepOf(key("[", { altKey: true }))).toBeNull();
+  });
+});
+
+describe("steppedPoint", () => {
+  it("starts at the first point forward and the last point backward", () => {
+    expect(steppedPoint([], 4, 1)).toBe(0);
+    expect(steppedPoint([], 4, -1)).toBe(3);
+  });
+
+  it("goes round from the last picked point", () => {
+    expect(steppedPoint([1], 4, 1)).toBe(2);
+    expect(steppedPoint([1], 4, -1)).toBe(0);
+    expect(steppedPoint([3], 4, 1)).toBe(0);
+    expect(steppedPoint([0], 4, -1)).toBe(3);
+    // 複数を選んでいれば最後に選んだ点から
+    expect(steppedPoint([0, 2], 4, 1)).toBe(3);
+  });
+
+  it("starts over when the picked point is gone, and has nothing to pick without points", () => {
+    expect(steppedPoint([9], 4, 1)).toBe(0);
+    expect(steppedPoint([], 0, 1)).toBeNull();
+    expect(steppedPoint([0], 0, -1)).toBeNull();
   });
 });

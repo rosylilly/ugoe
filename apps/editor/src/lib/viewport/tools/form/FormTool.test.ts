@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // フォーム編集ツール: ポインタの操作から送るコマンド (docs/testing.md#エディタの部品のテスト)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../../i18n";
 import { Selection } from "../../../selection.svelte";
 import type { Point } from "../geometry";
 import {
@@ -211,6 +212,48 @@ describe("FormTool keys", () => {
         },
       },
     ]);
+  });
+
+  it("picks the next and previous point with ] and [, then moves it with the arrow keys", async () => {
+    const { doc, target } = await setup();
+    const selected = () =>
+      all(target, "circle.handle").flatMap((c, i) => (c.classList.contains("selected") ? [i] : []));
+    const status = () => target.querySelector(".vp-band [role=status]")?.textContent?.trim();
+    expect(press(document.body, "[").defaultPrevented).toBe(true);
+    expect(selected()).toEqual([3]);
+    expect(status()).toBe(t("viewport.point.current", { index: 4, total: 4 }));
+    press(document.body, "]");
+    press(document.body, "]");
+    expect(selected()).toEqual([1]);
+    expect(target.querySelector("svg.form circle.ring")).not.toBeNull();
+    press(document.body, "ArrowDown", { shiftKey: true });
+    await settle();
+    expect(doc.commands).toMatchObject([
+      {
+        op: "set_keyform_cell",
+        keyform: {
+          positions: [
+            [0, 0],
+            [100, 5],
+            [100, 100],
+            [0, 100],
+          ],
+        },
+      },
+    ]);
+    // ほかの数を選ぶと何個を選んだかに戻る
+    press(document.body, "a", { ctrlKey: true });
+    expect(status()).toBe(t("viewport.form.selected", { count: 4, total: 4 }));
+    expect(target.querySelector("svg.form circle.ring")).toBeNull();
+  });
+
+  it("leaves [ and ] to the parts outside the viewport", async () => {
+    const { target } = await setup();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    expect(press(outside, "]").defaultPrevented).toBe(false);
+    outside.remove();
+    expect(all(target, "circle.handle.selected")).toHaveLength(0);
   });
 
   it("leaves the arrow keys alone without picked points or outside the viewport", async () => {

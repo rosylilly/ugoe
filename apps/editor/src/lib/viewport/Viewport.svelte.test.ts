@@ -42,6 +42,9 @@ function setup() {
     restart: async () => {
       calls.push("restart");
     },
+    panBy(dx: number, dy: number) {
+      calls.push(`pan ${dx},${dy}`);
+    },
   });
   const target = document.createElement("div");
   document.body.append(target);
@@ -87,5 +90,26 @@ describe("Viewport", () => {
     expect(restart).toBeDefined();
     restart?.click();
     expect(calls).toEqual(["restart"]);
+  });
+
+  it("pans with Alt + arrows while the focus is on the page or in the viewport", () => {
+    const { target, calls } = setup();
+    const press = (el: Element, key: string, init: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+      el.dispatchEvent(event);
+      return event;
+    };
+    expect(press(document.body, "ArrowRight", { altKey: true }).defaultPrevented).toBe(true);
+    // ビューポートの中 (表示の道具のボタンなど)
+    const zoomIn = target.querySelector(`[aria-label="${t("viewport.zoomIn.label")}"]`);
+    if (!zoomIn) throw new Error("no zoom button");
+    press(zoomIn, "ArrowUp", { altKey: true, shiftKey: true });
+    // 矢印だけ (点を動かす) とビューポートの外 (ツリー・スライダー) では動かさない
+    press(document.body, "ArrowLeft");
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    cleanups.push(() => outside.remove());
+    expect(press(outside, "ArrowLeft", { altKey: true }).defaultPrevented).toBe(false);
+    expect(calls).toEqual(["pan 40,0", "pan 0,-200"]);
   });
 });

@@ -2863,7 +2863,7 @@
       "retriangulate": "Retriangulate",
       "deleteVertices": "Delete vertices",
       "done": "Done",
-      "hint": "Drag: move / box select · Shift: add · Ctrl+click: add vertex · Del: remove · Esc: exit",
+      "hint": "Drag: move / box select · Shift: add · Ctrl+click: add vertex · [ ]: pick next / previous · Del: remove · Esc: exit",
       "aria": "Mesh editor"
     },
     "cell": {
@@ -2882,6 +2882,9 @@
       },
       "selected": "{{count}} / {{total}} selected",
       "empty": "Select a mesh or deformer"
+    },
+    "point": {
+      "current": "Point {{index}} of {{total}}"
     },
     "gizmo": {
       "title": "{{kind}}: {{id}}",

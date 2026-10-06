@@ -6,6 +6,7 @@
   - 点のクリックで選ぶ (Shift で追加・解除)。要素の内側 (メッシュの三角形・ワープの格子) の何もない所からの
     ドラッグで矩形選択 (Shift で追加)、クリックで選択を解く。外側のクリックは下の選択レイヤーに通す。
   - 選んだ点のドラッグで、選んだ点をまとめて同じだけ動かす。「All」・Ctrl (Cmd) + A ですべて選ぶ。Esc で解く。
+  - キーボード: `]` `[` で次・前の点を 1 つ選び (帯の読み上げの領域に何番目かを出す)、矢印キーで選んだ点を動かす。
 
   パラメータ値がどれかの軸でキーの上にないときは編集しない (どのセルに書くか決まらないため)。
   代わりに「最も近いキーへ移動」を出す。
@@ -34,7 +35,7 @@ import TipButton from "../../../ui/TipButton.svelte";
 import type { ViewportController } from "../../controller.svelte";
 import { flatten, gridEdges, gridOutline, movePoints } from "../deformer/gizmo";
 import { type Box, meshEdges, updateVertexSelection, verticesInBox } from "../geometry";
-import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "../keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf, pointStepOf, steppedPoint } from "../keys";
 import { pressPoint, trianglesPath, validIndices } from "./form";
 
 interface Props {
@@ -82,6 +83,8 @@ const picked = $derived(
     : [],
 );
 const pickedSet = $derived(new Set(picked));
+/** 1 つだけ選んだ点 (`]` `[` で選ぶ点。囲みを描き、帯に何番目かを出す)。 */
+const current = $derived(picked.length === 1 ? (picked[0] ?? null) : null);
 
 function setPicked(indices: number[]): void {
   selected = { key: selectionKey, indices };
@@ -121,6 +124,9 @@ const base = $derived.by(() => {
 
 /** ドラッグ中のプレビューを反映した画面上の位置。 */
 const screen = $derived(drag?.kind === "points" ? movePoints(base, picked, drag.delta) : base);
+
+/** 1 つだけ選んだ点の囲みの中心。 */
+const ring = $derived(current !== null ? screen[current] : undefined);
 
 /** この内側のドラッグで矩形選択する (メッシュの三角形・ワープの格子の外周)。外側は選択レイヤーに通す。 */
 const area = $derived.by(() => {
@@ -264,10 +270,16 @@ function onKeyDown(e: KeyboardEvent): void {
   else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     selectAll();
-  } else {
-    // 矢印キーで選んだ点を動かす (ドラッグの代わり。docs/editor.md#ビューポートの操作と代わりの手段)
-    const step = picked.length > 0 && acceptsNudgeKey(e.target) ? nudgeOf(e) : null;
-    if (step) {
+  } else if (acceptsNudgeKey(e.target)) {
+    // `]` `[` で点を 1 つずつ選び、矢印キーで選んだ点を動かす
+    // (クリックとドラッグの代わり。docs/editor.md#ビューポートの操作と代わりの手段)
+    const dir = pointStepOf(e);
+    const next = dir ? steppedPoint(picked, localPoints.length, dir) : null;
+    const step = picked.length > 0 ? nudgeOf(e) : null;
+    if (next !== null) {
+      e.preventDefault();
+      if (!busy && drag === null) setPicked([next]);
+    } else if (step) {
       e.preventDefault();
       void movePicked(step);
     }
@@ -302,8 +314,10 @@ function moveToNearestKey() {
             tooltip={t("viewport.form.selectAll.tooltip")}
             shortcut="Mod+A">{t("viewport.cell.selectAll")}</TipButton
           >
-          <span class="muted"
-            >{t("viewport.form.selected", { count: picked.length, total: localPoints.length })}</span
+          <span class="muted" role="status"
+            >{current !== null
+              ? t("viewport.point.current", { index: current + 1, total: localPoints.length })
+              : t("viewport.form.selected", { count: picked.length, total: localPoints.length })}</span
           >
         {/if}
       {:else}
@@ -346,6 +360,7 @@ function moveToNearestKey() {
         onpointercancel={() => (drag = null)}
       />
     {/each}
+    {#if ring}<circle class="ring" cx={ring[0]} cy={ring[1]} r={element.kind === "rotation" ? 11 : 8} />{/if}
     {#if drag?.kind === "box"}
       {@const b = drag.box}
       <rect
@@ -392,6 +407,14 @@ line {
 .handle.selected {
   fill: var(--viewport-picked);
   stroke: var(--viewport-picked-edge);
+}
+
+/* 1 つだけ選んだ点 (`]` `[` で選ぶ点) の囲み。密な格子の中でも見つけやすくする */
+.ring {
+  fill: none;
+  stroke: var(--viewport-picked-edge);
+  stroke-width: 1.5;
+  pointer-events: none;
 }
 
 .area {

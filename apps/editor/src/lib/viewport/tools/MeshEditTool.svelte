@@ -7,6 +7,7 @@
     離したときに move_mesh_vertices を 1 つ送る。
   - Ctrl (Cmd) + クリック: その位置に頂点を足す。Delete / Backspace: 選択中の頂点を消す。
   - Esc: モードを抜ける (ToolOverlay が処理する)。
+  - `]` `[`: 次・前の頂点を 1 つ選ぶ。矢印キー: 選択中の頂点を動かす (キーは ToolOverlay が受けて呼ぶ)。
   頂点位置は wasm で評価した今のパラメータでの位置。コマンドは既定値の姿を基準にするので、
   モードに入るときにパラメータを既定値に戻す (ToolOverlay)。
 -->
@@ -21,6 +22,7 @@ import {
   updateVertexSelection,
   verticesInBox,
 } from "./geometry";
+import { steppedPoint } from "./keys";
 import type { ViewportScene } from "./scene.svelte";
 
 interface Props {
@@ -52,6 +54,8 @@ const selected = $derived(
   (selection.vertices[meshId] ?? []).filter((i) => mesh !== null && i < mesh.vertices),
 );
 const selectedSet = $derived(new Set(selected));
+/** 1 つだけ選んだ頂点 (`]` `[` で選ぶ点。囲みを描く)。 */
+const current = $derived(selected.length === 1 ? (selected[0] ?? null) : null);
 
 /** ドラッグ中のプレビューを含めた表示位置。 */
 const shown = $derived.by(() => {
@@ -187,6 +191,14 @@ export function retriangulate(): void {
   });
 }
 
+/** 次 (`dir` = 1)・前 (-1) の頂点を 1 つ選ぶ (`]` `[`。クリックの代わり)。選んだら true。 */
+export function step(dir: 1 | -1): boolean {
+  const next = steppedPoint(selected, mesh?.vertices ?? 0, dir);
+  if (next === null) return false;
+  if (drag === null) setVertices([next]);
+  return true;
+}
+
 export function selectAll(): void {
   if (mesh) setVertices(Array.from({ length: mesh.vertices }, (_, i) => i));
 }
@@ -226,6 +238,10 @@ function point(i: number): [number, number] {
         />
       {/each}
     </g>
+    {#if current !== null}
+      {@const [x, y] = point(current)}
+      <rect class="ring" x={x - 7} y={y - 7} width="14" height="14" />
+    {/if}
   {/if}
   {#if drag?.kind === "box"}
     {@const b = drag.box}
@@ -264,6 +280,13 @@ function point(i: number): [number, number] {
 .vertices rect.selected {
   fill: var(--viewport-picked);
   stroke: var(--viewport-picked-edge);
+}
+
+/* 1 つだけ選んだ頂点 (`]` `[` で選ぶ点) の囲み。密なメッシュの中でも見つけやすくする */
+.ring {
+  fill: none;
+  stroke: var(--viewport-picked-edge);
+  stroke-width: 1.5;
 }
 
 .box {

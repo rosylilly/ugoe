@@ -2,6 +2,7 @@
 // ビューポートのツールの切り替え: メッシュ編集モードのキー操作 (docs/testing.md#エディタの部品のテスト)。
 import { flushSync } from "svelte";
 import { describe, expect, it, vi } from "vitest";
+import { t } from "../i18n";
 import { GlueView } from "../panels/glues/glueView.svelte";
 import { PhysicsView } from "../panels/physics/physicsView.svelte";
 import { VerifyView } from "../panels/verify/verifyView.svelte";
@@ -28,7 +29,7 @@ function setup() {
   selection.set([{ kind: "mesh", id: "Quad" }]);
   selection.meshEdit = "Quad";
   selection.vertices = { Quad: [0] };
-  render(ToolOverlay, {
+  const { target } = render(ToolOverlay, {
     controller: controller.asController,
     doc: doc.asDocument,
     selection,
@@ -36,7 +37,7 @@ function setup() {
     verify: new VerifyView(),
     glue: new GlueView(),
   });
-  return { doc, selection };
+  return { doc, selection, target };
 }
 
 describe("ToolOverlay mesh edit keys", () => {
@@ -66,6 +67,28 @@ describe("ToolOverlay mesh edit keys", () => {
     expect(doc.commands).toEqual([
       { op: "move_mesh_vertices", id: "Quad", moves: [{ index: 0, delta: [-5, 0] }] },
     ]);
+  });
+
+  it("picks the next and previous vertex with ] and [ and reads out which one", () => {
+    const { doc, selection, target } = setup();
+    const status = () => target.querySelector(".vp-band [role=status]")?.textContent?.trim();
+    expect(press(document.body, "]").defaultPrevented).toBe(true);
+    expect(selection.vertices.Quad).toEqual([1]);
+    expect(status()).toBe(t("viewport.point.current", { index: 2, total: 4 }));
+    expect(target.querySelector("svg.tool rect.ring")).not.toBeNull();
+    press(document.body, "[");
+    press(document.body, "[");
+    expect(selection.vertices.Quad).toEqual([3]);
+    // 矢印を使う部品 (ツリーなど) にフォーカスがあるときは奪わない
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      expect(press(outside, "]").defaultPrevented).toBe(false);
+    } finally {
+      outside.remove();
+    }
+    expect(selection.vertices.Quad).toEqual([3]);
+    expect(doc.apply).not.toHaveBeenCalled();
   });
 
   it("does not take Esc, Delete or Ctrl + A pressed inside a dialog", async () => {

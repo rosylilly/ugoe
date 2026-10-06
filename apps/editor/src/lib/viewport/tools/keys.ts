@@ -51,3 +51,53 @@ export function nudgeOf(e: {
       return null;
   }
 }
+
+/** Alt + 矢印キー 1 回でビューを動かす量 (CSS ピクセル)。Shift も押していれば `PAN_LARGE`。 */
+export const PAN = 40;
+export const PAN_LARGE = 200;
+
+/**
+ * Alt + 矢印キーでビューを動かす量 (`ViewportController.panBy` に渡す CSS ピクセル)。Alt + ドラッグのパンの
+ * キーボードでの代わりなので、ドラッグと同じく絵を矢印の向きに動かす。Alt の無い矢印 (点を動かす) と、
+ * Ctrl・Cmd 付きは null。
+ */
+export function panOf(e: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): [number, number] | null {
+  if (!e.altKey || e.ctrlKey || e.metaKey) return null;
+  const dir = nudgeOf({ ...e, altKey: false, shiftKey: false });
+  if (!dir) return null;
+  const step = e.shiftKey ? PAN_LARGE : PAN;
+  return [dir[0] * step, dir[1] * step];
+}
+
+/**
+ * 点を 1 つずつ選ぶキー: `]` で次、`[` で前 (修飾キー無し)。それ以外は null。
+ * Tab はフォーカスの移動に残す。
+ */
+export function pointStepOf(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): 1 | -1 | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.key === "]") return 1;
+  if (e.key === "[") return -1;
+  return null;
+}
+
+/**
+ * `]` `[` で選ぶ次の点の番号 (`count` 個の点を番号順に巡る)。選んだ点が無ければ次は最初・前は最後、
+ * あれば最後に選んだ点 (`picked` の末尾) の次・前。点が無ければ null。
+ */
+export function steppedPoint(picked: readonly number[], count: number, dir: 1 | -1): number | null {
+  if (!(count > 0)) return null;
+  const anchor = picked.at(-1);
+  if (anchor === undefined || anchor < 0 || anchor >= count) return dir > 0 ? 0 : count - 1;
+  return (anchor + dir + count) % count;
+}

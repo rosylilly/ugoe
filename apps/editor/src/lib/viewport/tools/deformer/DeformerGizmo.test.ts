@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // デフォーマのギズモ: ポインタの操作から送るコマンド (docs/testing.md#エディタの部品のテスト)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "../../../i18n";
 import { Selection } from "../../../selection.svelte";
 import type { Point } from "../geometry";
 import {
@@ -230,6 +231,29 @@ describe("DeformerGizmo keys", () => {
         },
       },
     ]);
+  });
+
+  it("picks the next and previous control point with ] and [ and reads out which one", () => {
+    const { selection, target } = setup("Warp");
+    const status = () => target.querySelector(".vp-band [role=status]")?.textContent?.trim();
+    expect(status()).toBe("");
+    expect(press(document.body, "]").defaultPrevented).toBe(true);
+    expect(selection.controlPoints.Warp).toEqual([0]);
+    expect(status()).toBe(t("viewport.point.current", { index: 1, total: 4 }));
+    expect(target.querySelector("svg.gizmo rect.ring")).not.toBeNull();
+    press(document.body, "[");
+    expect(selection.controlPoints.Warp).toEqual([3]);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    expect(press(outside, "]").defaultPrevented).toBe(false);
+    outside.remove();
+    expect(selection.controlPoints.Warp).toEqual([3]);
+  });
+
+  it("leaves [ and ] alone for a rotation deformer", () => {
+    const { selection } = setup("Rot");
+    expect(press(document.body, "]").defaultPrevented).toBe(false);
+    expect(selection.controlPoints.Rot).toBeUndefined();
   });
 
   it("moves the rotation origin with the arrow keys", async () => {

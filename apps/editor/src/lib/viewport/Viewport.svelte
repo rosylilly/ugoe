@@ -1,7 +1,8 @@
 <!--
   ビューポート: ugoe-wasm でモデルを canvas に描き、その上にオーバーレイを重ねる。
 
-  操作: ホイールでカーソル位置を中心にズーム、中ボタン (または Alt + 左ボタン) のドラッグでパン。右下の表示の道具
+  操作: ホイールでカーソル位置を中心にズーム、中ボタン (または Alt + 左ボタン) のドラッグか Alt + 矢印キーでパン
+  (矢印キーはフォーカスがどこにも無いかビューポートの中にあるときだけ。tools/keys.ts の panOf)。右下の表示の道具
   (縮小・拡大・全体を表示) はビューの中央を中心に拡大し、キャンバス全体を表示する (ビューアと同じ並び。docs/editor.md#ビューポート)。
   右上の「Screenshot」で今の表示を PNG で保存する (saveScreenshot.ts。WebPuppet.read_pixels で
   取るので、オーバーレイは写らない。docs/editor.md#スクリーンショット)。左ボタンはツール (オーバーレイ) のために空けておく。
@@ -23,6 +24,7 @@ import { t } from "../i18n";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController, ViewportModel } from "./controller.svelte";
 import { saveViewportScreenshot, screenshotErrorText } from "./saveScreenshot";
+import { acceptsNudgeKey, panOf } from "./tools/keys";
 
 interface Props {
   controller: ViewportController;
@@ -135,7 +137,17 @@ function onPointerMove(e: PointerEvent) {
 function onPointerUp(e: PointerEvent) {
   if (panning?.id === e.pointerId) panning = null;
 }
+
+/** Alt + 矢印キーでパンする (ドラッグの代わり。docs/editor.md#ビューポートの操作と代わりの手段)。 */
+function onKeyDown(e: KeyboardEvent) {
+  const delta = acceptsNudgeKey(e.target) ? panOf(e) : null;
+  if (!delta) return;
+  e.preventDefault();
+  controller.panBy(delta[0], delta[1]);
+}
 </script>
+
+<svelte:window onkeydown={onKeyDown} />
 
 <div
   class="viewport"

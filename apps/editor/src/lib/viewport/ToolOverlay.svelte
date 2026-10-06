@@ -37,7 +37,7 @@ import DepthOverlay from "./tools/depth/DepthOverlay.svelte";
 import FormTool from "./tools/form/FormTool.svelte";
 import { boundaryEdges, cycleHit } from "./tools/geometry";
 import GlueOverlay from "./tools/glue/GlueOverlay.svelte";
-import { acceptsNudgeKey, acceptsToolKey, nudgeOf } from "./tools/keys";
+import { acceptsNudgeKey, acceptsToolKey, nudgeOf, pointStepOf } from "./tools/keys";
 import MeshEditTool from "./tools/MeshEditTool.svelte";
 import OverflowOverlay from "./tools/overflow/OverflowOverlay.svelte";
 import PhysicsOverlay from "./tools/physics/PhysicsOverlay.svelte";
@@ -95,6 +95,15 @@ const primaryDeformer = $derived(
 const editing = $derived(
   selection.meshEdit !== null && selection.meshEdit === primaryMesh ? selection.meshEdit : null,
 );
+
+/** メッシュ編集で 1 つだけ選んだ頂点が何番目か (帯の読み上げの領域。`]` `[` で選ぶとき)。 */
+const currentVertexText = $derived.by(() => {
+  if (editing === null) return "";
+  const total = scene.mesh(editing)?.vertices ?? 0;
+  const picked = (selection.vertices[editing] ?? []).filter((i) => i < total);
+  const index = picked.length === 1 ? picked[0] : undefined;
+  return index === undefined ? "" : t("viewport.point.current", { index: index + 1, total });
+});
 
 // 選択が別の要素に移ったり、メッシュが消えたりしたらモードを抜ける。
 $effect(() => {
@@ -215,9 +224,13 @@ function onKeyDown(e: KeyboardEvent): void {
   } else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     meshTool?.selectAll();
-  } else {
-    const step = acceptsNudgeKey(e.target) ? nudgeOf(e) : null;
-    if (step) {
+  } else if (acceptsNudgeKey(e.target)) {
+    // `]` `[` で頂点を 1 つずつ選び、矢印キーで動かす (docs/editor.md#ビューポートの操作と代わりの手段)
+    const dir = pointStepOf(e);
+    const step = nudgeOf(e);
+    if (dir && meshTool?.step(dir)) {
+      e.preventDefault();
+    } else if (step) {
       e.preventDefault();
       meshTool?.nudge(step[0], step[1]);
     }
@@ -292,6 +305,7 @@ function onKeyDown(e: KeyboardEvent): void {
     <p class="vp-band">
       <span>{t("viewport.meshEdit.title", { mesh: editing })}</span>
       <span class="hint muted">{t("viewport.meshEdit.hint")}</span>
+      <span class="muted" role="status">{currentVertexText}</span>
     </p>
     {#key editing}
       <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />

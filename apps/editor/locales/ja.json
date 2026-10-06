@@ -2797,7 +2797,7 @@
       "retriangulate": "三角形を作り直す",
       "deleteVertices": "頂点を消す",
       "done": "完了",
-      "hint": "ドラッグ: 移動・範囲選択 · Shift: 追加 · Ctrl + クリック: 頂点を足す · Del: 消す · Esc: 抜ける",
+      "hint": "ドラッグ: 移動・範囲選択 · Shift: 追加 · Ctrl + クリック: 頂点を足す · [ ]: 次・前の頂点 · Del: 消す · Esc: 抜ける",
       "aria": "メッシュの編集"
     },
     "cell": {
@@ -2816,6 +2816,9 @@
       },
       "selected": "{{count}} / {{total}} 個を選択",
       "empty": "メッシュかデフォーマを選んでください"
+    },
+    "point": {
+      "current": "{{total}} 個のうち {{index}} 番目の点"
     },
     "gizmo": {
       "title": "{{kind}}: {{id}}",
