@@ -1,11 +1,11 @@
 ---
 id: T0676
 title: エディタ UI: AI・モジュール・着せ替えの画面
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0673, T0670]
-assignee:
+assignee: claude-worker-T0676
 ---
 
 # T0676: エディタ UI: AI・モジュール・着せ替えの画面

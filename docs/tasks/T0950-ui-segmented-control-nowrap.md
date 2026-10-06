@@ -1,11 +1,11 @@
 ---
 id: T0950
 title: "@ugoe/ui: SegmentedControl の選択肢の名前を字の途中で折らない"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0950
 ---
 
 # T0950: @ugoe/ui: SegmentedControl の選択肢の名前を字の途中で折らない
