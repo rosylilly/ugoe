@@ -1,11 +1,11 @@
 ---
 id: T1668
 title: "エディタ: モーションのグラフで、近いキーの押せる範囲が重なる (200% の拡大で 0 秒と 1 秒のキーが約 2px 重なる)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1668
 ---
 
 # T1668: エディタ: モーションのグラフで、近いキーの押せる範囲が重なる (200% の拡大で 0 秒と 1 秒のキーが約 2px 重なる)
