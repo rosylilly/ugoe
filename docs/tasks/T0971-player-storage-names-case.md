@@ -1,11 +1,11 @@
 ---
 id: T0971
 title: "@ugoe/player: 覚える値の名前 (dress-up.auto-restore・lighting.models など kebab-case) をエディタのキー (camelCase) にそろえるか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0971
 ---
 
 # T0971: @ugoe/player: 覚える値の名前 (dress-up.auto-restore・lighting.models など kebab-case) をエディタのキー (camelCase) にそろえるか決める (判断が要る)

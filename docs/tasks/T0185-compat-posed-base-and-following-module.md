@@ -1,11 +1,11 @@
 ---
 id: T0185
 title: "互換性テスト: ポーズのグループと pose_parts を持つ本体と、それに追従する (ModulePose の links) モジュールの資料を足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, ugoe-format, assets/compat, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0185
 ---
 
 # T0185: 互換性テスト: ポーズのグループと pose_parts を持つ本体と、それに追従する (ModulePose の links) モジュールの資料を足す

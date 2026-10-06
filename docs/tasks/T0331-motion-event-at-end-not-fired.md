@@ -1,11 +1,11 @@
 ---
 id: T0331
 title: "モーション: 終わりちょうど (t = 長さ) のイベントが、丸めでときどき発火しないのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [ugoe-motion, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0331
 ---
 
 # T0331: モーション: 終わりちょうど (t = 長さ) のイベントが、丸めでときどき発火しないのを直す

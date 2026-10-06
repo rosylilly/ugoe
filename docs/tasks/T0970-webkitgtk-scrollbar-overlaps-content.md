@@ -1,11 +1,11 @@
 ---
 id: T0970
 title: "ビューア・スタジオ: WebKitGTK のスクロールバーが中身 (パラメータのグループの数・スタジオの右の列の端) に重なるのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/viewer, apps/studio, packages/ui, packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0970
 ---
 
 # T0970: ビューア・スタジオ: WebKitGTK のスクロールバーが中身 (パラメータのグループの数・スタジオの右の列の端) に重なるのを直す

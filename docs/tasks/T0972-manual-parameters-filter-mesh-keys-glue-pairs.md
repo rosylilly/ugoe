@@ -1,11 +1,11 @@
 ---
 id: T0972
 title: "マニュアル: パラメータの絞り込みと開閉・メッシュ編集の Shift + ] [ と I・グルーの「Pairs」の一覧を書き足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0972
 ---
 
 # T0972: マニュアル: パラメータの絞り込みと開閉・メッシュ編集の Shift + ] [ と I・グルーの「Pairs」の一覧を書き足す

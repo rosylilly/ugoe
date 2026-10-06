@@ -1,11 +1,11 @@
 ---
 id: T1650
 title: "エディタ: グルーの軸を足す行で、右の列が狭いとき選択欄の矢印が数値の欄の下に隠れるのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1650
 ---
 
 # T1650: エディタ: グルーの軸を足す行で、右の列が狭いとき選択欄の矢印が数値の欄の下に隠れるのを直す
