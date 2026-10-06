@@ -6,6 +6,7 @@ export const CHECKS = [
   ["contrast", "文字のコントラスト"],
   ["overflow", "横のはみ出し"],
   ["overlap", "文字・部品の重なり・切れ"],
+  ["scrollbar", "重ねて描くスクロールバーの下の文字・部品"],
   ["target-size", "24px 未満の押せるもの"],
   ["name", "名前の無い操作できる部品"],
   ["focus", "Tab の止まりの問題 (印・名前・画面の外)"],

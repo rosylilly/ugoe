@@ -20,6 +20,7 @@ const {
   pixelContrast,
   focusChange,
   coveredControls,
+  underScrollbar,
 } = globalThis.__ugoeAudit;
 
 const hex = (h) => ({
@@ -261,6 +262,122 @@ test("押せる部品の重なり: 枠の線を重ねた並び・入れ子・意
     },
   );
   assert.deepEqual(cover, []);
+});
+
+/**
+ * 重ねて描くスクロールバーの下の部品を判定する。`frames` は {el, ...大きさ}、`items` は {el: {name, frame}, right}
+ * (frame は部品を包む枠の el)。戻り値は `部品 < 枠 (空き)` の列。
+ */
+function underBar(frames, items, gap = 16) {
+  return underScrollbar(frames, items, {
+    gap,
+    inside: (frame, el) => el.frames.includes(frame),
+  }).map(({ item, frame, room }) => `${item.el.name} < ${frame.el.name} (${room})`);
+}
+
+/** 縦に 200px 送れる枠 (高さ 300・中身 500)。見える右端は 300。 */
+const frame = (name, more = {}) => ({
+  el: { name },
+  overflowX: "hidden",
+  overflowY: "auto",
+  scrollWidth: 300,
+  clientWidth: 300,
+  scrollHeight: 500,
+  clientHeight: 300,
+  right: 300,
+  ...more,
+});
+
+test("重ねて描くスクロールバー: 行末を空けない枠の中の文字・部品を見つける", () => {
+  // T0970 の前のビューアのパラメータの一覧 (.list。行末の padding が 0): グループの数が枠の右端に掛かる
+  const list = frame("list");
+  const count = { name: "count", frames: [list.el] };
+  const label = { name: "label", frames: [list.el] };
+  assert.deepEqual(
+    underBar(
+      [list],
+      [
+        { el: count, right: 300 },
+        { el: label, right: 120 },
+      ],
+    ),
+    ["count < list (0)"],
+  );
+  // T0970 の前のスタジオの右の列 (.studio__panels。8px): 空きが 16px に足りない
+  const panels = frame("panels");
+  assert.deepEqual(
+    underBar([panels], [{ el: { name: "button", frames: [panels.el] }, right: 292 }]),
+    ["button < panels (8)"],
+  );
+});
+
+test("重ねて描くスクロールバー: 空けた枠・送らない枠・横に送る枠は数えない", () => {
+  // 行末を --ugoe-scrollbar-gap (16px) 空けた枠 (端数の丸めの 0.5px は許す)
+  const gapped = frame("gapped");
+  assert.deepEqual(
+    underBar(
+      [gapped],
+      [
+        { el: { name: "a", frames: [gapped.el] }, right: 284 },
+        { el: { name: "b", frames: [gapped.el] }, right: 284.4 },
+      ],
+    ),
+    [],
+  );
+  // overflow-y: auto でも、中身が枠に収まっていて今は送れない枠 (スクロールバーが出ない)
+  const still = frame("still", { scrollHeight: 300 });
+  assert.deepEqual(underBar([still], [{ el: { name: "a", frames: [still.el] }, right: 300 }]), []);
+  // 送らない枠 (overflow-y: hidden)
+  const hidden = frame("hidden", { overflowY: "hidden" });
+  assert.deepEqual(
+    underBar([hidden], [{ el: { name: "a", frames: [hidden.el] }, right: 300 }]),
+    [],
+  );
+  // 横に送る枠 (縦は送らない): 中身は右の端の先へ続く
+  const wide = frame("wide", {
+    overflowX: "auto",
+    overflowY: "hidden",
+    scrollWidth: 900,
+    scrollHeight: 300,
+  });
+  assert.deepEqual(underBar([wide], [{ el: { name: "a", frames: [wide.el] }, right: 300 }]), []);
+  // 縦と横の両方に今送れる枠 (タイムラインの表など)
+  const both = frame("both", { overflowX: "auto", scrollWidth: 900 });
+  assert.deepEqual(underBar([both], [{ el: { name: "a", frames: [both.el] }, right: 300 }]), []);
+  // 枠の外の部品
+  const other = frame("other");
+  assert.deepEqual(underBar([other], [{ el: { name: "a", frames: [] }, right: 300 }]), []);
+});
+
+test("重ねて描くスクロールバー: 入れ子の枠では、部品ごとにいちばん内側の枠で 1 つ数える", () => {
+  // 画面の全体の送り (狭い幅) の中の、行末を空けないパネルの送る枠
+  const page = frame("page", { right: 360 });
+  const panel = frame("panel", { right: 350 });
+  const item = { name: "a", frames: [page.el, panel.el] };
+  assert.deepEqual(underBar([page, panel], [{ el: item, right: 345 }]), ["a < panel (5)"]);
+  // 内側の枠が空けていれば、外の枠の端から遠い部品は数えない
+  assert.deepEqual(underBar([page, panel], [{ el: item, right: 330 }]), []);
+});
+
+test("重ねて描くスクロールバーの下の部品は scrollbar として数え、報告の見出しがある", () => {
+  const found = pageFindings(
+    {
+      contrast: { checked: 0, unknown: 0, failures: [], disabled: [] },
+      overflow: { document: null, beyond: [] },
+      overlap: [],
+      scrollbar: ['span.count "3" is under the overlay scrollbar of div.list (0.0px < 16px)'],
+      small: [],
+      motion: [],
+      errors: [],
+      lang: "en",
+    },
+    "en",
+  );
+  assert.deepEqual(
+    found.map((f) => [f.check, f.target, f.detail]),
+    [["scrollbar", 'span.count "3"', "is under the overlay scrollbar of div.list (0.0px < 16px)"]],
+  );
+  assert.ok(Object.fromEntries(CHECKS).scrollbar);
 });
 
 test("axe の違反は名前の規則と、ほかの ARIA に分ける", () => {

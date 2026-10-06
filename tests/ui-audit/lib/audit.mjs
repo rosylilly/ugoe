@@ -109,6 +109,7 @@ export function pageFindings(r, lang, { expectErrors = false, expectOverlay = fa
   for (const item of r.overflow.beyond) out.push({ check: "overflow", ...split(item) });
   for (const item of r.overflow.escaped ?? []) out.push({ check: "overflow", ...split(item) });
   for (const item of r.overlap) out.push({ check: "overlap", ...split(item) });
+  for (const item of r.scrollbar ?? []) out.push({ check: "scrollbar", ...split(item) });
   for (const item of r.small) out.push({ check: "target-size", ...split(item) });
   for (const item of r.motion) out.push({ check: "motion", ...split(item) });
   for (const item of r.forced ?? []) out.push({ check: "forced", ...split(item) });

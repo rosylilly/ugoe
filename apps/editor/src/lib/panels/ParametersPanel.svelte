@@ -544,8 +544,10 @@ li {
   display: block;
 }
 
+/* 標準の左右の margin (2px) を消す: 行末の空き (--ugoe-scrollbar-gap) にはみ出さず、印の位置 (markerLeft) がつまみとそろう */
 .slider input {
   width: 100%;
+  margin-inline: 0;
 }
 
 /*

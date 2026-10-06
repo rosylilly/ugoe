@@ -8,6 +8,7 @@
 // - はみ出し: 文書の横のスクロールと、画面の右端を越える要素 (スクロールする祖先の中は除く)。送る枠の外を位置の基準にする absolute の要素。
 // - 重なりと切れ: 別の要素の文字が透けて重なる・`overflow: hidden` で文字が切れる (省略記号を付けたものは除く)。
 //   押せる部品が別の部品の下に隠れる (意図して重ねたものは除く。T0049)。
+// - 重ねて描くスクロールバー: 今縦に送れる枠の中で、右端が枠の右端から `--ugoe-scrollbar-gap` の中にある文字・押せる部品 (T0055)。
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
 // - エラー: 画面に出ているエラーの文 (role="alert"・.error など)。
 // - 動き: prefers-reduced-motion: reduce の下で、長さが 0 でない動き (CSS の animation・transition) が動いていないか。
@@ -599,6 +600,114 @@
     }).map(({ upper, lower }) => `${describe(lower.el)} is covered by ${describe(upper.el)}`);
   }
 
+  /** 行末の空きを測るときに許す端数 (CSS px)。小数の幅の丸めで 16px の空きが 15.9px に測られても数えないため。 */
+  const SCROLLBAR_GAP_SLACK = 0.5;
+
+  const scrolls = (o) => o === "auto" || o === "scroll";
+
+  /**
+   * 重ねて描くスクロールバーの下に入る文字・部品の判定の本体 (T0055)。`frames` は送る枠
+   * ({el, overflowX, overflowY, scrollWidth, clientWidth, scrollHeight, clientHeight, right}。right は枠の見える右端
+   * (スクロールバーと枠の線を除く))、`items` は文字・押せる部品 ({el, right}。right は切り取られた後の見える右端)。
+   * 今縦に送れて (`overflow-y` が auto・scroll で中身が枠より高い)、横には送っていない枠の中 (`inside(frame, item)`) で、
+   * 右端が枠の右端から `gap` の中にある部品を {item, frame, room} (room は空き) の列で返す。部品ごとに、いちばん内側の枠で 1 つ。
+   */
+  function underScrollbar(frames, items, { gap, inside }) {
+    const open = frames.filter(
+      (f) =>
+        scrolls(f.overflowY) &&
+        f.scrollHeight > f.clientHeight + 1 &&
+        !(scrolls(f.overflowX) && f.scrollWidth > f.clientWidth + 1),
+    );
+    const out = [];
+    for (const item of items) {
+      let hit = null;
+      for (const frame of open) {
+        if (!inside(frame.el, item.el)) continue;
+        const room = frame.right - item.right;
+        // 枠は文書の順なので、後に見つかった枠ほど内側
+        if (room < gap - SCROLLBAR_GAP_SLACK) hit = { item, frame, room };
+      }
+      if (hit) out.push(hit);
+    }
+    return out;
+  }
+
+  /**
+   * 重ねて描くスクロールバー (WebKitGTK・macOS) の下に入る文字・押せる部品 (T0055)。ヘッドレスの Chrome はスクロールバーに
+   * 幅を取るので、枠の見える右端 (clientWidth の右) からの空きが、重ねて描く形で中身に掛かる幅と同じになる。空きが
+   * `--ugoe-scrollbar-gap` に足りない部品を数える (docs/ui.md#レイアウト の送り。T0970)。地・区切り線・絵は数えない
+   * (文字と押せる部品だけを見る)。画面の全体の送り (ビューア・スタジオの狭い幅) も枠に含める。
+   */
+  function scrollbarAudit() {
+    const gap =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--ugoe-scrollbar-gap"),
+      ) || 16;
+    const frames = [];
+    const root = document.scrollingElement ?? document.documentElement;
+    frames.push({
+      el: root,
+      overflowX: "auto",
+      overflowY: "auto",
+      scrollWidth: root.scrollWidth,
+      clientWidth: root.clientWidth,
+      scrollHeight: root.scrollHeight,
+      clientHeight: root.clientHeight,
+      right: document.documentElement.clientWidth,
+    });
+    for (const el of document.querySelectorAll("body *")) {
+      const s = getComputedStyle(el);
+      if (!scrolls(s.overflowY) || !visible(el)) continue;
+      frames.push({
+        el,
+        overflowX: s.overflowX,
+        overflowY: s.overflowY,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        right: el.getBoundingClientRect().left + el.clientLeft + el.clientWidth,
+      });
+    }
+    const items = [];
+    for (const { el, rects } of textBoxes()) {
+      items.push({ el, right: Math.max(...rects.map((r) => r.right)) });
+    }
+    const seen = new Set();
+    for (const el of document.querySelectorAll(TARGETS)) {
+      if (!visible(el) || hiddenFromReaders(el)) continue;
+      const area = el.closest(".ugoe-number-field__box") ?? el;
+      if (seen.has(area)) continue;
+      seen.add(area);
+      const r = area.getBoundingClientRect();
+      if (r.width <= 1 || r.height <= 1) continue;
+      const clip = clipBox(area);
+      const left = Math.max(r.left, clip.left);
+      const right = Math.min(r.right, clip.right);
+      if (right - left <= 1 || Math.min(r.bottom, clip.bottom) - Math.max(r.top, clip.top) <= 1)
+        continue;
+      items.push({ el: area, right });
+    }
+    // 枠の中でも、間に fixed の要素 (枠の外に描く Popover など) があれば枠の上には無い
+    const inside = (frame, el) => {
+      if (frame === root) {
+        for (let n = el; n; n = n.parentElement)
+          if (getComputedStyle(n).position === "fixed") return false;
+        return true;
+      }
+      if (!frame.contains(el) || frame === el) return false;
+      for (let n = el; n && n !== frame; n = n.parentElement)
+        if (getComputedStyle(n).position === "fixed") return false;
+      return true;
+    };
+    const name = (el) => describe(el).replace(/ "[^"]*"$/, "");
+    return underScrollbar(frames, items, { gap, inside }).map(
+      ({ item, frame, room }) =>
+        `${describe(item.el)} is under the overlay scrollbar of ${name(frame.el)} (${room.toFixed(1)}px < ${gap}px)`,
+    );
+  }
+
   const TARGETS =
     "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=radio], [role=switch], [role=checkbox], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=option], [role=treeitem]";
 
@@ -857,6 +966,7 @@
       contrast: contrastAudit(),
       overflow: overflowAudit(),
       overlap: overlapAudit(),
+      scrollbar: scrollbarAudit(),
       small: targetAudit(),
       motion: motionAudit(),
       forced: forcedStateAudit(),
@@ -875,6 +985,7 @@
     requiredRatio,
     pixelContrast,
     coveredControls,
+    underScrollbar,
     pageAudit,
     hideText,
     pixelAudit,

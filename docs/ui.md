@@ -542,7 +542,7 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   選択肢の名前の終わり) ごとではなく枠で空けるのは、どの行末も、選んだ行の枠も同じだけ空くためです。空けると中身は狭く高くなるだけなので、
   送るかどうかが行き来しません (T0976)。
   幅を取る形のスクロールバー (ヘッドレスの Chrome・Windows) では、空けた幅はスクロールバーの左に余白として残るだけです。
-  確かめ方: 人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
+  確かめ方: `just ui-audit` の `scrollbar` (今送れる枠の中の文字・押せる部品の右端と枠の右端の空きが `--ugoe-scrollbar-gap` に足りないもの。T0055) と人。重ねて描くスクロールバーは本物の WebKitGTK の画像 (`just e2e --manual`) で見ます。エディタ・ビューア・スタジオの送る枠の規則が
   `--ugoe-scrollbar-gap` を使うか、使わない理由をスクロールバーの言葉で書いていることは packages/ui の `tokens.test.ts` (@ugoe/ui の部品の送る枠も見る)。
   一覧が送るときだけ印を付けることは packages/ui の `scrollGap.test.ts`。Tab で送り先に隠れたまま止まらないことは `just ui-audit` (Tab の止まりの「画面の外」)。送る枠の外を基準にする absolute の要素は
   `just ui-audit` の `overflow` (`… escapes …`) と、部品の見本 (`just ui-shots`) の `position` の無い送る枠の中の `Notice`・`Slider`・`ColorPicker`。
