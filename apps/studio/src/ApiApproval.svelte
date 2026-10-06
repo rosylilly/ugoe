@@ -54,13 +54,4 @@ const options = $derived(
   .approval__permission {
     margin-top: var(--ugoe-space-2);
   }
-
-  /* 狭い幅 (360px) で「権限」の名前が字の途中で折れないよう、名前は折らずに選択肢を次の行へ送る (T0818) */
-  .approval__permission :global(.ugoe-segmented) {
-    flex-wrap: wrap;
-  }
-
-  .approval__permission :global(.ugoe-segmented__label) {
-    white-space: nowrap;
-  }
 </style>

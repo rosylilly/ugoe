@@ -9,7 +9,8 @@
 //   重ねて出す部品 (ダイアログ・確かめのダイアログ・メニュー・Popover・Toast・ツールチップ) は、見本の画面の `?open=` で
 //   開いた状態にして、2 通り (light-compact-en・dark-comfortable-ja) で撮る。
 // - それぞれで、画面が描き終わったこと・スクリプトのエラーが無いこと・属性が URL のとおりであること・
-//   操作できる部品のすべてに読み上げの名前があることを確かめる。PNG は <出力先>/<名前>.png。
+//   操作できる部品のすべてに読み上げの名前があること・描いた形の問題 (見本の画面が測る。SegmentedControl の名前が
+//   字の途中で折れていないかなど。gallery/main.ts) が無いことを確かめる。PNG は <出力先>/<名前>.png。
 // - Chrome は環境変数 CHROME か、PATH の google-chrome / chromium を使う。CI には入れていない (人が Bits UI の
 //   更新や見た目の変更のときに実行し、画像を見比べる。ADR 0029 の 5)。
 
@@ -111,6 +112,7 @@ function inspect(html, expected) {
   const root = doc.documentElement;
   if (root.dataset.galleryError) problems.push(`スクリプトのエラー: ${root.dataset.galleryError}`);
   if (root.dataset.galleryReady !== "true") problems.push("描き終わらなかった");
+  if (root.dataset.galleryLayout) problems.push(`描いた形: ${root.dataset.galleryLayout}`);
   if (root.dataset.theme !== expected.theme) problems.push(`data-theme が ${root.dataset.theme}`);
   if (root.dataset.density !== expected.density)
     problems.push(`data-density が ${root.dataset.density}`);

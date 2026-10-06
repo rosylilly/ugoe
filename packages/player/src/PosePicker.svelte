@@ -68,12 +68,6 @@ function choose(group: PoseGroupInfo, part: string) {
     gap: var(--ugoe-space-2);
   }
 
-  /* 要素の名前が長くても横にはみ出さず、折り返す。 */
-  .ugoe-pose-picker :global(.ugoe-segmented),
-  .ugoe-pose-picker :global(.ugoe-segmented__group) {
-    flex-wrap: wrap;
-  }
-
   .ugoe-pose-picker__group {
     min-width: 0;
   }

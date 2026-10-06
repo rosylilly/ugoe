@@ -269,6 +269,10 @@ const swatches = [
         />
         <p id="gallery-frame-error" class="gallery__error">{s.frameError}</p>
         <SegmentedControl label={s.fit} options={fitOptions} bind:value={fit} />
+        <!-- 幅が足りないと、名前も選択肢も字の途中で折らずに、選択肢ごと次の行へ送る (T0950) -->
+        <div class="gallery__narrow">
+          <SegmentedControl label={s.fitNarrow} options={fitOptions} bind:value={fit} />
+        </div>
       </div>
     </section>
 
@@ -487,6 +491,12 @@ const swatches = [
     border: 1px solid var(--ugoe-color-border);
     border-radius: var(--ugoe-radius-lg);
     background: var(--ugoe-color-surface);
+  }
+
+  .gallery__narrow {
+    width: 7rem;
+    padding: var(--ugoe-space-1);
+    border: 1px dashed var(--ugoe-color-border);
   }
 
   .gallery__card--wide {

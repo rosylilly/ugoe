@@ -181,5 +181,7 @@ just ui-shots /tmp/ugoe-ui-shots      # 見本の画面を 21 通り撮って検
 撮るのはテーマ (light・dark) × 密度 (compact・comfortable) × 言語 (en・ja) の 8 通りと、狭い幅 (360px) の 1 枚、
 重ねて出す部品 (ダイアログ・確かめのダイアログ・メニュー・Popover・Toast・ツールチップ) を見本の画面の `?open=` で開いた 12 枚 (2 通りずつ)。
 動きの途中を撮らないよう、Chrome に `--force-prefers-reduced-motion` を渡す。
-それぞれで、描き終わったこと・スクリプトのエラーが無いこと・`<html>` の属性・操作できる部品のすべてに読み上げの名前があることを確かめる。
+それぞれで、描き終わったこと・スクリプトのエラーが無いこと・`<html>` の属性・操作できる部品のすべてに読み上げの名前があること・
+描いた形の問題が無いことを確かめる。描いた形は見本の画面が描き終えたときに測る (`gallery/main.ts`。`SegmentedControl` の名前と選択肢が
+字の途中で折れていないか、狭い所の `SegmentedControl` がはみ出さずに次の行へ送られたか)。
 Chrome は環境変数 `CHROME` で指定できる (無ければ PATH の `google-chrome` / `chromium`)。

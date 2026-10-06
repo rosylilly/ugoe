@@ -1,6 +1,7 @@
 <!--
   SegmentedControl: 2〜4 個の選択肢から 1 つを選ぶ (すべて見せたいとき。docs/ui.md#部品の一覧)。
   土台は Bits UI の RadioGroup (全体で 1 つのタブ止まり。矢印で移って選ぶ)。
+  幅が足りないときは、名前も選択肢も字の途中で折らず、選択肢ごと次の行へ送る (T0950)。
 -->
 <script lang="ts" generics="T extends string">
 import { RadioGroup } from "bits-ui";
@@ -56,9 +57,12 @@ const id = $props.id();
 
 <style>
   :global {
+    /* 名前と選択肢は字の途中で折らない。幅が足りなければ、まとまり (名前の後ろ) と選択肢ごとに次の行へ送る */
     .ugoe-segmented {
       display: inline-flex;
+      flex-wrap: wrap;
       align-items: center;
+      max-width: 100%;
       gap: var(--ugoe-space-2);
       color: var(--ugoe-color-text);
       font-family: var(--ugoe-font-sans);
@@ -70,8 +74,15 @@ const id = $props.id();
       opacity: var(--ugoe-opacity-disabled);
     }
 
+    .ugoe-segmented__label {
+      white-space: nowrap;
+    }
+
     .ugoe-segmented__group {
       display: inline-flex;
+      flex-wrap: wrap;
+      box-sizing: border-box;
+      max-width: 100%;
       padding: 1px;
       gap: 1px;
       border: 1px solid var(--ugoe-color-control-border);
