@@ -1,11 +1,11 @@
 ---
 id: T1644
 title: "エディタ: プレビューの着せ替えで、自動で外れた知らせと行の失敗の重複をまとめ、device_lost を Player と同じ扱いにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1644
 ---
 
 # T1644: エディタ: プレビューの着せ替えで、自動で外れた知らせと行の失敗の重複をまとめ、device_lost を Player と同じ扱いにする
