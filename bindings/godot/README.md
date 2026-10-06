@@ -79,6 +79,24 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
   `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
 
+### CI の bench.gd の値 (T0471)
+
+CI の `godot` のジョブ (2026-10-06、main の `376f1cd`、[run 37429758787](https://github.com/rosylilly/ugoe/actions/runs/37429758787)) の
+成果物 `godot-bench` の値。`_process` にかかった時間 (2000 フレーム、us)。ランナーは共有の仮想機械なので目安。
+
+- ランナー: GitHub Actions の `ubuntu-24.04` (イメージ 20260927.320、Ubuntu 24.04.5)、論理プロセッサ 2。
+- Mesa 25.2.8-0ubuntu0.24.04.4 (`noble-updates` の `libgl1-mesa-dri`・`mesa-vulkan-drivers`)、LLVM 20.1.2。Godot 4.7.1-stable (公式)。
+- Compatibility: `OpenGL API 4.5 (Core Profile) - llvmpipe` (Xvfb)。Forward+: `Vulkan 1.4.318 - llvmpipe` (lavapipe)。
+
+| ケース | Compatibility (mean / median / p95) | Forward+ lavapipe (mean / median / p95) |
+| --- | --- | --- |
+| avatar | 194 / 199 / 256 | 158 / 150 / 220 |
+| avatar-lit | 193 / 199 / 260 | 155 / 149 / 205 |
+| avatar-lit + scene light | 230 / 228 / 310 | 173 / 164 / 230 |
+| dress-up | 124 / 122 / 181 | 80 / 76 / 112 |
+
+同じジョブで、Forward+ (lavapipe) の適合テストも 69 / 69 ケースが通った (画像の最悪は 1/255。Compatibility は 69 / 69 で最悪 3/255)。
+
 ## 使い方 (GDScript)
 
 ```gdscript
@@ -359,8 +377,8 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 
 ## 制限 (後続の候補)
 
-- 画面のある Godot のエディタでの操作、Forward+ / Mobile のレンダラ (Vulkan) での見た目、Windows・macOS でのビルドは確かめていない
-  (比べ合わせは Compatibility (OpenGL) の Xvfb だけ)。
+- 画面のある Godot のエディタでの操作、実際の GPU の Forward+ と Mobile のレンダラでの見た目、Windows・macOS でのビルドは確かめていない
+  (比べ合わせは Compatibility (OpenGL) の Xvfb と、Forward+ の Mesa の lavapipe だけ)。
 - `Light2D` から取る光源は、テクスチャの形・影・合成のモードを使わない (上の「Light2D から取る光源」)。
 - 着せ替えのモジュールの読み込みの警告は、取り付けている間だけ読める (`get_module_load_warnings(name)`。`UgoeModule` は
   GDScript のリソースで中身を読まないため、付ける前のモジュールからは読めない)。
