@@ -1,11 +1,11 @@
 ---
 id: T1633
 title: "エディタ: localStorage のキーの名前を ugoe.editor.* にそろえる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0675]
-assignee:
+assignee: claude-worker-T1633
 ---
 
 # T1633: エディタ: localStorage のキーの名前を ugoe.editor.* にそろえる

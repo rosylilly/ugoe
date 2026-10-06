@@ -1,11 +1,11 @@
 ---
 id: T0850
 title: "ポーズを持つモジュールのフィクスチャを足し、着せ替えの直後にフェードを飛ばすことをスタジオで確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-model, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0850
 ---
 
 # T0850: ポーズを持つモジュールのフィクスチャを足し、着せ替えの直後にフェードを飛ばすことをスタジオで確かめる

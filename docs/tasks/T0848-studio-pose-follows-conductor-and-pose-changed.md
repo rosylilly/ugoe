@@ -1,11 +1,11 @@
 ---
 id: T0848
 title: "スタジオ: 指揮役の表示中のポーズの要素を操作ウィンドウに出し、操作 API に pose.changed を足す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0848
 ---
 
 # T0848: スタジオ: 指揮役の表示中のポーズの要素を操作ウィンドウに出し、操作 API に pose.changed を足す (判断が要る)

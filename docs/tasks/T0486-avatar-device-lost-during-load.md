@@ -1,11 +1,11 @@
 ---
 id: T0486
 title: "<ugoe-avatar>: 読み込みの途中に GPU を失ったとき、作り直せるのに error を送らない (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0486
 ---
 
 # T0486: <ugoe-avatar>: 読み込みの途中に GPU を失ったとき、作り直せるのに error を送らない (判断が要る)

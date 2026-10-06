@@ -1,11 +1,11 @@
 ---
 id: T0487
 title: "bindings/web: 見本をヘッドレスの Chrome で開き、MediaPipe の利用状況の送信が出ないことを自動で確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0487
 ---
 
 # T0487: bindings/web: 見本をヘッドレスの Chrome で開き、MediaPipe の利用状況の送信が出ないことを自動で確かめる
