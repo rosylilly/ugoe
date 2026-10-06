@@ -296,7 +296,11 @@ T0697 → T0932)。横断の所見の表は [workflow/code-review.md](workflow/c
 
 ### 後続の候補 (T0919)
 
-T0919 で見つけたもの。起票はオーケストレーターが行う。
+T0919 で見つけたもの。T0046 で起票した: 画像は T0968・T0969、鍵の保管庫は T0050、モーションのイベントは T0331、スクロールバーは T0970、
+ツリーの札は T1654、「Screenshot」は T1655、偽のホストの見本は T0047。
+
+M10 の完了の後に M10 のタスクから出た後続 (T0046 で起票した T0047〜T0050・T0331・T0968〜T0970・T0972・T1650〜T1657) は、M9 の後続と同じく
+M10 に残す。完了の条件には含めない。
 
 - マニュアルの残りの画像を `just e2e --manual` で撮る: チュートリアルの途中の姿 (`keyform-grid`・`mesh-edit`・`mirror`・`depth-rotation`。
   チュートリアルの手順を筋書きで通す)、AI (`ai-proposal`・`ai-consent`・`ai-instructions`・`ai-revision`・`ai-normal-maps`。偽の AI のプロバイダで)、
