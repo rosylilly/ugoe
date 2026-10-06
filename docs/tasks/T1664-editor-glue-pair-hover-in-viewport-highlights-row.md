@@ -1,11 +1,11 @@
 ---
 id: T1664
 title: "エディタ: ビューポートでグルーの組にポインタを乗せると、パネルの組の行を強調して一覧をその行へ送る"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0975]
-assignee:
+assignee: claude-worker-T1664
 ---
 
 # T1664: エディタ: ビューポートでグルーの組にポインタを乗せると、パネルの組の行を強調して一覧をその行へ送る

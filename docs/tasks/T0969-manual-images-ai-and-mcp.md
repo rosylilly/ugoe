@@ -1,11 +1,11 @@
 ---
 id: T0969
 title: "マニュアル: AI と MCP の画像 (ai-proposal・ai-revision・ai-consent・ai-settings など・mcp-*) を偽の AI のプロバイダで撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0050, T0968]
-assignee:
+assignee: claude-worker-T0969
 ---
 
 # T0969: マニュアル: AI と MCP の画像 (ai-proposal・ai-revision・ai-consent・ai-settings など・mcp-*) を偽の AI のプロバイダで撮り直す
