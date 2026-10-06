@@ -20,12 +20,13 @@
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
+| エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
-PuppetSurface のブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
+PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
 実機の e2e テストは 3 つのアプリをビルドし直すので、PR ごとの CI に入れず、別のワークフロー `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
 UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮るので `just ci` に入れず、画面を変える PR で人とエージェントが流します ([下](#ui-の監査))。
 
@@ -454,14 +455,14 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   `detach` で聞くのをやめない・`change` で大きさを合わせ直さない、のどれでも `pixel-ratio-change` が落ちます。`player.svelte.ts` で、
   作り直しの後に値を戻さない・モジュールを付け直さない (`player-loss-restore`)、ズームの換算に倍率を掛けない (`player-pixel-ratio`) でも落ちます。
   `surface.ts` で作り直した WebPuppet にビューを渡さない (T0942) と、`player-loss-restore`・`player-timeout-restart` が落ちます。
-- **エディタの `ViewportController` は対象にしていません (T0939 で決めた):** `PuppetSurface` を通る経路 (作り直しで表示の設定とモデルを渡し直す・
+- **エディタの `ViewportController` はここでは対象にしていません (T0939 で決めた):** `PuppetSurface` を通る経路 (作り直しで表示の設定とモデルを渡し直す・
   諦めたら状態と文を出す・倍率の変化で描き直しを頼む・CSS ピクセルと描画バッファの画素の換算) は Player と同じ形で薄く、本物の wasm で
   確かめたい部分 (作り直し・倍率・換算) は上の `PuppetSurface` と `Player` のシナリオで通ります。順序は偽の wasm の
-  `apps/editor/src/lib/viewport/controller.test.ts` が確かめます。ブラウザで動かすには、`@ugoe/player` のテストがアプリ (`apps/editor`) の
-  コードを読むか (パッケージからアプリへ向きが逆になる)、エディタの側に同じ仕組みを作り直し、エディタの wasm の読み込み
-  (`import.meta.glob` の `generated/`) と文言のカタログを差し替える必要があり、得られる確かさに比べて手間が大きいためです。
-  T0938 で足した「作り直す」ボタン (`ViewportController.restart`) も、状態を変えて `PuppetSurface.restart` を呼ぶだけなので、本物の wasm の部分は
-  `restart-after-giving-up` で通り、エディタの側には足していません (T0038)。エディタが作り直しのまわりに本物の wasm に頼る自分の処理を持ったら、足すことを考えます。
+  `apps/editor/src/lib/viewport/controller.test.ts` が確かめます。`@ugoe/player` のテストからアプリ (`apps/editor`) のコードは読みません
+  (パッケージからアプリへ向きが逆になる)。エディタが作り直しのまわりに本物の wasm に頼る自分の処理を持ったもの (プレビューの着せ替えの
+  読み込みの途中の喪失。T1644) は、ビルドしたエディタの画面を動かす [エディタのブラウザのテスト](#エディタのブラウザのテスト) で確かめます (T1656)。
+  T0938 で足した「作り直す」ボタン (`ViewportController.restart`) は、状態を変えて `PuppetSurface.restart` を呼ぶだけなので、本物の wasm の部分は
+  `restart-after-giving-up` で通ります (T0038)。
 - **置き場所:** `packages/player/browser-test/` (GPL-3.0-only)。テストは GPL の `surface.ts`・`player.svelte.ts` を読むので、MIT の
   `tests/conformance` (と、ライセンスを書いていないのでリポジトリの既定の MIT になる `tests/ui-audit`) には置きません。Chrome の起動は
   `just ui-audit` と同じ playwright-core (ルートの devDependencies)。`@ugoe/player` を Vite (アプリと同じ版を `@ugoe/player` の
@@ -470,6 +471,30 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   `target/player-browser/page.log` に残します。
 - WebGPU のデバイスの喪失は、ヘッドレスの Chrome で WebGPU を有効にしていないので確かめていません (偽の wasm のテストだけ。
   `Browser.crashGpuProcess` で起こせる見込みはあるが試していない)。本物の GPU (ドライバのリセットなど) での喪失は docs/manual-check.md の D09。
+
+## エディタのブラウザのテスト
+
+ビルドしたエディタの画面を、本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で動かし、偽の wasm の Vitest では確かめられない
+GPU の喪失のまわりを確かめます (T1656)。Tauri の代わりに [UI の監査](#ui-の監査) の偽のホスト (`tests/ui-audit/lib/editor-host.mjs`) を置き、
+画面は Playwright で操作します。詳しくは [apps/editor/browser-test/README.md](../apps/editor/browser-test/README.md)。
+
+```sh
+just editor-browser                                              # wasm・エディタ・見本をビルドしてすべてのシナリオ
+just editor-browser --no-build --only dress-up-loss-during-load  # 前のビルドで、選んだシナリオだけ
+```
+
+- **シナリオ:** プレビューの着せ替えで、WebGL2 のコンテキストを失っている間 (`WEBGL_lose_context`) にモジュールを読み込んでも
+  (`load_module` が `device_lost`) パネルに失敗の文を出さず、作り直した WebPuppet に付けて描く (`dress-up-loss-during-load`)・
+  失っている間の付け外し (チェックで外す・スロットの選択で差し替える) が、作り直した後に付けたい組で付く (`dress-up-change-while-lost`)。
+  付いたことは本物の WebPuppet (`attached_modules`) と一覧の行で、描いたことは `read_pixels` の読み戻しで確かめます。T1644 の前の
+  `dressUp.svelte.ts` では 2 つとも落ちます。
+- **待ち方:** 作り直しの完了 (新しい WebPuppet が描き、ビューポートの「GPU の復元を待っています」が消える) を待ってから確かめます。
+  作り直しの `WebPuppet.create` を 500 ms 遅らせて、CI の SwiftShader のように作成が遅いときも作り終える前に確かめないようにしています
+  ([PuppetSurface のブラウザのテスト](#puppetsurface-のブラウザのテスト) の T0960 と同じ)。
+- **e2e ではなくここにした理由 (T1656):** 喪失と復元を Chrome の `WEBGL_lose_context` で決まった時機に起こせ、本物の WebPuppet を
+  ページから直接見られ、1 つのシナリオだけを速く何度も流せるため。Tauri と WebView の間 (IPC・ファイルのダイアログ) は見ないので、
+  着せ替えの流れそのものは [実機の e2e テスト](#実機の-e2e-テスト) の手順が見ます。
+- **CI:** `conformance` ジョブで `just player-browser` の後に流します。落ちたときはページのコンソールを `target/editor-browser/page.log` に残します。
 
 ## エディタの部品のテスト
 

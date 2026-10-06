@@ -319,6 +319,12 @@ ui-shots out:
 player-browser *args:
     @node packages/player/browser-test/run.mjs {{args}}
 
+# エディタの画面を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失など) を
+# 確かめる (apps/editor/browser-test/README.md。T1656)。偽のホストは `just ui-audit` のもの。wasm とエディタと見本をビルドし Chrome が要るので
+# `just ci` には含めない (CI の conformance ジョブで流す)。例: `just editor-browser --no-build --only dress-up-loss-during-load`
+editor-browser *args:
+    @node apps/editor/browser-test/run.mjs {{args}}
+
 # 3 つのアプリの UI の監査 (tests/ui-audit/README.md): ビルドした画面を偽のホストとヘッドレスの Chrome で開き、ライト・ダーク × 日英 ×
 # 幅 × devicePixelRatio で撮って、コントラスト・はみ出し・重なり・押せる大きさ・名前・Tab の順を報告する。重いので `just ci` には含めない。
 # 例: `just ui-audit --only editor --quick`・`just ui-audit --no-build --compare target/ui-audit-before`

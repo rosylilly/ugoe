@@ -31,6 +31,7 @@ scripts/sidecar.mjs 同梱する ugoe-mcp をビルドして src-tauri/binaries/
 just editor         # 開発モードで起動 (vite + tauri dev)
 just editor-build   # リリースビルド (インストーラを作る。`just app::build TARGET=editor` の別名)
 just web-check      # Biome + svelte-check
+just editor-browser # ビルドした画面を本物の wasm とヘッドレスの Chrome で動かし、GPU の喪失のまわりを確かめる (browser-test/README.md)
 ```
 
 `just editor` と `just editor-build` は、先に `just wasm` (ugoe-wasm のビルドと JS バインディングの生成) を実行する
