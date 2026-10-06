@@ -1,11 +1,11 @@
 ---
 id: T1653
 title: "エディタ: ] [ で選んだ点を見せるパンの判定に、上の帯と右下の道具を入れる (見える矩形で判定する)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1653
 ---
 
 # T1653: エディタ: ] [ で選んだ点を見せるパンの判定に、上の帯と右下の道具を入れる (見える矩形で判定する)

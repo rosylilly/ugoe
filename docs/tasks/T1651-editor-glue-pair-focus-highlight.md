@@ -1,11 +1,11 @@
 ---
 id: T1651
 title: "エディタ: グルーのパネルの組の行にフォーカス・ホバーしたとき、ビューポートでその組を強調する"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T1650]
-assignee:
+assignee: claude-worker-T1651
 ---
 
 # T1651: エディタ: グルーのパネルの組の行にフォーカス・ホバーしたとき、ビューポートでその組を強調する
