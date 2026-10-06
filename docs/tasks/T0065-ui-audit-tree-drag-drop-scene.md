@@ -1,11 +1,11 @@
 ---
 id: T0065
 title: "ui-audit: エディタのツリーのドラッグの途中 (ドロップの印) を撮る場面を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T1675, T0064]
-assignee:
+assignee: claude-worker-T0065
 ---
 
 # T0065: ui-audit: エディタのツリーのドラッグの途中 (ドロップの印) を撮る場面を足す
