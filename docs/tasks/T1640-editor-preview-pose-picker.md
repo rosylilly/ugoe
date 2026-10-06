@@ -1,11 +1,11 @@
 ---
 id: T1640
 title: "エディタ: プレビューのポーズの欄を @ugoe/player の PosePicker に移す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, packages/player, docs]
 depends_on: [T0676]
-assignee:
+assignee: claude-worker-T1640
 ---
 
 # T1640: エディタ: プレビューのポーズの欄を @ugoe/player の PosePicker に移す

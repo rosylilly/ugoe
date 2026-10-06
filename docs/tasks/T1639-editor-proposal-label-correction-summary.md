@@ -1,11 +1,11 @@
 ---
 id: T1639
 title: "エディタ: 提案の一覧の分類の直しの行に、残すラベルと左右を出す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: [T0676]
-assignee:
+assignee: claude-worker-T1639
 ---
 
 # T1639: エディタ: 提案の一覧の分類の直しの行に、残すラベルと左右を出す
