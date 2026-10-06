@@ -159,6 +159,115 @@ fn unavailable_store_falls_back_to_env() {
     assert!(err.to_string().contains("ANTHROPIC_API_KEY"), "{err}");
 }
 
+/// 開くのが `fail_first` 回失敗し、その後はメモリ上の保存先を開く [`Opener`]。開いた回数を `opened` に数える。
+fn flaky_opener(
+    secrets: Secrets,
+    fail_first: usize,
+    opened: Arc<std::sync::atomic::AtomicUsize>,
+) -> Opener {
+    Box::new(move || {
+        let n = opened.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n < fail_first {
+            return Err("did not receive a reply".into());
+        }
+        Ok(Box::new(MemoryStore {
+            secrets: secrets.clone(),
+            fail: false,
+        }) as Box<dyn SecretStore>)
+    })
+}
+
+/// 開くのに失敗しても覚えず、次に使うときに開き直す。開けた保存先は覚えて、開き直さない (T1673)。
+#[test]
+fn store_is_reopened_after_a_failed_open() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let slot = claude_slot();
+    let secrets = Secrets::default();
+    let opened = Arc::new(AtomicUsize::new(0));
+    let keys = ApiKeys::new(flaky_opener(secrets.clone(), 1, opened.clone()), no_env);
+
+    assert_eq!(keys.status(&slot), KeyStatus::Unavailable);
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    keys.save(&slot, "sk-later").unwrap();
+    assert_eq!(keys.status(&slot), KeyStatus::Stored);
+    assert!(keys.find(&slot).is_some());
+    keys.delete(&slot).unwrap();
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    assert_eq!(opened.load(Ordering::SeqCst), 2);
+
+    // 保存の失敗でも開き直す
+    let opened = Arc::new(AtomicUsize::new(0));
+    let keys = ApiKeys::new(flaky_opener(secrets.clone(), 2, opened.clone()), no_env);
+    assert!(keys.save(&slot, "sk-x").is_err());
+    assert!(keys.delete(&slot).is_err());
+    keys.save(&slot, "sk-x").unwrap();
+    assert_eq!(opened.load(Ordering::SeqCst), 3);
+}
+
+/// 同時に使われても二重に開かない。開いている間に待っていた呼び出しは、その試みの失敗を受け取り、
+/// 続けて開き直さない (答えの来ない保存先を呼び出しの数だけ待たない)。
+#[test]
+fn concurrent_callers_share_one_open_attempt() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    let slot = claude_slot();
+    let opened = Arc::new(AtomicUsize::new(0));
+    // 開く試みは始まったことを `started` に知らせ、`release` を受け取るまで終わらない
+    let (started_tx, started) = mpsc::channel::<()>();
+    let (release, wait) = mpsc::channel::<bool>();
+    let (started_tx, wait) = (Mutex::new(started_tx), Mutex::new(wait));
+    let keys = {
+        let opened = opened.clone();
+        ApiKeys::new(
+            Box::new(move || {
+                opened.fetch_add(1, Ordering::SeqCst);
+                started_tx.lock().unwrap().send(()).unwrap();
+                match wait.lock().unwrap().recv_timeout(TIMEOUT) {
+                    Ok(true) => Ok(Box::new(MemoryStore::default()) as Box<dyn SecretStore>),
+                    _ => Err("did not receive a reply".into()),
+                }
+            }),
+            no_env,
+        )
+    };
+
+    std::thread::scope(|s| {
+        let first = s.spawn(|| keys.status(&slot));
+        // 1 つ目が開き始めてから、ほかの呼び出しを始める
+        started.recv_timeout(TIMEOUT).unwrap();
+        let (ready_tx, ready) = mpsc::channel::<()>();
+        let others: Vec<_> = (0..3)
+            .map(|_| {
+                let ready_tx = ready_tx.clone();
+                let (keys, slot) = (&keys, &slot);
+                s.spawn(move || {
+                    ready_tx.send(()).unwrap();
+                    keys.status(slot)
+                })
+            })
+            .collect();
+        for _ in 0..3 {
+            ready.recv_timeout(TIMEOUT).unwrap();
+        }
+        // ほかの呼び出しが錠を待ち始めるまで少し待つ
+        std::thread::sleep(Duration::from_millis(300));
+        release.send(false).unwrap();
+        assert_eq!(first.join().unwrap(), KeyStatus::Unavailable);
+        for other in others {
+            assert_eq!(other.join().unwrap(), KeyStatus::Unavailable);
+        }
+    });
+    assert_eq!(opened.load(Ordering::SeqCst), 1);
+
+    // その後の呼び出しは開き直す
+    release.send(true).unwrap();
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    assert_eq!(opened.load(Ordering::SeqCst), 2);
+}
+
 /// Secret Service の偽の保存先 (Linux)。`failures` を前から順に 1 つずつ失敗として返し、尽きたら普通に読み書きする。
 #[cfg(target_os = "linux")]
 mod flaky {

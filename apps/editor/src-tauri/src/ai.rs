@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -187,9 +188,20 @@ type Opener = Box<dyn Fn() -> Result<Box<dyn SecretStore>, String> + Send + Sync
 type EnvReader = fn(&str) -> Option<String>;
 
 /// API キーの読み書き。保存先は最初に使うときに開く (D-Bus への接続などで起動を遅らせないため)。
+///
+/// 開けた保存先は覚えて開き直さない。開くのに失敗したら覚えずに、次に使うときに開き直す (T1673。答えが
+/// 時間内に来なかったなどの一時的な失敗で、アプリを閉じるまで「使えない」にならないように)。失敗の種類では
+/// 分けない: 保存先の無い環境 (D-Bus のセッションが無い・Secret Service が無い) は開き直してもすぐに失敗し、
+/// 開くのは利用者の操作 (設定を開く・保存する・AI に送る) のときだけなので、開き直しは重くならない。
+/// 開くのは 1 つずつ (`opening` の錠) で、開いている間に待っていた呼び出しはその試みの失敗を受け取り、
+/// 続けて開き直さない (答えの来ない保存先を、待っていた呼び出しの数だけ待たないように)。
 pub struct ApiKeys {
     open: Opener,
-    store: OnceLock<Result<Box<dyn SecretStore>, String>>,
+    store: OnceLock<Box<dyn SecretStore>>,
+    /// 開く試みを 1 つずつにする錠。中身は最後に開くのに失敗した試みの失敗。
+    opening: Mutex<Option<String>>,
+    /// 開くのに失敗した回数 (錠を待つ前に見た数と比べ、待つ間に失敗した試みがあったかを知る)。
+    failed_opens: AtomicU64,
     env: EnvReader,
 }
 
@@ -213,14 +225,39 @@ impl ApiKeys {
         Self {
             open,
             store: OnceLock::new(),
+            opening: Mutex::new(None),
+            failed_opens: AtomicU64::new(0),
             env,
         }
     }
 
+    /// 保存先。開いていなければ開く (開くのに失敗したら、次に呼ばれたときに開き直す)。
     fn store(&self) -> Result<&dyn SecretStore, String> {
-        match self.store.get_or_init(|| (self.open)()) {
-            Ok(store) => Ok(store.as_ref()),
-            Err(e) => Err(e.clone()),
+        if let Some(store) = self.store.get() {
+            return Ok(store.as_ref());
+        }
+        let failed_before = self.failed_opens.load(Ordering::SeqCst);
+        let mut failure = self.opening.lock().unwrap_or_else(PoisonError::into_inner);
+        // 錠を待つ間に、ほかの呼び出しが開いた
+        if let Some(store) = self.store.get() {
+            return Ok(store.as_ref());
+        }
+        // 錠を待つ間に、ほかの呼び出しが開くのに失敗した: その失敗を返す
+        if self.failed_opens.load(Ordering::SeqCst) != failed_before
+            && let Some(e) = failure.as_ref()
+        {
+            return Err(e.clone());
+        }
+        match (self.open)() {
+            Ok(store) => {
+                *failure = None;
+                Ok(self.store.get_or_init(|| store).as_ref())
+            }
+            Err(e) => {
+                *failure = Some(e.clone());
+                self.failed_opens.fetch_add(1, Ordering::SeqCst);
+                Err(e)
+            }
         }
     }
 
