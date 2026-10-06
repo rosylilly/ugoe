@@ -19,7 +19,7 @@ src/drivers.ts           パラメータを毎フレーム外から動かす仕�
 src/parameters.ts        パラメータの一覧 (parameters_json) の読み取り・グループ分け・スライダーの刻み
 src/animation.ts         モーションと表情の一覧・発火したイベント (motion_events_json。T0734) の読み取り、トラッキングとの重なり、待機モーション (T0720〜T0722)
 src/lighting.ts          光源の設定・既定の組・set_lighting_json の JSON・localStorage への保存・光源の印の幾何 (T0708・T0709)
-src/pose.ts              ポーズのグループ (pose_json) の読み取り・付け外しの後の選択の引き継ぎ・要素の表示名 (T0735)
+src/pose.ts              ポーズのグループ (pose_json) の読み取り・付け外しの後の選択の引き継ぎ・表示中の要素 (pose_visible_json) への追従 (T0736)・要素の表示名 (T0735)
 src/color.ts             色の文字列 (#rrggbb) の読み取り
 src/dressUp.ts           着せ替えの一覧の読み取り・公開するスロットの絞り込み・エラーと警告の文 (T0706・T0715)
 src/dressUpMemory.ts     付けていたモジュールの組をモデルごとに覚える形と、戻すときにファイルをどこから得るか (T0711)
@@ -62,6 +62,11 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   モデルを開いたときは今までどおり fit。T0942)。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
+- ポーズ (T0735): `poseGroups` (グループ) と `poseShown` (グループごとに表示している要素) を持ち、`showPose(part)` で選ぶ。
+  `poseShown` はモーションによる切り替えに追従する (T0736): ふつうのモードでは毎フレーム `update` の後で表示中の要素
+  (`pose_visible_json()`) を読み、前のフレームから変わったときだけ合わせる (`followPoseShown`。グループは要素のパーツで突き合わせる)。
+  利用者の選択 (`show_pose`) はすぐに表示中になり、モーションの要求は次の `update` で表示中になるので、後から来たほうが欄に出る
+  (モーションが要求している間はモーションが勝つ。[docs/spec/motion.md](../../docs/spec/motion.md#ポーズ))。受け手のモードでは読まない。
 - `Player` は `@ugoe/face-tracking` の `TrackingTarget` を満たす (`new FaceTracker(player, …)`)。
 - 画像の保存は `capture()` で RGBA を受け取り、`encodePng` (`src/screenshot.ts`) で PNG にする。保存のダイアログと書き込みはアプリ。
   `src/screenshot.ts` はエディタのビューポート (`ViewportController.capture`) も使う (T0730。エディタが `@ugoe/player` から import するのは
@@ -148,7 +153,7 @@ player.pushFrame(decodeFrame(buffer));
 失ったコンテキストしか取れないときの作成の失敗 (`CreateError`。T0475)・
 作成の途中・描画中に GPU プロセスごと失ったときの作り直しと、wasm が panic しないこと (T0944)・
 devicePixelRatio だけが変わったときの追従を、`Player` は作り直しでモデル・モジュール・パラメータの値を戻すことと、倍率が変わったときの
-ビュー・ズームの換算・読み戻しの大きさを確かめる。
+ビュー・ズームの換算・読み戻しの大きさと、ポーズの欄がモーションによる切り替えに追従すること (T0736) を確かめる。
 `just player-browser` で流す (Chrome と wasm-bindgen-cli が要る。`just ci` には入れず、CI の `conformance` ジョブで流す)。
 回し方とシナリオは [docs/testing.md](../../docs/testing.md#puppetsurface-のブラウザのテスト)。
 

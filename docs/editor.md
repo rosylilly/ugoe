@@ -556,6 +556,11 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   読み直します。選んだ要素は WebPuppet の ID で `PreviewMode.modulePoseShown` に持ち、読み込みのたびに渡し直します (外したモジュールの
   パーツは `show_pose` が `false` を返すだけで、付け直すと選んでいた要素に戻る)。このグループがあれば、モデルにポーズが無くても
   「Pose」の段に「(not set up)」を出しません。本体の要素に追従する衣装の差分は、本体の要素と一緒に切り替わります。
+  モーションがパーツの不透明度のカーブで要素を切り替えると、欄も追従します (T0736): `PreviewMode.afterUpdate` が毎フレーム
+  表示中の要素 (`pose_visible_json`) を読み、前のフレームから変わったときだけ `poseShown`・`modulePoseShown` を合わせます
+  (`preview.ts` の `followShown`。編集中のモデルの要素は `previewPart` で WebPuppet の ID にして突き合わせる)。選んだ要素は
+  `show_pose` の直後から、モーションが要求した要素は次の `update` から表示中になるので、後から来たほうが欄に出ます (モーションが
+  要求している間はモーションが勝つ。[docs/spec/motion.md](spec/motion.md#ポーズ))。
 - **モーション・表情:** ドキュメントのもの (`EditorDocument.motions` / `expressions`、保存前のものも) を JSON で
   `start_motion_json(json, "force")`・`set_expression_json` に渡します。モーションはフェード・ループ・イベント込みで
   再生し (発火したイベントを最近の 5 つまで出す)、「Stop」は `stop_motions` (フェードアウト)。表情は 1 つだけ選び、

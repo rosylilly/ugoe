@@ -187,6 +187,11 @@ export function fakePuppet(options: FakeOptions = {}) {
       state.visible.set(group.join(","), part);
       return true;
     },
+    // 表示中の要素 (グループの順。テストが `state.visible` を書き換えると、モーションが切り替えたことになる)。
+    pose_visible_json: () =>
+      state.hasModel
+        ? JSON.stringify(poseGroups().map((g) => state.visible.get(g.join(",")) ?? g[0] ?? null))
+        : undefined,
     uses_lighting: () => false,
     set_lighting_json: (json?: string | null) => void state.lighting.push(json),
     canvas_size: () => new Float32Array([100, 100]),

@@ -4,6 +4,7 @@ import {
   defaultStages,
   EVENT_HISTORY,
   filterSections,
+  followShown,
   groupParameters,
   modulePoseGroups,
   modulePoseLabels,
@@ -11,6 +12,7 @@ import {
   pushEvents,
   sliderStep,
   stageAvailability,
+  visiblePoseParts,
 } from "./preview";
 
 function param(id: string, group: string | null = null, name = id): Parameter {
@@ -178,5 +180,41 @@ describe("modulePoseGroups (T0661)", () => {
   it("is empty without a pose", () => {
     expect(modulePoseGroups(undefined, own, null)).toEqual([]);
     expect(modulePoseGroups("not json", own, null)).toEqual([]);
+  });
+});
+
+describe("following the visible pose entries (T0736)", () => {
+  const entry = (part: string) => ({ part, links: [] as string[] });
+  const groups = [
+    { entries: [entry("ArmA"), entry("ArmB")] },
+    { entries: [entry("Hat/On"), entry("Hat/Off")] },
+  ];
+
+  it("reads the visible parts", () => {
+    expect(visiblePoseParts('[null,"ArmB"]')).toEqual(new Set(["ArmB"]));
+    expect(visiblePoseParts(undefined)).toBeNull();
+    expect(visiblePoseParts("{ not json")).toBeNull();
+    expect(visiblePoseParts("{}")).toBeNull();
+  });
+
+  it("shows the visible entry of each group", () => {
+    expect(followShown([], groups, new Set(["ArmB", "Hat/Off"]))).toEqual(["ArmB", "Hat/Off"]);
+    expect(followShown(["ArmB", "Hat/Off"], groups, new Set(["ArmA", "Hat/Off"]))).toEqual([
+      "Hat/Off",
+      "ArmA",
+    ]);
+  });
+
+  it("maps the parts to the puppet's ids", () => {
+    const own = { name: "Hat", editing: "Hat (editing)" };
+    const visible = new Set(["ArmA", "Hat (editing)/Off"]);
+    expect(followShown([], groups, visible, (part) => previewPart(part, own))).toEqual(["Hat/Off"]);
+  });
+
+  it("returns the same array when nothing changes", () => {
+    const shown = ["ArmB"];
+    // 挙げていないグループは先頭の要素を表示している。表示中の要素の無いグループは前のまま。
+    expect(followShown(shown, groups, new Set(["ArmB", "Hat/On"]))).toBe(shown);
+    expect(followShown(shown, groups, new Set())).toBe(shown);
   });
 });

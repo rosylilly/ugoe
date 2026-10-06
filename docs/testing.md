@@ -357,6 +357,8 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   モデル・モジュール・値・ビューを戻して描く (`player-timeout-restart`)。
   devicePixelRatio だけが変わったら、canvas と読み戻しの大きさが新しい倍率になり、CSS ピクセルで見たビュー (`view`) は動かず、
   CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
+  ポーズの欄 (`poseShown`) は本物の wasm の表示中の要素 (`pose_visible_json`) を読み、見本の `wave` で `HandsDown` → `Wave` → `HandsDown` と
+  追従し、モーションが終わった後に選んだ要素は残る (`player-pose-follows-motion`。T0736。追従をやめると落ちることを確かめた)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
   `setDevicePixelRatio(ratio)` として出します。ヘッドレスの Chrome (154 で確かめた) は倍率の上書きだけではメディアクエリを評価し直さず、
   `matchMedia` の `matches` は変わっても `change` が届きません (ページの大きさも変えると届く)。そこで上書きのたびに、エミュレートする

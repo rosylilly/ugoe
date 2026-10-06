@@ -3,7 +3,8 @@
 // 本物の wasm (/wasm/ugoe_wasm.js) とヘッドレスの Chrome の WebGL2 (SwiftShader) で、PuppetSurface (/player.js。
 // @ugoe/player を Vite でまとめたもの) の作成・描画・作り直し (WebGL2 の喪失で復元を待つ。T0935。復元が届かなければ
 // 時間切れで作り直す。T0938)・諦めと `restart`・破棄・devicePixelRatio の追従を確かめる。Player は、作り直しと
-// 「作り直す」(`restart`) でモデル・モジュール・値を戻すことと、倍率が変わったときのビューと読み戻しを確かめる (`player-*`)。順序の細部は src/surface.test.ts・player*.test.ts が偽の wasm で
+// 「作り直す」(`restart`) でモデル・モジュール・値を戻すことと、倍率が変わったときのビューと読み戻しと、ポーズの欄が
+// モーションに追従すること (T0736) を確かめる (`player-*`)。順序の細部は src/surface.test.ts・player*.test.ts が偽の wasm で
 // 確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
 // - `WebPuppet.create` と `free` を包んで、生きている WebPuppet を数える (GPU の資源が残らないことを確かめる)。
@@ -926,6 +927,30 @@ const scenarios = {
     );
     player.detach();
     check(canvasesIn(container).length === 0, "the canvas remains after detach");
+  },
+
+  /**
+   * Player のポーズの欄 (`poseShown`) は、モーションによる切り替えに追従する: 着せ替えの見本の `wave` で `HandsDown` → `Wave` →
+   * `HandsDown` と変わり、モーションが終わった後に利用者が選んだ要素は残る (T0736。本物の wasm の `pose_visible_json`)。
+   */
+  async "player-pose-follows-motion"() {
+    const container = stage();
+    const player = newPlayer();
+    player.setAutoIdle(false);
+    await player.attach(container);
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) });
+    const group = player.poseGroups.findIndex((g) => g.parts.includes("Wave"));
+    check(group >= 0, `no group with Wave: ${JSON.stringify(player.poseGroups)}`);
+    const shown = () => player.poseShown[group];
+    check(shown() === "HandsDown", `shown ${shown()} before the motion`);
+    check(player.playMotion("wave"), "wave did not start");
+    await until(() => shown() === "Wave", "the choice to follow the motion to Wave");
+    await until(() => shown() === "HandsDown", "the choice to follow the motion back to HandsDown");
+    await until(() => player.currentMotion === null, "the motion to end");
+    check(player.showPose("Wave"), "showPose(Wave) failed");
+    await frames(10);
+    check(shown() === "Wave", `shown ${shown()} after choosing Wave`);
+    player.detach();
   },
 
   /**

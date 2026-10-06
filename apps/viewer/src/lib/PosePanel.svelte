@@ -2,8 +2,8 @@
 // ポーズのパネル (T0735)。ポーズのグループを持つモデルのときに App.svelte が出す。
 // グループごとに表示する要素を選ぶ (Player.showPose → WebPuppet の show_pose。次のフレームからフェードで切り替わる)。
 // グループは WebPuppet の合成したポーズ (pose_json) から読むので、着せ替えで付けたモジュールのグループも並ぶ
-// (Player がモデルの読み直しと付け外しのたびに読み直す)。モーションが同じグループの要素を要求すれば、モーションが勝つ
-// (docs/spec/motion.md#ポーズ)。要素は 2〜4 個なら SegmentedControl、5 個以上なら Select で選ぶ (docs/ui.md#部品の一覧)。
+// (Player がモデルの読み直しと付け外しのたびに読み直す)。モーションが同じグループの要素を要求すれば、モーションが勝ち
+// (docs/spec/motion.md#ポーズ)、欄も Player が読む表示中の要素 (poseShown) に追従する (T0736)。要素は 2〜4 個なら SegmentedControl、5 個以上なら Select で選ぶ (docs/ui.md#部品の一覧)。
 import { type Player, poseEntryLabel, poseGroupNumbers } from "@ugoe/player";
 import { Section, SegmentedControl, Select } from "@ugoe/ui";
 import { t } from "./i18n";

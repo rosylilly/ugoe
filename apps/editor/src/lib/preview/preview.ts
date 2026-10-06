@@ -2,6 +2,7 @@
 // スライダーのグループ分けはビューア (packages/player/src/parameters.ts) と同じ規則。
 import { t } from "../i18n";
 import type { Model, Parameter, ParameterGroup, Pose, PoseGroup } from "../ipc";
+import { showEntry, shownEntry } from "../panels/poses/poses";
 import type { PuppetStage } from "../viewport/controller.svelte";
 
 /** スライダーの一覧の 1 区切り。`id` が `null` のものはグループに属さないパラメータ。 */
@@ -156,6 +157,43 @@ export function modulePoseGroups(
     const slash = first.indexOf("/");
     return [{ module: slash < 0 ? "" : first.slice(0, slash), group }];
   });
+}
+
+/**
+ * WebPuppet の表示中のポーズの要素 (`pose_visible_json`: グループごとのパーツか `null`。T0478) のパーツの集まり。
+ * 読めないもの (`undefined`・形の違うもの) は `null`。
+ */
+export function visiblePoseParts(json: string | undefined | null): Set<string> | null {
+  if (!json) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(value)) return null;
+  return new Set(value.filter((p): p is string => typeof p === "string"));
+}
+
+/**
+ * 表示する要素の一覧 `shown` を、WebPuppet の表示中の要素 `visible` に合わせる (モーションがパーツの不透明度のカーブで
+ * 要素を切り替えたとき、欄を追従させる。T0736)。`toPuppet` は要素のパーツを WebPuppet の ID にするもの (`previewPart`)。
+ * 表示中の要素が無いグループは前のまま。何も変わらなければ `shown` そのものを返す。
+ */
+export function followShown(
+  shown: readonly string[],
+  groups: readonly PoseGroup[],
+  visible: ReadonlySet<string>,
+  toPuppet: (part: string) => string = (part) => part,
+): readonly string[] {
+  let next = shown;
+  for (const group of groups) {
+    const entry = group.entries.find((e) => visible.has(toPuppet(e.part)));
+    if (entry === undefined || group.entries[shownEntry(group, next)]?.part === entry.part)
+      continue;
+    next = showEntry(next, group, entry.part);
+  }
+  return next;
 }
 
 /** モジュールのグループの見出し (`LongHair group 1`。モジュールごとに数える)。 */

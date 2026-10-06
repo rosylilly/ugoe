@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   carryPoseShown,
+  followPoseShown,
   type PoseGroupInfo,
   parsePose,
   poseEntryLabel,
@@ -76,5 +77,40 @@ describe("labels", () => {
       { parts: ["Hat/Brim"], module: "Hat" },
     ];
     expect(poseGroupNumbers(groups)).toEqual([1, 2, 1, 1, 2]);
+  });
+});
+
+describe("followPoseShown", () => {
+  const groups: PoseGroupInfo[] = [
+    { parts: ["earwear", "no_earwear"], module: null },
+    { parts: ["Hat/On", "Hat/Off"], module: "Hat" },
+  ];
+
+  it("takes the visible entry of each group", () => {
+    expect(followPoseShown(groups, '["no_earwear","Hat/Off"]', ["earwear", "Hat/On"])).toEqual([
+      "no_earwear",
+      "Hat/Off",
+    ]);
+  });
+
+  it("matches groups by their parts, not by position", () => {
+    // pose_json の要素の無いグループ (parsePose が飛ばす) は null になる。
+    expect(followPoseShown(groups, '[null,"no_earwear","Hat/Off"]', ["earwear", "Hat/On"])).toEqual(
+      ["no_earwear", "Hat/Off"],
+    );
+  });
+
+  it("keeps the choice of groups without a visible entry", () => {
+    expect(followPoseShown(groups, '["no_earwear"]', ["earwear", "Hat/Off"])).toEqual([
+      "no_earwear",
+      "Hat/Off",
+    ]);
+  });
+
+  it("returns the same array when nothing changes or the value is unreadable", () => {
+    const shown = ["earwear", "Hat/On"];
+    expect(followPoseShown(groups, '["earwear","Hat/On"]', shown)).toBe(shown);
+    expect(followPoseShown(groups, undefined, shown)).toBe(shown);
+    expect(followPoseShown(groups, '{"groups":[]}', shown)).toBe(shown);
   });
 });

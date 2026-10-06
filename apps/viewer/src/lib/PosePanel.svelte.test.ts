@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 // ポーズのパネル (PosePanel.svelte): グループごとに要素を選ぶ欄を出し、選ぶと Player.showPose を呼ぶこと (T0735)。
+// モーションが要素を切り替えると (Player が poseShown を表示中の要素に合わせる)、欄も追従すること (T0736)。
 import { setLocale } from "@ugoe/i18n";
 import type { Player, PoseGroupInfo } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
@@ -75,6 +76,26 @@ describe("PosePanel", () => {
     flushSync();
     expect(shown).toEqual(["Wave"]);
     expect(rows(target)).toEqual([["グループ 1", "Wave"]]);
+  });
+
+  it("follows the entry a motion switches to", () => {
+    const { target, player } = setup([
+      { parts: ["HandsDown", "Wave"], module: null },
+      { parts: ["A", "B", "C", "D", "E"], module: null },
+    ]);
+    // Player が表示中の要素 (pose_visible_json) に合わせて poseShown を書き換える。
+    player.poseShown = ["Wave", "C"];
+    flushSync();
+    expect(rows(target)[0]).toEqual(["グループ 1", "Wave"]);
+    expect(target.querySelector(".ugoe-select__value")?.textContent?.trim()).toBe("C");
+
+    // モーションが終わった後に利用者が選び直せる。
+    const down = [...target.querySelectorAll<HTMLButtonElement>(".ugoe-segmented__item")].find(
+      (b) => b.textContent?.trim() === "HandsDown",
+    );
+    down?.click();
+    flushSync();
+    expect(rows(target)[0]).toEqual(["グループ 1", "HandsDown"]);
   });
 
   it("uses a select for groups with five or more entries", () => {

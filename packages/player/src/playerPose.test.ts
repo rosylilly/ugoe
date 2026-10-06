@@ -1,7 +1,7 @@
-// Player のポーズの要素の選択 (T0735)。wasm と DOM は偽物 (src/testing/)。
+// Player のポーズの要素の選択 (T0735) と、モーションによる切り替えへの追従 (T0736)。wasm と DOM は偽物 (src/testing/)。
 import { describe, expect, it, vi } from "vitest";
 import { bundle, moduleFile } from "./testing/fakePuppet";
-import { ready, setupPlayer } from "./testing/player";
+import { ready, setupPlayer, step } from "./testing/player";
 
 // 画面の部品と MediaPipe まで読み込むと遅いので、Player が使う関数だけにする。
 vi.mock("@ugoe/face-tracking", () => import("./testing/faceTracking"));
@@ -92,5 +92,56 @@ describe("Player poses", () => {
         ["Hat/On", "Hat/Off"],
       ]),
     ).toEqual(p.poseShown);
+  });
+
+  it("follows the entries a motion switches to", async () => {
+    const { p, state } = await ready(options);
+    await p.load(model, [{ file: hat, attach: true }]);
+    step(0);
+    expect(p.poseShown).toEqual(["earwear", "Hat/On"]);
+
+    // モーションがパーツの不透明度のカーブで要素を要求した (偽物では表示中の要素を書き換える)。
+    state.visible.set("earwear,no_earwear", "no_earwear");
+    state.visible.set("Hat/On,Hat/Off", "Hat/Off");
+    step(16);
+    expect(p.poseShown).toEqual(["no_earwear", "Hat/Off"]);
+
+    // 変わらないフレームでは欄を作り直さない。
+    const shown = p.poseShown;
+    step(32);
+    expect(p.poseShown).toBe(shown);
+  });
+
+  it("shows the latest of the user's choice and the motion's request", async () => {
+    const { p, state } = await ready(options);
+    await p.load(model);
+    step(0);
+
+    // 利用者が選ぶと、表示中の要素もすぐにそれになるので、次のフレームでも欄はそのまま。
+    p.showPose("no_earwear");
+    step(16);
+    expect(p.poseShown).toEqual(["no_earwear"]);
+
+    // その後でモーションが同じグループの要素を要求すると、モーションが勝つ。
+    state.visible.set("earwear,no_earwear", "earwear");
+    step(32);
+    expect(p.poseShown).toEqual(["earwear"]);
+  });
+
+  it("follows the visible entries after the groups are read again", async () => {
+    const { p, state } = await ready(options);
+    await p.load(model);
+    step(0);
+    state.visible.set("earwear,no_earwear", "no_earwear");
+    step(16);
+    expect(p.poseShown).toEqual(["no_earwear"]);
+
+    // 付けると読み直す。モジュールのグループの要素もモーションに追従する。
+    p.loadModule(hat);
+    step(32);
+    expect(p.poseShown).toEqual(["no_earwear", "Hat/On"]);
+    state.visible.set("Hat/On,Hat/Off", "Hat/Off");
+    step(48);
+    expect(p.poseShown).toEqual(["no_earwear", "Hat/Off"]);
   });
 });

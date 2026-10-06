@@ -18,6 +18,8 @@
 //   見える)。入るときは編集中のビューポートで見ていた要素 (ViewportController.posePreview) から始め、読み直すと渡し直す。
 //   着せ替えで付けたモジュールのグループ (T0661) は WebPuppet の合成したポーズ (`pose_json`) から読み、付け外しと
 //   読み込みのたびに読み直す (`modulePoseGroups`)。選んだ要素は WebPuppet の ID で `modulePoseShown` に持つ。
+//   モーションがパーツの不透明度のカーブで要素を切り替えると、欄も追従する (T0736): 毎フレーム `update` の後で表示中の
+//   要素 (`pose_visible_json`) を読み、前のフレームから変わったときだけ `poseShown`・`modulePoseShown` を合わせる。
 
 import {
   FaceTracker,
@@ -37,10 +39,12 @@ import { DressUp } from "./dressUp.svelte";
 import { describeLoadWarnings, parseLoadWarnings } from "./loadWarnings";
 import {
   defaultStages,
+  followShown,
   type ModulePoseGroup,
   modulePoseGroups,
   previewPart,
   pushEvents,
+  visiblePoseParts,
 } from "./preview";
 import { saveTrackingRecording } from "./trackingHost";
 
@@ -102,6 +106,8 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
    * ほかのモジュールと差し替えられる)。
    */
   comparing = $state(false);
+  /** 最後に読んだ `pose_visible_json` (変わったときだけ欄を合わせる。T0736)。 */
+  #poseVisible: string | null = null;
   /** 今の編集を取り直した EditorDocument.revision。 */
   #ownRevision = -1;
   /** 描いている本体だけのモデルの、本体の版 (比べていなければ `null`)。 */
@@ -240,6 +246,37 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
       console.warn("ugoe:", e);
       this.modulePoses = [];
     }
+    // 次のフレームで表示中の要素を読み直す。
+    this.#poseVisible = null;
+  }
+
+  /**
+   * 表示中の要素を読み、モーションが切り替えた要素に欄を合わせる (T0736)。読んだ JSON が前のフレームと同じなら何もしない。
+   * 選んだ要素は `show_pose` の直後から表示中なので、選んだ後のフレームでも欄は変わらない。
+   */
+  #followPose(puppet: WebPuppet): void {
+    const own = this.#doc.parsedModel?.pose.groups ?? [];
+    if (own.length === 0 && this.modulePoses.length === 0) return;
+    let json: string | undefined;
+    try {
+      json = puppet.pose_visible_json();
+    } catch (e) {
+      console.warn("ugoe:", e);
+      return;
+    }
+    if (json === undefined || json === this.#poseVisible) return;
+    this.#poseVisible = json;
+    const visible = visiblePoseParts(json);
+    if (visible === null) return;
+    const module = this.#ownModule();
+    const shown = followShown(this.poseShown, own, visible, (part) => previewPart(part, module));
+    if (shown !== this.poseShown) this.poseShown = shown;
+    const moduleShown = followShown(
+      this.modulePoseShown,
+      this.modulePoses.map((m) => m.group),
+      visible,
+    );
+    if (moduleShown !== this.modulePoseShown) this.modulePoseShown = moduleShown;
   }
 
   // --- モーション・表情 ---
@@ -361,6 +398,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     if (playing !== this.motionPlaying) this.motionPlaying = playing;
     const fired = puppet.motion_events();
     if (fired.length > 0) this.events = pushEvents(this.events, fired);
+    this.#followPose(puppet);
   }
 
   // --- 内部 ---

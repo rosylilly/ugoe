@@ -68,3 +68,29 @@ export function poseGroupNumbers(groups: readonly PoseGroupInfo[]): number[] {
     return n;
   });
 }
+
+/**
+ * 表示中の要素 (`pose_visible_json()`: `pose_json()` のグループの並びでパーツか `null`。T0478) に `shown` を合わせる
+ * (モーションがパーツの不透明度のカーブで要素を切り替えたとき、欄を追従させる。T0736)。グループは要素のパーツで
+ * 突き合わせる (`parsePose` が要素の無いグループを飛ばしても並びがずれないように)。表示中の要素が見つからないグループと、
+ * 読めないもの (`null`・形の違うもの) は前の選択のまま。何も変わらなければ `shown` そのものを返す。
+ */
+export function followPoseShown(
+  groups: readonly PoseGroupInfo[],
+  visibleJson: string | null | undefined,
+  shown: readonly string[],
+): readonly string[] {
+  if (!visibleJson) return shown;
+  const value: unknown = JSON.parse(visibleJson);
+  if (!Array.isArray(value)) return shown;
+  const visible = new Set(value.filter((p): p is string => typeof p === "string"));
+  let changed = false;
+  const next = groups.map((group, i) => {
+    const current = shown[i] ?? group.parts[0] ?? "";
+    const part = group.parts.find((p) => visible.has(p));
+    if (part === undefined || part === current) return current;
+    changed = true;
+    return part;
+  });
+  return changed || next.length !== shown.length ? next : shown;
+}

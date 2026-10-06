@@ -64,7 +64,7 @@ import {
   type ParameterSection,
   parseParameterList,
 } from "./parameters";
-import { carryPoseShown, type PoseGroupInfo, parsePose } from "./pose";
+import { carryPoseShown, followPoseShown, type PoseGroupInfo, parsePose } from "./pose";
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import type { Screenshot } from "./screenshot";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
@@ -229,7 +229,8 @@ export class Player {
   poseGroups = $state<PoseGroupInfo[]>([]);
   /**
    * グループごとに表示している要素のパーツ (`poseGroups` と同じ順)。モデルを読むと先頭の要素になり、付け外しでは要素の並びが
-   * 同じグループの選択を保つ (Puppet と同じ規則。pose.ts の `carryPoseShown`)。
+   * 同じグループの選択を保つ (Puppet と同じ規則。pose.ts の `carryPoseShown`)。モーションがパーツの不透明度のカーブで
+   * 要素を切り替えると、毎フレーム読む表示中の要素 (`pose_visible_json`) に追従する (T0736。`followPoseShown`)。
    */
   poseShown = $state<string[]>([]);
 
@@ -252,6 +253,8 @@ export class Player {
   #cssSize: [number, number] = [1, 1];
   #frame = 0;
   #lastTime: number | null = null;
+  /** 最後に読んだ `pose_visible_json` (変わったときだけ `poseShown` を合わせる。T0736)。 */
+  #poseVisible: string | null = null;
   /** GPU を失ったときのパラメータの値 (作り直した WebPuppet に戻す)。 */
   #carry: Record<string, number> | null = null;
   /**
@@ -491,6 +494,7 @@ export class Player {
     // ポーズは読み直すと先頭の要素から始まる (付けていたモジュールのグループも)。前のモデルの選択は引き継がない。
     this.poseGroups = [];
     this.poseShown = [];
+    this.#poseVisible = null;
     this.#syncDressUp();
     // 再生の状態は読み直すと初めからになる (crates/ugoe-wasm/README.md)。
     this.#syncAnimations(puppet);
@@ -888,6 +892,27 @@ export class Player {
     }
     this.poseGroups = groups;
     this.poseShown = shown;
+    // 次のフレームで表示中の要素を読み直す (グループが変わると、同じ JSON でも並びの意味が変わる)。
+    this.#poseVisible = null;
+  }
+
+  /**
+   * 表示中の要素を読み、モーションが切り替えた要素に `poseShown` を合わせる (T0736)。読んだ JSON が前のフレームと同じなら
+   * 何もしない (毎フレームの読み出しで欄を作り直さないため)。利用者が選んだ要素も `show_pose` の直後から表示中なので食い違わない。
+   */
+  #followPose(puppet: WebPuppet): void {
+    if (this.poseGroups.length === 0) return;
+    let json: string | undefined;
+    try {
+      json = puppet.pose_visible_json();
+    } catch (e) {
+      console.warn("ugoe:", e);
+      return;
+    }
+    if (json === undefined || json === this.#poseVisible) return;
+    this.#poseVisible = json;
+    const shown = followPoseShown(this.poseGroups, json, this.poseShown);
+    if (shown !== this.poseShown) this.poseShown = [...shown];
   }
 
   // --- 受け手のモード (スタジオの出力ウィンドウ。follower.ts、ADR 0028 の 3.) ---
@@ -1341,6 +1366,7 @@ export class Player {
     puppet.update(dt);
     this.#afterMotionUpdate(puppet);
     this.#syncValues();
+    this.#followPose(puppet);
   }
 
   /**
