@@ -1,11 +1,11 @@
 ---
 id: T0843
 title: "スタジオ: 操作 API の pose.list・pose.set と、見本のプロファイルのポーズのホットキー"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0843
 ---
 
 # T0843: スタジオ: 操作 API の pose.list・pose.set と、見本のプロファイルのポーズのホットキー
