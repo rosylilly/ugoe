@@ -1,11 +1,11 @@
 ---
 id: T0958
 title: "フェイストラッキング: 顔が見つからないなどの状態を、揺れを抑えて読み上げで知らせるか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/face-tracking, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0958
 ---
 
 # T0958: フェイストラッキング: 顔が見つからないなどの状態を、揺れを抑えて読み上げで知らせるか決める (判断が要る)
