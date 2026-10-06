@@ -1,11 +1,11 @@
 ---
 id: T0964
 title: "render・ai の GPU テスト: 共有したデバイスで poll の直後に読み戻すと、コールバックが呼ばれる前で揺れる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-render, ugoe-ai, docs]
 depends_on: [T0963]
-assignee:
+assignee: claude-worker-T0964
 ---
 
 # T0964: render・ai の GPU テスト: 共有したデバイスで poll の直後に読み戻すと、コールバックが呼ばれる前で揺れる
