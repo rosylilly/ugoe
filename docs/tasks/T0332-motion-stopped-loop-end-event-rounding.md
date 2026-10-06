@@ -1,11 +1,11 @@
 ---
 id: T0332
 title: "モーション: ループするモーションを stop() し、止まる時刻が周回の終わりに重なると、t = 長さのイベントを丸めで逃す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [ugoe-motion, docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0332
 ---
 
 # T0332: モーション: ループするモーションを stop() し、止まる時刻が周回の終わりに重なると、t = 長さのイベントを丸めで逃す
