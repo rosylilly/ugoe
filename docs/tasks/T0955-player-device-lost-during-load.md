@@ -1,11 +1,11 @@
 ---
 id: T0955
 title: "Player: 読み込みの途中に GPU を失ったら、エラーの文を出さず、開こうとしたファイルを作り直した後に開く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, apps/editor, docs]
 depends_on: [T0486]
-assignee:
+assignee: claude-worker-T0955
 ---
 
 # T0955: Player: 読み込みの途中に GPU を失ったら、エラーの文を出さず、開こうとしたファイルを作り直した後に開く
