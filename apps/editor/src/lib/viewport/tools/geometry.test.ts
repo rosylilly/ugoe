@@ -4,6 +4,7 @@ import {
   cycleHit,
   meshEdges,
   nearestVertex,
+  segmentDistance,
   updateVertexSelection,
   verticesInBox,
 } from "./geometry";
@@ -22,6 +23,18 @@ describe("nearestVertex", () => {
 
   it("prefers the lower index on ties", () => {
     expect(nearestVertex([0, 0, 2, 0], 1, 0, 5)).toBe(0);
+  });
+});
+
+describe("segmentDistance", () => {
+  it("measures to the nearest point of the segment, its ends included", () => {
+    expect(segmentDistance([5, 3], [0, 0], [10, 0])).toBeCloseTo(3);
+    expect(segmentDistance([-3, 4], [0, 0], [10, 0])).toBeCloseTo(5);
+    expect(segmentDistance([13, -4], [0, 0], [10, 0])).toBeCloseTo(5);
+  });
+
+  it("measures to the point when both ends are the same", () => {
+    expect(segmentDistance([3, 4], [0, 0], [0, 0])).toBeCloseTo(5);
   });
 });
 

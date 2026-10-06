@@ -3,7 +3,7 @@
 // 強さの軸のキーの欄・新しい軸の最初のキーの欄は打つたびに (oninput) ボタンの可否を決め、空・同じキー・読めない文字を
 // 送らない。範囲の外の値は欄が範囲に収める。強さ・距離の欄は確定で送る。
 import { flushSync } from "svelte";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ParameterDef } from "../../document.svelte";
 import { Selection } from "../../selection.svelte";
 import {
@@ -402,6 +402,88 @@ describe("GluesPanel pair highlight (T1651)", () => {
     view.glue = null;
     flushSync();
     expect(view.highlightedPair).toBeNull();
+  });
+});
+
+describe("GluesPanel pair pointed at in the viewport (T1664)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Seam の組を (a 0..count-1, b 0) にしたパネル。 */
+  function setupPairs(count: number) {
+    const ctx = setup(null);
+    const model = JSON.parse(ctx.doc.model?.json ?? "{}");
+    model.glues[0].pairs = Array.from({ length: count }, (_, a) => ({ a, b: 0, weight: 1 }));
+    ctx.doc.model = { json: JSON.stringify(model), bundle: null };
+    flushSync();
+    return ctx;
+  }
+
+  function list(target: HTMLElement): HTMLUListElement {
+    return get<HTMLUListElement>(target, 'ul[aria-label="Vertex pairs of Seam"]');
+  }
+
+  /** 一覧の見える所を 0..100、`i` 番目の行を 30 * i .. 30 * i + 20 (一覧を送った分だけ上へ) にする。 */
+  function layOut(target: HTMLElement): void {
+    const ul = list(target);
+    const rect = (top: number, bottom: number) =>
+      ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top }) as DOMRect;
+    ul.getBoundingClientRect = () => rect(0, 100);
+    Array.from(ul.children).forEach((li, i) => {
+      (li as HTMLElement).getBoundingClientRect = () =>
+        rect(30 * i - ul.scrollTop, 30 * i + 20 - ul.scrollTop);
+    });
+  }
+
+  it("highlights the row of the pair and forgets it, without sending a command", () => {
+    const { doc, target, view } = setupPairs(2);
+    view.viewportPair = { a: 1, b: 0 };
+    flushSync();
+    const rows = all(target, 'ul[aria-label="Vertex pairs of Seam"] li');
+    expect(rows.map((r) => r.classList.contains("highlighted"))).toEqual([false, true]);
+    view.viewportPair = null;
+    flushSync();
+    expect(rows.some((r) => r.classList.contains("highlighted"))).toBe(false);
+    expect(doc.commands).toEqual([]);
+  });
+
+  it("scrolls the list to a hidden row once the pointer rests on its pair", () => {
+    vi.useFakeTimers();
+    const { target, view } = setupPairs(8);
+    layOut(target);
+    const ul = list(target);
+    view.viewportPair = { a: 6, b: 0 };
+    flushSync();
+    // 通り過ぎる間は送らない
+    vi.advanceTimersByTime(100);
+    expect(ul.scrollTop).toBe(0);
+    vi.advanceTimersByTime(200);
+    // 行 6 (180..200) の下端を一覧の下端 (100) に合わせる
+    expect(ul.scrollTop).toBe(100);
+    // 見えている行では動かさない
+    view.viewportPair = { a: 5, b: 0 };
+    flushSync();
+    vi.advanceTimersByTime(300);
+    expect(ul.scrollTop).toBe(100);
+    // 上に隠れた行は上端に合わせる
+    view.viewportPair = { a: 1, b: 0 };
+    flushSync();
+    vi.advanceTimersByTime(300);
+    expect(ul.scrollTop).toBe(30);
+  });
+
+  it("does not scroll when the pointer leaves the pair before resting", () => {
+    vi.useFakeTimers();
+    const { target, view } = setupPairs(8);
+    layOut(target);
+    view.viewportPair = { a: 7, b: 0 };
+    flushSync();
+    vi.advanceTimersByTime(100);
+    view.viewportPair = null;
+    flushSync();
+    vi.advanceTimersByTime(500);
+    expect(list(target).scrollTop).toBe(0);
   });
 });
 

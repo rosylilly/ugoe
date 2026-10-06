@@ -10,6 +10,9 @@
   - 本体のグルー・描画用の複製のグルーは読み取り専用 (重ねて見せるだけ)。
   - パネルの組の一覧の行にポインタかフォーカスがある組 (view.highlightedPair。T1651) は、線と両端を太く・別の色で
     いちばん上に描く。表示だけで、Command は送らない。
+  - 逆向き (T1664): 重ねの組の線か頂点の近く (PAIR_HOVER_RADIUS 以内) にポインタを乗せると、その組を
+    view.viewportPair にする (パネルがその行を強調して一覧を送る。ここでも同じく強調する)。押していない間だけ決め、
+    イベントは止めないので、ほかの道具 (選択・「Add pairs」「Remove pairs」の押す操作) を妨げない。
 -->
 <script lang="ts">
 import type { EditorDocument } from "../../../document.svelte";
@@ -25,7 +28,7 @@ import {
 } from "../../../panels/glues/glues";
 import type { GlueView, PairMode } from "../../../panels/glues/glueView.svelte";
 import TipButton from "../../../ui/TipButton.svelte";
-import { boundaryEdges, type Point } from "../geometry";
+import { boundaryEdges, type Point, segmentDistance } from "../geometry";
 import { acceptsToolKey } from "../keys";
 import type { ViewportScene } from "../scene.svelte";
 
@@ -36,6 +39,11 @@ interface Props {
 }
 
 let { doc, scene, view }: Props = $props();
+
+/** 組の線か頂点にポインタが乗っているとみなす距離 (CSS ピクセル)。 */
+const PAIR_HOVER_RADIUS = 6;
+
+let svg = $state<SVGSVGElement | null>(null);
 
 const model = $derived(doc.parsedModel);
 const glue = $derived(
@@ -134,6 +142,56 @@ function setMode(mode: PairMode): void {
   view.setPairMode(view.pairMode === mode ? "off" : mode);
 }
 
+/** ポインタの下の組 (`PAIR_HOVER_RADIUS` 以内でいちばん近い組。同じ距離なら先の組)。 */
+function pairAt(x: number, y: number): { a: number; b: number } | null {
+  if (!glue || !drawn) return null;
+  let best: { a: number; b: number } | null = null;
+  let bestDistance = PAIR_HOVER_RADIUS;
+  for (const p of drawn.pairs) {
+    const d = segmentDistance([x, y], p.pa, p.pb);
+    const pair = glue.pairs[p.index];
+    if (pair && (best === null ? d <= bestDistance : d < bestDistance)) {
+      best = { a: pair.a, b: pair.b };
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/** ポインタが絵の上 (ビューポートの重ねの svg かキャンバス) にあるか。ボタンや帯の上では組を指さない。 */
+function overDrawing(target: EventTarget | null): boolean {
+  const viewport = svg?.closest("[data-viewport]") ?? svg?.parentElement;
+  if (!(target instanceof Element) || !viewport?.contains(target)) return false;
+  if (target.closest("button, input, select, textarea, a, [role='group']")) return false;
+  return target.closest("svg, canvas") !== null;
+}
+
+/**
+ * ビューポートで組にポインタを乗せたら、その組を viewportPair にする (T1664)。ボタンを押している間 (ドラッグ中) と
+ * タッチは決め直さない。window で受けるので、重ねの svg がポインタを受けなくても (pointer-events: none) 決まる。
+ */
+function onWindowPointerMove(e: PointerEvent): void {
+  if (e.buttons !== 0 || e.pointerType === "touch") return;
+  let next: { a: number; b: number } | null = null;
+  if (svg && overDrawing(e.target)) {
+    const rect = svg.getBoundingClientRect();
+    next = pairAt(e.clientX - rect.left, e.clientY - rect.top);
+  }
+  const current = view.viewportPair;
+  if (next?.a === current?.a && next?.b === current?.b) return;
+  view.viewportPair = next;
+}
+
+/** ポインタが窓の外へ出たら忘れる。 */
+function onWindowPointerOut(e: PointerEvent): void {
+  if (e.relatedTarget === null && view.viewportPair !== null) view.viewportPair = null;
+}
+
+// 重ねを出さなくなったら (グルーを替えた・タブを閉じた・メッシュが無い) 忘れる。
+$effect(() => {
+  if (!drawn && view.viewportPair !== null) view.viewportPair = null;
+});
+
 function onKeyDown(e: KeyboardEvent): void {
   if (e.key !== "Escape" || view.pairMode === "off" || !acceptsToolKey(e.target)) return;
   view.setPairMode("off");
@@ -157,11 +215,15 @@ const hint = $derived(
 );
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window
+  onkeydown={onKeyDown}
+  onpointermove={onWindowPointerMove}
+  onpointerout={onWindowPointerOut}
+/>
 
 {#if glue}
   {#if drawn}
-    <svg class="layer" role="presentation" data-glue={glue.id}>
+    <svg bind:this={svg} class="layer" role="presentation" data-glue={glue.id}>
       <path class="outline a" d={drawn.outlineA} />
       <path class="outline b" d={drawn.outlineB} />
       {#each drawn.pairs as p (p.index)}
@@ -302,7 +364,7 @@ const hint = $derived(
   stroke-width: 3;
 }
 
-/* パネルで行を指している組 (T1651)。選んだ点と同じ色で、線を太く・両端を大きくして色だけに頼らない */
+/* パネルの行かビューポートで指している組 (T1651・T1664)。選んだ点と同じ色で、線を太く・両端を大きくして色だけに頼らない */
 .highlight {
   pointer-events: none;
 }

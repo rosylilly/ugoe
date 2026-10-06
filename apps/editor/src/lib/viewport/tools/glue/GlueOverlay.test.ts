@@ -12,6 +12,7 @@ import {
   dialogButton,
   FakeController,
   FakeDocument,
+  get,
   pointer,
   press,
   render,
@@ -163,5 +164,66 @@ describe("GlueOverlay highlighted pair (T1651)", () => {
     view.focusedPair = { a: 3, b: 3 };
     flushSync();
     expect(all(target, "g.highlight")).toHaveLength(0);
+  });
+});
+
+describe("GlueOverlay pair under the pointer (T1664)", () => {
+  // 組 0 は (210, 20)–(10, 20)、組 1 は (210, 220)–(10, 220) (CSS ピクセル)。
+  function layer(target: HTMLElement): Element {
+    return get(target, "svg.layer");
+  }
+
+  it("points at the pair whose line or vertex is under the pointer, and forgets it away", () => {
+    const { view, doc, target } = setup([
+      { a: 1, b: 0, weight: 1 },
+      { a: 2, b: 3, weight: 1 },
+    ]);
+    view.setPairMode("off");
+    flushSync();
+    pointer(layer(target), "pointermove", [110, 24]);
+    expect(view.viewportPair).toEqual({ a: 1, b: 0 });
+    expect(view.highlightedPair).toEqual({ a: 1, b: 0 });
+    expect(all(target, "g.highlight")[0]?.getAttribute("data-pair")).toBe("0");
+    // 頂点 (線の端) の近く
+    pointer(layer(target), "pointermove", [214, 223]);
+    expect(view.viewportPair).toEqual({ a: 2, b: 3 });
+    pointer(layer(target), "pointermove", [110, 120]);
+    expect(view.viewportPair).toBeNull();
+    expect(all(target, "g.highlight")).toHaveLength(0);
+    expect(doc.commands).toEqual([]);
+  });
+
+  it("keeps the pair while a button is held and ignores the bar", () => {
+    const { view, target } = setup();
+    pointer(layer(target), "pointermove", [110, 20]);
+    expect(view.viewportPair).toEqual({ a: 1, b: 0 });
+    pointer(layer(target), "pointermove", [110, 120], { buttons: 1 });
+    expect(view.viewportPair).toEqual({ a: 1, b: 0 });
+    pointer(get(target, ".bar button"), "pointermove", [110, 20]);
+    expect(view.viewportPair).toBeNull();
+  });
+
+  it("does not get in the way of removing a pair", async () => {
+    const { view, doc, target } = setup([
+      { a: 1, b: 0, weight: 1 },
+      { a: 2, b: 3, weight: 1 },
+    ]);
+    view.setPairMode("remove");
+    flushSync();
+    const marker = all(target, "rect.marker")[1] as Element;
+    pointer(marker, "pointermove", [110, 220]);
+    expect(view.viewportPair).toEqual({ a: 2, b: 3 });
+    pointer(marker, "pointerdown", [110, 220]);
+    await settleAll();
+    expect(sentPairs(doc)).toEqual([[{ a: 1, b: 0, weight: 1 }]]);
+  });
+
+  it("forgets the pair when the overlay goes away", () => {
+    const { view, target } = setup();
+    pointer(layer(target), "pointermove", [110, 20]);
+    expect(view.viewportPair).not.toBeNull();
+    view.glue = null;
+    flushSync();
+    expect(view.viewportPair).toBeNull();
   });
 });

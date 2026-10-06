@@ -40,6 +40,16 @@ export function nearestVertex(
   return best;
 }
 
+/** 点 `p` から線分 `a`–`b` までの距離 (`a` と `b` が同じ点なら、その点までの距離)。 */
+export function segmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const length = dx * dx + dy * dy;
+  const t =
+    length > 0 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
 /** 矩形 (辺の上を含む) に入る頂点の番号 (昇順)。 */
 export function verticesInBox(positions: ArrayLike<number>, box: Box): number[] {
   const [minX, maxX] = [Math.min(box.x0, box.x1), Math.max(box.x0, box.x1)];

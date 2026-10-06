@@ -11,6 +11,8 @@
   - 組の一覧 (T1648): 組ごとに「外す」、2 つのメッシュの頂点の番号 (1 から) を入れて「Pair」で 1 組足す。ビューポートで
     頂点を押す操作の、マウスを使わない代わり。どちらも set_glue を 1 つ送る (withPair・withoutPair)。
     行 (と「×」) にポインタかフォーカスがある間は、ビューポートでその組を強調する (T1651。GlueView.highlightedPair。表示だけ)。
+    逆に、ビューポートで組の線か頂点にポインタを乗せると (GlueView.viewportPair。T1664)、その行を強調し、ポインタが
+    PAIR_SCROLL_DELAY の間その組に留まって行が一覧の見える所に無いときだけ、一覧 (だけ) をその行まで送る。
   - モジュールのプロジェクトでは、本体のグルー (どちらかの端が本体のメッシュ) は読み取り専用 (BaseLock)。つなげるのは
     モジュールのメッシュだけ。描画用の複製のグルーは、インスペクタの「Sync」が作り直すので編集しない。
 -->
@@ -79,6 +81,34 @@ $effect(() => {
   const pair = view.highlightedPair;
   if (pair !== null && !(glue && hasPair(glue, pair.a, pair.b))) view.clearHighlight();
 });
+
+/** ビューポートで指した組の行へ一覧を送るまでの待ち (ミリ秒)。ポインタが組の上を通り過ぎる間は一覧を動かさない。 */
+const PAIR_SCROLL_DELAY = 250;
+
+let pairListEl = $state<HTMLUListElement | null>(null);
+
+// ビューポートで組を指したら (T1664)、ポインタがその組に留まったときに、行が一覧の見える所に無ければ一覧を送る。
+// 送るのは一覧の中だけ (パネル全体は動かさない)。行がすでに見えていれば動かさない。
+$effect(() => {
+  const pair = view.viewportPair;
+  const list = pairListEl;
+  if (pair === null || !list || !glue) return;
+  const index = glue.pairs.findIndex((p) => p.a === pair.a && p.b === pair.b);
+  if (index < 0) return;
+  const timer = setTimeout(() => {
+    const row = list.children[index];
+    if (row instanceof HTMLElement) revealInList(list, row);
+  }, PAIR_SCROLL_DELAY);
+  return () => clearTimeout(timer);
+});
+
+/** `row` が `list` の見える所に無ければ、近い側の端に合わせて一覧を送る。 */
+function revealInList(list: HTMLElement, row: HTMLElement): void {
+  const box = list.getBoundingClientRect();
+  const r = row.getBoundingClientRect();
+  if (r.top < box.top) list.scrollTop -= box.top - r.top;
+  else if (r.bottom > box.bottom) list.scrollTop += r.bottom - box.bottom;
+}
 
 /** ツリーで選んだメッシュのうち、つなげる 2 つ。 */
 const fromSelection = $derived(
@@ -476,7 +506,7 @@ const axisKeyValue = $derived(
     {#if g.pairs.length === 0}
       <p class="ed-hint">{t("glues.pairs.empty")}</p>
     {:else}
-      <ul class="pair-list" aria-label={t("glues.pairs.listAria", { id: g.id })}>
+      <ul bind:this={pairListEl} class="pair-list" aria-label={t("glues.pairs.listAria", { id: g.id })}>
         {#each g.pairs as pair, i (i)}
           <li
             class:highlighted={view.highlightedPair?.a === pair.a &&
