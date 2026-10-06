@@ -1,11 +1,11 @@
 ---
 id: T1641
 title: "エディタ: wasm の生成物があると、部品のテストで wasm の fetch が中断されて処理されない rejection になり Vitest が落ちる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1641
 ---
 
 # T1641: エディタ: wasm の生成物があると、部品のテストで wasm の fetch が中断されて処理されない rejection になり Vitest が落ちる
