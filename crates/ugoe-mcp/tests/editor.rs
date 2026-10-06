@@ -257,13 +257,16 @@ impl Relay {
     }
 
     /// `command` (中継を起動するコマンド) を stdio のサーバとして起動する。
+    ///
+    /// 起動できなければ、コマンド・作業ディレクトリ・環境変数とパスの有無を出して panic する
+    /// (Windows の CI でしか起きない失敗の原因をログから絞るため。T0966)。
     fn spawn_command(mut command: Command) -> Self {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .unwrap();
+            .unwrap_or_else(|e| panic!("cannot spawn the relay: {e:?}\n{}", describe(&command)));
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Self {
@@ -346,6 +349,28 @@ impl Drop for Relay {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// 起動に失敗したコマンドの説明: プログラム・引数・作業ディレクトリ・足した環境変数と、パスがあるか。
+fn describe(command: &Command) -> String {
+    let exists = |path: &Path| match fs::metadata(path) {
+        Ok(m) if m.is_dir() => "a directory".to_owned(),
+        Ok(_) => "a file".to_owned(),
+        Err(e) => format!("missing ({e})"),
+    };
+    let program = Path::new(command.get_program());
+    let mut lines = vec![
+        format!("program: {program:?} ({})", exists(program)),
+        format!("args: {:?}", command.get_args().collect::<Vec<_>>()),
+    ];
+    match command.get_current_dir() {
+        Some(dir) => lines.push(format!("current_dir: {dir:?} ({})", exists(dir))),
+        None => lines.push("current_dir: (inherited)".to_owned()),
+    }
+    for (key, value) in command.get_envs() {
+        lines.push(format!("env: {key:?} = {value:?}"));
+    }
+    lines.join("\n")
 }
 
 fn start(editor: &Arc<FakeEditor>, discovery: &Path) -> EditorBridge {
