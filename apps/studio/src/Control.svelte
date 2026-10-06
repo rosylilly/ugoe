@@ -24,7 +24,7 @@ import {
   Toggle,
   Toolbar,
 } from "@ugoe/ui";
-import { onMount } from "svelte";
+import { onMount, tick } from "svelte";
 import ApiApproval from "./ApiApproval.svelte";
 import ApiPanel from "./ApiPanel.svelte";
 import HotkeysPanel from "./HotkeysPanel.svelte";
@@ -76,7 +76,7 @@ import {
   presetSize,
   type TickRate,
 } from "./lib/settings";
-import { statusBadges } from "./lib/status";
+import { type PanelId, revealPanel, statusBadges } from "./lib/status";
 import { DEFAULT_CAMERA_PROFILE, type VirtualCameraStatus } from "./lib/virtualCamera";
 import MotionPanel from "./MotionPanel.svelte";
 import MotionSettingsPanel from "./MotionSettingsPanel.svelte";
@@ -189,6 +189,24 @@ const sceneHotkeys = $derived.by(() => {
 const outputSize = $derived(parseOutputSize(profile?.profile.output.size));
 /** 出力ウィンドウに出している背景 (配信しているシーンのもの。配信していなければ `null`)。 */
 const liveBackground = $derived(profile?.live == null ? null : (scene?.background ?? null));
+/** 右の列の設定のパネルが開いているか (「いまの状態」の印から開いて送る。T0845)。 */
+const panelsOpen = $state<Record<PanelId, boolean>>({
+  inputs: true,
+  output: true,
+  source: true,
+  hotkeys: true,
+  api: true,
+  load: true,
+});
+
+/** 印を押したとき: そのパネルを開いて送り、見出しにフォーカスを移す。 */
+function openPanel(panel: PanelId) {
+  void revealPanel(document, panel, async (p) => {
+    panelsOpen[p] = true;
+    await tick();
+  });
+}
+
 /** 「いまの状態」の印 (lib/status.ts)。 */
 const badges = $derived(
   statusBadges({
@@ -779,7 +797,7 @@ onMount(() => {
         <ul class="studio__status" aria-label={t("status.label")}>
           {#each badges as view (view.id)}
             <li>
-              <StatusBadge {view}>
+              <StatusBadge {view} onopen={() => openPanel(view.panel)}>
                 {#if view.id === "lipSync" && view.tone === "ok"}
                   <meter min="0" max="1" value={microphone.level} aria-label={t("status.meter")}></meter>
                 {/if}
@@ -843,46 +861,52 @@ onMount(() => {
           />
         </Section>
       {/if}
-      <Section title={t("inputs.heading")}>
-        <InputPanel
-          {tracker}
-          {microphone}
-          settings={inputSettings}
-          trackingParameters={animation.trackingParameters}
-          {values}
-          trackingPaused={animation.trackingPaused}
-          lipSyncPaused={animation.lipSyncPaused}
-          disabled={host === null}
-          onsettings={(settings) => run((h) => h.setInputSettings(settings))}
-          ontrackingpause={(paused) => void run((h) => h.setTrackingPaused(paused))}
-          onlipsyncpause={(paused) => void run((h) => h.setLipSyncPaused(paused))}
-        />
-      </Section>
-      <Section title={t("output.heading")}>
-        <OutputPanel
-          {output}
-          size={outputSize}
-          background={liveBackground}
-          onvisible={setOutputVisible}
-          ontop={setOutputOnTop}
-          onsize={applyOutputSize}
-        />
-      </Section>
+      <div data-panel="inputs">
+        <Section title={t("inputs.heading")} bind:open={panelsOpen.inputs}>
+          <InputPanel
+            {tracker}
+            {microphone}
+            settings={inputSettings}
+            trackingParameters={animation.trackingParameters}
+            {values}
+            trackingPaused={animation.trackingPaused}
+            lipSyncPaused={animation.lipSyncPaused}
+            disabled={host === null}
+            onsettings={(settings) => run((h) => h.setInputSettings(settings))}
+            ontrackingpause={(paused) => void run((h) => h.setTrackingPaused(paused))}
+            onlipsyncpause={(paused) => void run((h) => h.setLipSyncPaused(paused))}
+          />
+        </Section>
+      </div>
+      <div data-panel="output">
+        <Section title={t("output.heading")} bind:open={panelsOpen.output}>
+          <OutputPanel
+            {output}
+            size={outputSize}
+            background={liveBackground}
+            onvisible={setOutputVisible}
+            ontop={setOutputOnTop}
+            onsize={applyOutputSize}
+          />
+        </Section>
+      </div>
 
-      <Section title={t("source.heading")}>
-        <SourcePanel
-          {api}
-          size={sourceSize}
-          disabled={host === null}
-          onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
-          url={async () => {
-            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
-            if (host === null) throw new Error("no host");
-            return host.sourceUrl();
-          }}
-          onregenerate={async () => (await run((h) => h.regenerateSourceToken())) ?? null}
-        />
-      </Section>
+      <div data-panel="source">
+        <Section title={t("source.heading")} bind:open={panelsOpen.source}>
+          <SourcePanel
+            {api}
+            size={sourceSize}
+            disabled={host === null}
+            onenabled={(enabled) => void run((h) => h.setSourceEnabled(enabled))}
+            url={async () => {
+              // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
+              if (host === null) throw new Error("no host");
+              return host.sourceUrl();
+            }}
+            onregenerate={async () => (await run((h) => h.regenerateSourceToken())) ?? null}
+          />
+        </Section>
+      </div>
 
       <Section title={t("virtualCamera.heading")}>
         <VirtualCameraPanel
@@ -892,31 +916,33 @@ onMount(() => {
         />
       </Section>
 
-      <Section title={t("hotkeys.heading")}>
-        <HotkeysPanel
-          {hotkeys}
-          problems={hotkeyProblems}
-          {wayland}
-          scenes={sceneChoices}
-          expressions={animation.expressions}
-          motions={animation.motions.map((m) => m.name)}
-          slots={animation.slots}
-          poses={poseGroups.flatMap((g) => g.parts)}
-          disabled={host === null}
-          onchange={(list) => run((h) => h.setHotkeys(list))}
-          onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}
-          onpickmodule={() => pickFile("module")}
-          moduleSlot={async (path) => {
-            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
-            if (host === null) throw new Error("no host");
-            try {
-              return await host.moduleSlot(path);
-            } catch (e) {
-              throw new Error(describeError(e));
-            }
-          }}
-        />
-      </Section>
+      <div data-panel="hotkeys">
+        <Section title={t("hotkeys.heading")} bind:open={panelsOpen.hotkeys}>
+          <HotkeysPanel
+            {hotkeys}
+            problems={hotkeyProblems}
+            {wayland}
+            scenes={sceneChoices}
+            expressions={animation.expressions}
+            motions={animation.motions.map((m) => m.name)}
+            slots={animation.slots}
+            poses={poseGroups.flatMap((g) => g.parts)}
+            disabled={host === null}
+            onchange={(list) => run((h) => h.setHotkeys(list))}
+            onsuspend={(suspended) => void run((h) => h.suspendHotkeys(suspended))}
+            onpickmodule={() => pickFile("module")}
+            moduleSlot={async (path) => {
+              // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
+              if (host === null) throw new Error("no host");
+              try {
+                return await host.moduleSlot(path);
+              } catch (e) {
+                throw new Error(describeError(e));
+              }
+            }}
+          />
+        </Section>
+      </div>
       <Section title={t("motion.settingsHeading")}>
         <MotionSettingsPanel
           {animation}
@@ -926,30 +952,34 @@ onMount(() => {
         />
       </Section>
 
-      <Section title={t("api.heading")}>
-        <ApiPanel
-          {api}
-          disabled={host === null}
-          onenabled={(enabled) => {
-            postponed = new Set();
-            void run((h) => h.setApiEnabled(enabled));
-          }}
-          onport={(port) => void run((h) => h.setApiPort(port))}
-          token={async () => {
-            // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
-            if (host === null) throw new Error("no host");
-            return host.apiToken();
-          }}
-          onregenerate={() => void run((h) => h.regenerateApiToken())}
-          ondisconnect={(id) => void run((h) => h.disconnectApiClient(id))}
-          onrevoke={(id) => void run((h) => h.revokeApiClient(id))}
-          onreview={(id) => (postponed = new Set([...postponed].filter((p) => p !== id)))}
-        />
-      </Section>
+      <div data-panel="api">
+        <Section title={t("api.heading")} bind:open={panelsOpen.api}>
+          <ApiPanel
+            {api}
+            disabled={host === null}
+            onenabled={(enabled) => {
+              postponed = new Set();
+              void run((h) => h.setApiEnabled(enabled));
+            }}
+            onport={(port) => void run((h) => h.setApiPort(port))}
+            token={async () => {
+              // i18n-ignore: 起こらない (host が無いときは部品を無効にする)
+              if (host === null) throw new Error("no host");
+              return host.apiToken();
+            }}
+            onregenerate={() => void run((h) => h.regenerateApiToken())}
+            ondisconnect={(id) => void run((h) => h.disconnectApiClient(id))}
+            onrevoke={(id) => void run((h) => h.revokeApiClient(id))}
+            onreview={(id) => (postponed = new Set([...postponed].filter((p) => p !== id)))}
+          />
+        </Section>
+      </div>
 
-      <Section title={t("load.heading")}>
-        <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
-      </Section>
+      <div data-panel="load">
+        <Section title={t("load.heading")} bind:open={panelsOpen.load}>
+          <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
+        </Section>
+      </div>
 
       <Section title={t("parameters.heading")}>
         {#snippet actions()}

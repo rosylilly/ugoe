@@ -16,7 +16,7 @@ src/Control.svelte            操作ウィンドウ: プロファイルのメニ
                               列の並び (シーン・配信中に触るもの・設定) と狭い幅の積み方 (T0817)、設定の並び (準備の順。T0818)
 src/OutputPanel.svelte        操作ウィンドウの「出力ウィンドウ」: 表示・最前面・大きさと、様子 (いまの大きさ・枠・背景)・取り込み方の案内 (T0818)
                               透過のシーンなのに透過が画面で効かないときの「背景」の欄の注意 (T0846)
-src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。中身は lib/status.ts。T0817)
+src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。押すとその設定のパネルへ。中身は lib/status.ts。T0817・T0845)
 src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
 src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
 src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除 (確かめてから)・切り替えのホットキーの表示)
@@ -25,7 +25,7 @@ src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源
 src/MotionPanel.svelte        表情とモーション (表情の付け外し・モーションの再生と優先度)
 src/MotionSettingsPanel.svelte モーションの設定 (待機モーション・トラッキング中のモーションの優先。右の設定の列。T0818)
 src/InputPanel.svelte         入力 (@ugoe/face-tracking のパネルでカメラのトラッキング、マイクの機器・感度・ノイズの閾値・メーター)
-src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない数と行ごとの印と理由)
+src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して決める・操作と引数・登録できない数と行ごとの印と理由・削除の「元に戻す」)
 src/ReceiverFailuresNotices.svelte 操作ウィンドウの上の、受け手が読めなかったことの知らせ (受け手ごとに 1 つ。読めなかったものをすべて並べる。T0840)
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
 src/LicenseDialog.svelte      ライセンスの表示 (設定の「ライセンスを表示…」)。本文は public/third-party-notices.txt

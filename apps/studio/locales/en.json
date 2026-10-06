@@ -401,6 +401,8 @@
     "noKeys": "Set keys",
     "action": "Action",
     "remove": "Remove",
+    "removed": "Removed the hotkey “{{action}}”.",
+    "undo": "Undo",
     "scene": "Scene",
     "missingScene": "(deleted scene)",
     "expression": "Expression",

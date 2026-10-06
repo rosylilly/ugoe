@@ -389,6 +389,8 @@
     "noKeys": "キーを決める",
     "action": "操作",
     "remove": "削除",
+    "removed": "ホットキー「{{action}}」を削除しました。",
+    "undo": "元に戻す",
     "scene": "シーン",
     "missingScene": "(消したシーン)",
     "expression": "表情",

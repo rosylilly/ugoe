@@ -14,8 +14,24 @@ export type StatusTone = "ok" | "off" | "warning" | "danger";
 
 export type StatusId = "tracking" | "lipSync" | "hotkeys" | "output" | "load" | "api" | "source";
 
+/** 右の列の設定のパネル (印を押すと開いて送る先。T0845)。 */
+export type PanelId = "inputs" | "output" | "source" | "hotkeys" | "api" | "load";
+
+/** 印ごとの、その設定を変えるパネル。 */
+export const STATUS_PANELS: Record<StatusId, PanelId> = {
+  tracking: "inputs",
+  lipSync: "inputs",
+  hotkeys: "hotkeys",
+  output: "output",
+  load: "load",
+  api: "api",
+  source: "source",
+};
+
 export interface StatusBadgeView {
   id: StatusId;
+  /** 押すと開くパネル。 */
+  panel: PanelId;
   tone: StatusTone;
   /** 印の横に出す短い文。 */
   label: string;
@@ -53,7 +69,7 @@ export interface OutputBadgeState {
 }
 
 function badge(id: StatusId, tone: StatusTone, label: string, tooltip: string): StatusBadgeView {
-  return { id, tone, label, tooltip };
+  return { id, panel: STATUS_PANELS[id], tone, label, tooltip };
 }
 
 export function trackingBadge(state: TrackingState): StatusBadgeView {
@@ -182,6 +198,43 @@ export function sourceBadge(api: ApiView): StatusBadgeView {
     t("status.source.on"),
     t("status.source.onTip", { count: source.connections }),
   );
+}
+
+/**
+ * パネルを開いて送り、見出し (開閉のボタン) にフォーカスを移す (T0845)。パネルは `data-panel` の付いた要素で囲んだ Section。
+ * 閉じていれば `open` で開き、開いた中身を描き終えてから送る。見つからなければ `false`。
+ */
+export async function revealPanel(
+  root: ParentNode,
+  panel: PanelId,
+  open: (panel: PanelId) => Promise<void>,
+): Promise<boolean> {
+  await open(panel);
+  const container = root.querySelector<HTMLElement>(`[data-panel="${panel}"]`);
+  const heading = container?.querySelector<HTMLElement>(".ugoe-section__trigger");
+  if (container == null || heading == null) return false;
+  scrollToTop(container);
+  // 送るのは上で済ませる (focus の既定の送りで位置が変わらないように)
+  heading.focus({ preventScroll: true });
+  return true;
+}
+
+/**
+ * 要素の頭が、送れるいちばん近い祖先 (右の列) の頭に来るよう送る。scrollIntoView は送らない祖先 (body など) まで
+ * 動かして画面がずれるので使わない。動きを減らす設定なら一度に送る。
+ */
+function scrollToTop(el: HTMLElement) {
+  let box = el.parentElement;
+  while (box !== null) {
+    const overflow = getComputedStyle(box).overflowY;
+    if (box.scrollHeight > box.clientHeight && (overflow === "auto" || overflow === "scroll"))
+      break;
+    box = box.parentElement;
+  }
+  if (box === null) return;
+  const top = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  box.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
 }
 
 /** 「いまの状態」に並べる印 (配信中に気にする順)。 */

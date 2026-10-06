@@ -256,6 +256,26 @@ export const APPS = {
       await ctx.scene("output", { aria: false });
       await scrollToTop(page);
 
+      // 「いまの状態」のホットキーの印からホットキーのパネルへ送り、1 つ目を削除した後の「元に戻す」の知らせ (T0845)
+      await page
+        .getByRole("list", { name: text("studio", ctx.lang, "status.label"), exact: true })
+        .locator('[data-status="hotkeys"]')
+        .click();
+      await page.waitForTimeout(800);
+      await page
+        .locator('[data-panel="hotkeys"]')
+        .getByRole("button", { name: text("studio", ctx.lang, "hotkeys.remove"), exact: true })
+        .first()
+        .click();
+      await page.waitForTimeout(300);
+      await ctx.scene("hotkey-removed");
+      await page
+        .locator('[data-panel="hotkeys"]')
+        .getByRole("button", { name: text("studio", ctx.lang, "hotkeys.undo"), exact: true })
+        .click();
+      await page.waitForTimeout(300);
+      await scrollToTop(page);
+
       // 注意の要る状態 (承認を待つアプリ・登録できないホットキー・負荷の注意。T0818)
       await page.evaluate(({ messages, status }) => {
         window.__uiAuditStudio.setStatus(status);

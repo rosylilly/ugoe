@@ -150,4 +150,67 @@ describe("HotkeysPanel", () => {
     const keyButton = items[1]?.querySelector("button");
     expect(keyButton?.getAttribute("aria-describedby")).toBe(clash?.id);
   });
+
+  it("puts a removed hotkey back at the same place with Undo", async () => {
+    const original: Hotkey[] = [
+      { keys: "Ctrl+KeyA", action: { kind: "scene", scene: "a" } },
+      { keys: "Ctrl+KeyB", action: { kind: "stopMotions" } },
+      { keys: "Ctrl+KeyC", action: { kind: "clearExpressions" } },
+    ];
+    const { target, sent, notify } = setup(original);
+    const second = target.querySelectorAll(".hotkeys__item")[1];
+    if (second === undefined) throw new Error("no second row");
+    button(second, t("hotkeys.remove")).click();
+    await notify();
+    expect(sent.at(-1)).toEqual([original[0], original[2]]);
+    // 知らせに消した操作の名前と「元に戻す」を出し、フォーカスをそこへ移す (押したボタンは消えたため)
+    const undo = button(target, t("hotkeys.undo"));
+    expect(target.textContent).toContain(
+      t("hotkeys.removed", { action: t("hotkeys.kinds.stopMotions") }),
+    );
+    expect(document.activeElement).toBe(undo);
+
+    undo.click();
+    await notify();
+    // 同じ位置に同じキーと操作で戻す (送った割り当てでバックエンドが OS に登録し直す)
+    expect(sent.at(-1)).toEqual(original);
+    expect(target.querySelectorAll(".hotkeys__item")).toHaveLength(3);
+    expect(target.querySelector(".hotkeys__undo")).toBeNull();
+    const restored = target.querySelectorAll(".hotkeys__item")[1]?.querySelector("button");
+    expect(document.activeElement).toBe(restored);
+  });
+
+  it("puts the removed hotkey last when the rows after it are gone", async () => {
+    const original: Hotkey[] = [
+      { keys: "Ctrl+KeyA", action: { kind: "scene", scene: "a" } },
+      { keys: "Ctrl+KeyB", action: { kind: "stopMotions" } },
+    ];
+    const { target, sent, notify } = setup(original);
+    const rows = () => [...target.querySelectorAll(".hotkeys__item")];
+    const second = rows()[1];
+    if (second === undefined) throw new Error("no second row");
+    button(second, t("hotkeys.remove")).click();
+    await notify();
+    const first = rows()[0];
+    if (first === undefined) throw new Error("no first row");
+    // 2 つ目を消した後に 1 つ目も消すと、知らせは後のものに替わる
+    button(first, t("hotkeys.remove")).click();
+    await notify();
+    expect(sent.at(-1)).toEqual([]);
+    button(target, t("hotkeys.undo")).click();
+    await notify();
+    expect(sent.at(-1)).toEqual([original[0]]);
+  });
+
+  it("forgets the removed hotkey when the notice is closed", async () => {
+    const original: Hotkey[] = [{ keys: "Ctrl+KeyA", action: { kind: "stopMotions" } }];
+    const { target, notify } = setup(original);
+    button(target, t("hotkeys.remove")).click();
+    await notify();
+    const close = target.querySelector<HTMLElement>(".ugoe-notice button[aria-label]");
+    expect(close).not.toBeNull();
+    close?.click();
+    flushSync();
+    expect(target.querySelector(".hotkeys__undo")).toBeNull();
+  });
 });

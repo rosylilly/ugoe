@@ -2,12 +2,12 @@
   ホットキー (docs/studio.md#ホットキー、T0803): 操作ごとのキーの割り当て。キーの欄を押してからキーを押すと割り当てる
   (押している間はホットキーの登録を外す)。割り当てはプロファイルに持ち、バックエンドがグローバルなショートカットとして登録する
   (アプリが前面に無くても効く)。登録できなかったもの (ぶつかり・OS が使っている) は、パネルの頭に数を、その行に印と理由を出す
-  (ぶつかりは、相手の割り当てを操作の名前で示す。T0818)。
+  (ぶつかりは、相手の割り当てを操作の名前で示す。T0818)。削除した行は、パネルの頭の知らせの「元に戻す」で同じ位置に戻せる (T0845)。
 -->
 <script lang="ts">
 import { MOTION_PRIORITIES, type MotionPriority } from "@ugoe/player";
 import { Button, Icon, Kbd, Notice, SegmentedControl, Select } from "@ugoe/ui";
-import { onDestroy } from "svelte";
+import { onDestroy, tick } from "svelte";
 import { describeError } from "./lib/errors";
 import {
   defaultAction,
@@ -63,6 +63,9 @@ let {
 /** キーを待っている割り当ての位置。 */
 let capturing = $state<number | null>(null);
 let pickError = $state<string | null>(null);
+/** 最後に削除した割り当てと、その位置 (知らせの「元に戻す」で戻す。T0845)。 */
+let removed = $state<{ index: number; hotkey: Hotkey } | null>(null);
+let root = $state<HTMLElement>();
 
 const KIND_KEYS: Record<Exclude<HotkeyKind, "unknown">, string> = {
   scene: "hotkeys.kinds.scene",
@@ -150,11 +153,29 @@ function add() {
   startCapture(next.length - 1);
 }
 
-function remove(index: number) {
+async function remove(index: number) {
   if (capturing !== null) stopCapture();
   const next = structuredClone($state.snapshot(current)) as Hotkey[];
-  next.splice(index, 1);
+  const [hotkey] = next.splice(index, 1);
+  if (hotkey === undefined) return;
+  removed = { index, hotkey };
   void edit.submit(next);
+  // 押したボタンは行ごと消えるので、フォーカスを知らせの「元に戻す」へ移す (body へ落とさない)
+  await tick();
+  root?.querySelector<HTMLElement>(".hotkeys__undo")?.focus();
+}
+
+/** 削除した割り当てを、同じ位置 (後ろの行が減っていれば最後) に戻す。キーも操作も削除の前のまま。 */
+async function undoRemove() {
+  const last = removed;
+  if (last === null) return;
+  removed = null;
+  const next = structuredClone($state.snapshot(current)) as Hotkey[];
+  const index = Math.min(last.index, next.length);
+  next.splice(index, 0, last.hotkey);
+  void edit.submit(next);
+  await tick();
+  root?.querySelectorAll<HTMLElement>(".hotkeys__keys")[index]?.focus();
 }
 
 // --- キーの割り当て ---
@@ -243,7 +264,15 @@ function problemText(problem: HotkeyProblem): string {
 
 <svelte:window onkeydowncapture={onKeydown} />
 
-<div class="hotkeys">
+<div class="hotkeys" bind:this={root}>
+  {#if removed !== null}
+    <Notice ondismiss={() => (removed = null)}>
+      {t("hotkeys.removed", { action: describe(removed.hotkey) })}
+      {#snippet actions()}
+        <Button small class="hotkeys__undo" {disabled} onclick={undoRemove}>{t("hotkeys.undo")}</Button>
+      {/snippet}
+    </Notice>
+  {/if}
   {#if wayland}
     <Notice tone="warning">{t("hotkeys.wayland")}</Notice>
   {/if}
@@ -268,6 +297,7 @@ function problemText(problem: HotkeyProblem): string {
         <div class="hotkeys__row">
           <Button
             small
+            class="hotkeys__keys"
             pressed={capturing === index}
             {disabled}
             aria-describedby={problem ? `hotkey-problem-${index}` : undefined}
@@ -294,7 +324,7 @@ function problemText(problem: HotkeyProblem): string {
               />
             {/if}
           </div>
-          <Button small variant="ghost" {disabled} onclick={() => remove(index)}>{t("hotkeys.remove")}</Button>
+          <Button small variant="ghost" {disabled} onclick={() => void remove(index)}>{t("hotkeys.remove")}</Button>
         </div>
         {#if action.kind === "scene"}
           <Select

@@ -186,12 +186,15 @@ export function studioPageInit({ osLocale, fixture }) {
   let listener = null;
   /** 負荷の数値に重ねるもの (`setStatus`)。 */
   let statusPatch = {};
+  /** 最後に送ったプロファイルの通知 (ホットキーを変えたら、割り当てを替えて送り直す)。 */
+  let lastProfile = null;
   const sendApi = () => {
     listener?.({ kind: "api", ...api });
     return api;
   };
   window.__uiAuditStudio = {
     emit(message) {
+      if (message.kind === "profile") lastProfile = message;
       if (message.kind === "api") {
         const { kind: _, ...view } = message;
         api = view;
@@ -254,6 +257,12 @@ export function studioPageInit({ osLocale, fixture }) {
       api = { ...api, pending: api.pending.filter((c) => c.id !== id) };
       sendApi();
     },
+    // ホットキーの削除と「元に戻す」を撮る (T0845)。割り当てを替えたプロファイルを送り直す
+    async setHotkeys(hotkeys) {
+      if (lastProfile === null) return;
+      lastProfile = { ...lastProfile, profile: { ...lastProfile.profile, hotkeys } };
+      listener?.(lastProfile);
+    },
     async revokeApiClient(id) {
       api = { ...api, clients: api.clients.filter((c) => c.id !== id) };
       sendApi();
@@ -271,7 +280,15 @@ export function studioPageInit({ osLocale, fixture }) {
     sceneBackground: async () => new Uint8Array(),
     async subscribeStatus(onMessage) {
       listener = onMessage;
-      onMessage({ kind: "profile", profile, path, dirty: true, live: active.id, recent: [path] });
+      lastProfile = {
+        kind: "profile",
+        profile,
+        path,
+        dirty: true,
+        live: active.id,
+        recent: [path],
+      };
+      onMessage(lastProfile);
       onMessage({ kind: "api", ...api });
       onMessage({
         kind: "scene",

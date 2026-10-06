@@ -1,7 +1,7 @@
 <!--
   「いまの状態」の印 1 つ (docs/studio.md#操作ウィンドウ、T0817)。色だけで伝えないよう、印の形 (動いている = 丸にチェック・切 = 中の空いた丸・
   注意 = 三角・動かせない = 八角) と短い文を並べ、意味は Tooltip で出す (キーボードでも出せるよう、印をフォーカスできるようにする)。
-  中身 (文と説明) は lib/status.ts。
+  中身 (文と説明) は lib/status.ts。`onopen` を渡すとボタンになり、押すとその設定のパネルを開く (T0845)。
 -->
 <script lang="ts">
 import { Icon, Tooltip } from "@ugoe/ui";
@@ -12,32 +12,51 @@ interface Props {
   view: StatusBadgeView;
   /** 文の後ろに足すもの (口パクの音量のメーターなど)。 */
   children?: Snippet;
+  /** 押したとき (その設定のパネルを開く)。渡さなければ押せない印 (フォーカスだけできる)。 */
+  onopen?: () => void;
 }
 
-let { view, children }: Props = $props();
+let { view, children, onopen }: Props = $props();
 </script>
+
+{#snippet content()}
+  <span class="status-badge__icon">
+    {#if view.tone === "ok"}
+      <Icon name="success" />
+    {:else if view.tone === "warning"}
+      <Icon name="warning" />
+    {:else if view.tone === "danger"}
+      <Icon name="danger" />
+    {:else}
+      <!-- 切: 中の空いた丸に横線 (Icon に無い 1 か所だけの印。docs/ui.md#アイコン) -->
+      <svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.25" /><path d="M5.25 8h5.5" />
+      </svg>
+    {/if}
+  </span>
+  <span class="status-badge__label">{view.label}</span>
+  {@render children?.()}
+{/snippet}
 
 <Tooltip text={view.tooltip}>
   {#snippet trigger(attrs)}
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <span {...attrs} class="status-badge" data-tone={view.tone} data-status={view.id} tabindex="0">
-      <span class="status-badge__icon">
-        {#if view.tone === "ok"}
-          <Icon name="success" />
-        {:else if view.tone === "warning"}
-          <Icon name="warning" />
-        {:else if view.tone === "danger"}
-          <Icon name="danger" />
-        {:else}
-          <!-- 切: 中の空いた丸に横線 (Icon に無い 1 か所だけの印。docs/ui.md#アイコン) -->
-          <svg class="ugoe-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.25" /><path d="M5.25 8h5.5" />
-          </svg>
-        {/if}
+    {#if onopen}
+      <button
+        {...attrs}
+        type="button"
+        class="status-badge status-badge--button"
+        data-tone={view.tone}
+        data-status={view.id}
+        onclick={onopen}
+      >
+        {@render content()}
+      </button>
+    {:else}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span {...attrs} class="status-badge" data-tone={view.tone} data-status={view.id} tabindex="0">
+        {@render content()}
       </span>
-      <span class="status-badge__label">{view.label}</span>
-      {@render children?.()}
-    </span>
+    {/if}
   {/snippet}
 </Tooltip>
 
@@ -56,6 +75,19 @@ let { view, children }: Props = $props();
     font-size: var(--ugoe-font-size-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  /* 押せる印: 枠を操作の部品の色にし (押せると分かるように)、乗ると明るさを変える (Button と同じ) */
+  .status-badge--button {
+    margin: 0;
+    border-color: var(--ugoe-color-control-border);
+    font-family: inherit;
+    line-height: inherit;
+    cursor: pointer;
+  }
+
+  .status-badge--button:hover {
+    background-image: var(--ugoe-overlay-hover);
   }
 
   .status-badge:focus-visible {
