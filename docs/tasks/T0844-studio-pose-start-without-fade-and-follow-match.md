@@ -1,11 +1,11 @@
 ---
 id: T0844
 title: "スタジオ: 読み直したシーンで選んだポーズの要素から始め、follow_match にポーズの切り替えを入れる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [apps/studio, packages/player, docs]
 depends_on: [T0329, T0843]
-assignee:
+assignee: claude-worker-T0844
 ---
 
 # T0844: スタジオ: 読み直したシーンで選んだポーズの要素から始め、follow_match にポーズの切り替えを入れる
