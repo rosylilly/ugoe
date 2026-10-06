@@ -1,11 +1,11 @@
 ---
 id: T0057
 title: "CI: e2e と rust (apps) のキャッシュの重なり (Tauri の依存) を調べ、1 組を 5GB に収めるか決める"
-status: todo
+status: in-progress
 milestone: M10
 crates: [.github/workflows, docs]
 depends_on: [T0056]
-assignee:
+assignee: claude-worker-T0057
 ---
 
 # T0057: CI: e2e と rust (apps) のキャッシュの重なり (Tauri の依存) を調べ、1 組を 5GB に収めるか決める
