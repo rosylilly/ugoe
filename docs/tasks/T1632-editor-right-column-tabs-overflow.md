@@ -1,11 +1,11 @@
 ---
 id: T1632
 title: "エディタ: 右の列の 8 つのタブが既定の幅で 2 行になるのを直す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T0676]
-assignee:
+assignee: claude-worker-T1632
 ---
 
 # T1632: エディタ: 右の列の 8 つのタブが既定の幅で 2 行になるのを直す (判断が要る)
