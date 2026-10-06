@@ -99,6 +99,8 @@ pub struct MotionPlayer {
     elapsed: f64,
     /// 終了する経過時間。`None` なら終わらない (ループ中)。
     end: Option<f64>,
+    /// 今の周回が始まった経過時間。ループするモーションの再生位置は `elapsed - lap_start` (T0332)。
+    lap_start: f64,
     /// 次の [`advance`](Self::advance) で、再生位置ちょうどのイベントも発火するか
     /// (再生の開始直後とループの折り返し直後)。
     inclusive_start: bool,
@@ -125,6 +127,7 @@ impl MotionPlayer {
             time: 0.0,
             elapsed: 0.0,
             end,
+            lap_start: 0.0,
             inclusive_start: true,
             fired: Vec::new(),
         }
@@ -202,9 +205,11 @@ impl MotionPlayer {
             return;
         }
 
-        let mut remaining = dt;
+        // 再生位置は周回の始まりからの経過時間の差。`f32` の再生位置に `dt` を足していくと、`stop()` の
+        // 終わりが周回の終わりに重なるときに丸めで周回の終わりに届かず、t = 長さのイベントを逃した (T0332)。
+        let lap = f64::from(duration);
         for _ in 0..MAX_LAPS_PER_ADVANCE {
-            let to = self.time + remaining;
+            let to = (self.elapsed - self.lap_start).max(0.0) as f32;
             if to < duration {
                 self.fire_range(self.time, to);
                 self.time = to;
@@ -212,17 +217,25 @@ impl MotionPlayer {
             }
             // 折り返す。周回の終わりまでのイベントを発火し、次の周回は 0 から始める。
             self.fire_range(self.time, duration);
-            remaining -= duration - self.time;
+            self.lap_start += lap;
             self.time = 0.0;
             self.inclusive_start = true;
-            if remaining <= 0.0 {
+            if self.elapsed <= self.lap_start {
                 return;
             }
         }
-        // 周回の上限を超えた分は発火せず、再生位置だけを合わせる。巨大な `dt` から周回の長さを
-        // 引き続けても桁落ちで減らない (極端に短い長さでも同じ) ので、剰余で [0, duration) に収める。
-        let time = remaining.rem_euclid(duration);
-        self.time = if time < duration { time } else { 0.0 };
+        // 周回の上限を超えた分は発火せず、再生位置だけを合わせる。巨大な経過時間に周回の長さを
+        // 足し続けても桁落ちで変わらない (極端に短い長さでも同じ) ので、剰余で [0, duration) に収める。
+        let time = (self.elapsed - self.lap_start).rem_euclid(lap);
+        self.lap_start = self.elapsed - time;
+        let time = (self.elapsed - self.lap_start).max(0.0) as f32;
+        if time < duration {
+            self.time = time;
+        } else {
+            // 桁落ちで差が周回の長さに届くときは、今を周回の始まりにする (次の `advance` で周回を回し続けない)。
+            self.lap_start = self.elapsed;
+            self.time = 0.0;
+        }
     }
 
     /// 直前の [`advance`](Self::advance) (または [`update`](Self::update)) で発火したイベント。
@@ -661,6 +674,35 @@ mod tests {
         }
     }
 
+    /// ループするモーションを止め、終わりがちょうど周回の終わりに重なっても、t = 長さのイベントは
+    /// 終わる前にちょうど 1 回発火する (再生位置を `f32` で足していくと、丸めで周回の終わりに届かないまま終わった。T0332)。
+    #[test]
+    fn stopped_loop_end_event_fires_when_end_meets_lap_end() {
+        let dts = [1.0 / 60.0, 1.0 / 30.0, 1.0 / 144.0, 0.1, 0.007, 0.0333];
+        let durations = [0.7, 1.0, 1.3, 1.5, 2.2, 3.1, 4.7, 10.3];
+        for duration in durations {
+            for dt in dts {
+                let mut m = motion(duration, true, vec![]);
+                m.fade_out = duration;
+                m.events = vec![event(duration, "end")];
+                let mut player = MotionPlayer::new(m);
+                player.stop();
+                let mut count = 0;
+                let mut finished = false;
+                for _ in 0..100_000 {
+                    player.advance(dt);
+                    count += fired(&player).len();
+                    if player.is_finished() {
+                        finished = true;
+                        break;
+                    }
+                }
+                assert!(finished, "duration={duration} dt={dt}");
+                assert_eq!(count, 1, "duration={duration} dt={dt}");
+            }
+        }
+    }
+
     #[test]
     fn stopped_looping_motion_fires_events_until_end() {
         let mut m = motion(1.0, true, vec![]);
@@ -713,10 +755,36 @@ mod tests {
                 assert!(time < duration, "duration={duration} dt={dt} time={time}");
             }
             assert!(fired(&player).len() <= MAX_LAPS_PER_ADVANCE as usize + 1);
-            // その後も普通に進む。
-            player.advance(1.0 / 60.0);
-            assert!(player.time().is_finite());
+            // その後も止まらず、1 回の `advance` で扱う周回は上限まで。
+            for _ in 0..3 {
+                player.advance(1.0 / 60.0);
+                let time = player.time();
+                assert!(time.is_finite(), "duration={duration} dt={dt} time={time}");
+                if duration > 0.0 {
+                    assert!(time < duration, "duration={duration} dt={dt} time={time}");
+                }
+                assert!(fired(&player).len() <= MAX_LAPS_PER_ADVANCE as usize + 1);
+            }
         }
+    }
+
+    /// 長時間ループした後でも、再生位置は `dt` ずつ進み、周回ごとにイベントが発火する
+    /// (再生位置を周回の始まりの経過時間 (`f64`) との差で求めても桁落ちしない。T0332)。
+    #[test]
+    fn looping_keeps_playing_after_a_long_run() {
+        let mut m = motion(10.0, true, vec![]);
+        m.events = vec![event(0.0, "zero")];
+        let mut player = MotionPlayer::new(m);
+        // 約 12 日 (周回の上限を超えるので、剰余で再生位置を合わせる)。1_048_576 = 10 * 104_857 + 6。
+        player.advance(1_048_576.0);
+        assert!(close(player.time(), 6.0), "{}", player.time());
+        let mut zero = 0;
+        for _ in 0..(5 * 60) {
+            player.advance(1.0 / 60.0);
+            zero += fired(&player).len();
+        }
+        assert!((player.time() - 1.0).abs() < 1e-4, "{}", player.time());
+        assert_eq!(zero, 1);
     }
 
     /// 長時間ループした後でも、`stop` から `fade_out` 秒で終わる (経過時間の精度が落ちて止まらない)。

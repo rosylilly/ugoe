@@ -100,7 +100,9 @@ A playing motion has two clocks:
 It also has an **end** time on the `elapsed` clock, or no end: a non-looping motion ends at
 `max(duration, 0)`; a looping motion has no end until it is stopped.
 
-**Starting** sets `elapsed = 0`, `time = 0`.
+A looping motion also keeps `lap_start`, the `elapsed` at which its current loop started.
+
+**Starting** sets `elapsed = 0`, `time = 0`, `lap_start = 0`.
 
 **Stopping** sets `end = min(end, elapsed + max(fade_out, 0))` (just `elapsed + max(fade_out, 0)` if
 there was no end). A motion is **finished** when it has an end and `elapsed ≥ end`. A finished motion
@@ -116,19 +118,20 @@ if not looping, or not duration > 0 (NaN included):
     to = min(elapsed, max(duration, 0))
     fire the events in (time, to];  time = to
 else:
-    remaining = dt
     loop:
-        if time + remaining < duration:
-            fire the events in (time, time + remaining];  time += remaining;  stop
+        to = max(elapsed − lap_start, 0)
+        if to < duration:
+            fire the events in (time, to];  time = to;  stop
         fire the events in (time, duration]
-        remaining −= duration − time;  time = 0
-        if remaining ≤ 0: stop
+        lap_start += duration;  time = 0
+        if elapsed ≤ lap_start: stop
 ```
 
-A non-looping motion takes its position from `elapsed` rather than adding `dt` to `time`, so that
-rounding cannot leave `time` short of `duration` when the motion reaches its end: the advance that
-reaches the end of a non-looping motion moves `time` to exactly `duration` and fires an event at
-`t = duration` exactly once.
+The position is taken from `elapsed` (minus `lap_start` when looping) rather than by adding `dt` to
+`time`, so that rounding cannot leave `time` short of `duration` when the motion reaches its end: the
+advance that reaches the end of a non-looping motion moves `time` to exactly `duration` and fires an
+event at `t = duration` exactly once, and so does the advance in which a stopped looping motion
+reaches an end that falls exactly at the end of a loop.
 
 **Events.** The events of a range are fired in order of their time `t`. The range is `(from, to]`,
 except that it is `[from, to]` for the first range after the motion starts and for the first range
@@ -141,8 +144,10 @@ cannot stall it. What an advance does beyond the limit is not specified, except 
 `[0, duration)`.
 
 *Informative:* the reference implementation handles at most 1000 loops in one advance. Beyond that
-it fires no more events and sets `time` to the remaining time modulo `duration` (0 if that rounds to
-`duration`).
+it fires no more events, moves `lap_start` so that `time = (elapsed − lap_start) mod duration`, and
+sets `lap_start = elapsed`, `time = 0` if that rounds to `duration`. It keeps `elapsed` and
+`lap_start` as 64-bit floats, so the position stays precise over a long run; only after an absurd
+`elapsed` (around 10^14 seconds at 60 fps) does a frame's `dt` stop moving it.
 
 **Fade weight.** For a fade-in length `fi` and fade-out length `fo`:
 
