@@ -25,8 +25,8 @@ rel.ugoeproj: base model C:\Users\runneradmin\AppData\Local\Temp\.tmpczRQBa\outs
 
 ## 受け入れ条件
 
-- [ ] テストの期待値を `plain_path` (canonicalize した形) で作るようにした。ほかのテストで同じく canonicalize していない一時ディレクトリのパスを期待値にしている所が無いか探した
-- [ ] `just crate ugoe-mcp`・`just cross-check`・`just ci` が通る。次の main の CI の `rust (windows)` で確かめる
+- [x] テストの期待値を `plain_path` (canonicalize した形) で作るようにした。ほかのテストで同じく canonicalize していない一時ディレクトリのパスを期待値にしている所が無いか探した
+- [x] `just crate ugoe-mcp`・`just cross-check`・`just ci` が通る。次の main の CI の `rust (windows)` で確かめる
 
 ## 参考
 
@@ -35,3 +35,6 @@ rel.ugoeproj: base model C:\Users\runneradmin\AppData\Local\Temp\.tmpczRQBa\outs
 ## メモ
 
 - CI の失敗から起票した (2026-10-06)。
+- 直したこと: `root_confines_module_bases` の期待値を `plain_path(outside_base.canonicalize())` にした。ほかの `tempfile::tempdir()` を使うテストは
+  Windows の CI で通っており、パスを文字列で比べているのはこの 1 か所だけだった (`shown` を使う所は canonicalize したパスを渡している)。
+- 確かめたこと: `just crate ugoe-mcp`、Windows のターゲットの clippy (`-p ugoe-mcp --all-targets`)、`just ci`。Windows の実機では次の main の CI で確かめる。
