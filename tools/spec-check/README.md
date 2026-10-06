@@ -19,7 +19,9 @@
   機能の宣言、`.ugoe` と `.ugoemod` のコンテナ。ファイルの例 (`spec/examples/bundles/`) の作成と、参照実装との往復の試験 (T0128)
 - 描画 ([spec/rendering.md](../../spec/rendering.md)): CPU の小さなラスタライザ (`render.ts`)。画素の中心での内外の判定と左上の規則、
   乗算済みの双線形・clamp-to-edge、乗算色とスクリーン色、3 つの合成モード、マスク (入れ子・反転・union と intersection・強さ)、
-  裏面の除去、法線マップとライティング (環境光・平行光・点光源)、任意のアフィンのビュー変換。描画の例 (`spec/examples/render-*/`) の照合と、
+  裏面の除去、法線マップとライティング (環境光・平行光・点光源)、任意のアフィンのビュー変換。
+  PNG のテクスチャの読み方 ([spec/rendering.md](../../spec/rendering.md#textures)、`png.ts`): すべての色の種類とビット深度、`tRNS`、
+  16 ビットの上位のバイト、ガンマと色のチャンクを見ない、Adam7 のインターレース (T0175)。描画の例 (`spec/examples/render-*/`) の照合と、
   参照実装の描画との比較 (T0127・T0130)
 - 追従 (トラッキング、[spec/avatar-profile.md](../../spec/avatar-profile.md#face-tracking)): 標準の対応と `avatar.tracking` の上書き、
   1 フレームの順の手順 3 (`tracking.ts`、T0130)
@@ -97,7 +99,7 @@ pnpm --filter ugoe-spec-check check
 | `test/examples.test.ts` | `spec/examples/` の評価の例 (`expected.json`) をすべて評価し、[許容誤差](../../spec/examples/README.md#tolerances) で期待値と比べる。 |
 | `test/timeline.test.ts` | `spec/examples/` の時間の例 (`timeline.json`) をはじめからフレームごとに走らせ、[許容誤差](../../spec/examples/README.md#timeline-tolerances) で期待値と比べる。ファイルの例のうち時間の例と同じ中身のもの (`physics-pendulum.ugoe`・`motion-crossfade.ugoe`・`expressions.ugoe`) は、バンドルから読んだデータでも走らせる (T0129)。 |
 | `test/compat.test.ts` | `assets/compat/` の資料を読む。`dev/` は警告なしに読めて評価できる、`future/` は仕様どおりに劣化して読める (評価の結果が元のファイルと同じ) か拒否される ([docs/testing.md](../../docs/testing.md#互換性テスト))。 |
-| `test/bundles.test.ts` | ファイルの例 (`spec/examples/bundles/`) を読み、目録 `bundles.json` (チャンクの表・結果・同じ中身の JSON の文書・画像の色) と比べる。目録から書き出しで作り直したものと、展開したペイロードが同じ。 |
+| `test/bundles.test.ts` | ファイルの例 (`spec/examples/bundles/`) を読み、目録 `bundles.json` (チャンクの表・結果・同じ中身の JSON の文書・画像の色) と比べる。画像は `png.ts` の PNG の読み方で読む (`png-*.ugoe` がその規則の例)。目録から書き出しで作り直したものと、展開したペイロードが同じ。 |
 | `test/writer.test.ts` | MessagePack の符号化 (整数と長さの境目、float 32 と 64)、整数と `f32` のフィールドの型、2 通りの書き方、知らない値と基準の機能の宣言の拒否、コンテナの配置、すべての例と互換性の資料のこの実装での往復。 |
 | `test/render.test.ts` | `spec/examples/` の描画の例 (`render.json`) をこの実装のラスタライザで描き、[許容誤差](../../spec/examples/README.md#rendering-tolerances) で調べる画素と比べる。調べる画素が三角形の辺から 1 画素以上離れていること (例の作り方の規則)、隣り合う三角形が共有する辺の画素を 1 度だけ塗ること、乗算済みでの補間。 |
 | `test/reader.test.ts` | コンテナの誤り (ヘッダ・表・重なり・許されないチャンク・画像の数)、機能の宣言、MessagePack、JSON の整数と `null`、知らない値、検証。 |
@@ -126,6 +128,12 @@ pnpm --filter ugoe-spec-check check
 - 描画の例の期待値は、この実装の出力を写したものではない。調べる画素だけで仕様の式を直接計算する別の転記 (T0127 の作業者が Python で書いた
   使い捨てのもの) で出し、合成とマスクの係数は手で確かめた。この実装のラスタライザはそれと独立に書き、一致を確かめた。
 - 描画は倍精度の実数で行い、描くたびに [0, 1] に切り詰める (8 ビットに量子化しない)。テクスチャの乗算済みへの変換も実数で行う。
+- PNG の例 (`png-*.ugoe`) の画像は、目録の `png` の記述から `png.ts` の `encodePng` で作る (走査線のフィルタは 0〜4 を順に使い、
+  IDAT は 2 つに分ける)。期待する画素 (`rgba`) は規則から手で書いた値で、この実装の読み込みの出力を写したものではない。
+  作った PNG を libpng (ImageMagick の `convert … txt:`) で読んだ値の上位のバイトとも一致することを確かめた (T0175)。
+  規則に反する読み方 (`gAMA` で補正する・`sRGB` を線形に変換する・16 ビットを丸める・8 ビットにしてから `tRNS` と比べる・
+  広げた値を `tRNS` と比べる・`tRNS` より後の番号の alpha を 0 にする・パレットの番号を広げる・インターレースを無視する) を
+  `png.ts` に一時的に入れると、それぞれ対応する例で `test/bundles.test.ts` が落ちることを確かめた (T0175)。
 - Bézier の `s` は二分法で解く (仕様は `|b(s) − x| ≤ 1e-6` を求め、解き方を問わない)。
 
 ## ライセンス

@@ -89,7 +89,11 @@ struct ExpectedWarnings {
 struct ExpectedImage {
     width: u32,
     height: u32,
+    /// 4 つなら全画素の色、そうでなければ行ごとの各画素の色。
     rgba: Vec<u8>,
+    /// PNG の中身の記述 (例を作る側のためのもの)。読んだ画素は `rgba` で照合する。
+    #[allow(dead_code)]
+    png: Option<Value>,
     normal_map: Option<Box<ExpectedImage>>,
 }
 
@@ -550,11 +554,20 @@ fn check_image(
                     "{label}: size {width}x{height} != {}x{}",
                     expected.width, expected.height
                 ));
-            } else if rgba != expected.rgba {
+            } else if !matches_rgba(&rgba, &expected.rgba) {
                 failures.push(format!("{label}: rgba {rgba:?} != {:?}", expected.rgba));
             }
         }
         Err(e) => failures.push(format!("{label}: {e}")),
+    }
+}
+
+/// 読んだ画素 `rgba` が例の `rgba` (全画素の色 1 つか、各画素の色) と同じか。
+fn matches_rgba(rgba: &[u8], expected: &[u8]) -> bool {
+    if expected.len() == 4 {
+        rgba.chunks(4).all(|pixel| pixel == expected)
+    } else {
+        rgba == expected
     }
 }
 

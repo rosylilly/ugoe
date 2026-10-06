@@ -327,6 +327,19 @@ container of [bundle.md](../bundle.md):
 | `invalid-motion.ugoe` | A motion with a point whose value is not finite (written as `1e39` in its JSON document, which converts to infinity): the file is refused. |
 | `invalid-motion-duration.ugoe` | A motion with a negative `duration`: the file is refused. |
 | `invalid-expression.ugoe` | An expression with an adjustment whose `value` is not finite (written as `1e39`): the file is refused. |
+| `png-palette.ugoe` | An indexed-color PNG texture of bit depth 2 whose `tRNS` chunk is shorter than its palette. |
+| `png-gray-trns.ugoe` | A grayscale PNG texture of bit depth 4 with a `tRNS` chunk, compared before scaling. |
+| `png-rgb-trns.ugoe` | An RGB PNG texture of bit depth 8 with a `tRNS` chunk. |
+| `png-16bit-trns.ugoe` | An RGB PNG texture of bit depth 16 with a `tRNS` chunk: samples reduced to their most significant byte, `tRNS` compared with all 16 bits. |
+| `png-gamma.ugoe` | An RGB PNG texture with `gAMA` (gamma 1.0) and `cHRM` chunks, which are ignored. |
+| `png-srgb.ugoe` | An RGBA PNG texture with `sRGB` and `gAMA` chunks, which are ignored. |
+| `png-interlaced.ugoe` | An RGBA PNG texture interlaced with Adam7 (one of the passes is empty). |
+| `png-interlaced-gray.ugoe` | A grayscale PNG texture of bit depth 1 interlaced with Adam7. |
+
+The `png-*.ugoe` files carry the model of [single-quad](single-quad/) with a texture that checks
+how a PNG texture is decoded ([rendering.md](../rendering.md#textures)). Their images are larger
+than the `width` and `height` the model states for its texture, which a reader does not check
+([model.md](../model.md#textures)).
 
 The directory also holds the JSON documents of the files that are not taken from the other examples
 (`lit-quads.model.json`, `short-hair.module.json`, and `invalid-motion.json`,
@@ -367,7 +380,24 @@ range of `f32` in the [JSON Schema](../schema/)) that the other documents satisf
 | `warnings` | Optional. For `ok`: `unknown_features`, the unknown optional features a reader reports. Apart from these, reading the file produces no warnings. |
 | `model`, `physics`, `motions`, `expressions`, `module` | The JSON documents the file is equivalent to, relative to `bundles.json`. `motions` and `expressions` are arrays in table order. For `ok`, the data a reader obtains from the file is the data it obtains from these documents. For `error`, they are the data the file carries. |
 | `meta` | Optional. The JSON value of the `META` chunk. Absent: the file has no `META` chunk. |
-| `textures` | One entry per texture, in the order of the model's (or module's) `textures`: the image's `width` and `height` in pixels and the color `rgba` of every pixel (non-premultiplied, 0 to 255), and `normal_map`, the same for the texture's normal map if it has one. Every image is a PNG. |
+| `textures` | One entry per texture, in the order of the model's (or module's) `textures`: the image's `width` and `height` in pixels; `rgba`, the pixels a reader decodes from the image ([rendering.md](../rendering.md#textures); non-premultiplied, 0 to 255), either four values, the color of every pixel, or four values per pixel, row by row from the top-left; optionally `png`, below; and `normal_map`, the same for the texture's normal map if it has one. Every image is a PNG. |
+
+`png` describes what the PNG file holds, for the images that are not 8-bit RGBA. Absent: the
+image is 8-bit RGBA (color type 6), not interlaced, and stores the colors of `rgba`. The PNG
+holds the chunks `IHDR`, then `gAMA`, `cHRM` and `sRGB` when given, `PLTE`, `tRNS`, two `IDAT`
+chunks and `IEND`; its scanlines use the filter types 0 to 4 in turn.
+
+| Field | Meaning |
+| --- | --- |
+| `color_type` | The color type of `IHDR`: 0 grayscale, 2 RGB, 3 indexed color, 4 grayscale with alpha, 6 RGBA. |
+| `bit_depth` | The bit depth of `IHDR` (1, 2, 4, 8 or 16). |
+| `interlace` | Optional. 1: Adam7. Absent or 0: not interlaced. |
+| `palette` | Optional. The entries of `PLTE` as `[r, g, b]`. |
+| `transparency` | Optional. The content of `tRNS`: for indexed color, the alpha of each palette entry from the first; for grayscale `[g]` and for RGB `[r, g, b]`, the transparent color at the image's bit depth. |
+| `gamma` | Optional. The value of `gAMA` (the gamma times 100,000). |
+| `chromaticities` | Optional. The eight values of `cHRM` (times 100,000). |
+| `srgb` | Optional. The rendering intent of `sRGB`. |
+| `samples` | The stored samples, pixel by pixel, row by row from the top-left, at the image's bit depth: for each pixel, one value per channel (the palette index for indexed color). |
 
 Values of `error`, named after the steps of [Reading](../bundle.md#reading):
 

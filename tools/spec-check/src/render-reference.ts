@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decodeRgbaPng } from "./png.ts";
+import { decodePng } from "./png.ts";
 import {
   loadRenderExample,
   PIXEL_TOLERANCE,
@@ -75,7 +75,7 @@ for (const name of names) {
       stdio: ["ignore", "ignore", "inherit"],
     });
     if (dropped) console.log(`${name} case ${i}: lights the CLI refuses were left out`);
-    const image = decodeRgbaPng(new Uint8Array(readFileSync(png)));
+    const image = decodePng(new Uint8Array(readFileSync(png)));
     for (const p of c.pixels) {
       const at = 4 * (p.at[1] * image.width + p.at[0]);
       const a = image.pixels[at + 3];

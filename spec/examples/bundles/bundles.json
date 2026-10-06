@@ -618,6 +618,756 @@
           ]
         }
       ]
+    },
+    {
+      "file": "png-palette.ugoe",
+      "summary": "An indexed-color PNG texture of bit depth 2 whose tRNS chunk is shorter than its palette: the alpha of an index comes from tRNS, or 255 beyond its end, and the indices are not scaled.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 4,
+          "height": 2,
+          "png": {
+            "color_type": 3,
+            "bit_depth": 2,
+            "palette": [
+              [
+                255,
+                0,
+                0
+              ],
+              [
+                0,
+                255,
+                0
+              ],
+              [
+                0,
+                0,
+                255
+              ],
+              [
+                255,
+                255,
+                255
+              ]
+            ],
+            "transparency": [
+              0,
+              128
+            ],
+            "samples": [
+              0,
+              1,
+              2,
+              3,
+              3,
+              2,
+              1,
+              0
+            ]
+          },
+          "rgba": [
+            255,
+            0,
+            0,
+            0,
+            0,
+            255,
+            0,
+            128,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            255,
+            255,
+            0,
+            255,
+            0,
+            128,
+            255,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-gray-trns.ugoe",
+      "summary": "A grayscale PNG texture of bit depth 4 with a tRNS chunk: the samples are scaled by 255 / 15, and only the pixel whose unscaled sample equals the tRNS value (5) is transparent.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 4,
+          "height": 1,
+          "png": {
+            "color_type": 0,
+            "bit_depth": 4,
+            "transparency": [
+              5
+            ],
+            "samples": [
+              5,
+              6,
+              15,
+              0
+            ]
+          },
+          "rgba": [
+            85,
+            85,
+            85,
+            0,
+            102,
+            102,
+            102,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-rgb-trns.ugoe",
+      "summary": "An RGB PNG texture of bit depth 8 with a tRNS chunk: the pixels that equal the tRNS color are transparent, the others opaque.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 2,
+          "height": 2,
+          "png": {
+            "color_type": 2,
+            "bit_depth": 8,
+            "transparency": [
+              10,
+              20,
+              30
+            ],
+            "samples": [
+              10,
+              20,
+              30,
+              10,
+              20,
+              31,
+              200,
+              100,
+              50,
+              10,
+              20,
+              30
+            ]
+          },
+          "rgba": [
+            10,
+            20,
+            30,
+            0,
+            10,
+            20,
+            31,
+            255,
+            200,
+            100,
+            50,
+            255,
+            10,
+            20,
+            30,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-16bit-trns.ugoe",
+      "summary": "An RGB PNG texture of bit depth 16 with a tRNS chunk: each sample is reduced to its most significant byte (not rounded), and the tRNS color is compared with all 16 bits, so only the first pixel is transparent although the first three have the same high bytes.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 4,
+          "height": 1,
+          "png": {
+            "color_type": 2,
+            "bit_depth": 16,
+            "transparency": [
+              4660,
+              22136,
+              39612
+            ],
+            "samples": [
+              4660,
+              22136,
+              39612,
+              4608,
+              22016,
+              39424,
+              4863,
+              22271,
+              39679,
+              255,
+              65280,
+              32896
+            ]
+          },
+          "rgba": [
+            18,
+            86,
+            154,
+            0,
+            18,
+            86,
+            154,
+            255,
+            18,
+            86,
+            154,
+            255,
+            0,
+            255,
+            128,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-gamma.ugoe",
+      "summary": "An RGB PNG texture with gAMA (gamma 1.0) and cHRM chunks: they are ignored, and the samples are used as they are.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 2,
+          "height": 1,
+          "png": {
+            "color_type": 2,
+            "bit_depth": 8,
+            "gamma": 100000,
+            "chromaticities": [
+              31270,
+              32900,
+              64000,
+              33000,
+              30000,
+              60000,
+              15000,
+              6000
+            ],
+            "samples": [
+              128,
+              64,
+              32,
+              16,
+              240,
+              200
+            ]
+          },
+          "rgba": [
+            128,
+            64,
+            32,
+            255,
+            16,
+            240,
+            200,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-srgb.ugoe",
+      "summary": "An RGBA PNG texture with sRGB and gAMA chunks: they are ignored, and the samples are used as they are (not converted to linear).",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 2,
+          "height": 1,
+          "png": {
+            "color_type": 6,
+            "bit_depth": 8,
+            "gamma": 45455,
+            "srgb": 0,
+            "samples": [
+              128,
+              64,
+              32,
+              200,
+              16,
+              240,
+              200,
+              64
+            ]
+          },
+          "rgba": [
+            128,
+            64,
+            32,
+            200,
+            16,
+            240,
+            200,
+            64
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-interlaced.ugoe",
+      "summary": "An RGBA PNG texture interlaced with Adam7, 7 by 3 pixels (the third pass is empty): it is decoded to the full image in row order.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 7,
+          "height": 3,
+          "png": {
+            "color_type": 6,
+            "bit_depth": 8,
+            "interlace": 1,
+            "samples": [
+              0,
+              0,
+              0,
+              255,
+              36,
+              0,
+              20,
+              245,
+              72,
+              0,
+              40,
+              235,
+              108,
+              0,
+              60,
+              225,
+              144,
+              0,
+              80,
+              215,
+              180,
+              0,
+              100,
+              205,
+              216,
+              0,
+              120,
+              195,
+              0,
+              100,
+              20,
+              250,
+              36,
+              100,
+              40,
+              240,
+              72,
+              100,
+              60,
+              230,
+              108,
+              100,
+              80,
+              220,
+              144,
+              100,
+              100,
+              210,
+              180,
+              100,
+              120,
+              200,
+              216,
+              100,
+              140,
+              190,
+              0,
+              200,
+              40,
+              245,
+              36,
+              200,
+              60,
+              235,
+              72,
+              200,
+              80,
+              225,
+              108,
+              200,
+              100,
+              215,
+              144,
+              200,
+              120,
+              205,
+              180,
+              200,
+              140,
+              195,
+              216,
+              200,
+              160,
+              185
+            ]
+          },
+          "rgba": [
+            0,
+            0,
+            0,
+            255,
+            36,
+            0,
+            20,
+            245,
+            72,
+            0,
+            40,
+            235,
+            108,
+            0,
+            60,
+            225,
+            144,
+            0,
+            80,
+            215,
+            180,
+            0,
+            100,
+            205,
+            216,
+            0,
+            120,
+            195,
+            0,
+            100,
+            20,
+            250,
+            36,
+            100,
+            40,
+            240,
+            72,
+            100,
+            60,
+            230,
+            108,
+            100,
+            80,
+            220,
+            144,
+            100,
+            100,
+            210,
+            180,
+            100,
+            120,
+            200,
+            216,
+            100,
+            140,
+            190,
+            0,
+            200,
+            40,
+            245,
+            36,
+            200,
+            60,
+            235,
+            72,
+            200,
+            80,
+            225,
+            108,
+            200,
+            100,
+            215,
+            144,
+            200,
+            120,
+            205,
+            180,
+            200,
+            140,
+            195,
+            216,
+            200,
+            160,
+            185
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-interlaced-gray.ugoe",
+      "summary": "A grayscale PNG texture of bit depth 1 interlaced with Adam7, 10 by 3 pixels: each row of each pass starts at a byte boundary, and the samples are scaled to 0 and 255.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 10,
+          "height": 3,
+          "png": {
+            "color_type": 0,
+            "bit_depth": 1,
+            "interlace": 1,
+            "samples": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0
+            ]
+          },
+          "rgba": [
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            255,
+            255,
+            0,
+            0,
+            0,
+            255
+          ]
+        }
+      ]
     }
   ]
 }

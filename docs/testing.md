@@ -228,6 +228,8 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   その一覧 `bundles.json` です。一覧の各項目は、チャンク表 (タグと圧縮の有無の並び) と、読めるファイルなら読んだ中身
   (対応する JSON の文書・`META` の値・画像の全画素・報告される知らない任意の機能)、拒否されるファイルなら拒否する読み込みの手順の名前
   (`feature_declarations` など) と知らない必須の機能を持ちます。ファイルは仕様だけから作った別の書き出し (`tools/spec-check`) で作ります。
+  `png-*.ugoe` は、PNG のテクスチャの読み方 (rendering.md#前提) を確かめる例です。テクスチャの PNG の中身 (色の種類・ビット深度・`PLTE`・`tRNS`・
+  `gAMA` などのチャンク・インターレース・サンプルの値) を一覧の `png` に書き、規則どおりに読んだ画素を `rgba` に持ちます。
   参照実装の読み込み (`read_bundle_with_report` / `read_module_with_report`) が一覧のとおりに読むことを
   `crates/ugoe-format/tests/spec_bundles.rs` で確かめます。食い違う例は理由を付けてテストの `KNOWN_MISMATCHES` に挙げます
   (例のファイルを参照実装に合わせて作り直してはいけません)。

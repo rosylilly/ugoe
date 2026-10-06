@@ -18,7 +18,7 @@ import {
 } from "./bundle.ts";
 import * as D from "./decode.ts";
 import type { MsgValue } from "./msgpack.ts";
-import { decodeRgbaPng, solidPng } from "./png.ts";
+import { decodePng, encodePng, type PngSpec, solidPng } from "./png.ts";
 import type * as M from "./types.ts";
 import {
   type ChunkSpec,
@@ -57,7 +57,10 @@ const STEP_OF_KIND: Record<ReadErrorKind, ErrorStep> = {
 export interface ImageSpec {
   width: number;
   height: number;
-  rgba: Rgba;
+  /** 4 つなら全画素の色、4 × 幅 × 高さなら行ごとの各画素の色 (読んだ結果。非乗算の 0〜255)。 */
+  rgba: number[];
+  /** PNG の中身の記述。無ければ 8 ビットの RGBA で `rgba` の色を書く。 */
+  png?: PngSpec;
 }
 
 export interface FileEntry {
@@ -118,7 +121,8 @@ export function expectedData(dir: string, e: FileEntry): ExpectedData {
   };
 }
 
-const png = (s: ImageSpec) => solidPng(s.width, s.height, s.rgba);
+const png = (s: ImageSpec) =>
+  s.png ? encodePng(s.width, s.height, s.png) : solidPng(s.width, s.height, s.rgba as Rgba);
 
 /** 目録の項目から、ファイルを書く (この実装の書き出しで)。 */
 export function buildFile(dir: string, e: FileEntry): Uint8Array {
@@ -164,15 +168,24 @@ export function buildFile(dir: string, e: FileEntry): Uint8Array {
 
 function compareImage(where: string, image: Image, spec: ImageSpec): string[] {
   if (image.format !== "png") return [`${where}: expected a PNG`];
-  const { width, height, pixels } = decodeRgbaPng(image.bytes);
+  let decoded: ReturnType<typeof decodePng>;
+  try {
+    decoded = decodePng(image.bytes);
+  } catch (err) {
+    return [`${where}: ${(err as Error).message}`];
+  }
+  const { width, height, pixels } = decoded;
   if (width !== spec.width || height !== spec.height) {
     return [`${where}: size ${width}x${height}, expected ${spec.width}x${spec.height}`];
   }
+  const each = spec.rgba.length === 4;
+  if (!each && spec.rgba.length !== pixels.length) {
+    return [`${where}: ${spec.rgba.length} values in rgba for ${width}x${height} pixels`];
+  }
   for (let i = 0; i < pixels.length; i += 4) {
-    if (!isDeepStrictEqual([...pixels.subarray(i, i + 4)], spec.rgba)) {
-      return [
-        `${where}: pixel ${i / 4} is ${[...pixels.subarray(i, i + 4)]}, expected ${spec.rgba}`,
-      ];
+    const want = each ? spec.rgba : spec.rgba.slice(i, i + 4);
+    if (!isDeepStrictEqual([...pixels.subarray(i, i + 4)], want)) {
+      return [`${where}: pixel ${i / 4} is ${[...pixels.subarray(i, i + 4)]}, expected ${want}`];
     }
   }
   return [];
