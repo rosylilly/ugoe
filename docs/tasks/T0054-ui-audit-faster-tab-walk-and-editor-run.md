@@ -1,11 +1,11 @@
 ---
 id: T0054
 title: "ui-audit: Tab のたどりを速くし (PNG を Node の側で読む)、エディタの 13 組を前面の 600 秒に収める"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0053]
-assignee:
+assignee: claude-worker-T0054
 ---
 
 # T0054: ui-audit: Tab のたどりを速くし (PNG を Node の側で読む)、エディタの 13 組を前面の 600 秒に収める
