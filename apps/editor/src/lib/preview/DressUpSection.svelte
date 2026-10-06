@@ -12,6 +12,9 @@
   として 1 回だけ出す (パネルの頭に同じ理由を重ねない。T1644)。行のファイルは名前だけを出す (全体は `title`)。
   違いの一覧は、行の文の下に要素の表 (ID・何が違うか・選ぶ) を置き、要素が多ければ絞り込みの欄を出し、1 行の要素は
   `DIFFERENCE_ROWS` 件まで出して残りは「さらに N 件」で開く (パネルの中に縦の送りを重ねない)。閉じている間は中を描かない。
+  GPU を失っている間と WebPuppet の作り直しの途中は、行のチェックとスロットの選択に付けたい組を出し (`DressUp.shown`)、まだ
+  WebPuppet に届いていない付け外しの行に「プレビューが戻ったら付けます / 外します」を文字で添える (チェックボックスの説明にも
+  する。T1666)。
 -->
 <script lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
@@ -46,6 +49,8 @@ interface Props {
 
 let { dressUp, slots, published = null, onselect }: Props = $props();
 
+const id = $props.id();
+
 /** `.ugoemod` をウィンドウの上でドラッグしている。 */
 let dragging = $state(false);
 let dropError = $state<string | null>(null);
@@ -54,7 +59,9 @@ const rows = $derived(
   slotRows(
     slots,
     dressUp.entries.flatMap((e) =>
-      e.loaded && e.slot !== null ? [{ name: e.name, slot: e.slot, attached: e.attached }] : [],
+      e.loaded && e.slot !== null
+        ? [{ name: e.name, slot: e.slot, attached: dressUp.shown(e) }]
+        : [],
     ),
     published,
   ),
@@ -219,14 +226,16 @@ onMount(() => {
     <p class="ed-hint">{t("preview.dressUp.modules.empty")}</p>
   {:else}
     <ul class="modules">
-      {#each dressUp.entries as entry (entry.own ? "#own" : (entry.path ?? entry.name))}
+      {#each dressUp.entries as entry, index (entry.own ? "#own" : (entry.path ?? entry.name))}
+        {@const pending = dressUp.pendingChange(entry)}
         <li class:own={entry.own}>
           <div class="module">
             <span class="check">
               <Checkbox
                 label={entry.label ?? entry.name}
-                checked={entry.attached}
+                checked={dressUp.shown(entry)}
                 disabled={!entry.loaded || dressUp.busy}
+                aria-describedby={pending ? `${id}-waiting-${index}` : undefined}
                 onchange={(on) => (on ? dressUp.attach(entry.name) : dressUp.detach(entry.name))}
               />
               {#if entry.own}
@@ -257,6 +266,11 @@ onMount(() => {
               >
             {/if}
           </div>
+          {#if pending}
+            <p class="ed-hint" id={`${id}-waiting-${index}`}>{pending === "on"
+                ? t("preview.dressUp.modules.waiting.on")
+                : t("preview.dressUp.modules.waiting.off")}</p>
+          {/if}
           {#if entry.path}
             <!-- 全体のパスは title (フォーカスを受けない文の補い。docs/ui.md の「残した title」) -->
             <p class="ed-hint path" title={entry.path}>{fileName(entry.path)}</p>

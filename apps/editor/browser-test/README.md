@@ -35,8 +35,8 @@ WebGL2 のコンテキストは、ページの初期化で `getContext` を包�
 | --- | --- |
 | `dress-up-loss-during-load` | プレビューの着せ替えで、ビューポートの WebGL2 のコンテキストを失っている間 (ビューポートが「GPU の復元を待っています」) に「Load .ugoemod…」で猫耳 (`cat-ears.ugoemod`) を読み込む (`load_module` が `device_lost`)。パネルに失敗の文が出ず、復元した後に作り直した WebPuppet に猫耳が付き (一覧の行のチェックと `attached_modules`)、描かれる (読み戻しで、描いた画素の一番上の行が猫耳のぶん上がる) |
 | `dress-up-load-during-recreation` | 復元した後の作り直しの途中 (古い WebPuppet を `free` し、新しいものの作成を 5000 ms 遅らせている間。ビューポートの `puppet` が `null`) に猫耳を読み込む。パネルに失敗の文が出ず、作り直した WebPuppet に猫耳が付き、描かれる (T1658) |
-| `dress-up-change-while-lost` | 猫耳・長い髪・ツインテールを読み込み (猫耳とツインテールが付く) 、失っている間に猫耳のチェックを外し、スロット `Hair` の選択で長い髪に替える。パネルに失敗の文が出ず、作り直した WebPuppet には長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない |
-| `dress-up-change-during-recreation` | `dress-up-change-while-lost` と同じ付け外しを、作り直しの途中 (古い WebPuppet を `free` し、新しいものの作成を 5000 ms 遅らせている間) に行う。作り直した WebPuppet には長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない (T1659) |
+| `dress-up-change-while-lost` | 猫耳・長い髪・ツインテールを読み込み (猫耳とツインテールが付く) 、失っている間に猫耳のチェックを外し、スロット `Hair` の選択で長い髪に替える。パネルに失敗の文が出ず、作り直す前から一覧の行のチェックとスロットの選択がそのとおりになり、まだ届いていない行に待っている文 (チェックボックスの説明) が付く (T1666)。作り直した WebPuppet には長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない |
+| `dress-up-change-during-recreation` | `dress-up-change-while-lost` と同じ付け外しを、作り直しの途中 (古い WebPuppet を `free` し、新しいものの作成を 5000 ms 遅らせている間) に行う。作り直す前 (まだ WebPuppet が無い間) から行のチェックとスロットの選択がそのとおりになり (T1666)、作り直した WebPuppet には長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない (T1659) |
 
 どれも、作り直しの完了 (新しい WebPuppet が描き、ビューポートの「GPU の復元を待っています」が消える) を待ってから確かめる。
 作り直しの `WebPuppet.create` を 500 ms 遅らせて、CI の SwiftShader のように作成が遅いときに、作り終える前に確かめないことも兼ねる

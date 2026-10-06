@@ -230,16 +230,29 @@ async function expectRecreating(page, message) {
   );
 }
 
-/** 着せ替えの一覧の行 (名前・チェック) と、パネルの中の失敗の文 (`role=alert`)。 */
+/**
+ * 着せ替えの一覧の行 (名前・チェック・チェックボックスの説明 (待っている付け外しの文。T1666))、スロットの選択 (スロット →
+ * 選んでいるもの) と、パネルの中の失敗の文 (`role=alert`)。
+ */
 function panelState(page) {
   return dressUpSection(page).evaluate((section) => ({
     rows: [...section.querySelectorAll("ul li")].map((li) => {
       const box = li.querySelector("[role=checkbox]");
+      const describedBy = box?.getAttribute("aria-describedby");
       return {
         name: li.querySelector("label")?.textContent?.trim() ?? "",
         checked: box?.getAttribute("aria-checked") === "true",
+        note: describedBy
+          ? (document.getElementById(describedBy)?.textContent?.trim() ?? "")
+          : null,
       };
     }),
+    slots: Object.fromEntries(
+      [...section.querySelectorAll(".slot")].map((row) => [
+        row.querySelector(".slot-id")?.textContent?.trim() ?? "",
+        row.querySelector(".ugoe-select__value")?.textContent?.trim() ?? "",
+      ]),
+    ),
     alerts: [...section.querySelectorAll("[role=alert]")].map((a) => a.textContent?.trim() ?? ""),
   }));
 }
@@ -396,6 +409,7 @@ export const SCENARIOS = {
     await loseContext(page);
     await takeOffEarsAndSwapHair(page);
     expectNoAlerts(await panelState(page), "after changing the modules while the context is lost");
+    await expectWaitingChanges(page, "while the context is lost");
 
     await restoreAndRecreate(page);
     await expectOnlyLongHair(page, withEars);
@@ -418,6 +432,8 @@ export const SCENARIOS = {
       await panelState(page),
       "after changing the modules while there is no WebPuppet",
     );
+    await expectWaitingChanges(page, "while there is no WebPuppet");
+    await expectRecreating(page, "the new WebPuppet was made before the rows were read");
 
     await untilDrawing(page, "the recreated WebPuppet to draw");
     await expectOnlyLongHair(page, withEars);
@@ -454,6 +470,26 @@ async function takeOffEarsAndSwapHair(page) {
   await page.waitForTimeout(200);
 }
 
+/**
+ * 作り直す前から、一覧の行のチェックとスロットの選択が付け外し (猫耳を外し、長い髪に替えた) を出し、まだ届いていない行に
+ * 待っている文を添える (T1666)。
+ */
+async function expectWaitingChanges(page, when) {
+  const state = await panelState(page);
+  expectRows(state, { CatEars: false, LongHair: true, TwinTails: false }, when);
+  const notes = Object.fromEntries(state.rows.map((r) => [r.name, r.note]));
+  const on = en("preview.dressUp.modules.waiting.on");
+  const off = en("preview.dressUp.modules.waiting.off");
+  check(
+    notes.CatEars === off && notes.LongHair === on && notes.TwinTails === off,
+    `${when}: the rows do not say what waits for the preview (${JSON.stringify(notes)})`,
+  );
+  check(
+    state.slots.Hair === "LongHair",
+    `${when}: the Hair slot shows ${state.slots.Hair} (${JSON.stringify(state.slots)})`,
+  );
+}
+
 /** 作り直した WebPuppet に長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない (`withEars` は猫耳を付けた読み戻し)。 */
 async function expectOnlyLongHair(page, withEars) {
   await until(
@@ -467,6 +503,10 @@ async function expectOnlyLongHair(page, withEars) {
   const after = await panelState(page);
   expectNoAlerts(after, "after the recreation");
   expectRows(after, { CatEars: false, LongHair: true, TwinTails: false }, "after the recreation");
+  check(
+    after.rows.every((r) => r.note === null),
+    `after the recreation: a row still waits (${JSON.stringify(after.rows)})`,
+  );
   const attached = await attachedModules(page);
   check(attached.join() === "LongHair", `attached after the recreation: ${attached.join()}`);
   const shot = await drawn(page);

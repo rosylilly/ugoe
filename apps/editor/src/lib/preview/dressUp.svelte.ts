@@ -12,7 +12,9 @@
 //   バイト列は `#pending` に取っておき、付け外しは付けたい組 (`wanted`) だけを変え、作り直した WebPuppet に `loaded` で
 //   読み込んで付ける (T1644。Player とビューポートと同じ。docs/ui.md#webpuppet-の寿命)。作り直しの途中 (古い
 //   WebPuppet を捨ててから新しいものができるまで。`host.puppet()` が `null`) に読み込んだものも `#pending` に取っておき
-//   (T1658)、その間の付け外しも付けたい組だけを変える (T1659)。
+//   (T1658)、その間の付け外しも付けたい組だけを変える (T1659)。そうして待っている間 (`waiting`) は、行のチェックと
+//   スロットの選択に付けたい組を出し (`shown`)、まだ WebPuppet に届いていない付け外しを行に文字で出す
+//   (`pendingChange`。T1666)。作り直した WebPuppet に付けられなかったものは、付けたい組から外して行で知らせる。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
@@ -122,6 +124,11 @@ export class DressUp {
   ownProblem = $state<string | null>(null);
   /** ビューポートで強調している違いの要素 (プレビューを出ると消える)。 */
   highlight = $state<DifferenceHighlight | null>(null);
+  /**
+   * GPU を失っているか作り直しの途中で、付けたい組や読み込みを WebPuppet に渡せず、作り直した WebPuppet を待っている
+   * (`loaded` で揃えると戻る。T1666)。
+   */
+  waiting = $state(false);
 
   /** 一覧をプロジェクトに残した後 (未保存の印が変わる) に呼ぶ。 */
   onsaved: (() => void) | null = null;
@@ -159,6 +166,7 @@ export class DressUp {
     }
     this.#bytes.clear();
     this.#pending = [];
+    this.waiting = false;
     this.#ownName = null;
     this.#ownLabel = null;
     // 比べている途中の結果は前のプロジェクトのもの。届いても捨てる (T1614)。
@@ -232,7 +240,8 @@ export class DressUp {
       if (save) void this.#save();
       return;
     }
-    if (!puppet) {
+    // GPU を失ったと分かっていれば、試さずに付けたい組だけを変える。
+    if (!puppet || puppet.is_lost()) {
       this.#want(entry);
     } else {
       try {
@@ -256,14 +265,18 @@ export class DressUp {
     const puppet = this.#puppet();
     const entry = this.#entry(name);
     if (!entry || (!puppet && !this.#host.active())) return;
-    if (puppet) {
+    // GPU を失っていたら試さない (付いていないものを外したときに `#afterChange` が付けたい組を古い状態に戻すため)。
+    if (puppet && !puppet.is_lost()) {
       try {
         if (entry.attached) puppet.detach_module(name);
         entry.problem = null;
         this.#afterChange(puppet);
       } catch (e) {
-        if (!puppet.is_lost()) entry.problem = describeProblem(e);
+        if (puppet.is_lost()) this.waiting = true;
+        else entry.problem = describeProblem(e);
       }
+    } else {
+      this.waiting = true;
     }
     entry.wanted = false;
     if (save) void this.#save();
@@ -372,6 +385,27 @@ export class DressUp {
     void this.#compareFiles();
   }
 
+  /**
+   * 行のチェックとスロットの選択に出す「付けるか」。ふだんは今付いているか (`attached`)。作り直した WebPuppet を待っている
+   * 間 (`waiting`) は、利用者が選んだ付けたい組 (`wanted`) を出す (押した付け外しがすぐ出るように。T1666)。モジュールの
+   * プロジェクトの自分のスロットの行は、付けたい組に残っていても付けないので `attached` のまま。
+   */
+  shown(entry: DressUpEntry): boolean {
+    if (!this.waiting) return entry.attached;
+    const own = this.#host.ownSlot?.() ?? null;
+    return own !== null && entry.slot === own ? entry.attached : entry.wanted;
+  }
+
+  /**
+   * 作り直した WebPuppet を待っている間に、行のチェックが出しているがまだ WebPuppet に届いていない付け外し
+   * (`on` は付ける・`off` は外す)。無ければ `null`。
+   */
+  pendingChange(entry: DressUpEntry): "on" | "off" | null {
+    const shown = this.shown(entry);
+    if (shown === entry.attached) return null;
+    return shown ? "on" : "off";
+  }
+
   /** 行 `module` の違いの要素 `item` を強調する。同じ要素ならやめる。 */
   toggleHighlight(module: string, item: DifferenceItem): void {
     const current = this.highlight;
@@ -397,7 +431,10 @@ export class DressUp {
    * また GPU を失っていたら何もしない (次の作り直しでまた呼ばれる)。
    */
   loaded(puppet: WebPuppet): void {
-    if (puppet.is_lost()) return;
+    if (puppet.is_lost()) {
+      this.waiting = true;
+      return;
+    }
     const known = new Set(this.#infos(puppet).map((m) => m.name));
     for (const [name, bytes] of this.#bytes) {
       if (known.has(name)) continue;
@@ -421,6 +458,8 @@ export class DressUp {
     }
     this.#reconcile(puppet);
     this.#loadPending(puppet);
+    // 揃える途中でまた GPU を失ったら、次の作り直しまで待つ。
+    this.waiting = puppet.is_lost();
   }
 
   // --- 内部 ---
@@ -474,6 +513,7 @@ export class DressUp {
    * 差し替える)。作り直した WebPuppet に `loaded` で付ける。
    */
   #want(entry: DressUpEntry): void {
+    this.waiting = true;
     for (const other of this.entries) {
       if (other.slot !== null && other.slot === entry.slot) other.wanted = false;
     }
@@ -524,6 +564,7 @@ export class DressUp {
     const puppet = this.#host.puppet();
     if (!puppet) {
       this.#pending.push({ source: { ...source, bytes }, entry, attach });
+      this.waiting = true;
       return null;
     }
     return this.#loadInto(puppet, bytes, source, entry, attach);
@@ -557,6 +598,7 @@ export class DressUp {
     } catch (e) {
       if (puppet.is_lost()) {
         this.#pending.push({ source: { ...source, bytes }, entry, attach });
+        this.waiting = true;
         return null;
       }
       this.#loadFailed(source, entry, e);

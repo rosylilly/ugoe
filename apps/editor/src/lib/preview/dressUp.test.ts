@@ -1,7 +1,6 @@
 // プレビューの着せ替え (T0649): 説明の文言・スロットの一覧と、DressUp の付け外し (WebPuppet と IPC は偽物)。
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModuleDifference } from "../ipc";
-import type { WebPuppet } from "../viewport/wasm";
 import {
   describeProblem,
   differenceItemCount,
@@ -14,6 +13,7 @@ import {
   slotRows,
 } from "./dressUp";
 import { DressUp } from "./dressUp.svelte";
+import { dressUpError, fakePuppet } from "./test/fakeModulePuppet";
 
 const saved: unknown[] = [];
 /** `comparePreviewModule` の結果 (バイト列はモジュールの名前)。 */
@@ -38,107 +38,6 @@ vi.mock("../ipc", () => ({
     }),
   },
 }));
-
-/** ugoe-wasm の DressUpError と同じ形のエラー。 */
-function dressUpError(code: string, fields: Record<string, string>): Error {
-  return Object.assign(new Error(`${code} happened`), { name: "DressUpError", code, ...fields });
-}
-
-/**
- * 着せ替えの WebPuppet の偽物。バイト列はモジュールの名前の文字列で、`slots` にスロットを持つ。
- * `broken` のスロットのモジュールは付けられない (付けた後にスロットが消えた、などの代わり)。
- * `state.lost` の間は GPU を失った WebPuppet で、読み込みと付け外しが `device_lost` を投げる (ugoe-wasm と同じ)。
- */
-function fakePuppet(slotOf: Record<string, string>) {
-  const loaded: string[] = [];
-  let attached: string[] = [];
-  const broken = new Set<string>();
-  const state = { lost: false };
-  /** 直前の `reload` で付け直せなかったもの (`detached_modules_json`)。 */
-  let detached: unknown[] = [];
-  const lost = () => {
-    if (state.lost) throw dressUpError("device_lost", {});
-  };
-  const check = (names: string[]) => {
-    lost();
-    for (const name of names) {
-      if (!loaded.includes(name)) throw dressUpError("not_loaded", { module: name });
-      const slot = slotOf[name] ?? "?";
-      if (broken.has(slot)) throw dressUpError("unknown_slot", { module: name, slot });
-    }
-  };
-  const puppet = {
-    has_model: () => true,
-    is_lost: () => state.lost,
-    load_module(bytes: Uint8Array) {
-      lost();
-      const name = new TextDecoder().decode(bytes);
-      if (!(name in slotOf)) throw dressUpError("invalid_file", {});
-      if (!loaded.includes(name)) loaded.push(name);
-      return name;
-    },
-    unload_module(name: string) {
-      lost();
-      attached = attached.filter((n) => n !== name);
-      const i = loaded.indexOf(name);
-      if (i >= 0) loaded.splice(i, 1);
-    },
-    attach_module(name: string) {
-      check([name]);
-      attached = [...attached.filter((n) => slotOf[n] !== slotOf[name] && n !== name), name];
-    },
-    detach_module(name: string) {
-      lost();
-      if (!attached.includes(name)) throw dressUpError("not_attached", { module: name });
-      attached = attached.filter((n) => n !== name);
-    },
-    set_modules(names: string[]) {
-      check(names);
-      attached = [...names];
-    },
-    attached_modules: () => [...attached],
-    detached_modules_json: () => JSON.stringify(detached),
-    modules_json: () =>
-      JSON.stringify(
-        loaded.map((name) => ({
-          name,
-          slot: slotOf[name],
-          requires: {},
-          attached: attached.includes(name),
-          textures: 1,
-          warnings: [],
-        })),
-      ),
-  };
-  /** モデルの読み直し (T0123): 付けていたものを 1 つずつ付け直し、付けられないものを外して一覧に残す。 */
-  const reload = () => {
-    const before = attached;
-    attached = [];
-    detached = [];
-    for (const name of before) {
-      try {
-        check([name]);
-        attached.push(name);
-      } catch (e) {
-        const { code, module, slot } = e as Error & Record<string, string>;
-        detached.push({
-          module: name,
-          slot: slotOf[name],
-          error: { code, message: (e as Error).message, module, slot },
-          warning: `module \`${name}\` was detached: ${(e as Error).message}`,
-        });
-      }
-    }
-  };
-  return {
-    puppet: puppet as unknown as WebPuppet,
-    broken,
-    state,
-    reload,
-    attached: () => attached,
-    loaded: () => [...loaded],
-  };
-}
 
 const SLOTS = { LongHair: "Hair", ShortHair: "Hair", Dress: "Outfit" };
 
@@ -166,10 +65,14 @@ function setup() {
     drop() {
       gone = true;
     },
-    /** GPU を失った WebPuppet を作り直す (ViewportController の `#setUp` → `PreviewMode.loaded`)。 */
-    recreate() {
+    /**
+     * GPU を失った WebPuppet を作り直す (ViewportController の `#setUp` → `PreviewMode.loaded`)。`broken` のスロットの
+     * モジュールは新しい WebPuppet に付けられない。
+     */
+    recreate(broken: string[] = []) {
       gone = false;
       fake = fakePuppet(SLOTS);
+      for (const slot of broken) fake.broken.add(slot);
       dressUp.loaded(fake.puppet);
       return fake;
     },
@@ -622,6 +525,110 @@ describe("DressUp while the WebPuppet is being made again (T1658)", () => {
     await dressUp.add([{ path: "/work/Dress.ugoemod", bytes: bytes("Dress") }]);
     await dressUp.load();
     expect(t.recreate().loaded()).toEqual([]);
+  });
+});
+
+describe("DressUp rows while waiting for the WebPuppet (T1666)", () => {
+  /** 行のチェック (とスロットの選択) に出すものと、待っている付け外し。 */
+  const rows = (d: DressUp) => d.entries.map((e) => [e.name, d.shown(e), d.pendingChange(e)]);
+
+  async function putOnThree() {
+    const t = setup();
+    await t.dressUp.add([
+      { path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") },
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: "/work/Dress.ugoemod", bytes: bytes("Dress") },
+    ]);
+    expect(t.fake.attached()).toEqual(["ShortHair", "Dress"]);
+    expect(t.dressUp.waiting).toBe(false);
+    return t;
+  }
+
+  it("shows a change made while the GPU is lost at once, and keeps it after the recreation", async () => {
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    dressUp.setSlot("Outfit", null);
+    dressUp.setSlot("Hair", "LongHair");
+    expect(dressUp.waiting).toBe(true);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", true, "on"],
+      ["ShortHair", false, "off"],
+      ["Dress", false, "off"],
+    ]);
+    t.recreate();
+    expect(dressUp.waiting).toBe(false);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", true, null],
+      ["ShortHair", false, null],
+      ["Dress", false, null],
+    ]);
+  });
+
+  it("shows a change made while there is no WebPuppet at once, and keeps it after the recreation", async () => {
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    t.drop();
+    dressUp.detach("ShortHair");
+    dressUp.attach("LongHair");
+    dressUp.detach("LongHair");
+    expect(dressUp.waiting).toBe(true);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", false, null],
+      ["ShortHair", false, "off"],
+      ["Dress", true, null],
+    ]);
+    expect(t.recreate().attached()).toEqual(["Dress"]);
+    expect(dressUp.waiting).toBe(false);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", false, null],
+      ["ShortHair", false, null],
+      ["Dress", true, null],
+    ]);
+  });
+
+  it("keeps showing the wanted set while the recreation has not finished", async () => {
+    // 作り直しを諦めた (ビューポートが「作り直す」を出した) 間も、付けたい組を出したまま待つ。
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    t.drop();
+    dressUp.setSlot("Hair", "LongHair");
+    const again = fakePuppet(SLOTS);
+    again.state.lost = true;
+    dressUp.loaded(again.puppet);
+    expect(dressUp.waiting).toBe(true);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", true, "on"],
+      ["ShortHair", false, "off"],
+      ["Dress", true, null],
+    ]);
+  });
+
+  it("unticks a module the new WebPuppet cannot put on, and tells why on its row", async () => {
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    dressUp.setSlot("Hair", "LongHair");
+    expect(t.recreate(["Hair"]).attached()).toEqual(["Dress"]);
+    expect(dressUp.waiting).toBe(false);
+    expect(rows(dressUp)).toEqual([
+      ["LongHair", false, null],
+      ["ShortHair", false, null],
+      ["Dress", true, null],
+    ]);
+    expect(entry(dressUp, "LongHair")?.problem?.summary).toContain("LongHair was taken off");
+  });
+
+  it("does not undo the wanted set when taking off a module that is not on while the GPU is lost", async () => {
+    const t = await putOnThree();
+    const { dressUp } = t;
+    t.fake.state.lost = true;
+    dressUp.detach("Dress");
+    dressUp.detach("LongHair");
+    expect(entry(dressUp, "Dress")).toMatchObject({ wanted: false, problem: null });
+    expect(t.recreate().attached()).toEqual(["ShortHair"]);
   });
 });
 

@@ -1499,7 +1499,11 @@
           "aria": "Remove {{name}}",
           "tooltip": "Take it off and remove it from the list"
         },
-        "dropped": "Dropped file: not kept in the project."
+        "dropped": "Dropped file: not kept in the project.",
+        "waiting": {
+          "on": "Puts this on when the preview is back.",
+          "off": "Takes this off when the preview is back."
+        }
       },
       "differences": {
         "comparing": "Comparing with your current edits…",
