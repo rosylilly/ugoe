@@ -1,11 +1,11 @@
 ---
 id: T0573
 title: "MCP: エージェントの差分の組 (variant_sets) も承認を経て残す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-mcp, ugoe-editor-core, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0573
 ---
 
 # T0573: MCP: エージェントの差分の組 (variant_sets) も承認を経て残す (判断が要る)
