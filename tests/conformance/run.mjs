@@ -9,7 +9,8 @@
 // 2. C ABI: tests/conformance/c/runner.c を libugoe_ffi.a にリンクして実行し、評価の結果を比べる
 // 3. wasm: npm パッケージ (bindings/web/dist) をヘッドレスの Chrome の WebGL2 (wasm) と WebGPU (wasm-webgpu) で動かし、
 //    評価の結果と画像を比べる。avatar: 同じパッケージの `<ugoe-avatar>` を WebGL2 で動かし、作成・切り離しと再接続・
-//    `backend` の変更・コンテキストの喪失からの作り直し (復元の時間切れと諦めも) のシナリオを確かめる (web/avatar.js。参照とは比べない)。
+//    `backend` の変更・コンテキストの喪失と GPU プロセスの喪失からの作り直し (復元の時間切れと諦めも) のシナリオを確かめる
+//    (web/avatar.js。参照とは比べない)。
 //    queries: 同じパッケージの `*_json()` の出力のキーを、パッケージの型のキーの一覧と比べる (web/queries.js。参照とは比べない)
 // 4. Unity: UPM パッケージの Unity に依存しない C# の層 (Runtime/Core) を dotnet で動かし、評価の結果を比べる
 // 5. Godot: GDExtension のノードから読み戻した評価の結果と、描いた画像を比べる (bindings/godot/example/tests/conformance.gd)
@@ -372,6 +373,10 @@ async function runWeb(dist, binding, backend, page) {
     };
   });
   rearm();
+  const profile = mkdtempSync(join(tmpdir(), "ugoe-conformance-chrome-"));
+  // <ugoe-avatar> のシナリオは GPU プロセスを落とすので、ブラウザの CDP (DevTools のプロトコル) を開く (T0484)
+  const gpuCrash = page === "avatar.html";
+  const cdp = gpuCrash ? browserCdp(profile) : null;
   const server = createServer((req, res) => {
     rearm();
     const url = new URL(req.url, "http://localhost");
@@ -390,6 +395,19 @@ async function runWeb(dist, binding, backend, page) {
           console.error(`[${binding}] ${body}`);
         } else if (url.pathname === "/done") {
           finish(JSON.parse(body.toString("utf8")));
+        } else if (url.pathname === "/crash-gpu" && cdp) {
+          // GPU プロセスを落とす (avatar.html。T0484)。`delay` (ミリ秒) があれば、待たずに応答してからその後で落とす
+          // (ページの JS が同期的に動いている間 (wasm の作成の途中など) にも落とせる。時機は決まらない)
+          const { delay } = JSON.parse(body.toString("utf8") || "{}");
+          if (typeof delay === "number") {
+            setTimeout(() => cdp.send("Browser.crashGpuProcess").catch(() => {}), delay);
+          } else {
+            cdp.send("Browser.crashGpuProcess").then(
+              () => send(200, "ok"),
+              (e) => send(500, String(e?.message ?? e)),
+            );
+            return;
+          }
         } else if (/^\/result\/[\w-]+\.(json|png)$/.test(url.pathname)) {
           writeFileSync(join(out, binding, url.pathname.slice("/result/".length)), body);
         } else {
@@ -435,7 +453,6 @@ async function runWeb(dist, binding, backend, page) {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const { port } = server.address();
 
-  const profile = mkdtempSync(join(tmpdir(), "ugoe-conformance-chrome-"));
   const flags = [
     "--headless=new",
     `--user-data-dir=${profile}`,
@@ -451,6 +468,16 @@ async function runWeb(dist, binding, backend, page) {
     // シナリオでは捨てた canvas のコンテキストも GC されるまで数に入り、今のコンテキストが失われることがあるので上げる
     // (packages/player/browser-test と同じ。T0938・T0479)
     "--max-active-webgl-contexts=256",
+    // GPU プロセスを何度も落とす (T0484)。Chrome は続けて落ちると GPU を諦め (SwiftShader の後に代わりが無いとブラウザごと
+    // 終わる)、落ちたときに WebGL を使っていたページの WebGL を止める (`getContext` が `null`) ので、どちらも外す。
+    // CDP は空いているポートで開き、ポートはプロファイルの DevToolsActivePort から読む
+    ...(gpuCrash
+      ? [
+          "--disable-gpu-process-crash-limit",
+          "--disable-domain-blocking-for-3d-apis",
+          "--remote-debugging-port=0",
+        ]
+      : []),
     ...(process.env.CI ? ["--no-sandbox"] : []),
     `http://127.0.0.1:${port}/${page}?backend=${backend}`,
   ];
@@ -460,6 +487,7 @@ async function runWeb(dist, binding, backend, page) {
   const exited = new Promise((r) => browser.on("exit", (code) => r({ exited: code })));
   const result = await Promise.race([done, exited, timeout]);
   clearTimeout(idle);
+  cdp?.close();
   browser.kill();
   await exited;
   server.close();
@@ -478,6 +506,57 @@ async function runWeb(dist, binding, backend, page) {
     `${binding} (${backend}): passed ${result.total - result.failed} of ${result.total} ${unit}`,
   );
   return result.failed === 0;
+}
+
+/**
+ * `--remote-debugging-port=0` で起動した Chrome のブラウザの CDP に WebSocket で繋ぎ、命令を送るもの。最初の `send` で
+ * プロファイルの DevToolsActivePort (1 行目がポート、2 行目がブラウザの口のパス) を読んで繋ぐ。
+ */
+function browserCdp(profile) {
+  let connection = null;
+  let id = 0;
+  const pending = new Map();
+  const connect = async () => {
+    const file = join(profile, "DevToolsActivePort");
+    for (let i = 0; !existsSync(file); i++) {
+      if (i >= 100) throw new Error("Chrome did not write DevToolsActivePort");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const [port, path] = readFileSync(file, "utf8").split("\n");
+    const socket = new WebSocket(`ws://127.0.0.1:${port.trim()}${path.trim()}`);
+    await new Promise((resolve, reject) => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", () => reject(new Error("could not connect to CDP")), {
+        once: true,
+      });
+    });
+    socket.addEventListener("message", (e) => {
+      const message = JSON.parse(String(e.data));
+      const request = pending.get(message.id);
+      if (!request) return;
+      pending.delete(message.id);
+      if (message.error) request.reject(new Error(`CDP: ${message.error.message}`));
+      else request.resolve(message.result);
+    });
+    socket.addEventListener("close", () => {
+      for (const request of pending.values()) request.reject(new Error("CDP was closed"));
+      pending.clear();
+    });
+    return socket;
+  };
+  return {
+    async send(method, params = {}) {
+      connection ??= connect();
+      const socket = await connection;
+      const request = ++id;
+      const result = new Promise((resolve, reject) => pending.set(request, { resolve, reject }));
+      socket.send(JSON.stringify({ id: request, method, params }));
+      return result;
+    },
+    close() {
+      connection?.then((socket) => socket.close()).catch(() => {});
+    },
+  };
 }
 
 /** 見つかった Chrome の名前。無ければ null。 */

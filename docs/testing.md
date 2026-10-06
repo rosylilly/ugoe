@@ -325,6 +325,13 @@ just conformance --only c   # C ABI だけ
 ランタイムの評価・描画・C ABI・wasm の API を変えたら実行します。手順・計画の形式・エンジン向けのバインディングを足す手順は
 [tests/conformance/README.md](../tests/conformance/README.md)。
 
+`<ugoe-avatar>` (`avatar`) は参照と比べず、作成・切り離し・作り直しのシナリオを本物の wasm とヘッドレスの Chrome (WebGL2 は SwiftShader) で
+確かめます。WebGL2 のコンテキストの喪失 (`WEBGL_lose_context`) のほか、描いている間と作成の途中に GPU プロセスを落とすシナリオ
+(`gpu-process-crash`・`gpu-process-crash-during-create`。T0484) もあり、落とし方と Chrome の起動の設定は下の
+[PuppetSurface のブラウザのテスト](#puppetsurface-のブラウザのテスト) と揃えています (run.mjs が CDP の `Browser.crashGpuProcess` を、
+playwright を使わずに WebSocket で送る)。wasm の panic があればそのシナリオは失敗します。シナリオの一覧は
+[tests/conformance/README.md](../tests/conformance/README.md#ugoe-avatar-のシナリオ)。
+
 ## PuppetSurface のブラウザのテスト
 
 エディタのビューポートと Player が共有する `PuppetSurface` (`packages/player/src/surface.ts`。[docs/ui.md](ui.md#webpuppet-の寿命)) と、

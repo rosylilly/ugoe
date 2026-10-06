@@ -2,12 +2,14 @@
 //
 // run.mjs のサーバーが配るページで動く。本物の wasm とヘッドレスの Chrome の WebGL2 (SwiftShader) で、要素の作成・読み込み・
 // 切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直し (復元の時間切れ・作れないときの試し直しと
-// 諦め) を、シナリオごとに確かめる。
+// 諦め)・GPU プロセスの喪失からの作り直しを、シナリオごとに確かめる。
 // 順序は bindings/web/src/avatar.test.ts が偽物で確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
 // - パッケージは /pkg/ (bindings/web/dist)、モデルは /samples/<名前> (assets/samples。`?delay=ミリ秒` で応答を遅らせる)。
 // - `WebPuppet.create` と `free` を包んで、生きている `WebPuppet` を数える (GPU の資源が残らないことを確かめる)。
 // - 描いたことは、要素の canvas (shadow root) を 2D の canvas に写して、背景でない画素があるかで確かめる。
+// - GPU プロセスは、run.mjs のサーバーに /crash-gpu を送って落とさせる (CDP の `Browser.crashGpuProcess`。T0484)。
+// - wasm の panic (`console_error_panic_hook` がコンソールに書く `panicked at`) を見たら、そのシナリオを失敗にする。
 // - 結果はシナリオごとに /result/avatar.json に書き、/done で数を知らせる。
 
 import "/pkg/element.js";
@@ -20,6 +22,17 @@ const MODEL_B = "/samples/dress-up/dress-up.ugoe";
 const WAIT_MS = 30_000;
 /** 要素が WebGL2 の復元を待つ時間 (bindings/web/src/avatar.ts の `RESTORE_TIMEOUT_MS`。作れなかった作り直しを試し直すまでも同じ)。 */
 const RESTORE_TIMEOUT_MS = 5_000;
+
+// --- wasm の panic ---
+
+/** 今のシナリオで見た wasm の panic (最初の行)。 */
+const panics = [];
+const consoleError = console.error;
+console.error = (...args) => {
+  const text = args.map(String).join(" ");
+  if (text.includes("panicked at")) panics.push(text.split("\n")[0]);
+  consoleError.apply(console, args);
+};
 
 // --- 生きている WebPuppet を数える ---
 
@@ -78,10 +91,11 @@ function frames(n = 3) {
   });
 }
 
-/** `condition()` が真になるまで待つ (`WAIT_MS` を過ぎたら失敗)。 */
+/** `condition()` が真になるまで待つ (`WAIT_MS` を過ぎるか wasm が panic したら失敗)。 */
 async function until(condition, what) {
   const deadline = performance.now() + WAIT_MS;
   while (!condition()) {
+    if (panics.length > 0) throw new Error(`wasm panicked while waiting for ${what}: ${panics[0]}`);
     if (performance.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await sleep(20);
   }
@@ -138,6 +152,35 @@ function loseContextOf(canvas) {
   ext.loseContext();
   check(gl.isContextLost(), "the context is not lost");
   return ext;
+}
+
+/**
+ * GPU プロセスを落とす (run.mjs が CDP の `Browser.crashGpuProcess` を送る)。`delay` (ミリ秒) を渡すと落とすのを待たずに戻り、
+ * その後で落ちる (時機は決まらない)。渡さなければ落ちるまで待つ。
+ */
+function crashGpuProcess(delay) {
+  return post("/crash-gpu", JSON.stringify({ delay }));
+}
+
+/** 新しい canvas に WebGL2 のコンテキストを作れて、失っていない (GPU プロセスが戻った) ことを待つ。 */
+async function untilGpuIsBack() {
+  await until(() => {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    const ok = gl !== null && !gl.isContextLost();
+    // 試しに作ったコンテキストは、Chrome の上限に数えられないようにすぐ手放す
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    return ok;
+  }, "the GPU process to come back");
+}
+
+/** 要素が送った `error` が、wasm のコードを持つ例外 (`CreateError`・`LoadError`・`RenderError`) である。 */
+function expectCodedError(error, when) {
+  check(
+    error instanceof Error &&
+      ["CreateError", "LoadError", "RenderError"].includes(error.name) &&
+      typeof error.code === "string",
+    `${when}: an error without a code: ${error?.name}: ${error?.message}`,
+  );
 }
 
 /** 要素の `error` と `gpulost` を数える (`stop()` で聞くのをやめる)。 */
@@ -549,6 +592,118 @@ const scenarios = {
   },
 };
 
+// GPU プロセスを落とすシナリオ (T0484)。Chrome が GPU プロセスを作り直すと、落ちる前の WebGL も影響を受けるので最後に動かす
+Object.assign(scenarios, {
+  /**
+   * 描いている間に GPU プロセスが落ちたら、WebGL2 のコンテキストの喪失として `gpulost` を送って復元を待ち、新しい canvas で
+   * 作り直して、モデルとパラメータの値を戻して描く (2 回続けて)。
+   */
+  async "gpu-process-crash"() {
+    const el = avatar({ backend: "webgl2", src: MODEL_A });
+    const loaded = once(el, "load");
+    document.body.append(el);
+    await loaded;
+    const [id, value] = pickParameter(el);
+    check(el.setParameter(id, value), `setParameter(${id}) failed`);
+    await expectDrawn(el, "before the crash");
+    const events = recordEvents(el);
+
+    for (let round = 1; round <= 2; round++) {
+      const old = canvasOf(el);
+      const oldPuppet = el.puppet;
+      const reloaded = once(el, "load", `round ${round}: the recreation after the crash`);
+      const crashedAt = performance.now();
+      await crashGpuProcess();
+      await reloaded;
+      await log(
+        `gpu-process-crash: round ${round} recreated ${(performance.now() - crashedAt).toFixed(0)} ms after the crash`,
+      );
+      check(events.gpulost === round, `round ${round}: gpulost was sent ${events.gpulost} times`);
+      check(
+        events.errors.length === 0,
+        `round ${round}: error: ${events.errors.map((e) => e.message).join("; ")}`,
+      );
+      check(!el.waitingForGpu, `round ${round}: still waitingForGpu after the recreation`);
+      check((await el.ready) === el.puppet, `round ${round}: ready is not the recreated puppet`);
+      const canvas = canvasOf(el);
+      check(canvas !== old, `round ${round}: the canvas was not replaced`);
+      check(!old.isConnected, `round ${round}: the old canvas is still in the shadow root`);
+      check(
+        el.puppet !== oldPuppet && !el.puppet.is_lost(),
+        `round ${round}: the puppet was not recreated`,
+      );
+      check(signature(el) === signatures.a, `round ${round}: a different model after the crash`);
+      const got = el.getParameter(id);
+      check(
+        Math.abs(got - value) < 1e-6,
+        `round ${round}: ${id} is ${got} after the crash, expected ${value}`,
+      );
+      await expectDrawn(el, `round ${round}: after the crash`);
+      await expectLive(1, `round ${round}: after the crash`);
+      // 次の回が前の GPU プロセスの後始末と重ならないように待つ
+      await untilGpuIsBack();
+    }
+    events.stop();
+    el.remove();
+    await expectLive(0, "after removing");
+  },
+
+  /**
+   * 要素の作成・読み込みの途中に GPU プロセスが落ちても (サーバーの側から時機をずらして落とす)、wasm は panic せず、要素は
+   * 作り直して描くか、コードを持つ例外 (`CreateError` など) の `error` を送って止まる。止まったら `restart()` で作り直して描く。
+   * 落ちた時機は決まらない (どの段に当たるかは走るたびに変わる) ので、どう終わったかは数えて書くだけにする。
+   */
+  async "gpu-process-crash-during-create"() {
+    const outcomes = new Map();
+    for (const delay of [0, 20, 50, 100, 150, 200, 300, 500]) {
+      const el = avatar({ backend: "webgl2", src: MODEL_A });
+      const events = recordEvents(el);
+      let loads = 0;
+      el.addEventListener("load", () => loads++);
+      await crashGpuProcess(delay);
+      document.body.append(el);
+      // 落ちてから (落とす命令が届くまでの余裕を見る)、GPU プロセスが戻るのを待つ
+      await sleep(delay + 300);
+      await untilGpuIsBack();
+      // 落ちたことが要素に届いて、作り直しか失敗で落ち着くのを待つ
+      await frames(5);
+      await until(
+        () =>
+          creating === 0 &&
+          !el.waitingForGpu &&
+          (el.puppet?.has_model() || (el.puppet === null && events.errors.length > 0)),
+        `delay ${delay}: the element to settle`,
+      );
+      for (const error of events.errors) expectCodedError(error, `delay ${delay}`);
+      let outcome;
+      if (el.puppet === null) {
+        // 作成で失敗して止まった。`restart()` で作り直す
+        outcome = `failed (${events.errors.map((e) => `${e.name}/${e.code}`).join(", ")}), restarted`;
+        const restarted = once(el, "load", `delay ${delay}: the reload after restart()`);
+        el.restart();
+        await restarted;
+      } else {
+        outcome =
+          events.gpulost > 0
+            ? `recreated (gpulost x${events.gpulost}, load x${loads})`
+            : `not affected (load x${loads})`;
+        if (events.errors.length > 0)
+          outcome += ` with ${events.errors.map((e) => `${e.name}/${e.code}`).join(", ")}`;
+      }
+      events.stop();
+      outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
+      check(signature(el) === signatures.a, `delay ${delay}: a different model`);
+      await expectDrawn(el, `delay ${delay}`);
+      await expectLive(1, `delay ${delay}`);
+      el.remove();
+      await expectLive(0, `delay ${delay}: after removing`);
+    }
+    await log(
+      `gpu-process-crash-during-create: ${[...outcomes].map(([k, v]) => `${k} x${v}`).join("; ")}`,
+    );
+  },
+});
+
 async function main() {
   signatures.a = await modelSignature(MODEL_A);
   signatures.b = await modelSignature(MODEL_B);
@@ -557,6 +712,7 @@ async function main() {
   let failed = 0;
   for (const [name, run] of Object.entries(scenarios)) {
     await post("/start", name);
+    panics.length = 0;
     try {
       try {
         await run();
@@ -565,6 +721,7 @@ async function main() {
         for (const el of document.querySelectorAll("ugoe-avatar")) el.remove();
       }
       await expectLive(0, `after ${name}`);
+      check(panics.length === 0, `wasm panicked: ${panics[0]}`);
       results[name] = "ok";
     } catch (e) {
       failed += 1;

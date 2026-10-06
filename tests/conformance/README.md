@@ -214,9 +214,22 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 | `detach-while-creating` | 作成中に外して戻すのを繰り返しても、`WebPuppet` は 1 つだけ残り、canvas も 1 つで、描く。外したまま作成が終わっても残らない |
 | `detach-while-fetching` | 新しい `src` の取得中に外して戻すと、前のモデルではなく新しい `src` を読んで描く |
 | `backend-change` | `backend` を変えると作り直してパラメータの値を引き継ぐ (`auto` はこの Chrome では WebGPU のアダプタが無く、同じ canvas の WebGL2 で描く)。取得中・作成中に続けて変えても、`WebPuppet` は 1 つで新しい `src` を描く |
+| `gpu-process-crash` | 描いている間に GPU プロセスが落ちると、WebGL2 のコンテキストの喪失として `gpulost` を送って復元を待ち、新しい canvas で作り直して (`load`)、`ready` がその `WebPuppet` で解決し、モデルと値が戻って描く。`error` は送らない。2 回続けて行う (T0484) |
+| `gpu-process-crash-during-create` | 要素を付けると同時に時機をずらして (0〜500 ミリ秒後に) GPU プロセスを落とす。wasm は panic せず、要素は作り直して描くか、コードを持つ例外 (`CreateError`・`LoadError`・`RenderError`) の `error` を送って止まる。止まったら `restart()` で作り直して描く。8 回行い、どう終わったかを数えてログに書く (T0484) |
 
 - 作り直しで作れないこと (GPU が戻らない・コンテキストの上限) は、要素が作る新しい canvas のコンテキストを `WebPuppet.create` の前に
   `WEBGL_lose_context` で失わせて起こす (本物の wasm が `CreateError` の `context_unavailable` で失敗する。T0475)。
+- GPU プロセスは、ページが `run.mjs` のサーバーに `/crash-gpu` を送り、`run.mjs` がブラウザの CDP の `Browser.crashGpuProcess` で落とす
+  (`{"delay": ミリ秒}` を付けると、待たずに応答してからその後で落とすので、wasm の同期的な作成の途中にも落とせる。時機は決まらない)。
+  CDP は `--remote-debugging-port=0` で開き、ポートはプロファイルの `DevToolsActivePort` から読んで WebSocket で繋ぐ。Chrome は GPU
+  プロセスが続けて落ちると GPU を諦め (SwiftShader の後に代わりが無いとブラウザごと終わる)、落ちたときに WebGL を使っていたページの
+  WebGL を止めるので、`avatar` だけ `--disable-gpu-process-crash-limit`・`--disable-domain-blocking-for-3d-apis` で起動する
+  (packages/player/browser-test と同じ起動の設定。T0944)。GPU プロセスを落とすシナリオは最後に動かす。
+- wasm の panic (`console_error_panic_hook` がコンソールに書く `panicked at`) が 1 つでもあれば、そのシナリオは失敗する (T0484)。
+- `gpu-process-crash-during-create` で落ちる時機は決まらないので、通っても全ての段で落としたとは言えない (どの段でも panic しないことの
+  決定的な確かめは packages/player/browser-test の `lose-context-during-create`・`invalid-block-index-during-create`)。手元の走り
+  (WSL2・SwiftShader) では、作成で失敗して `restart()` したもの・読み込みの途中に失って `LoadError` (`device_lost`) を送った後に作り直したもの・
+  作り直したものが出た。
 - 復元の時間切れは本物の時間 (5 秒) を待つので、`context-loss-timeout` は約 5 秒、`gpu-lost-repeatedly` は約 10 秒かかる
   (T0479 で測った。`avatar` 全体は 12 秒ほどから 30 秒ほどになった)。
 - 作り直しを繰り返すと、捨てた canvas の WebGL のコンテキストも GC されるまで Chrome の上限 (16) に数えられ、今のコンテキストが失われる
