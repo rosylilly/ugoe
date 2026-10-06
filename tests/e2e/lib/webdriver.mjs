@@ -386,6 +386,7 @@ export const Keys = {
   Alt: "\uE00A",
   End: "\uE010",
   Home: "\uE011",
+  ArrowLeft: "\uE012",
   ArrowUp: "\uE013",
   ArrowRight: "\uE014",
 };

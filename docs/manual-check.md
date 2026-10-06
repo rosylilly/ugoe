@@ -647,6 +647,8 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
 - 手順: 設定で Claude API (または OpenAI 互換の API) のキーを入れ、送信に同意して PSD からの自動リギングを提案させ、採用する。
   OpenAI 互換は OpenAI・OpenRouter・Gemini・Ollama・LM Studio のうち使えるもの。
 - 期待: キーが OS のキーチェーンに保存され、起動し直しても残る。提案が出て、採用するとモデルが動く。
+  マニュアルの AI の画像 (`ai-proposal`・`ai-revision` など) は e2e の偽の AI のプロバイダ (値は範囲の真ん中、理由は決まった文) で撮ったものなので、
+  本物の AI の答え (理由の文・Not applied) の出方が画像と同じ形かも見る。
 - 元: T0509・T0512・T0517・T0519・T0523・T0637・T0638・T0644
 - 結果: W 未 ・ M 未 ・ L 未
 
@@ -655,13 +657,16 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
 - 手順: 「Settings」→「Connect agents」を有効にし、[manual/mcp.md](manual/mcp.md#2-エージェントに登録する) のとおり Claude Code (あれば OpenCode・ChatGPT) から登録して頼む。
   Windows では WSL の中の Claude Code からも ([manual/mcp.md の Windows と WSL](manual/mcp.md#windows-と-wsl))。
 - 期待: 接続でき、確認のダイアログの後に編集が適用される。Windows のインストール先の `ugoe-mcp.exe` が使われる。
+  マニュアルの画像 (`mcp-connect`・`mcp-approval`) は e2e の偽のエージェント (名前 `claude-code`) で撮ったものなので、本物の
+  Claude Code でつないだときの「Connected agents」の名前と確認の画面が画像と合うかも見る。
 - 元: T0642・T0662・T0513・T0514
 - 結果: W 未 ・ M 未 ・ L 未
 
 #### A03 Claude Desktop の拡張機能 [C: WM]
 
 - 手順: [manual/mcp.md の Claude Desktop](manual/mcp.md#claude-desktop) のとおり `.mcpb` を入れる。
-- 期待: Claude Desktop に入り、エディタにつながる。
+- 期待: Claude Desktop に入り、エディタにつながる。 「Connected agents」に出る名前が、偽のエージェント (名前 `claude-ai`) で撮った
+  マニュアルの画像 (`mcp-claude-desktop`) と合うかも見る。
 - 元: T0643
 - 結果: W 未 ・ M 未
 

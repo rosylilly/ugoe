@@ -34,7 +34,8 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
 ## 流れ
 
 1. アプリを `tauri build --debug --no-bundle` でビルドする。フロントエンドを埋め込んだデバッグビルドなので、Vite の開発サーバは要らない
-   (配布物と同じ読み込み方)。できた実行ファイルは `target/e2e/bin/` に写す。
+   (配布物と同じ読み込み方)。できた実行ファイルは `target/e2e/bin/` に写す。エディタは `ugoe-mcp` も `cargo build -p ugoe-mcp` で作って
+   隣に写す (エディタは同梱の `ugoe-mcp` を隣に探す。「Connect agents」の登録のコマンドと Claude Desktop の `.mcpb`)。
 2. Xvfb を起動する (空いている番号を選ぶ。下の「Xvfb の番号」)。利用者の画面にはウィンドウを出さない。
 3. アプリごとに、新しい D-Bus のセッション (`dbus-run-session`) の中で tauri-driver を起動し、`specs/<アプリ>.test.mjs` を
    node:test で流す。エディタのセッションでは、先に使い捨ての鍵の保管庫を動かす (下の「鍵の保管庫」)。tauri-driver は WebKitWebDriver に中継し、WebKitWebDriver がアプリを起動する。
@@ -61,9 +62,23 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
 - `dbus-run-session` で新しいセッションバスを使う。利用者の鍵の保管庫 (Secret Service。エディタの API キー) に触らない。
   エディタの API キーは、そのセッションで動かす使い捨ての保管庫に入る (下の「鍵の保管庫」)。
 - 言語は `LANG=en_US.UTF-8` に固定する (OS の言語に合わせる画面を、どの環境でも英語にする)。
-- テストが書くファイル (スタジオの見本のプロファイル・エディタの見本のプロジェクト) は `target/e2e/<アプリ>/work/` に置く。
+- テストが書くファイル (スタジオの見本のプロファイル・エディタの見本のプロジェクト) は `target/e2e/<アプリ>/work/` に置く
+  (`--manual` では `/tmp/ugoe-manual/work/`。下の「マニュアルの画像」)。
 - スタジオの操作 API は空いているポートで開く (利用者のスタジオの既定のポート 28451 とぶつけない)。見本のプロファイルの
   ホットキー (OS 全体に登録される) は外してから開く。
+
+### 外に出さない
+
+エディタの AI のプロバイダは、外のサービス (Claude API・OpenRouter など) に HTTPS で送る。筋書きはどれも外に送らない
+(偽の AI のプロバイダはループバック、外のサービスに送る前の確認は「Cancel」で閉じる) が、誤って送らないように run.mjs が見張る (T0969)。
+
+- run.mjs は 127.0.0.1 の空いているポートにプロキシの形の止める口を立て、エディタの `ALL_PROXY`・`HTTPS_PROXY`・`HTTP_PROXY`
+  (と小文字) をそこに向ける。`NO_PROXY` はループバック (`127.0.0.1,localhost,::1`) で、偽の AI のプロバイダ・MCP のブリッジ・WebDriver は
+  直に通る。AI のプロバイダの HTTP (ureq。crates/ugoe-ai) はこれらを読む。
+- 止める口は、来た要求 (HTTPS の `CONNECT` と HTTP) をすべて 403 で断って覚える。終わったときに 1 つでもあれば、
+  `editor tried to reach the network (blocked)` と行き先を出して、そのアプリを失敗にする。
+- 送り先を `https://example.invalid/v1` (名前の引けない送り先) にして「Test connection」で送らせると、`CONNECT example.invalid:443` が
+  止まって失敗になることを確かめた (T0969。外には何も出ない)。
 
 ### 鍵の保管庫
 
@@ -140,7 +155,22 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 - 提案の元は 2 つ: 見本の着せ替えの本体に「Import PSD…」で取り込んだ PSD (物理とスロットを持つ本体に提案を重ねる。リグの提案が
   本体の物理の衝突体 `Shoulders` を外し、スロット `Hair` の参照が壊れて提案が作れなかった T1627 の回帰) と、「New from PSD…」で
   作った本体の要素の無いプロジェクト (T0039)。どちらも `proposeAndPreview` (specs/editor.test.mjs) で提案とプレビューを確かめる。
-- MCP の経路 (エディタにつないだエージェントの提案) は使わない。ポートとトークンの準備が要り、画面の操作が提案の一覧から先は同じため。
+- 利用者の注文 (プロンプトの `<user_instructions>`) があれば、リグの値の理由に、従った文と、髪・揺れ・帽子のようにリグの値では変えられない
+  文の `Not applied:` の行を足す (マニュアルの画像 `ai-revision` の「Not applied」)。値は変えない。
+- MCP の経路 (エディタにつないだエージェントの提案) は筋書きでは使わない。ポートとトークンの準備が要り、画面の操作が提案の一覧から先は同じため。
+  マニュアルの画像は偽のエージェントで撮る (下の「偽のエージェント」)。
+
+### 偽のエージェント
+
+マニュアルの MCP の画像 (`mcp-*`) は、Claude Code や Claude Desktop の代わりに、テストがエディタの中の MCP サーバ (ブリッジ) に
+MCP の Streamable HTTP でつなぐ小さなクライアント (`lib/fake-agent.mjs`) で撮る。本物のモデルには何も送らない。
+
+- 送り先とトークンは、画面の表示の代わりにバックエンドのコマンド (`mcp_bridge_status`・`get_mcp_bridge_token`) で読む。
+- `initialize` の `clientInfo` で名乗る (`claude-code` 2.5.0・`claude-ai` 1.2.0)。「Connected agents」にその名前が出る。
+  つないだエージェントの一覧は待ち受けを入れ直すと空になるので、画像ごとに「Allow agents to connect to this editor」を入れ直す。
+- 適用の確認 (`mcp-approval`) は、エージェントが `get_psd_layers`・`set_layer_labels` (偽の AI のプロバイダと同じ、名前からのラベル)・
+  `propose_rig` で提案を作り、`apply_proposal` を送って答えを待つ間に撮る。撮った後に「Apply」を押す。
+
 
 ### 画像からのトラッキング
 
@@ -210,12 +240,28 @@ MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状�
   本体の問題 (`module-problem`・`module-problem-drop`) は、見本の本体の写しからスロット `Headwear` を消したもの・物理を消したものを
   作業の場所に作り、その隣に写したモジュールを開いて撮る。点光源 (`lighting-point`) は、ライティングのプロジェクトで「Add point」を押し、
   取っ手を右の肩のそばへドラッグする。
-- 撮らないもの (前の画像のまま): MCP (`mcp-*`。エージェントの接続が要る)、AI の提案・注文・作り直し・法線マップ・送る前の確認
-  (`ai-proposal`・`ai-instructions`・`ai-revision`・`ai-normal-maps`・`ai-consent`。T0969)、スタジオの出力の例 (`studio-output`。
-  Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ (`studio-virtual-camera`。v4l2loopback が要る)。この 2 枚は手で撮る
-  ([docs/manual-check.md](../../docs/manual-check.md) の U06)。
 - AI の設定 (`ai-settings`) は、OpenRouter を選んで適用し、送り先の欄と API キーの欄を撮る。API キーの欄は鍵の保管庫が要る
   (上の「鍵の保管庫」。無ければ「Apply」の行までを撮る)。
+- AI の提案 (`ai-*`。T0969) は `character.psd` から作って保存したプロジェクトで撮る。右の列を広げる (列の区切りを 80px 左へ、
+  上下の区切りを下の端へ。区切りにフォーカスしてキーで)。
+  - 注文の欄 (`ai-instructions`) と送る前の確認 (`ai-consent`) は、Claude を選び、偽のキー (`sk-ant-e2e-not-a-real-key`) を鍵の保管庫に
+    置いて撮る。名前で分類してから注文を書いて「Propose rig」を押し、出た確認 (リグの値) を撮って「Cancel」で閉じる (何も送らない。
+    上の「外に出さない」)。鍵の保管庫が無ければ飛ばす。
+  - 提案 (`ai-proposal`)・作り直し (`ai-revision`) は、送り先を偽の AI のプロバイダにして、AI で分類してから提案する。提案をプレビューし、
+    提案の下のスライダーの `AngleX` と `MouthOpenY` を最大にする。作り直しは注文 (髪の揺れを含む) を書いて「Regenerate with instructions」を押す。
+  - 法線マップ (`ai-normal-maps`) は `ugoe sample avatar` (法線マップの無いもの) のプロジェクトで、顔のまとまりの縁の丸みを開いて提案し、
+    プレビューする (光源は最初のもの)。
+- MCP (`mcp-*`) は同じ `character.psd` のプロジェクトで、偽のエージェント (上の「偽のエージェント」) をつないで撮る。
+  Claude Desktop のタブ (`mcp-claude-desktop`) は「Save .mcpb…」で `.mcpb` を保存した後に、1280×1000 の窓で撮る (ダイアログの全体が入るように)。
+- 画像は公開されるので、流した機械の場所 (ユーザー名・worktree・ビルドのキャッシュ) を写さない。`--manual` では run.mjs が
+  作業の場所を `/tmp/ugoe-manual/work/`、実行ファイル (エディタと `ugoe-mcp`) を `/tmp/ugoe-manual/bin/` に写して起動する (T0969)。
+  画面に出るパス (「Agents work on」・登録のコマンドの `ugoe-mcp`・保存した `.mcpb`・新しいモジュールの本体) は、どの機械でも
+  `/tmp/ugoe-manual/…` になる。実行ファイルは写す (シンボリックリンクにしない): エディタは自分の実行ファイルの実際の場所の隣に
+  `ugoe-mcp` を探し、その場所を出す。決まった場所なので、`--manual` は同じ機械で同時に流せない (`/tmp/ugoe-manual/lock` に
+  動いている実行のプロセスの番号を書き、ほかの実行がいれば終了コード 2 で止まる)。
+- 撮らないもの (前の画像のまま): スタジオの出力の例 (`studio-output`。Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ
+  (`studio-virtual-camera`。v4l2loopback が要る)。この 2 枚は手で撮る ([docs/manual-check.md](../../docs/manual-check.md) の U06)。
+- WSL の中で流しても、`--manual` ではアプリに `WSL_DISTRO_NAME` を渡さない (エディタの「Connect agents」に WSL の案内を写さない)。
 
 ### ヘッドレスの Chrome (`just ui-audit`) との違い
 

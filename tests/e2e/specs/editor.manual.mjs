@@ -2,15 +2,17 @@
 // マニュアルのエディタの章は英語の画面の名前で書くので、英語の画面で撮る。流し方は tests/e2e/README.md#マニュアルの画像。
 //
 // 見本の着せ替え (「Open Sample…」) と `assets/fixtures/character.psd` から撮る。チュートリアルの途中の姿 (メッシュ・キーの格子・
-// ミラー・深度) は、docs/manual/tutorial.md の手順を画面で操作して作る。MCP と AI の提案などの画像は撮らない
-// (tests/e2e/README.md#マニュアルの画像 の「撮らないもの」)。
+// ミラー・深度) は、docs/manual/tutorial.md の手順を画面で操作して作る。AI の提案は偽の AI のプロバイダ (lib/fake-ai.mjs) で、
+// MCP は偽のエージェント (lib/fake-agent.mjs) で撮る。外部のサービスには何も送らない (送る前の確認は「Cancel」で閉じる)。
 
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { before, describe } from "node:test";
-import { dialogAnswers, keyringSkip, launch, root, step, work } from "../lib/harness.mjs";
+import { after, before, describe } from "node:test";
+import { connectAgent } from "../lib/fake-agent.mjs";
+import { LABELS, startFakeAi } from "../lib/fake-ai.mjs";
+import { dialogAnswers, invoke, keyringSkip, launch, root, step, work } from "../lib/harness.mjs";
 import { manualShot, resizeTo } from "../lib/manual.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
 import { startFakeTracking } from "../lib/tracking.mjs";
@@ -411,30 +413,185 @@ async function settle(session, ms = 600) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+/** AI タブの「Use …」のチェックボックス (押せるようになるまで待つ)。 */
+function useAiBox(session) {
+  return waitFor(
+    () =>
+      session.execute(() => {
+        const label = [...document.querySelectorAll("aside.right .ugoe-checkbox__label")].find(
+          (l) => /^Use /.test(l.textContent.trim()),
+        );
+        const box = label && document.getElementById(label.htmlFor);
+        return box && !box.disabled ? box : null;
+      }),
+    { message: "the Use AI checkbox" },
+  );
+}
+
+/** AI タブの「Use …」を `on` にする。 */
+async function setUseAi(session, on) {
+  const box = await useAiBox(session);
+  if (((await box.attribute("aria-checked")) === "true") !== on) await box.click();
+  await waitFor(async () => ((await box.attribute("aria-checked")) === "true") === on, {
+    message: `the Use AI checkbox to be ${on ? "checked" : "unchecked"}`,
+  });
+}
+
+/** AI タブの注文の欄。 */
+function instructionsField(session) {
+  return waitFor(() => session.execute(() => document.querySelector("aside.right textarea")), {
+    message: "the instructions field",
+  });
+}
+
+/** 設定の「AI provider」を開く。 */
+async function openAiSettings(session) {
+  await clickButton(session, "^Settings$", "header");
+  await session.waitFind("[role=dialog]");
+  await clickButton(session, "^AI provider$", "[role=dialog]");
+}
+
+/** 開いているダイアログを Esc で閉じ、閉じるまで待つ。 */
+async function closeDialog(session) {
+  await session.keys(Keys.Escape);
+  await waitFor(async () => (await session.findAll("[role=dialog]")).length === 0, {
+    message: "the dialog to close",
+  });
+  // 「Settings」の Tooltip が右の列のタブに重ならないように、ポインタを離す
+  await settle(session, 300);
+}
+
+/** 提案のカード (`#<id>`)。 */
+function proposalCard(session, id) {
+  return waitFor(
+    () =>
+      session.execute(
+        (id) =>
+          [...document.querySelectorAll("article.proposal")].find(
+            (a) => a.querySelector("header .index")?.textContent.trim() === `#${id}`,
+          ) ?? null,
+        id,
+      ),
+    { timeout: 60_000, message: `the proposal #${id}` },
+  );
+}
+
+/** プレビュー中の提案のスライダー (名前が `pattern` に合うもの) を最大にする (つまみにフォーカスして End)。 */
+async function maxPreviewSlider(session, pattern) {
+  const thumb = await waitFor(
+    () =>
+      session.execute((pattern) => {
+        const re = new RegExp(pattern);
+        for (const slider of document.querySelectorAll(
+          "article.proposal.previewing .ugoe-slider",
+        )) {
+          const label = slider.querySelector(".ugoe-slider__label")?.textContent.trim() ?? "";
+          if (re.test(label)) return slider.querySelector("[role=slider]");
+        }
+        return null;
+      }, pattern),
+    { message: `the preview slider ${pattern}` },
+  );
+  await session.execute((el) => el.focus(), thumb);
+  await session.keys(Keys.End);
+  await waitFor(
+    async () =>
+      (await thumb.attribute("aria-valuenow")) === (await thumb.attribute("aria-valuemax")),
+    { message: `the preview slider ${pattern} to be at its maximum` },
+  );
+}
+
+/** 右の列の中の `el` の下端が、送れる祖先の下端 (の少し上) に来るまで送る。 */
+function scrollInRightToBottom(session, el) {
+  return session.execute((el) => {
+    let box = el.parentElement;
+    while (box !== null) {
+      const o = getComputedStyle(box).overflowY;
+      if (box.scrollHeight > box.clientHeight && (o === "auto" || o === "scroll")) break;
+      box = box.parentElement;
+    }
+    if (box === null) return;
+    box.scrollTop += el.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom + 8;
+  }, el);
+}
+
+/**
+ * AI タブを広く見せる: 右の列の区切りを 5 段 (80px) 左へ動かし、右の列の上下の区切りを下の端 (インスペクタの割合の最大) へ動かす
+ * (どちらも区切りにフォーカスしてキーで。覚えた大きさは、この後の手順にも残る)。
+ */
+async function widenRight(session) {
+  const separator = (css) =>
+    session
+      .execute((css) => document.querySelector(css), css)
+      .then((el) => {
+        if (!el) throw new Error(`no separator ${css}`);
+        return el;
+      });
+  const right = await separator(".right-splitter [role=separator]");
+  await session.execute((el) => el.focus(), right);
+  for (let i = 0; i < 5; i++) await session.keys(Keys.ArrowLeft);
+  const split = await separator("aside.right [role=separator][aria-orientation=horizontal]");
+  await session.execute((el) => el.focus(), split);
+  await session.keys(Keys.End);
+}
+
+/** 設定の「Connect agents」の待ち受けを入れ直し (つながったエージェントの一覧が空になる)、送り先とトークンを返す。 */
+async function restartBridge(session) {
+  const toggle = await session.waitFind("[role=dialog] [role=switch]");
+  if ((await toggle.attribute("aria-checked")) === "true") {
+    await toggle.click();
+    await waitFor(async () => (await toggle.attribute("aria-checked")) === "false", {
+      message: "the bridge to stop",
+    });
+  }
+  await toggle.click();
+  await session.waitFindText("[role=dialog] .state", "Listening on", 20_000);
+  const status = await invoke(session, "mcp_bridge_status");
+  return { url: status.url, token: await invoke(session, "get_mcp_bridge_token") };
+}
+
+/** 「Connected agents」に `name` が出るまで待つ。 */
+function agentListed(session, name) {
+  return session.waitFindText("[role=dialog] .clients li", name, 20_000);
+}
+
 describe("editor manual images", () => {
   const app = launch({ name: "editor" });
   const sampleDir = join(work(), "ugoe-dress-up-sample");
   const psd = join(root, "assets", "fixtures", "character.psd");
   const litProject = join(work(), "avatar-lit.ugoeproj");
+  /** 法線マップの無い見本のアバター (AI タブの法線マップの提案)。 */
+  const avatarProject = join(work(), "avatar.ugoeproj");
+  /** `character.psd` から作って保存するプロジェクト (AI の提案と MCP。エージェントはパスで指す)。 */
+  const characterProject = join(work(), "character.ugoeproj");
+  /** 偽の AI のプロバイダ (lib/fake-ai.mjs)。 */
+  let ai;
 
-  // 法線マップのある見本のアバター (ライティングと検証の画像。`ugoe sample avatar --lit`)
-  before(() => {
-    const result = spawnSync(
-      "just",
-      [
-        "cli",
-        "sample",
-        "avatar",
-        "--lit",
-        "-o",
-        join(work(), "avatar-lit.ugoe"),
-        "--project",
-        litProject,
-      ],
-      { cwd: root, stdio: "inherit" },
-    );
-    if (result.status !== 0) throw new Error("ugoe sample avatar --lit failed");
+  // 法線マップのある見本のアバター (ライティングと検証の画像。`ugoe sample avatar --lit`) と、無いもの (法線マップの提案)
+  before(async () => {
+    for (const [lit, name] of [
+      [true, "avatar-lit"],
+      [false, "avatar"],
+    ]) {
+      const result = spawnSync(
+        "just",
+        [
+          "cli",
+          "sample",
+          "avatar",
+          ...(lit ? ["--lit"] : []),
+          "-o",
+          join(work(), `${name}.ugoe`),
+          "--project",
+          join(work(), `${name}.ugoeproj`),
+        ],
+        { cwd: root, stdio: "inherit" },
+      );
+      if (result.status !== 0) throw new Error(`ugoe sample avatar (${name}) failed`);
+    }
+    ai = await startFakeAi();
   });
+  after(() => ai?.close());
 
   step(app, "starts", async () => {
     const s = app.session;
@@ -1336,19 +1493,14 @@ describe("editor manual images", () => {
     await fileMenu(s, "New Module…");
     await discardIfAsked(s);
     const dialog = await s.waitFindText("[role=dialog]", "New dress-up module");
-    // 欄に本体の場所が出るので、短い場所 (/tmp/ugoe-manual-…) に写した本体を選ぶ
-    const temp = mkdtempSync(join(tmpdir(), "ugoe-manual-"));
-    cpSync(join(sampleDir, "dress-up.ugoeproj"), join(temp, "dress-up.ugoeproj"), {
-      recursive: true,
-    });
-    answerDialog("open-directory", join(temp, "dress-up.ugoeproj"));
+    // 欄に本体の場所が出る (作業の場所は run.mjs が決まった短い場所にする。tests/e2e/README.md#マニュアルの画像)
+    answerDialog("open-directory", join(sampleDir, "dress-up.ugoeproj"));
     await clickButton(s, "^Project folder…$", "[role=dialog]");
     await s.clickText("[role=dialog] label", "Headwear", 20_000);
     await fill(s, await fieldIn(s, dialog, "Module name"), "CatEars");
     await settle(s, 400);
     await manualShot(s, "module-new", { clip: dialog });
     await clickButton(s, "^Cancel$", "[role=dialog]");
-    rmSync(temp, { recursive: true, force: true });
   });
 
   step(app, "module-problem", async () => {
@@ -1396,5 +1548,272 @@ describe("editor manual images", () => {
     await s.waitFindText(".problem", "Remove and open");
     await settle(s, 400);
     await manualShot(s, "module-problem-drop", { clip: physicsProblem, pad: 4 });
+  });
+
+  // AI の提案 (docs/manual/ai.md)。character.psd から作ったプロジェクトで。送る前の確認 (`ai-consent`) と注文の欄
+  // (`ai-instructions`) は Claude (鍵の保管庫に偽のキー) で撮り、確認は「Cancel」で閉じる (何も送らない。run.mjs の止める口が
+  // 外への要求を見張る)。提案・作り直しは偽の AI のプロバイダ (127.0.0.1) で作る
+  step(app, "ai: a project from character.psd", async () => {
+    const s = app.session;
+    // 前の手順の本体の問題 (`module-problem-drop`) の知らせを閉じる (「New from PSD…」では消えない)
+    if ((await s.findAll(".problem")).length > 0) await clickButton(s, "^Close", ".problem");
+    answerDialog("open-file", psd);
+    await fileMenu(s, "New from PSD…");
+    await discardIfAsked(s);
+    await waitFor(() => s.execute(() => document.querySelectorAll("[role=treeitem]").length > 3), {
+      timeout: 30_000,
+      message: "the PSD in the tree",
+    });
+    await viewportReady(s);
+    await waitFor(async () => (await s.findAll(".problem")).length === 0, {
+      timeout: 5_000,
+      message: "the problem of the base to close",
+    });
+    answerDialog("save-file", characterProject);
+    await fileMenu(s, "Save As");
+    await waitFor(() => existsSync(join(characterProject, "project.json")), {
+      timeout: 20_000,
+      message: `${characterProject} to be written`,
+    });
+    await dismissToasts(s);
+    await widenRight(s);
+  });
+
+  step(
+    app,
+    "ai-instructions and ai-consent",
+    async () => {
+      const s = app.session;
+      // 既定のプロバイダの Claude に、偽のキーを使い捨ての鍵の保管庫に置く (送らないので本物でなくてよい)
+      await openAiSettings(s);
+      await s.clickWhen(() => s.find('[role=dialog] input[type=radio][value="claude"]'), {
+        message: "the Claude choice",
+      });
+      await s.clickText("[role=dialog] form.provider button[type=submit]", "Apply");
+      await waitFor(async () => (await invoke(s, "ai_settings")).provider.provider === "claude", {
+        message: "Claude to be applied",
+      });
+      const key = await fieldIn(s, "[role=dialog]", "API key");
+      await key.type("sk-ant-e2e-not-a-real-key");
+      await s.clickText("[role=dialog] button[type=submit]", "Save");
+      await waitFor(async () => (await invoke(s, "ai_settings")).key === "stored", {
+        timeout: 20_000,
+        message: "the API key to be stored",
+      });
+      await closeDialog(s);
+
+      // 名前で分類しておく (AI に送らない)。「Propose rig」はリグの値だけを尋ねる (確認は 1 回)
+      await openTab(s, "AI");
+      await s.waitFindText(".psd", "character.psd");
+      await setUseAi(s, false);
+      await clickButton(s, "^Classify layers$", "aside.right");
+      await s.waitFindText("aside.right p", "classified by name", 20_000);
+      await setUseAi(s, true);
+      await fill(
+        s,
+        await instructionsField(s),
+        "Turn the head less. Close the eyes a little narrower. Make the hair sway more.",
+      );
+      await scrollRightToTop(s);
+      await settle(s, 400);
+      const rect = await s.execute(() => {
+        const section = [...document.querySelectorAll("aside.right section")].find(
+          (el) => el.querySelector("h3")?.textContent.trim() === "Auto rig from PSD",
+        );
+        const propose = [...section.querySelectorAll("button")].find(
+          (b) => b.textContent.trim() === "Propose rig",
+        );
+        const r = section.getBoundingClientRect();
+        const bottom = propose.closest(".row").getBoundingClientRect().bottom;
+        return {
+          x: Math.floor(r.left),
+          y: Math.floor(r.top),
+          width: Math.ceil(r.width),
+          height: Math.ceil(bottom + 8 - r.top),
+        };
+      });
+      await manualShot(s, "ai-instructions", { clip: rect });
+
+      await clickButton(s, "^Propose rig$", "aside.right");
+      const consent = await s.waitFindText(
+        "[role=alertdialog]",
+        "Send to Anthropic Claude API?",
+        20_000,
+      );
+      await s.waitFindText("[role=alertdialog] dt", "Your instructions");
+      await settle(s, 400);
+      await manualShot(s, "ai-consent", { clip: consent });
+      // 断ると何も送らずに終わる (提案は作らない)
+      await s.clickText("[role=alertdialog] button", "Cancel");
+      await waitFor(async () => (await s.findAll("[role=alertdialog]")).length === 0, {
+        message: "the consent to close",
+      });
+      await s.waitFindText("aside.right button:not([disabled])", "Propose rig", 20_000);
+      assert.equal((await s.findAll("article.proposal")).length, 0);
+    },
+    { skip: keyringSkip() },
+  );
+
+  step(app, "ai-proposal", async () => {
+    const s = app.session;
+    // 送り先を偽の AI のプロバイダ (ループバック。確認も API キーも要らない) にする
+    await openAiSettings(s);
+    await s.clickWhen(() => s.find('[role=dialog] input[type=radio][value="openai_compatible"]'), {
+      message: "the OpenAI-compatible choice",
+    });
+    // 打った後の Enter で設定の欄を送る (「Apply」と同じ)
+    await (await fieldIn(s, "[role=dialog] form.provider", "Base URL")).replace(ai.baseUrl);
+    await waitFor(
+      async () => {
+        const settings = await invoke(s, "ai_settings");
+        return settings.local && settings.provider.openai.base_url === ai.baseUrl;
+      },
+      { message: "the fake provider to be applied" },
+    );
+    await closeDialog(s);
+
+    await openTab(s, "AI");
+    await fill(s, await instructionsField(s), "");
+    await setUseAi(s, true);
+    await clickButton(s, "^Classify layers$", "aside.right");
+    await s.waitFindText("aside.right p", "classified by AI", 30_000);
+    await clickButton(s, "^Propose rig$", "aside.right");
+    const card = await proposalCard(s, 1);
+    await clickButton(s, "^Preview$", "article.proposal");
+    await s.waitFind(".viewport .proposal-banner", 30_000);
+    await maxPreviewSlider(s, "^Angle ?X$");
+    await maxPreviewSlider(s, "^Mouth ?Open ?Y$");
+    await scrollInRightToBottom(s, card);
+    await settle(s, 1500);
+    await manualShot(s, "ai-proposal");
+  });
+
+  step(app, "ai-revision", async () => {
+    const s = app.session;
+    await clickButton(s, "^End preview$", "article.proposal");
+    await waitFor(async () => (await s.findAll(".viewport .proposal-banner")).length === 0, {
+      message: "the preview to end",
+    });
+    await fill(
+      s,
+      await instructionsField(s),
+      "Turn the head less. Close the eyes a little narrower. Make the hair sway more.",
+    );
+    await clickButton(s, "^Regenerate with instructions$", "article.proposal");
+    const card = await proposalCard(s, 2);
+    await s.waitFindText("article.proposal .unapplied", "hair");
+    // カードの頭 (題名・印・注文・Not applied・理由の始め) を撮る
+    await scrollInRight(s, card);
+    await settle(s, 600);
+    await manualShot(s, "ai-revision", { clip: card, pad: [0, 4, 4, 4], maxHeight: 360 });
+  });
+
+  step(app, "ai-normal-maps", async () => {
+    const s = app.session;
+    await openProject(s, avatarProject);
+    await openTab(s, "AI");
+    const section = await waitFor(
+      () =>
+        s.execute(() =>
+          document.querySelector('aside.right section[aria-label="Normal maps from the shapes"]'),
+        ),
+      { message: "the normal maps section" },
+    );
+    await waitFor(
+      () => s.execute((el) => el.querySelectorAll(".normal-groups > li").length > 0, section),
+      { timeout: 30_000, message: "the normal map groups" },
+    );
+    // 顔のまとまりの縁の丸みとならしを開く
+    await s.clickWhen(
+      () =>
+        s.execute((el) => el.querySelector(".normal-groups > li details.shape summary"), section),
+      { message: "the shape of the face group" },
+    );
+    await clickButton(s, "^Propose normal maps", "aside.right");
+    const card = await proposalCard(s, 1);
+    await s.execute((el) => el.querySelector("header")?.scrollIntoView(), card);
+    await clickButton(s, "^Preview$", "article.proposal");
+    await s.waitFind(".viewport .proposal-banner", 60_000);
+    await viewportReady(s);
+    await scrollInRight(s, section);
+    await settle(s, 2000);
+    await manualShot(s, "ai-normal-maps");
+    await clickButton(s, "^End preview$", "article.proposal");
+  });
+
+  // MCP (docs/manual/mcp.md)。偽のエージェント (lib/fake-agent.mjs) が、Claude Desktop・Claude Code の名前でブリッジにつなぐ
+  step(app, "mcp-claude-desktop", async () => {
+    const s = app.session;
+    await openProject(s, characterProject);
+    await clickButton(s, "^Settings$", "header");
+    const dialog = await s.waitFind("[role=dialog]");
+    await clickButton(s, "^Connect agents$", "[role=dialog]");
+    const bridge = await restartBridge(s);
+    await connectAgent({ ...bridge, name: "claude-ai", version: "1.2.0" });
+    await agentListed(s, "claude-ai");
+    await clickButton(s, "^Claude Desktop$", "[role=dialog] [role=tablist]");
+    const bundle = join(work(), "ugoe-editor.mcpb");
+    answerDialog("save-file", bundle);
+    await clickButton(s, "^Save \\.mcpb", "[role=dialog]");
+    await waitFor(() => existsSync(bundle), {
+      timeout: 60_000,
+      message: `${bundle} to be written`,
+    });
+    await s.waitFindText("[role=dialog]", "Saved", 20_000);
+    // ダイアログの全体が入るように、窓を高くして撮る
+    await resizeTo(s, 1280, 1000);
+    await settle(s, 400);
+    await manualShot(s, "mcp-claude-desktop", { clip: dialog });
+    await resizeTo(s, 1280, 800);
+  });
+
+  /** Claude Code の名前でつないだ偽のエージェント (適用の確認に使う)。 */
+  let agent;
+  step(app, "mcp-connect", async () => {
+    const s = app.session;
+    const dialog = await s.waitFind("[role=dialog]");
+    const bridge = await restartBridge(s);
+    agent = await connectAgent({ ...bridge, name: "claude-code", version: "2.5.0" });
+    await agentListed(s, "claude-code");
+    await clickButton(s, "^Claude Code$", "[role=dialog] [role=tablist]");
+    await scrollRightToTop(s);
+    await settle(s, 400);
+    await manualShot(s, "mcp-connect", { clip: dialog });
+    await closeDialog(s);
+  });
+
+  step(app, "mcp-approval", async () => {
+    const s = app.session;
+    // エージェントがレイヤーの名前で分類し (fake-ai.mjs と同じ表)、リグを提案して適用を求める
+    const listed = await agent.call("get_psd_layers", {
+      path: characterProject,
+      psd,
+      images: false,
+    });
+    const layers = listed.layers
+      .filter((l) => l.has_pixels)
+      .map((l) => {
+        const [label, side] = LABELS[l.path.at(-1)] ?? ["other", "center"];
+        return { index: l.index, label, side, confidence: 0.9 };
+      });
+    await agent.call("set_layer_labels", { path: characterProject, layers });
+    const rig = await agent.call("propose_rig", {
+      path: characterProject,
+      title: "Rig the head turn, eyes and mouth",
+    });
+    const applied = agent.call("apply_proposal", {
+      path: characterProject,
+      proposal: rig.proposal,
+    });
+    applied.catch(() => {});
+    await s.waitFindText(".approval h2", "claude-code wants to apply", 20_000);
+    await clickButton(s, "^Show in AI tab$", ".approval");
+    await s.waitFind(".viewport .proposal-banner", 30_000);
+    await maxPreviewSlider(s, "^Angle ?X$");
+    await scrollInRightToBottom(s, await proposalCard(s, 1));
+    await settle(s, 1500);
+    await manualShot(s, "mcp-approval");
+    await clickButton(s, "^Apply$", ".approval");
+    await applied;
   });
 });

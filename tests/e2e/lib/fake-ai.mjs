@@ -7,11 +7,14 @@
 //   (`<番号>. name: "<グループ> / <レイヤー>"; ...`) に、レイヤーの名前から決めたラベルを答える (`LABELS`。無ければ `other`)。
 // - それ以外 (リグの値。crates/ugoe-ai/src/rig.rs の `values_schema`): 数の項目には説明の範囲 (`From <min> to <max>.`) の
 //   真ん中を、`reason` には決まった文を答える。
+// - 利用者の注文 (プロンプトの `<user_instructions>`。crates/ugoe-ai/src/instructions.rs) があれば、リグの値の `reason` に
+//   注文の文ごとの答えを足す: 髪・揺れ・帽子のような、リグの値では変えられない文は `Not applied:` の行 (画面の「Not applied」)、
+//   ほかの文は従ったことにする (値は変えない)。
 
 import { createServer } from "node:http";
 
 /** レイヤーの名前 (パスの最後) → [ラベル, 左右]。`assets/fixtures/character.psd` のレイヤー。 */
-const LABELS = {
+export const LABELS = {
   背景: ["background", "center"],
   後ろ髪: ["hair_back", "center"],
   首: ["neck", "center"],
@@ -23,8 +26,11 @@ const LABELS = {
   前髪: ["hair_front", "center"],
 };
 
-/** 偽のリグの答えの理由。提案の理由の欄に出る。 */
-export const FAKE_REASON = "Values chosen by the e2e fake provider.";
+/** 偽のリグの答えの理由。提案の理由の欄に出る (マニュアルの画像にも写るので、偽の答えの決め方をそのまま書く)。 */
+export const FAKE_REASON = "Each value is the middle of its allowed range.";
+
+/** リグの値 (振り向き・目・口) では変えられない注文の文。`Not applied:` で答える。 */
+const NOT_A_RIG_VALUE = /hair|sway|hat|headwear|physics|髪|揺|帽子/i;
 
 /** 要求のプロンプトの文 (user の content の text をつなげたもの)。 */
 function promptText(body) {
@@ -37,6 +43,26 @@ function promptText(body) {
     .join("\n");
 }
 
+/** プロンプトの利用者の注文 (`<user_instructions>` の中の JSON の文字列)。無ければ `null`。 */
+function instructionsIn(prompt) {
+  const match = /<user_instructions>\s*("(?:[^"\\]|\\.)*")\s*<\/user_instructions>/.exec(prompt);
+  return match ? JSON.parse(match[1]) : null;
+}
+
+/** 注文に答える理由の続き: 従った文と、リグの値では変えられない文 (`Not applied:` の行)。 */
+function answerInstructions(instructions) {
+  const sentences = instructions
+    .split(/(?<=[.!?。])\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+  const followed = sentences.filter((s) => !NOT_A_RIG_VALUE.test(s));
+  const lines = followed.length > 0 ? [` As asked: ${followed.join(" ")}`] : [];
+  for (const s of sentences.filter((s) => NOT_A_RIG_VALUE.test(s))) {
+    lines.push(`\nNot applied: ${s} This is not one of the rig values.`);
+  }
+  return lines.join("");
+}
+
 function classify(prompt) {
   const layers = [];
   for (const match of prompt.matchAll(/^(\d+)\. name: ("(?:[^"\\]|\\.)*")/gm)) {
@@ -47,14 +73,15 @@ function classify(prompt) {
   return { layers, variant_sets: [] };
 }
 
-function values(schema) {
+function values(schema, prompt) {
+  const instructions = instructionsIn(prompt);
   const answer = {};
   for (const [name, property] of Object.entries(schema.properties ?? {})) {
     if (property.type === "number") {
       const range = /From (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?)/.exec(property.description ?? "");
       answer[name] = range ? (Number(range[1]) + Number(range[2])) / 2 : 0;
     } else {
-      answer[name] = FAKE_REASON;
+      answer[name] = instructions ? FAKE_REASON + answerInstructions(instructions) : FAKE_REASON;
     }
   }
   return answer;
@@ -92,7 +119,8 @@ export async function startFakeAi() {
         .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
         .filter((p) => p.type === "image_url").length;
       requests.push({ kind, images, model: body.model });
-      const answer = kind === "classify" ? classify(promptText(body)) : values(schema);
+      const prompt = promptText(body);
+      const answer = kind === "classify" ? classify(prompt) : values(schema, prompt);
       reply(200, {
         id: `e2e-${requests.length}`,
         object: "chat.completion",

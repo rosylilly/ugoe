@@ -107,7 +107,7 @@ Streamable HTTP で直接つなぐクライアントには、「Other clients (H
 
 エージェントが提案の適用 (`apply_proposal`)・Undo・Redo・保存 (`save_project`) を求めると、画面の下に確認が出ます。
 
-![エージェントが適用を求めた確認。「Show in AI tab」で提案をプレビューしながら決められる](images/mcp-approval.png)
+![エージェント (claude-code) が `propose_rig` の提案の適用を求めた確認。「Show in AI tab」で提案をプレビューしながら決められる (ここでは AngleX を 30 にした)](images/mcp-approval.png)
 
 1. 何をしようとしているか (提案の題名と、適用するコマンドの数・外すコマンド、保存なら書き出し先) を読む。
 2. 適用なら「Show in AI tab」で、エージェントが選んだコマンドのままプレビューできる (確認は出たままなので、見てから決められます)。
@@ -140,7 +140,7 @@ Claude Desktop (デスクトップのアプリ) からも、実行中のエデ�
 Claude Desktop は macOS・Windows と、Linux (ベータ。Ubuntu 22.04 以降・Debian 12 以降、x64・arm64。拡張機能も入れられます。
 [Install Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)) で動きます。
 
-![Connect agents の Claude Desktop のタブ。拡張機能を入れ、Claude Desktop がつながったところ](images/mcp-claude-desktop.png)
+![Connect agents の Claude Desktop のタブ。「Save .mcpb…」で拡張機能を保存し、Claude Desktop (claude-ai) がつながったところ](images/mcp-claude-desktop.png)
 
 ### 入れる
 

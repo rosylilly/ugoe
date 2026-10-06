@@ -12,6 +12,8 @@
 // 3. アプリごとに、テスト用の XDG のディレクトリ (設定・データ・キャッシュ) と D-Bus のセッションで tauri-driver を起動し、
 //    specs/<アプリ>.test.mjs を node:test で流す。利用者の設定・プロファイル・WebView のデータ・鍵の保管庫には触らない。
 //    エディタの D-Bus のセッションでは、使い捨ての鍵の保管庫 (gnome-keyring-daemon) を動かす (API キーの保存の筋書き。T0050)。
+//    エディタはこの計算機の外への HTTP(S) を、手元の止める口 (プロキシ) に向ける。外へ出ようとしたら止め、その手順を失敗にする
+//    (README の「外に出さない」)。
 //
 // 結果は <out> (既定 target/e2e) に残る: <アプリ>/driver.log (アプリと WebKitWebDriver の出力)、
 // <アプリ>/*.console.json (ページの console)、<アプリ>/failures/<手順>/ (失敗したときのスクリーンショットとログ)、
@@ -33,7 +35,9 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
@@ -48,9 +52,19 @@ const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 /** マニュアルの画像の置き場 (`--update-images` が写す先)。 */
 const manualImages = join(root, "docs", "manual", "images");
 
-/** アプリの名前と、pnpm のパッケージ・実行ファイル。`keyring`: D-Bus のセッションで鍵の保管庫を動かす (API キーの保存)。 */
+/**
+ * アプリの名前と、pnpm のパッケージ・実行ファイル。`keyring`: D-Bus のセッションで鍵の保管庫を動かす (API キーの保存)。
+ * `sidecars`: 実行ファイルの隣に置くワークスペースのバイナリ (エディタは同梱の ugoe-mcp を隣に探す。「Connect agents」の登録の
+ * コマンドと Claude Desktop の .mcpb)。`offline`: 外への HTTP(S) を止める口に向ける (README の「外に出さない」)。
+ */
 const APPS = {
-  editor: { package: "@ugoe/editor", binary: "ugoe-editor", keyring: true },
+  editor: {
+    package: "@ugoe/editor",
+    binary: "ugoe-editor",
+    keyring: true,
+    sidecars: ["ugoe-mcp"],
+    offline: true,
+  },
   viewer: { package: "@ugoe/viewer", binary: "ugoe-viewer" },
   studio: { package: "@ugoe/studio", binary: "ugoe-studio" },
 };
@@ -142,11 +156,26 @@ for (const app of only) {
       console.error(`building ${app} failed`);
       process.exit(1);
     }
+    for (const sidecar of APPS[app].sidecars ?? []) {
+      const built = spawnSync("cargo", ["build", "-p", sidecar], { cwd: root, stdio: "inherit" });
+      if (built.status !== 0) {
+        console.error(`building ${sidecar} failed`);
+        process.exit(1);
+      }
+    }
     console.log(`built ${app} in ${Math.round((Date.now() - started) / 1000)}s`);
-    copyFileSync(join(target, "debug", binary), join(bin, binary));
-  } else if (!existsSync(join(bin, binary))) {
-    console.error(`${join(bin, binary)} does not exist: run without --no-build first`);
-    process.exit(2);
+    for (const name of [binary, ...(APPS[app].sidecars ?? [])]) {
+      // mbx が置き場から戻した成果物は読むだけの権限なので、写しも上書きできない。消してから写す
+      rmSync(join(bin, name), { force: true });
+      copyFileSync(join(target, "debug", name), join(bin, name));
+    }
+  } else {
+    for (const name of [binary, ...(APPS[app].sidecars ?? [])]) {
+      if (!existsSync(join(bin, name))) {
+        console.error(`${join(bin, name)} does not exist: run without --no-build first`);
+        process.exit(2);
+      }
+    }
   }
 }
 
@@ -274,7 +303,38 @@ function removeRuntimeDir(warn) {
   runtimeDir = null;
   return true;
 }
+/**
+ * マニュアルの画像を撮るときの、決まった短い場所 (README の「マニュアルの画像」)。画面に出るパス (エージェントの作業の場所・
+ * 同梱の ugoe-mcp・保存した .mcpb) に、流した機械の場所 (ユーザー名・worktree・ビルドのキャッシュ) を写さないため。
+ */
+const MANUAL_ROOT = "/tmp/ugoe-manual";
+/** 決まった場所を使っている印 (`--manual` を同じ機械で同時に流さない)。 */
+const manualLock = join(MANUAL_ROOT, "lock");
+let manualLocked = false;
+if (manual) {
+  mkdirSync(MANUAL_ROOT, { recursive: true });
+  if (existsSync(manualLock)) {
+    const pid = Number(readFileSync(manualLock, "utf8"));
+    let alive = false;
+    try {
+      process.kill(pid, 0);
+      alive = Number.isInteger(pid) && pid > 0;
+    } catch {
+      // 前の実行が残した印
+    }
+    if (alive) {
+      console.error(
+        `another --manual run (pid ${pid}) is using ${MANUAL_ROOT}; wait for it to finish`,
+      );
+      process.exit(2);
+    }
+    rmSync(manualLock, { force: true });
+  }
+  writeFileSync(manualLock, String(process.pid), { flag: "wx" });
+  manualLocked = true;
+}
 process.on("exit", () => {
+  if (manualLocked) rmSync(manualLock, { force: true });
   testProcess?.kill();
   stopDriver();
   removeRuntimeDir(true);
@@ -312,6 +372,33 @@ async function waitForDriver(url, driver) {
   throw new Error("tauri-driver did not start");
 }
 
+/**
+ * 外への HTTP(S) を止める口 (README の「外に出さない」)。プロキシとして待ち受け、来た要求 (HTTPS の CONNECT と HTTP) を
+ * 403 で断って `blocked` に覚える。アプリは HTTPS_PROXY などでここに向け、NO_PROXY でループバック (偽の AI のプロバイダ・
+ * MCP のブリッジ・WebDriver) だけを直に通す。
+ */
+async function startNetworkGuard() {
+  const blocked = [];
+  const server = createHttpServer((req, res) => {
+    blocked.push(`${req.method} ${req.url}`);
+    res.writeHead(403, { "content-type": "text/plain" });
+    res.end("blocked by the e2e network guard\n");
+  });
+  server.on("connect", (req, socket) => {
+    blocked.push(`CONNECT ${req.url}`);
+    socket.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n");
+  });
+  await new Promise((done, fail) => {
+    server.once("error", fail);
+    server.listen(0, "127.0.0.1", done);
+  });
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    blocked,
+    close: () => new Promise((done) => server.close(() => done())),
+  };
+}
+
 /** 使い捨ての鍵の保管庫のパスワード (保管庫はテストの間だけのもので、秘密ではない)。 */
 const KEYRING_PASSWORD = "ugoe-e2e";
 
@@ -345,7 +432,30 @@ for (const app of only) {
     mkdirSync(sub, { recursive: true });
   }
   mkdirSync(appEnv.UGOE_EDITOR_DIALOG_ANSWERS, { recursive: true });
-  const work = join(dir, "work");
+  // マニュアルの画像は普通の Linux の画面で撮る (WSL の中で流しても、エディタの「Connect agents」に WSL の案内を出さない)
+  if (manual) appEnv.WSL_DISTRO_NAME = undefined;
+  const guard = APPS[app].offline ? await startNetworkGuard() : null;
+  if (guard) {
+    // ureq (AI のプロバイダ。crates/ugoe-ai) はこれらを読む。ループバックは止めずに通す
+    for (const name of ["ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY"]) {
+      appEnv[name] = guard.url;
+      appEnv[name.toLowerCase()] = guard.url;
+    }
+    appEnv.NO_PROXY = appEnv.no_proxy = "127.0.0.1,localhost,::1";
+  }
+  // マニュアルの画像は、作業の場所と実行ファイルを決まった短い場所に置いて撮る (画面に出るパスがどの機械でも同じになる)。
+  // 実行ファイルは写す (エディタは自分の実行ファイルのシンボリックリンクを辿った場所の隣に ugoe-mcp を探し、その場所を画面に出す)
+  const work = manual ? join(MANUAL_ROOT, "work") : join(dir, "work");
+  let appBin = bin;
+  if (manual) {
+    rmSync(work, { recursive: true, force: true });
+    appBin = join(MANUAL_ROOT, "bin");
+    rmSync(appBin, { recursive: true, force: true });
+    mkdirSync(appBin, { recursive: true });
+    for (const name of [APPS[app].binary, ...(APPS[app].sidecars ?? [])]) {
+      copyFileSync(join(bin, name), join(appBin, name));
+    }
+  }
   mkdirSync(work, { recursive: true });
 
   const port = await freePort();
@@ -409,7 +519,7 @@ for (const app of only) {
         env: {
           ...process.env,
           E2E_DRIVER: url,
-          E2E_APP: join(bin, APPS[app].binary),
+          E2E_APP: join(appBin, APPS[app].binary),
           E2E_OUT: dir,
           E2E_WORK: work,
           // アプリの設定の場所 (起動の前に置くもの。スタジオの最近のプロファイルなど)
@@ -431,6 +541,15 @@ for (const app of only) {
     status = 1;
   } finally {
     stopDriver();
+  }
+  if (guard) {
+    await guard.close();
+    if (guard.blocked.length > 0) {
+      console.error(
+        `${app} tried to reach the network (blocked):\n  ${guard.blocked.join("\n  ")}`,
+      );
+      status = 1;
+    }
   }
   // D-Bus のセッションで起動されたもの (FUSE の `doc`) が止まるまで、少し待ちながら消し直す
   for (let attempt = 0; attempt < 40 && !removeRuntimeDir(attempt === 39); attempt++) {
