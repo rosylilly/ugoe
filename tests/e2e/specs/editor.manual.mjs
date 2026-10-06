@@ -1383,9 +1383,8 @@ describe("editor manual images", () => {
     await s.clickWhen(() => linkIn(s, ".dress-up table.items", "Wave"), {
       message: "the Wave link",
     });
-    // 「Fit」で寄せる。袖は細長く、寄せたままでは周りが見えないので、3 回縮小する
+    // 「Fit」で寄せる (袖が画面の半分ほどになり、周りも見える。T1671)
     await clickButton(s, "^Fit$", ".viewport");
-    for (let i = 0; i < 3; i++) await clickButton(s, "^Zoom out$", ".viewport");
     await settle(s, 800);
     await manualShot(s, "module-compare-pose");
     await exitPreview(s);

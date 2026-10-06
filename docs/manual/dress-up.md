@@ -385,7 +385,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
   強調されるのは、いまスロットに付いている方 (いまの編集かファイル) の要素です。除いた要素は、ファイルの方を付けると見えます。
   いまの編集で除いた要素 (ポーズのグループなど) のメッシュがいまの編集に残っていれば、その輪郭を破線で描き、下の知らせに
   「Removed: … is not in your current edits」と出ます (ファイルに無い足した要素をファイルで見たときは「Added: …」)。
-  もう一度押すか「Clear」でやめます。強調しているときに「Fit」を押すと、ビューポートがその要素に寄ります (全体に戻すのはビューポートの右下の「全体を表示」)。
+  もう一度押すか「Clear」でやめます。強調しているときに「Fit」を押すと、ビューポートがその要素に寄ります (要素が画面の半分ほどの大きさで真ん中に来て、周りも見えます。全体に戻すのはビューポートの右下の「全体を表示」)。
   「Select」を押すと、プレビューを出て左のツリー (物理のリグと衝突体は「Physics」タブ、グルーは「Glue」タブ、ポーズは「Poses」タブとツリーの
   パーツ) でその要素が選ばれます (もう一度「Preview」を押すと、付けていたモジュールは付き直ります)。書き出すときに「Pack textures into atlases」を選んだファイルとも、アトラスの前の
   テクスチャと UV に戻して比べるので、変えていなければ「Same as your current edits.」と出ます。
@@ -394,7 +394,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
   ![違いの名前 (Band) を押すと、プレビューのままビューポートでその要素が強調される。いまスロットに付いているファイルの方の Band](images/module-compare-highlight.png)
 
-  ![ポーズの追従の違い (Sailor の袖 WaveSleeve を本体の差分 Wave に付けるのをやめた) を強調し、「Fit」で寄せてから少し縮小した。プレビューの「Pose」で Wave を見せている](images/module-compare-pose.png)
+  ![ポーズの追従の違い (Sailor の袖 WaveSleeve を本体の差分 Wave に付けるのをやめた) を強調し、「Fit」で寄せた。プレビューの「Pose」で Wave を見せている](images/module-compare-pose.png)
 
   ![書き出した cat-ears.ugoemod の行に、耳を消したいまの編集との違いが出る](images/module-compare-differences.png)
 

@@ -100,14 +100,56 @@ describe("differences in the preview (T0657)", () => {
       400,
       200,
     );
-    // 範囲 40×20 (高さは最小の 24 にする) を、ビューポートの 80% (320×160) に収める: 倍率は
-    // min(320 / 40, 160 / 24) = 20 / 3。中心 (120, 110) をビューポートの中央 (200, 100) へ。
-    expect(move?.factor).toBeCloseTo(20 / 3);
+    // 範囲 40×20 (高さは最小の 24 にする) を、ビューポートの半分 (200×100) に収める: 倍率は
+    // min(200 / 40, 100 / 24) = 25 / 6。中心 (120, 110) をビューポートの中央 (200, 100) へ。
+    expect(move?.factor).toBeCloseTo(25 / 6);
     expect(move?.center).toEqual([120, 110]);
     expect(move?.pan).toEqual([80, -10]);
-    // 点 1 つでも寄りすぎない (最小の大きさ 24 を 240 の 80% に: 倍率 8)。
-    expect(fitMove([[10, 10]], 240, 240)?.factor).toBeCloseTo(8);
+    // 点 1 つでも寄りすぎない (最小の大きさ 24 を 240 の半分に: 倍率 5)。
+    expect(fitMove([[10, 10]], 240, 240)?.factor).toBeCloseTo(5);
+  });
+
+  it("keeps the surroundings of a thin element in view (T1671)", () => {
+    // 縦に細長い袖 (20×150) を 960×760 のビューポートへ: 長い辺 (高さ) で決まり、高さの半分 (380) に寄せる。
+    // 横は 20 × 380 / 150 ≈ 51 で、周りが見える。
+    const move = fitMove(
+      [
+        [400, 300],
+        [420, 450],
+      ],
+      960,
+      760,
+    );
+    expect(move?.factor).toBeCloseTo(380 / 150);
+    expect(150 * (move?.factor ?? 0)).toBeCloseTo(760 / 2);
+    // 横に細長いものは幅で決まる。
+    expect(
+      fitMove(
+        [
+          [0, 0],
+          [300, 4],
+        ],
+        960,
+        760,
+      )?.factor,
+    ).toBeCloseTo(480 / 300);
+    // 画面より大きい要素は縮小する。
+    expect(
+      fitMove(
+        [
+          [0, 0],
+          [1920, 100],
+        ],
+        960,
+        760,
+      )?.factor,
+    ).toBeCloseTo(0.25);
+  });
+
+  it("does not move without points or a viewport, and takes many points", () => {
+    // 描いたものが無ければ「Fit」は押せず (`found`)、動きも無い。
     expect(fitMove([], 400, 200)).toBeNull();
+    expect(fitMove([[10, 10]], 0, 200)).toBeNull();
     // 引数の数に上限のある Math.min(...) では止まる大きさ (JavaScriptCore は 65536 個まで)。
     const many = Array.from({ length: 300_000 }, (_, i): [number, number] => [i % 100, 0]);
     expect(fitMove(many, 400, 200)?.center).toEqual([49.5, 0]);
