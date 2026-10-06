@@ -101,3 +101,31 @@ export function steppedPoint(picked: readonly number[], count: number, dir: 1 | 
   if (anchor === undefined || anchor < 0 || anchor >= count) return dir > 0 ? 0 : count - 1;
   return (anchor + dir + count) % count;
 }
+
+/** `]` `[` で選んだ点を見える所へ送るとき、ビューの端から空ける幅 (CSS ピクセル)。 */
+export const REVEAL_MARGIN = 48;
+
+/**
+ * `]` `[` で選んだ点 (`point`、CSS ピクセル) を見える所へ送るためにビューを動かす量 (`ViewportController.panBy` に
+ * 渡す CSS ピクセル)。点がビュー (`size` = 幅・高さ) の端から `margin` より内側にあれば動かさず (null)、外にあれば
+ * 端から `margin` の所まで、軸ごとに足りない分だけ動かす。ビューが `2 * margin` より狭い軸は真ん中へ送る。
+ * 拡大率は変えない。数でない値や大きさが 0 のビューでは null。
+ */
+export function revealPanOf(
+  point: readonly [number, number],
+  size: readonly [number, number],
+  margin = REVEAL_MARGIN,
+): [number, number] | null {
+  const dx = revealAxis(point[0], size[0], margin);
+  const dy = revealAxis(point[1], size[1], margin);
+  if (dx === null || dy === null || (dx === 0 && dy === 0)) return null;
+  return [dx, dy];
+}
+
+function revealAxis(p: number, length: number, margin: number): number | null {
+  if (!Number.isFinite(p) || !(length > 0 && Number.isFinite(length))) return null;
+  const m = Math.min(Math.max(margin, 0), length / 2);
+  if (p < m) return m - p;
+  if (p > length - m) return length - m - p;
+  return 0;
+}

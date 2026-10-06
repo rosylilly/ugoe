@@ -337,7 +337,14 @@ function onKeyDown(e: KeyboardEvent): void {
       <span class="muted" role="status">{currentVertexText}</span>
     </p>
     {#key editing}
-      <MeshEditTool bind:this={meshTool} {scene} {doc} {selection} meshId={editing} />
+      <MeshEditTool
+        bind:this={meshTool}
+        {scene}
+        {doc}
+        {selection}
+        meshId={editing}
+        reveal={(x, y) => controller.reveal(x, y)}
+      />
     {/key}
   {:else if primaryIsBase}
     <!-- 本体の要素は編集できないので、編集のツールを出さない -->

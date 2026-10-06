@@ -247,6 +247,25 @@ describe("FormTool keys", () => {
     expect(target.querySelector("svg.form circle.ring")).toBeNull();
   });
 
+  it("pans the view to a point picked with ] outside the view, but not for a point inside or a click", async () => {
+    const { controller, handle } = await setup();
+    // 点の画面の位置は (10, 20) (210, 20) (210, 220) (10, 220)。ビューは 400×300 で、端の余白は 48
+    controller.size = [400, 300];
+    press(document.body, "]");
+    press(document.body, "]");
+    expect(controller.panBy.mock.calls).toEqual([
+      [38, 28],
+      [0, 28],
+    ]);
+    press(document.body, "]");
+    expect(controller.panBy).toHaveBeenCalledTimes(2);
+    // ポインタで選んだときは動かさない
+    pointer(handle(0), "pointerdown", screen(0));
+    pointer(handle(0), "pointerup", screen(0));
+    expect(handle(0).classList.contains("selected")).toBe(true);
+    expect(controller.panBy).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves [ and ] to the parts outside the viewport", async () => {
     const { target } = await setup();
     const outside = document.createElement("button");

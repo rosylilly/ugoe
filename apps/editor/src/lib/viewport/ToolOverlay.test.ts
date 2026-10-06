@@ -39,7 +39,7 @@ function setup() {
     verify: new VerifyView(),
     glue: new GlueView(),
   });
-  return { doc, selection, target };
+  return { controller, doc, selection, target };
 }
 
 describe("ToolOverlay mesh edit keys", () => {
@@ -58,6 +58,21 @@ describe("ToolOverlay mesh edit keys", () => {
     expect(selection.vertices.Quad).toEqual([0, 1, 2, 3]);
     press(document.body, "Escape");
     expect(selection.meshEdit).toBeNull();
+  });
+
+  it("pans the view to a vertex picked with ] or [ outside the view, but not inside", () => {
+    const { controller } = setup();
+    // 頂点の画面の位置は (10, 20) (210, 20) (210, 220) (10, 220)。ビューは 400×300 で、端の余白は 48
+    controller.size = [400, 300];
+    press(document.body, "]");
+    expect(controller.panBy.mock.calls).toEqual([[0, 28]]);
+    press(document.body, "]");
+    expect(controller.panBy).toHaveBeenCalledTimes(1);
+    press(document.body, "]");
+    expect(controller.panBy.mock.calls).toEqual([
+      [0, 28],
+      [38, 0],
+    ]);
   });
 
   it("moves the selected vertices with the arrow keys", async () => {

@@ -5,6 +5,7 @@ import { MAX_RESTARTS, RESTORE_TIMEOUT_MS } from "@ugoe/player";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../i18n";
 import type { ViewportController as ViewportControllerType } from "./controller.svelte";
+import { REVEAL_MARGIN } from "./tools/keys";
 import type { WebPuppet } from "./wasm";
 
 class FakeCanvas extends EventTarget {
@@ -163,6 +164,23 @@ describe("ViewportController", () => {
     canvas?.dispatchEvent(new Event("webglcontextrestored"));
     await settle();
     expect(pending).toHaveLength(2);
+  });
+
+  it("pans a point outside the view into it and leaves a point inside alone", async () => {
+    const controller = new ViewportController();
+    const attached = controller.attach(fakeContainer());
+    await settle();
+    const { puppet } = fakePuppet();
+    pending[0]?.resolve(puppet);
+    await attached;
+    // 大きさを知らないうちは動かさない
+    controller.reveal(-100, 50);
+    expect(puppet.view).toEqual([1, 0, 0]);
+    controller.resize(400, 300);
+    controller.reveal(200, 150);
+    expect(puppet.view).toEqual([1, 0, 0]);
+    controller.reveal(-100, 50);
+    expect(puppet.view).toEqual([1, 100 + REVEAL_MARGIN, 0]);
   });
 
   it("keeps the zoom and the pan when the WebPuppet is recreated", async () => {

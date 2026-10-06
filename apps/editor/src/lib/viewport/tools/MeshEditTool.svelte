@@ -30,9 +30,11 @@ interface Props {
   doc: EditorDocument;
   selection: Selection;
   meshId: string;
+  /** `]` `[` で選んだ頂点の表示位置 (CSS ピクセル) で呼ぶ (ビューの外なら見える所まで動かす。ToolOverlay)。 */
+  reveal?: (x: number, y: number) => void;
 }
 
-let { scene, doc, selection, meshId }: Props = $props();
+let { scene, doc, selection, meshId, reveal }: Props = $props();
 
 /** 頂点をつかめる距離 (CSS ピクセル)。 */
 const PICK_RADIUS = 8;
@@ -195,7 +197,11 @@ export function retriangulate(): void {
 export function step(dir: 1 | -1): boolean {
   const next = steppedPoint(selected, mesh?.vertices ?? 0, dir);
   if (next === null) return false;
-  if (drag === null) setVertices([next]);
+  if (drag === null) {
+    setVertices([next]);
+    const [x, y] = point(next);
+    if (positions) reveal?.(x, y);
+  }
   return true;
 }
 

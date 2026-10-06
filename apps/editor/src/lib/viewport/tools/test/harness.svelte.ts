@@ -23,6 +23,7 @@ import type {
 import type { ViewportController, ViewTransform } from "../../controller.svelte";
 import type { WebPuppet } from "../../wasm";
 import type { Point } from "../geometry";
+import { revealPanOf } from "../keys";
 
 const mounted: (() => void)[] = [];
 
@@ -185,6 +186,14 @@ export class FakeController {
   /** ビューを寄せる (着せ替えの違いの強調の「Fit」)。呼ばれた引数を記録する。 */
   zoomAt = vi.fn((_factor: number, _x: number, _y: number): void => {});
   panBy = vi.fn((_dx: number, _dy: number): void => {});
+  /** ビューポート要素の大きさ (CSS ピクセル)。null なら `reveal` は動かさない (ViewportController の resize の前と同じ)。 */
+  size: [number, number] | null = null;
+
+  /** `]` `[` で選んだ点を見せる (ViewportController.reveal と同じく、動かす量を `panBy` に渡す)。 */
+  reveal(x: number, y: number): void {
+    const delta = this.size ? revealPanOf([x, y], this.size) : null;
+    if (delta) this.panBy(delta[0], delta[1]);
+  }
 
   get asController(): ViewportController {
     return this as unknown as ViewportController;

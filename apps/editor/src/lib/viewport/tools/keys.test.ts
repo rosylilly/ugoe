@@ -9,6 +9,8 @@ import {
   PAN_LARGE,
   panOf,
   pointStepOf,
+  REVEAL_MARGIN,
+  revealPanOf,
   steppedPoint,
 } from "./keys";
 
@@ -127,5 +129,35 @@ describe("steppedPoint", () => {
     expect(steppedPoint([9], 4, 1)).toBe(0);
     expect(steppedPoint([], 0, 1)).toBeNull();
     expect(steppedPoint([0], 0, -1)).toBeNull();
+  });
+});
+
+describe("revealPanOf", () => {
+  const m = REVEAL_MARGIN;
+
+  it("leaves a point inside the margins where it is", () => {
+    expect(revealPanOf([400, 300], [800, 600])).toBeNull();
+    expect(revealPanOf([m, 600 - m], [800, 600])).toBeNull();
+  });
+
+  it("pans a point outside the view or in the margin just inside the edge", () => {
+    // 左と上の外
+    expect(revealPanOf([-100, -20], [800, 600])).toEqual([100 + m, 20 + m]);
+    // 右の外 (縦はそのまま)
+    expect(revealPanOf([900, 300], [800, 600])).toEqual([800 - m - 900, 0]);
+    // 下の余白の中
+    expect(revealPanOf([400, 590], [800, 600])).toEqual([0, 600 - m - 590]);
+  });
+
+  it("centers the point on an axis narrower than both margins", () => {
+    expect(revealPanOf([0, 300], [60, 600])).toEqual([30, 0]);
+    expect(revealPanOf([30, 300], [60, 600])).toBeNull();
+  });
+
+  it("does nothing for non-numbers or an empty view", () => {
+    expect(revealPanOf([Number.NaN, 0], [800, 600])).toBeNull();
+    expect(revealPanOf([0, Number.POSITIVE_INFINITY], [800, 600])).toBeNull();
+    expect(revealPanOf([-10, -10], [0, 0])).toBeNull();
+    expect(revealPanOf([-10, -10], [800, Number.NaN])).toBeNull();
   });
 });

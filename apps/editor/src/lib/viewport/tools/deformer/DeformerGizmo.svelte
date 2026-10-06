@@ -393,7 +393,15 @@ function step(e: KeyboardEvent): boolean {
   const next = steppedPoint(picked, warpCanvas.length, dir);
   if (next === null) return false;
   e.preventDefault();
-  if (!busy && drag === null) setPicked([next]);
+  if (!busy && drag === null) {
+    setPicked([next]);
+    // 選んだ点がビューの外にあれば見える所まで動かす (ポインタで選んだときは動かさない)
+    const p = warpCanvas[next];
+    if (p) {
+      const [x, y] = toScreen(p);
+      controller.reveal(x, y);
+    }
+  }
   return true;
 }
 

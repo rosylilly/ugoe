@@ -250,6 +250,24 @@ describe("DeformerGizmo keys", () => {
     expect(selection.controlPoints.Warp).toEqual([3]);
   });
 
+  it("pans the view to a control point picked with ] or [ outside the view, but not inside", () => {
+    const { controller } = setup("Warp");
+    // 制御点の画面の位置は (10, 20) (210, 20) (210, 220) (10, 220)。ビューは 400×300 で、端の余白は 48
+    controller.size = [400, 300];
+    press(document.body, "[");
+    expect(controller.panBy.mock.calls).toEqual([[38, 0]]);
+    press(document.body, "[");
+    expect(controller.panBy).toHaveBeenCalledTimes(1);
+    // 2 → 3 → 0
+    press(document.body, "]");
+    press(document.body, "]");
+    expect(controller.panBy.mock.calls).toEqual([
+      [38, 0],
+      [38, 0],
+      [38, 28],
+    ]);
+  });
+
   it("leaves [ and ] alone for a rotation deformer", () => {
     const { selection } = setup("Rot");
     expect(press(document.body, "]").defaultPrevented).toBe(false);

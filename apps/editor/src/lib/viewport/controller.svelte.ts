@@ -16,6 +16,7 @@ import {
 } from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
+import { revealPanOf } from "./tools/keys";
 import { loadErrorText, surfaceFailureText } from "./viewportErrors";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
@@ -127,6 +128,8 @@ export class ViewportController {
   #driver: FrameDriver | null = null;
   /** 光源の JSON (`set_lighting_json`)。null なら渡さない。WebPuppet を作り直しても渡し直す。 */
   #lighting: string | null = null;
+  /** ビューポート要素の大きさ (CSS ピクセル。resize)。 */
+  #size: [number, number] | null = null;
 
   /** 描画中の WebPuppet (ヒットテストなどの問い合わせ用)。 */
   get puppet(): WebPuppet | null {
@@ -330,6 +333,7 @@ export class ViewportController {
 
   /** ビューポート要素の大きさ (CSS ピクセル)。描画バッファは devicePixelRatio を掛けた画素にする。 */
   resize(width: number, height: number): void {
+    this.#size = [width, height];
     this.#surface.resize(width, height);
     this.requestRender();
   }
@@ -391,6 +395,15 @@ export class ViewportController {
     const dpr = this.#surface.pixelRatio;
     this.#puppet?.pan_by(dx * dpr, dy * dpr);
     this.requestRender();
+  }
+
+  /**
+   * CSS ピクセルの点 `(x, y)` がビューの外 (か端の余白の中) にあれば、見える所までずらす (拡大率は変えない。
+   * `]` `[` で選んだ点を見せる。tools/keys.ts の revealPanOf)。中にあれば何もしない。
+   */
+  reveal(x: number, y: number): void {
+    const delta = this.#size ? revealPanOf([x, y], this.#size) : null;
+    if (delta) this.panBy(delta[0], delta[1]);
   }
 
   /** キャンバス座標 → CSS ピクセル。 */

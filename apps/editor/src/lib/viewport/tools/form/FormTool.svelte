@@ -278,12 +278,20 @@ function onKeyDown(e: KeyboardEvent): void {
     const step = picked.length > 0 ? nudgeOf(e) : null;
     if (next !== null) {
       e.preventDefault();
-      if (!busy && drag === null) setPicked([next]);
+      if (!busy && drag === null) {
+        setPicked([next]);
+        reveal(base[next]);
+      }
     } else if (step) {
       e.preventDefault();
       void movePicked(step);
     }
   }
+}
+
+/** `]` `[` で選んだ点がビューの外にあれば、見える所まで表示を動かす (ポインタで選んだときは動かさない)。 */
+function reveal(p: Point | undefined): void {
+  if (p) controller.reveal(p[0], p[1]);
 }
 
 function moveToNearestKey() {
