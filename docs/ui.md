@@ -52,6 +52,13 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
   - **続けて失ったとき (T0935):** 前の作り直しから 1 分 (`RESTART_WINDOW_MS`) 以内に失う・作れないことが続き、作り直しが `MAX_RESTARTS` (3) 回を
     超えたら (4 回目)、作り直さずに `failed(GpuLostRepeatedlyError)` で知らせる (数と時間は `<ugoe-avatar>` と同じ)。GPU が戻らない間に
     作り直しを繰り返して資源と時間を使い続けないため。次の `attach` と `restart` で数え直す。
+    諦めた作り直しの中で作れなかったことがあれば、最後の失敗 (多くは `CreateError`) を `GpuLostRepeatedlyError` の `cause` に持たせる
+    (T0946)。最初の作成で作れずに「作り直す」を押してまた作れなかったときなど、実際には GPU を「失い続けた」のではなく作れなかったので、
+    使う側はその理由の文を出す (下の「失敗の文」)。どの作り直しも作れていた (作っては失った) なら `cause` は無い。
+  - **復元の時間切れのタイマー (T0946 で確かめた):** `RESTORE_TIMEOUT_MS` のタイマー (`#restoreTimer`) を置くのは `webglcontextlost` だけで、
+    復元を待っていないときだけ置く (待っている間の 2 つ目の知らせ・作り直している間・古い canvas の知らせでは置かない)。時間切れ・復元・
+    WebPuppet を捨てるとき (`detach`・作り直し) に消すので、前のタイマーを消さずに置き直す経路は無い (`<ugoe-avatar>` の T0480 と同じ誤りは無い)。
+    作れなかったときの試し直しの待ちは別のタイマー (`#recreate` の `sleep`) で、待った後に番号で古いものを捨てる。
   - **画面の知らせと「作り直す」(T0938):** 待つ間 (`waiting` から次の `created`・`failed` まで) は「GPU の復元を待っています」を出す
     (Player は `waitingForGpu`、エディタはビューポートの `status` を `loading` にして `viewport.gpuWaiting`)。諦めたら、Player は `status` を
     `unavailable` にして `error` にカタログの `errors.gpuLostRepeatedly` を、エディタは `status` を `error` にして `viewport.gpuLostRepeatedly`
@@ -65,7 +72,8 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
 - **失敗の文 (T0941):** どの文がどこから来るか。
   | 場面 | Player (ビューア・スタジオ) | エディタのビューポート |
   | --- | --- | --- |
-  | 続けて失って諦めた (`GpuLostRepeatedlyError`) | `player` の `errors.gpuLostRepeatedly` | `editor` の `viewport.gpuLostRepeatedly` |
+  | 続けて失って諦めた (`GpuLostRepeatedlyError`。`cause` が無い) | `player` の `errors.gpuLostRepeatedly` | `editor` の `viewport.gpuLostRepeatedly` |
+  | 作り直しで作れずに諦めた (`GpuLostRepeatedlyError` の `cause`。T0946) | `player` の `errors.recreateFailed` に `cause` の文 (下の 2 行と同じ) を埋める | `editor` の `viewport.recreateFailed` に `cause` の `createErrorText` の文を埋める (`surfaceFailureText`) |
   | 作れなかった (`CreateError`。`code` ごと) | `player` の `createError.*` (`describeCreateError`) | `editor` の `viewport.createError.*` (`createErrorText`) |
   | 作れなかった (ほかの例外・知らないコード) | `player` の `errors.renderStart` に例外の文を埋める | 例外の文 (`errorText`) |
   | 読み込みの失敗 (`LoadError`) | `player` の `loadError.*` (`describeLoadError`) | 同じ。ただし `device_lost` は `editor` の `viewport.deviceLost` (`loadErrorText`) |

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // モデルを描く領域 (Viewport.svelte) の GPU を失ったときの表示: 戻るのを待つ間は「GPU の復元を待っています」を出し、
-// 続けて失って諦めたら「作り直す」ボタンを出して Player.restart を呼ぶこと (T0938)。
+// 続けて失って諦めたとき・`CreateError` で作れなかったときは「作り直す」ボタンを出して Player.restart を呼ぶこと
+// (どちらも Player.canRestart。T0938・T0946)。
 // 空の状態に呼び手の中身 (開く・サンプル) を出し、拡大・縮小の道具を重ね、操作できる部品を role="img" の中に入れないこと (T0725)。
 import { setLocale } from "@ugoe/i18n";
 import type { Player } from "@ugoe/player";
@@ -95,6 +96,21 @@ describe("Viewport", () => {
     const button = target.querySelector("button");
     expect(button?.textContent?.trim()).toBe("作り直す");
     expect(target.textContent).toContain("GPU を続けて失ったので");
+    button?.click();
+    expect(calls).toEqual(["restart"]);
+  });
+
+  it("offers to restart when the WebPuppet could not be created", () => {
+    const { target, player, calls } = setup();
+    // Player は CreateError で作れなかったとき、訳した理由の文を出して canRestart を真にする。
+    player.status = "unavailable";
+    player.error =
+      "GPU のコンテキストを作れないため、描画を始められません。ほかのタブやウィンドウを閉じるか、少し待ってから「作り直す」を押してください";
+    player.canRestart = true;
+    flushSync();
+    expect(target.textContent).toContain("GPU のコンテキストを作れないため");
+    const button = target.querySelector("button");
+    expect(button?.textContent?.trim()).toBe("作り直す");
     button?.click();
     expect(calls).toEqual(["restart"]);
   });

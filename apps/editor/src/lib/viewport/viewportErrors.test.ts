@@ -2,10 +2,11 @@
 // ugoe-wasm の `LoadError`・`CreateError` のすべての `code` (crates/ugoe-wasm/codes.json の `load_error`・`create_error`) と
 // 補足の値の組を、エディタの言語のすべてで文にするか。
 import { LANGUAGES, SOURCE_LOCALE, setLocale } from "@ugoe/i18n";
+import { GpuLostRepeatedlyError } from "@ugoe/player";
 import { afterEach, describe, expect, it } from "vitest";
 import codes from "../../../../../crates/ugoe-wasm/codes.json";
 import { t } from "../i18n";
-import { createErrorText, loadErrorText } from "./viewportErrors";
+import { createErrorText, loadErrorText, surfaceFailureText } from "./viewportErrors";
 
 /** 補足の値のうち文字列のもの (ほかは数)。`image`・`limit` は文を選ぶので、取りうる値をすべて試す。 */
 const STRING_FIELDS: Record<string, string[]> = {
@@ -93,5 +94,22 @@ describe("viewport error texts", () => {
     expect(createErrorText(coded("CreateError", "something_new"))).toBe("wasm text");
     expect(createErrorText(new Error("plain"))).toBe("plain");
     expect(loadErrorText(coded("LoadError", "something_new"))).toBe("wasm text");
+  });
+
+  it("adds the reason the WebPuppet could not be made when giving up recreating it", () => {
+    expect(surfaceFailureText(new GpuLostRepeatedlyError())).toBe(t("viewport.gpuLostRepeatedly"));
+    setLocale("ja");
+    expect(
+      surfaceFailureText(new GpuLostRepeatedlyError(coded("CreateError", "device_unavailable"))),
+    ).toBe(
+      "GPU を使う準備ができないため、描画を始められません。少し待ってから「作り直す」を押してください (作り直しを何度か試しましたが、作れませんでした)",
+    );
+    setLocale("en");
+    expect(surfaceFailureText(new GpuLostRepeatedlyError(new Error("plain")))).toBe(
+      "plain (Tried to recreate it several times without success.)",
+    );
+    expect(surfaceFailureText(coded("CreateError", "context_unavailable"))).toBe(
+      t("viewport.createError.contextUnavailable"),
+    );
   });
 });

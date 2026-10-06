@@ -1,6 +1,6 @@
 // ビューポートの WebPuppet の作成と読み込みの失敗の文 (T0941。docs/ui.md#webpuppet-の寿命)。@ugoe/player のカタログの文は
 // ビューア・スタジオ向け (「アプリを起動し直して」) なので、GPU やブラウザの都合の失敗はエディタのカタログの文にする。
-import { describeLoadError, errorCode } from "@ugoe/player";
+import { describeLoadError, errorCode, GpuLostRepeatedlyError } from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
 
@@ -20,6 +20,16 @@ export function createErrorText(e: unknown): string {
   const code = errorCode(e, ["CreateError"]);
   const text = code === null ? undefined : CREATE_ERROR_TEXTS[code];
   return text?.() ?? errorText(e);
+}
+
+/**
+ * PuppetSurface が描画を始められなかった・作り直しを諦めた (`failed`) ときの文。作り直しの中で作れなかったことがあれば
+ * (`GpuLostRepeatedlyError` の `cause`。T0946)、その理由の文に作り直しを諦めたことを添える。
+ */
+export function surfaceFailureText(e: unknown): string {
+  if (!(e instanceof GpuLostRepeatedlyError)) return createErrorText(e);
+  if (e.cause === undefined) return t("viewport.gpuLostRepeatedly");
+  return t("viewport.recreateFailed", { reason: createErrorText(e.cause) });
 }
 
 /**

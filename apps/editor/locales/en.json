@@ -2776,6 +2776,7 @@
   "viewport": {
     "loading": "Loading viewport…",
     "gpuLostRepeatedly": "Stopped drawing because the GPU was lost repeatedly. Press “Try again” once the GPU is back.",
+    "recreateFailed": "{{reason}} (Tried to recreate it several times without success.)",
     "gpuWaiting": "Waiting for the GPU to be restored…",
     "restart": "Try again",
     "deviceLost": "The GPU stopped working. Restart the editor to draw again.",

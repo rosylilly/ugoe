@@ -1,7 +1,7 @@
 // ViewportController の WebPuppet の作成と破棄 (attach・detach・作り直し)。wasm と canvas は偽物。
 
 import { setLocale } from "@ugoe/i18n";
-import { MAX_RESTARTS } from "@ugoe/player";
+import { MAX_RESTARTS, RESTORE_TIMEOUT_MS } from "@ugoe/player";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../i18n";
 import type { ViewportController as ViewportControllerType } from "./controller.svelte";
@@ -245,6 +245,46 @@ describe("ViewportController", () => {
       expect(controller.message).toBeNull();
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it("says why it could not draw when restarting keeps failing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const createError = (code: string) =>
+        Object.assign(new Error(`create failed: ${code}`), { name: "CreateError", code });
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      pending[0]?.reject(createError("adapter_unavailable"));
+      await settle();
+      pending[1]?.reject(createError("context_unavailable"));
+      await attached;
+      expect(controller.message).toBe(t("viewport.createError.contextUnavailable"));
+
+      // 「作り直す」を押しても作れないまま、試し直しの上限を超える。
+      const restarting = controller.restart();
+      for (let i = 0; i < MAX_RESTARTS; i++) {
+        await settle();
+        pending.at(-1)?.reject(createError("adapter_unavailable"));
+        await settle();
+        pending.at(-1)?.reject(createError("device_unavailable"));
+        await settle();
+        expect(controller.message).toBe(t("viewport.gpuWaiting"));
+        await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+      }
+      await restarting;
+      expect(pending).toHaveLength(2 + MAX_RESTARTS * 2);
+      expect(controller.status).toBe("error");
+      expect(controller.canRestart).toBe(true);
+      // 「GPU を続けて失った」ではなく、作れなかった理由の文に、作り直しを諦めたことを添える。
+      expect(controller.message).toBe(
+        t("viewport.recreateFailed", { reason: t("viewport.createError.deviceUnavailable") }),
+      );
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
     }
   });
 

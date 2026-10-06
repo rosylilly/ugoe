@@ -16,7 +16,7 @@ import {
 } from "@ugoe/player";
 import { errorText } from "../errors";
 import { t } from "../i18n";
-import { createErrorText, loadErrorText } from "./viewportErrors";
+import { loadErrorText, surfaceFailureText } from "./viewportErrors";
 import { loadUgoeWasm, type WebPuppet } from "./wasm";
 
 /** ビューポートに表示するモデル。bundle があればテクスチャ付きで、無ければ JSON (白いテクスチャ) で表示する。 */
@@ -105,8 +105,7 @@ export class ViewportController {
       // GPU を続けて失ったときと、GPU やブラウザの都合で作れなかったとき (`CreateError`) は、作り直せば描けることがある。
       this.canRestart = e instanceof GpuLostRepeatedlyError || isCreateFailure(e);
       this.status = "error";
-      this.message =
-        e instanceof GpuLostRepeatedlyError ? t("viewport.gpuLostRepeatedly") : createErrorText(e);
+      this.message = surfaceFailureText(e);
     },
     // GPU が戻るのを待つ間 (WebGL2 の復元・作り直しの試し直し) は描かず、そう出す。作り直せたら `#setUp` が消す。
     waiting: () => {

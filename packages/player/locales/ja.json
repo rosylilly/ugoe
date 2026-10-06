@@ -109,6 +109,7 @@
     "notModel": "{{name}}: .ugoe・JSON のモデルか .ugoemod のモジュールではありません",
     "renderStart": "描画を始められません: {{message}}",
     "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。GPU が戻ったら「作り直す」を押してください",
+    "recreateFailed": "{{reason}} (作り直しを何度か試しましたが、作れませんでした)",
     "noFollowerApi": "ugoe-wasm に受け手の口 (WebPuppet.follow) がありません。ugoe-wasm をビルドし直してください"
   },
   "remembered": {

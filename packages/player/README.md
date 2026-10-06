@@ -112,6 +112,8 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
 - `WebPuppet.create` の `CreateError` (T0475。GPU やブラウザの都合で作れない) は `describeCreateError` が `createError.*` の文にする
   (知らないコードと `CreateError` でない例外は `null`)。`Player` は作れなかったときにこの文を `error` に入れ、`CreateError` なら
   (知らないコードでも) `canRestart` を真にする (T0941。[docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。`isCreateFailure` で見分けられる。
+- 作り直しを諦めた `GpuLostRepeatedlyError` が `cause` (作り直しで作れなかった最後の失敗) を持つときは、その理由の文 (`createError.*`、
+  ほかの例外は `errors.renderStart`) を `errors.recreateFailed` に埋めて `error` に入れる (「GPU を続けて失った」の文にしない。T0946)。
 - テストは Svelte のプラグインを通す (`vitest.config.ts`。@ugoe/i18n が runes を使うため)。文を確かめるテストは `setLocale("ja")` で言語を決めてから比べる。
 
 ## 受け手のモード (T0801)

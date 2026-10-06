@@ -110,6 +110,21 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** WebPuppet を作れなかった理由の文 (`CreateError` は訳した文、ほかは例外の文)。 */
+function createFailureText(e: unknown): string {
+  return describeCreateError(e) ?? t("errors.renderStart", { message: message(e) });
+}
+
+/**
+ * `PuppetSurface` が描画を始められなかった・作り直しを諦めたときの文。作り直しの中で作れなかったことがあれば
+ * (`GpuLostRepeatedlyError` の `cause`)、その理由の文に作り直しを諦めたことを添える (T0946)。
+ */
+function surfaceFailureText(e: unknown): string {
+  if (!(e instanceof GpuLostRepeatedlyError)) return createFailureText(e);
+  if (e.cause === undefined) return t("errors.gpuLostRepeatedly");
+  return t("errors.recreateFailed", { reason: createFailureText(e.cause) });
+}
+
 export class Player {
   status = $state<PlayerStatus>("starting");
   /** 直近のエラー (読み込みや描画の失敗)。 */
@@ -325,10 +340,7 @@ export class Player {
         // GPU を続けて失ったときと、GPU やブラウザの都合で作れなかったとき (`CreateError`) は、作り直せば描けることがある。
         this.canRestart = e instanceof GpuLostRepeatedlyError || isCreateFailure(e);
         this.status = "unavailable";
-        this.error =
-          e instanceof GpuLostRepeatedlyError
-            ? t("errors.gpuLostRepeatedly")
-            : (describeCreateError(e) ?? t("errors.renderStart", { message: message(e) }));
+        this.error = surfaceFailureText(e);
       },
       lost: () => {
         this.#carry = { ...this.values };

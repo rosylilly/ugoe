@@ -2,7 +2,7 @@
 // 着せ替え・モーション・ドライバとトラッキング・受け手のモード・光源は player*.test.ts に流れごとに分ける (T0931・T0933)。
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { t } from "./i18n";
-import { MAX_RESTARTS } from "./surface";
+import { MAX_RESTARTS, RESTORE_TIMEOUT_MS } from "./surface";
 import { bundle, fakePuppet, moduleFile } from "./testing/fakePuppet";
 import { container, moduleRows, pending, player, settle, setupPlayer } from "./testing/player";
 
@@ -198,6 +198,46 @@ describe("Player", () => {
     await restarting;
     expect(p.status).toBe("empty");
     expect(p.error).toBeNull();
+  });
+
+  it("says why it could not draw when restarting keeps failing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => {
+      warn.mockRestore();
+      vi.useRealTimers();
+    });
+    const createError = (code: string) =>
+      Object.assign(new Error(`create failed: ${code}`), { name: "CreateError", code });
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.reject(createError("adapter_unavailable"));
+    await settle();
+    pending[1]?.reject(createError("context_unavailable"));
+    await attached;
+    expect(p.error).toBe(t("createError.contextUnavailable"));
+
+    // 「作り直す」を押しても作れないまま、試し直しの上限を超える。
+    const restarting = p.restart();
+    for (let i = 0; i < MAX_RESTARTS; i++) {
+      await settle();
+      pending.at(-1)?.reject(createError("adapter_unavailable"));
+      await settle();
+      pending.at(-1)?.reject(createError("device_unavailable"));
+      await settle();
+      expect(p.waitingForGpu).toBe(true);
+      await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    }
+    await restarting;
+    expect(pending).toHaveLength(2 + MAX_RESTARTS * 2);
+    expect(p.status).toBe("unavailable");
+    expect(p.waitingForGpu).toBe(false);
+    expect(p.canRestart).toBe(true);
+    // 「GPU を続けて失った」ではなく、作れなかった理由の文に、作り直しを諦めたことを添える。
+    expect(p.error).toBe(
+      t("errors.recreateFailed", { reason: t("createError.deviceUnavailable") }),
+    );
   });
 
   it("keeps the exception text of a failure without a known code", async () => {

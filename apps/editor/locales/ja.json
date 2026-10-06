@@ -2712,6 +2712,7 @@
   "viewport": {
     "loading": "ビューポートを読み込んでいます…",
     "gpuLostRepeatedly": "GPU を続けて失ったので、描画を止めました。GPU が戻ったら「作り直す」を押してください",
+    "recreateFailed": "{{reason}} (作り直しを何度か試しましたが、作れませんでした)",
     "gpuWaiting": "GPU の復元を待っています…",
     "restart": "作り直す",
     "deviceLost": "GPU が止まりました。描き直すには、エディタを起動し直してください。",

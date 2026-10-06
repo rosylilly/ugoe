@@ -511,6 +511,8 @@ const scenarios = {
     await loseAndRestore(surface, container, log);
     check(log.failed.length === 1, `failed was called ${log.failed.length} times`);
     check(log.failed[0] instanceof GpuLostRepeatedlyError, `failed with ${log.failed[0]}`);
+    // どの作り直しも作れていた (作っては失った) ので、作れなかった理由は無い (T0946)
+    check(log.failed[0].cause === undefined, `failed with the cause ${log.failed[0].cause}`);
     check(surface.puppet === null, "the puppet remains after giving up");
     check(canvasesIn(container).length === 0, "the canvas remains after giving up");
     check(live.size === 0, `${live.size} live puppets after giving up`);
@@ -618,6 +620,36 @@ const scenarios = {
     // 次の attach では作れる
     check((await within(surface.attach(container), "attach again")) === "ready", "attach failed");
     expectDrawn(surface, container, "after attaching again");
+    surface.detach();
+  },
+
+  /**
+   * 最初の作成で作れず、`restart` で試し直しても作れないまま上限に当たったら、最後の `CreateError` を `cause` に持つ
+   * `GpuLostRepeatedlyError` で諦める (使う側は作れなかった理由の文を出す。T0946)。その後の `restart` で作れる。
+   */
+  async "restart-on-lost-context-gives-up-with-cause"() {
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    // "auto" と、落ちた先の "webgl2" の両方 (WebGL2 で作れていないので、試し直しも毎回 2 つ)
+    loseContextsBeforeCreate = 2;
+    check((await within(surface.attach(container), "attach")) === "failed", "attach did not fail");
+    expectContextUnavailable(log.failed[0], "attach");
+
+    loseContextsBeforeCreate = 2 * MAX_RESTARTS;
+    await within(surface.restart(), "restart");
+    check(loseContextsBeforeCreate === 0, `${loseContextsBeforeCreate} creations were not tried`);
+    check(log.failed.length === 2, `failed was called ${log.failed.length} times`);
+    const gaveUp = log.failed[1];
+    check(gaveUp instanceof GpuLostRepeatedlyError, `failed with ${gaveUp}`);
+    expectContextUnavailable(gaveUp.cause, "the cause");
+    check(log.waiting === MAX_RESTARTS, `waiting was called ${log.waiting} times`);
+    check(surface.puppet === null, "the puppet remains after giving up");
+    check(canvasesIn(container).length === 0, "the canvas remains after giving up");
+    check(live.size === 0, `${live.size} live puppets after giving up`);
+
+    await within(surface.restart(), "restart again");
+    check(surface.puppet !== null && log.created.at(-1)?.recovered, "not restarted");
+    expectDrawn(surface, container, "after restarting again");
     surface.detach();
   },
 

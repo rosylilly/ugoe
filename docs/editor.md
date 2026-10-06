@@ -2042,6 +2042,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - WebPuppet を GPU やブラウザの都合で作れなかった (`CreateError`。T0475) ときは、`code` ごとのエディタのカタログの文
   (`viewport.createError.*`) をビューポートに出し、「作り直す」ボタンも出します (`viewportErrors.ts` の `createErrorText`。T0941)。
   知らない `code` と、`code` を持たない例外は例外の文のままで、ボタンは出しません ([ui.md](ui.md#webpuppet-の寿命))。
+  作り直し (「作り直す」ボタンや GPU を失った後) でも作れずに諦めたときは、「GPU を続けて失った」ではなく作れなかった理由の文に
+  諦めたことを添えて出します (`GpuLostRepeatedlyError` の `cause`。`viewport.recreateFailed`・`surfaceFailureText`。T0946)。
 - 大きなモデルで、モデル全体を送るのが遅くなった場合は、差分パッチを送る方式を検討します。
 
 ### スクリーンショット

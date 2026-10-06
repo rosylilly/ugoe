@@ -12,7 +12,8 @@
 //   (GPU がまだ戻っていない)、同じだけ待って試し直す。待ち始めたら `waiting` で知らせる。
 //   作り直しは一度に 1 つだけで、捨てた WebPuppet の印やイベントは見ないので、2 つの知らせで 2 回作り直すことはない。
 // - 前の作り直しから `RESTART_WINDOW_MS` 以内に失うことが続き、`MAX_RESTARTS` 回を超えたら、作り直さずに
-//   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` か `restart` まで作らない)。
+//   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` か `restart` まで作らない)。その作り直しの中で作れなかった
+//   (`CreateError` など) ことがあれば、最後の失敗を `cause` に持たせる (使う側は作れなかった理由の文を出す。T0946)。
 // - devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
 //   `matchMedia` で聞いて描画バッファの大きさを合わせ直す。
 // - GPU を失って作り直すときは、失った WebPuppet のビュー (ズームとパン) を覚えて、作り直した WebPuppet に `created` の前に
@@ -55,7 +56,7 @@ export interface SurfaceHost<P extends SurfacePuppet> {
   created(puppet: P, recovered: boolean): void | Promise<void>;
   /**
    * WebGPU でも WebGL2 でも作れなかった (`error` は最後の失敗)。GPU を続けて失って作り直しを諦めたときは
-   * `GpuLostRepeatedlyError`。
+   * `GpuLostRepeatedlyError` (作り直しで作れなかったなら、その最後の失敗が `cause`)。
    */
   failed(error: unknown): void;
   /** GPU を失ったので作り直す (`puppet` はまだ捨てていない。値を読むことはできる)。 */
@@ -83,12 +84,20 @@ export const RESTART_WINDOW_MS = 60_000;
  */
 export const RESTORE_TIMEOUT_MS = 5_000;
 
-/** GPU を続けて失ったので、作り直しを諦めた (`SurfaceHost.failed` に渡す)。 */
+/**
+ * GPU を続けて失ったので、作り直しを諦めた (`SurfaceHost.failed` に渡す)。諦めた作り直しの中で作れなかったことがあれば、
+ * `cause` はその最後の失敗 (`WebPuppet.create` の例外。多くは `CreateError`)。どの作り直しも作れていた (作っては失った) なら `undefined`。
+ */
 export class GpuLostRepeatedlyError extends Error {
-  constructor() {
-    super("the GPU device was lost repeatedly");
+  constructor(cause?: unknown) {
+    super("the GPU device was lost repeatedly", cause === undefined ? undefined : { cause });
     this.name = "GpuLostRepeatedlyError";
   }
+}
+
+/** `#create` で WebGPU でも WebGL2 でも作れなかった (`error` は最後の失敗)。 */
+interface CreateFailure {
+  error: unknown;
 }
 
 /** `attach` の結果。`superseded` は待っている間に `detach` か次の `attach` があった。 */
@@ -172,7 +181,10 @@ export class PuppetSurface<P extends SurfacePuppet> {
     if (wasm === null) return "missing";
     this.#wasm = wasm;
     this.#watchPixelRatio();
-    return this.#create(token, false);
+    const result = await this.#create(token, false);
+    if (typeof result === "string") return result;
+    this.#host.failed(result.error);
+    return "failed";
   }
 
   /** WebPuppet と canvas を捨て、devicePixelRatio を聞くのをやめる。作っている途中のものも捨てる。 */
@@ -250,18 +262,22 @@ export class PuppetSurface<P extends SurfacePuppet> {
 
   /**
    * 捨てた WebPuppet の代わりを新しい canvas で作る。作れなければ (GPU がまだ戻っていない) `RESTORE_TIMEOUT_MS` 待って
-   * 試し直す。続けて `MAX_RESTARTS` 回を超えたら `failed(GpuLostRepeatedlyError)` で知らせる。
+   * 試し直す。続けて `MAX_RESTARTS` 回を超えたら `failed(GpuLostRepeatedlyError)` で知らせる (この作り直しで作れなかった
+   * ことがあれば、最後の失敗を `cause` にする)。
    */
   async #recreate(token: number): Promise<void> {
+    let lastError: unknown;
     // 試し直しは `#countRestart` が数えるが、時計に頼らずに回数でも止める。
     for (let attempt = 0; attempt <= MAX_RESTARTS; attempt++) {
       if (!this.#countRestart()) break;
-      if ((await this.#create(token, true)) !== "failed") return;
+      const result = await this.#create(token, true);
+      if (typeof result === "string") return;
+      lastError = result.error;
       this.#host.waiting?.();
       await sleep(RESTORE_TIMEOUT_MS);
       if (token !== this.#token) return;
     }
-    this.#host.failed(new GpuLostRepeatedlyError());
+    this.#host.failed(new GpuLostRepeatedlyError(lastError));
   }
 
   /** 作り直しを 1 回数える。続けて失って上限を超えたら `false` (諦める)。 */
@@ -275,7 +291,11 @@ export class PuppetSurface<P extends SurfacePuppet> {
     return true;
   }
 
-  async #create(token: number, recovered: boolean): Promise<AttachResult> {
+  /** 新しい canvas で WebPuppet を作る。作れなければ最後の失敗を返す (知らせるのは呼んだ側)。 */
+  async #create(
+    token: number,
+    recovered: boolean,
+  ): Promise<Exclude<AttachResult, "failed"> | CreateFailure> {
     const wasm = this.#wasm;
     const container = this.#container;
     if (wasm === null || container === null) return "superseded";
@@ -311,9 +331,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
       await this.#host.created(puppet, recovered);
       return token === this.#token ? "ready" : "superseded";
     }
-    // 作り直しで作れなかったときは、`#recreate` が試し直す。
-    if (!recovered) this.#host.failed(lastError);
-    return "failed";
+    return { error: lastError };
   }
 
   /** 失った WebPuppet のビューを覚える (ビューは CPU の側の状態なので、GPU を失っても読める)。 */
