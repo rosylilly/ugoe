@@ -33,6 +33,7 @@ ugoe-model.workspace = true
 ugoe-psd.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+dbus.workspace = true
 dbus-secret-service-keyring-store.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -43,6 +44,9 @@ windows-native-keyring-store.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+dbus-secret-service.workspace = true
 
 [lints]
 workspace = true

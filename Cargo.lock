@@ -5370,6 +5370,8 @@ name = "ugoe-editor"
 version = "0.0.0"
 dependencies = [
  "apple-native-keyring-store",
+ "dbus",
+ "dbus-secret-service",
  "dbus-secret-service-keyring-store",
  "keyring-core",
  "serde",

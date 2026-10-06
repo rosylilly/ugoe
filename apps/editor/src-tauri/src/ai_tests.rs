@@ -159,6 +159,213 @@ fn unavailable_store_falls_back_to_env() {
     assert!(err.to_string().contains("ANTHROPIC_API_KEY"), "{err}");
 }
 
+/// Secret Service の偽の保存先 (Linux)。`failures` を前から順に 1 つずつ失敗として返し、尽きたら普通に読み書きする。
+#[cfg(target_os = "linux")]
+mod flaky {
+    use std::any::Any;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use keyring_core::api::{CredentialApi, CredentialStoreApi};
+    use keyring_core::{Credential, Entry, Error, Result};
+    pub(super) use ugoe_editor_core::Coded;
+
+    use super::*;
+
+    #[derive(Default)]
+    pub(super) struct FlakyCred {
+        failures: Mutex<VecDeque<Error>>,
+        secret: Mutex<Option<Vec<u8>>>,
+        calls: AtomicUsize,
+    }
+
+    impl FlakyCred {
+        pub(super) fn fail_with(&self, errors: impl IntoIterator<Item = Error>) {
+            self.failures.lock().unwrap().extend(errors);
+        }
+
+        /// 呼ばれた回数を返し、数え直す。
+        pub(super) fn take_calls(&self) -> usize {
+            self.calls.swap(0, Ordering::SeqCst)
+        }
+
+        fn next_failure(&self) -> Result<()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.failures
+                .lock()
+                .unwrap()
+                .pop_front()
+                .map_or(Ok(()), Err)
+        }
+    }
+
+    impl CredentialApi for FlakyCred {
+        fn set_secret(&self, secret: &[u8]) -> Result<()> {
+            self.next_failure()?;
+            *self.secret.lock().unwrap() = Some(secret.to_vec());
+            Ok(())
+        }
+
+        fn get_secret(&self) -> Result<Vec<u8>> {
+            self.next_failure()?;
+            self.secret.lock().unwrap().clone().ok_or(Error::NoEntry)
+        }
+
+        fn delete_credential(&self) -> Result<()> {
+            self.next_failure()?;
+            self.secret
+                .lock()
+                .unwrap()
+                .take()
+                .map(drop)
+                .ok_or(Error::NoEntry)
+        }
+
+        fn get_credential(&self) -> Result<Option<Arc<Credential>>> {
+            Ok(None)
+        }
+
+        fn get_specifiers(&self) -> Option<(String, String)> {
+            None
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    pub(super) struct FlakyStore(pub(super) Arc<FlakyCred>);
+
+    impl CredentialStoreApi for FlakyStore {
+        fn vendor(&self) -> String {
+            "flaky".into()
+        }
+
+        fn id(&self) -> String {
+            "flaky".into()
+        }
+
+        fn build(
+            &self,
+            _service: &str,
+            _user: &str,
+            _modifiers: Option<&HashMap<&str, &str>>,
+        ) -> Result<Entry> {
+            Ok(Entry::new_with_credential(self.0.clone()))
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    /// dbus-secret-service-keyring-store が返す形の、D-Bus の失敗 (`name` の D-Bus のエラー)。
+    pub(super) fn dbus_failure(name: &str) -> Error {
+        Error::PlatformFailure(Box::new(dbus_secret_service::Error::Dbus(
+            dbus::Error::new_custom(name, "Did not receive a reply"),
+        )))
+    }
+
+    pub(super) fn no_reply() -> Error {
+        dbus_failure("org.freedesktop.DBus.Error.NoReply")
+    }
+
+    /// 偽の Secret Service を [`KeyringStore`] で包んだ [`ApiKeys`]。
+    pub(super) fn keys(cred: &Arc<FlakyCred>) -> ApiKeys {
+        let cred = cred.clone();
+        ApiKeys::new(
+            Box::new(move || {
+                let store: Arc<keyring_core::CredentialStore> = Arc::new(FlakyStore(cred.clone()));
+                Ok(Box::new(KeyringStore { store }) as Box<dyn SecretStore>)
+            }),
+            no_env,
+        )
+    }
+}
+
+/// Secret Service の答えが時間内に来なかったときは、保存・読み出し・削除のどれもやり直す。
+#[cfg(target_os = "linux")]
+#[test]
+fn keyring_calls_are_retried_when_the_secret_service_does_not_reply() {
+    use flaky::*;
+    let slot = claude_slot();
+    let cred = Arc::new(FlakyCred::default());
+    let keys = flaky::keys(&cred);
+
+    cred.fail_with([no_reply()]);
+    keys.save(&slot, "sk-a").unwrap();
+    assert_eq!(cred.take_calls(), 2);
+
+    cred.fail_with([no_reply(), no_reply()]);
+    assert_eq!(keys.status(&slot), KeyStatus::Stored);
+    assert_eq!(cred.take_calls(), 3);
+    cred.fail_with([no_reply()]);
+    assert!(keys.find(&slot).is_some());
+    assert_eq!(cred.take_calls(), 2);
+
+    cred.fail_with([no_reply()]);
+    keys.delete(&slot).unwrap();
+    assert_eq!(cred.take_calls(), 2);
+    assert_eq!(keys.status(&slot), KeyStatus::NotStored);
+    cred.take_calls();
+}
+
+/// 答えが来ないのが続けば、上限の回数で諦めて今のエラー (`ai.credential_store`) を返す。
+#[cfg(target_os = "linux")]
+#[test]
+fn keyring_calls_give_up_after_repeated_no_replies() {
+    use flaky::*;
+    let slot = claude_slot();
+    let cred = Arc::new(FlakyCred::default());
+    let keys = flaky::keys(&cred);
+    let too_many = || (0..KEYRING_ATTEMPTS).map(|_| no_reply());
+
+    cred.fail_with(too_many());
+    let err = keys.save(&slot, "sk-a").unwrap_err();
+    assert!(matches!(err, EditorError::CredentialStore(_)), "{err:?}");
+    assert_eq!(err.code(), "ai.credential_store");
+    assert!(err.to_string().contains("Did not receive a reply"), "{err}");
+    assert_eq!(cred.take_calls(), KEYRING_ATTEMPTS);
+
+    cred.fail_with(too_many());
+    assert_eq!(keys.status(&slot), KeyStatus::Unavailable);
+    assert_eq!(cred.take_calls(), KEYRING_ATTEMPTS);
+
+    cred.fail_with(too_many());
+    let err = keys.delete(&slot).unwrap_err();
+    assert_eq!(err.code(), "ai.credential_store");
+    assert_eq!(cred.take_calls(), KEYRING_ATTEMPTS);
+}
+
+/// 答えが来ないほかの失敗 (サービスが無い・保管庫が施錠されている) はやり直さない。
+#[cfg(target_os = "linux")]
+#[test]
+fn other_keyring_failures_are_not_retried() {
+    use flaky::*;
+    let slot = claude_slot();
+    let cred = Arc::new(FlakyCred::default());
+    let keys = flaky::keys(&cred);
+    let others = [
+        || dbus_failure("org.freedesktop.DBus.Error.ServiceUnknown"),
+        || keyring_core::Error::NoStorageAccess(Box::new(dbus_secret_service::Error::Locked)),
+        || keyring_core::Error::PlatformFailure(Box::new(dbus_secret_service::Error::Prompt)),
+    ];
+    for failure in others {
+        cred.fail_with([failure()]);
+        let err = keys.save(&slot, "sk-a").unwrap_err();
+        assert_eq!(err.code(), "ai.credential_store");
+        assert_eq!(cred.take_calls(), 1);
+
+        cred.fail_with([failure()]);
+        assert_eq!(keys.status(&slot), KeyStatus::Unavailable);
+        assert_eq!(cred.take_calls(), 1);
+
+        cred.fail_with([failure()]);
+        assert!(keys.delete(&slot).is_err());
+        assert_eq!(cred.take_calls(), 1);
+    }
+}
+
 /// キーは `Debug` にもエラーにも出ない。空白だけの保存値は使わない。
 #[test]
 fn keys_are_never_shown() {

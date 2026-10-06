@@ -485,36 +485,12 @@ describe("editor", () => {
           { message },
         );
       /**
-       * `act` (保管庫に書く操作) の後、キーの状態が `status` になるのを待つ。保管庫の答えが遅れて失敗した (dbus-secret-service は
-       * Secret Service の呼び出しを 2 秒で諦める。重い負荷の下 (並行のビルド) では gnome-keyring の答えが間に合わないことがある) ときは、
-       * 知らせを閉じて 1 回だけやり直す (T0050 のメモ)。
+       * `act` (保管庫に書く操作) の後、キーの状態が `status` になるのを待つ。保管庫の答えが時間内に来なかったとき
+       * (重い負荷の下の gnome-keyring) のやり直しはエディタがする (apps/editor/src-tauri/src/ai.rs の `with_retry`。T1665)。
        */
       const untilKeyStatus = async (act, status, message) => {
-        for (let attempt = 0; ; attempt++) {
-          await act();
-          const result = await waitFor(
-            async () => {
-              const [shown, timedOut] = await s.execute(() => [
-                document.querySelector("[role=dialog] [data-key-status]")?.dataset.keyStatus ??
-                  null,
-                (document.querySelector("[role=dialog]")?.innerText ?? "").includes(
-                  "Did not receive a reply",
-                ),
-              ]);
-              if (timedOut) return "timed out";
-              return shown === status && (await invoke(s, "ai_settings")).key === status
-                ? "done"
-                : null;
-            },
-            { message },
-          );
-          if (result === "done") return;
-          assert.equal(attempt, 0, `${message}: the keyring did not answer in time twice`);
-          console.warn(`${message}: the keyring did not answer in time; trying again`);
-          await s.clickWhen(() => s.find('[role=dialog] button[aria-label="Close this message"]'), {
-            message: "the button closing the error",
-          });
-        }
+        await act();
+        await waitKeyStatus(status, message);
       };
 
       await openSettings();

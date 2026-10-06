@@ -52,20 +52,23 @@ struct KeyringStore {
 
 impl KeyringStore {
     fn open() -> Result<Self, String> {
-        let store = platform_store().map_err(|e| describe(&e))?;
+        let store = with_retry(platform_store).map_err(|e| describe(&e))?;
         Ok(Self { store })
     }
 
-    fn entry(&self, account: &str) -> Result<keyring_core::Entry, String> {
-        self.store
-            .build(KEYRING_SERVICE, account, None)
-            .map_err(|e| describe(&e))
+    /// `account` の項目に `op` を行う。答えが時間内に来なかったときはやり直す ([`with_retry`])。
+    fn with_entry<T>(
+        &self,
+        account: &str,
+        op: impl Fn(&keyring_core::Entry) -> keyring_core::Result<T>,
+    ) -> keyring_core::Result<T> {
+        with_retry(|| op(&self.store.build(KEYRING_SERVICE, account, None)?))
     }
 }
 
 impl SecretStore for KeyringStore {
     fn get(&self, account: &str) -> Result<Option<String>, String> {
-        match self.entry(account)?.get_password() {
+        match self.with_entry(account, keyring_core::Entry::get_password) {
             Ok(secret) => Ok(Some(secret)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(e) => Err(describe(&e)),
@@ -73,17 +76,56 @@ impl SecretStore for KeyringStore {
     }
 
     fn set(&self, account: &str, secret: &str) -> Result<(), String> {
-        self.entry(account)?
-            .set_password(secret)
+        self.with_entry(account, |entry| entry.set_password(secret))
             .map_err(|e| describe(&e))
     }
 
     fn delete(&self, account: &str) -> Result<(), String> {
-        match self.entry(account)?.delete_credential() {
+        // やり直す前の呼び出しが消し終えていれば、やり直しは `NoEntry` になる (消えているので成功)
+        match self.with_entry(account, keyring_core::Entry::delete_credential) {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(e) => Err(describe(&e)),
         }
     }
+}
+
+/// 保存先の呼び出しを試す回数の上限 (初めの 1 回を含む)。dbus-secret-service は Secret Service の
+/// 呼び出しを 2 秒で諦め (時間の上限を変える口が無い)、重い負荷の下では答えが間に合わないことがあるため。
+const KEYRING_ATTEMPTS: usize = 3;
+
+/// 保存先の操作 `op` を行い、答えが時間内に来なかった失敗 ([`is_no_reply`]) のときだけ、合わせて
+/// [`KEYRING_ATTEMPTS`] 回まで試す。ほかの失敗はそのまま返す。保存は置き換え、消すのは無ければ成功なので、
+/// 前の呼び出しが遅れて済んでいても、やり直しで結果は変わらない。
+fn with_retry<T>(mut op: impl FnMut() -> keyring_core::Result<T>) -> keyring_core::Result<T> {
+    let mut attempt = 1;
+    loop {
+        match op() {
+            Err(e) if attempt < KEYRING_ATTEMPTS && is_no_reply(&e) => attempt += 1,
+            result => return result,
+        }
+    }
+}
+
+/// Secret Service の答えが時間内に来なかった (D-Bus の `org.freedesktop.DBus.Error.NoReply`) か。
+#[cfg(target_os = "linux")]
+fn is_no_reply(error: &keyring_core::Error) -> bool {
+    let keyring_core::Error::PlatformFailure(inner) = error else {
+        return false;
+    };
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(inner.as_ref());
+    while let Some(e) = cause {
+        if let Some(e) = e.downcast_ref::<dbus::Error>() {
+            return e.name() == Some("org.freedesktop.DBus.Error.NoReply");
+        }
+        cause = e.source();
+    }
+    false
+}
+
+/// Linux の Secret Service のほかは、やり直さない。
+#[cfg(not(target_os = "linux"))]
+fn is_no_reply(_: &keyring_core::Error) -> bool {
+    false
 }
 
 #[cfg(target_os = "linux")]

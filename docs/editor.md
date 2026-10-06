@@ -1771,6 +1771,12 @@ AI のプロバイダを選び、外部の AI サービスを安全に使うた�
     環境変数だけを使います。普通のファイルへの代わりの保存はしません。
   - Linux の保存先は同期の D-Bus (`dbus-secret-service-keyring-store`、暗号は `crypto-rust`) で、OpenSSL は要りません。
     D-Bus の応答待ちで画面が止まらないよう、AI の IPC コマンドは別のスレッドで動かします。
+  - Linux では、Secret Service の答えが時間内に来なかった (D-Bus の `org.freedesktop.DBus.Error.NoReply`) 失敗のときだけ、
+    保管庫を開く・読む・保存する・消すのどれも、合わせて 3 回まで試します (`ai::with_retry`。T1665)。dbus-secret-service は
+    呼び出しごとに 2 秒で諦め、この時間の上限を変える口がありません (4.1.0 の `proxy/mod.rs`。`dbus-secret-service-keyring-store` 1.0.1 も設定を受け付けない)。
+    重い負荷の下 (並行のビルドなど) では gnome-keyring の答えが間に合わないことがあります。保存は置き換え、消すのは無ければ成功なので、
+    前の呼び出しが遅れて済んでいても結果は変わりません。3 回とも答えが無ければ、ほかの失敗と同じ `ai.credential_store` を返します。
+    ほかの失敗 (サービスが無い・施錠されている・解錠の確認を閉じた) と、macOS・Windows の保存先ではやり直しません。
 - **画面に出すもの:** フロントエンドが知るのは、選んだプロバイダのキーの状態 (`KeyStatus`: `stored`・`not_stored`・`unavailable`)、
   キーが要るか、読む環境変数の名前とそこにキーがあるかだけです。キーは入力欄から `store_api_key` に 1 度渡すだけで、保存したら入力欄を空にします (Svelte の状態にも持たない)。
 - **プロジェクトごとの「外部に送らない」:** `project.json` の `editor.ai.send_externally` (`ProjectMeta::ai_send_externally`)。

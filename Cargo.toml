@@ -45,6 +45,8 @@ bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 dispatch2 = { version = "0.3", default-features = false, features = ["std", "objc2"] }
+dbus = "0.9"
+dbus-secret-service = "4"
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 encoding_rs = "0.8"
 getrandom = "0.3"
