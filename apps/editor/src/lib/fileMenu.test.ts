@@ -108,6 +108,32 @@ describe("FileMenuFlow: saving", () => {
     expect(flow.busy).toBe(false);
   });
 
+  it("shows what it is doing while it saves or opens, not while a path is chosen", async () => {
+    const flow = await flowWith(saved);
+    const done = deferred<ProjectStatus>();
+    ipc.saveProject.mockReturnValue(done.promise);
+    const saving = flow.save();
+    await vi.waitFor(() => expect(ipc.saveProject).toHaveBeenCalled());
+    expect(flow.activity).toBe("save");
+    done.resolve(saved);
+    await saving;
+    expect(flow.activity).toBeNull();
+
+    const chosen = deferred<string | null>();
+    dialogs.openDirectory = vi.fn(() => chosen.promise);
+    const opened = deferred<ProjectStatus>();
+    ipc.openProject.mockReturnValue(opened.promise);
+    const opening = flow.pick("open");
+    await vi.waitFor(() => expect(dialogs.openDirectory).toHaveBeenCalled());
+    expect(flow.activity).toBeNull();
+    chosen.resolve("/work/Other.ugoeproj");
+    await vi.waitFor(() => expect(ipc.openProject).toHaveBeenCalled());
+    expect(flow.activity).toBe("open");
+    opened.resolve(saved);
+    await opening;
+    expect(flow.activity).toBeNull();
+  });
+
   it("asks before saving when the project changed outside", async () => {
     const flow = await flowWith({ ...saved, modified: true });
     ipc.checkExternalChange.mockResolvedValue(change("a"));

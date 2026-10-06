@@ -26,8 +26,12 @@
     "proposalBanner": "AI の提案をプレビューしています。採用するまでモデルは変わりません。",
     "slotsBaseHint": "スロットは本体のモデルのものなので、モジュールのプロジェクトでは編集できません。本体のプロジェクトで編集してください。",
     "modelUnreadable": "モデルを読めませんでした。",
+    "documentError": "モデルを更新できませんでした",
     "splitter": {
-      "aria": "インスペクタとパラメータの高さを変える"
+      "aria": "インスペクタとパラメータの高さを変える",
+      "left": "ツリーの列の幅を変える",
+      "right": "インスペクタの列の幅を変える",
+      "timeline": "タイムラインの高さを変える"
     },
     "tabs": {
       "aria": "インスペクタのパネル",
@@ -77,7 +81,7 @@
     }
   },
   "emptyState": {
-    "viewport": "このプロジェクトは空です。「{{action}}」で PSD から始めます。",
+    "viewport": "このプロジェクトは空です。PSD ファイルから始めるか、保存したプロジェクトを開きます。",
     "tree": "パーツはまだありません。「{{action}}」から始めます"
   },
   "fileMenu": {
@@ -100,7 +104,8 @@
       "tooltip": "着せ替えの見本 (本体とモジュールのプロジェクト) を新しいフォルダーに書き出し、本体を開く"
     },
     "save": {
-      "label": "保存"
+      "label": "保存",
+      "tooltip": "プロジェクトを保存します"
     },
     "saveAs": {
       "label": "別名で保存…"
@@ -108,7 +113,8 @@
     "export": {
       "label": "書き出し…",
       "bundle": ".ugoe を書き出す…",
-      "module": ".ugoemod を書き出す…"
+      "module": ".ugoemod を書き出す…",
+      "tooltip": "書き出しの設定を選び、ランタイムで使う .ugoe を書き出します"
     },
     "exportModule": {
       "label": "モジュールを書き出す…",
@@ -121,6 +127,12 @@
       "tooltip": "{{name}} ({{path}})",
       "tooltipUnsaved": "{{name}} (まだ保存していません)",
       "modified": "保存していない変更があります"
+    },
+    "activity": {
+      "opening": "開いています…",
+      "saving": "保存しています…",
+      "exporting": "書き出しています…",
+      "importing": "PSD を取り込んでいます…"
     },
     "warnings": {
       "label_other": "取り込みの警告 {{count}} 件",
@@ -168,6 +180,9 @@
       "module": "ugoe の着せ替えのモジュール (.ugoemod)",
       "png": "PNG 画像 (.png)",
       "json": "JSON ファイル (.json)"
+    },
+    "menu": {
+      "label": "ファイル"
     }
   },
   "baseChange": {
@@ -400,6 +415,12 @@
     "general": {
       "tab": "一般"
     },
+    "about": {
+      "title": "ugoe のエディタについて",
+      "version": "版 {{version}}",
+      "licenses": "ライセンスを表示…",
+      "licensesDescription": "ugoe のエディタ (GPL-3.0-only) と、同梱したソフトウェアとモデルのライセンスです。"
+    },
     "ai": {
       "tab": "AI のプロバイダ",
       "provider": {
@@ -511,6 +532,13 @@
       "unit": "回",
       "description": "元に戻せる編集の数です (1〜1000、既定は 100)。1 回ごとにモデルの写しを持つので、大きなモデルでは下げてください。下げるとすぐに古い履歴から捨てます。すべてのプロジェクトに使います。"
     }
+  },
+  "license": {
+    "title": "ライセンス",
+    "description": "ugoe のエディタは GPL-3.0-only で配布しています。フェイストラッキングの MediaPipe と JavaScript のライブラリを、次のライセンスで同梱しています。",
+    "loadStatus": "ライセンスの表示を読み込めません ({{status}})",
+    "loadError": "ライセンスの表示を読み込めません: {{message}}",
+    "close": "閉じる"
   },
   "export": {
     "aria": "書き出しの設定",
@@ -1306,11 +1334,7 @@
       "saveTitle": "フェイストラッキングの記録を保存"
     },
     "licenses": {
-      "open": "サードパーティのライセンス",
-      "title": "ライセンス",
-      "description": "ugoe のエディタは GPL-3.0-only で配布しています。フェイストラッキングの MediaPipe と JavaScript のライブラリを、次のライセンスで同梱しています。",
-      "loadStatus": "ライセンスの表示を読み込めません ({{status}})",
-      "loadError": "ライセンスの表示を読み込めません: {{message}}"
+      "open": "サードパーティのライセンス"
     },
     "motions": {
       "title": "モーション",
@@ -2964,6 +2988,10 @@
         "label": "グループを削除",
         "description": "グループを削除しても、パラメータは残ります (グループから外れるだけです)。"
       }
+    },
+    "empty": {
+      "description": "パラメータはまだありません。モデルを動かすスライダーを足します。",
+      "add": "パラメータを追加"
     }
   },
   "timeline": {

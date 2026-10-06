@@ -1,5 +1,6 @@
 <!--
   ビューポートの下のパネル: モーション (タイムライン) と表情のタブ。畳める (表示の状態、localStorage に覚える)。
+  開いているときの高さは CSS の変数 `--timeline-height` (App.svelte の区切りで変える。無ければ窓の高さに合わせる)。
   状態 (選択中のモーション・再生位置など) は TimelineState、編集は Command (docs/editor.md#タイムライン)。
 -->
 <script lang="ts">
@@ -17,9 +18,11 @@ import { TimelineState } from "./timeline.svelte";
 interface Props {
   doc: EditorDocument;
   viewport: ViewportController;
+  /** 開いているか (App が高さの区切りを出すかに使う)。 */
+  open?: boolean;
 }
 
-let { doc, viewport }: Props = $props();
+let { doc, viewport, open = $bindable(loadPanelOpen()) }: Props = $props();
 
 // doc と viewport は App が作る 1 つだけのオブジェクトで、差し替わらない。
 // svelte-ignore state_referenced_locally
@@ -38,7 +41,6 @@ $effect(() => {
 });
 
 let tab = $state<"motions" | "expressions">("motions");
-let open = $state(loadPanelOpen());
 
 function toggleOpen() {
   open = !open;
@@ -93,7 +95,7 @@ function switchTab(next: "motions" | "expressions") {
     min-height: 0;
   }
   .timeline.open {
-    height: clamp(280px, 42vh, 520px);
+    height: var(--timeline-height, clamp(280px, 42vh, 520px));
   }
   .tabs {
     display: flex;

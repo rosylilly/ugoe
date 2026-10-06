@@ -3,13 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   clampSplit,
   DEFAULT_SPLIT,
+  LEFT_WIDTH,
+  loadSize,
   loadSplit,
   MAX_SPLIT,
   MIN_SPLIT,
+  RIGHT_WIDTH,
   SPLIT_STEP,
+  saveSize,
   saveSplit,
+  sizeByKey,
   splitAt,
   splitByKey,
+  TIMELINE_HEIGHT,
 } from "./layout";
 
 describe("right column split", () => {
@@ -60,5 +66,46 @@ describe("remembered split", () => {
       expect(loadSplit()).toBe(DEFAULT_SPLIT);
       expect(() => saveSplit(0.4)).not.toThrow();
     }
+  });
+});
+
+describe("column widths and the timeline height", () => {
+  it("moves a column separator with the left and right arrows", () => {
+    expect(sizeByKey(LEFT_WIDTH, 240, "ArrowRight", "vertical")).toBe(240 + LEFT_WIDTH.step);
+    expect(sizeByKey(LEFT_WIDTH, 240, "ArrowLeft", "vertical")).toBe(240 - LEFT_WIDTH.step);
+    expect(sizeByKey(LEFT_WIDTH, 240, "ArrowDown", "vertical")).toBeNull();
+    expect(sizeByKey(LEFT_WIDTH, 240, "Home", "vertical")).toBe(LEFT_WIDTH.min);
+    expect(sizeByKey(LEFT_WIDTH, 240, "End", "vertical")).toBe(LEFT_WIDTH.max);
+  });
+
+  it("grows the area when its separator before it moves back", () => {
+    // 右の列の左端の区切りを左へ動かすと、右の列は広くなる
+    expect(sizeByKey(RIGHT_WIDTH, 320, "ArrowLeft", "vertical", true)).toBe(320 + RIGHT_WIDTH.step);
+    // タイムラインの上端の区切りを上へ動かすと、タイムラインは高くなる
+    expect(sizeByKey(TIMELINE_HEIGHT, 300, "ArrowUp", "horizontal", true)).toBe(
+      300 + TIMELINE_HEIGHT.step,
+    );
+  });
+
+  it("keeps the size in the range", () => {
+    expect(sizeByKey(LEFT_WIDTH, LEFT_WIDTH.max, "ArrowRight", "vertical")).toBe(LEFT_WIDTH.max);
+    expect(sizeByKey(LEFT_WIDTH, LEFT_WIDTH.min, "ArrowLeft", "vertical")).toBe(LEFT_WIDTH.min);
+  });
+
+  it("remembers sizes and goes back to the default when reset", () => {
+    const storage = new MemoryStorage();
+    useLocalStorage(storage);
+    expect(loadSize(LEFT_WIDTH)).toBe(LEFT_WIDTH.default);
+    expect(loadSize(TIMELINE_HEIGHT)).toBeNull();
+    saveSize(LEFT_WIDTH, 300);
+    saveSize(TIMELINE_HEIGHT, 400);
+    expect(loadSize(LEFT_WIDTH)).toBe(300);
+    expect(loadSize(TIMELINE_HEIGHT)).toBe(400);
+    saveSize(TIMELINE_HEIGHT, null);
+    expect(loadSize(TIMELINE_HEIGHT)).toBeNull();
+    storage.setItem(LEFT_WIDTH.key, "9999");
+    expect(loadSize(LEFT_WIDTH)).toBe(LEFT_WIDTH.max);
+    storage.setItem(LEFT_WIDTH.key, "wide");
+    expect(loadSize(LEFT_WIDTH)).toBe(LEFT_WIDTH.default);
   });
 });

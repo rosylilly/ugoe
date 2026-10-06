@@ -23,12 +23,16 @@ body {
   color: var(--ugoe-color-text);
 }
 
+/* 左右の列の幅は区切りで変える (App.svelte の --left-width・--right-width)。狭い窓でビューポートが潰れないよう、窓の幅の割合でも抑える。 */
 .shell {
   display: grid;
-  grid-template: "header header header" auto "left viewport right" minmax(0, 1fr) / 240px minmax(
-      0,
-      1fr
-    ) 320px;
+  grid-template:
+    "header header header header header" auto
+    "left lsplit viewport rsplit right" minmax(0, 1fr)
+    / min(var(--left-width, 240px), 28vw) auto minmax(0, 1fr) auto min(
+      var(--right-width, 320px),
+      36vw
+    );
   height: 100vh;
 }
 
@@ -52,14 +56,13 @@ aside {
   overflow: auto;
 }
 
+/* 列の間の線は区切り (lib/ui/Splitter.svelte) が引く */
 .left {
   grid-area: left;
-  border-right: 1px solid var(--ugoe-color-border);
 }
 
 .right {
   grid-area: right;
-  border-left: 1px solid var(--ugoe-color-border);
 }
 
 .center {

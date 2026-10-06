@@ -30,9 +30,9 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 ## 1. PSD から新規作成する
 
 エディタを起動すると、空のプロジェクト (**Untitled**) が開いています。ビューポートの中央に
-`This project is empty. Use File > New from PSD… to start from a PSD file.` と出ています。
+`This project is empty. Start from a PSD file, or open a project you saved.` と、「New from PSD…」「Open…」「Open Sample…」のボタンが出ています。
 
-1. ヘッダーの「New from PSD…」を押す。ファイルを選ぶダイアログが開きます。
+1. ヘッダーの「File」から「New from PSD…」を選ぶ (空のプロジェクトなら、ビューポートの中央の「New from PSD…」でもよい)。ファイルを選ぶダイアログが開きます。
 2. リポジトリの `assets/fixtures/character.psd` を選ぶ。
 3. ダイアログの「開く」(Open) を押す。
 

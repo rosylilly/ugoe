@@ -27,8 +27,12 @@
     "proposalBanner": "Previewing an AI proposal. The model is unchanged until you adopt it.",
     "slotsBaseHint": "Slots belong to the base model and can't be edited in a module project. Edit them in the base project.",
     "modelUnreadable": "The model could not be read.",
+    "documentError": "The model could not be updated",
     "splitter": {
-      "aria": "Resize the inspector and the parameters"
+      "aria": "Resize the inspector and the parameters",
+      "left": "Resize the tree column",
+      "right": "Resize the inspector column",
+      "timeline": "Resize the timeline"
     },
     "tabs": {
       "aria": "Inspector panels",
@@ -79,7 +83,7 @@
     }
   },
   "emptyState": {
-    "viewport": "This project is empty. Use {{action}} to start from a PSD file.",
+    "viewport": "This project is empty. Start from a PSD file, or open a project you saved.",
     "tree": "No parts yet. Start with {{action}}"
   },
   "fileMenu": {
@@ -102,7 +106,8 @@
       "tooltip": "Write the dress-up sample (a base and its module projects) into a new folder and open the base"
     },
     "save": {
-      "label": "Save"
+      "label": "Save",
+      "tooltip": "Save the project"
     },
     "saveAs": {
       "label": "Save As…"
@@ -110,7 +115,8 @@
     "export": {
       "label": "Export…",
       "bundle": "Export .ugoe…",
-      "module": "Export .ugoemod…"
+      "module": "Export .ugoemod…",
+      "tooltip": "Choose the export settings and write a .ugoe bundle for the runtime"
     },
     "exportModule": {
       "label": "Export Module…",
@@ -123,6 +129,12 @@
       "tooltip": "{{name}} ({{path}})",
       "tooltipUnsaved": "{{name}} (not saved yet)",
       "modified": "Unsaved changes"
+    },
+    "activity": {
+      "opening": "Opening…",
+      "saving": "Saving…",
+      "exporting": "Exporting…",
+      "importing": "Importing the PSD…"
     },
     "warnings": {
       "label_one": "{{count}} import warning",
@@ -171,6 +183,9 @@
       "module": "ugoe dress-up module (.ugoemod)",
       "png": "PNG image (.png)",
       "json": "JSON file (.json)"
+    },
+    "menu": {
+      "label": "File"
     }
   },
   "baseChange": {
@@ -407,6 +422,12 @@
     "general": {
       "tab": "General"
     },
+    "about": {
+      "title": "About the ugoe editor",
+      "version": "Version {{version}}",
+      "licenses": "Show licenses…",
+      "licensesDescription": "The license of the ugoe editor (GPL-3.0-only) and of the bundled software and models."
+    },
     "ai": {
       "tab": "AI provider",
       "provider": {
@@ -518,6 +539,13 @@
       "unit": "steps",
       "description": "How many edits Undo remembers (1 to 1000, default 100). Each step keeps a copy of the model, so lower it for large models. Lowering it drops the oldest steps now. Applies to every project."
     }
+  },
+  "license": {
+    "title": "Licenses",
+    "description": "The ugoe editor is distributed under GPL-3.0-only. It bundles MediaPipe (for face tracking) and JavaScript libraries under the following licenses.",
+    "loadStatus": "Cannot load the notices ({{status}})",
+    "loadError": "Cannot load the notices: {{message}}",
+    "close": "Close"
   },
   "export": {
     "aria": "Export settings",
@@ -1331,11 +1359,7 @@
       "saveTitle": "Save face tracking recording"
     },
     "licenses": {
-      "open": "Third-party licenses",
-      "title": "Licenses",
-      "description": "The ugoe editor is distributed under GPL-3.0-only. It bundles MediaPipe (for face tracking) and JavaScript libraries under the following licenses.",
-      "loadStatus": "Cannot load the notices ({{status}})",
-      "loadError": "Cannot load the notices: {{message}}"
+      "open": "Third-party licenses"
     },
     "motions": {
       "title": "Motions",
@@ -3033,6 +3057,10 @@
         "label": "Delete group",
         "description": "Deleting a group keeps its parameters. They just leave the group."
       }
+    },
+    "empty": {
+      "description": "No parameters yet. Add one to make a slider that moves the model.",
+      "add": "Add parameter"
     }
   },
   "timeline": {

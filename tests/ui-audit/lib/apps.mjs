@@ -115,6 +115,15 @@ export const APPS = {
     },
     async extras(page, ctx) {
       await settingsScene(page, ctx, text("editor", ctx.lang, "app.settings.label"));
+      // ヘッダーの「File」のメニュー
+      await page
+        .getByRole("button", { name: text("editor", ctx.lang, "fileMenu.menu.label"), exact: true })
+        .first()
+        .click();
+      await page.getByRole("menu").first().waitFor({ timeout: 5000 });
+      await ctx.scene("file-menu", { aria: false });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
       await page
         .getByRole("button", {
           name: text("editor", ctx.lang, "fileMenu.export.label"),

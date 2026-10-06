@@ -222,7 +222,8 @@ const partOptions = $derived([
 const ids = $props.id();
 </script>
 
-<h2>{t("slots.title")}</h2>
+<!-- 右の列のタブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す。App.svelte) -->
+<h2 class="ugoe-visually-hidden">{t("slots.title")}</h2>
 <p class="help intro">{t("slots.intro")}</p>
 
 {#if model}

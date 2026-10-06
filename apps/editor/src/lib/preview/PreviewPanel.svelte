@@ -10,6 +10,7 @@ import { Button, Icon, Notice, Section, Select, Slider, TextField, Toggle } from
 import type { EditorDocument } from "../document.svelte";
 import { t } from "../i18n";
 import type { DifferenceItem } from "../ipc";
+import LicenseDialog from "../LicenseDialog.svelte";
 import { labelOf } from "../labels";
 import type { LightingView } from "../panels/lighting/lightingView.svelte";
 import PreviewLightsSection from "../panels/lighting/PreviewLightsSection.svelte";
@@ -18,7 +19,6 @@ import { shownEntry } from "../panels/poses/poses";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
 import DressUpSection from "./DressUpSection.svelte";
-import LicenseDialog from "./LicenseDialog.svelte";
 import {
   filterSections,
   groupParameters,

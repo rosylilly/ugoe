@@ -129,7 +129,8 @@ function togglePreview(): void {
 }
 </script>
 
-<h2>{t("physics.title")}</h2>
+<!-- 右の列のタブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す。App.svelte) -->
+<h2 class="ugoe-visually-hidden">{t("physics.title")}</h2>
 
 <div class="ed-buttons row">
   <TipButton

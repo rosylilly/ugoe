@@ -25,11 +25,11 @@ interface Props {
   /** 表示するモデル。変わるたびに読み直す。 */
   model: ViewportModel | null;
   overlay?: Snippet<[ViewportController]>;
-  /** 中央に出す案内 (空のプロジェクトでの次の操作など)。 */
-  hint?: string | null;
+  /** 中央に出す空の状態 (空のプロジェクトでの次の操作の文とボタン。docs/ui.md#デザイン の「空の状態」)。 */
+  empty?: Snippet;
 }
 
-let { controller, model, overlay, hint = null }: Props = $props();
+let { controller, model, overlay, empty }: Props = $props();
 
 let container: HTMLDivElement;
 /** canvas を置く要素 (canvas は controller が作り、GPU を失ったら作り直す)。 */
@@ -139,7 +139,7 @@ function onPointerUp(e: PointerEvent) {
   <div class="overlay">
     {#if overlay}{@render overlay(controller)}{/if}
   </div>
-  {#if hint}<p class="hint muted">{hint}</p>{/if}
+  {#if empty}<div class="empty">{@render empty()}</div>{/if}
   <div class="hud" bind:clientWidth={hudWidth}>
     {#if controller.status !== "ready"}
       <span class={controller.status === "error" ? "error" : "muted"}>
@@ -195,13 +195,17 @@ function onPointerUp(e: PointerEvent) {
   pointer-events: none;
 }
 
-.hint {
+/* 右上の HUD の下から下端までの間の中央。低い画面では中で送る */
+.empty {
   position: absolute;
-  inset: 50% 16px auto;
-  transform: translateY(-50%);
-  margin: 0;
+  inset: calc(var(--ugoe-target-min) + var(--ugoe-space-5)) var(--ugoe-space-4) var(--ugoe-space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: var(--ugoe-space-3);
+  overflow-y: auto;
   text-align: center;
-  pointer-events: none;
 }
 
 .shot-notice {

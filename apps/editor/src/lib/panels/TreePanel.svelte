@@ -1,5 +1,5 @@
 <!--
-  左パネル: パーツ / デフォーマのツリー (docs/editor.md#画面構成-m2-の目標)。
+  左パネル: パーツ / デフォーマのツリー (docs/editor.md#画面の配置)。
   選択は Selection (lib/selection.svelte.ts)、編集は EditorDocument.apply(Command) で行う。
   ツリーの組み立てとコマンドへの変換は tree/ の純粋な TS (build.ts / edit.ts) に置く。
   デフォーマ・メッシュの親の付け替えは、見た目を保つ reparent_preserving_look で送る (tree/edit.ts)。

@@ -20,7 +20,7 @@
 
 | メッセージ | 意味と対処 |
 | --- | --- |
-| 「Discard unsaved changes?」(「保存していない変更を捨てますか?」) の確かめ | 「New」「New from PSD…」「New Module…」「Open…」「Open Sample…」を押したとき、保存していない変更があると出ます。捨ててよければ「Discard and continue」を押します。残したければ「Cancel」を押し、先に「Save」を押します |
+| 「Discard unsaved changes?」(「保存していない変更を捨てますか?」) の確かめ | 「File」のメニューの「New」「New from PSD…」「New Module…」「Open…」「Open Sample…」を選んだとき、保存していない変更があると出ます。捨ててよければ「Discard and continue」を押します。残したければ「Cancel」を押し、先に「Save」を押します |
 | `…: not a ugoe project (project.json is missing)` | 「Open…」で `.ugoeproj` ではないフォルダを選びました。`project.json` と `model.json` の入った `.ugoeproj` フォルダを選びます |
 | `…: directory is not empty and is not a ugoe project` | 「Save As…」で、中身のある別のフォルダを保存先に選びました (上書きしないように拒否します)。新しい名前を付けます |
 | `path must be absolute: …` | パスが絶対パスではありません。ふつうはダイアログで選ぶので出ません |

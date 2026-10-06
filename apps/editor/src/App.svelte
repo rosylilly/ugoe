@@ -15,9 +15,12 @@
   ヘッダーの「Agents」はエディタにつないだエージェント (lib/agents/。設定の「Connect agents」) の状態。エージェントの
   適用・保存の確認 (lib/agents/ApprovalDialog.svelte) もここに置き、ブリッジのイベントで文書と提案を読み直す。
   プレビューモード (lib/preview/) では、左の列・タイムライン・編集のツールと右の列を隠し、右にプレビューのパネルを出す。
+  配置 (docs/editor.md#画面の配置): ヘッダーは左から「File」のメニュー・保存・書き出し・Undo・Redo・プロジェクトの名前、右端に
+  プレビュー・エージェント・設定・ヘルプ。左右の列の幅とタイムラインの高さは区切り (lib/ui/Splitter.svelte) で変えて覚える。
+  ファイルのショートカット (保存・別名で保存・開く) もここで受ける。
 -->
 <script lang="ts">
-import { Toaster, TooltipProvider } from "@ugoe/ui";
+import { Button, Notice, Toaster, TooltipProvider } from "@ugoe/ui";
 import { onMount, untrack } from "svelte";
 import ApprovalDialog from "./lib/agents/ApprovalDialog.svelte";
 import { agentBridge } from "./lib/agents/bridge.svelte";
@@ -28,12 +31,18 @@ import { ProposalsView } from "./lib/ai/proposals.svelte";
 import SettingsDialog from "./lib/ai/SettingsDialog.svelte";
 import BaseLock from "./lib/BaseLock.svelte";
 import { EditorDocument } from "./lib/document.svelte";
-import { emptyViewportHint } from "./lib/emptyState";
 import FileMenu from "./lib/FileMenu.svelte";
 import HelpButton from "./lib/HelpButton.svelte";
 import { t } from "./lib/i18n";
-import { type AppInfo, type DifferenceItem, ipc } from "./lib/ipc";
-import { loadSplit, saveSplit, splitAt, splitByKey } from "./lib/layout";
+import { type DifferenceItem, ipc } from "./lib/ipc";
+import {
+  LEFT_WIDTH,
+  loadSize,
+  loadSplit,
+  RIGHT_SPLIT,
+  RIGHT_WIDTH,
+  TIMELINE_HEIGHT,
+} from "./lib/layout";
 import ModuleErrorHelp from "./lib/ModuleErrorHelp.svelte";
 import { renamePrefix } from "./lib/moduleProject";
 import GluesPanel from "./lib/panels/glues/GluesPanel.svelte";
@@ -56,7 +65,8 @@ import { differenceTarget } from "./lib/preview/differenceHighlight";
 import PreviewPanel from "./lib/preview/PreviewPanel.svelte";
 import { PreviewMode } from "./lib/preview/preview.svelte";
 import { Selection } from "./lib/selection.svelte";
-import { historyShortcut, isInDialog, isMac, isTextEntry } from "./lib/shortcuts";
+import { fileShortcut, historyShortcut, isInDialog, isMac, isTextEntry } from "./lib/shortcuts";
+import Splitter from "./lib/ui/Splitter.svelte";
 import TabStrip, { type TabItem } from "./lib/ui/TabStrip.svelte";
 import TipButton from "./lib/ui/TipButton.svelte";
 import { ViewportController } from "./lib/viewport/controller.svelte";
@@ -77,16 +87,9 @@ const proposals = new ProposalsView(doc, viewport);
 const lighting = new LightingView();
 /** 「Poses」のタブを開いているか。 */
 let posesActive = $state(false);
-let info = $state<AppInfo | null>(null);
 let fileMenu = $state<FileMenu>();
 let settings = $state<SettingsDialog>();
 
-ipc
-  .appInfo()
-  .then((i) => {
-    info = i;
-  })
-  .catch((e) => console.warn("ugoe: could not read the app info:", e));
 doc.refresh();
 void lighting.load();
 lighting.onsaved = () => fileMenu?.refresh();
@@ -225,46 +228,33 @@ const paneTabs = $derived<TabItem<PaneTab>[]>([
 const mac = isMac(navigator.platform);
 
 /**
- * Undo / Redo のショートカット。入力欄の中では、入力欄自身の取り消しに任せる。ダイアログの中では何もしない
- * (lib/shortcuts.ts の isInDialog)。
+ * Undo / Redo と、ファイルの操作 (保存・別名で保存・開く) のショートカット。入力欄の中では、入力欄自身の取り消しに任せ、
+ * 保存も確定 (Enter・フォーカスを外す) の後に押してもらう。ダイアログの中では何もしない (lib/shortcuts.ts の isInDialog)。
  */
 function onKeydown(e: KeyboardEvent): void {
+  if (isTextEntry(e.target) || isInDialog(e.target)) return;
+  const file = fileShortcut(e, mac);
+  if (file) {
+    e.preventDefault();
+    if (file === "save") void fileMenu?.save();
+    else void fileMenu?.pick(file);
+    return;
+  }
   const action = historyShortcut(e, mac);
-  if (!action || isTextEntry(e.target) || isInDialog(e.target) || preview.active) return;
+  if (!action || preview.active) return;
   e.preventDefault();
   if (action === "undo") doc.undo();
   else doc.redo();
 }
 
-// 右の列の上下の分け方 (インスペクタの高さの割合)。
-let split = $state(loadSplit());
-let rightColumn = $state<HTMLElement>();
-let dragging = $state(false);
-
-function onSplitterDown(e: PointerEvent): void {
-  dragging = true;
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-}
-
-function onSplitterMove(e: PointerEvent): void {
-  if (!dragging || !rightColumn) return;
-  const rect = rightColumn.getBoundingClientRect();
-  split = splitAt(e.clientY - rect.top, rect.height);
-}
-
-function onSplitterUp(): void {
-  if (!dragging) return;
-  dragging = false;
-  saveSplit(split);
-}
-
-function onSplitterKey(e: KeyboardEvent): void {
-  const next = splitByKey(split, e.key);
-  if (next === null) return;
-  e.preventDefault();
-  split = next;
-  saveSplit(split);
-}
+// 左右の列の幅・タイムラインの高さ・右の列の上下の分け方 (lib/layout.ts。区切りで変えて覚える)。
+let leftWidth = $state(loadSize(LEFT_WIDTH));
+let rightWidth = $state(loadSize(RIGHT_WIDTH));
+let timelineHeight = $state(loadSize(TIMELINE_HEIGHT));
+let split = $state<number | null>(loadSplit());
+let timelineOpen = $state(true);
+let timelineMeasured = $state(0);
+let rightColumnHeight = $state(0);
 
 // ドキュメントを読み直すたびに、プロジェクト名と未保存の印も取り直す。
 $effect(() => {
@@ -278,13 +268,24 @@ $effect(() => {
 });
 </script>
 
+<!-- 空のプロジェクトの次の操作 (docs/ui.md#デザイン の「空の状態」)。 -->
+{#snippet emptyProject()}
+  <p class="empty-text">{t("emptyState.viewport")}</p>
+  <div class="ed-buttons empty-actions">
+    <Button variant="primary" onclick={() => void fileMenu?.pick("newFromPsd")}>{t("fileMenu.newFromPsd.label")}</Button>
+    <Button onclick={() => void fileMenu?.pick("open")}>{t("fileMenu.open.label")}</Button>
+    <TipButton onclick={() => void fileMenu?.pick("openSample")} tooltip={t("fileMenu.openSample.tooltip")}
+      >{t("fileMenu.openSample.label")}</TipButton
+    >
+  </div>
+{/snippet}
+
 <svelte:window onkeydown={onKeydown} />
 
 <TooltipProvider>
-<div class="shell" class:previewing={preview.active}>
+<div class="shell" class:previewing={preview.active} style:--left-width="{leftWidth}px" style:--right-width="{rightWidth}px">
   <header>
-    <strong>ugoe</strong>
-    <span class="muted">{info ? `v${info.version}` : "…"}</span>
+    <strong class="brand">ugoe</strong>
     <!-- 別のモデルになったら (新規・開く・取り込み) キャンバス全体を表示し直す。外での書き換えの後の開き直しでは保つ。 -->
     <FileMenu
       bind:this={fileMenu}
@@ -298,7 +299,27 @@ $effect(() => {
         void preview.dressUp.load();
       }}
       onrenamemodule={(from, to) => selection.set(renamePrefix(selection.items, from, to))}
-    />
+    >
+      {#if !preview.active}
+        <!-- 戻れない・進めないときは押せない (doc.history。編集・Undo・Redo の後に読み直す)。 -->
+        <span class="history">
+          <TipButton
+            variant="ghost"
+            disabled={!doc.canUndo}
+            onclick={() => doc.undo()}
+            tooltip={t("app.undo.tooltip")}
+            shortcut="Mod+Z">{t("app.undo.label")}</TipButton
+          >
+          <TipButton
+            variant="ghost"
+            disabled={!doc.canRedo}
+            onclick={() => doc.redo()}
+            tooltip={t("app.redo.tooltip")}
+            shortcut={mac ? "Mod+Shift+Z" : "Mod+Y"}>{t("app.redo.label")}</TipButton
+          >
+        </span>
+      {/if}
+    </FileMenu>
     <TipButton
       variant="ghost"
       pressed={preview.active}
@@ -306,23 +327,6 @@ $effect(() => {
       tooltip={preview.active ? t("app.preview.exitTooltip") : t("app.preview.tooltip")}
       >{preview.active ? t("app.preview.exit") : t("app.preview.label")}</TipButton
     >
-    {#if !preview.active}
-      <!-- 戻れない・進めないときは押せない (doc.history。編集・Undo・Redo の後に読み直す)。 -->
-      <TipButton
-        variant="ghost"
-        disabled={!doc.canUndo}
-        onclick={() => doc.undo()}
-        tooltip={t("app.undo.tooltip")}
-        shortcut="Mod+Z">{t("app.undo.label")}</TipButton
-      >
-      <TipButton
-        variant="ghost"
-        disabled={!doc.canRedo}
-        onclick={() => doc.redo()}
-        tooltip={t("app.redo.tooltip")}
-        shortcut={mac ? "Mod+Shift+Z" : "Mod+Y"}>{t("app.redo.label")}</TipButton
-      >
-    {/if}
     {#if agentBridge.status?.running}
       <TipButton variant="ghost" class="agents" onclick={() => settings?.open("agents")} tooltip={t("app.agents.tooltip")}
         ><span class="dot" aria-hidden="true"></span>{agentBridge.connected > 0
@@ -335,17 +339,23 @@ $effect(() => {
     >
     <HelpButton />
   </header>
-  <aside class="left">
+  <aside class="left" id="editor-left">
     <TreePanel {doc} {selection} />
   </aside>
+  <div class="column-splitter left-splitter">
+    <Splitter label={t("app.splitter.left")} orientation="vertical" range={LEFT_WIDTH} bind:value={leftWidth}
+      controls="editor-left" />
+  </div>
   <main class="center">
     <div class="viewport-area">
       <Viewport controller={viewport} model={proposals.preview?.model ?? doc.model}
-        hint={doc.empty && !proposals.preview ? emptyViewportHint() : null}>
+        empty={doc.empty && !proposals.preview ? emptyProject : undefined}>
         {#snippet overlay(controller)}
           {#if proposals.preview}
             <p class="proposal-banner" role="status">{t("app.proposalBanner")}</p>
-          {:else if !preview.active}<ToolOverlay {controller} {doc} {selection} {physics} {verify} {glue} />
+          {:else if !preview.active && !doc.empty}
+            <!-- 空のプロジェクトでは編集の道具を出さない (編集するものが無く、中央の次の操作と重なる) -->
+            <ToolOverlay {controller} {doc} {selection} {physics} {verify} {glue} />
           {:else}<DifferenceOverlay {controller} {doc} {preview} />{/if}
           {#if !proposals.preview && (lighting.active || preview.active)}
             <LightingOverlay {controller} {doc} view={lighting} />
@@ -353,10 +363,21 @@ $effect(() => {
         {/snippet}
       </Viewport>
     </div>
-    <div class="timeline-slot"><TimelinePanel {doc} {viewport} /></div>
+    <div class="timeline-slot" id="editor-timeline" bind:clientHeight={timelineMeasured}
+      style:--timeline-height={timelineHeight === null ? undefined : `${timelineHeight}px`}>
+      {#if timelineOpen}
+        <Splitter label={t("app.splitter.timeline")} orientation="horizontal" reverse range={TIMELINE_HEIGHT}
+          bind:value={timelineHeight} measure={() => timelineMeasured} controls="editor-timeline" />
+      {/if}
+      <TimelinePanel {doc} {viewport} bind:open={timelineOpen} />
+    </div>
   </main>
-  <aside class="right" bind:this={rightColumn}>
-    <div class="pane inspector" style:flex-basis="{split * 100}%">
+  <div class="column-splitter right-splitter">
+    <Splitter label={t("app.splitter.right")} orientation="vertical" reverse range={RIGHT_WIDTH}
+      bind:value={rightWidth} controls="editor-right" />
+  </div>
+  <aside class="right" id="editor-right" bind:clientHeight={rightColumnHeight}>
+    <div class="pane inspector" id="editor-inspector" style:flex-basis="{(split ?? RIGHT_SPLIT.min) * 100}%">
       <div class="tabs">
         <TabStrip
           tabs={paneTabs}
@@ -367,10 +388,16 @@ $effect(() => {
         />
       </div>
       {#if doc.error}
-        <p class="error ugoe-selectable">{doc.error}</p>
-        <ModuleErrorHelp error={doc.failure} base={doc.module?.base ?? null}
-          onopenbase={() => void fileMenu?.openModuleBase()} />
+        <div class="doc-error">
+          <Notice tone="danger" title={t("app.documentError")} ondismiss={() => (doc.error = null)}>
+            <p>{doc.error}</p>
+            <ModuleErrorHelp error={doc.failure} base={doc.module?.base ?? null}
+              onopenbase={() => void fileMenu?.openModuleBase()} />
+          </Notice>
+        </div>
       {/if}
+      <!-- 中身の見出し (<h2>) はタブと同じ名前なので、各パネルで見た目では隠し、読み上げと見出しの移動に残す。 -->
+      <div class="tab-panel" role="tabpanel" aria-label={paneTabs.find((tab) => tab.value === currentTab)?.label}>
       {#if proposals.active}
         <ProposalsPanel
           view={proposals}
@@ -398,25 +425,10 @@ $effect(() => {
       {:else}
         <InspectorPanel {doc} {selection} {viewport} staleRigs={proposals.staleRigs} onopenai={openProposals} />
       {/if}
+      </div>
     </div>
-    <!-- フォーカスできる区切り (ARIA の separator) はキー操作を受ける部品。 -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div
-      class="splitter"
-      class:dragging
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label={t("app.splitter.aria")}
-      aria-valuemin={15}
-      aria-valuemax={85}
-      aria-valuenow={Math.round(split * 100)}
-      tabindex="0"
-      onpointerdown={onSplitterDown}
-      onpointermove={onSplitterMove}
-      onpointerup={onSplitterUp}
-      onpointercancel={onSplitterUp}
-      onkeydown={onSplitterKey}
-    ></div>
+    <Splitter label={t("app.splitter.aria")} orientation="horizontal" range={RIGHT_SPLIT} bind:value={split}
+      scale={() => (rightColumnHeight > 0 ? 1 / rightColumnHeight : 0)} controls="editor-inspector" />
     <div class="pane parameters">
       <ParametersPanel parameters={doc.parameters} {viewport} {doc} {selection} />
     </div>
@@ -428,6 +440,7 @@ $effect(() => {
   {/if}
 </div>
 <SettingsDialog bind:this={settings} {doc} onchange={() => fileMenu?.refresh()} />
+
 <ConsentDialog prompt={consentPrompt} />
 <ApprovalDialog
   proposals={proposals.value?.proposals ?? []}
@@ -449,11 +462,27 @@ $effect(() => {
   }
   .shell.previewing .left,
   .shell.previewing .right,
+  .shell.previewing .column-splitter,
   .shell.previewing .timeline-slot {
     display: none;
   }
+  .column-splitter {
+    display: flex;
+    min-height: 0;
+  }
+  .left-splitter {
+    grid-area: lsplit;
+  }
+  .right-splitter {
+    grid-area: rsplit;
+  }
   .timeline-slot {
-    display: contents;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-height: 0;
+    /* ビューポートを 120px は残す (区切りで大きくしすぎても潰れない) */
+    max-height: calc(100% - 120px);
   }
   .preview {
     grid-area: preview;
@@ -472,19 +501,34 @@ $effect(() => {
     background: var(--ugoe-color-surface);
     color: var(--ugoe-color-accent);
   }
-  /* 幅が足りないときはファイルのメニューだけが縮んで折り返し、右のボタンと名前は縮めない
-     (ヘッダーの高さが伸びる)。 */
-  /* 失敗の知らせの帯 (FileMenu の .bands) は折り返して最後の行に入る。 */
+  .empty-text {
+    margin: 0;
+    color: var(--ugoe-color-text-muted);
+  }
+  .empty-actions {
+    justify-content: center;
+  }
+  /* ヘッダーは 1 行に収める: プロジェクトの名前だけが縮んで省略される (FileMenu の .project-info)。
+     幅が足りないときだけ折り返し、失敗の知らせの帯 (FileMenu の .bands) は最後の行に入る。 */
   header {
     flex-wrap: wrap;
+    gap: var(--ugoe-space-1);
     min-height: 36px;
-    padding-block: var(--ugoe-space-2);
+    padding-block: var(--ugoe-space-1);
   }
-  header > :global(:not(.file-menu, .bands)) {
+  header > :global(:not(.project-info, .bands)) {
     flex-shrink: 0;
     white-space: nowrap;
   }
-  /* ヘッダーを 1 行に収めるため、ボタンの左右の余白を詰める (押せる大きさは変えない) */
+  .brand {
+    margin-right: var(--ugoe-space-2);
+  }
+  .history {
+    display: flex;
+    gap: var(--ugoe-space-1);
+    margin-left: var(--ugoe-space-2);
+  }
+  /* ボタンの左右の余白を詰める (押せる大きさは変えない) */
   header :global(.ugoe-button--ghost) {
     padding-inline: var(--ugoe-space-2);
   }
@@ -535,18 +579,11 @@ $effect(() => {
   .pane.parameters {
     flex: 1 1 0;
   }
-  .splitter {
-    flex: none;
-    height: 6px;
-    border-block: 1px solid var(--ugoe-color-border);
-    background: var(--ugoe-color-bg);
-    cursor: row-resize;
-    touch-action: none;
+  .doc-error {
+    margin-bottom: var(--ugoe-space-3);
   }
-  .splitter:hover,
-  .splitter:focus-visible,
-  .splitter.dragging {
-    background: var(--ugoe-color-accent);
-    outline: none;
+  .doc-error p {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 </style>

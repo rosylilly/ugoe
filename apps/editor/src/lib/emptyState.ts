@@ -16,11 +16,6 @@ export function isEmptyModel(
   );
 }
 
-/** 空のプロジェクトでビューポートに出す案内。 */
-export function emptyViewportHint(): string {
-  return t("emptyState.viewport", { action: t("fileMenu.newFromPsd.label") });
-}
-
 /** 空のプロジェクトでツリーに出す案内。 */
 export function emptyTreeHint(): string {
   return t("emptyState.tree", { action: t("fileMenu.newFromPsd.label") });

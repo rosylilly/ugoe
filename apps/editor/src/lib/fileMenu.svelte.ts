@@ -61,6 +61,12 @@ export type PathAction =
   | "locateBaseBundle";
 
 /**
+ * 実行中のファイルの操作 (ヘッダーに「保存しています…」などを出す。docs/editor.md#読み込み中と失敗の見せ方)。
+ * ファイルダイアログで選んでいる間は入れない (選び終えて、読み書きしている間だけ)。
+ */
+export type FileActivity = PathAction | "save";
+
+/**
  * 成功した後のモデルの読み直し: しない、同じモデルの続き (取り込み)、別のモデルに替わった、
  * 同じプロジェクトを開き直した (外での書き換えの後)。
  */
@@ -135,6 +141,8 @@ export class FileMenuFlow {
   baseChange = $state<ExternalChange | null>(null);
   /** ダイアログを開いているか、その後の処理の途中か (利用者の操作を 1 つずつ行う)。 */
   busy = $state(false);
+  /** 読み書きしている操作 (選んだ後。ヘッダーに出す)。 */
+  activity = $state<FileActivity | null>(null);
   /** 未保存の変更を破棄する操作 (確かめのダイアログで「Discard」を選んだら続ける)。 */
   pendingDiscard = $state<(() => void) | null>(null);
   /** 失敗の文 (知らせの帯に出す)。 */
@@ -433,7 +441,7 @@ export class FileMenuFlow {
       try {
         const path = await this.#choose(kind);
         this.message = null;
-        if (path && (await this.#perform(kind, path))) {
+        if (path && (await this.#active(kind, () => this.#perform(kind, path)))) {
           // 見本なら、次の「Open…」をモジュールのプロジェクトの並ぶフォルダーから始める
           const opened = kind === "openSample" && this.status?.path ? this.status.path : path;
           this.lastDir = parentDir(opened) ?? this.lastDir;
@@ -673,22 +681,34 @@ export class FileMenuFlow {
     }
     /** バックエンドが外での書き換えを見つけて保存を断ったか。 */
     let refused = false;
-    const saved = await this.#run(async () => {
-      try {
-        const result = await ipc.saveProject();
-        this.#inform(t("fileMenu.notice.saved", { path: result.path ?? "" }));
-        return result;
-      } catch (e) {
-        refused = isExternalChangeError(e);
-        throw e;
-      }
-    }, "none");
+    const saved = await this.#active("save", () =>
+      this.#run(async () => {
+        try {
+          const result = await ipc.saveProject();
+          this.#inform(t("fileMenu.notice.saved", { path: result.path ?? "" }));
+          return result;
+        } catch (e) {
+          refused = isExternalChangeError(e);
+          throw e;
+        }
+      }, "none"),
+    );
     if (!saved && refused) {
       const again = await ipc.checkExternalChange().catch(() => null);
       if (again) {
         this.message = null;
         this.#askExternal(again, true);
       }
+    }
+  }
+
+  /** 読み書きしている間、`activity` を立てる。 */
+  async #active<T>(kind: FileActivity, task: () => Promise<T>): Promise<T> {
+    this.activity = kind;
+    try {
+      return await task();
+    } finally {
+      this.activity = null;
     }
   }
 

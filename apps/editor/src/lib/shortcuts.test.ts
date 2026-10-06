@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { historyShortcut, isInDialog, isMac, isTextEntry, type KeyInput } from "./shortcuts";
+import {
+  fileShortcut,
+  historyShortcut,
+  isInDialog,
+  isMac,
+  isTextEntry,
+  type KeyInput,
+} from "./shortcuts";
 
 const key = (k: string, mods: Partial<KeyInput> = {}): KeyInput => ({
   key: k,
@@ -55,5 +62,23 @@ describe("history shortcuts", () => {
     expect(isMac("MacIntel")).toBe(true);
     expect(isMac("Win32")).toBe(false);
     expect(isMac("Linux x86_64")).toBe(false);
+  });
+});
+
+describe("file shortcuts", () => {
+  it("saves, saves as and opens with Ctrl, or Cmd on macOS", () => {
+    expect(fileShortcut(key("s", { ctrlKey: true }), false)).toBe("save");
+    expect(fileShortcut(key("S", { ctrlKey: true, shiftKey: true }), false)).toBe("saveAs");
+    expect(fileShortcut(key("o", { ctrlKey: true }), false)).toBe("open");
+    expect(fileShortcut(key("s", { metaKey: true }), true)).toBe("save");
+    expect(fileShortcut(key("s", { ctrlKey: true }), true)).toBeNull();
+    expect(fileShortcut(key("s", { metaKey: true }), false)).toBeNull();
+  });
+
+  it("ignores other keys and Alt", () => {
+    expect(fileShortcut(key("s"), false)).toBeNull();
+    expect(fileShortcut(key("s", { ctrlKey: true, altKey: true }), false)).toBeNull();
+    expect(fileShortcut(key("O", { ctrlKey: true, shiftKey: true }), false)).toBeNull();
+    expect(fileShortcut(key("z", { ctrlKey: true }), false)).toBeNull();
   });
 });

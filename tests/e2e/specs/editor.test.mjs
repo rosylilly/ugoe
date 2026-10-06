@@ -28,6 +28,12 @@ import { Keys, waitFor } from "../lib/webdriver.mjs";
  * OS のファイルダイアログの代わりに、デバッグビルドのバックエンドが答えのファイルを読む (`UGOE_EDITOR_DIALOG_ANSWERS`、
  * apps/editor/src-tauri/src/dialog.rs)。バックエンドが選んだパスを覚えるので、コマンドはそのパスを読み書きできる (T1616)。
  */
+/** ヘッダーの「File」のメニューを開き、項目 `text` を選ぶ (T0673)。 */
+async function fileMenu(session, text) {
+  await session.clickText("nav.file-menu button", "File");
+  await session.clickText("[role=menuitem]", text);
+}
+
 function answerDialog(kind, path) {
   writeFileSync(join(dialogAnswers(), kind), path);
 }
@@ -187,7 +193,7 @@ describe("editor", () => {
 
   step(app, "starts", async () => {
     const s = app.session;
-    await s.waitFindText("nav.file-menu button", "Open Sample", 20_000);
+    await s.waitFindText("nav.file-menu button", "File", 20_000);
     await installPageHelpers(s);
   });
 
@@ -205,10 +211,9 @@ describe("editor", () => {
     const s = app.session;
     // 見本のフォルダーは、フォルダーを選ぶダイアログで選んだ場所の中に作る
     answerDialog("open-directory", work());
-    const button = await s.waitFindText("nav.file-menu button", "Open Sample");
-    await button.click();
+    await fileMenu(s, "Open Sample");
     await waitFor(() => existsSync(project), { message: `${project} to be written` });
-    await s.waitFindText("nav.file-menu .project .name", "dress-up", 20_000);
+    await s.waitFindText(".project-info .project .name", "dress-up", 20_000);
     await waitFor(
       () =>
         s.execute(
@@ -276,7 +281,7 @@ describe("editor", () => {
     await waitFor(async () => (await invoke(s, "get_model_json")).includes("9.8.7"), {
       message: "the edit in the model",
     });
-    await s.waitFind("nav.file-menu .project .dirty");
+    await s.waitFind(".project-info .project .dirty");
     const save = await s.waitFindText("nav.file-menu button", "Save");
     await save.click();
     await waitFor(
@@ -285,7 +290,7 @@ describe("editor", () => {
         message: "the saved notice",
       },
     );
-    await waitFor(async () => (await s.findAll("nav.file-menu .project .dirty")).length === 0, {
+    await waitFor(async () => (await s.findAll(".project-info .project .dirty")).length === 0, {
       message: "the modified mark to go away",
     });
     const files = readdirSync(project, { recursive: true }).filter((f) => f.endsWith(".json"));
@@ -296,8 +301,7 @@ describe("editor", () => {
   step(app, "imports a PSD and its layers appear in the tree", async () => {
     const s = app.session;
     answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
-    const button = await s.waitFindText("nav.file-menu button", "Import PSD");
-    await button.click();
+    await fileMenu(s, "Import PSD");
     // 取り込みは別のスレッドで作り、適用してから画面に届く (T0685)。PSD のファイル名の最上位のパーツができる
     const top = await waitFor(() => treeRow(s, "character"), {
       timeout: 30_000,
@@ -321,7 +325,7 @@ describe("editor", () => {
         `the layer ${layer} is not a mesh in the model`,
       );
     }
-    await s.waitFind("nav.file-menu .project .dirty");
+    await s.waitFind(".project-info .project .dirty");
     await shot(s, "editor-psd");
   });
 
@@ -417,10 +421,10 @@ describe("editor", () => {
     // 開く前に変更を捨てるかを訊かれる
     const moduleProject = join(work(), "ugoe-dress-up-sample", "cat-ears.ugoeproj");
     answerDialog("open-directory", moduleProject);
-    await s.clickText("nav.file-menu button", "Open…");
+    await fileMenu(s, "Open…");
     await s.clickText("[role=alertdialog] button, [role=dialog] button", "Discard and continue");
-    await s.waitFind("nav.file-menu button.module", 20_000);
-    await waitFor(async () => (await s.findAll("nav.file-menu .project .dirty")).length === 0, {
+    await s.waitFind(".project-info button.module", 20_000);
+    await waitFor(async () => (await s.findAll(".project-info .project .dirty")).length === 0, {
       message: "the module project to open without changes",
     });
 
@@ -490,9 +494,9 @@ describe("editor", () => {
       // 見本の着せ替えの本体を開き直す (今はモジュールのプロジェクト。変更は無いので確かめずに開く)。
       // 本体は物理の衝突体 `Shoulders` を持ち、スロット `Hair` がそれを公開する
       answerDialog("open-directory", project);
-      await s.clickText("nav.file-menu button", "Open…");
-      await s.waitFindText("nav.file-menu .project .name", "dress-up", 20_000);
-      await waitFor(async () => (await s.findAll("nav.file-menu button.module")).length === 0, {
+      await fileMenu(s, "Open…");
+      await s.waitFindText(".project-info .project .name", "dress-up", 20_000);
+      await waitFor(async () => (await s.findAll(".project-info button.module")).length === 0, {
         message: "the base project to open",
       });
       const physics = await invoke(s, "get_physics");
@@ -507,7 +511,7 @@ describe("editor", () => {
 
       // 本体に character.psd を取り込む。取り込んだ PSD が AI タブの提案の元になる
       answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
-      await s.clickText("nav.file-menu button", "Import PSD");
+      await fileMenu(s, "Import PSD");
       await waitFor(() => treeRow(s, "character"), {
         timeout: 30_000,
         message: "the imported PSD in the tree",
@@ -551,7 +555,7 @@ describe("editor", () => {
     // 「New from PSD…」で character.psd から新しいプロジェクトを作る (本体の要素の無いプロジェクト)。
     // 前の手順で採用した提案は保存していないので、作る前に変更を捨てるかを訊かれる
     answerDialog("open-file", join(root, "assets", "fixtures", "character.psd"));
-    await s.clickText("nav.file-menu button", "New from PSD…");
+    await fileMenu(s, "New from PSD…");
     await s.clickText("[role=alertdialog] button, [role=dialog] button", "Discard and continue");
     await waitFor(
       async () => (await treeRow(s, "character")) && (await invoke(s, "get_physics")) === null,
@@ -569,7 +573,7 @@ describe("editor", () => {
     const japanese = await s.waitFindText("[role=dialog] .ugoe-segmented__item", "日本語");
     await japanese.click();
     await waitFor(
-      () => s.execute(`return __e2e.byText("nav.file-menu button", "^開く…$") !== null`),
+      () => s.execute(`return __e2e.byText("nav.file-menu button", "^ファイル$") !== null`),
       {
         message: "the file menu in Japanese",
       },

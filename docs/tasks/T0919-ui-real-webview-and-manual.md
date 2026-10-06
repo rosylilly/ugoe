@@ -69,3 +69,11 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   (登録できないものがあれば、頭の知らせと行の印。`just ui-audit` の `-attention-hotkeys` の場面が見本になる)、studio-api-approval.png (ボタンが
   「後で」「拒否」「承認」の順)、studio-settings.png (下に「閉じる」)。「出力ウィンドウ」のパネル (いまの大きさ・枠・背景・取り込み方の案内) を
   写した画像を「はじめての配信の準備」に足すとよい (`-output` の場面が見本になる)。
+- T0673 から書き足した: エディタのヘッダーが変わった (ファイルの操作を「File」のメニューにまとめ、ヘッダーには Save・Export・Undo・Redo・
+  プロジェクト名、右端に Preview・Settings・Help。版はヘッダーから設定の「General」の「About the ugoe editor」へ移し、ライセンスもそこから開く)。
+  空のプロジェクトのビューポートの中央に「New from PSD…」「Open…」「Open Sample…」のボタン (編集の道具は出さない)、パラメータの無いモデルの
+  パラメータ一覧に「Add parameter」。左右の列の幅とタイムラインの高さを区切りで変えられる (区切りは 1px の線)。右の列のパネルの見出し
+  (「Inspector」など) は見た目では出さない。docs/manual/screen.md (ヘッダーの表と「File」のメニューの表・区切り・空の状態)・tutorial.md・
+  dress-up.md・warnings.md の文は T0673 で直した。撮り直す画像: screen.png (ヘッダーと列の線・パネルの見出し)、ヘッダーやビューポートの空の状態を
+  写したもの (tutorial の最初の画面があれば)、ヘッダーを写した画像のすべて (版の文字が消え、ボタンの並びが変わった)。「File」のメニューを開いた画像と、
+  設定の「General」(ライセンスの表示) の画像を足すとよい。

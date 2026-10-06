@@ -1,11 +1,12 @@
 <!--
-  同梱する第三者のもの (MediaPipe の wasm とモデル・バンドルに入る JS のライブラリ) のライセンスの表示 (T0636・T0926)。
+  エディタ (GPL-3.0-only) と、同梱する第三者のもの (MediaPipe の wasm とモデル・バンドルに入る JS のライブラリ) のライセンスの表示
+  (T0636・T0926)。設定の「一般」(ビューア・スタジオと同じく設定から。T0673) と、プレビューのフェイストラッキングの欄から開く。
   本文は public/third-party-notices.txt (scripts/third-party-notices.mjs が生成する。docs/release.md#同梱物のライセンスの表記)。
 -->
 <script lang="ts">
-import { Dialog } from "@ugoe/ui";
-import { errorText } from "../errors";
-import { t } from "../i18n";
+import { Button, Dialog } from "@ugoe/ui";
+import { errorText } from "./errors";
+import { t } from "./i18n";
 
 let shown = $state(false);
 let text = $state("");
@@ -21,22 +22,25 @@ export async function open(): Promise<void> {
       text = await res.text();
       loaded = true;
     } else {
-      text = t("preview.licenses.loadStatus", { status: res.status });
+      text = t("license.loadStatus", { status: res.status });
     }
   } catch (e) {
-    text = t("preview.licenses.loadError", { message: errorText(e) });
+    text = t("license.loadError", { message: errorText(e) });
   }
 }
 </script>
 
 <Dialog
   bind:open={shown}
-  title={t("preview.licenses.title")}
-  description={t("preview.licenses.description")}
+  title={t("license.title")}
+  description={t("license.description")}
   size="lg"
   onclose={() => (shown = false)}
 >
   <pre class="ugoe-selectable">{text}</pre>
+  {#snippet actions()}
+    <Button onclick={() => (shown = false)}>{t("license.close")}</Button>
+  {/snippet}
 </Dialog>
 
 <style>

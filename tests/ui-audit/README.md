@@ -59,7 +59,7 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
 
 | アプリ | 場面 |
 | --- | --- |
-| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-export`、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-deformers-expressions` |
+| エディタ | `-empty` (新しいプロジェクト)、(なし) 見本を開いた画面、`-bottom` (送れる所を下まで送った)、`-settings`、`-file-menu` (ヘッダーの「File」のメニュー)、`-export`、`-selected` (パーツを選んだ)、`-tab-<physics/glue/lighting/slots/poses/verify/ai>` (右の列のタブ)、`-deformers-expressions` |
 | ビューア | `-empty`、`-samples-menu`、(なし) 見本を開いた画面、`-bottom`、`-background` (ツールバーの「背景」の Popover)、`-settings` |
 | スタジオ | (なし) 開いた画面、`-bottom`、`-settings`、`-profile-menu`、`-output` (「出力ウィンドウ」のパネルまで送った)、`-attention` (承認を待つアプリ・登録できないホットキー・負荷の注意)、`-attention-hotkeys` (「ホットキー」のパネルまで送った)、`-approved` (承認した後の「取り消す」の知らせ)、`-first-run` (初めて起動した画面: 新しいプロファイル) |
 

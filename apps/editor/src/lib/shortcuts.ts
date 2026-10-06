@@ -1,4 +1,4 @@
-// エディタ全体のキーボードショートカットの判定 (Undo / Redo)。DOM のイベントの形だけに依存する
+// エディタ全体のキーボードショートカットの判定 (Undo / Redo・保存・開く)。DOM のイベントの形だけに依存する
 // 純粋な関数を置く (shortcuts.test.ts で検査する)。
 
 /** 判定に使うキーイベントの値 (KeyboardEvent の一部)。 */
@@ -22,6 +22,21 @@ export function historyShortcut(e: KeyInput, mac: boolean): HistoryAction | null
   const key = e.key.toLowerCase();
   if (key === "z") return e.shiftKey ? "redo" : "undo";
   if (key === "y" && !mac && !e.shiftKey) return "redo";
+  return null;
+}
+
+export type FileShortcutAction = "save" | "saveAs" | "open";
+
+/**
+ * ファイルの操作のショートカットか (docs/editor.md#画面の配置)。macOS は Cmd、それ以外は Ctrl。
+ * 保存は S、別名で保存は Shift + S、開くは O。Alt との組み合わせは別の操作とみなす。
+ */
+export function fileShortcut(e: KeyInput, mac: boolean): FileShortcutAction | null {
+  const primary = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  if (!primary || e.altKey) return null;
+  const key = e.key.toLowerCase();
+  if (key === "s") return e.shiftKey ? "saveAs" : "save";
+  if (key === "o" && !e.shiftKey) return "open";
   return null;
 }
 

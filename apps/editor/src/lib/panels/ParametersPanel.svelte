@@ -223,6 +223,16 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   </form>
 {/if}
 
+<!-- 空の状態: 何が無いかと次の操作 (docs/ui.md#デザイン の「空の状態」) -->
+{#if parameters.length === 0 && !creating}
+  <div class="ed-buttons empty">
+    <p class="ed-hint">{t("parameters.empty.description")}</p>
+    {#if !baseParameters}
+      <Button small onclick={() => (creating = true)}>{t("parameters.empty.add")}</Button>
+    {/if}
+  </div>
+{/if}
+
 <ul>
   {#each parameters as p (p.id)}
     {@const value = viewport.parameterValues[p.id] ?? p.default}

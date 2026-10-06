@@ -103,7 +103,7 @@ const levelOptions = $derived([
 ]);
 
 async function apply(): Promise<void> {
-  if (!module || !isValidModuleName(name) || !slot) return;
+  if (busy || !module || !isValidModuleName(name) || !slot) return;
   busy = true;
   const command: Command = {
     op: "set_module_settings",
@@ -133,6 +133,8 @@ async function apply(): Promise<void> {
 </script>
 
 <Dialog {open} title={t("moduleSettings.title")} size="md" {onclose}>
+  <!-- 名前の欄の Enter で適用する (既定のボタン。docs/editor.md#ダイアログ) -->
+  <form class="form" onsubmit={(e) => (e.preventDefault(), void apply())}>
   {#if module}
     <TextField
       label={t("moduleSettings.name.label")}
@@ -203,6 +205,7 @@ async function apply(): Promise<void> {
     <p class="error ugoe-selectable" role="alert">{error}</p>
     <ModuleErrorHelp error={failure} base={module?.base ?? null} {busy} onopenbase={() => onopenbase(rejected)} />
   {/if}
+  </form>
   {#snippet actions()}
     <Button onclick={onclose}>{t("moduleSettings.cancel.label")}</Button>
     <Button variant="primary" onclick={apply} disabled={busy || !isValidModuleName(name) || !slot}>
@@ -212,6 +215,11 @@ async function apply(): Promise<void> {
 </Dialog>
 
 <style>
+  /* 中身の並びは Dialog の本文のまま。form は文字の欄の Enter で決定するためだけに置く
+     (送信のボタンの無い form は、文字の欄が 1 つだけなら Enter で送られる: HTML の implicit submission) */
+  .form {
+    display: contents;
+  }
   p {
     margin: 0;
   }

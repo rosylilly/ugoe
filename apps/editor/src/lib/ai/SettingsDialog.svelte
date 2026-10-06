@@ -1,5 +1,6 @@
 <!--
-  ヘッダーの「Settings」。「General」(画面の言語 (lib/LanguageSetting.svelte)・テーマ・Undo の上限 (lib/UndoLimitSetting.svelte))・「AI provider」と
+  ヘッダーの「Settings」。「General」(画面の言語 (lib/LanguageSetting.svelte)・テーマ・Undo の上限 (lib/UndoLimitSetting.svelte)・
+  エディタについて (版とライセンス。lib/LicenseDialog.svelte をこの上に重ねて開く))・「AI provider」と
   「Connect agents」(lib/agents/ConnectAgents.svelte。エディタの中の MCP サーバ) の 3 つのタブ。
   「AI provider」は AI の設定 (docs/editor.md#ai-の設定と送信の同意):
   プロバイダ (Claude / OpenAI 互換) とモデル・ベースの URL の選択 (エディタ全体の設定)、選んだプロバイダの
@@ -27,6 +28,7 @@ import { errorCode, errorText } from "../errors";
 import { t } from "../i18n";
 import { type AiSettings, ipc, type OutputMode, type ProviderSettings } from "../ipc";
 import LanguageSetting from "../LanguageSetting.svelte";
+import LicenseDialog from "../LicenseDialog.svelte";
 import UndoLimitSetting from "../UndoLimitSetting.svelte";
 import TabStrip, { type TabItem } from "../ui/TabStrip.svelte";
 import TipButton from "../ui/TipButton.svelte";
@@ -59,6 +61,9 @@ let testResult = $state<{ ok: boolean; text: string } | null>(null);
 let draft = $state<ProviderSettings | null>(null);
 /** 開いているタブ。 */
 let tab = $state<SettingsTab>("general");
+/** エディタの版 (読めなければ null)。 */
+let version = $state<string | null>(null);
+let licenses = $state<LicenseDialog | null>(null);
 const id = $props.id();
 
 type SettingsTab = "general" | "ai" | "agents";
@@ -89,6 +94,14 @@ export async function open(which: "general" | "ai" | "agents" = "general"): Prom
   tab = which;
   testResult = null;
   isOpen = true;
+  if (version === null) {
+    ipc
+      .appInfo()
+      .then((info) => {
+        version = info.version;
+      })
+      .catch((e) => console.warn("ugoe: could not read the app info:", e));
+  }
   await aiSettings.refresh();
   resetDraft();
 }
@@ -196,10 +209,17 @@ function keyPlaceholder(s: AiSettings): string {
   </div>
   {#if tab === "general"}
     <section>
-      <h3>{t("settings.general.tab")}</h3>
+      <!-- タブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す) -->
+      <h3 class="ugoe-visually-hidden">{t("settings.general.tab")}</h3>
       <LanguageSetting />
       <div class="theme"><ThemeSetting /></div>
       <div class="undo-limit"><UndoLimitSetting {doc} /></div>
+      <h3>{t("settings.about.title")}</h3>
+      <p>{t("settings.about.version", { version: version ?? "…" })}</p>
+      <div class="ed-buttons">
+        <Button onclick={() => void licenses?.open()}>{t("settings.about.licenses")}</Button>
+      </div>
+      <p class="ed-hint note">{t("settings.about.licensesDescription")}</p>
     </section>
   {:else if tab === "agents"}
     <ConnectAgents />
@@ -371,12 +391,14 @@ function keyPlaceholder(s: AiSettings): string {
     <Button onclick={close}>{t("settings.close.label")}</Button>
   {/snippet}
 </Dialog>
+<LicenseDialog bind:this={licenses} />
 
 <style>
   .tabs {
     margin-bottom: var(--ugoe-space-1);
   }
-  section > :global(h3:first-child) {
+  section > :global(h3:first-child),
+  section > :global(.ugoe-visually-hidden:first-child + *) {
     margin-top: 0;
   }
   p {

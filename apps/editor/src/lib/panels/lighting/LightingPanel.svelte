@@ -66,7 +66,8 @@ const meshesId = $props.id();
 const selectedCount = $derived(selection.items.filter((r) => r.kind === "mesh").length);
 </script>
 
-<h2>{t("lighting.title")}</h2>
+<!-- 右の列のタブと同じ名前なので見た目では隠す (読み上げと見出しの移動に残す。App.svelte) -->
+<h2 class="ugoe-visually-hidden">{t("lighting.title")}</h2>
 {#if !model || meshes.length === 0}
   <p class="ed-hint">{t("lighting.empty")}</p>
 {:else}
