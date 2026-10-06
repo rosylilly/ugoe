@@ -13,6 +13,7 @@ src/calibration.ts      キャリブレーション (中立の顔を差し引く
 src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
+src/status.ts           パネルの状態の文 (顔が見つからないなど) と、その揺れの抑え (T0958)
 src/TrackingPanel.svelte  パネル (入力の選択・映像とランドマーク・調整・記録・値の表示)
 src/usage-logging.ts    MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)
 src/mediapipe-bundle.test.ts  入れている MediaPipe の配布物が、上の止め方の頼る形で送るままかを確かめる

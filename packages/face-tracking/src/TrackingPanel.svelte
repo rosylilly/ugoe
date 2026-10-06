@@ -5,6 +5,12 @@ import { formatNumber } from "@ugoe/i18n";
 import { Button, type ButtonBaseProps, Section, Select, Slider, Toggle, Tooltip } from "@ugoe/ui";
 import { onDestroy, onMount } from "svelte";
 import { t } from "./i18n";
+import {
+  CONDITION_SETTLE_MS,
+  SettledValue,
+  type TrackingCondition,
+  trackingCondition,
+} from "./status";
 import type { FaceTracker } from "./tracker.svelte";
 
 interface Props {
@@ -69,25 +75,60 @@ function onFile(e: Event & { currentTarget: HTMLInputElement }) {
   if (file) void tracker.startFile(file);
 }
 
-let statusText = $derived.by(() => {
-  switch (tracker.status) {
-    case "loading":
-      return t("status.loading");
-    case "running": {
-      if (tracker.source?.kind === "replay") {
-        return t("status.replayPosition", {
-          time: seconds(tracker.replayTime),
-          duration: seconds(tracker.replayDuration),
-        });
-      }
-      if (!tracker.faceFound) return t("status.noFace");
-      const fps = t("status.fps", { fps: tracker.fps });
-      if (tracker.trackBody && !tracker.bodyFound) return `${fps} · ${t("status.noBody")}`;
-      return fps;
-    }
-    default:
-      return "";
+/** 状態の文のキー (止めている間は文を出さない)。 */
+const CONDITION_TEXT = {
+  idle: null,
+  loading: "status.loading",
+  stopped: "status.stopped",
+  noFace: "status.noFace",
+  noBody: "status.noBody",
+  tracking: "status.tracking",
+  replaying: "status.replaying",
+} as const satisfies Record<TrackingCondition, string | null>;
+
+let condition = $derived(trackingCondition(tracker));
+/**
+ * `role="status"` の要素に出す状態。顔の短い出入りで読み上げが続かないよう、変わってから約 1 秒続いたときだけ変える
+ * (T0958、docs/ui.md#状態の変化の知らせ)。止めたときは待たずに文を消す。
+ */
+const settled = new SettledValue<TrackingCondition>(
+  "idle",
+  CONDITION_SETTLE_MS,
+  (c) => c === "idle",
+);
+let shownCondition = $state<TrackingCondition>("idle");
+
+$effect(() => {
+  const next = condition;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    shownCondition = settled.update(next, performance.now());
+    const at = settled.settlesAt;
+    if (at !== null) timer = setTimeout(settle, Math.max(0, at - performance.now()));
+  };
+  settle();
+  return () => clearTimeout(timer);
+});
+
+let conditionText = $derived.by(() => {
+  const key = CONDITION_TEXT[shownCondition];
+  return key === null ? "" : t(key);
+});
+/** 見出しの幅を空けるため、うまく動いている間の文は見せずに読ませる (見た目は fps・再生の位置だけ)。 */
+let conditionQuiet = $derived(shownCondition === "tracking" || shownCondition === "replaying");
+let conditionWarn = $derived(
+  shownCondition === "noFace" || shownCondition === "noBody" || shownCondition === "stopped",
+);
+/** 毎フレーム変わる数 (fps・再生の位置)。読み上げで知らせないので `role="status"` の外に置く。 */
+let metricsText = $derived.by(() => {
+  if (!tracker.running) return "";
+  if (tracker.source?.kind === "replay") {
+    return t("status.replayPosition", {
+      time: seconds(tracker.replayTime),
+      duration: seconds(tracker.replayDuration),
+    });
   }
+  return t("status.fps", { fps: tracker.fps });
 });
 
 let blendShapes = $derived(Object.entries(tracker.output?.blendShapes ?? {}));
@@ -116,7 +157,13 @@ let cameraOptions = $derived(
 <div class="tracking">
   <Section title={t("title")} {level} bind:open>
     {#snippet actions()}
-      <span class="status" class:warn={tracker.running && !tracker.faceFound}>{statusText}</span>
+      <!-- 状態の文は描いたときから置いて中身だけを変える (live region は先に置く。docs/ui.md#状態の変化の知らせ) -->
+      <span class="state">
+        <span class="status" class:warn={conditionWarn} class:ugoe-visually-hidden={conditionQuiet} role="status"
+          >{conditionText}</span
+        >
+        {#if metricsText}<span class="metrics">{metricsText}</span>{/if}
+      </span>
     {/snippet}
 
     <div class="row">
@@ -293,7 +340,14 @@ let cameraOptions = $derived(
 {/snippet}
 
 <style>
-  .status {
+  .state {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0 var(--ugoe-space-2);
+  }
+  .status,
+  .metrics {
     color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);
     font-variant-numeric: tabular-nums;

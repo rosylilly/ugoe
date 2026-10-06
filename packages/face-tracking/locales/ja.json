@@ -4,6 +4,9 @@
     "loading": "準備中…",
     "noFace": "顔が見つかりません",
     "noBody": "体が見つかりません",
+    "tracking": "トラッキング中",
+    "replaying": "記録を再生中",
+    "stopped": "トラッキングが止まりました",
     "fps": "{{fps}} fps",
     "replayPosition": "{{time}} / {{duration}} 秒"
   },

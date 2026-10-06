@@ -4,6 +4,9 @@
     "loading": "Loading…",
     "noFace": "No face found",
     "noBody": "No body found",
+    "tracking": "Tracking",
+    "replaying": "Playing the recording",
+    "stopped": "Tracking stopped",
     "fps": "{{fps}} fps",
     "replayPosition": "{{time}} / {{duration}} s"
   },

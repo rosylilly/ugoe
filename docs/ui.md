@@ -644,6 +644,11 @@ T0918 で、[骨組み (ランドマークと見出し)](#骨組み-ランドマ
 - 今 `announce()` で知らせるもの: エディタの AI の提案が届いた (AI・つないだエージェント・作り直し。開いたときからある提案と、Undo で戻った提案は読まない)、
   ビューアのモデルを開き終えた (着せ替えなどの読み直しは読まない)、スタジオの出しているシーンが変わった (クリック・ホットキー・操作 API のどれでも。
   開いたときは読まない) と、自分で保存したプロファイル (自動の保存は読まない)。
+- 今その場の `role="status"` で知らせるもの: フェイストラッキングのパネル (`TrackingPanel`) の見出しの横の状態 (準備中・トラッキング中・
+  記録を再生中・顔が見つからない・体が見つからない・止まった。T0958)。顔の短い出入りで読み上げが続かないよう、状態が変わってから約 1 秒
+  続いたときだけ文を変えます (`@ugoe/face-tracking` の `status.ts`)。止めたときは待たずに文を消します (空の文は読まれない)。fps と再生の位置は
+  その隣の、live region の外の文に分けています。見出しの幅を空けるため、トラッキング中・記録を再生中の文は見せずに読ませます
+  (`.ugoe-visually-hidden`。見た目は fps・再生の位置だけ)。
 - **live region は先に置きます。** 中身と一緒に足した `role="status"` を読まない読み上げソフトがあるので、知らせの領域は描いたときから置いて中身だけを
   変えます (`Toaster`・`announce()`)。条件で出す `Notice` は「出たときに読む」に頼っているので、読まれないと分かったものは `announce()` に移します。
 - **毎秒変わる数は live region の外に置きます** (AI に送っている間の経った秒数・トラッキングの fps・再生の位置)。読みたいときに読める所にあればよいです。
@@ -669,7 +674,7 @@ Windows の高コントラスト (コントラスト テーマ) は、ブラウ�
 | 部品 | Vitest (キーボード操作と aria の属性)、見本の画面 (`pnpm --filter @ugoe/ui gallery`)、`just ui-shots <出力先>` (両方のテーマ・言語・密度で撮り、名前を検査。[packages/ui/README.md](../packages/ui/README.md)) | 部品を足す・変えたとき (T0902・T0903) |
 | 3 つのアプリの画面 | `just ui-audit` ([docs/testing.md](testing.md#ui-の監査)・[tests/ui-audit/README.md](../tests/ui-audit/README.md)) | コントラスト・横のはみ出し・文字の重なりと切れ・押せる大きさ・名前 (axe-core)・ARIA の規則・ランドマークと見出し・reduced motion の下の動き・強制色の状態・画面のエラー・Tab の順。画面を変える PR の前と後で流して比べる (`--compare`) |
 | ランドマークと見出し | `just ui-audit` の `structure` (axe-core の landmark・heading・region の規則) と、場面ごとの `<場面>.outline.txt` (ランドマーク・見出し・live region を文書の順に並べたもの) | 上の「骨組み」の表と同じか。見出しの段が飛ばないか |
-| 状態の変化の知らせ | 部品のテスト (`announce()` と `Toaster` の領域。`packages/ui/src/overlays.test.ts`)・アプリのテスト (いつ知らせるか: `proposalsView.test.ts`・`liveScene.test.ts`・`loadedModel.test.ts`)・`.outline.txt` の `[status]` の行 | 領域が先に置かれ、知らせるべき変化で 1 回だけ文が入るか |
+| 状態の変化の知らせ | 部品のテスト (`announce()` と `Toaster` の領域。`packages/ui/src/overlays.test.ts`)・アプリのテスト (いつ知らせるか: `proposalsView.test.ts`・`liveScene.test.ts`・`loadedModel.test.ts`)・トラッキングの状態の揺れの抑え (`packages/face-tracking/src/status.test.ts`)・`.outline.txt` の `[status]` の行 | 領域が先に置かれ、知らせるべき変化で 1 回だけ文が入るか |
 | スクリーンリーダー | 下の手順と [docs/manual-check.md の U03](manual-check.md#u03-スクリーンリーダーで主な流れを読む-b-wml) | 名前・役割・状態が読まれるか、読む順が見た目の順か、知らせが読まれるか |
 | 強制色 | `just ui-audit` の `en-dark-forced-wide` と `ja-light-forced-narrow` (Chrome の強制色のエミュレーション。暗い組では Tab もたどる) と、[U04](manual-check.md#u04-os-の高コントラスト動きを減らす拡大-b-wml) | 入・押した・選んだ状態が見分けられる (`forced`。同じ種類の部品の入と切の見た目を比べる)、フォーカスの輪が残る |
 | 200% の拡大 | `just ui-audit` の `en-light-zoom200` と `ja-light-zoom200` (CSS の窓の幅を半分にし、devicePixelRatio 2) と、実物の WebView | 文字が切れない・重ならない・横に送らずに読める |
