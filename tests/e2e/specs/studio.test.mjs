@@ -334,8 +334,8 @@ describe("studio", () => {
     await invoke(s, "set_api_port", { port });
     const sw = await s.execute(`return __e2e.toggle("^Let other apps")`);
     await sw.click();
-    await waitFor(() => s.execute(`return __e2e.byText(".studio__api", "^API$") !== null`), {
-      message: "the API badge",
+    await waitFor(() => s.execute(`return __e2e.listItem("^Status$", "^API on$") !== null`), {
+      message: "the API on badge in Status",
     });
     const token = await invoke(s, "api_token");
     const client = rpcClient(`ws://127.0.0.1:${port}/api`);
@@ -377,8 +377,8 @@ describe("studio", () => {
     const s = app.session;
     const sw = await s.execute(`return __e2e.toggle("^Serve a page for the OBS browser source")`);
     await sw.click();
-    await waitFor(() => s.execute(`return __e2e.byText(".studio__api", "^Source$") !== null`), {
-      message: "the source badge",
+    await waitFor(() => s.execute(`return __e2e.listItem("^Status$", "^Source on$") !== null`), {
+      message: "the Source on badge in Status",
     });
     const url = await invoke(s, "source_url");
     const page = await fetch(url);

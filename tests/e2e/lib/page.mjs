@@ -37,6 +37,24 @@ export async function installPageHelpers(session) {
         for (const el of document.querySelectorAll(selector)) if (re.test(text(el))) return el;
         return null;
       },
+      /**
+       * 名前 (aria-label か aria-labelledby) が listName に合うリストの中で、文字が pattern に合う最初の項目。
+       * クラス名に頼らず、役割と名前で探す (スタジオの「いまの状態」の印など)。
+       */
+      listItem(listName, pattern) {
+        const nameRe = new RegExp(listName, "i");
+        const re = new RegExp(pattern, "i");
+        const accessibleName = (el) => {
+          const ids = el.getAttribute("aria-labelledby");
+          if (ids) return ids.trim().split(/ +/).map((id) => document.getElementById(id)).filter((el) => el !== null).map(text).join(" ");
+          return el.getAttribute("aria-label") ?? "";
+        };
+        for (const list of document.querySelectorAll("ul, ol, [role=list]")) {
+          if (!nameRe.test(accessibleName(list))) continue;
+          for (const item of list.querySelectorAll("li, [role=listitem]")) if (re.test(text(item))) return item;
+        }
+        return null;
+      },
       text,
     };
   `);
