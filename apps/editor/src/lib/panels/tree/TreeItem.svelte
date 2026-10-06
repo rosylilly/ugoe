@@ -278,7 +278,7 @@ function insideRename(e: Event): boolean {
 /*
  * 強制色: 地の色・影は消え、透明な枠は文字の色の線になる (docs/ui.md#強制色)。行の枠は地の色にして、印は系統の色の地と枠で描き直す。
  * 選んだ行は Highlight の地、キーボードの位置は CanvasText の枠 (選んだ行では内側の線も)、ドロップの位置は Highlight の破線の枠と上下の太い線、
- * 落とせない所は GrayText の点線 (理由の文も出る) (docs/ui.md#エディタのツリーの行の札と強制色-t1670)
+ * 落とせない所は GrayText の点線 (理由の文も出る)、ホバーは名前の下線、畳んだ行の中のメッシュのホバーは下線と左端の線 (docs/ui.md#エディタのツリーの行の札と強制色-t1670)
  */
 @media (forced-colors: active) {
   .row {
@@ -333,6 +333,29 @@ function insideRename(e: Event): boolean {
     border-width: 1px;
     border-style: dotted;
     border-color: GrayText;
+  }
+  /*
+   * ホバー (ビューポートで乗っているメッシュの行も): 地の重ねは消えるので、名前に太い下線を引く (枠・地の印と重ならない)。
+   * 畳んだ行の中のメッシュに乗っているのは、下線に加えて左端の縦の線 (内側の影は消えるので ::before の枠で。選んだ行では HighlightText)
+   */
+  .row:hover .name,
+  .row.hovered .name,
+  .row.hovered-within .name {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+  .row.hovered-within {
+    position: relative;
+  }
+  .row.hovered-within::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    border-left: 3px solid Highlight;
+  }
+  .row.selected.hovered-within::before {
+    border-left-color: HighlightText;
   }
 }
 /* 開閉の印: 並びの幅は 14px のまま、押せる範囲を 24×24 に広げる (左右に 5px ずつはみ出す。T0907) */
