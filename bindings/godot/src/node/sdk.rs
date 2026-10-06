@@ -329,6 +329,22 @@ impl UgoePuppet2D {
             .unwrap_or_default()
     }
 
+    /// ポーズの定義: グループごとの要素のパーツの ID (`docs/spec/motion.md#ポーズ`)。グループの並びは `get_visible_pose_parts` と
+    /// 同じ (付けた着せ替えのモジュールのグループも入る)、要素の並びはモデルの `entries` の並びで、先頭が初めに表示する要素。
+    /// `links` のパーツは含めない (`show_pose` に渡せるパーツだけ)。要素の無いグループは空の配列。モデルが無ければ空。
+    #[func]
+    pub fn get_pose_entry_parts(&self) -> Array<PackedStringArray> {
+        self.loaded
+            .as_ref()
+            .map(|l| {
+                pose_entry_parts(&l.puppet)
+                    .into_iter()
+                    .map(|parts| parts.into_iter().map(GString::from).collect())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     // --- 目パチ・呼吸・リップシンクと物理の設定の差し替え
 
     /// 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。省いたフィールドは既定値) で差し替える
@@ -593,6 +609,17 @@ fn visible_pose_parts(puppet: &ugoe::Puppet) -> Vec<Option<&str>> {
         .collect()
 }
 
+/// ポーズのグループごとの要素のパーツ (`links` は含めない)。C ABI の `ugoe_puppet_pose_entry_part` と同じ並び。
+fn pose_entry_parts(puppet: &ugoe::Puppet) -> Vec<Vec<&str>> {
+    puppet
+        .pose()
+        .pose()
+        .groups
+        .iter()
+        .map(|group| group.entries.iter().map(|e| e.part.as_str()).collect())
+        .collect()
+}
+
 /// 読み込みの警告を GDScript の辞書の配列にする: `{ "code", "warning", ... }`。補足のキーは `LoadWarning::fields`。
 fn warning_dictionaries(warnings: &[LoadWarning]) -> Array<VarDictionary> {
     warnings
@@ -622,7 +649,7 @@ mod tests {
     use ugoe::model::pose::{PoseEntry, PoseGroup};
     use ugoe::motion::Priority;
 
-    use super::visible_pose_parts;
+    use super::{pose_entry_parts, visible_pose_parts};
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -684,5 +711,45 @@ mod tests {
         }];
         puppet.attach_module(Arc::new(module)).expect("attach");
         assert_eq!(visible_pose_parts(&puppet), [Some("LongHair/Hair")]);
+    }
+
+    /// 定義はグループごとの要素の `part` をモデルの並びで返し、`links` と要素の無いグループの扱いは表示中の要素と並びがそろう。
+    #[test]
+    fn pose_entry_parts_list_the_definition() {
+        // ArmA の要素はリンクに SleeveA を持つ
+        let mut model = fixtures::pose_and_effects();
+        model.pose.groups.insert(
+            0,
+            PoseGroup {
+                entries: Vec::new(),
+            },
+        );
+        let mut puppet = Puppet::new(model).expect("puppet");
+        let empty: [&str; 0] = [];
+        assert_eq!(
+            pose_entry_parts(&puppet),
+            [&empty[..], &["ArmA", "ArmB"][..]]
+        );
+        assert_eq!(
+            pose_entry_parts(&puppet).len(),
+            visible_pose_parts(&puppet).len()
+        );
+        // 定義の要素は `show_pose` に渡せる
+        for part in ["ArmB", "ArmA"] {
+            assert!(puppet.pose_mut().show(&part.into()));
+            assert_eq!(visible_pose_parts(&puppet), [None, Some(part)]);
+        }
+
+        let mut puppet = Puppet::new(fixtures::dress_up_base()).expect("puppet");
+        assert!(pose_entry_parts(&puppet).is_empty());
+        let mut module = fixtures::long_hair_module();
+        module.pose.groups = vec![PoseGroup {
+            entries: vec![PoseEntry {
+                part: "Hair".into(),
+                links: Vec::new(),
+            }],
+        }];
+        puppet.attach_module(Arc::new(module)).expect("attach");
+        assert_eq!(pose_entry_parts(&puppet), [["LongHair/Hair"]]);
     }
 }
