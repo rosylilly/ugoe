@@ -12,8 +12,15 @@ import { CHECKS, compare, countsTable, formatCompare, kindOf, summarize } from "
 import { focusRegion, formatWalk, imageRing, walkProblems } from "../lib/walk.mjs";
 import "../lib/page-checks.js";
 
-const { parseColor, over, contrastRatio, requiredRatio, pixelContrast, focusChange } =
-  globalThis.__ugoeAudit;
+const {
+  parseColor,
+  over,
+  contrastRatio,
+  requiredRatio,
+  pixelContrast,
+  focusChange,
+  coveredControls,
+} = globalThis.__ugoeAudit;
 
 const hex = (h) => ({
   r: Number.parseInt(h.slice(1, 3), 16),
@@ -170,6 +177,66 @@ test("ページの検査の結果を検査ごとの見つけたものにする",
   );
   assert.deepEqual(expected, []);
   assert.equal(found[0].detail, "3.20 < 4.5 (fg ...)");
+});
+
+/**
+ * 押せる部品の重なりを判定する。`boxes` は {el: {name, parent?, overlay?}, rect}。上に描かれるのは後に並べた方 (流れの中の
+ * 部品の描く順) で、`overlay` の付いた要素 (意図して重ねた印) を上に重ねた組は数えない。
+ */
+function covered(boxes) {
+  const inside = (a, b) => {
+    for (let n = b; n; n = n.parent) if (n === a) return true;
+    return false;
+  };
+  return coveredControls(boxes, {
+    related: (a, b) => inside(a, b) || inside(b, a),
+    upperAt: (a, b) => (boxes.indexOf(a) < boxes.indexOf(b) ? b : a),
+    intentional: (upper) => upper.overlay === true,
+  }).map(({ upper, lower }) => `${lower.el.name} < ${upper.el.name}`);
+}
+
+const box = (el, left, top, right, bottom) => ({ el, rect: { left, top, right, bottom } });
+
+test("押せる部品の重なり: 選択欄の右端 (矢印) が隣の数値の欄の下に隠れる形を見つける", () => {
+  // T1650 の前のグルーの軸を足す行 (*-zoom200): 縮んだ枠から Select (最小 8em) がはみ出し、右の数値の欄の下に入る
+  const select = { name: "select" };
+  const number = { name: "number" };
+  assert.deepEqual(covered([box(select, 0, 0, 128, 28), box(number, 100, 0, 180, 28)]), [
+    "select < number",
+  ]);
+  // 直した後: 数値の欄は次の行へ送られ、重ならない
+  assert.deepEqual(covered([box(select, 0, 0, 128, 28), box(number, 0, 36, 80, 64)]), []);
+});
+
+test("押せる部品の重なり: 枠の線を重ねた並び・入れ子・意図して重ねたものは数えない", () => {
+  // つないだボタンの列 (枠の線を 1〜2px 重ねる)
+  assert.deepEqual(
+    covered([box({ name: "a" }, 0, 0, 40, 28), box({ name: "b" }, 38, 0, 80, 28)]),
+    [],
+  );
+  // 行の中のボタン (ツリーの行の目のボタンなど)
+  const row = { name: "row" };
+  assert.deepEqual(
+    covered([box(row, 0, 0, 200, 28), box({ name: "eye", parent: row }, 170, 2, 196, 26)]),
+    [],
+  );
+  // ボタンに重ねたバッジ・ビューポートの上の道具 (重ねた側に印がある)
+  const badge = { name: "badge", overlay: true };
+  assert.deepEqual(covered([box({ name: "tab" }, 0, 0, 80, 28), box(badge, 70, -4, 90, 12)]), []);
+  // 印のある部品の下に、印の無い部品が重なったのではなく、印の無い部品が上に来たら数える
+  assert.deepEqual(covered([box(badge, 70, -4, 90, 12), box({ name: "tab" }, 0, 0, 80, 28)]), [
+    "badge < tab",
+  ]);
+  // 上に描かれたのがどちらでもない (ダイアログの幕が両方を覆う) なら数えない
+  const cover = coveredControls(
+    [box({ name: "a" }, 0, 0, 50, 28), box({ name: "b" }, 20, 0, 70, 28)],
+    {
+      related: () => false,
+      upperAt: () => null,
+      intentional: () => false,
+    },
+  );
+  assert.deepEqual(cover, []);
 });
 
 test("axe の違反は名前の規則と、ほかの ARIA に分ける", () => {

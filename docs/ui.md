@@ -516,7 +516,7 @@ M10 (UI の品質) のタスクが同じ物差しで画面を見直すための�
   シーンの一覧) を最も広くし、横のパネルには最小と最大の幅を付けます。幅が足りないときは、まず折り返し (ボタンの並び)、次に列ごと縦に送る並び
   (ビューア・スタジオの狭い幅)、最後に省略記号 (名前。全体は Tooltip か `title`) の順で逃がします。ボタン・見出し・欄の名前に固定の幅を付けません
   (英語は日本語より長い)。
-  確かめ方: `just ui-audit` (横のはみ出し・文字の重なりと切れ。広い幅と狭い幅) と人。
+  確かめ方: `just ui-audit` (横のはみ出し・文字と押せる部品の重なりと切れ。広い幅と狭い幅) と人。
 - **高さの変化:** 低い画面 (エディタ 720px) でも主な操作が見えるようにします。送るのはパネルの中で、パネルの頭 (見出し・タブ・道具の並び) は送らずに残します。
   ビューアとスタジオの狭い幅だけは、画面の全体を縦に送ります。
   確かめ方: 人 (`-bottom` の場面で、送った先が見えること)。
@@ -689,7 +689,7 @@ Windows の高コントラスト (コントラスト テーマ) は、ブラウ�
 | 何を | 道具 | 見るもの |
 | --- | --- | --- |
 | 部品 | Vitest (キーボード操作と aria の属性)、見本の画面 (`pnpm --filter @ugoe/ui gallery`)、`just ui-shots <出力先>` (両方のテーマ・言語・密度で撮り、名前を検査。[packages/ui/README.md](../packages/ui/README.md)) | 部品を足す・変えたとき (T0902・T0903) |
-| 3 つのアプリの画面 | `just ui-audit` ([docs/testing.md](testing.md#ui-の監査)・[tests/ui-audit/README.md](../tests/ui-audit/README.md)) | コントラスト・横のはみ出し・文字の重なりと切れ・押せる大きさ・名前 (axe-core)・ARIA の規則・ランドマークと見出し・reduced motion の下の動き・強制色の状態・画面のエラー・Tab の順。画面を変える PR の前と後で流して比べる (`--compare`) |
+| 3 つのアプリの画面 | `just ui-audit` ([docs/testing.md](testing.md#ui-の監査)・[tests/ui-audit/README.md](../tests/ui-audit/README.md)) | コントラスト・横のはみ出し・文字と押せる部品の重なりと切れ・押せる大きさ・名前 (axe-core)・ARIA の規則・ランドマークと見出し・reduced motion の下の動き・強制色の状態・画面のエラー・Tab の順。画面を変える PR の前と後で流して比べる (`--compare`) |
 | ランドマークと見出し | `just ui-audit` の `structure` (axe-core の landmark・heading・region の規則) と、場面ごとの `<場面>.outline.txt` (ランドマーク・見出し・live region を文書の順に並べたもの) | 上の「骨組み」の表と同じか。見出しの段が飛ばないか |
 | 状態の変化の知らせ | 部品のテスト (`announce()` と `Toaster` の領域。`packages/ui/src/overlays.test.ts`)・アプリのテスト (いつ知らせるか: `proposalsView.test.ts`・`liveScene.test.ts`・`loadedModel.test.ts`)・トラッキングの状態の揺れの抑え (`packages/face-tracking/src/status.test.ts`)・`.outline.txt` の `[status]` の行 | 領域が先に置かれ、知らせるべき変化で 1 回だけ文が入るか |
 | スクリーンリーダー | 下の手順と [docs/manual-check.md の U03](manual-check.md#u03-スクリーンリーダーで主な流れを読む-b-wml) | 名前・役割・状態が読まれるか、読む順が見た目の順か、知らせが読まれるか |

@@ -7,6 +7,7 @@
 //   文字を消して撮った画面の画素を地として測る (pixelAudit。T0952)。無効の部品は基準の外 (別に数える)。
 // - はみ出し: 文書の横のスクロールと、画面の右端を越える要素 (スクロールする祖先の中は除く)。送る枠の外を位置の基準にする absolute の要素。
 // - 重なりと切れ: 別の要素の文字が透けて重なる・`overflow: hidden` で文字が切れる (省略記号を付けたものは除く)。
+//   押せる部品が別の部品の下に隠れる (意図して重ねたものは除く。T0049)。
 // - 押せる大きさ: 24×24 CSS px 未満のボタン・リンク・入力 (WCAG 2.5.8。docs/ui.md#そのほか)。
 // - エラー: 画面に出ているエラーの文 (role="alert"・.error など)。
 // - 動き: prefers-reduced-motion: reduce の下で、長さが 0 でない動き (CSS の animation・transition) が動いていないか。
@@ -444,7 +445,7 @@
   }
 
   /**
-   * 文字の重なりと切れ。
+   * 文字の重なりと切れ (と、押せる部品の重なり: controlOverlapAudit)。
    * - 重なり: 別の要素の文字の矩形が 2px を超えて重なり、上に描かれた側から共通の祖先までに不透明な地が無い
    *   (下の文字が透けて見える)。上に不透明な地を敷いた重なり (ダイアログ・メニュー) は、隠しているので数えない。
    * - 切れ: `overflow: hidden` (か `clip`) で、`text-overflow: ellipsis` を付けずに中身が枠を越えている。
@@ -518,7 +519,91 @@
         );
       }
     }
+    found.push(...controlOverlapAudit());
     return found;
+  }
+
+  /** 重なりを数える最小の幅と高さ (CSS px)。枠の線を 1px 重ねて並べる部品 (つないだボタンの列など) を数えないため。 */
+  const CONTROL_OVERLAP_MIN = 2;
+
+  /**
+   * 押せる部品どうしの重なりの判定の本体 (T0049)。`boxes` は {el, rect} (rect は切り取られた後の見える部分)。
+   * 幅と高さがともに CONTROL_OVERLAP_MIN を超えて重なる組のうち、入れ子の組 (`related`) と、上に描かれた側が意図して
+   * 重ねたもの (`intentional(upper, lower)`) を除き、{upper, lower} の列を返す。上の側は重なりの中ほどの点で `upperAt` が決める
+   * (どちらでもない: ダイアログの幕などが両方を覆う、なら数えない)。
+   */
+  function coveredControls(boxes, { related, upperAt, intentional }) {
+    const out = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const left = Math.max(a.rect.left, b.rect.left);
+        const right = Math.min(a.rect.right, b.rect.right);
+        const top = Math.max(a.rect.top, b.rect.top);
+        const bottom = Math.min(a.rect.bottom, b.rect.bottom);
+        if (right - left <= CONTROL_OVERLAP_MIN || bottom - top <= CONTROL_OVERLAP_MIN) continue;
+        if (related(a.el, b.el)) continue;
+        const upper = upperAt(a, b, (left + right) / 2, (top + bottom) / 2);
+        if (upper !== a && upper !== b) continue;
+        const lower = upper === a ? b : a;
+        if (intentional(upper.el, lower.el)) continue;
+        out.push({ upper, lower });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 意図して重ねた部品か: 上に描かれた側から共通の祖先の手前までに、位置を流れから外したもの (`position` が absolute・fixed・
+   * sticky。バッジ・ビューポートの上の道具・送っても残る頭)、最上層 (モーダルのダイアログ・Popover)、`data-ui-audit-overlay` の
+   * 印のどれかがある。
+   */
+  function overlaid(upper, lower) {
+    const common = commonAncestor(upper, lower);
+    for (let n = upper; n && n !== common; n = n.parentElement) {
+      if (n.hasAttribute("data-ui-audit-overlay")) return true;
+      const p = getComputedStyle(n).position;
+      if (p === "absolute" || p === "fixed" || p === "sticky") return true;
+      if (n.matches("dialog:modal, [popover]:popover-open")) return true;
+    }
+    return false;
+  }
+
+  /**
+   * 押せる部品どうしの重なり: 部品の押せる範囲 (数値の欄は枠の全体) が別の部品の下に隠れている (選択欄の矢印が隣の数値の欄の
+   * 下に隠れるなど。T0044 で見つけ、文字の重なりでは出なかった形。T0049)。意図して重ねたもの (overlaid) は数えない。
+   */
+  function controlOverlapAudit() {
+    const seen = new Set();
+    const boxes = [];
+    for (const el of document.querySelectorAll(TARGETS)) {
+      if (!visible(el) || hiddenFromReaders(el)) continue;
+      const area = el.closest(".ugoe-number-field__box") ?? el;
+      if (seen.has(area)) continue;
+      seen.add(area);
+      const r = area.getBoundingClientRect();
+      // 見せずに読ませる部品 (1px の枠) は除く
+      if (r.width <= 1 || r.height <= 1) continue;
+      const clip = clipBox(area);
+      const rect = {
+        left: Math.max(r.left, clip.left),
+        top: Math.max(r.top, clip.top),
+        right: Math.min(r.right, clip.right),
+        bottom: Math.min(r.bottom, clip.bottom),
+      };
+      if (rect.right - rect.left <= 1 || rect.bottom - rect.top <= 1) continue;
+      boxes.push({ el: area, rect });
+    }
+    return coveredControls(boxes, {
+      related: (a, b) => a.contains(b) || b.contains(a),
+      upperAt: (a, b, x, y) => {
+        const top = document.elementFromPoint(x, y);
+        if (!top) return null;
+        return a.el.contains(top) ? a : b.el.contains(top) ? b : null;
+      },
+      intentional: overlaid,
+    }).map(({ upper, lower }) => `${describe(lower.el)} is covered by ${describe(upper.el)}`);
   }
 
   const TARGETS =
@@ -780,6 +865,7 @@
     contrastRatio,
     requiredRatio,
     pixelContrast,
+    coveredControls,
     pageAudit,
     hideText,
     pixelAudit,
