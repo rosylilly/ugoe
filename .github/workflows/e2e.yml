@@ -1,7 +1,7 @@
 name: E2E
 
 # 本物の Tauri のアプリ (エディタ・ビューア・スタジオ) を起動して操作する e2e テスト (`just e2e`。tests/e2e/README.md)。
-# 3 つのアプリを Tauri でビルドし直すので重く、PR ごとの CI (ci.yml) には入れない。main への push・毎晩・手動で流す
+# 3 つのアプリをビルドし直すので重く、PR ごとの CI (ci.yml) には入れない。main への push・毎晩・手動で流す
 # (利用者の決定 2026-10-03)。画面は Xvfb、WebView は WebKitGTK、WebDriver は WebKitWebDriver と tauri-driver。
 # Windows と macOS は流さない (docs/testing.md#実機の-e2e-テスト)。
 on:
@@ -17,8 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # CARGO で始まる環境変数は rust-cache のキーに入る。読むキャッシュ (ci.yml の rust (apps)・conformance) と同じ値にする
   CARGO_TERM_COLOR: always
-  # デバッグ情報を作らない (target がおよそ半分になる。ci.yml の rust-group と同じ)
+  # デバッグ情報を作らない (ci.yml と同じ)
   CARGO_PROFILE_DEV_DEBUG: "0"
   # tauri-driver の版 (docs/testing.md#実機の-e2e-テスト と揃える)
   TAURI_DRIVER_VERSION: 2.1.0
@@ -44,12 +45,17 @@ jobs:
           dpkg-query -W libwebkit2gtk-4.1-0 webkit2gtk-driver xvfb gnome-keyring
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
-      # ci.yml の rust (apps) とは共有しない。tauri build はアプリごとに feature の統合が変わり、依存の成果物は半分ほどしか
-      # 揃わない (docs/testing.md#ci-のキャッシュ、T0057)
+      # 自分のキャッシュは持たず、ci.yml の rust (apps) (dev の依存。run.mjs は 3 つのアプリを 1 回の cargo でビルドするので
+      # feature の統合が揃う) と conformance (ugoe-wasm の wasm32 の release) のキャッシュを読むだけにする
+      # (docs/testing.md#ci-のキャッシュ、T0059)
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: e2e
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: conformance
+          save-if: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: group-apps
+          save-if: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

@@ -88,7 +88,8 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
   | 保存するジョブ (`shared-key`) | 読むだけのジョブ |
   | --- | --- |
   | `rust (tools)` (`group-tools`) | `gpu (vulkan)`・`gpu (gl)` (テストのビルドの依存が `rust (tools)` のテストのビルドに含まれることを手元で確かめた) |
-  | `conformance` (`conformance`) | `web` と web-runtime-release.yml (`ugoe-wasm` の release と web-dist)、`godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`) |
+  | `conformance` (`conformance`) | `web` と web-runtime-release.yml (`ugoe-wasm` の release と web-dist)、`godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`)、e2e.yml (`ugoe-wasm` の release) |
+  | `rust (apps)` (`group-apps`) | e2e.yml (アプリの dev の依存。下の「e2e.yml は自分のキャッシュを持たない」) |
 
 - **`godot` の GDExtension は別のキャッシュにする:** rust-cache は保存の前に、`workspaces` に書いたワークスペースの
   「依存でないもの」(`cargo metadata` でそのワークスペースの外にあるパッケージ以外) を target から消します
@@ -110,20 +111,24 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 - **キャッシュを使わないジョブ:** unity.yml (`check` と `native`。`ugoe-ffi` の依存は少なく、ビルドの時間の大半はキャッシュされない
   ワークスペースのクレートなので、キャッシュがあっても速くならない)、editor-build.yml (タグか手での起動でだけ動く。アプリ × OS の
   リリースビルドのキャッシュは大きく、上限を圧迫する)。
-- **e2e.yml は `e2e` の自分のキャッシュを持つ (`rust (apps)` と共有しない):** どちらも Tauri の依存をビルドしますが、成果物の
-  ハッシュが揃うのは半分ほどです。e2e は `tauri build --debug` でアプリを 1 つずつビルドするので、`tauri/custom-protocol` が有効になり
-  (tauri とプラグインが別物になる)、アプリごとに feature の統合が変わって (スタジオだけのビルドでは serde などの feature が違い、
-  gtk・webkit2gtk の `-sys` まで別物になる) 3 組の dev の依存ができます。加えて `ugoe-wasm` の wasm32 の release をビルドします。
-  手元で `rust (apps)` の手順の後に e2e のビルドをすると、e2e の target (掃除の後、圧縮前 約 3.1GB) のうち `rust (apps)` と同じものは
-  約 1.7GB で、dev の依存を約 170 個コンパイルし直しました (時間は空の target からの約 56%)。e2e が `group-apps` (と wasm の分は
-  `conformance`) を読むだけにすると 1 組が約 1.1GB 減りますが、e2e の run ごとに CI で 10 分余りのコンパイルが増える見込みなので、
-  分けたままにします (T0057)。
+- **e2e.yml は自分のキャッシュを持たない:** rust-cache を 2 つ使い、`conformance` と `group-apps` のキーを `save-if: false` で
+  読むだけにします (T0059)。`tests/e2e/run.mjs` は、アプリごとの `tauri build` ではなく、各アプリの beforeBuildCommand
+  (`pnpm wasm && pnpm build`) の後に、選んだアプリ (と隣に置く `ugoe-mcp`) を 1 回の
+  `cargo build --bins --features tauri/custom-protocol -p ugoe-editor -p ugoe-mcp -p ugoe-viewer -p ugoe-studio` でビルドします
+  (引数は `tauri build` が中で流すものと同じ。[tests/e2e/README.md](../tests/e2e/README.md#流れ))。アプリをまとめると feature の統合が
+  `rust (apps)` (4 つのクレートを 1 回でビルドする) と揃い、違うのは `tauri/custom-protocol` で変わる tauri・プラグインなどの依存
+  17 個だけになります (手元で `rust (apps)` の手順の後に 26 秒。アプリを 1 つずつ `tauri build` していたときは約 170 個)。
+  `pnpm wasm` の `ugoe-wasm` の wasm32 の release は `conformance` の `just player-browser` と同じコマンドなので、そのキャッシュに入っています。
+  2 つの rust-cache は同じ `target/` に続けて戻し (同じ名前の成果物は同じ中身)、どちらの環境のハッシュにも 1 つ目の restore が置く
+  `CARGO_INCREMENTAL=0` が入ります (ci.yml の 1 つの rust-cache の restore も、キーを作る前に置く) ので、キーは保存する側と揃います。
+  `Cargo.toml` が変わった main への push では、e2e.yml は ci.yml と並んで動くので、新しいキーはまだ保存されておらず、
+  前のキーから前方一致で戻して差分をコンパイルします。
 - **容量の目安:** main の 1 組 (同じ `Cargo.toml` のハッシュのキャッシュ) が上限の半分 (5GB) 程度に収まるようにします
   (`Cargo.toml` が変わった直後は新旧の 2 組が並ぶため)。測るには `gh api repos/{owner}/{repo}/actions/cache/usage` と
   `gh cache list --limit 100`。T0051 の前 (2026-10-06) は 1 組が約 8.7GB (rust-cache が 21 個) で、2 組目で上限を超えていました。
   `godot-gdextension` (約 0.4GB) はルートの `Cargo.toml` では変わらないので、2 組が並ぶときも 1 個のままです。
-  見積もりでは 1 組が約 5.7GB で 5GB を少し超えますが、2 組が並んで上限を超えたときに消されるのは最後に使われた日の古いもの
-  (新しい組がすでに保存された古い組の分) なので、当たりへの影響は小さいと見ています (T0057)。
+  見積もりでは 1 組が約 4.6GB です (e2e のキャッシュ (約 1.1GB) をやめた。T0059)。2 組が並んで上限を超えたときに消されるのは
+  最後に使われた日の古いもの (新しい組がすでに保存された古い組の分) なので、当たりへの影響は小さいと見ています (T0057)。
 
 ### 別のターゲットの検査
 

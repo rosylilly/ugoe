@@ -6,7 +6,9 @@
 // `--manual` は筋書きの代わりに specs/<アプリ>.manual.mjs を流し、マニュアルの画像を <out>/<アプリ>/manual/ に撮る。
 // `--update-images` は、撮った画像の色を減らして docs/manual/images に写す (`--manual` を含む。README の「マニュアルの画像」)。
 //
-// 1. アプリをビルドする: `tauri build --debug --no-bundle` (フロントエンドを埋め込んだデバッグビルド。Vite は要らない)。
+// 1. アプリをビルドする: `tauri build --debug --no-bundle` と同じもの (フロントエンドを埋め込んだデバッグビルド。Vite は要らない) を、
+//    アプリごとの tauri build ではなく、各アプリの beforeBuildCommand (`pnpm wasm && pnpm build`) の後に 1 回の cargo で作る
+//    (`cargo build --bins --features tauri/custom-protocol -p <アプリ>…`。tauri build が中で流すのと同じ引数。README の「流れ」)。
 //    できた実行ファイルを <out>/bin/ に写す (後の `cargo build` で target/debug のものが置き換わっても使えるように)。
 // 2. 画面を用意する: 既定では Xvfb を起動する (利用者の画面にウィンドウを出さない)。`--headed` なら今の DISPLAY を使う。
 // 3. アプリごとに、テスト用の XDG のディレクトリ (設定・データ・キャッシュ) と D-Bus のセッションで tauri-driver を起動し、
@@ -53,7 +55,7 @@ const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
 const manualImages = join(root, "docs", "manual", "images");
 
 /**
- * アプリの名前と、pnpm のパッケージ・実行ファイル。`keyring`: D-Bus のセッションで鍵の保管庫を動かす (API キーの保存)。
+ * アプリの名前と、pnpm のパッケージ・実行ファイル (Cargo のパッケージと同じ名前)。`keyring`: D-Bus のセッションで鍵の保管庫を動かす (API キーの保存)。
  * `sidecars`: 実行ファイルの隣に置くワークスペースのバイナリ (エディタは同梱の ugoe-mcp を隣に探す。「Connect agents」の登録の
  * コマンドと Claude Desktop の .mcpb)。`offline`: 外への HTTP(S) を止める口に向ける (README の「外に出さない」)。
  */
@@ -142,39 +144,47 @@ if (headed && !process.env.DISPLAY) {
 
 const bin = join(out, "bin");
 mkdirSync(bin, { recursive: true });
-for (const app of only) {
-  const { package: pkg, binary } = APPS[app];
-  if (build) {
-    console.log(`\n== build ${app} (tauri build --debug --no-bundle)`);
-    const started = Date.now();
-    const result = spawnSync(
-      "pnpm",
-      ["--filter", pkg, "tauri", "build", "--debug", "--no-bundle", "--ci"],
-      { cwd: root, stdio: "inherit" },
-    );
+/** 写す実行ファイル (アプリとその隣に置くもの)。 */
+const binaries = only.flatMap((app) => [APPS[app].binary, ...(APPS[app].sidecars ?? [])]);
+if (build) {
+  const started = Date.now();
+  // フロントエンド: tauri build と同じく、tauri.conf.json の beforeBuildCommand をアプリのディレクトリで流す
+  // (`pnpm wasm` で ugoe-wasm の生成物を作り、`pnpm build` で frontendDist を作る)
+  for (const app of only) {
+    const appDir = join(root, "apps", app);
+    const { beforeBuildCommand } = JSON.parse(
+      readFileSync(join(appDir, "src-tauri", "tauri.conf.json"), "utf8"),
+    ).build;
+    console.log(`\n== build ${app} frontend (${beforeBuildCommand})`);
+    const result = spawnSync("sh", ["-c", beforeBuildCommand], { cwd: appDir, stdio: "inherit" });
     if (result.status !== 0) {
-      console.error(`building ${app} failed`);
+      console.error(`building the ${app} frontend failed`);
       process.exit(1);
     }
-    for (const sidecar of APPS[app].sidecars ?? []) {
-      const built = spawnSync("cargo", ["build", "-p", sidecar], { cwd: root, stdio: "inherit" });
-      if (built.status !== 0) {
-        console.error(`building ${sidecar} failed`);
-        process.exit(1);
-      }
-    }
-    console.log(`built ${app} in ${Math.round((Date.now() - started) / 1000)}s`);
-    for (const name of [binary, ...(APPS[app].sidecars ?? [])]) {
-      // mbx が置き場から戻した成果物は読むだけの権限なので、写しも上書きできない。消してから写す
-      rmSync(join(bin, name), { force: true });
-      copyFileSync(join(target, "debug", name), join(bin, name));
-    }
-  } else {
-    for (const name of [binary, ...(APPS[app].sidecars ?? [])]) {
-      if (!existsSync(join(bin, name))) {
-        console.error(`${join(bin, name)} does not exist: run without --no-build first`);
-        process.exit(2);
-      }
+  }
+  // Rust: 選んだアプリを 1 回の cargo でビルドする。引数は tauri build (tauri-cli 2.12) が中で流す
+  // `cargo build --bins --features tauri/custom-protocol` と同じ (custom-protocol で frontendDist を実行ファイルに埋め込む)。
+  // アプリをまとめると feature の統合が CI の rust (apps) と揃い、そのキャッシュの依存をそのまま使える
+  // (docs/testing.md#ci-のキャッシュ、T0059)
+  const cargoArgs = ["build", "--bins", "--features", "tauri/custom-protocol"];
+  for (const name of binaries) cargoArgs.push("-p", name);
+  console.log(`\n== build ${only.join(", ")} (cargo ${cargoArgs.join(" ")})`);
+  const built = spawnSync("cargo", cargoArgs, { cwd: root, stdio: "inherit" });
+  if (built.status !== 0) {
+    console.error(`building ${only.join(", ")} failed`);
+    process.exit(1);
+  }
+  console.log(`built ${only.join(", ")} in ${Math.round((Date.now() - started) / 1000)}s`);
+  for (const name of binaries) {
+    // mbx が置き場から戻した成果物は読むだけの権限なので、写しも上書きできない。消してから写す
+    rmSync(join(bin, name), { force: true });
+    copyFileSync(join(target, "debug", name), join(bin, name));
+  }
+} else {
+  for (const name of binaries) {
+    if (!existsSync(join(bin, name))) {
+      console.error(`${join(bin, name)} does not exist: run without --no-build first`);
+      process.exit(2);
     }
   }
 }

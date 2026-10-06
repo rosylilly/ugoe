@@ -33,9 +33,20 @@ CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/te
 
 ## 流れ
 
-1. アプリを `tauri build --debug --no-bundle` でビルドする。フロントエンドを埋め込んだデバッグビルドなので、Vite の開発サーバは要らない
-   (配布物と同じ読み込み方)。できた実行ファイルは `target/e2e/bin/` に写す。エディタは `ugoe-mcp` も `cargo build -p ugoe-mcp` で作って
-   隣に写す (エディタは同梱の `ugoe-mcp` を隣に探す。「Connect agents」の登録のコマンドと Claude Desktop の `.mcpb`)。
+1. アプリをビルドする。`tauri build --debug --no-bundle` と同じもの (フロントエンドを埋め込んだデバッグビルド。Vite の開発サーバは要らず、
+   配布物と同じ読み込み方) を、アプリごとの `tauri build` ではなく次の 2 段で作る (T0059):
+   1. 選んだアプリごとに、`tauri.conf.json` の `beforeBuildCommand` (`pnpm wasm && pnpm build`) をアプリのディレクトリで流し、
+      wasm の生成物と `dist/` (frontendDist) を作る。
+   2. 選んだアプリを 1 回の `cargo build --bins --features tauri/custom-protocol -p ugoe-editor -p ugoe-mcp -p ugoe-viewer -p ugoe-studio`
+      でビルドする。エディタは同梱の `ugoe-mcp` を隣に探す (「Connect agents」の登録のコマンドと Claude Desktop の `.mcpb`) ので、
+      それも同じ cargo で作る。
+
+   できた実行ファイルは `target/e2e/bin/` に写す。1 回の cargo にするのは、feature の統合を CI の `rust (apps)` と揃えて、
+   e2e.yml がそのキャッシュを読むだけで済むようにするため ([docs/testing.md](../../docs/testing.md#ci-のキャッシュ))。
+   cargo の引数は tauri-cli (2.12.0) が `tauri build` の中で流すもの (アプリの `src-tauri` で `cargo build --bins --features tauri/custom-protocol`)
+   と同じ。`custom-protocol` が frontendDist を実行ファイルに埋め込み、`tauri.conf.json` は tauri-build と `generate_context!` が
+   コンパイルのときに読む。tauri-cli を上げたら、`pnpm --filter @ugoe/viewer tauri build --debug --no-bundle -v` の出力で
+   cargo の引数が変わっていないかを確かめる (確かめ方は T0059 のメモ)。
 2. Xvfb を起動する (空いている番号を選ぶ。下の「Xvfb の番号」)。利用者の画面にはウィンドウを出さない。
 3. アプリごとに、新しい D-Bus のセッション (`dbus-run-session`) の中で tauri-driver を起動し、`specs/<アプリ>.test.mjs` を
    node:test で流す。エディタのセッションでは、先に使い捨ての鍵の保管庫を動かす (下の「鍵の保管庫」)。tauri-driver は WebKitWebDriver に中継し、WebKitWebDriver がアプリを起動する。
