@@ -242,8 +242,12 @@ function insideRename(e: Event): boolean {
 .ed-tag {
   color: var(--tree-muted);
 }
-/* 本体の札をまとめた札は、本体の要素の選択と同じ破線の枠 */
+/*
+ * 本体の札をまとめた札は、本体の要素の選択と同じ破線の枠。中の見せない「本体」の文字の位置の基準にもなる
+ * (送る枠の外を基準にしない。docs/ui.md#レイアウト の「送り」。T1667)
+ */
 .ed-tag.base-merged {
+  position: relative;
   border-style: dashed;
   border-color: var(--tree-muted);
 }
