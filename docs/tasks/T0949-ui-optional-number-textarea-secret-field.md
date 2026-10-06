@@ -1,11 +1,11 @@
 ---
 id: T0949
 title: "@ugoe/ui: 空を持てる数値の欄・複数行の文字の欄・秘密の欄を足し、エディタの残りの <input> を移す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0949
 ---
 
 # T0949: @ugoe/ui: 空を持てる数値の欄・複数行の文字の欄・秘密の欄を足し、エディタの残りの <input> を移す
