@@ -90,8 +90,18 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
   | `rust (tools)` (`group-tools`) | `gpu (vulkan)`・`gpu (gl)` (テストのビルドの依存が `rust (tools)` のテストのビルドに含まれることを手元で確かめた) |
   | `conformance` (`conformance`) | `web` と web-runtime-release.yml (`ugoe-wasm` の release と web-dist)、`godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`) |
 
-  `godot` の GDExtension (`bindings/godot` はワークスペースの外) の依存 (godot-rust など) は、rust-cache が保存の前に
-  「ワークスペースの依存でないもの」として target から消すので、キャッシュしても残りません。
+- **`godot` の GDExtension は別のキャッシュにする:** rust-cache は保存の前に、`workspaces` に書いたワークスペースの
+  「依存でないもの」(`cargo metadata` でそのワークスペースの外にあるパッケージ以外) を target から消します
+  ([src/save.ts・src/cleanup.ts](https://github.com/Swatinem/rust-cache))。GDExtension (`bindings/godot` はワークスペースの外、
+  ADR 0026) をルートの `target/` でビルドすると、その依存 (godot-rust など) は保存の前に消えて毎回コンパイルされていました
+  (dev 約 3.5 分・release 約 2.5 分。T0051)。そこで CI (`CI` がある) では `bindings/godot/build.mjs` が GDExtension だけを
+  `bindings/godot/target/` でビルドし、`godot` のジョブは rust-cache を 2 つ使います。1 つ目は今のとおり `conformance` のキーを読むだけ
+  (ルートの `target/`。参照の画像を描くクレート)、2 つ目は `shared-key: godot-gdextension`・`workspaces: bindings/godot -> target` で
+  main でだけ保存します。1 つの手順に 2 つの workspace を書くと、キーを `conformance` と共有して読むだけにする (GDExtension の依存を
+  保存できない) か、`godot` だけのキーにする (参照のクレートの分を `conformance` のキャッシュと重ねて保存し、容量が増える) かになるので、
+  手順を分けました。2 つ目のキーの最後のハッシュは `bindings/godot` の `Cargo.toml` と `Cargo.lock` (と `rust-toolchain.toml`) から
+  作るので、ルートの `Cargo.toml` が変わっても変わりません。大きさは dev と release の依存で約 0.4GB の見込みです
+  (手元で `CARGO_PROFILE_DEV_DEBUG=0` でビルドし、保存の前の掃除を真似た target を gzip して約 0.37GB。T0056)。
 - **失敗したジョブでも保存する (`cache-on-failure: true`) のは `rust (windows)`・`rust (macos)` だけ:** 成功するまで保存しないと、
   テストが落ち続ける間は毎回依存をすべてビルドする (Windows で約 16 分) ためです。依存がそろってから保存されるように、
   後の手順は前の手順が落ちても流します (`if: ${{ !cancelled() }}`)。ほかの Linux のジョブには付けません。
@@ -103,6 +113,7 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 - **容量の目安:** main の 1 組 (同じ `Cargo.toml` のハッシュのキャッシュ) が上限の半分 (5GB) 程度に収まるようにします
   (`Cargo.toml` が変わった直後は新旧の 2 組が並ぶため)。測るには `gh api repos/{owner}/{repo}/actions/cache/usage` と
   `gh cache list --limit 100`。T0051 の前 (2026-10-06) は 1 組が約 8.7GB (rust-cache が 21 個) で、2 組目で上限を超えていました。
+  `godot-gdextension` (約 0.4GB) はルートの `Cargo.toml` では変わらないので、2 組が並ぶときも 1 個のままです。
 
 ### 別のターゲットの検査
 

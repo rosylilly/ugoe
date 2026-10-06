@@ -345,12 +345,19 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
       # 参照の画像を描く ugoe のクレート (ugoe-cli・ugoe-conformance・ugoe-ffi) は conformance のジョブと同じビルドなので、
-      # そのキャッシュを読むだけにする。GDExtension (bindings/godot はワークスペースの外) の依存は、rust-cache が
-      # ワークスペースの依存でないものとして保存の前に消すので、キャッシュしても残らない
+      # そのキャッシュを読むだけにする (ルートの target/)
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: conformance
           save-if: false
+      # GDExtension (bindings/godot はワークスペースの外) は、CI では build.mjs が bindings/godot/target/ でビルドする。
+      # rust-cache は保存の前に、そのワークスペースの依存でないものを target から消すので、ルートの target/ とは別のキャッシュにして
+      # godot-rust などの依存を残す (docs/testing.md の「CI のキャッシュ」)
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: godot-gdextension
+          workspaces: bindings/godot -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions

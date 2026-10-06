@@ -33,6 +33,10 @@ godot --path bindings/godot/example        # 見本のシーンを開く (エデ
   `build.mjs` はシェルの PATH によらず cargo を mbx に通す (just のレシピと同じ)。`MBX_DISABLE=1` で mbx を通さないときは、
   ルートの `target/` にある mbx の読み取り専用のハードリンクを素の cargo が書き直せないので、`bindings/godot/target/` に分けてビルドする
   (初回は依存クレートも含めて作り直す)。`CARGO_TARGET_DIR` を指定したときはそれを使う。
+- CI (環境変数 `CI` がある) では、GDExtension だけを `bindings/godot/target/` でビルドし、参照の画像を描く `ugoe` のクレート
+  (`--conformance`) はルートの `target/` でビルドする。rust-cache は保存の前にワークスペースの依存でないものを target から消すので、
+  ルートの `target/` に置くと godot-rust などの依存がキャッシュに残らないため ([docs/testing.md](../../docs/testing.md#ci-のキャッシュ)。
+  ci.yml の `godot` のジョブは `bindings/godot/target/` を別のキャッシュにする)。
 - 見本 (`example/main.tscn`) は `assets/samples/` のモデルを選んで表示し、パラメータごとのスライダーと、表情・モーションの
   ボタン、着せ替えのモジュール (`dress-up.ugoe` 用) のチェックボックスを作る。ライティングを受けるモデル (`avatar-lit.ugoe`)
   では、マウスの位置に点光源を置く。触っていない間は `AngleX` を揺らす。クリックした位置の当たり判定を出力に出す。

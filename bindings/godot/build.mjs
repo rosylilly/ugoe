@@ -48,20 +48,30 @@ const cargo = cargoEnvWithMbx(process.env);
 // target/ はリポジトリのルートと共有する (ugoe のクレートのビルド済みの成果物を使い回す)。
 // ただし mbx を通さない (`MBX_DISABLE`) のに mbx が入っているか、ルートの target/ が mbx の managed target (シンボリックリンク)
 // なら、共有の target/ には mbx の置き場からの読み取り専用のハードリンクがあり、素の cargo は書き直せずに失敗する
-// (`output file ... is not writeable`)。そのときは bindings/godot/target/ に分けてビルドする。
+// (`output file ... is not writeable`)。そのときは参照を描く ugoe のクレートも含めて bindings/godot/target/ に分けてビルドする。
+// CI (`CI` がある) では GDExtension だけを bindings/godot/target/ に分ける。rust-cache は保存の前に、ワークスペースの依存でない
+// ものを target から消すので、ルートの target/ に置くと godot-rust などの依存がキャッシュに残らない (ci.yml の godot のジョブは
+// bindings/godot/target/ を別のキャッシュにする。docs/testing.md の「CI のキャッシュ」)。参照を描く ugoe のクレートは、
+// conformance のジョブのキャッシュを使えるようにルートの target/ でビルドする。
 const sharedTarget = join(root, "target");
+const ownTarget = join(here, "target");
 let targetDir = process.env.CARGO_TARGET_DIR ?? sharedTarget;
-if (
-  process.env.CARGO_TARGET_DIR === undefined &&
-  !cargo.viaMbx &&
-  (cargo.installed || isSymlink(sharedTarget))
-) {
-  targetDir = join(here, "target");
-  console.log(`mbx を通さないので、mbx と共有しない ${targetDir} でビルドする`);
+let referenceTargetDir = targetDir;
+if (process.env.CARGO_TARGET_DIR === undefined) {
+  if (!cargo.viaMbx && (cargo.installed || isSymlink(sharedTarget))) {
+    targetDir = referenceTargetDir = ownTarget;
+    console.log(`mbx を通さないので、mbx と共有しない ${targetDir} でビルドする`);
+  } else if (process.env.CI) {
+    targetDir = ownTarget;
+    console.log(
+      `CI なので、GDExtension を ${targetDir} でビルドする (参照の画像は ${referenceTargetDir})`,
+    );
+  }
 }
 const cargoArgs = ["build", "--locked", "--manifest-path", join(here, "Cargo.toml")];
 if (release) cargoArgs.push("--release");
 const cargoEnv = { ...cargo.env, CARGO_TARGET_DIR: targetDir };
+const referenceEnv = { ...cargo.env, CARGO_TARGET_DIR: referenceTargetDir };
 execFileSync("cargo", cargoArgs, { stdio: "inherit", env: cargoEnv });
 
 function isSymlink(path) {
@@ -185,8 +195,8 @@ if (conformance) {
         ...(renderer ? ["--godot-renderer", renderer] : []),
         ...cases,
       ],
-      // 参照を描く ugoe のクレートも、上の cargo と同じ環境と target でビルドする。
-      { stdio: "inherit", env: cargoEnv },
+      // 参照を描く ugoe のクレートは、上の cargo と同じ環境でビルドする (target は上の referenceTargetDir)。
+      { stdio: "inherit", env: referenceEnv },
     );
   } catch {
     process.exitCode = 1;
