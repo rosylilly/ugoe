@@ -1,6 +1,8 @@
 // ugoe-wasm の JS バインディングの型の写し (wasm-bindgen が生成する ugoe_wasm.d.ts から作った)。
 // 生成物 (src/wasm/) が無い環境で `pnpm check` を通すためだけに使う (scripts/check.mjs)。
 // 配布物には生成した本物の型が入る。crates/ugoe-wasm の公開 API を変えたら、生成物から作り直す。
+// `@internal` の doc コメントを付けたメンバーはエディタ向けで、@ugoe/runtime の公開の API の外 (Rust の doc コメントから
+// 生成物にも同じ印が入る。印の有無も scripts/check-wasm-types.mjs と ugoe_wasm.test.mjs が比べる)。
 
 export class MotionSampler {
   free(): void;
@@ -25,8 +27,11 @@ export class WebPuppet {
   canvas_to_screen(x: number, y: number): Float32Array;
   clear_tracking(): void;
   static create(canvas: HTMLCanvasElement, backend?: string | null): Promise<WebPuppet>;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   deformer_ids(): string[];
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   deformer_jacobian(id: string, x: number, y: number): Float32Array | undefined;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   deformer_point(id: string, x: number, y: number): Float32Array | undefined;
   detach_module(name: string): void;
   detached_modules_json(): string;
@@ -81,6 +86,7 @@ export class WebPuppet {
   part_opacities_applied_parts(): Uint32Array;
   part_opacities_applied_values(): Float32Array;
   physics_json(): string | undefined;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   physics_particles(rig: number): Float32Array;
   pose_json(): string | undefined;
   pose_visible_json(): string | undefined;
@@ -90,7 +96,9 @@ export class WebPuppet {
   reset_parameters(): void;
   reset_physics(): void;
   resize(width: number, height: number): void;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   rotation_frame(id: string): Float32Array | undefined;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   rotation_local_keyform(id: string): Float32Array | undefined;
   screen_to_canvas(x: number, y: number): Float32Array;
   set_background(r: number, g: number, b: number, a: number): void;
@@ -138,6 +146,7 @@ export class WebPuppet {
   uses_lighting(): boolean;
   values_before_physics(): Float32Array;
   view_transform(): Float32Array;
+  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   warp_points(id: string): Float32Array | undefined;
   width(): number;
   zoom(): number;

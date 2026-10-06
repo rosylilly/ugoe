@@ -6,6 +6,7 @@
 // 写しは 2 種類ある (docs/tasks/T0435-wasm-type-copies.md):
 // - 全体の写し `bindings/web/stub/ugoe_wasm.d.ts`。生成物が無い環境の型検査で使う (@ugoe/runtime と 3 つのアプリ)。
 //   クラス・メンバー・関数・型の別名が生成物と同じであること (引数の名前は比べない)。
+//   メンバーの doc コメントの `@internal` (エディタ向けで公開の API の外。crates/ugoe-wasm/README.md) の有無も同じであること。
 //   interface (InitOutput) は wasm の内部の口なので、写しにあるものが生成物にあることだけを見る。
 // - 一部の写し (使うものだけを書いた interface)。@ugoe/player の `WebPuppet` と @ugoe/face-tracking の `TrackingPuppet`。
 //   どのメンバーも生成物にあり、型が同じであること。写しは末尾の省略できる引数を省いてよい。
@@ -36,7 +37,7 @@ export const PARTIAL_COPIES = [
 /**
  * @typedef {{ name: string, type: string, optional: boolean, rest: boolean }} Param
  * @typedef {{ kind: "method" | "property" | "constructor", isStatic: boolean, optional: boolean,
- *   params: Param[], type: string }} Member
+ *   internal: boolean, params: Param[], type: string }} Member
  * @typedef {{ kind: "class" | "interface", members: Map<string, Member> }} Container
  * @typedef {{ containers: Map<string, Container>, functions: Map<string, { params: Param[], type: string }>,
  *   aliases: Map<string, string> }} Declarations
@@ -78,11 +79,14 @@ function memberName(node, sf) {
 function memberOf(node, sf) {
   const isStatic = (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Static) !== 0;
   const optional = node.questionToken !== undefined;
+  // doc コメントの `@internal` (公開の API の外の印)
+  const internal = ts.getJSDocTags(node).some((t) => t.tagName.text === "internal");
   if (ts.isMethodDeclaration(node) || ts.isMethodSignature(node)) {
     return {
       kind: "method",
       isStatic,
       optional,
+      internal,
       params: paramsOf(node, sf),
       type: typeText(node.type, sf),
     };
@@ -93,12 +97,20 @@ function memberOf(node, sf) {
       kind: "constructor",
       isStatic: false,
       optional: false,
+      internal,
       params: paramsOf(node, sf),
       type: isPrivate ? "private" : "public",
     };
   }
   if (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) {
-    return { kind: "property", isStatic, optional, params: [], type: typeText(node.type, sf) };
+    return {
+      kind: "property",
+      isStatic,
+      optional,
+      internal,
+      params: [],
+      type: typeText(node.type, sf),
+    };
   }
   return undefined;
 }
@@ -193,6 +205,10 @@ export function compareFull(copy, generated) {
       }
       const diff = compareMember(cm, gm, false);
       if (diff) problems.push(`${name}.${key}: ${diff}`);
+      if (cm.internal !== gm.internal) {
+        const where = gm.internal ? "the generated" : "the copy";
+        problems.push(`${name}.${key}: @internal only in ${where}`);
+      }
     }
     for (const key of c.members.keys()) {
       if (!g.members.has(key))

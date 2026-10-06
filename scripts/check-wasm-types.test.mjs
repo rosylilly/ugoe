@@ -26,6 +26,12 @@ export class WebPuppet {
     load_bundle(bytes: Uint8Array, limits_json?: string | null): string[];
     parameter(id: string): number | undefined;
     static create(canvas: HTMLCanvasElement, backend?: string | null): Promise<WebPuppet>;
+    /**
+     * 制御点。
+     *
+     * @internal エディタ向け。
+     */
+    warp_points(id: string): Float32Array | undefined;
 }
 
 export function version(): string;
@@ -52,6 +58,8 @@ export class WebPuppet {
   ): string[];
   parameter(id: string): number | undefined;
   static create(canvas: HTMLCanvasElement, backend?: string | null): Promise<WebPuppet>;
+  /** @internal エディタ向け。 */
+  warp_points(id: string): Float32Array | undefined;
 }
 
 export function version(): string;
@@ -111,6 +119,19 @@ describe("compareFull", () => {
     assert.deepEqual(compareFull(copy, generated), [
       "WebPuppet.static create: missing in the copy",
       "function version: missing in the copy",
+    ]);
+  });
+
+  it("reports a member whose @internal differs", () => {
+    const copy = parseDeclarations(
+      COPY.replace("  /** @internal エディタ向け。 */\n", "").replace(
+        "  parameter(id: string)",
+        "  /** @internal */\n  parameter(id: string)",
+      ),
+    );
+    assert.deepEqual(compareFull(copy, generated), [
+      "WebPuppet.parameter: @internal only in the copy",
+      "WebPuppet.warp_points: @internal only in the generated",
     ]);
   });
 });

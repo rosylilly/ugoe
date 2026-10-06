@@ -8,9 +8,13 @@ import { describe, expect, it } from "vitest";
 
 const crate = join(import.meta.dirname, "..", "..", "..", "crates", "ugoe-wasm", "src");
 
-/** `#[wasm_bindgen]` の `impl WebPuppet` のメソッドと、`#[wasm_bindgen]` の関数の名前。 */
+/**
+ * `#[wasm_bindgen]` の `impl WebPuppet` のメソッドと、`#[wasm_bindgen]` の関数の名前。
+ * `internal` は doc コメントに `@internal` を持つメソッド (エディタ向けで公開の API の外)。
+ */
 function rustExports() {
   const methods = new Set();
+  const internal = new Set();
   const functions = new Set();
   for (const entry of readdirSync(crate, { recursive: true })) {
     const file = String(entry);
@@ -24,11 +28,15 @@ function rustExports() {
       if (!next.startsWith("impl WebPuppet")) continue;
       for (let j = i + 2; j < lines.length && lines[j] !== "}"; j++) {
         const m = lines[j]?.match(/^ {4}pub (?:async )?fn (\w+)/);
-        if (m?.[1]) methods.add(m[1]);
+        if (!m?.[1]) continue;
+        methods.add(m[1]);
+        for (let k = j - 1; k >= 0 && lines[k]?.startsWith("    ///"); k--) {
+          if (/^ {4}\/\/\/ @internal\b/.test(lines[k] ?? "")) internal.add(m[1]);
+        }
       }
     }
   }
-  return { methods, functions };
+  return { methods, internal, functions };
 }
 
 /** スタブの `WebPuppet` のメソッドと、`export function` の名前 (wasm-bindgen の初期化の関数を除く)。 */
@@ -38,10 +46,13 @@ function stubExports() {
   const methods = new Set(
     [...body.matchAll(/^ {2}(?:static )?(\w+)\(/gm)].map((m) => m[1]).filter((n) => n !== "free"),
   );
+  const internal = new Set(
+    [...body.matchAll(/^ {2}\/\*\* @internal\b.*\*\/\n {2}(?:static )?(\w+)\(/gm)].map((m) => m[1]),
+  );
   const functions = new Set(
     [...text.matchAll(/^export function (\w+)/gm)].map((m) => m[1]).filter((n) => n !== "initSync"),
   );
-  return { methods, functions };
+  return { methods, internal, functions };
 }
 
 describe("stub/ugoe_wasm.d.ts", () => {
@@ -51,5 +62,13 @@ describe("stub/ugoe_wasm.d.ts", () => {
     expect(rust.methods.size).toBeGreaterThan(50);
     expect([...stub.methods].sort()).toEqual([...rust.methods].sort());
     expect([...stub.functions].sort()).toEqual([...rust.functions].sort());
+  });
+
+  it("marks the same WebPuppet methods @internal as crates/ugoe-wasm", () => {
+    const rust = rustExports();
+    const stub = stubExports();
+    // エディタ向けの問い合わせ (crates/ugoe-wasm/README.md)
+    expect(rust.internal).toContain("rotation_local_keyform");
+    expect([...stub.internal].sort()).toEqual([...rust.internal].sort());
   });
 });

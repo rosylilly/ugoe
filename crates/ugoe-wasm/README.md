@@ -220,7 +220,16 @@ follower.follow(conductor.values_before_physics(), dt, lipSync?.[0], lipSync?.[1
 
 ### エディタ向けの問い合わせ (ギズモ・物理の表示)
 
+**公開の API の外 (T0492):** この節のメソッドはエディタ向けで、予告なく変わる。npm の @ugoe/runtime (bindings/web) からも
+呼べて型にも出るが、版を上げるときに互換を守る範囲 (公開の API) には含めない。型 (生成物の `ugoe_wasm.d.ts` と
+bindings/web/stub/ugoe_wasm.d.ts) では doc コメントに `@internal` を付けて示す (Rust の doc コメントに書いたものが生成物に入る)。
+理由: ギズモの形や物理の画面の都合で変わりやすく、リリース前に互換で縛るのは早い。配布物から外す (feature で分ける) ことも
+考えたが、wasm を 2 通り作る手間と型の写しが 2 通りになる手間に対して、大きさの得が小さいので採らなかった。
+新しいエディタ向けの問い合わせを足すときも `@internal` を付け、この一覧に載せる (印の有無は `just wasm-types` と
+bindings/web/stub/ugoe_wasm.test.mjs が Rust・生成物・写しの間で比べる)。
+
 ```js
+puppet.deformer_ids();                    // ワープと回転デフォーマの ID (モデルの定義順)
 puppet.warp_points("Cloth");              // ワープの制御点 (キャンバス座標)
 puppet.rotation_frame("Head");            // [ox, oy, ax, ay, bx, by]
 puppet.rotation_local_keyform("Head");    // [ox, oy, angle, scale] 補間した局所の値 (親の座標系。T1660)

@@ -293,6 +293,17 @@ requestAnimationFrame(function frame(now) {
 [crates/ugoe-wasm/README.md#有限でない値と-dt](../../crates/ugoe-wasm/README.md#有限でない値と-dt)、ほかの入口との比較は
 [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)。
 
+### 公開の API の範囲 (T0492)
+
+`WebPuppet` のメソッドのうち、エディタ向けの問い合わせ (`deformer_ids`・`warp_points`・`rotation_frame`・
+`rotation_local_keyform`・`deformer_point`・`deformer_jacobian`・`physics_particles`) は **公開の API の外** です。
+呼べて型にも出ますが、エディタ (ギズモ・物理の画面) の都合で予告なく変わり、版を上げるときの互換の対象にしません。
+型では doc コメントの `@internal` で示します (一覧と理由は
+[crates/ugoe-wasm/README.md#エディタ向けの問い合わせ-ギズモ物理の表示](../../crates/ugoe-wasm/README.md#エディタ向けの問い合わせ-ギズモ物理の表示))。
+配布物から外さない (feature で分けない) のは、wasm と型の写しを 2 通り持つ手間に対して大きさの得が小さいためです。
+どのメソッドもランタイムの評価の結果を読んで並べ直す薄い口で、外しても減るのはその分だけです (測ってはいない。全体の内訳は
+[wasm の大きさ](#wasm-の大きさ))。
+
 ### 読み込みの警告と着せ替えの失敗の型 (T0438)
 
 `load_warnings_json()` と着せ替えの `DressUpError` は、このパッケージの型と補助で読めます
