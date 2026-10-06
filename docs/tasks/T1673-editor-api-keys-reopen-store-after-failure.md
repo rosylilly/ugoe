@@ -1,11 +1,11 @@
 ---
 id: T1673
 title: "エディタ: キーの保管庫を開くのに失敗すると、アプリを開き直すまで API キーが「使えない」のままになるのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1673
 ---
 
 # T1673: エディタ: キーの保管庫を開くのに失敗すると、アプリを開き直すまで API キーが「使えない」のままになるのを直す
