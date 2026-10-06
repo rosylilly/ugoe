@@ -159,6 +159,8 @@ async function proposeAndPreview(s, ai) {
   const counted = await invokeStats(s);
   await s.clickText("article.proposal button", "Preview");
   await s.waitFind(".viewport .proposal-banner", 30_000);
+  // 帯は編集の道具の代わりに出る (.strip と重ならず、`]` `[` で選ぶツールも無い。docs/editor.md の「選んだ点を見える所へ」)
+  assert.equal((await s.findAll(".viewport .strip")).length, 0);
   await waitFor(
     () =>
       s.execute(`return document.querySelector("article.proposal.previewing .sliders") !== null`),

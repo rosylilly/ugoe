@@ -2193,6 +2193,9 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
   下の端の右下の表示の道具の高さを除いた範囲です (`keys.ts` の `visibleRectOf`。帯の下に隠れる点も帯の下へ送る)。高さは ToolOverlay と
   Viewport が測り (大きさが変わるたびに)、`ViewportController.setCovered` で渡します。上と下を合わせてビューの高さ以上を隠すときは
   ビュー全体で判定します。拡大率は変えず、余白より内側の点では動かしません。ポインタで選んだときは動かしません (押した点は見えている)。
+  AI の提案のプレビューの帯 (App.svelte の `.proposal-banner`) は隠す範囲に入れません。プレビュー中は帯が ToolOverlay の代わりに
+  出て、編集の道具 (`.strip` と `]` `[` を受けるツール) を外すので、帯と `.strip` は同時に出ず、`]` `[` で点を選ぶこともありません
+  ([AI の提案](#ai-の提案) のプレビュー。T1663)。
 - **2 つの頂点の中点に足す (Shift + `]` `[`・`I`。T1648):** メッシュ編集で、Shift + `]` `[` は 1 つ目 (選択の先頭) を残し、2 つ目 (選択の末尾。
   1 つしか無ければ 1 つ目) の次・前の頂点を 2 つ目にします (1 つ目は飛ばす。`keys.ts` の `pointExtendOf`・`extendedPoints`。配列によって
   `key` が `}` `{` になるので両方を受ける)。2 つを選ぶと帯に「Points 1 and 2 of 4」(`viewport.point.pair`) を出し、`I` (修飾キー無し。
