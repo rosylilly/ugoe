@@ -1,11 +1,11 @@
 ---
 id: T0329
 title: "モーション: ポーズの要素をフェードせずに表示する口 (PosePlayer と wasm)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-motion, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0329
 ---
 
 # T0329: モーション: ポーズの要素をフェードせずに表示する口 (PosePlayer と wasm)

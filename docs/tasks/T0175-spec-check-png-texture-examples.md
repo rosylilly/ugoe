@@ -1,11 +1,11 @@
 ---
 id: T0175
 title: "spec-check: PNG のテクスチャの読み方を確かめる例のバンドルを足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, tools/spec-check, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0175
 ---
 
 # T0175: spec-check: PNG のテクスチャの読み方を確かめる例のバンドルを足す

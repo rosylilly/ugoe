@@ -1,11 +1,11 @@
 ---
 id: T0481
 title: "Godot: KTX2 のテクスチャも参照のデコーダで読む"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0481
 ---
 
 # T0481: Godot: KTX2 のテクスチャも参照のデコーダで読む

@@ -1,11 +1,11 @@
 ---
 id: T0484
 title: "適合テスト: <ugoe-avatar> で GPU プロセスが落ちても作り直して描く"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/conformance, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0484
 ---
 
 # T0484: 適合テスト: <ugoe-avatar> で GPU プロセスが落ちても作り直して描く
