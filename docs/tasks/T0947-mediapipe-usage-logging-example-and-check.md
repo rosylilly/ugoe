@@ -1,11 +1,11 @@
 ---
 id: T0947
 title: "MediaPipe の利用状況の送信: web の見本でも止め、版を上げたときに送り方の変化を自動で見つける"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/web, packages/face-tracking, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0947
 ---
 
 # T0947: MediaPipe の利用状況の送信: web の見本でも止め、版を上げたときに送り方の変化を自動で見つける
