@@ -139,7 +139,7 @@ showToast(t("file.saved"), { tone: "success" }); // 既定で 5 秒。ポイン�
 ```ts
 // main.ts で mount の前に 1 回。キーは `<アプリ>.theme` (言語の `<アプリ>.locale` と同じ流儀)
 import { initTheme } from "@ugoe/ui";
-initTheme("ugoe-viewer.theme");
+initTheme("ugoe.viewer.theme");
 ```
 
 ```svelte

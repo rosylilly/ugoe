@@ -161,9 +161,9 @@ describe("loadLighting / saveLighting", () => {
   it("falls back to the default for broken or foreign data", () => {
     const storage = new MemoryStorage();
     expect(loadLighting(store(storage))).toEqual(defaultLighting());
-    storage.setItem("ugoe-viewer.lighting", "{not json");
+    storage.setItem("ugoe.viewer.lighting", "{not json");
     expect(loadLighting(store(storage))).toEqual(defaultLighting());
-    storage.setItem("ugoe-viewer.lighting", JSON.stringify({ version: 99, settings: {} }));
+    storage.setItem("ugoe.viewer.lighting", JSON.stringify({ version: 99, settings: {} }));
     expect(loadLighting(store(storage))).toEqual(defaultLighting());
   });
 
@@ -216,7 +216,7 @@ describe("lightingMemory", () => {
     const storage = new MemoryStorage();
     const m = model(1);
     storage.setItem(
-      "ugoe-viewer.lighting.models",
+      "ugoe.viewer.lighting.models",
       JSON.stringify({
         version: 1,
         entries: [
@@ -232,7 +232,7 @@ describe("lightingMemory", () => {
     const repaired = memory.get(m);
     expect(repaired?.ambient).toEqual(defaultLighting().ambient);
     expect(repaired?.point.x).toBe(1.5);
-    storage.setItem("ugoe-viewer.lighting.models", "{not json");
+    storage.setItem("ugoe.viewer.lighting.models", "{not json");
     expect(memory.get(m)).toBeNull();
     expect(() => memory.set(m, defaultLighting())).not.toThrow();
   });

@@ -1,13 +1,13 @@
 // Player が覚えるもの (光源・着せ替えの組・待機モーションなど) の localStorage の読み書き (T0930)。
-// キーは「アプリが渡す接頭辞」+ "." + 名前 (`STORAGE_NAMES`)。接頭辞を省くとビューアの `ugoe-viewer`
-// (前からのキーのまま。ビューアが覚えたものを失わない)。
+// キーは「アプリが渡す接頭辞」+ "." + 名前 (`STORAGE_NAMES`)。接頭辞はアプリのキーと同じ `ugoe.<アプリ>` の形で、
+// 省くとビューアの `ugoe.viewer` (apps/viewer/src/lib/storageKeys.ts の `STORAGE_PREFIX` と同じ)。
 //
 // localStorage は引くだけで例外になる環境 (保存を禁止したブラウザ) や、書くと容量で例外になることがある。
 // 読み書きは @ugoe/i18n の `readStoredItem` などを通し、読めなければ「覚えていない」、書けなければ何もしない (例外を出さない。T0937)。
 import { readStoredItem, removeStoredItem, writeStoredItem } from "@ugoe/i18n";
 
 /** 接頭辞を省いたときの接頭辞 (ビューア)。 */
-export const DEFAULT_STORAGE_PREFIX = "ugoe-viewer";
+export const DEFAULT_STORAGE_PREFIX = "ugoe.viewer";
 
 /** Player が覚えるものの名前 (キーの接頭辞の後ろ)。 */
 export const STORAGE_NAMES = {
@@ -91,10 +91,5 @@ export class PlayerStorage {
   /** オン・オフを覚える。 */
   setToggle(name: StorageName, value: boolean): void {
     this.set(name, value ? "on" : "off");
-  }
-
-  /** この接頭辞で Player が覚えたものをすべて忘れる (アプリの古い値を捨てるとき)。 */
-  clear(): void {
-    for (const name of Object.values(STORAGE_NAMES)) this.remove(name);
   }
 }

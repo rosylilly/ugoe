@@ -81,7 +81,7 @@ export interface PlayerHost {
   wasmMissingMessage?: string;
   /**
    * 覚えるもの (光源・着せ替えの組・待機モーションなど) の localStorage のキーの接頭辞 (storage.ts。T0930)。
-   * 省くとビューアの `ugoe-viewer` (`DEFAULT_STORAGE_PREFIX`)。
+   * 省くとビューアの `ugoe.viewer` (`DEFAULT_STORAGE_PREFIX`)。スタジオは `ugoe.studio.player`。
    */
   storagePrefix?: string;
   /** 覚える先。省くと `localStorage` (テストで差し替える)。 */

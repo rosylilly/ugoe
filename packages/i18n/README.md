@@ -70,7 +70,7 @@ export const t = translator("face-tracking");
   設定の画面は `getLocalePreference()` を選択の値にし、`setLocalePreference(value)` で切り替えて `initLocale()` のキーに覚える。
   キーを指定して読み書きするだけなら `loadLocalePreference(key, storage?)`・`saveLocalePreference(key, value, storage?)`。
   使えない localStorage (例外を出す・無い) では覚えず、覚えていない・知らない値は `"system"` として読む。
-  キーはアプリごと (`ugoe.editor.locale`・`ugoe-viewer.locale`・`ugoe-studio.locale`) で、値は `system`・`en`・`ja`。
+  キーはアプリごと (`ugoe.editor.locale`・`ugoe.viewer.locale`・`ugoe.studio.locale`) で、値は `system`・`en`・`ja`。
 - `<html lang>` は今の言語に合わせる。
 
 ### localStorage の読み書き (T0937)

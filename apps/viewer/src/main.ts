@@ -5,10 +5,10 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
 import { systemLocale } from "./lib/host";
-import { LOCALE_STORAGE_KEY, THEME_STORAGE_KEY } from "./lib/settings";
+import { STORAGE_KEYS } from "./lib/storageKeys";
 
 // テーマ: 覚えた設定 (既定は OS に合わせる)。OS のテーマの変化にも追従する。
-initTheme(THEME_STORAGE_KEY);
+initTheme(STORAGE_KEYS.theme);
 
 const target = document.getElementById("app");
 // i18n-ignore: 開発者向け (index.html の誤り。起こらない)
@@ -18,6 +18,6 @@ if (!target) throw new Error("#app not found");
 // tauri-plugin-os の locale() で OS から取る (WebView によっては OS の言語と違う値を返すため。packages/i18n/README.md)。
 // 最初の画面から OS の言語で出すよう、取れてから描く (Tauri の外では navigator.languages のまま)。
 // OS の言語が取れなくても、navigator.languages で動く。
-await initLocale(LOCALE_STORAGE_KEY, systemLocale);
+await initLocale(STORAGE_KEYS.locale, systemLocale);
 
 mount(App, { target });

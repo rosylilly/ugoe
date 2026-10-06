@@ -70,7 +70,6 @@ import { fileName, type ProfileView, type SceneSettings, withBackgroundKind } fr
 import { Pulse } from "./lib/pulse";
 import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
-  forgetLegacySettings,
   type OutputSizePreset,
   parseOutputSize,
   parseTickRate,
@@ -685,8 +684,6 @@ async function resetParameters() {
 let stopMicrophoneSteps: (() => void) | null = null;
 
 onMount(() => {
-  // 刻みの速さと仮想カメラの設定はプロファイルに持つ (T0827)。前に localStorage に覚えていたものは引き継がない。
-  forgetLegacySettings();
   void (async () => {
     try {
       host = await studioHost();

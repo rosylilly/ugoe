@@ -30,7 +30,7 @@ import {
 } from "./lib/outputLayout";
 import { sceneLighting } from "./lib/profile";
 import { RenderStatsWindow } from "./lib/renderStats";
-import { PLAYER_STORAGE_PREFIX } from "./lib/settings";
+import { PLAYER_STORAGE_PREFIX } from "./lib/storageKeys";
 import { loadWasm } from "./lib/wasm/load";
 
 interface Props {

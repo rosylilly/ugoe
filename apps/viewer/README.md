@@ -17,7 +17,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   main.ts               トークン (@ugoe/ui/tokens.css) を読み、覚えた言語と OS の言語を決めてから App を描く
   App.svelte            ツールバー・ビューポート・右のパネル・ステータスバー、ドロップとショートカット
   lib/i18n.ts           文言の `t()` (名前空間 `viewer`)
-  lib/settings.ts       モデルによらない設定 (画面の言語・テーマのキー) を localStorage に覚える
+  lib/storageKeys.ts    localStorage のキーの一覧 (下の「覚える値」)
   lib/SettingsDialog.svelte  設定の画面 (言語: OS に合わせる・日本語・English)
   lib/LicenseDialog.svelte   ライセンスの画面 (public/third-party-notices.txt)
   lib/host.ts           ファイルの選択と読み込み・OS の言語 (Tauri / ブラウザ / 差し替え)
@@ -95,7 +95,7 @@ src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 | 覚えたもの | モデルごとに覚えた光源・着せ替えの組・待機モーションの一覧。モデルごとに・すべて忘れる (下の「[覚えたものの一覧](#覚えたものの一覧-t0714)」) |
 | 背景 | ツールバーの「背景」ボタンの Popover で、背景色と「透明」を選ぶ (ボタンには今の背景の見本を出す)。透明にすると市松模様の上に描く (T0737) |
 | 画像を保存 | 今の表示を PNG で保存する (下の「[画像の保存](#画像の保存-t0420)」) |
-| 設定 (ツールバーの歯車) | 画面の言語を「OS に合わせる」(既定)・「日本語」・「English」から選ぶ。すぐに切り替わり、`ugoe-viewer.locale` に覚える。OS の言語は Tauri では tauri-plugin-os の `locale()` で取り (WebView の `navigator.languages` は OS の言語と違うことがあるため)、ブラウザでは `navigator.languages` を使う。対応していない言語なら English。テーマ (「OS に合わせる」(既定)・ライト・ダーク) も選べ、`ugoe-viewer.theme` に覚える (`@ugoe/ui` の `ThemeSetting`) |
+| 設定 (ツールバーの歯車) | 画面の言語を「OS に合わせる」(既定)・「日本語」・「English」から選ぶ。すぐに切り替わり、`ugoe.viewer.locale` に覚える。OS の言語は Tauri では tauri-plugin-os の `locale()` で取り (WebView の `navigator.languages` は OS の言語と違うことがあるため)、ブラウザでは `navigator.languages` を使う。対応していない言語なら English。テーマ (「OS に合わせる」(既定)・ライト・ダーク) も選べ、`ugoe.viewer.theme` に覚える (`@ugoe/ui` の `ThemeSetting`) |
 | 着せ替え | スロットのあるモデルか、モジュールを読み込んだときに右のパネルに出る。スロットごとにモジュールを付ける・外す・差し替える (下の「着せ替え」) |
 | ライティング | ライティングを使うモデルのときだけ右のパネルに出る。光源の向き・位置・色・強さと既定の光源の組 (下の「ライティング」) |
 | モーションと表情 | バンドルにモーションか表情があるときに右のパネルに出る。モーションを優先度を選んで再生・停止し、表情を付け外しする (下の「モーションと表情」) |
@@ -311,7 +311,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 ### 付けていた組を覚える (T0711)
 
 モデルごとに、読み込んだモジュール (名前とファイルの鍵) と付けていたもの (合成の順) を `localStorage` の
-`ugoe-viewer.dress-up` に覚える (`dressUpMemory.ts`。入れ物は下の `ModelMemory`)。
+`ugoe.viewer.dress-up` に覚える (`dressUpMemory.ts`。入れ物は下の `ModelMemory`)。
 
 - 着せ替えを操作する (付ける・外す・差し替える・×・モジュールを開く) たびに、開いているモデルの組を覚え直す。
   覚えた組があれば (`dressUpRemembered`) パネルに「このモデル用に覚えた組があります」と「覚えた組を忘れる」(`forgetDressUp`) を出す。
@@ -321,7 +321,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   64 個まで (`MAX_MODULES`)。ファイルの中身は覚えない (容量のため)。
 - モデルを開いたとき (別のモデルか、同じモデルをモジュールと一緒に開き直したとき)、覚えていた組と違えば (付けているもの・その順・
   読み込んでいないモジュール。`needsRestore`) パネルで「戻す」か尋ねる (`restoreOffer`)。「前の組を自動で戻す」
-  (`ugoe-viewer.dress-up.auto-restore`) なら尋ねずに戻す。尋ねている間は覚え直さず、「今回は戻さない」でも覚えている組は
+  (`ugoe.viewer.dress-up.auto-restore`) なら尋ねずに戻す。尋ねている間は覚え直さず、「今回は戻さない」でも覚えている組は
   変えない (次に着せ替えを操作したときに覚え直す)。
 - 戻すときは、覚えていたモジュールを **読み込んでいるもの (名前) → このセッションで読んだ中身 (指紋。32 個まで手元に置く) →
   覚えていた場所** の順に探し (`planRestore`)、付けているものを外してから覚えていた順に付ける。
@@ -347,18 +347,40 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   (`unknown`)。開けない種類だけなら赤、混ざれば黄。一緒に来る文字列 (`kind` が `string`) は数えない。`items` を渡さないブラウザでは
   見立てず、枠だけを出す。
 
+## 覚える値
+
+表示と設定は WebView の `localStorage` に覚える。キーはすべて `ugoe.viewer.<名前>` の形 (エディタの `ugoe.editor.*`・スタジオの `ugoe.studio.*` と同じ形)。
+ビューアが自分で読み書きするキーは `src/lib/storageKeys.ts` の `STORAGE_KEYS` にまとめ、ほかは @ugoe/player が同じ接頭辞
+(`STORAGE_PREFIX` = @ugoe/player の `DEFAULT_STORAGE_PREFIX`) と `STORAGE_NAMES` の名前で読み書きする。形・重なり・`index.html` が読むテーマの
+キーとの一致は `storageKeys.test.ts` で検査する (T0957)。
+
+| キー | 覚えるもの | 読み書きする所 |
+| --- | --- | --- |
+| `ugoe.viewer.locale` | 画面の言語 (`system`・`en`・`ja`) | `main.ts` (`@ugoe/i18n` の `initLocale`)・設定のダイアログ |
+| `ugoe.viewer.theme` | テーマ (`system`・`light`・`dark`) | `main.ts` (`@ugoe/ui` の `initTheme`)・`index.html` の `<head>` |
+| `ugoe.viewer.lighting` | 最後に使った光源の設定 | @ugoe/player ([ライティング](#ライティング-t0705)) |
+| `ugoe.viewer.lighting.models` | モデルごとの光源の設定 | @ugoe/player ([モデルごとに覚える](#モデルごとに覚える-t0711)) |
+| `ugoe.viewer.lighting.markers` | ビューポートに光源の印を出すか | @ugoe/player ([ライティング](#ライティング-t0705)) |
+| `ugoe.viewer.dress-up` | モデルごとの着せ替えの組 | @ugoe/player ([付けていた組を覚える](#付けていた組を覚える-t0711)) |
+| `ugoe.viewer.dress-up.auto-restore` | 前の組を尋ねずに戻すか | 同上 |
+| `ugoe.viewer.idle-motion.models` | モデルごとの待機モーションの選択 | @ugoe/player ([待機モーション](#待機モーション-t0721)) |
+| `ugoe.viewer.auto-idle` | 待機モーションを自動で流すか | 同上 |
+| `ugoe.viewer.motion-over-tracking` | トラッキング中もモーションを優先するか | @ugoe/player ([フェイストラッキングと同時に使う](#フェイストラッキングと同時に使う)) |
+| `ugoe.viewer.motion-over-tracking.kept` | モーションを優先してもトラッキングのままにするパラメータ | 同上 |
+| `ugoe.viewer.remembered-order` | 覚えたものの一覧の並び | `MemoryDialog.svelte` (`player.storage`。[覚えたものの一覧](#覚えたものの一覧-t0714)) |
+
 ## モデルごとに覚える (T0711)
 
 モデルごとの設定 (着せ替えの組と、光源の設定 (T0709)、待機モーションの選択 (T0722)) は、`modelMemory.ts` の部品で覚える。
 
 | 覚えるもの | localStorage のキー | 上限 | 忘れる操作 |
 | --- | --- | --- | --- |
-| 着せ替えの組 (`dressUpMemory.ts`) | `ugoe-viewer.dress-up` | 20 体 | 着せ替えのパネルの「覚えた組を忘れる」、「覚えたもの」の一覧 |
-| 光源の設定 (`lighting.ts` の `lightingMemory`) | `ugoe-viewer.lighting.models` | 50 体 | 「覚えたもの」の一覧 (T0714。T0709 ではパネルの「既定に戻す」だった) |
-| 待機モーションの選択 (`animation.ts` の `idleMemory`) | `ugoe-viewer.idle-motion.models` | 50 体 | モーションのパネルの「覚えた選択を忘れる」、「覚えたもの」の一覧 (T0722) |
+| 着せ替えの組 (`dressUpMemory.ts`) | `ugoe.viewer.dress-up` | 20 体 | 着せ替えのパネルの「覚えた組を忘れる」、「覚えたもの」の一覧 |
+| 光源の設定 (`lighting.ts` の `lightingMemory`) | `ugoe.viewer.lighting.models` | 50 体 | 「覚えたもの」の一覧 (T0714。T0709 ではパネルの「既定に戻す」だった) |
+| 待機モーションの選択 (`animation.ts` の `idleMemory`) | `ugoe.viewer.idle-motion.models` | 50 体 | モーションのパネルの「覚えた選択を忘れる」、「覚えたもの」の一覧 (T0722) |
 
-キーの接頭辞 `ugoe-viewer` は @ugoe/player の既定 (`PlayerHost.storagePrefix` を省いたとき。`packages/player/src/storage.ts`、T0930)。
-ビューアは接頭辞を渡さない (前から覚えたものを読み続けるため)。
+キーの接頭辞 `ugoe.viewer` は @ugoe/player の既定 (`PlayerHost.storagePrefix` を省いたとき。`packages/player/src/storage.ts`、T0930)。
+ビューアは接頭辞を渡さない (下の「[覚える値](#覚える値)」)。
 
 - **モデルの鍵 (`ModelIdentity`):** `{ name, fingerprint, location? }`。
   - `location` (`FileLocation`) は後から読み直せる場所: `path:<絶対パス>` (Tauri のダイアログ・ドロップ・起動時の引数)、
@@ -383,7 +405,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 ツールバーの「覚えたもの」(とライティングのパネルの「覚えたもの…」) で、モデルごとに覚えたもの (光源の設定・着せ替えの組・待機モーションの選択 (T0722)) を
 一覧にする (`MemoryDialog.svelte`)。3 つの入れ物の項目を同じモデル (`sameModel`) ごとに 1 行にまとめ (`rememberedModels.ts` の
 `mergeRemembered`)、開いているモデルを先頭に、あとは「並び」で選んだ順に並べる。既定は覚えた日時の新しい順で、名前の順も選べる (T0717)。選んだ並びは localStorage の
-`ugoe-viewer.remembered-order` に覚え (`loadRememberedOrder`・`saveRememberedOrder` に `player.storage` を渡す)、次に一覧を開いたときも使う
+`ugoe.viewer.remembered-order` に覚え (`loadRememberedOrder`・`saveRememberedOrder` に `player.storage` を渡す)、次に一覧を開いたときも使う
 (T0718。知らない値・読めないときは新しい順)。
 
 - **覚えた日時 (T0717):** `ModelMemory` の項目に `at` (最後に覚えた日時、ミリ秒) を持たせた。`set` のたびに今の時刻にする
@@ -399,7 +421,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | (操作) | 光源と組の両方を覚えていれば「両方を忘れる」 |
 
 - 「すべて忘れる…」は確かめのダイアログ (`AlertDialog`。既定のフォーカスは「キャンセル」) で確かめてから、入れ物のキーを消す (`ModelMemory.clear`)。
-  最後に使った光源 (`ugoe-viewer.lighting`)・光源の印・前の組を自動で戻す、の設定は残す (モデルごとのものではないため)。
+  最後に使った光源 (`ugoe.viewer.lighting`)・光源の印・前の組を自動で戻す、の設定は残す (モデルごとのものではないため)。
 - 忘れても、いま表示している光源と付けているモジュールは変えない。開いているモデルの分を忘れたときは、パネルの「覚えた」の表示を消し、
   尋ねている組は取り消す。次に光源や着せ替えを変えると、そのときのものをまた覚える (`Player.forgetRemembered`・`forgetAllRemembered`)。
 - ライティングを受けるのがモジュールだけのモデルでモジュールを外すとライティングのパネルは消えるが、覚えた光源は一覧から忘れられる
@@ -418,14 +440,14 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | 環境光 | 色と強さ。どの向きの面にも同じだけ当たる |
 | 平行光源 | 光が来る向き。丸い面をドラッグ (中心が正面、縁が真横) するか、「方位」(0° = 右、90° = 上、180° = 左、−90° = 下) と「高さ」(0° = 面に沿う、90° = 正面) で選ぶ。色と強さ |
 | 点光源 | 位置 (「横」「縦」はキャンバスの幅・高さに対する割合、四角い面のドラッグでも選べる)・「手前」(キャンバスからの距離)・「範囲」(光が届く距離。遠いほど弱まり、範囲の外には届かない)。手前と範囲はキャンバスの長い辺に対する割合。色と強さ |
-| ビューポートに光源の印を出す | ビューポートに光源の印を重ね、印のドラッグで光源を動かす (下の「ビューポートの光源の印」)。既定は出す。`ugoe-viewer.lighting.markers` に覚える |
+| ビューポートに光源の印を出す | ビューポートに光源の印を重ね、印のドラッグで光源を動かす (下の「ビューポートの光源の印」)。既定は出す。`ugoe.viewer.lighting.markers` に覚える |
 
 - 渡す色は「色 × 強さ」(1 を超えてよい)。位置と範囲を割合で持つので、キャンバスの大きさが違うモデルでも同じように当たる。
   JSON への変換は `lighting.ts` の `toLightingJson` (平行光源の `direction` は光が進む向きなので、来る向きの逆にする)。
-- 設定は **モデルごとに覚える** (T0709。`ugoe-viewer.lighting.models`、最近開いた 50 体まで。鍵は [モデルごとに覚える](#モデルごとに覚える-t0711))。
+- 設定は **モデルごとに覚える** (T0709。`ugoe.viewer.lighting.models`、最近開いた 50 体まで。鍵は [モデルごとに覚える](#モデルごとに覚える-t0711))。
   - 光源を変える (`setLighting`・`updateLighting`) と、開いているモデルの設定として覚え、最近使ったものにする。
   - モデルを開くと、覚えた設定があればそれにする (覚えた項目を最近使ったものにし、鍵も新しくする)。無ければ **最後に使った設定** を保つ
-    (最後に使った設定は T0705 と同じ `ugoe-viewer.lighting` にも覚え、起動し直した後に覚えていないモデルで使う)。開くだけでは覚えない。
+    (最後に使った設定は T0705 と同じ `ugoe.viewer.lighting` にも覚え、起動し直した後に覚えていないモデルで使う)。開くだけでは覚えない。
   - パネルに「このモデル用に覚えた設定」か「このモデル用の設定はまだありません」を出す (`lightingRemembered`)。
   - 「既定に戻す」(`resetLighting`) は光源を「標準」にし、**「標準」をそのモデルの設定として覚える** (T0714。最後に使った設定も
     「標準」になる)。次にそのモデルを開いたときも、最後に使った設定によらず「標準」で始まる。「標準」を覚えていれば押せない。
@@ -537,9 +559,9 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 - 待機モーションは、モデルを開くたびに、そのモデルに覚えた選択 (下) か、無ければ既定 (`animation.ts` の `defaultIdleMotion`:
   名前が `idle` のもの (大文字小文字は区別しない)、無ければ `idle` で始まるもの (ループするものを先に)) を選ぶ。選択欄で替えられる
   (「(なし)」で流さない)。一覧では「待機」の印が付く。
-- オン・オフ (`ugoe-viewer.auto-idle`) は localStorage に覚える (モデルによらない)。
+- オン・オフ (`ugoe.viewer.auto-idle`) は localStorage に覚える (モデルによらない)。
 - **待機モーションの選択はモデルごとに覚える (T0722)。** 選択欄で選ぶと (「(なし)」も)、開いているモデルの分として
-  `ugoe-viewer.idle-motion.models` に覚える (`animation.ts` の `idleMemory`。入れ物は `modelMemory.ts` の `ModelMemory`、値は
+  `ugoe.viewer.idle-motion.models` に覚える (`animation.ts` の `idleMemory`。入れ物は `modelMemory.ts` の `ModelMemory`、値は
   `{ motion: string | null }`)。次にそのモデルを開くと覚えた選択で始める (`initialIdleMotion`)。覚えたモーションがモデルから消えていたら
   既定を使う (覚えたものは消さない。書き出し直して名前が戻れば、また使う)。モデルを開いただけでは覚えない (既定は覚えない)。
   覚えていると選択欄の横に「覚えた選択を忘れる」が出る。「覚えたもの」の一覧にも「待機モーション」の列で出し、そこでも忘れられる。
@@ -562,7 +584,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 
 #### モーションを優先する (T0721)
 
-「トラッキング中もモーションを優先」(既定で入。`ugoe-viewer.motion-over-tracking` に覚える) を入れると、**待機以外の優先度で再生中の
+「トラッキング中もモーションを優先」(既定で入。`ugoe.viewer.motion-over-tracking` に覚える) を入れると、**待機以外の優先度で再生中の
 モーション** が動かすパラメータでは、トラッキングの値の上にモーションの値が乗る (`WebPuppet.set_motion_over_tracking(true)`)。
 見本の `nod` を再生すると、トラッキング中でも頭がうなずき、終わるとフェードアウトしてトラッキングの頭の向きに戻る。
 モーションが動かさないパラメータ (目・口など) はトラッキングのまま。
@@ -575,7 +597,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
   `trackingGroup` が ID の先頭で分ける) のチェックと、「パラメータごとに選ぶ」(トラッキングが書き込むパラメータの一覧) が出る。
   外した部分・パラメータは、モーションが動かしてもトラッキングのまま (例: 目を外すと、`nod` でうなずきながら目はトラッキングどおり
   瞬きする)。部分のチェックは、一部だけ外していると中間の表示になり、押すとまとめて優先に戻す。選択は外したパラメータの ID として
-  `ugoe-viewer.motion-over-tracking.kept` に覚え (モデルによらない。標準のパラメータの ID は共通のため)、WebPuppet の
+  `ugoe.viewer.motion-over-tracking.kept` に覚え (モデルによらない。標準のパラメータの ID は共通のため)、WebPuppet の
   `set_tracking_kept` に渡す。外したパラメータとモーションが重なると、モーションに「一部トラッキング」の印が出る。
 - 表情・目パチ・呼吸は、今までどおりトラッキング (とモーション) の値の上に重なる。
 - 待機の優先度のモーション (自動で流す待機モーションなど) には効かない。ループする待機モーションが頭の向きをずっと上書きすると、

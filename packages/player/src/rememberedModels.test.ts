@@ -172,7 +172,7 @@ describe("remembered order", () => {
   });
 
   it("falls back to the newest first for unknown values and a broken storage", () => {
-    expect(loadRememberedOrder(store(storage({ "ugoe-viewer.remembered-order": "size" })))).toBe(
+    expect(loadRememberedOrder(store(storage({ "ugoe.viewer.remembered-order": "size" })))).toBe(
       "recent",
     );
     const broken = {

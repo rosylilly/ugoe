@@ -39,8 +39,9 @@ src/Output.svelte             出力ウィンドウとブラウザソースの�
                               配信の口 (`feed`) を受け取る。出力ウィンドウではドラッグで動かす
 src/lib/feed.ts               受け手の配信の口 (OutputFeed)。ブラウザソースは WebSocket とファイルの HTTP (`sourceFeed`。切れたらつなぎ直す)
 src/lib/host.ts               バックエンドとの口 (StudioHost)。Tauri の外では window.__UGOE_STUDIO_HOST__ を使う
-src/lib/settings.ts           覚える設定 (言語・刻みの速さ。localStorage) と出力の大きさのプリセット。出力ウィンドウの Player のキーの接頭辞
-                              (`ugoe-studio.player`。T0930 より前にビューアの接頭辞で覚えたものは操作ウィンドウを開いたときに消す)
+src/lib/settings.ts           出力の大きさのプリセットと刻みの速さ (プロファイルの値の読み方)
+src/lib/storageKeys.ts        localStorage のキーの一覧 (`ugoe.studio.*`。出力ウィンドウの Player の接頭辞 `ugoe.studio.player` も。
+                              docs/studio.md の「覚える値」)
 src/lib/status.ts             「いまの状態」の印 (トラッキング・口パク・ホットキー・負荷・操作 API・ブラウザソース) の形と文と説明 (T0817)
                               透過が効かないかの判定 (`transparencyLost`。T0846)
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
@@ -60,7 +61,7 @@ src/lib/commandMessage.ts     コマンドのエラーの形と英語の文 (@ug
 src/lib/labels.ts             シーンの表示名
 src/lib/receivers.ts          受け手の表示名と、受け手が読めなかったこと (T0825) の文と受け手ごとのまとめ (T0840)
 src/lib/decodeImage.ts        受け手が受け取った背景の画像をデコードできるか (壊れた画像を知らせる。T0836)
-src/lib/virtualCamera.ts      仮想カメラの設定 (localStorage) と状態・知らせの判断
+src/lib/virtualCamera.ts      仮想カメラの設定 (プロファイルの値) と状態・知らせの判断
 src/lib/i18n.ts               文言 (@ugoe/i18n の名前空間 `studio`。カタログは locales/)
 src/lib/wasm/                 ugoe-wasm の読み込み。generated/ は `pnpm wasm` の出力 (gitignore 済み)
 src-tauri/                    バックエンド (Rust クレート `ugoe-studio`)
@@ -117,11 +118,11 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 - **操作ウィンドウはモデルを描かない** (GPU の負荷を出力の分だけにする)。様子は値と数値で示す。
 - パラメータのスライダーは指揮役に書き込む (`set_parameter`。次の刻みから基準値になる)。動かしてから 0.5 秒は、指揮役からの値で表示を上書きしない。
 - 言語は「OS に合わせる」が既定で、OS の言語は `tauri-plugin-os` の `locale()` で取る (WebView の `navigator.languages` は OS と違うことがある。
-  `packages/i18n/README.md`)。選んだ言語は `ugoe-studio.locale` に覚える。
-- 言語とテーマ (OS に合わせる・ライト・ダーク。`@ugoe/ui` の `ThemeSetting`) はツールバーの歯車の設定のダイアログ。テーマは `ugoe-studio.theme` に覚える。
+  `packages/i18n/README.md`)。選んだ言語は `ugoe.studio.locale` に覚える。
+- 言語とテーマ (OS に合わせる・ライト・ダーク。`@ugoe/ui` の `ThemeSetting`) はツールバーの歯車の設定のダイアログ。テーマは `ugoe.studio.theme` に覚える。
   操作ウィンドウだけに効かせ、出力ウィンドウ (`output.ts`) は @ugoe/ui を読まないので透過のまま。
 - 出力ウィンドウの大きさは物理ピクセルのプリセット (1920×1080・1280×720・1080×1920・1080×1080・自由)。選んだものはプロファイルに持ち、
-  プロファイルを開いたときに合わせる (T0802。T0801 の `ugoe-studio.output-size` は使わない)。
+  プロファイルを開いたときに合わせる (T0802)。
 - **シーンとプロファイル (T0802):** プロファイル (版の番号付きの JSON) は舞台 (`stage.rs`) が持ち、変わるたびに操作ウィンドウへ `profile` の
   通知を配る。シーンの切り替えは指揮役の `present` で行い、受け手には `scene` の通知 (モデルとモジュールの版・見せ方) を配る。
   形式と切り替えの規則は [docs/studio.md](../../docs/studio.md#シーンとプロファイル)。

@@ -181,6 +181,19 @@
 
 負荷の印は指揮役の最初の様子が、出力の印は出力ウィンドウの様子が届くまで出さない。
 
+### 覚える値
+
+操作ウィンドウの表示の設定は WebView の `localStorage` に覚える。キーはすべて `ugoe.studio.<名前>` の形 (エディタの `ugoe.editor.*`・
+ビューアの `ugoe.viewer.*` と同じ形) で、一覧 (`apps/studio/src/lib/storageKeys.ts` の `STORAGE_KEYS`) から使う
+(形と重なり、`index.html` が読むテーマのキーとの一致は `storageKeys.test.ts` で検査する。T0957)。プロファイルに持つもの
+(出力の大きさ・刻みの速さ・仮想カメラなど) は覚えない ([プロファイルの形式](#プロファイルの形式))。
+
+| キー | 値 | 既定 | 場所 |
+| --- | --- | --- | --- |
+| `ugoe.studio.locale` | `system`・`en`・`ja` | `system` | 設定のダイアログの言語 (`@ugoe/i18n` の `initLocale`。`src/control.ts`) |
+| `ugoe.studio.theme` | `system`・`light`・`dark` | `system` | 設定のダイアログのテーマ (`@ugoe/ui` の `initTheme`。`index.html` の `<head>` も読む)。操作ウィンドウだけに効く |
+| `ugoe.studio.player.<名前>` | @ugoe/player の `STORAGE_NAMES` | — | 出力ウィンドウの Player の接頭辞 (`PLAYER_STORAGE_PREFIX`)。受け手のモードではほぼ何も覚えない (`packages/player/README.md`) |
+
 ## 出力ウィンドウ
 
 | 設定 | 選択肢 | 既定 |
@@ -398,11 +411,9 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
   意味を変える・項目を消すときは版を上げ、読む側に古い版からの読み替えを足す。ホットキー・入力・モーションの設定 (T0803) は省ける項目として足した
   (下の「入力とホットキーの項目」)。刻みの速さと仮想カメラの設定 (`output.tickRate`・`output.virtualCamera`。T0827) も、版 1 のまま省ける項目として足した。
   それより前のプロファイルは既定の値 (60・1280×720・30・`#f0f0f0`) で読み、それより前のスタジオは 2 つを読み飛ばす (保存し直すと消える)。
-- **localStorage からの移し替え (T0827):** 刻みの速さと仮想カメラの設定は、以前は操作ウィンドウの localStorage
-  (`ugoe-studio.tick-rate`・`ugoe-studio.virtual-camera`) に覚えていた。**引き継がずに捨てる** (起動したときに 2 つのキーを消す。
-  `apps/studio/src/lib/settings.ts` の `forgetLegacySettings`)。プロファイルの値は、その計算機の設定でなくプロファイルを書いたときの値にしたい
-  (人に渡したプロファイルが、受け取った計算機の localStorage で変わらないように)。項目の無いプロファイルに localStorage の値を当てると、
-  開く計算機ごとに値が変わる。スタジオはまだ公開しておらず、失うのは開発中に選んだ値だけ。
+- **localStorage に持たない (T0827):** 刻みの速さと仮想カメラの設定は、操作ウィンドウの localStorage ではなくプロファイルに持つ。
+  プロファイルの値は、その計算機の設定でなくプロファイルを書いたときの値にしたい (人に渡したプロファイルが、受け取った計算機の
+  localStorage で変わらないように)。localStorage に覚えるのは画面の言語とテーマだけ ([覚える値](#覚える値))。
 - パスは絶対パスで持つ (ADR 0028 の 4.)。見つからなければ、そのシーンに切り替えるときに選び直させる。
 
 #### 入力とホットキーの項目 (T0803)

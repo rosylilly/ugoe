@@ -149,8 +149,8 @@ describe("Player follower mode", () => {
     const { p: viewer } = await ready();
     await viewer.load(first, [{ file: hat, attach: true }]);
     viewer.detach();
-    const saved = localStorage.getItem("ugoe-viewer.dress-up");
-    const lighting = localStorage.getItem("ugoe-viewer.lighting");
+    const saved = localStorage.getItem("ugoe.viewer.dress-up");
+    const lighting = localStorage.getItem("ugoe.viewer.lighting");
 
     const { p } = await ready({}, { readFile: async () => hat });
     p.startFollowing();
@@ -163,13 +163,13 @@ describe("Player follower mode", () => {
     });
     expect(p.lighting.ambient.intensity).toBe(2);
     expect(p.lightingRemembered).toBe(false);
-    expect(localStorage.getItem("ugoe-viewer.dress-up")).toBe(saved);
-    expect(localStorage.getItem("ugoe-viewer.lighting")).toBe(lighting);
+    expect(localStorage.getItem("ugoe.viewer.dress-up")).toBe(saved);
+    expect(localStorage.getItem("ugoe.viewer.lighting")).toBe(lighting);
   });
 
   it("writes nothing to the storage, not even the remembered idle motion (T0930)", async () => {
     const storage = new MemoryStorage();
-    const store = new PlayerStorage("ugoe-studio.player", storage as unknown as Storage);
+    const store = new PlayerStorage("ugoe.studio.player", storage as unknown as Storage);
     idleMemory(store).set(modelIdentity(first), { motion: "idle" });
     const writes: string[] = [];
     const setItem = storage.setItem.bind(storage);
@@ -179,7 +179,7 @@ describe("Player follower mode", () => {
     };
     const { p } = await ready(
       { motions: [{ name: "idle", looping: true, parameters: [] }] },
-      { storagePrefix: "ugoe-studio.player", storage: storage as unknown as Storage },
+      { storagePrefix: "ugoe.studio.player", storage: storage as unknown as Storage },
     );
     p.startFollowing();
     await p.load(first);

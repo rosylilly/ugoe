@@ -42,7 +42,7 @@ function apply(root: HTMLElement | undefined = globalThis.document?.documentElem
 
 /**
  * 起動時に 1 回 (mount の前): 覚えた設定を <html> に付け、OS のテーマの変化を見張る。`key` は覚えるキー
- * (例: `ugoe-viewer.theme`)。見張りをやめる関数を返す。
+ * (例: `ugoe.viewer.theme`)。見張りをやめる関数を返す。
  */
 export function initTheme(key: string): () => void {
   storageKey = key;

@@ -1,5 +1,5 @@
 // 言語の設定を覚える・起動時に戻す (T0925)。テーマ (@ugoe/ui の theme.svelte.ts) と同じ流儀で、設定は localStorage に
-// アプリが渡すキー (`<アプリ>.locale`。例: `ugoe-viewer.locale`) で覚える。
+// アプリが渡すキー (`ugoe.<アプリ>.locale`。例: `ugoe.viewer.locale`) で覚える。
 // OS の言語の取り方 (Tauri の tauri-plugin-os など) はアプリが関数で渡す (このパッケージは Tauri に依存しない。README の「OS の言語」)。
 import { setLocale, setSystemLanguages } from "./i18n.svelte";
 import { isLocale, type LocalePreference } from "./languages";
