@@ -1,11 +1,11 @@
 ---
 id: T1675
 title: "エディタ: 強制色で、ツリーのビューポートからのホバー (hovered・hovered-within) が見えないのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1675
 ---
 
 # T1675: エディタ: 強制色で、ツリーのビューポートからのホバー (hovered・hovered-within) が見えないのを直す

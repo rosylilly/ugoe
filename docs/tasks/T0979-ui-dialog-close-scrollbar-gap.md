@@ -1,11 +1,11 @@
 ---
 id: T0979
 title: "@ugoe/ui: Dialog の閉じるボタンを、重ねて描くスクロールバーから離す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [packages/ui, tests, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0979
 ---
 
 # T0979: @ugoe/ui: Dialog の閉じるボタンを、重ねて描くスクロールバーから離す
