@@ -1,11 +1,11 @@
 ---
 id: T0737
 title: "ビューア: 背景の色と「透明」を「背景」の Popover にまとめ、360px のツールバーを 2 行にする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/viewer, packages/ui, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0737
 ---
 
 # T0737: ビューア: 背景の色と「透明」を「背景」の Popover にまとめ、360px のツールバーを 2 行にする
