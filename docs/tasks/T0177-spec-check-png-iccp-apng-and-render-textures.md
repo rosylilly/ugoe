@@ -1,11 +1,11 @@
 ---
 id: T0177
 title: "spec-check: iCCP と APNG のフレームを持つ PNG の例を足し、描画の例のテクスチャでも PNG の記述を使う"
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, tools/spec-check, ugoe-format, ugoe-render, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0177
 ---
 
 # T0177: spec-check: iCCP と APNG のフレームを持つ PNG の例を足し、描画の例のテクスチャでも PNG の記述を使う

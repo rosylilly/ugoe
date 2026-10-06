@@ -1,11 +1,11 @@
 ---
 id: T0330
 title: "spec/examples: タイムラインに show_pose_immediately の操作を足して確かめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [spec, tools/spec-check, ugoe, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0330
 ---
 
 # T0330: spec/examples: タイムラインに show_pose_immediately の操作を足して確かめる

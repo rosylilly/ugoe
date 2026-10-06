@@ -1,11 +1,11 @@
 ---
 id: T0485
 title: "Godot: UgoePuppet2D にポーズの定義 (グループごとの要素のパーツ) を読む関数を足す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0485
 ---
 
 # T0485: Godot: UgoePuppet2D にポーズの定義 (グループごとの要素のパーツ) を読む関数を足す

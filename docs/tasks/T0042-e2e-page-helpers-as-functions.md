@@ -1,11 +1,11 @@
 ---
 id: T0042
 title: "e2e: page.mjs のページ側のコードを文字列でなく関数で渡す"
-status: todo
+status: in-progress
 milestone: M9
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0042
 ---
 
 # T0042: e2e: page.mjs のページ側のコードを文字列でなく関数で渡す
