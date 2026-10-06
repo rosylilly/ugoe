@@ -4,7 +4,16 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { t } from "./i18n";
 import { MAX_RESTARTS, RESTORE_TIMEOUT_MS } from "./surface";
 import { bundle, fakePuppet, moduleFile } from "./testing/fakePuppet";
-import { container, moduleRows, pending, player, settle, setupPlayer } from "./testing/player";
+import {
+  container,
+  moduleRows,
+  pending,
+  player,
+  ready,
+  settle,
+  setupPlayer,
+  step,
+} from "./testing/player";
 
 // 画面の部品と MediaPipe まで読み込むと遅いので、Player が使う関数だけにする。
 vi.mock("@ugoe/face-tracking", () => import("./testing/faceTracking"));
@@ -418,5 +427,179 @@ describe("Player", () => {
       globalThis.devicePixelRatio = 1;
       delete (globalThis as { matchMedia?: unknown }).matchMedia;
     }
+  });
+});
+
+// 読み込みの途中に GPU を失ったとき (T0955。`<ugoe-avatar>` の T0486 と同じ扱い): エラーの文を出さず、開こうとしたファイルを
+// 作り直した後に開く。エラーの文は作り直しを諦めたときだけ。
+describe("Player when the GPU is lost while loading", () => {
+  /** WebGL2 のコンテキストを失う (wasm は `webglcontextlost` で `is_lost()` を立てる)。 */
+  function loseContext(fake: ReturnType<typeof fakePuppet>, index: number): void {
+    fake.state.lost = true;
+    pending[index]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+  }
+
+  it("opens the file after the WebGL context comes back", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const first = await ready();
+    await first.p.load(bundle("a.ugoe", 1));
+    first.p.zoomBy(3);
+    loseContext(first, 0);
+    const other = bundle("b.ugoe", 2);
+    await first.p.load(other);
+    expect(first.p.error).toBeNull();
+    expect(first.p.waitingForGpu).toBe(true);
+
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([other.bytes]);
+    expect(first.p.modelName).toBe("b.ugoe");
+    expect(first.p.status).toBe("ready");
+    expect(first.p.error).toBeNull();
+    // 開いたモデルなので fit で見せる。
+    expect(first.p.zoom).toBe(1);
+  });
+
+  it("opens the first model after the GPU is recreated", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const first = await ready();
+    loseContext(first, 0);
+    const model = bundle("a.ugoe", 1);
+    await first.p.load(model);
+    expect(first.p.error).toBeNull();
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([model.bytes]);
+    expect(first.p.status).toBe("ready");
+    expect(first.p.error).toBeNull();
+  });
+
+  it("opens the file after the WebGPU device is recreated", async () => {
+    const first = await ready();
+    await first.p.load(bundle("a.ugoe", 1));
+    // WebGPU のデバイスの喪失は canvas のイベントが無く、次のフレームの `is_lost()` で作り直す。
+    first.state.lost = true;
+    const other = bundle("b.ugoe", 2);
+    await first.p.load(other);
+    expect(first.p.error).toBeNull();
+    step(16);
+    await settle();
+    expect(first.calls).toEqual(["free"]);
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([other.bytes]);
+    expect(first.p.modelName).toBe("b.ugoe");
+    expect(first.p.error).toBeNull();
+  });
+
+  it("opens a module after the GPU is recreated", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const first = await ready();
+    const model = bundle("a.ugoe", 1);
+    await first.p.load(model);
+    loseContext(first, 0);
+    await first.p.load(moduleFile("hat", "head"));
+    expect(first.p.dressUpError).toBeNull();
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([model.bytes]);
+    expect(moduleRows(first.p)).toEqual([["hat", true]]);
+    expect(first.p.dressUpError).toBeNull();
+  });
+
+  it("does not say the GPU stopped when dressing up while it is lost", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const first = await ready();
+    await first.p.load(bundle("a.ugoe", 1), [{ file: moduleFile("hat", "head"), attach: false }]);
+    loseContext(first, 0);
+    expect(first.p.attachModule("hat")).toBe(false);
+    expect(first.p.dressUpError).toBeNull();
+    expect(moduleRows(first.p)).toEqual([["hat", false]]);
+  });
+
+  it("keeps the view, the values and the modules when the GPU is lost again while reloading", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
+    const parameters = [{ id: "AngleX" }];
+    const first = await ready({ parameters });
+    const model = bundle("a.ugoe", 1);
+    await first.p.load(model, [{ file: moduleFile("hat", "head"), attach: true }]);
+    first.p.zoomBy(2);
+    first.p.setParameter("AngleX", 0.5);
+    loseContext(first, 0);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    // 作り直した WebPuppet も、モデルを読み直す前に失った。
+    const second = fakePuppet({ parameters });
+    second.state.lost = true;
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(first.p.error).toBeNull();
+    step(16);
+    await settle();
+    const third = fakePuppet({ parameters });
+    pending[2]?.resolve(third.puppet);
+    await settle();
+    expect(third.loaded).toEqual([model.bytes]);
+    expect(first.p.error).toBeNull();
+    expect(first.p.zoom).toBe(2);
+    expect(third.state.values.get("AngleX")).toBe(0.5);
+    expect(moduleRows(first.p)).toEqual([["hat", true]]);
+  });
+
+  it("says why only after giving up, and opens the file on restart", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => {
+      warn.mockRestore();
+      vi.useRealTimers();
+    });
+    const createError = () =>
+      Object.assign(new Error("no adapter"), { name: "CreateError", code: "adapter_unavailable" });
+    const first = await ready();
+    await first.p.load(bundle("a.ugoe", 1));
+    first.state.lost = true;
+    const other = bundle("b.ugoe", 2);
+    await first.p.load(other);
+    step(16);
+    // 作り直しで作れないまま、試し直しの上限を超える (作れないのは WebGL2 だけ。一度 WebGL2 に落ちていないので両方試す)。
+    for (let i = 0; i < MAX_RESTARTS; i++) {
+      await settle();
+      pending.at(-1)?.reject(createError());
+      await settle();
+      pending.at(-1)?.reject(createError());
+      await settle();
+      expect(first.p.error).toBeNull();
+      await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS);
+    }
+    await settle();
+    expect(first.p.status).toBe("unavailable");
+    expect(first.p.error).toBe(
+      t("errors.recreateFailed", { reason: t("createError.adapterUnavailable") }),
+    );
+
+    const restarting = first.p.restart();
+    await settle();
+    const restarted = fakePuppet();
+    pending.at(-1)?.resolve(restarted.puppet);
+    await restarting;
+    await settle();
+    expect(restarted.loaded).toEqual([other.bytes]);
+    expect(first.p.modelName).toBe("b.ugoe");
+    expect(first.p.error).toBeNull();
   });
 });

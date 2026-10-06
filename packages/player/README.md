@@ -65,6 +65,11 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   値も既定から始める (前のモデルの値を同じ ID のパラメータに戻さない。T0945)。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
+- **読み込みの途中に GPU を失ったとき (T0955):** `load` (と `loadModule`) が wasm から `device_lost` を受け、WebPuppet が
+  `is_lost()` なら、読み込めなかったとはせず、`error`・`dressUpError` に文を出さない。開こうとしたファイル (と一緒に開くモジュール) は
+  作り直した後に開く (WebPuppet が無い間に開いたものと同じく fit で見せ、値は既定から)。`load` は作り直しを待たずに返る。エラーの文は
+  作り直しを諦めたときだけ (`errors.gpuLostRepeatedly`・`errors.recreateFailed`)。付け外しは何もせず `false` を返す (文は出さない)。
+  `<ugoe-avatar>` の T0486 と同じ扱い ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
 - ポーズ (T0735): `poseGroups` (グループ) と `poseShown` (グループごとに表示している要素) を持ち、`showPose(part)` で選ぶ (次のフレームからフェード。
   `showPose(part, { immediately: true })` はフェードせずにすぐに表示する (`show_pose_immediately`。読み込みの直後など。T0844))。
   `poseShown` はモーションによる切り替えに追従する (T0736): ふつうのモードでは毎フレーム `update` の後で表示中の要素
@@ -111,7 +116,8 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   検査のエラーなど) は wasm の英語の文を括弧で添え、知らないコードは英語の文のまま出す。`load_module` が上限を超えた `DressUpError`
   (`read_limit_exceeded`・`image_limit_exceeded`) も同じ文にする。アプリ (ビューア・スタジオ) は `error` を出すだけで、訳を持たない。
 - 描画と読み戻し (`render`・`read_pixels`) の `RenderError` (T0465。`code` は `device_lost` だけ) は `describeRenderError` が
-  読み込みの `device_lost` と同じ文にする (`capture` の失敗を出すアプリが使う)。着せ替えの `device_lost` も同じ文。
+  `loadError.deviceLost` の文にする (`capture` の失敗を出すアプリが使う)。読み込みと着せ替えの `device_lost` は、上のとおり
+  GPU を失っている (`is_lost()`) なら文を出さない (`describeLoadError`・`describeDressUpError` は同じ文を返すが、そのとき Player は出さない)。
 - `WebPuppet.create` の `CreateError` (T0475。GPU やブラウザの都合で作れない) は `describeCreateError` が `createError.*` の文にする
   (知らないコードと `CreateError` でない例外は `null`)。`Player` は作れなかったときにこの文を `error` に入れ、`CreateError` なら
   (知らないコードでも) `canRestart` を真にする (T0941。[docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。`isCreateFailure` で見分けられる。
@@ -172,7 +178,8 @@ player.pushFrame(decodeFrame(buffer));
 失ったコンテキストしか取れないときの作成の失敗 (`CreateError`。T0475)・
 作成の途中・描画中に GPU プロセスごと失ったときの作り直しと、wasm が panic しないこと (T0944)・
 devicePixelRatio だけが変わったときの追従を、`Player` は作り直しでモデル・モジュール・パラメータの値を戻すことと、倍率が変わったときの
-ビュー・ズームの換算・読み戻しの大きさと、ポーズの欄がモーションによる切り替えに追従すること (T0736) を確かめる。
+ビュー・ズームの換算・読み戻しの大きさと、ポーズの欄がモーションによる切り替えに追従すること (T0736) と、読み込みの途中に
+失ったら文を出さずに開こうとしたモデルとモジュールを作り直した後に開くこと (T0955) を確かめる。
 `just player-browser` で流す (Chrome と wasm-bindgen-cli が要る。`just ci` には入れず、CI の `conformance` ジョブで流す)。
 回し方とシナリオは [docs/testing.md](../../docs/testing.md#puppetsurface-のブラウザのテスト)。
 

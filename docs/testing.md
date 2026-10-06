@@ -376,6 +376,9 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
   ポーズの欄 (`poseShown`) は本物の wasm の表示中の要素 (`pose_visible_json`) を読み、見本の `wave` で `HandsDown` → `Wave` → `HandsDown` と
   追従し、モーションが終わった後に選んだ要素は残る (`player-pose-follows-motion`。T0736。追従をやめると落ちることを確かめた)。
+  コンテキストを失っている間 (`load_bundle`・`load_module` が `device_lost`) に初めのモデルを開いても、別のモデルとモジュールを開いても、
+  `error`・`dressUpError` を出さず、復元の後にそのモデル (とモジュール) を開いて fit で描く (`player-loss-during-load`。T0955。
+  直す前には落ちることを確かめた)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
   `setDevicePixelRatio(ratio)` として出します。ヘッドレスの Chrome (154 で確かめた) は倍率の上書きだけではメディアクエリを評価し直さず、
   `matchMedia` の `matches` は変わっても `change` が届きません (ページの大きさも変えると届く)。そこで上書きのたびに、エミュレートする

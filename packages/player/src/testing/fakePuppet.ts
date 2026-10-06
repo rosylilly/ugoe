@@ -69,6 +69,16 @@ export function fakePuppet(options: FakeOptions = {}) {
     immediate: [] as string[],
     /** ビュー (fit に対する倍率と、fit の位置からのずれ。偽物の変換は `scale = zoom`・`offset = pan`)。 */
     view: { zoom: 1, pan: [0, 0] as [number, number] },
+    /**
+     * GPU を失ったか (`is_lost`)。真の間は、wasm と同じく読み込みと着せ替えが `code` = `device_lost` の例外を投げる
+     * (テストは WebGL2 なら canvas の `webglcontextlost` も送る)。
+     */
+    lost: false,
+  };
+  /** 失った WebPuppet の読み込み・着せ替えの例外 (ugoe-wasm の `LoadError`・`DressUpError` と同じ形)。 */
+  const checkLost = (name: "LoadError" | "DressUpError") => {
+    if (state.lost)
+      throw Object.assign(new Error("the GPU device was lost"), { name, code: "device_lost" });
   };
   /** 今のポーズのグループ (本体 → 付けたモジュールの順)。 */
   const poseGroups = (): string[][] => [
@@ -83,9 +93,10 @@ export function fakePuppet(options: FakeOptions = {}) {
   const methods: Record<string, ((...args: never[]) => unknown) | undefined> = {
     free: () => calls.push("free"),
     backend: () => "webgl2",
-    is_lost: () => false,
+    is_lost: () => state.lost,
     has_model: () => state.hasModel,
     load_bundle: (bytes: Uint8Array) => {
+      checkLost("LoadError");
       // ugoe-wasm の `LoadError` と同じ形 (`name`・`code`)。
       if (options.failLoad)
         throw Object.assign(new Error("not a ugoe file"), {
@@ -110,22 +121,26 @@ export function fakePuppet(options: FakeOptions = {}) {
     },
     reset_parameters: resetValues,
     load_module: (bytes: Uint8Array) => {
+      checkLost("DressUpError");
       const { name, slot } = JSON.parse(new TextDecoder().decode(bytes.subarray(16)));
       state.modules.set(name, slot);
       log.push(`load ${name}`);
       return name;
     },
     attach_module: (name: string) => {
+      checkLost("DressUpError");
       const slot = state.modules.get(name);
       if (slot === undefined) throw new Error(`${name} is not loaded`);
       state.attached = state.attached.filter((n) => state.modules.get(n) !== slot);
       state.attached.push(name);
     },
     detach_module: (name: string) => {
+      checkLost("DressUpError");
       if (!state.attached.includes(name)) throw new Error(`${name} is not attached`);
       state.attached = state.attached.filter((n) => n !== name);
     },
     unload_module: (name: string) => {
+      checkLost("DressUpError");
       if (!state.modules.delete(name)) throw new Error(`${name} is not loaded`);
       state.attached = state.attached.filter((n) => n !== name);
       log.push(`unload ${name}`);

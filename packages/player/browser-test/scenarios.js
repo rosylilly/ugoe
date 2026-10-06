@@ -962,6 +962,70 @@ const scenarios = {
   },
 
   /**
+   * Player の読み込みの途中に WebGL2 のコンテキストを失ったら (wasm の `load_bundle`・`load_module` が `device_lost`)、エラーの文を
+   * 出さずに、開こうとしたモデルとモジュールを作り直した後に開いて描く (T0955。`<ugoe-avatar>` の T0486 と同じ扱い)。
+   * 開いたモデルなので fit で見せる。初めのモデル (前のモデルが無い) でも同じ。
+   */
+  async "player-loss-during-load"() {
+    const container = stage();
+    const player = newPlayer();
+    player.setBackground("#000000", true);
+    await player.attach(container);
+    check(player.status === "empty", `status after attach is ${player.status}`);
+
+    // 初めのモデルを開く途中に失った
+    let oldCanvas = canvasesIn(container)[0];
+    let ext = await loseContext(container);
+    await until(() => player.waitingForGpu, "waitingForGpu after the loss");
+    await player.load({ name: "avatar.ugoe", bytes: await modelBytes() });
+    check(player.error === null, `error while the context is lost: ${player.error}`);
+    check(player.modelName !== "avatar.ugoe", "the model was opened while the context is lost");
+    ext.restoreContext();
+    await until(() => {
+      const canvases = canvasesIn(container);
+      return (
+        (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
+        player.status === "unavailable"
+      );
+    }, "the first model after the recreation");
+    check(player.status === "ready", `status ${player.status} (${player.error})`);
+    check(player.error === null, `error after the recreation: ${player.error}`);
+    check(player.modelName === "avatar.ugoe", `model ${player.modelName}`);
+    await expectCaptured(player, "the first model after the recreation");
+    player.zoomBy(2, 40, 30);
+
+    // 別のモデルとモジュールを開く途中に失った
+    oldCanvas = canvasesIn(container)[0];
+    ext = await loseContext(container);
+    await until(() => player.waitingForGpu, "waitingForGpu after the second loss");
+    const module = { name: "cat-ears.ugoemod", bytes: await fileBytes(DRESS_UP_MODULE) };
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) }, [
+      { file: module, attach: true },
+    ]);
+    check(player.error === null, `error while the context is lost: ${player.error}`);
+    check(player.dressUpError === null, `dress-up error while lost: ${player.dressUpError}`);
+    check(player.modelName === "avatar.ugoe", `model while lost ${player.modelName}`);
+    ext.restoreContext();
+    await until(() => {
+      const canvases = canvasesIn(container);
+      return (
+        (canvases.length === 1 && canvases[0] !== oldCanvas && player.status === "ready") ||
+        player.status === "unavailable"
+      );
+    }, "the second model after the recreation");
+    check(player.status === "ready", `status ${player.status} (${player.error})`);
+    check(player.error === null, `error after the recreation: ${player.error}`);
+    check(player.dressUpError === null, `dress-up error: ${player.dressUpError}`);
+    check(player.modelName === "dress-up.ugoe", `model ${player.modelName}`);
+    const attached = player.modules.filter((m) => m.attached).map((m) => m.name);
+    check(attached.length === 1, `attached modules: ${attached.join(", ")}`);
+    check(near(player.zoom, 1), `zoom after opening a model ${player.zoom}`);
+    check(live.size === 1, `${live.size} live puppets`);
+    await expectCaptured(player, "the second model after the recreation");
+    player.detach();
+  },
+
+  /**
    * Player のポーズの欄 (`poseShown`) は、モーションによる切り替えに追従する: 着せ替えの見本の `wave` で `HandsDown` → `Wave` →
    * `HandsDown` と変わり、モーションが終わった後に利用者が選んだ要素は残る (T0736。本物の wasm の `pose_visible_json`)。
    */

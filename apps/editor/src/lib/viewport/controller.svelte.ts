@@ -524,6 +524,12 @@ export class ViewportController {
       }
       this.requestRender();
     } catch (e) {
+      // 読み込みの途中に GPU を失った (`device_lost`) なら、エラーにせず、次のフレームの `checkLost` で作り直す (WebGL2 は
+      // 復元を待つ)。作り直した WebPuppet には `#setUp` が今のモデルを読む (T0955。Player・`<ugoe-avatar>` と同じ)。
+      if (puppet.is_lost()) {
+        this.requestRender();
+        return;
+      }
       // 読み込みの失敗 (`LoadError`。T0434) はビューアと同じ訳 (@ugoe/player のカタログ) にする (T1611)。GPU が止まったものは
       // エディタのカタログの文 (T0941)。
       this.status = "error";

@@ -50,6 +50,19 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
     [crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#作成の失敗-t0475))。作り直しの途中なら上の「作れなければ」と同じく待って試し直し、
     回数に数える。最初の `attach` なら `failed(error)` にその例外を渡す。`<ugoe-avatar>` も同じ。
   - 作り直しは一度に 1 つで、捨てた WebPuppet の印と古い canvas のイベントは見ないので、2 つの知らせが重なっても作り直しは 1 回。
+  - **読み込みの途中の喪失 (T0955):** wasm の読み込み (`load_bundle`・`load_json`) と着せ替え (`load_module`・付け外し) は、GPU を
+    失った後 (`is_lost()` が真) に呼ぶと `code` が `device_lost` の例外を投げる。このときは喪失の知らせ (WebGL2 の `webglcontextlost`) は
+    もう届いているか、次のフレームの `checkLost()` で気づく。使う側は、投げた後に `is_lost()` が真なら読み込めなかったとはせず
+    (エラーの文を出さず)、開こうとしたものを作り直した後に開く。エラーの文は作り直しを諦めたとき (`failed`) だけ。`<ugoe-avatar>` の
+    T0486 (`load()` は作り直した後に解決する) と同じ扱い。
+    - **Player:** 開こうとしたモデル (と一緒に開くモジュール) を、WebPuppet が無い間に開いたものと同じく `#setUp` で開く (fit で見せ、
+      パラメータの値も既定から。`#setUp` の読み直しの途中にまた失ったときは、利用者が開いたものではないのでビューと値を保つ)。
+      `load` の Promise は待たずに返す (WebPuppet が無い間と同じ)。前のモデルのモジュールは除いたまま。モジュールの読み込みも同じく
+      作り直した後に読む。付け外し (`attachModule` など) は WebPuppet が無い間と同じく何もせず `false` を返し、`dressUpError` を出さない
+      (作り直しは付けていた組で戻す)。
+    - **エディタのビューポート:** 表示するモデル (`setModel`) は読む前に覚えるので、文を出さずに `requestRender` で次のフレームの
+      `checkLost()` へ回せば、作り直した WebPuppet に `#setUp` が今のモデルを読む。WebGL2 の復元を待つ間は「GPU の復元を待っています」の
+      ままにする。
   - **続けて失ったとき (T0935):** 前の作り直しから 1 分 (`RESTART_WINDOW_MS`) 以内に失う・作れないことが続き、作り直しが `MAX_RESTARTS` (3) 回を
     超えたら (4 回目)、作り直さずに `failed(GpuLostRepeatedlyError)` で知らせる (数と時間は `<ugoe-avatar>` と同じ)。GPU が戻らない間に
     作り直しを繰り返して資源と時間を使い続けないため。次の `attach` と `restart` で数え直す。
@@ -77,7 +90,7 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
   | 作り直しで作れずに諦めた (`GpuLostRepeatedlyError` の `cause`。T0946) | `player` の `errors.recreateFailed` に `cause` の文 (下の 2 行と同じ) を埋める | `editor` の `viewport.recreateFailed` に `cause` の `createErrorText` の文を埋める (`surfaceFailureText`) |
   | 作れなかった (`CreateError`。`code` ごと) | `player` の `createError.*` (`describeCreateError`) | `editor` の `viewport.createError.*` (`createErrorText`) |
   | 作れなかった (ほかの例外・知らないコード) | `player` の `errors.renderStart` に例外の文を埋める | 例外の文 (`errorText`) |
-  | 読み込みの失敗 (`LoadError`) | `player` の `loadError.*` (`describeLoadError`) | 同じ。ただし `device_lost` は `editor` の `viewport.deviceLost` (`loadErrorText`) |
+  | 読み込みの失敗 (`LoadError`) | `player` の `loadError.*` (`describeLoadError`)。GPU を失った `device_lost` は出さない (上の「読み込みの途中の喪失」) | 同じ。`is_lost()` が偽の `device_lost` は `editor` の `viewport.deviceLost` (`loadErrorText`) |
   | 読み戻しの失敗 (`RenderError` の `device_lost`) | `player` の `loadError.deviceLost` (`describeRenderError`) | `editor` の `viewport.deviceLost` (`screenshotErrorText`) |
 
   `player` のカタログの GPU が止まった文は「アプリを起動し直して (ブラウザではページを読み込み直して)」で、エディタはエディタを起動し直す

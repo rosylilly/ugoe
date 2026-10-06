@@ -2069,8 +2069,11 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - モデルの読み込み (`load_bundle`・`load_json`) の失敗は、wasm の `LoadError` の `code` と補足の値から今の言語の文にします
   (ビューアと同じ `@ugoe/player` の `describeLoadError`。訳はそのカタログ (名前空間 `player`) の `loadError`。T1611)。
   編集中もプレビューモードも同じ `ViewportController` で読むので、どちらにも出ます。知らない `code` と `LoadError` でない例外は
-  wasm の文 (英語) のままです。GPU が止まった (`device_lost`) ときだけは、ビューアの「アプリを起動し直して」ではなくエディタのカタログの
-  文 (`viewport.deviceLost`。エディタを起動し直す案内。スクリーンショットと同じ文) にします (`viewportErrors.ts` の `loadErrorText`。T0941)。
+  wasm の文 (英語) のままです。読み込みの途中に GPU を失った (`device_lost`。`is_lost()` が真) ときは読み込めなかったとはせず、文を
+  出さずに作り直し (WebGL2 は復元を待つ) を始め、作り直した WebPuppet に今のモデルを読みます (T0955。ビューア・`<ugoe-avatar>` と同じ。
+  [ui.md](ui.md#webpuppet-の寿命))。`is_lost()` が偽なのに `device_lost` が来たときは、ビューアの「アプリを起動し直して」ではなく
+  エディタのカタログの文 (`viewport.deviceLost`。エディタを起動し直す案内。スクリーンショットと同じ文) にします (`viewportErrors.ts` の
+  `loadErrorText`。T0941)。
 - WebPuppet を GPU やブラウザの都合で作れなかった (`CreateError`。T0475) ときは、`code` ごとのエディタのカタログの文
   (`viewport.createError.*`) をビューポートに出し、「作り直す」ボタンも出します (`viewportErrors.ts` の `createErrorText`。T0941)。
   知らない `code` と、`code` を持たない例外は例外の文のままで、ボタンは出しません ([ui.md](ui.md#webpuppet-の寿命))。

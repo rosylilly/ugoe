@@ -409,4 +409,89 @@ describe("ViewportController", () => {
       vi.unstubAllGlobals();
     }
   });
+  // 読み込みの途中に GPU を失ったら (`device_lost`)、エラーにせず、作り直した後にそのモデルを読む (T0955。Player・`<ugoe-avatar>` と同じ)。
+  describe("when the GPU is lost while loading", () => {
+    /** モデルを読める偽の WebPuppet。失っていれば wasm と同じく `device_lost` を投げる。読んだ JSON を `loaded` に残す。 */
+    function loadingPuppet() {
+      const fake = fakePuppet();
+      const loaded: string[] = [];
+      Object.assign(fake.puppet, {
+        load_json: (json: string) => {
+          if (fake.puppet.lost)
+            throw Object.assign(new Error("the GPU device was lost"), {
+              name: "LoadError",
+              code: "device_lost",
+            });
+          loaded.push(json);
+          return [];
+        },
+        uses_lighting: () => false,
+        parameter_ids: () => [],
+        view_transform: () => new Float32Array([1, 0, 0]),
+      });
+      return { ...fake, loaded };
+    }
+
+    it("loads the model after the WebGL context comes back", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const controller = new ViewportController();
+        const attached = controller.attach(fakeContainer());
+        await settle();
+        const first = loadingPuppet();
+        pending[0]?.resolve(first.puppet);
+        await attached;
+        controller.setModel({ json: "a", bundle: null });
+        first.puppet.lost = true;
+        pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+        controller.setModel({ json: "b", bundle: null });
+        expect(controller.status).toBe("loading");
+        expect(controller.message).toBe(t("viewport.gpuWaiting"));
+        pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+        await settle();
+        const second = loadingPuppet();
+        pending[1]?.resolve(second.puppet);
+        await settle();
+        expect(second.loaded).toEqual(["b"]);
+        expect(controller.status).toBe("ready");
+        expect(controller.message).toBeNull();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("recreates the WebGPU device and loads the model", async () => {
+      let frame: FrameRequestCallback | null = null;
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        frame = callback;
+        return 1;
+      });
+      try {
+        const controller = new ViewportController();
+        const attached = controller.attach(fakeContainer());
+        await settle();
+        const first = loadingPuppet();
+        pending[0]?.resolve(first.puppet);
+        await attached;
+        (frame as FrameRequestCallback | null)?.(0);
+        frame = null;
+        // WebGPU のデバイスの喪失はイベントが無い。読み込みが `device_lost` を投げたら、次のフレームで作り直す。
+        first.puppet.lost = true;
+        controller.setModel({ json: "b", bundle: null });
+        expect(controller.status).toBe("ready");
+        expect(controller.message).toBeNull();
+        (frame as FrameRequestCallback | null)?.(16);
+        expect(first.calls).toEqual(["free"]);
+        await settle();
+        const second = loadingPuppet();
+        pending[1]?.resolve(second.puppet);
+        await settle();
+        expect(second.loaded).toEqual(["b"]);
+        expect(controller.status).toBe("ready");
+        expect(controller.message).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  });
 });

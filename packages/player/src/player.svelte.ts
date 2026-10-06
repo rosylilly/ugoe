@@ -426,9 +426,7 @@ export class Player {
     const puppet = this.#puppet;
     // まだ描画の準備中なら、準備ができたときに読む (#setUp)。
     if (puppet === null) {
-      this.#openedWhileDown = true;
-      this.#file = file;
-      this.#pendingModules.push(...modules);
+      this.#openLater(file, modules);
       return;
     }
     const identity = modelIdentity(file);
@@ -451,6 +449,12 @@ export class Player {
           parseLoadWarnings(puppet.load_warnings_json()),
         );
       } catch (e) {
+        // 読み込みの途中に GPU を失った (`device_lost`)。モデルの誤りではないので文を出さず、作り直した後に開く (T0955)。
+        // 作り直しは次のフレームの `checkLost` (WebGL2 は復元の待ち) で始まる。前のモデルのモジュールは除いたまま。
+        if (puppet.is_lost()) {
+          this.#openLater(file, modules);
+          return;
+        }
         this.error = `${file.name}: ${describeLoadError(e)}`;
         // 前のモデルが残るので、除いたモジュールを戻す。GPU を作り直したときも前のモデルを読み直す (`#file` は変えない)。
         if (previous !== null) this.#reloadModules(previous.files, previous.attached);
@@ -480,6 +484,16 @@ export class Player {
       return;
     }
     this.#remember();
+  }
+
+  /**
+   * 描画の準備ができたら (`#setUp`) モデルを開く。作り直しの読み直し (`#keepView`) の途中で GPU をまた失ったときは、
+   * 利用者が開いたものではないので、次の作り直しでもビューとパラメータの値を保つ。
+   */
+  #openLater(file: ModelFile, modules: readonly ModuleToOpen[]): void {
+    if (!this.#keepView) this.#openedWhileDown = true;
+    this.#file = file;
+    this.#pendingModules.push(...modules);
   }
 
   /** モデルを読んだ後の、パラメータ・トラッキング・光源・着せ替えの一覧の用意。 */
@@ -613,6 +627,11 @@ export class Player {
     try {
       name = puppet.load_module(file.bytes);
     } catch (e) {
+      // GPU を失った (`device_lost`) なら、モデルと同じく作り直した後に読む (T0955)。
+      if (puppet.is_lost()) {
+        this.#pendingModules.push({ file, attach });
+        return null;
+      }
       this.dressUpError = `${file.name}: ${describeDressUpError(e)}`;
       return null;
     }
@@ -1227,7 +1246,10 @@ export class Player {
     saveLighting(saved, this.storage);
   }
 
-  /** 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。 */
+  /**
+   * 付け外しを 1 つ行い、一覧を読み直す。失敗したら (wasm は何も変えない) 理由を `dressUpError` に入れる。GPU を失っていたら
+   * (`device_lost`)、WebPuppet が無い間と同じく何もせずに `false` を返す (作り直しは付けていた組で戻す。T0955)。
+   */
   #dressUp(action: (puppet: WebPuppet) => void): boolean {
     const puppet = this.#puppet;
     if (puppet === null) return false;
@@ -1236,6 +1258,7 @@ export class Player {
       this.dressUpError = null;
       return true;
     } catch (e) {
+      if (puppet.is_lost()) return false;
       this.dressUpError = describeDressUpError(e);
       return false;
     } finally {
