@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // ビューポート (Viewport.svelte) の GPU を失ったときの表示: 戻るのを待つ間は controller の文言を出し、続けて失って
-// 諦めたら「作り直す」ボタンを出して ViewportController.restart を呼ぶこと (T0938)。
-import { flushSync, mount, unmount } from "svelte";
+// 諦めたら「作り直す」ボタンを出して ViewportController.restart を呼ぶこと (T0938)。描くものが無い間はスクリーンショットを
+// 押せないこと (T1655)。
+import { createRawSnippet, flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "../i18n";
 import type { ViewportController, ViewportStatus } from "./controller.svelte";
@@ -26,11 +27,12 @@ afterEach(() => {
 });
 
 /** ビューポートが読む controller の状態と、呼ぶメソッドだけを持つ偽物。 */
-function setup() {
+function setup(options: { empty?: boolean } = {}) {
   const calls: string[] = [];
   const controller = $state({
     status: "ready" as ViewportStatus,
     message: null as string | null,
+    hasModel: true,
     backend: "webgl2",
     canRestart: false,
     attach: async () => {},
@@ -52,16 +54,33 @@ function setup() {
   });
   const target = document.createElement("div");
   document.body.append(target);
-  const instance = mount(Viewport, {
-    target,
-    props: { controller: controller as unknown as ViewportController, model: null },
+  const props = $state({
+    controller: controller as unknown as ViewportController,
+    model: null,
+    empty: options.empty ? createRawSnippet(() => ({ render: () => "<p>empty</p>" })) : undefined,
   });
+  const instance = mount(Viewport, { target, props });
   cleanups.push(() => {
     unmount(instance);
     target.remove();
   });
   flushSync();
-  return { target, controller, calls };
+  return { target, controller, props, calls };
+}
+
+/** HUD の「Screenshot」のボタン。 */
+function screenshotButton(target: HTMLElement): HTMLButtonElement {
+  const button = [...target.querySelectorAll<HTMLButtonElement>(".hud button")].find(
+    (b) => b.textContent?.trim() === t("viewport.screenshot.label"),
+  );
+  if (!button) throw new Error("no screenshot button");
+  return button;
+}
+
+/** ボタンの aria-describedby が指す文。 */
+function description(button: HTMLElement): string | null {
+  const id = button.getAttribute("aria-describedby");
+  return id ? (document.getElementById(id)?.textContent ?? null) : null;
 }
 
 /** HUD のボタンの文言。 */
@@ -135,5 +154,33 @@ describe("Viewport", () => {
     } finally {
       height.mockRestore();
     }
+  });
+
+  it("disables the screenshot until a model is drawn and says why (T1655)", () => {
+    const { target, controller } = setup();
+    controller.hasModel = false;
+    flushSync();
+    expect(screenshotButton(target).disabled).toBe(true);
+    expect(description(screenshotButton(target))).toBe(t("viewport.screenshot.unavailable"));
+    // モデルを読み込んだら押せる
+    controller.hasModel = true;
+    flushSync();
+    expect(screenshotButton(target).disabled).toBe(false);
+    expect(description(screenshotButton(target))).toBeNull();
+    // 読み込みの失敗 (と描画できない間) は押せない
+    controller.status = "error";
+    flushSync();
+    expect(screenshotButton(target).disabled).toBe(true);
+    expect(description(screenshotButton(target))).toBe(t("viewport.screenshot.unavailable"));
+  });
+
+  it("disables the screenshot in an empty project (T1655)", () => {
+    const { target, props } = setup({ empty: true });
+    expect(screenshotButton(target).disabled).toBe(true);
+    expect(description(screenshotButton(target))).toBe(t("viewport.screenshot.unavailable"));
+    // 中身を足して空でなくなったら押せる
+    props.empty = undefined;
+    flushSync();
+    expect(screenshotButton(target).disabled).toBe(false);
   });
 });

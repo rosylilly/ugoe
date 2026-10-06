@@ -3079,7 +3079,8 @@
       "tooltip": "Save the current view as a PNG image (without gizmos and other overlays)",
       "saved": "Saved screenshot to {{path}}",
       "failed": "Cannot save the screenshot: {{error}}",
-      "dialogTitle": "Save Screenshot"
+      "dialogTitle": "Save Screenshot",
+      "unavailable": "Nothing to save: no model is drawn in the viewport"
     },
     "view": {
       "aria": "View"

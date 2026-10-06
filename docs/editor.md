@@ -2204,6 +2204,12 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 
 ビューポートの右上の「Screenshot」で、今の表示を PNG で保存します (T0420)。
 
+- **押せないとき:** 描くものが無い間 (空のプロジェクト・モデルを読み込む前・読み込みの失敗・GPU の復元を待つ間など描画できない間) は
+  押せません (`disabled`)。押せない理由 (`viewport.screenshot.unavailable`) を Tooltip と、ボタンの `aria-describedby` が指す
+  見えない文で出します。モデルを読み込めているかは `ViewportController.hasModel` (`WebPuppet.has_model`)、空のプロジェクトかは
+  Viewport の `empty` (中央の空の状態を出しているか) で決めます。保存の処理 (`screenshot()`) も同じ条件で入らないので、
+  ボタン以外の道から呼んでも空の画像を保存しません (T1655)。
+
 - 画像は canvas の読み戻しではなく `WebPuppet.read_pixels()` で取ります (`ViewportController.capture`)。canvas と同じ大きさ
   (描画バッファの画素 = CSS ピクセル × devicePixelRatio)・ビュー・背景 (`--viewport-bg`)・光源で canvas とは別のテクスチャに描いた、
   ストレートアルファの RGBA です。WebGL2・WebGPU のどちらでも同じに取れます。

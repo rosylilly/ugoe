@@ -97,6 +97,11 @@ export class ViewportController {
   /** 読み込んだモデルにライティングを受けるメッシュがあるか (`WebPuppet.uses_lighting`)。 */
   usesLighting = $state(false);
   /**
+   * WebPuppet にモデルを読み込めているか (`WebPuppet.has_model`)。読み込む前と読み込みに失敗した後は `false`。
+   * 描くものが無い間はスクリーンショットを押せないようにする (Viewport.svelte。T1655)。
+   */
+  hasModel = $state(false);
+  /**
    * 編集中のビューポートでポーズを効かせて見ているときの、表示する要素のパーツ (グループごとに 1 つまで。
    * 挙げていないグループは最初の要素)。`null` ならポーズを効かせない (すべての要素が見える。既定)。
    * Poses タブで切り替える (docs/editor.md#ポーズの編集)。プレビューモードはこれを使わない。
@@ -527,6 +532,7 @@ export class ViewportController {
         : puppet.load_json(model.json);
       for (const warning of warnings) console.warn("ugoe:", warning);
       this.usesLighting = puppet.uses_lighting();
+      this.hasModel = puppet.has_model();
       this.#applyStages();
       if (this.#driver) {
         // プレビュー中の読み直し (別の WebPuppet への作り直しなど)。値はプレビューのものを渡す。
@@ -562,6 +568,7 @@ export class ViewportController {
       // エディタのカタログの文 (T0941)。
       this.status = "error";
       this.message = loadErrorText(e);
+      this.hasModel = false;
     }
   }
 

@@ -386,6 +386,39 @@ describe("ViewportController", () => {
     }
   });
 
+  it("tells whether a model is loaded (T1655)", async () => {
+    const controller = new ViewportController();
+    const attached = controller.attach(fakeContainer());
+    await settle();
+    const { puppet } = fakePuppet();
+    let loaded = false;
+    let fail = false;
+    Object.assign(puppet, {
+      has_model: () => loaded,
+      load_json: () => {
+        if (fail)
+          throw Object.assign(new Error("broken"), { name: "LoadError", code: "invalid_model" });
+        loaded = true;
+        return [];
+      },
+      uses_lighting: () => false,
+      set_enabled() {},
+      reset_parameters() {},
+      parameter_ids: () => [],
+    });
+    pending[0]?.resolve(puppet);
+    await attached;
+    // 読み込む前
+    expect(controller.hasModel).toBe(false);
+    controller.setModel({ json: "{}", bundle: null });
+    expect(controller.hasModel).toBe(true);
+    // 読み込みの失敗 (WebPuppet が前のモデルを持っていても描くものとしない)
+    fail = true;
+    controller.setModel({ json: '{"broken": true}', bundle: null });
+    expect(controller.status).toBe("error");
+    expect(controller.hasModel).toBe(false);
+  });
+
   it("translates the load error of the model from its code", async () => {
     const controller = new ViewportController();
     const attached = controller.attach(fakeContainer());

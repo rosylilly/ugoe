@@ -5,7 +5,8 @@
   (矢印キーはフォーカスがどこにも無いかビューポートの中にあるときだけ。tools/keys.ts の panOf)。右下の表示の道具
   (縮小・拡大・全体を表示) はビューの中央を中心に拡大し、キャンバス全体を表示する (ビューアと同じ並び。docs/editor.md#ビューポート)。
   右上の「Screenshot」で今の表示を PNG で保存する (saveScreenshot.ts。WebPuppet.read_pixels で
-  取るので、オーバーレイは写らない。docs/editor.md#スクリーンショット)。左ボタンはツール (オーバーレイ) のために空けておく。
+  取るので、オーバーレイは写らない。docs/editor.md#スクリーンショット)。描くものが無い間 (空のプロジェクト・モデルを読み込む前・
+  読み込みの失敗・描画できない) は押せず、Tooltip と aria-describedby で理由を出す (T1655)。左ボタンはツール (オーバーレイ) のために空けておく。
   GPU を失って戻るのを待つ間は右上に「GPU の復元を待っています」を、続けて失って諦めた・作れなかったら「作り直す」ボタンを出す
   (controller.canRestart。docs/ui.md#webpuppet-の寿命。T0938・T0941)。描画の方式 (WebGPU・WebGL2) は開発者向けの情報なので、
   設定の「一般」に出す (T0675)。
@@ -37,6 +38,8 @@ interface Props {
 
 let { controller, model, overlay, empty }: Props = $props();
 
+const ids = $props.id();
+
 let container: HTMLDivElement;
 /** canvas を置く要素 (canvas は controller が作り、GPU を失ったら作り直す)。 */
 let surface = $state<HTMLDivElement>();
@@ -57,9 +60,12 @@ const ZOOM_STEP = 1.25;
 /** 直近のスクリーンショットの失敗 (閉じるまで残す。保存した場所は Toast で出す)。 */
 let shotError = $state<string | null>(null);
 
+/** 描くものがあり、スクリーンショットを取れるか (空のプロジェクトでは空の画像になるので取らない。T1655)。 */
+const canCapture = $derived(controller.status === "ready" && controller.hasModel && !empty);
+
 /** 今の表示を PNG で保存する (オーバーレイは写らない)。 */
 async function screenshot() {
-  if (capturing) return;
+  if (capturing || !canCapture) return;
   capturing = true;
   try {
     const path = await saveViewportScreenshot(controller);
@@ -189,10 +195,16 @@ function onKeyDown(e: KeyboardEvent) {
     <TipButton
       small
       onclick={() => void screenshot()}
-      disabled={controller.status !== "ready" || capturing}
-      tooltip={t("viewport.screenshot.tooltip")}>{t("viewport.screenshot.label")}</TipButton
+      disabled={!canCapture || capturing}
+      aria-describedby={canCapture ? undefined : `${ids}-shot-unavailable`}
+      tooltip={canCapture ? t("viewport.screenshot.tooltip") : t("viewport.screenshot.unavailable")}
+      >{t("viewport.screenshot.label")}</TipButton
     >
   </div>
+  {#if !canCapture}
+    <!-- 無効のボタンはフォーカスを受けないので、押せない理由は別の要素から付ける (docs/ui.md#部品の一覧) -->
+    <span id="{ids}-shot-unavailable" class="ugoe-visually-hidden">{t("viewport.screenshot.unavailable")}</span>
+  {/if}
   {#if controller.status === "ready" && !empty}
     <!-- 表示の道具の上のホイール・押下はビューポートのズーム・パンにしない -->
     <div
