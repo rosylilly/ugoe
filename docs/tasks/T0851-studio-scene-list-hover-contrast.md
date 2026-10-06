@@ -1,11 +1,11 @@
 ---
 id: T0851
 title: "スタジオ: ダークでシーンの一覧の選んだ行にホバーすると、控えめな文字が 4.5:1 に届かないのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/studio, packages/ui, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0851
 ---
 
 # T0851: スタジオ: ダークでシーンの一覧の選んだ行にホバーすると、控えめな文字が 4.5:1 に届かないのを直す

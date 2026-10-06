@@ -1,11 +1,11 @@
 ---
 id: T1643
 title: "エディタ: AI の提案の「採用で変わるもの」を、コマンドの種類名でなく利用者の言葉 (「パラメータを足す × 5」) で出す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1643
 ---
 
 # T1643: エディタ: AI の提案の「採用で変わるもの」を、コマンドの種類名でなく利用者の言葉 (「パラメータを足す × 5」) で出す
