@@ -540,6 +540,12 @@ const dragHint = $derived.by(() => {
   outline: var(--ugoe-focus-ring);
   outline-offset: -2px;
 }
+/* 強制色では透明な枠も文字の色で描かれ、内側に重なるフォーカスの印との差が 3:1 に届かないので、地の色にする (T1654) */
+@media (forced-colors: active) {
+  .tree:not(.drop-root) {
+    border-color: Canvas;
+  }
+}
 .tree.dragging {
   cursor: grabbing;
 }

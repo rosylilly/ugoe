@@ -54,6 +54,19 @@ let {
 }: Props = $props();
 
 const node = $derived(row.node);
+/**
+ * 本体の札のほかの札 (マスク・非表示)。本体の札とほかの札が並ぶと名前が 1 文字まで縮むので、そのときは本体の札を
+ * ほかの札の破線の枠にまとめ、文字は見せずに読ませる (docs/ui.md#エディタのツリーの札と選んだ行-t1654)。
+ */
+const tags = $derived.by(() => {
+  const list: { label: string; tooltip: string }[] = [];
+  if (node.maskOnly)
+    list.push({ label: t("tree.row.mask.label"), tooltip: t("tree.row.mask.tooltip") });
+  if (node.hidden)
+    list.push({ label: t("tree.row.hidden.label"), tooltip: t("tree.row.hidden.tooltip") });
+  return list;
+});
+const baseMerged = $derived(base && tags.length > 0);
 const hasChildren = $derived(node.children.length > 0);
 let done = false;
 /** 名前の変更の欄の文字と要素。 */
@@ -165,14 +178,24 @@ function insideRename(e: Event): boolean {
     <span class="name" title={node.ref.id}>{node.name}</span>
   {/if}
   <!-- 行はフォーカスを受けない (木が aria-activedescendant で受ける) ので、印の説明は Tooltip ではなく title で出す。 -->
-  {#if base}<span class="ed-tag" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
-  {#if node.maskOnly}<span class="ed-tag" title={t("tree.row.mask.tooltip")}>{t("tree.row.mask.label")}</span>{/if}
-  {#if node.hidden}<span class="ed-tag" title={t("tree.row.hidden.tooltip")}>{t("tree.row.hidden.label")}</span>{/if}
+  {#if base && !baseMerged}<span class="ed-tag" title={t("tree.row.base.tooltip")}>{t("tree.row.base.label")}</span>{/if}
+  {#each tags as tag (tag.label)}
+    <span
+      class="ed-tag"
+      class:base-merged={baseMerged}
+      title={baseMerged ? `${t("tree.row.base.tooltip")}\n${tag.tooltip}` : tag.tooltip}
+    >{#if baseMerged}<span class="ugoe-visually-hidden">{`${t("tree.row.base.label")} `}</span>{/if}{tag.label}</span>
+  {/each}
   {#if node.drawOrder !== undefined}<span class="order" title={t("tree.row.drawOrder")}>{node.drawOrder}</span>{/if}
 </div>
 
 <style>
+/*
+ * 行の中の控えめな文字 (非表示・本体の名前・札・描く順) の色。選んだ行は accent-soft (本体は sunken) の地に hover の重ねが乗っても
+ * 4.5:1 に届くように、本文の色へ寄せる (docs/ui.md#エディタのツリーの札と選んだ行-t1654)
+ */
 .row {
+  --tree-muted: var(--ugoe-color-text-muted);
   display: flex;
   align-items: center;
   gap: var(--ugoe-space-2);
@@ -195,6 +218,7 @@ function insideRename(e: Event): boolean {
   box-shadow: inset 3px 0 0 var(--ugoe-color-accent);
 }
 .row.selected {
+  --tree-muted: color-mix(in srgb, var(--ugoe-color-text) 30%, var(--ugoe-color-text-muted));
   background-color: var(--ugoe-color-accent-soft);
 }
 /* 主な選択は太字 (ビューポートの太い輪郭に当たる) */
@@ -213,7 +237,15 @@ function insideRename(e: Event): boolean {
 .row.base .name,
 .row.hidden .name {
   /* 薄くするのは不透明度ではなく控えめな文字の色で (opacity では 4.5:1 に届かない。T0907) */
-  color: var(--ugoe-color-text-muted);
+  color: var(--tree-muted);
+}
+.ed-tag {
+  color: var(--tree-muted);
+}
+/* 本体の札をまとめた札は、本体の要素の選択と同じ破線の枠 */
+.ed-tag.base-merged {
+  border-style: dashed;
+  border-color: var(--tree-muted);
 }
 .row.mask-only .name {
   font-style: italic;
@@ -264,7 +296,7 @@ function insideRename(e: Event): boolean {
 .order {
   flex: none;
   font-size: var(--ugoe-font-size-xs);
-  color: var(--ugoe-color-text-muted);
+  color: var(--tree-muted);
   font-variant-numeric: tabular-nums;
 }
 </style>
