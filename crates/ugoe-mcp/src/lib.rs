@@ -27,6 +27,7 @@ pub mod schema;
 pub mod server;
 mod summary;
 pub mod tools;
+pub mod verbatim;
 pub mod wsl;
 
 pub use bridge::{BridgeOptions, EditorBridge};

@@ -15,6 +15,7 @@ use ugoe_editor_core::texture::solid_png;
 use ugoe_editor_core::{
     LayerCorrection, LayerCorrections, LayerSide, Project, ProjectMeta, Textures,
 };
+use ugoe_mcp::verbatim::plain_path;
 use ugoe_model::fixtures;
 
 /// `single_quad` (メッシュ `Quad`、パラメータ `X`) のプロジェクトを保存する。
@@ -168,6 +169,11 @@ fn parameter_ids(summary: &Value) -> Vec<String> {
         .iter()
         .map(|p| p["id"].as_str().unwrap().to_owned())
         .collect()
+}
+
+/// 結果に出る正規化したパス `path` の形 (Windows の verbatim の `\\?\` を外した形。T0967)。
+fn shown(path: &Path) -> Value {
+    json!(plain_path(path.to_str().unwrap()))
 }
 
 #[test]
@@ -1277,7 +1283,7 @@ fn the_classification_saved_by_the_editor_is_used() {
         "get_psd_layers",
         json!({ "path": path, "count": 64, "images": false, "overview": false }),
     );
-    assert_eq!(page["psd"], json!(psd.canonicalize().unwrap()));
+    assert_eq!(page["psd"], shown(&psd.canonicalize().unwrap()));
     let layers = page["layers"].as_array().unwrap();
     assert_eq!(layers[changed]["label"], "neckwear");
     assert_eq!(layers[changed]["confidence"], 0.5);
@@ -1519,7 +1525,7 @@ fn root_confines_tool_paths() {
     // 相対パスは root から解決する (サーバの作業ディレクトリではない)。
     let opened = client.call_ok("open_project", json!({ "path": "quad.ugoeproj" }));
     let canonical_root = root.canonicalize().unwrap();
-    assert_eq!(opened["path"], json!(canonical_root.join("quad.ugoeproj")));
+    assert_eq!(opened["path"], shown(&canonical_root.join("quad.ugoeproj")));
     // root の下を指す絶対パスも使える。
     let absolute = canonical_root.join("quad.ugoeproj");
     client.call_ok(
@@ -1585,7 +1591,7 @@ fn root_confines_tool_paths() {
         "save_project",
         json!({ "path": "quad.ugoeproj", "bundle": "quad.ugoe" }),
     );
-    assert_eq!(saved["bundle"], json!(canonical_root.join("quad.ugoe")));
+    assert_eq!(saved["bundle"], shown(&canonical_root.join("quad.ugoe")));
     assert!(root.join("quad.ugoe").is_file());
 
     #[cfg(unix)]

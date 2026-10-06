@@ -20,6 +20,7 @@ use ugoe_editor_core::{
 };
 use ugoe_mcp::discovery::{self, DISCOVERY_ENV, Discovery};
 use ugoe_mcp::host::{Action, Approvals, Change, HostError, Lent, Opening, export_replace_failed};
+use ugoe_mcp::verbatim::plain_path;
 use ugoe_mcp::{BridgeOptions, DocumentHost, EditorBridge};
 use ugoe_model::fixtures;
 
@@ -1065,13 +1066,7 @@ fn check_manifest(manifest: &Value, files: &[&str]) {
 /// `${__dirname}/server/ugoe-mcp.exe` をそのままつなぐと起動できない (`InvalidFilename`)。Claude Desktop が
 /// 渡す展開先は `C:\Users\…` の通常の形なので、`\\?\` を外してそれに合わせる。
 fn desktop_dirname(dir: &str) -> String {
-    if let Some(rest) = dir.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = dir.strip_prefix(r"\\?\") {
-        rest.to_owned()
-    } else {
-        dir.to_owned()
-    }
+    plain_path(dir).into_owned()
 }
 
 /// manifest の `mcp_config` の文字列の `${__dirname}` を `dirname` で置き換える。

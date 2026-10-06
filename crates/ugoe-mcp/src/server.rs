@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 use crate::host::{Cancellation, DocumentHost};
 use crate::render::panic_message;
 use crate::tools::{Options, Tools};
+use crate::verbatim::plain_paths_in;
 
 /// 要求ごとに `_meta` で版を示す版 (握手をしない)。
 pub const MODERN_VERSION: &str = "2026-07-28";
@@ -245,7 +246,7 @@ impl Server {
 
     fn instructions(&self) -> String {
         match self.tools.host_instructions() {
-            Some(extra) => format!("{INSTRUCTIONS}\n{extra}"),
+            Some(extra) => format!("{INSTRUCTIONS}\n{}", plain_paths_in(&extra)),
             None => INSTRUCTIONS.to_owned(),
         }
     }

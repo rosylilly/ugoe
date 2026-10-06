@@ -10,6 +10,7 @@ use clap::Parser;
 use ugoe_mcp::http::{ENDPOINT, HttpOptions, HttpServer, generate_token};
 use ugoe_mcp::mcpb::{Bundle, Platform};
 use ugoe_mcp::relay::{Relay, RelayOptions};
+use ugoe_mcp::verbatim::plain_path;
 use ugoe_mcp::{Options, Root, Server};
 
 /// トークンを渡す環境変数 (コマンド行に書くとほかの利用者から見えることがあるので、こちらを勧める)。
@@ -84,7 +85,10 @@ fn main() -> anyhow::Result<()> {
     }
     let root = cli.root.as_deref().map(Root::new).transpose()?;
     let paths = match &root {
-        Some(root) => format!("paths confined to {}", root.dir().display()),
+        Some(root) => format!(
+            "paths confined to {}",
+            plain_path(&root.dir().to_string_lossy())
+        ),
         None => "any path".to_owned(),
     };
     let server = Server::new(Options {

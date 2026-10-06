@@ -1035,9 +1035,12 @@ fn proposal_json(view: &ProposalView) -> Value {
 
 /// ツールの結果 (`CallToolResult`) にする。失敗はツールの実行エラー (`isError`) として返し、
 /// エージェントが読んで直せるようにする。
+/// ツールの結果 (`CallToolResult`)。見せるパスは verbatim の形を外す ([`crate::verbatim`])。
 fn tool_result(result: ToolResult) -> Value {
-    match result {
-        Ok(output) => {
+    let mut value = match result {
+        Ok(mut output) => {
+            // 文は JSON に書き出すと `\` が重なるので、書き出す前に直す。
+            crate::verbatim::plain_paths_in_value(&mut output.value);
             let mut content = vec![json!({ "type": "text", "text": output.value.to_string() })];
             for item in &output.content {
                 content.push(match item {
@@ -1060,7 +1063,10 @@ fn tool_result(result: ToolResult) -> Value {
             "structuredContent": detail,
             "isError": true,
         }),
-    }
+    };
+    // エラーの文・引数と、結果に添える文。
+    crate::verbatim::plain_paths_in_value(&mut value);
+    value
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(arguments: Value) -> Result<T, ToolError> {
@@ -1176,5 +1182,37 @@ mod tests {
         std::fs::create_dir_all(&path).unwrap();
         let after = tools.resolve(path.to_str().unwrap()).unwrap();
         assert_eq!(before, after);
+    }
+}
+
+#[cfg(test)]
+mod result_tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// 結果とエラーのパスは verbatim の形 (Windows の canonicalize の形) を外して見せる (T0967)。
+    #[test]
+    fn results_show_plain_paths() {
+        let shown = tool_result(Ok(Output {
+            value: json!({ "path": r"\\?\C:\work\a.ugoeproj" }),
+            content: vec![Content::Text(r"see \\?\UNC\s\share\b.png".to_owned())],
+        }));
+        assert_eq!(shown["structuredContent"]["path"], r"C:\work\a.ugoeproj");
+        let text: Value =
+            serde_json::from_str(shown["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(text["path"], r"C:\work\a.ugoeproj");
+        assert_eq!(shown["content"][1]["text"], r"see \\s\share\b.png");
+
+        let shown = tool_result(Err(ToolError::mcp(
+            "mcp.outside_root",
+            message_args! { "path" => r"\\?\C:\out\b.ugoe", "root" => r"\\?\C:\root" },
+            r"base model \\?\C:\out\b.ugoe: outside the root directory `\\?\C:\root`",
+        )));
+        let plain = r"base model C:\out\b.ugoe: outside the root directory `C:\root`";
+        assert_eq!(shown["content"][0]["text"], plain);
+        assert_eq!(shown["structuredContent"]["message"], plain);
+        assert_eq!(shown["structuredContent"]["args"]["path"], r"C:\out\b.ugoe");
+        assert_eq!(shown["structuredContent"]["args"]["root"], r"C:\root");
     }
 }

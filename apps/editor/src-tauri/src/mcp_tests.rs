@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use ugoe_editor_core::texture::solid_png;
 use ugoe_editor_core::{Project, ProjectMeta, Textures};
 use ugoe_mcp::relay::{Relay, RelayOptions};
+use ugoe_mcp::verbatim::plain_path;
 use ugoe_model::fixtures;
 
 use super::*;
@@ -487,7 +488,10 @@ fn saving_with_a_bundle_keeps_the_previous_bundle_when_it_fails() {
     );
     assert!(err.contains("nothing was saved"), "{err}");
     assert_eq!(detail["code"], "mcp.export_write_failed");
-    assert_eq!(detail["args"]["path"], missing.display().to_string());
+    assert_eq!(
+        detail["args"]["path"],
+        *plain_path(&missing.display().to_string())
+    );
 
     // 置き換えられなければ (行き先が中身のあるディレクトリ)、前のものを残し、一時ファイルを消す。
     let blocked = out.join("blocked.ugoe");
@@ -536,7 +540,7 @@ fn a_failed_save_reports_the_editor_error_code() {
         detail["args"]["path"]
             .as_str()
             .unwrap()
-            .starts_with(&textures.display().to_string()),
+            .starts_with(&*plain_path(&textures.display().to_string())),
         "{detail}"
     );
     assert!(detail["args"]["detail"].is_string(), "{detail}");

@@ -124,13 +124,7 @@ impl WslPaths {
     pub fn to_wsl(&self, path: &str) -> Option<String> {
         let path = path.replace('/', "\\");
         // `\\?\` (正規化したパス) を外す。`\\?\UNC\server\share` は `\\server\share`。
-        let path = match path.strip_prefix("\\\\?\\") {
-            Some(rest) => match rest.strip_prefix("UNC\\") {
-                Some(unc) => format!("\\\\{unc}"),
-                None => rest.to_owned(),
-            },
-            None => path,
-        };
+        let path = crate::verbatim::plain_path(&path).into_owned();
         if let Some(unc) = path.strip_prefix("\\\\") {
             let mut parts = unc.splitn(3, '\\');
             let server = parts.next()?;
