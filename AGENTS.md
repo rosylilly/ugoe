@@ -156,7 +156,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 - Git フックは lefthook で管理する (`lefthook.yml`)。`pnpm install` で有効になる。
   - pre-commit: rustfmt と Biome による自動整形、依存方向の検査、タスクファイルの検査
   - commit-msg: commitlint によるメッセージの検査
-  - pre-push: clippy、全テスト、svelte-check
+  - pre-push: clippy、全テスト、svelte-check (先に古いアプリの wasm の生成物を作り直す。[docs/testing.md](docs/testing.md#wasm-の生成物の古さ))
 - **`--no-verify` でフックを飛ばしてはならない。** フックが失敗したら原因を直す。CI でも同じ検査を行う。
 - メッセージは事前に `just commitlint "feat(cli): add render command"` で検査できる。
 

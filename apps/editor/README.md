@@ -35,7 +35,8 @@ just editor-browser # ビルドした画面を本物の wasm とヘッドレス�
 ```
 
 `just editor` と `just editor-build` は、先に `just wasm` (ugoe-wasm のビルドと JS バインディングの生成) を実行する
-(`tauri.conf.json` の `beforeDevCommand` / `beforeBuildCommand`)。
+(`tauri.conf.json` の `beforeDevCommand` / `beforeBuildCommand`)。`just web-check` と pre-push は、ugoe-wasm が変わって
+生成物が古くなっていれば先に作り直す (`just wasm-fresh`。[docs/testing.md](../../docs/testing.md#wasm-の生成物の古さ))。
 
 `just editor-build` (`just app::build TARGET=editor`) は `--config src-tauri/tauri.bundle.conf.json` を重ね、MCP サーバの
 `ugoe-mcp` をサイドカー (Tauri の `externalBin`) として同梱する。重ねた設定の `beforeBuildCommand` が `pnpm sidecar`

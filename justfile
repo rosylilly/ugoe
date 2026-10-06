@@ -199,11 +199,18 @@ sdk-no-render-check:
     if cargo tree -p ugoe-ffi -e normal,build --prefix none | grep -E '^(wgpu|naga) '; then echo "ugoe-ffi (C ABI) が wgpu・naga に依存している (T0166)" >&2; exit 1; fi
 
 # ugoe-wasm をビルドし、エディタが読む JS バインディングを生成する (出力は gitignore 済み)。
+# 生成物の隣に入力の指紋 (ugoe_wasm.fingerprint) を書き、`just wasm-fresh` が古さを確かめるのに使う。
 # ビューアは `just wasm apps/viewer/src/lib/wasm/generated` (apps/viewer の `pnpm wasm`)。
 # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版 (`just wasm-bindgen-version`) が必要:
 #   cargo install wasm-bindgen-cli --version <版> --locked
 wasm out="apps/editor/src/lib/viewport/generated":
     @node scripts/wasm.mjs build {{quote(out)}}
+
+# アプリ (エディタ・ビューア・スタジオ) の wasm の生成物のうち、今の ugoe-wasm より古いものだけを作り直す。
+# 古さは `just wasm` が生成物の隣に書く入力の指紋で、ビルドせずに確かめる (古くなければ一瞬で終わる)。
+# 生成物の無いアプリは飛ばす。web-check と lefthook の pre-push の web-check の前に流す (docs/testing.md#wasm-の生成物の古さ)
+wasm-fresh:
+    @node scripts/wasm.mjs fresh
 
 # ugoe-wasm の手書きの型の写し (bindings/web/stub/ugoe_wasm.d.ts と @ugoe/player・@ugoe/face-tracking の interface) を
 # `just wasm` の生成物と比べ、メソッドの抜けと型の違いを報告する (scripts/check-wasm-types.mjs)。
@@ -229,7 +236,7 @@ wasm-bindgen-version:
     @node scripts/wasm.mjs version
 
 # フロントエンドの lint / 型検査 / 単体テスト (Vitest)
-web-check: wasm-types
+web-check: wasm-fresh wasm-types
     pnpm biome check .
     pnpm --filter '@ugoe/editor' check
     pnpm --filter '@ugoe/editor' test
@@ -283,9 +290,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs)
 script-check:
-    @node --test --test-reporter=dot scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/worktree-cargo-config.test.mjs
+    @node --test --test-reporter=dot scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ、手で確かめる一式 (scripts/check-pack.mjs) のパスの検査
 app-build-check:

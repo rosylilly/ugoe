@@ -9,12 +9,12 @@
 | スナップショットテスト | `insta` (`tests/snapshots/`) | `just test`。更新は `cargo insta review` |
 | 互換性テスト | `crates/ugoe-format/tests/compat.rs` と資料 `assets/compat/` | `just test`。資料の作り直しは [互換性テスト](#互換性テスト) |
 | 描画テスト (GPU) | `gpu-tests` feature を持つクレート (`ugoe-render` など) | `just test-gpu` |
-| フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/*/src/**/*.test.ts`・`packages/*/src/**/*.test.ts`。部品を描くテストは [下](#エディタの部品のテスト)) | `just web-check` |
+| フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/*/src/**/*.test.ts`・`packages/*/src/**/*.test.ts`。部品を描くテストは [下](#エディタの部品のテスト)) | `just web-check` (先に `just wasm-fresh` で古い wasm の生成物を作り直す。[下](#wasm-の生成物の古さ)) |
 | wasm の型の写しの検査 | `scripts/check-wasm-types.mjs`。手書きの型の写し (`bindings/web/stub/ugoe_wasm.d.ts`・`@ugoe/player` と `@ugoe/face-tracking` の interface) を `just wasm` の生成物と比べる | `just wasm-types` (生成物が無ければ一部の写しをスタブと比べる。CI の web ジョブは `just wasm` の後に生成物と比べる) |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと Unity の宣言の過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
-| 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・npm のライセンスの例外・worktree の cargo の設定) | `just script-check` |
+| 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・npm のライセンスの例外・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
 | API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps`。wasm32 でだけコンパイルするコード (`ugoe-wasm` の `src/web.rs`・`src/web/`) は wasm32 のターゲットで `cargo doc -p ugoe-wasm` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`)。wasm32 の分は `just wasm-check` |
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字と押せる部品の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
@@ -29,6 +29,30 @@ C ABI の検査はワークスペースの外のツール (cbindgen) と C コ�
 PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
 実機の e2e テストは 3 つのアプリをビルドし直すので、PR ごとの CI に入れず、別のワークフロー `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
 UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮るので `just ci` に入れず、画面を変える PR で人とエージェントが流します ([下](#ui-の監査))。
+
+## wasm の生成物の古さ
+
+エディタ・ビューア・スタジオの wasm の生成物 (`apps/editor/src/lib/viewport/generated`・`apps/viewer/src/lib/wasm/generated`・
+`apps/studio/src/lib/wasm/generated`) は git の管理外で、`just wasm <out>` (各アプリの `pnpm wasm`) で作ります。pull や merge で
+ugoe-wasm の API が変わっても作業ツリーには前の生成物が残るので、そのままだと svelte-check がコードの誤りでなく生成物の古さで落ちます
+(T0062)。そこで:
+
+- `just wasm` (`scripts/wasm.mjs build`) は生成物の隣に、入力の指紋 `ugoe_wasm.fingerprint` を書きます。入力は ugoe-wasm と、
+  それが (dev 以外で) 依存するワークスペースのクレートの `Cargo.toml`・`build.rs`・`src/` の下のすべてのファイルと、
+  ルートの `Cargo.toml`・`Cargo.lock` (wasm-bindgen の版を含む)・`rust-toolchain.toml` です。テスト・例・README は入れません。
+- `just wasm-fresh` (`scripts/wasm.mjs fresh`) は、ビルドせずに今の指紋を求めて (100 ほどのファイルを読むだけで、数十ミリ秒) 3 つの生成物と比べ、
+  古いものだけを作り直します。指紋の無い生成物 (指紋を書く前に作ったもの) も古いとみなします。生成物の無いアプリは飛ばします
+  (型検査は `bindings/web/stub` を読む)。確かめるだけなら `node scripts/wasm.mjs check` (古ければ終了コード 1)。
+- `just web-check` (`just ci`) と lefthook の pre-push の web-check は、先に `just wasm-fresh` を流します。作り直しは止めずに行います。
+  ugoe-wasm の wasm32 の release ビルド (ほかの差分が無ければ手元で数秒〜数十秒。mbx の置き場に当たれば数秒) と wasm-bindgen だけで、
+  pre-push の clippy と全テストより軽いためです。pre-push のように just を通らずに `scripts/wasm.mjs` を呼んでも、mbx の shim が入っていれば
+  cargo は mbx を通ります (`exportMbxPath`。[docs/workflow/build-cache.md](workflow/build-cache.md))。
+- 作り直すには wasm-bindgen-cli (`Cargo.lock` と同じ版) が要ります。無ければ入れ方と、代わりに古い生成物を消す (`rm -r <生成物>`。
+  型検査はスタブを読む) コマンドを出して止まります。
+
+判定の単体テストは `scripts/wasm.test.mjs` (`just script-check`) です。小さな偽のワークスペースで、指紋の書き換え・指紋の無い生成物・
+入力の変更 (ソース・シェーダ・Cargo.toml・Cargo.lock・rust-toolchain.toml) を古いと見つけ、テスト・README・dev の依存だけのクレートの
+変更と、生成物の無いアプリを飛ばすことを確かめます。
 
 ## CI のジョブ
 
