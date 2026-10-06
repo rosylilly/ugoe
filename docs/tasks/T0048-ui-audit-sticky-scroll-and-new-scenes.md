@@ -1,11 +1,11 @@
 ---
 id: T0048
 title: "ui-audit: 右の列へ送るときに頭のタブの高さを引き、パラメータの絞り込みとツリーの選んだ行のホバーの場面を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0047]
-assignee:
+assignee: claude-worker-T0048
 ---
 
 # T0048: ui-audit: 右の列へ送るときに頭のタブの高さを引き、パラメータの絞り込みとツリーの選んだ行のホバーの場面を足す

@@ -1,11 +1,11 @@
 ---
 id: T0051
 title: "CI: rust-cache が失敗したジョブで保存されないことと、容量の上限を超えて消されることを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [.github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0051
 ---
 
 # T0051: CI の rust-cache の当たりを良くする
