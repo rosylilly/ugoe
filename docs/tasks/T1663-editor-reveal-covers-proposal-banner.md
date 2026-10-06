@@ -1,11 +1,11 @@
 ---
 id: T1663
 title: "エディタ: 提案のプレビューの帯が出ている間、その高さも ] [ で選んだ点を見せる判定の上の隠す範囲に入れる"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1663
 ---
 
 # T1663: エディタ: 提案のプレビューの帯が出ている間、その高さも ] [ で選んだ点を見せる判定の上の隠す範囲に入れる
