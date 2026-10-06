@@ -1,11 +1,11 @@
 ---
 id: T0948
 title: "ビューアとスタジオのポーズのパネルを共有の部品にまとめる"
-status: todo
+status: in-progress
 milestone: M9
 crates: [packages/player, apps/viewer, apps/studio, docs]
 depends_on: [T0736]
-assignee:
+assignee: claude-worker-T0948
 ---
 
 # T0948: ビューアとスタジオのポーズのパネルを共有の部品にまとめる
