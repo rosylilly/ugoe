@@ -482,6 +482,8 @@ Claude Code に次のように頼む:
   リグだけを入れられる。`keep_labels: false` なら添えない。
 - 適用した直しは利用者の直しと同じ扱いになる (`set_by: "user"`・確からしさ 1。後の `set_layer_labels` は上書きしない)。
   `save_project` で `project.json` に書き、開き直しても (エディタでも) 戻る。差分の組 (`variant_sets`) と確からしさは残さない。
+  承認したモジュールのリグの組はポーズのグループとしてモデルに残る。開き直した後に出すモジュールのリグは、名前の末尾の A / B と
+  PSD で片方を隠した重なり (とエディタの分類のキャッシュの組) で組を見つける。組を手がかりにしたければ `set_layer_labels` で渡し直す。
 - リグなしで分類だけを残す・直しを変える・消すときは、`propose_edit` で `set_layer_correction` の列を提案する
   (`{"op": "set_layer_correction", "path": [...], "correction": {"label": "eye_white", "side": "left"}}`。消すなら `null`)。
 - エディタにつないだとき (`--editor`) も同じで、提案はエディタの一覧に出て、採用するとエディタの文書の直しになる。
