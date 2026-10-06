@@ -302,6 +302,46 @@ describe("Player", () => {
     expect(p.zoom).toBe(1);
   });
 
+  it("puts back the parameter values after a lost GPU", async () => {
+    const parameters = [{ id: "AngleX" }];
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet({ parameters }).puppet);
+    await attached;
+    await p.load(bundle("a.ugoe", 1));
+    p.setParameter("AngleX", 0.5);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet({ parameters });
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.state.values.get("AngleX")).toBe(0.5);
+    expect(p.values.AngleX).toBe(0.5);
+  });
+
+  it("starts a model opened while the WebPuppet is being recreated from the defaults", async () => {
+    const parameters = [{ id: "AngleX" }];
+    const p = player();
+    const attached = p.attach(container);
+    await settle();
+    pending[0]?.resolve(fakePuppet({ parameters }).puppet);
+    await attached;
+    await p.load(bundle("a.ugoe", 1));
+    p.setParameter("AngleX", 0.5);
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    pending[0]?.canvas.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    // 作り直している間に、同じ ID のパラメータを持つ別のモデルを開いた。前のモデルの値は戻さない (T0945)。
+    await p.load(bundle("b.ugoe", 2));
+    const second = fakePuppet({ parameters });
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.state.values.get("AngleX")).toBe(0);
+    expect(p.values.AngleX).toBe(0);
+  });
+
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {
     const queries: { media: string; target: EventTarget }[] = [];
     globalThis.matchMedia = (media: string) => {

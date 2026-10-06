@@ -255,7 +255,7 @@ export class Player {
   #lastTime: number | null = null;
   /** 最後に読んだ `pose_visible_json` (変わったときだけ `poseShown` を合わせる。T0736)。 */
   #poseVisible: string | null = null;
-  /** GPU を失ったときのパラメータの値 (作り直した WebPuppet に戻す)。 */
+  /** GPU を失ったときのパラメータの値 (作り直した WebPuppet に戻す。待つ間に別のモデルを開いたら戻さない)。 */
   #carry: Record<string, number> | null = null;
   /**
    * 作り直した WebPuppet にモデルを読み直す (`#setUp`)。PuppetSurface が渡し直したビューを保つので、次の `#afterLoad` は
@@ -1438,7 +1438,7 @@ export class Player {
 
   /**
    * できた WebPuppet (attach と、GPU を失った後の作り直し) を使い始める。作り直しなら、同じモデルを読み直してから、
-   * モジュールを読み直して付けていたもの (合成の順) を付け直し、パラメータの値を戻す。
+   * モジュールを読み直して付けていたもの (合成の順) を付け直し、パラメータの値を戻す (待つ間に別のモデルを開いたら戻さない)。
    */
   async #setUp(puppet: WebPuppet, recovered: boolean): Promise<void> {
     this.backend = puppet.backend();
@@ -1452,8 +1452,10 @@ export class Player {
     const known = [...this.#moduleFiles.values()].map((m) => m.file);
     this.#moduleFiles.clear();
     if (recovered) this.#quiet++;
-    // 作り直しでは、PuppetSurface が渡し直したビュー (利用者のズームとパン) を保つ。待つ間に開いたモデルは fit で見せる。
-    this.#keepView = recovered && !this.#openedWhileDown;
+    // 作り直しでは、PuppetSurface が渡し直したビュー (利用者のズームとパン) とパラメータの値を保つ。待つ間に開いたモデルは
+    // fit で見せ、値も既定から始める (前のモデルの値を同じ ID のパラメータに戻さない。T0945)。
+    const openedWhileDown = this.#openedWhileDown;
+    this.#keepView = recovered && !openedWhileDown;
     this.#openedWhileDown = false;
     try {
       if (this.#file !== null) await this.load(this.#file, pending);
@@ -1466,7 +1468,7 @@ export class Player {
     const carry = this.#carry;
     this.#carry = null;
     // 作り直している間に detach された。
-    if (!recovered || carry === null || this.#puppet !== puppet) return;
+    if (!recovered || openedWhileDown || carry === null || this.#puppet !== puppet) return;
     for (const [id, value] of Object.entries(carry)) puppet.set_parameter(id, value);
     this.#syncValues();
   }

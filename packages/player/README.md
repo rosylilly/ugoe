@@ -58,8 +58,9 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   できた WebPuppet は捨てる (アンマウントと再マウントが重なっても資源が残らない)。GPU を失ったら (WebGPU も WebGL2 も `is_lost`)
   canvas ごと作り直してモデルを読み直す。WebGL2 はコンテキストの復元 (`webglcontextrestored`) を待ってから作り直す。前の作り直しから
   1 分以内に失うことが続き 4 回目になったら、作り直さずに `status` を `unavailable`、`error` を `errors.gpuLostRepeatedly` にする
-  (`<ugoe-avatar>` と同じ数と時間。T0935)。作り直しでは利用者のズームとパンを保つ (失う前のビューを渡し直し、読み直しで fit しない。
-  モデルを開いたときは今までどおり fit。T0942)。devicePixelRatio だけが変わったときも
+  (`<ugoe-avatar>` と同じ数と時間。T0935)。作り直しでは利用者のズームとパンとパラメータの値を保つ (失う前のビューを渡し直し、
+  読み直しで fit しない。モデルを開いたときは今までどおり fit。T0942)。作り直しを待つ間に別のモデルを開いたら、そのモデルは fit で見せ、
+  値も既定から始める (前のモデルの値を同じ ID のパラメータに戻さない。T0945)。devicePixelRatio だけが変わったときも
   描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
 - ポーズ (T0735): `poseGroups` (グループ) と `poseShown` (グループごとに表示している要素) を持ち、`showPose(part)` で選ぶ。
