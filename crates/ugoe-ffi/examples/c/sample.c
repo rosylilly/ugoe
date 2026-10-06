@@ -338,16 +338,29 @@ static void host_actions(UgoePuppet *puppet) {
     CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f));
     printf("%u parts, %u overridden, %u pose entries\n", parts, overridden, entries);
 
-    /* 表示中のポーズの要素 (グループごとのパーツの番号。T0478)。上で最後に選んだ要素が表示中になる。 */
+    /* 表示中のポーズの要素 (グループごとのパーツの番号。T0478)。上で最後に選んだ要素が表示中になる。
+       ポーズの定義 (グループごとの要素のパーツの番号。T0483) で、表示中の要素がグループの要素であることも確かめる。 */
     uint32_t groups = 0;
     CHECK(ugoe_puppet_pose_group_count(puppet, &groups));
     for (uint32_t g = 0; g < groups; g++) {
+        uint32_t count = 0;
+        CHECK(ugoe_puppet_pose_entry_count(puppet, g, &count));
         uint32_t part = UINT32_MAX;
         UgoeResult r = ugoe_puppet_pose_visible_part(puppet, g, &part);
         if (r == UGOE_ERROR_NOT_FOUND) {
+            EXPECT(count == 0);
             continue; /* 要素の無いグループ */
         }
         CHECK(r);
+        bool listed = false;
+        for (uint32_t e = 0; e < count; e++) {
+            uint32_t entry = UINT32_MAX;
+            CHECK(ugoe_puppet_pose_entry_part(puppet, g, e, &entry));
+            listed = listed || entry == part;
+        }
+        EXPECT(listed);
+        uint32_t none = 0;
+        EXPECT(ugoe_puppet_pose_entry_part(puppet, g, count, &none) == UGOE_ERROR_OUT_OF_RANGE);
         const char *id = NULL;
         CHECK(ugoe_puppet_part_id(puppet, part, &id));
         bool shown = false;
@@ -357,6 +370,7 @@ static void host_actions(UgoePuppet *puppet) {
     }
     uint32_t unused = 0;
     EXPECT(ugoe_puppet_pose_visible_part(puppet, groups, &unused) == UGOE_ERROR_OUT_OF_RANGE);
+    EXPECT(ugoe_puppet_pose_entry_count(puppet, groups, &unused) == UGOE_ERROR_OUT_OF_RANGE);
 
     /* モデルの effects と同じ JSON。省略したフィールドは既定値。 */
     static const char effects[] =

@@ -485,6 +485,28 @@ namespace Ugoe
             return result;
         }
 
+        /// <summary>
+        /// ポーズの定義: グループごとの要素のパーツの ID (グループの並びは <see cref="GetVisiblePoseParts"/> と同じで、着せ替えで
+        /// 付けたモジュールのグループを含む。要素はモデルの並びで、先頭が初めに表示する要素。リンクのパーツは含まない)。
+        /// ポーズを選ぶ欄を作るために使う (docs/spec/motion.md#ポーズ)。要素の無いグループは空の配列。
+        /// </summary>
+        public string[][] GetPoseEntryParts()
+        {
+            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count));
+            var result = new string[count][];
+            for (uint i = 0; i < count; i++)
+            {
+                UgoeException.Check(Native.ugoe_puppet_pose_entry_count(handle, i, out var entries));
+                result[i] = new string[entries];
+                for (uint j = 0; j < entries; j++)
+                {
+                    UgoeException.Check(Native.ugoe_puppet_pose_entry_part(handle, i, j, out var part));
+                    result[i][j] = PartIds[(int)part];
+                }
+            }
+            return result;
+        }
+
         // --- 物理 ---
 
         /// <summary>

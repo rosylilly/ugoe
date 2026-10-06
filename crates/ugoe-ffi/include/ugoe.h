@@ -1128,6 +1128,31 @@ UgoeResult ugoe_puppet_pose_visible_part(const struct UgoePuppet *puppet,
                                          uint32_t group,
                                          uint32_t *out);
 
+// ポーズの `group` 番目のグループの要素の数 (合成したモデルのポーズ。`docs/spec/motion.md#ポーズ`)。
+//
+// `group` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_pose_entry_count(const struct UgoePuppet *puppet,
+                                        uint32_t group,
+                                        uint32_t *out);
+
+// ポーズの `group` 番目のグループの `entry` 番目の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で
+// `out` に書く (`docs/spec/motion.md#ポーズ`)。要素の並びはモデルの `entries` の並びで、先頭が初めに表示する要素。
+// `links` のパーツは返さない。
+//
+// `group` か `entry` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_pose_entry_part(const struct UgoePuppet *puppet,
+                                       uint32_t group,
+                                       uint32_t entry,
+                                       uint32_t *out);
+
 // `.ugoe` バンドルのバイト列から `UgoePuppet` を作る。
 //
 // バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、

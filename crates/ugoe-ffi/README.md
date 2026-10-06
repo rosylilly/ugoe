@@ -340,6 +340,9 @@ ugoe_puppet_show_pose(puppet, "ArmB", &shown);      /* ポーズの要素 (part 
 uint32_t groups = 0, visible = 0;
 ugoe_puppet_pose_group_count(puppet, &groups);      /* ポーズのグループの数 (付けたモジュールのグループを含む) */
 ugoe_puppet_pose_visible_part(puppet, 0, &visible); /* グループ 0 で表示中の要素のパーツの番号 (T0478) */
+uint32_t entries = 0, entry = 0;
+ugoe_puppet_pose_entry_count(puppet, 0, &entries);  /* グループ 0 の要素の数 (T0483) */
+ugoe_puppet_pose_entry_part(puppet, 0, 1, &entry);  /* グループ 0 の要素 1 のパーツの番号 */
 ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) */
 ```
 
@@ -358,6 +361,11 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
   含む) の並びで、着せ替えの操作で変わる。範囲の外は `UGOE_ERROR_OUT_OF_RANGE`、要素の無いグループは `UGOE_ERROR_NOT_FOUND`。
   wasm は `pose_visible_json()` (`pose_json()` の `groups` の並びで、パーツの ID か `null` の配列)。関数を足しただけなので ABI の版は上げない
   ([ABI の版](#abi-の版))。
+- `ugoe_puppet_pose_entry_count`・`ugoe_puppet_pose_entry_part` はポーズの定義 (グループごとの要素の `part` をパーツの番号で。T0483) で、
+  ホストがポーズを選ぶ欄を作るために使う。並びはモデルの `entries` の並び (先頭が初めに表示する要素) で、`links` のパーツは返さない。
+  グループの番号は `ugoe_puppet_pose_visible_part` と同じ (付けたモジュールのグループを含み、着せ替えの操作で変わる)。要素の無いグループの
+  要素の数は 0。グループか要素の番号が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`。wasm の `pose_json()` の `groups[].entries[].part` に当たる
+  (C ABI では JSON でなく番号で返し、ID は `ugoe_puppet_part_id` で引く)。関数を足しただけなので ABI の版は上げない。
 - `ugoe_puppet_set_effects_json` は `Puppet::set_effects` と同じ (`docs/spec/motion.md#エフェクト設定の差し替え`)。同じ設定でも目パチと呼吸は
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
   設定はモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・範囲の外の値

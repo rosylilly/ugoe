@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// T0412・T0414・T0478 で C ABI に足したホストの操作 (パーツ・ポーズの表示の選択と表示中の要素・効果の差し替え・モーションのイベント) を、
+// T0412・T0414・T0478・T0483 で C ABI に足したホストの操作 (パーツ・ポーズの表示の選択と表示中の要素と定義・効果の差し替え・モーションのイベント) を、
 // 公開仕様の例 (spec/examples/) の期待値と比べる。
 using System.IO;
 using System.Linq;
@@ -84,6 +84,18 @@ namespace Ugoe.Tests
             Assert.That(puppet.GetVisiblePoseParts(), Is.EqualTo(new[] { "ArmB" }));
             Assert.That(puppet.ShowPose("SleeveB"), Is.False);
             Assert.That(puppet.GetVisiblePoseParts(), Is.EqualTo(new[] { "ArmB" }));
+        }
+
+        // ポーズの定義はモデルの要素の並びで、リンクのパーツ (SleeveB) を含まない。表示の選択では変わらない。
+        [Test]
+        public void PoseEntryPartsListTheDefinition()
+        {
+            using var puppet = FromExample("pose-select");
+            var expected = new[] { new[] { "ArmA", "ArmB" } };
+            Assert.That(puppet.GetPoseEntryParts(), Is.EqualTo(expected));
+            Assert.That(puppet.ShowPose("ArmB"), Is.True);
+            puppet.Update(0.125f);
+            Assert.That(puppet.GetPoseEntryParts(), Is.EqualTo(expected));
         }
 
         private static void AssertParameters(Puppet puppet, float eye, float breath, float mouth, float mouth2)

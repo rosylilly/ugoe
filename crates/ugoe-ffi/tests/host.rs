@@ -1,5 +1,5 @@
 //! T0414 で足した C ABI (パーツの一覧と不透明度の上書き・ポーズの表示の選択・効果の設定の差し替え) と
-//! T0416 で足した評価後のパーツの不透明度と、T0478 で足した表示中のポーズの要素を Rust から呼んで、
+//! T0416 で足した評価後のパーツの不透明度と、T0478 で足した表示中のポーズの要素と、T0483 で足したポーズの定義を Rust から呼んで、
 //! `ugoe::Puppet` と同じ結果になることを確かめる。
 #![allow(unsafe_code)] // C ABI の関数は unsafe なので、呼ぶテストに限り許可する。
 #![allow(clippy::unwrap_used)]
@@ -284,6 +284,116 @@ fn visible_pose_parts_skip_empty_groups_and_include_modules() {
     ok(unsafe { ugoe_puppet_attach_module(p.0, m) });
     unsafe { ugoe_module_destroy(m) };
     assert_eq!(visible_pose_parts(&p), [some("LongHair/Hair")]);
+}
+
+/// ポーズの定義 (グループごとの要素のパーツの ID)。
+fn pose_definition(p: &Handle) -> Vec<Vec<String>> {
+    let mut groups = u32::MAX;
+    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups) });
+    (0..groups)
+        .map(|group| {
+            let mut entries = u32::MAX;
+            ok(unsafe { ugoe_puppet_pose_entry_count(p.0, group, &mut entries) });
+            (0..entries)
+                .map(|entry| {
+                    let mut part = u32::MAX;
+                    ok(unsafe { ugoe_puppet_pose_entry_part(p.0, group, entry, &mut part) });
+                    let mut id = ptr::null();
+                    ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id) });
+                    text(id)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// ポーズの定義はモデルの `entries` の並びで、`links` は含まない。要素の無いグループは 0 個。範囲の外はエラー。
+#[test]
+fn pose_definition_lists_entry_parts() {
+    let mut model = fixtures::pose_and_effects();
+    model.pose.groups.insert(
+        0,
+        PoseGroup {
+            entries: Vec::new(),
+        },
+    );
+    let p = from_model(&model);
+    let expected: Vec<Vec<String>> = model
+        .pose
+        .groups
+        .iter()
+        .map(|g| {
+            g.entries
+                .iter()
+                .map(|e| e.part.as_str().to_owned())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        expected,
+        [vec![], vec!["ArmA".to_owned(), "ArmB".to_owned()]]
+    );
+    assert_eq!(pose_definition(&p), expected);
+    // 表示の選択では定義は変わらない。
+    assert!(show_pose(&p, "ArmB"));
+    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    assert_eq!(pose_definition(&p), expected);
+
+    let mut out = 0;
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_count(p.0, 2, &mut out) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 2, 0, &mut out) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 0, 0, &mut out) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 2, &mut out) },
+        UGOE_ERROR_OUT_OF_RANGE
+    );
+    assert_eq!(out, 0, "失敗したら書かない");
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_count(p.0, 1, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 0, ptr::null_mut()) },
+        UGOE_ERROR_NULL_POINTER
+    );
+    assert_eq!(
+        unsafe { ugoe_puppet_pose_entry_count(ptr::null(), 1, &mut out) },
+        UGOE_ERROR_NULL_POINTER
+    );
+}
+
+/// 付けたモジュールのポーズのグループも定義に入り、外すと消える。
+#[test]
+fn pose_definition_includes_modules() {
+    let p = from_model(&fixtures::dress_up_base());
+    assert!(pose_definition(&p).is_empty());
+    let mut module = fixtures::long_hair_module();
+    module.pose.groups = vec![PoseGroup {
+        entries: vec![PoseEntry {
+            part: "Hair".into(),
+            links: Vec::new(),
+        }],
+    }];
+    let mut file = ModuleFile::new(module);
+    file.textures = file.module.textures.iter().map(|_| png()).collect();
+    let bytes = write_module(&file).unwrap();
+    let mut m = ptr::null_mut();
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, m) });
+    assert_eq!(pose_definition(&p), [vec!["LongHair/Hair".to_owned()]]);
+    unsafe { ugoe_module_destroy(m) };
+    let name = CString::new("LongHair").unwrap();
+    ok(unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr()) });
+    assert!(pose_definition(&p).is_empty());
 }
 
 /// 評価後のパーツの不透明度は `ModelInstance::part_opacity` と同じで、ポーズのフェードと祖先が掛かる。

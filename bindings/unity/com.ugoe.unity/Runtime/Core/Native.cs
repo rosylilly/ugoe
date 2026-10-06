@@ -230,6 +230,8 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_show_pose(PuppetHandle puppet, byte[] part, out byte shown);
         [DllImport(Library)] internal static extern int ugoe_puppet_pose_group_count(PuppetHandle puppet, out uint count);
         [DllImport(Library)] internal static extern int ugoe_puppet_pose_visible_part(PuppetHandle puppet, uint group, out uint part);
+        [DllImport(Library)] internal static extern int ugoe_puppet_pose_entry_count(PuppetHandle puppet, uint group, out uint count);
+        [DllImport(Library)] internal static extern int ugoe_puppet_pose_entry_part(PuppetHandle puppet, uint group, uint entry, out uint part);
 
         // --- 物理 ---
 

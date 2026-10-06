@@ -1,5 +1,5 @@
 //! パーツの一覧・パーツの不透明度の上書き・ポーズの表示の選択 (T0414)。評価後のパーツの不透明度 (T0416)。
-//! 表示中のポーズの要素 (T0478)。
+//! 表示中のポーズの要素 (T0478)。ポーズの定義 (グループごとの要素のパーツ。T0483)。
 
 use std::ffi::c_char;
 
@@ -228,6 +228,73 @@ pub unsafe extern "C" fn ugoe_puppet_pose_visible_part(
                 format!("pose group {index} has no shown entry"),
             )
         })?;
+        let part = p
+            .puppet
+            .instance()
+            .compiled()
+            .part_index(part.as_str())
+            .ok_or_else(|| Error::new(UGOE_ERROR_NOT_FOUND, format!("no part `{part}`")))?;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", part as u32) }
+    })
+}
+
+/// ポーズの `group` 番目のグループの要素の数 (合成したモデルのポーズ。`docs/spec/motion.md#ポーズ`)。
+///
+/// `group` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_pose_entry_count(
+    puppet: *const UgoePuppet,
+    group: u32,
+    out: *mut u32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let groups = &p.puppet.pose().pose().groups;
+        let index = group as usize;
+        let group = groups
+            .get(index)
+            .ok_or_else(|| Error::out_of_range("pose group", index, groups.len()))?;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", group.entries.len() as u32) }
+    })
+}
+
+/// ポーズの `group` 番目のグループの `entry` 番目の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で
+/// `out` に書く (`docs/spec/motion.md#ポーズ`)。要素の並びはモデルの `entries` の並びで、先頭が初めに表示する要素。
+/// `links` のパーツは返さない。
+///
+/// `group` か `entry` が範囲の外なら `UGOE_ERROR_OUT_OF_RANGE`。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_pose_entry_part(
+    puppet: *const UgoePuppet,
+    group: u32,
+    entry: u32,
+    out: *mut u32,
+) -> UgoeResult {
+    guard(|| {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        let groups = &p.puppet.pose().pose().groups;
+        let index = group as usize;
+        let entries = &groups
+            .get(index)
+            .ok_or_else(|| Error::out_of_range("pose group", index, groups.len()))?
+            .entries;
+        let entry = entry as usize;
+        let part = &entries
+            .get(entry)
+            .ok_or_else(|| Error::out_of_range("pose entry", entry, entries.len()))?
+            .part;
         let part = p
             .puppet
             .instance()

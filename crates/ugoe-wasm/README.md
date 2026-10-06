@@ -171,7 +171,7 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
   JS で引数を省いたときにどちらになるかを気にさせないため。Rust の `PosePlayer` の関数とも 1 対 1 になる)。C ABI には無い。
 - `pose_visible_json` はグループごとの表示中の要素の `part` (`PosePlayer::visible_parts`。要素の無いグループは `null`)。`show_pose` で
   選んだ要素はフェードを待たずに、モーションのパーツの不透明度のカーブの要求で切り替わった要素は次の `update` の後に入る。ポーズの段を
-  止めている間も表示中の要素は変わる。C ABI では `ugoe_puppet_pose_group_count`・`ugoe_puppet_pose_visible_part` (T0478)。
+  止めている間も表示中の要素は変わる。C ABI では `ugoe_puppet_pose_group_count`・`ugoe_puppet_pose_visible_part` (T0478)。`pose_json` の要素のパーツは C ABI では `ugoe_puppet_pose_entry_count`・`ugoe_puppet_pose_entry_part` (T0483)。
 - `set_effects_json` は設定をモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・
   範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数)・`error_codes`
   (検査のエラーの種類を `", "` でつないだ文字列) を持つ `Error` を投げ、何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field`
