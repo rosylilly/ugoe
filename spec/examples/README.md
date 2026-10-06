@@ -227,6 +227,7 @@ Rendering examples:
 | [render-lighting](render-lighting/) | Normal maps, normals turned by rotation, mirroring and shear; ambient, directional and point lights, attenuation, light above 1, invalid lights, unlit meshes; lights under view transforms that mirror or turn the canvas; invalid lights before eight valid ones, and more than eight lights. |
 | [render-lighting-off](render-lighting-off/) | A model whose `lighting` is `false`: no mesh is lit. |
 | [render-texture](render-texture/) | Bilinear filtering of premultiplied values; clamp-to-edge addressing with texture coordinates outside `[0, 1]`. |
+| [render-png](render-png/) | PNG textures decoded ([rendering.md](../rendering.md#textures)) and then premultiplied: an indexed-color image with `tRNS`, a 16-bit RGB image with `tRNS`, and a 16-bit grayscale image with alpha. |
 
 ## Rendering examples
 
@@ -268,7 +269,7 @@ The files of a rendering example:
   | --- | --- |
   | `model` | The model file, relative to `render.json`. |
   | `summary` | A description of the example. |
-  | `textures` | One entry per texture, in the order of the model's `textures`: `width`, `height` and the color `rgba` of every pixel (row by row from the top-left; non-premultiplied, 0 to 255), and `normal_map`, the same for the texture's normal map if it has one (the model's `normal_map` names it). |
+  | `textures` | One entry per texture, in the order of the model's `textures`: `width`, `height` and the color `rgba` of every pixel (row by row from the top-left; non-premultiplied, 0 to 255), optionally `png`, and `normal_map`, the same for the texture's normal map if it has one (the model's `normal_map` names it). `png` describes the PNG file the image is, as in [file examples](#file-examples); `rgba` is then the pixels a renderer decodes from it. Absent: the image is the 8-bit RGBA PNG of the colors of `rgba`. |
   | `cases` | Independent frames. |
   | `cases[].parameters` | Optional. Parameter values, as in evaluation examples. The model is evaluated once. |
   | `cases[].target` | The width and height of the render target in pixels. The target is cleared to transparent black before drawing. |
@@ -286,7 +287,8 @@ To stay independent of rasterization details, the examples follow these rules:
   triangle of the model (of meshes that are drawn and of meshes used as masks), so it does not
   depend on how edges and shared edges are rasterized.
 - Textures have a single color, except in `render-texture`, which checks filtering at pixels whose
-  sampling position lies strictly between texel centers or beyond the clamped edge.
+  sampling position lies strictly between texel centers or beyond the clamped edge, and in
+  `render-png`, which checks pixels whose sampling position is a texel center.
 - A case with more than 8 valid lights (outside [Conformance](../rendering.md#conformance), since a
   renderer MAY use only 8 of them) is chosen so that the checked pixels are the same whichever 8 of
   its lights, or all of them, a renderer uses.
@@ -334,6 +336,8 @@ container of [bundle.md](../bundle.md):
 | `png-16bit-trns.ugoe` | An RGB PNG texture of bit depth 16 with a `tRNS` chunk: samples reduced to their most significant byte, `tRNS` compared with all 16 bits. |
 | `png-gamma.ugoe` | An RGB PNG texture with `gAMA` (gamma 1.0) and `cHRM` chunks, which are ignored. |
 | `png-srgb.ugoe` | An RGBA PNG texture with `sRGB` and `gAMA` chunks, which are ignored. |
+| `png-iccp.ugoe` | An RGB PNG texture with an `iCCP` chunk (a profile with linear tone curves), which is ignored. |
+| `png-apng.ugoe` | An APNG texture whose two animation frames (`fcTL`, `fdAT`) have other colors than its default image: only the default image (`IDAT`) is used. |
 | `png-interlaced.ugoe` | An RGBA PNG texture interlaced with Adam7 (one of the passes is empty). |
 | `png-interlaced-gray.ugoe` | A grayscale PNG texture of bit depth 1 interlaced with Adam7. |
 
@@ -385,8 +389,9 @@ range of `f32` in the [JSON Schema](../schema/)) that the other documents satisf
 
 `png` describes what the PNG file holds, for the images that are not 8-bit RGBA. Absent: the
 image is 8-bit RGBA (color type 6), not interlaced, and stores the colors of `rgba`. The PNG
-holds the chunks `IHDR`, then `gAMA`, `cHRM` and `sRGB` when given, `PLTE`, `tRNS`, two `IDAT`
-chunks and `IEND`; its scanlines use the filter types 0 to 4 in turn.
+holds the chunks `IHDR`, then `iCCP`, `gAMA`, `cHRM`, `sRGB` and `acTL` when given, `PLTE`, `tRNS`,
+two `IDAT` chunks, an `fcTL` and an `fdAT` chunk for each animation frame, and `IEND`; its
+scanlines use the filter types 0 to 4 in turn, starting again with 0 in each frame.
 
 | Field | Meaning |
 | --- | --- |
@@ -398,6 +403,8 @@ chunks and `IEND`; its scanlines use the filter types 0 to 4 in turn.
 | `gamma` | Optional. The value of `gAMA` (the gamma times 100,000). |
 | `chromaticities` | Optional. The eight values of `cHRM` (times 100,000). |
 | `srgb` | Optional. The rendering intent of `sRGB`. |
+| `icc_profile` | Optional. An `iCCP` chunk: `name`, the profile name, and `gamma`. The profile (compressed with deflate) is an ICC version 2 RGB display profile with the sRGB primaries adapted to D50, the D50 white point, and the same tone curve, the power `gamma`, for the three channels. |
+| `frames` | Optional. The frames of an APNG: `acTL` gives their number and 0 plays. The default image is not part of the animation. Each frame has the size of the image at offset (0, 0), a delay of 1/10 second, dispose and blend operations 0, and its `samples`, as below; its `fcTL` and `fdAT` chunks are numbered in order from 0. |
 | `samples` | The stored samples, pixel by pixel, row by row from the top-left, at the image's bit depth: for each pixel, one value per channel (the palette index for indexed color). |
 
 Values of `error`, named after the steps of [Reading](../bundle.md#reading):

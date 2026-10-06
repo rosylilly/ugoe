@@ -89,7 +89,9 @@ results within the tolerances of [Conformance](#conformance).
   *Informative:* the reference implementation's PNG decoder follows these rules for every host that
   uses it (the command-line tool, the C ABI, WebAssembly and the Godot binding). The file examples
   `png-*.ugoe` ([examples/README.md](examples/README.md#file-examples)) give the pixels these rules
-  decode from PNG files of each kind.
+  decode from PNG files of each kind, including files with `iCCP` and with APNG frames, and the
+  rendering example [render-png](examples/render-png/) draws decoded and premultiplied 16-bit and
+  indexed-color textures.
 - KTX2 texture images ([bundle.md](bundle.md#textures-and-normal-maps)) are non-premultiplied as
   well. A renderer:
   - ignores `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` in the KTX2 data format descriptor (writers do not

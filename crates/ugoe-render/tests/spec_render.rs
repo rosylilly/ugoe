@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 use ugoe_core::Rgb;
+use ugoe_format::image::{ImageLimits, decode_png};
 use ugoe_format::model_from_json;
 use ugoe_model::validate::validate;
 use ugoe_render::{Light, Lighting, Renderer, View};
@@ -43,9 +44,89 @@ struct RenderExample {
 struct Image {
     width: u32,
     height: u32,
-    /// 乗算していない 0..255 の RGBA。
+    /// 乗算していない 0..255 の RGBA。`png` があればそれを読んだ結果。
     rgba: Vec<u8>,
+    /// 画像の PNG の中身 (`spec/examples/README.md#file-examples` の `png`)。
+    png: Option<PngSpec>,
     normal_map: Option<Box<Image>>,
+}
+
+/// PNG の中身の記述。描画の例が使うもの (インターレースなし・色のチャンクなし) だけを受け付ける。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PngSpec {
+    color_type: u8,
+    bit_depth: u8,
+    palette: Option<Vec<[u8; 3]>>,
+    transparency: Option<Vec<u16>>,
+    /// 画素ごと・行ごとのサンプル (ビット深度のまま)。
+    samples: Vec<u16>,
+}
+
+impl PngSpec {
+    /// 記述の PNG を `png` クレートで書く (走査線のフィルタは任意。読んだ画素は同じ)。
+    fn encode(&self, width: u32, height: u32) -> Vec<u8> {
+        let color = png::ColorType::from_u8(self.color_type).expect("color type");
+        let depth = png::BitDepth::from_u8(self.bit_depth).expect("bit depth");
+        let channels = color.samples();
+        let bits = usize::from(self.bit_depth);
+        let stride = (width as usize * channels * bits).div_ceil(8);
+        let mut data = vec![0u8; stride * height as usize];
+        for (row, samples) in self.samples.chunks(width as usize * channels).enumerate() {
+            let line = &mut data[row * stride..(row + 1) * stride];
+            for (i, &v) in samples.iter().enumerate() {
+                let bit = i * bits;
+                match bits {
+                    16 => line[bit / 8..bit / 8 + 2].copy_from_slice(&v.to_be_bytes()),
+                    8 => line[bit / 8] = v as u8,
+                    _ => line[bit / 8] |= (v as u8) << (8 - bits - bit % 8),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, width, height);
+        encoder.set_color(color);
+        encoder.set_depth(depth);
+        if let Some(palette) = &self.palette {
+            encoder.set_palette(palette.as_flattened().to_vec());
+        }
+        if let Some(t) = &self.transparency {
+            let bytes: Vec<u8> = if color == png::ColorType::Indexed {
+                t.iter().map(|&a| a as u8).collect()
+            } else {
+                t.iter().flat_map(|v| v.to_be_bytes()).collect()
+            };
+            encoder.set_trns(bytes);
+        }
+        let mut writer = encoder.write_header().expect("PNG header");
+        writer.write_image_data(&data).expect("PNG data");
+        writer.finish().expect("PNG");
+        out
+    }
+}
+
+impl Image {
+    /// 乗算していない画素。`png` があれば、その PNG を参照実装の読み込み (`decode_png`) で読んだもので、
+    /// それが `rgba` と同じことも確かめる。
+    fn decoded(&self, label: &str) -> Vec<u8> {
+        let Some(spec) = &self.png else {
+            return self.rgba.clone();
+        };
+        let bytes = spec.encode(self.width, self.height);
+        let decoded = decode_png(&bytes, ImageLimits::default()).expect("decode PNG");
+        assert_eq!(decoded.pixels, self.rgba, "{label}: decoded PNG");
+        decoded.pixels
+    }
+
+    /// 描画に渡す乗算済みの画素。PNG の画像は参照実装の `premultiply` で乗算済みにする。
+    fn premultiplied(&self, label: &str) -> Vec<u8> {
+        let mut pixels = self.decoded(label);
+        if self.png.is_none() {
+            return premultiply(&pixels);
+        }
+        ugoe_format::image::premultiply(&mut pixels);
+        pixels
+    }
 }
 
 #[derive(Deserialize)]
@@ -246,6 +327,7 @@ fn reference_renderer_meets_the_rendering_examples() {
             }
             instance.update();
             let image = render(
+                &name,
                 &example.textures,
                 case,
                 &instance,
@@ -295,7 +377,13 @@ impl Target {
 }
 
 /// `case.target` の大きさの描画先を透明な黒でクリアし、1 フレーム描いて読み戻す。
-fn render(textures: &[Image], case: &Case, instance: &ModelInstance, view: View) -> Target {
+fn render(
+    name: &str,
+    textures: &[Image],
+    case: &Case,
+    instance: &ModelInstance,
+    view: View,
+) -> Target {
     let Gpu { device, queue, .. } = gpu();
     let mut renderer = Renderer::new(device, FORMAT);
     for (index, texture) in (0u32..).zip(textures) {
@@ -306,7 +394,7 @@ fn render(textures: &[Image], case: &Case, instance: &ModelInstance, view: View)
                 index,
                 texture.width,
                 texture.height,
-                &premultiply(&texture.rgba),
+                &texture.premultiplied(&format!("{name}: texture {index}")),
             )
             .expect("texture");
         if let Some(normal) = &texture.normal_map {
@@ -317,7 +405,7 @@ fn render(textures: &[Image], case: &Case, instance: &ModelInstance, view: View)
                     index,
                     normal.width,
                     normal.height,
-                    &normal.rgba,
+                    &normal.decoded(&format!("{name}: normal map {index}")),
                 )
                 .expect("normal map");
         }

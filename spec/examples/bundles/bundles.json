@@ -992,6 +992,124 @@
       ]
     },
     {
+      "file": "png-iccp.ugoe",
+      "summary": "An RGB PNG texture with an iCCP chunk whose profile has linear tone curves (gamma 1.0): it is ignored, and the samples are used as they are (not converted from the profile).",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 2,
+          "height": 1,
+          "png": {
+            "color_type": 2,
+            "bit_depth": 8,
+            "icc_profile": {
+              "name": "Linear RGB",
+              "gamma": 1.0
+            },
+            "samples": [
+              128,
+              64,
+              32,
+              16,
+              240,
+              200
+            ]
+          },
+          "rgba": [
+            128,
+            64,
+            32,
+            255,
+            16,
+            240,
+            200,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "file": "png-apng.ugoe",
+      "summary": "An animated PNG (APNG) texture whose default image is not part of the animation and whose two frames have other colors: only the default image (IDAT) is used, and the frames (fcTL, fdAT) are ignored.",
+      "style": "minimal",
+      "chunks": [
+        {
+          "tag": "MODL"
+        },
+        {
+          "tag": "TEXR"
+        }
+      ],
+      "result": "ok",
+      "model": "../single-quad/model.json",
+      "textures": [
+        {
+          "width": 2,
+          "height": 1,
+          "png": {
+            "color_type": 6,
+            "bit_depth": 8,
+            "samples": [
+              0,
+              0,
+              255,
+              255,
+              0,
+              255,
+              0,
+              128
+            ],
+            "frames": [
+              {
+                "samples": [
+                  255,
+                  0,
+                  0,
+                  255,
+                  255,
+                  0,
+                  0,
+                  255
+                ]
+              },
+              {
+                "samples": [
+                  255,
+                  255,
+                  0,
+                  64,
+                  0,
+                  255,
+                  255,
+                  64
+                ]
+              }
+            ]
+          },
+          "rgba": [
+            0,
+            0,
+            255,
+            255,
+            0,
+            255,
+            0,
+            128
+          ]
+        }
+      ]
+    },
+    {
       "file": "png-interlaced.ugoe",
       "summary": "An RGBA PNG texture interlaced with Adam7, 7 by 3 pixels (the third pass is empty): it is decoded to the full image in row order.",
       "style": "minimal",

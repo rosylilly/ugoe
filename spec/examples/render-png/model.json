@@ -1,0 +1,221 @@
+{
+  "schema_version": 0,
+  "meta": {
+    "name": "render_png",
+    "canvas": {
+      "width": 64.0,
+      "height": 48.0,
+      "origin": [
+        32.0,
+        24.0
+      ]
+    }
+  },
+  "parameters": [],
+  "parts": [
+    {
+      "id": "Root",
+      "name": "Root",
+      "keyforms": {
+        "keyforms": [
+          {
+            "opacity": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "id": "Palette",
+      "name": "Palette",
+      "part": "Root",
+      "texture": 0,
+      "uvs": [
+        [
+          -0.0078125,
+          0.0
+        ],
+        [
+          0.9921875,
+          0.0
+        ],
+        [
+          0.9921875,
+          1.0
+        ],
+        [
+          -0.0078125,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                64.0,
+                0.0
+              ],
+              [
+                64.0,
+                16.0
+              ],
+              [
+                0.0,
+                16.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "Rgb16",
+      "name": "Rgb16",
+      "part": "Root",
+      "texture": 1,
+      "uvs": [
+        [
+          -0.0078125,
+          0.0
+        ],
+        [
+          0.9921875,
+          0.0
+        ],
+        [
+          0.9921875,
+          1.0
+        ],
+        [
+          -0.0078125,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                16.0
+              ],
+              [
+                64.0,
+                16.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                0.0,
+                32.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "GrayAlpha16",
+      "name": "GrayAlpha16",
+      "part": "Root",
+      "texture": 2,
+      "uvs": [
+        [
+          -0.0078125,
+          0.0
+        ],
+        [
+          0.9921875,
+          0.0
+        ],
+        [
+          0.9921875,
+          1.0
+        ],
+        [
+          -0.0078125,
+          1.0
+        ]
+      ],
+      "indices": [
+        0,
+        1,
+        2,
+        0,
+        2,
+        3
+      ],
+      "keyforms": {
+        "keyforms": [
+          {
+            "positions": [
+              [
+                0.0,
+                32.0
+              ],
+              [
+                64.0,
+                32.0
+              ],
+              [
+                64.0,
+                48.0
+              ],
+              [
+                0.0,
+                48.0
+              ]
+            ],
+            "opacity": 1.0,
+            "draw_order": 500.0
+          }
+        ]
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "palette",
+      "width": 4,
+      "height": 1
+    },
+    {
+      "name": "rgb16",
+      "width": 4,
+      "height": 1
+    },
+    {
+      "name": "gray_alpha16",
+      "width": 4,
+      "height": 1
+    }
+  ]
+}

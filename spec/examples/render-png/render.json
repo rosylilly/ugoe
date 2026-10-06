@@ -1,0 +1,301 @@
+{
+  "model": "model.json",
+  "summary": "PNG textures decoded and then premultiplied. Each 4x1 texture is sampled at its texel centers (the texture coordinates are shifted by 1/128, so the centers of the target pixels 8, 24, 40 and 56 of each row fall on them). Top: an indexed-color PNG of bit depth 2 whose tRNS chunk is shorter than its palette (alpha 0, 128, 51 and, beyond tRNS, 255). Middle: an RGB PNG of bit depth 16 whose first pixel equals the tRNS color in all 16 bits (transparent) and whose second has the same high bytes (opaque); samples reduced to their most significant byte. Bottom: a grayscale-with-alpha PNG of bit depth 16, alpha reduced to its most significant byte before premultiplying.",
+  "textures": [
+    {
+      "width": 4,
+      "height": 1,
+      "png": {
+        "color_type": 3,
+        "bit_depth": 2,
+        "palette": [
+          [
+            200,
+            100,
+            50
+          ],
+          [
+            40,
+            80,
+            240
+          ],
+          [
+            255,
+            255,
+            255
+          ],
+          [
+            10,
+            20,
+            30
+          ]
+        ],
+        "transparency": [
+          0,
+          128,
+          51
+        ],
+        "samples": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "rgba": [
+        200,
+        100,
+        50,
+        0,
+        40,
+        80,
+        240,
+        128,
+        255,
+        255,
+        255,
+        51,
+        10,
+        20,
+        30,
+        255
+      ]
+    },
+    {
+      "width": 4,
+      "height": 1,
+      "png": {
+        "color_type": 2,
+        "bit_depth": 16,
+        "transparency": [
+          4660,
+          22136,
+          39612
+        ],
+        "samples": [
+          4660,
+          22136,
+          39612,
+          4608,
+          22016,
+          39424,
+          51455,
+          25855,
+          13055,
+          65535,
+          32768,
+          0
+        ]
+      },
+      "rgba": [
+        18,
+        86,
+        154,
+        0,
+        18,
+        86,
+        154,
+        255,
+        200,
+        100,
+        50,
+        255,
+        255,
+        128,
+        0,
+        255
+      ]
+    },
+    {
+      "width": 4,
+      "height": 1,
+      "png": {
+        "color_type": 4,
+        "bit_depth": 16,
+        "samples": [
+          51455,
+          33023,
+          25600,
+          0,
+          65535,
+          13056,
+          2815,
+          65535
+        ]
+      },
+      "rgba": [
+        200,
+        200,
+        200,
+        128,
+        100,
+        100,
+        100,
+        0,
+        255,
+        255,
+        255,
+        51,
+        10,
+        10,
+        10,
+        255
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "summary": "Canvas and target of the same size.",
+      "target": [
+        64,
+        48
+      ],
+      "pixels": [
+        {
+          "at": [
+            8,
+            12
+          ],
+          "rgba": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "at": [
+            24,
+            12
+          ],
+          "rgba": [
+            20.08,
+            40.16,
+            120.47,
+            128.0
+          ]
+        },
+        {
+          "at": [
+            40,
+            3
+          ],
+          "rgba": [
+            51.0,
+            51.0,
+            51.0,
+            51.0
+          ]
+        },
+        {
+          "at": [
+            56,
+            3
+          ],
+          "rgba": [
+            10.0,
+            20.0,
+            30.0,
+            255.0
+          ]
+        },
+        {
+          "at": [
+            8,
+            28
+          ],
+          "rgba": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "at": [
+            24,
+            28
+          ],
+          "rgba": [
+            18.0,
+            86.0,
+            154.0,
+            255.0
+          ]
+        },
+        {
+          "at": [
+            40,
+            19
+          ],
+          "rgba": [
+            200.0,
+            100.0,
+            50.0,
+            255.0
+          ]
+        },
+        {
+          "at": [
+            56,
+            19
+          ],
+          "rgba": [
+            255.0,
+            128.0,
+            0.0,
+            255.0
+          ]
+        },
+        {
+          "at": [
+            8,
+            44
+          ],
+          "rgba": [
+            100.39,
+            100.39,
+            100.39,
+            128.0
+          ]
+        },
+        {
+          "at": [
+            24,
+            44
+          ],
+          "rgba": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "at": [
+            40,
+            35
+          ],
+          "rgba": [
+            51.0,
+            51.0,
+            51.0,
+            51.0
+          ]
+        },
+        {
+          "at": [
+            56,
+            35
+          ],
+          "rgba": [
+            10.0,
+            10.0,
+            10.0,
+            255.0
+          ]
+        }
+      ]
+    }
+  ]
+}

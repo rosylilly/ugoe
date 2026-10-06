@@ -37,4 +37,5 @@ png.workspace = true
 pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-ugoe-format.workspace = true
+# png: 描画の例の PNG のテクスチャを参照実装の読み込みで読む (tests/spec_render.rs)。
+ugoe-format = { workspace = true, features = ["png"] }

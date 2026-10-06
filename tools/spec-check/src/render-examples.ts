@@ -4,13 +4,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readModelJson } from "./bundle.ts";
 import { evaluate, parameterValues } from "./evaluate.ts";
-import { rgbaPng } from "./png.ts";
+import { decodePng, encodePng, type PngSpec, rgbaPng } from "./png.ts";
 import { applyView, fitView, type Image, type Lights, render, type View } from "./render.ts";
 import type * as M from "./types.ts";
 import { writeBundle } from "./write.ts";
 
-export interface TextureSpec extends Image {
-  normal_map?: Image;
+/** テクスチャ (と法線マップ) の画像。`png` があれば画像はその PNG で、`rgba` は読んだ結果。 */
+export interface ImageSpec extends Image {
+  png?: PngSpec;
+}
+
+export interface TextureSpec extends ImageSpec {
+  normal_map?: ImageSpec;
 }
 
 export interface ExpectedPixel {
@@ -52,6 +57,18 @@ export function loadRenderExample(dir: string): RenderExample {
   return { model, doc, warnings };
 }
 
+/** 画像のファイル (`png` が無ければ `rgba` の 8 ビットの RGBA)。 */
+export function imageFile(i: ImageSpec): Uint8Array {
+  return i.png ? encodePng(i.width, i.height, i.png) : rgbaPng(i.width, i.height, i.rgba);
+}
+
+/** 描くときの画像: 画像のファイルを PNG の読み方 (spec/rendering.md#textures) で読んだもの。 */
+export function decodedImage(i: ImageSpec): Image {
+  if (!i.png) return i;
+  const { width, height, pixels } = decodePng(imageFile(i));
+  return { width, height, rgba: [...pixels] };
+}
+
 /** 1 つのケースを描いて、画素ごとの食い違いの説明の一覧を返す (空なら一致)。 */
 export function compareRenderCase(example: RenderExample, c: RenderCase): string[] {
   const { model, doc } = example;
@@ -60,8 +77,8 @@ export function compareRenderCase(example: RenderExample, c: RenderCase): string
   const image = render({
     model,
     result,
-    textures: doc.textures,
-    normalMaps: doc.textures.map((t) => t.normal_map ?? null),
+    textures: doc.textures.map(decodedImage),
+    normalMaps: doc.textures.map((t) => (t.normal_map ? decodedImage(t.normal_map) : null)),
     width,
     height,
     lights: c.lights,
@@ -114,10 +131,11 @@ function segmentDistance(p: M.Vec2, a: M.Vec2, b: M.Vec2): number {
 
 /** 例のモデルとテクスチャ (と法線マップ) の `.ugoe` (参照実装に描かせるため)。 */
 export function renderExampleBundle(example: RenderExample): Uint8Array {
-  const png = (i: Image) => rgbaPng(i.width, i.height, i.rgba);
   return writeBundle({
     model: example.model,
-    textures: example.doc.textures.map(png),
-    normalMaps: example.doc.textures.flatMap((t) => (t.normal_map ? [png(t.normal_map)] : [])),
+    textures: example.doc.textures.map(imageFile),
+    normalMaps: example.doc.textures.flatMap((t) =>
+      t.normal_map ? [imageFile(t.normal_map)] : [],
+    ),
   });
 }

@@ -6,7 +6,12 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { rasterize, sample } from "../src/render.ts";
-import { compareRenderCase, loadRenderExample, pixelsNearEdges } from "../src/render-examples.ts";
+import {
+  compareRenderCase,
+  decodedImage,
+  loadRenderExample,
+  pixelsNearEdges,
+} from "../src/render-examples.ts";
 import { SPEC_EXAMPLES } from "./paths.ts";
 
 const names = readdirSync(SPEC_EXAMPLES, { withFileTypes: true })
@@ -29,6 +34,10 @@ for (const name of names) {
       assert.equal(spec.height, t.height);
       assert.equal(spec.rgba.length, 4 * t.width * t.height);
       assert.equal(spec.normal_map !== undefined, t.normal_map !== null);
+      // PNG の記述のある画像は、それを読んだ結果が rgba
+      for (const image of [spec, spec.normal_map]) {
+        if (image?.png) assert.deepEqual(decodedImage(image).rgba, image.rgba);
+      }
     });
     const failures = example.doc.cases.flatMap((c, i) =>
       [...pixelsNearEdges(example, c), ...compareRenderCase(example, c)].map(

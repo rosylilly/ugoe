@@ -24,8 +24,9 @@
     (`fcTL`・`fdAT`) は見ません。
   - 参照の実装は `ugoe_format::image::decode_png` で、C ABI の `ugoe_image_decode`・wasm・Godot のバインディングも同じ関数を使います
     (Godot の PNG の読み込みは `gAMA` で値を変えるので使わない。T0477)。
-  - 公開仕様のファイルの例 `spec/examples/bundles/png-*.ugoe` (T0175) が、これらの規則どおりに読んだ画素を持ちます
-    ([testing.md#公開仕様の例](../testing.md#公開仕様の例))。
+  - 公開仕様のファイルの例 `spec/examples/bundles/png-*.ugoe` (T0175。`iCCP` と APNG のフレームを持つものは T0177) が、
+    これらの規則どおりに読んだ画素を持ちます。描画の例 `spec/examples/render-png/` (T0177) は、16 ビットとパレット (`tRNS` 付き) の
+    画像を読んで乗算済みにしたものを描きます ([testing.md#公開仕様の例](../testing.md#公開仕様の例))。
 
   KTX2 では:
   - KTX2 のデータ形式の記述の `KHR_DF_FLAG_ALPHA_PREMULTIPLIED` は見ません (立っていても乗算していないとみなす。書き出しは立てない)。

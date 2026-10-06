@@ -67,7 +67,11 @@ export interface PngSpec {
   chromaticities?: number[];
   /** `sRGB` のレンダリングインテント。 */
   srgb?: number;
+  /** `iCCP` のプロファイル: 名前と、各チャンネルのトーンカーブのガンマ (`iccProfile`)。 */
+  icc_profile?: { name: string; gamma: number };
   samples: number[];
+  /** APNG のフレーム (既定の画像はアニメーションに含めない)。各フレームは画像全体の大きさで、`samples` は既定の画像と同じ形。 */
+  frames?: { samples: number[] }[];
 }
 
 const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as const;
@@ -115,15 +119,12 @@ function predict(filter: number, a: number, b: number, c: number): number {
   throw new Error(`unknown PNG filter ${filter}`);
 }
 
-/**
- * 記述 `spec` の PNG を作る。走査線のフィルタは 0〜4 を順に使い (パスごとに前の行を空に戻す)、
- * IDAT は 2 つに分け、色のチャンクは IHDR の直後に置く。
- */
-export function encodePng(width: number, height: number, spec: PngSpec): Uint8Array {
+/** 走査線の列 (フィルタの種類のバイトを先頭に持つ) を deflate で圧縮したもの。 */
+function imageData(width: number, height: number, spec: PngSpec, samples: number[]): Uint8Array {
   const channels = CHANNELS[spec.color_type];
   const depth = spec.bit_depth;
-  if (spec.samples.length !== width * height * channels) {
-    throw new Error(`${spec.samples.length} samples for ${width}x${height}x${channels}`);
+  if (samples.length !== width * height * channels) {
+    throw new Error(`${samples.length} samples for ${width}x${height}x${channels}`);
   }
   const bpp = Math.max(1, (channels * depth) / 8);
   const raw: number[] = [];
@@ -136,7 +137,7 @@ export function encodePng(width: number, height: number, spec: PngSpec): Uint8Ar
       let bit = 0;
       for (const [x, y] of row) {
         for (let k = 0; k < channels; k++) {
-          const v = spec.samples[(y * width + x) * channels + k];
+          const v = samples[(y * width + x) * channels + k];
           if (depth === 16) {
             bytes[bit / 8] = v >> 8;
             bytes[bit / 8 + 1] = v & 0xff;
@@ -156,25 +157,92 @@ export function encodePng(width: number, height: number, spec: PngSpec): Uint8Ar
       prior = bytes;
     }
   }
+  return new Uint8Array(deflateSync(new Uint8Array(raw)));
+}
+
+/** s15Fixed16Number の列。 */
+function s15f16(vs: number[]): number[] {
+  return vs.flatMap((v) => {
+    const n = Math.round(v * 65536) >>> 0;
+    return [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  });
+}
+
+const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
+const u32be = (v: number) => [v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff];
+
+/**
+ * ICC v2 の RGB のディスプレイのプロファイル (https://www.color.org/icc32.pdf)。原色は sRGB (D50 に順応した値)、
+ * 白色点は D50、3 つのトーンカーブはどれもガンマ `gamma` の冪 (`curv` の 1 つの値)。
+ */
+export function iccProfile(name: string, gamma: number): Uint8Array {
+  const pad = (b: number[]) => [...b, ...new Array((4 - (b.length % 4)) % 4).fill(0)];
+  const xyz = (v: number[]) => [...ascii("XYZ "), 0, 0, 0, 0, ...s15f16(v)];
+  const desc = pad([
+    ...ascii("desc"),
+    ...[0, 0, 0, 0],
+    ...u32be(name.length + 1),
+    ...ascii(name),
+    0,
+    ...new Array(4 + 4 + 2 + 1 + 67).fill(0),
+  ]);
+  const g = Math.round(gamma * 256);
+  const curve = pad([...ascii("curv"), 0, 0, 0, 0, ...u32be(1), g >> 8, g & 0xff]);
+  const tags: [string, number[]][] = [
+    ["desc", desc],
+    ["cprt", pad([...ascii("text"), 0, 0, 0, 0, ...ascii("CC0"), 0])],
+    ["wtpt", xyz([0.9642, 1.0, 0.8249])],
+    ["rXYZ", xyz([0.4361, 0.2225, 0.0139])],
+    ["gXYZ", xyz([0.3851, 0.7169, 0.0971])],
+    ["bXYZ", xyz([0.1431, 0.0606, 0.7141])],
+    ["rTRC", curve],
+    ["gTRC", curve],
+    ["bTRC", curve],
+  ];
+  const table: number[] = u32be(tags.length);
+  const data: number[] = [];
+  let at = 128 + 4 + 12 * tags.length;
+  for (const [sig, bytes] of tags) {
+    table.push(...ascii(sig), ...u32be(at), ...u32be(bytes.length));
+    data.push(...bytes);
+    at += bytes.length;
+  }
+  const header = new Array<number>(128).fill(0);
+  header.splice(0, 4, ...u32be(at));
+  header.splice(8, 4, 0x02, 0x10, 0, 0);
+  header.splice(12, 12, ...ascii("mntrRGB XYZ "));
+  header.splice(24, 12, ...[2026, 1, 1, 0, 0, 0].flatMap((v) => [v >> 8, v & 0xff]));
+  header.splice(36, 4, ...ascii("acsp"));
+  header.splice(68, 12, ...s15f16([0.9642, 1.0, 0.8249]));
+  return new Uint8Array([...header, ...table, ...data]);
+}
+
+/**
+ * 記述 `spec` の PNG を作る。走査線のフィルタは 0〜4 を順に使い (パスごとに前の行を空に戻す)、
+ * IDAT は 2 つに分け、色のチャンクと `acTL` は IHDR の直後に置く。APNG のフレームは IDAT の後に、
+ * フレームごとに `fcTL` と 1 つの `fdAT` を置く。
+ */
+export function encodePng(width: number, height: number, spec: PngSpec): Uint8Array {
   const ihdr = new Uint8Array(13);
   const view = new DataView(ihdr.buffer);
   view.setUint32(0, width);
   view.setUint32(4, height);
-  ihdr.set([depth, spec.color_type, 0, 0, spec.interlace ?? 0], 8);
-  const u32s = (vs: number[]) => {
-    const out = new Uint8Array(4 * vs.length);
-    vs.forEach((v, i) => {
-      new DataView(out.buffer).setUint32(4 * i, v);
-    });
-    return out;
-  };
+  ihdr.set([spec.bit_depth, spec.color_type, 0, 0, spec.interlace ?? 0], 8);
+  const u32s = (vs: number[]) => new Uint8Array(vs.flatMap(u32be));
   const parts = [
     new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr),
   ];
+  if (spec.icc_profile) {
+    const { name, gamma } = spec.icc_profile;
+    const profile = deflateSync(iccProfile(name, gamma));
+    parts.push(chunk("iCCP", new Uint8Array([...ascii(name), 0, 0, ...profile])));
+  }
   if (spec.gamma !== undefined) parts.push(chunk("gAMA", u32s([spec.gamma])));
   if (spec.chromaticities) parts.push(chunk("cHRM", u32s(spec.chromaticities)));
   if (spec.srgb !== undefined) parts.push(chunk("sRGB", new Uint8Array([spec.srgb])));
+  const frames = spec.frames ?? [];
+  if (frames.length > 0) parts.push(chunk("acTL", u32s([frames.length, 0])));
   if (spec.palette) parts.push(chunk("PLTE", new Uint8Array(spec.palette.flat())));
   if (spec.transparency) {
     const t = spec.transparency;
@@ -184,9 +252,23 @@ export function encodePng(width: number, height: number, spec: PngSpec): Uint8Ar
         : new Uint8Array(t.flatMap((v) => [v >> 8, v & 0xff]));
     parts.push(chunk("tRNS", data));
   }
-  const idat = new Uint8Array(deflateSync(new Uint8Array(raw)));
+  const idat = imageData(width, height, spec, spec.samples);
   const half = idat.length >> 1;
   parts.push(chunk("IDAT", idat.subarray(0, half)), chunk("IDAT", idat.subarray(half)));
+  // APNG のフレーム: 番号は fcTL と fdAT で通し。位置 0・遅れ 1/10 秒・破棄 0 (none)・合成 0 (source)
+  let sequence = 0;
+  for (const f of frames) {
+    const fctl = new Uint8Array(26);
+    const v = new DataView(fctl.buffer);
+    [sequence++, width, height, 0, 0].forEach((x, i) => {
+      v.setUint32(4 * i, x);
+    });
+    v.setUint16(20, 1);
+    v.setUint16(22, 10);
+    parts.push(chunk("fcTL", fctl));
+    const data = imageData(width, height, spec, f.samples);
+    parts.push(chunk("fdAT", new Uint8Array([...u32be(sequence++), ...data])));
+  }
   parts.push(chunk("IEND", new Uint8Array(0)));
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
@@ -199,7 +281,7 @@ export function encodePng(width: number, height: number, spec: PngSpec): Uint8Ar
 
 /**
  * PNG を非乗算の RGBA 8 ビットに読む (spec/rendering.md#textures の規則)。
- * サンプルはそのまま使い、ガンマと色のチャンクは見ない。16 ビットは上位のバイトを取り (丸めない)、
+ * サンプルはそのまま使い、ガンマと色のチャンク (`iCCP` を含む) は見ない。16 ビットは上位のバイトを取り (丸めない)、
  * 8 ビット未満のグレースケールは `v × 255 / (2^d − 1)` に広げる (パレットの番号は広げない)。
  * グレースケールと RGB の `tRNS` は、ビット深度のままの値 (16 ビットは 16 ビットすべて) で比べる。
  * Adam7 は全体の画像に戻す。APNG のフレーム (`fcTL`・`fdAT`) は読まない。

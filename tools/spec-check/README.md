@@ -21,7 +21,7 @@
   乗算済みの双線形・clamp-to-edge、乗算色とスクリーン色、3 つの合成モード、マスク (入れ子・反転・union と intersection・強さ)、
   裏面の除去、法線マップとライティング (環境光・平行光・点光源)、任意のアフィンのビュー変換。
   PNG のテクスチャの読み方 ([spec/rendering.md](../../spec/rendering.md#textures)、`png.ts`): すべての色の種類とビット深度、`tRNS`、
-  16 ビットの上位のバイト、ガンマと色のチャンクを見ない、Adam7 のインターレース (T0175)。描画の例 (`spec/examples/render-*/`) の照合と、
+  16 ビットの上位のバイト、ガンマと色のチャンク (`iCCP` を含む) を見ない、Adam7 のインターレース (T0175)、APNG のフレームを読まない (T0177)。描画の例 (`spec/examples/render-*/`) の照合と、
   参照実装の描画との比較 (T0127・T0130)
 - 追従 (トラッキング、[spec/avatar-profile.md](../../spec/avatar-profile.md#face-tracking)): 標準の対応と `avatar.tracking` の上書き、
   1 フレームの順の手順 3 (`tracking.ts`、T0130)
@@ -101,7 +101,7 @@ pnpm --filter ugoe-spec-check check
 | `test/compat.test.ts` | `assets/compat/` の資料を読む。`dev/` は警告なしに読めて評価できる、`future/` は仕様どおりに劣化して読める (評価の結果が元のファイルと同じ) か拒否される ([docs/testing.md](../../docs/testing.md#互換性テスト))。 |
 | `test/bundles.test.ts` | ファイルの例 (`spec/examples/bundles/`) を読み、目録 `bundles.json` (チャンクの表・結果・同じ中身の JSON の文書・画像の色) と比べる。画像は `png.ts` の PNG の読み方で読む (`png-*.ugoe` がその規則の例)。目録から書き出しで作り直したものと、展開したペイロードが同じ。 |
 | `test/writer.test.ts` | MessagePack の符号化 (整数と長さの境目、float 32 と 64)、整数と `f32` のフィールドの型、2 通りの書き方、知らない値と基準の機能の宣言の拒否、コンテナの配置、すべての例と互換性の資料のこの実装での往復。 |
-| `test/render.test.ts` | `spec/examples/` の描画の例 (`render.json`) をこの実装のラスタライザで描き、[許容誤差](../../spec/examples/README.md#rendering-tolerances) で調べる画素と比べる。調べる画素が三角形の辺から 1 画素以上離れていること (例の作り方の規則)、隣り合う三角形が共有する辺の画素を 1 度だけ塗ること、乗算済みでの補間。 |
+| `test/render.test.ts` | `spec/examples/` の描画の例 (`render.json`) をこの実装のラスタライザで描き (`png` の記述のあるテクスチャは、`encodePng` で作った PNG を `decodePng` で読んだもので描き、それが `rgba` と同じことも確かめる)、[許容誤差](../../spec/examples/README.md#rendering-tolerances) で調べる画素と比べる。調べる画素が三角形の辺から 1 画素以上離れていること (例の作り方の規則)、隣り合う三角形が共有する辺の画素を 1 度だけ塗ること、乗算済みでの補間。 |
 | `test/reader.test.ts` | コンテナの誤り (ヘッダ・表・重なり・許されないチャンク・画像の数)、機能の宣言、MessagePack、JSON の整数と `null`、知らない値、検証。 |
 | `test/physics.test.ts` | 物理の時間の進め方のうち時間の例で確かめにくいもの: 1 回の更新の刻みの上限を超える巨大な `dt` の後、残りの時間が割り算の余りになり、物理が進み続ける。 |
 
@@ -134,6 +134,10 @@ pnpm --filter ugoe-spec-check check
   規則に反する読み方 (`gAMA` で補正する・`sRGB` を線形に変換する・16 ビットを丸める・8 ビットにしてから `tRNS` と比べる・
   広げた値を `tRNS` と比べる・`tRNS` より後の番号の alpha を 0 にする・パレットの番号を広げる・インターレースを無視する) を
   `png.ts` に一時的に入れると、それぞれ対応する例で `test/bundles.test.ts` が落ちることを確かめた (T0175)。
+  `iCCP` のプロファイル (`iccProfile`) は ImageMagick が読め、それを使った色の変換で値が変わる (正しいプロファイルである) ことを確かめた。
+  `iCCP` があると色を変換する読み方は `png-iccp` で、APNG の最初または最後のフレームを読む読み方は `png-apng` で落ちる (T0177)。
+- 描画の例のテクスチャも `png` の記述を持てる (T0177)。`render-png` はテクセルの中心を調べ、期待値は読んだ色に alpha を掛けた実数を
+  手で求めた値。`render-reference.ts` は `png` の記述のある画像を `encodePng` で作って参照実装に渡す。
 - Bézier の `s` は二分法で解く (仕様は `|b(s) − x| ≤ 1e-6` を求め、解き方を問わない)。
 
 ## ライセンス
