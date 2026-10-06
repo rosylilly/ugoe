@@ -1,11 +1,11 @@
 ---
 id: T1661
 title: "エディタ: 強制色でパーツの木のフォーカスの印が前と後の比 3:1 に届かないのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: [T1654]
-assignee:
+assignee: claude-worker-T1661
 ---
 
 # T1661: エディタ: 強制色でパーツの木のフォーカスの印が前と後の比 3:1 に届かないのを直す

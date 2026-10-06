@@ -1,11 +1,11 @@
 ---
 id: T0968
 title: "マニュアル: 残りの画像 (チュートリアルの途中・モジュール・点光源・スタジオの出力と仮想カメラ) を撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0972, T1650, T1654]
-assignee:
+assignee: claude-worker-T0968
 ---
 
 # T0968: マニュアル: 残りの画像 (チュートリアルの途中・モジュール・点光源・スタジオの出力と仮想カメラ) を撮り直す
