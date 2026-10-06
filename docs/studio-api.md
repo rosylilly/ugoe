@@ -1,8 +1,8 @@
 # ugoe Studio API reference (version 1)
 
 The ugoe Studio API lets other programs on the same computer — a Stream Deck plugin, a chat bot, a macro tool —
-switch scenes, expressions and motions in ugoe Studio, move parameters, dress up the avatar and receive change
-notifications. It is **off by default**, listens on the **loopback interface only**, and every new client must be
+switch scenes, expressions and motions in ugoe Studio, move parameters, dress up the avatar, choose its pose parts and
+receive change notifications. It is **off by default**, listens on the **loopback interface only**, and every new client must be
 **approved by the user** in the studio's control window.
 
 - Transport: WebSocket (RFC 6455), text messages, `ws://127.0.0.1:<port>/api` (also `ws://[::1]:<port>/api`).
@@ -113,7 +113,8 @@ request's response.
 
 `-32010` reasons (`error.data.code`): `noModel` (no avatar on air), `unknownMotion`, `unknownExpression`,
 `unknownScene`, `missing` (a file of the scene was not found), `unreadable`, `wrongType`, `tooLarge`, `dressUp`
-(the module does not fit the slot). Other fields in `data` give details (`name`, `path`, `message`).
+(the module does not fit the slot), `unknownPose` (the avatar on air has no such pose part). Other fields in `data`
+give details (`name`, `path`, `message`, `part`).
 
 `data` also has `messageCode` and `args`, the same error in the shape the studio's own screens use
 (ADR 0029): `messageCode` is a stable dotted code (`scene.unknown`, `scene.model_missing`, `animation.no_model`, …)
@@ -235,6 +236,17 @@ they are.
 air, or empties the slot when `module` is `null`. The change is saved in the scene, like a dress-up hotkey.
 Like `scene.activate`, a switch that starts while the modules load wins, and the earlier dress-up is dropped.
 
+### Pose
+
+`pose.list` (read) returns `groups`: `[{parts, module, shown}]`, the pose groups of the avatar on air (the model and
+its worn modules), in pose order. `parts` are the part IDs the group chooses between; parts of a dress-up module are
+`<module>/<part>`. `module` is the name of the module the group belongs to, or `null` for the model's own groups.
+`shown` is the part the scene shows in that group. `groups` is empty when no avatar is on air.
+
+`pose.set` (control) takes `{part}` (a part ID from `pose.list`) and shows it in its group, like the control window's
+**Pose** panel and pose hotkeys. The choice is saved in the scene on air. A part the avatar does not have fails with
+`-32010` (`unknownPose`). A motion that animates the same parts still wins while it plays.
+
 ### Hotkey actions
 
 These do what the studio's hotkeys of the same kind do, so tools can replace global hotkeys (for example on Wayland,
@@ -246,7 +258,7 @@ where global hotkeys only work while the studio is in front).
 | `lipsync.pause` | `{paused?}` | Pause or resume microphone lip sync (omit to toggle). Same result |
 | `tracking.calibrate` | — | Make the current face pose neutral (done by the control window's tracker) |
 
-Scene switching, expressions, motions and dress-up have their own methods above.
+Scene switching, expressions, motions, dress-up and pose have their own methods above.
 
 ### `events.subscribe` / `events.unsubscribe` (read)
 

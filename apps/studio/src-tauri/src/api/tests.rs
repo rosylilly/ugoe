@@ -173,6 +173,21 @@ impl Dir {
         path
     }
 
+    /// ポーズのあるモデル (`.ugoe`。グループ `ArmA` / `ArmB`) を書く (T0843)。
+    fn pose_model(&self) -> PathBuf {
+        let mut bundle = Bundle::new(fixtures::pose_and_effects());
+        bundle.textures = vec![
+            ugoe::format::TextureData {
+                format: ugoe::format::TextureFormat::Png,
+                bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+            };
+            bundle.model.textures.len()
+        ];
+        let path = self.0.path().join("pose.ugoe");
+        std::fs::write(&path, ugoe::format::write_bundle(&bundle).unwrap()).unwrap();
+        path
+    }
+
     fn module(&self, name: &str, module: ugoe::model::module::Module) -> PathBuf {
         let path = self.0.path().join(name);
         let mut file = ugoe::format::ModuleFile::new(module);
@@ -699,6 +714,60 @@ fn dresses_up_only_with_modules_from_the_profile() {
         client.notification().unwrap()["params"]["modules"],
         json!([])
     );
+}
+
+/// `pose.list` は出しているモデルのポーズのグループと表示している要素を返し、`pose.set` は操作ウィンドウの `show_pose` と同じく
+/// 要素を選んでシーンに覚える (T0843)。
+#[test]
+fn lists_and_sets_the_pose_of_the_scene_on_air() {
+    let dir = Dir::new();
+    let model = dir.pose_model();
+    let studio = studio();
+    let mut reader = Client::connect(&studio);
+    reader.approved(Permission::Read);
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+
+    // 出しているシーンが無い。
+    assert_eq!(client.call("pose.list", json!({})), json!({ "groups": [] }));
+    let id = client.send("pose.set", json!({ "part": "ArmB" }));
+    let response = client.response();
+    assert_eq!(response["id"], id);
+    assert_eq!(response["error"]["code"], OPERATION_FAILED);
+    assert_eq!(response["error"]["data"]["code"], "noModel");
+
+    let (chat, _) = stage_scenes(&studio, &model, &[]);
+    assert_eq!(
+        reader.call("pose.list", json!({})),
+        json!({ "groups": [{ "parts": ["ArmA", "ArmB"], "module": null, "shown": "ArmA" }] })
+    );
+    assert_eq!(
+        reader.fail("pose.set", json!({ "part": "ArmB" })),
+        FORBIDDEN
+    );
+
+    assert_eq!(
+        client.call("pose.set", json!({ "part": "ArmB" })),
+        json!({})
+    );
+    assert_eq!(
+        client.call("pose.list", json!({}))["groups"][0]["shown"],
+        "ArmB"
+    );
+    assert_eq!(
+        lock(&studio.stage).profile().scene(&chat).unwrap().pose,
+        ["ArmB"]
+    );
+
+    let id = client.send("pose.set", json!({ "part": "Nope" }));
+    let response = client.response();
+    assert_eq!(response["id"], id);
+    assert_eq!(response["error"]["code"], OPERATION_FAILED);
+    assert_eq!(
+        response["error"]["data"],
+        json!({ "code": "unknownPose", "part": "Nope", "messageCode": "scene.unknown_pose", "args": { "part": "Nope" } })
+    );
+    assert_eq!(client.fail("pose.set", json!({})), INVALID_PARAMS);
 }
 
 /// `dressup.list` は付けていないモジュールを、舞台と指揮役のロックを放してから読む (シーンの切り替えを待たせない。T0819)。
@@ -1709,6 +1778,8 @@ const SCHEMA_METHODS: &[&str] = &[
     "parameter.set",
     "dressup.list",
     "dressup.set",
+    "pose.list",
+    "pose.set",
     "tracking.pause",
     "lipsync.pause",
     "tracking.calibrate",

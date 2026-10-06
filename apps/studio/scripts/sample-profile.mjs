@@ -88,6 +88,9 @@ export function sampleProfile(samples, lang = "ja") {
         slot: "Headwear",
         module: file("dress-up", "cat-ears.ugoemod"),
       }),
+      // 着せ替えのシーンの本体 (dress-up.ugoe) のポーズの要素 (手を振る差分・手を下ろした姿)。このシーンでだけ効く
+      key("Ctrl+Alt+KeyW", { kind: "pose", part: "Wave" }),
+      key("Ctrl+Alt+KeyD", { kind: "pose", part: "HandsDown" }),
       key("Ctrl+Alt+KeyP", { kind: "trackingPause" }),
       key("Ctrl+Alt+KeyK", { kind: "trackingCalibrate" }),
       key("Ctrl+Alt+KeyL", { kind: "lipSyncPause" }),

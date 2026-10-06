@@ -28,11 +28,13 @@ const MAX_VALUES: usize = 256;
 pub fn permission(method: &str) -> Option<Permission> {
     Some(match method {
         "studio.state" | "scene.list" | "expression.list" | "motion.list" | "parameter.list"
-        | "dressup.list" | "events.subscribe" | "events.unsubscribe" => Permission::Read,
+        | "dressup.list" | "pose.list" | "events.subscribe" | "events.unsubscribe" => {
+            Permission::Read
+        }
         "scene.activate" | "expression.set" | "expression.add" | "expression.remove"
         | "expression.toggle" | "expression.clear" | "motion.play" | "motion.stop"
-        | "parameter.set" | "dressup.set" | "tracking.pause" | "tracking.calibrate"
-        | "lipsync.pause" => Permission::Control,
+        | "parameter.set" | "dressup.set" | "pose.set" | "tracking.pause"
+        | "tracking.calibrate" | "lipsync.pause" => Permission::Control,
         _ => return None,
     })
 }
@@ -139,6 +141,22 @@ pub fn call(studio: &Studio, method: &str, p: &Map<String, Value>) -> Result<Val
                 .switch_scene(|stage, conductor| {
                     stage.begin_dress_up(&slot, module.as_deref(), conductor)
                 })
+                .map_err(|e| RpcError::failed(&e))?;
+            Ok(json!({}))
+        }
+        "pose.list" => Ok(pose_list(studio)),
+        "pose.set" => {
+            #[derive(Deserialize)]
+            struct P {
+                part: String,
+            }
+            let P { part } = params(p)?;
+            if lock(&studio.stage).live().is_none() {
+                return Err(RpcError::failed(&AnimationError::NoModel));
+            }
+            // 操作ウィンドウの `show_pose` と同じ (シーンに覚える)。
+            studio
+                .switch_scene(|stage, conductor| stage.begin_show_pose(&part, conductor))
                 .map_err(|e| RpcError::failed(&e))?;
             Ok(json!({}))
         }
@@ -356,6 +374,24 @@ fn parameter_set(studio: &Studio, p: &Map<String, Value>) -> Result<Value, RpcEr
         }
     }
     Ok(json!({ "unknown": unknown }))
+}
+
+/// `pose.list`: 出しているモデル (と付けているモジュール) のポーズのグループと、グループごとに表示している要素 (T0843)。
+fn pose_list(studio: &Studio) -> Value {
+    let conductor = lock(&studio.conductor);
+    let shown = conductor
+        .scene()
+        .map(|s| s.look.pose.as_slice())
+        .unwrap_or_default();
+    let groups: Vec<Value> = conductor
+        .pose_groups()
+        .into_iter()
+        .map(|group| {
+            let part = shown.iter().find(|p| group.parts.contains(p));
+            json!({ "parts": group.parts, "module": group.module, "shown": part })
+        })
+        .collect();
+    json!({ "groups": groups })
 }
 
 fn dressup_list(studio: &Studio) -> Value {

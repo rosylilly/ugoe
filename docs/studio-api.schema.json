@@ -686,6 +686,80 @@
       "type": "object",
       "properties": {}
     },
+    "pose.list.params": {
+      "description": "No parameters.",
+      "type": "object",
+      "properties": {}
+    },
+    "pose.list.result": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Part IDs of the group's choices, in the group's order. Parts of a dress-up module are `<module>/<part>`."
+              },
+              "module": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "Name of the dress-up module the group belongs to."
+                  },
+                  {
+                    "type": "null",
+                    "description": "The group belongs to the model."
+                  }
+                ]
+              },
+              "shown": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "The part the scene on air shows in this group."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "parts",
+              "module",
+              "shown"
+            ]
+          },
+          "description": "Pose groups of the model on air and its worn modules, in pose order. Empty when no avatar is on air."
+        }
+      },
+      "required": [
+        "groups"
+      ]
+    },
+    "pose.set.params": {
+      "type": "object",
+      "properties": {
+        "part": {
+          "type": "string",
+          "description": "A part ID from pose.list."
+        }
+      },
+      "required": [
+        "part"
+      ]
+    },
+    "pose.set.result": {
+      "description": "An empty object.",
+      "type": "object",
+      "properties": {}
+    },
     "tracking.pause.params": {
       "type": "object",
       "properties": {
@@ -1183,6 +1257,36 @@
           "type": "object",
           "properties": {
             "method": {
+              "const": "pose.list"
+            },
+            "params": {
+              "$ref": "#/$defs/pose.list.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: read."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "pose.set"
+            },
+            "params": {
+              "$ref": "#/$defs/pose.set.params"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "description": "Permission: control."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
               "const": "tracking.pause"
             },
             "params": {
@@ -1268,7 +1372,7 @@
           "description": "English text for logs."
         },
         "data": {
-          "description": "For -32010: the studio's reason, with a machine-readable `code` (for example noModel, unknownMotion, unknownExpression, unknownScene, missing, unreadable, dressUp).",
+          "description": "For -32010: the studio's reason, with a machine-readable `code` (for example noModel, unknownMotion, unknownExpression, unknownScene, missing, unreadable, dressUp, unknownPose).",
           "type": "object"
         }
       },
