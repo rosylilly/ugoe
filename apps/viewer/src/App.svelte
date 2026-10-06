@@ -448,7 +448,8 @@ function onKeyDown(e: KeyboardEvent) {
     display: flex;
     flex-direction: column;
     gap: var(--ugoe-space-3);
-    padding: var(--ugoe-space-3) var(--ugoe-space-4);
+    /* 右はスクロールバーの分を空ける (docs/ui.md#レイアウト の「送り」) */
+    padding: var(--ugoe-space-3) var(--ugoe-scrollbar-gap) var(--ugoe-space-3) var(--ugoe-space-4);
   }
   .features > :global(*) {
     flex: none;
@@ -457,7 +458,8 @@ function onKeyDown(e: KeyboardEvent) {
   .sidebar > :global(.parameters) {
     flex: 1 1 0;
     min-height: 40%;
-    padding: var(--ugoe-space-3) var(--ugoe-space-4) 0;
+    /* 右は中の一覧のスクロールバーの分 (一覧が右の端まで広がり、その padding に描かせる。ParameterPanel.svelte) */
+    padding: var(--ugoe-space-3) var(--ugoe-scrollbar-gap) 0 var(--ugoe-space-4);
     border-top: 1px solid var(--ugoe-color-border);
   }
   /* 十分に広い幅では、機能のパネルとパラメータを横に 2 列に並べ、どちらも上から下まで使う。 */
@@ -489,6 +491,7 @@ function onKeyDown(e: KeyboardEvent) {
       height: 45%;
       border-left: none;
       border-top: 1px solid var(--ugoe-color-border);
+      /* 中の段 (機能のパネル・パラメータ) が右の padding でスクロールバーの分を空ける */
       overflow-y: auto;
     }
     .features {

@@ -24,7 +24,7 @@ describe("viewer manual images", () => {
     await waitFor(() => s.execute("return !!window.__UGOE_VIEWER__"), {
       message: "the viewer to start",
     });
-    await useLocale(s, "ugoe-viewer.locale", "ja");
+    await useLocale(s, "ugoe.viewer.locale", "ja");
     await waitFor(() => s.execute("return !!window.__UGOE_VIEWER__"), {
       message: "the viewer to start again",
     });

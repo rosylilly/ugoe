@@ -1100,7 +1100,7 @@ onMount(() => {
   }
 
   /*
-    列の幅 (T0817): シーンの一覧は名前とホットキーが 1 行に収まる幅、中央 (配信中に触るもの) を最も広く、右の設定のパネルは
+    列の幅 (T0817): シーンの一覧は名前とホットキーが 1 行に収まる幅 (右のスクロールバーの分の 0.5rem を含む。T0970)、中央 (配信中に触るもの) を最も広く、右の設定のパネルは
     スライダーと数値の欄が並ぶ幅で止める。960px 以下では、シーンと中央を 2 列にして設定のパネルをその下に、640px 以下では 1 列に積み、
     画面の全体を送る (列ごとの送りをやめる)。
   */
@@ -1108,14 +1108,15 @@ onMount(() => {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(13rem, 17rem) minmax(20rem, 1fr) minmax(20rem, 28rem);
+    grid-template-columns: minmax(13.5rem, 17.5rem) minmax(20rem, 1fr) minmax(20rem, 28rem);
   }
 
   @media (max-width: 960px) {
     .studio__main {
-      grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+      grid-template-columns: minmax(12.5rem, 16.5rem) minmax(0, 1fr);
       /* 縦に積んだ列を中身の高さにして、画面の全体を送る (auto の行は中のスクロールに合わせて縮み、列が重なっていた。T0907) */
       grid-auto-rows: max-content;
+      /* 行末の列 (中央・設定のパネル) が右の padding でスクロールバーの分を空ける */
       overflow: auto;
     }
 
@@ -1164,6 +1165,7 @@ onMount(() => {
     flex-direction: column;
     gap: var(--ugoe-space-4);
     min-width: 0;
+    /* 右の padding (space-5) はスクロールバーの分 (--ugoe-scrollbar-gap) 以上 */
     padding: var(--ugoe-space-4) var(--ugoe-space-5);
     overflow: auto;
   }
@@ -1217,7 +1219,8 @@ onMount(() => {
 
   .studio__panels {
     overflow: auto;
-    padding: var(--ugoe-space-3);
+    /* 右はスクロールバーの分を空ける (docs/ui.md#レイアウト の「送り」) */
+    padding: var(--ugoe-space-3) var(--ugoe-scrollbar-gap) var(--ugoe-space-3) var(--ugoe-space-3);
     background: var(--ugoe-color-surface);
     border-left: 1px solid var(--ugoe-color-border);
   }

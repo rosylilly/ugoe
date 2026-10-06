@@ -151,7 +151,8 @@ const current = $derived(index < 0 ? null : (scenes[index] ?? null));
     display: flex;
     flex-direction: column;
     gap: var(--ugoe-space-3);
-    padding: var(--ugoe-space-4) var(--ugoe-space-3);
+    /* 右はスクロールバーの分を空ける (docs/ui.md#レイアウト の「送り」) */
+    padding: var(--ugoe-space-4) var(--ugoe-scrollbar-gap) var(--ugoe-space-4) var(--ugoe-space-3);
     overflow: auto;
     background: var(--ugoe-color-surface);
     border-right: 1px solid var(--ugoe-color-border);

@@ -31,6 +31,8 @@ async function load() {
     max-height: 60vh;
     overflow: auto;
     margin: 0;
+    /* 右はスクロールバーの分を空ける (docs/ui.md#レイアウト の「送り」) */
+    padding-inline-end: var(--ugoe-scrollbar-gap);
     font-family: var(--ugoe-font-mono);
     font-size: var(--ugoe-font-size-xs);
     white-space: pre-wrap;

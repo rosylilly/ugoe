@@ -2,7 +2,7 @@
 // ダークの 2 つの宣言がそろっていること・宣言したトークンがどこかで使われていること・使っているトークンが宣言されていることを見る。
 
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // happy-dom の下では import.meta.url が file: でないので、dirname を使う
@@ -102,5 +102,31 @@ describe("tokens.css", () => {
     const names = [...new Set([...forced.matchAll(/\.(ugoe-[a-z0-9_-]+)/g)].map((m) => m[1]))];
     expect(names.length).toBeGreaterThan(5);
     expect(names.filter((name) => !used.has(name))).toEqual([]);
+  });
+
+  it("leaves the scrollbar gap in the scroll containers of the viewer and the studio", () => {
+    // WebKitGTK のスクロールバーは中身の上に重なる (T0970。docs/ui.md#レイアウト の「送り」)。送る枠の規則は、行末を
+    // --ugoe-scrollbar-gap だけ空けるか、空けなくてよい理由 (中の段が空ける・padding が足りる) をスクロールバーの言葉で書く
+    const apps = [join(root, "apps/viewer/src"), join(root, "apps/studio/src")];
+    const missing: string[] = [];
+    let checked = 0;
+    for (const { path, text } of files) {
+      if (!apps.some((dir) => path.startsWith(dir))) continue;
+      const css = path.endsWith(".svelte")
+        ? [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n")
+        : path.endsWith(".css")
+          ? text
+          : "";
+      for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+        const [rule, selector, body] = m as unknown as [string, string, string];
+        if (!/overflow(-y)?\s*:\s*(auto|scroll)/.test(body)) continue;
+        checked++;
+        if (!rule.includes("--ugoe-scrollbar-gap") && !rule.includes("スクロールバー")) {
+          missing.push(`${relative(root, path)}: ${selector.trim().split("\n").pop()}`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+    expect(missing).toEqual([]);
   });
 });

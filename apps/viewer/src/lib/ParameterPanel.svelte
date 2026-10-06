@@ -131,10 +131,14 @@ let sections = $derived(visibleSections(player.sections, filter, showInternal));
     margin-bottom: var(--ugoe-space-2);
     font-size: var(--ugoe-font-size-sm);
   }
+  /* 一覧はパネルの右の padding まで広げ、スクロールバーをその中に描かせる (グループの数や戻すボタンに重ねない。
+     置く側はパネルの右の padding を --ugoe-scrollbar-gap にする。docs/ui.md#レイアウト の「送り」) */
   .list {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    margin-inline-end: calc(-1 * var(--ugoe-scrollbar-gap));
+    padding-inline-end: var(--ugoe-scrollbar-gap);
   }
   /* 送っている間も、いまどのグループかが分かるように見出しを上に残す。 */
   .list :global(.ugoe-section__header) {

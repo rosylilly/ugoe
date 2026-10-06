@@ -187,6 +187,12 @@
   --ugoe-icon-stroke: 1.5;
   /* 押せる部品の最小の大きさ (WCAG 2.5.8)。compact でもこれより小さくしない */
   --ugoe-target-min: 24px;
+  /*
+   * 縦に送る枠の行末 (右) に空ける幅 (docs/ui.md#レイアウト の「送り」)。WebKitGTK・macOS のスクロールバーは幅を取らずに
+   * 中身の上に重ねて描く (WebKitGTK は細い印が 3px、指を乗せると 8px に太り、右端から 14px まで掛かる)。
+   * `scrollbar-gutter` は重ねて描くスクロールバーには幅を空けないので、送る枠の行末の padding をこれ以上にする。
+   */
+  --ugoe-scrollbar-gap: 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {

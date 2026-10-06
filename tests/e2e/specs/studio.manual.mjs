@@ -121,7 +121,7 @@ describe("studio manual images", () => {
     await waitFor(() => s.execute("return !!window.__UGOE_TRACKER__"), {
       message: "the control window to start",
     });
-    await useLocale(s, "ugoe-studio.locale", "ja");
+    await useLocale(s, "ugoe.studio.locale", "ja");
     await waitFor(() => s.execute("return !!window.__UGOE_TRACKER__"), {
       message: "the control window to start again",
     });
