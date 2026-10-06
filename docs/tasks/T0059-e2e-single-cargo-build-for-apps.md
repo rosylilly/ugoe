@@ -1,11 +1,11 @@
 ---
 id: T0059
 title: "e2e: 3 つのアプリを 1 回の cargo でビルドし、e2e の CI は rust (apps) のキャッシュを読むだけにする"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests/e2e, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0059
 ---
 
 # T0059: e2e: 3 つのアプリを 1 回の cargo でビルドし、e2e の CI は rust (apps) のキャッシュを読むだけにする

@@ -1,11 +1,11 @@
 ---
 id: T0492
 title: "@ugoe/runtime: エディタ向けの問い合わせ (rotation_local_keyform など) を公開の API に含めるかを決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M10
 crates: [bindings/web, ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0492
 ---
 
 # T0492: @ugoe/runtime: エディタ向けの問い合わせ (rotation_local_keyform など) を公開の API に含めるかを決める (判断が要る)

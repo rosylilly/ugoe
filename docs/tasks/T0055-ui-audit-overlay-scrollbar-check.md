@@ -1,11 +1,11 @@
 ---
 id: T0055
 title: "ui-audit: 重ねて描くスクロールバー (WebKitGTK) が中身に掛かるのを見つける検査を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [tests, docs]
 depends_on: [T0054, T1662]
-assignee:
+assignee: claude-worker-T0055
 ---
 
 # T0055: ui-audit: 重ねて描くスクロールバー (WebKitGTK) が中身に掛かるのを見つける検査を足す

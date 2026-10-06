@@ -1,11 +1,11 @@
 ---
 id: T1672
 title: "エディタ: 「New from PSD…」で別のプロジェクトを作った後も、モジュールを開けなかった知らせ (ModuleProblemBar) が残るのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor]
 depends_on: []
-assignee:
+assignee: claude-worker-T1672
 ---
 
 # T1672: エディタ: 「New from PSD…」で別のプロジェクトを作った後も、モジュールを開けなかった知らせ (ModuleProblemBar) が残るのを直す

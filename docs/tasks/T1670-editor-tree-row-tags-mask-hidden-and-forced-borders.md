@@ -1,11 +1,11 @@
 ---
 id: T1670
 title: "エディタ: ツリーの「マスク専用かつ非表示」の行で札が 2 つ並んで名前が縮むのと、強制色で行の透明な枠が箱に見えるのを直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1670
 ---
 
 # T1670: エディタ: ツリーの「マスク専用かつ非表示」の行で札が 2 つ並んで名前が縮むのと、強制色で行の透明な枠が箱に見えるのを直す

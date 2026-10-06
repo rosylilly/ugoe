@@ -1,11 +1,11 @@
 ---
 id: T0978
 title: "マニュアル: ドープシートのキーの印を Enter・Space でも選べることと、近いキーは押した所に近い方を選ぶことを書き足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0978
 ---
 
 # T0978: マニュアル: ドープシートのキーの印を Enter・Space でも選べることと、近いキーは押した所に近い方を選ぶことを書き足す
