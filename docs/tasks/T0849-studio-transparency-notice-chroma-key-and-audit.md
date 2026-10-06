@@ -1,11 +1,11 @@
 ---
 id: T0849
 title: "スタジオ: 透過が効かない注意に「背景をクロマキーにする」を付け、ui-audit に透過が効かない場面を足す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [apps/studio, tests, docs]
 depends_on: [T0952]
-assignee:
+assignee: claude-worker-T0849
 ---
 
 # T0849: スタジオ: 透過が効かない注意に「背景をクロマキーにする」を付け、ui-audit に透過が効かない場面を足す
