@@ -100,7 +100,7 @@ AI を使うときは、「Instructions for Claude」(選んだプロバイダ�
 3. 新しい提案が一覧の後ろに「revision of #1」の印付きで並びます。**前の提案は残ります。** 両方を「Preview」で見比べて、
    良い方を「Adopt」し、要らない方を「Reject」します。
 
-![作り直した提案 (「revision of #1」)。添えた注文と、反映できなかった注文 (Not applied。ここでは髪の揺れ) が理由の上に出る](images/ai-revision.png)
+![作り直した提案 (「revision of #1」)。添えた注文と、反映できなかった注文 (Not applied。ここでは髪の揺れ) が理由の上に出る。理由の値は、注文に従って振り向き (turn) と目の閉じる線 (eye close line) が #1 より小さい](images/ai-revision.png)
 
 - 作り直しはいつも AI を使います。「Use …」に印がないか、注文が空のときは押せません。
 - 作り直しは、今の分類をそのまま使います。「帽子は headwear」のようにラベルも直したいときは、「When regenerating, also reclassify

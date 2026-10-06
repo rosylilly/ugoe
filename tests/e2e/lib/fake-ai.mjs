@@ -9,7 +9,10 @@
 //   真ん中を、`reason` には決まった文を答える。
 // - 利用者の注文 (プロンプトの `<user_instructions>`。crates/ugoe-ai/src/instructions.rs) があれば、リグの値の `reason` に
 //   注文の文ごとの答えを足す: 髪・揺れ・帽子のような、リグの値では変えられない文は `Not applied:` の行 (画面の「Not applied」)、
-//   ほかの文は従ったことにする (値は変えない)。
+//   ほかの文は従う。従う文が値の言葉 (`STEERS`。振り向き・目・笑い・口) と向きの言葉 (`LESS`・`MORE`。less・narrower・控えめ・細く
+//   など / more・wider・大きく など) を持てば、その値を範囲の 6 分の 1 だけ下げるか上げる (笑いは `eye_close_bend` を下げる)。
+//   文ごとに足し、範囲の端で止める。同じ注文なら同じ値になる。値の言葉か向きの言葉が無い文は、値を変えずに従ったことにする。
+//   動かした値は理由の続き (`(Moved by a sixth of the range: <名前> down, ...)`) に書く。
 
 import { createServer } from "node:http";
 
@@ -32,6 +35,48 @@ export const FAKE_REASON = "Each value is the middle of its allowed range.";
 /** リグの値 (振り向き・目・口) では変えられない注文の文。`Not applied:` で答える。 */
 const NOT_A_RIG_VALUE = /hair|sway|hat|headwear|physics|髪|揺|帽子/i;
 
+/**
+ * 注文の文で動かす値: 文が `words` を持てば、名前が `value` に合う数の項目を動かす (`invert` なら向きを逆に)。
+ * 名前は crates/ugoe-ai/src/rig.rs の `RigParams::RANGES`。
+ */
+const STEERS = [
+  { words: /\b(turn|turns|head)\b|振り向|向き/i, value: /^turn_angle_scale$/ },
+  { words: /\beyes?\b|目/i, value: /^eye_close_line$/ },
+  { words: /\bsmil(e|es|ing)\b|笑/i, value: /^eye_close_bend$/, invert: true },
+  { words: /\bmouth\b|口/i, value: /^mouth_open_height$/ },
+];
+
+/** 値を下げる言葉と上げる言葉。 */
+const LESS = /\b(less|smaller|narrower|lower|weaker)\b|控えめ|小さ|細|弱/i;
+const MORE = /\b(more|larger|bigger|wider|higher|stronger)\b|大き|太|広|強/i;
+
+/** 値の 1 歩 (範囲の何分の 1 か)。真ん中から両端まで 3 歩。 */
+const STEPS = 6;
+
+/** 注文の文。`。`・`.`・`!`・`?` で区切る。 */
+function sentencesOf(instructions) {
+  return instructions
+    .split(/(?<=[.!?。])\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
+/** 従う文が動かす値の歩数: 名前 → 歩数 (負なら下げる)。 */
+function steering(sentences, names) {
+  const steps = {};
+  for (const s of sentences) {
+    const direction = LESS.test(s) ? -1 : MORE.test(s) ? 1 : 0;
+    if (direction === 0) continue;
+    for (const { words, value, invert } of STEERS) {
+      if (!words.test(s)) continue;
+      for (const name of names.filter((n) => value.test(n))) {
+        steps[name] = (steps[name] ?? 0) + (invert ? -direction : direction);
+      }
+    }
+  }
+  return steps;
+}
+
 /** 要求のプロンプトの文 (user の content の text をつなげたもの)。 */
 function promptText(body) {
   const user = body.messages?.find((m) => m.role === "user");
@@ -49,14 +94,21 @@ function instructionsIn(prompt) {
   return match ? JSON.parse(match[1]) : null;
 }
 
-/** 注文に答える理由の続き: 従った文と、リグの値では変えられない文 (`Not applied:` の行)。 */
-function answerInstructions(instructions) {
-  const sentences = instructions
-    .split(/(?<=[.!?。])\s*/)
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
-  const followed = sentences.filter((s) => !NOT_A_RIG_VALUE.test(s));
+/** 従う文 (リグの値で変えられる文)。 */
+function followedOf(sentences) {
+  return sentences.filter((s) => !NOT_A_RIG_VALUE.test(s));
+}
+
+/**
+ * 注文に答える理由の続き: 従った文と動かした値 (`moved`。名前 → 歩数)、リグの値では変えられない文 (`Not applied:` の行)。
+ */
+function answerInstructions(sentences, moved) {
+  const followed = followedOf(sentences);
   const lines = followed.length > 0 ? [` As asked: ${followed.join(" ")}`] : [];
+  const changes = Object.entries(moved)
+    .filter(([, n]) => n !== 0)
+    .map(([name, n]) => `${name} ${n < 0 ? "down" : "up"}`);
+  if (changes.length > 0) lines.push(` (Moved by a sixth of the range: ${changes.join(", ")}.)`);
   for (const s of sentences.filter((s) => NOT_A_RIG_VALUE.test(s))) {
     lines.push(`\nNot applied: ${s} This is not one of the rig values.`);
   }
@@ -73,16 +125,36 @@ function classify(prompt) {
   return { layers, variant_sets: [] };
 }
 
+/**
+ * リグの値の答え。数の項目は範囲の真ん中から、注文の従う文が動かす歩数 (範囲の 6 分の 1 ずつ、端で止める) だけ動かす。
+ * 範囲の無い項目は 0。
+ */
 function values(schema, prompt) {
   const instructions = instructionsIn(prompt);
+  const sentences = instructions ? sentencesOf(instructions) : [];
+  const properties = Object.entries(schema.properties ?? {});
+  const steps = steering(
+    followedOf(sentences),
+    properties.filter(([, p]) => p.type === "number").map(([name]) => name),
+  );
+  const moved = {};
   const answer = {};
-  for (const [name, property] of Object.entries(schema.properties ?? {})) {
-    if (property.type === "number") {
-      const range = /From (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?)/.exec(property.description ?? "");
-      answer[name] = range ? (Number(range[1]) + Number(range[2])) / 2 : 0;
-    } else {
-      answer[name] = instructions ? FAKE_REASON + answerInstructions(instructions) : FAKE_REASON;
+  for (const [name, property] of properties) {
+    if (property.type !== "number") continue;
+    const range = /From (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?)/.exec(property.description ?? "");
+    if (!range) {
+      answer[name] = 0;
+      continue;
     }
+    const [min, max] = [Number(range[1]), Number(range[2])];
+    const half = STEPS / 2;
+    const step = Math.min(half, Math.max(-half, steps[name] ?? 0));
+    if (step !== 0) moved[name] = step;
+    answer[name] = min + ((max - min) * (half + step)) / STEPS;
+  }
+  for (const [name, property] of properties) {
+    if (property.type === "number") continue;
+    answer[name] = instructions ? FAKE_REASON + answerInstructions(sentences, moved) : FAKE_REASON;
   }
   return answer;
 }

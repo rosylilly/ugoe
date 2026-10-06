@@ -1701,6 +1701,12 @@ describe("editor manual images", () => {
     await clickButton(s, "^Regenerate with instructions$", "article.proposal");
     const card = await proposalCard(s, 2);
     await s.waitFindText("article.proposal .unapplied", "hair");
+    // 偽のプロバイダは従った文 (振り向きを控えめに・目を細く) の値を動かす (lib/fake-ai.mjs)。作り直した提案の値が前と違う
+    const { proposals } = await invoke(s, "get_proposals");
+    const chosen = (p) => /^Values chosen by the AI: (.*?) \(/.exec(p.rationale)?.[1];
+    const [first, revised] = proposals.slice(-2).map(chosen);
+    assert.equal(first, "turn 0.75, eye close line 0.60, bend +0.00, mouth open 0.55");
+    assert.equal(revised, "turn 0.60, eye close line 0.50, bend +0.00, mouth open 0.55");
     // カードの頭 (題名・印・注文・Not applied・理由の始め) を撮る
     await scrollInRight(s, card);
     await settle(s, 600);

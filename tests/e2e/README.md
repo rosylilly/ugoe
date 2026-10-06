@@ -166,8 +166,14 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 - 提案の元は 2 つ: 見本の着せ替えの本体に「Import PSD…」で取り込んだ PSD (物理とスロットを持つ本体に提案を重ねる。リグの提案が
   本体の物理の衝突体 `Shoulders` を外し、スロット `Hair` の参照が壊れて提案が作れなかった T1627 の回帰) と、「New from PSD…」で
   作った本体の要素の無いプロジェクト (T0039)。どちらも `proposeAndPreview` (specs/editor.test.mjs) で提案とプレビューを確かめる。
-- 利用者の注文 (プロンプトの `<user_instructions>`) があれば、リグの値の理由に、従った文と、髪・揺れ・帽子のようにリグの値では変えられない
-  文の `Not applied:` の行を足す (マニュアルの画像 `ai-revision` の「Not applied」)。値は変えない。
+- 利用者の注文 (プロンプトの `<user_instructions>`) があれば、文 (`。`・`.`・`!`・`?` で区切る) ごとに答える。髪・揺れ・帽子のように
+  リグの値では変えられない文は、理由に `Not applied:` の行を足す (マニュアルの画像 `ai-revision` の「Not applied」)。ほかの文には従う:
+  文が値の言葉 (振り向き・頭・turn・head → `turn_angle_scale`、目・eye → `eye_close_line`、笑・smile → `eye_close_bend`、口・mouth →
+  `mouth_open_height`) と向きの言葉 (控えめ・小さ・細・弱・less・smaller・narrower など → 下げる、大き・太・広・強・more・larger・wider など →
+  上げる。笑いは逆で、上げる言葉で `eye_close_bend` を下げる) を持てば、その値を範囲の 6 分の 1 だけ動かす (文ごとに足し、範囲の端で止める)。
+  同じ注文なら同じ値。どちらかの言葉が無い文は、値を変えずに従ったことにする。理由には従った文と動かした値
+  (`(Moved by a sixth of the range: turn_angle_scale down, ...)`) を足す。マニュアルの筋書きの作り直し (「Turn the head less. Close the eyes
+  a little narrower. Make the hair sway more.」) は、振り向き 0.75 → 0.60・目の閉じる線 0.60 → 0.50 になり、筋書きがその値を確かめる (T0061)。
 - MCP の経路 (エディタにつないだエージェントの提案) は筋書きでは使わない。ポートとトークンの準備が要り、画面の操作が提案の一覧から先は同じため。
   マニュアルの画像は偽のエージェントで撮る (下の「偽のエージェント」)。
 

@@ -1,7 +1,7 @@
 ---
 id: T0061
 title: "e2e: 偽の AI のプロバイダが、注文に従うときに実際にリグの値を変え、ai-revision.png を撮り直す"
-status: in-progress
+status: done
 milestone: M10
 crates: [tests/e2e, docs]
 depends_on: [T0059]
@@ -18,11 +18,11 @@ assignee: claude-worker-T0061
 
 ## 受け入れ条件
 
-- [ ] 偽のプロバイダが、リグの値で従える注文の文 (例: 振り向きを大きく・目を細く) に従うとき、対応する値を決まった形で変える
+- [x] 偽のプロバイダが、リグの値で従える注文の文 (例: 振り向きを大きく・目を細く) に従うとき、対応する値を決まった形で変える
       (同じ注文なら同じ値。従えない文の `Not applied:` は今のまま)。変える規則を fake-ai.mjs のコメントと tests/e2e/README.md に書いた
-- [ ] 偽のプロバイダの単体テストがあれば足す (無ければ、作り直した提案の値が前と違うことを筋書きの中で確かめる)
-- [ ] `just e2e --manual` で ai-revision.png など注文の作り直しを写す画像を撮り直し、マニュアル (docs/manual) の説明と合うことを確かめた
-- [ ] `just e2e --only editor` と `just ci` が通る
+- [x] 偽のプロバイダの単体テストがあれば足す (無ければ、作り直した提案の値が前と違うことを筋書きの中で確かめる)
+- [x] `just e2e --manual` で ai-revision.png など注文の作り直しを写す画像を撮り直し、マニュアル (docs/manual) の説明と合うことを確かめた
+- [x] `just e2e --only editor` と `just ci` が通る
 
 ## 参考
 
@@ -33,3 +33,26 @@ assignee: claude-worker-T0061
 
 - T0058 で起票した (元の候補: T0969 (偽の AI のプロバイダが注文に従った値を返す))。
 - 同じ tests/e2e を触る T0059 (ビルドの形) の後にした。
+
+### T0061 の作業 (やったこと)
+
+- `tests/e2e/lib/fake-ai.mjs`: 注文の従う文 (髪・揺れ・帽子などの `Not applied:` の外) が、値の言葉 (振り向き・頭・turn・head →
+  `turn_angle_scale`、目・eye → `eye_close_line`、笑・smile → `eye_close_bend` (向きは逆)、口・mouth → `mouth_open_height`) と
+  向きの言葉 (控えめ・小さ・細・弱・less・narrower など / 大き・太・広・強・more・wider など) を持てば、その値を範囲の 6 分の 1 だけ
+  下げるか上げる (文ごとに足し、範囲の端で止める)。同じ注文なら同じ値。理由に `(Moved by a sixth of the range: <名前> down, ...)` を足す。
+  規則はファイルの先頭のコメントと tests/e2e/README.md (「偽の AI のプロバイダ」) に書いた。`Not applied:` の答えは変えていない。
+- 偽のプロバイダの単体テストは無いので、マニュアルの筋書き (`specs/editor.manual.mjs` の `ai-revision`) で、`get_proposals` の理由の
+  「Values chosen by the AI」が #1 は `turn 0.75, eye close line 0.60, ...`、作り直しは `turn 0.60, eye close line 0.50, ...` であることを確かめる。
+- `just e2e --update-images --only editor` (`--manual` を含む) で `ai-revision.png` を撮り直してコミットした (値が 0.60・0.50 に変わった)。
+  画像にパスは写っていない (カードの文だけ) ことを画像で確かめた。`ai-proposal.png` は注文が無いので変わらなかった。
+  docs/manual/ai.md の画像の説明に、値が注文に従って #1 より小さいことを足した。docs/manual-check.md の偽物の説明も今の形にした。
+- `just e2e --only editor`・`just e2e --update-images --only editor`・`just ci` が通った。
+
+### やらなかったこと
+
+- ai-revision の外の画像は、撮り直した結果をコミットしていない (動きの途中の差だけで、このタスクの範囲の外)。
+- 偽のプロバイダの単体テスト (`node --test`) は作っていない (just のレシピに足すのが範囲の外のため。筋書きで確かめる)。
+
+### 起票の候補
+
+- 無し。
