@@ -239,6 +239,25 @@ async function dressUpScenes(page, ctx) {
 }
 
 /**
+ * パラメータの多いモデル (100 個・グループ 10 個。T1630) のパラメータのパネル: 一覧の頭と、一覧の下の「Groups」を開いた所。
+ */
+async function manyParametersScenes(page, ctx) {
+  const host = ctx.editorHost;
+  host.set({ manyParameters: true });
+  await reopenEditorProject(page, ctx);
+  await ctx.scene("many-parameters", { aria: false });
+  const groups = page.locator(".pane.parameters").getByRole("button", {
+    name: pattern(text("editor", ctx.lang, "parameters.groups.title_other")),
+  });
+  await groups.first().click();
+  await page.waitForTimeout(300);
+  await scrollToElement(groups);
+  await ctx.scene("many-parameters-groups", { aria: false });
+  await scrollToTop(page);
+  host.set({ manyParameters: false });
+}
+
+/**
  * アプリの定義。
  * - `wide`・`narrow`: 広い幅・狭い幅の窓の大きさ (CSS px)。狭い幅は docs/ui.md#そのほか の下限。
  * - `half` (省ける): 画面の半分に置いたときの窓の大きさ。ライトの英語で 1 組だけ撮る (`en-light-half`)。
@@ -366,6 +385,7 @@ export const APPS = {
       await ctx.scene("deformers-expressions", { aria: false });
       await aiScenes(page, ctx);
       await dressUpScenes(page, ctx);
+      await manyParametersScenes(page, ctx);
     },
   },
   viewer: {

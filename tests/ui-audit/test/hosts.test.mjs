@@ -229,3 +229,17 @@ test("静的サーバ: dist の中だけを配り、wasm の型を付ける", as
     await server.close();
   }
 });
+
+test("エディタの偽のホスト: パラメータの多いモデル (T1630)", () => {
+  const host = createEditorHost(fakeProject());
+  host.handle("open_project", { path: "/somewhere/x.ugoeproj" });
+  host.set({ manyParameters: true });
+  const model = JSON.parse(host.handle("get_model_json").value);
+  assert.equal(model.parameters.length, 100);
+  assert.equal(model.parameter_groups.length, 10);
+  // ID は重ならず、グループの無いパラメータもある
+  assert.equal(new Set(model.parameters.map((p) => p.id)).size, 100);
+  assert.ok(model.parameters.some((p) => p.group === null));
+  host.set({ manyParameters: false });
+  assert.equal(JSON.parse(host.handle("get_model_json").value).parameters.length, 1);
+});

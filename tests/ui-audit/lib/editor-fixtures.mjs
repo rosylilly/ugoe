@@ -329,3 +329,31 @@ export function renameModule(bytes, name) {
   });
   return Buffer.concat(parts);
 }
+
+/**
+ * パラメータの多いモデル (T1630): 見本のモデルのパラメータを `count` 個まで、グループを `groups` 個まで足す。
+ * 足したパラメータはグループに順に入れ、7 つに 1 つはグループに入れない (「Other」の区切りも出す)。名前は長いものを混ぜる。
+ */
+export function manyParametersModel(model, { count = 100, groups = 10 } = {}) {
+  const parameters = [...(model.parameters ?? [])];
+  const parameterGroups = [...(model.parameter_groups ?? [])];
+  for (let i = parameterGroups.length; i < groups; i++) {
+    parameterGroups.push({
+      id: `Extra${i}`,
+      name: i % 3 === 0 ? `Accessories and props ${i}` : `Extra ${i}`,
+    });
+  }
+  for (let i = parameters.length; i < count; i++) {
+    parameters.push({
+      id: `Extra${i}`,
+      name: i % 5 === 0 ? `Extra parameter with a long name ${i}` : `Extra ${i}`,
+      min: -1,
+      max: 1,
+      default: 0,
+      kind: "normal",
+      mirror: null,
+      group: i % 7 === 0 ? null : parameterGroups[i % parameterGroups.length].id,
+    });
+  }
+  return { ...model, parameters, parameter_groups: parameterGroups };
+}

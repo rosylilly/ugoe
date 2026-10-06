@@ -6,14 +6,25 @@
   中継用 (Parameter::internal) のパラメータは名前を斜体にして「relay」を付ける。編集欄で切り替える
   (set_parameter_internal。docs/spec/model.md#パラメータ)。
   編集欄の「Group」でパラメータをグループに入れ、一覧の下の「Groups」でグループを作る・名前を変える・消す・並べ替える
-  (docs/editor.md#パラメータのグループ)。
+  (docs/editor.md#パラメータのグループ)。グループのあるモデルでは、一覧をプレビュー・ビューアと同じ規則でグループごとに
+  区切る (折りたためる見出しと、グループの無いパラメータの「Other」)。
 -->
 <script lang="ts">
-import { Button, Checkbox, Icon, IconButton, NumberField, TextField, Tooltip } from "@ugoe/ui";
+import {
+  Button,
+  Checkbox,
+  Icon,
+  IconButton,
+  NumberField,
+  Section,
+  TextField,
+  Tooltip,
+} from "@ugoe/ui";
 import BaseLock from "../BaseLock.svelte";
 import type { EditorDocument, ParameterDef } from "../document.svelte";
 import { t } from "../i18n";
 import { baseElements, isBaseElement } from "../moduleProject";
+import { groupParameters } from "../preview/preview";
 import type { Selection } from "../selection.svelte";
 import TipButton from "../ui/TipButton.svelte";
 import type { ViewportController } from "../viewport/controller.svelte";
@@ -53,6 +64,13 @@ const baseParameters = $derived(doc.module !== null);
 const elementIsBase = $derived(
   selection.primary !== null && isBaseElement(baseElements(doc.module), selection.primary),
 );
+
+/** 一覧の区切り (プレビュー・ビューアと同じ規則。docs/editor.md#パラメータのグループ)。 */
+const sections = $derived(
+  groupParameters(parameters, doc.parsedModel?.parameter_groups ?? [], t("parameters.ungrouped")),
+);
+/** グループに入ったパラメータが無ければ (グループの無いモデル)、見出しを出さずに並べる。 */
+const grouped = $derived(sections.some((s) => s.id !== null));
 
 /** 定義を編集中のパラメータ (null なら閉じている)。 */
 let editing = $state<string | null>(null);
@@ -245,141 +263,154 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
   </div>
 {/if}
 
-<ul>
-  {#each parameters as p (p.id)}
-    {@const value = viewport.parameterValues[p.id] ?? p.default}
-    {@const keys = keysOf(p.id)}
-    {@const onKey = keyAt(keys, value, keyTolerance(p))}
-    <li>
-      <span class="row">
-        <Tooltip
-          text={p.internal
-            ? t("parameters.edit.tooltipRelay", { id: p.id })
-            : t("parameters.edit.tooltip", { id: p.id })}
-        >
-          {#snippet trigger(attrs)}
-            <button
-              {...attrs}
-              class="name"
-              class:internal={p.internal}
-              onclick={(e) => {
-                (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
-                openEditor(p);
-              }}
-              >{p.name}{#if p.internal}<span class="tag">{t("parameters.relay.tag")}</span>{/if}</button
-            >
-          {/snippet}
-        </Tooltip>
-        <span class="row">
-          <Tooltip text={t("parameters.value.tooltip", { min: p.min, max: p.max })}>
-            {#snippet trigger(attrs)}
-              <input
-                {...attrs}
-                class="value"
-                type="text"
-                inputmode="decimal"
-                value={formatValue(value)}
-                aria-label={t("parameters.value.aria", { name: p.name })}
-                aria-invalid={valueError?.id === p.id || undefined}
-                aria-describedby={[attrs["aria-describedby"], valueError?.id === p.id ? `${ids}-value-error` : undefined]
-                  .filter(Boolean)
-                  .join(" ") || undefined}
-                onchange={(e) => onValueChange(p, e)}
-                onkeydown={onValueKeyDown}
-              />
-            {/snippet}
-          </Tooltip>
-          {#if element}
-            <IconButton
-              small
-              class={onKey !== undefined ? "key on" : "key"}
-              disabled={elementIsBase}
-              label={keyLabel(value, onKey, element.target.id)}
-              onclick={() => toggleKey(p, onKey)}><Icon name="key" /></IconButton
-            >
-          {/if}
-        </span>
-      </span>
-      <span class="slider">
-        <input
-          type="range"
-          min={p.min}
-          max={p.max}
-          step={(p.max - p.min) / 1000 || 0.001}
-          {value}
-          aria-label={p.name}
-          oninput={(e) => onInput(p.id, e)}
-        />
-        {#if keys.length > 0}
-          <span class="markers">
-            {#each keys as key (key)}
-              <Tooltip text={t("parameters.key.marker", { key })}>
-                {#snippet trigger(attrs)}
-                  <button
-                    {...attrs}
-                    class="marker"
-                    class:current={key === onKey}
-                    style:left={markerLeft(p, key)}
-                    aria-label={t("parameters.key.goTo", { key })}
-                    onclick={(e) => {
-                      (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
-                      goToMarker(p, keys, key, e);
-                    }}
-                  ></button>
-                {/snippet}
-              </Tooltip>
-            {/each}
-          </span>
-        {/if}
-      </span>
-      {#if valueError?.id === p.id}<p class="error ugoe-selectable" id="{ids}-value-error">{valueError.message}</p>{/if}
-      {#if editing === p.id}
-        <BaseLock locked={baseParameters} hint={t("parameters.baseHint")}>
-          <div class="editor">
-            <TextField label={t("parameters.field.name")} bind:value={draft.name} />
-            <span class="range">
-              <NumberField
-                label={t("parameters.field.min")}
-                bind:value={draft.min}
-                decimals={3}
-                size={5}
-              />
-              <NumberField
-                label={t("parameters.field.default")}
-                bind:value={draft.default}
-                decimals={3}
-                size={5}
-              />
-              <NumberField
-                label={t("parameters.field.max")}
-                bind:value={draft.max}
-                decimals={3}
-                size={5}
-              />
-            </span>
-            <ParameterGroupSelect {doc} parameter={p} groups={doc.parsedModel?.parameter_groups ?? []} />
-            <ParameterMirror {doc} parameter={p} {parameters} />
-            <Checkbox
-              label={t("parameters.relay.label")}
-              aria-describedby="{ids}-relay-{p.id}"
-              checked={p.internal ?? false}
-              onchange={(v) => setInternal(p, v)}
-            />
-            <p class="ed-hint" id="{ids}-relay-{p.id}">{t("parameters.relay.description")}</p>
-            <span class="buttons">
-              <Button small onclick={() => saveEditor(p)}>{t("parameters.apply.label")}</Button>
-              <Button small variant="danger" onclick={() => remove(p)}
-                >{t("parameters.delete.label")}</Button
-              >
-            </span>
-          </div>
-        </BaseLock>
-      {/if}
-    </li>
+{#if grouped}
+  {#each sections as section (section.id ?? "")}
+    <Section title={section.name}>
+      {#snippet actions()}<span class="count">{section.parameters.length}</span>{/snippet}
+      {@render rows(section.parameters)}
+    </Section>
   {/each}
-</ul>
+{:else}
+  {@render rows(parameters)}
+{/if}
 
 <ParameterGroups {doc} {parameters} />
+
+{#snippet rows(list: ParameterDef[])}
+  <ul>
+    {#each list as p (p.id)}
+      {@const value = viewport.parameterValues[p.id] ?? p.default}
+      {@const keys = keysOf(p.id)}
+      {@const onKey = keyAt(keys, value, keyTolerance(p))}
+      <li>
+        <span class="row">
+          <Tooltip
+            text={p.internal
+              ? t("parameters.edit.tooltipRelay", { id: p.id })
+              : t("parameters.edit.tooltip", { id: p.id })}
+          >
+            {#snippet trigger(attrs)}
+              <button
+                {...attrs}
+                class="name"
+                class:internal={p.internal}
+                onclick={(e) => {
+                  (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                  openEditor(p);
+                }}
+                >{p.name}{#if p.internal}<span class="tag">{t("parameters.relay.tag")}</span>{/if}</button
+              >
+            {/snippet}
+          </Tooltip>
+          <span class="row">
+            <Tooltip text={t("parameters.value.tooltip", { min: p.min, max: p.max })}>
+              {#snippet trigger(attrs)}
+                <input
+                  {...attrs}
+                  class="value"
+                  type="text"
+                  inputmode="decimal"
+                  value={formatValue(value)}
+                  aria-label={t("parameters.value.aria", { name: p.name })}
+                  aria-invalid={valueError?.id === p.id || undefined}
+                  aria-describedby={[attrs["aria-describedby"], valueError?.id === p.id ? `${ids}-value-error` : undefined]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
+                  onchange={(e) => onValueChange(p, e)}
+                  onkeydown={onValueKeyDown}
+                />
+              {/snippet}
+            </Tooltip>
+            {#if element}
+              <IconButton
+                small
+                class={onKey !== undefined ? "key on" : "key"}
+                disabled={elementIsBase}
+                label={keyLabel(value, onKey, element.target.id)}
+                onclick={() => toggleKey(p, onKey)}><Icon name="key" /></IconButton
+              >
+            {/if}
+          </span>
+        </span>
+        <span class="slider">
+          <input
+            type="range"
+            min={p.min}
+            max={p.max}
+            step={(p.max - p.min) / 1000 || 0.001}
+            {value}
+            aria-label={p.name}
+            oninput={(e) => onInput(p.id, e)}
+          />
+          {#if keys.length > 0}
+            <span class="markers">
+              {#each keys as key (key)}
+                <Tooltip text={t("parameters.key.marker", { key })}>
+                  {#snippet trigger(attrs)}
+                    <button
+                      {...attrs}
+                      class="marker"
+                      class:current={key === onKey}
+                      style:left={markerLeft(p, key)}
+                      aria-label={t("parameters.key.goTo", { key })}
+                      onclick={(e) => {
+                        (attrs.onclick as ((e: MouseEvent) => void) | undefined)?.(e);
+                        goToMarker(p, keys, key, e);
+                      }}
+                    ></button>
+                  {/snippet}
+                </Tooltip>
+              {/each}
+            </span>
+          {/if}
+        </span>
+        {#if valueError?.id === p.id}<p class="error ugoe-selectable" id="{ids}-value-error">{valueError.message}</p>{/if}
+        {#if editing === p.id}
+          <BaseLock locked={baseParameters} hint={t("parameters.baseHint")}>
+            <div class="editor">
+              <TextField label={t("parameters.field.name")} bind:value={draft.name} />
+              <span class="range">
+                <NumberField
+                  label={t("parameters.field.min")}
+                  bind:value={draft.min}
+                  decimals={3}
+                  size={5}
+                />
+                <NumberField
+                  label={t("parameters.field.default")}
+                  bind:value={draft.default}
+                  decimals={3}
+                  size={5}
+                />
+                <NumberField
+                  label={t("parameters.field.max")}
+                  bind:value={draft.max}
+                  decimals={3}
+                  size={5}
+                />
+              </span>
+              <ParameterGroupSelect {doc} parameter={p} groups={doc.parsedModel?.parameter_groups ?? []} />
+              <ParameterMirror {doc} parameter={p} {parameters} />
+              <Checkbox
+                label={t("parameters.relay.label")}
+                aria-describedby="{ids}-relay-{p.id}"
+                checked={p.internal ?? false}
+                onchange={(v) => setInternal(p, v)}
+              />
+              <p class="ed-hint" id="{ids}-relay-{p.id}">{t("parameters.relay.description")}</p>
+              <span class="buttons">
+                <Button small onclick={() => saveEditor(p)}>{t("parameters.apply.label")}</Button>
+                <Button small variant="danger" onclick={() => remove(p)}
+                  >{t("parameters.delete.label")}</Button
+                >
+              </span>
+            </div>
+          </BaseLock>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <style>
 .head,
@@ -398,6 +429,12 @@ async function toggleKey(p: ParameterDef, onKey: number | undefined) {
 ul {
   list-style: none;
   padding: 0;
+}
+
+.count {
+  color: var(--ugoe-color-text-muted);
+  font-size: var(--ugoe-font-size-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 li {

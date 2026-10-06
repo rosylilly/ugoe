@@ -51,3 +51,26 @@ export function moveGroupCommand(
 export function memberCount(parameters: readonly Parameter[], id: string): number {
   return parameters.filter((p) => p.group === id).length;
 }
+
+/**
+ * グループ `id` をドラッグして、並びの `index` 番目の前 (並びの長さなら末尾) に落としたときのコマンド。
+ * `index` は動かす前の並びの番号。今と同じ位置 (自分の前か後ろ) なら null。
+ */
+export function dropGroupCommand(
+  groups: readonly ParameterGroup[],
+  id: string,
+  index: number,
+): Command | null {
+  const from = groups.findIndex((g) => g.id === id);
+  if (from < 0 || index === from || index === from + 1) return null;
+  return { op: "reorder_parameter_group", id, before: groups[index]?.id ?? null };
+}
+
+/**
+ * ドラッグで落とす先: 行 (画面の上端 `top`・高さ `height`。並びの順) のうち、ポインタ (`y`) より中ほどが下にある
+ * 最初の行の番号 (その行の前に落とす)。どの行よりも下なら行の数 (末尾)。
+ */
+export function dropIndexAt(rows: readonly { top: number; height: number }[], y: number): number {
+  const index = rows.findIndex((r) => y < r.top + r.height / 2);
+  return index < 0 ? rows.length : index;
+}

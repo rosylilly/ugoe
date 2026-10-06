@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
-// パラメータのグループの節: 作る・名前を変える・消す・並べ替えるがそれぞれコマンドを 1 つ送ること
+// パラメータのグループの節: 作る・名前を変える・消す・並べ替える (▲▼・ドラッグ・Alt + ↑↓) がそれぞれコマンドを 1 つ送ること
 // (docs/editor.md#パラメータのグループ、docs/testing.md#エディタの部品のテスト)。
 import { flushSync } from "svelte";
 import { describe, expect, it } from "vitest";
 import type { ParameterGroup } from "../../generated/types";
 import {
+  all,
   FakeDocument,
   get,
+  pointer,
   render,
   settle,
   testModel,
@@ -69,6 +71,26 @@ function openSection(target: HTMLElement): void {
 
 const FACE = { id: "Face", name: "顔" };
 const BODY = { id: "Body", name: "Body" };
+const EYES = { id: "Eyes", name: "Eyes" };
+
+/** happy-dom はレイアウトをしないので、行を上から高さ 30px ずつ並べたことにする。 */
+function layoutRows(target: HTMLElement): HTMLLIElement[] {
+  const rows = all<HTMLLIElement>(target, "li[data-group]");
+  rows.forEach((li, i) => {
+    li.getBoundingClientRect = () => new DOMRect(0, i * 30, 200, 30);
+  });
+  return rows;
+}
+
+/** 行 `row` の名前を押して、`y` まで動かす (離さない)。 */
+function dragTo(row: HTMLLIElement, y: number): HTMLElement {
+  const list = row.parentElement as HTMLElement;
+  const start = row.getBoundingClientRect().top + 15;
+  pointer(get(row, ".name"), "pointerdown", [10, start]);
+  pointer(list, "pointermove", [10, start + 6], { buttons: 1 });
+  pointer(list, "pointermove", [10, y], { buttons: 1 });
+  return list;
+}
 
 describe("ParameterGroups", () => {
   it("shows the count in the heading and creates a group from the empty state", async () => {
@@ -128,6 +150,92 @@ describe("ParameterGroups", () => {
       { op: "reorder_parameter_group", id: "Face", before: null },
       { op: "reorder_parameter_group", id: "Body", before: "Face" },
     ]);
+  });
+
+  it("moves a group by dragging it and shows where it drops", async () => {
+    const { doc, target } = setup([FACE, BODY, EYES]);
+    openSection(target);
+    const [face, , eyes] = layoutRows(target);
+    if (!face || !eyes) throw new Error("no rows");
+    // Eyes を Face の上半分へ: Face の前に落とす
+    const list = dragTo(eyes, 5);
+    expect(eyes.classList.contains("dragging")).toBe(true);
+    expect(face.classList.contains("drop-before")).toBe(true);
+    pointer(list, "pointerup", [10, 5]);
+    await settle();
+    // Face を最後の行の下半分へ: 末尾に落とす
+    dragTo(face, 85);
+    expect(eyes.classList.contains("drop-after")).toBe(true);
+    pointer(list, "pointerup", [10, 85]);
+    await settle();
+    expect(doc.commands).toEqual([
+      { op: "reorder_parameter_group", id: "Eyes", before: "Face" },
+      { op: "reorder_parameter_group", id: "Face", before: null },
+    ]);
+    // 離した直後のクリックで名前の編集欄を開かない
+    expect(target.querySelector("form")).toBeNull();
+  });
+
+  it("sends nothing when a drag ends where it started or is cancelled with Esc", async () => {
+    const { doc, target } = setup([FACE, BODY, EYES]);
+    openSection(target);
+    const [face, body] = layoutRows(target);
+    if (!face || !body) throw new Error("no rows");
+    // Body を Face の下半分 (= Body の前) へ: 動かない
+    let list = dragTo(body, 20);
+    expect(target.querySelector(".drop-before, .drop-after")).toBeNull();
+    pointer(list, "pointerup", [10, 20]);
+    await settle();
+    list = dragTo(body, 5);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+    expect(body.classList.contains("dragging")).toBe(false);
+    pointer(list, "pointerup", [10, 5]);
+    await settle();
+    expect(doc.commands).toEqual([]);
+  });
+
+  it("does not start a drag from the up and down buttons", async () => {
+    const { doc, target } = setup([FACE, BODY]);
+    openSection(target);
+    const [, body] = layoutRows(target);
+    if (!body) throw new Error("no rows");
+    const up = buttonByLabel(target, "Move Body up");
+    pointer(up, "pointerdown", [10, 45]);
+    pointer(body.parentElement as HTMLElement, "pointermove", [10, 0], { buttons: 1 });
+    expect(body.classList.contains("dragging")).toBe(false);
+    pointer(body.parentElement as HTMLElement, "pointerup", [10, 0]);
+    await settle();
+    expect(doc.commands).toEqual([]);
+  });
+
+  it("moves a group with Alt + arrow keys on its name", async () => {
+    const { doc, target } = setup([FACE, BODY]);
+    openSection(target);
+    const name = buttonByText(target, "Body");
+    expect(name.getAttribute("aria-keyshortcuts")).toBe("Alt+ArrowUp Alt+ArrowDown");
+    // 修飾キーの無い矢印は何もしない
+    name.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    name.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowUp",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await settle();
+    // 端では送らない
+    buttonByText(target, "顔 (Face)").dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowUp",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await settle();
+    expect(doc.commands).toEqual([{ op: "reorder_parameter_group", id: "Body", before: "Face" }]);
   });
 
   it("is read-only in a module project", () => {

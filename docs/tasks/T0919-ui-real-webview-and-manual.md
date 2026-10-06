@@ -127,3 +127,8 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
   (タブとアイコンの表)・mcp.md の文は T1632 で直した。撮り直す画像: 右の列の頭 (タブ) を写したもの (screen.png・physics-rig.png・
   physics-templates.png・physics-preview.png・slots.png・slots-draw-order.png・lighting.png・lighting-point.png・verify.png・ai-*.png・
   module-glue*.png・module-compare-pose.png など。写っているかは画像ごとに確かめる)。`just ui-audit` の `-tab-<physics/glue/…>` の場面が見本になる。
+- T1630 から書き足した: エディタのパラメータのパネルの一覧が、グループに入ったパラメータがあるとグループの順に区切られ (折りたためる見出しと
+  数、グループの無いものは最後の「Other」)、一覧の下の「Groups」のグループを行のドラッグと名前のボタンの Alt + ↑ / ↓ でも並べ替えられるように
+  なった。docs/manual/screen.md の「パラメータ」の表の文 (「Group」・グループの見出し・「Groups」の行) は T1630 で直した。撮り直す画像:
+  screen.png (右下のパラメータが見本のグループ「Head」などで区切られる)。「Groups」を写した画像は今のマニュアルに無い。足すなら
+  `just ui-audit` の `-many-parameters-groups` の場面が見本になる。

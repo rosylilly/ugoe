@@ -3014,6 +3014,7 @@
   },
   "parameters": {
     "title": "Parameters",
+    "ungrouped": "Other",
     "snap": {
       "label": "Snap to keys",
       "tooltip": "Move the selected element's parameters to their nearest keys"
@@ -3087,7 +3088,7 @@
     "groups": {
       "title_one": "Groups ({{count}})",
       "title_other": "Groups ({{count}})",
-      "description": "Groups divide the parameter sliders into sections in the preview and in viewers. Put a parameter in a group with Group in its settings.",
+      "description": "Groups divide the parameter sliders into sections in this list, in the preview, and in viewers. Put a parameter in a group with Group in its settings.",
       "empty": "No groups yet. Create one to sort the sliders into sections.",
       "add": {
         "label": "New group",
@@ -3105,6 +3106,7 @@
       "moveDown": {
         "aria": "Move {{name}} down"
       },
+      "dragHint": "Drag a group or use ▲▼ to reorder. Alt+↑ or Alt+↓ on a group's name also moves it. Esc cancels a drag.",
       "delete": {
         "label": "Delete group",
         "description": "Deleting a group keeps its parameters. They just leave the group."

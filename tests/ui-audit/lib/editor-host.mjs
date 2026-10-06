@@ -15,6 +15,7 @@ import {
   aiSettingsFixture,
   differencesFixture,
   disclosureFixture,
+  manyParametersModel,
   moduleStatusFixture,
   proposalStateFixture,
   renameModule,
@@ -110,6 +111,8 @@ export function createEditorHost({ project, bundle }) {
     dressUp: false,
     /** モジュールのプロジェクト (本体は見本、モジュールは Sailor) を開いている。 */
     module: false,
+    /** パラメータを 100 個・グループを 10 個にしたモデル (T1630)。描くのは見本の .ugoe のまま。 */
+    manyParameters: false,
   };
   /** 答えを待たせている AI への送信 (取り消すと `ai.cancelled` で終わる)。 */
   const pending = [];
@@ -155,7 +158,12 @@ export function createEditorHost({ project, bundle }) {
         ? moduleStatusFixture({ name: "Sailor", base: project, model: JSON.parse(sample.model) })
         : null,
     module_open_problem: () => null,
-    get_model_json: () => (state.open ? sample.model : emptyModel),
+    get_model_json: () => {
+      if (!state.open) return emptyModel;
+      return state.manyParameters
+        ? JSON.stringify(manyParametersModel(JSON.parse(sample.model)))
+        : sample.model;
+    },
     get_animations: () =>
       state.open
         ? { motions: sample.motions, expressions: sample.expressions }
@@ -254,7 +262,7 @@ export function createEditorHost({ project, bundle }) {
   return {
     unknown,
     calls,
-    /** 見本に無い状態を切り替える (`ai`・`restoring`・`dressUp`・`module`)。 */
+    /** 見本に無い状態を切り替える (`ai`・`restoring`・`dressUp`・`module`・`manyParameters`)。 */
     set(changes) {
       Object.assign(state, changes);
     },

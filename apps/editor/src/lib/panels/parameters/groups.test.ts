@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Parameter, ParameterGroup } from "../../generated/types";
 import {
   addGroupCommand,
+  dropGroupCommand,
+  dropIndexAt,
   groupOptions,
   memberCount,
   moveGroupCommand,
@@ -82,5 +84,41 @@ describe("parameter groups", () => {
     const parameters = [param("X", "Face"), param("Y", "Face"), param("Z", null)];
     expect(memberCount(parameters, "Face")).toBe(2);
     expect(memberCount(parameters, "Body")).toBe(0);
+  });
+
+  it("drops a group before another one or at the end, and not where it already is", () => {
+    const groups = [group("A"), group("B"), group("C")];
+    expect(dropGroupCommand(groups, "C", 0)).toEqual({
+      op: "reorder_parameter_group",
+      id: "C",
+      before: "A",
+    });
+    expect(dropGroupCommand(groups, "A", 3)).toEqual({
+      op: "reorder_parameter_group",
+      id: "A",
+      before: null,
+    });
+    expect(dropGroupCommand(groups, "A", 2)).toEqual({
+      op: "reorder_parameter_group",
+      id: "A",
+      before: "C",
+    });
+    // 自分の前と後ろは今の位置
+    expect(dropGroupCommand(groups, "B", 1)).toBeNull();
+    expect(dropGroupCommand(groups, "B", 2)).toBeNull();
+    expect(dropGroupCommand(groups, "Missing", 0)).toBeNull();
+  });
+
+  it("finds the drop index from the rows' middles", () => {
+    const rows = [
+      { top: 0, height: 20 },
+      { top: 20, height: 40 },
+    ];
+    expect(dropIndexAt(rows, -5)).toBe(0);
+    expect(dropIndexAt(rows, 9)).toBe(0);
+    expect(dropIndexAt(rows, 11)).toBe(1);
+    expect(dropIndexAt(rows, 39)).toBe(1);
+    expect(dropIndexAt(rows, 41)).toBe(2);
+    expect(dropIndexAt([], 0)).toBe(0);
   });
 });

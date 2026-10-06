@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // パラメータのスライダーの下のキーの印: 押せる範囲 (24px) のどこを押してもそのキーへ移り、隣の印と範囲が重なる所では
 // 近い方のキーへ移る (docs/ui.md#そのほか、docs/testing.md#エディタの部品のテスト。T1634)。
+// 一覧のグループの区切り: グループの順に見出しを出し、グループの無いパラメータは最後の「Other」にまとめる (T1630)。
 import { flushSync } from "svelte";
 import { describe, expect, it } from "vitest";
 import { Selection } from "../selection.svelte";
@@ -100,5 +101,87 @@ describe("ParametersPanel key markers", () => {
     three.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
     flushSync();
     expect(viewport.parameterValues.AngleX).toBe(3);
+  });
+});
+
+describe("ParametersPanel groups", () => {
+  const param = (id: string, group: string | null) => ({
+    id,
+    name: id,
+    min: 0,
+    max: 1,
+    default: 0,
+    kind: "normal" as const,
+    mirror: null,
+    group,
+  });
+
+  function setupGroups(
+    groups: { id: string; name: string }[],
+    parameters: ReturnType<typeof param>[],
+  ) {
+    const doc = new FakeDocument();
+    doc.model = {
+      json: JSON.stringify({ ...JSON.parse(testModel()), parameter_groups: groups }),
+      bundle: null,
+    };
+    const { target } = render(ParametersPanel, {
+      doc: doc.asDocument,
+      selection: new Selection(),
+      viewport: new FakeController().asController,
+      parameters,
+    });
+    return target;
+  }
+
+  /** 区切りの見出しと、その中のスライダーの名前 (一覧の下の「Groups」の節は除く)。 */
+  function sections(target: HTMLElement): [string, string[]][] {
+    return all<HTMLElement>(target, ".ugoe-section")
+      .filter((s) => s.querySelector("input[type=range]") !== null)
+      .map((s) => [
+        s.querySelector(".ugoe-section__trigger")?.textContent?.trim() ?? "",
+        all<HTMLInputElement>(s, "input[type=range]").map(
+          (r) => r.getAttribute("aria-label") ?? "",
+        ),
+      ]);
+  }
+
+  it("divides the list by group in the groups' order, with the ungrouped ones last", () => {
+    const target = setupGroups(
+      [
+        { id: "Body", name: "Body" },
+        { id: "Face", name: "顔" },
+        { id: "Empty", name: "Empty" },
+      ],
+      [
+        param("AngleX", "Face"),
+        param("Loose", null),
+        param("BodyX", "Body"),
+        param("Stray", "Missing"),
+        param("EyeL", "Face"),
+      ],
+    );
+    expect(sections(target)).toEqual([
+      ["Body", ["BodyX"]],
+      ["顔", ["AngleX", "EyeL"]],
+      // 定義に無いグループを指すものもグループの無いものとまとめる。空のグループは出さない
+      ["Other", ["Loose", "Stray"]],
+    ]);
+    // 見出しに数を出す
+    const counts = all<HTMLElement>(target, ".ugoe-section__actions .count").map(
+      (c) => c.textContent,
+    );
+    expect(counts).toEqual(["1", "2", "2"]);
+  });
+
+  it("lists the parameters without headings when no parameter is in a group", () => {
+    const target = setupGroups(
+      [{ id: "Face", name: "Face" }],
+      [param("A", null), param("B", null)],
+    );
+    expect(sections(target)).toEqual([]);
+    expect(
+      all<HTMLInputElement>(target, "input[type=range]").map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["A", "B"]);
   });
 });
