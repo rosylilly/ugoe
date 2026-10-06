@@ -20,8 +20,8 @@ assignee:
 - [ ] `ugoe-ffi` が既定で有効な feature `std` を持ち、外すと `#![no_std]` でビルドできる
 - [ ] `std` を外した形のアロケータ (`#[global_allocator]`) は、ホストの C ライブラリの `malloc`・`free` (と整列の要る確保の関数) を呼ぶ。
       パニックの処理 (`#[panic_handler]`) は `abort` を呼ぶ。どちらも SDK ごとの知識を持たない
-- [ ] `std` を外した形は、スレッドローカルの `ugoe_last_error*` を持たず、T0489 の `UgoeError` だけでエラーを返す。ヘッダの宣言も分ける
-      (別のヘッダか、`#ifdef` で。cbindgen で生成する)
+- [ ] `std` の有無で関数の集合とヘッダが変わらない (エラーは T0489 の `UgoeError` で返すので、スレッドローカルは要らない)。
+      `std` を外した形でパニックの処理が `abort` になることを README に書いた
 - [ ] `std` を外した形で使えない関数 (テクスチャのデコードなど) をヘッダと README に書いた
 - [ ] `aarch64-unknown-none` で staticlib をビルドし、C の見本とリンクして、未解決のシンボルがホストの C ライブラリのもの (`malloc`・`free`・
       `abort` など) だけであることを確かめる検査を足し、CI で回す (実機での確認は対象外。メモに書く)

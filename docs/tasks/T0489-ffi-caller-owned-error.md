@@ -1,36 +1,46 @@
 ---
 id: T0489
-title: "C ABI: 失敗の中身を、呼び出し側が渡すオブジェクト (UgoeError) で返す"
+title: "C ABI: 失敗の中身を呼び出し側の UgoeError で返し、スレッドローカルの ugoe_last_error* を廃止する"
 status: todo
 milestone: M11
-crates: [ugoe-ffi, tests/conformance, docs]
+crates: [ugoe-ffi, bindings/unity, tests/conformance, ugoe, ugoe-wasm, bindings/godot, docs]
 depends_on: []
 assignee:
 ---
 
-# T0489: C ABI: 失敗の中身を、呼び出し側が渡すオブジェクト (UgoeError) で返す
+# T0489: C ABI: 失敗の中身を呼び出し側の UgoeError で返し、スレッドローカルの ugoe_last_error* を廃止する
 
 ## 目的
 
 C ABI のエラー (`ugoe_last_error*`) はスレッドローカルにあるので、失敗した呼び出しとエラーを読む呼び出しが別の OS のスレッドで動くホスト
 (Go の goroutine・C# の async の続き・スレッドプール) では、違うスレッドの値を読む。また `std` の無い環境ではスレッドローカルを使えない。
-呼び出し側が持つ `UgoeError` に失敗の中身を書く関数を足す ([ADR 0031](../adr/0031-no-std-runtime-and-host-neutral-c-abi.md#c-abi-のエラーはスレッドローカルに置かない))。
+失敗の中身は呼び出し側が渡す `UgoeError` に書く形だけにし、`ugoe_last_error*` は廃止する
+([ADR 0031](../adr/0031-no-std-runtime-and-host-neutral-c-abi.md#c-abi-のエラーはスレッドローカルに置かない))。
+1.0 より前で、C ABI の利用者はリポジトリの中だけなので、ABI を壊して同じ PR で移す。
 
 ## 受け入れ条件
 
-- [ ] 形を決めて README に書いた。候補: (a) 失敗しうる関数すべてに `UgoeError*` を最後の引数に取る別名を足す、
-      (b) 失敗しうる関数が `UgoeError*` を取る新しい関数の組 (`*_e` など) を足す、(c) 他。関数の数・cbindgen での生成・Unity などの写しやすさで選ぶ
-- [ ] `UgoeError` の作成・破棄・読み出し (`ugoe_error_message`・`ugoe_error_kind`・`ugoe_error_field`・`ugoe_error_field_count`・
-      `ugoe_error_field_key_at`・`ugoe_error_field_value_at`) を足した。読める値は今の `ugoe_last_error*` と同じ
-- [ ] 失敗とエラーの読み出しを別のスレッドで行うテストを足した (新しい形では正しく読め、`ugoe_last_error` は今どおりスレッドごと)
-- [ ] 今の `ugoe_last_error*` は残し、同じ値を記録する。足しただけなので ABI の版は上げない
-- [ ] ヘッダ (`just ffi-header`)・C の見本・docs/portability.md#c-abi-ugoe-ffi-の規約 を更新した。`just ffi-check`・`just refs` が通る
+- [ ] `UgoeError` の作成・破棄・読み出し (`ugoe_error_create`・`ugoe_error_destroy`・`ugoe_error_message`・`ugoe_error_kind`・`ugoe_error_field`・
+      `ugoe_error_field_count`・`ugoe_error_field_key_at`・`ugoe_error_field_value_at`) を足した。読める値は今の `ugoe_last_error*` と同じ
+- [ ] 失敗しうるすべての関数が `UgoeError*` を取る (NULL なら書かない)。引数の位置と名前をすべての関数で揃え、形を README に書いた。
+      成功した呼び出しは渡された `UgoeError` を空にするか、前の中身を残すかも決めて書いた
+- [ ] パニック (`UGOE_ERROR_PANIC`) のメッセージも `UgoeError` に書く
+- [ ] `ugoe_last_error*` とスレッドローカルの状態を消した。`crates/ugoe-ffi` にスレッドローカル・グローバルな状態が残っていない
+- [ ] `ABI_VERSION` を上げた
+- [ ] 失敗させたのとは別のスレッドで `UgoeError` を読むテストを足した
+- [ ] リポジトリの中の利用者を移した: C の見本 (`examples/c/sample.c`)、適合テスト (`tests/conformance/c/runner.c`・`src/frame.rs`)、
+      Unity (`Native.cs`・`UgoeException` の作り方。例外の種類と補足の値は今と同じ)。`just refs` (ヘッダと Unity の宣言の過不足) が通る
+- [ ] `ugoe_last_error*` に触れている文書とコメント (docs/portability.md#c-abi-ugoe-ffi-の規約・crates/ugoe-ffi/README.md・docs/spec/modules.md・
+      bindings/unity/README.md・bindings/godot/README.md・crates/ugoe-wasm/README.md・crates/ugoe/README.md、`ugoe`・`ugoe-wasm` の doc コメント) を
+      新しい名前に直した。docs/portability.md にスレッドについての約束 (ADR 0031) を書いた
+- [ ] ヘッダ (`just ffi-header`) を作り直し、`just ffi-check` が通る。Unity のテスト (bindings/unity/tests) が通る
 - [ ] `just ci` が通る
 
 ## 参考
 
-- [ADR 0031](../adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、crates/ugoe-ffi/src/error.rs、crates/ugoe-ffi/README.md
+- [ADR 0031](../adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、crates/ugoe-ffi/src/error.rs、crates/ugoe-ffi/README.md#abi-の版、
+  bindings/unity/README.md
 
 ## メモ
 
-- 2026-10-06 起票。後続の候補: Unity の `Ugoe.Puppet` を新しい形に移す (`UgoeException` の作り方。async から呼ぶ利用者のため)。
+- 2026-10-06 起票。同日、利用者の判断で「`ugoe_last_error*` を残して足すだけ」から「廃止して置き換える」に改めた。

@@ -36,4 +36,4 @@ assignee:
 
 ## メモ
 
-- 2026-10-06、Go (Ebitengine) やゲーム機への組み込みの検討から起票した。ADR 0031 は Proposed。着手の前に利用者が承認する。
+- 2026-10-06、Go (Ebitengine) やゲーム機への組み込みの検討から起票した。ADR 0031 は同日に Accepted。

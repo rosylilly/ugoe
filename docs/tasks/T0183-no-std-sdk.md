@@ -20,7 +20,7 @@ assignee:
 - [ ] `ugoe` が `#![no_std]` + `extern crate alloc;` で、既定で有効な feature `std` を持つ。`render` の feature は `std` を含む
 - [ ] `default-features = false` (render も std も無し) で、`Puppet` の読み込み・評価・物理・モーション・トラッキング・着せ替えが使える
 - [ ] `ugoe` を `just nostd-check` の対象に足した。`just sdk-no-render-check` (wgpu・naga が入らないこと) も今までどおり通る
-- [ ] docs/portability.md の `ugoe` の feature の表に `std` を足し、「提案中」の注記を、決まった方針の説明に書き換えた (ADR 0031 が Accepted になっていれば)
+- [ ] docs/portability.md の `ugoe` の feature の表に `std` を足し、「対応中」の注記を、決まった方針の説明に書き換えた
 - [ ] `just ci` が通る
 
 ## 参考
