@@ -4,6 +4,7 @@
 //! - NV12・YUY2 の計算シェーダの結果は、同じ画を CPU の参照実装 (`yuv::convert`) で変換したものと ±1 で一致する。
 //! - `cpu_yuv` で選ぶ CPU の変換の道 (計算シェーダの無いアダプタの道) は、GPU の変換の道と ±1 で一致する。
 //! - 読み戻しを待たない: 空いたバッファが無ければ描かずに `false` を返し、`poll` は最も新しい 1 枚を返す。
+//! - 同じ `Gpu` を複数のスレッドから使っても、1 枚の口と常駐の口のどちらも読み戻しを受け取れる。
 #![cfg(feature = "gpu-tests")]
 #![allow(clippy::unwrap_used)]
 
@@ -200,4 +201,32 @@ fn backdrop_replaces_the_clear_color_until_removed() {
     };
     let err = resident.set_backdrop(gpu(), Some(&small)).unwrap_err();
     assert!(err.to_string().contains("backdrop is 1x1"), "{err}");
+}
+
+/// 同じ `Gpu` を複数のスレッドから使っても、読み戻しを受け取れる (T0963)。
+///
+/// wgpu はコールバックを、`poll` で集めたスレッドがロックを外してから呼ぶ。ほかのスレッドの `poll` は、集められた
+/// コールバックがまだ呼ばれていないうちに「待ち終わった」と戻ることがある。そのときも呼ばれるまで poll し直す。
+#[test]
+fn readbacks_from_many_threads_share_one_gpu() {
+    const THREADS: usize = 8;
+    const ROUNDS: usize = 16;
+    let prepared = prepared();
+    let (expected, _) = prepared.render(gpu()).unwrap();
+    std::thread::scope(|s| {
+        for t in 0..THREADS {
+            let (prepared, expected) = (&prepared, &expected);
+            s.spawn(move || {
+                // 半分は 1 枚の口、半分は常駐の口 (Wait::All) で読み戻す。
+                let mut resident = (t % 2 == 1).then(|| resident(prepared, PixelFormat::Rgba8, 2));
+                for _ in 0..ROUNDS {
+                    let pixels = match &mut resident {
+                        Some(resident) => render_once(resident, prepared),
+                        None => prepared.render(gpu()).unwrap().0.pixels,
+                    };
+                    assert_eq!(pixels, expected.pixels);
+                }
+            });
+        }
+    });
 }

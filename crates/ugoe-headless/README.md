@@ -82,6 +82,10 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
   上限は `Gpu::set_wait_timeout` で変えられる (`Duration::MAX` なら上限なし。`ugoe render` と `ugoe-mcp` の `--gpu-timeout` は `args::parse_gpu_timeout` で読む)。上限を超えた `Gpu` (とそれで作った `Resident`) は
   止まっているかもしれないので使い回さず、破棄もせずに手放して作り直す (MCP サーバがそうする)。
   wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒で打ち切るので、1 秒ずつ待ち直して上限まで待つ。
+- **複数のスレッド:** 同じ `Gpu` を複数のスレッドから使ってよい (テストは 1 つの `Gpu` を並行して使う)。wgpu は読み戻しのコールバックを、
+  `poll` で集めたスレッドがロックを外してから呼ぶので、ほかのスレッドの `poll` は、集められたコールバックがまだ呼ばれていないうちに
+  「待ち終わった」と戻ることがある。`Gpu::render` と `Resident::poll(Wait::All)` は、待ち終わってもコールバックが呼ばれていなければ
+  1 ms ずつ間を置いて poll し直し (1000 回と待つ時間の上限まで)、それでも呼ばれなければ `Error::Gpu` を返す (T0963)。
 
 ## テスト
 
@@ -90,7 +94,8 @@ cargo test -p ugoe-headless   # GPU を使わないテスト (引数・大きさ
 ```
 
 常駐の描画は `cargo test -p ugoe-headless --features gpu-tests` (`tests/resident_gpu.rs`。RGBA が 1 枚の口と同じ・
-GPU の YUV が CPU の参照と ±1 で一致・`cpu_yuv` の CPU の道が GPU の道と ±1 で一致・読み戻しを待たない) が確かめ、`just test-gpu` に含まれる。
+GPU の YUV が CPU の参照と ±1 で一致・`cpu_yuv` の CPU の道が GPU の道と ±1 で一致・読み戻しを待たない・
+複数のスレッドから同じ `Gpu` で読み戻せる) が確かめ、`just test-gpu` に含まれる。
 
 実際の描画は `ugoe render` のテスト (`cargo test -p ugoe-cli --features gpu-tests`) と、MCP サーバのテスト
 (`cargo test -p ugoe-mcp --features gpu-tests`) が確かめる。どちらも `just test-gpu` に含まれる。

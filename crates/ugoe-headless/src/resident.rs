@@ -342,7 +342,14 @@ impl Resident {
                     .poll(wgpu::PollType::Poll)
                     .map_err(gpu_error("waiting for the GPU"))?;
             }
-            Wait::All => gpu.wait()?,
+            // 待ち終わっても、ほかのスレッドの poll が集めたコールバックがまだ呼ばれていないことがある (T0963)。
+            Wait::All => gpu.wait_until(|| {
+                let pending = self
+                    .slots
+                    .iter()
+                    .any(|s| s.state.load(Ordering::Acquire) == PENDING);
+                (!pending).then_some(())
+            })?,
         }
         let mut newest: Option<usize> = None;
         let mut failed = false;

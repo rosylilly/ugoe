@@ -6,6 +6,8 @@
 //!   (wgpu の既定では panic になる)。
 //! - 読み戻しは時間の上限 ([`Gpu::wait_timeout`]) まで待ち、超えたら [`Error::Gpu`] を返す
 //!   ([`Error::is_gpu_wait_timeout`])。ドライバが止まっても呼び出したスレッドが戻らなくならないように。
+//! - 同じ `Gpu` を複数のスレッドから使ってよい。待ち終わっても読み戻しのコールバックがまだ呼ばれていなければ
+//!   (ほかのスレッドの `poll` が集めて、まだ呼んでいない)、上限のある回数だけ poll し直す ([`Gpu::wait_until`])。
 
 use std::time::{Duration, Instant};
 
@@ -30,6 +32,20 @@ pub const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// wgpu の GL のバックエンドは 1 回の待ちを約 2.1 秒 (`i32::MAX` ナノ秒) で打ち切るので、
 /// 刻んで待ち直さないと、どのバックエンドでも同じ上限にならない。
 const WAIT_STEP: Duration = Duration::from_secs(1);
+
+/// 待ち終わったのに読み戻しのコールバックがまだ呼ばれていないとき、poll し直す回数の上限。
+///
+/// wgpu はコールバックを、`poll` で集めたスレッドがロックを外してから呼ぶ。同じデバイスをほかのスレッドも
+/// poll していると、こちらの `poll` は「キューが空」で戻るのに、こちらのコールバックはほかのスレッドが
+/// 持ったまま、まだ呼ばれていないことがある。そのスレッドがすぐに呼ぶので、少し間を置いて確かめ直す。
+/// 呼ばれないまま上限 (回数か [`Gpu::wait_timeout`]) に達したら [`Error::Gpu`] を返す (止まり続けない)。
+const CALLBACK_RETRIES: u32 = 1000;
+
+/// poll し直す前に置く間 (他のスレッドがコールバックを呼ぶのを待つ。空回りしないように)。
+const CALLBACK_RETRY_PAUSE: Duration = Duration::from_millis(1);
+
+/// 待ち終わってもコールバックが呼ばれなかったときの `context`。
+const CALLBACK_NOT_CALLED: &str = "readback callback was not called";
 
 /// [`Error::is_gpu_wait_timeout`] で見分ける、待つ時間の上限を超えたときの `context`。
 pub(crate) const WAIT_TIMED_OUT: &str = "the GPU did not finish in time";
@@ -117,16 +133,24 @@ impl Gpu {
         self.wait_timeout = timeout;
     }
 
-    /// 頼んだ GPU の仕事がすべて終わるまで、上限 ([`Gpu::wait_timeout`]) まで待つ。
-    pub(crate) fn wait(&self) -> Result<(), Error> {
-        wait_with(self.wait_timeout, |step| {
-            self.device
-                .poll(wgpu::PollType::Wait {
-                    submission_index: None,
-                    timeout: Some(step),
-                })
-                .map(drop)
-        })
+    /// 頼んだ GPU の仕事がすべて終わり、`done` (読み戻しのコールバックが呼ばれたか) が `Some` を返すまで、
+    /// 上限 ([`Gpu::wait_timeout`]) まで待つ。
+    ///
+    /// 仕事が終わっても `done` が `None` なら、ほかのスレッドがコールバックを持ったまま、まだ呼んでいない。
+    /// [`CALLBACK_RETRIES`] 回まで poll し直し、それでも呼ばれなければ [`Error::Gpu`] を返す。
+    pub(crate) fn wait_until<T>(&self, done: impl FnMut() -> Option<T>) -> Result<T, Error> {
+        wait_with(
+            self.wait_timeout,
+            |step| {
+                self.device
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(step),
+                    })
+                    .map(drop)
+            },
+            done,
+        )
     }
 
     /// `名前 (バックエンド)` の形のアダプタの説明。
@@ -236,10 +260,8 @@ impl Gpu {
         readback.map_async(wgpu::MapMode::Read, .., move |r| {
             let _ = tx.send(r);
         });
-        self.wait()?;
-        // 待ち終わればコールバックは呼ばれている。`recv` で待つと、呼ばれなかったときに止まり続ける。
-        rx.try_recv()
-            .map_err(gpu_error("readback callback was not called"))?
+        // `recv` で待つと、コールバックが呼ばれなかったときに止まり続ける。
+        self.wait_until(|| rx.try_recv().ok())?
             .map_err(gpu_error("mapping the readback buffer"))?;
         let mapped = readback
             .get_mapped_range(..)
@@ -357,18 +379,31 @@ pub fn stats_json(stats: &FrameStats) -> serde_json::Value {
     })
 }
 
-/// `poll` を [`WAIT_STEP`] 以下の刻みで呼び、`timeout` を超えたら [`Error::Gpu`] を返す。
+/// `poll` を [`WAIT_STEP`] 以下の刻みで呼び、`done` が `Some` を返せばその値を返す。`timeout` を超えたら [`Error::Gpu`] を返す。
 /// `poll` は渡された長さまで待ち、終われば `Ok`、終わらなければ `PollError::Timeout` を返す。
-fn wait_with(
+/// `poll` が終わっても `done` が `None` のときは、[`CALLBACK_RETRY_PAUSE`] を置いて [`CALLBACK_RETRIES`] 回まで poll し直す。
+fn wait_with<T>(
     timeout: Duration,
     mut poll: impl FnMut(Duration) -> Result<(), wgpu::PollError>,
-) -> Result<(), Error> {
+    mut done: impl FnMut() -> Option<T>,
+) -> Result<T, Error> {
     // 上限が大きすぎて時刻にできなければ、上限なしで待つ。
     let deadline = Instant::now().checked_add(timeout);
+    let mut retries = 0;
     loop {
         let remaining = deadline.map_or(WAIT_STEP, |d| d.saturating_duration_since(Instant::now()));
-        match poll(remaining.min(WAIT_STEP)) {
-            Ok(()) => return Ok(()),
+        match poll(remaining.min(WAIT_STEP)).map(|()| done()) {
+            Ok(Some(value)) => return Ok(value),
+            // 仕事は終わったが、コールバックはほかのスレッドが持ったまま、まだ呼ばれていない。
+            Ok(None) if retries < CALLBACK_RETRIES && !remaining.is_zero() => {
+                retries += 1;
+                std::thread::sleep(CALLBACK_RETRY_PAUSE);
+            }
+            Ok(None) => {
+                return Err(gpu_error(CALLBACK_NOT_CALLED)(format!(
+                    "the GPU finished but the callback was not called after {CALLBACK_RETRIES} polls"
+                )));
+            }
             // 残りがあれば待ち直す。残りが 0 の最後の確かめでも終わっていなければ上限を超えた。
             Err(wgpu::PollError::Timeout) if !remaining.is_zero() => {}
             Err(wgpu::PollError::Timeout) => return Err(Error::gpu_wait_timeout(timeout)),
@@ -402,11 +437,15 @@ mod tests {
         let timeout = Duration::from_millis(30);
         let started = Instant::now();
         let mut steps = Vec::new();
-        let err = wait_with(timeout, |step| {
-            steps.push(step);
-            std::thread::sleep(step);
-            Err(wgpu::PollError::Timeout)
-        })
+        let err = wait_with(
+            timeout,
+            |step| {
+                steps.push(step);
+                std::thread::sleep(step);
+                Err(wgpu::PollError::Timeout)
+            },
+            || Some(()),
+        )
         .unwrap_err();
         assert!(err.is_gpu_wait_timeout(), "{err:?}");
         assert!(matches!(err, Error::Gpu { .. }), "{err:?}");
@@ -421,15 +460,19 @@ mod tests {
     #[test]
     fn wait_retries_within_the_timeout() {
         let mut calls = 0;
-        wait_with(DEFAULT_WAIT_TIMEOUT, |step| {
-            assert!(step <= WAIT_STEP && !step.is_zero(), "{step:?}");
-            calls += 1;
-            if calls < 3 {
-                Err(wgpu::PollError::Timeout)
-            } else {
-                Ok(())
-            }
-        })
+        wait_with(
+            DEFAULT_WAIT_TIMEOUT,
+            |step| {
+                assert!(step <= WAIT_STEP && !step.is_zero(), "{step:?}");
+                calls += 1;
+                if calls < 3 {
+                    Err(wgpu::PollError::Timeout)
+                } else {
+                    Ok(())
+                }
+            },
+            || Some(()),
+        )
         .unwrap();
         assert_eq!(calls, 3);
     }
@@ -438,17 +481,59 @@ mod tests {
     #[test]
     fn wait_without_a_limit_and_other_errors() {
         let mut calls = 0;
-        let err = wait_with(Duration::MAX, |step| {
-            assert_eq!(step, WAIT_STEP);
-            calls += 1;
-            if calls < 2 {
-                Err(wgpu::PollError::Timeout)
-            } else {
-                Err(wgpu::PollError::WrongSubmissionIndex(2, 1))
-            }
-        })
+        let err = wait_with(
+            Duration::MAX,
+            |step| {
+                assert_eq!(step, WAIT_STEP);
+                calls += 1;
+                if calls < 2 {
+                    Err(wgpu::PollError::Timeout)
+                } else {
+                    Err(wgpu::PollError::WrongSubmissionIndex(2, 1))
+                }
+            },
+            || Some(()),
+        )
         .unwrap_err();
         assert!(!err.is_gpu_wait_timeout(), "{err:?}");
         assert!(err.to_string().starts_with("waiting for the GPU"), "{err}");
+    }
+
+    /// 仕事が終わってもコールバックがまだ呼ばれていなければ (ほかのスレッドの poll が持っている)、poll し直す (T0963)。
+    #[test]
+    fn wait_polls_again_until_the_callback_is_called() {
+        let (mut polls, mut checks) = (0, 0);
+        let value = wait_with(
+            DEFAULT_WAIT_TIMEOUT,
+            |_| {
+                polls += 1;
+                Ok(())
+            },
+            || {
+                checks += 1;
+                (checks == 3).then_some(42)
+            },
+        )
+        .unwrap();
+        assert_eq!(value, 42);
+        assert_eq!((polls, checks), (3, 3));
+    }
+
+    /// コールバックがいつまでも呼ばれなければ、上限の回数で諦める (止まり続けない)。
+    #[test]
+    fn wait_gives_up_when_the_callback_is_never_called() {
+        let mut polls = 0;
+        let err = wait_with(
+            DEFAULT_WAIT_TIMEOUT,
+            |_| {
+                polls += 1;
+                Ok(())
+            },
+            || None::<()>,
+        )
+        .unwrap_err();
+        assert_eq!(polls, CALLBACK_RETRIES + 1);
+        assert!(!err.is_gpu_wait_timeout(), "{err:?}");
+        assert!(err.to_string().starts_with(CALLBACK_NOT_CALLED), "{err}");
     }
 }
