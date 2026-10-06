@@ -36,3 +36,10 @@ assignee:
 ## メモ
 
 - T0026 (2 回目の起票のまとめ) から: T0920 の候補「エディタの自前の部品 (`TabStrip`・`LightColor` など) の props (`ariaLabel` など) の名前を `@ugoe/ui` の部品に揃える (任意)」をこのタスクで扱う。
+- T0040 (6 回目の起票のまとめ) から書き足した:
+  - T0916 の候補: パネルのボタンの文言の先頭の「+ 」(`+ Rig`・`+ Particle`・`+ Glue`・`+ Circle`・`+ Capsule`・`+ Slot`・`+ Entry`・`+ Group`・`+ Part`・
+    `+ Input`・`+ Output`・`+ {{template}}`・グルーの `+ Key`・`+ Axis` など。`apps/editor/locales/*.json`) を `Icon name="plus"` にするか記号を外すかを決めてそろえる
+    (タイムラインの `+ Event at …` も同じ決め方にする。T0675 のメモにも書いた)。
+  - T0916 の候補: ポーズのタブの文字の重なり (`button.name "Wave"` と説明・`span.count`・`span.pick` がチェックボックスのラベルに重なる。T0915 の基準線の後に増えた)。
+  - T0917 の候補: ツリーの名前の変更 (`TreeItem` の行の中で開く欄) を `TextField` に移す (開いたときに全体を選ぶ・押下を行に渡さない口が `TextField` に要る。`packages/ui` はこのタスクの範囲の外なので、小さければ範囲外の変更としてメモに書き、大きければ後続にする。
+    行の高さ 24px を保つ)。docs/ui.md#足りない部品と口-t0917 の表から消す。
