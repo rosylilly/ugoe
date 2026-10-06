@@ -42,7 +42,7 @@ Timeline examples:
 | [expressions](expressions/) | The three expression operations over host values, fades, setting and adding expressions. |
 | [effects](effects/) | Eye blink with a 64-bit seed, breathing, lip sync, effect-group strengths from a motion, turning effects off. |
 | [pose](pose/) | A pose group switched by part opacity curves, links, combined part opacity overrides, turning the pose off. |
-| [pose-select](pose-select/) | The host showing pose entries: fades to the chosen entry, parts that name no entry, motion requests that decide the shown entry, showing an entry while the pose is off. |
+| [pose-select](pose-select/) | The host showing pose entries: fades to the chosen entry, parts that name no entry, motion requests that decide the shown entry, showing an entry while the pose is off, showing an entry without the fade. |
 | [effects-replace](effects-replace/) | The host replacing the effect settings: the eye blink and breathing restart from the new settings (also when they are equal), lip sync moves the kept level to new parameters, empty settings. |
 | [tracking](tracking/) | Face tracking input mapped by the avatar profile: the standard mapping, overrides that change the sign, redirect a formula, map a blend shape and sum two inputs, ignored elements, internal parameters, clamping; tracking after motions and before expressions; removing the input. |
 
@@ -174,6 +174,7 @@ The files of a timeline example:
   | `{ "lip_sync": <level> }` | The host supplies the lip sync level from now on; `null` removes it. Initially there is no level. |
   | `{ "tracking": <input> }` | The host supplies this tracking input in every frame from now on ([avatar-profile.md](../avatar-profile.md#tracking-input)); `null` removes it. Initially there is no tracking input. The input is `{ "head": { "yaw", "pitch", "roll" }, "body": { "yaw", "pitch", "roll" }, "shoulders": { "left", "right" }, "blend_shapes": { <ARKit name>: <value>, … } }`: `head` is required, `body` and `shoulders` and each of their fields are optional (absent: the input does not have it), and blend shapes not listed are 0. |
   | `{ "show_pose": <part ID> }` | The host shows the pose entry whose `part` is this part ([Pose](../motion.md#pose)). |
+  | `{ "show_pose_immediately": <part ID> }` | The host shows the pose entry whose `part` is this part without the fade ([Pose](../motion.md#pose)). A runtime that does not offer this MAY skip timelines with this action. |
   | `{ "set_effects": <Effects> }` | The host replaces the effect settings with this [`Effects`](../model.md#effects) object (with the defaults of model.md for absent fields; [Replacing the effect settings](../motion.md#replacing-the-effect-settings)). The `seed` is read exactly, as in a model. |
   | `{ "reset_physics": true }` | The host resets physics ([physics.md](../physics.md#state)). |
   | `{ "stages": { <stage>: <bool>, … } }` | The host turns stages on or off. Stages: `physics`, `eye_blink`, `breath`, `lip_sync`, `pose`. Initially all are on. |

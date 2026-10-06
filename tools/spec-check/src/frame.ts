@@ -93,6 +93,11 @@ export class Runtime {
     this.pose.show(part);
   }
 
+  /** ポーズのエントリをフェードせずに表示する (spec/motion.md#pose)。 */
+  showPoseImmediately(part: string): void {
+    this.pose.showImmediately(part);
+  }
+
   startMotion(motion: M.Motion, priority: Priority): boolean {
     return this.motions.start(motion, priority);
   }

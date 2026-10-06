@@ -96,6 +96,9 @@ enum Action {
     ShowPose {
         show_pose: String,
     },
+    ShowPoseImmediately {
+        show_pose_immediately: String,
+    },
     SetEffects {
         set_effects: Box<Effects>,
     },
@@ -398,6 +401,13 @@ fn perform(
         }
         Action::ShowPose { show_pose } => {
             puppet.pose_mut().show(&PartId::new(show_pose.as_str()));
+        }
+        Action::ShowPoseImmediately {
+            show_pose_immediately,
+        } => {
+            puppet
+                .pose_mut()
+                .show_immediately(&PartId::new(show_pose_immediately.as_str()));
         }
         Action::SetEffects { set_effects } => puppet.set_effects((**set_effects).clone()),
         Action::ResetPhysics { .. } => puppet.reset_physics(),

@@ -484,6 +484,19 @@ export class PoseState {
     });
   }
 
+  /**
+   * `part` のエントリをフェードせずに表示する (spec/motion.md#pose)。グループの不透明度をすぐに、
+   * そのエントリは 1、ほかは 0 にする。ポーズに無いパーツなら何もしない。
+   */
+  showImmediately(part: string): void {
+    this.pose.groups.forEach((g, gi) => {
+      const i = g.entries.findIndex((e) => e.part === part);
+      if (i < 0) return;
+      this.shown[gi] = i;
+      this.opacity[gi] = this.opacity[gi].map((_, j) => (j === i ? 1 : 0));
+    });
+  }
+
   /** 各エントリの `part` (リンクは含まない)。 */
   entryParts(): Set<string> {
     return new Set(this.pose.groups.flatMap((g) => g.entries.map((e) => e.part)));

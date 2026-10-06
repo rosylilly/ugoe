@@ -246,7 +246,7 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 - 時間の例 (`timeline.json` を持つもの、公開仕様の [Timeline examples](../spec/examples/README.md#timeline-examples)) は、フレームごとの
   ホストの操作と `dt` と、そのフレームの後のパラメータの値・パーツの不透明度の上書き・イベント・動的物理の加算量・評価の結果の期待値の列です。
   操作はパラメータの設定、モーションの開始と停止、表情の設定・追加・停止、リップシンクの音量、トラッキングの入力 (`null` で外す)、
-  ポーズの要素の表示 (`show_pose`)、エフェクト設定の差し替え (`set_effects`)、物理のリセット、段の有効無効です。
+  ポーズの要素の表示 (`show_pose`・フェードを飛ばす `show_pose_immediately`)、エフェクト設定の差し替え (`set_effects`)、物理のリセット、段の有効無効です。
   参照実装の `Puppet` が満たすことを `crates/ugoe/tests/spec_timelines.rs` で確かめ、食い違う例は理由を付けて `KNOWN_MISMATCHES` に挙げます。
 - 互換性テストの資料 (`assets/compat/`) との違い: あちらはリリースごとのバイナリのファイルで、古い版のファイルが読めることと、
   知らない機能を劣化させて読めることを確かめる (評価の期待値は持たない)。こちらは仕様の一部 (CC BY 4.0) で、

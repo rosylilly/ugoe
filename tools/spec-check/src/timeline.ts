@@ -22,6 +22,7 @@ export type Action =
   | { lip_sync: number | null }
   | { tracking: TrackingInput | null }
   | { show_pose: string }
+  | { show_pose_immediately: string }
   | { set_effects: M.Effects }
   | { reset_physics: true }
   | { stages: Partial<Record<Stage, boolean>> };
@@ -160,6 +161,8 @@ export function runTimeline(ex: TimelineExample): string[] {
       } else if ("lip_sync" in action) rt.lipSyncLevel = action.lip_sync;
       else if ("tracking" in action) rt.tracking = action.tracking;
       else if ("show_pose" in action) rt.showPose(action.show_pose);
+      else if ("show_pose_immediately" in action)
+        rt.showPoseImmediately(action.show_pose_immediately);
       else if ("set_effects" in action) rt.setEffects(action.set_effects);
       else if ("reset_physics" in action) rt.physics?.reset();
       else if ("stages" in action) {

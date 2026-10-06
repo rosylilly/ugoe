@@ -360,7 +360,7 @@ chosen as above, and between frames the opacities of its group change at once: 1
 0 for every other entry. The next frame follows the steps above; if motions request another entry of
 the group, the fade towards it starts from these opacities. While the pose stage is off, the
 opacities still change (they are not written), and the stage continues from them when it is turned
-on again.
+on again. The [pose-select](examples/pose-select/) example shows both ways of showing an entry.
 
 **Reading the shown entries.** A runtime SHOULD let a host read the shown entry of each group (for
 example, to keep a pose selector in step with motions). An entry the host shows is the shown entry at
