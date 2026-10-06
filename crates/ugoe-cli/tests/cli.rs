@@ -827,3 +827,171 @@ fn build_rejects_broken_or_invalid_json() {
     let stderr = fails(&json);
     assert!(stderr.contains("is not a PNG"), "{stderr}");
 }
+
+/// `ugoe build <file>.model.json --meta --physics --motion --expression`: 添えた `META`・物理・モーション・表情が
+/// バンドルに入る (モーションと表情は並べた順)。`--meta` はバンドルとモジュールの入力の `META` の代わりにもなる。
+#[test]
+fn build_adds_meta_and_animation_files_to_model_json() {
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let example = |p: &str| path(&repo_file(&format!("spec/examples/{p}")));
+    let meta = tmp.join("meta.json");
+    std::fs::write(&meta, r#"{"author": "ugoe", "license": "CC0"}"#).expect("write meta");
+
+    let bundle = tmp.join("pendulum.ugoe");
+    stdout(&ugoe(&[
+        "build",
+        &example("physics-pendulum/model.json"),
+        "-o",
+        &path(&bundle),
+        "--meta",
+        &path(&meta),
+        "--physics",
+        &example("physics-pendulum/model.physics.json"),
+        "--motion",
+        &example("motion-curves/curves.motion.json"),
+        "--motion",
+        &example("effects/calm.motion.json"),
+        "--expression",
+        &example("expressions/sad.expression.json"),
+        "--expression",
+        &example("expressions/happy.expression.json"),
+    ]));
+    let read =
+        ugoe_format::read_bundle(&std::fs::read(&bundle).expect("read bundle")).expect("bundle");
+    let physics = ugoe_format::physics_from_json(
+        &std::fs::read_to_string(repo_file(
+            "spec/examples/physics-pendulum/model.physics.json",
+        ))
+        .expect("read physics"),
+    )
+    .expect("physics");
+    assert_eq!(read.physics, Some(physics));
+    let names = |names: Vec<&str>| names.join(",");
+    assert_eq!(
+        names(read.motions.iter().map(|m| m.name.as_str()).collect()),
+        "curves,calm"
+    );
+    assert_eq!(
+        names(read.expressions.iter().map(|e| e.name.as_str()).collect()),
+        "sad,happy"
+    );
+    assert_eq!(
+        read.meta,
+        Some(serde_json::json!({ "author": "ugoe", "license": "CC0" }))
+    );
+
+    // バンドルとモジュールの入力: `--meta` は `META` を差し替え、物理などはそのまま。
+    let other = tmp.join("other.json");
+    std::fs::write(&other, r#"{"author": "someone else"}"#).expect("write meta");
+    let rebuilt = tmp.join("rebuilt.ugoe");
+    stdout(&ugoe(&[
+        "build",
+        &path(&bundle),
+        "-o",
+        &path(&rebuilt),
+        "--meta",
+        &path(&other),
+    ]));
+    let again =
+        ugoe_format::read_bundle(&std::fs::read(&rebuilt).expect("read bundle")).expect("bundle");
+    assert_eq!(
+        again.meta,
+        Some(serde_json::json!({ "author": "someone else" }))
+    );
+    assert_eq!(again.physics, read.physics);
+    assert_eq!(again.motions, read.motions);
+    let module = tmp.join("short-hair.ugoemod");
+    stdout(&ugoe(&[
+        "build",
+        &example("bundles/short-hair.ugoemod"),
+        "-o",
+        &path(&module),
+        "--meta",
+        &path(&other),
+    ]));
+    let read =
+        ugoe_format::read_module(&std::fs::read(&module).expect("read module")).expect("module");
+    assert_eq!(
+        read.meta,
+        Some(serde_json::json!({ "author": "someone else" }))
+    );
+}
+
+/// `ugoe build` に添えた JSON が壊れている・検証に通らない・通常のファイルでない、またはモデルの JSON でない入力に
+/// `--physics` などを渡したときは失敗する。
+#[test]
+fn build_rejects_broken_or_invalid_added_files() {
+    let temp = tempfile::tempdir().expect("create output dir");
+    let tmp = temp.path();
+    let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();
+    let model = path(&repo_file("spec/examples/physics-pendulum/model.json"));
+    let out = path(&tmp.join("out.ugoe"));
+    let fails = |input: &str, extra: &[&str]| {
+        let mut args = vec!["build", input, "-o", &out];
+        args.extend_from_slice(extra);
+        let output = ugoe(&args);
+        assert!(!output.status.success(), "{extra:?}");
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    let write = |name: &str, json: &str| {
+        let file = tmp.join(name);
+        std::fs::write(&file, json).expect("write json");
+        path(&file)
+    };
+    let read_json = |p: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(repo_file(p)).expect("read json"))
+            .expect("json")
+    };
+
+    // 壊れた JSON。
+    let broken = write("broken.json", "{\"name\": ");
+    for flag in ["--meta", "--physics", "--motion", "--expression"] {
+        let stderr = fails(&model, &[flag, &broken]);
+        assert!(stderr.contains("parsing"), "{flag}: {stderr}");
+    }
+
+    // 物理がモデルに無いパラメータを読む。
+    let mut physics = read_json("spec/examples/physics-pendulum/model.physics.json");
+    physics["rigs"][0]["inputs"][0]["parameter"] = "Missing".into();
+    let physics = write("invalid.physics.json", &physics.to_string());
+    let stderr = fails(&model, &["--physics", &physics]);
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.starts_with("error: ") && l.contains("Missing")),
+        "{stderr}"
+    );
+    assert!(stderr.contains("1 validation error(s)"), "{stderr}");
+
+    // 長さが負のモーション・値が無限大の表情。
+    let mut motion = read_json("spec/examples/motion-curves/curves.motion.json");
+    motion["duration"] = (-1.0).into();
+    let motion = write("invalid.motion.json", &motion.to_string());
+    let stderr = fails(&model, &["--motion", &motion]);
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.starts_with("error: curves: duration")),
+        "{stderr}"
+    );
+    let mut expression = read_json("spec/examples/expressions/happy.expression.json");
+    expression["parameters"][0]["value"] = 1e40.into();
+    let expression = write("invalid.expression.json", &expression.to_string());
+    let stderr = fails(&model, &["--expression", &expression]);
+    assert!(
+        stderr.lines().any(|l| l.starts_with("error: happy: ")),
+        "{stderr}"
+    );
+
+    // 補助のファイルは通常のファイルだけ (T0530)。
+    let stderr = fails(&model, &["--meta", &path(tmp)]);
+    assert!(stderr.contains("not a regular file"), "{stderr}");
+
+    // モデルの JSON でない入力に `--physics` などは渡せない。
+    let module = path(&repo_file("spec/examples/bundles/short-hair.ugoemod"));
+    let motion = path(&repo_file("spec/examples/motion-curves/curves.motion.json"));
+    let stderr = fails(&module, &["--motion", &motion]);
+    assert!(stderr.contains("need a model JSON input"), "{stderr}");
+}

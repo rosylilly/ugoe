@@ -20,7 +20,7 @@
 
 入力のファイルは、利用者が自分で渡すものなので通常のファイルに限らない (`/dev/stdin` や `<(...)` の FIFO も読める。
 `ugoe build` の入力も同じ)。外からパスを受ける MCP サーバやアプリは通常のファイルだけを読む (T0530 の線引き)。
-`render` の `--texture` などの補助のファイルと、`import-psd` の PSD は通常のファイルだけを読む (下の各節)。
+`render` の `--texture`・`build` の `--meta` などの補助のファイルと、`import-psd` の PSD は通常のファイルだけを読む (下の各節)。
 
 ```sh
 ugoe validate model.json                 # 検証。問題なければ "ok"
@@ -178,6 +178,8 @@ ugoe build character.ugoe -o packed.ugoe --atlas --atlas-max-size 4096
 ugoe build long-hair.ugoemod -o packed.ugoemod --atlas   # モジュールのテクスチャをモジュールの単位でまとめる
 ugoe build quad.model.json -o quad.ugoe              # 手で書いたモデルの JSON から (画像は隣の textures/<name>.png)
 ugoe build hair.module.json -o hair.ugoemod --compress   # 手で書いたモジュールの JSON から
+ugoe build quad.model.json -o quad.ugoe --meta meta.json --physics quad.physics.json \
+  --motion idle.motion.json --motion nod.motion.json --expression smile.expression.json   # META と物理・モーション・表情を添える
 ugoe render packed.ugoe -o check.png                 # 見た目が変わっていないことを目で確かめる
 ```
 
@@ -188,6 +190,10 @@ ugoe render packed.ugoe -o check.png                 # 見た目が変わって�
 | `--atlas-max-size <PX>` | アトラス 1 枚の幅と高さの上限 (既定 2048) |
 | `--atlas-padding <PX>` | 各画像の周りに複製する端の画素の幅 (既定 2) |
 | `--compress` | 画像 (`TEXR` `NRML`) 以外のチャンクを zstd で圧縮する (既定は無圧縮) |
+| `--meta <PATH>` | `META` に書くメタデータ (作者やライセンスなど。自由な JSON)。どの入力にも使え、入力のバンドル・モジュールの `META` の代わりにする |
+| `--physics <PATH>` | 添える物理の設定 (`*.physics.json`)。入力がモデルの JSON のときだけ |
+| `--motion <PATH>` | 添えるモーション (`*.motion.json`。複数指定可で、並べた順に書く)。入力がモデルの JSON のときだけ |
+| `--expression <PATH>` | 添える表情 (`*.expression.json`。複数指定可で、並べた順に書く)。入力がモデルの JSON のときだけ |
 
 - 入力はディレクトリならプロジェクト、先頭のマジックが `UGOE` のファイルならバンドル (かモジュール)、ほかのファイルなら JSON として読む。バンドルの物理・モーション・表情・法線マップ・`META` は引き継ぐ。
   テクスチャと法線マップは PNG であること (KTX2 はエラー)。アトラスを使わなければ、読んだバンドルと同じ内容のバンドルを書く
@@ -197,8 +203,13 @@ ugoe render packed.ugoe -o check.png                 # 見た目が変わって�
   テクスチャと法線マップの名前が重なっていたり PNG でなければエラー。
 - 入力が JSON なら、最上位に `slot` があればモジュール (`Module`)、なければモデル (`Model`) として読み (拡張子は見ない)、
   `ugoe_model::validate::validate` / `validate_module` で検証する。壊れた JSON は `parsing ...` で、検証に通らなければバンドルと同じく
-  各エラーを `error: ...` で書いてから件数 (`N validation error(s)`) で失敗する。モデルの JSON からは物理・モーション・表情・`META` の無いバンドルを、
-  モジュールの JSON からは `META` の無いモジュールを書く (`--atlas`・`--compress` はバンドル・モジュールの入力と同じ)。
+  各エラーを `error: ...` で書いてから件数 (`N validation error(s)`) で失敗する。モデルの JSON からはバンドルを、
+  モジュールの JSON からはモジュールを書く (`--atlas`・`--compress` はバンドル・モジュールの入力と同じ)。
+  - **添えるもの:** モデルの JSON には `--physics`・`--motion`・`--expression` で物理・モーション・表情を添えられる (無ければ書かない)。
+    物理はモデルとの参照を `validate_physics` で、モーションと表情は数値を `validate_motion` / `validate_expression` で検証し、
+    通らなければ上と同じ形で失敗する。ほかの入力 (プロジェクト・バンドル・モジュール・モジュールの JSON) にこれらを渡すとエラー。
+    `META` は `--meta` で添える (無ければモデル・モジュールの JSON からは `META` の無いものを書く)。
+    添えるファイル (`--meta` も) は補助のファイルなので、通常のファイルだけをチャンクの上限 (256 MiB) まで読む。
   - **画像の置き場:** テクスチャ (`TextureRef::name`) と法線マップ (`TextureRef::normal_map`) の画像は、プロジェクトと同じく
     JSON の隣の `textures/<name>.png` から名前で読む ([docs/spec/file-formats.md#プロジェクト-ugoeproj](../../docs/spec/file-formats.md#プロジェクト-ugoeproj))。
     通常のファイルだけを、プロジェクトの画像と同じ上限まで読み、PNG でなければエラーにする。

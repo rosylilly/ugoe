@@ -91,6 +91,20 @@ pub fn images(json: &Path, textures: &[TextureRef]) -> anyhow::Result<Textures> 
     Ok(images)
 }
 
+/// `--meta`・`--physics` などの補助の JSON を読む。補助のファイルなので、通常のファイルだけを
+/// チャンクの上限 (`MAX_DECOMPRESSED_CHUNK_LEN`) まで読む。
+pub fn read_json(path: &Path) -> anyhow::Result<String> {
+    let max = ugoe_format::bundle::MAX_DECOMPRESSED_CHUNK_LEN as u64;
+    let bytes = ugoe_fs::read_regular_file(path, max)
+        .with_context(|| format!("reading {}", path.display()))?;
+    String::from_utf8(bytes).with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
+/// `--meta`: `META` に書くメタデータ (自由な JSON。`docs/spec/file-formats.md`) を読む。
+pub fn read_meta(path: &Path) -> anyhow::Result<serde_json::Value> {
+    serde_json::from_str(&read_json(path)?).with_context(|| format!("parsing {}", path.display()))
+}
+
 /// 画像のパス。名前がファイル名に使えなければ (プロジェクトと同じ規則) `None`。
 fn image_path(dir: &Path, name: &str) -> Option<PathBuf> {
     is_valid_texture_name(name).then(|| dir.join(format!("{name}.png")))

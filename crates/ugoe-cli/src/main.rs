@@ -168,6 +168,19 @@ struct BuildArgs {
     /// 画像以外のチャンクを zstd で圧縮して書く (`docs/spec/file-formats.md`)。既定は無圧縮。
     #[arg(long)]
     compress: bool,
+    /// `META` に書くメタデータ (作者やライセンスなど。自由な JSON) のパス。入力のバンドル・モジュールの
+    /// `META` の代わりにする。
+    #[arg(long, value_name = "PATH")]
+    meta: Option<PathBuf>,
+    /// 物理の設定の JSON (`*.physics.json`) のパス。入力がモデルの JSON のときだけ使える。
+    #[arg(long, value_name = "PATH")]
+    physics: Option<PathBuf>,
+    /// モーションの JSON (`*.motion.json`) のパス (複数指定可。並べた順に書く)。入力がモデルの JSON のときだけ使える。
+    #[arg(long = "motion", value_name = "PATH")]
+    motions: Vec<PathBuf>,
+    /// 表情の JSON (`*.expression.json`) のパス (複数指定可。並べた順に書く)。入力がモデルの JSON のときだけ使える。
+    #[arg(long = "expression", value_name = "PATH")]
+    expressions: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -470,7 +483,14 @@ fn run_import_psd(args: ImportPsdArgs) -> anyhow::Result<()> {
 fn run_build(args: BuildArgs) -> anyhow::Result<()> {
     use ugoe_editor_core::Project;
 
+    // 入力を読む前に、壊れた `--meta` で止める。
+    let new_meta = args
+        .meta
+        .as_deref()
+        .map(json_source::read_meta)
+        .transpose()?;
     let (project, meta) = if args.input.is_dir() {
+        reject_animation_files(&args, "a project")?;
         let project = Project::load(&args.input)
             .with_context(|| format!("loading {}", args.input.display()))?;
         (project, None)
@@ -480,18 +500,33 @@ fn run_build(args: BuildArgs) -> anyhow::Result<()> {
             .with_context(|| format!("reading {}", args.input.display()))?;
         if bytes.starts_with(&ugoe_format::MAGIC) {
             match read_container(&args.input, &bytes)? {
-                Container::Bundle(bundle) => project_from_bundle(*bundle)?,
-                Container::Module(file) => return rebuild_module(&args, &file),
+                Container::Bundle(bundle) => {
+                    reject_animation_files(&args, "a bundle")?;
+                    project_from_bundle(*bundle)?
+                }
+                Container::Module(mut file) => {
+                    reject_animation_files(&args, "a dress-up module")?;
+                    file.meta = new_meta.or(file.meta);
+                    return rebuild_module(&args, &file);
+                }
             }
         } else {
             match read_json_source(&args.input, bytes)? {
-                JsonSource::Model(model) => (project_from_json(&args.input, *model)?, None),
+                JsonSource::Model(model) => {
+                    let mut project = project_from_json(&args.input, *model)?;
+                    add_animation_files(&args, &mut project)?;
+                    (project, None)
+                }
                 JsonSource::Module(module) => {
-                    return rebuild_module(&args, &module_file_from_json(&args.input, *module)?);
+                    reject_animation_files(&args, "a module JSON")?;
+                    let mut file = module_file_from_json(&args.input, *module)?;
+                    file.meta = new_meta;
+                    return rebuild_module(&args, &file);
                 }
             }
         }
     };
+    let meta = new_meta.or(meta);
 
     let project = if args.atlas {
         let (atlased, report) = project.with_atlas(&atlas_options(&args))?;
@@ -621,6 +656,55 @@ fn project_from_json(path: &Path, model: Model) -> anyhow::Result<ugoe_editor_co
         model,
         textures,
     ))
+}
+
+/// `--physics`・`--motion`・`--expression` はモデルの JSON の入力にだけ使える (ほかの入力は物理などを
+/// 自分で持つか、持てない)。指定されていれば、入力の種類 `what` を挙げて失敗する。
+fn reject_animation_files(args: &BuildArgs, what: &str) -> anyhow::Result<()> {
+    if args.physics.is_some() || !args.motions.is_empty() || !args.expressions.is_empty() {
+        bail!(
+            "--physics, --motion and --expression need a model JSON input; {} is {what}",
+            args.input.display()
+        );
+    }
+    Ok(())
+}
+
+/// `--physics`・`--motion`・`--expression` のファイルを読み、モデルの JSON から作ったプロジェクトに添える。
+/// 物理はモデルとの参照を検証し、モーションと表情は数値を検証する。通らなければ、そのファイルについて
+/// バンドルと同じ形 (各エラーを `error: ...`、最後に件数) で失敗する。
+fn add_animation_files(
+    args: &BuildArgs,
+    project: &mut ugoe_editor_core::Project,
+) -> anyhow::Result<()> {
+    let invalid = |path: &Path, error: ugoe_format::FormatError| -> anyhow::Error {
+        validation_failure(path, &error).unwrap_or_else(|| {
+            anyhow::Error::new(error).context(format!("parsing {}", path.display()))
+        })
+    };
+    if let Some(path) = &args.physics {
+        let physics = ugoe_format::physics_from_json(&json_source::read_json(path)?)
+            .map_err(|e| invalid(path, e))?;
+        let errors = ugoe_model::validate::validate_physics(&physics, &project.model);
+        if !errors.is_empty() {
+            return Err(invalid(
+                path,
+                ugoe_format::FormatError::InvalidPhysics(errors),
+            ));
+        }
+        project.physics = Some(physics);
+    }
+    for path in &args.motions {
+        let motion = ugoe_format::motion_from_json(&json_source::read_json(path)?)
+            .map_err(|e| invalid(path, e))?;
+        project.motions.push(motion);
+    }
+    for path in &args.expressions {
+        let expression = ugoe_format::expression_from_json(&json_source::read_json(path)?)
+            .map_err(|e| invalid(path, e))?;
+        project.expressions.push(expression);
+    }
+    Ok(())
 }
 
 /// モジュールの JSON を、画像 (JSON の隣の `textures/<name>.png`) を付けたモジュールのファイルにする。
