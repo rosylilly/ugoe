@@ -471,6 +471,98 @@ async function treeSelectedHoverScene(page, ctx, key, name) {
 }
 
 /**
+ * ツリーのドラッグの途中 (ドロップの印。T0065): パーツの木で選んでいないメッシュの行をポインタで押して 10px 動かし (TreePanel.svelte の
+ * `onRowPointerDown`・`onPointerMove`。5px 動かすとドラッグになる)、離さずに見えている行の上を動かして、印の付いた行が出たところで撮る。
+ * 中へ (`drop-into`。ほかのパーツの行の中ほど)・手前 (`drop-above`。同じ描画の順のメッシュの行の上半分)・落とせない所 (`drop-bad`。
+ * 描画の順の違うメッシュの行など。押した行は除く。理由の文が `.hint.error` で出るので `errors`)。奥 (`drop-below`) は手前と同じ線の上下違いなので撮らない。
+ * 手前に落とせる組が無ければ次のメッシュの行から押し直す。どの印も出なければ場面の失敗にする。撮った後は木に `pointercancel` を送って
+ * ドラッグを取り消し (`cancelDrag`)、印と `.tree.dragging` が消えるのを待ってから、木の外でポインタを離す (後の場面に残さない)。
+ */
+async function treeDragScenes(page, ctx) {
+  await page
+    .getByRole("tab", { name: text("editor", ctx.lang, "tree.view.parts"), exact: true })
+    .click();
+  await page.waitForTimeout(200);
+  await scrollToTop(page);
+  const tree = page.locator(".tree[role=tree]").first();
+  // ポインタの下にあって見えている行 (送った枠・頭に隠れていない) の、上半分と中ほどの点
+  const visibleRows = () =>
+    tree.evaluate((el) =>
+      [...el.querySelectorAll("[role=treeitem][data-key]")].flatMap((row) => {
+        const r = row.getBoundingClientRect();
+        const points = { upper: r.top + r.height * 0.25, middle: r.top + r.height / 2 };
+        const x = r.left + Math.min(r.width / 2, 80);
+        const seen = Object.values(points).every(
+          (y) => document.elementFromPoint(x, y)?.closest("[data-key]") === row,
+        );
+        if (!seen) return [];
+        return [
+          {
+            key: row.dataset.key,
+            selected: row.getAttribute("aria-selected") === "true",
+            x,
+            ...points,
+          },
+        ];
+      }),
+    );
+  const marked = (mark) =>
+    page.locator(`.tree .row.${mark}${mark === "drop-bad" ? "" : ":not(.drop-bad)"}`);
+  // 押したまま (押した行を除く) 行の上を動かして、`mark` の印が出る点を探す
+  const find = async (mark, rows) => {
+    for (const row of rows) {
+      for (const y of [row.middle, row.upper]) {
+        await page.mouse.move(row.x, y, { steps: 2 });
+        await page.waitForTimeout(50);
+        if ((await marked(mark).count()) > 0) return true;
+      }
+    }
+    return false;
+  };
+  const release = async () => {
+    await tree.dispatchEvent("pointercancel");
+    await page.locator(".tree.dragging, .tree .row[class*=drop-]").first().waitFor({
+      state: "detached",
+      timeout: 5000,
+    });
+    await page.mouse.move(1, 300);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+  };
+
+  const rows = await visibleRows();
+  const sources = rows.filter((r) => r.key.startsWith("mesh:") && !r.selected);
+  if (sources.length === 0) throw new Error("no unselected mesh row to drag in the tree");
+  const scenes = [
+    ["drop-into", "tree-drop-into", {}],
+    ["drop-above", "tree-drop-above", {}],
+    ["drop-bad", "tree-drop-bad", { errors: true }],
+  ];
+  const pending = new Set(scenes.map(([mark]) => mark));
+  for (const source of sources.slice(0, 6)) {
+    if (pending.size === 0) break;
+    await page.mouse.move(source.x, source.middle);
+    await page.mouse.down();
+    await page.mouse.move(source.x + 10, source.middle, { steps: 2 });
+    try {
+      await page.locator(".tree.dragging").first().waitFor({ timeout: 2000 });
+      const targets = rows.filter((r) => r.key !== source.key);
+      for (const [mark, name, options] of scenes) {
+        if (!pending.has(mark)) continue;
+        if (!(await find(mark, targets))) continue;
+        await page.waitForTimeout(300);
+        await ctx.scene(name, { aria: false, ...options });
+        pending.delete(mark);
+      }
+    } finally {
+      await release();
+    }
+  }
+  if (pending.size > 0)
+    throw new Error(`no row in the tree showed the drop mark: ${[...pending].join(", ")}`);
+}
+
+/**
  * アプリの定義。
  * - `wide`・`narrow`: 広い幅・狭い幅の窓の大きさ (CSS px)。狭い幅は docs/ui.md#そのほか の下限。
  * - `half` (省ける): 画面の半分に置いたときの窓の大きさ。ライトの英語で 1 組だけ撮る (`en-light-half`)。
@@ -547,6 +639,7 @@ export const APPS = {
       await treeHoverScenes(page, ctx);
       // 非表示の要素 (見本の Wave は不透明度 0) を選んだ行に乗せた
       await treeSelectedHoverScene(page, ctx, "part:Wave", "tree-hidden-hover");
+      await treeDragScenes(page, ctx);
       // パーツを選んだ状態 (インスペクタに中身が出る)
       await page.locator("[role=treeitem]").nth(1).click();
       await page.waitForTimeout(600);
