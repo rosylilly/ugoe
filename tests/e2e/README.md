@@ -12,6 +12,8 @@ just e2e --only studio      # スタジオだけ (カンマ区切りで複数)
 just e2e --no-build         # ビルドを省き、前に作った target/e2e/bin/ の実行ファイルを使う
 just e2e --headed           # Xvfb を使わず、今の画面 (DISPLAY) にウィンドウを出す (手元で様子を見るとき)
 just e2e --out DIR          # 結果の置き場 (既定 target/e2e)
+just e2e --manual           # 筋書きの代わりに、マニュアルの画像を撮る (下の「マニュアルの画像」)
+just e2e --update-images    # 撮った画像の色を減らして docs/manual/images に写す (--manual を含む)
 ```
 
 要るもの (Linux だけ):
@@ -81,7 +83,7 @@ CI では失敗したときに `target/e2e` (実行ファイルを除く) を成
 | --- | --- |
 | エディタ (`specs/editor.test.mjs`) | 起動 → ダイアログで選んでいないパスを渡したコマンド (`import_psd`・`export_bundle`) が `file.not_chosen`・`file.not_chosen_for_save` で断られる → 「Open Sample…」で見本のプロジェクトを書き出して開き、ビューポートが描ける → パラメータ (AngleX) の値を入力する → メタデータの Version を変えて保存し、ファイルに書かれ未保存の印が消える → 「Import PSD…」で `assets/fixtures/character.psd` を取り込み、ツリーにレイヤーが出る → 「Export…」で `.ugoe` を書き出し、ファイルができて一時ファイルが残らない → プレビューで見本の `cat-ears.ugoemod` を読み込んで付き、チェックで外し、スロットの選択欄で付け直す → 画像からトラッキングし、MediaPipe が顔を見つけて口の開きが動く → 見本のモジュールのプロジェクト `cat-ears.ugoeproj` を開き (保存していない変更を捨てる確認を通る)、「Export Module…」で `.ugoemod` を書き出し、見本の `cat-ears.ugoemod` と同じバイト列で一時ファイルが残らない → 設定の AI の送り先を偽の AI のプロバイダにする → 見本の着せ替えの本体を開き直して「Import PSD…」で `character.psd` を取り込み、AI タブの「Propose rig」で分類とリグの提案を作り、「Preview」で提案を適用した姿 (`get_proposal_preview_bundle`) がビューポートに出て、「End preview」で戻りドキュメントが変わらず、「Adopt」で本体の物理に髪揺れのリグが足されて衝突体 `Shoulders` とスロット `Hair` の参照が残る (T1627 の回帰) → 「New from PSD…」で `character.psd` から作った物理の無いプロジェクトでも、同じく提案を作ってプレビューする → 設定で日本語に切り替え、読み込み直しても日本語のまま → CSP の違反が無い |
 | ビューア (`specs/viewer.test.mjs`) | 起動 → 「Samples」のメニューから見本を開く → トラッキングの記録を流し、AngleX が動く → 画像からトラッキングし、口の開きが動く → 設定を開いて閉じる → CSP の違反が無い |
-| スタジオ (`specs/studio.test.mjs`) | 起動 → 見本のプロファイルを開く → シーンをクリックで切り替える → 出力ウィンドウを出し、フレームが届く → 透過が効かない (Xvfb にコンポジタは無い) と「背景」の欄に注意が出て、注意のボタンで背景がクロマキーになり注意が消え、「シーンの編集」で透過に戻すとまた出る (T0846・T0849) → 重い検出の下でトラッキングが操作ウィンドウと出力に届く (T0812 の回帰) → 出力ウィンドウを隠してもフレームが届き続ける → 画像からトラッキングし、口の開きが動く → 操作 API を入れると「いまの状態」に「API on」の印が出て、クライアントを承認し、シーンを切り替える → ブラウザソースを入れると「Source on」の印が出て、ページとフレームが届く → シーンを足すとプロファイルに自動で保存され、開き直しても残る → CSP の違反が無い |
+| スタジオ (`specs/studio.test.mjs`) | 起動 → 見本のプロファイルを開く → シーンをクリックで切り替える → 出力ウィンドウを出し、「いまの状態」に見本の大きさ (1920 × 1080) が出て、フレームが届く → 透過が効かない (Xvfb にコンポジタは無い) と「背景」の欄に注意が出て、注意のボタンで背景がクロマキーになり注意が消え、「シーンの編集」で透過に戻すとまた出る (T0846・T0849) → 重い検出の下でトラッキングが操作ウィンドウと出力に届く (T0812 の回帰) → 出力ウィンドウを隠してもフレームが届き続ける → 画像からトラッキングし、口の開きが動く → 操作 API を入れると「いまの状態」に「API on」の印が出て、クライアントを承認し (承認の後の「取り消す」の知らせが出る)、シーンを切り替える → ブラウザソースを入れると「Source on」の印が出て、ページとフレームが届く → シーンを足すとプロファイルに自動で保存され、開き直しても残る → CSP の違反が無い |
 
 画面の操作はできるだけ WebDriver の入力 (クリック・キー) で行う。次のものだけは OS のものなので、テストが代わりをする。
 
@@ -167,6 +169,39 @@ MediaPipe が読めた後で、ページの `fetch` が MediaPipe の利用状�
 試すには、`{"app":{"security":{"csp":{"script-src":"'self'"}}}}` を書いた JSON を作り、
 `pnpm --filter @ugoe/viewer tauri build --debug --no-bundle --config <その JSON>` でビルドして `target/debug/` の実行ファイルを
 `<out>/bin/` に写し、`just e2e --no-build --only viewer --out <out>` で流す。
+
+## マニュアルの画像
+
+`just e2e --manual` は、筋書きの代わりに `specs/<アプリ>.manual.mjs` を流し、マニュアル (docs/manual) の画像を本物の WebView
+(Linux の WebKitGTK) で撮る (T0919)。撮った画像は `<out>/<アプリ>/manual/<名前>.png` に置く。`--update-images` を付けると、
+256 色に減らして (`convert -dither None -colors 256`) `docs/manual/images/<名前>.png` に写す。画面を変えたら撮り直して、差分の画像を見て確かめる。
+
+- 窓の大きさは筋書きが決める (`lib/manual.mjs` の `resizeTo`。Xvfb は devicePixelRatio 1)。エディタ 1280×800、ビューア 1300×820・1100×760、
+  スタジオ 1280×800 (パネルの画像は 1280×1000 の窓でパネルだけを切り出す)。
+- 言語: エディタは英語 (マニュアルが英語の名前で書く)、ビューアとスタジオは日本語 (localStorage の言語の設定を変えて読み込み直す)。
+  スタジオは日本語の見本のプロファイル (`sample-ja.json`。ホットキーは Xvfb の画面にだけ登録する。`--headed` では外す)。
+- 中身: エディタは「Open Sample…」の見本の着せ替えと `character.psd`、ライティングと検証は `ugoe sample avatar --lit` で作ったプロジェクト、
+  モジュールは見本の `cat-ears.ugoeproj`。トラッキングは偽のカメラ (記録の再生)。
+- 撮らないもの (前の画像のまま): チュートリアルの途中の姿 (`keyform-grid`・`mesh-edit`・`mirror`・`depth-rotation`。手順を通して作る必要がある)、
+  MCP (`mcp-*`。エージェントの接続が要る)、AI の提案・注文・作り直し・法線マップ・送る前の確認 (`ai-proposal`・`ai-instructions`・`ai-revision`・
+  `ai-normal-maps`・`ai-consent`)、モジュールの作成と比較 (`module-*` のうち `module-workspace` 以外)、スタジオの出力の例 (`studio-output`。
+  Xvfb にはコンポジタが無く透過を撮れない) と仮想カメラ (`studio-virtual-camera`。v4l2loopback が要る)、点光源 (`lighting-point`)。
+- AI の設定 (`ai-settings`) は送り先の欄だけを撮る。API キーの欄は OS の鍵の保管庫が要り、e2e の D-Bus のセッションには無い。
+
+### ヘッドレスの Chrome (`just ui-audit`) との違い
+
+T0919 で、同じ画面を `just ui-audit` (偽のホストとヘッドレスの Chrome) と比べて分かった違い。
+
+- 書体: WebKitGTK は fontconfig の既定 (DejaVu Sans・Noto Sans CJK) で描き、太字 (600) が太く出る (見出し・Section の名前)。
+  Chrome は細い字面で、「…」を CJK の書体の「⋯」(中央の点) で描く。文字の幅と行の高さが違うので、折り返しの位置も違う
+  (ビューアの 1100px の窓で、日本語のトラッキングの欄の「左右を入れ替える」が 2 行になる)。
+- スクロールバー: WebKitGTK は GTK のスクロールバーを中身の上に重ねて描き、右端の数 (ビューアのパラメータのグループの数など) に重なる。
+  ヘッドレスの Chrome の画像には出ない。
+- 偽のホストと本物のバックエンドの違いで、本物でだけ起きた不具合: スタジオの承認の後の知らせが出ない (承認すると ID が変わる)、
+  出力ウィンドウの大きさが前のまま (960×540) で「OS が小さくした」の注意が出る、空の `WAYLAND_DISPLAY` で Wayland と見なして
+  ホットキーが「前面でだけ」になる。どれも T0919 で直し、e2e の筋書きに足した。
+- 偽のホストの見本は本物と少しずれている (スタジオの「雑談」のポーズのグループが `ArmsDown`・`ArmsUp`・`Wave` で、本物の見本は
+  `earwear`・`no_earwear`。プロファイルの拡張子)。見た目の確認には、本物の見本で撮るこの画像を使う。
 
 ## 筋書きを足す
 

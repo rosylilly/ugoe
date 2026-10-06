@@ -392,11 +392,12 @@ impl Studio {
     }
 
     /// 承認を待つクライアントを承認する: 鍵を作って覚え、`session.hello` に応答する。
+    /// 承認したクライアントの ID (承認を待つ間の ID とは別に作る。[`ClientView::id`]) を返す。
     pub(crate) fn approve_api_client(
         &self,
         id: &str,
         permission: Permission,
-    ) -> Result<(), CommandError> {
+    ) -> Result<String, CommandError> {
         let mut state = lock(&self.api.0);
         let index = state
             .pending
@@ -435,7 +436,7 @@ impl Studio {
         }
         drop(state);
         self.send_api_view();
-        Ok(())
+        Ok(client)
     }
 
     /// 承認を待つクライアントを断る (誤りを返して閉じる)。

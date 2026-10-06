@@ -590,6 +590,29 @@ NVDA (Windows。無料。<https://www.nvaccess.org/>)・VoiceOver (macOS。Cmd +
 - 元: T0907・T0918 (ヘッドレスの Chrome の強制色・reduced motion・200% では `just ui-audit` が 0 件。実物の WebView は未確認)
 - 結果: W 未 ・ M 未 ・ L 未
 
+#### U05 M10 の見直しの画面を WebView2 と WKWebView で見る [B: WM]
+
+M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-audit`) と Linux の WebKitGTK (`just e2e --manual`。マニュアルの画像を撮る) では
+確かめた。Windows (WebView2) と macOS (WKWebView) は自動の外なので、マニュアルの画像 ([manual/images](manual/images)) と見比べる (T0919)。
+書体・スクロールバー・折り返しは WebView ごとに違ってよい ([tests/e2e/README.md#ヘッドレスの-chrome-just-ui-audit-との違い](../tests/e2e/README.md#ヘッドレスの-chrome-just-ui-audit-との違い))。
+崩れ (文字の切れ・重なり・はみ出し・押せない) だけを NG にする。
+
+- 手順:
+  1. エディタ: 起動した空の画面 (`screen-empty.png`)、「File」→「Open Sample…」で見本を開いた画面 (`screen.png`)、右の列のアイコンのタブに
+     ポインタを乗せて Tooltip、タイムラインの行とキーを選んでグラフ (`timeline.png`) と「Settings…」(`timeline-settings.png`)、
+     HeadWarp・HeadRotation・Face の「Edit mesh」(`tools-*.png`)、「Preview」で見本のモジュール 2 つを読み込む (`dress-up-preview.png`)、
+     「Settings」の「General」(`settings-general.png`)。
+  2. エディタのツリー: 行の名前の変更 (F2。全体が選ばれた欄が開き、欄の中のクリックで行が選ばれない)、パーツ (Body など大きな行) に
+     ポインタを乗せてビューポートの破線の輪郭が出て、ポインタを動かし続けても重くならない、ライティングの光源の印の透明な円を押せる (T0674・T1638)。
+  3. ビューア: 「サンプル」→「着せ替え」を幅 1300px と 1100px の窓で開く (`dress-up-viewer-sample.png`・`motions-viewer.png`)。1200px 以上で
+     右の列が 2 列になる。「ポーズ」で `Wave` を選ぶ (`viewer-pose.png`)。モデルを開く前のビューポートに「ファイルを選ぶ…」「サンプルを開く」が出る。
+  4. スタジオ: 見本のプロファイル (日本語) を開いた画面 (`studio-overview.png`)、「着せ替え」のシーン (`studio-scenes.png`)、右の列の各パネル
+     (`studio-*.png`)。操作 API でアプリを承認した後に「承認しました」と「取り消す」の知らせが出る (`studio-api-approved.png`)。
+     出力ウィンドウの「大きさ」を 1920 × 1080 にしたとき、「いまの大きさ」と「いまの状態」の印がその大きさになり、画面に収まるなら注意が出ない。
+- 期待: 画像と同じ並びで、文字が切れたり重なったりしない。上の操作がすべてできる。
+- 元: T0919 (M10 のまとめ。T0673・T0674・T0675・T0725・T0817・T0818・T1632・T1638 などのメモの「実物の WebView で確かめる」)
+- 結果: W 未 ・ M 未 ・ L 自動 (T0919 の `just e2e --manual` で撮った。2 の名前の変更・ホバーの重さ・光源の印は未)
+
 ### A. AI とエージェント (エディタ)
 
 #### A01 AI のキーの保存と提案 [C: WML]

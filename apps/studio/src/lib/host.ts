@@ -269,7 +269,11 @@ export interface StudioHost {
   apiToken(): Promise<string>;
   /** トークンを作り直す (古いトークンは使えなくなる)。 */
   regenerateApiToken(): Promise<string>;
-  approveApiClient(id: string, permission: ApiPermission): Promise<void>;
+  /**
+   * 承認を待つクライアント `id` を承認する。承認したクライアントの ID (`ApiView.clients` の `id`。承認を待つ間の ID とは違う)
+   * を返す。
+   */
+  approveApiClient(id: string, permission: ApiPermission): Promise<string>;
   denyApiClient(id: string): Promise<void>;
   /** 承認したクライアントの鍵を取り消す (つないでいれば切る)。 */
   revokeApiClient(id: string): Promise<void>;

@@ -53,11 +53,11 @@ Tauri の IPC を本物の ugoe_editor_core::Document / Project に中継する�
 
 ## 2. 画面の見方
 
-![取り込んだ直後の画面](images/screen.png)
+![取り込んだ直後の画面](images/tutorial-import.png)
 
 | 場所 | 内容 |
 | --- | --- |
-| 上 (ヘッダー) | ファイル操作 (「New」「New from PSD…」「Open…」「Save」「Save As…」「Export…」「Import PSD…」)、プロジェクト名、「Undo」「Redo」「Help」 |
+| 上 (ヘッダー) | 「File」のメニュー (「New」「New from PSD…」「Open…」「Save As…」「Import PSD…」など)、「Save」「Export…」「Undo」「Redo」、プロジェクト名、右端に「Preview」「Settings」「Help」 ([画面とパネル](screen.md#ヘッダー)) |
 | 左 (ツリー) | 「Parts」タブはパーツの階層、「Deformers」タブはデフォーマの階層。行を押すと選択します |
 | 中央 (ビューポート) | モデルの表示と編集。左上に「Edit mesh」「Form edit」、右上に「Screenshot」、右下に拡大・縮小と「全体を表示」 |
 | 右上 (インスペクタ) | 選んだ要素の設定。「Inspector」の見出しの下に `mesh: 顔 (Layer8)` のように種類・名前・ID が出ます |

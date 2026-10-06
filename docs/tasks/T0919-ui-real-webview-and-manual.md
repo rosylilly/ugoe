@@ -1,7 +1,7 @@
 ---
 id: T0919
 title: UI 品質: 実機の WebView での確認とマニュアルの画像の更新
-status: in-progress
+status: done
 milestone: M10
 crates: [docs, tests, apps/editor, apps/viewer, apps/studio]
 depends_on: [T0918]
@@ -17,11 +17,11 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
 
 ## 受け入れ条件
 
-- [ ] e2e (T0006・`just e2e`) で、WebKitGTK の 3 つのアプリの主な画面を撮れるようにし、ヘッドレスの Chrome との差をメモに書いた
-- [ ] WebView2 と WKWebView で確かめる手順を docs/manual-check.md に足した (利用者の確認)
-- [ ] M10 の各タスクのメモに書かれた「マニュアルの更新の候補」を反映し、docs/manual/images の画像を撮り直した
-- [ ] docs/roadmap.md の M10 に完了の判断と後続の候補を書いた
-- [ ] `just ci` が通る
+- [x] e2e (T0006・`just e2e`) で、WebKitGTK の 3 つのアプリの主な画面を撮れるようにし、ヘッドレスの Chrome との差をメモに書いた
+- [x] WebView2 と WKWebView で確かめる手順を docs/manual-check.md に足した (利用者の確認)
+- [x] M10 の各タスクのメモに書かれた「マニュアルの更新の候補」を反映し、docs/manual/images の画像を撮り直した
+- [x] docs/roadmap.md の M10 に完了の判断と後続の候補を書いた
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -147,3 +147,40 @@ M10 の見直しを、ヘッドレスの Chrome ではなく実機の WebView (W
 - T1637 から書き足した: エディタは空のプロジェクトと幅 900px 未満の窓 (200% の拡大など) でタイムラインを畳んだ状態で始まる
   (「▸」で開く。押した後は押した開閉のまま)。1024px 以上で中身のあるプロジェクトは前のまま。撮り直す画像: 空のプロジェクトのエディタを写したもの
   (screen.md・tutorial.md の最初の画面など。タイムラインが畳まれ、ビューポートの空の状態が中央に来る)。docs/manual/motions.md・screen.md の文は T1637 で直した。
+
+### T0919 の作業 (やったこと)
+
+- `just e2e --manual` (`specs/<アプリ>.manual.mjs`・`lib/manual.mjs`) で、本物の Tauri のアプリ (WebKitGTK・Xvfb) のマニュアルの画像を撮り、
+  `--update-images` で 256 色にして docs/manual/images に写すようにした (tests/e2e/README.md#マニュアルの画像)。WebDriver に Set Window Rect を足した。
+- 撮り直した画像 29 枚: エディタ (screen・timeline・expressions・physics-rig・physics-preview・physics-templates・slots・slots-draw-order・
+  preview・preview-tracking・preview-module-pose・dress-up-preview・dress-up-errors・ai-settings・lighting・verify・module-workspace)、
+  ビューア (dress-up-viewer-sample・motions-viewer。イベントの欄も)、スタジオ (overview・scenes・motion・inputs・hotkeys・source・api・
+  api-approval・load・settings)。足した画像 11 枚: screen-empty・tutorial-import・timeline-settings・tools-warp-gizmo・tools-rotation・
+  tools-mesh-edit・settings-general・viewer-pose・studio-pose・studio-output-panel・studio-api-approved。マニュアルの文に画像と説明を足し、
+  見本と合わなくなった説明 (TwinTails → LongHair、Dress → Sailor、Sailor のポーズのグループ → 本体の Wave と袖、検証・テンプレート) を直した。
+- 候補の反映: チュートリアルの「2. 画面の見方」のヘッダーの説明 (T0673)、本体を開いた後の帯と「Return to module」(T1622、dress-up.md)、
+  ビューアの空の画面の「サンプルを開く」(T0725。motions・lighting・dress-up)。ほかの候補の文は各タスクで直してあった。
+- 実機で見つけて直した不具合 (apps/studio。偽のホストでは出ない):
+  - 操作 API の承認の後の「承認しました / 取り消す」の知らせが出なかった (承認でクライアントの ID が新しくなるのに、画面は待っていた間の ID で探していた)。
+    `approve_api_client` が新しい ID を返す。e2e の筋書きと Rust のテストを足した。
+  - 出力ウィンドウを隠している間に大きさを変えると、tao の `inner_size` が前の 960×540 のままで「OS が小さくした」の注意が出続けた。
+    Linux は GTK の窓から読み、窓の大きさが変わったら様子を送り直す。e2e で「Output 1920 × 1080」を確かめる。
+  - 空の `WAYLAND_DISPLAY` を Wayland と見なし、ホットキーが「前面でだけ」になった (e2e は空にして X11 で動かす)。
+- ヘッドレスの Chrome (`just ui-audit --quick`。見つけたもの 0 件) との違い: 書体 (WebKitGTK は DejaVu Sans・Noto Sans CJK で太字が太い。
+  Chrome は「…」を「⋯」で描く)、折り返し (ビューア 1100px の日本語で「左右を入れ替える」が 2 行)、GTK のスクロールバーが中身に重なる、
+  偽のホストの見本のずれ。tests/e2e/README.md#ヘッドレスの-chrome-just-ui-audit-との違い に書いた。
+- docs/manual-check.md に U05 (WebView2 と WKWebView でマニュアルの画像と見比べる) を足した。docs/roadmap.md の M10 に完了の判断と後続の候補。
+
+### やらなかったこと・確かめていないこと
+
+- 撮らなかった画像 (前のまま): チュートリアルの途中 (keyform-grid・mesh-edit・mirror・depth-rotation)、AI (ai-proposal・ai-consent・
+  ai-instructions・ai-revision・ai-normal-maps)、MCP (mcp-*)、モジュールの作成と比較 (module-* のうち module-workspace 以外)、lighting-point、
+  studio-output (Xvfb にコンポジタが無い)、studio-virtual-camera (v4l2loopback が無い)。ai-settings は API キーの欄を撮れない (e2e の D-Bus に鍵の保管庫が無い)。
+- WebView2・WKWebView は確かめていない (manual-check の U05)。WebKitGTK のツリーの名前の変更・ホバーの重さ・光源の印の押せる範囲 (T0674・T1638) も手で見ていない。
+- スタジオの「状態の印の 4 つの形」の画像 (T0817) は足していない。
+
+### 起票の候補
+
+docs/roadmap.md の「後続の候補 (T0919)」と同じ: 残りのマニュアルの画像を e2e で撮る / e2e の D-Bus で鍵の保管庫を動かす /
+モーションの終わりちょうどのイベントが発火しないことがある (ugoe-motion) / WebKitGTK のスクロールバーが中身に重なる /
+エディタのモジュールのツリーで札 2 つの行の名前が 1 文字まで縮む / 空のプロジェクトで「Screenshot」が押せる / ui-audit の偽のホストの見本を本物に合わせる。

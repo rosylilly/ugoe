@@ -497,6 +497,7 @@ just e2e                  # 3 つのアプリをビルドして流す (結果は
 just e2e --only studio    # スタジオだけ
 just e2e --no-build       # 前にビルドした実行ファイルで流し直す
 just e2e --headed         # Xvfb を使わず、今の画面にウィンドウを出す
+just e2e --update-images  # マニュアルの画像 (docs/manual/images) を本物の WebView で撮り直す (T0919)
 ```
 
 - 道具: [tauri-driver](https://crates.io/crates/tauri-driver) **2.1.0** (`cargo install tauri-driver --version 2.1.0 --locked`。

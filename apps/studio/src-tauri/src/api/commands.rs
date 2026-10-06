@@ -45,13 +45,14 @@ pub(crate) fn regenerate_api_token(
     studio.regenerate_api_token()
 }
 
-/// 承認を待つクライアントを `permission` で承認する。
+/// 承認を待つクライアントを `permission` で承認する。承認したクライアントの ID を返す
+/// (承認を待つ間の ID とは違う。画面の「取り消す」はこの ID で取り消す)。
 #[tauri::command]
 pub(crate) fn approve_api_client(
     studio: tauri::State<'_, Arc<Studio>>,
     id: String,
     permission: Permission,
-) -> Result<(), CommandError> {
+) -> Result<String, CommandError> {
     studio.approve_api_client(&id, permission)
 }
 

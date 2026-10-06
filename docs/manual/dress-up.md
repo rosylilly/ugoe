@@ -310,6 +310,11 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 ![揺れものの当たりを外して開く前に、外すものを確かめる](images/module-problem-drop.png)
 
+「Open base project」で本体を開くと、ヘッダーの下に「Editing the base of module …」の帯と「Return to module」が出ます。
+本体を直して保存してから「Return to module」を押すと、元のモジュールのプロジェクトを開き直します。モジュールの設定の画面で
+拒否された設定 (スロットの移し替えなど) は、戻った後に適用し直し、また拒否されたら設定の画面に出ます
+([docs/editor.md#モジュールに戻る](../editor.md#モジュールに戻る))。
+
 説明の中の本体のファイル名は `"…"` で囲んで出ます。本体を選び直してもスロットがないときは、その本体についての説明に替わり、続けてスロットを選べます。
 開いているモジュールの本体を読み直せなかったとき (本体を外で変えた・動かした) の選び直しと「Use this slot」は、開き直さずに下敷きを替えるので、
 保存していない編集も残ります (保存すると新しい本体とスロットを覚えます)。
@@ -329,7 +334,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 本体のプロジェクトのプレビューで `.ugoemod` を読み込み、付けたり外したりして、動き・前後関係・隠れる部分を確かめます。
 **モデルは変わりません** (Undo の履歴にも残りません)。
 
-![プレビューの着せ替え。髪の LongHair と服の Dress を付けている](images/dress-up-preview.png)
+![プレビューの着せ替え。髪の LongHair と服の Sailor を付けている](images/dress-up-preview.png)
 
 1. ヘッダーの「Preview」を押してプレビューに入る ([プレビュー](preview.md))。右のパネルに「Dress-up」の節が出ます。
 2. 「Load .ugoemod…」を押してモジュールのファイルを選ぶ。または、`.ugoemod` のファイルをエディタのウィンドウにドロップする
@@ -395,7 +400,7 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 読み込めないファイルはパネルの上に、自動で外れたモジュールと読み込みの注意 (代わりの画像を使ったテクスチャなど) は黄色い枠の知らせで出ます。
 一覧の行にはファイルの名前だけが出ます (ポインタを乗せると場所の全体が出ます)。
 
-![付けられないモジュールの理由](images/dress-up-errors.png)
+![付けられないモジュールの理由。スロットの無いモデルに CatEars を読み込んだ](images/dress-up-errors.png)
 
 | 出るメッセージ | 理由と対処 |
 | --- | --- |
@@ -470,6 +475,8 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 グループごとに差分の名前 (パーツの ID) が並び、選んだ差分にフェードで切り替わります。差分が 5 つ以上のグループは選択欄で選びます。
 ポーズの無いモデルではパネルは出ません。
 
+![見本の「着せ替え」で Wave を選んだところ。Sailor の袖も手と一緒に切り替わる](images/viewer-pose.png)
+
 - 着せ替えで付けたモジュールのグループも「Sailor のグループ 1」のように並びます (差分の名前はモジュールの名前を除いたもの)。
   付け外しすると欄が増えたり減ったりし、ほかのグループの選択はそのまま残ります。外して付け直したモジュールのグループは、先頭の差分から始まります。
 - モデルを開き直すと、どのグループも先頭の差分 (エディタの「first」) に戻ります。選んだ差分は覚えません。
@@ -483,12 +490,12 @@ just cli sample dress-up -o /tmp/dress-up --project /tmp/dress-up/projects
 
 ### 見本で試す
 
-ビューアのツールバーの「サンプル」を押し、「着せ替え」を選ぶと、見本の本体 (スロット `Hair`・`Headwear`・`Outfit` を持つ)
+ビューアのツールバーの「サンプル」(モデルを開く前なら、ビューポートの「サンプルを開く」でもよい) を押し、「着せ替え」を選ぶと、見本の本体 (スロット `Hair`・`Headwear`・`Outfit` を持つ)
 と 4 つのモジュールを読み込みます。長い髪 (`LongHair`)・猫耳 (`CatEars`)・セーラー服 (`Sailor`) が付いた姿で開き、
 パネルの `Hair` の「差し替える」でツインテール (`TwinTails`) に替えられます。「外す」で本体の既定の髪やシャツに戻ります。
 髪の房は物理で揺れるので、`AngleX` のスライダーやフェイストラッキングで頭を振ってみてください。
 
-![ビューアの着せ替えの見本。TwinTails・CatEars・Sailor を付けている](images/dress-up-viewer-sample.png)
+![ビューアの着せ替えの見本。LongHair・CatEars・Sailor を付けている](images/dress-up-viewer-sample.png)
 
 見本のファイルはリポジトリの [assets/samples/dress-up/](../../assets/samples/README.md#dress-up) にあり、
 ほかのファイルと同じように「開く」やドロップでも開けます。スロットの範囲や置き換えの設定の例としても使えます。

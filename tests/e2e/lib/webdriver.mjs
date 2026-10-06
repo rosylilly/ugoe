@@ -292,6 +292,11 @@ export class Session {
     return this.call("POST", "/window", { handle });
   }
 
+  /** 今のウィンドウの位置と大きさを変える (Set Window Rect。`{ width, height }` など)。 */
+  setWindowRect(rect) {
+    return this.call("POST", "/window/rect", rect);
+  }
+
   /** 今のウィンドウのスクリーンショット (PNG のバイト列)。 */
   async screenshot() {
     const base64 = await this.call("GET", "/screenshot");

@@ -4,7 +4,7 @@
 光の向きに合わせてパーツの明るい側と暗い側ができ、平らな絵に立体感が出ます。
 仕組みは [editor.md#ライティングの画面](../editor.md#ライティングの画面) と [spec/rendering.md#ライティング](../spec/rendering.md#ライティング) (開発者向け) にあります。
 
-![「Lighting」タブ。ビューポートに平行光源の取っ手 (円と 1)、右に法線マップと光源の設定が並ぶ](images/lighting.png)
+![「Lighting」タブ。ビューポートに平行光源の取っ手 (円と 1)、右に光を受けるメッシュ (「Lit meshes」)・法線マップ・光源の設定が並ぶ](images/lighting.png)
 
 大事なこと:
 
@@ -16,7 +16,7 @@
 ## 見本で試す
 
 法線マップを付けた見本のモデル ([assets/samples/avatar-lit.ugoe](../../assets/samples/README.md#avatar-litugoe)) があります。
-ビューアのツールバーの「サンプル」→「アバター (ライティング)」で開くと、右のパネルにライティングのパネルが出て、光の向きを変えて陰影を確かめられます。
+ビューアのツールバーの「サンプル」(モデルを開く前なら、ビューポートの「サンプルを開く」でもよい) →「アバター (ライティング)」で開くと、右のパネルにライティングのパネルが出て、光の向きを変えて陰影を確かめられます。
 エディタで開くときは、`just cli sample avatar --lit -o avatar-lit.ugoe --project avatar-lit.ugoeproj` でプロジェクトを作ります。
 
 ![見本のアバター。左からライティングなし、左・右・上から光を当てたもの](../../assets/samples/avatar-lit.jpg)

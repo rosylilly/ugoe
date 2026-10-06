@@ -241,14 +241,16 @@ export function studioPageInit({ osLocale, fixture }) {
     apiState: async () => api,
     async approveApiClient(id, permission) {
       const client = api.pending.find((c) => c.id === id);
-      if (client === undefined) return;
+      if (client === undefined) return id;
+      // 本物のバックエンドと同じく、承認したクライアントには新しい ID を付ける
+      const approved = `${id}-approved`;
       api = {
         ...api,
         pending: api.pending.filter((c) => c.id !== id),
         clients: [
           ...api.clients,
           {
-            id,
+            id: approved,
             name: client.name,
             permission,
             approvedAt: 1767225600,
@@ -258,6 +260,7 @@ export function studioPageInit({ osLocale, fixture }) {
         ],
       };
       sendApi();
+      return approved;
     },
     async denyApiClient(id) {
       api = { ...api, pending: api.pending.filter((c) => c.id !== id) };

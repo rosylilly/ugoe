@@ -282,6 +282,34 @@ T0697 → T0932)。横断の所見の表は [workflow/code-review.md](workflow/c
 - T0907 (M8) の後続の候補 (TextField・tooltip・Menu の説明の行・エディタのライセンスの表記・残った title・ビューアのパネルの高さ) は M10 に入れた。
 - 1.0 に含めるかは未決 (利用者が決める)。
 
+### 完了の判断 (T0919)
+
+- **見直しは完了した。** 波 1〜6 のタスクと、そこから起票した後続 (T0737・T0845・T0849・T0949〜T0954・T1630〜T1641 など) が入り、
+  `just ui-audit` の 3 つのアプリ・すべての場面で見つけたものは 0 件 (T0919 の時点の `--quick`)。
+- **実機の WebView:** Linux の WebKitGTK は `just e2e` (Xvfb) で 3 つのアプリの主な画面を撮れるようにした (`just e2e --manual`。
+  [tests/e2e/README.md#マニュアルの画像](../tests/e2e/README.md#マニュアルの画像))。撮る中で、偽のホストでは出ない不具合を 3 つ見つけて直した
+  (スタジオの承認の後の知らせ・出力ウィンドウの大きさ・空の `WAYLAND_DISPLAY`)。ヘッドレスの Chrome との違い (書体・スクロールバー・折り返し) は
+  同じ README に書いた。WebView2 と WKWebView は利用者の確認 ([manual-check.md](manual-check.md) の U05) に残す。
+- **マニュアル:** M10 の各タスクのメモの「マニュアルの更新の候補」を反映し、docs/manual/images のうち 40 枚を本物の WebView で撮り直した
+  (11 枚は新しく足した)。撮っていない画像 (チュートリアルの途中・MCP・AI の提案・モジュールの比較など) は下の候補に残す。
+- これでマイルストーンの「完了の条件」は満たした (WebView2 と WKWebView の目視は利用者の確認)。T0954 は T0919 の時点で作業中。
+
+### 後続の候補 (T0919)
+
+T0919 で見つけたもの。起票はオーケストレーターが行う。
+
+- マニュアルの残りの画像を `just e2e --manual` で撮る: チュートリアルの途中の姿 (`keyform-grid`・`mesh-edit`・`mirror`・`depth-rotation`。
+  チュートリアルの手順を筋書きで通す)、AI (`ai-proposal`・`ai-consent`・`ai-instructions`・`ai-revision`・`ai-normal-maps`。偽の AI のプロバイダで)、
+  モジュールの作成と比較 (`module-*`)、点光源 (`lighting-point`)、MCP (`mcp-*`)。スタジオの `studio-output` と `studio-virtual-camera` は
+  コンポジタと v4l2loopback が要るので手で撮る。
+- e2e の D-Bus のセッションで鍵の保管庫 (gnome-keyring) を動かし、AI の API キーの欄と保存を確かめる (今は「保管庫が無い」の案内になり、画像も撮れない)。
+- モーションの終わりちょうどのイベント (見本の `nod` の `nod-end`、t = 長さ) が、再生しても発火しないことがある (e2e のビューアで、4 回続けて発火しないことがあった)。
+  再生位置 (f32 の積み上げ) と経過時間 (f64) の丸めの差で、終わりに着く前に終わると見なすためと見ている (ugoe-motion の `MotionPlayer::advance`)。
+- WebKitGTK のスクロールバーが中身に重なる (ビューアのパラメータのグループの数・スタジオの列の右端)。`scrollbar-gutter` などで避ける。
+- エディタのモジュールのプロジェクトのツリーで、`base` と `hidden` の 2 つの札が付く行の名前が 1 文字 (「E…」) まで縮む。
+- エディタの空のプロジェクトでも、ビューポートの「Screenshot」が押せる。
+- `just ui-audit` の偽のホストの見本を本物に合わせる (スタジオの見本のポーズのグループ・プロファイルの拡張子)。
+
 ## Release 公開 (時期は未定)
 
 番号を付けない、先送りのマイルストーン。利用者が v1.0.0 の完全リリースと判断するまで公開しない。公開する時期が来たと判断したら、

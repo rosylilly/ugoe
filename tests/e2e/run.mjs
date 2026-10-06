@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // 本物の Tauri のアプリ (エディタ・ビューア・スタジオ) を起動して操作する e2e テストを実行する (`just e2e`。tests/e2e/README.md)。
 //
-//   node tests/e2e/run.mjs [--only editor,viewer,studio] [--no-build] [--headed] [--out DIR]
+//   node tests/e2e/run.mjs [--only editor,viewer,studio] [--no-build] [--headed] [--out DIR] [--manual] [--update-images]
+//
+// `--manual` は筋書きの代わりに specs/<アプリ>.manual.mjs を流し、マニュアルの画像を <out>/<アプリ>/manual/ に撮る。
+// `--update-images` は、撮った画像の色を減らして docs/manual/images に写す (`--manual` を含む。README の「マニュアルの画像」)。
 //
 // 1. アプリをビルドする: `tauri build --debug --no-bundle` (フロントエンドを埋め込んだデバッグビルド。Vite は要らない)。
 //    できた実行ファイルを <out>/bin/ に写す (後の `cargo build` で target/debug のものが置き換わっても使えるように)。
@@ -24,8 +27,10 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
 } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -38,6 +43,8 @@ exportMbxPath();
 const here = import.meta.dirname;
 const root = resolve(here, "..", "..");
 const target = process.env.CARGO_TARGET_DIR ?? join(root, "target");
+/** マニュアルの画像の置き場 (`--update-images` が写す先)。 */
+const manualImages = join(root, "docs", "manual", "images");
 
 /** アプリの名前と、pnpm のパッケージ・実行ファイル。 */
 const APPS = {
@@ -60,6 +67,8 @@ for (const app of only) {
 }
 const build = !args.includes("--no-build");
 const headed = args.includes("--headed");
+const updateImages = args.includes("--update-images");
+const manual = updateImages || args.includes("--manual");
 const out = resolve(option("--out", join(target, "e2e")));
 
 if (process.platform !== "linux") {
@@ -336,7 +345,11 @@ for (const app of only) {
     // 非同期で待つ (止める合図を受けたときに、後片付けできるように)
     const test = spawn(
       process.execPath,
-      ["--test", "--test-concurrency=1", join(here, "specs", `${app}.test.mjs`)],
+      [
+        "--test",
+        "--test-concurrency=1",
+        join(here, "specs", manual ? `${app}.manual.mjs` : `${app}.test.mjs`),
+      ],
       {
         cwd: root,
         stdio: "inherit",
@@ -351,6 +364,8 @@ for (const app of only) {
           // エディタのファイルのダイアログの答えを置く場所
           E2E_DIALOG_ANSWERS: appEnv.UGOE_EDITOR_DIALOG_ANSWERS,
           E2E_DISPLAY: display,
+          // 利用者の画面に出しているか (マニュアルの画像の筋書きが、OS 全体に効くホットキーを外す)
+          ...(headed ? { E2E_HEADED: "1" } : {}),
         },
       },
     );
@@ -366,9 +381,38 @@ for (const app of only) {
   results.push({ app, ok: status === 0, seconds });
 }
 
+if (updateImages) {
+  console.log("\n== manual images");
+  for (const { app, ok } of results) {
+    if (!ok) {
+      console.log(`  ${app}: not updated (the run failed)`);
+      continue;
+    }
+    for (const name of readdirSync(join(out, app, "manual")).filter((f) => f.endsWith(".png"))) {
+      const dest = join(manualImages, name);
+      // 256 色に減らす (前の画像と同じく、リポジトリを重くしない。色の多いアバターの絵も読める)
+      const result = spawnSync("convert", [
+        join(out, app, "manual", name),
+        "-strip",
+        "-dither",
+        "None",
+        "-colors",
+        "256",
+        `png8:${dest}`,
+      ]);
+      if (result.status !== 0) {
+        console.error(`  could not write ${dest}: ${result.stderr}`);
+        process.exitCode = 1;
+        continue;
+      }
+      console.log(`  ${app}: ${name} (${Math.round(statSync(dest).size / 1024)} KB)`);
+    }
+  }
+}
+
 console.log("\n== e2e results");
 for (const { app, ok, seconds } of results) {
   console.log(`  ${ok ? "ok  " : "FAIL"} ${app} (${seconds}s)`);
 }
 console.log(`  results: ${out}`);
-process.exit(results.every((r) => r.ok) ? 0 : 1);
+process.exit(results.every((r) => r.ok) && !process.exitCode ? 0 : 1);

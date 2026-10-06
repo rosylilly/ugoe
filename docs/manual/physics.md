@@ -37,7 +37,7 @@ Live2D の物理と違って、揺れ用のパラメータ (`HairFront` など) 
 
 ## 3. 揺れを確かめる (プレビュー)
 
-![プレビュー中: 頭を傾けた直後で、後ろ髪と前髪が遅れてついてくる](images/physics-preview.png)
+![プレビュー中: 頭を傾けた直後で、髪が遅れてついてくる (見本の着せ替えの本体の HairSway)](images/physics-preview.png)
 
 1. 物理のパネルの「Preview」を押す。ボタンが「Stop preview」になり、ビューポートの左上に「Stop physics」が出ます。
 2. パラメータの `AngleZ` のスライダーを動かす (または値の欄に `30` と入力して Enter)。頭が傾き、髪が遅れて揺れてから真下に垂れます。
@@ -121,7 +121,7 @@ Live2D の物理と違って、揺れ用のパラメータ (`HairFront` など) 
 
 ## 7. テンプレート: 体の追従・弾み・首の追従
 
-![物理のパネルの「Templates」。体の追従と弾みを作った後](images/physics-templates.png)
+![物理のパネルの「Templates」](images/physics-templates.png)
 
 フェイストラッキングのアプリの多くは体の向きを出さないので、頭の動きから物理で体を遅れて付いてこさせ、弾ませる設定がよく使われます
 ([乾物ひもの「物理演算を用いた動き表現」](https://note.com/himono_vtuber/n/n9015f0030d53))。物理のパネルの「Templates」で、その定番の設定を 1 回の操作で作れます。

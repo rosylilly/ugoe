@@ -655,8 +655,9 @@ function parameterStep(p: ParameterInfo): number {
 async function approveClient(client: ApiPendingClient, permission: ApiPermission) {
   if (host === null) return;
   try {
-    await host.approveApiClient(client.id, permission);
-    approved = { id: client.id, name: client.name, permission };
+    // 承認したクライアントは新しい ID を持つ (承認を待つ間の ID では一覧に無く、知らせが出なかった。T0919)
+    const id = await host.approveApiClient(client.id, permission);
+    approved = { id, name: client.name, permission };
   } catch (e) {
     error = describeError(e);
   }

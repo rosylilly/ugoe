@@ -234,6 +234,28 @@ fn output_transparency(window: &WebviewWindow) -> Transparency {
     Transparency::from_compositing(screen.is_composited(), rgba)
 }
 
+/// 出力ウィンドウの中身の大きさ (物理ピクセル)。Linux は GTK の窓から読む: tao の `inner_size` は、隠れている間に
+/// 大きさを変えて表示した窓では前の大きさ (tauri.conf.json の 960×540) のままで、画面が「OS が小さくした」の注意を出し続けた
+/// (T0919 の実機の e2e で見つけた。WebView の中は選んだ大きさになっている)。
+#[cfg(target_os = "linux")]
+fn output_size(window: &WebviewWindow) -> Result<PhysicalSize<u32>, CommandError> {
+    use gtk::prelude::{GtkWindowExt, WidgetExt};
+    let gtk_window = window
+        .gtk_window()
+        .map_err(CommandError::output_window_failed)?;
+    let (width, height) = GtkWindowExt::size(&gtk_window);
+    let scale = WidgetExt::scale_factor(&gtk_window).max(1);
+    let physical = |v: i32| u32::try_from(v.saturating_mul(scale)).unwrap_or(0);
+    Ok(PhysicalSize::new(physical(width), physical(height)))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn output_size(window: &WebviewWindow) -> Result<PhysicalSize<u32>, CommandError> {
+    window
+        .inner_size()
+        .map_err(CommandError::output_window_failed)
+}
+
 /// Windows (8 以降は DWM が常に合成する) と macOS (常に合成し、透過には tauri.conf.json の macOSPrivateApi を使う)。
 #[cfg(any(windows, target_os = "macos"))]
 fn output_transparency(_window: &WebviewWindow) -> Transparency {
@@ -364,8 +386,17 @@ struct Hotkeys {
 /// Wayland のセッションか (グローバルなホットキーは X11 の窓が前面にあるときだけ届く)。
 fn wayland_session() -> bool {
     cfg!(target_os = "linux")
-        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
-            || std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v.eq_ignore_ascii_case("wayland")))
+        && is_wayland(
+            std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+            std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+        )
+}
+
+/// 環境変数 `WAYLAND_DISPLAY` と `XDG_SESSION_TYPE` から、Wayland のセッションかを決める。
+/// 空の `WAYLAND_DISPLAY` は無いのと同じ (GTK も X11 に描く。e2e の Xvfb は空にして X11 で動かす。T0919)。
+fn is_wayland(wayland_display: Option<&std::ffi::OsStr>, session_type: Option<&str>) -> bool {
+    wayland_display.is_some_and(|d| !d.is_empty())
+        || session_type.is_some_and(|v| v.eq_ignore_ascii_case("wayland"))
 }
 
 /// 出力から届いた描画の負荷。
@@ -1610,9 +1641,7 @@ fn output_window(app: &AppHandle) -> Result<WebviewWindow, CommandError> {
 }
 
 fn read_output_state(window: &WebviewWindow) -> Result<OutputState, CommandError> {
-    let size = window
-        .inner_size()
-        .map_err(CommandError::output_window_failed)?;
+    let size = output_size(window)?;
     Ok(OutputState {
         visible: window
             .is_visible()
@@ -1752,6 +1781,15 @@ pub fn run() {
                     window.state::<Arc<Studio>>().send_output_state(state);
                 }
             }
+            // 大きさが変わったら (利用者が窓の端を引いた・OS が画面に収めた)、出力ウィンドウの様子を送り直す。
+            // 前は大きさを変えるコマンドの戻り値でしか届かず、画面の「いまの大きさ」が古いままになった (T0919)
+            (OUTPUT, WindowEvent::Resized(_)) => {
+                if let Some(output) = window.app_handle().get_webview_window(OUTPUT)
+                    && let Ok(state) = read_output_state(&output)
+                {
+                    window.state::<Arc<Studio>>().send_output_state(state);
+                }
+            }
             // 操作ウィンドウを閉じたらアプリを終える (隠れた出力ウィンドウを残さない)。仮想カメラは止めてから
             // (Windows のカメラの機器を消し、Linux の機器を閉じる)。
             (CONTROL, WindowEvent::Destroyed) => {
@@ -1847,6 +1885,17 @@ mod tests {
         let json = serde_json::to_value(&error).unwrap();
         assert_eq!(json["code"], "internal");
         assert!(json["message"].is_string());
+    }
+
+    /// 空の `WAYLAND_DISPLAY` は Wayland ではない (e2e の Xvfb は空にして X11 で動かす。T0919)。
+    #[test]
+    fn wayland_needs_a_non_empty_display_or_the_session_type() {
+        use std::ffi::OsStr;
+        assert!(is_wayland(Some(OsStr::new("wayland-0")), None));
+        assert!(!is_wayland(Some(OsStr::new("")), None));
+        assert!(!is_wayland(None, None));
+        assert!(!is_wayland(Some(OsStr::new("")), Some("x11")));
+        assert!(is_wayland(None, Some("Wayland")));
     }
 
     #[test]

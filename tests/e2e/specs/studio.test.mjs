@@ -194,6 +194,12 @@ describe("studio", () => {
     await waitFor(() => s.execute(`return __e2e.toggleChecked("^Show the output window")`), {
       message: "the output window to be shown",
     });
+    // 見本のプロファイルの大きさ (1920×1080) が「いまの状態」に出る。前は Linux で、隠れている間に大きさを変えた窓の
+    // 大きさを tao が前のまま (960×540) 返し、「OS が小さくした」の注意が出ていた (T0919)
+    await waitFor(
+      () => s.execute(`return __e2e.listItem("^Status$", "^Output 1920 × 1080$") !== null`),
+      { message: "Output 1920 × 1080 in Status" },
+    );
     await switchToTauriWindow(s, "output");
     await captureLogs(s);
     await countOutputFrames(s);
@@ -373,6 +379,9 @@ describe("studio", () => {
       assert.equal(hi.error, undefined, JSON.stringify(hi.error));
       assert.equal(hi.result.permission, "control");
       assert.match(hi.result.key, /^[0-9a-f]{64}$/);
+      // 承認の後に「取り消す」の知らせが出る。承認したクライアントは承認を待つ間と違う ID を持つので、
+      // 画面がその ID で探さないと出ない (偽のホストでは同じ ID で、本物でだけ出なかった。T0919)
+      await s.waitFindText(".ugoe-notice", "Approved e2e client");
 
       const list = await client.call("scene.list");
       assert.deepEqual(

@@ -387,7 +387,7 @@ fn first_contact_needs_the_token_and_the_users_approval() {
     assert_eq!(view.pending[0].permission, Permission::Control);
     assert_eq!(client.fail("scene.list", json!({})), NOT_AUTHENTICATED);
     // 利用者は読むだけで承認する (求めた権限より狭くできる)。
-    studio
+    let approved = studio
         .approve_api_client(&view.pending[0].id, Permission::Read)
         .unwrap();
     let hello = client.take_json();
@@ -398,6 +398,8 @@ fn first_contact_needs_the_token_and_the_users_approval() {
     let view = studio.api_view();
     assert!(view.pending.is_empty());
     assert_eq!(view.clients.len(), 1);
+    // 返す ID は承認したクライアントの ID (承認を待つ間の ID とは違う。画面の「取り消す」が使う。T0919)
+    assert_eq!(view.clients[0].id, approved);
     assert_eq!(view.clients[0].connections, 1);
     assert!(client.call("scene.list", json!({}))["scenes"].is_array());
     assert_eq!(
