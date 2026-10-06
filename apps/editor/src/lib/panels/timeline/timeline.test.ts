@@ -12,6 +12,7 @@ import {
   KeyMoves,
   keyValuesCommand,
   loadPanelOpen,
+  nearestMark,
   newMotion,
   savePanelOpen,
   segmentEndingAt,
@@ -97,6 +98,27 @@ describe("graph mapping", () => {
     // inverse_stepped: 始点の時刻で上ってから進む。
     expect(d).toContain("L150,25 L200,25");
     expect(d.startsWith("M0,50 L0,50")).toBe(true);
+  });
+
+  it("picks the nearest mark whose hit square holds the point", () => {
+    const marks = [
+      { id: "a", x: 0, y: 0 },
+      { id: "b", x: 22, y: 0 },
+      { id: "c", x: 11, y: 20 },
+    ];
+    // a と b の押せる範囲 (24px) が重なる所では、中心の近い方
+    expect(nearestMark(marks, { x: 10.5, y: 0 }, 24)?.id).toBe("a");
+    expect(nearestMark(marks, { x: 11.5, y: 0 }, 24)?.id).toBe("b");
+    // 等しければ先の印
+    expect(nearestMark(marks, { x: 11, y: 0 }, 24)?.id).toBe("a");
+    expect(nearestMark(marks, { x: 11, y: 10 }, 24)?.id).toBe("c");
+    expect(nearestMark(marks, { x: 40, y: 0 }, 24)).toBeNull();
+    // 距離は縦横の大きい方で測る (正方形の押せる範囲に合わせる): 斜めの 9px は、横の 11px より近い
+    const diagonal = [
+      { id: "side", x: 11, y: 0 },
+      { id: "corner", x: 9, y: 9 },
+    ];
+    expect(nearestMark(diagonal, { x: 0, y: 0 }, 24)?.id).toBe("corner");
   });
 
   it("covers the parameter range and the keys", () => {

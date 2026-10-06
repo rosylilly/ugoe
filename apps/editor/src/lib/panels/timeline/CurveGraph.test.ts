@@ -68,9 +68,9 @@ function moveKey(c: Curve, command: Extract<Command, { op: "move_motion_key" }>)
   return { ...c, segments };
 }
 
-function setup() {
+function setup(c: Curve = curve(), width = 200) {
   const doc = new FakeDocument();
-  doc.motions = [motion(curve())];
+  doc.motions = [motion(c)];
   doc.onApply = (command) => {
     const current = doc.motions[0];
     const c = current ? findCurve(current, TARGET) : null;
@@ -99,7 +99,7 @@ function setup() {
     timeline,
     motion: first,
     row: { target: TARGET, label: "AngleX", curve: findCurve(first, TARGET), parameter: null },
-    view: { t0: 0, t1: 2, width: 200 },
+    view: { t0: 0, t1: 2, width },
     onmessage: () => {},
   });
   return { doc, timeline, target };
@@ -232,6 +232,41 @@ describe("CurveGraph drags while sending", () => {
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1, to: { t: 1.5, v: 10 } },
       { op: "move_motion_key", motion: "Nod", target: TARGET, t: 1.5, to: { t: 1.6, v: 10 } },
     ]);
+  });
+});
+
+describe("CurveGraph keys with overlapping hit areas", () => {
+  it("drags the key nearest to the pointer, not the one drawn on top", async () => {
+    // 幅 44px に 2 秒: 0 秒と 1 秒のキーは 22px 離れ、押せる範囲 (24px) が 2px 重なる (docs/ui.md#そのほか)。
+    const close: Curve = {
+      target: TARGET,
+      segments: [
+        { type: "start", p: { t: 0, v: 0 } },
+        { type: "linear", to: { t: 1, v: 0 } },
+        { type: "linear", to: { t: 2, v: 10 } },
+      ],
+      fade_in: null,
+      fade_out: null,
+    };
+    const { doc, timeline, target } = setup(close, 44);
+    const keys = target.querySelectorAll("rect.hit.grab");
+    const upper = keys[1];
+    if (!upper) throw new Error("no key");
+    // 重なりの中の 0 秒のキーに近い所を、上に描かれた 1 秒のキーの押せる範囲で押し、Shift で値だけ動かす
+    // (値 0 は y = 8 + 108、値 1 は 10.8px 上)。
+    drag(
+      upper,
+      [
+        [10.5, 116],
+        [10.5, 105.2],
+      ],
+      { shiftKey: true },
+    );
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "move_motion_key", motion: "Nod", target: TARGET, t: 0, to: { t: 0, v: 1 } },
+    ]);
+    expect(timeline.selectedKey?.t).toBe(0);
   });
 });
 

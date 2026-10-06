@@ -20,6 +20,7 @@ import {
   findCurve,
   type GraphView,
   keyCommand,
+  nearestMark,
   type SegmentKind,
   segmentEndingAt,
   segmentEnds,
@@ -84,6 +85,26 @@ const graph = $derived<GraphView>({
   height: HEIGHT - 2 * PAD,
 });
 
+/** 押せる印 (キーと取っ手) の中心。押せる範囲が重なる所で、押した所に近い印を選ぶのに使う (`onDown`)。 */
+type Mark = { kind: Drag["kind"]; t: number; point: Point; x: number; y: number };
+const marks = $derived.by((): Mark[] => {
+  const curve = row.curve;
+  if (!curve) return [];
+  const mark = (kind: Mark["kind"], t: number, point: Point): Mark => ({
+    kind,
+    t,
+    point,
+    x: x(point.t),
+    y: y(point.v),
+  });
+  // キーを先に並べる (取っ手と同じ近さならキー。上に描くのもキー)
+  const out = curveKeys(curve).map((k) => mark("key", k.t, k));
+  for (const s of curve.segments) {
+    if (s.type === "bezier") out.push(mark("c1", s.to.t, s.c1), mark("c2", s.to.t, s.c2));
+  }
+  return out;
+});
+
 function preview(curve: Curve, d: Drag | null): Curve {
   if (!d) return curve;
   const segments = curve.segments.map((s): Segment => {
@@ -138,8 +159,18 @@ function currentCurve(): Curve | null {
 
 // --- ドラッグ ---
 
-function onDown(e: PointerEvent, kind: Drag["kind"], t: number, point: Point) {
+/**
+ * 印を押した: 押せる範囲が重なる所では、上に描かれた印 (`pressed`) ではなく押した所に中心が近い印をつかむ
+ * (docs/ui.md#そのほか。T1668)。
+ */
+function onDown(e: PointerEvent, pressed: Pick<Mark, "kind" | "t" | "point">) {
   e.stopPropagation();
+  const svg = (e.currentTarget as SVGElement).ownerSVGElement;
+  const rect = svg?.getBoundingClientRect();
+  const near = rect
+    ? nearestMark(marks, { x: e.clientX - rect.left, y: e.clientY - rect.top }, HIT)
+    : null;
+  const { kind, t, point } = near ?? pressed;
   timeline.stop();
   timeline.selectKey(row.target, t);
   if (kind === "key") timeline.seek(t);
@@ -435,9 +466,11 @@ async function removeCurve() {
           <line class="arm" x1={x(s.to.t)} y1={y(s.to.v)} x2={x(s.c2.t)} y2={y(s.c2.v)} />
           {#each [["c1", s.c1], ["c2", s.c2]] as const as [kind, c] (kind)}
             <rect class="handle" x={x(c.t) - 4} y={y(c.v) - 4} width="8" height="8" />
-            <!-- 押せる範囲は 24×24 (見た目の印より広い。docs/ui.md#そのほか。T0907) -->
+            <!-- 押せる範囲は 24×24 (見た目の印より広い。docs/ui.md#そのほか。T0907)。近い印と重なる所は、押した所に
+                 近い印をつかむ (onDown) ので、重なりは意図したもの (data-ui-audit-overlay。T1668) -->
             <rect
               class="hit move"
+              data-ui-audit-overlay
               x={x(c.t) - HIT / 2}
               y={y(c.v) - HIT / 2}
               width={HIT}
@@ -447,7 +480,7 @@ async function removeCurve() {
               aria-label={kind === "c1"
                 ? t("timeline.curve.handleStart.aria", { time: s.to.t })
                 : t("timeline.curve.handleEnd.aria", { time: s.to.t })}
-              onpointerdown={(e) => onDown(e, kind, s.to.t, c)}
+              onpointerdown={(e) => onDown(e, { kind, t: s.to.t, point: c })}
               onpointermove={onMove}
               onpointerup={onUp}
               onpointercancel={() => (drag = null)}
@@ -458,8 +491,10 @@ async function removeCurve() {
       {#each curveKeys(shown) as k, i (i)}
         {@const original = row.curve ? curveKeys(row.curve)[i] : k}
         <circle class="point" class:selected={original?.t === selectedT} cx={x(k.t)} cy={y(k.v)} r="5" />
+        <!-- 押せる範囲は取っ手と同じ (上の注釈) -->
         <rect
           class="hit grab"
+          data-ui-audit-overlay
           x={x(k.t) - HIT / 2}
           y={y(k.v) - HIT / 2}
           width={HIT}
@@ -467,7 +502,7 @@ async function removeCurve() {
           role="button"
           tabindex="-1"
           aria-label={t("timeline.curve.point.aria", { time: k.t, value: k.v })}
-          onpointerdown={(e) => original && onDown(e, "key", original.t, original)}
+          onpointerdown={(e) => original && onDown(e, { kind: "key", t: original.t, point: original })}
           onpointermove={onMove}
           onpointerup={onUp}
           onpointercancel={() => (drag = null)}

@@ -209,6 +209,28 @@ function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
+/**
+ * 押した所 `p` に中心が近い印 (グラフのキーと取っ手。座標は CSS px)。印の押せる範囲 (一辺 `hit` の正方形) が重なる所では、
+ * 上に描かれた印ではなく中心の近い印を選ぶ (docs/ui.md#そのほか。T1668)。距離は正方形に合わせて縦横の大きい方で測るので、
+ * 選んだ印の押せる範囲は必ず `p` を含む。等しければ先の印。どの押せる範囲にも入らなければ null。
+ */
+export function nearestMark<T extends { x: number; y: number }>(
+  marks: readonly T[],
+  p: { x: number; y: number },
+  hit: number,
+): T | null {
+  let best: T | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const m of marks) {
+    const distance = Math.max(Math.abs(m.x - p.x), Math.abs(m.y - p.y));
+    if (distance <= hit / 2 && distance < bestDistance) {
+      best = m;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 /** 値の表示範囲: パラメータなら値域、それ以外 (不透明度・エフェクトの強さ) は 0〜1。キーがはみ出せば広げる。 */
 export function valueRange(
   curve: Curve | null,
