@@ -29,7 +29,16 @@
 -->
 <script lang="ts">
 import { formatList } from "@ugoe/i18n";
-import { Button, Checkbox, Notice, SegmentedControl, Select, Slider, Tooltip } from "@ugoe/ui";
+import {
+  Button,
+  Checkbox,
+  Notice,
+  SegmentedControl,
+  Select,
+  Slider,
+  TextArea,
+  Tooltip,
+} from "@ugoe/ui";
 import { t } from "../i18n";
 import type { LayerSide } from "../ipc";
 import { bulgeForm, bulgeLimits, bulgeUnit } from "../panels/lighting/lighting";
@@ -231,16 +240,17 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
     {t("proposals.instructions.label", { name: aiName })}
     <span class="muted">{t("proposals.instructions.optional")}</span>
   </label>
-  <textarea
+  <TextArea
     id={`${uid}-instructions`}
-    rows="3"
+    rows={3}
     bind:value={view.instructions}
     disabled={busy}
+    invalid={tooLong}
     placeholder={module
       ? t("proposals.instructions.placeholderModule")
       : t("proposals.instructions.placeholder")}
     aria-describedby={`${uid}-instructions-note`}
-  ></textarea>
+  />
   <p id={`${uid}-instructions-note`} class="ed-hint">
     <span class:error={tooLong}>{chars} / {MAX_INSTRUCTION_CHARS}</span>{" · "}
     {view.useAi
@@ -695,22 +705,6 @@ function groupCounts(textures: number, mapped: number, oriented: number): string
   .instructions {
     display: block;
     margin-top: var(--ugoe-space-2);
-  }
-  textarea {
-    box-sizing: border-box;
-    width: 100%;
-    padding: var(--ugoe-space-1) var(--ugoe-space-2);
-    resize: vertical;
-    border: 1px solid var(--ugoe-color-control-border);
-    border-radius: var(--ugoe-radius-md);
-    background: var(--ugoe-color-surface);
-    color: var(--ugoe-color-text);
-    font: inherit;
-    font-size: var(--ugoe-font-size-sm);
-  }
-  textarea:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 1px;
   }
   .sent {
     margin: var(--ugoe-space-2) 0;

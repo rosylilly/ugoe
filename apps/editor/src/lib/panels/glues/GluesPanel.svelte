@@ -30,6 +30,7 @@ import {
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
+  keyStep,
   keyValue,
   removeGlueKeyCommand,
   selectedPair,
@@ -77,8 +78,10 @@ let repairDistance = $state(DEFAULT_GLUE_DISTANCE);
 const busy = $derived(doc.pending > 0);
 /** 強さの軸に足すパラメータと、そのキー (軸ごとのキーの入力はパラメータの ID ごと)。 */
 let axisParameter = $state("");
-let axisKey = $state("");
-let newKeys = $state<Record<string, string>>({});
+/** 新しい強さの軸の最初のキー (null は空。パラメータの既定値を使う)。 */
+let axisKey = $state<number | null>(null);
+/** 軸ごとの、足すキーの入力 (打っている途中の読めた値)。 */
+let newKeys = $state<Record<string, number | null>>({});
 
 /** 選んでいなければ、ツリーの選択か一覧の先頭 2 つ。 */
 const meshA = $derived(
@@ -139,7 +142,7 @@ const meshOptions = $derived(
 const ids = $props.id();
 const axisOptions = $derived(unbound.map((p) => ({ value: p.id, label: p.name || p.id })));
 const axisKeyValue = $derived(
-  axisChoice ? keyValue(axisKey === "" ? String(axisChoice.default) : axisKey, axisChoice) : null,
+  axisChoice ? keyValue(axisKey ?? axisChoice.default, axisChoice) : null,
 );
 </script>
 
@@ -240,8 +243,8 @@ const axisKeyValue = $derived(
         <div class="axes" role="group" aria-label={t("glues.axes.aria")}>
           {#each glue.keyforms.bindings as b (b.parameter)}
             {@const param = doc.parameters.find((p) => p.id === b.parameter)}
-            {@const text = newKeys[b.parameter] ?? ""}
-            {@const key = param ? keyValue(text, param, b.keys) : null}
+            {@const typed = newKeys[b.parameter] ?? null}
+            {@const key = param ? keyValue(typed, param, b.keys) : null}
             <div class="axis">
               <span class="axis-name">{parameterName(b.parameter)}</span>
               <span class="keys">
@@ -258,14 +261,18 @@ const axisKeyValue = $derived(
                     ></span
                   >
                 {/each}
-                <!-- 空の欄 (キーを入れていない) を持てるよう、数値の欄は標準の input のまま。 -->
-                <input
-                  type="number"
-                  step="any"
+                <!-- 空 (キーを入れていない) を持てる欄。打つたびに読めた値で「Key」を押せるかを決める -->
+                <NumberField
+                  optional
+                  min={param?.min}
+                  max={param?.max}
+                  step={param ? keyStep(param) : 0.1}
+                  decimals={4}
+                  value={typed}
                   placeholder={t("glues.newKey.placeholder")}
                   aria-label={t("glues.newKey.aria", { parameter: parameterName(b.parameter) })}
-                  value={text}
-                  oninput={(e) => (newKeys = { ...newKeys, [b.parameter]: e.currentTarget.value })}
+                  oninput={(v) => (newKeys = { ...newKeys, [b.parameter]: v })}
+                  onchange={(v) => (newKeys = { ...newKeys, [b.parameter]: v })}
                 />
                 <TipButton
                   small
@@ -273,7 +280,7 @@ const axisKeyValue = $derived(
                   tooltip={param ? t("glues.addKey.tooltip", { min: param.min, max: param.max }) : undefined}
                   onclick={async () => {
                     if (key !== null && (await send(() => addGlueKeyCommand(glue.id, b.parameter, key)))) {
-                      newKeys = { ...newKeys, [b.parameter]: "" };
+                      newKeys = { ...newKeys, [b.parameter]: null };
                     }
                   }}><Icon name="plus" />{t("glues.addKey.label")}</TipButton
                 >
@@ -290,16 +297,22 @@ const axisKeyValue = $derived(
                   disabled={locked}
                   onchange={(v) => {
                     axisParameter = v;
-                    axisKey = "";
+                    axisKey = null;
                   }}
                 />
               </span>
-              <input
-                type="number"
-                step="any"
+              <!-- 空はパラメータの既定値 (空の欄に薄く出す) -->
+              <NumberField
+                optional
+                min={axisChoice?.min}
+                max={axisChoice?.max}
+                step={axisChoice ? keyStep(axisChoice) : 0.1}
+                decimals={4}
+                value={axisKey}
+                emptyValue={axisChoice?.default}
                 aria-label={t("glues.axisKey.aria")}
-                value={axisKey === "" ? String(axisChoice?.default ?? 0) : axisKey}
-                oninput={(e) => (axisKey = e.currentTarget.value)}
+                oninput={(v) => (axisKey = v)}
+                onchange={(v) => (axisKey = v)}
               />
               <TipButton
                 small
@@ -308,7 +321,7 @@ const axisKeyValue = $derived(
                 onclick={async () => {
                   const [parameter, key] = [axisChoice?.id, axisKeyValue];
                   if (parameter !== undefined && key !== null && (await send(() => addGlueKeyCommand(glue.id, parameter, key)))) {
-                    axisKey = "";
+                    axisKey = null;
                   }
                 }}><Icon name="plus" />{t("glues.addAxis.label")}</TipButton
               >
@@ -482,12 +495,6 @@ const axisKeyValue = $derived(
 
 .grow {
   flex: 1;
-  min-width: 0;
-}
-
-.row input,
-.keys input {
-  width: 5em;
   min-width: 0;
 }
 

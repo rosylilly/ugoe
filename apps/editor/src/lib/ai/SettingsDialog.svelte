@@ -17,6 +17,7 @@ import {
   Dialog,
   NumberField,
   type Option,
+  SecretField,
   Select,
   TextField,
   ThemeSetting,
@@ -48,8 +49,8 @@ interface Props {
 let { doc, onchange, backend = null }: Props = $props();
 
 let isOpen = $state(false);
-let keyInput = $state<HTMLInputElement>();
-/** 入力欄が空でないか (キーそのものは状態に持たない)。 */
+let keyInput = $state<SecretField>();
+/** 入力欄が空でないか (キーそのものは状態に持たない。SecretField)。 */
 let hasKeyInput = $state(false);
 let busy = $state(false);
 /**
@@ -118,7 +119,7 @@ function close(): void {
 }
 
 function clearKeyInput(): void {
-  if (keyInput) keyInput.value = "";
+  keyInput?.clear();
   hasKeyInput = false;
 }
 
@@ -149,8 +150,8 @@ function choosePreset(baseUrl: string): void {
 
 async function saveKey(e: SubmitEvent): Promise<void> {
   e.preventDefault();
-  const key = keyInput?.value ?? "";
-  clearKeyInput();
+  const key = keyInput?.take() ?? "";
+  hasKeyInput = false;
   if (key.trim()) await run(() => ipc.storeApiKey(key));
 }
 
@@ -335,14 +336,12 @@ function keyPlaceholder(s: AiSettings): string {
       {/if}
       {#if s.key !== "unavailable"}
         <form class="row key" onsubmit={saveKey}>
-          <input
+          <SecretField
             bind:this={keyInput}
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
+            bind:filled={hasKeyInput}
+            class="key-field"
             placeholder={keyPlaceholder(s)}
             aria-label={t("settings.ai.key.aria", { service: s.service })}
-            oninput={(e) => (hasKeyInput = e.currentTarget.value.trim() !== "")}
           />
           <Button type="submit" disabled={busy || !hasKeyInput || dirty}>{t("settings.ai.key.save.label")}</Button>
           {#if s.key === "stored"}
@@ -428,21 +427,9 @@ function keyPlaceholder(s: AiSettings): string {
     align-items: center;
     gap: var(--ugoe-space-3);
   }
-  /* API キーの欄 (@ugoe/ui の TextField と同じ見た目)。キーを Svelte の状態に持たないよう、標準の input のまま。 */
-  .key input {
+  /* API キーの欄 (SecretField。キーを Svelte の状態に持たない) は残りの幅に広げる */
+  .key :global(.key-field) {
     flex: 1;
-    min-width: 0;
-    min-height: var(--ugoe-control-height);
-    padding: 0 var(--ugoe-space-2);
-    border: 1px solid var(--ugoe-color-control-border);
-    border-radius: var(--ugoe-radius-md);
-    background: var(--ugoe-color-surface);
-    color: var(--ugoe-color-text);
-    font: inherit;
-  }
-  .key input:focus-visible {
-    outline: var(--ugoe-focus-ring);
-    outline-offset: 1px;
   }
   .test {
     margin-top: var(--ugoe-space-3);

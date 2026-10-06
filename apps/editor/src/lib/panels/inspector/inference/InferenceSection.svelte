@@ -306,26 +306,29 @@ function finiteOrNull(value: number | null): number | null {
             onchange={(v) => (mirrorFrom = Number(v))}
           />
         </div>
-        <!-- 空欄 (既定) に戻せるよう、空にできる数値の欄は標準の入力欄のまま -->
-        <label class="ed-field">
-          <span>{t("inspector.inference.mirror.axis.label")}</span>
-          <input
-            type="number"
-            step="any"
+        <!-- 空は既定を使う (欄に薄く出す) -->
+        <div class="ed-field">
+          <span id="{ids}-mirror-axis">{t("inspector.inference.mirror.axis.label")}</span>
+          <NumberField
+            optional
+            decimals={3}
             placeholder={t("inspector.inference.mirror.axis.placeholder")}
+            aria-labelledby="{ids}-mirror-axis"
             bind:value={mirrorAxis}
           />
-        </label>
-        <label class="ed-field">
-          <span>{t("inspector.inference.mirror.tolerance.label")}</span>
-          <input
-            type="number"
-            step="any"
-            min="0"
+        </div>
+        <div class="ed-field">
+          <span id="{ids}-mirror-tolerance">{t("inspector.inference.mirror.tolerance.label")}</span>
+          <NumberField
+            optional
+            min={0}
+            step={0.1}
+            decimals={3}
             placeholder={t("inspector.inference.mirror.tolerance.placeholder")}
+            aria-labelledby="{ids}-mirror-tolerance"
             bind:value={mirrorTolerance}
           />
-        </label>
+        </div>
         <Checkbox
           label={t("inspector.inference.mirror.overwriteAuthored.label")}
           bind:checked={overwriteAuthored}
@@ -364,15 +367,18 @@ function finiteOrNull(value: number | null): number | null {
             onchange={(v) => (partnerInput = v === NONE ? "" : v)}
           />
         </div>
-        <label class="ed-field">
-          <span>{t("inspector.inference.partner.axis.label")}</span>
-          <input
-            type="number"
-            step="any"
+        <div class="ed-field">
+          <span id="{ids}-pair-axis">{t("inspector.inference.partner.axis.label")}</span>
+          <!-- 打つたびに「Set partner」を押せるかを決める (確定を待たない) -->
+          <NumberField
+            optional
+            decimals={3}
             placeholder={t("inspector.inference.partner.axis.placeholder")}
+            aria-labelledby="{ids}-pair-axis"
             bind:value={pairAxisInput}
+            oninput={(v) => (pairAxisInput = v)}
           />
-        </label>
+        </div>
         <span class="row">
           <TipButton
             small
@@ -414,24 +420,6 @@ p {
 
 .settings .ed-field {
   margin: 0;
-}
-
-.settings input[type="number"] {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.settings input[type="number"]:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
 }
 
 .row {

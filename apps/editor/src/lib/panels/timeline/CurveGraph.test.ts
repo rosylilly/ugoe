@@ -257,12 +257,9 @@ async function chooseKind(target: HTMLElement, kind: string): Promise<void> {
 }
 
 /** カーブのフェードの欄 (0 = フェードイン、1 = フェードアウト) に値を入れて確定する。 */
-function setFade(target: HTMLElement, index: number, text: string): void {
-  const input = target.querySelectorAll<HTMLInputElement>('.fields input[type="number"]')[index];
-  if (!input) throw new Error("no fade field");
-  input.value = text;
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-  flushSync();
+/** フェードの欄 (空を持てる NumberField) に文字を入れて確定する。 */
+function setFade(target: HTMLElement, which: "fade_in" | "fade_out", text: string): void {
+  enter(field(target, `-${which}`), text);
 }
 
 describe("CurveGraph segment and fade edits while sending", () => {
@@ -311,15 +308,30 @@ describe("CurveGraph segment and fade edits while sending", () => {
     const { doc, target } = setup();
     const gate = deferred();
     doc.pending = gate.promise;
-    setFade(target, 0, "0.5");
+    setFade(target, "fade_in", "0.5");
     await settle();
     // 表示のカーブはまだフェードインが無い。
-    setFade(target, 1, "0.3");
+    setFade(target, "fade_out", "0.3");
     gate.resolve();
     await settleAll();
     expect(doc.commands).toEqual([
       { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: 0.5, fade_out: null },
       { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: 0.5, fade_out: 0.3 },
+    ]);
+  });
+
+  it("shows the motion's fade in an empty field and sends an emptied field as null", async () => {
+    const { doc, target } = setup();
+    const fadeIn = field(target, "-fade_in");
+    expect(fadeIn.value).toBe("");
+    expect(fadeIn.placeholder).toBe("0");
+    setFade(target, "fade_in", "0.5");
+    await settleAll();
+    setFade(target, "fade_in", "");
+    await settleAll();
+    expect(doc.commands).toEqual([
+      { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: 0.5, fade_out: null },
+      { op: "set_motion_curve_fade", motion: "Nod", target: TARGET, fade_in: null, fade_out: null },
     ]);
   });
 });

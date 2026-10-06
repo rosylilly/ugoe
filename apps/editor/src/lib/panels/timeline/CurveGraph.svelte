@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 import { formatNumber } from "@ugoe/i18n";
-import { NumberField, Select, Tooltip } from "@ugoe/ui";
+import { NumberField, Select } from "@ugoe/ui";
 import type { EditorDocument } from "../../document.svelte";
 import { t } from "../../i18n";
 import type { Command, Curve, Motion, Point, Segment } from "../../ipc";
@@ -294,10 +294,7 @@ function setKind(kind: SegmentKind) {
   );
 }
 
-function setFade(field: "fade_in" | "fade_out", e: Event) {
-  const input = e.currentTarget as HTMLInputElement;
-  const value = input.value.trim() === "" ? null : input.valueAsNumber;
-  if (value !== null && !Number.isFinite(value)) return;
+function setFade(field: "fade_in" | "fade_out", value: number | null) {
   const name = motion.name;
   // もう一方のフェードは、送る直前の (前に確定したフェードを読み直した後の) カーブから取る。
   void doc.send(() => {
@@ -381,38 +378,34 @@ async function removeCurve() {
     {#if row.curve}
       <span class="fields">
         <span class="inline">
-          <label for="{ids}-fade_in">{t("timeline.curve.fadeIn.label")}</label>
-          <!-- 空 (モーションのフェードを使う) にできるよう、数値の欄は標準の input のまま。説明は Tooltip -->
-          <Tooltip text={t("timeline.curve.fade.tooltip")} id="{ids}-fade_in">
-            {#snippet trigger(attrs)}
-              <input
-                {...attrs}
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="—"
-                value={row.curve?.fade_in ?? ""}
-                onchange={(e) => setFade("fade_in", e)}
-              />
-            {/snippet}
-          </Tooltip>
+          <span id="{ids}-fade_in">{t("timeline.curve.fadeIn.label")}</span>
+          <!-- 空はモーションのフェードを使う (空の欄にモーションのフェードを薄く出す) -->
+          <NumberField
+            optional
+            min={0}
+            step={0.1}
+            size={4}
+            value={row.curve?.fade_in ?? null}
+            emptyValue={motion.fade_in}
+            aria-labelledby="{ids}-fade_in"
+            tooltip={t("timeline.curve.fade.tooltip")}
+            onchange={(v) => setFade("fade_in", v)}
+          />
         </span>
         <span class="inline">
-          <label for="{ids}-fade_out">{t("timeline.curve.fadeOut.label")}</label>
-          <!-- 空 (モーションのフェードを使う) にできるよう、数値の欄は標準の input のまま。説明は Tooltip -->
-          <Tooltip text={t("timeline.curve.fade.tooltip")} id="{ids}-fade_out">
-            {#snippet trigger(attrs)}
-              <input
-                {...attrs}
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="—"
-                value={row.curve?.fade_out ?? ""}
-                onchange={(e) => setFade("fade_out", e)}
-              />
-            {/snippet}
-          </Tooltip>
+          <span id="{ids}-fade_out">{t("timeline.curve.fadeOut.label")}</span>
+          <!-- 空はモーションのフェードを使う (空の欄にモーションのフェードを薄く出す) -->
+          <NumberField
+            optional
+            min={0}
+            step={0.1}
+            size={4}
+            value={row.curve?.fade_out ?? null}
+            emptyValue={motion.fade_out}
+            aria-labelledby="{ids}-fade_out"
+            tooltip={t("timeline.curve.fade.tooltip")}
+            onchange={(v) => setFade("fade_out", v)}
+          />
         </span>
       </span>
     {/if}
@@ -535,9 +528,6 @@ async function removeCurve() {
     display: inline-flex;
     align-items: center;
     gap: var(--ugoe-space-1);
-  }
-  input[type="number"] {
-    width: 56px;
   }
   .plot {
     display: block;

@@ -4,7 +4,7 @@
   準拠の検査 (check_avatar_profile) の結果を出す。トラッキングの上書き・視線・スロットはここでは編集しない。
 -->
 <script lang="ts">
-import { Button, Checkbox, Notice, Select, TextField } from "@ugoe/ui";
+import { Button, Checkbox, Notice, Select, TextArea, TextField } from "@ugoe/ui";
 import type { EditorDocument } from "../../../document.svelte";
 import { errorText, messageText } from "../../../errors";
 import type { AvatarCheck, AvatarMeta, Command } from "../../../generated/types";
@@ -76,10 +76,6 @@ function setMeta(patch: Partial<AvatarMeta>): Promise<void> {
   return meta ? apply(metaCommand(meta, patch)) : Promise.resolve();
 }
 
-function inputValue(event: Event): string {
-  return (event.currentTarget as HTMLTextAreaElement).value;
-}
-
 const optionalTexts = $derived<{ key: OptionalText; label: string; placeholder?: string }[]>([
   { key: "version", label: t("inspector.avatar.meta.version") },
   { key: "copyright", label: t("inspector.avatar.meta.copyright") },
@@ -146,13 +142,13 @@ const ids = $props.id();
         />
       </div>
       <div class="column">
-        <label for="{ids}-authors">{t("inspector.avatar.meta.authors")}</label>
-        <textarea
-          id="{ids}-authors"
-          rows="2"
+        <TextArea
+          label={t("inspector.avatar.meta.authors")}
+          rows={2}
+          spellcheck={false}
           value={meta.authors.join("\n")}
-          onchange={(e) => setMeta({ authors: parseLines(inputValue(e)) })}
-        ></textarea>
+          onchange={(value) => setMeta({ authors: parseLines(value) })}
+        />
       </div>
       {#each optionalTexts as field (field.key)}
         <div class="ed-field">
@@ -166,13 +162,13 @@ const ids = $props.id();
         </div>
       {/each}
       <div class="column">
-        <label for="{ids}-references">{t("inspector.avatar.meta.references")}</label>
-        <textarea
-          id="{ids}-references"
-          rows="2"
+        <TextArea
+          label={t("inspector.avatar.meta.references")}
+          rows={2}
+          spellcheck={false}
           value={meta.references.join("\n")}
-          onchange={(e) => setMeta({ references: parseLines(inputValue(e)) })}
-        ></textarea>
+          onchange={(value) => setMeta({ references: parseLines(value) })}
+        />
       </div>
       <div class="ed-field">
         <span id="{ids}-thumbnail">{t("inspector.avatar.meta.thumbnail")}</span>
@@ -234,13 +230,12 @@ const ids = $props.id();
         {/each}
       </fieldset>
       <div class="column">
-        <label for="{ids}-third-party">{t("inspector.avatar.meta.thirdPartyLicenses")}</label>
-        <textarea
-          id="{ids}-third-party"
-          rows="2"
+        <TextArea
+          label={t("inspector.avatar.meta.thirdPartyLicenses")}
+          rows={2}
           value={meta.third_party_licenses ?? ""}
-          onchange={(e) => setMeta({ third_party_licenses: optionalText(inputValue(e)) })}
-        ></textarea>
+          onchange={(value) => setMeta({ third_party_licenses: optionalText(value) })}
+        />
       </div>
 
       <h4>{t("inspector.avatar.hitAreas.title")}</h4>
@@ -292,29 +287,7 @@ const ids = $props.id();
 {/if}
 
 <style>
-.column textarea {
-  min-height: var(--ugoe-control-height);
-  padding: 0 var(--ugoe-space-2);
-  border: 1px solid var(--ugoe-color-control-border);
-  border-radius: var(--ugoe-radius-md);
-  background: var(--ugoe-color-surface);
-  color: var(--ugoe-color-text);
-  font: inherit;
-}
-
-.column textarea {
-  padding: var(--ugoe-space-1) var(--ugoe-space-2);
-}
-
-.column textarea:focus-visible {
-  outline: var(--ugoe-focus-ring);
-  outline-offset: 1px;
-}
-
 .column {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ugoe-space-1);
   margin: var(--ugoe-space-2) 0;
 }
 

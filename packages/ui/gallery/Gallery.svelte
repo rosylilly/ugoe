@@ -18,12 +18,14 @@ import {
   type MenuEntry,
   Notice,
   NumberField,
+  SecretField,
   Section,
   SegmentedControl,
   Select,
   Slider,
   showToast,
   Tabs,
+  TextArea,
   TextField,
   Toaster,
   Toggle,
@@ -74,6 +76,8 @@ let camera = $state<string>("1");
 let layerName = $state("Hair front");
 let layerId = $state("Layer3");
 let filterText = $state("");
+let fadeIn = $state<number | null>(null);
+let authors = $state("Ann\nBob");
 let fit = $state<string>("0");
 let tab = $state<string>("0");
 let mirrored = $state(true);
@@ -301,6 +305,7 @@ const swatches = [
         <NumberField label={s.scale} bind:value={scale} min={0.1} max={10} step={0.1} />
         <NumberField label={s.scale} value={12} step={0.1} invalid aria-describedby="gallery-scale-error" />
         <p id="gallery-scale-error" class="gallery__error">{s.scaleError}</p>
+        <NumberField label={s.fadeIn} optional bind:value={fadeIn} emptyValue={0.5} min={0} step={0.1} unit={s.seconds} />
       </div>
     </section>
 
@@ -311,6 +316,8 @@ const swatches = [
         <TextField label={s.layerId} mono bind:value={layerId} error={s.layerIdError} />
         <TextField type="search" aria-label={s.filter} placeholder={s.filterPlaceholder} bind:value={filterText} />
         <TextField label={s.disabled} value={layerName} disabled />
+        <TextArea label={s.authors} hint={s.authorsHint} rows={2} spellcheck={false} bind:value={authors} />
+        <SecretField label={s.apiKey} placeholder={s.apiKeyPlaceholder} />
       </div>
     </section>
 

@@ -7,16 +7,17 @@
     欄を書き換えずにフォーカスを外したり Enter を押したりしただけでは呼ばない (docs/ui.md#数値の部品と-onchange)。
   - onchange を呼んでいる間は、`numberFieldCommit()` が欄ごとに一意な印を返す (同じ欄の続けての確定をまとめるため)。
   - `tooltip` を渡すと、欄に Tooltip で説明を出す (`title` 属性の代わり)。
+  - `optional` なら値に空 (`null`。既定を使うなど) を持てる (docs/ui.md#空を持てる数値の欄)。空の欄には `placeholder`
+    (省くと `emptyValue` を書式にしたもの) を出し、欄を空にして確定すると `null` を送る。空から矢印キーで動かすときは
+    `emptyValue` (省くと範囲に収めた 0) から動かす。
 -->
-<script lang="ts">
+<script lang="ts" generics="Optional extends boolean = false">
 import { withNumberFieldCommit } from "../commit";
 import { clamp, decimalsOf, formatEditable, parseEditable, roundTo, stepValue } from "../number";
 import type { TriggerAttributes } from "../props";
 import Tooltip from "./Tooltip.svelte";
 
-interface Props {
-  /** 値。確定したときに更新される。 */
-  value?: number;
+interface CommonProps {
   min?: number;
   max?: number;
   /** 増減の刻み。既定は 1。 */
@@ -29,6 +30,8 @@ interface Props {
   label?: string;
   /** 見えるラベルを別の要素に置くときの、その要素の id (Slider と組み合わせるときなど)。 */
   "aria-labelledby"?: string;
+  /** 見えるラベルを置けないときの読み上げの名前。 */
+  "aria-label"?: string;
   /** 補足の説明を持つ要素の id。 */
   "aria-describedby"?: string;
   disabled?: boolean;
@@ -38,12 +41,28 @@ interface Props {
   tooltip?: string;
   /** 欄の幅 (文字数)。既定は 6。 */
   size?: number;
-  /** 利用者の操作で値を確定し、値が変わったとき。外から渡した値では呼ばない。 */
-  onchange?: (value: number) => void;
+  /** 空の欄に出す文字 (翻訳を通した文言)。 */
+  placeholder?: string;
+}
+
+/** 値の型。`optional` なら空 (`null`) を持てる。 */
+type Value = Optional extends true ? number | null : number;
+
+interface Props extends CommonProps {
+  /** 値に空 (`null`。既定を使うなど) を持てる。 */
+  optional?: Optional;
+  /** 値。確定したときに更新される。`optional` なら `null` は空。 */
+  value?: Value;
+  /** 空が表す値 (既定値。`optional` のとき)。空の欄の `placeholder` の既定と、空から矢印キーで動かすときの元にする。 */
+  emptyValue?: number;
+  /** 打つたびに、読めた値 (範囲に収め、丸めない)。`optional` で欄が空なら `null`。読めない文字の間は呼ばない。 */
+  oninput?: (value: Value) => void;
+  /** 利用者の操作で値を確定し、値が変わったとき (`optional` で空にしたら `null`)。外から渡した値では呼ばない。 */
+  onchange?: (value: Value) => void;
 }
 
 let {
-  value = $bindable(0),
+  value = $bindable(0 as Value),
   min,
   max,
   step = 1,
@@ -51,11 +70,16 @@ let {
   unit,
   label,
   "aria-labelledby": labelledby,
+  "aria-label": ariaLabel,
   "aria-describedby": describedby,
   disabled = false,
   invalid = false,
   tooltip,
   size = 6,
+  placeholder,
+  optional = false as Optional,
+  emptyValue,
+  oninput,
   onchange,
 }: Props = $props();
 
@@ -65,34 +89,64 @@ const digits = $derived(decimals ?? decimalsOf(step));
 let text = $state("");
 // 利用者が欄を書き換えて、まだ確定も取り消しもしていないか
 let dirty = $state(false);
+// optional で値が空か (null・undefined)
+const empty = $derived(optional && (value === null || value === undefined));
+const shownPlaceholder = $derived(
+  placeholder ??
+    (optional && emptyValue !== undefined ? formatEditable(emptyValue, digits) : undefined),
+);
 
 // 書き換えの途中でなければ、値の変化を欄に映す
 $effect(() => {
-  const shown = formatEditable(value, digits);
+  const shown = format(value);
   if (!dirty) text = shown;
 });
 
-function revert() {
-  dirty = false;
-  text = formatEditable(value, digits);
+function format(v: number | null | undefined): string {
+  return typeof v === "number" ? formatEditable(v, digits) : "";
 }
 
-function commit(next: number) {
-  const v = roundTo(clamp(next, min, max), digits);
+function revert() {
   dirty = false;
-  text = formatEditable(v, digits);
-  if (v !== value) {
-    value = v;
-    if (onchange) withNumberFieldCommit(id, () => onchange(v));
+  text = format(value);
+}
+
+/** 値を確定する。`null` は空 (optional のときだけ渡す)。 */
+function commit(next: number | null) {
+  const v = next === null ? null : roundTo(clamp(next, min, max), digits);
+  dirty = false;
+  text = format(v);
+  if (v !== (value ?? null)) {
+    value = v as Value;
+    const call = onchange as ((v: number | null) => void) | undefined;
+    if (call) withNumberFieldCommit(id, () => call(v));
   }
 }
 
 function commitText() {
   // 書き換えていなければ確定しない (表示の丸めや古い表示で、外から渡した値を書き換えないため)
   if (!dirty) return;
+  if (optional && text.trim() === "") {
+    commit(null);
+    return;
+  }
   const parsed = parseEditable(text);
   if (parsed === null) revert();
   else commit(parsed);
+}
+
+function handleInput(event: Event) {
+  dirty = true;
+  const call = oninput as ((v: number | null) => void) | undefined;
+  if (!call) return;
+  // bind:value の更新と順が決まっていないので、欄の要素から読む
+  const typed = (event.currentTarget as HTMLInputElement).value;
+  if (optional && typed.trim() === "") {
+    call(null);
+    return;
+  }
+  const parsed = parseEditable(typed);
+  if (parsed !== null) call(clamp(parsed, min, max));
 }
 
 function onkeydown(event: KeyboardEvent) {
@@ -126,8 +180,13 @@ function onkeydown(event: KeyboardEvent) {
       return;
   }
   event.preventDefault();
-  // 値が数でない (NaN など) ときは、範囲に収めた 0 から動かす (NaN を onchange に渡さない)
-  const base = parseEditable(text) ?? (Number.isFinite(value) ? value : clamp(0, min, max));
+  // 値が空 (optional) のときは空が表す値から、数でない (NaN など) ときは範囲に収めた 0 から動かす (NaN を onchange に渡さない)
+  const fallback =
+    empty && emptyValue !== undefined && Number.isFinite(emptyValue)
+      ? emptyValue
+      : clamp(0, min, max);
+  const base =
+    parseEditable(text) ?? (typeof value === "number" && Number.isFinite(value) ? value : fallback);
   commit(stepValue(base, steps, { min, max, step }));
 }
 </script>
@@ -145,15 +204,17 @@ function onkeydown(event: KeyboardEvent) {
     spellcheck="false"
     {size}
     {disabled}
+    placeholder={shownPlaceholder}
     aria-labelledby={labelledby ?? (label ? `${id}-label` : undefined)}
+    aria-label={ariaLabel}
     aria-describedby={[attrs["aria-describedby"], describedby].filter(Boolean).join(" ") || undefined}
     aria-invalid={invalid || undefined}
-    aria-valuenow={value}
+    aria-valuenow={typeof value === "number" ? value : undefined}
     aria-valuemin={min}
     aria-valuemax={max}
-    aria-valuetext={unit ? `${text} ${unit}` : undefined}
+    aria-valuetext={unit && text !== "" ? `${text} ${unit}` : undefined}
     bind:value={text}
-    oninput={() => (dirty = true)}
+    oninput={handleInput}
     onblur={(e) => {
       commitText();
       (attrs.onblur as ((e: FocusEvent) => void) | undefined)?.(e);
@@ -254,6 +315,11 @@ function onkeydown(event: KeyboardEvent) {
     /* 誤りの印は外側の枠に出すので、tokens.css の文字の欄の印を打ち消す */
     .ugoe-number-field__input[aria-invalid] {
       box-shadow: none;
+    }
+
+    .ugoe-number-field__input::placeholder {
+      color: var(--ugoe-color-text-muted);
+      opacity: 1;
     }
 
     /* 輪は外側の枠 (focus-within) に出す */

@@ -128,14 +128,20 @@ export function unboundParameters<T extends Pick<Parameter, "id">>(
  * キーの入力 (パラメータの範囲の有限の値)。軸に同じキー (キーフォームの格子と同じ許容差で比べる) があれば `null`。
  */
 export function keyValue(
-  text: string,
+  value: number | null,
   parameter: Pick<Parameter, "min" | "max">,
   keys: readonly number[] = [],
 ): number | null {
-  const value = Number(text);
-  if (text.trim() === "" || !Number.isFinite(value)) return null;
+  if (value === null || !Number.isFinite(value)) return null;
   if (value < parameter.min || value > parameter.max) return null;
   return keyAt([...keys], value, keyTolerance(parameter)) === undefined ? value : null;
+}
+
+/** キーの欄の矢印キーの刻み。値域を 10〜100 等分した程度の、きりのよい大きさ。 */
+export function keyStep(parameter: Pick<Parameter, "min" | "max">): number {
+  const range = parameter.max - parameter.min;
+  if (!(range > 0 && Number.isFinite(range))) return 0.1;
+  return 10 ** Math.floor(Math.log10(range / 10));
 }
 
 // --- 頂点の組をビューポートで編集する (T0661) ---

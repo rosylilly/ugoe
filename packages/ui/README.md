@@ -8,9 +8,9 @@
 (`just licenses` が推移的に検査する)。
 
 ```
-src/tokens.css          デザイントークン (CSS 変数)。ライト・ダーク (data-theme)、compact・comfortable (data-density)
+src/tokens.css          デザイントークン (CSS 変数)。ライト・ダーク (data-theme)、compact・comfortable (data-density)。文字の欄の共通の見た目も
 src/index.ts            公開する部品と関数 (アプリとほかのパッケージが使うものだけを名前で出す)
-src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・TextField・Select・SegmentedControl・
+src/components/         部品 (Button・IconButton・Checkbox・Toggle・Slider・NumberField・TextField・TextArea・SecretField・Select・SegmentedControl・
                         Tabs・Section・Toolbar・Dialog・AlertDialog・Notice・Toaster・Tooltip・TooltipProvider・
                         Menu・ContextMenu・Popover・ColorPicker・DropZone・Kbd・ThemeSetting・Icon)
 src/number.ts           数値の欄の解釈・書式・増減 (純粋な関数)

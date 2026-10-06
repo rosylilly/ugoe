@@ -9,6 +9,7 @@ import {
   isBaseGlue,
   isDrawCloneGlue,
   keyformLabels,
+  keyStep,
   keyValue,
   removeGlueKeyCommand,
   selectedPair,
@@ -152,16 +153,22 @@ describe("glue pairs and intensity axes (T0661)", () => {
 
   it("accepts keys inside the parameter range that are not on the axis yet", () => {
     const range = { min: -1, max: 1 };
-    expect(keyValue("0.5", range)).toBe(0.5);
-    expect(keyValue("", range)).toBeNull();
-    expect(keyValue("2", range)).toBeNull();
-    expect(keyValue("x", range)).toBeNull();
-    expect(keyValue("1", range, [0, 1])).toBeNull();
+    expect(keyValue(0.5, range)).toBe(0.5);
+    expect(keyValue(null, range)).toBeNull();
+    expect(keyValue(2, range)).toBeNull();
+    expect(keyValue(Number.NaN, range)).toBeNull();
+    expect(keyValue(1, range, [0, 1])).toBeNull();
+  });
+
+  it("steps keys by a round fraction of the parameter range", () => {
+    expect(keyStep({ min: -30, max: 30 })).toBe(1);
+    expect(keyStep({ min: 0, max: 1 })).toBeCloseTo(0.1);
+    expect(keyStep({ min: 0, max: 0 })).toBe(0.1);
   });
 
   it("treats a key within the keyform tolerance as already on the axis", () => {
     // f32 を経由したキー (0.1 は 0.10000000149011612 になる) も同じキーとみなす。
-    expect(keyValue("0.1", { min: -1, max: 1 }, [Math.fround(0.1)])).toBeNull();
-    expect(keyValue("0.2", { min: -1, max: 1 }, [Math.fround(0.1)])).toBe(0.2);
+    expect(keyValue(0.1, { min: -1, max: 1 }, [Math.fround(0.1)])).toBeNull();
+    expect(keyValue(0.2, { min: -1, max: 1 }, [Math.fround(0.1)])).toBe(0.2);
   });
 });

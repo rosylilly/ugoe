@@ -301,8 +301,10 @@ HTML の標準の要素の上に自作し、ふるまいは [WAI-ARIA APG](https
 | `Checkbox` | 決定 (保存・OK) を押すまで効かない選択肢、または一覧の中の選択 | Bits UI `Checkbox` | Space | 1 |
 | `Toggle` | すぐに効く入・切 (「鏡像で表示」など)。説明は `tooltip` (スイッチに Tooltip を付ける) | Bits UI `Switch` | Space・Enter | 1 |
 | `Slider` | 範囲のある数値。`NumberField` とリセット (既定値に戻す) を並べて出せる (この組み合わせは自作)。説明は `tooltip` (つまみに Tooltip を付ける) | Bits UI `Slider` | 矢印・PageUp/PageDown・Home/End | 1 |
-| `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す。誤りは `invalid`、説明は `tooltip` | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
-| `TextField` | 1 行の文字 (名前・ID・URL・検索)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は標準の `<textarea>` (まだ部品が無い) | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
+| `NumberField` | 数値を正確に入れる。上下の矢印で増減、Shift で 10 倍。単位を後ろに出す。誤りは `invalid`、説明は `tooltip`。空 (既定を使う) を持てる欄は `optional` (下の「空を持てる数値の欄」)。打つたびに読めた値を知りたいときは `oninput` | 自作 (`<input type="text" inputmode="decimal">`、APG の Spinbutton) | 上下の矢印・Enter で確定・Esc で戻す | 1 |
+| `TextField` | 1 行の文字 (名前・ID・URL・検索)。見えるラベル (`label`)・補足 (`hint`)・誤りの文 (`error`) を欄と結んで出す。ID・パスは `mono`、説明は `tooltip`。複数行は `TextArea`、秘密は `SecretField` | 自作 (`<input>`) | Enter・フォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0917 |
+| `TextArea` | 複数行の文字 (名前の一覧・注文の文など)。ラベル・補足・誤りの文・`tooltip`・確定の約束は `TextField` と同じ。綴りの印は既定で出す (`spellcheck`) | 自作 (`<textarea>`) | Enter は改行・Mod+Enter かフォーカスを外すと確定 (`onchange`)・Esc で確定前に戻す | T0949 |
+| `SecretField` | API キーなどの秘密 (`TextField` と同じ見た目)。値を Svelte の状態に持たない: 呼び手は `bind:filled` (空白を除いて空でないか) だけを受け、送るときに `bind:this` の `take()` で取り出す (取り出すと欄を空にする)。捨てるのは `clear()` | 自作 (`<input type="password">`) | Enter は標準のまま (`<form>` なら送る)・Esc で入れかけを消す | T0949 |
 | `Select` | 5 個以上の選択肢から 1 つ。誤りは `invalid` (選べなくなった値など)、説明は `tooltip` | Bits UI `Select` | 上下の矢印・Enter・頭文字で移る | 1 |
 | `SegmentedControl` | 2〜4 個の選択肢から 1 つ (すべて見せたいとき)。名前と選択肢は字の途中で折らず、幅が足りなければ選択肢ごと次の行へ送る (T0950) | Bits UI `RadioGroup` (または `ToggleGroup` の単一選択) | 矢印で移り、選ぶ | 1 |
 | `Tabs` | 同じ場所の中身を切り替える (中身が別の画面のとき) | Bits UI `Tabs` | 左右の矢印・Home/End | 1 |
@@ -376,7 +378,7 @@ Bits UI を包むときの約束:
 | ダイアログ | `Dialog` | 見出しは `title`、説明は `description`、決定・取り消しは `actions`。Esc で閉じるときの意味 (「後で」など) を `onclose` で決める。ボタンの並び・既定のボタン・Enter と Esc は [docs/editor.md の「ダイアログ」](editor.md#ダイアログ) |
 | 区切り | `Splitter` (`lib/ui/Splitter.svelte`) | 領域の大きさを変える境 (APG の Window Splitter)。ポインタのドラッグと、矢印・Home・End、Enter とダブルクリックで既定に戻す。範囲と覚えるキーは `lib/layout.ts` の `SizeRange` ([docs/editor.md の「画面の配置」](editor.md#画面の配置)) |
 | 空の状態の次の操作 | `.ed-hint` と `Button` | 「何が無いか」の 1 文と、次の操作のボタンをその場に並べる (ビューポートの空のプロジェクト・パラメータ一覧) |
-| 文字の入力欄 | `TextField` | 行の左に名前を置くときは `<label for>` と `id`、ほかは `label`。確定で送る欄は `onchange` (Enter・フォーカスを外す)。標準の `<input>` のまま残すものは下の「足りない部品と口 (T0917)」 |
+| 文字の入力欄 | `TextField`・`TextArea`・`SecretField` | 行の左に名前を置くときは `<label for>` と `id`、ほかは `label`。確定で送る欄は `onchange` (Enter・フォーカスを外す。`TextArea` は Mod+Enter・フォーカスを外す)。空 (既定) を持てる数値は `NumberField` の `optional`。標準の `<input>` のまま残すものは下の「足りない部品と口 (T0917)」 |
 | 要素の名前 | `src/lib/labels.ts` | `顔 (Layer8)` の形 (名前と ID)。ID・パス・パラメータの名前は訳さない |
 
 - **文言の置き場所:** エディタのカタログ (`apps/editor/locales/<言語>.json`、名前空間 `editor`) のキーの最初の段は、画面の部分 (`app`・`fileMenu`・
@@ -403,6 +405,21 @@ Bits UI を包むときの約束:
   呼んでいる間だけ、`numberFieldCommit()` が欄ごとに一意な印 (文字列) を返します (それ以外では `null`)。受け手はこれで同じ欄の続けての確定を
   見分けてまとめられます。エディタは 1 つの Undo にまとめます ([editor.md#undo](editor.md#undo)、T0695)。`onchange` の中で `await` した後は
   印が無いので、読むなら同期的に読みます。ビューア・スタジオは印を読まず、振る舞いは変わりません。
+
+### 空を持てる数値の欄
+
+`NumberField` に `optional` を渡すと、値に空 (`null`) を持てます (T0949)。空は「既定を使う」(カーブのフェードはモーションのフェード、
+推定の軸は既定の軸) や「まだ入れていない」(グルーの足すキー) を表します。`optional` を渡さない欄は今までどおり空を持てません (空にして確定すると前の値に戻す)。
+
+- **空の表示:** 欄は空にし、`placeholder` を出します。省くと、空が表す値 (`emptyValue`) を欄と同じ書式で薄く出します (フェードの欄の `0.5` など)。
+  空の間は `aria-valuenow`・`aria-valuetext` を付けません。
+- **確定:** 欄を空 (空白だけも) にして確定 (Enter・フォーカスを外す) すると、`onchange(null)` を呼びます。もとから空なら呼びません。
+  読めない文字は、ほかの欄と同じく確定前の値 (空なら空) に戻します。
+- **矢印キー:** 空から上下の矢印・PageUp / PageDown で動かすときは、`emptyValue` から動かします (`0.5` から上で `0.6`)。
+  `emptyValue` が無ければ、範囲に収めた 0 から動かします (値が数でないときと同じ)。
+- **打つたびの値:** `oninput` は打つたびに、読めた値を範囲に収めて (丸めずに) 渡します。`optional` で空なら `null`。読めない文字の間は呼びません。
+  確定を待たずにボタンを押せるかを決める欄 (グルーの「Key」、推定の「Set partner」) が使います。
+- 型は `optional` で分かれます (`optional` なら `value`・`onchange`・`oninput` が `number | null`)。
 
 ## 文字の選択
 
@@ -648,14 +665,15 @@ T0907 の後続の候補だった部品の不足を埋め、アプリに残る�
   「足りないパラメータを作る」を押せない理由 (見える補足)、カーブのフェードの欄 (Tooltip)、タイムラインのキーを打つ ◆ とキーの印 (Tooltip。◆ には
   読み上げの名前も付けた)、静止姿勢の警告の行・検証のセル (Tooltip)、AI の提案の注文の文と依存 (見える補足)、ビューアのイベントの読み方 (見える補足)。
 
+T0917 で部品が無くて残した 3 種類の欄は、T0949 で部品を足して移しました: 空にできる数値の欄 (カーブのフェード・グルーのキーと新しい軸の
+最初のキー・推定のミラーの軸と許す差・左右の対の軸) は `NumberField` の `optional` に、複数行の欄 (アバターのメタデータの作者・参照・
+第三者のライセンスと、AI の注文) は `TextArea` に、API キー (`SettingsDialog`) は `SecretField` に。
+
 標準の `<input>` のまま残したもの:
 
 | 場所 | 理由 |
 | --- | --- |
-| 空にできる数値の欄 (カーブのフェード・グルーのキー・推定の軸と許す差) | 空 (既定を使う) を持てる数値の部品がまだ無い (`NumberField` は空を持てない) |
 | パラメータの値の欄 (`ParametersPanel`) | 範囲の外を丸めず、誤りの文を出す作り (誤りの文は `aria-describedby`・`aria-invalid` で結んだ) |
-| API キー (`SettingsDialog`、`type="password"`) | キーを Svelte の状態に持たない (`TextField` は値を状態に持つ)。見た目は `TextField` とそろえた |
-| 複数行の欄 (アバターのメタデータ・AI の注文の `<textarea>`) | 複数行の部品がまだ無い |
 | チェックボックス・ラジオ・範囲・ファイルの `<input>` | 文字の欄ではない。ライティングの「光を受けるメッシュ」の行のチェックボックスは、名前を選ぶボタンと分けるため見えるラベルを持たない (`Checkbox` は見えるラベルが要る)。押せる範囲は箱を包む 24px の `<label>` (T0674) |
 
 残した `title` (フォーカスを受けない要素の補い):
