@@ -10,7 +10,8 @@
 // - 読み込んだバイト列を持っておき、WebPuppet を作り直したとき (GPU の喪失など) に読み込み直す。
 // - 読み込みや付け外しの途中に GPU を失った (`device_lost`。`is_lost()` が真) ら、失敗の文を出さない。読み込もうとした
 //   バイト列は `#pending` に取っておき、付け外しは付けたい組 (`wanted`) だけを変え、作り直した WebPuppet に `loaded` で
-//   読み込んで付ける (T1644。Player とビューポートと同じ。docs/ui.md#webpuppet-の寿命)。
+//   読み込んで付ける (T1644。Player とビューポートと同じ。docs/ui.md#webpuppet-の寿命)。作り直しの途中 (古い
+//   WebPuppet を捨ててから新しいものができるまで。`host.puppet()` が `null`) に読み込んだものも `#pending` に取っておく (T1658)。
 // - 一覧 (パスと付けるか) は project.json の editor.dress_up に残す (ipc.setPreviewModules)。ドロップしたファイルで
 //   パスが分からないもの (ブラウザ) は残さない。
 // - モジュールのプロジェクトでは、PreviewMode が本体だけのモデルを描き、今の編集を書き出したモジュールを一覧の先頭の
@@ -133,7 +134,10 @@ export class DressUp {
   #ownLabel: string | null = null;
   /** 違いを比べた回数 (古い結果を捨てる)。 */
   #compareToken = 0;
-  /** GPU を失っていて読み込めなかったもの (作り直した WebPuppet に `loaded` で読み込む)。 */
+  /**
+   * GPU を失っていたか、作り直しの途中で WebPuppet が無くて読み込めなかったもの (作り直した WebPuppet に `loaded` で
+   * 読み込む)。
+   */
   #pending: PendingModule[] = [];
 
   constructor(host: DressUpHost) {
@@ -482,18 +486,23 @@ export class DressUp {
 
   /**
    * バイト列を WebPuppet に読み込み、一覧の行を作るか更新する。読み込めたらモジュールの名前を返す。
-   * `entry` (ファイルから読み直す行) がなければ、同じ名前か同じパスの行を置き換える。GPU を失っていたら
-   * `#pending` に取っておき (`attach` は読み込んだら付けるか)、`null` を返す。
+   * `entry` (ファイルから読み直す行) がなければ、同じ名前か同じパスの行を置き換える。GPU を失っていたり、
+   * WebPuppet を作り直している途中 (`host.puppet()` が `null`。T1658) だったりしたら、`#pending` に取っておき
+   * (`attach` は読み込んだら付けるか)、`null` を返す。
    */
   async #load(source: ModuleSource, entry?: DressUpEntry, attach = false): Promise<string | null> {
-    const puppet = this.#host.puppet();
-    if (!puppet) return null;
     let bytes: Uint8Array;
     try {
       bytes =
         source.bytes ?? (source.path ? await ipc.readModuleFile(source.path) : new Uint8Array());
     } catch (e) {
       this.#loadFailed(source, entry, e);
+      return null;
+    }
+    // ファイルを読んでいる間に作り直しが始まることもあるので、読んだ後で WebPuppet を見る。
+    const puppet = this.#host.puppet();
+    if (!puppet) {
+      this.#pending.push({ source: { ...source, bytes }, entry, attach });
       return null;
     }
     return this.#loadInto(puppet, bytes, source, entry, attach);
@@ -706,7 +715,7 @@ export class DressUp {
   }
 }
 
-/** GPU を失っていて読み込めなかったもの (`DressUp.#pending`)。 */
+/** GPU を失っていたか WebPuppet が無くて読み込めなかったもの (`DressUp.#pending`)。 */
 interface PendingModule {
   source: ModuleSource & { bytes: Uint8Array };
   /** ファイルから読み直していた行 (無ければ新しく読み込むもの)。 */

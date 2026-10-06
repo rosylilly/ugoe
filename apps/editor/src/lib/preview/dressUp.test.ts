@@ -145,8 +145,14 @@ const SLOTS = { LongHair: "Hair", ShortHair: "Hair", Dress: "Outfit" };
 function setup() {
   let fake = fakePuppet(SLOTS);
   let active = true;
+  /** 作り直しの途中 (古い WebPuppet を捨て、新しいものができるまで。`host.puppet()` が `null`)。 */
+  let gone = false;
   const changed = vi.fn();
-  const dressUp = new DressUp({ puppet: () => fake.puppet, active: () => active, changed });
+  const dressUp = new DressUp({
+    puppet: () => (gone ? null : fake.puppet),
+    active: () => active,
+    changed,
+  });
   return {
     dressUp,
     get fake() {
@@ -156,8 +162,13 @@ function setup() {
     setActive: (a: boolean) => {
       active = a;
     },
+    /** GPU を失った WebPuppet を捨てる (作り直しの途中。`recreate` で新しいものができる)。 */
+    drop() {
+      gone = true;
+    },
     /** GPU を失った WebPuppet を作り直す (ViewportController の `#setUp` → `PreviewMode.loaded`)。 */
     recreate() {
+      gone = false;
       fake = fakePuppet(SLOTS);
       dressUp.loaded(fake.puppet);
       return fake;
@@ -493,6 +504,63 @@ describe("DressUp when the GPU is lost during a load (T1644)", () => {
     dressUp.loaded(again.puppet);
     expect(entry(dressUp, "Dress")).toMatchObject({ wanted: true, problem: null });
     expect(t.recreate().attached()).toEqual(["Dress"]);
+  });
+});
+
+describe("DressUp while the WebPuppet is being made again (T1658)", () => {
+  it("keeps a module given while there is no WebPuppet, and puts it on the new one", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    await dressUp.add([{ path: "/work/LongHair.ugoemod", bytes: bytes("LongHair") }]);
+    t.fake.state.lost = true;
+    t.drop();
+    await dressUp.add([
+      { path: "/work/ShortHair.ugoemod", bytes: bytes("ShortHair") },
+      { path: null, bytes: bytes("Dress"), name: "Dress.ugoemod" },
+    ]);
+    expect(dressUp.error).toBeNull();
+    expect(dressUp.entries.map((e) => [e.name, e.problem])).toEqual([["LongHair", null]]);
+    const fresh = t.recreate();
+    expect(fresh.loaded()).toEqual(["LongHair", "ShortHair", "Dress"]);
+    expect(fresh.attached()).toEqual(["ShortHair", "Dress"]);
+    expect(dressUp.entries.map((e) => [e.name, e.attached, e.wanted, e.problem])).toEqual([
+      ["LongHair", false, false, null],
+      ["ShortHair", true, true, null],
+      ["Dress", true, true, null],
+    ]);
+    await vi.waitFor(() =>
+      expect(saved.at(-1)).toEqual([
+        { path: "/work/LongHair.ugoemod", attached: false },
+        { path: "/work/ShortHair.ugoemod", attached: true },
+      ]),
+    );
+  });
+
+  it("keeps a file read again while there is no WebPuppet, and loads it into the new one", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    files["/work/LongHair.ugoemod"] = "LongHair";
+    await dressUp.load();
+    t.drop();
+    await dressUp.refresh();
+    expect(entry(dressUp, "LongHair")).toMatchObject({ problem: null, wanted: true });
+    const fresh = t.recreate();
+    expect(fresh.loaded()).toEqual(["LongHair"]);
+    expect(fresh.attached()).toEqual(["LongHair"]);
+    expect(entry(dressUp, "LongHair")).toMatchObject({
+      loaded: true,
+      attached: true,
+      wanted: true,
+    });
+  });
+
+  it("drops what it kept when the project is opened again", async () => {
+    const t = setup();
+    const { dressUp } = t;
+    t.drop();
+    await dressUp.add([{ path: "/work/Dress.ugoemod", bytes: bytes("Dress") }]);
+    await dressUp.load();
+    expect(t.recreate().loaded()).toEqual([]);
   });
 });
 

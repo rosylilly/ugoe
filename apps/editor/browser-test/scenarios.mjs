@@ -16,6 +16,11 @@ const WAIT_MS = 60_000;
  * (新しい canvas はあるが WebPuppet はまだ無い間に確かめてしまわないことを確かめる。T0960 と同じ)。
  */
 const CREATE_DELAY_MS = 500;
+/**
+ * 作り直しの途中に読み込むシナリオで、WebPuppet の作成を遅らせる時間 (ミリ秒)。その間 (古い WebPuppet を捨て、新しいものが
+ * まだ無い) にファイルを選んで読み終えるのに足りる長さ。
+ */
+const RECREATION_DELAY_MS = 5_000;
 
 /**
  * ページの初期化 (page.addInitScript)。WebGL2 のコンテキストを canvas ごとに覚える (`loseContext` で、ビューポートの canvas の
@@ -294,6 +299,59 @@ export const SCENARIOS = {
 
     await restoreAndRecreate(page);
     // 作り直した WebPuppet にモジュールを読み込んで付ける (`DressUp.loaded`)。一覧の行は WebPuppet の状態を写す
+    await until(
+      page,
+      () => window.__editorBrowser.current.attached_modules().includes("CatEars"),
+      "CatEars to be put on the recreated WebPuppet",
+    );
+    const after = await panelState(page);
+    expectNoAlerts(after, "after the recreation");
+    expectRows(after, { CatEars: true }, "after the recreation");
+    const attached = await attachedModules(page);
+    check(attached.join() === "CatEars", `attached modules: ${attached.join(", ")}`);
+    const shot = await drawn(page);
+    check(shot.fraction > 0.01, `the recreated preview is empty (${shot.fraction})`);
+    check(
+      shot.top >= 0 && shot.top < base.top - 5,
+      `the cat ears are not drawn: the top row is ${shot.top} (${base.top} without them)`,
+    );
+    await expectLivePuppets(page, "after the recreation");
+  },
+
+  /**
+   * 作り直しの途中 (古い WebPuppet を捨て、新しいものを作っている間。ビューポートの `puppet` が `null`) に読み込んだモジュールも
+   * 取っておき、作り直した WebPuppet に読み込んで付けて描く (T1658)。作成を長く遅らせて、その間に読み込む。
+   */
+  async "dress-up-load-during-recreation"(page, ctx) {
+    await openSample(page, ctx);
+    await enterPreview(page);
+    const base = await drawn(page);
+    check(base.fraction > 0.01, `the preview is empty (${(base.fraction * 100).toFixed(2)}%)`);
+    await page.evaluate((ms) => {
+      window.__editorBrowser.createDelayMs = ms;
+    }, RECREATION_DELAY_MS);
+
+    await loseContext(page);
+    await page.evaluate(() => window.__editorBrowser.lost.restoreContext());
+    // 古い WebPuppet を捨て (`free`)、新しいものをまだ作り終えていない
+    await until(
+      page,
+      () => {
+        const state = window.__editorBrowser;
+        return state.current === null && !state.live.has(state.before) && state.live.size === 0;
+      },
+      "the old WebPuppet to be freed before the new one is made",
+    );
+    await loadModule(page, ctx, "cat-ears.ugoemod");
+    check(
+      await page.evaluate(
+        () => window.__editorBrowser.current === null && window.__editorBrowser.live.size === 0,
+      ),
+      "the new WebPuppet was made before the module was loaded",
+    );
+    expectNoAlerts(await panelState(page), "while the WebPuppet is being made again");
+
+    await untilDrawing(page, "the recreated WebPuppet to draw");
     await until(
       page,
       () => window.__editorBrowser.current.attached_modules().includes("CatEars"),

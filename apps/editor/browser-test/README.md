@@ -34,13 +34,16 @@ WebGL2 のコンテキストは、ページの初期化で `getContext` を包�
 | 名前 | 確かめること |
 | --- | --- |
 | `dress-up-loss-during-load` | プレビューの着せ替えで、ビューポートの WebGL2 のコンテキストを失っている間 (ビューポートが「GPU の復元を待っています」) に「Load .ugoemod…」で猫耳 (`cat-ears.ugoemod`) を読み込む (`load_module` が `device_lost`)。パネルに失敗の文が出ず、復元した後に作り直した WebPuppet に猫耳が付き (一覧の行のチェックと `attached_modules`)、描かれる (読み戻しで、描いた画素の一番上の行が猫耳のぶん上がる) |
+| `dress-up-load-during-recreation` | 復元した後の作り直しの途中 (古い WebPuppet を `free` し、新しいものの作成を 5000 ms 遅らせている間。ビューポートの `puppet` が `null`) に猫耳を読み込む。パネルに失敗の文が出ず、作り直した WebPuppet に猫耳が付き、描かれる (T1658) |
 | `dress-up-change-while-lost` | 猫耳・長い髪・ツインテールを読み込み (猫耳とツインテールが付く) 、失っている間に猫耳のチェックを外し、スロット `Hair` の選択で長い髪に替える。パネルに失敗の文が出ず、作り直した WebPuppet には長い髪だけが付き、一覧の行もそのとおりで、猫耳が描かれない |
 
-どちらも、作り直しの完了 (新しい WebPuppet が描き、ビューポートの「GPU の復元を待っています」が消える) を待ってから確かめる。
+どれも、作り直しの完了 (新しい WebPuppet が描き、ビューポートの「GPU の復元を待っています」が消える) を待ってから確かめる。
 作り直しの `WebPuppet.create` を 500 ms 遅らせて、CI の SwiftShader のように作成が遅いときに、作り終える前に確かめないことも兼ねる
 (Player の `player-loss-during-load` と同じ。T0960)。3000 ms 遅らせても通ることと、5 回続けて流して揺れないことを確かめた (T1656)。
 T1644 の前の `dressUp.svelte.ts` では 2 つとも落ち (失っている間にパネルに「The GPU stopped working.」が出る)、作り直した後に取っておいた
 モジュールを読み込まない (`#loadPending` を呼ばない) と `dress-up-loss-during-load` が落ちることも確かめた。
+T1658 の前の `dressUp.svelte.ts` (WebPuppet が無い間に読み込んだものを捨てる) では `dress-up-load-during-recreation` が落ちる
+(猫耳が付かない) ことと、直した後に 5 回続けて流して揺れないことを確かめた。
 
 ## 選んだ仕組み
 

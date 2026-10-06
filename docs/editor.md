@@ -684,7 +684,9 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   例外を投げます。このときは失敗の文を出さず、ビューポートの作り直し ([docs/ui.md](ui.md#webpuppet-の寿命)。プレビューは毎フレーム描くので
   次のフレームで気づく) の後に付け直します。読み込もうとしたバイト列は取っておき (`DressUp` の `#pending`)、付け外しは付けたい組
   (`wanted`) だけを変え、作り直した `WebPuppet` で `PreviewMode.loaded` → `DressUp.loaded` が読み込んで付けます。作り直した `WebPuppet` を
-  付けている途中にまた失っても、付けたい組は変えません (次の作り直しで付ける)。Player (`@ugoe/player`) の読み込みの途中の喪失 (T0955) と
+  付けている途中にまた失っても、付けたい組は変えません (次の作り直しで付ける)。作り直しの途中 (古い `WebPuppet` を捨ててから新しいものが
+  できるまで。ビューポートの `puppet` が `null`) に読み込んだモジュールも、ファイルを読んでからバイト列を同じように取っておき、作り直した
+  `WebPuppet` に読み込んで (「Load .ugoemod…」で読み込んだものなら) 付けます (T1658)。Player (`@ugoe/player`) の読み込みの途中の喪失 (T0955) と
   同じ扱いです。作り直しを諦めたときはビューポートが文を出します。
 - **エラー:** `DressUpError` の `code` を分かる言葉にします (`describeProblem`。「スロットがない → Slots タブで足す」
   「公開していないパラメータ → スロットの Parameters に入れる」など)。元の文言は「Details」に出します。
