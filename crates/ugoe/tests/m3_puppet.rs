@@ -33,6 +33,7 @@ const DT: f32 = 1.0 / 60.0;
 fn param(puppet: &Puppet, id: &str) -> f32 {
     let p = puppet.instance().parameters();
     p.get(p.index_of(id).unwrap_or_else(|| panic!("parameter {id}")))
+        .unwrap()
 }
 
 #[track_caller]
@@ -301,15 +302,25 @@ fn every_stage_runs_in_one_puppet_in_frame_order() {
         // ポーズ: モーションが `ArmB` を求めるので、`fade_duration` (0.5 秒) かけて切り替わる。
         let opacity = |p: usize| puppet.instance().part_opacity_override(p);
         let shown = (t / 0.5).min(1.0);
-        assert_close(opacity(arm_b).0, shown, 1e-3, &what("ArmB"));
-        assert!(opacity(arm_a).0 <= 1.0 - shown + 1e-3, "{}", what("ArmA"));
+        assert_close(opacity(arm_b).unwrap().0, shown, 1e-3, &what("ArmB"));
+        assert!(
+            opacity(arm_a).unwrap().0 <= 1.0 - shown + 1e-3,
+            "{}",
+            what("ArmA")
+        );
         assert_eq!(opacity(arm_a), opacity(sleeve_a), "{}", what("SleeveA"));
     }
     assert!(blinked && eyes_open, "the eyes must blink and reopen");
     assert!(hair_front > 1e-3, "HairFront never moved: {hair_front}");
     assert!(hair_swing > 0.1, "the hair never swung: {hair_swing}");
-    assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
-    assert_eq!(puppet.instance().part_opacity_override(arm_a), (0.0, 1.0));
+    assert_eq!(
+        puppet.instance().part_opacity_override(arm_b),
+        Some((1.0, 1.0))
+    );
+    assert_eq!(
+        puppet.instance().part_opacity_override(arm_a),
+        Some((0.0, 1.0))
+    );
 }
 
 /// 上のテストの対照: 口のリグは入力が変われば揺れる (リップシンクの代わりにトラッキングで口を動かす)。

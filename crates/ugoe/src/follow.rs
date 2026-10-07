@@ -221,7 +221,7 @@ mod tests {
 
     fn param(puppet: &Puppet, id: &str) -> f32 {
         let p = puppet.instance().parameters();
-        p.get(p.index_of(id).unwrap())
+        p.get(p.index_of(id).unwrap()).unwrap()
     }
 
     fn values(puppet: &Puppet) -> Vec<f32> {
@@ -416,7 +416,7 @@ mod tests {
     fn opacities(puppet: &Puppet) -> Vec<f32> {
         let instance = puppet.instance();
         let parts = (0..instance.compiled().model().parts.len()).flat_map(|i| {
-            let (value, weight) = instance.part_opacity_override(i);
+            let (value, weight) = instance.part_opacity_override(i).unwrap();
             [value, weight]
         });
         parts
@@ -470,7 +470,10 @@ mod tests {
         // 終わった後はカーブが無く、ポーズの要素は切り替えたまま。
         assert!(conductor.part_opacities_applied().is_empty());
         let arm_b = follower.instance().compiled().part_index("ArmB").unwrap();
-        assert_eq!(follower.instance().part_opacity_override(arm_b), (1.0, 1.0));
+        assert_eq!(
+            follower.instance().part_opacity_override(arm_b),
+            Some((1.0, 1.0))
+        );
     }
 
     /// `update` はカーブのあるパーツだけを、パーツの番号で覚える (モデルに無いパーツは含めない)。

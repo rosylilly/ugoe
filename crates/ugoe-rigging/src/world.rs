@@ -87,7 +87,9 @@ impl ParentWorld {
     /// 今の姿勢での、親の座標系 → キャンバス座標の写像。
     pub fn world(&self) -> WorldTransform<'_> {
         match &self.parent {
-            Some((instance, index)) => instance.deformer_world(*index),
+            Some((instance, index)) => instance
+                .deformer_world(*index)
+                .unwrap_or(WorldTransform::IDENTITY),
             None => WorldTransform::IDENTITY,
         }
     }

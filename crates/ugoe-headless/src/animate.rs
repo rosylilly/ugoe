@@ -124,7 +124,7 @@ pub fn apply_params(
             bail!("unknown parameter `{id}` (known: {known})");
         };
         parameters.set(index, *value);
-        let actual = parameters.get(index);
+        let actual = parameters.get(index).unwrap_or(*value);
         if actual != *value {
             let p = &instance.compiled().model().parameters[index.0 as usize];
             warnings.push(format!(
@@ -226,7 +226,7 @@ mod tests {
 
     fn param(puppet: &Puppet, id: &str) -> f32 {
         let p = puppet.instance().parameters();
-        p.get(p.index_of(id).unwrap())
+        p.get(p.index_of(id).unwrap()).unwrap()
     }
 
     /// `X` を 1 秒で 0 → 1 に動かすモーション。

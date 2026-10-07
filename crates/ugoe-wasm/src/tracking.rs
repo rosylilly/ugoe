@@ -95,7 +95,7 @@ mod tests {
         puppet.set_tracking(Some(input));
         puppet.update(1.0 / 60.0);
         let params = puppet.instance().parameters();
-        let get = |id: &str| params.get(params.index_of(id).unwrap());
+        let get = |id: &str| params.get(params.index_of(id).unwrap()).unwrap();
         assert!((get("EyeLOpen") - 0.25).abs() < 1e-6);
         assert!((get("EyeROpen") - 1.0).abs() < 1e-6);
         assert!((get("MouthOpenY") - 0.5).abs() < 1e-6);

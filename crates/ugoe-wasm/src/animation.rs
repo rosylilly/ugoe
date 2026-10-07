@@ -432,7 +432,7 @@ pub fn base_physics_json(puppet: &Puppet) -> Result<Option<String>, AnimationErr
 pub fn part_evaluated_opacity(puppet: &Puppet, part: &str) -> Option<f32> {
     let instance = puppet.instance();
     let index = instance.compiled().part_index(part)?;
-    Some(instance.part_opacity(index))
+    instance.part_opacity(index)
 }
 
 /// 今の物理の設定の JSON。物理が無ければ `None`。
@@ -511,7 +511,7 @@ mod tests {
 
     fn param(puppet: &Puppet, id: &str) -> f32 {
         let p = puppet.instance().parameters();
-        p.get(p.index_of(id).unwrap())
+        p.get(p.index_of(id).unwrap()).unwrap()
     }
 
     fn set_param(puppet: &mut Puppet, id: &str, value: f32) {
@@ -1030,19 +1030,25 @@ mod tests {
         assert!(!show_pose(&mut puppet, "SleeveA"));
         assert!(!show_pose(&mut puppet, "Missing"));
         puppet.update(DT);
-        assert_eq!(puppet.instance().part_opacity_override(arm_b), (0.0, 1.0));
+        assert_eq!(
+            puppet.instance().part_opacity_override(arm_b),
+            Some((0.0, 1.0))
+        );
 
         assert!(show_pose(&mut puppet, "ArmB"));
         for _ in 0..15 {
             puppet.update(DT);
         }
-        let (value, weight) = puppet.instance().part_opacity_override(arm_b);
+        let (value, weight) = puppet.instance().part_opacity_override(arm_b).unwrap();
         assert!((value - 0.5).abs() < 1e-4, "{value}");
         assert_eq!(weight, 1.0);
         for _ in 0..30 {
             puppet.update(DT);
         }
-        assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+        assert_eq!(
+            puppet.instance().part_opacity_override(arm_b),
+            Some((1.0, 1.0))
+        );
     }
 
     /// フェードを飛ばした表示は、次の `update` で選んだ要素を不透明度 1 で書き込む。
@@ -1054,13 +1060,22 @@ mod tests {
         assert!(!show_pose_immediately(&mut puppet, "SleeveA"));
         assert!(!show_pose_immediately(&mut puppet, "Missing"));
         puppet.update(DT);
-        assert_eq!(puppet.instance().part_opacity_override(arm_b), (0.0, 1.0));
+        assert_eq!(
+            puppet.instance().part_opacity_override(arm_b),
+            Some((0.0, 1.0))
+        );
 
         assert!(show_pose_immediately(&mut puppet, "ArmB"));
         assert_eq!(pose_visible_parts(&puppet), [Some("ArmB")]);
         puppet.update(DT);
-        assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
-        assert_eq!(puppet.instance().part_opacity_override(arm_a), (0.0, 1.0));
+        assert_eq!(
+            puppet.instance().part_opacity_override(arm_b),
+            Some((1.0, 1.0))
+        );
+        assert_eq!(
+            puppet.instance().part_opacity_override(arm_a),
+            Some((0.0, 1.0))
+        );
     }
 
     /// 評価後のパーツの不透明度は祖先を掛けた値で、無いパーツは `None`。

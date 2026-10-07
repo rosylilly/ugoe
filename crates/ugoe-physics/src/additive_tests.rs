@@ -24,7 +24,7 @@ const BODY_FROM_HEAD: f32 = 0.3;
 const YAW: f32 = 20.0;
 
 fn get(params: &ParameterValues, id: &str) -> f32 {
-    params.get(params.index_of(id).unwrap())
+    params.get(params.index_of(id).unwrap()).unwrap()
 }
 
 fn set(params: &mut ParameterValues, id: &str, value: f32) {

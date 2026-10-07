@@ -131,7 +131,7 @@ pub(crate) fn build(compiled: &CompiledModel) -> (Vec<Option<MeshMask>>, Vec<Mas
 
 /// メッシュのマスクの内容のキーと、読むときに 1 から引くか。マスクがなければ `None`。
 fn content_key(compiled: &CompiledModel, mesh: usize) -> Option<(ContentKey, bool)> {
-    let refs = compiled.mask_refs(mesh);
+    let refs = compiled.mask_refs(mesh)?;
     let set = |invert: bool| {
         let mut v: Vec<u32> = refs
             .iter()
@@ -143,7 +143,7 @@ fn content_key(compiled: &CompiledModel, mesh: usize) -> Option<(ContentKey, boo
         v
     };
     let (pos, neg) = (set(false), set(true));
-    let intersection = compiled.mask_mode(mesh) == MaskMode::Intersection && pos.len() >= 2;
+    let intersection = compiled.mask_mode(mesh) == Some(MaskMode::Intersection) && pos.len() >= 2;
     Some(match (pos.is_empty(), neg.is_empty()) {
         (true, true) => return None,
         // 和集合 (通常マスク 1 つの共通部分も同じ): pos = 1 − Π(1 − c)。
@@ -191,7 +191,7 @@ fn content_of(compiled: &CompiledModel, key: &ContentKey) -> MaskContent {
     members.dedup();
     let level = members
         .iter()
-        .map(|&m| compiled.mask_depth(m as usize))
+        .filter_map(|&m| compiled.mask_depth(m as usize))
         .max()
         .unwrap_or(0);
     MaskContent {

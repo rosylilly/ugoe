@@ -95,7 +95,7 @@ fn run_update(settings: PhysicsSettings, layouts: &[Model]) -> u64 {
         let mut values: Vec<(&str, f32)> = layouts[0]
             .parameters
             .iter()
-            .filter_map(|p| Some((p.id.as_str(), params.get(params.index_of(p.id.as_str())?))))
+            .filter_map(|p| Some((p.id.as_str(), params.get(params.index_of(p.id.as_str())?)?)))
             .collect();
         values.sort_by(|a, b| a.0.cmp(b.0));
         for (_, v) in values {

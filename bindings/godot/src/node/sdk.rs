@@ -276,8 +276,9 @@ impl UgoePuppet2D {
     #[func]
     pub fn get_part_opacity(&self, id: GString) -> VarDictionary {
         let mut d = VarDictionary::new();
-        if let Some((loaded, i)) = self.part(&id) {
-            let (value, weight) = loaded.puppet.instance().part_opacity_override(i);
+        let opacity = (self.part(&id))
+            .and_then(|(loaded, i)| loaded.puppet.instance().part_opacity_override(i));
+        if let Some((value, weight)) = opacity {
             d.set("value", value);
             d.set("weight", weight);
         }
@@ -288,8 +289,8 @@ impl UgoePuppet2D {
     /// 不透明度に掛かる)。パーツが無ければ警告を出して 0。
     #[func]
     pub fn get_part_evaluated_opacity(&self, id: GString) -> f32 {
-        match self.part(&id) {
-            Some((loaded, i)) => loaded.puppet.instance().part_opacity(i),
+        match (self.part(&id)).and_then(|(loaded, i)| loaded.puppet.instance().part_opacity(i)) {
+            Some(opacity) => opacity,
             None => {
                 godot_warn!("ugoe: part `{id}` not found");
                 0.0

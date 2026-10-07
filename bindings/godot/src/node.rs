@@ -441,7 +441,7 @@ impl UgoePuppet2D {
     pub fn get_parameter(&self, id: GString) -> f32 {
         let id = id.to_string();
         match (&self.loaded, self.parameter_index(&id)) {
-            (Some(l), Some(i)) => l.puppet.instance().parameters().get(i),
+            (Some(l), Some(i)) => l.puppet.instance().parameters().get(i).unwrap_or(0.0),
             _ => self.parameters.get(&id).copied().unwrap_or(0.0),
         }
     }
@@ -459,11 +459,13 @@ impl UgoePuppet2D {
         if let (Some(loaded), Some(i)) = (&mut self.loaded, index) {
             let params = loaded.puppet.instance_mut().parameters_mut();
             params.set(i, value);
-            let value = params.get(i);
-            if value == params.default_value(i) {
-                self.parameters.remove(&id);
-            } else {
-                self.parameters.insert(id, value);
+            match params.get(i) {
+                Some(value) if Some(value) != params.default_value(i) => {
+                    self.parameters.insert(id, value);
+                }
+                _ => {
+                    self.parameters.remove(&id);
+                }
             }
             self.dirty = true;
         } else if self.loaded.is_some() {
@@ -497,11 +499,7 @@ impl UgoePuppet2D {
     pub fn reset_parameters(&mut self) {
         self.parameters.clear();
         if let Some(loaded) = &mut self.loaded {
-            let params = loaded.puppet.instance_mut().parameters_mut();
-            for i in 0..params.len() {
-                let i = ParamIndex(i as u32);
-                params.set(i, params.default_value(i));
-            }
+            loaded.puppet.instance_mut().parameters_mut().reset();
             self.dirty = true;
         }
         self.base_mut().notify_property_list_changed();
@@ -1122,7 +1120,7 @@ impl UgoePuppet2D {
     fn parameter_default(&self, id: &str) -> Option<f32> {
         let loaded = self.loaded.as_ref()?;
         let i = self.parameter_index(id)?;
-        Some(loaded.puppet.instance().parameters().default_value(i))
+        loaded.puppet.instance().parameters().default_value(i)
     }
 
     /// `model` を当てる: あれば読み込み、null ならモデルを外す。

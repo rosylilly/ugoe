@@ -106,11 +106,8 @@ pub unsafe extern "C" fn ugoe_puppet_part_opacity(
     guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
-        let len = p.part_ids.len();
-        if index as usize >= len {
-            return Err(Error::out_of_range("part", index as usize, len));
-        }
-        let (value, weight) = p.puppet.instance().part_opacity_override(index as usize);
+        let (value, weight) = (p.puppet.instance().part_opacity_override(index as usize))
+            .ok_or_else(|| Error::out_of_range("part", index as usize, p.part_ids.len()))?;
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", UgoePartOpacity { value, weight }) }
     })
@@ -133,11 +130,8 @@ pub unsafe extern "C" fn ugoe_puppet_part_evaluated_opacity(
     guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
-        let len = p.part_ids.len();
-        if index as usize >= len {
-            return Err(Error::out_of_range("part", index as usize, len));
-        }
-        let opacity = p.puppet.instance().part_opacity(index as usize);
+        let opacity = (p.puppet.instance().part_opacity(index as usize))
+            .ok_or_else(|| Error::out_of_range("part", index as usize, p.part_ids.len()))?;
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", opacity) }
     })

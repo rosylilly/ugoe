@@ -360,17 +360,9 @@ impl ModelInstance {
         }
     }
 
-    /// パーツ `part` の不透明度の上書き `(値, 重み)`。
-    ///
-    /// # Panics
-    ///
-    /// `part` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn part_opacity_override(&self, part: usize) -> (f32, f32) {
-        self.part_opacity_overrides[part]
+    /// パーツ `part` の不透明度の上書き `(値, 重み)`。`part` が範囲外なら `None`。
+    pub fn part_opacity_override(&self, part: usize) -> Option<(f32, f32)> {
+        self.part_opacity_overrides.get(part).copied()
     }
 
     /// すべてのパーツの不透明度の上書きをやめる。
@@ -828,17 +820,9 @@ impl ModelInstance {
 
     /// 直前の [`ModelInstance::update`] で評価したパーツ `part` (`Model::parts` のインデックス) の不透明度。
     /// 上書き ([`ModelInstance::set_part_opacity_override`]) を当てた自身の値に祖先の値を掛けたもので、
-    /// メッシュの不透明度に掛かる値 (`docs/spec/evaluation.md` の 2.)。
-    ///
-    /// # Panics
-    ///
-    /// `part` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn part_opacity(&self, part: usize) -> f32 {
-        self.part_opacity[part]
+    /// メッシュの不透明度に掛かる値 (`docs/spec/evaluation.md` の 2.)。`part` が範囲外なら `None`。
+    pub fn part_opacity(&self, part: usize) -> Option<f32> {
+        self.part_opacity.get(part).copied()
     }
 
     // ---- デフォーマのワールド変換 (docs/spec/evaluation.md#デフォーマのワールド変換を読む) ----
@@ -850,54 +834,33 @@ impl ModelInstance {
     ///
     /// ワープは UV 空間、回転デフォーマは原点を (0,0) としたピクセル単位の座標系を写す。
     /// 未知の種類のデフォーマは恒等変換なので、親のワールド変換と同じになる。
-    ///
-    /// # Panics
-    ///
-    /// `deformer` が範囲外のとき。
-    pub fn deformer_world(&self, deformer: usize) -> WorldTransform<'_> {
-        assert!(
-            deformer < self.deformer_affine.len(),
-            "deformer out of range"
-        );
-        self.world(Some(deformer as u32))
+    /// `deformer` が範囲外なら `None`。
+    pub fn deformer_world(&self, deformer: usize) -> Option<WorldTransform<'_>> {
+        (deformer < self.deformer_affine.len()).then(|| self.world(Some(deformer as u32)))
     }
 
     /// デフォーマ `deformer` の親の座標系 (キーフォームの原点・制御点の座標系) → キャンバス座標。
-    /// 親がなければ恒等写像。
-    ///
-    /// # Panics
-    ///
-    /// `deformer` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn deformer_parent_world(&self, deformer: usize) -> WorldTransform<'_> {
-        self.world(self.compiled.deformers[deformer].parent)
+    /// 親がなければ恒等写像。`deformer` が範囲外なら `None`。
+    pub fn deformer_parent_world(&self, deformer: usize) -> Option<WorldTransform<'_>> {
+        let parent = self.compiled.deformers.get(deformer)?.parent;
+        Some(self.world(parent))
     }
 
     /// メッシュ `mesh` の親の座標系 (キーフォームの頂点の座標系) → キャンバス座標。
-    /// 親がなければ恒等写像。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mesh_parent_world(&self, mesh: usize) -> WorldTransform<'_> {
-        self.world(self.compiled.meshes[mesh].parent)
+    /// 親がなければ恒等写像。`mesh` が範囲外なら `None`。
+    pub fn mesh_parent_world(&self, mesh: usize) -> Option<WorldTransform<'_>> {
+        let parent = self.compiled.meshes.get(mesh)?.parent;
+        Some(self.world(parent))
     }
 
-    /// `deformer_world(deformer).point(local)`。
-    pub fn deformer_world_point(&self, deformer: usize, local: Vec2) -> Vec2 {
-        self.deformer_world(deformer).point(local)
+    /// `deformer_world(deformer).point(local)`。`deformer` が範囲外なら `None`。
+    pub fn deformer_world_point(&self, deformer: usize, local: Vec2) -> Option<Vec2> {
+        Some(self.deformer_world(deformer)?.point(local))
     }
 
-    /// `deformer_world(deformer).jacobian(local)`。
-    pub fn deformer_world_jacobian(&self, deformer: usize, local: Vec2) -> Mat2 {
-        self.deformer_world(deformer).jacobian(local)
+    /// `deformer_world(deformer).jacobian(local)`。`deformer` が範囲外なら `None`。
+    pub fn deformer_world_jacobian(&self, deformer: usize, local: Vec2) -> Option<Mat2> {
+        Some(self.deformer_world(deformer)?.jacobian(local))
     }
 
     /// ワープ `deformer` のキャンバス座標の制御点 (行優先、x が速い)。ワープでなければ `None`。
@@ -922,24 +885,13 @@ impl ModelInstance {
     ///
     /// `update` の途中の値は保持していないので、呼ぶたびに補間し直して新しい `Vec` を返す
     /// (毎フレームの描画ではなく、エディタなどの問い合わせ用)。`update` の後にパラメータを
-    /// 変えていなければ、`update` が使った値と同じになる。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mesh_local_positions(&self, mesh: usize) -> Vec<Vec2> {
-        let grid = &self.compiled.model.meshes[mesh].keyforms;
+    /// 変えていなければ、`update` が使った値と同じになる。`mesh` が範囲外なら `None`。
+    pub fn mesh_local_positions(&self, mesh: usize) -> Option<Vec<Vec2>> {
+        let grid = &self.compiled.model.meshes.get(mesh)?.keyforms;
+        let compiled = self.compiled.meshes.get(mesh)?;
         let mut weights = Weights::new();
-        keyform::weights(
-            &self.compiled.meshes[mesh].bindings,
-            self.parameters.as_slice(),
-            &mut weights,
-        );
-        let n = self.drawables[mesh].positions.len();
+        keyform::weights(&compiled.bindings, self.parameters.as_slice(), &mut weights);
+        let n = self.drawables.get(mesh)?.positions.len();
         let mut out = vec![Vec2::ZERO; n];
         for &(k, w) in &weights {
             let positions = grid.keyforms.get(k).map_or(&[][..], |k| &k.positions);
@@ -947,7 +899,7 @@ impl ModelInstance {
                 *p += *q * w;
             }
         }
-        let shapes = &self.compiled.meshes[mesh].blend_shapes;
+        let shapes = &compiled.blend_shapes;
         let mut scratch = GridWeights::default();
         for (shape_grid, shape) in grid.blend_shapes.iter().zip(shapes) {
             if let Some((current, _)) = shape.weights(self.parameters.as_slice(), &mut scratch) {
@@ -955,7 +907,7 @@ impl ModelInstance {
                 blend_shape::add_points(&mut out, shape_grid, current, rest, |k| &k.positions);
             }
         }
-        out
+        Some(out)
     }
 
     /// 回転デフォーマ `deformer` のキーフォームを今のパラメータ値で補間した値 (ブレンドシェイプの
@@ -1140,11 +1092,11 @@ mod tests {
         ] {
             for part in 0..parts {
                 instance.set_part_opacity_override(part, value, weight);
-                assert_eq!(instance.part_opacity_override(part), (0.5, 0.5));
+                assert_eq!(instance.part_opacity_override(part), Some((0.5, 0.5)));
             }
             instance.update();
             assert_eq!(instance.drawables(), &before[..]);
-            assert!((0..parts).all(|p| instance.part_opacity(p).is_finite()));
+            assert!((0..parts).all(|p| instance.part_opacity(p).is_some_and(f32::is_finite)));
         }
     }
 
@@ -1285,18 +1237,19 @@ mod tests {
                     if glued.contains(&mesh.id.to_string()) {
                         continue;
                     }
-                    let world = instance.mesh_parent_world(i);
+                    let world = instance.mesh_parent_world(i).unwrap();
                     assert_eq!(world.is_identity(), mesh.parent.is_none());
                     let mapped: Vec<Vec2> = instance
                         .mesh_local_positions(i)
+                        .unwrap()
                         .into_iter()
                         .map(|p| world.point(p))
                         .collect();
                     assert_eq!(mapped, instance.drawables()[i].positions, "{}", mesh.id);
                     if let Some(parent) = &mesh.parent {
                         let d = instance.compiled().deformer_index(parent.as_str()).unwrap();
-                        for &p in &instance.mesh_local_positions(i) {
-                            assert_eq!(instance.deformer_world_point(d, p), world.point(p));
+                        for &p in &instance.mesh_local_positions(i).unwrap() {
+                            assert_eq!(instance.deformer_world_point(d, p), Some(world.point(p)));
                         }
                     }
                 }
@@ -1330,7 +1283,7 @@ mod tests {
                         DeformerKind::Warp(_) => (&warp_samples[..], 1e-3),
                         _ => (&rotation_samples[..], 0.5),
                     };
-                    let world = instance.deformer_world(d);
+                    let world = instance.deformer_world(d).unwrap();
                     for &p in samples {
                         let j = world.jacobian(p);
                         let dx = (world.point(p + Vec2::new(h, 0.0))
@@ -1352,7 +1305,7 @@ mod tests {
                             deformer.id,
                             j.y_axis
                         );
-                        assert_eq!(j, instance.deformer_world_jacobian(d, p));
+                        assert_eq!(Some(j), instance.deformer_world_jacobian(d, p));
                         checked += 1;
                     }
                 }
@@ -1369,7 +1322,7 @@ mod tests {
             let mut instance = instance(model);
             set_all(&mut instance, 0.7);
             for (d, deformer) in instance.compiled().model().deformers.iter().enumerate() {
-                let world = instance.deformer_world(d);
+                let world = instance.deformer_world(d).unwrap();
                 match &deformer.kind {
                     DeformerKind::Warp(w) => {
                         let points = instance.warp_world_points(d).unwrap();
@@ -1433,7 +1386,7 @@ mod tests {
         set_all(&mut instance, 0.7);
         let model = instance.compiled().model().clone();
         for (d, deformer) in model.deformers.iter().enumerate() {
-            let world = instance.deformer_world(d);
+            let world = instance.deformer_world(d).unwrap();
             let built = match &deformer.kind {
                 DeformerKind::Warp(w) => WorldTransform::from_warp_points(
                     instance.warp_world_points(d).unwrap(),
@@ -1466,16 +1419,36 @@ mod tests {
     }
 
     // 親のないデフォーマの親の座標系は恒等写像。
+    // T0187: 添字を取る問い合わせは範囲外の番号で `None` を返す (パニックしない)。
+    #[test]
+    fn out_of_range_queries_return_none() {
+        let instance = instance(fixtures::rotation_chain());
+        let model = instance.compiled().model();
+        let (parts, deformers, meshes) =
+            (model.parts.len(), model.deformers.len(), model.meshes.len());
+        assert_eq!(instance.part_opacity(parts), None);
+        assert_eq!(instance.part_opacity_override(parts), None);
+        assert!(instance.deformer_world(deformers).is_none());
+        assert!(instance.deformer_parent_world(deformers).is_none());
+        assert!(instance.mesh_parent_world(meshes).is_none());
+        assert_eq!(instance.deformer_world_point(deformers, Vec2::ZERO), None);
+        assert_eq!(
+            instance.deformer_world_jacobian(usize::MAX, Vec2::ZERO),
+            None
+        );
+        assert_eq!(instance.mesh_local_positions(meshes), None);
+    }
+
     #[test]
     fn root_parent_world_is_identity() {
         let instance = instance(fixtures::rotation_chain());
         let arm = instance.compiled().deformer_index("Arm").unwrap();
         let hand = instance.compiled().deformer_index("Hand").unwrap();
-        let root = instance.deformer_parent_world(arm);
+        let root = instance.deformer_parent_world(arm).unwrap();
         assert!(root.is_identity());
         assert_eq!(root.point(Vec2::new(3.0, 4.0)), Vec2::new(3.0, 4.0));
         assert_eq!(root.jacobian(Vec2::new(3.0, 4.0)), Mat2::IDENTITY);
-        assert!(!instance.deformer_parent_world(hand).is_identity());
+        assert!(!instance.deformer_parent_world(hand).unwrap().is_identity());
     }
 
     // ---- 変更フラグ (docs/spec/evaluation.md#8-出力) ----
@@ -1516,7 +1489,7 @@ mod tests {
         instance.set_part_opacity_override(child, 0.0, 0.5);
         instance.update();
         assert!((instance.part_opacity[child] - 0.25).abs() < 1e-6);
-        assert_eq!(instance.part_opacity_override(child), (0.0, 0.5));
+        assert_eq!(instance.part_opacity_override(child), Some((0.0, 0.5)));
 
         instance.clear_part_opacity_overrides();
         instance.update();
@@ -1529,19 +1502,19 @@ mod tests {
         let mut instance = instance(fixtures::part_opacity_hierarchy());
         let [root, child, grandchild] =
             ["Root", "Child", "Grandchild"].map(|id| instance.compiled().part_index(id).unwrap());
-        assert!((instance.part_opacity(root) - 1.0).abs() < 1e-6);
-        assert!((instance.part_opacity(child) - 0.5).abs() < 1e-6);
-        assert!((instance.part_opacity(grandchild) - 0.4).abs() < 1e-6);
+        assert!((instance.part_opacity(root).unwrap() - 1.0).abs() < 1e-6);
+        assert!((instance.part_opacity(child).unwrap() - 0.5).abs() < 1e-6);
+        assert!((instance.part_opacity(grandchild).unwrap() - 0.4).abs() < 1e-6);
 
         set(&mut instance, "Fade", 1.0);
         instance.set_part_opacity_override(child, 0.0, 0.5);
         // update の前は前回の値のまま。
-        assert!((instance.part_opacity(child) - 0.5).abs() < 1e-6);
+        assert!((instance.part_opacity(child).unwrap() - 0.5).abs() < 1e-6);
         instance.update();
         // Root = 0.5、Child = lerp(0.5, 0, 0.5) × 0.5 = 0.125、Grandchild = 0.8 × 0.125。
-        assert!((instance.part_opacity(root) - 0.5).abs() < 1e-6);
-        assert!((instance.part_opacity(child) - 0.125).abs() < 1e-6);
-        assert!((instance.part_opacity(grandchild) - 0.1).abs() < 1e-6);
+        assert!((instance.part_opacity(root).unwrap() - 0.5).abs() < 1e-6);
+        assert!((instance.part_opacity(child).unwrap() - 0.125).abs() < 1e-6);
+        assert!((instance.part_opacity(grandchild).unwrap() - 0.1).abs() < 1e-6);
         // メッシュ A (Grandchild、デフォーマ 0.25) の不透明度に掛かる。
         let a = mesh_index(&instance, "A");
         assert!((instance.drawables()[a].opacity - 0.1 * 0.25).abs() < 1e-6);

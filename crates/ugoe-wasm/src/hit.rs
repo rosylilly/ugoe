@@ -53,7 +53,7 @@ fn contains(instance: &ModelInstance, i: u32, point: [f32; 2]) -> bool {
     if !d.visible || d.opacity <= 0.0 {
         return false;
     }
-    instance.mesh_contains(i as usize, Vec2::from(point))
+    instance.mesh_contains(i as usize, Vec2::from(point)) == Some(true)
 }
 
 #[cfg(test)]

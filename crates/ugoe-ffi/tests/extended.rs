@@ -1031,7 +1031,9 @@ fn physics_settings_can_be_replaced() {
     }
     let front = {
         let params = rust.instance().parameters();
-        params.get(params.index_of(standard::HAIR_FRONT).unwrap())
+        params
+            .get(params.index_of(standard::HAIR_FRONT).unwrap())
+            .unwrap()
     };
     assert!(front.abs() > 1e-3);
     assert!((param(&p, standard::HAIR_FRONT) - front).abs() < 1e-5);
@@ -1361,7 +1363,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
         .parameters()
         .index_of(standard::MOUTH_OPEN_Y)
         .unwrap();
-    assert_eq!(native.instance().parameters().get(id), mouth);
+    assert_eq!(native.instance().parameters().get(id), Some(mouth));
 
     ok(unsafe {
         ugoe_puppet_follow(

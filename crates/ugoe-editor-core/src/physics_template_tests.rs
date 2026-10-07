@@ -248,8 +248,8 @@ fn head_turn(model: &Model, physics: Option<&PhysicsSettings>, frames: usize) ->
             puppet.update(1.0 / FPS);
             let params = puppet.instance().parameters();
             (
-                params.get(body),
-                relay.map(|r| params.get(r)).unwrap_or_default(),
+                params.get(body).unwrap(),
+                relay.and_then(|r| params.get(r)).unwrap_or_default(),
             )
         })
         .skip(10)

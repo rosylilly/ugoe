@@ -126,64 +126,45 @@ impl ParameterValues {
         self.values.is_empty()
     }
 
-    /// 現在値。
-    ///
-    /// # Panics
-    ///
-    /// `index` が範囲外のとき (`min`・`max`・`default_value`・`set`・`blend` も同じ)。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn get(&self, index: ParamIndex) -> f32 {
-        self.values[index.0 as usize]
+    /// 現在値。`index` が範囲外なら `None` (`min`・`max`・`default_value` も同じ)。
+    pub fn get(&self, index: ParamIndex) -> Option<f32> {
+        self.values.get(index.0 as usize).copied()
     }
 
     /// 値域の下限。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn min(&self, index: ParamIndex) -> f32 {
-        self.min[index.0 as usize]
+    pub fn min(&self, index: ParamIndex) -> Option<f32> {
+        self.min.get(index.0 as usize).copied()
     }
 
     /// 値域の上限。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn max(&self, index: ParamIndex) -> f32 {
-        self.max[index.0 as usize]
+    pub fn max(&self, index: ParamIndex) -> Option<f32> {
+        self.max.get(index.0 as usize).copied()
     }
 
     /// 既定値。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn default_value(&self, index: ParamIndex) -> f32 {
-        self.default[index.0 as usize]
+    pub fn default_value(&self, index: ParamIndex) -> Option<f32> {
+        self.default.get(index.0 as usize).copied()
     }
 
     /// 値域にクランプして設定する。NaN は書き込まずに無視する (値は変わらない。
     /// `docs/spec/evaluation.md` の評価はいつも値域の中の値を見る)。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
-    )]
+    /// `index` が範囲外なら何もしない (別のモデルについて解決した連番でもパニックしない)。
     pub fn set(&mut self, index: ParamIndex, value: f32) {
         let i = index.0 as usize;
-        if !value.is_nan() {
-            self.values[i] = value.clamp(self.min[i], self.max[i]);
+        if let (Some(v), Some(&min), Some(&max)) =
+            (self.values.get_mut(i), self.min.get(i), self.max.get(i))
+            && !value.is_nan()
+        {
+            *v = value.clamp(min, max);
         }
     }
 
     /// 現在値に `weight` の重みで `value` をブレンドする (モーションのフェード用)。
-    /// 結果が NaN なら [`ParameterValues::set`] と同じく無視する。
+    /// 結果が NaN なら [`ParameterValues::set`] と同じく無視する。`index` が範囲外なら何もしない。
     pub fn blend(&mut self, index: ParamIndex, value: f32, weight: f32) {
-        let current = self.get(index);
-        self.set(index, current + (value - current) * weight);
+        if let Some(current) = self.get(index) {
+            self.set(index, current + (value - current) * weight);
+        }
     }
 
     /// `previous` にある同じ ID のパラメータの値を引き継ぐ (値域にクランプする)。
@@ -191,8 +172,8 @@ impl ParameterValues {
     pub fn carry_over(&mut self, previous: &ParameterValues) {
         let ranges = self.min.iter().zip(&self.max);
         for ((id, v), (&min, &max)) in self.layout.ids.iter().zip(&mut self.values).zip(ranges) {
-            if let Some(j) = previous.index_of(id.as_str()) {
-                *v = previous.get(j).clamp(min, max);
+            if let Some(value) = previous.index_of(id.as_str()).and_then(|j| previous.get(j)) {
+                *v = value.clamp(min, max);
             }
         }
     }
@@ -216,9 +197,25 @@ mod tests {
     fn range_accessors_return_model_values() {
         let params = ParameterValues::from_model(&ugoe_model::fixtures::physics_hair());
         let index = params.index_of(ugoe_model::standard::ANGLE_X).unwrap();
-        assert_eq!(params.min(index), -30.0);
-        assert_eq!(params.max(index), 30.0);
-        assert_eq!(params.default_value(index), 0.0);
+        assert_eq!(params.min(index), Some(-30.0));
+        assert_eq!(params.max(index), Some(30.0));
+        assert_eq!(params.default_value(index), Some(0.0));
+    }
+
+    // T0187: 範囲外の連番の問い合わせは `None`、書き込みは何もしない (パニックしない)。
+    #[test]
+    fn out_of_range_index_reads_none_and_writes_nothing() {
+        let mut params = ParameterValues::from_model(&ugoe_model::fixtures::physics_hair());
+        let out = ParamIndex(params.len() as u32);
+        assert_eq!(params.get(out), None);
+        assert_eq!(params.min(out), None);
+        assert_eq!(params.max(out), None);
+        assert_eq!(params.default_value(out), None);
+        let before = params.as_slice().to_vec();
+        params.set(out, 1.0);
+        params.blend(out, 1.0, 1.0);
+        params.set(ParamIndex(u32::MAX), 1.0);
+        assert_eq!(params.as_slice(), before.as_slice());
     }
 
     // spec/evaluation.md#parameter-values: 有限値でない書き込みは無視してよい。NaN を値に入れると
@@ -229,13 +226,13 @@ mod tests {
         let index = params.index_of(ugoe_model::standard::ANGLE_X).unwrap();
         params.set(index, 12.0);
         params.set(index, f32::NAN);
-        assert_eq!(params.get(index), 12.0);
+        assert_eq!(params.get(index), Some(12.0));
         params.blend(index, f32::NAN, 0.5);
         params.blend(index, 0.0, f32::NAN);
-        assert_eq!(params.get(index), 12.0);
+        assert_eq!(params.get(index), Some(12.0));
         // 無限大は値域にクランプする。
         params.set(index, f32::INFINITY);
-        assert_eq!(params.get(index), 30.0);
+        assert_eq!(params.get(index), Some(30.0));
     }
 
     // T0146: `index_of` は ID の並びの連番を返す。ID の表は複製のあいだで共有し、複製しない。

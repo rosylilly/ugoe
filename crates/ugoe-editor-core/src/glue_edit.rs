@@ -120,12 +120,13 @@ pub fn pair_vertices(
         .map_err(|e| invalid(&what(), format!("the model cannot be evaluated: {e}")))?;
     let instance = ModelInstance::new(compiled);
     let rest = |mesh: usize| -> Vec<Vec2> {
-        let world = instance.mesh_parent_world(mesh);
-        instance
-            .mesh_local_positions(mesh)
-            .into_iter()
-            .map(|p| world.point(p))
-            .collect()
+        let (Some(world), Some(local)) = (
+            instance.mesh_parent_world(mesh),
+            instance.mesh_local_positions(mesh),
+        ) else {
+            return Vec::new();
+        };
+        local.into_iter().map(|p| world.point(p)).collect()
     };
     let (points_a, points_b) = (rest(a), rest(b));
     let limit = distance * distance;

@@ -290,47 +290,25 @@ impl CompiledModel {
     }
 
     /// メッシュ `mesh` (`Model::meshes` のインデックス) のマスクの参照。並びは `Mesh::masks` と同じ。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mask_refs(&self, mesh: usize) -> &[ResolvedMaskRef] {
-        &self.meshes[mesh].masks
+    /// `mesh` が範囲外なら `None`。
+    pub fn mask_refs(&self, mesh: usize) -> Option<&[ResolvedMaskRef]> {
+        Some(&self.meshes.get(mesh)?.masks)
     }
 
     /// メッシュ `mesh` の通常マスクの結合方法 (`Mesh::mask_mode`)。
     /// 未知の結合方法には和集合のフォールバックを適用して返す (`MaskMode::effective`)。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mask_mode(&self, mesh: usize) -> MaskMode {
-        self.model.meshes[mesh].mask_mode.effective()
+    /// `mesh` が範囲外なら `None`。
+    pub fn mask_mode(&self, mesh: usize) -> Option<MaskMode> {
+        Some(self.model.meshes.get(mesh)?.mask_mode.effective())
     }
 
     /// メッシュ `mesh` のマスクの依存の深さ。マスクを持たなければ 0、
     /// 持てば 1 + (マスクとして使うメッシュの深さの最大値)。
     ///
     /// 深さの小さいメッシュから順に評価すれば、マスクは必ずマスクされる側より先に評価される
-    /// (入れ子の継承、`docs/spec/rendering.md#マスク`)。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mask_depth(&self, mesh: usize) -> u32 {
-        self.meshes[mesh].mask_depth
+    /// (入れ子の継承、`docs/spec/rendering.md#マスク`)。`mesh` が範囲外なら `None`。
+    pub fn mask_depth(&self, mesh: usize) -> Option<u32> {
+        Some(self.meshes.get(mesh)?.mask_depth)
     }
 
     /// マスクとして 1 回以上参照されるメッシュ (`Model::meshes` のインデックス) を、
@@ -348,16 +326,9 @@ impl CompiledModel {
     }
 
     /// 当たり判定 `hit_area` の判定に使うメッシュ (`Model::meshes` のインデックス)。
-    ///
-    /// # Panics
-    ///
-    /// `hit_area` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn hit_area_mesh(&self, hit_area: usize) -> usize {
-        self.hit_area_meshes[hit_area] as usize
+    /// `hit_area` が範囲外なら `None`。
+    pub fn hit_area_mesh(&self, hit_area: usize) -> Option<usize> {
+        self.hit_area_meshes.get(hit_area).map(|&m| m as usize)
     }
 }
 

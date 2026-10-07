@@ -287,7 +287,7 @@ mod tests {
     }
 
     fn x(p: &ParameterValues) -> f32 {
-        p.get(ParamIndex(0))
+        p.get(ParamIndex(0)).unwrap()
     }
 
     fn params() -> ParameterValues {

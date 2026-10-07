@@ -143,7 +143,7 @@ pub unsafe extern "C" fn ugoe_puppet_hit_test(
             .compiled()
             .hit_area_index(id)
             .ok_or_else(|| Error::new(UGOE_ERROR_NOT_FOUND, format!("no hit area `{id}`")))?;
-        let hit = instance.hit_area_contains(index, Vec2::new(x, y));
+        let hit = instance.hit_area_contains(index, Vec2::new(x, y)) == Some(true);
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", hit) }
     })

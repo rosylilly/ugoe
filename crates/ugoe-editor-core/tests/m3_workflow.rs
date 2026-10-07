@@ -17,7 +17,7 @@ const DT: f32 = 1.0 / 60.0;
 
 fn param(puppet: &Puppet, id: &str) -> f32 {
     let p = puppet.instance().parameters();
-    p.get(p.index_of(id).unwrap())
+    p.get(p.index_of(id).unwrap()).unwrap()
 }
 
 fn deformer(puppet: &Puppet, id: &str) -> usize {

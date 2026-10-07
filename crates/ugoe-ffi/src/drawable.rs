@@ -200,8 +200,8 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_info(
             index_count: mesh.indices.len() as u32,
             culling: mesh.culling,
             mask_only: mesh.mask_only,
-            mask_count: compiled.mask_refs(i).len() as u32,
-            mask_mode: mask_mode_code(compiled.mask_mode(i)),
+            mask_count: compiled.mask_refs(i).unwrap_or_default().len() as u32,
+            mask_mode: mask_mode_code(compiled.mask_mode(i).unwrap_or_default()),
         };
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", info) }
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_mask(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
-        let refs = p.puppet.instance().compiled().mask_refs(i);
+        let refs = (p.puppet.instance().compiled().mask_refs(i)).unwrap_or_default();
         let r = refs
             .get(mask as usize)
             .ok_or_else(|| Error::out_of_range("mask", mask as usize, refs.len()))?;

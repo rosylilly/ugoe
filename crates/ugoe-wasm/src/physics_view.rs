@@ -11,7 +11,7 @@ use ugoe::runtime::ModelInstance;
 /// デフォーマがなければ `None`。`instance` は評価済みであること。
 pub fn deformer_point(instance: &ModelInstance, id: &str, p: Vec2) -> Option<Vec<f32>> {
     let index = instance.compiled().deformer_index(id)?;
-    let w = instance.deformer_world(index).point(p);
+    let w = instance.deformer_world_point(index, p)?;
     Some(vec![w.x, w.y])
 }
 
@@ -19,7 +19,7 @@ pub fn deformer_point(instance: &ModelInstance, id: &str, p: Vec2) -> Option<Vec
 /// (列優先: 局所の x 方向の像 `(a, b)` と y 方向の像 `(c, d)`)。デフォーマがなければ `None`。
 pub fn deformer_jacobian(instance: &ModelInstance, id: &str, p: Vec2) -> Option<Vec<f32>> {
     let index = instance.compiled().deformer_index(id)?;
-    let j = instance.deformer_world(index).jacobian(p);
+    let j = instance.deformer_world_jacobian(index, p)?;
     Some(vec![j.x_axis.x, j.x_axis.y, j.y_axis.x, j.y_axis.y])
 }
 

@@ -257,7 +257,7 @@ fn blend_shapes_are_included_like_the_runtime() {
         let index = instance.parameters().index_of(id.as_str()).unwrap();
         instance.parameters_mut().set(index, *value);
     }
-    let expected = instance.mesh_local_positions(1);
+    let expected = instance.mesh_local_positions(1).unwrap();
     assert_eq!(cheek.points.len(), expected.len());
     for (p, q) in cheek.points.iter().zip(&expected) {
         assert!((p.uv - *q).length() < 1e-6, "{p:?} vs {q:?}");
@@ -348,7 +348,7 @@ fn warp_control_points_match_the_runtime() {
     let expected = instance.warp_world_points(index).unwrap();
     assert_eq!(cheek.points.len(), expected.len());
     for (p, q) in cheek.points.iter().zip(expected) {
-        let world = instance.deformer_world(body).point(p.uv);
+        let world = instance.deformer_world(body).unwrap().point(p.uv);
         assert!((world - *q).length() < 1e-3, "{world:?} vs {q:?}");
     }
 }

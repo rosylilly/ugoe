@@ -79,7 +79,9 @@ impl ExpressionPlayer {
         );
         for (p, index) in self.expression.parameters.iter().zip(indices) {
             let Some(index) = *index else { continue };
-            let v = parameters.get(index);
+            let Some(v) = parameters.get(index) else {
+                continue;
+            };
             let value = match p.op {
                 ExpressionOp::Add => v + p.value * w,
                 ExpressionOp::Multiply => v * (1.0 + (p.value - 1.0) * w),
@@ -185,7 +187,7 @@ mod tests {
         player.advance(elapsed);
         let mut p = params(x);
         player.apply(&mut p);
-        p.get(ParamIndex(0))
+        p.get(ParamIndex(0)).unwrap()
     }
 
     /// `docs/spec/motion.md#表情` の op の式。
@@ -236,7 +238,7 @@ mod tests {
         let mut player = ExpressionPlayer::new(expression("e", ExpressionOp::Add, 0.5, 0.0));
         let mut p = params(0.0);
         player.apply(&mut p);
-        assert!(close(p.get(ParamIndex(0)), 0.5));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.5));
 
         // 先頭に `Y` を足した並び (`X` は 1 番目)。
         let mut model = fixtures::single_quad();
@@ -245,8 +247,11 @@ mod tests {
         model.parameters.insert(0, y);
         let mut shifted = ParameterValues::from_model(&model);
         player.apply(&mut shifted);
-        assert!(close(shifted.get(shifted.index_of("X").unwrap()), 0.5));
-        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), 0.0);
+        assert!(close(
+            shifted.get(shifted.index_of("X").unwrap()).unwrap(),
+            0.5
+        ));
+        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), Some(0.0));
     }
 
     /// 複数の表情は開始した順に適用する。
@@ -258,7 +263,7 @@ mod tests {
         let mut p = params(0.1);
         m.update(&mut p, 0.1);
         // (0.1 + 0.5) * 0.5
-        assert!(close(p.get(ParamIndex(0)), 0.3));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.3));
     }
 
     #[test]
@@ -270,7 +275,10 @@ mod tests {
         let mut p = params(0.0);
         m.update(&mut p, 0.25);
         let a = -easing(0.75);
-        assert!(close(p.get(ParamIndex(0)), a + (1.0 - a) * easing(0.25)));
+        assert!(close(
+            p.get(ParamIndex(0)).unwrap(),
+            a + (1.0 - a) * easing(0.25)
+        ));
         m.update(&mut params(0.0), 1.0);
         assert_eq!(m.players().len(), 1);
         assert_eq!(m.players()[0].expression().name, "b");

@@ -822,7 +822,7 @@ mod tests {
         after.parameters_mut().carry_over(before.parameters());
         let get = |instance: &ModelInstance, id: &str| {
             let params = instance.parameters();
-            params.get(params.index_of(id).unwrap())
+            params.get(params.index_of(id).unwrap()).unwrap()
         };
         assert_eq!(get(&after, "AngleX"), 12.0);
         assert_eq!(get(&after, "BodySway"), 0.7);
@@ -843,7 +843,7 @@ mod tests {
         narrowed.parameters[2].max = 0.5;
         let mut after = crate::ParameterValues::from_model(&narrowed);
         after.carry_over(&before);
-        assert_eq!(after.get(after.index_of("BodySway").unwrap()), 0.5);
+        assert_eq!(after.get(after.index_of("BodySway").unwrap()), Some(0.5));
     }
 
     #[test]

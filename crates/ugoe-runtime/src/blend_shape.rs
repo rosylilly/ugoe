@@ -276,6 +276,9 @@ mod tests {
         set(&mut inst, "Wide", 0.75);
         inst.update();
         // Mouth は親を持たないので、局所座標がそのままキャンバス座標。
-        assert_eq!(inst.mesh_local_positions(0), inst.drawables()[0].positions);
+        assert_eq!(
+            inst.mesh_local_positions(0).as_ref(),
+            Some(&inst.drawables()[0].positions)
+        );
     }
 }

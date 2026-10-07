@@ -84,8 +84,8 @@ fn bad_expression(bad: f32) -> Expression {
 fn state(puppet: &Puppet) -> Vec<f32> {
     let instance = puppet.instance();
     let parts = (0..instance.compiled().model().parts.len()).flat_map(|i| {
-        let (value, weight) = instance.part_opacity_override(i);
-        [value, weight, instance.part_opacity(i)]
+        let (value, weight) = instance.part_opacity_override(i).unwrap();
+        [value, weight, instance.part_opacity(i).unwrap()]
     });
     let drawables = instance.drawables().iter().flat_map(|d| {
         d.positions

@@ -779,7 +779,7 @@ fn unknown_optional_features_in_bundles_fall_back() {
 
     // フォールバック: 合成モードは通常、マスクは和集合、未知のデフォーマは恒等変換。
     let compiled = CompiledModel::compile(model.clone()).expect("compile");
-    assert_eq!(compiled.mask_mode(face), MaskMode::Union);
+    assert_eq!(compiled.mask_mode(face), Some(MaskMode::Union));
     let future_drawables = evaluate(model.clone());
     assert_eq!(future_drawables[face].blend, BlendMode::Normal);
     assert_drawables_eq(&future_drawables, &evaluate(dev.model.clone()));

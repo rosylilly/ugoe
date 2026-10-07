@@ -308,6 +308,7 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 - `mask_refs(i)`: メッシュ `i` のマスクの参照 (マスク用メッシュのインデックスと反転の有無)。並びは `masks` と同じ
 - `mask_mode(i)`: メッシュ `i` の通常マスクの結合方法
 - `mask_depth(i)`: マスクの依存の深さ。マスクを持たなければ 0、持てば 1 + (マスク用メッシュの深さの最大値)
+- `mask_refs`・`mask_mode`・`mask_depth` は `Option` を返し、`i` が範囲の外なら `None` (パニックしない。[portability.md](../portability.md#パニックしない))
 - `mask_order()`: マスクとして参照されるメッシュを、深さの昇順 (同じ深さは宣言順) に並べたもの。各メッシュのマスクはそのメッシュより前に現れるので、この順に評価すれば入れ子のマスクを継承できる
 
 ### 変更フラグ
@@ -354,6 +355,9 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 | `mesh_local_positions(m)` | メッシュのキーフォームを今のパラメータ値で補間した頂点位置 (ブレンドシェイプの差分を含む。親のワールド変換とグルーの前)。問い合わせ用で、呼ぶたびに `Vec` を確保する |
 | `rotation_local_keyform(d)` | 回転デフォーマのキーフォームを今のパラメータ値で補間した値 (原点・角度など。ブレンドシェイプの差分を含み、動的物理の加算量は含まない)。回転デフォーマでなければ `None`。問い合わせ用で、呼ぶたびに補間し直す |
 
+添字を取る API (`deformer_world`・`deformer_parent_world`・`mesh_parent_world`・`deformer_world_point`・`deformer_world_jacobian`・
+`mesh_local_positions`) は `Option` を返し、添字が範囲の外なら `None` です (パニックしない。[portability.md](../portability.md#パニックしない))。
+
 写像 (`WorldTransform`) は次を持ちます。
 
 - `point(p)`: `update()` がメッシュの頂点に使うのと同じ式・同じ演算順で写す。したがって、グルーで動かされないメッシュでは `mesh_parent_world(m).point(mesh_local_positions(m)[i])` が `drawables()[m].positions[i]` とビット単位で一致する。
@@ -388,3 +392,6 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 | `WebPuppet.hit_area_ids()` / `hit_areas_at(x, y)` / `hit_area_test(id, x, y)` | wasm 版。問い合わせの前に、未反映のパラメータ変更を評価する |
 | `Puppet::standard_hit_area(name)` / `hit_test_standard(name, p)` / `standard_hit_areas_at(p)` | アバタープロファイルの標準の名前 (`Head`・`Body`、`Model.avatar.hit_areas`、[avatar-profile.md](avatar-profile.md#アプリ向けの情報)) で引く版。対応が無い名前は当たらない。`standard_hit_areas_at` は点を含む当たり判定の標準の名前を手前から並べる |
 | `WebPuppet.standard_hit_area(name)` / `hit_test_standard(name, x, y)` / `standard_hit_areas_at(x, y)` | その wasm 版 |
+
+添字を取る `hit_area_mesh`・`mesh_contains`・`hit_area_contains` は `Option` を返し、添字が範囲の外なら `None` です
+([portability.md](../portability.md#パニックしない))。

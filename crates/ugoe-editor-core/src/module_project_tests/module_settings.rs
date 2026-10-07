@@ -475,8 +475,10 @@ fn module_settings_keep_physics_in_place_when_the_anchor_changes() {
         let attach = index(collider.attach.as_ref().unwrap().as_str());
         let rig = &physics.rigs[0];
         (
-            instance.deformer_world_point(attach, center),
-            instance.deformer_world_point(index("LongHair/Sway"), rig.particles[0].position),
+            instance.deformer_world_point(attach, center).unwrap(),
+            instance
+                .deformer_world_point(index("LongHair/Sway"), rig.particles[0].position)
+                .unwrap(),
         )
     };
 

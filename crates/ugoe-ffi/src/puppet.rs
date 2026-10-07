@@ -589,10 +589,19 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_info(
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
         let values = p.puppet.instance().parameters();
+        let (Some(min), Some(max), Some(default_value)) =
+            (values.min(i), values.max(i), values.default_value(i))
+        else {
+            return Err(Error::out_of_range(
+                "parameter",
+                index as usize,
+                values.len(),
+            ));
+        };
         let info = UgoeParameterInfo {
-            min: values.min(i),
-            max: values.max(i),
-            default_value: values.default_value(i),
+            min,
+            max,
+            default_value,
         };
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", info) }
@@ -615,8 +624,11 @@ pub unsafe extern "C" fn ugoe_puppet_get_parameter(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
+        let values = p.puppet.instance().parameters();
+        let value = (values.get(i))
+            .ok_or_else(|| Error::out_of_range("parameter", index as usize, values.len()))?;
         // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", p.puppet.instance().parameters().get(i)) }
+        unsafe { write(out, "out", value) }
     })
 }
 

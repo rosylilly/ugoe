@@ -171,7 +171,7 @@ fn set(puppet: &mut Puppet, id: &str, value: f32) {
 
 fn get(puppet: &Puppet, id: &str) -> f32 {
     let params = puppet.instance().parameters();
-    params.get(params.index_of(id).unwrap())
+    params.get(params.index_of(id).unwrap()).unwrap()
 }
 
 /// 名前 (PSD のレイヤー名) ごとのメッシュの頂点 (キャンバス座標) と不透明度。

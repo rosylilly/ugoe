@@ -10,6 +10,7 @@
 - 決定的であること
 - GPU・I/O・スレッド・時刻取得に依存しない。wasm32 でビルドできること
 - `update()` で毎フレームのヒープ確保をしない
+- パニックしない。添字を取る問い合わせは範囲の外で `None` を返し、書く API は何もしない ([規則](../../docs/portability.md#パニックしない))
 - ID から添字への引き当て (`ParameterValues::index_of`・`CompiledModel::*_index`) を線形探索にしない (毎フレームの経路で呼ばれる。T0146、`examples/id_lookup_timing.rs` で測る)。表は `BTreeMap` (O(log n)。`std` の `HashMap` は no_std に無く、決まったハッシュ関数ではファイルから来る ID で衝突を狙われうるため。T0181)
 
 ## 仕様

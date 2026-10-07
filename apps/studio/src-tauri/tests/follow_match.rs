@@ -29,7 +29,7 @@ const EPSILON: f32 = 1e-3;
 fn shape(puppet: &Puppet) -> Vec<f32> {
     let instance = puppet.instance();
     let parts = (0..instance.compiled().model().parts.len()).flat_map(|i| {
-        let (value, weight) = instance.part_opacity_override(i);
+        let (value, weight) = instance.part_opacity_override(i).unwrap();
         [value, weight]
     });
     let values: Vec<f32> = instance
@@ -285,7 +285,10 @@ fn part_opacity_curves_reach_the_follower() {
     assert!(sent_curves);
     let puppet = follower.puppet().unwrap();
     let arm_b = puppet.instance().compiled().part_index("ArmB").unwrap();
-    assert_eq!(puppet.instance().part_opacity_override(arm_b), (1.0, 1.0));
+    assert_eq!(
+        puppet.instance().part_opacity_override(arm_b),
+        Some((1.0, 1.0))
+    );
 }
 
 /// 物理が実際に効いている (受け手の形が、物理を切った形と違う)。上の検査が空振りしていないことの確認。

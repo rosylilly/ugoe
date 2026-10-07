@@ -108,6 +108,6 @@ fn unknown_blend_and_mask_modes_fall_back() {
     model.meshes[tongue].mask_mode = MaskMode::Unknown;
     model.meshes[tongue].blend = BlendMode::Unknown;
     let m = instance(model);
-    assert_eq!(m.compiled().mask_mode(tongue), MaskMode::Union);
+    assert_eq!(m.compiled().mask_mode(tongue), Some(MaskMode::Union));
     assert_eq!(m.drawables()[tongue].blend, BlendMode::Normal);
 }

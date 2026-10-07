@@ -85,7 +85,7 @@ fn param(p: &Handle, id: &str) -> f32 {
 
 fn rust_param(puppet: &Puppet, id: &str) -> f32 {
     let params = puppet.instance().parameters();
-    params.get(params.index_of(id).unwrap())
+    params.get(params.index_of(id).unwrap()).unwrap()
 }
 
 fn set_effects(p: &Handle, json: &str) -> UgoeResult {
@@ -160,7 +160,8 @@ fn showing_a_pose_entry_follows_the_puppet() {
         for (id, &i) in ["ArmA", "SleeveA", "ArmB"].iter().zip(&parts) {
             let expected = rust
                 .instance()
-                .part_opacity_override(compiled.part_index(id).unwrap());
+                .part_opacity_override(compiled.part_index(id).unwrap())
+                .unwrap();
             assert_eq!(part_opacity(&p, i), expected, "{id} at frame {frame}");
         }
     }
@@ -416,7 +417,7 @@ fn evaluated_part_opacity_follows_the_puppet() {
         ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         rust.update(DT);
         for i in 0..model.parts.len() {
-            let expected = rust.instance().part_opacity(i);
+            let expected = rust.instance().part_opacity(i).unwrap();
             assert_eq!(evaluated(i as u32), expected, "part {i} at frame {frame}");
         }
     }

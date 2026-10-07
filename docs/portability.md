@@ -249,14 +249,22 @@ wasm の入口 (`ugoe-wasm`。T0493) は、外から来るデータ
 - 本当に起こらないと示せる箇所 (`const fn` の中・コンパイルで作った番号だけを使うグラフの探索など) だけ、理由を書いて
   `#[expect(clippy::indexing_slicing, reason = "…")]` にする。
 
-**パニックしてよいもの (Rust の API の約束)**
+**添字を取る Rust の API**
 
-Rust の公開 API で、添字を引数に取る問い合わせ (`ParameterValues::get`・`set`・`min`・`max`・`default_value`・`blend`、
-`ModelInstance::part_opacity`・`part_opacity_override`・`deformer_world`・`deformer_parent_world`・`mesh_parent_world`・
-`mesh_local_positions`・`mesh_contains`・`hit_area_contains`、`CompiledModel::mask_refs`・`mask_mode`・`mask_depth`・
-`hit_area_mesh`) は、`Vec` の添字と同じく範囲の外でパニックし、doc コメントの `# Panics` に書きます (値を返せないため)。
-これらに外から来た番号を渡す上の層 (C ABI・wasm・Godot) は、先に範囲を確かめます。値を書くだけの API
-(`ModelInstance::set_part_opacity_override`・`DynamicOffsets` の `add_angle` など) は、範囲の外なら何もしません。
+Rust の公開 API で添字を引数に取るものも、範囲の外でパニックしません (T0187 で決めました)。
+
+- 読む問い合わせ (`ParameterValues::get`・`min`・`max`・`default_value`、`ModelInstance::part_opacity`・
+  `part_opacity_override`・`deformer_world`・`deformer_parent_world`・`mesh_parent_world`・`deformer_world_point`・
+  `deformer_world_jacobian`・`mesh_local_positions`・`mesh_contains`・`hit_area_contains`、`CompiledModel::mask_refs`・
+  `mask_mode`・`mask_depth`・`hit_area_mesh`) は `Option` を返し、範囲の外なら `None` です。
+- 書く API (`ParameterValues::set`・`blend`、`ModelInstance::set_part_opacity_override`、`DynamicOffsets` の `add_angle` など) は、
+  範囲の外なら何もしません。
+
+理由: `std` の無い環境ではパニックがアプリ全体を止めるので、上の層 (C ABI・wasm・Godot・ツール) が範囲を確かめ忘れても止まらない
+ことを、doc コメントの約束 (`# Panics`) ではなく型で守ります。`Vec` の添字の慣習 (範囲の外でパニックする) に合わせる案と、
+パニックする形とパニックしない形を両方持つ案は採りませんでした (リリース前で互換の縛りが無く、API を倍にしないため)。
+`Option` の分岐は毎フレームの経路 (`Puppet::update`) の時間を変えません (T0187 で変える前と後を比べた)。
+上の層は `None` をそれぞれの失敗 (C ABI の範囲外のエラー・wasm の `undefined`・既定の値) に写します。
 
 **検査の方法**
 

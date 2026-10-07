@@ -36,17 +36,22 @@ fn nested_masks_are_ordered_by_dependency() {
         mesh_index(&m, "Iris"),
         mesh_index(&m, "Sclera"),
     );
-    assert_eq!(c.mask_refs(pupil), [mask_ref(&m, "Iris", false)]);
-    assert_eq!(c.mask_refs(iris), [mask_ref(&m, "Sclera", false)]);
-    assert_eq!(c.mask_refs(sclera), []);
+    assert_eq!(c.mask_refs(pupil).unwrap(), [mask_ref(&m, "Iris", false)]);
+    assert_eq!(c.mask_refs(iris).unwrap(), [mask_ref(&m, "Sclera", false)]);
+    assert_eq!(c.mask_refs(sclera).unwrap(), []);
     assert_eq!(
         [
             c.mask_depth(sclera),
             c.mask_depth(iris),
             c.mask_depth(pupil)
         ],
-        [0, 1, 2]
+        [Some(0), Some(1), Some(2)]
     );
+    // T0187: 範囲外の番号は `None`。
+    let out = m.compiled().model().meshes.len();
+    assert_eq!(c.mask_refs(out), None);
+    assert_eq!(c.mask_mode(out), None);
+    assert_eq!(c.mask_depth(out), None);
     // 宣言順は Pupil, Iris, Sclera だが、マスクが先に並ぶ。Pupil はマスクとして使われないので含まない。
     assert_eq!(c.mask_order(), [sclera as u32, iris as u32]);
 }
@@ -62,13 +67,13 @@ fn mask_order_puts_every_mask_after_its_own_masks() {
         let order = c.mask_order();
         let position = |mesh: u32| order.iter().position(|&i| i == mesh);
         for (i, &mesh) in order.iter().enumerate() {
-            for r in c.mask_refs(mesh as usize) {
+            for r in c.mask_refs(mesh as usize).unwrap() {
                 assert!(position(r.mesh).is_some_and(|p| p < i));
             }
         }
         // マスクとして参照されるメッシュはすべて含まれる。
         for mesh in 0..c.model().meshes.len() {
-            for r in c.mask_refs(mesh) {
+            for r in c.mask_refs(mesh).unwrap() {
                 assert!(position(r.mesh).is_some());
             }
         }
@@ -80,10 +85,10 @@ fn mixed_masks_resolve_invert_per_reference() {
     let m = instance(fixtures::mixed_masks());
     let brow = mesh_index(&m, "Brow");
     assert_eq!(
-        m.compiled().mask_refs(brow),
+        m.compiled().mask_refs(brow).unwrap(),
         [mask_ref(&m, "Face", false), mask_ref(&m, "Hair", true)]
     );
-    assert_eq!(m.compiled().mask_mode(brow), MaskMode::Union);
+    assert_eq!(m.compiled().mask_mode(brow), Some(MaskMode::Union));
 }
 
 #[test]
@@ -115,10 +120,10 @@ fn intersection_and_mask_only() {
         mesh_index(&m, "Tongue"),
     );
     let c = m.compiled();
-    assert_eq!(c.mask_mode(tongue), MaskMode::Intersection);
-    assert_eq!(c.mask_mode(face), MaskMode::Union);
+    assert_eq!(c.mask_mode(tongue), Some(MaskMode::Intersection));
+    assert_eq!(c.mask_mode(face), Some(MaskMode::Union));
     assert_eq!(
-        c.mask_refs(tongue),
+        c.mask_refs(tongue).unwrap(),
         [
             mask_ref(&m, "MouthMask", false),
             mask_ref(&m, "Face", false)

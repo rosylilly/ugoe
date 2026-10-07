@@ -129,8 +129,8 @@ fn blend_shape_grids_interpolate_smoothly() {
     set(&mut smooth, "AngleX", 12.0);
     set(&mut smooth, "Squash", 0.3);
     assert_eq!(
-        smooth.mesh_local_positions(0),
-        smooth.drawables()[0].positions
+        smooth.mesh_local_positions(0).as_ref(),
+        Some(&smooth.drawables()[0].positions)
     );
     let frame = smooth.rotation_world_frame(1).expect("rotation");
     let local = smooth.rotation_local_keyform(1).expect("rotation");

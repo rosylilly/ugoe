@@ -31,7 +31,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use ugoe_core::math;
 
-use ugoe_core::{Vec2, lerp};
+use ugoe_core::{Mat2, Vec2, lerp};
 use ugoe_model::DeformerKind;
 use ugoe_model::physics::{
     ColliderId, NormalizationRange, PhysicsBlend, PhysicsOutput, PhysicsRig, PhysicsRigId,
@@ -368,7 +368,7 @@ impl PhysicsSystem {
                 .rigs
                 .iter()
                 .flat_map(|s| s.output_params.iter().flatten())
-                .map(|&index| (index, parameters.get(index)))
+                .filter_map(|&index| Some((index, parameters.get(index)?)))
                 .collect(),
         });
         self.resolved_layout = Some(parameters.layout());
@@ -586,9 +586,9 @@ impl PhysicsSystem {
         colliders.extend(self.settings.colliders.iter().zip(&binding.colliders).map(
             |(c, attach)| {
                 let attach = (*attach).ok()?;
-                let world = attach.map_or(ugoe_runtime::WorldTransform::IDENTITY, |d| {
-                    instance.deformer_world(d)
-                });
+                let world = attach
+                    .and_then(|d| instance.deformer_world(d))
+                    .unwrap_or(ugoe_runtime::WorldTransform::IDENTITY);
                 WorldCollider::new(&c.shape, &world)
             },
         ));
@@ -601,14 +601,17 @@ impl PhysicsSystem {
             let p0 = rig.particles.first().map_or(Vec2::ZERO, |p| p.position);
             frame.anchor = rb
                 .anchor
-                .map_or(Vec2::ZERO, |a| instance.deformer_world(a).point(p0) - p0);
+                .and_then(|a| instance.deformer_world_point(a, p0))
+                .map_or(Vec2::ZERO, |p| p - p0);
             frame.frame_angle = rb.frame.map_or(0.0, |f| {
                 // ワープは格子の中心での向き、回転デフォーマはどこでも同じ。
                 let at = match model.deformers.get(f).map(|d| &d.kind) {
                     Some(DeformerKind::Warp(_)) => Vec2::splat(0.5),
                     _ => Vec2::ZERO,
                 };
-                chain::signed_angle(down, instance.deformer_world(f).jacobian(at) * down)
+                instance
+                    .deformer_world_jacobian(f, at)
+                    .map_or(0.0, |j| chain::signed_angle(down, j * down))
             });
             frame.references.clear();
             frame.flips.clear();
@@ -619,7 +622,9 @@ impl PhysicsSystem {
                         let origin = instance
                             .rotation_local_keyform(d)
                             .map_or(Vec2::ZERO, |k| k.origin);
-                        let j = instance.deformer_parent_world(d).jacobian(origin);
+                        let j = instance
+                            .deformer_parent_world(d)
+                            .map_or(Mat2::IDENTITY, |w| w.jacobian(origin));
                         (j * gravity, j.determinant() < 0.0)
                     }
                     _ => (gravity, false),
@@ -924,7 +929,9 @@ impl Relay {
     fn begin(&mut self, parameters: &ParameterValues) {
         self.values.clone_from(parameters);
         for (index, base) in &mut self.bases {
-            *base = parameters.get(*index);
+            if let Some(value) = parameters.get(*index) {
+                *base = value;
+            }
         }
     }
 
@@ -1012,10 +1019,14 @@ fn root_pose(
 
 /// パラメータの値を、default の両側で別々に線形写像して `range` に写す。
 fn normalize(parameters: &ParameterValues, index: ParamIndex, range: NormalizationRange) -> f32 {
-    let value = parameters.get(index);
-    let min = parameters.min(index);
-    let max = parameters.max(index);
-    let default = parameters.default_value(index);
+    let (Some(value), Some(min), Some(max), Some(default)) = (
+        parameters.get(index),
+        parameters.min(index),
+        parameters.max(index),
+        parameters.default_value(index),
+    ) else {
+        return range.default;
+    };
     if value > default && max > default {
         let t = ((value - default) / (max - default)).min(1.0);
         lerp(range.default, range.max, t)
@@ -1132,10 +1143,11 @@ fn blend_parameter(
 ) {
     if is_additive(output) {
         // `set` が値域にクランプする。
-        parameters.set(index, parameters.get(index) + value * weight);
-    } else {
-        let value = value.clamp(parameters.min(index), parameters.max(index));
-        parameters.blend(index, value, weight);
+        if let Some(current) = parameters.get(index) {
+            parameters.set(index, current + value * weight);
+        }
+    } else if let (Some(min), Some(max)) = (parameters.min(index), parameters.max(index)) {
+        parameters.blend(index, value.clamp(min, max), weight);
     }
 }
 

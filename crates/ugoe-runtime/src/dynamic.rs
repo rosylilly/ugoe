@@ -342,7 +342,10 @@ mod tests {
         d: usize,
         local: &ugoe_model::deformer::RotationKeyform,
     ) -> ugoe_core::Affine2 {
-        instance.deformer_parent_world(d).rotation_child(local)
+        instance
+            .deformer_parent_world(d)
+            .unwrap()
+            .rotation_child(local)
     }
 
     // ブレンドシェイプの軸だけが 1 段目の後に変わっても、2 段目で評価し直す。

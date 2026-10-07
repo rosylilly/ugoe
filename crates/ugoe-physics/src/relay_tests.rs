@@ -16,7 +16,7 @@ use super::*;
 const STEP: f32 = 1.0 / 60.0;
 
 fn get(params: &ParameterValues, id: &str) -> f32 {
-    params.get(params.index_of(id).unwrap())
+    params.get(params.index_of(id).unwrap()).unwrap()
 }
 
 fn set(params: &mut ParameterValues, id: &str, value: f32) {

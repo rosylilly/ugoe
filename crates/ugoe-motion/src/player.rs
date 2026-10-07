@@ -400,7 +400,7 @@ mod tests {
     fn applied(player: &mut MotionPlayer, weight: f32) -> f32 {
         let mut p = params();
         player.apply(&mut p, weight);
-        p.get(p.index_of("X").unwrap())
+        p.get(p.index_of("X").unwrap()).unwrap()
     }
 
     fn fired(player: &MotionPlayer) -> Vec<&str> {
@@ -425,9 +425,9 @@ mod tests {
         let mut player = MotionPlayer::new(motion(2.0, false, vec![ramp("X", 2.0, 1.0)]));
         let mut p = params();
         player.update(&mut p, 0.5, 1.0);
-        assert!(close(p.get(ParamIndex(0)), 0.25));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.25));
         player.update(&mut p, 0.5, 1.0);
-        assert!(close(p.get(ParamIndex(0)), 0.5));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.5));
     }
 
     /// `docs/spec/motion.md#再生とフェード`: フェードインの重みは easing(elapsed / fade_in)。
@@ -820,7 +820,7 @@ mod tests {
         let mut player = MotionPlayer::new(motion(10.0, false, vec![constant("X", 0.5)]));
         let mut p = params();
         player.apply(&mut p, 1.0);
-        assert!(close(p.get(ParamIndex(0)), 0.5));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.5));
 
         // 先頭に `Y` を足した並び (`X` は 1 番目)。
         let mut model = fixtures::single_quad();
@@ -829,13 +829,16 @@ mod tests {
         model.parameters.insert(0, y);
         let mut shifted = ParameterValues::from_model(&model);
         player.apply(&mut shifted, 1.0);
-        assert!(close(shifted.get(shifted.index_of("X").unwrap()), 0.5));
-        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), 0.0);
+        assert!(close(
+            shifted.get(shifted.index_of("X").unwrap()).unwrap(),
+            0.5
+        ));
+        assert_eq!(shifted.get(shifted.index_of("Y").unwrap()), Some(0.0));
 
         // 元の並びに戻しても正しく書く。
         let mut p = params();
         player.apply(&mut p, 1.0);
-        assert!(close(p.get(ParamIndex(0)), 0.5));
+        assert!(close(p.get(ParamIndex(0)).unwrap(), 0.5));
     }
 
     /// パラメータ以外の対象は `curve_values` で取り出す。未知の対象と評価できないカーブは除く。

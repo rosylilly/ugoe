@@ -147,8 +147,10 @@ impl EyeBlinkPlayer {
         let indices = self
             .param_indices
             .get(parameters, ids(&self.config.parameters));
-        for index in indices.iter().flatten() {
-            parameters.set(*index, parameters.get(*index) * factor);
+        for &index in indices.iter().flatten() {
+            if let Some(value) = parameters.get(index) {
+                parameters.set(index, value * factor);
+            }
         }
     }
 
@@ -223,7 +225,9 @@ impl BreathPlayer {
                 0.0
             };
             let delta = p.weight * (p.offset + p.peak * wave);
-            parameters.set(index, parameters.get(index) + delta);
+            if let Some(value) = parameters.get(index) {
+                parameters.set(index, value + delta);
+            }
         }
     }
 }
@@ -292,7 +296,7 @@ mod tests {
     }
 
     fn get(p: &ParameterValues, id: &str) -> f32 {
-        p.get(p.index_of(id).unwrap())
+        p.get(p.index_of(id).unwrap()).unwrap()
     }
 
     #[test]
@@ -381,13 +385,13 @@ mod tests {
         assert_eq!(b.phase(), BlinkPhase::Closed);
         let mut q = p.clone();
         b.apply(&mut q, 1.0);
-        assert_eq!(q.get(eye_l), 0.0);
+        assert_eq!(q.get(eye_l), Some(0.0));
         let mut q = p.clone();
         b.apply(&mut q, 0.5);
-        assert!(close(q.get(eye_l), 0.4));
+        assert!(close(q.get(eye_l).unwrap(), 0.4));
         let mut q = p.clone();
         b.apply(&mut q, 0.0);
-        assert!(close(q.get(eye_l), 0.8));
+        assert!(close(q.get(eye_l).unwrap(), 0.8));
     }
 
     #[test]

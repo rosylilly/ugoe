@@ -70,8 +70,10 @@ fn rest(model: &Model, index: usize) -> Result<Rest, EditError> {
         )
     })?;
     let instance = ModelInstance::new(compiled);
+    let local = (instance.mesh_local_positions(index))
+        .ok_or_else(|| geometry(&model.meshes[index].id, "the mesh cannot be evaluated"))?;
     Ok(Rest {
-        local: instance.mesh_local_positions(index),
+        local,
         world: instance.drawables()[index].positions.clone(),
         instance,
     })
@@ -83,7 +85,7 @@ impl Rest {
     /// 親なしは単位行列、回転デフォーマは線形部分、ワープはその点での双線形写像の微分
     /// (格子の外では外挿のアフィン近似の微分)。ランタイムが解析的に求める。
     fn parent_jacobian(&self, index: usize, at: Vec2) -> Mat2 {
-        self.instance.mesh_parent_world(index).jacobian(at)
+        (self.instance.mesh_parent_world(index)).map_or(Mat2::IDENTITY, |w| w.jacobian(at))
     }
 }
 

@@ -1,7 +1,7 @@
 ---
 id: T0187
 title: "ランタイム: 添字を取る問い合わせの API (ParameterValues::get など) を、パニックせず Option を返す形にするかを決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M11
 crates: [ugoe-runtime, ugoe, ugoe-ffi, ugoe-wasm, bindings/godot, docs]
 depends_on: [T0493]
@@ -38,11 +38,11 @@ B。リリース前で互換の縛りが無く (利用者の方針)、M11 の「
 
 ## 受け入れ条件
 
-- [ ] 利用者に案を示して方針を決め、決めたことと理由を docs/portability.md#パニックしない に書いた
-- [ ] 決めた方針に合わせて API と呼び出し側を直し、`#[expect(clippy::indexing_slicing, reason = "…(# Panics)")]` の残りを減らした
+- [x] 利用者に案を示して方針を決め、決めたことと理由を docs/portability.md#パニックしない に書いた
+- [x] 決めた方針に合わせて API と呼び出し側を直し、`#[expect(clippy::indexing_slicing, reason = "…(# Panics)")]` の残りを減らした
       (A ならこの項目は不要)。範囲の外の番号で `None` (や何もしないこと) になるテストを足した
-- [ ] 公開の型やメソッドの形を変えたなら、crates の README・docs/spec (対応する節があれば英語の `spec/` も) を同じ PR で直した
-- [ ] `just nostd-check`・`just wasm-check`・`just conformance` と `just ci` が通る
+- [x] 公開の型やメソッドの形を変えたなら、crates の README・docs/spec (対応する節があれば英語の `spec/` も) を同じ PR で直した
+- [x] `just nostd-check`・`just wasm-check`・`just conformance` と `just ci` が通る
 
 ## 参考
 
@@ -55,3 +55,27 @@ B。リリース前で互換の縛りが無く (利用者の方針)、M11 の「
 - M11 の後続 (docs/roadmap.md の M11)。M11 の完了の条件には含めない。
 - 呼び出し側の `ugoe-wasm` を触るので、同じクレートに lint を足す T0493 の後にした (T0493 は判断を待たずに進められる)。
 - 判断 (2026-10-07): 利用者が案 B (Option を返す形に変える。書く API は範囲の外で何もしない) を選んだ。
+- やったこと (2026-10-07):
+  - `ugoe-runtime`: `ParameterValues::get`・`min`・`max`・`default_value` は `Option<f32>`、`set`・`blend` は範囲の外で何もしない。
+    `ModelInstance::part_opacity`・`part_opacity_override`・`deformer_world`・`deformer_parent_world`・`mesh_parent_world`・
+    `mesh_local_positions`・`mesh_contains`・`hit_area_contains` と、`deformer_world` を通していた `deformer_world_point`・
+    `deformer_world_jacobian` (一覧に無かったが同じくパニックしていた) は `Option` を返す。`CompiledModel::mask_refs`・`mask_mode`・
+    `mask_depth`・`hit_area_mesh` も `Option`。`#[expect(clippy::indexing_slicing, reason = "…(# Panics)")]` は 15 か所すべて外した
+    (`deformer_world` の `assert!` も)。範囲の外で `None` か何もしないことのテストを parameters.rs・instance.rs・hit.rs・tests/masks.rs に足した。
+  - 呼び出し側: `ugoe-physics` (範囲の外の出力・正規化・衝突体の取り付けは使わない・恒等写像)・`ugoe-motion` (目パチ・呼吸・表情は
+    範囲の外を飛ばす)・`ugoe-render` (マスクの参照が無いメッシュはマスク無し)・`ugoe` (`Puppet::update`・`hit_test`)・`ugoe-ffi`
+    (範囲の外は今までどおり `UGOE_ERROR_OUT_OF_RANGE`。`ugoe_puppet_part_opacity` などの前もっての範囲の確かめを `Option` に置き換えた)・
+    `ugoe-wasm`・`bindings/godot` (`reset_parameters` は `ParameterValues::reset`)・`ugoe-rigging`・`ugoe-editor-core`
+    (`mesh_edit` は `EditError::MeshGeometry`)・`ugoe-headless`・アプリ (studio のテスト) を直した。`crates:` の外の
+    ugoe-physics・ugoe-motion・ugoe-render・ugoe-rigging・ugoe-editor-core・ugoe-headless・ugoe-ai (テスト)・ugoe-format (テスト)・
+    apps/studio は、呼び出し側をすべて直す指示 (オーケストレーター) に従って触った。
+  - 文書: docs/portability.md#パニックしない の「パニックしてよいもの」を「添字を取る Rust の API」に書き換え、決めたことと理由を書いた。
+    docs/spec/evaluation.md (マスクの参照・デフォーマのワールド変換を読む・当たり判定) に範囲の外で `None` を書いた。
+    crates/ugoe-runtime/README.md の「守ること」に足した。英語の `spec/` は Rust の API を書いていないので変えていない。
+  - `Puppet::update` の時間 (`--release`、`ugoe` を `std` だけで。2000 回の平均の 31 回の中央値、μs。一時的な example で測り、コミットしていない):
+    physics_hair 0.236 → 0.233、dynamic_hair 0.927 → 0.929、pose_and_effects 0.167 → 0.161、avatar_profile 0.189 → 0.180、
+    300 パラメータ・300 パーツ・200 メッシュ 7.08 → 7.18。ほかのワーカーと並行して測ったので数 % は揺れる。遅くはなっていない。
+  - 検査: `just nostd-check`・`just wasm-check`・`just conformance` (c・wasm・wasm-webgpu・avatar・queries・example・unity・godot)・
+    `just godot-check` (69 of 69)・`just ffi-check`・`just cross-check`・`cargo clippy`/`cargo test` (bindings/godot)・`just ci` が通る。
+- やらなかったこと: C ABI・wasm・Godot の公開の関数の形は変えていない (もともと範囲の外をエラー・`undefined`・既定の値で返している)。
+- 起票の候補: なし。

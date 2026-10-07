@@ -11,7 +11,7 @@ const DT: f32 = 1.0 / 60.0;
 
 fn param(puppet: &Puppet, id: &str) -> f32 {
     let p = puppet.instance().parameters();
-    p.get(p.index_of(id).unwrap())
+    p.get(p.index_of(id).unwrap()).unwrap()
 }
 
 fn set_param(puppet: &mut Puppet, id: &str, value: f32) {
@@ -433,17 +433,17 @@ fn pose_state_carries_over_and_module_parts_follow() {
         let i = puppet.instance().compiled().part_index(id).unwrap();
         puppet.instance().part_opacity_override(i)
     };
-    assert_eq!(opacity(&puppet, "ArmB"), (1.0, 1.0));
+    assert_eq!(opacity(&puppet, "ArmB"), Some((1.0, 1.0)));
 
     puppet.attach_module(Arc::new(dress)).unwrap();
     // 表示中の要素は `ArmB` のまま (先頭の要素に戻ってフェードし直さない)。
-    assert_eq!(opacity(&puppet, "ArmB"), (1.0, 1.0));
-    assert_eq!(opacity(&puppet, "ArmA"), (0.0, 1.0));
-    assert_eq!(opacity(&puppet, "Dress/SleeveB"), (1.0, 1.0));
-    assert_eq!(opacity(&puppet, "Dress/SleeveA"), (0.0, 1.0));
+    assert_eq!(opacity(&puppet, "ArmB"), Some((1.0, 1.0)));
+    assert_eq!(opacity(&puppet, "ArmA"), Some((0.0, 1.0)));
+    assert_eq!(opacity(&puppet, "Dress/SleeveB"), Some((1.0, 1.0)));
+    assert_eq!(opacity(&puppet, "Dress/SleeveA"), Some((0.0, 1.0)));
     puppet.update(DT);
-    assert_eq!(opacity(&puppet, "Dress/SleeveB"), (1.0, 1.0));
-    assert_eq!(opacity(&puppet, "Dress/SleeveA"), (0.0, 1.0));
+    assert_eq!(opacity(&puppet, "Dress/SleeveB"), Some((1.0, 1.0)));
+    assert_eq!(opacity(&puppet, "Dress/SleeveA"), Some((0.0, 1.0)));
 }
 
 #[test]

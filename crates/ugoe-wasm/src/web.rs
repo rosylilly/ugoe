@@ -479,7 +479,7 @@ impl WebPuppet {
     /// パラメータの現在値。ID が無ければ `undefined`。
     pub fn parameter(&self, id: &str) -> Option<f32> {
         let params = self.puppet.as_ref()?.instance().parameters();
-        params.index_of(id).map(|i| params.get(i))
+        params.get(params.index_of(id)?)
     }
 
     /// すべてのパラメータを既定値に戻す。

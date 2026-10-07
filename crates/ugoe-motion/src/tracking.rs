@@ -642,7 +642,7 @@ mod tests {
     }
 
     fn value(params: &ParameterValues, id: &str) -> f32 {
-        params.get(params.index_of(id).unwrap())
+        params.get(params.index_of(id).unwrap()).unwrap()
     }
 
     fn map_with(overrides: Vec<TrackingOverride>) -> (TrackingMap, ParameterValues) {

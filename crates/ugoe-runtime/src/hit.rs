@@ -12,18 +12,10 @@ impl ModelInstance {
     /// メッシュ `mesh` の変形後の三角形のどれかが、キャンバス座標 `point` を含むか。
     ///
     /// 三角形の内外だけで判定する (辺の上を含む、向きは問わない)。可視性・不透明度・
-    /// テクスチャの透明部分は見ない。範囲外の頂点を指す三角形は無視する。
-    ///
-    /// # Panics
-    ///
-    /// `mesh` が範囲外のとき。
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
-    )]
-    pub fn mesh_contains(&self, mesh: usize, point: Vec2) -> bool {
-        let p = &self.drawables()[mesh].positions;
-        self.compiled().model().meshes[mesh]
+    /// テクスチャの透明部分は見ない。範囲外の頂点を指す三角形は無視する。`mesh` が範囲外なら `None`。
+    pub fn mesh_contains(&self, mesh: usize, point: Vec2) -> Option<bool> {
+        let p = &self.drawables().get(mesh)?.positions;
+        let hit = (self.compiled().model().meshes.get(mesh)?)
             .indices
             .as_chunks::<3>()
             .0
@@ -33,17 +25,14 @@ impl ModelInstance {
                     return false;
                 };
                 in_triangle(point, *a, *b, *c)
-            })
+            });
+        Some(hit)
     }
 
     /// 当たり判定 `hit_area` (`Model::hit_areas` の添字) がキャンバス座標 `point` を含むか。
-    /// 判定の規則は [`ModelInstance::mesh_contains`] と同じ。
-    ///
-    /// # Panics
-    ///
-    /// `hit_area` が範囲外のとき。
-    pub fn hit_area_contains(&self, hit_area: usize, point: Vec2) -> bool {
-        self.mesh_contains(self.compiled().hit_area_mesh(hit_area), point)
+    /// 判定の規則は [`ModelInstance::mesh_contains`] と同じ。`hit_area` が範囲外なら `None`。
+    pub fn hit_area_contains(&self, hit_area: usize, point: Vec2) -> Option<bool> {
+        self.mesh_contains(self.compiled().hit_area_mesh(hit_area)?, point)
     }
 
     /// キャンバス座標 `point` を含む当たり判定 (`Model::hit_areas` の添字) を、手前から順に並べる。
@@ -61,7 +50,7 @@ impl ModelInstance {
                 .filter(|&(_, &m)| m == mesh)
                 .map(|(h, _)| h)
                 .peekable();
-            if areas.peek().is_some() && self.mesh_contains(mesh as usize, point) {
+            if areas.peek().is_some() && self.mesh_contains(mesh as usize, point) == Some(true) {
                 hits.extend(areas);
             }
         }
@@ -143,9 +132,9 @@ mod tests {
         let x = inst.parameters().index_of("X").unwrap();
         inst.parameters_mut().set(x, 1.0);
         // update するまでは前回の評価結果で判定する。
-        assert!(inst.hit_area_contains(0, left));
+        assert_eq!(inst.hit_area_contains(0, left), Some(true));
         inst.update();
-        assert!(!inst.hit_area_contains(0, left));
+        assert_eq!(inst.hit_area_contains(0, left), Some(false));
         assert_eq!(inst.hit_areas_at(right), vec![0]);
     }
 
@@ -171,7 +160,14 @@ mod tests {
         ];
         let inst = instance(model);
         assert_eq!(inst.compiled().hit_area_index("EyeAgain"), Some(2));
-        assert_eq!(inst.compiled().hit_area_mesh(2), 2);
+        assert_eq!(inst.compiled().hit_area_mesh(2), Some(2));
+        // T0187: 範囲外の番号は `None`。
+        assert_eq!(inst.compiled().hit_area_mesh(3), None);
+        assert_eq!(inst.hit_area_contains(3, Vec2::new(128.0, 100.0)), None);
+        assert_eq!(
+            inst.mesh_contains(usize::MAX, Vec2::new(128.0, 100.0)),
+            None
+        );
         assert_eq!(inst.hit_areas_at(Vec2::new(128.0, 100.0)), vec![1, 0, 2]);
         assert_eq!(inst.hit_areas_at(Vec2::new(70.0, 100.0)), vec![0, 2]);
         assert_eq!(

@@ -459,7 +459,7 @@ fn check_frame(
         } else {
             PARAMETER_TOLERANCE * range.max(1.0)
         };
-        let actual = params.get(index);
+        let actual = params.get(index).unwrap();
         if (actual - expected).abs() > tolerance {
             failures.push(format!("{label} parameter {id}: {actual} != {expected}"));
         }
@@ -469,7 +469,7 @@ fn check_frame(
         let part = compiled
             .part_index(id)
             .unwrap_or_else(|| panic!("{label}: unknown part {id}"));
-        let (value, weight) = instance.part_opacity_override(part);
+        let (value, weight) = instance.part_opacity_override(part).unwrap();
         let weight_ok = (weight - expected.weight).abs() <= VALUE_TOLERANCE;
         let value_ok = expected.weight == 0.0 || (value - expected.value).abs() <= VALUE_TOLERANCE;
         if !weight_ok || !value_ok {

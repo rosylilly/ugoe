@@ -477,8 +477,9 @@ impl Puppet {
         }
         for (i, (base, output)) in self.base.iter_mut().zip(&self.output).enumerate() {
             let index = ParamIndex(i as u32);
-            let current = params.get(index);
-            if current.to_bits() != output.to_bits() {
+            if let Some(current) = params.get(index)
+                && current.to_bits() != output.to_bits()
+            {
                 *base = current;
             }
             params.set(index, *base);
@@ -593,7 +594,8 @@ impl Puppet {
         self.instance
             .compiled()
             .hit_area_index(hit_area)
-            .is_some_and(|h| self.instance.hit_area_contains(h, point))
+            .and_then(|h| self.instance.hit_area_contains(h, point))
+            .unwrap_or(false)
     }
 
     /// アバタープロファイルの標準の当たり判定の名前 (`Head`・`Body`、`Model.avatar.hit_areas`) に
@@ -734,7 +736,7 @@ mod tests {
 
     fn param(puppet: &Puppet, id: &str) -> f32 {
         let p = puppet.instance().parameters();
-        p.get(p.index_of(id).unwrap())
+        p.get(p.index_of(id).unwrap()).unwrap()
     }
 
     #[test]
@@ -1041,9 +1043,9 @@ mod tests {
             puppet.instance().part_opacity_override(i)
         };
         puppet.update(DT);
-        assert_eq!(part(&puppet, "ArmA"), (1.0, 1.0));
-        assert_eq!(part(&puppet, "SleeveA"), (1.0, 1.0));
-        assert_eq!(part(&puppet, "ArmB"), (0.0, 1.0));
+        assert_eq!(part(&puppet, "ArmA"), Some((1.0, 1.0)));
+        assert_eq!(part(&puppet, "SleeveA"), Some((1.0, 1.0)));
+        assert_eq!(part(&puppet, "ArmB"), Some((0.0, 1.0)));
 
         puppet.start_motion(
             motion(
@@ -1057,12 +1059,12 @@ mod tests {
             Priority::Normal,
         );
         puppet.update(0.25);
-        let (b, _) = part(&puppet, "ArmB");
+        let (b, _) = part(&puppet, "ArmB").unwrap();
         assert!(close(b, 0.5), "{b}");
-        assert!(close(part(&puppet, "SleeveA").0, 0.5));
+        assert!(close(part(&puppet, "SleeveA").unwrap().0, 0.5));
         puppet.update(0.5);
-        assert_eq!(part(&puppet, "ArmB"), (1.0, 1.0));
-        assert_eq!(part(&puppet, "ArmA"), (0.0, 1.0));
+        assert_eq!(part(&puppet, "ArmB"), Some((1.0, 1.0)));
+        assert_eq!(part(&puppet, "ArmA"), Some((0.0, 1.0)));
     }
 
     /// ポーズに属さないパーツへのカーブは、パーツの不透明度を直接上書きする。
@@ -1311,8 +1313,8 @@ mod tests {
             puppet.instance().part_opacity_override(i)
         };
         puppet.update(DT);
-        assert_eq!(part(&puppet, "ArmA").1, 0.0);
-        assert_eq!(part(&puppet, "ArmB").1, 0.0);
+        assert_eq!(part(&puppet, "ArmA").unwrap().1, 0.0);
+        assert_eq!(part(&puppet, "ArmB").unwrap().1, 0.0);
         puppet.start_motion(
             motion(
                 10.0,
@@ -1322,7 +1324,7 @@ mod tests {
             Priority::Normal,
         );
         puppet.update(DT);
-        assert_eq!(part(&puppet, "ArmB"), (1.0, 1.0));
-        assert_eq!(part(&puppet, "ArmA").1, 0.0);
+        assert_eq!(part(&puppet, "ArmB"), Some((1.0, 1.0)));
+        assert_eq!(part(&puppet, "ArmA").unwrap().1, 0.0);
     }
 }
