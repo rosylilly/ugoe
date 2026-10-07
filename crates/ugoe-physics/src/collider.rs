@@ -1,6 +1,7 @@
 //! 衝突体 (円・カプセル) と粒子の区間の衝突。仕様: `docs/spec/physics.md#衝突体`。
 
 use ugoe_core::Vec2;
+use ugoe_core::math;
 use ugoe_model::physics::ColliderShape;
 use ugoe_runtime::WorldTransform;
 
@@ -158,7 +159,7 @@ pub fn constrain_segment(
         .fold(f32::INFINITY, f32::min)
         .max(SWEEP_MIN_RADIUS);
     let step = (min_radius / length).min(SWEEP_MAX_STEP_DEGREES.to_radians());
-    let end = base.perp_dot(target).atan2(base.dot(target));
+    let end = math::atan2(base.perp_dot(target), base.dot(target));
 
     let start = if blocked(0.0) {
         match nearest_free(&blocked, step) {
@@ -172,7 +173,7 @@ pub fn constrain_segment(
         0.0
     };
     let span = wrap_radians(end - start);
-    let samples = (span.abs() / step).ceil().max(1.0) as u32;
+    let samples = math::ceil(span.abs() / step).max(1.0) as u32;
     let mut free = start;
     for k in 1..=samples {
         let angle = start + span * (k as f32 / samples as f32);
@@ -187,7 +188,7 @@ pub fn constrain_segment(
 
 /// 基準の向き (角度 0、当たっている) から最も近い、当たらない向き。境目まで二分法で詰める。
 fn nearest_free(blocked: &impl Fn(f32) -> bool, step: f32) -> Option<f32> {
-    let half = (std::f32::consts::PI / step).ceil() as u32;
+    let half = math::ceil(std::f32::consts::PI / step) as u32;
     for k in 1..=half {
         for sign in [1.0, -1.0] {
             let angle = sign * (step * k as f32).min(std::f32::consts::PI);
@@ -216,7 +217,7 @@ fn bisect(blocked: &impl Fn(f32) -> bool, mut free: f32, mut hit: f32) -> f32 {
 /// 角度 (ラジアン) を (-π, π] に畳む。
 fn wrap_radians(angle: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
-    let a = (angle + PI).rem_euclid(TAU) - PI;
+    let a = math::rem_euclid(angle + PI, TAU) - PI;
     if a <= -PI { a + TAU } else { a }
 }
 

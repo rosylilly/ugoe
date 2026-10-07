@@ -87,6 +87,7 @@ pub(crate) fn add_points<T>(
 #[cfg(test)]
 mod tests {
     use ugoe_core::Rgb;
+    use ugoe_core::math;
     use ugoe_model::{DeformerKind, Model, fixtures};
 
     use crate::{CompiledModel, DrawableChanges, ModelInstance};
@@ -197,7 +198,7 @@ mod tests {
         inst.update();
         let frame = inst.rotation_world_frame(1).unwrap();
         assert_eq!(frame.translation, ugoe_core::Vec2::new(136.0, 128.0));
-        let (sin, cos) = 10f32.to_radians().sin_cos();
+        let (sin, cos) = math::sin_cos(10f32.to_radians());
         let x_axis = frame.matrix2.x_axis;
         assert_close(x_axis.x, 1.5 * cos);
         assert_close(x_axis.y, 1.5 * sin);

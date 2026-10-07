@@ -2,6 +2,7 @@
 //! 入力は `ugoe_model::fixtures::dynamic_hair` とその物理設定。
 
 use ugoe_core::Mat2;
+use ugoe_core::math;
 use ugoe_model::fixtures::{
     dynamic_hair, dynamic_hair_settings, physics_hair, physics_hair_settings,
 };
@@ -210,7 +211,7 @@ fn colliding_hair_keeps_segment_lengths_and_stays_outside() {
     let (mut free_min, mut particle_min, mut joint_min) =
         (f32::INFINITY, f32::INFINITY, f32::INFINITY);
     for k in 0..240 {
-        let x = 30.0 * (k as f32 * 0.05).sin();
+        let x = 30.0 * math::sin(k as f32 * 0.05);
         set(&mut free_instance, ANGLE_X, x);
         frame(&mut free, &mut free_instance);
         set(&mut instance, ANGLE_X, x);
@@ -279,7 +280,7 @@ fn rest_pose_inside_a_collider_is_reported_and_kept_on_the_near_side() {
     instance.update();
 
     for k in 0..240 {
-        set(&mut instance, ANGLE_X, 30.0 * (k as f32 * 0.05).sin());
+        set(&mut instance, ANGLE_X, 30.0 * math::sin(k as f32 * 0.05));
         frame(&mut physics, &mut instance);
         let p = physics.chain(0).unwrap().particles();
         for i in 1..p.len() {
@@ -415,8 +416,8 @@ fn dynamic_physics_is_deterministic() {
         let (mut physics, mut instance) = setup(dynamic_hair_settings());
         let mut trace = Vec::new();
         for k in 0..240 {
-            set(&mut instance, ANGLE_X, 30.0 * (k as f32 * 0.07).sin());
-            set(&mut instance, ANGLE_Z, 20.0 * (k as f32 * 0.03).cos());
+            set(&mut instance, ANGLE_X, 30.0 * math::sin(k as f32 * 0.07));
+            set(&mut instance, ANGLE_Z, 20.0 * math::cos(k as f32 * 0.03));
             // 表示のフレームレートが揺れても決定的。
             let dt = if k % 3 == 0 { STEP * 1.7 } else { STEP * 0.6 };
             physics.update_instance(&mut instance, dt);

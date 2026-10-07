@@ -61,6 +61,8 @@ insta = { version = "1", features = ["json"] }
 js-sys = "0.3"
 keyring-core = "1"
 libc = "0.2"
+# ランタイム層の数学関数 (ugoe_core::math)。std の有無と OS にかかわらず同じ結果にする (docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+libm = "0.2"
 miniz_oxide = "0.9"
 naga = { version = "30", features = ["wgsl-in"] }
 objc2 = "0.6"

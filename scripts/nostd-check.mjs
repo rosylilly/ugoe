@@ -7,10 +7,12 @@
 //   node scripts/nostd-check.mjs run [<crate>...]  検査を流す (クレートを省けばすべて)。ターゲットが無ければ入れ方を出して失敗する
 //                                                  (`just nostd-check`。CI の rust (runtime))
 //   node scripts/nostd-check.mjs targets           要るターゲットを出す (CI の `rustup target add` が使う)
-//   node scripts/nostd-check.mjs check             一覧のクレートがワークスペースにあり、feature `std` を既定で持つかを検査する (`just groups`)
+//   node scripts/nostd-check.mjs check             一覧のクレートがワークスペースにあり、feature `std` を既定で持つかと、
+//                                                  MATH_CRATES の clippy.toml (数学関数の禁止) が揃っているかを検査する (`just groups`)
 //   node scripts/nostd-check.mjs list              クレートの一覧
 
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 /** std の無いターゲット。 */
@@ -21,6 +23,13 @@ export const NOSTD_TARGET = "aarch64-unknown-none";
  * 依存の向きの順 (下の層から) に並べる。
  */
 export const NOSTD_CRATES = ["ugoe-core", "ugoe-model", "ugoe-format"];
+
+/**
+ * std の f32・f64 の数学関数を clippy の `disallowed_methods` で禁じ、`ugoe_core::math` (常に libm) を通させるクレート
+ * (T0180。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#数学関数は-libm-に寄せる)。各クレートの `crates/<名前>/clippy.toml` は
+ * 同じ内容で、ルートの clippy.toml の設定をすべて含む (clippy は最も近い clippy.toml だけを読むため)。
+ */
+export const MATH_CRATES = ["ugoe-core", "ugoe-runtime", "ugoe-physics", "ugoe-motion", "ugoe"];
 
 /** クレートを省けばすべて、知らないクレートは例外。 */
 export function select(crates, names) {
@@ -73,6 +82,43 @@ export function validate(crates, metadata) {
     }
   }
   return errors;
+}
+
+/**
+ * MATH_CRATES の clippy.toml を検査し、問題を文字列の配列で返す (空なら問題なし)。
+ * @param {string[]} crates
+ * @param {string} root ルートの clippy.toml の中身
+ * @param {(name: string) => string | undefined} read クレートの clippy.toml の中身 (無ければ undefined)
+ */
+export function validateClippyConfigs(crates, root, read) {
+  const errors = [];
+  const settings = root
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+  let first;
+  for (const name of crates) {
+    const text = read(name);
+    if (text === undefined) {
+      errors.push(`${name}: clippy.toml が無い (数学関数の禁止)`);
+      continue;
+    }
+    if (!text.includes("disallowed-methods"))
+      errors.push(`${name}: clippy.toml に disallowed-methods が無い`);
+    const lines = new Set(text.split("\n").map((line) => line.trim()));
+    for (const setting of settings) {
+      if (!lines.has(setting))
+        errors.push(`${name}: clippy.toml にルートの設定 \`${setting}\` が無い`);
+    }
+    if (first === undefined) first = { name, text };
+    else if (text !== first.text) errors.push(`${name}: clippy.toml が ${first.name} のものと違う`);
+  }
+  return errors;
+}
+
+function readClippyConfig(name) {
+  const path = `crates/${name}/clippy.toml`;
+  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
 function installedTargets() {
@@ -129,9 +175,20 @@ function main([command, ...names]) {
       console.log(NOSTD_TARGET);
       return 0;
     case "check": {
-      const errors = validate(NOSTD_CRATES, metadata());
+      const errors = [
+        ...validate(NOSTD_CRATES, metadata()),
+        ...validateClippyConfigs(
+          MATH_CRATES,
+          readFileSync("clippy.toml", "utf8"),
+          readClippyConfig,
+        ),
+      ];
       for (const e of errors) console.error(`error: ${e}`);
-      if (errors.length === 0) console.log(`nostd crates ok (${NOSTD_CRATES.length} crates)`);
+      if (errors.length === 0) {
+        console.log(
+          `nostd crates ok (${NOSTD_CRATES.length} crates, clippy.toml of ${MATH_CRATES.length} crates)`,
+        );
+      }
       return errors.length > 0 ? 1 : 0;
     }
     case "list":

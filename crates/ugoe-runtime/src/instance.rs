@@ -967,6 +967,7 @@ fn world_transform<'a>(
 
 #[cfg(test)]
 mod tests {
+    use ugoe_core::math;
     use ugoe_model::{Model, fixtures};
 
     use super::*;
@@ -1292,7 +1293,7 @@ mod tests {
         );
         set(&mut instance, "Angle", 30.0);
         instance.update();
-        let (s, c) = 30f32.to_radians().sin_cos();
+        let (s, c) = math::sin_cos(30f32.to_radians());
         let frame = instance.rotation_world_frame(arm).unwrap();
         assert!(frame.translation.abs_diff_eq(Vec2::new(128.0, 128.0), 1e-4));
         assert!(

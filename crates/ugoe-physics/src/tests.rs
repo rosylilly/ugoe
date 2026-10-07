@@ -1,5 +1,6 @@
 //! `PhysicsSystem` のテスト。入力は `ugoe_model::fixtures::physics_hair` とその物理設定。
 
+use ugoe_core::math;
 use ugoe_model::fixtures::{physics_hair, physics_hair_settings};
 use ugoe_model::physics::PhysicsTarget;
 use ugoe_model::standard::{ANGLE_X, ANGLE_Z, HAIR_BACK, HAIR_FRONT};
@@ -60,8 +61,8 @@ fn same_input_sequence_gives_same_output() {
         let mut trace = Vec::new();
         for k in 0..300 {
             let t = k as f32 * 0.021;
-            set(&mut params, ANGLE_X, (t * 2.3).sin() * 30.0);
-            set(&mut params, ANGLE_Z, (t * 1.7).cos() * 20.0);
+            set(&mut params, ANGLE_X, math::sin(t * 2.3) * 30.0);
+            set(&mut params, ANGLE_Z, math::cos(t * 1.7) * 20.0);
             // フレームの長さもばらつかせる。
             let dt = [1.0 / 60.0, 1.0 / 144.0, 1.0 / 30.0, 0.1][k % 4];
             physics.update(&mut params, dt);
@@ -282,7 +283,7 @@ fn values_left_to_runtime_fallbacks_pass_validation_and_stay_finite() {
         assert_close(physics.step_duration(), 1.0 / DEFAULT_FPS, 1e-9);
         let mut params = ParameterValues::from_model(&model);
         for k in 0..120 {
-            set(&mut params, ANGLE_X, (k as f32 * 0.1).sin() * 30.0);
+            set(&mut params, ANGLE_X, math::sin(k as f32 * 0.1) * 30.0);
             physics.update(&mut params, STEP);
             assert!(
                 params.as_slice().iter().all(|v| v.is_finite()),

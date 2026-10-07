@@ -1,5 +1,6 @@
 //! デフォーマのワールド変換 (`docs/spec/evaluation.md` の「3. デフォーマのワールド変換」)。
 
+use ugoe_core::math;
 use ugoe_core::{Affine2, Mat2, Vec2};
 
 /// 回転デフォーマの親がワープのときに向きを求める差分の幅 (UV 単位)。
@@ -82,7 +83,7 @@ impl Transform<'_> {
                 let o = w.map(rotation.origin);
                 let up = w.map(rotation.origin + Vec2::new(0.0, -ROTATION_EPSILON)) - o;
                 // R(δ) * (0, -1) = (sin δ, -cos δ) が up の向きになる δ。
-                let delta = up.x.atan2(-up.y).to_degrees();
+                let delta = math::atan2(up.x, -up.y).to_degrees();
                 Affine2::from_mat2_translation(rotation.linear(rotation.angle + delta), o)
             }
         }
@@ -125,8 +126,8 @@ impl<'a> Warp<'a> {
     fn cell(&self, uv: Vec2) -> (usize, usize, f32, f32) {
         let gx = uv.x * self.cols as f32;
         let gy = uv.y * self.rows as f32;
-        let i = (gx.floor().max(0.0) as usize).min(self.cols - 1);
-        let j = (gy.floor().max(0.0) as usize).min(self.rows - 1);
+        let i = (math::floor(gx).max(0.0) as usize).min(self.cols - 1);
+        let j = (math::floor(gy).max(0.0) as usize).min(self.rows - 1);
         (i, j, gx - i as f32, gy - j as f32)
     }
 

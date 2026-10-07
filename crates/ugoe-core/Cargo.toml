@@ -23,8 +23,9 @@ schema = ["std", "dep:schemars"]
 ts = ["std", "dep:ts-rs"]
 
 [dependencies]
-# std が無いときの数学関数は libm (std があるときは std のものを使う。T0180 で常に libm にする)
-glam = { workspace = true, features = ["nostd-libm"] }
+# glam の中の数学関数も std の有無にかかわらず libm にする (ugoe_core::math と同じ。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+glam = { workspace = true, features = ["libm"] }
+libm.workspace = true
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["alloc"] }
 ts-rs = { workspace = true, optional = true }

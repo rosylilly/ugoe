@@ -5361,6 +5361,7 @@ name = "ugoe-core"
 version = "0.0.0"
 dependencies = [
  "glam",
+ "libm",
  "schemars 1.2.2",
  "serde",
  "ts-rs",

@@ -9,6 +9,7 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
+use ugoe_core::math;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe_motion::MotionPlayer;
 use ugoe_motion::curve::{self, SegmentIndex};
@@ -93,7 +94,7 @@ fn long_motion() -> Motion {
     let keys = (DURATION * KEY_FPS) as usize;
     let curves = (0..CURVES)
         .map(|c| {
-            let value = |k: usize| ((k as f32 * 0.1) + c as f32).sin();
+            let value = |k: usize| math::sin((k as f32 * 0.1) + c as f32);
             let time = |k: usize| k as f32 / KEY_FPS;
             let mut segments = vec![Segment::Start {
                 p: Point {

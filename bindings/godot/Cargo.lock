@@ -381,6 +381,7 @@ name = "ugoe-core"
 version = "0.0.0"
 dependencies = [
  "glam 0.33.11",
+ "libm",
  "serde",
 ]
 

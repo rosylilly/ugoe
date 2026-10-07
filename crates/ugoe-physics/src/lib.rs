@@ -12,6 +12,7 @@ pub mod chain;
 pub mod collider;
 
 use std::sync::Arc;
+use ugoe_core::math;
 
 use ugoe_core::{Vec2, lerp};
 use ugoe_model::DeformerKind;
@@ -691,11 +692,11 @@ impl PhysicsSystem {
         if dt.is_finite() && dt > 0.0 {
             self.accumulator += dt;
         }
-        let whole = (self.accumulator / step).floor();
+        let whole = math::floor(self.accumulator / step);
         if whole > MAX_STEPS_PER_UPDATE as f32 {
             // ステップ数の上限を超えた分の時間は捨てる。巨大な `dt` から `whole * step` を引くと
             // 桁落ちする (無限大にもなる) ので、余りは剰余で求めて [0, step) に収める。
-            self.accumulator = self.accumulator.rem_euclid(step);
+            self.accumulator = math::rem_euclid(self.accumulator, step);
         } else {
             self.accumulator -= whole * step;
         }
@@ -927,7 +928,7 @@ fn rotate_deg(v: Vec2, degrees: f32) -> Vec2 {
 
 /// 角度を (-180, 180] に収める。
 fn wrap_degrees(degrees: f32) -> f32 {
-    let r = degrees.rem_euclid(360.0);
+    let r = math::rem_euclid(degrees, 360.0);
     if r > 180.0 { r - 360.0 } else { r }
 }
 

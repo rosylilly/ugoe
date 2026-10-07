@@ -681,6 +681,7 @@ fn record_part_opacities<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ugoe_core::math;
 
     #[test]
     fn puppet_updates_fixture() {
@@ -828,7 +829,7 @@ mod tests {
             puppet.update(DT);
             t += DT;
         }
-        let expected = 0.5 * 15.0 * (std::f32::consts::TAU * t / 6.5345).sin();
+        let expected = 0.5 * 15.0 * math::sin(std::f32::consts::TAU * t / 6.5345);
         assert!(
             (param(&puppet, standard::ANGLE_X) - expected).abs() < 1e-2,
             "{} != {expected}",
@@ -850,7 +851,7 @@ mod tests {
         assert!(breath > 0.0);
         puppet.update(3.2345 / 4.0);
         let t = 3.2345 / 2.0;
-        let expected = 10.0 + 7.5 * (std::f32::consts::TAU * t / 6.5345).sin();
+        let expected = 10.0 + 7.5 * math::sin(std::f32::consts::TAU * t / 6.5345);
         assert!(close(param(&puppet, standard::ANGLE_X), expected));
     }
 

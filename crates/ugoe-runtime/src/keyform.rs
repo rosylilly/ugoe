@@ -232,6 +232,7 @@ pub fn blend_bool<T>(grid: &KeyformGrid<T>, weights: &Weights, f: impl Fn(&T) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ugoe_core::math;
 
     fn binding(param: u32, keys: &[f32]) -> ResolvedBinding {
         ResolvedBinding::new(
@@ -349,10 +350,11 @@ mod tests {
     #[test]
     fn smooth_follows_an_arc_better_than_linear() {
         let keys = [-30.0f32, 0.0, 30.0];
-        let (xs, ys): (Vec<f32>, Vec<f32>) = keys.iter().map(|k| k.to_radians().sin_cos()).unzip();
+        let (xs, ys): (Vec<f32>, Vec<f32>) =
+            keys.iter().map(|k| math::sin_cos(k.to_radians())).unzip();
         let (s, l) = (smooth(0, &keys), binding(0, &keys));
         for v in [-25.0f32, -15.0, -5.0, 5.0, 15.0, 25.0] {
-            let radius = |b: &ResolvedBinding| interp(b, &xs, v).hypot(interp(b, &ys, v));
+            let radius = |b: &ResolvedBinding| math::hypot(interp(b, &xs, v), interp(b, &ys, v));
             let (smooth_err, linear_err) = ((radius(&s) - 1.0).abs(), (radius(&l) - 1.0).abs());
             assert!(
                 smooth_err * 5.0 < linear_err,

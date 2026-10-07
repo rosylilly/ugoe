@@ -3,6 +3,7 @@
 //! 検証 (`validate_physics`) を通らない設定や、極端な有限値で粒子があふれる設定を、
 //! 検証せずに `PhysicsSystem` に渡す (ホストが設定を組み立てる場合)。
 
+use ugoe_core::math;
 use ugoe_model::fixtures::{
     dynamic_hair, dynamic_hair_settings, physics_hair, physics_hair_settings,
 };
@@ -85,8 +86,8 @@ fn broken_settings_keep_parameters_finite() {
         let mut physics = PhysicsSystem::new(settings);
         let mut parameters = ParameterValues::from_model(&physics_hair());
         for k in 0..120 {
-            set(&mut parameters, ANGLE_X, 30.0 * (k as f32 * 0.1).sin());
-            set(&mut parameters, ANGLE_Z, 20.0 * (k as f32 * 0.07).cos());
+            set(&mut parameters, ANGLE_X, 30.0 * math::sin(k as f32 * 0.1));
+            set(&mut parameters, ANGLE_Z, 20.0 * math::cos(k as f32 * 0.07));
             physics.update(&mut parameters, STEP);
             assert!(
                 parameters.as_slice().iter().all(|v| v.is_finite()),
@@ -106,7 +107,7 @@ fn broken_settings_keep_dynamic_offsets_finite() {
             let index = instance.parameters().index_of(ANGLE_X).unwrap();
             instance
                 .parameters_mut()
-                .set(index, 30.0 * (k as f32 * 0.1).sin());
+                .set(index, 30.0 * math::sin(k as f32 * 0.1));
             dynamic_frame(&mut physics, &mut instance, label);
         }
     }
@@ -156,7 +157,7 @@ fn finite_settings_keep_chains_finite() {
     let mut physics = PhysicsSystem::new(physics_hair_settings());
     let mut parameters = ParameterValues::from_model(&physics_hair());
     for k in 0..120 {
-        set(&mut parameters, ANGLE_X, 30.0 * (k as f32 * 0.3).sin());
+        set(&mut parameters, ANGLE_X, 30.0 * math::sin(k as f32 * 0.3));
         physics.update(&mut parameters, STEP);
         assert!(chain_is_finite(&physics));
     }

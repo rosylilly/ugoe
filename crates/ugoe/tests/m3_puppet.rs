@@ -15,6 +15,7 @@ use std::f32::consts::TAU;
 use std::path::PathBuf;
 
 use ugoe::core::Vec2;
+use ugoe::core::math;
 use ugoe::model::avatar::check::check_profile;
 use ugoe::model::effects::{Effects, EyeBlink};
 use ugoe::model::expression::{Expression, ExpressionOp, ExpressionParameter};
@@ -185,7 +186,7 @@ fn tracking(jaw_open: f32) -> TrackingInput {
 
 /// `AngleX` の呼吸 (`Breath::standard()`: 重み 0.5、振幅 15、周期 6.5345 秒)。
 fn breath_angle_x(t: f32) -> f32 {
-    0.5 * 15.0 * (TAU * t / 6.5345).sin()
+    0.5 * 15.0 * math::sin(TAU * t / 6.5345)
 }
 
 /// 各段が決まった順に重なることを、パラメータの値で確かめる。

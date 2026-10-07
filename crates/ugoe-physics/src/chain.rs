@@ -5,6 +5,7 @@
 //! 動的物理 (T0305) の衝突体や重力の基準からも同じ積分を使う。
 
 use ugoe_core::Vec2;
+use ugoe_core::math;
 use ugoe_model::physics::PhysicsParticle;
 
 /// 根元の回転に、子の粒子が引きずられる割合 (`docs/spec/physics.md#係数の意味`)。
@@ -198,7 +199,7 @@ fn rest_segment(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -
 /// 1 ステップで残す速度の割合。`mobility` は基準フレームあたりの割合なので、
 /// ステップ幅に応じて累乗する (ステップの周波数を変えても減衰の速さが変わらない)。
 fn velocity_retention(mobility: f32, time_scale: f32) -> f32 {
-    mobility.max(0.0).powf(time_scale)
+    math::powf(mobility.max(0.0), time_scale)
 }
 
 /// 粒子 i の、初期位置での親からの向き。向きが決まらなければ真下。
@@ -214,7 +215,7 @@ pub fn signed_angle(from: Vec2, to: Vec2) -> f32 {
     if from == Vec2::ZERO || to == Vec2::ZERO {
         return 0.0;
     }
-    from.perp_dot(to).atan2(from.dot(to)).to_degrees()
+    math::atan2(from.perp_dot(to), from.dot(to)).to_degrees()
 }
 
 #[cfg(test)]
@@ -262,7 +263,7 @@ mod tests {
         let defs = two_particles();
         let mut chain = Chain::new(&defs, Vec2::ZERO);
         for k in 0..100 {
-            let root = Vec2::new((k as f32 * 0.3).sin() * 20.0, 0.0);
+            let root = Vec2::new(math::sin(k as f32 * 0.3) * 20.0, 0.0);
             chain.step(&defs, &input(root), |_, _| {});
             let p = chain.particles();
             assert!(((p[1].position - p[0].position).length() - 10.0).abs() < 1e-4);

@@ -4,6 +4,7 @@
 //! 描画の頂点) のハッシュを記録した。実装を変えてもこの値が変わらなければ、結果はビット単位で同じ。
 //! 結果を意図して変える (仕様の変更) ときは、理由を書いてハッシュを更新する。
 
+use ugoe_core::math;
 use ugoe_model::Model;
 use ugoe_model::fixtures::{
     dynamic_hair, dynamic_hair_settings, physics_hair, physics_hair_settings, physics_relay,
@@ -49,8 +50,8 @@ impl Hasher {
 
 /// フレーム `k` の入力の値と `dt` (表示のフレームレートの揺れを含む)。
 fn input(k: usize) -> (f32, f32, f32) {
-    let x = 30.0 * (k as f32 * 0.07).sin();
-    let z = 20.0 * (k as f32 * 0.03).cos();
+    let x = 30.0 * math::sin(k as f32 * 0.07);
+    let z = 20.0 * math::cos(k as f32 * 0.03);
     let dt = match k % 4 {
         0 => STEP * 1.7,
         1 => STEP * 0.6,
@@ -119,13 +120,17 @@ fn reordered_parameters_give_the_same_result() {
     }
 }
 
-// 記録したハッシュは、`sin`・`cos` などの結果が同じプラットフォーム (CI の x86_64 Linux) でだけ比べる。
+// 記録したハッシュは、CI と同じプラットフォーム (x86_64 Linux) でだけ比べる。
+// T0180 で数学関数を `ugoe_core::math` (常に libm) にしたとき、`sin`・`atan2`・`powf` などの最後の桁が変わったので記録し直した
+// (入力の `sin`・`cos` も libm になった。見本のモデルと物理のフィクスチャで 900 フレームずつ比べた
+// 前後の差は、パラメータと頂点の値 261 万個のうち 401 個が変わり、最大で 6.1e-5)。
+// libm にしたので OS の数学ライブラリの差は無くなったが、ほかのプラットフォームで同じハッシュになるかは確かめていない。
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 fn hair_update_matches_recorded_hash() {
     let hash = run_update(physics_hair_settings(), &[physics_hair()]);
-    assert_eq!(hash, 0x185e_09f5_7b19_b86b, "{hash:#x}");
+    assert_eq!(hash, 0x5231_b2df_e2dd_5849, "{hash:#x}");
 }
 
 /// 並びが変わる・パラメータが足りない `ParameterValues` に切り替える。
@@ -136,14 +141,14 @@ fn hair_update_with_changing_layouts_matches_recorded_hash() {
         physics_hair_settings(),
         &[physics_hair(), reversed(physics_hair()), physics_relay()],
     );
-    assert_eq!(hash, 0x6f81_3093_7946_46bb, "{hash:#x}");
+    assert_eq!(hash, 0x061a_b7ae_3da1_4da6, "{hash:#x}");
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 fn relay_update_matches_recorded_hash() {
     let hash = run_update(physics_relay_settings(), &[physics_relay()]);
-    assert_eq!(hash, 0x75a7_32c1_126b_99bf, "{hash:#x}");
+    assert_eq!(hash, 0x6b47_ebf2_cbb6_b40f, "{hash:#x}");
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -168,5 +173,5 @@ fn dynamic_update_instance_matches_recorded_hash() {
         }
         hash.physics(&physics);
     }
-    assert_eq!(hash.0, 0xeef9_eb0a_6fd0_89d5, "{:#x}", hash.0);
+    assert_eq!(hash.0, 0x5f37_83b1_18a2_e986, "{:#x}", hash.0);
 }

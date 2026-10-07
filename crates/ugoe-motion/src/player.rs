@@ -1,6 +1,7 @@
 //! モーション 1 本の再生 (時刻・フェード・ループ・イベント)。
 //! 仕様: `docs/spec/motion.md#再生とフェード`。
 
+use ugoe_core::math;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent};
 use ugoe_runtime::ParameterValues;
 
@@ -13,7 +14,7 @@ pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
 /// フェードの曲線 `0.5 - 0.5 cos(π x)`。`x` は `[0, 1]` にクランプする。
 pub fn easing(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
-    0.5 - 0.5 * (std::f32::consts::PI * x).cos()
+    0.5 - 0.5 * math::cos(std::f32::consts::PI * x)
 }
 
 /// フェードイン (経過時間 `elapsed`、長さ `duration`) の重み。長さが 0 以下なら 1。
@@ -226,7 +227,7 @@ impl MotionPlayer {
         }
         // 周回の上限を超えた分は発火せず、再生位置だけを合わせる。巨大な経過時間に周回の長さを
         // 足し続けても桁落ちで変わらない (極端に短い長さでも同じ) ので、剰余で [0, duration) に収める。
-        let time = (self.elapsed - self.lap_start).rem_euclid(lap);
+        let time = math::rem_euclid_f64(self.elapsed - self.lap_start, lap);
         self.lap_start = self.elapsed - time;
         let time = (self.elapsed - self.lap_start).max(0.0) as f32;
         if time < duration {
@@ -408,7 +409,7 @@ mod tests {
         assert!(close(easing(1.0), 1.0));
         assert!(close(
             easing(0.25),
-            0.5 - 0.5 * (std::f32::consts::FRAC_PI_4).cos()
+            0.5 - 0.5 * math::cos(std::f32::consts::FRAC_PI_4)
         ));
         assert_eq!(easing(-1.0), 0.0);
         assert!(close(easing(2.0), 1.0));

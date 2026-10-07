@@ -15,6 +15,7 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
+use ugoe_core::math;
 use ugoe_model::fixtures;
 use ugoe_model::standard::{ANGLE_X, ANGLE_Z, BODY_ANGLE_X};
 use ugoe_physics::PhysicsSystem;
@@ -82,8 +83,8 @@ fn report(name: &str, per_frame: Duration) {
 /// フレーム `k` の入力の値。
 fn wave(k: usize) -> (f32, f32) {
     (
-        30.0 * (k as f32 * 0.07).sin(),
-        10.0 * (k as f32 * 0.03).cos(),
+        30.0 * math::sin(k as f32 * 0.07),
+        10.0 * math::cos(k as f32 * 0.03),
     )
 }
 

@@ -171,8 +171,12 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
   - `std::io` (`Read`・`Write`) は使わない。バイト列のスライスを読み、`Vec<u8>` に書く (zstd の展開は `ruzstd::io::Read`。
     `std` があれば `std::io::Read` そのもの)。
   - `HashMap`・`HashSet` は使わない (`std` にしかない)。`BTreeMap`・`BTreeSet` か、決まったハッシュ関数の `hashbrown` に置き換える。
-  - `f32` の `sin`・`powf` などは `std` にしかない。`T0180` で `ugoe_core::math` (常に `libm`) に寄せるまでは、`glam` の関数
-    (`Vec2::from_angle` など。`std` があれば `std` の関数を使い、無ければ `libm` を使う) を通す。
+  - 数学関数 (`sin`・`atan2`・`powf`・`floor`・`rem_euclid` など) は `ugoe_core::math` から呼ぶ。中身は `std` の有無にかかわらず常に
+    `libm` (純粋な Rust の実装) で、`glam` も feature `libm` で同じ実装を使う。`f32::sin` などは `std` にしか無く、OS の C の数学ライブラリで
+    最後の桁が変わりうるため。`std` の有無でも OS でも、同じ入力から同じビット列の出力が得られる。`abs`・`signum`・`to_radians`・
+    `min`・`max`・`clamp` などは `core` にあり、結果も IEEE で決まるので、そのまま使う。
+    足りない関数は `ugoe_core::math` に `libm` を呼ぶ関数を足す。`std` の `f32`・`f64` の数学関数を直接呼ぶと、clippy の `disallowed_methods`
+    が警告する (対象は `scripts/nostd-check.mjs` の `MATH_CRATES` で、各クレートの `clippy.toml` に書く。`just groups` が揃っているかを検査する)。
   - ワークスペースの依存 (`[workspace.dependencies]`) は既定の feature を切ってある (`glam`・`ruzstd`・`serde`・`serde_json`・`thiserror`・
     `ugoe-core`・`ugoe-model`・`ugoe-format`)。メンバーの `default-features = false` はワークスペースの側で切らないと効かないため。使う側で
     `features = ["std"]` を書く (`ruzstd` は `["hash", "std"]`)。
@@ -188,7 +192,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 > 対応中: ランタイム層 (`ugoe-core`〜`ugoe`・`ugoe-ffi`) を `no_std + alloc` でビルドできるようにする (ゲーム機・組み込み機器向け)。
 > 今 `std` 無しでビルドできるのは `ugoe-core` と `ugoe-model` (T0179)、`ugoe-format` (T0182。PNG とブロック圧縮の KTX2 のデコードは
 > feature `png` (`std` を含む) の側にあり、`std` 無しで読める画像は圧縮していない KTX2 だけ。[crates/ugoe-format/README.md](../crates/ugoe-format/README.md))。
-> 数学関数は `std` の有無にかかわらず `libm` を使う。方針は [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、タスクは T0180〜T0184・T0491。
+> 数学関数は `std` の有無にかかわらず `libm` を使う (T0180)。方針は [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、タスクは T0180〜T0184・T0491。
 
 ## 配布
 

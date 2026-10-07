@@ -1,6 +1,7 @@
 //! リグの順序と中継パラメータのテスト (`docs/spec/physics.md#リグの順序と中継`)。
 //! 入力は `ugoe_model::fixtures::physics_relay` とその物理設定。
 
+use ugoe_core::math;
 use ugoe_model::Parameter;
 use ugoe_model::fixtures::{
     RELAY_BOUNCE, RELAY_FOLLOW, dynamic_hair, dynamic_hair_settings, physics_hair_settings,
@@ -79,7 +80,7 @@ fn order_changes_the_result() {
         let mut params = ParameterValues::from_model(&physics_relay());
         let mut trace = Vec::new();
         for k in 0..120 {
-            set(&mut params, BODY_ANGLE_X, (k as f32 * 0.05).sin() * 10.0);
+            set(&mut params, BODY_ANGLE_X, math::sin(k as f32 * 0.05) * 10.0);
             physics.update(&mut params, STEP);
             trace.push(get(&params, BODY_ANGLE_Z));
         }
@@ -138,7 +139,7 @@ fn relay_is_deterministic() {
         let mut trace = Vec::new();
         for k in 0..300 {
             let t = k as f32 * 0.021;
-            set(&mut params, BODY_ANGLE_X, (t * 2.3).sin() * 10.0);
+            set(&mut params, BODY_ANGLE_X, math::sin(t * 2.3) * 10.0);
             let dt = [1.0 / 60.0, 1.0 / 144.0, 1.0 / 30.0, 0.1][k % 4];
             physics.update(&mut params, dt);
             trace.push(params.as_slice().to_vec());
@@ -213,7 +214,7 @@ fn relay_drives_dynamic_rig() {
             let index = instance.parameters().index_of(ANGLE_X).unwrap();
             instance
                 .parameters_mut()
-                .set(index, (k as f32 * 0.07).sin() * 30.0);
+                .set(index, math::sin(k as f32 * 0.07) * 30.0);
             physics.update_instance(&mut instance, STEP);
             instance.update();
             trace.push(instance.dynamic_offsets().unwrap().angle(hair));

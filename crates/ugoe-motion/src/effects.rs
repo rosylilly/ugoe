@@ -1,5 +1,6 @@
 //! 目パチ・呼吸・リップシンク。仕様: `docs/spec/motion.md#エフェクト`。
 
+use ugoe_core::math;
 use ugoe_model::ParamId;
 use ugoe_model::effects::{Breath, EyeBlink, LipSync};
 use ugoe_runtime::ParameterValues;
@@ -198,7 +199,7 @@ impl BreathPlayer {
         }
         for (phase, p) in self.phases.iter_mut().zip(&self.config.parameters) {
             *phase = if p.cycle > 0.0 {
-                (*phase + dt).rem_euclid(p.cycle)
+                math::rem_euclid(*phase + dt, p.cycle)
             } else {
                 0.0
             };
@@ -215,7 +216,7 @@ impl BreathPlayer {
         for ((p, phase), index) in self.config.parameters.iter().zip(&self.phases).zip(indices) {
             let Some(index) = *index else { continue };
             let wave = if p.cycle > 0.0 {
-                (std::f32::consts::TAU * phase / p.cycle).sin()
+                math::sin(std::f32::consts::TAU * phase / p.cycle)
             } else {
                 0.0
             };
@@ -472,7 +473,7 @@ mod tests {
         // Breath: 1 * (0.5 + 0.5 * sin(π/2)) = 1。既定値 0 に加える。
         assert!(close(get(&p, standard::BREATH), 1.0));
         let t = quarter;
-        let expected = 0.5 * 15.0 * (std::f32::consts::TAU * t / 6.5345).sin();
+        let expected = 0.5 * 15.0 * math::sin(std::f32::consts::TAU * t / 6.5345);
         assert!(close(get(&p, standard::ANGLE_X), expected));
 
         // 周期で折り返しても同じ値になる。
