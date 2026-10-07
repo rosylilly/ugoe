@@ -1,11 +1,11 @@
 ---
 id: T0491
 title: ugoe-ffi を std の無い環境向けの静的ライブラリとしてビルドする
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, Cargo.toml, Cargo.lock, justfile, scripts, .github/workflows, docs]
 depends_on: [T0183, T0184, T0489]
-assignee:
+assignee: claude-worker-T0491
 ---
 
 # T0491: ugoe-ffi を std の無い環境向けの静的ライブラリとしてビルドする
