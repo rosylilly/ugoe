@@ -1,11 +1,11 @@
 ---
 id: T0188
 title: "壊れた入力のテストを、cargo-fuzz などで続けて回す fuzzing に広げるかを決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-format, ugoe, .github/workflows, docs]
 depends_on: [T0186]
-assignee:
+assignee: claude-worker-T0188
 ---
 
 # T0188: 壊れた入力のテストを、cargo-fuzz などで続けて回す fuzzing に広げるかを決める (判断が要る)
