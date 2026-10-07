@@ -56,6 +56,9 @@ let cursor = $state<string | null>(null);
 let message = $state<{ text: string; error: boolean } | null>(null);
 let confirmDelete = $state<ElementRef[] | null>(null);
 let treeEl = $state<HTMLElement>();
+// 上と下に貼り付く頭と下の欄の高さ。行を見える所へ送るとき、その下に隠さないように使う (T1676)
+let headHeight = $state(0);
+let footerHeight = $state(0);
 
 const index = $derived.by(() => {
   if (!doc.parsedModel) return null;
@@ -385,9 +388,9 @@ const dragHint = $derived.by(() => {
 });
 </script>
 
-<div class="panel">
+<div class="panel" style:--tree-head-height="{headHeight}px" style:--tree-footer-height="{footerHeight}px">
   <!-- 頭 (表示の切り替えと道具の並び) は、木を送っても上に残す (docs/ui.md#レイアウト の「高さの変化」) -->
-  <div class="head">
+  <div class="head" bind:offsetHeight={headHeight}>
     <TabStrip
       tabs={viewTabs}
       value={view}
@@ -476,7 +479,7 @@ const dragHint = $derived.by(() => {
     </div>
   {/if}
   <!-- メッセージは木の下に出す (上に出すと行がずれ、ドラッグ中の落とし先が変わるため)。 -->
-  <div class="footer">
+  <div class="footer" bind:offsetHeight={footerHeight}>
     {#if message}
       <Notice tone={message.error ? "danger" : "info"} ondismiss={() => (message = null)}>
         {message.text}
@@ -523,10 +526,14 @@ const dragHint = $derived.by(() => {
 }
 .footer {
   position: sticky;
-  bottom: 0;
+  /* 頭と同じく、左の列の内側の余白の分だけ下に寄せ、列の下端に付ける (下に木の行が覗かないように。T1676) */
+  bottom: calc(-1 * var(--ugoe-space-3));
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--ugoe-space-2);
+  margin-bottom: calc(-1 * var(--ugoe-space-3));
+  padding: var(--ugoe-space-1) 0 var(--ugoe-space-3);
   background: var(--ugoe-color-surface);
 }
 .tree {
@@ -545,6 +552,10 @@ const dragHint = $derived.by(() => {
   .tree:not(.drop-root) {
     border-color: Canvas;
   }
+}
+/* 行を scrollIntoView で送るとき、貼り付いた頭と下の欄の下に隠さない */
+.tree > :global(.row) {
+  scroll-margin: var(--tree-head-height) 0 var(--tree-footer-height);
 }
 .tree.dragging {
   cursor: grabbing;
