@@ -135,7 +135,9 @@ cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --pro
 
 **検査 (実機での確認はしていない):**
 
-- `just nostd-check` (CI の rust (runtime)): `aarch64-unknown-none` (std の無い tier 2 のターゲット) で clippy、ホストで `std` を外した形の単体テスト、
+- `just nostd-check` (CI の rust (runtime)): `aarch64-unknown-none` (std の無い tier 2 のターゲット) と `thumbv7em-none-eabihf`
+  (32 ビットで 64 ビットのアトミック操作が無い tier 2 のターゲット。T0070) で clippy、ホストで `std` を外した形の単体テスト、
+  `thumbv7em-none-eabihf` の静的ライブラリを作る (リンクはしない)。`aarch64-unknown-none` では
   静的ライブラリを作ってフリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と (clang でコンパイルして rust-lld で) リンクし、
   未解決のシンボルが `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc` だけであることを確かめる (`scripts/nostd-check.mjs` の
   `HOST_SYMBOLS`)。
@@ -206,7 +208,7 @@ cargo +nightly rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-featu
   手がかりを失う割に、ライブラリは 3% ほどしか小さくならない。
 - **アトミック操作:** ランタイム層は `alloc::sync::Arc` を使うので、ポインタの幅のアトミックな比較と交換 (CAS) が要る。CAS の無い
   ターゲット (`thumbv6m-none-eabi` など) ではビルドできない。64 ビットのアトミック操作は要らない (`armv6k-nintendo-3ds` などの
-  32 ビットのターゲットでもビルドできる)。
+  32 ビットのターゲットでもビルドできる。tier 2 の `thumbv7em-none-eabihf` で `just nostd-check` が確かめる)。
 - **確かめたこと (nightly 1.101、2026-10):** 次のターゲットで上のコマンドが通り、未解決のシンボルが上の 6 つだけであることを、
   フリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と rust-lld でリンクして確かめた。CI では検査しない
   (nightly が要るため。tier 2 の `aarch64-unknown-none` は `just nostd-check` が検査する)。

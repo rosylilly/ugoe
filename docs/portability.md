@@ -205,14 +205,16 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
     `features = ["std"]` を書く (`ruzstd` は `["hash", "std"]`)。
   - 検査の対象は `scripts/nostd-check.mjs` の `NOSTD_CRATES`。`aarch64-unknown-none` (`std` が無く、`core` と `alloc` がビルド済みで
     配られる tier 2 のターゲット) で、クレートを 1 つずつ `--no-default-features` で clippy にかけるので、どこかで `std` に依存すると
-    (依存の feature の統合の漏れを含めて) 失敗する。ターゲットは `rustup target add aarch64-unknown-none` で入れる。
+    (依存の feature の統合の漏れを含めて) 失敗する。同じ clippy を `thumbv7em-none-eabihf` (32 ビットで、64 ビットのアトミック操作が無い
+    tier 2 のターゲット) でも流し、`ugoe-ffi` は静的ライブラリまで作る (64 ビットの機械では見つからない `AtomicU64` のような退行を見つける。T0070)。
+    ターゲットは `rustup target add aarch64-unknown-none thumbv7em-none-eabihf` で入れる (`node scripts/nostd-check.mjs targets` が出す)。
     CI は `rust (runtime)` のジョブで流す。no_std に対応したクレートを `NOSTD_CRATES` に足す。
     `HOST_TEST_CRATES` (`ugoe-format`・`ugoe-ffi`) は、`std` を外した形の単体テストもホストで流す ([testing.md](testing.md#std-の無い形の単体テスト))。
 - `std::fs`、`std::thread`、`std::time` を使わないこと。時間は `dt` として受け取ります。
 - グローバルな状態 (static mut、グローバルなロガーの初期化など) を持たないこと。
   例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。
   カウンタは 64 ビットのアトミックがあれば `AtomicU64`、無いターゲット (`thumbv7em-none-eabihf`・32 ビットのゲーム機など) では
-  `AtomicUsize` で数える (その場合は 2^32 個で番号が一巡する。T0495)。比べて入れ替える操作 (CAS) の無いターゲット (`thumbv6m` など) は、
+  `AtomicUsize` で数える (その場合は 2^32 個で番号が一巡する。T0495。`just nostd-check` が `thumbv7em-none-eabihf` で確かめる)。比べて入れ替える操作 (CAS) の無いターゲット (`thumbv6m` など) は、
   ランタイムが `Arc` を使うので対象外。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 - 外から来るデータ (ファイル・ホストの引数) のどんな値でもパニックしないこと ([下](#パニックしない))。

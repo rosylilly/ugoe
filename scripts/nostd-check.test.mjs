@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  ATOMIC32_TARGET,
   clippyArgs,
   FFI_CRATE,
   HOST_SYMBOLS,
@@ -10,8 +11,10 @@ import {
   hostStubSource,
   hostTestArgs,
   MATH_CRATES,
+  missingTargets,
   NOSTD_CRATES,
   NOSTD_TARGET,
+  NOSTD_TARGETS,
   select,
   staticlibArgs,
   undefinedSymbols,
@@ -40,6 +43,17 @@ test("clippy の引数は 1 つのクレートのライブラリを std の無�
     "-D",
     "warnings",
   ]);
+});
+
+test("64 ビットのアトミック操作の無いターゲットでも検査し、入っていないターゲットを見つける", () => {
+  assert.deepEqual(NOSTD_TARGETS, ["aarch64-unknown-none", "thumbv7em-none-eabihf"]);
+  assert.equal(NOSTD_TARGETS[0], NOSTD_TARGET);
+  assert.ok(NOSTD_TARGETS.includes(ATOMIC32_TARGET));
+  assert.deepEqual(clippyArgs("x", ATOMIC32_TARGET).slice(5, 7), ["--target", ATOMIC32_TARGET]);
+  assert.deepEqual(staticlibArgs(ATOMIC32_TARGET).slice(-2), ["--target", ATOMIC32_TARGET]);
+  assert.deepEqual(missingTargets(["x86_64-unknown-linux-gnu", ...NOSTD_TARGETS]), []);
+  assert.deepEqual(missingTargets(["aarch64-unknown-none"]), [ATOMIC32_TARGET]);
+  assert.deepEqual(missingTargets([]), NOSTD_TARGETS);
 });
 
 test("一覧のクレートはワークスペースにあり、feature std を既定で持つ", () => {

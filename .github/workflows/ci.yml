@@ -145,7 +145,8 @@ jobs:
       - name: ugoe without render
         if: matrix.group == 'runtime'
         run: just sdk-no-render-check
-      # ランタイム層のクレートが std 無し (aarch64-unknown-none) でビルドできるか (`just nostd-check`。ADR 0031、T0179)。
+      # ランタイム層のクレートが std 無し (aarch64-unknown-none と、64 ビットのアトミック操作の無い thumbv7em-none-eabihf) で
+      # ビルドできるか (`just nostd-check`。ADR 0031、T0179・T0070)。ターゲットは `nostd-check.mjs targets` が出すものをすべて入れる。
       # ugoe-ffi は std の無い形の静的ライブラリを C の見本とリンクし、未解決のシンボルがホストの C ライブラリのもの
       # (malloc・free・abort など) だけかも確かめる (T0491)。C の見本はランナーに入っている clang でコンパイルする
       - name: no_std

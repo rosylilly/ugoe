@@ -3,12 +3,14 @@
 // `aarch64-unknown-none` は std そのものが無く、core と alloc がビルド済みで配られるターゲットなので、どこかで std に依存すると
 // (依存の feature の統合の漏れを含めて) ビルドが失敗する。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md、
 // docs/portability.md#ランタイム層が守る制約-移植性のため。
+// 32 ビットで 64 ビットのアトミック操作の無い `thumbv7em-none-eabihf` でも同じ clippy を流し、ugoe-ffi の静的ライブラリを作る
+// (`AtomicU64` のような、64 ビットの機械では見つからない退行を見つける。T0495・T0070)。
 //
 //   node scripts/nostd-check.mjs run [<crate>...]  検査を流す (クレートを省けばすべて)。ターゲットが無ければ入れ方を出して失敗する
 //                                                  (`just nostd-check`。CI の rust (runtime))。HOST_TEST_CRATES では std の無い形の
 //                                                  単体テストをホストで流し (T0186・T0491)、ugoe-ffi では静的ライブラリを
 //                                                  C の見本とリンクする検査も流す (T0491。crates/ugoe-ffi/README.md#std-の無い環境)
-//   node scripts/nostd-check.mjs targets           要るターゲットを出す (CI の `rustup target add` が使う)
+//   node scripts/nostd-check.mjs targets           要るターゲット (NOSTD_TARGETS) を出す (CI の `rustup target add` が使う)
 //   node scripts/nostd-check.mjs check             一覧のクレートがワークスペースにあり、feature `std` を既定で持つかと、
 //                                                  HOST_TEST_CRATES が開発時の依存に自分を置いていないかと、
 //                                                  MATH_CRATES の clippy.toml (数学関数の禁止) が揃っているかを検査する (`just groups`)
@@ -20,8 +22,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
-/** std の無いターゲット。 */
+/** std の無いターゲット。ugoe-ffi の静的ライブラリを C の見本とリンクするのはこのターゲットだけ。 */
 export const NOSTD_TARGET = "aarch64-unknown-none";
+
+/**
+ * 64 ビットのアトミック操作の無い std の無いターゲット (32 ビットの Arm Cortex-M4F。ポインタの幅の比較と交換はある)。
+ * rustup が stable で core と alloc を配る tier 2 のターゲットで、ゲーム機の 32 ビットのターゲット (tier 3) の代わりに検査する (T0070)。
+ * NOSTD_TARGET と同じ clippy を流す (`cfg(target_has_atomic = "64")` で分けたコードの、こちら側の枝も lint にかけるため。
+ * 型検査までなので、ビルドだけと比べて時間はほとんど変わらない)。ugoe-ffi は静的ライブラリを作るところまでで、リンクはしない。
+ */
+export const ATOMIC32_TARGET = "thumbv7em-none-eabihf";
+
+/** `just nostd-check` が要るターゲット (`targets` が出す。CI の `rustup target add`)。 */
+export const NOSTD_TARGETS = [NOSTD_TARGET, ATOMIC32_TARGET];
 
 /**
  * std 無しでビルドできるクレート。ランタイム層のクレートを no_std にしたら、ここに足す (ADR 0031。T0180〜T0183・T0491)。
@@ -305,20 +318,26 @@ function checkHostTests(name) {
   return 0;
 }
 
+/** std の無い形の静的ライブラリを作る。失敗すれば 1 を返す。 */
+function buildStaticlib(target) {
+  const args = staticlibArgs(target);
+  console.log(`== ${FFI_CRATE} (${target}, staticlib): cargo ${args.join(" ")}`);
+  try {
+    execFileSync("cargo", args, { stdio: "inherit" });
+  } catch {
+    console.error(`error: ${FFI_CRATE} の静的ライブラリを std 無し (${target}) で作れない`);
+    return 1;
+  }
+  return 0;
+}
+
 /**
  * ugoe-ffi の std の無い形の検査 (T0491): aarch64-unknown-none の静的ライブラリを作って
  * C の見本 (crates/ugoe-ffi/examples/c/nostd.c) とリンクし、未解決のシンボルが HOST_SYMBOLS だけであることを確かめる。
  * 実機での動作は確かめない (crates/ugoe-ffi/README.md#std-の無い環境)。
  */
 function checkFfiStaticlib() {
-  const args = staticlibArgs();
-  console.log(`== ${FFI_CRATE} (${NOSTD_TARGET}, staticlib): cargo ${args.join(" ")}`);
-  try {
-    execFileSync("cargo", args, { stdio: "inherit" });
-  } catch {
-    console.error(`error: ${FFI_CRATE} の静的ライブラリを std 無し (${NOSTD_TARGET}) で作れない`);
-    return 1;
-  }
+  if (buildStaticlib(NOSTD_TARGET) !== 0) return 1;
   const clang = process.env.CLANG ?? "clang";
   if (spawnSync(clang, ["--version"]).status !== 0) {
     console.error(
@@ -405,26 +424,37 @@ function checkFfiStaticlib() {
   }
 }
 
+/** 入っていないターゲット。 */
+export function missingTargets(installed, targets = NOSTD_TARGETS) {
+  return targets.filter((target) => !installed.includes(target));
+}
+
 function run(crates) {
-  if (!installedTargets().includes(NOSTD_TARGET)) {
-    console.error(`error: ターゲットが入っていない: ${NOSTD_TARGET}`);
-    console.error(`  入れ方: rustup target add ${NOSTD_TARGET}`);
+  const missing = missingTargets(installedTargets());
+  if (missing.length > 0) {
+    console.error(`error: ターゲットが入っていない: ${missing.join(", ")}`);
+    console.error(`  入れ方: rustup target add ${missing.join(" ")}`);
     return 1;
   }
   for (const name of crates) {
-    const args = clippyArgs(name);
-    console.log(`== ${name} (${NOSTD_TARGET}): cargo ${args.join(" ")}`);
-    try {
-      execFileSync("cargo", args, { stdio: "inherit" });
-    } catch {
-      console.error(`error: ${name} が std 無し (${NOSTD_TARGET}) でビルドできない`);
-      return 1;
+    for (const target of NOSTD_TARGETS) {
+      const args = clippyArgs(name, target);
+      console.log(`== ${name} (${target}): cargo ${args.join(" ")}`);
+      try {
+        execFileSync("cargo", args, { stdio: "inherit" });
+      } catch {
+        console.error(`error: ${name} が std 無し (${target}) でビルドできない`);
+        return 1;
+      }
     }
   }
   for (const name of HOST_TEST_CRATES) {
     if (crates.includes(name) && checkHostTests(name) !== 0) return 1;
   }
-  if (crates.includes(FFI_CRATE)) return checkFfiStaticlib();
+  if (crates.includes(FFI_CRATE)) {
+    if (buildStaticlib(ATOMIC32_TARGET) !== 0) return 1;
+    return checkFfiStaticlib();
+  }
   return 0;
 }
 
@@ -443,7 +473,7 @@ function main([command, ...names]) {
       return run(crates);
     }
     case "targets":
-      console.log(NOSTD_TARGET);
+      for (const target of NOSTD_TARGETS) console.log(target);
       return 0;
     case "check": {
       const meta = metadata();
