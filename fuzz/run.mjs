@@ -5,6 +5,7 @@
 //   node fuzz/run.mjs all [秒]                 # すべてのターゲットを順に、それぞれ [秒] ずつ回す
 //   node fuzz/run.mjs <target> [秒] -- <引数>  # `--` の後ろは libFuzzer に渡す (例: -jobs=4 -workers=4)
 //   node fuzz/run.mjs --check                  # 依存のライセンスの検査・整形の検査・clippy・すべてのターゲットのビルド
+//   node fuzz/run.mjs --lint                   # --check のうち stable でできるもの (ビルド以外。PR ごとの CI が流す)
 //   node fuzz/run.mjs --list                   # ターゲットと種の置き場所を表示する
 //
 // 見つかった入力は fuzz/artifacts/<target>/ に、育てた入力の集まり (コーパス) は fuzz/corpus/<target>/ に残る (どちらも git の管理外)。
@@ -53,13 +54,15 @@ if (own.includes("--list")) {
   process.exit(0);
 }
 
-if (own.includes("--check")) {
+if (own.includes("--check") || own.includes("--lint")) {
   run("node", [join(root, "scripts/check-licenses.mjs"), "--fuzz"], stableEnv);
-  // 整形と clippy はルートの rust-toolchain.toml (stable) で行う (ワークスペースと同じ規則にする。libfuzzer-sys は stable でもビルドできる)
+  // 整形と clippy はルートの rust-toolchain.toml (stable) で行う (ワークスペースと同じ規則にする。libfuzzer-sys は stable でもビルドできる)。
+  // clippy は libfuzzer-sys のビルドスクリプトが同梱の libFuzzer (C++) をコンパイルするので、C++ のコンパイラが要る。
+  // --locked (ライセンスの検査の cargo metadata も): ランタイムのクレートに依存を足して fuzz/Cargo.lock が古くなったら、ここで気づく (fuzz/README.md)
   const manifest = ["--manifest-path", join(here, "Cargo.toml")];
   run("cargo", ["fmt", ...manifest, "--", "--check"], stableEnv);
   run("cargo", ["clippy", "--locked", ...manifest, "--", "-D", "warnings"], stableEnv);
-  cargoFuzz(["build"]);
+  if (own.includes("--check")) cargoFuzz(["build"]);
   process.exit(0);
 }
 

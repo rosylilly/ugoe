@@ -5,6 +5,8 @@
 方針は [ADR 0032](../docs/adr/0032-fuzzing-with-cargo-fuzz.md)、使い方の全体は [docs/testing.md](../docs/testing.md#fuzz)。
 
 ルートのワークスペースの外にあり (空の `[workspace]` と独自の `Cargo.lock`)、`just ci` には入らない。
+PR ごとの CI (ci.yml の `rust (runtime)`) は、stable でできる検査 (`just fuzz-lint`: 依存のライセンス・整形・clippy) を流す。
+`ugoe`・`ugoe-format` の公開 API を変えてターゲットが壊れたら、週に 1 度の fuzz.yml を待たずに PR で気づく。
 
 ## ターゲット
 
@@ -31,7 +33,13 @@ just fuzz bundle          # 60 秒
 just fuzz all 300         # すべてのターゲットを 300 秒ずつ
 just fuzz image 600 -- -jobs=4 -workers=4   # `--` の後ろは libFuzzer に渡す
 just fuzz-check           # 依存のライセンス・整形・clippy・すべてのターゲットのビルド
+just fuzz-lint            # fuzz-check のうち stable でできるもの (ターゲットのビルド以外)。nightly と cargo-fuzz は要らない
 ```
+
+- `just fuzz-lint` は nightly も cargo-fuzz も要らないが、`libfuzzer-sys` のビルドスクリプトが同梱の libFuzzer (C++) を
+  コンパイルするので C++ のコンパイラが要る。依存のライセンスの検査 (`cargo metadata`) と clippy は `--locked` で流すので、
+  ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が古くなると失敗する。そのときは `cargo update --manifest-path fuzz/Cargo.toml --workspace` で直す
+  (ほかの依存の版は変えない)。
 
 - 育てた入力は `fuzz/corpus/<target>/`、見つかった入力は `fuzz/artifacts/<target>/` に残る (どちらも git の管理外)。
 - 1 つの入力に 10 秒を超えたら止まらないループとみなす (`-timeout=10`)。メモリの上限は libFuzzer の既定 (2048 MB)。
@@ -47,7 +55,7 @@ just fuzz-check           # 依存のライセンス・整形・clippy・すべ�
 
 ## ライセンス
 
-このクレートは MIT。依存のライセンスは `just licenses` の対象の外なので、`scripts/check-licenses.mjs --fuzz` (`just fuzz-check`) で検査する。
+このクレートは MIT。依存のライセンスは `just licenses` の対象の外なので、`scripts/check-licenses.mjs --fuzz` (`just fuzz-check`・`just fuzz-lint`) で検査する。
 
 - `libfuzzer-sys`: `(MIT OR Apache-2.0) AND NCSA`。同梱の libFuzzer (LLVM の C++ のソース) が NCSA (寛容なライセンス。
   ソースの見出しは Apache-2.0 WITH LLVM-exception)。検査はこのクレートにだけ NCSA を認める。

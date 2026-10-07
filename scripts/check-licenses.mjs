@@ -17,7 +17,7 @@
 //   それを検査する (docs/adr/0026-godot-binding.md)。MIT で、依存は寛容なライセンスに限る。例外として
 //   godot-rust のクレートだけ MPL-2.0 を認める。`node bindings/godot/build.mjs --check` が実行する。
 // - fuzz のクレート (fuzz/) もワークスペースの外にあり、`--fuzz` を付けたときだけ検査する
-//   (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。MIT で、依存は寛容なライセンスに限る。libfuzzer-sys だけ NCSA も認める。`node fuzz/run.mjs --check` が実行する。
+//   (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。MIT で、依存は寛容なライセンスに限る。libfuzzer-sys だけ NCSA も認める。`node fuzz/run.mjs --check` と `--lint` が実行する。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { execFileSync } from "node:child_process";

@@ -169,6 +169,11 @@ fuzz target *args:
 fuzz-check:
     @node fuzz/run.mjs --check
 
+# PR ごとの CI (ci.yml の rust (runtime)) が流す。C++ のコンパイラが要る (libfuzzer-sys のビルドスクリプトが libFuzzer をコンパイルする)
+# fuzz のクレートの stable での検査 (依存のライセンス・整形・clippy。fuzz-check からターゲットのビルドを除いたもの。nightly は要らない)
+fuzz-lint:
+    @node fuzz/run.mjs --lint
+
 # 配布物の適合テスト (tests/conformance/README.md): C ABI・wasm (npm パッケージ、WebGL2 と WebGPU)・Unity の C# の層・Godot の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
 # `<ugoe-avatar>` (avatar) は作成・切り離し・コンテキストの喪失からの作り直しのシナリオを、queries は `*_json()` の出力のキーと TS の型を確かめる。
 # example は見本 (bindings/web/examples/basic) の MediaPipe の利用状況の送信がネットワークに出ないことを確かめる。

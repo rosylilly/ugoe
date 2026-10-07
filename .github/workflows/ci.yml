@@ -153,6 +153,15 @@ jobs:
         run: |
           node scripts/nostd-check.mjs targets | xargs rustup target add
           just nostd-check
+      # fuzz のクレート (fuzz/。ワークスペースの外で独自の Cargo.lock) を stable で検査する (`just fuzz-lint`: 依存のライセンス・
+      # 整形・clippy。T0072)。ターゲットは ugoe・ugoe-format の公開 API を使うので、変えて壊れたら週に 1 度の fuzz.yml を待たずに気づく。
+      # ランタイムの API を変える PR が必ず流すこのジョブに置く。nightly と cargo-fuzz は要らない (計装したビルドは fuzz.yml)。
+      # ビルドは fuzz/target で、rust-cache (target だけを持ち越す) の外: 依存は 50 ほどで、libfuzzer-sys のビルドスクリプトが
+      # libFuzzer (C++。ランナーの g++ でコンパイルする) を含めても手元の 4 並列で約 10 秒なので、キャッシュは足さない。
+      # ライセンスの検査と clippy は --locked で、ランタイムのクレートに依存を足して fuzz/Cargo.lock が古くなったらここで落ちる (fuzz/README.md)
+      - name: Fuzz targets
+        if: matrix.group == 'runtime'
+        run: just fuzz-lint
       # wasm32 の clippy と、wasm32 でだけコンパイルするコード (`WebPuppet` など) の rustdoc の警告 (T0033)
       - name: wasm32
         if: matrix.group == 'bindings'

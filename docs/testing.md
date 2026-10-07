@@ -64,7 +64,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 | ジョブ | 内容 |
 | --- | --- |
 | `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just refs`・`just groups`・`just licenses`・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
-| `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)) |
+| `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。fuzz のクレート (`fuzz/`) の stable での検査 (`just fuzz-lint`。[fuzz](#fuzz)) も |
 | `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |
 | `rust (tools)` | `ugoe-fs`・`ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
@@ -393,8 +393,14 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   nightly は fuzz のビルドだけで使い、`rust-toolchain.toml` (stable) は変えません。
 - CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
   次の回へ持ち越します。見つかった入力はワークフローの成果物 (`fuzz-artifacts-<target>`) に上げます。
-- PR ごとの CI は fuzz のクレートをビルドしません。ランタイムの公開 API を変えたら `just fuzz-check` (依存のライセンス・整形・clippy・
-  すべてのターゲットのビルド) を流してください (流さなくても、週に 1 度のジョブで気づきます)。
+- PR ごとの CI (ci.yml の `rust (runtime)`) は、`just fuzz-lint` で fuzz のクレートを stable で検査します (依存のライセンス・整形・
+  clippy。T0072)。ターゲットは `ugoe`・`ugoe-format` の公開 API を使うので、変えて壊れたら週に 1 度のジョブを待たずに PR で気づきます。
+  nightly と cargo-fuzz は要りませんが、`libfuzzer-sys` のビルドスクリプトが同梱の libFuzzer (C++) をコンパイルするので C++ の
+  コンパイラが要ります。ランタイムの公開 API を変えたら手元でも `just fuzz-lint` を流してください (`just ci` には入れていません)。
+- 依存のライセンスの検査 (`cargo metadata`) と clippy は `--locked` で流すので、ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が
+  古くなると `just fuzz-lint` が失敗します。
+  `cargo update --manifest-path fuzz/Cargo.toml --workspace` で足りない依存だけを足して直します ([fuzz/README.md](../fuzz/README.md))。
+- 計装したターゲットのビルド (nightly と cargo-fuzz) まで含めた検査は `just fuzz-check` で、CI では週に 1 度の fuzz.yml が流します。
 - 見つかった入力を直したら、最小にした入力 (`cargo +nightly fuzz tmin`) を `broken_input.rs` の決まった入力に足し、stable の
   `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`)。
 - 依存 (`libfuzzer-sys` と同梱の libFuzzer) のライセンスは `just licenses` の対象の外なので、`scripts/check-licenses.mjs --fuzz`

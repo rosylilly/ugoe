@@ -26,8 +26,9 @@
 2. **nightly は fuzz のビルドだけで使う。** `rust-toolchain.toml` (stable) は変えず、`fuzz/run.mjs` が `cargo +nightly fuzz` を呼ぶ
    (`UGOE_FUZZ_TOOLCHAIN` で変えられる)。整形と clippy (`node fuzz/run.mjs --check`) はルートの stable で行う。
 3. **`just ci` には入れない。** 手元では `just fuzz <target> [秒]`、CI では定期のワークフロー `.github/workflows/fuzz.yml`
-   (週に 1 度と手動。ターゲットごとに数分) で回す。PR ごとの CI は fuzz のクレートをビルドしないので、ランタイムの API の変更で
-   ターゲットが壊れても、気づくのは定期のジョブか `just fuzz-check` になる。
+   (週に 1 度と手動。ターゲットごとに数分) で回す。PR ごとの CI (ci.yml の `rust (runtime)`) は、stable でできる検査
+   (`just fuzz-lint`: 依存のライセンス・整形・clippy) だけを流し、ランタイムの API の変更でターゲットが壊れたら PR で気づく (T0072)。
+   計装したビルドは定期のジョブか `just fuzz-check` で行う。
 4. **見つかった入力は、最小にして `broken_input.rs` の決まった入力に足す。** 直した後も stable の `just ci` で再発を止めるため。
 5. **依存のライセンスは `scripts/check-licenses.mjs --fuzz` で別に検査する** (`just licenses` の対象の外なので)。許すのは
    寛容なライセンス (ルートの検査と同じ集合) と、`libfuzzer-sys` に限った NCSA。
