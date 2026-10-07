@@ -102,32 +102,38 @@ pub struct Warp<'a> {
 }
 
 impl<'a> Warp<'a> {
-    /// `points.len() == (rows + 1) * (cols + 1)`、`rows >= 1`、`cols >= 1` であること。
+    /// `points.len() == (rows + 1) * (cols + 1)`、`rows >= 1`、`cols >= 1` であること
+    /// (モデルの検証で確かめる。満たさなければ、足りない制御点を原点とみなす)。
     pub fn new(points: &'a [Vec2], cols: usize, rows: usize) -> Self {
-        debug_assert_eq!(points.len(), (rows + 1) * (cols + 1));
-        let c00 = points[0];
-        let c10 = points[cols];
-        let c01 = points[rows * (cols + 1)];
-        let c11 = points[rows * (cols + 1) + cols];
-        Self {
+        let mut warp = Self {
             points,
             cols,
             rows,
-            axis_u: ((c10 - c00) + (c11 - c01)) * 0.5,
-            axis_v: ((c01 - c00) + (c11 - c10)) * 0.5,
-        }
+            axis_u: Vec2::ZERO,
+            axis_v: Vec2::ZERO,
+        };
+        let c00 = warp.point(0, 0);
+        let c10 = warp.point(cols, 0);
+        let c01 = warp.point(0, rows);
+        let c11 = warp.point(cols, rows);
+        warp.axis_u = ((c10 - c00) + (c11 - c01)) * 0.5;
+        warp.axis_v = ((c01 - c00) + (c11 - c10)) * 0.5;
+        warp
     }
 
     fn point(&self, x: usize, y: usize) -> Vec2 {
-        self.points[y * (self.cols + 1) + x]
+        let i = y
+            .saturating_mul(self.cols.saturating_add(1))
+            .saturating_add(x);
+        self.points.get(i).copied().unwrap_or(Vec2::ZERO)
     }
 
     /// `uv` を含むセル `(i, j)` とセルの中での位置 `(fx, fy)`。範囲外なら端のセル。
     fn cell(&self, uv: Vec2) -> (usize, usize, f32, f32) {
         let gx = uv.x * self.cols as f32;
         let gy = uv.y * self.rows as f32;
-        let i = (math::floor(gx).max(0.0) as usize).min(self.cols - 1);
-        let j = (math::floor(gy).max(0.0) as usize).min(self.rows - 1);
+        let i = (math::floor(gx).max(0.0) as usize).min(self.cols.saturating_sub(1));
+        let j = (math::floor(gy).max(0.0) as usize).min(self.rows.saturating_sub(1));
         (i, j, gx - i as f32, gy - j as f32)
     }
 

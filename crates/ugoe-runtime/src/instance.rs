@@ -5,9 +5,9 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use ugoe_core::{Affine2, Mat2, Rgb, Vec2};
-use ugoe_model::deformer::RotationKeyform;
+use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
-use ugoe_model::{BlendMode, DeformerKind};
+use ugoe_model::{BlendMode, DeformerKind, KeyformGrid};
 
 use crate::blend_shape;
 use crate::deform::{Rotation, Transform, Warp, lerp};
@@ -332,13 +332,12 @@ impl ModelInstance {
     ///
     /// `value` か `weight` が有限でない (NaN か無限大) 書き込みは無視する (前の上書きのまま)。
     /// `lerp` が NaN をパーツの不透明度に入れるため (`docs/portability.md#ホストから来る数`)。
-    ///
-    /// # Panics
-    ///
-    /// `part` が範囲外のとき。
+    /// `part` が範囲外の書き込みも無視する (別のモデルについて解決した番号でもパニックしない)。
     pub fn set_part_opacity_override(&mut self, part: usize, value: f32, weight: f32) {
-        let current = &mut self.part_opacity_overrides[part];
-        if value.is_finite() && weight.is_finite() {
+        if let Some(current) = self.part_opacity_overrides.get_mut(part)
+            && value.is_finite()
+            && weight.is_finite()
+        {
             *current = (value, weight.clamp(0.0, 1.0));
         }
     }
@@ -348,6 +347,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `part` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn part_opacity_override(&self, part: usize) -> (f32, f32) {
         self.part_opacity_overrides[part]
     }
@@ -392,7 +395,11 @@ impl ModelInstance {
         let dynamic = self
             .dynamic
             .get_or_insert_with(|| Box::new(Dynamic::new(&self.compiled.model)));
-        dynamic.snapshot.copy_from_slice(self.parameters.as_slice());
+        // 長さはパラメータの数と同じ。ホストが並びを差し替えていたら合わせる (同じ長さなら確保しない)。
+        dynamic.snapshot.clear();
+        dynamic
+            .snapshot
+            .extend_from_slice(self.parameters.as_slice());
         dynamic.pending = true;
         self.update_deformers(Stage::First);
     }
@@ -476,14 +483,23 @@ impl ModelInstance {
         let values = self.parameters.as_slice();
         for &p in &compiled.part_order {
             let p = p as usize;
-            let part = &compiled.parts[p];
+            // 評価順と各バッファはコンパイル済みのモデルのパーツの数で作ってあるので、いつも揃う。
+            let (Some(part), Some(model_part), Some(&(value, weight))) = (
+                compiled.parts.get(p),
+                compiled.model.parts.get(p),
+                self.part_opacity_overrides.get(p),
+            ) else {
+                continue;
+            };
             let (_, weights) = self.scratch.compute(&part.bindings, values);
-            let own =
-                keyform::blend_scalar(&compiled.model.parts[p].keyforms, weights, |k| k.opacity);
-            let (value, weight) = self.part_opacity_overrides[p];
+            let own = keyform::blend_scalar(&model_part.keyforms, weights, |k| k.opacity);
             let own = own + (value - own) * weight;
-            let parent = part.parent.map_or(1.0, |i| self.part_opacity[i as usize]);
-            self.part_opacity[p] = own * parent;
+            let parent = part
+                .parent
+                .map_or(1.0, |i| opacity_at(&self.part_opacity, i));
+            if let Some(o) = self.part_opacity.get_mut(p) {
+                *o = own * parent;
+            }
         }
     }
 
@@ -499,21 +515,32 @@ impl ModelInstance {
         }
         for &d in &compiled.deformer_order {
             let d = d as usize;
-            let deformer = &compiled.deformers[d];
+            // 評価順と各バッファはコンパイル済みのモデルのデフォーマの数で作ってあるので、いつも揃う。
+            let (Some(deformer), Some(model_deformer)) =
+                (compiled.deformers.get(d), model.deformers.get(d))
+            else {
+                continue;
+            };
             if stage == Stage::Second
                 && let Some(dynamic) = dynamic.as_deref_mut()
             {
-                let changed = dynamic.offsets.targets[d]
-                    || deformer.parent.is_some_and(|p| dynamic.dirty[p as usize])
+                let flag = |flags: &[bool], i: usize| flags.get(i).copied().unwrap_or(false);
+                let changed = flag(&dynamic.offsets.targets, d)
+                    || deformer
+                        .parent
+                        .is_some_and(|p| flag(&dynamic.dirty, p as usize))
                     || deformer
                         .bindings
                         .iter()
                         .chain(deformer.blend_shapes.iter().flat_map(|s| &s.bindings))
                         .any(|b| {
                             let i = b.param.0 as usize;
-                            values[i].to_bits() != dynamic.snapshot[i].to_bits()
+                            let bits = |v: &[f32]| v.get(i).map(|x| x.to_bits());
+                            bits(values) != bits(&dynamic.snapshot)
                         });
-                dynamic.dirty[d] = changed;
+                if let Some(dirty) = dynamic.dirty.get_mut(d) {
+                    *dirty = changed;
+                }
                 if !changed {
                     continue;
                 }
@@ -521,13 +548,16 @@ impl ModelInstance {
             let offsets = dynamic.as_deref().map(|d| &d.offsets);
             // 形 (制御点・原点・角度・拡大率) は `weights`、それ以外は `linear` の重みで補間する。
             let (weights, linear) = self.scratch.compute(&deformer.bindings, values);
-            let own_opacity = match &model.deformers[d].kind {
+            let own_opacity = match &model_deformer.kind {
                 DeformerKind::Warp(warp) => {
                     // 自分の制御点を取り出して親の変換を借りる (空の Vec との交換なので確保は起きない)。
-                    let mut points = core::mem::take(&mut self.warp_points[d]);
+                    let Some(slot) = self.warp_points.get_mut(d) else {
+                        continue;
+                    };
+                    let mut points = core::mem::take(slot);
                     points.fill(Vec2::ZERO);
                     for &(k, w) in weights {
-                        for (p, q) in points.iter_mut().zip(&warp.keyforms.keyforms[k].points) {
+                        for (p, q) in points.iter_mut().zip(keyform_points(&warp.keyforms, k)) {
                             *p += *q * w;
                         }
                     }
@@ -564,7 +594,9 @@ impl ModelInstance {
                             *p += finite_offset(*o);
                         }
                     }
-                    self.warp_points[d] = points;
+                    if let Some(slot) = self.warp_points.get_mut(d) {
+                        *slot = points;
+                    }
                     opacity
                 }
                 DeformerKind::Rotation(rotation) => {
@@ -607,7 +639,9 @@ impl ModelInstance {
                     if let Some(offsets) = offsets {
                         world.translation += finite_offset(offsets.origin(d));
                     }
-                    self.deformer_affine[d] = world;
+                    if let Some(slot) = self.deformer_affine.get_mut(d) {
+                        *slot = world;
+                    }
                     opacity
                 }
                 // 未知の種類は恒等変換で、不透明度も変えない。子は親の変換をそのまま受ける
@@ -616,8 +650,10 @@ impl ModelInstance {
             };
             let parent_opacity = deformer
                 .parent
-                .map_or(1.0, |i| self.deformer_opacity[i as usize]);
-            self.deformer_opacity[d] = own_opacity * parent_opacity;
+                .map_or(1.0, |i| opacity_at(&self.deformer_opacity, i));
+            if let Some(o) = self.deformer_opacity.get_mut(d) {
+                *o = own_opacity * parent_opacity;
+            }
         }
     }
 
@@ -626,22 +662,25 @@ impl ModelInstance {
         let compiled = &*self.compiled;
         let model = &compiled.model;
         let values = self.parameters.as_slice();
-        for (i, mesh) in model.meshes.iter().enumerate() {
-            let cm = &compiled.meshes[i];
+        // コンパイル済みのメッシュと出力はモデルのメッシュの数で作ってあるので、zip で揃う。
+        let meshes = model.meshes.iter().zip(&compiled.meshes);
+        for (i, ((mesh, cm), out)) in meshes.zip(&mut self.drawables).enumerate() {
             // 頂点位置は `weights`、それ以外は `linear` の重みで補間する (線形の格子では同じ列)。
             let (weights, linear) = self.scratch.compute(&cm.bindings, values);
             let grid = &mesh.keyforms;
-            let out = &mut self.drawables[i];
             out.positions.fill(Vec2::ZERO);
             for &(k, w) in weights {
-                for (p, q) in out.positions.iter_mut().zip(&grid.keyforms[k].positions) {
+                let positions = grid.keyforms.get(k).map_or(&[][..], |k| &k.positions);
+                for (p, q) in out.positions.iter_mut().zip(positions) {
                     *p += *q * w;
                 }
             }
             let mut mul = [0.0f32; 3];
             let mut scr = [0.0f32; 3];
             for &(k, w) in linear {
-                let kf = &grid.keyforms[k];
+                let Some(kf) = grid.keyforms.get(k) else {
+                    continue;
+                };
                 mul[0] += kf.multiply_color.r * w;
                 mul[1] += kf.multiply_color.g * w;
                 mul[2] += kf.multiply_color.b * w;
@@ -696,8 +735,10 @@ impl ModelInstance {
                     *p += finite_offset(*o);
                 }
             }
-            let part = self.part_opacity[cm.part as usize];
-            let deformer = cm.parent.map_or(1.0, |d| self.deformer_opacity[d as usize]);
+            let part = opacity_at(&self.part_opacity, cm.part);
+            let deformer = cm
+                .parent
+                .map_or(1.0, |d| opacity_at(&self.deformer_opacity, d));
             out.opacity = own * part * deformer;
             out.draw_order = draw_order;
             out.multiply_color = Rgb::new(mul[0], mul[1], mul[2]);
@@ -716,12 +757,29 @@ impl ModelInstance {
             let intensity = keyform::blend_scalar(&glue.keyforms, weights, |k| k.intensity);
             let (a, b) = (cg.mesh_a as usize, cg.mesh_b as usize);
             for pair in &glue.pairs {
+                // 頂点の番号は検証で範囲内と確かめてある (`GlueVertexOutOfRange`)。
                 let (ia, ib) = (usize::from(pair.a), usize::from(pair.b));
-                let pa = self.drawables[a].positions[ia];
-                let pb = self.drawables[b].positions[ib];
+                let position = |d: &[DrawableState], m: usize, i: usize| {
+                    d.get(m).and_then(|s| s.positions.get(i)).copied()
+                };
+                let (Some(pa), Some(pb)) = (
+                    position(&self.drawables, a, ia),
+                    position(&self.drawables, b, ib),
+                ) else {
+                    continue;
+                };
                 let target = lerp(pa, pb, pair.weight);
-                self.drawables[a].positions[ia] = lerp(pa, target, intensity);
-                self.drawables[b].positions[ib] = lerp(pb, target, intensity);
+                let mut write = |m: usize, i: usize, p: Vec2| {
+                    if let Some(q) = self
+                        .drawables
+                        .get_mut(m)
+                        .and_then(|s| s.positions.get_mut(i))
+                    {
+                        *q = p;
+                    }
+                };
+                write(a, ia, lerp(pa, target, intensity));
+                write(b, ib, lerp(pb, target, intensity));
             }
         }
     }
@@ -757,6 +815,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `part` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn part_opacity(&self, part: usize) -> f32 {
         self.part_opacity[part]
     }
@@ -788,6 +850,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `deformer` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn deformer_parent_world(&self, deformer: usize) -> WorldTransform<'_> {
         self.world(self.compiled.deformers[deformer].parent)
     }
@@ -798,6 +864,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mesh_parent_world(&self, mesh: usize) -> WorldTransform<'_> {
         self.world(self.compiled.meshes[mesh].parent)
     }
@@ -815,7 +885,7 @@ impl ModelInstance {
     /// ワープ `deformer` のキャンバス座標の制御点 (行優先、x が速い)。ワープでなければ `None`。
     pub fn warp_world_points(&self, deformer: usize) -> Option<&[Vec2]> {
         match self.compiled.model.deformers.get(deformer)?.kind {
-            DeformerKind::Warp(_) => Some(&self.warp_points[deformer]),
+            DeformerKind::Warp(_) => self.warp_points.get(deformer).map(Vec::as_slice),
             _ => None,
         }
     }
@@ -824,7 +894,7 @@ impl ModelInstance {
     /// `matrix2` の列は、局所座標の x 軸・y 軸の単位ベクトルの像。回転デフォーマでなければ `None`。
     pub fn rotation_world_frame(&self, deformer: usize) -> Option<Affine2> {
         match self.compiled.model.deformers.get(deformer)?.kind {
-            DeformerKind::Rotation(_) => Some(self.deformer_affine[deformer]),
+            DeformerKind::Rotation(_) => self.deformer_affine.get(deformer).copied(),
             _ => None,
         }
     }
@@ -839,6 +909,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mesh_local_positions(&self, mesh: usize) -> Vec<Vec2> {
         let grid = &self.compiled.model.meshes[mesh].keyforms;
         let mut weights = Weights::new();
@@ -850,7 +924,8 @@ impl ModelInstance {
         let n = self.drawables[mesh].positions.len();
         let mut out = vec![Vec2::ZERO; n];
         for &(k, w) in &weights {
-            for (p, q) in out.iter_mut().zip(&grid.keyforms[k].positions) {
+            let positions = grid.keyforms.get(k).map_or(&[][..], |k| &k.positions);
+            for (p, q) in out.iter_mut().zip(positions) {
                 *p += *q * w;
             }
         }
@@ -877,8 +952,8 @@ impl ModelInstance {
         let grid = &rotation.keyforms;
         let values = self.parameters.as_slice();
         let mut scratch = GridWeights::default();
-        let (weights, linear) =
-            scratch.compute(&self.compiled.deformers[deformer].bindings, values);
+        let compiled = self.compiled.deformers.get(deformer)?;
+        let (weights, linear) = scratch.compute(&compiled.bindings, values);
         let mut out = RotationKeyform {
             origin: keyform::blend_vec2(grid, weights, |k| k.origin),
             angle: keyform::blend_scalar(grid, weights, |k| k.angle),
@@ -887,7 +962,7 @@ impl ModelInstance {
             reflect_y: keyform::blend_bool(grid, linear, |k| k.reflect_y),
             opacity: keyform::blend_scalar(grid, linear, |k| k.opacity),
         };
-        let shapes = &self.compiled.deformers[deformer].blend_shapes;
+        let shapes = &compiled.blend_shapes;
         let mut shape_scratch = GridWeights::default();
         for (g, shape) in grid.blend_shapes.iter().zip(shapes) {
             if let Some((current, current_linear)) = shape.weights(values, &mut shape_scratch) {
@@ -917,13 +992,25 @@ impl ModelInstance {
         let d = &self.drawables;
         // 同じ描画順なら宣言順 (安定ソートと同じ結果)。インデックスを第 2 キーにして
         // 全順序にすれば、確保をしない不安定ソートで済む。
+        // 並べる番号は 0..drawables.len() なので、`get` はいつも値を返す。
+        let order = |i: u32| d.get(i as usize).map(|s| s.draw_order);
         self.render_order.sort_unstable_by(|&a, &b| {
-            d[a as usize]
-                .draw_order
-                .total_cmp(&d[b as usize].draw_order)
+            let (x, y) = (order(a), order(b));
+            x.zip(y)
+                .map_or(core::cmp::Ordering::Equal, |(x, y)| x.total_cmp(&y))
                 .then(a.cmp(&b))
         });
     }
+}
+
+/// 不透明度の列の `i` 番目。範囲外なら 1 (掛けても変わらない。コンパイル済みのモデルの番号なら起こらない)。
+fn opacity_at(opacities: &[f32], i: u32) -> f32 {
+    opacities.get(i as usize).copied().unwrap_or(1.0)
+}
+
+/// ワープの格子のキーフォーム `k` の制御点。範囲外なら空 (重みは格子の軸から求めるので起こらない)。
+fn keyform_points(grid: &KeyformGrid<WarpKeyform>, k: usize) -> &[Vec2] {
+    grid.keyforms.get(k).map_or(&[], |k| &k.points)
 }
 
 /// ビット列が同じか (変更フラグ用)。
@@ -951,18 +1038,31 @@ fn world_transform<'a>(
     parent: Option<u32>,
 ) -> Transform<'a> {
     let mut parent = parent;
+    // 親はコンパイルで ID から解決した番号で、バッファはデフォーマの数で作ってある (いつも範囲内)。
+    // 範囲外なら恒等写像とみなす。
     while let Some(d) = parent {
         let d = d as usize;
-        match &compiled.model.deformers[d].kind {
+        let Some(deformer) = compiled.model.deformers.get(d) else {
+            break;
+        };
+        match &deformer.kind {
             DeformerKind::Warp(w) => {
+                let Some(points) = warp_points.get(d) else {
+                    break;
+                };
                 return Transform::Warp(Warp::new(
-                    &warp_points[d],
+                    points,
                     usize::from(w.cols),
                     usize::from(w.rows),
                 ));
             }
-            DeformerKind::Rotation(_) => return Transform::Affine(affine[d]),
-            DeformerKind::Unknown => parent = compiled.deformers[d].parent,
+            DeformerKind::Rotation(_) => {
+                let Some(&a) = affine.get(d) else {
+                    break;
+                };
+                return Transform::Affine(a);
+            }
+            DeformerKind::Unknown => parent = compiled.deformers.get(d).and_then(|c| c.parent),
         }
     }
     Transform::Identity

@@ -117,6 +117,10 @@ pub const SWEEP_MAX_STEP_DEGREES: f32 = 10.0;
 /// 掃引の刻みを決めるときの、衝突体の半径の下限 (ピクセル)。半径が 0 に近い衝突体で刻みが細かくなりすぎないようにする。
 const SWEEP_MIN_RADIUS: f32 = 0.5;
 
+/// 掃引で半回転 (π) を調べる刻みの数の上限。区間が衝突体の半径に比べて極端に長くても、
+/// 刻みをこれより細かくしない (調べる回数を抑える。`docs/spec/physics.md#衝突体`)。
+const SWEEP_MAX_SAMPLES: u32 = 65_536;
+
 /// 当たる向きと当たらない向きの境目を二分法で求める回数。
 const SWEEP_BISECTIONS: u32 = 16;
 
@@ -158,7 +162,9 @@ pub fn constrain_segment(
         .map(|c| c.radius())
         .fold(f32::INFINITY, f32::min)
         .max(SWEEP_MIN_RADIUS);
-    let step = (min_radius / length).min(SWEEP_MAX_STEP_DEGREES.to_radians());
+    let step = (min_radius / length)
+        .min(SWEEP_MAX_STEP_DEGREES.to_radians())
+        .max(core::f32::consts::PI / SWEEP_MAX_SAMPLES as f32);
     let end = math::atan2(base.perp_dot(target), base.dot(target));
 
     let start = if blocked(0.0) {
@@ -251,6 +257,21 @@ fn segment_segment_distance(p: Vec2, q: Vec2, a: Vec2, b: Vec2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 区間が衝突体の半径に比べて極端に長くても、調べる刻みの数に上限があるので掃引が終わる
+    /// (始めの向きで当たっていないときと、当たっていて当たらない向きを探すとき。T0184)。
+    #[test]
+    fn extremely_long_segments_finish_the_sweep() {
+        let c = WorldCollider::Circle {
+            center: Vec2::new(0.0, 50.0),
+            radius: 10.0,
+        };
+        for from in [Vec2::new(1.0e18, 0.0), Vec2::new(0.0, 1.0e18)] {
+            let mut to = Vec2::new(-1.0e18, 1.0);
+            constrain_segment(&[c], 0.0, Vec2::ZERO, from, &mut to);
+            assert!(to.is_finite(), "{from}: {to}");
+        }
+    }
 
     #[test]
     fn circle_pushes_points_to_its_surface() {

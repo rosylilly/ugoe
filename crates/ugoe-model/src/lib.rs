@@ -11,6 +11,15 @@
 
 #![cfg_attr(not(any(feature = "ts", feature = "schema")), no_std)]
 #![warn(missing_docs)]
+// ランタイム層はパニックしない (docs/portability.md#パニックしない。ADR 0031)。テストのコードは clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
 
 extern crate alloc;
 
@@ -20,6 +29,10 @@ pub mod deformer;
 pub mod effects;
 /// 表情。
 pub mod expression;
+#[expect(
+    clippy::indexing_slicing,
+    reason = "固定の内容で作るテスト用のモデル (外から来るデータを扱わない)"
+)]
 pub mod fixtures;
 pub mod keyform;
 /// メッシュ・マスク・合成モード・グルー。

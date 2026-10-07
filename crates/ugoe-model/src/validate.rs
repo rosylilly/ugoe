@@ -652,10 +652,10 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
             (b, &glue.mesh_b, glue.pairs.iter().map(|p| p.b).collect()),
         ];
         for (mesh_index, mesh_id, indices) in sides {
-            let Some(mesh_index) = mesh_index else {
+            let Some(mesh) = mesh_index.and_then(|i| model.meshes.get(i)) else {
                 continue;
             };
-            let vertices = model.meshes[mesh_index].uvs.len();
+            let vertices = mesh.uvs.len();
             if let Some(&index) = indices.iter().find(|&&i| usize::from(i) >= vertices) {
                 errors.push(ValidationError::GlueVertexOutOfRange {
                     id: glue.id.to_string(),
@@ -896,10 +896,8 @@ fn check_grid<T>(
         }
         // NaN を含む比較 (`partial_cmp` が `None`) も不正とする。キーが 1 つの軸の NaN は比較では見つからないので別に見る。
         if binding.keys.iter().any(|k| k.is_nan())
-            || binding
-                .keys
-                .windows(2)
-                .any(|w| w[0].partial_cmp(&w[1]) != Some(Ordering::Less))
+            || (binding.keys.iter().zip(binding.keys.iter().skip(1)))
+                .any(|(a, b)| a.partial_cmp(b) != Some(Ordering::Less))
         {
             errors.push(ValidationError::KeysNotAscending {
                 kind: refs.kind,
@@ -1000,7 +998,10 @@ impl<'a> Kinds<'a> {
 
     /// パラメータの種類。存在しないパラメータは `None` (参照の検査で報告済み)。
     fn of(&self, parameter: &crate::ParamId) -> Option<ParameterKind> {
-        self.params.get(parameter).map(|&i| self.parameters[i].kind)
+        self.params
+            .get(parameter)
+            .and_then(|&i| self.parameters.get(i))
+            .map(|p| p.kind)
     }
 }
 
@@ -1172,7 +1173,7 @@ fn check_mirrors<T, K: Ord + Display>(
         let Some(target) = refs.check(table, "mirror", kind, mirror, errors) else {
             continue;
         };
-        let back = mirror_of(&items[target]);
+        let back = items.get(target).and_then(&mirror_of);
         if mirror != id && back != Some(id) {
             errors.push(ValidationError::AsymmetricMirror {
                 kind,
@@ -1185,6 +1186,10 @@ fn check_mirrors<T, K: Ord + Display>(
 }
 
 /// 親をたどる連鎖に循環があれば、循環ごとに 1 件報告する。未定義の親は参照検査に任せて無視する。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "添字は 0..items.len() と、items から作った表の値と、経路に積んだその値 (いつも範囲内)"
+)]
 fn check_cycles<T, K: Ord + Display>(
     kind: &'static str,
     items: &[T],
@@ -1234,6 +1239,10 @@ fn check_cycles<T, K: Ord + Display>(
 ///
 /// 宣言順・`masks` の並び順の深さ優先探索で、後退辺 1 本につき 1 件報告する。
 /// 同じ循環を重複した参照でたどった場合は 1 件にまとめる。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "添字は 0..meshes.len() と、メッシュから作った表の値と、スタックに積んだその値 (いつも範囲内)"
+)]
 fn check_mask_cycles(
     model: &Model,
     table: &BTreeMap<&crate::MeshId, usize>,
@@ -1432,12 +1441,12 @@ mod tests {
         model.meta.canvas.origin.y = -inf;
         model.parts[0].keyforms.keyforms[0].opacity = inf;
         let DeformerKind::Warp(w) = &mut model.deformers[0].kind else {
-            unreachable!()
+            panic!("unexpected deformer kind")
         };
         w.keyforms.keyforms[0].points[4].x = inf;
         w.keyforms.keyforms[0].opacity = -inf;
         let DeformerKind::Rotation(r) = &mut model.deformers[1].kind else {
-            unreachable!()
+            panic!("unexpected deformer kind")
         };
         let rot = &mut r.keyforms.keyforms[0];
         (rot.origin.x, rot.angle, rot.scale, rot.opacity) = (inf, inf, inf, inf);

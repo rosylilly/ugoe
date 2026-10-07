@@ -21,6 +21,8 @@
 - `std::` を使わず `core::`・`alloc::` から使う。数学関数は `ugoe_core::math` から呼ぶ (`clippy.toml` の `disallowed_methods`)
 - `ugoe-render` は `render` feature の下だけで使う。`render` の無いビルドでも通るように、`ugoe::render` の型を
   `render` の外の公開 API に出さない (doc コメントのリンクも `ugoe_render` へ張らない)
+- 外から来るデータ (ファイル・ホストの引数) のどんな値でもパニックしない (lint と `tests/broken_input.rs`。
+  [docs/portability.md](../../docs/portability.md#パニックしない))
 
 ## 仕様
 

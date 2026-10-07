@@ -85,7 +85,8 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                 | PhysicsTarget::DeformerOffset { deformer } => {
                     let kind = refs
                         .check(&deformers, "outputs", "deformer", deformer, &mut errors)
-                        .map(|d| &model.deformers[d].kind);
+                        .and_then(|d| model.deformers.get(d))
+                        .map(|d| &d.kind);
                     if let Some(DeformerKind::Warp(_)) = kind {
                         errors.push(kind_mismatch(&refs, deformer, "rotation"));
                     }
@@ -94,7 +95,8 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                     let expected = match owner {
                         VertexOwner::Mesh(mesh) => refs
                             .check(&meshes, "outputs", "mesh", mesh, &mut errors)
-                            .map(|m| model.meshes[m].uvs.len()),
+                            .and_then(|m| model.meshes.get(m))
+                            .map(|m| m.uvs.len()),
                         VertexOwner::Warp(deformer) => {
                             let found = refs.check(
                                 &deformers,
@@ -103,7 +105,7 @@ pub fn validate_physics(physics: &PhysicsSettings, model: &Model) -> Vec<Validat
                                 deformer,
                                 &mut errors,
                             );
-                            match found.map(|d| &model.deformers[d].kind) {
+                            match found.and_then(|d| model.deformers.get(d)).map(|d| &d.kind) {
                                 Some(DeformerKind::Warp(warp)) => {
                                     Some(warp_point_count(warp.rows, warp.cols))
                                 }
@@ -285,7 +287,7 @@ mod tests {
         };
         let warp = find(true);
         let DeformerKind::Warp(grid) = &warp.kind else {
-            unreachable!()
+            panic!("unexpected deformer kind")
         };
         let points = (usize::from(grid.rows) + 1) * (usize::from(grid.cols) + 1);
         let rotation = find(false).id.clone();
@@ -426,11 +428,11 @@ mod tests {
             ..
         } = rig.outputs[4].target.clone()
         else {
-            unreachable!()
+            panic!("unexpected deformer kind")
         };
         let PhysicsTarget::DeformerAngle { deformer: rotation } = rig.outputs[1].target.clone()
         else {
-            unreachable!()
+            panic!("unexpected deformer kind")
         };
         rig.outputs[2].target = PhysicsTarget::DeformerOffset {
             deformer: warp.clone(),

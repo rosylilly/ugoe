@@ -23,6 +23,10 @@ pub const BLEND_SHAPE_COUNT: usize = ARKIT_BLEND_SHAPES.len();
 pub const BODY_FROM_HEAD: f32 = 0.3;
 
 /// 名前が `name` の ARKit のブレンドシェイプの、[`ARKIT_BLEND_SHAPES`] での添字。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "i < BLEND_SHAPE_COUNT (const fn では get を使えない)"
+)]
 pub const fn blend_shape_index(name: &str) -> Option<usize> {
     let mut i = 0;
     while i < BLEND_SHAPE_COUNT {
@@ -34,6 +38,10 @@ pub const fn blend_shape_index(name: &str) -> Option<usize> {
     None
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    reason = "i < a.len() == b.len() (const fn では get を使えない)"
+)]
 const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -49,6 +57,7 @@ const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// 対応表で使うブレンドシェイプの添字。名前を間違えるとコンパイルエラーになる。
+#[expect(clippy::panic, reason = "定数の初期化 (コンパイル時の評価) でだけ呼ぶ")]
 const fn bs(name: &str) -> usize {
     match blend_shape_index(name) {
         Some(i) => i,
@@ -155,15 +164,15 @@ impl Default for TrackingInput {
 impl TrackingInput {
     /// 名前が `name` のブレンドシェイプの値。知らない名前なら `None`。
     pub fn blend_shape(&self, name: &str) -> Option<f32> {
-        blend_shape_index(name).map(|i| self.blend_shapes[i])
+        blend_shape_index(name).and_then(|i| self.blend_shapes.get(i).copied())
     }
 
     /// 名前が `name` のブレンドシェイプの値を設定する。知らない名前 (MediaPipe の `_neutral` など) なら
     /// 何もせず `false` を返す。
     pub fn set_blend_shape(&mut self, name: &str, value: f32) -> bool {
-        match blend_shape_index(name) {
-            Some(i) => {
-                self.blend_shapes[i] = value;
+        match blend_shape_index(name).and_then(|i| self.blend_shapes.get_mut(i)) {
+            Some(v) => {
+                *v = value;
                 true
             }
             None => false,
@@ -370,7 +379,8 @@ impl Source {
     fn eval(self, input: &TrackingInput) -> f32 {
         match self {
             Self::Standard(f) => f.eval(input),
-            Self::BlendShape(i) => input.blend_shapes[i],
+            // 添字は `blend_shape_index` で引いたもの (いつも範囲内)。無ければ有限でない値として書き込まない。
+            Self::BlendShape(i) => input.blend_shapes.get(i).copied().unwrap_or(f32::NAN),
             Self::Head(axis) => input.head_value(axis),
         }
     }
@@ -503,8 +513,9 @@ impl TrackingMap {
             if internal.contains(index) {
                 return false;
             }
-            let range = kept.len()..kept.len() + (*end - *start);
-            kept.extend_from_slice(&overrides[*start..*end]);
+            let group = overrides.get(*start..*end).unwrap_or_default();
+            let range = kept.len()..kept.len() + group.len();
+            kept.extend_from_slice(group);
             (*start, *end) = (range.start, range.end);
             true
         });
@@ -561,7 +572,8 @@ impl TrackingMap {
             let Some(index) = target(parameters, *index).filter(|&i| filter(i)) else {
                 continue;
             };
-            let value = self.overrides[*start..*end]
+            // 範囲は対応表を作るときに `overrides` に積んだもの (いつも範囲内)。
+            let value = (self.overrides.get(*start..*end).unwrap_or_default())
                 .iter()
                 .map(|m| m.source.eval(input) * m.scale + m.offset)
                 .sum();

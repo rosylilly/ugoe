@@ -184,11 +184,11 @@ impl MotionManager {
                 let CurveTarget::PartOpacity(part) = target else {
                     continue;
                 };
-                let i = match out
+                let entry = match out
                     .iter()
                     .position(|e| self.part_of(e.player, e.curve) == Some(part))
                 {
-                    Some(i) => i,
+                    Some(i) => out.get_mut(i),
                     None => {
                         out.push(PartOpacityEntry {
                             player: player_index,
@@ -196,12 +196,15 @@ impl MotionManager {
                             value: 0.0,
                             weight: 0.0,
                         });
-                        out.len() - 1
+                        out.last_mut()
                     }
                 };
-                let PartOpacityEntry {
+                let Some(PartOpacityEntry {
                     value: v, weight, ..
-                } = &mut out[i];
+                }) = entry
+                else {
+                    continue;
+                };
                 // 重み W で上書きした上に、さらに w で上書きする: lerp(lerp(o, v, W), value, w)
                 // = lerp(o, v', W') となる v' と W' を求める。
                 let new_weight = 1.0 - (1.0 - *weight) * (1.0 - w);

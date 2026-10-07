@@ -161,8 +161,12 @@ pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError
     let mut buf = vec![0; size];
     let info = reader.next_frame(&mut buf).map_err(decode_error)?;
     buf.truncate(info.buffer_size());
-    let pixel_count = info.width as usize * info.height as usize;
-    let mut pixels = Vec::with_capacity(pixel_count * 4);
+    // 灰色の画像は `size` より 4 倍大きくなるので、32bit の環境では改めて桁あふれを確かめる。
+    let rgba_size = (info.width as usize)
+        .checked_mul(info.height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(ImageError::TooLarge { width, height, max })?;
+    let mut pixels = Vec::with_capacity(rgba_size);
     match info.color_type {
         png::ColorType::Rgba => pixels = buf,
         png::ColorType::Rgb => {
@@ -328,8 +332,11 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
     if !header.starts_with(&KTX2_SIGNATURE) {
         return Err(invalid("no KTX2 identifier"));
     }
+    // 位置はどれも見出しの長さ (`KTX2_HEADER_LEN`) の中の定数。
     let u32_at = |at: usize| {
-        u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
+        (header.get(at..at + 4))
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, u32::from_le_bytes)
     };
     let (vk_format, width, height) = (u32_at(12), u32_at(20), u32_at(24));
     let (depth, layers, faces, scheme) = (u32_at(28), u32_at(32), u32_at(36), u32_at(44));
@@ -362,10 +369,11 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
     let level = bytes
         .get(KTX2_HEADER_LEN..KTX2_HEADER_LEN + KTX2_LEVEL_LEN)
         .ok_or_else(|| invalid("no level index"))?;
+    // 位置はどれもレベルの索引の長さ (`KTX2_LEVEL_LEN`) の中の定数。
     let u64_at = |at: usize| {
-        let mut b = [0; 8];
-        b.copy_from_slice(&level[at..at + 8]);
-        u64::from_le_bytes(b)
+        (level.get(at..at + 8))
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, u64::from_le_bytes)
     };
     let (offset, length, uncompressed) = (u64_at(0), u64_at(8), u64_at(16));
     let data = usize::try_from(offset)
@@ -459,16 +467,23 @@ fn decode_blocks(
     for (i, compressed) in data.chunks_exact(bc.block_bytes()).enumerate() {
         bc.decode(compressed, &mut block);
         let (x, y) = ((i % blocks_x) * 4, (i / blocks_x) * 4);
-        let columns = (width - x).min(4);
+        // ブロックの数は呼び出し側が大きさから確かめてあるので、範囲はいつも画像の中。
+        let columns = width.saturating_sub(x).min(4);
         for (row, line) in block
             .as_chunks::<16>()
             .0
             .iter()
-            .take((height - y).min(4))
+            .take(height.saturating_sub(y).min(4))
             .enumerate()
         {
             let at = ((y + row) * width + x) * 4;
-            pixels[at..at + columns * 4].copy_from_slice(&line[..columns * 4]);
+            let (Some(dst), Some(src)) = (
+                pixels.get_mut(at..at + columns * 4),
+                line.get(..columns * 4),
+            ) else {
+                continue;
+            };
+            dst.copy_from_slice(src);
         }
     }
     pixels
@@ -1460,6 +1475,44 @@ mod tests {
         }
         assert!(decode_image(TextureFormat::Png, &ktx2, ImageLimits::default()).is_err());
         assert!(decode_image(TextureFormat::Ktx2, &png, ImageLimits::default()).is_err());
+    }
+
+    /// 切り詰めた・ビットを反転した KTX2 (無圧縮・zstd・ブロック圧縮) と PNG でも、パニックしない (T0184)。
+    #[test]
+    fn broken_ktx2_and_png_do_not_panic() {
+        let texels: Vec<u8> = (0..5 * 3 * 4).map(|i| i as u8).collect();
+        let mut zstd = Ktx2::rgba8(R8G8B8A8_UNORM, (5, 3), vec![texels.clone(), vec![1; 12]]);
+        zstd.zstd = true;
+        let mut samples = vec![
+            Ktx2::rgba8(R8G8B8A8_SRGB, (5, 3), vec![texels.clone()]).bytes(),
+            Ktx2::rgba8(R8G8B8_SRGB, (5, 3), vec![texels[..45].to_vec()]).bytes(),
+            zstd.bytes(),
+        ];
+        #[cfg(feature = "png")]
+        samples.extend([
+            Ktx2::rgba8(
+                BC1_RGB_UNORM_BLOCK,
+                (5, 5),
+                vec![bc1_block(RED, BLUE, [1; 16]).repeat(4)],
+            )
+            .bytes(),
+            Ktx2::rgba8(BC7_UNORM_BLOCK, (4, 4), vec![bc7_solid([1, 2, 3, 4])]).bytes(),
+            rgba8(3, 2, &texels[..24]),
+        ]);
+        let limits = ImageLimits::default();
+        for bytes in samples {
+            let flipped = (0..bytes.len()).map(|i| {
+                let mut b = bytes.clone();
+                b[i] ^= 1 << (i % 8);
+                b
+            });
+            let truncated = (0..bytes.len()).map(|len| bytes[..len].to_vec());
+            for broken in truncated.chain(flipped) {
+                let _ = decode_ktx2_premultiplied(&broken, limits);
+                #[cfg(feature = "png")]
+                let _ = decode_png_premultiplied(&broken, limits);
+            }
+        }
     }
 
     #[test]

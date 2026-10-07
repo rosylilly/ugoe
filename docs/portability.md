@@ -122,7 +122,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 基準値の列 | `Puppet::set_base_values`・`Puppet::follow` の `values` | エラー (`ParameterValuesError::NaN`。何も変えない) | 値域にクランプ | 値域にクランプ。数が違えばエラー |
 | リップシンクの音量 | `Puppet::set_lip_sync_level` | 音量なし (`None` と同じ) | 0〜1 にクランプ | 0〜1 にクランプ |
 | 受け手のリップシンクの音量と強さ、パーツの不透明度の値と重み | `Puppet::follow` | エラー (`ParameterValuesError::NonFiniteLipSync`・`NonFinitePartOpacity`。何も変えない) | NaN と同じエラー (強さが無限大だと `lerp` が `0 × ∞` で NaN を書くため) | 音量は 0〜1 にクランプ。重みは 0〜1 にクランプ |
-| パーツの不透明度の上書き | `ModelInstance::set_part_opacity_override` | 書かない (前の上書きのまま) | 書かない | 重みは 0〜1 にクランプ |
+| パーツの不透明度の上書き | `ModelInstance::set_part_opacity_override` | 書かない (前の上書きのまま) | 書かない | 重みは 0〜1 にクランプ。パーツの番号が範囲の外なら書かない |
 | 動的物理の加算量 | `DynamicOffsets` (`ModelInstance::dynamic_offsets_mut`) | 評価で 0 とみなす (書いた値は残る) | 0 とみなす | (意味どおり) |
 | トラッキングの入力 | `Puppet::set_tracking` (`TrackingInput`) | 式の値が有限でないパラメータには書かない ([avatar-profile.md](spec/avatar-profile.md#フェイストラッキングとの対応)) | 同じ | 値域にクランプ |
 | 当たり判定の点 | `Puppet::hit_test`・`hit_areas_at` | 当たらない | 当たらない (範囲の外) | (意味どおり) |
@@ -196,6 +196,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
   例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。
   カウンタは `core::sync::atomic::AtomicU64` なので、64 ビットのアトミックを持たないターゲット (`thumbv6m` など) は対象外 (T0181)。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
+- 外から来るデータ (ファイル・ホストの引数) のどんな値でもパニックしないこと ([下](#パニックしない))。
 
 `std` 無しでビルドできるクレート (`NOSTD_CRATES`) は、`ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・
 `ugoe` (`render` を外した形) です。ゲーム機・組み込み機器のように Rust の `std` が無い環境では、これらを `default-features = false` で使います。
@@ -204,6 +205,53 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 ([crates/ugoe-format/README.md](../crates/ugoe-format/README.md)。テクスチャのデコードはもともとホストの役目)。
 C ABI (`ugoe-ffi`) の `std` の無い形 (staticlib。アロケータはホストの `malloc`・`free`、パニックはホストの `abort`) は
 [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi) で決めた形で作ります (T0491)。
+
+### パニックしない
+
+`std` の無い環境の C ABI は `panic=abort` で、パニックはアプリ全体を止めます
+([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#ランタイム層ではパニックを起こさない))。そこでランタイム層
+(`ugoe-core`・`ugoe-model`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-format`・`ugoe`) は、外から来るデータ
+(ファイルのバイト列・JSON・ホストが渡す数と番号と ID・ホストが組み立てた設定) のどんな値でもパニックせず、止まらない (時間の
+ループに回数の上限を持つ) ことを守ります。受け付けない値は失敗を返すか、[ホストから来る数](#ホストから来る数) の扱い (書かない・
+0 とみなす・使わない) にします。T0184 で決めました。
+
+**書き方**
+
+- 添字 (`v[i]`・`&v[a..b]`) の代わりに `get`・`get_mut`・`zip`・`iter().take()` を使い、範囲の外なら飛ばす・既定値にする。
+  検証済みのモデルやコンパイルで作った番号のように、範囲の外が起こらないと示せる箇所でも、書き換えやすければ `get` にする
+  (食い違ったデータが来ても止まらないように)。
+- `expect`・`panic!`・`unreachable!`・`unimplemented!`・`todo!` を使わない (`unwrap` はワークスペースの lint で禁止済み)。
+  `debug_assert!` も使わない (debug ビルドで止まる)。
+- 外から来る大きさ・個数・番号の積と和は `checked_*`・`saturating_*` で求める (debug ビルドの桁あふれのパニックと、wasm32 の
+  32 ビットの `usize`)。確保の前に上限を確かめる (`Vec::with_capacity` は桁あふれでパニックする)。
+- `copy_from_slice` は長さが違うとパニックする。ホストが差し替えうる列 (パラメータの値など) は `clear` と `extend_from_slice`
+  で写す (長さが同じなら確保しない)。
+- 本当に起こらないと示せる箇所 (`const fn` の中・コンパイルで作った番号だけを使うグラフの探索など) だけ、理由を書いて
+  `#[expect(clippy::indexing_slicing, reason = "…")]` にする。
+
+**パニックしてよいもの (Rust の API の約束)**
+
+Rust の公開 API で、添字を引数に取る問い合わせ (`ParameterValues::get`・`set`・`min`・`max`・`default_value`・`blend`、
+`ModelInstance::part_opacity`・`part_opacity_override`・`deformer_world`・`deformer_parent_world`・`mesh_parent_world`・
+`mesh_local_positions`・`mesh_contains`・`hit_area_contains`、`CompiledModel::mask_refs`・`mask_mode`・`mask_depth`・
+`hit_area_mesh`) は、`Vec` の添字と同じく範囲の外でパニックし、doc コメントの `# Panics` に書きます (値を返せないため)。
+これらに外から来た番号を渡す上の層 (C ABI・wasm・Godot) は、先に範囲を確かめます。値を書くだけの API
+(`ModelInstance::set_part_opacity_override`・`DynamicOffsets` の `add_angle` など) は、範囲の外なら何もしません。
+
+**検査の方法**
+
+- **lint:** 上のクレートの `lib.rs` で `clippy::expect_used`・`clippy::indexing_slicing`・`clippy::panic`・
+  `clippy::string_slice`・`clippy::unimplemented`・`clippy::unreachable` を有効にしてあり、`just ci` の clippy (`-D warnings`)
+  が止めます。テストのコードは各クレートの `clippy.toml` (`allow-indexing-slicing-in-tests` など) で除きます。
+  算術の桁あふれ (`clippy::arithmetic_side_effects`) は浮動小数点の演算まで数えて多すぎるので有効にせず、外から来る大きさ・個数の
+  箇所を監査しました (T0184)。
+- **壊れた入力のテスト:** `crates/ugoe-format/tests/broken_input.rs` (`assets/compat` のバンドルとモジュールを切り詰め・ビットを
+  反転して読み、画像をデコードし、読めたモデルを評価する。`ugoe_model::fixtures` の JSON を切り詰め・書き換え・数を極端な値にして読む。
+  深い入れ子)、`crates/ugoe/tests/broken_input.rs` (同じく壊したバンドルとモジュールを `Puppet` で動かす。NaN・無限大・巨大な数の
+  パラメータ・`dt`・トラッキング・受け手の入力、範囲の外の番号と知らない ID、検査していない物理の設定・モーション・表情・エフェクト、
+  ホストが評価の状態を別のモデルのものに差し替える)、`ugoe-format` の `image` の単体テスト (壊した KTX2 と PNG)。
+  どれも決まった入力で、依存を足さずに stable で動きます (乱数による fuzz は使っていない)。
+- 上の層 (`ugoe-ffi`・`ugoe-wasm`) は対象外です。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
 
 ## 配布
 

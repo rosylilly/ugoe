@@ -109,16 +109,20 @@ impl Chain {
             return;
         };
         let mut prev = root + first.position;
-        self.particles[0] = Particle::at_rest(prev);
-        for i in 1..self.particles.len() {
+        // 粒子と定義は同じ数で作る ([`Chain::new`])。違えば短いほうに合わせる。
+        let mut particles = self.particles.iter_mut().zip(defs);
+        if let Some((p, _)) = particles.next() {
+            *p = Particle::at_rest(prev);
+        }
+        for (i, (p, d)) in particles.enumerate().map(|(i, x)| (i + 1, x)) {
             let segment = Segment {
                 index: i,
                 parent: prev,
-                from: prev + rest_direction(defs, i) * defs[i].radius,
+                from: prev + rest_direction(defs, i) * d.radius,
             };
             prev += rest_segment(defs, i, gravity, wind);
             constrain(&segment, &mut prev);
-            self.particles[i] = Particle::at_rest(prev);
+            *p = Particle::at_rest(prev);
         }
     }
 
@@ -136,16 +140,20 @@ impl Chain {
         let Some(first) = defs.first() else {
             return;
         };
-        let root = &mut self.particles[0];
+        let Some(root) = self.particles.first_mut() else {
+            return;
+        };
         root.last_position = root.position;
         root.position = input.root + first.position;
 
         let rotation = Vec2::from_angle((input.rotation_delta * ROOT_ROTATION_FOLLOW).to_radians());
-        for i in 1..self.particles.len() {
-            let d = &defs[i];
-            let parent = self.particles[i - 1].position;
-            let parent_last = self.particles[i - 1].last_position;
-            let p = &mut self.particles[i];
+        // 粒子と定義は同じ数で作る ([`Chain::new`])。違えば短いほうに合わせる。
+        for i in 1..self.particles.len().min(defs.len()) {
+            let (Some(d), Some([parent, p])) = (defs.get(i), self.particles.get_mut(i - 1..=i))
+            else {
+                break;
+            };
+            let (parent, parent_last) = (parent.position, parent.last_position);
             let from_dir = (p.position - parent_last)
                 .try_normalize()
                 .unwrap_or_else(|| rest_direction(defs, i));
@@ -190,7 +198,9 @@ pub fn rest_offset(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2
 
 /// 静止姿勢での区間 i (粒子 i-1 → i) のベクトル。力の向きが決まらなければ初期位置の向き。
 fn rest_segment(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -> Vec2 {
-    let d = &defs[i];
+    let Some(d) = defs.get(i) else {
+        return Vec2::ZERO;
+    };
     let dir = (gravity * d.acceleration + wind)
         .try_normalize()
         .unwrap_or_else(|| rest_direction(defs, i));
@@ -203,9 +213,12 @@ fn velocity_retention(mobility: f32, time_scale: f32) -> f32 {
     math::powf(mobility.max(0.0), time_scale)
 }
 
-/// 粒子 i の、初期位置での親からの向き。向きが決まらなければ真下。
+/// 粒子 i の、初期位置での親からの向き。向きが決まらなければ (`i` が 0 か範囲外を含む) 真下。
 fn rest_direction(defs: &[PhysicsParticle], i: usize) -> Vec2 {
-    (defs[i].position - defs[i - 1].position)
+    let (Some(parent), Some(d)) = (i.checked_sub(1).and_then(|j| defs.get(j)), defs.get(i)) else {
+        return Vec2::Y;
+    };
+    (d.position - parent.position)
         .try_normalize()
         .unwrap_or(Vec2::Y)
 }

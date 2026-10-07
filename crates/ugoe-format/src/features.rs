@@ -190,7 +190,7 @@ mod tests {
     /// 仕様書の `heading` の直後にある表の行を、セルの列として返す (見出し行と区切り行を除く)。
     fn spec_table(spec: &str, heading: &str) -> Vec<Vec<String>> {
         let start = spec.find(heading).expect("heading");
-        spec[start..]
+        (spec.get(start..).expect("heading"))
             .lines()
             .skip_while(|line| !line.starts_with('|'))
             .take_while(|line| line.starts_with('|'))
@@ -208,7 +208,7 @@ mod tests {
     fn plain(cell: &str) -> String {
         let mut text = cell.replace('`', "");
         while let Some(start) = text.find(" ([") {
-            let end = text[start..].find("))").expect("link") + start + 2;
+            let end = text.get(start..).and_then(|t| t.find("))")).expect("link") + start + 2;
             text.replace_range(start..end, "");
         }
         text

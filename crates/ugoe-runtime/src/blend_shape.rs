@@ -76,7 +76,10 @@ pub(crate) fn add_points<T>(
     let interp = |weights: &Weights, i: usize| {
         let mut sum = Vec2::ZERO;
         for &(k, w) in weights {
-            sum += f(&grid.keyforms[k])[i] * w;
+            // 点の数は検証で揃えてある。足りないキーフォームの点は 0 とみなす。
+            if let Some(&q) = grid.keyforms.get(k).and_then(|k| f(k).get(i)) {
+                sum += q * w;
+            }
         }
         sum
     };

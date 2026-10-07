@@ -7,7 +7,7 @@
 ## 守ること
 
 - 読み込み時には必ずスキーマのバージョンを検査する
-- 壊れた入力でパニックしない
+- 壊れた入力でパニックしない (lint と `tests/broken_input.rs`。[docs/portability.md](../../docs/portability.md#パニックしない))
 - 外から来る入力で資源を使い切らない。展開の上限は形式でなく読む側の設定 (`ReadLimits`。既定は 1 チャンク 256 MiB・合計 1 GiB)。超えたら展開の途中でやめてエラーにする
 - ファイルシステムに触れない (バイト列のスライスを読み、`Vec<u8>` に書く。`std::io` も使わない)
 - `no_std` + `alloc` でビルドできる状態を保つ (`just nostd-check`。[docs/portability.md](../../docs/portability.md#ランタイム層が守る制約-移植性のため))

@@ -5,6 +5,8 @@
 # 同じ内容のファイルを置くクレートは scripts/nostd-check.mjs の MATH_CRATES で、内容が揃っているかは `just groups` が検査する。
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
 disallowed-methods = [
   { path = "f32::floor", reason = "ugoe_core::math::floor を使う (std の有無と OS にかかわらず libm。ADR 0031)" },
   { path = "f32::ceil", reason = "ugoe_core::math::ceil を使う (std の有無と OS にかかわらず libm。ADR 0031)" },

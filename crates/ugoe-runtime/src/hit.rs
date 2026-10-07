@@ -17,6 +17,10 @@ impl ModelInstance {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mesh_contains(&self, mesh: usize, point: Vec2) -> bool {
         let p = &self.drawables()[mesh].positions;
         self.compiled().model().meshes[mesh]
@@ -53,7 +57,10 @@ impl ModelInstance {
             return hits;
         }
         for &mesh in self.render_order().iter().rev() {
-            let mut areas = (0..meshes.len()).filter(|&h| meshes[h] == mesh).peekable();
+            let mut areas = (meshes.iter().enumerate())
+                .filter(|&(_, &m)| m == mesh)
+                .map(|(h, _)| h)
+                .peekable();
             if areas.peek().is_some() && self.mesh_contains(mesh as usize, point) {
                 hits.extend(areas);
             }

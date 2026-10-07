@@ -131,27 +131,47 @@ impl ParameterValues {
     /// # Panics
     ///
     /// `index` が範囲外のとき (`min`・`max`・`default_value`・`set`・`blend` も同じ)。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
+    )]
     pub fn get(&self, index: ParamIndex) -> f32 {
         self.values[index.0 as usize]
     }
 
     /// 値域の下限。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
+    )]
     pub fn min(&self, index: ParamIndex) -> f32 {
         self.min[index.0 as usize]
     }
 
     /// 値域の上限。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
+    )]
     pub fn max(&self, index: ParamIndex) -> f32 {
         self.max[index.0 as usize]
     }
 
     /// 既定値。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
+    )]
     pub fn default_value(&self, index: ParamIndex) -> f32 {
         self.default[index.0 as usize]
     }
 
     /// 値域にクランプして設定する。NaN は書き込まずに無視する (値は変わらない。
     /// `docs/spec/evaluation.md` の評価はいつも値域の中の値を見る)。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の連番は呼び出し側の誤り (# Panics)"
+    )]
     pub fn set(&mut self, index: ParamIndex, value: f32) {
         let i = index.0 as usize;
         if !value.is_nan() {
@@ -169,10 +189,10 @@ impl ParameterValues {
     /// `previous` にある同じ ID のパラメータの値を引き継ぐ (値域にクランプする)。
     /// 組み替え (`docs/spec/modules.md#合成`) で、合成し直したモデルに前の値を移すときに使う。
     pub fn carry_over(&mut self, previous: &ParameterValues) {
-        for (i, id) in self.layout.ids.iter().enumerate() {
+        let ranges = self.min.iter().zip(&self.max);
+        for ((id, v), (&min, &max)) in self.layout.ids.iter().zip(&mut self.values).zip(ranges) {
             if let Some(j) = previous.index_of(id.as_str()) {
-                let value = previous.get(j);
-                self.values[i] = value.clamp(self.min[i], self.max[i]);
+                *v = previous.get(j).clamp(min, max);
             }
         }
     }

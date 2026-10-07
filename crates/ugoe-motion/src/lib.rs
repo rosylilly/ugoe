@@ -10,6 +10,15 @@
 
 #![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+// ランタイム層はパニックしない (docs/portability.md#パニックしない。ADR 0031)。テストのコードは clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
 
 extern crate alloc;
 

@@ -238,7 +238,9 @@ impl Puppet {
         let same = |m: &Arc<Module>| m.slot == module.slot || m.name == module.name;
         match modules.iter().position(same) {
             Some(i) => {
-                modules[i] = Arc::clone(&module);
+                if let Some(m) = modules.get_mut(i) {
+                    *m = Arc::clone(&module);
+                }
                 let mut k = 0;
                 modules.retain(|m| {
                     k += 1;

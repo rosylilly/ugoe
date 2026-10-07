@@ -22,7 +22,7 @@ pub struct ResolvedBinding {
 
 impl ResolvedBinding {
     /// 軸を作る。`interpolation` が曲線でキーが 3 つ以上なら、接線の係数を求めておく。
-    /// `keys` は空でなく、狭義の昇順であること (空だと重みを求めるときにパニックする)。
+    /// `keys` は空でなく、狭義の昇順であること (空ならいつもキーフォーム 0 を使う。パニックはしない)。
     pub fn new(param: ParamIndex, keys: Vec<f32>, interpolation: KeyformInterpolation) -> Self {
         let tangents =
             if interpolation.effective() == KeyformInterpolation::Smooth && keys.len() >= 3 {
@@ -54,7 +54,7 @@ impl ResolvedBinding {
 
 /// キー `i` の接線に使う 3 つのキーの先頭 (端では内側の 3 つ)。キーは 3 つ以上。
 fn tangent_base(n: usize, i: usize) -> usize {
-    i.saturating_sub(1).min(n - 3)
+    i.saturating_sub(1).min(n.saturating_sub(3))
 }
 
 /// キー `i` での接線 (キーの値に対する微分) を、3 つのキー `j, j+1, j+2` の値の係数で表す。
@@ -63,11 +63,11 @@ fn tangent_base(n: usize, i: usize) -> usize {
 /// 係数の和は 0 (値が一定なら接線は 0)。計算は f64 で行い、f32 に丸める。
 fn tangent(keys: &[f32], i: usize) -> [f32; 3] {
     let j = tangent_base(keys.len(), i);
-    let (x0, x1, x2) = (
-        f64::from(keys[j]),
-        f64::from(keys[j + 1]),
-        f64::from(keys[j + 2]),
-    );
+    // キーが 3 つ以上なら `j + 3 <= keys.len()` (`ResolvedBinding::new` が確かめてから呼ぶ)。
+    let Some(&[x0, x1, x2]) = keys.get(j..j + 3) else {
+        return [0.0; 3];
+    };
+    let (x0, x1, x2) = (f64::from(x0), f64::from(x1), f64::from(x2));
     let (h0, h1) = (x1 - x0, x2 - x1);
     let sum = h0 + h1;
     // 接線 = a * d0 + b * d1 (d0, d1 は 2 つの区間の傾き)。
@@ -102,22 +102,29 @@ fn weights_with(bindings: &[ResolvedBinding], values: &[f32], smooth: bool, out:
     out.push((0, 1.0));
     let mut stride = 1;
     for binding in bindings {
-        let (seg, t) = locate(&binding.keys, values[binding.param.0 as usize]);
+        // 軸のパラメータが `values` に無ければ NaN と同じ (先頭のキー)。
+        let value = values
+            .get(binding.param.0 as usize)
+            .copied()
+            .unwrap_or(f32::NAN);
+        let (seg, t) = locate(&binding.keys, value);
         let n = out.len();
         if smooth && binding.is_smooth() && t > 0.0 {
             let (base, axis) = smooth_axis(binding, seg, t);
-            let count = axis.len().min(binding.keys.len() - base);
+            let count = axis.len().min(binding.keys.len().saturating_sub(base));
             for i in 0..n {
-                let (index, w) = out[i];
-                out[i] = (index + base * stride, w * axis[0]);
+                let Some(slot) = out.get_mut(i) else { break };
+                let (index, w) = *slot;
+                *slot = (index + base * stride, w * axis[0]);
                 for (k, a) in axis.iter().enumerate().take(count).skip(1) {
                     out.push((index + (base + k) * stride, w * a));
                 }
             }
         } else {
             for i in 0..n {
-                let (index, w) = out[i];
-                out[i] = (index + seg * stride, w * (1.0 - t));
+                let Some(slot) = out.get_mut(i) else { break };
+                let (index, w) = *slot;
+                *slot = (index + seg * stride, w * (1.0 - t));
                 if t > 0.0 {
                     out.push((index + (seg + 1) * stride, w * t));
                 }
@@ -134,38 +141,54 @@ fn weights_with(bindings: &[ResolvedBinding], values: &[f32], smooth: bool, out:
 fn smooth_axis(binding: &ResolvedBinding, seg: usize, t: f32) -> (usize, [f32; 4]) {
     let n = binding.keys.len();
     let base = seg.saturating_sub(1);
-    let h = binding.keys[seg + 1] - binding.keys[seg];
+    // `locate` は `t > 0` のとき `seg + 1 < n` を返す。
+    let (Some(&k0), Some(&k1)) = (binding.keys.get(seg), binding.keys.get(seg + 1)) else {
+        return (base, [0.0; 4]);
+    };
+    let h = k1 - k0;
     let (t2, t3) = (t * t, t * t * t);
     let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
     let h10 = t3 - 2.0 * t2 + t;
     let h01 = -2.0 * t3 + 3.0 * t2;
     let h11 = t3 - t2;
     let mut axis = [0.0f32; 4];
-    axis[seg - base] += h00;
-    axis[seg + 1 - base] += h01;
+    // 添字はいつも 0..4 (`base = seg - 1` か 0 で、接線の 3 つのキーは `base..base + 4` に入る)。
+    let mut add = |key: usize, value: f32| {
+        if let Some(a) = key.checked_sub(base).and_then(|k| axis.get_mut(k)) {
+            *a += value;
+        }
+    };
+    add(seg, h00);
+    add(seg + 1, h01);
     for (key, basis) in [(seg, h10), (seg + 1, h11)] {
         let j = tangent_base(n, key);
-        for (c, coef) in binding.tangents[key].iter().enumerate() {
-            axis[j + c - base] += h * basis * coef;
+        for (c, coef) in binding.tangents.get(key).into_iter().flatten().enumerate() {
+            add(j + c, h * basis * coef);
         }
     }
     (base, axis)
 }
 
 /// 値 `v` が属するセグメントの開始キーインデックスと補間係数 t (0..1)。
+///
+/// キーが空か `v` が NaN なら先頭のキー (`(0, 0.0)`)。
 fn locate(keys: &[f32], v: f32) -> (usize, f32) {
-    debug_assert!(!keys.is_empty());
+    let (Some(&first), Some(&last_key)) = (keys.first(), keys.last()) else {
+        return (0, 0.0);
+    };
     let last = keys.len() - 1;
-    if last == 0 || v <= keys[0] {
+    if last == 0 || v.is_nan() || v <= first {
         return (0, 0.0);
     }
-    if v >= keys[last] {
+    if v >= last_key {
         return (last, 0.0);
     }
-    // keys[seg] <= v < keys[seg + 1]
-    let seg = keys.partition_point(|&k| k <= v) - 1;
-    let t = (v - keys[seg]) / (keys[seg + 1] - keys[seg]);
-    (seg, t)
+    // keys[seg] <= v < keys[seg + 1] (first < v < last_key なので 1 <= partition_point <= last)
+    let seg = keys.partition_point(|&k| k <= v).saturating_sub(1);
+    let (Some(&k0), Some(&k1)) = (keys.get(seg), keys.get(seg + 1)) else {
+        return (0, 0.0);
+    };
+    (seg, (v - k0) / (k1 - k0))
 }
 
 /// 形のフィールドの重み (`shape`) と、形以外のフィールドの重み (`linear`) の作業領域。
@@ -202,8 +225,13 @@ impl GridWeights {
 }
 
 /// 重みでスカラーを合成する。
+///
+/// 格子に無いインデックスの項は 0 とみなす (重みは格子の軸から求めるので、検証済みのモデルでは起こらない)。
 pub fn blend_scalar<T>(grid: &KeyformGrid<T>, weights: &Weights, f: impl Fn(&T) -> f32) -> f32 {
-    weights.iter().map(|&(i, w)| f(&grid.keyforms[i]) * w).sum()
+    weights
+        .iter()
+        .filter_map(|&(i, w)| Some(f(grid.keyforms.get(i)?) * w))
+        .sum()
 }
 
 /// 重みでベクトルを合成する (和は重みの順序で取る)。
@@ -214,7 +242,9 @@ pub fn blend_vec2<T>(
 ) -> ugoe_core::Vec2 {
     let mut sum = ugoe_core::Vec2::ZERO;
     for &(i, w) in weights {
-        sum += f(&grid.keyforms[i]) * w;
+        if let Some(k) = grid.keyforms.get(i) {
+            sum += f(k) * w;
+        }
     }
     sum
 }
@@ -227,7 +257,7 @@ pub fn blend_bool<T>(grid: &KeyformGrid<T>, weights: &Weights, f: impl Fn(&T) ->
             best = Some((i, w));
         }
     }
-    best.is_some_and(|(i, _)| f(&grid.keyforms[i]))
+    best.and_then(|(i, _)| grid.keyforms.get(i)).is_some_and(f)
 }
 
 #[cfg(test)]

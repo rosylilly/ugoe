@@ -15,6 +15,15 @@
 
 #![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+// ランタイム層はパニックしない (docs/portability.md#パニックしない。ADR 0031)。テストのコードは clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
 
 extern crate alloc;
 
@@ -409,8 +418,10 @@ impl Puppet {
         let params = self.instance.parameters();
         self.tracking_kept = vec![false; params.len()];
         for id in &self.tracking_kept_ids {
-            if let Some(i) = params.index_of(id) {
-                self.tracking_kept[i.0 as usize] = true;
+            if let Some(kept) =
+                (params.index_of(id)).and_then(|i| self.tracking_kept.get_mut(i.0 as usize))
+            {
+                *kept = true;
             }
         }
     }
@@ -459,6 +470,11 @@ impl Puppet {
         let params = self.instance.parameters_mut();
 
         // 1. 基準値に戻す。前フレームの出力から変わっている値はホストが書き換えたので、基準値にする。
+        // ホストがパラメータの並びを差し替えていたら (`instance_mut`)、今の値をすべて基準値にする。
+        if self.base.len() != params.len() || self.output.len() != params.len() {
+            copy_values(&mut self.base, params.as_slice());
+            copy_values(&mut self.output, params.as_slice());
+        }
         for (i, (base, output)) in self.base.iter_mut().zip(&self.output).enumerate() {
             let index = ParamIndex(i as u32);
             let current = params.get(index);
@@ -488,7 +504,7 @@ impl Puppet {
         }
 
         // 4. 基準値を保存する。これより後の処理は毎フレーム基準値に重ねるので累積しない。
-        self.base.copy_from_slice(params.as_slice());
+        copy_values(&mut self.base, params.as_slice());
 
         // 5. 表情
         self.expressions.update(params, dt);
@@ -505,7 +521,7 @@ impl Puppet {
         }
         // 8. 物理
         // 動的物理を使う設定では、ここで 1 段目の評価を行い、11. の評価が 2 段目になる。
-        self.before_physics.copy_from_slice(params.as_slice());
+        copy_values(&mut self.before_physics, params.as_slice());
         if let Some(physics) = self.physics.as_mut().filter(|_| self.toggles.physics) {
             physics.update_instance(&mut self.instance, dt);
         }
@@ -521,7 +537,7 @@ impl Puppet {
                 .level()
                 .map(|level| LipSyncInput { level, strength });
         }
-        self.output.copy_from_slice(params.as_slice());
+        copy_values(&mut self.output, params.as_slice());
 
         // 10. パーツの不透明度 (モーションのカーブとポーズ)
         self.write_part_opacities(dt, true);
@@ -567,7 +583,7 @@ impl Puppet {
         self.instance
             .hit_areas_at(point)
             .into_iter()
-            .map(|h| hit_areas[h].id.as_str())
+            .filter_map(|h| hit_areas.get(h).map(|a| a.id.as_str()))
             .collect()
     }
 
@@ -615,6 +631,13 @@ impl Puppet {
             })
             .collect()
     }
+}
+
+/// パラメータの値の列 `src` を `dst` に写す。長さが違えば `dst` を合わせる (ホストが
+/// [`Puppet::instance_mut`] でパラメータの並びを差し替えても止まらないように。同じ長さなら確保しない)。
+fn copy_values(dst: &mut Vec<f32>, src: &[f32]) {
+    dst.clear();
+    dst.extend_from_slice(src);
 }
 
 /// 負か有限でない `dt` を 0 にする。NaN が再生の時刻に入ると、モーション・目パチ・呼吸の状態が戻らなくなるため

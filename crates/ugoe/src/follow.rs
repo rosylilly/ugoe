@@ -90,7 +90,7 @@ impl Puppet {
         for (i, &value) in values.iter().enumerate() {
             params.set(ParamIndex(i as u32), value);
         }
-        self.base.copy_from_slice(params.as_slice());
+        crate::copy_values(&mut self.base, params.as_slice());
         Ok(())
     }
 
@@ -151,8 +151,10 @@ impl Puppet {
         }
         self.set_base_values(values)?;
         let dt = crate::sanitize_dt(dt);
-        self.before_physics
-            .copy_from_slice(self.instance.parameters().as_slice());
+        crate::copy_values(
+            &mut self.before_physics,
+            self.instance.parameters().as_slice(),
+        );
         // 8. 物理 (動的物理を使う設定では、ここで 1 段目の評価を行う)
         if let Some(physics) = self.physics.as_mut().filter(|_| self.toggles.physics) {
             physics.update_instance(&mut self.instance, dt);
@@ -170,8 +172,7 @@ impl Puppet {
                 .map(|level| LipSyncInput { level, ..input });
             self.lip_sync.set_level(own);
         }
-        self.output
-            .copy_from_slice(self.instance.parameters().as_slice());
+        crate::copy_values(&mut self.output, self.instance.parameters().as_slice());
         // 10. パーツの不透明度 (届いたモーションのカーブとポーズ)
         // モデルは `instance` と別に持つ (パーツの ID を複製せずに借りたまま、`instance` に書くため)。
         let compiled = Arc::clone(self.instance.compiled());

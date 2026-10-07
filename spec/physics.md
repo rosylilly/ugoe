@@ -456,7 +456,7 @@ if q = P: push q out of every near collider; return q
 target = normalize(q − P);  base = normalize(from − P), or target if zero
 at(θ) = P + R(θ) · base × L                               (θ in radians here, clockwise positive)
 blocked(θ) = at(θ) is blocked by any near collider
-step = min(max(min radius of near colliders, 0.5) / L, 10 degrees)
+step = max(min(max(min radius of near colliders, 0.5) / L, 10 degrees), π / 65536)
 end  = signed angle from base to target, in radians, in (−π, π]
 start = 0
 if blocked(0):

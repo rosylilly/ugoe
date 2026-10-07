@@ -25,7 +25,7 @@ pub fn evaluate(segments: &[Segment], t: f32) -> Option<f32> {
     if t <= prev.t {
         return Some(prev.v);
     }
-    for seg in &segments[1..] {
+    for seg in segments.iter().skip(1) {
         let to = match seg {
             Segment::Start { .. } | Segment::Unknown => return None,
             Segment::Linear { to }
@@ -73,12 +73,11 @@ impl SegmentIndex {
                 max_ends: Vec::new(),
             };
         }
-        let len = segments[1..]
-            .iter()
+        let len = (segments.iter().skip(1))
             .position(|s| matches!(s, Segment::Start { .. }))
             .map_or(segments.len(), |i| i + 1);
         let mut max = f32::NEG_INFINITY;
-        let max_ends = segments[1..len]
+        let max_ends = (segments.get(1..len).unwrap_or_default())
             .iter()
             .map(|s| {
                 // `f32::max` は NaN を捨てる。線形の探索でも NaN の終わりの時刻は選ばれない。
@@ -95,12 +94,11 @@ impl SegmentIndex {
 
     /// カーブを時刻 `t` で評価する。結果は [`evaluate`] と同じ。
     ///
-    /// `segments` は [`new`](Self::new) に渡したものと同じ列でなければならない。
+    /// `segments` は [`new`](Self::new) に渡したものと同じ列でなければならない (違う列なら結果は決まらないが、パニックはしない)。
     pub fn evaluate(&self, segments: &[Segment], t: f32) -> Option<f32> {
         if !self.valid {
             return None;
         }
-        debug_assert!(self.len <= segments.len());
         let first = end_point(segments.first()?);
         if t <= first.t {
             return Some(first.v);

@@ -114,7 +114,8 @@ impl MotionPlayer {
     /// `motion` を時刻 0 から再生するプレイヤーを作る。ループしないモーションは `duration` で終わる。
     pub fn new(motion: Motion) -> Self {
         let mut event_order: Vec<usize> = (0..motion.events.len()).collect();
-        event_order.sort_by(|&a, &b| motion.events[a].t.total_cmp(&motion.events[b].t));
+        let time = |i: usize| motion.events.get(i).map_or(0.0, |e| e.t);
+        event_order.sort_by(|&a, &b| time(a).total_cmp(&time(b)));
         let end = (!motion.looping).then_some(f64::from(motion.duration.max(0.0)));
         let segment_indices = motion
             .curves
@@ -243,7 +244,7 @@ impl MotionPlayer {
     /// 直前の [`advance`](Self::advance) (または [`update`](Self::update)) で発火したイベント。
     /// 発火した順 (ループをまたいだ場合は周回の順、周回の中では時刻の順) に並ぶ。
     pub fn fired_events(&self) -> impl Iterator<Item = &MotionEvent> {
-        self.fired.iter().map(|&i| &self.motion.events[i])
+        self.fired.iter().filter_map(|&i| self.motion.events.get(i))
     }
 
     /// 現在の時刻でカーブを評価し、パラメータを対象とするカーブを適用する。
@@ -312,7 +313,10 @@ impl MotionPlayer {
     fn fire_range(&mut self, from: f32, to: f32) {
         let inclusive = core::mem::take(&mut self.inclusive_start);
         for &i in &self.event_order {
-            let t = self.motion.events[i].t;
+            // `event_order` は `0..motion.events.len()` を並べ替えたもの (いつも範囲内)。
+            let Some(t) = self.motion.events.get(i).map(|e| e.t) else {
+                continue;
+            };
             let after_from = if inclusive { t >= from } else { t > from };
             if after_from && t <= to {
                 self.fired.push(i);

@@ -11,6 +11,15 @@
 
 #![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+// ランタイム層はパニックしない (docs/portability.md#パニックしない。ADR 0031)。テストのコードは clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
 
 extern crate alloc;
 
@@ -216,7 +225,7 @@ impl PhysicsSystem {
                 chain: Chain::new(&rig.particles, Vec2::ZERO),
                 pose: RootPose::default(),
                 external: RootPose::default(),
-                relay_inputs: relay_inputs(&settings.rigs[..k], rig),
+                relay_inputs: relay_inputs(settings.rigs.get(..k).unwrap_or_default(), rig),
                 input_params: Vec::new(),
                 output_params: Vec::new(),
                 previous: vec![None; rig.outputs.len()],
@@ -378,7 +387,10 @@ impl PhysicsSystem {
         let model = compiled.model();
         let deformer = |id: &str| compiled.deformer_index(id);
         let rotation = |id: &str| {
-            deformer(id).filter(|&d| matches!(model.deformers[d].kind, DeformerKind::Rotation(_)))
+            deformer(id).filter(|&d| {
+                (model.deformers.get(d))
+                    .is_some_and(|d| matches!(d.kind, DeformerKind::Rotation(_)))
+            })
         };
         let rigs = self
             .settings
@@ -402,7 +414,8 @@ impl PhysicsSystem {
                         PhysicsTarget::Vertices { owner, .. } => match owner {
                             VertexOwner::Warp(id) => deformer(id.as_str())
                                 .filter(|&d| {
-                                    matches!(model.deformers[d].kind, DeformerKind::Warp(_))
+                                    (model.deformers.get(d))
+                                        .is_some_and(|d| matches!(d.kind, DeformerKind::Warp(_)))
                                 })
                                 .map_or(Target::Ignore, Target::Warp),
                             VertexOwner::Mesh(id) => compiled
@@ -509,7 +522,7 @@ impl PhysicsSystem {
         let mut values = Vec::new();
         for ((rig, frame), state) in settings.rigs.iter().zip(&frames).zip(&self.rigs) {
             let mut pose = root_pose(rig, &state.input_params, parameters, |i| {
-                !state.relay_inputs[i]
+                !is_relay(&state.relay_inputs, i)
             });
             pose.translation += frame.anchor;
             pose.angle += frame.frame_angle;
@@ -532,15 +545,25 @@ impl PhysicsSystem {
                 outputs(rig, &chain, &input, &frame.references, &mut values);
                 r.write(rig, &state.output_params, &values);
             }
-            let particles = chain.particles();
-            for i in 1..particles.len() {
-                let margin = rig.particles[i].collision_radius.max(0.0);
+            let segments = chain
+                .particles()
+                .windows(2)
+                .zip(rig.particles.iter().skip(1));
+            for (i, (pair, def)) in segments.enumerate().map(|(i, x)| (i + 1, x)) {
+                let [parent, particle] = pair else {
+                    continue;
+                };
+                let margin = def.collision_radius.max(0.0);
                 for (c, &id) in frame.colliders.iter().zip(&frame.collider_ids) {
-                    if c.blocks(particles[i - 1].position, particles[i].position, margin) {
+                    // `collider_ids` は `settings.colliders` の添字 (`bind` で解決したもの)。
+                    let Some(collider) = settings.colliders.get(id) else {
+                        continue;
+                    };
+                    if c.blocks(parent.position, particle.position, margin) {
                         found.push(RestPoseCollision {
                             rig: rig.id.clone(),
                             particle: i,
-                            collider: settings.colliders[id].id.clone(),
+                            collider: collider.id.clone(),
                         });
                     }
                 }
@@ -581,8 +604,8 @@ impl PhysicsSystem {
                 .map_or(Vec2::ZERO, |a| instance.deformer_world(a).point(p0) - p0);
             frame.frame_angle = rb.frame.map_or(0.0, |f| {
                 // ワープは格子の中心での向き、回転デフォーマはどこでも同じ。
-                let at = match model.deformers[f].kind {
-                    DeformerKind::Warp(_) => Vec2::splat(0.5),
+                let at = match model.deformers.get(f).map(|d| &d.kind) {
+                    Some(DeformerKind::Warp(_)) => Vec2::splat(0.5),
                     _ => Vec2::ZERO,
                 };
                 chain::signed_angle(down, instance.deformer_world(f).jacobian(at) * down)
@@ -607,7 +630,7 @@ impl PhysicsSystem {
             frame.collider_ids.clear();
             frame.colliders.clear();
             for &c in &rb.colliders {
-                if let Some(collider) = colliders[c] {
+                if let Some(&Some(collider)) = colliders.get(c) {
                     frame.collider_ids.push(c);
                     frame.colliders.push(collider);
                 }
@@ -632,7 +655,7 @@ impl PhysicsSystem {
         targets.extend(settings.rigs.iter().zip(frames).zip(&self.rigs).map(
             |((rig, frame), state)| {
                 let mut pose = root_pose(rig, &state.input_params, parameters, |i| {
-                    !state.relay_inputs[i]
+                    !is_relay(&state.relay_inputs, i)
                 });
                 pose.translation += frame.anchor;
                 // 基準の回転は、前のステップから近い側に回ったとみなす (±180 度をまたいでも跳ばない)。
@@ -783,8 +806,13 @@ impl PhysicsSystem {
             .zip(&binding.rigs)
             .zip(frames)
         {
-            for (o, output) in rig.outputs.iter().enumerate() {
-                let (Some(previous), Some(current)) = (state.previous[o], state.current[o]) else {
+            // 出力ごとの列 (解決した出力先・前後の値・反転) は、どれも `rig.outputs` と同じ数で作る。
+            let per_output = (rb.outputs.iter().zip(&frame.flips))
+                .zip(state.previous.iter().zip(&state.current));
+            for (output, ((target, &flip), (&previous, &current))) in
+                rig.outputs.iter().zip(per_output)
+            {
+                let (Some(previous), Some(current)) = (previous, current) else {
                     continue;
                 };
                 let value = previous.lerp(current, alpha);
@@ -793,13 +821,13 @@ impl PhysicsSystem {
                     continue;
                 }
                 let weight = (output.weight / 100.0).clamp(0.0, 1.0);
-                match rb.outputs[o] {
+                match *target {
                     Target::Ignore => {}
                     Target::Parameter(index) => {
                         blend_parameter(instance.parameters_mut(), index, output, value.x, weight);
                     }
                     Target::Angle(d) => {
-                        let angle = if frame.flips[o] { -value.x } else { value.x };
+                        let angle = if flip { -value.x } else { value.x };
                         instance.dynamic_offsets_mut().add_angle(d, angle * weight);
                     }
                     Target::Offset(d) => {
@@ -858,6 +886,11 @@ fn relay_inputs(earlier: &[PhysicsRig], rig: &PhysicsRig) -> Vec<bool> {
         .collect()
 }
 
+/// 入力 `i` が中継の入力か (`relay_inputs` は入力と同じ数で作る)。
+fn is_relay(relay_inputs: &[bool], i: usize) -> bool {
+    relay_inputs.get(i).copied().unwrap_or(false)
+}
+
 /// 中継の入力を足した姿勢。中継の入力がないリグでは `pose` のまま (結果を変えない)。
 fn with_relay(
     pose: RootPose,
@@ -868,7 +901,7 @@ fn with_relay(
     match relay {
         Some(r) if state.relay_inputs.contains(&true) => {
             pose.with_relay(root_pose(rig, &state.input_params, &r.values, |i| {
-                state.relay_inputs[i]
+                is_relay(&state.relay_inputs, i)
             }))
         }
         _ => pose,
@@ -918,7 +951,7 @@ fn collide(colliders: &[WorldCollider], rig: &PhysicsRig, segment: &Segment, p: 
     if colliders.is_empty() {
         return;
     }
-    let margin = rig.particles[segment.index].collision_radius.max(0.0);
+    let margin = (rig.particles.get(segment.index)).map_or(0.0, |p| p.collision_radius.max(0.0));
     collider::constrain_segment(colliders, margin, segment.parent, segment.from, p);
 }
 
@@ -1008,6 +1041,8 @@ fn outputs(
     out: &mut [Option<Vec2>],
 ) {
     let particles = chain.particles();
+    // 番号 `k` の粒子の位置 (下で使う番号は `1 <= i < particles.len()` から作るので、いつも範囲内)。
+    let position = |k: usize| particles.get(k).map_or(Vec2::ZERO, |p| p.position);
     let values = rig
         .outputs
         .iter()
@@ -1026,7 +1061,7 @@ fn outputs(
                 PhysicsTarget::DeformerOffset { .. } | PhysicsTarget::Vertices { .. } => {
                     // 変位 = 根元からの相対位置 - 静止姿勢での相対位置。
                     let rest = chain::rest_offset(&rig.particles, i, input.gravity, input.wind);
-                    let d = particles[i].position - particles[0].position - rest;
+                    let d = position(i) - position(0) - rest;
                     match output.source {
                         PhysicsSource::X => Vec2::new(d.x, 0.0),
                         PhysicsSource::Y => Vec2::new(0.0, d.y),
@@ -1034,9 +1069,9 @@ fn outputs(
                     }
                 }
                 PhysicsTarget::Parameter { .. } | PhysicsTarget::DeformerAngle { .. } => {
-                    let segment = particles[i].position - particles[i - 1].position;
+                    let segment = position(i) - position(i - 1);
                     let parent = if i >= 2 {
-                        particles[i - 1].position - particles[i - 2].position
+                        position(i - 1) - position(i - 2)
                     } else {
                         reference
                     };

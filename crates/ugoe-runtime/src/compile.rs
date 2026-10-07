@@ -294,6 +294,10 @@ impl CompiledModel {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mask_refs(&self, mesh: usize) -> &[ResolvedMaskRef] {
         &self.meshes[mesh].masks
     }
@@ -304,6 +308,10 @@ impl CompiledModel {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mask_mode(&self, mesh: usize) -> MaskMode {
         self.model.meshes[mesh].mask_mode.effective()
     }
@@ -317,6 +325,10 @@ impl CompiledModel {
     /// # Panics
     ///
     /// `mesh` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn mask_depth(&self, mesh: usize) -> u32 {
         self.meshes[mesh].mask_depth
     }
@@ -340,6 +352,10 @@ impl CompiledModel {
     /// # Panics
     ///
     /// `hit_area` が範囲外のとき。
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "範囲外の添字は呼び出し側の誤り (# Panics)"
+    )]
     pub fn hit_area_mesh(&self, hit_area: usize) -> usize {
         self.hit_area_meshes[hit_area] as usize
     }
@@ -348,6 +364,10 @@ impl CompiledModel {
 /// 親が先になる順序。循環がないこと (validate で検査済み) を前提にする。
 ///
 /// 配列順に要素を見て、未訪問の祖先を根の側から並べる。結果は入力だけで決まる (決定的)。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "添字は 0..parents.len() と、コンパイルで ID から解決した親 (いつも範囲内)"
+)]
 fn topological_order(parents: impl Iterator<Item = Option<u32>>) -> Vec<u32> {
     let parents: Vec<Option<u32>> = parents.collect();
     let mut visited = vec![false; parents.len()];
@@ -375,6 +395,10 @@ fn topological_order(parents: impl Iterator<Item = Option<u32>>) -> Vec<u32> {
 }
 
 /// メッシュごとのマスクの依存の深さ。循環がないこと (validate で検査済み) を前提にする。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "添字は 0..meshes.len() と、コンパイルで ID から解決したマスクのメッシュ (いつも範囲内)"
+)]
 fn mask_depths(meshes: &[CompiledMesh]) -> Vec<u32> {
     let mut depth: Vec<Option<u32>> = vec![None; meshes.len()];
     let mut on_stack = vec![false; meshes.len()];
@@ -413,6 +437,10 @@ fn mask_depths(meshes: &[CompiledMesh]) -> Vec<u32> {
 }
 
 /// マスクとして参照されるメッシュを、深さの昇順 (同じ深さは宣言順) に並べる。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "添字は 0..meshes.len() と、コンパイルで ID から解決したマスクのメッシュ (いつも範囲内)"
+)]
 fn mask_order(meshes: &[CompiledMesh]) -> Vec<u32> {
     let mut used = vec![false; meshes.len()];
     for r in meshes.iter().flat_map(|m| &m.masks) {

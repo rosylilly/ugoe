@@ -68,18 +68,23 @@ impl DynamicOffsets {
     ///
     /// 回転デフォーマ以外では評価に使われない。
     pub fn add_angle(&mut self, deformer: usize, degrees: f32) {
-        if let Some(a) = self.angle.get_mut(deformer) {
+        if let (Some(a), Some(target)) =
+            (self.angle.get_mut(deformer), self.targets.get_mut(deformer))
+        {
             *a += degrees;
-            self.targets[deformer] = true;
+            *target = true;
         }
     }
 
     /// デフォーマ `deformer` の原点のワールド位置を `offset` (キャンバス座標) だけずらす。
     /// 範囲外なら何もしない。回転デフォーマ以外では評価に使われない。
     pub fn add_origin(&mut self, deformer: usize, offset: Vec2) {
-        if let Some(o) = self.origin.get_mut(deformer) {
+        if let (Some(o), Some(target)) = (
+            self.origin.get_mut(deformer),
+            self.targets.get_mut(deformer),
+        ) {
             *o += offset;
-            self.targets[deformer] = true;
+            *target = true;
         }
     }
 
@@ -90,8 +95,11 @@ impl DynamicOffsets {
         if len == 0 {
             return None;
         }
-        self.targets[deformer] = true;
-        let v = &mut self.warp[deformer];
+        let (Some(target), Some(v)) = (self.targets.get_mut(deformer), self.warp.get_mut(deformer))
+        else {
+            return None;
+        };
+        *target = true;
         if v.is_empty() {
             *v = vec![Vec2::ZERO; len];
         }
@@ -102,7 +110,7 @@ impl DynamicOffsets {
     /// 最初の呼び出しでバッファを確保する。範囲外なら `None`。
     pub fn mesh_positions_mut(&mut self, mesh: usize) -> Option<&mut [Vec2]> {
         let len = *self.mesh_len.get(mesh)?;
-        let v = &mut self.mesh[mesh];
+        let v = self.mesh.get_mut(mesh)?;
         if v.len() != len {
             *v = vec![Vec2::ZERO; len];
         }

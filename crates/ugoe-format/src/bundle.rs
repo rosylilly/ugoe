@@ -259,8 +259,7 @@ pub(crate) fn normal_map_of<'a>(
     texture: usize,
 ) -> Option<&'a TextureData> {
     textures.get(texture)?.normal_map.as_ref()?;
-    let index = textures[..texture]
-        .iter()
+    let index = (textures.iter().take(texture))
         .filter(|t| t.normal_map.is_some())
         .count();
     normal_maps.get(index)
@@ -772,7 +771,7 @@ impl<'a> Payloads<'a> {
 /// ヘッダとチャンク表を読み、各チャンクの範囲を検査する。
 pub(crate) fn read_table(bytes: &[u8]) -> Result<Vec<Entry>, FormatError> {
     let header = bytes.get(..HEADER_LEN).ok_or(FormatError::Truncated)?;
-    if header[0..4] != MAGIC {
+    if !header.starts_with(&MAGIC) {
         return Err(FormatError::BadMagic);
     }
     let version = read_u32(header, 4)?;
