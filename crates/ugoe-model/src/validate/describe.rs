@@ -1,6 +1,8 @@
 //! 検証エラーの列を利用者に見せる文にする (`docs/spec/model.md#検証エラーの文`)。
 
-use std::fmt::Write as _;
+use alloc::format;
+use alloc::string::String;
+use core::fmt::Write as _;
 
 use super::ValidationError;
 
@@ -31,6 +33,7 @@ pub fn describe_errors(subject: &str, errors: &[ValidationError]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
 
     fn error(i: usize) -> ValidationError {
         ValidationError::DuplicateId {

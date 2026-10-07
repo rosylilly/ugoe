@@ -3,6 +3,11 @@
 //! モーションと表情はモデルと照らさない (対象が存在しないカーブと項目は効かないだけ)。
 //! 値の場所 (`field`) はモーション・表情の中の場所 (`duration`、`curves[0].segments[1].to.t` など)。
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use super::{ValidationError, check_finite, check_non_negative};
 use crate::expression::Expression;
 use crate::motion::{Motion, Point, Segment};
@@ -134,6 +139,7 @@ mod tests {
     use crate::ParamId;
     use crate::expression::{ExpressionOp, ExpressionParameter};
     use crate::motion::{Curve, CurveTarget, MotionEvent};
+    use alloc::borrow::ToOwned;
 
     fn point(t: f32, v: f32) -> Point {
         Point { t, v }

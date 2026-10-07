@@ -4,8 +4,9 @@
 //! ランタイムはロード時に ID を連番インデックスへ解決する。
 //! 型パラメータ `T` は ID の種類 (パラメータ / パーツ / メッシュ …) を区別するための幽霊型。
 
-use std::fmt;
-use std::marker::PhantomData;
+use alloc::string::String;
+use core::fmt;
+use core::marker::PhantomData;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -75,20 +76,20 @@ impl<T> PartialEq<Id<T>> for &str {
     }
 }
 
-impl<T> std::hash::Hash for Id<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl<T> core::hash::Hash for Id<T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.value.hash(state);
     }
 }
 
 impl<T> PartialOrd for Id<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<T> Ord for Id<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.value.cmp(&other.value)
     }
 }
@@ -145,7 +146,7 @@ impl<T> schemars::JsonSchema for Id<T> {
         true
     }
 
-    fn schema_name() -> std::borrow::Cow<'static, str> {
+    fn schema_name() -> alloc::borrow::Cow<'static, str> {
         "Id".into()
     }
 

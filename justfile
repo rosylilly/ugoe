@@ -55,9 +55,10 @@ test *args:
 # CI のジョブのまとまり (グループ) の検査: すべてのクレートがどれか 1 つのグループに入っているか (scripts/ci-groups.mjs)。
 # 別のターゲットの検査 (scripts/cross-check.mjs) の定義のクレートがワークスペースにあるかも見る
 groups:
-    @node --test --test-reporter=dot scripts/ci-groups.test.mjs scripts/cross-check.test.mjs
+    @node --test --test-reporter=dot scripts/ci-groups.test.mjs scripts/cross-check.test.mjs scripts/nostd-check.test.mjs
     @node scripts/ci-groups.mjs check
     @node scripts/cross-check.mjs check
+    @node scripts/nostd-check.mjs check
 
 # グループの一覧は `node scripts/ci-groups.mjs list`。CI の rust (<グループ>) ジョブと同じ検査。
 # lint-group と test-group は bash の構文を使うので、Windows では Git Bash か WSL で実行する。
@@ -189,6 +190,12 @@ vcam-check: (cross-check "vcam")
 wasm-check:
     cargo clippy -p ugoe-wasm --target wasm32-unknown-unknown -- -D warnings
     RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc -p ugoe-wasm --no-deps --target wasm32-unknown-unknown
+
+# ランタイム層のクレートが std 無し (no_std + alloc) でビルドできるか。aarch64-unknown-none で `--no-default-features` の clippy
+# (対象は scripts/nostd-check.mjs の NOSTD_CRATES。ADR 0031)。名前を省けばすべて: `just nostd-check`、`just nostd-check ugoe-model`。
+# ターゲットが無ければ `rustup target add` の入れ方を出して止まる。`just ci` には含めない (CI では rust (runtime) のジョブ)。ランタイム層を触ったら実行する
+nostd-check *names:
+    @node scripts/nostd-check.mjs run {{names}}
 
 # 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
 # (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)

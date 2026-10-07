@@ -1,5 +1,7 @@
 //! ポーズ (排他的なパーツ切り替え) の設定データ。再生は `ugoe-motion`、仕様は `docs/spec/model.md#ポーズ` と `docs/spec/motion.md#エフェクト`。
 
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 use crate::PartId;
@@ -54,6 +56,7 @@ pub struct PoseEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn missing_fields_use_defaults() {

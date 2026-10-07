@@ -174,6 +174,7 @@ pub fn range(id: &str) -> Option<(f32, f32, f32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
 
     #[test]
     fn ids_are_unique_except_shared_smiles() {

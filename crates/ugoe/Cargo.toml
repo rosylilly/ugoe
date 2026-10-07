@@ -13,14 +13,14 @@ keywords = ["animation", "rigging", "vtuber", "puppet", "2d"]
 categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
-ugoe-core.workspace = true
+ugoe-core = { workspace = true, features = ["std"] }
 ugoe-format.workspace = true
-ugoe-model.workspace = true
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-motion.workspace = true
 ugoe-physics.workspace = true
 ugoe-render = { workspace = true, optional = true }
 ugoe-runtime.workspace = true
-thiserror.workspace = true
+thiserror = { workspace = true, features = ["std"] }
 
 [features]
 default = ["render"]
@@ -28,8 +28,8 @@ default = ["render"]
 render = ["dep:ugoe-render"]
 
 [dev-dependencies]
-serde.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

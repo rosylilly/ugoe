@@ -1,5 +1,11 @@
 //! 物理の設定の検査。検査項目は `docs/spec/model.md#物理の検証`。
 
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use super::{
     Refs, ValidationError, check_finite, check_non_negative, check_vec2, collect_ids,
     warp_point_count,

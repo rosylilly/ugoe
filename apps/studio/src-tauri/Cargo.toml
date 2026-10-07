@@ -19,14 +19,14 @@ tauri-build.workspace = true
 getrandom.workspace = true
 # 仮想カメラの背景の画像 (WebP) のデコード (T0808。利用者の判断 2026-10-02)。
 image-webp.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 # macOS で出力ウィンドウの背景を透過するには macos-private-api が要る (tauri.conf.json の macOSPrivateApi)
 tauri = { workspace = true, features = ["macos-private-api"] }
 tauri-plugin-dialog.workspace = true
 tauri-plugin-global-shortcut.workspace = true
 tauri-plugin-os.workspace = true
-thiserror.workspace = true
+thiserror = { workspace = true, features = ["std"] }
 # 操作 API の WebSocket のフレーム (T0805。HTTP の要求と握手の検査は自前。利用者の決定 2026-10-02)。
 tungstenite.workspace = true
 ugoe = { workspace = true, features = ["render"] }

@@ -14,15 +14,15 @@ clap.workspace = true
 getrandom.workspace = true
 # `.mcpb` (zip) の deflate (ugoe-psd が使っているもので、新しい依存ではない)。
 miniz_oxide.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
 ugoe-ai.workspace = true
 ugoe-editor-core.workspace = true
 ugoe-format.workspace = true
 ugoe-fs.workspace = true
 ugoe-headless.workspace = true
-ugoe-model.workspace = true
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-psd.workspace = true
 # `--editor` の中継がエディタへ送る HTTP のクライアント (ugoe-ai が使っているもので、新しい依存ではない)。
 ureq.workspace = true

@@ -8,13 +8,13 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-thiserror.workspace = true
-ugoe-core.workspace = true
-ugoe-model.workspace = true
+thiserror = { workspace = true, features = ["std"] }
+ugoe-core = { workspace = true, features = ["std"] }
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-runtime.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

@@ -1,10 +1,15 @@
 //! モデルの構造的整合性チェック。ランタイム・エディタ・AI 出力の受け入れ時に使う。
 //! 検査項目は `docs/spec/model.md#検証`。
 
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::hash::Hash;
+use alloc::borrow::ToOwned;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::fmt::Display;
 
 use ugoe_core::Vec2;
 
@@ -680,13 +685,13 @@ pub fn validate(model: &Model) -> Vec<ValidationError> {
 /// ポーズの検査: パーツの参照、パーツの重複、フェード時間。
 fn check_pose(
     model: &Model,
-    parts: &HashMap<&crate::PartId, usize>,
+    parts: &BTreeMap<&crate::PartId, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     let pose = &model.pose;
     check_non_negative("pose.fade_duration", pose.fade_duration, errors);
-    let mut seen = HashSet::new();
-    let mut reported = HashSet::new();
+    let mut seen = BTreeSet::new();
+    let mut reported = BTreeSet::new();
     for (index, group) in pose.groups.iter().enumerate() {
         let id = index.to_string();
         let refs = Refs {
@@ -694,7 +699,7 @@ fn check_pose(
             id: &id,
         };
         for entry in &group.entries {
-            let targets = std::iter::once(("part", &entry.part))
+            let targets = core::iter::once(("part", &entry.part))
                 .chain(entry.links.iter().map(|link| ("links", link)));
             for (field, part) in targets {
                 refs.check(parts, field, "part", part, errors);
@@ -728,7 +733,7 @@ pub fn validate_effects(effects: &Effects, model: &Model) -> Vec<ValidationError
 /// エフェクトの検査: 対象パラメータの参照と時間・周期の値。
 fn check_effects(
     effects: &Effects,
-    params: &HashMap<&crate::ParamId, usize>,
+    params: &BTreeMap<&crate::ParamId, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     let blink = &effects.eye_blink;
@@ -794,13 +799,13 @@ fn check_positive(field: &str, value: f32, errors: &mut Vec<ValidationError>) {
 }
 
 /// ID → 配列インデックスの表を作り、重複 ID を報告する (重複時は最初の要素を採る)。
-fn collect_ids<'a, K: Eq + Hash + Display + 'a>(
+fn collect_ids<'a, K: Ord + Display + 'a>(
     kind: &'static str,
     ids: impl Iterator<Item = &'a K>,
     errors: &mut Vec<ValidationError>,
-) -> HashMap<&'a K, usize> {
-    let mut map = HashMap::new();
-    let mut reported = HashSet::new();
+) -> BTreeMap<&'a K, usize> {
+    let mut map = BTreeMap::new();
+    let mut reported = BTreeSet::new();
     for (index, id) in ids.enumerate() {
         if map.contains_key(id) {
             if reported.insert(id) {
@@ -824,9 +829,9 @@ struct Refs<'a> {
 
 impl Refs<'_> {
     /// `target` が `table` にあればそのインデックスを返し、なければエラーを積む。
-    fn check<K: Eq + Hash + Display>(
+    fn check<K: Ord + Display>(
         &self,
-        table: &HashMap<&K, usize>,
+        table: &BTreeMap<&K, usize>,
         field: &'static str,
         target_kind: &'static str,
         target: &K,
@@ -852,7 +857,7 @@ impl Refs<'_> {
 fn check_grid<T>(
     refs: &Refs<'_>,
     path: &str,
-    params: &HashMap<&crate::ParamId, usize>,
+    params: &BTreeMap<&crate::ParamId, usize>,
     same_kind: &dyn Fn(&str) -> bool,
     grid: &KeyformGrid<T>,
     errors: &mut Vec<ValidationError>,
@@ -866,7 +871,7 @@ fn check_grid<T>(
             actual: grid.keyforms.len(),
         });
     }
-    let mut seen = HashSet::new();
+    let mut seen = BTreeSet::new();
     for (b, binding) in grid.bindings.iter().enumerate() {
         refs.check(
             params,
@@ -974,7 +979,7 @@ fn check_grid<T>(
 
 /// ブレンドシェイプ格子の検査に使う、パラメータの種類の表。
 struct Kinds<'a> {
-    params: &'a HashMap<&'a crate::ParamId, usize>,
+    params: &'a BTreeMap<&'a crate::ParamId, usize>,
     parameters: &'a [Parameter],
     /// 要素がブレンドシェイプ格子を持てるか (メッシュ・ワープ・回転デフォーマ)。
     supported: bool,
@@ -982,7 +987,7 @@ struct Kinds<'a> {
 
 impl<'a> Kinds<'a> {
     fn new(
-        params: &'a HashMap<&'a crate::ParamId, usize>,
+        params: &'a BTreeMap<&'a crate::ParamId, usize>,
         parameters: &'a [Parameter],
         supported: bool,
     ) -> Self {
@@ -1033,7 +1038,7 @@ fn check_blend_shapes<T>(
         errors.push(invalid(0, "is not supported on this element"));
         return;
     }
-    let mut earlier = HashSet::new();
+    let mut earlier = BTreeSet::new();
     let base = keyforms_path(refs);
     for (index, shape) in grid.blend_shapes.iter().enumerate() {
         let path = format!("{base}.blend_shapes[{index}]");
@@ -1050,7 +1055,7 @@ fn check_blend_shapes<T>(
             }
         }
         // 同じ格子の中の重複は `check_grid` が報告するので、前の格子との重複だけを見る。
-        let mut reported = HashSet::new();
+        let mut reported = BTreeSet::new();
         for binding in &shape.bindings {
             if earlier.contains(&binding.parameter) && reported.insert(&binding.parameter) {
                 errors.push(ValidationError::DuplicateBinding {
@@ -1146,12 +1151,12 @@ fn check_depth(
 }
 
 /// ミラーの参照先が存在し、対が双方向であること (自分自身との対は常に正しい)。
-fn check_mirrors<T, K: Eq + Hash + Display>(
+fn check_mirrors<T, K: Ord + Display>(
     kind: &'static str,
     items: &[T],
     id_of: impl Fn(&T) -> &K,
     mirror_of: impl Fn(&T) -> Option<&K>,
-    table: &HashMap<&K, usize>,
+    table: &BTreeMap<&K, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     for item in items {
@@ -1180,12 +1185,12 @@ fn check_mirrors<T, K: Eq + Hash + Display>(
 }
 
 /// 親をたどる連鎖に循環があれば、循環ごとに 1 件報告する。未定義の親は参照検査に任せて無視する。
-fn check_cycles<T, K: Eq + Hash + Display>(
+fn check_cycles<T, K: Ord + Display>(
     kind: &'static str,
     items: &[T],
     id_of: impl Fn(&T) -> &K,
     parent_of: impl Fn(&T) -> Option<&K>,
-    table: &HashMap<&K, usize>,
+    table: &BTreeMap<&K, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     #[derive(Clone, Copy, PartialEq)]
@@ -1231,7 +1236,7 @@ fn check_cycles<T, K: Eq + Hash + Display>(
 /// 同じ循環を重複した参照でたどった場合は 1 件にまとめる。
 fn check_mask_cycles(
     model: &Model,
-    table: &HashMap<&crate::MeshId, usize>,
+    table: &BTreeMap<&crate::MeshId, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     #[derive(Clone, Copy, PartialEq)]
@@ -1251,7 +1256,7 @@ fn check_mask_cycles(
         })
         .collect();
     let mut state = vec![State::Unvisited; edges.len()];
-    let mut reported = HashSet::new();
+    let mut reported = BTreeSet::new();
     for start in 0..edges.len() {
         if state[start] != State::Unvisited {
             continue;

@@ -14,10 +14,10 @@ categories = ["rendering", "graphics", "game-development"]
 
 [dependencies]
 bytemuck.workspace = true
-thiserror.workspace = true
+thiserror = { workspace = true, features = ["std"] }
 tracing.workspace = true
-ugoe-core.workspace = true
-ugoe-model.workspace = true
+ugoe-core = { workspace = true, features = ["std"] }
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-runtime.workspace = true
 wgpu.workspace = true
 
@@ -35,7 +35,7 @@ gpu-tests = []
 naga = { workspace = true, features = ["glsl-out"] }
 png.workspace = true
 pollster.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 # png: 描画の例の PNG のテクスチャを参照実装の読み込みで読む (tests/spec_render.rs)。
 ugoe-format = { workspace = true, features = ["png"] }

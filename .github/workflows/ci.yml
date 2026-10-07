@@ -145,6 +145,12 @@ jobs:
       - name: ugoe without render
         if: matrix.group == 'runtime'
         run: just sdk-no-render-check
+      # ランタイム層のクレートが std 無し (aarch64-unknown-none) でビルドできるか (`just nostd-check`。ADR 0031、T0179)
+      - name: no_std
+        if: matrix.group == 'runtime'
+        run: |
+          node scripts/nostd-check.mjs targets | xargs rustup target add
+          just nostd-check
       # wasm32 の clippy と、wasm32 でだけコンパイルするコード (`WebPuppet` など) の rustdoc の警告 (T0033)
       - name: wasm32
         if: matrix.group == 'bindings'

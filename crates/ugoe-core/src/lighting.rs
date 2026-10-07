@@ -5,6 +5,8 @@
 //! GPU に依存しない組み込み先 (C ABI・GDExtension) も同じ型を使えるように、ここに置く (T0166)。
 //! `ugoe` は `ugoe::lighting`、`ugoe-render` は `ugoe_render::{Light, Lighting, MAX_LIGHTS}` として再エクスポートする。
 
+use alloc::vec::Vec;
+
 use crate::Rgb;
 
 /// 参照レンダラが 1 フレームに使う光源の数の上限。使える光源のうち、これより後ろのものは使わない。

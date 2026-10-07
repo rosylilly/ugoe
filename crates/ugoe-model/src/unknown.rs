@@ -4,6 +4,10 @@
 //! 新しい版のファイルを読むと、知らないタグは `Unknown` になる。`Unknown` は書き出せないので、
 //! 読み込み時の警告と、書き出し前の検査に使う。返すのは値の場所 (`meshes[Face].blend` など)。
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::avatar::{
     AvatarPermission, AvatarProfile, CommercialUsage, CreditNotation, Modification, TrackingSource,
 };

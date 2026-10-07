@@ -1,6 +1,9 @@
 //! テスト・サンプル用の小さなモデル。下流クレートのテストはここを共通の入力に使う。
 //! 新しい機能をテストしたいときは、ここに関数を追加する (既存フィクスチャの挙動は変えない)。
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 use ugoe_core::{Rgb, Vec2};
 
 use crate::avatar::{AvatarMeta, AvatarProfile};
@@ -1022,10 +1025,11 @@ pub fn smooth_arc() -> Model {
     );
     let keys = [-30.0, 0.0, 30.0];
     let on_arc = |angle: f32| {
-        let (sin, cos) = angle.to_radians().sin_cos();
+        // f32::sin_cos は std にしかないので glam を通す (x が cos、y が sin)
+        let dir = Vec2::from_angle(angle.to_radians());
         Vec2::new(
-            128.0 + SMOOTH_ARC_RADIUS * sin,
-            128.0 - SMOOTH_ARC_RADIUS * cos,
+            128.0 + SMOOTH_ARC_RADIUS * dir.y,
+            128.0 - SMOOTH_ARC_RADIUS * dir.x,
         )
     };
     let square = |c: Vec2, dy: f32| {

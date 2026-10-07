@@ -13,7 +13,7 @@ name = "ugoe_studio_vcam"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-thiserror.workspace = true
+thiserror = { workspace = true, features = ["std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

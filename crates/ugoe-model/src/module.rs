@@ -4,7 +4,9 @@
 //! スロットの名前とパラメータの ID だけに依存する部分的なモデルとして作る。
 //! 本体とモジュールの合成は `ugoe_runtime::compose` が行う。
 
-use std::collections::BTreeSet;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 use ugoe_core::Id;
@@ -252,7 +254,7 @@ impl Module {
 /// 格子 (とブレンドシェイプ格子) の軸と、深度からの回転の設定が参照するパラメータ。
 fn grid_parameters<T>(grid: &crate::KeyformGrid<T>) -> Vec<&ParamId> {
     let mut found = Vec::new();
-    for g in std::iter::once(grid).chain(&grid.blend_shapes) {
+    for g in core::iter::once(grid).chain(&grid.blend_shapes) {
         found.extend(g.bindings.iter().map(|b| &b.parameter));
         if let Some(crate::KeyformInference::DepthRotation(rotation)) = &g.inference {
             found.extend(rotation.yaw.iter().chain(&rotation.pitch));

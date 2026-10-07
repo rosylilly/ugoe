@@ -1,7 +1,10 @@
 //! 着せ替えのスロットとモジュールの検査。検査項目は `docs/spec/model.md#検証` と
 //! `docs/spec/modules.md#検証`。
 
-use std::collections::{HashMap, HashSet};
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use ugoe_core::Vec2;
 
@@ -13,15 +16,15 @@ use crate::{DeformerId, MeshId, Model, Module, ParamId, Parameter, PartId};
 /// `Model::slots` の検査: ID の一意性、参照先の存在、描画順の範囲。
 pub(super) fn check_slots(
     model: &Model,
-    params: &HashMap<&ParamId, usize>,
-    parts: &HashMap<&PartId, usize>,
-    deformers: &HashMap<&DeformerId, usize>,
-    meshes: &HashMap<&MeshId, usize>,
+    params: &BTreeMap<&ParamId, usize>,
+    parts: &BTreeMap<&PartId, usize>,
+    deformers: &BTreeMap<&DeformerId, usize>,
+    meshes: &BTreeMap<&MeshId, usize>,
     errors: &mut Vec<ValidationError>,
 ) {
     collect_ids("slot", model.slots.iter().map(|s| &s.id), errors);
     // スロットの `pose_parts` は、ポーズの要素 (リンクは含めない) のパーツでなければならない。
-    let pose_entries: HashMap<&PartId, usize> = model
+    let pose_entries: BTreeMap<&PartId, usize> = model
         .pose
         .groups
         .iter()
@@ -104,7 +107,7 @@ pub fn validate_module(module: &Module) -> Vec<ValidationError> {
     if !module.physics.is_empty() {
         // 本体の衝突体 (スロットの `colliders`) への参照は合成時に検査する。同じ ID があれば
         // モジュールの衝突体を指すので、モジュールにない ID だけを除く。
-        let own: HashSet<&str> = module
+        let own: BTreeSet<&str> = module
             .physics
             .colliders
             .iter()
@@ -140,6 +143,8 @@ mod tests {
         dress_module, dress_up_base, jacket_module, long_hair_module, posed_dress_up_base,
         sleeves_module,
     };
+    use alloc::string::String;
+    use alloc::vec;
 
     #[test]
     fn fixtures_are_valid() {

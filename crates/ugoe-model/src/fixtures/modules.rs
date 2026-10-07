@@ -1,5 +1,8 @@
 //! 着せ替え (T0111) のフィクスチャ: スロットを持つ本体と、そこに取り付けるモジュール。
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 use ugoe_core::Vec2;
 
 use super::{

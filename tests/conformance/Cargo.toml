@@ -12,14 +12,14 @@ anyhow.workspace = true
 clap.workspace = true
 # 8 ビットの RGBA ではない PNG のテクスチャを書く (16 ビット・パレット。T0473)
 png.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
 ugoe.workspace = true
 # テクスチャのデコードの結果を比べる (`ugoe_format::image`。T0466)
 ugoe-format = { workspace = true, features = ["png"] }
 ugoe-headless.workspace = true
-ugoe-model.workspace = true
+ugoe-model = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

@@ -43,6 +43,8 @@ impl ValidationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::String;
+    use alloc::vec;
 
     #[test]
     fn codes_are_fixed() {

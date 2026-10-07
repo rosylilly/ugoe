@@ -1,6 +1,9 @@
 //! モーション (時間軸アニメーション) データ。再生は `ugoe-motion`、仕様は `docs/spec/motion.md`。
 
-use std::fmt;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};

@@ -9,6 +9,7 @@
 
 ## 守ること
 
+- `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない (`just nostd-check`。[規則](../../docs/portability.md#ランタイム層が守る制約-移植性のため))
 - serde の derive 以外の、シリアライズ形式への依存を持たない (例外: コード生成用の ts-rs / schemars は feature `ts` / `schema` の裏に置く。[型の生成](../../docs/editor.md#型の生成))
 - ドメインの概念 (パラメータやメッシュなど) を置かない。それは `ugoe-model` に置く (光源の型は上の理由による例外)
 - `Id<T>` は種類 (`T`) の違う ID どうしを比べられない。文字列 (`str`・`&str`) とは両向きに比べられる (`id == "AngleX"`)。

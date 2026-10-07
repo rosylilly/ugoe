@@ -5,8 +5,16 @@
 //!
 //! 例外として、コード生成 (TypeScript の型と JSON Schema) のための実装を feature `ts` /
 //! `schema` の裏に置く。ランタイムはこれらを有効にしない (`docs/editor.md#型の生成`)。
+//!
+//! `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない
+//! (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。
+//! ただしコード生成の feature (`ts`・`schema`) を有効にしたときだけは std の prelude を使う
+//! (ts-rs と schemars の derive が生成するコードが `String`・`format!` などを prelude から使うため。ツール層だけが有効にする)。
 
+#![cfg_attr(not(any(feature = "ts", feature = "schema")), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
 
 #[cfg(any(feature = "ts", feature = "schema"))]
 pub mod codegen;

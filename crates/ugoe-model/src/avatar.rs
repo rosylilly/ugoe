@@ -4,6 +4,9 @@
 //! 準拠の検査は [`check`] ([`check::check_profile`])。トラッキングの値からパラメータを計算する処理は
 //! このクレートには置かない (`docs/spec/avatar-profile.md#フェイストラッキングとの対応`)。
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 pub mod check;
 
 use serde::{Deserialize, Serialize};
@@ -462,6 +465,7 @@ pub struct AvatarHitArea {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn permissions_default_to_most_restrictive() {

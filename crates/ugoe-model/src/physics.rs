@@ -1,6 +1,8 @@
 //! 物理演算 (振り子チェーン) の設定データ。アルゴリズムは `ugoe-physics`、仕様は `docs/spec/physics.md`。
 
-use std::fmt;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
@@ -415,6 +417,8 @@ pub struct NormalizationRange {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
+    use alloc::vec;
 
     use serde_json::json;
 

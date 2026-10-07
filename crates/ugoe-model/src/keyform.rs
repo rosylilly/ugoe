@@ -2,6 +2,10 @@
 //! 詳細な数式は `docs/spec/evaluation.md` を参照。
 //! セルの由来と推定の設定 (オーサリング用) は `docs/spec/keyform-inference.md`。
 
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 use ugoe_core::Vec2;
 

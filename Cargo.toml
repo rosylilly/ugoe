@@ -19,16 +19,17 @@ license = "MIT"
 # crates.io に公開するクレート (publish = true) は、path に加えて version を書く (公開したパッケージでは version だけが残る)。
 # version は [workspace.package] の version と揃える (`node scripts/crates.mjs sync`。docs/release.md)。
 # ugoe の既定の feature (render = wgpu) は切ってある。参照レンダラを使うクレートは `features = ["render"]` を書く (C ABI・GDExtension に wgpu を入れないため。T0166)。
+# no_std に対応したクレート (ugoe-core・ugoe-model) の既定の feature (std) も切ってある。使う側で `features = ["std"]` を書く (ADR 0031)。
 ugoe = { path = "crates/ugoe", version = "0.0.0", default-features = false }
 ugoe-ai = { path = "crates/ugoe-ai" }
-ugoe-core = { path = "crates/ugoe-core", version = "0.0.0" }
+ugoe-core = { path = "crates/ugoe-core", version = "0.0.0", default-features = false }
 ugoe-editor-core = { path = "crates/ugoe-editor-core" }
 ugoe-format = { path = "crates/ugoe-format", version = "0.0.0" }
 ugoe-fs = { path = "crates/ugoe-fs" }
 ugoe-headless = { path = "crates/ugoe-headless" }
 ugoe-mcp = { path = "crates/ugoe-mcp" }
 ugoe-mesher = { path = "crates/ugoe-mesher" }
-ugoe-model = { path = "crates/ugoe-model", version = "0.0.0" }
+ugoe-model = { path = "crates/ugoe-model", version = "0.0.0", default-features = false }
 ugoe-motion = { path = "crates/ugoe-motion", version = "0.0.0" }
 ugoe-physics = { path = "crates/ugoe-physics", version = "0.0.0" }
 ugoe-psd = { path = "crates/ugoe-psd" }
@@ -37,6 +38,9 @@ ugoe-rigging = { path = "crates/ugoe-rigging" }
 ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0" }
 ugoe-studio-vcam = { path = "apps/studio/vcam" }
 # --- external ---
+# ランタイム層が使う依存 (glam・ruzstd・serde・serde_json・thiserror) は既定の feature を切ってある。メンバーの
+# `default-features = false` はここで切らないと効かないため (docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)。
+# 使う側で `features = ["std"]` (ruzstd は `["hash", "std"]`) を書く。no_std に対応したランタイム層のクレートは、自分の feature `std` から有効にする。
 anyhow = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 base64 = "0.22"
@@ -50,7 +54,7 @@ dbus-secret-service = "4"
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 encoding_rs = "0.8"
 getrandom = "0.3"
-glam = { version = "0.33", features = ["serde", "bytemuck"] }
+glam = { version = "0.33", default-features = false, features = ["all-types", "bytemuck", "serde"] }
 gtk = "0.18"
 image-webp = "0.2"
 insta = { version = "1", features = ["json"] }
@@ -69,10 +73,10 @@ objc2-system-extensions = { version = "0.3", default-features = false, features 
 png = "0.18"
 pollster = "1"
 rmp-serde = "1"
-ruzstd = "0.9"
+ruzstd = { version = "0.9", default-features = false }
 schemars = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_json = { version = "1", default-features = false }
 spade = "2"
 tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
@@ -82,7 +86,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 tauri-plugin-single-instance = "2"
 tempfile = "3"
-thiserror = "2"
+thiserror = { version = "2", default-features = false }
 tracing = "0.1"
 ts-rs = "12"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }

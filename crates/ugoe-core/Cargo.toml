@@ -12,17 +12,21 @@ readme = "README.md"
 keywords = ["ugoe", "animation", "rigging", "2d", "math"]
 categories = ["graphics", "game-development", "mathematics"]
 
-# コード生成用 (T0603)。ランタイムは使わないので既定では無効。ugoe-editor-core が有効にする。
 [features]
+default = ["std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = ["glam/std", "serde/std"]
+# コード生成用 (T0603)。ランタイムは使わないので既定では無効。ugoe-editor-core が有効にする。
 # schemars::JsonSchema を実装する (AI ツール定義の JSON Schema)
-schema = ["dep:schemars"]
+schema = ["std", "dep:schemars"]
 # ts_rs::TS を実装する (エディタの TypeScript の型)
-ts = ["dep:ts-rs"]
+ts = ["std", "dep:ts-rs"]
 
 [dependencies]
-glam.workspace = true
+# std が無いときの数学関数は libm (std があるときは std のものを使う。T0180 で常に libm にする)
+glam = { workspace = true, features = ["nostd-libm"] }
 schemars = { workspace = true, optional = true }
-serde.workspace = true
+serde = { workspace = true, features = ["alloc"] }
 ts-rs = { workspace = true, optional = true }
 
 [lints]

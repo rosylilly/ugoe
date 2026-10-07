@@ -3,6 +3,9 @@
 //! `Default` は「対象パラメータなし (何もしない)」で、時間などの値だけ仕様の既定値を持つ。
 //! 標準パラメータ (`crate::standard`) を対象にした推奨設定は `standard()` で作る。
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 use crate::ParamId;

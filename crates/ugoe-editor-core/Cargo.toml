@@ -10,9 +10,9 @@ license.workspace = true
 [dependencies]
 png.workspace = true
 schemars.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
 ts-rs.workspace = true
 # コード生成 (TypeScript の型と JSON Schema) のための実装を有効にする
 ugoe-core = { workspace = true, features = ["schema", "ts"] }

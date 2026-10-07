@@ -10,8 +10,8 @@ license.workspace = true
 [dependencies]
 encoding_rs.workspace = true
 miniz_oxide.workspace = true
-thiserror.workspace = true
-ugoe-core.workspace = true
+thiserror = { workspace = true, features = ["std"] }
+ugoe-core = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tempfile.workspace = true

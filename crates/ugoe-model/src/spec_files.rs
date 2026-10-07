@@ -9,6 +9,12 @@
 //! - 生成物は公開仕様の一部なので CC BY 4.0。`$comment` にその旨を書く。
 //! - 文字列の enum は `oneOf` の `const` の並びの形に揃える (`string_enum_to_one_of`)。
 
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+
 use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema};

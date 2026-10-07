@@ -9,8 +9,8 @@ license.workspace = true
 
 [dependencies]
 spade.workspace = true
-thiserror.workspace = true
-ugoe-core.workspace = true
+thiserror = { workspace = true, features = ["std"] }
+ugoe-core = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

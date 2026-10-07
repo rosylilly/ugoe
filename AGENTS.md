@@ -83,6 +83,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの)。アプリが同梱するライセンスの表記 (`third-party-notices.txt`) が依存と食い違わないかも検査する ([docs/release.md](docs/release.md#同梱物のライセンスの表記)) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
+| `just nostd-check` | ランタイム層のクレートが `std` 無し (`aarch64-unknown-none`) でビルドできるか (ランタイム層を触ったら実行。対象は `scripts/nostd-check.mjs`、規則は [docs/portability.md](docs/portability.md#ランタイム層が守る制約-移植性のため)) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
 | `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |

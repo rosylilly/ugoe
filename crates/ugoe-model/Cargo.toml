@@ -12,16 +12,19 @@ readme = "README.md"
 keywords = ["ugoe", "animation", "rigging", "2d", "model"]
 categories = ["graphics", "game-development", "data-structures"]
 
-# コード生成用 (T0603)。ランタイムは使わないので既定では無効。ugoe-editor-core が有効にする。
 [features]
+default = ["std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = ["serde/std", "thiserror/std", "ugoe-core/std"]
+# コード生成用 (T0603)。ランタイムは使わないので既定では無効。ugoe-editor-core が有効にする。
 # schemars::JsonSchema を実装する (AI ツール定義の JSON Schema)
-schema = ["dep:schemars", "dep:serde_json", "ugoe-core/schema"]
+schema = ["std", "dep:schemars", "dep:serde_json", "serde_json/std", "ugoe-core/schema"]
 # ts_rs::TS を実装する (エディタの TypeScript の型)
-ts = ["dep:ts-rs", "ugoe-core/ts"]
+ts = ["std", "dep:ts-rs", "ugoe-core/ts"]
 
 [dependencies]
 schemars = { workspace = true, optional = true }
-serde.workspace = true
+serde = { workspace = true, features = ["alloc"] }
 serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 ts-rs = { workspace = true, optional = true }
@@ -29,7 +32,7 @@ ugoe-core.workspace = true
 
 [dev-dependencies]
 rmp-serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["std"] }
 
 [[example]]
 name = "spec_files"

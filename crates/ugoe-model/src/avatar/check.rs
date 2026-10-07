@@ -4,7 +4,13 @@
 //! 構造の検証 ([`crate::validate::validate`]) とは別に呼ぶ。`avatar` はランタイムが読み飛ばせるデータ
 //! (機能 `avatar.profile`) なので、ここで見つけた問題はモデルの読み込みを拒否する理由にしない。
 
-use std::collections::HashSet;
+use alloc::borrow::ToOwned;
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use super::{
     ARKIT_BLEND_SHAPES, AvatarProfile, HEAD_INPUTS, LEVEL_1_PARAMETERS, LEVEL_2_PARAMETERS,
@@ -381,8 +387,8 @@ fn check_look_at(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<Profile
 
 /// 当たり判定の対応の検査: 名前の重複と `HitArea` の参照。
 fn check_hit_areas(model: &Model, avatar: &AvatarProfile, issues: &mut Vec<ProfileIssue>) {
-    let mut seen = HashSet::new();
-    let mut reported = HashSet::new();
+    let mut seen = BTreeSet::new();
+    let mut reported = BTreeSet::new();
     for (index, entry) in avatar.hit_areas.iter().enumerate() {
         if !seen.insert(&entry.name) && reported.insert(&entry.name) {
             issues.push(ProfileIssue::DuplicateHitAreaName {

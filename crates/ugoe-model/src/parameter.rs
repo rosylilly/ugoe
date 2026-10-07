@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use serde::{Deserialize, Serialize};
 use ugoe_core::Id;
 
@@ -33,7 +35,7 @@ pub struct Parameter {
     /// 中継用 (内部) のパラメータか。物理のリグの間で値を受け渡すためのもので
     /// (`docs/spec/physics.md#リグの順序と中継`)、トラッキングは書き込まず、
     /// ビューアなどのアプリの一覧では既定で隠す (`docs/spec/model.md#パラメータ`)。省略時は `false`。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub internal: bool,
 }

@@ -16,15 +16,15 @@ categories = ["graphics", "game-development", "encoding", "parser-implementation
 bcdec_rs = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 rmp-serde.workspace = true
-ruzstd.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-ugoe-model.workspace = true
+ruzstd = { workspace = true, features = ["hash", "std"] }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
+ugoe-model = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 png.workspace = true
-ugoe-core.workspace = true
+ugoe-core = { workspace = true, features = ["std"] }
 # 結合テスト (tests/spec_bundles.rs) で `image` モジュールを使うために、自分の `png` feature を有効にする
 ugoe-format = { path = ".", features = ["png"] }
 # 互換性テスト (tests/compat.rs) で、未知の物理の出力を無視することを確かめる

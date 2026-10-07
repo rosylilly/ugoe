@@ -13,8 +13,8 @@ keywords = ["ugoe", "animation", "motion", "lip-sync", "2d"]
 categories = ["game-development", "multimedia"]
 
 [dependencies]
-ugoe-core.workspace = true
-ugoe-model.workspace = true
+ugoe-core = { workspace = true, features = ["std"] }
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-runtime.workspace = true
 
 [lints]

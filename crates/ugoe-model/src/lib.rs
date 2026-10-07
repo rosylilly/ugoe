@@ -3,8 +3,16 @@
 //! ここにはシリアライズ可能な「モデルが何であるか」の定義だけを置き、
 //! 「どう動かすか」(補間・変形・物理・モーション再生) は下流クレートが担う。
 //! 仕様は `docs/spec/model.md` を正とする。型を変更したら仕様書も同じ PR で更新すること。
+//!
+//! `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない
+//! (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。
+//! ただしコード生成の feature (`ts`・`schema`) を有効にしたときだけは std の prelude を使う
+//! (ts-rs と schemars の derive が生成するコードが `String`・`format!` などを prelude から使うため。ツール層だけが有効にする)。
 
+#![cfg_attr(not(any(feature = "ts", feature = "schema")), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
 
 pub mod avatar;
 /// デフォーマ (ワープ・回転)。
@@ -29,6 +37,9 @@ pub mod spec_files;
 pub mod standard;
 pub mod unknown;
 pub mod validate;
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 /// `Vec2` のフィールドの生成用の型 (`#[ts(as = "crate::Vec2Repr")]` などで使う)。
@@ -97,7 +108,7 @@ pub struct Model {
     pub slots: Vec<Slot>,
     /// ホストが渡す光源でライティングするか。省略時は `false` で、`false` は書き出しでも省略する。
     /// メッシュごとの有無は `Mesh::lit` (`docs/spec/rendering.md#ライティング`)。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub lighting: bool,
 }
 

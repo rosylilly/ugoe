@@ -141,13 +141,32 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 ## ランタイム層が守る制約 (移植性のため)
 
 - wasm32-unknown-unknown でビルドできること (`just wasm-check`)。
+- `std` 無し (`no_std` + `alloc`) でビルドできること (`just nostd-check`。[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md))。
+  対応したクレートは次のように書きます。
+  - クレートの先頭に `#![no_std]` と `extern crate alloc;` を書き、`std::` ではなく `core::` と `alloc::` から使う
+    (`String`・`Vec`・`format!`・`vec!` なども `use alloc::…;` で明示する)。コード生成の feature (`ts`・`schema`) を有効にしたときだけは
+    `#![cfg_attr(not(any(feature = "ts", feature = "schema")), no_std)]` で std の prelude を使う (ts-rs と schemars の derive が
+    prelude の `String` などを使うため。ツール層だけが有効にする)。
+  - 既定で有効な feature `std` を持ち、依存の `std` (`serde/std` など) はそこから有効にする。`std` を外しても公開 API は変えない
+    (エラー型は `core::error::Error` を実装する。thiserror 2 は `std` 無しでもそうなる)。
+  - `HashMap`・`HashSet` は使わない (`std` にしかない)。`BTreeMap`・`BTreeSet` か、決まったハッシュ関数の `hashbrown` に置き換える。
+  - `f32` の `sin`・`powf` などは `std` にしかない。`T0180` で `ugoe_core::math` (常に `libm`) に寄せるまでは、`glam` の関数
+    (`Vec2::from_angle` など。`std` があれば `std` の関数を使い、無ければ `libm` を使う) を通す。
+  - ワークスペースの依存 (`[workspace.dependencies]`) は既定の feature を切ってある (`glam`・`ruzstd`・`serde`・`serde_json`・`thiserror`・
+    `ugoe-core`・`ugoe-model`)。メンバーの `default-features = false` はワークスペースの側で切らないと効かないため。使う側で
+    `features = ["std"]` を書く (`ruzstd` は `["hash", "std"]`)。
+  - 検査の対象は `scripts/nostd-check.mjs` の `NOSTD_CRATES`。`aarch64-unknown-none` (`std` が無く、`core` と `alloc` がビルド済みで
+    配られる tier 2 のターゲット) で、クレートを 1 つずつ `--no-default-features` で clippy にかけるので、どこかで `std` に依存すると
+    (依存の feature の統合の漏れを含めて) 失敗する。ターゲットは `rustup target add aarch64-unknown-none` で入れる。
+    CI は `rust (runtime)` のジョブで流す。no_std に対応したクレートを `NOSTD_CRATES` に足す。
 - `std::fs`、`std::thread`、`std::time` を使わないこと。時間は `dt` として受け取ります。
 - グローバルな状態 (static mut、グローバルなロガーの初期化など) を持たないこと。
   例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 
 > 対応中: ランタイム層 (`ugoe-core`〜`ugoe`・`ugoe-ffi`) を `no_std + alloc` でビルドできるようにする (ゲーム機・組み込み機器向け)。
-> 数学関数は `std` の有無にかかわらず `libm` を使う。方針は [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、タスクは T0179〜T0184・T0491。
+> 今 `std` 無しでビルドできるのは `ugoe-core` と `ugoe-model` (T0179)。
+> 数学関数は `std` の有無にかかわらず `libm` を使う。方針は [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、タスクは T0180〜T0184・T0491。
 
 ## 配布
 

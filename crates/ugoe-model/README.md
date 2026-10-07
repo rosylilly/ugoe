@@ -7,6 +7,7 @@
 ## 守ること
 
 - アルゴリズム (補間・変形・再生) を置かない
+- `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない (`just nostd-check`。[規則](../../docs/portability.md#ランタイム層が守る制約-移植性のため))
 - 型を変えたら同じ PR で `docs/spec/model.md` と公開仕様の `spec/model.md` を更新する。ファイル形式に影響する場合は `SCHEMA_VERSION` も更新する。
   `just gen` で公開仕様の JSON Schema (`spec/schema/`) を作り直し、`just spec` で `spec/model.md` のフィールドの表と合っていることを確かめる
 - `fixtures` の既存の関数の挙動を変えない (追加だけにする)

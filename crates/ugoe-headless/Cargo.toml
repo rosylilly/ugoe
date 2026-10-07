@@ -11,13 +11,13 @@ license.workspace = true
 clap = { workspace = true, optional = true }
 png.workspace = true
 pollster.workspace = true
-ruzstd.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+ruzstd = { workspace = true, features = ["hash", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
 ugoe.workspace = true
 ugoe-fs.workspace = true
 ugoe-format = { workspace = true, features = ["png"] }
-ugoe-model.workspace = true
+ugoe-model = { workspace = true, features = ["std"] }
 ugoe-render.workspace = true
 ugoe-runtime.workspace = true
 wgpu.workspace = true
