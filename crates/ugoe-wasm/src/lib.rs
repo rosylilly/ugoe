@@ -9,6 +9,17 @@
 //!
 //! ビルド: `just wasm` (wasm-bindgen-cli が必要。README を参照)。
 
+// 入口はホスト (JS) から来る番号・文字列・バイト列を受けるので、ランタイム層と C ABI と同じくパニックしない
+// (docs/portability.md#パニックしない。T0493)。テストのコードはルートの clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
+
 pub mod animation;
 #[cfg(test)]
 mod codes;

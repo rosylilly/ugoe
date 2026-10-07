@@ -67,10 +67,10 @@ impl WebPuppet {
         });
         let parts = part_opacity_parts.unwrap_or_default();
         let pairs = part_opacity_values.unwrap_or_default();
-        if pairs.len() != parts.len() * 2 {
+        if pairs.len() != parts.len().saturating_mul(2) {
             return Err(JsError::new(&format!(
                 "expected {} part opacity values and weights, got {}",
-                parts.len() * 2,
+                parts.len().saturating_mul(2),
                 pairs.len()
             )));
         }

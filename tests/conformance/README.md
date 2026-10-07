@@ -256,6 +256,7 @@ WebGPU のデバイスの喪失 (`is_lost`) はページから起こせないの
 | `motion-events` | 見本のアバターで、最初の `update` で発火するイベントを持つモーションを `start_motion_json` で再生し、`motion_events_json` を出させる (T0462) |
 | `avatar`・`avatar-lit` | 見本のモデル (モーション・表情・アバタープロファイル・パラメータのグループ・ポーズ) |
 | `dress-up` | 着せ替えの見本 (パラメータのグループ・ポーズ)。`long-hair`・`cat-ears`・`sailor` を付け、`twin-tails` は読むだけ (`attached: false`) |
+| `host-input` | 見本のアバターで、範囲の外の番号・知らない ID・NaN と無限大・壊れた JSON とバイト列を入口に渡し、どれも trap (`WebAssembly.RuntimeError`) せず既定の値か JS の例外になることと、その後も描画と問い合わせが続けられることを確かめる (キーも比べる。T0493、[docs/portability.md#パニックしない](../../docs/portability.md#パニックしない)) |
 | `coverage` | 上のどれかで、一覧のすべての形を 1 度は比べたか |
 
 - 無い必須のキーと、一覧に無いキー (型に無いキー) を食い違いとする。型が `[key: string]: unknown` を持つ形 (パラメータ・スロット) でも、

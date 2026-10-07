@@ -112,6 +112,104 @@ items["motion-events"] = () =>
     if (events.length !== 1) throw new Error(`motion_events_json gave ${events.length} events`);
     check.puppet(puppet, "motion-events");
   });
+// ホストから来る範囲の外の番号・知らない ID・極端な数で、wasm が trap せず (`WebAssembly.RuntimeError` にならず)、
+// 既定の値か JS の例外を返し、続けて使えること (docs/portability.md#パニックしない。T0493)
+items["host-input"] = () =>
+  withPuppet(async (puppet) => {
+    loadModel(puppet, await bytes("/samples/avatar.ugoe"));
+    const NONE = "__no_such_id__";
+    const BIG = 0xffffffff;
+    const ANY = Symbol("any");
+    /** `call` を呼ぶ。投げたら trap でないこと、返したら `expected` (関数なら判定) に合うことを確かめる。 */
+    const probe = (name, call, expected = ANY) => {
+      let value;
+      try {
+        value = call();
+      } catch (e) {
+        if (e instanceof WebAssembly.RuntimeError)
+          check.errors.push(`host-input: ${name} trapped: ${e}`);
+        return;
+      }
+      if (expected === ANY) return;
+      const ok = typeof expected === "function" ? expected(value) : Object.is(value, expected);
+      if (!ok) check.errors.push(`host-input: ${name} returned ${JSON.stringify(value)}`);
+    };
+    const empty = (v) => v.length === 0;
+    probe("drawable_positions", () => puppet.drawable_positions(BIG), undefined);
+    probe("physics_particles", () => puppet.physics_particles(BIG), empty);
+    probe("set_parameter", () => puppet.set_parameter(NONE, 1), false);
+    probe("set_parameter NaN", () => puppet.set_parameter("AngleX", Number.NaN));
+    probe("parameter", () => puppet.parameter(NONE), undefined);
+    probe("part_evaluated_opacity", () => puppet.part_evaluated_opacity(NONE), undefined);
+    probe("deformer_point", () => puppet.deformer_point(NONE, 0, 0), undefined);
+    probe("deformer_jacobian", () => puppet.deformer_jacobian(NONE, 0, 0), undefined);
+    probe("warp_points", () => puppet.warp_points(NONE), undefined);
+    probe("rotation_frame", () => puppet.rotation_frame(NONE), undefined);
+    probe("rotation_local_keyform", () => puppet.rotation_local_keyform(NONE), undefined);
+    probe("hit_area_test", () => puppet.hit_area_test(NONE, 0, 0), false);
+    probe("hit_test NaN", () => puppet.hit_test(Number.NaN, Number.NaN));
+    probe("hit_test_standard", () => puppet.hit_test_standard(NONE, 0, 0), false);
+    probe("show_pose", () => puppet.show_pose(NONE), false);
+    probe("show_pose_immediately", () => puppet.show_pose_immediately(NONE), false);
+    probe("start_motion", () => puppet.start_motion(NONE, undefined));
+    probe("start_motion priority", () => puppet.start_motion(NONE, NONE));
+    probe("set_expression", () => puppet.set_expression(NONE));
+    probe("add_expression", () => puppet.add_expression(NONE));
+    probe("stop_expression", () => puppet.stop_expression(NONE));
+    probe("set_enabled", () => puppet.set_enabled(NONE, true));
+    probe("is_enabled", () => puppet.is_enabled(NONE));
+    probe("attach_module", () => puppet.attach_module(NONE));
+    probe("detach_module", () => puppet.detach_module(NONE));
+    probe("unload_module", () => puppet.unload_module(NONE));
+    probe("load_module", () => puppet.load_module(new Uint8Array([0, 1, 2, 3])));
+    probe("set_tracking_kept", () => puppet.set_tracking_kept([NONE]));
+    probe("set_tracking", () =>
+      puppet.set_tracking(
+        [NONE, "eyeBlinkLeft"],
+        new Float32Array([Number.NaN]),
+        1e30,
+        -1e30,
+        Number.NaN,
+      ),
+    );
+    probe("set_base_values", () => puppet.set_base_values(new Float32Array(1)));
+    const values = puppet.values_before_physics();
+    probe("follow", () =>
+      puppet.follow(
+        values,
+        1 / 60,
+        Number.NaN,
+        Infinity,
+        new Uint32Array([BIG]),
+        new Float32Array([1, 1]),
+      ),
+    );
+    probe("follow pairs", () =>
+      puppet.follow(
+        values,
+        1 / 60,
+        undefined,
+        undefined,
+        new Uint32Array([0]),
+        new Float32Array(1),
+      ),
+    );
+    probe("set_effects_json", () => puppet.set_effects_json("{"));
+    probe("set_physics_json", () => puppet.set_physics_json("[]"));
+    probe("set_lighting_json", () => puppet.set_lighting_json("null"));
+    probe("set_expression_json", () => puppet.set_expression_json("{}"));
+    probe("start_motion_json", () => puppet.start_motion_json("{}"));
+    probe("set_lip_sync_level", () => puppet.set_lip_sync_level(Infinity));
+    for (const dt of [Number.NaN, Infinity, -1, 1e30])
+      probe(`update ${dt}`, () => puppet.update(dt));
+    probe("set_view", () => puppet.set_view(Number.NaN, Infinity, -Infinity));
+    probe("zoom_at", () => puppet.zoom_at(0, Number.NaN, Number.NaN));
+    // 続けて使える (trap の後の `WebPuppet` は Rust の状態が途中のまま残る)
+    puppet.fit();
+    puppet.update(1 / 60);
+    puppet.render();
+    check.puppet(puppet, "host-input");
+  });
 for (const model of MODELS) {
   items[model.name] = () =>
     withPuppet(async (puppet) => {

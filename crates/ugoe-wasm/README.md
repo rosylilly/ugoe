@@ -10,6 +10,12 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 - WebGPU がなくても WebGL2 で動くこと
 - ブラウザに依存するコードは `src/web.rs` と `src/web/` (wasm32 のときだけビルド) に閉じ込め、
   それ以外 (`load`・`view`・`hit`・`gizmo`・`animation`) はネイティブでテストできるように保つ
+- ホスト (JS) から来るどんな番号・文字列・バイト列・数でもパニック (wasm の trap) しないこと。範囲の外の番号や知らない ID は
+  既定の値 (`undefined`・`false`・空の列) か JS の例外にする。trap の後の `WebPuppet` は Rust の状態が途中のまま残り、ホストが
+  作り直すまで使えなくなるため、ランタイム層と C ABI と同じ規則にそろえた (T0493)。`lib.rs` で clippy の `expect_used`・
+  `indexing_slicing`・`panic`・`string_slice`・`unimplemented`・`unreachable` を有効にしてあり、テストのコードはルートの
+  `clippy.toml` で除く。書き方は [docs/portability.md#パニックしない](../../docs/portability.md#パニックしない)。
+  本物の wasm の入口で trap しないことは `just conformance --only queries` の `host-input` が確かめる
 
 ## 構成
 
@@ -534,3 +540,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0434 (読み込みの失敗のコード)
 - T0457 (読み込みの失敗の種類を SDK で決めて C ABI と揃える・着せ替えの `device_lost`)
 - T0465 (描画と読み戻しの `RenderError` の `device_lost`)
+- T0493 (パニックの lint を有効にして、ホストから来る値で trap しない)

@@ -15,7 +15,7 @@ pub fn drawable_bounds(instance: &ModelInstance) -> Vec<f32> {
             continue;
         };
         let (mut min, mut max) = (*first, *first);
-        for p in &d.positions[1..] {
+        for p in d.positions.iter().skip(1) {
             min = min.min(*p);
             max = max.max(*p);
         }
@@ -47,7 +47,9 @@ pub fn hit_test_all(instance: &ModelInstance, point: [f32; 2]) -> Vec<u32> {
 
 /// 要素 `i` が表示中で、その三角形のどれかが `point` を含むか。
 fn contains(instance: &ModelInstance, i: u32, point: [f32; 2]) -> bool {
-    let d = &instance.drawables()[i as usize];
+    let Some(d) = instance.drawables().get(i as usize) else {
+        return false;
+    };
     if !d.visible || d.opacity <= 0.0 {
         return false;
     }

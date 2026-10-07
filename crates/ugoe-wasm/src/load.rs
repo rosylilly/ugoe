@@ -292,14 +292,13 @@ pub use ugoe::LoadWarning;
 /// JSON: `{"code", "warning", "texture"?, "reason"?, "feature"?, "path"?}` (`load_warnings_json` の要素。
 /// `crates/ugoe-wasm/README.md#読み込みの警告-t0125`)。`warning` は文の警告と同じ文字列。番号の補足の値は数にする。
 pub fn warning_json(warning: &LoadWarning) -> serde_json::Value {
-    let mut json = serde_json::json!({
-        "code": warning.code(),
-        "warning": warning.to_string(),
-    });
+    let mut json = serde_json::Map::new();
+    json.insert("code".into(), warning.code().into());
+    json.insert("warning".into(), warning.to_string().into());
     for (key, value) in warning.fields() {
-        json[key] = field_json(value);
+        json.insert(key.into(), field_json(value));
     }
-    json
+    json.into()
 }
 
 /// 補足の値 (警告と着せ替えの失敗の `fields`) の JSON。番号は数、文は文字列。種類の一覧は `, ` でつないだ文字列

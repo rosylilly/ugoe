@@ -228,7 +228,8 @@ C ABI (`ugoe-ffi`) の `std` の無い形 (staticlib。アロケータはホス�
 
 `std` の無い環境の C ABI は `panic=abort` で、パニックはアプリ全体を止めます
 ([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#ランタイム層ではパニックを起こさない))。そこでランタイム層
-(`ugoe-core`・`ugoe-model`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-format`・`ugoe`) と C ABI (`ugoe-ffi`。T0491) は、外から来るデータ
+(`ugoe-core`・`ugoe-model`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-format`・`ugoe`) と C ABI (`ugoe-ffi`。T0491) と
+wasm の入口 (`ugoe-wasm`。T0493) は、外から来るデータ
 (ファイルのバイト列・JSON・ホストが渡す数と番号と ID・ホストが組み立てた設定) のどんな値でもパニックせず、止まらない (時間の
 ループに回数の上限を持つ) ことを守ります。受け付けない値は失敗を返すか、[ホストから来る数](#ホストから来る数) の扱い (書かない・
 0 とみなす・使わない) にします。T0184 で決めました。
@@ -271,7 +272,12 @@ Rust の公開 API で、添字を引数に取る問い合わせ (`ParameterValu
   どれも決まった入力で、依存を足さずに stable で動きます (乱数による fuzz は使っていない)。
 - C ABI (`ugoe-ffi`) も同じ lint を有効にしています (T0491)。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
   `std` の無い形の静的ライブラリはパニックで `abort` するので、C ABI の入口もパニックしてはなりません。
-  `ugoe-wasm` は対象外です (ブラウザ向けで `std` があり、パニックは wasm の trap として JavaScript の例外で届く)。
+- wasm の入口 (`ugoe-wasm`) も同じ lint を有効にしています (T0493)。wasm のパニックは trap として JavaScript の
+  `WebAssembly.RuntimeError` で届きますが、trap の後の `WebPuppet` は Rust の状態が途中のまま残り (借用の印も残る)、続けて呼ぶと
+  食い違った結果かもう一度の例外になります。ホスト (`<ugoe-avatar>`・アプリ) が作り直すまで使えなくなるので、入口はホスト (JS) から
+  来る番号・文字列・バイト列で trap せず、既定の値 (`undefined`・`false`・空の列) か JS の例外を返します。適合テストの
+  `queries` の `host-input` (tests/conformance/README.md#問い合わせの-json-のキー) が、範囲の外の番号・知らない ID・
+  NaN と無限大を本物の wasm の入口に渡し、trap しないことと、その後も続けて使えることを確かめます。
 
 ## 配布
 

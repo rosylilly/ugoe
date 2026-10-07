@@ -149,7 +149,10 @@ impl WebPuppet {
                 .map_err(|e| JsValue::from(js_error(e)))?;
             let mut pixels = Vec::with_capacity(row_bytes as usize * height as usize);
             for row in range.chunks_exact(padded as usize) {
-                pixels.extend_from_slice(&row[..row_bytes as usize]);
+                // row_bytes <= padded (行の大きさを整列に切り上げたもの) なので、いつも取れる。
+                if let Some(row) = row.get(..row_bytes as usize) {
+                    pixels.extend_from_slice(row);
+                }
             }
             drop(range);
             buffer.unmap();
