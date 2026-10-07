@@ -1,11 +1,11 @@
 ---
 id: T0066
 title: M9 の後続のタスクの「起票の候補」をまとめて起票する (13 回目)
-status: todo
+status: in-progress
 milestone: M9
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0066
 ---
 
 # T0066: M9 の後続のタスクの「起票の候補」をまとめて起票する (13 回目)
