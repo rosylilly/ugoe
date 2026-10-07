@@ -1,11 +1,11 @@
 ---
 id: T0073
 title: "check-licenses.mjs: --locked で失敗したとき、スタックトレースでなく古い lock のファイルと直し方を短く出す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0073
 ---
 
 # T0073: check-licenses.mjs: --locked で失敗したとき、スタックトレースでなく古い lock のファイルと直し方を短く出す

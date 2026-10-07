@@ -1,11 +1,11 @@
 ---
 id: T0498
 title: "ugoe-ffi: C ABI のヘッダの関数と fuzzing.rs が呼ぶ関数の一覧を比べ、fuzz の入れ忘れを検査で止める"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0498
 ---
 
 # T0498: ugoe-ffi: C ABI のヘッダの関数と fuzzing.rs が呼ぶ関数の一覧を比べ、fuzz の入れ忘れを検査で止める
