@@ -1,11 +1,11 @@
 ---
 id: T0497
 title: "fuzz: C ABI (ugoe-ffi) の入口に直接入力を渡す fuzz のターゲットを足す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M11
 crates: [fuzz, ugoe-ffi, .github/workflows, scripts, justfile, docs, AGENTS.md]
 depends_on: []
-assignee:
+assignee: claude-worker-T0497
 ---
 
 # T0497: fuzz: C ABI (ugoe-ffi) の入口に直接入力を渡す fuzz のターゲットを足す (判断が要る)
