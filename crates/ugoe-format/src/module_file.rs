@@ -7,6 +7,10 @@
 //!   モジュールの物理は `MODU` の中 (`Module::physics`) に入る。
 //! - 読み込みは入力を信用しない。範囲外・重なり・切り詰めはすべてエラーにし、パニックしない。
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use ugoe_model::module::Module;
 
 use crate::bundle::{

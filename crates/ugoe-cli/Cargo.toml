@@ -14,7 +14,7 @@ serde_json = { workspace = true, features = ["std"] }
 ugoe = { workspace = true, features = ["render"] }
 ugoe-core = { workspace = true, features = ["std"] }
 ugoe-editor-core.workspace = true
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["std"] }
 ugoe-fs.workspace = true
 ugoe-headless = { workspace = true, features = ["clap"] }
 ugoe-model = { workspace = true, features = ["std"] }

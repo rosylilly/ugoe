@@ -26,7 +26,7 @@ thiserror = { workspace = true, features = ["std"] }
 ts-rs.workspace = true
 ugoe-ai.workspace = true
 ugoe-editor-core.workspace = true
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["std"] }
 ugoe-fs.workspace = true
 ugoe-mcp.workspace = true
 ugoe-model = { workspace = true, features = ["std"] }

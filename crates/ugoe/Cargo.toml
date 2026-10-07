@@ -14,7 +14,7 @@ categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
 ugoe-core = { workspace = true, features = ["std"] }
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["std"] }
 ugoe-model = { workspace = true, features = ["std"] }
 ugoe-motion.workspace = true
 ugoe-physics.workspace = true

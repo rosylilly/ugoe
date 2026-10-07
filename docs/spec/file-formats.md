@@ -210,7 +210,7 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 | チャンク | エンコード |
 | --- | --- |
-| `MODL` `MODU` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。ペイロード (圧縮されていれば展開後) はちょうど 1 つの MessagePack の値。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named`)。enum の表現は JSON と同じく serde の属性に従う |
+| `MODL` `MODU` `PHYS` `MOTN` `EXPR` `FEAT` | **MessagePack**。ペイロード (圧縮されていれば展開後) はちょうど 1 つの MessagePack の値。構造体はフィールド名付きのマップ (`rmp-serde` の `to_vec_named` と同じ形。参照実装は `ugoe-format` の中の実装で、同じバイト列を書く)。enum の表現は JSON と同じく serde の属性に従う |
 | `TEXR` `NRML` | PNG / KTX2 ファイルの中身そのまま。形式は先頭のシグネチャで判別する。テクスチャの画素は、どちらの形式でも乗算していないアルファ (KTX2 の扱いは [rendering.md#前提](rendering.md#前提)) |
 | `META` | UTF-8 の JSON |
 

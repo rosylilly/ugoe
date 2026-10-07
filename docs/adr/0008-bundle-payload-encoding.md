@@ -36,4 +36,5 @@
 - `ugoe-model` を変えずに全型が往復する。フィールド名付きなので、フィールドの追加や `#[serde(default)]` による省略にも JSON と同じように耐える。
 - フィールド名の分だけ postcard より大きくなる (無圧縮でも `single_quad` フィクスチャで JSON のおよそ 8 割)。繰り返すフィールド名は zstd の圧縮で大きく縮む。
 - 追加の依存は `rmp-serde` (+ `rmp`) と `ruzstd` (+ `twox-hash`)。いずれも純 Rust で wasm32 でビルドできる。
+  (T0182 で `std` 無しで使うために `rmp-serde` を `ugoe-format` の中の実装に替えた。バイト列は同じ。[ADR 0031](0031-no-std-runtime-and-host-neutral-c-abi.md#追記-ugoe-format-の-messagepack-t0182))
 - 見直す条件: 読み込み時間が問題になったとき (`CompiledModel` のゼロコピー形式を検討する)。あるいは `ugoe-model` の enum を外部タグ付きに変えられるなら、postcard に切り替えてより小さく速くできる (コンテナ形式の `version` を上げる)。

@@ -1,7 +1,13 @@
-//! テクスチャの PNG と KTX2 のデコード (feature `png`)。
+//! テクスチャの PNG と KTX2 のデコード。
 //!
 //! バンドルの `TEXR` / `NRML` の PNG と KTX2 を、8bit の RGBA に正規化してデコードする。ヘッドレス描画 (`ugoe-headless`) と
 //! WebAssembly (`ugoe-wasm`) が同じ関数を使い、画像の大きさの上限と色の展開の規則を 1 か所に保つ。
+//!
+//! - PNG のデコード (`decode_png`・`decode_png_premultiplied`・`decode_image`・`decode_image_premultiplied`) と
+//!   KTX2 のブロック圧縮 (BCn) の展開は、feature `png` (`std` を含む) が要る。feature が無ければ、PNG の関数は無く、
+//!   [`decode_ktx2`] は圧縮していない 8bit の RGB / RGBA (超圧縮は無しか zstd) だけを読み、BCn は
+//!   [`ImageError::UnsupportedKtx2`] にする (`std` の無い環境では画像のデコードはもともとホストの役目。
+//!   `docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md`)。
 //!
 //! - 色の値はリニア化しない (`docs/spec/rendering.md#前提`)。PNG は `gAMA`・`sRGB`・`iCCP`・`cHRM` を見ずに
 //!   保存された値のまま使う。KTX2 も、形式の `_SRGB` や転送関数によらず保存された値のまま使う。
@@ -13,9 +19,20 @@
 //!   確保の前に一辺を [`ImageLimits::max_side`] と比べる (png の `Limits` はデコーダの中のバッファにしか効かない)。
 //!   KTX2 も見出しの大きさを確保の前に比べる。
 
-use std::io::{Cursor, Read};
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+#[cfg(feature = "png")]
+use alloc::{string::ToString, vec};
+#[cfg(feature = "png")]
+use std::io::Cursor;
 
-use crate::bundle::{KTX2_SIGNATURE, TextureFormat};
+use ruzstd::io::Read;
+
+use crate::bundle::KTX2_SIGNATURE;
+#[cfg(feature = "png")]
+use crate::bundle::TextureFormat;
 
 /// [`ImageLimits::default`] の、デコードする画像の一辺の上限 (16384)。
 ///
@@ -56,7 +73,7 @@ impl ImageLimits {
 
 /// 8bit RGBA の画像。`pixels` は行の順に `width * height * 4` バイト。
 ///
-/// アルファが乗算済みかどうかは作った関数で決まる ([`decode_png`]・[`decode_ktx2`] はストレート、
+/// アルファが乗算済みかどうかは作った関数で決まる (`decode_png`・[`decode_ktx2`] はストレート、
 /// `*_premultiplied` は乗算済み)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rgba8 {
@@ -95,6 +112,9 @@ pub enum ImageError {
 }
 
 /// 形式 (`format`) に合わせて画像をデコードし、アルファを掛けない RGBA8 にする (法線マップ用)。
+///
+/// feature `png` (`std` を含む) が要る。無ければ KTX2 は [`decode_ktx2`] で読む。
+#[cfg(feature = "png")]
 pub fn decode_image(
     format: TextureFormat,
     bytes: &[u8],
@@ -107,6 +127,9 @@ pub fn decode_image(
 }
 
 /// 形式 (`format`) に合わせて画像をデコードし、乗算済みアルファの RGBA8 にする (描画するテクスチャ用)。
+///
+/// feature `png` (`std` を含む) が要る。無ければ KTX2 は [`decode_ktx2_premultiplied`] で読む。
+#[cfg(feature = "png")]
 pub fn decode_image_premultiplied(
     format: TextureFormat,
     bytes: &[u8],
@@ -120,7 +143,8 @@ pub fn decode_image_premultiplied(
 /// PNG をデコードして、アルファを掛けない (ストレートの) RGBA8 にする。法線マップのようにアルファを使わない画像用。
 ///
 /// グレースケール・パレット・16bit は 8bit RGBA に展開する。一辺が `limits.max_side` を超える画像は
-/// 画素を確保する前に [`ImageError::TooLarge`]。
+/// 画素を確保する前に [`ImageError::TooLarge`]。feature `png` (`std` を含む) が要る。
+#[cfg(feature = "png")]
 pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
@@ -172,7 +196,8 @@ pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError
 
 /// PNG をデコードして、乗算済みアルファの RGBA8 にする (描画するテクスチャ用)。
 ///
-/// 展開と上限は [`decode_png`] と同じ。乗算は [`premultiply`]。
+/// 展開と上限は `decode_png` と同じ。乗算は [`premultiply`]。feature `png` (`std` を含む) が要る。
+#[cfg(feature = "png")]
 pub fn decode_png_premultiplied(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
     let mut image = decode_png(bytes, limits)?;
     premultiply(&mut image.pixels);
@@ -217,6 +242,7 @@ impl BlockFormat {
     }
 
     /// 1 ブロックを 4x4 の RGBA8 (行の順、1 行 16 バイト) に展開する。`block` は [`Self::block_bytes`] バイト。
+    #[cfg(feature = "png")]
     fn decode(self, block: &[u8], out: &mut [u8; 64]) {
         const PITCH: usize = 16;
         match self {
@@ -293,6 +319,7 @@ const KTX2_SUPERCOMPRESSION_ZSTD: u32 = 2;
 /// - 一辺が `limits.max_side` を超える画像は、画素を確保する前に [`ImageError::TooLarge`]。
 /// - ほかの形式 (ETC2・ASTC・BC6H・Basis Universal など)・配列・キューブマップ・3D は [`ImageError::UnsupportedKtx2`]。
 /// - 見出しやレベルの範囲が壊れていれば [`ImageError::InvalidKtx2`]。
+/// - ブロック圧縮の展開には feature `png` が要る。無ければ BCn も [`ImageError::UnsupportedKtx2`]。
 pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError> {
     let invalid = |message: &str| ImageError::InvalidKtx2(message.to_owned());
     let header = bytes
@@ -312,6 +339,10 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
             "vkFormat {vk_format} (only uncompressed 8-bit RGB and RGBA, BC1-BC5 and BC7 are decoded)"
         ));
     };
+    #[cfg(not(feature = "png"))]
+    if let Ktx2Texel::Block(_) = texel {
+        return Err(block_compression_needs_png(vk_format));
+    }
     if width == 0 || height == 0 {
         return Err(invalid("not a 2D texture (width or height is 0)"));
     }
@@ -392,7 +423,10 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
             }
             pixels
         }
+        #[cfg(feature = "png")]
         Ktx2Texel::Block(bc) => decode_blocks(bc, data, width as usize, height as usize, rgba_size),
+        #[cfg(not(feature = "png"))]
+        Ktx2Texel::Block(_) => return Err(block_compression_needs_png(vk_format)),
     };
     Ok(Rgba8 {
         width,
@@ -401,8 +435,17 @@ pub fn decode_ktx2(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageErro
     })
 }
 
+/// feature `png` が無いときの、ブロック圧縮の KTX2 のエラー。
+#[cfg(not(feature = "png"))]
+fn block_compression_needs_png(vk_format: u32) -> ImageError {
+    ImageError::UnsupportedKtx2(format!(
+        "vkFormat {vk_format} (decoding block-compressed formats needs the `png` feature)"
+    ))
+}
+
 /// ブロック圧縮の段 (`data` はブロックが行の順に `ceil(w / 4) * ceil(h / 4)` 個。呼ぶ側が長さを確かめている) を
 /// RGBA8 (`rgba_size` = `w * h * 4` バイト) に展開する。右端と下端の欠けたブロックは、画像に入る画素だけを使う。
+#[cfg(feature = "png")]
 fn decode_blocks(
     bc: BlockFormat,
     data: &[u8],
@@ -450,6 +493,7 @@ pub fn premultiply(rgba: &mut [u8]) {
     }
 }
 
+#[cfg(feature = "png")]
 fn decode_error(error: png::DecodingError) -> ImageError {
     ImageError::Decode(error.to_string())
 }
@@ -458,6 +502,7 @@ fn decode_error(error: png::DecodingError) -> ImageError {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "png")]
     fn encode(
         size: (u32, u32),
         color: png::ColorType,
@@ -473,6 +518,7 @@ mod tests {
     }
 
     /// `setup` で見出しの後のチャンク (`PLTE`・`tRNS`・`gAMA` など) を足して PNG を作る。
+    #[cfg(feature = "png")]
     fn encode_with(
         (width, height): (u32, u32),
         color: png::ColorType,
@@ -491,6 +537,7 @@ mod tests {
         out
     }
 
+    #[cfg(feature = "png")]
     fn rgba8(width: u32, height: u32, data: &[u8]) -> Vec<u8> {
         encode(
             (width, height),
@@ -501,10 +548,12 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "png")]
     fn straight(bytes: &[u8]) -> Vec<u8> {
         decode_png(bytes, ImageLimits::default()).unwrap().pixels
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn rgba_is_kept_and_premultiplied_on_request() {
         let bytes = rgba8(2, 1, &[255, 0, 0, 255, 128, 200, 255, 0]);
@@ -523,6 +572,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn rgb_is_opaque() {
         let bytes = encode(
@@ -535,6 +585,7 @@ mod tests {
         assert_eq!(straight(&bytes), vec![1, 2, 3, 255]);
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn grayscale_is_expanded_to_rgba() {
         let gray = encode(
@@ -564,6 +615,7 @@ mod tests {
         assert_eq!(straight(&bits), vec![0, 0, 0, 255, 255, 255, 255, 255]);
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn palette_is_expanded_to_rgba() {
         let palette = [10, 20, 30, 40, 50, 60];
@@ -577,6 +629,7 @@ mod tests {
         assert_eq!(straight(&bytes), vec![40, 50, 60, 255, 10, 20, 30, 255]);
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn sixteen_bit_is_reduced_to_eight_bit() {
         // 16bit はビッグエンディアン。上位の 8bit を使う。
@@ -591,6 +644,7 @@ mod tests {
     }
 
     /// パレットの `tRNS` はアルファになる。`tRNS` より後ろの番号は不透明 (`docs/spec/rendering.md#前提`)。
+    #[cfg(feature = "png")]
     #[test]
     fn palette_transparency_becomes_alpha() {
         let bytes = encode_with(
@@ -610,6 +664,7 @@ mod tests {
     }
 
     /// グレースケールと RGB の `tRNS` (透明にする 1 色) は、一致する画素のアルファを 0、ほかを 255 にする。
+    #[cfg(feature = "png")]
     #[test]
     fn color_key_transparency_becomes_alpha() {
         let gray = encode_with(
@@ -631,6 +686,7 @@ mod tests {
     }
 
     /// 16bit の `tRNS` は、上位 8bit にする前の 16bit の値で比べる (下位のバイトだけが違う画素は不透明)。
+    #[cfg(feature = "png")]
     #[test]
     fn sixteen_bit_color_key_is_compared_before_reduction() {
         let bytes = encode_with(
@@ -658,6 +714,7 @@ mod tests {
     }
 
     /// 8bit 未満のグレースケールは `v × 255 / (2^depth − 1)` に広げる。パレットの番号は広げずに引く。
+    #[cfg(feature = "png")]
     #[test]
     fn low_bit_depths_are_scaled_or_looked_up() {
         let two = encode(
@@ -692,6 +749,7 @@ mod tests {
     }
 
     /// zlib の無圧縮のブロック 1 つで `data` を包む (テストで PNG を手で組むため)。
+    #[cfg(feature = "png")]
     fn zlib_stored(data: &[u8]) -> Vec<u8> {
         let len = u16::try_from(data.len()).unwrap();
         let mut out = vec![0x78, 0x01, 0x01];
@@ -708,6 +766,7 @@ mod tests {
     }
 
     /// チャンクの型と中身から、長さと CRC を付けたチャンクを作る。
+    #[cfg(feature = "png")]
     fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
         let mut crc = !0u32;
         for &byte in kind.iter().chain(data) {
@@ -728,6 +787,7 @@ mod tests {
     }
 
     /// `IHDR` の後に `extra` のチャンクを挟んだ、8bit RGBA の PNG を手で組む。
+    #[cfg(feature = "png")]
     fn handmade_png(
         (width, height): (u32, u32),
         interlace: u8,
@@ -748,6 +808,7 @@ mod tests {
     }
 
     /// `gAMA`・`sRGB`・`cHRM`・`iCCP` は値を変えない (保存された値のまま。`docs/spec/rendering.md#前提`)。
+    #[cfg(feature = "png")]
     #[test]
     fn gamma_and_color_chunks_are_ignored() {
         let raw = [0, 10, 128, 250, 200];
@@ -772,6 +833,7 @@ mod tests {
     }
 
     /// Adam7 のインターレースは、行の順の画像に戻す。
+    #[cfg(feature = "png")]
     #[test]
     fn interlaced_png_is_deinterlaced() {
         // 2x2 の Adam7: 1 回目が (0, 0)、6 回目が (1, 0)、7 回目が 2 行目。各行は先頭にフィルタの種類 (0)。
@@ -788,6 +850,7 @@ mod tests {
     }
 
     /// APNG は既定の画像 (`IDAT`) だけを読む。アニメーションの枠 (`fdAT`) は読まない。
+    #[cfg(feature = "png")]
     #[test]
     fn apng_uses_only_the_default_image() {
         for separate_default in [false, true] {
@@ -809,6 +872,7 @@ mod tests {
     }
 
     /// IHDR が 65535x65535 で、画素のデータが zlib の見出しだけの小さな PNG。
+    #[cfg(feature = "png")]
     fn huge_png_header() -> Vec<u8> {
         let mut out = Vec::new();
         let mut encoder = png::Encoder::new(&mut out, 65535, 65535);
@@ -822,6 +886,7 @@ mod tests {
     }
 
     /// 見出しの大きさを確かめてから確保する (外から来た PNG で約 17GB を確保しようとして落ちないように)。
+    #[cfg(feature = "png")]
     #[test]
     fn rejects_images_larger_than_the_limit_before_allocating() {
         let err = decode_png(&huge_png_header(), ImageLimits::default()).unwrap_err();
@@ -844,6 +909,7 @@ mod tests {
     }
 
     /// 上限は呼び出し側が変えられる。ちょうど上限の一辺は読め、1 つ超えるとエラー。
+    #[cfg(feature = "png")]
     #[test]
     fn the_limit_can_be_changed_by_the_caller() {
         let bytes = rgba8(3, 2, &[7; 3 * 2 * 4]);
@@ -867,6 +933,7 @@ mod tests {
         assert!(decode_png(&tall, ImageLimits::default().with_max_side(2)).is_err());
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn broken_input_is_an_error() {
         let err = decode_png(b"not a png", ImageLimits::default()).unwrap_err();
@@ -1147,11 +1214,35 @@ mod tests {
         invalid(&wrong.bytes());
     }
 
+    /// feature `png` が無ければ、ブロック圧縮は展開せずに対応しない形式として報告する。
+    #[cfg(not(feature = "png"))]
+    #[test]
+    fn ktx2_block_compression_needs_the_png_feature() {
+        for (format, bytes) in [
+            (BC1_RGB_UNORM_BLOCK, 8),
+            (BC1_RGBA_SRGB_BLOCK, 8),
+            (BC2_UNORM_BLOCK, 16),
+            (BC3_UNORM_BLOCK, 16),
+            (BC3_SRGB_BLOCK, 16),
+            (BC4_UNORM_BLOCK, 8),
+            (BC5_UNORM_BLOCK, 16),
+            (BC7_UNORM_BLOCK, 16),
+            (BC7_SRGB_BLOCK, 16),
+        ] {
+            let ktx2 = Ktx2::rgba8(format, (4, 4), vec![vec![0; bytes]]).bytes();
+            let message = unsupported_bytes(&ktx2);
+            assert!(message.contains("`png` feature"), "{message}");
+        }
+    }
+
     /// RGB565 の色。
+    #[cfg(feature = "png")]
     const RED: u16 = 0xf800;
+    #[cfg(feature = "png")]
     const BLUE: u16 = 0x001f;
 
     /// BC1 の色のブロック (端点 2 つと、画素ごとの 2bit の添字。添字は左上から行の順)。
+    #[cfg(feature = "png")]
     fn bc1_block(c0: u16, c1: u16, indices: [u8; 16]) -> Vec<u8> {
         let bits = indices
             .iter()
@@ -1165,12 +1256,14 @@ mod tests {
     }
 
     /// BC3 / BC4 のアルファ (1 チャンネル) のブロック。添字はすべて 0 (値は `a0`)。
+    #[cfg(feature = "png")]
     fn bc4_block(a0: u8, a1: u8) -> Vec<u8> {
         vec![a0, a1, 0, 0, 0, 0, 0, 0]
     }
 
     /// BC7 のモード 6 の、全画素が同じ色のブロック。端点はどちらも `rgba` (7bit) で、p ビットは 1
     /// (8bit の値は `(c << 1) | 1`)。添字はすべて 0。
+    #[cfg(feature = "png")]
     fn bc7_solid(rgba: [u8; 4]) -> Vec<u8> {
         let mut bits: u128 = 1 << 6; // モード 6
         let mut at = 7;
@@ -1184,12 +1277,14 @@ mod tests {
         bits.to_le_bytes().to_vec()
     }
 
+    #[cfg(feature = "png")]
     fn pixel(image: &Rgba8, x: u32, y: u32) -> [u8; 4] {
         let at = ((y * image.width + x) * 4) as usize;
         image.pixels[at..at + 4].try_into().unwrap()
     }
 
     /// BC1: 4 色のモードは端点の色、3 色のモードの 4 つ目は、アルファ付きの形式なら透明の黒、アルファなしなら不透明の黒。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_bc1_is_decoded() {
         let mut indices = [0; 16];
@@ -1210,6 +1305,7 @@ mod tests {
 
     /// BC3 の色のブロックは、端点の大小によらず 4 色のモードで読む (Direct3D 10 以降の決まり。
     /// `docs/adr/0030-compressed-ktx2-decoding.md`)。`color0 == color1` で添字 3 は端点の色で、黒ではない。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_bc3_colors_always_use_four_color_mode() {
         let block = [bc4_block(128, 0), bc1_block(RED, RED, [3; 16])].concat();
@@ -1238,6 +1334,7 @@ mod tests {
     }
 
     /// BC4 は `(R, 0, 0, 255)`、BC5 は `(R, G, 0, 255)`、BC7 は RGBA。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_bc4_bc5_and_bc7_are_decoded() {
         let decode = |format: u32, block: Vec<u8>| {
@@ -1265,6 +1362,7 @@ mod tests {
     }
 
     /// 幅・高さが 4 の倍数でなければ、端のブロックの画像に入る画素だけを使う。ミップマップは最初の段だけ、zstd も外す。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_partial_blocks_levels_and_zstd() {
         // 5x3 は 2x1 ブロック。左のブロックは赤、右は青。
@@ -1291,6 +1389,7 @@ mod tests {
     }
 
     /// ブロック圧縮の段の大きさは、ブロックの数とブロックのバイト数の積と合わなければ壊れている。上限は展開する前に確かめる。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_block_level_size_must_match() {
         let short = Ktx2::rgba8(BC3_UNORM_BLOCK, (4, 4), vec![vec![0; 8]]).bytes();
@@ -1313,6 +1412,7 @@ mod tests {
     }
 
     /// 乱れたブロックでもパニックせず、大きさどおりの画素を返す (外から来るデータ)。
+    #[cfg(feature = "png")]
     #[test]
     fn ktx2_arbitrary_blocks_do_not_panic() {
         let mut seed = 0x2545_f491_u32;
@@ -1340,6 +1440,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn decode_image_follows_the_format() {
         let png = rgba8(1, 1, &[200, 100, 50, 128]);

@@ -20,7 +20,7 @@ export const NOSTD_TARGET = "aarch64-unknown-none";
  * std 無しでビルドできるクレート。ランタイム層のクレートを no_std にしたら、ここに足す (ADR 0031。T0180〜T0183・T0491)。
  * 依存の向きの順 (下の層から) に並べる。
  */
-export const NOSTD_CRATES = ["ugoe-core", "ugoe-model"];
+export const NOSTD_CRATES = ["ugoe-core", "ugoe-model", "ugoe-format"];
 
 /** クレートを省けばすべて、知らないクレートは例外。 */
 export function select(crates, names) {

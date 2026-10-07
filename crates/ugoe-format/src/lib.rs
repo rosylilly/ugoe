@@ -3,17 +3,31 @@
 //! - `.ugoe` : ランタイムバンドル (ヘッダ + チャンク表 + チャンク)。バイナリ。[`bundle`] を参照。
 //! - `.ugoemod` : 着せ替えのモジュール。バンドルと同じコンテナ。[`module_file`] を参照。
 //! - `*.motion.json` / `*.expression.json` / `*.physics.json` : JSON。
-//! - テクスチャの PNG と KTX2 のデコード (上限つき): `image` (feature `png`)。
+//! - テクスチャの PNG と KTX2 のデコード (上限つき): [`image`]。PNG とブロック圧縮の KTX2 は feature `png`。
 //!
 //! 読み込みは **常に** スキーマバージョンを検査し、未知の新しい版は明示的なエラーにする。
+//!
+//! `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない
+//! (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。`std` が無くても、バンドル・モジュール・JSON の読み書きと
+//! zstd の展開、読み込みの上限 ([`ReadLimits`]) は同じに働く。`std` を要るのは feature `png` (PNG と BCn のデコード) だけ。
 
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
+// feature `png` の PNG のデコーダが `std::io` を使う (テストは std の prelude で動く)
+#[cfg(all(feature = "std", not(test)))]
+extern crate std;
 
 pub mod bundle;
 pub mod features;
-#[cfg(feature = "png")]
 pub mod image;
 pub mod module_file;
+mod msgpack;
+
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use ugoe_model::Model;
 use ugoe_model::expression::Expression;
@@ -32,6 +46,7 @@ pub use module_file::{
     ModuleFile, read_module, read_module_with, read_module_with_report, write_module,
     write_module_with,
 };
+pub use msgpack::{MsgPackDecodeError, MsgPackEncodeError};
 
 /// `.ugoe` ファイル先頭のマジックバイト。
 pub const MAGIC: [u8; 4] = *b"UGOE";
@@ -196,10 +211,10 @@ pub enum FormatError {
     Json(#[from] serde_json::Error),
     /// チャンクの MessagePack への書き出しに失敗した。
     #[error(transparent)]
-    MsgPackEncode(#[from] rmp_serde::encode::Error),
+    MsgPackEncode(#[from] MsgPackEncodeError),
     /// チャンクの MessagePack を読めない (形が合わないなど)。
     #[error(transparent)]
-    MsgPackDecode(#[from] rmp_serde::decode::Error),
+    MsgPackDecode(#[from] MsgPackDecodeError),
 }
 
 impl FormatError {

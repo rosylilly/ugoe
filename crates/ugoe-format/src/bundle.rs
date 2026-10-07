@@ -8,9 +8,13 @@
 //! - 着せ替えのモジュール (`.ugoemod`) も同じコンテナを使う ([`crate::module_file`])。
 //! - 読み込みは入力を信用しない。範囲外・重なり・切り詰めはすべてエラーにし、パニックしない。
 
-use std::borrow::Cow;
-use std::fmt;
-use std::io::Read;
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::fmt;
+
+use ruzstd::io::Read;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -20,6 +24,7 @@ use ugoe_model::physics::PhysicsSettings;
 use ugoe_model::{Model, TextureRef};
 
 use crate::features::{self, FeatureDecl, FeatureTable};
+use crate::msgpack::{self, Decoder};
 use crate::{FormatError, MAGIC, check_schema_version};
 
 /// コンテナ形式のバージョン (ヘッダの `version`)。スキーマのバージョンとは別。
@@ -891,13 +896,11 @@ pub(crate) fn check_normal_map_count(
 }
 
 pub(crate) fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, FormatError> {
-    Ok(rmp_serde::to_vec_named(value)?)
+    Ok(msgpack::to_vec_named(value)?)
 }
 
 pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, FormatError> {
-    let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
-    de.set_max_depth(MAX_DEPTH);
-    Ok(T::deserialize(&mut de)?)
+    Ok(T::deserialize(&mut Decoder::new(bytes, MAX_DEPTH))?)
 }
 
 /// 本体のチャンク `tag` (`MODL` / `MODU`) の `schema_version` を、どのペイロードもデコードする前に確かめる。
@@ -927,7 +930,7 @@ pub(crate) fn check_schema_version_first<'a>(
 /// MessagePack のマップから `schema_version` の値だけを読む。
 ///
 /// マップのキーを順に見て、`schema_version` 以外の値は型に当てはめずに読み飛ばす
-/// (入れ子の深さの上限は [`decode`] と同じ。`rmp_serde` はマップを最後まで読まないとエラーにするので、
+/// (入れ子の深さの上限は [`decode`] と同じ。マップを最後まで読まないとエラーになるので、
 /// 見つけた後も最後まで読み飛ばす)。マップでない・キーが文字列でない・値が `u32` でない・
 /// 見つからない・途中で壊れているときは `None`。
 pub(crate) fn peek_schema_version(bytes: &[u8]) -> Option<u32> {
@@ -981,9 +984,10 @@ pub(crate) fn peek_schema_version(bytes: &[u8]) -> Option<u32> {
         }
     }
 
-    let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
-    de.set_max_depth(MAX_DEPTH);
-    de.deserialize_map(VersionVisitor).ok().flatten()
+    Decoder::new(bytes, MAX_DEPTH)
+        .deserialize_map(VersionVisitor)
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ serde_json = { workspace = true, features = ["std"] }
 thiserror = { workspace = true, features = ["std"] }
 ugoe-ai.workspace = true
 ugoe-editor-core.workspace = true
-ugoe-format.workspace = true
+ugoe-format = { workspace = true, features = ["std"] }
 ugoe-fs.workspace = true
 ugoe-headless.workspace = true
 ugoe-model = { workspace = true, features = ["std"] }

@@ -15,17 +15,18 @@ categories = ["graphics", "game-development", "encoding", "parser-implementation
 [dependencies]
 bcdec_rs = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
-rmp-serde.workspace = true
-ruzstd = { workspace = true, features = ["hash", "std"] }
-serde = { workspace = true, features = ["std"] }
-serde_json = { workspace = true, features = ["std"] }
-thiserror = { workspace = true, features = ["std"] }
-ugoe-model = { workspace = true, features = ["std"] }
+ruzstd = { workspace = true, features = ["hash"] }
+serde = { workspace = true, features = ["alloc"] }
+serde_json = { workspace = true, features = ["alloc"] }
+thiserror.workspace = true
+ugoe-model.workspace = true
 
 [dev-dependencies]
 png.workspace = true
+# MessagePack の読み書き (src/msgpack.rs) が rmp-serde と同じバイト列・結果になることを比べる
+rmp-serde.workspace = true
 ugoe-core = { workspace = true, features = ["std"] }
-# 結合テスト (tests/spec_bundles.rs) で `image` モジュールを使うために、自分の `png` feature を有効にする
+# 結合テスト (tests/spec_bundles.rs) と image の単体テストで PNG と BCn のデコードを使うために、自分の `png` feature を有効にする
 ugoe-format = { path = ".", features = ["png"] }
 # 互換性テスト (tests/compat.rs) で、未知の物理の出力を無視することを確かめる
 # 互換性テスト (tests/compat.rs) で、モジュールのパーツが本体のポーズの要素に追従することを確かめる
@@ -34,9 +35,12 @@ ugoe-physics.workspace = true
 ugoe-runtime.workspace = true
 
 [features]
-# テクスチャの PNG と KTX2 のデコード (`image` モジュール。KTX2 は圧縮していない 8bit の RGB / RGBA と BCn。
-# BCn は bcdec_rs で展開する。docs/adr/0030-compressed-ktx2-decoding.md)。
-png = ["dep:bcdec_rs", "dep:png"]
+default = ["std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = ["ruzstd/std", "serde/std", "serde_json/std", "thiserror/std", "ugoe-model/std"]
+# テクスチャの PNG と、ブロック圧縮 (BCn) の KTX2 のデコード (`image` モジュール。BCn は bcdec_rs で展開する。
+# docs/adr/0030-compressed-ktx2-decoding.md)。std を含む。圧縮していない KTX2 はこの feature が無くても読む。
+png = ["std", "dep:bcdec_rs", "dep:png"]
 
 [lints]
 workspace = true

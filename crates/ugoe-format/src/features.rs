@@ -5,7 +5,9 @@
 //! - バンドルは `FEAT` チャンクで、基準の機能以外に使っている機能を宣言する ([`FeatureDecl`])。
 //! - 読み込みでは、知らない必須の機能があれば拒否し、知らない任意の機能は警告にする。
 
-use std::collections::HashSet;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
@@ -156,12 +158,12 @@ pub(crate) fn check(
     known: impl Fn(&str) -> bool,
 ) -> Result<Vec<String>, Vec<String>> {
     // 宣言は外から来るので、数が多くても 2 乗の時間をかけないように集合で調べる。
-    let required: HashSet<&str> = declared
+    let required: BTreeSet<&str> = declared
         .iter()
         .filter(|d| d.required)
         .map(|d| d.id.as_str())
         .collect();
-    let mut seen: HashSet<&str> = HashSet::new();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut missing: Vec<String> = Vec::new();
     let mut optional: Vec<String> = Vec::new();
     for decl in declared.iter().filter(|d| !known(&d.id)) {

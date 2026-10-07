@@ -142,3 +142,20 @@
 - 依存を足すときに no_std で使えるかを確かめる手間が増える (`just nostd-check` が検出する)。
 - 見直すきっかけ: `rmp-serde` などの依存が no_std で使えず、置き換えの手間が大きいと分かったとき。ゲーム機の実機で、
   `aarch64-unknown-none` の検査では見つからない問題 (TLS・アトミック・浮動小数点の設定など) が見つかったとき。
+
+## 追記: ugoe-format の MessagePack (T0182)
+
+`rmp-serde` 1.3 は `std::io` を前提に書かれ、`std` を外す feature を持たない (中の `rmp` は `std` を外せる)。そこで、
+`ugoe-format` の中に MessagePack の serde の実装 (`msgpack` モジュール。テストを含めて 1,300 行ほど) を書き、
+`rmp-serde` を置き換えた。新しい依存は足していない (`rmp` も使わない。`rmp` は自分の `std` の feature の有無で公開 API の形が変わり、
+ワークスペースでは開発時の依存の `rmp-serde` が `std` を有効にするので、両方の形でビルドできるように書く手間のほうが大きい)。
+
+- 書き出すバイト列と読み込みの結果 (値か誤りか・入れ子の深さの上限の数え方・`Option` と enum の判別) は `rmp-serde` の
+  `to_vec_named` と `Deserializer::from_read_ref` と同じにした。`rmp-serde` を開発時の依存に残し、整数・文字列・配列・マップの長さの境目、
+  serde の enum と構造体の形、壊したバイト列、`assets/samples` と `assets/compat` のすべてのチャンクで、両者の結果が同じことを
+  単体テストで比べる。`assets/` のすべてのファイルを読み直して書き出したバイト列 (無圧縮と zstd) も、置き換えの前後で同じだった。
+- 書かないもの: `i128`・`u128` と MessagePack の拡張型 (モデルの型は使わない。拡張型は読むことはできる)。
+- `ruzstd` は `std` 無しでも使える (`ruzstd::io::Read` が `std` の有無で `std::io::Read` か自前の同じ形の trait になる)。
+- PNG (`png`) と BCn (`bcdec_rs`) のデコードは feature `png` (`std` を含む) の側に置いた。`std` 無しで読める画像は、
+  圧縮していない 8bit の KTX2 (超圧縮は無しか zstd) だけ。
+- 置き換えの手間は小さく、この ADR の決定は変えない。
