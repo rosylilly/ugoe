@@ -3,7 +3,7 @@
 //
 //   node bindings/godot/build.mjs            # デバッグビルド
 //   node bindings/godot/build.mjs --release  # リリースビルド
-//   node bindings/godot/build.mjs --check    # ビルドして、依存のライセンスの検査 (scripts/check-licenses.mjs --godot) と、
+//   node bindings/godot/build.mjs --check    # 依存のライセンスの検査 (scripts/check-licenses.mjs --godot。ビルドの前) と、ビルドして
 //                                            # wgpu・naga に依存しないことの検査 (T0166) と、
 //                                            # ヘッドレスの Godot での example/tests/smoke.gd を実行する
 //   node bindings/godot/build.mjs --import   # ビルドして、見本のプロジェクトを Godot で読み込む (.godot/ の作成と拡張の登録)
@@ -21,7 +21,7 @@
 // Godot の実行ファイルは環境変数 GODOT (既定は `godot`) で指定する。
 // このクレートはルートのワークスペースの外にある (docs/adr/0026-godot-binding.md)。
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,14 @@ const cargoArgs = ["build", "--locked", "--manifest-path", join(here, "Cargo.tom
 if (release) cargoArgs.push("--release");
 const cargoEnv = { ...cargo.env, CARGO_TARGET_DIR: targetDir };
 const referenceEnv = { ...cargo.env, CARGO_TARGET_DIR: referenceTargetDir };
+if (check) {
+  // 依存のライセンスの検査はビルドの前に流す。Cargo.lock が古ければ (`--locked`)、cargo のビルドの失敗とスタックではなく、
+  // 古い lock のファイルと直し方を短く出して止まる (scripts/lib/cargo-locked.mjs)
+  const licenses = spawnSync("node", [join(root, "scripts", "check-licenses.mjs"), "--godot"], {
+    stdio: "inherit",
+  });
+  if (licenses.status !== 0) process.exit(licenses.status ?? 1);
+}
 execFileSync("cargo", cargoArgs, { stdio: "inherit", env: cargoEnv });
 
 function isSymlink(path) {
@@ -156,9 +164,6 @@ if (check || conformance || importProject || bench) {
 }
 
 if (check) {
-  execFileSync("node", [join(root, "scripts", "check-licenses.mjs"), "--godot"], {
-    stdio: "inherit",
-  });
   // GDExtension は参照レンダラを使わない (ugoe を default-features = false で使う) ので、wgpu・naga を含めない (T0166)。
   const tree = execFileSync(
     "cargo",

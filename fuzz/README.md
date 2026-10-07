@@ -44,8 +44,8 @@ just fuzz-lint            # fuzz-check のうち stable でできるもの (タ�
 
 - `just fuzz-lint` は nightly も cargo-fuzz も要らないが、`libfuzzer-sys` のビルドスクリプトが同梱の libFuzzer (C++) を
   コンパイルするので C++ のコンパイラが要る。依存のライセンスの検査 (`cargo metadata`) と clippy は `--locked` で流すので、
-  ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が古くなると失敗する。そのときは `cargo update --manifest-path fuzz/Cargo.toml --workspace` で直す
-  (ほかの依存の版は変えない)。
+  ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が古くなると失敗する (ライセンスの検査が古い lock のファイルと直し方を出して止まる)。
+  そのときは `cargo update --manifest-path fuzz/Cargo.toml --workspace` で直し (ほかの依存の版は変えない)、`fuzz/Cargo.lock` をコミットする。
 
 - 育てた入力は `fuzz/corpus/<target>/`、見つかった入力は `fuzz/artifacts/<target>/` に残る (どちらも git の管理外)。
 - 1 つの入力に 10 秒を超えたら止まらないループとみなす (`-timeout=10`)。メモリの上限は libFuzzer の既定 (2048 MB)。

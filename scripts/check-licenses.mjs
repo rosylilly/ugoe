@@ -20,16 +20,18 @@
 //   (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。MIT で、依存は寛容なライセンスに限る。libfuzzer-sys だけ NCSA も認める。`node fuzz/run.mjs --check` と `--lint` が実行する。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { staleLockMessage } from "./lib/cargo-locked.mjs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
 exportMbxPath();
 
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer", "ugoe-studio", "ugoe-studio-vcam"]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
 
@@ -120,13 +122,25 @@ function satisfies(expr, allowed) {
   return or();
 }
 
-/** `cargo metadata` の結果 (`manifest` を省くとルートのワークスペース)。 */
+/**
+ * `cargo metadata` の結果 (`manifest` を省くとルートのワークスペース)。lock のファイルが古いために `--locked` で
+ * 失敗したら、古いファイルと直し方だけを出して終了コード 1 で終わる (scripts/lib/cargo-locked.mjs)。
+ * ほかの失敗は cargo の出力をそのまま出して投げる。
+ */
 function cargoMetadata(manifest) {
   const args = ["metadata", "--format-version", "1", "--locked"];
   if (manifest) args.push("--manifest-path", manifest);
-  return JSON.parse(
-    execFileSync("cargo", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }),
-  );
+  const r = spawnSync("cargo", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  if (r.error) throw r.error;
+  const stale = r.status !== 0 ? staleLockMessage(r.stderr, REPO_ROOT) : undefined;
+  if (stale !== undefined) {
+    console.error(stale);
+    process.exit(1);
+  }
+  process.stderr.write(r.stderr);
+  if (r.status !== 0)
+    throw new Error(`cargo ${args.join(" ")} が失敗した (終了コード ${r.status})`);
+  return JSON.parse(r.stdout);
 }
 
 /** `id` から dev 以外の依存をたどったパッケージの ID の集合 (`id` 自身を含む)。 */
