@@ -1,11 +1,11 @@
 ---
 id: T0071
 title: "CI (任意): nightly の -Zbuild-std で tier 3 のターゲットの std の無い静的ライブラリを作る検査を、定期のジョブで回す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [scripts, .github/workflows, docs, crates/ugoe-ffi/README.md]
 depends_on: [T0070]
-assignee:
+assignee: claude-worker-T0071
 ---
 
 # T0071: CI (任意): nightly の -Zbuild-std で tier 3 のターゲットの std の無い静的ライブラリを作る検査を、定期のジョブで回す
