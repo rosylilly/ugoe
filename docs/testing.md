@@ -63,7 +63,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 | ジョブ | 内容 |
 | --- | --- |
 | `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just refs`・`just groups`・`just licenses`・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
-| `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)) |
+| `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)) |
 | `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |
 | `rust (tools)` | `ugoe-fs`・`ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
@@ -78,7 +78,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 - `ugoe-wasm` の `src/web.rs`・`src/web/` (`WebPuppet` など) は `cfg(target_arch = "wasm32")` の中にあり、ホストの `doc-check` ではコンパイルされません。`just wasm-check` が wasm32 のターゲットで `cargo doc -p ugoe-wasm --no-deps` を rustdoc の警告をエラーにして流します (CI は `rust (bindings)`。T0033)。ホストの文書から wasm32 だけの項目へはリンクできない (ホストの `doc-check` で壊れたリンクになる) ので、バッククォートだけで書きます。
 - `just script-check` (scripts/ の単体テスト) は Node だけで動くので、ワークスペースをビルドしない `rust-checks` のジョブで流します (T0027)。`just groups`・`just app-build-check` が流すテストは、それぞれのレシピの側に入っています。
 - clippy (`just lint`・`just lint-group`) は、既定の feature と、すべての feature (`--all-features`) の 2 回流します。`gpu-tests` などの feature の下のコード (GPU のテストなど) は既定の feature ではコンパイルされず、警告が溜まっていたためです (T0211・T0013)。グループでの `--all-features` は、選んだクレートの feature だけを有効にします。
-- `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。
+- `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。`just crate <クレート>` も、グループの `features` のうちそのクレートのもの (`ugoe-format/png` など) を有効にして clippy とテストを流します (T0186)。
 - 各ジョブは、最初にランナーの使わない SDK (.NET・Android SDK・Haskell・CodeQL) を消してディスクを空けます。
 - CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません (ci.yml のワークフロー全体の `env`)。target とキャッシュがおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
 - 依存クレートの成果物は `Swatinem/rust-cache` で持ち越します。方針は下の「CI のキャッシュ」。
@@ -227,6 +227,14 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
   ```
 
   `WINEDLLOVERRIDES` は、新しい Wine の環境を作るときの Mono と Gecko の導入 (画面が無いと止まる) を飛ばすためです。
+
+### std の無い形の単体テスト
+
+`just nostd-check` (CI の `rust (runtime)`) は、`scripts/nostd-check.mjs` の `HOST_TEST_CRATES` (`ugoe-format`・`ugoe-ffi`) の単体テストを、ホストで既定の feature を外して (`cargo test -p <クレート> --lib --no-default-features`) 流し、テストのコードも同じ feature で clippy にかけます (`--lib --profile test`)。`std` があると選ばれない分岐 (`ugoe-format` の `ruzstd` の `std` 無しの zstd の展開、`png` が無いときの KTX2 の扱いなど) を確かめるためです ([portability.md](portability.md#ランタイム層が守る制約-移植性のため)。T0186・T0491)。
+
+- 対象のクレートは開発時の依存に自分を置きません。置くと、その feature (`ugoe-format` なら `png` と `std`) が `--no-default-features` のテストでも有効になります。`just groups` (`nostd-check.mjs check`) が検査します。
+- feature の要るテストは、単体テストなら `#[cfg(feature = "…")]`、結合テストなら `Cargo.toml` の `[[test]]` の `required-features` にし、その feature を CI のグループの `features` に書きます (上の CI のジョブ)。
+- 有効になる feature は `cargo tree -p <クレート> --no-default-features -e features -i <クレート>` で確かめられます (クレート自身の feature が出なければよい)。
 
 ### クレートを足したとき
 

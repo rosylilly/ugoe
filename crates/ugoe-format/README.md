@@ -34,6 +34,18 @@
   feature が無くても、`image` モジュールは圧縮していない 8bit の RGB / RGBA の KTX2 (超圧縮は無しか zstd) を読む
   (`std` の無い環境では、画像のデコードはもともとホストの役目)。
 
+### テストと feature
+
+開発時の依存に自分を置かない (置くと `png` と `std` がテストで常に有効になり、`png` の無い形を試せない)。
+
+- `png` の無い形 (`std` も無い): `just nostd-check` (CI の rust (runtime)) がホストで `cargo test -p ugoe-format --lib --no-default-features`
+  を流す (テストのコードの clippy も)。zstd の展開 (`ruzstd` の `std` 無し)・`ReadLimits`・圧縮していない KTX2 と、
+  BCn の KTX2 を `ImageError::UnsupportedKtx2` で断ることを確かめる。
+- `png` のある形: PNG と BCn を使う単体テストは `#[cfg(feature = "png")]`、結合テストの `tests/broken_input.rs`・`tests/spec_bundles.rs` は
+  `Cargo.toml` の `required-features = ["png"]`。ワークスペースのテスト (`just ci`)・CI のグループ (`scripts/ci-groups.mjs` の `runtime` の
+  `features`)・`just crate ugoe-format` は `png` を有効にして流す。`cargo test -p ugoe-format` を直接呼ぶと飛ばされるので、
+  `--features png` を付ける。
+
 ## 画像 (`image`)
 
 テクスチャの PNG と KTX2 のデコード。ヘッドレス描画 (`ugoe-headless`)・WebAssembly (`ugoe-wasm`)・C ABI (`ugoe-ffi` の `ugoe_image_decode`) が共有する

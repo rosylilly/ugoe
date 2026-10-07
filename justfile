@@ -84,10 +84,11 @@ test-os *args:
 test-gpu *args:
     crates="$(node scripts/gpu-test-args.mjs)"; cargo test $crates {{args}}
 
-# 特定クレートだけを素早く検査: `just crate ugoe-runtime`
+# 特定クレートだけを素早く検査: `just crate ugoe-runtime`。CI のグループ (scripts/ci-groups.mjs) の features のうち、
+# そのクレートのもの (ugoe-format の png など) を有効にする
 crate name:
-    cargo clippy -p {{name}} --all-targets -- -D warnings
-    cargo test -p {{name}}
+    args="$(node scripts/ci-groups.mjs crate-args {{name}})"; cargo clippy $args --all-targets -- -D warnings
+    args="$(node scripts/ci-groups.mjs crate-args {{name}})"; cargo test $args
 
 # タスク用 worktree を作る (mbx が無効なら main の target/ をコピーしてビルドを省く。docs/workflow/build-cache.md): `just wt-add T0104`
 wt-add id *slug:

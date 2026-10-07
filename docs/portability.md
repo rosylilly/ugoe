@@ -204,6 +204,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
     配られる tier 2 のターゲット) で、クレートを 1 つずつ `--no-default-features` で clippy にかけるので、どこかで `std` に依存すると
     (依存の feature の統合の漏れを含めて) 失敗する。ターゲットは `rustup target add aarch64-unknown-none` で入れる。
     CI は `rust (runtime)` のジョブで流す。no_std に対応したクレートを `NOSTD_CRATES` に足す。
+    `HOST_TEST_CRATES` (`ugoe-format`・`ugoe-ffi`) は、`std` を外した形の単体テストもホストで流す ([testing.md](testing.md#std-の無い形の単体テスト))。
 - `std::fs`、`std::thread`、`std::time` を使わないこと。時間は `dt` として受け取ります。
 - グローバルな状態 (static mut、グローバルなロガーの初期化など) を持たないこと。
   例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。

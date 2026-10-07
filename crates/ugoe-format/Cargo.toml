@@ -26,8 +26,6 @@ png.workspace = true
 # MessagePack の読み書き (src/msgpack.rs) が rmp-serde と同じバイト列・結果になることを比べる
 rmp-serde.workspace = true
 ugoe-core = { workspace = true, features = ["std"] }
-# 結合テスト (tests/spec_bundles.rs) と image の単体テストで PNG と BCn のデコードを使うために、自分の `png` feature を有効にする
-ugoe-format = { path = ".", features = ["png"] }
 # 互換性テスト (tests/compat.rs) で、未知の物理の出力を無視することを確かめる
 # 互換性テスト (tests/compat.rs) で、モジュールのパーツが本体のポーズの要素に追従することを確かめる
 ugoe-motion = { workspace = true, features = ["std"] }
@@ -41,6 +39,17 @@ std = ["ruzstd/std", "serde/std", "serde_json/std", "thiserror/std", "ugoe-model
 # テクスチャの PNG と、ブロック圧縮 (BCn) の KTX2 のデコード (`image` モジュール。BCn は bcdec_rs で展開する。
 # docs/adr/0030-compressed-ktx2-decoding.md)。std を含む。圧縮していない KTX2 はこの feature が無くても読む。
 png = ["std", "dep:bcdec_rs", "dep:png"]
+
+# PNG のデコードを使う結合テストは feature `png` が要る。開発時の依存に自分を置いて `png` を有効にすると、
+# `--no-default-features` の単体テスト (`just nostd-check`) でも `png` と `std` が有効になるので置かない (T0186)。
+# ワークスペースのテストと CI のグループ (scripts/ci-groups.mjs) は `png` を有効にして流す。
+[[test]]
+name = "broken_input"
+required-features = ["png"]
+
+[[test]]
+name = "spec_bundles"
+required-features = ["png"]
 
 [lints]
 workspace = true

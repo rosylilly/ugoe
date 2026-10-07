@@ -5442,7 +5442,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "ugoe-core",
- "ugoe-format",
  "ugoe-model",
  "ugoe-motion",
  "ugoe-physics",

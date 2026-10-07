@@ -8,6 +8,9 @@
 //                                            `cargo clippy` / `cargo test` に渡す引数 (`-p <crate>` の並びと --features)。
 //                                            `just lint-group <group>` / `just test-group <group>` が使う。--all-features を付けると
 //                                            グループのクレートのすべての feature (`gpu-tests` など) を有効にする (lint-group の 2 回目の clippy)
+//   node scripts/ci-groups.mjs crate-args <crate>
+//                                            1 つのクレートの `-p <crate>` と、グループの features のうちそのクレートのもの
+//                                            (`just crate <name>` が使う。CI と同じく `required-features` のテストも流す。T0186)
 //   node scripts/ci-groups.mjs os <clippy|test> [<cargo の引数>...]
 //                                            OS_CRATES の clippy (すべての feature) / テストを流す (`just lint-os` / `just test-os`。
 //                                            CI の rust (windows)・rust (macos)。Windows の PowerShell からも動くよう cargo を直接呼ぶ)
@@ -29,7 +32,8 @@ import { exportMbxPath } from "./lib/mbx.mjs";
  */
 export const GROUPS = {
   // ランタイム層 (crates.io に公開するクレート)。ワークスペースでは ugoe-editor-core が schema と ts を、
-  // ugoe-headless と ugoe-wasm が ugoe-format の png を有効にする
+  // ugoe-headless と ugoe-wasm が ugoe-format の png を有効にする。ugoe-format の png を使う結合テストは required-features
+  // (std の無い形の単体テストは just nostd-check。T0186)
   runtime: {
     crates: [
       "ugoe-core",
@@ -147,6 +151,17 @@ export function cargoArgs(def, { allFeatures = false } = {}) {
   return args;
 }
 
+/**
+ * 1 つのクレートの `cargo clippy` / `cargo test` に渡す引数。グループの features のうち、そのクレートのものだけを付ける
+ * (`ugoe-format/png` など。開発時の依存に自分を置かない代わりに、CI と同じ feature でテストする。T0186)。
+ * どのグループにも無いクレートは `-p <crate>` だけ (知らない名前は cargo が誤りにする)。
+ */
+export function crateArgs(groups, name) {
+  const def = Object.values(groups).find((d) => d.crates.includes(name));
+  const features = (def?.features ?? []).filter((f) => f.startsWith(`${name}/`));
+  return features.length > 0 ? ["-p", name, "--features", features.join(",")] : ["-p", name];
+}
+
 /** OS_CRATES の `cargo` の引数。clippy はすべての feature で、警告をエラーにする。 */
 export function osCargoArgs(command, crates, extra = []) {
   const packages = crates.flatMap((name) => ["-p", name]);
@@ -199,6 +214,14 @@ function main([command, group, ...rest]) {
       console.log(cargoArgs(def, { allFeatures }).join(" "));
       return 0;
     }
+    case "crate-args": {
+      if (group === undefined) {
+        console.error("usage: node scripts/ci-groups.mjs crate-args <crate>");
+        return 1;
+      }
+      console.log(crateArgs(GROUPS, group).join(" "));
+      return 0;
+    }
     case "os": {
       let args;
       try {
@@ -231,7 +254,7 @@ function main([command, group, ...rest]) {
     }
     default:
       console.error(
-        "usage: node scripts/ci-groups.mjs <check|args <group> [--all-features]|os <clippy|test>|matrix|list>",
+        "usage: node scripts/ci-groups.mjs <check|args <group> [--all-features]|crate-args <crate>|os <clippy|test>|matrix|list>",
       );
       return 1;
   }

@@ -1483,6 +1483,7 @@ mod tests {
         let texels: Vec<u8> = (0..5 * 3 * 4).map(|i| i as u8).collect();
         let mut zstd = Ktx2::rgba8(R8G8B8A8_UNORM, (5, 3), vec![texels.clone(), vec![1; 12]]);
         zstd.zstd = true;
+        #[cfg_attr(not(feature = "png"), allow(unused_mut))]
         let mut samples = vec![
             Ktx2::rgba8(R8G8B8A8_SRGB, (5, 3), vec![texels.clone()]).bytes(),
             Ktx2::rgba8(R8G8B8_SRGB, (5, 3), vec![texels[..45].to_vec()]).bytes(),

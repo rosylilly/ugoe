@@ -5,11 +5,12 @@
 // docs/portability.md#ランタイム層が守る制約-移植性のため。
 //
 //   node scripts/nostd-check.mjs run [<crate>...]  検査を流す (クレートを省けばすべて)。ターゲットが無ければ入れ方を出して失敗する
-//                                                  (`just nostd-check`。CI の rust (runtime))。ugoe-ffi では、std の無い形の
-//                                                  単体テスト (ホスト) と、静的ライブラリを C の見本とリンクする検査も流す
-//                                                  (T0491。crates/ugoe-ffi/README.md#std-の無い環境)
+//                                                  (`just nostd-check`。CI の rust (runtime))。HOST_TEST_CRATES では std の無い形の
+//                                                  単体テストをホストで流し (T0186・T0491)、ugoe-ffi では静的ライブラリを
+//                                                  C の見本とリンクする検査も流す (T0491。crates/ugoe-ffi/README.md#std-の無い環境)
 //   node scripts/nostd-check.mjs targets           要るターゲットを出す (CI の `rustup target add` が使う)
 //   node scripts/nostd-check.mjs check             一覧のクレートがワークスペースにあり、feature `std` を既定で持つかと、
+//                                                  HOST_TEST_CRATES が開発時の依存に自分を置いていないかと、
 //                                                  MATH_CRATES の clippy.toml (数学関数の禁止) が揃っているかを検査する (`just groups`)
 //   node scripts/nostd-check.mjs list              クレートの一覧
 
@@ -51,6 +52,13 @@ export const MATH_CRATES = [
   "ugoe",
   "ugoe-ffi",
 ];
+
+/**
+ * std の無い形 (`--no-default-features`) の単体テストをホストで流すクレート。テストのコードも clippy にかける。
+ * 開発時の依存で自分の feature を有効にすると std の無い形にならないので、そのクレートは開発時の依存に自分を置かない
+ * (ugoe-format は `png` を使う結合テストを `required-features` にしている。T0186)。NOSTD_CRATES の順に並べる。
+ */
+export const HOST_TEST_CRATES = ["ugoe-format", "ugoe-ffi"];
 
 /** 静的ライブラリをリンクして調べる C ABI のクレート (T0491)。 */
 export const FFI_CRATE = "ugoe-ffi";
@@ -106,6 +114,30 @@ export function clippyArgs(name, target = NOSTD_TARGET) {
     "-D",
     "warnings",
   ];
+}
+
+/**
+ * std の無い形の単体テストのコードをホストで検査する `cargo clippy` の引数。`--profile test` でライブラリを `cfg(test)` で検査する
+ * (`--tests` は結合テストと、テストでない形のライブラリも作るので使わない。後者は ugoe-ffi ではホストで作れない)。
+ */
+export function hostClippyArgs(name) {
+  return [
+    "clippy",
+    "-p",
+    name,
+    "--lib",
+    "--profile",
+    "test",
+    "--no-default-features",
+    "--",
+    "-D",
+    "warnings",
+  ];
+}
+
+/** std の無い形の単体テストをホストで流す `cargo test` の引数。 */
+export function hostTestArgs(name) {
+  return ["test", "-p", name, "--lib", "--no-default-features"];
 }
 
 /**
@@ -174,6 +206,26 @@ export function validate(crates, metadata) {
 }
 
 /**
+ * HOST_TEST_CRATES を検査し、問題を文字列の配列で返す (空なら問題なし)。NOSTD_CRATES に含まれ、開発時の依存に自分を
+ * 置いていない (置くとその feature がテストで有効になり、std の無い形にならない。T0186) こと。
+ * @param {string[]} hostTests
+ * @param {string[]} crates
+ * @param {{ packages: Array<{ name: string, dependencies?: Array<{ name: string, kind: string | null }> }> }} metadata
+ */
+export function validateHostTests(hostTests, crates, metadata) {
+  const errors = [];
+  const packages = new Map(metadata.packages.map((p) => [p.name, p]));
+  for (const name of hostTests) {
+    if (!crates.includes(name)) errors.push(`HOST_TEST_CRATES: ${name} は NOSTD_CRATES に無い`);
+    const self = (packages.get(name)?.dependencies ?? []).some(
+      (d) => d.name === name && d.kind === "dev",
+    );
+    if (self) errors.push(`${name}: 開発時の依存に自分があり、std の無い形の単体テストにならない`);
+  }
+  return errors;
+}
+
+/**
  * MATH_CRATES の clippy.toml を検査し、問題を文字列の配列で返す (空なら問題なし)。
  * @param {string[]} crates
  * @param {string} root ルートの clippy.toml の中身
@@ -236,20 +288,28 @@ function rustLld() {
 }
 
 /**
- * ugoe-ffi の std の無い形の検査 (T0491): ホストで単体テストを流し、aarch64-unknown-none の静的ライブラリを作って
+ * HOST_TEST_CRATES の 1 つのクレートの、std の無い形の単体テストのコードの clippy とテストをホストで流す (T0186・T0491)。
+ * ホストには std があるので、テストの側は std を使ってよい。ライブラリの feature が std の無い形になっていることを確かめる。
+ */
+function checkHostTests(name) {
+  for (const args of [hostClippyArgs(name), hostTestArgs(name)]) {
+    console.log(`== ${name}: std の無い形の単体テスト (ホスト): cargo ${args.join(" ")}`);
+    try {
+      execFileSync("cargo", args, { stdio: "inherit" });
+    } catch {
+      console.error(`error: ${name} の std の無い形の単体テストが失敗した`);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * ugoe-ffi の std の無い形の検査 (T0491): aarch64-unknown-none の静的ライブラリを作って
  * C の見本 (crates/ugoe-ffi/examples/c/nostd.c) とリンクし、未解決のシンボルが HOST_SYMBOLS だけであることを確かめる。
  * 実機での動作は確かめない (crates/ugoe-ffi/README.md#std-の無い環境)。
  */
 function checkFfiStaticlib() {
-  console.log(`== ${FFI_CRATE}: std の無い形の単体テスト (ホスト)`);
-  try {
-    execFileSync("cargo", ["test", "-p", FFI_CRATE, "--lib", "--no-default-features"], {
-      stdio: "inherit",
-    });
-  } catch {
-    console.error(`error: ${FFI_CRATE} の std の無い形の単体テストが失敗した`);
-    return 1;
-  }
   const args = staticlibArgs();
   console.log(`== ${FFI_CRATE} (${NOSTD_TARGET}, staticlib): cargo ${args.join(" ")}`);
   try {
@@ -360,6 +420,9 @@ function run(crates) {
       return 1;
     }
   }
+  for (const name of HOST_TEST_CRATES) {
+    if (crates.includes(name) && checkHostTests(name) !== 0) return 1;
+  }
   if (crates.includes(FFI_CRATE)) return checkFfiStaticlib();
   return 0;
 }
@@ -382,8 +445,10 @@ function main([command, ...names]) {
       console.log(NOSTD_TARGET);
       return 0;
     case "check": {
+      const meta = metadata();
       const errors = [
-        ...validate(NOSTD_CRATES, metadata()),
+        ...validate(NOSTD_CRATES, meta),
+        ...validateHostTests(HOST_TEST_CRATES, NOSTD_CRATES, meta),
         ...validateClippyConfigs(
           MATH_CRATES,
           readFileSync("clippy.toml", "utf8"),

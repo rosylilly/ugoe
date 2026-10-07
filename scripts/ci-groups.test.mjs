@@ -1,7 +1,15 @@
 // scripts/ci-groups.mjs の検査のテスト (`just groups`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cargoArgs, OS_CRATES, osCargoArgs, validate, validateOs } from "./ci-groups.mjs";
+import {
+  cargoArgs,
+  crateArgs,
+  GROUPS,
+  OS_CRATES,
+  osCargoArgs,
+  validate,
+  validateOs,
+} from "./ci-groups.mjs";
 
 const pkg = (name, { features = {}, targets = [] } = {}) => ({
   name,
@@ -102,4 +110,21 @@ test("OS のジョブの clippy はすべての feature で警告をエラーに
     "--nocapture",
   ]);
   assert.throws(() => osCargoArgs("build", ["a"]), /unknown command: build/);
+});
+
+test("1 つのクレートの引数は、グループの features のうちそのクレートのものだけを付ける", () => {
+  const groups = {
+    g: { crates: ["a", "b"], features: ["a/x", "b/y", "a/z"] },
+    h: { crates: ["c"] },
+  };
+  assert.deepEqual(crateArgs(groups, "a"), ["-p", "a", "--features", "a/x,a/z"]);
+  assert.deepEqual(crateArgs(groups, "c"), ["-p", "c"]);
+  assert.deepEqual(crateArgs(groups, "unknown"), ["-p", "unknown"]);
+  // png を使う結合テストは required-features なので、just crate ugoe-format でも流れる (T0186)
+  assert.deepEqual(crateArgs(GROUPS, "ugoe-format"), [
+    "-p",
+    "ugoe-format",
+    "--features",
+    "ugoe-format/png",
+  ]);
 });

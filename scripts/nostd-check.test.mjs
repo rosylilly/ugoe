@@ -5,7 +5,10 @@ import {
   clippyArgs,
   FFI_CRATE,
   HOST_SYMBOLS,
+  HOST_TEST_CRATES,
+  hostClippyArgs,
   hostStubSource,
+  hostTestArgs,
   MATH_CRATES,
   NOSTD_CRATES,
   NOSTD_TARGET,
@@ -15,6 +18,7 @@ import {
   unexpectedSymbols,
   validate,
   validateClippyConfigs,
+  validateHostTests,
 } from "./nostd-check.mjs";
 
 test("クレートを省けばすべてを選び、知らないクレートは失敗する", () => {
@@ -117,4 +121,41 @@ test("ホストの C ライブラリの代わりは、HOST_SYMBOLS をすべて�
   const source = hostStubSource();
   for (const name of HOST_SYMBOLS) assert.match(source, new RegExp(`\\b${name}\\(`));
   assert.ok(!source.includes("undefined"));
+});
+
+test("std の無い形の単体テストは、既定の feature を外してホストで clippy とテストを流す", () => {
+  assert.deepEqual(hostClippyArgs("x"), [
+    "clippy",
+    "-p",
+    "x",
+    "--lib",
+    "--profile",
+    "test",
+    "--no-default-features",
+    "--",
+    "-D",
+    "warnings",
+  ]);
+  assert.deepEqual(hostTestArgs("x"), ["test", "-p", "x", "--lib", "--no-default-features"]);
+  assert.ok(HOST_TEST_CRATES.includes("ugoe-format"));
+  assert.ok(HOST_TEST_CRATES.includes(FFI_CRATE));
+  assert.deepEqual(validateHostTests(HOST_TEST_CRATES, NOSTD_CRATES, { packages: [] }), []);
+});
+
+test("std の無い形の単体テストのクレートは、std 無しの一覧にあり、開発時の依存に自分を置かない", () => {
+  const metadata = {
+    packages: [
+      { name: "ok", dependencies: [{ name: "other", kind: "dev" }] },
+      { name: "normal-self", dependencies: [{ name: "normal-self", kind: null }] },
+      { name: "dev-self", dependencies: [{ name: "dev-self", kind: "dev" }] },
+    ],
+  };
+  const crates = ["ok", "normal-self", "dev-self"];
+  assert.deepEqual(validateHostTests(["ok", "normal-self"], crates, metadata), []);
+  assert.deepEqual(validateHostTests(["dev-self"], crates, metadata), [
+    "dev-self: 開発時の依存に自分があり、std の無い形の単体テストにならない",
+  ]);
+  assert.deepEqual(validateHostTests(["missing"], crates, metadata), [
+    "HOST_TEST_CRATES: missing は NOSTD_CRATES に無い",
+  ]);
 });
