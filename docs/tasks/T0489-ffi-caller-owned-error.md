@@ -1,11 +1,11 @@
 ---
 id: T0489
 title: "C ABI: 失敗の中身を呼び出し側の UgoeError で返し、スレッドローカルの ugoe_last_error* を廃止する"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, bindings/unity, tests/conformance, ugoe, ugoe-wasm, bindings/godot, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0489
 ---
 
 # T0489: C ABI: 失敗の中身を呼び出し側の UgoeError で返し、スレッドローカルの ugoe_last_error* を廃止する

@@ -1,11 +1,11 @@
 ---
 id: T0179
 title: no_std の土台 (依存の既定の feature・just nostd-check・ugoe-core と ugoe-model)
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-core, ugoe-model, Cargo.toml, Cargo.lock, justfile, scripts, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0179
 ---
 
 # T0179: no_std の土台 (依存の既定の feature・just nostd-check・ugoe-core と ugoe-model)
