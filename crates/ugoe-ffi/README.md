@@ -18,7 +18,9 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
   知らせるだけにする。入口ごとの表は [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)
 - C ABI の入口は fuzz でも確かめる (`just fuzz ffi`。T0497)。fuzz のターゲットが呼ぶ安全な Rust の入口 `ugoe_ffi::fuzzing`
   (feature `fuzzing`。ヘッダには出さず、配るライブラリでは有効にしない) が、入力を C のホストと同じ呼び方の列に組み立てる。
-  公開する関数を足したら、`src/fuzzing.rs` の問い合わせか台本の操作にも足す ([docs/testing.md](../../docs/testing.md#fuzz))
+  公開する関数を足したら、`src/fuzzing.rs` の問い合わせか台本の操作にも足す ([docs/testing.md](../../docs/testing.md#fuzz))。
+  入れ忘れは `just refs` (`scripts/check-ffi-bindings.mjs`) がヘッダと比べて、呼んでいない関数の名前を出して止める。
+  入力を取らない関数など fuzz で呼ばなくてよいものは、同じスクリプトの `fuzz` の `omit` に理由を付けて書く (T0498)
 
 ## 使い方
 

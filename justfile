@@ -131,7 +131,7 @@ spec:
 layers:
     @node scripts/check-layers.mjs
 
-# 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言の過不足
+# 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口 (ugoe_ffi::fuzzing) の呼び出しの過不足
 # (docs/workflow/code-review.md#m9-の結果)
 refs:
     @node --test --test-reporter=dot scripts/check-refs.test.mjs

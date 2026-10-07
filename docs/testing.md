@@ -12,7 +12,7 @@
 | フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/*/src/**/*.test.ts`・`packages/*/src/**/*.test.ts`。部品を描くテストは [下](#エディタの部品のテスト)) | `just web-check` (先に `just wasm-fresh` で古い wasm の生成物を作り直す。[下](#wasm-の生成物の古さ)) |
 | wasm の型の写しの検査 | `scripts/check-wasm-types.mjs`。手書きの型の写し (`bindings/web/stub/ugoe_wasm.d.ts`・`@ugoe/player` と `@ugoe/face-tracking` の interface) を `just wasm` の生成物と比べる | `just wasm-types` (生成物が無ければ一部の写しをスタブと比べる。CI の web ジョブは `just wasm` の後に生成物と比べる) |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
-| 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと Unity の宣言の過不足) | `just refs` |
+| 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと、Unity の宣言・fuzz の入口 `ugoe_ffi::fuzzing` の呼び出しの過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・npm のライセンスの例外・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
 | API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps`。wasm32 でだけコンパイルするコード (`ugoe-wasm` の `src/web.rs`・`src/web/`) は wasm32 のターゲットで `cargo doc -p ugoe-wasm` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`)。wasm32 の分は `just wasm-check` |
@@ -430,6 +430,9 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
     誤りとして返す。
   - 同じ入口を、決まった入力 (`assets/compat` と `assets/samples` のファイルに決まった台本を付けたもの) で `crates/ugoe-ffi/tests/fuzzing.rs`
     (`required-features = ["fuzzing"]`。CI のグループ `bindings` が feature を有効にする) が stable で回す。`ffi` で見つかった入力はここに足す。
+  - C ABI に関数を足して入口に入れ忘れると、`just refs` (`scripts/check-ffi-bindings.mjs`) がヘッダと入口の呼び出し (関数のポインタとして
+    渡すのも含む) を比べ、呼んでいない関数の名前を出して止める。呼ばなくてよい関数 (`ugoe_abi_version` など入力を取らないもの) は
+    スクリプトの `omit` に理由付きで置く (T0498)。どの台本で届くかまでは見ない。
 - 手元では `just fuzz <target> [秒]` (既定 60 秒。`all` ですべて)。nightly と cargo-fuzz が要り、無ければ入れ方を示して止まります。
   nightly は fuzz のビルドだけで使い、`rust-toolchain.toml` (stable) は変えません。
 - CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで

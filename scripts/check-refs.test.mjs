@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hasAnchor, refs } from "./check-doc-refs.mjs";
-import { compare, csharpFunctions, headerFunctions } from "./check-ffi-bindings.mjs";
+import { compare, csharpFunctions, headerFunctions, rustFunctions } from "./check-ffi-bindings.mjs";
 
 test("根からのパスの参照とアンカーを集め、相対パスと URL の一部は除く", () => {
   const text = [
@@ -55,9 +55,35 @@ test("漏れ・余り・不要な除外を誤りにする", () => {
     binding,
   );
   assert.deepEqual(errors, [
-    "b: ヘッダの ugoe_b が B.cs に宣言されていない",
-    "b: ugoe_c は宣言されているので OMIT から外す",
+    "b: ヘッダの ugoe_b が B.cs で宣言されていない",
+    "b: ugoe_c は宣言されているので omit から外す",
     "b: B.cs の ugoe_old がヘッダに無い",
-    "b: OMIT の ugoe_gone がヘッダに無い",
+    "b: omit の ugoe_gone がヘッダに無い",
   ]);
+});
+
+test("Rust の呼び出しと関数のポインタを集め、コメントと文字列の中の名前は数えない", () => {
+  const rs = [
+    "//! `ugoe_abi_version` は呼ばない",
+    "let code = unsafe { ugoe_puppet_update(puppet, 1.0 / 60.0, self.error) };",
+    'self.check("ugoe_puppet_destroy", code); // ugoe_version も',
+    'let parts = self.count("ugoe_puppet_part_count", ugoe_puppet_part_count, p);',
+    '/* ugoe_puppet_frame */ let s = "\\"ugoe_error_kind\\"";',
+  ].join("\n");
+  assert.deepEqual([...rustFunctions(rs)].sort(), ["ugoe_puppet_part_count", "ugoe_puppet_update"]);
+});
+
+test("fuzz の入口が呼んでいない関数を、呼び出しの漏れとして名前を出す", () => {
+  const binding = {
+    name: "fuzz",
+    file: "fuzzing.rs",
+    verb: "呼ばれて",
+    omit: { ugoe_abi_version: "理由" },
+  };
+  const errors = compare(
+    new Set(["ugoe_abi_version", "ugoe_a", "ugoe_b"]),
+    rustFunctions("ugoe_a(x);"),
+    binding,
+  );
+  assert.deepEqual(errors, ["fuzz: ヘッダの ugoe_b が fuzzing.rs で呼ばれていない"]);
 });

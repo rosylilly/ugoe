@@ -260,6 +260,11 @@ impl<'a> Runner<'a> {
                 self.read_str(ugoe_error_field_key_at(self.error, i));
                 self.read_str(ugoe_error_field_value_at(self.error, i));
             }
+            // キーで引く形も、無いキー・空のキー・NULL を含めて呼ぶ
+            for key in [c"limit", c"module", c"errors", c"", c"no-such-key"] {
+                self.read_str(ugoe_error_field(self.error, key.as_ptr()));
+            }
+            self.read_str(ugoe_error_field(self.error, ptr::null()));
             let message = ugoe_error_message(self.error);
             self.read_str(message);
             if message.is_null() {
@@ -386,6 +391,26 @@ impl<'a> Runner<'a> {
     /// モジュールとして読み、読めたら名前・スロット・警告を問い合わせる。
     fn create_module(&mut self, file: &[u8]) -> Option<*mut UgoeModule> {
         let mut module = ptr::null_mut();
+        // 小さな上限でも読み、上限を超えたら止まることを確かめる (読めたら破棄して、ふつうの上限で読み直す)
+        let limits = UgoeReadLimits {
+            max_chunk_decompressed: 64,
+            max_total_decompressed: 128,
+        };
+        // SAFETY: `file` は `file.len()` バイトの読める領域、`limits` は読める、`module` は書き込める。
+        let code = unsafe {
+            ugoe_module_create_with_limits(
+                file.as_ptr(),
+                file.len(),
+                &raw const limits,
+                &raw mut module,
+                self.error,
+            )
+        };
+        if self.check("ugoe_module_create_with_limits", code) {
+            // SAFETY: 作ったばかりで、ほかに渡していない。
+            unsafe { ugoe_module_destroy(module) };
+            module = ptr::null_mut();
+        }
         // SAFETY: `file` は `file.len()` バイトの読める領域、`module` は書き込める。
         let code =
             unsafe { ugoe_module_create(file.as_ptr(), file.len(), &raw mut module, self.error) };
