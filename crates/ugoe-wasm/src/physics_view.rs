@@ -59,7 +59,7 @@ mod tests {
         let index = instance.parameters().index_of("Angle").unwrap();
         instance.parameters_mut().set(index, 30.0);
         instance.update();
-        let (s, c) = 30f32.to_radians().sin_cos();
+        let (s, c) = ugoe::core::math::sin_cos(30f32.to_radians());
         // Arm は (128,128) を中心に時計回りに 30 度。
         let p = deformer_point(&instance, "Arm", Vec2::new(10.0, 0.0)).unwrap();
         assert!(close(&p, &[128.0 + 10.0 * c, 128.0 + 10.0 * s]));

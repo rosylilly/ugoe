@@ -51,6 +51,7 @@ export const MATH_CRATES = [
   "ugoe-motion",
   "ugoe",
   "ugoe-ffi",
+  "ugoe-wasm",
 ];
 
 /**

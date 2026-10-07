@@ -198,6 +198,8 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
     `min`・`max`・`clamp` などは `core` にあり、結果も IEEE で決まるので、そのまま使う。
     足りない関数は `ugoe_core::math` に `libm` を呼ぶ関数を足す。`std` の `f32`・`f64` の数学関数を直接呼ぶと、clippy の `disallowed_methods`
     が警告する (対象は `scripts/nostd-check.mjs` の `MATH_CRATES` で、各クレートの `clippy.toml` に書く。`just groups` が揃っているかを検査する)。
+    `std` を使う `ugoe-wasm` も `MATH_CRATES` に入れて同じ禁止を持たせ、ブラウザ (エディタを含む) で計算した値をほかのホストとそろえる
+    (テストのコードにも効く。T0496)。
   - ワークスペースの依存 (`[workspace.dependencies]`) は既定の feature を切ってある (`glam`・`ruzstd`・`serde`・`serde_json`・`thiserror`・
     `ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe`)。メンバーの `default-features = false` はワークスペースの側で切らないと効かないため。使う側で
     `features = ["std"]` を書く (`ruzstd` は `["hash", "std"]`)。

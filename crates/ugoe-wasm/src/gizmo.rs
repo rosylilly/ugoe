@@ -100,7 +100,7 @@ mod tests {
         // Angle = 30: Arm が時計回りに 30 度回る。
         set(&mut instance, "Angle", 30.0);
         let arm = rotation_frame(&instance, "Arm").unwrap();
-        let (s, c) = 30f32.to_radians().sin_cos();
+        let (s, c) = ugoe::core::math::sin_cos(30f32.to_radians());
         assert!(close(&arm, &[128.0, 128.0, c, s, -s, c]));
         // Cloth (Arm の子のワープ) の制御点も回る。
         let cloth = warp_points(&instance, "Cloth").unwrap();
