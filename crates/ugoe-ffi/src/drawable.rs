@@ -6,7 +6,7 @@ use std::ffi::c_char;
 use ugoe::format::{TextureData, TextureFormat};
 use ugoe::model::{BlendMode, MaskMode};
 
-use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UgoeError, UgoeResult, guard};
+use crate::error::{Error, UgoeError, UgoeResult, guard};
 use crate::puppet::{UgoePuppet, puppet_ref, write};
 
 /// 通常の合成。
@@ -32,7 +32,7 @@ pub const UGOE_TEXTURE_KTX2: u32 = 2;
 pub const UGOE_CHANGED_POSITIONS: u8 = 1 << 0;
 /// 不透明度。
 pub const UGOE_CHANGED_OPACITY: u8 = 1 << 1;
-/// 描画順の値 (並び全体の変化は `ugoe_puppet_render_order_changed`)。
+/// 描画順の値 (並び全体の変化は `UgoeFrame::render_order_changed`)。
 pub const UGOE_CHANGED_DRAW_ORDER: u8 = 1 << 2;
 /// 描くかどうか (`visible`)。
 pub const UGOE_CHANGED_VISIBILITY: u8 = 1 << 3;
@@ -43,7 +43,7 @@ pub const UGOE_CHANGED_SCREEN_COLOR: u8 = 1 << 5;
 /// マスクの効き具合。
 pub const UGOE_CHANGED_MASK_STRENGTH: u8 = 1 << 6;
 
-// ビットは `ugoe::runtime::DrawableChanges` のものをそのまま渡す (`ugoe_puppet_drawable_state`)。
+// ビットは `ugoe::runtime::DrawableChanges` のものをそのまま渡す (`ugoe_puppet_frame`)。
 const _: () = {
     use ugoe::runtime::DrawableChanges as C;
     assert!(UGOE_CHANGED_POSITIONS == C::POSITIONS.bits());
@@ -56,7 +56,7 @@ const _: () = {
     assert!(C::ALL.bits() == (1 << 7) - 1);
 };
 
-// 頂点位置と UV は `Vec2` の並びを float の並びとして貸す (`ugoe_puppet_positions`・`ugoe_puppet_drawable_uvs`)。
+// UV は `Vec2` の並びを float の並びとして貸す (`ugoe_puppet_drawable_uvs`)。
 const _: () = {
     assert!(size_of::<ugoe::core::Vec2>() == 2 * size_of::<f32>());
     assert!(align_of::<ugoe::core::Vec2>() == align_of::<f32>());
@@ -94,12 +94,12 @@ pub struct UgoeMask {
     pub invert: bool,
 }
 
-/// 描画可能要素の、直前の `ugoe_puppet_update` で評価した状態。
+/// 描画可能要素の、直前の `ugoe_puppet_update` で評価した状態 (`ugoe_puppet_frame` で受け取る)。
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UgoeDrawableState {
     pub opacity: f32,
-    /// 描画順の値 (大きいほど手前)。並べた結果は `ugoe_puppet_render_order`。
+    /// 描画順の値 (大きいほど手前)。並べた結果は `UgoeFrame::render_order`。
     pub draw_order: f32,
     /// 乗算色 (RGB)。
     pub multiply_color: [f32; 3],
@@ -127,7 +127,7 @@ pub struct UgoeTexture {
     pub len: usize,
 }
 
-fn blend_code(blend: BlendMode) -> u32 {
+pub(crate) fn blend_code(blend: BlendMode) -> u32 {
     match blend.effective() {
         BlendMode::Additive => UGOE_BLEND_ADDITIVE,
         BlendMode::Multiply => UGOE_BLEND_MULTIPLY,
@@ -236,114 +236,6 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_mask(
     })
 }
 
-/// `index` 番目の描画可能要素の、直前の `ugoe_puppet_update` で評価した状態。
-///
-/// # Safety
-///
-/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_drawable_state(
-    puppet: *const UgoePuppet,
-    index: u32,
-    out: *mut UgoeDrawableState,
-    error: *mut UgoeError,
-) -> UgoeResult {
-    guard(error, || {
-        // SAFETY: 呼び出し側の約束。
-        let p = unsafe { puppet_ref(puppet)? };
-        let i = p.drawable_index(index)?;
-        let instance = p.puppet.instance();
-        let d = &instance.drawables()[i];
-        let state = UgoeDrawableState {
-            opacity: d.opacity,
-            draw_order: d.draw_order,
-            multiply_color: [d.multiply_color.r, d.multiply_color.g, d.multiply_color.b],
-            screen_color: [d.screen_color.r, d.screen_color.g, d.screen_color.b],
-            blend_mode: blend_code(d.blend),
-            mask_strength: d.mask_strength,
-            visible: d.visible,
-            changes: instance.changes()[i].bits(),
-        };
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", state) }
-    })
-}
-
-/// `index` 番目の描画可能要素の頂点位置 (キャンバス座標、x と y の組を頂点の数だけ) を、
-/// ホストのバッファ `out` (`len` 個の float) にコピーする。`len` が 2 × 頂点数より小さければ
-/// `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、何も書かない。
-///
-/// # Safety
-///
-/// `puppet` は有効な `UgoePuppet`、`out` は `len` 個の float を書き込める領域を指すこと。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_copy_positions(
-    puppet: *const UgoePuppet,
-    index: u32,
-    out: *mut f32,
-    len: usize,
-    error: *mut UgoeError,
-) -> UgoeResult {
-    guard(error, || {
-        // SAFETY: 呼び出し側の約束。
-        let p = unsafe { puppet_ref(puppet)? };
-        let i = p.drawable_index(index)?;
-        let positions = &p.puppet.instance().drawables()[i].positions;
-        let needed = positions.len() * 2;
-        if len < needed {
-            return Err(Error::new(
-                UGOE_ERROR_BUFFER_TOO_SMALL,
-                format!("`out` holds {len} floats but {needed} are needed"),
-            ));
-        }
-        if needed == 0 {
-            return Ok(());
-        }
-        if out.is_null() {
-            return Err(Error::null("out"));
-        }
-        // SAFETY: `out` は `len` (≥ needed) 個の float を書き込める (呼び出し側の約束)。
-        let out = unsafe { std::slice::from_raw_parts_mut(out, needed) };
-        for (dst, v) in out.as_chunks_mut::<2>().0.iter_mut().zip(positions) {
-            *dst = [v.x, v.y];
-        }
-        Ok(())
-    })
-}
-
-/// `index` 番目の描画可能要素の頂点位置を、内部のバッファのまま借りる。`*out` に先頭
-/// (x と y の組が `*out_len` / 2 個)、`*out_len` に float の数を書く。
-///
-/// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
-///
-/// # Safety
-///
-/// `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_positions(
-    puppet: *const UgoePuppet,
-    index: u32,
-    out: *mut *const f32,
-    out_len: *mut usize,
-    error: *mut UgoeError,
-) -> UgoeResult {
-    guard(error, || {
-        // SAFETY: 呼び出し側の約束。
-        let p = unsafe { puppet_ref(puppet)? };
-        let i = p.drawable_index(index)?;
-        let positions = &p.puppet.instance().drawables()[i].positions;
-        // `glam::Vec2` は `#[repr(C)] { x: f32, y: f32 }` なので、float の並びとして読める。
-        let ptr = positions.as_ptr().cast::<f32>();
-        if out.is_null() {
-            return Err(Error::null("out"));
-        }
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out_len, "out_len", positions.len() * 2)? };
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", ptr) }
-    })
-}
-
 /// `index` 番目の描画可能要素のテクスチャ座標 (u と v の組を頂点の数だけ。0〜1、画像の左上が原点) を借りる。
 /// ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 ///
@@ -399,53 +291,6 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_indices(
         unsafe { write(out_len, "out_len", indices.len())? };
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", indices.as_ptr()) }
-    })
-}
-
-/// 奥から手前への描画順 (描画可能要素の番号の並び) を借りる。`*out_len` は描画可能要素の数。
-/// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
-///
-/// # Safety
-///
-/// `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_render_order(
-    puppet: *const UgoePuppet,
-    out: *mut *const u32,
-    out_len: *mut usize,
-    error: *mut UgoeError,
-) -> UgoeResult {
-    guard(error, || {
-        // SAFETY: 呼び出し側の約束。
-        let p = unsafe { puppet_ref(puppet)? };
-        let order = p.puppet.instance().render_order();
-        if out.is_null() {
-            return Err(Error::null("out"));
-        }
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out_len, "out_len", order.len())? };
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", order.as_ptr()) }
-    })
-}
-
-/// 前の `ugoe_puppet_update` から描画順の並びが変わったか (作った直後と最初の `update` の後は true)。
-///
-/// # Safety
-///
-/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_render_order_changed(
-    puppet: *const UgoePuppet,
-    out: *mut bool,
-    error: *mut UgoeError,
-) -> UgoeResult {
-    guard(error, || {
-        // SAFETY: 呼び出し側の約束。
-        let p = unsafe { puppet_ref(puppet)? };
-        let changed = p.puppet.instance().render_order_changed();
-        // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", changed) }
     })
 }
 

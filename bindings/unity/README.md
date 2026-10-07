@@ -225,8 +225,12 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
 
 ### C ABI との対応
 
-`Native.cs` は `crates/ugoe-ffi/include/ugoe.h` のすべての関数を宣言する。ただし `ugoe_puppet_positions` (内部のバッファの借用) だけは
-宣言しない。C# では借りても配列に写すことになり、`ugoe_puppet_copy_positions` (`Puppet.CopyPositions`) と同じだから。
+`Native.cs` は `crates/ugoe-ffi/include/ugoe.h` のすべての関数を宣言する。ただし `ugoe_puppet_frame` (毎フレームの状態の借用) だけは
+宣言しない。C# では借りても配列に写すことになり、`ugoe_puppet_copy_frame` (`FrameSync.Pull`) と同じだから。
+毎フレームの状態 (すべての要素の状態・描画順・頂点の位置) は `FrameSync.Pull` が `ugoe_puppet_copy_frame` の 1 回の呼び出しで受け取る
+(頂点の位置は変更フラグの立った要素の範囲だけを写させる)。1 フレームの C ABI の呼び出しは、`update` を除いて 1 回 (前は要素ごとの状態の N 回、
+頂点の位置の変わった要素の数だけ、描画順が変わったかの 1 回と、変わったときの描画順の 1 回。24 要素の `avatar.ugoe` では最大 50 回) (T0490)。
+変更フラグによらずすべての頂点の位置を読むときは `FrameSync.PullAll`。
 読み込みの上限の関数 (`ugoe_read_limits_default`・`ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits`) は
 `UgoeReadLimits.Default`・`Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` (T0458)。
 画像のデコード (`ugoe_image_*`) は `EncodedTexture.Decode(premultiply[, UgoeImageLimits])` で、結果は `DecodedImage` (上の行が先の RGBA8) に写して
@@ -254,8 +258,9 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
     法線マップのあるテクスチャ (`avatar-lit.ugoe`) はアトラスにまとめられない (法線マップを同じ配置で詰める必要があり、ugoe-editor-core の
     アトラス化がまだ対応していない)。`MaterialPropertyBlock` を使うので、Unity の動的バッチングと SRP Batcher はもともと効かない。
   - `batching` を false にすると要素ごとに描く (比べるとき・調べるとき)。
-- 毎フレーム LateUpdate で評価し (`ugoe_puppet_update`)、**変更フラグ** (`UGOE_CHANGED_*`・`render_order_changed`) の立った
-  要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形 (表示とカリング) を送り直す (`FrameSync`)。
+- 毎フレーム LateUpdate で評価し (`ugoe_puppet_update`)、そのフレームの状態を 1 回の呼び出しで受け取って (`ugoe_puppet_copy_frame`)、
+  **変更フラグ** (`UGOE_CHANGED_*`・`render_order_changed`) の立った要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形
+  (表示とカリング) を送り直す (`FrameSync`)。
   マスクも、関わる要素の頂点かマスクの効き具合が変わったときだけ描き直す。
 - テクスチャは読み込み時に乗算済みアルファ (参照実装と同じ `(c × a + 127) div 255`) にし、バイリニア・端で止める・
   ミップマップなし・sRGB のデコードなし (`linear: true`) で作る。法線マップはアルファを掛けない。PNG と KTX2 (圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7) は

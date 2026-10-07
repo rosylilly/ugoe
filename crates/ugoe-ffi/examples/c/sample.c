@@ -472,37 +472,24 @@ int main(int argc, char **argv) {
         CHECK(ugoe_puppet_update(puppet, 1.0f / 60.0f, err));
     }
 
-    /* 奥から順に、借りた頂点とコピーした頂点が一致することを確かめる。 */
-    const uint32_t *order = NULL;
-    size_t order_len = 0;
-    CHECK(ugoe_puppet_render_order(puppet, &order, &order_len, err));
-    EXPECT(order_len == drawables);
+    /* このフレームの状態をまとめて借り、奥から順に読む。コピーした状態・頂点が借りたものと一致することも確かめる。 */
+    UgoeFrame frame;
+    CHECK(ugoe_puppet_frame(puppet, &frame, err));
+    EXPECT(frame.drawable_count == drawables);
     size_t visible = 0, vertices = 0;
-    for (size_t k = 0; k < order_len; k++) {
-        uint32_t d = order[k];
+    for (uint32_t k = 0; k < frame.drawable_count; k++) {
+        uint32_t d = frame.render_order[k];
         UgoeDrawableInfo info;
-        UgoeDrawableState state;
         CHECK(ugoe_puppet_drawable_info(puppet, d, &info, err));
-        CHECK(ugoe_puppet_drawable_state(puppet, d, &state, err));
         EXPECT(info.texture < textures);
-
-        const float *borrowed = NULL;
-        size_t floats = 0;
-        CHECK(ugoe_puppet_positions(puppet, d, &borrowed, &floats, err));
-        EXPECT(floats == 2 * (size_t)info.vertex_count);
-        float *copied = malloc((floats > 0 ? floats : 1) * sizeof(float));
-        CHECK(ugoe_puppet_copy_positions(puppet, d, copied, floats, err));
-        EXPECT(floats == 0 || memcmp(borrowed, copied, floats * sizeof(float)) == 0);
-        for (size_t v = 0; v < floats; v++) {
-            EXPECT(isfinite(copied[v]));
+        const UgoeDrawableState *state = &frame.states[d];
+        const UgoePositionRange *range = &frame.position_ranges[d];
+        EXPECT(range->count == 2 * (size_t)info.vertex_count);
+        EXPECT(range->first + range->count <= frame.positions_len);
+        for (size_t v = 0; v < range->count; v++) {
+            EXPECT(isfinite(frame.positions[range->first + v]));
         }
-        free(copied);
-
-        if (floats > 0) {
-            float too_small[1];
-            EXPECT(ugoe_puppet_copy_positions(puppet, d, too_small, 1, err) == UGOE_ERROR_BUFFER_TOO_SMALL);
-        }
-        if (state.visible) {
+        if (state->visible) {
             visible++;
         }
         vertices += info.vertex_count;
@@ -510,9 +497,34 @@ int main(int argc, char **argv) {
     printf("%zu visible drawables, %zu vertices\n", visible, vertices);
     EXPECT(visible > 0);
 
+    /* コピーの形: まず要る数を聞き、ホストのバッファに写す。 */
+    UgoeFrameBuffers buffers = {0};
+    UgoeFrameCopy copy;
+    EXPECT(ugoe_puppet_copy_frame(puppet, &buffers, false, &copy, err) == UGOE_ERROR_BUFFER_TOO_SMALL);
+    EXPECT(copy.drawable_count == drawables && copy.positions_len == frame.positions_len);
+    buffers.drawable_capacity = copy.drawable_count;
+    buffers.states = malloc((copy.drawable_count + 1) * sizeof(UgoeDrawableState));
+    buffers.render_order = malloc((copy.drawable_count + 1) * sizeof(uint32_t));
+    buffers.position_ranges = malloc((copy.drawable_count + 1) * sizeof(UgoePositionRange));
+    buffers.positions_capacity = copy.positions_len;
+    buffers.positions = malloc((copy.positions_len + 1) * sizeof(float));
+    CHECK(ugoe_puppet_copy_frame(puppet, &buffers, false, &copy, err));
+    EXPECT(copy.render_order_changed == frame.render_order_changed);
+    EXPECT(memcmp(buffers.render_order, frame.render_order, drawables * sizeof(uint32_t)) == 0);
+    EXPECT(memcmp(buffers.position_ranges, frame.position_ranges, drawables * sizeof(UgoePositionRange)) == 0);
+    EXPECT(frame.positions_len == 0 || memcmp(buffers.positions, frame.positions, frame.positions_len * sizeof(float)) == 0);
+    for (uint32_t d = 0; d < drawables; d++) {
+        EXPECT(buffers.states[d].opacity == frame.states[d].opacity);
+        EXPECT(buffers.states[d].changes == frame.states[d].changes);
+    }
+    free(buffers.states);
+    free(buffers.render_order);
+    free(buffers.position_ranges);
+    free(buffers.positions);
+
     /* 範囲外の番号はエラーになる。 */
-    UgoeDrawableState state;
-    EXPECT(ugoe_puppet_drawable_state(puppet, drawables, &state, err) == UGOE_ERROR_OUT_OF_RANGE);
+    UgoeDrawableInfo out_of_range;
+    EXPECT(ugoe_puppet_drawable_info(puppet, drawables, &out_of_range, err) == UGOE_ERROR_OUT_OF_RANGE);
 
     print_warnings(puppet);
     hit_test(puppet, &canvas);

@@ -21,8 +21,8 @@ export const BINDINGS = [
     name: "unity",
     file: "bindings/unity/com.ugoe.unity/Runtime/Core/Native.cs",
     omit: {
-      ugoe_puppet_positions:
-        "内部のバッファの借用。C# では配列に写すことになり ugoe_puppet_copy_positions と同じ (bindings/unity/README.md)",
+      ugoe_puppet_frame:
+        "毎フレームの状態の借用。C# では配列に写すことになり ugoe_puppet_copy_frame と同じ (bindings/unity/README.md)",
     },
   },
 ];

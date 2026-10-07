@@ -7,8 +7,9 @@
 //! - 失敗しうる関数は [`UgoeResult`] を返し、最後の引数 `error` に [`UgoeError`] を取る (NULL なら書かない)。
 //!   失敗の中身はそこから読む。C ABI はグローバルな状態もスレッドローカルな状態も持たない (ADR 0031)。
 //! - パニックを FFI 境界の外へ漏らさない (`catch_unwind` して [`UGOE_ERROR_PANIC`] を返す)。
-//! - 頂点位置は、ホストのバッファへのコピー ([`ugoe_puppet_copy_positions`]) と、内部のバッファの
-//!   借用 ([`ugoe_puppet_positions`]。次の `ugoe_puppet_update` まで有効) の両方を用意する。
+//! - 毎フレームの描画の状態 (頂点位置・不透明度・描画順など) は 1 回の呼び出しでまとめて渡す。内部のバッファの
+//!   借用 ([`ugoe_puppet_frame`]。次の `ugoe_puppet_update` まで有効) と、ホストのバッファへのコピー
+//!   ([`ugoe_puppet_copy_frame`]) の両方を用意する (ADR 0031)。
 #![allow(unsafe_code)] // `#[unsafe(no_mangle)]` と生ポインタ操作のため、このクレートに限り許可する。
 
 mod animation;
@@ -16,6 +17,7 @@ mod drawable;
 mod dress_up;
 mod error;
 mod follow;
+mod frame;
 mod hit;
 mod image;
 mod lighting;
@@ -32,6 +34,7 @@ pub use drawable::*;
 pub use dress_up::*;
 pub use error::*;
 pub use follow::*;
+pub use frame::*;
 pub use hit::*;
 pub use image::*;
 pub use lighting::*;

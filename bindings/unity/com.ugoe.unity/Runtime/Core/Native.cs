@@ -6,8 +6,8 @@
 // - 失敗しうる関数は最後の引数に UgoeError* (IntPtr error) を取る。呼ぶ側は NativeError.Current (このスレッドの UgoeError) を渡し、
 //   同じスレッドのまま UgoeException.Check で結果を確かめる (間に await を挟まない)。
 // - 関数を足したら、ヘッダ (crates/ugoe-ffi/include/ugoe.h) の宣言と型を合わせる。
-// - ヘッダの関数のうち ugoe_puppet_positions (内部のバッファの借用) だけは宣言しない。C# では借りても配列に写すことになり、
-//   ugoe_puppet_copy_positions と同じなので (README の「C ABI との対応」)。
+// - ヘッダの関数のうち ugoe_puppet_frame (毎フレームの状態の借用) だけは宣言しない。C# では借りても配列に写すことになり、
+//   ugoe_puppet_copy_frame と同じなので (README の「C ABI との対応」)。
 using System;
 using System.Runtime.InteropServices;
 
@@ -62,6 +62,34 @@ namespace Ugoe
             public float MaskStrength;
             public byte Visible;
             public byte Changes;
+        }
+
+        /// <summary>頂点の位置の範囲 (float の番号と数)。</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct PositionRange
+        {
+            public UIntPtr First;
+            public UIntPtr Count;
+        }
+
+        /// <summary>ugoe_puppet_copy_frame が写す先。ポインタは呼ぶ側が固定した配列を指す。</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct FrameBuffers
+        {
+            public IntPtr States;
+            public IntPtr RenderOrder;
+            public IntPtr PositionRanges;
+            public UIntPtr DrawableCapacity;
+            public IntPtr Positions;
+            public UIntPtr PositionsCapacity;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct FrameCopy
+        {
+            public uint DrawableCount;
+            public UIntPtr PositionsLen;
+            public byte RenderOrderChanged;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -191,13 +219,13 @@ namespace Ugoe
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_count(PuppetHandle puppet, out uint count, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_info(PuppetHandle puppet, uint index, out DrawableInfo info, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_mask(PuppetHandle puppet, uint index, uint mask, out Mask info, IntPtr error);
-        [DllImport(Library)] internal static extern int ugoe_puppet_drawable_state(PuppetHandle puppet, uint index, out DrawableState state, IntPtr error);
-        [DllImport(Library)] internal static extern int ugoe_puppet_copy_positions(PuppetHandle puppet, uint index, [Out] float[] buffer, UIntPtr len, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_uvs(PuppetHandle puppet, uint index, out IntPtr data, out UIntPtr len, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_indices(PuppetHandle puppet, uint index, out IntPtr data, out UIntPtr len, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_drawable_lit(PuppetHandle puppet, uint index, out byte lit, IntPtr error);
-        [DllImport(Library)] internal static extern int ugoe_puppet_render_order(PuppetHandle puppet, out IntPtr data, out UIntPtr len, IntPtr error);
-        [DllImport(Library)] internal static extern int ugoe_puppet_render_order_changed(PuppetHandle puppet, out byte changed, IntPtr error);
+
+        // --- 毎フレームの描画の状態 ---
+
+        [DllImport(Library)] internal static extern int ugoe_puppet_copy_frame(PuppetHandle puppet, ref FrameBuffers buffers, byte changedPositionsOnly, out FrameCopy copy, IntPtr error);
 
         // --- テクスチャ ---
 

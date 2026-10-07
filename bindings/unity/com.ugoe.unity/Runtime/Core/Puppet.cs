@@ -273,16 +273,6 @@ namespace Ugoe
         /// <summary>着せ替えに成功するたびに増える。描画の準備をやり直すかの判断に使う。</summary>
         public int DressUpVersion { get; private set; }
 
-        public DrawableState GetDrawableState(int index)
-        {
-            UgoeException.Check(Native.ugoe_puppet_drawable_state(handle, (uint)index, out var s, NativeError.Current));
-            return new DrawableState(s);
-        }
-
-        /// <summary>頂点位置 (キャンバス座標の x, y の組) を <paramref name="buffer"/> にコピーする。長さは 2 × 頂点数以上。</summary>
-        public void CopyPositions(int index, float[] buffer) =>
-            UgoeException.Check(Native.ugoe_puppet_copy_positions(handle, (uint)index, buffer, (UIntPtr)buffer.Length, NativeError.Current));
-
         /// <summary>テクスチャ座標 (u, v の組。0〜1、画像の左上が原点)。</summary>
         public float[] GetUvs(int index)
         {
@@ -303,21 +293,40 @@ namespace Ugoe
             return result;
         }
 
-        /// <summary>奥から手前への描画順 (描画可能要素の番号) を <paramref name="buffer"/> (描画可能要素の数以上) にコピーする。</summary>
-        public void CopyRenderOrder(int[] buffer)
+        /// <summary>
+        /// 直前の <see cref="Update"/> で評価した、すべての描画可能要素の状態・描画順・頂点の位置を 1 回の呼び出しで写す
+        /// (<c>ugoe_puppet_copy_frame</c>)。配列の長さは描画可能要素の数 (<paramref name="positions"/> は頂点の位置の float の数) 以上。
+        /// <paramref name="changedPositionsOnly"/> なら、頂点の位置は変更フラグの立った要素の範囲だけを写す。描画順が変わったかを返す。
+        /// </summary>
+        internal bool CopyFrame(Native.DrawableState[] states, int[] renderOrder, Native.PositionRange[] ranges, float[] positions,
+            bool changedPositionsOnly)
         {
-            UgoeException.Check(Native.ugoe_puppet_render_order(handle, out var ptr, out var len, NativeError.Current));
-            if ((int)len > buffer.Length) throw new ArgumentException("buffer is too small", nameof(buffer));
-            if ((int)len > 0) Marshal.Copy(ptr, buffer, 0, (int)len);
-        }
-
-        /// <summary>前の <see cref="Update"/> から描画順の並びが変わったか (作った直後と最初の update の後は true)。</summary>
-        public bool RenderOrderChanged
-        {
-            get
+            // 写す先の配列を、呼び出しの間だけ固定する (このアセンブリは unsafe を使わない)。
+            var pins = new[]
             {
-                UgoeException.Check(Native.ugoe_puppet_render_order_changed(handle, out var changed, NativeError.Current));
-                return changed != 0;
+                GCHandle.Alloc(states, GCHandleType.Pinned),
+                GCHandle.Alloc(renderOrder, GCHandleType.Pinned),
+                GCHandle.Alloc(ranges, GCHandleType.Pinned),
+                GCHandle.Alloc(positions, GCHandleType.Pinned),
+            };
+            try
+            {
+                var buffers = new Native.FrameBuffers
+                {
+                    States = pins[0].AddrOfPinnedObject(),
+                    RenderOrder = pins[1].AddrOfPinnedObject(),
+                    PositionRanges = pins[2].AddrOfPinnedObject(),
+                    DrawableCapacity = (UIntPtr)Math.Min(states.Length, Math.Min(renderOrder.Length, ranges.Length)),
+                    Positions = pins[3].AddrOfPinnedObject(),
+                    PositionsCapacity = (UIntPtr)positions.Length,
+                };
+                UgoeException.Check(Native.ugoe_puppet_copy_frame(handle, ref buffers, changedPositionsOnly ? (byte)1 : (byte)0,
+                    out var copy, NativeError.Current));
+                return copy.RenderOrderChanged != 0;
+            }
+            finally
+            {
+                foreach (var pin in pins) pin.Free();
             }
         }
 

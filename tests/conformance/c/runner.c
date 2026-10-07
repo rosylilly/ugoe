@@ -419,17 +419,15 @@ static bool run_case(const Case *c, const char *out_dir) {
         ok = false;
         goto done;
     }
-    uint32_t count = 0;
-    CHECK(ugoe_puppet_drawable_count(puppet, &count, err));
+    UgoeFrame frame;
+    CHECK(ugoe_puppet_frame(puppet, &frame, err));
     fputs("{\"meshes\":{", f);
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < frame.drawable_count; i++) {
         UgoeDrawableInfo info;
-        UgoeDrawableState state;
-        const float *xy = NULL;
-        size_t n = 0;
         CHECK(ugoe_puppet_drawable_info(puppet, i, &info, err));
-        CHECK(ugoe_puppet_drawable_state(puppet, i, &state, err));
-        CHECK(ugoe_puppet_positions(puppet, i, &xy, &n, err));
+        const UgoeDrawableState state = frame.states[i];
+        const float *xy = frame.positions + frame.position_ranges[i].first;
+        size_t n = frame.position_ranges[i].count;
         if (i > 0) fputc(',', f);
         write_string(f, info.id);
         fputs(":{\"positions\":[", f);
@@ -454,12 +452,9 @@ static bool run_case(const Case *c, const char *out_dir) {
         fprintf(f, ",\"visible\":%s}", state.visible ? "true" : "false");
     }
     fputs("},\"render_order\":[", f);
-    const uint32_t *order = NULL;
-    size_t order_len = 0;
-    CHECK(ugoe_puppet_render_order(puppet, &order, &order_len, err));
-    for (size_t i = 0; i < order_len; i++) {
+    for (uint32_t i = 0; i < frame.drawable_count; i++) {
         UgoeDrawableInfo info;
-        CHECK(ugoe_puppet_drawable_info(puppet, order[i], &info, err));
+        CHECK(ugoe_puppet_drawable_info(puppet, frame.render_order[i], &info, err));
         if (i > 0) fputc(',', f);
         write_string(f, info.id);
     }

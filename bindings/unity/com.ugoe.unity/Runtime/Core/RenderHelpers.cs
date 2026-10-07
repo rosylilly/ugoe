@@ -236,9 +236,16 @@ namespace Ugoe
     /// 毎フレームの評価結果を、変更フラグを見て必要な分だけ取り出す (docs/spec/rendering.md の Skipping unchanged work)。
     /// エンジンは <see cref="PositionsChanged"/> などが立った要素だけを GPU に送り直す。
     /// </summary>
+    /// <remarks>
+    /// C ABI は 1 フレームに 1 回だけ呼ぶ (<c>ugoe_puppet_copy_frame</c>。描画可能要素の数によらない)。
+    /// </remarks>
     public sealed class FrameSync
     {
         private readonly Puppet puppet;
+        private readonly Native.DrawableState[] rawStates;
+        private readonly Native.PositionRange[] ranges;
+        /// <summary>すべての要素の頂点位置をつないだもの。変更フラグの立った要素の範囲だけが今のフレームの値。</summary>
+        private readonly float[] positions;
 
         /// <summary>描画可能要素ごとの頂点位置 (キャンバス座標の x, y の組)。変わった要素だけ書き直す。</summary>
         public float[][] Positions { get; }
@@ -257,31 +264,48 @@ namespace Ugoe
         {
             this.puppet = puppet;
             var drawables = puppet.Drawables;
+            var floats = 0;
             Positions = new float[drawables.Count][];
-            for (var i = 0; i < drawables.Count; i++) Positions[i] = new float[drawables[i].VertexCount * 2];
+            for (var i = 0; i < drawables.Count; i++)
+            {
+                Positions[i] = new float[drawables[i].VertexCount * 2];
+                floats += Positions[i].Length;
+            }
+            rawStates = new Native.DrawableState[drawables.Count];
+            ranges = new Native.PositionRange[drawables.Count];
+            positions = new float[floats];
             States = new DrawableState[drawables.Count];
             PositionsChanged = new bool[drawables.Count];
             RenderOrder = new int[drawables.Count];
         }
 
         /// <summary><see cref="Puppet.Update"/> の後に呼ぶ。</summary>
-        public void Pull()
+        public void Pull() => Pull(false);
+
+        /// <summary>
+        /// <see cref="Pull"/> と同じだが、変更フラグによらずすべての要素の頂点位置を取り出す
+        /// (前の <see cref="Puppet.Update"/> の後に <see cref="Pull"/> しなかったときや、今の値をすべて読みたいとき)。
+        /// <see cref="PositionsChanged"/> はすべて true になる。
+        /// </summary>
+        public void PullAll() => Pull(true);
+
+        private void Pull(bool all)
         {
+            // 頂点位置は、要る要素の範囲だけを写させ、その範囲だけを読む。
+            RenderOrderChanged = puppet.CopyFrame(rawStates, RenderOrder, ranges, positions, !all);
             PositionsCopied = 0;
             for (var i = 0; i < States.Length; i++)
             {
-                var state = puppet.GetDrawableState(i);
+                var state = new DrawableState(rawStates[i]);
                 States[i] = state;
-                var changed = (state.Changes & DrawableChanges.Positions) != 0;
+                var changed = all || (state.Changes & DrawableChanges.Positions) != 0;
                 PositionsChanged[i] = changed;
                 if (changed)
                 {
-                    puppet.CopyPositions(i, Positions[i]);
+                    Array.Copy(positions, (int)ranges[i].First.ToUInt64(), Positions[i], 0, (int)ranges[i].Count.ToUInt64());
                     PositionsCopied++;
                 }
             }
-            RenderOrderChanged = puppet.RenderOrderChanged;
-            if (RenderOrderChanged) puppet.CopyRenderOrder(RenderOrder);
         }
     }
 }

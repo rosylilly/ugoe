@@ -1276,16 +1276,7 @@ fn follow_matches_the_puppet() {
         });
         native.follow(&values, None, &[], DT).unwrap();
         for (i, drawable) in native.instance().drawables().iter().enumerate() {
-            let mut positions = vec![f32::NAN; drawable.positions.len() * 2];
-            ok(unsafe {
-                ugoe_puppet_copy_positions(
-                    p.0,
-                    i as u32,
-                    positions.as_mut_ptr(),
-                    positions.len(),
-                    err(),
-                )
-            });
+            let positions = positions(p.0, i as u32);
             let expected: Vec<f32> = drawable.positions.iter().flat_map(|v| [v.x, v.y]).collect();
             assert_eq!(positions, expected, "frame {frame}, drawable {i}");
         }
@@ -1472,9 +1463,10 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
             )
         });
         native.follow(&values, None, &inputs, 0.1).unwrap();
-        let mut state = UgoeDrawableState::default();
-        ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
-        assert_eq!(state.opacity, native.instance().drawables()[0].opacity);
+        assert_eq!(
+            states(p.0)[0].opacity,
+            native.instance().drawables()[0].opacity
+        );
     }
     assert!((native.instance().drawables()[0].opacity - 0.625).abs() < 1e-6);
 
@@ -1679,10 +1671,9 @@ fn conductor_values_match_the_puppet_and_drive_a_follower() {
                 err(),
             )
         });
-        for i in 0..count(&conductor, ugoe_puppet_drawable_count) {
-            let (mut a, mut b) = (UgoeDrawableState::default(), UgoeDrawableState::default());
-            ok(unsafe { ugoe_puppet_drawable_state(conductor.0, i, &mut a, err()) });
-            ok(unsafe { ugoe_puppet_drawable_state(follower.0, i, &mut b, err()) });
+        let (a, b) = (states(conductor.0), states(follower.0));
+        assert_eq!(a.len(), b.len());
+        for (i, (a, b)) in a.iter().zip(&b).enumerate() {
             assert_eq!(a.opacity, b.opacity, "frame {frame}, drawable {i}");
         }
         assert_eq!(

@@ -66,3 +66,45 @@ pub fn last_field_value_at(index: usize) -> *const c_char {
     // SAFETY: 同上。
     unsafe { ugoe_error_field_value_at(err(), index) }
 }
+
+/// `ugoe_puppet_frame` で借りたもの (次の update や破棄の前に読む)。
+pub fn frame(puppet: *mut UgoePuppet) -> UgoeFrame {
+    let mut frame = UgoeFrame::default();
+    // SAFETY: `puppet` はテストが作って破棄していない `UgoePuppet`。
+    let code = unsafe { ugoe_puppet_frame(puppet, &mut frame, err()) };
+    assert_eq!(code, UGOE_OK);
+    frame
+}
+
+/// `ptr` から `len` 個を写す (`len` が 0 なら NULL でもよい)。
+fn to_vec<T: Copy>(ptr: *const T, len: usize) -> Vec<T> {
+    if len == 0 {
+        return Vec::new();
+    }
+    // SAFETY: C ABI が貸した `len` 個の並び。
+    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
+}
+
+/// すべての描画可能要素の状態 (番号順。`ugoe_puppet_frame`)。
+pub fn states(puppet: *mut UgoePuppet) -> Vec<UgoeDrawableState> {
+    let f = frame(puppet);
+    to_vec(f.states, f.drawable_count as usize)
+}
+
+/// `drawable` 番目の描画可能要素の頂点の位置 (x と y の組。`ugoe_puppet_frame`)。
+pub fn positions(puppet: *mut UgoePuppet, drawable: u32) -> Vec<f32> {
+    let f = frame(puppet);
+    let ranges = to_vec(f.position_ranges, f.drawable_count as usize);
+    let all = to_vec(f.positions, f.positions_len);
+    let r = ranges[drawable as usize];
+    all[r.first..r.first + r.count].to_vec()
+}
+
+/// 描画順と、それが変わったか (`ugoe_puppet_frame`)。
+pub fn render_order(puppet: *mut UgoePuppet) -> (Vec<u32>, bool) {
+    let f = frame(puppet);
+    (
+        to_vec(f.render_order, f.drawable_count as usize),
+        f.render_order_changed,
+    )
+}

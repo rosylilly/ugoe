@@ -27,8 +27,8 @@ if (ugoe_puppet_create_from_bundle(bytes, len, &puppet, err) != UGOE_OK) {
 }
 ugoe_puppet_set_parameter(puppet, index, value, err);
 ugoe_puppet_update(puppet, dt, NULL);  /* 結果コードだけで足りるなら NULL */
-const float *xy; size_t n;
-ugoe_puppet_positions(puppet, drawable, &xy, &n, err);  /* 次の update まで有効 */
+UgoeFrame frame;
+ugoe_puppet_frame(puppet, &frame, err);  /* このフレームの状態をまとめて借りる。次の update まで有効 */
 ugoe_puppet_destroy(puppet);
 ugoe_error_destroy(err);
 ```
@@ -39,8 +39,8 @@ ugoe_error_destroy(err);
 - 失敗しうる関数は `UgoeResult` (`UGOE_OK` = 0) を返し、最後の引数 `UgoeError *error` に失敗の中身を書く
   ([失敗の受け取り方](#失敗の受け取り方-t0489))。
 - 内部でパニックが起きたら `UGOE_ERROR_PANIC` を返す。そのオブジェクトの状態は不定なので破棄する。
-- 頂点位置はホストのバッファへのコピー (`ugoe_puppet_copy_positions`) と、内部のバッファの借用
-  (`ugoe_puppet_positions`。次の `ugoe_puppet_update` か破棄まで有効) の両方がある。
+- 毎フレームの描画の状態 (頂点位置・表示・不透明度・色・描画順など) は 1 回の呼び出しでまとめて受け取る。内部のバッファの借用
+  (`ugoe_puppet_frame`) と、ホストのバッファへのコピー (`ugoe_puppet_copy_frame`) の両方がある ([毎フレームの描画の状態](#毎フレームの描画の状態-t0490))。
 - テクスチャはエンコードされたままのバイト列 (PNG・KTX2) を渡す。デコードと乗算済みアルファへの変換はホストが行う
   ([docs/spec/rendering.md](../../docs/spec/rendering.md))。エンジンが読めない形式 (KTX2 の BCn など) は、参照と同じデコーダ
   `ugoe_image_decode` で RGBA8 にできる ([テクスチャのデコード](#テクスチャのデコード-t0466))。
@@ -93,6 +93,46 @@ just ffi-header   # include/ugoe.h を作り直す
 just ffi-check    # ヘッダが最新かの検査と、C の見本のビルド・実行
 ```
 
+## 毎フレームの描画の状態 (T0490)
+
+描画の情報は、読む時機で 2 つに分かれる ([ADR 0031](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#毎フレームの描画の状態はまとめて渡す))。
+
+- **モデルの形** (読み込みと着せ替えの後に 1 回): 描画可能要素の数と情報 (`ugoe_puppet_drawable_count`・`_info`)・マスクの参照 (`_mask`)・
+  UV (`_uvs`)・インデックス (`_indices`)・ライティングを受けるか (`_lit`)・テクスチャ (`ugoe_puppet_texture`・`_normal_map`)。描画要素ごとに読む。
+- **このフレームの状態** (`ugoe_puppet_update` の後に毎回): すべての描画可能要素の状態 (`UgoeDrawableState`: 表示・不透明度・色・合成モード・
+  マスクの効き具合・描画順の値・変更のフラグ)・描画順・描画順が変わったか・頂点の位置。1 回の呼び出しでまとめて受け取る
+  (cgo やマネージドな言語のように、境界を越える呼び出しが重いホストでも、呼び出しの数が描画要素の数によらない)。
+
+```c
+UgoeFrame frame;
+ugoe_puppet_frame(puppet, &frame, err);
+for (uint32_t k = 0; k < frame.drawable_count; k++) {
+    uint32_t d = frame.render_order[k];            /* 奥から手前へ */
+    const UgoeDrawableState *s = &frame.states[d];
+    if (s->changes & UGOE_CHANGED_POSITIONS) {     /* 変わった要素だけ頂点バッファへ写す */
+        const float *xy = frame.positions + frame.position_ranges[d].first;
+        upload(d, xy, frame.position_ranges[d].count);
+    }
+    draw(d, s);
+}
+```
+
+- 頂点の位置は、すべての描画要素の位置 (キャンバス座標の x と y の組) を番号順につないだ 1 つの配列 (`positions`、float が `positions_len` 個)。
+  描画要素 `d` の位置は `position_ranges[d]` の `first` から `count` 個 (単位は float。`count` は 2 × 頂点の数)。範囲は読み込みと着せ替えの後は変わらない。
+- **借用** (`ugoe_puppet_frame`): ポインタはすべて、次の `ugoe_puppet_update`・`ugoe_puppet_follow`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
+  コピーを省きたいホストのため。
+- **コピー** (`ugoe_puppet_copy_frame(puppet, &buffers, changed_positions_only, &out, err)`): ホストのバッファ (`UgoeFrameBuffers`) に写し、
+  描画要素の数・位置の float の数・描画順が変わったかを `UgoeFrameCopy` に書く。`drawable_capacity` か `positions_capacity` が足りなければ
+  `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、要る数 (`*out`) だけを書く (すべてのポインタを NULL・大きさを 0 にして呼べば要る数が分かる)。
+  借用の寿命を扱いにくいホスト (マネージドな言語) のため。`changed_positions_only` が true なら、頂点の位置は変更のフラグ
+  (`UGOE_CHANGED_POSITIONS`) が立った描画要素の範囲だけを写す (毎フレーム同じバッファへ写すホストが、変わっていない位置を写さずに済む)。
+- 変更のフラグは前の `ugoe_puppet_update` からの変化 (作った直後と最初の `update` の後と、着せ替えの直後はすべて立つ)。`update` の後に
+  毎回読まなかったホストは、フラグによらずすべてを読み直す。
+- 内部では、頂点の位置をつないだ配列を `ugoe_puppet_frame`・`ugoe_puppet_copy_frame` を呼んだときに作り、同じ評価の結果なら作り直さない。
+  前に読んだ評価のちょうど次の `update` なら、位置の変わった描画要素だけを写す (`ugoe-runtime` の `ModelInstance::id`・`update_count`)。
+  そのため、この 2 つの関数は `UgoePuppet *` (const でない) を取る。
+- Unity は `ugoe_puppet_copy_frame` を `FrameSync.Pull` で 1 フレームに 1 回呼ぶ (bindings/unity/README.md)。Godot は C ABI ではなく SDK を直接使う。
+
 ## ABI の版
 
 `ugoe_abi_version()` (ヘッダでは `UGOE_ABI_VERSION`) は、**既存の** 関数・型・定数を壊したときだけ上げる (T0409 で決めた)。
@@ -103,6 +143,9 @@ just ffi-check    # ヘッダが最新かの検査と、C の見本のビルド�
 - そのため、構造体にフィールドを足したくなったら、既存の構造体は変えずに別の関数や構造体を足す
   (例: 描画可能要素がライティングを受けるかは `UgoeDrawableInfo` に足さず、`ugoe_puppet_drawable_lit` にした)。
 - 知らないエラーコードが返ることがある (足したもの)。0 以外はすべて失敗として扱い、`ugoe_error_message` を出せばよい。
+- 今の版は 2。T0489 (`UgoeError`) で 1 から上げ、T0490 (毎フレームの描画の状態をまとめて受け取る形。描画要素ごとの
+  `ugoe_puppet_drawable_state`・`ugoe_puppet_positions` などを消した) も同じ 2 に含める。どちらもまだリリースしていない間の変更で、
+  2 の版を持つライブラリを配ったことがないため (リリースの間に壊す変更が何度あっても、上げるのは 1 回でよい)。
 
 ## 着せ替え (T0409)
 
@@ -458,6 +501,8 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt,
 - T0722 (トラッキング中のモーションの優先)
 - T0133 (受け手として進める: 基準値として書く口)
 - T0134 (受け手でもリップシンクを物理の後に当てる)
+- T0489 (失敗を呼び出し側の `UgoeError` で受け取る)
+- T0490 (毎フレームの描画の状態をまとめて受け取る)
 - T0454 (指揮役の側の値を読む口)
 - T0457 (モデルの読み込みの失敗の種類)
 - T0489 (失敗の中身を呼び出し側の `UgoeError` で返す。スレッドローカルの状態を持たない。ADR 0031)

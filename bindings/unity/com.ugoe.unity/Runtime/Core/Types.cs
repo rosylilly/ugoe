@@ -149,7 +149,7 @@ namespace Ugoe
     public readonly struct DrawableState
     {
         public readonly float Opacity;
-        /// <summary>描画順の値 (大きいほど手前)。並べた結果は <see cref="Puppet.CopyRenderOrder"/>。</summary>
+        /// <summary>描画順の値 (大きいほど手前)。並べた結果は <see cref="FrameSync.RenderOrder"/>。</summary>
         public readonly float DrawOrder;
         public readonly float MultiplyR, MultiplyG, MultiplyB;
         public readonly float ScreenR, ScreenG, ScreenB;

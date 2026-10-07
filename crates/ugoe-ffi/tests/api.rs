@@ -83,13 +83,6 @@ fn from_bundle(bytes: &[u8]) -> Handle {
     Handle(p)
 }
 
-fn positions(p: &Handle, drawable: u32) -> Vec<f32> {
-    let mut ptr = ptr::null();
-    let mut len = 0;
-    ok(unsafe { ugoe_puppet_positions(p.0, drawable, &mut ptr, &mut len, err()) });
-    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
-}
-
 #[test]
 fn versions() {
     assert_eq!(ugoe_abi_version(), ABI_VERSION);
@@ -137,12 +130,7 @@ fn matches_puppet_after_setting_a_parameter() {
             .iter()
             .flat_map(|v| [v.x, v.y])
             .collect();
-        let borrowed = positions(&p, d);
-        assert_eq!(borrowed, expected);
-
-        let mut copied = vec![f32::NAN; expected.len()];
-        ok(unsafe { ugoe_puppet_copy_positions(p.0, d, copied.as_mut_ptr(), copied.len(), err()) });
-        assert_eq!(copied, expected);
+        assert_eq!(positions(p.0, d), expected);
 
         let mut info = std::mem::MaybeUninit::<UgoeDrawableInfo>::uninit();
         ok(unsafe { ugoe_puppet_drawable_info(p.0, d, info.as_mut_ptr(), err()) });
@@ -163,8 +151,7 @@ fn matches_puppet_after_setting_a_parameter() {
             mesh.indices
         );
 
-        let mut state = UgoeDrawableState::default();
-        ok(unsafe { ugoe_puppet_drawable_state(p.0, d, &mut state, err()) });
+        let state = states(p.0)[d as usize];
         let expected = &reference.instance().drawables()[d as usize];
         assert_eq!(state.opacity, expected.opacity);
         assert_eq!(state.draw_order, expected.draw_order);
@@ -172,13 +159,7 @@ fn matches_puppet_after_setting_a_parameter() {
         assert_eq!(state.blend_mode, UGOE_BLEND_NORMAL);
     }
 
-    let mut order = ptr::null();
-    let mut len = 0;
-    ok(unsafe { ugoe_puppet_render_order(p.0, &mut order, &mut len, err()) });
-    assert_eq!(
-        unsafe { std::slice::from_raw_parts(order, len) },
-        reference.instance().render_order()
-    );
+    assert_eq!(render_order(p.0).0, reference.instance().render_order());
 
     let mut canvas = UgoeCanvas::default();
     ok(unsafe { ugoe_puppet_canvas(p.0, &mut canvas, err()) });
@@ -190,21 +171,16 @@ fn matches_puppet_after_setting_a_parameter() {
 fn reports_changes_between_updates() {
     let p = from_bundle(&single_quad_bundle());
     ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
-    let mut state = UgoeDrawableState::default();
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
-    assert_ne!(state.changes & UGOE_CHANGED_POSITIONS, 0);
+    assert_ne!(states(p.0)[0].changes & UGOE_CHANGED_POSITIONS, 0);
+    assert!(render_order(p.0).1);
 
     ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
-    assert_eq!(state.changes, 0);
-    let mut changed = true;
-    ok(unsafe { ugoe_puppet_render_order_changed(p.0, &mut changed, err()) });
-    assert!(!changed);
+    assert_eq!(states(p.0)[0].changes, 0);
+    assert!(!render_order(p.0).1);
 
     ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, 0.5, err()) });
     ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
-    assert_eq!(state.changes, UGOE_CHANGED_POSITIONS);
+    assert_eq!(states(p.0)[0].changes, UGOE_CHANGED_POSITIONS);
 }
 
 #[test]
@@ -373,15 +349,9 @@ fn errors_are_reported_with_codes_and_messages() {
         UGOE_ERROR_NULL_POINTER
     );
 
-    let mut small = [0.0f32; 3];
+    let mut info = std::mem::MaybeUninit::<UgoeDrawableInfo>::uninit();
     assert_eq!(
-        unsafe { ugoe_puppet_copy_positions(p.0, 0, small.as_mut_ptr(), small.len(), err()) },
-        UGOE_ERROR_BUFFER_TOO_SMALL
-    );
-    assert_eq!(small, [0.0; 3]);
-    let mut state = UgoeDrawableState::default();
-    assert_eq!(
-        unsafe { ugoe_puppet_drawable_state(p.0, 9, &mut state, err()) },
+        unsafe { ugoe_puppet_drawable_info(p.0, 9, info.as_mut_ptr(), err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 }

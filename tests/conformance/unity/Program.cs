@@ -222,14 +222,16 @@ namespace Ugoe.Conformance
         {
             var meshes = new JsonObject();
             var drawables = puppet.Drawables;
+            // 変更フラグによらず、すべての要素の今の値を読む。
+            var sync = new FrameSync(puppet);
+            sync.PullAll();
             for (var i = 0; i < drawables.Count; i++)
             {
                 var info = drawables[i];
-                var xy = new float[info.VertexCount * 2];
-                puppet.CopyPositions(i, xy);
+                var xy = sync.Positions[i];
                 var positions = new JsonArray();
                 for (var v = 0; v < info.VertexCount; v++) positions.Add(new JsonArray(xy[v * 2], xy[v * 2 + 1]));
-                var s = puppet.GetDrawableState(i);
+                var s = sync.States[i];
                 meshes[info.Id] = new JsonObject
                 {
                     ["positions"] = positions,
@@ -241,10 +243,8 @@ namespace Ugoe.Conformance
                     ["visible"] = s.Visible,
                 };
             }
-            var order = new int[drawables.Count];
-            puppet.CopyRenderOrder(order);
             var renderOrder = new JsonArray();
-            foreach (var i in order) renderOrder.Add(drawables[i].Id);
+            foreach (var i in sync.RenderOrder) renderOrder.Add(drawables[i].Id);
             return new JsonObject { ["meshes"] = meshes, ["render_order"] = renderOrder };
         }
 

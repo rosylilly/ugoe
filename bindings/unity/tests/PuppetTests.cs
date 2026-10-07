@@ -88,6 +88,14 @@ namespace Ugoe.Tests
             Assert.That(sync.RenderOrderChanged, Is.False);
             Assert.That(sync.States.All(s => s.Changes == DrawableChanges.None), Is.True);
 
+            // 変更フラグによらずすべてを取り出しても、同じ値になる (新しく作った FrameSync でも)。
+            var all = new FrameSync(puppet);
+            all.PullAll();
+            Assert.That(all.PositionsCopied, Is.EqualTo(puppet.Drawables.Count));
+            Assert.That(all.PositionsChanged.All(c => c), Is.True);
+            for (var i = 0; i < puppet.Drawables.Count; i++) Assert.That(all.Positions[i], Is.EqualTo(sync.Positions[i]));
+            Assert.That(all.RenderOrder, Is.EqualTo(sync.RenderOrder));
+
             puppet.SetParameter("AngleX", 20);
             puppet.Update(1f / 60);
             sync.Pull();

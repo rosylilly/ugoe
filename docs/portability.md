@@ -63,7 +63,15 @@ wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には
     (別々のオブジェクトなら並行してかまいません)。
   - 読み出しの関数が返す文字列は、その `UgoeError` に次の失敗を書くか、破棄するまで有効です。
 - パニックは `catch_unwind` で捕まえてエラーコード (`UGOE_ERROR_PANIC`) に変換し、メッセージを `UgoeError` に書きます。FFI の境界の外にパニックを漏らしません。
-- 頂点データは、ホストが確保したバッファにコピーする API (`ugoe_puppet_copy_positions(p, drawable, out_ptr, len)`) と、内部のバッファを借用する API (次の `update` まで有効) の両方を提供します。
+- 毎フレームの描画の状態 (すべての描画可能要素の頂点の位置・表示・不透明度・色・合成モード・マスクの効き具合・描画順の値・変更のフラグと、描画順) は、
+  1 回の呼び出しでまとめて渡します。境界を越える呼び出しが重いホスト (cgo・マネージドな言語) でも、呼び出しの数が描画可能要素の数によりません
+  ([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#毎フレームの描画の状態はまとめて渡す))。
+  - 頂点の位置は、描画可能要素ごとの範囲 (先頭と数) を持つ 1 つの連続した配列です。変更のフラグも一緒に渡すので、ホストは変わっていない要素の位置を写さずに済みます。
+  - 内部のバッファを借用する API (`ugoe_puppet_frame(p, &frame, err)`。次の `update`・着せ替え・破棄まで有効) と、ホストが確保したバッファに
+    コピーする API (`ugoe_puppet_copy_frame(p, &buffers, changed_positions_only, &out, err)`。足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で要る数を返す)
+    の両方を提供します。コピーは、変更のフラグが立った要素の位置だけを写すこともできます。
+  - 読み込みと着せ替えの後に 1 回読む情報 (UV・インデックス・テクスチャ・マスクの参照など) は、描画可能要素ごとの関数で読みます
+    ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#毎フレームの描画の状態-t0490))。
 - ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します (`just ffi-header` で作り直し、`just ffi-check` で検査と C の見本の実行)。cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず、版を固定した CLI として使います。`just ffi-check` は `just ci` に含めません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成))。
 - `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。関数・型・定数・エラーコードを足すだけなら上げません
   (既存の構造体にフィールドを足すのは壊す変更なので、別の関数や構造体を足します。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#abi-の版))。

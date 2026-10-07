@@ -16,6 +16,7 @@ use crate::error::{
     Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, c_string,
     guard,
 };
+use crate::frame::FrameCache;
 use crate::limits::{UgoeReadLimits, load_error, read_limits};
 use crate::warning::{
     UgoeWarning, Warning, missing_textures, read_warnings, write_warning, write_warning_field,
@@ -58,6 +59,8 @@ pub struct UgoePuppet {
     pub(crate) warnings: Vec<Warning>,
     /// 直前の `update` で発火したモーションのイベント。
     pub(crate) motion_events: MotionEvents,
+    /// 毎フレームの描画の状態をまとめたもの (`ugoe_puppet_frame`)。
+    pub(crate) frame: FrameCache,
 }
 
 /// パラメータの範囲と既定値。
@@ -123,6 +126,7 @@ impl UgoePuppet {
             slot_ids,
             warnings,
             motion_events: MotionEvents::default(),
+            frame: FrameCache::default(),
         };
         this.refresh_model();
         this

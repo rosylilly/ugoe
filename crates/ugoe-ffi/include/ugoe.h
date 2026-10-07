@@ -42,7 +42,7 @@
 // 不透明度。
 #define UGOE_CHANGED_OPACITY (1 << 1)
 
-// 描画順の値 (並び全体の変化は `ugoe_puppet_render_order_changed`)。
+// 描画順の値 (並び全体の変化は `UgoeFrame::render_order_changed`)。
 #define UGOE_CHANGED_DRAW_ORDER (1 << 2)
 
 // 描くかどうか (`visible`)。
@@ -168,26 +168,6 @@ typedef struct UgoeMask {
   bool invert;
 } UgoeMask;
 
-// 描画可能要素の、直前の `ugoe_puppet_update` で評価した状態。
-typedef struct UgoeDrawableState {
-  float opacity;
-  // 描画順の値 (大きいほど手前)。並べた結果は `ugoe_puppet_render_order`。
-  float draw_order;
-  // 乗算色 (RGB)。
-  float multiply_color[3];
-  // スクリーン色 (RGB)。
-  float screen_color[3];
-  // 合成モード (`UGOE_BLEND_*`)。知らないモードは通常の合成に置き換え済み。
-  uint32_t blend_mode;
-  // マスクの効き具合 (0〜1)。マスクを持たない要素では意味を持たない。
-  float mask_strength;
-  // 色として描くか。不透明度 0 やマスク専用の要素は false。
-  bool visible;
-  // 前の `ugoe_puppet_update` から変わったもの (`UGOE_CHANGED_*` のビット和)。
-  // 作った直後と最初の `update` の後はすべてのビットが立つ。
-  uint8_t changes;
-} UgoeDrawableState;
-
 // 画像のエンコードされたままのバイト列。
 typedef struct UgoeTexture {
   // `UGOE_TEXTURE_*`。
@@ -228,6 +208,81 @@ typedef struct UgoePartOpacityInput {
   // フェードを含めた重み (0〜1)。
   float weight;
 } UgoePartOpacityInput;
+
+// 描画可能要素の、直前の `ugoe_puppet_update` で評価した状態 (`ugoe_puppet_frame` で受け取る)。
+typedef struct UgoeDrawableState {
+  float opacity;
+  // 描画順の値 (大きいほど手前)。並べた結果は `UgoeFrame::render_order`。
+  float draw_order;
+  // 乗算色 (RGB)。
+  float multiply_color[3];
+  // スクリーン色 (RGB)。
+  float screen_color[3];
+  // 合成モード (`UGOE_BLEND_*`)。知らないモードは通常の合成に置き換え済み。
+  uint32_t blend_mode;
+  // マスクの効き具合 (0〜1)。マスクを持たない要素では意味を持たない。
+  float mask_strength;
+  // 色として描くか。不透明度 0 やマスク専用の要素は false。
+  bool visible;
+  // 前の `ugoe_puppet_update` から変わったもの (`UGOE_CHANGED_*` のビット和)。
+  // 作った直後と最初の `update` の後はすべてのビットが立つ。
+  uint8_t changes;
+} UgoeDrawableState;
+
+// 描画可能要素の頂点の位置が、連続した配列 (`UgoeFrame::positions`) のどこにあるか。単位は float の数
+// (頂点 1 つが x と y の 2 つ)。読み込みと着せ替えの後は変わらない。
+typedef struct UgoePositionRange {
+  // 先頭 (その描画可能要素の最初の頂点の x の位置)。
+  size_t first;
+  // float の数 (2 × 頂点の数)。
+  size_t count;
+} UgoePositionRange;
+
+// 直前の `ugoe_puppet_update` で評価した、すべての描画可能要素の状態 (`ugoe_puppet_frame` が貸す)。
+//
+// ポインタはすべて、次の `ugoe_puppet_update`・`ugoe_puppet_follow`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
+typedef struct UgoeFrame {
+  // 描画可能要素の数 (`states`・`render_order`・`position_ranges` の要素の数)。
+  uint32_t drawable_count;
+  // 描画可能要素ごとの状態 (番号順)。
+  const struct UgoeDrawableState *states;
+  // 奥から手前への描画順 (描画可能要素の番号の並び)。
+  const uint32_t *render_order;
+  // 前の `ugoe_puppet_update` から描画順の並びが変わったか (作った直後と最初の `update` の後は true)。
+  bool render_order_changed;
+  // 描画可能要素ごとの、`positions` の中の頂点の位置の範囲 (番号順)。
+  const struct UgoePositionRange *position_ranges;
+  // すべての描画可能要素の頂点の位置 (キャンバス座標の x と y の組) を番号順につないだもの。
+  const float *positions;
+  // `positions` の float の数。
+  size_t positions_len;
+} UgoeFrame;
+
+// `ugoe_puppet_copy_frame` が写す先 (ホストのバッファ)。
+typedef struct UgoeFrameBuffers {
+  // 描画可能要素ごとの状態を書く先 (`drawable_capacity` 個)。
+  struct UgoeDrawableState *states;
+  // 描画順を書く先 (`drawable_capacity` 個)。
+  uint32_t *render_order;
+  // 頂点の位置の範囲を書く先 (`drawable_capacity` 個)。
+  struct UgoePositionRange *position_ranges;
+  // `states`・`render_order`・`position_ranges` のそれぞれに書ける要素の数。
+  size_t drawable_capacity;
+  // 頂点の位置を書く先 (`positions_capacity` 個の float)。
+  float *positions;
+  // `positions` に書ける float の数。
+  size_t positions_capacity;
+} UgoeFrameBuffers;
+
+// `ugoe_puppet_copy_frame` が写したものの大きさと、描画順が変わったか。
+typedef struct UgoeFrameCopy {
+  // 描画可能要素の数 (`drawable_capacity` に要る数)。
+  uint32_t drawable_count;
+  // 頂点の位置の float の数 (`positions_capacity` に要る数)。
+  size_t positions_len;
+  // 前の `ugoe_puppet_update` から描画順の並びが変わったか (`UgoeFrame::render_order_changed`)。
+  bool render_order_changed;
+} UgoeFrameCopy;
 
 // 画像のデコードの上限 (Rust の `ugoe_format::image::ImageLimits`)。値は `ugoe_image_limits_default` から始めて変える。
 //
@@ -521,43 +576,6 @@ UgoeResult ugoe_puppet_drawable_mask(const struct UgoePuppet *puppet,
                                      struct UgoeMask *out,
                                      struct UgoeError *error);
 
-// `index` 番目の描画可能要素の、直前の `ugoe_puppet_update` で評価した状態。
-//
-// # Safety
-//
-// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_drawable_state(const struct UgoePuppet *puppet,
-                                      uint32_t index,
-                                      struct UgoeDrawableState *out,
-                                      struct UgoeError *error);
-
-// `index` 番目の描画可能要素の頂点位置 (キャンバス座標、x と y の組を頂点の数だけ) を、
-// ホストのバッファ `out` (`len` 個の float) にコピーする。`len` が 2 × 頂点数より小さければ
-// `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、何も書かない。
-//
-// # Safety
-//
-// `puppet` は有効な `UgoePuppet`、`out` は `len` 個の float を書き込める領域を指すこと。
-UgoeResult ugoe_puppet_copy_positions(const struct UgoePuppet *puppet,
-                                      uint32_t index,
-                                      float *out,
-                                      size_t len,
-                                      struct UgoeError *error);
-
-// `index` 番目の描画可能要素の頂点位置を、内部のバッファのまま借りる。`*out` に先頭
-// (x と y の組が `*out_len` / 2 個)、`*out_len` に float の数を書く。
-//
-// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
-//
-// # Safety
-//
-// `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_positions(const struct UgoePuppet *puppet,
-                                 uint32_t index,
-                                 const float **out,
-                                 size_t *out_len,
-                                 struct UgoeError *error);
-
 // `index` 番目の描画可能要素のテクスチャ座標 (u と v の組を頂点の数だけ。0〜1、画像の左上が原点) を借りる。
 // ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 //
@@ -581,26 +599,6 @@ UgoeResult ugoe_puppet_drawable_indices(const struct UgoePuppet *puppet,
                                         const uint16_t **out,
                                         size_t *out_len,
                                         struct UgoeError *error);
-
-// 奥から手前への描画順 (描画可能要素の番号の並び) を借りる。`*out_len` は描画可能要素の数。
-// ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
-//
-// # Safety
-//
-// `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_render_order(const struct UgoePuppet *puppet,
-                                    const uint32_t **out,
-                                    size_t *out_len,
-                                    struct UgoeError *error);
-
-// 前の `ugoe_puppet_update` から描画順の並びが変わったか (作った直後と最初の `update` の後は true)。
-//
-// # Safety
-//
-// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_render_order_changed(const struct UgoePuppet *puppet,
-                                            bool *out,
-                                            struct UgoeError *error);
 
 // テクスチャの数 (描画可能要素の `texture` はこれより小さい)。
 //
@@ -973,6 +971,39 @@ UgoeResult ugoe_puppet_part_opacities_applied(const struct UgoePuppet *puppet,
                                               size_t capacity,
                                               size_t *out_count,
                                               struct UgoeError *error);
+
+// 直前の `ugoe_puppet_update` で評価した、すべての描画可能要素の状態・描画順・頂点の位置を、内部のバッファのまま借りる
+// (`*out` に書く)。ポインタの寿命は `UgoeFrame` を参照。
+//
+// 頂点の位置は、変更のフラグ (`UgoeDrawableState::changes` の `UGOE_CHANGED_POSITIONS`) が立った描画可能要素だけを
+// ホストの頂点バッファへ写せばよい。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_frame(struct UgoePuppet *puppet,
+                             struct UgoeFrame *out,
+                             struct UgoeError *error);
+
+// `ugoe_puppet_frame` と同じものを、ホストのバッファ `*buffers` に写す。大きさと、描画順が変わったかを `*out` に書く。
+//
+// `drawable_capacity` が描画可能要素の数より、または `positions_capacity` が頂点の位置の float の数より小さければ
+// `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out` (要る数) だけを書く (バッファには何も書かない)。
+// 大きさは読み込みと着せ替えの後は変わらないので、すべてのポインタを NULL・大きさを 0 にして 1 回呼べば要る数が分かる。
+//
+// `changed_positions_only` が true なら、頂点の位置は、変更のフラグ (`UGOE_CHANGED_POSITIONS`) が立った描画可能要素の
+// 範囲だけを写す (ほかの範囲は書かない)。毎回の `ugoe_puppet_update` の後に同じバッファへ写すホストのためのもの
+// (作った直後と最初の `update` の後は、すべてのフラグが立つ)。状態・描画順・範囲は常にすべてを写す。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`buffers` は読める `UgoeFrameBuffers` を指し、その中の各ポインタは NULL か、
+// 書かれた数の要素を書き込める領域を指すこと。`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_copy_frame(struct UgoePuppet *puppet,
+                                  const struct UgoeFrameBuffers *buffers,
+                                  bool changed_positions_only,
+                                  struct UgoeFrameCopy *out,
+                                  struct UgoeError *error);
 
 // 当たり判定 (`Model::hit_areas`) の数。
 //
