@@ -40,14 +40,14 @@ namespace Ugoe
         /// <summary>ブレンドシェイプの名前 (<c>"eyeBlinkLeft"</c> など)。</summary>
         public static string BlendShapeName(int index)
         {
-            UgoeException.Check(Native.ugoe_blend_shape_name((uint)index, out var name));
+            UgoeException.Check(Native.ugoe_blend_shape_name((uint)index, out var name, NativeError.Current));
             return Utf8.Decode(name);
         }
 
         /// <summary>名前からブレンドシェイプの添字を引く。知らない名前なら -1。</summary>
         public static int BlendShapeIndex(string name)
         {
-            var r = Native.ugoe_blend_shape_index(Utf8.Encode(name), out var index);
+            var r = Native.ugoe_blend_shape_index(Utf8.Encode(name), out var index, NativeError.Current);
             if (r == (int)UgoeResult.NotFound) return -1;
             UgoeException.Check(r);
             return (int)index;

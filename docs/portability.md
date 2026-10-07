@@ -51,22 +51,32 @@ wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には
 
 - 公開する関数はすべて `ugoe_` で始めます。
 - オブジェクトは不透明なポインタで渡し、`ugoe_*_create` / `ugoe_*_destroy` で寿命を管理します。
-- 関数はエラーコード (`UgoeResult`、`i32`) を返し、詳細なエラーメッセージはスレッドローカルの `ugoe_last_error()` で取得できるようにします。
-- パニックは `catch_unwind` で捕まえてエラーコードに変換します。FFI の境界の外にパニックを漏らしません。
+- 失敗しうる関数はエラーコード (`UgoeResult`、`i32`) を返し、最後の引数に呼び出し側の `UgoeError*` を取ります。失敗の中身
+  (メッセージ・種類・補足の値) はそこに書き、`ugoe_error_message(e)`・`ugoe_error_kind(e)`・`ugoe_error_field(e, key)` などで読みます。
+  NULL を渡せば書きません。成功した呼び出しは中身を変えません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#失敗の受け取り方-t0489))。
+- C ABI はグローバルな状態もスレッドローカルな状態も持ちません ([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#c-abi-のエラーはスレッドローカルに置かない))。
+  スレッドについての約束は次のとおりです。
+  - `UgoeError` はスレッドに結び付かないので、どのスレッドで作り、書かせ、読んでもかまいません。呼び出しの間で OS のスレッドが変わるホスト
+    (Go の goroutine・C# の async の続き・スレッドプール) でも、失敗した呼び出しに渡した `UgoeError` から正しい中身を読めます。
+    ただし 1 つの `UgoeError` を同時に複数のスレッドから使ってはなりません (呼び出しごとか、スレッドごとに 1 つ持ちます)。
+  - `UgoePuppet`・`UgoeModule`・`UgoeImage` も同じで、どのスレッドから使ってもよいが、1 つを同時に複数のスレッドから使ってはなりません
+    (別々のオブジェクトなら並行してかまいません)。
+  - 読み出しの関数が返す文字列は、その `UgoeError` に次の失敗を書くか、破棄するまで有効です。
+- パニックは `catch_unwind` で捕まえてエラーコード (`UGOE_ERROR_PANIC`) に変換し、メッセージを `UgoeError` に書きます。FFI の境界の外にパニックを漏らしません。
 - 頂点データは、ホストが確保したバッファにコピーする API (`ugoe_puppet_copy_positions(p, drawable, out_ptr, len)`) と、内部のバッファを借用する API (次の `update` まで有効) の両方を提供します。
 - ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します (`just ffi-header` で作り直し、`just ffi-check` で検査と C の見本の実行)。cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず、版を固定した CLI として使います。`just ffi-check` は `just ci` に含めません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成))。
 - `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。関数・型・定数・エラーコードを足すだけなら上げません
   (既存の構造体にフィールドを足すのは壊す変更なので、別の関数や構造体を足します。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#abi-の版))。
 - 可変長の結果は、ホストのバッファ (`out`・`capacity`) に書いて数を返し、足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で数だけを返します。
-- 着せ替えなど、失敗の種類を機械が読む必要がある関数は、`ugoe_last_error_kind()` と `ugoe_last_error_field(key)` で wasm と同じ `code` と補足の値を返します。
-  補足の値は `ugoe_last_error_field_count()`・`ugoe_last_error_field_key_at(i)`・`ugoe_last_error_field_value_at(i)` で列挙もでき、バインディングはキーの一覧を写さずに済みます (T0464)。
+- 着せ替えなど、失敗の種類を機械が読む必要がある関数は、`UgoeError` の `ugoe_error_kind(e)` と `ugoe_error_field(e, key)` で wasm と同じ `code` と補足の値を返します。
+  補足の値は `ugoe_error_field_count(e)`・`ugoe_error_field_key_at(e, i)`・`ugoe_error_field_value_at(e, i)` で列挙もでき、バインディングはキーの一覧を写さずに済みます (T0464)。
   読み込みの警告も wasm と同じ `code` です。どちらも値は SDK (`ugoe::DressUpError::code`・`ugoe::LoadWarning`) が決め、バインディングはそれを写すだけにします (T0412)。
 - 外から来るファイルの読み込みの上限 (展開するバイト) は、組み込む側が `UgoeReadLimits` で指定できます (指定しない関数は既定値)。
   超えたら `UGOE_ERROR_LIMIT_EXCEEDED` で、種類 `read_limit_exceeded` と補足の値は wasm と同じです (T0152。`docs/spec/file-formats.md#読み込みの上限`)。
 - wasm のモデルの読み込み (`load_json` / `load_bundle`) の失敗は、すべて `name` が `"LoadError"` で `code` と補足の値を持ちます (T0434。
   一覧は [crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#読み込みの失敗-t0434))。ファイルとモデルの失敗 (`invalid_file`・
   `unsupported_version`・`invalid_model`・`compile` など) の種類は SDK の `ugoe::LoadError` が決め、C ABI の `ugoe_puppet_create_from_*` も
-  `ugoe_last_error_kind()` で同じ値を返します (T0457。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457))。
+  `ugoe_error_kind(e)` で同じ値を返します (T0457。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457))。
   利用者に見せる文は組み込み先が `code` から作ります ([ADR 0029](adr/0029-shared-ui-and-i18n.md))。
 
 ## ホストから来る数
@@ -130,7 +140,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 | 光源 | 向きが 0・有限でない値・`range` が正でない・負の色を拒む (`ugoe_lighting_uniform`) | `set_lighting_json` は同じ条件で例外 | `ambient_light` は色が有限で負でなければ受け付け、そうでなければ拒む。光源は C ABI と同じ条件で、通らないものは警告を出して使わない |
 | 当たり判定の点 | 下の層と同じ (当たらない) | 同じ | 同じ |
 | 表示 (wasm のビュー・Godot のマスク) | — | `set_view`・`pan_by`・`zoom_at`・`set_background` は有限でなければ何も変えない ([wasm の表](../crates/ugoe-wasm/README.md#有限でない値と-dt)) | `mask_scale` は有限でなければ拒む |
-| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` は検証して `UGOE_ERROR_INVALID_MODEL` で拒み、`ugoe_last_error_kind` は `invalid_physics`。`ugoe_puppet_set_effects_json` も同じく拒み、種類は `invalid_model`。補足の値はどちらも `errors` (検査のエラーの数)・`error_codes` (その種類)。T0461・T0469) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外。`set_physics_json`・`set_base_physics_json` は `code` が `invalid_physics`、`set_effects_json` は `invalid_model` で、`errors`・`error_codes` を持つ例外。`set_base_physics_json` で付けているモジュールと合成できなければ、付け外しの失敗と同じ `DressUpError` で、`code` と補足の値は C ABI の `UGOE_ERROR_DRESS_UP` と同じ種類。T0476) | 同じ (`set_effects_json`・`set_physics_json`・`set_base_physics_json` は C ABI と同じ文のエラーを出し、結果の辞書 `{ "ok": false, "code", "error", ... }` を返す。種類と `errors`・`error_codes` は C ABI と同じ。T0470) |
+| モーション・表情・エフェクト・物理の JSON | 読み込みの検証に従う (`ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` は検証して `UGOE_ERROR_INVALID_MODEL` で拒み、`ugoe_error_kind` は `invalid_physics`。`ugoe_puppet_set_effects_json` も同じく拒み、種類は `invalid_model`。補足の値はどちらも `errors` (検査のエラーの数)・`error_codes` (その種類)。T0461・T0469) | 同じ (`start_motion_json`・`set_expression_json` は検証して例外。`set_physics_json`・`set_base_physics_json` は `code` が `invalid_physics`、`set_effects_json` は `invalid_model` で、`errors`・`error_codes` を持つ例外。`set_base_physics_json` で付けているモジュールと合成できなければ、付け外しの失敗と同じ `DressUpError` で、`code` と補足の値は C ABI の `UGOE_ERROR_DRESS_UP` と同じ種類。T0476) | 同じ (`set_effects_json`・`set_physics_json`・`set_base_physics_json` は C ABI と同じ文のエラーを出し、結果の辞書 `{ "ok": false, "code", "error", ... }` を返す。種類と `errors`・`error_codes` は C ABI と同じ。T0470) |
 
 - C ABI が拒む値を下の層は「書かない」「0 とみなす」で受け付けるのは、上の層の表し方の違いで、前提の違いではない。C ABI は結果コードで知らせる流儀なので、
   ホストの誤りを早く見つけられるよう拒む (T0423)。

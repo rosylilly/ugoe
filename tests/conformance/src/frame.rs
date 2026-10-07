@@ -45,7 +45,7 @@ pub fn image_digest(width: u32, height: u32, pixels: &[u8]) -> String {
     format!("{width}x{height}:{hash:016x}")
 }
 
-/// デコードの失敗を比べる文字列。C ABI の `ugoe_last_error_kind` と同じ値 (`crates/ugoe-ffi/README.md`)。
+/// デコードの失敗を比べる文字列。C ABI の `ugoe_error_kind` と同じ値 (`crates/ugoe-ffi/README.md`)。
 pub fn image_error_kind(error: &ugoe_format::image::ImageError) -> &'static str {
     use ugoe_format::image::ImageError;
     match error {

@@ -11,7 +11,7 @@ namespace Ugoe.Tests
         [Test]
         public void VersionAndAbi()
         {
-            Assert.That(UgoeRuntime.AbiVersion, Is.EqualTo(1u));
+            Assert.That(UgoeRuntime.AbiVersion, Is.EqualTo(2u));
             Assert.That(UgoeRuntime.Version, Does.Match(@"^\d+\.\d+\.\d+"));
         }
 

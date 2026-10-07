@@ -41,7 +41,7 @@
 
 `DressUpError::fields` は `(キー, FieldValue)` の列を返す。値は ID・名前なら `FieldValue::Text`、番号・数なら `FieldValue::Index`、
 種類 (`code`) の一覧なら `FieldValue::Codes` (読み込みの警告 `LoadWarning::fields` と同じ型)。wasm の `DressUpError` は文字列と数
-(一覧は `, ` でつないだ文字列)、C ABI の `ugoe_last_error_field` は文字列 (番号は 10 進、一覧は `, ` でつないだもの) にする。キーは種類ごとに決まり、無い値はキーごと出さない (T0412・T0157)。
+(一覧は `, ` でつないだ文字列)、C ABI の `ugoe_error_field` は文字列 (番号は 10 進、一覧は `, ` でつないだもの) にする。キーは種類ごとに決まり、無い値はキーごと出さない (T0412・T0157)。
 
 | `code` | キー |
 | --- | --- |

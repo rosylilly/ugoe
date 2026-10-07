@@ -87,7 +87,7 @@ namespace Ugoe
                 };
             }
             var raw = new float[Native.LightingUniformFloats];
-            UgoeException.Check(Native.ugoe_lighting_uniform(new[] { ambientR, ambientG, ambientB }, native, (UIntPtr)count, raw));
+            UgoeException.Check(Native.ugoe_lighting_uniform(new[] { ambientR, ambientG, ambientB }, native, (UIntPtr)count, raw, NativeError.Current));
 
             var result = new LightingUniform();
             Array.Copy(raw, 0, result.Ambient, 0, 4);

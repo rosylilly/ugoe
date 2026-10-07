@@ -29,12 +29,15 @@
 #define MAX_ITEMS 256
 #define MAX_STEPS 4096
 
+/* 失敗の中身を受け取る UgoeError。実行器は 1 つのスレッドで動くので、すべての呼び出しで共有する。 */
+static UgoeError *err;
+
 /* 呼び出しが失敗したら、エラーメッセージを出して false を返す。 */
 #define CHECK(call)                                                                   \
     do {                                                                              \
         UgoeResult check_result_ = (call);                                            \
         if (check_result_ != UGOE_OK) {                                               \
-            const char *message_ = ugoe_last_error();                                 \
+            const char *message_ = ugoe_error_message(err);                           \
             fprintf(stderr, "%s: %s failed (%d): %s\n", c->name, #call,               \
                     (int)check_result_, message_ ? message_ : "(no message)");        \
             ok = false;                                                               \
@@ -188,9 +191,9 @@ static bool create_puppet(const Case *c, const unsigned char *bytes, size_t len,
     bool ok = true;
     UgoePuppet *puppet = NULL;
     if (c->bundle) {
-        CHECK(ugoe_puppet_create_from_bundle(bytes, len, &puppet));
+        CHECK(ugoe_puppet_create_from_bundle(bytes, len, &puppet, err));
     } else {
-        CHECK(ugoe_puppet_create_from_json(bytes, len, &puppet));
+        CHECK(ugoe_puppet_create_from_json(bytes, len, &puppet, err));
     }
     for (size_t i = 0; i < c->module_count; i++) {
         if (!modules[i]) {
@@ -200,16 +203,16 @@ static bool create_puppet(const Case *c, const unsigned char *bytes, size_t len,
                 ok = false;
                 goto done;
             }
-            UgoeResult r = ugoe_module_create(module_bytes, module_len, &modules[i]);
+            UgoeResult r = ugoe_module_create(module_bytes, module_len, &modules[i], err);
             free(module_bytes);
             CHECK(r);
         }
-        CHECK(ugoe_puppet_attach_module(puppet, modules[i]));
+        CHECK(ugoe_puppet_attach_module(puppet, modules[i], err));
     }
     for (size_t i = 0; i < c->param_count; i++) {
         uint32_t index = 0;
-        CHECK(ugoe_puppet_parameter_index(puppet, c->param_ids[i], &index));
-        CHECK(ugoe_puppet_set_parameter(puppet, index, c->param_values[i]));
+        CHECK(ugoe_puppet_parameter_index(puppet, c->param_ids[i], &index, err));
+        CHECK(ugoe_puppet_set_parameter(puppet, index, c->param_values[i], err));
     }
 done:
     if (!ok) {
@@ -224,10 +227,10 @@ done:
 static bool motion_index(const Case *c, UgoePuppet *puppet, const char *name, uint32_t *out) {
     bool ok = true;
     uint32_t count = 0;
-    CHECK(ugoe_puppet_motion_count(puppet, &count));
+    CHECK(ugoe_puppet_motion_count(puppet, &count, err));
     for (uint32_t i = 0; i < count; i++) {
         const char *motion = NULL;
-        CHECK(ugoe_puppet_motion_name(puppet, i, &motion));
+        CHECK(ugoe_puppet_motion_name(puppet, i, &motion, err));
         if (strcmp(motion, name) == 0) {
             *out = i;
             return true;
@@ -243,12 +246,12 @@ done:
 static bool record_events(const Case *c, UgoePuppet *puppet, size_t step, Events *events) {
     bool ok = true;
     uint32_t count = 0;
-    CHECK(ugoe_puppet_motion_event_count(puppet, &count));
+    CHECK(ugoe_puppet_motion_event_count(puppet, &count, err));
     for (uint32_t i = 0; i < count; i++) {
         UgoeMotionEvent e;
         UgoeMotionEventSource source;
-        CHECK(ugoe_puppet_motion_event(puppet, i, &e));
-        CHECK(ugoe_puppet_motion_event_source(puppet, i, &source));
+        CHECK(ugoe_puppet_motion_event(puppet, i, &e, err));
+        CHECK(ugoe_puppet_motion_event_source(puppet, i, &source, err));
         if (events->len == events->cap) {
             size_t cap = events->cap ? events->cap * 2 : 16;
             Event *items = realloc(events->items, cap * sizeof *items);
@@ -278,11 +281,11 @@ static bool create_conductor(const Case *c, const unsigned char *bytes, size_t l
     if (!create_puppet(c, bytes, len, modules, &conductor)) return false;
     if (c->conduct_effects) {
         CHECK(ugoe_puppet_set_effects_json(conductor, (const uint8_t *)c->conduct_effects,
-                                           strlen(c->conduct_effects)));
+                                           strlen(c->conduct_effects), err));
     }
-    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_PHYSICS, false));
-    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_EYE_BLINK, c->conduct_effects != NULL));
-    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_BREATH, c->conduct_effects != NULL));
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_PHYSICS, false, err));
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_EYE_BLINK, c->conduct_effects != NULL, err));
+    CHECK(ugoe_puppet_set_stage_enabled(conductor, UGOE_STAGE_BREATH, c->conduct_effects != NULL, err));
     if (c->conduct_motion[0] != '\0') {
         uint32_t index = 0;
         if (!motion_index(c, conductor, c->conduct_motion, &index)) {
@@ -290,7 +293,7 @@ static bool create_conductor(const Case *c, const unsigned char *bytes, size_t l
             goto done;
         }
         bool started = false;
-        CHECK(ugoe_puppet_start_motion(conductor, index, UGOE_PRIORITY_NORMAL, &started));
+        CHECK(ugoe_puppet_start_motion(conductor, index, UGOE_PRIORITY_NORMAL, &started, err));
         if (!started) {
             fprintf(stderr, "%s: motion `%s` did not start\n", c->name, c->conduct_motion);
             ok = false;
@@ -311,21 +314,21 @@ static bool lead(const Case *c, UgoePuppet *conductor, UgoePuppet *puppet, float
     bool ok = true;
     float *values = NULL;
     UgoePartOpacityInput *parts = NULL;
-    if (level >= 0.0f) CHECK(ugoe_puppet_set_lip_sync_level(conductor, level));
-    CHECK(ugoe_puppet_update(conductor, dt));
+    if (level >= 0.0f) CHECK(ugoe_puppet_set_lip_sync_level(conductor, level, err));
+    CHECK(ugoe_puppet_update(conductor, dt, err));
     size_t count = 0;
-    UgoeResult r = ugoe_puppet_values_before_physics(conductor, NULL, 0, &count);
+    UgoeResult r = ugoe_puppet_values_before_physics(conductor, NULL, 0, &count, err);
     if (r != UGOE_ERROR_BUFFER_TOO_SMALL) CHECK(r);
     values = malloc((count > 0 ? count : 1) * sizeof *values);
     if (!values) {
         ok = false;
         goto done;
     }
-    CHECK(ugoe_puppet_values_before_physics(conductor, values, count, &count));
+    CHECK(ugoe_puppet_values_before_physics(conductor, values, count, &count, err));
     float strength = 0.0f;
-    CHECK(ugoe_puppet_lip_sync_applied(conductor, &level, &strength));
+    CHECK(ugoe_puppet_lip_sync_applied(conductor, &level, &strength, err));
     size_t part_count = 0;
-    r = ugoe_puppet_part_opacities_applied(conductor, NULL, 0, &part_count);
+    r = ugoe_puppet_part_opacities_applied(conductor, NULL, 0, &part_count, err);
     if (r != UGOE_ERROR_BUFFER_TOO_SMALL) CHECK(r);
     if (part_count > 0) {
         parts = malloc(part_count * sizeof *parts);
@@ -333,9 +336,9 @@ static bool lead(const Case *c, UgoePuppet *conductor, UgoePuppet *puppet, float
             ok = false;
             goto done;
         }
-        CHECK(ugoe_puppet_part_opacities_applied(conductor, parts, part_count, &part_count));
+        CHECK(ugoe_puppet_part_opacities_applied(conductor, parts, part_count, &part_count, err));
     }
-    CHECK(ugoe_puppet_follow(puppet, values, count, level, strength, parts, part_count, dt));
+    CHECK(ugoe_puppet_follow(puppet, values, count, level, strength, parts, part_count, dt, err));
 done:
     free(values);
     free(parts);
@@ -365,12 +368,12 @@ static bool run_case(const Case *c, const char *out_dir) {
         const uint32_t stages[] = {UGOE_STAGE_PHYSICS, UGOE_STAGE_EYE_BLINK, UGOE_STAGE_BREATH,
                                    UGOE_STAGE_LIP_SYNC, UGOE_STAGE_POSE};
         for (size_t i = 0; i < sizeof stages / sizeof stages[0]; i++) {
-            CHECK(ugoe_puppet_set_stage_enabled(puppet, stages[i], false));
+            CHECK(ugoe_puppet_set_stage_enabled(puppet, stages[i], false, err));
         }
-        CHECK(ugoe_puppet_update(puppet, 0.0f));
+        CHECK(ugoe_puppet_update(puppet, 0.0f, err));
     } else {
-        CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_EYE_BLINK, c->effects));
-        CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects));
+        CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_EYE_BLINK, c->effects, err));
+        CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects, err));
         for (size_t i = 0; i < c->step_count; i++) {
             if (conductor) {
                 if (!lead(c, conductor, puppet, c->lead_lip_sync[i], c->steps[i])) {
@@ -381,7 +384,7 @@ static bool run_case(const Case *c, const char *out_dir) {
                 CHECK(ugoe_puppet_follow(puppet, c->follow[i], c->follow_len[i],
                                          c->follow_lip_sync[i][0], c->follow_lip_sync[i][1],
                                          c->follow_parts[i], c->follow_part_count[i],
-                                         c->steps[i]));
+                                         c->steps[i], err));
             } else {
                 for (size_t k = 0; k < c->start_count; k++) {
                     if (c->start_steps[k] != i) continue;
@@ -391,7 +394,7 @@ static bool run_case(const Case *c, const char *out_dir) {
                         ok = false;
                         goto done;
                     }
-                    CHECK(ugoe_puppet_start_motion(puppet, index, c->start_priorities[k], &started));
+                    CHECK(ugoe_puppet_start_motion(puppet, index, c->start_priorities[k], &started, err));
                     if (started != c->start_accepted[k]) {
                         fprintf(stderr, "%s: starting `%s` at step %zu gave %d\n", c->name,
                                 c->start_names[k], i, (int)started);
@@ -399,7 +402,7 @@ static bool run_case(const Case *c, const char *out_dir) {
                         goto done;
                     }
                 }
-                CHECK(ugoe_puppet_update(puppet, c->steps[i]));
+                CHECK(ugoe_puppet_update(puppet, c->steps[i], err));
                 if (c->start_count > 0 && !record_events(c, puppet, i, &events)) {
                     ok = false;
                     goto done;
@@ -417,16 +420,16 @@ static bool run_case(const Case *c, const char *out_dir) {
         goto done;
     }
     uint32_t count = 0;
-    CHECK(ugoe_puppet_drawable_count(puppet, &count));
+    CHECK(ugoe_puppet_drawable_count(puppet, &count, err));
     fputs("{\"meshes\":{", f);
     for (uint32_t i = 0; i < count; i++) {
         UgoeDrawableInfo info;
         UgoeDrawableState state;
         const float *xy = NULL;
         size_t n = 0;
-        CHECK(ugoe_puppet_drawable_info(puppet, i, &info));
-        CHECK(ugoe_puppet_drawable_state(puppet, i, &state));
-        CHECK(ugoe_puppet_positions(puppet, i, &xy, &n));
+        CHECK(ugoe_puppet_drawable_info(puppet, i, &info, err));
+        CHECK(ugoe_puppet_drawable_state(puppet, i, &state, err));
+        CHECK(ugoe_puppet_positions(puppet, i, &xy, &n, err));
         if (i > 0) fputc(',', f);
         write_string(f, info.id);
         fputs(":{\"positions\":[", f);
@@ -453,10 +456,10 @@ static bool run_case(const Case *c, const char *out_dir) {
     fputs("},\"render_order\":[", f);
     const uint32_t *order = NULL;
     size_t order_len = 0;
-    CHECK(ugoe_puppet_render_order(puppet, &order, &order_len));
+    CHECK(ugoe_puppet_render_order(puppet, &order, &order_len, err));
     for (size_t i = 0; i < order_len; i++) {
         UgoeDrawableInfo info;
-        CHECK(ugoe_puppet_drawable_info(puppet, order[i], &info));
+        CHECK(ugoe_puppet_drawable_info(puppet, order[i], &info, err));
         if (i > 0) fputc(',', f);
         write_string(f, info.id);
     }
@@ -498,6 +501,7 @@ int main(int argc, char **argv) {
                 (unsigned)UGOE_ABI_VERSION);
         return 2;
     }
+    err = ugoe_error_create();
     FILE *plan = fopen(argv[1], "r");
     if (!plan) {
         perror(argv[1]);
@@ -631,10 +635,12 @@ int main(int argc, char **argv) {
     invalid:
         fprintf(stderr, "%s: invalid line `%s`\n", argv[1], line);
         fclose(plan);
+        ugoe_error_destroy(err);
         return 2;
     }
     clear_case(&c);
     fclose(plan);
+    ugoe_error_destroy(err);
     printf("c: evaluated %d cases (%d failed)\n", total - failed, failed);
     return failed == 0 ? 0 : 1;
 }

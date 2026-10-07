@@ -6,7 +6,7 @@
 use ugoe::{LipSyncInput, ParameterValuesError, PartOpacityInput};
 
 use crate::error::{
-    Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_INVALID_ARGUMENT, UgoeResult, guard,
+    Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_INVALID_ARGUMENT, UgoeError, UgoeResult, guard,
 };
 use crate::puppet::{UgoePuppet, puppet_mut, puppet_ref, write};
 
@@ -77,8 +77,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_base_values(
     puppet: *mut UgoePuppet,
     values: *const f32,
     count: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -118,8 +119,9 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
     part_opacities: *const UgoePartOpacityInput,
     part_opacity_count: usize,
     dt: f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         if !dt.is_finite() || dt < 0.0 {
             return Err(Error::new(
                 UGOE_ERROR_INVALID_ARGUMENT,
@@ -207,8 +209,9 @@ pub unsafe extern "C" fn ugoe_puppet_values_before_physics(
     out: *mut f32,
     capacity: usize,
     out_count: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -231,8 +234,9 @@ pub unsafe extern "C" fn ugoe_puppet_lip_sync_applied(
     puppet: *const UgoePuppet,
     out_level: *mut f32,
     out_strength: *mut f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         if out_strength.is_null() {
@@ -266,8 +270,9 @@ pub unsafe extern "C" fn ugoe_puppet_part_opacities_applied(
     out: *mut UgoePartOpacityInput,
     capacity: usize,
     out_count: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。

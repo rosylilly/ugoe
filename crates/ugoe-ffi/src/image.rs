@@ -17,8 +17,8 @@ use ugoe_format::image::{
 
 use crate::drawable::{UGOE_TEXTURE_KTX2, UGOE_TEXTURE_PNG};
 use crate::error::{
-    Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_LIMIT_EXCEEDED, UgoeResult,
-    guard,
+    Error, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_LIMIT_EXCEEDED, UgoeError,
+    UgoeResult, guard,
 };
 use crate::puppet::write;
 
@@ -47,7 +47,7 @@ pub struct UgoeImage {
 }
 
 fn image_error(error: ImageError) -> Error {
-    /// 種類 (`ugoe_last_error_kind`): 一辺が上限を超える。補足の値は `width`・`height`・`max` (wasm の
+    /// 種類 (`ugoe_error_kind`): 一辺が上限を超える。補足の値は `width`・`height`・`max` (wasm の
     /// `image_limit_exceeded` と同じ値。wasm はさらに `image`・`texture` を持つ)。
     const IMAGE_LIMIT_EXCEEDED: &str = "image_limit_exceeded";
     /// 種類: 画像が壊れている (wasm の `invalid_texture` と同じ)。
@@ -86,7 +86,7 @@ fn image_error(error: ImageError) -> Error {
 /// - `premultiply`: true なら乗算済みアルファにする (描画するテクスチャ。参照と同じ整数の丸め)。法線マップは false
 ///   (アルファを掛けない)。
 ///
-/// 失敗したときの戻り値と種類 (`ugoe_last_error_kind`):
+/// 失敗したときの戻り値と種類 (`ugoe_error_kind`):
 ///
 /// - `UGOE_ERROR_LIMIT_EXCEEDED`・`"image_limit_exceeded"`: 一辺が上限を超える (補足の値 `width`・`height`・`max`)。
 /// - `UGOE_ERROR_FORMAT`・`"unsupported_texture"`: 読める KTX2 だが、デコードしない形式 (ETC2・ASTC など)。白で代用するとよい。
@@ -104,8 +104,9 @@ pub unsafe extern "C" fn ugoe_image_decode(
     limits: *const UgoeImageLimits,
     premultiply: bool,
     out: *mut *mut UgoeImage,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         if out.is_null() {
             return Err(Error::null("out"));
         }
@@ -151,7 +152,7 @@ pub unsafe extern "C" fn ugoe_image_destroy(image: *mut UgoeImage) {
     if image.is_null() {
         return;
     }
-    guard(|| {
+    guard(std::ptr::null_mut(), || {
         // SAFETY: `ugoe_image_decode` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(image) });
         Ok(())
@@ -178,8 +179,9 @@ pub unsafe extern "C" fn ugoe_image_size(
     image: *const UgoeImage,
     out_width: *mut u32,
     out_height: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let i = unsafe { image_ref(image)? };
         if out_height.is_null() {
@@ -202,8 +204,9 @@ pub unsafe extern "C" fn ugoe_image_pixels(
     image: *const UgoeImage,
     out: *mut *const u8,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let i = unsafe { image_ref(image)? };
         if out.is_null() {
@@ -220,8 +223,7 @@ pub unsafe extern "C" fn ugoe_image_pixels(
 mod tests {
     use super::*;
     use crate::drawable::UGOE_TEXTURE_NONE;
-    use crate::error::{UGOE_ERROR_NULL_POINTER, UGOE_OK};
-    use std::ffi::CStr;
+    use crate::error::{TestError, UGOE_ERROR_NULL_POINTER, UGOE_OK};
 
     /// 1×2 の RGBA の PNG (上が半透明の赤、下が不透明の緑)。
     fn png() -> Vec<u8> {
@@ -243,7 +245,8 @@ mod tests {
         bytes: &[u8],
         limits: Option<UgoeImageLimits>,
         premultiply: bool,
-    ) -> (UgoeResult, *mut UgoeImage) {
+    ) -> (UgoeResult, *mut UgoeImage, TestError) {
+        let error = TestError::new();
         let mut image = std::ptr::null_mut();
         let limits_ptr = limits
             .as_ref()
@@ -257,9 +260,10 @@ mod tests {
                 limits_ptr,
                 premultiply,
                 &mut image,
+                error.0,
             )
         };
-        (code, image)
+        (code, image, error)
     }
 
     fn pixels(image: *const UgoeImage) -> (u32, u32, Vec<u8>) {
@@ -268,28 +272,28 @@ mod tests {
         let mut len = 0;
         // SAFETY: 有効な `UgoeImage` と書き込める領域を渡している。
         unsafe {
-            assert_eq!(ugoe_image_size(image, &mut w, &mut h), UGOE_OK);
-            assert_eq!(ugoe_image_pixels(image, &mut data, &mut len), UGOE_OK);
+            assert_eq!(
+                ugoe_image_size(image, &mut w, &mut h, std::ptr::null_mut()),
+                UGOE_OK
+            );
+            assert_eq!(
+                ugoe_image_pixels(image, &mut data, &mut len, std::ptr::null_mut()),
+                UGOE_OK
+            );
             (w, h, std::slice::from_raw_parts(data, len).to_vec())
         }
-    }
-
-    fn last_kind() -> Option<String> {
-        let kind = crate::error::ugoe_last_error_kind();
-        // SAFETY: NULL か NUL 終端の文字列。
-        (!kind.is_null()).then(|| unsafe { CStr::from_ptr(kind) }.to_str().unwrap().to_owned())
     }
 
     #[test]
     fn decodes_png_straight_and_premultiplied() {
         let bytes = png();
-        let (code, image) = decode(UGOE_TEXTURE_PNG, &bytes, None, false);
+        let (code, image, _) = decode(UGOE_TEXTURE_PNG, &bytes, None, false);
         assert_eq!(code, UGOE_OK);
         assert_eq!(pixels(image), (1, 2, vec![255, 0, 0, 128, 0, 255, 0, 255]));
         // SAFETY: 作った画像を 1 度だけ解放する。
         unsafe { ugoe_image_destroy(image) };
 
-        let (code, image) = decode(UGOE_TEXTURE_PNG, &bytes, None, true);
+        let (code, image, _) = decode(UGOE_TEXTURE_PNG, &bytes, None, true);
         assert_eq!(code, UGOE_OK);
         let expected = ugoe_format::image::decode_png_premultiplied(&bytes, ImageLimits::default())
             .unwrap()
@@ -307,7 +311,7 @@ mod tests {
         let mut bytes = ktx2_with_format(131, 4, 4, 8);
         let block = bytes.len() - 8;
         bytes[block..].copy_from_slice(&[0x00, 0xF8, 0x1F, 0x00, 0b0101_0101, 0, 0, 0]);
-        let (code, image) = decode(UGOE_TEXTURE_KTX2, &bytes, None, true);
+        let (code, image, _) = decode(UGOE_TEXTURE_KTX2, &bytes, None, true);
         assert_eq!(code, UGOE_OK);
         let (w, h, px) = pixels(image);
         assert_eq!((w, h), (4, 4));
@@ -324,7 +328,7 @@ mod tests {
 
     #[test]
     fn limit_exceeded_has_kind_and_fields() {
-        let (code, image) = decode(
+        let (code, image, error) = decode(
             UGOE_TEXTURE_PNG,
             &png(),
             Some(UgoeImageLimits { max_side: 1 }),
@@ -332,15 +336,8 @@ mod tests {
         );
         assert_eq!(code, UGOE_ERROR_LIMIT_EXCEEDED);
         assert!(image.is_null());
-        assert_eq!(last_kind().as_deref(), Some("image_limit_exceeded"));
-        let field = |key: &str| {
-            let key = std::ffi::CString::new(key).unwrap();
-            // SAFETY: NUL 終端の文字列を渡し、返るのは NUL 終端の文字列 (補足の値はあるので NULL でない)。
-            unsafe { CStr::from_ptr(crate::error::ugoe_last_error_field(key.as_ptr())) }
-                .to_str()
-                .unwrap()
-                .to_owned()
-        };
+        assert_eq!(error.kind().as_deref(), Some("image_limit_exceeded"));
+        let field = |key: &str| error.field(&std::ffi::CString::new(key).unwrap()).unwrap();
         assert_eq!(field("width"), "1");
         assert_eq!(field("height"), "2");
         assert_eq!(field("max"), "1");
@@ -348,32 +345,32 @@ mod tests {
 
     #[test]
     fn broken_and_unsupported_images_have_kinds() {
-        let (code, image) = decode(UGOE_TEXTURE_PNG, b"not a png", None, true);
+        let (code, image, error) = decode(UGOE_TEXTURE_PNG, b"not a png", None, true);
         assert_eq!(code, UGOE_ERROR_FORMAT);
         assert!(image.is_null());
-        assert_eq!(last_kind().as_deref(), Some("invalid_texture"));
+        assert_eq!(error.kind().as_deref(), Some("invalid_texture"));
 
-        let (code, _) = decode(UGOE_TEXTURE_KTX2, b"not a ktx2", None, true);
+        let (code, _, error) = decode(UGOE_TEXTURE_KTX2, b"not a ktx2", None, true);
         assert_eq!(code, UGOE_ERROR_FORMAT);
-        assert_eq!(last_kind().as_deref(), Some("invalid_texture"));
+        assert_eq!(error.kind().as_deref(), Some("invalid_texture"));
 
         // ETC2 (VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK = 151) の 4×4 の KTX2。読めるがデコードしない。
-        let (code, _) = decode(
+        let (code, _, error) = decode(
             UGOE_TEXTURE_KTX2,
             &ktx2_with_format(151, 4, 4, 16),
             None,
             true,
         );
         assert_eq!(code, UGOE_ERROR_FORMAT);
-        assert_eq!(last_kind().as_deref(), Some("unsupported_texture"));
+        assert_eq!(error.kind().as_deref(), Some("unsupported_texture"));
     }
 
     #[test]
     fn rejects_unknown_formats_and_null_pointers() {
         let bytes = png();
-        let (code, _) = decode(UGOE_TEXTURE_NONE, &bytes, None, true);
+        let (code, _, _) = decode(UGOE_TEXTURE_NONE, &bytes, None, true);
         assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
-        let (code, _) = decode(99, &bytes, None, true);
+        let (code, _, _) = decode(99, &bytes, None, true);
         assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
         // SAFETY: NULL を渡して失敗を確かめる。
         unsafe {
@@ -384,11 +381,12 @@ mod tests {
                 std::ptr::null(),
                 true,
                 std::ptr::null_mut(),
+                std::ptr::null_mut(),
             );
             assert_eq!(code, UGOE_ERROR_NULL_POINTER);
             let (mut w, mut h) = (0, 0);
             assert_eq!(
-                ugoe_image_size(std::ptr::null(), &mut w, &mut h),
+                ugoe_image_size(std::ptr::null(), &mut w, &mut h, std::ptr::null_mut()),
                 UGOE_ERROR_NULL_POINTER
             );
             ugoe_image_destroy(std::ptr::null_mut());

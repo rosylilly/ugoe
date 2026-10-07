@@ -24,16 +24,16 @@ namespace Ugoe
         private Puppet(PuppetHandle handle)
         {
             this.handle = handle;
-            UgoeException.Check(Native.ugoe_puppet_canvas(handle, out var c));
+            UgoeException.Check(Native.ugoe_puppet_canvas(handle, out var c, NativeError.Current));
             Canvas = new CanvasInfo(c.Width, c.Height, c.OriginX, c.OriginY);
             MotionNames = ReadNames(NameList.Motions);
             ExpressionNames = ReadNames(NameList.Expressions);
             SlotIds = ReadNames(NameList.Slots);
-            UgoeException.Check(Native.ugoe_puppet_load_warning_count(handle, out var warningCount));
+            UgoeException.Check(Native.ugoe_puppet_load_warning_count(handle, out var warningCount, NativeError.Current));
             LoadWarnings = new LoadWarning[warningCount];
             for (uint i = 0; i < warningCount; i++)
             {
-                UgoeException.Check(Native.ugoe_puppet_load_warning(handle, i, out var w));
+                UgoeException.Check(Native.ugoe_puppet_load_warning(handle, i, out var w, NativeError.Current));
                 LoadWarnings[i] = new LoadWarning(Utf8.Decode(w.Code), Utf8.Decode(w.Message));
             }
             Reload();
@@ -44,7 +44,7 @@ namespace Ugoe
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
-            UgoeException.Check(Native.ugoe_puppet_create_from_bundle(bytes, (UIntPtr)bytes.Length, out var ptr));
+            UgoeException.Check(Native.ugoe_puppet_create_from_bundle(bytes, (UIntPtr)bytes.Length, out var ptr, NativeError.Current));
             return Wrap(ptr);
         }
 
@@ -56,7 +56,7 @@ namespace Ugoe
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
-            UgoeException.Check(Native.ugoe_puppet_create_from_bundle_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr));
+            UgoeException.Check(Native.ugoe_puppet_create_from_bundle_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr, NativeError.Current));
             return Wrap(ptr);
         }
 
@@ -66,7 +66,7 @@ namespace Ugoe
             if (json == null) throw new ArgumentNullException(nameof(json));
             UgoeRuntime.EnsureCompatible();
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-            UgoeException.Check(Native.ugoe_puppet_create_from_json(bytes, (UIntPtr)bytes.Length, out var ptr));
+            UgoeException.Check(Native.ugoe_puppet_create_from_json(bytes, (UIntPtr)bytes.Length, out var ptr, NativeError.Current));
             return Wrap(ptr);
         }
 
@@ -97,14 +97,14 @@ namespace Ugoe
         /// <summary>読み込みの警告 <paramref name="index"/> の補足の値 (<c>"texture"</c>・<c>"feature"</c>・<c>"path"</c>)。無ければ null。</summary>
         public string GetLoadWarningField(int index, string key)
         {
-            var r = Native.ugoe_puppet_load_warning_field(handle, (uint)index, Utf8.Encode(key), out var value);
+            var r = Native.ugoe_puppet_load_warning_field(handle, (uint)index, Utf8.Encode(key), out var value, NativeError.Current);
             if (r == (int)UgoeResult.NotFound) return null;
             UgoeException.Check(r);
             return Utf8.Decode(value);
         }
 
         /// <summary>1 フレーム進める。<paramref name="dt"/> は前のフレームからの経過秒数。</summary>
-        public void Update(float dt) => UgoeException.Check(Native.ugoe_puppet_update(handle, dt));
+        public void Update(float dt) => UgoeException.Check(Native.ugoe_puppet_update(handle, dt, NativeError.Current));
 
         // --- パラメータ ---
 
@@ -116,13 +116,13 @@ namespace Ugoe
 
         public float GetParameter(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_get_parameter(handle, (uint)index, out var value));
+            UgoeException.Check(Native.ugoe_puppet_get_parameter(handle, (uint)index, out var value, NativeError.Current));
             return value;
         }
 
         /// <summary>値を設定する (範囲に丸める)。次の <see cref="Update"/> から、モーションなどを重ねる基準の値になる。</summary>
         public void SetParameter(int index, float value) =>
-            UgoeException.Check(Native.ugoe_puppet_set_parameter(handle, (uint)index, value));
+            UgoeException.Check(Native.ugoe_puppet_set_parameter(handle, (uint)index, value, NativeError.Current));
 
         /// <summary>ID で設定する。知らない ID なら false。</summary>
         public bool SetParameter(string id, float value)
@@ -148,7 +148,7 @@ namespace Ugoe
                     Marshal.Copy(bytes, 0, ptrs[i], bytes.Length);
                     vals[i] = values[i];
                 }
-                UgoeException.Check(Native.ugoe_puppet_set_parameters_by_id(handle, ptrs, vals, (UIntPtr)ptrs.Length, out var applied));
+                UgoeException.Check(Native.ugoe_puppet_set_parameters_by_id(handle, ptrs, vals, (UIntPtr)ptrs.Length, out var applied, NativeError.Current));
                 return (int)applied;
             }
             finally
@@ -162,11 +162,11 @@ namespace Ugoe
 
         /// <summary>リップシンクの音量 (0〜1)。null で入力をやめる (口のパラメータに触らなくなる)。</summary>
         public void SetLipSyncLevel(float? level) =>
-            UgoeException.Check(Native.ugoe_puppet_set_lip_sync_level(handle, level ?? -1f));
+            UgoeException.Check(Native.ugoe_puppet_set_lip_sync_level(handle, level ?? -1f, NativeError.Current));
 
         /// <summary>段を動かすか (既定はすべて動かす)。例: トラッキング中は目パチを止める。</summary>
         public void SetStageEnabled(UpdateStage stage, bool enabled) =>
-            UgoeException.Check(Native.ugoe_puppet_set_stage_enabled(handle, (uint)stage, enabled ? (byte)1 : (byte)0));
+            UgoeException.Check(Native.ugoe_puppet_set_stage_enabled(handle, (uint)stage, enabled ? (byte)1 : (byte)0, NativeError.Current));
 
         // --- 受け手 ---
 
@@ -178,7 +178,7 @@ namespace Ugoe
         public void SetBaseValues(float[] values)
         {
             if (values == null) throw new ArgumentNullException(nameof(values));
-            UgoeException.Check(Native.ugoe_puppet_set_base_values(handle, values, (UIntPtr)values.Length));
+            UgoeException.Check(Native.ugoe_puppet_set_base_values(handle, values, (UIntPtr)values.Length, NativeError.Current));
         }
 
         /// <summary>
@@ -213,7 +213,7 @@ namespace Ugoe
                 }
             }
             UgoeException.Check(Native.ugoe_puppet_follow(handle, values, (UIntPtr)values.Length, lipSyncLevel ?? -1f,
-                lipSyncLevel.HasValue ? lipSyncStrength : 0f, parts, (UIntPtr)count, dt));
+                lipSyncLevel.HasValue ? lipSyncStrength : 0f, parts, (UIntPtr)count, dt, NativeError.Current));
         }
 
         // --- 指揮役 (T0454) ---
@@ -226,14 +226,14 @@ namespace Ugoe
         public float[] ValuesBeforePhysics()
         {
             var buffer = new float[Parameters.Count];
-            var r = Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out var count);
+            var r = Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out var count, NativeError.Current);
             if (r != (int)UgoeResult.BufferTooSmall)
             {
                 UgoeException.Check(r);
                 return buffer;
             }
             buffer = new float[(int)count];
-            UgoeException.Check(Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out _));
+            UgoeException.Check(Native.ugoe_puppet_values_before_physics(handle, buffer, (UIntPtr)buffer.Length, out _, NativeError.Current));
             return buffer;
         }
 
@@ -243,7 +243,7 @@ namespace Ugoe
         /// </summary>
         public LipSyncInput? LipSyncApplied()
         {
-            UgoeException.Check(Native.ugoe_puppet_lip_sync_applied(handle, out var level, out var strength));
+            UgoeException.Check(Native.ugoe_puppet_lip_sync_applied(handle, out var level, out var strength, NativeError.Current));
             return level < 0 ? (LipSyncInput?)null : new LipSyncInput(level, strength);
         }
 
@@ -253,12 +253,12 @@ namespace Ugoe
         /// </summary>
         public PartOpacityInput[] PartOpacitiesApplied()
         {
-            var r = Native.ugoe_puppet_part_opacities_applied(handle, null, UIntPtr.Zero, out var count);
+            var r = Native.ugoe_puppet_part_opacities_applied(handle, null, UIntPtr.Zero, out var count, NativeError.Current);
             if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
             var buffer = new Native.PartOpacityInput[(int)count];
             if (buffer.Length > 0)
             {
-                UgoeException.Check(Native.ugoe_puppet_part_opacities_applied(handle, buffer, (UIntPtr)buffer.Length, out count));
+                UgoeException.Check(Native.ugoe_puppet_part_opacities_applied(handle, buffer, (UIntPtr)buffer.Length, out count, NativeError.Current));
             }
             var result = new PartOpacityInput[(int)count];
             for (var i = 0; i < result.Length; i++) result[i] = new PartOpacityInput((int)buffer[i].Part, buffer[i].Value, buffer[i].Weight);
@@ -275,18 +275,18 @@ namespace Ugoe
 
         public DrawableState GetDrawableState(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_drawable_state(handle, (uint)index, out var s));
+            UgoeException.Check(Native.ugoe_puppet_drawable_state(handle, (uint)index, out var s, NativeError.Current));
             return new DrawableState(s);
         }
 
         /// <summary>頂点位置 (キャンバス座標の x, y の組) を <paramref name="buffer"/> にコピーする。長さは 2 × 頂点数以上。</summary>
         public void CopyPositions(int index, float[] buffer) =>
-            UgoeException.Check(Native.ugoe_puppet_copy_positions(handle, (uint)index, buffer, (UIntPtr)buffer.Length));
+            UgoeException.Check(Native.ugoe_puppet_copy_positions(handle, (uint)index, buffer, (UIntPtr)buffer.Length, NativeError.Current));
 
         /// <summary>テクスチャ座標 (u, v の組。0〜1、画像の左上が原点)。</summary>
         public float[] GetUvs(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_drawable_uvs(handle, (uint)index, out var ptr, out var len));
+            UgoeException.Check(Native.ugoe_puppet_drawable_uvs(handle, (uint)index, out var ptr, out var len, NativeError.Current));
             var result = new float[(int)len];
             if (result.Length > 0) Marshal.Copy(ptr, result, 0, result.Length);
             return result;
@@ -295,7 +295,7 @@ namespace Ugoe
         /// <summary>三角形の頂点番号 (3 つで 1 つの三角形)。</summary>
         public ushort[] GetIndices(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_drawable_indices(handle, (uint)index, out var ptr, out var len));
+            UgoeException.Check(Native.ugoe_puppet_drawable_indices(handle, (uint)index, out var ptr, out var len, NativeError.Current));
             var raw = new short[(int)len];
             if (raw.Length > 0) Marshal.Copy(ptr, raw, 0, raw.Length);
             var result = new ushort[raw.Length];
@@ -306,7 +306,7 @@ namespace Ugoe
         /// <summary>奥から手前への描画順 (描画可能要素の番号) を <paramref name="buffer"/> (描画可能要素の数以上) にコピーする。</summary>
         public void CopyRenderOrder(int[] buffer)
         {
-            UgoeException.Check(Native.ugoe_puppet_render_order(handle, out var ptr, out var len));
+            UgoeException.Check(Native.ugoe_puppet_render_order(handle, out var ptr, out var len, NativeError.Current));
             if ((int)len > buffer.Length) throw new ArgumentException("buffer is too small", nameof(buffer));
             if ((int)len > 0) Marshal.Copy(ptr, buffer, 0, (int)len);
         }
@@ -316,7 +316,7 @@ namespace Ugoe
         {
             get
             {
-                UgoeException.Check(Native.ugoe_puppet_render_order_changed(handle, out var changed));
+                UgoeException.Check(Native.ugoe_puppet_render_order_changed(handle, out var changed, NativeError.Current));
                 return changed != 0;
             }
         }
@@ -327,7 +327,7 @@ namespace Ugoe
         {
             get
             {
-                UgoeException.Check(Native.ugoe_puppet_texture_count(handle, out var count));
+                UgoeException.Check(Native.ugoe_puppet_texture_count(handle, out var count, NativeError.Current));
                 return (int)count;
             }
         }
@@ -335,14 +335,14 @@ namespace Ugoe
         /// <summary>テクスチャの画像 (エンコードされたまま。PNG は乗算していないアルファ)。</summary>
         public EncodedTexture GetTexture(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_texture(handle, (uint)index, out var t));
+            UgoeException.Check(Native.ugoe_puppet_texture(handle, (uint)index, out var t, NativeError.Current));
             return ToEncoded(t);
         }
 
         /// <summary>テクスチャの法線マップ。無ければ <see cref="EncodedTextureFormat.None"/>。PNG はアルファを掛けずにデコードする。</summary>
         public EncodedTexture GetNormalMap(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_normal_map(handle, (uint)index, out var t));
+            UgoeException.Check(Native.ugoe_puppet_normal_map(handle, (uint)index, out var t, NativeError.Current));
             return ToEncoded(t);
         }
 
@@ -362,7 +362,7 @@ namespace Ugoe
         {
             get
             {
-                UgoeException.Check(Native.ugoe_puppet_uses_lighting(handle, out var uses));
+                UgoeException.Check(Native.ugoe_puppet_uses_lighting(handle, out var uses, NativeError.Current));
                 return uses != 0;
             }
         }
@@ -376,7 +376,7 @@ namespace Ugoe
         /// <summary>モーションを開始する。低い優先度で開始しなかったら false。</summary>
         public bool StartMotion(int index, MotionPriority priority = MotionPriority.Normal)
         {
-            UgoeException.Check(Native.ugoe_puppet_start_motion(handle, (uint)index, (uint)priority, out var started));
+            UgoeException.Check(Native.ugoe_puppet_start_motion(handle, (uint)index, (uint)priority, out var started, NativeError.Current));
             return started != 0;
         }
 
@@ -384,12 +384,12 @@ namespace Ugoe
         public bool StartMotion(string name, MotionPriority priority = MotionPriority.Normal) =>
             StartMotion(IndexOf(MotionNames, name, "motion"), priority);
 
-        public void SetExpression(int index) => UgoeException.Check(Native.ugoe_puppet_set_expression(handle, (uint)index));
+        public void SetExpression(int index) => UgoeException.Check(Native.ugoe_puppet_set_expression(handle, (uint)index, NativeError.Current));
 
         public void SetExpression(string name) => SetExpression(IndexOf(ExpressionNames, name, "expression"));
 
         /// <summary>使用中の表情をすべてフェードアウトさせる。</summary>
-        public void StopExpressions() => UgoeException.Check(Native.ugoe_puppet_stop_expressions(handle));
+        public void StopExpressions() => UgoeException.Check(Native.ugoe_puppet_stop_expressions(handle, NativeError.Current));
 
         /// <summary>
         /// 直前の <see cref="Update"/> で発火したモーションのイベント (開始した順のモーションごとに、発火した順)。
@@ -397,13 +397,13 @@ namespace Ugoe
         /// </summary>
         public MotionEvent[] MotionEvents()
         {
-            UgoeException.Check(Native.ugoe_puppet_motion_event_count(handle, out var count));
+            UgoeException.Check(Native.ugoe_puppet_motion_event_count(handle, out var count, NativeError.Current));
             // イベントの無いフレーム (ほとんど) では確保しない。
             var result = count == 0 ? Array.Empty<MotionEvent>() : new MotionEvent[count];
             for (uint i = 0; i < count; i++)
             {
-                UgoeException.Check(Native.ugoe_puppet_motion_event(handle, i, out var e));
-                UgoeException.Check(Native.ugoe_puppet_motion_event_source(handle, i, out var source));
+                UgoeException.Check(Native.ugoe_puppet_motion_event(handle, i, out var e, NativeError.Current));
+                UgoeException.Check(Native.ugoe_puppet_motion_event_source(handle, i, out var source, NativeError.Current));
                 result[i] = new MotionEvent(e.Time, Utf8.Decode(e.Value), Utf8.Decode(source.Motion), source.Number);
             }
             return result;
@@ -419,7 +419,7 @@ namespace Ugoe
         {
             if (json == null) throw new ArgumentNullException(nameof(json));
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-            UgoeException.Check(Native.ugoe_puppet_set_effects_json(handle, bytes, (UIntPtr)bytes.Length));
+            UgoeException.Check(Native.ugoe_puppet_set_effects_json(handle, bytes, (UIntPtr)bytes.Length, NativeError.Current));
         }
 
         // --- パーツ・ポーズ ---
@@ -431,7 +431,7 @@ namespace Ugoe
         public int FindPart(string id)
         {
             if (id == null) return -1;
-            var r = Native.ugoe_puppet_part_index(handle, Utf8.Encode(id), out var index);
+            var r = Native.ugoe_puppet_part_index(handle, Utf8.Encode(id), out var index, NativeError.Current);
             if (r == (int)UgoeResult.NotFound) return -1;
             UgoeException.Check(r);
             return (int)index;
@@ -440,7 +440,7 @@ namespace Ugoe
         /// <summary>直前の <see cref="Update"/> がパーツ <paramref name="index"/> に書いた不透明度の上書き。</summary>
         public PartOpacity GetPartOpacity(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_part_opacity(handle, (uint)index, out var o));
+            UgoeException.Check(Native.ugoe_puppet_part_opacity(handle, (uint)index, out var o, NativeError.Current));
             return new PartOpacity(o.Value, o.Weight);
         }
 
@@ -450,7 +450,7 @@ namespace Ugoe
         /// </summary>
         public float GetPartEvaluatedOpacity(int index)
         {
-            UgoeException.Check(Native.ugoe_puppet_part_evaluated_opacity(handle, (uint)index, out var opacity));
+            UgoeException.Check(Native.ugoe_puppet_part_evaluated_opacity(handle, (uint)index, out var opacity, NativeError.Current));
             return opacity;
         }
 
@@ -462,7 +462,7 @@ namespace Ugoe
         public bool ShowPose(string part)
         {
             if (part == null) throw new ArgumentNullException(nameof(part));
-            UgoeException.Check(Native.ugoe_puppet_show_pose(handle, Utf8.Encode(part), out var shown));
+            UgoeException.Check(Native.ugoe_puppet_show_pose(handle, Utf8.Encode(part), out var shown, NativeError.Current));
             return shown != 0;
         }
 
@@ -473,11 +473,11 @@ namespace Ugoe
         /// </summary>
         public string[] GetVisiblePoseParts()
         {
-            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count));
+            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count, NativeError.Current));
             var result = new string[count];
             for (uint i = 0; i < count; i++)
             {
-                var r = Native.ugoe_puppet_pose_visible_part(handle, i, out var part);
+                var r = Native.ugoe_puppet_pose_visible_part(handle, i, out var part, NativeError.Current);
                 if (r == (int)UgoeResult.NotFound) continue;
                 UgoeException.Check(r);
                 result[i] = PartIds[(int)part];
@@ -492,15 +492,15 @@ namespace Ugoe
         /// </summary>
         public string[][] GetPoseEntryParts()
         {
-            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count));
+            UgoeException.Check(Native.ugoe_puppet_pose_group_count(handle, out var count, NativeError.Current));
             var result = new string[count][];
             for (uint i = 0; i < count; i++)
             {
-                UgoeException.Check(Native.ugoe_puppet_pose_entry_count(handle, i, out var entries));
+                UgoeException.Check(Native.ugoe_puppet_pose_entry_count(handle, i, out var entries, NativeError.Current));
                 result[i] = new string[entries];
                 for (uint j = 0; j < entries; j++)
                 {
-                    UgoeException.Check(Native.ugoe_puppet_pose_entry_part(handle, i, j, out var part));
+                    UgoeException.Check(Native.ugoe_puppet_pose_entry_part(handle, i, j, out var part, NativeError.Current));
                     result[i][j] = PartIds[(int)part];
                 }
             }
@@ -518,7 +518,7 @@ namespace Ugoe
         public void SetPhysicsJson(string json)
         {
             var bytes = json == null ? null : System.Text.Encoding.UTF8.GetBytes(json);
-            UgoeException.Check(Native.ugoe_puppet_set_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0)));
+            UgoeException.Check(Native.ugoe_puppet_set_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0), NativeError.Current));
         }
 
         /// <summary>
@@ -530,7 +530,7 @@ namespace Ugoe
         public void SetBasePhysicsJson(string json)
         {
             var bytes = json == null ? null : System.Text.Encoding.UTF8.GetBytes(json);
-            UgoeException.Check(Native.ugoe_puppet_set_base_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0)));
+            UgoeException.Check(Native.ugoe_puppet_set_base_physics_json(handle, bytes, (UIntPtr)(bytes?.Length ?? 0), NativeError.Current));
         }
 
         /// <summary>今の物理の設定の JSON。物理が無ければ null。</summary>
@@ -547,19 +547,19 @@ namespace Ugoe
         {
             UIntPtr len;
             var r = basePhysics
-                ? Native.ugoe_puppet_base_physics_json(handle, null, UIntPtr.Zero, out len)
-                : Native.ugoe_puppet_physics_json(handle, null, UIntPtr.Zero, out len);
+                ? Native.ugoe_puppet_base_physics_json(handle, null, UIntPtr.Zero, out len, NativeError.Current)
+                : Native.ugoe_puppet_physics_json(handle, null, UIntPtr.Zero, out len, NativeError.Current);
             if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
             if ((int)len == 0) return null;
             var buffer = new byte[(int)len];
             UgoeException.Check(basePhysics
-                ? Native.ugoe_puppet_base_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len)
-                : Native.ugoe_puppet_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len));
+                ? Native.ugoe_puppet_base_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len, NativeError.Current)
+                : Native.ugoe_puppet_physics_json(handle, buffer, (UIntPtr)buffer.Length, out len, NativeError.Current));
             return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)len);
         }
 
         /// <summary>物理の粒子を初期姿勢に戻す (次の <see cref="Update"/> で静止姿勢に置き直す)。</summary>
-        public void ResetPhysics() => UgoeException.Check(Native.ugoe_puppet_reset_physics(handle));
+        public void ResetPhysics() => UgoeException.Check(Native.ugoe_puppet_reset_physics(handle, NativeError.Current));
 
         // --- 着せ替え ---
 
@@ -581,14 +581,14 @@ namespace Ugoe
         /// </summary>
         public void AttachModule(Module module)
         {
-            UgoeException.Check(Native.ugoe_puppet_attach_module(handle, module.Handle));
+            UgoeException.Check(Native.ugoe_puppet_attach_module(handle, module.Handle, NativeError.Current));
             AfterDressUp();
         }
 
         /// <summary>名前でモジュールを外す。付いていなければ種類 <c>"not_attached"</c> の <see cref="UgoeException"/>。</summary>
         public void DetachModule(string name)
         {
-            UgoeException.Check(Native.ugoe_puppet_detach_module(handle, Utf8.Encode(name)));
+            UgoeException.Check(Native.ugoe_puppet_detach_module(handle, Utf8.Encode(name), NativeError.Current));
             AfterDressUp();
         }
 
@@ -604,7 +604,7 @@ namespace Ugoe
                     modules[i].Handle.DangerousAddRef(ref added[i]);
                     ptrs[i] = modules[i].Handle.DangerousGetHandle();
                 }
-                UgoeException.Check(Native.ugoe_puppet_set_modules(handle, ptrs, (UIntPtr)ptrs.Length));
+                UgoeException.Check(Native.ugoe_puppet_set_modules(handle, ptrs, (UIntPtr)ptrs.Length, NativeError.Current));
             }
             finally
             {
@@ -618,7 +618,7 @@ namespace Ugoe
 
         private void AfterDressUp()
         {
-            UgoeException.Check(Native.ugoe_puppet_changed_textures(handle, out var ptr, out var len));
+            UgoeException.Check(Native.ugoe_puppet_changed_textures(handle, out var ptr, out var len, NativeError.Current));
             var changed = new int[(int)len];
             if (changed.Length > 0) Marshal.Copy(ptr, changed, 0, changed.Length);
             ChangedTextures = changed;
@@ -633,12 +633,12 @@ namespace Ugoe
         /// <summary>キャンバス座標の点を含む当たり判定の番号 (手前から順)。直前の <see cref="Update"/> の形で判定する。</summary>
         public int[] HitAreasAt(float x, float y)
         {
-            var r = Native.ugoe_puppet_hit_areas_at(handle, x, y, null, UIntPtr.Zero, out var count);
+            var r = Native.ugoe_puppet_hit_areas_at(handle, x, y, null, UIntPtr.Zero, out var count, NativeError.Current);
             if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
             var buffer = new uint[(int)count];
             if (buffer.Length > 0)
             {
-                UgoeException.Check(Native.ugoe_puppet_hit_areas_at(handle, x, y, buffer, (UIntPtr)buffer.Length, out count));
+                UgoeException.Check(Native.ugoe_puppet_hit_areas_at(handle, x, y, buffer, (UIntPtr)buffer.Length, out count, NativeError.Current));
             }
             var result = new int[(int)count];
             for (var i = 0; i < result.Length; i++) result[i] = (int)buffer[i];
@@ -648,14 +648,14 @@ namespace Ugoe
         /// <summary>ID の当たり判定が点を含むか。知らない ID なら <see cref="UgoeException"/> (<see cref="UgoeResult.NotFound"/>)。</summary>
         public bool HitTest(string id, float x, float y)
         {
-            UgoeException.Check(Native.ugoe_puppet_hit_test(handle, Utf8.Encode(id), x, y, out var hit));
+            UgoeException.Check(Native.ugoe_puppet_hit_test(handle, Utf8.Encode(id), x, y, out var hit, NativeError.Current));
             return hit != 0;
         }
 
         /// <summary>標準の名前 (<c>"Head"</c>・<c>"Body"</c>) に対応する当たり判定の番号。無ければ -1。</summary>
         public int StandardHitArea(string name)
         {
-            var r = Native.ugoe_puppet_standard_hit_area(handle, Utf8.Encode(name), out var index);
+            var r = Native.ugoe_puppet_standard_hit_area(handle, Utf8.Encode(name), out var index, NativeError.Current);
             if (r == (int)UgoeResult.NotFound) return -1;
             UgoeException.Check(r);
             return (int)index;
@@ -664,7 +664,7 @@ namespace Ugoe
         /// <summary>標準の名前の当たり判定が点を含むか。対応が無ければ false。</summary>
         public bool HitTestStandard(string name, float x, float y)
         {
-            UgoeException.Check(Native.ugoe_puppet_hit_test_standard(handle, Utf8.Encode(name), x, y, out var hit));
+            UgoeException.Check(Native.ugoe_puppet_hit_test_standard(handle, Utf8.Encode(name), x, y, out var hit, NativeError.Current));
             return hit != 0;
         }
 
@@ -672,17 +672,17 @@ namespace Ugoe
 
         /// <summary>フェイストラッキングの入力を設定する。null で入力をやめる (最後に書いた値は残る)。</summary>
         public void SetTracking(TrackingInput input) =>
-            UgoeException.Check(Native.ugoe_puppet_set_tracking(handle, input?.ToNative()));
+            UgoeException.Check(Native.ugoe_puppet_set_tracking(handle, input?.ToNative(), NativeError.Current));
 
         /// <summary>トラッキングが書き込むパラメータの番号 (昇順)。</summary>
         public int[] TrackingTargets()
         {
-            var r = Native.ugoe_puppet_tracking_targets(handle, null, UIntPtr.Zero, out var count);
+            var r = Native.ugoe_puppet_tracking_targets(handle, null, UIntPtr.Zero, out var count, NativeError.Current);
             if (r != (int)UgoeResult.BufferTooSmall) UgoeException.Check(r);
             var buffer = new uint[(int)count];
             if (buffer.Length > 0)
             {
-                UgoeException.Check(Native.ugoe_puppet_tracking_targets(handle, buffer, (UIntPtr)buffer.Length, out count));
+                UgoeException.Check(Native.ugoe_puppet_tracking_targets(handle, buffer, (UIntPtr)buffer.Length, out count, NativeError.Current));
             }
             var result = new int[(int)count];
             for (var i = 0; i < result.Length; i++) result[i] = (int)buffer[i];
@@ -697,10 +697,10 @@ namespace Ugoe
         {
             get
             {
-                UgoeException.Check(Native.ugoe_puppet_motion_over_tracking(handle, out var enabled));
+                UgoeException.Check(Native.ugoe_puppet_motion_over_tracking(handle, out var enabled, NativeError.Current));
                 return enabled != 0;
             }
-            set => UgoeException.Check(Native.ugoe_puppet_set_motion_over_tracking(handle, value ? (byte)1 : (byte)0));
+            set => UgoeException.Check(Native.ugoe_puppet_set_motion_over_tracking(handle, value ? (byte)1 : (byte)0, NativeError.Current));
         }
 
         /// <summary>
@@ -716,7 +716,7 @@ namespace Ugoe
                 if (indices[i] < 0) throw new ArgumentOutOfRangeException(nameof(indices), indices[i], "parameter index must not be negative");
                 raw[i] = (uint)indices[i];
             }
-            UgoeException.Check(Native.ugoe_puppet_set_tracking_kept(handle, raw, (UIntPtr)count));
+            UgoeException.Check(Native.ugoe_puppet_set_tracking_kept(handle, raw, (UIntPtr)count, NativeError.Current));
         }
 
         // --- 内部 ---
@@ -724,30 +724,30 @@ namespace Ugoe
         // 着せ替えで変わるもの (描画可能要素・パラメータ・当たり判定・パーツ・付けているモジュール) を読み直す。
         private void Reload()
         {
-            UgoeException.Check(Native.ugoe_puppet_drawable_count(handle, out var count));
+            UgoeException.Check(Native.ugoe_puppet_drawable_count(handle, out var count, NativeError.Current));
             drawables = new DrawableInfo[count];
             for (uint i = 0; i < count; i++)
             {
-                UgoeException.Check(Native.ugoe_puppet_drawable_info(handle, i, out var info));
+                UgoeException.Check(Native.ugoe_puppet_drawable_info(handle, i, out var info, NativeError.Current));
                 var masks = new MaskRef[info.MaskCount];
                 for (uint m = 0; m < info.MaskCount; m++)
                 {
-                    UgoeException.Check(Native.ugoe_puppet_drawable_mask(handle, i, m, out var mask));
+                    UgoeException.Check(Native.ugoe_puppet_drawable_mask(handle, i, m, out var mask, NativeError.Current));
                     masks[m] = new MaskRef((int)mask.Drawable, mask.Invert != 0);
                 }
-                UgoeException.Check(Native.ugoe_puppet_drawable_lit(handle, i, out var lit));
+                UgoeException.Check(Native.ugoe_puppet_drawable_lit(handle, i, out var lit, NativeError.Current));
                 drawables[i] = new DrawableInfo(Utf8.Decode(info.Id), (int)info.Texture, (int)info.VertexCount,
                     (int)info.IndexCount, info.Culling != 0, info.MaskOnly != 0,
                     info.MaskMode == 1 ? MaskMode.Intersection : MaskMode.Union, masks, lit != 0);
             }
 
-            UgoeException.Check(Native.ugoe_puppet_parameter_count(handle, out var paramCount));
+            UgoeException.Check(Native.ugoe_puppet_parameter_count(handle, out var paramCount, NativeError.Current));
             parameters = new ParameterInfo[paramCount];
             parameterIndex = new Dictionary<string, int>((int)paramCount);
             for (uint i = 0; i < paramCount; i++)
             {
-                UgoeException.Check(Native.ugoe_puppet_parameter_id(handle, i, out var id));
-                UgoeException.Check(Native.ugoe_puppet_parameter_info(handle, i, out var p));
+                UgoeException.Check(Native.ugoe_puppet_parameter_id(handle, i, out var id, NativeError.Current));
+                UgoeException.Check(Native.ugoe_puppet_parameter_info(handle, i, out var p, NativeError.Current));
                 var name = Utf8.Decode(id);
                 parameters[i] = new ParameterInfo(name, p.Min, p.Max, p.Default);
                 parameterIndex[name] = (int)i;
@@ -775,12 +775,12 @@ namespace Ugoe
             int r;
             switch (list)
             {
-                case NameList.Motions: r = Native.ugoe_puppet_motion_count(handle, out n); break;
-                case NameList.Expressions: r = Native.ugoe_puppet_expression_count(handle, out n); break;
-                case NameList.Slots: r = Native.ugoe_puppet_slot_count(handle, out n); break;
-                case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_count(handle, out n); break;
-                case NameList.Parts: r = Native.ugoe_puppet_part_count(handle, out n); break;
-                default: r = Native.ugoe_puppet_attached_module_count(handle, out n); break;
+                case NameList.Motions: r = Native.ugoe_puppet_motion_count(handle, out n, NativeError.Current); break;
+                case NameList.Expressions: r = Native.ugoe_puppet_expression_count(handle, out n, NativeError.Current); break;
+                case NameList.Slots: r = Native.ugoe_puppet_slot_count(handle, out n, NativeError.Current); break;
+                case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_count(handle, out n, NativeError.Current); break;
+                case NameList.Parts: r = Native.ugoe_puppet_part_count(handle, out n, NativeError.Current); break;
+                default: r = Native.ugoe_puppet_attached_module_count(handle, out n, NativeError.Current); break;
             }
             UgoeException.Check(r);
             var result = new string[n];
@@ -789,12 +789,12 @@ namespace Ugoe
                 IntPtr ptr;
                 switch (list)
                 {
-                    case NameList.Motions: r = Native.ugoe_puppet_motion_name(handle, i, out ptr); break;
-                    case NameList.Expressions: r = Native.ugoe_puppet_expression_name(handle, i, out ptr); break;
-                    case NameList.Slots: r = Native.ugoe_puppet_slot_id(handle, i, out ptr); break;
-                    case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_id(handle, i, out ptr); break;
-                    case NameList.Parts: r = Native.ugoe_puppet_part_id(handle, i, out ptr); break;
-                    default: r = Native.ugoe_puppet_attached_module_name(handle, i, out ptr); break;
+                    case NameList.Motions: r = Native.ugoe_puppet_motion_name(handle, i, out ptr, NativeError.Current); break;
+                    case NameList.Expressions: r = Native.ugoe_puppet_expression_name(handle, i, out ptr, NativeError.Current); break;
+                    case NameList.Slots: r = Native.ugoe_puppet_slot_id(handle, i, out ptr, NativeError.Current); break;
+                    case NameList.HitAreas: r = Native.ugoe_puppet_hit_area_id(handle, i, out ptr, NativeError.Current); break;
+                    case NameList.Parts: r = Native.ugoe_puppet_part_id(handle, i, out ptr, NativeError.Current); break;
+                    default: r = Native.ugoe_puppet_attached_module_name(handle, i, out ptr, NativeError.Current); break;
                 }
                 UgoeException.Check(r);
                 result[i] = Utf8.Decode(ptr);

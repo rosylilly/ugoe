@@ -12,7 +12,7 @@ use ugoe::model::validate::{ValidationError, describe_errors};
 use crate::dress_up::dress_up_error;
 use crate::error::{
     Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_FORMAT, UGOE_ERROR_INVALID_ARGUMENT,
-    UGOE_ERROR_INVALID_MODEL, UgoeResult, c_string, guard,
+    UGOE_ERROR_INVALID_MODEL, UgoeError, UgoeResult, c_string, guard,
 };
 use crate::puppet::{UgoePuppet, bytes, puppet_mut, puppet_ref, write};
 
@@ -84,8 +84,9 @@ impl MotionEvents {
 pub unsafe extern "C" fn ugoe_puppet_motion_event_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -104,8 +105,9 @@ pub unsafe extern "C" fn ugoe_puppet_motion_event(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeMotionEvent,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let entry = p.motion_events.get(index)?;
@@ -130,8 +132,9 @@ pub unsafe extern "C" fn ugoe_puppet_motion_event_source(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeMotionEventSource,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let entry = p.motion_events.get(index)?;
@@ -148,7 +151,7 @@ pub unsafe extern "C" fn ugoe_puppet_motion_event_source(
 /// `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 ///
 /// JSON を読めなければ `UGOE_ERROR_FORMAT`、モデルに対する検査 (`docs/spec/physics.md`) を通らなければ
-/// `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_physics"`、`ugoe_last_error_field` の `"errors"`・`"error_codes"` は
+/// `UGOE_ERROR_INVALID_MODEL` (`ugoe_error_kind` は `"invalid_physics"`、`ugoe_error_field` の `"errors"`・`"error_codes"` は
 /// 検査のエラーの数と種類。着せ替えの `invalid_physics` と同じ。T0469) を返し、何も変えない。
 ///
 /// 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
@@ -163,8 +166,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_physics_json(
     puppet: *mut UgoePuppet,
     json: *const u8,
     len: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -194,8 +198,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_base_physics_json(
     puppet: *mut UgoePuppet,
     json: *const u8,
     len: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -262,8 +267,9 @@ pub unsafe extern "C" fn ugoe_puppet_physics_json(
     out: *mut u8,
     capacity: usize,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let settings = p.puppet.physics().map(|physics| physics.settings());
@@ -285,8 +291,9 @@ pub unsafe extern "C" fn ugoe_puppet_base_physics_json(
     out: *mut u8,
     capacity: usize,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -335,8 +342,11 @@ unsafe fn write_physics(
 ///
 /// `puppet` は有効な `UgoePuppet` を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_reset_physics(puppet: *mut UgoePuppet) -> UgoeResult {
-    guard(|| {
+pub unsafe extern "C" fn ugoe_puppet_reset_physics(
+    puppet: *mut UgoePuppet,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         unsafe { puppet_mut(puppet)? }.puppet.reset_physics();
         Ok(())
@@ -351,8 +361,8 @@ pub unsafe extern "C" fn ugoe_puppet_reset_physics(puppet: *mut UgoePuppet) -> U
 /// 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
 ///
 /// 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
-/// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
-/// `ugoe_last_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
+/// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_error_kind` は `"invalid_model"`、
+/// `ugoe_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
 ///
 /// # Safety
 ///
@@ -362,8 +372,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_effects_json(
     puppet: *mut UgoePuppet,
     json: *const u8,
     len: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         if json.is_null() {

@@ -1,4 +1,4 @@
-//! モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗の種類 (T0457): `ugoe_last_error_kind` と補足の値が、
+//! モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗の種類 (T0457): `ugoe_error_kind` と補足の値が、
 //! SDK の `ugoe::LoadError` (wasm の `LoadError` の `code`) と同じになる。戻り値は T0457 の前と同じ。
 #![allow(unsafe_code)] // C ABI の関数は unsafe なので、呼ぶテストに限り許可する。
 #![allow(clippy::unwrap_used)]
@@ -13,6 +13,9 @@ use ugoe::format::{Bundle, TextureData, TextureFormat, write_bundle};
 use ugoe::model::fixtures;
 use ugoe_ffi::*;
 
+mod common;
+use common::*;
+
 fn text(ptr: *const c_char) -> Option<String> {
     (!ptr.is_null()).then(|| {
         unsafe { CStr::from_ptr(ptr) }
@@ -23,7 +26,7 @@ fn text(ptr: *const c_char) -> Option<String> {
 
 fn field(key: &str) -> Option<String> {
     let key = CString::new(key).unwrap();
-    text(unsafe { ugoe_last_error_field(key.as_ptr()) })
+    text(last_field(&key))
 }
 
 /// 失敗の戻り値・種類・補足の値。
@@ -53,10 +56,10 @@ fn last_failure(code: UgoeResult) -> Failure {
         .filter_map(|&k| field(k).map(|v| (k, v)))
         .collect();
     // 番号での列挙 (T0464) も、キーで読んだものと同じ組を返す。
-    let mut listed: Vec<_> = (0..ugoe_last_error_field_count())
+    let mut listed: Vec<_> = (0..last_field_count())
         .map(|i| {
-            let key = text(ugoe_last_error_field_key_at(i)).unwrap();
-            (key, text(ugoe_last_error_field_value_at(i)).unwrap())
+            let key = text(last_field_key_at(i)).unwrap();
+            (key, text(last_field_value_at(i)).unwrap())
         })
         .collect();
     let mut by_key: Vec<_> = fields
@@ -68,21 +71,22 @@ fn last_failure(code: UgoeResult) -> Failure {
     assert_eq!(listed, by_key);
     Failure {
         code,
-        kind: text(ugoe_last_error_kind()),
+        kind: text(last_kind()),
         fields,
     }
 }
 
 fn from_bundle(bytes: &[u8]) -> Failure {
     let mut p = ptr::null_mut();
-    let code = unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p) };
+    let code =
+        unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p, err()) };
     assert!(p.is_null());
     last_failure(code)
 }
 
 fn from_json(json: &str) -> Failure {
     let mut p = ptr::null_mut();
-    let code = unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p) };
+    let code = unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p, err()) };
     assert!(p.is_null());
     last_failure(code)
 }
@@ -185,9 +189,9 @@ fn json_failures_have_kinds() {
     // UTF-8 でない JSON は引数の誤りで、種類を持たない (wasm では起きない)。
     let bytes = [0xff_u8, 0xfe];
     let mut p = ptr::null_mut();
-    let code = unsafe { ugoe_puppet_create_from_json(bytes.as_ptr(), bytes.len(), &mut p) };
+    let code = unsafe { ugoe_puppet_create_from_json(bytes.as_ptr(), bytes.len(), &mut p, err()) };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
-    assert!(ugoe_last_error_kind().is_null());
+    assert!(last_kind().is_null());
 }
 
 /// 種類を持たない失敗 (NULL の引数など) は、前の読み込みの失敗の種類を消す。
@@ -195,7 +199,7 @@ fn json_failures_have_kinds() {
 fn kinds_follow_the_last_failure() {
     from_bundle(b"not a bundle");
     let mut p = ptr::null_mut();
-    let code = unsafe { ugoe_puppet_create_from_bundle(ptr::null(), 4, &mut p) };
+    let code = unsafe { ugoe_puppet_create_from_bundle(ptr::null(), 4, &mut p, err()) };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
-    assert!(ugoe_last_error_kind().is_null());
+    assert!(last_kind().is_null());
 }

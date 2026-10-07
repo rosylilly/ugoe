@@ -6,7 +6,7 @@ use std::ffi::c_char;
 use ugoe::format::{TextureData, TextureFormat};
 use ugoe::model::{BlendMode, MaskMode};
 
-use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UgoeResult, guard};
+use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UgoeError, UgoeResult, guard};
 use crate::puppet::{UgoePuppet, puppet_ref, write};
 
 /// 通常の合成。
@@ -163,8 +163,9 @@ impl UgoePuppet {
 pub unsafe extern "C" fn ugoe_puppet_drawable_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -182,8 +183,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_info(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeDrawableInfo,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -215,8 +217,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_mask(
     index: u32,
     mask: u32,
     out: *mut UgoeMask,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -243,8 +246,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_state(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeDrawableState,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -278,8 +282,9 @@ pub unsafe extern "C" fn ugoe_puppet_copy_positions(
     index: u32,
     out: *mut f32,
     len: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -320,8 +325,9 @@ pub unsafe extern "C" fn ugoe_puppet_positions(
     index: u32,
     out: *mut *const f32,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -350,8 +356,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_uvs(
     index: u32,
     out: *mut *const f32,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -378,8 +385,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_indices(
     index: u32,
     out: *mut *const u16,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
@@ -405,8 +413,9 @@ pub unsafe extern "C" fn ugoe_puppet_render_order(
     puppet: *const UgoePuppet,
     out: *mut *const u32,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let order = p.puppet.instance().render_order();
@@ -429,8 +438,9 @@ pub unsafe extern "C" fn ugoe_puppet_render_order(
 pub unsafe extern "C" fn ugoe_puppet_render_order_changed(
     puppet: *const UgoePuppet,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let changed = p.puppet.instance().render_order_changed();
@@ -448,8 +458,9 @@ pub unsafe extern "C" fn ugoe_puppet_render_order_changed(
 pub unsafe extern "C" fn ugoe_puppet_texture_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -489,8 +500,9 @@ pub unsafe extern "C" fn ugoe_puppet_texture(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeTexture,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let (texture, _) = p
@@ -513,8 +525,9 @@ pub unsafe extern "C" fn ugoe_puppet_normal_map(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeTexture,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let (_, normal_map) = p

@@ -12,6 +12,9 @@ use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::fixtures;
 use ugoe_ffi::*;
 
+mod common;
+use common::*;
+
 /// 画像の中身は読まないので、PNG の署名だけのバイト列でよい。
 const FAKE_PNG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -51,7 +54,7 @@ fn ok(code: UgoeResult) {
 }
 
 fn last_error() -> String {
-    let ptr = ugoe_last_error();
+    let ptr = last_message();
     if ptr.is_null() {
         return String::new();
     }
@@ -75,7 +78,7 @@ impl Drop for Handle {
 
 fn from_bundle(bytes: &[u8]) -> Handle {
     let mut p = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p) });
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p, err()) });
     assert!(!p.is_null());
     Handle(p)
 }
@@ -83,7 +86,7 @@ fn from_bundle(bytes: &[u8]) -> Handle {
 fn positions(p: &Handle, drawable: u32) -> Vec<f32> {
     let mut ptr = ptr::null();
     let mut len = 0;
-    ok(unsafe { ugoe_puppet_positions(p.0, drawable, &mut ptr, &mut len) });
+    ok(unsafe { ugoe_puppet_positions(p.0, drawable, &mut ptr, &mut len, err()) });
     unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
 }
 
@@ -99,26 +102,26 @@ fn matches_puppet_after_setting_a_parameter() {
     let mut reference = Puppet::new(fixtures::single_quad()).unwrap();
 
     let mut count = 0;
-    ok(unsafe { ugoe_puppet_parameter_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_parameter_count(p.0, &mut count, err()) });
     assert_eq!(count, 1);
     let mut id = ptr::null();
-    ok(unsafe { ugoe_puppet_parameter_id(p.0, 0, &mut id) });
+    ok(unsafe { ugoe_puppet_parameter_id(p.0, 0, &mut id, err()) });
     assert_eq!(string(id), "X");
 
     let x = CString::new("X").unwrap();
     let mut index = u32::MAX;
-    ok(unsafe { ugoe_puppet_parameter_index(p.0, x.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, x.as_ptr(), &mut index, err()) });
     assert_eq!(index, 0);
     let mut info = UgoeParameterInfo::default();
-    ok(unsafe { ugoe_puppet_parameter_info(p.0, index, &mut info) });
+    ok(unsafe { ugoe_puppet_parameter_info(p.0, index, &mut info, err()) });
     assert_eq!((info.min, info.max), (-1.0, 1.0));
 
     // 範囲の外の値は丸める。
-    ok(unsafe { ugoe_puppet_set_parameter(p.0, index, 5.0) });
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, index, 5.0, err()) });
     let mut value = 0.0;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value, err()) });
     assert_eq!(value, 1.0);
-    ok(unsafe { ugoe_puppet_update(p.0, 1.0 / 60.0) });
+    ok(unsafe { ugoe_puppet_update(p.0, 1.0 / 60.0, err()) });
 
     let params = reference.instance_mut().parameters_mut();
     let i = params.index_of("X").unwrap();
@@ -126,7 +129,7 @@ fn matches_puppet_after_setting_a_parameter() {
     reference.update(1.0 / 60.0);
 
     let mut drawables = 0;
-    ok(unsafe { ugoe_puppet_drawable_count(p.0, &mut drawables) });
+    ok(unsafe { ugoe_puppet_drawable_count(p.0, &mut drawables, err()) });
     assert_eq!(drawables as usize, reference.instance().drawables().len());
     for d in 0..drawables {
         let expected: Vec<f32> = reference.instance().drawables()[d as usize]
@@ -138,11 +141,11 @@ fn matches_puppet_after_setting_a_parameter() {
         assert_eq!(borrowed, expected);
 
         let mut copied = vec![f32::NAN; expected.len()];
-        ok(unsafe { ugoe_puppet_copy_positions(p.0, d, copied.as_mut_ptr(), copied.len()) });
+        ok(unsafe { ugoe_puppet_copy_positions(p.0, d, copied.as_mut_ptr(), copied.len(), err()) });
         assert_eq!(copied, expected);
 
         let mut info = std::mem::MaybeUninit::<UgoeDrawableInfo>::uninit();
-        ok(unsafe { ugoe_puppet_drawable_info(p.0, d, info.as_mut_ptr()) });
+        ok(unsafe { ugoe_puppet_drawable_info(p.0, d, info.as_mut_ptr(), err()) });
         let info = unsafe { info.assume_init() };
         assert_eq!(info.vertex_count as usize * 2, expected.len());
         let mesh = &reference.instance().compiled().model().meshes[d as usize];
@@ -151,17 +154,17 @@ fn matches_puppet_after_setting_a_parameter() {
 
         let mut uvs = ptr::null();
         let mut len = 0;
-        ok(unsafe { ugoe_puppet_drawable_uvs(p.0, d, &mut uvs, &mut len) });
+        ok(unsafe { ugoe_puppet_drawable_uvs(p.0, d, &mut uvs, &mut len, err()) });
         assert_eq!(len, info.vertex_count as usize * 2);
         let mut indices = ptr::null();
-        ok(unsafe { ugoe_puppet_drawable_indices(p.0, d, &mut indices, &mut len) });
+        ok(unsafe { ugoe_puppet_drawable_indices(p.0, d, &mut indices, &mut len, err()) });
         assert_eq!(
             unsafe { std::slice::from_raw_parts(indices, len) },
             mesh.indices
         );
 
         let mut state = UgoeDrawableState::default();
-        ok(unsafe { ugoe_puppet_drawable_state(p.0, d, &mut state) });
+        ok(unsafe { ugoe_puppet_drawable_state(p.0, d, &mut state, err()) });
         let expected = &reference.instance().drawables()[d as usize];
         assert_eq!(state.opacity, expected.opacity);
         assert_eq!(state.draw_order, expected.draw_order);
@@ -171,14 +174,14 @@ fn matches_puppet_after_setting_a_parameter() {
 
     let mut order = ptr::null();
     let mut len = 0;
-    ok(unsafe { ugoe_puppet_render_order(p.0, &mut order, &mut len) });
+    ok(unsafe { ugoe_puppet_render_order(p.0, &mut order, &mut len, err()) });
     assert_eq!(
         unsafe { std::slice::from_raw_parts(order, len) },
         reference.instance().render_order()
     );
 
     let mut canvas = UgoeCanvas::default();
-    ok(unsafe { ugoe_puppet_canvas(p.0, &mut canvas) });
+    ok(unsafe { ugoe_puppet_canvas(p.0, &mut canvas, err()) });
     assert_eq!((canvas.width, canvas.height), (256.0, 256.0));
     assert_eq!((canvas.origin_x, canvas.origin_y), (128.0, 128.0));
 }
@@ -186,21 +189,21 @@ fn matches_puppet_after_setting_a_parameter() {
 #[test]
 fn reports_changes_between_updates() {
     let p = from_bundle(&single_quad_bundle());
-    ok(unsafe { ugoe_puppet_update(p.0, 0.0) });
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
     let mut state = UgoeDrawableState::default();
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state) });
+    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
     assert_ne!(state.changes & UGOE_CHANGED_POSITIONS, 0);
 
-    ok(unsafe { ugoe_puppet_update(p.0, 0.0) });
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state) });
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
     assert_eq!(state.changes, 0);
     let mut changed = true;
-    ok(unsafe { ugoe_puppet_render_order_changed(p.0, &mut changed) });
+    ok(unsafe { ugoe_puppet_render_order_changed(p.0, &mut changed, err()) });
     assert!(!changed);
 
-    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, 0.5) });
-    ok(unsafe { ugoe_puppet_update(p.0, 0.0) });
-    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state) });
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, 0.5, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
     assert_eq!(state.changes, UGOE_CHANGED_POSITIONS);
 }
 
@@ -208,44 +211,44 @@ fn reports_changes_between_updates() {
 fn textures_motions_and_expressions_come_from_the_bundle() {
     let p = from_bundle(&single_quad_bundle());
     let mut count = 0;
-    ok(unsafe { ugoe_puppet_texture_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_texture_count(p.0, &mut count, err()) });
     assert_eq!(count, 1);
     let mut texture = UgoeTexture {
         format: u32::MAX,
         data: ptr::null(),
         len: 0,
     };
-    ok(unsafe { ugoe_puppet_texture(p.0, 0, &mut texture) });
+    ok(unsafe { ugoe_puppet_texture(p.0, 0, &mut texture, err()) });
     assert_eq!(texture.format, UGOE_TEXTURE_PNG);
     assert_eq!(
         unsafe { std::slice::from_raw_parts(texture.data, texture.len) },
         FAKE_PNG
     );
 
-    ok(unsafe { ugoe_puppet_motion_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_motion_count(p.0, &mut count, err()) });
     assert_eq!(count, 1);
     let mut name = ptr::null();
-    ok(unsafe { ugoe_puppet_motion_name(p.0, 0, &mut name) });
+    ok(unsafe { ugoe_puppet_motion_name(p.0, 0, &mut name, err()) });
     assert_eq!(string(name), "wave");
     let mut started = false;
-    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, &mut started) });
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, &mut started, err()) });
     assert!(started);
     // 再生中のモーションより低い優先度では開始しない。
-    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_IDLE, &mut started) });
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_IDLE, &mut started, err()) });
     assert!(!started);
     assert_eq!(
-        unsafe { ugoe_puppet_start_motion(p.0, 0, 99, ptr::null_mut()) },
+        unsafe { ugoe_puppet_start_motion(p.0, 0, 99, ptr::null_mut(), err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
 
-    ok(unsafe { ugoe_puppet_expression_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_expression_count(p.0, &mut count, err()) });
     assert_eq!(count, 1);
-    ok(unsafe { ugoe_puppet_expression_name(p.0, 0, &mut name) });
+    ok(unsafe { ugoe_puppet_expression_name(p.0, 0, &mut name, err()) });
     assert_eq!(string(name), "smile");
-    ok(unsafe { ugoe_puppet_set_expression(p.0, 0) });
-    ok(unsafe { ugoe_puppet_update(p.0, 1.0) });
+    ok(unsafe { ugoe_puppet_set_expression(p.0, 0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 1.0, err()) });
     let mut value = 0.0;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut value) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut value, err()) });
     assert!((value - 0.5).abs() < 1e-5, "{value}");
 }
 
@@ -253,18 +256,18 @@ fn textures_motions_and_expressions_come_from_the_bundle() {
 fn json_model_has_no_texture_data() {
     let json = ugoe::format::model_to_json(&fixtures::single_quad()).unwrap();
     let mut p = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p) });
+    ok(unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p, err()) });
     let p = Handle(p);
     let mut texture = UgoeTexture {
         format: u32::MAX,
         data: FAKE_PNG.as_ptr(),
         len: 1,
     };
-    ok(unsafe { ugoe_puppet_texture(p.0, 0, &mut texture) });
+    ok(unsafe { ugoe_puppet_texture(p.0, 0, &mut texture, err()) });
     assert_eq!(texture.format, UGOE_TEXTURE_NONE);
     assert!(texture.data.is_null());
     let mut count = 1;
-    ok(unsafe { ugoe_puppet_motion_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_motion_count(p.0, &mut count, err()) });
     assert_eq!(count, 0);
 }
 
@@ -272,26 +275,27 @@ fn json_model_has_no_texture_data() {
 fn errors_are_reported_with_codes_and_messages() {
     let mut p = ptr::null_mut();
     let garbage = b"not a bundle";
-    let code = unsafe { ugoe_puppet_create_from_bundle(garbage.as_ptr(), garbage.len(), &mut p) };
+    let code =
+        unsafe { ugoe_puppet_create_from_bundle(garbage.as_ptr(), garbage.len(), &mut p, err()) };
     assert_eq!(code, UGOE_ERROR_FORMAT);
     assert!(p.is_null());
     assert!(!last_error().is_empty());
 
     let json = b"{}";
-    let code = unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p) };
+    let code = unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p, err()) };
     assert_eq!(code, UGOE_ERROR_FORMAT);
 
-    let code = unsafe { ugoe_puppet_create_from_bundle(ptr::null(), 4, &mut p) };
+    let code = unsafe { ugoe_puppet_create_from_bundle(ptr::null(), 4, &mut p, err()) };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
     assert!(last_error().contains("bytes"));
 
     let mut count = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_parameter_count(ptr::null(), &mut count) },
+        unsafe { ugoe_puppet_parameter_count(ptr::null(), &mut count, err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_update(ptr::null_mut(), 0.0) },
+        unsafe { ugoe_puppet_update(ptr::null_mut(), 0.0, err()) },
         UGOE_ERROR_NULL_POINTER
     );
     // NULL の破棄は何もしない。
@@ -299,47 +303,47 @@ fn errors_are_reported_with_codes_and_messages() {
 
     let p = from_bundle(&single_quad_bundle());
     assert_eq!(
-        unsafe { ugoe_puppet_update(p.0, f32::NAN) },
+        unsafe { ugoe_puppet_update(p.0, f32::NAN, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
     assert_eq!(
-        unsafe { ugoe_puppet_parameter_count(p.0, ptr::null_mut()) },
+        unsafe { ugoe_puppet_parameter_count(p.0, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_set_parameter(p.0, 1, 0.0) },
+        unsafe { ugoe_puppet_set_parameter(p.0, 1, 0.0, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert!(last_error().contains("parameter index 1"));
     let missing = CString::new("Missing").unwrap();
     let mut index = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_parameter_index(p.0, missing.as_ptr(), &mut index) },
+        unsafe { ugoe_puppet_parameter_index(p.0, missing.as_ptr(), &mut index, err()) },
         UGOE_ERROR_NOT_FOUND
     );
     let bad_utf8 = [0xffu8, 0];
     assert_eq!(
-        unsafe { ugoe_puppet_parameter_index(p.0, bad_utf8.as_ptr().cast(), &mut index) },
+        unsafe { ugoe_puppet_parameter_index(p.0, bad_utf8.as_ptr().cast(), &mut index, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
 
     // NaN の値は、どの入口でも受け付けず何も変えない。
     let mut value = f32::NAN;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut value) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut value, err()) });
     assert_eq!(
-        unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NAN) },
+        unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NAN, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
     assert_eq!(
-        unsafe { ugoe_puppet_set_lip_sync_level(p.0, f32::NAN) },
+        unsafe { ugoe_puppet_set_lip_sync_level(p.0, f32::NAN, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
     let mut after = f32::NAN;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after, err()) });
     assert_eq!(after, value);
     // 無限大は範囲に丸める。
-    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NEG_INFINITY) });
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after) });
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, f32::NEG_INFINITY, err()) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, 0, &mut after, err()) });
     assert_eq!(after, -1.0);
 
     // UTF-8 でない ID は、何番目かをメッセージに書く。
@@ -347,7 +351,14 @@ fn errors_are_reported_with_codes_and_messages() {
     let values = [0.0f32, 0.0];
     assert_eq!(
         unsafe {
-            ugoe_puppet_set_parameters_by_id(p.0, ids.as_ptr(), values.as_ptr(), 2, ptr::null_mut())
+            ugoe_puppet_set_parameters_by_id(
+                p.0,
+                ids.as_ptr(),
+                values.as_ptr(),
+                2,
+                ptr::null_mut(),
+                err(),
+            )
         },
         UGOE_ERROR_INVALID_ARGUMENT
     );
@@ -356,33 +367,72 @@ fn errors_are_reported_with_codes_and_messages() {
     // 作る関数は `out` が NULL なら何も作らない。
     let bytes = single_quad_bundle();
     assert_eq!(
-        unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), ptr::null_mut()) },
+        unsafe {
+            ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), ptr::null_mut(), err())
+        },
         UGOE_ERROR_NULL_POINTER
     );
 
     let mut small = [0.0f32; 3];
     assert_eq!(
-        unsafe { ugoe_puppet_copy_positions(p.0, 0, small.as_mut_ptr(), small.len()) },
+        unsafe { ugoe_puppet_copy_positions(p.0, 0, small.as_mut_ptr(), small.len(), err()) },
         UGOE_ERROR_BUFFER_TOO_SMALL
     );
     assert_eq!(small, [0.0; 3]);
     let mut state = UgoeDrawableState::default();
     assert_eq!(
-        unsafe { ugoe_puppet_drawable_state(p.0, 9, &mut state) },
+        unsafe { ugoe_puppet_drawable_state(p.0, 9, &mut state, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 }
 
+/// 失敗の中身は呼び出しに渡した `UgoeError` に入り、スレッドに結び付かない。別のスレッドで失敗させても、
+/// 作ったスレッドで読める (Go の goroutine・C# の async の続きのように、呼び出しの間でスレッドが変わるホスト。ADR 0031)。
 #[test]
-fn last_error_is_per_thread() {
+fn error_is_readable_from_another_thread() {
+    /// 生ポインタをスレッドの間で渡すための包み。
+    struct Shared(*mut UgoeError);
+    // SAFETY: `UgoeError` はスレッドに結び付かず、同時には 1 つのスレッドからしか使わない。
+    unsafe impl Send for Shared {}
+
+    let error = Shared(ugoe_error_create());
+    let error = std::thread::spawn(move || {
+        let error = error;
+        let mut count = 0;
+        assert_eq!(
+            unsafe { ugoe_puppet_parameter_count(ptr::null(), &mut count, error.0) },
+            UGOE_ERROR_NULL_POINTER
+        );
+        error
+    })
+    .join()
+    .unwrap();
+    // 別のスレッドで書いた中身を、このスレッドで読む。
+    let message = unsafe { CStr::from_ptr(ugoe_error_message(error.0)) };
+    assert_eq!(message.to_str().unwrap(), "`puppet` is null");
+    assert!(unsafe { ugoe_error_kind(error.0) }.is_null());
+
+    // さらに別のスレッドでも読める。成功した呼び出しは中身を変えない。
+    let error = std::thread::spawn(move || {
+        let error = error;
+        let p = from_bundle(&single_quad_bundle());
+        let mut count = 0;
+        assert_eq!(
+            unsafe { ugoe_puppet_parameter_count(p.0, &mut count, error.0) },
+            UGOE_OK
+        );
+        let message = unsafe { CStr::from_ptr(ugoe_error_message(error.0)) };
+        assert_eq!(message.to_str().unwrap(), "`puppet` is null");
+        error
+    })
+    .join()
+    .unwrap();
+    unsafe { ugoe_error_destroy(error.0) };
+
+    // NULL を渡せば何も書かない。
     let mut count = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_parameter_count(ptr::null(), &mut count) },
+        unsafe { ugoe_puppet_parameter_count(ptr::null(), &mut count, ptr::null_mut()) },
         UGOE_ERROR_NULL_POINTER
     );
-    let other = std::thread::spawn(|| ugoe_last_error().is_null())
-        .join()
-        .unwrap();
-    assert!(other);
-    assert!(!ugoe_last_error().is_null());
 }

@@ -69,11 +69,11 @@ pub enum DressUpError {
 
 impl DressUpError {
     /// `.ugoemod` を読めなかったときの種類。付け外しの失敗ではないが、組み込み先 (wasm の `DressUpError`・
-    /// C ABI の `ugoe_last_error_kind`) が同じ一覧で扱うので、ここで決める。
+    /// C ABI の `ugoe_error_kind`) が同じ一覧で扱うので、ここで決める。
     pub const INVALID_FILE: &'static str = "invalid_file";
 
     /// 機械が読む種類 (`"unknown_slot"`・`"slot_occupied"` など)。wasm の `DressUpError` の `code` と
-    /// C ABI の `ugoe_last_error_kind` はこの値を使う。値は組み込み先が照らし合わせるので変えない。
+    /// C ABI の `ugoe_error_kind` はこの値を使う。値は組み込み先が照らし合わせるので変えない。
     pub fn code(&self) -> &'static str {
         self.info().0
     }

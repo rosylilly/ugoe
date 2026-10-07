@@ -29,6 +29,27 @@ namespace Ugoe.Tests
             }
         }
 
+        /// <summary>
+        /// 失敗の中身はスレッドごとの UgoeError に入るので、同時に別々のスレッドで失敗しても、それぞれの例外が自分の失敗の中身を持つ
+        /// (T0489。C ABI はスレッドローカルの状態を持たない)。
+        /// </summary>
+        [Test]
+        public void ConcurrentFailuresKeepTheirOwnKinds()
+        {
+            var garbage = new byte[] { 1, 2, 3 };
+            var newer = File.ReadAllBytes(Path.Combine(Paths.Root, "assets", "compat", "future", "newer-schema.ugoe"));
+            var kinds = new string[64];
+            System.Threading.Tasks.Parallel.For(0, kinds.Length, i =>
+            {
+                var e = Assert.Throws<UgoeException>(() => Puppet.FromBundle(i % 2 == 0 ? garbage : newer));
+                kinds[i] = e.Kind;
+            });
+            for (var i = 0; i < kinds.Length; i++)
+            {
+                Assert.That(kinds[i], Is.EqualTo(i % 2 == 0 ? "invalid_file" : "unsupported_version"), $"{i}");
+            }
+        }
+
         [Test]
         public void BundleLoadFailuresCarryKinds()
         {

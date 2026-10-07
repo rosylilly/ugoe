@@ -1,11 +1,10 @@
-//! エラーコードとスレッドローカルのエラーメッセージ、パニックを境界で止める仕組み
-//! (`docs/portability.md#c-abi-ugoe-ffi-の規約`)。
+//! エラーコードと、呼び出し側が渡す失敗の中身 (`UgoeError`)、パニックを境界で止める仕組み
+//! (`docs/portability.md#c-abi-ugoe-ffi-の規約`。ADR 0031)。
 
-use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{self, AssertUnwindSafe};
 
-/// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は `ugoe_last_error` で得る。
+/// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は、呼び出しに渡した `UgoeError` から得る。
 pub type UgoeResult = i32;
 
 /// 成功。
@@ -19,7 +18,7 @@ pub const UGOE_ERROR_OUT_OF_RANGE: UgoeResult = 3;
 /// ホストが渡したバッファが小さすぎた。バッファには何も書き込んでいない (可変長の結果では、要る数か長さだけを書く)。
 pub const UGOE_ERROR_BUFFER_TOO_SMALL: UgoeResult = 4;
 /// ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。モデルの読み込み
-/// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_last_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
+/// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
 /// `"unsupported_features"`・`"invalid_model"` のどれか (T0457)。
 pub const UGOE_ERROR_FORMAT: UgoeResult = 5;
 /// モデルの検証やコンパイルに失敗した。モデルの読み込みでは、種類が `"invalid_model"` か `"compile"` (T0457)。
@@ -30,12 +29,12 @@ pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;
 /// ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
 pub const UGOE_ERROR_PANIC: UgoeResult = 8;
-/// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_last_error_kind`、
-/// 補足の値は `ugoe_last_error_field` で得る (T0409)。
+/// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
+/// 補足の値は `ugoe_error_field` で得る (T0409)。
 pub const UGOE_ERROR_DRESS_UP: UgoeResult = 9;
 /// 読み込みの上限 (`UgoeReadLimits`) を超えたので、読み込みをやめた。ファイルが壊れているとは限らない
-/// (上限を上げれば読めることがある)。種類 (`ugoe_last_error_kind`) は `"read_limit_exceeded"`、補足の値は
-/// `ugoe_last_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
+/// (上限を上げれば読めることがある)。種類 (`ugoe_error_kind`) は `"read_limit_exceeded"`、補足の値は
+/// `ugoe_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
 pub const UGOE_ERROR_LIMIT_EXCEEDED: UgoeResult = 10;
 
 /// 境界の内側で使う失敗。コードとメッセージを持つ。
@@ -43,9 +42,9 @@ pub const UGOE_ERROR_LIMIT_EXCEEDED: UgoeResult = 10;
 pub(crate) struct Error {
     code: UgoeResult,
     message: String,
-    /// 機械が読む種類 (`ugoe_last_error_kind`)。wasm の `DressUpError` の `code` と同じ値。
+    /// 機械が読む種類 (`ugoe_error_kind`)。wasm の `DressUpError` の `code` と同じ値。
     kind: Option<&'static str>,
-    /// 補足の値 (`ugoe_last_error_field`。`module`・`slot` など)。
+    /// 補足の値 (`ugoe_error_field`。`module`・`slot` など)。
     fields: Vec<(&'static str, String)>,
 }
 
@@ -82,16 +81,32 @@ impl Error {
     }
 }
 
-/// 最後の失敗の中身。
-#[derive(Default)]
-struct LastError {
+/// 失敗の中身 (メッセージ・種類・補足の値) を受け取る入れ物。不透明な型で、中身には触れない (ADR 0031)。
+///
+/// `ugoe_error_create` で作り、`ugoe_error_destroy` で破棄する。失敗しうる関数は最後の引数 `error` にこれを取り、
+/// 失敗したら中身を書き換える (NULL を渡せば書かない。結果コードだけで足りるとき)。成功した呼び出しは中身を変えない
+/// (前の失敗の中身が残る。どの呼び出しが失敗したかは結果コードで判断する)。
+///
+/// スレッドに結び付かないので、どのスレッドで作り、書かせ、読んでもよい。ただし 1 つの `UgoeError` を同時に複数のスレッドから
+/// 使ってはならない (呼び出しごとか、スレッドごとに 1 つ持つ)。
+#[derive(Debug, Default)]
+pub struct UgoeError {
+    /// メッセージ。まだ失敗を書いていなければ `None`。
     message: Option<CString>,
     kind: Option<CString>,
     fields: Vec<(CString, CString)>,
 }
 
-thread_local! {
-    static LAST_ERROR: RefCell<LastError> = RefCell::new(LastError::default());
+impl UgoeError {
+    fn set(&mut self, error: &Error) {
+        self.message = Some(c_string(&error.message));
+        self.kind = error.kind.map(c_string);
+        self.fields = error
+            .fields
+            .iter()
+            .map(|(k, v)| (c_string(k), c_string(v)))
+            .collect();
+    }
 }
 
 /// 文字列を C の文字列にする。NUL が含まれていたら、そこまでで切る。
@@ -100,194 +115,311 @@ pub(crate) fn c_string(s: &str) -> CString {
     CString::new(&s[..end]).unwrap_or_default()
 }
 
-fn set_last_error(error: Error) {
-    let last = LastError {
-        message: Some(c_string(&error.message)),
-        kind: error.kind.map(c_string),
-        fields: error
-            .fields
-            .iter()
-            .map(|(k, v)| (c_string(k), c_string(v)))
-            .collect(),
-    };
-    LAST_ERROR.with(|cell| *cell.borrow_mut() = last);
+/// 失敗を `out` に書く。`out` が NULL なら何もしない。
+///
+/// # Safety
+///
+/// `out` は NULL か、破棄されていない `UgoeError` を指し、ほかから同時に使われていないこと。
+unsafe fn report(out: *mut UgoeError, error: &Error) {
+    // SAFETY: 呼び出し側の約束。
+    if let Some(out) = unsafe { out.as_mut() } {
+        out.set(error);
+    }
 }
 
-/// `f` をパニックを捕まえて実行し、結果をエラーコードにする。失敗したらメッセージを記録する。
-pub(crate) fn guard(f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
-    match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok(Ok(())) => UGOE_OK,
-        Ok(Err(error)) => {
-            let code = error.code;
-            set_last_error(error);
-            code
-        }
+/// `f` をパニックを捕まえて実行し、結果をエラーコードにする。失敗したら中身を `error` に書く (NULL なら書かない)。
+///
+/// 公開する関数の `error` 引数をそのまま渡す。呼び出し側の約束として、`error` は NULL か、破棄されていない `UgoeError` を指し、
+/// ほかから同時に使われていないこと (ヘッダの `UgoeError` の説明)。
+pub(crate) fn guard(error: *mut UgoeError, f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
+    let failure = match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(Ok(())) => return UGOE_OK,
+        Ok(Err(failure)) => failure,
         Err(payload) => {
             let message = payload
                 .downcast_ref::<&str>()
                 .map(|s| (*s).to_owned())
                 .or_else(|| payload.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "unknown panic payload".to_owned());
-            set_last_error(Error::new(
-                UGOE_ERROR_PANIC,
-                format!("panic inside ugoe: {message}"),
-            ));
-            UGOE_ERROR_PANIC
+            Error::new(UGOE_ERROR_PANIC, format!("panic inside ugoe: {message}"))
         }
-    }
+    };
+    // SAFETY: 公開する関数の呼び出し側の約束 (上の説明)。
+    unsafe { report(error, &failure) };
+    failure.code
 }
 
-/// このスレッドで最後に失敗した関数のエラーメッセージ (UTF-8、NUL 終端)。失敗がまだなければ NULL。
-///
-/// ポインタは、同じスレッドで次に関数が失敗するまで有効。成功した呼び出しではメッセージを消さない。
+/// 空の `UgoeError` を作る。`ugoe_error_destroy` で破棄する。
 #[unsafe(no_mangle)]
-pub extern "C" fn ugoe_last_error() -> *const c_char {
-    LAST_ERROR.with(|last| {
-        last.borrow()
-            .message
-            .as_ref()
-            .map_or(std::ptr::null(), |message| message.as_ptr())
-    })
+pub extern "C" fn ugoe_error_create() -> *mut UgoeError {
+    Box::into_raw(Box::default())
 }
 
-/// このスレッドで最後に失敗した関数の、機械が読む種類 (UTF-8、NUL 終端)。種類を持たない失敗なら NULL。
+/// `UgoeError` を破棄する。NULL なら何もしない。破棄した後は、これから読んだ文字列のポインタも無効になる。
+///
+/// # Safety
+///
+/// `error` は NULL か、`ugoe_error_create` で作ってまだ破棄していない `UgoeError` であること。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_error_destroy(error: *mut UgoeError) {
+    if error.is_null() {
+        return;
+    }
+    // SAFETY: `ugoe_error_create` が Box::into_raw で作ったポインタ。
+    drop(unsafe { Box::from_raw(error) });
+}
+
+/// `UgoeError` を読む。NULL なら `None`。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+unsafe fn read<'a>(error: *const UgoeError) -> Option<&'a UgoeError> {
+    // SAFETY: 呼び出し側の約束。
+    unsafe { error.as_ref() }
+}
+
+fn c_ptr(s: Option<&CString>) -> *const c_char {
+    s.map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
+/// `error` に書いた失敗のメッセージ (UTF-8、NUL 終端)。まだ失敗を書いていないか、`error` が NULL なら NULL。
+///
+/// 読み出しの関数 (`ugoe_error_*`) が返すポインタは、その `UgoeError` に次の失敗を書くか、破棄するまで有効。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_error_message(error: *const UgoeError) -> *const c_char {
+    // SAFETY: 呼び出し側の約束。
+    c_ptr(unsafe { read(error) }.and_then(|e| e.message.as_ref()))
+}
+
+/// `error` に書いた失敗の、機械が読む種類 (UTF-8、NUL 終端)。種類を持たない失敗か、まだ失敗を書いていなければ NULL。
 ///
 /// 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 /// wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
 /// モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗 (`UGOE_ERROR_FORMAT`・`UGOE_ERROR_INVALID_MODEL`) では、
 /// wasm の `LoadError` の `code` と同じ値 (`"invalid_file"`・`"unsupported_version"`・`"unsupported_features"`・
 /// `"invalid_model"`・`"compile"`。T0457)。読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
-/// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
-#[unsafe(no_mangle)]
-pub extern "C" fn ugoe_last_error_kind() -> *const c_char {
-    LAST_ERROR.with(|last| {
-        last.borrow()
-            .kind
-            .as_ref()
-            .map_or(std::ptr::null(), |kind| kind.as_ptr())
-    })
-}
-
-/// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
-/// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
-/// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
-/// 番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_error_message` と同じ。
 ///
 /// # Safety
 ///
-/// `key` は NULL か、NUL 終端の文字列を指すこと。
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_last_error_field(key: *const c_char) -> *const c_char {
+pub unsafe extern "C" fn ugoe_error_kind(error: *const UgoeError) -> *const c_char {
+    // SAFETY: 呼び出し側の約束。
+    c_ptr(unsafe { read(error) }.and_then(|e| e.kind.as_ref()))
+}
+
+/// `error` に書いた失敗の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
+/// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
+/// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
+/// 番号や数は 10 進の文字列。無ければ NULL。`error` か `key` が NULL のときも NULL。ポインタの寿命は `ugoe_error_message` と同じ。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。`key` は NULL か、NUL 終端の文字列を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_error_field(
+    error: *const UgoeError,
+    key: *const c_char,
+) -> *const c_char {
     if key.is_null() {
         return std::ptr::null();
     }
     // SAFETY: 呼び出し側の約束で、`key` は NUL 終端の文字列。
     let key = unsafe { CStr::from_ptr(key) };
-    LAST_ERROR.with(|last| {
-        last.borrow()
-            .fields
-            .iter()
-            .find(|(k, _)| k.as_c_str() == key)
-            .map_or(std::ptr::null(), |(_, v)| v.as_ptr())
-    })
+    // SAFETY: 呼び出し側の約束。
+    let value = unsafe { read(error) }
+        .and_then(|e| e.fields.iter().find(|(k, _)| k.as_c_str() == key))
+        .map(|(_, v)| v);
+    c_ptr(value)
 }
 
-/// このスレッドで最後に失敗した関数の補足の値の数。補足の値を持たない失敗や、失敗がまだないときは 0 (T0464)。
+/// `error` に書いた失敗の補足の値の数。補足の値を持たない失敗、まだ失敗を書いていないとき、`error` が NULL のときは 0 (T0464)。
 ///
-/// 補足の値は `ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at` で 0 から順に読める。
+/// 補足の値は `ugoe_error_field_key_at`・`ugoe_error_field_value_at` で 0 から順に読める。
 /// キーを知らなくても (新しい版でキーが増えても) すべての補足の値を得られる。並びは SDK の `fields` の順。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
 #[unsafe(no_mangle)]
-pub extern "C" fn ugoe_last_error_field_count() -> usize {
-    LAST_ERROR.with(|last| last.borrow().fields.len())
+pub unsafe extern "C" fn ugoe_error_field_count(error: *const UgoeError) -> usize {
+    // SAFETY: 呼び出し側の約束。
+    unsafe { read(error) }.map_or(0, |e| e.fields.len())
 }
 
-/// このスレッドで最後に失敗した関数の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
-/// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// `error` に書いた失敗の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
+/// `index` が `ugoe_error_field_count(error)` 以上なら NULL。ポインタの寿命は `ugoe_error_message` と同じ。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
 #[unsafe(no_mangle)]
-pub extern "C" fn ugoe_last_error_field_key_at(index: usize) -> *const c_char {
-    LAST_ERROR.with(|last| {
-        last.borrow()
-            .fields
-            .get(index)
-            .map_or(std::ptr::null(), |(k, _)| k.as_ptr())
-    })
+pub unsafe extern "C" fn ugoe_error_field_key_at(
+    error: *const UgoeError,
+    index: usize,
+) -> *const c_char {
+    // SAFETY: 呼び出し側の約束。
+    c_ptr(unsafe { read(error) }.and_then(|e| e.fields.get(index).map(|(k, _)| k)))
 }
 
-/// このスレッドで最後に失敗した関数の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_last_error_field` と同じ書き方。T0464)。
-/// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+/// `error` に書いた失敗の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_error_field` と同じ書き方。T0464)。
+/// `index` が `ugoe_error_field_count(error)` 以上なら NULL。ポインタの寿命は `ugoe_error_message` と同じ。
+///
+/// # Safety
+///
+/// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
 #[unsafe(no_mangle)]
-pub extern "C" fn ugoe_last_error_field_value_at(index: usize) -> *const c_char {
-    LAST_ERROR.with(|last| {
-        last.borrow()
-            .fields
-            .get(index)
-            .map_or(std::ptr::null(), |(_, v)| v.as_ptr())
-    })
+pub unsafe extern "C" fn ugoe_error_field_value_at(
+    error: *const UgoeError,
+    index: usize,
+) -> *const c_char {
+    // SAFETY: 呼び出し側の約束。
+    c_ptr(unsafe { read(error) }.and_then(|e| e.fields.get(index).map(|(_, v)| v)))
+}
+
+/// テストで使う `UgoeError`。テストのあいだ `UgoeError` を持ち、最後に破棄する。
+#[cfg(test)]
+pub(crate) struct TestError(pub(crate) *mut UgoeError);
+
+#[cfg(test)]
+impl TestError {
+    pub(crate) fn new() -> Self {
+        Self(ugoe_error_create())
+    }
+
+    fn text(p: *const c_char) -> Option<String> {
+        // SAFETY: NULL でないポインタは、次の失敗を書くまで有効な NUL 終端の文字列。
+        (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
+    }
+
+    pub(crate) fn message(&self) -> Option<String> {
+        // SAFETY: `self.0` は破棄していない `UgoeError`。
+        Self::text(unsafe { ugoe_error_message(self.0) })
+    }
+
+    pub(crate) fn kind(&self) -> Option<String> {
+        // SAFETY: 同上。
+        Self::text(unsafe { ugoe_error_kind(self.0) })
+    }
+
+    pub(crate) fn field(&self, key: &CStr) -> Option<String> {
+        // SAFETY: 同上。`key` は NUL 終端。
+        Self::text(unsafe { ugoe_error_field(self.0, key.as_ptr()) })
+    }
+
+    pub(crate) fn field_count(&self) -> usize {
+        // SAFETY: 同上。
+        unsafe { ugoe_error_field_count(self.0) }
+    }
+
+    pub(crate) fn key_at(&self, i: usize) -> Option<String> {
+        // SAFETY: 同上。
+        Self::text(unsafe { ugoe_error_field_key_at(self.0, i) })
+    }
+
+    pub(crate) fn value_at(&self, i: usize) -> Option<String> {
+        // SAFETY: 同上。
+        Self::text(unsafe { ugoe_error_field_value_at(self.0, i) })
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestError {
+    fn drop(&mut self) {
+        // SAFETY: `ugoe_error_create` で作ったもの。
+        unsafe { ugoe_error_destroy(self.0) };
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn last_error() -> String {
-        let ptr = ugoe_last_error();
-        assert!(!ptr.is_null());
-        // SAFETY: ugoe_last_error は NUL 終端の文字列を返し、次の失敗まで有効。
-        unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned()
-    }
-
     #[test]
     fn panic_becomes_error_code() {
-        let code = guard(|| panic!("boom"));
+        let e = TestError::new();
+        let code = guard(e.0, || panic!("boom"));
         assert_eq!(code, UGOE_ERROR_PANIC);
-        assert!(last_error().contains("boom"));
+        assert!(e.message().is_some_and(|m| m.contains("boom")));
 
-        let code = guard(|| panic!("formatted {}", 42));
+        let code = guard(e.0, || panic!("formatted {}", 42));
         assert_eq!(code, UGOE_ERROR_PANIC);
-        assert!(last_error().contains("formatted 42"));
+        assert!(e.message().is_some_and(|m| m.contains("formatted 42")));
     }
 
     #[test]
     fn error_sets_message_and_success_keeps_it() {
-        let code = guard(|| Err(Error::new(UGOE_ERROR_NOT_FOUND, "no such thing\0ignored")));
+        let e = TestError::new();
+        assert_eq!(e.message(), None);
+        let code = guard(e.0, || {
+            Err(Error::new(UGOE_ERROR_NOT_FOUND, "no such thing\0ignored"))
+        });
         assert_eq!(code, UGOE_ERROR_NOT_FOUND);
-        assert_eq!(last_error(), "no such thing");
-        assert_eq!(guard(|| Ok(())), UGOE_OK);
-        assert_eq!(last_error(), "no such thing");
-        assert!(ugoe_last_error_kind().is_null());
+        assert_eq!(e.message().as_deref(), Some("no such thing"));
+        assert_eq!(guard(e.0, || Ok(())), UGOE_OK);
+        assert_eq!(e.message().as_deref(), Some("no such thing"));
+        assert_eq!(e.kind(), None);
+    }
+
+    #[test]
+    fn null_error_is_not_written() {
+        let code = guard(std::ptr::null_mut(), || Err(Error::null("x")));
+        assert_eq!(code, UGOE_ERROR_NULL_POINTER);
+        // SAFETY: NULL は読み出しの関数に渡してよい。
+        unsafe {
+            assert!(ugoe_error_message(std::ptr::null()).is_null());
+            assert!(ugoe_error_kind(std::ptr::null()).is_null());
+            assert!(ugoe_error_field(std::ptr::null(), c"slot".as_ptr()).is_null());
+            assert_eq!(ugoe_error_field_count(std::ptr::null()), 0);
+            assert!(ugoe_error_field_key_at(std::ptr::null(), 0).is_null());
+            assert!(ugoe_error_field_value_at(std::ptr::null(), 0).is_null());
+            ugoe_error_destroy(std::ptr::null_mut());
+        }
     }
 
     #[test]
     fn kind_and_fields_follow_the_last_failure() {
-        let code = guard(|| {
+        let e = TestError::new();
+        let code = guard(e.0, || {
             Err(Error::new(UGOE_ERROR_DRESS_UP, "taken")
                 .with_kind("slot_occupied", vec![("slot", "Hair".into())]))
         });
         assert_eq!(code, UGOE_ERROR_DRESS_UP);
-        // SAFETY: NULL でないポインタは、次の失敗まで有効な NUL 終端の文字列。`key` は C の文字列リテラルか NULL。
-        unsafe {
-            let text = |p: *const c_char| CStr::from_ptr(p).to_string_lossy().into_owned();
-            assert_eq!(text(ugoe_last_error_kind()), "slot_occupied");
-            assert_eq!(text(ugoe_last_error_field(c"slot".as_ptr())), "Hair");
-            assert!(ugoe_last_error_field(c"module".as_ptr()).is_null());
-            assert!(ugoe_last_error_field(std::ptr::null()).is_null());
+        assert_eq!(e.kind().as_deref(), Some("slot_occupied"));
+        assert_eq!(e.field(c"slot").as_deref(), Some("Hair"));
+        assert_eq!(e.field(c"module"), None);
+        // SAFETY: `e.0` は破棄していない `UgoeError`。`key` が NULL でもよい。
+        assert!(unsafe { ugoe_error_field(e.0, std::ptr::null()) }.is_null());
 
-            // 番号でも読める (T0464)。
-            assert_eq!(ugoe_last_error_field_count(), 1);
-            assert_eq!(text(ugoe_last_error_field_key_at(0)), "slot");
-            assert_eq!(text(ugoe_last_error_field_value_at(0)), "Hair");
-            assert!(ugoe_last_error_field_key_at(1).is_null());
-            assert!(ugoe_last_error_field_value_at(usize::MAX).is_null());
+        // 番号でも読める (T0464)。
+        assert_eq!(e.field_count(), 1);
+        assert_eq!(e.key_at(0).as_deref(), Some("slot"));
+        assert_eq!(e.value_at(0).as_deref(), Some("Hair"));
+        assert_eq!(e.key_at(1), None);
+        assert_eq!(e.value_at(usize::MAX), None);
 
-            // 種類を持たない失敗で消える。
-            guard(|| Err(Error::null("x")));
-            assert!(ugoe_last_error_kind().is_null());
-            assert!(ugoe_last_error_field(c"slot".as_ptr()).is_null());
-            assert_eq!(ugoe_last_error_field_count(), 0);
-            assert!(ugoe_last_error_field_key_at(0).is_null());
-            assert!(ugoe_last_error_field_value_at(0).is_null());
-        }
+        // 種類を持たない失敗で消える。
+        guard(e.0, || Err(Error::null("x")));
+        assert_eq!(e.kind(), None);
+        assert_eq!(e.field(c"slot"), None);
+        assert_eq!(e.field_count(), 0);
+        assert_eq!(e.key_at(0), None);
+        assert_eq!(e.value_at(0), None);
+    }
+
+    #[test]
+    fn errors_are_independent() {
+        let a = TestError::new();
+        let b = TestError::new();
+        guard(a.0, || Err(Error::null("a")));
+        guard(b.0, || Err(Error::null("b")));
+        assert_eq!(a.message().as_deref(), Some("`a` is null"));
+        assert_eq!(b.message().as_deref(), Some("`b` is null"));
     }
 }

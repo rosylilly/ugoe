@@ -50,7 +50,7 @@ impl AnimationError {
         }
     }
 
-    /// JS の例外に付ける種類と補足の値 (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と同じ)。検査と合成の失敗だけが持つ:
+    /// JS の例外に付ける種類と補足の値 (C ABI の `ugoe_error_kind`・`ugoe_error_field` と同じ)。検査と合成の失敗だけが持つ:
     ///
     /// - エフェクトの設定 (`set_effects_json`): 読み込みと同じ `"invalid_model"` (T0461)。
     /// - 物理の設定 (`set_physics_json`・`set_base_physics_json`): 着せ替えと同じ `"invalid_physics"` (T0469)。

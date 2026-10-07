@@ -174,7 +174,7 @@ puppet.hit_test_standard("Head", x, y); // Model.avatar.hit_areas の標準の�
   止めている間も表示中の要素は変わる。C ABI では `ugoe_puppet_pose_group_count`・`ugoe_puppet_pose_visible_part` (T0478)。`pose_json` の要素のパーツは C ABI では `ugoe_puppet_pose_entry_count`・`ugoe_puppet_pose_entry_part` (T0483)。
 - `set_effects_json` は設定をモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・
   範囲の外の値・モデルにないパラメータ)。通らなければ `code` が `"invalid_model"` で `errors` (検査のエラーの数)・`error_codes`
-  (検査のエラーの種類を `", "` でつないだ文字列) を持つ `Error` を投げ、何も変えない (C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field`
+  (検査のエラーの種類を `", "` でつないだ文字列) を持つ `Error` を投げ、何も変えない (C ABI の `ugoe_error_kind`・`ugoe_error_field`
   と同じ値。T0461・T0469)。読めない JSON の例外は `code` を持たない。
 - `set_physics_json`・`set_base_physics_json` の検査の失敗は、`code` が `"invalid_physics"` で `errors`・`error_codes` を持つ `Error`
   (着せ替えの `invalid_physics` と同じ値。C ABI の `ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` と同じ。T0469)。
@@ -297,7 +297,7 @@ try {
 ```
 
 `code` と補足の値のうち、付け外しの失敗と `invalid_file` は SDK の `ugoe::DressUpError::code`・`fields`・`INVALID_FILE` が決め、
-C ABI の `ugoe_last_error_kind` と同じ (T0412)。`set_base_physics_json` で付けているモジュールと合成できないときも、同じ `DressUpError` を投げる (T0476)。`not_loaded`・`no_model`・`texture`・`device_lost` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
+C ABI の `ugoe_error_kind` と同じ (T0412)。`set_base_physics_json` で付けているモジュールと合成できないときも、同じ `DressUpError` を投げる (T0476)。`not_loaded`・`no_model`・`texture`・`device_lost` は wasm だけのもの (`src/dress_up.rs` の `error_info`)。
 GPU のデバイスを失った (`is_lost()`) 後の `load_module`・`attach_module`・`detach_module`・`set_modules`・`unload_module` は、何も変えずに
 `code` が `device_lost` の `DressUpError` を投げる (T0457。それまではコードを持たない `Error`)。新しい canvas で作り直す。
 
@@ -379,7 +379,7 @@ try {
 - 上限はファイル形式の決まりではなく、組み込む側の方針 (`docs/spec/file-formats.md#読み込みの上限`)。ファイルが壊れているとは限らない
   (上限を上げれば読めることがある) ので、`invalid_file` とは分けた。超えたときは何も変えない (前のモデル・モジュールのまま)。
 - `read_limit_exceeded` の種類と補足の値は SDK の `ugoe::limits::ReadLimitExceeded` が決め、C ABI (`UGOE_ERROR_LIMIT_EXCEEDED` と
-  `ugoe_last_error_kind`・`ugoe_last_error_field`) と同じ。C ABI の補足の値は文字列で、wasm は読み込みの警告と同じく数は数にする。
+  `ugoe_error_kind`・`ugoe_error_field`) と同じ。C ABI の補足の値は文字列で、wasm は読み込みの警告と同じく数は数にする。
   `image_limit_exceeded` は wasm だけ (C ABI は画像をデコードしない)。`src/load.rs` の `LoadError::info`。
 - `load_bundle` のほかの失敗も同じ `LoadError` で、`code` を持つ ([読み込みの失敗](#読み込みの失敗-t0434))。
 - 上限の JSON の形の誤り (知らない項目・負の値・小数) は `invalid limits: ...` の例外 (綴りの誤りで上限が黙って効かなくならないように)。
@@ -417,7 +417,7 @@ try {
 
 - コードは公開の約束として扱い、名前を変えない (意味が変わるなら新しいコードにする)。知らない `code` (将来の種類) は `message` を出せばよい。
 - ファイルとモデルの失敗 (`invalid_file`・`unsupported_version`・`unsupported_features`・`invalid_model`・`compile`・`read_limit_exceeded`) の
-  種類と補足の値は SDK の `ugoe::LoadError` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_create_from_*` の `ugoe_last_error_kind` と
+  種類と補足の値は SDK の `ugoe::LoadError` (`code()`・`fields()`) が決め、C ABI の `ugoe_puppet_create_from_*` の `ugoe_error_kind` と
   同じ値 (T0457。[crates/ugoe-ffi/README.md](../ugoe-ffi/README.md#モデルの読み込みの失敗-t0457)。C ABI では数も 10 進の文字列)。
   画像とレンダラの失敗 (`image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost`) は wasm だけ
   (C ABI は画像をデコードせず、レンダラを持たない)。対応は `src/load.rs` の `LoadError::info` とそのテスト (`every_load_error_has_a_code`)。

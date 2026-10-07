@@ -233,7 +233,7 @@ if not puppet.load_model_from_buffer(bytes):
 
 `set_effects_json`・`set_physics_json`・`set_base_physics_json` は結果の辞書を返す。成功なら `{ "ok": true }`。
 失敗ならエラーを出して何も変えず、`{ "ok": false, "code", "error", ... }` を返す (`ok` のほかは `get_load_error()` と同じ形。
-`get_load_error()` は変えない)。`code` と補足の値は C ABI の `ugoe_last_error_kind`・`ugoe_last_error_field` と wasm の例外の
+`get_load_error()` は変えない)。`code` と補足の値は C ABI の `ugoe_error_kind`・`ugoe_error_field` と wasm の例外の
 `code` とプロパティ ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#code-の一覧-t0452) の `settings_error`) に揃える:
 
 | `code` | 補足の値 | いつ |

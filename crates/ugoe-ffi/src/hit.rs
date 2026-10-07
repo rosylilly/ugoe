@@ -8,7 +8,9 @@ use std::ffi::c_char;
 
 use ugoe::core::Vec2;
 
-use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_NOT_FOUND, UgoeResult, guard};
+use crate::error::{
+    Error, UGOE_ERROR_BUFFER_TOO_SMALL, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, guard,
+};
 use crate::puppet::{UgoePuppet, c_str, puppet_ref, write};
 
 /// 当たり判定 (`Model::hit_areas`) の数。
@@ -20,8 +22,9 @@ use crate::puppet::{UgoePuppet, c_str, puppet_ref, write};
 pub unsafe extern "C" fn ugoe_puppet_hit_area_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -39,8 +42,9 @@ pub unsafe extern "C" fn ugoe_puppet_hit_area_id(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let id = p
@@ -68,8 +72,9 @@ pub unsafe extern "C" fn ugoe_puppet_hit_areas_at(
     out: *mut u32,
     capacity: usize,
     out_count: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let hits = p.puppet.instance().hit_areas_at(Vec2::new(x, y));
@@ -125,8 +130,9 @@ pub unsafe extern "C" fn ugoe_puppet_hit_test(
     x: f32,
     y: f32,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -153,8 +159,9 @@ pub unsafe extern "C" fn ugoe_puppet_standard_hit_area(
     puppet: *const UgoePuppet,
     name: *const c_char,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -187,8 +194,9 @@ pub unsafe extern "C" fn ugoe_puppet_hit_test_standard(
     x: f32,
     y: f32,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。

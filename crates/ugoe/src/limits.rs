@@ -22,7 +22,7 @@ pub struct ReadLimitExceeded {
 }
 
 impl ReadLimitExceeded {
-    /// 機械が読む種類。wasm の読み込みのエラーの `code` と C ABI の `ugoe_last_error_kind` の値。変えない。
+    /// 機械が読む種類。wasm の読み込みのエラーの `code` と C ABI の `ugoe_error_kind` の値。変えない。
     pub const CODE: &'static str = "read_limit_exceeded";
 
     /// `error` が読み込みの上限を超えたものなら、その中身。

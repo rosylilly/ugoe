@@ -6,7 +6,7 @@
 
 use ugoe::lighting::MAX_LIGHTS;
 
-use crate::error::{Error, UGOE_ERROR_INVALID_ARGUMENT, UgoeResult, guard};
+use crate::error::{Error, UGOE_ERROR_INVALID_ARGUMENT, UgoeError, UgoeResult, guard};
 use crate::puppet::{UgoePuppet, puppet_ref, write};
 
 /// 平行光源 (`ugoe::lighting::Light::Directional`)。
@@ -125,9 +125,10 @@ pub unsafe extern "C" fn ugoe_lighting_uniform(
     lights: *const UgoeLight,
     count: usize,
     out: *mut UgoeLightingUniform,
+    error: *mut UgoeError,
 ) -> UgoeResult {
     const { assert!(UGOE_MAX_LIGHTS == MAX_LIGHTS) };
-    guard(|| {
+    guard(error, || {
         let ambient = if ambient.is_null() {
             [1.0; 3]
         } else {
@@ -169,8 +170,9 @@ pub unsafe extern "C" fn ugoe_lighting_uniform(
 pub unsafe extern "C" fn ugoe_puppet_uses_lighting(
     puppet: *const UgoePuppet,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -190,8 +192,9 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_lit(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;

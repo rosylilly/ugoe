@@ -1,6 +1,6 @@
 //! モデルの読み込み (ファイルを読む・コンパイルする) の失敗の種類 (`code`) と補足の値 (T0457)。
 //!
-//! wasm の `LoadError` (`crates/ugoe-wasm/README.md#読み込みの失敗-t0434`) と C ABI の `ugoe_last_error_kind`
+//! wasm の `LoadError` (`crates/ugoe-wasm/README.md#読み込みの失敗-t0434`) と C ABI の `ugoe_error_kind`
 //! (`crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457`) は、ここの値を使う。
 //! テクスチャのデコードやレンダラへの登録の失敗は組み込み先ごとのものなので、ここでは決めない。
 

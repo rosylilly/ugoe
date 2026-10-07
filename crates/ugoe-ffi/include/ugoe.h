@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 // C ABI のバージョン。互換性を壊す変更で上げる (ヘッダでは `UGOE_ABI_VERSION`)。
-#define UGOE_ABI_VERSION 1
+#define UGOE_ABI_VERSION 2
 
 // 通常の合成。
 #define UGOE_BLEND_NORMAL 0
@@ -93,6 +93,16 @@
 // ARKit のブレンドシェイプの数 (`UgoeTrackingInput::blend_shapes` の長さ)。
 #define UGOE_BLEND_SHAPE_COUNT 52
 
+// 失敗の中身 (メッセージ・種類・補足の値) を受け取る入れ物。不透明な型で、中身には触れない (ADR 0031)。
+//
+// `ugoe_error_create` で作り、`ugoe_error_destroy` で破棄する。失敗しうる関数は最後の引数 `error` にこれを取り、
+// 失敗したら中身を書き換える (NULL を渡せば書かない。結果コードだけで足りるとき)。成功した呼び出しは中身を変えない
+// (前の失敗の中身が残る。どの呼び出しが失敗したかは結果コードで判断する)。
+//
+// スレッドに結び付かないので、どのスレッドで作り、書かせ、読んでもよい。ただし 1 つの `UgoeError` を同時に複数のスレッドから
+// 使ってはならない (呼び出しごとか、スレッドごとに 1 つ持つ)。
+typedef struct UgoeError UgoeError;
+
 // デコードした画像 (8bit RGBA)。`ugoe_image_decode` で作り、`ugoe_image_destroy` で解放する。
 typedef struct UgoeImage UgoeImage;
 
@@ -108,7 +118,7 @@ typedef struct UgoeModule UgoeModule;
 // 1 つの `UgoePuppet` を複数のスレッドから同時に使ってはならない (別々の `UgoePuppet` なら並行してよい)。
 typedef struct UgoePuppet UgoePuppet;
 
-// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は `ugoe_last_error` で得る。
+// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は、呼び出しに渡した `UgoeError` から得る。
 typedef int32_t UgoeResult;
 
 // 発火したモーションのイベント (`docs/spec/motion.md`)。
@@ -324,7 +334,7 @@ typedef struct UgoeTrackingInput {
 #define UGOE_ERROR_BUFFER_TOO_SMALL 4
 
 // ファイルを読めなかった (壊れたバイト列、対応していない版、知らない必須の機能など)。モデルの読み込み
-// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_last_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
+// (`ugoe_puppet_create_from_*`) では、種類 (`ugoe_error_kind`) が `"invalid_file"`・`"unsupported_version"`・
 // `"unsupported_features"`・`"invalid_model"` のどれか (T0457)。
 #define UGOE_ERROR_FORMAT 5
 
@@ -339,13 +349,13 @@ typedef struct UgoeTrackingInput {
 // ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
 #define UGOE_ERROR_PANIC 8
 
-// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_last_error_kind`、
-// 補足の値は `ugoe_last_error_field` で得る (T0409)。
+// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
+// 補足の値は `ugoe_error_field` で得る (T0409)。
 #define UGOE_ERROR_DRESS_UP 9
 
 // 読み込みの上限 (`UgoeReadLimits`) を超えたので、読み込みをやめた。ファイルが壊れているとは限らない
-// (上限を上げれば読めることがある)。種類 (`ugoe_last_error_kind`) は `"read_limit_exceeded"`、補足の値は
-// `ugoe_last_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
+// (上限を上げれば読めることがある)。種類 (`ugoe_error_kind`) は `"read_limit_exceeded"`、補足の値は
+// `ugoe_error_field` の `"limit"`・`"chunk"`・`"max"` (T0152)。
 #define UGOE_ERROR_LIMIT_EXCEEDED 10
 
 #ifdef __cplusplus
@@ -363,7 +373,9 @@ const char *ugoe_version(void);
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_motion_event_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_motion_event_count(const struct UgoePuppet *puppet,
+                                          uint32_t *out,
+                                          struct UgoeError *error);
 
 // 直前の `ugoe_puppet_update` で発火した `index` 番目のモーションのイベント。開始した順のモーションごとに、
 // 発火した順に並ぶ (ループをまたいだら周回の順)。文字列は次の `ugoe_puppet_update` まで有効。
@@ -373,7 +385,8 @@ UgoeResult ugoe_puppet_motion_event_count(const struct UgoePuppet *puppet, uint3
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
                                     uint32_t index,
-                                    struct UgoeMotionEvent *out);
+                                    struct UgoeMotionEvent *out,
+                                    struct UgoeError *error);
 
 // 直前の `ugoe_puppet_update` で発火した `index` 番目のモーションのイベントを発火したモーション (T0462)。
 // `index` は `ugoe_puppet_motion_event` と同じ並び。クロスフェードでフェードアウト中のモーションのイベントは、
@@ -384,13 +397,14 @@ UgoeResult ugoe_puppet_motion_event(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_motion_event_source(const struct UgoePuppet *puppet,
                                            uint32_t index,
-                                           struct UgoeMotionEventSource *out);
+                                           struct UgoeMotionEventSource *out,
+                                           struct UgoeError *error);
 
 // 物理の設定を JSON (`*.physics.json` の形。UTF-8、`len` バイト。NUL 終端は要らない) で差し替える。
 // `json` が NULL なら物理を外す。粒子は次の `ugoe_puppet_update` で、その時の入力に対する静止姿勢から始める。
 //
 // JSON を読めなければ `UGOE_ERROR_FORMAT`、モデルに対する検査 (`docs/spec/physics.md`) を通らなければ
-// `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_physics"`、`ugoe_last_error_field` の `"errors"`・`"error_codes"` は
+// `UGOE_ERROR_INVALID_MODEL` (`ugoe_error_kind` は `"invalid_physics"`、`ugoe_error_field` の `"errors"`・`"error_codes"` は
 // 検査のエラーの数と種類。着せ替えの `invalid_physics` と同じ。T0469) を返し、何も変えない。
 //
 // 着せ替えのモジュールを付けているときは、付けたモデルに対して差し替える。次に付け外しをすると、
@@ -402,7 +416,8 @@ UgoeResult ugoe_puppet_motion_event_source(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`json` は NULL か `len` バイトの読める領域を指すこと。
 UgoeResult ugoe_puppet_set_physics_json(struct UgoePuppet *puppet,
                                         const uint8_t *json,
-                                        size_t len);
+                                        size_t len,
+                                        struct UgoeError *error);
 
 // 本体の物理の設定を JSON (`ugoe_puppet_set_physics_json` と同じ形) で差し替える。`json` が NULL なら外す
 // (`ugoe::Puppet::set_base_physics`、`docs/spec/modules.md#puppet-での着せ替え`)。
@@ -420,7 +435,8 @@ UgoeResult ugoe_puppet_set_physics_json(struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`json` は NULL か `len` バイトの読める領域を指すこと。
 UgoeResult ugoe_puppet_set_base_physics_json(struct UgoePuppet *puppet,
                                              const uint8_t *json,
-                                             size_t len);
+                                             size_t len,
+                                             struct UgoeError *error);
 
 // 今の物理の設定の JSON (UTF-8。NUL 終端しない) を `out` (`capacity` バイト) に書き、`*out_len` にバイト数を書く。
 // 物理が無ければ `*out_len` は 0。`capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_len` だけを書く
@@ -432,7 +448,8 @@ UgoeResult ugoe_puppet_set_base_physics_json(struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_physics_json(const struct UgoePuppet *puppet,
                                     uint8_t *out,
                                     size_t capacity,
-                                    size_t *out_len);
+                                    size_t *out_len,
+                                    struct UgoeError *error);
 
 // 本体の物理の設定 (`ugoe::Puppet::base_physics`) の JSON。書き方は `ugoe_puppet_physics_json` と同じ。
 // 着せ替えのモジュールを付けていれば、合成する前の本体の設定 (付けたことがなければ今の設定)。
@@ -444,14 +461,16 @@ UgoeResult ugoe_puppet_physics_json(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_base_physics_json(const struct UgoePuppet *puppet,
                                          uint8_t *out,
                                          size_t capacity,
-                                         size_t *out_len);
+                                         size_t *out_len,
+                                         struct UgoeError *error);
 
 // 物理の粒子を初期姿勢に戻す (次の `ugoe_puppet_update` で静止姿勢に置き直す)。物理が無ければ何もしない。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
-UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
+UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet,
+                                     struct UgoeError *error);
 
 // 目パチ・呼吸・リップシンクの設定を JSON (モデルの `effects` と同じ形。UTF-8、`len` バイト。NUL 終端は要らない)
 // で差し替える。省略したフィールドはモデルと同じ既定値になる。
@@ -461,22 +480,25 @@ UgoeResult ugoe_puppet_reset_physics(struct UgoePuppet *puppet);
 // 同じ設定を渡しても初めからになる。JSON を読めなければ `UGOE_ERROR_FORMAT` を返し、何も変えない。
 //
 // 設定はモデルの読み込みと同じに検査する (`ugoe::Puppet::try_set_effects`。有限でない値・範囲の外の値・モデルにない
-// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、
-// `ugoe_last_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
+// パラメータ)。通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_error_kind` は `"invalid_model"`、
+// `ugoe_error_field` の `"errors"` は検査のエラーの数、`"error_codes"` は種類を `, ` でつないだもの) を返し、何も変えない。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`json` は `len` バイトの読める領域を指すこと。
 UgoeResult ugoe_puppet_set_effects_json(struct UgoePuppet *puppet,
                                         const uint8_t *json,
-                                        size_t len);
+                                        size_t len,
+                                        struct UgoeError *error);
 
 // 描画可能要素 (メッシュ) の数。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_drawable_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_drawable_count(const struct UgoePuppet *puppet,
+                                      uint32_t *out,
+                                      struct UgoeError *error);
 
 // `index` 番目の描画可能要素の、評価で変わらない情報。
 //
@@ -485,7 +507,8 @@ UgoeResult ugoe_puppet_drawable_count(const struct UgoePuppet *puppet, uint32_t 
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_drawable_info(const struct UgoePuppet *puppet,
                                      uint32_t index,
-                                     struct UgoeDrawableInfo *out);
+                                     struct UgoeDrawableInfo *out,
+                                     struct UgoeError *error);
 
 // `index` 番目の描画可能要素の、`mask` 番目のマスクの参照。
 //
@@ -495,7 +518,8 @@ UgoeResult ugoe_puppet_drawable_info(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_drawable_mask(const struct UgoePuppet *puppet,
                                      uint32_t index,
                                      uint32_t mask,
-                                     struct UgoeMask *out);
+                                     struct UgoeMask *out,
+                                     struct UgoeError *error);
 
 // `index` 番目の描画可能要素の、直前の `ugoe_puppet_update` で評価した状態。
 //
@@ -504,7 +528,8 @@ UgoeResult ugoe_puppet_drawable_mask(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_drawable_state(const struct UgoePuppet *puppet,
                                       uint32_t index,
-                                      struct UgoeDrawableState *out);
+                                      struct UgoeDrawableState *out,
+                                      struct UgoeError *error);
 
 // `index` 番目の描画可能要素の頂点位置 (キャンバス座標、x と y の組を頂点の数だけ) を、
 // ホストのバッファ `out` (`len` 個の float) にコピーする。`len` が 2 × 頂点数より小さければ
@@ -516,7 +541,8 @@ UgoeResult ugoe_puppet_drawable_state(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_copy_positions(const struct UgoePuppet *puppet,
                                       uint32_t index,
                                       float *out,
-                                      size_t len);
+                                      size_t len,
+                                      struct UgoeError *error);
 
 // `index` 番目の描画可能要素の頂点位置を、内部のバッファのまま借りる。`*out` に先頭
 // (x と y の組が `*out_len` / 2 個)、`*out_len` に float の数を書く。
@@ -529,7 +555,8 @@ UgoeResult ugoe_puppet_copy_positions(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_positions(const struct UgoePuppet *puppet,
                                  uint32_t index,
                                  const float **out,
-                                 size_t *out_len);
+                                 size_t *out_len,
+                                 struct UgoeError *error);
 
 // `index` 番目の描画可能要素のテクスチャ座標 (u と v の組を頂点の数だけ。0〜1、画像の左上が原点) を借りる。
 // ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
@@ -540,7 +567,8 @@ UgoeResult ugoe_puppet_positions(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_drawable_uvs(const struct UgoePuppet *puppet,
                                     uint32_t index,
                                     const float **out,
-                                    size_t *out_len);
+                                    size_t *out_len,
+                                    struct UgoeError *error);
 
 // `index` 番目の描画可能要素の三角形の頂点番号 (3 つで 1 つの三角形) を借りる。
 // ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
@@ -551,7 +579,8 @@ UgoeResult ugoe_puppet_drawable_uvs(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_drawable_indices(const struct UgoePuppet *puppet,
                                         uint32_t index,
                                         const uint16_t **out,
-                                        size_t *out_len);
+                                        size_t *out_len,
+                                        struct UgoeError *error);
 
 // 奥から手前への描画順 (描画可能要素の番号の並び) を借りる。`*out_len` は描画可能要素の数。
 // ポインタは、次の `ugoe_puppet_update`・着せ替えの操作・`ugoe_puppet_destroy` まで有効。
@@ -561,7 +590,8 @@ UgoeResult ugoe_puppet_drawable_indices(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_render_order(const struct UgoePuppet *puppet,
                                     const uint32_t **out,
-                                    size_t *out_len);
+                                    size_t *out_len,
+                                    struct UgoeError *error);
 
 // 前の `ugoe_puppet_update` から描画順の並びが変わったか (作った直後と最初の `update` の後は true)。
 //
@@ -569,14 +599,17 @@ UgoeResult ugoe_puppet_render_order(const struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_render_order_changed(const struct UgoePuppet *puppet,
-                                            bool *out);
+                                            bool *out,
+                                            struct UgoeError *error);
 
 // テクスチャの数 (描画可能要素の `texture` はこれより小さい)。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_texture_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_texture_count(const struct UgoePuppet *puppet,
+                                     uint32_t *out,
+                                     struct UgoeError *error);
 
 // `index` 番目のテクスチャの画像 (エンコードされたまま)。デコードはホストが行う。
 //
@@ -588,7 +621,8 @@ UgoeResult ugoe_puppet_texture_count(const struct UgoePuppet *puppet, uint32_t *
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_texture(const struct UgoePuppet *puppet,
                                uint32_t index,
-                               struct UgoeTexture *out);
+                               struct UgoeTexture *out,
+                               struct UgoeError *error);
 
 // `index` 番目のテクスチャの法線マップ (エンコードされたまま)。無ければ `format` が `UGOE_TEXTURE_NONE`
 // (法線 `(0, 0, 1)` として扱う)。PNG は **アルファを掛けずに** デコードする
@@ -599,12 +633,13 @@ UgoeResult ugoe_puppet_texture(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_normal_map(const struct UgoePuppet *puppet,
                                   uint32_t index,
-                                  struct UgoeTexture *out);
+                                  struct UgoeTexture *out,
+                                  struct UgoeError *error);
 
 // `.ugoemod` のバイト列から `UgoeModule` を作る。バイト列は呼び出しの間だけ読む。
 // 本体との整合 (スロット・パラメータ) は付けるときに検査する。
 //
-// 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_last_error_kind` は `"invalid_file"` になる。
+// 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_error_kind` は `"invalid_file"` になる。
 // 既定の読み込みの上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_module_create_with_limits` を参照)。
 //
 // # Safety
@@ -612,12 +647,13 @@ UgoeResult ugoe_puppet_normal_map(const struct UgoePuppet *puppet,
 // `bytes` は `len` バイトの読める領域を指すこと。`out` は `UgoeModule*` を書き込める領域を指すこと。
 UgoeResult ugoe_module_create(const uint8_t *bytes,
                               size_t len,
-                              struct UgoeModule **out);
+                              struct UgoeModule **out,
+                              struct UgoeError *error);
 
 // 読み込みの上限 `limits` を指定して、`.ugoemod` のバイト列から `UgoeModule` を作る (T0152)。
 //
 // `limits` が NULL なら既定値 (`ugoe_module_create` と同じ)。上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、
-// `ugoe_last_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
+// `ugoe_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
 //
 // # Safety
 //
@@ -626,7 +662,8 @@ UgoeResult ugoe_module_create(const uint8_t *bytes,
 UgoeResult ugoe_module_create_with_limits(const uint8_t *bytes,
                                           size_t len,
                                           const struct UgoeReadLimits *limits,
-                                          struct UgoeModule **out);
+                                          struct UgoeModule **out,
+                                          struct UgoeError *error);
 
 // `UgoeModule` を破棄する。NULL なら何もしない。`UgoePuppet` に付けたモジュールは付いたまま残る。
 //
@@ -641,7 +678,8 @@ void ugoe_module_destroy(struct UgoeModule *module);
 //
 // `module` は有効な `UgoeModule`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_module_name(const struct UgoeModule *module,
-                            const char **out);
+                            const char **out,
+                            struct UgoeError *error);
 
 // モジュールを付けるスロットの ID (UTF-8、NUL 終端)。ポインタは `UgoeModule` を破棄するまで有効。
 //
@@ -649,14 +687,17 @@ UgoeResult ugoe_module_name(const struct UgoeModule *module,
 //
 // `module` は有効な `UgoeModule`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_module_slot(const struct UgoeModule *module,
-                            const char **out);
+                            const char **out,
+                            struct UgoeError *error);
 
 // モジュールを読み込んだときの警告の数。
 //
 // # Safety
 //
 // `module` は有効な `UgoeModule`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_module_warning_count(const struct UgoeModule *module, uint32_t *out);
+UgoeResult ugoe_module_warning_count(const struct UgoeModule *module,
+                                     uint32_t *out,
+                                     struct UgoeError *error);
 
 // モジュールを読み込んだときの `index` 番目の警告。文字列は `UgoeModule` を破棄するまで有効。
 //
@@ -665,7 +706,8 @@ UgoeResult ugoe_module_warning_count(const struct UgoeModule *module, uint32_t *
 // `module` は有効な `UgoeModule`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_module_warning(const struct UgoeModule *module,
                                uint32_t index,
-                               struct UgoeWarning *out);
+                               struct UgoeWarning *out,
+                               struct UgoeError *error);
 
 // モジュールを読み込んだときの `index` 番目の警告の補足の値 `key` (`ugoe_puppet_load_warning_field` と同じ)。
 //
@@ -675,7 +717,8 @@ UgoeResult ugoe_module_warning(const struct UgoeModule *module,
 UgoeResult ugoe_module_warning_field(const struct UgoeModule *module,
                                      uint32_t index,
                                      const char *key,
-                                     const char **out);
+                                     const char **out,
+                                     struct UgoeError *error);
 
 // モジュールを付ける。同じスロットか同じ名前のモジュールが付いていれば、それと差し替える
 // (合成の順の同じ位置に入る)。そうでなければ最後に加える。
@@ -688,7 +731,8 @@ UgoeResult ugoe_module_warning_field(const struct UgoeModule *module,
 //
 // `puppet` は有効な `UgoePuppet`、`module` は有効な `UgoeModule` を指すこと。
 UgoeResult ugoe_puppet_attach_module(struct UgoePuppet *puppet,
-                                     const struct UgoeModule *module);
+                                     const struct UgoeModule *module,
+                                     struct UgoeError *error);
 
 // 名前が `name` (UTF-8、NUL 終端) のモジュールを外す。付いていなければ `UGOE_ERROR_DRESS_UP`
 // (種類は `"not_attached"`)。成功したときのポインタの扱いは `ugoe_puppet_attach_module` と同じ。
@@ -697,7 +741,8 @@ UgoeResult ugoe_puppet_attach_module(struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet`、`name` は NUL 終端の文字列を指すこと。
 UgoeResult ugoe_puppet_detach_module(struct UgoePuppet *puppet,
-                                     const char *name);
+                                     const char *name,
+                                     struct UgoeError *error);
 
 // 付けるモジュールの組を `modules` (`count` 個、合成の順) にする。`count` が 0 なら本体だけに戻す
 // (`modules` は NULL でもよい)。成功したときのポインタの扱いは `ugoe_puppet_attach_module` と同じ。
@@ -707,14 +752,17 @@ UgoeResult ugoe_puppet_detach_module(struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`modules` は `count` 個の有効な `UgoeModule*` の並びを指すこと。
 UgoeResult ugoe_puppet_set_modules(struct UgoePuppet *puppet,
                                    const struct UgoeModule *const *modules,
-                                   size_t count);
+                                   size_t count,
+                                   struct UgoeError *error);
 
 // 付けているモジュールの数。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_attached_module_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_attached_module_count(const struct UgoePuppet *puppet,
+                                             uint32_t *out,
+                                             struct UgoeError *error);
 
 // 付けている `index` 番目 (合成の順) のモジュールの名前 (UTF-8、NUL 終端)。
 // ポインタは、次の着せ替えの操作か `UgoePuppet` の破棄まで有効。
@@ -724,14 +772,17 @@ UgoeResult ugoe_puppet_attached_module_count(const struct UgoePuppet *puppet, ui
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_attached_module_name(const struct UgoePuppet *puppet,
                                             uint32_t index,
-                                            const char **out);
+                                            const char **out,
+                                            struct UgoeError *error);
 
 // 本体のモデルのスロットの数 (モジュールを付けていても本体のもの)。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_slot_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_slot_count(const struct UgoePuppet *puppet,
+                                  uint32_t *out,
+                                  struct UgoeError *error);
 
 // 本体の `index` 番目のスロットの ID (UTF-8、NUL 終端。モジュールの `ugoe_module_slot` と比べる)。
 // ポインタは `UgoePuppet` を破棄するまで有効。
@@ -741,7 +792,8 @@ UgoeResult ugoe_puppet_slot_count(const struct UgoePuppet *puppet, uint32_t *out
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_slot_id(const struct UgoePuppet *puppet,
                                uint32_t index,
-                               const char **out);
+                               const char **out,
+                               struct UgoeError *error);
 
 // 直前の着せ替えの操作で、画像 (と法線マップ) を設定し直すテクスチャの番号 (昇順) を借りる。
 // 出どころが変わったか新しく増えた番号で、`ugoe_puppet_texture` / `ugoe_puppet_normal_map` で引き直す。
@@ -753,46 +805,80 @@ UgoeResult ugoe_puppet_slot_id(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` と `out_len` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_changed_textures(const struct UgoePuppet *puppet,
                                         const uint32_t **out,
-                                        size_t *out_len);
+                                        size_t *out_len,
+                                        struct UgoeError *error);
 
-// このスレッドで最後に失敗した関数のエラーメッセージ (UTF-8、NUL 終端)。失敗がまだなければ NULL。
+// 空の `UgoeError` を作る。`ugoe_error_destroy` で破棄する。
+struct UgoeError *ugoe_error_create(void);
+
+// `UgoeError` を破棄する。NULL なら何もしない。破棄した後は、これから読んだ文字列のポインタも無効になる。
 //
-// ポインタは、同じスレッドで次に関数が失敗するまで有効。成功した呼び出しではメッセージを消さない。
-const char *ugoe_last_error(void);
+// # Safety
+//
+// `error` は NULL か、`ugoe_error_create` で作ってまだ破棄していない `UgoeError` であること。
+void ugoe_error_destroy(struct UgoeError *error);
 
-// このスレッドで最後に失敗した関数の、機械が読む種類 (UTF-8、NUL 終端)。種類を持たない失敗なら NULL。
+// `error` に書いた失敗のメッセージ (UTF-8、NUL 終端)。まだ失敗を書いていないか、`error` が NULL なら NULL。
+//
+// 読み出しの関数 (`ugoe_error_*`) が返すポインタは、その `UgoeError` に次の失敗を書くか、破棄するまで有効。
+//
+// # Safety
+//
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+const char *ugoe_error_message(const struct UgoeError *error);
+
+// `error` に書いた失敗の、機械が読む種類 (UTF-8、NUL 終端)。種類を持たない失敗か、まだ失敗を書いていなければ NULL。
 //
 // 着せ替えの失敗 (`UGOE_ERROR_DRESS_UP` と、`.ugoemod` を読めなかったときの `UGOE_ERROR_FORMAT`) で、
 // wasm の `DressUpError` の `code` と同じ値 (`"unknown_slot"`・`"slot_occupied"`・`"invalid_file"` など) になる。
 // モデルの読み込み (`ugoe_puppet_create_from_*`) の失敗 (`UGOE_ERROR_FORMAT`・`UGOE_ERROR_INVALID_MODEL`) では、
 // wasm の `LoadError` の `code` と同じ値 (`"invalid_file"`・`"unsupported_version"`・`"unsupported_features"`・
 // `"invalid_model"`・`"compile"`。T0457)。読み込みの上限を超えたとき (`UGOE_ERROR_LIMIT_EXCEEDED`) は `"read_limit_exceeded"`。
-// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_last_error` と同じ。
-const char *ugoe_last_error_kind(void);
-
-// このスレッドで最後に失敗した関数の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
-// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
-// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
-// 番号や数は 10 進の文字列。無ければ NULL。`key` が NULL か UTF-8 でなくても NULL。ポインタの寿命は `ugoe_last_error` と同じ。
+// 一覧は crates/ugoe-ffi/README.md。ポインタの寿命は `ugoe_error_message` と同じ。
 //
 // # Safety
 //
-// `key` は NULL か、NUL 終端の文字列を指すこと。
-const char *ugoe_last_error_field(const char *key);
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+const char *ugoe_error_kind(const struct UgoeError *error);
 
-// このスレッドで最後に失敗した関数の補足の値の数。補足の値を持たない失敗や、失敗がまだないときは 0 (T0464)。
+// `error` に書いた失敗の補足の値 `key` (`"module"`・`"slot"`・`"parameter"`・`"mesh"`・
+// `"attached"`・`"mask"`・`"rig"`・`"collider"`・`"part"`・`"texture"`・`"required"`・`"actual"`・`"errors"`、
+// 読み込みの上限では `"limit"`・`"chunk"`・`"max"`、モデルの読み込みでは `"found"`・`"supported"`・`"features"`・`"errors"`)。
+// 番号や数は 10 進の文字列。無ければ NULL。`error` か `key` が NULL のときも NULL。ポインタの寿命は `ugoe_error_message` と同じ。
 //
-// 補足の値は `ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at` で 0 から順に読める。
+// # Safety
+//
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。`key` は NULL か、NUL 終端の文字列を指すこと。
+const char *ugoe_error_field(const struct UgoeError *error,
+                             const char *key);
+
+// `error` に書いた失敗の補足の値の数。補足の値を持たない失敗、まだ失敗を書いていないとき、`error` が NULL のときは 0 (T0464)。
+//
+// 補足の値は `ugoe_error_field_key_at`・`ugoe_error_field_value_at` で 0 から順に読める。
 // キーを知らなくても (新しい版でキーが増えても) すべての補足の値を得られる。並びは SDK の `fields` の順。
-size_t ugoe_last_error_field_count(void);
+//
+// # Safety
+//
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+size_t ugoe_error_field_count(const struct UgoeError *error);
 
-// このスレッドで最後に失敗した関数の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
-// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
-const char *ugoe_last_error_field_key_at(size_t index);
+// `error` に書いた失敗の、`index` 番目の補足の値のキー (UTF-8、NUL 終端。`"module"` など。T0464)。
+// `index` が `ugoe_error_field_count(error)` 以上なら NULL。ポインタの寿命は `ugoe_error_message` と同じ。
+//
+// # Safety
+//
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+const char *ugoe_error_field_key_at(const struct UgoeError *error,
+                                    size_t index);
 
-// このスレッドで最後に失敗した関数の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_last_error_field` と同じ書き方。T0464)。
-// `index` が `ugoe_last_error_field_count()` 以上なら NULL。ポインタの寿命は `ugoe_last_error` と同じ。
-const char *ugoe_last_error_field_value_at(size_t index);
+// `error` に書いた失敗の、`index` 番目の補足の値 (UTF-8、NUL 終端。`ugoe_error_field` と同じ書き方。T0464)。
+// `index` が `ugoe_error_field_count(error)` 以上なら NULL。ポインタの寿命は `ugoe_error_message` と同じ。
+//
+// # Safety
+//
+// `error` は NULL か、破棄されていない `UgoeError` を指すこと。
+const char *ugoe_error_field_value_at(const struct UgoeError *error,
+                                      size_t index);
 
 // パラメータの値 `values` (`count` 個。パラメータの番号の順) を、すべて **基準値として** 書く (範囲に丸める)。
 //
@@ -804,7 +890,8 @@ const char *ugoe_last_error_field_value_at(size_t index);
 // `puppet` は有効な `UgoePuppet`、`values` は `count` 個の `float` を読める領域を指すこと。
 UgoeResult ugoe_puppet_set_base_values(struct UgoePuppet *puppet,
                                        const float *values,
-                                       size_t count);
+                                       size_t count,
+                                       struct UgoeError *error);
 
 // 受け手として 1 フレーム進める: `values` (`count` 個) を基準値として書き、物理 → リップシンク → パーツの不透明度
 // (モーションのカーブとポーズ) → 評価の順に `dt` 秒進める (`ugoe_puppet_update` の後半と同じ順。`ugoe::Puppet::follow`)。
@@ -834,7 +921,8 @@ UgoeResult ugoe_puppet_follow(struct UgoePuppet *puppet,
                               float lip_sync_strength,
                               const struct UgoePartOpacityInput *part_opacities,
                               size_t part_opacity_count,
-                              float dt);
+                              float dt,
+                              struct UgoeError *error);
 
 // 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、物理の段に入る直前のパラメータの値 (パラメータの番号の順。
 // `ugoe::Puppet::values_before_physics`) を `out` (`capacity` 個) に写し、数 (パラメータの数) を `*out_count` に書く。
@@ -851,7 +939,8 @@ UgoeResult ugoe_puppet_follow(struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_values_before_physics(const struct UgoePuppet *puppet,
                                              float *out,
                                              size_t capacity,
-                                             size_t *out_count);
+                                             size_t *out_count,
+                                             struct UgoeError *error);
 
 // 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) でリップシンクの段が当てた音量を `*out_level`、強さ (エフェクトグループ `LipSync`
 // の強さ) を `*out_strength` に書く (`ugoe::Puppet::lip_sync_applied`)。受け手の `ugoe_puppet_follow` の `lip_sync_level` と
@@ -865,7 +954,8 @@ UgoeResult ugoe_puppet_values_before_physics(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out_level` と `out_strength` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_lip_sync_applied(const struct UgoePuppet *puppet,
                                         float *out_level,
-                                        float *out_strength);
+                                        float *out_strength,
+                                        struct UgoeError *error);
 
 // 指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、モーションのパーツの不透明度のカーブが値を求めたパーツ (カーブのあるパーツだけ。
 // `ugoe::Puppet::part_opacities_applied`) を `out` (`capacity` 個) に写し、数を `*out_count` に書く。受け手の
@@ -881,14 +971,17 @@ UgoeResult ugoe_puppet_lip_sync_applied(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_part_opacities_applied(const struct UgoePuppet *puppet,
                                               struct UgoePartOpacityInput *out,
                                               size_t capacity,
-                                              size_t *out_count);
+                                              size_t *out_count,
+                                              struct UgoeError *error);
 
 // 当たり判定 (`Model::hit_areas`) の数。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_hit_area_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_hit_area_count(const struct UgoePuppet *puppet,
+                                      uint32_t *out,
+                                      struct UgoeError *error);
 
 // `index` 番目の当たり判定の ID (UTF-8、NUL 終端)。ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 //
@@ -897,7 +990,8 @@ UgoeResult ugoe_puppet_hit_area_count(const struct UgoePuppet *puppet, uint32_t 
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_hit_area_id(const struct UgoePuppet *puppet,
                                    uint32_t index,
-                                   const char **out);
+                                   const char **out,
+                                   struct UgoeError *error);
 
 // 点 `(x, y)` を含む当たり判定の番号を、手前から順に `out` (`capacity` 個) に書く。`*out_count` には
 // 当たった数を書く。`capacity` が足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く
@@ -912,7 +1006,8 @@ UgoeResult ugoe_puppet_hit_areas_at(const struct UgoePuppet *puppet,
                                     float y,
                                     uint32_t *out,
                                     size_t capacity,
-                                    size_t *out_count);
+                                    size_t *out_count,
+                                    struct UgoeError *error);
 
 // ID が `id` (UTF-8、NUL 終端) の当たり判定が点 `(x, y)` を含むか。知らない ID なら `UGOE_ERROR_NOT_FOUND`。
 //
@@ -923,7 +1018,8 @@ UgoeResult ugoe_puppet_hit_test(const struct UgoePuppet *puppet,
                                 const char *id,
                                 float x,
                                 float y,
-                                bool *out);
+                                bool *out,
+                                struct UgoeError *error);
 
 // 標準の当たり判定の名前 `name` (`"Head"`・`"Body"`。`Model.avatar.hit_areas`) に対応する当たり判定の番号。
 // 対応が無ければ `UGOE_ERROR_NOT_FOUND`。ID は `ugoe_puppet_hit_area_id` で得る。
@@ -933,7 +1029,8 @@ UgoeResult ugoe_puppet_hit_test(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`name` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_standard_hit_area(const struct UgoePuppet *puppet,
                                          const char *name,
-                                         uint32_t *out);
+                                         uint32_t *out,
+                                         struct UgoeError *error);
 
 // 標準の名前 `name` の当たり判定が点 `(x, y)` を含むか。対応が無ければ false (エラーにしない。
 // `ugoe::Puppet::hit_test_standard` と同じ)。
@@ -945,7 +1042,8 @@ UgoeResult ugoe_puppet_hit_test_standard(const struct UgoePuppet *puppet,
                                          const char *name,
                                          float x,
                                          float y,
-                                         bool *out);
+                                         bool *out,
+                                         struct UgoeError *error);
 
 // 既定の画像のデコードの上限 (`limits` に NULL を渡したときの値)。
 struct UgoeImageLimits ugoe_image_limits_default(void);
@@ -961,7 +1059,7 @@ struct UgoeImageLimits ugoe_image_limits_default(void);
 // - `premultiply`: true なら乗算済みアルファにする (描画するテクスチャ。参照と同じ整数の丸め)。法線マップは false
 //   (アルファを掛けない)。
 //
-// 失敗したときの戻り値と種類 (`ugoe_last_error_kind`):
+// 失敗したときの戻り値と種類 (`ugoe_error_kind`):
 //
 // - `UGOE_ERROR_LIMIT_EXCEEDED`・`"image_limit_exceeded"`: 一辺が上限を超える (補足の値 `width`・`height`・`max`)。
 // - `UGOE_ERROR_FORMAT`・`"unsupported_texture"`: 読める KTX2 だが、デコードしない形式 (ETC2・ASTC など)。白で代用するとよい。
@@ -976,7 +1074,8 @@ UgoeResult ugoe_image_decode(uint32_t format,
                              size_t len,
                              const struct UgoeImageLimits *limits,
                              bool premultiply,
-                             struct UgoeImage **out);
+                             struct UgoeImage **out,
+                             struct UgoeError *error);
 
 // `ugoe_image_decode` で作った画像を解放する。NULL なら何もしない。
 //
@@ -992,7 +1091,8 @@ void ugoe_image_destroy(struct UgoeImage *image);
 // `image` は有効な `UgoeImage`、`out_width` と `out_height` は書き込める領域を指すこと。
 UgoeResult ugoe_image_size(const struct UgoeImage *image,
                            uint32_t *out_width,
-                           uint32_t *out_height);
+                           uint32_t *out_height,
+                           struct UgoeError *error);
 
 // 画像の画素 (`width * height * 4` バイト。R・G・B・A の順で、左上から行の順)。ポインタは `UgoeImage` を解放するまで有効。
 //
@@ -1001,7 +1101,8 @@ UgoeResult ugoe_image_size(const struct UgoeImage *image,
 // `image` は有効な `UgoeImage`、`out` と `out_len` は書き込める領域を指すこと。
 UgoeResult ugoe_image_pixels(const struct UgoeImage *image,
                              const uint8_t **out,
-                             size_t *out_len);
+                             size_t *out_len,
+                             struct UgoeError *error);
 
 // 光源の組を検査し、シェーダに渡す形 (`UgoeLightingUniform`) にする。陰影の式は
 // `docs/spec/rendering.md#ライティング` (参照シェーダと同じ)。
@@ -1020,7 +1121,8 @@ UgoeResult ugoe_image_pixels(const struct UgoeImage *image,
 UgoeResult ugoe_lighting_uniform(const float *ambient,
                                  const struct UgoeLight *lights,
                                  size_t count,
-                                 struct UgoeLightingUniform *out);
+                                 struct UgoeLightingUniform *out,
+                                 struct UgoeError *error);
 
 // このモデルにライティングを受けるメッシュがあるか (`Model::lighting` と `Mesh::lit` の両方が true。
 // `ugoe::Puppet::uses_lighting`)。光源の操作を出すかの判断に使う。
@@ -1029,7 +1131,8 @@ UgoeResult ugoe_lighting_uniform(const float *ambient,
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_uses_lighting(const struct UgoePuppet *puppet,
-                                     bool *out);
+                                     bool *out,
+                                     struct UgoeError *error);
 
 // `index` 番目の描画可能要素がライティングを受けるか (`Model::lighting` と `Mesh::lit` の両方が true)。
 // 受けない要素には陰影を掛けない。受ける要素は、テクスチャの法線マップ (`ugoe_puppet_normal_map`) を読むか、
@@ -1040,7 +1143,8 @@ UgoeResult ugoe_puppet_uses_lighting(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_drawable_lit(const struct UgoePuppet *puppet,
                                     uint32_t index,
-                                    bool *out);
+                                    bool *out,
+                                    struct UgoeError *error);
 
 // 既定の読み込みの上限 (上限を指定しない関数が使う値)。
 struct UgoeReadLimits ugoe_read_limits_default(void);
@@ -1050,7 +1154,9 @@ struct UgoeReadLimits ugoe_read_limits_default(void);
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_part_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_part_count(const struct UgoePuppet *puppet,
+                                  uint32_t *out,
+                                  struct UgoeError *error);
 
 // `index` 番目のパーツの ID (UTF-8、NUL 終端)。ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 //
@@ -1059,7 +1165,8 @@ UgoeResult ugoe_puppet_part_count(const struct UgoePuppet *puppet, uint32_t *out
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_part_id(const struct UgoePuppet *puppet,
                                uint32_t index,
-                               const char **out);
+                               const char **out,
+                               struct UgoeError *error);
 
 // ID (UTF-8、NUL 終端) からパーツの番号を引く。無ければ `UGOE_ERROR_NOT_FOUND`。
 //
@@ -1068,7 +1175,8 @@ UgoeResult ugoe_puppet_part_id(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`id` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_part_index(const struct UgoePuppet *puppet,
                                   const char *id,
-                                  uint32_t *out);
+                                  uint32_t *out,
+                                  struct UgoeError *error);
 
 // 直前の `ugoe_puppet_update` が `index` 番目のパーツに書いた不透明度の上書き (モーションのパーツの不透明度の
 // カーブとポーズの結果。`docs/spec/motion.md#フレーム内の適用順`)。評価に渡した値で、公開仕様の時間の例の
@@ -1079,7 +1187,8 @@ UgoeResult ugoe_puppet_part_index(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_part_opacity(const struct UgoePuppet *puppet,
                                     uint32_t index,
-                                    struct UgoePartOpacity *out);
+                                    struct UgoePartOpacity *out,
+                                    struct UgoeError *error);
 
 // 直前の評価 (`ugoe_puppet_update` か着せ替えの操作) での `index` 番目のパーツの不透明度。上書きを当てた自身の値に
 // 祖先の値を掛けたもので、そのパーツのメッシュの不透明度に掛かる (`docs/spec/evaluation.md` の 2.、
@@ -1090,7 +1199,8 @@ UgoeResult ugoe_puppet_part_opacity(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_part_evaluated_opacity(const struct UgoePuppet *puppet,
                                               uint32_t index,
-                                              float *out);
+                                              float *out,
+                                              struct UgoeError *error);
 
 // ポーズで、`part` (UTF-8、NUL 終端) を `part` に持つ要素をそのグループの表示中の要素にする
 // (`links` のパーツは対象外)。不透明度は次の `ugoe_puppet_update` からフェードで近づく。
@@ -1105,7 +1215,8 @@ UgoeResult ugoe_puppet_part_evaluated_opacity(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`part` は NUL 終端の文字列、`out_shown` は NULL か書き込める領域を指すこと。
 UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
                                  const char *part,
-                                 bool *out_shown);
+                                 bool *out_shown,
+                                 struct UgoeError *error);
 
 // ポーズのグループの数 (着せ替えで付けたモジュールのグループを含む、合成したモデルのポーズ)。
 //
@@ -1113,7 +1224,8 @@ UgoeResult ugoe_puppet_show_pose(struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_pose_group_count(const struct UgoePuppet *puppet,
-                                        uint32_t *out);
+                                        uint32_t *out,
+                                        struct UgoeError *error);
 
 // ポーズの `group` 番目のグループで表示中の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で `out` に書く
 // (`ugoe::motion::PosePlayer::visible_parts`、`docs/spec/motion.md#ポーズ`)。`ugoe_puppet_show_pose` で選んだ要素は
@@ -1126,7 +1238,8 @@ UgoeResult ugoe_puppet_pose_group_count(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_pose_visible_part(const struct UgoePuppet *puppet,
                                          uint32_t group,
-                                         uint32_t *out);
+                                         uint32_t *out,
+                                         struct UgoeError *error);
 
 // ポーズの `group` 番目のグループの要素の数 (合成したモデルのポーズ。`docs/spec/motion.md#ポーズ`)。
 //
@@ -1137,7 +1250,8 @@ UgoeResult ugoe_puppet_pose_visible_part(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_pose_entry_count(const struct UgoePuppet *puppet,
                                         uint32_t group,
-                                        uint32_t *out);
+                                        uint32_t *out,
+                                        struct UgoeError *error);
 
 // ポーズの `group` 番目のグループの `entry` 番目の要素の `part` を、パーツの番号 (`ugoe_puppet_part_id` の番号) で
 // `out` に書く (`docs/spec/motion.md#ポーズ`)。要素の並びはモデルの `entries` の並びで、先頭が初めに表示する要素。
@@ -1151,14 +1265,15 @@ UgoeResult ugoe_puppet_pose_entry_count(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_pose_entry_part(const struct UgoePuppet *puppet,
                                        uint32_t group,
                                        uint32_t entry,
-                                       uint32_t *out);
+                                       uint32_t *out,
+                                       struct UgoeError *error);
 
 // `.ugoe` バンドルのバイト列から `UgoePuppet` を作る。
 //
 // バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 // 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
 // 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
-// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_last_error_kind`) と
+// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_error_kind`) と
 // 補足の値は wasm の `LoadError` と同じ (crates/ugoe-ffi/README.md の「モデルの読み込みの失敗」。T0457)。
 //
 // # Safety
@@ -1166,7 +1281,8 @@ UgoeResult ugoe_puppet_pose_entry_part(const struct UgoePuppet *puppet,
 // `bytes` は `len` バイトの読める領域を指すこと。`out` は `UgoePuppet*` を書き込める領域を指すこと。
 UgoeResult ugoe_puppet_create_from_bundle(const uint8_t *bytes,
                                           size_t len,
-                                          struct UgoePuppet **out);
+                                          struct UgoePuppet **out,
+                                          struct UgoeError *error);
 
 // 読み込みの上限 `limits` を指定して、`.ugoe` バンドルのバイト列から `UgoePuppet` を作る (T0152)。
 //
@@ -1181,7 +1297,8 @@ UgoeResult ugoe_puppet_create_from_bundle(const uint8_t *bytes,
 UgoeResult ugoe_puppet_create_from_bundle_with_limits(const uint8_t *bytes,
                                                       size_t len,
                                                       const struct UgoeReadLimits *limits,
-                                                      struct UgoePuppet **out);
+                                                      struct UgoePuppet **out,
+                                                      struct UgoeError *error);
 
 // モデルの JSON (UTF-8、`len` バイト。NUL 終端は要らない) から `UgoePuppet` を作る。
 //
@@ -1194,7 +1311,8 @@ UgoeResult ugoe_puppet_create_from_bundle_with_limits(const uint8_t *bytes,
 // `json` は `len` バイトの読める領域を指すこと。`out` は `UgoePuppet*` を書き込める領域を指すこと。
 UgoeResult ugoe_puppet_create_from_json(const uint8_t *json,
                                         size_t len,
-                                        struct UgoePuppet **out);
+                                        struct UgoePuppet **out,
+                                        struct UgoeError *error);
 
 // `UgoePuppet` を破棄する。NULL なら何もしない。破棄した後は、このオブジェクトから借りたポインタも無効になる。
 //
@@ -1208,7 +1326,9 @@ void ugoe_puppet_destroy(struct UgoePuppet *puppet);
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_canvas(const struct UgoePuppet *puppet, struct UgoeCanvas *out);
+UgoeResult ugoe_puppet_canvas(const struct UgoePuppet *puppet,
+                              struct UgoeCanvas *out,
+                              struct UgoeError *error);
 
 // 1 フレーム進める (モーション → 表情 → 目パチ・呼吸 → 物理 → リップシンク → ポーズ → 評価。
 // `docs/spec/motion.md#フレーム内の適用順`)。`dt` は前のフレームからの経過秒数。
@@ -1219,14 +1339,17 @@ UgoeResult ugoe_puppet_canvas(const struct UgoePuppet *puppet, struct UgoeCanvas
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_update(struct UgoePuppet *puppet,
-                              float dt);
+                              float dt,
+                              struct UgoeError *error);
 
 // パラメータの数。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_parameter_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_parameter_count(const struct UgoePuppet *puppet,
+                                       uint32_t *out,
+                                       struct UgoeError *error);
 
 // `index` 番目のパラメータの ID (UTF-8、NUL 終端)。ポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効。
 //
@@ -1235,7 +1358,8 @@ UgoeResult ugoe_puppet_parameter_count(const struct UgoePuppet *puppet, uint32_t
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_parameter_id(const struct UgoePuppet *puppet,
                                     uint32_t index,
-                                    const char **out);
+                                    const char **out,
+                                    struct UgoeError *error);
 
 // ID (UTF-8、NUL 終端) からパラメータの番号を引く。無ければ `UGOE_ERROR_NOT_FOUND`。
 //
@@ -1244,7 +1368,8 @@ UgoeResult ugoe_puppet_parameter_id(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`id` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_parameter_index(const struct UgoePuppet *puppet,
                                        const char *id,
-                                       uint32_t *out);
+                                       uint32_t *out,
+                                       struct UgoeError *error);
 
 // `index` 番目のパラメータの範囲と既定値。
 //
@@ -1253,14 +1378,18 @@ UgoeResult ugoe_puppet_parameter_index(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_parameter_info(const struct UgoePuppet *puppet,
                                       uint32_t index,
-                                      struct UgoeParameterInfo *out);
+                                      struct UgoeParameterInfo *out,
+                                      struct UgoeError *error);
 
 // `index` 番目のパラメータの現在の値。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_get_parameter(const struct UgoePuppet *puppet, uint32_t index, float *out);
+UgoeResult ugoe_puppet_get_parameter(const struct UgoePuppet *puppet,
+                                     uint32_t index,
+                                     float *out,
+                                     struct UgoeError *error);
 
 // `index` 番目のパラメータに値を設定する (範囲に丸める)。次の `ugoe_puppet_update` から、
 // モーションなどを重ねる基準の値になる (`docs/spec/motion.md#フレーム内の適用順`)。
@@ -1270,7 +1399,8 @@ UgoeResult ugoe_puppet_get_parameter(const struct UgoePuppet *puppet, uint32_t i
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_set_parameter(struct UgoePuppet *puppet,
                                      uint32_t index,
-                                     float value);
+                                     float value,
+                                     struct UgoeError *error);
 
 // リップシンクの音量 (0〜1) を設定する。`value` が負なら入力をやめ、
 // リップシンクは口のパラメータに触らなくなる。音声の解析はホストが行う。
@@ -1279,14 +1409,17 @@ UgoeResult ugoe_puppet_set_parameter(struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_set_lip_sync_level(struct UgoePuppet *puppet,
-                                          float value);
+                                          float value,
+                                          struct UgoeError *error);
 
 // バンドルに入っていたモーションの数 (JSON から作ったときは 0)。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_motion_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_motion_count(const struct UgoePuppet *puppet,
+                                    uint32_t *out,
+                                    struct UgoeError *error);
 
 // `index` 番目のモーションの名前 (UTF-8、NUL 終端)。ポインタは `UgoePuppet` を破棄するまで有効。
 //
@@ -1295,7 +1428,8 @@ UgoeResult ugoe_puppet_motion_count(const struct UgoePuppet *puppet, uint32_t *o
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_motion_name(const struct UgoePuppet *puppet,
                                    uint32_t index,
-                                   const char **out);
+                                   const char **out,
+                                   struct UgoeError *error);
 
 // `index` 番目のモーションを優先度 `priority` (`UGOE_PRIORITY_*`) で開始する。
 // 再生中のモーションより低い優先度で開始しなかったときは、`*started` に false を書く
@@ -1307,14 +1441,17 @@ UgoeResult ugoe_puppet_motion_name(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_start_motion(struct UgoePuppet *puppet,
                                     uint32_t index,
                                     uint32_t priority,
-                                    bool *started);
+                                    bool *started,
+                                    struct UgoeError *error);
 
 // バンドルに入っていた表情の数 (JSON から作ったときは 0)。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_expression_count(const struct UgoePuppet *puppet, uint32_t *out);
+UgoeResult ugoe_puppet_expression_count(const struct UgoePuppet *puppet,
+                                        uint32_t *out,
+                                        struct UgoeError *error);
 
 // `index` 番目の表情の名前 (UTF-8、NUL 終端)。ポインタは `UgoePuppet` を破棄するまで有効。
 //
@@ -1323,7 +1460,8 @@ UgoeResult ugoe_puppet_expression_count(const struct UgoePuppet *puppet, uint32_
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_expression_name(const struct UgoePuppet *puppet,
                                        uint32_t index,
-                                       const char **out);
+                                       const char **out,
+                                       struct UgoeError *error);
 
 // 表情を `index` 番目の表情だけにする (使用中の表情はフェードアウトする)。
 //
@@ -1331,14 +1469,15 @@ UgoeResult ugoe_puppet_expression_name(const struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_set_expression(struct UgoePuppet *puppet,
-                                      uint32_t index);
+                                      uint32_t index,
+                                      struct UgoeError *error);
 
 // 使用中の表情をすべてフェードアウトさせる (表情の解除)。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
-UgoeResult ugoe_puppet_stop_expressions(struct UgoePuppet *puppet);
+UgoeResult ugoe_puppet_stop_expressions(struct UgoePuppet *puppet, struct UgoeError *error);
 
 // ID (UTF-8、NUL 終端) で複数のパラメータに値を設定する (範囲に丸める)。`ids` と `values` は `count` 個ずつ。
 // 知らない ID は飛ばし、設定した数を `*out_applied` に書く (`out_applied` は NULL でもよい)。
@@ -1353,7 +1492,8 @@ UgoeResult ugoe_puppet_set_parameters_by_id(struct UgoePuppet *puppet,
                                             const char *const *ids,
                                             const float *values,
                                             size_t count,
-                                            size_t *out_applied);
+                                            size_t *out_applied,
+                                            struct UgoeError *error);
 
 // `ugoe_puppet_update` の段 `stage` (`UGOE_STAGE_*`) を動かすか (既定はすべて動かす)。
 // 止めた段はパラメータ・パーツの不透明度に触らない (`docs/spec/motion.md#段の有効無効`)。
@@ -1364,7 +1504,8 @@ UgoeResult ugoe_puppet_set_parameters_by_id(struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_set_stage_enabled(struct UgoePuppet *puppet,
                                          uint32_t stage,
-                                         bool enabled);
+                                         bool enabled,
+                                         struct UgoeError *error);
 
 // 読み込みの警告の数 (読み込みは成功しているが、表示が劣化しうること)。JSON から作ったときは 0。
 //
@@ -1372,7 +1513,8 @@ UgoeResult ugoe_puppet_set_stage_enabled(struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_load_warning_count(const struct UgoePuppet *puppet,
-                                          uint32_t *out);
+                                          uint32_t *out,
+                                          struct UgoeError *error);
 
 // `index` 番目の読み込みの警告 (`code` は wasm の `load_warnings_json` と同じ)。
 // 文字列は `UgoePuppet` を破棄するまで有効。
@@ -1382,7 +1524,8 @@ UgoeResult ugoe_puppet_load_warning_count(const struct UgoePuppet *puppet,
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_puppet_load_warning(const struct UgoePuppet *puppet,
                                     uint32_t index,
-                                    struct UgoeWarning *out);
+                                    struct UgoeWarning *out,
+                                    struct UgoeError *error);
 
 // `index` 番目の読み込みの警告の補足の値 `key` (UTF-8、NUL 終端。`"texture"`・`"feature"`・`"path"`)。
 // 数も 10 進の文字列で返す。その警告が `key` を持たなければ `UGOE_ERROR_NOT_FOUND`。
@@ -1394,7 +1537,8 @@ UgoeResult ugoe_puppet_load_warning(const struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_load_warning_field(const struct UgoePuppet *puppet,
                                           uint32_t index,
                                           const char *key,
-                                          const char **out);
+                                          const char **out,
+                                          struct UgoeError *error);
 
 // フェイストラッキングの入力を設定する。`input` が NULL なら入力をやめる (トラッキングでパラメータに触らない)。
 //
@@ -1407,7 +1551,8 @@ UgoeResult ugoe_puppet_load_warning_field(const struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet`、`input` は NULL か読める `UgoeTrackingInput` を指すこと。
 UgoeResult ugoe_puppet_set_tracking(struct UgoePuppet *puppet,
-                                    const struct UgoeTrackingInput *input);
+                                    const struct UgoeTrackingInput *input,
+                                    struct UgoeError *error);
 
 // トラッキングが書き込むパラメータの番号 (昇順) を `out` (`capacity` 個) に書き、数を `*out_count` に書く。
 // 足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` を返し、`*out_count` だけを書く (`ugoe_puppet_hit_areas_at` と同じ)。
@@ -1419,7 +1564,8 @@ UgoeResult ugoe_puppet_set_tracking(struct UgoePuppet *puppet,
 UgoeResult ugoe_puppet_tracking_targets(const struct UgoePuppet *puppet,
                                         uint32_t *out,
                                         size_t capacity,
-                                        size_t *out_count);
+                                        size_t *out_count,
+                                        struct UgoeError *error);
 
 // トラッキング中に、再生中のモーションが動かすパラメータではモーションを優先するか (既定は `false`。T0722)。
 //
@@ -1432,14 +1578,17 @@ UgoeResult ugoe_puppet_tracking_targets(const struct UgoePuppet *puppet,
 //
 // `puppet` は有効な `UgoePuppet` を指すこと。
 UgoeResult ugoe_puppet_set_motion_over_tracking(struct UgoePuppet *puppet,
-                                                bool enabled);
+                                                bool enabled,
+                                                struct UgoeError *error);
 
 // `ugoe_puppet_set_motion_over_tracking` で設定した値を `*out` に書く。
 //
 // # Safety
 //
 // `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
-UgoeResult ugoe_puppet_motion_over_tracking(const struct UgoePuppet *puppet, bool *out);
+UgoeResult ugoe_puppet_motion_over_tracking(const struct UgoePuppet *puppet,
+                                            bool *out,
+                                            struct UgoeError *error);
 
 // モーションを優先しても (`ugoe_puppet_set_motion_over_tracking`)、トラッキングのままにするパラメータを、
 // パラメータの番号 `indices` (`count` 個) で設定する (目は除く、など。既定は無し)。`count` が 0 なら無しに戻す
@@ -1450,7 +1599,8 @@ UgoeResult ugoe_puppet_motion_over_tracking(const struct UgoePuppet *puppet, boo
 // `puppet` は有効な `UgoePuppet`、`indices` は `count` 個の `uint32_t` を読める領域を指すこと。
 UgoeResult ugoe_puppet_set_tracking_kept(struct UgoePuppet *puppet,
                                          const uint32_t *indices,
-                                         size_t count);
+                                         size_t count,
+                                         struct UgoeError *error);
 
 // `index` 番目の ARKit のブレンドシェイプの名前 (UTF-8、NUL 終端。`"eyeBlinkLeft"` など)。
 // ポインタはずっと有効。
@@ -1459,7 +1609,8 @@ UgoeResult ugoe_puppet_set_tracking_kept(struct UgoePuppet *puppet,
 //
 // `out` は書き込める領域を指すこと。
 UgoeResult ugoe_blend_shape_name(uint32_t index,
-                                 const char **out);
+                                 const char **out,
+                                 struct UgoeError *error);
 
 // 名前 (UTF-8、NUL 終端) から ARKit のブレンドシェイプの添字を引く。MediaPipe Face Landmarker の
 // カテゴリ名はそのまま使える。知らない名前 (`_neutral` など) なら `UGOE_ERROR_NOT_FOUND`。
@@ -1468,7 +1619,8 @@ UgoeResult ugoe_blend_shape_name(uint32_t index,
 //
 // `name` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
 UgoeResult ugoe_blend_shape_index(const char *name,
-                                  uint32_t *out);
+                                  uint32_t *out,
+                                  struct UgoeError *error);
 
 #ifdef __cplusplus
 }  // extern "C"

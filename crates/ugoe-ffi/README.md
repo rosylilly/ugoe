@@ -20,24 +20,24 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
 静的ライブラリをリンクするときは、Linux ではさらに `-lm -lpthread -ldl` が要る。
 
 ```c
+UgoeError *err = ugoe_error_create();
 UgoePuppet *puppet = NULL;
-if (ugoe_puppet_create_from_bundle(bytes, len, &puppet) != UGOE_OK) {
-    fprintf(stderr, "%s\n", ugoe_last_error());
+if (ugoe_puppet_create_from_bundle(bytes, len, &puppet, err) != UGOE_OK) {
+    fprintf(stderr, "%s\n", ugoe_error_message(err));
 }
-ugoe_puppet_set_parameter(puppet, index, value);
-ugoe_puppet_update(puppet, dt);
+ugoe_puppet_set_parameter(puppet, index, value, err);
+ugoe_puppet_update(puppet, dt, NULL);  /* 結果コードだけで足りるなら NULL */
 const float *xy; size_t n;
-ugoe_puppet_positions(puppet, drawable, &xy, &n);  /* 次の update まで有効 */
+ugoe_puppet_positions(puppet, drawable, &xy, &n, err);  /* 次の update まで有効 */
 ugoe_puppet_destroy(puppet);
+ugoe_error_destroy(err);
 ```
 
 動く見本は [`examples/c/sample.c`](examples/c/sample.c) (`just ffi-check` でビルドし、`assets/samples/avatar.ugoe`・
 法線マップ付きの `avatar-lit.ugoe`・着せ替えの `dress-up/` (本体とモジュール) で実行する)。
 
-- 関数は `UgoeResult` (`UGOE_OK` = 0) を返し、失敗したら同じスレッドの `ugoe_last_error()` でメッセージを得る。
-  種類を持つ失敗 (着せ替え・読み込み) は `ugoe_last_error_kind()` と補足の値を持つ。補足の値はキーで読む (`ugoe_last_error_field("slot")`) ほか、
-  `ugoe_last_error_field_count()` と `ugoe_last_error_field_key_at(i)`・`ugoe_last_error_field_value_at(i)` で、キーを知らなくても
-  すべてを列挙できる (新しい版でキーが増えても、ホストにキーの一覧を写さずに済む。T0464。足しただけなので ABI の版は上げない)。
+- 失敗しうる関数は `UgoeResult` (`UGOE_OK` = 0) を返し、最後の引数 `UgoeError *error` に失敗の中身を書く
+  ([失敗の受け取り方](#失敗の受け取り方-t0489))。
 - 内部でパニックが起きたら `UGOE_ERROR_PANIC` を返す。そのオブジェクトの状態は不定なので破棄する。
 - 頂点位置はホストのバッファへのコピー (`ugoe_puppet_copy_positions`) と、内部のバッファの借用
   (`ugoe_puppet_positions`。次の `ugoe_puppet_update` か破棄まで有効) の両方がある。
@@ -45,6 +45,38 @@ ugoe_puppet_destroy(puppet);
   ([docs/spec/rendering.md](../../docs/spec/rendering.md))。エンジンが読めない形式 (KTX2 の BCn など) は、参照と同じデコーダ
   `ugoe_image_decode` で RGBA8 にできる ([テクスチャのデコード](#テクスチャのデコード-t0466))。
 - 1 つの `UgoePuppet` を複数のスレッドから同時に使ってはならない。
+
+## 失敗の受け取り方 (T0489)
+
+失敗の中身 (メッセージ・種類・補足の値) は、呼び出し側が渡す不透明なオブジェクト `UgoeError` に書く
+([ADR 0031](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#c-abi-のエラーはスレッドローカルに置かない))。
+C ABI はグローバルな状態もスレッドローカルな状態も持たない。
+
+```c
+UgoeError *err = ugoe_error_create();
+if (ugoe_puppet_detach_module(puppet, "Hat", err) != UGOE_OK) {
+    const char *kind = ugoe_error_kind(err);           /* "not_attached" など。種類を持たない失敗なら NULL */
+    printf("%s: %s\n", kind ? kind : "-", ugoe_error_message(err));
+    for (size_t i = 0; i < ugoe_error_field_count(err); i++) {
+        printf("  %s = %s\n", ugoe_error_field_key_at(err, i), ugoe_error_field_value_at(err, i));
+    }
+}
+ugoe_error_destroy(err);
+```
+
+- **引数の形:** `UgoeResult` を返す関数は、すべて **最後の引数** に `UgoeError *error` を取る (名前も `error` で揃える)。
+  NULL なら中身を書かない (結果コードだけで足りるとき)。`void` を返す破棄の関数 (`ugoe_puppet_destroy`・`ugoe_module_destroy`・
+  `ugoe_image_destroy`) と、失敗しない関数 (`ugoe_abi_version`・`ugoe_version`・`*_default`・`ugoe_error_*`) は取らない。
+- **成功したときは中身を変えない。** 前の失敗の中身が残るので、失敗したかどうかは結果コードで判断する (毎フレームの呼び出しで書き込みをしないため)。
+- **読み出し:** `ugoe_error_message(e)` (メッセージ。まだ失敗を書いていなければ NULL)・`ugoe_error_kind(e)` (機械が読む種類。wasm と同じ `code`)・
+  `ugoe_error_field(e, key)` (補足の値)。補足の値は `ugoe_error_field_count(e)` と `ugoe_error_field_key_at(e, i)`・
+  `ugoe_error_field_value_at(e, i)` で、キーを知らなくてもすべてを列挙できる (新しい版でキーが増えても、ホストにキーの一覧を写さずに済む。T0464)。
+  読み出しの関数には NULL の `UgoeError` を渡してもよい (NULL か 0 が返る)。
+- 返る文字列は、その `UgoeError` に次の失敗を書くか、破棄するまで有効。
+- **スレッド:** `UgoeError` はスレッドに結び付かないので、どのスレッドで作り、書かせ、読んでもよい。呼び出しの間で OS のスレッドが変わる
+  ホスト (Go の goroutine・C# の async の続き) でも、失敗した呼び出しに渡した `UgoeError` から正しい中身を読める。ただし 1 つの `UgoeError` を
+  同時に複数のスレッドから使ってはならない (呼び出しごとか、スレッドごとに 1 つ持つ)。
+- 内部でパニックが起きたとき (`UGOE_ERROR_PANIC`) も、パニックのメッセージを `UgoeError` に書く。
 
 ## ヘッダの生成
 
@@ -70,21 +102,21 @@ just ffi-check    # ヘッダが最新かの検査と、C の見本のビルド�
   そのまま動く。新しい関数があるかは、ライブラリの版 (`ugoe_version()`) で確かめる。
 - そのため、構造体にフィールドを足したくなったら、既存の構造体は変えずに別の関数や構造体を足す
   (例: 描画可能要素がライティングを受けるかは `UgoeDrawableInfo` に足さず、`ugoe_puppet_drawable_lit` にした)。
-- 知らないエラーコードが返ることがある (足したもの)。0 以外はすべて失敗として扱い、`ugoe_last_error()` を出せばよい。
+- 知らないエラーコードが返ることがある (足したもの)。0 以外はすべて失敗として扱い、`ugoe_error_message` を出せばよい。
 
 ## 着せ替え (T0409)
 
 ```c
 UgoeModule *hair = NULL;
-ugoe_module_create(bytes, len, &hair);            /* .ugoemod を読む (付けはしない)。読めなければ UGOE_ERROR_FORMAT */
-if (ugoe_puppet_attach_module(puppet, hair) != UGOE_OK) {
+ugoe_module_create(bytes, len, &hair, err);            /* .ugoemod を読む (付けはしない)。読めなければ UGOE_ERROR_FORMAT */
+if (ugoe_puppet_attach_module(puppet, hair, err) != UGOE_OK) {
     /* UGOE_ERROR_DRESS_UP: 種類と補足の値は wasm の DressUpError と同じ */
-    printf("%s (%s)\n", ugoe_last_error_kind(), ugoe_last_error_field("slot"));
+    printf("%s (%s)\n", ugoe_error_kind(err), ugoe_error_field(err, "slot"));
 }
 const uint32_t *changed; size_t n;
-ugoe_puppet_changed_textures(puppet, &changed, &n); /* 画像を設定し直すテクスチャの番号 */
-ugoe_puppet_detach_module(puppet, "LongHair");
-ugoe_puppet_set_modules(puppet, list, count);       /* 付ける組をまとめて決める (合成の順)。0 個で本体だけ */
+ugoe_puppet_changed_textures(puppet, &changed, &n, err); /* 画像を設定し直すテクスチャの番号 */
+ugoe_puppet_detach_module(puppet, "LongHair", err);
+ugoe_puppet_set_modules(puppet, list, count, err);       /* 付ける組をまとめて決める (合成の順)。0 個で本体だけ */
 ugoe_module_destroy(hair);                          /* 付けたモジュールは付いたまま残る */
 ```
 
@@ -99,8 +131,8 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 - スロットは `ugoe_puppet_slot_count` / `ugoe_puppet_slot_id` (本体のもの)、付けているモジュールは
   `ugoe_puppet_attached_module_count` / `ugoe_puppet_attached_module_name` (合成の順)。
 
-失敗の種類 (`ugoe_last_error_kind()`) は wasm の `DressUpError` の `code` と同じで、同じ補足の値
-(`ugoe_last_error_field("module")`・`"slot"`・`"parameter"`・`"mesh"`・`"attached"` など) を持つ
+失敗の種類 (`ugoe_error_kind`) は wasm の `DressUpError` の `code` と同じで、同じ補足の値
+(`ugoe_error_field(err, "module")`・`"slot"`・`"parameter"`・`"mesh"`・`"attached"` など) を持つ
 ([crates/ugoe-wasm/README.md](../ugoe-wasm/README.md#着せ替え-t0123))。番号 (`texture`・`required`・`actual`・`errors`) は 10 進の文字列
 (wasm では数)、種類の一覧 (`error_codes`) は `, ` でつないだ文字列 (wasm と同じ)。無い値 (本体がアバタープロファイルを持たないときの `actual`) は NULL (T0157。キーの意味は
 [crates/ugoe/README.md](../ugoe/README.md#着せ替えの失敗の補足の値))。
@@ -124,7 +156,7 @@ ugoe_module_destroy(hair);                          /* 付けたモジュール�
 | `invalid_physics` | 同上 (物理の設定の差し替え `ugoe_puppet_set_physics_json`・`ugoe_puppet_set_base_physics_json` では `UGOE_ERROR_INVALID_MODEL`。T0469) | `errors`・`error_codes` |
 
 wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きない (モジュールはポインタで渡し、`UgoePuppet` は常にモデルを持ち、
-画像の登録はホストが行う)。種類を持たない失敗では `ugoe_last_error_kind()` は NULL。種類と補足の値の対応は SDK の
+画像の登録はホストが行う)。種類を持たない失敗では `ugoe_error_kind` は NULL。種類と補足の値の対応は SDK の
 `ugoe::DressUpError::code`・`fields` (と `INVALID_FILE`) の 1 か所にあり、wasm も同じものを使う (T0412)。
 
 ## 読み込みの上限 (T0152)
@@ -132,18 +164,18 @@ wasm にある `not_loaded`・`no_model`・`texture` は C ABI では起きな�
 ```c
 UgoeReadLimits limits = ugoe_read_limits_default();       /* 1 チャンク 256 MiB・合計 1 GiB */
 limits.max_total_decompressed = 64u * 1024 * 1024;        /* 置かれた環境に合わせて変える */
-UgoeResult r = ugoe_puppet_create_from_bundle_with_limits(bytes, len, &limits, &puppet);
+UgoeResult r = ugoe_puppet_create_from_bundle_with_limits(bytes, len, &limits, &puppet, err);
 if (r == UGOE_ERROR_LIMIT_EXCEEDED) {
-    /* ugoe_last_error_kind() は "read_limit_exceeded" */
-    printf("%s %s > %s\n", ugoe_last_error_field("chunk"), ugoe_last_error_field("limit"), ugoe_last_error_field("max"));
+    /* ugoe_error_kind(err) は "read_limit_exceeded" */
+    printf("%s %s > %s\n", ugoe_error_field(err, "chunk"), ugoe_error_field(err, "limit"), ugoe_error_field(err, "max"));
 }
-ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同じ */
+ugoe_module_create_with_limits(bytes, len, &limits, &module, err); /* .ugoemod も同じ */
 ```
 
 - 上限はファイル形式の決まりではなく、組み込む側の方針 (`docs/spec/file-formats.md#読み込みの上限`)。数えるのは圧縮したチャンクを
   展開したバイトだけで、上限を超えそうになったら展開の途中でやめる (先に確保しない)。`limits` が NULL なら既定値。
 - 上限を指定しない `ugoe_puppet_create_from_bundle`・`ugoe_module_create` は既定値で読み、超えたら同じく `UGOE_ERROR_LIMIT_EXCEEDED` を返す。
-- 種類 (`ugoe_last_error_kind()`) は `"read_limit_exceeded"`、補足の値は `"limit"` (`"chunk_decompressed"` | `"total_decompressed"`)・
+- 種類 (`ugoe_error_kind`) は `"read_limit_exceeded"`、補足の値は `"limit"` (`"chunk_decompressed"` | `"total_decompressed"`)・
   `"chunk"` (展開をやめたチャンクのタグ。`"TEXR"` など)・`"max"` (超えた上限のバイト数、10 進)。値は SDK の
   `ugoe::limits::ReadLimitExceeded` で、wasm の読み込みのエラーの `code` と同じ。
 - PNG の大きさの上限 (wasm の `max_image_side`) は読み込みには無い。読み込みは画像をデコードせず、エンコードされたまま渡すので、デコードの上限はホストが決める
@@ -154,22 +186,22 @@ ugoe_module_create_with_limits(bytes, len, &limits, &module); /* .ugoemod も同
 ## モデルの読み込みの失敗 (T0457)
 
 ```c
-UgoeResult r = ugoe_puppet_create_from_bundle(bytes, len, &puppet);
+UgoeResult r = ugoe_puppet_create_from_bundle(bytes, len, &puppet, err);
 if (r != UGOE_OK) {
-    const char *kind = ugoe_last_error_kind(); /* "unsupported_version" など。NULL なら種類なし */
+    const char *kind = ugoe_error_kind(err); /* "unsupported_version" など。NULL なら種類なし */
     if (kind && strcmp(kind, "unsupported_version") == 0)
-        printf("version %s > %s\n", ugoe_last_error_field("found"), ugoe_last_error_field("supported"));
+        printf("version %s > %s\n", ugoe_error_field(err, "found"), ugoe_error_field(err, "supported"));
 }
 ```
 
 `ugoe_puppet_create_from_bundle`・`ugoe_puppet_create_from_bundle_with_limits`・`ugoe_puppet_create_from_json` の失敗は、種類
-(`ugoe_last_error_kind()`) と補足の値 (`ugoe_last_error_field`) を持つ。値は wasm の `LoadError` の `code` と同じで
+(`ugoe_error_kind`) と補足の値 (`ugoe_error_field`) を持つ。値は wasm の `LoadError` の `code` と同じで
 ([crates/ugoe-wasm/README.md](../ugoe-wasm/README.md#読み込みの失敗-t0434))、SDK の `ugoe::LoadError` (`code()`・`fields()`) の 1 か所で決める。
 補足の値は 10 進の文字列 (wasm では数)。戻り値は T0457 の前と同じ (種類を足しただけなので ABI の版は上げない)。
 
 | 種類 | 戻り値 | 補足の値 | いつ |
 | --- | --- | --- | --- |
-| `invalid_file` | `UGOE_ERROR_FORMAT` | | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど。細かい理由は `ugoe_last_error()` にだけある) |
+| `invalid_file` | `UGOE_ERROR_FORMAT` | | ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど。細かい理由は `ugoe_error_message` にだけある) |
 | `unsupported_version` | 同上 | `found` (ファイルの版)・`supported` (読める版) | ファイルの版 (スキーマかコンテナ) が新しすぎる |
 | `unsupported_features` | 同上 | `features` (知らない必須の機能の ID を `", "` でつないだもの) | 知らない必須の機能を宣言している |
 | `invalid_model` | `UGOE_ERROR_FORMAT` (バンドルを読むときの検査)・`UGOE_ERROR_INVALID_MODEL` (コンパイルの前の検査。JSON はここ) | `errors` (検査のエラーの数)・`error_codes` (検査のエラーの種類を `", "` でつないだもの。着せ替えの `invalid_physics` と同じ。T0469) | モデル・物理・モーション・表情が検査に通らない |
@@ -178,7 +210,7 @@ if (r != UGOE_OK) {
 
 - wasm の `image_limit_exceeded`・`invalid_texture`・`texture_too_large`・`texture`・`device_lost` はモデルの読み込みでは起きない (画像をデコードせず、
   レンダラを持たない)。`image_limit_exceeded`・`invalid_texture` は `ugoe_image_decode` の失敗の種類にある ([テクスチャのデコード](#テクスチャのデコード-t0466))。
-- 引数の誤り (NULL・UTF-8 でない JSON) は種類を持たない (`ugoe_last_error_kind()` は NULL)。
+- 引数の誤り (NULL・UTF-8 でない JSON) は種類を持たない (`ugoe_error_kind` は NULL)。
 - `.ugoemod` の読み込み (`ugoe_module_create`) は今までどおり、上限を超えたものだけ `read_limit_exceeded` で、ほかは `invalid_file`
   ([着せ替え](#着せ替え-t0409)。wasm の `load_module` と同じ)。
 - テストは `tests/load_errors.rs`。
@@ -187,17 +219,17 @@ if (r != UGOE_OK) {
 
 ```c
 UgoeTexture texture;
-ugoe_puppet_texture(puppet, index, &texture);            /* エンコードされたまま (PNG・KTX2) */
+ugoe_puppet_texture(puppet, index, &texture, err);            /* エンコードされたまま (PNG・KTX2) */
 UgoeImage *image = NULL;
 UgoeResult r = ugoe_image_decode(texture.format, texture.data, texture.len,
-                                 NULL /* 既定の上限 */, true /* 乗算済みにする */, &image);
+                                 NULL /* 既定の上限 */, true /* 乗算済みにする */, &image, err);
 if (r == UGOE_OK) {
     uint32_t w, h; const uint8_t *rgba; size_t len;
-    ugoe_image_size(image, &w, &h);
-    ugoe_image_pixels(image, &rgba, &len);               /* w * h * 4 バイト、上の行が先。ugoe_image_destroy まで有効 */
+    ugoe_image_size(image, &w, &h, err);
+    ugoe_image_pixels(image, &rgba, &len, err);               /* w * h * 4 バイト、上の行が先。ugoe_image_destroy まで有効 */
     upload(rgba, w, h);
     ugoe_image_destroy(image);
-} else if (strcmp(ugoe_last_error_kind(), "unsupported_texture") == 0) {
+} else if (strcmp(ugoe_error_kind(err), "unsupported_texture") == 0) {
     /* ETC2・ASTC など。白 (法線マップなら平ら) で代用する */
 }
 ```
@@ -211,7 +243,7 @@ if (r == UGOE_OK) {
 - 上限は `UgoeImageLimits` (`max_side`、既定は一辺 16384。`ugoe_image_limits_default`)。NULL なら既定値。超える画像は画素を確保する前に失敗にする。
 - 結果は不透明な `UgoeImage` で、`ugoe_image_destroy` で解放する (画素のポインタはそこまで有効)。
 
-| 種類 (`ugoe_last_error_kind()`) | 戻り値 | 補足の値 | いつ |
+| 種類 (`ugoe_error_kind`) | 戻り値 | 補足の値 | いつ |
 | --- | --- | --- | --- |
 | `image_limit_exceeded` | `UGOE_ERROR_LIMIT_EXCEEDED` | `width`・`height`・`max` | 一辺が上限を超える (wasm の同じ種類はさらに `image`・`texture` を持つ) |
 | `unsupported_texture` | `UGOE_ERROR_FORMAT` | | 読める KTX2 だが、デコードしない形式 (ETC2・ASTC・BC6H・Basis Universal など)。wasm では読み込みの警告 `texture_ktx2`・`normal_map_ktx2` |
@@ -284,22 +316,22 @@ if (r == UGOE_OK) {
 ## モーションのイベントと物理の設定 (T0412)
 
 ```c
-CHECK(ugoe_puppet_update(puppet, dt));
+CHECK(ugoe_puppet_update(puppet, dt, err));
 uint32_t n = 0;
-ugoe_puppet_motion_event_count(puppet, &n);          /* 直前の update で発火したイベント */
+ugoe_puppet_motion_event_count(puppet, &n, err);          /* 直前の update で発火したイベント */
 for (uint32_t i = 0; i < n; i++) {
     UgoeMotionEvent e;
-    ugoe_puppet_motion_event(puppet, i, &e);          /* e.time (モーションの中の秒)・e.value (次の update まで有効) */
+    ugoe_puppet_motion_event(puppet, i, &e, err);          /* e.time (モーションの中の秒)・e.value (次の update まで有効) */
     UgoeMotionEventSource s;
-    ugoe_puppet_motion_event_source(puppet, i, &s);   /* 発火したモーション: s.motion (名前)・s.number (始めた番号。T0462) */
+    ugoe_puppet_motion_event_source(puppet, i, &s, err);   /* 発火したモーション: s.motion (名前)・s.number (始めた番号。T0462) */
 }
 
 size_t len = 0;
-ugoe_puppet_physics_json(puppet, NULL, 0, &len);      /* 物理が無ければ len == 0。あれば UGOE_ERROR_BUFFER_TOO_SMALL */
-ugoe_puppet_set_physics_json(puppet, json, json_len); /* *.physics.json の形で差し替える。NULL で外す */
-ugoe_puppet_reset_physics(puppet);                    /* 粒子を初期姿勢に戻す */
-ugoe_puppet_set_base_physics_json(puppet, json, json_len); /* 本体の設定を差し替える。付け外しの後も保つ (T0416) */
-ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (書き方は ugoe_puppet_physics_json と同じ) */
+ugoe_puppet_physics_json(puppet, NULL, 0, &len, err);      /* 物理が無ければ len == 0。あれば UGOE_ERROR_BUFFER_TOO_SMALL */
+ugoe_puppet_set_physics_json(puppet, json, json_len, err); /* *.physics.json の形で差し替える。NULL で外す */
+ugoe_puppet_reset_physics(puppet, err);                    /* 粒子を初期姿勢に戻す */
+ugoe_puppet_set_base_physics_json(puppet, json, json_len, err); /* 本体の設定を差し替える。付け外しの後も保つ (T0416) */
+ugoe_puppet_base_physics_json(puppet, NULL, 0, &len, err);      /* 本体の設定 (書き方は ugoe_puppet_physics_json と同じ) */
 ```
 
 - イベントは `ugoe::Puppet::motion_events` と同じ (開始した順のモーションごとに、発火した順)。wasm の `motion_events()` は値だけを返す。
@@ -311,7 +343,7 @@ ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (�
   `MotionEvent.Motion`・`Number`、Godot は `motion_event_fired` のシグナルと `get_motion_events()`。
 - `ugoe_puppet_set_physics_json` は `ugoe::Puppet::set_physics` と同じく、モデルに対して検査する。JSON を読めなければ `UGOE_ERROR_FORMAT`、
   検査を通らなければ `UGOE_ERROR_INVALID_MODEL` で、どちらも何も変えない。粒子は次の `update` で静止姿勢から始める。
-  検査の失敗の種類 (`ugoe_last_error_kind`) は `"invalid_physics"`、補足の値は `"errors"` (検査のエラーの数)・`"error_codes"`
+  検査の失敗の種類 (`ugoe_error_kind`) は `"invalid_physics"`、補足の値は `"errors"` (検査のエラーの数)・`"error_codes"`
   (種類を `, ` でつないだもの) で、着せ替えの `invalid_physics` と同じ (T0469。戻り値は前のまま、種類を足しただけなので ABI の版は上げない)。
 - 着せ替えのモジュールを付けている間に差し替えた設定は、次の付け外しで本体の設定から作り直される (wasm の `set_physics_json` と同じ)。
   差し替えた設定を保たないことは T0414 で決めた (合成した設定は本体の分に戻せないため。`docs/spec/modules.md#puppet-での着せ替え`)。
@@ -319,7 +351,7 @@ ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (�
   付けているモジュールの組と合成し直し、この後の付け外しでもこの設定から合成する。付けたことがなければ `ugoe_puppet_set_physics_json` と同じ。
   JSON を読めなければ `UGOE_ERROR_FORMAT`、本体のモデルか合成したモデルに対する検査を通らなければ `UGOE_ERROR_INVALID_MODEL`
   (種類と補足の値は `ugoe_puppet_set_physics_json` と同じ `"invalid_physics"`)、
-  合成できなければ `UGOE_ERROR_DRESS_UP` (種類は `ugoe_last_error_kind`) で、何も変えない。本体の物理の有無が変わってスロットの
+  合成できなければ `UGOE_ERROR_DRESS_UP` (種類は `ugoe_error_kind`) で、何も変えない。本体の物理の有無が変わってスロットの
   衝突体の扱いが変わるとモデルを差し替えるので、そのときは着せ替えの操作と同じく ID のポインタが無効になる。
 - `ugoe_puppet_base_physics_json` は合成する前の本体の設定 (付けたことがなければ今の設定)。モデルを読み直すホストが引き継ぐために使う。
 - `ugoe_puppet_physics_json` は NUL 終端しない UTF-8 をホストのバッファに書く (可変長の結果の規約)。
@@ -328,22 +360,22 @@ ugoe_puppet_base_physics_json(puppet, NULL, 0, &len);      /* 本体の設定 (�
 
 ```c
 uint32_t parts = 0, index = 0;
-ugoe_puppet_part_count(puppet, &parts);             /* パーツの数 (Model::parts の並び) */
-ugoe_puppet_part_index(puppet, "ArmA", &index);     /* ID から番号。ugoe_puppet_part_id で逆引き */
+ugoe_puppet_part_count(puppet, &parts, err);             /* パーツの数 (Model::parts の並び) */
+ugoe_puppet_part_index(puppet, "ArmA", &index, err);     /* ID から番号。ugoe_puppet_part_id で逆引き */
 UgoePartOpacity o;
-ugoe_puppet_part_opacity(puppet, index, &o);        /* 直前の update が書いた上書き (o.value, o.weight) */
+ugoe_puppet_part_opacity(puppet, index, &o, err);        /* 直前の update が書いた上書き (o.value, o.weight) */
 float evaluated = 0;
-ugoe_puppet_part_evaluated_opacity(puppet, index, &evaluated); /* 評価後の不透明度 (祖先を掛けた値。T0416) */
+ugoe_puppet_part_evaluated_opacity(puppet, index, &evaluated, err); /* 評価後の不透明度 (祖先を掛けた値。T0416) */
 
 bool shown = false;
-ugoe_puppet_show_pose(puppet, "ArmB", &shown);      /* ポーズの要素 (part の ID) を表示する。要素でなければ false */
+ugoe_puppet_show_pose(puppet, "ArmB", &shown, err);      /* ポーズの要素 (part の ID) を表示する。要素でなければ false */
 uint32_t groups = 0, visible = 0;
-ugoe_puppet_pose_group_count(puppet, &groups);      /* ポーズのグループの数 (付けたモジュールのグループを含む) */
-ugoe_puppet_pose_visible_part(puppet, 0, &visible); /* グループ 0 で表示中の要素のパーツの番号 (T0478) */
+ugoe_puppet_pose_group_count(puppet, &groups, err);      /* ポーズのグループの数 (付けたモジュールのグループを含む) */
+ugoe_puppet_pose_visible_part(puppet, 0, &visible, err); /* グループ 0 で表示中の要素のパーツの番号 (T0478) */
 uint32_t entries = 0, entry = 0;
-ugoe_puppet_pose_entry_count(puppet, 0, &entries);  /* グループ 0 の要素の数 (T0483) */
-ugoe_puppet_pose_entry_part(puppet, 0, 1, &entry);  /* グループ 0 の要素 1 のパーツの番号 */
-ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) */
+ugoe_puppet_pose_entry_count(puppet, 0, &entries, err);  /* グループ 0 の要素の数 (T0483) */
+ugoe_puppet_pose_entry_part(puppet, 0, 1, &entry, err);  /* グループ 0 の要素 1 のパーツの番号 */
+ugoe_puppet_set_effects_json(puppet, json, len, err);    /* 目パチ・呼吸・リップシンクの設定 (モデルの effects の形) */
 ```
 
 - `ugoe_puppet_part_opacity` はモーションのパーツの不透明度のカーブとポーズが書いた **上書き** (`lerp(o, value, weight)` の `value` と
@@ -370,7 +402,7 @@ ugoe_puppet_set_effects_json(puppet, json, len);    /* 目パチ・呼吸・リ�
   初めからやり直し、リップシンクの音量は保つ。省略したフィールドは既定値、`seed` は丸めずに読む。読めなければ `UGOE_ERROR_FORMAT`。
   設定はモデルの読み込みと同じに検査する (`Puppet::try_set_effects`。有限でない値 (JSON の `1e39` は `f32` の無限大)・範囲の外の値
   (目パチの `interval` と呼吸の `cycle` が 0 以下、目パチの `closing`・`closed`・`opening` が負)・モデルにないパラメータ)。
-  通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_last_error_kind` は `"invalid_model"`、`ugoe_last_error_field("errors")` は検査のエラーの数、
+  通らなければ `UGOE_ERROR_INVALID_MODEL` (`ugoe_error_kind` は `"invalid_model"`、`ugoe_error_field(err, "errors")` は検査のエラーの数、
   `"error_codes"` は種類を `, ` でつないだもの。読み込みの `invalid_model` と同じ) を返し、何も変えない (T0461・T0469)。
 - パーツの ID のポインタは、着せ替えの操作か `UgoePuppet` の破棄まで有効 (当たり判定の ID と同じ)。
 
@@ -381,15 +413,15 @@ float values[PARAM_COUNT];                          /* ugoe_puppet_parameter_cou
 UgoePartOpacityInput parts[2];                      /* モーションのパーツの不透明度のカーブ (パーツの番号・値・重み) */
 /* values を基準値として書き、物理 → リップシンク (音量 level・強さ strength。level が負なら当てない) →
    パーツの不透明度 (parts とポーズ) → 評価の順に dt 秒進める。カーブが無ければ NULL, 0 */
-ugoe_puppet_follow(puppet, values, PARAM_COUNT, level, strength, parts, 2, dt);
-ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT); /* 基準値として書くだけ (評価しない) */
+ugoe_puppet_follow(puppet, values, PARAM_COUNT, level, strength, parts, 2, dt, err);
+ugoe_puppet_set_base_values(puppet, values, PARAM_COUNT, err); /* 基準値として書くだけ (評価しない) */
 
 /* 指揮役の側 (T0454): 直前の ugoe_puppet_update の、受け手へ配る値を読む */
 size_t n = 0;
-ugoe_puppet_values_before_physics(conductor, values, PARAM_COUNT, &n);   /* 物理の段に入る直前の値 */
-ugoe_puppet_lip_sync_applied(conductor, &level, &strength);              /* 当てていなければ level = -1 */
-ugoe_puppet_part_opacities_applied(conductor, parts, 2, &n);             /* 足りなければ UGOE_ERROR_BUFFER_TOO_SMALL と数 */
-ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt);
+ugoe_puppet_values_before_physics(conductor, values, PARAM_COUNT, &n, err);   /* 物理の段に入る直前の値 */
+ugoe_puppet_lip_sync_applied(conductor, &level, &strength, err);              /* 当てていなければ level = -1 */
+ugoe_puppet_part_opacities_applied(conductor, parts, 2, &n, err);             /* 足りなければ UGOE_ERROR_BUFFER_TOO_SMALL と数 */
+ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt, err);
 ```
 
 - `ugoe::Puppet::follow`・`set_base_values` と同じ (`docs/spec/motion.md#受け手として進める`)。スタジオの仮想カメラのような受け手が、指揮役から
@@ -428,3 +460,4 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt)
 - T0134 (受け手でもリップシンクを物理の後に当てる)
 - T0454 (指揮役の側の値を読む口)
 - T0457 (モデルの読み込みの失敗の種類)
+- T0489 (失敗の中身を呼び出し側の `UgoeError` で返す。スレッドローカルの状態を持たない。ADR 0031)

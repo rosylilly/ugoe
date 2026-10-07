@@ -220,11 +220,11 @@ namespace Ugoe
         {
             UgoeRuntime.EnsureCompatible();
             var data = Data ?? Array.Empty<byte>();
-            UgoeException.Check(Native.ugoe_image_decode((uint)Format, data, (UIntPtr)data.Length, ref limits, premultiply ? (byte)1 : (byte)0, out var image));
+            UgoeException.Check(Native.ugoe_image_decode((uint)Format, data, (UIntPtr)data.Length, ref limits, premultiply ? (byte)1 : (byte)0, out var image, NativeError.Current));
             try
             {
-                UgoeException.Check(Native.ugoe_image_size(image, out var width, out var height));
-                UgoeException.Check(Native.ugoe_image_pixels(image, out var pixels, out var len));
+                UgoeException.Check(Native.ugoe_image_size(image, out var width, out var height, NativeError.Current));
+                UgoeException.Check(Native.ugoe_image_pixels(image, out var pixels, out var len, NativeError.Current));
                 var copy = new byte[checked((int)len.ToUInt64())];
                 if (copy.Length > 0) Marshal.Copy(pixels, copy, 0, copy.Length);
                 return new DecodedImage((int)width, (int)height, copy);

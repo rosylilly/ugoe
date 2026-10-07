@@ -97,25 +97,19 @@ mod tests {
     /// 入力からは作りにくいコンパイルの失敗 (検査を通るが評価できない) も、SDK の種類で `UGOE_ERROR_INVALID_MODEL`。
     #[test]
     fn compile_errors_keep_their_code_and_text() {
-        use std::ffi::CStr;
-
         use ugoe::runtime::CompileError;
 
-        use crate::error::{guard, ugoe_last_error, ugoe_last_error_kind};
+        use crate::error::{TestError, guard};
 
-        let code = guard(|| Err(load_error(CompileError::Unsupported("x").into())));
+        let error = TestError::new();
+        let code = guard(error.0, || {
+            Err(load_error(CompileError::Unsupported("x").into()))
+        });
         assert_eq!(code, UGOE_ERROR_INVALID_MODEL);
-        // SAFETY: 失敗の直後なので、どちらも NUL 終端の文字列を指す。
-        let (kind, message) = unsafe {
-            (
-                CStr::from_ptr(ugoe_last_error_kind()),
-                CStr::from_ptr(ugoe_last_error()),
-            )
-        };
-        assert_eq!(kind.to_str().unwrap(), "compile");
+        assert_eq!(error.kind().as_deref(), Some("compile"));
         assert_eq!(
-            message.to_str().unwrap(),
-            CompileError::Unsupported("x").to_string()
+            error.message(),
+            Some(CompileError::Unsupported("x").to_string())
         );
     }
 

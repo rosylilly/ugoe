@@ -69,26 +69,55 @@ namespace Ugoe
             Fields = fields ?? new Dictionary<string, string>();
         }
 
-        /// <summary>結果が失敗なら、同じスレッドの最後のエラーから例外を作って投げる。</summary>
+        /// <summary>
+        /// 結果が失敗なら、このスレッドの <see cref="NativeError.Current"/> (失敗した呼び出しに渡したもの) から例外を作って投げる。
+        /// 呼び出しと同じスレッドで、間に await を挟まずに呼ぶ。
+        /// </summary>
         internal static void Check(int result)
         {
-            if (result != 0) throw FromLastError(result);
+            if (result != 0) throw FromError(result, NativeError.Current);
         }
 
-        internal static UgoeException FromLastError(int result)
+        internal static UgoeException FromError(int result, IntPtr error)
         {
-            var message = Utf8.Decode(Native.ugoe_last_error()) ?? $"ugoe error {result}";
-            var kind = Utf8.Decode(Native.ugoe_last_error_kind());
+            var message = Utf8.Decode(Native.ugoe_error_message(error)) ?? $"ugoe error {result}";
+            var kind = Utf8.Decode(Native.ugoe_error_kind(error));
             // 補足の値は C ABI が列挙するものをすべて読む (キーの一覧をここに写さない。T0464)。
             var fields = new Dictionary<string, string>();
-            var count = (ulong)Native.ugoe_last_error_field_count();
+            var count = (ulong)Native.ugoe_error_field_count(error);
             for (ulong i = 0; i < count; i++)
             {
-                var key = Utf8.Decode(Native.ugoe_last_error_field_key_at((UIntPtr)i));
-                var value = Utf8.Decode(Native.ugoe_last_error_field_value_at((UIntPtr)i));
+                var key = Utf8.Decode(Native.ugoe_error_field_key_at(error, (UIntPtr)i));
+                var value = Utf8.Decode(Native.ugoe_error_field_value_at(error, (UIntPtr)i));
                 if (key != null && value != null) fields[key] = value;
             }
             return new UgoeException((UgoeResult)result, message, kind, fields);
+        }
+    }
+
+    /// <summary>
+    /// C ABI の失敗しうる関数に渡す <c>UgoeError*</c>。マネージドなスレッドごとに 1 つ作って使い回す。
+    /// C ABI の <c>UgoeError</c> はスレッドに結び付かないが、同時に複数のスレッドから使ってはならないので、スレッドごとに分ける
+    /// (crates/ugoe-ffi/README.md#失敗の受け取り方-t0489)。呼び出しと <see cref="UgoeException.Check"/> は同じスレッドで続けて行うので、
+    /// 失敗した呼び出しに渡したものを読める。スレッドが終わると、<see cref="ErrorHandle"/> のファイナライザが破棄する。
+    /// </summary>
+    internal static class NativeError
+    {
+        [ThreadStatic] private static ErrorHandle current;
+
+        /// <summary>このスレッドの <c>UgoeError*</c>。初めて使うときに作る。</summary>
+        internal static IntPtr Current
+        {
+            get
+            {
+                var error = current;
+                if (error == null)
+                {
+                    error = new ErrorHandle(Native.ugoe_error_create());
+                    current = error;
+                }
+                return error.DangerousGetHandle();
+            }
         }
     }
 

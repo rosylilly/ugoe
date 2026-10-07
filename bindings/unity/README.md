@@ -166,7 +166,7 @@ foreach (var id in puppet.HitAreasAt(worldPoint)) Debug.Log(id);
 `"invalid_model"`。補足の値はどちらも `"errors"`・`"error_codes"`。T0469) で、
 種類と補足の値は crates/ugoe-ffi/README.md (wasm の `DressUpError`・`LoadError`・設定の差し替えの例外) と同じ。種類を持たない失敗 (NULL・範囲外の引数など) では `Kind` は null、`Fields` は空。
 `UgoeResult` の値が `ugoe.h` の `UGOE_OK`・`UGOE_ERROR_*` と揃っていることは `tests/ResultTests.cs` が確かめる。
-`Fields` は C ABI が列挙する補足の値 (`ugoe_last_error_field_count`・`ugoe_last_error_field_key_at`・`ugoe_last_error_field_value_at`) を
+`Fields` は C ABI が列挙する補足の値 (`ugoe_error_field_count`・`ugoe_error_field_key_at`・`ugoe_error_field_value_at`) を
 すべて入れる。キーの一覧を C# に写さないので、新しい版で種類やキーが増えても、このパッケージを直さずに入る (T0464)。
 実際の失敗 (壊れたバンドル・知らない必須の機能・新しいスキーマの版・検査を通らないモデル・上限の超過・`unknown_mask` の着せ替え・
 検査を通らない物理とエフェクトの設定) の
@@ -231,6 +231,10 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
 `UgoeReadLimits.Default`・`Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` (T0458)。
 画像のデコード (`ugoe_image_*`) は `EncodedTexture.Decode(premultiply[, UgoeImageLimits])` で、結果は `DecodedImage` (上の行が先の RGBA8) に写して
 `UgoeImage` はすぐに解放する (T0466)。
+失敗の中身 (`UgoeError`) は、マネージドなスレッドごとに 1 つ作って (`NativeError.Current`)、失敗しうるすべての関数の最後の引数に渡し、
+同じスレッドのまま `UgoeException.Check` でそこから例外を作る (T0489。間に await を挟まないので、async の続きで別のスレッドに移っても
+混ざらない)。スレッドが終わると `ErrorHandle` のファイナライザが `ugoe_error_destroy` で破棄する。同時に別々のスレッドで失敗しても
+それぞれの例外が自分の中身を持つことは `tests/ResultTests.cs` が確かめる。
 宣言の漏れは `scripts/check-ffi-bindings.mjs` (`just refs`) が検出する。
 
 ## 描画のしかた

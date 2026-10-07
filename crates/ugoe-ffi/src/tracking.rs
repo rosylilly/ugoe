@@ -3,15 +3,14 @@
 //! 平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
 //! (`docs/spec/avatar-profile.md#実装の範囲`)。
 
-use std::ffi::{CString, c_char};
-use std::sync::OnceLock;
+use std::ffi::c_char;
 
 use ugoe::model::avatar::ARKIT_BLEND_SHAPES;
 use ugoe::motion::tracking::{BLEND_SHAPE_COUNT, blend_shape_index};
 use ugoe::motion::{BodyInput, Rotation, TrackingInput, TrackingMap};
 
 use crate::error::{
-    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
+    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, guard,
 };
 use crate::hit::write_indices;
 use crate::puppet::{UgoePuppet, c_str, puppet_mut, puppet_ref, write};
@@ -113,8 +112,9 @@ impl UgoeTrackingInput {
 pub unsafe extern "C" fn ugoe_puppet_set_tracking(
     puppet: *mut UgoePuppet,
     input: *const UgoeTrackingInput,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let input = unsafe { input.as_ref() }
             .map(UgoeTrackingInput::input)
@@ -138,8 +138,9 @@ pub unsafe extern "C" fn ugoe_puppet_tracking_targets(
     out: *mut u32,
     capacity: usize,
     out_count: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let instance = p.puppet.instance();
@@ -167,8 +168,9 @@ pub unsafe extern "C" fn ugoe_puppet_tracking_targets(
 pub unsafe extern "C" fn ugoe_puppet_set_motion_over_tracking(
     puppet: *mut UgoePuppet,
     enabled: bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         unsafe { puppet_mut(puppet)? }
             .puppet
@@ -186,8 +188,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_motion_over_tracking(
 pub unsafe extern "C" fn ugoe_puppet_motion_over_tracking(
     puppet: *const UgoePuppet,
     out: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let enabled = unsafe { puppet_ref(puppet)? }.puppet.motion_over_tracking();
         // SAFETY: 呼び出し側の約束。
@@ -207,8 +210,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_tracking_kept(
     puppet: *mut UgoePuppet,
     indices: *const u32,
     count: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let indices: &[u32] = if count == 0 {
@@ -234,10 +238,26 @@ pub unsafe extern "C" fn ugoe_puppet_set_tracking_kept(
     })
 }
 
-fn blend_shape_names() -> &'static [CString] {
-    static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
-    NAMES.get_or_init(|| ARKIT_BLEND_SHAPES.iter().map(|n| c_string(n)).collect())
-}
+/// ブレンドシェイプの名前を入れる枠の長さ (NUL を含む)。
+const BLEND_SHAPE_NAME_CAPACITY: usize = 32;
+
+/// ARKit のブレンドシェイプの名前 (NUL 終端。残りは NUL で埋める)。コンパイル時に作る変わらない表で、
+/// C ABI にグローバルな状態を持たせないため、実行時に作って保持はしない (ADR 0031)。
+static BLEND_SHAPE_NAMES: [[u8; BLEND_SHAPE_NAME_CAPACITY]; BLEND_SHAPE_COUNT] = {
+    let mut names = [[0; BLEND_SHAPE_NAME_CAPACITY]; BLEND_SHAPE_COUNT];
+    let mut i = 0;
+    while i < BLEND_SHAPE_COUNT {
+        let bytes = ARKIT_BLEND_SHAPES[i].as_bytes();
+        assert!(bytes.len() < BLEND_SHAPE_NAME_CAPACITY);
+        let mut j = 0;
+        while j < bytes.len() {
+            names[i][j] = bytes[j];
+            j += 1;
+        }
+        i += 1;
+    }
+    names
+};
 
 /// `index` 番目の ARKit のブレンドシェイプの名前 (UTF-8、NUL 終端。`"eyeBlinkLeft"` など)。
 /// ポインタはずっと有効。
@@ -246,14 +266,17 @@ fn blend_shape_names() -> &'static [CString] {
 ///
 /// `out` は書き込める領域を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_blend_shape_name(index: u32, out: *mut *const c_char) -> UgoeResult {
-    guard(|| {
-        let names = blend_shape_names();
-        let name = names
+pub unsafe extern "C" fn ugoe_blend_shape_name(
+    index: u32,
+    out: *mut *const c_char,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
+        let name = BLEND_SHAPE_NAMES
             .get(index as usize)
-            .ok_or_else(|| Error::out_of_range("blend shape", index as usize, names.len()))?;
+            .ok_or_else(|| Error::out_of_range("blend shape", index as usize, BLEND_SHAPE_COUNT))?;
         // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", name.as_ptr()) }
+        unsafe { write(out, "out", name.as_ptr().cast::<c_char>()) }
     })
 }
 
@@ -264,8 +287,12 @@ pub unsafe extern "C" fn ugoe_blend_shape_name(index: u32, out: *mut *const c_ch
 ///
 /// `name` は NUL 終端の文字列、`out` は書き込める領域を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_blend_shape_index(name: *const c_char, out: *mut u32) -> UgoeResult {
-    guard(|| {
+pub unsafe extern "C" fn ugoe_blend_shape_index(
+    name: *const c_char,
+    out: *mut u32,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let name = unsafe { c_str(name, "name")? };
         let index = blend_shape_index(name)

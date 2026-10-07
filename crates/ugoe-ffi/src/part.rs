@@ -3,7 +3,7 @@
 
 use std::ffi::c_char;
 
-use crate::error::{Error, UGOE_ERROR_NOT_FOUND, UgoeResult, guard};
+use crate::error::{Error, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, guard};
 use crate::puppet::{UgoePuppet, c_str, puppet_mut, puppet_ref, write};
 
 /// パーツ自身の不透明度の上書き (`docs/spec/motion.md#パーツの不透明度`)。
@@ -26,8 +26,9 @@ pub struct UgoePartOpacity {
 pub unsafe extern "C" fn ugoe_puppet_part_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -45,8 +46,9 @@ pub unsafe extern "C" fn ugoe_puppet_part_id(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let id = p
@@ -68,8 +70,9 @@ pub unsafe extern "C" fn ugoe_puppet_part_index(
     puppet: *const UgoePuppet,
     id: *const c_char,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -97,8 +100,9 @@ pub unsafe extern "C" fn ugoe_puppet_part_opacity(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoePartOpacity,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let len = p.part_ids.len();
@@ -123,8 +127,9 @@ pub unsafe extern "C" fn ugoe_puppet_part_evaluated_opacity(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let len = p.part_ids.len();
@@ -153,8 +158,9 @@ pub unsafe extern "C" fn ugoe_puppet_show_pose(
     puppet: *mut UgoePuppet,
     part: *const c_char,
     out_shown: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -177,8 +183,9 @@ pub unsafe extern "C" fn ugoe_puppet_show_pose(
 pub unsafe extern "C" fn ugoe_puppet_pose_group_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let count = p.puppet.pose().pose().groups.len() as u32;
@@ -201,8 +208,9 @@ pub unsafe extern "C" fn ugoe_puppet_pose_visible_part(
     puppet: *const UgoePuppet,
     group: u32,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let player = p.puppet.pose();
@@ -251,8 +259,9 @@ pub unsafe extern "C" fn ugoe_puppet_pose_entry_count(
     puppet: *const UgoePuppet,
     group: u32,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let groups = &p.puppet.pose().pose().groups;
@@ -280,8 +289,9 @@ pub unsafe extern "C" fn ugoe_puppet_pose_entry_part(
     group: u32,
     entry: u32,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let groups = &p.puppet.pose().pose().groups;

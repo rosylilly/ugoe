@@ -13,6 +13,9 @@ use ugoe::format::{Bundle, TextureData, TextureFormat, WriteOptions, write_bundl
 use ugoe::model::fixtures;
 use ugoe_ffi::*;
 
+mod common;
+use common::*;
+
 /// 画像の中身は読まないので、PNG の署名だけのバイト列でよい。
 fn png() -> TextureData {
     TextureData {
@@ -30,7 +33,7 @@ fn text(ptr: *const c_char) -> String {
 
 fn field(key: &str) -> String {
     let key = CString::new(key).unwrap();
-    text(unsafe { ugoe_last_error_field(key.as_ptr()) })
+    text(last_field(&key))
 }
 
 /// 圧縮したバンドル (展開するチャンクを持つ)。
@@ -58,13 +61,8 @@ fn total(max: u64) -> UgoeReadLimits {
 
 #[track_caller]
 fn assert_total_limit_exceeded(code: UgoeResult, max: u64) {
-    assert_eq!(
-        code,
-        UGOE_ERROR_LIMIT_EXCEEDED,
-        "{}",
-        text(ugoe_last_error())
-    );
-    assert_eq!(text(ugoe_last_error_kind()), "read_limit_exceeded");
+    assert_eq!(code, UGOE_ERROR_LIMIT_EXCEEDED, "{}", text(last_message()));
+    assert_eq!(text(last_kind()), "read_limit_exceeded");
     assert_eq!(field("limit"), "total_decompressed");
     assert_eq!(field("max"), max.to_string());
     assert!(!field("chunk").is_empty());
@@ -77,7 +75,13 @@ fn bundles_over_the_limits_are_rejected() {
     let small = total(1);
     assert_total_limit_exceeded(
         unsafe {
-            ugoe_puppet_create_from_bundle_with_limits(bytes.as_ptr(), bytes.len(), &small, &mut p)
+            ugoe_puppet_create_from_bundle_with_limits(
+                bytes.as_ptr(),
+                bytes.len(),
+                &small,
+                &mut p,
+                err(),
+            )
         },
         1,
     );
@@ -90,7 +94,13 @@ fn bundles_over_the_limits_are_rejected() {
     };
     assert_eq!(
         unsafe {
-            ugoe_puppet_create_from_bundle_with_limits(bytes.as_ptr(), bytes.len(), &chunk, &mut p)
+            ugoe_puppet_create_from_bundle_with_limits(
+                bytes.as_ptr(),
+                bytes.len(),
+                &chunk,
+                &mut p,
+                err(),
+            )
         },
         UGOE_ERROR_LIMIT_EXCEEDED
     );
@@ -106,6 +116,7 @@ fn bundles_over_the_limits_are_rejected() {
                     bytes.len(),
                     limits,
                     &mut p,
+                    err(),
                 )
             },
             UGOE_OK
@@ -120,7 +131,9 @@ fn modules_over_the_limits_are_rejected() {
     let mut m = ptr::null_mut();
     let small = total(1);
     assert_total_limit_exceeded(
-        unsafe { ugoe_module_create_with_limits(bytes.as_ptr(), bytes.len(), &small, &mut m) },
+        unsafe {
+            ugoe_module_create_with_limits(bytes.as_ptr(), bytes.len(), &small, &mut m, err())
+        },
         1,
     );
     assert!(m.is_null());
@@ -128,13 +141,17 @@ fn modules_over_the_limits_are_rejected() {
     // 上限の外の失敗は今までどおり `UGOE_ERROR_FORMAT` と `invalid_file`。
     let garbage = b"not a module";
     assert_eq!(
-        unsafe { ugoe_module_create_with_limits(garbage.as_ptr(), garbage.len(), &small, &mut m) },
+        unsafe {
+            ugoe_module_create_with_limits(garbage.as_ptr(), garbage.len(), &small, &mut m, err())
+        },
         UGOE_ERROR_FORMAT
     );
-    assert_eq!(text(ugoe_last_error_kind()), "invalid_file");
+    assert_eq!(text(last_kind()), "invalid_file");
 
     assert_eq!(
-        unsafe { ugoe_module_create_with_limits(bytes.as_ptr(), bytes.len(), ptr::null(), &mut m) },
+        unsafe {
+            ugoe_module_create_with_limits(bytes.as_ptr(), bytes.len(), ptr::null(), &mut m, err())
+        },
         UGOE_OK
     );
     unsafe { ugoe_module_destroy(m) };
@@ -147,7 +164,7 @@ fn bundle_format_errors_keep_their_code() {
     let garbage = b"not a bundle";
     let mut p = ptr::null_mut();
     assert_eq!(
-        unsafe { ugoe_puppet_create_from_bundle(garbage.as_ptr(), garbage.len(), &mut p) },
+        unsafe { ugoe_puppet_create_from_bundle(garbage.as_ptr(), garbage.len(), &mut p, err()) },
         UGOE_ERROR_FORMAT
     );
     assert_eq!(
@@ -157,9 +174,10 @@ fn bundle_format_errors_keep_their_code() {
                 garbage.len(),
                 &total(1),
                 &mut p,
+                err(),
             )
         },
         UGOE_ERROR_FORMAT
     );
-    assert_eq!(text(ugoe_last_error_kind()), "invalid_file");
+    assert_eq!(text(last_kind()), "invalid_file");
 }

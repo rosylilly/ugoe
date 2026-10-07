@@ -75,7 +75,7 @@ impl LoadError {
 
     /// 機械が読む種類と補足の値 (JS の `Error` の `code` とプロパティ)。値は組み込み先が照らし合わせるので変えない。
     /// ファイルとモデルの失敗 (`invalid_file`〜`read_limit_exceeded`) は SDK の [`ugoe::LoadError::code`]・`fields` で、
-    /// C ABI の `ugoe_last_error_kind` と同じ値 (T0457)。
+    /// C ABI の `ugoe_error_kind` と同じ値 (T0457)。
     ///
     /// - `invalid_file`: ファイルを読めない (ugoe のファイルでない・壊れている・JSON の誤りなど)。
     /// - `unsupported_version`: `found` (ファイルの版)・`supported` (読める版)。
@@ -303,7 +303,7 @@ pub fn warning_json(warning: &LoadWarning) -> serde_json::Value {
 }
 
 /// 補足の値 (警告と着せ替えの失敗の `fields`) の JSON。番号は数、文は文字列。種類の一覧は `, ` でつないだ文字列
-/// (C ABI の `ugoe_last_error_field` と同じ文。T0168)。
+/// (C ABI の `ugoe_error_field` と同じ文。T0168)。
 pub fn field_json(value: FieldValue<'_>) -> serde_json::Value {
     match value {
         FieldValue::Index(i) => i.into(),

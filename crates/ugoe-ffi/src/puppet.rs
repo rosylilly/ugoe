@@ -13,7 +13,8 @@ use ugoe::{Puppet, TextureSource};
 use crate::animation::MotionEvents;
 use crate::dress_up::ModuleData;
 use crate::error::{
-    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeResult, c_string, guard,
+    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, c_string,
+    guard,
 };
 use crate::limits::{UgoeReadLimits, load_error, read_limits};
 use crate::warning::{
@@ -328,9 +329,10 @@ pub(crate) unsafe fn write<T>(out: *mut T, name: &str, value: T) -> Result<(), E
 /// `out` は NULL か、ポインタを書き込める領域を指すこと。
 unsafe fn create(
     out: *mut *mut UgoePuppet,
+    error: *mut UgoeError,
     make: impl FnOnce() -> Result<UgoePuppet, Error>,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         if out.is_null() {
             return Err(Error::null("out"));
         }
@@ -346,7 +348,7 @@ unsafe fn create(
 /// バンドルの物理・モーション・表情・テクスチャも読み込む。バイト列は呼び出しの間だけ読むので、
 /// 戻った後に解放してよい。成功したら `*out` に新しい `UgoePuppet` を書き込む。
 /// 既定の読み込みの上限で読み、超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_puppet_create_from_bundle_with_limits` を参照)。
-/// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_last_error_kind`) と
+/// 読めなければ `UGOE_ERROR_FORMAT`、モデルを評価できなければ `UGOE_ERROR_INVALID_MODEL` で、種類 (`ugoe_error_kind`) と
 /// 補足の値は wasm の `LoadError` と同じ (crates/ugoe-ffi/README.md の「モデルの読み込みの失敗」。T0457)。
 ///
 /// # Safety
@@ -357,9 +359,10 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle(
     bytes: *const u8,
     len: usize,
     out: *mut *mut UgoePuppet,
+    error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
-    unsafe { ugoe_puppet_create_from_bundle_with_limits(bytes, len, std::ptr::null(), out) }
+    unsafe { ugoe_puppet_create_from_bundle_with_limits(bytes, len, std::ptr::null(), out, error) }
 }
 
 /// 読み込みの上限 `limits` を指定して、`.ugoe` バンドルのバイト列から `UgoePuppet` を作る (T0152)。
@@ -378,10 +381,11 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle_with_limits(
     len: usize,
     limits: *const UgoeReadLimits,
     out: *mut *mut UgoePuppet,
+    error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
     unsafe {
-        create(out, || {
+        create(out, error, || {
             let limits = read_limits(limits);
             let (bundle, report) =
                 ugoe::format::read_bundle_with(self::bytes(bytes, len, "bytes")?, limits)
@@ -405,10 +409,11 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_json(
     json: *const u8,
     len: usize,
     out: *mut *mut UgoePuppet,
+    error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
     unsafe {
-        create(out, || {
+        create(out, error, || {
             let json = std::str::from_utf8(bytes(json, len, "json")?)
                 .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
             UgoePuppet::from_json(json)
@@ -427,7 +432,7 @@ pub unsafe extern "C" fn ugoe_puppet_destroy(puppet: *mut UgoePuppet) {
         return;
     }
     // Drop の中のパニックも境界の外へ出さない。
-    guard(|| {
+    guard(std::ptr::null_mut(), || {
         // SAFETY: `ugoe_puppet_create_*` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(puppet) });
         Ok(())
@@ -443,8 +448,9 @@ pub unsafe extern "C" fn ugoe_puppet_destroy(puppet: *mut UgoePuppet) {
 pub unsafe extern "C" fn ugoe_puppet_canvas(
     puppet: *const UgoePuppet,
     out: *mut UgoeCanvas,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let canvas = p.puppet.instance().compiled().model().meta.canvas;
@@ -468,8 +474,12 @@ pub unsafe extern "C" fn ugoe_puppet_canvas(
 ///
 /// `puppet` は有効な `UgoePuppet` を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_update(puppet: *mut UgoePuppet, dt: f32) -> UgoeResult {
-    guard(|| {
+pub unsafe extern "C" fn ugoe_puppet_update(
+    puppet: *mut UgoePuppet,
+    dt: f32,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
         if !dt.is_finite() || dt < 0.0 {
             return Err(Error::new(
                 UGOE_ERROR_INVALID_ARGUMENT,
@@ -493,8 +503,9 @@ pub unsafe extern "C" fn ugoe_puppet_update(puppet: *mut UgoePuppet, dt: f32) ->
 pub unsafe extern "C" fn ugoe_puppet_parameter_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -512,8 +523,9 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_id(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
@@ -533,8 +545,9 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_index(
     puppet: *const UgoePuppet,
     id: *const c_char,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -560,8 +573,9 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_info(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeParameterInfo,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
@@ -586,8 +600,9 @@ pub unsafe extern "C" fn ugoe_puppet_get_parameter(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
@@ -607,8 +622,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_parameter(
     puppet: *mut UgoePuppet,
     index: u32,
     value: f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let i = p.parameter_index(index)?;
@@ -630,8 +646,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_parameter(
 pub unsafe extern "C" fn ugoe_puppet_set_lip_sync_level(
     puppet: *mut UgoePuppet,
     value: f32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         if value.is_nan() {
             return Err(Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`value` is NaN"));
         }
@@ -652,8 +669,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_lip_sync_level(
 pub unsafe extern "C" fn ugoe_puppet_motion_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -671,8 +689,9 @@ pub unsafe extern "C" fn ugoe_puppet_motion_name(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let name = p
@@ -697,8 +716,9 @@ pub unsafe extern "C" fn ugoe_puppet_start_motion(
     index: u32,
     priority: u32,
     started: *mut bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let priority = match priority {
@@ -735,8 +755,9 @@ pub unsafe extern "C" fn ugoe_puppet_start_motion(
 pub unsafe extern "C" fn ugoe_puppet_expression_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -754,8 +775,9 @@ pub unsafe extern "C" fn ugoe_puppet_expression_name(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let name = p.expression_names.get(index as usize).ok_or_else(|| {
@@ -775,8 +797,9 @@ pub unsafe extern "C" fn ugoe_puppet_expression_name(
 pub unsafe extern "C" fn ugoe_puppet_set_expression(
     puppet: *mut UgoePuppet,
     index: u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let expression = p
@@ -795,8 +818,11 @@ pub unsafe extern "C" fn ugoe_puppet_set_expression(
 ///
 /// `puppet` は有効な `UgoePuppet` を指すこと。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ugoe_puppet_stop_expressions(puppet: *mut UgoePuppet) -> UgoeResult {
-    guard(|| {
+pub unsafe extern "C" fn ugoe_puppet_stop_expressions(
+    puppet: *mut UgoePuppet,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         p.puppet.expressions_mut().stop_all();
@@ -820,8 +846,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_parameters_by_id(
     values: *const f32,
     count: usize,
     out_applied: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let (ids, values): (&[*const c_char], &[f32]) = if count == 0 {
@@ -898,8 +925,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_stage_enabled(
     puppet: *mut UgoePuppet,
     stage: u32,
     enabled: bool,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let mut toggles = p.puppet.toggles();
@@ -931,8 +959,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_stage_enabled(
 pub unsafe extern "C" fn ugoe_puppet_load_warning_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -951,8 +980,9 @@ pub unsafe extern "C" fn ugoe_puppet_load_warning(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut UgoeWarning,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -973,8 +1003,9 @@ pub unsafe extern "C" fn ugoe_puppet_load_warning_field(
     index: u32,
     key: *const c_char,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。

@@ -25,15 +25,15 @@ namespace Ugoe
         private Module(ModuleHandle handle)
         {
             Handle = handle;
-            UgoeException.Check(Native.ugoe_module_name(handle, out var name));
+            UgoeException.Check(Native.ugoe_module_name(handle, out var name, NativeError.Current));
             Name = Utf8.Decode(name);
-            UgoeException.Check(Native.ugoe_module_slot(handle, out var slot));
+            UgoeException.Check(Native.ugoe_module_slot(handle, out var slot, NativeError.Current));
             Slot = Utf8.Decode(slot);
-            UgoeException.Check(Native.ugoe_module_warning_count(handle, out var count));
+            UgoeException.Check(Native.ugoe_module_warning_count(handle, out var count, NativeError.Current));
             Warnings = new LoadWarning[count];
             for (uint i = 0; i < count; i++)
             {
-                UgoeException.Check(Native.ugoe_module_warning(handle, i, out var w));
+                UgoeException.Check(Native.ugoe_module_warning(handle, i, out var w, NativeError.Current));
                 Warnings[i] = new LoadWarning(Utf8.Decode(w.Code), Utf8.Decode(w.Message));
             }
         }
@@ -46,7 +46,7 @@ namespace Ugoe
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
-            UgoeException.Check(Native.ugoe_module_create(bytes, (UIntPtr)bytes.Length, out var ptr));
+            UgoeException.Check(Native.ugoe_module_create(bytes, (UIntPtr)bytes.Length, out var ptr, NativeError.Current));
             return Wrap(ptr);
         }
 
@@ -58,7 +58,7 @@ namespace Ugoe
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             UgoeRuntime.EnsureCompatible();
-            UgoeException.Check(Native.ugoe_module_create_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr));
+            UgoeException.Check(Native.ugoe_module_create_with_limits(bytes, (UIntPtr)bytes.Length, ref limits, out var ptr, NativeError.Current));
             return Wrap(ptr);
         }
 
@@ -81,7 +81,7 @@ namespace Ugoe
         /// <summary>警告 <paramref name="index"/> の補足の値 <paramref name="key"/>。無ければ null。</summary>
         public string GetWarningField(int index, string key)
         {
-            var r = Native.ugoe_module_warning_field(Handle, (uint)index, Utf8.Encode(key), out var value);
+            var r = Native.ugoe_module_warning_field(Handle, (uint)index, Utf8.Encode(key), out var value, NativeError.Current);
             if (r == (int)UgoeResult.NotFound) return null;
             UgoeException.Check(r);
             return Utf8.Decode(value);

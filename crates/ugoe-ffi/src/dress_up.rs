@@ -1,7 +1,7 @@
 //! 着せ替え: `.ugoemod` の読み込み (`UgoeModule`) と、`UgoePuppet` へのモジュールの付け外し
 //! (`docs/spec/modules.md#puppet-での着せ替え`)。
 //!
-//! 失敗の種類 (`ugoe_last_error_kind`) と補足の値は SDK の `ugoe::DressUpError::code`・`fields` で、
+//! 失敗の種類 (`ugoe_error_kind`) と補足の値は SDK の `ugoe::DressUpError::code`・`fields` で、
 //! wasm の `DressUpError` の `code` と同じ (T0412)。
 
 use std::ffi::{CString, c_char};
@@ -12,7 +12,7 @@ use ugoe::format::TextureData;
 use ugoe::format::module_file;
 use ugoe::model::module::Module;
 
-use crate::error::{Error, UGOE_ERROR_DRESS_UP, UgoeResult, c_string, guard};
+use crate::error::{Error, UGOE_ERROR_DRESS_UP, UgoeError, UgoeResult, c_string, guard};
 use crate::limits::{UgoeReadLimits, format_error, read_limits};
 use crate::puppet::{UgoePuppet, c_str, puppet_mut, puppet_ref, write};
 use crate::warning::{
@@ -66,7 +66,7 @@ impl UgoePuppet {
 /// `.ugoemod` のバイト列から `UgoeModule` を作る。バイト列は呼び出しの間だけ読む。
 /// 本体との整合 (スロット・パラメータ) は付けるときに検査する。
 ///
-/// 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_last_error_kind` は `"invalid_file"` になる。
+/// 読めなければ `UGOE_ERROR_FORMAT` を返し、`ugoe_error_kind` は `"invalid_file"` になる。
 /// 既定の読み込みの上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` (`ugoe_module_create_with_limits` を参照)。
 ///
 /// # Safety
@@ -77,15 +77,16 @@ pub unsafe extern "C" fn ugoe_module_create(
     bytes: *const u8,
     len: usize,
     out: *mut *mut UgoeModule,
+    error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
-    unsafe { ugoe_module_create_with_limits(bytes, len, std::ptr::null(), out) }
+    unsafe { ugoe_module_create_with_limits(bytes, len, std::ptr::null(), out, error) }
 }
 
 /// 読み込みの上限 `limits` を指定して、`.ugoemod` のバイト列から `UgoeModule` を作る (T0152)。
 ///
 /// `limits` が NULL なら既定値 (`ugoe_module_create` と同じ)。上限を超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、
-/// `ugoe_last_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
+/// `ugoe_error_kind` は `"read_limit_exceeded"` (補足の値は `"limit"`・`"chunk"`・`"max"`)。ほかは `ugoe_module_create` と同じ。
 ///
 /// # Safety
 ///
@@ -97,8 +98,9 @@ pub unsafe extern "C" fn ugoe_module_create_with_limits(
     len: usize,
     limits: *const UgoeReadLimits,
     out: *mut *mut UgoeModule,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         if out.is_null() {
             return Err(Error::null("out"));
         }
@@ -145,7 +147,7 @@ pub unsafe extern "C" fn ugoe_module_destroy(module: *mut UgoeModule) {
     if module.is_null() {
         return;
     }
-    guard(|| {
+    guard(std::ptr::null_mut(), || {
         // SAFETY: `ugoe_module_create` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(module) });
         Ok(())
@@ -171,8 +173,9 @@ unsafe fn module_ref<'a>(ptr: *const UgoeModule) -> Result<&'a UgoeModule, Error
 pub unsafe extern "C" fn ugoe_module_name(
     module: *const UgoeModule,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let m = unsafe { module_ref(module)? };
         // SAFETY: 呼び出し側の約束。
@@ -189,8 +192,9 @@ pub unsafe extern "C" fn ugoe_module_name(
 pub unsafe extern "C" fn ugoe_module_slot(
     module: *const UgoeModule,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let m = unsafe { module_ref(module)? };
         // SAFETY: 呼び出し側の約束。
@@ -207,8 +211,9 @@ pub unsafe extern "C" fn ugoe_module_slot(
 pub unsafe extern "C" fn ugoe_module_warning_count(
     module: *const UgoeModule,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let m = unsafe { module_ref(module)? };
         // SAFETY: 呼び出し側の約束。
@@ -226,8 +231,9 @@ pub unsafe extern "C" fn ugoe_module_warning(
     module: *const UgoeModule,
     index: u32,
     out: *mut UgoeWarning,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let m = unsafe { module_ref(module)? };
         // SAFETY: 呼び出し側の約束。
@@ -246,8 +252,9 @@ pub unsafe extern "C" fn ugoe_module_warning_field(
     index: u32,
     key: *const c_char,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let m = unsafe { module_ref(module)? };
         // SAFETY: 呼び出し側の約束。
@@ -269,8 +276,9 @@ pub unsafe extern "C" fn ugoe_module_warning_field(
 pub unsafe extern "C" fn ugoe_puppet_attach_module(
     puppet: *mut UgoePuppet,
     module: *const UgoeModule,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -304,8 +312,9 @@ pub unsafe extern "C" fn ugoe_puppet_attach_module(
 pub unsafe extern "C" fn ugoe_puppet_detach_module(
     puppet: *mut UgoePuppet,
     name: *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -330,8 +339,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_modules(
     puppet: *mut UgoePuppet,
     modules: *const *const UgoeModule,
     count: usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_mut(puppet)? };
         let list: &[*const UgoeModule] = if count == 0 {
@@ -360,8 +370,9 @@ pub unsafe extern "C" fn ugoe_puppet_set_modules(
 pub unsafe extern "C" fn ugoe_puppet_attached_module_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -380,8 +391,9 @@ pub unsafe extern "C" fn ugoe_puppet_attached_module_name(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let name = p.module_names.get(index as usize).ok_or_else(|| {
@@ -401,8 +413,9 @@ pub unsafe extern "C" fn ugoe_puppet_attached_module_name(
 pub unsafe extern "C" fn ugoe_puppet_slot_count(
     puppet: *const UgoePuppet,
     out: *mut u32,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         // SAFETY: 呼び出し側の約束。
@@ -421,8 +434,9 @@ pub unsafe extern "C" fn ugoe_puppet_slot_id(
     puppet: *const UgoePuppet,
     index: u32,
     out: *mut *const c_char,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let id = p
@@ -447,8 +461,9 @@ pub unsafe extern "C" fn ugoe_puppet_changed_textures(
     puppet: *const UgoePuppet,
     out: *mut *const u32,
     out_len: *mut usize,
+    error: *mut UgoeError,
 ) -> UgoeResult {
-    guard(|| {
+    guard(error, || {
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         if out.is_null() {
@@ -463,16 +478,11 @@ pub unsafe extern "C" fn ugoe_puppet_changed_textures(
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
-
     use ugoe::model::validate::ValidationError;
     use ugoe::runtime::ComposeError;
 
     use super::*;
-    use crate::error::{
-        ugoe_last_error_field, ugoe_last_error_field_count, ugoe_last_error_field_key_at,
-        ugoe_last_error_field_value_at, ugoe_last_error_kind,
-    };
+    use crate::error::TestError;
 
     /// 補足の値は wasm (`crates/ugoe-wasm/src/dress_up/tests.rs` の `numbered_and_referenced_fields_reach_js`) と同じキーで出る。
     /// 番号は 10 進の文字列 (wasm では数)。無い値 (本体がプロファイルを持たないときの `actual`) は NULL。
@@ -591,19 +601,16 @@ mod tests {
                 ],
             ),
         ];
-        let text = |p: *const c_char| {
-            // SAFETY: NULL でないポインタは、次の失敗まで有効な NUL 終端の文字列。
-            (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
-        };
+        let out = TestError::new();
         for (error, code, fields) in cases {
-            assert_eq!(guard(|| Err(dress_up_error(error))), UGOE_ERROR_DRESS_UP);
-            assert_eq!(text(ugoe_last_error_kind()).as_deref(), Some(code));
+            assert_eq!(
+                guard(out.0, || Err(dress_up_error(error))),
+                UGOE_ERROR_DRESS_UP
+            );
+            assert_eq!(out.kind().as_deref(), Some(code));
             // 番号で列挙すると、値を持つ補足の値だけが同じ順に並ぶ (T0464)。
-            let listed: Vec<_> = (0..ugoe_last_error_field_count())
-                .map(|i| {
-                    let key = text(ugoe_last_error_field_key_at(i));
-                    (key, text(ugoe_last_error_field_value_at(i)))
-                })
+            let listed: Vec<_> = (0..out.field_count())
+                .map(|i| (out.key_at(i), out.value_at(i)))
                 .collect();
             let expected: Vec<_> = fields
                 .iter()
@@ -612,9 +619,7 @@ mod tests {
             assert_eq!(listed, expected, "{code}");
             for (key, value) in fields {
                 let key = CString::new(key).unwrap();
-                // SAFETY: `key` は NUL 終端の文字列。
-                let field = text(unsafe { ugoe_last_error_field(key.as_ptr()) });
-                assert_eq!(field.as_deref(), value, "{code} {key:?}");
+                assert_eq!(out.field(&key).as_deref(), value, "{code} {key:?}");
             }
         }
     }

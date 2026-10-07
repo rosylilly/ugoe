@@ -17,11 +17,14 @@ use ugoe::model::pose::{PoseEntry, PoseGroup};
 use ugoe::model::{Model, fixtures, standard};
 use ugoe_ffi::*;
 
+mod common;
+use common::*;
+
 const DT: f32 = 1.0 / 60.0;
 
 #[track_caller]
 fn ok(code: UgoeResult) {
-    assert_eq!(code, UGOE_OK, "{}", text(ugoe_last_error()));
+    assert_eq!(code, UGOE_OK, "{}", text(last_message()));
 }
 
 fn text(ptr: *const c_char) -> String {
@@ -44,14 +47,14 @@ impl Drop for Handle {
 fn from_model(model: &Model) -> Handle {
     let json = ugoe::format::model_to_json(model).unwrap();
     let mut p = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p) });
+    ok(unsafe { ugoe_puppet_create_from_json(json.as_ptr(), json.len(), &mut p, err()) });
     Handle(p)
 }
 
 fn part_index(p: &Handle, id: &str) -> u32 {
     let id = CString::new(id).unwrap();
     let mut index = u32::MAX;
-    ok(unsafe { ugoe_puppet_part_index(p.0, id.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_part_index(p.0, id.as_ptr(), &mut index, err()) });
     index
 }
 
@@ -60,23 +63,23 @@ fn part_opacity(p: &Handle, index: u32) -> (f32, f32) {
         value: f32::NAN,
         weight: f32::NAN,
     };
-    ok(unsafe { ugoe_puppet_part_opacity(p.0, index, &mut out) });
+    ok(unsafe { ugoe_puppet_part_opacity(p.0, index, &mut out, err()) });
     (out.value, out.weight)
 }
 
 fn show_pose(p: &Handle, part: &str) -> bool {
     let part = CString::new(part).unwrap();
     let mut shown = false;
-    ok(unsafe { ugoe_puppet_show_pose(p.0, part.as_ptr(), &mut shown) });
+    ok(unsafe { ugoe_puppet_show_pose(p.0, part.as_ptr(), &mut shown, err()) });
     shown
 }
 
 fn param(p: &Handle, id: &str) -> f32 {
     let id = CString::new(id).unwrap();
     let mut index = 0;
-    ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index, err()) });
     let mut value = f32::NAN;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value, err()) });
     value
 }
 
@@ -86,7 +89,7 @@ fn rust_param(puppet: &Puppet, id: &str) -> f32 {
 }
 
 fn set_effects(p: &Handle, json: &str) -> UgoeResult {
-    unsafe { ugoe_puppet_set_effects_json(p.0, json.as_ptr(), json.len()) }
+    unsafe { ugoe_puppet_set_effects_json(p.0, json.as_ptr(), json.len(), err()) }
 }
 
 /// パーツの一覧は `Model::parts` の並びで、ID から番号を引ける。
@@ -95,29 +98,29 @@ fn parts_are_listed_in_model_order() {
     let model = fixtures::pose_and_effects();
     let p = from_model(&model);
     let mut n = u32::MAX;
-    ok(unsafe { ugoe_puppet_part_count(p.0, &mut n) });
+    ok(unsafe { ugoe_puppet_part_count(p.0, &mut n, err()) });
     assert_eq!(n as usize, model.parts.len());
     for (i, part) in model.parts.iter().enumerate() {
         let mut id = ptr::null();
-        ok(unsafe { ugoe_puppet_part_id(p.0, i as u32, &mut id) });
+        ok(unsafe { ugoe_puppet_part_id(p.0, i as u32, &mut id, err()) });
         assert_eq!(text(id), part.id.as_str());
         assert_eq!(part_index(&p, part.id.as_str()), i as u32);
     }
 
     let mut id = ptr::null();
     assert_eq!(
-        unsafe { ugoe_puppet_part_id(p.0, n, &mut id) },
+        unsafe { ugoe_puppet_part_id(p.0, n, &mut id, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     let missing = CString::new("Missing").unwrap();
     let mut index = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_part_index(p.0, missing.as_ptr(), &mut index) },
+        unsafe { ugoe_puppet_part_index(p.0, missing.as_ptr(), &mut index, err()) },
         UGOE_ERROR_NOT_FOUND
     );
     let mut out = UgoePartOpacity::default();
     assert_eq!(
-        unsafe { ugoe_puppet_part_opacity(p.0, n, &mut out) },
+        unsafe { ugoe_puppet_part_opacity(p.0, n, &mut out, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 }
@@ -143,7 +146,7 @@ fn showing_a_pose_entry_follows_the_puppet() {
     assert!(!show_pose(&p, "Missing"));
     // `out_shown` は NULL でもよい。
     let arm_b = CString::new("ArmB").unwrap();
-    ok(unsafe { ugoe_puppet_show_pose(p.0, arm_b.as_ptr(), ptr::null_mut()) });
+    ok(unsafe { ugoe_puppet_show_pose(p.0, arm_b.as_ptr(), ptr::null_mut(), err()) });
     assert!(rust.pose_mut().show(&"ArmB".into()));
 
     let compiled = rust.instance().compiled().clone();
@@ -152,7 +155,7 @@ fn showing_a_pose_entry_follows_the_puppet() {
             assert!(show_pose(&p, "ArmA"));
             assert!(rust.pose_mut().show(&"ArmA".into()));
         }
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         rust.update(DT);
         for (id, &i) in ["ArmA", "SleeveA", "ArmB"].iter().zip(&parts) {
             let expected = rust
@@ -178,17 +181,17 @@ fn png() -> TextureData {
 /// ポーズの各グループで表示中の要素のパーツの ID (要素の無いグループは `None`)。
 fn visible_pose_parts(p: &Handle) -> Vec<Option<String>> {
     let mut groups = u32::MAX;
-    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups) });
+    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups, err()) });
     (0..groups)
         .map(|group| {
             let mut part = u32::MAX;
-            let code = unsafe { ugoe_puppet_pose_visible_part(p.0, group, &mut part) };
+            let code = unsafe { ugoe_puppet_pose_visible_part(p.0, group, &mut part, err()) };
             if code == UGOE_ERROR_NOT_FOUND {
                 return None;
             }
             ok(code);
             let mut id = ptr::null();
-            ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id) });
+            ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id, err()) });
             Some(text(id))
         })
         .collect()
@@ -224,32 +227,32 @@ fn visible_pose_parts_follow_show_pose_and_motions() {
     bundle.motions = vec![motion];
     let bytes = write_bundle(&bundle).unwrap();
     let mut raw = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw) });
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw, err()) });
     let p = Handle(raw);
 
     assert_eq!(visible_pose_parts(&p), [some("ArmA")]);
     assert!(show_pose(&p, "ArmB"));
     assert_eq!(visible_pose_parts(&p), [some("ArmB")]);
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert_eq!(visible_pose_parts(&p), [some("ArmB")]);
 
     let mut started = false;
-    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, &mut started) });
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, &mut started, err()) });
     assert!(started);
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert_eq!(visible_pose_parts(&p), [some("ArmA")]);
 
     let mut part = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_pose_visible_part(p.0, 1, &mut part) },
+        unsafe { ugoe_puppet_pose_visible_part(p.0, 1, &mut part, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_visible_part(p.0, 0, ptr::null_mut()) },
+        unsafe { ugoe_puppet_pose_visible_part(p.0, 0, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_group_count(ptr::null(), &mut part) },
+        unsafe { ugoe_puppet_pose_group_count(ptr::null(), &mut part, err()) },
         UGOE_ERROR_NULL_POINTER
     );
 }
@@ -280,8 +283,8 @@ fn visible_pose_parts_skip_empty_groups_and_include_modules() {
     file.textures = file.module.textures.iter().map(|_| png()).collect();
     let bytes = write_module(&file).unwrap();
     let mut m = ptr::null_mut();
-    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
-    ok(unsafe { ugoe_puppet_attach_module(p.0, m) });
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m, err()) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, m, err()) });
     unsafe { ugoe_module_destroy(m) };
     assert_eq!(visible_pose_parts(&p), [some("LongHair/Hair")]);
 }
@@ -289,17 +292,17 @@ fn visible_pose_parts_skip_empty_groups_and_include_modules() {
 /// ポーズの定義 (グループごとの要素のパーツの ID)。
 fn pose_definition(p: &Handle) -> Vec<Vec<String>> {
     let mut groups = u32::MAX;
-    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups) });
+    ok(unsafe { ugoe_puppet_pose_group_count(p.0, &mut groups, err()) });
     (0..groups)
         .map(|group| {
             let mut entries = u32::MAX;
-            ok(unsafe { ugoe_puppet_pose_entry_count(p.0, group, &mut entries) });
+            ok(unsafe { ugoe_puppet_pose_entry_count(p.0, group, &mut entries, err()) });
             (0..entries)
                 .map(|entry| {
                     let mut part = u32::MAX;
-                    ok(unsafe { ugoe_puppet_pose_entry_part(p.0, group, entry, &mut part) });
+                    ok(unsafe { ugoe_puppet_pose_entry_part(p.0, group, entry, &mut part, err()) });
                     let mut id = ptr::null();
-                    ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id) });
+                    ok(unsafe { ugoe_puppet_part_id(p.0, part, &mut id, err()) });
                     text(id)
                 })
                 .collect()
@@ -336,37 +339,37 @@ fn pose_definition_lists_entry_parts() {
     assert_eq!(pose_definition(&p), expected);
     // 表示の選択では定義は変わらない。
     assert!(show_pose(&p, "ArmB"));
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert_eq!(pose_definition(&p), expected);
 
     let mut out = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_count(p.0, 2, &mut out) },
+        unsafe { ugoe_puppet_pose_entry_count(p.0, 2, &mut out, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_part(p.0, 2, 0, &mut out) },
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 2, 0, &mut out, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_part(p.0, 0, 0, &mut out) },
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 0, 0, &mut out, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 2, &mut out) },
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 2, &mut out, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(out, 0, "失敗したら書かない");
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_count(p.0, 1, ptr::null_mut()) },
+        unsafe { ugoe_puppet_pose_entry_count(p.0, 1, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 0, ptr::null_mut()) },
+        unsafe { ugoe_puppet_pose_entry_part(p.0, 1, 0, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_pose_entry_count(ptr::null(), 1, &mut out) },
+        unsafe { ugoe_puppet_pose_entry_count(ptr::null(), 1, &mut out, err()) },
         UGOE_ERROR_NULL_POINTER
     );
 }
@@ -387,12 +390,12 @@ fn pose_definition_includes_modules() {
     file.textures = file.module.textures.iter().map(|_| png()).collect();
     let bytes = write_module(&file).unwrap();
     let mut m = ptr::null_mut();
-    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
-    ok(unsafe { ugoe_puppet_attach_module(p.0, m) });
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m, err()) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, m, err()) });
     assert_eq!(pose_definition(&p), [vec!["LongHair/Hair".to_owned()]]);
     unsafe { ugoe_module_destroy(m) };
     let name = CString::new("LongHair").unwrap();
-    ok(unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr()) });
+    ok(unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr(), err()) });
     assert!(pose_definition(&p).is_empty());
 }
 
@@ -404,13 +407,13 @@ fn evaluated_part_opacity_follows_the_puppet() {
     let mut rust = Puppet::new(model.clone()).unwrap();
     let evaluated = |index: u32| {
         let mut out = f32::NAN;
-        ok(unsafe { ugoe_puppet_part_evaluated_opacity(p.0, index, &mut out) });
+        ok(unsafe { ugoe_puppet_part_evaluated_opacity(p.0, index, &mut out, err()) });
         out
     };
     assert!(show_pose(&p, "ArmB"));
     assert!(rust.pose_mut().show(&"ArmB".into()));
     for frame in 0..20 {
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         rust.update(DT);
         for i in 0..model.parts.len() {
             let expected = rust.instance().part_opacity(i);
@@ -425,7 +428,9 @@ fn evaluated_part_opacity_follows_the_puppet() {
 
     let mut out = 0.0;
     assert_eq!(
-        unsafe { ugoe_puppet_part_evaluated_opacity(p.0, model.parts.len() as u32, &mut out) },
+        unsafe {
+            ugoe_puppet_part_evaluated_opacity(p.0, model.parts.len() as u32, &mut out, err())
+        },
         UGOE_ERROR_OUT_OF_RANGE
     );
 }
@@ -444,17 +449,17 @@ fn effect_settings_can_be_replaced() {
     // seed は正確に読む (f64 に丸めない)。
     assert!(json.contains(&(u64::MAX - 1).to_string()));
 
-    ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5) });
+    ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5, err()) });
     rust.set_lip_sync_level(Some(0.5));
     for _ in 0..10 {
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         rust.update(DT);
     }
     ok(set_effects(&p, &json));
     rust.set_effects(effects);
     let mut closed = false;
     for frame in 0..120 {
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         rust.update(DT);
         for id in [
             standard::EYE_L_OPEN,
@@ -478,7 +483,7 @@ fn effect_settings_can_be_replaced() {
     assert_eq!(set_effects(&p, "{"), UGOE_ERROR_FORMAT);
     assert_eq!(set_effects(&p, "[1]"), UGOE_ERROR_FORMAT);
     assert_eq!(
-        unsafe { ugoe_puppet_set_effects_json(p.0, ptr::null(), 0) },
+        unsafe { ugoe_puppet_set_effects_json(p.0, ptr::null(), 0, err()) },
         UGOE_ERROR_NULL_POINTER
     );
 }
@@ -493,7 +498,7 @@ fn invalid_effect_settings_are_rejected_without_changes() {
         &p,
         r#"{ "lip_sync": { "parameters": ["MouthOpenY"] } }"#,
     ));
-    ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5) });
+    ok(unsafe { ugoe_puppet_set_lip_sync_level(p.0, 0.5, err()) });
 
     let errors = CString::new("errors").unwrap();
     let error_codes = CString::new("error_codes").unwrap();
@@ -521,20 +526,12 @@ fn invalid_effect_settings_are_rejected_without_changes() {
         ),
     ] {
         assert_eq!(set_effects(&p, json), UGOE_ERROR_INVALID_MODEL, "{json}");
-        assert_eq!(text(ugoe_last_error_kind()), "invalid_model", "{json}");
-        assert_eq!(
-            text(unsafe { ugoe_last_error_field(errors.as_ptr()) }),
-            count,
-            "{json}"
-        );
-        assert_eq!(
-            text(unsafe { ugoe_last_error_field(error_codes.as_ptr()) }),
-            codes,
-            "{json}"
-        );
-        assert!(text(ugoe_last_error()).starts_with("effects failed validation"));
+        assert_eq!(text(last_kind()), "invalid_model", "{json}");
+        assert_eq!(text(last_field(&errors)), count, "{json}");
+        assert_eq!(text(last_field(&error_codes)), codes, "{json}");
+        assert!(text(last_message()).starts_with("effects failed validation"));
         // リップシンクは前の設定のまま。
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         assert!(
             (param(&p, standard::MOUTH_OPEN_Y) - 0.5).abs() < 1e-5,
             "{json}"

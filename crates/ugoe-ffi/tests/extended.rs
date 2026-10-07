@@ -17,6 +17,9 @@ use ugoe::model::module::Module;
 use ugoe::model::{HitArea, TextureRef, standard};
 use ugoe_ffi::*;
 
+mod common;
+use common::*;
+
 const DT: f32 = 1.0 / 60.0;
 
 fn png(tag: u8) -> TextureData {
@@ -28,7 +31,7 @@ fn png(tag: u8) -> TextureData {
 
 #[track_caller]
 fn ok(code: UgoeResult) {
-    assert_eq!(code, UGOE_OK, "{}", text(ugoe_last_error()));
+    assert_eq!(code, UGOE_OK, "{}", text(last_message()));
 }
 
 fn text(ptr: *const c_char) -> String {
@@ -59,7 +62,7 @@ impl Drop for ModuleHandle {
 fn from_bundle(bundle: &Bundle) -> Handle {
     let bytes = ugoe::format::write_bundle(bundle).unwrap();
     let mut p = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p) });
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut p, err()) });
     Handle(p)
 }
 
@@ -74,7 +77,7 @@ fn module(module: Module, tag: u8) -> ModuleHandle {
     file.textures = file.module.textures.iter().map(|_| png(tag)).collect();
     let bytes = write_module(&file).unwrap();
     let mut m = ptr::null_mut();
-    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m, err()) });
     ModuleHandle(m)
 }
 
@@ -84,16 +87,19 @@ fn texture(p: &Handle, index: u32) -> Vec<u8> {
         data: ptr::null(),
         len: 0,
     };
-    ok(unsafe { ugoe_puppet_texture(p.0, index, &mut t) });
+    ok(unsafe { ugoe_puppet_texture(p.0, index, &mut t, err()) });
     if t.data.is_null() {
         return Vec::new();
     }
     unsafe { std::slice::from_raw_parts(t.data, t.len) }.to_vec()
 }
 
-fn count(p: &Handle, f: unsafe extern "C" fn(*const UgoePuppet, *mut u32) -> UgoeResult) -> u32 {
+fn count(
+    p: &Handle,
+    f: unsafe extern "C" fn(*const UgoePuppet, *mut u32, *mut UgoeError) -> UgoeResult,
+) -> u32 {
     let mut n = u32::MAX;
-    ok(unsafe { f(p.0, &mut n) });
+    ok(unsafe { f(p.0, &mut n, err()) });
     n
 }
 
@@ -101,7 +107,7 @@ fn drawable_ids(p: &Handle) -> Vec<String> {
     (0..count(p, ugoe_puppet_drawable_count))
         .map(|d| {
             let mut info = std::mem::MaybeUninit::<UgoeDrawableInfo>::uninit();
-            ok(unsafe { ugoe_puppet_drawable_info(p.0, d, info.as_mut_ptr()) });
+            ok(unsafe { ugoe_puppet_drawable_info(p.0, d, info.as_mut_ptr(), err()) });
             text(unsafe { info.assume_init() }.id)
         })
         .collect()
@@ -110,7 +116,7 @@ fn drawable_ids(p: &Handle) -> Vec<String> {
 fn changed_textures(p: &Handle) -> Vec<u32> {
     let mut ptr = ptr::null();
     let mut len = usize::MAX;
-    ok(unsafe { ugoe_puppet_changed_textures(p.0, &mut ptr, &mut len) });
+    ok(unsafe { ugoe_puppet_changed_textures(p.0, &mut ptr, &mut len, err()) });
     if len == 0 {
         return Vec::new();
     }
@@ -120,15 +126,15 @@ fn changed_textures(p: &Handle) -> Vec<u32> {
 fn param(p: &Handle, id: &str) -> f32 {
     let id = CString::new(id).unwrap();
     let mut index = 0;
-    ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index, err()) });
     let mut value = f32::NAN;
-    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value) });
+    ok(unsafe { ugoe_puppet_get_parameter(p.0, index, &mut value, err()) });
     value
 }
 
 fn field(key: &str) -> String {
     let key = CString::new(key).unwrap();
-    text(unsafe { ugoe_last_error_field(key.as_ptr()) })
+    text(last_field(&key))
 }
 
 #[test]
@@ -138,13 +144,13 @@ fn modules_attach_detach_and_follow_the_puppet() {
     let dress = module(dress_module(), 2);
 
     let mut s = ptr::null();
-    ok(unsafe { ugoe_module_name(hair.0, &mut s) });
+    ok(unsafe { ugoe_module_name(hair.0, &mut s, err()) });
     assert_eq!(text(s), "LongHair");
-    ok(unsafe { ugoe_module_slot(hair.0, &mut s) });
+    ok(unsafe { ugoe_module_slot(hair.0, &mut s, err()) });
     assert_eq!(text(s), "Hair");
     let slots: Vec<String> = (0..count(&p, ugoe_puppet_slot_count))
         .map(|i| {
-            ok(unsafe { ugoe_puppet_slot_id(p.0, i, &mut s) });
+            ok(unsafe { ugoe_puppet_slot_id(p.0, i, &mut s, err()) });
             text(s)
         })
         .collect();
@@ -154,7 +160,7 @@ fn modules_attach_detach_and_follow_the_puppet() {
 
     // Rust の Puppet と同じモデルになる。
     let mut reference = Puppet::new(dress_up_base()).unwrap();
-    ok(unsafe { ugoe_puppet_attach_module(p.0, hair.0) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, hair.0, err()) });
     let change = reference
         .attach_module(std::sync::Arc::new(long_hair_module()))
         .unwrap();
@@ -174,22 +180,22 @@ fn modules_attach_detach_and_follow_the_puppet() {
 
     // 付けたモジュールは、UgoeModule を破棄しても残る。
     drop(hair);
-    ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0, err()) });
     assert_eq!(changed_textures(&p), [2]);
     assert_eq!(count(&p, ugoe_puppet_attached_module_count), 2);
     let names: Vec<String> = (0..2)
         .map(|i| {
-            ok(unsafe { ugoe_puppet_attached_module_name(p.0, i, &mut s) });
+            ok(unsafe { ugoe_puppet_attached_module_name(p.0, i, &mut s, err()) });
             text(s)
         })
         .collect();
     assert_eq!(names, ["LongHair", "Dress"]);
     assert_eq!(texture(&p, 1), png(1).bytes);
     assert_eq!(texture(&p, 2), png(2).bytes);
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
 
     let name = CString::new("LongHair").unwrap();
-    ok(unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr()) });
+    ok(unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr(), err()) });
     assert_eq!(count(&p, ugoe_puppet_texture_count), 2);
     assert_eq!(changed_textures(&p), [1]);
     assert_eq!(texture(&p, 1), png(2).bytes);
@@ -199,7 +205,7 @@ fn modules_attach_detach_and_follow_the_puppet() {
             .any(|id| id.starts_with("LongHair/"))
     );
 
-    ok(unsafe { ugoe_puppet_set_modules(p.0, ptr::null(), 0) });
+    ok(unsafe { ugoe_puppet_set_modules(p.0, ptr::null(), 0, err()) });
     assert_eq!(count(&p, ugoe_puppet_attached_module_count), 0);
     assert_eq!(count(&p, ugoe_puppet_texture_count), 1);
     let base = Puppet::new(dress_up_base()).unwrap();
@@ -208,7 +214,7 @@ fn modules_attach_detach_and_follow_the_puppet() {
         base.instance().drawables().len()
     );
     let list = [dress.0.cast_const()];
-    ok(unsafe { ugoe_puppet_set_modules(p.0, list.as_ptr(), list.len()) });
+    ok(unsafe { ugoe_puppet_set_modules(p.0, list.as_ptr(), list.len(), err()) });
     assert_eq!(count(&p, ugoe_puppet_attached_module_count), 1);
 }
 
@@ -222,7 +228,7 @@ fn attaching_replaces_modules_like_the_puppet() {
         (0..count(p, ugoe_puppet_attached_module_count))
             .map(|i| {
                 let mut s = ptr::null();
-                ok(unsafe { ugoe_puppet_attached_module_name(p.0, i, &mut s) });
+                ok(unsafe { ugoe_puppet_attached_module_name(p.0, i, &mut s, err()) });
                 text(s)
             })
             .collect()
@@ -232,7 +238,7 @@ fn attaching_replaces_modules_like_the_puppet() {
     };
     let mut attach = |m: Module, tag: u8| {
         let handle = module(m.clone(), tag);
-        ok(unsafe { ugoe_puppet_attach_module(p.0, handle.0) });
+        ok(unsafe { ugoe_puppet_attach_module(p.0, handle.0, err()) });
         let change = reference.attach_module(std::sync::Arc::new(m)).unwrap();
         assert_eq!(changed_textures(&p), change.textures);
         assert_eq!(attached_names(&p), reference_names(&reference));
@@ -271,10 +277,10 @@ fn dress_up_failures_carry_the_wasm_codes() {
     stray.slot = "Nope".into();
     let stray = module(stray, 1);
     assert_eq!(
-        unsafe { ugoe_puppet_attach_module(p.0, stray.0) },
+        unsafe { ugoe_puppet_attach_module(p.0, stray.0, err()) },
         UGOE_ERROR_DRESS_UP
     );
-    assert_eq!(text(ugoe_last_error_kind()), "unknown_slot");
+    assert_eq!(text(last_kind()), "unknown_slot");
     assert_eq!(field("module"), "LongHair");
     assert_eq!(field("slot"), "Nope");
     // 失敗したときは何も変えない。
@@ -282,42 +288,42 @@ fn dress_up_failures_carry_the_wasm_codes() {
 
     let name = CString::new("Dress").unwrap();
     assert_eq!(
-        unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr()) },
+        unsafe { ugoe_puppet_detach_module(p.0, name.as_ptr(), err()) },
         UGOE_ERROR_DRESS_UP
     );
-    assert_eq!(text(ugoe_last_error_kind()), "not_attached");
+    assert_eq!(text(last_kind()), "not_attached");
     assert_eq!(field("module"), "Dress");
 
     let garbage = b"not a module";
     let mut m = ptr::null_mut();
     assert_eq!(
-        unsafe { ugoe_module_create(garbage.as_ptr(), garbage.len(), &mut m) },
+        unsafe { ugoe_module_create(garbage.as_ptr(), garbage.len(), &mut m, err()) },
         UGOE_ERROR_FORMAT
     );
     assert!(m.is_null());
-    assert_eq!(text(ugoe_last_error_kind()), "invalid_file");
+    assert_eq!(text(last_kind()), "invalid_file");
 
     // 番号の補足の値は 10 進の文字列。本体がアバタープロファイルを持たなければ `actual` は無い (T0157)。
     let mut picky = long_hair_module();
     picky.requires.avatar_level = Some(2);
     let picky = module(picky, 1);
     assert_eq!(
-        unsafe { ugoe_puppet_attach_module(p.0, picky.0) },
+        unsafe { ugoe_puppet_attach_module(p.0, picky.0, err()) },
         UGOE_ERROR_DRESS_UP
     );
-    assert_eq!(text(ugoe_last_error_kind()), "avatar_level");
+    assert_eq!(text(last_kind()), "avatar_level");
     assert_eq!(field("module"), "LongHair");
     assert_eq!(field("required"), "2");
-    assert!(unsafe { ugoe_last_error_field(c"actual".as_ptr()) }.is_null());
+    assert!(last_field(c"actual").is_null());
 
     // 本体がスロットを持たなければ付けられない。
     let q = from_model(fixtures::single_quad());
     let hair = module(long_hair_module(), 1);
     assert_eq!(
-        unsafe { ugoe_puppet_attach_module(q.0, hair.0) },
+        unsafe { ugoe_puppet_attach_module(q.0, hair.0, err()) },
         UGOE_ERROR_DRESS_UP
     );
-    assert!(!text(ugoe_last_error_kind()).is_empty());
+    assert!(!text(last_kind()).is_empty());
 }
 
 #[test]
@@ -334,10 +340,10 @@ fn normal_maps_and_lit_drawables() {
     let p = from_bundle(&bundle);
 
     let mut uses = false;
-    ok(unsafe { ugoe_puppet_uses_lighting(p.0, &mut uses) });
+    ok(unsafe { ugoe_puppet_uses_lighting(p.0, &mut uses, err()) });
     assert!(uses);
     let mut lit = false;
-    ok(unsafe { ugoe_puppet_drawable_lit(p.0, 0, &mut lit) });
+    ok(unsafe { ugoe_puppet_drawable_lit(p.0, 0, &mut lit, err()) });
     assert!(lit);
 
     let mut t = UgoeTexture {
@@ -345,21 +351,21 @@ fn normal_maps_and_lit_drawables() {
         data: ptr::null(),
         len: 0,
     };
-    ok(unsafe { ugoe_puppet_normal_map(p.0, 0, &mut t) });
+    ok(unsafe { ugoe_puppet_normal_map(p.0, 0, &mut t, err()) });
     assert_eq!(t.format, UGOE_TEXTURE_NONE);
-    ok(unsafe { ugoe_puppet_normal_map(p.0, 1, &mut t) });
+    ok(unsafe { ugoe_puppet_normal_map(p.0, 1, &mut t, err()) });
     assert_eq!(t.format, UGOE_TEXTURE_PNG);
     assert_eq!(
         unsafe { std::slice::from_raw_parts(t.data, t.len) },
         png(9).bytes
     );
     assert_eq!(
-        unsafe { ugoe_puppet_normal_map(p.0, 2, &mut t) },
+        unsafe { ugoe_puppet_normal_map(p.0, 2, &mut t, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 
     let q = from_model(fixtures::single_quad());
-    ok(unsafe { ugoe_puppet_uses_lighting(q.0, &mut uses) });
+    ok(unsafe { ugoe_puppet_uses_lighting(q.0, &mut uses, err()) });
     assert!(!uses);
 }
 
@@ -387,7 +393,15 @@ fn lighting_uniform_matches_the_reference_layout() {
     ];
     let ambient = [0.1, 0.2, 0.3];
     let mut u = UgoeLightingUniform::default();
-    ok(unsafe { ugoe_lighting_uniform(ambient.as_ptr(), lights.as_ptr(), lights.len(), &mut u) });
+    ok(unsafe {
+        ugoe_lighting_uniform(
+            ambient.as_ptr(),
+            lights.as_ptr(),
+            lights.len(),
+            &mut u,
+            err(),
+        )
+    });
     assert_eq!(u.ambient, [0.1, 0.2, 0.3, 0.0]);
     assert_eq!(u.count, 3);
     assert_eq!(u.lights[0].vector, [0.0, 0.0, 1.0, 0.0]);
@@ -401,13 +415,13 @@ fn lighting_uniform_matches_the_reference_layout() {
     );
 
     // 既定は環境光が白で光源なし。
-    ok(unsafe { ugoe_lighting_uniform(ptr::null(), ptr::null(), 0, &mut u) });
+    ok(unsafe { ugoe_lighting_uniform(ptr::null(), ptr::null(), 0, &mut u, err()) });
     assert_eq!(u.ambient, [1.0, 1.0, 1.0, 0.0]);
     assert_eq!(u.count, 0);
 
     // 上限を超えた光源は先頭だけを使う。
     let many = vec![lights[0]; UGOE_MAX_LIGHTS + 2];
-    ok(unsafe { ugoe_lighting_uniform(ptr::null(), many.as_ptr(), many.len(), &mut u) });
+    ok(unsafe { ugoe_lighting_uniform(ptr::null(), many.as_ptr(), many.len(), &mut u, err()) });
     assert_eq!(u.count as usize, UGOE_MAX_LIGHTS);
 
     let bad = [
@@ -434,7 +448,7 @@ fn lighting_uniform_matches_the_reference_layout() {
     ];
     for light in bad {
         assert_eq!(
-            unsafe { ugoe_lighting_uniform(ptr::null(), &light, 1, &mut u) },
+            unsafe { ugoe_lighting_uniform(ptr::null(), &light, 1, &mut u, err()) },
             UGOE_ERROR_INVALID_ARGUMENT,
             "{light:?}"
         );
@@ -458,46 +472,48 @@ fn hit_tests_follow_the_evaluated_shape() {
     let p = from_model(model);
     assert_eq!(count(&p, ugoe_puppet_hit_area_count), 1);
     let mut s = ptr::null();
-    ok(unsafe { ugoe_puppet_hit_area_id(p.0, 0, &mut s) });
+    ok(unsafe { ugoe_puppet_hit_area_id(p.0, 0, &mut s, err()) });
     assert_eq!(text(s), "Body");
 
     let body = CString::new("Body").unwrap();
     let head = CString::new("Head").unwrap();
     let (x, y) = (220.0, 100.0);
     let mut hit = true;
-    ok(unsafe { ugoe_puppet_hit_test(p.0, body.as_ptr(), x, y, &mut hit) });
+    ok(unsafe { ugoe_puppet_hit_test(p.0, body.as_ptr(), x, y, &mut hit, err()) });
     assert!(!hit);
-    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, 1.0) });
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
-    ok(unsafe { ugoe_puppet_hit_test(p.0, body.as_ptr(), x, y, &mut hit) });
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, 0, 1.0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
+    ok(unsafe { ugoe_puppet_hit_test(p.0, body.as_ptr(), x, y, &mut hit, err()) });
     assert!(hit);
     assert_eq!(
-        unsafe { ugoe_puppet_hit_test(p.0, head.as_ptr(), x, y, &mut hit) },
+        unsafe { ugoe_puppet_hit_test(p.0, head.as_ptr(), x, y, &mut hit, err()) },
         UGOE_ERROR_NOT_FOUND
     );
 
     let mut n = usize::MAX;
     assert_eq!(
-        unsafe { ugoe_puppet_hit_areas_at(p.0, x, y, ptr::null_mut(), 0, &mut n) },
+        unsafe { ugoe_puppet_hit_areas_at(p.0, x, y, ptr::null_mut(), 0, &mut n, err()) },
         UGOE_ERROR_BUFFER_TOO_SMALL
     );
     assert_eq!(n, 1);
     let mut hits = [u32::MAX; 2];
-    ok(unsafe { ugoe_puppet_hit_areas_at(p.0, x, y, hits.as_mut_ptr(), hits.len(), &mut n) });
+    ok(unsafe {
+        ugoe_puppet_hit_areas_at(p.0, x, y, hits.as_mut_ptr(), hits.len(), &mut n, err())
+    });
     assert_eq!((n, hits[0]), (1, 0));
-    ok(unsafe { ugoe_puppet_hit_areas_at(p.0, 10.0, 10.0, ptr::null_mut(), 0, &mut n) });
+    ok(unsafe { ugoe_puppet_hit_areas_at(p.0, 10.0, 10.0, ptr::null_mut(), 0, &mut n, err()) });
     assert_eq!(n, 0);
 
     let mut index = u32::MAX;
-    ok(unsafe { ugoe_puppet_standard_hit_area(p.0, body.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_standard_hit_area(p.0, body.as_ptr(), &mut index, err()) });
     assert_eq!(index, 0);
     assert_eq!(
-        unsafe { ugoe_puppet_standard_hit_area(p.0, head.as_ptr(), &mut index) },
+        unsafe { ugoe_puppet_standard_hit_area(p.0, head.as_ptr(), &mut index, err()) },
         UGOE_ERROR_NOT_FOUND
     );
-    ok(unsafe { ugoe_puppet_hit_test_standard(p.0, body.as_ptr(), x, y, &mut hit) });
+    ok(unsafe { ugoe_puppet_hit_test_standard(p.0, body.as_ptr(), x, y, &mut hit, err()) });
     assert!(hit);
-    ok(unsafe { ugoe_puppet_hit_test_standard(p.0, head.as_ptr(), x, y, &mut hit) });
+    ok(unsafe { ugoe_puppet_hit_test_standard(p.0, head.as_ptr(), x, y, &mut hit, err()) });
     assert!(!hit);
 }
 
@@ -523,49 +539,49 @@ fn tracking_writes_into_the_parameters() {
 
     let name = CString::new("eyeBlinkLeft").unwrap();
     let mut index = u32::MAX;
-    ok(unsafe { ugoe_blend_shape_index(name.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_blend_shape_index(name.as_ptr(), &mut index, err()) });
     let mut s = ptr::null();
-    ok(unsafe { ugoe_blend_shape_name(index, &mut s) });
+    ok(unsafe { ugoe_blend_shape_name(index, &mut s, err()) });
     assert_eq!(text(s), "eyeBlinkLeft");
     let neutral = CString::new("_neutral").unwrap();
     assert_eq!(
-        unsafe { ugoe_blend_shape_index(neutral.as_ptr(), &mut index) },
+        unsafe { ugoe_blend_shape_index(neutral.as_ptr(), &mut index, err()) },
         UGOE_ERROR_NOT_FOUND
     );
     assert_eq!(
-        unsafe { ugoe_blend_shape_name(UGOE_BLEND_SHAPE_COUNT as u32, &mut s) },
+        unsafe { ugoe_blend_shape_name(UGOE_BLEND_SHAPE_COUNT as u32, &mut s, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 
     let mut input = tracking_input();
-    ok(unsafe { ugoe_blend_shape_index(name.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_blend_shape_index(name.as_ptr(), &mut index, err()) });
     input.blend_shapes[index as usize] = 0.75;
     input.head_yaw = 10.0;
-    ok(unsafe { ugoe_puppet_set_tracking(p.0, &input) });
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_set_tracking(p.0, &input, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert!((param(&p, standard::EYE_L_OPEN) - 0.25).abs() < 1e-4);
     assert!((param(&p, standard::ANGLE_X) - 10.0).abs() < 1e-4);
 
     // 入力をやめても最後の値は残る。
-    ok(unsafe { ugoe_puppet_set_tracking(p.0, ptr::null()) });
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_set_tracking(p.0, ptr::null(), err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert!((param(&p, standard::EYE_L_OPEN) - 0.25).abs() < 1e-4);
 
     input.head_yaw = f32::INFINITY;
     assert_eq!(
-        unsafe { ugoe_puppet_set_tracking(p.0, &input) },
+        unsafe { ugoe_puppet_set_tracking(p.0, &input, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
 
     let mut n = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_tracking_targets(p.0, ptr::null_mut(), 0, &mut n) },
+        unsafe { ugoe_puppet_tracking_targets(p.0, ptr::null_mut(), 0, &mut n, err()) },
         UGOE_ERROR_BUFFER_TOO_SMALL
     );
     let mut targets = vec![0u32; n];
-    ok(unsafe { ugoe_puppet_tracking_targets(p.0, targets.as_mut_ptr(), n, &mut n) });
+    ok(unsafe { ugoe_puppet_tracking_targets(p.0, targets.as_mut_ptr(), n, &mut n, err()) });
     let angle_x = CString::new(standard::ANGLE_X).unwrap();
-    ok(unsafe { ugoe_puppet_parameter_index(p.0, angle_x.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, angle_x.as_ptr(), &mut index, err()) });
     assert!(targets.contains(&index));
     assert!(targets.is_sorted());
 }
@@ -574,15 +590,15 @@ fn tracking_writes_into_the_parameters() {
 fn stages_can_be_turned_off() {
     let p = from_model(fixtures::avatar_profile());
     let eye = standard::EYE_L_OPEN;
-    ok(unsafe { ugoe_puppet_set_stage_enabled(p.0, UGOE_STAGE_EYE_BLINK, false) });
-    ok(unsafe { ugoe_puppet_set_stage_enabled(p.0, UGOE_STAGE_BREATH, false) });
+    ok(unsafe { ugoe_puppet_set_stage_enabled(p.0, UGOE_STAGE_EYE_BLINK, false, err()) });
+    ok(unsafe { ugoe_puppet_set_stage_enabled(p.0, UGOE_STAGE_BREATH, false, err()) });
     let before = param(&p, eye);
     for _ in 0..600 {
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         assert_eq!(param(&p, eye), before);
     }
     assert_eq!(
-        unsafe { ugoe_puppet_set_stage_enabled(p.0, 99, true) },
+        unsafe { ugoe_puppet_set_stage_enabled(p.0, 99, true, err()) },
         UGOE_ERROR_INVALID_ARGUMENT
     );
 }
@@ -595,7 +611,14 @@ fn parameters_can_be_set_by_id_in_bulk() {
     let values = [12.0, 1.0, 1000.0];
     let mut applied = 0;
     ok(unsafe {
-        ugoe_puppet_set_parameters_by_id(p.0, ptrs.as_ptr(), values.as_ptr(), 3, &mut applied)
+        ugoe_puppet_set_parameters_by_id(
+            p.0,
+            ptrs.as_ptr(),
+            values.as_ptr(),
+            3,
+            &mut applied,
+            err(),
+        )
     });
     assert_eq!(applied, 2);
     assert_eq!(param(&p, standard::ANGLE_X), 12.0);
@@ -611,13 +634,14 @@ fn parameters_can_be_set_by_id_in_bulk() {
                 values.as_ptr(),
                 3,
                 ptr::null_mut(),
+                err(),
             )
         },
         UGOE_ERROR_INVALID_ARGUMENT
     );
     assert_eq!(param(&p, standard::ANGLE_X), 12.0);
     ok(unsafe {
-        ugoe_puppet_set_parameters_by_id(p.0, ptr::null(), ptr::null(), 0, ptr::null_mut())
+        ugoe_puppet_set_parameters_by_id(p.0, ptr::null(), ptr::null(), 0, ptr::null_mut(), err())
     });
 }
 
@@ -632,12 +656,12 @@ fn expressions_can_be_stopped() {
         .unwrap(),
     ];
     let p = from_bundle(&bundle);
-    ok(unsafe { ugoe_puppet_set_expression(p.0, 0) });
-    ok(unsafe { ugoe_puppet_update(p.0, 1.0) });
+    ok(unsafe { ugoe_puppet_set_expression(p.0, 0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 1.0, err()) });
     assert!((param(&p, "X") - 0.5).abs() < 1e-5);
-    ok(unsafe { ugoe_puppet_stop_expressions(p.0) });
-    ok(unsafe { ugoe_puppet_update(p.0, 1.0) });
-    ok(unsafe { ugoe_puppet_update(p.0, 1.0) });
+    ok(unsafe { ugoe_puppet_stop_expressions(p.0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 1.0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 1.0, err()) });
     assert!(param(&p, "X").abs() < 1e-5);
 }
 
@@ -649,7 +673,7 @@ fn load_warnings_have_codes_and_fields() {
     // 新しい版を模したバンドル (知らない任意の機能と未知の値。assets/compat/README.md)。
     let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
     let mut raw = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw) });
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw, err()) });
     let p = Handle(raw);
     let n = count(&p, ugoe_puppet_load_warning_count);
     let mut w = UgoeWarning {
@@ -661,7 +685,7 @@ fn load_warnings_have_codes_and_fields() {
     let path = CString::new("path").unwrap();
     let mut value = ptr::null();
     for i in 0..n {
-        ok(unsafe { ugoe_puppet_load_warning(p.0, i, &mut w) });
+        ok(unsafe { ugoe_puppet_load_warning(p.0, i, &mut w, err()) });
         let code = text(w.code);
         assert!(!text(w.message).is_empty());
         let key = if code == "unknown_optional_feature" {
@@ -669,7 +693,7 @@ fn load_warnings_have_codes_and_fields() {
         } else {
             &path
         };
-        ok(unsafe { ugoe_puppet_load_warning_field(p.0, i, key.as_ptr(), &mut value) });
+        ok(unsafe { ugoe_puppet_load_warning_field(p.0, i, key.as_ptr(), &mut value, err()) });
         assert!(!text(value).is_empty());
         codes.push(code);
     }
@@ -680,27 +704,27 @@ fn load_warnings_have_codes_and_fields() {
     assert!(codes.contains(&"unknown_value".to_owned()), "{codes:?}");
     let other = CString::new("texture").unwrap();
     assert_eq!(
-        unsafe { ugoe_puppet_load_warning_field(p.0, 0, other.as_ptr(), &mut value) },
+        unsafe { ugoe_puppet_load_warning_field(p.0, 0, other.as_ptr(), &mut value, err()) },
         UGOE_ERROR_NOT_FOUND
     );
     assert_eq!(
-        unsafe { ugoe_puppet_load_warning(p.0, n, &mut w) },
+        unsafe { ugoe_puppet_load_warning(p.0, n, &mut w, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 
     let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
     let mut m = ptr::null_mut();
-    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m, err()) });
     let future = ModuleHandle(m);
     let mut n = 0;
-    ok(unsafe { ugoe_module_warning_count(future.0, &mut n) });
+    ok(unsafe { ugoe_module_warning_count(future.0, &mut n, err()) });
     assert!(n > 0);
-    ok(unsafe { ugoe_module_warning(future.0, 0, &mut w) });
+    ok(unsafe { ugoe_module_warning(future.0, 0, &mut w, err()) });
     assert!(!text(w.code).is_empty());
 
     let hair = module(long_hair_module(), 1);
     let mut n = u32::MAX;
-    ok(unsafe { ugoe_module_warning_count(hair.0, &mut n) });
+    ok(unsafe { ugoe_module_warning_count(hair.0, &mut n, err()) });
     assert_eq!(n, 0);
 }
 
@@ -762,13 +786,13 @@ fn load_warnings_are_unchanged_by_the_shared_codes() {
     let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoe");
     let (_, report) = ugoe::format::read_bundle_with_report(bytes).unwrap();
     let mut raw = ptr::null_mut();
-    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw) });
+    ok(unsafe { ugoe_puppet_create_from_bundle(bytes.as_ptr(), bytes.len(), &mut raw, err()) });
     let p = Handle(raw);
     let n = count(&p, ugoe_puppet_load_warning_count);
     let actual = warnings(
         n,
-        |i, out| unsafe { ugoe_puppet_load_warning(p.0, i, out) },
-        |i, key, out| unsafe { ugoe_puppet_load_warning_field(p.0, i, key, out) },
+        |i, out| unsafe { ugoe_puppet_load_warning(p.0, i, out, err()) },
+        |i, key, out| unsafe { ugoe_puppet_load_warning_field(p.0, i, key, out, err()) },
     );
     let expected = expected_read_warnings(&report);
     assert!(!expected.is_empty());
@@ -777,14 +801,14 @@ fn load_warnings_are_unchanged_by_the_shared_codes() {
     let bytes = include_bytes!("../../../assets/compat/future/optional-feature.ugoemod");
     let (_, report) = ugoe::format::module_file::read_module_with_report(bytes).unwrap();
     let mut m = ptr::null_mut();
-    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m) });
+    ok(unsafe { ugoe_module_create(bytes.as_ptr(), bytes.len(), &mut m, err()) });
     let future = ModuleHandle(m);
     let mut n = 0;
-    ok(unsafe { ugoe_module_warning_count(future.0, &mut n) });
+    ok(unsafe { ugoe_module_warning_count(future.0, &mut n, err()) });
     let actual = warnings(
         n,
-        |i, out| unsafe { ugoe_module_warning(future.0, i, out) },
-        |i, key, out| unsafe { ugoe_module_warning_field(future.0, i, key, out) },
+        |i, out| unsafe { ugoe_module_warning(future.0, i, out, err()) },
+        |i, key, out| unsafe { ugoe_module_warning_field(future.0, i, key, out, err()) },
     );
     assert_eq!(actual, expected_read_warnings(&report));
 }
@@ -812,7 +836,7 @@ fn motion_events(p: &Handle) -> Vec<(f32, String)> {
                 time: f32::NAN,
                 value: ptr::null(),
             };
-            ok(unsafe { ugoe_puppet_motion_event(p.0, i, &mut e) });
+            ok(unsafe { ugoe_puppet_motion_event(p.0, i, &mut e, err()) });
             (e.time, text(e.value))
         })
         .collect()
@@ -830,7 +854,7 @@ fn motion_events_follow_the_puppet() {
     let mut rust = Puppet::new(fixtures::pose_and_effects()).unwrap();
     assert!(motion_events(&p).is_empty());
 
-    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut()) });
+    ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut(), err()) });
     rust.start_motion(motion, ugoe::motion::Priority::Force);
     for (dt, expected) in [
         (0.25, vec![]),
@@ -840,7 +864,7 @@ fn motion_events_follow_the_puppet() {
         ),
         (0.1, vec![]),
     ] {
-        ok(unsafe { ugoe_puppet_update(p.0, dt) });
+        ok(unsafe { ugoe_puppet_update(p.0, dt, err()) });
         rust.update(dt);
         let actual = motion_events(&p);
         assert_eq!(actual, expected);
@@ -856,7 +880,7 @@ fn motion_events_follow_the_puppet() {
         value: ptr::null(),
     };
     assert_eq!(
-        unsafe { ugoe_puppet_motion_event(p.0, 0, &mut e) },
+        unsafe { ugoe_puppet_motion_event(p.0, 0, &mut e, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
 }
@@ -868,7 +892,7 @@ fn motion_event_sources(p: &Handle) -> Vec<(String, u64)> {
                 motion: ptr::null(),
                 number: u64::MAX,
             };
-            ok(unsafe { ugoe_puppet_motion_event_source(p.0, i, &mut s) });
+            ok(unsafe { ugoe_puppet_motion_event_source(p.0, i, &mut s, err()) });
             (text(s.motion), s.number)
         })
         .collect()
@@ -889,7 +913,9 @@ fn motion_event_sources_name_the_motion_that_fired() {
     let p = from_bundle(&bundle);
     let mut rust = Puppet::new(fixtures::pose_and_effects()).unwrap();
     let start = |rust: &mut Puppet| {
-        ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut()) });
+        ok(unsafe {
+            ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_FORCE, ptr::null_mut(), err())
+        });
         rust.start_motion(motion.clone(), ugoe::motion::Priority::Force);
     };
     start(&mut rust);
@@ -902,7 +928,7 @@ fn motion_event_sources_name_the_motion_that_fired() {
         if restart {
             start(&mut rust);
         }
-        ok(unsafe { ugoe_puppet_update(p.0, dt) });
+        ok(unsafe { ugoe_puppet_update(p.0, dt, err()) });
         rust.update(dt);
         let values: Vec<_> = motion_events(&p).into_iter().map(|(_, v)| v).collect();
         let sources = motion_event_sources(&p);
@@ -924,44 +950,39 @@ fn motion_event_sources_name_the_motion_that_fired() {
         number: 0,
     };
     assert_eq!(
-        unsafe { ugoe_puppet_motion_event_source(p.0, 2, &mut s) },
+        unsafe { ugoe_puppet_motion_event_source(p.0, 2, &mut s, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_motion_event_source(p.0, 0, ptr::null_mut()) },
+        unsafe { ugoe_puppet_motion_event_source(p.0, 0, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
 }
 
 fn physics_json(p: &Handle) -> String {
     let mut len = usize::MAX;
-    let code = unsafe { ugoe_puppet_physics_json(p.0, ptr::null_mut(), 0, &mut len) };
+    let code = unsafe { ugoe_puppet_physics_json(p.0, ptr::null_mut(), 0, &mut len, err()) };
     if len == 0 {
         ok(code);
         return String::new();
     }
     assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
     let mut buf = vec![0u8; len];
-    ok(unsafe { ugoe_puppet_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len) });
+    ok(unsafe { ugoe_puppet_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len, err()) });
     assert_eq!(len, buf.len());
     String::from_utf8(buf).unwrap()
 }
 
 fn set_physics(p: &Handle, json: &str) -> UgoeResult {
-    unsafe { ugoe_puppet_set_physics_json(p.0, json.as_ptr(), json.len()) }
+    unsafe { ugoe_puppet_set_physics_json(p.0, json.as_ptr(), json.len(), err()) }
 }
 
 /// 直前の失敗の種類と、番号で列挙した補足の値 (T0464)。
 fn last_kind_and_fields() -> (String, Vec<(String, String)>) {
-    let fields = (0..ugoe_last_error_field_count())
-        .map(|i| {
-            (
-                text(ugoe_last_error_field_key_at(i)),
-                text(ugoe_last_error_field_value_at(i)),
-            )
-        })
+    let fields = (0..last_field_count())
+        .map(|i| (text(last_field_key_at(i)), text(last_field_value_at(i))))
         .collect();
-    (text(ugoe_last_error_kind()), fields)
+    (text(last_kind()), fields)
 }
 
 /// 物理の設定の検査の失敗の種類と補足の値 (着せ替えの `invalid_physics` と同じ。T0469)。
@@ -997,11 +1018,11 @@ fn physics_settings_can_be_replaced() {
         .with_physics(settings.clone());
     let angle = CString::new(standard::ANGLE_X).unwrap();
     let mut index = 0;
-    ok(unsafe { ugoe_puppet_parameter_index(p.0, angle.as_ptr(), &mut index) });
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, angle.as_ptr(), &mut index, err()) });
     for frame in 0..8 {
         let value = (frame as f32 * 0.7).sin() * 30.0;
-        ok(unsafe { ugoe_puppet_set_parameter(p.0, index, value) });
-        ok(unsafe { ugoe_puppet_update(p.0, DT) });
+        ok(unsafe { ugoe_puppet_set_parameter(p.0, index, value, err()) });
+        ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         let params = rust.instance_mut().parameters_mut();
         let i = params.index_of(standard::ANGLE_X).unwrap();
         params.set(i, value);
@@ -1013,7 +1034,7 @@ fn physics_settings_can_be_replaced() {
     };
     assert!(front.abs() > 1e-3);
     assert!((param(&p, standard::HAIR_FRONT) - front).abs() < 1e-5);
-    ok(unsafe { ugoe_puppet_reset_physics(p.0) });
+    ok(unsafe { ugoe_puppet_reset_physics(p.0, err()) });
 
     // 検査を通らない設定と読めない JSON は、何も変えずに失敗する。
     let mut bad = settings.clone();
@@ -1025,10 +1046,10 @@ fn physics_settings_can_be_replaced() {
     // 文は検証エラーの列の共通の形 (T0015。`docs/spec/model.md#検証エラーの文`)。
     let errors = ugoe::model::validate::validate_physics(&bad, &fixtures::physics_hair());
     assert_eq!(
-        text(ugoe_last_error()),
+        text(last_message()),
         ugoe::model::validate::describe_errors("physics settings", &errors)
     );
-    assert!(text(ugoe_last_error()).contains("Missing"));
+    assert!(text(last_message()).contains("Missing"));
     assert_eq!(
         last_kind_and_fields(),
         invalid_physics(errors.len(), "unknown_reference")
@@ -1040,7 +1061,7 @@ fn physics_settings_can_be_replaced() {
     );
 
     // NULL で外す。
-    ok(unsafe { ugoe_puppet_set_physics_json(p.0, ptr::null(), 0) });
+    ok(unsafe { ugoe_puppet_set_physics_json(p.0, ptr::null(), 0, err()) });
     assert_eq!(physics_json(&p), "");
 }
 
@@ -1074,7 +1095,7 @@ fn motion_over_tracking_follows_the_puppet() {
 
     let eye_blink = CString::new("eyeBlinkLeft").unwrap();
     let mut blink = 0;
-    ok(unsafe { ugoe_blend_shape_index(eye_blink.as_ptr(), &mut blink) });
+    ok(unsafe { ugoe_blend_shape_index(eye_blink.as_ptr(), &mut blink, err()) });
     let mut input = tracking_input();
     input.blend_shapes[blink as usize] = 0.75;
     input.head_yaw = 15.0;
@@ -1083,25 +1104,27 @@ fn motion_over_tracking_follows_the_puppet() {
     let run = |over: bool, kept: &[&str]| {
         let p = from_bundle(&bundle);
         let mut enabled = true;
-        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled) });
+        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled, err()) });
         assert!(!enabled, "off by default");
-        ok(unsafe { ugoe_puppet_set_motion_over_tracking(p.0, over) });
-        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled) });
+        ok(unsafe { ugoe_puppet_set_motion_over_tracking(p.0, over, err()) });
+        ok(unsafe { ugoe_puppet_motion_over_tracking(p.0, &mut enabled, err()) });
         assert_eq!(enabled, over);
         let indices: Vec<u32> = kept
             .iter()
             .map(|id| {
                 let id = CString::new(*id).unwrap();
                 let mut index = 0;
-                ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index) });
+                ok(unsafe { ugoe_puppet_parameter_index(p.0, id.as_ptr(), &mut index, err()) });
                 index
             })
             .collect();
-        ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, indices.as_ptr(), indices.len()) });
-        ok(unsafe { ugoe_puppet_set_tracking(p.0, &input) });
-        ok(unsafe { ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut()) });
+        ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, indices.as_ptr(), indices.len(), err()) });
+        ok(unsafe { ugoe_puppet_set_tracking(p.0, &input, err()) });
+        ok(unsafe {
+            ugoe_puppet_start_motion(p.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut(), err())
+        });
         for _ in 0..3 {
-            ok(unsafe { ugoe_puppet_update(p.0, 0.1) });
+            ok(unsafe { ugoe_puppet_update(p.0, 0.1, err()) });
         }
         (
             param(&p, standard::ANGLE_X),
@@ -1122,31 +1145,31 @@ fn motion_over_tracking_follows_the_puppet() {
     let p = from_bundle(&bundle);
     let bad = [u32::MAX];
     assert_eq!(
-        unsafe { ugoe_puppet_set_tracking_kept(p.0, bad.as_ptr(), 1) },
+        unsafe { ugoe_puppet_set_tracking_kept(p.0, bad.as_ptr(), 1, err()) },
         UGOE_ERROR_OUT_OF_RANGE
     );
     assert_eq!(
-        unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 1) },
+        unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 1, err()) },
         UGOE_ERROR_NULL_POINTER
     );
-    ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 0) });
+    ok(unsafe { ugoe_puppet_set_tracking_kept(p.0, ptr::null(), 0, err()) });
 }
 
 fn base_physics_json(p: &Handle) -> String {
     let mut len = usize::MAX;
-    let code = unsafe { ugoe_puppet_base_physics_json(p.0, ptr::null_mut(), 0, &mut len) };
+    let code = unsafe { ugoe_puppet_base_physics_json(p.0, ptr::null_mut(), 0, &mut len, err()) };
     if len == 0 {
         ok(code);
         return String::new();
     }
     assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
     let mut buf = vec![0u8; len];
-    ok(unsafe { ugoe_puppet_base_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len) });
+    ok(unsafe { ugoe_puppet_base_physics_json(p.0, buf.as_mut_ptr(), buf.len(), &mut len, err()) });
     String::from_utf8(buf).unwrap()
 }
 
 fn set_base_physics(p: &Handle, json: &str) -> UgoeResult {
-    unsafe { ugoe_puppet_set_base_physics_json(p.0, json.as_ptr(), json.len()) }
+    unsafe { ugoe_puppet_set_base_physics_json(p.0, json.as_ptr(), json.len(), err()) }
 }
 
 /// 本体の物理の設定の差し替え (T0416) は `ugoe::Puppet::set_base_physics` と同じで、付け外しの後も保たれる。
@@ -1155,7 +1178,7 @@ fn base_physics_survives_dress_up() {
     let p = from_model(dress_up_base());
     let mut rust = Puppet::new(dress_up_base()).unwrap();
     let hair = module(long_hair_module(), 1);
-    ok(unsafe { ugoe_puppet_attach_module(p.0, hair.0) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, hair.0, err()) });
     rust.attach_module(std::sync::Arc::new(long_hair_module()))
         .unwrap();
     assert_eq!(base_physics_json(&p), "");
@@ -1180,7 +1203,7 @@ fn base_physics_survives_dress_up() {
     );
 
     let dress = module(dress_module(), 2);
-    ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, dress.0, err()) });
     let composed = parse(&physics_json(&p));
     assert_eq!(composed.wind, windy.wind);
     assert_eq!(composed.rigs[0].id.as_str(), "LongHair/Sway");
@@ -1209,7 +1232,7 @@ fn base_physics_survives_dress_up() {
     assert_eq!(parse(&physics_json(&p)), composed);
 
     // NULL で本体の物理を外す。モジュールのリグは既定の設定に加わる。
-    ok(unsafe { ugoe_puppet_set_base_physics_json(p.0, ptr::null(), 0) });
+    ok(unsafe { ugoe_puppet_set_base_physics_json(p.0, ptr::null(), 0, err()) });
     assert_eq!(base_physics_json(&p), "");
     let composed = parse(&physics_json(&p));
     assert_eq!(composed.wind, ugoe::core::Vec2::ZERO);
@@ -1229,10 +1252,10 @@ fn follow_matches_the_puppet() {
         .unwrap()
         .with_physics(fixtures::dynamic_hair_settings());
     let mut count = 0;
-    ok(unsafe { ugoe_puppet_parameter_count(p.0, &mut count) });
+    ok(unsafe { ugoe_puppet_parameter_count(p.0, &mut count, err()) });
     assert_eq!(count, 2);
     let mut drawables = 0;
-    ok(unsafe { ugoe_puppet_drawable_count(p.0, &mut drawables) });
+    ok(unsafe { ugoe_puppet_drawable_count(p.0, &mut drawables, err()) });
     assert!(drawables > 0);
 
     for frame in 0..60 {
@@ -1248,13 +1271,20 @@ fn follow_matches_the_puppet() {
                 ptr::null(),
                 0,
                 DT,
+                err(),
             )
         });
         native.follow(&values, None, &[], DT).unwrap();
         for (i, drawable) in native.instance().drawables().iter().enumerate() {
             let mut positions = vec![f32::NAN; drawable.positions.len() * 2];
             ok(unsafe {
-                ugoe_puppet_copy_positions(p.0, i as u32, positions.as_mut_ptr(), positions.len())
+                ugoe_puppet_copy_positions(
+                    p.0,
+                    i as u32,
+                    positions.as_mut_ptr(),
+                    positions.len(),
+                    err(),
+                )
             });
             let expected: Vec<f32> = drawable.positions.iter().flat_map(|v| [v.x, v.y]).collect();
             assert_eq!(positions, expected, "frame {frame}, drawable {i}");
@@ -1264,12 +1294,23 @@ fn follow_matches_the_puppet() {
     // 受け付けない値は何も変えない。
     let before = (param(&p, "AngleX"), param(&p, "AngleZ"));
     let one = [0.0f32];
-    let code =
-        unsafe { ugoe_puppet_follow(p.0, one.as_ptr(), one.len(), -1.0, 0.0, ptr::null(), 0, DT) };
+    let code = unsafe {
+        ugoe_puppet_follow(
+            p.0,
+            one.as_ptr(),
+            one.len(),
+            -1.0,
+            0.0,
+            ptr::null(),
+            0,
+            DT,
+            err(),
+        )
+    };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
-    assert!(text(ugoe_last_error()).contains("expected 2"));
+    assert!(text(last_message()).contains("expected 2"));
     let nan = [0.0, f32::NAN];
-    let code = unsafe { ugoe_puppet_set_base_values(p.0, nan.as_ptr(), nan.len()) };
+    let code = unsafe { ugoe_puppet_set_base_values(p.0, nan.as_ptr(), nan.len(), err()) };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
     let values = [1.0f32, 2.0];
     let code = unsafe {
@@ -1282,16 +1323,17 @@ fn follow_matches_the_puppet() {
             ptr::null(),
             0,
             -1.0,
+            err(),
         )
     };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
-    let code = unsafe { ugoe_puppet_set_base_values(p.0, ptr::null(), 2) };
+    let code = unsafe { ugoe_puppet_set_base_values(p.0, ptr::null(), 2, err()) };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
     assert_eq!((param(&p, "AngleX"), param(&p, "AngleZ")), before);
 
     // 基準値として書くと、次の update でもその値のまま (段が何も重ならないモデル)。
-    ok(unsafe { ugoe_puppet_set_base_values(p.0, values.as_ptr(), values.len()) });
-    ok(unsafe { ugoe_puppet_update(p.0, DT) });
+    ok(unsafe { ugoe_puppet_set_base_values(p.0, values.as_ptr(), values.len(), err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
     assert_eq!((param(&p, "AngleX"), param(&p, "AngleZ")), (1.0, 2.0));
 }
 
@@ -1316,6 +1358,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
             ptr::null(),
             0,
             DT,
+            err(),
         )
     });
     native.follow(&values, Some(input), &[], DT).unwrap();
@@ -1338,6 +1381,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
             ptr::null(),
             0,
             DT,
+            err(),
         )
     });
     assert_eq!(param(&p, standard::MOUTH_OPEN_Y), 0.0);
@@ -1351,6 +1395,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
             ptr::null(),
             0,
             DT,
+            err(),
         )
     };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
@@ -1368,6 +1413,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
                 ptr::null(),
                 0,
                 DT,
+                err(),
             )
         };
         assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT, "{strength}");
@@ -1384,6 +1430,7 @@ fn follow_applies_the_lip_sync_like_the_puppet() {
             ptr::null(),
             0,
             DT,
+            err(),
         )
     });
 }
@@ -1421,11 +1468,12 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
                 opacities.as_ptr(),
                 opacities.len(),
                 0.1,
+                err(),
             )
         });
         native.follow(&values, None, &inputs, 0.1).unwrap();
         let mut state = UgoeDrawableState::default();
-        ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state) });
+        ok(unsafe { ugoe_puppet_drawable_state(p.0, 0, &mut state, err()) });
         assert_eq!(state.opacity, native.instance().drawables()[0].opacity);
     }
     assert!((native.instance().drawables()[0].opacity - 0.625).abs() < 1e-6);
@@ -1445,6 +1493,7 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
             nan.as_ptr(),
             1,
             DT,
+            err(),
         )
     };
     assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT);
@@ -1469,6 +1518,7 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
                 infinite.as_ptr(),
                 1,
                 DT,
+                err(),
             )
         };
         assert_eq!(code, UGOE_ERROR_INVALID_ARGUMENT, "{value} {weight}");
@@ -1483,6 +1533,7 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
             ptr::null(),
             1,
             DT,
+            err(),
         )
     };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
@@ -1490,12 +1541,19 @@ fn follow_applies_the_part_opacities_like_the_puppet() {
 
 fn values_before_physics(p: &Handle) -> Vec<f32> {
     let mut len = usize::MAX;
-    let code = unsafe { ugoe_puppet_values_before_physics(p.0, ptr::null_mut(), 0, &mut len) };
+    let code =
+        unsafe { ugoe_puppet_values_before_physics(p.0, ptr::null_mut(), 0, &mut len, err()) };
     assert_eq!(code, UGOE_ERROR_BUFFER_TOO_SMALL);
     let mut values = vec![f32::NAN; len];
     let mut written = usize::MAX;
     ok(unsafe {
-        ugoe_puppet_values_before_physics(p.0, values.as_mut_ptr(), values.len(), &mut written)
+        ugoe_puppet_values_before_physics(
+            p.0,
+            values.as_mut_ptr(),
+            values.len(),
+            &mut written,
+            err(),
+        )
     });
     assert_eq!(written, len);
     values
@@ -1503,13 +1561,14 @@ fn values_before_physics(p: &Handle) -> Vec<f32> {
 
 fn lip_sync_applied(p: &Handle) -> (f32, f32) {
     let (mut level, mut strength) = (f32::NAN, f32::NAN);
-    ok(unsafe { ugoe_puppet_lip_sync_applied(p.0, &mut level, &mut strength) });
+    ok(unsafe { ugoe_puppet_lip_sync_applied(p.0, &mut level, &mut strength, err()) });
     (level, strength)
 }
 
 fn part_opacities_applied(p: &Handle) -> Vec<UgoePartOpacityInput> {
     let mut len = usize::MAX;
-    let code = unsafe { ugoe_puppet_part_opacities_applied(p.0, ptr::null_mut(), 0, &mut len) };
+    let code =
+        unsafe { ugoe_puppet_part_opacities_applied(p.0, ptr::null_mut(), 0, &mut len, err()) };
     if len == 0 {
         ok(code);
         return Vec::new();
@@ -1518,7 +1577,13 @@ fn part_opacities_applied(p: &Handle) -> Vec<UgoePartOpacityInput> {
     let mut parts = vec![UgoePartOpacityInput::default(); len];
     let mut written = usize::MAX;
     ok(unsafe {
-        ugoe_puppet_part_opacities_applied(p.0, parts.as_mut_ptr(), parts.len(), &mut written)
+        ugoe_puppet_part_opacities_applied(
+            p.0,
+            parts.as_mut_ptr(),
+            parts.len(),
+            &mut written,
+            err(),
+        )
     });
     assert_eq!(written, len);
     parts
@@ -1575,14 +1640,16 @@ fn conductor_values_match_the_puppet_and_drive_a_follower() {
     assert_eq!(lip_sync_applied(&conductor), (-1.0, 1.0));
     assert!(part_opacities_applied(&conductor).is_empty());
 
-    ok(unsafe { ugoe_puppet_start_motion(conductor.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut()) });
+    ok(unsafe {
+        ugoe_puppet_start_motion(conductor.0, 0, UGOE_PRIORITY_NORMAL, ptr::null_mut(), err())
+    });
     native.start_motion(motion, ugoe::motion::Priority::Normal);
     let mut saw_curves = false;
     for frame in 0..80 {
         let level = (frame % 5) as f32 / 4.0;
-        ok(unsafe { ugoe_puppet_set_lip_sync_level(conductor.0, level) });
+        ok(unsafe { ugoe_puppet_set_lip_sync_level(conductor.0, level, err()) });
         native.set_lip_sync_level(Some(level));
-        ok(unsafe { ugoe_puppet_update(conductor.0, DT) });
+        ok(unsafe { ugoe_puppet_update(conductor.0, DT, err()) });
         native.update(DT);
 
         let values = values_before_physics(&conductor);
@@ -1609,12 +1676,13 @@ fn conductor_values_match_the_puppet_and_drive_a_follower() {
                 parts.as_ptr(),
                 parts.len(),
                 DT,
+                err(),
             )
         });
         for i in 0..count(&conductor, ugoe_puppet_drawable_count) {
             let (mut a, mut b) = (UgoeDrawableState::default(), UgoeDrawableState::default());
-            ok(unsafe { ugoe_puppet_drawable_state(conductor.0, i, &mut a) });
-            ok(unsafe { ugoe_puppet_drawable_state(follower.0, i, &mut b) });
+            ok(unsafe { ugoe_puppet_drawable_state(conductor.0, i, &mut a, err()) });
+            ok(unsafe { ugoe_puppet_drawable_state(follower.0, i, &mut b, err()) });
             assert_eq!(a.opacity, b.opacity, "frame {frame}, drawable {i}");
         }
         assert_eq!(
@@ -1629,27 +1697,31 @@ fn conductor_values_match_the_puppet_and_drive_a_follower() {
     assert!(saw_curves);
 
     // リップシンクの段を止めると当てていない。
-    ok(unsafe { ugoe_puppet_set_stage_enabled(conductor.0, UGOE_STAGE_LIP_SYNC, false) });
-    ok(unsafe { ugoe_puppet_update(conductor.0, DT) });
+    ok(unsafe { ugoe_puppet_set_stage_enabled(conductor.0, UGOE_STAGE_LIP_SYNC, false, err()) });
+    ok(unsafe { ugoe_puppet_update(conductor.0, DT, err()) });
     assert_eq!(lip_sync_applied(&conductor), (-1.0, 1.0));
 
     // NULL は受け付けない。
     let mut value = 0.0f32;
     assert_eq!(
-        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, &mut value, ptr::null_mut()) },
+        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, &mut value, ptr::null_mut(), err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, ptr::null_mut(), &mut value) },
+        unsafe { ugoe_puppet_lip_sync_applied(conductor.0, ptr::null_mut(), &mut value, err()) },
         UGOE_ERROR_NULL_POINTER
     );
     assert_eq!(
-        unsafe { ugoe_puppet_values_before_physics(conductor.0, &mut value, 1, ptr::null_mut()) },
+        unsafe {
+            ugoe_puppet_values_before_physics(conductor.0, &mut value, 1, ptr::null_mut(), err())
+        },
         UGOE_ERROR_NULL_POINTER
     );
     let mut len = 0;
     assert_eq!(
-        unsafe { ugoe_puppet_values_before_physics(conductor.0, ptr::null_mut(), 100, &mut len) },
+        unsafe {
+            ugoe_puppet_values_before_physics(conductor.0, ptr::null_mut(), 100, &mut len, err())
+        },
         UGOE_ERROR_NULL_POINTER
     );
 }
