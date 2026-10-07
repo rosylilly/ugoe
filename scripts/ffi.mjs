@@ -77,8 +77,27 @@ function check() {
   const windows = process.platform === "win32";
   const exe = join(out, windows ? "sample.exe" : "sample");
   const lib = join(root, "target", "debug", windows ? "ugoe_ffi.lib" : "libugoe_ffi.a");
-  const system = { darwin: ["-framework", "CoreFoundation"], linux: ["-lm", "-lpthread", "-ldl"] };
-  run(process.env.CC ?? "cc", [
+  const system = {
+    darwin: ["-framework", "CoreFoundation"],
+    linux: ["-lm", "-lpthread", "-ldl"],
+    // `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` が x86_64-pc-windows-msvc で出す
+    // `kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib /defaultlib:msvcrt` に合わせる。最後の C ライブラリは
+    // `-fms-runtime-lib=dll` で揃える (clang の既定は静的な libcmt で、Rust の側の msvcrt とぶつかる)。
+    // `_CRT_SECURE_NO_WARNINGS` は、MSVC の C ライブラリが標準の `fopen` などに付ける非推奨の警告 (-Werror で止まる) を消す
+    win32: [
+      "-fms-runtime-lib=dll",
+      "-D_CRT_SECURE_NO_WARNINGS",
+      "-lkernel32",
+      "-lntdll",
+      "-luserenv",
+      "-lws2_32",
+      "-ldbghelp",
+    ],
+  };
+  // Windows では `cl` ではなく clang (gcc 形式の引数のドライバ) を使う: clang は Visual Studio と Windows SDK を自分で
+  // 探すので、開発者のシェル (vcvars) の外でも MSVC のライブラリとリンクでき、警告の扱い (-Werror -pedantic) を Linux・macOS と
+  // 同じ引数で書ける。CI のランナー (windows-latest) には LLVM が入っている。CC で替えるときも gcc 形式の引数のドライバにする
+  run(process.env.CC ?? (windows ? "clang" : "cc"), [
     "-std=c11",
     "-Wall",
     "-Wextra",

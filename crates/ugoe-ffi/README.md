@@ -90,8 +90,9 @@ cbindgen は MPL-2.0 なので、このクレートの依存 (`build-dependencie
 ワークスペースの外のツールとして使う。版は `scripts/ffi.mjs` の `CBINDGEN_VERSION` と CI (`.github/workflows/ci.yml` の `cbindgen@...`) で揃え、
 違う版や未導入なら `just ffi-check` / `just ffi-header` が入れ方を案内して止まる。ヘッダには cbindgen の版を書かない。
 
-`just ffi-check` は cbindgen と C コンパイラ (`cc`。`CC` で変えられる) が要るので `just ci` には含めず、CI の `rust (bindings)` (Linux) と
-`rust (macos)` のジョブで別に実行する (Windows では流さない。[docs/testing.md](../../docs/testing.md#windows-と-macos))。
+`just ffi-check` は cbindgen と C コンパイラ (`cc`。Windows では MSVC のライブラリとリンクする `clang`。`CC` で変えられるが、gcc 形式の
+引数のドライバにする) が要るので `just ci` には含めず、CI の `rust (bindings)` (Linux)・`rust (macos)`・`rust (windows)` のジョブで別に実行する
+(Windows は `std` がある形だけ。[docs/testing.md](../../docs/testing.md#windows-と-macos))。
 
 ```sh
 cargo install cbindgen --version 0.29.4 --locked
@@ -616,7 +617,6 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt,
 
 ## 範囲外 (後続)
 
-- Windows と macOS での C の見本のビルドは確かめていない (CI は Linux だけ)。
 - 描画 (`ugoe-render`) は C ABI に出さない。ホストのエンジンで描く (段階 B。`docs/portability.md`)。
 
 ## 関連タスク

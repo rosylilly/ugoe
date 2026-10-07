@@ -70,7 +70,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 | `rust (tools)` | `ugoe-fs`・`ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
 | `rust (apps)` | エディタ・ビューア・スタジオ (Tauri) の clippy とテスト、生成物の検査 (`just gen && git diff --exit-code`)。Tauri のシステムの依存はこのジョブでだけ入れる |
 | `rust (cross)` | 手元の OS 以外のターゲットでの clippy (`just cross-check`)。下の「別のターゲットの検査」 |
-| `rust (windows)`・`rust (macos)` | Windows と macOS のランナーでの、ファイルを扱うクレートの clippy とテスト (`just lint-os`・`just test-os`)。macOS ではアプリの clippy (`just lint-group apps`) と C ABI (`just ffi-check`) も。下の「Windows と macOS」 |
+| `rust (windows)`・`rust (macos)` | Windows と macOS のランナーでの、ファイルを扱うクレートの clippy とテスト (`just lint-os`・`just test-os`)。C ABI (`just ffi-check`。Windows は `std` がある形だけ)。macOS ではアプリの clippy (`just lint-group apps`) も。下の「Windows と macOS」 |
 | `rust` | 上の全ジョブの結果をまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため) |
 
 - 手元では `just lint-group <グループ>` と `just test-group <グループ>` で、CI の 1 つのジョブと同じ clippy とテストを走らせられます。`just ci` は今までどおりワークスペース全体を検査します。
@@ -135,6 +135,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
   次に `Cargo.toml` が変わるまでその不完全なキャッシュが完全一致で使われ続けるためです。
   `rust (macos)` のキャッシュには `just ffi-check` が作る `std` の無い形 (プロファイル `nostd`) の依存も入ります (手元の Linux で
   `nostd` の依存を gzip して約 36MB。`std` がある形の依存は `just test-os` のビルドとほぼ重なり、増えるのは 10 個ほど。T0067)。
+  `rust (windows)` は `std` がある形だけを作るので、増えるのはその 10 個ほどです (T0069)。
 - **キャッシュを使わないジョブ:** unity.yml (`check` と `native`。`ugoe-ffi` の依存は少なく、ビルドの時間の大半はキャッシュされない
   ワークスペースのクレートなので、キャッシュがあっても速くならない)、editor-build.yml (タグか手での起動でだけ動く。アプリ × OS の
   リリースビルドのキャッシュは大きく、上限を圧迫する)。
@@ -210,12 +211,14 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
   どちらも Node から cargo を呼ぶので、Windows の PowerShell からも動きます。手元の Linux でも流せます。
 - macOS では、アプリの src-tauri の macOS のコード (エディタの資格情報の保存先など) と仮想カメラを、macOS の上の
   `just lint-group apps` で検査します (上の「別のターゲットの検査」)。
-- macOS では C ABI (`just ffi-check`) も流し、C の見本を `std` がある形と `std` の無い形の `ugoe-ffi` の静的ライブラリに macOS の
-  C ライブラリ (`std` の無い形が呼ぶ `aligned_alloc` は macOS 10.15 以降) とリンクして動かします (T0067。
-  [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。Windows では流しません。`scripts/ffi.mjs` のリンクは gcc 形式の
-  引数の `cc` と Linux・macOS のライブラリの一覧を前提にしていて、ランナーの MSVC は開発者のシェル (vcvars) の外では使えないためです
-  (`std` の無い形は MSVC の C ライブラリに `aligned_alloc` が無いので、どのみち飛ばす)。Windows の `ugoe-ffi` のビルドは unity.yml の
-  `native (windows-x86_64)` が見ます。
+- C ABI (`just ffi-check`) も流し、C の見本を `ugoe-ffi` の静的ライブラリにリンクして動かします
+  ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。macOS は `std` がある形と `std` の無い形の両方で、macOS の
+  C ライブラリ (`std` の無い形が呼ぶ `aligned_alloc` は macOS 10.15 以降) とリンクのフラグを見ます (T0067)。Windows は `std` がある形だけで、
+  `scripts/ffi.mjs` はランナーに入っている `clang` (gcc 形式の引数のドライバ) で MSVC のライブラリとリンクします (T0069)。`cl` を使わないのは、
+  `cl` は開発者のシェル (vcvars) の外では使えないが、`clang` は Visual Studio と Windows SDK を自分で探すので手順を足さずに済み、
+  警告の扱い (`-Werror -pedantic`) も Linux・macOS と同じ引数で書けるためです。リンクするシステムのライブラリは
+  `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` の出力に合わせます。`std` の無い形は MSVC の
+  C ライブラリに `aligned_alloc` が無いので飛ばします。
 - ファイルを扱うクレートを足したら `OS_CRATES` に足します (`just cross-check` の `tools` にも入る。上の「別のターゲットの検査」)。GPU も Tauri のシステムの依存も入れないので、それらが要るクレートは入れません。
 - 手元の Linux で Windows のテストを近似するには、MinGW と Wine で `x86_64-pc-windows-gnu` のテストを流せます (CI の代わりにはならない。
   Wine のソケットやファイルシステムは本物の Windows と細部が違う):
