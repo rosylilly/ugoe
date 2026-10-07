@@ -1,11 +1,11 @@
 ---
 id: T0072
 title: "CI: PR ごとに fuzz のターゲットが stable でコンパイルできるかを確かめる"
-status: todo
+status: in-progress
 milestone: M11
 crates: [.github/workflows, fuzz, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0072
 ---
 
 # T0072: CI: PR ごとに fuzz のターゲットが stable でコンパイルできるかを確かめる

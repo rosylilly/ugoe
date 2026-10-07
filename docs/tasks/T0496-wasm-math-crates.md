@@ -1,11 +1,11 @@
 ---
 id: T0496
 title: "ugoe-wasm: std の数学関数の禁止 (MATH_CRATES の clippy.toml) を有効にする"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-wasm, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0496
 ---
 
 # T0496: ugoe-wasm: std の数学関数の禁止 (MATH_CRATES の clippy.toml) を有効にする

@@ -1,11 +1,11 @@
 ---
 id: T0069
 title: "CI: Windows で just ffi-check の std がある形 (C の見本のリンクと実行) を流す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [scripts, .github/workflows, docs, crates/ugoe-ffi/README.md]
 depends_on: []
-assignee:
+assignee: claude-worker-T0069
 ---
 
 # T0069: CI: Windows で just ffi-check の std がある形 (C の見本のリンクと実行) を流す
