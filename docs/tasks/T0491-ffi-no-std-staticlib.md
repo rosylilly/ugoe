@@ -35,3 +35,4 @@ assignee:
 ## メモ
 
 - 2026-10-06 起票。`panic=abort` は Cargo のプロファイルで決まるので、ワークスペースのプロファイルを変えずに済む方法 (専用のプロファイル) を選ぶ。
+- T0180・T0183 からの申し送り (2026-10-07): ugoe-ffi を no_std にするとき、ugoe-ffi と ugoe-format にも clippy.toml (std の数学関数の disallowed-methods) を足し、scripts/nostd-check.mjs の MATH_CRATES に入れる。`ugoe-ffi/src/lighting.rs` の `f32::sqrt` は `ugoe_core::math::sqrt` にする。
