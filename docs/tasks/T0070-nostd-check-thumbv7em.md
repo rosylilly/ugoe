@@ -1,11 +1,11 @@
 ---
 id: T0070
 title: "just nostd-check: 64 ビットのアトミック操作の無い tier 2 のターゲット (thumbv7em-none-eabihf) でもビルドを確かめる"
-status: todo
+status: in-progress
 milestone: M11
 crates: [scripts, .github/workflows, docs, crates/ugoe-ffi/README.md]
 depends_on: []
-assignee:
+assignee: claude-worker-T0070
 ---
 
 # T0070: just nostd-check: 64 ビットのアトミック操作の無い tier 2 のターゲット (thumbv7em-none-eabihf) でもビルドを確かめる
