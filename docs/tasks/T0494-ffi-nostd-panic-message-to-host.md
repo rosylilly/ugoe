@@ -1,11 +1,11 @@
 ---
 id: T0494
 title: "C ABI: std の無い形で、パニックのメッセージをホストに渡す口を作るかを決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, bindings/unity, docs]
 depends_on: [T0495]
-assignee:
+assignee: claude-worker-T0494
 ---
 
 # T0494: C ABI: std の無い形で、パニックのメッセージをホストに渡す口を作るかを決める (判断が要る)
