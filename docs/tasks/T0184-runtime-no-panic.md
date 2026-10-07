@@ -1,11 +1,11 @@
 ---
 id: T0184
 title: ランタイム層でパニックを起こさない (lint と壊れた入力のテスト)
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-core, ugoe-model, ugoe-runtime, ugoe-physics, ugoe-motion, ugoe-format, ugoe, Cargo.toml, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0184
 ---
 
 # T0184: ランタイム層でパニックを起こさない (lint と壊れた入力のテスト)

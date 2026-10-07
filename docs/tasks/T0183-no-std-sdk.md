@@ -1,11 +1,11 @@
 ---
 id: T0183
 title: ugoe (SDK、render を外した形) を no_std + alloc にする
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe, Cargo.toml, Cargo.lock, scripts, docs]
 depends_on: [T0181, T0182]
-assignee:
+assignee: claude-worker-T0183
 ---
 
 # T0183: ugoe (SDK、render を外した形) を no_std + alloc にする
