@@ -2,8 +2,6 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU64, Ordering};
-
 use ugoe_core::{Affine2, Mat2, Rgb, Vec2};
 use ugoe_model::deformer::{RotationKeyform, WarpKeyform};
 use ugoe_model::mesh::MeshKeyform;
@@ -179,6 +177,25 @@ impl WorldTransform<'_> {
     }
 }
 
+/// 新しいインスタンスの番号 ([`ModelInstance::id`])。番号は一意であればよい (順序は使わない) ので Relaxed で足りる。
+///
+/// 64 ビットのアトミック操作が無いターゲット (`armv6k-nintendo-3ds`・`thumbv7em-none-eabihf` など) では
+/// `AtomicU64` が無いので、ポインタの幅のアトミック操作で数える (crates/ugoe-ffi/README.md#std-の無い環境。T0495)。
+fn next_instance_id() -> u64 {
+    #[cfg(target_has_atomic = "64")]
+    {
+        use core::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
+    }
+    #[cfg(not(target_has_atomic = "64"))]
+    {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+        NEXT_ID.fetch_add(1, Ordering::Relaxed) as u64
+    }
+}
+
 /// モデル 1 体分の実行時状態。
 #[derive(Debug)]
 pub struct ModelInstance {
@@ -262,10 +279,8 @@ impl ModelInstance {
         // 重みの個数は、線形の軸 2 つ・曲線の軸 4 つまでの積 (`keyform::weights`)。
         // 軸の多い格子で事前確保が膨らみすぎないように上限を置く (超えた分は評価中に確保する)。
         let max_weights = compiled.max_weights.min(1 << 20);
-        // 番号は一意であればよい (順序は使わない) ので Relaxed で足りる。
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let mut instance = Self {
-            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            id: next_instance_id(),
             update_count: 0,
             parameters,
             render_order: Vec::with_capacity(mesh_count),
@@ -293,6 +308,9 @@ impl ModelInstance {
     }
 
     /// このインスタンスを識別する番号。プロセス内で一意で、インスタンスの生存中は変わらない。
+    ///
+    /// 64 ビットのアトミック操作が無いターゲット (32 ビットのゲーム機・組み込み機器) では、32 ビットの番号を
+    /// 使うので、インスタンスを 2^32 回作ると番号が一巡する。
     ///
     /// 描画側が「どのインスタンスの出力を転送済みか」を覚えるために使う
     /// (`docs/spec/evaluation.md#変更フラグ`)。

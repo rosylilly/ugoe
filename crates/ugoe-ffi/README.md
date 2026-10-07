@@ -143,6 +143,50 @@ cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --pro
 - ゲーム機の実機と SDK での確認は、組み込み先 (SDK を持つ人) に任せる。`aarch64-unknown-none` の検査で見つからない問題 (TLS・アトミック・
   浮動小数点の設定など) があれば ADR 0031 を見直す。
 
+### core と alloc が配られないターゲット (tier 3。T0495)
+
+ゲーム機向けのターゲットの多くは Rust の tier 3 で、`core`・`alloc` がビルド済みで配られない (`rustup target add` できない)。
+nightly の `-Zbuild-std` で `core`・`alloc` をソースからビルドする ([build-std](https://doc.rust-lang.org/cargo/reference/unstable.html#build-std))。
+ゲーム機の SDK のツールチェインが独自の Rust を配るなら、その手順に従う。
+
+```sh
+# nightly と、core・alloc のソース (rust-src)。nightly はルートの Cargo.toml の rust-version 以上であること
+# (古い nightly は rust-version で拒まれる)。リポジトリの rust-toolchain.toml (stable) は `+nightly` で上書きする
+rustup toolchain install nightly
+rustup component add rust-src --toolchain nightly
+
+cargo +nightly rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --profile nostd \
+  --target <ターゲット> -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem
+# → target/<ターゲット>/nostd/libugoe_ffi.a
+```
+
+- **`cargo rustc --crate-type staticlib` で staticlib だけを作る。** `cargo build` でも通るが、`Cargo.toml` の `crate-type` にある
+  cdylib も作ろうとして、ターゲットによってはリンカの警告 (`aarch64-nintendo-switch-freestanding` の `cannot find entry symbol _start`)
+  が出る。
+- **`-Zbuild-std-features=compiler-builtins-mem`:** 付けないと、`memcpy`・`memmove`・`memset`・`memcmp` が未解決のシンボルとして
+  残る (ビルド済みの `aarch64-unknown-none` の `core` はこれらを持つが、`-Zbuild-std` の既定では持たない)。付けると、未解決のシンボルは
+  `just nostd-check` と同じ `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc` だけになる。SDK の C ライブラリの `memcpy` など
+  (速いことが多い) を使いたければ付けずに、ホストのリンクで解決する。
+- **パニック:** プロファイル `nostd` の `panic = "abort"` で `core` もビルドし直すので、`rust_eh_personality` は残らない。
+  パニックの戦略 `immediate-abort` (旧 `panic_immediate_abort`。nightly で `-Zpanic-immediate-abort --config 'profile.nostd.panic="immediate-abort"'`) は
+  使わない。パニックがその場のトラップ命令になって `#[panic_handler]` (ホストの `abort`) を通らず、ホストがパニックに気づく
+  手がかりを失う割に、ライブラリは 3% ほどしか小さくならない。
+- **アトミック操作:** ランタイム層は `alloc::sync::Arc` を使うので、ポインタの幅のアトミックな比較と交換 (CAS) が要る。CAS の無い
+  ターゲット (`thumbv6m-none-eabi` など) ではビルドできない。64 ビットのアトミック操作は要らない (`armv6k-nintendo-3ds` などの
+  32 ビットのターゲットでもビルドできる)。
+- **確かめたこと (nightly 1.101、2026-10):** 次のターゲットで上のコマンドが通り、未解決のシンボルが上の 6 つだけであることを、
+  フリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と rust-lld でリンクして確かめた。CI では検査しない
+  (nightly が要るため。tier 2 の `aarch64-unknown-none` は `just nostd-check` が検査する)。
+
+  | ターゲット | 幅 | 確かめたこと |
+  | --- | --- | --- |
+  | `aarch64-nintendo-switch-freestanding` | 64 ビット | ビルド・未解決のシンボル・形だけのホストの関数とのリンク |
+  | `armv6k-nintendo-3ds` | 32 ビット (64 ビットのアトミック操作が無い) | ビルド・未解決のシンボル・形だけのホストの関数とのリンク |
+  | `armv7-sony-vita-newlibeabihf` | 32 ビット | ビルド・未解決のシンボル・形だけのホストの関数とのリンク |
+  | `mipsel-sony-psp` | 32 ビット (単精度の浮動小数点) | ビルド・未解決のシンボル (C の見本の浮動小数点の ABI を合わせられず、リンクまでは確かめていない) |
+
+- 実機と SDK のツールチェイン (SDK のリンカ・C ライブラリ・スレッドとメモリの設定) では確かめていない。
+
 ## 毎フレームの描画の状態 (T0490)
 
 描画の情報は、読む時機で 2 つに分かれる ([ADR 0031](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#毎フレームの描画の状態はまとめて渡す))。

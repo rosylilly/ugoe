@@ -24,7 +24,7 @@
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
-| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi)) |
+| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi))。`core`・`alloc` が配られない tier 3 のターゲット (ゲーム機の多く) は nightly の `-Zbuild-std=core,alloc` (と `-Zbuild-std-features=compiler-builtins-mem`) でビルドする。`aarch64-nintendo-switch-freestanding`・`armv6k-nintendo-3ds` などで通ることを手元で確かめたが、CI では検査しない。ポインタの幅のアトミックな比較と交換が要る ([手順](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)) |
 
 ## `ugoe` クレートの feature
 
@@ -208,7 +208,9 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 - `std::fs`、`std::thread`、`std::time` を使わないこと。時間は `dt` として受け取ります。
 - グローバルな状態 (static mut、グローバルなロガーの初期化など) を持たないこと。
   例外: 出力に影響しない一意な ID を振るためのアトミックなカウンタ (`ModelInstance::id()`) は認める。初期化が不要で、評価結果の決定性にも影響しないため。
-  カウンタは `core::sync::atomic::AtomicU64` なので、64 ビットのアトミックを持たないターゲット (`thumbv6m` など) は対象外 (T0181)。
+  カウンタは 64 ビットのアトミックがあれば `AtomicU64`、無いターゲット (`thumbv7em-none-eabihf`・32 ビットのゲーム機など) では
+  `AtomicUsize` で数える (その場合は 2^32 個で番号が一巡する。T0495)。比べて入れ替える操作 (CAS) の無いターゲット (`thumbv6m` など) は、
+  ランタイムが `Arc` を使うので対象外。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 - 外から来るデータ (ファイル・ホストの引数) のどんな値でもパニックしないこと ([下](#パニックしない))。
 
