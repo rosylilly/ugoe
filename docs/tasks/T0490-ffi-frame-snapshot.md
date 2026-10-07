@@ -1,11 +1,11 @@
 ---
 id: T0490
 title: "C ABI: 毎フレームの描画の状態をまとめて受け取る形に置き換え、描画要素ごとの関数を廃止する"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, ugoe, bindings/unity, tests/conformance, docs]
 depends_on: [T0489]
-assignee:
+assignee: claude-worker-T0490
 ---
 
 # T0490: C ABI: 毎フレームの描画の状態をまとめて受け取る形に置き換え、描画要素ごとの関数を廃止する
