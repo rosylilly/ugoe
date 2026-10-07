@@ -30,3 +30,4 @@ assignee:
 ## メモ
 
 - 2026-10-06 起票。
+- T0182 からの申し送り (2026-10-07): ugoe は ugoe-format を `default-features = false` で取り、自分の `std` の feature から ugoe-format の `std` (と必要なら `png`) を有効にする。
