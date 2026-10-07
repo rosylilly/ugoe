@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   ATOMIC32_TARGET,
+  archiveUndefinedSymbols,
+  BUILD_STD_TARGET_DIR,
+  BUILD_STD_TARGETS,
+  buildStdArgs,
   clippyArgs,
   FFI_CRATE,
   HOST_SYMBOLS,
@@ -17,6 +21,7 @@ import {
   NOSTD_TARGETS,
   select,
   staticlibArgs,
+  symbolDiff,
   undefinedSymbols,
   unexpectedSymbols,
   validate,
@@ -172,4 +177,40 @@ test("std の無い形の単体テストのクレートは、std 無しの一覧
   assert.deepEqual(validateHostTests(["missing"], crates, metadata), [
     "HOST_TEST_CRATES: missing は NOSTD_CRATES に無い",
   ]);
+});
+
+test("build-std は tier 3 の 64 ビットと 32 ビットのターゲットを選び、知らないターゲットは失敗する", () => {
+  assert.deepEqual(BUILD_STD_TARGETS, [
+    "aarch64-nintendo-switch-freestanding",
+    "armv6k-nintendo-3ds",
+  ]);
+  assert.deepEqual(select(BUILD_STD_TARGETS, ["armv6k-nintendo-3ds"], "target"), [
+    "armv6k-nintendo-3ds",
+  ]);
+  assert.throws(() => select(BUILD_STD_TARGETS, ["x"], "target"), /unknown target: x/);
+});
+
+test("build-std の引数は nightly で staticlib を別の置き場に作り、core と alloc と mem の関数をビルドする", () => {
+  assert.deepEqual(buildStdArgs("armv6k-nintendo-3ds", "nightly-2026-10-06"), [
+    "+nightly-2026-10-06",
+    ...staticlibArgs("armv6k-nintendo-3ds"),
+    "--target-dir",
+    BUILD_STD_TARGET_DIR,
+    "-Zbuild-std=core,alloc",
+    "-Zbuild-std-features=compiler-builtins-mem",
+  ]);
+});
+
+test("静的ライブラリの未解決のシンボルは、どのメンバも定義しないものだけを名前の順に返す", () => {
+  const undefinedOutput = "\na-1.o:\nmalloc\nmemcpy\n\nb-2.o:\nabort\nmalloc\n";
+  const definedOutput = "\na-1.o:\nugoe_puppet_new\n\nc-3.o:\nmemcpy\n";
+  assert.deepEqual(archiveUndefinedSymbols(undefinedOutput, definedOutput), ["abort", "malloc"]);
+});
+
+test("決めた一覧との違いは、一覧に無いものと一覧にあって無いものに分ける", () => {
+  assert.deepEqual(symbolDiff([...HOST_SYMBOLS]), { extra: [], missing: [] });
+  assert.deepEqual(symbolDiff(["calloc", "memcpy"], ["abort", "calloc"]), {
+    extra: ["memcpy"],
+    missing: ["abort"],
+  });
 });

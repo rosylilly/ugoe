@@ -1,0 +1,38 @@
+name: No-std build-std
+
+# core と alloc が配られない tier 3 のターゲット (ゲーム機。aarch64-nintendo-switch-freestanding と、64 ビットのアトミック操作の無い
+# armv6k-nintendo-3ds) で、nightly の -Zbuild-std で ugoe-ffi の std の無い静的ライブラリを作り、未解決のシンボルが決めた一覧
+# (`just nostd-check` と同じ 6 つ) と同じかを確かめる (`just nostd-build-std`。crates/ugoe-ffi/README.md、docs/testing.md、T0495・T0071)。
+# nightly が要り、nightly の変更で壊れても PR を止めたくないので、PR ごとの CI (ci.yml) には入れず、週に 1 度と手動で流す。
+# fuzz.yml とは分ける (失敗の意味と直し方が違い、片方だけを手動で流せるように。fuzz の matrix と corpus のキャッシュにも混ぜない)。
+on:
+  schedule:
+    # 毎週月曜 04:47 (UTC)。fuzz.yml (04:23) と少しずらす
+    - cron: "47 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-std:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      # core と alloc のソース (rust-src) と、rustc と同じ LLVM の llvm-nm (llvm-tools)。rust-toolchain.toml (stable) は `+nightly` で
+      # 上書きするので、stable は入れない
+      - name: Install nightly with rust-src and llvm-tools
+        run: rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools
+      - uses: extractions/setup-just@v4
+      # Swatinem/rust-cache は使わない (nightly が毎回変わり、キャッシュの鍵の rustc の版が一致しないため)。
+      # 失敗したターゲットがあっても残りのターゲットを続け、最後に失敗する
+      - name: Build the ugoe-ffi staticlib with -Zbuild-std
+        run: just nostd-build-std

@@ -15,6 +15,11 @@
 //                                                  HOST_TEST_CRATES が開発時の依存に自分を置いていないかと、
 //                                                  MATH_CRATES の clippy.toml (数学関数の禁止) が揃っているかを検査する (`just groups`)
 //   node scripts/nostd-check.mjs list              クレートの一覧
+//   node scripts/nostd-check.mjs build-std [<target>...]
+//                                                  core と alloc が配られない tier 3 のターゲット (BUILD_STD_TARGETS。省けばすべて) で、
+//                                                  nightly の `-Zbuild-std` で ugoe-ffi の静的ライブラリを作り、未解決のシンボルが
+//                                                  HOST_SYMBOLS と同じかを llvm-nm で確かめる (`just nostd-build-std`。nightly と
+//                                                  rust-src と llvm-tools が要る。CI は週に 1 度の nostd-build-std.yml。T0495・T0071)
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -100,12 +105,27 @@ export const C_TARGET = "aarch64-none-elf";
 /** C の見本 (crates/ugoe-ffi/examples/c/nostd.c) の入口。リンクの起点にする。 */
 export const SAMPLE_ENTRY = "ugoe_nostd_sample";
 
-/** クレートを省けばすべて、知らないクレートは例外。 */
-export function select(crates, names) {
+/**
+ * core と alloc がビルド済みで配られない tier 3 のターゲット。nightly の `-Zbuild-std` で ugoe-ffi の静的ライブラリを作る (T0495・T0071)。
+ * 今のゲーム機と同じ 64 ビットの AArch64 と、64 ビットのアトミック操作の無い 32 ビットの Arm (crates/ugoe-ffi/README.md の表)。
+ */
+export const BUILD_STD_TARGETS = ["aarch64-nintendo-switch-freestanding", "armv6k-nintendo-3ds"];
+
+/** `build-std` の nightly のツールチェイン (`UGOE_NIGHTLY_TOOLCHAIN` で変えられる。fuzz/run.mjs の `UGOE_FUZZ_TOOLCHAIN` と同じ形)。 */
+export const NIGHTLY_TOOLCHAIN = process.env.UGOE_NIGHTLY_TOOLCHAIN ?? "nightly";
+
+/**
+ * `build-std` の成果物の置き場。stable の `just nostd-check`・`just ffi-check` と同じ target/ のプロファイル `nostd` に置くと、
+ * ホストのビルドスクリプトなどが rustc の版の違いで作り直し合うので分ける。
+ */
+export const BUILD_STD_TARGET_DIR = join("target", "build-std");
+
+/** 名前を省けばすべて、知らない名前は例外 (`kind` は例外のメッセージの種類)。 */
+export function select(crates, names, kind = "crate") {
   if (names.length === 0) return [...crates];
   for (const name of names) {
     if (!crates.includes(name)) {
-      throw new Error(`unknown crate: ${name} (${crates.join(", ")})`);
+      throw new Error(`unknown ${kind}: ${name} (${crates.join(", ")})`);
     }
   }
   return names;
@@ -172,6 +192,47 @@ export function staticlibArgs(target = NOSTD_TARGET) {
     "--target",
     target,
   ];
+}
+
+/**
+ * tier 3 のターゲットの静的ライブラリを nightly の `-Zbuild-std` で作る `cargo` の引数 (crates/ugoe-ffi/README.md の手順と同じ)。
+ * `compiler-builtins-mem` で `memcpy` などを compiler_builtins に持たせ、未解決のシンボルを HOST_SYMBOLS だけにする。
+ */
+export function buildStdArgs(target, toolchain = NIGHTLY_TOOLCHAIN) {
+  return [
+    `+${toolchain}`,
+    ...staticlibArgs(target),
+    "--target-dir",
+    BUILD_STD_TARGET_DIR,
+    "-Zbuild-std=core,alloc",
+    "-Zbuild-std-features=compiler-builtins-mem",
+  ];
+}
+
+/** `llvm-nm -j` の出力のシンボルの名前 (アーカイブのメンバの見出し `<名前>.o:` と空行を除く)。 */
+function nmNames(output) {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.endsWith(":"));
+}
+
+/**
+ * 静的ライブラリの未解決のシンボル。`llvm-nm -j --undefined-only` と `--defined-only` の出力から、どのメンバも定義しないものを
+ * 名前の順に返す (メンバ同士で解決するものは除く)。リンクの `--gc-sections` と違って使われない関数の参照も残るが、
+ * `compiler-builtins-mem` を付ければ HOST_SYMBOLS と同じになる (T0495)。
+ */
+export function archiveUndefinedSymbols(undefinedOutput, definedOutput) {
+  const defined = new Set(nmNames(definedOutput));
+  return [...new Set(nmNames(undefinedOutput))].filter((name) => !defined.has(name)).sort();
+}
+
+/** 決めた一覧 (HOST_SYMBOLS) との違い。`extra` は一覧に無い未解決のシンボル、`missing` は一覧にあって無いもの。 */
+export function symbolDiff(symbols, expected = HOST_SYMBOLS) {
+  return {
+    extra: symbols.filter((name) => !expected.includes(name)),
+    missing: expected.filter((name) => !symbols.includes(name)),
+  };
 }
 
 /** リンカ (lld) の出力から、未解決のシンボルの名前を並べて返す (重なりを除き、名前の順)。 */
@@ -424,6 +485,90 @@ function checkFfiStaticlib() {
   }
 }
 
+/** nightly のツールチェインの sysroot。ツールチェインが無ければ undefined。 */
+function nightlySysroot(toolchain) {
+  const out = spawnSync("rustc", [`+${toolchain}`, "--print", "sysroot"], { encoding: "utf8" });
+  return out.status === 0 ? out.stdout.trim() : undefined;
+}
+
+/** nightly の llvm-tools の llvm-nm (rustc と同じ LLVM)。`LLVM_NM` で指定できる。 */
+function llvmNm(toolchain, sysroot) {
+  if (process.env.LLVM_NM) return process.env.LLVM_NM;
+  const host = execFileSync("rustc", [`+${toolchain}`, "-vV"], { encoding: "utf8" }).match(
+    /^host: (\S+)$/m,
+  )?.[1];
+  const exe = process.platform === "win32" ? "llvm-nm.exe" : "llvm-nm";
+  return join(sysroot, "lib", "rustlib", host ?? "", "bin", exe);
+}
+
+/**
+ * tier 3 のターゲットで ugoe-ffi の静的ライブラリを `-Zbuild-std` で作り、未解決のシンボルが HOST_SYMBOLS と同じかを確かめる
+ * (T0071)。ターゲットごとに続け、失敗したターゲットの数を返す (道具が無ければ 1)。C の見本とのリンクはしない (32 ビットの
+ * ターゲットごとに C の浮動小数点の ABI を合わせる必要があるため。リンクは stable の aarch64-unknown-none で `run` が確かめる)。
+ */
+function buildStd(targets, toolchain = NIGHTLY_TOOLCHAIN) {
+  const sysroot = nightlySysroot(toolchain);
+  const install = [
+    `  入れ方: rustup toolchain install ${toolchain} --profile minimal --component rust-src,llvm-tools`,
+    `         (入っていれば rustup component add rust-src llvm-tools --toolchain ${toolchain})`,
+  ];
+  if (sysroot === undefined) {
+    console.error(
+      `error: ツールチェイン ${toolchain} が無い (UGOE_NIGHTLY_TOOLCHAIN で指定できる)`,
+    );
+    for (const line of install) console.error(line);
+    return 1;
+  }
+  if (!existsSync(join(sysroot, "lib", "rustlib", "src", "rust", "library"))) {
+    console.error(`error: ${toolchain} に rust-src (core と alloc のソース) が無い`);
+    for (const line of install) console.error(line);
+    return 1;
+  }
+  const nm = llvmNm(toolchain, sysroot);
+  if (spawnSync(nm, ["--version"]).status !== 0) {
+    console.error(
+      `error: llvm-nm (${nm}) が無い (${toolchain} の llvm-tools。LLVM_NM で指定できる)`,
+    );
+    for (const line of install) console.error(line);
+    return 1;
+  }
+  // mbx (docs/workflow/build-cache.md) は nightly の -Z の付いたビルドを検証できずに止まるので通さない (fuzz/run.mjs と同じ)
+  const env = { ...process.env, MBX_DISABLE: "1" };
+  const failed = [];
+  for (const target of targets) {
+    const args = buildStdArgs(target, toolchain);
+    console.log(`== ${FFI_CRATE} (${target}, staticlib, -Zbuild-std): cargo ${args.join(" ")}`);
+    if (spawnSync("cargo", args, { stdio: "inherit", env }).status !== 0) {
+      console.error(`error: ${FFI_CRATE} の静的ライブラリを ${target} で作れない`);
+      failed.push(target);
+      continue;
+    }
+    const lib = join(BUILD_STD_TARGET_DIR, target, "nostd", "libugoe_ffi.a");
+    const list = (flag) =>
+      spawnSync(nm, ["-j", flag, lib], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const undefinedOut = list("--undefined-only");
+    const definedOut = list("--defined-only");
+    if (undefinedOut.status !== 0 || definedOut.status !== 0) {
+      console.error(`${undefinedOut.stderr}${definedOut.stderr}`);
+      console.error(`error: ${lib} のシンボルを llvm-nm で読めない`);
+      failed.push(target);
+      continue;
+    }
+    const symbols = archiveUndefinedSymbols(undefinedOut.stdout, definedOut.stdout);
+    const { extra, missing } = symbolDiff(symbols);
+    if (extra.length > 0 || missing.length > 0) {
+      console.error(`error: ${target} の未解決のシンボルが決めた一覧 (HOST_SYMBOLS) と違う`);
+      if (extra.length > 0) console.error(`  一覧に無いもの: ${extra.join(", ")}`);
+      if (missing.length > 0) console.error(`  一覧にあって無いもの: ${missing.join(", ")}`);
+      failed.push(target);
+      continue;
+    }
+    console.log(`build-std ok (${target}): unresolved symbols are ${symbols.join(", ")}`);
+  }
+  if (failed.length > 0) console.error(`error: build-std failed: ${failed.join(", ")}`);
+  return failed.length;
+}
+
 /** 入っていないターゲット。 */
 export function missingTargets(installed, targets = NOSTD_TARGETS) {
   return targets.filter((target) => !installed.includes(target));
@@ -497,8 +642,20 @@ function main([command, ...names]) {
     case "list":
       for (const name of NOSTD_CRATES) console.log(name);
       return 0;
+    case "build-std": {
+      let targets;
+      try {
+        targets = select(BUILD_STD_TARGETS, names, "target");
+      } catch (e) {
+        console.error(`error: ${e.message}`);
+        return 1;
+      }
+      return buildStd(targets) > 0 ? 1 : 0;
+    }
     default:
-      console.error("usage: node scripts/nostd-check.mjs <run [<crate>...]|targets|check|list>");
+      console.error(
+        "usage: node scripts/nostd-check.mjs <run [<crate>...]|targets|check|list|build-std [<target>...]>",
+      );
       return 1;
   }
 }

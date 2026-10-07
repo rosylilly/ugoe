@@ -22,9 +22,10 @@
 | PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
 | エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
 | fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は週に 1 度の `fuzz.yml`。[下](#fuzz)) |
+| tier 3 のターゲットの build-std | `core`・`alloc` が配られない tier 3 のターゲット (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い `armv6k-nintendo-3ds`) で、nightly の `-Zbuild-std` で `ugoe-ffi` の `std` の無い静的ライブラリを作り、未解決のシンボルが決めた一覧と同じかを確かめる | `just nostd-build-std [ターゲット...]` (nightly と rust-src と llvm-tools が要る。`just ci` に入れず、CI は週に 1 度の `nostd-build-std.yml`。[下](#tier-3-のターゲットの-build-std)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行。`std` の無い形の静的ライブラリをホストの C ライブラリとリンクした見本 (`examples/c/nostd.c`) の実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
-`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz 以外) すべて実行します。
+`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz・tier 3 のターゲットの build-std 以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
 PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
@@ -83,6 +84,8 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 - 各ジョブは、最初にランナーの使わない SDK (.NET・Android SDK・Haskell・CodeQL) を消してディスクを空けます。
 - CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません (ci.yml のワークフロー全体の `env`)。target とキャッシュがおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
 - 依存クレートの成果物は `Swatinem/rust-cache` で持ち越します。方針は下の「CI のキャッシュ」。
+- nightly が要る検査は PR ごとの CI に入れず、PR を止めない別のワークフローで週に 1 度 (月曜) と手動 (`workflow_dispatch`) で流します:
+  `fuzz.yml` ([fuzz](#fuzz)) と `nostd-build-std.yml` ([tier 3 のターゲットの build-std](#tier-3-のターゲットの-build-std))。
 
 各グループの target の大きさの目安 (T0002 で手元で測った値。`CARGO_PROFILE_DEV_DEBUG=0` で clippy とテストのビルドの後):
 
@@ -239,6 +242,27 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
 - 対象のクレートは開発時の依存に自分を置きません。置くと、その feature (`ugoe-format` なら `png` と `std`) が `--no-default-features` のテストでも有効になります。`just groups` (`nostd-check.mjs check`) が検査します。
 - feature の要るテストは、単体テストなら `#[cfg(feature = "…")]`、結合テストなら `Cargo.toml` の `[[test]]` の `required-features` にし、その feature を CI のグループの `features` に書きます (上の CI のジョブ)。
 - 有効になる feature は `cargo tree -p <クレート> --no-default-features -e features -i <クレート>` で確かめられます (クレート自身の feature が出なければよい)。
+
+### tier 3 のターゲットの build-std
+
+ゲーム機向けのターゲットの多くは Rust の tier 3 で、`core`・`alloc` が配られません。`just nostd-build-std` は、`scripts/nostd-check.mjs` の
+`BUILD_STD_TARGETS` (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い 32 ビットの `armv6k-nintendo-3ds`) で、
+nightly の `-Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem` で `ugoe-ffi` の静的ライブラリを作り、
+未解決のシンボルが `just nostd-check` と同じ 6 つ (`HOST_SYMBOLS`: `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc`) と同じかを
+`llvm-nm` で確かめます (手順は [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)。T0495・T0071)。
+
+- nightly が要るので `just ci`・PR ごとの CI には入れず、`.github/workflows/nostd-build-std.yml` が週に 1 度と手動で流します。
+  nightly や依存の変更で壊れても PR は止まりません。fuzz.yml とは失敗の意味と直し方が違うので、別のワークフローにしています。
+- 道具は `rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools` で入れます (無ければ入れ方を出して止まります)。
+  `llvm-nm` は nightly の llvm-tools のもの (rustc と同じ LLVM) を使い、`LLVM_NM` で変えられます。nightly は `UGOE_NIGHTLY_TOOLCHAIN`
+  (既定 `nightly`) で日付を固定できます。nightly はルートの `Cargo.toml` の `rust-version` 以上であることが要ります。
+- 未解決のシンボルは、静的ライブラリのどのメンバも定義しないものです (リンクの `--gc-sections` と違い、使われない関数の参照も残ります)。
+  一覧に無いもの (例: `compiler-builtins-mem` が効かなくなって `memcpy` などが残る) も、一覧にあって無いものも失敗にします。
+  C の見本とのリンクはしません (ターゲットごとに C の浮動小数点の ABI を合わせる必要があるため。リンクは stable の `aarch64-unknown-none` で
+  `just nostd-check` が確かめます)。
+- 成果物は `target/build-std/` に置きます (stable の `just nostd-check`・`just ffi-check` のプロファイル `nostd` と rustc の版が違い、
+  作り直し合わないように)。mbx (ビルドのキャッシュ) は通しません。
+- 1 つのターゲットが失敗しても残りのターゲットを続け、最後に失敗します。手元で 2 つのターゲットにかかる時間は約 1 分です。
 
 ### クレートを足したとき
 

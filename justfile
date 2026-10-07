@@ -216,6 +216,13 @@ wasm-check:
 nostd-check *names:
     @node scripts/nostd-check.mjs run {{names}}
 
+# core と alloc が配られない tier 3 のターゲット (Switch の AArch64 と、64 ビットのアトミック操作の無い 3DS の Arm) で、nightly の
+# `-Zbuild-std` で ugoe-ffi の静的ライブラリを作り、未解決のシンボルが `just nostd-check` と同じ 6 つかを llvm-nm で確かめる (T0071)。
+# 名前を省けばすべて (scripts/nostd-check.mjs の BUILD_STD_TARGETS)。nightly と rust-src と llvm-tools が要る (無ければ入れ方を出して止まる)。
+# `just ci` には含めない (CI では週に 1 度の nostd-build-std.yml)
+nostd-build-std *targets:
+    @node scripts/nostd-check.mjs build-std {{targets}}
+
 # 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
 # (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)
 sdk-no-render-check:
