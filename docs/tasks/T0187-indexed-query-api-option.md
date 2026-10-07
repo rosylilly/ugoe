@@ -1,11 +1,11 @@
 ---
 id: T0187
 title: "ランタイム: 添字を取る問い合わせの API (ParameterValues::get など) を、パニックせず Option を返す形にするかを決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-runtime, ugoe, ugoe-ffi, ugoe-wasm, bindings/godot, docs]
 depends_on: [T0493]
-assignee:
+assignee: claude-worker-T0187
 ---
 
 # T0187: ランタイム: 添字を取る問い合わせの API (ParameterValues::get など) を、パニックせず Option を返す形にするかを決める (判断が要る)
