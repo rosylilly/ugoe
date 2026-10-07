@@ -4,7 +4,11 @@
 //! (`crates/ugoe-ffi/README.md#モデルの読み込みの失敗-t0457`) は、ここの値を使う。
 //! テクスチャのデコードやレンダラへの登録の失敗は組み込み先ごとのものなので、ここでは決めない。
 
-use std::fmt;
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt;
 
 use ugoe_format::FormatError;
 use ugoe_model::validate::ValidationError;

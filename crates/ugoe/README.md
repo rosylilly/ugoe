@@ -9,11 +9,16 @@
 - `render` (既定で有効): 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする。エンジン独自のレンダラで描く
   組み込み先は `default-features = false` で外すと wgpu をビルドしない ([docs/portability.md#ugoe-クレートの-feature](../../docs/portability.md#ugoe-クレートの-feature)、T0156)。
   外したビルドの検査は `just sdk-no-render-check`。光源の型 (`ugoe::lighting::{Light, Lighting, MAX_LIGHTS}`。`ugoe-core` の再エクスポート) は
-  `render` が無くても使える (T0166)
+  `render` が無くても使える (T0166)。`std` を含む
+- `std` (既定で有効): 下位のクレートと依存の `std` を有効にする。クレートは `no_std` + `alloc` で書くので、外しても公開 API は変わらない。
+  `default-features = false` (`render` も `std` も無し) で、`Puppet` の読み込み・評価・物理・モーション・トラッキング・着せ替えを
+  `std` の無い環境で使える ([docs/portability.md#ランタイム層が守る制約-移植性のため](../../docs/portability.md#ランタイム層が守る制約-移植性のため)、
+  ADR 0031、T0183)。`aarch64-unknown-none` でのビルドは `just nostd-check ugoe`
 
 ## 守ること
 
 - アプリやエンジンの組み込みで最初に使うクレートなので、API を小さく分かりやすく保つ
+- `std::` を使わず `core::`・`alloc::` から使う。数学関数は `ugoe_core::math` から呼ぶ (`clippy.toml` の `disallowed_methods`)
 - `ugoe-render` は `render` feature の下だけで使う。`render` の無いビルドでも通るように、`ugoe::render` の型を
   `render` の外の公開 API に出さない (doc コメントのリンクも `ugoe_render` へ張らない)
 
@@ -82,3 +87,4 @@
 - T0152 (読み込みの上限)
 - T0156 (`render` feature)
 - T0457 (モデルの読み込みの失敗の種類)
+- T0183 (`no_std` + `alloc`、feature `std`)

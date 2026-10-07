@@ -3,7 +3,10 @@
 //!
 //! どの警告を出すかは組み込み先が決める (画像のデコードをしない C ABI は KTX2 の警告を出さないなど)。
 
-use std::fmt;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt;
 
 use ugoe_format::ReadWarning;
 use ugoe_model::validate::ValidationError;

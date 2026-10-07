@@ -13,19 +13,29 @@ keywords = ["animation", "rigging", "vtuber", "puppet", "2d"]
 categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
-ugoe-core = { workspace = true, features = ["std"] }
-ugoe-format = { workspace = true, features = ["std"] }
-ugoe-model = { workspace = true, features = ["std"] }
-ugoe-motion = { workspace = true, features = ["std"] }
-ugoe-physics = { workspace = true, features = ["std"] }
+thiserror.workspace = true
+ugoe-core.workspace = true
+ugoe-format.workspace = true
+ugoe-model.workspace = true
+ugoe-motion.workspace = true
+ugoe-physics.workspace = true
 ugoe-render = { workspace = true, optional = true }
-ugoe-runtime = { workspace = true, features = ["std"] }
-thiserror = { workspace = true, features = ["std"] }
+ugoe-runtime.workspace = true
 
 [features]
-default = ["render"]
-# 参照レンダラ (`ugoe::render`、wgpu)。エンジン独自のレンダラで描く組み込み先は `default-features = false` で外す (T0156)
-render = ["dep:ugoe-render"]
+default = ["render", "std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = [
+  "thiserror/std",
+  "ugoe-core/std",
+  "ugoe-format/std",
+  "ugoe-model/std",
+  "ugoe-motion/std",
+  "ugoe-physics/std",
+  "ugoe-runtime/std",
+]
+# 参照レンダラ (`ugoe::render`、wgpu)。std を含む。エンジン独自のレンダラで描く組み込み先は `default-features = false` で外す (T0156)
+render = ["std", "dep:ugoe-render"]
 
 [dev-dependencies]
 serde = { workspace = true, features = ["std"] }

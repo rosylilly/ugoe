@@ -4,6 +4,11 @@
 //! `ugoe::format::module_file::read_module_with` に [`ReadLimits`] を渡して指定する (既定値で読む `read_bundle` などはそのまま)。
 //! 上限を超えたときの種類 (`code`) と補足の値はここで決め、wasm と C ABI が同じ値を返す (T0152)。
 
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+
 use ugoe_format::{ChunkTag, FormatError};
 
 pub use ugoe_format::{ReadLimit, ReadLimits};

@@ -8,11 +8,20 @@
 //!
 //! - `render` (既定で有効): 参照レンダラ (wgpu) を `ugoe::render` として再エクスポートする。
 //!   エンジン独自のレンダラで描くなら `default-features = false` で外すと、wgpu をビルドしない
-//!   (`docs/portability.md#ugoe-クレートの-feature`)。
+//!   (`docs/portability.md#ugoe-クレートの-feature`)。`std` を含む。
+//! - `std` (既定で有効): 下位のクレートの `std` を有効にする。`no_std` + `alloc` で書くので、外しても公開 API は変わらない。
+//!   `render` も `std` も外す (`default-features = false`) と、`Puppet` の読み込み・評価・物理・モーション・トラッキング・着せ替えを
+//!   `std` の無い環境で使える (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。
 
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
 
-use std::sync::Arc;
+extern crate alloc;
+
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 
 pub use ugoe_core as core;
 pub use ugoe_format as format;

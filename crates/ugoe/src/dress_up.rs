@@ -4,7 +4,11 @@
 //! 本体とモジュールの組を合成 ([`ugoe_runtime::compose`]) してコンパイルし直す。本体の物理の設定は
 //! [`Puppet::set_base_physics`] で差し替えられる。
 
-use std::sync::Arc;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use ugoe_model::Model;
 use ugoe_model::module::Module;

@@ -29,6 +29,7 @@ export const NOSTD_CRATES = [
   "ugoe-runtime",
   "ugoe-physics",
   "ugoe-motion",
+  "ugoe",
 ];
 
 /**

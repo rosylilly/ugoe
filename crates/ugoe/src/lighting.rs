@@ -6,6 +6,8 @@
 //! 法線マップは [`bundle_normal_maps`] で引いてデコードし、`Renderer::set_normal_map` で登録する
 //! (PNG は **アルファを掛けずに** デコードする。デコードはホストの仕事)。
 
+use alloc::vec::Vec;
+
 pub use ugoe_core::lighting::{Light, Lighting, MAX_LIGHTS};
 use ugoe_format::{Bundle, TextureData};
 use ugoe_model::Model;

@@ -29,10 +29,17 @@
 
 | feature | 既定 | 内容 |
 | --- | --- | --- |
-| `render` | 有効 | 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする |
+| `render` | 有効 | 参照レンダラ (`ugoe-render`、wgpu) を `ugoe::render` として再エクスポートする。`std` を含む |
+| `std` | 有効 | 下位のクレート (`ugoe-core`〜`ugoe-motion`・`ugoe-format`) と依存の `std` を有効にする。外しても公開 API は変わらない |
 
 段階 B で Rust から `ugoe` を使う組み込み先 (自前のエンジン・godot-rust など) は、`default-features = false` で `render` を外すと
 wgpu と naga をビルドしません。`Puppet` と評価・物理・モーション・読み込み (`ugoe::format`) はそのまま使え、無くなるのは `ugoe::render` だけです。
+`default-features = false` は `std` も外し、`ugoe` は `no_std` + `alloc` でビルドされます
+([ランタイム層が守る制約](#ランタイム層が守る制約-移植性のため))。`Puppet` の読み込み・評価・物理・モーション・トラッキング・着せ替えは
+`std` の無い環境 (ゲーム機・組み込み機器) でもそのまま使えます。数学関数は `std` の有無にかかわらず `libm` なので、出力も変わりません。
+`std` のある環境で `std` を足す必要はありません (足しても公開 API と出力は同じ)。`std` を外すと、`ugoe::format::image` で読める画像は
+圧縮していない KTX2 だけになります (PNG とブロック圧縮の KTX2 は `ugoe-format` の feature `png` (`std` を含む)。
+[crates/ugoe-format/README.md](../crates/ugoe-format/README.md))。
 光源の型 (`Lighting`・`Light`・`MAX_LIGHTS`) は `ugoe::lighting` にあり、外しても使えます (`ugoe::render` にも同じ型があります。
 `uses_lighting`・`bundle_normal_maps` も同じモジュール。T0166)。
 
@@ -178,7 +185,7 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
     足りない関数は `ugoe_core::math` に `libm` を呼ぶ関数を足す。`std` の `f32`・`f64` の数学関数を直接呼ぶと、clippy の `disallowed_methods`
     が警告する (対象は `scripts/nostd-check.mjs` の `MATH_CRATES` で、各クレートの `clippy.toml` に書く。`just groups` が揃っているかを検査する)。
   - ワークスペースの依存 (`[workspace.dependencies]`) は既定の feature を切ってある (`glam`・`ruzstd`・`serde`・`serde_json`・`thiserror`・
-    `ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`)。メンバーの `default-features = false` はワークスペースの側で切らないと効かないため。使う側で
+    `ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe`)。メンバーの `default-features = false` はワークスペースの側で切らないと効かないため。使う側で
     `features = ["std"]` を書く (`ruzstd` は `["hash", "std"]`)。
   - 検査の対象は `scripts/nostd-check.mjs` の `NOSTD_CRATES`。`aarch64-unknown-none` (`std` が無く、`core` と `alloc` がビルド済みで
     配られる tier 2 のターゲット) で、クレートを 1 つずつ `--no-default-features` で clippy にかけるので、どこかで `std` に依存すると
@@ -190,10 +197,13 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
   カウンタは `core::sync::atomic::AtomicU64` なので、64 ビットのアトミックを持たないターゲット (`thumbv6m` など) は対象外 (T0181)。
 - 重い依存を追加しないこと。追加する場合は ADR を書きます。
 
-> 対応中: ランタイム層 (`ugoe-core`〜`ugoe`・`ugoe-ffi`) を `no_std + alloc` でビルドできるようにする (ゲーム機・組み込み機器向け)。
-> 今 `std` 無しでビルドできるのは `ugoe-core` と `ugoe-model` (T0179)、`ugoe-runtime`・`ugoe-physics`・`ugoe-motion` (T0181)、`ugoe-format` (T0182。PNG とブロック圧縮の KTX2 のデコードは
-> feature `png` (`std` を含む) の側にあり、`std` 無しで読める画像は圧縮していない KTX2 だけ。[crates/ugoe-format/README.md](../crates/ugoe-format/README.md))。
-> 数学関数は `std` の有無にかかわらず `libm` を使う (T0180)。方針は [ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md)、タスクは T0180〜T0184・T0491。
+`std` 無しでビルドできるクレート (`NOSTD_CRATES`) は、`ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・
+`ugoe` (`render` を外した形) です。ゲーム機・組み込み機器のように Rust の `std` が無い環境では、これらを `default-features = false` で使います。
+対象にしないのは `ugoe-render` (wgpu) と `ugoe-wasm` (ブラウザ向けで `std` がある) です。PNG とブロック圧縮の KTX2 のデコードは
+`ugoe-format` の feature `png` (`std` を含む) の側にあり、`std` 無しで読める画像は圧縮していない KTX2 だけです
+([crates/ugoe-format/README.md](../crates/ugoe-format/README.md)。テクスチャのデコードはもともとホストの役目)。
+C ABI (`ugoe-ffi`) の `std` の無い形 (staticlib。アロケータはホストの `malloc`・`free`、パニックはホストの `abort`) は
+[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi) で決めた形で作ります (T0491)。
 
 ## 配布
 

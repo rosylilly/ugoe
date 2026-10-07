@@ -6,7 +6,7 @@
 //! を配り、受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) はそれを [`Puppet::follow`] で順に適用する。段の順は `update` と同じなので、同じ列なら、どの受け手も物理を含めて
 //! 1 つの `Puppet` と同じ形になる。
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use ugoe_runtime::ParamIndex;
 
