@@ -1,5 +1,8 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use ugoe_core::{Affine2, Mat2, Rgb, Vec2};
 use ugoe_model::deformer::RotationKeyform;
@@ -94,20 +97,20 @@ impl DrawableChanges {
     }
 }
 
-impl std::ops::BitOr for DrawableChanges {
+impl core::ops::BitOr for DrawableChanges {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
         Self(self.0 | rhs.0)
     }
 }
 
-impl std::ops::BitOrAssign for DrawableChanges {
+impl core::ops::BitOrAssign for DrawableChanges {
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 |= rhs.0;
     }
 }
 
-impl std::ops::BitAnd for DrawableChanges {
+impl core::ops::BitAnd for DrawableChanges {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
         Self(self.0 & rhs.0)
@@ -364,7 +367,7 @@ impl ModelInstance {
         let pending = self
             .dynamic
             .as_mut()
-            .is_some_and(|d| std::mem::take(&mut d.pending));
+            .is_some_and(|d| core::mem::take(&mut d.pending));
         let stage = if pending { Stage::Second } else { Stage::Full };
         self.update_parts();
         self.update_deformers(stage);
@@ -421,7 +424,7 @@ impl ModelInstance {
     /// 比較はビット列の一致で行う (決定的で、NaN が続いても毎フレーム変更ありにならない)。
     /// 頂点位置は変わったときだけコピーするので、止まっているメッシュの費用は比較 1 回分で済む。
     fn detect_changes(&mut self) {
-        let report_all = std::mem::take(&mut self.report_all);
+        let report_all = core::mem::take(&mut self.report_all);
         for ((cur, prev), changes) in self
             .drawables
             .iter()
@@ -521,7 +524,7 @@ impl ModelInstance {
             let own_opacity = match &model.deformers[d].kind {
                 DeformerKind::Warp(warp) => {
                     // 自分の制御点を取り出して親の変換を借りる (空の Vec との交換なので確保は起きない)。
-                    let mut points = std::mem::take(&mut self.warp_points[d]);
+                    let mut points = core::mem::take(&mut self.warp_points[d]);
                     points.fill(Vec2::ZERO);
                     for &(k, w) in weights {
                         for (p, q) in points.iter_mut().zip(&warp.keyforms.keyforms[k].points) {
@@ -1059,7 +1062,7 @@ mod tests {
         let compiled = CompiledModel::compile(fixtures::pose_and_effects()).unwrap();
         let a = ModelInstance::new(Arc::clone(&compiled));
         let b = ModelInstance::new(compiled);
-        assert!(std::ptr::eq(a.parameters().ids(), b.parameters().ids()));
+        assert!(core::ptr::eq(a.parameters().ids(), b.parameters().ids()));
     }
 
     // README.md「update() で毎フレームのヒープ確保をしない」: new で確保したバッファが

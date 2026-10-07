@@ -4,14 +4,19 @@
 //! 組み替えは合成とコンパイルのやり直しで行い、パラメータの値は
 //! [`crate::ParameterValues::carry_over`] で引き継ぐ。
 
-use std::collections::{HashMap, HashSet};
+use alloc::borrow::ToOwned;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use ugoe_core::Id;
 use ugoe_model::deformer::DeformerKind;
 use ugoe_model::keyform::KeyformGrid;
 use ugoe_model::module::DrawOrderRange;
 use ugoe_model::part::PartKeyform;
-use ugoe_model::physics::{ColliderId, PhysicsSettings, PhysicsTarget, VertexOwner};
+use ugoe_model::physics::{PhysicsSettings, PhysicsTarget, VertexOwner};
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::validate::{ValidationError, validate};
 use ugoe_model::{DeformerId, Model, Module, Part, PartId, Slot, standard};
@@ -193,7 +198,7 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
             }
             model.deformers.push(deformer);
         }
-        let own_meshes: HashSet<&str> = module.meshes.iter().map(|m| m.id.as_str()).collect();
+        let own_meshes: BTreeSet<&str> = module.meshes.iter().map(|m| m.id.as_str()).collect();
         for mesh in &module.meshes {
             if mesh.texture as usize >= module.textures.len() {
                 return Err(ComposeError::TextureOutOfRange {
@@ -292,10 +297,14 @@ fn compose_physics_with(
 ) -> Result<PhysicsSettings, ComposeError> {
     let attachments = attach(base, modules)?;
     let mut physics = physics.clone();
-    let base_ids: HashSet<ColliderId> = physics.colliders.iter().map(|c| c.id.clone()).collect();
+    let base_ids: BTreeSet<String> = physics
+        .colliders
+        .iter()
+        .map(|c| c.id.as_str().to_owned())
+        .collect();
     for Attachment { module, slot } in attachments {
         let rename = Renamer::new(&module.name);
-        let own_colliders: HashSet<&str> = module
+        let own_colliders: BTreeSet<&str> = module
             .physics
             .colliders
             .iter()
@@ -311,7 +320,7 @@ fn compose_physics_with(
                 if own_colliders.contains(collider.as_str()) {
                     colliders.push(rename.id(collider));
                 } else if slot.colliders.contains(collider)
-                    && (!base_colliders || base_ids.contains(collider))
+                    && (!base_colliders || base_ids.contains(collider.as_str()))
                 {
                     // 本体の衝突体はそのまま指す。本体に物理が無ければ指す先が無いので外す。
                     if base_colliders {
@@ -408,10 +417,10 @@ fn attach<'a>(
     base: &'a Model,
     modules: &[&'a Module],
 ) -> Result<Vec<Attachment<'a>>, ComposeError> {
-    let slots: HashMap<&str, &Slot> = base.slots.iter().map(|s| (s.id.as_str(), s)).collect();
-    let params: HashSet<&str> = base.parameters.iter().map(|p| p.id.as_str()).collect();
-    let mut names = HashSet::new();
-    let mut occupied: HashMap<&str, &str> = HashMap::new();
+    let slots: BTreeMap<&str, &Slot> = base.slots.iter().map(|s| (s.id.as_str(), s)).collect();
+    let params: BTreeSet<&str> = base.parameters.iter().map(|p| p.id.as_str()).collect();
+    let mut names = BTreeSet::new();
+    let mut occupied: BTreeMap<&str, &str> = BTreeMap::new();
     let mut attachments = Vec::with_capacity(modules.len());
     for &module in modules {
         let name = module.name.as_str();
@@ -522,9 +531,9 @@ impl<'a> Renamer<'a> {
 /// パーツ自身の不透明度を 0 にするのではなく親を挟むので、ポーズやモーションがパーツの
 /// 不透明度を上書きしても隠れたままになる。挟むパーツは末尾に加える。
 fn hide_replaced_parts(model: &mut Model, replaced: Vec<PartId>) {
-    let mut seen = HashSet::new();
+    let mut seen = BTreeSet::new();
     for id in replaced {
-        if !seen.insert(id.clone()) {
+        if !seen.insert(id.as_str().to_owned()) {
             continue;
         }
         let Some(part) = model.parts.iter_mut().find(|p| p.id == id) else {
@@ -546,6 +555,7 @@ fn hide_replaced_parts(model: &mut Model, replaced: Vec<PartId>) {
 mod tests {
     use ugoe_core::Vec2;
     use ugoe_model::fixtures::{dress_module, dress_up_base, long_hair_module};
+    use ugoe_model::physics::ColliderId;
     use ugoe_model::validate::validate_physics;
     use ugoe_model::{AvatarProfile, MaskRef};
 
@@ -663,7 +673,7 @@ mod tests {
             }
             assert_eq!(error.code(), *code, "{error:?}");
         }
-        let codes: HashSet<_> = cases.iter().map(|(e, _)| e.code()).collect();
+        let codes: BTreeSet<_> = cases.iter().map(|(e, _)| e.code()).collect();
         assert_eq!(codes.len(), cases.len(), "codes must be distinct");
     }
 

@@ -3,6 +3,7 @@
 //! 差分は `interp(格子, 現在値) - interp(格子, 既定値)`。既定値での重みはコンパイル時に求めておき、
 //! 現在の重みがそれと同じ格子は加算しない。
 
+use alloc::vec::Vec;
 use ugoe_core::Vec2;
 use ugoe_model::KeyformGrid;
 

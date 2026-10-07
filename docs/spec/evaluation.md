@@ -340,7 +340,7 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 ### デフォーマのワールド変換を読む
 
 エディタのギズモや座標変換のために、`ModelInstance` は直前の `update()` で評価したデフォーマのワールド変換 (3.) を公開します。
-どれも評価済みの状態を借りて読むだけで、`update()` の費用やメモリ確保は増えません。添字は `Model::deformers` / `Model::meshes` のもので、ID からは `CompiledModel::deformer_index(id)` / `mesh_index(id)` で引きます。ID からの引き当て (`part_index`・`hit_area_index`・`ParameterValues::index_of` も) はコンパイル時に作る表を使う定数時間なので、毎フレーム呼んでもモデルの大きさに比例する費用はかかりません。
+どれも評価済みの状態を借りて読むだけで、`update()` の費用やメモリ確保は増えません。添字は `Model::deformers` / `Model::meshes` のもので、ID からは `CompiledModel::deformer_index(id)` / `mesh_index(id)` で引きます。ID からの引き当て (`part_index`・`hit_area_index`・`ParameterValues::index_of` も) はコンパイル時に作る表 (ID の順序で引く木。O(log n)) を使うので、毎フレーム呼んでもモデルの大きさに比例する費用はかかりません。
 
 連番 (`ParamIndex`) を解決して控える側 (物理・モーション) は、`ParameterValues::layout()` で並びの手札 (`ParameterLayout`) を控え、次のフレームで `has_layout(&layout)` により並びが同じかを定数時間で確かめます。手札はポインタの比較なので、同じ値から複製した (`clone`・`clone_from`) もの同士だけが同じで、`from_model` で作り直したものは ID の列が同じでも違うと判定されます。そのときは ID の列 (`ids()`) を比べるか解決し直します (物理は ID の列を比べ、同じなら手札だけ取り替えます)。
 

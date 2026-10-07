@@ -1,5 +1,6 @@
 //! ポーズ (排他的なパーツの切り替え)。仕様: `docs/spec/motion.md#ポーズ`。
 
+use alloc::vec::Vec;
 use ugoe_model::PartId;
 use ugoe_model::pose::{Pose, PoseGroup};
 
@@ -177,7 +178,7 @@ impl PosePlayer {
             .zip(&self.groups)
             .flat_map(|(g, s)| {
                 g.entries.iter().zip(&s.opacities).flat_map(|(e, &o)| {
-                    std::iter::once(&e.part)
+                    core::iter::once(&e.part)
                         .chain(e.links.iter())
                         .map(move |p| (p, o))
                 })

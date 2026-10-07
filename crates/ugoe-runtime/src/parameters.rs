@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use ugoe_model::{Model, ParamId};
 
@@ -26,7 +27,7 @@ pub struct ParameterValues {
     values: Vec<f32>,
 }
 
-/// パラメータの ID の並びと、ID → 連番の表 (`index_of` を定数時間にする。T0146)。
+/// パラメータの ID の並びと、ID → 連番の表 (`index_of` を線形探索にしない。T0146)。
 #[derive(Debug)]
 struct Layout {
     ids: Vec<ParamId>,
@@ -227,10 +228,10 @@ mod tests {
         }
         assert_eq!(params.index_of("Missing"), None);
         let copy = params.clone();
-        assert!(std::ptr::eq(copy.ids(), params.ids()));
+        assert!(core::ptr::eq(copy.ids(), params.ids()));
         let mut other = ParameterValues::from_model(&ugoe_model::fixtures::single_quad());
         other.clone_from(&params);
-        assert!(std::ptr::eq(other.ids(), params.ids()));
+        assert!(core::ptr::eq(other.ids(), params.ids()));
         assert_eq!(
             other.index_of(model.parameters[0].id.as_str()),
             Some(ParamIndex(0))

@@ -11,7 +11,7 @@ license.workspace = true
 thiserror = { workspace = true, features = ["std"] }
 ugoe-core = { workspace = true, features = ["std"] }
 ugoe-model = { workspace = true, features = ["std"] }
-ugoe-runtime.workspace = true
+ugoe-runtime = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 serde_json = { workspace = true, features = ["std"] }

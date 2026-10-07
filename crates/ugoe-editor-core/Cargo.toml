@@ -20,11 +20,11 @@ ugoe-format = { workspace = true, features = ["png"] }
 ugoe-fs.workspace = true
 ugoe-mesher.workspace = true
 ugoe-model = { workspace = true, features = ["schema", "ts"] }
-ugoe-motion.workspace = true
-ugoe-physics.workspace = true
+ugoe-motion = { workspace = true, features = ["std"] }
+ugoe-physics = { workspace = true, features = ["std"] }
 ugoe-psd.workspace = true
 ugoe-rigging.workspace = true
-ugoe-runtime.workspace = true
+ugoe-runtime = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tempfile.workspace = true

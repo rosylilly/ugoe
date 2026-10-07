@@ -18,7 +18,7 @@ thiserror = { workspace = true, features = ["std"] }
 tracing.workspace = true
 ugoe-core = { workspace = true, features = ["std"] }
 ugoe-model = { workspace = true, features = ["std"] }
-ugoe-runtime.workspace = true
+ugoe-runtime = { workspace = true, features = ["std"] }
 wgpu.workspace = true
 
 [lints]

@@ -1,5 +1,6 @@
 //! 表情の再生 (フェードと重ね合わせ)。仕様: `docs/spec/motion.md#表情`。
 
+use alloc::vec::Vec;
 use ugoe_model::expression::{Expression, ExpressionOp};
 use ugoe_runtime::ParameterValues;
 

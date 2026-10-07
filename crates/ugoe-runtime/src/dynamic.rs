@@ -1,6 +1,8 @@
 //! 動的物理の出力 (デフォーマ・頂点への加算量) と、2 段階の評価の状態。
 //! 仕様: `docs/spec/evaluation.md#動的物理を使う場合-2-段階の評価`。
 
+use alloc::vec;
+use alloc::vec::Vec;
 use ugoe_core::Vec2;
 use ugoe_model::{DeformerKind, Model};
 

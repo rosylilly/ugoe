@@ -1,6 +1,7 @@
 //! モーション 1 本の再生 (時刻・フェード・ループ・イベント)。
 //! 仕様: `docs/spec/motion.md#再生とフェード`。
 
+use alloc::vec::Vec;
 use ugoe_core::math;
 use ugoe_model::motion::{Curve, CurveTarget, Motion, MotionEvent};
 use ugoe_runtime::ParameterValues;
@@ -14,7 +15,7 @@ pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
 /// フェードの曲線 `0.5 - 0.5 cos(π x)`。`x` は `[0, 1]` にクランプする。
 pub fn easing(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
-    0.5 - 0.5 * math::cos(std::f32::consts::PI * x)
+    0.5 - 0.5 * math::cos(core::f32::consts::PI * x)
 }
 
 /// フェードイン (経過時間 `elapsed`、長さ `duration`) の重み。長さが 0 以下なら 1。
@@ -309,7 +310,7 @@ impl MotionPlayer {
     /// 再生位置 `from` から `to` までに通過したイベントを `fired` に積む。
     /// 範囲は `(from, to]` (開始直後・折り返し直後は `[from, to]`)。
     fn fire_range(&mut self, from: f32, to: f32) {
-        let inclusive = std::mem::take(&mut self.inclusive_start);
+        let inclusive = core::mem::take(&mut self.inclusive_start);
         for &i in &self.event_order {
             let t = self.motion.events[i].t;
             let after_from = if inclusive { t >= from } else { t > from };
@@ -409,7 +410,7 @@ mod tests {
         assert!(close(easing(1.0), 1.0));
         assert!(close(
             easing(0.25),
-            0.5 - 0.5 * math::cos(std::f32::consts::FRAC_PI_4)
+            0.5 - 0.5 * math::cos(core::f32::consts::FRAC_PI_4)
         ));
         assert_eq!(easing(-1.0), 0.0);
         assert!(close(easing(2.0), 1.0));

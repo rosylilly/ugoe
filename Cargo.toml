@@ -19,7 +19,7 @@ license = "MIT"
 # crates.io に公開するクレート (publish = true) は、path に加えて version を書く (公開したパッケージでは version だけが残る)。
 # version は [workspace.package] の version と揃える (`node scripts/crates.mjs sync`。docs/release.md)。
 # ugoe の既定の feature (render = wgpu) は切ってある。参照レンダラを使うクレートは `features = ["render"]` を書く (C ABI・GDExtension に wgpu を入れないため。T0166)。
-# no_std に対応したクレート (ugoe-core・ugoe-model・ugoe-format) の既定の feature (std) も切ってある。使う側で `features = ["std"]` を書く (ADR 0031)。
+# no_std に対応したクレート (ugoe-core・ugoe-model・ugoe-format・ugoe-runtime・ugoe-physics・ugoe-motion) の既定の feature (std) も切ってある。使う側で `features = ["std"]` を書く (ADR 0031)。
 ugoe = { path = "crates/ugoe", version = "0.0.0", default-features = false }
 ugoe-ai = { path = "crates/ugoe-ai" }
 ugoe-core = { path = "crates/ugoe-core", version = "0.0.0", default-features = false }
@@ -30,12 +30,12 @@ ugoe-headless = { path = "crates/ugoe-headless" }
 ugoe-mcp = { path = "crates/ugoe-mcp" }
 ugoe-mesher = { path = "crates/ugoe-mesher" }
 ugoe-model = { path = "crates/ugoe-model", version = "0.0.0", default-features = false }
-ugoe-motion = { path = "crates/ugoe-motion", version = "0.0.0" }
-ugoe-physics = { path = "crates/ugoe-physics", version = "0.0.0" }
+ugoe-motion = { path = "crates/ugoe-motion", version = "0.0.0", default-features = false }
+ugoe-physics = { path = "crates/ugoe-physics", version = "0.0.0", default-features = false }
 ugoe-psd = { path = "crates/ugoe-psd" }
 ugoe-render = { path = "crates/ugoe-render", version = "0.0.0" }
 ugoe-rigging = { path = "crates/ugoe-rigging" }
-ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0" }
+ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0", default-features = false }
 ugoe-studio-vcam = { path = "apps/studio/vcam" }
 # --- external ---
 # ランタイム層が使う依存 (glam・ruzstd・serde・serde_json・thiserror) は既定の feature を切ってある。メンバーの

@@ -6,10 +6,11 @@
 
 ## 守ること
 
+- `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない (`just nostd-check`。[規則](../../docs/portability.md#ランタイム層が守る制約-移植性のため))
 - 決定的であること
 - GPU・I/O・スレッド・時刻取得に依存しない。wasm32 でビルドできること
 - `update()` で毎フレームのヒープ確保をしない
-- ID から添字への引き当て (`ParameterValues::index_of`・`CompiledModel::*_index`) を定数時間に保つ (毎フレームの経路で呼ばれる。T0146、`examples/id_lookup_timing.rs` で測る)
+- ID から添字への引き当て (`ParameterValues::index_of`・`CompiledModel::*_index`) を線形探索にしない (毎フレームの経路で呼ばれる。T0146、`examples/id_lookup_timing.rs` で測る)。表は `BTreeMap` (O(log n)。`std` の `HashMap` は no_std に無く、決まったハッシュ関数ではファイルから来る ID で衝突を狙われうるため。T0181)
 
 ## 仕様
 

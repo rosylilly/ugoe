@@ -12,12 +12,17 @@ readme = "README.md"
 keywords = ["ugoe", "animation", "rigging", "deformation", "2d"]
 categories = ["graphics", "game-development"]
 
+[features]
+default = ["std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = ["glam/std", "serde/std", "thiserror/std", "ugoe-core/std", "ugoe-model/std"]
+
 [dependencies]
-glam = { workspace = true, features = ["std"] }
-serde = { workspace = true, features = ["std"] }
-thiserror = { workspace = true, features = ["std"] }
-ugoe-core = { workspace = true, features = ["std"] }
-ugoe-model = { workspace = true, features = ["std"] }
+glam.workspace = true
+serde = { workspace = true, features = ["alloc"] }
+thiserror.workspace = true
+ugoe-core.workspace = true
+ugoe-model.workspace = true
 
 [lints]
 workspace = true

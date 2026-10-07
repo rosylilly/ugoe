@@ -30,9 +30,9 @@ ugoe-core = { workspace = true, features = ["std"] }
 ugoe-format = { path = ".", features = ["png"] }
 # 互換性テスト (tests/compat.rs) で、未知の物理の出力を無視することを確かめる
 # 互換性テスト (tests/compat.rs) で、モジュールのパーツが本体のポーズの要素に追従することを確かめる
-ugoe-motion.workspace = true
-ugoe-physics.workspace = true
-ugoe-runtime.workspace = true
+ugoe-motion = { workspace = true, features = ["std"] }
+ugoe-physics = { workspace = true, features = ["std"] }
+ugoe-runtime = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]

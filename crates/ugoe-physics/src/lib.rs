@@ -5,13 +5,21 @@
 //!
 //! 動的物理 (`docs/spec/physics.md#動的物理-揺れ用パラメータのいらない物理`) を使う設定では、
 //! [`PhysicsSystem::update_instance`] がモデルの 1 段目の評価を読み、デフォーマ・頂点に出力する。
+//!
+//! `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない
+//! (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。
 
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
 
 pub mod chain;
 pub mod collider;
 
-use std::sync::Arc;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 use ugoe_core::math;
 
 use ugoe_core::{Vec2, lerp};
@@ -273,7 +281,7 @@ impl PhysicsSystem {
     /// 動的物理の機能は使わない (根元はキャンバスに固定し、衝突体と重力の基準を無視し、
     /// パラメータ以外への出力を捨てる)。動的物理には [`Self::update_instance`] を使う。
     pub fn update(&mut self, parameters: &mut ParameterValues, dt: f32) {
-        let mut frames = std::mem::take(&mut self.frames);
+        let mut frames = core::mem::take(&mut self.frames);
         canvas_frames(&self.settings, &mut frames);
         let alpha = self.advance(&frames, parameters, dt);
         self.frames = frames;
@@ -309,7 +317,7 @@ impl PhysicsSystem {
             self.bind(instance);
         }
         instance.update_first_stage();
-        let mut frames = std::mem::take(&mut self.frames);
+        let mut frames = core::mem::take(&mut self.frames);
         self.rig_frames(instance, &mut frames);
         let alpha = self.advance(&frames, instance.parameters(), dt);
         self.write_instance(instance, &frames, alpha);
@@ -744,7 +752,7 @@ impl PhysicsSystem {
                     }
                     state.pose = pose;
                     state.external = external;
-                    std::mem::swap(&mut state.previous, &mut state.current);
+                    core::mem::swap(&mut state.previous, &mut state.current);
                     outputs(
                         rig,
                         &state.chain,

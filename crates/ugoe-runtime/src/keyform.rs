@@ -2,6 +2,7 @@
 //!
 //! 補間後の値はどの補間の種類でもキーフォームの線形結合 `Σ w_i keyform[i]` で、ここでは重みを求める。
 
+use alloc::vec::Vec;
 use ugoe_model::{KeyformGrid, KeyformInterpolation};
 
 use crate::ParamIndex;
@@ -253,7 +254,7 @@ mod tests {
     /// 1 軸のスカラーのキー値 `values` を重みで補間する。
     fn interp(b: &ResolvedBinding, keyvalues: &[f32], v: f32) -> f32 {
         let mut w = Weights::new();
-        weights(std::slice::from_ref(b), &[v], &mut w);
+        weights(core::slice::from_ref(b), &[v], &mut w);
         w.iter().map(|&(i, w)| keyvalues[i] * w).sum()
     }
 
@@ -321,8 +322,8 @@ mod tests {
         assert!(!s.is_smooth());
         let (mut ws, mut wl) = (Weights::new(), Weights::new());
         for v in [-1.0, -0.37, 0.0, 0.5, 0.999] {
-            weights(std::slice::from_ref(&s), &[v], &mut ws);
-            weights(std::slice::from_ref(&l), &[v], &mut wl);
+            weights(core::slice::from_ref(&s), &[v], &mut ws);
+            weights(core::slice::from_ref(&l), &[v], &mut wl);
             assert_eq!(ws, wl);
         }
     }
@@ -337,7 +338,7 @@ mod tests {
         let mut w = Weights::new();
         let mut v = -30.0;
         while v <= 25.0 {
-            weights(std::slice::from_ref(&b), &[v], &mut w);
+            weights(core::slice::from_ref(&b), &[v], &mut w);
             let sum: f32 = w.iter().map(|&(_, w)| w).sum();
             assert!((sum - 1.0).abs() < 1e-5, "sum {sum} at {v}");
             let got = interp(&b, &values, v);

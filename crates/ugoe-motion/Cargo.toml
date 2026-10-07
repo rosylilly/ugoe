@@ -12,9 +12,14 @@ readme = "README.md"
 keywords = ["ugoe", "animation", "motion", "lip-sync", "2d"]
 categories = ["game-development", "multimedia"]
 
+[features]
+default = ["std"]
+# std を使う。外しても公開 API は変わらない (no_std + alloc。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
+std = ["ugoe-core/std", "ugoe-model/std", "ugoe-runtime/std"]
+
 [dependencies]
-ugoe-core = { workspace = true, features = ["std"] }
-ugoe-model = { workspace = true, features = ["std"] }
+ugoe-core.workspace = true
+ugoe-model.workspace = true
 ugoe-runtime.workspace = true
 
 [lints]

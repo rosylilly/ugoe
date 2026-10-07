@@ -1,6 +1,10 @@
 //! オーサリング用 [`Model`] を評価しやすい形へ変換する (ID → インデックス解決、トポロジカル順序付け)。
 
-use std::sync::Arc;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use ugoe_model::{DeformerKind, KeyformGrid, KeyformInterpolation, MaskMode, Model};
 
@@ -41,7 +45,7 @@ pub struct CompiledModel {
     pub(crate) hit_area_meshes: Vec<u32>,
     /// すべてのキーフォーム格子のうち最大の重みの個数。重みバッファの事前確保に使う。
     pub(crate) max_weights: usize,
-    /// ID → 添字の表 (`part_index` などを定数時間にする。T0146)。
+    /// ID → 添字の表 (`part_index` などを線形探索にしない。T0146)。
     pub(crate) part_ids: IdIndex,
     pub(crate) deformer_ids: IdIndex,
     pub(crate) mesh_ids: IdIndex,

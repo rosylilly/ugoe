@@ -1,5 +1,6 @@
 //! パラメータの ID から解決した添字の控え。並びが変わったら解決し直す (T0325)。
 
+use alloc::vec::Vec;
 use ugoe_runtime::{ParamIndex, ParameterLayout, ParameterValues};
 
 /// ID の列を `ParameterValues` の添字に解決して持つ。
@@ -38,12 +39,6 @@ impl ResolvedParams {
         );
         self.layout = Some(parameters.layout());
         &self.indices
-    }
-
-    /// 控えている並びの手札 (テスト用)。
-    #[cfg(test)]
-    pub(crate) fn layout_for_test(&self) -> Option<ParameterLayout> {
-        self.layout.clone()
     }
 }
 

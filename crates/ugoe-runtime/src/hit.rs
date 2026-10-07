@@ -3,6 +3,7 @@
 //!
 //! どれも直前の [`ModelInstance::update`] の結果を読むだけで、再評価はしない。
 
+use alloc::vec::Vec;
 use ugoe_core::Vec2;
 
 use crate::ModelInstance;

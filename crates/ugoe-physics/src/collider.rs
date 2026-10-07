@@ -188,10 +188,10 @@ pub fn constrain_segment(
 
 /// 基準の向き (角度 0、当たっている) から最も近い、当たらない向き。境目まで二分法で詰める。
 fn nearest_free(blocked: &impl Fn(f32) -> bool, step: f32) -> Option<f32> {
-    let half = math::ceil(std::f32::consts::PI / step) as u32;
+    let half = math::ceil(core::f32::consts::PI / step) as u32;
     for k in 1..=half {
         for sign in [1.0, -1.0] {
-            let angle = sign * (step * k as f32).min(std::f32::consts::PI);
+            let angle = sign * (step * k as f32).min(core::f32::consts::PI);
             if !blocked(angle) {
                 let inside = sign * step * (k - 1) as f32;
                 return Some(bisect(blocked, angle, inside));
@@ -216,7 +216,7 @@ fn bisect(blocked: &impl Fn(f32) -> bool, mut free: f32, mut hit: f32) -> f32 {
 
 /// 角度 (ラジアン) を (-π, π] に畳む。
 fn wrap_radians(angle: f32) -> f32 {
-    use std::f32::consts::{PI, TAU};
+    use core::f32::consts::{PI, TAU};
     let a = math::rem_euclid(angle + PI, TAU) - PI;
     if a <= -PI { a + TAU } else { a }
 }
@@ -374,7 +374,7 @@ mod tests {
         assert!(
             (segment_segment_distance(Vec2::ZERO, Vec2::new(0.0, 3.0), a, b) - 2.0).abs() < 1e-6
         );
-        assert!((wrap_radians(3.0 * std::f32::consts::PI) - std::f32::consts::PI).abs() < 1e-5);
+        assert!((wrap_radians(3.0 * core::f32::consts::PI) - core::f32::consts::PI).abs() < 1e-5);
     }
 
     #[test]

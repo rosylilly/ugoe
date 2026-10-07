@@ -4,6 +4,7 @@
 //! パラメータの入出力を知らない純粋なシミュレーションとして切り出してあり、
 //! 動的物理 (T0305) の衝突体や重力の基準からも同じ積分を使う。
 
+use alloc::vec::Vec;
 use ugoe_core::Vec2;
 use ugoe_core::math;
 use ugoe_model::physics::PhysicsParticle;

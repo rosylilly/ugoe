@@ -7,8 +7,14 @@
 //!    ([`ModelInstance::changes`] で前フレームから変わったものだけを転送できる)
 //!
 //! このクレートは GPU・I/O・スレッドに依存しない。決定的 (同入力 → 同出力) であること。
+//!
+//! `no_std` + `alloc` で書く。既定で有効な feature `std` を外しても公開 API は変わらない
+//! (`docs/portability.md#ランタイム層が守る制約-移植性のため`)。
 
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
+
+extern crate alloc;
 
 mod blend_shape;
 pub mod compile;

@@ -1,5 +1,6 @@
 //! モーションカーブの評価。仕様: `docs/spec/motion.md#カーブ`。
 
+use alloc::vec::Vec;
 use ugoe_model::motion::{Point, Segment};
 
 /// ベジェの t→s を解くときの許容誤差 (正規化した区間 `[0, 1]` での時刻の差)。

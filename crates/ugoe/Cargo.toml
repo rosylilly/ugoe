@@ -16,10 +16,10 @@ categories = ["game-development", "graphics", "rendering"]
 ugoe-core = { workspace = true, features = ["std"] }
 ugoe-format = { workspace = true, features = ["std"] }
 ugoe-model = { workspace = true, features = ["std"] }
-ugoe-motion.workspace = true
-ugoe-physics.workspace = true
+ugoe-motion = { workspace = true, features = ["std"] }
+ugoe-physics = { workspace = true, features = ["std"] }
 ugoe-render = { workspace = true, optional = true }
-ugoe-runtime.workspace = true
+ugoe-runtime = { workspace = true, features = ["std"] }
 thiserror = { workspace = true, features = ["std"] }
 
 [features]

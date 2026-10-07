@@ -20,7 +20,7 @@ ugoe-headless = { workspace = true, features = ["clap"] }
 ugoe-model = { workspace = true, features = ["std"] }
 ugoe-psd.workspace = true
 ugoe-rigging.workspace = true
-ugoe-runtime.workspace = true
+ugoe-runtime = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 png.workspace = true

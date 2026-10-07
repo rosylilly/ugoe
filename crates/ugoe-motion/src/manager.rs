@@ -1,6 +1,8 @@
 //! 優先度付きのモーションマネージャ (クロスフェード)。
 //! 仕様: `docs/spec/motion.md#モーションマネージャ`。
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use ugoe_model::PartId;
 use ugoe_model::motion::{CurveTarget, Motion, MotionEvent};
 use ugoe_runtime::ParameterValues;
