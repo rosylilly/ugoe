@@ -1,11 +1,11 @@
 ---
 id: T0074
 title: "fuzz/Cargo.lock の依存の版を、ルートの Cargo.lock とそろえるかを決め、そろえるならずれを検査する"
-status: todo
+status: in-progress
 milestone: M11
 crates: [fuzz, scripts, docs]
 depends_on: [T0073]
-assignee:
+assignee: claude-worker-T0074
 ---
 
 # T0074: fuzz/Cargo.lock の依存の版を、ルートの Cargo.lock とそろえるかを決め、そろえるならずれを検査する
