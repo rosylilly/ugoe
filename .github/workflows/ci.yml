@@ -245,6 +245,20 @@ jobs:
       - name: Clippy (apps)
         if: ${{ !cancelled() && matrix.name == 'macos' }}
         run: just lint-group apps
+      # C ABI (`just ffi-check`): rust (bindings) と同じく、ヘッダが最新かと、C の見本を std がある形と std の無い形の静的ライブラリに
+      # リンクして実行する。macOS の C ライブラリ (`aligned_alloc` は macOS 10.15 以降) とリンクのフラグ (`-framework CoreFoundation`)
+      # を見続ける (T0067。crates/ugoe-ffi/README.md#std-の無い環境)。cbindgen は rust (bindings) の「Install cbindgen」と同じ版を入れる。
+      # Windows では流さない: scripts/ffi.mjs のリンクは gcc 形式の引数の `cc` とホストのライブラリの一覧 (Linux・macOS) を前提にしていて、
+      # ランナーの MSVC は開発者のシェル (vcvars) の外では使えない。std の無い形は MSVC の C ライブラリに `aligned_alloc` が無いので
+      # どのみち飛ばす。Windows の C ABI のビルドは unity.yml の native (windows-x86_64) が見る
+      - name: Install cbindgen
+        if: ${{ !cancelled() && matrix.name == 'macos' }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen@0.29.4
+      - name: C ABI
+        if: ${{ !cancelled() && matrix.name == 'macos' }}
+        run: just ffi-check
 
   # Rust の全ジョブの結果を 1 つにまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)
   rust:

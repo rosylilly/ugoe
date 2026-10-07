@@ -90,7 +90,8 @@ cbindgen は MPL-2.0 なので、このクレートの依存 (`build-dependencie
 ワークスペースの外のツールとして使う。版は `scripts/ffi.mjs` の `CBINDGEN_VERSION` と CI (`.github/workflows/ci.yml` の `cbindgen@...`) で揃え、
 違う版や未導入なら `just ffi-check` / `just ffi-header` が入れ方を案内して止まる。ヘッダには cbindgen の版を書かない。
 
-`just ffi-check` は cbindgen と C コンパイラ (`cc`。`CC` で変えられる) が要るので `just ci` には含めず、CI の `rust (bindings)` ジョブで別に実行する。
+`just ffi-check` は cbindgen と C コンパイラ (`cc`。`CC` で変えられる) が要るので `just ci` には含めず、CI の `rust (bindings)` (Linux) と
+`rust (macos)` のジョブで別に実行する (Windows では流さない。[docs/testing.md](../../docs/testing.md#windows-と-macos))。
 
 ```sh
 cargo install cbindgen --version 0.29.4 --locked
@@ -136,7 +137,7 @@ cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --pro
   静的ライブラリを作ってフリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と (clang でコンパイルして rust-lld で) リンクし、
   未解決のシンボルが `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc` だけであることを確かめる (`scripts/nostd-check.mjs` の
   `HOST_SYMBOLS`)。
-- `just ffi-check` (CI の rust (bindings)): ホスト (Linux・macOS) 向けに `std` を外した静的ライブラリを作り、同じ見本を
+- `just ffi-check` (CI の rust (bindings) と rust (macos)): ホスト (Linux・macOS) 向けに `std` を外した静的ライブラリを作り、同じ見本を
   [`examples/c/nostd_main.c`](examples/c/nostd_main.c) からホストの C ライブラリ (アロケータとパニックの処理の相手) とリンクして、
   見本のモデルで実行する。Windows (MSVC の C ライブラリは `aligned_alloc` を持たない) では飛ばす。
 - ゲーム機の実機と SDK での確認は、組み込み先 (SDK を持つ人) に任せる。`aarch64-unknown-none` の検査で見つからない問題 (TLS・アトミック・
