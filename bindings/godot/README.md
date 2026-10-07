@@ -59,6 +59,9 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
 - 依存のライセンスの検査 (`cargo metadata`) とビルドは `--locked` で流すので、ランタイムのクレートに依存を足して
   `bindings/godot/Cargo.lock` が古くなると `--check` が失敗する (ライセンスの検査が古い lock のファイルと直し方を出して止まる)。
   そのときは `cargo update --manifest-path bindings/godot/Cargo.toml --workspace` で直し、`bindings/godot/Cargo.lock` をコミットする。
+- `bindings/godot/Cargo.lock` の依存の版は、ルートの `Cargo.lock` とそろえる (`just groups` が `scripts/check-lock-sync.mjs` で比べ、
+  ずれたらルートの版に合わせる `cargo update … --precise` を出して止まる。[docs/testing.md](../../docs/testing.md#fuzz))。
+  godot-rust が使う glam 0.32 のように、ルートと互換でない系列の版は比べない。
 - Godot の実行ファイルは環境変数 `GODOT` (既定は `godot`) で指定する。見つからなければ入れ方を示して止まる。
 - `--conformance` は、配布物の適合テスト ([tests/conformance/README.md](../../tests/conformance/README.md)) の計画のケースを、
   実行器 `example/tests/conformance.gd` で倍率 1・背景 `#808080` で描き、`ugoe-conformance compare --images` で

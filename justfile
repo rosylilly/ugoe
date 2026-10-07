@@ -53,12 +53,14 @@ test *args:
     cargo test --workspace {{args}}
 
 # CI のジョブのまとまり (グループ) の検査: すべてのクレートがどれか 1 つのグループに入っているか (scripts/ci-groups.mjs)。
-# 別のターゲットの検査 (scripts/cross-check.mjs) の定義のクレートがワークスペースにあるかも見る
+# 別のターゲットの検査 (scripts/cross-check.mjs) の定義のクレートがワークスペースにあるかも見る。
+# ワークスペースの外の Cargo.lock (fuzz/・bindings/godot/) の依存の版がルートとそろっているかも見る (scripts/check-lock-sync.mjs)
 groups:
-    @node --test --test-reporter=dot scripts/ci-groups.test.mjs scripts/cross-check.test.mjs scripts/nostd-check.test.mjs
+    @node --test --test-reporter=dot scripts/ci-groups.test.mjs scripts/cross-check.test.mjs scripts/lock-sync.test.mjs scripts/nostd-check.test.mjs
     @node scripts/ci-groups.mjs check
     @node scripts/cross-check.mjs check
     @node scripts/nostd-check.mjs check
+    @node scripts/check-lock-sync.mjs
 
 # グループの一覧は `node scripts/ci-groups.mjs list`。CI の rust (<グループ>) ジョブと同じ検査。
 # lint-group と test-group は bash の構文を使うので、Windows では Git Bash か WSL で実行する。

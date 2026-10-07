@@ -13,7 +13,7 @@
 | wasm の型の写しの検査 | `scripts/check-wasm-types.mjs`。手書きの型の写し (`bindings/web/stub/ugoe_wasm.d.ts`・`@ugoe/player` と `@ugoe/face-tracking` の interface) を `just wasm` の生成物と比べる | `just wasm-types` (生成物が無ければ一部の写しをスタブと比べる。CI の web ジョブは `just wasm` の後に生成物と比べる) |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと、Unity の宣言・fuzz の入口 `ugoe_ffi::fuzzing` の呼び出しの過不足) | `just refs` |
-| CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
+| CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか)・`scripts/check-lock-sync.mjs` (ワークスペースの外の `Cargo.lock` の依存の版がルートとそろうか。[fuzz](#fuzz)) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・`--locked` で lock が古いときの文・npm のライセンスの例外・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
 | API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps`。wasm32 でだけコンパイルするコード (`ugoe-wasm` の `src/web.rs`・`src/web/`) は wasm32 のターゲットで `cargo doc -p ugoe-wasm` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`)。wasm32 の分は `just wasm-check` |
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字と押せる部品の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
@@ -447,6 +447,16 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   `cargo update --manifest-path fuzz/Cargo.toml --workspace` で足りない依存だけを足して直し、`fuzz/Cargo.lock` をコミットします
   ([fuzz/README.md](../fuzz/README.md))。Godot のバインディング (`bindings/godot/Cargo.lock`。`node bindings/godot/build.mjs --check`)
   も同じで、`cargo update --manifest-path bindings/godot/Cargo.toml --workspace` で直します ([bindings/godot/README.md](../bindings/godot/README.md))。
+- **依存の版はルートの `Cargo.lock` とそろえます (T0074)。** `fuzz/Cargo.lock` と `bindings/godot/Cargo.lock` は、ルートの `Cargo.lock`
+  にもある依存 (semver で互換な同じ系列) をルートと同じ版にします。理由: fuzz が回すコードや Godot に出すコードと、出荷するコード
+  (ルートのワークスペースでビルドするアプリ・C ABI・wasm) で依存の版が違うと、fuzz が見つけた (あるいは見つけない) 不具合が
+  出荷物と食い違うおそれがあるためです (着手のときは glam・libc・cc・twox-hash がずれていた)。外のクレートだけの依存
+  (`libfuzzer-sys`・godot-rust) と、ルートと互換でない系列 (godot-rust の glam 0.32) は比べません。
+  - `just groups` (`just ci` と CI の `rust-checks`) と `just fuzz-lint` が `scripts/check-lock-sync.mjs` (判定は `scripts/lib/lock-sync.mjs`)
+    で比べ、ずれた依存と、ルートの版に合わせる `cargo update --manifest-path <…>/Cargo.toml -p <名前>@<版> --precise <ルートの版>` を出して
+    止まります。cargo は使わず lock のファイルを読むだけなので、ワークスペースをビルドしないジョブで流せます。
+  - ずれは、足した依存を `cargo update --workspace` が最新の版で入れたときと、ルートで依存を上げたとき (外の lock は自動では追従しない)
+    に起きます。外のクレートの依存が新しい版を求めてルートの版に合わせられないときは、ルートで `cargo update -p <名前>` して両方を新しい版にします。
 - 計装したターゲットのビルド (nightly と cargo-fuzz) まで含めた検査は `just fuzz-check` で、CI では週に 1 度の fuzz.yml が流します。
 - 見つかった入力を直したら、最小にした入力 (`cargo +nightly fuzz tmin`) を `broken_input.rs` の決まった入力に足し、stable の
   `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`。`ffi` なら

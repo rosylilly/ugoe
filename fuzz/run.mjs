@@ -4,7 +4,7 @@
 //   node fuzz/run.mjs <target> [秒]            # 1 つのターゲットを回す (既定は 60 秒)。`just fuzz <target> [秒]`
 //   node fuzz/run.mjs all [秒]                 # すべてのターゲットを順に、それぞれ [秒] ずつ回す
 //   node fuzz/run.mjs <target> [秒] -- <引数>  # `--` の後ろは libFuzzer に渡す (例: -jobs=4 -workers=4)
-//   node fuzz/run.mjs --check                  # 依存のライセンスの検査・整形の検査・clippy・すべてのターゲットのビルド
+//   node fuzz/run.mjs --check                  # 依存のライセンスと版 (ルートの Cargo.lock とそろうか) の検査・整形の検査・clippy・すべてのターゲットのビルド
 //   node fuzz/run.mjs --lint                   # --check のうち stable でできるもの (ビルド以外。PR ごとの CI が流す)
 //   node fuzz/run.mjs --list                   # ターゲットと種の置き場所を表示する
 //
@@ -57,6 +57,8 @@ if (own.includes("--list")) {
 
 if (own.includes("--check") || own.includes("--lint")) {
   run("node", [join(root, "scripts/check-licenses.mjs"), "--fuzz"], stableEnv);
+  // 依存の版がルートの Cargo.lock とそろっているか (fuzz が回すコードと出荷するコードで依存の版を違えない。`just groups` も見る)
+  run("node", [join(root, "scripts/check-lock-sync.mjs"), "fuzz"], stableEnv);
   // 整形と clippy はルートの rust-toolchain.toml (stable) で行う (ワークスペースと同じ規則にする。libfuzzer-sys は stable でもビルドできる)。
   // clippy は libfuzzer-sys のビルドスクリプトが同梱の libFuzzer (C++) をコンパイルするので、C++ のコンパイラが要る。
   // --locked (ライセンスの検査の cargo metadata も): ランタイムのクレートに依存を足して fuzz/Cargo.lock が古くなったら、ここで気づく (fuzz/README.md)
