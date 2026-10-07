@@ -61,6 +61,7 @@ apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメー�
 apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手、シーンとプロファイル、入力とホットキー。ADR 0028。vcam/ = 仮想カメラ (unsafe を許す唯一のアプリのクレート))
 packages/           アプリ (エディタ・ビューア・スタジオ) で共有するフロントエンドの部品 (face-tracking・ui・i18n・player。GPL-3.0-only)
 bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
+fuzz/               fuzz のターゲット (cargo-fuzz、nightly。ワークスペースの外、ADR 0032。`just fuzz <target>`。just ci には入らない)
 tests/conformance/  配布物の適合テスト (ugoe-conformance。C ABI・wasm の頂点と画像を参照と比べる。`just conformance`)
 docs/               設計・仕様・ADR・タスク
 scripts/            補助スクリプト (check-layers.mjs 等)
@@ -86,6 +87,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just nostd-check` | ランタイム層のクレートが `std` 無し (`aarch64-unknown-none`) でビルドできるか (ランタイム層を触ったら実行。対象は `scripts/nostd-check.mjs`、規則は [docs/portability.md](docs/portability.md#ランタイム層が守る制約-移植性のため)) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
 | `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
+| `just fuzz <target> [秒]` | 外から来る入力 (バンドル・モジュール・画像・JSON) を cargo-fuzz で回す (nightly と cargo-fuzz が要る。`just ci` には含めない。ランタイムの公開 API を変えたら `just fuzz-check`。[docs/testing.md](docs/testing.md#fuzz)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |

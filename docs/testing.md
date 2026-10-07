@@ -21,9 +21,10 @@
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
 | PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
 | エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
+| fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は週に 1 度の `fuzz.yml`。[下](#fuzz)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行。`std` の無い形の静的ライブラリをホストの C ライブラリとリンクした見本 (`examples/c/nostd.c`) の実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
-`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト以外) すべて実行します。
+`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz 以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
 PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
@@ -370,6 +371,34 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 - 変形の結果は、許容誤差を付けて比較します (目安は `1e-4` px)。
 - 仕様書の式に対応するテストには、テスト名かコメントで仕様書の節を示します。
 - 評価の出力全体を `insta` の JSON スナップショットにしてよいですが、スナップショットを更新するときは、PR 本文に「なぜ値が変わったのか」を書きます。
+
+## 壊れた入力と fuzz
+
+外から来る入力 (`.ugoe`・`.ugoemod`・画像・JSON・ホストの数) でパニックしないことは、2 段で確かめます
+(規則は [portability.md](portability.md#パニックしない))。
+
+- **決まった入力のテスト** (`crates/ugoe-format/tests/broken_input.rs`・`crates/ugoe/tests/broken_input.rs`。T0184): 切り詰め・
+  ビットの反転・数の書き換え・深い入れ子など。stable で依存を足さずに動き、`just ci` に入ります。
+- **fuzz** (`fuzz/`。下の節): 決まった入力の外を、カバレッジを見て入力を変えながら探します。`just ci` には入れません。
+
+### fuzz
+
+[cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (libFuzzer) のターゲットを、ルートのワークスペースの外のクレート `fuzz/` に置きます
+(決めたことと理由は [ADR 0032](adr/0032-fuzzing-with-cargo-fuzz.md)。T0188 で利用者が選んだ)。
+
+- ターゲットは `bundle` (バンドルの読み込み・画像のデコード・`Puppet` での評価)・`module` (モジュールの読み込みと着せ替えの本体への
+  取り付け)・`image` (PNG と KTX2 のデコード)・`json` (JSON 形式のモデル・モジュール・物理・モーション・表情)。詳しくは
+  [fuzz/README.md](../fuzz/README.md)。
+- 手元では `just fuzz <target> [秒]` (既定 60 秒。`all` ですべて)。nightly と cargo-fuzz が要り、無ければ入れ方を示して止まります。
+  nightly は fuzz のビルドだけで使い、`rust-toolchain.toml` (stable) は変えません。
+- CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
+  次の回へ持ち越します。見つかった入力はワークフローの成果物 (`fuzz-artifacts-<target>`) に上げます。
+- PR ごとの CI は fuzz のクレートをビルドしません。ランタイムの公開 API を変えたら `just fuzz-check` (依存のライセンス・整形・clippy・
+  すべてのターゲットのビルド) を流してください (流さなくても、週に 1 度のジョブで気づきます)。
+- 見つかった入力を直したら、最小にした入力 (`cargo +nightly fuzz tmin`) を `broken_input.rs` の決まった入力に足し、stable の
+  `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`)。
+- 依存 (`libfuzzer-sys` と同梱の libFuzzer) のライセンスは `just licenses` の対象の外なので、`scripts/check-licenses.mjs --fuzz`
+  (`just fuzz-check`) で検査します。
 
 ## 性能の計測
 

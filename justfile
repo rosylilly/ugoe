@@ -159,6 +159,16 @@ godot-build *args:
 godot-check *args:
     node bindings/godot/build.mjs --check --conformance {{args}}
 
+# nightly と cargo-fuzz が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では週に 1 度の fuzz.yml)。
+# `--` の後ろは libFuzzer に渡す: `just fuzz bundle 300 -- -jobs=4 -workers=4`。見つかった入力は fuzz/artifacts/<target>/
+# fuzz (fuzz/README.md): 外から来る入力のターゲット (bundle・module・image・json。all ですべて) を [秒] (既定 60) ずつ回す
+fuzz target *args:
+    @node fuzz/run.mjs {{target}} {{args}}
+
+# fuzz のクレートの検査 (依存のライセンス・整形・clippy・すべてのターゲットのビルド)。`just ci` には含めない
+fuzz-check:
+    @node fuzz/run.mjs --check
+
 # 配布物の適合テスト (tests/conformance/README.md): C ABI・wasm (npm パッケージ、WebGL2 と WebGPU)・Unity の C# の層・Godot の頂点と画像を、ModelInstance と ugoe render の参照と比べる。
 # `<ugoe-avatar>` (avatar) は作成・切り離し・コンテキストの喪失からの作り直しのシナリオを、queries は `*_json()` の出力のキーと TS の型を確かめる。
 # example は見本 (bindings/web/examples/basic) の MediaPipe の利用状況の送信がネットワークに出ないことを確かめる。

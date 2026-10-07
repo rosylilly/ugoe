@@ -41,3 +41,4 @@
 | [0029](0029-shared-ui-and-i18n.md) | 共有の UI 部品と翻訳 (@ugoe/ui・@ugoe/i18n・@ugoe/player)。翻訳は i18next、部品の土台は Bits UI | Accepted |
 | [0030](0030-compressed-ktx2-decoding.md) | 参照の実装と wasm で圧縮した KTX2 をデコードする (BCn を bcdec_rs で。ETC2・ASTC・Basis は後で) | Accepted |
 | [0031](0031-no-std-runtime-and-host-neutral-c-abi.md) | ランタイム層を no_std + alloc で使えるようにし (数学関数は常に libm)、C ABI のエラーをスレッドローカルから外し、毎フレームの状態はまとめて渡す | Accepted |
+| [0032](0032-fuzzing-with-cargo-fuzz.md) | 外から来る入力を cargo-fuzz (libFuzzer、nightly) で続けて fuzz する。ワークスペースの外に置き、`just ci` に入れない | Accepted |

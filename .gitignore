@@ -27,3 +27,8 @@ dist/
 /apps/studio/public/mediapipe/
 # Claude Code などの MCP の登録 (利用者の環境に固有のパスを含むので共有しない)
 /.mcp.json
+# cargo-fuzz のビルド・育てた入力・見つかった入力・カバレッジ (fuzz/run.mjs。docs/testing.md#fuzz)
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/

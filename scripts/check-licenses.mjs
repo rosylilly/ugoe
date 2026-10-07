@@ -16,6 +16,8 @@
 // - Godot のバインディング (bindings/godot) はルートのワークスペースの外にあり、`--godot` を付けたときだけ
 //   それを検査する (docs/adr/0026-godot-binding.md)。MIT で、依存は寛容なライセンスに限る。例外として
 //   godot-rust のクレートだけ MPL-2.0 を認める。`node bindings/godot/build.mjs --check` が実行する。
+// - fuzz のクレート (fuzz/) もワークスペースの外にあり、`--fuzz` を付けたときだけ検査する
+//   (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。MIT で、依存は寛容なライセンスに限る。libfuzzer-sys だけ NCSA も認める。`node fuzz/run.mjs --check` が実行する。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { execFileSync } from "node:child_process";
@@ -142,10 +144,12 @@ function runtimeDeps(nodes, id) {
   return seen;
 }
 
-if (process.argv.includes("--godot")) {
-  const meta = cargoMetadata(
-    fileURLToPath(new URL("../bindings/godot/Cargo.toml", import.meta.url)),
-  );
+/**
+ * ルートのワークスペースの外にある 1 つのクレート (`manifest`) を検査して終わる: クレートは MIT で、
+ * dev 以外の依存は寛容なライセンスか、`extra(name)` が返すライセンス。
+ */
+function checkOutsideCrate(manifest, extra = () => []) {
+  const meta = cargoMetadata(fileURLToPath(new URL(manifest, import.meta.url)));
   const byId = new Map(meta.packages.map((p) => [p.id, p]));
   const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
   const errors = [];
@@ -160,7 +164,7 @@ if (process.argv.includes("--godot")) {
   for (const id of deps) {
     if (id === rootId) continue;
     const dep = byId.get(id);
-    const allowed = GODOT_RUST.has(dep.name) ? new Set([...PERMISSIVE, "MPL-2.0"]) : PERMISSIVE;
+    const allowed = new Set([...PERMISSIVE, ...extra(dep.name)]);
     if (!dep.license || !satisfies(dep.license, allowed)) {
       errors.push(`${rootPkg.name} -> ${dep.name} ${dep.version}: ${dep.license} は使えない`);
     }
@@ -169,6 +173,16 @@ if (process.argv.includes("--godot")) {
   if (errors.length === 0)
     console.log(`licenses ok (${rootPkg.name}, ${deps.size - 1} dependencies)`);
   process.exit(errors.length > 0 ? 1 : 0);
+}
+
+if (process.argv.includes("--godot")) {
+  checkOutsideCrate("../bindings/godot/Cargo.toml", (name) =>
+    GODOT_RUST.has(name) ? ["MPL-2.0"] : [],
+  );
+}
+if (process.argv.includes("--fuzz")) {
+  // libfuzzer-sys の同梱の libFuzzer (LLVM) は NCSA (寛容なライセンス。ソースの見出しは Apache-2.0 WITH LLVM-exception)
+  checkOutsideCrate("../fuzz/Cargo.toml", (name) => (name === "libfuzzer-sys" ? ["NCSA"] : []));
 }
 
 const meta = cargoMetadata();

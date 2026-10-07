@@ -1,0 +1,56 @@
+[package]
+name = "ugoe-fuzz"
+description = "ugoe の外から来る入力 (.ugoe・.ugoemod・画像・JSON) の fuzz のターゲット (cargo-fuzz。docs/testing.md#fuzz)"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# 参照レンダラ (wgpu) は使わない
+ugoe = { path = "../crates/ugoe", default-features = false, features = ["std"] }
+ugoe-format = { path = "../crates/ugoe-format", features = ["png"] }
+
+# リポジトリのルートのワークスペースには入れない (独自の Cargo.lock を持つ)。
+# nightly と libFuzzer で動かすので、stable の `just ci` から外す (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。
+[workspace]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+
+[[bin]]
+name = "bundle"
+path = "fuzz_targets/bundle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "module"
+path = "fuzz_targets/module.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image"
+path = "fuzz_targets/image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false

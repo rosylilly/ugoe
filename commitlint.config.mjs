@@ -26,6 +26,8 @@ const SCOPES = [
   "fs",
   // tests/conformance (ugoe-conformance)
   "conformance",
+  // fuzz/ (ugoe-fuzz。ワークスペースの外の fuzz のターゲット)
+  "fuzz",
   // bindings/
   "godot",
   "unity",

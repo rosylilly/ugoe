@@ -1,0 +1,84 @@
+name: Fuzz
+
+# 外から来る入力 (.ugoe・.ugoemod・画像・JSON) の fuzz (cargo-fuzz と libFuzzer。fuzz/README.md、docs/testing.md#fuzz、
+# docs/adr/0032-fuzzing-with-cargo-fuzz.md)。nightly が要り時間もかかるので、PR ごとの CI (ci.yml) には入れず、
+# 週に 1 度と手動で流す (利用者の決定 2026-10-07)。育てた入力 (fuzz/corpus) は actions/cache で次の回へ持ち越す。
+on:
+  schedule:
+    # 毎週月曜 04:23 (UTC)
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "ターゲットごとに回す秒数"
+        default: "300"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [bundle, module, image, json]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      # 整形と clippy は rust-toolchain.toml (stable)、fuzz のビルドは nightly (ADR 0032)
+      - name: Install Rust toolchains (rust-toolchain.toml and nightly)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup toolchain install nightly --profile minimal
+      # install-action の一覧に無いので cargo-binstall で入れる (無ければソースからビルドする)
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: extractions/setup-just@v4
+      # fuzz/ はワークスペースの外 (独自の Cargo.lock) なので、ci.yml のキャッシュとは分ける
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fuzz
+          workspaces: fuzz -> target
+          save-if: ${{ matrix.target == 'bundle' }}
+      # 依存のライセンス (scripts/check-licenses.mjs --fuzz)・整形・clippy・すべてのターゲットのビルド。
+      # PR ごとの CI は fuzz のクレートをビルドしないので、ランタイムの API の変更で壊れたらここで気づく
+      - name: Check the fuzz crate
+        if: matrix.target == 'bundle'
+        run: just fuzz-check
+      - name: Restore the corpus
+        uses: actions/cache/restore@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      # 入力の値はシェルに直接埋め込まず、環境変数で渡す (run.mjs が整数かを確かめる)
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          FUZZ_TARGET: ${{ matrix.target }}
+          FUZZ_SECONDS: ${{ inputs.seconds || '300' }}
+        run: just fuzz "$FUZZ_TARGET" "$FUZZ_SECONDS"
+      # 見つからなくても育てた入力を残す (見つかったときも、それまでの入力は次の回に使える)
+      - name: Save the corpus
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      # 見つかった入力 (パニック・時間切れ・メモリの使いすぎ)。手元で `cargo +nightly fuzz run <target> <ファイル>` で再現する
+      - name: Upload the found inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

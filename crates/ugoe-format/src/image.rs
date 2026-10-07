@@ -150,6 +150,18 @@ pub fn decode_png(bytes: &[u8], limits: ImageLimits) -> Result<Rgba8, ImageError
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().map_err(decode_error)?;
     let (width, height) = (reader.info().width, reader.info().height);
+    // PLTE の長さは 3 の倍数 (PNG の仕様)。`png` 0.18 は 3 の倍数でない PLTE を受け入れ、パレットの展開でパニックするので、
+    // ここで断る (PLTE は IDAT より前にあるので `read_info` の後に揃っている。fuzz で見つかった。T0188)。
+    if reader
+        .info()
+        .palette
+        .as_ref()
+        .is_some_and(|p| p.len() % 3 != 0)
+    {
+        return Err(ImageError::Decode(
+            "PLTE chunk length is not a multiple of 3".to_owned(),
+        ));
+    }
     let max = limits.max_side;
     if width > max || height > max {
         return Err(ImageError::TooLarge { width, height, max });

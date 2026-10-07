@@ -278,7 +278,10 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
   深い入れ子)、`crates/ugoe/tests/broken_input.rs` (同じく壊したバンドルとモジュールを `Puppet` で動かす。NaN・無限大・巨大な数の
   パラメータ・`dt`・トラッキング・受け手の入力、範囲の外の番号と知らない ID、検査していない物理の設定・モーション・表情・エフェクト、
   ホストが評価の状態を別のモデルのものに差し替える)、`ugoe-format` の `image` の単体テスト (壊した KTX2 と PNG)。
-  どれも決まった入力で、依存を足さずに stable で動きます (乱数による fuzz は使っていない)。
+  どれも決まった入力で、依存を足さずに stable で動きます。
+- **fuzz:** 決まった入力の外は、cargo-fuzz (libFuzzer、nightly) のターゲット `fuzz/` (バンドル・モジュール・画像・JSON) で探します。
+  `just ci` には入れず、手元の `just fuzz <target>` と週に 1 度の CI のジョブで回します。見つかった入力は直して `broken_input.rs` に
+  足します ([testing.md](testing.md#fuzz)、[ADR 0032](adr/0032-fuzzing-with-cargo-fuzz.md))。
 - C ABI (`ugoe-ffi`) も同じ lint を有効にしています (T0491)。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
   `std` の無い形の静的ライブラリはパニックで `abort` するので、C ABI の入口もパニックしてはなりません。
 - wasm の入口 (`ugoe-wasm`) も同じ lint を有効にしています (T0493)。wasm のパニックは trap として JavaScript の
