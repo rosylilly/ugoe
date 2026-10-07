@@ -1,8 +1,12 @@
 //! エラーコードと、呼び出し側が渡す失敗の中身 (`UgoeError`)、パニックを境界で止める仕組み
 //! (`docs/portability.md#c-abi-ugoe-ffi-の規約`。ADR 0031)。
 
-use std::ffi::{CStr, CString, c_char};
-use std::panic::{self, AssertUnwindSafe};
+use alloc::boxed::Box;
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::ffi::{CStr, c_char};
 
 /// 関数の結果。`UGOE_OK` (0) が成功、それ以外は失敗の種類。詳細は、呼び出しに渡した `UgoeError` から得る。
 pub type UgoeResult = i32;
@@ -28,6 +32,7 @@ pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 /// 指定した ID が見つからなかった。
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;
 /// ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
+/// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ)。
 pub const UGOE_ERROR_PANIC: UgoeResult = 8;
 /// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
 /// 補足の値は `ugoe_error_field` で得る (T0409)。
@@ -81,6 +86,14 @@ impl Error {
     }
 }
 
+/// `items` の `index` 番目。範囲外なら `UGOE_ERROR_OUT_OF_RANGE` の失敗にする。確かめた添字でもパニックの代わりに
+/// 失敗にするために使う (`docs/portability.md#パニックしない`)。
+pub(crate) fn at<'a, T>(items: &'a [T], what: &str, index: usize) -> Result<&'a T, Error> {
+    items
+        .get(index)
+        .ok_or_else(|| Error::out_of_range(what, index, items.len()))
+}
+
 /// 失敗の中身 (メッセージ・種類・補足の値) を受け取る入れ物。不透明な型で、中身には触れない (ADR 0031)。
 ///
 /// `ugoe_error_create` で作り、`ugoe_error_destroy` で破棄する。失敗しうる関数は最後の引数 `error` にこれを取り、
@@ -111,8 +124,8 @@ impl UgoeError {
 
 /// 文字列を C の文字列にする。NUL が含まれていたら、そこまでで切る。
 pub(crate) fn c_string(s: &str) -> CString {
-    let end = s.find('\0').unwrap_or(s.len());
-    CString::new(&s[..end]).unwrap_or_default()
+    let head = s.split('\0').next().unwrap_or_default();
+    CString::new(head).unwrap_or_default()
 }
 
 /// 失敗を `out` に書く。`out` が NULL なら何もしない。
@@ -127,26 +140,44 @@ unsafe fn report(out: *mut UgoeError, error: &Error) {
     }
 }
 
-/// `f` をパニックを捕まえて実行し、結果をエラーコードにする。失敗したら中身を `error` に書く (NULL なら書かない)。
+/// `f` を実行し、結果をエラーコードにする。失敗したら中身を `error` に書く (NULL なら書かない)。
+/// `std` がある形ではパニックも捕まえて [`UGOE_ERROR_PANIC`] にする (無い形ではパニックはホストの `abort` を呼ぶ。nostd.rs)。
 ///
 /// 公開する関数の `error` 引数をそのまま渡す。呼び出し側の約束として、`error` は NULL か、破棄されていない `UgoeError` を指し、
 /// ほかから同時に使われていないこと (ヘッダの `UgoeError` の説明)。
 pub(crate) fn guard(error: *mut UgoeError, f: impl FnOnce() -> Result<(), Error>) -> UgoeResult {
-    let failure = match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok(Ok(())) => return UGOE_OK,
-        Ok(Err(failure)) => failure,
-        Err(payload) => {
-            let message = payload
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_owned())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown panic payload".to_owned());
-            Error::new(UGOE_ERROR_PANIC, format!("panic inside ugoe: {message}"))
-        }
+    let failure = match catch_panic(f) {
+        Ok(()) => return UGOE_OK,
+        Err(failure) => failure,
     };
     // SAFETY: 公開する関数の呼び出し側の約束 (上の説明)。
     unsafe { report(error, &failure) };
     failure.code
+}
+
+/// `f` を実行し、パニックしたら [`UGOE_ERROR_PANIC`] の失敗にする。
+#[cfg(any(feature = "std", test))]
+fn catch_panic(f: impl FnOnce() -> Result<(), Error>) -> Result<(), Error> {
+    use alloc::borrow::ToOwned;
+    use std::panic::{self, AssertUnwindSafe};
+
+    panic::catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic payload".to_owned());
+        Err(Error::new(
+            UGOE_ERROR_PANIC,
+            format!("panic inside ugoe: {message}"),
+        ))
+    })
+}
+
+/// `std` の無い形では巻き戻せないので、そのまま実行する (パニックはホストの `abort` を呼ぶ。nostd.rs)。
+#[cfg(not(any(feature = "std", test)))]
+fn catch_panic(f: impl FnOnce() -> Result<(), Error>) -> Result<(), Error> {
+    f()
 }
 
 /// 空の `UgoeError` を作る。`ugoe_error_destroy` で破棄する。
@@ -180,7 +211,7 @@ unsafe fn read<'a>(error: *const UgoeError) -> Option<&'a UgoeError> {
 }
 
 fn c_ptr(s: Option<&CString>) -> *const c_char {
-    s.map_or(std::ptr::null(), |s| s.as_ptr())
+    s.map_or(core::ptr::null(), |s| s.as_ptr())
 }
 
 /// `error` に書いた失敗のメッセージ (UTF-8、NUL 終端)。まだ失敗を書いていないか、`error` が NULL なら NULL。
@@ -228,7 +259,7 @@ pub unsafe extern "C" fn ugoe_error_field(
     key: *const c_char,
 ) -> *const c_char {
     if key.is_null() {
-        return std::ptr::null();
+        return core::ptr::null();
     }
     // SAFETY: 呼び出し側の約束で、`key` は NUL 終端の文字列。
     let key = unsafe { CStr::from_ptr(key) };

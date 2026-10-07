@@ -145,7 +145,9 @@ jobs:
       - name: ugoe without render
         if: matrix.group == 'runtime'
         run: just sdk-no-render-check
-      # ランタイム層のクレートが std 無し (aarch64-unknown-none) でビルドできるか (`just nostd-check`。ADR 0031、T0179)
+      # ランタイム層のクレートが std 無し (aarch64-unknown-none) でビルドできるか (`just nostd-check`。ADR 0031、T0179)。
+      # ugoe-ffi は std の無い形の静的ライブラリを C の見本とリンクし、未解決のシンボルがホストの C ライブラリのもの
+      # (malloc・free・abort など) だけかも確かめる (T0491)。C の見本はランナーに入っている clang でコンパイルする
       - name: no_std
         if: matrix.group == 'runtime'
         run: |
@@ -155,7 +157,8 @@ jobs:
       - name: wasm32
         if: matrix.group == 'bindings'
         run: just wasm-check
-      # C ABI のヘッダが最新か、C の見本のビルドと実行 (crates/ugoe-ffi/README.md#ヘッダの生成)。
+      # C ABI のヘッダが最新か、C の見本のビルドと実行 (crates/ugoe-ffi/README.md#ヘッダの生成)。std の無い形の静的ライブラリも
+      # ホストの C ライブラリとリンクして実行する (crates/ugoe-ffi/README.md#std-の無い環境)。
       # cbindgen は MPL-2.0 なのでワークスペースの依存に入れず、版を固定した CLI を入れる (scripts/ffi.mjs と揃える)
       - name: Install cbindgen
         if: matrix.group == 'bindings'

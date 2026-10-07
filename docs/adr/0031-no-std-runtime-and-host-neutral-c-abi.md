@@ -159,3 +159,26 @@
 - PNG (`png`) と BCn (`bcdec_rs`) のデコードは feature `png` (`std` を含む) の側に置いた。`std` 無しで読める画像は、
   圧縮していない 8bit の KTX2 (超圧縮は無しか zstd) だけ。
 - 置き換えの手間は小さく、この ADR の決定は変えない。
+
+## 追記: std の無い形の C ABI (T0491)
+
+`ugoe-ffi` に既定で有効な feature `std` を足し、外すと `#![no_std]` の静的ライブラリになるようにした
+([crates/ugoe-ffi/README.md](../../crates/ugoe-ffi/README.md#std-の無い環境))。決定を具体にしたところと、その理由:
+
+- **アロケータ:** `malloc`・`free` と `aligned_alloc` に加え、`calloc` (`alloc_zeroed`) と `realloc` も呼ぶ。LLVM は確保と 0 埋めを
+  `calloc` に置き換えるので、呼ばなくてもシンボルは要る。それなら明示して、0 埋めと伸長を C ライブラリに任せる (`realloc` は
+  `Vec` の伸長で写しを省ける)。`malloc` の整列は std の `System` と同じく 64 ビットのターゲットで 16 バイト、ほかで 8 バイトとみなし、
+  それより大きな整列 (と、大きさより大きな整列) だけ `aligned_alloc` にする。`aligned_alloc` は C11 にあり、POSIX の
+  `posix_memalign` よりゲーム機の SDK の C ライブラリが持っている見込みが高いので選んだ (大きさは整列の倍数に切り上げる)。
+- **パニックの処理:** `abort` を呼ぶだけで、メッセージは出さない (出す先がホストごとに違い、書式化のコードも要るため)。
+  確保の失敗 (`handle_alloc_error`) も同じパニックの処理に来る。
+- **プロファイル:** ワークスペースの dev・release を変えず、`[profile.nostd]` (release を継ぎ、`panic = "abort"`) を足した。
+  `aarch64-unknown-none` は既定で `panic = "abort"` だが、ゲーム機のターゲットはそうとは限らないため。
+- **置き場所:** アロケータとパニックの処理は `ugoe-ffi` の中の `#[cfg(all(not(feature = "std"), not(test)))]` のモジュールに置いた。
+  別のクレートに分けると、組み込む人が 2 つをリンクする必要があり、std の形と取り違えやすい。代わりに、std を外した `ugoe-ffi` は
+  ほかの Rust のクレートから使えず、結合テストも動かない (単体テストは std の prelude で動く)。
+- **検査:** `just nostd-check` が `aarch64-unknown-none` の静的ライブラリをフリースタンディングの C の見本と rust-lld でリンクし、
+  未解決のシンボルが `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc` だけであることを確かめる (`memcpy` などは
+  このターゲットの `compiler_builtins` が持つ)。`just ffi-check` はホスト (Linux・macOS) 向けの std の無い形をホストの C ライブラリと
+  リンクして見本のモデルで動かす。ホスト向けに配られる `core` は巻き戻しありでビルドされているので `rust_eh_personality` が残り、
+  見本の側で形だけ定義した。実機では確かめていない。

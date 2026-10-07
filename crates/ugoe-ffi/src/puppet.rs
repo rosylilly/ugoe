@@ -1,7 +1,12 @@
 //! `UgoePuppet`: 読み込み・破棄・パラメータ・更新・モーションと表情。
 
-use std::ffi::{CStr, CString, c_char};
-use std::sync::Arc;
+use alloc::boxed::Box;
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ffi::{CStr, c_char};
 
 use ugoe::format::{Bundle, ReadReport, TextureData};
 use ugoe::model::expression::Expression;
@@ -13,7 +18,7 @@ use ugoe::{Puppet, TextureSource};
 use crate::animation::MotionEvents;
 use crate::dress_up::ModuleData;
 use crate::error::{
-    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, c_string,
+    Error, UGOE_ERROR_INVALID_ARGUMENT, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, at, c_string,
     guard,
 };
 use crate::frame::FrameCache;
@@ -271,7 +276,7 @@ pub(crate) unsafe fn bytes<'a>(ptr: *const u8, len: usize, name: &str) -> Result
         return Err(Error::null(name));
     }
     // SAFETY: 呼び出し側の約束。
-    Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
+    Ok(unsafe { core::slice::from_raw_parts(ptr, len) })
 }
 
 /// NUL 終端の UTF-8 文字列を借りる。
@@ -366,7 +371,7 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_bundle(
     error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
-    unsafe { ugoe_puppet_create_from_bundle_with_limits(bytes, len, std::ptr::null(), out, error) }
+    unsafe { ugoe_puppet_create_from_bundle_with_limits(bytes, len, core::ptr::null(), out, error) }
 }
 
 /// 読み込みの上限 `limits` を指定して、`.ugoe` バンドルのバイト列から `UgoePuppet` を作る (T0152)。
@@ -418,7 +423,7 @@ pub unsafe extern "C" fn ugoe_puppet_create_from_json(
     // SAFETY: 呼び出し側の約束。
     unsafe {
         create(out, error, || {
-            let json = std::str::from_utf8(bytes(json, len, "json")?)
+            let json = core::str::from_utf8(bytes(json, len, "json")?)
                 .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
             UgoePuppet::from_json(json)
         })
@@ -436,7 +441,7 @@ pub unsafe extern "C" fn ugoe_puppet_destroy(puppet: *mut UgoePuppet) {
         return;
     }
     // Drop の中のパニックも境界の外へ出さない。
-    guard(std::ptr::null_mut(), || {
+    guard(core::ptr::null_mut(), || {
         // SAFETY: `ugoe_puppet_create_*` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(puppet) });
         Ok(())
@@ -533,7 +538,7 @@ pub unsafe extern "C" fn ugoe_puppet_parameter_id(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.parameter_index(index)?;
-        let id = p.parameter_ids[i.0 as usize].as_ptr();
+        let id = at(&p.parameter_ids, "parameter", i.0 as usize)?.as_ptr();
         // SAFETY: 呼び出し側の約束。
         unsafe { write(out, "out", id) }
     })
@@ -865,8 +870,8 @@ pub unsafe extern "C" fn ugoe_puppet_set_parameters_by_id(
             // SAFETY: 呼び出し側の約束で、どちらも `count` 個を読める。
             unsafe {
                 (
-                    std::slice::from_raw_parts(ids, count),
-                    std::slice::from_raw_parts(values, count),
+                    core::slice::from_raw_parts(ids, count),
+                    core::slice::from_raw_parts(values, count),
                 )
             }
         };

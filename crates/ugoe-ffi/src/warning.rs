@@ -1,7 +1,11 @@
 //! 読み込みの警告。種類 (`code`) と補足の値は SDK の `ugoe::LoadWarning` のもので、wasm の
 //! `load_warnings_json` と同じ (crates/ugoe-wasm/README.md#読み込みの警告-t0125。T0412)。
 
-use std::ffi::{CString, c_char};
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::ffi::c_char;
 
 use ugoe::LoadWarning;
 use ugoe::format::{ReadReport, TextureData};

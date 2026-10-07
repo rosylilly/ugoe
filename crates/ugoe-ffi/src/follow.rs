@@ -3,6 +3,9 @@
 //! と、指揮役の口: 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) が物理の段に入る直前に持っていた値などを読む
 //! (`ugoe::Puppet::values_before_physics`・`lip_sync_applied`・`part_opacities_applied`。T0454)。
 
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use ugoe::{LipSyncInput, ParameterValuesError, PartOpacityInput};
 
 use crate::error::{
@@ -23,7 +26,7 @@ unsafe fn floats<'a>(values: *const f32, count: usize) -> Result<&'a [f32], Erro
         return Err(Error::null("values"));
     }
     // SAFETY: 呼び出し側の約束で、`values` は `count` 個を読める。
-    Ok(unsafe { std::slice::from_raw_parts(values, count) })
+    Ok(unsafe { core::slice::from_raw_parts(values, count) })
 }
 
 /// モーションのパーツの不透明度のカーブが 1 つのパーツに求めた値と重み (`ugoe::PartOpacityInput`。T0135)。
@@ -143,7 +146,7 @@ pub unsafe extern "C" fn ugoe_puppet_follow(
             return Err(Error::null("part_opacities"));
         } else {
             // SAFETY: 呼び出し側の約束で、`part_opacities` は `part_opacity_count` 個を読める。
-            unsafe { std::slice::from_raw_parts(part_opacities, part_opacity_count) }
+            unsafe { core::slice::from_raw_parts(part_opacities, part_opacity_count) }
                 .iter()
                 .map(|&p| p.into())
                 .collect()
@@ -184,7 +187,7 @@ unsafe fn copy_out<S: Copy, T: From<S>>(
         return Err(Error::null("out"));
     }
     // SAFETY: `out` は `capacity` (≥ values.len()) 個を書き込める (呼び出し側の約束)。
-    let out = unsafe { std::slice::from_raw_parts_mut(out, values.len()) };
+    let out = unsafe { core::slice::from_raw_parts_mut(out, values.len()) };
     for (dst, &v) in out.iter_mut().zip(values) {
         *dst = v.into();
     }

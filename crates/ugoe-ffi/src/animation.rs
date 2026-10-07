@@ -2,8 +2,13 @@
 //! `physics_json`・`reset_physics` と同じ。効果の設定の差し替え (T0414) は wasm の `set_effects_json` と同じ。
 //! 本体の物理の設定 (T0416) は wasm の `set_base_physics_json`・`base_physics_json` と同じ。
 
-use std::ffi::{CString, c_char};
-use std::sync::Arc;
+use alloc::ffi::CString;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::ffi::c_char;
 
 use ugoe::DressUpError;
 use ugoe::model::physics::PhysicsSettings;
@@ -229,7 +234,7 @@ unsafe fn read_physics(json: *const u8, len: usize) -> Result<Option<PhysicsSett
         return Ok(None);
     }
     // SAFETY: 呼び出し側の約束。
-    let json = std::str::from_utf8(unsafe { bytes(json, len, "json")? })
+    let json = core::str::from_utf8(unsafe { bytes(json, len, "json")? })
         .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
     ugoe::format::physics_from_json(json)
         .map(Some)
@@ -332,7 +337,7 @@ unsafe fn write_physics(
         return Err(Error::null("out"));
     }
     // SAFETY: `out` は `capacity` (≥ json.len()) バイトを書き込める (呼び出し側の約束)。
-    unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out, json.len()) };
+    unsafe { core::ptr::copy_nonoverlapping(json.as_ptr(), out, json.len()) };
     Ok(())
 }
 
@@ -381,7 +386,7 @@ pub unsafe extern "C" fn ugoe_puppet_set_effects_json(
             return Err(Error::null("json"));
         }
         // SAFETY: 呼び出し側の約束。
-        let json = std::str::from_utf8(unsafe { bytes(json, len, "json")? })
+        let json = core::str::from_utf8(unsafe { bytes(json, len, "json")? })
             .map_err(|_| Error::new(UGOE_ERROR_INVALID_ARGUMENT, "`json` is not UTF-8"))?;
         let effects = serde_json::from_str(json)
             .map_err(|e| Error::new(UGOE_ERROR_FORMAT, format!("effects: {e}")))?;

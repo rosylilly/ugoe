@@ -4,8 +4,13 @@
 //! 失敗の種類 (`ugoe_error_kind`) と補足の値は SDK の `ugoe::DressUpError::code`・`fields` で、
 //! wasm の `DressUpError` の `code` と同じ (T0412)。
 
-use std::ffi::{CString, c_char};
-use std::sync::Arc;
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::ffi::CString;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::ffi::c_char;
 
 use ugoe::DressUpError;
 use ugoe::format::TextureData;
@@ -80,7 +85,7 @@ pub unsafe extern "C" fn ugoe_module_create(
     error: *mut UgoeError,
 ) -> UgoeResult {
     // SAFETY: 呼び出し側の約束。
-    unsafe { ugoe_module_create_with_limits(bytes, len, std::ptr::null(), out, error) }
+    unsafe { ugoe_module_create_with_limits(bytes, len, core::ptr::null(), out, error) }
 }
 
 /// 読み込みの上限 `limits` を指定して、`.ugoemod` のバイト列から `UgoeModule` を作る (T0152)。
@@ -147,7 +152,7 @@ pub unsafe extern "C" fn ugoe_module_destroy(module: *mut UgoeModule) {
     if module.is_null() {
         return;
     }
-    guard(std::ptr::null_mut(), || {
+    guard(core::ptr::null_mut(), || {
         // SAFETY: `ugoe_module_create` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(module) });
         Ok(())
@@ -289,7 +294,9 @@ pub unsafe extern "C" fn ugoe_puppet_attach_module(
         let mut modules = p.modules.clone();
         match modules.iter().position(same) {
             Some(i) => {
-                modules[i] = Arc::clone(&m.data);
+                if let Some(slot) = modules.get_mut(i) {
+                    *slot = Arc::clone(&m.data);
+                }
                 let mut k = 0;
                 modules.retain(|d| {
                     k += 1;
@@ -350,7 +357,7 @@ pub unsafe extern "C" fn ugoe_puppet_set_modules(
             return Err(Error::null("modules"));
         } else {
             // SAFETY: 呼び出し側の約束で、`modules` は `count` 個のポインタを読める。
-            unsafe { std::slice::from_raw_parts(modules, count) }
+            unsafe { core::slice::from_raw_parts(modules, count) }
         };
         let data = list
             .iter()

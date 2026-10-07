@@ -8,12 +8,17 @@
 //! - バイト列と形式を受け取るだけの関数で、`UgoePuppet` の状態は変えない (読み込みの関数と意味は変わらない)。
 //! - デコードの上限はホストが決める (`UgoeImageLimits`。NULL なら既定値)。
 //! - 結果は不透明な `UgoeImage` で持ち、`ugoe_image_destroy` で解放する。
+//! - `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では、PNG とブロック圧縮 (BCn) の KTX2 をデコードしない
+//!   (デコーダが `std` を要る。`"unsupported_texture"` で失敗する)。読めるのは圧縮していない 8bit の KTX2 だけ。
+
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use ugoe::format::TextureFormat;
-use ugoe_format::image::{
-    DEFAULT_MAX_IMAGE_SIDE, ImageError, ImageLimits, Rgba8, decode_image,
-    decode_image_premultiplied,
-};
+use ugoe_format::image::{DEFAULT_MAX_IMAGE_SIDE, ImageError, ImageLimits, Rgba8};
 
 use crate::drawable::{UGOE_TEXTURE_KTX2, UGOE_TEXTURE_PNG};
 use crate::error::{
@@ -46,16 +51,16 @@ pub struct UgoeImage {
     image: Rgba8,
 }
 
-fn image_error(error: ImageError) -> Error {
-    /// 種類 (`ugoe_error_kind`): 一辺が上限を超える。補足の値は `width`・`height`・`max` (wasm の
-    /// `image_limit_exceeded` と同じ値。wasm はさらに `image`・`texture` を持つ)。
-    const IMAGE_LIMIT_EXCEEDED: &str = "image_limit_exceeded";
-    /// 種類: 画像が壊れている (wasm の `invalid_texture` と同じ)。
-    const INVALID_TEXTURE: &str = "invalid_texture";
-    /// 種類: 読める KTX2 だが、デコードしない形式 (ETC2・ASTC・BC6H・Basis Universal など)。wasm では読み込みの警告
-    /// (`texture_ktx2`・`normal_map_ktx2`) にして白で代用するもの。
-    const UNSUPPORTED_TEXTURE: &str = "unsupported_texture";
+/// 種類 (`ugoe_error_kind`): 一辺が上限を超える。補足の値は `width`・`height`・`max` (wasm の
+/// `image_limit_exceeded` と同じ値。wasm はさらに `image`・`texture` を持つ)。
+const IMAGE_LIMIT_EXCEEDED: &str = "image_limit_exceeded";
+/// 種類: 画像が壊れている (wasm の `invalid_texture` と同じ)。
+const INVALID_TEXTURE: &str = "invalid_texture";
+/// 種類: 読める KTX2 だが、デコードしない形式 (ETC2・ASTC・BC6H・Basis Universal など)。wasm では読み込みの警告
+/// (`texture_ktx2`・`normal_map_ktx2`) にして白で代用するもの。`std` の無い形では PNG と BCn の KTX2 も。
+const UNSUPPORTED_TEXTURE: &str = "unsupported_texture";
 
+fn image_error(error: ImageError) -> Error {
     let message = error.to_string();
     match error {
         ImageError::TooLarge { width, height, max } => {
@@ -80,6 +85,10 @@ fn image_error(error: ImageError) -> Error {
 /// 参照 (`ugoe render`)・wasm と同じデコーダで、同じ画素になる (`docs/spec/rendering.md#前提`)。PNG と、KTX2 の
 /// 圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 を読む。色はリニア化せず、KTX2 のミップマップは最初の段だけを使う。
 /// 画素は左上から行の順 (上の行が先)。
+///
+/// **std の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では、PNG とブロック圧縮 (BCn) の KTX2 をデコードしない**
+/// (デコーダが std を要る)。どちらも `UGOE_ERROR_FORMAT`・`"unsupported_texture"` で失敗するので、ホストのデコーダで読む。
+/// 圧縮していない 8bit の KTX2 は std の有無にかかわらず読む。
 ///
 /// - `format`: `UGOE_TEXTURE_PNG` か `UGOE_TEXTURE_KTX2` (`UgoeTexture::format`)。ほかは `UGOE_ERROR_INVALID_ARGUMENT`。
 /// - `limits`: NULL なら既定値 (`ugoe_image_limits_default`)。
@@ -129,17 +138,54 @@ pub unsafe extern "C" fn ugoe_image_decode(
         };
         let limits = ImageLimits::default()
             .with_max_side(limits.map_or(DEFAULT_MAX_IMAGE_SIDE, |l| l.max_side));
-        let image = if premultiply {
-            decode_image_premultiplied(format, bytes, limits)
-        } else {
-            decode_image(format, bytes, limits)
-        }
-        .map_err(image_error)?;
+        let image = decode(format, bytes, limits, premultiply)?;
         let boxed = Box::into_raw(Box::new(UgoeImage { image }));
         // SAFETY: `out` は NULL でないことを確かめた。呼び出し側の約束で書き込める。
         unsafe { out.write(boxed) };
         Ok(())
     })
+}
+
+/// 形式に合わせてデコードする (参照・wasm と同じ `ugoe_format::image`)。
+#[cfg(feature = "std")]
+fn decode(
+    format: TextureFormat,
+    bytes: &[u8],
+    limits: ImageLimits,
+    premultiply: bool,
+) -> Result<Rgba8, Error> {
+    use ugoe_format::image::{decode_image, decode_image_premultiplied};
+
+    if premultiply {
+        decode_image_premultiplied(format, bytes, limits)
+    } else {
+        decode_image(format, bytes, limits)
+    }
+    .map_err(image_error)
+}
+
+/// `std` の無い形のデコード。PNG のデコーダは `std` を要るので読まず、`"unsupported_texture"` で失敗する
+/// (ブロック圧縮の KTX2 も同じ種類で失敗する。`ugoe_format::image::decode_ktx2`)。
+#[cfg(not(feature = "std"))]
+fn decode(
+    format: TextureFormat,
+    bytes: &[u8],
+    limits: ImageLimits,
+    premultiply: bool,
+) -> Result<Rgba8, Error> {
+    use ugoe_format::image::{decode_ktx2, decode_ktx2_premultiplied};
+
+    match format {
+        TextureFormat::Png => Err(Error::new(
+            UGOE_ERROR_FORMAT,
+            "PNG decoding needs the std build of ugoe-ffi",
+        )
+        .with_kind(UNSUPPORTED_TEXTURE, Vec::new())),
+        TextureFormat::Ktx2 if premultiply => {
+            decode_ktx2_premultiplied(bytes, limits).map_err(image_error)
+        }
+        TextureFormat::Ktx2 => decode_ktx2(bytes, limits).map_err(image_error),
+    }
 }
 
 /// `ugoe_image_decode` で作った画像を解放する。NULL なら何もしない。
@@ -152,7 +198,7 @@ pub unsafe extern "C" fn ugoe_image_destroy(image: *mut UgoeImage) {
     if image.is_null() {
         return;
     }
-    guard(std::ptr::null_mut(), || {
+    guard(core::ptr::null_mut(), || {
         // SAFETY: `ugoe_image_decode` が Box::into_raw で作ったポインタ。
         drop(unsafe { Box::from_raw(image) });
         Ok(())
@@ -247,10 +293,10 @@ mod tests {
         premultiply: bool,
     ) -> (UgoeResult, *mut UgoeImage, TestError) {
         let error = TestError::new();
-        let mut image = std::ptr::null_mut();
+        let mut image = core::ptr::null_mut();
         let limits_ptr = limits
             .as_ref()
-            .map_or(std::ptr::null(), |l| l as *const UgoeImageLimits);
+            .map_or(core::ptr::null(), |l| l as *const UgoeImageLimits);
         // SAFETY: 有効な領域を渡している。
         let code = unsafe {
             ugoe_image_decode(
@@ -268,23 +314,24 @@ mod tests {
 
     fn pixels(image: *const UgoeImage) -> (u32, u32, Vec<u8>) {
         let (mut w, mut h) = (0, 0);
-        let mut data = std::ptr::null();
+        let mut data = core::ptr::null();
         let mut len = 0;
         // SAFETY: 有効な `UgoeImage` と書き込める領域を渡している。
         unsafe {
             assert_eq!(
-                ugoe_image_size(image, &mut w, &mut h, std::ptr::null_mut()),
+                ugoe_image_size(image, &mut w, &mut h, core::ptr::null_mut()),
                 UGOE_OK
             );
             assert_eq!(
-                ugoe_image_pixels(image, &mut data, &mut len, std::ptr::null_mut()),
+                ugoe_image_pixels(image, &mut data, &mut len, core::ptr::null_mut()),
                 UGOE_OK
             );
-            (w, h, std::slice::from_raw_parts(data, len).to_vec())
+            (w, h, core::slice::from_raw_parts(data, len).to_vec())
         }
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn decodes_png_straight_and_premultiplied() {
         let bytes = png();
         let (code, image, _) = decode(UGOE_TEXTURE_PNG, &bytes, None, false);
@@ -305,6 +352,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn decodes_bc1_ktx2_like_the_sdk() {
         // VK_FORMAT_BC1_RGB_UNORM_BLOCK (131) の 4×4 の 1 ブロック。color0 = 赤 (565 の 0xF800)、color1 = 青 (0x001F)。
         // 1 行目の 4 画素だけ番号 1 (青)、ほかは番号 0 (赤)。
@@ -327,6 +375,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn limit_exceeded_has_kind_and_fields() {
         let (code, image, error) = decode(
             UGOE_TEXTURE_PNG,
@@ -344,6 +393,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn broken_and_unsupported_images_have_kinds() {
         let (code, image, error) = decode(UGOE_TEXTURE_PNG, b"not a png", None, true);
         assert_eq!(code, UGOE_ERROR_FORMAT);
@@ -365,6 +415,50 @@ mod tests {
         assert_eq!(error.kind().as_deref(), Some("unsupported_texture"));
     }
 
+    /// `std` の無い形は PNG と BCn をデコードせず、`"unsupported_texture"` で失敗する。圧縮していない KTX2 は読む。
+    #[test]
+    #[cfg(not(feature = "std"))]
+    fn without_std_only_uncompressed_ktx2_is_decoded() {
+        let (code, image, error) = decode(UGOE_TEXTURE_PNG, &png(), None, true);
+        assert_eq!(code, UGOE_ERROR_FORMAT);
+        assert!(image.is_null());
+        assert_eq!(error.kind().as_deref(), Some("unsupported_texture"));
+
+        // VK_FORMAT_BC1_RGB_UNORM_BLOCK (131)
+        let (code, _, error) = decode(
+            UGOE_TEXTURE_KTX2,
+            &ktx2_with_format(131, 4, 4, 8),
+            None,
+            true,
+        );
+        assert_eq!(code, UGOE_ERROR_FORMAT);
+        assert_eq!(error.kind().as_deref(), Some("unsupported_texture"));
+
+        let (code, _, error) = decode(UGOE_TEXTURE_KTX2, b"not a ktx2", None, true);
+        assert_eq!(code, UGOE_ERROR_FORMAT);
+        assert_eq!(error.kind().as_deref(), Some("invalid_texture"));
+
+        // VK_FORMAT_R8G8B8A8_UNORM (37) の 1×2。上が半透明の赤、下が不透明の緑。
+        let mut bytes = ktx2_with_format(37, 1, 2, 8);
+        let level = bytes.len() - 8;
+        bytes[level..].copy_from_slice(&[255, 0, 0, 128, 0, 255, 0, 255]);
+        let (code, image, _) = decode(UGOE_TEXTURE_KTX2, &bytes, None, false);
+        assert_eq!(code, UGOE_OK);
+        assert_eq!(pixels(image), (1, 2, vec![255, 0, 0, 128, 0, 255, 0, 255]));
+        // SAFETY: 作った画像を 1 度だけ解放する。
+        unsafe { ugoe_image_destroy(image) };
+        let (code, image, _) = decode(UGOE_TEXTURE_KTX2, &bytes, None, true);
+        assert_eq!(code, UGOE_OK);
+        assert_eq!(pixels(image).2[..4], [128, 0, 0, 128]);
+        // SAFETY: 同上。
+        unsafe { ugoe_image_destroy(image) };
+
+        let limits = Some(UgoeImageLimits { max_side: 1 });
+        let (code, _, error) = decode(UGOE_TEXTURE_KTX2, &bytes, limits, true);
+        assert_eq!(code, UGOE_ERROR_LIMIT_EXCEEDED);
+        assert_eq!(error.kind().as_deref(), Some("image_limit_exceeded"));
+    }
+
     #[test]
     fn rejects_unknown_formats_and_null_pointers() {
         let bytes = png();
@@ -378,18 +472,18 @@ mod tests {
                 UGOE_TEXTURE_PNG,
                 bytes.as_ptr(),
                 bytes.len(),
-                std::ptr::null(),
+                core::ptr::null(),
                 true,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
             assert_eq!(code, UGOE_ERROR_NULL_POINTER);
             let (mut w, mut h) = (0, 0);
             assert_eq!(
-                ugoe_image_size(std::ptr::null(), &mut w, &mut h, std::ptr::null_mut()),
+                ugoe_image_size(core::ptr::null(), &mut w, &mut h, core::ptr::null_mut()),
                 UGOE_ERROR_NULL_POINTER
             );
-            ugoe_image_destroy(std::ptr::null_mut());
+            ugoe_image_destroy(core::ptr::null_mut());
         }
     }
 

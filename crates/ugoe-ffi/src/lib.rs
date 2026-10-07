@@ -6,11 +6,37 @@
 //! - オブジェクトは不透明ポインタ (`UgoePuppet*`) で渡し、`ugoe_puppet_destroy` で解放する。
 //! - 失敗しうる関数は [`UgoeResult`] を返し、最後の引数 `error` に [`UgoeError`] を取る (NULL なら書かない)。
 //!   失敗の中身はそこから読む。C ABI はグローバルな状態もスレッドローカルな状態も持たない (ADR 0031)。
-//! - パニックを FFI 境界の外へ漏らさない (`catch_unwind` して [`UGOE_ERROR_PANIC`] を返す)。
+//! - パニックを FFI 境界の外へ漏らさない (`std` がある形では `catch_unwind` して [`UGOE_ERROR_PANIC`] を返す。
+//!   `std` の無い形ではホストの `abort` を呼ぶ)。ランタイム層と同じく、外から来るどんな値でもパニックしないように書く
+//!   (`docs/portability.md#パニックしない`)。
 //! - 毎フレームの描画の状態 (頂点位置・不透明度・描画順など) は 1 回の呼び出しでまとめて渡す。内部のバッファの
 //!   借用 ([`ugoe_puppet_frame`]。次の `ugoe_puppet_update` まで有効) と、ホストのバッファへのコピー
 //!   ([`ugoe_puppet_copy_frame`]) の両方を用意する (ADR 0031)。
-#![allow(unsafe_code)] // `#[unsafe(no_mangle)]` と生ポインタ操作のため、このクレートに限り許可する。
+//!
+//! # feature
+//!
+//! - `std` (既定で有効): `std` を使う。外すと `#![no_std]` (`core` + `alloc`) でビルドし、ゲーム機や組み込み機器のように
+//!   Rust の `std` が無い環境に静的ライブラリとして組み込める。アロケータはホストの C ライブラリの `malloc`・`free` など、
+//!   パニックは `abort` になる。関数の集合とヘッダは変わらない (crates/ugoe-ffi/README.md#std-の無い環境。ADR 0031)。
+
+#![cfg_attr(not(test), no_std)]
+#![allow(unsafe_code)]
+// `#[unsafe(no_mangle)]` と生ポインタ操作のため、このクレートに限り許可する。
+// C ABI の中のパニックは、std の無い形ではアプリ全体を止める (docs/portability.md#パニックしない。ADR 0031)。
+// テストのコードは clippy.toml で除く。
+#![warn(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::string_slice,
+    clippy::unimplemented,
+    clippy::unreachable
+)]
+
+extern crate alloc;
+// `catch_unwind` (error.rs の `guard`) が使う (テストは std の prelude で動く)
+#[cfg(all(feature = "std", not(test)))]
+extern crate std;
 
 mod animation;
 mod drawable;
@@ -22,12 +48,16 @@ mod hit;
 mod image;
 mod lighting;
 mod limits;
+/// std の無い形のアロケータとパニックの処理。ホストの C ライブラリの宣言はヘッダに出さない。
+/// cbindgen:ignore
+#[cfg(all(not(feature = "std"), not(test)))]
+mod nostd;
 mod part;
 mod puppet;
 mod tracking;
 mod warning;
 
-use std::ffi::c_char;
+use core::ffi::c_char;
 
 pub use animation::*;
 pub use drawable::*;

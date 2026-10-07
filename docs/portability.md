@@ -24,6 +24,7 @@
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
+| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi)) |
 
 ## `ugoe` クレートの feature
 
@@ -69,7 +70,19 @@ wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には
   - `UgoePuppet`・`UgoeModule`・`UgoeImage` も同じで、どのスレッドから使ってもよいが、1 つを同時に複数のスレッドから使ってはなりません
     (別々のオブジェクトなら並行してかまいません)。
   - 読み出しの関数が返す文字列は、その `UgoeError` に次の失敗を書くか、破棄するまで有効です。
-- パニックは `catch_unwind` で捕まえてエラーコード (`UGOE_ERROR_PANIC`) に変換し、メッセージを `UgoeError` に書きます。FFI の境界の外にパニックを漏らしません。
+- C ABI はパニックを起こさないように書きます ([パニックしない](#パニックしない))。そのうえで後ろの守りとして、`std` がある形ではパニックを
+  `catch_unwind` で捕まえてエラーコード (`UGOE_ERROR_PANIC`) に変換し、メッセージを `UgoeError` に書きます。FFI の境界の外にパニックを漏らしません。
+  `std` の無い形では巻き戻せないので、パニックはホストの `abort` を呼びます。
+- `std` の有無で関数の集合とヘッダを変えません。`ugoe-ffi` は既定で有効な feature `std` を持ち、外すと `#![no_std]` (`core` + `alloc`) の
+  静的ライブラリになります (ゲーム機・組み込み機器向け)。
+  - アロケータ (`#[global_allocator]`) はホストの C ライブラリの `malloc`・`calloc`・`realloc`・`free` (と大きな整列の `aligned_alloc`) を、
+    パニックの処理 (`#[panic_handler]`) は `abort` を呼びます。シンボルはホストのリンクで解決し、SDK ごとの知識はクレートに持ちません。
+  - `panic = "abort"` はワークスペースの既定のプロファイルを変えず、専用のプロファイル `nostd` (ルートの `Cargo.toml`) で決めます。
+  - `std` が要る機能 (PNG とブロック圧縮の KTX2 のデコード。`ugoe_image_decode`) は、関数は残したまま `"unsupported_texture"` で失敗します。
+    ヘッダの関数の説明と [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境) に書きます。
+  - `just nostd-check` が `aarch64-unknown-none` の静的ライブラリを C の見本とリンクし、未解決のシンボルがホストの C ライブラリのもの
+    (`malloc`・`calloc`・`realloc`・`aligned_alloc`・`free`・`abort`) だけであることを確かめます。`just ffi-check` はホスト向けの
+    `std` の無い形を C ライブラリとリンクして実行します。実機での確認は組み込み先に任せます (T0491)。
 - 毎フレームの描画の状態 (すべての描画可能要素の頂点の位置・表示・不透明度・色・合成モード・マスクの効き具合・描画順の値・変更のフラグと、描画順) は、
   1 回の呼び出しでまとめて渡します。境界を越える呼び出しが重いホスト (cgo・マネージドな言語) でも、呼び出しの数が描画可能要素の数によりません
   ([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#毎フレームの描画の状態はまとめて渡す))。
@@ -199,18 +212,20 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
 - 外から来るデータ (ファイル・ホストの引数) のどんな値でもパニックしないこと ([下](#パニックしない))。
 
 `std` 無しでビルドできるクレート (`NOSTD_CRATES`) は、`ugoe-core`・`ugoe-model`・`ugoe-format`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・
-`ugoe` (`render` を外した形) です。ゲーム機・組み込み機器のように Rust の `std` が無い環境では、これらを `default-features = false` で使います。
+`ugoe` (`render` を外した形)・`ugoe-ffi` です。ゲーム機・組み込み機器のように Rust の `std` が無い環境では、これらを `default-features = false` で使います。
 対象にしないのは `ugoe-render` (wgpu) と `ugoe-wasm` (ブラウザ向けで `std` がある) です。PNG とブロック圧縮の KTX2 のデコードは
 `ugoe-format` の feature `png` (`std` を含む) の側にあり、`std` 無しで読める画像は圧縮していない KTX2 だけです
 ([crates/ugoe-format/README.md](../crates/ugoe-format/README.md)。テクスチャのデコードはもともとホストの役目)。
-C ABI (`ugoe-ffi`) の `std` の無い形 (staticlib。アロケータはホストの `malloc`・`free`、パニックはホストの `abort`) は
-[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi) で決めた形で作ります (T0491)。
+C ABI (`ugoe-ffi`) の `std` の無い形 (staticlib。アロケータはホストの `malloc`・`free` など、パニックはホストの `abort`) の
+作り方と組み込みの手順は [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境) にあります (T0491。
+[C ABI の規約](#c-abi-ugoe-ffi-の規約))。`ugoe-ffi` は `#![cfg_attr(not(test), no_std)]` で書き、`catch_unwind` を使う `std` の形だけ
+`extern crate std;` を足します。
 
 ### パニックしない
 
 `std` の無い環境の C ABI は `panic=abort` で、パニックはアプリ全体を止めます
 ([ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#ランタイム層ではパニックを起こさない))。そこでランタイム層
-(`ugoe-core`・`ugoe-model`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-format`・`ugoe`) は、外から来るデータ
+(`ugoe-core`・`ugoe-model`・`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-format`・`ugoe`) と C ABI (`ugoe-ffi`。T0491) は、外から来るデータ
 (ファイルのバイト列・JSON・ホストが渡す数と番号と ID・ホストが組み立てた設定) のどんな値でもパニックせず、止まらない (時間の
 ループに回数の上限を持つ) ことを守ります。受け付けない値は失敗を返すか、[ホストから来る数](#ホストから来る数) の扱い (書かない・
 0 とみなす・使わない) にします。T0184 で決めました。
@@ -251,7 +266,9 @@ Rust の公開 API で、添字を引数に取る問い合わせ (`ParameterValu
   パラメータ・`dt`・トラッキング・受け手の入力、範囲の外の番号と知らない ID、検査していない物理の設定・モーション・表情・エフェクト、
   ホストが評価の状態を別のモデルのものに差し替える)、`ugoe-format` の `image` の単体テスト (壊した KTX2 と PNG)。
   どれも決まった入力で、依存を足さずに stable で動きます (乱数による fuzz は使っていない)。
-- 上の層 (`ugoe-ffi`・`ugoe-wasm`) は対象外です。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
+- C ABI (`ugoe-ffi`) も同じ lint を有効にしています (T0491)。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
+  `std` の無い形の静的ライブラリはパニックで `abort` するので、C ABI の入口もパニックしてはなりません。
+  `ugoe-wasm` は対象外です (ブラウザ向けで `std` があり、パニックは wasm の trap として JavaScript の例外で届く)。
 
 ## 配布
 

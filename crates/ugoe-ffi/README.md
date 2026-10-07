@@ -7,7 +7,11 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
 ## 守ること
 
 - `unsafe` はこのクレートでだけ許可する
-- パニックを FFI の境界の外へ漏らさない (公開する関数はすべて `error::guard` を通す)
+- パニックを FFI の境界の外へ漏らさない (公開する関数はすべて `error::guard` を通す)。そのうえで、ランタイム層と同じく
+  パニックそのものを起こさないように書く (`clippy::indexing_slicing` などを有効にしている。[docs/portability.md#パニックしない](../../docs/portability.md#パニックしない))。
+  `std` の無い形では、パニックはアプリ全体を止めるため ([std の無い環境](#std-の無い環境))
+- `std` に依存しない (`core` と `alloc` で書く)。`std` の有無で関数の集合とヘッダを変えない ([std の無い環境](#std-の無い環境))
+- 数学関数は `ugoe::core::math` を使う (std の `f32::sqrt` などは clippy.toml で禁じている。ADR 0031)
 - ABI を壊したら `ABI_VERSION` を上げる ([ABI の版](#abi-の版))
 - 公開する関数・型を変えたら `just ffi-header` でヘッダを作り直してコミットする
 - ホストから来る数 (NaN・無限大・負の `dt`) は、前提を `ugoe::Puppet` と `ugoe-runtime` に任せ、受け付けない値を `UGOE_ERROR_INVALID_ARGUMENT` で
@@ -38,7 +42,8 @@ ugoe_error_destroy(err);
 
 - 失敗しうる関数は `UgoeResult` (`UGOE_OK` = 0) を返し、最後の引数 `UgoeError *error` に失敗の中身を書く
   ([失敗の受け取り方](#失敗の受け取り方-t0489))。
-- 内部でパニックが起きたら `UGOE_ERROR_PANIC` を返す。そのオブジェクトの状態は不定なので破棄する。
+- 内部でパニックが起きたら `UGOE_ERROR_PANIC` を返す。そのオブジェクトの状態は不定なので破棄する
+  (`std` の無い形ではホストの `abort` を呼ぶ。[std の無い環境](#std-の無い環境))。
 - 毎フレームの描画の状態 (頂点位置・表示・不透明度・色・描画順など) は 1 回の呼び出しでまとめて受け取る。内部のバッファの借用
   (`ugoe_puppet_frame`) と、ホストのバッファへのコピー (`ugoe_puppet_copy_frame`) の両方がある ([毎フレームの描画の状態](#毎フレームの描画の状態-t0490))。
 - テクスチャはエンコードされたままのバイト列 (PNG・KTX2) を渡す。デコードと乗算済みアルファへの変換はホストが行う
@@ -92,6 +97,50 @@ cargo install cbindgen --version 0.29.4 --locked
 just ffi-header   # include/ugoe.h を作り直す
 just ffi-check    # ヘッダが最新かの検査と、C の見本のビルド・実行
 ```
+
+## std の無い環境
+
+ゲーム機や組み込み機器のように Rust の `std` が無い環境には、既定で有効な feature `std` を外した静的ライブラリを組み込む
+([ADR 0031](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi)。T0491)。
+`std` を外すと、このクレートと依存するランタイム層のクレートは `#![no_std]` (`core` と `alloc`) でビルドされる。
+
+```sh
+# 巻き戻さないプロファイル nostd (ルートの Cargo.toml。release と同じで panic = "abort") で、staticlib だけを作る
+cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --profile nostd --target <ターゲット>
+# → target/<ターゲット>/nostd/libugoe_ffi.a
+```
+
+- **関数の集合とヘッダは変わらない。** 同じ `include/ugoe.h` を使う。失敗の中身は呼び出し側の `UgoeError` に書くので
+  ([失敗の受け取り方](#失敗の受け取り方-t0489))、スレッドローカルもグローバルな状態も要らない。
+- **アロケータ** (`#[global_allocator]`。`src/nostd.rs`) は、ホストの C ライブラリの `malloc`・`calloc`・`realloc`・`free` と、
+  `malloc` の整列 (64 ビットのターゲットで 16 バイト、ほかで 8 バイトとみなす) より大きな整列が要るときの `aligned_alloc` (C11) を呼ぶ。
+- **パニック** (`#[panic_handler]`) は、ホストの C ライブラリの `abort` を呼ぶ。巻き戻しが無いので `catch_unwind` できず、
+  `UGOE_ERROR_PANIC` は返らない。確保の失敗も `abort` になる。ランタイム層と C ABI はパニックを起こさないように書いている
+  ([docs/portability.md#パニックしない](../../docs/portability.md#パニックしない)) ので、パニックは ugoe の誤りであり、`abort` はその最後の守り。
+- どちらもシンボル (`malloc`・`calloc`・`realloc`・`aligned_alloc`・`free`・`abort`) をホストのリンクで解決するだけで、ゲーム機などの
+  SDK ごとの知識はこのクレートに持たない。SDK の C ライブラリがこれらを持たなければ、同じ名前の関数をホストの側で用意する。
+  `memcpy` などは Rust の `compiler_builtins` が持つターゲットと、ホストの C ライブラリに任せるターゲットがある。
+- **使えない機能:** テクスチャのデコード (`ugoe_image_decode`) は、PNG とブロック圧縮 (BCn) の KTX2 をデコードしない (デコーダが `std` を要る)。
+  どちらも `UGOE_ERROR_FORMAT`・種類 `"unsupported_texture"` で失敗するので、ホストのデコーダで読む。圧縮していない 8 ビットの KTX2 は読む。
+  ほかの関数は `std` の有無にかかわらず同じに働く (読み込み・評価・物理・モーション・トラッキング・着せ替え・JSON の読み書き)。
+- **パニックのプロファイル:** `panic = "abort"` は Cargo のプロファイルで決まるので、ワークスペースの既定のプロファイル (dev・release) は変えず、
+  専用のプロファイル `nostd` を使う。Rust のツールチェインが配る `core` が巻き戻しありでビルドされているターゲット (ホストの Linux など) では、
+  `rust_eh_personality` が未解決のシンボルとして残る (呼ばれることは無い)。巻き戻しの無いターゲット (`aarch64-unknown-none` など) や、
+  `core` を `panic = "abort"` でビルドし直す (`-Zbuild-std`) ときは残らない。残るときはホストで形だけ定義する (`examples/c/nostd_main.c`)。
+- **Rust から使わない:** `std` を外した `ugoe-ffi` は、アロケータとパニックの処理を定義するので、ほかの Rust のクレートから rlib として使わない
+  (Rust のホストは `ugoe` を使う)。同じ理由で、`std` を外した形の結合テスト (`tests/`) は動かない (単体テストは動く)。
+
+**検査 (実機での確認はしていない):**
+
+- `just nostd-check` (CI の rust (runtime)): `aarch64-unknown-none` (std の無い tier 2 のターゲット) で clippy、ホストで `std` を外した形の単体テスト、
+  静的ライブラリを作ってフリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と (clang でコンパイルして rust-lld で) リンクし、
+  未解決のシンボルが `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc` だけであることを確かめる (`scripts/nostd-check.mjs` の
+  `HOST_SYMBOLS`)。
+- `just ffi-check` (CI の rust (bindings)): ホスト (Linux・macOS) 向けに `std` を外した静的ライブラリを作り、同じ見本を
+  [`examples/c/nostd_main.c`](examples/c/nostd_main.c) からホストの C ライブラリ (アロケータとパニックの処理の相手) とリンクして、
+  見本のモデルで実行する。Windows (MSVC の C ライブラリは `aligned_alloc` を持たない) では飛ばす。
+- ゲーム機の実機と SDK での確認は、組み込み先 (SDK を持つ人) に任せる。`aarch64-unknown-none` の検査で見つからない問題 (TLS・アトミック・
+  浮動小数点の設定など) があれば ADR 0031 を見直す。
 
 ## 毎フレームの描画の状態 (T0490)
 
@@ -277,6 +326,7 @@ if (r == UGOE_OK) {
 }
 ```
 
+- `std` の無い形では PNG と BCn の KTX2 を `unsupported_texture` で断る ([std の無い環境](#std-の無い環境))。
 - 参照 (`ugoe render`)・wasm と同じ `ugoe_format::image` のデコーダで、同じ画素になる (`docs/spec/rendering.md#前提`)。
   PNG と、KTX2 の圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7 を読む ([ADR 0030](../../docs/adr/0030-compressed-ktx2-decoding.md))。
   色はリニア化せず、KTX2 のミップマップは最初の段だけを使う。`premultiply` が true なら乗算済みアルファ (参照と同じ整数の丸め)、
@@ -506,3 +556,4 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt,
 - T0454 (指揮役の側の値を読む口)
 - T0457 (モデルの読み込みの失敗の種類)
 - T0489 (失敗の中身を呼び出し側の `UgoeError` で返す。スレッドローカルの状態を持たない。ADR 0031)
+- T0491 (std の無い環境向けの静的ライブラリ。ADR 0031)

@@ -9,6 +9,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
 use ugoe::Puppet;
+use ugoe::core::math;
 use ugoe::format::module_file::{ModuleFile, write_module};
 use ugoe::format::{Bundle, TextureData, TextureFormat};
 use ugoe::model::avatar::{AvatarHitArea, AvatarProfile};
@@ -1020,7 +1021,7 @@ fn physics_settings_can_be_replaced() {
     let mut index = 0;
     ok(unsafe { ugoe_puppet_parameter_index(p.0, angle.as_ptr(), &mut index, err()) });
     for frame in 0..8 {
-        let value = (frame as f32 * 0.7).sin() * 30.0;
+        let value = math::sin(frame as f32 * 0.7) * 30.0;
         ok(unsafe { ugoe_puppet_set_parameter(p.0, index, value, err()) });
         ok(unsafe { ugoe_puppet_update(p.0, DT, err()) });
         let params = rust.instance_mut().parameters_mut();
@@ -1260,7 +1261,7 @@ fn follow_matches_the_puppet() {
 
     for frame in 0..60 {
         let t = frame as f32 * DT;
-        let values = [30.0 * (t * 6.0).sin(), 10.0 * (t * 4.0).cos()];
+        let values = [30.0 * math::sin(t * 6.0), 10.0 * math::cos(t * 4.0)];
         ok(unsafe {
             ugoe_puppet_follow(
                 p.0,

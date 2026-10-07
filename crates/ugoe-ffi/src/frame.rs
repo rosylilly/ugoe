@@ -3,6 +3,8 @@
 //! `ugoe_puppet_update` の後に 1 回の呼び出しで、すべての描画可能要素の状態・描画順・頂点の位置を受け取る。
 //! 読み込みのときに 1 回読む情報 (UV・インデックス・マスクの参照など) は描画要素ごとの関数 (`drawable.rs`) で読む。
 
+use alloc::format;
+use alloc::vec::Vec;
 use ugoe::runtime::{DrawableChanges, ModelInstance};
 
 use crate::drawable::{UgoeDrawableState, blend_code};
@@ -46,11 +48,11 @@ impl Default for UgoeFrame {
     fn default() -> Self {
         Self {
             drawable_count: 0,
-            states: std::ptr::null(),
-            render_order: std::ptr::null(),
+            states: core::ptr::null(),
+            render_order: core::ptr::null(),
             render_order_changed: false,
-            position_ranges: std::ptr::null(),
-            positions: std::ptr::null(),
+            position_ranges: core::ptr::null(),
+            positions: core::ptr::null(),
             positions_len: 0,
         }
     }
@@ -77,11 +79,11 @@ pub struct UgoeFrameBuffers {
 impl Default for UgoeFrameBuffers {
     fn default() -> Self {
         Self {
-            states: std::ptr::null_mut(),
-            render_order: std::ptr::null_mut(),
-            position_ranges: std::ptr::null_mut(),
+            states: core::ptr::null_mut(),
+            render_order: core::ptr::null_mut(),
+            position_ranges: core::ptr::null_mut(),
             drawable_capacity: 0,
-            positions: std::ptr::null_mut(),
+            positions: core::ptr::null_mut(),
             positions_capacity: 0,
         }
     }
@@ -131,7 +133,13 @@ impl FrameCache {
                 if !change.contains(DrawableChanges::POSITIONS) {
                     continue;
                 }
-                let dst = &mut self.positions[range.first..range.first + range.count];
+                // 範囲は下 (すべてを写すとき) で `positions` に合わせて作ったもの
+                let Some(dst) = self
+                    .positions
+                    .get_mut(range.first..range.first + range.count)
+                else {
+                    continue;
+                };
                 for (dst, v) in dst.as_chunks_mut::<2>().0.iter_mut().zip(&d.positions) {
                     *dst = [v.x, v.y];
                 }
@@ -288,7 +296,12 @@ pub unsafe extern "C" fn ugoe_puppet_copy_frame(
             for (state, range) in cache.states.iter().zip(&cache.ranges) {
                 if state.changes & DrawableChanges::POSITIONS.bits() != 0 {
                     let r = range.first..range.first + range.count;
-                    positions[r.clone()].copy_from_slice(&cache.positions[r]);
+                    // `positions` は `cache.positions` と同じ長さ
+                    if let (Some(dst), Some(src)) =
+                        (positions.get_mut(r.clone()), cache.positions.get(r))
+                    {
+                        dst.copy_from_slice(src);
+                    }
                 }
             }
         } else {
@@ -311,5 +324,5 @@ unsafe fn slice_mut<'a, T>(ptr: *mut T, len: usize, name: &str) -> Result<&'a mu
         return Err(Error::null(name));
     }
     // SAFETY: 呼び出し側の約束。
-    Ok(unsafe { std::slice::from_raw_parts_mut(ptr, len) })
+    Ok(unsafe { core::slice::from_raw_parts_mut(ptr, len) })
 }

@@ -2,7 +2,8 @@
 // `just ffi-header` と `just ffi-check` の実体 (crates/ugoe-ffi/README.md#ヘッダの生成)。
 //
 //   node scripts/ffi.mjs header   cbindgen で crates/ugoe-ffi/include/ugoe.h を作り直す
-//   node scripts/ffi.mjs check    ヘッダが最新かを検査し、C の見本をビルドして実行する
+//   node scripts/ffi.mjs check    ヘッダが最新かを検査し、C の見本をビルドして実行する。std の無い形の静的ライブラリも
+//                                 ホストの C ライブラリとリンクして実行する (crates/ugoe-ffi/README.md#std-の無い環境)
 //
 // cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず CLI として使う。版は CBINDGEN_VERSION に揃える:
 //   cargo install cbindgen --version <CBINDGEN_VERSION> --locked
@@ -101,6 +102,54 @@ function check() {
   run(exe, [join(samples, "avatar.ugoe")]);
   run(exe, ["--lit", join(samples, "avatar-lit.ugoe")]);
   run(exe, [join(dressUp, "dress-up.ugoe"), ...modules]);
+
+  checkNostd([
+    join(samples, "avatar.ugoe"),
+    join(samples, "avatar-lit.ugoe"),
+    join(dressUp, "dress-up.ugoe"),
+  ]);
+}
+
+/**
+ * std の無い形 (`--no-default-features`、プロファイル `nostd`) の静的ライブラリをホスト向けに作り、フリースタンディングの
+ * 見本 (examples/c/nostd.c) とホストの C ライブラリ (アロケータとパニックの処理が呼ぶ `malloc`・`free`・`abort` など) と
+ * リンクして実行する。aarch64-unknown-none でのリンクの検査は `just nostd-check` (scripts/nostd-check.mjs)。
+ * Windows (MSVC) の C ライブラリは `aligned_alloc` を持たないので飛ばす (std の無い形は std の無い環境のためのもの)。
+ */
+function checkNostd(models) {
+  if (process.platform === "win32") {
+    console.log("skip: the std-less static library is not checked on Windows");
+    return;
+  }
+  run("cargo", [
+    "rustc",
+    "-p",
+    "ugoe-ffi",
+    "--lib",
+    "--crate-type",
+    "staticlib",
+    "--no-default-features",
+    "--profile",
+    "nostd",
+  ]);
+  const out = join(root, "target", "ffi-sample");
+  const exe = join(out, "nostd-sample");
+  const examples = join(crate, "examples", "c");
+  run(process.env.CC ?? "cc", [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-pedantic",
+    "-I",
+    join(crate, "include"),
+    join(examples, "nostd.c"),
+    join(examples, "nostd_main.c"),
+    join(root, "target", "nostd", "libugoe_ffi.a"),
+    "-o",
+    exe,
+  ]);
+  for (const model of models) run(exe, [model]);
 }
 
 const [command] = process.argv.slice(2);

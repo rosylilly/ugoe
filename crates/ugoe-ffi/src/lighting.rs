@@ -4,9 +4,12 @@
 //! 光源はホストの状態 (`ugoe::lighting::Lighting` と同じ中身) で、`UgoePuppet` は持たない。
 //! 法線マップは `ugoe_puppet_normal_map` で引く。
 
+use alloc::format;
+use alloc::string::String;
+use ugoe::core::math;
 use ugoe::lighting::MAX_LIGHTS;
 
-use crate::error::{Error, UGOE_ERROR_INVALID_ARGUMENT, UgoeError, UgoeResult, guard};
+use crate::error::{Error, UGOE_ERROR_INVALID_ARGUMENT, UgoeError, UgoeResult, at, guard};
 use crate::puppet::{UgoePuppet, puppet_ref, write};
 
 /// 平行光源 (`ugoe::lighting::Light::Directional`)。
@@ -75,7 +78,7 @@ fn light_uniform(i: usize, light: &UgoeLight) -> Result<UgoeLightUniform, Error>
     let [x, y, z] = light.vector;
     match light.kind {
         UGOE_LIGHT_DIRECTIONAL => {
-            let length = (x * x + y * y + z * z).sqrt();
+            let length = math::sqrt(x * x + y * y + z * z);
             if !(length.is_finite() && length > 0.0) {
                 return Err(invalid(format!(
                     "{what}: the direction must be finite and non-zero"
@@ -142,7 +145,7 @@ pub unsafe extern "C" fn ugoe_lighting_uniform(
             return Err(Error::null("lights"));
         } else {
             // SAFETY: 呼び出し側の約束で、`lights` は `count` 個の `UgoeLight` を読める。
-            unsafe { std::slice::from_raw_parts(lights, count) }
+            unsafe { core::slice::from_raw_parts(lights, count) }
         };
         let mut uniform = UgoeLightingUniform {
             ambient: [ambient[0], ambient[1], ambient[2], 0.0],
@@ -150,8 +153,8 @@ pub unsafe extern "C" fn ugoe_lighting_uniform(
         };
         for (i, light) in lights.iter().enumerate() {
             let light = light_uniform(i, light)?;
-            if i < UGOE_MAX_LIGHTS {
-                uniform.lights[i] = light;
+            if let Some(slot) = uniform.lights.get_mut(i) {
+                *slot = light;
                 uniform.count += 1;
             }
         }
@@ -200,6 +203,8 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_lit(
         let i = p.drawable_index(index)?;
         let model = p.puppet.instance().compiled().model();
         // SAFETY: 呼び出し側の約束。
-        unsafe { write(out, "out", model.lighting && model.meshes[i].lit) }
+        let lit = at(&model.meshes, "drawable", i)?.lit;
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", model.lighting && lit) }
     })
 }

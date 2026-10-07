@@ -3,7 +3,10 @@
 //! 平滑化・キャリブレーション・回転行列からの角度の計算・鏡像の入れ替えはホストが行う
 //! (`docs/spec/avatar-profile.md#実装の範囲`)。
 
-use std::ffi::c_char;
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::vec::Vec;
+use core::ffi::c_char;
 
 use ugoe::model::avatar::ARKIT_BLEND_SHAPES;
 use ugoe::motion::tracking::{BLEND_SHAPE_COUNT, blend_shape_index};
@@ -74,9 +77,10 @@ impl UgoeTrackingInput {
     fn input(&self) -> Result<TrackingInput, Error> {
         const { assert!(UGOE_BLEND_SHAPE_COUNT == BLEND_SHAPE_COUNT) };
         let mut blend_shapes = [0.0; BLEND_SHAPE_COUNT];
-        for (i, (dst, &v)) in blend_shapes.iter_mut().zip(&self.blend_shapes).enumerate() {
+        let inputs = blend_shapes.iter_mut().zip(&self.blend_shapes);
+        for ((dst, &v), name) in inputs.zip(ARKIT_BLEND_SHAPES) {
             if !v.is_finite() {
-                return Err(invalid(ARKIT_BLEND_SHAPES[i], v));
+                return Err(invalid(name, v));
             }
             *dst = v;
         }
@@ -221,7 +225,7 @@ pub unsafe extern "C" fn ugoe_puppet_set_tracking_kept(
             return Err(Error::null("indices"));
         } else {
             // SAFETY: 呼び出し側の約束で、`indices` は `count` 個を読める。
-            unsafe { std::slice::from_raw_parts(indices, count) }
+            unsafe { core::slice::from_raw_parts(indices, count) }
         };
         let parameters = &p.puppet.instance().compiled().model().parameters;
         let ids = indices
@@ -243,6 +247,10 @@ const BLEND_SHAPE_NAME_CAPACITY: usize = 32;
 
 /// ARKit のブレンドシェイプの名前 (NUL 終端。残りは NUL で埋める)。コンパイル時に作る変わらない表で、
 /// C ABI にグローバルな状態を持たせないため、実行時に作って保持はしない (ADR 0031)。
+#[expect(
+    clippy::indexing_slicing,
+    reason = "コンパイル時に評価する表で、範囲外ならビルドが失敗する (実行時にパニックしない)"
+)]
 static BLEND_SHAPE_NAMES: [[u8; BLEND_SHAPE_NAME_CAPACITY]; BLEND_SHAPE_COUNT] = {
     let mut names = [[0; BLEND_SHAPE_NAME_CAPACITY]; BLEND_SHAPE_COUNT];
     let mut i = 0;

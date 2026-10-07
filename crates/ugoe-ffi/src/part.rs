@@ -1,9 +1,10 @@
 //! パーツの一覧・パーツの不透明度の上書き・ポーズの表示の選択 (T0414)。評価後のパーツの不透明度 (T0416)。
 //! 表示中のポーズの要素 (T0478)。ポーズの定義 (グループごとの要素のパーツ。T0483)。
 
-use std::ffi::c_char;
+use alloc::format;
+use core::ffi::c_char;
 
-use crate::error::{Error, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, guard};
+use crate::error::{Error, UGOE_ERROR_NOT_FOUND, UgoeError, UgoeResult, at, guard};
 use crate::puppet::{UgoePuppet, c_str, puppet_mut, puppet_ref, write};
 
 /// パーツ自身の不透明度の上書き (`docs/spec/motion.md#パーツの不透明度`)。
@@ -216,18 +217,16 @@ pub unsafe extern "C" fn ugoe_puppet_pose_visible_part(
         let player = p.puppet.pose();
         let groups = &player.pose().groups;
         let index = group as usize;
-        if index >= groups.len() {
-            return Err(Error::out_of_range("pose group", index, groups.len()));
-        }
-        if groups[index].entries.is_empty() {
+        if at(groups, "pose group", index)?.entries.is_empty() {
             return Err(Error::new(
                 UGOE_ERROR_NOT_FOUND,
                 format!("pose group {index} has no entries"),
             ));
         }
         // `visible_parts` は要素の無いグループを飛ばし、ほかのグループでは 1 つずつ返す。
-        let skip = groups[..index]
+        let skip = groups
             .iter()
+            .take(index)
             .filter(|g| !g.entries.is_empty())
             .count();
         let part = player.visible_parts().nth(skip).ok_or_else(|| {

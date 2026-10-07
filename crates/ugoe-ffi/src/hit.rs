@@ -4,7 +4,8 @@
 //! どれも直前の `ugoe_puppet_update` で評価した変形後の形で判定する (不透明度 0 や非表示のメッシュでも当たる)。
 //! 座標はキャンバス座標 (ピクセル単位・Y 下向き)。
 
-use std::ffi::c_char;
+use alloc::format;
+use core::ffi::c_char;
 
 use ugoe::core::Vec2;
 
@@ -111,7 +112,7 @@ pub(crate) unsafe fn write_indices(
         return Err(Error::null("out"));
     }
     // SAFETY: `out` は `capacity` (≥ values.len()) 個を書き込める (呼び出し側の約束)。
-    let out = unsafe { std::slice::from_raw_parts_mut(out, values.len()) };
+    let out = unsafe { core::slice::from_raw_parts_mut(out, values.len()) };
     for (dst, &v) in out.iter_mut().zip(values) {
         *dst = v as u32;
     }

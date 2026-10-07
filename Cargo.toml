@@ -117,3 +117,9 @@ opt-level = 2
 
 [profile.release]
 lto = "thin"
+
+# std の無い環境向けの ugoe-ffi の静的ライブラリ (`--no-default-features --profile nostd`)。巻き戻しの仕組みが無いので
+# パニックは abort にする (crates/ugoe-ffi/README.md#std-の無い環境、ADR 0031)。ほかのプロファイルは変えない
+[profile.nostd]
+inherits = "release"
+panic = "abort"

@@ -5,14 +5,18 @@
 // docs/portability.md#ランタイム層が守る制約-移植性のため。
 //
 //   node scripts/nostd-check.mjs run [<crate>...]  検査を流す (クレートを省けばすべて)。ターゲットが無ければ入れ方を出して失敗する
-//                                                  (`just nostd-check`。CI の rust (runtime))
+//                                                  (`just nostd-check`。CI の rust (runtime))。ugoe-ffi では、std の無い形の
+//                                                  単体テスト (ホスト) と、静的ライブラリを C の見本とリンクする検査も流す
+//                                                  (T0491。crates/ugoe-ffi/README.md#std-の無い環境)
 //   node scripts/nostd-check.mjs targets           要るターゲットを出す (CI の `rustup target add` が使う)
 //   node scripts/nostd-check.mjs check             一覧のクレートがワークスペースにあり、feature `std` を既定で持つかと、
 //                                                  MATH_CRATES の clippy.toml (数学関数の禁止) が揃っているかを検査する (`just groups`)
 //   node scripts/nostd-check.mjs list              クレートの一覧
 
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 /** std の無いターゲット。 */
@@ -30,6 +34,7 @@ export const NOSTD_CRATES = [
   "ugoe-physics",
   "ugoe-motion",
   "ugoe",
+  "ugoe-ffi",
 ];
 
 /**
@@ -37,7 +42,41 @@ export const NOSTD_CRATES = [
  * (T0180。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#数学関数は-libm-に寄せる)。各クレートの `crates/<名前>/clippy.toml` は
  * 同じ内容で、ルートの clippy.toml の設定をすべて含む (clippy は最も近い clippy.toml だけを読むため)。
  */
-export const MATH_CRATES = ["ugoe-core", "ugoe-runtime", "ugoe-physics", "ugoe-motion", "ugoe"];
+export const MATH_CRATES = [
+  "ugoe-core",
+  "ugoe-format",
+  "ugoe-runtime",
+  "ugoe-physics",
+  "ugoe-motion",
+  "ugoe",
+  "ugoe-ffi",
+];
+
+/** 静的ライブラリをリンクして調べる C ABI のクレート (T0491)。 */
+export const FFI_CRATE = "ugoe-ffi";
+
+/**
+ * std の無い形の ugoe-ffi の静的ライブラリが、ホストに解決を任せてよいシンボル (ホストの C ライブラリの関数)。
+ * アロケータ (crates/ugoe-ffi/src/nostd.rs) が呼ぶ確保の関数と、パニックの処理が呼ぶ `abort`。
+ * `memcpy` などは aarch64-unknown-none の compiler_builtins が持つので入らない。
+ */
+export const HOST_SYMBOLS = ["abort", "aligned_alloc", "calloc", "free", "malloc", "realloc"];
+
+/** HOST_SYMBOLS の C の宣言 (形だけの定義を作るのに使う)。 */
+const HOST_STUBS = {
+  abort: "_Noreturn void abort(void) { for (;;) {} }",
+  aligned_alloc: "void *aligned_alloc(size_t a, size_t n) { (void)a; (void)n; return NULL; }",
+  calloc: "void *calloc(size_t c, size_t n) { (void)c; (void)n; return NULL; }",
+  free: "void free(void *p) { (void)p; }",
+  malloc: "void *malloc(size_t n) { (void)n; return NULL; }",
+  realloc: "void *realloc(void *p, size_t n) { (void)p; (void)n; return NULL; }",
+};
+
+/** C の見本をコンパイルするターゲット (clang の `--target`)。NOSTD_TARGET と同じ機械。 */
+export const C_TARGET = "aarch64-none-elf";
+
+/** C の見本 (crates/ugoe-ffi/examples/c/nostd.c) の入口。リンクの起点にする。 */
+export const SAMPLE_ENTRY = "ugoe_nostd_sample";
 
 /** クレートを省けばすべて、知らないクレートは例外。 */
 export function select(crates, names) {
@@ -67,6 +106,48 @@ export function clippyArgs(name, target = NOSTD_TARGET) {
     "-D",
     "warnings",
   ];
+}
+
+/**
+ * std の無い形の静的ライブラリを作る `cargo rustc` の引数。巻き戻さないプロファイル `nostd` (ルートの Cargo.toml) で、
+ * 作る種類を staticlib だけにする (cdylib はこのターゲットに無い)。
+ */
+export function staticlibArgs(target = NOSTD_TARGET) {
+  return [
+    "rustc",
+    "-p",
+    FFI_CRATE,
+    "--lib",
+    "--crate-type",
+    "staticlib",
+    "--no-default-features",
+    "--profile",
+    "nostd",
+    "--target",
+    target,
+  ];
+}
+
+/** リンカ (lld) の出力から、未解決のシンボルの名前を並べて返す (重なりを除き、名前の順)。 */
+export function undefinedSymbols(output) {
+  const names = new Set();
+  for (const match of output.matchAll(/undefined symbol: (\S+)/g)) names.add(match[1]);
+  return [...names].sort();
+}
+
+/** ホストの C ライブラリのもの (HOST_SYMBOLS) でない未解決のシンボル。 */
+export function unexpectedSymbols(symbols, allowed = HOST_SYMBOLS) {
+  return symbols.filter((name) => !allowed.includes(name));
+}
+
+/** HOST_SYMBOLS を形だけ定義する C のソース (ホストの C ライブラリの代わり。リンクが通ることを確かめる)。 */
+export function hostStubSource(symbols = HOST_SYMBOLS) {
+  const lines = [
+    "/* ホストの C ライブラリの代わり (scripts/nostd-check.mjs が作る)。 */",
+    "#include <stddef.h>",
+  ];
+  for (const name of symbols) lines.push(HOST_STUBS[name]);
+  return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -146,6 +227,123 @@ function metadata() {
   );
 }
 
+/** rustup のツールチェインに入っている lld (rust-lld)。 */
+function rustLld() {
+  const sysroot = execFileSync("rustc", ["--print", "sysroot"], { encoding: "utf8" }).trim();
+  const host = execFileSync("rustc", ["-vV"], { encoding: "utf8" }).match(/^host: (\S+)$/m)?.[1];
+  const exe = process.platform === "win32" ? "rust-lld.exe" : "rust-lld";
+  return join(sysroot, "lib", "rustlib", host ?? "", "bin", exe);
+}
+
+/**
+ * ugoe-ffi の std の無い形の検査 (T0491): ホストで単体テストを流し、aarch64-unknown-none の静的ライブラリを作って
+ * C の見本 (crates/ugoe-ffi/examples/c/nostd.c) とリンクし、未解決のシンボルが HOST_SYMBOLS だけであることを確かめる。
+ * 実機での動作は確かめない (crates/ugoe-ffi/README.md#std-の無い環境)。
+ */
+function checkFfiStaticlib() {
+  console.log(`== ${FFI_CRATE}: std の無い形の単体テスト (ホスト)`);
+  try {
+    execFileSync("cargo", ["test", "-p", FFI_CRATE, "--lib", "--no-default-features"], {
+      stdio: "inherit",
+    });
+  } catch {
+    console.error(`error: ${FFI_CRATE} の std の無い形の単体テストが失敗した`);
+    return 1;
+  }
+  const args = staticlibArgs();
+  console.log(`== ${FFI_CRATE} (${NOSTD_TARGET}, staticlib): cargo ${args.join(" ")}`);
+  try {
+    execFileSync("cargo", args, { stdio: "inherit" });
+  } catch {
+    console.error(`error: ${FFI_CRATE} の静的ライブラリを std 無し (${NOSTD_TARGET}) で作れない`);
+    return 1;
+  }
+  const clang = process.env.CLANG ?? "clang";
+  if (spawnSync(clang, ["--version"]).status !== 0) {
+    console.error(
+      `error: C の見本を ${C_TARGET} 向けにコンパイルする clang が無い (CLANG で指定できる)`,
+    );
+    console.error("  入れ方: sudo apt-get install clang (macOS は Xcode の clang でよい)");
+    return 1;
+  }
+  const lld = rustLld();
+  const lib = join("target", NOSTD_TARGET, "nostd", "libugoe_ffi.a");
+  const tmp = mkdtempSync(join(tmpdir(), "ugoe-ffi-nostd-"));
+  try {
+    const cc = (source, out) =>
+      spawnSync(
+        clang,
+        [
+          `--target=${C_TARGET}`,
+          "-ffreestanding",
+          "-fno-builtin",
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-I",
+          join("crates", FFI_CRATE, "include"),
+          "-c",
+          source,
+          "-o",
+          out,
+        ],
+        { stdio: "inherit" },
+      ).status === 0;
+    const sample = join(tmp, "nostd.o");
+    if (!cc(join("crates", FFI_CRATE, "examples", "c", "nostd.c"), sample)) {
+      console.error("error: C の見本 (nostd.c) をコンパイルできない");
+      return 1;
+    }
+    const link = (inputs) =>
+      spawnSync(
+        lld,
+        [
+          "-flavor",
+          "gnu",
+          "--gc-sections",
+          "-e",
+          SAMPLE_ENTRY,
+          "--error-limit=0",
+          "-o",
+          join(tmp, "sample.elf"),
+          ...inputs,
+        ],
+        { encoding: "utf8" },
+      );
+    // ホストの C ライブラリ無しでリンクし、未解決のシンボルを集める
+    const bare = link([sample, lib]);
+    const symbols = undefinedSymbols(`${bare.stdout}${bare.stderr}`);
+    const unexpected = unexpectedSymbols(symbols);
+    if (unexpected.length > 0) {
+      console.error(`${bare.stdout}${bare.stderr}`);
+      console.error(
+        `error: ホストの C ライブラリのもの以外の未解決のシンボルがある: ${unexpected.join(", ")}`,
+      );
+      return 1;
+    }
+    // HOST_SYMBOLS を形だけ定義すればリンクが通る (ほかの原因で失敗しない) ことを確かめる
+    const stubSource = join(tmp, "host.c");
+    writeFileSync(stubSource, hostStubSource());
+    const stub = join(tmp, "host.o");
+    if (!cc(stubSource, stub)) return 1;
+    const full = link([sample, lib, stub]);
+    if (full.status !== 0) {
+      console.error(`${full.stdout}${full.stderr}`);
+      console.error(`error: ${FFI_CRATE} の静的ライブラリを C の見本とリンクできない`);
+      return 1;
+    }
+    console.log(
+      `staticlib ok: unresolved symbols are host C library functions only (${symbols.join(", ")})`,
+    );
+    return 0;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 function run(crates) {
   if (!installedTargets().includes(NOSTD_TARGET)) {
     console.error(`error: ターゲットが入っていない: ${NOSTD_TARGET}`);
@@ -162,6 +360,7 @@ function run(crates) {
       return 1;
     }
   }
+  if (crates.includes(FFI_CRATE)) return checkFfiStaticlib();
   return 0;
 }
 

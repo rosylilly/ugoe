@@ -402,6 +402,7 @@ typedef struct UgoeTrackingInput {
 #define UGOE_ERROR_NOT_FOUND 7
 
 // ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
+// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ)。
 #define UGOE_ERROR_PANIC 8
 
 // 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
@@ -1084,6 +1085,10 @@ struct UgoeImageLimits ugoe_image_limits_default(void);
 // 参照 (`ugoe render`)・wasm と同じデコーダで、同じ画素になる (`docs/spec/rendering.md#前提`)。PNG と、KTX2 の
 // 圧縮していない 8bit の RGB / RGBA と BC1〜BC5・BC7 を読む。色はリニア化せず、KTX2 のミップマップは最初の段だけを使う。
 // 画素は左上から行の順 (上の行が先)。
+//
+// **std の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では、PNG とブロック圧縮 (BCn) の KTX2 をデコードしない**
+// (デコーダが std を要る)。どちらも `UGOE_ERROR_FORMAT`・`"unsupported_texture"` で失敗するので、ホストのデコーダで読む。
+// 圧縮していない 8bit の KTX2 は std の有無にかかわらず読む。
 //
 // - `format`: `UGOE_TEXTURE_PNG` か `UGOE_TEXTURE_KTX2` (`UgoeTexture::format`)。ほかは `UGOE_ERROR_INVALID_ARGUMENT`。
 // - `limits`: NULL なら既定値 (`ugoe_image_limits_default`)。

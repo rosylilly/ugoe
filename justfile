@@ -142,7 +142,8 @@ refs:
 ffi-header:
     @node scripts/ffi.mjs header
 
-# C ABI の検査: ヘッダが最新か、C の見本のビルドと実行。cbindgen と C コンパイラが要るので `just ci` には含めない
+# C ABI の検査: ヘッダが最新か、C の見本のビルドと実行 (std の無い形の静的ライブラリも、ホストの C ライブラリとリンクして実行する)。
+# cbindgen と C コンパイラが要るので `just ci` には含めない
 ffi-check:
     @node scripts/ffi.mjs check
 
@@ -193,6 +194,7 @@ wasm-check:
 
 # ランタイム層のクレートが std 無し (no_std + alloc) でビルドできるか。aarch64-unknown-none で `--no-default-features` の clippy
 # (対象は scripts/nostd-check.mjs の NOSTD_CRATES。ADR 0031)。名前を省けばすべて: `just nostd-check`、`just nostd-check ugoe-model`。
+# ugoe-ffi は std の無い形の単体テストと、静的ライブラリを C の見本とリンクして未解決のシンボルを調べる検査も流す (clang が要る。T0491)。
 # ターゲットが無ければ `rustup target add` の入れ方を出して止まる。`just ci` には含めない (CI では rust (runtime) のジョブ)。ランタイム層を触ったら実行する
 nostd-check *names:
     @node scripts/nostd-check.mjs run {{names}}

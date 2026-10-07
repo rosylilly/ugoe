@@ -1,12 +1,12 @@
 //! 描画可能要素 (メッシュ) の評価結果と、テクスチャの取り出し。
 //! 出力の意味は `docs/spec/evaluation.md#8-出力`、描画の式は `docs/spec/rendering.md`。
 
-use std::ffi::c_char;
+use core::ffi::c_char;
 
 use ugoe::format::{TextureData, TextureFormat};
 use ugoe::model::{BlendMode, MaskMode};
 
-use crate::error::{Error, UgoeError, UgoeResult, guard};
+use crate::error::{Error, UgoeError, UgoeResult, at, guard};
 use crate::puppet::{UgoePuppet, puppet_ref, write};
 
 /// 通常の合成。
@@ -190,11 +190,13 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_info(
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
         let compiled = p.puppet.instance().compiled();
-        let mesh = &compiled.model().meshes[i];
+        let mesh = at(&compiled.model().meshes, "drawable", i)?;
         let info = UgoeDrawableInfo {
-            id: p.drawable_ids[i].as_ptr(),
+            id: at(&p.drawable_ids, "drawable", i)?.as_ptr(),
             texture: mesh.texture,
-            vertex_count: p.puppet.instance().drawables()[i].positions.len() as u32,
+            vertex_count: at(p.puppet.instance().drawables(), "drawable", i)?
+                .positions
+                .len() as u32,
             index_count: mesh.indices.len() as u32,
             culling: mesh.culling,
             mask_only: mesh.mask_only,
@@ -254,7 +256,12 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_uvs(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
-        let uvs = &p.puppet.instance().compiled().model().meshes[i].uvs;
+        let uvs = &at(
+            &p.puppet.instance().compiled().model().meshes,
+            "drawable",
+            i,
+        )?
+        .uvs;
         if out.is_null() {
             return Err(Error::null("out"));
         }
@@ -283,7 +290,12 @@ pub unsafe extern "C" fn ugoe_puppet_drawable_indices(
         // SAFETY: 呼び出し側の約束。
         let p = unsafe { puppet_ref(puppet)? };
         let i = p.drawable_index(index)?;
-        let indices = &p.puppet.instance().compiled().model().meshes[i].indices;
+        let indices = &at(
+            &p.puppet.instance().compiled().model().meshes,
+            "drawable",
+            i,
+        )?
+        .indices;
         if out.is_null() {
             return Err(Error::null("out"));
         }
@@ -318,7 +330,7 @@ fn texture_value(texture: Option<&TextureData>) -> UgoeTexture {
     match texture {
         None => UgoeTexture {
             format: UGOE_TEXTURE_NONE,
-            data: std::ptr::null(),
+            data: core::ptr::null(),
             len: 0,
         },
         Some(t) => UgoeTexture {

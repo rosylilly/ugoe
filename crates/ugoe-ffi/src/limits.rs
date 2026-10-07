@@ -5,6 +5,8 @@
 //! 超えたら `UGOE_ERROR_LIMIT_EXCEEDED` を返し、種類と補足の値は SDK の `ugoe::limits::ReadLimitExceeded` で、
 //! wasm の読み込みのエラーの `code` と同じ。
 
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use ugoe::LoadError;
 use ugoe::format::FormatError;
 use ugoe::limits::{ReadLimitExceeded, ReadLimits};
@@ -121,7 +123,7 @@ mod tests {
         assert_eq!(limits.max_total_decompressed, 1024 * 1024 * 1024);
         // SAFETY: NULL は既定値。
         assert_eq!(
-            unsafe { read_limits(std::ptr::null()) },
+            unsafe { read_limits(core::ptr::null()) },
             ReadLimits::default()
         );
     }
