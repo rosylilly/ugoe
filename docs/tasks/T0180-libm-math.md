@@ -1,11 +1,11 @@
 ---
 id: T0180
 title: ランタイム層の数学関数を ugoe_core::math (常に libm) に寄せる
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-core, ugoe-runtime, ugoe-physics, ugoe-motion, ugoe, Cargo.toml, Cargo.lock, tests/conformance, tools/spec-check, assets/fixtures, docs]
 depends_on: [T0179]
-assignee:
+assignee: claude-worker-T0180
 ---
 
 # T0180: ランタイム層の数学関数を ugoe_core::math (常に libm) に寄せる

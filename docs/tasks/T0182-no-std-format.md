@@ -1,11 +1,11 @@
 ---
 id: T0182
 title: ugoe-format を no_std + alloc にする (rmp-serde・ruzstd・std::io の扱い)
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-format, Cargo.toml, Cargo.lock, scripts, docs]
 depends_on: [T0179]
-assignee:
+assignee: claude-worker-T0182
 ---
 
 # T0182: ugoe-format を no_std + alloc にする (rmp-serde・ruzstd・std::io の扱い)
