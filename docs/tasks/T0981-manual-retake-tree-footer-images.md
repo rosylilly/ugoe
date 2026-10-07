@@ -1,11 +1,11 @@
 ---
 id: T0981
 title: "マニュアル: T1676 の後に、ツリーの下端が変わった 5 枚の画像を撮り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [docs, tests]
 depends_on: []
-assignee:
+assignee: claude-worker-T0981
 ---
 
 # T0981: マニュアル: T1676 の後に、ツリーの下端が変わった 5 枚の画像を撮り直す

@@ -1,11 +1,11 @@
 ---
 id: T0493
 title: "ugoe-wasm: T0184 のパニックの lint を有効にするかを決め、有効にする (判断が要る)"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-wasm, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0493
 ---
 
 # T0493: ugoe-wasm: T0184 のパニックの lint を有効にするかを決め、有効にする (判断が要る)

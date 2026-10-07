@@ -1,11 +1,11 @@
 ---
 id: T0495
 title: "C ABI: -Zbuild-std が要るターゲット (tier 3 のゲーム機向けなど) で std の無い静的ライブラリを作る手順を確かめる"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-ffi, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0495
 ---
 
 # T0495: C ABI: -Zbuild-std が要るターゲット (tier 3 のゲーム機向けなど) で std の無い静的ライブラリを作る手順を確かめる

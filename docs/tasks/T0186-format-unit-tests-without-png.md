@@ -1,11 +1,11 @@
 ---
 id: T0186
 title: "ugoe-format: png (std) の無い形の単体テストを CI で流す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-format, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0186
 ---
 
 # T0186: ugoe-format: png (std) の無い形の単体テストを CI で流す

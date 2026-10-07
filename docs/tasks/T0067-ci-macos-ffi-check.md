@@ -1,11 +1,11 @@
 ---
 id: T0067
 title: "CI: macOS で just ffi-check (std の無い静的ライブラリの形を含む) を流す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [.github/workflows, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0067
 ---
 
 # T0067: CI: macOS で just ffi-check (std の無い静的ライブラリの形を含む) を流す
