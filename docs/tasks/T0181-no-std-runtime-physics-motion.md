@@ -1,11 +1,11 @@
 ---
 id: T0181
 title: ugoe-runtime・ugoe-physics・ugoe-motion を no_std + alloc にする
-status: todo
+status: in-progress
 milestone: M11
 crates: [ugoe-runtime, ugoe-physics, ugoe-motion, Cargo.toml, Cargo.lock, scripts, docs]
 depends_on: [T0179, T0180]
-assignee:
+assignee: claude-worker-T0181
 ---
 
 # T0181: ugoe-runtime・ugoe-physics・ugoe-motion を no_std + alloc にする
