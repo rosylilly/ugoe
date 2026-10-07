@@ -18,6 +18,8 @@
 //! - `std` (既定で有効): `std` を使う。外すと `#![no_std]` (`core` + `alloc`) でビルドし、ゲーム機や組み込み機器のように
 //!   Rust の `std` が無い環境に静的ライブラリとして組み込める。アロケータはホストの C ライブラリの `malloc`・`free` など、
 //!   パニックは (登録されたホストの関数にメッセージを渡してから) `abort` になる。関数の集合とヘッダは変わらない (crates/ugoe-ffi/README.md#std-の無い環境。ADR 0031)。
+//! - `fuzzing`: fuzz のターゲット (`fuzz/fuzz_targets/ffi.rs`) が呼ぶ安全な Rust の入口 `ugoe_ffi::fuzzing` を足す。入力を C ABI の呼び出しの列に
+//!   組み立てて回すので、`unsafe` はこのクレートの中に留まる。ヘッダには出さず、配るライブラリでは有効にしない (docs/testing.md#fuzz。T0497)。
 
 #![cfg_attr(not(test), no_std)]
 #![allow(unsafe_code)]
@@ -44,6 +46,10 @@ mod dress_up;
 mod error;
 mod follow;
 mod frame;
+/// fuzz のための安全な入口 (feature `fuzzing`)。C ABI の関数ではないので、ヘッダに出さない。
+/// cbindgen:ignore
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod hit;
 mod image;
 mod lighting;

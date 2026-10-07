@@ -346,6 +346,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ugoe-ffi"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "ugoe",
+ "ugoe-format",
+]
+
+[[package]]
 name = "ugoe-format"
 version = "0.0.0"
 dependencies = [
@@ -364,6 +373,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "ugoe",
+ "ugoe-ffi",
  "ugoe-format",
 ]
 

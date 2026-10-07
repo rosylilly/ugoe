@@ -87,7 +87,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just nostd-check` | ランタイム層のクレートが `std` 無し (`aarch64-unknown-none`) でビルドできるか (ランタイム層を触ったら実行。対象は `scripts/nostd-check.mjs`、規則は [docs/portability.md](docs/portability.md#ランタイム層が守る制約-移植性のため)) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
 | `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
-| `just fuzz <target> [秒]` | 外から来る入力 (バンドル・モジュール・画像・JSON) を cargo-fuzz で回す (nightly と cargo-fuzz が要る。`just ci` には含めない。ランタイムの公開 API を変えたら `just fuzz-check`。[docs/testing.md](docs/testing.md#fuzz)) |
+| `just fuzz <target> [秒]` | 外から来る入力 (バンドル・モジュール・画像・JSON・C ABI の呼び出し) を cargo-fuzz で回す (nightly と cargo-fuzz が要る。`just ci` には含めない。ランタイムの公開 API を変えたら `just fuzz-check`。[docs/testing.md](docs/testing.md#fuzz)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
 | `just editor` | エディタを開発モードで起動 |
 | `just viewer` | ビューアを開発モードで起動 |

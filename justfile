@@ -161,7 +161,7 @@ godot-check *args:
 
 # nightly と cargo-fuzz が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では週に 1 度の fuzz.yml)。
 # `--` の後ろは libFuzzer に渡す: `just fuzz bundle 300 -- -jobs=4 -workers=4`。見つかった入力は fuzz/artifacts/<target>/
-# fuzz (fuzz/README.md): 外から来る入力のターゲット (bundle・module・image・json。all ですべて) を [秒] (既定 60) ずつ回す
+# fuzz (fuzz/README.md): 外から来る入力のターゲット (bundle・module・image・json・ffi。all ですべて) を [秒] (既定 60) ずつ回す
 fuzz target *args:
     @node fuzz/run.mjs {{target}} {{args}}
 

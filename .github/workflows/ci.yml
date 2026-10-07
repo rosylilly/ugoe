@@ -155,7 +155,7 @@ jobs:
           node scripts/nostd-check.mjs targets | xargs rustup target add
           just nostd-check
       # fuzz のクレート (fuzz/。ワークスペースの外で独自の Cargo.lock) を stable で検査する (`just fuzz-lint`: 依存のライセンス・
-      # 整形・clippy。T0072)。ターゲットは ugoe・ugoe-format の公開 API を使うので、変えて壊れたら週に 1 度の fuzz.yml を待たずに気づく。
+      # 整形・clippy。T0072)。ターゲットは ugoe・ugoe-format の公開 API と ugoe-ffi の fuzzing を使うので、変えて壊れたら週に 1 度の fuzz.yml を待たずに気づく。
       # ランタイムの API を変える PR が必ず流すこのジョブに置く。nightly と cargo-fuzz は要らない (計装したビルドは fuzz.yml)。
       # ビルドは fuzz/target で、rust-cache (target だけを持ち越す) の外: 依存は 50 ほどで、libfuzzer-sys のビルドスクリプトが
       # libFuzzer (C++。ランナーの g++ でコンパイルする) を含めても手元の 4 並列で約 10 秒なので、キャッシュは足さない。

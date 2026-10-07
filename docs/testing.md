@@ -390,14 +390,28 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 (決めたことと理由は [ADR 0032](adr/0032-fuzzing-with-cargo-fuzz.md)。T0188 で利用者が選んだ)。
 
 - ターゲットは `bundle` (バンドルの読み込み・画像のデコード・`Puppet` での評価)・`module` (モジュールの読み込みと着せ替えの本体への
-  取り付け)・`image` (PNG と KTX2 のデコード)・`json` (JSON 形式のモデル・モジュール・物理・モーション・表情)。詳しくは
-  [fuzz/README.md](../fuzz/README.md)。
+  取り付け)・`image` (PNG と KTX2 のデコード)・`json` (JSON 形式のモデル・モジュール・物理・モーション・表情)・`ffi` (C ABI の入口。下)。
+  詳しくは [fuzz/README.md](../fuzz/README.md)。
+- **C ABI (`ffi`。T0497):** C ABI の関数は `unsafe extern "C" fn` で、呼ぶには `unsafe` が要る。利用者の決定 (2026-10-07) で、
+  `ugoe-ffi` に feature `fuzzing` で安全な Rust の入口 `ugoe_ffi::fuzzing::run` を置き、ターゲットはそれを呼ぶ (`fuzz/` は
+  `unsafe_code = "deny"` のまま。`unsafe` の例外を増やさず、`unsafe` は `ugoe-ffi` の中に留まる)。入口は入力を
+  `[ファイル] [SCRIPT_MARKER] [台本]` に分け、ファイルをバンドル (読めなければモデルの JSON) とモジュールとして C のホストと同じ呼び方で
+  読み、台本の 1 バイトごとに操作 (パラメータの番号と名前での設定・NaN と無限大・`update`・モーション・表情・トラッキング・受け手・
+  当たり判定・物理とエフェクトの JSON・着せ替え・フレームの借用と写しなど) を選んで呼ぶ。借りた文字列と配列はすべて読み
+  (fuzz のビルドは AddressSanitizer)、範囲の外の番号を返すなどのホストへの約束の破れも誤りにする。feature はヘッダに出さず、
+  配るライブラリでは有効にしない (`panic-test` と同じ扱い)。
+  - **std がある形のパニック:** C ABI は `catch_unwind` でパニックを `UGOE_ERROR_PANIC` に変えるが、libfuzzer-sys は初期化のときに
+    「既定のフックを呼んでから `abort` する」パニックのフックを入れるので、巻き戻す前 (`catch_unwind` に届く前) に止まり、fuzz の
+    クラッシュとして見つかる (T0497 で、わざとパニックさせて確かめた)。フックを通らずに `UGOE_ERROR_PANIC` が返ったときも、入口が
+    誤りとして返す。
+  - 同じ入口を、決まった入力 (`assets/compat` と `assets/samples` のファイルに決まった台本を付けたもの) で `crates/ugoe-ffi/tests/fuzzing.rs`
+    (`required-features = ["fuzzing"]`。CI のグループ `bindings` が feature を有効にする) が stable で回す。`ffi` で見つかった入力はここに足す。
 - 手元では `just fuzz <target> [秒]` (既定 60 秒。`all` ですべて)。nightly と cargo-fuzz が要り、無ければ入れ方を示して止まります。
   nightly は fuzz のビルドだけで使い、`rust-toolchain.toml` (stable) は変えません。
 - CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
   次の回へ持ち越します。見つかった入力はワークフローの成果物 (`fuzz-artifacts-<target>`) に上げます。
 - PR ごとの CI (ci.yml の `rust (runtime)`) は、`just fuzz-lint` で fuzz のクレートを stable で検査します (依存のライセンス・整形・
-  clippy。T0072)。ターゲットは `ugoe`・`ugoe-format` の公開 API を使うので、変えて壊れたら週に 1 度のジョブを待たずに PR で気づきます。
+  clippy。T0072)。ターゲットは `ugoe`・`ugoe-format` の公開 API と `ugoe-ffi` の `fuzzing` を使うので、変えて壊れたら週に 1 度のジョブを待たずに PR で気づきます。
   nightly と cargo-fuzz は要りませんが、`libfuzzer-sys` のビルドスクリプトが同梱の libFuzzer (C++) をコンパイルするので C++ の
   コンパイラが要ります。ランタイムの公開 API を変えたら手元でも `just fuzz-lint` を流してください (`just ci` には入れていません)。
 - 依存のライセンスの検査 (`cargo metadata`) と clippy は `--locked` で流すので、ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が
@@ -405,7 +419,8 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   `cargo update --manifest-path fuzz/Cargo.toml --workspace` で足りない依存だけを足して直します ([fuzz/README.md](../fuzz/README.md))。
 - 計装したターゲットのビルド (nightly と cargo-fuzz) まで含めた検査は `just fuzz-check` で、CI では週に 1 度の fuzz.yml が流します。
 - 見つかった入力を直したら、最小にした入力 (`cargo +nightly fuzz tmin`) を `broken_input.rs` の決まった入力に足し、stable の
-  `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`)。
+  `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`。`ffi` なら
+  `crates/ugoe-ffi/tests/fuzzing.rs`)。
 - 依存 (`libfuzzer-sys` と同梱の libFuzzer) のライセンスは `just licenses` の対象の外なので、`scripts/check-licenses.mjs --fuzz`
   (`just fuzz-check`) で検査します。
 

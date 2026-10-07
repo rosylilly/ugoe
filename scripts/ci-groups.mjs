@@ -47,9 +47,11 @@ export const GROUPS = {
     ],
     features: ["ugoe-format/png", "ugoe-model/schema", "ugoe-model/ts"],
   },
-  // バインディングと配布物の適合テスト。CI では wasm32 と C ABI の検査もこのジョブで行う
+  // バインディングと配布物の適合テスト。CI では wasm32 と C ABI の検査もこのジョブで行う。
+  // ugoe-ffi の fuzzing は、fuzz の入口を決まった入力で回す結合テスト (tests/fuzzing.rs) の required-features
   bindings: {
     crates: ["ugoe-ffi", "ugoe-wasm", "ugoe-conformance"],
+    features: ["ugoe-ffi/fuzzing"],
   },
   // 素材の取り込みとリギング・ヘッドレス描画
   assets: {

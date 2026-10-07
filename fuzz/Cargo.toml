@@ -1,6 +1,6 @@
 [package]
 name = "ugoe-fuzz"
-description = "ugoe の外から来る入力 (.ugoe・.ugoemod・画像・JSON) の fuzz のターゲット (cargo-fuzz。docs/testing.md#fuzz)"
+description = "ugoe の外から来る入力 (.ugoe・.ugoemod・画像・JSON・C ABI の呼び出し) の fuzz のターゲット (cargo-fuzz。docs/testing.md#fuzz)"
 version = "0.0.0"
 edition = "2024"
 publish = false
@@ -13,6 +13,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 # 参照レンダラ (wgpu) は使わない
 ugoe = { path = "../crates/ugoe", default-features = false, features = ["std"] }
+# C ABI の入口を回す安全な Rust の入口 (`ugoe_ffi::fuzzing`。ヘッダには出ない feature。T0497)
+ugoe-ffi = { path = "../crates/ugoe-ffi", features = ["fuzzing"] }
 ugoe-format = { path = "../crates/ugoe-format", features = ["png"] }
 
 # リポジトリのルートのワークスペースには入れない (独自の Cargo.lock を持つ)。
@@ -51,6 +53,13 @@ bench = false
 [[bin]]
 name = "json"
 path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi"
+path = "fuzz_targets/ffi.rs"
 test = false
 doc = false
 bench = false

@@ -25,9 +25,16 @@ std = ["serde_json/std", "ugoe/std", "ugoe-format/png"]
 # テスト用。std の無い形に、わざとパニックする `ugoe_test_panic` を足す (ヘッダには出さない)。`just ffi-check` が
 # パニックのメッセージがホストの関数に届いてから abort することを確かめるのに使う。配る静的ライブラリでは有効にしない
 panic-test = []
+# fuzz 用。入力を C ABI の呼び出しの列に組み立てて回す安全な入口 `ugoe_ffi::fuzzing` を足す (ヘッダには出さない)。
+# fuzz のターゲット (fuzz/fuzz_targets/ffi.rs) が使う。配るライブラリでは有効にしない (docs/testing.md#fuzz)
+fuzzing = []
 
 [lints]
 workspace = true
+
+[[test]]
+name = "fuzzing"
+required-features = ["fuzzing"]
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]

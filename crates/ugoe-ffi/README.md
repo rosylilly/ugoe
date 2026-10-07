@@ -16,6 +16,9 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
 - 公開する関数・型を変えたら `just ffi-header` でヘッダを作り直してコミットする
 - ホストから来る数 (NaN・無限大・負の `dt`) は、前提を `ugoe::Puppet` と `ugoe-runtime` に任せ、受け付けない値を `UGOE_ERROR_INVALID_ARGUMENT` で
   知らせるだけにする。入口ごとの表は [docs/portability.md#ホストから来る数](../../docs/portability.md#ホストから来る数)
+- C ABI の入口は fuzz でも確かめる (`just fuzz ffi`。T0497)。fuzz のターゲットが呼ぶ安全な Rust の入口 `ugoe_ffi::fuzzing`
+  (feature `fuzzing`。ヘッダには出さず、配るライブラリでは有効にしない) が、入力を C のホストと同じ呼び方の列に組み立てる。
+  公開する関数を足したら、`src/fuzzing.rs` の問い合わせか台本の操作にも足す ([docs/testing.md](../../docs/testing.md#fuzz))
 
 ## 使い方
 

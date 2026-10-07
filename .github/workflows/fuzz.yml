@@ -1,6 +1,6 @@
 name: Fuzz
 
-# 外から来る入力 (.ugoe・.ugoemod・画像・JSON) の fuzz (cargo-fuzz と libFuzzer。fuzz/README.md、docs/testing.md#fuzz、
+# 外から来る入力 (.ugoe・.ugoemod・画像・JSON・C ABI の呼び出し) の fuzz (cargo-fuzz と libFuzzer。fuzz/README.md、docs/testing.md#fuzz、
 # docs/adr/0032-fuzzing-with-cargo-fuzz.md)。nightly が要り時間もかかるので、PR ごとの CI (ci.yml) には入れず、
 # 週に 1 度と手動で流す (利用者の決定 2026-10-07)。育てた入力 (fuzz/corpus) は actions/cache で次の回へ持ち越す。
 on:
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [bundle, module, image, json]
+        target: [bundle, module, image, json, ffi]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

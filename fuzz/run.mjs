@@ -31,6 +31,7 @@ const TARGETS = {
   module: ["assets/compat"],
   image: ["fuzz/seeds/image"],
   json: ["spec/examples"],
+  ffi: ["assets/compat", "fuzz/seeds/ffi"],
 };
 
 // libFuzzer の既定の引数: 1 つの入力に 10 秒を超えたら止まらないループとみなす。確保の上限は libFuzzer の既定 (2048 MB)。

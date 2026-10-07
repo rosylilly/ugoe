@@ -3,5 +3,6 @@
 *.psd binary
 *.ugoe binary
 *.ico binary
+fuzz/seeds/** binary
 Cargo.lock -diff linguist-generated
 pnpm-lock.yaml -diff linguist-generated
