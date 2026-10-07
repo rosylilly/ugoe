@@ -115,7 +115,8 @@ cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --pro
   ([失敗の受け取り方](#失敗の受け取り方-t0489))、スレッドローカルもグローバルな状態も要らない。
 - **アロケータ** (`#[global_allocator]`。`src/nostd.rs`) は、ホストの C ライブラリの `malloc`・`calloc`・`realloc`・`free` と、
   `malloc` の整列 (64 ビットのターゲットで 16 バイト、ほかで 8 バイトとみなす) より大きな整列が要るときの `aligned_alloc` (C11) を呼ぶ。
-- **パニック** (`#[panic_handler]`) は、ホストの C ライブラリの `abort` を呼ぶ。巻き戻しが無いので `catch_unwind` できず、
+- **パニック** (`#[panic_handler]`) は、ホストが登録した関数にメッセージを渡してから ([下](#パニックのメッセージをホストに渡す-t0494))、
+  ホストの C ライブラリの `abort` を呼ぶ。巻き戻しが無いので `catch_unwind` できず、
   `UGOE_ERROR_PANIC` は返らない。確保の失敗も `abort` になる。ランタイム層と C ABI はパニックを起こさないように書いている
   ([docs/portability.md#パニックしない](../../docs/portability.md#パニックしない)) ので、パニックは ugoe の誤りであり、`abort` はその最後の守り。
 - どちらもシンボル (`malloc`・`calloc`・`realloc`・`aligned_alloc`・`free`・`abort`) をホストのリンクで解決するだけで、ゲーム機などの
@@ -142,6 +143,37 @@ cargo rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-features --pro
   見本のモデルで実行する。Windows (MSVC の C ライブラリは `aligned_alloc` を持たない) では飛ばす。
 - ゲーム機の実機と SDK での確認は、組み込み先 (SDK を持つ人) に任せる。`aarch64-unknown-none` の検査で見つからない問題 (TLS・アトミック・
   浮動小数点の設定など) があれば ADR 0031 を見直す。
+
+### パニックのメッセージをホストに渡す (T0494)
+
+ゲーム機や組み込み機器ではデバッガをつなげないことも多いので、`abort` の前にパニックの位置とメッセージをホストのログに渡せる
+([ADR 0031 の追記](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#追記-パニックのメッセージをホストに渡す-t0494))。
+
+```c
+static void on_panic(const char *message, size_t len, void *user) {
+    host_log_error("ugoe: %.*s", (int)len, message);   /* 例: "panicked at crates/ugoe/src/x.rs:10:5: ..." */
+}
+
+ugoe_set_panic_handler(on_panic, NULL);   /* 初期化のとき、ほかの ugoe の関数より先に 1 回 */
+```
+
+- **呼ばれ方:** パニックすると、登録した関数に `panicked at <file>:<line>:<column>: <message>` を UTF-8 で渡し、関数から戻った後で
+  `abort` を呼ぶ。関数の中でアプリを止めてもよいが、`longjmp` や例外で抜けてはならない (ugoe の中に戻れない)。登録が無ければ
+  今までどおり `abort` だけ。`handler` に NULL を渡すと登録を外す。
+- **バッファ:** メッセージは固定の大きさ (`UGOE_PANIC_MESSAGE_MAX` = 255 バイトと NUL) のスタックのバッファに `core::fmt::Write` で書き、
+  確保しない (確保の失敗のパニックでも呼べる)。入りきらない分は UTF-8 の文字の境界で切り捨てる (位置を先に書くので、位置は残る)。
+  ポインタは呼ばれている間だけ有効。
+- **もう一度パニックしない:** 書式化の失敗 (切り詰め) は無視する。登録した関数や書式化の中でもう一度パニックしたら、関数を呼ばずに `abort` する。
+  別々のスレッドが同時にパニックしたときも、後のほうは関数を呼ばずに `abort` する (どちらにしてもアプリは止まる)。
+- **登録はプロセスに 1 つ:** C ABI はグローバルな状態を持たないが ([失敗の受け取り方](#失敗の受け取り方-t0489))、パニックの処理はもともと
+  プロセスに 1 つなので、登録だけはグローバルに置く。ポインタの幅のアトミック (`AtomicPtr` の読み書き) に置くので、64 ビットの
+  アトミック操作の無いターゲット (`armv6k-nintendo-3ds`) でも使える。関数と `user` は 2 つのアトミックに分けて置くので、
+  ほかのスレッドが ugoe の関数を呼んでいない間 (ふつうは初期化のとき) に登録する。
+- **`std` がある形:** 関数はあるが、登録した関数は呼ばない。パニックは `catch_unwind` で `UGOE_ERROR_PANIC` になり、メッセージは
+  `UgoeError` に書くので、ホストはそちらで受け取る (std のパニックのフックにはつながない。ホストの Rust のフックと混ざらないように)。
+- **検査:** `just ffi-check` が、わざとパニックする関数 `ugoe_test_panic` を足すテスト用の feature `panic-test` (ヘッダには出ない。
+  配る静的ライブラリでは有効にしない) で std の無い形を作り、[`examples/c/nostd_main.c`](examples/c/nostd_main.c) の `--panic` で、
+  登録した関数にメッセージと位置が届いてから `SIGABRT` で止まることを確かめる。登録と書式化と切り詰めは単体テスト (`src/panic.rs`) で確かめる。
 
 ### core と alloc が配られないターゲット (tier 3。T0495)
 
@@ -237,9 +269,9 @@ for (uint32_t k = 0; k < frame.drawable_count; k++) {
 - そのため、構造体にフィールドを足したくなったら、既存の構造体は変えずに別の関数や構造体を足す
   (例: 描画可能要素がライティングを受けるかは `UgoeDrawableInfo` に足さず、`ugoe_puppet_drawable_lit` にした)。
 - 知らないエラーコードが返ることがある (足したもの)。0 以外はすべて失敗として扱い、`ugoe_error_message` を出せばよい。
-- 今の版は 2。T0489 (`UgoeError`) で 1 から上げ、T0490 (毎フレームの描画の状態をまとめて受け取る形。描画要素ごとの
-  `ugoe_puppet_drawable_state`・`ugoe_puppet_positions` などを消した) も同じ 2 に含める。どちらもまだリリースしていない間の変更で、
-  2 の版を持つライブラリを配ったことがないため (リリースの間に壊す変更が何度あっても、上げるのは 1 回でよい)。
+- 今の版は 3。T0489 (`UgoeError`) で 1 から 2 に上げ、T0490 (毎フレームの描画の状態をまとめて受け取る形。描画要素ごとの
+  `ugoe_puppet_drawable_state`・`ugoe_puppet_positions` などを消した) も同じ 2 に含めた。T0494 (`ugoe_set_panic_handler`) で 3 に上げた。
+  関数を足すだけだが、std の無い形のパニックの扱い (ホストの関数を呼んでから `abort`) が変わったことを版で確かめられるよう、利用者の判断で上げた。
 
 ## 着せ替え (T0409)
 
@@ -602,3 +634,4 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt,
 - T0457 (モデルの読み込みの失敗の種類)
 - T0489 (失敗の中身を呼び出し側の `UgoeError` で返す。スレッドローカルの状態を持たない。ADR 0031)
 - T0491 (std の無い環境向けの静的ライブラリ。ADR 0031)
+- T0494 (std の無い形のパニックのメッセージをホストに渡す `ugoe_set_panic_handler`)

@@ -23,7 +23,7 @@ namespace Ugoe
 #endif
 
         /// <summary>このバインディングが前提とする C ABI の版 (ヘッダの <c>UGOE_ABI_VERSION</c>)。</summary>
-        internal const uint AbiVersion = 2;
+        internal const uint AbiVersion = 3;
 
         internal const int TextureNone = 0;
         internal const int TexturePng = 1;
@@ -180,6 +180,10 @@ namespace Ugoe
         [DllImport(Library)] internal static extern UIntPtr ugoe_error_field_count(IntPtr error);
         [DllImport(Library)] internal static extern IntPtr ugoe_error_field_key_at(IntPtr error, UIntPtr index);
         [DllImport(Library)] internal static extern IntPtr ugoe_error_field_value_at(IntPtr error, UIntPtr index);
+
+        // std の無い形の静的ライブラリがパニックしたときに呼ぶ関数を登録する (crates/ugoe-ffi/README.md の「パニックのメッセージをホストに渡す」)。
+        // Unity が使う std がある形では呼ばれない (パニックは UgoeResult.Panic の例外になる) ので、C# の API には包まない。
+        [DllImport(Library)] internal static extern void ugoe_set_panic_handler(IntPtr handler, IntPtr user);
 
         // --- 作成と破棄 ---
 

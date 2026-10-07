@@ -19,9 +19,12 @@ png.workspace = true
 [features]
 default = ["std"]
 # std を使う。外すと `#![no_std]` (core + alloc) でビルドし、アロケータはホストの C ライブラリの `malloc`・`free` など、
-# パニックは `abort` になる。関数の集合とヘッダは変わらないが、PNG と BCn のテクスチャのデコードは std の側にある
+# パニックは (`ugoe_set_panic_handler` で登録されたホストの関数にメッセージを渡してから) `abort` になる。関数の集合とヘッダは変わらないが、PNG と BCn のテクスチャのデコードは std の側にある
 # (crates/ugoe-ffi/README.md#std-の無い環境。docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md)
 std = ["serde_json/std", "ugoe/std", "ugoe-format/png"]
+# テスト用。std の無い形に、わざとパニックする `ugoe_test_panic` を足す (ヘッダには出さない)。`just ffi-check` が
+# パニックのメッセージがホストの関数に届いてから abort することを確かめるのに使う。配る静的ライブラリでは有効にしない
+panic-test = []
 
 [lints]
 workspace = true

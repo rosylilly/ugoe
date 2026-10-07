@@ -24,7 +24,7 @@
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
-| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi))。`core`・`alloc` が配られない tier 3 のターゲット (ゲーム機の多く) は nightly の `-Zbuild-std=core,alloc` (と `-Zbuild-std-features=compiler-builtins-mem`) でビルドする。`aarch64-nintendo-switch-freestanding`・`armv6k-nintendo-3ds` などで通ることを手元で確かめたが、CI では検査しない。ポインタの幅のアトミックな比較と交換が要る ([手順](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)) |
+| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは (`ugoe_set_panic_handler` で登録されたホストの関数にメッセージを渡してから) `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi))。`core`・`alloc` が配られない tier 3 のターゲット (ゲーム機の多く) は nightly の `-Zbuild-std=core,alloc` (と `-Zbuild-std-features=compiler-builtins-mem`) でビルドする。`aarch64-nintendo-switch-freestanding`・`armv6k-nintendo-3ds` などで通ることを手元で確かめたが、CI では検査しない。ポインタの幅のアトミックな比較と交換が要る ([手順](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)) |
 
 ## `ugoe` クレートの feature
 
@@ -72,11 +72,12 @@ wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には
   - 読み出しの関数が返す文字列は、その `UgoeError` に次の失敗を書くか、破棄するまで有効です。
 - C ABI はパニックを起こさないように書きます ([パニックしない](#パニックしない))。そのうえで後ろの守りとして、`std` がある形ではパニックを
   `catch_unwind` で捕まえてエラーコード (`UGOE_ERROR_PANIC`) に変換し、メッセージを `UgoeError` に書きます。FFI の境界の外にパニックを漏らしません。
-  `std` の無い形では巻き戻せないので、パニックはホストの `abort` を呼びます。
+  `std` の無い形では巻き戻せないので、パニックはホストの `abort` を呼びます。その前に、ホストが `ugoe_set_panic_handler` で登録した関数が
+  あれば、パニックの位置とメッセージを渡します ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#パニックのメッセージをホストに渡す-t0494))。
 - `std` の有無で関数の集合とヘッダを変えません。`ugoe-ffi` は既定で有効な feature `std` を持ち、外すと `#![no_std]` (`core` + `alloc`) の
   静的ライブラリになります (ゲーム機・組み込み機器向け)。
   - アロケータ (`#[global_allocator]`) はホストの C ライブラリの `malloc`・`calloc`・`realloc`・`free` (と大きな整列の `aligned_alloc`) を、
-    パニックの処理 (`#[panic_handler]`) は `abort` を呼びます。シンボルはホストのリンクで解決し、SDK ごとの知識はクレートに持ちません。
+    パニックの処理 (`#[panic_handler]`) は (登録されたホストの関数にメッセージを渡してから) `abort` を呼びます。シンボルはホストのリンクで解決し、SDK ごとの知識はクレートに持ちません。
   - `panic = "abort"` はワークスペースの既定のプロファイルを変えず、専用のプロファイル `nostd` (ルートの `Cargo.toml`) で決めます。
   - `std` が要る機能 (PNG とブロック圧縮の KTX2 のデコード。`ugoe_image_decode`) は、関数は残したまま `"unsupported_texture"` で失敗します。
     ヘッダの関数の説明と [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境) に書きます。

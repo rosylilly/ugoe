@@ -239,6 +239,8 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
 同じスレッドのまま `UgoeException.Check` でそこから例外を作る (T0489。間に await を挟まないので、async の続きで別のスレッドに移っても
 混ざらない)。スレッドが終わると `ErrorHandle` のファイナライザが `ugoe_error_destroy` で破棄する。同時に別々のスレッドで失敗しても
 それぞれの例外が自分の中身を持つことは `tests/ResultTests.cs` が確かめる。
+`ugoe_set_panic_handler` (std の無い形の静的ライブラリがパニックしたときのメッセージの受け取り) は宣言だけで、C# の API には包まない。
+Unity が使う std がある形では呼ばれず、パニックは `UgoeResult.Panic` の例外になるため (T0494)。
 宣言の漏れは `scripts/check-ffi-bindings.mjs` (`just refs`) が検出する。
 
 ## 描画のしかた

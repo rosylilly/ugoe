@@ -1,12 +1,14 @@
 //! `std` の無い形 (feature `std` を外したビルド) のアロケータとパニックの処理 (ADR 0031、
 //! crates/ugoe-ffi/README.md#std-の無い環境)。
 //!
+//! パニックのメッセージは、ホストが登録した関数があればそれに渡す (panic.rs。T0494)。
 //! どちらもホストの C ライブラリの関数 (`malloc`・`calloc`・`realloc`・`aligned_alloc`・`free`・`abort`) を呼ぶだけで、
 //! シンボルはホストのリンクで解決する。ゲーム機などの SDK ごとの知識はこのクレートに持たない。
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::c_void;
 use core::panic::PanicInfo;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// ホストの C ライブラリの関数。
 mod c {
@@ -101,9 +103,27 @@ unsafe impl GlobalAlloc for HostAllocator {
 #[global_allocator]
 static ALLOCATOR: HostAllocator = HostAllocator;
 
-/// パニックしたらホストの `abort` を呼ぶ。std の無い環境では巻き戻せない (`catch_unwind` が無い) ので、
-/// C ABI の外へ戻らずにアプリを止める。確保の失敗 (`handle_alloc_error`) もここに来る。
+/// パニックしたら、ホストが登録した関数 (`ugoe_set_panic_handler`) にメッセージと位置を渡してから、ホストの `abort` を呼ぶ。
+/// std の無い環境では巻き戻せない (`catch_unwind` が無い) ので、C ABI の外へ戻らずにアプリを止める。
+/// 確保の失敗 (`handle_alloc_error`) もここに来る (メッセージの書式化は確保しない。panic.rs)。
 #[panic_handler]
-fn panic(_info: &PanicInfo<'_>) -> ! {
+fn panic(info: &PanicInfo<'_>) -> ! {
+    // ホストの関数や書式化の中でもう一度パニックしたら、もう呼ばずに止める。
+    // 別々のスレッドが同時にパニックしたときも、後のほうは呼ばずに止める (どちらにしてもアプリは止まる)。
+    static PANICKING: AtomicBool = AtomicBool::new(false);
+    if !PANICKING.swap(true, Ordering::AcqRel) {
+        crate::panic::report(info.location(), &info.message());
+    }
     c::abort()
+}
+
+/// わざとパニックする (feature `panic-test`。`just ffi-check` がパニックのメッセージがホストの関数に届くことを確かめる)。
+/// ヘッダには出さない (このモジュールは cbindgen が読まない)。
+#[cfg(feature = "panic-test")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ugoe_test_panic(value: u32) {
+    #[expect(clippy::panic, reason = "パニックの処理を確かめるため")]
+    {
+        panic!("test panic requested by the host ({value})");
+    }
 }

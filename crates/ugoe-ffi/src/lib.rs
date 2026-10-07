@@ -7,7 +7,7 @@
 //! - 失敗しうる関数は [`UgoeResult`] を返し、最後の引数 `error` に [`UgoeError`] を取る (NULL なら書かない)。
 //!   失敗の中身はそこから読む。C ABI はグローバルな状態もスレッドローカルな状態も持たない (ADR 0031)。
 //! - パニックを FFI 境界の外へ漏らさない (`std` がある形では `catch_unwind` して [`UGOE_ERROR_PANIC`] を返す。
-//!   `std` の無い形ではホストの `abort` を呼ぶ)。ランタイム層と同じく、外から来るどんな値でもパニックしないように書く
+//!   `std` の無い形では、[`ugoe_set_panic_handler`] で登録されたホストの関数にメッセージを渡してから、ホストの `abort` を呼ぶ)。ランタイム層と同じく、外から来るどんな値でもパニックしないように書く
 //!   (`docs/portability.md#パニックしない`)。
 //! - 毎フレームの描画の状態 (頂点位置・不透明度・描画順など) は 1 回の呼び出しでまとめて渡す。内部のバッファの
 //!   借用 ([`ugoe_puppet_frame`]。次の `ugoe_puppet_update` まで有効) と、ホストのバッファへのコピー
@@ -17,7 +17,7 @@
 //!
 //! - `std` (既定で有効): `std` を使う。外すと `#![no_std]` (`core` + `alloc`) でビルドし、ゲーム機や組み込み機器のように
 //!   Rust の `std` が無い環境に静的ライブラリとして組み込める。アロケータはホストの C ライブラリの `malloc`・`free` など、
-//!   パニックは `abort` になる。関数の集合とヘッダは変わらない (crates/ugoe-ffi/README.md#std-の無い環境。ADR 0031)。
+//!   パニックは (登録されたホストの関数にメッセージを渡してから) `abort` になる。関数の集合とヘッダは変わらない (crates/ugoe-ffi/README.md#std-の無い環境。ADR 0031)。
 
 #![cfg_attr(not(test), no_std)]
 #![allow(unsafe_code)]
@@ -52,6 +52,7 @@ mod limits;
 /// cbindgen:ignore
 #[cfg(all(not(feature = "std"), not(test)))]
 mod nostd;
+mod panic;
 mod part;
 mod puppet;
 mod tracking;
@@ -69,13 +70,14 @@ pub use hit::*;
 pub use image::*;
 pub use lighting::*;
 pub use limits::*;
+pub use panic::*;
 pub use part::*;
 pub use puppet::*;
 pub use tracking::*;
 pub use warning::*;
 
 /// C ABI のバージョン。互換性を壊す変更で上げる (ヘッダでは `UGOE_ABI_VERSION`)。
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 /// 読み込んだライブラリの C ABI のバージョン。ヘッダの `UGOE_ABI_VERSION` と一致するかを確かめる。
 #[unsafe(no_mangle)]

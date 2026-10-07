@@ -32,7 +32,7 @@ pub const UGOE_ERROR_INVALID_MODEL: UgoeResult = 6;
 /// 指定した ID が見つからなかった。
 pub const UGOE_ERROR_NOT_FOUND: UgoeResult = 7;
 /// ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
-/// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ)。
+/// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ。止まる前のメッセージは `ugoe_set_panic_handler` で受け取れる)。
 pub const UGOE_ERROR_PANIC: UgoeResult = 8;
 /// 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
 /// 補足の値は `ugoe_error_field` で得る (T0409)。

@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 // C ABI のバージョン。互換性を壊す変更で上げる (ヘッダでは `UGOE_ABI_VERSION`)。
-#define UGOE_ABI_VERSION 2
+#define UGOE_ABI_VERSION 3
 
 // 通常の合成。
 #define UGOE_BLEND_NORMAL 0
@@ -65,6 +65,9 @@
 
 // 参照レンダラが使う光源の数の上限 (`ugoe::lighting::MAX_LIGHTS`)。
 #define UGOE_MAX_LIGHTS 8
+
+// パニックのとき `UgoePanicHandler` に渡すメッセージの最大のバイト数 (NUL を除く)。超えた分は UTF-8 の文字の境界で切り詰める。
+#define UGOE_PANIC_MESSAGE_MAX 255
 
 // 待機モーション。ほかのモーションが再生中なら開始しない (`docs/spec/motion.md#モーションマネージャ`)。
 #define UGOE_PRIORITY_IDLE 0
@@ -322,6 +325,11 @@ typedef struct UgoeLightingUniform {
   struct UgoeLightUniform lights[UGOE_MAX_LIGHTS];
 } UgoeLightingUniform;
 
+// パニックのメッセージを受け取るホストの関数。`message` は UTF-8 の `len` バイト (NUL 終端もしている)。
+// `user` は `ugoe_set_panic_handler` に渡したもの。ポインタは呼ばれている間だけ有効。
+// 戻った後でライブラリはホストの `abort` を呼ぶ。関数の中でアプリを止めてもよいが、`longjmp` や例外で抜けてはならない。
+typedef void (*UgoePanicHandler)(const char *message, size_t len, void *user);
+
 // パーツ自身の不透明度の上書き (`docs/spec/motion.md#パーツの不透明度`)。
 //
 // 評価ではパーツ自身の不透明度 `o` (キーフォームの補間) を `lerp(o, value, weight)` にしてから子へ伝える。
@@ -402,7 +410,7 @@ typedef struct UgoeTrackingInput {
 #define UGOE_ERROR_NOT_FOUND 7
 
 // ugoe の内部でパニックが起きた。対象のオブジェクトの状態は不定なので、破棄して作り直す。
-// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ)。
+// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では返らない (パニックはホストの `abort` を呼ぶ。止まる前のメッセージは `ugoe_set_panic_handler` で受け取れる)。
 #define UGOE_ERROR_PANIC 8
 
 // 着せ替え (モジュールの付け外し) に失敗した。何も変えていない。種類は `ugoe_error_kind`、
@@ -1184,6 +1192,18 @@ UgoeResult ugoe_puppet_drawable_lit(const struct UgoePuppet *puppet,
 
 // 既定の読み込みの上限 (上限を指定しない関数が使う値)。
 struct UgoeReadLimits ugoe_read_limits_default(void);
+
+// パニックしたときに呼ぶ関数を登録する。`handler` が NULL なら登録を外す。登録はプロセスに 1 つで、後から登録したものが勝つ。
+//
+// `std` の無い形 (crates/ugoe-ffi/README.md#std-の無い環境) では、パニックすると `handler` にメッセージ
+// (`panicked at <file>:<line>:<column>: <message>`。最大 `UGOE_PANIC_MESSAGE_MAX` バイト) を渡し、戻った後でホストの `abort` を呼ぶ。
+// 書式化は固定の大きさのスタックのバッファで行い、確保しない (確保の失敗のパニックでも呼べる)。
+// `std` がある形では呼ばない (パニックは `UGOE_ERROR_PANIC` で返り、メッセージは `UgoeError` に書く)。
+//
+// ほかのスレッドが ugoe の関数を呼んでいない間 (ふつうは初期化のとき) に呼ぶ。パニックと同時に登録を変えると、
+// 新しい関数に古い `user` が渡ることがある。`handler` と `user` は登録を外すまで有効であること。
+void ugoe_set_panic_handler(UgoePanicHandler handler,
+                            void *user);
 
 // パーツ (`Model::parts`) の数。
 //

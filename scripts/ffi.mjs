@@ -129,6 +129,9 @@ function checkNostd(models) {
     "--crate-type",
     "staticlib",
     "--no-default-features",
+    // わざとパニックする `ugoe_test_panic` を足す (ヘッダには出ない。ほかは配る形と同じ)
+    "--features",
+    "panic-test",
     "--profile",
     "nostd",
   ]);
@@ -150,6 +153,27 @@ function checkNostd(models) {
     exe,
   ]);
   for (const model of models) run(exe, [model]);
+  checkNostdPanic(exe);
+}
+
+/**
+ * std の無い形でパニックしたら、`ugoe_set_panic_handler` で登録したホストの関数にメッセージと位置が届き、その後で
+ * ホストの `abort` で止まることを確かめる (crates/ugoe-ffi/README.md#パニックのメッセージをホストに渡す-t0494)。
+ */
+function checkNostdPanic(exe) {
+  const r = spawnSync(exe, ["--panic"], { cwd: root, encoding: "utf8" });
+  const expected =
+    /^nostd-sample: ugoe panicked: panicked at \S*src\/nostd\.rs:\d+:\d+: test panic requested by the host \(42\)$/m;
+  const problems = [];
+  if (r.signal !== "SIGABRT")
+    problems.push(`expected SIGABRT, got status ${r.status} signal ${r.signal}`);
+  if (!expected.test(r.stderr)) problems.push("the panic message did not reach the host handler");
+  if (/not NUL-terminated|returned/.test(r.stderr)) problems.push("unexpected output");
+  if (problems.length > 0) {
+    console.error(`error: ${exe} --panic: ${problems.join("; ")}\n--- stderr ---\n${r.stderr}`);
+    process.exit(1);
+  }
+  console.log("nostd panic handler ok");
 }
 
 const [command] = process.argv.slice(2);

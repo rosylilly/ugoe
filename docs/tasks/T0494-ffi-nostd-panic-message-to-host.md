@@ -1,7 +1,7 @@
 ---
 id: T0494
 title: "C ABI: std の無い形で、パニックのメッセージをホストに渡す口を作るかを決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M11
 crates: [ugoe-ffi, bindings/unity, docs]
 depends_on: [T0495]
@@ -36,11 +36,11 @@ A。リンク時の要求を増やさず (B は使わないホストにも定義
 
 ## 受け入れ条件
 
-- [ ] 利用者に案を示して方針を決め、決めたことと理由を crates/ugoe-ffi/README.md#std-の無い環境 と docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md の追記に書いた
-- [ ] A・B なら: 関数 (かシンボル) をヘッダ (cbindgen の生成物と `just refs` の宣言の検査)・Unity の宣言・README に足し、
+- [x] 利用者に案を示して方針を決め、決めたことと理由を crates/ugoe-ffi/README.md#std-の無い環境 と docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md の追記に書いた
+- [x] A・B なら: 関数 (かシンボル) をヘッダ (cbindgen の生成物と `just refs` の宣言の検査)・Unity の宣言・README に足し、
       `just ffi-check` の std の無い見本 (examples/c/nostd_main.c) で、わざと起こしたパニックのメッセージがホストの関数に届いてから
       abort することを確かめた (見本のテスト用の入口か、テストだけの feature で)
-- [ ] `just nostd-check`・`just ffi-check`・`just unity-check`・`just conformance` と `just ci` が通る
+- [x] `just nostd-check`・`just ffi-check`・`just unity-check`・`just conformance` と `just ci` が通る
 
 ## 参考
 
@@ -53,3 +53,21 @@ A。リンク時の要求を増やさず (B は使わないホストにも定義
 - M11 の後続 (docs/roadmap.md の M11)。M11 の完了の条件には含めない。
 - 同じ crates/ugoe-ffi/README.md#std-の無い環境 を書き足す T0495 (判断を待たずに進められる) の後にした。
 - 判断 (2026-10-07): 利用者が案 A (ホストが登録する関数 ugoe_set_panic_handler。ABI_VERSION を上げる) を選んだ。
+- やったこと (T0494):
+  - `src/panic.rs` に `ugoe_set_panic_handler`・`UgoePanicHandler`・`UGOE_PANIC_MESSAGE_MAX` (255) を足した。登録は `AtomicPtr` 2 つ
+    (関数と `user`) の読み書きだけ。std の無い形の `#[panic_handler]` (nostd.rs) は `panicked at <file>:<line>:<column>: <message>` を
+    スタックの 256 バイトのバッファに書き (文字の境界で切り詰め、書式化の失敗は無視)、登録された関数を呼んでから `abort` する。
+    二度目のパニック (関数や書式化の中・別のスレッド) は `AtomicBool` で関数を呼ばずに `abort`。std がある形では呼ばない
+    (`UGOE_ERROR_PANIC` と `UgoeError` で足りる。std のパニックのフックにはつながない)。`ABI_VERSION` を 3 に上げた。
+  - 確かめ方: テスト用の feature `panic-test` (nostd.rs にヘッダに出ない `ugoe_test_panic` を足す) で `just ffi-check` が std の無い形を
+    作り、`examples/c/nostd_main.c --panic` の標準エラーにメッセージと位置が出て `SIGABRT` で止まることを `scripts/ffi.mjs` で確かめる。
+    登録・書式化・切り詰め・std の形で呼ばないことは単体テスト (std の有無の両方で流れる)。
+  - 64 ビットのアトミックの無いターゲット: nightly の `-Zbuild-std` で `armv6k-nintendo-3ds` と `aarch64-nintendo-switch-freestanding` の
+    静的ライブラリを作り、未解決のシンボルが今までの 6 つ (`abort` など) のままで、`__atomic_*` などが増えないことを確かめた (手元のみ)。
+  - ヘッダ (cbindgen)・Unity の `Native.cs` の宣言 (C# の API には包まない。std の形では呼ばれないため)・`AbiVersion` = 3・README・
+    ADR 0031 の追記・docs/portability.md を直した。
+  - crates の外: `scripts/ffi.mjs` (ffi-check で feature `panic-test` を付けて作り、`--panic` を確かめる) を直した。
+- 通した検査: `just refs`・`just ffi-check`・`just nostd-check`・`just conformance` (全部)・`just unity-check`・`just cross-check`・`just ci`。
+- やらなかったこと: 実機・ゲーム機の SDK での確認。macOS の `just ffi-check` (`--panic` の `SIGABRT` の確かめ) は CI の rust (macos) に任せた (手元は Linux)。
+- メモ: README#abi-の版 の規則 (足すだけなら上げない) に対し、版を上げたのは利用者の判断 (README に理由を書いた)。
+- 起票の候補: なし。
