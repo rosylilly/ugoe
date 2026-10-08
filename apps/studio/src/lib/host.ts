@@ -226,10 +226,13 @@ export interface StudioHost {
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
   // 入力 (T0803)
-  /** 刻みごとに `onPulse` を呼ぶ (入力の処理。ウィンドウが隠れても止まらない)。 */
-  subscribePulse(onPulse: () => void): Promise<void>;
-  /** トラッキングの入力 (`null` で外す)。 */
-  setTracking(frame: TrackingFrame | null): Promise<void>;
+  /** 刻みごとに `onPulse` を促しの番号で呼ぶ (入力の処理。ウィンドウが隠れても止まらない)。 */
+  subscribePulse(onPulse: (seq: number) => void): Promise<void>;
+  /**
+   * トラッキングの入力 (`null` で外す)。`pulse` は検出を始めた促しの番号 (バックエンドが促しの時刻を寄せるのに使う。
+   * 促しで回していないときは `null`。T0854)。
+   */
+  setTracking(frame: TrackingFrame | null, pulse: number | null): Promise<void>;
   setTrackingPaused(paused: boolean): Promise<void>;
   setAutoEyeBlink(enabled: boolean): Promise<void>;
   /** マイクの音量 (0〜1。`null` で口パクを止める)。 */
@@ -350,7 +353,7 @@ async function tauriHost(): Promise<StudioHost> {
       return locale();
     },
     subscribePulse: (onPulse) => subscribe("subscribe_pulse", onPulse),
-    setTracking: (frame) => invoke("set_tracking", { frame }),
+    setTracking: (frame, pulse) => invoke("set_tracking", { frame, pulse }),
     setTrackingPaused: (paused) => invoke("set_tracking_paused", { paused }),
     setAutoEyeBlink: (enabled) => invoke("set_auto_eye_blink", { enabled }),
     setLipSyncLevel: (level) => invoke("set_lip_sync_level", { level }),

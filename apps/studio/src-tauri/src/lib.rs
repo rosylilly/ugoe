@@ -33,6 +33,7 @@ pub mod pacing;
 pub mod profile;
 pub mod stage;
 pub mod stream;
+mod ticker;
 pub mod virtual_camera;
 
 use std::collections::HashMap;
@@ -55,7 +56,7 @@ use crate::conductor::{Conductor, PoseGroupInfo};
 use crate::error::CommandError;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
-use crate::pacing::{Measured, Pacer, RateMeter, TickRate};
+use crate::pacing::{Measured, TickRate};
 use crate::profile::{Profile, SceneSettings, VirtualCameraSettings};
 use crate::stage::{Finish, Loading, Pending, ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
@@ -346,6 +347,9 @@ struct Studio {
     tick_rate: AtomicU32,
     /// 実際の刻みの速さと揺れ (刻みのスレッドが書く)。
     measured: Mutex<Option<Measured>>,
+    /// トラッキングの値が最後に届いた時刻と、その値を検出した促しの番号 (`set_tracking` が書き、刻みのスレッドが読んで
+    /// 促しの時刻を決める。T0854)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
+    tracking_arrived: Mutex<Option<(Instant, u32)>>,
     /// 出力ごとの描画の負荷 (ラベル → 報告)。
     renders: Mutex<HashMap<String, Reported>>,
     /// 受け手が今のシーンで読めなかったこと (ラベル → 報告。T0825)。ほかのロックを握ったまま取ってよい (最後に取る)。
@@ -894,42 +898,31 @@ impl Studio {
     }
 }
 
-/// 刻みのスレッド。設定した速さで `dt` を測って指揮役を進める (WebView の抑制を受けない)。
-/// 遅れたときは取り戻そうとせず、次の刻みを今から数え直す (`dt` は実測なので時間は失わない。`pacing.rs`)。
+/// 刻みのスレッド (`ticker.rs`)。
 fn run_ticks(studio: Arc<Studio>) {
-    let mut rate = studio.tick_rate();
-    let mut last = Instant::now();
-    let mut pacer = Pacer::new(rate, last);
-    let mut meter = RateMeter::default();
-    let mut count = 0u32;
-    loop {
-        let now = Instant::now();
-        let deadline = pacer.deadline();
-        if deadline > now {
-            std::thread::sleep(deadline - now);
-        }
-        let now = Instant::now();
-        pacer.tick(now);
-        meter.record(now);
-        if meter.measured() != *lock(&studio.measured) {
-            *lock(&studio.measured) = meter.measured();
-        }
-        let dt = now.duration_since(last).as_secs_f32();
-        last = now;
-        count = (count + 1) % rate.status_every();
-        studio.tick(dt, count == 0);
-        // 操作ウィンドウの入力の処理を促す (隠れていても Channel のメッセージは届く。docs/studio.md#隠れても止まらない)。
-        studio
-            .pulses
-            .send_all(&InvokeResponseBody::Json("0".to_owned()));
-        let wanted = studio.tick_rate();
-        if wanted != rate {
-            rate = wanted;
-            pacer.set_rate(rate, Instant::now());
-            meter.reset();
-            *lock(&studio.measured) = None;
-            count = 0;
-        }
+    ticker::run(&*studio);
+}
+
+impl ticker::TickHost for Studio {
+    fn tick_rate(&self) -> TickRate {
+        Studio::tick_rate(self)
+    }
+
+    fn tick(&self, dt: f32, status: bool) {
+        Studio::tick(self, dt, status);
+    }
+
+    fn pulse(&self, seq: u32) {
+        self.pulses
+            .send_all(&InvokeResponseBody::Json(seq.to_string()));
+    }
+
+    fn take_arrival(&self) -> Option<(Instant, u32)> {
+        lock(&self.tracking_arrived).take()
+    }
+
+    fn set_measured(&self, measured: Option<Measured>) {
+        *lock(&self.measured) = measured;
     }
 }
 
@@ -1196,10 +1189,21 @@ fn subscribe_pulse(
 }
 
 /// トラッキングの入力 (キャリブレーションと平滑化の後)。`null` で外す (トラッキングが書き込んでいたパラメータは既定値に戻る)。
+/// `pulse` は検出を始めた促し (`subscribe_pulse`) の番号。添えてあれば、刻みのスレッドが促しの時刻を値が刻みの少し前に
+/// 届くように寄せる (T0854。`pacing.rs` の `Pacer`)。
 #[tauri::command]
-fn set_tracking(studio: tauri::State<'_, Arc<Studio>>, frame: Option<TrackingFrame>) {
+fn set_tracking(
+    studio: tauri::State<'_, Arc<Studio>>,
+    frame: Option<TrackingFrame>,
+    pulse: Option<u32>,
+) {
     let input = frame.as_ref().map(TrackingFrame::to_input);
+    let tracking = input.is_some();
     lock(&studio.conductor).perform(|animation, puppet| animation.set_tracking(puppet, input));
+    if tracking && let Some(pulse) = pulse {
+        // 指揮役に渡し終えた時刻 (次の刻みで使われる)。
+        *lock(&studio.tracking_arrived) = Some((Instant::now(), pulse));
+    }
 }
 
 /// トラッキングを一時停止する・再開する。

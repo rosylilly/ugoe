@@ -157,12 +157,14 @@ const approvedClient = $derived(
 );
 /** カメラとマイクの処理を回す刻み (バックエンドの刻みのスレッドから届く)。 */
 const pulse = new Pulse();
-const sendTracking = latestOnly((frame: TrackingFrame | null) =>
-  host === null ? Promise.resolve() : host.setTracking(frame),
+// 値には検出を始めた促しの番号を添える (検出は促しの処理の中で同期して終わる。T0854)。
+const sendTracking = latestOnly(
+  ({ frame, seq }: { frame: TrackingFrame | null; seq: number | null }) =>
+    host === null ? Promise.resolve() : host.setTracking(frame, seq),
 );
 const tracker = new FaceTracker(
   {
-    setTracking: sendTracking,
+    setTracking: (frame) => sendTracking({ frame, seq: pulse.current }),
     setAutoEyeBlink: (enabled) => void run((h) => h.setAutoEyeBlink(enabled)),
   },
   { schedule: pulse.schedule },
@@ -696,7 +698,7 @@ onMount(() => {
     await run((h) => h.subscribeStatus(onMonitor));
     // 入力の処理はバックエンドの刻みで回す (受け取れなければ requestAnimationFrame のまま)。
     try {
-      await host.subscribePulse(() => pulse.beat(performance.now()));
+      await host.subscribePulse((seq) => pulse.beat(performance.now(), seq));
       pulse.connect();
     } catch {
       // 刻みを受け取れない口 (古いブリッジなど)。

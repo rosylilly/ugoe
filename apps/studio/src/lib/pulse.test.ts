@@ -79,4 +79,18 @@ describe("Pulse", () => {
     expect(calls).toEqual([0, 16, 32]);
     expect(error).toHaveBeenCalledTimes(3);
   });
+
+  it("tells the steps which pulse they are handling", () => {
+    const clock = fakeClock();
+    const pulse = new Pulse(clock.read);
+    pulse.connect();
+    const seen: (number | null)[] = [];
+    pulse.schedule(() => seen.push(pulse.current));
+    pulse.beat(0, 7);
+    pulse.beat(16, "0");
+    pulse.beat(32);
+    expect(seen).toEqual([7, null, null]);
+    // 処理の外では番号を持たない。
+    expect(pulse.current).toBeNull();
+  });
 });
