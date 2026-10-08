@@ -1,11 +1,11 @@
 ---
 id: T1406
 title: "Godot: マスクの解像度を Unity と同じく 2^(1/4) 刻みに丸め、ゆっくりしたズームでもマスクを描き直す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [bindings/godot, docs]
 depends_on: [T1405]
-assignee:
+assignee: claude-worker-T1406
 ---
 
 # T1406: Godot: マスクの解像度を 2^(1/4) 刻みに丸め、ゆっくりしたズームでもマスクを描き直す
