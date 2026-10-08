@@ -1,7 +1,7 @@
 ---
 id: T0191
 title: "性能: Puppet の評価が遅くなったら気づける検査を足す (判断が要る)"
-status: in-progress
+status: done
 milestone: M7
 crates: [ugoe, scripts, justfile, .github/workflows, docs]
 depends_on: [T0190]
@@ -40,12 +40,12 @@ A。依存を増やさずに「目標を割った」「大きく遅くなった�
 
 ## 受け入れ条件
 
-- [ ] 利用者に案を示して方針を決め、決めたことと理由を docs/testing.md の「性能の計測」に書いた (新しい依存や道具を入れるなら、
+- [x] 利用者に案を示して方針を決め、決めたことと理由を docs/testing.md の「性能の計測」に書いた (新しい依存や道具を入れるなら、
       その理由も。ランタイム層に重い依存を入れるなら ADR)
-- [ ] 決めた方針の検査を足した。上限を超える (か前より遅い) ときに失敗することを、一時的に遅くした変更 (コミットしない) で確かめ、
+- [x] 決めた方針の検査を足した。上限を超える (か前より遅い) ときに失敗することを、一時的に遅くした変更 (コミットしない) で確かめ、
       メモに書いた
-- [ ] CI で流すなら、ジョブを足し、push した後の CI で確かめることをメモに書いた。`just` のレシピを足したら AGENTS.md のコマンドの表にも足した
-- [ ] `just ci` が通る
+- [x] CI で流すなら、ジョブを足し、push した後の CI で確かめることをメモに書いた。`just` のレシピを足したら AGENTS.md のコマンドの表にも足した
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -56,3 +56,25 @@ A。依存を増やさずに「目標を割った」「大きく遅くなった�
 
 - T0075 で起票した (元: docs/roadmap.md の M7 の「性能: 1 体を 1ms 以内」の、遅くなったら気づける検査)。
 - 判断 (2026-10-08): 利用者が案 A (just perf と週 1 回の定期の CI のジョブで時間の上限を確かめる。依存を足さない) を選んだ。
+- やったこと:
+  - `crates/ugoe/examples/puppet_timing.rs` に `--check` を足した。`update` と `follow` の中央値を `LIMITS` (生成のモデル 300µs、
+    `avatar.ugoe` 100µs) と比べ、超えたものは 2 回まで測り直して最も速い中央値で判定し、超えたままなら `OVER` と出して終了コード 1。
+  - `just perf` (release で `--check`)、`.github/workflows/perf.yml` (毎週月曜 05:11 UTC と手動。`lscpu` を出してから `just perf`。
+    rust-cache は release 用に `shared-key: perf`)。AGENTS.md のコマンドの表と docs/testing.md (検査の表・CI のジョブ・
+    「性能の計測」の「遅くなったら気づく検査」に方針・上限・決め方・揺れへの備え) を書いた。
+  - 上限の決め方: 手元 (Ryzen 9 7900) の 55µs / 18µs に、ランナーの 1 コアの遅さ (2 倍ほど) と揺れ (2〜3 割) を見込んだ値
+    (150µs 弱 / 50µs 弱) のさらに 2 倍ほど。生成のモデルの 300µs は、中程度の PC がランナーの 3 倍遅くても 1ms に収まる値でもある。
+  - 失敗の確かめ (コミットしていない): `Puppet::update` の頭で `self.instance.update()` を 6 回余分に呼ぶ変更で `just perf` を流し、
+    生成のモデルの `update` (373.0µs / 上限 300) と `avatar.ugoe` の `update` (126.1µs / 上限 100) が `OVER`、`follow` は ok、
+    `2 measurement(s) over the limit` で終了コード 1 になった。戻した後は ok で終了コード 0 (手元はほかのビルドで load average 16 ほど、
+    生成のモデルの `update` の中央値 81.9µs)。
+  - `actionlint` (1.7.12、shellcheck は外して) で perf.yml にエラーが無いことを確かめた。
+- push した後の CI で確かめること (push していないので未確認):
+  - perf.yml を手動 (`workflow_dispatch`) で 1 度流し、成功すること。`lscpu` の CPU と、ランナーで測った値 (生成のモデル・`avatar.ugoe` の
+    `update`・`follow` の中央値) を docs/testing.md の「遅くなったら気づく検査」に書き、上限が緩すぎ (値の 5 倍以上など) ・
+    きつすぎ (値の 1.5 倍未満など) なら見直す。
+  - 何度か流して、揺れで落ちないこと。release のビルドの時間と rust-cache が効くこと (timeout-minutes: 30 に収まること)。
+- やらなかったこと: 前の値との比較 (案 B) と命令の数 (案 C)。wasm (ブラウザ) での時間の検査。
+- 起票の候補:
+  - perf.yml を何度か流した後の、ランナーの値の記録と上限の見直し。
+  - PR ごとに細かい後退を止めたくなったら、命令の数を数える検査 (案 C、iai-callgrind と valgrind)。

@@ -225,6 +225,12 @@ nostd-check *names:
 nostd-build-std *targets:
     @node scripts/nostd-check.mjs build-std {{targets}}
 
+# 性能の検査: `Puppet` の 1 フレームの評価 (crates/ugoe/examples/puppet_timing.rs) を測り、中央値が上限を超えたら失敗する
+# (T0191、docs/testing.md#遅くなったら気づく検査)。時間は機械と負荷で揺れるので `just ci` には含めない (CI では週に 1 度の perf.yml)。
+# ほかのビルドと重ならないときに流す
+perf:
+    cargo run --release -p ugoe --example puppet_timing -- --check
+
 # 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
 # (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)
 sdk-no-render-check:

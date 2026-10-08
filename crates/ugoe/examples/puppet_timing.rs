@@ -17,6 +17,9 @@
 //!
 //! 表示のフレームレートを 60fps とする。ほかの処理の揺れを除くため、`BATCH` フレームずつの平均を取り、
 //! そのうち最も速いものと中央値を示す (`physics_timing` と同じ測り方)。
+//!
+//! `--check` を付けると、`update` と `follow` の中央値を上限 ([`LIMITS`]) と比べ、超えたものがあれば終了コード 1 で終わる
+//! (T0191。`just perf` と週に 1 度の CI の `perf.yml` が流す。上限の決め方は docs/testing.md#遅くなったら気づく検査)。
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -44,6 +47,21 @@ use ugoe::{LipSyncInput, PartOpacityInput, Puppet, Toggles};
 const FRAMES: usize = 6_000;
 const BATCH: usize = 200;
 const DT: f32 = 1.0 / 60.0;
+
+/// `--check` の上限: (モデル, 計測, 1 フレームの中央値の上限 [µs])。決め方は docs/testing.md#遅くなったら気づく検査。
+///
+/// 手元 (Ryzen 9 7900) の値 (生成のモデル 55µs ほど、`avatar.ugoe` 18µs ほど) に、CI のランナーの遅さと揺れを見込み
+/// (2 倍 × 1.3 倍ほど)、さらに 2 倍ほどの余裕を持たせた。生成のモデルの上限は、中程度の PC がランナーの 3 倍遅くても
+/// 目標の 1ms に収まる値でもある。
+const LIMITS: [(&str, &str, u64); 4] = [
+    ("generated", "update", 300),
+    ("generated", "follow", 300),
+    ("avatar.ugoe", "update", 100),
+    ("avatar.ugoe", "follow", 100),
+];
+
+/// `--check` で上限を超えたときに測り直す回数。ほかの処理と重なった一時の揺れで落ちないように、最も速い中央値で判定する。
+const RETRIES: usize = 2;
 
 fn main() {
     let generated = medium_model();
@@ -85,11 +103,15 @@ fn main() {
     }
     println!();
     println!("per frame (us), batches of {BATCH} frames out of {FRAMES}: best / median");
+    // `--check` で上限と比べる中央値: (モデル, 計測, 中央値)
+    let mut medians = Vec::new();
     for subject in [&generated, &avatar] {
         let update = measure_update(subject, Toggles::default());
         report(subject.name, "update", update);
+        medians.push((subject.name, "update", update.1));
         let follow = measure_follow(subject);
         report(subject.name, "follow", follow);
+        medians.push((subject.name, "follow", follow.1));
         let no_physics = measure_update(
             subject,
             Toggles {
@@ -100,6 +122,55 @@ fn main() {
         report(subject.name, "update without physics", no_physics);
         report(subject.name, "evaluation only", measure_evaluation(subject));
     }
+
+    if std::env::args().skip(1).any(|arg| arg == "--check") {
+        let over = check(&[&generated, &avatar], &medians);
+        if over > 0 {
+            eprintln!("{over} measurement(s) over the limit (docs/testing.md)");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// 測った中央値を [`LIMITS`] と比べ、上限を超えた計測の数を返す。超えたものは [`RETRIES`] 回まで測り直す。
+fn check(subjects: &[&Subject], medians: &[(&str, &str, Duration)]) -> usize {
+    println!();
+    println!("check (us): median / limit");
+    let mut over = 0;
+    for (model, name, limit) in LIMITS {
+        let subject = subjects
+            .iter()
+            .find(|s| s.name == model)
+            .expect("subject in LIMITS");
+        let measure = || match name {
+            "update" => measure_update(subject, Toggles::default()).1,
+            "follow" => measure_follow(subject).1,
+            _ => unreachable!("unknown measurement in LIMITS: {name}"),
+        };
+        let limit = Duration::from_micros(limit);
+        let mut median = medians
+            .iter()
+            .find(|&&(m, n, _)| m == model && n == name)
+            .map(|&(_, _, median)| median)
+            .expect("measured in main");
+        for _ in 0..RETRIES {
+            if median <= limit {
+                break;
+            }
+            median = median.min(measure());
+        }
+        let ok = median <= limit;
+        println!(
+            "  {model:12} {name:24} {:>9.1} / {:>9.1}  {}",
+            median.as_secs_f64() * 1e6,
+            limit.as_secs_f64() * 1e6,
+            if ok { "ok" } else { "OVER" },
+        );
+        if !ok {
+            over += 1;
+        }
+    }
+    over
 }
 
 /// 生成のモデルの物理のリグが形を動かしていること (計測が空回りしていないこと) を確かめる。

@@ -23,9 +23,10 @@
 | エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
 | fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は週に 1 度の `fuzz.yml`。[下](#fuzz)) |
 | tier 3 のターゲットの build-std | `core`・`alloc` が配られない tier 3 のターゲット (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い `armv6k-nintendo-3ds`) で、nightly の `-Zbuild-std` で `ugoe-ffi` の `std` の無い静的ライブラリを作り、未解決のシンボルが決めた一覧と同じかを確かめる | `just nostd-build-std [ターゲット...]` (nightly と rust-src と llvm-tools が要る。`just ci` に入れず、CI は週に 1 度の `nostd-build-std.yml`。[下](#tier-3-のターゲットの-build-std)) |
+| 性能の検査 | `crates/ugoe/examples/puppet_timing.rs` を `--check` で流し、`Puppet` の 1 フレームの評価の中央値を上限と比べる | `just perf` (時間は機械と負荷で揺れるので `just ci` に入れず、CI は週に 1 度の `perf.yml`。[下](#遅くなったら気づく検査)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行。`std` の無い形の静的ライブラリをホストの C ライブラリとリンクした見本 (`examples/c/nostd.c`) の実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
-`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz・tier 3 のターゲットの build-std 以外) すべて実行します。
+`just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz・tier 3 のターゲットの build-std・性能の検査以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
 配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
 PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
@@ -86,6 +87,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 - 依存クレートの成果物は `Swatinem/rust-cache` で持ち越します。方針は下の「CI のキャッシュ」。
 - nightly が要る検査は PR ごとの CI に入れず、PR を止めない別のワークフローで週に 1 度 (月曜) と手動 (`workflow_dispatch`) で流します:
   `fuzz.yml` ([fuzz](#fuzz)) と `nostd-build-std.yml` ([tier 3 のターゲットの build-std](#tier-3-のターゲットの-build-std))。
+  時間で判定する性能の検査も、ランナーの揺れで関係の無い PR を落とさないように同じ扱いにします: `perf.yml` ([遅くなったら気づく検査](#遅くなったら気づく検査))。
 
 各グループの target の大きさの目安 (T0002 で手元で測った値。`CARGO_PROFILE_DEV_DEBUG=0` で clippy とテストのビルドの後):
 
@@ -503,6 +505,32 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 どちらも 1ms の目標を大きく下回ります (生成のモデルで目標の約 5%。中程度の PC で数倍遅くても収まる)。時間の大半は評価
 (キーフォームの補間・デフォーマの変形・頂点) で、生成のモデルでは物理 (動的なリグの 2 段階の評価を含む) が約 8µs、
 モーション・効果・ポーズは 1µs ほどです。wasm (ブラウザ) と、ほかの CPU では測っていません。
+
+### 遅くなったら気づく検査
+
+変更で評価が遅くなったときに気づけるよう、`puppet_timing` に上限の判定 (`--check`) を持たせ、`just perf` で流します (T0191)。
+`update` と `follow` の中央値が上限を超えたら、超えたものを `OVER` と示して終了コード 1 で終わります。
+
+- **方針 (利用者の決定 2026-10-08):** 時間の上限を `just perf` と週に 1 度 (月曜) と手動の CI のジョブ (`.github/workflows/perf.yml`) で確かめます。
+  新しい依存や道具は入れません。共有の CI のランナーでは時間が 2〜3 割揺れるので、PR ごとの CI (`just ci`) で時間を比べると関係の無い
+  PR が落ちます。前の値と比べるベンチマーク (`criterion` など) は前の値が別の機械のものになって誤報が多く、命令の数を数える方法
+  (`iai-callgrind` と valgrind) は依存と道具が増えるため、今は入れません。PR ごとに細かい後退を止めたくなったら、そのとき命令の数を足します。
+- **上限 (`puppet_timing.rs` の `LIMITS`、1 フレームの中央値):**
+
+  | モデル | `update` | `follow` | 手元の値 (上の表) |
+  | --- | --- | --- | --- |
+  | 生成のモデル | 300µs | 300µs | 55µs ほど |
+  | `avatar.ugoe` | 100µs | 100µs | 18µs ほど |
+
+- **決め方:** GitHub の `ubuntu-latest` のランナー (共有の仮想機械) は、手元の機械 (上の表) より 1 コアの速さで 2 倍ほど遅く、
+  さらに 2〜3 割揺れると見込み (生成のモデルで 150µs 弱、`avatar.ugoe` で 50µs 弱)、その 2 倍ほどを上限にしました。
+  生成のモデルの上限 300µs は、中程度の PC がランナーの 3 倍遅くても目標の 1ms に収まる値でもあります。揺れで落ちないことを優先したので、
+  ランナーでは 2 倍ほどの後退と、目標を割りそうなことに気づけます。1〜2 割の細かい後退は揺れに埋もれて分かりません。
+- **揺れへの備え:** 中央値は 200 フレームずつの平均 30 個の中央値で、一時の重なりにはもともと強くしてあります。それでも上限を超えたものは
+  2 回まで測り直し、最も速い中央値で判定します (`RETRIES`)。手元で流すときは、ほかのビルドと重ならないときにします
+  (ほかのビルドが並行して load average 16 ほどの手元の機械でも、生成のモデルの `update` は 80µs ほどで上限を下回りました)。
+- **CI:** `perf.yml` は CPU (`lscpu`) を出してから `just perf` を流します。落ちたら、まず CPU と測った値を見て、ランナーが遅いのかコードが遅いのかを
+  見分けます。ランナーで測った値が分かったら、この節に書き、上限が緩すぎ・きつすぎなら見直します。
 
 ## 描画テスト
 
