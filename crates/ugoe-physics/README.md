@@ -7,7 +7,8 @@
 - `PhysicsSystem`: パラメータの入出力、固定ステップ、出力の補間。
 - `chain::Chain`: 振り子チェーン 1 本の積分。パラメータを知らないので、動的物理からも使う。
 - `collider::WorldCollider`・`collider::constrain_segment`: 衝突体 (円・カプセル)。区間の長さを保って親のまわりに回し、
-  衝突体の手前で止める (すり抜けない)。`PhysicsSystem::rest_pose_collisions` で静止姿勢の当たりを調べる。
+  衝突体の手前で止める (すり抜けない)。親と衝突体の距離は掃引の始めに 1 度だけ求め、作業用のバッファ
+  (`collider::SweepBuffer`) は呼び出し側が持って使い回す。`PhysicsSystem::rest_pose_collisions` で静止姿勢の当たりを調べる。
 - 動的物理 (`PhysicsSystem::update_instance`): モデルの 1 段目の評価から根元・衝突体・重力の基準を求め、
   回転デフォーマの角度・原点、ワープの制御点、メッシュの頂点に出力する (2 段階の評価)。
 

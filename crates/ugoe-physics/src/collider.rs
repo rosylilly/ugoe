@@ -1,5 +1,6 @@
 //! 衝突体 (円・カプセル) と粒子の区間の衝突。仕様: `docs/spec/physics.md#衝突体`。
 
+use alloc::vec::Vec;
 use ugoe_core::Vec2;
 use ugoe_core::math;
 use ugoe_model::physics::ColliderShape;
@@ -59,19 +60,23 @@ impl WorldCollider {
     /// `q` が半径を `margin` だけ広げた衝突体の内側にあるか、区間 (線分) が衝突体そのもの
     /// (`margin` なし) を横切れば当たる。`parent` が衝突体そのものの内側にあれば、区間の判定はしない。
     pub fn blocks(&self, parent: Vec2, q: Vec2, margin: f32) -> bool {
+        self.blocks_from(self.distance_to(parent), parent, q, margin)
+    }
+
+    /// [`WorldCollider::blocks`] を、求めておいた `parent` から芯までの距離 `parent_distance`
+    /// ([`WorldCollider::distance_to`]) で判定する。掃引の間は親が変わらないので、距離を判定のたびに求め直さない。
+    fn blocks_from(&self, parent_distance: f32, parent: Vec2, q: Vec2, margin: f32) -> bool {
         let (a, b, radius) = self.core();
         if point_segment_distance(q, a, b) < radius + margin {
             return true;
         }
-        point_segment_distance(parent, a, b) >= radius
-            && segment_segment_distance(parent, q, a, b) < radius
+        parent_distance >= radius && segment_segment_distance(parent, q, a, b) < radius
     }
 
-    /// 親 `parent` から長さ `length` の区間が、どの向きでもこの衝突体に当たらないか
-    /// (衝突体が区間の届く範囲の外にあるか)。
-    fn out_of_reach(&self, parent: Vec2, length: f32, margin: f32) -> bool {
-        let (a, b, radius) = self.core();
-        point_segment_distance(parent, a, b) >= length + radius + margin
+    /// 点 `p` から芯 (円の中心・カプセルの線分) までの距離。
+    fn distance_to(&self, p: Vec2) -> f32 {
+        let (a, b, _) = self.core();
+        point_segment_distance(p, a, b)
     }
 
     /// 半径 (キャンバスのピクセル)。
@@ -124,6 +129,24 @@ const SWEEP_MAX_SAMPLES: u32 = 65_536;
 /// 当たる向きと当たらない向きの境目を二分法で求める回数。
 const SWEEP_BISECTIONS: u32 = 16;
 
+/// [`constrain_segment`] の作業用のバッファ。
+///
+/// 掃引は親のまわりに区間を回しながら衝突体との当たりを何度も調べるが、親と衝突体は掃引の間変わらないので、
+/// 区間の届く範囲にある衝突体とその親からの距離 (平方根を含む) を掃引の始めに 1 度だけ求めてここに入れる。
+/// 衝突体の数はモデルで決まり上限が無いので、決まった大きさの配列 (スタック) ではなく、呼び出し側が持って使い回す
+/// `Vec` にした (容量が足りた後は確保しない)。中身は呼び出しの間で引き継がない。
+#[derive(Debug, Clone, Default)]
+pub struct SweepBuffer {
+    near: Vec<NearCollider>,
+}
+
+/// 区間の届く範囲にある衝突体と、親から芯までの距離。
+#[derive(Debug, Clone, Copy)]
+struct NearCollider {
+    collider: WorldCollider,
+    parent_distance: f32,
+}
+
 /// 粒子 i の区間 (親 `parent` から粒子 `to` まで) を、区間の長さを保ったまま衝突体の外に置く。
 /// 仕様: `docs/spec/physics.md#衝突体`。
 ///
@@ -131,25 +154,34 @@ const SWEEP_BISECTIONS: u32 = 16;
 /// 近い側に回し、最初に衝突体に当たる手前で止める (1 ステップで衝突体をすり抜けない)。`from` の向きで既に
 /// 当たっていれば、そこから最も近い当たらない向き (同じ角度なら時計回り) から回す。どの向きでも当たるなら、
 /// 衝突体ごとに表面の最も近い点へ押し出す ([`WorldCollider::push_out`]。区間は伸びる)。
-/// どの衝突体にも当たらなければ `to` を変えない。
+/// どの衝突体にも当たらなければ `to` を変えない。`buffer` は作業用 (呼び出しのたびに確保しないため)。
 pub fn constrain_segment(
     colliders: &[WorldCollider],
     margin: f32,
     parent: Vec2,
     from: Vec2,
     to: &mut Vec2,
+    buffer: &mut SweepBuffer,
 ) {
     let length = length(*to - parent);
-    // 区間の届く範囲にある衝突体。
-    let near = || {
-        colliders
-            .iter()
-            .filter(move |c| !c.out_of_reach(parent, length, margin))
-    };
-    if near().next().is_none() {
+    // 区間の届く範囲にある衝突体 (親からの距離が `length + radius + margin` 以上なら、どの向きでも当たらない)。
+    buffer.near.clear();
+    buffer.near.extend(colliders.iter().filter_map(|&collider| {
+        let parent_distance = collider.distance_to(parent);
+        if parent_distance >= length + collider.radius() + margin {
+            None
+        } else {
+            Some(NearCollider {
+                collider,
+                parent_distance,
+            })
+        }
+    }));
+    let near = buffer.near.as_slice();
+    if near.is_empty() {
         return;
     }
-    let push_out_all = |p: &mut Vec2| near().for_each(|c| c.push_out(p, margin));
+    let push_out_all = |p: &mut Vec2| near.iter().for_each(|n| n.collider.push_out(p, margin));
     let Some(target) = (*to - parent).try_normalize() else {
         push_out_all(to);
         return;
@@ -157,9 +189,15 @@ pub fn constrain_segment(
     let base = (from - parent).try_normalize().unwrap_or(target);
     // 基準の向きから `angle` (ラジアン、時計回りが正) 回した粒子の位置。
     let at = |angle: f32| parent + Vec2::from_angle(angle).rotate(base) * length;
-    let blocked = |angle: f32| near().any(|c| c.blocks(parent, at(angle), margin));
-    let min_radius = near()
-        .map(|c| c.radius())
+    let blocked = |angle: f32| {
+        near.iter().any(|n| {
+            n.collider
+                .blocks_from(n.parent_distance, parent, at(angle), margin)
+        })
+    };
+    let min_radius = near
+        .iter()
+        .map(|n| n.collider.radius())
         .fold(f32::INFINITY, f32::min)
         .max(SWEEP_MIN_RADIUS);
     let step = (min_radius / length)
@@ -275,7 +313,14 @@ mod tests {
         };
         for from in [Vec2::new(1.0e18, 0.0), Vec2::new(0.0, 1.0e18)] {
             let mut to = Vec2::new(-1.0e18, 1.0);
-            constrain_segment(&[c], 0.0, Vec2::ZERO, from, &mut to);
+            constrain_segment(
+                &[c],
+                0.0,
+                Vec2::ZERO,
+                from,
+                &mut to,
+                &mut SweepBuffer::default(),
+            );
             assert!(to.is_finite(), "{from}: {to}");
         }
     }
@@ -331,7 +376,14 @@ mod tests {
             radius: 5.0,
         };
         let mut to = Vec2::new(3.0, 4.0) * 2.0;
-        constrain_segment(&[c], 1.0, Vec2::ZERO, Vec2::new(0.0, 10.0), &mut to);
+        constrain_segment(
+            &[c],
+            1.0,
+            Vec2::ZERO,
+            Vec2::new(0.0, 10.0),
+            &mut to,
+            &mut SweepBuffer::default(),
+        );
         assert_eq!(to, Vec2::new(6.0, 8.0));
     }
 
@@ -343,7 +395,14 @@ mod tests {
             radius: 0.5,
         };
         let mut to = Vec2::new(10.0, 0.0);
-        constrain_segment(&[c], 0.0, Vec2::ZERO, Vec2::new(0.0, 10.0), &mut to);
+        constrain_segment(
+            &[c],
+            0.0,
+            Vec2::ZERO,
+            Vec2::new(0.0, 10.0),
+            &mut to,
+            &mut SweepBuffer::default(),
+        );
         assert!((to.length() - 10.0).abs() < 1e-4, "{to}");
         let d = to.distance(at_degrees(-45.0));
         assert!((0.5..0.51).contains(&d), "{d}");
@@ -359,7 +418,14 @@ mod tests {
             radius: 1.0,
         };
         let mut to = Vec2::new(10.0, 0.0);
-        constrain_segment(&[c], 0.0, Vec2::ZERO, Vec2::new(0.0, 10.0), &mut to);
+        constrain_segment(
+            &[c],
+            0.0,
+            Vec2::ZERO,
+            Vec2::new(0.0, 10.0),
+            &mut to,
+            &mut SweepBuffer::default(),
+        );
         assert!((to.length() - 10.0).abs() < 1e-4);
         assert!(!c.blocks(Vec2::ZERO, to, 0.0));
         assert!(to.y > to.x, "stopped on the near side: {to}");
@@ -374,7 +440,14 @@ mod tests {
             radius: 1.0,
         };
         let mut to = Vec2::new(0.0, 10.0);
-        constrain_segment(&[c], 0.5, Vec2::ZERO, Vec2::new(0.0, 10.0), &mut to);
+        constrain_segment(
+            &[c],
+            0.5,
+            Vec2::ZERO,
+            Vec2::new(0.0, 10.0),
+            &mut to,
+            &mut SweepBuffer::default(),
+        );
         assert!((to.length() - 10.0).abs() < 1e-4);
         assert!(!c.blocks(Vec2::ZERO, to, 0.5), "{to}");
         assert!(c.blocks(Vec2::ZERO, to + Vec2::new(0.05, 0.0), 0.5), "{to}");
@@ -388,7 +461,14 @@ mod tests {
             radius: 50.0,
         };
         let mut to = Vec2::new(0.0, 10.0);
-        constrain_segment(&[c], 0.0, Vec2::ZERO, Vec2::new(0.0, 10.0), &mut to);
+        constrain_segment(
+            &[c],
+            0.0,
+            Vec2::ZERO,
+            Vec2::new(0.0, 10.0),
+            &mut to,
+            &mut SweepBuffer::default(),
+        );
         assert!(to.abs_diff_eq(Vec2::new(0.0, 50.0), 1e-4), "{to}");
     }
 

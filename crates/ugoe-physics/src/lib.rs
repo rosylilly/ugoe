@@ -40,6 +40,7 @@ use ugoe_model::physics::{
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterLayout, ParameterValues};
 
 pub use chain::{Chain, Particle, Segment, StepInput};
+use collider::SweepBuffer;
 pub use collider::WorldCollider;
 
 /// 1 回の `update` で実行するステップ数の上限 (`docs/spec/physics.md#時間の進め方`)。
@@ -76,6 +77,8 @@ pub struct PhysicsSystem {
     world_colliders: Vec<Option<WorldCollider>>,
     targets: Vec<RootPose>,
     starts: Vec<RootPose>,
+    /// 衝突の判定の掃引の作業用のバッファ。
+    sweep: SweepBuffer,
 }
 
 /// 衝突体を考えない静止姿勢で、衝突体に当たっている区間 ([`PhysicsSystem::rest_pose_collisions`])。
@@ -246,6 +249,7 @@ impl PhysicsSystem {
             relay_buffer: None,
             frames: Vec::new(),
             world_colliders: Vec::new(),
+            sweep: SweepBuffer::default(),
             targets: Vec::new(),
             starts: Vec::new(),
         }
@@ -707,7 +711,7 @@ impl PhysicsSystem {
                     pose.translation,
                     input.gravity,
                     input.wind,
-                    |s, p| collide(&frame.colliders, rig, s, p),
+                    |s, p| collide(&frame.colliders, rig, s, p, &mut self.sweep),
                 );
                 state.pose = pose;
                 state.external = *target;
@@ -765,7 +769,7 @@ impl PhysicsSystem {
                     let pose = with_relay(external, rig, state, relay.as_deref());
                     let input = step_input(pose, pose.angle - state.pose.angle);
                     state.chain.step(&rig.particles, &input, |s, p| {
-                        collide(&frame.colliders, rig, s, p);
+                        collide(&frame.colliders, rig, s, p, &mut self.sweep);
                     });
                     if !state.chain.is_finite() {
                         // あふれた鎖は速度が NaN のまま戻らないので、このステップの入力の静止姿勢に
@@ -775,7 +779,7 @@ impl PhysicsSystem {
                             pose.translation,
                             input.gravity,
                             input.wind,
-                            |s, p| collide(&frame.colliders, rig, s, p),
+                            |s, p| collide(&frame.colliders, rig, s, p, &mut self.sweep),
                         );
                     }
                     state.pose = pose;
@@ -954,12 +958,18 @@ impl Relay {
 }
 
 /// 粒子の区間を、長さを保ってリグの衝突体の外に置く。
-fn collide(colliders: &[WorldCollider], rig: &PhysicsRig, segment: &Segment, p: &mut Vec2) {
+fn collide(
+    colliders: &[WorldCollider],
+    rig: &PhysicsRig,
+    segment: &Segment,
+    p: &mut Vec2,
+    sweep: &mut SweepBuffer,
+) {
     if colliders.is_empty() {
         return;
     }
     let margin = (rig.particles.get(segment.index)).map_or(0.0, |p| p.collision_radius.max(0.0));
-    collider::constrain_segment(colliders, margin, segment.parent, segment.from, p);
+    collider::constrain_segment(colliders, margin, segment.parent, segment.from, p, sweep);
 }
 
 /// 頂点ごとの重みを掛けて足す。

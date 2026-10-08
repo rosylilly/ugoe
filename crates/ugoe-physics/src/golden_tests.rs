@@ -175,3 +175,93 @@ fn dynamic_update_instance_matches_recorded_hash() {
     }
     assert_eq!(hash.0, 0x5f37_83b1_18a2_e986, "{:#x}", hash.0);
 }
+
+/// 衝突体の多い鎖を大きく振って 600 ステップ進めた粒子のハッシュと、衝突体で位置を直した回数。
+/// 円とカプセル、親の近くと遠く、半径 0 に近い細いものを置き、掃引で止まる・始めの向きで当たる・
+/// どの向きでも当たって押し出すの各場合を通す。
+fn run_colliding_chain() -> (u64, usize) {
+    use ugoe_model::physics::PhysicsParticle;
+    let defs: Vec<PhysicsParticle> = (0..6)
+        .map(|i| PhysicsParticle {
+            position: Vec2::new(0.0, 20.0 * i as f32),
+            mobility: 0.95,
+            delay: 1.0,
+            acceleration: 1.0,
+            radius: if i == 0 { 0.0 } else { 20.0 },
+            collision_radius: if i % 2 == 0 { 1.5 } else { 0.0 },
+        })
+        .collect();
+    let colliders = [
+        WorldCollider::Circle {
+            center: Vec2::new(30.0, 40.0),
+            radius: 8.0,
+        },
+        WorldCollider::Circle {
+            center: Vec2::new(-25.0, 70.0),
+            radius: 0.3,
+        },
+        WorldCollider::Capsule {
+            a: Vec2::new(-60.0, 100.0),
+            b: Vec2::new(-20.0, 95.0),
+            radius: 5.0,
+        },
+        WorldCollider::Capsule {
+            a: Vec2::new(15.0, 85.0),
+            b: Vec2::new(50.0, 120.0),
+            radius: 6.0,
+        },
+        WorldCollider::Circle {
+            center: Vec2::new(0.0, 400.0),
+            radius: 10.0,
+        },
+        WorldCollider::Circle {
+            center: Vec2::new(120.0, 0.0),
+            radius: 60.0,
+        },
+        WorldCollider::Capsule {
+            a: Vec2::new(-10.0, 55.0),
+            b: Vec2::new(10.0, 55.0),
+            radius: 3.0,
+        },
+    ];
+    let mut chain = Chain::new(&defs, Vec2::ZERO);
+    let mut hash = Hasher::new();
+    let mut moved = 0;
+    let mut sweep = collider::SweepBuffer::default();
+    for k in 0..600 {
+        let t = k as f32 / 60.0;
+        let input = StepInput {
+            root: Vec2::new(90.0 * math::sin(t * 2.3), 15.0 * math::cos(t * 1.1)),
+            rotation_delta: 8.0 * math::cos(t * 3.0),
+            gravity: Vec2::new(0.0, 1.0),
+            wind: Vec2::new(0.3 * math::sin(t * 0.5), 0.0),
+            time_scale: 0.5,
+        };
+        chain.step(&defs, &input, |s, p| {
+            let before = *p;
+            let margin = defs[s.index].collision_radius;
+            collider::constrain_segment(&colliders, margin, s.parent, s.from, p, &mut sweep);
+            if p.to_array().map(f32::to_bits) != before.to_array().map(f32::to_bits) {
+                moved += 1;
+            }
+        });
+        for p in chain.particles() {
+            hash.vec2(p.position);
+            hash.vec2(p.velocity);
+        }
+    }
+    (hash.0, moved)
+}
+
+/// 衝突の判定の算術を変えても (T0333 で親と衝突体の距離を掃引の始めに 1 度だけ求めるようにした)、
+/// 粒子の位置と速度はビット単位で変わらない。ハッシュは直す前の実装で記録した。
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn colliding_chain_matches_recorded_hash() {
+    let (hash, moved) = run_colliding_chain();
+    assert!(
+        moved > 300,
+        "colliders must change positions often: {moved}"
+    );
+    assert_eq!(hash, 0xc32b_8ae4_39d5_02fe, "{hash:#x}");
+}
