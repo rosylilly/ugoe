@@ -61,7 +61,8 @@ pub enum Wake {
 /// 刻みは決まった間隔の格子に乗せる。遅れたときは取り戻そうとせず、今から数え直す (まとめて刻んで `dt` が 0 に近い刻みを作らない)。
 ///
 /// 促しは 1 刻みに 1 回。トラッキングの値が届いていなければ刻みの直後に送る。届いていれば、促してから値が届くまでの時間
-/// (検出と IPC) を直近の約 1 秒について測り、値が次の刻みの少し前に届くように促しを前へ寄せる (T0854。`docs/studio.md#入力`)。
+/// (検出と IPC) を直近の値について測り、値が次の刻みの少し前に届くように促しを前へ寄せる (T0854。`docs/studio.md#入力`)。
+/// 見る値は直近の約 1 秒の値と、それが少なければ (検出が重い) 最低 `MIN_LEADS` 個まで遡った値 (5 秒より古いものは使わない。T0868)。
 /// 操作ウィンドウは促しを受けて検出するので、刻みのほうを値へ寄せると、寄せた刻みの促しがまた値を呼んで刻みが速くなる。
 /// 刻みの格子は動かさず促しを動かすので、刻みの速さと `dt` は変わらない。
 ///
@@ -84,8 +85,11 @@ pub struct Pacer {
     seq: u32,
     /// 直近の促し (古い順。`MAX_PULSES` まで)。これより古い促しの値は測らない。
     pulses: VecDeque<Pulse>,
-    /// 届いた時刻と、促してから届くまでの時間 (古い順。`LEAD_WINDOW` より古いものは捨てる)。
+    /// 届いた時刻と、促してから届くまでの時間 (古い順。`LEAD_WINDOW` より古いものは、`min_leads` 個に足りない分だけ
+    /// `LEAD_MAX_AGE` まで残す。`prune_leads`)。
     leads: VecDeque<(Instant, Duration)>,
+    /// `LEAD_WINDOW` より古い値を残して、見る値をこの数まで増やす (`MIN_LEADS`。テストでは 0 にして T0868 の前と比べる)。
+    min_leads: usize,
     /// 促してから届くまでの時間をどれだけと見るか (`best_lead`。届くたびに選び直す)。
     lead: Option<Duration>,
     /// 届いて、まだ刻みで使われていない最後の値。
@@ -157,6 +161,13 @@ impl Pacer {
     const MARGIN_MIN_VALUES: u32 = 10;
     /// 促してから届くまでの時間を見る長さ。これより長く届かなければ、促しを刻みの直後に戻す。
     pub const LEAD_WINDOW: Duration = Duration::from_secs(1);
+    /// 促してから届くまでの時間を見る値の数の下限 (T0868。`docs/studio.md#入力`)。直近の約 1 秒の値がこれより少なければ
+    /// (検出が重く 1 秒に数個しか届かない)、`LEAD_WINDOW` より古い値も残してこの数まで見る。1 秒に 2 個では、1 つの値の揺れで
+    /// 寄せる先が決まり、それより遅い値が刻みに遅れる (遅れた値が 33〜50%。T0864 の e2e)。10 個あれば、まれに遅い 1 個 (10%) を
+    /// 遅れさせるか、ほかを待たせて間に合わせるかを費用で比べられる。
+    const MIN_LEADS: usize = 10;
+    /// 数の下限のために残す値の古さの上限 (計算機の混み具合が変わった古い値をいつまでも使わない)。1 秒に 2 個でも 10 個そろう長さ。
+    const LEAD_MAX_AGE: Duration = Duration::from_secs(5);
     /// 覚える届いた時刻の数の上限 (促しは 1 刻みに 1 回なので、120 刻みでも 1 秒で 120 回まで。選ぶ計算は数の 2 乗)。
     const MAX_LEADS: usize = 128;
     /// 覚える促しの数 (120 刻みで約 0.5 秒、30 刻みで約 2 秒)。これより前の促しの値が届くほど重ければ寄せない。
@@ -170,8 +181,9 @@ impl Pacer {
             // 最初の刻みの前には促さない (今までどおり、刻みの直後から)。
             pulsed: true,
             seq: 0,
-            pulses: VecDeque::new(),
-            leads: VecDeque::new(),
+            pulses: VecDeque::with_capacity(Self::MAX_PULSES),
+            leads: VecDeque::with_capacity(Self::MAX_LEADS),
+            min_leads: Self::MIN_LEADS,
             lead: None,
             unused: None,
             last_tick: None,
@@ -318,16 +330,26 @@ impl Pacer {
         if at < pulse {
             return;
         }
-        if let Some(since) = at.checked_sub(Self::LEAD_WINDOW) {
-            while self.leads.front().is_some_and(|(t, _)| *t < since) {
-                self.leads.pop_front();
-            }
-        }
         if self.leads.len() >= Self::MAX_LEADS {
             self.leads.pop_front();
         }
         self.leads.push_back((at, at - pulse));
+        self.prune_leads(at);
         self.lead = self.best_lead();
+    }
+
+    /// 見る値を決める (`at` は最後に届いた時刻)。`LEAD_WINDOW` のうちの値はすべて、それより古い値は `min_leads` 個に足りない分だけ
+    /// `LEAD_MAX_AGE` のうちのものを残す。
+    fn prune_leads(&mut self, at: Instant) {
+        while let Some(&(t, _)) = self.leads.front() {
+            let age = at.saturating_duration_since(t);
+            let keep = age <= Self::LEAD_WINDOW
+                || (age <= Self::LEAD_MAX_AGE && self.leads.len() <= self.min_leads);
+            if keep {
+                break;
+            }
+            self.leads.pop_front();
+        }
     }
 
     /// 値を使ったか置き換えた。狙った刻み (の半刻み前より後) を前の刻みで過ぎていれば遅れ。
@@ -592,6 +614,8 @@ mod tests {
         deadlines: Vec<Instant>,
         /// 値が届いてから刻みで使われるまでの待ち。
         waits: Vec<Duration>,
+        /// 待ちと、使った刻みの時刻。
+        used: Vec<(Instant, Duration)>,
         /// 刻みごとの、使われたか置き換わった値の数と、そのうち遅れた数 (`Pacer::tick`)。
         values: Vec<(Instant, u32, u32)>,
         /// 回している間の余裕の最大。
@@ -601,6 +625,24 @@ mod tests {
     }
 
     impl Run {
+        /// `from` から `to` までの刻みで数えた、遅れた値の割合と、使われた値の待ちの平均。
+        fn between(&self, from: Instant, to: Instant) -> (f64, Duration) {
+            let within = |t: &Instant| *t >= from && *t < to;
+            let (values, late) = self
+                .values
+                .iter()
+                .filter(|(t, _, _)| within(t))
+                .fold((0, 0), |(v, l), (_, values, late)| (v + values, l + late));
+            let waits: Vec<Duration> = self
+                .used
+                .iter()
+                .filter(|(t, _)| within(t))
+                .map(|(_, w)| *w)
+                .collect();
+            let mean = waits.iter().sum::<Duration>() / (waits.len().max(1) as u32);
+            (f64::from(late) / f64::from(values.max(1)), mean)
+        }
+
         /// 遅れた値の数の合計。
         fn late(&self) -> usize {
             self.values.iter().map(|(_, _, late)| *late as usize).sum()
@@ -643,6 +685,7 @@ mod tests {
             ticks: Vec::new(),
             deadlines: Vec::new(),
             waits: Vec::new(),
+            used: Vec::new(),
             values: Vec::new(),
             max_margin: pacer.margin,
             meter: WaitMeter::default(),
@@ -679,6 +722,7 @@ mod tests {
                     }
                     if let Some(arrived) = used {
                         run.waits.push(now - arrived);
+                        run.used.push((now, now - arrived));
                     }
                     run.deadlines.push(pacer.deadline());
                     let ticked = pacer.tick(now);
@@ -972,6 +1016,13 @@ mod tests {
         pacer
     }
 
+    /// 届くまでの時間を直近の約 1 秒の値だけで見る (T0868 の前と同じ) `Pacer`。比べるために使う。
+    fn time_window_only(rate: TickRate, start: Instant) -> Pacer {
+        let mut pacer = Pacer::new(rate, start);
+        pacer.min_leads = 0;
+        pacer
+    }
+
     /// 刻みは格子より早くならず、速さは設定を超えない。
     fn assert_keeps_the_rate(run: &Run, rate: TickRate, seconds: u32, label: &str) {
         for (tick, deadline) in run.ticks.iter().zip(&run.deadlines) {
@@ -1103,6 +1154,179 @@ mod tests {
                 "{label}: {reported:?}"
             );
             assert_keeps_the_rate(&run, rate, seconds, &label);
+        }
+    }
+
+    /// 検出の重い操作ウィンドウ (`pulse.ts` の `Pulse` と、新しい映像のフレームがあるときだけ検出する `FaceTracker`) を模す。
+    /// 映像のフレームは `frame` ごと。促しを受けると、前の検出が終わってから前の検出にかかった時間が経つまでは飛ばし、
+    /// 新しいフレームがあれば `detect` + 0〜`jitter` かけて検出し、値を送る (T0868)。
+    struct Detector {
+        start: Instant,
+        frame: Duration,
+        detect: Duration,
+        jitter: Duration,
+        rng: Rng,
+        /// 前の検出が終わった時刻と、かかった時間。
+        last_end: Option<Instant>,
+        last_cost: Duration,
+        /// 前に検出したフレームの番号。
+        last_frame: Option<u128>,
+    }
+
+    impl Detector {
+        fn new(start: Instant, frame_ms: u64, detect_ms: u64, jitter_ms: u64, seed: u64) -> Self {
+            Self {
+                start,
+                frame: Duration::from_millis(frame_ms),
+                detect: Duration::from_millis(detect_ms),
+                jitter: Duration::from_millis(jitter_ms),
+                rng: Rng(seed),
+                last_end: None,
+                last_cost: Duration::ZERO,
+                last_frame: None,
+            }
+        }
+
+        /// `now` の促しで送る値の、促しから届くまでの時間 (送らなければ `None`)。
+        fn pulse(&mut self, now: Instant) -> Option<Duration> {
+            if let Some(end) = self.last_end {
+                // 検出の途中に届いた促しは、検出が終わってから扱われる (WebView に溜まる)。
+                if now < end || now - end < self.last_cost {
+                    return None;
+                }
+            }
+            // 最初のフレームは少しずらす (刻みの格子と揃わないように)。
+            let frame = (now - self.start + self.frame / 3).as_nanos() / self.frame.as_nanos();
+            if self.last_frame.is_some_and(|last| last >= frame) {
+                self.last_end = Some(now);
+                self.last_cost = Duration::ZERO;
+                return None;
+            }
+            let cost = self.detect + self.rng.upto(self.jitter);
+            self.last_frame = Some(frame);
+            self.last_end = Some(now + cost);
+            self.last_cost = cost;
+            Some(cost)
+        }
+    }
+
+    #[test]
+    fn few_values_from_slow_detection_are_rarely_late() {
+        // T0864 の e2e (T0812 の手順。検出 200 ms・カメラ 2 fps) で遅れた値が 33〜50% だったものを模す。
+        let start = Instant::now();
+        let seconds = 60;
+        let until = start + Duration::from_secs(u64::from(seconds));
+        let settled = start + Duration::from_secs(10);
+        for rate in TickRate::ALL {
+            // (フレームの間隔, 検出, 検出の揺れ) ミリ秒。
+            for (frame, detect, jitter) in [(500, 200, 8), (500, 200, 20), (200, 80, 20)] {
+                let label = format!("{rate:?} frame {frame} detect {detect}+0..{jitter} ms");
+                let run = |pacer| {
+                    let mut detector = Detector::new(start, frame, detect, jitter, 11);
+                    let mut sleep = Rng(5);
+                    simulate_with(
+                        pacer,
+                        start,
+                        until,
+                        |now| detector.pulse(now),
+                        || sleep.upto(Duration::from_micros(500)),
+                    )
+                };
+                let before = run(time_window_only(rate, start));
+                let after = run(Pacer::new(rate, start));
+                let (before_late, after_late) =
+                    (before.late_ratio(settled), after.late_ratio(settled));
+                let values: u32 = after.values.iter().map(|(_, v, _)| *v).sum();
+                println!(
+                    "{label}: {:.1} values/s, late {:.1}% -> {:.1}%",
+                    f64::from(values) / f64::from(seconds),
+                    before_late * 100.0,
+                    after_late * 100.0
+                );
+                assert!(after_late < before_late, "{label}");
+                assert!(after_late < 0.15, "{label}");
+                assert_keeps_the_rate(&before, rate, seconds, &label);
+                assert_keeps_the_rate(&after, rate, seconds, &label);
+            }
+        }
+    }
+
+    #[test]
+    fn old_leads_are_dropped_when_detection_changes() {
+        // 10 秒たったところで、検出の重さや値の間隔が変わる (T0868)。
+        let start = Instant::now();
+        let switch = start + Duration::from_secs(10);
+        let seconds = 70;
+        let until = switch + Duration::from_secs(60);
+        let rate = TickRate::Fps60;
+        // (前のフレームの間隔・検出・揺れ, 後のフレームの間隔・検出・揺れ) ミリ秒。
+        let cases = [
+            // 軽い検出 (60 fps のカメラ・6 ms) から重い検出 (2 fps・200 ms) へ: 値の間隔が急に長くなる。
+            ((16, 6, 0), (500, 200, 8)),
+            ((100, 30, 8), (500, 205, 8)),
+            // 重い検出から軽い検出へ: 値の間隔が急に短くなる。
+            ((500, 200, 8), (16, 6, 0)),
+            ((500, 205, 8), (200, 53, 8)),
+            // 値の間隔は同じ (2 fps) まま、検出が重くなる・軽くなる。
+            ((500, 100, 8), (500, 200, 8)),
+            ((500, 205, 8), (500, 103, 8)),
+        ];
+        for (from, to) in cases {
+            let label = format!("{from:?} -> {to:?}");
+            let run = |pacer: Pacer, until: Instant, switch: Instant| {
+                let mut first = Detector::new(start, from.0, from.1, from.2, 3);
+                let mut second = Detector::new(start, to.0, to.1, to.2, 3);
+                let mut sleep = Rng(9);
+                simulate_with(
+                    pacer,
+                    start,
+                    until,
+                    |now| {
+                        if now < switch {
+                            first.pulse(now)
+                        } else {
+                            second.pulse(now)
+                        }
+                    },
+                    || sleep.upto(Duration::from_micros(500)),
+                )
+            };
+            // 後の値が 1 秒に `MIN_LEADS` 個より多ければ、約 1 秒 (と 1 フレーム) の後には前の値を見ない。
+            // 少なくても、古さの上限の後には見ない。
+            let dropped = if to.0 <= 100 {
+                Pacer::LEAD_WINDOW + Duration::from_millis(to.0)
+            } else {
+                Pacer::LEAD_MAX_AGE
+            };
+            let short = run(Pacer::new(rate, start), switch + dropped, switch);
+            let oldest = short.pacer.leads.front().map(|(t, _)| *t);
+            assert!(oldest.is_some_and(|t| t >= switch), "{label}: {oldest:?}");
+            // その後の遅れた値の割合と待ちは、初めから後の検出だったときと同じほど (前の検出に引きずられていない)。
+            let changed = run(Pacer::new(rate, start), until, switch);
+            let steady = run(Pacer::new(rate, start), until, start);
+            let (late, wait) = changed.between(switch + dropped, until);
+            let (steady_late, steady_wait) = steady.between(switch + dropped, until);
+            // 変わってすぐ (前の値も見ている間) を、T0868 の前 (直近の約 1 秒だけ見る) と比べる (確かめるのは上の 2 つ)。
+            let (moving, moving_wait) = changed.between(switch, switch + dropped);
+            let (window, window_wait) =
+                run(time_window_only(rate, start), until, switch).between(switch, switch + dropped);
+            println!(
+                "{label}: first {dropped:?}: late {:.1}% wait {moving_wait:.2?} (1 s window: {:.1}% {window_wait:.2?}); \
+                 then late {:.1}% wait {wait:.2?} (steady {:.1}% {steady_wait:.2?})",
+                moving * 100.0,
+                window * 100.0,
+                late * 100.0,
+                steady_late * 100.0,
+            );
+            assert!(
+                late <= steady_late + 0.05,
+                "{label}: {late} / {steady_late}"
+            );
+            assert!(
+                wait <= steady_wait + Duration::from_millis(1),
+                "{label}: {wait:?} / {steady_wait:?}"
+            );
+            assert_keeps_the_rate(&changed, rate, seconds, &label);
         }
     }
 
