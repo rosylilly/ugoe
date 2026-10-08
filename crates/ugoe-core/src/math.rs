@@ -10,6 +10,8 @@
 //! 結果も IEEE で決まるので、そのまま使ってよい。
 //!
 //! `sqrt`・`floor`・`ceil` などは IEEE で結果が決まるので、どの実装でも値は同じ。`std` の無い環境で使えるようにするためだけに置く。
+//! ただし [`sqrt`] は、`std` があれば `std` の `f32::sqrt` (CPU の命令) を使う。安定版の Rust の `libm` は wasm32 で命令を使えず、
+//! ソフトウェアで反復して求めるので、物理の衝突の判定が目に見えて遅くなったため (T0193。結果のビット列は同じ)。
 
 /// 正弦 (ラジアン)。
 #[inline]
@@ -42,9 +44,22 @@ pub fn atan2(y: f32, x: f32) -> f32 {
 }
 
 /// 平方根。
+///
+/// 平方根は IEEE で正しく丸めると決まっているので、`std` の有無でも結果のビット列は同じ。`std` があれば `f32::sqrt`
+/// (wasm32 の `f32.sqrt`・x86_64 の `sqrtss` などの命令) を使う。`libm` は wasm32 では安定版の Rust で命令を使えず、
+/// ソフトウェアで反復するので数倍遅い (T0193、`docs/testing.md#1-フレームの評価`)。
 #[inline]
 pub fn sqrt(x: f32) -> f32 {
-    libm::sqrtf(x)
+    #[cfg(feature = "std")]
+    {
+        extern crate std;
+        #[allow(clippy::disallowed_methods)]
+        std::primitive::f32::sqrt(x)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::sqrtf(x)
+    }
 }
 
 /// `sqrt(x * x + y * y)` を途中の桁あふれ無しに求める。
@@ -143,6 +158,33 @@ mod tests {
         assert_eq!(exp(0.0), 1.0);
         assert_eq!(ln(1.0), 0.0);
         assert!((ln(exp(2.0)) - 2.0).abs() < 1e-6);
+    }
+
+    /// [`sqrt`] は `std` の有無で中身が変わるが、結果のビット列は `libm` と同じ (特別な値と非正規化数を含む。T0193)。
+    #[test]
+    fn sqrt_matches_libm_bit_for_bit() {
+        let special = [
+            0.0,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -1.0,
+            f32::MIN_POSITIVE,
+            f32::MIN_POSITIVE / 3.0,
+            f32::from_bits(1),
+            f32::MAX,
+        ];
+        let sweep = (0..20_000u32)
+            .map(|k| f32::from_bits(k.wrapping_mul(214_013).wrapping_add(2_531_011) & 0x7fff_ffff));
+        for x in special.into_iter().chain(sweep) {
+            let (a, b) = (sqrt(x), libm::sqrtf(x));
+            if a.is_nan() {
+                assert!(b.is_nan(), "sqrt({x:e})");
+            } else {
+                assert_eq!(a.to_bits(), b.to_bits(), "sqrt({x:e})");
+            }
+        }
     }
 
     #[test]

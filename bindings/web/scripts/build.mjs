@@ -41,9 +41,11 @@ const PROFILE_CONFIG = {
  * 毎フレーム動く (変形・物理・モーション・描画の準備) ので、速さを優先する (opt-level = 3) クレート。
  * すべてを "z" にすると評価が約 2.5 倍遅くなった。これらだけを 3 に戻すと release と同じ速さで、
  * 大きさは約 2% 増えるだけだった (bindings/web/README.md#wasm-の大きさ)。
+ * libm (ugoe_core::math と glam の三角関数など) も物理が毎フレーム呼ぶので入れる。"z" のままでは物理の段が約 1.3 倍遅かった (T0193)。
  */
 const HOT_CRATES = [
   "glam",
+  "libm",
   "ugoe",
   "ugoe-core",
   "ugoe-motion",

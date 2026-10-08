@@ -196,6 +196,8 @@ M9 のコードレビューで、入口ごとに拒む・無視する・0 にす
     `libm` (純粋な Rust の実装) で、`glam` も feature `libm` で同じ実装を使う。`f32::sin` などは `std` にしか無く、OS の C の数学ライブラリで
     最後の桁が変わりうるため。`std` の有無でも OS でも、同じ入力から同じビット列の出力が得られる。`abs`・`signum`・`to_radians`・
     `min`・`max`・`clamp` などは `core` にあり、結果も IEEE で決まるので、そのまま使う。
+    例外は平方根 (`ugoe_core::math::sqrt`) で、`std` があれば `std` の `f32::sqrt` (CPU の命令) を使う。正しく丸めると IEEE で決まっているので
+    ビット列は同じで、安定版の Rust の `libm` は wasm32 で命令を使えず (ソフトウェアで反復する) 物理の段が遅かったため (T0193)。
     足りない関数は `ugoe_core::math` に `libm` を呼ぶ関数を足す。`std` の `f32`・`f64` の数学関数を直接呼ぶと、clippy の `disallowed_methods`
     が警告する (対象は `scripts/nostd-check.mjs` の `MATH_CRATES` で、各クレートの `clippy.toml` に書く。`just groups` が揃っているかを検査する)。
     `std` を使う `ugoe-wasm` も `MATH_CRATES` に入れて同じ禁止を持たせ、ブラウザ (エディタを含む) で計算した値をほかのホストとそろえる

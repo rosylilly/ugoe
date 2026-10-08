@@ -787,8 +787,8 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 (バイト。gzip と brotli は Node の zlib で測った。「いま」は T0413 の時点の main で測り直した値)
 
 - cargo のプロファイル `web-dist` を `--config` で定義して使います: `opt-level = "z"`・`lto = "fat"`・`codegen-units = 1`。
-  ただし毎フレーム動くクレート (`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-render`・`ugoe`・`ugoe-core`・`glam`) は
-  `opt-level = 3` に戻します。すべてを `"z"` にすると 4,354,077 バイト (gzip 1,250,656。T0410 の時点) とさらに小さいものの、
+  ただし毎フレーム動くクレート (`ugoe-runtime`・`ugoe-physics`・`ugoe-motion`・`ugoe-render`・`ugoe`・`ugoe-core`・`glam`・`libm`) は
+  `opt-level = 3` に戻します (`libm` は T0193 で足した。物理が毎フレーム呼ぶ三角関数が約 1.5 倍速くなり、wasm は約 4KB 増えるだけ)。すべてを `"z"` にすると 4,354,077 バイト (gzip 1,250,656。T0410 の時点) とさらに小さいものの、
   CPU の評価 (`update` と変形) が約 2.5 倍遅くなったためです (見本のアバターで 1 フレーム約 19µs → 48µs。ヘッドレスの Chrome)。
 - wasm-bindgen の `--remove-name-section` で関数名の節 (約 1.8MB。パニックのスタックトレースに名前が出るだけ) を外します。
 - **wasm-opt (binaryen) は使いません。** `-Oz` で生の大きさは約 1 割減りますが、gzip した大きさはかえって約 1 割増えました。

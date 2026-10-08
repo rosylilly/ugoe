@@ -139,7 +139,7 @@ pub fn constrain_segment(
     from: Vec2,
     to: &mut Vec2,
 ) {
-    let length = (*to - parent).length();
+    let length = length(*to - parent);
     // 区間の届く範囲にある衝突体。
     let near = || {
         colliders
@@ -236,7 +236,14 @@ fn point_segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     } else {
         0.0
     };
-    (p - (a + ab * t)).length()
+    length(p - (a + ab * t))
+}
+
+/// ベクトルの長さ。`Vec2::length` と同じ値 (どちらも `x * x + y * y` の正しく丸めた平方根) だが、`glam` の中の `libm` の
+/// 平方根ではなく [`math::sqrt`] (`std` があれば CPU の命令) を使う。衝突の判定は 1 ステップに数百回呼ぶので、wasm で
+/// `libm` の平方根 (ソフトウェア) が物理の段の時間の大半を占めていた (T0193)。
+fn length(v: Vec2) -> f32 {
+    math::sqrt(v.length_squared())
 }
 
 /// 線分 `p`–`q` と線分 `a`–`b` の距離。

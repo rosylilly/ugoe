@@ -16,7 +16,8 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
   `indexing_slicing`・`panic`・`string_slice`・`unimplemented`・`unreachable` を有効にしてあり、テストのコードは
   `clippy.toml` (ルートの設定を写したもの) で除く。書き方は [docs/portability.md#パニックしない](../../docs/portability.md#パニックしない)。
   本物の wasm の入口で trap しないことは `just conformance --only queries` の `host-input` が確かめる
-- 数学関数は `ugoe::core::math` を使う (常に `libm`。ブラウザで計算した値をほかのホストとそろえるため)。std の `f32::sin_cos` などは
+- 数学関数は `ugoe::core::math` を使う (常に `libm`。ブラウザで計算した値をほかのホストとそろえるため。結果が IEEE で決まる `sqrt` だけは
+  `std` の命令。T0193)。std の `f32::sin_cos` などは
   `clippy.toml` で禁じている (テストのコードも。ランタイム層と同じ内容で、`scripts/nostd-check.mjs` の `MATH_CRATES` に入れてある。
   [ADR 0031](../../docs/adr/0031-no-std-runtime-and-host-neutral-c-abi.md#数学関数は-libm-に寄せる))
 
