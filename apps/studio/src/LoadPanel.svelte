@@ -3,6 +3,10 @@
   描く解像度 (T0858) は出力ウィンドウとブラウザソースの描画バッファの倍率で、選ぶと受け手の次のフレームから効く。
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
   使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
+  出力ウィンドウとブラウザソースの行には、描いた回数と並べて描く機会 (`requestAnimationFrame`) の回数を出す (T0862)。
+  読み上げの区切り (T0862): 受け手ごとの行 (`<dd>`) の値は、見える区切りの文字 (`load.separator`。「、」・", ") でつないだ 1 つの文にする。
+  「・」は読み上げで黙って飛ばされることがあるので使わない。2 行目 (API と GPU の名前) の前は見た目では改行なので、
+  区切りの文字を `.ugoe-visually-hidden` で読み上げにだけ置く (`aria-label` は `<dd>` の名前にならないので使わない)。
   Windows では GPU の優先度 (通常・低い) を選び、当てられなかった理由を出す (T0861、docs/studio.md#gpu-の優先度)。
 -->
 <script lang="ts">
@@ -143,14 +147,26 @@ function changePriority(value: string) {
   if (priority !== undefined) onGpuPriority(priority);
 }
 
-/** 受け手が描いている API と GPU の名前 (報告に無ければ `null`)。 */
-function gpuText(r: RendererLoad): string | null {
+/**
+ * 受け手の行の 1 行目の値 (描画の回数と描く機会の回数・1 回の時間・捨てたフレーム)。描く機会の回数 (`refreshFps`) は
+ * 出力ウィンドウとブラウザソースだけが報告する (仮想カメラは描く機会ごとに描くので出さない)。
+ */
+function rendererValues(r: RendererLoad): string[] {
+  if (r.stale) return [t("load.stale")];
+  return [
+    r.refreshFps === null
+      ? t("load.drawn", { fps: perSecond(r.fps) })
+      : t("load.drawnRefresh", { fps: perSecond(r.fps), refresh: perSecond(r.refreshFps) }),
+    t("load.renderTime", { render: ms(r.renderMs), max: ms(r.renderMaxMs) }),
+    t("load.dropped", { count: r.dropped }),
+  ];
+}
+
+/** 受け手が描いている API と GPU の名前 (報告に無ければ空)。 */
+function gpuValues(r: RendererLoad): string[] {
   const used = rendererGpu(r);
-  if (used === null) return null;
-  return t("load.rendererGpu", {
-    backend: used.backend,
-    adapter: used.adapter ?? t("load.adapterHidden"),
-  });
+  if (used === null) return [];
+  return [used.backend, used.adapter ?? t("load.adapterHidden")];
 }
 </script>
 
@@ -224,17 +240,10 @@ function gpuText(r: RendererLoad): string | null {
       {#each status.renderers as r (r.label)}
         <dt>{receiverName(r.label)}</dt>
         <dd>
-          {r.stale
-            ? t("load.stale")
-            : t("load.rendererValue", {
-                fps: perSecond(r.fps),
-                render: ms(r.renderMs),
-                max: ms(r.renderMaxMs),
-                count: r.dropped,
-              })}
-          {#if gpuText(r) !== null}
-            <span class="load__gpu">{gpuText(r)}</span>
-          {/if}
+          <!-- 2 行目は見た目では改行で分かれるので、読み上げのためだけに区切りを置く (間に空白を入れない) -->
+          {rendererValues(r).join(t("load.separator"))}{#if gpuValues(r).length > 0}<span class="load__gpu"
+              ><span class="ugoe-visually-hidden">{t("load.separator")}</span>{gpuValues(r).join(t("load.separator"))}</span
+            >{/if}
         </dd>
       {/each}
     </dl>
@@ -268,6 +277,8 @@ function gpuText(r: RendererLoad): string | null {
   }
 
   .load__gpu {
+    /* 読み上げにだけ置く区切り (`position: absolute`) を、この行の中に留める */
+    position: relative;
     display: block;
     color: var(--ugoe-color-text-muted);
     font-size: var(--ugoe-font-size-sm);

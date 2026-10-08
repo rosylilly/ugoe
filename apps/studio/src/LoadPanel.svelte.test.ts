@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 // 負荷のパネル (LoadPanel.svelte) の GPU の優先度 (T0861): Windows でだけ選べ、当てられなかった理由をコードから訳して出すこと。
+// 受け手ごとの行 (T0862): 描く機会の回数を出し、値が読み上げで区切られること。
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import LoadPanel from "./LoadPanel.svelte";
-import type { GpuPriority, GpuView } from "./lib/host";
+import type { GpuPriority, GpuView, RendererLoad, StatusMessage } from "./lib/host";
 import { t } from "./lib/i18n";
 
 const cleanups: (() => void)[] = [];
@@ -21,12 +22,12 @@ const WINDOWS: GpuView = {
   priorityErrors: [],
 };
 
-function setup(gpu: GpuView) {
+function setup(gpu: GpuView, status: StatusMessage | null = null) {
   const chosen: GpuPriority[] = [];
   const props = $state({
     tickRate: 60 as const,
     renderScale: 1 as const,
-    status: null,
+    status,
     gpu,
     onTickRate: () => {},
     onRenderScale: () => {},
@@ -88,5 +89,99 @@ describe("GPU の優先度", () => {
     props.gpu = { ...props.gpu, priorityErrors: [] };
     flushSync();
     expect(target.textContent).not.toContain("msedgewebview2");
+  });
+});
+
+function renderer(overrides: Partial<RendererLoad>): RendererLoad {
+  return {
+    label: "output",
+    stale: false,
+    targetFps: null,
+    fps: 42,
+    refreshFps: 144,
+    renderMs: 1.5,
+    renderMaxMs: 3,
+    dropped: 0,
+    backend: "webgpu",
+    adapter: "Test GPU",
+    ...overrides,
+  };
+}
+
+function status(renderers: RendererLoad[]): StatusMessage {
+  return {
+    kind: "status",
+    seq: 1,
+    values: [],
+    tickMs: 0.5,
+    outputs: renderers.length,
+    tickRate: 60,
+    measuredRate: 60,
+    maxIntervalMs: 17,
+    renderers,
+  };
+}
+
+/** 受け手の行の値 (`<dd>`) の文字。見た目では隠した区切りも含む (読み上げはこの文字を読む)。 */
+function rowText(target: HTMLElement, name: string): string {
+  const dt = [...target.querySelectorAll("dt")].find((el) => el.textContent === name);
+  return dt?.nextElementSibling?.textContent ?? "";
+}
+
+describe("受け手ごとの行", () => {
+  const sep = t("load.separator");
+  const drawn = (fps: number) => t("load.drawn", { fps: t("load.perSecond", { value: fps }) });
+  const refreshed = (fps: number, refresh: number) =>
+    t("load.drawnRefresh", {
+      fps: t("load.perSecond", { value: fps }),
+      refresh: t("load.perSecond", { value: refresh }),
+    });
+
+  it("描いた回数と並べて描く機会の回数を出し、値と API・GPU の名前を区切りでつなぐ", () => {
+    const { target } = setup(WINDOWS, status([renderer({})]));
+    expect(rowText(target, t("load.outputWindow"))).toBe(
+      [
+        refreshed(42, 144),
+        t("load.renderTime", {
+          render: t("load.ms", { value: 1.5 }),
+          max: t("load.ms", { value: 3 }),
+        }),
+        t("load.dropped", { count: 0 }),
+        "WebGPU",
+        "Test GPU",
+      ].join(sep),
+    );
+    // 2 行目の前の区切りは見た目では隠し、読み上げにだけ置く
+    const hidden = target.querySelector(".load__gpu .ugoe-visually-hidden");
+    expect(hidden?.textContent).toBe(sep);
+  });
+
+  it("描く機会の回数の無い受け手 (仮想カメラ) と古い報告には描く機会の回数を出さない", () => {
+    const { target } = setup(
+      WINDOWS,
+      status([
+        renderer({
+          label: "virtualCamera",
+          targetFps: 30,
+          fps: 30,
+          refreshFps: null,
+          backend: "vulkan",
+        }),
+        renderer({ label: "browserSource", stale: true }),
+      ]),
+    );
+    const camera = rowText(target, t("load.virtualCamera"));
+    expect(camera.startsWith(`${drawn(30)}${sep}`)).toBe(true);
+    const source = rowText(target, t("load.browserSource"));
+    expect(source).toBe([t("load.stale"), "WebGPU", "Test GPU"].join(sep));
+    expect(target.textContent).not.toContain(t("load.perSecond", { value: 144 }));
+  });
+
+  it("API の名前が無ければ 2 行目を出さない", () => {
+    const { target } = setup(WINDOWS, status([renderer({ backend: null })]));
+    expect(target.querySelector(".load__gpu")).toBeNull();
+    expect(rowText(target, t("load.outputWindow")).endsWith(t("load.dropped", { count: 0 }))).toBe(
+      true,
+    );
   });
 });
