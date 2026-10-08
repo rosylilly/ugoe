@@ -44,6 +44,11 @@
   `ugoe-runtime` で決め、C ABI・wasm・Godot・Unity は表し方だけを持つ。`tests/host_numbers.rs`)
 - [docs/spec/rendering.md#ホストでのライティング](../../docs/spec/rendering.md#ホストでのライティング) (`lighting`: 光源の型 `Light`・`Lighting`・`MAX_LIGHTS`、`uses_lighting` / `Puppet::uses_lighting`・`bundle_normal_maps`)
 
+## 性能の計測
+
+`examples/puppet_timing.rs` が `Puppet::update` と `Puppet::follow` の 1 フレームの時間を測る
+(`cargo run --release -p ugoe --example puppet_timing`。目標と結果は [docs/testing.md#1-フレームの評価](../../docs/testing.md#1-フレームの評価))。
+
 ## 着せ替えの失敗の補足の値
 
 `DressUpError::fields` は `(キー, FieldValue)` の列を返す。値は ID・名前なら `FieldValue::Text`、番号・数なら `FieldValue::Index`、
