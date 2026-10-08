@@ -40,17 +40,38 @@ class FakePuppet {
   is_lost() {
     return this.lost;
   }
+  /** `update` を呼んだ回数と `render` で描いた回数 (T1402)。 */
+  updates = 0;
+  renders = 0;
+  /** 0 より大きい間は、`update` のたびに形が変わる (揺れている物理。1 回ごとに 1 減らす)。 */
+  swing = 0;
+  /** 前の `render` の後に形が変わったか (`shape_changed`)。 */
+  shapeChanged = true;
   resize(_width: number, _height: number) {}
   fit() {}
-  update() {}
-  render() {}
+  update() {
+    this.updates++;
+    if (this.swing > 0) {
+      this.swing--;
+      this.shapeChanged = true;
+    }
+  }
+  shape_changed() {
+    return this.shapeChanged;
+  }
+  render() {
+    this.renders++;
+    this.shapeChanged = false;
+  }
   unload() {
     this.model = null;
+    this.shapeChanged = true;
   }
   set_motion_over_tracking() {}
   set_tracking_kept() {}
   set_parameter(id: string, value: number) {
     this.values.set(id, value);
+    this.shapeChanged = true;
     return true;
   }
   parameter(id: string) {
@@ -64,6 +85,14 @@ class FakePuppet {
   }
   load_warnings_json() {
     return JSON.stringify(this.warningDetails);
+  }
+  set_tracking() {
+    this.shapeChanged = true;
+  }
+  set_enabled() {}
+  clear_tracking() {}
+  tracking_parameter_ids() {
+    return [];
   }
   set_expression(_name: string) {
     throw new Error("no expression");
@@ -131,6 +160,7 @@ vi.mock("./runtime.js", () => ({
     if (data === runtime.badModel) throw new Error("invalid model");
     puppet.limits = options.limits;
     puppet.model = typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array);
+    puppet.shapeChanged = true;
     return [];
   },
 }));
@@ -803,6 +833,100 @@ describe("<ugoe-avatar>", () => {
       expect(avatar.puppet).toBe(current);
       expect(unknown()).toHaveLength(2);
       expect(runtime.creates).toHaveLength(2);
+    });
+  });
+
+  describe("drawing only when something changed (T1402)", () => {
+    /** `update` が `n` 回呼ばれるまで rAF を回す。 */
+    async function frames(puppet: FakePuppet, n: number) {
+      const until = puppet.updates + n;
+      for (let i = 0; i < 400 && puppet.updates < until; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(puppet.updates).toBeGreaterThanOrEqual(until);
+    }
+
+    async function loadedAvatar() {
+      const avatar = newAvatar();
+      document.body.append(avatar);
+      const puppet = fake(await avatar.ready);
+      await flush();
+      const before = puppet.renders;
+      await avatar.load("model-a");
+      await frames(puppet, 3);
+      // 読み込んだモデルを 1 回だけ描く。
+      expect(puppet.renders).toBe(before + 1);
+      return { avatar, puppet };
+    }
+
+    it("draws a still model once and keeps advancing time", async () => {
+      const { puppet } = await loadedAvatar();
+      const renders = puppet.renders;
+      const updates = puppet.updates;
+      await frames(puppet, 5);
+      expect(puppet.updates).toBeGreaterThan(updates);
+      expect(puppet.renders).toBe(renders);
+    });
+
+    it("draws while the shape changes and stops when it settles", async () => {
+      const { puppet } = await loadedAvatar();
+      const renders = puppet.renders;
+      puppet.swing = 4;
+      await frames(puppet, 6);
+      expect(puppet.renders).toBe(renders + 4);
+      await frames(puppet, 5);
+      expect(puppet.renders).toBe(renders + 4);
+    });
+
+    it("draws after a parameter change, requestRender and tracking input", async () => {
+      const { avatar, puppet } = await loadedAvatar();
+      let renders = puppet.renders;
+      avatar.setParameter("X", 1);
+      await frames(puppet, 2);
+      expect(puppet.renders).toBe(++renders);
+
+      // 見せ方を変えた (`puppet` を直接操作した) ときは、形が変わらなくても描く。
+      avatar.requestRender();
+      await frames(puppet, 2);
+      expect(puppet.renders).toBe(++renders);
+
+      avatar.setTracking({ blendshapes: {}, head: { yaw: 0, pitch: 0, roll: 0 } });
+      await frames(puppet, 2);
+      expect(puppet.renders).toBe(++renders);
+      await frames(puppet, 3);
+      expect(puppet.renders).toBe(renders);
+    });
+
+    it("draws after a resize", async () => {
+      let observed: ResizeObserverCallback | null = null;
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(callback: ResizeObserverCallback) {
+            observed = callback;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const { puppet } = await loadedAvatar();
+      const renders = puppet.renders;
+      const entry = { contentRect: { width: 200, height: 100 } } as ResizeObserverEntry;
+      (observed as ResizeObserverCallback | null)?.([entry], {} as ResizeObserver);
+      await frames(puppet, 2);
+      expect(puppet.renders).toBe(renders + 1);
+    });
+
+    it("draws a parameter change while paused without advancing time", async () => {
+      const { avatar, puppet } = await loadedAvatar();
+      avatar.paused = true;
+      await flush();
+      const renders = puppet.renders;
+      const updates = puppet.updates;
+      avatar.setParameter("X", 1);
+      await flush();
+      expect(puppet.renders).toBe(renders + 1);
+      expect(puppet.updates).toBe(updates);
     });
   });
 

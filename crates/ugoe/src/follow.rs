@@ -202,6 +202,7 @@ impl Puppet {
         );
         // 11. 評価
         self.instance.update();
+        self.shape.observe(&self.instance);
         Ok(())
     }
 }

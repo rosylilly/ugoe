@@ -86,6 +86,7 @@ impl WebPuppet {
         puppet
             .follow(values, lip_sync, &part_opacities, dt)
             .map_err(js_error)?;
+        self.shape_changed |= puppet.changed();
         self.dirty = false;
         Ok(())
     }

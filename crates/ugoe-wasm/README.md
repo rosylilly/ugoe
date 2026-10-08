@@ -81,6 +81,22 @@ puppet.clear_tracking();
   canvas の `webglcontextlost` を聞いて印を立てる (リスナーは `free` で外す。既定の動作は止めないので、復元を待つホストは自分で
   `preventDefault` する。T0932)。知らせのイベントは出さないので、ホストは描画のたびか毎フレーム `is_lost()` を確かめる。
 
+### 描くのを省く (T1402)
+
+```js
+puppet.update(dt);
+if (puppet.shape_changed() || viewChanged) puppet.render(); // 形も見せ方も変わらなければ描かない
+```
+
+- `shape_changed()` は、前の `render` の後にモデルの形 (評価の出力) が見て分かるほど変わったか。`update`・`follow` のたびの
+  `Puppet::changed` ([docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)) を、`render` で描くまで積んだもの。
+  `Puppet::changed` は「最後に変わったと報告した出力」と比べるので、報告を見て描かなかったフレームを `WebPuppet` が覚えておく。
+- パラメータを書き換えて評価を待っているとき (`set_parameter`・`reset_parameters` など) と、モデルを読み込んだ・外した後も `true`。
+- 見せ方 (描画先の大きさ・ビュー・背景・光源・テクスチャ・着せ替え) の変化は含まない。変えたフレームはホストが描く。
+- `render` が描けなかった (サーフェスを作り直した・時間切れ) ときは下ろさない (次の `render` で描く)。
+- `<ugoe-avatar>` の描画のループはこれで描くのを省く ([bindings/web/README.md](../../bindings/web/README.md#描画のループ))。
+  `@ugoe/player` (エディタ・ビューア・スタジオ) はまだ使わない。
+
 ### 有限でない値と `dt`
 
 JS から NaN・無限大・負の `dt` を渡したときの扱い (T0433。T0424 のレビューで確かめ、T0137・T0139・T0155・T0158 で SDK とランタイムを直した後のもの)。
@@ -591,3 +607,4 @@ npm のパッケージ `@ugoe/runtime` の wasm は、`just web-runtime` が大�
 - T0457 (読み込みの失敗の種類を SDK で決めて C ABI と揃える・着せ替えの `device_lost`)
 - T0465 (描画と読み戻しの `RenderError` の `device_lost`)
 - T0493 (パニックの lint を有効にして、ホストから来る値で trap しない)
+- T1402 (`shape_changed`: 形が変わったときだけ描く)

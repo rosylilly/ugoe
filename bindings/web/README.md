@@ -71,6 +71,7 @@ avatar.clearTracking();
   `devicePixelRatio` だけが変わったとき (倍率の違う画面へウィンドウを移したなど。ResizeObserver は知らせない) も、
   `matchMedia` で聞いて描画バッファの大きさを合わせ直します。
 - 画面外にあるとき (IntersectionObserver) と `paused` の間は `requestAnimationFrame` を回しません。
+  回している間も、形と見せ方が変わらないフレームは描きません ([描画のループ](#描画のループ))。
 - GPU を失ったら (GPU プロセスのクラッシュなど)、新しい canvas で作り直してモデルを読み直します (パラメータの値は引き継ぐ)。
   WebGL2 では、canvas の `webglcontextlost` で描くのを止め、`webglcontextrestored` を待ってから作り直します
   (`puppet.is_lost()` も `true` になりますが、復元を待つために `preventDefault` するので、要素も canvas のイベントを聞きます)。
@@ -120,6 +121,38 @@ avatar.clearTracking();
   `gpulost`: `CustomEvent<null>`)。
   `UgoeAvatarElement` の `addEventListener` / `removeEventListener` はこれで `e.detail` を型付けします
   (要素を `HTMLElement` として持っているときは `UgoeAvatarElement` にしてから呼びます)。
+
+### 描画のループ
+
+`<ugoe-avatar>` は、時間を進めている間 (`paused` でなく画面に見えている間) は `requestAnimationFrame` のたびに `update(dt)` を呼び、
+次のどちらかのときだけ `render()` を呼びます (T1402)。
+
+- 形が変わった: `puppet.shape_changed()` が `true` (前の `render` の後に、評価の出力が見て分かるほど変わった。パラメータの書き換え・
+  モーション・表情・目パチ・呼吸・物理・トラッキング・読み込みを含む)。
+- 見せ方が変わった・描き直しを頼まれた: `requestRender()` の後。要素は大きさ (`devicePixelRatio` を含む)・属性
+  (`parameters`・`expression`・`motion`・`paused` など)・`setParameter`・`setTracking`・`clearTracking`・読み込み・GPU の作り直しの
+  たびに自分で呼びます。
+
+待機のモーション・目パチ・呼吸の無いモデル (や、それらを止めたページ) は、読み込んで 1 回描いた後は描きません。物理は揺れている間は
+描き、揺れが見て分からない大きさに収まると描かなくなります。描かない間も `update` で時間 (物理) は進むので、動き出したフレームで
+すぐ描きます。WebGPU・WebGL2 の canvas は描かなければ前の画を出し続けるので、見た目は変わりません。
+
+決めたこと:
+
+- **「形が変わらない」は SDK (`Puppet::changed`) で決める。** wasm の `shape_changed` はそれを `render` まで積んだもの。要素の中で
+  パラメータの値を毎フレーム読んで比べる案もあったが、判断を下の層に置くと C ABI・Unity・Godot のホストも同じ口で描くのを省け、
+  比べるのも `Puppet` の中で安い (境界を越えて値を読まない)。パラメータでなく評価の出力 (頂点位置・不透明度・色・描画順) で比べるので、
+  描画に効かないパラメータの変化では描かず、動的物理 (パラメータを持たない揺れ) や着せ替えも同じ規則で扱える。
+- **許容誤差** は頂点位置がキャンバスの長い辺の 1e-5 (4K の画面でも 0.04 画素)、不透明度と色が 1e-3 (8 ビットの 1 段の 4 分の 1)。
+  比べる相手は最後に描いた出力なので、ゆっくりした変化も積もれば描く。決め方と理由は
+  [docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)。
+- **見せ方の変化は要素が知っている。** `puppet` を直接操作して見せ方を変えた (ビュー・背景・光源・テクスチャ・着せ替えなど) ときは、
+  今までどおり `requestRender()` を呼びます。パラメータを直接書いたとき (`puppet.set_parameter`) は `shape_changed()` が `true` に
+  なるので描きますが、呼んでも構いません。
+- 利用者の操作は要りません (描く回数が減るだけ)。
+- canvas を `drawImage`・`toDataURL` で写すときは注意します。描画バッファは描いた直後 (同じタスク) にしか読めず
+  (`preserveDrawingBuffer: false`)、描かなかったフレームの後に写すと空になります。画を取り出すなら `puppet.read_pixels()` を使うか、
+  `requestRender()` の後に要素が描いた直後に写します (適合テストの `tests/conformance/web/avatar.js` は `render` を包んで写す)。
 
 ## フェイストラッキング
 
@@ -285,7 +318,8 @@ requestAnimationFrame(function frame(now) {
   if (puppet.is_lost()) return; // GPU を失った (WebGL2 のコンテキストの喪失を含む)。新しい canvas で作り直す
   puppet.update(Math.min((now - last) / 1000, 0.1));
   last = now;
-  puppet.render();
+  // 形が変わったときだけ描く。見せ方 (大きさ・ビュー・背景・光源) を変えたフレームは自分で描く (下の「描画のループ」)
+  if (puppet.shape_changed()) puppet.render();
   requestAnimationFrame(frame);
 });
 ```

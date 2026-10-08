@@ -399,3 +399,11 @@ WebGL2 は `base_vertex` とストレージバッファを使えないので、�
 
   マスクを読む要素の外接矩形の変化は、割り当ての変換の違いとして現れます。
 - `FrameStats` の `position_bytes` / `uniform_bytes` / `index_bytes` (合計は `uploaded_bytes`) に転送したバイト数を、`masks_reused` にマスクパスを省いたかを出します。
+
+### 描画の省略
+
+フレームごと描くのを省くかはホストが決めます。`Puppet::changed()` ([evaluation.md#見た目の変化](evaluation.md#見た目の変化)) が `false` で、
+見せ方 (ビュー・背景・光源・テクスチャ・描画先の大きさ) も変えていなければ、前に描いた画のままでよいので `encode` を呼びません
+(WebGPU・WebGL2 の canvas は描かなければ前の画を出し続ける)。`<ugoe-avatar>` はこうして描く (T1402。
+[bindings/web/README.md](../../bindings/web/README.md#描画のループ))。スタジオの受け手は新しいフレームが届いたときだけ描く (T0857)。
+許容誤差を下回る違いは描かないので、出力は最後に描いた画から見て分からない範囲で遅れることがあります。

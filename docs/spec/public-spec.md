@@ -111,7 +111,7 @@
 | [Lighting](../../spec/rendering.md#lighting) | [rendering.md#ライティング](rendering.md#ライティング) | 参照レンダラ・ホストでの扱いは含めない |
 | [Unknown values](../../spec/rendering.md#unknown-values) | [rendering.md#合成モード](rendering.md#合成モード)、[rendering.md#マスクの参照](rendering.md#マスクの参照) | |
 | [Conformance](../../spec/rendering.md#conformance) | [rendering.md#互換の基準](rendering.md#互換の基準) | |
-| [Implementation notes](../../spec/rendering.md#implementation-notes) | [rendering.md#描画の最適化](rendering.md#描画の最適化)、[rendering.md#転送の省略](rendering.md#転送の省略) | informative。見た目を変えない実装の工夫 |
+| [Implementation notes](../../spec/rendering.md#implementation-notes) | [rendering.md#描画の最適化](rendering.md#描画の最適化)、[rendering.md#転送の省略](rendering.md#転送の省略)、[rendering.md#描画の省略](rendering.md#描画の省略) | informative。見た目を変えない (描画の省略は見て分からない範囲でしか変えない) 実装の工夫。許容誤差の値と `Puppet::changed` の API は日本語版だけ |
 
 ## 物理 (`spec/physics.md`)
 

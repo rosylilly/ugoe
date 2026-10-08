@@ -225,25 +225,41 @@ function signature(el) {
 
 /** 要素の canvas に描いたか (背景でない画素の数が全体の 1% を超えるか)。 */
 async function expectDrawn(el, when) {
-  // 描き終えた後のフレームで写す (WebGL2 の描画バッファは、合成された後も Chrome では読める)
+  // 要素が描いた直後 (同じタスク) に写す。要素は形も見せ方も変わらないフレームを描かないので (T1402)、後のフレームでは
+  // WebGL2 の描画バッファは合成の後に空になっている (preserveDrawingBuffer: false)。
   let opaque = 0;
   let total = 0;
   for (let attempt = 0; attempt < 20; attempt++) {
+    const puppet = el.puppet;
+    let drawn = null;
+    if (puppet) {
+      puppet.render = () => {
+        delete puppet.render; // 1 回だけ写し、元のメソッドに戻す
+        puppet.render();
+        drawn = readCanvas(canvasOf(el));
+      };
+    }
     el.requestRender();
     await frames(2);
-    const canvas = canvasOf(el);
-    const copy = document.createElement("canvas");
-    copy.width = canvas.width;
-    copy.height = canvas.height;
-    const context = copy.getContext("2d", { willReadFrequently: true });
-    context.drawImage(canvas, 0, 0);
-    const { data } = context.getImageData(0, 0, copy.width, copy.height);
-    total = copy.width * copy.height;
-    opaque = 0;
-    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
+    if (puppet && Object.hasOwn(puppet, "render")) delete puppet.render;
+    if (!drawn) continue;
+    ({ opaque, total } = drawn);
     if (opaque > total / 100) return;
   }
   throw new Error(`${when}: the canvas is empty (${opaque} of ${total} pixels drawn)`);
+}
+
+/** canvas の画素のうち、背景 (透明) でないものの数。 */
+function readCanvas(canvas) {
+  const copy = document.createElement("canvas");
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  const context = copy.getContext("2d", { willReadFrequently: true });
+  context.drawImage(canvas, 0, 0);
+  const { data } = context.getImageData(0, 0, copy.width, copy.height);
+  let opaque = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) opaque++;
+  return { opaque, total: copy.width * copy.height };
 }
 
 /** 値域の中で既定値と違う値を持つパラメータを 1 つ選ぶ。 */

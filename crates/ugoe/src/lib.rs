@@ -66,6 +66,9 @@ pub use load_error::{LoadError, LoadErrorValue};
 // ライティングの補助 (T0210)。
 pub mod lighting;
 
+// 見た目の変化 (`Puppet::changed`。T1402)。
+mod shape;
+
 use ugoe_model::PartId;
 use ugoe_model::effects::{EYE_BLINK_GROUP, Effects, LIP_SYNC_GROUP};
 use ugoe_model::expression::Expression;
@@ -156,6 +159,8 @@ pub struct Puppet {
     toggles: Toggles,
     /// 着せ替えの本体と取り付けているモジュール (`dress_up.rs`)。モジュールを付けるまで `None`。
     wardrobe: Option<dress_up::Wardrobe>,
+    /// 最後に見た目が変わったと報告した出力の控え ([`Puppet::changed`])。
+    shape: shape::ShapeWatch,
 }
 
 impl Puppet {
@@ -200,6 +205,7 @@ impl Puppet {
             tracking_kept: Vec::new(),
             toggles: Toggles::default(),
             wardrobe: None,
+            shape: shape::ShapeWatch::new(),
         };
         puppet.set_pose(pose);
         puppet
@@ -545,6 +551,23 @@ impl Puppet {
 
         // 11. 評価
         self.instance.update();
+        self.shape.observe(&self.instance);
+    }
+
+    /// 直前の [`Puppet::update`] (か [`Puppet::follow`]) で、見た目が変わったか
+    /// (`docs/spec/evaluation.md#見た目の変化`)。`false` なら、ホストは描くのを省いてよい (前に描いた画のままでよい)。
+    ///
+    /// 比べる相手は直前のフレームではなく、最後に `true` を返したときの評価の出力 (頂点位置・不透明度・色・
+    /// マスクの効き具合・表示・描画順) で、許容誤差を下回る違いは変わっていないとする。収まりかけた物理の小さな揺れでは
+    /// `false` になり、少しずつの変化も積もって許容誤差を超えれば `true` になる。許容誤差は頂点位置がキャンバスの長い辺の
+    /// 1e-5、不透明度・色・マスクの効き具合が 1e-3。
+    ///
+    /// 時間 (モーション・物理) は `false` の間も `update` で進むので、動き出したフレームですぐ `true` になる。
+    /// 最初の `update` の前と最初の `update` の後、モデルを差し替えた (着せ替え) 後の `update` では `true`。
+    /// `true` を見て描かなかったホストは、描くまで自分で覚えておくこと (次の `update` は、描かなかった出力と比べる)。
+    /// 見せ方 (ビュー・背景・光源・テクスチャ) の変化はここに含まない (ホストが知っている)。
+    pub fn changed(&self) -> bool {
+        self.shape.changed()
     }
 
     /// 段 10. (パーツの不透明度) を、今のモーションのカーブで書く。`record` なら受け手へ配る記録

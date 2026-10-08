@@ -29,6 +29,8 @@
 - [docs/spec/motion.md#フレーム内の適用順](../../docs/spec/motion.md#フレーム内の適用順)
 - [docs/spec/motion.md#受け手として進める](../../docs/spec/motion.md#受け手として進める) (`Puppet::set_base_values` / `follow` / `values_before_physics` / `lip_sync_applied` / `part_opacities_applied`。`src/follow.rs`)
 - [docs/spec/evaluation.md#9-当たり判定](../../docs/spec/evaluation.md#9-当たり判定) (`Puppet::hit_areas_at` / `hit_test`)
+- [docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化) (`Puppet::changed`: 直前の `update` / `follow` で、
+  評価の出力が最後に変わったと報告したときから見て分かるほど変わったか。ホストが描くのを省くための口。`src/shape.rs`。T1402)
 - [docs/spec/modules.md#puppet-での着せ替え](../../docs/spec/modules.md#puppet-での着せ替え) (`Puppet::attach_module` / `detach_module` / `set_modules` / `set_base_physics`。`src/dress_up.rs`)
 - 着せ替えの失敗と読み込みの警告の種類 (`DressUpError::code`・`fields`、`LoadWarning`。`src/warning.rs`)。wasm と C ABI が同じ値を返すために
   ここで決める。値は組み込み先が照らし合わせるので変えない (T0412)
@@ -97,3 +99,4 @@
 - T0156 (`render` feature)
 - T0457 (モデルの読み込みの失敗の種類)
 - T0183 (`no_std` + `alloc`、feature `std`)
+- T1402 (`Puppet::changed`: 見た目が変わったときだけ描く)

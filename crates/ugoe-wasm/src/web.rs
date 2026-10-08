@@ -167,6 +167,8 @@ pub struct WebPuppet {
     background: wgpu::Color,
     /// パラメータが変わり、評価し直す必要がある。
     dirty: bool,
+    /// 前の `render` の後に形が変わった (`shape_changed`。T1402)。
+    shape_changed: bool,
     /// デバイスを失った (GPU プロセスのクラッシュ・WebGL2 のコンテキストの喪失など)。ホストは作り直す必要がある。
     lost: Arc<AtomicBool>,
     /// WebGL2 で作ったときの、canvas の `webglcontextlost` のリスナー (`lost` を立てる。破棄のときに外す。T0932)。
@@ -413,6 +415,7 @@ impl WebPuppet {
             view: ViewState::default(),
             background: wgpu::Color::TRANSPARENT,
             dirty: false,
+            shape_changed: true,
             lost,
             context_lost,
             wardrobe: Wardrobe::default(),
@@ -504,6 +507,7 @@ impl WebPuppet {
     /// モデルを外す (背景だけを描くようになる)。モーションと表情の一覧も空にする。
     pub fn unload(&mut self) {
         self.puppet = None;
+        self.shape_changed = true;
         self.library = Library::default();
         self.active_expressions.clear();
     }
@@ -572,8 +576,20 @@ impl WebPuppet {
     pub fn update(&mut self, dt: f32) {
         if let Some(puppet) = &mut self.puppet {
             puppet.update(dt);
+            self.shape_changed |= puppet.changed();
             self.dirty = false;
         }
+    }
+
+    /// 前の `render` の後に、モデルの形 (評価の出力) が見て分かるほど変わったか (T1402)。
+    ///
+    /// `update`・`follow` のたびの `Puppet::changed` を、`render` で描くまで積んだもの。パラメータの書き換え
+    /// (`set_parameter` など) で評価し直すのを待っているときと、モデルを読み込んだ・外した後も `true`。
+    /// `false` なら、見せ方 (描画先の大きさ・ビュー・背景・光源・テクスチャ・着せ替え) を変えていない限り `render` を
+    /// 省いてよい (canvas は前に描いた画を出し続ける)。止まったモデルや収まった物理で、毎フレーム描くのを省くために使う。
+    /// 許容誤差の決め方は `docs/spec/evaluation.md#見た目の変化`。
+    pub fn shape_changed(&self) -> bool {
+        self.shape_changed || self.dirty
     }
 
     // --- 描画 ---
@@ -666,6 +682,7 @@ impl WebPuppet {
         // 描画に失敗しても、クリアした画面は出す。
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
+        self.shape_changed = false;
         result.map_err(|e| js_error(e).into())
     }
 
@@ -923,6 +940,7 @@ impl WebPuppet {
         puppet.set_motion_over_tracking(self.motion_over_tracking);
         puppet.set_tracking_kept(self.tracking_kept.iter().cloned());
         self.puppet = Some(puppet);
+        self.shape_changed = true;
         self.load_warnings = load_warnings;
         // 再生の状態は読み直すと初めからになる。
         self.active_expressions.clear();
@@ -955,6 +973,7 @@ impl WebPuppet {
         if self.dirty {
             if let Some(puppet) = &mut self.puppet {
                 puppet.instance_mut().update();
+                self.shape_changed = true;
             }
             self.dirty = false;
         }

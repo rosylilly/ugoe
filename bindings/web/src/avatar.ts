@@ -21,6 +21,7 @@
 // 復元が `RESTORE_TIMEOUT_MS` 待っても届かなければ、新しい canvas で作り直しを試す (T0938。@ugoe/player の PuppetSurface と同じ)。
 // フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
+// 時間を進めている間も、形 (`WebPuppet.shape_changed`) と見せ方 (`requestRender`) が変わらないフレームは描かない (T1402)。
 
 import {
   isUnknownPowerPreference,
@@ -941,16 +942,21 @@ export class UgoeAvatarElement extends BaseElement {
       if (this.#trackingDirty && puppet.has_model()) puppet.update(0);
     }
     this.#trackingDirty = false;
+    // 形 (評価の出力) が変わらず、見せ方も変わっていない (`requestRender` が無い) フレームは描かない。
+    // 時間は進めたままなので、物理が動き出したフレームで描く。canvas は描かなければ前の画を出し続ける (T1402)。
+    const draw = this.#needsRender || puppet.shape_changed();
     this.#needsRender = false;
-    try {
-      puppet.render();
-    } catch (e) {
-      if (puppet.is_lost()) {
-        this.#onLost();
+    if (draw) {
+      try {
+        puppet.render();
+      } catch (e) {
+        if (puppet.is_lost()) {
+          this.#onLost();
+          return;
+        }
+        this.#dispatchError(e);
         return;
       }
-      this.#dispatchError(e);
-      return;
     }
     this.#schedule();
   }

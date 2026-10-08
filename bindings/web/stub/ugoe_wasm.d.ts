@@ -135,6 +135,7 @@ export class WebPuppet {
   ): void;
   set_tracking_kept(ids: string[]): void;
   set_view(zoom: number, pan_x: number, pan_y: number): void;
+  shape_changed(): boolean;
   slots_json(): string;
   show_pose(part: string): boolean;
   show_pose_immediately(part: string): boolean;

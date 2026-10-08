@@ -375,3 +375,11 @@ the result.
 - **Skipping unchanged work.** The reference renderer compares the data of each frame with what it
   last uploaded and uploads only what changed, and reuses the mask atlas when nothing that affects
   it changed.
+- **Skipping unchanged frames.** A host may skip drawing a frame when the evaluated output differs
+  from the output it last drew by less than a small tolerance and nothing else that affects the
+  image (view, background, lights, textures, target size) changed; the previous image stays on
+  screen. The comparison should be made against the last drawn output, not the previous frame, so
+  that slow changes still accumulate and get drawn. Time (motions, physics) keeps advancing while
+  frames are skipped. The tolerance should be well below what can be seen, for example a small
+  fraction of the canvas size for vertex positions and a fraction of one 8-bit step for opacities
+  and colors.
