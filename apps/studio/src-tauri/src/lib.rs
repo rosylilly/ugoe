@@ -22,6 +22,7 @@ mod access;
 mod acl;
 pub mod animation;
 pub mod api;
+mod app_nap;
 pub mod conductor;
 mod error;
 pub mod follower;
@@ -1722,6 +1723,8 @@ fn permission_response(label: &str, kind: PermissionKind) -> PermissionResponse 
 }
 
 pub fn run() {
+    // macOS の App Nap で刻みが遅れないように、アプリの終わりまで活動を始めたままにする (T0855。macOS の外では何もしない)。
+    let _activity = app_nap::prevent();
     let studio = Arc::new(Studio::default());
     let ticking = Arc::clone(&studio);
     let staging = Arc::clone(&studio);

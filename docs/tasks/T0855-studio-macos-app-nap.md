@@ -1,7 +1,7 @@
 ---
 id: T0855
 title: "スタジオ: macOS の App Nap で刻みが遅れないようにする (判断が要る)"
-status: in-progress
+status: done
 milestone: M8
 crates: [apps/studio, docs, Cargo.lock]
 depends_on: []
@@ -43,12 +43,12 @@ A。新しいクレートも `unsafe` も増えず、ADR の例外も広げな�
 
 ## 受け入れ条件
 
-- [ ] 利用者に案を示して方針を決め、決めたことと理由を docs/studio.md#刻みの速さと正確さ に書いた (B なら ADR 0028 の 8. に追記)
-- [ ] 決めた方針を入れた。macOS の外ではビルドされない・何もしないこと、`just vcam-check` (macOS のターゲットの clippy。A でも
+- [x] 利用者に案を示して方針を決め、決めたことと理由を docs/studio.md#刻みの速さと正確さ に書いた (B なら ADR 0028 の 8. に追記)
+- [x] 決めた方針を入れた。macOS の外ではビルドされない・何もしないこと、`just vcam-check` (macOS のターゲットの clippy。A でも
       `#[cfg(target_os = "macos")]` のコードを触るので) が通ることを確かめた
-- [ ] macOS の実機で、出力ウィンドウと操作ウィンドウを隠したまま数分刻んで、負荷の表示 (実際の刻みの速さと最も長い間隔) に注意が出ないことを
+- [x] macOS の実機で、出力ウィンドウと操作ウィンドウを隠したまま数分刻んで、負荷の表示 (実際の刻みの速さと最も長い間隔) に注意が出ないことを
       確かめる手順を docs/manual-check.md に足した (確かめられなければ、確かめていないことをメモと docs/studio.md#実機で確かめていないこと に書く)
-- [ ] `just licenses` と `just ci` が通る
+- [x] `just licenses` と `just ci` が通る
 
 ## 参考
 
@@ -61,3 +61,16 @@ A。新しいクレートも `unsafe` も増えず、ADR の例外も広げな�
 - T0075 で起票した (元: docs/roadmap.md の M8 の「起票していない後続の候補」の「macOS の App Nap を止める (依存か unsafe が要るので利用者の判断)」)。
 - T0856 (承認の OS への知らせ) と同じくスタジオの `src-tauri/Cargo.toml` と Cargo.lock を触りうるので、T0856 はこのタスクの後にする。
 - 判断 (2026-10-08): 利用者が案 A (スタジオのバックエンドから objc2-foundation の beginActivityWithOptions_reason を呼び、起動中ずっと活動を始めたままにする。新しいクレートも unsafe も増やさない) を選んだ。
+- やったこと (2026-10-08):
+  - `apps/studio/src-tauri/src/app_nap.rs` を足し、`lib.rs` の `run` の初めに `app_nap::prevent()` で活動を始め、`run` の終わりまで持つ
+    (`NSActivityOptions::UserInitiatedAllowingIdleSystemSleep`)。macOS では `objc2`・`objc2-foundation` (NSObject・NSProcessInfo・NSString) を
+    `cfg(target_os = "macos")` の依存に足した (どちらも仮想カメラが使う版で、Cargo.lock は `ugoe-studio` の依存の行が増えただけ)。`unsafe` は無い
+    (`beginActivityWithOptions_reason` は objc2-foundation 0.3.2 で安全な関数)。macOS の外では大きさ 0 の値を返すだけ (テストで確かめる)。
+  - docs/studio.md#刻みの速さと正確さ に決めたことと理由・ほかの案を書き、#実機で確かめていないこと の表に足した。docs/manual-check.md に S30 を足した。
+- 確かめたこと: `just crate ugoe-studio`・`just vcam-check`・`just licenses`・`just refs`・`just ci` が通る。`ugoe-studio` 全体の
+  `aarch64-apple-darwin` の clippy は、tauri の依存 (objc2-exception-helper の Objective-C) が Apple の SDK を要るので WSL では流せない
+  (CI の rust (macos) が `just lint-group apps` で見る)。代わりに `app_nap.rs` を `#[path]` で読む使い捨てのクレート (同じ版の objc2・objc2-foundation、
+  ワークスペースと同じ lints) を作り、`aarch64-apple-darwin` と `x86_64-unknown-linux-gnu` で `clippy --all-targets -D warnings` が通ることを確かめた。
+- 確かめていないこと: macOS の実機で App Nap が止まり、両方のウィンドウを隠しても刻みが遅れないこと (manual-check.md の S30)。
+  `tauri::Builder::run` の後で活動の値が落ちるかは見ていない (落ちても落ちなくてもプロセスの終わりで活動は消える)。
+- 起票の候補: なし。

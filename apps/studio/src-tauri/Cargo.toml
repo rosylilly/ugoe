@@ -36,6 +36,11 @@ ugoe-studio-vcam.workspace = true
 # 仮想カメラの背景の画像 (JPEG) のデコード (T0808。利用者の判断 2026-10-02)。
 zune-jpeg.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# App Nap を止める活動 (T0855。仮想カメラが使っているもので、新しい依存ではない。利用者の判断 2026-10-08)。
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSObject", "NSProcessInfo", "NSString"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # 出力ウィンドウの透過が効くか (画面を合成しているか) を GDK に聞く (T0846。tauri が使っている版で、新しい依存ではない)。
 gtk.workspace = true

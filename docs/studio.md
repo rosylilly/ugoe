@@ -1150,8 +1150,17 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 - Windows の `Sleep` の粒度は既定で約 15.6 ms だが、Rust の `std::thread::sleep` は Windows 10 1803 以降では高精度の待機タイマー
   (`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`) を使うので、60・120 刻みでも 1 ms 程度の揺れに収まる見込み (Windows では未確認)。
   古い Windows で粒度が粗いときは、操作ウィンドウに「刻みの間隔が空いた」注意が出る。
-- macOS の App Nap は、ウィンドウがすべて隠れたアプリのタイマーを遅らせる。`backgroundThrottling` は WebView の設定で、App Nap は止めない。
-  App Nap を止めるには `NSProcessInfo` の `beginActivity` (Objective-C の呼び出し) が要る (未対応。T0855 で扱う。依存か `unsafe` が要るので利用者の判断)。
+- **macOS の App Nap を止める (T0855):** App Nap は、ウィンドウがすべて隠れた (ほかのウィンドウの裏・最小化・別のデスクトップ) アプリの
+  タイマーとスレッドの起床を遅らせる。刻みはバックエンドのスレッドのスリープで回すので、配信中に両方のウィンドウが隠れると刻みが遅れうる。
+  `backgroundThrottling` は WebView の設定で、App Nap は止めない。そこでバックエンドは起動したときに `NSProcessInfo` の
+  `beginActivityWithOptions:reason:` で活動を始め、アプリの終わりまで持つ (`apps/studio/src-tauri/src/app_nap.rs`。macOS の外では何もしない)。
+  - 選択肢は `NSActivityUserInitiatedAllowingIdleSystemSleep`。App Nap は止めるが、画面と計算機のスリープは妨げない。
+  - 配信していない間も App Nap しない。スタジオは開いている間ずっと刻み続けるアプリなので、配信の間だけに絞る差は小さい。
+  - 決めたこと (2026-10-08、利用者): スタジオのバックエンドから `objc2-foundation` の安全な関数で呼ぶ。`objc2-foundation` は仮想カメラの
+    クレートが既に使っているので新しいクレートは増えず、`unsafe` も要らない (ADR 0028 の 8. の例外を広げない)。終える `endActivity` は
+    `unsafe` なので呼ばない (活動はプロセスの終わりで消える)。ほかの案は、仮想カメラのクレートで出力しているときだけ止める (`unsafe` の例外を広げる)、
+    `Info.plist` の `NSAppSleepDisabled` (効くかが文書に無い)、止めずに案内だけする、だった。
+  - 効いたかは macOS の実機でしか確かめられない ([実機で確かめていないこと](#実機で確かめていないこと)。[実機の確認表](manual-check.md) の S30)。
 
 ### 負荷の表示
 
@@ -1218,7 +1227,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | 項目 | 確かめること | 詳しく |
 | --- | --- | --- |
 | Tauri のウィンドウ (T0801・T0802・T0804・T0907・T0811) | WebKitGTK・WebView2・WKWebView での操作ウィンドウの表示、枠の無い出力ウィンドウと背景の透過、ドラッグで動かすこと、閉じる操作で隠れること、操作ウィンドウを閉じるとアプリが終わること、大きさのプリセットが物理ピクセルになること、ファイルのダイアログ、ライセンスの表示 | [出力ウィンドウ](#出力ウィンドウ) |
-| 隠れても止まらない (T0804) | 出力ウィンドウを裏に置いても描き続けること (Windows・macOS)、macOS の App Nap、Windows の刻みの揺れ | [隠れても止まらない](#隠れても止まらない) |
+| 隠れても止まらない (T0804・T0855) | 出力ウィンドウを裏に置いても描き続けること (Windows・macOS)、macOS で両方のウィンドウを隠しても App Nap で刻みが遅れないこと (活動を始めたのが効くか)、Windows の刻みの揺れ | [隠れても止まらない](#隠れても止まらない)・[刻みの速さと正確さ](#刻みの速さと正確さ) |
 | ウィンドウの取り込み (T0804) | OBS の取り込みで透過がアルファとして届くか、裏に隠れても取り込みが止まらないか (Windows・macOS・Linux の X11 と Wayland) | [OBS でのウィンドウの取り込み](#obs-でのウィンドウの取り込み) の各 OS の「未確認」 |
 | 透過が効かないときの注意 (T0846) | Linux の X11 でコンポジタが無いと「背景」の欄に注意が出て、コンポジタを起動すると消えて透けること。Wayland・Windows・macOS では出ないこと | [出力ウィンドウの透過](#出力ウィンドウの透過) |
 | ブラウザソース (T0808) | 実際の OBS (CEF) で描けること (WebGL2)・透過・つなぎ直し、Tauri に入れた `dist/` からページを出せること | [OBS での設定](#obs-での設定) |
