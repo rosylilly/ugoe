@@ -19,7 +19,8 @@
 - 有限でない粒子と出力を外に出さない (鎖を静止姿勢に置き直し、出力を捨てる。`docs/spec/physics.md#有限でない状態`)
 - 毎フレームの確保とパラメータの名前の探索をしない (パラメータの添字は並びが変わったときだけ解決し直し、
   作業用のバッファは使い回す)。1 フレームの時間は `cargo run --release -p ugoe-physics --example physics_timing`
-  で測る。結果をビット単位で保つことは `src/golden_tests.rs` で確かめる
+  で測る (`dynamic_hair` の段の内訳 (1 段目の評価・物理そのもの・2 段目の評価) も出す。大きなモデルの段の内訳は
+  `ugoe` の例 `puppet_timing`。[docs/testing.md](../../docs/testing.md#1-フレームの評価))。結果をビット単位で保つことは `src/golden_tests.rs` で確かめる
 
 ## 仕様
 

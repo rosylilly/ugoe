@@ -479,8 +479,9 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 | --- | --- | --- |
 | 着せ替えの合成とコンパイル | `cargo run --release -p ugoe-runtime --example compose_timing` | 中規模の本体にモジュール 4 つを取り付ける ([modules.md](spec/modules.md#性能)) |
 | モーションのカーブの評価 | `cargo run --release -p ugoe-motion --example curve_timing` | フレームごとにキーを打った長いカーブ (300 セグメント × 100 本) を、線形の探索と前処理した探索 (`SegmentIndex`) で比べる |
-| `Puppet` の 1 フレームの評価 | `cargo run --release -p ugoe --example puppet_timing` | 中程度のモデルを模した生成のモデルと見本の `avatar.ugoe` で、`Puppet::update` と受け手の `Puppet::follow` の 1 回を測る (下の「1 フレームの評価」) |
+| `Puppet` の 1 フレームの評価 | `cargo run --release -p ugoe --example puppet_timing` | 中程度のモデルを模した生成のモデルと見本の `avatar.ugoe` で、`Puppet::update` と受け手の `Puppet::follow` の 1 回を測る。同じ 2 つのモデルの物理の段の内訳も出す (下の「1 フレームの評価」) |
 | `WebPuppet` の 1 フレームの評価 (wasm) | `just web-runtime` と `cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe` の後に `node bindings/web/examples/timing/measure.mjs --runs 5` (`--max-us 300` で上限と比べる。ビルドから上限との比較までは `just perf-wasm`) | 同じ 2 つのモデルで、ブラウザの中の `WebPuppet.update`・`follow` の 1 回を測る (計測のページ `bindings/web/examples/timing/`。ヘッドレスの Chrome で開いて表を出す。手元のブラウザで開くなら `node bindings/web/examples/timing/serve.mjs`。下の「1 フレームの評価」) |
+| 物理の 1 フレーム | `cargo run --release -p ugoe-physics --example physics_timing` | fixtures の設定で、物理だけ (`PhysicsSystem::update`・`update_instance`) の時間と、`dynamic_hair` の段の内訳 (1 段目の評価・物理そのもの・2 段目の評価。下の「1 フレームの評価」) |
 
 ### 1 フレームの評価
 
@@ -559,6 +560,35 @@ wasm でも 1ms の目標を大きく下回ります (生成のモデルで目�
 - **残り。** 物理そのものはネイティブの約 1.35 倍で、大半は衝突の判定の算術 (`WorldCollider::blocks` と掃引) です。1 段目の評価
   (約 1.6 倍) と三角関数 (`sincosf` 約 4.3ns、`atan2f` 約 6.1ns。ネイティブの約 2 倍) はネイティブより遅いものの、wasm の一般的な
   遅さの範囲で、直す安い手は見つかっていません。
+
+**物理の段の内訳の調べ方 (T0334)。** 動的物理のある 1 フレームは、1 段目の評価 (`ModelInstance::update_first_stage`) → 物理そのもの
+(鎖の積分・衝突・出力) → 2 段目の評価 (`ModelInstance::update`) と進みます。物理の段が遅くなったときは、まずネイティブでどの段かを分けます。
+
+- **ネイティブ:** `puppet_timing` (生成のモデルと `avatar.ugoe`) と `physics_timing` (fixtures の `dynamic_hair`) が、`Puppet` を通さずに
+  `ModelInstance` と `PhysicsSystem` を直接使い、`first stage`・`update_instance` (1 段目を含む)・`physics itself` (両者の差)・
+  `second stage` を出します (行の意味は各例の先頭のコメント)。1 段目は `update_instance` の中で行うので、別の回で `update_instance` の前に
+  呼んで測り、差を物理そのものとします。入力は `update` と同じに動かし、モーションと効果は通しません。生成のモデルと `avatar.ugoe` の段を
+  `ugoe-physics` の例で測らないのは、`ugoe-physics` が `.ugoe` を読めない (`ugoe-format` に dev で依存すると crates.io に公開する順が循環する) ためです。
+  手元の値 (T0334。上と同じ機械、load average 9 前後。最も速いもの / 中央値、µs):
+
+  | モデル | 1 段目の評価 | `update_instance` | 物理そのもの | 2 段目の評価 |
+  | --- | --- | --- | --- | --- |
+  | 生成のモデル (頂点 4,532) | 2.9 / 3.1 | 8.9 / 9.6 | 6.0 / 6.5 | 43.7 / 44.3 |
+  | `avatar.ugoe` (頂点 1,410) | 1.7 / 1.7 | 2.1 / 2.2 | 0.4 / 0.5 | 15.5 / 15.8 |
+- **wasm:** 計測のページは `WebPuppet` の公開の口を通るので、段を分けられません (分かるのは物理を止めた `update` との差だけ)。
+  段を分けたいときは、T0193 と同じく作業用のクレートをリポジトリの外 (scratchpad など) に作ります。
+  1. `ugoe-runtime` と `ugoe-physics` に (path で) 依存する `cdylib` のクレートを作り、`physics_timing` の段の計測と同じループを書く。
+     時刻は JS の `performance.now()` を `#[wasm_bindgen]` の `extern` で import して取る (`std::time::Instant` は wasm32-unknown-unknown で使えない)。
+     同じコードをネイティブ (`Instant`) でも動かせるようにしておくと、wasm / ネイティブの比が段ごとに出る。
+  2. `cargo build --release --target wasm32-unknown-unknown` で、関数名の節 (`name`) を残してビルドする (`[profile.release]` に `strip = false` を書き、
+     wasm-bindgen に `--remove-name-section` を付けず、wasm-opt を通さない)。`@ugoe/runtime` と同じ条件にするなら、毎フレーム動くクレートの `opt-level` を
+     `bindings/web/scripts/build.mjs` の `HOT_CRATES` に合わせる。
+  3. 計測のページと同じく COOP と COEP を付けて配り (刻みを 5µs にするため。`serve.mjs` を参考に)、ヘッドレスの Chrome で開いて段ごとの時間を出す。
+  4. 関数ごとの内訳が要るときは、同じページを Chrome DevTools Protocol の `Profiler` (`Profiler.enable`・`Profiler.setSamplingInterval`・
+     `Profiler.start`・`Profiler.stop`) で記録し、プロファイルのノードを関数名で `update_instance` の下 (`update_first_stage` を除く)
+     に絞り、自己時間を数える。T0193 はこれで平方根 (`libm::sqrtf`) が物理そのものの 48% を占めることを見つけました。
+- **ネイティブの関数ごとの内訳:** perf のある Linux なら `perf record` で `physics_timing` を記録します。T0193 の手元 (WSL2) は
+  カーネルに perf が無く、時間を段に分けて測るだけでした。
 
 ### 遅くなったら気づく検査
 

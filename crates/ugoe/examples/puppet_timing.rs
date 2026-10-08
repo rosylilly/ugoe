@@ -9,6 +9,17 @@
 //!   ループするモーションを再生し続ける。描画・GPU への転送・ファイルの読み込みは含めない。
 //! - `follow`: 受け手の `Puppet::follow`。指揮役の `update` が配る値の列を先に記録しておき、それを順に渡す。
 //! - 段の内訳: 物理の段を止めた `update` と、評価 (`ModelInstance::update`) だけ。
+//! - 物理の段の内訳 (T0334。docs/testing.md#1-フレームの評価): `Puppet` を通さず `ModelInstance` と `PhysicsSystem` を
+//!   直接使い、入力を `update` と同じに動かして (モーション・効果は通さない) 次を測る。
+//!   - `first stage`: 1 段目の評価 (`ModelInstance::update_first_stage`) だけ。`update_instance` の中で行うものと同じ処理を、
+//!     別の回で `update_instance` の前に呼んで測る (その回の `update_instance` と `update` は測らない)。動的物理を使わない設定では `-`。
+//!   - `update_instance`: `PhysicsSystem::update_instance` の 1 回 (1 段目の評価を含む)。
+//!   - `physics itself`: `update_instance` と `first stage` の差 (鎖の積分・衝突・出力)。
+//!   - `second stage`: 続く `ModelInstance::update` (2 段目の評価)。
+//!
+//!   物理だけの設定ごとの時間と小さなモデル (`dynamic_hair`) の段の内訳は `ugoe-physics` の例 `physics_timing`。
+//!   `ugoe-physics` は `.ugoe` を読めない (`ugoe-format` に dev で依存すると crates.io に公開する順が循環する) ので、
+//!   生成のモデルと `avatar.ugoe` の段の内訳はここで測る。
 //!
 //! モデルは 2 つ。
 //!
@@ -44,7 +55,8 @@ use ugoe::model::{
     Mesh, Model, Parameter, Part, Pose, fixtures, standard,
 };
 use ugoe::motion::Priority;
-use ugoe::runtime::ParameterValues;
+use ugoe::physics::PhysicsSystem;
+use ugoe::runtime::{CompiledModel, ModelInstance, ParameterValues};
 use ugoe::{LipSyncInput, PartOpacityInput, Puppet, Toggles};
 
 const FRAMES: usize = 6_000;
@@ -130,6 +142,11 @@ fn main() {
         );
         report(subject.name, "update without physics", no_physics);
         report(subject.name, "evaluation only", measure_evaluation(subject));
+    }
+    println!();
+    println!("physics stages per frame (us), without motion and effects: best / median");
+    for subject in [&generated, &avatar] {
+        measure_stages(subject);
     }
 
     if std::env::args().skip(1).any(|arg| arg == "--check") {
@@ -293,8 +310,14 @@ impl Subject {
 
 /// フレーム `k` の、トラッキング相当の入力とリップシンクの音量を書く。
 fn drive(puppet: &mut Puppet, k: usize) {
+    drive_parameters(puppet.instance_mut().parameters_mut(), k);
     let t = k as f32 * DT;
-    let params = puppet.instance_mut().parameters_mut();
+    puppet.set_lip_sync_level(Some(0.5 + 0.5 * math::sin(t * 9.0)));
+}
+
+/// フレーム `k` の、トラッキング相当の入力を書く。
+fn drive_parameters(params: &mut ParameterValues, k: usize) {
+    let t = k as f32 * DT;
     set(params, standard::ANGLE_X, 25.0 * math::sin(t * 1.3));
     set(params, standard::ANGLE_Y, 15.0 * math::sin(t * 0.9 + 1.0));
     set(params, standard::ANGLE_Z, 10.0 * math::cos(t * 0.7));
@@ -313,7 +336,6 @@ fn drive(puppet: &mut Puppet, k: usize) {
         standard::EYE_R_SMILE,
         0.5 + 0.5 * math::sin(t * 0.3),
     );
-    puppet.set_lip_sync_level(Some(0.5 + 0.5 * math::sin(t * 9.0)));
 }
 
 fn set(params: &mut ParameterValues, id: &str, value: f32) {
@@ -427,6 +449,66 @@ fn measure_evaluation(subject: &Subject) -> (Duration, Duration) {
         black_box(instance.drawables());
     }
     batches.summary()
+}
+
+/// 物理の段の内訳 (先頭のコメントの「物理の段の内訳」)。物理の無いモデルでは何もしない。
+fn measure_stages(subject: &Subject) {
+    let Some(settings) = &subject.physics else {
+        return;
+    };
+    let setup = || {
+        let compiled = CompiledModel::compile(subject.model.clone()).expect("compile");
+        let mut instance = ModelInstance::new(compiled);
+        let mut physics = PhysicsSystem::new(settings.clone());
+        physics.bind(&mut instance);
+        (instance, physics)
+    };
+    let (mut instance, mut physics) = setup();
+    let mut physics_stage = Batches::default();
+    let mut second = Batches::default();
+    for k in 0..FRAMES {
+        drive_parameters(instance.parameters_mut(), k);
+        let start = Instant::now();
+        physics.update_instance(&mut instance, DT);
+        let middle = Instant::now();
+        instance.update();
+        second.add(middle.elapsed());
+        physics_stage.add(middle - start);
+        black_box(instance.drawables());
+    }
+    let physics_stage = physics_stage.summary();
+    if physics.is_dynamic() {
+        // 1 段目だけを別の回で測る。物理と 2 段目は同じに進め (状態を本番と揃える)、時間は測らない。
+        let (mut instance, mut physics) = setup();
+        let mut first = Batches::default();
+        for k in 0..FRAMES {
+            drive_parameters(instance.parameters_mut(), k);
+            let start = Instant::now();
+            instance.update_first_stage();
+            first.add(start.elapsed());
+            physics.update_instance(&mut instance, DT);
+            instance.update();
+            black_box(instance.drawables());
+        }
+        let first = first.summary();
+        report(subject.name, "first stage", first);
+        report(subject.name, "update_instance", physics_stage);
+        report(
+            subject.name,
+            "physics itself",
+            (
+                physics_stage.0.saturating_sub(first.0),
+                physics_stage.1.saturating_sub(first.1),
+            ),
+        );
+    } else {
+        println!(
+            "  {:12} {:24} {:>9} / {:>9}",
+            subject.name, "first stage", "-", "-"
+        );
+        report(subject.name, "update_instance", physics_stage);
+    }
+    report(subject.name, "second stage", second.summary());
 }
 
 // ---- 中程度のモデルを模した生成のモデル ----
