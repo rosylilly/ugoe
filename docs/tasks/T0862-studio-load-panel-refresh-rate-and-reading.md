@@ -1,11 +1,11 @@
 ---
 id: T0862
 title: "スタジオ: 「フレームレートと負荷」の受け手ごとの行に描く機会の回数 (画面のリフレッシュレート) を出し、スクリーンリーダーの読み上げの区切りを直す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs, tests/ui-audit]
 depends_on: []
-assignee:
+assignee: claude-worker-T0862
 ---
 
 # T0862: スタジオ: 受け手ごとの行に描く機会の回数を出し、読み上げを直す

@@ -1,11 +1,11 @@
 ---
 id: T1401
 title: "@ugoe/runtime: createPuppet の options と <ugoe-avatar> の属性に GPU の電力の希望 (powerPreference) を足す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1401
 ---
 
 # T1401: @ugoe/runtime: powerPreference を足す

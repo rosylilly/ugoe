@@ -1,11 +1,11 @@
 ---
 id: T0192
 title: "性能: wasm (ブラウザ) で Puppet の 1 フレームの評価を測る計測のページを足し、1ms の目標と比べる"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0192
 ---
 
 # T0192: 性能: wasm (ブラウザ) で 1 フレームの評価を測る

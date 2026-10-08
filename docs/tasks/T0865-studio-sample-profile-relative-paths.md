@@ -1,11 +1,11 @@
 ---
 id: T0865
 title: "スタジオ: 見本のプロファイルを、見本のモデルと同じフォルダに相対パスで書いてコミットする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, assets, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0865
 ---
 
 # T0865: スタジオ: 見本のプロファイルを相対パスでコミットする
