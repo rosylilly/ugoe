@@ -1,11 +1,11 @@
 ---
 id: T0864
 title: "スタジオ: トラッキングの促しの余裕 (LEAD_MARGIN、今は 1 ms) を OS のスリープの粒度に合わせる"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0863]
-assignee:
+assignee: claude-worker-T0864
 ---
 
 # T0864: スタジオ: 促しの余裕を OS に合わせる
