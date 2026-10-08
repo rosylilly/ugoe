@@ -664,6 +664,30 @@ URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU �
 `smile`・`surprised`・`sad`) を持つので、`motion` / `expression` 属性をそのまま試せます
 ([assets/samples/README.md](../../assets/samples/README.md#モーションと表情)。T0719)。
 
+### 計測のページ (`examples/timing`)
+
+ブラウザの中で 1 フレームの評価 (`WebPuppet.update` の 1 回) を測るページです (T0192)。ネイティブの
+`crates/ugoe/examples/puppet_timing.rs` と同じ 2 つのモデル (中程度のモデルを模した生成のモデルと見本の `avatar.ugoe`) を読み、
+同じ入力 (トラッキング相当のパラメータの書き込み・リップシンクの音量・ループするモーションの再生) で `update`・受け手の `follow`・
+物理の段を止めた `update` を測り、200 フレームずつの平均のうち最も速いものと中央値を表で出します。頂点の数・`navigator.userAgent`・
+描画の API・タイマーの刻みも出します。測り方と結果は [docs/testing.md#1-フレームの評価](../../docs/testing.md#1-フレームの評価)。
+
+リポジトリのルートで:
+
+```sh
+just web-runtime   # wasm と TypeScript をビルドして bindings/web/dist/ に出す
+cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe
+node bindings/web/examples/timing/measure.mjs --runs 5   # ヘッドレスの Chrome で開いて表を出す (CHROME で Chrome を指定)
+node bindings/web/examples/timing/serve.mjs              # 手元のブラウザで開くなら http://localhost:8081/
+```
+
+- `serve.mjs` は `bindings/web` の `dist/` をそのまま配ります (tgz を作って入れなくてよい)。`performance.now()` の刻みを細かくするため
+  (Chrome は 100µs → 5µs)、COOP と COEP を付けてページを cross-origin isolated にします。
+- URL の `?frames=6000&batch=200&backend=webgl2` で、フレームの数・平均を取るフレームの数・描画の API を変えられます。
+  V8 は wasm を後から最適化し直すので、フレームの数を減らすと遅く出ます。
+- 結果はページの `window.ugoeTiming` (`done` が `true` になったら `environment` と `results` が揃う) にも置きます。
+  `measure.mjs` はこれを読み、ページを `--runs` 回開き直した中央値と、測った前後の load average も出します。
+
 ## リリース
 
 npm への公開は、パッケージを使う人 (このリポジトリを持つ人) が決めて行います。いまは `private: true` なので、

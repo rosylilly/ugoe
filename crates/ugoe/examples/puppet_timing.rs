@@ -20,6 +20,9 @@
 //!
 //! `--check` を付けると、`update` と `follow` の中央値を上限 ([`LIMITS`]) と比べ、超えたものがあれば終了コード 1 で終わる
 //! (T0191。`just perf` と週に 1 度の CI の `perf.yml` が流す。上限の決め方は docs/testing.md#遅くなったら気づく検査)。
+//!
+//! `--write <path>` を付けると、測らずに生成のモデル (物理とモーション `idle` を含む) を `.ugoe` に書き出して終わる
+//! (T0192。wasm (ブラウザ) の計測のページ `bindings/web/examples/timing` が読む。docs/testing.md#1-フレームの評価)。
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -73,6 +76,12 @@ fn main() {
         physics: Some(medium_physics()),
         motion: Some(idle_motion()),
     };
+    let mut write = std::env::args().skip_while(|arg| arg != "--write");
+    if write.next().is_some() {
+        let path = write.next().expect("--write <path>");
+        write_bundle(&generated, &path);
+        return;
+    }
     check_physics_moves(&generated);
 
     let path = concat!(
@@ -130,6 +139,40 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// 1 画素の白の PNG (生成のモデルのテクスチャ `white`。描画の見た目は測らないので中身は問わない)。
+const WHITE_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xf8, 0x0f, 0x04, 0x00,
+    0x09, 0xfb, 0x03, 0xfd, 0x68, 0xfa, 0x1c, 0xcc, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+    0xae, 0x42, 0x60, 0x82,
+];
+
+/// `subject` (物理とモーションを含む) を `.ugoe` にして `path` に書き、読み直して検査 (`validate`) を通ることを確かめる。
+fn write_bundle(subject: &Subject, path: &str) {
+    use ugoe::format::{Bundle, TextureData, TextureFormat};
+
+    let mut bundle = Bundle::new(subject.model.clone());
+    bundle.physics.clone_from(&subject.physics);
+    bundle.motions = subject.motion.iter().cloned().collect();
+    bundle.textures = (subject.model.textures.iter())
+        .map(|_| TextureData {
+            format: TextureFormat::Png,
+            bytes: WHITE_PNG.to_vec(),
+        })
+        .collect();
+    let bytes = ugoe::format::write_bundle(&bundle).expect("write the generated model");
+    // 読み込みはモデルと物理の検査 (`validate`・`validate_physics`) を通す
+    let read = ugoe::format::read_bundle(&bytes).expect("read back the generated model");
+    assert_eq!(
+        read, bundle,
+        "the written bundle should read back unchanged"
+    );
+    std::fs::write(path, &bytes).expect("write the .ugoe file");
+    println!("wrote {path} ({} bytes)", bytes.len());
+    subject.describe();
 }
 
 /// 測った中央値を [`LIMITS`] と比べ、上限を超えた計測の数を返す。超えたものは [`RETRIES`] 回まで測り直す。

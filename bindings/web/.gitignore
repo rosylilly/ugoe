@@ -3,3 +3,5 @@
 # `pnpm pack --out ugoe-runtime.tgz` の出力 (examples/basic が読む)
 /ugoe-runtime.tgz
 /examples/*/package-lock.json
+# 計測のページが読む生成のモデル (`puppet_timing -- --write` で書き出す)
+/examples/timing/generated.ugoe

@@ -48,6 +48,8 @@
 
 `examples/puppet_timing.rs` が `Puppet::update` と `Puppet::follow` の 1 フレームの時間を測る
 (`cargo run --release -p ugoe --example puppet_timing`。目標と結果は [docs/testing.md#1-フレームの評価](../../docs/testing.md#1-フレームの評価))。
+`-- --write <path>` を付けると、測らずに生成のモデル (物理とモーションを含む) を `.ugoe` に書き出す
+(wasm (ブラウザ) の計測のページ `bindings/web/examples/timing` が読む。T0192)。
 
 ## 着せ替えの失敗の補足の値
 

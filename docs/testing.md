@@ -477,6 +477,7 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 | 着せ替えの合成とコンパイル | `cargo run --release -p ugoe-runtime --example compose_timing` | 中規模の本体にモジュール 4 つを取り付ける ([modules.md](spec/modules.md#性能)) |
 | モーションのカーブの評価 | `cargo run --release -p ugoe-motion --example curve_timing` | フレームごとにキーを打った長いカーブ (300 セグメント × 100 本) を、線形の探索と前処理した探索 (`SegmentIndex`) で比べる |
 | `Puppet` の 1 フレームの評価 | `cargo run --release -p ugoe --example puppet_timing` | 中程度のモデルを模した生成のモデルと見本の `avatar.ugoe` で、`Puppet::update` と受け手の `Puppet::follow` の 1 回を測る (下の「1 フレームの評価」) |
+| `WebPuppet` の 1 フレームの評価 (wasm) | `just web-runtime` と `cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe` の後に `node bindings/web/examples/timing/measure.mjs --runs 5` | 同じ 2 つのモデルで、ブラウザの中の `WebPuppet.update`・`follow` の 1 回を測る (計測のページ `bindings/web/examples/timing/`。ヘッドレスの Chrome で開いて表を出す。手元のブラウザで開くなら `node bindings/web/examples/timing/serve.mjs`。下の「1 フレームの評価」) |
 
 ### 1 フレームの評価
 
@@ -505,7 +506,30 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 
 どちらも 1ms の目標を大きく下回ります (生成のモデルで目標の約 5%。中程度の PC で数倍遅くても収まる)。時間の大半は評価
 (キーフォームの補間・デフォーマの変形・頂点) で、生成のモデルでは物理 (動的なリグの 2 段階の評価を含む) が約 8µs、
-モーション・効果・ポーズは 1µs ほどです。wasm (ブラウザ) と、ほかの CPU では測っていません。
+モーション・効果・ポーズは 1µs ほどです。ほかの CPU では測っていません。
+
+**wasm (ブラウザ)。** 計測のページ (`bindings/web/examples/timing/`。T0192) が、同じ 2 つのモデル (生成のモデルは
+`puppet_timing -- --write` で `.ugoe` に書き出したもの) をブラウザの中で読み、`WebPuppet.update` (入力の書き込みとモーションの再生は
+ネイティブと同じ) と受け手の `follow`、物理の段を止めた `update` を同じ測り方で測ります (評価だけ (`ModelInstance::update`) は
+wasm の API に無いので測らない)。`@ugoe/runtime` の wasm (`just web-runtime` の `web-dist` のプロファイル。毎フレーム動くクレートは
+`opt-level = 3`) を使います。時間は `update` (`follow`) の呼び出しだけを `performance.now()` で測り、200 回の和で平均します。
+Chrome は cross-origin isolated でないと `performance.now()` を 100µs に丸めるので、ページを配る `serve.mjs` が COOP と COEP を付けて
+5µs の刻みにします (ページに `crossOriginIsolated` と刻みを出す)。V8 は wasm をまず速いコンパイラ (Liftoff) で動かし、後から最適化
+したもの (TurboFan) に替えるので、始めの数百フレームは遅く、フレームの数を減らすと中央値が上がります (1,200 フレームでは生成のモデルの
+`update` が 113µs)。
+
+結果 (T0192。上と同じ機械、ヘッドレスの Chrome 154 (`HeadlessChrome/154.0.0.0`、tests/ui-audit と同じもの。描画の API は WebGL2
+(SwiftShader)。`update` は CPU だけで動くので効かない)、cross-origin isolated (刻み 5µs)。ほかのワーカーのビルドが並行して
+load average 8〜9。5 回開き直した中央値、単位は µs。ネイティブは同じ時刻に 3 回流した中央値):
+
+| モデル | `update` | `follow` | 物理を止めた `update` | ネイティブの `update` | wasm / ネイティブ |
+| --- | --- | --- | --- | --- | --- |
+| 生成のモデル (頂点 4,532) | 69.3 (最速 64.8) | 69.5 (65.1) | 48.2 (46.1) | 54.9 (52.9) | 約 1.3 倍 |
+| `avatar.ugoe` (頂点 1,410) | 17.9 (16.8) | 18.8 (17.2) | 16.7 (15.6) | 18.1 (17.9) | 約 1.0 倍 |
+
+wasm でも 1ms の目標を大きく下回ります (生成のモデルで目標の約 7%)。物理を止めた `update` (評価とモーション・効果) はネイティブと
+ほぼ同じ (生成のモデルで 48µs と 47µs) で、差の大半は物理の段です (wasm で約 21µs、ネイティブで約 8µs。約 2.5 倍)。
+中程度の PC のブラウザ・Safari・Firefox・WebGPU を有効にした Chrome では測っていません。
 
 ### 遅くなったら気づく検査
 
