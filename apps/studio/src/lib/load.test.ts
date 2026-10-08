@@ -21,6 +21,7 @@ function renderer(patch: Partial<RendererLoad> = {}): RendererLoad {
   return {
     label: "output",
     fps: 60,
+    refreshFps: 60,
     renderMs: 1,
     renderMaxMs: 2,
     dropped: 0,
@@ -55,9 +56,26 @@ describe("load warnings", () => {
 
   it("flag heavy, slow and dropping renderers", () => {
     const kinds = loadWarnings(
-      status({ renderers: [renderer({ renderMs: 12, fps: 40, dropped: 3 })] }),
+      status({ renderers: [renderer({ renderMs: 12, fps: 40, refreshFps: 40, dropped: 3 })] }),
     ).map((w) => w.kind);
     expect(kinds).toEqual(["renderHeavy", "renderSlow", "dropped"]);
+  });
+
+  it("judge an output by its chances to draw, not by the draws (T0857)", () => {
+    // 変わったときだけ描くので、144 Hz の画面で刻み 30 なら描くのは約 30 回。フレームが 1 回の更新に重なって減っても注意しない。
+    const output = renderer({ fps: 27, refreshFps: 144 });
+    expect(loadWarnings(status({ tickRate: 30, renderers: [output] }))).toEqual([]);
+    expect(loadWarnings(status({ tickRate: 60, renderers: [{ ...output, fps: 52 }] }))).toEqual([]);
+    // 画面の更新が刻みの速さより少ない (60 Hz の画面で刻み 120) ときは、今までどおり注意する。
+    const slow = loadWarnings(
+      status({
+        tickRate: 120,
+        measuredRate: 120,
+        maxIntervalMs: 9,
+        renderers: [renderer({ fps: 60, refreshFps: 60 })],
+      }),
+    );
+    expect(slow).toEqual([{ kind: "renderSlow", label: "output", fps: 60, target: 120 }]);
   });
 
   it("judge the virtual camera by its own frame rate", () => {
@@ -65,6 +83,7 @@ describe("load warnings", () => {
       label: "virtualCamera",
       targetFps: 30,
       fps: 30,
+      refreshFps: null,
       renderMs: 10,
       dropped: 2,
     });

@@ -14,7 +14,9 @@
 //   作成の途中の決まった時機での喪失は、WebGL2 の呼び出しを数えて、N 回目の前に `loseContext` を呼んで起こす。
 // - wasm の panic (`console_error_panic_hook` がコンソールに出す `panicked at`) が 1 つでもあれば、そのシナリオは失敗する。
 // - devicePixelRatio だけの変化は、run.mjs が出す `setDevicePixelRatio` (CDP の `Emulation.setDeviceMetricsOverride`) で起こす (T0939)。
-// - `window.runScenarios(names)` が結果 ([{name, ok, error}]) を返す (names が null ならすべて)。
+// - 受け手のモードが変わったときだけ描くこと (T0857) は、`render` を数え、止めた後の画をページのスクリーンショット (run.mjs が出す
+//   `screenshot`。合成された画面なので、描かなかったフレームでも canvas に残っている画が写る) で確かめる。
+// - `window.runScenarios(names)` が結果 ([{name, ok, error, note}]) を返す (names が null ならすべて。`note` は測った数)。
 
 import {
   GpuLostRepeatedlyError,
@@ -99,6 +101,15 @@ WebPuppet.create = async function (...args) {
   live.add(puppet);
   return puppet;
 };
+/** `render` を呼んだ回数 (受け手が変わったときだけ描くことを数える。T0857)。 */
+let renders = 0;
+const render = WebPuppet.prototype.render;
+WebPuppet.prototype.render = function (...args) {
+  renders++;
+  return render.apply(this, args);
+};
+/** 測った数をシナリオの結果に添える (run.mjs が出す)。 */
+let note = null;
 const free = WebPuppet.prototype.free;
 WebPuppet.prototype.free = function () {
   live.delete(this);
@@ -278,6 +289,42 @@ async function untilPlayerRecreated(player, container, oldCanvas, what) {
       player.status === "unavailable"
     );
   }, what);
+}
+
+/**
+ * ページの `element` のところを撮って (run.mjs の `screenshot`。合成された画面)、画素を返す。描いていないフレームでも、
+ * canvas に残っている画が写る。
+ */
+async function screenshotOf(element) {
+  const rect = element.getBoundingClientRect();
+  const base64 = await window.screenshot({
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+  });
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+  const copy = document.createElement("canvas");
+  copy.width = bitmap.width;
+  copy.height = bitmap.height;
+  const context = copy.getContext("2d", { willReadFrequently: true });
+  context.drawImage(bitmap, 0, 0);
+  return context.getImageData(0, 0, copy.width, copy.height).data;
+}
+
+/** 2 つの画素の列で、どれかの色が `tolerance` より違う画素の数。 */
+function differentPixels(a, b, tolerance = 2) {
+  let count = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    for (let c = 0; c < 4; c++) {
+      if (Math.abs(a[i + c] - b[i + c]) > tolerance) {
+        count++;
+        break;
+      }
+    }
+  }
+  return count;
 }
 
 /** devicePixelRatio を変える (run.mjs の CDP)。ページに届くまで待つ。 */
@@ -1303,6 +1350,80 @@ const scenarios = {
       await setPixelRatio(1);
     }
   },
+
+  /**
+   * 受け手のモードは、フレームが届いたときと見せ方が変わったときだけ描く。刻み 30 のフレームを約 2 秒届けると、描く回数は
+   * フレームの数ほどで、`requestAnimationFrame` の回数 (ヘッドレスの Chrome は約 60 回/秒) より少ない。フレームが止まった後は
+   * 描かないが、画面には最後の形が残る (T0857)。
+   */
+  async "player-follower-draws-on-change"() {
+    const container = stage();
+    const player = newPlayer();
+    const stats = [];
+    player.startFollowing((s) => stats.push(s));
+    await player.attach(container);
+    player.setBackground("#ffffff", true);
+    await player.load({ name: "avatar.ugoe", bytes: await modelBytes() });
+    check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+    player.followScene(1);
+    const defs = new Map(player.sections.flatMap((s) => s.parameters).map((p) => [p.id, p]));
+    const ids = Object.keys(player.values);
+    await frames(3);
+    const shown = await screenshotOf(container);
+
+    // 刻み 30 で約 2 秒、パラメータを既定から最大へ動かすフレームを届ける。
+    const count = 60;
+    const start = { renders, frames: stats.length };
+    for (let seq = 1; seq <= count; seq++) {
+      const t = seq / count;
+      const values = Float32Array.from(ids, (id) => {
+        const def = defs.get(id);
+        return def === undefined ? 0 : def.default + (def.max - def.default) * t;
+      });
+      player.pushFrame({
+        seq,
+        revision: 1,
+        dt: 1 / 30,
+        reset: false,
+        values,
+        lipSync: null,
+        partOpacityParts: new Uint32Array(),
+        partOpacityValues: new Float32Array(),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+    }
+    await frames(2);
+    check(player.error === null, `error while following: ${player.error}`);
+    const drawn = renders - start.renders;
+    const chances = stats.length - start.frames;
+    const reportedDraws = stats.slice(start.frames).filter((s) => s.drawn).length;
+    note = `${count} frames: ${drawn} draws in ${chances} animation frames`;
+    check(drawn === reportedDraws, `${drawn} draws, but ${reportedDraws} reported as drawn`);
+    check(drawn <= count + 2, note);
+    check(drawn >= count / 2, note);
+    check(chances >= drawn * 1.5, note);
+
+    // フレームが止まった後は描かないが、画面には最後の形が残る。
+    const last = await screenshotOf(container);
+    const before = renders;
+    await frames(30);
+    check(renders === before, `drew ${renders - before} times without a new frame`);
+    const kept = await screenshotOf(container);
+    const changed = differentPixels(last, kept);
+    check(changed === 0, `${changed} pixels changed after the frames stopped`);
+    // 最後の形は、フレームを適用する前の形と違う (動かした形が残っている)。
+    const moved = differentPixels(shown, kept);
+    check(moved > 0, "the last pose is the same as the first one");
+    let opaque = 0;
+    for (let i = 0; i < kept.length; i += 4) if (kept[i] < 250 || kept[i + 1] < 250) opaque++;
+    check(opaque > kept.length / 4 / 100, "the screen is empty after the frames stopped");
+
+    // 見せ方を変えると (フレームが無くても) 描く。
+    player.zoomBy(1.5);
+    await frames(2);
+    check(renders === before + 1, `drew ${renders - before} times after zooming`);
+    player.detach();
+  },
 };
 
 window.runScenarios = async (names) => {
@@ -1316,10 +1437,16 @@ window.runScenarios = async (names) => {
       // シナリオの後に WebPuppet が残っていない (GPU の資源を捨てた)
       check(live.size === 0, `${live.size} live puppets after the scenario`);
       check(panics.length === 0, `wasm panicked: ${panics[0]}`);
-      results.push({ name, ok: true });
+      results.push({ name, ok: true, note });
     } catch (e) {
-      results.push({ name, ok: false, error: e instanceof Error ? e.message : String(e) });
+      results.push({
+        name,
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+        note,
+      });
     } finally {
+      note = null;
       onCreating = null;
       loseContextsBeforeCreate = 0;
       createDelayMs = 0;

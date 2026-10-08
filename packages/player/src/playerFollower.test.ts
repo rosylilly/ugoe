@@ -161,8 +161,96 @@ describe("Player follower mode", () => {
     expect(applied).toHaveLength(602);
     expect(stats).toHaveLength(1);
     expect(stats[0]?.at).toBe(100);
+    expect(stats[0]?.drawn).toBe(true);
     expect(stats[0]?.dropped).toBe(1);
     expect(stats[0]?.renderMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("draws only after a frame or a change of the look, and reports every animation frame (T0857)", async () => {
+    const stats: FollowRenderStats[] = [];
+    const { p, log } = await ready({ pose: [["HandsDown", "Wave"]] });
+    p.startFollowing((s) => stats.push(s));
+    await p.load(first);
+    p.followScene(1);
+    let now = 0;
+    /** `requestAnimationFrame` を 1 回進め、描いたか (`render` を呼んだか) を返す。 */
+    const drew = (): boolean => {
+      const before = log.filter((l) => l === "render").length;
+      step(now);
+      now += 7;
+      return log.filter((l) => l === "render").length > before;
+    };
+    // モデルを読んだ後の最初の回は描き、何も変わらなければ描かない。
+    expect(drew()).toBe(true);
+    expect(drew()).toBe(false);
+    expect(drew()).toBe(false);
+    // フレームを適用した (2 つ届いても 1 回だけ描く)。
+    p.pushFrame(followFrame(1, 1, 1));
+    p.pushFrame(followFrame(2, 1, 2));
+    expect(drew()).toBe(true);
+    expect(drew()).toBe(false);
+    // 見せ方の変化。
+    const changes: [string, () => void][] = [
+      ["background", () => p.setBackground("#000000", true)],
+      ["zoom", () => p.zoomBy(2)],
+      ["pan", () => p.panBy(3, 4)],
+      ["fit", () => p.fit()],
+      ["size", () => p.resize(320, 240)],
+      [
+        "lighting",
+        () =>
+          p.updateLighting(
+            (s) => {
+              s.ambient.intensity = 0.5;
+            },
+            { preview: true },
+          ),
+      ],
+      ["module", () => p.loadModule(moduleFile("hat", "head"))],
+      ["pose", () => p.showPose("Wave", { immediately: true })],
+    ];
+    for (const [what, change] of changes) {
+      change();
+      expect(drew(), what).toBe(true);
+      expect(drew(), `${what} (again)`).toBe(false);
+    }
+    // 報告は描かなかった回も届き、描いた回だけ時間を持つ。
+    expect(stats.length).toBe(Math.round(now / 7));
+    expect(stats.filter((s) => s.drawn)).toHaveLength(2 + changes.length);
+    expect(stats.every((s) => s.drawn || s.renderMs === 0)).toBe(true);
+    expect(stats.map((s) => s.at)).toEqual(stats.map((_, i) => i * 7));
+  });
+
+  it("draws after the WebPuppet is recreated even without a new frame (T0857)", async () => {
+    const p = player();
+    p.startFollowing();
+    const attached = p.attach(container);
+    await settle();
+    const firstFake = fakePuppet();
+    pending[0]?.resolve(firstFake.puppet);
+    await attached;
+    await p.load(first);
+    p.followScene(1);
+    step(0);
+    step(16);
+    expect(firstFake.log.filter((l) => l === "render")).toHaveLength(1);
+    const lost = pending[0]?.canvas;
+    lost?.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    lost?.dispatchEvent(new Event("webglcontextrestored"));
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.loaded).toEqual([first.bytes]);
+    step(32);
+    step(48);
+    expect(second.log.filter((l) => l === "render")).toHaveLength(1);
+  });
+
+  it("draws every animation frame when not following", async () => {
+    const { log } = await ready();
+    for (let i = 0; i < 4; i++) step(i * 16);
+    expect(log.filter((l) => l === "render")).toHaveLength(4);
   });
 
   it("neither uses nor remembers the dress-up set and the lights", async () => {

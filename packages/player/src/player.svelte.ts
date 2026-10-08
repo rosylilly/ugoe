@@ -1,7 +1,7 @@
 // モデル 1 体の表示と、フレームのループ。WebPuppet (ugoe-wasm) を持ち、UI に状態を公開する。
 //
 // フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
-// → スライダーの値を同期 → 描画。
+// → スライダーの値を同期 → 描画。受け手のモード (スタジオの出力ウィンドウ) は、変わったときだけ描く。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。WebPuppet と canvas の寿命は surface.ts。
 // wasm の読み込みとファイルの読み直しはアプリが `PlayerHost` で渡す。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
@@ -258,12 +258,18 @@ export class Player {
   readonly drivers = new DriverSet();
   /** 受け手のモードのときの、適用を待つフレーム (follower.ts)。`null` なら時計で進める (ふつうのモード)。 */
   #follower: FrameQueue | null = null;
-  /** 受け手のモードで、1 回描くたびに呼ぶもの (`startFollowing` の引数)。 */
+  /** 受け手のモードで、`requestAnimationFrame` のたびに (描かなかった回も) 呼ぶもの (`startFollowing` の引数)。 */
   #onFollowRender: ((stats: FollowRenderStats) => void) | null = null;
   /** 受け手のモードで、前に描いてからフレームの適用にかかった時間 (ミリ秒)。 */
   #followMs = 0;
   /** 受け手のモードで、溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
   #droppedFrames = 0;
+  /**
+   * 前に描いてから、描き直す必要ができたか (フレームを適用した・ビューや大きさ・背景・光源・着せ替え・ポーズ・パラメータが
+   * 変わった・モデルを読んだ・WebPuppet を作り直した)。受け手のモードは、これが立っているときだけ描く
+   * (指揮役より速く描いても新しい形は出ないため。docs/studio.md#出力ウィンドウ)。ふつうのモードは毎フレーム描くので見ない。
+   */
+  #dirty = true;
 
   /** WebPuppet と canvas の寿命 (作成・GPU を失ったときの作り直し・破棄・devicePixelRatio の追従。surface.ts)。 */
   readonly #surface: PuppetSurface<WebPuppet>;
@@ -519,6 +525,7 @@ export class Player {
     if (puppet === null) return;
     // 読み直しでは同じ ID の値が引き継がれるが、別のファイルを開いたときは既定値から始める。
     puppet.reset_parameters();
+    this.#dirty = true;
     const list = parseParameterList(puppet.parameters_json());
     this.#parameters = list.parameters;
     this.sections = groupParameters(list, t("parameters.ungrouped"));
@@ -714,6 +721,7 @@ export class Player {
     const puppet = this.#puppet;
     if (puppet === null || this.driven.has(id)) return;
     puppet.set_parameter(id, value);
+    this.#dirty = true;
     this.values[id] = puppet.parameter(id) ?? value;
   }
 
@@ -755,6 +763,7 @@ export class Player {
 
   resetAllParameters(): void {
     this.#puppet?.reset_parameters();
+    this.#dirty = true;
     this.#syncValues();
   }
 
@@ -918,6 +927,7 @@ export class Player {
     if (index < 0) return false;
     const shown = options.immediately ? puppet.show_pose_immediately(part) : puppet.show_pose(part);
     if (!shown) return false;
+    this.#dirty = true;
     this.poseShown = this.poseShown.map((shown, i) => (i === index ? part : shown));
     return true;
   }
@@ -973,6 +983,10 @@ export class Player {
    * (ドライバ・トラッキング・モーション・目パチなどは使わない。値は指揮役が決める)。光源の設定と着せ替えの組は
    * 覚えず、覚えたものも使わない (シーンが決める)。モデルは `load` で読み、
    * 読み終えたら `followScene(revision)` でそのシーンのフレームを受け付ける。
+   *
+   * 描くのは、前に描いてから新しいフレームを適用したか見せ方 (ビュー・大きさ・背景・光源・着せ替え・ポーズ) が変わったか、
+   * WebPuppet を作り直したときだけ (描く回数の上限は指揮役の刻みの速さ。docs/studio.md#出力ウィンドウ)。
+   * `onRender` は `requestAnimationFrame` のたびに、描いたかどうかと一緒に呼ぶ。
    */
   startFollowing(onRender?: (stats: FollowRenderStats) => void): void {
     this.#follower ??= new FrameQueue();
@@ -1342,6 +1356,8 @@ export class Player {
   #syncDressUp(): void {
     const puppet = this.#puppet;
     if (puppet === null) return;
+    // 付け外し (ポーズのグループも変わる)。
+    this.#dirty = true;
     try {
       this.modules = parseModules(puppet.modules_json());
       this.slots = parseSlots(puppet.slots_json());
@@ -1366,20 +1382,27 @@ export class Player {
     const dt = this.#lastTime === null ? 0 : Math.min((now - this.#lastTime) / 1000, MAX_DT);
     this.#lastTime = now;
     const started = performance.now();
-    if (this.#follower !== null) {
+    const follower = this.#follower;
+    if (follower !== null) {
       // ふつうは届いたときに適用済み。モデルを読み終える前に届いたものなどが残っていれば、ここで適用する。
-      if (puppet.has_model()) this.#follow(puppet, this.#follower);
+      if (puppet.has_model()) this.#follow(puppet, follower);
     } else if (puppet.has_model()) this.#advance(puppet, dt);
-    try {
-      puppet.render();
-    } catch (e) {
-      const text = message(e);
-      if (this.error !== text) this.error = text;
+    // 受け手は、前に描いてから何も変わっていなければ描かない (canvas には前に描いた画が残る)。
+    const draw = follower === null || this.#dirty;
+    if (draw) {
+      this.#dirty = false;
+      try {
+        puppet.render();
+      } catch (e) {
+        const text = message(e);
+        if (this.error !== text) this.error = text;
+      }
     }
+    // 描かなかった回も知らせる (描く回数を数える側が、時間の経過を知れるように)。
     if (this.#onFollowRender !== null) {
-      const renderMs = this.#followMs + performance.now() - started;
-      this.#followMs = 0;
-      this.#onFollowRender({ at: now, renderMs, dropped: this.#droppedFrames });
+      const renderMs = draw ? this.#followMs + performance.now() - started : 0;
+      if (draw) this.#followMs = 0;
+      this.#onFollowRender({ at: now, drawn: draw, renderMs, dropped: this.#droppedFrames });
     }
   };
 
@@ -1443,6 +1466,7 @@ export class Player {
       reset_physics: reset_physics.bind(puppet),
     };
     for (const { frame, gap, parts } of queue.take()) {
+      this.#dirty = true;
       try {
         applyFrame(follower, frame, gap, parts);
       } catch (e) {
@@ -1468,6 +1492,7 @@ export class Player {
   #applyLighting(): void {
     const puppet = this.#puppet;
     if (puppet === null) return;
+    this.#dirty = true;
     const size = puppet.canvas_size();
     const json = toLightingJson(this.lighting, [size[0] ?? 1, size[1] ?? 1]);
     try {
@@ -1479,6 +1504,8 @@ export class Player {
 
   /** ビューの変換を読み直す (ズーム・パン・大きさ・モデルが変わったとき)。 */
   #syncView(): void {
+    // ビュー・大きさ (canvas を作り直すと画が消える)・倍率が変わったので描き直す。
+    this.#dirty = true;
     const t = this.#puppet?.has_model() ? this.#puppet.view_transform() : [];
     const [scale, x, y] = t;
     if (scale === undefined || x === undefined || y === undefined) {
@@ -1491,6 +1518,7 @@ export class Player {
   }
 
   #applyBackground(): void {
+    this.#dirty = true;
     const rgb = parseHexColor(this.background) ?? [1, 1, 1];
     this.#puppet?.set_background(rgb[0], rgb[1], rgb[2], this.transparent ? 0 : 1);
   }
@@ -1500,6 +1528,8 @@ export class Player {
    * モジュールを読み直して付けていたもの (合成の順) を付け直し、パラメータの値を戻す (待つ間に別のモデルを開いたら戻さない)。
    */
   async #setUp(puppet: WebPuppet, recovered: boolean): Promise<void> {
+    // 新しい canvas には何も描いていない。
+    this.#dirty = true;
     this.backend = puppet.backend();
     this.adapterName = puppet.adapter_name();
     this.#syncView();

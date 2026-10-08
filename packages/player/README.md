@@ -157,10 +157,15 @@ player.pushFrame(decodeFrame(buffer));
 
 - 受け手のモードでは時計の `dt` を使わず、届いたフレームを `FrameQueue` (`src/follower.ts`) から順にすべて取り出して `follow` で適用する
   (物理 → リップシンク → ポーズ。T0134)。適用は `pushFrame`・`followScene` の **その場で** 行い、`#tick` (`requestAnimationFrame`) は描くだけ
-  (残っていれば適用してから描く)。ページが隠れて `requestAnimationFrame` が止まっても物理は止まらない (T0804、docs/studio.md#隠れても止まらない)。
+  (残っていれば適用してから描く)。
+- 受け手のモードでは **変わったときだけ描く** (T0857)。前に描いてから、フレームを 1 つ以上適用した・ビュー (fit・ズーム・パン)・大きさ・
+  devicePixelRatio・背景・光源・着せ替え・ポーズ・パラメータが変わった・モデルを読んだ・WebPuppet を作り直したときに印 (`#dirty`) を立て、
+  `#tick` は印が立っているときだけ `render()` を呼ぶ。描く回数の上限は指揮役の刻みの速さになる (docs/studio.md#出力ウィンドウ)。描かなかった
+  `requestAnimationFrame` でも canvas には前に描いた画が残る。受け手のモードでないとき (ビューア) は今までどおり毎フレーム描く。ページが隠れて `requestAnimationFrame` が止まっても物理は止まらない (T0804、docs/studio.md#隠れても止まらない)。
   ドライバ・トラッキング・モーション・待機モーションは使わない (値は指揮役が決める)。`values` (スライダーの表示) も同期しない。
-- `startFollowing(onRender)` の `onRender` は、描くたびに `{at, renderMs, dropped}` (前に描いてからの適用と描画の CPU の時間・溢れて捨てたフレームの合計) を受け取る
-  (スタジオの負荷の表示)。
+- `startFollowing(onRender)` の `onRender` は、`requestAnimationFrame` のたびに (描かなかった回も) `{at, drawn, renderMs, dropped}`
+  (描いたか・描いたなら前に描いてからの適用と描画の CPU の時間・溢れて捨てたフレームの合計) を受け取る (スタジオの負荷の表示。
+  描いた回数と描く機会の回数を数える。docs/studio.md#負荷の表示)。
 - 前のシーンのフレームは捨て、まだ読み終えていないシーンのフレームは待たせる。同じシーンの中で `seq` が飛んだら (待たせすぎて
   溢れたときも) 物理をリセットしてから続ける。
 - モデルを読み直さずに次のシーンへ移るとき (スタジオで見せ方や着せ替えだけが変わった。T0802) は `continueScene(revision)`。
@@ -180,13 +185,14 @@ player.pushFrame(decodeFrame(buffer));
 作成の途中・描画中に GPU プロセスごと失ったときの作り直しと、wasm が panic しないこと (T0944)・
 devicePixelRatio だけが変わったときの追従を、`Player` は作り直しでモデル・モジュール・パラメータの値を戻すことと、倍率が変わったときの
 ビュー・ズームの換算・読み戻しの大きさと、ポーズの欄がモーションによる切り替えに追従すること (T0736) と、読み込みの途中に
-失ったら文を出さずに開こうとしたモデルとモジュールを作り直した後に開くこと (T0955) を確かめる。
+失ったら文を出さずに開こうとしたモデルとモジュールを作り直した後に開くこと (T0955) と、受け手のモードが変わったときだけ描き、止めた後も
+最後の形が画面に残ること (T0857) を確かめる。
 `just player-browser` で流す (Chrome と wasm-bindgen-cli が要る。`just ci` には入れず、CI の `conformance` ジョブで流す)。
 回し方とシナリオは [docs/testing.md](../../docs/testing.md#puppetsurface-のブラウザのテスト)。
 
 - `run.mjs` (Node): ugoe-wasm をビルドし (`--no-build` で省く)、`src/index.ts` を Vite と Svelte のプラグインで 1 つの ES モジュール
   (`player.js`。runes と @ugoe/i18n などの依存を含む) にまとめ、小さなサーバで配って playwright-core で Chrome を開く。
-  devicePixelRatio は CDP で変え、ページには `setDevicePixelRatio(ratio)` として出す。結果の置き場は `target/player-browser/`
+  devicePixelRatio は CDP で変え、ページには `setDevicePixelRatio(ratio)` として出す。ページの合成された画は `screenshot(clip)` (PNG の base64) で撮る。結果の置き場は `target/player-browser/`
   (ページのコンソールは `page.log`)。Vite は `@ugoe/player` の devDependencies (アプリと同じ版)。
 - `scenarios.js` (ページ): シナリオ。足すときは `scenarios` に関数を足す (失敗は例外で知らせる)。
 - **置き場所をここにした理由 (ライセンス):** テストは GPL-3.0-only の `surface.ts`・`player.svelte.ts` をそのまま読むので、GPL のパッケージの中に置く。

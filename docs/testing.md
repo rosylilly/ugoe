@@ -646,6 +646,9 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   コンテキストを失っている間 (`load_bundle`・`load_module` が `device_lost`) に初めのモデルを開いても、別のモデルとモジュールを開いても、
   `error`・`dressUpError` を出さず、復元の後にそのモデル (とモジュール) を開いて fit で描く (`player-loss-during-load`。T0955。
   直す前には落ちることを確かめた)。
+  受け手のモードで、刻み 30 のフレームを約 2 秒届けると、描く回数 (`render` の呼び出し) はフレームの数ほどで `requestAnimationFrame` の回数より
+  少なく (結果の行に数を出す。毎フレーム描いていた前は 60 フレームで 122 回、今は 60 回)、フレームが止まった後は描かないが、ページの
+  スクリーンショット (run.mjs の `screenshot`。合成された画面) で最後の形が残り、ズームすると描く (`player-follower-draws-on-change`。T0857)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
   `setDevicePixelRatio(ratio)` として出します。ヘッドレスの Chrome (154 で確かめた) は倍率の上書きだけではメディアクエリを評価し直さず、
   `matchMedia` の `matches` は変わっても `change` が届きません (ページの大きさも変えると届く)。そこで上書きのたびに、エミュレートする

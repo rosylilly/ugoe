@@ -411,6 +411,7 @@ export function studioPageInit({ osLocale, fixture }) {
             {
               label: "output",
               fps: 59.6,
+              refreshFps: 60,
               renderMs: 1.4,
               renderMaxMs: 3.1,
               dropped: 0,

@@ -175,6 +175,10 @@ try {
       browserCdp.send("Browser.crashGpuProcess").catch(() => {});
     }, delay);
   });
+  // ページのところを撮る (合成された画面。受け手が描かなかったフレームでも canvas に残る画が写るかを見る。T0857)。
+  await page.exposeFunction("screenshot", async (clip) =>
+    (await page.screenshot({ clip })).toString("base64"),
+  );
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.waitForFunction(() => typeof window.runScenarios === "function");
   const results = await Promise.race([
@@ -185,6 +189,7 @@ try {
   ]);
   for (const r of results) {
     console.log(`${r.ok ? "ok  " : "FAIL"} ${r.name}${r.error ? `: ${r.error}` : ""}`);
+    if (r.note) console.log(`     ${r.note}`);
     if (!r.ok) failed++;
   }
   if (results.length === 0) {

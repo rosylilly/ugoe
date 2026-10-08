@@ -305,11 +305,16 @@ export class FrameQueue {
   }
 }
 
-/** 受け手のモードで 1 回描いたときの負荷 (`Player.startFollowing` の引数に渡す。スタジオの負荷の表示、docs/studio.md#負荷の表示)。 */
+/**
+ * 受け手のモードの `requestAnimationFrame` 1 回分の負荷 (`Player.startFollowing` の引数に渡す。スタジオの負荷の表示、
+ * docs/studio.md#負荷の表示)。受け手は変わったときだけ描くので、描かなかった回も渡す (`drawn` が偽)。
+ */
 export interface FollowRenderStats {
-  /** 描いた時刻 (`requestAnimationFrame` の時刻。ミリ秒)。 */
+  /** `requestAnimationFrame` の時刻 (ミリ秒)。 */
   at: number;
-  /** 前に描いてからのフレームの適用と、この描画にかかった CPU の時間 (ミリ秒)。 */
+  /** この回に描いたか (前に描いてから、新しいフレームを適用したか見せ方が変わった)。 */
+  drawn: boolean;
+  /** 描いたなら、前に描いてからのフレームの適用と、この描画にかかった CPU の時間 (ミリ秒)。描かなければ 0。 */
   renderMs: number;
   /** 溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
   dropped: number;

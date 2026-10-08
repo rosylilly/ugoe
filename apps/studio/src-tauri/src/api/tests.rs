@@ -2191,14 +2191,15 @@ fn the_browser_source_serves_the_scene_and_streams_frames() {
     // ページは描画の負荷を返す (操作ウィンドウの負荷の表示に出る)。
     socket.send(
         opcode::TEXT,
-        br#"{"kind":"renderStats","fps":59.5,"renderMs":1.25,"renderMaxMs":3.0,"dropped":0}"#,
+        br#"{"kind":"renderStats","fps":29.5,"refreshFps":59.5,"renderMs":1.25,"renderMaxMs":3.0,"dropped":0}"#,
     );
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !lock(&studio.renders).contains_key(source::LABEL) {
         assert!(std::time::Instant::now() < deadline, "the stats arrive");
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(lock(&studio.renders)[source::LABEL].stats.fps, 59.5);
+    let reported = lock(&studio.renders)[source::LABEL].stats;
+    assert_eq!((reported.fps, reported.refresh_fps), (29.5, Some(59.5)));
     // 読めなかったことも返す (今のシーンのものだけ。操作ウィンドウに出る。T0825)。
     let revision = next["revision"].as_u64().unwrap();
     socket.send(

@@ -223,7 +223,7 @@
       "intervalSpike": "A tick was {{max}} apart (expected {{period}}). Motion may stutter; the OS timer may be coarse or the computer busy.",
       "tickHeavy": "One tick takes {{tick}} of the {{period}} budget. Try a lower tick rate.",
       "renderHeavy": "{{name}}: drawing takes {{render}} of the {{period}} budget. Try a smaller output size or a lower tick rate.",
-      "renderSlow": "{{name}} draws {{fps}}, below {{target}}.",
+      "renderSlow": "{{name}} can draw only {{fps}}, below {{target}}.",
       "dropped_one": "{{name}} dropped {{count}} frame. Physics was reset to catch up.",
       "dropped_other": "{{name}} dropped {{count}} frames. Physics was reset to catch up.",
       "stale": "{{name}} is not drawing. It may be hidden or minimized; streaming software may not capture it."

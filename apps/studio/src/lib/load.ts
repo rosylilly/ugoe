@@ -27,13 +27,17 @@ function rendererWarnings(load: RendererLoad, tickRate: number): LoadWarning[] {
   // 隠れているなど、報告が途絶えている出力の数値は古いので、ほかの注意は出さない。
   if (load.stale) return [{ kind: "stale", label: load.label }];
   const out: LoadWarning[] = [];
-  // 出力ウィンドウは刻みごとに描く。仮想カメラは自分のフレームレートで描く (刻みより遅いことがある)。
+  // 出力ウィンドウは刻みの速さを目標にする。仮想カメラは自分のフレームレートで描く (刻みより遅いことがある)。
   const target = load.targetFps ?? tickRate;
   const period = periodMs(target);
   if (load.renderMs > period * BUDGET_SHARE)
     out.push({ kind: "renderHeavy", label: load.label, renderMs: load.renderMs, periodMs: period });
-  if (load.fps < target * RATE_SHORTFALL)
-    out.push({ kind: "renderSlow", label: load.label, fps: load.fps, target });
+  // 出力ウィンドウとブラウザソースは変わったときだけ描くので、描いた回数は届いたフレームの数に従う。フレームが届く時機と
+  // 画面の更新の時機が揺れて 2 つのフレームが 1 回の更新に入ると描いた回数は減るが、描画が遅れたのではない。そこで描く機会
+  // (`requestAnimationFrame`) の回数で判断する (画面のリフレッシュレートが目標より低い・描画が重くて更新が遅れる。T0857)。
+  const rate = load.refreshFps ?? load.fps;
+  if (rate < target * RATE_SHORTFALL)
+    out.push({ kind: "renderSlow", label: load.label, fps: rate, target });
   // 捨てたフレーム (物理のリセットを伴う) は、刻みごとに描く出力だけのもの。仮想カメラが描かなかった画は数値だけに出し、
   // 追いつかないことは仮想カメラの「遅れた」で知らせる (VirtualCameraPanel.svelte)。
   if (load.dropped > 0 && load.targetFps === null)

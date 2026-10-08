@@ -85,7 +85,7 @@ describe("sourceFeed", () => {
       `${BASE}scene/7/background`,
       `${BASE}scene/9/model`,
     ]);
-    const stats = { fps: 60, renderMs: 1, renderMaxMs: 2, dropped: 0 };
+    const stats = { fps: 60, refreshFps: 144, renderMs: 1, renderMaxMs: 2, dropped: 0 };
     await f.reportRenderStats(stats);
     await f.subscribeFrames(() => {});
     const socket = FakeSocket.made[0] as FakeSocket;

@@ -42,8 +42,13 @@ export interface OutputState {
 
 /** 出力が報告する描画の負荷 (lib.rs の `RenderStats`。直近の約 1 秒)。 */
 export interface RenderStats {
-  /** 描いた回数 (回/秒)。 */
+  /** 描いた回数 (回/秒)。出力ウィンドウとブラウザソースは変わったときだけ描くので、刻みの速さを上限に、届いたフレームの数に従う。 */
   fps: number;
+  /**
+   * 描く機会 (`requestAnimationFrame`) の回数 (回/秒。画面のリフレッシュレート、描画が重ければそれより少ない)。
+   * 出力ウィンドウとブラウザソースだけで、仮想カメラは `null` (描く機会ごとに描く)。
+   */
+  refreshFps: number | null;
   /** 1 回の描画 (届いたフレームの適用と描画) の CPU の時間の平均 (ミリ秒)。 */
   renderMs: number;
   /** 1 回の描画の CPU の時間の最大 (ミリ秒)。 */

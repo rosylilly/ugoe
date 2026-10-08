@@ -51,8 +51,9 @@ const player = new Player({
   storagePrefix: PLAYER_STORAGE_PREFIX,
 });
 const renderStats = new RenderStatsWindow();
-player.startFollowing(({ at, renderMs, dropped }) => {
-  const stats = renderStats.record(at, renderMs, dropped);
+// 受け手は変わったときだけ描き、描かなかった `requestAnimationFrame` でも知らせが来る (描く回数の上限は刻みの速さ)。
+player.startFollowing((frame) => {
+  const stats = renderStats.record(frame);
   if (stats !== null) void feed().then((f) => f.reportRenderStats(stats));
 });
 // 開発中やヘッドレスのブラウザで状態を見るため。

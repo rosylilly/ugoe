@@ -116,6 +116,7 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
   OS ごとの効き方と、OBS での取り込みの手順は [docs/studio.md](../../docs/studio.md#隠れても止まらない)。
 - **受け手 (出力ウィンドウ):** `@ugoe/player` の受け手のモード (`Player.startFollowing`)。シーンの通知を受けたら `scene_model(revision)` で
   モデルのバイト列を取って読み、そのシーンのフレームを順にすべて `follow` で適用して (物理・リップシンク・ポーズだけが動く)、最後に 1 回描く。
+  新しいフレームも見せ方の変化も無い `requestAnimationFrame` では描かない (描く回数の上限は刻みの速さ。T0857)。
 - **操作ウィンドウはモデルを描かない** (GPU の負荷を出力の分だけにする)。様子は値と数値で示す。
 - パラメータのスライダーは指揮役に書き込む (`set_parameter`。次の刻みから基準値になる)。動かしてから 0.5 秒は、指揮役からの値で表示を上書きしない。
 - 言語は「OS に合わせる」が既定で、OS の言語は `tauri-plugin-os` の `locale()` で取る (WebView の `navigator.languages` は OS と違うことがある。

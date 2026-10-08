@@ -274,8 +274,11 @@ fn output_transparency(_window: &WebviewWindow) -> Transparency {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RenderStats {
-    /// 描いた回数 (回/秒)。
+    /// 描いた回数 (回/秒)。出力ウィンドウとブラウザソースは変わったときだけ描くので、刻みの速さを上限に、届いたフレームの数に従う。
     fps: f32,
+    /// 描く機会 (`requestAnimationFrame`) の回数 (回/秒。画面のリフレッシュレート、描画が重ければそれより少ない)。
+    /// 出力ウィンドウとブラウザソースだけで、仮想カメラは `None` (描く機会ごとに描く)。注意の判断に使う (load.ts)。
+    refresh_fps: Option<f32>,
     /// 1 回の描画 (届いたフレームの適用と描画) の CPU の時間の平均 (ミリ秒)。
     render_ms: f32,
     /// 1 回の描画の CPU の時間の最大 (ミリ秒)。
@@ -286,9 +289,14 @@ struct RenderStats {
 
 impl RenderStats {
     fn is_valid(&self) -> bool {
-        [self.fps, self.render_ms, self.render_max_ms]
-            .iter()
-            .all(|v| v.is_finite() && *v >= 0.0)
+        [
+            self.fps,
+            self.refresh_fps.unwrap_or(0.0),
+            self.render_ms,
+            self.render_max_ms,
+        ]
+        .iter()
+        .all(|v| v.is_finite() && *v >= 0.0)
     }
 }
 
@@ -874,6 +882,7 @@ impl Studio {
             } => {
                 let stats = RenderStats {
                     fps: measured,
+                    refresh_fps: None,
                     render_ms,
                     render_max_ms,
                     dropped,
@@ -1972,6 +1981,7 @@ mod tests {
                 label: "output".into(),
                 stats: RenderStats {
                     fps: 60.0,
+                    refresh_fps: Some(144.0),
                     render_ms: 1.5,
                     render_max_ms: 2.0,
                     dropped: 0,
@@ -1985,7 +1995,7 @@ mod tests {
             concat!(
                 r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
                 r#""measuredRate":59.5,"maxIntervalMs":null,"renderers":[{"label":"output","fps":60.0,"#,
-                r#""renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false,"targetFps":null}]}"#
+                r#""refreshFps":144.0,"renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false,"targetFps":null}]}"#
             )
         );
     }
@@ -2205,6 +2215,7 @@ mod tests {
         let studio = Studio::default();
         let stats = RenderStats {
             fps: 60.0,
+            refresh_fps: Some(60.0),
             render_ms: 1.0,
             render_max_ms: 1.0,
             dropped: 0,
@@ -2213,6 +2224,13 @@ mod tests {
         assert!(
             !RenderStats {
                 render_ms: f32::NAN,
+                ..stats
+            }
+            .is_valid()
+        );
+        assert!(
+            !RenderStats {
+                refresh_fps: Some(f32::INFINITY),
                 ..stats
             }
             .is_valid()
