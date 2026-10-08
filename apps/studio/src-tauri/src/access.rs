@@ -7,6 +7,8 @@
 //! - 読める: 開くダイアログで選んだパス (このセッションの間)・今のプロファイルにあるパス (シーンのモデル・モジュール・背景の画像と、
 //!   ホットキーの着せ替えのモジュール)・最近のプロファイル (アプリのデータの場所にバックエンドが書いたもの)。
 //!   プロファイルにあるパスは、利用者がそのプロファイルを選んで開いた (または前に自分で選んで保存した) ものとして扱う。
+//!   ファイルの中の相対パスは読むときに絶対パスに解いてある (`profile::resolve_path`) ので、解いた絶対パスで比べる。
+//!   フォルダの外を指す相対パスは解かずに残るが、`stage::read_asset` が相対パスを読まない。
 //! - 書ける: 保存のダイアログで選んだパス。1 回書いたら忘れる。今の保存先 (`save_profile` の `path` を省いたとき) は
 //!   バックエンドが持つので、選び直さずに書ける。
 
@@ -173,6 +175,45 @@ mod tests {
             access
                 .check_readable(Path::new("/m/other.ugoe"), &stage)
                 .is_ok()
+        );
+    }
+
+    /// 相対パスで書いたプロファイルのファイルは、解いた絶対パスで読める (T0852)。
+    #[test]
+    fn reads_files_written_as_relative_paths_by_their_absolute_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("profile.json");
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "format": "ugoe-studio-profile",
+                "version": 1,
+                "scenes": [{ "id": "a", "name": "A", "model": "m/a.ugoe", "modules": ["../x.ugoemod"] }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut stage = Stage::new(None);
+        stage
+            .open_profile(&path, &mut crate::conductor::Conductor::new())
+            .ok();
+        let access = FileAccess::default();
+        assert!(
+            access
+                .check_readable(&tmp.path().join("m/a.ugoe"), &stage)
+                .is_ok()
+        );
+        // 字面の相対パスは、読めるパスにならない。
+        assert!(
+            access
+                .check_readable(Path::new("m/a.ugoe"), &stage)
+                .is_err()
+        );
+        // フォルダの外を指す相対パスは解かない。そのまま残るが、読むところ (`stage::read_asset`) が読まない。
+        assert!(
+            access
+                .check_readable(&tmp.path().join("../x.ugoemod"), &stage)
+                .is_err()
         );
     }
 

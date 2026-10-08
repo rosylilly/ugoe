@@ -719,6 +719,53 @@ fn dresses_up_only_with_modules_from_the_profile() {
     );
 }
 
+/// 相対パスで書いたプロファイルのモジュールも、解いた絶対パスで一覧に出して比べる (T0852)。
+#[test]
+fn dresses_up_with_modules_written_as_relative_paths() {
+    let dir = Dir::new();
+    let model = dir.model();
+    let dress = dir.module("dress.ugoemod", fixtures::dress_module());
+    let path = dir.0.path().join("p.json");
+    std::fs::write(
+        &path,
+        json!({
+            "format": "ugoe-studio-profile",
+            "version": 1,
+            "scenes": [{ "id": "chat", "name": "Chat", "model": "avatar.ugoe" }],
+            "hotkeys": [
+                { "keys": "F9", "action": { "kind": "dressUp", "slot": "Outfit", "module": "dress.ugoemod" } }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let studio = studio();
+    let error = studio.with_stage(|stage, conductor| stage.open_profile(&path, conductor));
+    assert_eq!(error.unwrap(), None);
+    assert_eq!(
+        lock(&studio.stage).profile().scenes[0].model.as_deref(),
+        Some(model.as_path())
+    );
+    let mut client = Client::connect(&studio);
+    client.approved(Permission::Control);
+    let list = client.call("dressup.list", json!({}));
+    assert_eq!(list["modules"][0]["id"], dress.to_str().unwrap());
+    // プロファイルに書いた字面 (相対パス) では指せない。
+    assert_eq!(
+        client.fail(
+            "dressup.set",
+            json!({ "slot": "Outfit", "module": "dress.ugoemod" })
+        ),
+        INVALID_PARAMS
+    );
+    client.call(
+        "dressup.set",
+        json!({ "slot": "Outfit", "module": dress.to_str() }),
+    );
+    let list = client.call("dressup.list", json!({}));
+    assert_eq!(list["slots"][1]["module"], dress.to_str().unwrap());
+}
+
 /// `pose.list` は出しているモデルのポーズのグループと表示している要素を返し、`pose.set` は操作ウィンドウの `show_pose` と同じく
 /// 要素を選んでシーンに覚える (T0843)。
 #[test]

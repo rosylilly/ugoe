@@ -4,12 +4,16 @@
 //! 確かめ、未来の版は [`ProfileError::FutureVersion`] にする (黙って読み落とさない)。値の範囲を外れたものは収め直す
 //! ([`Profile::sanitize`])。ホットキー・入力・モーションの設定 (T0803) と、出力の刻みの速さ・仮想カメラの設定 (T0827) は
 //! 同じ版のまま、省略できる項目として足した。
+//!
+//! ファイルのパス (シーンのモデル・モジュール・背景の画像と、ホットキーの着せ替えのモジュール) は、プロファイルのフォルダを
+//! 基準にした相対パスでも持てる (`docs/studio.md#プロファイルのパス`、ADR 0033)。メモリの上では絶対パスに解いて持ち
+//! ([`Profile::read`])、書くときにプロファイルのフォルダの下のものだけを相対パスに戻す ([`Profile::write`])。
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::hotkeys::{self, Hotkey};
+use crate::hotkeys::{self, Hotkey, HotkeyAction};
 use crate::input::{InputSettings, MotionSettings};
 use crate::pacing::TickRate;
 use crate::virtual_camera;
@@ -66,10 +70,11 @@ pub struct SceneSettings {
     /// プロファイルの中で一意な ID (ホットキーや外部 API がシーンを指す)。
     pub id: String,
     pub name: String,
-    /// モデル (`.ugoe` か JSON) の絶対パス。まだ選んでいなければ `None`。
+    /// モデル (`.ugoe` か JSON) のパス。まだ選んでいなければ `None`。ファイルの中ではプロファイルのフォルダからの相対パスでもよい
+    /// (読むと絶対パスに解く。[`Profile::read`])。モジュール・背景の画像も同じ。
     #[serde(default)]
     pub model: Option<PathBuf>,
-    /// 付けるモジュール (`.ugoemod`) の絶対パス (合成の順)。
+    /// 付けるモジュール (`.ugoemod`) のパス (合成の順)。
     #[serde(default)]
     pub modules: Vec<PathBuf>,
     /// 光源の設定 (`@ugoe/player` の `LightingSettings`。読むのは画面と受け手で、ここでは中身を見ない)。`None` は既定の光源。
@@ -122,7 +127,7 @@ pub enum Background {
     Color { color: String },
     /// クロマキーの単色 (`#rrggbb`。配信ソフトで色を抜く)。見え方は単色と同じで、画面で色の選び方を変える。
     Chroma { color: String },
-    /// 画像 (PNG・JPEG・WebP の絶対パス)。出力を覆うように拡大する。
+    /// 画像 (PNG・JPEG・WebP のパス)。出力を覆うように拡大する。
     Image { path: PathBuf },
 }
 
@@ -308,7 +313,7 @@ impl Profile {
         Ok(profile)
     }
 
-    /// ファイルから読む。
+    /// ファイルから読む。相対パスはプロファイルのフォルダを基準に絶対パスに解く ([`resolve_path`])。
     pub fn read(path: &Path) -> Result<Self, ProfileError> {
         let io = |e: std::io::Error| ProfileError::Io {
             path: path.to_owned(),
@@ -328,7 +333,10 @@ impl Profile {
                 e.utf8_error(),
             ))
         })?;
-        Self::from_json(&text, path)
+        let mut profile = Self::from_json(&text, path)?;
+        let base = base_dir(path);
+        profile.map_paths(|p| resolve_path(&base, p));
+        Ok(profile)
     }
 
     /// 整形した JSON (今の版で書く)。
@@ -341,8 +349,13 @@ impl Profile {
     }
 
     /// ファイルに書く (一時ファイルに書いてから置き換え、途中で落ちても前のファイルを壊さない。`ugoe_fs::write_atomic`)。
+    /// `path` のフォルダ (とその下) にあるファイルは相対パス、外のものは絶対パスで書く ([`relative_path`])。
+    /// 別の場所へ保存すれば、その場所を基準に書き直す。
     pub fn write(&self, path: &Path) -> Result<(), ProfileError> {
-        ugoe_fs::write_atomic(path, self.to_json().as_bytes()).map_err(|e| ProfileError::Io {
+        let base = base_dir(path);
+        let mut profile = self.clone();
+        profile.map_paths(|p| relative_path(&base, p).map_or_else(|| p.to_owned(), PathBuf::from));
+        ugoe_fs::write_atomic(path, profile.to_json().as_bytes()).map_err(|e| ProfileError::Io {
             path: path.to_owned(),
             message: e.to_string(),
         })
@@ -373,6 +386,30 @@ impl Profile {
         hotkeys::sanitize(&mut self.hotkeys);
         self.input.sanitize();
         self.motion.sanitize();
+    }
+
+    /// ファイルのパス (シーンのモデル・モジュール・背景の画像と、ホットキーの着せ替えのモジュール) をすべて `f` で置き換える。
+    fn map_paths(&mut self, mut f: impl FnMut(&Path) -> PathBuf) {
+        for scene in &mut self.scenes {
+            if let Some(model) = &mut scene.model {
+                *model = f(model);
+            }
+            for module in &mut scene.modules {
+                *module = f(module);
+            }
+            if let Background::Image { path } = &mut scene.background {
+                *path = f(path);
+            }
+        }
+        for hotkey in &mut self.hotkeys {
+            if let HotkeyAction::DressUp {
+                module: Some(module),
+                ..
+            } = &mut hotkey.action
+            {
+                *module = f(module);
+            }
+        }
     }
 
     pub fn scene(&self, id: &str) -> Option<&SceneSettings> {
@@ -467,6 +504,74 @@ pub fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
     }
     let channel = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).ok();
     Some([channel(1)?, channel(3)?, channel(5)?])
+}
+
+/// プロファイルのファイル `path` のあるフォルダ (相対パスの基準)。`path` が相対パスなら今のディレクトリから絶対パスにする。
+fn base_dir(path: &Path) -> PathBuf {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    path.parent().map(Path::to_owned).unwrap_or_default()
+}
+
+/// プロファイルにあるパス `path` を、プロファイルのフォルダ `base` を基準に解く (`docs/studio.md#プロファイルのパス`)。
+///
+/// 絶対パスはそのまま。相対パスは `/` か `\` で区切り (どの OS でも同じに読む)、`base` の下のファイルを指すものだけを解く。
+/// フォルダの外に出られるもの (`..`・点と空白だけの名前・区切りから始まるもの (ルートや UNC)・`:` を含むもの (ドライブ名)) と
+/// 空のものは、相対パスのまま返す。相対パスのままのパスは読めないパスで、[`crate::stage::read_asset`] は読まずに
+/// 見つからないとする (画面は選び直させる)。プロファイルに書き戻すときもそのまま書く。
+///
+/// 解くのは字面だけで、記号のリンクはたどらない (フォルダの下にある記号のリンクは、ほかのファイルと同じく OS がたどって読む。
+/// 絶対パスはもともと受け付けるので、記号のリンクで読めるファイルは増えない)。
+pub fn resolve_path(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_owned();
+    }
+    match path.to_str().and_then(relative_components) {
+        Some(parts) => {
+            let mut resolved = base.to_owned();
+            for part in parts {
+                resolved.push(part);
+            }
+            resolved
+        }
+        None => path.to_owned(),
+    }
+}
+
+/// 相対パスの名前の並び。フォルダの外に出られるもの・空のものは `None` ([`resolve_path`])。`.` と空の名前 (`a//b`) は飛ばす。
+fn relative_components(text: &str) -> Option<Vec<&str>> {
+    if text.starts_with(['/', '\\']) || text.contains(':') {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for part in text.split(['/', '\\']) {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        // `..` と、Windows が末尾の点と空白を落として `..` や `.` に読むかもしれない名前 (`...`・`.. `)。
+        if part.trim_end_matches(['.', ' ']).is_empty() {
+            return None;
+        }
+        parts.push(part);
+    }
+    (!parts.is_empty()).then_some(parts)
+}
+
+/// `path` がフォルダ `base` の下にあれば、`base` からの相対パス (区切りは `/`)。外にある・相対パスで書くと
+/// 同じファイルに解けない (名前に `\` や `:` を含む) なら `None` (絶対パスのまま書く)。比べるのは字面だけ。
+pub fn relative_path(base: &Path, path: &Path) -> Option<String> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let rest = path.strip_prefix(base).ok()?;
+    let parts = rest
+        .components()
+        .map(|c| match c {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let text = parts.join("/");
+    (resolve_path(base, Path::new(&text)) == path).then_some(text)
 }
 
 /// 最近のプロファイル (新しいものが先頭)。アプリのデータの場所の `recent-profiles.json` に置く。
@@ -771,6 +876,273 @@ mod tests {
             Profile::read(&folder),
             Err(ProfileError::Io { .. })
         ));
+    }
+
+    /// ファイルのパスをすべて持つプロファイル (モデル・モジュール・背景の画像・ホットキーの着せ替えのモジュール)。
+    fn profile_with_paths(model: &str, module: &str, background: &str, hotkey: &str) -> String {
+        serde_json::json!({
+            "format": "ugoe-studio-profile",
+            "version": 1,
+            "scenes": [{
+                "id": "a",
+                "name": "A",
+                "model": model,
+                "modules": [module],
+                "background": { "kind": "image", "path": background }
+            }],
+            "hotkeys": [
+                { "keys": "Ctrl+1", "action": { "kind": "dressUp", "slot": "hat", "module": hotkey } }
+            ]
+        })
+        .to_string()
+    }
+
+    /// プロファイルが持つパス (モデル・モジュール・背景の画像・ホットキーのモジュールの順)。
+    fn paths_of(profile: &Profile) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        let mut profile = profile.clone();
+        profile.map_paths(|p| {
+            paths.push(p.to_owned());
+            p.to_owned()
+        });
+        paths
+    }
+
+    /// 相対パスはプロファイルのフォルダを基準に解く。フォルダごと別の場所へ写しても、写した先の同じファイルを指す (T0852)。
+    #[test]
+    fn resolves_relative_paths_against_the_profile_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("from");
+        std::fs::create_dir_all(from.join("models")).unwrap();
+        std::fs::write(
+            from.join("p.json"),
+            profile_with_paths(
+                "models/avatar.ugoe",
+                "./models//hat.ugoemod",
+                "bg.png",
+                r"models\cap.ugoemod",
+            ),
+        )
+        .unwrap();
+        let to = tmp.path().join("to/nested");
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::copy(from.join("p.json"), to.join("p.json")).unwrap();
+        for dir in [&from, &to] {
+            let profile = Profile::read(&dir.join("p.json")).unwrap();
+            assert_eq!(
+                paths_of(&profile),
+                [
+                    dir.join("models").join("avatar.ugoe"),
+                    dir.join("models").join("hat.ugoemod"),
+                    dir.join("bg.png"),
+                    dir.join("models").join("cap.ugoemod"),
+                ]
+            );
+        }
+        // 絶対パスはそのまま。
+        let absolute = tmp.path().join("elsewhere/avatar.ugoe");
+        assert_eq!(resolve_path(&from, &absolute), absolute);
+        // 相対パスのプロファイルを開いても、今のディレクトリではなくプロファイルのフォルダを基準にする。
+        let relative = Path::new("p.json");
+        assert_eq!(
+            base_dir(relative),
+            std::env::current_dir().unwrap(),
+            "the base of a relative profile path is absolute"
+        );
+    }
+
+    /// プロファイルのフォルダの外に出られる相対パスは解かない (相対パスのまま残し、読めないパスとして扱う)。T0852。
+    #[test]
+    fn leaves_relative_paths_that_escape_the_profile_folder_unresolved() {
+        let base = Path::new("/home/me/show");
+        for path in [
+            "../secret.ugoe",
+            "models/../../secret.ugoe",
+            r"models\..\..\secret.ugoe",
+            "models/.../secret.ugoe",
+            "models/.. /secret.ugoe",
+            r"\secret.ugoe",
+            r"\\server\share\secret.ugoe",
+            r"C:\secret.ugoe",
+            "C:secret.ugoe",
+            "C:/secret.ugoe",
+            "models/a.ugoe:stream",
+            "",
+            ".",
+            "./",
+        ] {
+            assert_eq!(
+                resolve_path(base, Path::new(path)),
+                Path::new(path),
+                "{path:?}"
+            );
+        }
+        // 名前の中の点は構わない。
+        assert_eq!(
+            resolve_path(base, Path::new("..models/a..ugoe")),
+            base.join("..models").join("a..ugoe")
+        );
+        // 読んだプロファイルでも、すべての種類のパスでそのまま残る。
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("p.json");
+        std::fs::write(
+            &path,
+            profile_with_paths("../a.ugoe", "../m.ugoemod", "../bg.png", "../c.ugoemod"),
+        )
+        .unwrap();
+        let profile = Profile::read(&path).unwrap();
+        assert_eq!(
+            paths_of(&profile),
+            ["../a.ugoe", "../m.ugoemod", "../bg.png", "../c.ugoemod"].map(PathBuf::from)
+        );
+        // 書き戻すときもそのまま書く (利用者が直せるように、黙って消さない)。
+        profile.write(&path).unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains(r#""model": "../a.ugoe""#)
+        );
+    }
+
+    /// プロファイルのフォルダの下のファイルは相対パス (区切りは `/`)、外のものは絶対パスで書く。
+    /// 別の場所へ保存し直すと、新しい場所を基準に書き直す (T0852)。
+    #[test]
+    fn writes_paths_under_the_profile_folder_as_relative_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let show = tmp.path().join("show");
+        let outside = tmp.path().join("library/avatar.ugoe");
+        let mut profile = Profile::new();
+        profile.scenes[0].model = Some(show.join("models").join("avatar.ugoe"));
+        profile.scenes[0].modules = vec![outside.clone()];
+        profile.scenes[0].background = Background::Image {
+            path: show.join("bg.png"),
+        };
+        profile.hotkeys = serde_json::from_value(serde_json::json!([
+            { "keys": "Ctrl+1", "action": { "kind": "dressUp", "slot": "hat", "module": show.join("hat.ugoemod") } }
+        ]))
+        .unwrap();
+        std::fs::create_dir_all(&show).unwrap();
+        let path = show.join("p.json");
+        profile.write(&path).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let scene = &written["scenes"][0];
+        assert_eq!(scene["model"], "models/avatar.ugoe");
+        assert_eq!(scene["modules"][0], outside.to_str().unwrap());
+        assert_eq!(scene["background"]["path"], "bg.png");
+        assert_eq!(written["hotkeys"][0]["action"]["module"], "hat.ugoemod");
+        // 読み直すと同じプロファイル (メモリの上は絶対パス)。
+        assert_eq!(Profile::read(&path).unwrap(), profile);
+
+        // 1 つ下のフォルダへ保存し直すと、`show` の直下のファイルは外になるので絶対パスで書く。
+        let deeper = show.join("models");
+        std::fs::create_dir_all(&deeper).unwrap();
+        let path = deeper.join("p.json");
+        profile.write(&path).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let scene = &written["scenes"][0];
+        assert_eq!(scene["model"], "avatar.ugoe");
+        assert_eq!(
+            scene["background"]["path"],
+            show.join("bg.png").to_str().unwrap()
+        );
+        assert_eq!(Profile::read(&path).unwrap(), profile);
+    }
+
+    /// 相対パスにするかは字面で決める。名前に `\` や `:` を含むなど相対パスで書くと同じファイルに解けないもの、
+    /// `..` を含む絶対パス、フォルダそのものは絶対パスのまま書く。
+    #[test]
+    fn writes_absolute_paths_when_a_relative_path_would_not_round_trip() {
+        let base = Path::new("/home/me/show");
+        assert_eq!(
+            relative_path(base, Path::new("/home/me/show/m/a.ugoe")).as_deref(),
+            Some("m/a.ugoe")
+        );
+        assert_eq!(
+            relative_path(base, Path::new("/home/me/showcase/a.ugoe")),
+            None
+        );
+        assert_eq!(
+            relative_path(base, Path::new("/home/me/show/../a.ugoe")),
+            None
+        );
+        assert_eq!(relative_path(base, Path::new("/home/me/show")), None);
+        assert_eq!(relative_path(base, Path::new("a.ugoe")), None);
+        #[cfg(unix)]
+        {
+            // Unix では `\` と `:` は名前に使える。相対パスで書くと区切りやドライブ名に読むので、絶対パスで書く。
+            assert_eq!(
+                relative_path(base, Path::new(r"/home/me/show/a\b.ugoe")),
+                None
+            );
+            assert_eq!(
+                relative_path(base, Path::new("/home/me/show/a:b.ugoe")),
+                None
+            );
+        }
+    }
+
+    /// Windows のパス (区切りの `\`・ドライブ名) の組み立て。Windows でだけ確かめられる (T0852)。
+    #[cfg(windows)]
+    #[test]
+    fn resolves_and_writes_windows_paths() {
+        let base = Path::new(r"C:\Users\me\show");
+        assert_eq!(
+            resolve_path(base, Path::new("models/a.ugoe")),
+            Path::new(r"C:\Users\me\show\models\a.ugoe")
+        );
+        assert_eq!(
+            relative_path(base, Path::new(r"C:\Users\me\show\models\a.ugoe")).as_deref(),
+            Some("models/a.ugoe")
+        );
+        assert_eq!(relative_path(base, Path::new(r"D:\show\a.ugoe")), None);
+        assert_eq!(
+            resolve_path(base, Path::new(r"D:\show\a.ugoe")),
+            Path::new(r"D:\show\a.ugoe")
+        );
+        // ルートから始まる (ドライブ名の無い) パスと UNC は、相対パスとしては解かない。
+        assert_eq!(
+            resolve_path(base, Path::new(r"\a.ugoe")),
+            Path::new(r"\a.ugoe")
+        );
+        assert_eq!(
+            resolve_path(base, Path::new(r"\\server\share\a.ugoe")),
+            Path::new(r"\\server\share\a.ugoe")
+        );
+    }
+
+    /// 記号のリンクはたどらずに字面で解く: リンクしたフォルダから開いたプロファイルは、そのリンクのパスを基準にする。
+    /// フォルダの下にある記号のリンクは、そのパスのまま (OS がたどって読む)。書くときもリンクを解かずに比べる (T0852)。
+    #[cfg(unix)]
+    #[test]
+    fn resolves_paths_without_following_symbolic_links() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(
+            real.join("p.json"),
+            profile_with_paths("link.ugoe", "m.ugoemod", "bg.png", "c.ugoemod"),
+        )
+        .unwrap();
+        let outside = tmp.path().join("outside.ugoe");
+        std::fs::write(&outside, "x").unwrap();
+        std::os::unix::fs::symlink(&outside, real.join("link.ugoe")).unwrap();
+        let linked = tmp.path().join("linked");
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+
+        let profile = Profile::read(&linked.join("p.json")).unwrap();
+        let model = profile.scenes[0].model.clone().unwrap();
+        assert_eq!(model, linked.join("link.ugoe"));
+        // リンクの先 (フォルダの外) は読める (絶対パスで書いたときと同じ)。
+        assert_eq!(std::fs::read_to_string(&model).unwrap(), "x");
+        // 書き戻すと、リンクのパスのまま相対パスにする。
+        profile.write(&linked.join("p.json")).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(real.join("p.json")).unwrap()).unwrap();
+        assert_eq!(written["scenes"][0]["model"], "link.ugoe");
+        // リンクを解いたパスは、リンクから開いたフォルダの下とはみなさない (絶対パスで書く)。
+        assert_eq!(relative_path(&linked, &real.join("m.ugoemod")), None);
     }
 
     #[test]

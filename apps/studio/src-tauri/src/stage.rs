@@ -1075,12 +1075,22 @@ fn file_name(path: &Path) -> String {
 }
 
 /// 拡張子と大きさを確かめてから読む。通常のファイルだけを読む。
+///
+/// 相対パスは読まずに見つからないとする: プロファイルの相対パスは読むときに絶対パスに解くので、相対パスのまま残るのは
+/// プロファイルのフォルダの外を指す読めないパス (`..` を含むものなど。[`crate::profile::resolve_path`])。
+/// 今のディレクトリを基準に読まないように、ここで止める。
 pub fn read_asset(
     asset: Asset,
     path: &Path,
     extensions: &[&str],
     max_bytes: u64,
 ) -> Result<Vec<u8>, SceneError> {
+    if !path.is_absolute() {
+        return Err(SceneError::Missing {
+            asset,
+            path: path.to_owned(),
+        });
+    }
     let ok = path
         .extension()
         .and_then(|e| e.to_str())
@@ -1711,6 +1721,80 @@ mod tests {
         assert!(stage.open_profile(&path, &mut conductor).is_err());
         assert!(stage.recent().is_empty());
         assert!(RecentProfiles::read(&recent).profiles.is_empty());
+    }
+
+    /// プロファイルの隣のモデルは相対パスで保存し、フォルダごと別の場所へ写しても開ける (T0852)。
+    #[test]
+    fn opens_a_profile_moved_with_its_models() {
+        let dir = Dir::new();
+        std::fs::create_dir_all(dir.0.path().join("show")).unwrap();
+        let base = dir.model("show/base.json", fixtures::dress_up_base());
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        let s = scene(&mut stage, Some(&base), &[]);
+        stage.update_scene(s.clone(), &mut conductor).unwrap();
+        stage.activate(&s.id, &mut conductor).unwrap();
+        stage
+            .save_profile(Some(&dir.0.path().join("show/p.json")))
+            .unwrap();
+
+        let moved = dir.0.path().join("moved");
+        std::fs::create_dir_all(&moved).unwrap();
+        for name in ["p.json", "base.json"] {
+            std::fs::copy(dir.0.path().join("show").join(name), moved.join(name)).unwrap();
+        }
+        std::fs::remove_dir_all(dir.0.path().join("show")).unwrap();
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        assert_eq!(
+            stage
+                .open_profile(&moved.join("p.json"), &mut conductor)
+                .unwrap(),
+            None
+        );
+        assert_eq!(stage.live(), Some(s.id.as_str()));
+        assert_eq!(
+            stage.profile().scene(&s.id).unwrap().model.as_deref(),
+            Some(moved.join("base.json").as_path())
+        );
+        assert_eq!(conductor.scene().unwrap().model_name, "base.json");
+    }
+
+    /// プロファイルのフォルダの外を指す相対パス (`..`) は、ファイルがあっても読まずに見つからないとする (T0852)。
+    #[test]
+    fn does_not_read_relative_paths_out_of_the_profile_folder() {
+        let dir = Dir::new();
+        dir.model("base.json", fixtures::dress_up_base());
+        let show = dir.0.path().join("show");
+        std::fs::create_dir_all(&show).unwrap();
+        let path = show.join("p.json");
+        std::fs::write(
+            &path,
+            r#"{"format": "ugoe-studio-profile", "version": 1,
+                "scenes": [{"id": "a", "name": "A", "model": "../base.json"}]}"#,
+        )
+        .unwrap();
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        let error = stage.open_profile(&path, &mut conductor).unwrap();
+        assert_eq!(
+            error,
+            Some(SceneError::Missing {
+                asset: Asset::Model,
+                path: "../base.json".into()
+            })
+        );
+        assert_eq!(stage.live(), None);
+        // 相対パスは、今のディレクトリを基準にしても読まない。
+        assert!(matches!(
+            read_asset(
+                Asset::Model,
+                Path::new("Cargo.toml"),
+                &["toml"],
+                MAX_MODEL_BYTES
+            ),
+            Err(SceneError::Missing { .. })
+        ));
     }
 
     #[test]

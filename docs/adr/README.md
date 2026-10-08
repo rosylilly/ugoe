@@ -37,8 +37,9 @@
 | [0025](0025-web-runtime-package.md) | Web のランタイムのパッケージ (@ugoe/runtime) は MIT で bindings/web に置く | Accepted |
 | [0026](0026-godot-binding.md) | Godot のバインディング (godot-rust) をワークスペースの外に置く | Accepted |
 | [0027](0027-crates-io-publishing.md) | crates.io に公開するクレートの範囲 (`ugoe` とその依存) と公開の方法 | Accepted |
-| [0028](0028-studio.md) | 配信用のアプリ「スタジオ」の範囲・構成・描画の場所・外部 API の安全性 | Accepted |
+| [0028](0028-studio.md) | 配信用のアプリ「スタジオ」の範囲・構成・描画の場所・外部 API の安全性 | 一部 Superseded (プロファイルのパスは 0033) |
 | [0029](0029-shared-ui-and-i18n.md) | 共有の UI 部品と翻訳 (@ugoe/ui・@ugoe/i18n・@ugoe/player)。翻訳は i18next、部品の土台は Bits UI | Accepted |
 | [0030](0030-compressed-ktx2-decoding.md) | 参照の実装と wasm で圧縮した KTX2 をデコードする (BCn を bcdec_rs で。ETC2・ASTC・Basis は後で) | Accepted |
 | [0031](0031-no-std-runtime-and-host-neutral-c-abi.md) | ランタイム層を no_std + alloc で使えるようにし (数学関数は常に libm)、C ABI のエラーをスレッドローカルから外し、毎フレームの状態はまとめて渡す | Accepted |
 | [0032](0032-fuzzing-with-cargo-fuzz.md) | 外から来る入力を cargo-fuzz (libFuzzer、nightly) で続けて fuzz する。ワークスペースの外に置き、`just ci` に入れない | Accepted |
+| [0033](0033-studio-profile-relative-paths.md) | スタジオのプロファイルは、プロファイルのフォルダの下のファイルを相対パスで持つ (`..` を含む相対パスは読まない) | Accepted |

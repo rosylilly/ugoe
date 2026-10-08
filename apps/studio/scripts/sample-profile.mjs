@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 見本のプロファイルを書き出す (`pnpm --filter @ugoe/studio sample-profile <出力の .json> [--lang en] [--force]`。T0806)。
-// 見本のモデル (assets/samples) を使うシーン・ホットキーを持つ。プロファイルはモデルを絶対パスで持つ (docs/studio.md#プロファイルの形式)
-// ので、ファイルをコミットせず、このリポジトリの場所に合わせてその場で作る。手順は docs/manual/studio.md#見本のプロファイル。
+// 見本のモデル (assets/samples) を使うシーン・ホットキーを持つ。見本のモデルは出力の .json のフォルダの外にあり、絶対パスで持つ
+// (docs/studio.md#プロファイルのパス) ので、ファイルをコミットせず、このリポジトリの場所に合わせてその場で作る。手順は docs/manual/studio.md#見本のプロファイル。
 
 import { existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

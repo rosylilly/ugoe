@@ -26,7 +26,7 @@ export type BackgroundKind = Background["kind"];
 export interface SceneSettings {
   id: string;
   name: string;
-  /** モデルの絶対パス。まだ選んでいなければ `null`。 */
+  /** モデルの絶対パス (ファイルの中の相対パスはバックエンドが解いてから渡す)。まだ選んでいなければ `null`。 */
   model: string | null;
   /** 付けるモジュールの絶対パス (合成の順)。 */
   modules: string[];
