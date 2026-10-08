@@ -1,11 +1,11 @@
 ---
 id: T0082
 title: "wasm-fresh が bindings/web の wasm の生成物 (src/wasm/) の古さも確かめ、古ければ作り直す"
-status: todo
+status: in-progress
 milestone: M10
 crates: [scripts, bindings/web, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0082
 ---
 
 # T0082: wasm-fresh が bindings/web の wasm の生成物の古さも確かめる
