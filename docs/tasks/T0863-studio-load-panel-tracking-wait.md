@@ -1,11 +1,11 @@
 ---
 id: T0863
 title: "スタジオ: 「フレームレートと負荷」に、トラッキングの値が届いてから刻みで使われるまでの待ち (平均と最大) を出す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs, tests/ui-audit, tests/e2e]
 depends_on: [T0862]
-assignee:
+assignee: claude-worker-T0863
 ---
 
 # T0863: スタジオ: トラッキングの待ちを負荷の表示に出す
