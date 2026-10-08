@@ -5,7 +5,11 @@
 // 2. TypeScript を dist/ に出力する
 // 3. 生成したバインディングと wasm を dist/wasm/ に写す
 //
-// `--no-wasm` を付けると 1 を飛ばし、src/wasm/ にある生成物を使う。
+// `--no-wasm` を付けると 1 を飛ばし、src/wasm/ にある生成物を使う。`--wasm-only` を付けると 1 だけを行う
+// (`just wasm-fresh` が古い src/wasm/ を作り直すとき。docs/testing.md#wasm-の生成物の古さ)。
+//
+// 1 は生成物の隣に、`just wasm` と同じ入力の指紋 (scripts/wasm.mjs の `fingerprint`。ugoe_wasm.fingerprint) を書く。
+// `just wasm-fresh` はこれで src/wasm/ の古さを確かめる。指紋は dist/wasm/ には写さない。
 //
 // 1 は `just wasm` (scripts/wasm.mjs。エディタとビューアが使う) と次の点が違う (数字は bindings/web/README.md#wasm-の大きさ)。
 // - cargo のプロファイル `web-dist` (下の `PROFILE`) を `--config` で定義して使う。release を継承し、
@@ -16,10 +20,17 @@
 // - wasm-opt (binaryen) は使わない。生の大きさは約 1 割減るが、gzip した大きさはかえって増えたため。
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { exportMbxPath } from "../../../scripts/lib/mbx.mjs";
+import {
+  FINGERPRINT_FILE,
+  fingerprint,
+  requireWasmBindgen,
+  WASM_FILE,
+  writeFingerprint,
+} from "../../../scripts/wasm.mjs";
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
 exportMbxPath();
@@ -64,21 +75,10 @@ function run(cmd, args, cwd = pkg) {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-/** Cargo.lock に記録された wasm-bindgen の版 (scripts/wasm.mjs と同じ検査)。 */
-function lockedBindgenVersion() {
-  const lock = readFileSync(join(root, "Cargo.lock"), "utf8");
-  return lock.match(/^name = "wasm-bindgen"\r?\nversion = "([^"]+)"/m)?.[1] ?? null;
-}
-
 function buildWasm() {
-  const want = lockedBindgenVersion();
-  const r = spawnSync("wasm-bindgen", ["--version"], { encoding: "utf8" });
-  const have = r.status === 0 ? (r.stdout.trim().split(/\s+/)[1] ?? null) : null;
-  if (!want || have !== want) {
-    console.error(`error: wasm-bindgen-cli ${want} is required (found: ${have ?? "none"}).`);
-    console.error(`  cargo install wasm-bindgen-cli --version ${want} --locked`);
-    process.exit(1);
-  }
+  requireWasmBindgen();
+  // ビルドの前に求める (ビルドの間にソースが変われば、次の確かめで古いとみなされる。scripts/wasm.mjs と同じ)
+  const print = fingerprint();
   const config = [
     ...Object.entries(PROFILE_CONFIG).map(([k, v]) => `profile.${PROFILE}.${k}=${v}`),
     ...HOT_CRATES.map((c) => `profile.${PROFILE}.package.${c}.opt-level=3`),
@@ -120,16 +120,24 @@ function buildWasm() {
     ],
     root,
   );
+  writeFingerprint(generated, print);
 }
 
 if (!process.argv.includes("--no-wasm")) buildWasm();
-if (!existsSync(join(generated, "ugoe_wasm_bg.wasm"))) {
-  console.error("error: src/wasm/ugoe_wasm_bg.wasm is missing (build without --no-wasm)");
+if (process.argv.includes("--wasm-only")) {
+  console.log(`generated ${generated}`);
+  process.exit(0);
+}
+if (!existsSync(join(generated, WASM_FILE))) {
+  console.error(`error: src/wasm/${WASM_FILE} is missing (build without --no-wasm)`);
   process.exit(1);
 }
 
 rmSync(dist, { recursive: true, force: true });
 const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc");
 run(process.execPath, [tsc, "-p", "tsconfig.build.json"]);
-cpSync(generated, join(dist, "wasm"), { recursive: true });
+cpSync(generated, join(dist, "wasm"), {
+  recursive: true,
+  filter: (src) => basename(src) !== FINGERPRINT_FILE,
+});
 console.log(`built ${dist}`);

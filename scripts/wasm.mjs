@@ -5,8 +5,9 @@
 //
 //   node scripts/wasm.mjs version       Cargo.lock に記録された wasm-bindgen の版を出力する
 //   node scripts/wasm.mjs build <out>   ugoe-wasm をビルドし、JS バインディングを <out> に生成する
-//   node scripts/wasm.mjs check         アプリの生成物 (APP_OUTS) が古いかを確かめる。古ければ一覧を出して終了コード 1
-//   node scripts/wasm.mjs fresh         アプリの生成物のうち古いものだけを作り直す (`just wasm-fresh`。web-check と pre-push の前)
+//   node scripts/wasm.mjs check         生成物 (アプリの APP_OUTS と @ugoe/runtime の WEB_RUNTIME_OUT) が古いかを確かめる。
+//                                       古ければ一覧を出して終了コード 1
+//   node scripts/wasm.mjs fresh         生成物のうち古いものだけを作り直す (`just wasm-fresh`。web-check と pre-push の前)
 //
 // wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない:
 //   cargo install wasm-bindgen-cli --version <version> --locked
@@ -14,11 +15,13 @@
 // 古さの判定 (T0062。docs/testing.md#wasm-の生成物の古さ): `build` は生成物の隣に、入力 (ugoe-wasm と依存する
 // ワークスペースのクレートの Cargo.toml・build.rs・src/、ルートの Cargo.toml・Cargo.lock (wasm-bindgen の版を含む)・
 // rust-toolchain.toml) の指紋 (FINGERPRINT_FILE) を書く。`check`・`fresh` はビルドせずに今の指紋を求めて比べる。
-// 生成物の無いアプリは飛ばす (型検査は bindings/web のスタブを読む)。指紋の無い生成物は古いとみなす。
+// 生成物の無いもの (wasm 本体 WASM_FILE の無いもの) は飛ばす (型検査は bindings/web のスタブを読む)。指紋の無い生成物は古いとみなす。
+// @ugoe/runtime の生成物 (T0082) は別の cargo のプロファイルで作るので、作り直しは bindings/web/scripts/build.mjs に任せる
+// (`--wasm-only`)。指紋は同じもの (build.mjs もここの `fingerprint`・`writeFingerprint` で書く)。
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
@@ -30,6 +33,15 @@ export const APP_OUTS = [
   "apps/viewer/src/lib/wasm/generated",
   "apps/studio/src/lib/wasm/generated",
 ];
+/**
+ * @ugoe/runtime (bindings/web) の生成物の場所 (git の管理外。`pnpm --filter @ugoe/runtime build`)。
+ * 生成物が無ければ bindings/web/scripts/check.mjs がスタブの型の写しを置くので、ディレクトリがあっても生成物とは限らない。
+ */
+export const WEB_RUNTIME_OUT = "bindings/web/src/wasm";
+/** 古さを確かめる生成物のすべて。 */
+export const OUTS = [...APP_OUTS, WEB_RUNTIME_OUT];
+/** wasm-bindgen が出す wasm 本体の名前。これがあれば生成物とみなす (bindings/web/scripts/check.mjs と同じ見分け方)。 */
+export const WASM_FILE = "ugoe_wasm_bg.wasm";
 /** 生成物の隣に書く指紋のファイルの名前。 */
 export const FINGERPRINT_FILE = "ugoe_wasm.fingerprint";
 /** 指紋の求め方を変えたら上げる (前の求め方の指紋を古いとみなすため)。 */
@@ -121,15 +133,20 @@ export function fingerprint(root = repoRoot) {
   return hash.digest("hex");
 }
 
+/** 指紋 (`fingerprint` の値) を生成物のディレクトリ `dir` に書く。 */
+export function writeFingerprint(dir, print) {
+  writeFileSync(join(dir, FINGERPRINT_FILE), `${print}\n`);
+}
+
 /**
- * アプリの生成物のうち古いもの。生成物の無い (ディレクトリが無いか空の) ものは飛ばす。
+ * 生成物のうち古いもの。生成物の無い (wasm 本体の無い) ものは飛ばす。
  * @returns {{ out: string, reason: string }[]}
  */
-export function staleOutputs(root = repoRoot, outs = APP_OUTS, current = fingerprint(root)) {
+export function staleOutputs(root = repoRoot, outs = OUTS, current = fingerprint(root)) {
   const stale = [];
   for (const out of outs) {
     const dir = join(root, out);
-    if (!existsSync(dir) || !statSync(dir).isDirectory() || readdirSync(dir).length === 0) continue;
+    if (!existsSync(join(dir, WASM_FILE))) continue;
     const file = join(dir, FINGERPRINT_FILE);
     if (!existsSync(file)) {
       stale.push({ out, reason: `no ${FINGERPRINT_FILE} (generated before it was recorded)` });
@@ -157,8 +174,8 @@ function run(cmd, args) {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-/** wasm-bindgen-cli の版が Cargo.lock と合っていなければ、入れ方を出して終える。 */
-function requireWasmBindgen(hint) {
+/** wasm-bindgen-cli の版が Cargo.lock と合っていなければ、入れ方 (と `hint`) を出して終える。 */
+export function requireWasmBindgen(hint) {
   const want = lockedVersion();
   if (!want) {
     console.error("error: wasm-bindgen is not found in Cargo.lock");
@@ -193,7 +210,7 @@ function build(outs, hint) {
   const wasm = join(target_directory, "wasm32-unknown-unknown", "release", "ugoe_wasm.wasm");
   for (const out of outs) {
     run("wasm-bindgen", ["--target", "web", "--out-dir", out, wasm]);
-    writeFileSync(join(resolve(repoRoot, out), FINGERPRINT_FILE), `${print}\n`);
+    writeFingerprint(resolve(repoRoot, out), print);
   }
 }
 
@@ -230,11 +247,19 @@ function main() {
     console.log("regenerating the stale ugoe-wasm bindings:");
     for (const { out, reason } of stale) console.log(`  ${out}: ${reason}`);
     const outs = stale.map((s) => s.out);
-    build(
-      outs,
+    requireWasmBindgen(
       `or remove the stale ${outs.length > 1 ? "directories" : "directory"} (the type check then reads bindings/web/stub):\n` +
         outs.map((o) => `  rm -r ${relative(process.cwd(), join(repoRoot, o)) || o}`).join("\n"),
     );
+    const appOuts = outs.filter((o) => o !== WEB_RUNTIME_OUT);
+    if (appOuts.length > 0) build(appOuts);
+    // @ugoe/runtime は配布用のプロファイルで作る (dist/ は作らない)
+    if (outs.includes(WEB_RUNTIME_OUT)) {
+      run(process.execPath, [
+        join(repoRoot, "bindings", "web", "scripts", "build.mjs"),
+        "--wasm-only",
+      ]);
+    }
   } else {
     console.error("usage: node scripts/wasm.mjs version | build <out-dir> | check | fresh");
     process.exit(2);

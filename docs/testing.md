@@ -36,26 +36,33 @@ UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮る
 ## wasm の生成物の古さ
 
 エディタ・ビューア・スタジオの wasm の生成物 (`apps/editor/src/lib/viewport/generated`・`apps/viewer/src/lib/wasm/generated`・
-`apps/studio/src/lib/wasm/generated`) は git の管理外で、`just wasm <out>` (各アプリの `pnpm wasm`) で作ります。pull や merge で
-ugoe-wasm の API が変わっても作業ツリーには前の生成物が残るので、そのままだと svelte-check がコードの誤りでなく生成物の古さで落ちます
-(T0062)。そこで:
+`apps/studio/src/lib/wasm/generated`) は git の管理外で、`just wasm <out>` (各アプリの `pnpm wasm`) で作ります。`@ugoe/runtime` の生成物
+(`bindings/web/src/wasm`) も git の管理外で、`just web-runtime` (`pnpm --filter @ugoe/runtime build`) で作ります。pull や merge で
+ugoe-wasm の API が変わっても作業ツリーには前の生成物が残るので、そのままだと svelte-check や `@ugoe/runtime` の tsc が
+コードの誤りでなく生成物の古さで落ちます (T0062・T0082)。そこで:
 
-- `just wasm` (`scripts/wasm.mjs build`) は生成物の隣に、入力の指紋 `ugoe_wasm.fingerprint` を書きます。入力は ugoe-wasm と、
+- `just wasm` (`scripts/wasm.mjs build`) と `just web-runtime` (`bindings/web/scripts/build.mjs`。同じ `fingerprint` を使う) は
+  生成物の隣に、入力の指紋 `ugoe_wasm.fingerprint` を書きます。`@ugoe/runtime` の `dist/` には写しません。入力は ugoe-wasm と、
   それが (dev 以外で) 依存するワークスペースのクレートの `Cargo.toml`・`build.rs`・`src/` の下のすべてのファイルと、
   ルートの `Cargo.toml`・`Cargo.lock` (wasm-bindgen の版を含む)・`rust-toolchain.toml` です。テスト・例・README は入れません。
-- `just wasm-fresh` (`scripts/wasm.mjs fresh`) は、ビルドせずに今の指紋を求めて (100 ほどのファイルを読むだけで、数十ミリ秒) 3 つの生成物と比べ、
-  古いものだけを作り直します。指紋の無い生成物 (指紋を書く前に作ったもの) も古いとみなします。生成物の無いアプリは飛ばします
-  (型検査は `bindings/web/stub` を読む)。確かめるだけなら `node scripts/wasm.mjs check` (古ければ終了コード 1)。
+- `just wasm-fresh` (`scripts/wasm.mjs fresh`) は、ビルドせずに今の指紋を求めて (100 ほどのファイルを読むだけで、数十ミリ秒) 4 つの生成物と比べ、
+  古いものだけを作り直します。指紋の無い生成物 (指紋を書く前に作ったもの) も古いとみなします。生成物の無いもの (wasm 本体
+  `ugoe_wasm_bg.wasm` の無いもの) は飛ばします (型検査は `bindings/web/stub` を読む。`@ugoe/runtime` の検査が `src/wasm` に置く
+  スタブの写しも生成物とはみなさない)。`@ugoe/runtime` の生成物は配布用のプロファイル `web-dist` で作るので、
+  `bindings/web/scripts/build.mjs --wasm-only` で作り直します (`dist/` は作らない。fat LTO なので、mbx の置き場に当たらなければ手元で 2 分ほど)。
+  確かめるだけなら `node scripts/wasm.mjs check` (古ければ終了コード 1)。`pnpm --filter @ugoe/runtime check` を直接流したときは、
+  生成物が古ければ警告を出します (作り直しはしない)。
 - `just web-check` (`just ci`) と lefthook の pre-push の web-check は、先に `just wasm-fresh` を流します。作り直しは止めずに行います。
   ugoe-wasm の wasm32 の release ビルド (ほかの差分が無ければ手元で数秒〜数十秒。mbx の置き場に当たれば数秒) と wasm-bindgen だけで、
-  pre-push の clippy と全テストより軽いためです。pre-push のように just を通らずに `scripts/wasm.mjs` を呼んでも、mbx の shim が入っていれば
+  pre-push の clippy と全テストより軽いためです (`@ugoe/runtime` の作り直しは fat LTO で重いが、`just web-runtime` を一度でも流した
+  作業ツリーでしか起きない)。pre-push の web-check はアプリと `@ugoe/runtime` などの型検査を流します。pre-push のように just を通らずに `scripts/wasm.mjs` を呼んでも、mbx の shim が入っていれば
   cargo は mbx を通ります (`exportMbxPath`。[docs/workflow/build-cache.md](workflow/build-cache.md))。
 - 作り直すには wasm-bindgen-cli (`Cargo.lock` と同じ版) が要ります。無ければ入れ方と、代わりに古い生成物を消す (`rm -r <生成物>`。
   型検査はスタブを読む) コマンドを出して止まります。
 
 判定の単体テストは `scripts/wasm.test.mjs` (`just script-check`) です。小さな偽のワークスペースで、指紋の書き換え・指紋の無い生成物・
 入力の変更 (ソース・シェーダ・Cargo.toml・Cargo.lock・rust-toolchain.toml) を古いと見つけ、テスト・README・dev の依存だけのクレートの
-変更と、生成物の無いアプリを飛ばすことを確かめます。
+変更と、生成物の無いもの (型だけのスタブの写しも) を飛ばすことと、`@ugoe/runtime` の生成物も確かめることを見ます。
 
 ## CI のジョブ
 

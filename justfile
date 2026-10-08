@@ -257,9 +257,9 @@ sdk-no-render-check:
 wasm out="apps/editor/src/lib/viewport/generated":
     @node scripts/wasm.mjs build {{quote(out)}}
 
-# アプリ (エディタ・ビューア・スタジオ) の wasm の生成物のうち、今の ugoe-wasm より古いものだけを作り直す。
-# 古さは `just wasm` が生成物の隣に書く入力の指紋で、ビルドせずに確かめる (古くなければ一瞬で終わる)。
-# 生成物の無いアプリは飛ばす。web-check と lefthook の pre-push の web-check の前に流す (docs/testing.md#wasm-の生成物の古さ)
+# アプリ (エディタ・ビューア・スタジオ) と @ugoe/runtime (bindings/web/src/wasm) の wasm の生成物のうち、今の ugoe-wasm より
+# 古いものだけを作り直す。古さは `just wasm`・`just web-runtime` が生成物の隣に書く入力の指紋で、ビルドせずに確かめる
+# (古くなければ一瞬で終わる)。生成物の無いものは飛ばす。web-check と lefthook の pre-push の web-check の前に流す (docs/testing.md#wasm-の生成物の古さ)
 wasm-fresh:
     @node scripts/wasm.mjs fresh
 

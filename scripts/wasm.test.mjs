@@ -10,7 +10,10 @@ import {
   fingerprint,
   inputFiles,
   nonDevDependencies,
+  OUTS,
   staleOutputs,
+  WASM_FILE,
+  WEB_RUNTIME_OUT,
   wasmCrateDirs,
 } from "./wasm.mjs";
 
@@ -69,6 +72,7 @@ ugoe-wasm = { path = "crates/ugoe-wasm" }
 /** `build` と同じく、生成物と今の指紋を `out` に置く。 */
 function generate(out, print = fingerprint(root)) {
   write(`${out}/ugoe_wasm.d.ts`, "export {};\n");
+  write(`${out}/${WASM_FILE}`, "");
   write(`${out}/${FINGERPRINT_FILE}`, `${print}\n`);
 }
 
@@ -132,7 +136,7 @@ describe("staleOutputs", () => {
   });
 
   it("今の指紋と同じなら古くない", () => {
-    for (const out of APP_OUTS) generate(out);
+    for (const out of OUTS) generate(out);
     assert.deepEqual(staleOutputs(root), []);
   });
 
@@ -145,8 +149,15 @@ describe("staleOutputs", () => {
     );
   });
 
+  it("型だけで wasm 本体の無いもの (bindings/web/scripts/check.mjs が置くスタブの写しなど) は飛ばす", () => {
+    write(`${APP_OUTS[0]}/ugoe_wasm.d.ts`, "export {};\n");
+    write(`${WEB_RUNTIME_OUT}/ugoe_wasm.d.ts`, "export {};\n");
+    assert.deepEqual(staleOutputs(root), []);
+  });
+
   it("指紋の無い生成物は古い", () => {
     write(`${APP_OUTS[0]}/ugoe_wasm.d.ts`, "export {};\n");
+    write(`${APP_OUTS[0]}/${WASM_FILE}`, "");
     const stale = staleOutputs(root);
     assert.deepEqual(
       stale.map((s) => s.out),
@@ -191,4 +202,24 @@ describe("staleOutputs", () => {
       assert.deepEqual(staleOutputs(root), []);
     });
   }
+
+  it("@ugoe/runtime (bindings/web) の生成物も確かめる", () => {
+    assert.ok(OUTS.includes(WEB_RUNTIME_OUT));
+    generate(WEB_RUNTIME_OUT);
+    assert.deepEqual(staleOutputs(root), []);
+    write("crates/ugoe-wasm/src/lib.rs", "// changed\n");
+    assert.deepEqual(
+      staleOutputs(root).map((s) => s.out),
+      [WEB_RUNTIME_OUT],
+    );
+  });
+
+  it("指紋の無い @ugoe/runtime の生成物 (指紋を書く前のビルドの残り) は古い", () => {
+    write(`${WEB_RUNTIME_OUT}/ugoe_wasm.d.ts`, "export {};\n");
+    write(`${WEB_RUNTIME_OUT}/${WASM_FILE}`, "");
+    assert.deepEqual(
+      staleOutputs(root).map((s) => s.out),
+      [WEB_RUNTIME_OUT],
+    );
+  });
 });

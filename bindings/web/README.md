@@ -831,14 +831,17 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 
 | コマンド | 内容 |
 | --- | --- |
-| `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み)・`tsc`・`dist/` への出力 |
-| `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される) |
+| `pnpm --filter @ugoe/runtime build` | = `just web-runtime`。wasm のビルド (`src/wasm/` に生成、gitignore 済み。隣に入力の指紋 `ugoe_wasm.fingerprint` を書く)・`tsc`・`dist/` への出力 (指紋は写さない)。`--wasm-only` で wasm のビルドだけ、`--no-wasm` で `src/wasm/` をそのまま使う |
+| `pnpm --filter @ugoe/runtime check` | 型検査。`src/wasm/` に生成物 (`ugoe_wasm_bg.wasm`) が無ければ、手書きの型 `stub/ugoe_wasm.d.ts` を `src/wasm/` に写し直して検査する (写しは毎回作り直すので、スタブを直せばそのまま反映される)。生成物が今の ugoe-wasm より古ければ警告を出す (`just web-check` は先に `just wasm-fresh` で作り直す) |
 | `pnpm --filter @ugoe/runtime test` | 属性の解釈・トラッキングの変換と平滑化・`<ugoe-avatar>` の作成と読み込みの順序 (happy-dom と `WebPuppet` の偽物)・問い合わせの JSON の補助・スタブの型のずれ・`code` の一覧と Rust の突き合わせの単体テスト (Vitest) |
 | `just conformance --only wasm,wasm-webgpu,avatar,queries` | 配布物の適合テスト (`tests/conformance/README.md`)。`WebPuppet` の評価の結果と画像を参照と比べ (`wasm`・`wasm-webgpu`)、`<ugoe-avatar>` の作成・切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直し (復元の時間切れ・作れないときの試し直しと諦めも) を、本物の wasm とヘッドレスの Chrome で確かめる (`avatar`)。問い合わせの JSON の出力のキーを型のキーと比べる (`queries`)。Chrome と wasm-bindgen-cli が要る |
 
 - `crates/ugoe-wasm` の公開 API を変えたら、`stub/ugoe_wasm.d.ts` を生成物 (`src/wasm/ugoe_wasm.d.ts`) から作り直します。
   メソッドと関数の名前がクレートとずれていると、単体テスト (`stub/ugoe_wasm.test.mjs`) が失敗します。
   引数と戻り値の型まで含めたずれは、`just wasm` の後の `just wasm-types` (`scripts/check-wasm-types.mjs`。CI の web ジョブ) が報告します。
+- 一度ビルドした `src/wasm/` は、pull などで ugoe-wasm が変わると古くなります (古い型で検査が落ちる)。`just wasm-fresh` は
+  アプリの生成物と同じく指紋で古さを確かめ、古ければ `scripts/build.mjs --wasm-only` で作り直します
+  ([docs/testing.md#wasm-の生成物の古さ](../../docs/testing.md#wasm-の生成物の古さ)。T0082)。
 - このスタブは、生成物の無い環境でのアプリ (エディタ・ビューア・スタジオ) の型検査でも使います (各アプリの `tsconfig.json` の `paths`)。
   型の宣言をアプリが読むだけで、このパッケージが GPL のコードを読むわけではありません。
 - **`code` の突き合わせ (T0452):** 読み込みの警告・着せ替えの失敗・読み込みの失敗・作成の失敗 (T0475)・描画と読み戻しの失敗 (T0465)・設定の差し替えの失敗 (T0469) の `code` と補足の値のキーの一覧は

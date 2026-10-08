@@ -34,7 +34,7 @@ pre-push:
       run: cargo clippy --workspace --all-targets -- -D warnings
     - name: test
       run: cargo test --workspace
-    # 先にアプリの wasm の生成物が古ければ作り直す (古い生成物で svelte-check が落ちないように。
+    # 先にアプリと @ugoe/runtime の wasm の生成物が古ければ作り直す (古い生成物で svelte-check や tsc が落ちないように。
     # 古くなければ数秒で終わる。docs/testing.md#wasm-の生成物の古さ)
     - name: web-check
-      run: just wasm-fresh && pnpm --filter @ugoe/editor --filter @ugoe/viewer --filter @ugoe/studio --filter @ugoe/face-tracking --filter @ugoe/player --filter @ugoe/i18n check
+      run: just wasm-fresh && pnpm --filter @ugoe/editor --filter @ugoe/viewer --filter @ugoe/studio --filter @ugoe/face-tracking --filter @ugoe/player --filter @ugoe/i18n --filter @ugoe/runtime check
