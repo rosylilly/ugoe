@@ -1,11 +1,11 @@
 ---
 id: T0190
 title: 性能: Puppet の 1 フレームの評価の時間を測る例 (中程度のモデル・数千頂点) を足し、1ms の目標と比べる
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0190
 ---
 
 # T0190: 性能: Puppet の 1 フレームの評価の時間を測る例を足す

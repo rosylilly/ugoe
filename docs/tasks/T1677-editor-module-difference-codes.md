@@ -1,11 +1,11 @@
 ---
 id: T1677
 title: "エディタ: 着せ替えのモジュールの違いの文を、英語の文ではなくコードと引数で返して訳す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-editor-core, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1677
 ---
 
 # T1677: エディタ: 着せ替えの違いの文をコードと引数で返す

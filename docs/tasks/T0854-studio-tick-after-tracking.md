@@ -1,11 +1,11 @@
 ---
 id: T0854
 title: "スタジオ: トラッキングの値が届いたら次の刻みを早め、カメラからの遅れを縮める"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0854
 ---
 
 # T0854: スタジオ: トラッキングが届いたら次の刻みを早める

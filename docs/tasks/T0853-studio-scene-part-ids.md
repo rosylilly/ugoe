@@ -1,11 +1,11 @@
 ---
 id: T0853
 title: "スタジオ: シーンの通知にパーツの ID の並びを載せ、着せ替えの直後に前のフレームのパーツの番号がずれないようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0853
 ---
 
 # T0853: スタジオ: シーンの通知にパーツの ID を載せる
