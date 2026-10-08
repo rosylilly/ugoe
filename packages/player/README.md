@@ -155,7 +155,7 @@ player.startFollowing();             // 受け手のモードにする (時計�
 await player.attach(container);
 // シーンの通知を受けたら、そのモデルを読んでから、そのシーンのフレームを受け付ける
 await player.load({ name: scene.modelName, bytes });
-player.followScene(scene.revision);
+player.followScene(scene.revision, scene.partIds);
 // フレーム (バイト列) が届くたびに
 player.pushFrame(decodeFrame(buffer));
 ```
@@ -175,6 +175,10 @@ player.pushFrame(decodeFrame(buffer));
   溢れたときも) 物理をリセットしてから続ける。
 - モデルを読み直さずに次のシーンへ移るとき (スタジオで見せ方や着せ替えだけが変わった。T0802) は `continueScene(revision)`。
   前のシーンのフレームも捨てずに順に適用し、`seq` の続きも保つ (受け手ごとに物理の刻みが抜けないように)。
+- フレームのパーツの不透明度の番号は、そのフレームのシーンの `partIds` で ID に直し、受け手のモデルの並び (`WebPuppet.part_ids()`。
+  モデルを読んだ・モジュールを付け外ししたときに 1 回読んで `FrameQueue.setModelParts` に渡す) の番号に引き直す (T0853・T1400)。
+  モジュールを読めずに飛ばして受け手のモデルの並びがシーンと食い違っても、指揮役と同じパーツに当たる (受け手に無いパーツは捨てる)。
+  並びがモデルと同じシーンでは引き直さず、表はシーンを受けたときと付け外しのときにだけ作る (フレームごとには確保しない)。
 - 受け手のモードでは、光源の設定と着せ替えの組を覚えず、覚えたものも使わない (どちらもシーンが決める)。待機モーションの選択も
   読まず書き直さない (受け手は待機モーションを流さない。T0930)。
 - `WebPuppet.follow` を呼ぶのは `src/follower.ts` の `applyFrame` だけ (`follow` の引数が変わったら、こことフレームの形を合わせる)。

@@ -26,6 +26,10 @@ export interface FakeOptions {
   pose?: string[][];
   /** モジュールのポーズのグループ (名前 → 要素のパーツの並び。付けると `<名前>/<パーツ>` で本体のグループの後に入る)。 */
   modulePoses?: Record<string, string[][]>;
+  /** 本体のパーツの ID (`part_ids` の先頭。モデルを読んでいなければ `part_ids` は空)。 */
+  parts?: string[];
+  /** モジュールのパーツ (名前 → パーツの ID。付けると `<名前>/<パーツ>` で本体のパーツの後に付けた順で入る)。 */
+  moduleParts?: Record<string, string[]>;
 }
 
 /**
@@ -147,6 +151,15 @@ export function fakePuppet(options: FakeOptions = {}) {
       log.push(`unload ${name}`);
     },
     attached_modules: () => [...state.attached],
+    part_ids: () =>
+      state.hasModel
+        ? [
+            ...(options.parts ?? []),
+            ...state.attached.flatMap((name) =>
+              (options.moduleParts?.[name] ?? []).map((part) => `${name}/${part}`),
+            ),
+          ]
+        : [],
     modules_json: () =>
       JSON.stringify(
         [...state.modules].map(([name, slot]) => ({

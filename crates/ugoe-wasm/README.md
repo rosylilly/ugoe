@@ -227,14 +227,15 @@ follower.follow(conductor.values_before_physics(), dt, lipSync?.[0], lipSync?.[1
   `undefined`。C ABI では `ugoe_puppet_values_before_physics`・`ugoe_puppet_lip_sync_applied` (当てていなければ音量 -1)・
   `ugoe_puppet_part_opacities_applied`。
 
-### エディタ向けの問い合わせ (ギズモ・物理の表示)
+### アプリ向けの問い合わせ (ギズモ・物理の表示・パーツの並び)
 
-**公開の API の外 (T0492):** この節のメソッドはエディタ向けで、予告なく変わる。npm の @ugoe/runtime (bindings/web) からも
-呼べて型にも出るが、版を上げるときに互換を守る範囲 (公開の API) には含めない。型 (生成物の `ugoe_wasm.d.ts` と
-bindings/web/stub/ugoe_wasm.d.ts) では doc コメントに `@internal` を付けて示す (Rust の doc コメントに書いたものが生成物に入る)。
-理由: ギズモの形や物理の画面の都合で変わりやすく、リリース前に互換で縛るのは早い。配布物から外す (feature で分ける) ことも
-考えたが、wasm を 2 通り作る手間と型の写しが 2 通りになる手間に対して、大きさの得が小さいので採らなかった。
-新しいエディタ向けの問い合わせを足すときも `@internal` を付け、この一覧に載せる (印の有無は `just wasm-types` と
+**公開の API の外 (T0492):** この節のメソッドはアプリ (エディタのギズモ・物理の画面と、スタジオの受け手) 向けで、予告なく変わる。
+npm の @ugoe/runtime (bindings/web) からも呼べて型にも出るが、版を上げるときに互換を守る範囲 (公開の API) には含めない。
+型 (生成物の `ugoe_wasm.d.ts` と bindings/web/stub/ugoe_wasm.d.ts) では doc コメントに `@internal` を付けて示す
+(Rust の doc コメントに書いたものが生成物に入る)。
+理由: ギズモの形や物理の画面、スタジオのフレームの配信の都合で変わりやすく、リリース前に互換で縛るのは早い。配布物から外す
+(feature で分ける) ことも考えたが、wasm を 2 通り作る手間と型の写しが 2 通りになる手間に対して、大きさの得が小さいので採らなかった。
+新しいアプリ向けの問い合わせを足すときも `@internal` を付け、この一覧に載せる (印の有無は `just wasm-types` と
 bindings/web/stub/ugoe_wasm.test.mjs が Rust・生成物・写しの間で比べる)。
 
 ```js
@@ -245,12 +246,16 @@ puppet.rotation_local_keyform("Head");    // [ox, oy, angle, scale] 補間した
 puppet.deformer_point("Head", 0, -40);    // デフォーマの局所座標の点 → キャンバス座標 [x, y]
 puppet.deformer_jacobian("Cloth", 0.5, 0.5); // その点でのヤコビ行列 [a, b, c, d] (列優先。逆写像用)
 puppet.physics_particles(0);              // リグ 0 の粒子の今の位置 [x0, y0, ...] (動的物理ならキャンバス座標)
+puppet.part_ids();                        // 合成したモデルのパーツの ID (parts の順。モジュールのパーツは "Dress/Dress")
 ```
 
 - どれも今のパラメータ値 (と最後の `update`) で評価した値を返す (`src/gizmo.rs`・`src/physics_view.rs`)。T0629 (エディタの物理の画面) で追加。
 - `rotation_local_keyform` はワールドの変換ではなく、今のパラメータ値でキーフォームを補間した (ブレンドシェイプも足した) 回転デフォーマの
   局所の値 (原点は親の座標系、角度は度・時計回り正、拡大率)。キーの間でも値を返す (エディタのインスペクタがキーの間で補間した今の値を
   押せない欄に出すのに使う。`ModelInstance::rotation_local_keyform`)。回転デフォーマでない・モデルが無ければ `undefined`。
+- `part_ids` は着せ替えのモジュールも合成したモデルの `parts` の ID の順 (モジュールのパーツは合成の ID `<モジュール>/<パーツ>`。
+  モデルが無ければ空。`src/dress_up.rs`)。スタジオの wasm の受け手 (`@ugoe/player` の受け手のモード) が、指揮役のフレームのパーツの番号を
+  自分のモデルの番号に引き直すのに使う (モデルを読み・モジュールを付け直したときに 1 回読む。docs/studio.md#フレームの配信-内部の形。T1400)。
 
 ### ライティング (T0210)
 
@@ -536,7 +541,7 @@ puppet.adapter_name(); // 使っている GPU の名前 (例: "ANGLE (NVIDIA, ..
   空のことがある)、WebGL2 では `WEBGL_debug_renderer_info` が使えればその名前 (`UNMASKED_RENDERER_WEBGL`)、使えなければ空
   (wgpu はそのとき `RENDERER` の一般の名前 (`"WebKit WebGL"` など) を名前にするが、GPU の名前ではないので返さない)。空のときに画面に何を
   出すかは呼ぶ側が決める。
-- 公開の API に含める (T0492 の「エディタ向けの問い合わせ」ではない)。エディタに限らず、スタジオ・ビューア・npm の利用者のどれでも
+- 公開の API に含める (T0492 の「アプリ向けの問い合わせ」ではない)。エディタに限らず、スタジオ・ビューア・npm の利用者のどれでも
   GPU を選ぶ・使っている GPU を見せるのに使うため。`@ugoe/player` の `PuppetSurface`・`Player` は `powerPreference` で渡し
   ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))、npm の `@ugoe/runtime` は `createPuppet` の `powerPreference` と `<ugoe-avatar>` の
   `power-preference` 属性 (`powerPreference` のプロパティ。変えると作り直す。知らない値は `"default"` として警告を出す) で渡し、

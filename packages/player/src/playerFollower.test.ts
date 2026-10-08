@@ -121,9 +121,13 @@ describe("Player follower mode", () => {
   });
 
   it("remaps the part numbers of the previous scene's frames after dressing up (T0853)", async () => {
-    const { p, log } = await ready();
+    const { p, log } = await ready({
+      parts: ["Root"],
+      moduleParts: { LongHair: ["Hair"], Dress: ["Dress"] },
+    });
     p.startFollowing();
     await p.load(first);
+    p.loadModule(moduleFile("Dress", "Outfit"), true);
     p.followScene(1, ["Root", "Dress/Dress"]);
     // 着せ替えの前のシーンのフレーム (Dress/Dress の番号 1) が、着せ替えたシーンを受けた後に届く。
     const late = {
@@ -131,6 +135,9 @@ describe("Player follower mode", () => {
       partOpacityParts: new Uint32Array([1]),
       partOpacityValues: new Float32Array([0.5, 1]),
     };
+    p.unloadModule("Dress");
+    p.loadModule(moduleFile("LongHair", "Hair"), true);
+    p.loadModule(moduleFile("Dress", "Outfit"), true);
     p.continueScene(2, ["Root", "LongHair/Hair", "Dress/Dress"]);
     p.pushFrame(late);
     p.pushFrame({
@@ -139,6 +146,38 @@ describe("Player follower mode", () => {
       partOpacityValues: new Float32Array([0.5, 1]),
     });
     expect(followLog(log)).toEqual(["follow 1 0.5 [2]", "follow 2 0.5 [2]"]);
+  });
+
+  it("remaps the part numbers to its own model when a module could not be read (T1400)", async () => {
+    const { p, log } = await ready({
+      parts: ["Root"],
+      moduleParts: { LongHair: ["Hair"], Dress: ["Dress"], Hat: ["Hat"] },
+    });
+    p.startFollowing();
+    await p.load(first);
+    // 指揮役は LongHair・Dress・Hat を付けたが、受け手は LongHair を読めずに飛ばした (Dress/Dress は番号 1、Hat/Hat は 2)。
+    p.loadModule(moduleFile("Dress", "Outfit"), true);
+    p.loadModule(moduleFile("Hat", "Head"), true);
+    p.followScene(1, ["Root", "LongHair/Hair", "Dress/Dress", "Hat/Hat"]);
+    p.pushFrame({
+      ...followFrame(1, 1, 1),
+      partOpacityParts: new Uint32Array([2, 1]),
+      partOpacityValues: new Float32Array([0.5, 1, 0.25, 1]),
+    });
+    // 指揮役の Dress/Dress (2) は受け手の 1 に当たり、受け手に無い LongHair/Hair (1) は捨てる。
+    expect(followLog(log)).toEqual(["follow 1 0.5 [1]"]);
+
+    // 次のシーンで LongHair を付け直した (付け直した後にシーンに移る)。前のシーンのフレームも今の並びに引き直す。
+    p.unloadModule("Dress");
+    p.unloadModule("Hat");
+    for (const name of ["LongHair", "Dress", "Hat"]) p.loadModule(moduleFile(name, name), true);
+    p.pushFrame({
+      ...followFrame(2, 1, 2),
+      partOpacityParts: new Uint32Array([3]),
+      partOpacityValues: new Float32Array([0.5, 1]),
+    });
+    p.continueScene(2, ["Root", "LongHair/Hair", "Dress/Dress", "Hat/Hat"]);
+    expect(followLog(log)).toEqual(["follow 1 0.5 [1]", "follow 2 0.5 [3]"]);
   });
 
   it("reports the drawing load and the frames dropped while waiting", async () => {

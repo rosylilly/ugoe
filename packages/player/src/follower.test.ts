@@ -180,6 +180,22 @@ describe("FrameQueue part numbers (T0853)", () => {
     q.push(withParts(1, 1, [0, 1, 2], [0.125, 1, 0.25, 1, 0.375, 1]));
     expect(applied(q)).toEqual(["[0,1] [0.125,1,0.375,1]"]);
   });
+
+  it("remaps to the receiver's own model when a module was skipped (T1400)", () => {
+    const q = new FrameQueue();
+    // 受け手は LongHair を読めずに飛ばした (シーンの並びと食い違う)。
+    q.setModelParts(["Root", "Dress/Dress", "Hat/Hat"]);
+    q.setScene(1, ["Root", "LongHair/Hair", "Dress/Dress", "Hat/Hat"]);
+    q.push(withParts(1, 1, [2, 3, 1], [0.5, 1, 0.25, 1, 0.75, 1]));
+    expect(applied(q)).toEqual(["[1,2] [0.5,1,0.25,1]"]);
+    // 付け直したら (次のシーンを受ける前でも) 今の並びに引き直す。
+    q.setModelParts(["Root", "LongHair/Hair", "Dress/Dress", "Hat/Hat"]);
+    q.push(withParts(2, 1, [1], [0.75, 1]));
+    expect(applied(q)).toEqual(["[1] [0.75,1]"]);
+    q.continueScene(2, ["Root", "LongHair/Hair", "Dress/Dress", "Hat/Hat"]);
+    q.push(withParts(3, 2, [3], [0.5, 1]));
+    expect(applied(q)).toEqual(["[3] [0.5,1]"]);
+  });
 });
 
 describe("applyFrame", () => {

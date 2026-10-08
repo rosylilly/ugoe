@@ -32,11 +32,11 @@ export class WebPuppet {
     backend?: string | null,
     power_preference?: string | null,
   ): Promise<WebPuppet>;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   deformer_ids(): string[];
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   deformer_jacobian(id: string, x: number, y: number): Float32Array | undefined;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   deformer_point(id: string, x: number, y: number): Float32Array | undefined;
   detach_module(name: string): void;
   detached_modules_json(): string;
@@ -88,10 +88,12 @@ export class WebPuppet {
   parameter_values(): Float32Array;
   parameters_json(): string;
   part_evaluated_opacity(part: string): number | undefined;
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
+  part_ids(): string[];
   part_opacities_applied_parts(): Uint32Array;
   part_opacities_applied_values(): Float32Array;
   physics_json(): string | undefined;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   physics_particles(rig: number): Float32Array;
   pose_json(): string | undefined;
   pose_visible_json(): string | undefined;
@@ -101,9 +103,9 @@ export class WebPuppet {
   reset_parameters(): void;
   reset_physics(): void;
   resize(width: number, height: number): void;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   rotation_frame(id: string): Float32Array | undefined;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   rotation_local_keyform(id: string): Float32Array | undefined;
   screen_to_canvas(x: number, y: number): Float32Array;
   set_background(r: number, g: number, b: number, a: number): void;
@@ -151,7 +153,7 @@ export class WebPuppet {
   uses_lighting(): boolean;
   values_before_physics(): Float32Array;
   view_transform(): Float32Array;
-  /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
+  /** @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。 */
   warp_points(id: string): Float32Array | undefined;
   width(): number;
   zoom(): number;

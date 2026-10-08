@@ -10,7 +10,7 @@ const crate = join(import.meta.dirname, "..", "..", "..", "crates", "ugoe-wasm",
 
 /**
  * `#[wasm_bindgen]` の `impl WebPuppet` のメソッドと、`#[wasm_bindgen]` の関数の名前。
- * `internal` は doc コメントに `@internal` を持つメソッド (エディタ向けで公開の API の外)。
+ * `internal` は doc コメントに `@internal` を持つメソッド (アプリ向けで公開の API の外)。
  */
 function rustExports() {
   const methods = new Set();
@@ -67,8 +67,9 @@ describe("stub/ugoe_wasm.d.ts", () => {
   it("marks the same WebPuppet methods @internal as crates/ugoe-wasm", () => {
     const rust = rustExports();
     const stub = stubExports();
-    // エディタ向けの問い合わせ (crates/ugoe-wasm/README.md)
+    // アプリ向けの問い合わせ (crates/ugoe-wasm/README.md)
     expect(rust.internal).toContain("rotation_local_keyform");
+    expect(rust.internal).toContain("part_ids");
     expect([...stub.internal].sort()).toEqual([...rust.internal].sort());
   });
 });

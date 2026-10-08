@@ -6,7 +6,7 @@
 // 写しは 2 種類ある (docs/tasks/T0435-wasm-type-copies.md):
 // - 全体の写し `bindings/web/stub/ugoe_wasm.d.ts`。生成物が無い環境の型検査で使う (@ugoe/runtime と 3 つのアプリ)。
 //   クラス・メンバー・関数・型の別名が生成物と同じであること (引数の名前は比べない)。
-//   メンバーの doc コメントの `@internal` (エディタ向けで公開の API の外。crates/ugoe-wasm/README.md) の有無も同じであること。
+//   メンバーの doc コメントの `@internal` (アプリ向けで公開の API の外。crates/ugoe-wasm/README.md) の有無も同じであること。
 //   interface (InitOutput) は wasm の内部の口なので、写しにあるものが生成物にあることだけを見る。
 // - 一部の写し (使うものだけを書いた interface)。@ugoe/player の `WebPuppet` と @ugoe/face-tracking の `TrackingPuppet`。
 //   どのメンバーも生成物にあり、型が同じであること。写しは末尾の省略できる引数を省いてよい。

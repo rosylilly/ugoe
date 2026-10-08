@@ -835,7 +835,7 @@ impl WebPuppet {
 
     /// ワープと回転デフォーマの ID (モデルの定義順)。
     ///
-    /// @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。
+    /// @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。
     pub fn deformer_ids(&self) -> Vec<String> {
         self.puppet
             .as_ref()
@@ -846,7 +846,7 @@ impl WebPuppet {
     /// ワープ `id` の今のパラメータ値での制御点 `[x0, y0, ...]` (行優先、x が速い)。
     /// ワープでなければ `undefined`。
     ///
-    /// @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。
+    /// @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。
     pub fn warp_points(&mut self, id: &str) -> Option<Vec<f32>> {
         self.evaluate();
         gizmo::warp_points(self.puppet.as_ref()?.instance(), id)
@@ -855,7 +855,7 @@ impl WebPuppet {
     /// 回転デフォーマ `id` の今のパラメータ値でのワールド変換 `[ox, oy, ax, ay, bx, by]`
     /// (原点と、局所座標の x 軸・y 軸の単位ベクトルの像)。回転デフォーマでなければ `undefined`。
     ///
-    /// @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。
+    /// @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。
     pub fn rotation_frame(&mut self, id: &str) -> Option<Vec<f32>> {
         self.evaluate();
         gizmo::rotation_frame(self.puppet.as_ref()?.instance(), id)
@@ -864,7 +864,7 @@ impl WebPuppet {
     /// 回転デフォーマ `id` の今のパラメータ値で補間した局所の値 `[ox, oy, angle, scale]` (原点は親の座標系、
     /// 角度は度。キーの間でも補間した値。親の変換は掛けない)。回転デフォーマでない・モデルが無ければ `undefined`。
     ///
-    /// @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。
+    /// @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。
     pub fn rotation_local_keyform(&mut self, id: &str) -> Option<Vec<f32>> {
         self.evaluate();
         gizmo::rotation_local(self.puppet.as_ref()?.instance(), id)

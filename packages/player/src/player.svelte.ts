@@ -1004,7 +1004,11 @@ export class Player {
    * `onRender` は `requestAnimationFrame` のたびに、描いたかどうかと一緒に呼ぶ。
    */
   startFollowing(onRender?: (stats: FollowRenderStats) => void): void {
-    this.#follower ??= new FrameQueue();
+    if (this.#follower === null) {
+      this.#follower = new FrameQueue();
+      const puppet = this.#puppet;
+      if (puppet !== null) this.#follower.setModelParts(puppet.part_ids());
+    }
     this.#onFollowRender = onRender ?? null;
   }
 
@@ -1015,7 +1019,8 @@ export class Player {
 
   /**
    * シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。
-   * `partIds` はシーンのパーツの並び (`SceneMessage.partIds`。読んだモデルとモジュールの並びと同じ。T0853)。
+   * `partIds` はシーンのパーツの並び (`SceneMessage.partIds`。T0853)。フレームのパーツの番号は、その並びから受け手のモデルの並び
+   * (`WebPuppet.part_ids`。モジュールを読めずに飛ばしたときはシーンと食い違う。T1400) に引き直す。
    */
   followScene(revision: number, partIds: readonly string[] = []): void {
     this.#follower?.setScene(revision, partIds);
@@ -1024,8 +1029,8 @@ export class Player {
 
   /**
    * モデルを読み直さずにシーン `revision` に移る (見せ方や着せ替えだけが変わった)。前のシーンのフレームも捨てずに
-   * 順に適用する (follower.ts の `FrameQueue.continueScene`)。前のシーンのフレームのパーツの番号は、`partIds`
-   * (このシーンのパーツの並び) の番号に引き直す (T0853)。モジュールを付け直したなら、付け直した後に呼ぶ。
+   * 順に適用する (follower.ts の `FrameQueue.continueScene`)。`partIds` はこのシーンのパーツの並びで、どのシーンのフレームも
+   * 受け手のモデルの並びに引き直す (T0853・T1400)。モジュールを付け直したなら、付け直した後に呼ぶ。
    */
   continueScene(revision: number, partIds: readonly string[] = []): void {
     this.#follower?.continueScene(revision, partIds);
@@ -1381,6 +1386,8 @@ export class Player {
       this.dressUpError = message(e);
     }
     this.#attached = puppet.attached_modules();
+    // 受け手は、フレームのパーツの番号を引き直す先のモデルの並びを、読み・付け外しのたびに 1 回読む (T1400)。
+    this.#follower?.setModelParts(puppet.part_ids());
     if (puppet.has_model()) this.usesLighting = puppet.uses_lighting();
     this.#syncPose(puppet);
     // 利用者が着せ替えを操作した: 尋ねている組は取り消し、いまの組を覚える。

@@ -26,6 +26,8 @@ export interface WebPuppet extends TrackingPuppet {
   detach_module(name: string): void;
   unload_module(name: string): void;
   attached_modules(): string[];
+  /** 合成したモデルのパーツの ID (`parts` の順。受け手のモードでフレームのパーツの番号を引き直すのに使う。T1400)。 */
+  part_ids(): string[];
   modules_json(): string;
   slots_json(): string;
   avatar_slots_json(): string;

@@ -373,6 +373,16 @@ pub fn attached_names(puppet: Option<&Puppet>) -> Vec<&str> {
     })
 }
 
+/// `puppet` の合成したモデルのパーツの ID (`parts` の順。モジュールのパーツは合成の ID `<モジュール>/<パーツ>`)。
+/// モデルが無ければ空。スタジオの受け手がフレームのパーツの番号を自分のモデルの番号に引き直すのに使う
+/// (`docs/studio.md#フレームの配信-内部の形`)。
+pub fn part_ids(puppet: Option<&Puppet>) -> Vec<String> {
+    puppet.map_or_else(Vec::new, |p| {
+        let model = p.instance().compiled().model();
+        model.parts.iter().map(|part| part.id.to_string()).collect()
+    })
+}
+
 /// 本体のモデルのスロット (モジュールを付けていても本体のもの)。
 pub fn slots(puppet: &Puppet) -> &[Slot] {
     &puppet.base_model().slots

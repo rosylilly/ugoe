@@ -181,6 +181,30 @@ fn attach_and_detach_register_textures_in_order() {
     assert!(sink.take().is_empty());
 }
 
+/// 合成したモデルのパーツの ID は合成の順で、モジュールのパーツは合成の ID になる (T1400)。
+#[test]
+fn part_ids_follow_the_composed_model() {
+    assert!(part_ids(None).is_empty());
+    let mut sink = Recorder::default();
+    let (mut puppet, mut wardrobe) = setup(&mut sink);
+    let base: Vec<String> = puppet
+        .base_model()
+        .parts
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect();
+    assert!(base.contains(&"Hair".to_string()), "{base:?}");
+    assert_eq!(part_ids(Some(&puppet)), base);
+
+    wardrobe.attach(&mut puppet, "Dress", &mut sink).unwrap();
+    let mut dressed = base.clone();
+    dressed.push("Dress/Dress".into());
+    assert_eq!(part_ids(Some(&puppet)), dressed);
+
+    wardrobe.detach(&mut puppet, "Dress", &mut sink).unwrap();
+    assert_eq!(part_ids(Some(&puppet)), base);
+}
+
 #[test]
 fn reloading_an_attached_module_replaces_its_texture() {
     let mut sink = Recorder::default();

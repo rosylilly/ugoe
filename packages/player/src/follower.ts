@@ -202,7 +202,8 @@ export function applyFrame(
  * - 同じモデルのまま次のシーンに移ったとき (`continueScene`。見せ方や着せ替えだけが変わった) は、前のシーンのフレームも
  *   捨てずに順に適用し、`seq` の続きも保つ (受け手ごとに物理の刻みが抜けないように)。
  * - フレームのパーツの番号は、そのフレームのシーン (受けていなければその前の最も新しいシーン) の `partIds` で ID に直し、
- *   今のシーンの `partIds` (受け手が付けたモデルの並び) の番号に引き直す (着せ替えの直後の前のシーンのフレーム。T0853)。
+ *   受け手のモデルの並び (`setModelParts`。`WebPuppet.part_ids`) の番号に引き直す (着せ替えの直後の前のシーンのフレーム。T0853。
+ *   モジュールを読めずに飛ばして、受け手のモデルの並びがシーンと食い違うとき。T1400)。
  */
 export class FrameQueue {
   #pending: FollowFrame[] = [];
@@ -214,6 +215,8 @@ export class FrameQueue {
   #dropped = false;
   /** 受けたシーンのパーツの並び (`revision` の順。並びが前と同じシーンは足さない)。 */
   #parts: PartRemap[] = [];
+  /** 受け手のモデルのパーツの並び (`setModelParts`)。まだ渡されていなければ、今のシーンの `partIds` をモデルの並びとみなす。 */
+  #model: readonly string[] | null = null;
 
   /** 今のシーン (モデルを読み終えたもの)。 */
   get revision(): number | null {
@@ -226,10 +229,19 @@ export class FrameQueue {
   }
 
   /**
+   * 受け手のモデルのパーツの並び (合成したモデルの `parts` の ID の順。`WebPuppet.part_ids`) を渡す。モデルを読んだ・
+   * モジュールを付け外ししたときに呼ぶ (フレームごとには呼ばない)。受けたシーンの引き直しの表をこの並びで作り直す。
+   */
+  setModelParts(model: readonly string[]): void {
+    this.#model = model;
+    for (const map of this.#parts) map.rebuild(model);
+  }
+
+  /**
    * シーン `revision` (パーツの並びは `partIds`) のモデルを読み終えた。以後はそのシーンのフレームを最初から適用する。
    */
   setScene(revision: number, partIds: readonly string[] = []): void {
-    this.#parts = [new PartRemap(revision, partIds, partIds)];
+    this.#parts = [new PartRemap(revision, partIds, this.#model ?? partIds)];
     this.#revision = revision;
     this.#from = revision;
     this.#lastSeq = null;
@@ -246,10 +258,12 @@ export class FrameQueue {
       return;
     }
     if (revision > this.#revision) {
-      for (const map of this.#parts) map.rebuild(partIds);
+      const model = this.#model ?? partIds;
+      // モデルの並びを渡されていれば、表は付け外しのとき (`setModelParts`) に作り直してある。
+      if (this.#model === null) for (const map of this.#parts) map.rebuild(model);
       const last = this.#parts.at(-1);
       if (last === undefined || !sameIds(last.partIds, partIds))
-        this.#parts.push(new PartRemap(revision, partIds, partIds));
+        this.#parts.push(new PartRemap(revision, partIds, model));
     }
     this.#revision = Math.max(this.#revision, revision);
   }

@@ -9,7 +9,7 @@ use ugoe::render::{RenderError, Renderer};
 use wasm_bindgen::prelude::*;
 
 use super::WebPuppet;
-use crate::dress_up::{self, TextureSink, WardrobeError, attached_names};
+use crate::dress_up::{self, TextureSink, WardrobeError, attached_names, part_ids};
 use crate::load::Rgba8;
 
 /// レンダラへの登録 ([`TextureSink`])。
@@ -142,6 +142,14 @@ impl WebPuppet {
             .into_iter()
             .map(str::to_owned)
             .collect()
+    }
+
+    /// 合成したモデルのパーツの ID (`parts` の順。着せ替えのモジュールのパーツは合成の ID `<モジュール>/<パーツ>`)。
+    /// モデルが無ければ空。スタジオの受け手がフレームのパーツの番号を引き直すのに使う (`docs/studio.md`)。
+    ///
+    /// @internal アプリ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「アプリ向けの問い合わせ」)。
+    pub fn part_ids(&self) -> Vec<String> {
+        part_ids(self.puppet.as_ref())
     }
 
     /// 読み込んだモジュールの一覧の JSON (読み込んだ順):
