@@ -63,6 +63,7 @@ pub enum Wake {
 /// 促しは 1 刻みに 1 回。トラッキングの値が届いていなければ刻みの直後に送る。届いていれば、促してから値が届くまでの時間
 /// (検出と IPC) を直近の値について測り、値が次の刻みの少し前に届くように促しを前へ寄せる (T0854。`docs/studio.md#入力`)。
 /// 見る値は直近の約 1 秒の値と、それが少なければ (検出が重い) 最低 `MIN_LEADS` 個まで遡った値 (5 秒より古いものは使わない。T0868)。
+/// 値が `hold` (値の間隔で決める。`hold_for`) の間届かなければ (トラッキングを止めた)、促しを刻みの直後に戻す (T0872)。
 /// 操作ウィンドウは促しを受けて検出するので、刻みのほうを値へ寄せると、寄せた刻みの促しがまた値を呼んで刻みが速くなる。
 /// 刻みの格子は動かさず促しを動かすので、刻みの速さと `dt` は変わらない。
 ///
@@ -90,6 +91,10 @@ pub struct Pacer {
     leads: VecDeque<(Instant, Duration)>,
     /// `LEAD_WINDOW` より古い値を残して、見る値をこの数まで増やす (`MIN_LEADS`。テストでは 0 にして T0868 の前と比べる)。
     min_leads: usize,
+    /// 最後の値からこれだけ次の値が届かなければ、促しを刻みの直後に戻す (`hold_for`。届くたびに決め直す)。
+    hold: Duration,
+    /// `hold` を値の間隔で決めるか (テストでは `false` にして、`LEAD_WINDOW` のままの T0872 の前と比べる)。
+    hold_by_interval: bool,
     /// 促してから届くまでの時間をどれだけと見るか (`best_lead`。届くたびに選び直す)。
     lead: Option<Duration>,
     /// 届いて、まだ刻みで使われていない最後の値。
@@ -159,7 +164,7 @@ impl Pacer {
     const MARGIN_CALM: u32 = 2;
     /// 1 つの区切りで、これより少ない値しか無ければ見直さない (トラッキングを使っていない)。
     const MARGIN_MIN_VALUES: u32 = 10;
-    /// 促してから届くまでの時間を見る長さ。これより長く届かなければ、促しを刻みの直後に戻す。
+    /// 促してから届くまでの時間を見る長さ。値の間隔が短ければ、これより長く届かないと促しを刻みの直後に戻す (`hold_for`)。
     pub const LEAD_WINDOW: Duration = Duration::from_secs(1);
     /// 促してから届くまでの時間を見る値の数の下限 (T0868。`docs/studio.md#入力`)。直近の約 1 秒の値がこれより少なければ
     /// (検出が重く 1 秒に数個しか届かない)、`LEAD_WINDOW` より古い値も残してこの数まで見る。1 秒に 2 個では、1 つの値の揺れで
@@ -170,8 +175,10 @@ impl Pacer {
     const LEAD_MAX_AGE: Duration = Duration::from_secs(5);
     /// 覚える届いた時刻の数の上限 (促しは 1 刻みに 1 回なので、120 刻みでも 1 秒で 120 回まで。選ぶ計算は数の 2 乗)。
     const MAX_LEADS: usize = 128;
-    /// 覚える促しの数 (120 刻みで約 0.5 秒、30 刻みで約 2 秒)。これより前の促しの値が届くほど重ければ寄せない。
-    const MAX_PULSES: usize = 64;
+    /// 覚える促しの数 (120 刻みで 5 秒、30 刻みで 20 秒)。これより前の促しの値が届くほど重ければ寄せない。
+    /// 120 刻みでも `LEAD_MAX_AGE` の間の促しを覚え、検出に 1 秒以上かかっても測れるようにする (T0872。64 個では、120 刻みで
+    /// 約 0.5 秒・60 刻みで約 1 秒より重い検出の値をどの促しのものか分からず、寄せられなかった)。探すのは値が届くときだけ。
+    const MAX_PULSES: usize = 600;
 
     pub fn new(rate: TickRate, now: Instant) -> Self {
         let period = rate.period();
@@ -184,6 +191,8 @@ impl Pacer {
             pulses: VecDeque::with_capacity(Self::MAX_PULSES),
             leads: VecDeque::with_capacity(Self::MAX_LEADS),
             min_leads: Self::MIN_LEADS,
+            hold: Self::LEAD_WINDOW,
+            hold_by_interval: true,
             lead: None,
             unused: None,
             last_tick: None,
@@ -244,12 +253,12 @@ impl Pacer {
         }
     }
 
-    /// 促しから、値を使わせたい刻みまでの時間 (促してから届くまでの時間と余裕)。値が届いていなければ `None` (寄せない)。
+    /// 促しから、値を使わせたい刻みまでの時間 (促してから届くまでの時間と余裕)。値が `hold` の間届いていなければ `None` (寄せない)。
     fn aim(&self, now: Instant) -> Option<Duration> {
         let fresh = self
             .leads
             .back()
-            .is_some_and(|(at, _)| now.saturating_duration_since(*at) <= Self::LEAD_WINDOW);
+            .is_some_and(|(at, _)| now.saturating_duration_since(*at) <= self.hold);
         self.lead.filter(|_| fresh).map(|lead| lead + self.margin)
     }
 
@@ -336,6 +345,32 @@ impl Pacer {
         self.leads.push_back((at, at - pulse));
         self.prune_leads(at);
         self.lead = self.best_lead();
+        if self.hold_by_interval {
+            self.hold = self.hold_for();
+        }
+    }
+
+    /// 最後の値から、促しを刻みの直後に戻すまでの時間 (T0872。`docs/studio.md#入力`)。見る値 (`leads`) の届いた間隔の中央値の
+    /// 2 倍を、`LEAD_WINDOW` 以上 `LEAD_MAX_AGE` 以下に収める。
+    ///
+    /// 1 秒のままだと、検出がとても重く値が 1 秒に 1 個より少ないとき、値が届くたびに寄せては次の値の前に戻すのを繰り返し、
+    /// 検出を始める促しが寄せられない (値の届く時刻が刻みに揃わない)。中央値なので、止まっていた間の長い 1 回では延びない。
+    /// 2 倍なので、フレームを 1 つ飛ばした (間隔が 1 回だけ倍になった) くらいでは戻さない。値が多いときは `LEAD_WINDOW` のまま (T0868 までと同じ)。
+    /// 止まったときは、長くても `LEAD_MAX_AGE` の後に戻す (そのころには見積もりに使う値も古い)。
+    /// 届くたびに決め直す (刻みのたびではない)。間隔はスタックの配列に集める (確保しない)。
+    fn hold_for(&self) -> Duration {
+        let mut intervals = [Duration::ZERO; Self::MAX_LEADS];
+        let mut count = 0;
+        for (prev, next) in self.leads.iter().zip(self.leads.iter().skip(1)) {
+            intervals[count] = next.0.saturating_duration_since(prev.0);
+            count += 1;
+        }
+        if count == 0 {
+            return Self::LEAD_WINDOW;
+        }
+        let intervals = &mut intervals[..count];
+        let (_, median, _) = intervals.select_nth_unstable(count / 2);
+        (*median * 2).clamp(Self::LEAD_WINDOW, Self::LEAD_MAX_AGE)
     }
 
     /// 見る値を決める (`at` は最後に届いた時刻)。`LEAD_WINDOW` のうちの値はすべて、それより古い値は `min_leads` 個に足りない分だけ
@@ -618,6 +653,8 @@ mod tests {
         used: Vec<(Instant, Duration)>,
         /// 刻みごとの、使われたか置き換わった値の数と、そのうち遅れた数 (`Pacer::tick`)。
         values: Vec<(Instant, u32, u32)>,
+        /// 促しを寄せていなかった (`Ticked::margin` が無い) 刻みの時刻 (T0872)。
+        unaimed: Vec<Instant>,
         /// 回している間の余裕の最大。
         max_margin: Duration,
         /// 刻みのスレッドと同じく刻みごとに集めた待ち (負荷の報告。T0867)。
@@ -687,6 +724,7 @@ mod tests {
             waits: Vec::new(),
             used: Vec::new(),
             values: Vec::new(),
+            unaimed: Vec::new(),
             max_margin: pacer.margin,
             meter: WaitMeter::default(),
         };
@@ -728,8 +766,9 @@ mod tests {
                     let ticked = pacer.tick(now);
                     assert_eq!(ticked.wait, used.map(|a| now - a));
                     // 余裕は寄せているときだけ報告する。
-                    if let Some(margin) = ticked.margin {
-                        assert_eq!(margin, pacer.margin);
+                    match ticked.margin {
+                        Some(margin) => assert_eq!(margin, pacer.margin),
+                        None => run.unaimed.push(now),
                     }
                     run.meter.record(now, ticked);
                     run.values.push((now, ticked.values, ticked.late));
@@ -1023,6 +1062,13 @@ mod tests {
         pacer
     }
 
+    /// 促しを刻みの直後に戻すまでの時間を `LEAD_WINDOW` のままにする (T0872 の前と同じ) `Pacer`。比べるために使う。
+    fn fixed_hold(rate: TickRate, start: Instant) -> Pacer {
+        let mut pacer = Pacer::new(rate, start);
+        pacer.hold_by_interval = false;
+        pacer
+    }
+
     /// 刻みは格子より早くならず、速さは設定を超えない。
     fn assert_keeps_the_rate(run: &Run, rate: TickRate, seconds: u32, label: &str) {
         for (tick, deadline) in run.ticks.iter().zip(&run.deadlines) {
@@ -1249,6 +1295,135 @@ mod tests {
                 assert_keeps_the_rate(&after, rate, seconds, &label);
             }
         }
+    }
+
+    #[test]
+    fn very_slow_detection_keeps_the_pulse_moved() {
+        // 検出がとても重く、値が 1 秒に 1 個より少ない (T0872)。`Detector` は前の検出にかかった時間だけ次の促しを飛ばすので、
+        // 値の間隔は検出の約 2 倍 (1,200 ms で約 2.4 秒、2,000 ms で約 4 秒)。カメラは 30 fps。
+        let start = Instant::now();
+        let seconds = 120;
+        let until = start + Duration::from_secs(u64::from(seconds));
+        let settled = start + Duration::from_secs(15);
+        for rate in TickRate::ALL {
+            // 検出が刻みの間隔の倍数 (1,200・2,000 ms) だと、寄せない促しの値は刻みの直後に届く (前の待ちが長く出る)。
+            // 倍数でない 1,205・2,005 ms でも比べる。
+            for (detect, jitter) in [
+                (1_200, 8),
+                (1_200, 20),
+                (2_000, 8),
+                (2_000, 20),
+                (1_205, 8),
+                (1_205, 20),
+                (2_005, 8),
+                (2_005, 20),
+            ] {
+                let label = format!("{rate:?} detect {detect}+0..{jitter} ms");
+                let run = |pacer| {
+                    let mut detector = Detector::new(start, 33, detect, jitter, 13);
+                    let mut sleep = Rng(5);
+                    simulate_with(
+                        pacer,
+                        start,
+                        until,
+                        |now| detector.pulse(now),
+                        || sleep.upto(Duration::from_micros(500)),
+                    )
+                };
+                let before = run(fixed_hold(rate, start));
+                let after = run(Pacer::new(rate, start));
+                let (before_late, before_wait) = before.between(settled, until);
+                let (after_late, after_wait) = after.between(settled, until);
+                let unaimed = |run: &Run| run.unaimed.iter().filter(|t| **t >= settled).count();
+                // 刻みの少し前 (余裕の上限のうち) に届かなかった値の割合。寄せていない促しの値は狙った刻みが無く「遅れた値」に
+                // 数えないので、前と後を同じ物差しで比べるにはこちらを見る (寄せていない値は刻みに対して届く時刻が揃わない)。
+                let far = |run: &Run| {
+                    let waits: Vec<_> = run.used.iter().filter(|(t, _)| *t >= settled).collect();
+                    let far = waits.iter().filter(|(_, w)| *w > Pacer::MAX_MARGIN).count();
+                    far as f64 / waits.len().max(1) as f64
+                };
+                let ticks = after.ticks.iter().filter(|t| **t >= settled).count();
+                let values: u32 = after.values.iter().map(|(_, v, _)| *v).sum();
+                println!(
+                    "{label}: {:.2} values/s, hold {:?}, unaimed ticks {} -> {} / {ticks}, \
+                     late {:.1}% -> {:.1}%, not just before the tick {:.1}% -> {:.1}%, \
+                     wait {before_wait:.2?} -> {after_wait:.2?}",
+                    f64::from(values) / f64::from(seconds),
+                    after.pacer.hold,
+                    unaimed(&before),
+                    unaimed(&after),
+                    before_late * 100.0,
+                    after_late * 100.0,
+                    far(&before) * 100.0,
+                    far(&after) * 100.0,
+                );
+                // 前は値が届くたびに寄せては戻していた。後は寄せたまま。
+                assert!(unaimed(&before) > ticks / 4, "{label}");
+                assert_eq!(unaimed(&after), 0, "{label}");
+                assert!(after.pacer.hold > Pacer::LEAD_WINDOW, "{label}");
+                assert!(after.pacer.hold <= Pacer::LEAD_MAX_AGE, "{label}");
+                // 寄せた値のうち狙った刻みに遅れるものは、見る値が 2〜3 個しか無いので 1〜2 割ある (前は寄せないので数えない)。
+                assert!(after_late < 0.3, "{label}");
+                // 待ちは、30・60 刻みでは縮み、120 刻み (間隔が検出の揺れほど) では前とほぼ同じ。
+                if rate == TickRate::Fps120 {
+                    assert!(
+                        after_wait < before_wait + Duration::from_micros(500),
+                        "{label}"
+                    );
+                } else {
+                    assert!(after_wait < before_wait, "{label}");
+                    assert!(far(&after) < far(&before), "{label}");
+                }
+                assert_keeps_the_rate(&before, rate, seconds, &label);
+                assert_keeps_the_rate(&after, rate, seconds, &label);
+            }
+        }
+    }
+
+    #[test]
+    fn pulse_returns_after_the_hold_when_slow_tracking_stops() {
+        // 値が約 2.4 秒ごとに届いていて止まった: 値の間隔で決めた時間の後に、促しを刻みの直後に戻す (T0872)。
+        let start = Instant::now();
+        let rate = TickRate::Fps60;
+        let stop = start + Duration::from_secs(20);
+        let until = stop + Pacer::LEAD_MAX_AGE + Duration::from_secs(5);
+        let mut detector = Detector::new(start, 33, 1_200, 20, 13);
+        let run = simulate(rate, start, until, |now| {
+            if now < stop {
+                detector.pulse(now)
+            } else {
+                None
+            }
+        });
+        let last = run.pacer.leads.back().map(|(t, _)| *t).unwrap();
+        let hold = run.pacer.hold;
+        assert!(
+            Pacer::LEAD_WINDOW < hold && hold <= Pacer::LEAD_MAX_AGE,
+            "{hold:?}"
+        );
+        // 最後の値から `hold` の間は寄せたまま、その後は戻す。
+        let first_unaimed = run.unaimed.iter().find(|t| **t > last).copied().unwrap();
+        assert!(
+            first_unaimed - last > hold,
+            "{:?} / {hold:?}",
+            first_unaimed - last
+        );
+        assert!(
+            first_unaimed - last <= hold + rate.period(),
+            "{:?} / {hold:?}",
+            first_unaimed - last
+        );
+        assert!(run.unaimed.iter().filter(|t| **t > last).count() > 1);
+        let end = *run.ticks.last().unwrap();
+        assert_eq!(run.pacer.pulse_offset(end), rate.period());
+        // 値の間隔がどれだけ長くても、戻すまでは `LEAD_MAX_AGE` 以下。
+        let mut pacer = Pacer::new(rate, start);
+        for i in 0..5u64 {
+            let at = start + Duration::from_millis(4_500 * i);
+            let seq = pacer.pulse(at);
+            pacer.arrived(at + Duration::from_millis(5), seq);
+        }
+        assert_eq!(pacer.hold, Pacer::LEAD_MAX_AGE);
     }
 
     #[test]
