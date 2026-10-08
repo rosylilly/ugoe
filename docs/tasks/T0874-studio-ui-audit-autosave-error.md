@@ -1,11 +1,11 @@
 ---
 id: T0874
 title: "スタジオの ui-audit: 偽のホストに自動の保存の一時の失敗を足し、失敗の帯を監査する"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0874
 ---
 
 # T0874: スタジオの ui-audit: 偽のホストに自動の保存の一時の失敗を足し、失敗の帯を監査する

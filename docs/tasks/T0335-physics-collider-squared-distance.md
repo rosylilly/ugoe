@@ -1,11 +1,11 @@
 ---
 id: T0335
 title: "性能: 物理の衝突の判定で、距離を平方根を取らずに 2 乗で比べるか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-physics, docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0335
 ---
 
 # T0335: 性能: 物理の衝突の判定で、距離を平方根を取らずに 2 乗で比べるか決める (判断が要る)

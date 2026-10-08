@@ -1,11 +1,11 @@
 ---
 id: T0873
 title: "スタジオ: 「トラッキングの待ち」に値の数を載せ、e2e で遅れた値の合計と割合を出す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0873
 ---
 
 # T0873: スタジオ: 「トラッキングの待ち」に値の数を載せ、e2e で遅れた値の合計と割合を出す
