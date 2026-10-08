@@ -1,11 +1,11 @@
 ---
 id: T0868
 title: "スタジオ: トラッキングの値が少ないとき、届くまでの時間を見る長さを値の数で決める"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: [T0867]
-assignee:
+assignee: claude-worker-T0868
 ---
 
 # T0868: スタジオ: トラッキングの値が少ないとき、届くまでの時間を見る長さを値の数で決める
