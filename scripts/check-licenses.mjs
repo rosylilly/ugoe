@@ -3,7 +3,8 @@
 // 方針の正は docs/adr/0018-licensing-and-1.0-scope.md。
 //
 // - ワークスペースのクレートは MIT。アプリ (エディタ ugoe-editor・ビューア ugoe-viewer・スタジオ ugoe-studio と
-//   その仮想カメラ ugoe-studio-vcam) だけ GPL-3.0-only (docs/adr/0019-viewer-license.md・docs/adr/0028-studio.md)。
+//   その仮想カメラ ugoe-studio-vcam・GPU の優先度 ugoe-studio-gpu-priority) だけ GPL-3.0-only (docs/adr/0019-viewer-license.md・
+//   docs/adr/0028-studio.md・docs/adr/0034-studio-gpu-priority.md)。
 // - MIT のクレートが (dev 以外で) 依存するクレートは、寛容なライセンスで使えること。
 // - アプリが依存するクレートは、GPL-3.0 と両立するライセンスで使えること。
 // - npm のパッケージ bindings/web (@ugoe/runtime) は MIT で、実行時の依存は寛容なライセンスに限る
@@ -32,7 +33,13 @@ import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
 exportMbxPath();
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const EDITOR_CRATES = new Set(["ugoe-editor", "ugoe-viewer", "ugoe-studio", "ugoe-studio-vcam"]);
+const EDITOR_CRATES = new Set([
+  "ugoe-editor",
+  "ugoe-viewer",
+  "ugoe-studio",
+  "ugoe-studio-vcam",
+  "ugoe-studio-gpu-priority",
+]);
 const EXPECTED = { mit: "MIT", editor: "GPL-3.0-only" };
 
 // 寛容なライセンス (MIT のクレートの依存に使ってよい)

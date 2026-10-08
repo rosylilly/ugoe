@@ -5614,8 +5614,18 @@ dependencies = [
  "ugoe",
  "ugoe-fs",
  "ugoe-headless",
+ "ugoe-studio-gpu-priority",
  "ugoe-studio-vcam",
  "zune-jpeg",
+]
+
+[[package]]
+name = "ugoe-studio-gpu-priority"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "webview2-com",
+ "windows 0.62.2",
 ]
 
 [[package]]

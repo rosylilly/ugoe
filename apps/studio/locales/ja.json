@@ -81,6 +81,14 @@
       "unsupported": "グラフィックの設定は Windows でだけ開けます。",
       "failed": "グラフィックの設定を開けません: {{reason}}"
     },
+    "gpu_priority": {
+      "unsupported": "GPU の優先度は Windows でだけ変えられます。",
+      "access_denied": "{{process}} の GPU の優先度を変える権限がありません。",
+      "process_not_found": "{{process}} が見つからないので、GPU の優先度を変えられません。",
+      "webview_too_old": "WebView2 Runtime が古いので、出力ウィンドウの GPU の優先度を変えられません。WebView2 Runtime を新しくしてください。",
+      "no_gpu_process": "出力ウィンドウの GPU のプロセスが見つからないので、出力ウィンドウの GPU の優先度を変えられません。",
+      "failed": "{{process}} の GPU の優先度を変えられません: {{reason}}"
+    },
     "output_window": {
       "missing": "出力ウィンドウがありません。",
       "failed": "出力ウィンドウを変えられません: {{reason}}",
@@ -216,6 +224,10 @@
     "renderScale": "描く解像度",
     "renderScaleValue": "{{value}}%",
     "renderScaleHint": "出力ウィンドウとブラウザソースは、大きさにこの割合を掛けた解像度で描き、引き伸ばして出します。下げると GPU の負荷が減りますが、画がぼやけます。仮想カメラは自分の解像度で描きます。",
+    "priority": "GPU の優先度",
+    "priorityNormal": "通常",
+    "priorityLow": "低い",
+    "priorityHint": "「低い」にすると、ゲームや OBS が GPU を使い切っている間はスタジオ (出力ウィンドウ・操作ウィンドウ・仮想カメラ) の描画を後回しにし、GPU を譲ります。そのぶん出力のフレームが落ちることがあります。ブラウザソースは OBS が描くので変わりません。",
     "empty": "モデルを開くと負荷を表示します。",
     "tick": "1 刻みの時間",
     "measured": "実際の刻みの速さ",

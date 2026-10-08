@@ -48,10 +48,16 @@ const ALLOWED = {
   "ugoe-viewer": union(RUNTIME_TIER, FS),
   // スタジオ (apps/studio、ADR 0028 の 1.): 指揮役はネイティブの Puppet。ランタイム層と ugoe-headless (仮想カメラの常駐の描画) に依存してよい。
   // エディタの中核と AI には依存しない (スタジオはモデルを編集しない)
-  "ugoe-studio": union(RUNTIME_TIER, HEADLESS, FS, ["ugoe-studio-vcam"]),
+  "ugoe-studio": union(RUNTIME_TIER, HEADLESS, FS, [
+    "ugoe-studio-vcam",
+    "ugoe-studio-gpu-priority",
+  ]),
   // スタジオの仮想カメラ (apps/studio/vcam、ADR 0028 の 8.): OS の境界だけを持ち、内部のクレートに依存しない
   // (Windows の Frame Server が読み込む DLL にもなるので、小さく保つ)。unsafe を許す唯一のアプリのクレート
   "ugoe-studio-vcam": new Set(),
+  // スタジオの GPU の優先度 (apps/studio/gpu-priority、ADR 0034): Windows の GPU のスケジューラの口だけを持ち、
+  // 内部のクレートに依存しない。unsafe を許すアプリのクレート (もう 1 つは仮想カメラ)
+  "ugoe-studio-gpu-priority": new Set(),
   // --- ツール層 ---
   "ugoe-psd": CORE,
   "ugoe-mesher": CORE,

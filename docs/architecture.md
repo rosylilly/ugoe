@@ -48,7 +48,7 @@
 | T3 自動化 | `ugoe-ai` | T2 以下 |
 | T4 アプリ | `ugoe-cli`, `ugoe-mcp`, `apps/editor` (`ugoe-editor`) | すべて (エディタはライブラリとしての `ugoe-mcp` にも依存する。ADR 0023) |
 | アプリ (ランタイムの見本) | `apps/viewer` (`ugoe-viewer`) | ランタイム層と `ugoe-fs` だけ。描画は webview の `ugoe-wasm` |
-| アプリ (配信) | `apps/studio` (`ugoe-studio`) | ランタイム層と `ugoe-headless` (仮想カメラの描画)・`ugoe-fs`・`ugoe-studio-vcam` (`apps/studio/vcam`。仮想カメラの OS の境界。内部のクレートに依存しない。`unsafe` を許す例外)。出力ウィンドウとブラウザソースの描画は `ugoe-wasm` ([studio.md](studio.md)) |
+| アプリ (配信) | `apps/studio` (`ugoe-studio`) | ランタイム層と `ugoe-headless` (仮想カメラの描画)・`ugoe-fs`・`ugoe-studio-vcam` (`apps/studio/vcam`。仮想カメラの OS の境界)・`ugoe-studio-gpu-priority` (`apps/studio/gpu-priority`。Windows の GPU の優先度。ADR 0034) (この 2 つは内部のクレートに依存せず、`unsafe` を許す例外)。出力ウィンドウとブラウザソースの描画は `ugoe-wasm` ([studio.md](studio.md)) |
 
 層を分ける理由:
 

@@ -1,7 +1,7 @@
 ---
 id: T0861
 title: "スタジオ: Windows で GPU の処理の優先度を下げ、ゲームや OBS に GPU を譲れるようにする (判断が要る)"
-status: in-progress
+status: done
 milestone: M8
 crates: [apps/studio, docs, Cargo.toml, Cargo.lock]
 depends_on: [T0857]
@@ -57,12 +57,12 @@ Windows だけの機能で、既定は今と同じ (下げない) にする。�
 
 ## 受け入れ条件
 
-- [ ] 利用者に案を示して方針を決め、決めたことと理由を docs/studio.md に書いた (A なら ADR 0028 の 8. に追記、B なら新しい ADR と AGENTS.md の例外の一覧)
-- [ ] 決めた方針を入れた: 「フレームレートと負荷」に「GPU の優先度」(通常・低い) を Windows でだけ出し、選んだら自分のプロセスと
+- [x] 利用者に案を示して方針を決め、決めたことと理由を docs/studio.md に書いた (A なら ADR 0028 の 8. に追記、B なら新しい ADR と AGENTS.md の例外の一覧)
+- [x] 決めた方針を入れた: 「フレームレートと負荷」に「GPU の優先度」(通常・低い) を Windows でだけ出し、選んだら自分のプロセスと
       (A・B なら) WebView2 の GPU のプロセスに当てる。当てられなかった (権限・古い WebView2 Runtime・プロセスが見つからない) ときは理由をコードで
       操作ウィンドウに出す (ADR 0029)。設定は T0860 の判断 2 と同じ置き場所 (機械ごとの設定) に持つ
-- [ ] `unsafe` のブロックには前提を `// SAFETY:` で書き、境界の外へは安全な関数だけを出した。Windows の外ではビルドされない・何もしないことを確かめた
-- [ ] `just vcam-check`・`just cross-check` (Windows のターゲットの clippy)・`just licenses`・`just ci` が通る
+- [x] `unsafe` のブロックには前提を `// SAFETY:` で書き、境界の外へは安全な関数だけを出した。Windows の外ではビルドされない・何もしないことを確かめた
+- [x] `just vcam-check`・`just cross-check` (Windows のターゲットの clippy)・`just licenses`・`just ci` が通る
 
 ### 確かめていないこと (実機)
 
@@ -86,3 +86,43 @@ Windows だけの機能で、既定は今と同じ (下げない) にする。�
   触れないので使えない。D3D12 のキューの優先度 (`D3D12_COMMAND_QUEUE_PRIORITY`) は「通常」より下が無い。
 - `windows` クレートの `D3DKMTSetProcessSchedulingPriorityClass` の機能の名前 (`Wdk_Graphics_Direct3D` の見込み) は、作業のときに 0.62 で確かめる。
 - 判断 (2026-10-08): 利用者が「新しい unsafe のクレート」を選んだ。GPU の優先度だけを受け持つ新しいクレートを作り、unsafe の例外を 1 つ増やす。AGENTS.md の unsafe の例外の一覧と、ADR (新しく書くか ADR 0028 の 8. の見直し) を同じ PR で直す。既定は通常の優先度。T0857 の後に、まだ要るかを測ってから作る。
+- 作業 (2026-10-08、claude-worker-T0861):
+  - **新しいクレート `ugoe-studio-gpu-priority` (`apps/studio/gpu-priority`、GPL-3.0-only):** unsafe を許す (lint は vcam と同じ)。
+    `GpuPriority` (Normal / BelowNormal) と `Error` (AccessDenied・ProcessNotFound・WebView2TooOld・Other) はどの OS でもビルドし、
+    OS を呼ぶ `src/win.rs` は `#[cfg(windows)]` だけ: `set_current_process_priority`・`set_process_priority`
+    (`OpenProcess(PROCESS_SET_INFORMATION)` + `D3DKMTSetProcessSchedulingPriorityClass`)・`webview2::gpu_process_ids`・
+    `webview2::watch_gpu_processes` (`ICoreWebView2Environment8::GetProcessInfos` と `add_ProcessInfosChanged`)。どの unsafe にも `// SAFETY:`。
+  - **依存:** Windows でだけ `windows` 0.62 (機能 `Wdk_Graphics_Direct3D`・`Win32_Foundation`・`Win32_System_Threading`) と
+    `webview2-com` 0.39 (MIT。WebView2 の COM の束縛。wry 0.57 が使っている版で、Tauri の `PlatformWebview::environment()` と同じ型)。
+    どちらも既に Cargo.lock にあった (webview2-com は wry の推移的な依存) ので、ビルドするクレートは増えない。ワークスペースの依存に
+    `webview2-com = "0.39"` を足した。`D3DKMTSetProcessSchedulingPriorityClass` の機能名は `Wdk_Graphics_Direct3D` (0.62 で確かめた)。
+  - **出典 (Microsoft の文書で確かめた):** D3DKMTSetProcessSchedulingPriorityClass (gdi32.dll・NTSTATUS を返す・Windows Vista から)、
+    D3DKMT_SCHEDULINGPRIORITYCLASS (IDLE=0〜REALTIME=5)、ICoreWebView2Environment8 (GetProcessInfos・ProcessInfosChanged。
+    WebView2 1.0.1108.44 から)。ハンドルに要るアクセス権は文書に無いので `PROCESS_SET_INFORMATION` にした (実機で要確認)。
+  - **スタジオ:** `gpu.rs` に `GpuPriority` (normal / low) を足し、T0860 の `studio-settings.json` の `priority` に持つ (既定 normal)。
+    `gpu_priority.rs` は当てる先 (スタジオ・WebView2 の GPU のプロセス) と当てた記録・失敗のコード (OS を呼ぶ口を引数で受け、Linux でテスト)。
+    `set_gpu_priority` コマンド (Windows の外は `gpu_priority.unsupported`)、起動時の `watch_gpu_priority` (覚えた優先度を当て、
+    `with_webview` の中で WebView2 の GPU のプロセスを見張る)、当て直したら `subscribe_status` に `gpu` の通知。エラーのコードは
+    `gpu_priority.{unsupported,access_denied,process_not_found,webview_too_old,no_gpu_process,failed}` (翻訳あり)。
+    `GpuView` に `priority`・`prioritySupported`・`priorityErrors`。
+  - **画面:** 「フレームレートと負荷」に「GPU の優先度」(通常・低い) を `prioritySupported` (Windows) のときだけ出し、`priorityErrors` を注意で出す。
+    LoadPanel.svelte.test.ts を足した。ui-audit の偽のホストも直した (失敗の注意が見える形)。
+  - **登録:** Cargo.toml の members と依存、check-layers・ci-groups (apps)・check-licenses (EDITOR_CRATES)・commitlint の SCOPES
+    (`studio-gpu-priority`)・cross-check の CHECKS (`gpu-priority`: x86_64-pc-windows-msvc) とそのテスト。
+  - **文書:** ADR 0034 (新しく書いた。ADR 0028 の状態と 8. に置き換えを書いた)・AGENTS.md の unsafe の例外とリポジトリ構成・
+    docs/studio.md#gpu-の優先度 と実機で確かめていないこと・docs/manual/studio.md・docs/manual-check.md の S35・apps/studio/README.md・
+    docs/architecture.md・docs/testing.md・docs/workflow/code-review.md。
+  - 検査: `just crate ugoe-studio`・`just crate ugoe-studio-gpu-priority`・`just cross-check` (vcam・gpu-priority・apps・tools)・`just vcam-check`・
+    `just layers`・`just licenses`・`just groups`・`just refs`・`pnpm --filter @ugoe/studio check`・vitest。`just ci` は下に書く。
+- やらなかったこと・確かめていないこと:
+  - **Windows の実機は無い (WSL)。** 効き目 (ゲームの fps・OBS のフレームの欠落・スタジオの描画の回数の落ち方)、`PROCESS_SET_INFORMATION` で
+    WebView2 の GPU のプロセスを開けるか、WebView2 Runtime が GPU のプロセスを作り直したときに当て直されるかは確かめていない
+    (docs/manual-check.md の S35。S34 は T0858 が使った)。Windows のコードは clippy (x86_64-pc-windows-msvc・x86_64-pc-windows-gnu) まで。
+  - **T0857 (変わったときだけ描く) で足りたかは測っていない** (WSL では測れない)。足りるかは S35 で見る。
+  - 画面に部品を足したので、`just e2e --only studio` (13 件すべて通った) と `just ui-audit --only studio` (183 の場面で指摘 0。偽のホストは
+    Windows の形で「GPU の優先度」と失敗の注意を出す) を流した。e2e は「GPU の優先度」の欄が Linux で出ないことを直接は見ていない
+    (それは LoadPanel.svelte.test.ts の `prioritySupported: false` と、lib.rs のテストの `prioritySupported` が `cfg!(windows)` であることで見ている)。
+  - docs/manual/images/studio-load.png は撮り直していない (Linux の画面では優先度が出ないため)。
+- 起票の候補:
+  - Windows の実機で S35 を確かめる (効かなければ ADR 0034 の見直すきっかけのとおりクレートごと外す)。
+  - WebView2 の GPU のプロセスを開くのに要るアクセス権が `PROCESS_SET_INFORMATION` で足りなかったら、`PROCESS_SET_LIMITED_INFORMATION` などを試す。

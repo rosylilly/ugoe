@@ -32,6 +32,7 @@
     "allow-set-tick-rate",
     "allow-gpu-settings",
     "allow-set-gpu-preference",
+    "allow-set-gpu-priority",
     "allow-open-graphics-settings",
     "allow-set-render-scale",
     "allow-subscribe-pulse",

@@ -244,8 +244,21 @@ export function studioPageInit({ osLocale, fixture }) {
   };
   const active = profile.scenes.find((s) => s.id === profile.activeScene) ?? profile.scenes[0];
   let api = fixture.api;
-  /** 使う GPU の様子 (T0860)。 */
-  let gpu = { preference: "highPerformance", launched: "auto", graphicsSettings: true };
+  /** 使う GPU の様子 (T0860)。GPU の優先度 (T0861) は、当てられなかった知らせも見えるように「低い」で 1 つ失敗した形にする */
+  let gpu = {
+    preference: "highPerformance",
+    launched: "auto",
+    graphicsSettings: true,
+    priority: "low",
+    prioritySupported: true,
+    priorityErrors: [
+      {
+        code: "gpu_priority.access_denied",
+        args: { process: "msedgewebview2 (GPU, 4242)" },
+        message: "access to msedgewebview2 (GPU, 4242) was denied when changing its GPU priority",
+      },
+    ],
+  };
   /** 指揮役の通知を受ける画面の口 (`subscribeStatus` で受け取る)。 */
   let listener = null;
   /** 負荷の数値に重ねるもの (`setStatus`)。 */
@@ -304,6 +317,10 @@ export function studioPageInit({ osLocale, fixture }) {
       return gpu;
     },
     setRenderScale: async () => {},
+    setGpuPriority: async (priority) => {
+      gpu = { ...gpu, priority, priorityErrors: [] };
+      return gpu;
+    },
     systemLocale: async () => osLocale,
     playMotion: async () => true,
     virtualCameraState: async () => ({ state: "stopped", unavailable: null }),

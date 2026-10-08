@@ -73,6 +73,9 @@ export interface RenderStats {
 /** 使う GPU の希望 (gpu.rs の `GpuPreference`。T0860、docs/studio.md#使う-gpu)。 */
 export type GpuPreference = "auto" | "lowPower" | "highPerformance";
 
+/** GPU の優先度 (gpu.rs の `GpuPriority`。Windows だけ。T0861、docs/studio.md#gpu-の優先度)。 */
+export type GpuPriority = "normal" | "low";
+
 /** 使う GPU の様子 (gpu.rs の `GpuView`)。 */
 export interface GpuView {
   /** 今の希望 (仮想カメラは次に始めるときにこれを使う)。 */
@@ -81,6 +84,12 @@ export interface GpuView {
   launched: GpuPreference;
   /** OS の「グラフィックの設定」を開けるか (Windows だけ)。 */
   graphicsSettings: boolean;
+  /** 選んでいる GPU の優先度 (T0861)。 */
+  priority: GpuPriority;
+  /** GPU の優先度を選べるか (Windows だけ)。 */
+  prioritySupported: boolean;
+  /** GPU の優先度を当てられなかった理由 (スタジオのプロセス・WebView2 の GPU のプロセスの順。当てられていれば空)。 */
+  priorityErrors: CommandMessage[];
 }
 
 /** 出力ごとの描画の負荷 (lib.rs の `RendererLoad`)。 */
@@ -193,6 +202,8 @@ export type MonitorMessage =
     }
   | { kind: "hotkey"; action: HotkeyAction; error: CommandMessage | null }
   | ({ kind: "virtualCamera" } & VirtualCameraStatus)
+  /** 使う GPU の様子が変わった (GPU の優先度を WebView2 の GPU のプロセスに当て直した・当てられなかった。T0861)。 */
+  | ({ kind: "gpu" } & GpuView)
   | ({ kind: "api" } & ApiView)
   | {
       kind: "loadFailures";
@@ -267,6 +278,11 @@ export interface StudioHost {
   openGraphicsSettings(): Promise<void>;
   /** 出力ウィンドウとブラウザソースの描く解像度の倍率を選ぶ (1 / 0.75 / 0.5。プロファイルに持つ。T0858)。選べない値なら例外。 */
   setRenderScale(scale: number): Promise<void>;
+  /**
+   * GPU の優先度を選ぶ (機械ごとの設定ファイルに覚え、すぐに当てる。Windows だけ。ほかの OS では例外。T0861)。
+   * 当てられなかった理由は戻り値の `priorityErrors`。
+   */
+  setGpuPriority(priority: GpuPriority): Promise<GpuView>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
   // 入力 (T0803)
@@ -398,6 +414,7 @@ async function tauriHost(): Promise<StudioHost> {
     setGpuPreference: (preference) => invoke("set_gpu_preference", { preference }),
     openGraphicsSettings: () => invoke("open_graphics_settings"),
     setRenderScale: (scale) => invoke("set_render_scale", { scale }),
+    setGpuPriority: (priority) => invoke("set_gpu_priority", { priority }),
     async systemLocale() {
       const { locale } = await import("@tauri-apps/plugin-os");
       return locale();

@@ -18,7 +18,7 @@ src/OutputPanel.svelte        操作ウィンドウの「出力ウィンドウ�
                               透過のシーンなのに透過が画面で効かないときの「背景」の欄の注意と、背景をクロマキーにするボタン (T0846・T0849)
 src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。押すとその設定のパネルへ。中身は lib/status.ts。T0817・T0845)
 src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
-src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・使う GPU (T0860)・1 刻みの時間・出力ごとの描画の負荷と描いている API と GPU
+src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・使う GPU (T0860)・GPU の優先度 (Windows だけ。T0861)・1 刻みの時間・出力ごとの描画の負荷と描いている API と GPU
 src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除 (確かめてから)・切り替えのホットキーの表示)
 src/SceneEditor.svelte        シーンの編集 (名前・モデル・モジュール・位置と大きさと回転・背景・ライティング)
 src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源・点光源)
@@ -77,7 +77,8 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
   src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作と、透過が画面で効くか (Linux は GDK に聞く。T0846)・2 つのウィンドウを作る
-  src/gpu.rs                    使う GPU の設定 (studio-settings.json。機械ごと)・WebView2 の引数・Windows の「グラフィックの設定」を開く (T0860)
+  src/gpu.rs                    使う GPU の設定と GPU の優先度 (studio-settings.json。機械ごと)・WebView2 の引数・Windows の「グラフィックの設定」を開く (T0860・T0861)
+  src/gpu_priority.rs           GPU の優先度を当てる先 (スタジオと WebView2 の GPU のプロセス)・当てたかの記録・当てられなかった理由のコード (T0861)
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
   src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、受け手ごとにすべて覚えて操作ウィンドウに配る。T0825・T0836・T0840)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
@@ -104,7 +105,8 @@ scripts/build-vcam.mjs        `pnpm vcam`: 仮想カメラのメディアソー�
 scripts/build-vcam-macos.mjs  `pnpm vcam:macos`: macOS の Camera Extension を swiftc で作って署名する (macOS だけ)
 scripts/sample-profile.mjs    `pnpm sample-profile <出力>`: 見本のモデル (assets/samples) を使う見本のプロファイルを書き出す (T0806。docs/manual/studio.md#見本のプロファイル)
 vitest.config.ts              フロントエンドのテスト (`pnpm test`)。部品と $effect のテストは先頭に `@vitest-environment happy-dom` を書く
-vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許す唯一のアプリのクレート。下の「仮想カメラ」)
+vcam/                         仮想カメラの OS の境界 (クレート `ugoe-studio-vcam`。unsafe を許すアプリのクレート。下の「仮想カメラ」)
+gpu-priority/                 Windows の GPU の優先度 (クレート `ugoe-studio-gpu-priority`。unsafe を許すアプリのクレート。下の「GPU の優先度」)
 ```
 
 ## 仕組み
@@ -146,7 +148,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
 | `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー)。プロファイルの `output.tickRate` に持つ |
-| `gpu_settings()` / `set_gpu_preference(preference)` | 操作 | 使う GPU (`auto`・`lowPower`・`highPerformance`) の様子 (今の希望・起動したときの希望・グラフィックの設定を開けるか) と選び直し。機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所) に持つ (T0860。docs/studio.md#使う-gpu) |
+| `gpu_settings()` / `set_gpu_preference(preference)` | 操作 | 使う GPU (`auto`・`lowPower`・`highPerformance`) の様子 (今の希望・起動したときの希望・グラフィックの設定を開けるか・GPU の優先度と当てられなかった理由) と選び直し。機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所) に持つ (T0860。docs/studio.md#使う-gpu) |
+| `set_gpu_priority(priority)` | 操作 | GPU の優先度 (`normal`・`low`) を選び、設定ファイルに書いて、スタジオと WebView2 の GPU のプロセスにすぐ当てる。当てられなかった理由は戻り値の `priorityErrors`。WebView2 が GPU のプロセスを作り直して当て直したときは `subscribe_status` に `gpu` の通知で同じ形を送る。Windows の外では `gpu_priority.unsupported` (T0861。docs/studio.md#gpu-の優先度) |
 | `open_graphics_settings()` | 操作 | Windows の「グラフィックの設定」を開く (ほかの OS ではエラー) |
 | `subscribe_pulse(channel)` | 操作 | 刻みごとに入力の処理を促すメッセージを受け取る (カメラとマイクの処理。最小化しても止まらない) |
 | `set_tracking(frame)` / `set_tracking_paused(paused)` / `set_auto_eye_blink(enabled)` | 操作 | トラッキングの入力 (`null` で外す)・一時停止・自動の目パチ |
@@ -262,7 +265,13 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
 | `animation.motion_rejected` | | 再生中のモーションより優先度が低くて始まらなかった (ホットキーの知らせだけ) |
 | `tick_rate.unsupported` | `rate` | 刻みの速さが 30 / 60 / 120 でない |
 | `render_stats.invalid` | | 出力の報告した描画の負荷が数でない・負 (API と GPU の名前が 256 バイトを超える) |
-| `gpu_settings.save_failed` | `reason` | 使う GPU の設定を設定ファイルに書けない |
+| `gpu_settings.save_failed` | `reason` | 使う GPU の設定 (GPU の優先度を含む) を設定ファイルに書けない |
+| `gpu_priority.unsupported` | | GPU の優先度を変えられない OS (Windows の外) |
+| `gpu_priority.access_denied` | `process` | プロセスの GPU の優先度を変える権限が無い |
+| `gpu_priority.process_not_found` | `process` | GPU の優先度を当てる前にプロセスが終わった |
+| `gpu_priority.webview_too_old` | | WebView2 Runtime が古く、GPU のプロセスを知れない |
+| `gpu_priority.no_gpu_process` | | WebView2 の GPU のプロセスが無い |
+| `gpu_priority.failed` | `process`・`reason` | そのほかの理由で GPU の優先度を変えられない |
 | `graphics_settings.unsupported` | | Windows の外で「グラフィックの設定」を開こうとした |
 | `graphics_settings.failed` | `reason` | 「グラフィックの設定」を開けない |
 | `output_window.missing` | | 出力ウィンドウが無い |
@@ -310,6 +319,21 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
   `just ci` には含まれないので、`src/mf/`・`src/cmio.rs` を触ったら実行する。リンクまでは `cargo xwin build` (Windows)、
   Swift の拡張は macOS でしか作れない。
 
+## GPU の優先度
+
+Windows で、スタジオのプロセス (仮想カメラ) と WebView2 の GPU のプロセス (出力ウィンドウと操作ウィンドウ) の GPU のスケジューラの優先度を
+「通常」か「低い」(`BELOW_NORMAL`) にする (T0861)。仕様は [docs/studio.md#gpu-の優先度](../../docs/studio.md#gpu-の優先度)、
+`unsafe` の例外は [ADR 0034](../../docs/adr/0034-studio-gpu-priority.md)。
+
+- `gpu-priority/` (`ugoe-studio-gpu-priority`、GPL-3.0-only) は OS の呼び出しだけを持つ。内部のクレートに依存しない。
+  - `src/lib.rs`: 優先度 (`GpuPriority`) とエラー (`Error`)。どの OS でもビルドする。
+  - `src/win.rs`: Windows だけ。`set_current_process_priority`・`set_process_priority` (`D3DKMTSetProcessSchedulingPriorityClass`)、
+    `webview2::watch_gpu_processes` (`ICoreWebView2Environment8` の GPU のプロセスの番号と `ProcessInfosChanged`)。
+  - **`unsafe` を許す** (ADR 0034)。lint は仮想カメラのクレートと同じ (`undocumented_unsafe_blocks` と `unsafe_op_in_unsafe_fn` を拒否)。
+- バックエンドは `src-tauri/src/gpu_priority.rs` (当てる先と記録。OS を呼ぶ口を引数で受けるので Linux でもテストする) と、`lib.rs` の
+  `set_gpu_priority`・`watch_gpu_priority` (起動したときに当て、`with_webview` の中で WebView2 の GPU のプロセスを見張る)。
+- Windows のコードは `just cross-check gpu-priority` (`x86_64-pc-windows-msvc`) と `just cross-check apps` (`ugoe-studio` の Windows のコード) で検査する。
+
 ## ブラウザソースの画を確かめる
 
 出力ウィンドウ・ブラウザソースのページ・仮想カメラの画を、同じフレームの列で止めて比べる ([docs/studio.md#画の確かめ](../../docs/studio.md#画の確かめ-adr-0028-の-10))。
@@ -350,6 +374,7 @@ pnpm --filter @ugoe/studio vcam   # 仮想カメラの DLL (Windows 向け。Lin
 pnpm --filter @ugoe/studio sample-profile ~/sample-profile.json  # 見本のプロファイル (--lang en でシーンの名前を英語に。--force で上書き)
 cargo test -p ugoe-studio         # 指揮役・配信の形・一致の検査・操作 API (本物のループバックの待ち受けも使う)
 cargo test -p ugoe-studio-vcam    # 仮想カメラの共有メモリの形・設定・v4l2 の構造体
+cargo test -p ugoe-studio-gpu-priority  # GPU の優先度のクラスの値 (OS の呼び出しは Windows だけ)
 cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮想カメラの画 (just test-gpu に含まれる。CI では除く)
 ```
 

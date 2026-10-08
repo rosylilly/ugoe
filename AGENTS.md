@@ -58,7 +58,7 @@ crates/             Rust クレート (ランタイム層とツール層。依�
   ugoe-mcp            MCP サーバ (外部のエージェントが .ugoeproj を読み、編集を提案・適用する)
 apps/editor/        Tauri エディタ (src/ = Svelte フロントエンド, src-tauri/ = Rust バックエンド)
 apps/viewer/        Tauri ビューア (.ugoe を開いて表示しパラメータを動かす。構成はエディタと同じ)
-apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手、シーンとプロファイル、入力とホットキー。ADR 0028。vcam/ = 仮想カメラ (unsafe を許す唯一のアプリのクレート))
+apps/studio/        Tauri スタジオ (配信用。操作ウィンドウと出力ウィンドウ、指揮役と受け手、シーンとプロファイル、入力とホットキー。ADR 0028。vcam/ = 仮想カメラ、gpu-priority/ = Windows の GPU の優先度 (この 2 つだけが unsafe を許すアプリのクレート))
 packages/           アプリ (エディタ・ビューア・スタジオ) で共有するフロントエンドの部品 (face-tracking・ui・i18n・player。GPL-3.0-only)
 bindings/           ランタイムを別の環境へ出すパッケージ (MIT。web = npm の @ugoe/runtime と <ugoe-avatar>、godot = Godot 4 の GDExtension (ワークスペースの外、ADR 0026)、unity = UPM パッケージ (C# から C ABI を呼ぶ))
 fuzz/               fuzz のターゲット (cargo-fuzz、nightly。ワークスペースの外、ADR 0032。`just fuzz <target>`。just ci には入らない)
@@ -109,7 +109,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 
 ### コード
 
-- Rust edition 2024、toolchain は `rust-toolchain.toml` で固定。`unsafe` は禁止 (例外は `ugoe-ffi` と、[ADR 0028](docs/adr/0028-studio.md) で決めた仮想カメラの 1 クレートだけ)。
+- Rust edition 2024、toolchain は `rust-toolchain.toml` で固定。`unsafe` は禁止 (例外は `ugoe-ffi` と、[ADR 0028](docs/adr/0028-studio.md) で決めた仮想カメラのクレート (`apps/studio/vcam`) と、[ADR 0034](docs/adr/0034-studio-gpu-priority.md) で決めたスタジオの GPU の優先度のクレート (`apps/studio/gpu-priority`) だけ)。
 - 依存クレートはルートの `Cargo.toml` の `[workspace.dependencies]` に追加し、各クレートでは `foo.workspace = true` と書く。1 行に 1 依存、アルファベット順に並べる (マージ衝突を減らすため)。
 - 新しい外部依存を入れるときは PR 本文に理由を書く。ランタイム層に重い依存を入れるなら ADR を書く。
 - ライブラリコードで `unwrap()` を使わない (テストでは可)。エラー型は `thiserror` で作り、`anyhow` はバイナリ (`ugoe-cli` 等) だけで使う。

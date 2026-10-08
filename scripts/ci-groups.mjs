@@ -63,7 +63,13 @@ export const GROUPS = {
   },
   // Tauri のアプリ (エディタ・ビューア・スタジオ)。CI では生成物の検査 (`just gen`) もこのジョブで行う
   apps: {
-    crates: ["ugoe-editor", "ugoe-viewer", "ugoe-studio", "ugoe-studio-vcam"],
+    crates: [
+      "ugoe-editor",
+      "ugoe-viewer",
+      "ugoe-studio",
+      "ugoe-studio-vcam",
+      "ugoe-studio-gpu-priority",
+    ],
     tauri: true,
   },
 };

@@ -1,0 +1,39 @@
+[package]
+name = "ugoe-studio-gpu-priority"
+description = "ugoe スタジオの GPU の優先度 (Windows の GPU のスケジューラの、プロセスごとの優先度のクラス。docs/adr/0034-studio-gpu-priority.md)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license = "GPL-3.0-only"
+
+[dependencies]
+thiserror = { workspace = true, features = ["std"] }
+
+# Windows の外では OS を呼ばない (`set_process_priority` などの口が無い。docs/studio.md#gpu-の優先度)。
+[target.'cfg(windows)'.dependencies]
+# WebView2 の GPU のプロセスの番号 (`ICoreWebView2Environment8::GetProcessInfos`)。wry (Tauri) が使っている版で、
+# スタジオが Tauri から受け取る `ICoreWebView2Environment` と同じ型にする。
+webview2-com.workspace = true
+
+[target.'cfg(windows)'.dependencies.windows]
+workspace = true
+features = [
+  "Wdk_Graphics_Direct3D",
+  "Win32_Foundation",
+  "Win32_System_Threading",
+]
+
+# ワークスペースの lint を写し、unsafe だけを許す (ADR 0034: unsafe の例外のクレートの 1 つ)。
+# 代わりに、unsafe のブロックに `// SAFETY:` のコメントを必ず書かせ、unsafe fn の中でも unsafe のブロックを要求する。
+[lints.rust]
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "deny"

@@ -119,6 +119,65 @@ impl CommandError {
         .arg("reason", reason)
     }
 
+    /// GPU の優先度を変えられない OS (Windows の外。T0861)。
+    #[cfg_attr(windows, allow(dead_code))]
+    pub(crate) fn gpu_priority_unsupported() -> Self {
+        Self::new(
+            "gpu_priority.unsupported",
+            "the GPU priority can be changed only on Windows",
+        )
+    }
+
+    /// プロセス `process` の GPU の優先度を変える権限が無い (T0861)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn gpu_priority_access_denied(process: &str) -> Self {
+        Self::new(
+            "gpu_priority.access_denied",
+            format!("access to {process} was denied when changing its GPU priority"),
+        )
+        .arg("process", process)
+    }
+
+    /// GPU の優先度を変えるプロセス `process` が無かった (終わった。T0861)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn gpu_priority_process_not_found(process: &str) -> Self {
+        Self::new(
+            "gpu_priority.process_not_found",
+            format!("{process} was not found when changing its GPU priority"),
+        )
+        .arg("process", process)
+    }
+
+    /// WebView2 Runtime が古く、GPU のプロセスを知れない (T0861)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn gpu_priority_webview_too_old() -> Self {
+        Self::new(
+            "gpu_priority.webview_too_old",
+            "the WebView2 Runtime is too old to find its GPU process",
+        )
+    }
+
+    /// WebView2 の GPU のプロセスが無い (GPU を使わずに描いている・作り直している途中。T0861)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn gpu_priority_no_gpu_process() -> Self {
+        Self::new(
+            "gpu_priority.no_gpu_process",
+            "the GPU process of WebView2 was not found",
+        )
+    }
+
+    /// プロセス `process` の GPU の優先度を変えられなかった (`reason` は英語の文。T0861)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn gpu_priority_failed(process: &str, reason: impl std::fmt::Display) -> Self {
+        let reason = reason.to_string();
+        Self::new(
+            "gpu_priority.failed",
+            format!("the GPU priority of {process} could not be changed: {reason}"),
+        )
+        .arg("process", process)
+        .arg("reason", reason)
+    }
+
     /// 出力ウィンドウが無い。
     pub(crate) fn output_window_missing() -> Self {
         Self::new("output_window.missing", "the output window is missing")
@@ -420,6 +479,12 @@ mod tests {
             CommandError::gpu_settings_save_failed("x"),
             CommandError::graphics_settings_unsupported(),
             CommandError::graphics_settings_failed("x"),
+            CommandError::gpu_priority_unsupported(),
+            CommandError::gpu_priority_access_denied("x"),
+            CommandError::gpu_priority_process_not_found("x"),
+            CommandError::gpu_priority_webview_too_old(),
+            CommandError::gpu_priority_no_gpu_process(),
+            CommandError::gpu_priority_failed("x", "y"),
             CommandError::output_window_missing(),
             CommandError::output_window_failed("x"),
             CommandError::unsupported_output_size(1, 2),

@@ -37,6 +37,8 @@ const SCOPES = [
   "studio",
   // apps/studio/vcam (ugoe-studio-vcam。スタジオの仮想カメラ)
   "studio-vcam",
+  // apps/studio/gpu-priority (ugoe-studio-gpu-priority。スタジオの GPU の優先度)
+  "studio-gpu-priority",
   // packages/ (共有のフロントエンドのパッケージ)
   "ui",
   "i18n",

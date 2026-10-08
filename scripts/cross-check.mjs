@@ -36,6 +36,11 @@ export const CHECKS = {
     crates: ["ugoe-studio-vcam"],
     targets: ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"],
   },
+  // スタジオの GPU の優先度 (apps/studio/gpu-priority、ADR 0034)。unsafe はすべて Windows の cfg の中にある
+  "gpu-priority": {
+    crates: ["ugoe-studio-gpu-priority"],
+    targets: ["x86_64-pc-windows-msvc"],
+  },
   // エディタ・ビューア・スタジオの src-tauri の Windows のコード (エディタの資格情報の保存先など。T0013)。
   // 依存の ring (ugoe-ai の rustls) の C と tauri-build のリソース (.rc) はターゲット向けにコンパイルされるので、
   // MinGW の gcc と windres がある windows-gnu で検査する (msvc は MSVC の SDK が要る)。macOS は Apple の SDK が要り

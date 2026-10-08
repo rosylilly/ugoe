@@ -28,6 +28,9 @@ pub mod conductor;
 mod error;
 pub mod follower;
 mod gpu;
+// GPU の優先度を当てるのは Windows だけ (ほかの OS ではテストだけが使う)。
+#[cfg_attr(not(windows), allow(dead_code))]
+mod gpu_priority;
 pub mod hotkeys;
 pub mod input;
 pub mod lighting;
@@ -155,6 +158,10 @@ enum Monitor<'a> {
         action: &'a HotkeyAction,
         error: Option<CommandError>,
     },
+    /// 使う GPU の様子が変わった (GPU の優先度を WebView2 の GPU のプロセスに当て直した・当てられなかった。T0861)。
+    #[serde(rename = "gpu")]
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Gpu(&'a gpu::GpuView),
     /// 仮想カメラの状態が変わった (T0807)。
     #[serde(rename = "virtualCamera")]
     VirtualCamera(&'a virtual_camera::Status),
@@ -877,6 +884,21 @@ impl Studio {
             .clone()
     }
 
+    /// WebView2 の GPU のプロセスが分かった・変わった (T0861)。今の GPU の優先度を当て、様子が変わったら操作ウィンドウに知らせる。
+    #[cfg(windows)]
+    fn webview_gpu_changed(&self, processes: Result<Vec<u32>, ugoe_studio_gpu_priority::Error>) {
+        let mut settings = lock(&self.gpu);
+        let before = settings.view();
+        settings.webview_changed(processes, &mut apply_gpu_priority);
+        let view = settings.view();
+        drop(settings);
+        if view != before
+            && let Some(body) = Self::json(&Monitor::Gpu(&view))
+        {
+            self.monitors.send_all(&body);
+        }
+    }
+
     /// 仮想カメラのスレッドからの知らせを受ける。
     fn camera_event(&self, event: CameraEvent, fps: u32) {
         match event {
@@ -1527,6 +1549,69 @@ async fn set_gpu_preference(
     .await?
 }
 
+/// GPU の優先度を変えて、機械ごとの設定ファイルに書き、スタジオのプロセスと WebView2 の GPU のプロセスに当てる (Windows だけ。
+/// ほかの OS では `gpu_priority.unsupported`。T0861、docs/studio.md#gpu-の優先度)。当てられなかった理由は `priorityErrors` に載せる。
+#[tauri::command]
+async fn set_gpu_priority(
+    studio: tauri::State<'_, Arc<Studio>>,
+    priority: gpu::GpuPriority,
+) -> Result<gpu::GpuView, CommandError> {
+    #[cfg(windows)]
+    {
+        blocking(&studio, move |studio| {
+            let mut settings = lock(&studio.gpu);
+            settings
+                .set_priority(priority, &mut apply_gpu_priority)
+                .map_err(CommandError::gpu_settings_save_failed)?;
+            Ok(settings.view())
+        })
+        .await?
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (studio, priority);
+        Err(CommandError::gpu_priority_unsupported())
+    }
+}
+
+/// GPU の優先度を OS で当てる (`ugoe-studio-gpu-priority`。T0861)。
+#[cfg(windows)]
+fn apply_gpu_priority(
+    target: gpu_priority::Target,
+    priority: ugoe_studio_gpu_priority::GpuPriority,
+) -> Result<(), ugoe_studio_gpu_priority::Error> {
+    match target {
+        gpu_priority::Target::Studio => {
+            ugoe_studio_gpu_priority::set_current_process_priority(priority)
+        }
+        gpu_priority::Target::WebView(pid) => {
+            ugoe_studio_gpu_priority::set_process_priority(pid, priority)
+        }
+    }
+}
+
+/// 起動したときに、覚えた GPU の優先度をスタジオのプロセスに当て、WebView2 の GPU のプロセスを見張る (Windows だけ。T0861)。
+/// WebView2 の COM は WebView2 を作ったスレッドで呼ぶので、`with_webview` (メインのスレッド) の中で調べる。
+#[cfg(windows)]
+fn watch_gpu_priority(app: &AppHandle, studio: &Arc<Studio>) {
+    lock(&studio.gpu).apply_priority(&mut apply_gpu_priority);
+    let Some(control) = app.get_webview_window(CONTROL) else {
+        return;
+    };
+    let studio = Arc::clone(studio);
+    let result = control.with_webview(move |webview| {
+        let watching = Arc::clone(&studio);
+        let processes = ugoe_studio_gpu_priority::webview2::watch_gpu_processes(
+            &webview.environment(),
+            move |processes| watching.webview_gpu_changed(processes),
+        );
+        studio.webview_gpu_changed(processes);
+    });
+    if let Err(e) = result {
+        eprintln!("the GPU process of WebView2 cannot be watched: {e}");
+    }
+}
+
 /// Windows の「グラフィックの設定」を開く (仮想カメラの GPU を Windows の側で選ぶため。ほかの OS では `graphics_settings.unsupported`)。
 #[tauri::command]
 async fn open_graphics_settings() -> Result<(), CommandError> {
@@ -1873,6 +1958,9 @@ pub fn run() {
             for config in window_configs(&app.config().app.windows, launched) {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.build()?;
             }
+            // GPU の優先度 (T0861。Windows だけ): 覚えた優先度を当て、WebView2 の GPU のプロセスを見張る。
+            #[cfg(windows)]
+            watch_gpu_priority(app.handle(), &staging);
             // 最近のプロファイルはアプリのデータの場所に覚える (取れなければ覚えない)。
             let recent = app
                 .path()
@@ -1969,6 +2057,7 @@ pub fn run() {
             report_load_failure,
             gpu_settings,
             set_gpu_preference,
+            set_gpu_priority,
             open_graphics_settings,
             output_power_preference,
             subscribe_pulse,
@@ -2086,6 +2175,17 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Monitor::SceneLoading { scene: None }).unwrap(),
             r#"{"kind":"sceneLoading","scene":null}"#
+        );
+        // 使う GPU の様子 (T0861): 操作ウィンドウは `gpuSettings` と同じ形で受ける
+        let gpu = gpu::GpuSettings::load(None).view();
+        let json = serde_json::to_value(Monitor::Gpu(&gpu)).unwrap();
+        assert_eq!(json["kind"], "gpu");
+        assert_eq!(json["priority"], "normal");
+        assert_eq!(json["prioritySupported"], cfg!(windows));
+        assert_eq!(json["priorityErrors"], serde_json::json!([]));
+        assert_eq!(
+            json["preference"],
+            serde_json::to_value(gpu.preference).unwrap()
         );
         let status = Monitor::Status {
             seq: 3,

@@ -38,6 +38,7 @@ pub const COMMANDS: &[&str] = &[
     "report_load_failure",
     "gpu_settings",
     "set_gpu_preference",
+    "set_gpu_priority",
     "open_graphics_settings",
     "output_power_preference",
     "subscribe_pulse",

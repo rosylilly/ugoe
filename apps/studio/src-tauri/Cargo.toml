@@ -32,6 +32,8 @@ tungstenite.workspace = true
 ugoe = { workspace = true, features = ["render"] }
 ugoe-fs.workspace = true
 ugoe-headless.workspace = true
+# GPU の優先度 (T0861。unsafe の例外のクレート、ADR 0034。OS を呼ぶのは Windows だけ)。
+ugoe-studio-gpu-priority.workspace = true
 ugoe-studio-vcam.workspace = true
 # 仮想カメラの背景の画像 (JPEG) のデコード (T0808。利用者の判断 2026-10-02)。
 zune-jpeg.workspace = true

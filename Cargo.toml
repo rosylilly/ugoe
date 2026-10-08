@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "apps/studio/src-tauri", "apps/studio/vcam", "tests/conformance"]
+members = ["crates/*", "apps/editor/src-tauri", "apps/viewer/src-tauri", "apps/studio/src-tauri", "apps/studio/vcam", "apps/studio/gpu-priority", "tests/conformance"]
 default-members = ["crates/*"]
 
 [workspace.package]
@@ -36,6 +36,7 @@ ugoe-psd = { path = "crates/ugoe-psd" }
 ugoe-render = { path = "crates/ugoe-render", version = "0.0.0" }
 ugoe-rigging = { path = "crates/ugoe-rigging" }
 ugoe-runtime = { path = "crates/ugoe-runtime", version = "0.0.0", default-features = false }
+ugoe-studio-gpu-priority = { path = "apps/studio/gpu-priority" }
 ugoe-studio-vcam = { path = "apps/studio/vcam" }
 # --- external ---
 # ランタイム層が使う依存 (glam・ruzstd・serde・serde_json・thiserror) は既定の feature を切ってある。メンバーの
@@ -96,6 +97,8 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
+# スタジオの GPU の優先度 (WebView2 の GPU のプロセスを知る。wry が使っている版。T0861)
+webview2-com = "0.39"
 wgpu = "30"
 windows = "0.62"
 windows-core = "0.62"

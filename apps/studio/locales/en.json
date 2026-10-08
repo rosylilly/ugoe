@@ -81,6 +81,14 @@
       "unsupported": "The graphics settings can be opened only on Windows.",
       "failed": "Could not open the graphics settings: {{reason}}"
     },
+    "gpu_priority": {
+      "unsupported": "The GPU priority can be changed only on Windows.",
+      "access_denied": "Not allowed to change the GPU priority of {{process}}.",
+      "process_not_found": "Could not change the GPU priority because {{process}} was not found.",
+      "webview_too_old": "The WebView2 Runtime is too old to change the GPU priority of the output window. Update the WebView2 Runtime.",
+      "no_gpu_process": "Could not change the GPU priority of the output window because its GPU process was not found.",
+      "failed": "Could not change the GPU priority of {{process}}: {{reason}}"
+    },
     "output_window": {
       "missing": "The output window is missing.",
       "failed": "Could not change the output window: {{reason}}",
@@ -226,6 +234,10 @@
     "renderScale": "Render resolution",
     "renderScaleValue": "{{value}}%",
     "renderScaleHint": "The output window and the browser source draw at this share of their size and stretch the picture to fit. Lower values reduce the GPU load but make the picture blurrier. The virtual camera keeps its own resolution.",
+    "priority": "GPU priority",
+    "priorityNormal": "Normal",
+    "priorityLow": "Low",
+    "priorityHint": "“Low” lets games and OBS use the GPU first: while they use it fully, the studio (the output window, the control window and the virtual camera) draws later, and its output may drop frames. The browser source does not change because OBS draws it.",
     "empty": "Open a model to see the load.",
     "tick": "Time per tick",
     "measured": "Actual tick rate",

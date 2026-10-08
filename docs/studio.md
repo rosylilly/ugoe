@@ -1246,7 +1246,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | 仮想カメラ | スタジオのプロセスのネイティブの wgpu (`ugoe-headless` の `Gpu::with_power_preference`) | wgpu の `PowerPreference` (DX12・Vulkan・Metal で効く)。「自動」は今までどおり環境変数 `WGPU_POWER_PREF` に従う | 次に仮想カメラを始めたとき |
 | ブラウザソース | OBS のプロセス (CEF) | スタジオからは選べない (OBS の設定と OS の設定) | — |
 
-- **設定の置き場所:** 機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所。`{"format":"ugoe-studio-settings","version":1,"gpu":"highPerformance"}`)。
+- **設定の置き場所:** 機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所。`{"format":"ugoe-studio-settings","version":1,"gpu":"highPerformance","priority":"normal"}`。`priority` は [GPU の優先度](#gpu-の優先度))。
   GPU はその機械のものなので、プロファイルに入れない (プロファイルを別の機械に持って行ってもそのまま使える)。無い・読めない・知らない値なら「自動」。
   書けなければ選び直しを取り消して `gpu_settings.save_failed` を出す (`apps/studio/src-tauri/src/gpu.rs`)。
 - **起動し直しが要る:** WebView2 の引数は起動のときにしか渡せないので、出力ウィンドウは起動したときの値 (`launched`) で描き続ける。
@@ -1271,6 +1271,50 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 - wgpu は `PowerPreference::None` ではアダプタを列挙の順のまま選び、`LowPower` / `HighPerformance` では内蔵 / 外付けを先に並べ替える
   (wgpu-core 30 の `instance.rs`)。Windows の DXGI の列挙の先頭は、Windows のアプリごとの設定で選んだ GPU になる見込み (未確認)。
 - 効いたかは実機でしか確かめられない ([実機で確かめていないこと](#実機で確かめていないこと))。
+
+## GPU の優先度
+
+ゲームや OBS の描画を邪魔しないよう、スタジオの GPU の処理の優先度を下げる (T0861。利用者の要望 2026-10-08、T0076 で調べた)。
+**Windows だけ** の機能で、「フレームレートと負荷」の「GPU の優先度」で **通常** (既定。今までと同じで、OS を呼ばない)・**低い** から選ぶ。
+ほかの OS ではパネルに出さない (`set_gpu_priority` は `gpu_priority.unsupported`)。
+
+- **決めたこと (利用者の決定 2026-10-08):** GPU の優先度だけを受け持つ新しいクレート `ugoe-studio-gpu-priority` (`apps/studio/gpu-priority`) を作り、
+  `unsafe` の例外を 1 つ増やす ([ADR 0034](adr/0034-studio-gpu-priority.md))。仮想カメラのクレートの例外を広げる案 (ADR 0028 の 8. の追記) より、
+  例外のクレートは増えるが、それぞれのクレートの `unsafe` の範囲が小さく、レビューで見る範囲がはっきりする。既定は「通常」。
+- **しくみ:** Windows の GPU のスケジューラ (WDDM) の、プロセスごとの優先度のクラス (`D3DKMTSetProcessSchedulingPriorityClass`。
+  [Microsoft の文書](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/nf-d3dkmthk-d3dkmtsetprocessschedulingpriorityclass)、
+  [クラスの一覧](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/ne-d3dkmthk-_d3dkmt_schedulingpriorityclass))。
+  「低い」は `BELOW_NORMAL`。`IDLE` は、ほかのプロセスが GPU を使い続ける間ほとんど描けなくなるので選ばせない。上げる (`ABOVE_NORMAL` 以上) のは
+  管理者の権限が要るので扱わない (OBS が「管理者として実行」を勧めるのは、OBS 自身の GPU の優先度を上げるため)。
+- **当てる先:** スタジオの GPU の処理は 2 つのプロセスにあり、両方に当てる。
+  | 先 | 描いているもの | 知り方 |
+  | --- | --- | --- |
+  | スタジオのプロセス (`ugoe-studio.exe`) | 仮想カメラ (ネイティブの wgpu) | 今のプロセスの疑似ハンドル |
+  | WebView2 の GPU のプロセス (`msedgewebview2.exe`) | 出力ウィンドウと操作ウィンドウ (WebView2 の環境ごとに 1 つなので、操作ウィンドウの描画も下がる) | `ICoreWebView2Environment8::GetProcessInfos` の種類が GPU のもの ([文書](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2environment8)、[プロセスのモデル](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-model)) |
+  | ブラウザソース | OBS のプロセス | スタジオからは下げられない |
+- **いつ当てるか:** 選んだとき (すぐに)、起動したとき (覚えた値。「通常」なら何もしない)、WebView2 の GPU のプロセスが作り直されたとき
+  (`ProcessInfosChanged` の知らせで GPU のプロセスの番号を調べ直し、まだ当てていないプロセスに当てる)。WebView2 の COM は WebView2 を作った
+  スレッドで呼ぶので、Tauri の `with_webview` (メインのスレッド) の中で調べる (`apps/studio/src-tauri/src/lib.rs` の `watch_gpu_priority`)。
+  当てる先と、当てたかどうかの記録は `apps/studio/src-tauri/src/gpu_priority.rs` (OS を呼ぶ口を引数で受けるので Linux でもテストする)。
+- **当てられなかったとき:** 理由をコードで「フレームレートと負荷」に注意として出す (ADR 0029)。選んだ値は覚えたまま、次の機会 (選び直し・プロセスの作り直し) に当て直す。
+  | コード | とき |
+  | --- | --- |
+  | `gpu_priority.access_denied` | プロセスを開けない・優先度を変える権限が無い (`E_ACCESSDENIED`・`STATUS_ACCESS_DENIED`・`STATUS_PRIVILEGE_NOT_HELD`) |
+  | `gpu_priority.process_not_found` | 当てる前にプロセスが終わった |
+  | `gpu_priority.webview_too_old` | WebView2 Runtime が古く `ICoreWebView2Environment8` が無い (1.0.1108.44 から) |
+  | `gpu_priority.no_gpu_process` | WebView2 に GPU のプロセスが無い (GPU を使わずに描いている・作り直している途中) |
+  | `gpu_priority.failed` | そのほか (`NTSTATUS`・`HRESULT` の説明を `reason` に) |
+  ほかのプロセスのハンドルに要るアクセス権は文書に無いので、CPU の優先度 (`SetPriorityClass`) と同じ `PROCESS_SET_INFORMATION` で開く。
+  WebView2 の GPU のプロセスは同じ利用者のプロセスなので開ける見込みだが、確かめていない ([実機で確かめていないこと](#実機で確かめていないこと))。
+- **設定の置き場所:** [使う GPU](#使う-gpu) と同じ機械ごとの設定ファイル `studio-settings.json` の `priority` (`"normal"`・`"low"`。無い・知らない値なら「通常」)。
+  書けなければ選び直しを取り消し (当てもしない)、`gpu_settings.save_failed` を出す。
+- **代償:** 下げると、ゲームや OBS が GPU を使い切っている間はスタジオの描画が後回しになり、出力のフレームが落ちる (「描画の回数」が下がる)。
+  ゲームや OBS が GPU を使い切っていなければ、変わらない見込み。
+- **CPU の優先度は下げない:** `SetPriorityClass` で下げると、指揮役の刻みのスレッドが遅れて出力の滑らかさが崩れるため。
+- **macOS と Linux:** 普通のアプリがプロセスの GPU の優先度を下げる口が無い (Vulkan の `VK_EXT_global_priority` はキューの優先度で、wgpu が出しておらず、
+  ドライバも限られる)。これらの OS では、描く量を減らすこと (変わったときだけ描く (T0857)・刻みの速さ) で GPU を譲る。
+- **先に入れた T0857 で足りたか:** 変わったときだけ描く (T0857) で受け手の GPU の量は刻みの速さまで減る。それでも足りないかは、GPU を使い切るゲームと
+  OBS を動かした Windows の実機でしか測れず、確かめていない (この機能は、足りないときに使う逃げ道として入れた)。
 
 ## OBS でのウィンドウの取り込み
 
@@ -1332,6 +1376,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | 操作 API (T0805) | 実際のクライアント (Stream Deck など) からの接続、Windows と macOS での待ち受け (`::1`)・ファイアウォールの知らせ | [外部 API](#外部-api) |
 | 承認の OS の側の知らせ (T0856) | 操作ウィンドウを最小化・裏に置いたまま承認を待つクライアントが現れると、Windows のタスクバーが点滅し、macOS の Dock のアイコンが跳ね、Linux の X11 でパネルに「注意を要する」の印が出ること。前に出すと止まること。Wayland (GNOME・KDE) で何か出るか (GTK 3 の urgency hint は X11 のものなので、何も出ない見込み) | [外部 API](#外部-api) |
 | 使う GPU (T0860) | 2 つの GPU を持つ Windows のノート PC で、「高性能」で出力ウィンドウ (`--force-high-performance-gpu`) と仮想カメラが外付けの GPU を使い、「省電力」で内蔵の GPU を使うこと (タスクマネージャーの「GPU エンジン」の列と、「フレームレートと負荷」の GPU の名前)。Linux の PRIME (`DRI_PRIME`・NVIDIA のオフロード) と、Intel の Mac での切り替え | [使う GPU](#使う-gpu) |
+| GPU の優先度 (T0861) | Windows の実機で、GPU を使い切るゲーム (かベンチマーク) と OBS を動かしながら「低い」にすると、ゲームの fps と OBS の「レンダリングの遅延によるフレームの欠落」が改善するか、スタジオの「描画の回数」がどのくらい落ちるか。スタジオと WebView2 の GPU のプロセスを `PROCESS_SET_INFORMATION` で開いて当てられるか (注意が出ないか)。WebView2 Runtime が GPU のプロセスを作り直したときに当て直されるか。T0857 (変わったときだけ描く) だけで足りるか | [GPU の優先度](#gpu-の優先度) |
 | 仮想カメラ (T0807・T0809) | Windows 11 の登録と映り方、Linux の v4l2loopback、macOS の Camera Extension (Swift のコンパイルを含む) | [Windows](#windows-media-foundation)・[Linux](#linux-v4l2loopback)・[macOS](#macos-camera-extension) の「未確認」 |
 
 ## 実装のタスク

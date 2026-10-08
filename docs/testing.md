@@ -186,6 +186,7 @@ clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など
 | 検査 | クレート | ターゲット | 要るもの |
 | --- | --- | --- | --- |
 | `vcam` | `ugoe-studio-vcam` | `x86_64-pc-windows-msvc`・`aarch64-apple-darwin` | ターゲットの標準ライブラリだけ |
+| `gpu-priority` | `ugoe-studio-gpu-priority` (スタジオの GPU の優先度。ADR 0034) | `x86_64-pc-windows-msvc` | ターゲットの標準ライブラリだけ |
 | `apps` | `ugoe-editor`・`ugoe-viewer`・`ugoe-studio` | `x86_64-pc-windows-gnu` | MinGW の gcc と windres (`gcc-mingw-w64-x86-64`) |
 | `tools` | `ugoe-ai` と `OS_CRATES` (`ugoe-format`・`ugoe-fs`・`ugoe-editor-core`・`ugoe-cli`・`ugoe-mcp`) | `x86_64-pc-windows-gnu` | MinGW の gcc (`gcc-mingw-w64-x86-64`。依存の ring の C) |
 

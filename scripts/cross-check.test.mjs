@@ -99,6 +99,11 @@ test("仮想カメラは Windows と macOS のターゲットで検査する", (
   assert.deepEqual(CHECKS.vcam.targets, ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]);
 });
 
+test("GPU の優先度のクレートは Windows のターゲットで検査する", () => {
+  assert.deepEqual(CHECKS["gpu-priority"].crates, ["ugoe-studio-gpu-priority"]);
+  assert.deepEqual(CHECKS["gpu-priority"].targets, ["x86_64-pc-windows-msvc"]);
+});
+
 test("ugoe-ai と OS_CRATES (CI の rust (windows) の clippy) は MinGW のある windows-gnu で、すべての feature で検査する", () => {
   assert.equal(CHECKS.tools.crates[0], "ugoe-ai");
   for (const name of OS_CRATES) assert.ok(CHECKS.tools.crates.includes(name), name);

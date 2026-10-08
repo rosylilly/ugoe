@@ -42,6 +42,7 @@ import { describeError, isSceneError } from "./lib/errors";
 import type {
   FileKind,
   GpuPreference,
+  GpuPriority,
   GpuView,
   MonitorMessage,
   OutputState,
@@ -361,6 +362,11 @@ function onMonitor(message: MonitorMessage) {
       camera = state;
       break;
     }
+    case "gpu": {
+      const { kind: _, ...view } = message;
+      gpu = view;
+      break;
+    }
     case "api": {
       const { kind: _, ...view } = message;
       api = view;
@@ -667,6 +673,10 @@ async function changeGpuPreference(preference: GpuPreference) {
 
 function changeRenderScale(scale: RenderScale) {
   void renderScaleEdit.submit(scale);
+}
+
+async function changeGpuPriority(priority: GpuPriority) {
+  gpu = (await run((h) => h.setGpuPriority(priority))) ?? gpu;
 }
 
 /** パラメータのスライダーの刻み。 */
@@ -1048,6 +1058,7 @@ onMount(() => {
             onTickRate={changeTickRate}
             onRenderScale={changeRenderScale}
             onGpuPreference={(preference) => void changeGpuPreference(preference)}
+            onGpuPriority={(priority) => void changeGpuPriority(priority)}
             onGraphicsSettings={() => void run((h) => h.openGraphicsSettings())}
           />
         </Section>

@@ -3,11 +3,13 @@
   描く解像度 (T0858) は出力ウィンドウとブラウザソースの描画バッファの倍率で、選ぶと受け手の次のフレームから効く。
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
   使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
+  Windows では GPU の優先度 (通常・低い) を選び、当てられなかった理由を出す (T0861、docs/studio.md#gpu-の優先度)。
 -->
 <script lang="ts">
 import { formatNumber } from "@ugoe/i18n";
 import { Button, Notice, SegmentedControl } from "@ugoe/ui";
-import type { GpuPreference, GpuView, RendererLoad, StatusMessage } from "./lib/host";
+import { describeError } from "./lib/errors";
+import type { GpuPreference, GpuPriority, GpuView, RendererLoad, StatusMessage } from "./lib/host";
 import { t } from "./lib/i18n";
 import { type LoadWarning, loadWarnings, rendererGpu } from "./lib/load";
 import { receiverName } from "./lib/receivers";
@@ -26,6 +28,8 @@ interface Props {
   onTickRate: (rate: TickRate) => void;
   onRenderScale: (scale: RenderScale) => void;
   onGpuPreference: (preference: GpuPreference) => void;
+  /** GPU の優先度を選ぶ (Windows だけ)。 */
+  onGpuPriority: (priority: GpuPriority) => void;
   /** Windows の「グラフィックの設定」を開く。 */
   onGraphicsSettings: () => void;
 }
@@ -39,6 +43,7 @@ let {
   onTickRate,
   onRenderScale,
   onGpuPreference,
+  onGpuPriority,
   onGraphicsSettings,
 }: Props = $props();
 
@@ -56,6 +61,15 @@ function gpuLabel(preference: GpuPreference): string {
 }
 
 const gpuOptions = $derived(GPU_PREFERENCES.map((p) => ({ value: p, label: gpuLabel(p) })));
+
+const GPU_PRIORITIES: readonly GpuPriority[] = ["normal", "low"];
+
+const priorityOptions = $derived(
+  GPU_PRIORITIES.map((p) => ({
+    value: p,
+    label: p === "normal" ? t("load.priorityNormal") : t("load.priorityLow"),
+  })),
+);
 
 const rateOptions = $derived(
   TICK_RATES.map((rate) => ({
@@ -124,6 +138,11 @@ function changeGpu(value: string) {
   if (preference !== undefined) onGpuPreference(preference);
 }
 
+function changePriority(value: string) {
+  const priority = GPU_PRIORITIES.find((p) => p === value);
+  if (priority !== undefined) onGpuPriority(priority);
+}
+
 /** 受け手が描いている API と GPU の名前 (報告に無ければ `null`)。 */
 function gpuText(r: RendererLoad): string | null {
   const used = rendererGpu(r);
@@ -171,6 +190,20 @@ function gpuText(r: RendererLoad): string | null {
     <div>
       <Button small {disabled} onclick={onGraphicsSettings}>{t("load.graphicsSettings")}</Button>
     </div>
+  {/if}
+
+  {#if gpu?.prioritySupported}
+    <SegmentedControl
+      label={t("load.priority")}
+      value={gpu.priority}
+      options={priorityOptions}
+      {disabled}
+      onchange={changePriority}
+    />
+    <p class="load__hint">{t("load.priorityHint")}</p>
+    {#each gpu.priorityErrors as e (e.code + JSON.stringify(e.args))}
+      <Notice tone="warning">{describeError(e)}</Notice>
+    {/each}
   {/if}
 
   {#if status === null}
