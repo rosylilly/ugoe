@@ -1,11 +1,11 @@
 ---
 id: T0855
 title: "スタジオ: macOS の App Nap で刻みが遅れないようにする (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs, Cargo.lock]
 depends_on: []
-assignee:
+assignee: claude-worker-T0855
 ---
 
 # T0855: スタジオ: macOS の App Nap を止める (判断が要る)
