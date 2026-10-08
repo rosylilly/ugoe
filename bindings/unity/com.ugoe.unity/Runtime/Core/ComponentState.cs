@@ -232,6 +232,14 @@ namespace Ugoe
         }
 
         /// <summary>
+        /// 見た目が変わらなくても、評価の後で送り直すか (<see cref="FrameSync.PullIfChanged"/> の <c>force</c>)。
+        /// バッチをまだ決めていないか、まとめるかの設定が変わった・解像度 (<paramref name="scale"/>) が前に送ったとき
+        /// (<paramref name="lastScale"/>) と違う (マスクと中間のテクスチャを描き直す)・マスクのページが失われた、のどれか。
+        /// </summary>
+        internal static bool ForceSync(bool batchesStale, float scale, float lastScale, bool masksLost) =>
+            batchesStale || masksLost || !Approximately(scale, lastScale);
+
+        /// <summary>
         /// マスクを描き直すか。マスクがあり、内容が変わりうる・解像度 (<paramref name="scale"/>) が前に描いたとき
         /// (<paramref name="lastScale"/>) と違う・ページが失われた (デバイスの作り直しなど) のどれか。
         /// </summary>
@@ -325,12 +333,14 @@ namespace Ugoe
             if (hasPuppet) NeedsLoad = true;
         }
 
-        /// <summary>評価して送った。中間のテクスチャを描き直す。</summary>
-        internal void Evaluated()
-        {
-            Dirty = false;
-            IntermediateDirty = true;
-        }
+        /// <summary>評価した (送るかどうかに関わらず、評価し直す印を下ろす)。</summary>
+        internal void Evaluated() => Dirty = false;
+
+        /// <summary>
+        /// 評価の結果を送る (<see cref="FrameSync.PullIfChanged"/> が true)。中間のテクスチャを描き直す。
+        /// 見た目が変わらずに送らなかったフレームは、前に描いた中間のテクスチャのまま。
+        /// </summary>
+        internal void Sent() => IntermediateDirty = true;
 
         /// <summary>光源を設定した。材質があって設定したなら、中間のテクスチャを描き直す。</summary>
         internal void LightsApplied(bool materialsChanged)

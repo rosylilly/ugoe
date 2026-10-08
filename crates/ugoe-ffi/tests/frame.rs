@@ -301,3 +301,64 @@ fn copy_frame_reports_what_it_needs() {
     let code = unsafe { ugoe_puppet_frame(ptr::null_mut(), &mut f, err()) };
     assert_eq!(code, UGOE_ERROR_NULL_POINTER);
 }
+
+fn changed(p: &Handle) -> bool {
+    let mut out = false;
+    ok(unsafe { ugoe_puppet_changed(p.0, &mut out, err()) });
+    out
+}
+
+#[test]
+fn changed_reports_visible_changes() {
+    let p = from_bundle(DRESS_UP);
+    assert!(changed(&p), "作った直後");
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(changed(&p), "最初の update の後");
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(!changed(&p), "止まったモデルの 2 回目の update の後");
+    assert!(!changed(&p), "読んでも変わらない");
+
+    let mut index = 0;
+    ok(unsafe { ugoe_puppet_parameter_index(p.0, c"AngleX".as_ptr(), &mut index, err()) });
+    ok(unsafe { ugoe_puppet_set_parameter(p.0, index, 20.0, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(changed(&p), "パラメータを変えた後");
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(!changed(&p));
+
+    let mut m = ptr::null_mut();
+    ok(unsafe { ugoe_module_create(CAT_EARS.as_ptr(), CAT_EARS.len(), &mut m, err()) });
+    ok(unsafe { ugoe_puppet_attach_module(p.0, m, err()) });
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(changed(&p), "着せ替えの後");
+    ok(unsafe { ugoe_puppet_update(p.0, 0.0, err()) });
+    assert!(!changed(&p));
+    unsafe { ugoe_module_destroy(m) };
+}
+
+#[test]
+fn changed_matches_the_puppet() {
+    let p = from_bundle(AVATAR);
+    let mut native = native(AVATAR);
+    let mut seen = [false; 2];
+    for frame in 0..120 {
+        if frame == 30 {
+            set(&p, &mut native, c"AngleX", 25.0);
+        }
+        ok(unsafe { ugoe_puppet_update(p.0, 1.0 / 30.0, err()) });
+        native.update(1.0 / 30.0);
+        assert_eq!(changed(&p), native.changed(), "frame {frame}");
+        seen[usize::from(native.changed())] = true;
+    }
+    assert_eq!(seen, [true, true], "true と false の両方を確かめる");
+}
+
+#[test]
+fn changed_rejects_null() {
+    let p = from_bundle(AVATAR);
+    let mut out = false;
+    let code = unsafe { ugoe_puppet_changed(ptr::null(), &mut out, err()) };
+    assert_eq!(code, UGOE_ERROR_NULL_POINTER);
+    let code = unsafe { ugoe_puppet_changed(p.0, ptr::null_mut(), err()) };
+    assert_eq!(code, UGOE_ERROR_NULL_POINTER);
+}

@@ -187,6 +187,32 @@ impl UniformNames {
     }
 }
 
+/// 見た目が変わらずに描かなかったフレームの変更フラグを積んでおく控え (T1404)。
+///
+/// 変更フラグは直前の評価との違いしか表さないので、描かなかったフレームのものを次に描くときに足す
+/// (許容誤差を下回る違いが要素ごとに積もって、書き換えないまま残らないように)。
+#[derive(Debug, Default)]
+struct PendingChanges(Vec<DrawableChanges>);
+
+impl PendingChanges {
+    /// 今のフレームの変更フラグを積む。要素の数が違えば (着せ替え) すべてが変わったとする。
+    fn add(&mut self, changes: &[DrawableChanges]) {
+        if self.0.len() != changes.len() {
+            self.0.clear();
+            self.0.resize(changes.len(), DrawableChanges::ALL);
+            return;
+        }
+        for (pending, &change) in self.0.iter_mut().zip(changes) {
+            *pending |= change;
+        }
+    }
+
+    /// 描いたので空にする。
+    fn clear(&mut self) {
+        self.0.fill(DrawableChanges::NONE);
+    }
+}
+
 /// 1 体分の描画の資源。
 pub struct Renderer {
     container: Rid,
@@ -200,6 +226,8 @@ pub struct Renderer {
     textures: TextureCache,
     /// 読み込んでから最初の描画か (すべてを描き直す)。
     fresh: bool,
+    /// 描かなかったフレームの変更フラグ。
+    pending: PendingChanges,
     /// 直前の描画で使ったマスクの解像度 (キャンバスの 1 単位あたりの画素数)。
     mask_scale: f32,
     /// アトラスに収まらなかったときに、マスクの解像度に掛ける倍率 (解像度が変わると 1 に戻す)。
@@ -526,6 +554,7 @@ impl Renderer {
             atlas: (0, 0),
             textures,
             fresh: true,
+            pending: PendingChanges::default(),
             mask_scale: 0.0,
             shrink: MaskShrink::default(),
             points: PackedVector2Array::new(),
@@ -558,13 +587,21 @@ impl Renderer {
     }
 
     /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数。
+    ///
+    /// 見た目が変わらず (`Puppet::changed`。docs/spec/evaluation.md#見た目の変化)、マスクの解像度も変わらなければ、
+    /// 何も書き換えない (前に送った頂点のバッファと uniform のまま)。
     pub fn draw(&mut self, model: &LoadedModel, mask_scale: f32) {
         let instance = model.puppet.instance();
         let states = instance.drawables();
-        let changes = instance.changes();
+        let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
+        self.pending.add(instance.changes());
+        if !(self.fresh || rescale || model.puppet.changed()) {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending);
+        let changes = pending.0.as_slice();
         let origin = model.model().meta.canvas.origin;
         let fresh = std::mem::take(&mut self.fresh);
-        let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
         self.mask_scale = mask_scale;
         if rescale {
             self.shrink = MaskShrink::default();
@@ -703,6 +740,8 @@ impl Renderer {
             }
             set_color_params(&mut item.material, &self.names, state, changed, redraw);
         }
+        self.pending = pending;
+        self.pending.clear();
     }
 
     /// マスク用メッシュの今の外接矩形 (`self.masks` の順)。
@@ -883,5 +922,34 @@ fn set_color_params(
     }
     if all || changed.contains(DrawableChanges::MASK_STRENGTH) {
         material.set_shader_parameter(&names.mask_strength, &state.mask_strength.to_variant());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_changes_accumulate_until_drawn() {
+        let mut pending = PendingChanges::default();
+        // 最初 (と要素の数が変わったとき) はすべてが変わったとする。
+        pending.add(&[DrawableChanges::NONE; 2]);
+        assert_eq!(pending.0, [DrawableChanges::ALL; 2]);
+        pending.clear();
+        assert_eq!(pending.0, [DrawableChanges::NONE; 2]);
+        // 描かなかったフレームのフラグを足していく。
+        pending.add(&[DrawableChanges::POSITIONS, DrawableChanges::NONE]);
+        pending.add(&[DrawableChanges::NONE, DrawableChanges::OPACITY]);
+        pending.add(&[DrawableChanges::MASK_STRENGTH, DrawableChanges::NONE]);
+        assert_eq!(
+            pending.0,
+            [
+                DrawableChanges::POSITIONS | DrawableChanges::MASK_STRENGTH,
+                DrawableChanges::OPACITY
+            ]
+        );
+        pending.clear();
+        pending.add(&[DrawableChanges::NONE; 3]);
+        assert_eq!(pending.0, [DrawableChanges::ALL; 3]);
     }
 }

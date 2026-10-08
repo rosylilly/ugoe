@@ -897,6 +897,10 @@ impl<'a> Runner<'a> {
 
     /// 毎フレームの状態を借りて読み、ホストのバッファにも写す。
     fn frame(&mut self, puppet: *mut UgoePuppet) {
+        let mut changed = false;
+        // SAFETY: `puppet` は有効、出力は書き込める。
+        let code = unsafe { ugoe_puppet_changed(puppet, &raw mut changed, self.error) };
+        self.check("ugoe_puppet_changed", code);
         let mut frame = MaybeUninit::<UgoeFrame>::uninit();
         // SAFETY: `puppet` は有効、出力は書き込める。
         let code = unsafe { ugoe_puppet_frame(puppet, frame.as_mut_ptr(), self.error) };

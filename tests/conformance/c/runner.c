@@ -16,6 +16,7 @@
  * - conduct の行 (実行器の中で指揮役を進めるケース。T0454) があれば、同じモデルで指揮役の UgoePuppet をもう 1 つ作り、
  *   lead の行ごとに指揮役を ugoe_puppet_update で進め、指揮役の口 (ugoe_puppet_values_before_physics・
  *   ugoe_puppet_lip_sync_applied・ugoe_puppet_part_opacities_applied) で読んだ値で受け手を ugoe_puppet_follow で進める。
+ * - 時間を進めるケースでは、各 update (か follow) の後の ugoe_puppet_changed を結果の changed に書く (T1404)。
  */
 #include <errno.h>
 #include <stdbool.h>
@@ -351,6 +352,8 @@ static bool run_case(const Case *c, const char *out_dir) {
     UgoePuppet *conductor = NULL;
     UgoeModule *modules[MAX_ITEMS] = {0};
     Events events = {0};
+    /* 各 update (か follow) の後の ugoe_puppet_changed (T1404) */
+    bool *changed = NULL;
     FILE *f = NULL;
     size_t len = 0;
     unsigned char *bytes = read_file(c->model, &len);
@@ -374,6 +377,11 @@ static bool run_case(const Case *c, const char *out_dir) {
     } else {
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_EYE_BLINK, c->effects, err));
         CHECK(ugoe_puppet_set_stage_enabled(puppet, UGOE_STAGE_BREATH, c->effects, err));
+        changed = calloc(c->step_count, sizeof *changed);
+        if (!changed) {
+            ok = false;
+            goto done;
+        }
         for (size_t i = 0; i < c->step_count; i++) {
             if (conductor) {
                 if (!lead(c, conductor, puppet, c->lead_lip_sync[i], c->steps[i])) {
@@ -408,6 +416,7 @@ static bool run_case(const Case *c, const char *out_dir) {
                     goto done;
                 }
             }
+            CHECK(ugoe_puppet_changed(puppet, &changed[i], err));
         }
     }
 
@@ -474,11 +483,20 @@ static bool run_case(const Case *c, const char *out_dir) {
         }
         fputc(']', f);
     }
+    if (changed) {
+        fputs(",\"changed\":[", f);
+        for (size_t i = 0; i < c->step_count; i++) {
+            if (i > 0) fputc(',', f);
+            fputs(changed[i] ? "true" : "false", f);
+        }
+        fputc(']', f);
+    }
     fputs("}\n", f);
 
 done:
     if (f) fclose(f);
     clear_events(&events);
+    free(changed);
     for (size_t i = 0; i < c->module_count; i++) ugoe_module_destroy(modules[i]);
     ugoe_puppet_destroy(conductor);
     ugoe_puppet_destroy(puppet);

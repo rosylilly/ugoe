@@ -104,6 +104,48 @@ namespace Ugoe.Tests
         }
 
         [Test]
+        public void UnchangedFramesAreNotPulled()
+        {
+            using var puppet = Puppet.FromBundle(Paths.Read("avatar.ugoe"));
+            foreach (UpdateStage stage in Enum.GetValues(typeof(UpdateStage))) puppet.SetStageEnabled(stage, false);
+            var sync = new FrameSync(puppet);
+            Assert.That(puppet.Changed(), Is.True, "before the first update");
+            puppet.Update(0);
+            Assert.That(puppet.Changed(), Is.True, "the first update");
+            Assert.That(sync.PullIfChanged(), Is.True);
+            Assert.That(sync.PulledAll, Is.False);
+
+            // 止まったモデルは取り出さない (UgoePuppet はメッシュを書き換えない)。
+            for (var i = 0; i < 3; i++)
+            {
+                puppet.Update(1f / 60);
+                Assert.That(puppet.Changed(), Is.False);
+                Assert.That(sync.PullIfChanged(), Is.False);
+            }
+            // ほかの理由 (マスクの解像度など) で送るときは取り出す。飛ばした評価があったのですべてを。
+            Assert.That(sync.PullIfChanged(true), Is.True);
+            Assert.That(sync.PulledAll, Is.True);
+            Assert.That(sync.PositionsCopied, Is.EqualTo(puppet.Drawables.Count));
+
+            puppet.Update(1f / 60);
+            Assert.That(sync.PullIfChanged(), Is.False);
+            puppet.SetParameter("AngleX", 20);
+            puppet.Update(1f / 60);
+            Assert.That(puppet.Changed(), Is.True);
+            Assert.That(sync.PullIfChanged(), Is.True);
+            Assert.That(sync.PulledAll, Is.True, "an unchanged frame was skipped before");
+            var all = new FrameSync(puppet);
+            all.PullAll();
+            for (var i = 0; i < puppet.Drawables.Count; i++) Assert.That(sync.Positions[i], Is.EqualTo(all.Positions[i]));
+
+            puppet.SetParameter("AngleX", -20);
+            puppet.Update(1f / 60);
+            Assert.That(sync.PullIfChanged(), Is.True);
+            Assert.That(sync.PulledAll, Is.False, "consecutive changes only pull what changed");
+            Assert.That(sync.PositionsCopied, Is.LessThan(puppet.Drawables.Count));
+        }
+
+        [Test]
         public void MotionsAndExpressions()
         {
             using var puppet = Puppet.FromBundle(Paths.Read("avatar.ugoe"));

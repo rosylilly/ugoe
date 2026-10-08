@@ -24,6 +24,8 @@ namespace Ugoe.Tests
             public bool IntermediateLost;
             public bool IntermediateExists;
             public int IntermediateDraws;
+            // 評価で見た目が変わったか (UgoePuppet では FrameSync.PullIfChanged)。
+            public bool Shape = true;
 
             public bool HasPuppet => Puppet;
             public bool MasksLost => Lost;
@@ -53,6 +55,7 @@ namespace Ugoe.Tests
             {
                 Calls.Add($"Advance({dt.ToString(CultureInfo.InvariantCulture)})");
                 Frame.Evaluated();
+                if (Shape) Frame.Sent();
             }
 
             public void ApplyLights()
@@ -200,6 +203,18 @@ namespace Ugoe.Tests
             host.Frame.Changed();
             host.Frame1();
             Assert.That(host.Frame.IntermediateDirty, Is.True);
+        }
+
+        [Test]
+        public void UnchangedEvaluationKeepsTheIntermediate()
+        {
+            var host = Loaded();
+            host.Frame.TakeIntermediate(false);
+            host.Shape = false;
+            host.Frame.Changed();
+            host.Frame1();
+            Assert.That(host.Frame.Dirty, Is.False, "evaluated even though nothing was sent");
+            Assert.That(host.Frame.IntermediateDirty, Is.False);
         }
 
         // --- 光源 ---

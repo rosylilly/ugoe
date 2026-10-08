@@ -9,7 +9,7 @@ use ugoe::runtime::{DrawableChanges, ModelInstance};
 
 use crate::drawable::{UgoeDrawableState, blend_code};
 use crate::error::{Error, UGOE_ERROR_BUFFER_TOO_SMALL, UgoeError, UgoeResult, guard};
-use crate::puppet::{UgoePuppet, puppet_mut, write};
+use crate::puppet::{UgoePuppet, puppet_mut, puppet_ref, write};
 
 /// 描画可能要素の頂点の位置が、連続した配列 (`UgoeFrame::positions`) のどこにあるか。単位は float の数
 /// (頂点 1 つが x と y の 2 つ)。読み込みと着せ替えの後は変わらない。
@@ -308,6 +308,32 @@ pub unsafe extern "C" fn ugoe_puppet_copy_frame(
             positions.copy_from_slice(&cache.positions);
         }
         Ok(())
+    })
+}
+
+/// 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、見た目が変わったかを `*out` に書く (`ugoe::Puppet::changed`。
+/// `docs/spec/evaluation.md#見た目の変化`)。false なら、ホストはこのフレームの `ugoe_puppet_frame`・`ugoe_puppet_copy_frame` の
+/// 読み出しと頂点の書き換えを省いてよい (前に送った頂点のままでよい)。
+///
+/// 比べる相手は直前のフレームではなく、最後に true を返したときの出力で、許容誤差を下回る違い (収まりかけた物理の揺れ) は
+/// 変わっていないとする。変更のフラグ (`UgoeDrawableState::changes`) は直前の `update` との違いなので、false のフレームを
+/// 読まずに飛ばしたホストは、次に読むときにフラグによらずすべてを読み直す。作った直後と最初の `update` の後、着せ替えの後の
+/// `update` では true。
+///
+/// # Safety
+///
+/// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ugoe_puppet_changed(
+    puppet: *const UgoePuppet,
+    out: *mut bool,
+    error: *mut UgoeError,
+) -> UgoeResult {
+    guard(error, || {
+        // SAFETY: 呼び出し側の約束。
+        let p = unsafe { puppet_ref(puppet)? };
+        // SAFETY: 呼び出し側の約束。
+        unsafe { write(out, "out", p.puppet.changed()) }
     })
 }
 

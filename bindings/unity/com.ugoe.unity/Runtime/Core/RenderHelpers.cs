@@ -258,6 +258,11 @@ namespace Ugoe
         public bool RenderOrderChanged { get; private set; }
         /// <summary>直前の <see cref="Pull"/> で頂点位置を取り出した要素の数 (転送を省けたかの目安)。</summary>
         public int PositionsCopied { get; private set; }
+        /// <summary>直前に取り出したとき、前に取り出さなかった評価があってすべてを取り出したか (<see cref="PullIfChanged"/>)。</summary>
+        public bool PulledAll { get; private set; }
+
+        // 前の評価を取り出さずに飛ばしたか (次はすべてを取り出す)。
+        private bool skipped;
 
         /// <summary><paramref name="puppet"/> の今の描画可能要素の並びで作る (着せ替えの後は作り直す)。</summary>
         public FrameSync(Puppet puppet)
@@ -289,8 +294,28 @@ namespace Ugoe
         /// </summary>
         public void PullAll() => Pull(true);
 
+        /// <summary>
+        /// <see cref="Puppet.Update"/> の後に呼ぶ。見た目が変わった (<see cref="Puppet.Changed"/>) か <paramref name="force"/> なら
+        /// 取り出して true を返す。どちらでもなければ取り出さずに false を返し、前に取り出した値のまま (エンジンは頂点の書き換えを省く。
+        /// docs/spec/evaluation.md#見た目の変化)。
+        /// 変更フラグは直前の評価との違いしか表さないので、取り出さなかった評価の後は、フラグによらずすべてを取り出す
+        /// (<see cref="PulledAll"/>。許容誤差を下回る違いが要素ごとに積もったままにならないように)。
+        /// </summary>
+        public bool PullIfChanged(bool force = false)
+        {
+            if (!force && !puppet.Changed())
+            {
+                skipped = true;
+                return false;
+            }
+            Pull(skipped);
+            return true;
+        }
+
         private void Pull(bool all)
         {
+            skipped = false;
+            PulledAll = all;
             // 頂点位置は、要る要素の範囲だけを写させ、その範囲だけを読む。
             RenderOrderChanged = puppet.CopyFrame(rawStates, RenderOrder, ranges, positions, !all);
             PositionsCopied = 0;

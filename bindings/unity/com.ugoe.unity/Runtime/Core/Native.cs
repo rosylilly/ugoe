@@ -229,6 +229,7 @@ namespace Ugoe
 
         // --- 毎フレームの描画の状態 ---
 
+        [DllImport(Library)] internal static extern int ugoe_puppet_changed(PuppetHandle puppet, out byte changed, IntPtr error);
         [DllImport(Library)] internal static extern int ugoe_puppet_copy_frame(PuppetHandle puppet, ref FrameBuffers buffers, byte changedPositionsOnly, out FrameCopy copy, IntPtr error);
 
         // --- テクスチャ ---

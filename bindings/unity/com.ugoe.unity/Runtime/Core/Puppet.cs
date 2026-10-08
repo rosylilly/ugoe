@@ -106,6 +106,18 @@ namespace Ugoe
         /// <summary>1 フレーム進める。<paramref name="dt"/> は前のフレームからの経過秒数。</summary>
         public void Update(float dt) => UgoeException.Check(Native.ugoe_puppet_update(handle, dt, NativeError.Current));
 
+        /// <summary>
+        /// 直前の <see cref="Update"/> (か <see cref="Follow"/>) で見た目が変わったか (<c>ugoe_puppet_changed</c>。
+        /// docs/spec/evaluation.md#見た目の変化)。false なら、そのフレームの <see cref="FrameSync.Pull"/> と頂点の書き換えを省いてよい。
+        /// 比べる相手は最後に true を返したときの出力で、許容誤差を下回る違い (収まりかけた物理の揺れ) は変わっていないとする。
+        /// 省いた後に読むときは、変更フラグは直前の <see cref="Update"/> との違いしか表さないので <see cref="FrameSync.PullAll"/> で読む。
+        /// </summary>
+        public bool Changed()
+        {
+            UgoeException.Check(Native.ugoe_puppet_changed(handle, out var changed, NativeError.Current));
+            return changed != 0;
+        }
+
         // --- パラメータ ---
 
         /// <summary>パラメータの一覧 (ID・範囲・既定値)。着せ替えで変わることがある。</summary>

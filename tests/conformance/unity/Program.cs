@@ -15,6 +15,7 @@
 //   (ValuesBeforePhysics・LipSyncApplied・PartOpacitiesApplied) で読んだ値で受け手を Follow で進める。
 // - motions があるケース (T0462) は、その番号の Update の直前に StartMotion で始め、各 Update の後に発火したイベントと
 //   出どころ (MotionEvents の Value・Time・Motion・Number) を結果の motion_events に書く。
+// - steps があるケースは、各 Update (か Follow) の後の Puppet.Changed を結果の changed に書く (T1404)。
 // - before は使わない (同期して評価するので、値を変えてから反映するまでの遅れが無い)。
 // - テクスチャを持つバンドルのケース (KTX2 は T0466、PNG は T0473) は、すべてのテクスチャと法線マップを EncodedTexture.Decode
 //   (C ABI の ugoe_image_decode。Unity の UgoeTextures がテクスチャを読む経路) でデコードし、結果を textures に書く。
@@ -94,6 +95,7 @@ namespace Ugoe.Conformance
         {
             var modules = new List<Module>();
             var events = new JsonArray();
+            JsonArray changed = null;
             Puppet conductor = null;
             try
             {
@@ -113,6 +115,7 @@ namespace Ugoe.Conformance
                     puppet.SetStageEnabled(UpdateStage.Breath, effects);
                     var follow = c["follow"]?.AsArray();
                     var motions = c["motions"]?.AsArray();
+                    changed = new JsonArray();
                     for (var i = 0; i < steps.Count; i++)
                     {
                         var dt = (float)steps[i];
@@ -120,10 +123,12 @@ namespace Ugoe.Conformance
                         else if (follow != null) Follow(puppet, c, follow, i, dt);
                         else if (motions == null) puppet.Update(dt);
                         else UpdateWithMotions(puppet, motions, events, i, dt);
+                        changed.Add(puppet.Changed());
                     }
                 }
                 var frame = Frame(puppet);
                 if (c["motions"] != null) frame["motion_events"] = events;
+                if (changed != null) frame["changed"] = changed;
                 var textures = Textures(puppet);
                 if (textures != null) frame["textures"] = textures;
                 return frame;

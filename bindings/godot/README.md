@@ -320,6 +320,11 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 
 - 評価 (`ugoe::Puppet::update`) の結果を、描画可能要素ごとのキャンバスアイテム (`RenderingServer`) と `ShaderMaterial` で描く。
   描画順は draw index で決め、頂点位置は変わった要素だけ送り直す。
+- 評価の後で **見た目が変わらなかった** フレーム (`ugoe::Puppet::changed` が `false`。止まったモデルや、許容誤差の内に収まりかけた物理の揺れ。
+  [docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)) は、マスクの解像度が変わらない限り、頂点のバッファ
+  (`mesh_surface_update_vertex_region`)・描画順・uniform を何も書き換えない (T1404)。変更フラグは直前の評価との違いしか表さないので、
+  描かなかったフレームの変更フラグを積んでおき、次に描くときに足す (`src/render.rs` の `PendingChanges`)。Godot は毎フレーム描くので、
+  省けるのは CPU の書き換えと転送。
 - 要素とマスクのカバレッジは、読み込み時に `RenderingServer.mesh_*` でメッシュ (UV と頂点番号) を作ってキャンバスアイテムに 1 度だけ足し、
   毎フレームは頂点の位置だけを `mesh_surface_update_vertex_region` で書き換える (T0460。`canvas_item_add_triangle_array` で
   足し直すと、RenderingServer が呼ぶたびにポリゴンを作り直す)。キャンバスアイテムの矩形 (画面の外の選別) は位置から設定し直す。

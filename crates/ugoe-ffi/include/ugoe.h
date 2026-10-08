@@ -1014,6 +1014,22 @@ UgoeResult ugoe_puppet_copy_frame(struct UgoePuppet *puppet,
                                   struct UgoeFrameCopy *out,
                                   struct UgoeError *error);
 
+// 直前の `ugoe_puppet_update` (か `ugoe_puppet_follow`) で、見た目が変わったかを `*out` に書く (`ugoe::Puppet::changed`。
+// `docs/spec/evaluation.md#見た目の変化`)。false なら、ホストはこのフレームの `ugoe_puppet_frame`・`ugoe_puppet_copy_frame` の
+// 読み出しと頂点の書き換えを省いてよい (前に送った頂点のままでよい)。
+//
+// 比べる相手は直前のフレームではなく、最後に true を返したときの出力で、許容誤差を下回る違い (収まりかけた物理の揺れ) は
+// 変わっていないとする。変更のフラグ (`UgoeDrawableState::changes`) は直前の `update` との違いなので、false のフレームを
+// 読まずに飛ばしたホストは、次に読むときにフラグによらずすべてを読み直す。作った直後と最初の `update` の後、着せ替えの後の
+// `update` では true。
+//
+// # Safety
+//
+// `puppet` は有効な `UgoePuppet`、`out` は書き込める領域を指すこと。
+UgoeResult ugoe_puppet_changed(const struct UgoePuppet *puppet,
+                               bool *out,
+                               struct UgoeError *error);
+
 // 当たり判定 (`Model::hit_areas`) の数。
 //
 // # Safety

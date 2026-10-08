@@ -17,10 +17,14 @@ use crate::{Error, read};
 /// `case` の参照の結果。
 pub fn evaluate(case: &Case) -> Result<Frame, Error> {
     let mut events = Vec::new();
-    let puppet = run(case, &mut events)?;
+    let mut changed = Vec::new();
+    let puppet = run(case, &mut events, &mut changed)?;
     let mut frame = Frame::from_instance(puppet.instance());
     if !case.motions.is_empty() {
         frame.motion_events = Some(events);
+    }
+    if !case.steps.is_empty() {
+        frame.changed = Some(changed);
     }
     frame.textures = textures(case, &puppet)?;
     Ok(frame)
@@ -199,11 +203,16 @@ fn toggles(case: &Case) -> ugoe::Toggles {
 
 /// `case` のとおりに作って評価した `Puppet`。
 pub fn puppet(case: &Case) -> Result<Puppet, Error> {
-    run(case, &mut Vec::new())
+    run(case, &mut Vec::new(), &mut Vec::new())
 }
 
 /// [`puppet`] と同じ。計画の `motions` を始め、発火したモーションのイベントを `events` に足す (T0462)。
-fn run(case: &Case, events: &mut Vec<MotionEventFrame>) -> Result<Puppet, Error> {
+/// 各 `update` (か `follow`) の後の `Puppet::changed` を `changed` に足す (T1404)。
+fn run(
+    case: &Case,
+    events: &mut Vec<MotionEventFrame>,
+    changed: &mut Vec<bool>,
+) -> Result<Puppet, Error> {
     let mut puppet = loaded(case)?;
     if !case.steps.is_empty() {
         // 計画の列は `advance` と同じ (`plan::steps`)。バインディングと同じく、列のとおりに進める。
@@ -240,6 +249,7 @@ fn run(case: &Case, events: &mut Vec<MotionEventFrame>) -> Result<Puppet, Error>
                             }),
                     );
                 }
+                changed.push(puppet.changed());
             }
         } else {
             for (i, (&dt, values)) in case.steps.iter().zip(&case.follow).enumerate() {
@@ -263,6 +273,7 @@ fn run(case: &Case, events: &mut Vec<MotionEventFrame>) -> Result<Puppet, Error>
                 puppet
                     .follow(values, lip_sync, &part_opacities, dt)
                     .map_err(|e| invalid(case, e))?;
+                changed.push(puppet.changed());
             }
         }
     }
@@ -432,6 +443,28 @@ mod tests {
         assert_eq!(evaluate(other).unwrap().motion_events, None);
     }
 
+    /// 時間を進めるケースは各 `update` の後の `changed` を書く (T1404)。進めないケースは書かない。
+    #[test]
+    fn stepped_cases_record_changed() {
+        let plan = plan();
+        let mut seen = [false; 2];
+        for case in &plan.cases {
+            let changed = evaluate(case).unwrap().changed;
+            if case.steps.is_empty() {
+                assert_eq!(changed, None, "{}", case.name);
+                continue;
+            }
+            let changed = changed.unwrap();
+            assert_eq!(changed.len(), case.steps.len(), "{}", case.name);
+            // 最初の `update` の後は true
+            assert_eq!(changed.first(), Some(&true), "{}", case.name);
+            for c in changed {
+                seen[usize::from(c)] = true;
+            }
+        }
+        assert_eq!(seen, [true, true], "true と false の両方が計画にある");
+    }
+
     /// 計画の `update` の列で進めた結果が、`ugoe render --time` (`animate::advance`) と同じになる。
     #[test]
     fn steps_match_advance() {
@@ -447,9 +480,10 @@ mod tests {
                     && c.motions.is_empty()
             })
             .unwrap();
-        // テクスチャのデコードの結果は `ModelInstance` から作らないので比べない。
+        // テクスチャのデコードの結果と、各 `update` の後の `changed` は `ModelInstance` から作らないので比べない。
         let expected = Frame {
             textures: None,
+            changed: None,
             ..evaluate(case).unwrap()
         };
         let mut stepped = case.clone();
@@ -577,6 +611,7 @@ mod tests {
             }
             let expected = Frame {
                 textures: None,
+                changed: None,
                 ..evaluate(case).unwrap()
             };
             assert_eq!(

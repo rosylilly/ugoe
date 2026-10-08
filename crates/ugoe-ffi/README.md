@@ -266,10 +266,18 @@ for (uint32_t k = 0; k < frame.drawable_count; k++) {
   (`UGOE_CHANGED_POSITIONS`) が立った描画要素の範囲だけを写す (毎フレーム同じバッファへ写すホストが、変わっていない位置を写さずに済む)。
 - 変更のフラグは前の `ugoe_puppet_update` からの変化 (作った直後と最初の `update` の後と、着せ替えの直後はすべて立つ)。`update` の後に
   毎回読まなかったホストは、フラグによらずすべてを読み直す。
+- **見た目の変化** (`ugoe_puppet_changed(puppet, &changed, err)`。T1404): 直前の `update` (か `ugoe_puppet_follow`) で、見た目が
+  許容誤差を超えて変わったか (`ugoe::Puppet::changed`。[docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化))。
+  比べる相手は最後に true を返したときの出力なので、収まりかけた物理の端数の揺れでは false になる (変更のフラグはビット列の比較なので立ち続ける)。
+  false のフレームは `ugoe_puppet_frame`・`ugoe_puppet_copy_frame` の読み出しと頂点の書き換えを丸ごと省いてよい (前に送った頂点のままでよい)。
+  省いたフレームの後に読むときは、上のとおりフラグによらずすべてを読み直す (省いた間の許容誤差を下回る違いが、要素ごとに積もって残らないように)。
+  作った直後と最初の `update` の後、着せ替えの後の `update` では true。wasm の `shape_changed` と違い、`set_parameter` などで評価を待っている間
+  (`update` の前) は含まない (`update` を呼ぶのはホストなので)。
 - 内部では、頂点の位置をつないだ配列を `ugoe_puppet_frame`・`ugoe_puppet_copy_frame` を呼んだときに作り、同じ評価の結果なら作り直さない。
   前に読んだ評価のちょうど次の `update` なら、位置の変わった描画要素だけを写す (`ugoe-runtime` の `ModelInstance::id`・`update_count`)。
   そのため、この 2 つの関数は `UgoePuppet *` (const でない) を取る。
-- Unity は `ugoe_puppet_copy_frame` を `FrameSync.Pull` で 1 フレームに 1 回呼ぶ (bindings/unity/README.md)。Godot は C ABI ではなく SDK を直接使う。
+- Unity は `ugoe_puppet_copy_frame` を `FrameSync.Pull` で 1 フレームに 1 回呼び、`ugoe_puppet_changed` が false のフレームでは呼ばない
+  (bindings/unity/README.md)。Godot は C ABI ではなく SDK を直接使う (`Puppet::changed` で同じように省く)。
 
 ## ABI の版
 
@@ -646,3 +654,4 @@ ugoe_puppet_follow(follower, values, PARAM_COUNT, level, strength, parts, n, dt,
 - T0489 (失敗の中身を呼び出し側の `UgoeError` で返す。スレッドローカルの状態を持たない。ADR 0031)
 - T0491 (std の無い環境向けの静的ライブラリ。ADR 0031)
 - T0494 (std の無い形のパニックのメッセージをホストに渡す `ugoe_set_panic_handler`)
+- T1404 (見た目が変わったかを問う `ugoe_puppet_changed`。関数を足すだけなので ABI の版は上げない)

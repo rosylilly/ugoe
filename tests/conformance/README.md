@@ -172,12 +172,15 @@ C ABI と Unity の C# の層は描画しないので、頂点を比べる。Uni
    `before` があるとき、値を変えてから描画に反映するまでにフレームの遅れが入りうる実行器 (Godot) は、先に `before` の値で
    数フレーム描き、次のフレームで `parameters` にして上の評価をし、その直後のフレームを結果にする。同期して評価・描画する実行器
    (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
-4. 結果を書く。形は `src/frame.rs` の `Frame` で、公開仕様の評価の例 (`expected.json` のケース) と同じ
+4. 時間を進めるケース (`steps` がある) では、各 `update` (か受け手の口) の後に見た目が変わったか (C ABI の `ugoe_puppet_changed`・
+   Unity の `Puppet.Changed`) を結果の `changed` に `steps` の順で書いてよい (T1404)。参照は `ugoe::Puppet::changed` で、両方にあれば
+   完全に一致することを比べる (書かないバインディング (wasm・Godot) とは比べない。wasm の `shape_changed` は描くまで積むので意味が違う)。
+5. 結果を書く。形は `src/frame.rs` の `Frame` で、公開仕様の評価の例 (`expected.json` のケース) と同じ
    (`{"meshes": {ID: {"positions": [[x, y], ...], "opacity", ...}}, "render_order": [ID, ...]}`)。取り出せない値は省いてよい
    (`positions` と `render_order` は必須)。評価の結果を読み戻せないなら書かず、比べ合わせを `--images-only` にする。
-5. 画像を描くなら: キャンバスと同じ大きさ (倍率 1、`round`)、キャンバス全体が収まるビュー、背景 `plan.background` (`#808080`、不透明)、
+6. 画像を描くなら: キャンバスと同じ大きさ (倍率 1、`round`)、キャンバス全体が収まるビュー、背景 `plan.background` (`#808080`、不透明)、
    `lighting` の光源で描き、ストレートアルファの PNG に書く。
-6. 扱えないケースは `skipped.json` に理由と一緒に書く。
+7. 扱えないケースは `skipped.json` に理由と一緒に書く。
 
 ### 許容誤差
 

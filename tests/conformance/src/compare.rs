@@ -39,7 +39,28 @@ pub fn frames(reference: &Frame, actual: &Frame) -> Vec<String> {
     render_order(reference, actual, &mut errors);
     motion_events(reference, actual, &mut errors);
     textures(reference, actual, &mut errors);
+    changed(reference, actual, &mut errors);
     errors
+}
+
+/// 各 `update` の後に見た目が変わったか (T1404)。両方にあるときだけ比べ、並びが完全に一致すること
+/// (書くのは `changed` を読めるバインディングだけ。今は C ABI と Unity)。
+fn changed(reference: &Frame, actual: &Frame, errors: &mut Vec<String>) {
+    let (Some(expected), Some(changed)) = (&reference.changed, &actual.changed) else {
+        return;
+    };
+    if expected != changed {
+        let show = |list: &[bool]| {
+            list.iter()
+                .map(|&c| if c { '1' } else { '0' })
+                .collect::<String>()
+        };
+        errors.push(format!(
+            "changed: {}, expected {}",
+            show(changed),
+            show(expected)
+        ));
+    }
 }
 
 /// テクスチャのデコードの結果 (T0466)。両方にあるときだけ比べ、番号ごとに完全に一致すること
@@ -313,6 +334,7 @@ mod tests {
             render_order: order.iter().map(|s| (*s).to_owned()).collect(),
             motion_events: None,
             textures: None,
+            changed: None,
         }
     }
 
@@ -368,6 +390,19 @@ mod tests {
         );
         // 書かないバインディング (C ABI の実行器・wasm・Godot) は比べない
         actual.textures = None;
+        assert!(frames(&reference, &actual).is_empty());
+    }
+
+    #[test]
+    fn changed_must_match_when_both_have_it() {
+        let mut reference = frame(&[("A", mesh(0.0, 500.0, 1.0))], &["A"]);
+        reference.changed = Some(vec![true, false, true]);
+        let mut actual = reference.clone();
+        assert!(frames(&reference, &actual).is_empty());
+        actual.changed = Some(vec![true, true, true]);
+        assert_eq!(frames(&reference, &actual), ["changed: 111, expected 101"]);
+        // 書かないバインディング (wasm・Godot) は比べない
+        actual.changed = None;
         assert!(frames(&reference, &actual).is_empty());
     }
 

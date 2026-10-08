@@ -22,6 +22,10 @@ pub struct Frame {
     /// 参照は `ugoe_format::image`、Unity は C ABI の `ugoe_image_decode` でデコードする。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub textures: Option<Vec<TextureFrame>>,
+    /// 時間を進めるケースの、各 `update` (か `follow`) の後に見た目が変わったか (`ugoe::Puppet::changed`。T1404)。
+    /// 参照は `Puppet::changed`、C ABI は `ugoe_puppet_changed`、Unity は `Puppet.Changed` で読む。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<Vec<bool>>,
 }
 
 /// テクスチャ 1 つのデコードの結果 ([`image_digest`] の形の文字列。画像が無ければ `None`)。
@@ -141,6 +145,7 @@ impl Frame {
             render_order,
             motion_events: None,
             textures: None,
+            changed: None,
         }
     }
 }

@@ -231,6 +231,7 @@ follower.Follow(conductor.ValuesBeforePhysics(), lipSync?.Level, lipSync?.Streng
 (頂点の位置は変更フラグの立った要素の範囲だけを写させる)。1 フレームの C ABI の呼び出しは、`update` を除いて 1 回 (前は要素ごとの状態の N 回、
 頂点の位置の変わった要素の数だけ、描画順が変わったかの 1 回と、変わったときの描画順の 1 回。24 要素の `avatar.ugoe` では最大 50 回) (T0490)。
 変更フラグによらずすべての頂点の位置を読むときは `FrameSync.PullAll`。
+見た目が変わったか (`ugoe_puppet_changed`) は `Puppet.Changed()` で、`FrameSync.PullIfChanged` が `false` のフレームの取り出しを省く (T1404)。
 読み込みの上限の関数 (`ugoe_read_limits_default`・`ugoe_puppet_create_from_bundle_with_limits`・`ugoe_module_create_with_limits`) は
 `UgoeReadLimits.Default`・`Puppet.FromBundle(bytes, limits)`・`Module.FromBytes(bytes, limits)` (T0458)。
 画像のデコード (`ugoe_image_*`) は `EncodedTexture.Decode(premultiply[, UgoeImageLimits])` で、結果は `DecodedImage` (上の行が先の RGBA8) に写して
@@ -264,6 +265,13 @@ Unity が使う std がある形では呼ばれず、パニックは `UgoeResult
   **変更フラグ** (`UGOE_CHANGED_*`・`render_order_changed`) の立った要素の分だけ、まとめたメッシュの頂点・頂点の色・三角形
   (表示とカリング) を送り直す (`FrameSync`)。
   マスクも、関わる要素の頂点かマスクの効き具合が変わったときだけ描き直す。
+- 評価の後で **見た目が変わらなかった** フレーム (`ugoe_puppet_changed` が `false`。止まったモデルや、許容誤差の内に収まりかけた物理の揺れ。
+  [docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)) は、状態の取り出し (`ugoe_puppet_copy_frame`) も
+  `Mesh` の書き換えも中間のテクスチャの描き直しもしない (前に送ったメッシュのまま。`FrameSync.PullIfChanged`。T1404)。
+  ただし、バッチをまだ決めていないか `batching` が変わった・マスクの解像度が変わった・マスクのページが失われたときは送る (`SyncRules.ForceSync`)。
+  変更フラグは直前の評価との違いしか表さないので、取り出さなかったフレームの後に送るときは、すべての要素の頂点・色を送り直す
+  (`FrameSync.PulledAll`。許容誤差を下回る違いが要素ごとに積もって残らないように)。エンジンは毎フレーム描くので、省けるのは CPU の書き換えと転送。
+  `tests/PuppetTests.cs` の `UnchangedFramesAreNotPulled` で、止まったモデルを取り出さないことを確かめる (Unity の実機では確かめていない)。
 - テクスチャは読み込み時に乗算済みアルファ (参照実装と同じ `(c × a + 127) div 255`) にし、バイリニア・端で止める・
   ミップマップなし・sRGB のデコードなし (`linear: true`) で作る。法線マップはアルファを掛けない。PNG と KTX2 (圧縮していない 8 ビットの RGB / RGBA と BC1〜BC5・BC7) は
   C ABI のデコーダ (`EncodedTexture.Decode`・`ugoe_image_decode`。参照の `ugoe render`・wasm と同じ画素。乗算もそこで行う) で読んで、

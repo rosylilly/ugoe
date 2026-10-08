@@ -376,5 +376,15 @@ namespace Ugoe.Tests
             Assert.That(SyncRules.NeedsMaskRedraw(true, false, 1, 0, false), Is.True, "never drawn");
             Assert.That(SyncRules.NeedsMaskRedraw(true, false, 1.0000001f, 1, false), Is.False, "rounding noise");
         }
+
+        [Test]
+        public void SyncIsForcedOnlyForReasonsOutsideTheShape()
+        {
+            Assert.That(SyncRules.ForceSync(false, 1, 1, false), Is.False);
+            Assert.That(SyncRules.ForceSync(true, 1, 1, false), Is.True, "batches not decided or batching switched");
+            Assert.That(SyncRules.ForceSync(false, 1, 1, true), Is.True, "mask pages lost");
+            Assert.That(SyncRules.ForceSync(false, 1.1892071f, 1, false), Is.True, "resolution changed");
+            Assert.That(SyncRules.ForceSync(false, 1.0000001f, 1, false), Is.False, "rounding noise");
+        }
     }
 }

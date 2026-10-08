@@ -560,13 +560,17 @@ namespace Ugoe.Unity
         {
             // 送るのに失敗しても、止まっている間は評価し直し続けない (印を先に下ろす)。
             frame.Evaluated();
-            Sync();
+            var scale = MaskResolution();
+            var force = SyncRules.ForceSync(batchPlan == null || batching != batchingUsed, scale, lastResolution, masks.Lost);
+            // 見た目が変わらず、ほかに送り直す理由も無ければ、読み出しとメッシュの書き換えを省く (前に送ったメッシュのまま)。
+            if (!sync.PullIfChanged(force)) return;
+            frame.Sent();
+            Sync(scale);
         }
 
-        // 変更フラグが立った分だけ Unity に送る。
-        private void Sync()
+        // 変更フラグが立った分だけ Unity に送る (取り出さなかった評価の後はすべて)。
+        private void Sync(float scale)
         {
-            sync.Pull();
             if (SyncRules.NeedsBatchRebuild(batchPlan, sync.RenderOrderChanged, batching, batchingUsed, sync.States))
             {
                 RebuildBatches();
@@ -594,7 +598,6 @@ namespace Ugoe.Unity
                     }
                 }
             }
-            var scale = MaskResolution();
             var maskDirty = SyncRules.NeedsMaskRedraw(masks.HasMasks,
                 SyncRules.MaskContentChanged(plan, sync.PositionsChanged, sync.States), scale, lastMaskScale, masks.Lost);
             lastResolution = scale;
@@ -613,7 +616,12 @@ namespace Ugoe.Unity
                     }
                 }
             }
-            foreach (var bv in batchViews) SyncBatch(bv);
+            foreach (var bv in batchViews)
+            {
+                // 取り出さなかった評価の間の色の変化 (許容誤差の内) は変更フラグに残らないので、すべてを送る。
+                if (sync.PulledAll) bv.AllColors = true;
+                SyncBatch(bv);
+            }
         }
 
         // まとめたメッシュ 1 つに、変わった要素の頂点・色・三角形を写して送る。
