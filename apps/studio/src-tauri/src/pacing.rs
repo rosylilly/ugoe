@@ -71,6 +71,9 @@ pub enum Wake {
 /// 刻むたびに、トラッキングの値が届いてから刻みで使われるまでの待ちと、刻みに遅れた値の数を返す (`tick`。T0863)。
 /// 促しを寄せていれば促しが狙った刻み (`aim` の後) を覚えておき、値が使われる前か次の値に置き換わる前に狙った刻みが過ぎていれば
 /// 「刻みに遅れた」とする (遅れた値は、狙った刻みの次の刻みまでに次の値が届いて置き換わることが多い)。
+///
+/// 値が刻みのどれだけ前に届くように寄せるか (余裕) は、起きる時刻の揺れで刻みに遅れた値の割合を見て、1〜4 ms の間で増減する
+/// (`adjust_margin`。T0864)。
 #[derive(Debug, Clone)]
 pub struct Pacer {
     period: Duration,
@@ -85,13 +88,21 @@ pub struct Pacer {
     leads: VecDeque<(Instant, Duration)>,
     /// 促してから届くまでの時間をどれだけと見るか (`best_lead`。届くたびに選び直す)。
     lead: Option<Duration>,
-    /// 届いて、まだ刻みで使われていない最後の値 (届いた時刻と、促しが狙った刻み)。
-    unused: Option<(Instant, Option<Instant>)>,
+    /// 届いて、まだ刻みで使われていない最後の値。
+    unused: Option<Unused>,
     /// 前の刻みの時刻。
     last_tick: Option<Instant>,
     /// 前の刻みから、使われたか置き換わった値の数と、そのうち刻みに遅れた数。
     values: u32,
     late: u32,
+    /// 値が次の刻みのどれだけ前に届くように促すか (`MIN_MARGIN`〜`MAX_MARGIN`。刻みに遅れた値の割合で増減する。T0864)。
+    margin: Duration,
+    /// 余裕を見直す区切りの始まりと、その間に使われたか置き換わった値の数と、そのうち起きる時刻の揺れで遅れた数 (`adjust_margin`)。
+    judge_start: Option<Instant>,
+    judged: u32,
+    missed: u32,
+    /// 遅れが無かった区切りが続いた数。
+    calm: u32,
 }
 
 /// 送った促し。
@@ -101,6 +112,19 @@ struct Pulse {
     at: Instant,
     /// 値を使わせたい刻みの時刻 (促しを寄せていなければ `None`)。
     target: Option<Instant>,
+    /// 促しから値を使わせたい刻みまでの時間 (`aim`。促しを寄せていなければ `None`)。
+    aim: Option<Duration>,
+}
+
+/// 届いて、まだ刻みで使われていない値。
+#[derive(Debug, Clone, Copy)]
+struct Unused {
+    at: Instant,
+    /// 促しが狙った刻み。
+    target: Option<Instant>,
+    /// 促してから届くまでの時間が見込み (`aim`) のうちだったか。そのうえで刻みに遅れたなら、起きる時刻の揺れで遅れた
+    /// (余裕を増やせば間に合う)。
+    expected: bool,
 }
 
 /// 1 回の刻みで使ったトラッキングの値 (`Pacer::tick`)。
@@ -115,8 +139,20 @@ pub struct Ticked {
 }
 
 impl Pacer {
-    /// 値が次の刻みのどれだけ前に届くように促すか (測った時間の揺れと、届いてから刻みのスレッドが読むまでの余裕)。
-    pub const LEAD_MARGIN: Duration = Duration::from_millis(1);
+    /// 値が次の刻みのどれだけ前に届くように促すか (余裕) の下限と上限 (T0864。`docs/studio.md#刻みの速さと正確さ`)。
+    /// 余裕は、促しと刻みの起きる時刻の揺れ (OS のスリープの粒度) と、届いてから刻みのスレッドが読むまでの時間を見込む。
+    /// 余裕の分だけ値は古くなるので、上限は刻みの間隔の半分 (120 刻みで約 4.2 ms) より小さくする。
+    const MIN_MARGIN: Duration = Duration::from_millis(1);
+    const MAX_MARGIN: Duration = Duration::from_millis(4);
+    /// 余裕を見直す区切りの長さ。
+    const MARGIN_WINDOW: Duration = Duration::from_secs(1);
+    /// 1 つの区切りで、起きる時刻の揺れで遅れた値が 5% を超えたら増やす量。
+    const MARGIN_UP: Duration = Duration::from_micros(500);
+    /// 遅れた値の無い区切りが `MARGIN_CALM` 回続いたら減らす量 (増やすより小さくし、少しずつ戻す)。
+    const MARGIN_DOWN: Duration = Duration::from_micros(250);
+    const MARGIN_CALM: u32 = 2;
+    /// 1 つの区切りで、これより少ない値しか無ければ見直さない (トラッキングを使っていない)。
+    const MARGIN_MIN_VALUES: u32 = 10;
     /// 促してから届くまでの時間を見る長さ。これより長く届かなければ、促しを刻みの直後に戻す。
     pub const LEAD_WINDOW: Duration = Duration::from_secs(1);
     /// 覚える届いた時刻の数の上限 (促しは 1 刻みに 1 回なので、120 刻みでも 1 秒で 120 回まで。選ぶ計算は数の 2 乗)。
@@ -139,6 +175,11 @@ impl Pacer {
             last_tick: None,
             values: 0,
             late: 0,
+            margin: Self::MIN_MARGIN,
+            judge_start: None,
+            judged: 0,
+            missed: 0,
+            calm: 0,
         }
     }
 
@@ -147,6 +188,10 @@ impl Pacer {
         self.period = rate.period();
         self.next = now + self.period;
         self.lead = self.best_lead();
+        // 余裕はそのまま (計算機の性質なので速さで変わらない)。見直しの区切りは数え直す。
+        self.judge_start = None;
+        self.judged = 0;
+        self.missed = 0;
     }
 
     /// 次の刻みの時刻。
@@ -191,9 +236,7 @@ impl Pacer {
             .leads
             .back()
             .is_some_and(|(at, _)| now.saturating_duration_since(*at) <= Self::LEAD_WINDOW);
-        self.lead
-            .filter(|_| fresh)
-            .map(|lead| lead + Self::LEAD_MARGIN)
+        self.lead.filter(|_| fresh).map(|lead| lead + self.margin)
     }
 
     /// `d` を `period` で割った余り。
@@ -203,32 +246,38 @@ impl Pacer {
         Duration::from_nanos(u64::try_from(d.as_nanos() % period).unwrap_or(0))
     }
 
-    /// 促してから届くまでの時間を、どれだけと見て促しを寄せるか。直近の値が刻みで使われるまでの待ちの合計が
+    /// 促してから届くまでの時間を、どれだけと見て促しを寄せるか。直近の値について、狙った刻みでの費用の合計が
     /// 最も小さくなるものを、届いた時間の中から選ぶ。
     ///
+    /// 費用は、間に合う値では刻みで使われるまでの待ち。促しを寄せた先 `c` と届くまでの時間 `d` から `(c + 余裕 - d) mod 間隔`。
+    /// 狙った刻みに遅れる値 (`d > c + 余裕`) は、その待ちに 1 刻みの間隔を足す (狙った刻みが新しい値を使えず、前の値を
+    /// もう 1 刻み出す。T0864)。足さないと、遅れて次の刻みのすぐ前に届く値の費用が小さく見え、揺れが大きいときに
+    /// 多くの値を遅れさせる寄せ方を選ぶ (T0863 の測定で 40%)。
+    ///
     /// 最も長いものに合わせると、刻みの間隔より長くかかった 1 回 (計算機が混んだときなど) で寄せる先が 1 刻み近く回り、
-    /// ほかの値が刻みに遅れて 1 刻み待つ。待ちは、促しを寄せた先 `c` と届くまでの時間 `d` から `(c + 余裕 - d) mod 間隔`。
+    /// ほかの値が刻みに遅れて 1 刻み待つ。まれに遅いものは遅れさせ、多くが遅いなら間に合わせる。
     fn best_lead(&self) -> Option<Duration> {
-        let wait = |c: Duration, d: Duration| {
-            let period = self.period.as_nanos().max(1);
-            (c + Self::LEAD_MARGIN + self.period * 2)
+        let period = self.period.as_nanos().max(1);
+        let cost = |c: Duration, d: Duration| {
+            let aim = c + self.margin;
+            let wait = (aim + self.period * 2)
                 .as_nanos()
                 .saturating_sub(Self::wrap(d, self.period).as_nanos())
-                % period
+                % period;
+            if d > aim { wait + period } else { wait }
         };
         self.leads
             .iter()
             .map(|(_, c)| *c)
-            .min_by_key(|c| self.leads.iter().map(|(_, d)| wait(*c, *d)).sum::<u128>())
+            .min_by_key(|c| self.leads.iter().map(|(_, d)| cost(*c, *d)).sum::<u128>())
     }
 
     /// `now` に促した。促しに付ける番号を返す。
     pub fn pulse(&mut self, now: Instant) -> u32 {
         // 狙う刻みは、予定した促しの時刻 (次の刻みの `pulse_offset` 前) から `aim` 後。格子の上の刻みになる
         // (起きるのが遅れても狙いはずれない)。
-        let target = self
-            .aim(now)
-            .map(|aim| self.next + aim.saturating_sub(self.pulse_offset(now)));
+        let aim = self.aim(now);
+        let target = aim.map(|aim| self.next + aim.saturating_sub(self.pulse_offset(now)));
         self.pulsed = true;
         let seq = self.seq;
         self.seq = self.seq.wrapping_add(1);
@@ -239,6 +288,7 @@ impl Pacer {
             seq,
             at: now,
             target,
+            aim,
         });
         seq
     }
@@ -248,9 +298,17 @@ impl Pacer {
     /// (刻みで使われるまでの待ちには数える。狙った刻みが分からないので遅れには数えない)。
     pub fn arrived(&mut self, at: Instant, pulse: u32) {
         let sent = self.pulses.iter().rev().find(|p| p.seq == pulse).copied();
-        if let Some((_, target)) = self.unused.replace((at, sent.and_then(|p| p.target))) {
+        let value = Unused {
+            at,
+            target: sent.and_then(|p| p.target),
+            expected: sent.is_some_and(|p| {
+                p.aim
+                    .is_some_and(|aim| at.saturating_duration_since(p.at) <= aim)
+            }),
+        };
+        if let Some(replaced) = self.unused.replace(value) {
             // 刻みで使われないまま置き換わった。
-            self.settle(target);
+            self.settle(replaced);
         }
         let Some(Pulse { at: pulse, .. }) = sent else {
             return;
@@ -270,22 +328,62 @@ impl Pacer {
         self.lead = self.best_lead();
     }
 
-    /// 狙った刻みが `target` の値を、使ったか置き換えた。狙った刻み (の半刻み前より後) を前の刻みで過ぎていれば遅れ。
-    fn settle(&mut self, target: Option<Instant>) {
+    /// 値を使ったか置き換えた。狙った刻み (の半刻み前より後) を前の刻みで過ぎていれば遅れ。
+    fn settle(&mut self, value: Unused) {
         self.values += 1;
-        let late = target
+        let late = value
+            .target
             .zip(self.last_tick)
             .is_some_and(|(target, last)| last + self.period / 2 >= target);
         self.late += u32::from(late);
+        self.judged += 1;
+        self.missed += u32::from(late && value.expected);
+    }
+
+    /// 余裕を見直す (区切りごと。`now` は刻みの時刻)。
+    ///
+    /// 数えるのは、届くまでの時間は見込みのうちなのに刻みに遅れた値 (促しが遅く起きた・刻みが早く起きたなど、起きる時刻の揺れで
+    /// 遅れたもの)。届くまでの時間が見込みより長くて遅れた値は寄せる先の選び方 (`best_lead`) が受け持つので、余裕では数えない
+    /// (まれにとても遅い値で余裕を上限まで増やさない)。5% を超えたら増やし、遅れの無い区切りが続いたら少しずつ戻す
+    /// (余裕の分だけ値は古くなる)。
+    fn adjust_margin(&mut self, now: Instant) {
+        let start = *self.judge_start.get_or_insert(now);
+        if now.saturating_duration_since(start) < Self::MARGIN_WINDOW {
+            return;
+        }
+        let mut margin = self.margin;
+        if self.judged >= Self::MARGIN_MIN_VALUES {
+            if self.missed.saturating_mul(20) > self.judged {
+                self.calm = 0;
+                margin = (margin + Self::MARGIN_UP).min(Self::MAX_MARGIN);
+            } else if self.missed == 0 {
+                self.calm += 1;
+                if self.calm >= Self::MARGIN_CALM {
+                    self.calm = 0;
+                    margin = margin
+                        .saturating_sub(Self::MARGIN_DOWN)
+                        .max(Self::MIN_MARGIN);
+                }
+            } else {
+                self.calm = 0;
+            }
+        }
+        self.judge_start = Some(now);
+        self.judged = 0;
+        self.missed = 0;
+        if margin != self.margin {
+            self.margin = margin;
+            self.lead = self.best_lead();
+        }
     }
 
     /// `now` まで待った (起きた) ので刻む。次の刻みの時刻を進め、この刻みで使った値を返す。
     /// この刻みの前に届いた値 (この刻みが使った値) は、先に `arrived` で渡しておく。
     pub fn tick(&mut self, now: Instant) -> Ticked {
-        let wait = self.unused.take().map(|(at, target)| {
-            self.settle(target);
+        let wait = self.unused.take().map(|value| {
+            self.settle(value);
             // 刻みの中で届いた値 (刻みの時刻より後) の待ちは 0。
-            now.saturating_duration_since(at)
+            now.saturating_duration_since(value.at)
         });
         let ticked = Ticked {
             wait,
@@ -294,6 +392,7 @@ impl Pacer {
         };
         self.values = 0;
         self.late = 0;
+        self.adjust_margin(now);
         self.last_tick = Some(now);
         self.pulsed = false;
         self.next += self.period;
@@ -475,25 +574,75 @@ mod tests {
         assert_eq!(pacer.deadline(), now + TickRate::Fps120.period());
     }
 
+    /// 仮の時刻で回した結果 (`simulate`)。
+    struct Run {
+        pacer: Pacer,
+        /// 刻んだ時刻。
+        ticks: Vec<Instant>,
+        /// 刻みの前の、次の刻みの予定の時刻 (`Pacer::deadline`)。
+        deadlines: Vec<Instant>,
+        /// 値が届いてから刻みで使われるまでの待ち。
+        waits: Vec<Duration>,
+        /// 刻みごとの、使われたか置き換わった値の数と、そのうち遅れた数 (`Pacer::tick`)。
+        values: Vec<(Instant, u32, u32)>,
+        /// 回している間の余裕の最大。
+        max_margin: Duration,
+    }
+
+    impl Run {
+        /// 遅れた値の数の合計。
+        fn late(&self) -> usize {
+            self.values.iter().map(|(_, _, late)| *late as usize).sum()
+        }
+
+        /// `from` からの刻みで数えた、遅れた値の割合。
+        fn late_ratio(&self, from: Instant) -> f64 {
+            let (values, late) = self
+                .values
+                .iter()
+                .filter(|(t, _, _)| *t >= from)
+                .fold((0, 0), |(v, l), (_, values, late)| (v + values, l + late));
+            f64::from(late) / f64::from(values.max(1))
+        }
+    }
+
     /// 刻みのスレッドを仮の時刻で回す。促しから `cost` 後に値が届く (操作ウィンドウは促しを受けて検出する)。
-    /// `cost` が `None` の促しでは値が届かない。刻んだ時刻と、値が届いてから刻みで使われるまでの待ちと、
-    /// `Pacer::tick` が遅れたとした値の数を返す (`tick` が返す待ちは外から測った待ちと等しいことを確かめる)。
+    /// `cost` が `None` の促しでは値が届かない。`tick` が返す待ちは外から測った待ちと等しいことを確かめる。
     fn simulate(
         rate: TickRate,
         start: Instant,
         until: Instant,
+        cost: impl FnMut(Instant) -> Option<Duration>,
+    ) -> Run {
+        simulate_with(Pacer::new(rate, start), start, until, cost, || {
+            Duration::ZERO
+        })
+    }
+
+    /// `simulate` で、促しと刻みのたびに、スリープが予定より `oversleep` だけ遅れて起きる (OS のスリープの粒度を模す。T0864)。
+    fn simulate_with(
+        mut pacer: Pacer,
+        start: Instant,
+        until: Instant,
         mut cost: impl FnMut(Instant) -> Option<Duration>,
-    ) -> (Pacer, Vec<Instant>, Vec<Duration>, usize) {
-        let mut pacer = Pacer::new(rate, start);
-        let mut ticks = Vec::new();
-        let mut waits = Vec::new();
-        let mut late = 0;
+        mut oversleep: impl FnMut() -> Duration,
+    ) -> Run {
+        let mut run = Run {
+            pacer: pacer.clone(),
+            ticks: Vec::new(),
+            deadlines: Vec::new(),
+            waits: Vec::new(),
+            values: Vec::new(),
+            max_margin: pacer.margin,
+        };
         // 届く前の値 (届く時刻と促しの番号。届く時刻の順)。
         let mut pending: VecDeque<(Instant, u32)> = VecDeque::new();
         let mut now = start;
-        for _ in 0..100_000 {
+        for _ in 0..1_000_000 {
             let (at, wake) = pacer.wake(now);
-            now = now.max(at);
+            if at > now {
+                now = at + oversleep();
+            }
             if now >= until {
                 break;
             }
@@ -501,7 +650,9 @@ mod tests {
                 Wake::Pulse => {
                     let seq = pacer.pulse(now);
                     if let Some(cost) = cost(now) {
-                        pending.push_back((now + cost, seq));
+                        let arrival = now + cost;
+                        let i = pending.partition_point(|(a, _)| *a <= arrival);
+                        pending.insert(i, (arrival, seq));
                     }
                 }
                 Wake::Tick => {
@@ -515,16 +666,19 @@ mod tests {
                         used = Some(arrived);
                     }
                     if let Some(arrived) = used {
-                        waits.push(now - arrived);
+                        run.waits.push(now - arrived);
                     }
+                    run.deadlines.push(pacer.deadline());
                     let ticked = pacer.tick(now);
                     assert_eq!(ticked.wait, used.map(|a| now - a));
-                    late += ticked.late as usize;
-                    ticks.push(now);
+                    run.values.push((now, ticked.values, ticked.late));
+                    run.ticks.push(now);
+                    run.max_margin = run.max_margin.max(pacer.margin);
                 }
             }
         }
-        (pacer, ticks, waits, late)
+        run.pacer = pacer;
+        run
     }
 
     #[test]
@@ -625,23 +779,25 @@ mod tests {
             let period = rate.period();
             for cost_ms in [2, 6, 12, 20, 45] {
                 let cost = Duration::from_millis(cost_ms);
-                let (_, ticks, waits, late) = simulate(rate, start, until, |_| Some(cost));
+                let run = simulate(rate, start, until, |_| Some(cost));
+                let (ticks, waits) = (&run.ticks, &run.waits);
                 // 刻みは格子のまま (速さは設定を超えず、`dt` も揺れない)。
                 for pair in ticks.windows(2) {
                     assert_eq!(pair[1] - pair[0], period, "{rate:?} {cost_ms} ms");
                 }
                 assert!(ticks.len() as u32 <= rate.hz() * 3, "{rate:?}");
-                // 寄せた後は、値は刻みの `LEAD_MARGIN` 前に届く。
+                // 寄せた後は、値は刻みの余裕 (揺れなければ下限のまま) 前に届く。
                 let settled = &waits[waits.len() / 2..];
                 assert!(!settled.is_empty());
                 for wait in settled {
                     assert!(
-                        wait.abs_diff(Pacer::LEAD_MARGIN) < Duration::from_micros(1),
+                        wait.abs_diff(Pacer::MIN_MARGIN) < Duration::from_micros(1),
                         "{rate:?} {cost_ms} ms: {wait:?}"
                     );
                 }
                 // 揺れなければ、刻みに遅れる値は無い。
-                assert_eq!(late, 0, "{rate:?} {cost_ms} ms");
+                assert_eq!(run.late(), 0, "{rate:?} {cost_ms} ms");
+                assert_eq!(run.max_margin, Pacer::MIN_MARGIN);
             }
         }
     }
@@ -652,13 +808,13 @@ mod tests {
         let rate = TickRate::Fps60;
         let stop = start + Duration::from_secs(1);
         let until = stop + Pacer::LEAD_WINDOW + Duration::from_millis(100);
-        let (pacer, ticks, _, _) = simulate(rate, start, until, |now| {
+        let run = simulate(rate, start, until, |now| {
             (now < stop).then_some(Duration::from_millis(5))
         });
-        let last = *ticks.last().unwrap();
-        assert_eq!(pacer.pulse_offset(last), rate.period());
+        let last = *run.ticks.last().unwrap();
+        assert_eq!(run.pacer.pulse_offset(last), rate.period());
         // 届いている間に寄せた促しは、届かなくなっても刻みの格子を動かさない。
-        for pair in ticks.windows(2) {
+        for pair in run.ticks.windows(2) {
             assert_eq!(pair[1] - pair[0], rate.period());
         }
     }
@@ -701,12 +857,13 @@ mod tests {
         pacer.arrived(pulse + Duration::from_millis(6), seq);
         let tick = tick + period;
         let used = Ticked {
-            wait: Some(Pacer::LEAD_MARGIN),
+            wait: Some(Pacer::MIN_MARGIN),
             values: 1,
             late: 0,
         };
         assert_eq!(pacer.tick(tick), used);
         // 混んで 9 ms かかると、狙った刻みに遅れる。その刻みは新しい値を使わない。
+        // (届いた後は、遅れる値の多い寄せ方を避けて 9 ms に合わせ直す。`best_lead`)
         let (pulse, _) = pacer.wake(tick);
         let slow = pacer.pulse(pulse);
         let missed = tick + period;
@@ -742,25 +899,173 @@ mod tests {
         let until = start + Duration::from_secs(3);
         let rate = TickRate::Fps60;
         let mut pulses = 0u32;
-        // 10 回に 1 回、検出と IPC が 3 ms 長くかかる (余裕の 1 ms を超えて刻みに遅れる)。
-        let (_, _, waits, late) = simulate(rate, start, until, |_| {
+        // 30 回に 1 回、検出と IPC が 3 ms 長くかかる (余裕の 1 ms を超えて刻みに遅れる)。まれなので、
+        // ほかの値を 3 ms 待たせて間に合わせるより、遅れさせる (`best_lead`)。
+        let run = simulate(rate, start, until, |_| {
             pulses += 1;
-            Some(Duration::from_millis(if pulses.is_multiple_of(10) {
+            Some(Duration::from_millis(if pulses.is_multiple_of(30) {
                 9
             } else {
                 6
             }))
         });
-        let slow = (pulses / 10) as usize;
-        // 寄せる前 (最初の値) のほかは、遅い値をどれも遅れに数える。
+        let slow = (pulses / 30) as usize;
+        let late = run.late();
+        // 遅い値をどれも遅れに数える。
         assert!(slow - 1 <= late && late <= slow, "{late} / {slow}");
         // 遅れた値は次の値に置き換わるので、使われた値の待ちは余裕のまま。
-        let settled = &waits[waits.len() / 2..];
+        let settled = &run.waits[run.waits.len() / 2..];
         assert!(
             settled
                 .iter()
-                .all(|w| w.abs_diff(Pacer::LEAD_MARGIN) < Duration::from_micros(1))
+                .all(|w| w.abs_diff(Pacer::MIN_MARGIN) < Duration::from_micros(1))
         );
+        // 届くまでの時間が見込みより長くて遅れた値では、余裕を増やさない (起きる時刻の揺れではない)。
+        assert_eq!(run.max_margin, Pacer::MIN_MARGIN);
+    }
+
+    /// 仮の時刻のテストの乱数 (xorshift。同じ種なら同じ列)。
+    struct Rng(u64);
+
+    impl Rng {
+        /// `0` 以上 `max` 以下。
+        fn upto(&mut self, max: Duration) -> Duration {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            max.mul_f64((self.0 >> 11) as f64 / (1u64 << 53) as f64)
+        }
+    }
+
+    /// 余裕を見直さない (T0864 の前と同じ 1 ms のまま) `Pacer`。比べるために使う。
+    fn fixed_margin(rate: TickRate, start: Instant) -> Pacer {
+        let mut pacer = Pacer::new(rate, start);
+        // 見直しの区切りが始まらない (始まりが遠い先)。
+        pacer.judge_start = Some(start + Duration::from_secs(3600));
+        pacer
+    }
+
+    /// 刻みは格子より早くならず、速さは設定を超えない。
+    fn assert_keeps_the_rate(run: &Run, rate: TickRate, seconds: u32, label: &str) {
+        for (tick, deadline) in run.ticks.iter().zip(&run.deadlines) {
+            assert!(tick >= deadline, "{label}");
+        }
+        for pair in run.deadlines.windows(2) {
+            assert!(pair[1] - pair[0] >= rate.period(), "{label}");
+        }
+        assert!(run.ticks.len() as u32 <= rate.hz() * seconds, "{label}");
+    }
+
+    #[test]
+    fn margin_grows_when_sleeps_wake_late() {
+        let start = Instant::now();
+        let seconds = 20;
+        let until = start + Duration::from_secs(u64::from(seconds));
+        let settled = start + Duration::from_secs(10);
+        for rate in TickRate::ALL {
+            // スリープが 0〜2 ms 遅れる機械と、0〜15 ms 遅れる機械 (粒度の粗い OS)。検出と IPC は揺れない。
+            for late_ms in [2, 15] {
+                let label = format!("{rate:?} {late_ms} ms");
+                let max = Duration::from_millis(late_ms);
+                let cost = |_| Some(Duration::from_millis(6));
+                let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+                let before = simulate_with(fixed_margin(rate, start), start, until, cost, || {
+                    rng.upto(max)
+                });
+                let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+                let after = simulate_with(Pacer::new(rate, start), start, until, cost, || {
+                    rng.upto(max)
+                });
+                let (before_late, after_late) =
+                    (before.late_ratio(settled), after.late_ratio(settled));
+                println!(
+                    "{label}: late {:.1}% -> {:.1}%, margin {:?}",
+                    before_late * 100.0,
+                    after_late * 100.0,
+                    after.pacer.margin
+                );
+                // 余裕が増えて、遅れた値の割合が下がる。上限は超えない。
+                assert!(after.pacer.margin > Pacer::MIN_MARGIN, "{label}");
+                assert!(after.max_margin <= Pacer::MAX_MARGIN, "{label}");
+                assert!(after_late < before_late, "{label}");
+                if late_ms == 2 {
+                    // 余裕の上限で収まる揺れなら、遅れはほとんど無くなる。
+                    assert!(after_late < 0.05, "{label}");
+                } else {
+                    // 上限より大きく揺れるなら、余裕は上限で止まる (遅れは減るが残る。刻みの間隔が空いた注意の出る計算機)。
+                    assert_eq!(after.max_margin, Pacer::MAX_MARGIN, "{label}");
+                }
+                assert_keeps_the_rate(&before, rate, seconds, &label);
+                assert_keeps_the_rate(&after, rate, seconds, &label);
+            }
+        }
+    }
+
+    #[test]
+    fn margin_returns_when_sleeps_stop_waking_late() {
+        let start = Instant::now();
+        let rate = TickRate::Fps60;
+        let calm = start + Duration::from_secs(10);
+        let until = calm + Duration::from_secs(40);
+        let mut rng = Rng(7);
+        let now = std::cell::Cell::new(start);
+        // 10 秒の間スリープが 0〜2 ms 遅れ、その後は遅れない。
+        let run = simulate_with(
+            Pacer::new(rate, start),
+            start,
+            until,
+            |at| {
+                now.set(at);
+                Some(Duration::from_millis(6))
+            },
+            || {
+                if now.get() < calm {
+                    rng.upto(Duration::from_millis(2))
+                } else {
+                    Duration::ZERO
+                }
+            },
+        );
+        assert!(run.max_margin > Pacer::MIN_MARGIN);
+        assert_eq!(run.pacer.margin, Pacer::MIN_MARGIN);
+        assert_eq!(run.late_ratio(calm + Duration::from_secs(1)), 0.0);
+        // 戻った後は、値は刻みの 1 ms 前に届く。
+        let last = run.waits[run.waits.len() - 10..].to_vec();
+        assert!(
+            last.iter()
+                .all(|w| w.abs_diff(Pacer::MIN_MARGIN) < Duration::from_micros(1)),
+            "{last:?}"
+        );
+    }
+
+    #[test]
+    fn widely_varying_detection_does_not_leave_many_values_late() {
+        // T0863 の測定 (混んだ計算機で遅れた値 40%) を模す: 検出と IPC が 6 割は 3 ms、4 割は 14 ms。
+        let start = Instant::now();
+        let seconds = 10;
+        let until = start + Duration::from_secs(u64::from(seconds));
+        for rate in TickRate::ALL {
+            let label = format!("{rate:?}");
+            let mut rng = Rng(42);
+            let run = simulate(rate, start, until, |_| {
+                Some(Duration::from_millis(
+                    if rng.upto(Duration::from_millis(10)) < Duration::from_millis(4) {
+                        14
+                    } else {
+                        3
+                    },
+                ))
+            });
+            let late = run.late_ratio(start + Duration::from_secs(2));
+            let settled = &run.waits[run.waits.len() / 5..];
+            let mean = settled.iter().sum::<Duration>() / settled.len() as u32;
+            println!("{label}: late {:.1}%, wait {mean:?}", late * 100.0);
+            // 遅い値に合わせて寄せる (速い値は待つが、狙った刻みはどれも新しい値を使う)。
+            assert!(late < 0.05, "{label}: {late}");
+            // 届くまでの時間の揺れでは余裕を増やさない。
+            assert_eq!(run.max_margin, Pacer::MIN_MARGIN, "{label}");
+            assert_keeps_the_rate(&run, rate, seconds, &label);
+        }
     }
 
     #[test]
