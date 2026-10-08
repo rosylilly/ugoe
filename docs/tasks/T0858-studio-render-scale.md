@@ -1,11 +1,11 @@
 ---
 id: T0858
 title: "スタジオ: 出力ウィンドウとブラウザソースの描く解像度の倍率 (1・0.75・0.5) を選べるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/player, apps/studio, docs]
 depends_on: [T0857]
-assignee:
+assignee: claude-worker-T0858
 ---
 
 # T0858: スタジオ: 描く解像度の倍率
