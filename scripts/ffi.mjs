@@ -83,9 +83,13 @@ function check() {
     // `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` が x86_64-pc-windows-msvc で出す
     // `kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib /defaultlib:msvcrt` に合わせる。最後の C ライブラリは
     // `-fms-runtime-lib=dll` で揃える (clang の既定は静的な libcmt で、Rust の側の msvcrt とぶつかる)。
+    // `-fms-runtime-lib` が効くのはコンパイル (オブジェクトに埋める `/DEFAULTLIB:msvcrt.lib`) だけで、clang のドライバは
+    // リンクの行に `-defaultlib:libcmt` を必ず足す。MSVC の link.exe はそれで静的な libucrt を選び、見本の `__imp_fopen` などが
+    // 解決できずに落ちる (lld-link は通るので cargo-xwin では見えない。T0079)。`-nodefaultlib:libcmt` でその既定を外す。
     // `_CRT_SECURE_NO_WARNINGS` は、MSVC の C ライブラリが標準の `fopen` などに付ける非推奨の警告 (-Werror で止まる) を消す
     win32: [
       "-fms-runtime-lib=dll",
+      "-Wl,-nodefaultlib:libcmt",
       "-D_CRT_SECURE_NO_WARNINGS",
       "-lkernel32",
       "-lntdll",

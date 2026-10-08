@@ -223,7 +223,10 @@ ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と 
   `scripts/ffi.mjs` はランナーに入っている `clang` (gcc 形式の引数のドライバ) で MSVC のライブラリとリンクします (T0069)。`cl` を使わないのは、
   `cl` は開発者のシェル (vcvars) の外では使えないが、`clang` は Visual Studio と Windows SDK を自分で探すので手順を足さずに済み、
   警告の扱い (`-Werror -pedantic`) も Linux・macOS と同じ引数で書けるためです。リンクするシステムのライブラリは
-  `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` の出力に合わせます。`std` の無い形は MSVC の
+  `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` の出力に合わせます。C ライブラリは Rust の側と同じ
+  動的な msvcrt に揃えます。`-fms-runtime-lib=dll` はコンパイルにしか効かず、clang のドライバがリンクの行に足す静的な libcmt を
+  `-Wl,-nodefaultlib:libcmt` で外します (T0079。lld-link は両方があっても通るが、MSVC の link.exe は静的な C ライブラリを選んで落ちるので、
+  手元で cargo-xwin と lld-link で確かめても見えない)。`std` の無い形は MSVC の
   C ライブラリに `aligned_alloc` が無いので飛ばします。
 - ファイルを扱うクレートを足したら `OS_CRATES` に足します (`just cross-check` の `tools` にも入る。上の「別のターゲットの検査」)。GPU も Tauri のシステムの依存も入れないので、それらが要るクレートは入れません。
 - 手元の Linux で Windows のテストを近似するには、MinGW と Wine で `x86_64-pc-windows-gnu` のテストを流せます (CI の代わりにはならない。
