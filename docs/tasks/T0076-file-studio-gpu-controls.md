@@ -1,11 +1,11 @@
 ---
 id: T0076
 title: スタジオの GPU の設定 (使う GPU を選ぶ・ほかのアプリに譲る・描く量で負荷を抑える) を調べてタスクにする
-status: todo
+status: in-progress
 milestone: M8
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0076
 ---
 
 # T0076: スタジオの GPU の設定 (使う GPU を選ぶ・ほかのアプリに譲る・描く量で負荷を抑える) を調べてタスクにする
