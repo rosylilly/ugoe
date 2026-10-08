@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // 負荷のパネル (LoadPanel.svelte) の GPU の優先度 (T0861): Windows でだけ選べ、当てられなかった理由をコードから訳して出すこと。
 // 受け手ごとの行 (T0862): 描く機会の回数を出し、値が読み上げで区切られること。
+// トラッキングの待ち (T0863): 届いていなければ「—」、届いていれば平均・最大・遅れた割合を区切りでつなぐこと。
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import LoadPanel from "./LoadPanel.svelte";
@@ -118,6 +119,7 @@ function status(renderers: RendererLoad[]): StatusMessage {
     tickRate: 60,
     measuredRate: 60,
     maxIntervalMs: 17,
+    trackingWait: null,
     renderers,
   };
 }
@@ -183,5 +185,33 @@ describe("受け手ごとの行", () => {
     expect(rowText(target, t("load.outputWindow")).endsWith(t("load.dropped", { count: 0 }))).toBe(
       true,
     );
+  });
+});
+
+describe("トラッキングの待ち", () => {
+  const sep = t("load.separator");
+
+  it("値が届いていなければ「—」を出し、読み上げには届いていないことを読ませる", () => {
+    const { target } = setup(WINDOWS, status([]));
+    expect(rowText(target, t("load.trackingWait"))).toBe(`—${t("load.trackingWaitNone")}`);
+    const hidden = [...target.querySelectorAll("dd .ugoe-visually-hidden")].map(
+      (el) => el.textContent,
+    );
+    expect(hidden).toContain(t("load.trackingWaitNone"));
+  });
+
+  it("平均・最大・刻みに遅れた割合を区切りでつなぎ、遅れても注意は出さない", () => {
+    const { target } = setup(WINDOWS, {
+      ...status([]),
+      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125 },
+    });
+    expect(rowText(target, t("load.trackingWait"))).toBe(
+      [
+        t("load.trackingWaitMean", { value: t("load.ms", { value: 1.23 }) }),
+        t("load.trackingWaitMax", { value: t("load.ms", { value: 15.5 }) }),
+        t("load.trackingWaitLate", { value: "12.5%" }),
+      ].join(sep),
+    );
+    expect(target.querySelector(".ugoe-notice")).toBeNull();
   });
 });

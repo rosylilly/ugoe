@@ -140,7 +140,19 @@ export interface StatusMessage {
   measuredRate: number | null;
   /** 直近 1 秒の刻みの間隔の最大 (ミリ秒)。 */
   maxIntervalMs: number | null;
+  /** 直近 1 秒の、トラッキングの値が届いてから刻みで使われるまでの待ち (値が届いていなければ `null`。T0863)。 */
+  trackingWait: TrackingWait | null;
   renderers: RendererLoad[];
+}
+
+/** トラッキングの値が届いてから刻みで使われるまでの待ち (pacing.rs の `TrackingWait`)。 */
+export interface TrackingWait {
+  /** 刻みで使われた値の待ちの平均 (ミリ秒)。 */
+  meanMs: number;
+  /** 待ちの最大 (ミリ秒)。 */
+  maxMs: number;
+  /** 届いた値のうち、狙った刻みに遅れた割合 (0〜1)。 */
+  late: number;
 }
 
 /**

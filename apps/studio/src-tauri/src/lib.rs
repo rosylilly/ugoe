@@ -62,7 +62,7 @@ use crate::conductor::{Conductor, PoseGroupInfo};
 use crate::error::CommandError;
 use crate::hotkeys::{ExpressionMode, Hotkey, HotkeyAction, HotkeyProblem, MotionPriority};
 use crate::input::{InputSettings, MotionSettings, TrackingFrame};
-use crate::pacing::{Measured, TickRate};
+use crate::pacing::{Measured, TickRate, TrackingWait};
 use crate::profile::{Profile, SceneSettings, VirtualCameraSettings};
 use crate::stage::{Finish, Loading, Pending, ProfileView, SceneError, Stage};
 use crate::stream::{Frame, Scene};
@@ -131,6 +131,8 @@ enum Monitor<'a> {
         measured_rate: Option<f32>,
         /// 直近 1 秒の刻みの間隔の最大 (ミリ秒)。
         max_interval_ms: Option<f32>,
+        /// 直近 1 秒の、トラッキングの値が届いてから刻みで使われるまでの待ち (値が届いていなければ無し。T0863)。
+        tracking_wait: Option<TrackingWait>,
         /// 出力ごとの描画の負荷。
         renderers: Vec<RendererLoad>,
     },
@@ -378,8 +380,11 @@ struct Studio {
     tick_rate: AtomicU32,
     /// 実際の刻みの速さと揺れ (刻みのスレッドが書く)。
     measured: Mutex<Option<Measured>>,
+    /// トラッキングの値が届いてから刻みで使われるまでの待ち (刻みのスレッドが書く。T0863)。
+    tracking_wait: Mutex<Option<TrackingWait>>,
     /// トラッキングの値が最後に届いた時刻と、その値を検出した促しの番号 (`set_tracking` が書き、刻みのスレッドが読んで
-    /// 促しの時刻を決める。T0854)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
+    /// 促しの時刻を決める。T0854)。`conductor` を握ったまま書く (刻みは `conductor` を握って取るので、刻みが使った値を取り違えない。T0863)。
+    /// ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
     tracking_arrived: Mutex<Option<(Instant, u32)>>,
     /// 出力ごとの描画の負荷 (ラベル → 報告)。
     renders: Mutex<HashMap<String, Reported>>,
@@ -521,9 +526,12 @@ impl Studio {
     }
 
     /// 1 刻み進めてフレームを配る。`status` なら操作ウィンドウにも値を送る。
-    fn tick(&self, dt: f32, status: bool) {
+    /// この刻みが使ったトラッキングの値の、まだ刻みのスレッドに渡していない届いた時刻と促しの番号を返す (`TickHost::tick`)。
+    fn tick(&self, dt: f32, status: bool) -> Option<(Instant, u32)> {
         let started = Instant::now();
         let mut conductor = lock(&self.conductor);
+        // `set_tracking` は `conductor` を握ったまま届いた時刻を書くので、ここで取った値はこの刻みが使う。
+        let arrival = lock(&self.tracking_arrived).take();
         let frame = conductor.tick(dt);
         let view = conductor
             .take_animation_changed()
@@ -539,7 +547,7 @@ impl Studio {
             self.monitors.send_all(&body);
         }
         let Some(frame) = frame else {
-            return;
+            return arrival;
         };
         let bytes = frame.encode();
         self.source_frame(bytes.clone());
@@ -553,6 +561,7 @@ impl Studio {
         if status {
             self.send_status(&frame);
         }
+        arrival
     }
 
     fn send_status(&self, frame: &Frame) {
@@ -566,6 +575,7 @@ impl Studio {
             tick_rate: self.tick_rate().hz(),
             measured_rate: measured.map(|m| m.rate),
             max_interval_ms: measured.map(|m| m.max_interval_ms),
+            tracking_wait: *lock(&self.tracking_wait),
             renderers: self.renderer_loads(Instant::now()),
         };
         if let Some(body) = Self::json(&message) {
@@ -972,8 +982,8 @@ impl ticker::TickHost for Studio {
         Studio::tick_rate(self)
     }
 
-    fn tick(&self, dt: f32, status: bool) {
-        Studio::tick(self, dt, status);
+    fn tick(&self, dt: f32, status: bool) -> Option<(Instant, u32)> {
+        Studio::tick(self, dt, status)
     }
 
     fn pulse(&self, seq: u32) {
@@ -987,6 +997,10 @@ impl ticker::TickHost for Studio {
 
     fn set_measured(&self, measured: Option<Measured>) {
         *lock(&self.measured) = measured;
+    }
+
+    fn set_tracking_wait(&self, wait: Option<TrackingWait>) {
+        *lock(&self.tracking_wait) = wait;
     }
 }
 
@@ -1263,11 +1277,13 @@ fn set_tracking(
 ) {
     let input = frame.as_ref().map(TrackingFrame::to_input);
     let tracking = input.is_some();
-    lock(&studio.conductor).perform(|animation, puppet| animation.set_tracking(puppet, input));
+    let mut conductor = lock(&studio.conductor);
+    conductor.perform(|animation, puppet| animation.set_tracking(puppet, input));
     if tracking && let Some(pulse) = pulse {
-        // 指揮役に渡し終えた時刻 (次の刻みで使われる)。
+        // 指揮役に渡し終えた時刻 (次の刻みで使われる)。刻みが値と時刻を別々に見ないように、`conductor` を握ったまま書く。
         *lock(&studio.tracking_arrived) = Some((Instant::now(), pulse));
     }
+    drop(conductor);
 }
 
 /// トラッキングを一時停止する・再開する。
@@ -2195,6 +2211,11 @@ mod tests {
             tick_rate: 60,
             measured_rate: Some(59.5),
             max_interval_ms: None,
+            tracking_wait: Some(TrackingWait {
+                mean_ms: 1.5,
+                max_ms: 4.0,
+                late: 0.25,
+            }),
             renderers: vec![RendererLoad {
                 label: "output".into(),
                 stats: RenderStats {
@@ -2214,7 +2235,9 @@ mod tests {
             serde_json::to_string(&status).unwrap(),
             concat!(
                 r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
-                r#""measuredRate":59.5,"maxIntervalMs":null,"renderers":[{"label":"output","fps":60.0,"#,
+                r#""measuredRate":59.5,"maxIntervalMs":null,"#,
+                r#""trackingWait":{"meanMs":1.5,"maxMs":4.0,"late":0.25},"#,
+                r#""renderers":[{"label":"output","fps":60.0,"#,
                 r#""refreshFps":144.0,"renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"backend":"webgpu","#,
                 r#""adapter":null,"stale":false,"targetFps":null}]}"#
             )

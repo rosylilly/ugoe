@@ -192,7 +192,7 @@ export const PENDING_CLIENT = { id: "ui-audit-deck", name: "Stream Deck", permis
 
 /**
  * 注意の要る状態の通知 (T0818): 承認を待つクライアント・登録できないホットキー (同じキーの 2 つ目と、OS が使っているもの)・
- * 負荷の注意 (刻みが遅れ、間隔が揺れる)。`status` は `setStatus` に渡す負荷の数値。
+ * 負荷の注意 (刻みが遅れ、間隔が揺れる)。`status` は `setStatus` に渡す負荷の数値 (トラッキングの値は届いていない「—」の形。T0863)。
  */
 export function attentionMessages(fixture) {
   const hotkeys = structuredClone(fixture.profile.hotkeys);
@@ -221,7 +221,7 @@ export function attentionMessages(fixture) {
         wayland: false,
       },
     ],
-    status: { measuredRate: 51.2, maxIntervalMs: 48.5 },
+    status: { measuredRate: 51.2, maxIntervalMs: 48.5, trackingWait: null },
   };
 }
 
@@ -437,6 +437,8 @@ export function studioPageInit({ osLocale, fixture }) {
           tickRate: 60,
           measuredRate: 59.8,
           maxIntervalMs: 17.2,
+          // トラッキングの値が届いてから刻みで使われるまでの待ち (lib.rs の `Monitor::Status`。T0863)
+          trackingWait: { meanMs: 1.04, maxMs: 3.41, late: 0.017 },
           renderers: [
             {
               label: "output",

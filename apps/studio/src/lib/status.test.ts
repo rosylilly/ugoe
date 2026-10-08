@@ -27,6 +27,7 @@ function load(patch: Partial<StatusMessage> = {}): StatusMessage {
     tickRate: 60,
     measuredRate: 60,
     maxIntervalMs: 17,
+    trackingWait: null,
     renderers: [],
     ...patch,
   } as StatusMessage;

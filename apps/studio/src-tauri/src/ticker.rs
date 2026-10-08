@@ -5,20 +5,24 @@
 
 use std::time::Instant;
 
-use crate::pacing::{Measured, Pacer, RateMeter, TickRate, Wake};
+use crate::pacing::{Measured, Pacer, RateMeter, TickRate, TrackingWait, WaitMeter, Wake};
 
 /// 刻みのスレッドがすること。
 pub trait TickHost {
     /// 刻みの速さ (刻みごとに読む)。
     fn tick_rate(&self) -> TickRate;
     /// 1 刻み進めてフレームを配る。`status` なら操作ウィンドウにも値を送る。
-    fn tick(&self, dt: f32, status: bool);
+    /// この刻みで使ったトラッキングの値のうち、まだ `take_arrival` で渡していないものがあれば、最後に届いた時刻と促しの番号を返す
+    /// (値を指揮役に渡すのと同じロックの中で取る。値が届いてから刻みで使われるまでの待ちを、使った刻みで数えるため)。
+    fn tick(&self, dt: f32, status: bool) -> Option<(Instant, u32)>;
     /// 操作ウィンドウの入力の処理を促す (`subscribe_pulse`)。`seq` は促しの番号 (値に添えて返ってくる)。
     fn pulse(&self, seq: u32);
     /// 前に聞いてからトラッキングの値が届いていれば、最後に届いた時刻と、その値を検出した促しの番号 (`set_tracking`)。
     fn take_arrival(&self) -> Option<(Instant, u32)>;
     /// 実際の刻みの速さと揺れが変わった。
     fn set_measured(&self, measured: Option<Measured>);
+    /// トラッキングの値が届いてから刻みで使われるまでの待ちが変わった (T0863)。
+    fn set_tracking_wait(&self, wait: Option<TrackingWait>);
     /// 回し続けるか (テストで止める)。
     fn running(&self) -> bool {
         true
@@ -28,12 +32,15 @@ pub trait TickHost {
 /// 設定した速さで `dt` を測って `host` を進める (WebView の抑制を受けない)。
 /// 遅れたときは取り戻そうとせず、次の刻みを今から数え直す (`dt` は実測なので時間は失わない。`pacing.rs`)。
 /// 入力の処理の促しは 1 刻みに 1 回で、トラッキングの値が届いていれば値が刻みの少し前に届くように前へ寄せる (`Pacer`)。
+/// 値が届いてから刻みで使われるまでの待ちを直近の約 1 秒について集めて渡す (`WaitMeter`。T0863)。
 pub fn run(host: &impl TickHost) {
     let mut rate = host.tick_rate();
     let mut last = Instant::now();
     let mut pacer = Pacer::new(rate, last);
     let mut meter = RateMeter::default();
     let mut measured = None;
+    let mut waits = WaitMeter::default();
+    let mut waited = None;
     let mut count = 0u32;
     // 1 回の繰り返しは促しか刻みのどちらか 1 つで、どちらも次の刻みまでに 1 回ずつなので、待たずに回り続けることはない。
     while host.running() {
@@ -51,7 +58,6 @@ pub fn run(host: &impl TickHost) {
             host.pulse(pacer.pulse(now));
             continue;
         }
-        pacer.tick(now);
         meter.record(now);
         if meter.measured() != measured {
             measured = meter.measured();
@@ -60,7 +66,15 @@ pub fn run(host: &impl TickHost) {
         let dt = now.duration_since(last).as_secs_f32();
         last = now;
         count = (count + 1) % rate.status_every();
-        host.tick(dt, count == 0);
+        // 刻みが使った値を先に渡してから、刻みの時刻を進める (`Pacer::tick` がその値の待ちを返す)。
+        if let Some((at, seq)) = host.tick(dt, count == 0) {
+            pacer.arrived(at, seq);
+        }
+        waits.record(now, pacer.tick(now));
+        if waits.measured() != waited {
+            waited = waits.measured();
+            host.set_tracking_wait(waited);
+        }
         let wanted = host.tick_rate();
         if wanted != rate {
             rate = wanted;
@@ -68,6 +82,9 @@ pub fn run(host: &impl TickHost) {
             meter.reset();
             measured = None;
             host.set_measured(None);
+            waits.reset();
+            waited = None;
+            host.set_tracking_wait(None);
             count = 0;
         }
     }
@@ -127,6 +144,8 @@ mod tests {
         dt_max: f32,
         dt_min: f32,
         measured: Vec<Measured>,
+        /// 刻みのスレッドが集めた待ち (`set_tracking_wait`)。
+        reported: Vec<TrackingWait>,
         /// 刻みのスレッドがまだ読んでいない、値が届いた時刻と促しの番号。
         arrival: Option<(Instant, u32)>,
     }
@@ -144,7 +163,7 @@ mod tests {
             self.rate
         }
 
-        fn tick(&self, dt: f32, _status: bool) {
+        fn tick(&self, dt: f32, _status: bool) -> Option<(Instant, u32)> {
             let now = Instant::now();
             let mut log = self.log.lock().unwrap();
             log.wait.ticked(now);
@@ -155,6 +174,7 @@ mod tests {
                 log.dt_min = f32::INFINITY;
             }
             log.ticks += 1;
+            log.arrival.take()
         }
 
         fn take_arrival(&self) -> Option<(Instant, u32)> {
@@ -168,6 +188,12 @@ mod tests {
         fn set_measured(&self, measured: Option<Measured>) {
             if let Some(m) = measured {
                 self.log.lock().unwrap().measured.push(m);
+            }
+        }
+
+        fn set_tracking_wait(&self, wait: Option<TrackingWait>) {
+            if let Some(w) = wait {
+                self.log.lock().unwrap().reported.push(w);
             }
         }
 
@@ -236,7 +262,7 @@ mod tests {
         );
         println!("cost {cost:?} / {seconds} s each");
         println!(
-            "mode   tick camera | wait mean p95 max (after 1 s) | rate min | max interval | dt min max | values"
+            "mode   tick camera | wait mean p95 max (after 1 s) | rate min | max interval | dt min max | values | reported mean max late (last)"
         );
         for rate in TickRate::ALL {
             for (camera_hz, tagged) in [(30, false), (30, true), (60, false), (60, true)] {
@@ -269,8 +295,20 @@ mod tests {
                     .fold(0.0, f32::max);
                 // 最初の 1 秒 (寄せる前) を除く。
                 let (count, mean, p95, max) = log.wait.stats(start + Duration::from_secs(1));
+                // 刻みのスレッドが集めて操作ウィンドウに出す値 (直近の約 1 秒。番号を添えない「前」では出ない)。
+                let reported = log.reported.last().map_or_else(
+                    || "-".to_owned(),
+                    |w| {
+                        format!(
+                            "{:>5.2} {:>5.2} ms {:>5.1}%",
+                            w.mean_ms,
+                            w.max_ms,
+                            w.late * 100.0
+                        )
+                    },
+                );
                 println!(
-                    "{:<6} {:>4} {:>6} | {mean:>5.2} {p95:>5.2} {max:>5.2} ms | {rate_min:>6.2} | {interval_max:>6.2} ms | {:>5.2} {:>5.2} ms | {count}",
+                    "{:<6} {:>4} {:>6} | {mean:>5.2} {p95:>5.2} {max:>5.2} ms | {rate_min:>6.2} | {interval_max:>6.2} ms | {:>5.2} {:>5.2} ms | {count} | {reported}",
                     if tagged { "after" } else { "before" },
                     rate.hz(),
                     camera_hz,

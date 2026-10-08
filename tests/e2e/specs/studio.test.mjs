@@ -312,6 +312,34 @@ describe("studio", () => {
       const spread = Math.max(...seen) - Math.min(...seen);
       assert.ok(spread > 5, `AngleX in the control window moved only ${spread}`);
 
+      // 「フレームレートと負荷」に、値が届いてから刻みで使われるまでの待ちが出る (届いていない間の「—」ではない。T0863)
+      const trigger = await s.waitFind('[data-panel="load"] .ugoe-section__trigger');
+      const wasOpen = (await trigger.attribute("aria-expanded")) === "true";
+      if (!wasOpen) await trigger.click();
+      const trackingWait = () =>
+        s.execute(() => {
+          const dt = [...document.querySelectorAll('[data-panel="load"] dt')].find(
+            (el) => el.textContent.trim() === "Tracking wait",
+          );
+          return dt?.nextElementSibling?.textContent.trim() ?? null;
+        });
+      await waitFor(
+        async () => /^Average .+ ms, max .+ ms, .+% missed their tick$/.test(await trackingWait()),
+        {
+          timeout: 5_000,
+          message: "the tracking wait in the load panel",
+        },
+      ).catch(async (e) => {
+        throw new Error(`${e.message}: ${JSON.stringify(await trackingWait())}`);
+      });
+      // 測った待ちも残す (実機の値と比べるため)
+      report.trackingWait = await trackingWait();
+      writeFileSync(
+        join(process.env.E2E_OUT, "tracking.json"),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+      if (!wasOpen) await trigger.click();
+
       await switchToTauriWindow(s, "output");
       const output = await s.execute("return window.__UGOE_STUDIO_OUTPUT__.values");
       await switchToTauriWindow(s, "main");

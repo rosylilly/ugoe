@@ -4,6 +4,8 @@
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
   使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
   出力ウィンドウとブラウザソースの行には、描いた回数と並べて描く機会 (`requestAnimationFrame`) の回数を出す (T0862)。
+  トラッキングの値が届いてから刻みで使われるまでの待ち (平均・最大・刻みに遅れた値の割合) も出す (T0863)。目安なので注意は出さない。
+  値が届いていない間は「—」(読み上げには届いていないことを読ませる)。
   読み上げの区切り (T0862): 受け手ごとの行 (`<dd>`) の値は、見える区切りの文字 (`load.separator`。「、」・", ") でつないだ 1 つの文にする。
   「・」は読み上げで黙って飛ばされることがあるので使わない。2 行目 (API と GPU の名前) の前は見た目では改行なので、
   区切りの文字を `.ugoe-visually-hidden` で読み上げにだけ置く (`aria-label` は `<dd>` の名前にならないので使わない)。
@@ -13,7 +15,14 @@
 import { formatNumber } from "@ugoe/i18n";
 import { Button, Notice, SegmentedControl } from "@ugoe/ui";
 import { describeError } from "./lib/errors";
-import type { GpuPreference, GpuPriority, GpuView, RendererLoad, StatusMessage } from "./lib/host";
+import type {
+  GpuPreference,
+  GpuPriority,
+  GpuView,
+  RendererLoad,
+  StatusMessage,
+  TrackingWait,
+} from "./lib/host";
 import { t } from "./lib/i18n";
 import { type LoadWarning, loadWarnings, rendererGpu } from "./lib/load";
 import { receiverName } from "./lib/receivers";
@@ -91,6 +100,19 @@ const warnings = $derived(status === null ? [] : loadWarnings(status));
 
 function ms(value: number): string {
   return t("load.ms", { value: formatNumber(value, { maximumFractionDigits: 2 }) });
+}
+
+function percent(value: number): string {
+  return formatNumber(value, { style: "percent", maximumFractionDigits: 1 });
+}
+
+/** トラッキングの待ちの行の値 (平均・最大・刻みに遅れた値の割合)。 */
+function trackingWaitValues(wait: TrackingWait): string[] {
+  return [
+    t("load.trackingWaitMean", { value: ms(wait.meanMs) }),
+    t("load.trackingWaitMax", { value: ms(wait.maxMs) }),
+    t("load.trackingWaitLate", { value: percent(wait.late) }),
+  ];
 }
 
 function perSecond(value: number): string {
@@ -237,6 +259,14 @@ function gpuValues(r: RendererLoad): string[] {
               max: ms(status.maxIntervalMs ?? 0),
             })}
       </dd>
+      <dt>{t("load.trackingWait")}</dt>
+      <dd>
+        {#if status.trackingWait === null}
+          <span aria-hidden="true">—</span><span class="ugoe-visually-hidden">{t("load.trackingWaitNone")}</span>
+        {:else}
+          {trackingWaitValues(status.trackingWait).join(t("load.separator"))}
+        {/if}
+      </dd>
       {#each status.renderers as r (r.label)}
         <dt>{receiverName(r.label)}</dt>
         <dd>
@@ -273,6 +303,8 @@ function gpuValues(r: RendererLoad): string[] {
   }
 
   .load__facts dd {
+    /* 読み上げにだけ置く文字 (`position: absolute`) を、この行の中に留める */
+    position: relative;
     margin: 0;
   }
 

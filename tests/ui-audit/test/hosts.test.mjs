@@ -189,6 +189,8 @@ test("スタジオの偽のホスト: 初めて起動した画面と注意の要
   for (const [i] of problems) assert.ok(i < hotkeys.length);
   assert.deepEqual(messages.find((m) => m.kind === "api").pending, [PENDING_CLIENT]);
   assert.ok(status.measuredRate < 60);
+  // トラッキングの値が届いていない形 (「—」) も画面に出す (T0863)
+  assert.equal(status.trackingWait, null);
 });
 
 test("アプリの定義が使う文言のキーが、英語と日本語のカタログにある", () => {
