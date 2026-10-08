@@ -1,11 +1,11 @@
 ---
 id: T0079
 title: "CI: Windows の just ffi-check が、C の見本のリンクで C ランタイム (動的と静的) が食い違って落ちる"
-status: todo
+status: in-progress
 milestone: M11
 crates: [scripts, .github/workflows, docs, crates/ugoe-ffi/README.md]
 depends_on: []
-assignee:
+assignee: claude-worker-T0079
 ---
 
 # T0079: CI: Windows の just ffi-check が、C の見本のリンクで C ランタイム (動的と静的) が食い違って落ちる
