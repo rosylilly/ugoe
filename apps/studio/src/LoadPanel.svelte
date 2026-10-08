@@ -1,5 +1,6 @@
 <!--
-  刻みの速さと負荷 (docs/studio.md#負荷の表示)。操作ウィンドウだけに出す (出力ウィンドウには何も重ねない)。
+  刻みの速さ・描く解像度と負荷 (docs/studio.md#負荷の表示)。操作ウィンドウだけに出す (出力ウィンドウには何も重ねない)。
+  描く解像度 (T0858) は出力ウィンドウとブラウザソースの描画バッファの倍率で、選ぶと受け手の次のフレームから効く。
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
   使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
 -->
@@ -10,17 +11,20 @@ import type { GpuPreference, GpuView, RendererLoad, StatusMessage } from "./lib/
 import { t } from "./lib/i18n";
 import { type LoadWarning, loadWarnings, rendererGpu } from "./lib/load";
 import { receiverName } from "./lib/receivers";
-import { TICK_RATES, type TickRate } from "./lib/settings";
+import { RENDER_SCALES, type RenderScale, TICK_RATES, type TickRate } from "./lib/settings";
 
 interface Props {
   /** 選んでいる刻みの速さ。 */
   tickRate: TickRate;
+  /** 選んでいる描く解像度の倍率。 */
+  renderScale: RenderScale;
   /** 指揮役からの最新の値と負荷 (モデルを開くまでは `null`)。 */
   status: StatusMessage | null;
   /** 使う GPU の様子 (取れるまでは `null`)。 */
   gpu: GpuView | null;
   disabled?: boolean;
   onTickRate: (rate: TickRate) => void;
+  onRenderScale: (scale: RenderScale) => void;
   onGpuPreference: (preference: GpuPreference) => void;
   /** Windows の「グラフィックの設定」を開く。 */
   onGraphicsSettings: () => void;
@@ -28,10 +32,12 @@ interface Props {
 
 let {
   tickRate,
+  renderScale,
   status,
   gpu,
   disabled = false,
   onTickRate,
+  onRenderScale,
   onGpuPreference,
   onGraphicsSettings,
 }: Props = $props();
@@ -55,6 +61,12 @@ const rateOptions = $derived(
   TICK_RATES.map((rate) => ({
     value: String(rate),
     label: t("load.rateValue", { value: rate }),
+  })),
+);
+const scaleOptions = $derived(
+  RENDER_SCALES.map((scale) => ({
+    value: String(scale),
+    label: t("load.renderScaleValue", { value: scale * 100 }),
   })),
 );
 const warnings = $derived(status === null ? [] : loadWarnings(status));
@@ -102,6 +114,11 @@ function changeRate(value: string) {
   if (rate !== undefined) onTickRate(rate);
 }
 
+function changeScale(value: string) {
+  const scale = RENDER_SCALES.find((s) => String(s) === value);
+  if (scale !== undefined) onRenderScale(scale);
+}
+
 function changeGpu(value: string) {
   const preference = GPU_PREFERENCES.find((p) => p === value);
   if (preference !== undefined) onGpuPreference(preference);
@@ -127,6 +144,14 @@ function gpuText(r: RendererLoad): string | null {
     onchange={changeRate}
   />
   <p class="load__hint">{t("load.tickRateHint")}</p>
+  <SegmentedControl
+    label={t("load.renderScale")}
+    value={String(renderScale)}
+    options={scaleOptions}
+    {disabled}
+    onchange={changeScale}
+  />
+  <p class="load__hint">{t("load.renderScaleHint")}</p>
 
   <SegmentedControl
     label={t("load.gpu")}

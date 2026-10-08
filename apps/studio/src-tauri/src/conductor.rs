@@ -172,6 +172,8 @@ pub struct Conductor {
     motion_events: Vec<FiredEvent>,
     /// 最後に知らせたポーズの表示中の要素と選択 ([`Conductor::take_pose_changed`]。T0848)。
     pose_noticed: (Vec<String>, Vec<String>),
+    /// シーンの通知に載せる描く解像度の倍率 ([`Conductor::set_render_scale`]。T0858)。
+    render_scale: f32,
 }
 
 /// 刻みで発火したモーションのイベントと、それを発火したモーション (外部 API の `motion.event`)。
@@ -208,6 +210,7 @@ impl Default for Conductor {
             sent: Vec::new(),
             motion_events: Vec::new(),
             pose_noticed: (Vec::new(), Vec::new()),
+            render_scale: 1.0,
         }
     }
 }
@@ -310,6 +313,7 @@ impl Conductor {
             part_ids,
             modules,
             look,
+            render_scale: self.render_scale,
         }))
     }
 
@@ -331,7 +335,21 @@ impl Conductor {
             part_ids: Vec::new(),
             modules: Vec::new(),
             look,
+            render_scale: self.render_scale,
         })
+    }
+
+    /// シーンの通知に載せる描く解像度の倍率 (プロファイルの `output.renderScale`。T0858) を変える。シーンの状態ではないので
+    /// `revision` は上げず、今のシーンの値も書き換える。今のシーンの値が変わったら `true` (受け手に配り直す)。
+    pub fn set_render_scale(&mut self, scale: f32) -> bool {
+        self.render_scale = scale;
+        match &mut self.scene {
+            Some(scene) if scene.render_scale != scale => {
+                scene.render_scale = scale;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// モデル (と付けているモジュール) にライティングを受けるメッシュがあるか。モデルが無ければ `false`。

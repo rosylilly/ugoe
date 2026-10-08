@@ -90,6 +90,13 @@ fn serves_a_frozen_scene_for_a_browser_check() {
         let id = scene.id.clone();
         stage.update_scene(scene, conductor).unwrap();
         stage.activate(&id, conductor).unwrap();
+        // 出力ウィンドウとページの描く解像度の倍率 (T0858。仮想カメラは使わない)。
+        if let Some(scale) = std::env::var("UGOE_STUDIO_CHECK_RENDER_SCALE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+        {
+            stage.set_render_scale(scale);
+        }
     });
     // 仮想カメラの受け手へのチャネル (スレッドは作らず、このテストで受ける)。
     let (tx, rx) = mpsc::channel();

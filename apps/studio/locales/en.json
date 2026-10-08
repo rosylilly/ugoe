@@ -68,6 +68,9 @@
     "tick_rate": {
       "unsupported": "{{rate}} ticks per second is not supported (choose 30, 60 or 120)."
     },
+    "render_scale": {
+      "unsupported": "A render resolution of {{scale}} is not supported (choose 100%, 75% or 50%)."
+    },
     "render_stats": {
       "invalid": "The output reported invalid render statistics."
     },
@@ -220,6 +223,9 @@
     "graphicsSettings": "Open the graphics settings",
     "rendererGpu": "{{backend}}, {{adapter}}",
     "adapterHidden": "GPU name hidden",
+    "renderScale": "Render resolution",
+    "renderScaleValue": "{{value}}%",
+    "renderScaleHint": "The output window and the browser source draw at this share of their size and stretch the picture to fit. Lower values reduce the GPU load but make the picture blurrier. The virtual camera keeps its own resolution.",
     "empty": "Open a model to see the load.",
     "tick": "Time per tick",
     "measured": "Actual tick rate",
@@ -239,7 +245,7 @@
       "rateShortfall": "The conductor ticks at {{measured}}, below {{target}}. The computer may be busy.",
       "intervalSpike": "A tick was {{max}} apart (expected {{period}}). Motion may stutter; the OS timer may be coarse or the computer busy.",
       "tickHeavy": "One tick takes {{tick}} of the {{period}} budget. Try a lower tick rate.",
-      "renderHeavy": "{{name}}: drawing takes {{render}} of the {{period}} budget. Try a smaller output size or a lower tick rate.",
+      "renderHeavy": "{{name}}: drawing takes {{render}} of the {{period}} budget. Try a smaller output size, a lower render resolution or a lower tick rate.",
       "renderSlow": "{{name}} can draw only {{fps}}, below {{target}}.",
       "dropped_one": "{{name}} dropped {{count}} frame. Physics was reset to catch up.",
       "dropped_other": "{{name}} dropped {{count}} frames. Physics was reset to catch up.",

@@ -75,6 +75,15 @@ impl CommandError {
         .arg("rate", rate)
     }
 
+    /// 描く解像度の倍率が 1 / 0.75 / 0.5 でない (T0858)。
+    pub(crate) fn unsupported_render_scale(scale: f32) -> Self {
+        Self::new(
+            "render_scale.unsupported",
+            format!("unsupported render scale: {scale}"),
+        )
+        .arg("scale", scale)
+    }
+
     /// 出力が報告した描画の負荷が、数でない・負。
     pub(crate) fn invalid_render_stats() -> Self {
         Self::new("render_stats.invalid", "invalid render stats")
@@ -406,6 +415,7 @@ mod tests {
             CommandError::scene_not_current(3),
             CommandError::scene_no_file(3),
             CommandError::unsupported_tick_rate(45),
+            CommandError::unsupported_render_scale(0.6),
             CommandError::invalid_render_stats(),
             CommandError::gpu_settings_save_failed("x"),
             CommandError::graphics_settings_unsupported(),

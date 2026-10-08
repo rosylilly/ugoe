@@ -44,3 +44,19 @@ export function parseOutputSize(value: string | null | undefined): OutputSizePre
 export function parseTickRate(value: number | null | undefined): TickRate {
   return TICK_RATES.find((r) => r === value) ?? DEFAULT_TICK_RATE;
 }
+
+/**
+ * 出力ウィンドウとブラウザソースの描く解像度の倍率 (T0858。profile.rs の `RENDER_SCALES`)。描画バッファを「表示の大きさ × 倍率」の
+ * 画素にして描き、表示の大きさに引き伸ばす (小さくすると GPU の負荷が減り、画は粗くなる)。
+ */
+export type RenderScale = 1 | 0.75 | 0.5;
+
+export const RENDER_SCALES: readonly RenderScale[] = [1, 0.75, 0.5];
+
+/** 既定の描く解像度の倍率 (今までと同じ)。 */
+export const DEFAULT_RENDER_SCALE: RenderScale = 1;
+
+/** プロファイルの値を描く解像度の倍率にする (無い・選べない値は既定)。 */
+export function parseRenderScale(value: number | null | undefined): RenderScale {
+  return RENDER_SCALES.find((s) => s === value) ?? DEFAULT_RENDER_SCALE;
+}

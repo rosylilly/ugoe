@@ -641,6 +641,9 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   モデル・モジュール・値・ビューを戻して描く (`player-timeout-restart`)。
   devicePixelRatio だけが変わったら、canvas と読み戻しの大きさが新しい倍率になり、CSS ピクセルで見たビュー (`view`) は動かず、
   CSS ピクセルの点を中心にしたズームでその点が動かない (換算に今の倍率を使う。`player-pixel-ratio`)。
+  描画バッファの倍率 (`renderScale`。T0858) を 0.5・0.75 (devicePixelRatio 1 と 2)・1 と変えると、canvas と読み戻しが「CSS ピクセル ×
+  devicePixelRatio × 倍率」の画素になり、canvas は表示の大きさ (テストのページの CSS で引き伸ばす) のまま、ズームとパンを動かした後の `view` は動かず、
+  点を中心にしたズームでその点が動かない (`player-render-scale`。パンを直さないと落ち、devicePixelRatio の変化でパンを直していなかった前も落ちた)。
   ポーズの欄 (`poseShown`) は本物の wasm の表示中の要素 (`pose_visible_json`) を読み、見本の `wave` で `HandsDown` → `Wave` → `HandsDown` と
   追従し、モーションが終わった後に選んだ要素は残る (`player-pose-follows-motion`。T0736。追従をやめると落ちることを確かめた)。
   コンテキストを失っている間 (`load_bundle`・`load_module` が `device_lost`) に初めのモデルを開いても、別のモデルとモジュールを開いても、

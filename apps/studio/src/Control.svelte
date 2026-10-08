@@ -74,9 +74,11 @@ import { SceneLoading } from "./lib/sceneLoading.svelte";
 import {
   type OutputSizePreset,
   parseOutputSize,
+  parseRenderScale,
   parseTickRate,
   presetOf,
   presetSize,
+  type RenderScale,
   type TickRate,
 } from "./lib/settings";
 import { type PanelId, revealPanel, statusBadges } from "./lib/status";
@@ -123,6 +125,13 @@ let output = $state<OutputState | null>(null);
 const sceneLoading = new SceneLoading();
 const tickRateEdit = new PendingEdit<TickRate>((rate) => run((h) => h.setTickRate(rate)));
 const tickRate = $derived(tickRateEdit.current(parseTickRate(profile?.profile.output.tickRate)));
+/** 送っている途中の描く解像度の倍率 (プロファイルに持つ。T0858)。 */
+const renderScaleEdit = new PendingEdit<RenderScale>((scale) =>
+  run((h) => h.setRenderScale(scale)),
+);
+const renderScale = $derived(
+  renderScaleEdit.current(parseRenderScale(profile?.profile.output.renderScale)),
+);
 /** 最新の値と負荷 (負荷の表示に使う)。 */
 let status = $state<StatusMessage | null>(null);
 /** 受け手が今のシーンで読めなかったこと (T0825。シーンが変わると空になって届く)。 */
@@ -656,6 +665,10 @@ async function changeGpuPreference(preference: GpuPreference) {
   gpu = (await run((h) => h.setGpuPreference(preference))) ?? gpu;
 }
 
+function changeRenderScale(scale: RenderScale) {
+  void renderScaleEdit.submit(scale);
+}
+
 /** パラメータのスライダーの刻み。 */
 function parameterStep(p: ParameterInfo): number {
   return (p.max - p.min) / 200;
@@ -1028,10 +1041,12 @@ onMount(() => {
         <Section level={2} title={t("load.heading")} bind:open={panelsOpen.load}>
           <LoadPanel
             {tickRate}
+            {renderScale}
             {status}
             {gpu}
             disabled={host === null}
             onTickRate={changeTickRate}
+            onRenderScale={changeRenderScale}
             onGpuPreference={(preference) => void changeGpuPreference(preference)}
             onGraphicsSettings={() => void run((h) => h.openGraphicsSettings())}
           />

@@ -3,6 +3,7 @@ import {
   DEFAULT_OUTPUT_SIZE,
   DEFAULT_TICK_RATE,
   parseOutputSize,
+  parseRenderScale,
   parseTickRate,
   presetOf,
   presetSize,
@@ -28,5 +29,14 @@ describe("tick rate", () => {
     expect(parseTickRate(120)).toBe(120);
     expect(parseTickRate(144)).toBe(DEFAULT_TICK_RATE);
     expect(parseTickRate(undefined)).toBe(DEFAULT_TICK_RATE);
+  });
+});
+
+describe("render scale", () => {
+  it("reads 1 / 0.75 / 0.5 from the profile and defaults to 1", () => {
+    expect(parseRenderScale(0.75)).toBe(0.75);
+    expect(parseRenderScale(0.5)).toBe(0.5);
+    expect(parseRenderScale(0.6)).toBe(1);
+    expect(parseRenderScale(undefined)).toBe(1);
   });
 });

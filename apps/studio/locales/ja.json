@@ -68,6 +68,9 @@
     "tick_rate": {
       "unsupported": "刻みの速さ {{rate}} 回/秒は選べません (30・60・120 から選びます)。"
     },
+    "render_scale": {
+      "unsupported": "描く解像度の倍率 {{scale}} は選べません (100%・75%・50% から選びます)。"
+    },
     "render_stats": {
       "invalid": "出力が報告した描画の負荷の値が正しくありません。"
     },
@@ -210,6 +213,9 @@
     "graphicsSettings": "グラフィックの設定を開く",
     "rendererGpu": "{{backend}}・{{adapter}}",
     "adapterHidden": "GPU の名前は伏せられています",
+    "renderScale": "描く解像度",
+    "renderScaleValue": "{{value}}%",
+    "renderScaleHint": "出力ウィンドウとブラウザソースは、大きさにこの割合を掛けた解像度で描き、引き伸ばして出します。下げると GPU の負荷が減りますが、画がぼやけます。仮想カメラは自分の解像度で描きます。",
     "empty": "モデルを開くと負荷を表示します。",
     "tick": "1 刻みの時間",
     "measured": "実際の刻みの速さ",
@@ -228,7 +234,7 @@
       "rateShortfall": "指揮役の刻みが {{measured}} で、{{target}} に届いていません。計算機が混んでいるかもしれません。",
       "intervalSpike": "刻みの間隔が {{max}} 空きました ({{period}} のはず)。動きがかくつくことがあります。OS のタイマーが粗いか、計算機が混んでいます。",
       "tickHeavy": "1 刻みに {{tick}} かかっています ({{period}} の中)。刻みの速さを下げてください。",
-      "renderHeavy": "{{name}}: 描画に {{render}} かかっています ({{period}} の中)。出力の大きさか刻みの速さを下げてください。",
+      "renderHeavy": "{{name}}: 描画に {{render}} かかっています ({{period}} の中)。出力の大きさ・描く解像度・刻みの速さのどれかを下げてください。",
       "renderSlow": "{{name}}が描ける回数が {{fps}} で、{{target}} に届いていません。",
       "dropped_other": "{{name}}がフレームを {{count}} 個捨てました。追いつくために物理をリセットしました。",
       "stale": "{{name}}が描いていません。隠れているか最小化されていると、配信ソフトが取り込めないことがあります。"

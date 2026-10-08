@@ -284,6 +284,14 @@ impl Stage {
         }
     }
 
+    /// 出力ウィンドウとブラウザソースの描く解像度の倍率を変える (T0858。選べる値 (`profile::RENDER_SCALES`) かは呼ぶ側が確かめる)。
+    pub fn set_render_scale(&mut self, scale: f32) {
+        if self.profile.output.render_scale != scale {
+            self.profile.output.render_scale = scale;
+            self.dirty = true;
+        }
+    }
+
     /// 仮想カメラの設定を置き換える (T0827。選べない値は既定に戻す)。
     pub fn set_virtual_camera(&mut self, mut settings: VirtualCameraSettings) {
         settings.sanitize();

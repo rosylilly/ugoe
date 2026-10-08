@@ -63,8 +63,13 @@ await player.load(file, modules); // モデル (と一緒に開くモジュー�
   (`<ugoe-avatar>` と同じ数と時間。T0935)。作り直しでは利用者のズームとパンとパラメータの値を保つ (失う前のビューを渡し直し、
   読み直しで fit しない。モデルを開いたときは今までどおり fit。T0942)。作り直しを待つ間に別のモデルを開いたら、そのモデルは fit で見せ、
   値も既定から始める (前のモデルの値を同じ ID のパラメータに戻さない。T0945)。devicePixelRatio だけが変わったときも
-  描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
+  描画バッファの大きさを合わせ直す (アプリの ResizeObserver は知らせないため。パンは CSS ピクセルで同じ場所に直す。T0858)。この寿命は `src/surface.ts` の `PuppetSurface` が持ち、
   エディタのビューポートも同じものを使う ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
+- **描画バッファの倍率 (`renderScale`。T0858):** 描画バッファを「CSS ピクセル × devicePixelRatio × 倍率」の画素にして描き、canvas は CSS で
+  表示の大きさに引き伸ばす (小さくすると GPU の描く量が減り、画は粗くなる)。0 より大きく 1 以下の有限の数で、それ以外は 1。既定は 1 (今と同じ)。
+  CSS ピクセルと描画バッファの画素の換算 (ビュー・ポインタの座標・作り直しで覚えるビュー) は devicePixelRatio と同じ所 (`PuppetSurface.pixelRatio`) で
+  倍率を含めて行う。変えたら描画バッファの大きさを合わせ直し、CSS ピクセルで同じ場所を見せるようにパンを直して描き直す。受け手のモードでなくても
+  使える (使っているのはスタジオの出力ウィンドウとブラウザソース。docs/studio.md#出力ウィンドウ)。
 - **読み込みの途中に GPU を失ったとき (T0955):** `load` (と `loadModule`) が wasm から `device_lost` を受け、WebPuppet が
   `is_lost()` なら、読み込めなかったとはせず、`error`・`dressUpError` に文を出さない。開こうとしたファイル (と一緒に開くモジュール) は
   作り直した後に開く (WebPuppet が無い間に開いたものと同じく fit で見せ、値は既定から)。`load` は作り直しを待たずに返る。エラーの文は
@@ -159,7 +164,7 @@ player.pushFrame(decodeFrame(buffer));
   (物理 → リップシンク → ポーズ。T0134)。適用は `pushFrame`・`followScene` の **その場で** 行い、`#tick` (`requestAnimationFrame`) は描くだけ
   (残っていれば適用してから描く)。
 - 受け手のモードでは **変わったときだけ描く** (T0857)。前に描いてから、フレームを 1 つ以上適用した・ビュー (fit・ズーム・パン)・大きさ・
-  devicePixelRatio・背景・光源・着せ替え・ポーズ・パラメータが変わった・モデルを読んだ・WebPuppet を作り直したときに印 (`#dirty`) を立て、
+  devicePixelRatio・描画バッファの倍率・背景・光源・着せ替え・ポーズ・パラメータが変わった・モデルを読んだ・WebPuppet を作り直したときに印 (`#dirty`) を立て、
   `#tick` は印が立っているときだけ `render()` を呼ぶ。描く回数の上限は指揮役の刻みの速さになる (docs/studio.md#出力ウィンドウ)。描かなかった
   `requestAnimationFrame` でも canvas には前に描いた画が残る。受け手のモードでないとき (ビューア) は今までどおり毎フレーム描く。ページが隠れて `requestAnimationFrame` が止まっても物理は止まらない (T0804、docs/studio.md#隠れても止まらない)。
   ドライバ・トラッキング・モーション・待機モーションは使わない (値は指揮役が決める)。`values` (スライダーの表示) も同期しない。

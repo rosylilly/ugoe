@@ -141,6 +141,16 @@ pub struct OutputSettings {
     pub tick_rate: u32,
     /// 仮想カメラの設定 (T0827)。
     pub virtual_camera: VirtualCameraSettings,
+    /// 出力ウィンドウとブラウザソースの描く解像度の倍率 ([`RENDER_SCALES`]。T0858)。選べない値は読むときに 1 にする。
+    pub render_scale: f32,
+}
+
+/// 選べる描く解像度の倍率 (先頭が既定)。描画バッファを「表示の大きさ × 倍率」の画素にして描く (docs/studio.md#出力ウィンドウ)。
+pub const RENDER_SCALES: [f32; 3] = [1.0, 0.75, 0.5];
+
+/// 選べる描く解像度の倍率か。
+pub fn is_render_scale(scale: f32) -> bool {
+    RENDER_SCALES.contains(&scale)
 }
 
 impl Default for OutputSettings {
@@ -149,15 +159,19 @@ impl Default for OutputSettings {
             size: "1920x1080".to_owned(),
             tick_rate: TickRate::DEFAULT.hz(),
             virtual_camera: VirtualCameraSettings::default(),
+            render_scale: RENDER_SCALES[0],
         }
     }
 }
 
 impl OutputSettings {
-    /// 選べない刻みの速さと仮想カメラの設定を既定に戻す。
+    /// 選べない刻みの速さ・描く解像度の倍率・仮想カメラの設定を既定に戻す。
     pub fn sanitize(&mut self) {
         if TickRate::from_hz(self.tick_rate).is_none() {
             self.tick_rate = TickRate::DEFAULT.hz();
+        }
+        if !is_render_scale(self.render_scale) {
+            self.render_scale = RENDER_SCALES[0];
         }
         self.virtual_camera.sanitize();
     }
@@ -650,6 +664,7 @@ mod tests {
         scene.pose = vec!["ArmB".into(), "CatEars/EarsUp".into()];
         profile.output.size = "1280x720".into();
         profile.output.tick_rate = 120;
+        profile.output.render_scale = 0.75;
         profile.output.virtual_camera = VirtualCameraSettings {
             width: 1920,
             height: 1080,
@@ -668,6 +683,7 @@ mod tests {
         .unwrap();
         assert_eq!(profile.output.size, "1280x720");
         assert_eq!(profile.output.tick_rate, 60);
+        assert_eq!(profile.output.render_scale, 1.0);
         assert_eq!(
             profile.output.virtual_camera.settings(),
             virtual_camera::Settings::default()
@@ -693,11 +709,12 @@ mod tests {
     #[test]
     fn sanitizes_the_output_settings() {
         let profile = read(
-            r##"{"format": "ugoe-studio-profile", "version": 1, "output": {"tickRate": 144,
+            r##"{"format": "ugoe-studio-profile", "version": 1, "output": {"tickRate": 144, "renderScale": 0.6,
                 "virtualCamera": {"width": 640, "height": 480, "fps": 25, "background": "green"}}}"##,
         )
         .unwrap();
         assert_eq!(profile.output.tick_rate, 60);
+        assert_eq!(profile.output.render_scale, 1.0);
         let camera = &profile.output.virtual_camera;
         assert_eq!((camera.width, camera.height, camera.fps), (1280, 720, 30));
         assert_eq!(camera.background, "#f0f0f0");

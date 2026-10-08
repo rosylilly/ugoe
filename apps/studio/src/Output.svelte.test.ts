@@ -25,6 +25,7 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     /** `followScene`・`continueScene` に渡したパーツの並び (T0853)。 */
     partIds: (readonly string[])[] = [];
     lightings = 0;
+    renderScale = 1;
     /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`。フェードせずに表示させたものは `pose!:<パーツ>`)。 */
     calls: string[] = [];
     powerPreference = "default";
@@ -99,6 +100,7 @@ interface Fake {
   continued: number[];
   partIds: (readonly string[])[];
   lightings: number;
+  renderScale: number;
   modules: { name: string }[];
   calls: string[];
   attachedWith: string[];
@@ -126,6 +128,7 @@ function scene(revision: number, patch: Partial<StudioScene> = {}): StudioScene 
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
     background: { kind: "transparent" },
     pose: [],
+    renderScale: 1,
     ...patch,
   } as StudioScene;
 }
@@ -488,6 +491,20 @@ describe("Output scene changes", () => {
       [3, 1],
     ]);
     expect(r.player.modules.map((m) => m.name)).toEqual(["Hat.ugoemod", "Ribbon.ugoemod"]);
+  });
+
+  it("applies the render scale of every scene, also when only the render scale changes (T0858)", async () => {
+    const model = vi.fn(async () => GOOD);
+    const r = receiver({ model });
+    await r.send(scene(1, { renderScale: 0.75 }));
+    await vi.waitFor(() => expect(r.player.followed).toEqual([1]));
+    expect(r.player.renderScale).toBe(0.75);
+    // 倍率だけが変わると、同じ版のシーンが配り直される。モデルは読み直さない。
+    await r.send(scene(1, { renderScale: 0.5 }));
+    expect(r.player.renderScale).toBe(0.5);
+    await settle();
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(r.player.followed).toEqual([1]);
   });
 
   it("revokes the previous blob URL when the background image changes", async () => {

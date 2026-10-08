@@ -197,6 +197,12 @@ describe("Player follower mode", () => {
       ["fit", () => p.fit()],
       ["size", () => p.resize(320, 240)],
       [
+        "render scale",
+        () => {
+          p.renderScale = 0.5;
+        },
+      ],
+      [
         "lighting",
         () =>
           p.updateLighting(

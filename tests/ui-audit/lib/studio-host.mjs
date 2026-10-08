@@ -25,6 +25,7 @@ export async function studioFixture(lang) {
   profile.output = {
     ...profile.output,
     tickRate: 60,
+    renderScale: 1,
     virtualCamera: camera.DEFAULT_CAMERA_PROFILE,
   };
   profile.input = inputs.DEFAULT_INPUT;
@@ -161,6 +162,7 @@ export function firstRunMessages(fixture) {
         transform: scene.transform,
         background: scene.background,
         pose: [],
+        renderScale: 1,
       },
       parameters: [],
       usesLighting: false,
@@ -301,6 +303,7 @@ export function studioPageInit({ osLocale, fixture }) {
       gpu = { ...gpu, preference };
       return gpu;
     },
+    setRenderScale: async () => {},
     systemLocale: async () => osLocale,
     playMotion: async () => true,
     virtualCameraState: async () => ({ state: "stopped", unavailable: null }),
@@ -382,6 +385,7 @@ export function studioPageInit({ osLocale, fixture }) {
           transform: active.transform,
           background: active.background,
           pose: shown,
+          renderScale: 1,
         },
         parameters,
         usesLighting: false,

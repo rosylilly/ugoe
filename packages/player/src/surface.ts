@@ -15,12 +15,16 @@
 //   `failed(GpuLostRepeatedlyError)` で知らせる (次の `attach` か `restart` まで作らない)。その作り直しの中で作れなかった
 //   (`CreateError` など) ことがあれば、最後の失敗を `cause` に持たせる (使う側は作れなかった理由の文を出す。T0946)。
 // - devicePixelRatio だけが変わったとき (倍率の違う画面へウィンドウを移したなど) は ResizeObserver が知らせないので、
-//   `matchMedia` で聞いて描画バッファの大きさを合わせ直す。
+//   `matchMedia` で聞いて描画バッファの大きさを合わせ直す。パンは描画バッファの画素なので、CSS ピクセルで同じ場所を見せるように直す。
 // - GPU を失って作り直すときは、失った WebPuppet のビュー (ズームとパン) を覚えて、作り直した WebPuppet に `created` の前に
 //   渡す (作り直しは利用者の操作ではないので、見ている場所を変えない。T0942)。パンは CSS ピクセルで覚え、作り直したときの
 //   devicePixelRatio で描画バッファの画素に直す。`attach` (作り直しでない作成) では既定のビュー (fit) から始める。
 // - GPU の電力の希望 (`powerPreference`。T0499) は、`attach` でも作り直しでも、そのときの値を `WebPuppet.create` に渡す。
 //   変えても今の WebPuppet はそのままで、次に作るとき (`restart` など) から効く。
+// - 描画バッファの倍率 (`renderScale`。T0858) は、描画バッファを「CSS ピクセル × devicePixelRatio × 倍率」の画素にする
+//   (canvas は CSS で表示の大きさに引き伸ばす)。CSS ピクセルと描画バッファの画素の換算 (`pixelRatio`) は倍率を含めた値なので、
+//   ビュー・ポインタの座標・作り直しで覚えるビューは devicePixelRatio と同じ所で換算される。倍率を変えたら描画バッファの大きさを
+//   合わせ直し、CSS ピクセルで同じ場所を見せるようにパンを直す。
 
 /** PuppetSurface が使う WebPuppet のメソッド (構造の型。アプリと Player の `WebPuppet` の型はこれを満たす)。 */
 export interface SurfacePuppet {
@@ -125,6 +129,11 @@ function currentPixelRatio(): number {
   return globalThis.devicePixelRatio || 1;
 }
 
+/** 描画バッファの倍率を収める (0 より大きく 1 以下の有限の数。それ以外は 1)。 */
+export function renderScaleOf(value: number): number {
+  return value > 0 && value <= 1 ? value : 1;
+}
+
 /** WebPuppet と、それを描く canvas の寿命。 */
 export class PuppetSurface<P extends SurfacePuppet> {
   readonly #host: SurfaceHost<P>;
@@ -140,7 +149,10 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #backend: "auto" | "webgl2" = "auto";
   /** 描く領域の大きさ (CSS ピクセル)。 */
   #cssSize: [number, number] = [1, 1];
-  #pixelRatio = currentPixelRatio();
+  /** 描画バッファの大きさを決めた devicePixelRatio。 */
+  #devicePixelRatio = currentPixelRatio();
+  /** 描画バッファの倍率 (`renderScale`)。 */
+  #renderScale = 1;
   /** devicePixelRatio の変化を聞いている問い合わせ (`#watchPixelRatio`)。 */
   #pixelRatioQuery: MediaQueryList | null = null;
   /** WebGL2 のコンテキストを失って、`webglcontextrestored` を待っている。 */
@@ -167,9 +179,30 @@ export class PuppetSurface<P extends SurfacePuppet> {
     return this.#puppet;
   }
 
-  /** 描画バッファの大きさを決めた devicePixelRatio (CSS ピクセルと描画バッファの画素の換算に使う)。 */
+  /**
+   * CSS ピクセルあたりの描画バッファの画素 (描画バッファの大きさを決めた devicePixelRatio × 倍率)。CSS ピクセルと描画バッファの
+   * 画素の換算に使う。
+   */
   get pixelRatio(): number {
-    return this.#pixelRatio;
+    return this.#devicePixelRatio * this.#renderScale;
+  }
+
+  /**
+   * 描画バッファの倍率 (T0858)。描画バッファを「CSS ピクセル × devicePixelRatio × 倍率」の画素 (1 画素以上。上限はデバイスが決める)
+   * にして描き、canvas は CSS で表示の大きさに引き伸ばす (小さくすると描く量が減り、画は粗くなる)。0 より大きく 1 以下の有限の数で、
+   * それ以外は 1 として扱う。既定は 1。変えたら描画バッファの大きさを合わせ直し、CSS ピクセルで同じ場所を見せるようにパンを直す
+   * (ズームは fit に対する倍率なのでそのまま)。描き直すのは使う側。
+   */
+  get renderScale(): number {
+    return this.#renderScale;
+  }
+
+  set renderScale(value: number) {
+    const scale = renderScaleOf(value);
+    if (scale === this.#renderScale) return;
+    this.#rescale(() => {
+      this.#renderScale = scale;
+    });
   }
 
   /** GPU を失って作り直している間。 */
@@ -215,10 +248,10 @@ export class PuppetSurface<P extends SurfacePuppet> {
     this.#savedView = null;
   }
 
-  /** 描く領域の大きさ (CSS ピクセル) が変わった。描画バッファは今の devicePixelRatio を掛けた画素にする。 */
+  /** 描く領域の大きさ (CSS ピクセル) が変わった。描画バッファは今の devicePixelRatio と倍率を掛けた画素にする。 */
   resize(width: number, height: number): void {
     this.#cssSize = [Math.max(1, width), Math.max(1, height)];
-    this.#pixelRatio = currentPixelRatio();
+    this.#devicePixelRatio = currentPixelRatio();
     this.#puppet?.resize(...this.#pixelSize());
   }
 
@@ -353,7 +386,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
 
   /** 失った WebPuppet のビューを覚える (ビューは CPU の側の状態なので、GPU を失っても読める)。 */
   #saveView(puppet: P): void {
-    const dpr = this.#pixelRatio;
+    const dpr = this.pixelRatio;
     this.#savedView = {
       zoom: puppet.zoom(),
       panX: puppet.pan_x() / dpr,
@@ -368,7 +401,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #restoreView(puppet: P): void {
     const view = this.#savedView;
     if (view === null) return;
-    const dpr = this.#pixelRatio;
+    const dpr = this.pixelRatio;
     puppet.set_view(view.zoom, view.panX * dpr, view.panY * dpr);
   }
 
@@ -433,15 +466,32 @@ export class PuppetSurface<P extends SurfacePuppet> {
   }
 
   #onPixelRatio = (): void => {
-    this.resize(...this.#cssSize);
+    this.#rescale(() => {
+      this.#devicePixelRatio = currentPixelRatio();
+    });
     this.#host.pixelRatioChanged?.();
     this.#watchPixelRatio();
   };
 
+  /**
+   * `update` で CSS ピクセルと描画バッファの画素の換算 (`pixelRatio`) を変え、描画バッファの大きさを合わせ直す。パンは描画バッファの
+   * 画素なので、CSS ピクセルで同じ場所を見せるように直す (ズームは fit に対する倍率なのでそのまま)。
+   */
+  #rescale(update: () => void): void {
+    const before = this.pixelRatio;
+    update();
+    const puppet = this.#puppet;
+    if (puppet === null) return;
+    puppet.resize(...this.#pixelSize());
+    const ratio = this.pixelRatio / before;
+    if (ratio !== 1) puppet.set_view(puppet.zoom(), puppet.pan_x() * ratio, puppet.pan_y() * ratio);
+  }
+
   #pixelSize(): [number, number] {
+    const ratio = this.pixelRatio;
     return [
-      Math.max(1, Math.round(this.#cssSize[0] * this.#pixelRatio)),
-      Math.max(1, Math.round(this.#cssSize[1] * this.#pixelRatio)),
+      Math.max(1, Math.round(this.#cssSize[0] * ratio)),
+      Math.max(1, Math.round(this.#cssSize[1] * ratio)),
     ];
   }
 }

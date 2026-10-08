@@ -9,6 +9,8 @@
   読み直し・付け直しの直後はフェードせずに表示する (T0844)。
   背景はシーンに従って要素の CSS で描き (透過・単色・クロマキー・画像)、モデルの canvas は常に透過にする。
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
+  描く解像度の倍率 (`scene.renderScale`。T0858) は通知が届いたらすぐ Player の `renderScale` に当てる (描画バッファを小さくして
+  canvas を CSS で引き伸ばす)。倍率だけが変わったときは同じ版のシーンが配り直されるので、見せ方の変化と同じに処理する。
   出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
   負荷には描いている API と GPU の名前も載せる。出力ウィンドウは起動したときの「使う GPU」の希望で描く (docs/studio.md#使う-gpu)。
@@ -88,6 +90,8 @@ const background = $derived(
 
 function onScene(scene: StudioScene) {
   latest = scene.revision;
+  // 前のシーンを読んでいる間でも当ててよい (描画バッファの大きさだけで、モデルやフレームに関わらない)。
+  player.renderScale = scene.renderScale;
   queue = queue
     .then(() => applyScene(scene))
     .catch((e: unknown) => {

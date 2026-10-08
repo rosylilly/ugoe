@@ -346,6 +346,42 @@ describe("Player", () => {
     expect(p.zoom).toBe(1);
   });
 
+  it("converts the view and the pointer with the render scale", async () => {
+    const p = player();
+    p.resize(200, 100);
+    const attached = p.attach(container);
+    await settle();
+    const sizes: number[][] = [];
+    const fake = fakePuppet();
+    fake.puppet.resize = (width, height) => void sizes.push([width, height]);
+    pending[0]?.resolve(fake.puppet);
+    await attached;
+    await p.load(bundle("a.ugoe", 1));
+    expect(p.renderScale).toBe(1);
+    p.zoomBy(2, 50, 20);
+    p.panBy(5, -5);
+    const view = p.view;
+    expect(view).toEqual({ scale: 2, x: -45, y: -25 });
+
+    // 描画バッファは半分の画素になり、CSS ピクセルで同じ場所を見せる。
+    p.renderScale = 0.5;
+    expect(sizes.at(-1)).toEqual([100, 50]);
+    expect(fake.state.view.pan).toEqual([-22.5, -12.5]);
+    expect([p.view?.x, p.view?.y]).toEqual([-45, -25]);
+    // ポインタの座標 (CSS ピクセル) も倍率を含めて換算する。
+    p.panBy(10, 4);
+    expect(fake.state.view.pan).toEqual([-17.5, -10.5]);
+    expect([p.view?.x, p.view?.y]).toEqual([-35, -21]);
+    // 中心 (CSS ピクセルで 100, 50) は描画バッファの (50, 25)。
+    p.zoomBy(2, 100, 50);
+    expect(fake.state.view.pan).toEqual([-85, -46]);
+    expect(p.zoom).toBe(4);
+    // 選べない値は 1。
+    p.renderScale = 2;
+    expect(p.renderScale).toBe(1);
+    expect(sizes.at(-1)).toEqual([200, 100]);
+  });
+
   it("fits a model opened while the WebPuppet is being recreated", async () => {
     const p = player();
     const attached = p.attach(container);

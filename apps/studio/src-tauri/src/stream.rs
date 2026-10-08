@@ -164,6 +164,9 @@ impl Frame {
 /// - どちらも同じ: 見せ方 (ライティング・配置・背景・ポーズの要素) だけを変え、前のシーンのフレームも続けて適用する。
 ///
 /// どの場合も、読み直し・付け直しの後に `pose` の要素を表示する要素にする (受け手のポーズは受け手が進めるため。T0842)。
+///
+/// 描く解像度の倍率 (`render_scale`。T0858) はシーンではなくプロファイルの出力の設定なので、変わっても `revision` は上げず、
+/// 同じシーンを出力ウィンドウとブラウザソースの受け手に配り直す (受け手には見せ方だけの変化と同じに見える)。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind", rename = "scene")]
 pub struct Scene {
@@ -185,6 +188,9 @@ pub struct Scene {
     /// 見せ方。
     #[serde(flatten)]
     pub look: Look,
+    /// 出力ウィンドウとブラウザソースの描く解像度の倍率 (プロファイルの `output.renderScale`。1・0.75・0.5。T0858)。
+    /// 仮想カメラは解像度を別に選ぶので使わない。
+    pub render_scale: f32,
 }
 
 /// シーンの見せ方 (物理に関わらないもの)。
@@ -300,6 +306,7 @@ mod tests {
             part_ids: vec!["Root".into(), "cat-ears/Ears".into()],
             modules: vec!["cat-ears".into()],
             look: Look::default(),
+            render_scale: 0.5,
         };
         assert_eq!(
             serde_json::to_value(&scene).unwrap(),
@@ -315,7 +322,8 @@ mod tests {
                 "lighting": null,
                 "transform": { "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0 },
                 "background": { "kind": "transparent" },
-                "pose": []
+                "pose": [],
+                "renderScale": 0.5
             })
         );
     }

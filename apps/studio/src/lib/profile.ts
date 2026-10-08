@@ -47,6 +47,8 @@ export interface OutputSettings {
   size: string;
   /** 刻みの速さ (回/秒。30 / 60 / 120。T0827)。 */
   tickRate: number;
+  /** 出力ウィンドウとブラウザソースの描く解像度の倍率 (1 / 0.75 / 0.5。T0858)。 */
+  renderScale: number;
   /** 仮想カメラの設定 (T0827)。 */
   virtualCamera: VirtualCameraProfile;
 }

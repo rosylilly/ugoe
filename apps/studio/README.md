@@ -324,7 +324,7 @@ UGOE_STUDIO_CHECK_DIR=/tmp/source-check cargo test -p ugoe-studio --features gpu
 同じ Origin の別のパスで返した `dist/output.html` (`window.__UGOE_STUDIO_HOST__` に、同じ `frames` の WebSocket と `scene/…` を読む口を置く) を
 480×270 で開く。フレームを配り終えると `done.txt` と仮想カメラの画 `vcam.png` を書くので、その後に 2 つのページを撮って `vcam.png` と比べる。
 `UGOE_STUDIO_CHECK_PORT` (既定 28461)・`UGOE_STUDIO_CHECK_SECS` (止めた後に待ち受ける秒数、既定 60)・`UGOE_STUDIO_CHECK_ROTATION` (回転、既定 8)・
-`UGOE_STUDIO_CHECK_NO_LIGHT` (光源を切る) で条件を変えられる。ループバックの外の Origin のページ (Playwright の `route` で返したものなど) から
+`UGOE_STUDIO_CHECK_NO_LIGHT` (光源を切る)・`UGOE_STUDIO_CHECK_RENDER_SCALE` (出力ウィンドウとページの描く解像度の倍率、既定 1。T0858) で条件を変えられる。ループバックの外の Origin のページ (Playwright の `route` で返したものなど) から
 ループバックへ接続するときは、Chrome の Local Network Access の検査で止められることがある (`--disable-features=LocalNetworkAccessChecks`)。
 OBS のページはスタジオ自身が出すので、この検査には当たらない。
 

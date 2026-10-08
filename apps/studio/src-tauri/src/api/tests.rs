@@ -2503,6 +2503,54 @@ fn the_camera_scene_keeps_module_indices() {
     assert!(files.model.is_some());
 }
 
+/// 描く解像度の倍率 (T0858) はシーンの通知に載せて配る。倍率だけが変わったら、同じ版のシーンをページに配り直す。
+#[test]
+fn the_render_scale_reaches_the_pages_with_the_scene() {
+    let dir = Dir::new();
+    let model = dir.model();
+    let (studio, _port, _token) = source_studio();
+    stage_scenes(&studio, &model, &[]);
+    let (tx, rx) = mpsc::sync_channel(source::QUEUE);
+    studio.source_connect(tx).unwrap();
+    let scenes = || -> Vec<Value> {
+        rx.try_iter()
+            .filter_map(|push| match push {
+                source::Push::Message(message) if message.is_text() => {
+                    serde_json::from_str(message.to_text().unwrap()).ok()
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let joined = scenes();
+    assert_eq!(joined.len(), 1);
+    assert_eq!(joined[0]["renderScale"], 1.0);
+    let revision = joined[0]["revision"].clone();
+
+    studio.with_stage(|stage, _| stage.set_render_scale(0.5));
+    let resent = scenes();
+    assert_eq!(resent.len(), 1);
+    assert_eq!(resent[0]["renderScale"], 0.5);
+    assert_eq!(
+        resent[0]["revision"], revision,
+        "the scene itself did not change"
+    );
+    assert!(lock(&studio.stage).dirty());
+    assert_eq!(lock(&studio.stage).profile().output.render_scale, 0.5);
+    // 同じ値なら配らない。
+    studio.with_stage(|stage, _| stage.set_render_scale(0.5));
+    assert!(scenes().is_empty());
+
+    // 次のシーンも、新しく開いたプロファイルも、その倍率で配る。
+    let next = studio.with_stage(|stage, _| stage.add_scene("Next"));
+    studio.with_stage(|stage, conductor| stage.activate(&next, conductor).unwrap());
+    let switched = scenes();
+    assert_eq!(switched.last().unwrap()["renderScale"], 0.5);
+    studio.with_stage(Stage::new_profile);
+    assert_eq!(scenes().last().unwrap()["renderScale"], 1.0);
+    studio.set_source_enabled(false);
+}
+
 #[test]
 fn a_page_that_stops_reading_is_dropped() {
     let (studio, _port, _token) = source_studio();

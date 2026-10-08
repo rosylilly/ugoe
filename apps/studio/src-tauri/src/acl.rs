@@ -33,6 +33,7 @@ pub const COMMANDS: &[&str] = &[
     "set_output_size",
     "tick_rate",
     "set_tick_rate",
+    "set_render_scale",
     "report_render_stats",
     "report_load_failure",
     "gpu_settings",

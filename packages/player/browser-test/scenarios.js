@@ -1352,6 +1352,72 @@ const scenarios = {
   },
 
   /**
+   * 描画バッファの倍率 (`renderScale`。T0858): canvas は「CSS ピクセル × devicePixelRatio × 倍率」の画素になり、読み戻しもその大きさ。
+   * 利用者のズームとパンは CSS ピクセルで同じ場所に残り、CSS ピクセルの点を中心にしたズームでその点が動かない (換算に倍率を含める)。
+   */
+  async "player-render-scale"() {
+    const container = stage();
+    const player = newPlayer();
+    try {
+      await player.attach(container);
+      await player.load({ name: "avatar.ugoe", bytes: await modelBytes() });
+      check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+      player.zoomBy(1.5, 50, 40);
+      player.panBy(7, -5);
+      const before = player.view;
+      check(before !== null, "no view after load");
+      for (const [ratio, scale] of [
+        [1, 0.5],
+        [1, 0.75],
+        [2, 0.75],
+        [1, 1],
+      ]) {
+        await setPixelRatio(ratio);
+        player.renderScale = scale;
+        const factor = ratio * scale;
+        await until(() => {
+          const canvas = canvasesIn(container)[0];
+          return canvas?.width === Math.round(160 * factor);
+        }, `the canvas at ratio ${ratio} and scale ${scale}`);
+        const canvas = canvasesIn(container)[0];
+        const where = `ratio ${ratio}, scale ${scale}`;
+        check(
+          canvas.height === Math.round(120 * factor),
+          `${where}: the canvas is ${canvas.width}x${canvas.height}`,
+        );
+        check(
+          canvas.clientWidth === 160 && canvas.clientHeight === 120,
+          `${where}: the canvas is shown at ${canvas.clientWidth}x${canvas.clientHeight}`,
+        );
+        const view = player.view;
+        check(
+          isView(view, before),
+          `${where}: the view moved from ${JSON.stringify(before)} to ${JSON.stringify(view)}`,
+        );
+        const { shot } = await capturedFraction(player);
+        check(
+          shot.width === canvas.width && shot.height === canvas.height,
+          `${where}: the capture is ${shot.width}x${shot.height}`,
+        );
+        await expectCaptured(player, where);
+        const [x, y] = [40, 30];
+        const anchor = [(x - view.x) / view.scale, (y - view.y) / view.scale];
+        player.zoomBy(2, x, y);
+        const zoomed = player.view;
+        const moved = [zoomed.x + zoomed.scale * anchor[0], zoomed.y + zoomed.scale * anchor[1]];
+        check(
+          near(zoomed.scale, view.scale * 2) && near(moved[0], x) && near(moved[1], y),
+          `${where}: zooming at (${x}, ${y}) moved the point to (${moved.join(", ")})`,
+        );
+        player.zoomBy(0.5, x, y);
+      }
+      player.detach();
+    } finally {
+      await setPixelRatio(1);
+    }
+  },
+
+  /**
    * 受け手のモードは、フレームが届いたときと見せ方が変わったときだけ描く。刻み 30 のフレームを約 2 秒届けると、描く回数は
    * フレームの数ほどで、`requestAnimationFrame` の回数 (ヘッドレスの Chrome は約 60 回/秒) より少ない。フレームが止まった後は
    * 描かないが、画面には最後の形が残る (T0857)。

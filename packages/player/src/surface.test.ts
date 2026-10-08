@@ -6,6 +6,7 @@ import {
   PuppetSurface,
   RESTART_WINDOW_MS,
   RESTORE_TIMEOUT_MS,
+  renderScaleOf,
   type SurfaceHost,
   type SurfacePuppet,
 } from "./surface";
@@ -737,6 +738,92 @@ describe("PuppetSurface", () => {
     expect(pending[3]?.powerPreference).toBe("low-power");
   });
 
+  it("draws a drawing buffer scaled by the render scale", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    const { host: h } = host();
+    const surface = new PuppetSurface(h);
+    expect(surface.renderScale).toBe(1);
+    surface.renderScale = 0.75;
+    surface.resize(200, 100);
+    const attached = surface.attach(container);
+    await settle();
+    expect([pending[0]?.canvas.width, pending[0]?.canvas.height]).toEqual([300, 150]);
+    const { puppet, calls } = fakePuppet();
+    pending[0]?.resolve(puppet);
+    await attached;
+    expect(calls).toEqual(["resize 300x150"]);
+    // CSS ピクセルと描画バッファの画素の換算は倍率を含む。
+    expect(surface.pixelRatio).toBe(1.5);
+    // 1 画素より小さくはしない。
+    surface.renderScale = 0.5;
+    surface.resize(0.2, 0.2);
+    expect(calls.at(-1)).toBe("resize 1x1");
+  });
+
+  it("treats a render scale outside (0, 1] as 1", () => {
+    for (const value of [0, -0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(renderScaleOf(value)).toBe(1);
+    expect(renderScaleOf(0.5)).toBe(0.5);
+    const surface = new PuppetSurface(host().host);
+    surface.renderScale = 0.5;
+    surface.renderScale = Number.NaN;
+    expect(surface.renderScale).toBe(1);
+  });
+
+  it("resizes the drawing buffer and keeps the view when the render scale changes", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    const { host: h } = host();
+    const surface = new PuppetSurface(h);
+    surface.resize(200, 100);
+    const attached = surface.attach(container);
+    await settle();
+    const { puppet, calls } = fakePuppet();
+    pending[0]?.resolve(puppet);
+    await attached;
+    // パンは描画バッファの画素 (CSS ピクセルで 20, -10)。
+    puppet.view = [3, 40, -20];
+    surface.renderScale = 0.5;
+    expect(calls).toEqual(["resize 400x200", "resize 200x100"]);
+    expect(surface.pixelRatio).toBe(1);
+    // CSS ピクセルで同じ場所を見せる (ズームは fit に対する倍率なのでそのまま)。
+    expect(puppet.view).toEqual([3, 20, -10]);
+    // 同じ値なら何もしない。
+    surface.renderScale = 0.5;
+    expect(calls).toHaveLength(2);
+  });
+
+  it("converts the view kept across a recreation with the render scale", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    const views: number[][] = [];
+    const { host: h } = host({
+      created: (puppet) =>
+        void views.push([...(puppet as ReturnType<typeof fakePuppet>["puppet"]).view]),
+    });
+    const surface = new PuppetSurface(h);
+    surface.renderScale = 0.5;
+    surface.resize(200, 100);
+    const attached = surface.attach(container);
+    await settle();
+    const first = fakePuppet();
+    pending[0]?.resolve(first.puppet);
+    await attached;
+    // 描画バッファの画素は CSS ピクセル × 2 × 0.5 = 1 倍。
+    first.puppet.view = [2, 30, 10];
+    first.puppet.lost = true;
+    surface.checkLost();
+    // 作り直す前に倍率が変わっても、CSS ピクセルで同じ場所を見せる。
+    surface.renderScale = 0.75;
+    await settle();
+    const second = fakePuppet();
+    pending[1]?.resolve(second.puppet);
+    await settle();
+    expect(second.calls).toEqual(["resize 300x150"]);
+    expect(views).toEqual([
+      [1, 0, 0],
+      [2, 45, 15],
+    ]);
+  });
+
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {
     const queries: { media: string; target: EventTarget }[] = [];
     vi.stubGlobal("matchMedia", (media: string) => {
@@ -755,9 +842,12 @@ describe("PuppetSurface", () => {
     expect(calls).toEqual(["resize 200x100"]);
     expect(queries.map((q) => q.media)).toEqual(["(resolution: 1dppx)"]);
 
+    // パンは描画バッファの画素。CSS ピクセルで同じ場所を見せるように直す。
+    puppet.view = [2, 10, -6];
     vi.stubGlobal("devicePixelRatio", 2);
     queries[0]?.target.dispatchEvent(new Event("change"));
     expect(calls).toEqual(["resize 200x100", "resize 400x200"]);
+    expect(puppet.view).toEqual([2, 20, -12]);
     expect(surface.pixelRatio).toBe(2);
     expect(log).toEqual(["created", "pixelRatio"]);
     expect(queries.map((q) => q.media)).toEqual(["(resolution: 1dppx)", "(resolution: 2dppx)"]);

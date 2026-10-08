@@ -582,12 +582,7 @@ impl Studio {
     /// シーンが変わった: 受け手と操作ウィンドウに配る。次の刻みのフレームより先に届くよう、指揮役を握ったまま呼ぶ。
     fn send_scene(&self, stage: &Stage, conductor: &Conductor) {
         self.scene_changed_load_failures(conductor.scene().map(|s| s.revision));
-        if let Some(body) = Self::scene_message(conductor) {
-            if let InvokeResponseBody::Json(json) = &body {
-                self.source_scene(json);
-            }
-            self.outputs.send_all(&body);
-        }
+        self.send_receiver_scene(conductor);
         if let Some(camera) = &*lock(&self.camera)
             && let Some(files) = Self::camera_scene(stage, conductor)
         {
@@ -595,6 +590,16 @@ impl Studio {
         }
         if let Some(body) = Self::monitor_scene_message(conductor) {
             self.monitors.send_all(&body);
+        }
+    }
+
+    /// 今のシーンを出力ウィンドウとブラウザソースの受け手に配る (描く解像度の倍率だけが変わったときは、これだけを配り直す)。
+    fn send_receiver_scene(&self, conductor: &Conductor) {
+        if let Some(body) = Self::scene_message(conductor) {
+            if let InvokeResponseBody::Json(json) = &body {
+                self.source_scene(json);
+            }
+            self.outputs.send_all(&body);
         }
     }
 
@@ -624,8 +629,12 @@ impl Studio {
         let loading = stage.loading().map(str::to_owned);
         let snapshot = api::StageSnapshot::of(&stage);
         let result = action(&mut stage, &mut conductor);
+        // 描く解像度の倍率はシーンの通知に載せて配る (変わっても `revision` は上げない。T0858)。
+        let rescaled = conductor.set_render_scale(stage.profile().output.render_scale);
         if conductor.scene().map(|s| s.revision) != before {
             self.send_scene(&stage, &conductor);
+        } else if rescaled {
+            self.send_receiver_scene(&conductor);
         }
         self.api_stage_changed(&snapshot, &api::StageSnapshot::of(&stage));
         // ポーズの変化は `scene.changed`・`dressup.changed` の後に送る (指揮役を握ったまま。刻みに先を越されないように)。
@@ -1537,6 +1546,16 @@ fn output_power_preference(studio: tauri::State<'_, Arc<Studio>>) -> &'static st
     lock(&studio.gpu).launched().web()
 }
 
+/// 出力ウィンドウとブラウザソースの描く解像度の倍率を 1 / 0.75 / 0.5 から選ぶ (プロファイルに持つ。受け手にはシーンの通知で配る。T0858)。
+#[tauri::command]
+fn set_render_scale(studio: tauri::State<'_, Arc<Studio>>, scale: f32) -> Result<(), CommandError> {
+    if !profile::is_render_scale(scale) {
+        return Err(CommandError::unsupported_render_scale(scale));
+    }
+    studio.with_stage(|stage, _| stage.set_render_scale(scale));
+    Ok(())
+}
+
 /// 出力が描画の負荷を報告する (操作ウィンドウに出す。出力ウィンドウには何も重ねない)。
 #[tauri::command]
 fn report_render_stats(
@@ -1945,6 +1964,7 @@ pub fn run() {
             set_output_size,
             tick_rate,
             set_tick_rate,
+            set_render_scale,
             report_render_stats,
             report_load_failure,
             gpu_settings,

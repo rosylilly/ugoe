@@ -33,6 +33,7 @@
     "allow-gpu-settings",
     "allow-set-gpu-preference",
     "allow-open-graphics-settings",
+    "allow-set-render-scale",
     "allow-subscribe-pulse",
     "allow-set-tracking",
     "allow-set-tracking-paused",

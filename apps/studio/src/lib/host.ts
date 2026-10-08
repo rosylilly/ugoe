@@ -154,6 +154,11 @@ export interface StudioScene extends SceneMessage {
    * 要素を含む。T0848)。
    */
   pose: string[];
+  /**
+   * 描く解像度の倍率 (プロファイルの `output.renderScale`。1 / 0.75 / 0.5。T0858)。出力ウィンドウとブラウザソースは Player の
+   * `renderScale` に当てる。変わっても `revision` は上がらない (同じシーンが配り直される)。
+   */
+  renderScale: number;
 }
 
 /** 操作ウィンドウへの通知 (lib.rs の `Monitor`)。 */
@@ -260,6 +265,8 @@ export interface StudioHost {
   setGpuPreference(preference: GpuPreference): Promise<GpuView>;
   /** Windows の「グラフィックの設定」を開く (ほかの OS では例外)。 */
   openGraphicsSettings(): Promise<void>;
+  /** 出力ウィンドウとブラウザソースの描く解像度の倍率を選ぶ (1 / 0.75 / 0.5。プロファイルに持つ。T0858)。選べない値なら例外。 */
+  setRenderScale(scale: number): Promise<void>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
   // 入力 (T0803)
@@ -390,6 +397,7 @@ async function tauriHost(): Promise<StudioHost> {
     gpuSettings: () => invoke("gpu_settings"),
     setGpuPreference: (preference) => invoke("set_gpu_preference", { preference }),
     openGraphicsSettings: () => invoke("open_graphics_settings"),
+    setRenderScale: (scale) => invoke("set_render_scale", { scale }),
     async systemLocale() {
       const { locale } = await import("@tauri-apps/plugin-os");
       return locale();

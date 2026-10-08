@@ -387,6 +387,21 @@ export class Player {
   }
 
   /**
+   * 描画バッファの倍率 (T0858。surface.ts の `renderScale`)。描画バッファを「CSS ピクセル × devicePixelRatio × 倍率」の画素にして描き、
+   * canvas は CSS で表示の大きさに引き伸ばす (小さくすると GPU の描く量が減り、画は粗くなる)。0 より大きく 1 以下で、それ以外は 1。
+   * 変えたら描画バッファの大きさを合わせ直して描き直す (CSS ピクセルで同じ場所を見せる)。既定は 1。
+   */
+  get renderScale(): number {
+    return this.#surface.renderScale;
+  }
+
+  set renderScale(value: number) {
+    const before = this.#surface.renderScale;
+    this.#surface.renderScale = value;
+    if (this.#surface.renderScale !== before) this.#syncView();
+  }
+
+  /**
    * `container` の中に canvas を作り、描画を始める。前に `attach` していれば、先に `detach` する。
    * 待っている間に `detach` か次の `attach` があれば、作った WebPuppet は捨てる。
    */
