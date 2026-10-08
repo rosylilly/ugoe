@@ -109,14 +109,20 @@ function placeSampleProfile() {
   profile.hotkeys = [];
   const path = join(work(), "sample-profile.json");
   writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`);
+  // 見本の印を残した写し (自動の保存で書き換えないことを確かめる。T0866)
+  const template = join(work(), "sample-template.json");
+  writeFileSync(template, `${JSON.stringify({ ...profile, template: true }, null, 2)}\n`);
   const config = join(configHome(), "app.ugoe.studio");
   mkdirSync(config, { recursive: true });
-  writeFileSync(join(config, "recent-profiles.json"), JSON.stringify({ profiles: [path] }));
-  return path;
+  writeFileSync(
+    join(config, "recent-profiles.json"),
+    JSON.stringify({ profiles: [path, template] }),
+  );
+  return { path, template };
 }
 
 describe("studio", () => {
-  const profilePath = placeSampleProfile();
+  const { path: profilePath, template: templatePath } = placeSampleProfile();
   const app = launch({ name: "studio" });
   const names = { chat: "Chat", evening: "Evening (lighting)" };
 
@@ -494,6 +500,26 @@ describe("studio", () => {
     );
     await invoke(s, "open_profile", { path });
     await s.waitFindText(".scenes__item .scenes__name", "Scene 5");
+  });
+
+  step(app, "keeps a sample profile and asks to save a copy (T0866)", async () => {
+    const s = app.session;
+    const before = readFileSync(templatePath, "utf8");
+    await invoke(s, "open_profile", { path: templatePath });
+    await waitFor(() => s.execute(`return __e2e.byText(".studio__saved", "^Sample$") !== null`), {
+      message: "the sample mark",
+    });
+    const add = await s.waitFindText(".scenes__actions button", "Add");
+    await add.click();
+    // 変えると写しの保存に誘う
+    await s.waitFindText("button", "Save a copy");
+    // 自動の保存の待ち (0.8 秒) を過ぎても、見本のファイルは変わらない
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    assert.equal(readFileSync(templatePath, "utf8"), before);
+    await waitFor(() => s.execute(`return __e2e.byText(".studio__saved", "^Sample$") !== null`), {
+      message: "the sample mark after the change",
+    });
+    await invoke(s, "new_profile");
   });
 
   checkNoCspViolations(app);

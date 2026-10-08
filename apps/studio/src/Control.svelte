@@ -38,6 +38,7 @@ import {
   EMPTY_API,
   pendingToShow,
 } from "./lib/api";
+import { Autosave, hasUnsavedChanges, needsSavePath } from "./lib/autosave";
 import { describeError, isSceneError } from "./lib/errors";
 import type {
   FileKind,
@@ -293,7 +294,12 @@ const profileEntries = $derived<MenuEntry[]>([
   { label: t("profile.new"), onselect: () => confirmDiscard(newProfile) },
   { label: t("profile.open"), onselect: () => confirmDiscard(openProfile) },
   { kind: "separator" },
-  { label: t("profile.save"), shortcut: "Mod+S", onselect: () => void saveProfile(false) },
+  {
+    // 書き換えないプロファイル (見本・書けない場所。T0866) の「保存」は写しを保存する
+    label: profile?.readOnly != null ? t("profile.saveCopy") : t("profile.save"),
+    shortcut: "Mod+S",
+    onselect: () => void saveProfile(false),
+  },
   { label: t("profile.saveAs"), onselect: () => void saveProfile(true) },
   { kind: "separator" },
   {
@@ -426,23 +432,20 @@ function onProfile(view: ProfileView) {
   // 別のプロファイルを開いたら、出力ウィンドウの大きさを合わせる。
   const preset = parseOutputSize(view.profile.output.size);
   if (preset !== appliedSize) void applyWindowSize(preset);
-  scheduleAutosave();
+  autosave.schedule(view);
 }
 
 // --- プロファイル ---
 
-let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * 保存先があり変えていれば、少し待ってから保存する。書き換えないプロファイル (見本・書けない場所。T0866) は保存しない
+ * (保存に失敗したら、バックエンドが書き換えないプロファイルにして知らせる。エラーは 1 度だけ出る)。
+ */
+const autosave = new Autosave(() => void run((h) => h.saveProfile()), AUTOSAVE_MS);
 
-/** 保存先があり、変えていれば、少し待ってから保存する。 */
-function scheduleAutosave() {
-  clearTimeout(autosaveTimer);
-  if (profile === null || profile.path === null || !profile.dirty) return;
-  autosaveTimer = setTimeout(() => void run((h) => h.saveProfile()), AUTOSAVE_MS);
-}
-
-/** 保存先の無いプロファイルを変えていれば、捨ててよいか確かめてから `action` を行う。 */
+/** 自動で保存しないプロファイル (保存先が無い・書き換えない) を変えていれば、捨ててよいか確かめてから `action` を行う。 */
 function confirmDiscard(action: () => void) {
-  if (profile !== null && profile.path === null && profile.dirty) discarding = action;
+  if (hasUnsavedChanges(profile)) discarding = action;
   else action();
 }
 
@@ -467,10 +470,10 @@ async function openProfileAt(path: string) {
   }
 }
 
-/** 保存する。`saveAs` か保存先が無ければ、保存先を選ばせる。 */
+/** 保存する。`saveAs` か保存先が無いか書き換えないプロファイルなら、保存先を選ばせる (写しを保存)。 */
 async function saveProfile(saveAs: boolean) {
   let path: string | undefined;
-  if (saveAs || profile?.path == null) {
+  if (needsSavePath(profile, saveAs)) {
     const picked = await run((h) => h.pickSavePath(t("file.profileFilter"), t("file.profileName")));
     if (picked === null || picked === undefined) return;
     path = picked;
@@ -753,7 +756,7 @@ onMount(() => {
   window.addEventListener("keydown", onKey);
   return () => {
     window.removeEventListener("keydown", onKey);
-    clearTimeout(autosaveTimer);
+    autosave.cancel();
     stopMicrophoneSteps?.();
     microphone.stop();
     tracker.stop();
@@ -770,9 +773,16 @@ onMount(() => {
       <!-- 狭い幅では省略するので、全体 (保存先の場所) を title に出す -->
       <span class="studio__profile-name" title={profile?.path ?? profileName}>{profileName}</span>
       {#if profile !== null}
-        <!-- 一度も保存していないプロファイルは、変えていなくても「未保存」(保存済みに見せない。T0818) -->
+        <!-- 一度も保存していないプロファイルは、変えていなくても「未保存」(保存済みに見せない。T0818)。
+             書き換えないプロファイルは「見本」「読み取り専用」(T0866) -->
         <span class="studio__saved" class:studio__saved--dirty={profile.dirty}>
-          {profile.dirty || profile.path === null ? t("profile.unsaved") : t("profile.saved")}
+          {#if profile.readOnly === "template"}
+            {t("profile.template")}
+          {:else if profile.readOnly === "notWritable"}
+            {t("profile.readOnly")}
+          {:else}
+            {profile.dirty || profile.path === null ? t("profile.unsaved") : t("profile.saved")}
+          {/if}
         </span>
       {/if}
     </span>
@@ -800,6 +810,14 @@ onMount(() => {
       {t("profile.unsavedHint")}
       {#snippet actions()}
         <Button small onclick={() => saveProfile(true)}>{t("profile.saveAs")}</Button>
+      {/snippet}
+    </Notice>
+  {:else if profile !== null && profile.readOnly !== null && profile.dirty}
+    <!-- 書き換えないプロファイルを変えたら、写しの保存に誘う (T0866) -->
+    <Notice tone="warning">
+      {profile.readOnly === "template" ? t("profile.templateHint") : t("profile.readOnlyHint")}
+      {#snippet actions()}
+        <Button small onclick={() => saveProfile(true)}>{t("profile.saveCopy")}</Button>
       {/snippet}
     </Notice>
   {/if}

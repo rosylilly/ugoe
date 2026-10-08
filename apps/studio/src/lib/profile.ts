@@ -57,6 +57,8 @@ export interface OutputSettings {
 export interface Profile {
   format: "ugoe-studio-profile";
   version: number;
+  /** 見本の印 (T0866)。印のあるプロファイルは自動で保存しない (`ProfileView.readOnly`)。写しには付けない。 */
+  template?: boolean;
   scenes: SceneSettings[];
   activeScene: string | null;
   output: OutputSettings;
@@ -68,6 +70,9 @@ export interface Profile {
   motion: MotionSettings;
 }
 
+/** 書き換えないプロファイルの訳 (stage.rs の `ReadOnly`)。 */
+export type ReadOnlyReason = "template" | "notWritable";
+
 /** 操作ウィンドウに届くプロファイルの状態 (stage.rs の `ProfileView`)。 */
 export interface ProfileView {
   profile: Profile;
@@ -75,6 +80,11 @@ export interface ProfileView {
   path: string | null;
   /** 保存した後に変えたか。 */
   dirty: boolean;
+  /**
+   * 書き換えないプロファイルなら、その訳 (stage.rs の `ReadOnly`。T0866)。`template` は見本の印、`notWritable` は保存先に書けない。
+   * 自動で保存せず、保存は保存先を選ばせる (写しを保存)。
+   */
+  readOnly: ReadOnlyReason | null;
   /** 指揮役に出しているシーンの ID。 */
   live: string | null;
   /** 最近のプロファイル (新しいものが先頭)。 */

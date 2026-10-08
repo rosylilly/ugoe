@@ -41,6 +41,8 @@ fn check_opens(dir: &Path, name: &str) {
     let text = std::fs::read_to_string(dir.join(name)).unwrap();
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
     let profile = Profile::read(&dir.join(name)).unwrap();
+    // 見本の印があり、開いても自動の保存で書き換えない (docs/studio.md#書き換えないプロファイル、T0866)
+    assert!(profile.template, "{name}");
     // 読むときに落としたもの (範囲の外の値・ぶつかるホットキー) が無い
     assert_eq!(
         profile.scenes.len(),

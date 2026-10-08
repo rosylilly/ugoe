@@ -1,6 +1,7 @@
 {
   "format": "ugoe-studio-profile",
   "version": 1,
+  "template": true,
   "scenes": [
     {
       "id": "chat",

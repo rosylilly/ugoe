@@ -15,11 +15,11 @@ test("/mnt/<ドライブ>/ の下を Windows のパスにし、それ以外は n
   assert.equal(windowsPath("/mnt/wsl/x"), null);
 });
 
-test("見本のモデルとプロファイルを samples/ にそのまま写し、--force が無ければ前のプロファイルを残す", () => {
+test("見本のモデルとプロファイルを samples/ にそのまま写し、前のプロファイルも置き換える", () => {
   const samples = join(import.meta.dirname, "..", "assets", "samples");
   const to = join(mkdtempSync(join(tmpdir(), "check-pack-")), "samples");
   try {
-    packSamples(to, false);
+    packSamples(to);
     for (const name of Object.values(PROFILE_FILES)) {
       // モデルを相対パスで持つので、書き直さずに写す (T0865)
       assert.equal(readFileSync(join(to, name), "utf8"), readFileSync(join(samples, name), "utf8"));
@@ -28,10 +28,9 @@ test("見本のモデルとプロファイルを samples/ にそのまま写し�
     assert.ok(existsSync(join(to, "dress-up", "long-hair.ugoemod")));
 
     const profile = join(to, PROFILE_FILES.ja);
+    // スタジオは見本の印のあるプロファイルを書き換えない (T0866) ので、前のもの (印の無い前の版など) は残さない
     writeFileSync(profile, "edited");
-    packSamples(to, false);
-    assert.equal(readFileSync(profile, "utf8"), "edited");
-    packSamples(to, true);
+    packSamples(to);
     assert.equal(
       readFileSync(profile, "utf8"),
       readFileSync(join(samples, PROFILE_FILES.ja), "utf8"),

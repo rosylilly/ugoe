@@ -1022,8 +1022,9 @@ async fn restore_profile(studio: tauri::State<'_, Arc<Studio>>) -> Result<(), Co
 fn open_profile_at(studio: &Arc<Studio>, path: &Path) -> Result<(), CommandError> {
     // プロファイルとシーンのファイルは舞台のロックの外で読む (T0834。パペットの組み立ても、T0837)。
     let read = Profile::read(path);
+    let writable = profile::is_writable(path);
     let error = studio
-        .with_stage(|stage, conductor| stage.begin_open_profile(path, read, conductor))?
+        .with_stage(|stage, conductor| stage.begin_open_profile(path, read, writable, conductor))?
         .and_then(|pending| match pending {
             Some(pending) => studio.present_with(pending, stage::LOADING),
             None => Ok(()),

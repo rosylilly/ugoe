@@ -3,6 +3,7 @@
 // (`pnpm --filter @ugoe/studio sample-profile [--check]`。T0806・T0865)。
 // 見本のモデル (assets/samples) を使うシーン・ホットキーを持つ。プロファイルは見本のモデルと同じフォルダに置き、モデルを相対パスで持つ
 // (docs/studio.md#プロファイルのパス) ので、コミットしたものをどの機械でもそのまま開ける。手順は docs/manual/studio.md#見本のプロファイル。
+// 見本の印 (`template`) を付けるので、スタジオは開いて変えても自動の保存で書き換えず、写しを保存させる (docs/studio.md#書き換えないプロファイル、T0866)。
 // `--check` は書き出さずに、コミットしたものがここで作るものと同じかを確かめる (違えば 1 で終わる)。
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -57,6 +58,7 @@ export function sampleProfile(lang = "ja") {
   return {
     format: "ugoe-studio-profile",
     version: 1,
+    template: true,
     scenes: [
       scene("chat", names.chat, file("avatar.ugoe")),
       scene("evening", names.evening, file("avatar-lit.ugoe"), { lighting: SUNSET }),
@@ -105,11 +107,13 @@ export function sampleProfile(lang = "ja") {
 /**
  * プロファイルの中のファイルの相対パス (`sampleProfile`) を、`dir` の下の絶対パスに置き換えた写し
  * (見本のモデルのフォルダの外にプロファイルを書くとき。e2e と ui-audit の偽のホスト)。
+ * 写しなので見本の印 (`template`) は外す (スタジオが写しを保存したときと同じ。自動の保存で書き換えてよい)。
  * @param {ReturnType<typeof sampleProfile>} profile
  * @param {string} dir
  */
 export function resolveSampleProfile(profile, dir = SAMPLES_DIR) {
   const copy = structuredClone(profile);
+  delete copy.template;
   const file = (path) => join(dir, ...path.split("/"));
   for (const scene of copy.scenes) {
     scene.model = file(scene.model);

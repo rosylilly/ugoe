@@ -70,6 +70,13 @@ describe("sampleProfile", () => {
     });
   }
 
+  it("marks the samples as templates but not the resolved copies", () => {
+    // スタジオは見本の印のあるプロファイルを自動の保存で書き換えない (docs/studio.md#書き換えないプロファイル、T0866)
+    expect(sampleProfile().template).toBe(true);
+    expect(sampleProfile("en").template).toBe(true);
+    expect(resolveSampleProfile(sampleProfile())).not.toHaveProperty("template");
+  });
+
   it("refers to its own scenes and gives every hotkey a different key", () => {
     const profile = sampleProfile();
     const ids = profile.scenes.map((s) => s.id);

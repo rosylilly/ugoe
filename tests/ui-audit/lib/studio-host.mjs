@@ -145,7 +145,7 @@ export function firstRunMessages(fixture) {
   };
   const profile = { ...fixture.profile, scenes: [scene], activeScene: "scene-1", hotkeys: [] };
   return [
-    { kind: "profile", profile, path: null, dirty: false, live: null, recent: [] },
+    { kind: "profile", profile, path: null, dirty: false, readOnly: null, live: null, recent: [] },
     // 承認したクライアントは無い (前の場面の「取り消す」の知らせを残さない)
     { kind: "api", ...fixture.api },
     {
@@ -207,6 +207,8 @@ export function attentionMessages(fixture) {
         profile,
         path: fixture.path,
         dirty: false,
+        // コミットした見本のプロファイルには見本の印がある (T0866)
+        readOnly: "template",
         live: active.id,
         recent: [fixture.path],
       },
@@ -384,6 +386,8 @@ export function studioPageInit({ osLocale, fixture }) {
         profile,
         path,
         dirty: true,
+        // コミットした見本のプロファイルは見本の印があり、変えると写しの保存に誘う (T0866)
+        readOnly: "template",
         live: active.id,
         recent: [path],
       };

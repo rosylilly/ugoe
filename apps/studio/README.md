@@ -46,6 +46,7 @@ src/lib/status.ts             「いまの状態」の印 (トラッキング・
                               透過が効かないかの判定 (`transparencyLost`。T0846)
 src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)・受け手の API と GPU の名前
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
+src/lib/autosave.ts           自動の保存と、保存先を選ばせるかの決まり (書き換えないプロファイルは自動で保存しない。T0866)
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
 src/lib/api.ts                操作 API とブラウザソースの様子の形 (mod.rs の ApiView・SourceView と同じ)・接続先・ポートの範囲・URL のトークンを伏せる
 src/lib/hotkeys.ts            ホットキーのキーの書き方 (押したキー → `Ctrl+Shift+KeyA`、Kbd の表記)
@@ -96,7 +97,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
     commands.rs                   操作ウィンドウのパネルが呼ぶコマンド
     tests.rs                      接続と操作のテスト (承認・権限・操作・通知・本物の待ち受け・JSON Schema との一致・ブラウザソースの経路と配信)
   tests/follow_match.rs         一致の検査 (ADR 0028 の 10.)
-  tests/sample_profile.rs       見本のプロファイル (assets/samples) を Profile::read で開け、フォルダごと写しても開ける (T0865)
+  tests/sample_profile.rs       見本のプロファイル (assets/samples) を Profile::read で開け、フォルダごと写しても開け、見本の印がある (T0865・T0866)
   tests/virtual_camera_gpu.rs   仮想カメラの画が、物理を有効にした 1 つの Puppet の画と一致する (`just test-gpu`)
   tauri.windows.conf.json       Windows のビルド: 仮想カメラの DLL を作る・NSIS を管理者の権限で入れる
   windows/hooks.nsh             NSIS: 仮想カメラの DLL を入れて regsvr32 で登録する・消す

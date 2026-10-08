@@ -90,10 +90,22 @@ pub struct ProfileView<'a> {
     pub path: Option<&'a Path>,
     /// 保存した後に変えたか。
     pub dirty: bool,
+    /// 書き換えないプロファイルなら、その訳 (T0866)。自動の保存をせず、保存は保存先を選ばせる。
+    pub read_only: Option<ReadOnly>,
     /// 指揮役に出しているシーンの ID。
     pub live: Option<&'a str>,
     /// 最近のプロファイル (新しいものが先頭)。
     pub recent: &'a [PathBuf],
+}
+
+/// 書き換えないプロファイルの訳 (T0866。`docs/studio.md#書き換えないプロファイル`)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReadOnly {
+    /// 見本の印 (`template`) がある。
+    Template,
+    /// 保存先に書けない (開いたときに書けないと分かった・保存に失敗した)。
+    NotWritable,
 }
 
 /// 今のシーンのファイルの中身。
@@ -118,6 +130,7 @@ pub struct Stage {
     profile: Profile,
     path: Option<PathBuf>,
     dirty: bool,
+    read_only: Option<ReadOnly>,
     live: Option<String>,
     assets: Assets,
     recent: RecentProfiles,
@@ -155,6 +168,11 @@ impl Stage {
         self.dirty
     }
 
+    /// 書き換えないプロファイルなら、その訳 (T0866)。
+    pub fn read_only(&self) -> Option<ReadOnly> {
+        self.read_only
+    }
+
     /// 指揮役に出しているシーンの ID。
     pub fn live(&self) -> Option<&str> {
         self.live.as_deref()
@@ -178,6 +196,7 @@ impl Stage {
             profile: &self.profile,
             path: self.path(),
             dirty: self.dirty,
+            read_only: self.read_only,
             live: self.live(),
             recent: self.recent(),
         }
@@ -190,6 +209,7 @@ impl Stage {
         self.profile = Profile::new();
         self.path = None;
         self.dirty = false;
+        self.read_only = None;
         self.live = None;
         self.assets = Assets::default();
         // 読んでいる途中の切り替えは捨てる。
@@ -201,10 +221,13 @@ impl Stage {
     /// 読んだプロファイル `read` (`path` から [`Profile::read`] で、舞台のロックの外で読む) を開き、最後に使ったシーンへの切り替えを始める。
     /// 読めなかったら何も変えない。開けたがシーンを出せなかったときは `Ok(Err(エラー))`
     /// (プロファイルは開いたまま、指揮役は前のシーンのまま)。切り替えを差し込んでも未保存にはならない (`activeScene` のシーンなので)。
+    /// 見本の印があるか、ファイルに書けない (`writable` が偽。[`crate::profile::is_writable`] で、これもロックの外で確かめる) なら、
+    /// 書き換えないプロファイルにする (T0866)。
     pub fn begin_open_profile(
         &mut self,
         path: &Path,
         read: Result<Profile, ProfileError>,
+        writable: bool,
         conductor: &mut Conductor,
     ) -> Result<Result<Option<Pending>, SceneError>, ProfileError> {
         let profile = match read {
@@ -217,6 +240,13 @@ impl Stage {
                 }
                 return Err(e);
             }
+        };
+        self.read_only = if profile.template {
+            Some(ReadOnly::Template)
+        } else if !writable {
+            Some(ReadOnly::NotWritable)
+        } else {
+            None
         };
         self.profile = profile;
         self.path = Some(path.to_owned());
@@ -241,7 +271,8 @@ impl Stage {
         path: &Path,
         conductor: &mut Conductor,
     ) -> Result<Option<SceneError>, ProfileError> {
-        let pending = self.begin_open_profile(path, Profile::read(path), conductor)?;
+        let writable = crate::profile::is_writable(path);
+        let pending = self.begin_open_profile(path, Profile::read(path), writable, conductor)?;
         Ok(pending
             .and_then(|pending| match pending {
                 Some(pending) => self.settle(pending, conductor, LOADING),
@@ -251,11 +282,25 @@ impl Stage {
     }
 
     /// 保存する。`path` を省くと今の保存先 (無ければ `None` を返して何もしない)。保存したら保存先を返す。
+    ///
+    /// 書き換えないプロファイル (T0866) は、`path` を省くと書かずに `None` を返す (自動の保存が来ても元のファイルを書かない)。
+    /// 今の保存先に書けなければ、書き換えないプロファイルにしてエラーを返す (自動の保存が失敗し続けないように。画面は写しを保存させる)。
+    /// 保存したら、保存先が新しいところになり、見本の印を外して自動の保存に戻る。
     pub fn save_profile(&mut self, path: Option<&Path>) -> Result<Option<PathBuf>, ProfileError> {
+        if path.is_none() && self.read_only.is_some() {
+            return Ok(None);
+        }
         let Some(path) = path.map(Path::to_owned).or_else(|| self.path.clone()) else {
             return Ok(None);
         };
-        self.profile.write(&path)?;
+        if let Err(e) = self.profile.write(&path) {
+            if self.path.as_deref() == Some(path.as_path()) {
+                self.read_only = Some(ReadOnly::NotWritable);
+            }
+            return Err(e);
+        }
+        self.profile.template = false;
+        self.read_only = None;
         self.path = Some(path.clone());
         self.dirty = false;
         self.touch_recent(&path);
@@ -1729,6 +1774,101 @@ mod tests {
         assert!(stage.open_profile(&path, &mut conductor).is_err());
         assert!(stage.recent().is_empty());
         assert!(RecentProfiles::read(&recent).profiles.is_empty());
+    }
+
+    /// 見本の印のあるプロファイルは、変えても自動の保存 (`save_profile(None)`) で書き換えない。写しを保存すると、写しが保存先になり、
+    /// 印を外して自動の保存に戻る (T0866)。
+    #[test]
+    fn keeps_template_profiles_and_saves_copies() {
+        let dir = Dir::new();
+        let path = dir.0.path().join("sample.json");
+        let text = r#"{"format": "ugoe-studio-profile", "version": 1, "template": true}"#;
+        std::fs::write(&path, text).unwrap();
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+        assert_eq!(stage.open_profile(&path, &mut conductor).unwrap(), None);
+        assert_eq!(stage.read_only(), Some(ReadOnly::Template));
+        let json = serde_json::to_value(stage.view()).unwrap();
+        assert_eq!(json["readOnly"], "template");
+
+        stage.add_scene("Game");
+        assert!(stage.dirty());
+        assert_eq!(stage.save_profile(None).unwrap(), None);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(stage.dirty());
+
+        let copy = dir.0.path().join("copy.json");
+        assert_eq!(stage.save_profile(Some(&copy)).unwrap(), Some(copy.clone()));
+        assert_eq!(stage.path(), Some(copy.as_path()));
+        assert_eq!(stage.read_only(), None);
+        assert!(!stage.profile().template);
+        // 写しには印を書かない。
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&copy).unwrap()).unwrap();
+        assert!(written.get("template").is_none(), "{written}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+
+        // 写しは自動の保存で書く。
+        stage.add_scene("Chat");
+        assert_eq!(stage.save_profile(None).unwrap(), Some(copy.clone()));
+        assert_eq!(Profile::read(&copy).unwrap().scenes.len(), 2);
+        // 新しいプロファイルは書き換えないプロファイルではない。
+        stage.open_profile(&path, &mut conductor).unwrap();
+        stage.new_profile(&mut conductor);
+        assert_eq!(stage.read_only(), None);
+    }
+
+    /// 書けないプロファイル (読み取り専用のファイル・書けないフォルダ) は自動の保存で書かず、保存に失敗し続けない (T0866)。
+    #[cfg(unix)]
+    #[test]
+    fn stops_saving_profiles_that_cannot_be_written() {
+        use std::os::unix::fs::PermissionsExt;
+        let set_mode = |path: &Path, mode: u32| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        };
+        let dir = Dir::new();
+        let folder = dir.0.path().join("show");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("p.json");
+        Profile::new().write(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut stage = Stage::new(None);
+        let mut conductor = Conductor::new();
+
+        // 読み取り専用のファイルは、開いたときに分かる (フォルダに書けても、置き換えで書き換えない)。
+        set_mode(&path, 0o444);
+        if crate::profile::is_writable(&path) {
+            // 権限を見ない利用者 (root) では確かめられない。
+            set_mode(&path, 0o644);
+            return;
+        }
+        stage.open_profile(&path, &mut conductor).unwrap();
+        assert_eq!(stage.read_only(), Some(ReadOnly::NotWritable));
+        stage.add_scene("Game");
+        assert_eq!(stage.save_profile(None).unwrap(), None);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+
+        // 書けないフォルダは、保存に失敗して分かる。失敗は 1 度だけで、その後は書こうとしない。
+        set_mode(&path, 0o644);
+        stage.open_profile(&path, &mut conductor).unwrap();
+        assert_eq!(stage.read_only(), None);
+        set_mode(&folder, 0o555);
+        stage.add_scene("Game");
+        let failed = stage.save_profile(None);
+        let again = stage.save_profile(None);
+        set_mode(&folder, 0o755);
+        assert!(matches!(failed, Err(ProfileError::Io { .. })), "{failed:?}");
+        assert_eq!(stage.read_only(), Some(ReadOnly::NotWritable));
+        assert_eq!(again.unwrap(), None);
+        assert!(stage.dirty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+
+        // 写しを保存すれば自動の保存に戻る。
+        let copy = dir.0.path().join("copy.json");
+        assert_eq!(stage.save_profile(Some(&copy)).unwrap(), Some(copy.clone()));
+        assert_eq!(stage.read_only(), None);
+        stage.add_scene("Chat");
+        assert_eq!(stage.save_profile(None).unwrap(), Some(copy));
     }
 
     /// プロファイルの隣のモデルは相対パスで保存し、フォルダごと別の場所へ写しても開ける (T0852)。

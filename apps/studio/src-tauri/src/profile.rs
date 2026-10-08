@@ -8,6 +8,9 @@
 //! ファイルのパス (シーンのモデル・モジュール・背景の画像と、ホットキーの着せ替えのモジュール) は、プロファイルのフォルダを
 //! 基準にした相対パスでも持てる (`docs/studio.md#プロファイルのパス`、ADR 0033)。メモリの上では絶対パスに解いて持ち
 //! ([`Profile::read`])、書くときにプロファイルのフォルダの下のものだけを相対パスに戻す ([`Profile::write`])。
+//!
+//! 見本の印 (`template`。T0866) のあるプロファイルは、開いても自動の保存で書き換えない (`docs/studio.md#書き換えないプロファイル`)。
+//! 印は書かない (写しには付けない)。
 
 use std::path::{Component, Path, PathBuf};
 
@@ -44,6 +47,9 @@ pub struct Profile {
     pub format: String,
     /// 版 ([`PROFILE_VERSION`])。
     pub version: u32,
+    /// 見本の印 (T0866)。印のあるプロファイルは自動の保存で書き換えず、保存は保存先を選ばせる。[`Self::write`] は書かない。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub template: bool,
     /// シーンの一覧 (並びは操作ウィンドウの並び)。
     #[serde(default)]
     pub scenes: Vec<SceneSettings>,
@@ -282,6 +288,7 @@ impl Profile {
         Self {
             format: PROFILE_FORMAT.to_owned(),
             version: PROFILE_VERSION,
+            template: false,
             scenes: vec![SceneSettings::new("scene-1".to_owned(), String::new())],
             active_scene: Some("scene-1".to_owned()),
             output: OutputSettings::default(),
@@ -364,10 +371,11 @@ impl Profile {
 
     /// ファイルに書く (一時ファイルに書いてから置き換え、途中で落ちても前のファイルを壊さない。`ugoe_fs::write_atomic`)。
     /// `path` のフォルダ (とその下) にあるファイルは相対パス、外のものは絶対パスで書く ([`relative_path`])。
-    /// 別の場所へ保存すれば、その場所を基準に書き直す。
+    /// 別の場所へ保存すれば、その場所を基準に書き直す。見本の印 (`template`) は書かない (書いたものは見本の写し)。
     pub fn write(&self, path: &Path) -> Result<(), ProfileError> {
         let base = base_dir(path);
         let mut profile = self.clone();
+        profile.template = false;
         profile.map_paths(|p| relative_path(&base, p).map_or_else(|| p.to_owned(), PathBuf::from));
         ugoe_fs::write_atomic(path, profile.to_json().as_bytes()).map_err(|e| ProfileError::Io {
             path: path.to_owned(),
@@ -518,6 +526,14 @@ pub fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
     }
     let channel = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).ok();
     Some([channel(1)?, channel(3)?, channel(5)?])
+}
+
+/// プロファイルのファイル `path` に書けるか (開いたときに確かめる。書く口で開くだけで、中身も更新の時刻も変えない。T0866)。
+///
+/// 読み取り専用のファイル (Unix の権限・Windows の読み取り専用の属性) は書けない。フォルダに書けないことはここでは分からない
+/// (保存は一時ファイルを同じフォルダに書いて置き換えるので、保存に失敗して分かる。`Stage::save_profile`)。
+pub fn is_writable(path: &Path) -> bool {
+    std::fs::OpenOptions::new().write(true).open(path).is_ok()
 }
 
 /// プロファイルのファイル `path` のあるフォルダ (相対パスの基準)。`path` が相対パスなら今のディレクトリから絶対パスにする。
@@ -866,6 +882,26 @@ mod tests {
         many.pose = (0..MAX_POSE_ENTRIES + 5).map(|i| format!("P{i}")).collect();
         many.sanitize();
         assert_eq!(many.pose.len(), MAX_POSE_ENTRIES);
+    }
+
+    /// 見本の印は読むが、書かない (写しには付けない。T0866)。
+    #[test]
+    fn reads_the_template_mark_but_does_not_write_it() {
+        let profile =
+            read(r#"{"format": "ugoe-studio-profile", "version": 1, "template": true}"#).unwrap();
+        assert!(profile.template);
+        assert!(
+            !read(r#"{"format": "ugoe-studio-profile", "version": 1}"#)
+                .unwrap()
+                .template
+        );
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("copy.json");
+        profile.write(&path).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("template"));
+        assert!(!Profile::read(&path).unwrap().template);
+        assert!(is_writable(&path));
+        assert!(!is_writable(&tmp.path().join("missing.json")));
     }
 
     #[test]

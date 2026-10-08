@@ -11,7 +11,8 @@
 //   `ugoe-check` のフォルダーを動かしても開ける。
 // - `fixtures/`: エディタの取り込みの確認に使う PSD (assets/fixtures/character.psd・layers.psd)。
 // - `manual-check.md`: 確認表の写し (結果を書き込んで返してもらう)。
-// 前の一式があっても、見本のプロファイルと確認表の写しは `--force` を付けないと上書きしない (書き込んだ結果を消さないため)。
+// 前の一式があっても、確認表の写しは `--force` を付けないと上書きしない (書き込んだ結果を消さないため)。見本のプロファイルは
+// スタジオが書き換えない (見本の印。T0866) ので、モデルと同じくいつも上書きする。
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
@@ -79,17 +80,17 @@ function writeUnlessExists(path, write, force) {
 }
 
 /**
- * 見本のモデルとモジュール (いつも上書き) と見本のプロファイルを、`to` (`samples/`) にそのまま写す。プロファイルは
- * 開いた後の変更を自動で保存するので、確認表と同じく `force` が無ければ前のものを残す。
+ * 見本のモデルとモジュールと見本のプロファイルを、`to` (`samples/`) にいつも上書きでそのまま写す。見本のプロファイルには
+ * 見本の印があり、スタジオは書き換えない (変更は写しに保存させる。docs/studio.md#書き換えないプロファイル、T0866) ので、
+ * 前のものを残さない (印の無い前の版の見本も置き換える)。
  */
-export function packSamples(to, force) {
+export function packSamples(to) {
   const samplesDir = join(root, "assets", "samples");
   for (const file of filesUnder(samplesDir, [".ugoe", ".ugoemod"])) {
     copy(join(samplesDir, file), join(to, file));
   }
   for (const name of Object.values(PROFILE_FILES)) {
-    const path = join(to, name);
-    writeUnlessExists(path, () => copyFileSync(join(samplesDir, name), path), force);
+    copy(join(samplesDir, name), join(to, name));
   }
 }
 
@@ -131,7 +132,7 @@ function main(argv) {
     );
   }
 
-  packSamples(join(dest, "samples"), force);
+  packSamples(join(dest, "samples"));
   for (const name of ["character.psd", "layers.psd"]) {
     copy(join(root, "assets", "fixtures", name), join(dest, "fixtures", name));
   }
