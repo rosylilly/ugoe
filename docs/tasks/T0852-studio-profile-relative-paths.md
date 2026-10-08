@@ -1,11 +1,11 @@
 ---
 id: T0852
 title: "スタジオ: プロファイルがモデル・モジュール・背景の画像を相対パスでも持てるようにする (ADR 0028 の 4. の見直し。判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0852
 ---
 
 # T0852: スタジオ: プロファイルの相対パス (判断が要る)
