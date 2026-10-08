@@ -7,7 +7,8 @@
 // - 書き換えの操作は何もしない (Promise を返すだけ)。知らないメソッドも何もしない。操作 API の承認・拒否・取り消しだけは、
 //   承認の後の知らせを撮るために様子を変えて送り直す。
 // - 場面を足すために、ページの `window.__uiAuditStudio` に通知を送る口 (`emit`)、負荷の数値を変える口 (`setStatus`)、
-//   出力ウィンドウの様子を変えて送る口 (`setOutput`。透過が効かない画面、T0849) を置く。
+//   出力ウィンドウの様子を変えて送る口 (`setOutput`。透過が効かない画面、T0849)、今の保存先への保存を失敗させる口
+//   (`failSave`。自動の保存の失敗の帯、T0874) を置く。
 //   送る通知の組 (初めて起動した画面・注意の要る状態) は下の `firstRunMessages`・`attentionMessages` で Node の側で作る (T0818)。
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -187,6 +188,50 @@ export function firstRunMessages(fixture) {
   ];
 }
 
+/** 自動の保存の失敗の種類ごとの保存先と OS のエラーの文 (Linux の `std::io::Error` の文。docs/studio.md#保存の失敗の種類)。 */
+const SAVE_FAILURES = {
+  // 一時の失敗 (ディスクが一杯): 保存先と変更を残し、少し待ってもう一度保存する
+  temporary: {
+    path: "/home/ugoe/Documents/ugoe/Streaming",
+    reason: "No space left on device (os error 28)",
+    readOnly: null,
+  },
+  // 書けない場所: 書き換えないプロファイルになり、写しの保存に誘う
+  denied: {
+    path: "/mnt/shared/ugoe/Streaming",
+    reason: "Permission denied (os error 13)",
+    readOnly: "notWritable",
+  },
+};
+
+/**
+ * 自動の保存が失敗する場面 (T0874): 保存先のある自分のプロファイルを変えた通知 (`profile`) と、今の保存先への保存
+ * (`saveProfile()`) が返す失敗 (`failure`。`failSave` に渡す)。エラーは stage.rs の `save_profile` が返す `ProfileError::Io`
+ * (コードは `profile.io`。error.rs)。`kind` は `temporary` (一時の失敗) か `denied` (書けない場所)。
+ */
+export function autosaveFailure(fixture, kind) {
+  const { path: stem, reason, readOnly } = SAVE_FAILURES[kind];
+  const path = `${stem}.${profileExtension()}`;
+  const active =
+    fixture.profile.scenes.find((s) => s.id === fixture.profile.activeScene) ??
+    fixture.profile.scenes[0];
+  return {
+    profile: {
+      kind: "profile",
+      profile: fixture.profile,
+      path,
+      dirty: true,
+      readOnly: null,
+      live: active.id,
+      recent: [path, fixture.path],
+    },
+    failure: {
+      error: { code: "profile.io", args: { path, reason }, message: `${path}: ${reason}` },
+      readOnly,
+    },
+  };
+}
+
 /** 承認を待つクライアント (`attentionMessages` と、承認の後の知らせを撮る場面で使う)。 */
 export const PENDING_CLIENT = { id: "ui-audit-deck", name: "Stream Deck", permission: "control" };
 
@@ -268,6 +313,8 @@ export function studioPageInit({ osLocale, fixture }) {
   let statusPatch = {};
   /** 最後に送ったプロファイルの通知 (ホットキーを変えたら、割り当てを替えて送り直す)。 */
   let lastProfile = null;
+  /** 今の保存先への保存 (`saveProfile()`) の失敗 (`failSave`。`null` なら失敗しない)。 */
+  let saveFailure = null;
   const sendApi = () => {
     listener?.({ kind: "api", ...api });
     return api;
@@ -288,12 +335,23 @@ export function studioPageInit({ osLocale, fixture }) {
       output = { ...output, ...patch };
       listener?.({ kind: "output", ...output });
     },
+    failSave(failure) {
+      saveFailure = failure;
+    },
   };
   const ids = parameters.map((p) => p.id);
   const given = {
     pickFile: async () => null,
     pickSavePath: async () => null,
-    saveProfile: async () => null,
+    async saveProfile(target) {
+      if (target !== undefined || saveFailure === null) return null;
+      // 書けない場所なら、バックエンドは書き換えないプロファイルにして通知を送ってから失敗を返す (stage.rs の save_profile)
+      if (saveFailure.readOnly !== null && lastProfile !== null) {
+        lastProfile = { ...lastProfile, readOnly: saveFailure.readOnly };
+        listener?.(lastProfile);
+      }
+      throw saveFailure.error;
+    },
     addScene: async () => "new-scene",
     duplicateScene: async () => "new-scene",
     moduleSlot: async () => "Hair",

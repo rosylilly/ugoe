@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createEditorHost, editorPageInit, ipcBinding } from "./editor-host.mjs";
 import {
   attentionMessages,
+  autosaveFailure,
   firstRunMessages,
   studioFixture,
   studioPageInit,
@@ -563,6 +564,28 @@ async function treeDragScenes(page, ctx) {
 }
 
 /**
+ * スタジオの自動の保存を失敗させる (T0874): 偽のホストの今の保存先への保存を `kind` の失敗にし (`failSave`)、保存先のある
+ * 変えたプロファイルを送って、`notices` の帯 (トーンと含む文) が出るのを待つ。出なければ場面の失敗にする。
+ */
+async function autosaveFailureScene(page, ctx, kind, notices) {
+  await page.evaluate(
+    ({ profile, failure }) => {
+      window.__uiAuditStudio.failSave(failure);
+      window.__uiAuditStudio.emit(profile);
+    },
+    autosaveFailure(ctx.fixture, kind),
+  );
+  for (const notice of notices) {
+    await page
+      .locator(`.ugoe-notice[data-tone="${notice.tone}"]`, { hasText: notice.text })
+      .waitFor({ timeout: 5000 })
+      .catch(() => {
+        throw new Error(`the ${kind} autosave failure did not show the ${notice.tone} notice`);
+      });
+  }
+}
+
+/**
  * アプリの定義。
  * - `wide`・`narrow`: 広い幅・狭い幅の窓の大きさ (CSS px)。狭い幅は docs/ui.md#そのほか の下限。
  * - `half` (省ける): 画面の半分に置いたときの窓の大きさ。ライトの英語で 1 組だけ撮る (`en-light-half`)。
@@ -876,6 +899,28 @@ export const APPS = {
         .click();
       await page.waitForTimeout(300);
       await ctx.scene("approved", { aria: false });
+
+      // 自動の保存の失敗 (T0874)。保存先のある自分のプロファイルを変え、自動の保存 (変えてから約 0.8 秒) が失敗した帯を待つ。
+      // 前の場面の承認の知らせは閉じる (帯の並びの頭に失敗の帯を置いて撮る)。後から出る帯の閉じるボタンの Tooltip が
+      // 出ないよう、フォーカスとポインタを外す
+      const approved = page.locator('.ugoe-notice[data-tone="success"]');
+      await approved.getByRole("button").last().click();
+      await approved.waitFor({ state: "detached", timeout: 5000 });
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.mouse.move(1, 300);
+      // 一時の失敗 (ディスクが一杯): 閉じられる赤の帯に、エラーと「もう一度自動で保存する」の文
+      await autosaveFailureScene(page, ctx, "temporary", [
+        { tone: "danger", text: text("studio", ctx.lang, "profile.autosaveRetryHint") },
+      ]);
+      await ctx.scene("autosave-error", { errors: true });
+      // 書けない場所: 書き換えないプロファイルになり、赤の帯 (もう一度保存するの文は無い) と写しの保存に誘う帯。
+      // 別の保存先のプロファイルにするので、前の失敗の帯は消えてから出直す
+      await autosaveFailureScene(page, ctx, "denied", [
+        { tone: "danger", text: "Permission denied" },
+        { tone: "warning", text: text("studio", ctx.lang, "profile.readOnlyHint") },
+      ]);
+      await ctx.scene("autosave-denied", { errors: true });
+      await page.evaluate(() => window.__uiAuditStudio.failSave(null));
 
       // 初めて起動した画面 (新しいプロファイル。モデルの無いシーンが 1 つ)
       await page.evaluate((messages) => {

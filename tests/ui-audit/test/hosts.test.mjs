@@ -16,6 +16,7 @@ import { createEditorHost, ipcBinding } from "../lib/editor-host.mjs";
 import { contentType, resolvePath, serve } from "../lib/serve.mjs";
 import {
   attentionMessages,
+  autosaveFailure,
   firstRunMessages,
   hostMethods,
   PENDING_CLIENT,
@@ -191,6 +192,29 @@ test("スタジオの偽のホスト: 初めて起動した画面と注意の要
   assert.ok(status.measuredRate < 60);
   // トラッキングの値が届いていない形 (「—」) も画面に出す (T0863)
   assert.equal(status.trackingWait, null);
+});
+
+test("スタジオの偽のホスト: 自動の保存が失敗する場面のプロファイルとエラー (T0874)", async () => {
+  const { shouldAutosave } = await import(join(root, "apps/studio/src/lib/autosave.ts"));
+  const fixture = await studioFixture("en");
+  const temporary = autosaveFailure(fixture, "temporary");
+  const denied = autosaveFailure(fixture, "denied");
+  for (const { profile, failure } of [temporary, denied]) {
+    // 画面が自動で保存するプロファイル (保存先があり、書き換えないプロファイルでなく、変えた)
+    assert.ok(shouldAutosave(profile), profile.path);
+    assert.ok(profile.path.endsWith(`.${profileExtension()}`));
+    // stage.rs の save_profile が返す ProfileError::Io (error.rs のコード) で、画面のカタログに文言がある
+    assert.equal(failure.error.code, "profile.io");
+    assert.equal(failure.error.args.path, profile.path);
+    for (const lang of ["en", "ja"]) {
+      assert.match(text("studio", lang, "errors.profile.io"), /\{\{path\}\}.*\{\{reason\}\}/);
+    }
+  }
+  // 一時の失敗は保存先と変更を残し、書けない場所は書き換えないプロファイルにする (docs/studio.md#保存の失敗の種類)
+  assert.equal(temporary.failure.readOnly, null);
+  assert.equal(denied.failure.readOnly, "notWritable");
+  // 保存先が違うので、書けない場所の場面に移ると一時の失敗の帯は消えてから出直す (autosave.ts の Autosave)
+  assert.notEqual(temporary.profile.path, denied.profile.path);
 });
 
 test("アプリの定義が使う文言のキーが、英語と日本語のカタログにある", () => {

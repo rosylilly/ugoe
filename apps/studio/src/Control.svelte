@@ -823,10 +823,11 @@ onMount(() => {
     <Notice tone="danger" ondismiss={() => (error = null)}>{error}</Notice>
   {/if}
   {#if autosaveError !== null}
-    <!-- 自動の保存の失敗。一時の失敗なら、もう一度保存することを添える (書けない場所なら下の写しの保存に誘う。T0870) -->
+    <!-- 自動の保存の失敗。一時の失敗なら、もう一度保存することを添える (書けない場所なら下の写しの保存に誘う。T0870)。
+         添える文は段落を分ける (OS のエラーの文に続けると、どこまでがエラーか分からない。T0874) -->
     <Notice tone="danger" ondismiss={() => (autosaveError = null)}>
-      {autosaveError}
-      {#if profile !== null && profile.readOnly === null}{t("profile.autosaveRetryHint")}{/if}
+      <p>{autosaveError}</p>
+      {#if profile !== null && profile.readOnly === null}<p>{t("profile.autosaveRetryHint")}</p>{/if}
     </Notice>
   {/if}
   {#if profile !== null && profile.path === null && profile.dirty}
