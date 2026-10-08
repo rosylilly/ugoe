@@ -51,3 +51,4 @@ Unity (`UgoePuppet.cs` の `upload`) と Godot (`render.rs`) はそれで転送�
 - T0078 で起票した (元の候補: T1402 (C ABI に `ugoe_puppet_changed` を足し、Unity・Godot でも形が変わらないフレームの描画を省く))。
 - M8 の後続 (docs/roadmap.md の M8 の「後続のタスク」)。M8 の完了の条件には含めない。
 - Unity の実機のエディタでの確認は T0443 の手順に任せる (作業者の環境では Unity を動かせない。確かめた範囲をメモに書く)。
+- 判断 (2026-10-08): 利用者が案 A (C ABI に ugoe_puppet_changed を足し、Unity・Godot でも変わらないフレームを省く) を選んだ。
