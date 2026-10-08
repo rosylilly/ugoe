@@ -60,3 +60,4 @@ A。新しいクレートも `unsafe` も増えず、ADR の例外も広げな�
 
 - T0075 で起票した (元: docs/roadmap.md の M8 の「起票していない後続の候補」の「macOS の App Nap を止める (依存か unsafe が要るので利用者の判断)」)。
 - T0856 (承認の OS への知らせ) と同じくスタジオの `src-tauri/Cargo.toml` と Cargo.lock を触りうるので、T0856 はこのタスクの後にする。
+- 判断 (2026-10-08): 利用者が案 A (スタジオのバックエンドから objc2-foundation の beginActivityWithOptions_reason を呼び、起動中ずっと活動を始めたままにする。新しいクレートも unsafe も増やさない) を選んだ。
