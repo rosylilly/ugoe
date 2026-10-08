@@ -1,11 +1,11 @@
 ---
 id: T0872
 title: "スタジオ: トラッキングの値が 1 秒に 1 個より少ないときも促しを寄せ続ける (戻すまでの時間を値の間隔で決める)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0872
 ---
 
 # T0872: スタジオ: 値が 1 秒に 1 個より少ないときも促しを寄せ続ける
