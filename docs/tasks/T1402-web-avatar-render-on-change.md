@@ -1,11 +1,11 @@
 ---
 id: T1402
 title: "@ugoe/runtime: <ugoe-avatar> も、形が変わらない (パラメータが変わらず物理が止まっている) 間は描かない (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [bindings/web, ugoe-wasm, ugoe, docs]
 depends_on: [T1401]
-assignee:
+assignee: claude-worker-T1402
 ---
 
 # T1402: @ugoe/runtime: <ugoe-avatar> は変わったときだけ描く
