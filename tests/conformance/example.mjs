@@ -15,6 +15,8 @@
 // - 2 回開く: 見本のまま (`guarded`。送信を断った回数が 1 以上で、送り先への要求が 0 件) と、見本の包みを外した対照
 //   (`unguarded`。送り先への要求が記録される。テストが送信を見つけられることの確かめ)。対照の要求は Fetch で止めるので、
 //   実際には送らない。
+// - `guarded` の回では、先に「power-preference」の選択を変えて、`<ugoe-avatar>` が作り直され、GPU の名前の表示
+//   (`adapterName`) が新しい値になることも確かめる (T1403)。
 
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -242,6 +244,12 @@ async function check(evaluate, mode, usageLogRequests) {
   await waitFor("the example to be ready", 60_000, () =>
     evaluate("window.ugoeExample?.ready || null"),
   );
+  let powerPreference;
+  if (mode === "guarded") {
+    powerPreference = await checkPowerPreference(evaluate);
+    if (!powerPreference.ok)
+      return { ok: false, reason: `power-preference: ${powerPreference.reason}`, powerPreference };
+  }
   // 「camera (MediaPipe)」: Face Landmarker を作り (createFromOptions)、偽のカメラの映像を調べ始める
   await evaluate('document.getElementById("camera").click()');
   const camera = await waitFor("the camera to start", 120_000, () =>
@@ -268,6 +276,7 @@ async function check(evaluate, mode, usageLogRequests) {
     return {
       ok: refused === 0,
       reason: refused === 0 ? undefined : "the guard was not removed",
+      powerPreference,
       usageLogsRefused: refused,
       cameraFrames: frames,
     };
@@ -285,8 +294,49 @@ async function check(evaluate, mode, usageLogRequests) {
     reason: ok
       ? undefined
       : `requests to ${USAGE_LOG_HOST} reached the network: ${usageLogRequests.join(", ")}`,
+    powerPreference,
     usageLogsRefused: refused,
     cameraFrames: frames,
+  };
+}
+
+/**
+ * 「power-preference」の選択を `high-performance` に変えると、`<ugoe-avatar>` が作り直して `load` を送り、`window.ugoeExample.element`
+ * と画面の表示 (`#adapter`) が新しい値 (希望と、文字列の `adapterName`) になることを確かめる (T1403)。
+ */
+async function checkPowerPreference(evaluate) {
+  // 最初の読み込み (既定の `default`) を待つ
+  const before = await waitFor("the first load of <ugoe-avatar>", 60_000, () =>
+    evaluate("window.ugoeExample.element"),
+  );
+  if (before.powerPreference !== "default")
+    return { ok: false, reason: `the first load used ${before.powerPreference}`, before };
+  await evaluate(`(() => {
+    const select = document.getElementById("power-preference");
+    select.value = "high-performance";
+    select.dispatchEvent(new Event("change"));
+  })()`);
+  const after = await waitFor("the reload after changing power-preference", 60_000, () =>
+    evaluate(`(() => {
+      const { element } = window.ugoeExample;
+      const text = document.getElementById("adapter").textContent;
+      return element?.powerPreference === "high-performance" && text.includes("high-performance")
+        ? { ...element, parameters: undefined, text }
+        : null;
+    })()`),
+  );
+  const ok = typeof after.adapterName === "string" && after.text.includes(after.adapterName);
+  return {
+    ok,
+    reason: ok
+      ? undefined
+      : `adapterName ${JSON.stringify(after.adapterName)} is not shown: ${after.text}`,
+    before: { powerPreference: before.powerPreference, adapterName: before.adapterName },
+    after: {
+      powerPreference: after.powerPreference,
+      adapterName: after.adapterName,
+      text: after.text,
+    },
   };
 }
 

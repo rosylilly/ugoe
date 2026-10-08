@@ -684,12 +684,17 @@ npm start          # http://localhost:8080/ (?backend=webgl2 で WebGL2 に固�
 パッケージを作り直したら、`rm -rf node_modules package-lock.json && npm install` で入れ直します
 (npm は同じ名前の tarball の中身の変化を見ないため)。
 
-`<ugoe-avatar>` (属性・スライダーからの `setParameter`・表情とモーションの切り替え・`backend` の切り替え・合成の入力とカメラのトラッキング) と、
-`createPuppet` で canvas に直接描く例を並べています。モデルはリポジトリの `assets/samples/` (MIT) を配ります。
-URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU の失敗を ([上](#webgpu-と-webgl2)) 変えられます。
+`<ugoe-avatar>` (属性・スライダーからの `setParameter`・表情とモーションの切り替え・`backend` と `power-preference` の切り替え・
+合成の入力とカメラのトラッキング) と、`createPuppet` で canvas に直接描く例を並べています。モデルはリポジトリの `assets/samples/` (MIT) を配ります。
+URL の `?src=` で `<ugoe-avatar>` のモデルを、`?simulate=` で WebGPU の失敗を ([上](#webgpu-と-webgl2))、`?power-preference=` で両方の例の
+GPU の電力の希望 ([上](#gpu-の電力の希望)。選択肢に無い値は `default`) を変えられます。
+
+「power-preference」の選択 (`default`・`low-power`・`high-performance`) を変えると `<ugoe-avatar>` は新しい canvas で作り直し、その下に
+今の GPU の名前 (`adapterName`。ブラウザが伏せると「伏せています」) と描画の API (`webgpu`・`webgl2`) と希望を出します (作り直した後の
+`load` で新しい値になります)。2 つの GPU を持つ機械で、希望によって GPU が変わるかを手で試せます (効くかはブラウザと OS が決めます)。
 
 ヘッドレスのブラウザで確かめるために、見本はページの状態を `window.ugoeExample` に置きます (`version`・`<ugoe-avatar>` の `load` の結果の
-`element`・低い層の例の `plain`・`errors`・トラッキングの `cameraFrames` や `usageLogsRefused` など)。`ready` は、操作の処理
+`element` (`backend`・`powerPreference`・`adapterName` など)・低い層の例の `plain`・`errors`・トラッキングの `cameraFrames` や `usageLogsRefused` など)。`ready` は、操作の処理
 (バックエンドの選択・チェックボックス・係数の欄) をすべて付け、`<ugoe-avatar>` を登録した後に `true` になる印です。自動のテスト
 (`just conformance --only example`) はこれを待ってから操作します (モデルの読み込みは待たない。読み込みの完了は `element` で分かります)。
 

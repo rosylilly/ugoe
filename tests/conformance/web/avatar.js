@@ -1,7 +1,7 @@
 // 適合テストの `<ugoe-avatar>` (npm パッケージ @ugoe/runtime の要素) の実行器 (tests/conformance/README.md、T0440)。
 //
 // run.mjs のサーバーが配るページで動く。本物の wasm とヘッドレスの Chrome の WebGL2 (SwiftShader) で、要素の作成・読み込み・
-// 切り離しと再接続・`backend` の変更・WebGL2 のコンテキストの喪失からの作り直し (復元の時間切れ・作れないときの試し直しと
+// 切り離しと再接続・`backend` と `power-preference` の変更・WebGL2 のコンテキストの喪失からの作り直し (復元の時間切れ・作れないときの試し直しと
 // 諦め)・GPU プロセスの喪失からの作り直しを、シナリオごとに確かめる。
 // 順序は bindings/web/src/avatar.test.ts が偽物で確かめているので、ここでは本物の GPU と wasm でも通ることを見る。
 //
@@ -44,8 +44,11 @@ let creating = 0;
  * `CreateError` (`context_unavailable`) で失敗する (T0475)。GPU が戻らずに作り直しで作れない場面の代わり。
  */
 let loseContextsBeforeCreate = 0;
+/** `WebPuppet.create` に渡った GPU の電力の希望 (3 つ目の引数) を呼んだ順に並べたもの (T1403)。 */
+const powerPreferences = [];
 const create = WebPuppet.create;
 WebPuppet.create = async function (...args) {
+  powerPreferences.push(args[2]);
   if (loseContextsBeforeCreate > 0) {
     loseContextsBeforeCreate--;
     loseContextOf(args[0]);
@@ -134,6 +137,20 @@ async function expectLive(n, when) {
   // 作成が終わった後の `free` (要素の `#start` の続き) を待つ
   await sleep(100);
   check(live.size === n, `${when}: ${live.size} WebPuppet(s) alive, expected ${n}`);
+}
+
+/** `console.warn` に出た文を `stop()` まで集める。 */
+function recordWarnings() {
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args.map(String).join(" "));
+    warn.apply(console, args);
+  };
+  warnings.stop = () => {
+    console.warn = warn;
+  };
+  return warnings;
 }
 
 function avatar(attributes) {
@@ -666,6 +683,106 @@ const scenarios = {
     check(el.backend === "webgl2", `backend is ${el.backend}`);
     await expectLive(1, "after changing backend while fetching");
     await expectDrawn(el, "after changing backend while fetching");
+    el.remove();
+    await expectLive(0, "after removing");
+  },
+
+  /**
+   * `power-preference` を変えると、新しい canvas で作り直してその希望を `WebPuppet.create` に渡し、モデルとパラメータの値を
+   * 引き継いで描く。`adapterName` は作り直した後も文字列 (ブラウザが伏せれば `""`)。解釈した値が変わらない書き換え
+   * (大文字小文字・知らない値 ↔ `default`) では作り直さない (T1403)。ヘッドレスの Chrome では希望によらず同じアダプタでよい。
+   */
+  async "power-preference-change"() {
+    const el = avatar({ backend: "webgl2", src: MODEL_A, "power-preference": "low-power" });
+    const loaded = once(el, "load");
+    powerPreferences.length = 0;
+    document.body.append(el);
+    await loaded;
+    check(
+      powerPreferences.at(-1) === "low-power",
+      `created with ${powerPreferences.at(-1)}, expected low-power`,
+    );
+    check(el.powerPreference === "low-power", `powerPreference is ${el.powerPreference}`);
+    check(typeof el.adapterName === "string", `adapterName is ${el.adapterName}`);
+    await log(`power-preference-change: low-power drew on "${el.adapterName}" (${el.backend})`);
+    const [id, value] = pickParameter(el);
+    check(el.setParameter(id, value), `setParameter(${id}) failed`);
+    await expectDrawn(el, "with low-power");
+    const events = recordEvents(el);
+
+    // 属性とプロパティで変えると作り直す
+    for (const [how, next, change] of [
+      [
+        "attribute",
+        "high-performance",
+        () => el.setAttribute("power-preference", "high-performance"),
+      ],
+      ["property", "default", () => (el.powerPreference = "default")],
+    ]) {
+      const old = canvasOf(el);
+      const oldPuppet = el.puppet;
+      const created = powerPreferences.length;
+      const reloaded = once(el, "load", `the reload after setting ${next} (${how})`);
+      change();
+      await reloaded;
+      check(el.powerPreference === next, `${how}: powerPreference is ${el.powerPreference}`);
+      check(
+        powerPreferences.length === created + 1 && powerPreferences.at(-1) === next,
+        `${how}: created with [${powerPreferences.slice(created)}], expected [${next}]`,
+      );
+      check(canvasOf(el) !== old, `${how}: the canvas was not replaced`);
+      check(!old.isConnected, `${how}: the old canvas is still in the shadow root`);
+      check(el.puppet !== oldPuppet, `${how}: the puppet was not recreated`);
+      check(signature(el) === signatures.a, `${how}: a different model after ${next}`);
+      const got = el.getParameter(id);
+      check(
+        Math.abs(got - value) < 1e-6,
+        `${how}: ${id} is ${got} after ${next}, expected ${value}`,
+      );
+      check(typeof el.adapterName === "string", `${how}: adapterName is ${el.adapterName}`);
+      await log(`power-preference-change: ${next} drew on "${el.adapterName}" (${el.backend})`);
+      await expectDrawn(el, `after ${next} (${how})`);
+      await expectLive(1, `after ${next} (${how})`);
+    }
+
+    // 解釈した値が変わらない書き換えでは作り直さない (知らない値は default として 1 度だけ警告する)
+    const warnings = recordWarnings();
+    try {
+      for (const [from, to] of [
+        ["default", "Bogus"],
+        ["Bogus", "DEFAULT"],
+        ["DEFAULT", " default "],
+      ]) {
+        const canvas = canvasOf(el);
+        const puppet = el.puppet;
+        const created = powerPreferences.length;
+        let loads = 0;
+        const onLoad = () => loads++;
+        el.addEventListener("load", onLoad);
+        el.setAttribute("power-preference", to);
+        await frames(5);
+        await expectLive(1, `after ${from} -> ${to}`);
+        el.removeEventListener("load", onLoad);
+        check(powerPreferences.length === created, `${from} -> ${to}: WebPuppet.create was called`);
+        check(el.puppet === puppet && canvasOf(el) === canvas, `${from} -> ${to}: recreated`);
+        check(loads === 0, `${from} -> ${to}: load was sent ${loads} times`);
+        check(
+          el.powerPreference === "default",
+          `${from} -> ${to}: powerPreference is ${el.powerPreference}`,
+        );
+      }
+    } finally {
+      warnings.stop();
+    }
+    const unknown = warnings.filter((w) => w.includes("unknown power-preference"));
+    check(
+      unknown.length === 1 && unknown[0].includes('"Bogus"'),
+      `unknown power-preference warnings: ${JSON.stringify(unknown)}`,
+    );
+    events.stop();
+    check(events.errors.length === 0, `error: ${events.errors.map((e) => e.message).join("; ")}`);
+    check(events.gpulost === 0, `gpulost was sent ${events.gpulost} times`);
+    await expectDrawn(el, "after the rewrites that keep the preference");
     el.remove();
     await expectLive(0, "after removing");
   },

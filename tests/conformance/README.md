@@ -12,7 +12,7 @@
 | wasm (npm パッケージ `@ugoe/runtime`、`wasm` と `wasm-webgpu`) | C ABI と同じすべての値 (`drawable_positions`・`drawable_states_json`・`render_order`) | あり (ヘッドレスの Chrome の WebGL2 と WebGPU。`read_pixels` で読み戻す) | [`web/runner.js`](web/runner.js) |
 | `<ugoe-avatar>` (npm パッケージ `@ugoe/runtime` の要素、`avatar`) | 参照とは比べない。シナリオ (下の「`<ugoe-avatar>` のシナリオ」) の成否を見る | 要素の canvas に描いたか (背景でない画素があるか)。ヘッドレスの Chrome の WebGL2 | [`web/avatar.js`](web/avatar.js) |
 | 問い合わせの JSON (npm パッケージ `@ugoe/runtime` の `*_json()`、`queries`) | 参照とは比べない。出力のキーを、パッケージの型のキーの一覧と比べる (下の「問い合わせの JSON のキー」) | なし (ヘッドレスの Chrome の WebGL2 で `WebPuppet` を作るだけ) | [`web/queries.js`](web/queries.js) |
-| 見本の MediaPipe の利用状況の送信 (`bindings/web/examples/basic`、`example`) | 参照とは比べない。「camera (MediaPipe)」で Face Landmarker を作った後に、送り先 (`odml.pa.googleapis.com`) への要求がネットワークに出ないか (下の「見本の MediaPipe の利用状況の送信」) | なし (ヘッドレスの Chrome の WebGL2 と偽のカメラ) | [`example.mjs`](example.mjs) |
+| 見本の MediaPipe の利用状況の送信 (`bindings/web/examples/basic`、`example`) | 参照とは比べない。「camera (MediaPipe)」で Face Landmarker を作った後に、送り先 (`odml.pa.googleapis.com`) への要求がネットワークに出ないか (下の「見本の MediaPipe の利用状況の送信」)。その前に「power-preference」の選択で作り直して GPU の名前の表示が変わるか | なし (ヘッドレスの Chrome の WebGL2 と偽のカメラ) | [`example.mjs`](example.mjs) |
 | Unity (`bindings/unity` の Unity に依存しない C# の層 `Runtime/Core`、`unity`) | C ABI と同じすべての値。テクスチャを持つバンドルのケースはテクスチャのデコードの結果 (`textures`) も | なし (描画は Unity が要る) | [`unity/Program.cs`](unity/Program.cs) (dotnet) |
 | Godot (`bindings/godot`、`godot`) | C ABI と同じすべての値 (ノードの `get_drawable_positions`・`get_drawable_state`・`get_render_order` で読み戻す) | あり (Compatibility (OpenGL)。`--godot-renderer forward_plus` で Forward+ (RenderingDevice の Vulkan。GPU が無ければ lavapipe)。画面が無ければ Xvfb) | [`bindings/godot/example/tests/conformance.gd`](../../bindings/godot/example/tests/conformance.gd) |
 
@@ -218,6 +218,7 @@ T0420 で Godot の評価の結果の読み戻しとモデルの JSON の読み�
 | `detach-while-creating` | 作成中に外して戻すのを繰り返しても、`WebPuppet` は 1 つだけ残り、canvas も 1 つで、描く。外したまま作成が終わっても残らない |
 | `detach-while-fetching` | 新しい `src` の取得中に外して戻すと、前のモデルではなく新しい `src` を読んで描く |
 | `backend-change` | `backend` を変えると作り直してパラメータの値を引き継ぐ (`auto` はこの Chrome では WebGPU のアダプタが無く、同じ canvas の WebGL2 で描く)。取得中・作成中に続けて変えても、`WebPuppet` は 1 つで新しい `src` を描く |
+| `power-preference-change` | `power-preference` を属性 (`low-power` → `high-performance`) とプロパティ (`powerPreference = "default"`) で変えると、そのたびに新しい canvas で作り直してその希望を `WebPuppet.create` の 3 つ目の引数に渡し、モデルとパラメータの値を引き継いで描く。`adapterName` は作り直した後も文字列 (ブラウザが伏せれば `""`)。解釈した値が変わらない書き換え (`default` → `Bogus` → `DEFAULT` → ` default `) では作り直さず `load` も送らず、知らない値の警告は 1 度だけ。ヘッドレスの Chrome では希望によらず同じアダプタ (SwiftShader) になる (T1403) |
 | `gpu-process-crash` | 描いている間に GPU プロセスが落ちると、WebGL2 のコンテキストの喪失として `gpulost` を送って復元を待ち、新しい canvas で作り直して (`load`)、`ready` がその `WebPuppet` で解決し、モデルと値が戻って描く。`error` は送らない。2 回続けて行う (T0484) |
 | `gpu-process-crash-during-create` | 要素を付けると同時に時機をずらして (0〜500 ミリ秒後に) GPU プロセスを落とす。wasm は panic せず、要素は作り直して描くか、コードを持つ例外 (`CreateError`・`LoadError`・`RenderError`) の `error` を送って止まる。止まったら `restart()` で作り直して描く。8 回行い、どう終わったかを数えてログに書く (T0484) |
 
@@ -308,6 +309,10 @@ Face Landmarker を作った (`FaceLandmarker.createFromOptions` の) 後に、M
   - `unguarded` (対照): `refuseMediaPipeUsageLog()` は `fetch` がすでに包んだものなら何もしないので、ページを開く前に `fetch` に包んだ印
     (`refusesMediaPipeUsageLog`) を付けて包みを外し、送り先への要求が記録されることを確かめる (このテストが送信を見つけられることの確かめ)。
     要求は Fetch で止める (`BlockedByClient`) ので、実際には Google に送らない (手元では 1 回の送信で 2 件記録された)。
+- **GPU の電力の希望 (T1403):** `guarded` の回では、「camera (MediaPipe)」を押す前に、`<ugoe-avatar>` の最初の読み込み
+  (`window.ugoeExample.element` の `powerPreference` が `default`) を待ってから「power-preference」の選択を `high-performance` に変え、
+  作り直した後の `load` で `element.powerPreference` と画面の表示 (`#adapter`) が `high-performance` になり、表示に `adapterName` が出ることを確かめる
+  (結果は `example.json` の `guarded.powerPreference`)。ヘッドレスの Chrome では前後で同じアダプタ (SwiftShader) になる。
 - 見本の `refuseMediaPipeUsageLog()` の呼び出しを外すと `guarded` が落ちる (T0487 で確かめた)。
 - `@mediapipe/tasks-vision` の版を上げて送り方が変わったこと (送信の経路・間隔) は、packages/face-tracking の
   `mediapipe-bundle.test.ts` (T0947) が見る。ここでは `guarded` で断った回数が 0 のまま 20 秒たつと落ちる。

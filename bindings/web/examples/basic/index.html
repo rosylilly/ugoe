@@ -63,6 +63,7 @@
       .coefficients input {
         width: 56px;
       }
+      #adapter,
       #filter-stats {
         font-size: 12px;
         color: #555;
@@ -102,6 +103,14 @@
               <option value="webgl2">webgl2</option>
             </select>
           </label>
+          <label style="display: flex">
+            power-preference
+            <select id="power-preference">
+              <option value="default">default</option>
+              <option value="low-power">low-power</option>
+              <option value="high-performance">high-performance</option>
+            </select>
+          </label>
           <label style="display: flex"><input type="checkbox" id="paused" /> paused</label>
           <label style="display: flex"><input type="checkbox" id="tracking" /> tracking (合成の入力)</label>
           <label style="display: flex"><input type="checkbox" id="camera" /> camera (MediaPipe)</label>
@@ -113,6 +122,8 @@
           <label>表情 minCutoff <input id="blend-min-cutoff" type="number" step="0.1" min="0" value="1" /></label>
           <label>表情 beta <input id="blend-beta" type="number" step="0.1" min="0" value="2" /></label>
         </div>
+        <!-- 今の GPU (adapterName) と描画の API。power-preference を変えると作り直され、新しい値になる -->
+        <p id="adapter"></p>
         <p id="filter-stats"></p>
         <video id="video" muted playsinline hidden></video>
         <div class="row">
@@ -146,6 +157,10 @@
 
       const query = new URLSearchParams(location.search);
       const backend = query.get("backend") ?? "auto";
+      // GPU の電力の希望 (?power-preference=low-power など。README の「GPU の電力の希望」)。<ugoe-avatar> は画面の選択でも変えられる
+      // (createPuppet は知らない値を受け付けないので、選択肢に無い値は default にする)
+      const powerPreferences = ["default", "low-power", "high-performance"];
+      const powerPreference = powerPreferences.find((p) => p === query.get("power-preference")) ?? "default";
       const avatar = document.getElementById("avatar");
       // ?src=samples/dress-up/dress-up.ugoe などでモデルを変える
       if (query.get("src")) avatar.setAttribute("src", query.get("src"));
@@ -174,6 +189,13 @@
       avatar.setAttribute("backend", backend);
       backendSelect.addEventListener("change", () =>
         avatar.setAttribute("backend", backendSelect.value),
+      );
+      // 希望は作るときにしか効かないので、変えると要素が新しい canvas で作り直す (終わると `load` が届き、下の表示が新しい値になる)
+      const powerSelect = document.getElementById("power-preference");
+      avatar.setAttribute("power-preference", powerPreference);
+      powerSelect.value = powerPreference;
+      powerSelect.addEventListener("change", () =>
+        avatar.setAttribute("power-preference", powerSelect.value),
       );
       document
         .getElementById("paused")
@@ -391,7 +413,17 @@
 
       avatar.addEventListener("load", (e) => {
         const { backend, warnings } = e.detail;
-        result.element = { backend, warnings, parameters: avatar.parameters };
+        // adapterName はブラウザが GPU の名前を伏せると空文字列
+        const adapterName = avatar.adapterName;
+        result.element = {
+          backend,
+          powerPreference: avatar.powerPreference,
+          adapterName,
+          warnings,
+          parameters: avatar.parameters,
+        };
+        document.getElementById("adapter").textContent =
+          `GPU: ${adapterName || "(ブラウザが伏せています)"} (${backend}、power-preference: ${avatar.powerPreference})`;
         status.textContent = `ugoe ${result.version}: <ugoe-avatar> は ${backend} で描画中 (警告 ${warnings.length} 件)`;
         fillSelect("expression", avatar.puppet.expression_names(), "expression");
         fillSelect("motion", avatar.puppet.motion_names(), "motion");
@@ -414,7 +446,7 @@
         canvas.height = canvas.clientHeight * dpr;
         let puppet;
         try {
-          puppet = await createPuppet(canvas, { backend });
+          puppet = await createPuppet(canvas, { backend, powerPreference });
         } catch (e) {
           if (backend !== "auto") throw e;
           // 1 つの canvas は WebGPU と WebGL2 を併用できないので、新しい canvas の WebGL2 で作り直す
@@ -424,7 +456,7 @@
           canvas = fresh;
           canvas.width = canvas.clientWidth * dpr;
           canvas.height = canvas.clientHeight * dpr;
-          puppet = await createPuppet(canvas, { backend: "webgl2" });
+          puppet = await createPuppet(canvas, { backend: "webgl2", powerPreference });
         }
         const warnings = await fetchModel(puppet, "samples/dress-up/dress-up.ugoe");
         puppet.set_parameter("AngleX", -15);
@@ -436,7 +468,7 @@
           requestAnimationFrame(frame);
         };
         requestAnimationFrame(frame);
-        result.plain = { backend: puppet.backend(), warnings };
+        result.plain = { backend: puppet.backend(), adapterName: puppet.adapter_name(), warnings };
       }
       startPlain().catch((e) => {
         result.errors.push(String(e));
