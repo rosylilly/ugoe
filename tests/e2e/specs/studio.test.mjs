@@ -38,6 +38,48 @@ function freePort() {
   });
 }
 
+/** 重い検出の下でトラッキングを流す長さ (ミリ秒)。 */
+const TRACKING_MS = 13_000;
+/** 「トラッキングの待ち」を読み始める時刻 (トラッキングを始めてから。見る値が 10 個そろう約 5 秒の後)。 */
+const WAIT_FROM_MS = 6_000;
+/** 「フレームレートと負荷」の「トラッキングの待ち」の文 (値が届いているとき)。平均・最大・遅れた割合・余裕を読む。 */
+const TRACKING_WAIT = /^Average (.+) ms, max (.+) ms, (.+)% missed their tick, margin (.+) ms$/;
+
+/**
+ * 「トラッキングの待ち」の文から数を読む。読めない (値が無い・余裕が無い・文の形が違う) ときは数を null にする。
+ * @param {string | null} text
+ */
+function parseTrackingWait(text) {
+  const m = text === null ? null : TRACKING_WAIT.exec(text);
+  const num = (v) => {
+    const n = Number(v.replaceAll(",", ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  return m
+    ? { meanMs: num(m[1]), maxMs: num(m[2]), latePercent: num(m[3]), marginMs: num(m[4]) }
+    : { meanMs: null, maxMs: null, latePercent: null, marginMs: null };
+}
+
+/**
+ * 集めた「トラッキングの待ち」のまとめ: 読めた回数・読めなかった回数 (その約 1 秒に値が届かなかった「—」など)・
+ * 遅れた割合の平均と最大・待ちの平均の平均・最大の最大。
+ * 表示に値の数は出ないので、割合は各回の割合をそのまま平均する (各回の値の数はほぼ同じ)。
+ * @param {ReturnType<typeof parseTrackingWait>[]} waits
+ */
+function summarizeTrackingWaits(waits) {
+  const read = waits.filter((w) => w.latePercent !== null);
+  const mean = (xs) => (xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const round = (v) => (v === null ? null : Math.round(v * 100) / 100);
+  return {
+    samples: read.length,
+    unread: waits.length - read.length,
+    meanLatePercent: round(mean(read.map((w) => w.latePercent))),
+    maxLatePercent: read.length > 0 ? Math.max(...read.map((w) => w.latePercent)) : null,
+    meanMeanMs: round(mean(read.map((w) => w.meanMs))),
+    maxMaxMs: read.length > 0 ? Math.max(...read.map((w) => w.maxMs)) : null,
+  };
+}
+
 /** 操作ウィンドウの、今の放送中のシーンの名前。 */
 function liveScene(session) {
   return session.execute(`
@@ -291,34 +333,7 @@ describe("studio", () => {
     "tracking under heavy detection reaches the control and the output (T0812)",
     async () => {
       const s = app.session;
-      await countInvokes(s, ["set_tracking"]);
-      // MediaPipe の検出 1 回 (WSL2 の WebKitGTK で約 200ms) を模す
-      await startFakeTracking(s, { costMs: 200, seconds: 6 });
-      const angleX = [];
-      const started = Date.now();
-      while (Date.now() - started < 10_000) {
-        angleX.push(await s.execute(`return __e2e.sliderValue("^Angle ?X( |$)")`));
-        await new Promise((r) => setTimeout(r, 250));
-      }
-      const stats = await invokeStats(s);
-      const tracker = await trackerState(s);
-      const done = stats.done.set_tracking ?? 0;
-      const p50 = percentile(stats.latency.set_tracking ?? [], 0.5);
-      const report = { done, errors: stats.errors.set_tracking ?? 0, p50, tracker, angleX };
-      writeFileSync(
-        join(process.env.E2E_OUT, "tracking.json"),
-        `${JSON.stringify(report, null, 2)}\n`,
-      );
-      assert.equal(tracker.status, "running", JSON.stringify(tracker));
-      // 直す前は 50 秒で 3 回しか届かず、応答に何秒もかかった (docs/tasks/T0812)
-      assert.ok(done >= 10, `set_tracking reached the backend only ${done} times in 10 s`);
-      assert.ok(p50 !== null && p50 < 1000, `set_tracking took ${p50} ms (p50)`);
-      const seen = angleX.filter((v) => v !== null);
-      assert.ok(seen.length > 0, "no AngleX slider in the control window");
-      const spread = Math.max(...seen) - Math.min(...seen);
-      assert.ok(spread > 5, `AngleX in the control window moved only ${spread}`);
-
-      // 「フレームレートと負荷」に、値が届いてから刻みで使われるまでの待ちと今の余裕が出る (届いていない間の「—」ではない。T0863・T0867)
+      // 「フレームレートと負荷」の「トラッキングの待ち」を手順の間に読むので、先に開いておく (T0871)
       const trigger = await s.waitFind('[data-panel="load"] .ugoe-section__trigger');
       const wasOpen = (await trigger.attribute("aria-expanded")) === "true";
       if (!wasOpen) await trigger.click();
@@ -329,16 +344,64 @@ describe("studio", () => {
           );
           return dt?.nextElementSibling?.textContent.trim() ?? null;
         });
-      await waitFor(
-        async () =>
-          /^Average .+ ms, max .+ ms, .+% missed their tick, margin .+ ms$/.test(
-            await trackingWait(),
-          ),
-        {
-          timeout: 5_000,
-          message: "the tracking wait in the load panel",
-        },
-      ).catch(async (e) => {
+
+      await countInvokes(s, ["set_tracking"]);
+      // MediaPipe の検出 1 回 (WSL2 の WebKitGTK で約 200ms) を模す
+      await startFakeTracking(s, { costMs: 200, seconds: 6 });
+      const angleX = [];
+      // 「トラッキングの待ち」は直近の約 1 秒 (検出 200 ms では値 2〜3 個) の集計で、1 つ遅れるだけで 0〜67% と揺れる。
+      // 前と後を比べられるよう、見る値が 10 個そろう (docs/studio.md#入力 の「見る値の数」) 約 5 秒の後から、
+      // 約 1 秒ごとに読んで残す。表示は約 1 秒ごとに変わるので、前に読んだものと同じ文なら同じ集計として数えない (T0871)
+      const waits = [];
+      const started = Date.now();
+      let nextWait = started + WAIT_FROM_MS;
+      while (Date.now() - started < TRACKING_MS) {
+        angleX.push(await s.execute(`return __e2e.sliderValue("^Angle ?X( |$)")`));
+        if (Date.now() >= nextWait) {
+          nextWait = Math.max(nextWait + 1_000, Date.now());
+          const text = await trackingWait();
+          if (text !== waits.at(-1)?.text) {
+            waits.push({ atMs: Date.now() - started, text, ...parseTrackingWait(text) });
+          }
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const elapsed = Date.now() - started;
+      const stats = await invokeStats(s);
+      const tracker = await trackerState(s);
+      const done = stats.done.set_tracking ?? 0;
+      const p50 = percentile(stats.latency.set_tracking ?? [], 0.5);
+      const report = {
+        done,
+        errors: stats.errors.set_tracking ?? 0,
+        p50,
+        tracker,
+        angleX,
+        trackingWaits: waits,
+        trackingWaitSummary: summarizeTrackingWaits(waits),
+      };
+      writeFileSync(
+        join(process.env.E2E_OUT, "tracking.json"),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+      assert.equal(tracker.status, "running", JSON.stringify(tracker));
+      // 直す前は 50 秒で 3 回しか届かず、応答に何秒もかかった (docs/tasks/T0812)
+      assert.ok(done >= 10, `set_tracking reached the backend only ${done} times in ${elapsed} ms`);
+      assert.ok(p50 !== null && p50 < 1000, `set_tracking took ${p50} ms (p50)`);
+      const seen = angleX.filter((v) => v !== null);
+      assert.ok(seen.length > 0, "no AngleX slider in the control window");
+      const spread = Math.max(...seen) - Math.min(...seen);
+      assert.ok(spread > 5, `AngleX in the control window moved only ${spread}`);
+
+      // 「フレームレートと負荷」に、値が届いてから刻みで使われるまでの待ちと今の余裕が出る (届いていない間の「—」ではない。T0863・T0867)。
+      // 判定は表示が出ることだけで、集めた割合・待ちの値では落とさない。値は計算機の重さとスリープの遅れで決まり
+      // (同じコードでも 1 回の表示が 0〜67%、数秒の平均も回ごとに揺れる。docs/tasks/T0868・T0871 のメモ)、
+      // 閾値を決めても揺れで落ちるか、緩くて回帰を捕まえないかのどちらかになる。値の良し悪しは pacing.rs の仮の時刻のテストで決め、
+      // ここでは tracking.json に残して前と後を見比べる
+      await waitFor(async () => TRACKING_WAIT.test(await trackingWait()), {
+        timeout: 5_000,
+        message: "the tracking wait in the load panel",
+      }).catch(async (e) => {
         throw new Error(`${e.message}: ${JSON.stringify(await trackingWait())}`);
       });
       // 測った待ちも残す (実機の値と比べるため)
