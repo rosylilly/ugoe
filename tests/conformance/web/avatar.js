@@ -252,8 +252,10 @@ async function expectDrawn(el, when) {
     if (puppet) {
       puppet.render = () => {
         delete puppet.render; // 1 回だけ写し、元のメソッドに戻す
-        puppet.render();
-        drawn = readCanvas(canvasOf(el));
+        // 描かずに返った (サーフェスを作り直した・時間切れ。T0983) ときは写さない。要素は次のフレームで描き直す。
+        const result = puppet.render();
+        if (result) drawn = readCanvas(canvasOf(el));
+        return result;
       };
     }
     el.requestRender();

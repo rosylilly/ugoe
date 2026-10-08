@@ -462,7 +462,9 @@ export class ViewportController {
     // (WebGL2 はコンテキストの復元を待つ)。
     if (!puppet || this.#surface.checkLost()) return;
     try {
-      puppet.render();
+      // サーフェスを作り直した・時間切れで描かずに返ったら、次のフレームで描き直す (T0983。プレビューの形の変化は
+      // `shape_changed` が下りずに残るので、先に描き直したフレームで下りる)。
+      if (!puppet.render()) this.requestRender();
       this.#updateTransform();
     } catch (e) {
       if (this.#surface.checkLost()) return;

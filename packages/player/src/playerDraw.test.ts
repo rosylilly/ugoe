@@ -100,6 +100,26 @@ describe("Player draws only when the shape or the look changed (T0982)", () => {
     }
   });
 
+  // wasm の `render` はサーフェスを作り直した・時間切れのときに描かずに返る。見せ方の印を残して次のフレームで描く (T0983)。
+  it("draws again on the next frame when render returned without drawing", async () => {
+    const { p, state } = await ready({ parameters });
+    await p.load(model);
+    const drew = frames(state);
+    drew();
+    expect(drew()).toBe(false);
+    for (const [what, change] of [
+      ["zoom", () => p.zoomBy(2)],
+      ["parameter", () => p.setParameter("AngleX", 0.5)],
+    ] as const) {
+      state.skipRenders = 1;
+      change();
+      expect(drew(), what).toBe(false);
+      expect(state.skipRenders, what).toBe(0);
+      expect(drew(), `${what} (next frame)`).toBe(true);
+      expect(drew(), `${what} (again)`).toBe(false);
+    }
+  });
+
   it("draws after the device pixel ratio changes", async () => {
     const queries: EventTarget[] = [];
     globalThis.matchMedia = () => {

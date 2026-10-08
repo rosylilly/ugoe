@@ -85,8 +85,13 @@ export function fakePuppet(options: FakeOptions = {}) {
     shapeChanged: true,
     /** `update` のたびに形が動くか (モーション・物理が動いている。偽なら止まったモデル)。 */
     moving: false,
-    /** `render` を呼んだ回数。 */
+    /** `render` で描いた回数 (描かずに返った回は数えない)。 */
     renders: 0,
+    /**
+     * この回数だけ、次からの `render` が描かずに `false` を返す (wasm がサーフェスを作り直した・時間切れのとき。T0983)。
+     * そのときは `shapeChanged` を下ろさず、ログには `render (not drawn)` を残す。
+     */
+    skipRenders: 0,
   };
   /** 失った WebPuppet の読み込み・着せ替えの例外 (ugoe-wasm の `LoadError`・`DressUpError` と同じ形)。 */
   const checkLost = (name: "LoadError" | "DressUpError") => {
@@ -284,10 +289,16 @@ export function fakePuppet(options: FakeOptions = {}) {
       const value = first === undefined ? 0 : (state.values.get(first.id) ?? 0);
       return new Uint8Array([Math.round((value + 1) * 100), 0, 0, 255]);
     },
-    render: () => {
+    render: (): boolean => {
+      if (state.skipRenders > 0) {
+        state.skipRenders--;
+        log.push("render (not drawn)");
+        return false;
+      }
       state.shapeChanged = false;
       state.renders++;
       log.push("render");
+      return true;
     },
     follow: (
       values: Float32Array,

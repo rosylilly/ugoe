@@ -85,7 +85,9 @@ puppet.clear_tracking();
 
 ```js
 puppet.update(dt);
-if (puppet.shape_changed() || viewChanged) puppet.render(); // 形も見せ方も変わらなければ描かない
+if (puppet.shape_changed() || viewChanged) {
+  viewChanged = !puppet.render(); // 形も見せ方も変わらなければ描かない。描けなければ次のフレームで描く
+}
 ```
 
 - `shape_changed()` は、前の `render` の後にモデルの形 (評価の出力) が見て分かるほど変わったか。`update`・`follow` のたびの
@@ -93,7 +95,10 @@ if (puppet.shape_changed() || viewChanged) puppet.render(); // 形も見せ方�
   `Puppet::changed` は「最後に変わったと報告した出力」と比べるので、報告を見て描かなかったフレームを `WebPuppet` が覚えておく。
 - パラメータを書き換えて評価を待っているとき (`set_parameter`・`reset_parameters` など) と、モデルを読み込んだ・外した後も `true`。
 - 見せ方 (描画先の大きさ・ビュー・背景・光源・テクスチャ・着せ替え) の変化は含まない。変えたフレームはホストが描く。
-- `render` が描けなかった (サーフェスを作り直した・時間切れ) ときは下ろさない (次の `render` で描く)。
+- `render` は描けたかを返す (T0983)。描けなかった (`false`。サーフェスを作り直した `Outdated`・`Lost`、時間切れの `Timeout`、
+  隠れている `Occluded`) ときは `shape_changed` を下ろさず、canvas には前の画が残る。ホストは見せ方の変化の印も下ろさずに残し、
+  次のフレームでもう一度 `render` を呼ぶ (下ろすと、形も見せ方も変わらない限り古い画が残る)。GPU を失ったとき (`device_lost`) と
+  描画の失敗は `false` でなく例外。
 - `<ugoe-avatar>` の描画のループ ([bindings/web/README.md](../../bindings/web/README.md#描画のループ)) と、`@ugoe/player` の
   ビューアのループ (packages/player/README.md。T0982)・エディタのプレビュー (docs/editor.md#プレビューモード) はこれで描くのを省く。
   スタジオの受け手は新しいフレームか見せ方の変化があったときだけ描く (T0857) ので、これは見ない。

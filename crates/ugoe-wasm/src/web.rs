@@ -625,8 +625,11 @@ impl WebPuppet {
         }
     }
 
-    /// 現在の状態を canvas に描く。GPU を失った (`is_lost()`) 後は、`code` が `device_lost` の `RenderError` を投げる (T0465)。
-    pub fn render(&mut self) -> Result<(), JsValue> {
+    /// 現在の状態を canvas に描き、描けたかを返す。GPU を失った (`is_lost()`) 後は、`code` が `device_lost` の `RenderError` を投げる (T0465)。
+    ///
+    /// サーフェスを作り直した (`Outdated`・`Lost`)・時間切れ (`Timeout`)・隠れている (`Occluded`) ときは描かずに `false` を返す。
+    /// canvas には前の画が残るので、ホストは見せ方の変化を覚えたままにし、次のフレームでもう一度呼ぶ。`shape_changed` も下ろさない (T0983)。
+    pub fn render(&mut self) -> Result<bool, JsValue> {
         if self.is_lost() {
             return Err(frame_error(FrameError::DeviceLost));
         }
@@ -637,10 +640,10 @@ impl WebPuppet {
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 // 作り直して次のフレームで描く。
                 self.surface.configure(&self.device, &self.config);
-                return Ok(());
+                return Ok(false);
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
+                return Ok(false);
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 return Err(JsError::new("failed to acquire the canvas texture").into());
@@ -683,7 +686,7 @@ impl WebPuppet {
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
         self.shape_changed = false;
-        result.map_err(|e| js_error(e).into())
+        result.map(|()| true).map_err(|e| js_error(e).into())
     }
 
     // --- ビュー (docs/editor.md#ビューポート) ---

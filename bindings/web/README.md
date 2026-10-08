@@ -149,6 +149,10 @@ avatar.clearTracking();
 - **見せ方の変化は要素が知っている。** `puppet` を直接操作して見せ方を変えた (ビュー・背景・光源・テクスチャ・着せ替えなど) ときは、
   今までどおり `requestRender()` を呼びます。パラメータを直接書いたとき (`puppet.set_parameter`) は `shape_changed()` が `true` に
   なるので描きますが、呼んでも構いません。
+- **描けなかったフレームは次のフレームで描き直す (T0983)。** `render()` は描けたかを返し、サーフェスを作り直したときや時間切れの
+  ときは描かずに `false` を返します。要素はそのとき描き直しの印を残し、次のフレームでもう一度 `render()` を呼びます
+  (形の変化は `shape_changed()` が `true` のまま残る)。自分のループで描くときも、見せ方の変化の印は `render()` が `true` を
+  返してから下ろします。
 - 利用者の操作は要りません (描く回数が減るだけ)。
 - canvas を `drawImage`・`toDataURL` で写すときは注意します。描画バッファは描いた直後 (同じタスク) にしか読めず
   (`preserveDrawingBuffer: false`)、描かなかったフレームの後に写すと空になります。画を取り出すなら `puppet.read_pixels()` を使うか、
@@ -318,7 +322,8 @@ requestAnimationFrame(function frame(now) {
   if (puppet.is_lost()) return; // GPU を失った (WebGL2 のコンテキストの喪失を含む)。新しい canvas で作り直す
   puppet.update(Math.min((now - last) / 1000, 0.1));
   last = now;
-  // 形が変わったときだけ描く。見せ方 (大きさ・ビュー・背景・光源) を変えたフレームは自分で描く (下の「描画のループ」)
+  // 形が変わったときだけ描く。見せ方 (大きさ・ビュー・背景・光源) を変えたフレームは自分で描く (下の「描画のループ」)。
+  // 描けなかった (`render()` が false) ときは shape_changed() が true のまま残り、次のフレームで描く
   if (puppet.shape_changed()) puppet.render();
   requestAnimationFrame(frame);
 });

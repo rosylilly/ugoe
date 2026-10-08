@@ -56,7 +56,7 @@ function fakePuppet() {
   const puppet = {
     lost: false,
     is_lost: () => puppet.lost,
-    render() {},
+    render: () => true,
     free: () => calls.push("free"),
     backend: () => "webgl2",
     set_background() {},
@@ -485,6 +485,7 @@ describe("ViewportController", () => {
         render() {
           renders++;
           changed = false;
+          return true;
         },
       });
       pending[0]?.resolve(puppet);
@@ -515,6 +516,54 @@ describe("ViewportController", () => {
       expect(controller.animationFrame).toBeGreaterThan(frame);
       moving = true;
       expect(tick()).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // wasm の `render` はサーフェスを作り直した・時間切れのときに描かずに返る。次のフレームで描き直す (T0983)。
+  it("draws again on the next frame when render returned without drawing", async () => {
+    let frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      const { puppet } = fakePuppet();
+      /** `render` の結果 (描いたか) を呼んだ順に残す。 */
+      const results: boolean[] = [];
+      let skip = 0;
+      Object.assign(puppet, {
+        render() {
+          const drawn = skip === 0;
+          if (!drawn) skip--;
+          results.push(drawn);
+          return drawn;
+        },
+      });
+      pending[0]?.resolve(puppet);
+      await attached;
+      /** 待っている `requestAnimationFrame` を 1 回分流す。 */
+      const tick = () => {
+        const run = frames;
+        frames = [];
+        for (const callback of run) callback(0);
+      };
+      tick();
+      results.length = 0;
+      // 見せ方を変えた (ビューを動かした) フレームで描けなかった。
+      skip = 1;
+      controller.requestRender();
+      tick();
+      expect(results).toEqual([false]);
+      tick();
+      expect(results).toEqual([false, true]);
+      tick();
+      expect(results).toEqual([false, true]);
     } finally {
       vi.unstubAllGlobals();
     }

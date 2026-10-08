@@ -81,7 +81,7 @@ export interface WebPuppet extends TrackingPuppet {
   width(): number;
   height(): number;
   set_background(r: number, g: number, b: number, a: number): void;
-  render(): void;
+  render(): boolean;
   read_pixels(): Promise<Uint8Array>;
 
   fit(): void;

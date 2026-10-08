@@ -948,7 +948,8 @@ export class UgoeAvatarElement extends BaseElement {
     this.#needsRender = false;
     if (draw) {
       try {
-        puppet.render();
+        // サーフェスを作り直した・時間切れで描かずに返ったら、次のフレームで描き直す (T0983)。
+        if (!puppet.render()) this.#needsRender = true;
       } catch (e) {
         if (puppet.is_lost()) {
           this.#onLost();

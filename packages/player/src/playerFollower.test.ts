@@ -266,6 +266,32 @@ describe("Player follower mode", () => {
     expect(stats.map((s) => s.at)).toEqual(stats.map((_, i) => i * 7));
   });
 
+  it("draws again on the next frame when render returned without drawing (T0983)", async () => {
+    const stats: FollowRenderStats[] = [];
+    const { p, log, state } = await ready();
+    p.startFollowing((s) => stats.push(s));
+    await p.load(first);
+    p.followScene(1);
+    let now = 0;
+    const drew = (): boolean => {
+      const before = log.filter((l) => l === "render").length;
+      step(now);
+      now += 7;
+      return log.filter((l) => l === "render").length > before;
+    };
+    drew();
+    expect(drew()).toBe(false);
+    // wasm の `render` がサーフェスを作り直して描かずに返った。次のフレームで描く。
+    state.skipRenders = 1;
+    p.pushFrame(followFrame(1, 1, 1));
+    expect(drew()).toBe(false);
+    expect(log.at(-1)).toBe("render (not drawn)");
+    expect(drew()).toBe(true);
+    expect(drew()).toBe(false);
+    // 描かずに返った回は描いた回として報告しない。
+    expect(stats.map((s) => s.drawn)).toEqual([true, false, false, true, false]);
+  });
+
   it("draws after the WebPuppet is recreated even without a new frame (T0857)", async () => {
     const p = player();
     p.startFollowing();

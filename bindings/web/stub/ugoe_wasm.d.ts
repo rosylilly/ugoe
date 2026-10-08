@@ -98,7 +98,7 @@ export class WebPuppet {
   pose_json(): string | undefined;
   pose_visible_json(): string | undefined;
   read_pixels(): Promise<Uint8Array>;
-  render(): void;
+  render(): boolean;
   render_order(): Uint32Array;
   reset_parameters(): void;
   reset_physics(): void;

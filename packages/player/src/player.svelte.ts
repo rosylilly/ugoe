@@ -1419,11 +1419,13 @@ export class Player {
       if (puppet.has_model()) this.#follow(puppet, follower);
     } else if (puppet.has_model()) this.#advance(puppet, dt);
     // 前に描いてから何も変わっていなければ描かない (canvas には前に描いた画が残る。印の決め方は `#dirty`)。
-    const draw = this.#dirty || (follower === null && puppet.shape_changed());
-    if (draw) {
+    let drawn = false;
+    if (this.#dirty || (follower === null && puppet.shape_changed())) {
       this.#dirty = false;
       try {
-        puppet.render();
+        // サーフェスを作り直した・時間切れで描かずに返ったら、印を残して次のフレームで描く (T0983)。
+        drawn = puppet.render();
+        if (!drawn) this.#dirty = true;
       } catch (e) {
         const text = message(e);
         if (this.error !== text) this.error = text;
@@ -1431,9 +1433,9 @@ export class Player {
     }
     // 描かなかった回も知らせる (描く回数を数える側が、時間の経過を知れるように)。
     if (this.#onFollowRender !== null) {
-      const renderMs = draw ? this.#followMs + performance.now() - started : 0;
-      if (draw) this.#followMs = 0;
-      this.#onFollowRender({ at: now, drawn: draw, renderMs, dropped: this.#droppedFrames });
+      const renderMs = drawn ? this.#followMs + performance.now() - started : 0;
+      if (drawn) this.#followMs = 0;
+      this.#onFollowRender({ at: now, drawn, renderMs, dropped: this.#droppedFrames });
     }
   };
 

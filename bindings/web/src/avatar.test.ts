@@ -59,9 +59,16 @@ class FakePuppet {
   shape_changed() {
     return this.shapeChanged;
   }
+  /** この回数だけ、次からの `render` が描かずに `false` を返す (サーフェスを作り直した・時間切れ。T0983)。 */
+  skipRenders = 0;
   render() {
+    if (this.skipRenders > 0) {
+      this.skipRenders--;
+      return false;
+    }
     this.renders++;
     this.shapeChanged = false;
+    return true;
   }
   unload() {
     this.model = null;
@@ -914,6 +921,21 @@ describe("<ugoe-avatar>", () => {
       const entry = { contentRect: { width: 200, height: 100 } } as ResizeObserverEntry;
       (observed as ResizeObserverCallback | null)?.([entry], {} as ResizeObserver);
       await frames(puppet, 2);
+      expect(puppet.renders).toBe(renders + 1);
+    });
+
+    // wasm の `render` はサーフェスを作り直した・時間切れのときに描かずに返る。次のフレームで描き直す (T0983)。
+    it("draws again on the next frame when render returned without drawing", async () => {
+      const { avatar, puppet } = await loadedAvatar();
+      avatar.paused = true;
+      await flush();
+      const renders = puppet.renders;
+      puppet.skipRenders = 1;
+      avatar.requestRender();
+      await flush();
+      expect(puppet.skipRenders).toBe(0);
+      expect(puppet.renders).toBe(renders + 1);
+      await flush();
       expect(puppet.renders).toBe(renders + 1);
     });
 
