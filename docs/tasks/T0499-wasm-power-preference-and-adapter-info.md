@@ -1,11 +1,11 @@
 ---
 id: T0499
 title: "ugoe-wasm: WebPuppet.create で GPU の電力の希望 (powerPreference) を渡せるようにし、使っているアダプタの名前を返す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-wasm, packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0499
 ---
 
 # T0499: ugoe-wasm: powerPreference とアダプタの情報
