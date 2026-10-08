@@ -50,3 +50,4 @@ ugoe-wasm の `WebPuppet.create` は GPU の電力の希望 (`power_preference`:
 - T0077 で起票した (元の候補: T0499 と T0076 (`@ugoe/runtime` の `createPuppet` と `<ugoe-avatar>` に `powerPreference` を足す))。同じ候補なので 1 つにした。
 - M8 の後続 (docs/roadmap.md の M8 の「後続のタスク」)。M8 の完了の条件には含めない。
 - 効くかはブラウザと OS が決める (Windows の Chromium は WebGPU の希望を無視する、など)。2 つの GPU の実機では確かめられない。
+- 判断 (2026-10-08): 利用者が推奨の形 (名前は powerPreference / power-preference、作った後に変えたら作り直す、adapterName を足す、知らない値は default として警告) を選んだ。

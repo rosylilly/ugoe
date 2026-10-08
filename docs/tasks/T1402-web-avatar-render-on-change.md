@@ -54,3 +54,4 @@ assignee:
 - M8 の後続 (docs/roadmap.md の M8 の「後続のタスク」)。M8 の完了の条件には含めない。
 - T1401 と同じ avatar.ts を触るので、T1401 の後にした。T1400 も ugoe-wasm を触るが、足す場所 (`@internal` の問い合わせと評価の口) が別なので依存は付けていない。
 - WebGPU・WebGL2 の canvas は、描かなければ前の画を出し続ける (T0857 のメモ)。
+- 判断 (2026-10-08): 利用者が案 A (ugoe の Puppet に前の update から変わったかを返す口を足し、wasm にも出す) を選んだ。
