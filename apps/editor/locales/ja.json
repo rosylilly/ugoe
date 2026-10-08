@@ -1431,6 +1431,109 @@
       "clear": {
         "label": "やめる",
         "tooltip": "強調をやめる"
+      },
+      "line": {
+        "name": "名前: {{before}} → {{after}}",
+        "slot": "スロット: {{before}} → {{after}}",
+        "elements": "{{what}}: {{before}} → {{after}} ({{details}})",
+        "textures": "テクスチャ: {{before}} → {{after}} ({{details}})",
+        "avatarLevel": "条件のアバタープロファイルのレベル: {{before}} → {{after}}",
+        "names": "{{what}}: {{details}}",
+        "poseOrder": "ポーズ: グループの並びが違います",
+        "unmatchedAtlas": "ファイルのテクスチャのアトラスに、今の編集のテクスチャと対応づけられないメッシュがあるので、変わったものとして数えます"
+      },
+      "elements": {
+        "part": "パーツ",
+        "deformer": "デフォーマ",
+        "mesh": "メッシュ",
+        "glue": "グルー",
+        "physics_rig": "物理のリグ",
+        "collider": "衝突体",
+        "pose_group": "ポーズのグループ",
+        "pose_follow": "ポーズの追従"
+      },
+      "names": {
+        "required_slots": "条件のスロット",
+        "required_parameters": "条件のパラメータ",
+        "parameters_used": "使うパラメータ"
+      },
+      "details": {
+        "added": "足した: {{ids}}",
+        "removed": "除いた: {{ids}}",
+        "changed": "変えた: {{ids}}",
+        "differentImage": "画像が違う: {{ids}}",
+        "separator": "; "
+      },
+      "state": {
+        "added": "足した",
+        "removed": "除いた"
+      },
+      "change": {
+        "separator": "; ",
+        "none": "なし",
+        "name": "名前 {{before}} → {{after}}",
+        "part": "パーツ {{before}} → {{after}}",
+        "parent": "親 {{before}} → {{after}}",
+        "type": "種類 {{before}} → {{after}}",
+        "grid": "格子 {{beforeCols}}×{{beforeRows}} → {{afterCols}}×{{afterRows}}",
+        "texture": "テクスチャ {{before}} → {{after}}",
+        "count": "{{what}} {{before}} → {{after}}",
+        "drawOrder": "描画順 {{before}} → {{after}}",
+        "glueMeshes": "両端のメッシュ {{beforeA}} + {{beforeB}} → {{afterA}} + {{afterB}}",
+        "colliders": "衝突体 ({{details}})",
+        "frame": "座標系の基準 {{before}} → {{after}}",
+        "attach": "取り付け先 {{before}} → {{after}}",
+        "shape": "形 {{before}} → {{after}}",
+        "radius": "半径 {{before}} → {{after}}",
+        "entries": "要素 {{before}} → {{after}}",
+        "links": "リンク ({{details}})",
+        "linksOf": "{{entry}} のリンク ({{details}})",
+        "linksReordered": "リンクの並び",
+        "linksOfReordered": "{{entry}} のリンクの並び",
+        "inKeyforms_other": "{{count}} 個のキーフォームの{{what}}",
+        "keyform_parameters": "キーフォームのパラメータ",
+        "blend_shapes": "ブレンドシェイプ",
+        "keyform_settings": "キーフォームの設定",
+        "triangles": "三角形",
+        "normalization": "正規化",
+        "position": "位置",
+        "blending_or_masks": "合成かマスク",
+        "other_settings": "ほかの設定",
+        "counted": {
+          "keyforms": "キーフォームの数",
+          "vertices": "頂点の数",
+          "triangles": "三角形の数",
+          "vertex_pairs": "頂点の組の数",
+          "particles": "粒子の数",
+          "inputs": "入力の数",
+          "outputs": "出力の数"
+        },
+        "changed": {
+          "uvs_other": "{{count}} 個の頂点の UV",
+          "vertex_pairs_other": "{{count}} 組の頂点",
+          "particles_other": "{{count}} 個の粒子の設定",
+          "inputs_other": "{{count}} 個の入力",
+          "outputs_other": "{{count}} 個の出力"
+        },
+        "keyformValue": {
+          "opacity": "不透明度",
+          "control_points": "制御点",
+          "origin_or_angle": "原点か角度",
+          "intensity": "強さ",
+          "vertex_positions": "頂点の位置",
+          "draw_order": "描画順",
+          "opacity_or_colors": "不透明度か色"
+        },
+        "deformerType": {
+          "warp": "ワープ",
+          "rotation": "回転",
+          "unknown": "不明"
+        },
+        "shapeType": {
+          "circle": "円",
+          "capsule": "カプセル",
+          "unknown": "不明"
+        }
       }
     },
     "dressUp": {

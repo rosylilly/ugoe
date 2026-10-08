@@ -11,7 +11,10 @@ use ugoe_model::physics::ColliderShape;
 use ugoe_model::pose::{PoseEntry, PoseGroup};
 use ugoe_model::{Glue, KeyformGrid, Module, Part, TextureRef};
 
-use crate::module_compare::{DifferenceKind, ModuleDifference};
+use crate::module_compare::{
+    ChangedItems, CountedItems, DifferenceKind, DifferenceLine, ElementChange, ItemState,
+    KeyformValue, ModuleDifference, NameList,
+};
 use crate::module_project::{ModuleBase, ModuleContext};
 use crate::texture::{Textures, encode_rgba_png, solid_png};
 use crate::{
@@ -109,16 +112,23 @@ fn differences_list_elements_textures_and_requirements() {
     changed
         .textures
         .insert(texture.clone(), Arc::from(solid_png(2, 2, [9, 9, 9, 255])));
-    let lines = texts(&compare_with_module_file(&changed, &bytes).unwrap());
+    let lines = lines(&compare_with_module_file(&changed, &bytes).unwrap());
     assert!(
-        lines.contains(&"Required slots: added: Outfit".to_owned()),
+        lines.contains(&DifferenceLine::Names {
+            what: NameList::RequiredSlots,
+            added: strings(&["Outfit"]),
+            removed: Vec::new(),
+        }),
         "{lines:?}"
     );
     assert!(
-        lines.contains(&format!(
-            "Textures: 1 → 1 (different image: {})",
-            long_hair_module().textures[0].name
-        )),
+        lines.contains(&DifferenceLine::Textures {
+            before: 1,
+            after: 1,
+            added: Vec::new(),
+            removed: Vec::new(),
+            changed: vec![long_hair_module().textures[0].name.clone()],
+        }),
         "{lines:?}"
     );
 
@@ -128,14 +138,13 @@ fn differences_list_elements_textures_and_requirements() {
             id: mesh.id.clone(),
         },
     );
-    let lines = texts(&compare_with_module_file(&removed, &bytes).unwrap());
+    let differences = compare_with_module_file(&removed, &bytes).unwrap();
     let id = mesh.id.as_str().trim_start_matches("LongHair/");
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("Meshes: ") && l.contains(&format!("removed: {id}"))),
-        "{lines:?}"
-    );
+    let DifferenceLine::Elements { removed, .. } = &find(&differences, DifferenceKind::Mesh).line
+    else {
+        unreachable!();
+    };
+    assert!(removed.iter().any(|r| r == id), "{differences:?}");
 }
 
 #[test]
@@ -184,8 +193,46 @@ fn modules_can_be_exported_with_an_atlas() {
     assert!(export_module_with_settings(&project, &invalid).is_err());
 }
 
-fn texts(differences: &[ModuleDifference]) -> Vec<String> {
-    differences.iter().map(|d| d.text.clone()).collect()
+fn lines(differences: &[ModuleDifference]) -> Vec<DifferenceLine> {
+    differences.iter().map(|d| d.line.clone()).collect()
+}
+
+fn strings(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|&id| id.to_owned()).collect()
+}
+
+/// 要素 `what` の行 (数 `before` → `after` と、足した・除いた・変えた ID)。
+fn elements(
+    what: DifferenceKind,
+    (before, after): (usize, usize),
+    added: &[&str],
+    removed: &[&str],
+    changed: &[&str],
+) -> DifferenceLine {
+    DifferenceLine::Elements {
+        what,
+        before,
+        after,
+        added: strings(added),
+        removed: strings(removed),
+        changed: strings(changed),
+    }
+}
+
+/// 要素 `what` の行。
+fn find(differences: &[ModuleDifference], what: DifferenceKind) -> &ModuleDifference {
+    differences
+        .iter()
+        .find(|d| matches!(d.line, DifferenceLine::Elements { what: w, .. } if w == what))
+        .unwrap_or_else(|| panic!("{differences:?}"))
+}
+
+fn changed_count(what: ChangedItems, count: usize) -> ElementChange {
+    ElementChange::Changed { what, count }
+}
+
+fn in_keyforms(what: KeyformValue, count: usize) -> ElementChange {
+    ElementChange::InKeyforms { what, count }
 }
 
 /// 画素がどこも違う (探す場所を 1 つに決められる) `width`×`height` の画像。
@@ -266,24 +313,29 @@ fn changed_meshes_tell_what_changed_and_where_they_are() {
     }
     front.uvs[1] = Vec2::new(0.5, 0.5);
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
-    let meshes = differences
-        .iter()
-        .find(|d| d.text.starts_with("Meshes: "))
-        .unwrap();
-    assert_eq!(meshes.text, "Meshes: 2 → 2 (changed: Front)");
+    let meshes = find(&differences, DifferenceKind::Mesh);
+    assert_eq!(
+        meshes.line,
+        elements(DifferenceKind::Mesh, (2, 2), &[], &[], &["Front"])
+    );
     let [item] = &meshes.items[..] else {
         panic!("{meshes:?}");
     };
     assert_eq!(item.kind, DifferenceKind::Mesh);
     assert_eq!(item.id, "Front");
+    assert_eq!(item.state, ItemState::Changed);
     assert_eq!(item.element.as_deref(), Some("LongHair/Front"));
     // 描画順は、ツリーやインスペクタと同じスロットの範囲の値で書く。
     assert_eq!(
-        item.text,
-        format!(
-            "UVs of 1 vertex; vertex positions in 1 keyform; draw order {before} → {}",
-            before - 10.0
-        )
+        item.changes,
+        [
+            changed_count(ChangedItems::Uvs, 1),
+            in_keyforms(KeyformValue::VertexPositions, 1),
+            ElementChange::DrawOrder {
+                before: f64::from(before),
+                after: f64::from(before - 10.0),
+            },
+        ]
     );
 
     // 頂点の数が変われば、数で書く。本体の要素は選ばない。
@@ -294,12 +346,15 @@ fn changed_meshes_tell_what_changed_and_where_they_are() {
         keyform.positions.push(Vec2::ZERO);
     }
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
-    let item = &differences
-        .iter()
-        .find(|d| d.text.starts_with("Meshes: "))
-        .unwrap()
-        .items[0];
-    assert_eq!(item.text, "vertices 4 → 5");
+    let item = &find(&differences, DifferenceKind::Mesh).items[0];
+    assert_eq!(
+        item.changes,
+        [ElementChange::Count {
+            what: CountedItems::Vertices,
+            before: 4,
+            after: 5,
+        }]
+    );
 }
 
 /// 足した要素も選べる。除いた要素も添えるが、今の編集に無いので選べない (ファイルを付けたプレビューで強調する)。
@@ -317,25 +372,26 @@ fn added_elements_can_be_selected() {
     // Back の無いファイルと比べると、今の編集では Back を足したことになる。
     let without_back = export_module(&removed).unwrap().bytes;
     let differences = compare_with_module_file(&project, &without_back).unwrap();
-    let meshes = differences
-        .iter()
-        .find(|d| d.text.starts_with("Meshes: "))
-        .unwrap();
+    let meshes = find(&differences, DifferenceKind::Mesh);
     // Front は Back でマスクしているので、Front も変わる。
-    assert_eq!(meshes.text, "Meshes: 1 → 2 (added: Back; changed: Front)");
+    assert_eq!(
+        meshes.line,
+        elements(DifferenceKind::Mesh, (1, 2), &["Back"], &[], &["Front"])
+    );
     assert_eq!(meshes.items[0].id, "Back");
-    assert_eq!(meshes.items[0].text, "added");
+    assert_eq!(meshes.items[0].state, ItemState::Added);
+    assert!(meshes.items[0].changes.is_empty());
     assert_eq!(meshes.items[0].element.as_deref(), Some("LongHair/Back"));
-    assert_eq!(meshes.items[1].text, "blending or masks");
+    assert_eq!(meshes.items[1].changes, [ElementChange::BlendingOrMasks]);
     let differences = compare_with_module_file(&removed, &bytes).unwrap();
-    let meshes = differences
-        .iter()
-        .find(|d| d.text.starts_with("Meshes: "))
-        .unwrap();
-    assert_eq!(meshes.text, "Meshes: 2 → 1 (removed: Back; changed: Front)");
+    let meshes = find(&differences, DifferenceKind::Mesh);
+    assert_eq!(
+        meshes.line,
+        elements(DifferenceKind::Mesh, (2, 1), &[], &["Back"], &["Front"])
+    );
     assert_eq!(meshes.items.len(), 2);
     assert_eq!(meshes.items[1].id, "Back");
-    assert_eq!(meshes.items[1].text, "removed");
+    assert_eq!(meshes.items[1].state, ItemState::Removed);
     assert_eq!(meshes.items[1].element, None);
     // ファイルのメッシュなので、プレビューでファイルを付けたときに強調できる。
     assert_eq!(meshes.items[1].meshes, ["Back"]);
@@ -366,30 +422,39 @@ fn physics_differences_tell_what_changed() {
         radius: 12.0,
     };
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
-    let find = |label: &str| {
-        differences
-            .iter()
-            .find(|d| d.text.starts_with(label))
-            .unwrap_or_else(|| panic!("{differences:?}"))
-    };
-    let rigs = find("Physics rigs: ");
-    assert_eq!(rigs.text, "Physics rigs: 1 → 1 (changed: Sway)");
+    let rigs = find(&differences, DifferenceKind::PhysicsRig);
+    assert_eq!(
+        rigs.line,
+        elements(DifferenceKind::PhysicsRig, (1, 1), &[], &[], &["Sway"])
+    );
     let [rig] = &rigs.items[..] else {
         panic!("{rigs:?}");
     };
     assert_eq!(rig.kind, DifferenceKind::PhysicsRig);
     assert_eq!(
-        rig.text,
-        "settings of 1 particle; colliders (removed: Collar)"
+        rig.changes,
+        [
+            changed_count(ChangedItems::Particles, 1),
+            ElementChange::Colliders {
+                added: Vec::new(),
+                removed: strings(&["Collar"]),
+            },
+        ]
     );
     assert_eq!(rig.element.as_deref(), Some("LongHair/Sway"));
     assert_eq!(rig.meshes, ["Back", "Front"]);
-    let colliders = find("Colliders: ");
+    let colliders = find(&differences, DifferenceKind::Collider);
     let [collider] = &colliders.items[..] else {
         panic!("{colliders:?}");
     };
     assert_eq!(collider.kind, DifferenceKind::Collider);
-    assert_eq!(collider.text, "radius 8 → 12");
+    assert_eq!(
+        collider.changes,
+        [ElementChange::Radius {
+            before: 8.0,
+            after: 12.0,
+        }]
+    );
     assert_eq!(collider.element.as_deref(), Some("LongHair/Collar"));
     assert!(collider.meshes.is_empty());
 
@@ -404,8 +469,17 @@ fn physics_differences_tell_what_changed() {
     sway.name = "Swing".into();
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
     let deformers = &differences[0];
-    assert_eq!(deformers.text, "Deformers: 1 → 1 (changed: Sway)");
-    assert_eq!(deformers.items[0].text, "name Sway → Swing");
+    assert_eq!(
+        deformers.line,
+        elements(DifferenceKind::Deformer, (1, 1), &[], &[], &["Sway"])
+    );
+    assert_eq!(
+        deformers.items[0].changes,
+        [ElementChange::Name {
+            before: "Sway".into(),
+            after: "Swing".into(),
+        }]
+    );
     assert_eq!(deformers.items[0].meshes, ["Back", "Front"]);
 }
 
@@ -437,21 +511,33 @@ fn glue_differences_tell_what_changed() {
     glue.pairs[0].weight = 0.25;
     glue.keyforms.keyforms[0].intensity = 0.5;
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
-    assert_eq!(texts(&differences), ["Glues: 1 → 1 (changed: Seam)"]);
+    assert_eq!(
+        lines(&differences),
+        [elements(DifferenceKind::Glue, (1, 1), &[], &[], &["Seam"])]
+    );
     let item = &differences[0].items[0];
     assert_eq!(item.kind, DifferenceKind::Glue);
-    assert_eq!(item.text, "1 pair of vertices; intensity in 1 keyform");
+    assert_eq!(
+        item.changes,
+        [
+            changed_count(ChangedItems::VertexPairs, 1),
+            in_keyforms(KeyformValue::Intensity, 1),
+        ]
+    );
     assert_eq!(item.element.as_deref(), Some("LongHair/Seam"));
     assert_eq!(item.meshes, ["Back", "Front"]);
 
     let mut removed = project.clone();
     removed.model.glues.clear();
     let differences = compare_with_module_file(&removed, &bytes).unwrap();
-    assert_eq!(texts(&differences), ["Glues: 1 → 0 (removed: Seam)"]);
+    assert_eq!(
+        lines(&differences),
+        [elements(DifferenceKind::Glue, (1, 0), &[], &["Seam"], &[])]
+    );
     let item = &differences[0].items[0];
     assert_eq!(
-        (item.text.as_str(), item.element.as_deref()),
-        ("removed", None)
+        (item.state, item.element.as_deref()),
+        (ItemState::Removed, None)
     );
     assert_eq!(item.meshes, ["Back", "Front"]);
 }
@@ -516,23 +602,35 @@ fn pose_differences_tell_what_changed() {
     pose.groups[0].entries[0].links.clear();
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
     assert_eq!(
-        texts(&differences),
+        lines(&differences),
         [
-            "Pose groups: 1 → 1 (changed: HatB / HatA)",
-            "Pose follows: 1 → 0 (removed: ArmA)",
+            elements(
+                DifferenceKind::PoseGroup,
+                (1, 1),
+                &[],
+                &[],
+                &["HatB / HatA"]
+            ),
+            elements(DifferenceKind::PoseFollow, (1, 0), &[], &["ArmA"], &[]),
         ]
     );
     let group = &differences[0].items[0];
     assert_eq!(group.kind, DifferenceKind::PoseGroup);
-    assert_eq!(group.text, "entries HatA / HatB → HatB / HatA");
+    assert_eq!(
+        group.changes,
+        [ElementChange::Entries {
+            before: "HatA / HatB".into(),
+            after: "HatB / HatA".into(),
+        }]
+    );
     assert_eq!(group.element.as_deref(), Some("HatB / HatA"));
     assert_eq!(group.parts, ["LongHair/HatB", "LongHair/HatA"]);
     assert_eq!(group.meshes, ["Front", "Back"]);
     let follow = &differences[1].items[0];
     assert_eq!(follow.kind, DifferenceKind::PoseFollow);
     assert_eq!(
-        (follow.text.as_str(), follow.element.as_deref()),
-        ("removed", None)
+        (follow.state, follow.element.as_deref()),
+        (ItemState::Removed, None)
     );
     assert!(follow.parts.is_empty());
 
@@ -543,17 +641,30 @@ fn pose_differences_tell_what_changed() {
     pose.groups[0].entries[0].links = vec!["LongHair/HatA".into()];
     let differences = compare_with_module_file(&relinked, &bytes).unwrap();
     assert_eq!(
-        texts(&differences),
+        lines(&differences),
         [
-            "Pose groups: 1 → 0 (removed: HatA / HatB)",
-            "Pose follows: 1 → 1 (changed: ArmA)",
+            elements(
+                DifferenceKind::PoseGroup,
+                (1, 0),
+                &[],
+                &["HatA / HatB"],
+                &[]
+            ),
+            elements(DifferenceKind::PoseFollow, (1, 1), &[], &[], &["ArmA"]),
         ]
     );
     let removed = &differences[0].items[0];
     assert_eq!(removed.element, None);
     assert_eq!(removed.meshes, ["Back", "Front"]);
     let follow = &differences[1].items[0];
-    assert_eq!(follow.text, "links (added: HatA; removed: Sleeve)");
+    assert_eq!(
+        follow.changes,
+        [ElementChange::Links {
+            entry: None,
+            added: strings(&["HatA"]),
+            removed: strings(&["Sleeve"]),
+        }]
+    );
     assert_eq!(follow.element.as_deref(), Some("ArmA"));
     assert_eq!(follow.parts, ["ArmA", "LongHair/HatA"]);
     assert_eq!(follow.meshes, ["Back"]);
@@ -570,15 +681,27 @@ fn atlased_files_are_compared_before_packing() {
     let mut moved = project.clone();
     mesh_mut(&mut moved, "LongHair/Front").uvs[2] = Vec2::new(0.25, 0.75);
     let differences = compare_with_module_file(&moved, &bytes).unwrap();
-    assert_eq!(texts(&differences), ["Meshes: 2 → 2 (changed: Front)"]);
-    assert_eq!(differences[0].items[0].text, "UVs of 1 vertex");
+    assert_eq!(
+        lines(&differences),
+        [elements(DifferenceKind::Mesh, (2, 2), &[], &[], &["Front"])]
+    );
+    assert_eq!(
+        differences[0].items[0].changes,
+        [changed_count(ChangedItems::Uvs, 1)]
+    );
 
     // 画像を描き替えると、そのテクスチャの画像が違う。
     let mut repainted = project.clone();
     repaint(&mut repainted, pattern_png(6, 5, 3));
     assert_eq!(
-        texts(&compare_with_module_file(&repainted, &bytes).unwrap()),
-        ["Textures: 2 → 2 (different image: front)"]
+        lines(&compare_with_module_file(&repainted, &bytes).unwrap()),
+        [DifferenceLine::Textures {
+            before: 2,
+            after: 2,
+            added: Vec::new(),
+            removed: Vec::new(),
+            changed: strings(&["front"]),
+        }]
     );
 
     // メッシュを除いても、ファイルのそのメッシュのテクスチャを画素で見つける。
@@ -589,16 +712,15 @@ fn atlased_files_are_compared_before_packing() {
         })
         .unwrap();
     let removed = Project::from_document(project.meta.clone(), &document);
-    let lines = texts(&compare_with_module_file(&removed, &bytes).unwrap());
-    assert!(
-        lines
-            .iter()
-            .all(|l| !l.starts_with("Textures") && !l.starts_with("Some meshes")),
-        "{lines:?}"
-    );
-    assert!(
-        lines.contains(&"Meshes: 2 → 1 (removed: Back; changed: Front)".to_owned()),
-        "{lines:?}"
+    assert_eq!(
+        lines(&compare_with_module_file(&removed, &bytes).unwrap()),
+        [elements(
+            DifferenceKind::Mesh,
+            (2, 1),
+            &[],
+            &["Back"],
+            &["Front"]
+        )]
     );
 }
 
@@ -614,22 +736,24 @@ fn unmatched_atlas_meshes_are_noted() {
         *uv = Vec2::new(1.0 - uv.x, 1.0 - uv.y);
     }
     let differences = compare_with_module_file(&changed, &bytes).unwrap();
-    assert_eq!(texts(&differences), ["Meshes: 2 → 2 (changed: Front)"]);
-    assert_eq!(differences[0].items[0].text, "UVs of 4 vertices");
+    assert_eq!(
+        lines(&differences),
+        [elements(DifferenceKind::Mesh, (2, 2), &[], &[], &["Front"])]
+    );
+    assert_eq!(
+        differences[0].items[0].changes,
+        [changed_count(ChangedItems::Uvs, 4)]
+    );
 
     // 画像も UV も違えば、場所を確かめられない。
     repaint(&mut changed, pattern_png(6, 5, 4));
-    let lines = texts(&compare_with_module_file(&changed, &bytes).unwrap());
+    let lines = lines(&compare_with_module_file(&changed, &bytes).unwrap());
+    assert!(lines.contains(&DifferenceLine::UnmatchedAtlas), "{lines:?}");
     assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("Some meshes in the file's texture atlases")),
-        "{lines:?}"
-    );
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("Textures: ") && l.contains("atlas-0")),
+        lines.iter().any(|l| matches!(
+            l,
+            DifferenceLine::Textures { removed, .. } if removed.iter().any(|r| r == "atlas-0")
+        )),
         "{lines:?}"
     );
 }

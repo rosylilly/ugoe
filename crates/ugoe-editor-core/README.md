@@ -48,3 +48,4 @@
 - T1615 (PSD のレイヤーの分類の直し `Command::SetLayerCorrection`。`src/classification.rs`。直しは `Document` のスナップショットに持ち、`project.json` の `editor.classification` に残す)
 - T0567 (PSD のレイヤーの分類の答えのキャッシュ `.ugoe-cache/classification.json`。`src/classification_cache.rs`。`project.json` は変えず、Undo の対象にしない。分類した PSD の大きさと FNV-1a のハッシュを添え、使う側 (エディタ・MCP サーバ) が今の PSD と比べる。[docs/spec/file-formats.md#分類のキャッシュ](../../docs/spec/file-formats.md#分類のキャッシュ))
 - T1626 (パラメータのグループを足す・消す・名前を変える・並べ替えるコマンド `AddParameterGroup`・`RemoveParameterGroup`・`RenameParameterGroup`・`ReorderParameterGroup`。消すと属していたパラメータの割り当てを外す。`src/document/remove.rs`・`src/document/reorder.rs`。[docs/editor.md#パラメータのグループ](../../docs/editor.md#パラメータのグループ))
+- T1677 (着せ替えの違い `compare_with_module_file` を英語の文ではなく種類と引数 (`DifferenceLine`・`ElementChange`・`ItemState`) で返す。文はエディタが今の言語で作る。[docs/editor.md#違いの種類と引数](../../docs/editor.md#違いの種類と引数))

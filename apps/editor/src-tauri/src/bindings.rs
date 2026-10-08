@@ -14,8 +14,9 @@ use ugoe_editor_core::message_catalog::{message_codes, message_samples};
 use ugoe_editor_core::overflow::{ElementOverflow, OverflowReport};
 use ugoe_editor_core::physics_check::RestPoseCollision;
 use ugoe_editor_core::{
-    ApplyReport, ColliderReference, DifferenceItem, DifferenceKind, ExportReport, ExportSettings,
-    Message, ModuleDifference, PsdImportWarning,
+    ApplyReport, ChangedItems, ColliderReference, ColliderShapeType, CountedItems, DeformerType,
+    DifferenceItem, DifferenceKind, DifferenceLine, ElementChange, ExportReport, ExportSettings,
+    GridSize, ItemState, KeyformValue, Message, ModuleDifference, NameList, PsdImportWarning,
 };
 
 use crate::ai::{AiReply, AiSettings, ConsentAnswer};
@@ -78,7 +79,17 @@ pub fn generated_files() -> Result<Vec<(&'static str, String)>, serde_json::Erro
     types.add::<BaseReload>();
     types.add::<ModuleExportReport>();
     types.add::<DifferenceKind>();
+    types.add::<ItemState>();
+    types.add::<DeformerType>();
+    types.add::<ColliderShapeType>();
+    types.add::<GridSize>();
+    types.add::<CountedItems>();
+    types.add::<ChangedItems>();
+    types.add::<KeyformValue>();
+    types.add::<ElementChange>();
     types.add::<DifferenceItem>();
+    types.add::<NameList>();
+    types.add::<DifferenceLine>();
     types.add::<ModuleDifference>();
     types.add::<ColliderReference>();
     // IPC コマンドのエラー (ADR 0029)。

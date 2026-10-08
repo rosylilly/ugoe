@@ -712,7 +712,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   行のファイルは名前だけを 1 行で出し、全体のパスは `title` にします (3 行に折り返していた)。
 - **違いの一覧の見せ方 (T0676):** 「N differences from your current edits」を開くと、違いの 1 行の文の下に、要素の表 (ID・何が違うか・
   「Select」) を出します。要素の行が 8 件 (`DIFFERENCE_FILTER_FROM`) を超えると絞り込みの欄を出し、空白で区切った語のすべてを含む行
-  (行の文が合えばその行の要素のすべて、合わなければ合う要素 (ID か違いの文) だけ) に絞ります (`filterDifferences`)。1 行の要素は 8 件
+  (行の文が合えばその行の要素のすべて、合わなければ合う要素 (ID か違いの文) だけ) に絞ります (`filterDifferences`)。文は画面に出す今の言語の文で
+  比べます (日本語の画面では日本語の語で絞る。T1677)。1 行の要素は 8 件
   (`DIFFERENCE_ROWS`) まで出し、残りは「さらに N 件を出す」で出します (パネルの中に縦の送りを重ねないため。絞り込み中はすべて出す)。
 - **一覧をプロジェクトに残す:** 一覧 (パスと、付けるか) を `project.json` の `editor.dress_up` に残し、次に開いたときに
   読み込み直します (`get_preview_modules` / `set_preview_modules`。Undo の対象ではなく、変えると未保存の印が付く)。
@@ -739,7 +740,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     スロットの選択肢には読み込んだ名前 (「CatEars (editing)」) を出します。名前を変えても要素の ID の接頭辞が変わるだけで、見た目は同じです。
     その名前と同じ名前のファイルを読み込んだときだけ、今の編集を残してファイルは付けません (`same_name` の説明「This file is also named …」)。
   - 今の編集と同じ名前 (モジュールの名前) のファイルの行には、今の編集との違いを文字でも出します (`compare_preview_module`、
-    `ugoe_editor_core::compare_with_module_file`、`DressUpEntry.differences`。T0654)。違いは「ファイル → 今の編集」の向きの英語の 1 行ずつで、
+    `ugoe_editor_core::compare_with_module_file`、`DressUpEntry.differences`。T0654)。違いは「ファイル → 今の編集」の向きの 1 行ずつで
+    (種類と引数で返し、画面が今の言語の文にする。[違いの種類と引数](#違いの種類と引数))、
     要素 (パーツ・デフォーマ・メッシュ・グルー) の数と、足した・除いた・変えたものの ID、テクスチャ (足した・除いた・画像が違うもの)、
     条件 (アバタープロファイルのレベル・スロット・パラメータ)、使うパラメータ、物理のリグと衝突体、ポーズのグループと追従です。メッシュのテクスチャは番号でなく
     名前で比べます。同じなら「Same as your current edits.」。今の編集を取り直すたび・そのファイルを読み込み直すたびに比べ直し、
@@ -747,16 +749,16 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - 足した・変えた・除いた要素 (パーツ・デフォーマ・メッシュ・グルー・物理のリグ・衝突体) は、行の下に要素ごとに何が違うかを添えます
     (`ModuleDifference.items`。T0656・T0657)。メッシュは
     名前・パーツ・親・テクスチャ・頂点 (数か、UV の変わった頂点の数)・三角形・キーフォーム (軸・数・頂点の位置の変わったキーフォームの数)・
-    描画順 (どのキーフォームでも同じ値なら `draw order 980 → 990`、でなければ変わったキーフォームの数。値はモジュールの空間
+    描画順 (どのキーフォームでも同じ値なら前と後の値 (「draw order 980 → 990」)、でなければ変わったキーフォームの数。値はモジュールの空間
     (0〜1000) から今のスロットの範囲に写したもので、ツリーやインスペクタと同じ)・不透明度と色・合成とマスク。
     デフォーマは名前・パーツ・親・種類・格子の大きさ・キーフォーム、パーツは名前・親・キーフォームの不透明度です。
     グルーは両端のメッシュ・頂点の組 (数か、変わった組の数)・強さのキーフォーム、物理のリグは名前・入力と出力 (数か、変わった数)・
     粒子 (数か、設定の変わった粒子の数)・正規化・衝突体 (足した・除いた ID)・重力の基準、衝突体は名前・取り付け先・形・位置・半径です。
     ポーズのグループ (T0659) は ID を持たないので、要素のパーツを ` / ` でつないだもの (`HatA / HatB`。最初に表示する要素から) を ID とし、
-    要素のパーツを 1 つでも共有するグループを同じグループとみなして、要素の並び (`entries HatA / HatB → HatB / HatA`) と要素ごとの
-    リンク (`links of HatA (added: …; removed: …)`) を添えます。追従 (本体の要素に加えるリンク、`ModulePose::links`) は本体の要素の
+    要素のパーツを 1 つでも共有するグループを同じグループとみなして、要素の並び (「entries HatA / HatB → HatB / HatA」) と要素ごとの
+    リンク (「links of HatA (added: …; removed: …)」) を添えます。追従 (本体の要素に加えるリンク、`ModulePose::links`) は本体の要素の
     パーツを ID とし、リンクの足した・除いたパーツを添えます。どちらにも出ない違い (グループの並びだけ) は「Pose: order of groups changed」。
-    足したものは `added`、除いたものは `removed`。
+    足したものは「added」、除いたものは「removed」(`DifferenceItem.state`)。
   - 要素の ID を押すと、プレビューのままビューポートでその要素を強調します (`DressUp.highlight`・`DifferenceOverlay.svelte`。T0657)。
     もう一度押すか、ビューポートの下の「Clear」でやめ、プレビューを出ると消えます。描くのは、いまビューポートに出ている版 (同じスロットに
     付いているのが今の編集 `<名前> (editing)` かファイル `<名前>` か。比べていなければ作業用のモデルで今の編集) の `WebPuppet` の
@@ -801,6 +803,51 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - 今の編集を書き出せない (検査に通らない) 間は、理由 (「Your edits can't be put on the base …」) を出し、作業用のモデルを描きます。このときは
     T0650 と同じく、自分のスロットの行は出さず、そのスロットのモジュールは付けません (`DressUpHost.ownSlot`。`own_slot` の説明)。
   - 本体だけのモデルには本体の物理がバンドルに入っているので、ドキュメントの物理 (モジュールのものを含む) を `set_physics_json` で渡しません。
+
+#### 違いの種類と引数
+
+`compare_preview_module` は違いを英語の文ではなく **種類 (`kind`) と引数** で返し、フロントエンドが @ugoe/i18n のカタログ
+(`preview.difference.line.*`・`preview.difference.change.*` など) で今の言語の文にします (`src/lib/preview/differenceText.ts` の
+`describeLine`・`describeItem`。T1677。最初 (T0654) は editor-core が英語の文で作り、日本語の画面でも英語のまま出ていた)。
+エラーをコードで返すのと同じ考え方です ([ADR 0029](adr/0029-shared-ui-and-i18n.md))。型は ts-rs で `src/lib/generated/types.ts` に出ます。
+
+- 前の値 (`before`) はファイル、後の値 (`after`) は今の編集です。値の無いもの (親なし・テクスチャなし・レベルなし) は `null` で、画面では「none」(「なし」)。
+- ID の並びは `formatList` で今の言語の一覧にし (「A, B, and C」・「A、B、C」)、数で変わる語は i18next の `count` の複数形にします。
+- 数 (描画順・半径) は小数 2 桁に丸めて送り、画面は `formatNumber` で書きます。
+- 違いの一覧の絞り込み (`filterDifferences`) も、同じ関数で作った今の言語の文で比べます。
+
+違いの 1 行 (`ModuleDifference.line`、`DifferenceLine`):
+
+| `kind` | 引数 | 英語の文の例 |
+| --- | --- | --- |
+| `name` / `slot` | `before`・`after` (モジュールの名前・スロット) | `Name: Hat → Cap` |
+| `elements` | `what` (`DifferenceKind`: `part`・`deformer`・`mesh`・`glue`・`physics_rig`・`collider`・`pose_group`・`pose_follow`)・`before`・`after` (数)・`added`・`removed`・`changed` (ID の並び) | `Meshes: 2 → 1 (removed: Ears; changed: Band)` |
+| `textures` | `before`・`after` (数)・`added`・`removed`・`changed` (画像などが違うテクスチャの名前) | `Textures: 1 → 1 (different image: hair)` |
+| `avatar_level` | `before`・`after` (条件のアバタープロファイルのレベル。無しは `null`) | `Required avatar level: none → 2` |
+| `names` | `what` (`required_slots`・`required_parameters`・`parameters_used`)・`added`・`removed` (名前の順) | `Required slots: added: Outfit` |
+| `pose_order` | なし (ポーズのグループの並びだけが違う) | `Pose: order of groups changed` |
+| `unmatched_atlas` | なし (ファイルのアトラスに今の編集のテクスチャへ戻せないメッシュがある) | `Some meshes in the file's texture atlases could not be matched …` |
+
+違いの行の要素 (`DifferenceItem`) は `state` (`added`・`removed`・`changed`) と、変えた要素の中身の違いの並び `changes`
+(`ElementChange`。足した・除いた要素では空) を持ちます。画面は `changes` を「; 」でつなぎます。
+
+| `kind` | 引数 | 英語の文の例 |
+| --- | --- | --- |
+| `name`・`part`・`entries` | `before`・`after` (名前・所属するパーツ・ポーズのグループの要素の並び) | `name Sway → Swing` |
+| `parent`・`texture`・`frame`・`attach` | `before`・`after` (親・テクスチャの名前・物理のリグの座標系の基準・衝突体の取り付け先。無しは `null`) | `parent none → Root` |
+| `type` | `before`・`after` (デフォーマの種類: `warp`・`rotation`・`unknown`) | `type warp → rotation` |
+| `shape` | `before`・`after` (衝突体の形: `circle`・`capsule`・`unknown`) | `shape circle → capsule` |
+| `grid` | `before`・`after` (`{ cols, rows }`) | `grid 3×2 → 4×5` |
+| `count` | `what` (`keyforms`・`vertices`・`triangles`・`vertex_pairs`・`particles`・`inputs`・`outputs`)・`before`・`after` | `vertices 12 → 14` |
+| `changed` | `what` (`uvs`・`vertex_pairs`・`particles`・`inputs`・`outputs`)・`count` (数は同じで、中身の変わったものの数) | `UVs of 1 vertex` |
+| `in_keyforms` | `what` (`opacity`・`control_points`・`origin_or_angle`・`intensity`・`vertex_positions`・`draw_order`・`opacity_or_colors`)・`count` (値の変わったキーフォームの数) | `vertex positions in 2 keyforms` |
+| `draw_order` | `before`・`after` (どのキーフォームでも同じ描画順。スロットの範囲に写した値) | `draw order 500 → 520` |
+| `radius` | `before`・`after` (衝突体の半径) | `radius 8 → 12` |
+| `glue_meshes` | `before_a`・`before_b`・`after_a`・`after_b` (グルーの両端のメッシュ) | `meshes A + B → A + C` |
+| `colliders` | `added`・`removed` (物理のリグの衝突体の ID) | `colliders (removed: Collar)` |
+| `links` | `entry` (グループの要素のパーツ。追従は `null`)・`added`・`removed` (リンクのパーツ) | `links of HatA (added: Bow)` |
+| `links_reordered` | `entry` (リンクの並びだけが違う) | `links reordered` |
+| `keyform_parameters`・`blend_shapes`・`keyform_settings`・`triangles`・`normalization`・`position`・`blending_or_masks`・`other_settings` | なし (何かが違う。`triangles` は数が同じとき、`other_settings` は書き出せなかった違い) | `blending or masks` |
 
 ## モジュールのプロジェクト
 
@@ -874,7 +921,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
 | `reload_base(base, slot)` | 本体を読み直す。`base`・`slot` があれば本体・スロットを付け替える (開き直さない。未保存の印が付く)。読み直せなければ `problem` 付きで、ドキュメントはそのまま (`BaseReload`) |
 | `get_preview_base_bundle()` | 本体だけの `.ugoe` のバイト列 (プレビューで今の編集と比べる。[プレビューの着せ替え](#プレビューの着せ替え)) |
 | `get_preview_module(name)` | 今の編集の `.ugoemod` のバイト列 (ファイルには書かない。書き出しと同じ検査)。`name` があればモジュールの名前をそれにする |
-| `compare_preview_module(<bytes>)` | 今の編集と、書き出した `.ugoemod` (本文のバイト列で送る) の違いの行 (`ModuleDifference[]`。足した・変えた要素ごとの詳細とツリーで選ぶ ID を持つ。同じなら空。[プレビューの着せ替え](#プレビューの着せ替え)) |
+| `compare_preview_module(<bytes>)` | 今の編集と、書き出した `.ugoemod` (本文のバイト列で送る) の違いの行 (`ModuleDifference[]`。種類と引数で、足した・変えた要素ごとの詳細とツリーで選ぶ ID を持つ。同じなら空。[違いの種類と引数](#違いの種類と引数)) |
 
 `ModuleStatus` は、本体のテクスチャ・物理のリグと衝突体・スロット・パラメータ・アバタープロファイルのレベルと、モジュールの条件 (`requires`) も返します
 (画面が本体のものの欄を無効にし、設定の画面で選ばせるため)。`base_revision` は本体の版で、プレビューが本体だけの `.ugoe` を取り直すかを決めます。

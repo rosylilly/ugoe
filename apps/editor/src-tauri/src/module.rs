@@ -507,7 +507,7 @@ pub async fn get_preview_base_bundle(app: AppHandle) -> IpcResult<tauri::ipc::Re
 }
 
 /// 開いているモジュールのプロジェクトの今の編集と、書き出した `.ugoemod` (本文のバイト列) の違い
-/// (`ugoe_editor_core::compare_with_module_file`。1 行ずつの英語と、足した・変えた要素ごとの詳細。同じなら空)。
+/// (`ugoe_editor_core::compare_with_module_file`。1 行ずつの種類と引数と、足した・変えた要素ごとの詳細。同じなら空)。
 /// プレビューの着せ替えの一覧で、同じ名前のファイルの行に出す (T0654・T0656)。
 #[tauri::command]
 pub fn compare_preview_module(

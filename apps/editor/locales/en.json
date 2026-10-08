@@ -1456,6 +1456,115 @@
       "clear": {
         "label": "Clear",
         "tooltip": "Stop highlighting"
+      },
+      "line": {
+        "name": "Name: {{before}} → {{after}}",
+        "slot": "Slot: {{before}} → {{after}}",
+        "elements": "{{what}}: {{before}} → {{after}} ({{details}})",
+        "textures": "Textures: {{before}} → {{after}} ({{details}})",
+        "avatarLevel": "Required avatar level: {{before}} → {{after}}",
+        "names": "{{what}}: {{details}}",
+        "poseOrder": "Pose: order of groups changed",
+        "unmatchedAtlas": "Some meshes in the file's texture atlases could not be matched to your current textures, so they count as changed"
+      },
+      "elements": {
+        "part": "Parts",
+        "deformer": "Deformers",
+        "mesh": "Meshes",
+        "glue": "Glues",
+        "physics_rig": "Physics rigs",
+        "collider": "Colliders",
+        "pose_group": "Pose groups",
+        "pose_follow": "Pose follows"
+      },
+      "names": {
+        "required_slots": "Required slots",
+        "required_parameters": "Required parameters",
+        "parameters_used": "Parameters used"
+      },
+      "details": {
+        "added": "added: {{ids}}",
+        "removed": "removed: {{ids}}",
+        "changed": "changed: {{ids}}",
+        "differentImage": "different image: {{ids}}",
+        "separator": "; "
+      },
+      "state": {
+        "added": "added",
+        "removed": "removed"
+      },
+      "change": {
+        "separator": "; ",
+        "none": "none",
+        "name": "name {{before}} → {{after}}",
+        "part": "part {{before}} → {{after}}",
+        "parent": "parent {{before}} → {{after}}",
+        "type": "type {{before}} → {{after}}",
+        "grid": "grid {{beforeCols}}×{{beforeRows}} → {{afterCols}}×{{afterRows}}",
+        "texture": "texture {{before}} → {{after}}",
+        "count": "{{what}} {{before}} → {{after}}",
+        "drawOrder": "draw order {{before}} → {{after}}",
+        "glueMeshes": "meshes {{beforeA}} + {{beforeB}} → {{afterA}} + {{afterB}}",
+        "colliders": "colliders ({{details}})",
+        "frame": "frame {{before}} → {{after}}",
+        "attach": "attached to {{before}} → {{after}}",
+        "shape": "shape {{before}} → {{after}}",
+        "radius": "radius {{before}} → {{after}}",
+        "entries": "entries {{before}} → {{after}}",
+        "links": "links ({{details}})",
+        "linksOf": "links of {{entry}} ({{details}})",
+        "linksReordered": "links reordered",
+        "linksOfReordered": "links of {{entry}} reordered",
+        "inKeyforms_one": "{{what}} in {{count}} keyform",
+        "inKeyforms_other": "{{what}} in {{count}} keyforms",
+        "keyform_parameters": "keyform parameters",
+        "blend_shapes": "blend shapes",
+        "keyform_settings": "keyform settings",
+        "triangles": "triangles",
+        "normalization": "normalization",
+        "position": "position",
+        "blending_or_masks": "blending or masks",
+        "other_settings": "other settings",
+        "counted": {
+          "keyforms": "keyforms",
+          "vertices": "vertices",
+          "triangles": "triangles",
+          "vertex_pairs": "vertex pairs",
+          "particles": "particles",
+          "inputs": "inputs",
+          "outputs": "outputs"
+        },
+        "changed": {
+          "uvs_one": "UVs of {{count}} vertex",
+          "uvs_other": "UVs of {{count}} vertices",
+          "vertex_pairs_one": "{{count}} pair of vertices",
+          "vertex_pairs_other": "{{count}} pairs of vertices",
+          "particles_one": "settings of {{count}} particle",
+          "particles_other": "settings of {{count}} particles",
+          "inputs_one": "{{count}} input",
+          "inputs_other": "{{count}} inputs",
+          "outputs_one": "{{count}} output",
+          "outputs_other": "{{count}} outputs"
+        },
+        "keyformValue": {
+          "opacity": "opacity",
+          "control_points": "control points",
+          "origin_or_angle": "origin or angle",
+          "intensity": "intensity",
+          "vertex_positions": "vertex positions",
+          "draw_order": "draw order",
+          "opacity_or_colors": "opacity or colors"
+        },
+        "deformerType": {
+          "warp": "warp",
+          "rotation": "rotation",
+          "unknown": "unknown"
+        },
+        "shapeType": {
+          "circle": "circle",
+          "capsule": "capsule",
+          "unknown": "unknown"
+        }
       }
     },
     "dressUp": {

@@ -13,7 +13,8 @@ import {
 const item = (fields: Partial<DifferenceItem>): DifferenceItem => ({
   kind: "mesh",
   id: "Ears",
-  text: "vertices 4 → 6",
+  state: "changed",
+  changes: [{ kind: "count", what: "vertices", before: 4, after: 6 }],
   element: "CatEars/Ears",
   meshes: ["Ears"],
   parts: [],
@@ -43,7 +44,7 @@ describe("differences in the preview (T0657)", () => {
     ).toEqual({ panel: "physics", rig: null, collider: "CatEars/Collar" });
     // 除いた要素は今の編集に無いので選べない。
     expect(
-      differenceTarget(item({ text: "removed", element: null }), "CatEars", exists),
+      differenceTarget(item({ state: "removed", element: null }), "CatEars", exists),
     ).toBeNull();
   });
 
@@ -87,7 +88,7 @@ describe("differences in the preview (T0657)", () => {
     expect(selectTitle(group)).toBe(
       "Leave the preview and select HatA / HatB in the Poses tab and its parts in the tree",
     );
-    const removed = item({ kind: "pose_follow", id: "ArmA", text: "removed", element: null });
+    const removed = item({ kind: "pose_follow", id: "ArmA", state: "removed", element: null });
     expect(differenceTarget(removed, "Hat", () => true)).toBeNull();
   });
 
@@ -168,27 +169,27 @@ describe("differences in the preview (T0657)", () => {
   it("tells where the highlighted element is, or how to see it", () => {
     const own = { name: "Hat (editing)", own: true };
     const file = { name: "Hat", own: false };
-    expect(highlightNotice({ id: "Brim", text: "added" }, own, true)).toBe(
+    expect(highlightNotice({ id: "Brim", state: "added" }, own, true)).toBe(
       "Brim in your current edits",
     );
-    expect(highlightNotice({ id: "Brim", text: "removed" }, own, false)).toBe(
+    expect(highlightNotice({ id: "Brim", state: "removed" }, own, false)).toBe(
       "Brim was removed in your current edits. Put on the file to see it.",
     );
-    expect(highlightNotice({ id: "Brim", text: "added" }, file, false)).toBe(
+    expect(highlightNotice({ id: "Brim", state: "added" }, file, false)).toBe(
       "Brim is not in the file. Put on your current edits to see it.",
     );
     // 除いた要素のメッシュが今の編集に残っていても、除いたと分かるようにする (T0661)。
-    expect(highlightNotice({ id: "ArmA", text: "removed" }, own, true)).toBe(
+    expect(highlightNotice({ id: "ArmA", state: "removed" }, own, true)).toBe(
       "Removed: ArmA is not in your current edits; the outline shows its meshes that are still there. Put on the file to see it.",
     );
-    expect(highlightNotice({ id: "Brim", text: "added" }, file, true)).toBe(
+    expect(highlightNotice({ id: "Brim", state: "added" }, file, true)).toBe(
       "Added: Brim is not in the file; the outline shows its meshes that are still there. Put on your current edits to see it.",
     );
-    expect(missingIn({ text: "removed" }, own)).toBe(true);
-    expect(missingIn({ text: "removed" }, file)).toBe(false);
-    expect(missingIn({ text: "added" }, file)).toBe(true);
-    expect(missingIn({ text: "added" }, null)).toBe(false);
-    expect(highlightNotice({ id: "Brim", text: "added" }, null, false)).toBe(
+    expect(missingIn({ state: "removed" }, own)).toBe(true);
+    expect(missingIn({ state: "removed" }, file)).toBe(false);
+    expect(missingIn({ state: "added" }, file)).toBe(true);
+    expect(missingIn({ state: "added" }, null)).toBe(false);
+    expect(highlightNotice({ id: "Brim", state: "added" }, null, false)).toBe(
       "Put on your current edits or the file to see Brim.",
     );
   });

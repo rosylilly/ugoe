@@ -74,7 +74,8 @@ function previewModel(): string {
 const item = (fields: Partial<DifferenceItem>): DifferenceItem => ({
   kind: "mesh",
   id: "Quad",
-  text: "vertices 4 → 6",
+  state: "changed",
+  changes: [{ kind: "count", what: "vertices", before: 4, after: 6 }],
   element: "Mod/Quad",
   meshes: ["Quad"],
   parts: [],

@@ -411,6 +411,11 @@ height: number,
 origin: Vec2, };
 
 /**
+ * [`ElementChange::Changed`] の数えるもの。
+ */
+export type ChangedItems = "uvs" | "vertex_pairs" | "particles" | "inputs" | "outputs";
+
+/**
  * デフォーマの子になれる要素。JSON では `{"kind": "mesh", "id": "EyeL"}` と書く
  * ([`KeyformTarget`] と同じ形)。
  */
@@ -477,6 +482,11 @@ b: Vec2,
  * 線分からの距離で表す半径 (ピクセル)。
  */
 radius: number, };
+
+/**
+ * 衝突体の形。
+ */
+export type ColliderShapeType = "circle" | "capsule" | "unknown";
 
 /**
  * 編集操作。JSON で表現でき、AI エージェントのツール呼び出しにそのまま対応する。
@@ -561,6 +571,11 @@ disclosure: DisclosureView,
 remember: boolean, };
 
 /**
+ * [`ElementChange::Count`] の数えるもの。
+ */
+export type CountedItems = "keyforms" | "vertices" | "triangles" | "vertex_pairs" | "particles" | "inputs" | "outputs";
+
+/**
  * クレジット表記。
  */
 export type CreditNotation = "required" | "unnecessary";
@@ -636,6 +651,11 @@ mirror_axis?: number | null, };
 export type DeformerKind = { "type": "warp" } & WarpDeformer | { "type": "rotation" } & RotationDeformer;
 
 /**
+ * デフォーマの種類。
+ */
+export type DeformerType = "warp" | "rotation" | "unknown";
+
+/**
  * [`crate::Command::ApplyDepthPreset`] の深度の作り方。JSON では `{"kind": "dome", "peak": 20}` と書く。
  */
 export type DepthPreset = { "kind": "uniform", value: number, } | { "kind": "dome", peak: number, } | { "kind": "points", indices: Array<number>, value: number, };
@@ -674,9 +694,13 @@ export type DifferenceItem = { kind: DifferenceKind,
  */
 id: string, 
 /**
- * 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`、除いたものは `removed`)。
+ * 足したか・除いたか・変えたか。
  */
-text: string, 
+state: ItemState, 
+/**
+ * 変えた要素の、何が違うか (足した・除いた要素では空)。
+ */
+changes: Array<ElementChange>, 
 /**
  * 選ぶときの、今の編集の ID (パーツ・デフォーマ・メッシュ・グルーは作業用のモデル、物理のリグと衝突体は
  * 作業用の物理の ID)。見つからなければ (除いた要素など) `None`。
@@ -699,6 +723,11 @@ parts: Array<string>, };
  * 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
  */
 export type DifferenceKind = "part" | "deformer" | "mesh" | "glue" | "physics_rig" | "collider" | "pose_group" | "pose_follow";
+
+/**
+ * 違いの 1 行の種類と引数 (T1677)。`before` はファイル、`after` は今の編集の値。ID の並びは要素の並び (名前の集まりは名前の順)。
+ */
+export type DifferenceLine = { "kind": "name", before: string, after: string, } | { "kind": "slot", before: string, after: string, } | { "kind": "elements", what: DifferenceKind, before: number, after: number, added: Array<string>, removed: Array<string>, changed: Array<string>, } | { "kind": "textures", before: number, after: number, added: Array<string>, removed: Array<string>, changed: Array<string>, } | { "kind": "avatar_level", before: number | null, after: number | null, } | { "kind": "names", what: NameList, added: Array<string>, removed: Array<string>, } | { "kind": "pose_order" } | { "kind": "unmatched_atlas" };
 
 /**
  * 外部に送る内容 (確認のダイアログに示す)。`ugoe_ai::Disclosure` の外部に送る場合の写し。
@@ -789,6 +818,12 @@ breath: Breath,
  * リップシンク。
  */
 lip_sync: LipSync, };
+
+/**
+ * 要素の中身の違い 1 つ (例: `{ kind: "count", what: "vertices", before: 12, after: 14 }`)。
+ * 前の値 (`before`) はファイル、後の値 (`after`) は今の編集。値の無いもの (親なし・テクスチャなし) は `null`。
+ */
+export type ElementChange = { "kind": "name", before: string, after: string, } | { "kind": "part", before: string, after: string, } | { "kind": "parent", before: string | null, after: string | null, } | { "kind": "type", before: DeformerType, after: DeformerType, } | { "kind": "grid", before: GridSize, after: GridSize, } | { "kind": "texture", before: string | null, after: string | null, } | { "kind": "count", what: CountedItems, before: number, after: number, } | { "kind": "changed", what: ChangedItems, count: number, } | { "kind": "in_keyforms", what: KeyformValue, count: number, } | { "kind": "draw_order", before: number, after: number, } | { "kind": "glue_meshes", before_a: string, before_b: string, after_a: string, after_b: string, } | { "kind": "colliders", added: Array<string>, removed: Array<string>, } | { "kind": "frame", before: string | null, after: string | null, } | { "kind": "attach", before: string | null, after: string | null, } | { "kind": "shape", before: ColliderShapeType, after: ColliderShapeType, } | { "kind": "radius", before: number, after: number, } | { "kind": "entries", before: string, after: string, } | { "kind": "links", entry: string | null, added: Array<string>, removed: Array<string>, } | { "kind": "links_reordered", entry: string | null, } | { "kind": "keyform_parameters" } | { "kind": "blend_shapes" } | { "kind": "keyform_settings" } | { "kind": "triangles" } | { "kind": "normalization" } | { "kind": "position" } | { "kind": "blending_or_masks" } | { "kind": "other_settings" };
 
 /**
  * 1 つの要素の、はみ出した点。
@@ -983,6 +1018,11 @@ b: number,
 weight: number, };
 
 /**
+ * ワープの格子の大きさ。
+ */
+export type GridSize = { cols: number, rows: number, };
+
+/**
  * 編集の履歴の状態 (`history_status` の戻り値)。ボタンを押せるかと設定の画面に使う。
  */
 export type HistoryStatus = { 
@@ -1024,6 +1064,11 @@ mesh: string, };
  * [`Command::InferKeyforms`] の推定の方法。
  */
 export type InferMethod = "from_grid" | "additive" | "depth_rotation";
+
+/**
+ * 違いの行の要素が、ファイルから今の編集でどうなったか。
+ */
+export type ItemState = "added" | "removed" | "changed";
 
 /**
  * まとめずに残したテクスチャの理由。
@@ -1122,6 +1167,11 @@ export type KeyformOrigin = "authored" | "derived" | "additive" | "depth_rotatio
  * どの要素も格子を 1 つだけ持つ (`ugoe_rigging::KeyformTarget` と同じ)。
  */
 export type KeyformTarget = { "kind": "part", "id": string } | { "kind": "mesh", "id": string } | { "kind": "deformer", "id": string } | { "kind": "glue", "id": string };
+
+/**
+ * [`ElementChange::InKeyforms`] の、キーフォームで変わった値。
+ */
+export type KeyformValue = "opacity" | "control_points" | "origin_or_angle" | "intensity" | "vertex_positions" | "draw_order" | "opacity_or_colors";
 
 /**
  * 利用者が決めた 1 枚のレイヤーの分類 (直したもの・認めたもの)。分類の答えより優先する。
@@ -1528,9 +1578,9 @@ export type Modification = "prohibited" | "allow" | "allow_redistribution";
  */
 export type ModuleDifference = { 
 /**
- * 英語の 1 行 (例: `Meshes: 2 → 1 (removed: Ears; changed: Band)`)。
+ * 何が違うか (種類と引数。例: `{ kind: "elements", what: "mesh", before: 2, after: 1, removed: ["Ears"], … }`)。
  */
-text: string, 
+line: DifferenceLine, 
 /**
  * 行の要素のうち、足したもの・変えたもの・除いたもの (要素の行だけ)。
  */
@@ -1751,6 +1801,11 @@ label: string | null,
  * 名前の規則の左右 (`left`・`right`・`center`)。左右が同じなら `null`。
  */
 side: string | null, };
+
+/**
+ * [`DifferenceLine::Names`] の名前の集まり。
+ */
+export type NameList = "required_slots" | "required_parameters" | "parameters_used";
 
 /**
  * AI タブで選んだ、法線マップを提案する 1 つのまとまりと設定 (`propose_normal_maps` の引数)。

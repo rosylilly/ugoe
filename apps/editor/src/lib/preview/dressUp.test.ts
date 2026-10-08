@@ -1,6 +1,15 @@
 // プレビューの着せ替え (T0649): 説明の文言・スロットの一覧と、DressUp の付け外し (WebPuppet と IPC は偽物)。
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ipc, type ModuleDifference } from "../ipc";
+import { setLocale } from "@ugoe/i18n";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type DifferenceItem,
+  type DifferenceKind,
+  type DifferenceLine,
+  type ElementChange,
+  type ItemState,
+  ipc,
+  type ModuleDifference,
+} from "../ipc";
 import {
   describeProblem,
   differenceItemCount,
@@ -19,6 +28,17 @@ const saved: unknown[] = [];
 /** `comparePreviewModule` の結果 (バイト列はモジュールの名前)。 */
 let compared: (bytes: Uint8Array) => ModuleDifference[] | Promise<ModuleDifference[]> = () => [];
 const files: Record<string, string> = {};
+
+/** メッシュの行 (数は 2 → 2)。 */
+const meshLine = (ids: { added?: string[]; changed?: string[] }): DifferenceLine => ({
+  kind: "elements",
+  what: "mesh",
+  before: 2,
+  after: 2,
+  added: ids.added ?? [],
+  removed: [],
+  changed: ids.changed ?? [],
+});
 
 vi.mock("../ipc", () => ({
   ipc: {
@@ -88,22 +108,54 @@ beforeEach(() => {
 });
 
 describe("filterDifferences", () => {
-  const item = (id: string, text: string) => ({
-    kind: "mesh" as const,
-    id,
-    text,
-    element: null,
-    meshes: [],
-    parts: [],
-  });
+  afterEach(() => setLocale("en"));
+  const item = (
+    kind: DifferenceKind,
+    id: string,
+    state: ItemState,
+    changes: ElementChange[] = [],
+  ): DifferenceItem => ({ kind, id, state, changes, element: null, meshes: [], parts: [] });
   const lines: ModuleDifference[] = [
     {
-      text: "Meshes: 2 → 3 (added: Band)",
-      items: [item("Band", "added"), item("Ears", "vertices 12 → 14")],
+      line: {
+        kind: "elements",
+        what: "mesh",
+        before: 2,
+        after: 3,
+        added: ["Band"],
+        removed: [],
+        changed: ["Ears"],
+      },
+      items: [
+        item("mesh", "Band", "added"),
+        item("mesh", "Ears", "changed", [
+          { kind: "count", what: "vertices", before: 12, after: 14 },
+        ]),
+      ],
     },
-    { text: "Textures: image changed: Ears", items: [] },
-    { text: "Deformers: 1 → 1", items: [item("EarWarp", "keyforms: 1 of 2 changed")] },
+    {
+      line: { kind: "textures", before: 1, after: 1, added: [], removed: [], changed: ["Ears"] },
+      items: [],
+    },
+    {
+      line: {
+        kind: "elements",
+        what: "deformer",
+        before: 1,
+        after: 1,
+        added: [],
+        removed: [],
+        changed: ["EarWarp"],
+      },
+      items: [
+        item("deformer", "EarWarp", "changed", [
+          { kind: "count", what: "keyforms", before: 1, after: 2 },
+        ]),
+      ],
+    },
   ];
+  const shown = (query: string) =>
+    filterDifferences(lines, query).map((l) => [l.line.kind, l.items.map((i) => i.id)]);
 
   it("keeps everything for an empty query, and counts the element rows", () => {
     expect(filterDifferences(lines, "  ")).toEqual(lines);
@@ -111,18 +163,25 @@ describe("filterDifferences", () => {
   });
 
   it("keeps a matching line whole, and only the matching elements of other lines", () => {
-    expect(filterDifferences(lines, "ears").map((l) => [l.text, l.items.map((i) => i.id)])).toEqual(
-      [
-        ["Meshes: 2 → 3 (added: Band)", ["Ears"]],
-        ["Textures: image changed: Ears", []],
-      ],
-    );
-    // 語のすべてを含むもの (大文字と小文字は区別しない)
-    expect(
-      filterDifferences(lines, "KEYFORMS earwarp").map((l) => l.items.map((i) => i.id)),
-    ).toEqual([["EarWarp"]]);
+    // 行の文 (「Meshes: 2 → 3 (added: Band; changed: Ears)」) が合えば、その行の要素はすべて残る。
+    expect(shown("ears")).toEqual([
+      ["elements", ["Band", "Ears"]],
+      ["textures", []],
+    ]);
+    // 語のすべてを含むもの (大文字と小文字は区別しない)。要素は ID と違いの文で合わせる。
+    expect(shown("KEYFORMS earwarp")).toEqual([["elements", ["EarWarp"]]]);
+    expect(shown("vertices 12")).toEqual([["elements", ["Ears"]]]);
     expect(filterDifferences(lines, "meshes")[0]?.items).toHaveLength(2);
     expect(filterDifferences(lines, "nothing")).toEqual([]);
+  });
+
+  it("filters with the words of the current language (T1677)", () => {
+    setLocale("ja");
+    expect(shown("頂点の数")).toEqual([["elements", ["Ears"]]]);
+    expect(shown("画像が違う")).toEqual([["textures", []]]);
+    expect(shown("足した")).toEqual([["elements", ["Band", "Ears"]]]);
+    // 英語の文では絞れない。
+    expect(shown("vertices")).toEqual([]);
   });
 });
 
@@ -812,12 +871,13 @@ describe("DressUp in a module project", () => {
       ownSlot: () => null,
     });
     const brim = (name: string): ModuleDifference => ({
-      text: `Meshes: 2 → 3 (added: ${name}Brim)`,
+      line: meshLine({ added: [`${name}Brim`] }),
       items: [
         {
           kind: "mesh",
           id: `${name}Brim`,
-          text: "added",
+          state: "added",
+          changes: [],
           element: `${name}/${name}Brim`,
           meshes: [`${name}Brim`],
           parts: [],
@@ -852,11 +912,21 @@ describe("DressUp in a module project", () => {
       changed: vi.fn(),
       ownSlot: () => null,
     });
-    const brim = (text: string): ModuleDifference => ({
-      text: "Meshes: 2 → 2 (changed: Brim)",
-      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"], parts: [] }],
+    const brim = (after: number): ModuleDifference => ({
+      line: meshLine({ changed: ["Brim"] }),
+      items: [
+        {
+          kind: "mesh",
+          id: "Brim",
+          state: "changed",
+          changes: [{ kind: "count", what: "vertices", before: 4, after }],
+          element: "Hat/Brim",
+          meshes: ["Brim"],
+          parts: [],
+        },
+      ],
     });
-    compared = () => [brim("vertices 4 → 6")];
+    compared = () => [brim(6)];
     dressUp.setOwn(bytes(editing), editing, false, "Hat");
     dressUp.loaded(fake.puppet);
     await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
@@ -866,9 +936,13 @@ describe("DressUp in a module project", () => {
     dressUp.toggleHighlight("Hat", item);
     expect(dressUp.highlight).toEqual({ module: "Hat", item });
     // 比べ直すと、同じ要素の新しい中身に替わる。
-    compared = () => [brim("vertices 4 → 7")];
+    compared = () => [brim(7)];
     dressUp.setOwn(bytes(editing), editing, true, "Hat");
-    await vi.waitFor(() => expect(dressUp.highlight?.item.text).toBe("vertices 4 → 7"));
+    await vi.waitFor(() =>
+      expect(dressUp.highlight?.item.changes).toEqual([
+        { kind: "count", what: "vertices", before: 4, after: 7 },
+      ]),
+    );
     // もう一度押すとやめる。
     dressUp.toggleHighlight("Hat", item);
     expect(dressUp.highlight).toBeNull();
@@ -892,11 +966,21 @@ describe("DressUp in a module project", () => {
       changed: vi.fn(),
       ownSlot: () => null,
     });
-    const brim = (text: string): ModuleDifference => ({
-      text: "Meshes: 2 → 2 (changed: Brim)",
-      items: [{ kind: "mesh", id: "Brim", text, element: "Hat/Brim", meshes: ["Brim"], parts: [] }],
+    const brim = (after: number): ModuleDifference => ({
+      line: meshLine({ changed: ["Brim"] }),
+      items: [
+        {
+          kind: "mesh",
+          id: "Brim",
+          state: "changed",
+          changes: [{ kind: "count", what: "vertices", before: 4, after }],
+          element: "Hat/Brim",
+          meshes: ["Brim"],
+          parts: [],
+        },
+      ],
     });
-    compared = () => [brim("vertices 4 → 6")];
+    compared = () => [brim(6)];
     dressUp.setOwn(bytes(editing), editing, false, "Hat");
     dressUp.loaded(fake.puppet);
     await dressUp.add([{ path: "/work/Hat.ugoemod", bytes: bytes("Hat") }]);
@@ -915,7 +999,7 @@ describe("DressUp in a module project", () => {
     expect(dressUp.highlight).toBeNull();
     // 遅れて届いた古い結果は、強調を書き換えない (同じ名前の行を強調していても)。
     dressUp.toggleHighlight("Hat", item);
-    finish([brim("vertices 4 → 7")]);
+    finish([brim(7)]);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dressUp.highlight).toEqual({ module: "Hat", item });
   });

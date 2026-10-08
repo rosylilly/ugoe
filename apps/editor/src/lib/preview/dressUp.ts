@@ -3,6 +3,7 @@
 import { describeLimitError } from "@ugoe/player";
 import { t } from "../i18n";
 import type { ModuleDifference, Slot } from "../ipc";
+import { describeItem, describeLine } from "./differenceText";
 import { describeModuleWarnings } from "./loadWarnings";
 
 /** 着せ替えのモジュールのファイル名か (拡張子 `.ugoemod`。大文字小文字は区別しない)。 */
@@ -218,6 +219,7 @@ export function differenceItemCount(lines: readonly ModuleDifference[]): number 
 /**
  * 違いの一覧を `query` で絞る (空白で区切った語のすべてを、大文字と小文字を区別せずに含むもの)。行の文が合えばその行の要素を
  * すべて残し、合わなければ合う要素 (ID か違いの文) だけを残す。何も合わない行は除く。`query` が空ならそのまま。
+ * 文は画面に出すのと同じ今の言語の文 (`describeLine`・`describeItem`) で比べる (T1677)。
  */
 export function filterDifferences(
   lines: readonly ModuleDifference[],
@@ -233,8 +235,8 @@ export function filterDifferences(
     return words.every((w) => lower.includes(w));
   };
   return lines.flatMap((line) => {
-    if (matches(line.text)) return [line];
-    const items = line.items.filter((item) => matches(`${item.id} ${item.text}`));
+    if (matches(describeLine(line.line))) return [line];
+    const items = line.items.filter((item) => matches(`${item.id} ${describeItem(item)}`));
     return items.length > 0 ? [{ ...line, items }] : [];
   });
 }

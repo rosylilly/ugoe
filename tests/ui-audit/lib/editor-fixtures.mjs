@@ -260,58 +260,93 @@ export function moduleStatusFixture({ name, base, model }) {
 }
 
 /**
- * 今の編集と書き出したファイルの違い (`compare_preview_module`)。長い一覧 (要素の行が多い) で、送りと絞り込みを撮る。
+ * 今の編集と書き出したファイルの違い (`compare_preview_module`。種類と引数で、画面が文にする。T1677)。長い一覧 (要素の行が多い) で、
+ * 送りと絞り込みを撮る。
  */
 export function differencesFixture() {
-  const item = (kind, id, text, element = `Sailor/${id}`) => ({
+  const item = (kind, id, changes, element = `Sailor/${id}`) => ({
     kind,
     id,
-    text,
+    state: changes === "added" || changes === "removed" ? changes : "changed",
+    changes: Array.isArray(changes) ? changes : [],
     element,
     meshes: kind === "mesh" ? [id] : [],
     parts: [],
+  });
+  const elements = (what, before, after, ids) => ({
+    kind: "elements",
+    what,
+    before,
+    after,
+    added: ids.added ?? [],
+    removed: ids.removed ?? [],
+    changed: ids.changed ?? [],
   });
   const meshes = Array.from({ length: 14 }, (_, i) =>
     item(
       "mesh",
       `Ribbon${String(i + 1).padStart(2, "0")}`,
       i % 3 === 0
-        ? "vertices 12 → 14; keyforms: 2 of 3 changed; draw order 300 → 310"
+        ? [
+            { kind: "count", what: "vertices", before: 12, after: 14 },
+            { kind: "in_keyforms", what: "vertex_positions", count: 2 },
+            { kind: "draw_order", before: 300, after: 310 },
+          ]
         : i % 3 === 1
           ? "added"
-          : "texture Sailor → SailorRibbon; opacity and color changed",
+          : [
+              { kind: "texture", before: "Sailor", after: "SailorRibbon" },
+              { kind: "in_keyforms", what: "opacity_or_colors", count: 3 },
+            ],
     ),
   );
+  const ids = (from) => meshes.filter((_, i) => i % 3 === from).map((m) => m.id);
   return [
-    { text: "Meshes: 14 → 25 (added 5; changed 9)", items: meshes },
     {
-      text: "Deformers: 3 → 4 (added: CollarWarp; changed: WaveRotation)",
+      line: elements("mesh", 14, 25, { added: ids(1), changed: [...ids(0), ...ids(2)] }),
+      items: meshes,
+    },
+    {
+      line: elements("deformer", 3, 4, { added: ["CollarWarp"], changed: ["WaveRotation"] }),
       items: [
         item("deformer", "CollarWarp", "added"),
-        item("deformer", "WaveRotation", "keyforms: 1 of 2 changed; pivot moved"),
+        item("deformer", "WaveRotation", [
+          { kind: "count", what: "keyforms", before: 1, after: 2 },
+          { kind: "keyform_settings" },
+        ]),
       ],
     },
     {
-      text: "Parts: 2 → 2 (changed: WaveSleeve)",
-      items: [item("part", "WaveSleeve", "keyform opacity changed")],
+      line: elements("part", 2, 2, { changed: ["WaveSleeve"] }),
+      items: [item("part", "WaveSleeve", [{ kind: "in_keyforms", what: "opacity", count: 1 }])],
     },
     {
-      text: "Physics rigs: 0 → 1 (added: RibbonSway)",
+      line: elements("physics_rig", 0, 1, { added: ["RibbonSway"] }),
       items: [item("physics_rig", "RibbonSway", "added", "Sailor/RibbonSway")],
     },
     {
-      text: "Pose: groups 1 → 1 (changed: Sleeve A / Sleeve B)",
+      line: elements("pose_group", 1, 1, { changed: ["Sleeve A / Sleeve B"] }),
       items: [
         item(
           "pose_group",
           "Sleeve A / Sleeve B",
-          "entries Sleeve A / Sleeve B → Sleeve B / Sleeve A",
+          [{ kind: "entries", before: "Sleeve A / Sleeve B", after: "Sleeve B / Sleeve A" }],
           null,
         ),
       ],
     },
-    { text: "Textures: 2 → 3 (added: SailorRibbon; image changed: Sailor)", items: [] },
-    { text: "Requirements: avatar profile level none → 1", items: [] },
+    {
+      line: {
+        kind: "textures",
+        before: 2,
+        after: 3,
+        added: ["SailorRibbon"],
+        removed: [],
+        changed: ["Sailor"],
+      },
+      items: [],
+    },
+    { line: { kind: "avatar_level", before: null, after: 1 }, items: [] },
   ];
 }
 

@@ -2,7 +2,8 @@
 //! エディタのプレビューの着せ替えの一覧で、同じ名前のファイルの行に文字で出す (`docs/editor.md#プレビューの着せ替え`)。
 //!
 //! 見るのは要素 (パーツ・デフォーマ・メッシュ・グルー) の ID と中身、テクスチャ (名前と画像)、条件、使うパラメータ、
-//! 物理のリグと衝突体、ポーズ。違いは英語の 1 行ずつ (エディタの画面にそのまま出す) で、「ファイル → 今の編集」の向きに書く。
+//! 物理のリグと衝突体、ポーズ。違いは 1 行ずつ、種類と引数 ([`DifferenceLine`]・[`ElementChange`]) で「ファイル → 今の編集」の
+//! 向きに返し、エディタの画面が今の言語の文にする (`docs/editor.md#違いの種類と引数`。T1677)。
 //! 足した・変えたパーツ・デフォーマ・メッシュは、何が違うか (メッシュなら頂点・キーフォーム・描画順など) を要素ごとに添え、
 //! ツリーで選べるように作業用のモデルの ID を付ける (T0656)。グルー・物理のリグ・衝突体も同じように中身まで添え、
 //! 除いた要素も添える。要素ごとに、プレビューのビューポートで強調するメッシュを付ける (T0657)。
@@ -31,28 +32,88 @@ mod atlas;
 mod changes;
 
 use atlas::{FileImage, FileView};
+pub use changes::{
+    ChangedItems, ColliderShapeType, CountedItems, DeformerType, ElementChange, GridSize,
+    KeyformValue,
+};
 use changes::{
     collider_changes, deformer_changes, glue_changes, mesh_changes, or_other, part_changes,
     rig_changes,
 };
 
 /// 違いの 1 行 (T0654)。足した・変えた要素ごとの中身の違いを添える (T0656)。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct ModuleDifference {
-    /// 英語の 1 行 (例: `Meshes: 2 → 1 (removed: Ears; changed: Band)`)。
-    pub text: String,
+    /// 何が違うか (種類と引数。例: `{ kind: "elements", what: "mesh", before: 2, after: 1, removed: ["Ears"], … }`)。
+    pub line: DifferenceLine,
     /// 行の要素のうち、足したもの・変えたもの・除いたもの (要素の行だけ)。
     pub items: Vec<DifferenceItem>,
 }
 
-/// 違いの行の要素 1 つ。
+/// 違いの 1 行の種類と引数 (T1677)。`before` はファイル、`after` は今の編集の値。ID の並びは要素の並び (名前の集まりは名前の順)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DifferenceLine {
+    /// モジュールの名前。
+    Name { before: String, after: String },
+    /// 付けるスロット。
+    Slot { before: String, after: String },
+    /// 要素 (`what`) の数と、足した・除いた・変えたものの ID。
+    Elements {
+        what: DifferenceKind,
+        before: usize,
+        after: usize,
+        added: Vec<String>,
+        removed: Vec<String>,
+        changed: Vec<String>,
+    },
+    /// テクスチャの数と、足した・除いた・画像 (か名前のほかの設定) が違うものの名前。
+    Textures {
+        before: usize,
+        after: usize,
+        added: Vec<String>,
+        removed: Vec<String>,
+        changed: Vec<String>,
+    },
+    /// 条件のアバタープロファイルのレベル (無しは `null`)。
+    AvatarLevel {
+        before: Option<u8>,
+        after: Option<u8>,
+    },
+    /// 名前の集まり (`what`) の、足した・除いたもの。
+    Names {
+        what: NameList,
+        added: Vec<String>,
+        removed: Vec<String>,
+    },
+    /// ポーズのグループの並びだけが違う。
+    PoseOrder,
+    /// ファイルのアトラスの中に、今の編集のテクスチャに戻せないメッシュがあった (アトラスを違いとして数える)。
+    UnmatchedAtlas,
+}
+
+/// [`DifferenceLine::Names`] の名前の集まり。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum NameList {
+    /// 条件のスロット。
+    RequiredSlots,
+    /// 条件のパラメータ。
+    RequiredParameters,
+    /// 使うパラメータ。
+    ParametersUsed,
+}
+
+/// 違いの行の要素 1 つ。
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct DifferenceItem {
     pub kind: DifferenceKind,
     /// モジュールの中の ID (表示用)。
     pub id: String,
-    /// 何が違うか (英語。例: `vertices 12 → 14; draw order 500 → 520`。足したものは `added`、除いたものは `removed`)。
-    pub text: String,
+    /// 足したか・除いたか・変えたか。
+    pub state: ItemState,
+    /// 変えた要素の、何が違うか (足した・除いた要素では空)。
+    pub changes: Vec<ElementChange>,
     /// 選ぶときの、今の編集の ID (パーツ・デフォーマ・メッシュ・グルーは作業用のモデル、物理のリグと衝突体は
     /// 作業用の物理の ID)。見つからなければ (除いた要素など) `None`。
     pub element: Option<String>,
@@ -64,6 +125,15 @@ pub struct DifferenceItem {
     /// ポーズのグループと追従を選ぶときの、今の編集のパーツの ID (作業用のモデル。グループは要素のパーツ、
     /// 追従は本体の要素のパーツとリンクのパーツ)。ほかの種類と除いた要素は空 (T0659)。
     pub parts: Vec<String>,
+}
+
+/// 違いの行の要素が、ファイルから今の編集でどうなったか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemState {
+    Added,
+    Removed,
+    Changed,
 }
 
 /// 違いの行の要素の種類 (パーツ・デフォーマ・メッシュはエディタの選択の種類と同じ名前)。
@@ -96,7 +166,7 @@ pub fn compare_with_module_file(
     });
     for item in differences.iter_mut().flat_map(|d| &mut d.items) {
         // 除いた要素は今の編集に無い (同じ ID の本体の要素を指さないように探さない)。
-        if item.text == REMOVED {
+        if item.state == ItemState::Removed {
             continue;
         }
         if matches!(
@@ -124,9 +194,6 @@ pub fn compare_with_module_file(
     }
     Ok(differences)
 }
-
-/// 除いた要素の [`DifferenceItem::text`]。
-const REMOVED: &str = "removed";
 
 /// モジュールの中の ID `id` の要素の、作業用のモデル・物理での ID (本体の要素は除く)。
 fn workspace_id(
@@ -196,15 +263,20 @@ pub fn module_differences(
     let old = &view.module;
     let mut lines = Vec::new();
     if old.name != module.name {
-        lines.push(line(format!("Name: {} → {}", old.name, module.name)));
+        lines.push(line(DifferenceLine::Name {
+            before: old.name.clone(),
+            after: module.name.clone(),
+        }));
     }
     if old.slot != module.slot {
-        lines.push(line(format!("Slot: {} → {}", old.slot, module.slot)));
+        lines.push(line(DifferenceLine::Slot {
+            before: old.slot.to_string(),
+            after: module.slot.to_string(),
+        }));
     }
 
     elements(
         &mut lines,
-        "Parts",
         DifferenceKind::Part,
         &keyed(&old.parts, |p| p.id.to_string()),
         &keyed(&module.parts, |p| p.id.to_string()),
@@ -212,7 +284,6 @@ pub fn module_differences(
     );
     elements(
         &mut lines,
-        "Deformers",
         DifferenceKind::Deformer,
         &keyed(&old.deformers, |d| d.id.to_string()),
         &keyed(&module.deformers, |d| d.id.to_string()),
@@ -221,7 +292,6 @@ pub fn module_differences(
     // メッシュのテクスチャは番号なので、名前で比べる (テクスチャの並びが変わっただけなら同じ)。
     elements(
         &mut lines,
-        "Meshes",
         DifferenceKind::Mesh,
         &keyed(&old.meshes, |m| m.id.to_string()),
         &keyed(&module.meshes, |m| m.id.to_string()),
@@ -235,7 +305,6 @@ pub fn module_differences(
     );
     elements(
         &mut lines,
-        "Glues",
         DifferenceKind::Glue,
         &keyed(&old.glues, |g| g.id.to_string()),
         &keyed(&module.glues, |g| g.id.to_string()),
@@ -245,36 +314,33 @@ pub fn module_differences(
 
     let requires = (&old.requires, &module.requires);
     if requires.0.avatar_level != requires.1.avatar_level {
-        let level = |l: Option<u8>| l.map_or_else(|| "none".to_owned(), |l| l.to_string());
-        lines.push(line(format!(
-            "Required avatar level: {} → {}",
-            level(requires.0.avatar_level),
-            level(requires.1.avatar_level)
-        )));
+        lines.push(line(DifferenceLine::AvatarLevel {
+            before: requires.0.avatar_level,
+            after: requires.1.avatar_level,
+        }));
     }
     names(
         &mut lines,
-        "Required slots",
+        NameList::RequiredSlots,
         &requires.0.slots,
         &requires.1.slots,
     );
     names(
         &mut lines,
-        "Required parameters",
+        NameList::RequiredParameters,
         &requires.0.parameters,
         &requires.1.parameters,
     );
     let used = (old.referenced_parameters(), module.referenced_parameters());
     names(
         &mut lines,
-        "Parameters used",
+        NameList::ParametersUsed,
         &used.0.into_iter().collect::<Vec<_>>(),
         &used.1.into_iter().collect::<Vec<_>>(),
     );
 
     elements(
         &mut lines,
-        "Physics rigs",
         DifferenceKind::PhysicsRig,
         &keyed(&old.physics.rigs, |r| r.id.to_string()),
         &keyed(&module.physics.rigs, |r| r.id.to_string()),
@@ -282,7 +348,6 @@ pub fn module_differences(
     );
     elements(
         &mut lines,
-        "Colliders",
         DifferenceKind::Collider,
         &keyed(&old.physics.colliders, |c| c.id.to_string()),
         &keyed(&module.physics.colliders, |c| c.id.to_string()),
@@ -295,9 +360,9 @@ pub fn module_differences(
     lines
 }
 
-fn line(text: String) -> ModuleDifference {
+fn line(line: DifferenceLine) -> ModuleDifference {
     ModuleDifference {
-        text,
+        line,
         items: Vec::new(),
     }
 }
@@ -317,51 +382,88 @@ fn texture_name<'a>(module: &'a Module, mesh: &Mesh) -> Option<&'a str> {
 /// `changes` は要素の中身の違い (同じなら空)。足した・変えた・除いた要素を行に添える。
 fn elements<T>(
     lines: &mut Vec<ModuleDifference>,
-    label: &str,
     kind: DifferenceKind,
     old: &[(String, &T)],
     new: &[(String, &T)],
-    changes: impl Fn(&T, &T) -> Vec<String>,
+    changes: impl Fn(&T, &T) -> Vec<ElementChange>,
 ) {
     let mut items = Vec::new();
     let mut added = Vec::new();
     let mut changed = Vec::new();
     for (id, element) in new {
-        let text = match find(old, id) {
+        match find(old, id) {
             None => {
-                added.push(id.as_str());
-                "added".to_owned()
+                added.push(id.clone());
+                items.push(item(kind, id, ItemState::Added, Vec::new()));
             }
             Some(o) => {
                 let what = changes(o, element);
                 if what.is_empty() {
                     continue;
                 }
-                changed.push(id.as_str());
-                what.join("; ")
+                changed.push(id.clone());
+                items.push(item(kind, id, ItemState::Changed, what));
             }
-        };
-        items.push(item(kind, id, text));
+        }
     }
-    let removed: Vec<&str> = old
+    let removed: Vec<String> = old
         .iter()
         .filter(|(id, _)| find(new, id).is_none())
-        .map(|(id, _)| id.as_str())
+        .map(|(id, _)| id.clone())
         .collect();
-    items.extend(removed.iter().map(|id| item(kind, id, REMOVED.to_owned())));
-    if let Some(details) = details(&added, &removed, &changed, "changed") {
-        lines.push(ModuleDifference {
-            text: format!("{label}: {} → {} ({details})", old.len(), new.len()),
-            items,
-        });
-    }
+    items.extend(
+        removed
+            .iter()
+            .map(|id| item(kind, id, ItemState::Removed, Vec::new())),
+    );
+    push_elements(
+        lines,
+        kind,
+        (old.len(), new.len()),
+        added,
+        removed,
+        changed,
+        items,
+    );
 }
 
-fn item(kind: DifferenceKind, id: &str, text: String) -> DifferenceItem {
+/// 要素の行 (足した・除いた・変えたものがあるときだけ)。
+fn push_elements(
+    lines: &mut Vec<ModuleDifference>,
+    what: DifferenceKind,
+    (before, after): (usize, usize),
+    added: Vec<String>,
+    removed: Vec<String>,
+    changed: Vec<String>,
+    items: Vec<DifferenceItem>,
+) {
+    if added.is_empty() && removed.is_empty() && changed.is_empty() {
+        return;
+    }
+    lines.push(ModuleDifference {
+        line: DifferenceLine::Elements {
+            what,
+            before,
+            after,
+            added,
+            removed,
+            changed,
+        },
+        items,
+    });
+}
+
+fn item(
+    kind: DifferenceKind,
+    id: &str,
+    state: ItemState,
+    changes: Vec<ElementChange>,
+) -> DifferenceItem {
     DifferenceItem {
         kind,
         id: id.to_owned(),
-        text,
+        state,
+        changes,
         element: None,
         meshes: Vec::new(),
         parts: Vec::new(),
@@ -372,24 +474,23 @@ fn find<'a, T>(list: &[(String, &'a T)], id: &str) -> Option<&'a T> {
     list.iter().find(|(i, _)| i == id).map(|(_, t)| *t)
 }
 
-/// 足した・除いた・変えたもの (`changed` の見出しは `verb`)。どれもなければ `None`。
-fn details(added: &[&str], removed: &[&str], changed: &[&str], verb: &str) -> Option<String> {
-    let parts: Vec<String> = [("added", added), ("removed", removed), (verb, changed)]
-        .into_iter()
-        .filter(|(_, ids)| !ids.is_empty())
-        .map(|(what, ids)| format!("{what}: {}", ids.join(", ")))
-        .collect();
-    (!parts.is_empty()).then(|| parts.join("; "))
-}
-
 /// 名前の集まりの違い (順序は見ない)。
-fn names<T: Display + Ord>(lines: &mut Vec<ModuleDifference>, label: &str, old: &[T], new: &[T]) {
+fn names<T: Display + Ord>(
+    lines: &mut Vec<ModuleDifference>,
+    what: NameList,
+    old: &[T],
+    new: &[T],
+) {
     let old: BTreeSet<String> = old.iter().map(ToString::to_string).collect();
     let new: BTreeSet<String> = new.iter().map(ToString::to_string).collect();
-    let added: Vec<&str> = new.difference(&old).map(String::as_str).collect();
-    let removed: Vec<&str> = old.difference(&new).map(String::as_str).collect();
-    if let Some(details) = details(&added, &removed, &[], "changed") {
-        lines.push(line(format!("{label}: {details}")));
+    let added: Vec<String> = new.difference(&old).cloned().collect();
+    let removed: Vec<String> = old.difference(&new).cloned().collect();
+    if !added.is_empty() || !removed.is_empty() {
+        lines.push(line(DifferenceLine::Names {
+            what,
+            added,
+            removed,
+        }));
     }
 }
 
@@ -578,15 +679,25 @@ fn pose_differences(lines: &mut Vec<ModuleDifference>, old: &ModulePose, new: &M
         let id = group_label(group);
         let found = (0..old.groups.len()).find(|&k| !matched[k] && shares(&old.groups[k], group));
         let Some(k) = found else {
-            added.push(id.clone());
-            items.push(item(DifferenceKind::PoseGroup, &id, "added".to_owned()));
+            items.push(item(
+                DifferenceKind::PoseGroup,
+                &id,
+                ItemState::Added,
+                Vec::new(),
+            ));
+            added.push(id);
             continue;
         };
         matched[k] = true;
         let what = group_changes(&old.groups[k], group);
         if !what.is_empty() {
-            changed.push(id.clone());
-            items.push(item(DifferenceKind::PoseGroup, &id, what.join("; ")));
+            items.push(item(
+                DifferenceKind::PoseGroup,
+                &id,
+                ItemState::Changed,
+                what,
+            ));
+            changed.push(id);
         }
     }
     let removed: Vec<String> = old
@@ -596,58 +707,55 @@ fn pose_differences(lines: &mut Vec<ModuleDifference>, old: &ModulePose, new: &M
         .filter(|(_, m)| !**m)
         .map(|(g, _)| group_label(g))
         .collect();
-    items.extend(
-        removed
-            .iter()
-            .map(|id| item(DifferenceKind::PoseGroup, id, REMOVED.to_owned())),
+    items.extend(removed.iter().map(|id| {
+        item(
+            DifferenceKind::PoseGroup,
+            id,
+            ItemState::Removed,
+            Vec::new(),
+        )
+    }));
+    push_elements(
+        lines,
+        DifferenceKind::PoseGroup,
+        (old.groups.len(), new.groups.len()),
+        added,
+        removed,
+        changed,
+        items,
     );
-    if let Some(details) = details(&strs(&added), &strs(&removed), &strs(&changed), "changed") {
-        lines.push(ModuleDifference {
-            text: format!(
-                "Pose groups: {} → {} ({details})",
-                old.groups.len(),
-                new.groups.len()
-            ),
-            items,
-        });
-    }
 
     elements(
         lines,
-        "Pose follows",
         DifferenceKind::PoseFollow,
         &keyed(&old.links, |e| e.part.to_string()),
         &keyed(&new.links, |e| e.part.to_string()),
         |a: &PoseEntry, b: &PoseEntry| {
             let mut out = Vec::new();
-            linked(&mut out, "links", &a.links, &b.links);
+            linked(&mut out, None, &a.links, &b.links);
             out
         },
     );
     if lines.len() == before {
-        lines.push(line("Pose: order of groups changed".to_owned()));
+        lines.push(line(DifferenceLine::PoseOrder));
     }
 }
 
-fn strs(ids: &[String]) -> Vec<&str> {
-    ids.iter().map(String::as_str).collect()
-}
-
 /// 同じとみなしたグループの中身の違い (要素の並びと、要素ごとのリンク)。
-fn group_changes(old: &PoseGroup, new: &PoseGroup) -> Vec<String> {
+fn group_changes(old: &PoseGroup, new: &PoseGroup) -> Vec<ElementChange> {
     if old == new {
         return Vec::new();
     }
     let mut out = Vec::new();
-    let (a, b) = (group_label(old), group_label(new));
-    if a != b {
-        out.push(format!("entries {a} → {b}"));
+    let (before, after) = (group_label(old), group_label(new));
+    if before != after {
+        out.push(ElementChange::Entries { before, after });
     }
     for entry in &new.entries {
         if let Some(before) = old.entries.iter().find(|e| e.part == entry.part) {
             linked(
                 &mut out,
-                &format!("links of {}", entry.part),
+                Some(entry.part.to_string()),
                 &before.links,
                 &entry.links,
             );
@@ -656,24 +764,29 @@ fn group_changes(old: &PoseGroup, new: &PoseGroup) -> Vec<String> {
     or_other(out)
 }
 
-/// リンクのパーツの違い (足した・除いた。並びだけなら `reordered`)。
-fn linked(out: &mut Vec<String>, what: &str, old: &[PartId], new: &[PartId]) {
+/// リンクのパーツの違い (足した・除いた。並びだけなら [`ElementChange::LinksReordered`])。`entry` はグループの要素のパーツ。
+fn linked(out: &mut Vec<ElementChange>, entry: Option<String>, old: &[PartId], new: &[PartId]) {
     if old == new {
         return;
     }
-    let added: Vec<&str> = new
+    let added: Vec<String> = new
         .iter()
         .filter(|p| !old.contains(p))
-        .map(|p| p.as_str())
+        .map(ToString::to_string)
         .collect();
-    let removed: Vec<&str> = old
+    let removed: Vec<String> = old
         .iter()
         .filter(|p| !new.contains(p))
-        .map(|p| p.as_str())
+        .map(ToString::to_string)
         .collect();
-    match details(&added, &removed, &[], "changed") {
-        Some(details) => out.push(format!("{what} ({details})")),
-        None => out.push(format!("{what} reordered")),
+    if added.is_empty() && removed.is_empty() {
+        out.push(ElementChange::LinksReordered { entry });
+    } else {
+        out.push(ElementChange::Links {
+            entry,
+            added,
+            removed,
+        });
     }
 }
 
@@ -694,19 +807,19 @@ fn textures(
         .filter(|(i, _)| !matches!(view.images[*i], FileImage::Hidden))
         .collect();
     let find = |name: &str| old.iter().find(|(_, t)| t.name == name).map(|(i, _)| *i);
-    let added: Vec<&str> = module
+    let added: Vec<String> = module
         .textures
         .iter()
         .filter(|t| find(&t.name).is_none())
-        .map(|t| t.name.as_str())
+        .map(|t| t.name.clone())
         .collect();
-    let removed: Vec<&str> = old
+    let removed: Vec<String> = old
         .iter()
         .filter(|(_, t)| !module.textures.iter().any(|n| n.name == t.name))
-        .map(|(_, t)| t.name.as_str())
+        .map(|(_, t)| t.name.clone())
         .collect();
     let file = view.file;
-    let changed: Vec<&str> = module
+    let changed: Vec<String> = module
         .textures
         .iter()
         .filter(|t| {
@@ -724,19 +837,18 @@ fn textures(
                     }
             })
         })
-        .map(|t| t.name.as_str())
+        .map(|t| t.name.clone())
         .collect();
-    if let Some(details) = details(&added, &removed, &changed, "different image") {
-        lines.push(line(format!(
-            "Textures: {} → {} ({details})",
-            old.len(),
-            module.textures.len()
-        )));
+    if !added.is_empty() || !removed.is_empty() || !changed.is_empty() {
+        lines.push(line(DifferenceLine::Textures {
+            before: old.len(),
+            after: module.textures.len(),
+            added,
+            removed,
+            changed,
+        }));
     }
     if view.unresolved {
-        lines.push(line(
-            "Some meshes in the file's texture atlases could not be matched to your current textures, so they count as changed"
-                .to_owned(),
-        ));
+        lines.push(line(DifferenceLine::UnmatchedAtlas));
     }
 }

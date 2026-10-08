@@ -138,14 +138,17 @@ export function shownVersion(
  * 要素が、描いている版 `shown` に無いか (今の編集で除いた要素か、ファイルに無い足した要素)。メッシュがその版に
  * 残っていれば輪郭は描けるが、要素そのものではない (T0661)。
  */
-export function missingIn(item: Pick<DifferenceItem, "text">, shown: ShownVersion | null): boolean {
+export function missingIn(
+  item: Pick<DifferenceItem, "state">,
+  shown: ShownVersion | null,
+): boolean {
   if (shown === null) return false;
-  return shown.own ? item.text === "removed" : item.text === "added";
+  return item.state === (shown.own ? "removed" : "added");
 }
 
 /** 強調の知らせ (ビューポートの下に出す)。`found` は描けた要素があったか。 */
 export function highlightNotice(
-  item: Pick<DifferenceItem, "id" | "text">,
+  item: Pick<DifferenceItem, "id" | "state">,
   shown: ShownVersion | null,
   found: boolean,
 ): string {

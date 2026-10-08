@@ -27,6 +27,7 @@ import { t } from "../i18n";
 import type { DifferenceItem, ModuleDifference, Slot } from "../ipc";
 import TipButton from "../ui/TipButton.svelte";
 import { selectTitle } from "./differenceHighlight";
+import { describeItem, describeLine } from "./differenceText";
 import {
   DIFFERENCE_FILTER_FROM,
   DIFFERENCE_ROWS,
@@ -335,9 +336,10 @@ onMount(() => {
         <p class="ed-hint" role="status">{t("preview.dressUp.differences.filter.none")}</p>
       {/if}
       {#each shownLines as line, i (i)}
-        {@const key = `${name}\u0000${line.text}`}
+        {@const text = describeLine(line.line)}
+        {@const key = `${name}\u0000${JSON.stringify(line.line)}`}
         {@const limit = differencesExpanded[key] || query !== "" ? line.items.length : DIFFERENCE_ROWS}
-        <p class="line">{line.text}</p>
+        <p class="line">{text}</p>
         {#if line.items.length > 0}
           <table class="items">
             <thead class="ugoe-visually-hidden">
@@ -374,7 +376,7 @@ onMount(() => {
                       {/snippet}
                     </Tooltip>
                   </th>
-                  <td>{item.text}</td>
+                  <td>{describeItem(item)}</td>
                   <td class="action">
                     {#if item.element !== null && onselect}
                       <TipButton small tooltip={selectTitle(item)} onclick={() => onselect?.(item)}
