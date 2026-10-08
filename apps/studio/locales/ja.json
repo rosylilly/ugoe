@@ -237,6 +237,8 @@
     "trackingWaitMean": "平均 {{value}}",
     "trackingWaitMax": "最大 {{value}}",
     "trackingWaitLate": "刻みに遅れた値 {{value}}",
+    "trackingWaitMargin": "余裕 {{value}}",
+    "trackingWaitMarginNone": "余裕なし (促しを寄せていません)",
     "outputWindow": "出力ウィンドウ",
     "virtualCamera": "仮想カメラ",
     "browserSource": "ブラウザソース",

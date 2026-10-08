@@ -153,6 +153,8 @@ export interface TrackingWait {
   maxMs: number;
   /** 届いた値のうち、狙った刻みに遅れた割合 (0〜1)。 */
   late: number;
+  /** 今の促しの余裕 (ミリ秒。1〜4)。促しを寄せていなければ `null` (T0867)。 */
+  marginMs: number | null;
 }
 
 /**

@@ -38,9 +38,9 @@ describe("load warnings", () => {
     // 測り終える前は速さと揺れを判断しない。
     expect(loadWarnings(status({ measuredRate: null, maxIntervalMs: null }))).toEqual([]);
     // トラッキングの待ちは目安で、刻みに遅れた値が多くても注意しない (T0863。遅れは刻みのスレッドが自分で減らす。T0864)。
-    expect(loadWarnings(status({ trackingWait: { meanMs: 12, maxMs: 30, late: 0.5 } }))).toEqual(
-      [],
-    );
+    expect(
+      loadWarnings(status({ trackingWait: { meanMs: 12, maxMs: 30, late: 0.5, marginMs: 4 } })),
+    ).toEqual([]);
   });
 
   it("flag a slow or jittery tick", () => {

@@ -200,18 +200,41 @@ describe("トラッキングの待ち", () => {
     expect(hidden).toContain(t("load.trackingWaitNone"));
   });
 
-  it("平均・最大・刻みに遅れた割合を区切りでつなぎ、遅れても注意は出さない", () => {
+  const values = [
+    t("load.trackingWaitMean", { value: t("load.ms", { value: 1.23 }) }),
+    t("load.trackingWaitMax", { value: t("load.ms", { value: 15.5 }) }),
+    t("load.trackingWaitLate", { value: "12.5%" }),
+  ];
+
+  it("平均・最大・刻みに遅れた割合・余裕を区切りでつなぎ、遅れても注意は出さない", () => {
     const { target } = setup(WINDOWS, {
       ...status([]),
-      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125 },
+      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125, marginMs: 1.5 },
     });
     expect(rowText(target, t("load.trackingWait"))).toBe(
-      [
-        t("load.trackingWaitMean", { value: t("load.ms", { value: 1.23 }) }),
-        t("load.trackingWaitMax", { value: t("load.ms", { value: 15.5 }) }),
-        t("load.trackingWaitLate", { value: "12.5%" }),
-      ].join(sep),
+      [...values, t("load.trackingWaitMargin", { value: t("load.ms", { value: 1.5 }) })].join(sep),
     );
     expect(target.querySelector(".ugoe-notice")).toBeNull();
+  });
+
+  it("促しを寄せていなければ「余裕 —」を出し、読み上げには寄せていないことを読ませる", () => {
+    const { target } = setup(WINDOWS, {
+      ...status([]),
+      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125, marginMs: null },
+    });
+    const row = [...target.querySelectorAll("dt")].find(
+      (el) => el.textContent === t("load.trackingWait"),
+    )?.nextElementSibling;
+    expect(row?.textContent).toBe(
+      [...values, t("load.trackingWaitMargin", { value: "—" })].join(sep) +
+        t("load.trackingWaitMarginNone"),
+    );
+    // 「—」は読み上げから隠し、代わりの文は見た目では隠す
+    expect(row?.querySelector('[aria-hidden="true"]')?.textContent).toBe(
+      t("load.trackingWaitMargin", { value: "—" }),
+    );
+    expect(row?.querySelector(".ugoe-visually-hidden")?.textContent).toBe(
+      t("load.trackingWaitMarginNone"),
+    );
   });
 });

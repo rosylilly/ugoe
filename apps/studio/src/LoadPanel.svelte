@@ -4,8 +4,9 @@
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
   使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
   出力ウィンドウとブラウザソースの行には、描いた回数と並べて描く機会 (`requestAnimationFrame`) の回数を出す (T0862)。
-  トラッキングの値が届いてから刻みで使われるまでの待ち (平均・最大・刻みに遅れた値の割合) も出す (T0863)。目安なので注意は出さない。
-  値が届いていない間は「—」(読み上げには届いていないことを読ませる)。
+  トラッキングの値が届いてから刻みで使われるまでの待ち (平均・最大・刻みに遅れた値の割合) と、今の促しの余裕 (T0867) も出す (T0863)。
+  目安なので注意は出さない。値が届いていない間は「—」(読み上げには届いていないことを読ませる)。
+  値は届いているが促しを寄せていない (余裕が無い) 間は「余裕 —」(読み上げには寄せていないことを読ませる)。
   読み上げの区切り (T0862): 受け手ごとの行 (`<dd>`) の値は、見える区切りの文字 (`load.separator`。「、」・", ") でつないだ 1 つの文にする。
   「・」は読み上げで黙って飛ばされることがあるので使わない。2 行目 (API と GPU の名前) の前は見た目では改行なので、
   区切りの文字を `.ugoe-visually-hidden` で読み上げにだけ置く (`aria-label` は `<dd>` の名前にならないので使わない)。
@@ -106,7 +107,7 @@ function percent(value: number): string {
   return formatNumber(value, { style: "percent", maximumFractionDigits: 1 });
 }
 
-/** トラッキングの待ちの行の値 (平均・最大・刻みに遅れた値の割合)。 */
+/** トラッキングの待ちの行の値 (平均・最大・刻みに遅れた値の割合)。余裕は行の終わりに別に置く。 */
 function trackingWaitValues(wait: TrackingWait): string[] {
   return [
     t("load.trackingWaitMean", { value: ms(wait.meanMs) }),
@@ -264,7 +265,14 @@ function gpuValues(r: RendererLoad): string[] {
         {#if status.trackingWait === null}
           <span aria-hidden="true">—</span><span class="ugoe-visually-hidden">{t("load.trackingWaitNone")}</span>
         {:else}
-          {trackingWaitValues(status.trackingWait).join(t("load.separator"))}
+          {@const wait = status.trackingWait}
+          <!-- 余裕の前の区切りとの間に空白を入れない -->
+          {trackingWaitValues(wait).join(t("load.separator"))}{t("load.separator")}{#if wait.marginMs === null}<span
+              aria-hidden="true">{t("load.trackingWaitMargin", { value: "—" })}</span
+            ><span class="ugoe-visually-hidden">{t("load.trackingWaitMarginNone")}</span>{:else}{t(
+              "load.trackingWaitMargin",
+              { value: ms(wait.marginMs) },
+            )}{/if}
         {/if}
       </dd>
       {#each status.renderers as r (r.label)}

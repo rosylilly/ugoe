@@ -312,7 +312,7 @@ describe("studio", () => {
       const spread = Math.max(...seen) - Math.min(...seen);
       assert.ok(spread > 5, `AngleX in the control window moved only ${spread}`);
 
-      // 「フレームレートと負荷」に、値が届いてから刻みで使われるまでの待ちが出る (届いていない間の「—」ではない。T0863)
+      // 「フレームレートと負荷」に、値が届いてから刻みで使われるまでの待ちと今の余裕が出る (届いていない間の「—」ではない。T0863・T0867)
       const trigger = await s.waitFind('[data-panel="load"] .ugoe-section__trigger');
       const wasOpen = (await trigger.attribute("aria-expanded")) === "true";
       if (!wasOpen) await trigger.click();
@@ -324,7 +324,10 @@ describe("studio", () => {
           return dt?.nextElementSibling?.textContent.trim() ?? null;
         });
       await waitFor(
-        async () => /^Average .+ ms, max .+ ms, .+% missed their tick$/.test(await trackingWait()),
+        async () =>
+          /^Average .+ ms, max .+ ms, .+% missed their tick, margin .+ ms$/.test(
+            await trackingWait(),
+          ),
         {
           timeout: 5_000,
           message: "the tracking wait in the load panel",

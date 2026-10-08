@@ -262,7 +262,7 @@ mod tests {
         );
         println!("cost {cost:?} / {seconds} s each");
         println!(
-            "mode   tick camera | wait mean p95 max (after 1 s) | rate min | max interval | dt min max | values | reported mean max late (last)"
+            "mode   tick camera | wait mean p95 max (after 1 s) | rate min | max interval | dt min max | values | reported mean max late margin (last)"
         );
         for rate in TickRate::ALL {
             for (camera_hz, tagged) in [(30, false), (30, true), (60, false), (60, true)] {
@@ -300,10 +300,12 @@ mod tests {
                     || "-".to_owned(),
                     |w| {
                         format!(
-                            "{:>5.2} {:>5.2} ms {:>5.1}%",
+                            "{:>5.2} {:>5.2} ms {:>5.1}% margin {}",
                             w.mean_ms,
                             w.max_ms,
-                            w.late * 100.0
+                            w.late * 100.0,
+                            w.margin_ms
+                                .map_or_else(|| "-".to_owned(), |m| format!("{m:.2} ms"))
                         )
                     },
                 );

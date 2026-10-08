@@ -247,6 +247,8 @@
     "trackingWaitMean": "Average {{value}}",
     "trackingWaitMax": "max {{value}}",
     "trackingWaitLate": "{{value}} missed their tick",
+    "trackingWaitMargin": "margin {{value}}",
+    "trackingWaitMarginNone": "no margin (pulses are not led)",
     "outputWindow": "Output window",
     "virtualCamera": "Virtual camera",
     "browserSource": "Browser source",

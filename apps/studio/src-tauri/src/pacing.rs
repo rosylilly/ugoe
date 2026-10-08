@@ -136,6 +136,8 @@ pub struct Ticked {
     pub values: u32,
     /// そのうち、促しが狙った刻みに遅れた値の数。
     pub late: u32,
+    /// この刻みの後の余裕 (`adjust_margin`)。促しを寄せていなければ (値が直近に届いていない) `None` (T0867)。
+    pub margin: Option<Duration>,
 }
 
 impl Pacer {
@@ -377,7 +379,7 @@ impl Pacer {
         }
     }
 
-    /// `now` まで待った (起きた) ので刻む。次の刻みの時刻を進め、この刻みで使った値を返す。
+    /// `now` まで待った (起きた) ので刻む。次の刻みの時刻を進め、この刻みで使った値と今の余裕を返す。
     /// この刻みの前に届いた値 (この刻みが使った値) は、先に `arrived` で渡しておく。
     pub fn tick(&mut self, now: Instant) -> Ticked {
         let wait = self.unused.take().map(|value| {
@@ -385,14 +387,15 @@ impl Pacer {
             // 刻みの中で届いた値 (刻みの時刻より後) の待ちは 0。
             now.saturating_duration_since(value.at)
         });
+        self.adjust_margin(now);
         let ticked = Ticked {
             wait,
             values: self.values,
             late: self.late,
+            margin: self.aim(now).map(|_| self.margin),
         };
         self.values = 0;
         self.late = 0;
-        self.adjust_margin(now);
         self.last_tick = Some(now);
         self.pulsed = false;
         self.next += self.period;
@@ -434,6 +437,8 @@ pub struct WaitMeter {
     late: u32,
     total: Duration,
     max: Duration,
+    /// 最後の刻みの余裕 (`Ticked::margin`)。
+    margin: Option<Duration>,
     /// 直近に集め終えた結果。
     measured: Option<TrackingWait>,
 }
@@ -448,6 +453,8 @@ pub struct TrackingWait {
     pub max_ms: f32,
     /// 届いた値のうち、促しが狙った刻みに遅れた割合 (0〜1。`Ticked::late`)。
     pub late: f32,
+    /// 集め終えた刻みの余裕 (ミリ秒。`Ticked::margin`)。促しを寄せていなければ無し (T0867)。
+    pub margin_ms: Option<f32>,
 }
 
 impl WaitMeter {
@@ -464,12 +471,14 @@ impl WaitMeter {
         }
         self.values = self.values.saturating_add(ticked.values);
         self.late = self.late.saturating_add(ticked.late);
+        self.margin = ticked.margin;
         if now.saturating_duration_since(start) >= Self::WINDOW {
             // 約 1 秒の間に値が 1 つも使われなければ、無し (トラッキングを使っていない)。
             self.measured = (self.used > 0).then(|| TrackingWait {
                 mean_ms: self.total.as_secs_f32() * 1e3 / self.used as f32,
                 max_ms: self.max.as_secs_f32() * 1e3,
                 late: self.late as f32 / self.values.max(1) as f32,
+                margin_ms: self.margin.map(|m| m.as_secs_f32() * 1e3),
             });
             *self = Self {
                 window_start: Some(now),
@@ -587,6 +596,8 @@ mod tests {
         values: Vec<(Instant, u32, u32)>,
         /// 回している間の余裕の最大。
         max_margin: Duration,
+        /// 刻みのスレッドと同じく刻みごとに集めた待ち (負荷の報告。T0867)。
+        meter: WaitMeter,
     }
 
     impl Run {
@@ -634,6 +645,7 @@ mod tests {
             waits: Vec::new(),
             values: Vec::new(),
             max_margin: pacer.margin,
+            meter: WaitMeter::default(),
         };
         // 届く前の値 (届く時刻と促しの番号。届く時刻の順)。
         let mut pending: VecDeque<(Instant, u32)> = VecDeque::new();
@@ -671,6 +683,11 @@ mod tests {
                     run.deadlines.push(pacer.deadline());
                     let ticked = pacer.tick(now);
                     assert_eq!(ticked.wait, used.map(|a| now - a));
+                    // 余裕は寄せているときだけ報告する。
+                    if let Some(margin) = ticked.margin {
+                        assert_eq!(margin, pacer.margin);
+                    }
+                    run.meter.record(now, ticked);
                     run.values.push((now, ticked.values, ticked.late));
                     run.ticks.push(now);
                     run.max_margin = run.max_margin.max(pacer.margin);
@@ -837,7 +854,7 @@ mod tests {
         let rate = TickRate::Fps60;
         let period = rate.period();
         let mut pacer = Pacer::new(rate, start);
-        // 届いていなければ何も出さない。
+        // 届いていなければ何も出さない (促しを寄せないので余裕も出さない)。
         let tick = start + period;
         assert_eq!(pacer.tick(tick), Ticked::default());
         // 寄せる前の促し (刻みの直後) の値は、狙った刻みが無いので遅れには数えない。
@@ -848,6 +865,7 @@ mod tests {
             wait: Some(period - Duration::from_millis(6)),
             values: 1,
             late: 0,
+            margin: Some(Pacer::MIN_MARGIN),
         };
         assert_eq!(pacer.tick(tick), used);
         // 寄せた促し (次の刻みの 7 ms 前) の値が 6 ms で届けば、刻みの 1 ms 前に届いて間に合う。
@@ -860,6 +878,7 @@ mod tests {
             wait: Some(Pacer::MIN_MARGIN),
             values: 1,
             late: 0,
+            margin: Some(Pacer::MIN_MARGIN),
         };
         assert_eq!(pacer.tick(tick), used);
         // 混んで 9 ms かかると、狙った刻みに遅れる。その刻みは新しい値を使わない。
@@ -867,7 +886,13 @@ mod tests {
         let (pulse, _) = pacer.wake(tick);
         let slow = pacer.pulse(pulse);
         let missed = tick + period;
-        assert_eq!(pacer.tick(missed), Ticked::default());
+        assert_eq!(
+            pacer.tick(missed),
+            Ticked {
+                margin: Some(Pacer::MIN_MARGIN),
+                ..Ticked::default()
+            }
+        );
         // 遅れた値は次の促しの値に置き換わる (使われない) が、遅れた値として数える。
         let slow_at = pulse + Duration::from_millis(9);
         pacer.arrived(slow_at, slow);
@@ -880,6 +905,7 @@ mod tests {
             wait: Some(tick - arrived),
             values: 2,
             late: 1,
+            margin: Some(Pacer::MIN_MARGIN),
         };
         assert_eq!(pacer.tick(tick), used);
         // 覚えていない番号の値も、待ちには数える (遅れには数えない)。
@@ -889,6 +915,7 @@ mod tests {
             wait: Some(period - Duration::from_millis(3)),
             values: 1,
             late: 0,
+            margin: Some(Pacer::MIN_MARGIN),
         };
         assert_eq!(pacer.tick(next), used);
     }
@@ -986,6 +1013,12 @@ mod tests {
                 );
                 // 余裕が増えて、遅れた値の割合が下がる。上限は超えない。
                 assert!(after.pacer.margin > Pacer::MIN_MARGIN, "{label}");
+                // 増えた余裕が負荷の報告に出る (T0867)。
+                let reported = after.meter.measured().and_then(|w| w.margin_ms);
+                assert!(
+                    reported.is_some_and(|m| m > 1.0 && m <= 4.0 + 1e-3),
+                    "{label}: {reported:?}"
+                );
                 assert!(after.max_margin <= Pacer::MAX_MARGIN, "{label}");
                 assert!(after_late < before_late, "{label}");
                 if late_ms == 2 {
@@ -1064,6 +1097,11 @@ mod tests {
             assert!(late < 0.05, "{label}: {late}");
             // 届くまでの時間の揺れでは余裕を増やさない。
             assert_eq!(run.max_margin, Pacer::MIN_MARGIN, "{label}");
+            let reported = run.meter.measured().and_then(|w| w.margin_ms);
+            assert!(
+                reported.is_some_and(|m| (m - 1.0).abs() < 1e-3),
+                "{label}: {reported:?}"
+            );
             assert_keeps_the_rate(&run, rate, seconds, &label);
         }
     }
@@ -1086,6 +1124,8 @@ mod tests {
                     wait: used.then(|| Duration::from_millis(if long { 15 } else { 1 })),
                     values: u32::from(used) + u32::from(i == 20),
                     late: u32::from(long) + u32::from(i == 20),
+                    // 余裕は途中で 1 ms から 1.5 ms に増えた。集め終えた刻みの値を出す。
+                    margin: Some(Duration::from_micros(if i < 30 { 1000 } else { 1500 })),
                 },
             );
         }
@@ -1098,6 +1138,25 @@ mod tests {
         );
         assert!((measured.max_ms - 15.0).abs() < 1e-3, "{measured:?}");
         assert!((measured.late - 5.0 / 41.0).abs() < 1e-6, "{measured:?}");
+        assert!(
+            measured.margin_ms.is_some_and(|m| (m - 1.5).abs() < 1e-3),
+            "{measured:?}"
+        );
+        // 値は使われたが、促しを寄せていない (番号の無い値) なら余裕は無し。
+        for _ in 0..60 {
+            t += period;
+            meter.record(
+                t,
+                Ticked {
+                    wait: Some(Duration::from_millis(1)),
+                    values: 1,
+                    late: 0,
+                    margin: None,
+                },
+            );
+        }
+        let measured = meter.measured().unwrap();
+        assert_eq!(measured.margin_ms, None);
         // 次の約 1 秒に値が使われなければ、無しに戻る (トラッキングを止めた)。
         for _ in 0..60 {
             t += period;
@@ -1110,6 +1169,7 @@ mod tests {
                 wait: Some(period),
                 values: 1,
                 late: 0,
+                margin: None,
             },
         );
         meter.reset();
