@@ -1,11 +1,11 @@
 ---
 id: T1400
 title: "ugoe-wasm: WebPuppet に合成したモデルのパーツの ID の並び (part_ids) を読む口を足し、wasm の受け手は自分のモデルの並びに引き直す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-wasm, bindings/web, packages/player, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1400
 ---
 
 # T1400: ugoe-wasm: WebPuppet の part_ids と wasm の受け手の引き直し
