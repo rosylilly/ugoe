@@ -1,7 +1,8 @@
 name: Perf
 
-# 性能の検査 (`just perf`。docs/testing.md#遅くなったら気づく検査、T0191): `Puppet` の 1 フレームの評価
-# (crates/ugoe/examples/puppet_timing.rs) を release で測り、中央値が上限を超えたら失敗する。共有のランナーでは時間が 2〜3 割揺れ、
+# 性能の検査 (`just perf`。docs/testing.md#遅くなったら気づく検査、T0191・T0194): `Puppet` の 1 フレームの評価を、ネイティブ
+# (crates/ugoe/examples/puppet_timing.rs を release で) と wasm (bindings/web/examples/timing の計測のページをヘッドレスの Chrome で) で
+# 測り、中央値が上限を超えたら失敗する。共有のランナーでは時間が 2〜3 割揺れ、
 # 関係の無い PR を落とさないように PR ごとの CI (ci.yml) には入れず、週に 1 度と手動で流す (利用者の決定 2026-10-08)。
 on:
   schedule:
@@ -19,18 +20,38 @@ env:
 jobs:
   perf:
     runs-on: ubuntu-latest
+    # 見込み: キャッシュの無いときに release のビルド (ネイティブ) と web-dist のビルド (wasm。lto = "fat") がそれぞれ 10 分ほど、
+    # 計測はネイティブが 1 分ほど、wasm がページを 1 回開いて 10 秒ほど (上限を超えて 2 回測り直しても 1 分ほど)
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install Rust toolchain (rust-toolchain.toml)
+      # wasm の計測は playwright-core (ルートの devDependencies) で Chrome (ubuntu-latest に入っている google-chrome) を開く
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
-      # release のビルドは ci.yml (dev のプロファイル) のキャッシュと成果物が違うので、キーを分ける
+      # release と web-dist のビルドは ci.yml (dev のプロファイル) のキャッシュと成果物が違うので、キーを分ける
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: perf
       - uses: extractions/setup-just@v4
+      - name: Resolve wasm-bindgen version
+        id: wasm-bindgen
+        run: echo "version=$(just wasm-bindgen-version)" >> "$GITHUB_OUTPUT"
+      - name: Install wasm-bindgen-cli (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       # 上限を超えたときに、遅いのがランナーかコードかを見分けられるように CPU を残す
       - name: Show the CPU
         run: lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core)'
-      - name: Check the frame time
-        run: just perf
+      - name: Check the frame time (native)
+        run: just perf-native
+      # ネイティブが落ちても流す (別のものを測るため)
+      - name: Check the frame time (wasm)
+        if: success() || failure()
+        run: just perf-wasm

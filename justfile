@@ -225,11 +225,21 @@ nostd-check *names:
 nostd-build-std *targets:
     @node scripts/nostd-check.mjs build-std {{targets}}
 
-# 性能の検査: `Puppet` の 1 フレームの評価 (crates/ugoe/examples/puppet_timing.rs) を測り、中央値が上限を超えたら失敗する
-# (T0191、docs/testing.md#遅くなったら気づく検査)。時間は機械と負荷で揺れるので `just ci` には含めない (CI では週に 1 度の perf.yml)。
+# 性能の検査: `Puppet` の 1 フレームの評価を、ネイティブ (`perf-native`) と wasm (ブラウザ。`perf-wasm`) で測り、中央値が上限を超えたら失敗する
+# (T0191・T0194、docs/testing.md#遅くなったら気づく検査)。時間は機械と負荷で揺れるので `just ci` には含めない (CI では週に 1 度の perf.yml)。
 # ほかのビルドと重ならないときに流す
-perf:
+perf: perf-native perf-wasm
+
+# ネイティブ: crates/ugoe/examples/puppet_timing.rs を release で測り、上限 (`LIMITS`) と比べる
+perf-native:
     cargo run --release -p ugoe --example puppet_timing -- --check
+
+# wasm (ブラウザ): 古いビルドを測らないように @ugoe/runtime (`just web-runtime`) と生成のモデルを毎回作り直し、計測のページ
+# (bindings/web/examples/timing) をヘッドレスの Chrome で開いて `update` と `follow` の中央値を 300µs と比べる。
+# wasm-bindgen-cli と Chrome (環境変数 CHROME で場所を指定できる) が要る。無ければ入れ方・指定の仕方を出して失敗する
+perf-wasm: web-runtime
+    cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe
+    node bindings/web/examples/timing/measure.mjs --max-us 300
 
 # 参照レンダラを外した ugoe (`default-features = false`) の clippy とテストと、ugoe と ugoe-ffi が wgpu・naga に依存しないことの検査
 # (docs/portability.md#ugoe-クレートの-feature、T0156・T0166)

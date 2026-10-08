@@ -726,6 +726,9 @@ node bindings/web/examples/timing/serve.mjs              # 手元のブラウザ
   V8 は wasm を後から最適化し直すので、フレームの数を減らすと遅く出ます。
 - 結果はページの `window.ugoeTiming` (`done` が `true` になったら `environment` と `results` が揃う) にも置きます。
   `measure.mjs` はこれを読み、ページを `--runs` 回開き直した中央値と、測った前後の load average も出します。
+- `measure.mjs --max-us 300` は `update` と `follow` の中央値を上限と比べ、超えたものを `OVER` と示して終了コード 1 で終わります
+  (超えたらページを開き直して 2 回まで測り直す。判定は `check.mjs`、単体テストは `check.test.mjs`)。ビルドから比較までは `just perf-wasm`
+  (`just perf` に含まれる。週に 1 度の CI の perf.yml も流す。[docs/testing.md#遅くなったら気づく検査](../../docs/testing.md#遅くなったら気づく検査))。
 
 ## リリース
 

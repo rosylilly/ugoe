@@ -23,7 +23,7 @@
 | エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
 | fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は週に 1 度の `fuzz.yml`。[下](#fuzz)) |
 | tier 3 のターゲットの build-std | `core`・`alloc` が配られない tier 3 のターゲット (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い `armv6k-nintendo-3ds`) で、nightly の `-Zbuild-std` で `ugoe-ffi` の `std` の無い静的ライブラリを作り、未解決のシンボルが決めた一覧と同じかを確かめる | `just nostd-build-std [ターゲット...]` (nightly と rust-src と llvm-tools が要る。`just ci` に入れず、CI は週に 1 度の `nostd-build-std.yml`。[下](#tier-3-のターゲットの-build-std)) |
-| 性能の検査 | `crates/ugoe/examples/puppet_timing.rs` を `--check` で流し、`Puppet` の 1 フレームの評価の中央値を上限と比べる | `just perf` (時間は機械と負荷で揺れるので `just ci` に入れず、CI は週に 1 度の `perf.yml`。[下](#遅くなったら気づく検査)) |
+| 性能の検査 | `Puppet` の 1 フレームの評価の中央値を上限と比べる。ネイティブは `crates/ugoe/examples/puppet_timing.rs` を `--check` で、wasm (ブラウザ) は計測のページ `bindings/web/examples/timing/` を `measure.mjs --max-us 300` で | `just perf` (= `just perf-native` と `just perf-wasm`。時間は機械と負荷で揺れるので `just ci` に入れず、CI は週に 1 度の `perf.yml`。wasm は wasm-bindgen-cli と Chrome が要る。[下](#遅くなったら気づく検査)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行。`std` の無い形の静的ライブラリをホストの C ライブラリとリンクした見本 (`examples/c/nostd.c`) の実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz・tier 3 のターゲットの build-std・性能の検査以外) すべて実行します。
@@ -480,7 +480,7 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
 | 着せ替えの合成とコンパイル | `cargo run --release -p ugoe-runtime --example compose_timing` | 中規模の本体にモジュール 4 つを取り付ける ([modules.md](spec/modules.md#性能)) |
 | モーションのカーブの評価 | `cargo run --release -p ugoe-motion --example curve_timing` | フレームごとにキーを打った長いカーブ (300 セグメント × 100 本) を、線形の探索と前処理した探索 (`SegmentIndex`) で比べる |
 | `Puppet` の 1 フレームの評価 | `cargo run --release -p ugoe --example puppet_timing` | 中程度のモデルを模した生成のモデルと見本の `avatar.ugoe` で、`Puppet::update` と受け手の `Puppet::follow` の 1 回を測る (下の「1 フレームの評価」) |
-| `WebPuppet` の 1 フレームの評価 (wasm) | `just web-runtime` と `cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe` の後に `node bindings/web/examples/timing/measure.mjs --runs 5` | 同じ 2 つのモデルで、ブラウザの中の `WebPuppet.update`・`follow` の 1 回を測る (計測のページ `bindings/web/examples/timing/`。ヘッドレスの Chrome で開いて表を出す。手元のブラウザで開くなら `node bindings/web/examples/timing/serve.mjs`。下の「1 フレームの評価」) |
+| `WebPuppet` の 1 フレームの評価 (wasm) | `just web-runtime` と `cargo run --release -p ugoe --example puppet_timing -- --write bindings/web/examples/timing/generated.ugoe` の後に `node bindings/web/examples/timing/measure.mjs --runs 5` (`--max-us 300` で上限と比べる。ビルドから上限との比較までは `just perf-wasm`) | 同じ 2 つのモデルで、ブラウザの中の `WebPuppet.update`・`follow` の 1 回を測る (計測のページ `bindings/web/examples/timing/`。ヘッドレスの Chrome で開いて表を出す。手元のブラウザで開くなら `node bindings/web/examples/timing/serve.mjs`。下の「1 フレームの評価」) |
 
 ### 1 フレームの評価
 
@@ -536,29 +536,45 @@ wasm でも 1ms の目標を大きく下回ります (生成のモデルで目�
 
 ### 遅くなったら気づく検査
 
-変更で評価が遅くなったときに気づけるよう、`puppet_timing` に上限の判定 (`--check`) を持たせ、`just perf` で流します (T0191)。
-`update` と `follow` の中央値が上限を超えたら、超えたものを `OVER` と示して終了コード 1 で終わります。
+変更で評価が遅くなったときに気づけるよう、ネイティブの `puppet_timing` に上限の判定 (`--check`。T0191) を、wasm (ブラウザ) の計測のページを
+開く `measure.mjs` に上限の判定 (`--max-us`。T0194) を持たせ、`just perf` で両方を流します。どちらも `update` と `follow` の中央値が
+上限を超えたら、超えたものを `OVER` と示して終了コード 1 で終わります。
+
+| レシピ | 測るもの | 要るもの |
+| --- | --- | --- |
+| `just perf-native` | `puppet_timing -- --check` (release) | Rust だけ |
+| `just perf-wasm` | `just web-runtime` と `puppet_timing -- --write` で生成物を毎回作り直してから (古いビルドを測らないように)、`measure.mjs --max-us 300` (ページを 1 回開く) | wasm-bindgen-cli (`Cargo.lock` と同じ版) と Chrome か Chromium (`CHROME` で場所を指定できる) |
+| `just perf` | 上の 2 つを順に (ネイティブが落ちたら wasm は流さない) | 両方 |
+
+wasm-bindgen-cli が無ければ `just web-runtime` が入れ方を出して失敗し、Chrome が無ければ `measure.mjs` が `Chrome is not found` と出して
+終了コード 2 で終わります (飛ばして成功にはしない。上限を確かめずに通ったと誤解しないため)。手元で Chrome を入れないなら `just perf-native` を流します。
 
 - **方針 (利用者の決定 2026-10-08):** 時間の上限を `just perf` と週に 1 度 (月曜) と手動の CI のジョブ (`.github/workflows/perf.yml`) で確かめます。
   新しい依存や道具は入れません。共有の CI のランナーでは時間が 2〜3 割揺れるので、PR ごとの CI (`just ci`) で時間を比べると関係の無い
   PR が落ちます。前の値と比べるベンチマーク (`criterion` など) は前の値が別の機械のものになって誤報が多く、命令の数を数える方法
   (`iai-callgrind` と valgrind) は依存と道具が増えるため、今は入れません。PR ごとに細かい後退を止めたくなったら、そのとき命令の数を足します。
-- **上限 (`puppet_timing.rs` の `LIMITS`、1 フレームの中央値):**
+- **上限 (1 フレームの中央値。ネイティブは `puppet_timing.rs` の `LIMITS`、wasm は `just perf-wasm` の `--max-us`):**
 
-  | モデル | `update` | `follow` | 手元の値 (上の表) |
-  | --- | --- | --- | --- |
-  | 生成のモデル | 300µs | 300µs | 55µs ほど |
-  | `avatar.ugoe` | 100µs | 100µs | 18µs ほど |
+  | モデル | ネイティブの `update`・`follow` | 手元の値 (上の表) | wasm の `update`・`follow` | 手元の値 (上の表) |
+  | --- | --- | --- | --- | --- |
+  | 生成のモデル | 300µs | 55µs ほど | 300µs | 70µs ほど |
+  | `avatar.ugoe` | 100µs | 18µs ほど | 300µs | 18µs ほど |
 
 - **決め方:** GitHub の `ubuntu-latest` のランナー (共有の仮想機械) は、手元の機械 (上の表) より 1 コアの速さで 2 倍ほど遅く、
   さらに 2〜3 割揺れると見込み (生成のモデルで 150µs 弱、`avatar.ugoe` で 50µs 弱)、その 2 倍ほどを上限にしました。
   生成のモデルの上限 300µs は、中程度の PC がランナーの 3 倍遅くても目標の 1ms に収まる値でもあります。揺れで落ちないことを優先したので、
   ランナーでは 2 倍ほどの後退と、目標を割りそうなことに気づけます。1〜2 割の細かい後退は揺れに埋もれて分かりません。
+- **wasm の上限 (利用者の決定 2026-10-08、T0194):** ネイティブの生成のモデルと同じ 300µs を、すべてのモデルの `update` と `follow` に 1 つの値で
+  使います。手元の中央値は回ごとに 3 割ほど揺れました (生成のモデルの `update` で 67〜87µs) が、それに対しても 3 倍以上の余裕があり、
+  ランナーが 2 倍遅くても下回ります。`avatar.ugoe` には緩く (手元の値の 15 倍ほど)、wasm で気づけるのは主に生成のモデルの後退です
+  (`avatar.ugoe` の小さな後退はネイティブの 100µs の上限で見ます)。物理を止めた `update` は内訳なので比べません。
 - **揺れへの備え:** 中央値は 200 フレームずつの平均 30 個の中央値で、一時の重なりにはもともと強くしてあります。それでも上限を超えたものは
-  2 回まで測り直し、最も速い中央値で判定します (`RETRIES`)。手元で流すときは、ほかのビルドと重ならないときにします
+  2 回まで測り直し、最も速い中央値で判定します (`RETRIES`。wasm はページを開き直して測り直す。`bindings/web/examples/timing/check.mjs`)。手元で流すときは、ほかのビルドと重ならないときにします
   (ほかのビルドが並行して load average 16 ほどの手元の機械でも、生成のモデルの `update` は 80µs ほどで上限を下回りました)。
-- **CI:** `perf.yml` は CPU (`lscpu`) を出してから `just perf` を流します。落ちたら、まず CPU と測った値を見て、ランナーが遅いのかコードが遅いのかを
-  見分けます。ランナーで測った値が分かったら、この節に書き、上限が緩すぎ・きつすぎなら見直します。
+- **CI:** `perf.yml` は CPU (`lscpu`) を出してから `just perf-native` と `just perf-wasm` を別の段で流します (ネイティブが落ちても wasm を流す)。
+  wasm の段のために Node と pnpm の依存、ビルド済みの wasm-bindgen-cli を入れ、Chrome は `ubuntu-latest` に入っているものを使います。
+  キャッシュの無いときの見込みは release と web-dist のビルドがそれぞれ 10 分ほど、計測が合わせて 2 分ほどで、`timeout-minutes: 30` に収まります。
+  落ちたら、まず CPU と測った値を見て、ランナーが遅いのかコードが遅いのかを見分けます。ランナーで測った値が分かったら、この節に書き、上限が緩すぎ・きつすぎなら見直します。
 
 ## 描画テスト
 
