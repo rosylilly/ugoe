@@ -1,11 +1,11 @@
 ---
 id: T0869
 title: "スタジオ: 外部 API に、今のプロファイルが書き換えないプロファイル (見本・読み取り専用) かを出すか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0869
 ---
 
 # T0869: スタジオ: 外部 API に、今のプロファイルが書き換えないプロファイルかを出すか決める (判断が要る)

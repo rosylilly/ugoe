@@ -1,11 +1,11 @@
 ---
 id: T0871
 title: "スタジオの e2e: T0812 の手順で「トラッキングの待ち」を数秒分集め、遅れた値の割合を前後で比べられるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0871
 ---
 
 # T0871: スタジオの e2e: T0812 の手順で「トラッキングの待ち」を数秒分集める

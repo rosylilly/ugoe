@@ -1,11 +1,11 @@
 ---
 id: T0334
 title: "性能: 物理の段の内訳 (1 段目の評価・物理・2 段目) を測る仕組みをリポジトリに置くか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-physics, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0334
 ---
 
 # T0334: 性能: 物理の段の内訳を測る仕組みをリポジトリに置くか決める (判断が要る)

@@ -1,11 +1,11 @@
 ---
 id: T1405
 title: "Godot: ノードに形が変わったか (と書き換えた回数) を出し、適合テストと smoke で変わらないフレームの書き換えを省いたことを確かめる (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [bindings/godot, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1405
 ---
 
 # T1405: Godot: ノードに形が変わったか (と書き換えた回数) を出し、書き換えを省いたことを確かめる (判断が要る)

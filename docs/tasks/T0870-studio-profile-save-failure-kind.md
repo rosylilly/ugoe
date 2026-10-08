@@ -1,11 +1,11 @@
 ---
 id: T0870
 title: "スタジオ: 自動の保存の失敗を、書けない場所と一時の失敗 (ディスクが一杯など) に分けるか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0870
 ---
 
 # T0870: スタジオ: 自動の保存の失敗を、書けない場所と一時の失敗に分けるか決める (判断が要る)

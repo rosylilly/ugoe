@@ -1,11 +1,11 @@
 ---
 id: T0333
 title: "性能: 物理の衝突の判定で、掃引の間は変わらない親と衝突体の距離を 1 度だけ求める"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-physics, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0333
 ---
 
 # T0333: 性能: 物理の衝突の判定で、掃引の間は変わらない親と衝突体の距離を 1 度だけ求める
