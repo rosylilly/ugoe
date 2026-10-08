@@ -1,11 +1,11 @@
 ---
 id: T1403
 title: "@ugoe/runtime: 見本のページに power-preference の選択と adapterName を出し、適合テストで変えて作り直すシナリオを足す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [bindings/web, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1403
 ---
 
 # T1403: @ugoe/runtime: 見本のページと適合テストに power-preference を足す

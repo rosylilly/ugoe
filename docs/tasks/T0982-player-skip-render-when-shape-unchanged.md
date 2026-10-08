@@ -1,11 +1,11 @@
 ---
 id: T0982
 title: "@ugoe/player: ビューアのループとエディタのプレビューでも、形が変わらないフレームは描かない"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/player, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0982
 ---
 
 # T0982: @ugoe/player: 形が変わらないフレームは描かない

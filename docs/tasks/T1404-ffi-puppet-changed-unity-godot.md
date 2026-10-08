@@ -1,11 +1,11 @@
 ---
 id: T1404
 title: "C ABI: ugoe_puppet_changed を足し、Unity・Godot でも形が変わらないフレームの書き換えを省く (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-ffi, bindings/unity, bindings/godot, tests/conformance, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1404
 ---
 
 # T1404: C ABI: ugoe_puppet_changed を足し、Unity・Godot でも形が変わらないフレームの書き換えを省く (判断が要る)

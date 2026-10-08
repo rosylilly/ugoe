@@ -1,11 +1,11 @@
 ---
 id: T0867
 title: "スタジオ: 「トラッキングの待ち」に今の促しの余裕 (1〜4 ms) も出す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0867
 ---
 
 # T0867: スタジオ: 「トラッキングの待ち」に今の促しの余裕も出す

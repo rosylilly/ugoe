@@ -1,11 +1,11 @@
 ---
 id: T0866
 title: "スタジオ: 見本のプロファイルや書けない場所のプロファイルを開いたら、自動の保存で書き換えず「写しを保存」に誘う (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, assets, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0866
 ---
 
 # T0866: スタジオ: 見本のプロファイルや書けない場所のプロファイルを自動の保存で書き換えない (判断が要る)

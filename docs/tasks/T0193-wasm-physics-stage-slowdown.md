@@ -1,11 +1,11 @@
 ---
 id: T0193
 title: "性能: wasm (ブラウザ) で物理の段がネイティブの約 2.5 倍遅い理由を調べる"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe-physics, bindings/web, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0193
 ---
 
 # T0193: 性能: wasm (ブラウザ) で物理の段がネイティブの約 2.5 倍遅い理由を調べる
