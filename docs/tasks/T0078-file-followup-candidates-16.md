@@ -1,11 +1,11 @@
 ---
 id: T0078
 title: M9 の後続のタスクの「起票の候補」をまとめて起票する (16 回目)
-status: todo
+status: in-progress
 milestone: M8
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0078
 ---
 
 # T0078: M9 の後続のタスクの「起票の候補」をまとめて起票する (16 回目)
