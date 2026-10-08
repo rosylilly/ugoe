@@ -80,6 +80,7 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
   src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、受け手ごとにすべて覚えて操作ウィンドウに配る。T0825・T0836・T0840)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
+  src/attention.rs              承認を待つクライアントを OS の側で知らせるか (操作ウィンドウが前面に無いときに注意を引き、待ちが無くなるか前に出たら止める。T0856)
   src/api/                      操作 API (T0805。docs/studio.md#外部-api、英語のリファレンスは docs/studio-api.md)
     mod.rs                        接続ごとの状態 (名乗る前・承認待ち・使える)・承認と取り消し・通知
     methods.rs                    メソッド (指揮役と舞台に入れる。ホットキーと同じ口)

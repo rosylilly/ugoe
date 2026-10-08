@@ -23,6 +23,7 @@ mod acl;
 pub mod animation;
 pub mod api;
 mod app_nap;
+mod attention;
 pub mod conductor;
 mod error;
 pub mod follower;
@@ -367,6 +368,8 @@ struct Studio {
     camera_status: Mutex<Option<virtual_camera::Status>>,
     /// 操作 API (T0805)。
     api: api::Api,
+    /// 承認を待つクライアントを OS の側で知らせているか (T0856)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
+    approval_attention: Mutex<attention::ApprovalAttention>,
     /// ブラウザソースのページの接続 (T0808。待ち受けは操作 API と共有する)。
     sources: api::source::Sources,
     /// `dressup.list` が読んだ付けていないモジュールの概要 (T0833)。ほかのロックを握らずに取る。
@@ -1770,6 +1773,9 @@ pub fn run() {
                 let html = asset.mime_type.starts_with("text/html");
                 (html == path.ends_with(".html")).then_some(asset.bytes)
             });
+            if let Some(control) = app.get_webview_window(CONTROL) {
+                staging.control_focused(control.is_focused().unwrap_or(false));
+            }
             staging.load_api(api_settings);
             watch_compositing(app.handle());
             std::thread::Builder::new()
@@ -1796,6 +1802,10 @@ pub fn run() {
                 {
                     window.state::<Arc<Studio>>().send_output_state(state);
                 }
+            }
+            // 操作ウィンドウが前面にあるかを覚える。前面に来たら、承認の待ちの知らせ (点滅・跳ね) を止める (T0856)。
+            (CONTROL, WindowEvent::Focused(focused)) => {
+                window.state::<Arc<Studio>>().control_focused(*focused);
             }
             // 操作ウィンドウを閉じたらアプリを終える (隠れた出力ウィンドウを残さない)。仮想カメラは止めてから
             // (Windows のカメラの機器を消し、Linux の機器を閉じる)。

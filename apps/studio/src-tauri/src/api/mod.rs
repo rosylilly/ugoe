@@ -29,12 +29,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use tauri::{Manager, UserAttentionType};
 
 use crate::animation::AnimationView;
 use crate::conductor::{Conductor, FiredEvent};
 use crate::error::CommandError;
 use crate::stage::Stage;
-use crate::{Monitor, Studio, lock};
+use crate::{CONTROL, Monitor, Studio, attention, lock};
 use rpc::{Id, RpcError};
 use store::{ApiSettings, ClientRecord, Permission};
 
@@ -307,9 +308,37 @@ impl Studio {
 
     pub(crate) fn send_api_view(&self) {
         let view = self.api_view();
+        let request =
+            lock(&self.approval_attention).pending(view.pending.iter().map(|p| p.id.as_str()));
+        self.request_control_attention(request);
         if let Some(body) = Self::json(&Monitor::Api(view)) {
             self.monitors.send_all(&body);
         }
+    }
+
+    /// 操作ウィンドウが前面にあるかが変わった (承認を待つクライアントを OS の側で知らせるか。T0856)。
+    pub(crate) fn control_focused(&self, focused: bool) {
+        let request = lock(&self.approval_attention).focus(focused);
+        self.request_control_attention(request);
+    }
+
+    /// 操作ウィンドウの注意を引く・止める (Windows はタスクバーの点滅、macOS は Dock のアイコンの跳ね、Linux は
+    /// ウィンドウマネージャの「注意を要する」の印。docs/studio.md#外部-api)。ロックを握らずに呼ぶ。テストでは何もしない。
+    fn request_control_attention(&self, request: Option<attention::Request>) {
+        let Some(request) = request else { return };
+        let Some(window) = self
+            .app
+            .get()
+            .and_then(|app| app.get_webview_window(CONTROL))
+        else {
+            return;
+        };
+        let kind = match request {
+            attention::Request::Start => Some(UserAttentionType::Critical),
+            attention::Request::Stop => None,
+        };
+        // 引けなくても承認の知らせは操作ウィンドウに出ているので、誤りは捨てる。
+        let _ = window.request_user_attention(kind);
     }
 
     /// 設定に合わせて待ち受けを止める・始める。操作 API とブラウザソースのどちらかが有効なら待ち受ける (ADR 0028 の 6.)。

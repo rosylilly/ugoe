@@ -348,6 +348,54 @@ fn stage_scenes(studio: &Studio, model: &Path, modules: &[PathBuf]) -> (String, 
     })
 }
 
+/// 承認を待つクライアントが現れると、操作ウィンドウが前面に無ければ OS の側で知らせ、承認・拒否・切断で待ちが
+/// 無くなると止める (T0856。どの場合に引くかの細部は `attention.rs` のテスト)。
+#[test]
+fn waiting_clients_draw_attention_until_nothing_waits() {
+    let studio = studio();
+    let requested = || lock(&studio.approval_attention).requested();
+    let hello = |client: &mut Client| {
+        client.send("session.hello", json!({ "name": "Deck", "token": TOKEN }));
+        studio.api_view().pending.last().unwrap().id.clone()
+    };
+
+    // 前面に無い (フォーカスを得ていない) 間に名乗った。承認すると止まる。
+    let mut client = Client::connect(&studio);
+    let pending = hello(&mut client);
+    assert!(requested());
+    studio
+        .approve_api_client(&pending, Permission::Read)
+        .unwrap();
+    assert!(!requested());
+
+    // 拒否で止まる。
+    let mut client = Client::connect(&studio);
+    let pending = hello(&mut client);
+    assert!(requested());
+    studio.deny_api_client(&pending);
+    assert!(!requested());
+
+    // 2 つ待つうち 1 つが切断してもまだ引き、残りも切断したら止まる。
+    let mut first = Client::connect(&studio);
+    let mut second = Client::connect(&studio);
+    hello(&mut first);
+    hello(&mut second);
+    studio.api_disconnect(first.id);
+    assert!(requested());
+    studio.api_disconnect(second.id);
+    assert!(!requested());
+
+    // 操作ウィンドウが前面にあれば引かない (上の知らせで足りる)。
+    studio.control_focused(true);
+    let mut client = Client::connect(&studio);
+    hello(&mut client);
+    assert!(!requested());
+    // 前面にある間に来たクライアントは、後で隠しても引かない (利用者はもう知らせを見ている)。
+    studio.control_focused(false);
+    studio.send_api_view();
+    assert!(!requested());
+}
+
 #[test]
 fn first_contact_needs_the_token_and_the_users_approval() {
     let studio = studio();
