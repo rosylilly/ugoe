@@ -122,6 +122,18 @@ fn show_pose(puppet: &mut Puppet, wanted: &[String], immediately: bool) -> Vec<S
     shown.iter().map(|p| p.as_str().to_owned()).collect()
 }
 
+/// `puppet` のモデル (モジュールを付けたら合成したモデル) の `parts` の ID の順 (シーンの `part_ids`。T0853)。
+pub fn part_ids(puppet: &Puppet) -> Vec<String> {
+    puppet
+        .instance()
+        .compiled()
+        .model()
+        .parts
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect()
+}
+
 /// `a` と `b` が同じモジュールの組か (`Arc` で見分ける)。
 fn same_modules(a: &[Arc<Module>], b: &[Arc<Module>]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(a, b)| Arc::ptr_eq(a, b))
@@ -287,6 +299,7 @@ impl Conductor {
             .iter()
             .map(|p| p.id.to_string())
             .collect();
+        let part_ids = part_ids(puppet);
         let modules = puppet.modules().iter().map(|m| m.name.clone()).collect();
         Ok(self.scene.insert(Scene {
             revision,
@@ -294,6 +307,7 @@ impl Conductor {
             modules_revision,
             model_name,
             parameter_ids,
+            part_ids,
             modules,
             look,
         }))
@@ -314,6 +328,7 @@ impl Conductor {
             modules_revision: self.revision,
             model_name: String::new(),
             parameter_ids: Vec::new(),
+            part_ids: Vec::new(),
             modules: Vec::new(),
             look,
         })

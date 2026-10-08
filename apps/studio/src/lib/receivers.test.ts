@@ -10,6 +10,7 @@ const scene = {
   modulesRevision: 6,
   modelName: "avatar.ugoe",
   parameterIds: [],
+  partIds: [],
   modules: ["CatEars", "Hat"],
   lighting: null,
   transform: { x: 0, y: 0, scale: 1, rotation: 0 },

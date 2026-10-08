@@ -155,6 +155,7 @@ export function firstRunMessages(fixture) {
         modulesRevision: 0,
         modelName: "",
         parameterIds: [],
+        partIds: [],
         modules: [],
         lighting: null,
         transform: scene.transform,

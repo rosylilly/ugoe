@@ -347,7 +347,8 @@ impl Feed {
             self.look = scene.look.clone();
             self.resident = Some(self.resident_for(gpu, &puppet, &model, &modules)?);
             self.model = Some(model);
-            self.follower.set_scene(scene.revision, puppet);
+            self.follower
+                .set_scene(scene.revision, puppet, &scene.part_ids);
             self.last_seq = None;
             reloaded = true;
             self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
@@ -370,7 +371,8 @@ impl Feed {
                 self.modules_revision = unread.is_empty().then_some(scene.modules_revision);
                 reloaded = true;
             }
-            self.follower.continue_scene(scene.revision);
+            self.follower
+                .continue_scene(scene.revision, &scene.part_ids);
         }
         self.look = scene.look.clone();
         // ポーズの要素は読み直し・付け直しの後に表示させる (受け手のポーズは受け手が進める。T0842)。

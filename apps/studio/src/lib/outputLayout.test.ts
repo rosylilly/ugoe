@@ -10,6 +10,7 @@ function scene(revision: number, modelRevision: number, modulesRevision: number)
     modulesRevision,
     modelName: "avatar.ugoe",
     parameterIds: [],
+    partIds: [],
     modules: [],
     lighting: null,
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },

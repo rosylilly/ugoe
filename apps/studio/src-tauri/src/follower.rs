@@ -3,22 +3,22 @@
 //! 一致の検査 (ADR 0028 の 10.、`tests/follow_match.rs`) と、仮想カメラの受け手 (`virtual_camera.rs`、T0807) が使う。
 //! wasm の受け手は `packages/player/src/follower.ts` で、規則は同じ。
 
-use ugoe::{ParameterValuesError, Puppet};
+use ugoe::{ParameterValuesError, PartOpacityInput, Puppet};
 
 use crate::stream::Frame;
 
-/// フレームを 1 つ適用する。ネイティブで `Puppet::follow` を呼ぶのはここだけにする
+/// フレームを 1 つ適用する。`part_opacities` はフレームのものを、このモデルのパーツの番号に引き直したもの
+/// ([`Follower`] が作る。T0853)。ネイティブで `Puppet::follow` を呼ぶのはここだけにする
 /// (T0134・T0135 で `follow` の引数が増えたときに合わせる場所を 1 つにするため)。
-pub fn apply_frame(puppet: &mut Puppet, frame: &Frame) -> Result<(), ParameterValuesError> {
+pub fn apply_frame(
+    puppet: &mut Puppet,
+    frame: &Frame,
+    part_opacities: &[PartOpacityInput],
+) -> Result<(), ParameterValuesError> {
     if frame.reset {
         puppet.reset_physics();
     }
-    puppet.follow(
-        &frame.values,
-        frame.lip_sync,
-        &frame.part_opacities,
-        frame.dt,
-    )
+    puppet.follow(&frame.values, frame.lip_sync, part_opacities, frame.dt)
 }
 
 /// シーンの通知のポーズの要素 `parts` (`Look::pose`) を、それぞれのグループの表示する要素にする (T0842)。
@@ -55,12 +55,58 @@ pub enum Received {
 /// 適用するフレームは `revision` が `from` (モデルを読んだシーン) から今のシーンまでのもの。同じモデルのまま次のシーンに
 /// 移ったとき ([`Follower::continue_scene`]。見せ方や着せ替えだけが変わった) は、前のシーンのフレームも捨てずに適用し、
 /// `seq` の続きも保つ (`packages/player/src/follower.ts` の `FrameQueue` と同じ規則)。
+///
+/// フレームのパーツの番号は、そのフレームのシーンの `part_ids` で ID に直し、今のモデルの番号に引き直して当てる
+/// (着せ替えの直後に前のシーンのフレームを当ててもモジュールのパーツがずれないように。T0853)。引き直しの表はシーンを
+/// 受けたときに作り、フレームごとには確保しない。
 #[derive(Debug, Default)]
 pub struct Follower {
     puppet: Option<Puppet>,
     from: Option<u32>,
     revision: Option<u32>,
     last_seq: Option<u64>,
+    /// 受けたシーンのパーツの並び (`revision` の順。並びが前と同じシーンは足さない)。
+    parts: Vec<ScenePartMap>,
+    /// 引き直したパーツの不透明度 (フレームごとに使い回す)。
+    remapped: Vec<PartOpacityInput>,
+}
+
+/// 1 つのシーンのパーツの並び (`Scene::part_ids`) と、その番号から受け手のモデルの番号への表 (T0853)。
+#[derive(Debug)]
+struct ScenePartMap {
+    revision: u32,
+    part_ids: Vec<String>,
+    /// シーンの番号ごとの、受け手のモデルの番号 (モデルに無い ID は `None`)。並びがモデルと同じなら `None` (引き直さない)。
+    table: Option<Vec<Option<u32>>>,
+}
+
+impl ScenePartMap {
+    fn new(revision: u32, part_ids: &[String], puppet: &Puppet) -> Self {
+        let mut map = Self {
+            revision,
+            part_ids: part_ids.to_vec(),
+            table: None,
+        };
+        map.rebuild(puppet);
+        map
+    }
+
+    /// `puppet` のモデルの番号への表を作り直す (モジュールを付け直したとき)。
+    fn rebuild(&mut self, puppet: &Puppet) {
+        let compiled = puppet.instance().compiled();
+        let parts = &compiled.model().parts;
+        let same = parts.len() == self.part_ids.len()
+            && parts
+                .iter()
+                .zip(&self.part_ids)
+                .all(|(part, id)| part.id.as_str() == id);
+        self.table = (!same).then(|| {
+            self.part_ids
+                .iter()
+                .map(|id| compiled.part_index(id).and_then(|i| u32::try_from(i).ok()))
+                .collect()
+        });
+    }
 }
 
 impl Follower {
@@ -68,19 +114,39 @@ impl Follower {
         Self::default()
     }
 
-    /// 新しいシーン `revision` のモデルにする。`puppet` は同じモデルから物理を有効にして作ったもの。
-    pub fn set_scene(&mut self, revision: u32, puppet: Puppet) {
+    /// 新しいシーン `revision` のモデルにする。`puppet` は同じモデルから物理を有効にして作ったもの、`part_ids` はシーンの
+    /// パーツの並び (`Scene::part_ids`)。
+    pub fn set_scene(&mut self, revision: u32, puppet: Puppet, part_ids: &[String]) {
+        self.parts = vec![ScenePartMap::new(revision, part_ids, &puppet)];
         self.puppet = Some(puppet);
         self.from = Some(revision);
         self.revision = Some(revision);
         self.last_seq = None;
     }
 
-    /// 同じモデルのまま次のシーン `revision` に移る (前のシーンのフレームも続けて適用する)。モデルが無ければ何もしない。
-    pub fn continue_scene(&mut self, revision: u32) {
-        if self.puppet.is_some() {
-            self.revision = Some(self.revision.map_or(revision, |r| r.max(revision)));
+    /// 同じモデルのまま次のシーン `revision` (パーツの並びは `part_ids`) に移る (前のシーンのフレームも続けて適用する)。
+    /// モジュールを付け直したなら、付け直した後に呼ぶ (前のシーンのパーツの番号を今のモデルに引き直すため)。
+    /// モデルが無ければ何もしない。
+    pub fn continue_scene(&mut self, revision: u32, part_ids: &[String]) {
+        let Some(puppet) = &self.puppet else {
+            return;
+        };
+        for map in &mut self.parts {
+            map.rebuild(puppet);
         }
+        let newer = self
+            .parts
+            .last()
+            .is_none_or(|last| revision > last.revision);
+        let same = self
+            .parts
+            .last()
+            .is_some_and(|last| last.part_ids == part_ids);
+        if newer && !same {
+            self.parts
+                .push(ScenePartMap::new(revision, part_ids, puppet));
+        }
+        self.revision = Some(self.revision.map_or(revision, |r| r.max(revision)));
     }
 
     /// モデルの無いシーンにする (フレームはすべて先のものとして捨てる)。
@@ -99,25 +165,47 @@ impl Follower {
 
     /// フレームを 1 つ受け取る。
     pub fn receive(&mut self, frame: &Frame) -> Result<Received, ParameterValuesError> {
-        let (Some(puppet), Some(from), Some(revision)) =
-            (self.puppet.as_mut(), self.from, self.revision)
+        let Self {
+            puppet: Some(puppet),
+            from: Some(from),
+            revision: Some(revision),
+            last_seq,
+            parts,
+            remapped,
+        } = self
         else {
             return Ok(Received::Ahead);
         };
-        if frame.revision < from {
+        if frame.revision < *from {
             return Ok(Received::Stale);
         }
-        if frame.revision > revision {
+        if frame.revision > *revision {
             return Ok(Received::Ahead);
         }
-        let gap = self
-            .last_seq
-            .is_some_and(|last| frame.seq != last.wrapping_add(1));
+        let gap = last_seq.is_some_and(|last| frame.seq != last.wrapping_add(1));
         if gap {
             puppet.reset_physics();
         }
-        apply_frame(puppet, frame)?;
-        self.last_seq = Some(frame.seq);
+        // フレームのシーン (受けていなければその前の、最も新しいシーン) の並びで引き直す。フレームは順に届くので、
+        // それより前のシーンの並びは捨てる。
+        let at = parts
+            .iter()
+            .rposition(|map| map.revision <= frame.revision)
+            .unwrap_or(0);
+        parts.drain(..at);
+        let part_opacities = match parts.first().and_then(|map| map.table.as_ref()) {
+            None => frame.part_opacities.as_slice(),
+            Some(table) => {
+                remapped.clear();
+                remapped.extend(frame.part_opacities.iter().filter_map(|input| {
+                    let part = (*table.get(input.part as usize)?)?;
+                    Some(PartOpacityInput { part, ..*input })
+                }));
+                remapped.as_slice()
+            }
+        };
+        apply_frame(puppet, frame, part_opacities)?;
+        *last_seq = Some(frame.seq);
         Ok(if gap {
             Received::AppliedAfterGap
         } else {
@@ -150,7 +238,7 @@ mod tests {
         let n = puppet.instance().parameters().len();
         let mut follower = Follower::new();
         assert_eq!(follower.receive(&frame(0, 1, n)), Ok(Received::Ahead));
-        follower.set_scene(2, puppet);
+        follower.set_scene(2, puppet, &[]);
         assert_eq!(follower.receive(&frame(1, 1, n)), Ok(Received::Stale));
         assert_eq!(follower.receive(&frame(2, 3, n)), Ok(Received::Ahead));
         assert_eq!(follower.receive(&frame(5, 2, n)), Ok(Received::Applied));
@@ -167,11 +255,11 @@ mod tests {
         let puppet = Puppet::new(fixtures::single_quad()).unwrap();
         let n = puppet.instance().parameters().len();
         let mut follower = Follower::new();
-        follower.continue_scene(4);
+        follower.continue_scene(4, &[]);
         assert_eq!(follower.receive(&frame(0, 4, n)), Ok(Received::Ahead));
-        follower.set_scene(2, puppet);
+        follower.set_scene(2, puppet, &[]);
         assert_eq!(follower.receive(&frame(1, 2, n)), Ok(Received::Applied));
-        follower.continue_scene(3);
+        follower.continue_scene(3, &[]);
         // 前のシーンのフレームも適用し、seq の続きを保つ。
         assert_eq!(follower.receive(&frame(2, 2, n)), Ok(Received::Applied));
         assert_eq!(follower.receive(&frame(3, 3, n)), Ok(Received::Applied));
@@ -180,5 +268,41 @@ mod tests {
         follower.clear();
         assert!(follower.puppet().is_none());
         assert_eq!(follower.receive(&frame(6, 3, n)), Ok(Received::Ahead));
+    }
+
+    #[test]
+    fn part_numbers_are_remapped_by_the_scene_part_ids() {
+        let puppet = Puppet::new(fixtures::pose_and_effects()).unwrap();
+        let n = puppet.instance().parameters().len();
+        let ids = crate::conductor::part_ids(&puppet);
+        let index = |id: &str| puppet.instance().compiled().part_index(id).unwrap();
+        let (arm_a, arm_b) = (index("ArmA"), index("ArmB"));
+        // シーンの並び: ArmB・(モデルに無いパーツ)・ArmA。
+        let scene = vec!["ArmB".to_owned(), "Missing".to_owned(), "ArmA".to_owned()];
+        let mut follower = Follower::new();
+        follower.set_scene(1, puppet, &scene);
+        let input = |part: u32, value: f32| PartOpacityInput {
+            part,
+            value,
+            weight: 1.0,
+        };
+        let mut sent = frame(0, 1, n);
+        sent.part_opacities = vec![input(0, 0.25), input(1, 0.5), input(2, 0.75)];
+        assert_eq!(follower.receive(&sent), Ok(Received::Applied));
+        let applied = follower.puppet().unwrap().part_opacities_applied().to_vec();
+        assert_eq!(
+            applied,
+            [input(arm_b as u32, 0.25), input(arm_a as u32, 0.75)]
+        );
+        // モデルと同じ並びのシーンに移れば、番号はそのまま。
+        follower.continue_scene(2, &ids);
+        sent.seq = 1;
+        sent.revision = 2;
+        sent.part_opacities = vec![input(arm_a as u32, 0.5)];
+        assert_eq!(follower.receive(&sent), Ok(Received::Applied));
+        assert_eq!(
+            follower.puppet().unwrap().part_opacities_applied(),
+            [input(arm_a as u32, 0.5)]
+        );
     }
 }

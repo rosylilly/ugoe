@@ -177,6 +177,9 @@ pub struct Scene {
     pub model_name: String,
     /// フレームの `values` の並び (モデルのパラメータの定義順)。
     pub parameter_ids: Vec<String>,
+    /// フレームの `part_opacities` のパーツの番号の並び (合成したモデルの `parts` の ID の順。モジュールのパーツは
+    /// `<モジュール>/<パーツ>`)。受け手は番号をこの ID に直し、自分のモデルの番号に引き直して当てる (T0853)。
+    pub part_ids: Vec<String>,
     /// 付けているモジュールの名前 (合成の順。`scene_module` の添字と同じ順)。
     pub modules: Vec<String>,
     /// 見せ方。
@@ -294,6 +297,7 @@ mod tests {
             modules_revision: 2,
             model_name: "avatar.ugoe".into(),
             parameter_ids: vec!["AngleX".into()],
+            part_ids: vec!["Root".into(), "cat-ears/Ears".into()],
             modules: vec!["cat-ears".into()],
             look: Look::default(),
         };
@@ -306,6 +310,7 @@ mod tests {
                 "modulesRevision": 2,
                 "modelName": "avatar.ugoe",
                 "parameterIds": ["AngleX"],
+                "partIds": ["Root", "cat-ears/Ears"],
                 "modules": ["cat-ears"],
                 "lighting": null,
                 "transform": { "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0 },

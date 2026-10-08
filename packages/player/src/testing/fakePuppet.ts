@@ -242,7 +242,17 @@ export function fakePuppet(options: FakeOptions = {}) {
       state.view.pan = [state.view.pan[0] + dx, state.view.pan[1] + dy];
     },
     render: () => log.push("render"),
-    follow: (values: Float32Array, dt: number) => log.push(`follow ${[...values]} ${dt}`),
+    follow: (
+      values: Float32Array,
+      dt: number,
+      _level?: number | null,
+      _strength?: number | null,
+      parts?: Uint32Array | null,
+    ) =>
+      log.push(
+        // パーツの不透明度のカーブがあるときだけ、その番号を書く。
+        `follow ${[...values]} ${dt}${parts && parts.length > 0 ? ` [${[...parts]}]` : ""}`,
+      ),
     reset_physics: () => log.push("reset_physics"),
   };
   if (options.follower === false) {

@@ -22,6 +22,8 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     loaded: string[] = [];
     followed: number[] = [];
     continued: number[] = [];
+    /** `followScene`・`continueScene` に渡したパーツの並び (T0853)。 */
+    partIds: (readonly string[])[] = [];
     lightings = 0;
     /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`。フェードせずに表示させたものは `pose!:<パーツ>`)。 */
     calls: string[] = [];
@@ -50,12 +52,14 @@ vi.mock("@ugoe/player", async (importOriginal) => {
       this.modules = this.modules.filter((m) => m.name !== name);
       return true;
     }
-    followScene(revision: number) {
+    followScene(revision: number, partIds: readonly string[]) {
       this.followed.push(revision);
+      this.partIds.push(partIds);
       this.calls.push(`follow:${revision}`);
     }
-    continueScene(revision: number) {
+    continueScene(revision: number, partIds: readonly string[]) {
       this.continued.push(revision);
+      this.partIds.push(partIds);
       this.calls.push(`continue:${revision}`);
     }
     showPose(part: string, options: { immediately?: boolean } = {}) {
@@ -83,6 +87,7 @@ interface Fake {
   loaded: string[];
   followed: number[];
   continued: number[];
+  partIds: (readonly string[])[];
   lightings: number;
   modules: { name: string }[];
   calls: string[];
@@ -103,6 +108,7 @@ function scene(revision: number, patch: Partial<StudioScene> = {}): StudioScene 
     modulesRevision: revision,
     modelName: "avatar.ugoe",
     parameterIds: [],
+    partIds: [],
     modules: [],
     lighting: null,
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
@@ -414,16 +420,24 @@ describe("Output scene changes", () => {
     const model = vi.fn(async () => GOOD);
     const module = vi.fn(async () => GOOD);
     const r = receiver({ model, module });
-    await r.send(scene(1, { modules: ["CatEars"] }));
+    const ears = ["Root", "CatEars/Ears"];
+    await r.send(scene(1, { modules: ["CatEars"], partIds: ears }));
     await vi.waitFor(() => expect(r.player.followed).toEqual([1]));
     // 見せ方だけが変わった。
-    await r.send(scene(2, { modelRevision: 1, modulesRevision: 1, modules: ["CatEars"] }));
+    await r.send(
+      scene(2, { modelRevision: 1, modulesRevision: 1, modules: ["CatEars"], partIds: ears }),
+    );
     await vi.waitFor(() => expect(r.player.continued).toEqual([2]));
     expect(model).toHaveBeenCalledTimes(1);
     expect(module).toHaveBeenCalledTimes(1);
     // モジュールの組だけが変わった。
-    await r.send(scene(3, { modelRevision: 1, modulesRevision: 3, modules: ["Hat", "Ribbon"] }));
+    const hat = ["Root", "Hat/Hat", "Ribbon/Ribbon"];
+    await r.send(
+      scene(3, { modelRevision: 1, modulesRevision: 3, modules: ["Hat", "Ribbon"], partIds: hat }),
+    );
     await vi.waitFor(() => expect(r.player.continued).toEqual([2, 3]));
+    // シーンのパーツの並びを渡し、前のシーンのフレームのパーツの番号を引き直させる (T0853)。
+    expect(r.player.partIds).toEqual([ears, ears, hat]);
     expect(model).toHaveBeenCalledTimes(1);
     expect(r.player.loaded).toEqual(["avatar.ugoe"]);
     expect(r.player.followed).toEqual([1]);

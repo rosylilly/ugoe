@@ -29,7 +29,10 @@ export interface FollowFrame {
   values: Float32Array;
   /** 指揮役のリップシンクの音量と強さ。当てなければ `null`。 */
   lipSync: { level: number; strength: number } | null;
-  /** 指揮役のモーションのパーツの不透明度のカーブがあるパーツの番号 (モデルの `parts` の順。T0135)。 */
+  /**
+   * 指揮役のモーションのパーツの不透明度のカーブがあるパーツの番号 (このフレームのシーンの `partIds` の順。T0135)。
+   * 受け手は `FrameQueue.take` が渡す `PartRemap` で自分のモデルの番号に引き直して当てる (T0853)。
+   */
   partOpacityParts: Uint32Array;
   /** `partOpacityParts` の各パーツのカーブの値と重み (交互。`partOpacityParts` の 2 倍の数)。 */
   partOpacityValues: Float32Array;
@@ -41,6 +44,8 @@ export interface SceneMessage {
   revision: number;
   modelName: string;
   parameterIds: string[];
+  /** フレームのパーツの番号の並び (指揮役の合成したモデルの `parts` の ID の順。モジュールのパーツは `<モジュール>/<パーツ>`。T0853)。 */
+  partIds: string[];
 }
 
 /** 受け手が使う `WebPuppet` の口 (wasm.ts の `WebPuppet` の一部)。 */
@@ -97,18 +102,94 @@ export function decodeFrame(buffer: ArrayBuffer): FollowFrame {
 }
 
 /**
- * フレームを 1 つ適用する。受け手で `follow` を呼ぶのはここだけにする (T0134・T0135 で引数が増えたときに合わせる場所を 1 つにするため)。
- * `gap` なら (`seq` が飛んだ) 物理をリセットしてから適用する。
+ * シーン 1 つのパーツの並び (`partIds`) の番号から、受け手のモデルの番号への引き直し (T0853)。
+ * 表はシーンを受けたとき (`FrameQueue.setScene`・`continueScene`) に作り、フレームごとには作らない。
  */
-export function applyFrame(puppet: FollowerPuppet, frame: FollowFrame, gap = false): void {
+export class PartRemap {
+  readonly revision: number;
+  readonly partIds: readonly string[];
+  /** シーンの番号ごとのモデルの番号 (モデルに無い ID は -1)。並びがモデルと同じなら `null` (引き直さない)。 */
+  #table: Int32Array | null = null;
+  #parts = new Uint32Array(0);
+  #values = new Float32Array(0);
+  /** 最後に `remap` で引き直したパーツの番号。 */
+  parts: Uint32Array = new Uint32Array(0);
+  /** 最後に `remap` で引き直した値と重み (交互)。 */
+  values: Float32Array = new Float32Array(0);
+
+  constructor(revision: number, partIds: readonly string[], model: readonly string[]) {
+    this.revision = revision;
+    this.partIds = partIds;
+    this.rebuild(model);
+  }
+
+  /** 引き直しが要らない (シーンの並びがモデルと同じ)。 */
+  get identity(): boolean {
+    return this.#table === null;
+  }
+
+  /** モデルのパーツの並び `model` への表を作り直す。 */
+  rebuild(model: readonly string[]): void {
+    if (sameIds(this.partIds, model)) {
+      this.#table = null;
+      return;
+    }
+    const index = new Map(model.map((id, i) => [id, i]));
+    this.#table = Int32Array.from(this.partIds, (id) => index.get(id) ?? -1);
+  }
+
+  /**
+   * フレームのパーツの番号と値を引き直し (モデルに無いパーツは捨てる)、`parts`・`values` に置く (次に呼ぶまで有効。
+   * 中身の入れ物は使い回し、引き直しの要らない表では何もしない)。
+   */
+  remap(parts: Uint32Array, values: Float32Array): void {
+    const table = this.#table;
+    if (table === null) {
+      this.parts = parts;
+      this.values = values;
+      return;
+    }
+    if (this.#parts.length < parts.length) {
+      this.#parts = new Uint32Array(parts.length);
+      this.#values = new Float32Array(parts.length * 2);
+    }
+    let n = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const to = table[parts[i] as number] ?? -1;
+      if (to < 0) continue;
+      this.#parts[n] = to;
+      this.#values[n * 2] = values[i * 2] as number;
+      this.#values[n * 2 + 1] = values[i * 2 + 1] as number;
+      n++;
+    }
+    this.parts = this.#parts.subarray(0, n);
+    this.values = this.#values.subarray(0, n * 2);
+  }
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/**
+ * フレームを 1 つ適用する。受け手で `follow` を呼ぶのはここだけにする (T0134・T0135 で引数が増えたときに合わせる場所を 1 つにするため)。
+ * `gap` なら (`seq` が飛んだ) 物理をリセットしてから適用する。`parts` があれば、パーツの番号をそれで引き直す (T0853)。
+ */
+export function applyFrame(
+  puppet: FollowerPuppet,
+  frame: FollowFrame,
+  gap = false,
+  parts: PartRemap | null = null,
+): void {
   if (frame.reset || gap) puppet.reset_physics();
+  parts?.remap(frame.partOpacityParts, frame.partOpacityValues);
   puppet.follow(
     frame.values,
     frame.dt,
     frame.lipSync?.level,
     frame.lipSync?.strength,
-    frame.partOpacityParts,
-    frame.partOpacityValues,
+    parts?.parts ?? frame.partOpacityParts,
+    parts?.values ?? frame.partOpacityValues,
   );
 }
 
@@ -120,6 +201,8 @@ export function applyFrame(puppet: FollowerPuppet, frame: FollowFrame, gap = fal
  * - 同じシーンの中で `seq` が飛んだら (接続が切れていた・溢れて捨てた)、物理をリセットしてから続ける。
  * - 同じモデルのまま次のシーンに移ったとき (`continueScene`。見せ方や着せ替えだけが変わった) は、前のシーンのフレームも
  *   捨てずに順に適用し、`seq` の続きも保つ (受け手ごとに物理の刻みが抜けないように)。
+ * - フレームのパーツの番号は、そのフレームのシーン (受けていなければその前の最も新しいシーン) の `partIds` で ID に直し、
+ *   今のシーンの `partIds` (受け手が付けたモデルの並び) の番号に引き直す (着せ替えの直後の前のシーンのフレーム。T0853)。
  */
 export class FrameQueue {
   #pending: FollowFrame[] = [];
@@ -129,6 +212,8 @@ export class FrameQueue {
   #lastSeq: number | null = null;
   /** 溢れて捨てたので、次に適用するフレームは `seq` が飛んだものとして扱う。 */
   #dropped = false;
+  /** 受けたシーンのパーツの並び (`revision` の順。並びが前と同じシーンは足さない)。 */
+  #parts: PartRemap[] = [];
 
   /** 今のシーン (モデルを読み終えたもの)。 */
   get revision(): number | null {
@@ -140,8 +225,11 @@ export class FrameQueue {
     return this.#pending.length;
   }
 
-  /** シーン `revision` のモデルを読み終えた。以後はそのシーンのフレームを最初から適用する。 */
-  setScene(revision: number): void {
+  /**
+   * シーン `revision` (パーツの並びは `partIds`) のモデルを読み終えた。以後はそのシーンのフレームを最初から適用する。
+   */
+  setScene(revision: number, partIds: readonly string[] = []): void {
+    this.#parts = [new PartRemap(revision, partIds, partIds)];
     this.#revision = revision;
     this.#from = revision;
     this.#lastSeq = null;
@@ -150,12 +238,18 @@ export class FrameQueue {
 
   /**
    * 同じモデルのまま、シーン `revision` に移る。前のシーンのフレームも捨てずに順に適用し、`seq` の続きも保つ。
-   * まだシーンが無ければ `setScene` と同じ。
+   * まだシーンが無ければ `setScene` と同じ。モジュールを付け直したなら、付け直した後に呼ぶ。
    */
-  continueScene(revision: number): void {
+  continueScene(revision: number, partIds: readonly string[] = []): void {
     if (this.#revision === null || this.#from === null) {
-      this.setScene(revision);
+      this.setScene(revision, partIds);
       return;
+    }
+    if (revision > this.#revision) {
+      for (const map of this.#parts) map.rebuild(partIds);
+      const last = this.#parts.at(-1);
+      if (last === undefined || !sameIds(last.partIds, partIds))
+        this.#parts.push(new PartRemap(revision, partIds, partIds));
     }
     this.#revision = Math.max(this.#revision, revision);
   }
@@ -169,11 +263,12 @@ export class FrameQueue {
   }
 
   /**
-   * 今のシーンで適用できるフレームを順に取り出す (`gap` は物理をリセットしてから適用するか)。
-   * まだ読んでいないシーンのフレームに当たったら、そこで止める (残りは待たせる)。
+   * 今のシーンで適用できるフレームを順に取り出す (`gap` は物理をリセットしてから適用するか、`parts` はパーツの番号の
+   * 引き直し。要らなければ `null`。`applyFrame` に渡す)。まだ読んでいないシーンのフレームに当たったら、そこで止める
+   * (残りは待たせる)。
    */
-  take(): { frame: FollowFrame; gap: boolean }[] {
-    const out: { frame: FollowFrame; gap: boolean }[] = [];
+  take(): { frame: FollowFrame; gap: boolean; parts: PartRemap | null }[] {
+    const out: { frame: FollowFrame; gap: boolean; parts: PartRemap | null }[] = [];
     const revision = this.#revision;
     const from = this.#from ?? revision;
     if (revision === null || from === null) return out;
@@ -186,10 +281,27 @@ export class FrameQueue {
       const gap = this.#dropped || (last !== null && frame.seq !== last + 1);
       this.#dropped = false;
       this.#lastSeq = frame.seq;
-      out.push({ frame, gap });
+      out.push({ frame, gap, parts: this.#partsFor(frame.revision) });
     }
     this.#pending.splice(0, i);
     return out;
+  }
+
+  /**
+   * シーン `revision` (受けていなければその前の最も新しいシーン) のパーツの引き直し。フレームは順に適用するので、
+   * それより前のシーンの並びは捨てる。
+   */
+  #partsFor(revision: number): PartRemap | null {
+    let at = 0;
+    for (let i = this.#parts.length - 1; i > 0; i--) {
+      if ((this.#parts[i] as PartRemap).revision <= revision) {
+        at = i;
+        break;
+      }
+    }
+    if (at > 0) this.#parts.splice(0, at);
+    const map = this.#parts[0];
+    return map === undefined || map.identity ? null : map;
   }
 }
 

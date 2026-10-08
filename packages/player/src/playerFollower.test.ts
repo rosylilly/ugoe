@@ -120,6 +120,27 @@ describe("Player follower mode", () => {
     ]);
   });
 
+  it("remaps the part numbers of the previous scene's frames after dressing up (T0853)", async () => {
+    const { p, log } = await ready();
+    p.startFollowing();
+    await p.load(first);
+    p.followScene(1, ["Root", "Dress/Dress"]);
+    // 着せ替えの前のシーンのフレーム (Dress/Dress の番号 1) が、着せ替えたシーンを受けた後に届く。
+    const late = {
+      ...followFrame(1, 1, 1),
+      partOpacityParts: new Uint32Array([1]),
+      partOpacityValues: new Float32Array([0.5, 1]),
+    };
+    p.continueScene(2, ["Root", "LongHair/Hair", "Dress/Dress"]);
+    p.pushFrame(late);
+    p.pushFrame({
+      ...followFrame(2, 2, 2),
+      partOpacityParts: new Uint32Array([2]),
+      partOpacityValues: new Float32Array([0.5, 1]),
+    });
+    expect(followLog(log)).toEqual(["follow 1 0.5 [2]", "follow 2 0.5 [2]"]);
+  });
+
   it("reports the drawing load and the frames dropped while waiting", async () => {
     const stats: FollowRenderStats[] = [];
     const p = player();

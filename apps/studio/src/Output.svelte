@@ -155,7 +155,7 @@ async function applyScene(scene: StudioScene): Promise<void> {
       modelRevision: scene.modelRevision,
       modulesRevision: skipped ? -1 : scene.modulesRevision,
     };
-    player.followScene(scene.revision);
+    player.followScene(scene.revision, scene.partIds);
     await showLook(scene);
     return;
   }
@@ -171,7 +171,7 @@ async function applyScene(scene: StudioScene): Promise<void> {
   await showLook(scene);
   // 背景の画像を取っている間に次のシーンが届いたら、このシーンには移らない (次のシーンが移る)。
   if (scene.revision !== latest) return;
-  player.continueScene(scene.revision);
+  player.continueScene(scene.revision, scene.partIds);
 }
 
 /**

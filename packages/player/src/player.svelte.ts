@@ -967,18 +967,22 @@ export class Player {
     return this.#follower !== null;
   }
 
-  /** シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。 */
-  followScene(revision: number): void {
-    this.#follower?.setScene(revision);
+  /**
+   * シーン `revision` のモデルを読み終えた。そのシーンのフレームを最初から適用する (前のシーンのフレームは捨てる)。
+   * `partIds` はシーンのパーツの並び (`SceneMessage.partIds`。読んだモデルとモジュールの並びと同じ。T0853)。
+   */
+  followScene(revision: number, partIds: readonly string[] = []): void {
+    this.#follower?.setScene(revision, partIds);
     this.#followPending();
   }
 
   /**
    * モデルを読み直さずにシーン `revision` に移る (見せ方や着せ替えだけが変わった)。前のシーンのフレームも捨てずに
-   * 順に適用する (follower.ts の `FrameQueue.continueScene`)。
+   * 順に適用する (follower.ts の `FrameQueue.continueScene`)。前のシーンのフレームのパーツの番号は、`partIds`
+   * (このシーンのパーツの並び) の番号に引き直す (T0853)。モジュールを付け直したなら、付け直した後に呼ぶ。
    */
-  continueScene(revision: number): void {
-    this.#follower?.continueScene(revision);
+  continueScene(revision: number, partIds: readonly string[] = []): void {
+    this.#follower?.continueScene(revision, partIds);
     this.#followPending();
   }
 
@@ -1421,9 +1425,9 @@ export class Player {
       follow: follow.bind(puppet),
       reset_physics: reset_physics.bind(puppet),
     };
-    for (const { frame, gap } of queue.take()) {
+    for (const { frame, gap, parts } of queue.take()) {
       try {
-        applyFrame(follower, frame, gap);
+        applyFrame(follower, frame, gap, parts);
       } catch (e) {
         // 値の数が合わない (シーンとモデルが食い違う) など。そのフレームは飛ばし、次で物理をリセットする。
         const text = message(e);

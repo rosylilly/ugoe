@@ -143,6 +143,45 @@ describe("FrameQueue", () => {
   });
 });
 
+describe("FrameQueue part numbers (T0853)", () => {
+  /** 適用したパーツの番号と値 (`take` の順)。 */
+  function applied(q: FrameQueue): string[] {
+    const calls: string[] = [];
+    const puppet: FollowerPuppet = {
+      follow: (_values, _dt, _level, _strength, parts, opacities) =>
+        calls.push(`[${[...(parts ?? [])]}] [${[...(opacities ?? [])]}]`),
+      reset_physics: () => {},
+    };
+    for (const { frame, gap, parts } of q.take()) applyFrame(puppet, frame, gap, parts);
+    return calls;
+  }
+  const withParts = (seq: number, revision: number, parts: number[], values: number[]) => ({
+    ...frame(seq, revision),
+    partOpacityParts: new Uint32Array(parts),
+    partOpacityValues: new Float32Array(values),
+  });
+
+  it("remaps the frames of the previous scene to the parts of the dressed model", () => {
+    const q = new FrameQueue();
+    q.setScene(1, ["Root", "Dress/Dress"]);
+    q.push(withParts(1, 1, [1], [0.5, 1]));
+    expect(applied(q)).toEqual(["[1] [0.5,1]"]);
+    // 着せ替えたシーンを受けた後に、前のシーンのフレームが届く (Dress/Dress は番号 2 に移った)。
+    q.continueScene(2, ["Root", "LongHair/Hair", "Dress/Dress"]);
+    q.push(withParts(2, 1, [1, 0], [0.5, 1, 0.25, 0.5]));
+    q.push(withParts(3, 2, [2], [0.75, 1]));
+    expect(applied(q)).toEqual(["[2,0] [0.5,1,0.25,0.5]", "[2] [0.75,1]"]);
+  });
+
+  it("drops the parts the model does not have", () => {
+    const q = new FrameQueue();
+    q.setScene(1, ["Root", "Hat/Hat", "Body"]);
+    q.continueScene(2, ["Root", "Body"]);
+    q.push(withParts(1, 1, [0, 1, 2], [0.125, 1, 0.25, 1, 0.375, 1]));
+    expect(applied(q)).toEqual(["[0,1] [0.125,1,0.375,1]"]);
+  });
+});
+
 describe("applyFrame", () => {
   it("resets physics before the frame when asked", () => {
     const calls: string[] = [];

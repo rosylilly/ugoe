@@ -19,7 +19,7 @@ use ugoe::model::motion::{Curve, CurveTarget, Motion, Point, Segment};
 use ugoe::model::physics::PhysicsSettings;
 use ugoe::model::{Model, fixtures};
 use ugoe::motion::Priority;
-use ugoe_studio_lib::conductor::{Conductor, NewModel, assemble};
+use ugoe_studio_lib::conductor::{Conductor, NewModel, assemble, part_ids};
 use ugoe_studio_lib::follower::{self, Follower, Received};
 use ugoe_studio_lib::stream::{Frame, Look, Scene};
 
@@ -213,7 +213,7 @@ fn run_case(
         if let Some(&(revision, at)) = scenes.get(next_scene)
             && at == i
         {
-            follower.set_scene(revision, single(&source));
+            follower.set_scene(revision, single(&source), &part_ids(&single(&source)));
             next_scene += 1;
         }
         assert_eq!(
@@ -231,7 +231,7 @@ fn run_case(
     // (2) 描画の頻度に依らない: 2 つ目のシーンの全フレームをまとめて適用してから描いても、最後の形は同じ。
     let (revision, at) = scenes[1];
     let mut batched = Follower::new();
-    batched.set_scene(revision, single(&source));
+    batched.set_scene(revision, single(&source), &part_ids(&single(&source)));
     for (bytes, _) in &recorded[at..] {
         batched.receive(&Frame::decode(bytes).unwrap()).unwrap();
     }
@@ -272,7 +272,7 @@ fn part_opacity_curves_reach_the_follower() {
     let mut conductor = Conductor::new();
     let revision = conductor.load("pose", source.clone()).unwrap().revision;
     let mut follower = Follower::new();
-    follower.set_scene(revision, single(&source));
+    follower.set_scene(revision, single(&source), &part_ids(&single(&source)));
     let played = conductor
         .perform(|animation, puppet| animation.play(puppet.unwrap(), "switch", Priority::Normal));
     assert_eq!(played, Ok(true));
@@ -301,14 +301,15 @@ fn physics_actually_moves_the_follower() {
     let mut conductor = Conductor::new();
     let revision = conductor.load("hair", source.clone()).unwrap().revision;
     let mut follower = Follower::new();
-    follower.set_scene(revision, single(&source));
+    follower.set_scene(revision, single(&source), &part_ids(&single(&source)));
     let mut still = Follower::new();
     let mut no_physics = Puppet::new(source.model.clone()).unwrap();
     no_physics.set_toggles(ugoe::Toggles {
         physics: false,
         ..ugoe::Toggles::default()
     });
-    still.set_scene(revision, no_physics);
+    let ids = part_ids(&no_physics);
+    still.set_scene(revision, no_physics, &ids);
     for frame in 0..60 {
         conductor.set_parameter("AngleX", if frame < 30 { 30.0 } else { -30.0 });
         let sent = conductor.tick(1.0 / 60.0).unwrap();
@@ -348,7 +349,7 @@ fn receive_scene(
                 let puppet = follower.puppet_mut().unwrap();
                 puppet.set_modules(modules.to_vec()).unwrap();
             }
-            follower.continue_scene(scene.revision);
+            follower.continue_scene(scene.revision, &scene.part_ids);
             dressed
         }
         _ => {
@@ -356,7 +357,7 @@ fn receive_scene(
             if !modules.is_empty() {
                 puppet.set_modules(modules.to_vec()).unwrap();
             }
-            follower.set_scene(scene.revision, puppet);
+            follower.set_scene(scene.revision, puppet, &scene.part_ids);
             true
         }
     };
@@ -563,4 +564,107 @@ fn a_follower_joining_after_a_pose_switch_matches_the_conductor() {
         differed |= pose_shape(stale.puppet().unwrap()) != expected;
     }
     assert!(differed);
+}
+
+/// パーツの ID ごとの不透明度の上書き (値と重み)。
+fn part_overrides(puppet: &Puppet) -> Vec<(String, (f32, f32))> {
+    let instance = puppet.instance();
+    instance
+        .compiled()
+        .model()
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| {
+            (
+                part.id.to_string(),
+                instance.part_opacity_override(i).unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// モジュールのパーツを切り替えるモーションを再生しながら着せ替えたとき、前のシーンのフレームを組み替えたモデルに当てても、
+/// 指揮役と同じ ID のパーツに当たる (T0853)。`[Dress]` から `[LongHair, Dress]` に替えると `Dress/Dress` の番号が 1 つずれ、
+/// 前のシーンの番号のままでは `LongHair/Hair` に当たる。
+#[test]
+fn frames_of_the_previous_scene_hit_the_same_parts_after_dressing_up() {
+    let mut source = bundle(&fixtures::dress_up_base(), None);
+    let p = |t: f32, v: f32| Point { t, v };
+    source.motions.push(Motion {
+        name: "fade_dress".into(),
+        duration: 2.0,
+        looping: false,
+        fade_in: 0.0,
+        fade_out: 0.0,
+        curves: vec![Curve {
+            target: CurveTarget::PartOpacity("Dress/Dress".into()),
+            segments: vec![
+                Segment::Start { p: p(0.0, 0.9) },
+                Segment::Linear { to: p(2.0, 0.1) },
+            ],
+            fade_in: None,
+            fade_out: None,
+        }],
+        events: vec![],
+    });
+    let model = assemble(
+        NewModel {
+            name: "dress_up.ugoe".into(),
+            bundle: source.clone(),
+        },
+        &[],
+    )
+    .unwrap();
+    let dress = vec![Arc::new(fixtures::dress_module())];
+    let with_hair = vec![
+        Arc::new(fixtures::long_hair_module()),
+        Arc::new(fixtures::dress_module()),
+    ];
+    let mut conductor = Conductor::new();
+    let mut follower = Follower::new();
+    let mut followed = None;
+    let scene = conductor
+        .present(Some(model), Some(dress.clone()), Look::default())
+        .unwrap()
+        .clone();
+    receive_scene(&mut follower, &mut followed, &scene, &source, &dress);
+    let played = conductor.perform(|animation, puppet| {
+        animation.play(puppet.unwrap(), "fade_dress", Priority::Normal)
+    });
+    assert_eq!(played, Ok(true));
+    for frame in 0..10 {
+        let sent = Frame::decode(&conductor.tick(dt_at(frame)).unwrap().encode()).unwrap();
+        follower.receive(&sent).unwrap();
+    }
+    // 着せ替えの前のシーンのフレーム (まだ受け手に届いていない) と、そのときの指揮役のパーツの上書き。
+    let mut late = Vec::new();
+    for frame in 10..15 {
+        let sent = Frame::decode(&conductor.tick(dt_at(frame)).unwrap().encode()).unwrap();
+        assert!(!sent.part_opacities.is_empty());
+        let expected = conductor.perform(|_, conducted| part_overrides(conducted.unwrap()));
+        late.push((sent, expected));
+    }
+    // 受け手は着せ替えのシーンを先に受けてモジュールを付け直し、その後に前のシーンのフレームを当てる。
+    let scene = conductor
+        .present(None, Some(with_hair.clone()), Look::default())
+        .unwrap()
+        .clone();
+    receive_scene(&mut follower, &mut followed, &scene, &source, &with_hair);
+    for (i, (frame, expected)) in late.iter().enumerate() {
+        assert_eq!(follower.receive(frame), Ok(Received::Applied), "frame {i}");
+        for (id, actual) in part_overrides(follower.puppet().unwrap()) {
+            match expected.iter().find(|(e, _)| *e == id) {
+                Some((_, value)) => assert_close(
+                    &[actual.0, actual.1],
+                    &[value.0, value.1],
+                    &format!("frame {i} {id}"),
+                ),
+                // 前の組に無かったパーツ (LongHair のもの) にはカーブを当てない。
+                None => assert_eq!(actual.1, 0.0, "frame {i} {id}"),
+            }
+        }
+    }
+    let dressed = follower.puppet().unwrap().instance().compiled();
+    assert!(dressed.part_index("LongHair/Hair").is_some());
 }
