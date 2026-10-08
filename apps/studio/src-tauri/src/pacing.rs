@@ -62,7 +62,8 @@ pub enum Wake {
 ///
 /// 促しは 1 刻みに 1 回。トラッキングの値が届いていなければ刻みの直後に送る。届いていれば、促してから値が届くまでの時間
 /// (検出と IPC) を直近の値について測り、値が次の刻みの少し前に届くように促しを前へ寄せる (T0854。`docs/studio.md#入力`)。
-/// 見る値は直近の約 1 秒の値と、それが少なければ (検出が重い) 最低 `MIN_LEADS` 個まで遡った値 (5 秒より古いものは使わない。T0868)。
+/// 見る値は直近の約 1 秒の値と、それが少なければ (検出が重い) 最低 `MIN_LEADS` 個まで遡った値 (`max_age` より古いものは使わない。
+/// 5 秒、値の間隔が長ければ 10 個そろう長さまで延ばす。T0868・T0875)。
 /// 値が `hold` (値の間隔で決める。`hold_for`) の間届かなければ (トラッキングを止めた)、促しを刻みの直後に戻す (T0872)。
 /// 操作ウィンドウは促しを受けて検出するので、刻みのほうを値へ寄せると、寄せた刻みの促しがまた値を呼んで刻みが速くなる。
 /// 刻みの格子は動かさず促しを動かすので、刻みの速さと `dt` は変わらない。
@@ -87,10 +88,14 @@ pub struct Pacer {
     /// 直近の促し (古い順。`MAX_PULSES` まで)。これより古い促しの値は測らない。
     pulses: VecDeque<Pulse>,
     /// 届いた時刻と、促してから届くまでの時間 (古い順。`LEAD_WINDOW` より古いものは、`min_leads` 個に足りない分だけ
-    /// `LEAD_MAX_AGE` まで残す。`prune_leads`)。
+    /// `max_age` まで残す。`prune_leads`)。
     leads: VecDeque<(Instant, Duration)>,
     /// `LEAD_WINDOW` より古い値を残して、見る値をこの数まで増やす (`MIN_LEADS`。テストでは 0 にして T0868 の前と比べる)。
     min_leads: usize,
+    /// 数の下限のために残す値の古さの上限 (`max_age_for`。届くたびに決め直す)。
+    max_age: Duration,
+    /// `max_age` を値の間隔で延ばすか (テストでは `false` にして、`LEAD_MAX_AGE` のままの T0875 の前と比べる)。
+    age_by_interval: bool,
     /// 最後の値からこれだけ次の値が届かなければ、促しを刻みの直後に戻す (`hold_for`。届くたびに決め直す)。
     hold: Duration,
     /// `hold` を値の間隔で決めるか (テストでは `false` にして、`LEAD_WINDOW` のままの T0872 の前と比べる)。
@@ -172,12 +177,16 @@ impl Pacer {
     /// 遅れさせるか、ほかを待たせて間に合わせるかを費用で比べられる。
     const MIN_LEADS: usize = 10;
     /// 数の下限のために残す値の古さの上限 (計算機の混み具合が変わった古い値をいつまでも使わない)。1 秒に 2 個でも 10 個そろう長さ。
+    /// 値の間隔がこれより長ければ (1 秒に 2 個より少ない)、`max_age_for` で `MAX_LEAD_MAX_AGE` まで延ばす (T0875)。
     const LEAD_MAX_AGE: Duration = Duration::from_secs(5);
+    /// 延ばした古さの上限の上限 (値が 4 秒に 1 個でも 10 個そろう長さ)。
+    const MAX_LEAD_MAX_AGE: Duration = Duration::from_secs(40);
     /// 覚える届いた時刻の数の上限 (促しは 1 刻みに 1 回なので、120 刻みでも 1 秒で 120 回まで。選ぶ計算は数の 2 乗)。
     const MAX_LEADS: usize = 128;
     /// 覚える促しの数 (120 刻みで 5 秒、30 刻みで 20 秒)。これより前の促しの値が届くほど重ければ寄せない。
-    /// 120 刻みでも `LEAD_MAX_AGE` の間の促しを覚え、検出に 1 秒以上かかっても測れるようにする (T0872。64 個では、120 刻みで
+    /// 120 刻みでも 5 秒の間の促しを覚え、検出に 1 秒以上かかっても測れるようにする (T0872。64 個では、120 刻みで
     /// 約 0.5 秒・60 刻みで約 1 秒より重い検出の値をどの促しのものか分からず、寄せられなかった)。探すのは値が届くときだけ。
+    /// 要るのは 1 回の検出にかかる時間の分で、見る値の古さ (`max_age`。T0875 で 40 秒まで延ばす) には関わらない。
     const MAX_PULSES: usize = 600;
 
     pub fn new(rate: TickRate, now: Instant) -> Self {
@@ -191,6 +200,8 @@ impl Pacer {
             pulses: VecDeque::with_capacity(Self::MAX_PULSES),
             leads: VecDeque::with_capacity(Self::MAX_LEADS),
             min_leads: Self::MIN_LEADS,
+            max_age: Self::LEAD_MAX_AGE,
+            age_by_interval: true,
             hold: Self::LEAD_WINDOW,
             hold_by_interval: true,
             lead: None,
@@ -344,10 +355,31 @@ impl Pacer {
         }
         self.leads.push_back((at, at - pulse));
         self.prune_leads(at);
+        self.drop_on_change(at);
         self.lead = self.best_lead();
+        let median = self.median_interval();
         if self.hold_by_interval {
-            self.hold = self.hold_for();
+            self.hold = Self::hold_for(median);
         }
+        if self.age_by_interval {
+            self.max_age = Self::max_age_for(median);
+        }
+    }
+
+    /// 見る値 (`leads`) の届いた間隔の中央値 (値が 1 個以下なら `None`)。間隔はスタックの配列に集める (確保しない)。
+    fn median_interval(&self) -> Option<Duration> {
+        let mut intervals = [Duration::ZERO; Self::MAX_LEADS];
+        let mut count = 0;
+        for (prev, next) in self.leads.iter().zip(self.leads.iter().skip(1)) {
+            intervals[count] = next.0.saturating_duration_since(prev.0);
+            count += 1;
+        }
+        if count == 0 {
+            return None;
+        }
+        let intervals = &mut intervals[..count];
+        let (_, median, _) = intervals.select_nth_unstable(count / 2);
+        Some(*median)
     }
 
     /// 最後の値から、促しを刻みの直後に戻すまでの時間 (T0872。`docs/studio.md#入力`)。見る値 (`leads`) の届いた間隔の中央値の
@@ -356,30 +388,60 @@ impl Pacer {
     /// 1 秒のままだと、検出がとても重く値が 1 秒に 1 個より少ないとき、値が届くたびに寄せては次の値の前に戻すのを繰り返し、
     /// 検出を始める促しが寄せられない (値の届く時刻が刻みに揃わない)。中央値なので、止まっていた間の長い 1 回では延びない。
     /// 2 倍なので、フレームを 1 つ飛ばした (間隔が 1 回だけ倍になった) くらいでは戻さない。値が多いときは `LEAD_WINDOW` のまま (T0868 までと同じ)。
-    /// 止まったときは、長くても `LEAD_MAX_AGE` の後に戻す (そのころには見積もりに使う値も古い)。
-    /// 届くたびに決め直す (刻みのたびではない)。間隔はスタックの配列に集める (確保しない)。
-    fn hold_for(&self) -> Duration {
-        let mut intervals = [Duration::ZERO; Self::MAX_LEADS];
-        let mut count = 0;
-        for (prev, next) in self.leads.iter().zip(self.leads.iter().skip(1)) {
-            intervals[count] = next.0.saturating_duration_since(prev.0);
-            count += 1;
+    /// 止まったときは、長くても `LEAD_MAX_AGE` の後に戻す。見る値の古さの上限 (`max_age`) を延ばしても、ここは延ばさない
+    /// (止めたことを 40 秒も待たずに知る。T0875)。
+    /// 届くたびに決め直す (刻みのたびではない)。`median` は `median_interval`。
+    fn hold_for(median: Option<Duration>) -> Duration {
+        median.map_or(Self::LEAD_WINDOW, |median| {
+            (median * 2).clamp(Self::LEAD_WINDOW, Self::LEAD_MAX_AGE)
+        })
+    }
+
+    /// 数の下限のために残す値の古さの上限 (T0875。`docs/studio.md#入力`)。見る値の届いた間隔の中央値の `MIN_LEADS` 倍 (10 個そろう長さ) を、
+    /// `LEAD_MAX_AGE` 以上 `MAX_LEAD_MAX_AGE` 以下に収める。`median` は `median_interval`。
+    ///
+    /// 5 秒のままだと、検出がとても重く値が 1 秒に 1 個より少ないとき、見積もりに使う値が 2〜3 個しか無く、寄せた値のうち狙った刻みに
+    /// 遅れるものが 1〜2 割ある (T0872)。値が 1 秒に 2 個以上なら 5 秒のまま (T0868 までと同じ)。延ばすと計算機の混み具合や検出の重さが
+    /// 変わった後の古い値を長く見るので、変わったと分かれば古い値を捨てる (`drop_on_change`)。
+    fn max_age_for(median: Option<Duration>) -> Duration {
+        median.map_or(Self::LEAD_MAX_AGE, |median| {
+            median
+                .saturating_mul(Self::MIN_LEADS as u32)
+                .clamp(Self::LEAD_MAX_AGE, Self::MAX_LEAD_MAX_AGE)
+        })
+    }
+
+    /// 検出の重さが変わったら、延ばした分の古い値を捨てる (T0875。`at` は最後に届いた時刻)。最後の値の届くまでの時間が、
+    /// `LEAD_MAX_AGE` より古い値 (`max_age` を延ばしたので残っている値) の範囲から 1 刻みの間隔より大きく外れたら
+    /// (1 刻みずれると寄せる先が 1 周回る)、それらを捨てる (延ばす前と同じ値を見る)。1 個の外れた値では、まれに遅い値か重さが
+    /// 変わったかは分からないが、捨てても延ばす前の 5 秒に戻るだけ (その後の値でまた延ばす)。
+    fn drop_on_change(&mut self, at: Instant) {
+        let Some(&(_, last)) = self.leads.back() else {
+            return;
+        };
+        let old = |t: &Instant| at.saturating_duration_since(*t) > Self::LEAD_MAX_AGE;
+        let (lo, hi) = self
+            .leads
+            .iter()
+            .take_while(|(t, _)| old(t))
+            .fold((Duration::MAX, Duration::ZERO), |(lo, hi), (_, d)| {
+                (lo.min(*d), hi.max(*d))
+            });
+        if lo > hi || (last + self.period >= lo && last <= hi + self.period) {
+            return;
         }
-        if count == 0 {
-            return Self::LEAD_WINDOW;
+        while self.leads.front().is_some_and(|(t, _)| old(t)) {
+            self.leads.pop_front();
         }
-        let intervals = &mut intervals[..count];
-        let (_, median, _) = intervals.select_nth_unstable(count / 2);
-        (*median * 2).clamp(Self::LEAD_WINDOW, Self::LEAD_MAX_AGE)
     }
 
     /// 見る値を決める (`at` は最後に届いた時刻)。`LEAD_WINDOW` のうちの値はすべて、それより古い値は `min_leads` 個に足りない分だけ
-    /// `LEAD_MAX_AGE` のうちのものを残す。
+    /// `max_age` のうちのものを残す。
     fn prune_leads(&mut self, at: Instant) {
         while let Some(&(t, _)) = self.leads.front() {
             let age = at.saturating_duration_since(t);
             let keep = age <= Self::LEAD_WINDOW
-                || (age <= Self::LEAD_MAX_AGE && self.leads.len() <= self.min_leads);
+                || (age <= self.max_age && self.leads.len() <= self.min_leads);
             if keep {
                 break;
             }
@@ -661,6 +723,8 @@ mod tests {
         values: Vec<(Instant, u32, u32)>,
         /// 促しを寄せていなかった (`Ticked::margin` が無い) 刻みの時刻 (T0872)。
         unaimed: Vec<Instant>,
+        /// 刻みごとの、見ている値のうち最も古いものの届いた時刻 (T0875)。
+        oldest: Vec<(Instant, Option<Instant>)>,
         /// 回している間の余裕の最大。
         max_margin: Duration,
         /// 刻みのスレッドと同じく刻みごとに集めた待ち (負荷の報告。T0867)。
@@ -684,6 +748,19 @@ mod tests {
                 .collect();
             let mean = waits.iter().sum::<Duration>() / (waits.len().max(1) as u32);
             (f64::from(late) / f64::from(values.max(1)), mean)
+        }
+
+        /// `switch` より前に届いた値を見なくなった (その後の刻みでずっと見ていない) 最初の刻みの時刻。
+        fn dropped(&self, switch: Instant) -> Option<Instant> {
+            let mut dropped = None;
+            for (t, oldest) in self.oldest.iter().filter(|(t, _)| *t >= switch) {
+                if oldest.is_some_and(|o| o < switch) {
+                    dropped = None;
+                } else if dropped.is_none() {
+                    dropped = Some(*t);
+                }
+            }
+            dropped
         }
 
         /// 遅れた値の数の合計。
@@ -731,6 +808,7 @@ mod tests {
             used: Vec::new(),
             values: Vec::new(),
             unaimed: Vec::new(),
+            oldest: Vec::new(),
             max_margin: pacer.margin,
             meter: WaitMeter::default(),
         };
@@ -778,6 +856,7 @@ mod tests {
                     }
                     run.meter.record(now, ticked);
                     run.values.push((now, ticked.values, ticked.late));
+                    run.oldest.push((now, pacer.leads.front().map(|(t, _)| *t)));
                     run.ticks.push(now);
                     run.max_margin = run.max_margin.max(pacer.margin);
                 }
@@ -1075,6 +1154,13 @@ mod tests {
         pacer
     }
 
+    /// 見る値の古さの上限を `LEAD_MAX_AGE` のままにする (T0875 の前と同じ) `Pacer`。比べるために使う。
+    fn fixed_max_age(rate: TickRate, start: Instant) -> Pacer {
+        let mut pacer = Pacer::new(rate, start);
+        pacer.age_by_interval = false;
+        pacer
+    }
+
     /// 刻みは格子より早くならず、速さは設定を超えない。
     fn assert_keeps_the_rate(run: &Run, rate: TickRate, seconds: u32, label: &str) {
         for (tick, deadline) in run.ticks.iter().zip(&run.deadlines) {
@@ -1297,6 +1383,12 @@ mod tests {
                 );
                 assert!(after_late < before_late, "{label}");
                 assert!(after_late < 0.15, "{label}");
+                // 値が 1 秒に 2 個ほどなら、見る値の古さの上限はほぼ延ばさない (間隔が 500 ms より少し長い分だけ。T0875)。
+                assert!(
+                    after.pacer.max_age < Pacer::LEAD_MAX_AGE + Duration::from_millis(100),
+                    "{label}: {:?}",
+                    after.pacer.max_age
+                );
                 assert_keeps_the_rate(&before, rate, seconds, &label);
                 assert_keeps_the_rate(&after, rate, seconds, &label);
             }
@@ -1337,8 +1429,10 @@ mod tests {
                     )
                 };
                 let before = run(fixed_hold(rate, start));
+                let short = run(fixed_max_age(rate, start));
                 let after = run(Pacer::new(rate, start));
                 let (before_late, before_wait) = before.between(settled, until);
+                let (short_late, short_wait) = short.between(settled, until);
                 let (after_late, after_wait) = after.between(settled, until);
                 let unaimed = |run: &Run| run.unaimed.iter().filter(|t| **t >= settled).count();
                 // 刻みの少し前 (余裕の上限のうち) に届かなかった値の割合。寄せていない促しの値は狙った刻みが無く「遅れた値」に
@@ -1351,16 +1445,19 @@ mod tests {
                 let ticks = after.ticks.iter().filter(|t| **t >= settled).count();
                 let values: u32 = after.values.iter().map(|(_, v, _)| *v).sum();
                 println!(
-                    "{label}: {:.2} values/s, hold {:?}, unaimed ticks {} -> {} / {ticks}, \
-                     late {:.1}% -> {:.1}%, not just before the tick {:.1}% -> {:.1}%, \
-                     wait {before_wait:.2?} -> {after_wait:.2?}",
+                    "{label}: {:.2} values/s, hold {:?}, max age {:?}, unaimed ticks {} -> {} / {ticks}, \
+                     late {:.1}% -> {:.1}% -> {:.1}%, not just before the tick {:.1}% -> {:.1}% -> {:.1}%, \
+                     wait {before_wait:.2?} -> {short_wait:.2?} -> {after_wait:.2?}",
                     f64::from(values) / f64::from(seconds),
                     after.pacer.hold,
+                    after.pacer.max_age,
                     unaimed(&before),
                     unaimed(&after),
                     before_late * 100.0,
+                    short_late * 100.0,
                     after_late * 100.0,
                     far(&before) * 100.0,
+                    far(&short) * 100.0,
                     far(&after) * 100.0,
                 );
                 // 前は値が届くたびに寄せては戻していた。後は寄せたまま。
@@ -1368,17 +1465,26 @@ mod tests {
                 assert_eq!(unaimed(&after), 0, "{label}");
                 assert!(after.pacer.hold > Pacer::LEAD_WINDOW, "{label}");
                 assert!(after.pacer.hold <= Pacer::LEAD_MAX_AGE, "{label}");
-                // 寄せた値のうち狙った刻みに遅れるものは、見る値が 2〜3 個しか無いので 1〜2 割ある (前は寄せないので数えない)。
-                assert!(after_late < 0.3, "{label}");
+                // 寄せた値のうち狙った刻みに遅れるものは、見る値の古さの上限が 5 秒のままでは、見る値が 2〜3 個しか無いので
+                // 1〜2 割ある (T0872。T0872 の前は寄せないので数えない)。値の間隔で延ばすと 10 個見るので下がる (T0875)。
+                assert!(after.pacer.max_age > Pacer::LEAD_MAX_AGE, "{label}");
+                assert!(after_late < short_late, "{label}");
+                assert!(after_late < 0.15, "{label}");
                 // 待ちは、30・60 刻みでは縮み、120 刻み (間隔が検出の揺れほど) では前とほぼ同じ。
                 if rate == TickRate::Fps120 {
                     assert!(
                         after_wait < before_wait + Duration::from_micros(500),
                         "{label}"
                     );
+                    // 遅れる値を減らす分、待ちが少し延びることがある (2,000 ms + 0〜20 ms で 3.4 → 4.0 ms)。
+                    assert!(
+                        after_wait < short_wait + Duration::from_millis(1),
+                        "{label}"
+                    );
                 } else {
                     assert!(after_wait < before_wait, "{label}");
                     assert!(far(&after) < far(&before), "{label}");
+                    assert!(after_wait < short_wait, "{label}");
                 }
                 assert_keeps_the_rate(&before, rate, seconds, &label);
                 assert_keeps_the_rate(&after, rate, seconds, &label);
@@ -1430,6 +1536,8 @@ mod tests {
             pacer.arrived(at + Duration::from_millis(5), seq);
         }
         assert_eq!(pacer.hold, Pacer::LEAD_MAX_AGE);
+        // 見る値の古さの上限は延ばすが、40 秒まで (T0875)。
+        assert_eq!(pacer.max_age, Pacer::MAX_LEAD_MAX_AGE);
     }
 
     #[test]
@@ -1508,6 +1616,161 @@ mod tests {
                 "{label}: {wait:?} / {steady_wait:?}"
             );
             assert_keeps_the_rate(&changed, rate, seconds, &label);
+        }
+    }
+
+    /// 刻みで数えた値の数・遅れた数と、使われた値の待ちの合計と数 (`old_leads_are_dropped_when_very_slow_detection_changes`)。
+    #[derive(Default)]
+    struct Counts {
+        values: u32,
+        late: u32,
+        wait: Duration,
+        used: u32,
+    }
+
+    impl Counts {
+        fn add(&mut self, run: &Run, from: Instant, to: Instant) {
+            let within = |t: &Instant| *t >= from && *t < to;
+            for (_, values, late) in run.values.iter().filter(|(t, _, _)| within(t)) {
+                self.values += values;
+                self.late += late;
+            }
+            for (_, wait) in run.used.iter().filter(|(t, _)| within(t)) {
+                self.wait += *wait;
+                self.used += 1;
+            }
+        }
+
+        fn late_ratio(&self) -> f64 {
+            f64::from(self.late) / f64::from(self.values.max(1))
+        }
+
+        fn mean_wait(&self) -> Duration {
+            self.wait / self.used.max(1)
+        }
+    }
+
+    /// 変わってから前の値を見なくなるまでの時間の最大と、その間 (`moving`) とその後 (`settled`) の数。
+    #[derive(Default)]
+    struct Totals {
+        dropped: Duration,
+        moving: Counts,
+        settled: Counts,
+    }
+
+    impl Totals {
+        fn add(
+            &mut self,
+            run: &Run,
+            dropped: Duration,
+            switch: Instant,
+            moving: Instant,
+            until: Instant,
+        ) {
+            self.dropped = self.dropped.max(dropped);
+            self.moving.add(run, switch, moving);
+            self.settled.add(run, moving, until);
+        }
+    }
+
+    impl std::fmt::Display for Totals {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "dropped within {:.1?}, then late {}/{} ({:.1}%) wait {:.2?}, after that late {}/{} ({:.1}%) wait {:.2?}",
+                self.dropped,
+                self.moving.late,
+                self.moving.values,
+                self.moving.late_ratio() * 100.0,
+                self.moving.mean_wait(),
+                self.settled.late,
+                self.settled.values,
+                self.settled.late_ratio() * 100.0,
+                self.settled.mean_wait(),
+            )
+        }
+    }
+
+    #[test]
+    fn old_leads_are_dropped_when_very_slow_detection_changes() {
+        // 値が 1 秒に 1 個より少ない (見る値の古さの上限を延ばす) 間か前後に、60 秒たったところで検出の重さが変わる (T0875)。
+        // 前の値を見なくなるまでの時間と、その間と後の遅れた値の割合と待ちを、延ばす前 (5 秒のまま) と比べる。値が少ないので
+        // 種を変えて 4 回ずつ回した合計で比べる。
+        let start = Instant::now();
+        let switch = start + Duration::from_secs(60);
+        let seconds = 240;
+        let until = start + Duration::from_secs(seconds);
+        let rate = TickRate::Fps60;
+        // (前のフレームの間隔・検出・揺れ, 後のフレームの間隔・検出・揺れ) ミリ秒。
+        let cases = [
+            // とても重いまま、重くなる・軽くなる。
+            ((33, 1_200, 8), (33, 2_000, 8)),
+            ((33, 2_000, 20), (33, 1_205, 20)),
+            ((33, 1_205, 20), (33, 605, 20)),
+            // 1 刻みの間隔より小さく変わる (変わったと見ない)。
+            ((33, 1_200, 8), (33, 1_210, 8)),
+            // とても重い検出から軽い検出へ、軽い検出や重い検出からとても重い検出へ。
+            ((33, 1_200, 20), (16, 6, 0)),
+            ((16, 6, 0), (33, 1_200, 20)),
+            ((500, 200, 8), (33, 2_005, 8)),
+        ];
+        for (from, to) in cases {
+            let label = format!("{from:?} -> {to:?}");
+            let mut before_total = Totals::default();
+            let mut after_total = Totals::default();
+            for seed in [3, 5, 7, 11] {
+                let run = |pacer: Pacer| {
+                    let mut first = Detector::new(start, from.0, from.1, from.2, seed);
+                    let mut second = Detector::new(start, to.0, to.1, to.2, seed);
+                    let mut sleep = Rng(9);
+                    simulate_with(
+                        pacer,
+                        start,
+                        until,
+                        |now| {
+                            if now < switch {
+                                first.pulse(now)
+                            } else {
+                                second.pulse(now)
+                            }
+                        },
+                        || sleep.upto(Duration::from_micros(500)),
+                    )
+                };
+                let before = run(fixed_max_age(rate, start));
+                let after = run(Pacer::new(rate, start));
+                let since = |run: &Run| run.dropped(switch).map(|t| t - switch).unwrap();
+                let (before_dropped, after_dropped) = (since(&before), since(&after));
+                // 値の重さが 1 刻みの間隔より大きく変われば、前の値を見る時間は延ばす前と同じほど
+                // (延ばした分は、変わった後の最初の値で捨てる)。
+                if label != "(33, 1200, 8) -> (33, 1210, 8)" {
+                    assert!(
+                        after_dropped <= before_dropped + Pacer::LEAD_WINDOW,
+                        "{label} seed {seed}: {after_dropped:?} / {before_dropped:?}"
+                    );
+                }
+                // どちらも前の値を見なくなるまでと、その後。
+                let moving = switch + before_dropped.max(after_dropped);
+                before_total.add(&before, before_dropped, switch, moving, until);
+                after_total.add(&after, after_dropped, switch, moving, until);
+                assert_keeps_the_rate(&after, rate, seconds as u32, &label);
+            }
+            println!("{label}: {before_total} -> {after_total}");
+            // 前の値も見ている間は、遅れた値の割合が延ばす前とほぼ同じ (1 刻みより小さく変わったときは、前の値を長く見る分
+            // 36 個のうち 2 個多い)。その後は延ばす前より下がる。待ちも大きくならない。
+            assert!(
+                after_total.moving.late_ratio() <= before_total.moving.late_ratio() + 0.1,
+                "{label}"
+            );
+            assert!(
+                after_total.settled.late_ratio() <= before_total.settled.late_ratio(),
+                "{label}"
+            );
+            assert!(
+                after_total.settled.mean_wait()
+                    <= before_total.settled.mean_wait() + Duration::from_micros(100),
+                "{label}"
+            );
         }
     }
 
