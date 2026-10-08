@@ -1,11 +1,11 @@
 ---
 id: T0857
 title: "スタジオ: 出力ウィンドウとブラウザソースの受け手は、新しいフレームか見せ方の変化があったときだけ描く"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/player, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0857
 ---
 
 # T0857: スタジオ: 受け手は変わったときだけ描く
