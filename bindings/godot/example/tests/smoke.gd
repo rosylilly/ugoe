@@ -368,6 +368,16 @@ func _redraws(puppet: Node2D, json_path: String) -> void:
 	puppet.mask_scale = 1.0
 	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(json_path)), "reload single-quad")
 	_check(puppet.get_redraw_count() == 1, "loading resets the redraw count (%d)" % puppet.get_redraw_count())
+	# 1 フレームに 0.05% ずつ 2 倍までズームすると、マスクの解像度の 2^(1/4) 刻みを越えるたびに (4 回) 描き直す (T1406)
+	puppet.advance(1.0 / 60.0)
+	var before: int = puppet.get_redraw_count()
+	var zoom := 1.0
+	while zoom < 2.0:
+		zoom = minf(zoom * 1.0005, 2.0)
+		puppet.scale = Vector2(zoom, zoom)
+		puppet.advance(1.0 / 60.0)
+	_check(puppet.get_redraw_count() - before == 4, "a slow zoom redraws at each mask resolution step (%d)" % (puppet.get_redraw_count() - before))
+	puppet.scale = Vector2.ONE
 
 
 # 木の中で試すため、最初のフレームで始める (`_initialize` の間は root がまだ木に入っていない)。

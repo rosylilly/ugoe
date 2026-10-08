@@ -213,6 +213,31 @@ impl PendingChanges {
     }
 }
 
+/// マスクの解像度 (キャンバスの 1 単位あたりの画素数) を 1/16〜16 に収め、2^(1/4) 刻みに切り上げて丸める
+/// (Unity の `UgoePuppet.MaskResolution` と同じ)。少しずつ変わる大きさ (ゆっくりしたズーム) でも、刻みを越えたときに
+/// マスクを作り直すため。NaN は 1 とする (0 は 1/16、無限大は 16 になる)。
+pub fn quantize_mask_scale(scale: f32) -> f32 {
+    if scale.is_nan() {
+        return 1.0;
+    }
+    let s = scale.clamp(1.0 / 16.0, 16.0);
+    ((s.log2() * 4.0).ceil() / 4.0).exp2()
+}
+
+/// 直前の描画で使ったマスクの解像度 ([`quantize_mask_scale`] で丸めたもの。描く前は 0)。
+#[derive(Default)]
+struct MaskResolution(f32);
+
+impl MaskResolution {
+    /// 今のフレームの解像度を丸めて取り込む。丸めた値が前と違えば (マスクを作り直す) true。
+    fn update(&mut self, scale: f32) -> bool {
+        let quantized = quantize_mask_scale(scale);
+        let changed = quantized != self.0;
+        self.0 = quantized;
+        changed
+    }
+}
+
 /// 1 体分の描画の資源。
 pub struct Renderer {
     container: Rid,
@@ -228,8 +253,8 @@ pub struct Renderer {
     fresh: bool,
     /// 描かなかったフレームの変更フラグ。
     pending: PendingChanges,
-    /// 直前の描画で使ったマスクの解像度 (キャンバスの 1 単位あたりの画素数)。
-    mask_scale: f32,
+    /// 直前の描画で使ったマスクの解像度。
+    mask_scale: MaskResolution,
     /// アトラスに収まらなかったときに、マスクの解像度に掛ける倍率 (解像度が変わると 1 に戻す)。
     shrink: MaskShrink,
     // 毎フレームの作業用
@@ -555,7 +580,7 @@ impl Renderer {
             textures,
             fresh: true,
             pending: PendingChanges::default(),
-            mask_scale: 0.0,
+            mask_scale: MaskResolution::default(),
             shrink: MaskShrink::default(),
             points: PackedVector2Array::new(),
             uvs,
@@ -586,14 +611,17 @@ impl Renderer {
         self.shrink.factor
     }
 
-    /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数。
+    /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数
+    /// ([`quantize_mask_scale`] で丸めて使う)。
     ///
-    /// 見た目が変わらず (`Puppet::changed`。docs/spec/evaluation.md#見た目の変化)、マスクの解像度も変わらなければ、
+    /// 見た目が変わらず (`Puppet::changed`。docs/spec/evaluation.md#見た目の変化)、丸めたマスクの解像度も変わらなければ、
     /// 何も書き換えない (前に送った頂点のバッファと uniform のまま)。書き換えたら true。
     pub fn draw(&mut self, model: &LoadedModel, mask_scale: f32) -> bool {
         let instance = model.puppet.instance();
         let states = instance.drawables();
-        let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
+        // 変わったら必ず描くので、描かないフレームに取り込んでも前の値は失わない。
+        let rescale = self.mask_scale.update(mask_scale);
+        let mask_scale = self.mask_scale.0;
         self.pending.add(instance.changes());
         if !(self.fresh || rescale || model.puppet.changed()) {
             return false;
@@ -602,7 +630,6 @@ impl Renderer {
         let changes = pending.0.as_slice();
         let origin = model.model().meta.canvas.origin;
         let fresh = std::mem::take(&mut self.fresh);
-        self.mask_scale = mask_scale;
         if rescale {
             self.shrink = MaskShrink::default();
         }
@@ -952,5 +979,59 @@ mod tests {
         pending.clear();
         pending.add(&[DrawableChanges::NONE; 3]);
         assert_eq!(pending.0, [DrawableChanges::ALL; 3]);
+    }
+
+    #[test]
+    fn mask_scale_is_quantized_to_quarter_octaves() {
+        let step = 0.25f32.exp2();
+        // 2 の累乗と刻みの境目はそのまま、境目を少しでも越えれば次の刻み
+        assert_eq!(quantize_mask_scale(1.0), 1.0);
+        assert_eq!(quantize_mask_scale(2.0), 2.0);
+        assert_eq!(quantize_mask_scale(0.5), 0.5);
+        assert!((quantize_mask_scale(1.001) - step).abs() < 1e-6);
+        assert!((quantize_mask_scale(step * 1.001) - step * step).abs() < 1e-5);
+        assert!((quantize_mask_scale(0.999) - 1.0).abs() < 1e-6);
+        // 同じ刻みの中の値は同じ解像度 (切り上げるので粗くならない)
+        for s in [1.01f32, 1.1, 1.18] {
+            assert_eq!(quantize_mask_scale(s), quantize_mask_scale(1.001));
+            assert!(quantize_mask_scale(s) >= s);
+        }
+        // 1/16〜16 に収め、0・負・無限大・NaN も有限で正の値にする
+        assert_eq!(quantize_mask_scale(0.0), 1.0 / 16.0);
+        assert_eq!(quantize_mask_scale(-1.0), 1.0 / 16.0);
+        assert_eq!(quantize_mask_scale(0.01), 1.0 / 16.0);
+        assert_eq!(quantize_mask_scale(f32::INFINITY), 16.0);
+        assert_eq!(quantize_mask_scale(40.0), 16.0);
+        assert_eq!(quantize_mask_scale(f32::NAN), 1.0);
+    }
+
+    #[test]
+    fn slow_zoom_rescales_at_each_step() {
+        // 1 フレームに 0.05% ずつ 2 倍までズームする
+        let frames: Vec<f32> = std::iter::successors(Some(1.0f32), |s| Some(s * 1.0005))
+            .take_while(|&s| s <= 2.0)
+            .chain([2.0])
+            .collect();
+        let mut resolution = MaskResolution::default();
+        assert!(resolution.update(frames[0]), "the first frame draws masks");
+        let rescales = frames[1..]
+            .iter()
+            .filter(|&&s| resolution.update(s))
+            .count();
+        // 2^(1/4)・2^(1/2)・2^(3/4)・2 の 4 つの刻みを越えるたびに作り直す
+        assert_eq!(rescales, 4);
+        assert_eq!(resolution.0, 2.0);
+
+        // 前のフレームの値と 0.1% を超えて違うときだけ作り直す形 (T1406 の前) では、一度も作り直さない
+        let mut previous = frames[0];
+        let old = frames[1..]
+            .iter()
+            .filter(|&&s| {
+                let rescale = (s - previous).abs() > 1e-3 * s;
+                previous = s;
+                rescale
+            })
+            .count();
+        assert_eq!(old, 0);
     }
 }

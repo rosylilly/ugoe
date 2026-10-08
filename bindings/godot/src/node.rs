@@ -55,7 +55,8 @@ pub(crate) struct UgoePuppet2D {
     #[export]
     play_in_editor: bool,
     /// マスクのテクスチャの解像度の倍率。1 で画面上の大きさと同じ解像度
-    /// (`docs/spec/rendering.md#精度`)。下げると軽くなるが、マスクの縁が粗くなる。
+    /// (`docs/spec/rendering.md#精度`)。下げると軽くなるが、マスクの縁が粗くなる。画面上の大きさを掛けた解像度は
+    /// 1/16〜16 に収め、2^(1/4) 刻みに切り上げて使う (`render::quantize_mask_scale`)。
     #[export(range = (0.1, 4.0, 0.05, or_greater))]
     #[var(set = set_mask_scale)]
     mask_scale: f32,
@@ -1594,7 +1595,7 @@ impl UgoePuppet2D {
 
     /// 直前の評価の結果を描く (`update` か `follow` の後)。
     fn draw(&mut self) {
-        // マスクは画面上の大きさ (ビューポートの画素) に合わせた解像度で描く。
+        // マスクは画面上の大きさ (ビューポートの画素) に合わせた解像度で描く (Renderer::draw が 2^(1/4) 刻みに丸める)。
         let screen_scale = if self.base().is_inside_tree() {
             let s = self.base().get_global_transform_with_canvas().scale();
             s.x.abs().max(s.y.abs())
