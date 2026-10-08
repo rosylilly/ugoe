@@ -8,6 +8,8 @@ import type { TrackingPuppet } from "@ugoe/face-tracking";
 export interface WebPuppet extends TrackingPuppet {
   free(): void;
   backend(): string;
+  /** 使っている GPU の名前 (ブラウザが伏せると空)。 */
+  adapter_name(): string;
   is_lost(): boolean;
 
   load_json(json: string): string[];
@@ -91,7 +93,14 @@ export interface WebPuppet extends TrackingPuppet {
 /** 初期化した ugoe-wasm のモジュール (プレーヤーが使う部分)。 */
 export interface UgoeWasmModule {
   WebPuppet: {
-    /** canvas に描く `WebPuppet` を作る。`backend` は `auto` / `webgl2` など。 */
-    create(canvas: HTMLCanvasElement, backend?: string | null): Promise<WebPuppet>;
+    /**
+     * canvas に描く `WebPuppet` を作る。`backend` は `auto` / `webgl2` など。`power_preference` は GPU の電力の希望
+     * (surface.ts の `PowerPreference`)。
+     */
+    create(
+      canvas: HTMLCanvasElement,
+      backend?: string | null,
+      power_preference?: string | null,
+    ): Promise<WebPuppet>;
   };
 }

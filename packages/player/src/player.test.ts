@@ -21,6 +21,23 @@ vi.mock("@ugoe/face-tracking", () => import("./testing/faceTracking"));
 setupPlayer();
 
 describe("Player", () => {
+  it("shows the adapter name and passes the power preference to the WebPuppet", async () => {
+    const { p } = await ready();
+    expect(p.backend).toBe("webgl2");
+    expect(p.adapterName).toBe("Fake GPU");
+    expect(p.powerPreference).toBe("default");
+    expect(pending[0]?.powerPreference).toBe("default");
+
+    // 変えたら restart から効く (今の WebPuppet は作り直さない)
+    p.powerPreference = "high-performance";
+    expect(pending).toHaveLength(1);
+    const restarting = p.restart();
+    await settle();
+    pending[1]?.resolve(fakePuppet().puppet);
+    await restarting;
+    expect(pending[1]?.powerPreference).toBe("high-performance");
+  });
+
   it("frees a WebPuppet that finishes after detach", async () => {
     const p = player();
     const attached = p.attach(container);

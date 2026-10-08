@@ -19,6 +19,8 @@
 // - GPU を失って作り直すときは、失った WebPuppet のビュー (ズームとパン) を覚えて、作り直した WebPuppet に `created` の前に
 //   渡す (作り直しは利用者の操作ではないので、見ている場所を変えない。T0942)。パンは CSS ピクセルで覚え、作り直したときの
 //   devicePixelRatio で描画バッファの画素に直す。`attach` (作り直しでない作成) では既定のビュー (fit) から始める。
+// - GPU の電力の希望 (`powerPreference`。T0499) は、`attach` でも作り直しでも、そのときの値を `WebPuppet.create` に渡す。
+//   変えても今の WebPuppet はそのままで、次に作るとき (`restart` など) から効く。
 
 /** PuppetSurface が使う WebPuppet のメソッド (構造の型。アプリと Player の `WebPuppet` の型はこれを満たす)。 */
 export interface SurfacePuppet {
@@ -38,10 +40,20 @@ interface SavedView {
   panY: number;
 }
 
+/**
+ * GPU の電力の希望 (`WebPuppet.create` の `power_preference`。T0499)。希望なので、効くかはブラウザと OS が決める
+ * (crates/ugoe-wasm/README.md の「GPU の電力の希望」)。`"default"` は希望なし。
+ */
+export type PowerPreference = "default" | "low-power" | "high-performance";
+
 /** WebPuppet を作る口 (初期化した ugoe-wasm のモジュール)。 */
 export interface SurfaceWasm<P extends SurfacePuppet> {
   WebPuppet: {
-    create(canvas: HTMLCanvasElement, backend?: string | null): Promise<P>;
+    create(
+      canvas: HTMLCanvasElement,
+      backend?: string | null,
+      power_preference?: string | null,
+    ): Promise<P>;
   };
 }
 
@@ -140,6 +152,11 @@ export class PuppetSurface<P extends SurfacePuppet> {
   #restartedAt: number | null = null;
   /** GPU を失った WebPuppet のビュー (作り直した WebPuppet に渡す)。`attach`・`detach` で忘れる。 */
   #savedView: SavedView | null = null;
+  /**
+   * GPU の電力の希望 (T0499)。作るたび (`attach`・GPU を失ったときの作り直し・`restart`) に渡す。変えても今の WebPuppet は
+   * 作り直さない (効かせるには `restart` を呼ぶ)。既定の `"default"` は希望なし (渡さないのと同じ)。
+   */
+  powerPreference: PowerPreference = "default";
 
   constructor(host: SurfaceHost<P>) {
     this.#host = host;
@@ -307,7 +324,7 @@ export class PuppetSurface<P extends SurfacePuppet> {
       container.prepend(canvas);
       let puppet: P;
       try {
-        puppet = await wasm.WebPuppet.create(canvas, backend);
+        puppet = await wasm.WebPuppet.create(canvas, backend, this.powerPreference);
       } catch (e) {
         canvas.remove();
         if (token !== this.#token) return "superseded";

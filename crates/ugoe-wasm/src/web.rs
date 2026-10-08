@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::animation::Library;
-use crate::create::CreateError;
+use crate::create::{self, CreateError};
 use crate::dress_up::{Wardrobe, WardrobeError, attached_names};
 use crate::frame::FrameError;
 use crate::load::{self, ErrorInfo, LoadError, LoadWarning, LoadedModel, Rgba8};
@@ -80,6 +80,49 @@ fn webgl2_context(canvas: &HtmlCanvasElement) -> Option<web_sys::WebGl2Rendering
     canvas.get_context("webgl2").ok()??.dyn_into().ok()
 }
 
+/// wgpu より先に `canvas` の WebGL2 のコンテキストを電力の希望を付けて作る (T0499)。
+///
+/// wgpu の GL のバックエンド (wgpu-hal 30 の gles/web.rs) は `getContext("webgl2", { antialias: false })` で作り、
+/// `powerPreference` を渡さない。同じ canvas の 2 回目からの `getContext` は最初のコンテキストを返して属性を無視するので
+/// (WebGL 1.0 の 5.2)、ここで同じ `antialias: false` に希望を足して先に作れば、wgpu はそれを使う。
+///
+/// `getContext` が `null` を返したり投げたりしたら、wgpu に作り直させずに、wgpu-hal と同じ文の `context_unavailable` にする
+/// (今までと同じく、最初の `getContext` で決める)。GPU プロセスが落ちている間の作成は `null` になり、すぐ続けて呼んだ
+/// `getContext` は、失っていないのに描けないコンテキストを返すことがある (ヘッドレスの Chrome と SwiftShader で、
+/// `just conformance --only avatar` の `gpu-process-crash-during-create` が描けなくなった)。失ったものが返ったときは、
+/// 今までと同じく後の `isContextLost()` の確かめに任せる。
+fn create_webgl2_context(
+    canvas: &HtmlCanvasElement,
+    preference: wgpu::PowerPreference,
+) -> Result<(), CreateError> {
+    let options = js_sys::Object::new();
+    // 普通のオブジェクトへの設定なので失敗しない。
+    let _ = js_sys::Reflect::set(&options, &"antialias".into(), &JsValue::FALSE);
+    let _ = js_sys::Reflect::set(
+        &options,
+        &"powerPreference".into(),
+        &create::webgl_power_preference(preference).into(),
+    );
+    // 文は wgpu-hal 30 の gles/web.rs (`create_surface_from_context`) と同じ。
+    match canvas.get_context_with_context_options("webgl2", &options) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(CreateError::ContextUnavailable(
+            "canvas.getContext() returned null; webgl2 not available or canvas already in use"
+                .into(),
+        )),
+        Err(e) => Err(CreateError::ContextUnavailable(format!(
+            "canvas.getContext() threw exception {e:?}"
+        ))),
+    }
+}
+
+/// `gl` が `WEBGL_debug_renderer_info` を持つ (wgpu はこれがあれば GPU の名前を、無ければ `RENDERER` の一般の名前
+/// (`"WebKit WebGL"` など) をアダプタの名前にする。wgpu-hal 30 の gles/adapter.rs)。
+fn has_debug_renderer_info(gl: &web_sys::WebGl2RenderingContext) -> bool {
+    gl.get_supported_extensions()
+        .is_some_and(|extensions| extensions.includes(&"WEBGL_debug_renderer_info".into(), 0))
+}
+
 /// `gl` を失っている (取れなかった `None` も失ったものとして扱う)。
 ///
 /// Chrome は失ったコンテキストを `getContext` から返すことがある (前に失った canvas・作れなかったときなど)。
@@ -113,6 +156,8 @@ pub struct WebPuppet {
     /// 描画に使うビューの形式 (リニア化しないため sRGB ではない形式)。
     view_format: wgpu::TextureFormat,
     backend: wgpu::Backend,
+    /// 使っているアダプタの名前 (`adapter_name`。T0499)。
+    adapter_name: String,
     renderer: Renderer,
     puppet: Option<Puppet>,
     /// バンドルのモーションと表情 (名前で再生する)。
@@ -170,11 +215,19 @@ impl WebPuppet {
     ///
     /// `backend` は `"auto"` (既定: WebGPU、無ければ WebGL2)・`"webgpu"`・`"webgl2"`。
     /// 1 つの canvas は WebGPU と WebGL2 のどちらか一方にしか使えないので、失敗したら別の canvas で作り直すこと。
+    ///
+    /// `power_preference` は GPU の電力の希望 `"default"` (省いたとき。希望なし)・`"low-power"`・`"high-performance"` (T0499)。
+    /// WebGPU ではアダプタを求めるとき (`requestAdapter` の `powerPreference`)、WebGL2 ではコンテキストを作るときの属性に渡す。
+    /// 希望なので、効くかはブラウザと OS が決める (Windows の Chromium は無視するなど)。使っているものは `adapter_name` で分かる。
+    /// 知らない `backend`・`power_preference` はコードを持たない `Error`。
     pub async fn create(
         canvas: HtmlCanvasElement,
         backend: Option<String>,
+        power_preference: Option<String>,
     ) -> Result<WebPuppet, JsValue> {
         console_error_panic_hook::set_once();
+        let power_preference = create::power_preference(power_preference.as_deref())
+            .map_err(|e| JsValue::from(JsError::new(&e)))?;
         let mut backends = match backend.as_deref().unwrap_or("auto") {
             "auto" => wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
             "webgpu" => wgpu::Backends::BROWSER_WEBGPU,
@@ -198,12 +251,15 @@ impl WebPuppet {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         desc.backends = backends;
         let instance = wgpu::Instance::new(desc);
+        // WebGPU が無ければ wgpu は WebGL2 を使う (`wgpu::Instance::new`)。
+        let webgl2 = !backends.contains(wgpu::Backends::BROWSER_WEBGPU);
+        if webgl2 {
+            create_webgl2_context(&canvas, power_preference).map_err(create_error)?;
+        }
 
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
             .map_err(|e| create_error(CreateError::ContextUnavailable(e.to_string())))?;
-        // WebGPU が無ければ wgpu は WebGL2 を使う (`wgpu::Instance::new`)。
-        let webgl2 = !backends.contains(wgpu::Backends::BROWSER_WEBGPU);
         let gl = webgl2.then(|| webgl2_context(&canvas)).flatten();
         if webgl2 && webgl2_context_lost(gl.as_ref()) {
             return Err(create_error(CreateError::ContextUnavailable(
@@ -212,7 +268,7 @@ impl WebPuppet {
         }
         // 作成の途中 (と描画中) に GPU プロセスが落ちても panic しないように包む (T0944)。
         let lost_context = gl.as_ref().map(lost_context::LostContextGuard::install);
-        Self::create_with(canvas, instance, surface, lost_context)
+        Self::create_with(canvas, instance, surface, power_preference, lost_context)
             .await
             .map_err(|e| match (&gl, e) {
                 // 途中で失って別の段で失敗したときも、コンテキストを失ったことを理由にする (作り直せば作れる)。
@@ -220,6 +276,14 @@ impl WebPuppet {
                     create_error(CreateError::ContextUnavailable(e.to_string()))
                 }
                 (_, e) => e.into(),
+            })
+            .map(|mut puppet| {
+                // WebGL2 で GPU の名前を取れないときの `RENDERER` は GPU の名前ではないので、空にする
+                // (WebGL2 の呼び出しなので、失ったかの最後の確かめより前に行う)。
+                if gl.as_ref().is_some_and(|gl| !has_debug_renderer_info(gl)) {
+                    puppet.adapter_name.clear();
+                }
+                puppet
             })
             .and_then(|puppet| match &gl {
                 // 作り終えるまでに失ったものは渡さない (`webglcontextlost` は後で届くので、`is_lost()` はまだ偽)。
@@ -237,10 +301,12 @@ impl WebPuppet {
         canvas: HtmlCanvasElement,
         instance: wgpu::Instance,
         surface: wgpu::Surface<'static>,
+        power_preference: wgpu::PowerPreference,
         lost_context: Option<lost_context::LostContextGuard>,
     ) -> Result<WebPuppet, CreateFailure> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference,
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
@@ -322,7 +388,8 @@ impl WebPuppet {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, view_format);
-        let backend = adapter.get_info().backend;
+        let info = adapter.get_info();
+        let backend = info.backend;
         // wgpu の GL のバックエンド (wgpu-hal 30) は WebGL2 のコンテキストの喪失をデバイスの喪失として知らせず、
         // 描画も失敗しない (何も描かれない) ので、canvas のイベントで `lost` を立てる (T0932)。
         let context_lost = (backend == wgpu::Backend::Gl)
@@ -335,6 +402,7 @@ impl WebPuppet {
             _instance: instance,
             surface,
             backend,
+            adapter_name: info.name,
             device,
             queue,
             config,
@@ -372,6 +440,15 @@ impl WebPuppet {
             wgpu::Backend::Gl => "webgl2".to_owned(),
             other => other.to_string(),
         }
+    }
+
+    /// 使っているアダプタ (GPU) の名前 (T0499)。電力の希望 (`create` の `power_preference`) が効いたかを確かめるのに使う。
+    ///
+    /// WebGPU では wgpu の `AdapterInfo::name` (`GPUAdapterInfo` の `description`)。WebGL2 では `WEBGL_debug_renderer_info` が
+    /// 使えればその名前 (`UNMASKED_RENDERER_WEBGL`)、使えなければ空。どちらもブラウザが名前を伏せたり丸めたりすることがあり
+    /// (WebGPU の `description` は空のことがある)、空のときに画面に何を出すか (出さない・「不明」など) は呼ぶ側が決める。
+    pub fn adapter_name(&self) -> String {
+        self.adapter_name.clone()
     }
 
     // --- モデル ---

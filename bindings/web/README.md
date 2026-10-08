@@ -598,7 +598,9 @@ WebGL2 への切り替えは、見本のページで次のように試せます 
 | `?backend=webgl2` | — | 最初から WebGL2 |
 
 自分のページで試すときも、`WebPuppet` を作る前に同じように `navigator.gpu` を書き換えれば同じ経路を通ります。
-描画に使っている API は `load` イベントの `detail.backend` か `puppet.backend()` で分かります。
+描画に使っている API は `load` イベントの `detail.backend` か `puppet.backend()` で分かります。使っている GPU の名前は
+`puppet.adapter_name()` で分かります (ブラウザが伏せると空。GPU の電力の希望 `powerPreference` は
+[crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499))。
 
 ## ローカルで使う (npm i 相当)
 

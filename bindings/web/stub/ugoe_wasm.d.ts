@@ -17,6 +17,7 @@ export class WebPuppet {
   free(): void;
   [Symbol.dispose](): void;
   active_expressions(): string[];
+  adapter_name(): string;
   add_expression(name: string): void;
   attach_module(name: string): void;
   attached_modules(): string[];
@@ -26,7 +27,11 @@ export class WebPuppet {
   canvas_size(): Float32Array;
   canvas_to_screen(x: number, y: number): Float32Array;
   clear_tracking(): void;
-  static create(canvas: HTMLCanvasElement, backend?: string | null): Promise<WebPuppet>;
+  static create(
+    canvas: HTMLCanvasElement,
+    backend?: string | null,
+    power_preference?: string | null,
+  ): Promise<WebPuppet>;
   /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */
   deformer_ids(): string[];
   /** @internal エディタ向け。予告なく変わる (公開の API の外。crates/ugoe-wasm/README.md の「エディタ向けの問い合わせ」)。 */

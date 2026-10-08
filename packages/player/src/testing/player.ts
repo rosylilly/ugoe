@@ -11,6 +11,7 @@ import { FakeCanvas, type FakeOptions, fakePuppet } from "./fakePuppet";
 /** WebPuppet.create が返す約束 (テストが好きな時に解く)。 */
 export const pending: {
   canvas: FakeCanvas;
+  powerPreference: string | null | undefined;
   resolve: (p: WebPuppet) => void;
   reject: (e: unknown) => void;
 }[] = [];
@@ -19,9 +20,9 @@ let nextFrame: FrameRequestCallback | null = null;
 
 const wasm: UgoeWasmModule = {
   WebPuppet: {
-    create: (canvas) =>
+    create: (canvas, _backend, powerPreference) =>
       new Promise<WebPuppet>((resolve, reject) =>
-        pending.push({ canvas: canvas as unknown as FakeCanvas, resolve, reject }),
+        pending.push({ canvas: canvas as unknown as FakeCanvas, powerPreference, resolve, reject }),
       ),
   },
 };

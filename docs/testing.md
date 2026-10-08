@@ -620,7 +620,10 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   続けて失って諦め、次の `attach` で作れる・諦めた後の `restart` で作り直し、回数も数え直す (`restart-after-giving-up`)・
   失った WebGL2 のコンテキストしか取れない canvas では `WebPuppet.create` が panic せずに `CreateError` (`context_unavailable`) で失敗し、
   その後も wasm が使える (`create-on-lost-context`)・最初の作成でそうなれば `attach` は `"failed"` で `failed` に例外を渡す (`attach-on-lost-context`)・
-  作り直しでそうなれば待って試し直し、作り直しの回数に数える (`recreate-on-lost-context`。T0475)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
+  作り直しでそうなれば待って試し直し、作り直しの回数に数える (`recreate-on-lost-context`。T0475)・
+  GPU の電力の希望 (`powerPreference`) を渡すと WebGL2 のコンテキストがその属性 (`antialias: false` のまま) で作られて描け、`adapter_name` は
+  `WEBGL_debug_renderer_info` があれば名前・無ければ空、知らない希望はコードを持たない `Error`、失ったコンテキストでは希望を渡しても
+  `context_unavailable`、`PuppetSurface.powerPreference` は作成と作り直しの両方で渡る (`power-preference`。T0499)・作っている間の `detach` と次の `attach`・devicePixelRatio だけが変わったら (1 → 2 → 1.5 → 1)
   描画バッファ (WebPuppet と canvas) を新しい倍率に合わせ直し、`detach` の後は聞かない (`pixel-ratio-change`)。どのシナリオの後も、生きている
   WebPuppet と canvas が残らないことを確かめます。喪失と復元は `WEBGL_lose_context` で起こします。
 - **シナリオ (GPU プロセスの喪失。T0944):** 描いている間に GPU プロセスが落ちたら、`PuppetSurface` は WebGL2 の喪失として復元を待ち、新しい canvas で

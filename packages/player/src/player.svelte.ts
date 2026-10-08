@@ -68,7 +68,7 @@ import { carryPoseShown, followPoseShown, type PoseGroupInfo, parsePose } from "
 import { mergeRemembered, type RememberedModel, type RememberedOrder } from "./rememberedModels";
 import type { Screenshot } from "./screenshot";
 import { PlayerStorage, STORAGE_NAMES } from "./storage";
-import { GpuLostRepeatedlyError, PuppetSurface } from "./surface";
+import { GpuLostRepeatedlyError, type PowerPreference, PuppetSurface } from "./surface";
 import type { UgoeWasmModule, WebPuppet } from "./wasm";
 
 /** プレーヤーを使うアプリが渡すもの (wasm の読み込みとファイルの読み直し)。 */
@@ -134,6 +134,11 @@ export class Player {
   modelName = $state<string | null>(null);
   /** 描画に使っている API (`webgpu` / `webgl2`)。 */
   backend = $state<string | null>(null);
+  /**
+   * 使っている GPU の名前 (`WebPuppet.adapter_name`。T0499)。ブラウザが伏せると空文字 (空のときに何を出すかは画面が決める)。
+   * 作るまでは `null`。
+   */
+  adapterName = $state<string | null>(null);
   /**
    * GPU を失って、戻るのを待っている (WebGL2 の復元を待つ・作り直しを試し直すのを待つ。surface.ts)。待っている間は描かない。
    * 画面には「GPU の復元を待っています」を出す (T0938)。
@@ -361,6 +366,18 @@ export class Player {
   /** 描画に使っている WebPuppet (作っている間と `detach` の後は `null`)。 */
   get #puppet(): WebPuppet | null {
     return this.#surface.puppet;
+  }
+
+  /**
+   * GPU の電力の希望 (T0499。surface.ts の `PowerPreference`)。`attach` と作り直し (GPU を失ったとき・`restart`) のたびに
+   * 同じ値を渡す。変えても今の WebPuppet はそのままなので、効かせるには `restart()` を呼ぶ (モデルなどは戻る)。既定は `"default"`。
+   */
+  get powerPreference(): PowerPreference {
+    return this.#surface.powerPreference;
+  }
+
+  set powerPreference(value: PowerPreference) {
+    this.#surface.powerPreference = value;
   }
 
   /**
@@ -1484,6 +1501,7 @@ export class Player {
    */
   async #setUp(puppet: WebPuppet, recovered: boolean): Promise<void> {
     this.backend = puppet.backend();
+    this.adapterName = puppet.adapter_name();
     this.#syncView();
     this.#applyBackground();
     this.status = "empty";

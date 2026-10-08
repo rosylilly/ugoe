@@ -31,6 +31,11 @@ T0672・T0914 で同じ誤りが両方に入り、別々に直していたため
   canvas を置く要素を渡すだけ。canvas の見た目は `:global(canvas)`・`canvasClass` で決める)。
 - **WebGL2 への切り替え:** `"auto"` で作れなければ新しい canvas で `"webgl2"` を試す (1 つの canvas は WebGPU と WebGL2 を併用できない)。
   一度 WebGL2 に落ちたら、作り直しでも WebGL2 から始める。
+- **GPU の電力の希望 (T0499):** `PuppetSurface.powerPreference` (`"default"`・`"low-power"`・`"high-performance"`。Player は
+  `powerPreference`) を、`attach` でも GPU を失ったときの作り直しでも `restart` でも `WebPuppet.create` に渡す。変えても今の WebPuppet は
+  作り直さないので、効かせるには `restart` を呼ぶ。既定の `"default"` は希望なし (今までと同じ)。希望なので効くかはブラウザと OS が決める
+  ([crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499))。使っている GPU の名前は Player の `adapterName`
+  (`WebPuppet.adapter_name()`。伏せられると空)。
 - **古い作成の破棄:** `attach`・`detach` のたびに番号を進め、待った後で変わっていたら、遅れてできた WebPuppet と canvas を捨てる
   (`attach` の結果は `"superseded"`)。作り直しの途中で `detach` されたときも同じ。
 - **GPU の喪失:** WebGPU のデバイスの喪失と WebGL2 のコンテキストの喪失は、どちらも `WebPuppet.is_lost()` で分かる (WebGL2 は

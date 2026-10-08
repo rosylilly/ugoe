@@ -33,7 +33,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 | `dress_up` | `.ugoemod` の読み込み、付け外しに合わせたテクスチャの登録し直し (`Wardrobe`)、エラーのコード (JS への公開は `src/web/dress_up.rs`) |
 | `lighting` | 光源の JSON (`set_lighting_json`) を `ugoe::render::Lighting` にする (JS への公開は `src/web/lighting.rs`) |
 | `frame` | 描画と読み戻し (`render`・`read_pixels`) の失敗のコード (`FrameError`。JS では `RenderError`) |
-| `create` | `WebPuppet.create` の失敗のコード (`CreateError`。T0475) |
+| `create` | `WebPuppet.create` の失敗のコード (`CreateError`。T0475) と、GPU の電力の希望 (`powerPreference`) の読み取り (T0499) |
 | `readback` | `drawable_states_json` の中身と、読み戻した画素をストレートアルファの RGBA にする処理 (JS への公開は `src/web/readback.rs`) |
 | `animation` | 物理・モーション・表情・エフェクトの JSON の受け渡し、バンドルのモーション・表情の名前の解決、モデルを読み直したときの物理と段の有効無効の引き継ぎ (JS への公開は `src/web/animation.rs`) |
 
@@ -42,7 +42,7 @@ npm のパッケージ `@ugoe/runtime` (と `<ugoe-avatar>`) は `bindings/web/`
 ```js
 import init, { WebPuppet } from "./generated/ugoe_wasm.js";
 await init();
-const puppet = await WebPuppet.create(canvas, "auto"); // "auto" | "webgpu" | "webgl2"
+const puppet = await WebPuppet.create(canvas, "auto"); // "auto" | "webgpu" | "webgl2"。3 つ目は GPU の電力の希望 (省ける。下の「GPU の電力の希望」)
 puppet.load_json(json);           // または load_bundle(bytes)。戻り値は警告の配列 (構造は load_warnings_json())。失敗は LoadError (code 付き)
 puppet.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);
 puppet.parameters_json();         // 値域・既定値・グループ ({"parameters": [...], "groups": [...]})
@@ -499,6 +499,46 @@ try {
   「GPU がまだ戻っていない」として待って試し直し、作り直しの回数に数える ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))。
   画面の文は `@ugoe/player` の `describeCreateError` (エディタは `viewport.createError.*`) が今の言語に訳す (T0941)。
   TypeScript の型は npm の `@ugoe/runtime` の `UgoeCreateError`・`isCreateError` (`bindings/web/src/create-errors.ts`)。
+
+### GPU の電力の希望 (T0499)
+
+```js
+const puppet = await WebPuppet.create(canvas, "auto", "high-performance"); // "default" (省いたとき) | "low-power" | "high-performance"
+puppet.adapter_name(); // 使っている GPU の名前 (例: "ANGLE (NVIDIA, ...)")。分からなければ ""
+```
+
+- 3 つ目の引数は GPU の **希望 (hint)**。WebGPU ではアダプタを求めるときの `requestAdapter({ powerPreference })` に
+  (wgpu の `PowerPreference`。`"default"` は何も渡さない)、WebGL2 では canvas のコンテキストを作るときの属性に渡す。
+  wgpu の GL のバックエンド (wgpu-hal 30) は `getContext("webgl2", { antialias: false })` で作って `powerPreference` を渡さないが、
+  同じ canvas の 2 回目からの `getContext` は最初のコンテキストを返して属性を無視するので、ugoe-wasm がサーフェスを作る前に
+  `getContext("webgl2", { antialias: false, powerPreference })` で先に作り、wgpu はそれを使う (WebGL2 で作るときだけ。`"default"` でも同じ属性で作る)。
+  先に作る `getContext` が `null` を返したら (GPU プロセスが落ちている間など)、wgpu に続けて呼ばせずに `context_unavailable` にする
+  (今までと同じく最初の `getContext` で決める。すぐ続けて呼ぶと、ヘッドレスの Chrome では失っていないのに描けないコンテキストが返り、
+  `just conformance --only avatar` の `gpu-process-crash-during-create` で描けなくなった)。
+  作成の途中の喪失の包み・`webglcontextlost` の印・`CreateError` のコードは変わらない (`just player-browser` の `power-preference` と
+  T0944 のシナリオ、`just conformance --only avatar`)。
+- 知らない文字列は、知らない `backend` と同じくコードを持たない `Error`。
+- 効くかはブラウザと OS が決める (T0076 で調べた。どれも 2 つの GPU を持つ実機では確かめていない):
+
+  | 環境 | 効き方 |
+  | --- | --- |
+  | Windows の Chromium (Chrome・Edge・WebView2) | WebGPU の希望は無視し、ブラウザ全体で 1 つのアダプタ (ノート PC ではたいてい内蔵) を使う。外付けを使うには起動の引数 `--force-high-performance-gpu` か OS のアプリごとのグラフィックスの設定 |
+  | macOS の Chromium (2 つの GPU の Intel の Mac) | WebGPU の希望が効く (希望が無ければ電源につながっているとき外付け)。WebGL の GPU の切り替えも Mac だけ (Chromium の `gpu_switching.cc`) |
+  | WebGL2 (Chromium) | Chrome 80 から既定は `low-power` |
+  | Apple Silicon の Mac | GPU が 1 つなので変わらない |
+
+  出典: [WebGPU の `powerPreference`](https://gpuweb.github.io/gpuweb/#dom-gpurequestadapteroptions-powerpreference)・
+  [WebGL の `powerPreference` と 2 回目の `getContext`](https://registry.khronos.org/webgl/specs/latest/1.0/#5.2)・
+  [Chrome の WebGPU の文書](https://developer.chrome.com/docs/web-platform/webgpu/troubleshooting-tips)・
+  [Chromium の GPU の切り替え](https://chromium.googlesource.com/chromium/src.git/+/HEAD/gpu/config/gpu_switching.cc)。
+  詳しい表は docs/tasks/T0076-file-studio-gpu-controls.md のメモ。
+- 効いたかは `adapter_name()` で確かめる。WebGPU では wgpu の `AdapterInfo::name` (`GPUAdapterInfo` の `description`。ブラウザが伏せて
+  空のことがある)、WebGL2 では `WEBGL_debug_renderer_info` が使えればその名前 (`UNMASKED_RENDERER_WEBGL`)、使えなければ空
+  (wgpu はそのとき `RENDERER` の一般の名前 (`"WebKit WebGL"` など) を名前にするが、GPU の名前ではないので返さない)。空のときに画面に何を
+  出すかは呼ぶ側が決める。
+- 公開の API に含める (T0492 の「エディタ向けの問い合わせ」ではない)。エディタに限らず、スタジオ・ビューア・npm の利用者のどれでも
+  GPU を選ぶ・使っている GPU を見せるのに使うため。`@ugoe/player` の `PuppetSurface`・`Player` は `powerPreference` で渡し
+  ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))、npm の `@ugoe/runtime` の `createPuppet`・`<ugoe-avatar>` はまだ渡さない。
 
 ### `code` の一覧 (T0452)
 

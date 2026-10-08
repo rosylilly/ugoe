@@ -93,6 +93,7 @@ export function fakePuppet(options: FakeOptions = {}) {
   const methods: Record<string, ((...args: never[]) => unknown) | undefined> = {
     free: () => calls.push("free"),
     backend: () => "webgl2",
+    adapter_name: () => "Fake GPU",
     is_lost: () => state.lost,
     has_model: () => state.hasModel,
     load_bundle: (bytes: Uint8Array) => {

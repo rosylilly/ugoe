@@ -23,6 +23,7 @@ class FakeCanvas extends EventTarget {
 interface Pending {
   canvas: FakeCanvas;
   backend: string;
+  powerPreference: string | null | undefined;
   resolve: (p: SurfacePuppet) => void;
   reject: (e: unknown) => void;
 }
@@ -32,11 +33,12 @@ let pending: Pending[] = [];
 
 const wasm = {
   WebPuppet: {
-    create: (canvas: HTMLCanvasElement, backend?: string | null) =>
+    create: (canvas: HTMLCanvasElement, backend?: string | null, powerPreference?: string | null) =>
       new Promise<SurfacePuppet>((resolve, reject) =>
         pending.push({
           canvas: canvas as unknown as FakeCanvas,
           backend: backend ?? "auto",
+          powerPreference,
           resolve,
           reject,
         }),
@@ -113,6 +115,8 @@ describe("PuppetSurface", () => {
     await settle();
     const first = pending[0];
     expect(first?.backend).toBe("auto");
+    // 既定は希望なし
+    expect(first?.powerPreference).toBe("default");
     expect([first?.canvas.width, first?.canvas.height]).toEqual([400, 200]);
     expect(first?.canvas.className).toBe("viewport-canvas");
     const { puppet, calls } = fakePuppet();
@@ -695,6 +699,42 @@ describe("PuppetSurface", () => {
     pending[1]?.resolve(fakePuppet().puppet);
     await restarting;
     expect(log).toEqual(["created", "lost", "released", "recovered"]);
+  });
+
+  it("passes the same power preference when creating and recreating", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host: h } = host();
+    const surface = new PuppetSurface(h);
+    expect(surface.powerPreference).toBe("default");
+    surface.powerPreference = "high-performance";
+    const attached = surface.attach(container);
+    await settle();
+    // WebGPU で作れずに WebGL2 で作るときも同じ値
+    pending[0]?.reject(new Error("no WebGPU"));
+    await settle();
+    const first = fakePuppet();
+    pending[1]?.resolve(first.puppet);
+    await attached;
+    // GPU を失ったときの作り直しも同じ値
+    first.puppet.lost = true;
+    surface.checkLost();
+    await settle();
+    pending[2]?.resolve(fakePuppet().puppet);
+    await settle();
+    expect(pending.map((p) => p.powerPreference)).toEqual([
+      "high-performance",
+      "high-performance",
+      "high-performance",
+    ]);
+
+    // 変えても今の WebPuppet はそのままで、restart から効く
+    surface.powerPreference = "low-power";
+    expect(pending).toHaveLength(3);
+    const restarting = surface.restart();
+    await settle();
+    pending[3]?.resolve(fakePuppet().puppet);
+    await restarting;
+    expect(pending[3]?.powerPreference).toBe("low-power");
   });
 
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {

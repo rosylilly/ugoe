@@ -629,6 +629,96 @@ const scenarios = {
     surface.detach();
   },
 
+  /**
+   * GPU の電力の希望 (`powerPreference`) を渡すと、WebGL2 のコンテキストはその属性で (`antialias: false` のまま) 作られ、
+   * 描ける。`adapter_name` は `WEBGL_debug_renderer_info` があればその名前、無ければ空。知らない希望はコードを持たない
+   * `Error`。失ったコンテキストしか取れない canvas では、希望を渡しても今までと同じ `context_unavailable` (T0499)。
+   * PuppetSurface の `powerPreference` は作るときにも作り直すときにも渡る。
+   */
+  async "power-preference"() {
+    const bytes = await modelBytes();
+    for (const preference of [undefined, "default", "low-power", "high-performance"]) {
+      const canvas = document.createElement("canvas");
+      document.body.append(canvas);
+      const puppet = await within(
+        WebPuppet.create(canvas, "webgl2", preference),
+        `create (${preference})`,
+      );
+      try {
+        const gl = canvas.getContext("webgl2");
+        const attributes = gl.getContextAttributes();
+        check(
+          attributes.powerPreference === (preference ?? "default"),
+          `${preference}: the context was created with powerPreference ${attributes.powerPreference}`,
+        );
+        check(
+          attributes.antialias === false,
+          `${preference}: antialias is ${attributes.antialias}`,
+        );
+        const name = puppet.adapter_name();
+        const debugInfo = gl.getSupportedExtensions().includes("WEBGL_debug_renderer_info");
+        check(
+          debugInfo ? name.length > 0 : name === "",
+          `${preference}: adapter_name is "${name}" (WEBGL_debug_renderer_info: ${debugInfo})`,
+        );
+        if (preference === "high-performance")
+          console.log(`power-preference: adapter_name "${name}"`);
+        puppet.load_bundle(bytes);
+        puppet.fit();
+        puppet.render();
+      } finally {
+        puppet.free();
+        canvas.remove();
+      }
+    }
+
+    let unknown = null;
+    try {
+      (
+        await within(WebPuppet.create(document.createElement("canvas"), "webgl2", "fast"), "create")
+      ).free();
+    } catch (e) {
+      unknown = e;
+    }
+    check(
+      unknown instanceof Error &&
+        unknown.code === undefined &&
+        /powerPreference/.test(unknown.message),
+      `an unknown preference failed with ${unknown?.name} ${unknown?.code}: ${unknown}`,
+    );
+
+    for (const backend of ["webgl2", "auto"]) {
+      const canvas = document.createElement("canvas");
+      document.body.append(canvas);
+      loseContextOf(canvas);
+      let error = null;
+      try {
+        (await within(WebPuppet.create(canvas, backend, "high-performance"), backend)).free();
+      } catch (e) {
+        error = e;
+      }
+      expectContextUnavailable(error, `${backend} with a preference`);
+      canvas.remove();
+    }
+    check(live.size === 0, `${live.size} live puppets`);
+
+    const container = stage();
+    const { surface, log } = await surfaceWithHost();
+    surface.powerPreference = "low-power";
+    check((await within(surface.attach(container), "attach")) === "ready", "attach failed");
+    const attributesOf = () => canvasesIn(container)[0].getContext("webgl2").getContextAttributes();
+    check(attributesOf().powerPreference === "low-power", "attach did not pass the preference");
+    expectDrawn(surface, container, "after attach");
+    await loseAndRestore(surface, container, log);
+    check(
+      attributesOf().powerPreference === "low-power",
+      "the recreation did not pass the preference",
+    );
+    expectDrawn(surface, container, "after the recreation");
+    check(log.failed.length === 0, `failed: ${log.failed[0]}`);
+    surface.detach();
+  },
+
   /** 最初の作成でコンテキストを作れなければ、`attach` は `"failed"` で、`failed` に `CreateError` を渡す (T0475)。 */
   async "attach-on-lost-context"() {
     const container = stage();
