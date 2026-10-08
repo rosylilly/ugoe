@@ -292,10 +292,23 @@ describe("Player follower mode", () => {
     expect(second.log.filter((l) => l === "render")).toHaveLength(1);
   });
 
-  it("draws every animation frame when not following", async () => {
-    const { log } = await ready();
+  it("looks at the shape only when not following (T0982)", async () => {
+    // ふつうのモードは形が動く間は毎フレーム描く (描くのを省く規則は playerDraw.test.ts)。
+    const viewer = await ready();
+    await viewer.p.load(first);
+    viewer.state.moving = true;
     for (let i = 0; i < 4; i++) step(i * 16);
-    expect(log.filter((l) => l === "render")).toHaveLength(4);
+    expect(viewer.log.filter((l) => l === "render")).toHaveLength(4);
+    viewer.p.detach();
+    // 受け手は形が変わったと言われても、フレームか見せ方が変わらなければ描かない。
+    const { p, log, state } = await ready();
+    p.startFollowing();
+    await p.load(first);
+    p.followScene(1);
+    step(0);
+    state.shapeChanged = true;
+    for (let i = 1; i < 4; i++) step(i * 16);
+    expect(log.filter((l) => l === "render")).toHaveLength(1);
   });
 
   it("neither uses nor remembers the dress-up set and the lights", async () => {

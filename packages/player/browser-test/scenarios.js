@@ -15,7 +15,8 @@
 // - wasm の panic (`console_error_panic_hook` がコンソールに出す `panicked at`) が 1 つでもあれば、そのシナリオは失敗する。
 // - devicePixelRatio だけの変化は、run.mjs が出す `setDevicePixelRatio` (CDP の `Emulation.setDeviceMetricsOverride`) で起こす (T0939)。
 // - 受け手のモードが変わったときだけ描くこと (T0857) は、`render` を数え、止めた後の画をページのスクリーンショット (run.mjs が出す
-//   `screenshot`。合成された画面なので、描かなかったフレームでも canvas に残っている画が写る) で確かめる。
+//   `screenshot`。合成された画面なので、描かなかったフレームでも canvas に残っている画が写る) で確かめる。ふつうのモードが止まった
+//   モデルを描かないこと (T0982) も同じ数え方とスクリーンショットで確かめる。
 // - `window.runScenarios(names)` が結果 ([{name, ok, error, note}]) を返す (names が null ならすべて。`note` は測った数)。
 
 import {
@@ -108,6 +109,19 @@ WebPuppet.prototype.render = function (...args) {
   renders++;
   return render.apply(this, args);
 };
+/**
+ * 真なら、モデルを読んだ WebPuppet の呼吸の段を止める (Player は呼吸を止める口を持たない。見本はどれも呼吸を持つので、
+ * 止まったモデルを作るのに使う。T0982)。
+ */
+let breathOff = false;
+for (const name of ["load_bundle", "load_json"]) {
+  const load = WebPuppet.prototype[name];
+  WebPuppet.prototype[name] = function (...args) {
+    const warnings = load.apply(this, args);
+    if (breathOff) this.set_enabled("breath", false);
+    return warnings;
+  };
+}
 /** 測った数をシナリオの結果に添える (run.mjs が出す)。 */
 let note = null;
 const free = WebPuppet.prototype.free;
@@ -135,6 +149,21 @@ async function until(condition, what) {
   while (!condition()) {
     if (performance.now() - start > WAIT_MS) throw new Error(`timed out waiting for ${what}`);
     await frames(1);
+  }
+}
+
+/**
+ * Player が描かなくなるまで (20 フレーム続けて `render` を呼ばなくなるまで) 待ち、待ったフレームの数を返す。600 フレームで諦める
+ * (呼吸や物理が収まらない)。
+ */
+async function untilStill(what) {
+  let waited = 0;
+  for (;;) {
+    const before = renders;
+    await frames(20);
+    waited += 20;
+    if (renders === before) return waited;
+    check(waited < 600, `${what} is still drawn after ${waited} animation frames`);
   }
 }
 
@@ -1490,6 +1519,59 @@ const scenarios = {
     check(renders === before + 1, `drew ${renders - before} times after zooming`);
     player.detach();
   },
+
+  /**
+   * ふつうのモード (ビューア) は、形 (`shape_changed`) か見せ方が変わったときだけ描く。待機モーション・目パチ・呼吸を止めたモデルは、
+   * 物理が収まると描かなくなり、画面には最後の形が残る。読み戻し (`capture`) は描かなかったフレームの後でも今の画を返す。
+   * パラメータ・ビューを変えると描く (T0982)。
+   */
+  async "player-viewer-draws-on-change"() {
+    const container = stage();
+    const player = newPlayer();
+    player.setAutoIdle(false);
+    player.setAutoEyeBlink(false);
+    breathOff = true;
+    await player.attach(container);
+    player.setBackground("#ffffff", true);
+    await player.load({ name: "dress-up.ugoe", bytes: await fileBytes(DRESS_UP) });
+    check(player.status === "ready", `status after load is ${player.status} (${player.error})`);
+    const start = renders;
+    const waited = await untilStill("the loaded model");
+    note = `settled after ${waited} animation frames with ${renders - start} draws`;
+    check(renders > start, "never drew the loaded model");
+
+    // 描かない間も、画面には最後の形が残る。
+    const shown = await screenshotOf(container);
+    const before = renders;
+    await frames(30);
+    check(renders === before, `drew ${renders - before} times while the model was still`);
+    const kept = await screenshotOf(container);
+    const changed = differentPixels(shown, kept);
+    check(changed === 0, `${changed} pixels changed while the model was still`);
+    let opaque = 0;
+    for (let i = 0; i < kept.length; i += 4) if (kept[i] < 250 || kept[i + 1] < 250) opaque++;
+    check(opaque > kept.length / 4 / 100, "the screen is empty while the model is still");
+    // 読み戻しは canvas を写さないので、描かなかったフレームの後でも空でない。
+    await expectCaptured(player, "after frames that were not drawn");
+    check(renders === before, "capture drew to the canvas");
+
+    // パラメータを動かすと描く。
+    const def = player.sections.flatMap((s) => s.parameters).find((p) => p.max !== p.default);
+    check(def !== undefined, "no parameter to move");
+    player.setParameter(def.id, def.max);
+    await frames(2);
+    check(renders > before, `did not draw after moving ${def.id}`);
+    await untilStill(`the model after moving ${def.id}`);
+    const moved = await screenshotOf(container);
+    check(differentPixels(kept, moved) > 0, `moving ${def.id} did not change the screen`);
+
+    // 見せ方を変えると (形が変わらなくても) 描く。
+    const still = renders;
+    player.zoomBy(1.5);
+    await frames(2);
+    check(renders === still + 1, `drew ${renders - still} times after zooming`);
+    player.detach();
+  },
 };
 
 window.runScenarios = async (names) => {
@@ -1518,6 +1600,7 @@ window.runScenarios = async (names) => {
       createDelayMs = 0;
       glCalls.loseAtCall = 0;
       glCalls.invalidBlockIndex = false;
+      breathOff = false;
       for (const surface of surfaces.splice(0)) surface.detach();
       for (const player of players.splice(0)) player.detach();
       for (let i = localStorage.length - 1; i >= 0; i--) {

@@ -680,6 +680,10 @@ just player-browser --no-build --only context-loss-restore   # 前にビルド�
   受け手のモードで、刻み 30 のフレームを約 2 秒届けると、描く回数 (`render` の呼び出し) はフレームの数ほどで `requestAnimationFrame` の回数より
   少なく (結果の行に数を出す。毎フレーム描いていた前は 60 フレームで 122 回、今は 60 回)、フレームが止まった後は描かないが、ページの
   スクリーンショット (run.mjs の `screenshot`。合成された画面) で最後の形が残り、ズームすると描く (`player-follower-draws-on-change`。T0857)。
+  ふつうのモード (ビューア) で、待機モーション・目パチ・呼吸を止めた `dress-up.ugoe` は、読んだ後 1 回描くと描かなくなり (結果の行に
+  数を出す)、描かない間もスクリーンショットで最後の形が残り、読み戻し (`capture`) は空でなく、パラメータを動かすと描いて画が変わり、
+  ズームすると 1 回描く (`player-viewer-draws-on-change`。T0982。毎フレーム描く前の `#tick` では落ちることを確かめた。Player は呼吸を
+  止める口を持たないので、ページが `load_bundle` を包んで `set_enabled("breath", false)` を呼ぶ)。
 - **倍率の変化の起こし方:** run.mjs が CDP の `Emulation.setDeviceMetricsOverride` でページの大きさを変えずに倍率だけを変え、ページに
   `setDevicePixelRatio(ratio)` として出します。ヘッドレスの Chrome (154 で確かめた) は倍率の上書きだけではメディアクエリを評価し直さず、
   `matchMedia` の `matches` は変わっても `change` が届きません (ページの大きさも変えると届く)。そこで上書きのたびに、エミュレートする

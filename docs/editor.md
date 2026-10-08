@@ -453,7 +453,7 @@ AI や CLI は `commands` の結果を確かめてから `batch` として適用
 
 `ViewportController.startPhysicsPreview()` / `stopPhysicsPreview()` (`viewport/controller.svelte.ts`)。
 
-- プレビュー中は `requestAnimationFrame` ごとに `WebPuppet.update(dt)` (1 フレーム最大 0.1 秒) を呼んで描き、`animationFrame` を増やしてオーバーレイに読み直させます。スライダー (`set_parameter`) は `Puppet::update` の基準値になるので、動かすと根元が動いて揺れます。
+- プレビュー中は `requestAnimationFrame` ごとに `WebPuppet.update(dt)` (1 フレーム最大 0.1 秒) を呼び、形が変わったとき (`shape_changed`) だけ描きます ([プレビューモード](#プレビューモード)の「描くのを省く」)。`animationFrame` は描かなかったフレームも増やし、オーバーレイに読み直させます。スライダー (`set_parameter`) は `Puppet::update` の基準値になるので、動かすと根元が動いて揺れます。
 - WebPuppet の段は、プレビュー中は物理だけを有効にし、それ以外 (目パチ・呼吸・リップシンク・ポーズ) は常に止めます (モデルを読み直すたびに設定し直す)。
 - 始めるときと止めるときに `reset_physics` で粒子を静止姿勢に戻します。止めると物理の段を止め (動的物理の加算量が 0 に戻る)、物理が書き込んだパラメータをスライダーの値に戻すので、編集中の姿に戻ります。
 - プレビュー中に編集すると、モデルと物理を読み直し、揺れは静止した姿からやり直します。
@@ -566,6 +566,11 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   (`FrameDriver`。`update` の前後に `beforeUpdate` / `afterUpdate`、モデルを読み込むたびに `loaded`)。
   適用順と手で動かした値との関係は [spec/motion.md](spec/motion.md#フレーム内の適用順) のとおりです
   (たとえば、再生中のモーションの対象はスライダーで動かしても上書きされる)。
+- **描くのを省く (T0982):** 物理のプレビューとプレビューモードの毎フレームの描画は、`update` の後に `WebPuppet.shape_changed()`
+  ([crates/ugoe-wasm/README.md](../crates/ugoe-wasm/README.md#描くのを省く-t1402)) が真のときだけ行います。止まったモデルや収まった
+  物理では描かず、canvas は前に描いた画を出し続けます。見せ方の変化 (ビュー・大きさ・背景・光源・モデルの読み直し) はプレビューの外と
+  同じく `requestRender` が描きます。描かないフレームも GPU の喪失は確かめます。スクリーンショットは canvas を写さず `read_pixels` で
+  取るので、描かなかったフレームの後でも今の画になります。
 - **段:** 物理・目パチ・呼吸・リップシンク・ポーズをそれぞれ `set_enabled` で切り替えます。最初はリップシンクだけ止め、
   ほかは有効です (リップシンクは音量を与えると口のパラメータを上書きするため)。リップシンクの音量はパネルの
   スライダー (0〜1) で与え、段を止めると `set_lip_sync_level(undefined)` に戻します。モデル (`effects`・`pose`) や
@@ -681,8 +686,8 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   行は、直すときに見る場所 (付け直すチェックボックス・読み直し・除く) の隣で、付け直せるまで残るためです。
   `WebPuppet` を作り直したとき (GPU の喪失など) は、持っているバイト列から読み込み直します。
 - **GPU の喪失 (T1644):** 読み込み (`load_module`) と付け外しは、GPU を失った後 (`is_lost()` が真) に呼ぶと `code` が `device_lost` の
-  例外を投げます。このときは失敗の文を出さず、ビューポートの作り直し ([docs/ui.md](ui.md#webpuppet-の寿命)。プレビューは毎フレーム描くので
-  次のフレームで気づく) の後に付け直します。読み込もうとしたバイト列は取っておき (`DressUp` の `#pending`)、付け外しは付けたい組
+  例外を投げます。このときは失敗の文を出さず、ビューポートの作り直し ([docs/ui.md](ui.md#webpuppet-の寿命)。プレビューは描かないフレームでも毎フレーム
+  確かめるので次のフレームで気づく) の後に付け直します。読み込もうとしたバイト列は取っておき (`DressUp` の `#pending`)、付け外しは付けたい組
   (`wanted`) だけを変え、作り直した `WebPuppet` で `PreviewMode.loaded` → `DressUp.loaded` が読み込んで付けます。作り直した `WebPuppet` を
   付けている途中にまた失っても、付けたい組は変えません (次の作り直しで付ける)。作り直しの途中 (古い `WebPuppet` を捨ててから新しいものが
   できるまで。ビューポートの `puppet` が `null`) に読み込んだモジュールも、ファイルを読んでからバイト列を同じように取っておき、作り直した

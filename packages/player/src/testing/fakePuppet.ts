@@ -78,6 +78,15 @@ export function fakePuppet(options: FakeOptions = {}) {
      * (テストは WebGL2 なら canvas の `webglcontextlost` も送る)。
      */
     lost: false,
+    /**
+     * 前の `render` の後に形が変わったか (`shape_changed`。wasm と同じく、読み込み・パラメータの書き換え・着せ替え・`update` で
+     * 形が動いた (`moving`) ときに立ち、`render` で下りる)。
+     */
+    shapeChanged: true,
+    /** `update` のたびに形が動くか (モーション・物理が動いている。偽なら止まったモデル)。 */
+    moving: false,
+    /** `render` を呼んだ回数。 */
+    renders: 0,
   };
   /** 失った WebPuppet の読み込み・着せ替えの例外 (ugoe-wasm の `LoadError`・`DressUpError` と同じ形)。 */
   const checkLost = (name: "LoadError" | "DressUpError") => {
@@ -110,6 +119,7 @@ export function fakePuppet(options: FakeOptions = {}) {
         });
       loaded.push(bytes);
       state.hasModel = true;
+      state.shapeChanged = true;
       state.playing = false;
       resetValues();
       state.visible.clear();
@@ -122,9 +132,17 @@ export function fakePuppet(options: FakeOptions = {}) {
     set_parameter: (id: string, value: number) => {
       if (!state.values.has(id)) return false;
       state.values.set(id, value);
+      state.shapeChanged = true;
       return true;
     },
-    reset_parameters: resetValues,
+    reset_parameters: () => {
+      resetValues();
+      state.shapeChanged = true;
+    },
+    update: () => {
+      if (state.moving) state.shapeChanged = true;
+    },
+    shape_changed: () => state.shapeChanged,
     load_module: (bytes: Uint8Array) => {
       checkLost("DressUpError");
       const { name, slot } = JSON.parse(new TextDecoder().decode(bytes.subarray(16)));
@@ -138,11 +156,13 @@ export function fakePuppet(options: FakeOptions = {}) {
       if (slot === undefined) throw new Error(`${name} is not loaded`);
       state.attached = state.attached.filter((n) => state.modules.get(n) !== slot);
       state.attached.push(name);
+      state.shapeChanged = true;
     },
     detach_module: (name: string) => {
       checkLost("DressUpError");
       if (!state.attached.includes(name)) throw new Error(`${name} is not attached`);
       state.attached = state.attached.filter((n) => n !== name);
+      state.shapeChanged = true;
     },
     unload_module: (name: string) => {
       checkLost("DressUpError");
@@ -255,7 +275,20 @@ export function fakePuppet(options: FakeOptions = {}) {
     pan_by: (dx: number, dy: number) => {
       state.view.pan = [state.view.pan[0] + dx, state.view.pan[1] + dy];
     },
-    render: () => log.push("render"),
+    width: () => 1,
+    height: () => 1,
+    // 1 画素の読み戻し。赤は先頭のパラメータの今の値 (-1..1 を 0..200 に) で、`render` で描いたかによらず今の状態を写す
+    // (wasm の `read_pixels` は canvas を写さず、別のテクスチャに今の状態を描く)。
+    read_pixels: async () => {
+      const first = parameters[0];
+      const value = first === undefined ? 0 : (state.values.get(first.id) ?? 0);
+      return new Uint8Array([Math.round((value + 1) * 100), 0, 0, 255]);
+    },
+    render: () => {
+      state.shapeChanged = false;
+      state.renders++;
+      log.push("render");
+    },
     follow: (
       values: Float32Array,
       dt: number,

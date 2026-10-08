@@ -94,8 +94,9 @@ if (puppet.shape_changed() || viewChanged) puppet.render(); // 形も見せ方�
 - パラメータを書き換えて評価を待っているとき (`set_parameter`・`reset_parameters` など) と、モデルを読み込んだ・外した後も `true`。
 - 見せ方 (描画先の大きさ・ビュー・背景・光源・テクスチャ・着せ替え) の変化は含まない。変えたフレームはホストが描く。
 - `render` が描けなかった (サーフェスを作り直した・時間切れ) ときは下ろさない (次の `render` で描く)。
-- `<ugoe-avatar>` の描画のループはこれで描くのを省く ([bindings/web/README.md](../../bindings/web/README.md#描画のループ))。
-  `@ugoe/player` (エディタ・ビューア・スタジオ) はまだ使わない。
+- `<ugoe-avatar>` の描画のループ ([bindings/web/README.md](../../bindings/web/README.md#描画のループ)) と、`@ugoe/player` の
+  ビューアのループ (packages/player/README.md。T0982)・エディタのプレビュー (docs/editor.md#プレビューモード) はこれで描くのを省く。
+  スタジオの受け手は新しいフレームか見せ方の変化があったときだけ描く (T0857) ので、これは見ない。
 
 ### 有限でない値と `dt`
 

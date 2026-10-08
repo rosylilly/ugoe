@@ -1,7 +1,8 @@
 // モデル 1 体の表示と、フレームのループ。WebPuppet (ugoe-wasm) を持ち、UI に状態を公開する。
 //
 // フレームごとに: ドライバ (drivers.ts) の値を設定 → トラッキングの入力を渡す → `update(dt)` (物理など)
-// → スライダーの値を同期 → 描画。受け手のモード (スタジオの出力ウィンドウ) は、変わったときだけ描く。
+// → スライダーの値を同期 → 描画。描くのは、前に描いてから形 (`WebPuppet.shape_changed`) か見せ方 (`#dirty`) が変わったときだけ
+// (T0982)。受け手のモード (スタジオの出力ウィンドウ) は、見せ方の印 (フレームの適用も立てる) だけで描く (T0857)。
 // 描画は WebGPU が無ければ WebGL2 で行う (docs/adr/0003-editor-viewport-in-webview.md)。WebPuppet と canvas の寿命は surface.ts。
 // wasm の読み込みとファイルの読み直しはアプリが `PlayerHost` で渡す。
 import { setPuppetTracking, type TrackingFrame } from "@ugoe/face-tracking";
@@ -265,9 +266,17 @@ export class Player {
   /** 受け手のモードで、溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
   #droppedFrames = 0;
   /**
-   * 前に描いてから、描き直す必要ができたか (フレームを適用した・ビューや大きさ・背景・光源・着せ替え・ポーズ・パラメータが
-   * 変わった・モデルを読んだ・WebPuppet を作り直した)。受け手のモードは、これが立っているときだけ描く
-   * (指揮役より速く描いても新しい形は出ないため。docs/studio.md#出力ウィンドウ)。ふつうのモードは毎フレーム描くので見ない。
+   * 前に描いてから、描き直す必要ができたか (見せ方の印)。見せ方を変えるところが自分で立てる: フレームを適用した (`#follow`)・
+   * ビュー・描画先の大きさ・devicePixelRatio・描画バッファの倍率 (`#syncView`)・背景 (`#applyBackground`)・光源 (`#applyLighting`)・
+   * 着せ替えとポーズのグループ (`#syncDressUp`。テクスチャもモジュールと一緒に変わる)・ポーズ (`showPose`)・パラメータ
+   * (`setParameter`・`resetAllParameters`)・モデルを読んだ (`#afterLoad`)・WebPuppet を作った・作り直した (`#setUp`。新しい canvas は空)。
+   * 見せ方を変える口を足すときは、ここで印を立てる (立て忘れると、形が変わるまで前の画が残る)。
+   *
+   * ふつうのモードは、これか `WebPuppet.shape_changed()` (前の `render` の後に形が変わった。パラメータの書き換え・モーション・表情・
+   * 目パチ・呼吸・物理・トラッキング・読み込みを含む。T1402) が立っているときだけ描く (止まったモデルや収まった物理で描かない。T0982)。
+   * 受け手のモードは、これが立っているときだけ描く (指揮役より速く描いても新しい形は出ないため。docs/studio.md#出力ウィンドウ)。
+   * どちらも、描かなかったフレームでは canvas に前に描いた画が残る。スクリーンショット (`capture`) は canvas を写さず
+   * `read_pixels` で今の状態を別のテクスチャに描くので、描かなかったフレームの後でも今の画になる。
    */
   #dirty = true;
 
@@ -1409,8 +1418,8 @@ export class Player {
       // ふつうは届いたときに適用済み。モデルを読み終える前に届いたものなどが残っていれば、ここで適用する。
       if (puppet.has_model()) this.#follow(puppet, follower);
     } else if (puppet.has_model()) this.#advance(puppet, dt);
-    // 受け手は、前に描いてから何も変わっていなければ描かない (canvas には前に描いた画が残る)。
-    const draw = follower === null || this.#dirty;
+    // 前に描いてから何も変わっていなければ描かない (canvas には前に描いた画が残る。印の決め方は `#dirty`)。
+    const draw = this.#dirty || (follower === null && puppet.shape_changed());
     if (draw) {
       this.#dirty = false;
       try {

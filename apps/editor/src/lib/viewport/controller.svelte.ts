@@ -502,7 +502,11 @@ export class ViewportController {
     });
   }
 
-  /** プレビューの 1 フレーム: 経過時間だけ物理を進めて描く。 */
+  /**
+   * プレビューの 1 フレーム: 経過時間だけ物理を進めて、形 (`shape_changed`。T1402) が変わったときだけ描く (止まったモデルや
+   * 収まった物理で描かない。T0982)。見せ方の変化 (ビュー・大きさ・背景・光源など) はプレビューの外と同じく `requestRender` が描く。
+   * 描かなかったフレームでは canvas に前の画が残る (スクリーンショットは canvas を写さず `read_pixels` で取るので、今の画になる)。
+   */
   #animate(now: number): void {
     const puppet = this.#puppet;
     const driver = this.#driver;
@@ -518,7 +522,9 @@ export class ViewportController {
     } catch (e) {
       console.warn("ugoe:", e);
     }
-    this.#render();
+    // 描かないフレームも GPU の喪失は確かめる (WebGPU のデバイスの喪失はイベントが無い。作り直しは `checkLost` が始める)。
+    if (puppet.shape_changed()) this.#render();
+    else this.#surface.checkLost();
     this.animationFrame += 1;
     this.#scheduleAnimation();
   }

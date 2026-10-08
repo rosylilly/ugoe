@@ -37,6 +37,8 @@ export interface WebPuppet extends TrackingPuppet {
   parameter(id: string): number | undefined;
   reset_parameters(): void;
   update(dt: number): void;
+  /** 前の `render` の後に形 (評価の出力) が見て分かるほど変わったか (T1402)。`false` なら見せ方を変えていない限り描かなくてよい。 */
+  shape_changed(): boolean;
   /**
    * 受け手のモード (follower.ts) でだけ使う。値を基準値として書き、物理 → リップシンク → パーツの不透明度 (モーションのカーブと
    * ポーズ) の順に `dt` 秒進める (`lipSyncLevel` を省くとリップシンクを当てない。`lipSyncStrength` を省くと 1。

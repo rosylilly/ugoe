@@ -454,6 +454,72 @@ describe("ViewportController", () => {
     }
   });
 
+  it("draws the physics preview only while the shape changes (T0982)", async () => {
+    let frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    try {
+      const controller = new ViewportController();
+      const attached = controller.attach(fakeContainer());
+      await settle();
+      const { puppet } = fakePuppet();
+      let renders = 0;
+      /** `update` のたびに形が動くか (物理が揺れている)。 */
+      let moving = true;
+      let changed = true;
+      Object.assign(puppet, {
+        has_model: () => true,
+        load_json: () => [],
+        uses_lighting: () => false,
+        set_enabled() {},
+        reset_parameters() {},
+        reset_physics() {},
+        parameter_ids: () => [],
+        update() {
+          if (moving) changed = true;
+        },
+        shape_changed: () => changed,
+        render() {
+          renders++;
+          changed = false;
+        },
+      });
+      pending[0]?.resolve(puppet);
+      await attached;
+      controller.setModel({ json: "{}", bundle: null });
+      let now = 0;
+      /** 待っている `requestAnimationFrame` を 1 回分流し、描いた回数を返す。 */
+      const tick = (): number => {
+        const before = renders;
+        const run = frames;
+        frames = [];
+        for (const callback of run) callback(now);
+        now += 16;
+        return renders - before;
+      };
+      tick();
+      controller.startPhysicsPreview();
+      expect(tick()).toBe(1);
+      expect(tick()).toBe(1);
+      // 揺れが収まると描かない (フレームは回し続ける)。
+      moving = false;
+      expect(tick()).toBe(0);
+      expect(tick()).toBe(0);
+      const frame = controller.animationFrame;
+      // 見せ方の変化はプレビューの外と同じく描く。
+      controller.requestRender();
+      expect(tick()).toBe(1);
+      expect(controller.animationFrame).toBeGreaterThan(frame);
+      moving = true;
+      expect(tick()).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("recreates the canvas when the GPU device is lost while rendering", async () => {
     let frame: FrameRequestCallback | null = null;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

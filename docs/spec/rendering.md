@@ -404,6 +404,6 @@ WebGL2 は `base_vertex` とストレージバッファを使えないので、�
 
 フレームごと描くのを省くかはホストが決めます。`Puppet::changed()` ([evaluation.md#見た目の変化](evaluation.md#見た目の変化)) が `false` で、
 見せ方 (ビュー・背景・光源・テクスチャ・描画先の大きさ) も変えていなければ、前に描いた画のままでよいので `encode` を呼びません
-(WebGPU・WebGL2 の canvas は描かなければ前の画を出し続ける)。`<ugoe-avatar>` はこうして描く (T1402。
-[bindings/web/README.md](../../bindings/web/README.md#描画のループ))。スタジオの受け手は新しいフレームが届いたときだけ描く (T0857)。
+(WebGPU・WebGL2 の canvas は描かなければ前の画を出し続ける)。`<ugoe-avatar>` (T1402。
+[bindings/web/README.md](../../bindings/web/README.md#描画のループ)) と、ビューアとエディタのプレビュー (T0982) はこうして描く。スタジオの受け手は新しいフレームが届いたときだけ描く (T0857)。
 許容誤差を下回る違いは描かないので、出力は最後に描いた画から見て分からない範囲で遅れることがあります。
