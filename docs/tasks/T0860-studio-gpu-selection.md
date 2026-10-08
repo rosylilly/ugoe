@@ -1,11 +1,11 @@
 ---
 id: T0860
 title: "スタジオ: 使う GPU (自動・省電力・高性能) を選べるようにし、受け手ごとに使っている GPU を見せる (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, ugoe-headless, packages/player, docs]
 depends_on: [T0499]
-assignee:
+assignee: claude-worker-T0860
 ---
 
 # T0860: スタジオ: 使う GPU を選ぶ (判断が要る)
