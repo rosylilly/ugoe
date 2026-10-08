@@ -85,3 +85,4 @@ Windows だけの機能で、既定は今と同じ (下げない) にする。�
 - D3D11 の `IDXGIDevice::SetGPUThreadPriority` (-7〜7) はデバイスごとの口だが、wgpu は D3D12 (と Vulkan) を使い、WebView2 の中のデバイスにも
   触れないので使えない。D3D12 のキューの優先度 (`D3D12_COMMAND_QUEUE_PRIORITY`) は「通常」より下が無い。
 - `windows` クレートの `D3DKMTSetProcessSchedulingPriorityClass` の機能の名前 (`Wdk_Graphics_Direct3D` の見込み) は、作業のときに 0.62 で確かめる。
+- 判断 (2026-10-08): 利用者が「新しい unsafe のクレート」を選んだ。GPU の優先度だけを受け持つ新しいクレートを作り、unsafe の例外を 1 つ増やす。AGENTS.md の unsafe の例外の一覧と、ADR (新しく書くか ADR 0028 の 8. の見直し) を同じ PR で直す。既定は通常の優先度。T0857 の後に、まだ要るかを測ってから作る。

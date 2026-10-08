@@ -100,3 +100,4 @@ WebView2 Runtime の `msedgewebview2.exe` (版ごとにパスが変わり、ほ�
 - wgpu は `PowerPreference::None` ではアダプタを列挙の順のまま選び、`LowPower` / `HighPerformance` では内蔵 / 外付けを先に並べ替える
   (wgpu-core 30 の instance.rs)。Windows の DXGI の列挙の先頭は、Windows のアプリごとの設定で選んだ GPU になる見込み (未確認。
   `DXGI_GPU_PREFERENCE` を使う `EnumAdapterByGpuPreference` とは別の口なので、実機で確かめる)。
+- 判断 (2026-10-08): 利用者が、Windows の出力ウィンドウは推奨の案 (高性能を選んだときだけ WebView2 を `--force-high-performance-gpu` で起動し、次の起動から効く。Windows のグラフィックスの設定を開くボタンを足す。レジストリは書かない) を、設定の置き場所は機械ごとの設定ファイルを選んだ。Linux と macOS は推奨どおり文書だけにする (利用者には聞いていない。推奨のまま)。
