@@ -104,7 +104,7 @@ pub struct ProfileView<'a> {
 pub enum ReadOnly {
     /// 見本の印 (`template`) がある。
     Template,
-    /// 保存先に書けない (開いたときに書けないと分かった・保存に失敗した)。
+    /// 保存先に書けない (開いたときに書けないと分かった・権限で保存に失敗した。一時の失敗ではならない。T0870)。
     NotWritable,
 }
 
@@ -140,6 +140,9 @@ pub struct Stage {
     tickets: u64,
     /// 最後に始めた切り替えの番号とシーンの ID (終わるまで。操作ウィンドウの読み込み中、T0841)。
     loading: Option<(u64, String)>,
+    /// 保存に差し込む失敗 (ディスクが一杯などを起こすため。テスト用)。
+    #[cfg(test)]
+    fail_writes: Option<std::io::ErrorKind>,
 }
 
 impl Stage {
@@ -284,7 +287,9 @@ impl Stage {
     /// 保存する。`path` を省くと今の保存先 (無ければ `None` を返して何もしない)。保存したら保存先を返す。
     ///
     /// 書き換えないプロファイル (T0866) は、`path` を省くと書かずに `None` を返す (自動の保存が来ても元のファイルを書かない)。
-    /// 今の保存先に書けなければ、書き換えないプロファイルにしてエラーを返す (自動の保存が失敗し続けないように。画面は写しを保存させる)。
+    /// 今の保存先に書けない (権限・読み取り専用のファイルシステム。[`crate::profile::is_denied`]) なら、書き換えないプロファイルにして
+    /// エラーを返す (自動の保存が失敗し続けないように。画面は写しを保存させる)。ディスクが一杯などの一時の失敗では、保存先も
+    /// 変更 (`dirty`) もそのまま残してエラーを返す (画面は少し待って自動の保存をもう一度行う。T0870)。
     /// 保存したら、保存先が新しいところになり、見本の印を外して自動の保存に戻る。
     pub fn save_profile(&mut self, path: Option<&Path>) -> Result<Option<PathBuf>, ProfileError> {
         if path.is_none() && self.read_only.is_some() {
@@ -293,11 +298,12 @@ impl Stage {
         let Some(path) = path.map(Path::to_owned).or_else(|| self.path.clone()) else {
             return Ok(None);
         };
-        if let Err(e) = self.profile.write(&path) {
-            if self.path.as_deref() == Some(path.as_path()) {
+        if let Err(e) = self.write_profile(&path) {
+            if self.path.as_deref() == Some(path.as_path()) && crate::profile::is_denied(&path, &e)
+            {
                 self.read_only = Some(ReadOnly::NotWritable);
             }
-            return Err(e);
+            return Err(ProfileError::io(&path, &e));
         }
         self.profile.template = false;
         self.read_only = None;
@@ -305,6 +311,15 @@ impl Stage {
         self.dirty = false;
         self.touch_recent(&path);
         Ok(Some(path))
+    }
+
+    /// プロファイルを `path` に書く (テストでは差し込んだ失敗を返す)。
+    fn write_profile(&self, path: &Path) -> std::io::Result<()> {
+        #[cfg(test)]
+        if let Some(kind) = self.fail_writes {
+            return Err(kind.into());
+        }
+        self.profile.write_file(path)
     }
 
     /// 最近の一覧から外す。
@@ -1869,6 +1884,65 @@ mod tests {
         assert_eq!(stage.read_only(), None);
         stage.add_scene("Chat");
         assert_eq!(stage.save_profile(None).unwrap(), Some(copy));
+    }
+
+    /// ディスクが一杯などの一時の失敗では、書き換えないプロファイルにせず、保存先と変更を残す。次の保存で書ければ自動の保存が続く。
+    /// 権限の失敗 (差し込んだもの) では書き換えないプロファイルにする (T0870)。
+    #[test]
+    fn keeps_saving_after_temporary_failures() {
+        use std::io::ErrorKind;
+        let dir = Dir::new();
+        let path = dir.0.path().join("p.json");
+        let mut stage = Stage::new(None);
+        stage.save_profile(Some(&path)).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+
+        for kind in [
+            ErrorKind::StorageFull,
+            ErrorKind::QuotaExceeded,
+            ErrorKind::ResourceBusy,
+            ErrorKind::Other,
+        ] {
+            stage.fail_writes = Some(kind);
+            stage.add_scene("Game");
+            let failed = stage.save_profile(None);
+            assert!(matches!(failed, Err(ProfileError::Io { .. })), "{failed:?}");
+            assert_eq!(stage.read_only(), None, "{kind:?}");
+            assert_eq!(stage.path(), Some(path.as_path()));
+            assert!(stage.dirty());
+            // 続けて失敗しても、保存先は残る (自動の保存はもう一度書こうとする)。
+            assert!(stage.save_profile(None).is_err());
+            assert_eq!(stage.read_only(), None);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+
+        // 空きができたら、次の自動の保存で書ける。
+        stage.fail_writes = None;
+        assert_eq!(stage.save_profile(None).unwrap(), Some(path.clone()));
+        assert!(!stage.dirty());
+        assert_eq!(Profile::read(&path).unwrap().scenes.len(), 5);
+        stage.add_scene("Chat");
+        assert_eq!(stage.save_profile(None).unwrap(), Some(path.clone()));
+
+        // 別の場所への保存 (写しを保存) の失敗は、今の保存先を変えない。
+        stage.fail_writes = Some(ErrorKind::PermissionDenied);
+        stage.add_scene("Talk");
+        assert!(
+            stage
+                .save_profile(Some(&dir.0.path().join("copy.json")))
+                .is_err()
+        );
+        assert_eq!(stage.read_only(), None);
+        assert_eq!(stage.path(), Some(path.as_path()));
+
+        // 権限の失敗は書き換えないプロファイルにする (Windows では、書けるファイルなら一時の失敗とする)。
+        assert!(stage.save_profile(None).is_err());
+        let read_only = (!cfg!(windows)).then_some(ReadOnly::NotWritable);
+        assert_eq!(stage.read_only(), read_only);
+        stage.fail_writes = Some(ErrorKind::ReadOnlyFilesystem);
+        assert!(stage.save_profile(Some(&path)).is_err());
+        assert_eq!(stage.read_only(), Some(ReadOnly::NotWritable));
+        assert_eq!(stage.save_profile(None).unwrap(), None);
     }
 
     /// プロファイルの隣のモデルは相対パスで保存し、フォルダごと別の場所へ写しても開ける (T0852)。

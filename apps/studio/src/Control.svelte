@@ -39,7 +39,7 @@ import {
   pendingToShow,
 } from "./lib/api";
 import { Autosave, hasUnsavedChanges, needsSavePath } from "./lib/autosave";
-import { describeError, isSceneError } from "./lib/errors";
+import { describeError, isCommandMessage, isSceneError } from "./lib/errors";
 import type {
   FileKind,
   GpuPreference,
@@ -101,6 +101,8 @@ import VirtualCameraPanel from "./VirtualCameraPanel.svelte";
 const EDIT_HOLD_MS = 500;
 /** プロファイルを変えてから自動で保存するまでの時間 (ミリ秒。続けて変えている間は待つ)。 */
 const AUTOSAVE_MS = 800;
+/** 自動の保存に失敗している間、次に保存するまでの時間 (ミリ秒。ディスクが一杯などの一時の失敗。T0870)。 */
+const AUTOSAVE_RETRY_MS = 30_000;
 
 let host = $state<StudioHost | null>(null);
 let scene = $state<StudioScene | null>(null);
@@ -146,6 +148,8 @@ let camera = $state<VirtualCameraStatus | null>(null);
 /** 使う GPU の様子 (T0860。機械ごとの設定)。 */
 let gpu = $state<GpuView | null>(null);
 let error = $state<string | null>(null);
+/** 自動の保存の失敗 (同じ失敗が続く間は 1 度だけ出し、保存できたら消す。T0870)。 */
+let autosaveError = $state<string | null>(null);
 let settingsOpen = $state(false);
 /** 手で動かしたパラメータと、動かした時刻。 */
 const edited = new Map<string, number>();
@@ -439,9 +443,21 @@ function onProfile(view: ProfileView) {
 
 /**
  * 保存先があり変えていれば、少し待ってから保存する。書き換えないプロファイル (見本・書けない場所。T0866) は保存しない
- * (保存に失敗したら、バックエンドが書き換えないプロファイルにして知らせる。エラーは 1 度だけ出る)。
+ * (権限で保存に失敗したら、バックエンドが書き換えないプロファイルにする)。ディスクが一杯などの一時の失敗では、
+ * 少し待ってもう一度保存する。知らせは同じ失敗が続く間は 1 度だけ出し、保存できたら消す (T0870)。
  */
-const autosave = new Autosave(() => void run((h) => h.saveProfile()), AUTOSAVE_MS);
+const autosave = new Autosave({
+  save: async () => host?.saveProfile(),
+  delayMs: AUTOSAVE_MS,
+  retryMs: AUTOSAVE_RETRY_MS,
+  onError: (e) => {
+    autosaveError = describeError(e);
+  },
+  onRecovered: () => {
+    autosaveError = null;
+  },
+  failureKey: (e) => (isCommandMessage(e) ? JSON.stringify([e.code, e.args]) : String(e)),
+});
 
 /** 自動で保存しないプロファイル (保存先が無い・書き換えない) を変えていれば、捨ててよいか確かめてから `action` を行う。 */
 function confirmDiscard(action: () => void) {
@@ -804,6 +820,13 @@ onMount(() => {
 
   {#if error !== null}
     <Notice tone="danger" ondismiss={() => (error = null)}>{error}</Notice>
+  {/if}
+  {#if autosaveError !== null}
+    <!-- 自動の保存の失敗。一時の失敗なら、もう一度保存することを添える (書けない場所なら下の写しの保存に誘う。T0870) -->
+    <Notice tone="danger" ondismiss={() => (autosaveError = null)}>
+      {autosaveError}
+      {#if profile !== null && profile.readOnly === null}{t("profile.autosaveRetryHint")}{/if}
+    </Notice>
   {/if}
   {#if profile !== null && profile.path === null && profile.dirty}
     <Notice tone="warning">

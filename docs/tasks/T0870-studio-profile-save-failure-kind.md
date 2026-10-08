@@ -1,7 +1,7 @@
 ---
 id: T0870
 title: "スタジオ: 自動の保存の失敗を、書けない場所と一時の失敗 (ディスクが一杯など) に分けるか決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
@@ -32,13 +32,13 @@ Windows の共有違反 (`ERROR_SHARING_VIOLATION`) は `io::ErrorKind` では `
 
 ## 受け入れ条件
 
-- [ ] 判断をメモに書いた
-- [ ] (A) 保存の失敗に種類を残し (`ProfileError` の欄か、`Stage` の中だけで使う区別)、権限の失敗だけ書き換えないプロファイルにした。
+- [x] 判断をメモに書いた
+- [x] (A) 保存の失敗に種類を残し (`ProfileError` の欄か、`Stage` の中だけで使う区別)、権限の失敗だけ書き換えないプロファイルにした。
       一時の失敗では保存先が残り、次の保存で書けたら知らせが消えて自動の保存が続くことを、stage.rs のテスト (失敗を差し込める書き出しの口か、
       Unix の権限を戻す形) で確かめた。同じ失敗が続く間に知らせを繰り返さないことを確かめた (画面の `autosave.ts` のテスト)
-- [ ] (A) 文言は日英 (`@ugoe/i18n` の検査が通る)。docs/studio.md#書き換えないプロファイル と docs/manual/studio.md を直した
-- [ ] 画面を変えたら `just e2e --only studio` と `just ui-audit --only studio` が通る
-- [ ] `just ci` が通る
+- [x] (A) 文言は日英 (`@ugoe/i18n` の検査が通る)。docs/studio.md#書き換えないプロファイル と docs/manual/studio.md を直した
+- [x] 画面を変えたら `just e2e --only studio` と `just ui-audit --only studio` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -53,3 +53,30 @@ Windows の共有違反 (`ERROR_SHARING_VIOLATION`) は `io::ErrorKind` では `
 - ディスクが一杯・Windows の共有違反は手元で起こしにくい。テストは失敗を差し込む形で確かめ、実機で確かめていないことをメモに書く。
 - T0869 (案 A を選んだ場合) と同じ `stage.rs` を触る。並べて進めるなら T0869 の判断の後にする。
 - 判断 (2026-10-08): 利用者が案 A (権限の失敗だけを読み取り専用にし、一時の失敗では自動の保存を続ける) を選んだ。
+- やったこと (2026-10-08):
+  - `profile.rs`: `Profile::write_file` (失敗を `io::Error` のまま返す) と `ProfileError::io`、`is_denied` を足した。
+    `PermissionDenied` (Unix の `EACCES`・`EPERM`、Windows の `ERROR_ACCESS_DENIED`) と `ReadOnlyFilesystem` (`EROFS`・`ERROR_WRITE_PROTECT`)
+    だけを書けない場所とし、ほかはすべて一時の失敗 (`StorageFull`・`QuotaExceeded`・`ResourceBusy`・Windows の共有違反 (`Uncategorized`) など)。
+    出典は Rust 1.98.1 の std の `sys/io/error/{unix,windows}.rs` の対応づけ (docs/studio.md#保存の失敗の種類 に URL)。
+  - Windows では、置き換え (`MoveFileExW`) の先をほかのアプリ (ウイルス対策ソフトなど) が開いていても `ERROR_ACCESS_DENIED` になりうる
+    (Git の `compat/mingw.c` の `mingw_rename` が同じ理由で試し直している) ので、`PermissionDenied` ならファイルを書く口で開き直して
+    確かめる (`cannot_reopen`。開ければ一時の失敗、`PermissionDenied`・`NotFound` なら書けない場所)。`cfg!` で切り替え、関数は
+    どの OS でもコンパイルして Linux でもテストする。
+  - `Stage::save_profile`: 今の保存先への失敗は、`is_denied` のときだけ `ReadOnly::NotWritable` にする。一時の失敗は保存先と `dirty` を残す。
+    テスト用に失敗を差し込む口 (`#[cfg(test)] fail_writes`) を足し、`keeps_saving_after_temporary_failures` で確かめた
+    (既存の Unix の権限のテストもそのまま通る)。`profile.rs` に `tells_denied_failures_from_temporary_ones`。
+  - 画面: `Autosave` を options の形にし、失敗したら `onError` で知らせ (同じ鍵 = エラーのコードと引数が続く間は 1 度だけ)、30 秒後に
+    もう一度保存する。失敗している間は変えても待ち直さない (30 秒に 1 度だけ試す。0.8 秒ごとの保存を繰り返さない)。保存できた・
+    手で保存した・写しを保存した・別のプロファイルにしたら `onRecovered` で知らせを消す。保存の通知 (`with_stage` は失敗でも
+    `ProfileView` を送る) が保存の失敗より先に届いても、後に届いても同じに動く。`autosave.test.ts` に 3 つのテスト。
+  - `Control.svelte`: 自動の保存の失敗は別の赤の帯 (`autosaveError`) に出し、一時の失敗 (書き換えないプロファイルでない) なら
+    「変更を残し、少し待ってからもう一度自動で保存する」を添える (`profile.autosaveRetryHint`、日英)。
+  - 文書: docs/studio.md (#書き換えないプロファイル の箇条を直し、#保存の失敗の種類 を足した)・docs/manual/studio.md。
+  - 検査: `just crate ugoe-studio`・`just cross-check`・`just e2e --only studio` (14 件通過)・`just ui-audit --only studio` (問題 0)・`just ci` が通った。
+- 確かめていないこと: 実機の Windows (共有違反・ほかのアプリが開いているファイルへの置き換え・読み取り専用の属性での `cannot_reopen` の判定)・
+  macOS・実際にディスクが一杯になったとき・ネットワークのドライブの切断。テストは失敗を差し込む形と Unix の権限で確かめた。
+  Windows でフォルダに書けない (ACL) が、ファイル自体は書けるときは、開き直しで一時の失敗とみなす (30 秒ごとに試し、知らせは 1 度)。
+  ui-audit の場面に、自動の保存の失敗の帯は入れていない (偽のホストで失敗を起こす場面が無い)。
+- 起票の候補:
+  - ui-audit の偽のホストに「自動の保存が一時の失敗をする」場面を足し、帯 (`autosaveError`) のコントラストやはみ出しを数える。
+  - Windows の実機で、共有違反・ウイルス対策ソフトの置き換えの失敗・読み取り専用の属性の判定を確かめる。

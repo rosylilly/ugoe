@@ -299,6 +299,7 @@
     "readOnly": "Read-only",
     "templateHint": "This is a sample profile, so changes are not saved to it. Save a copy to keep them. The copy is saved automatically after that.",
     "readOnlyHint": "This profile cannot be saved where it is. Save a copy to keep your changes. The copy is saved automatically after that.",
+    "autosaveRetryHint": "Your changes are kept, and the studio will try to save them again shortly.",
     "discardTitle": "Discard the unsaved profile?",
     "discardBody": "The scenes in this profile have not been saved. They are lost if you continue.",
     "discardConfirm": "Discard and continue",

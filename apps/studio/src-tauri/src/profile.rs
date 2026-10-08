@@ -276,6 +276,16 @@ pub enum ProfileError {
     Invalid { path: PathBuf, message: String },
 }
 
+impl ProfileError {
+    /// `path` の読み書きの失敗 `e`。
+    pub fn io(path: &Path, e: &std::io::Error) -> Self {
+        Self::Io {
+            path: path.to_owned(),
+            message: e.to_string(),
+        }
+    }
+}
+
 impl Default for Profile {
     fn default() -> Self {
         Self::new()
@@ -336,10 +346,7 @@ impl Profile {
 
     /// ファイルから読む。相対パスはプロファイルのフォルダを基準に絶対パスに解く ([`resolve_path`])。
     pub fn read(path: &Path) -> Result<Self, ProfileError> {
-        let io = |e: std::io::Error| ProfileError::Io {
-            path: path.to_owned(),
-            message: e.to_string(),
-        };
+        let io = |e: std::io::Error| ProfileError::io(path, &e);
         // 通常のファイルだけを読む (装置・FIFO・ディレクトリは読まない。`ugoe_fs::read_regular_file`)。
         let bytes = read_regular_file(path, MAX_PROFILE_BYTES).map_err(|e| match e {
             ReadError::TooLarge { len, .. } => ProfileError::TooLarge {
@@ -373,14 +380,17 @@ impl Profile {
     /// `path` のフォルダ (とその下) にあるファイルは相対パス、外のものは絶対パスで書く ([`relative_path`])。
     /// 別の場所へ保存すれば、その場所を基準に書き直す。見本の印 (`template`) は書かない (書いたものは見本の写し)。
     pub fn write(&self, path: &Path) -> Result<(), ProfileError> {
+        self.write_file(path)
+            .map_err(|e| ProfileError::io(path, &e))
+    }
+
+    /// [`Self::write`] と同じだが、失敗を `io::Error` のまま返す (失敗の種類で扱いを分けるため。[`is_denied`]・`Stage::save_profile`)。
+    pub fn write_file(&self, path: &Path) -> std::io::Result<()> {
         let base = base_dir(path);
         let mut profile = self.clone();
         profile.template = false;
         profile.map_paths(|p| relative_path(&base, p).map_or_else(|| p.to_owned(), PathBuf::from));
-        ugoe_fs::write_atomic(path, profile.to_json().as_bytes()).map_err(|e| ProfileError::Io {
-            path: path.to_owned(),
-            message: e.to_string(),
-        })
+        ugoe_fs::write_atomic(path, profile.to_json().as_bytes())
     }
 
     /// 値の範囲を外れたものを収め直す。ID の重複と空の ID は付け直し、`active_scene` が無いシーンを指していれば先頭にする。
@@ -531,9 +541,42 @@ pub fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
 /// プロファイルのファイル `path` に書けるか (開いたときに確かめる。書く口で開くだけで、中身も更新の時刻も変えない。T0866)。
 ///
 /// 読み取り専用のファイル (Unix の権限・Windows の読み取り専用の属性) は書けない。フォルダに書けないことはここでは分からない
-/// (保存は一時ファイルを同じフォルダに書いて置き換えるので、保存に失敗して分かる。`Stage::save_profile`)。
+/// (保存は一時ファイルを同じフォルダに書いて置き換えるので、保存に失敗して分かる。`Stage::save_profile`・[`is_denied`])。
 pub fn is_writable(path: &Path) -> bool {
     std::fs::OpenOptions::new().write(true).open(path).is_ok()
+}
+
+/// プロファイルのファイル `path` への保存の失敗 `e` が、書けない場所 (権限・読み取り専用のファイルシステム) によるものか
+/// (何度書いても同じ失敗か。T0870、`docs/studio.md#書き換えないプロファイル`)。
+///
+/// 書けない場所は `PermissionDenied` (Unix の `EACCES`・`EPERM`、Windows の `ERROR_ACCESS_DENIED`) と
+/// `ReadOnlyFilesystem` (Unix の `EROFS`、Windows の `ERROR_WRITE_PROTECT`)。それ以外 (ディスクが一杯 `StorageFull`、
+/// 割り当ての超過 `QuotaExceeded`、`ResourceBusy`、ネットワークのドライブの切断、Windows の共有違反
+/// `ERROR_SHARING_VIOLATION` (`io::ErrorKind` では分類されない) など) は、待てば直りうる一時の失敗とする。
+///
+/// Windows では、ほかのアプリ (ウイルス対策ソフトなど) が開いているファイルへの置き換え (`MoveFileExW`) も
+/// `ERROR_ACCESS_DENIED` になる。なので `PermissionDenied` なら、ファイルを書く口で開き直して確かめる
+/// (`cannot_reopen`)。Unix の `EACCES`・`EPERM` は、フォルダかファイルの権限によるものだけなので確かめない。
+pub fn is_denied(path: &Path, e: &std::io::Error) -> bool {
+    match e.kind() {
+        std::io::ErrorKind::ReadOnlyFilesystem => true,
+        std::io::ErrorKind::PermissionDenied => cfg!(not(windows)) || cannot_reopen(path),
+        _ => false,
+    }
+}
+
+/// 置き換えの `PermissionDenied` が書けない場所によるものか (Windows で使う。[`is_denied`]): ファイルを書く口で開けなければ
+/// (読み取り専用の属性・アクセス権で `PermissionDenied`、ファイルが無い (フォルダに書けない) で `NotFound`) 書けない場所。
+/// 開ければ (書けるファイルなのに置き換えられなかった)、ほかのアプリが開いていたなどの一時の失敗とする。
+/// 共有違反 (`ERROR_SHARING_VIOLATION`) で開けないのも一時の失敗。開くだけで、中身も更新の時刻も変えない ([`is_writable`] と同じ)。
+fn cannot_reopen(path: &Path) -> bool {
+    match std::fs::OpenOptions::new().write(true).open(path) {
+        Ok(_) => false,
+        Err(e) => matches!(
+            e.kind(),
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+        ),
+    }
 }
 
 /// プロファイルのファイル `path` のあるフォルダ (相対パスの基準)。`path` が相対パスなら今のディレクトリから絶対パスにする。
@@ -902,6 +945,54 @@ mod tests {
         assert!(!Profile::read(&path).unwrap().template);
         assert!(is_writable(&path));
         assert!(!is_writable(&tmp.path().join("missing.json")));
+    }
+
+    /// 権限と読み取り専用のファイルシステムの失敗だけを書けない場所とし、ほかは一時の失敗とする (T0870)。
+    #[test]
+    fn tells_denied_failures_from_temporary_ones() {
+        use std::io::{Error, ErrorKind};
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("p.json");
+        Profile::new().write(&path).unwrap();
+        assert!(is_denied(
+            &path,
+            &Error::from(ErrorKind::ReadOnlyFilesystem)
+        ));
+        for kind in [
+            ErrorKind::StorageFull,
+            ErrorKind::QuotaExceeded,
+            ErrorKind::ResourceBusy,
+            ErrorKind::TimedOut,
+            ErrorKind::NotFound,
+            ErrorKind::Other,
+        ] {
+            assert!(!is_denied(&path, &Error::from(kind)), "{kind:?}");
+        }
+        // Windows の共有違反は種類が付かない (`Uncategorized`)。
+        #[cfg(windows)]
+        assert!(!is_denied(&path, &Error::from_raw_os_error(32)));
+        // Windows では、書けるファイルなら権限の失敗もほかのアプリによる一時の失敗とする。
+        assert_eq!(
+            is_denied(&path, &Error::from(ErrorKind::PermissionDenied)),
+            cfg!(not(windows))
+        );
+        assert!(is_denied(
+            &tmp.path().join("missing.json"),
+            &Error::from(ErrorKind::PermissionDenied)
+        ));
+        // 開き直して確かめる (Windows で使う): 書けるファイルは開ける。無いファイルは書けない場所。
+        assert!(!cannot_reopen(&path));
+        assert!(cannot_reopen(&tmp.path().join("missing.json")));
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions.clone()).unwrap();
+        // 権限を見ない利用者 (root) では確かめられない。
+        if !is_writable(&path) {
+            assert!(cannot_reopen(&path));
+        }
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&path, permissions).unwrap();
     }
 
     #[test]
