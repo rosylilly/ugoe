@@ -1,11 +1,11 @@
 ---
 id: T0861
 title: "スタジオ: Windows で GPU の処理の優先度を下げ、ゲームや OBS に GPU を譲れるようにする (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs, Cargo.toml, Cargo.lock]
 depends_on: [T0857]
-assignee:
+assignee: claude-worker-T0861
 ---
 
 # T0861: スタジオ: Windows で GPU の優先度を下げる (判断が要る)
