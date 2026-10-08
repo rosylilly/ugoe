@@ -30,7 +30,7 @@ use ugoe_model::Model;
 use ugoe_render::FrameStats;
 
 pub use animate::Animation;
-pub use gpu::{DEFAULT_WAIT_TIMEOUT, Gpu, stats_json};
+pub use gpu::{DEFAULT_WAIT_TIMEOUT, Gpu, PowerPreference, stats_json};
 pub use image::Rgba8;
 pub use resident::{DEFAULT_SLOTS, Readback, Resident, ResidentOptions, Wait};
 pub use textures::{placeholder_texture, resolve_normal_maps, resolve_textures, texture_count};

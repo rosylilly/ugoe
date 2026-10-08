@@ -11,6 +11,7 @@
   回転は描画の要素 (舞台) の CSS で回す (ビューに回転が無いため)。
   出力ウィンドウは枠が無いので、左ボタンでドラッグするとウィンドウを動かせる (`feed.startDragging` があるとき。T0813)。
   描画の負荷は約 1 秒ごとにバックエンドへ送り、操作ウィンドウに出す (ここには何も重ねない。docs/studio.md#負荷の表示)。
+  負荷には描いている API と GPU の名前も載せる。出力ウィンドウは起動したときの「使う GPU」の希望で描く (docs/studio.md#使う-gpu)。
   今のシーンのモデル・モジュール・背景を取れない・読めない (背景の画像はデコードできない) ときも、バックエンドへ返して操作ウィンドウに出す
   (次のシーンに移ったための失敗は返さない。失敗したものは次のシーンの通知で取り直す。docs/studio.md#受け手が読めなかったとき)。
 -->
@@ -54,7 +55,10 @@ const renderStats = new RenderStatsWindow();
 // 受け手は変わったときだけ描き、描かなかった `requestAnimationFrame` でも知らせが来る (描く回数の上限は刻みの速さ)。
 player.startFollowing((frame) => {
   const stats = renderStats.record(frame);
-  if (stats !== null) void feed().then((f) => f.reportRenderStats(stats));
+  // 描いている API と GPU の名前も載せる (操作ウィンドウの「フレームレートと負荷」に出す。T0860)
+  if (stats === null) return;
+  const report = { ...stats, backend: player.backend, adapter: player.adapterName };
+  void feed().then((f) => f.reportRenderStats(report));
 });
 // 開発中やヘッドレスのブラウザで状態を見るため。
 window.__UGOE_STUDIO_OUTPUT__ = player;
@@ -267,10 +271,18 @@ onMount(() => {
   observer.observe(output);
   layout();
   void (async () => {
-    await player.attach(stage);
-    player.setBackground("#000000", true);
     const host = await feed();
     resolvedFeed = host;
+    // 出力ウィンドウは起動したときの「使う GPU」の希望で描く (作り直しでも同じ値。T0860)。ブラウザソースは OBS が決めるので渡さない。
+    if (host.outputPowerPreference !== undefined) {
+      try {
+        player.powerPreference = await host.outputPowerPreference();
+      } catch {
+        // 読めなければ希望なしで描く
+      }
+    }
+    await player.attach(stage);
+    player.setBackground("#000000", true);
     await host.subscribeFrames((message) => {
       if (message instanceof ArrayBuffer) player.pushFrame(decodeFrame(message));
       else if (message.kind === "scene") onScene(message);

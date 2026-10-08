@@ -71,6 +71,13 @@
     "render_stats": {
       "invalid": "The output reported invalid render statistics."
     },
+    "gpu_settings": {
+      "save_failed": "Could not save the GPU setting: {{reason}}"
+    },
+    "graphics_settings": {
+      "unsupported": "The graphics settings can be opened only on Windows.",
+      "failed": "Could not open the graphics settings: {{reason}}"
+    },
     "output_window": {
       "missing": "The output window is missing.",
       "failed": "Could not change the output window: {{reason}}",
@@ -203,6 +210,16 @@
     "tickRate": "Tick rate",
     "rateValue": "{{value}} fps",
     "tickRateHint": "The output frame rate. Outputs cannot show new poses faster than this.",
+    "gpu": "GPU",
+    "gpuAuto": "Automatic",
+    "gpuLowPower": "Power saving",
+    "gpuHighPerformance": "High performance",
+    "gpuHint": "On laptops and similar computers, choose whether to draw with the integrated GPU (power saving) or the discrete GPU (high performance). It applies to the output window from the next start of the studio, and to the virtual camera from its next start. OBS decides the GPU of the browser source (choose it in the OBS and OS settings).",
+    "gpuRestart": "After the studio restarts, the output window draws with “{{preference}}” (now “{{launched}}”).",
+    "gpuWindowsHint": "If the virtual camera does not use the chosen GPU on Windows, add ugoe-studio.exe in the graphics settings and choose its GPU.",
+    "graphicsSettings": "Open the graphics settings",
+    "rendererGpu": "{{backend}}, {{adapter}}",
+    "adapterHidden": "GPU name hidden",
     "empty": "Open a model to see the load.",
     "tick": "Time per tick",
     "measured": "Actual tick rate",

@@ -242,6 +242,8 @@ export function studioPageInit({ osLocale, fixture }) {
   };
   const active = profile.scenes.find((s) => s.id === profile.activeScene) ?? profile.scenes[0];
   let api = fixture.api;
+  /** 使う GPU の様子 (T0860)。 */
+  let gpu = { preference: "highPerformance", launched: "auto", graphicsSettings: true };
   /** 指揮役の通知を受ける画面の口 (`subscribeStatus` で受け取る)。 */
   let listener = null;
   /** 負荷の数値に重ねるもの (`setStatus`)。 */
@@ -293,6 +295,12 @@ export function studioPageInit({ osLocale, fixture }) {
     },
     tickRate: async () => 60,
     setTickRate: async (rate) => rate,
+    // 使う GPU (T0860)。起動し直しの知らせとグラフィックの設定のボタンも見えるように、Windows で選び直した形にする
+    gpuSettings: async () => gpu,
+    setGpuPreference: async (preference) => {
+      gpu = { ...gpu, preference };
+      return gpu;
+    },
     systemLocale: async () => osLocale,
     playMotion: async () => true,
     virtualCameraState: async () => ({ state: "stopped", unavailable: null }),
@@ -415,6 +423,8 @@ export function studioPageInit({ osLocale, fixture }) {
               renderMs: 1.4,
               renderMaxMs: 3.1,
               dropped: 0,
+              backend: "webgpu",
+              adapter: "Integrated GPU",
               stale: false,
               targetFps: null,
             },

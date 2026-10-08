@@ -3,7 +3,10 @@
 // (docs/studio.md#ブラウザソース、apps/studio/src-tauri/src/api/source.rs)。
 import type { LoadFailure, RenderStats, StudioHost } from "./host";
 
-/** 受け手が使う口 (StudioHost の一部)。ウィンドウを動かす口は出力ウィンドウにだけある。 */
+/**
+ * 受け手が使う口 (StudioHost の一部)。ウィンドウを動かす口と、GPU の電力の希望を読む口は出力ウィンドウにだけある
+ * (ブラウザソースの GPU は OBS が決める。T0860)。
+ */
 export type OutputFeed = Pick<
   StudioHost,
   | "subscribeFrames"
@@ -13,7 +16,7 @@ export type OutputFeed = Pick<
   | "reportRenderStats"
   | "reportLoadFailure"
 > &
-  Partial<Pick<StudioHost, "startDragging">>;
+  Partial<Pick<StudioHost, "startDragging" | "outputPowerPreference">>;
 
 /** 接続が切れてから、つなぎ直すまでの時間 (ミリ秒)。スタジオを起動し直しても OBS のページはそのまま戻る。 */
 export const RECONNECT_MS = 1000;

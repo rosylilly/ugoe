@@ -41,6 +41,8 @@ import {
 import { describeError, isSceneError } from "./lib/errors";
 import type {
   FileKind,
+  GpuPreference,
+  GpuView,
   MonitorMessage,
   OutputState,
   ParameterInfo,
@@ -130,6 +132,8 @@ let appliedSize: OutputSizePreset | null = null;
 let showInternal = $state(false);
 /** 仮想カメラの状態 (VirtualCameraPanel.svelte)。 */
 let camera = $state<VirtualCameraStatus | null>(null);
+/** 使う GPU の様子 (T0860。機械ごとの設定)。 */
+let gpu = $state<GpuView | null>(null);
 let error = $state<string | null>(null);
 let settingsOpen = $state(false);
 /** 手で動かしたパラメータと、動かした時刻。 */
@@ -648,6 +652,10 @@ function changeTickRate(rate: TickRate) {
   void tickRateEdit.submit(rate);
 }
 
+async function changeGpuPreference(preference: GpuPreference) {
+  gpu = (await run((h) => h.setGpuPreference(preference))) ?? gpu;
+}
+
 /** パラメータのスライダーの刻み。 */
 function parameterStep(p: ParameterInfo): number {
   return (p.max - p.min) / 200;
@@ -695,6 +703,7 @@ onMount(() => {
     }
     output = (await run((h) => h.outputState())) ?? null;
     camera = (await run((h) => h.virtualCameraState())) ?? null;
+    gpu = (await run((h) => h.gpuSettings())) ?? null;
     await run((h) => h.subscribeStatus(onMonitor));
     // 入力の処理はバックエンドの刻みで回す (受け取れなければ requestAnimationFrame のまま)。
     try {
@@ -1017,7 +1026,15 @@ onMount(() => {
 
       <div data-panel="load">
         <Section level={2} title={t("load.heading")} bind:open={panelsOpen.load}>
-          <LoadPanel {tickRate} {status} disabled={host === null} onTickRate={changeTickRate} />
+          <LoadPanel
+            {tickRate}
+            {status}
+            {gpu}
+            disabled={host === null}
+            onTickRate={changeTickRate}
+            onGpuPreference={(preference) => void changeGpuPreference(preference)}
+            onGraphicsSettings={() => void run((h) => h.openGraphicsSettings())}
+          />
         </Section>
       </div>
 

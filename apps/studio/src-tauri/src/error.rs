@@ -80,6 +80,36 @@ impl CommandError {
         Self::new("render_stats.invalid", "invalid render stats")
     }
 
+    /// 使う GPU の設定を、機械ごとの設定ファイルに書けなかった (`reason` は英語の文。T0860)。
+    pub(crate) fn gpu_settings_save_failed(reason: impl std::fmt::Display) -> Self {
+        let reason = reason.to_string();
+        Self::new(
+            "gpu_settings.save_failed",
+            format!("the GPU setting could not be saved: {reason}"),
+        )
+        .arg("reason", reason)
+    }
+
+    /// OS の「グラフィックの設定」を開けない OS (Windows の外。T0860)。
+    #[cfg_attr(windows, allow(dead_code))]
+    pub(crate) fn graphics_settings_unsupported() -> Self {
+        Self::new(
+            "graphics_settings.unsupported",
+            "the graphics settings can be opened only on Windows",
+        )
+    }
+
+    /// OS の「グラフィックの設定」を開けなかった (`reason` は英語の文。T0860)。
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn graphics_settings_failed(reason: impl std::fmt::Display) -> Self {
+        let reason = reason.to_string();
+        Self::new(
+            "graphics_settings.failed",
+            format!("the graphics settings could not be opened: {reason}"),
+        )
+        .arg("reason", reason)
+    }
+
     /// 出力ウィンドウが無い。
     pub(crate) fn output_window_missing() -> Self {
         Self::new("output_window.missing", "the output window is missing")
@@ -377,6 +407,9 @@ mod tests {
             CommandError::scene_no_file(3),
             CommandError::unsupported_tick_rate(45),
             CommandError::invalid_render_stats(),
+            CommandError::gpu_settings_save_failed("x"),
+            CommandError::graphics_settings_unsupported(),
+            CommandError::graphics_settings_failed("x"),
             CommandError::output_window_missing(),
             CommandError::output_window_failed("x"),
             CommandError::unsupported_output_size(1, 2),

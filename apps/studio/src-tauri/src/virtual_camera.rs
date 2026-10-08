@@ -12,6 +12,8 @@
 //!   (`crates/ugoe-headless/README.md#gpu`)。GPU を待つ時間の上限を超えたら (止めるときの待ち・動いている間に読み戻しが
 //!   [`STALL_LIMIT`] 来ない)、その GPU を手放して次の開始で作り直す (T0832)。描画中に GPU がエラーを返したときも
 //!   (`gpuError`。デバイスの喪失など) 手放す (T0836)。
+//! - GPU は始めるときの設定の希望 (「使う GPU」。T0860、`docs/studio.md#使う-gpu`) で作る。希望が変わっていれば、次の開始で
+//!   前の GPU を (破棄せずに) 手放して作り直す。同じ希望なら作り直さない。
 //! - シーンのモデル・モジュール・背景の画像を読めなくても止まらず、出力ウィンドウの受け手と同じ報告 ([`Event::LoadFailures`]) で
 //!   読めなかったものをすべて知らせる (T0836・T0840、`docs/studio.md#受け手が読めなかったとき`)。
 //! - OS の部品 (`VirtualCamera`) は、作ったスレッドで使って落とす (Windows の COM)。
@@ -32,8 +34,8 @@ use ugoe_headless::image::{
 };
 use ugoe_headless::yuv::{self, PixelFormat};
 use ugoe_headless::{
-    DEFAULT_SLOTS, Gpu, Readback, Resident, ResidentOptions, Rgba8, Scene as HeadlessScene,
-    Shading, Wait, placeholder_texture, texture_count,
+    DEFAULT_SLOTS, Gpu, PowerPreference, Readback, Resident, ResidentOptions, Rgba8,
+    Scene as HeadlessScene, Shading, Wait, placeholder_texture, texture_count,
 };
 use ugoe_studio_vcam::{Config, Delivery, PixelLayout, VirtualCamera};
 
@@ -159,12 +161,15 @@ pub struct SceneFiles {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Status(Status),
-    /// 直近の約 1 秒の描画の負荷 (回/秒・1 回の時間の平均と最大 (ミリ秒)・捨てた数の合計)。
+    /// 直近の約 1 秒の描画の負荷 (回/秒・1 回の時間の平均と最大 (ミリ秒)・捨てた数の合計) と、描いている GPU
+    /// (wgpu のバックエンドの名前とアダプタの名前。T0860)。
     Stats {
         fps: f32,
         render_ms: f32,
         render_max_ms: f32,
         dropped: u64,
+        backend: &'static str,
+        adapter: String,
     },
     /// 今のシーンのファイルを読めなかった (`load_failure.rs`。受け手のラベルは [`LABEL`])。1 つのシーンで読めなかったものすべて
     /// (空にはしない)。
@@ -206,10 +211,14 @@ static GPU: GpuCell<Gpu> = GpuCell::new();
 
 /// 描画に使う GPU の置き場。作った GPU は破棄しない (`Box::leak`。`crates/ugoe-headless/README.md#gpu`)。作れなかったことも覚える。
 /// 待つ時間の上限を超えた GPU は [`GpuCell::discard`] で手放し、次の [`GpuCell::get`] で作り直す。
+/// 作ったときの電力の希望も覚え、違う希望で求められたら前の GPU を手放して作り直す (作れなかったことも、違う希望なら試し直す)。
 #[derive(Debug)]
 struct GpuCell<T: 'static> {
-    slot: Mutex<Option<Result<&'static T, String>>>,
+    slot: Mutex<Option<MadeGpu<T>>>,
 }
+
+/// 作ったときの電力の希望と、作った GPU (か作れなかった理由)。
+type MadeGpu<T> = (Option<PowerPreference>, Result<&'static T, String>);
 
 impl<T> GpuCell<T> {
     const fn new() -> Self {
@@ -218,17 +227,28 @@ impl<T> GpuCell<T> {
         }
     }
 
-    /// 今の GPU。無ければ `make` で作る。
-    fn get(&self, make: impl FnOnce() -> Result<T, String>) -> Result<&'static T, String> {
+    /// 希望 `power` で作った今の GPU。無ければ (違う希望で作ったものしか無ければ) `make` で作る。
+    fn get(
+        &self,
+        power: Option<PowerPreference>,
+        make: impl FnOnce() -> Result<T, String>,
+    ) -> Result<&'static T, String> {
         let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
-        slot.get_or_insert_with(|| make().map(|gpu| &*Box::leak(Box::new(gpu))))
-            .clone()
+        match &*slot {
+            Some((made, result)) if *made == power => result.clone(),
+            _ => {
+                // 違う希望で作った GPU は手放すだけで破棄しない (`Box::leak` したまま)。
+                let result = make().map(|gpu| &*Box::leak(Box::new(gpu)));
+                *slot = Some((power, result.clone()));
+                result
+            }
+        }
     }
 
     /// `gpu` を手放す (破棄はしない)。すでに作り直していれば何もしない。
     fn discard(&self, gpu: &T) {
         let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
-        if matches!(*slot, Some(Ok(current)) if std::ptr::eq(current, gpu)) {
+        if matches!(*slot, Some((_, Ok(current))) if std::ptr::eq(current, gpu)) {
             *slot = None;
         }
     }
@@ -927,7 +947,13 @@ fn apply(
 }
 
 /// 仮想カメラのスレッドの本体。`Command::Stop` かチャネルが閉じるまで回り、止まったら [`Status::Stopped`] を知らせる。
-pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Event)) {
+/// GPU は電力の希望 `power` で作る (`None` は希望なしで、環境変数 `WGPU_POWER_PREF` に従う)。
+pub fn run(
+    settings: Settings,
+    power: Option<PowerPreference>,
+    commands: Receiver<Command>,
+    events: impl Fn(Event),
+) {
     events(Event::Status(Status::Starting { settings }));
     let failed = |code: &str, detail: String| {
         events(Event::Status(Status::Failed {
@@ -940,7 +966,9 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
         Ok(camera) => camera,
         Err(e) => return failed(e.code(), e.to_string()),
     };
-    let gpu = match GPU.get(|| Gpu::new(None).map_err(|e| e.to_string())) {
+    let gpu = match GPU.get(power, || {
+        Gpu::with_power_preference(None, power).map_err(|e| e.to_string())
+    }) {
         Ok(gpu) => gpu,
         Err(e) => return failed("gpu", e),
     };
@@ -1042,6 +1070,8 @@ pub fn run(settings: Settings, commands: Receiver<Command>, events: impl Fn(Even
                 render_ms: meter.total.as_secs_f32() * 1000.0 / count as f32,
                 render_max_ms: meter.max.as_secs_f32() * 1000.0,
                 dropped: feed.dropped(),
+                backend: gpu.adapter_info.backend.to_str(),
+                adapter: gpu.adapter_info.name.clone(),
             });
             meter = Meter::new(now);
         }
@@ -1261,36 +1291,60 @@ mod tests {
     #[test]
     fn a_hung_gpu_is_recreated_on_the_next_start() {
         let cell = GpuCell::<u32>::new();
-        let first = cell.get(|| Ok(1)).unwrap();
+        let first = cell.get(None, || Ok(1)).unwrap();
         // 待ち終えたら手放さない。
         assert!(!drain(&cell, first, || Ok(())));
-        assert!(std::ptr::eq(cell.get(|| Ok(2)).unwrap(), first));
+        assert!(std::ptr::eq(cell.get(None, || Ok(2)).unwrap(), first));
         // 時間切れでないエラーでも手放さない。
         let other = ugoe_headless::Error::Gpu {
             context: "mapping the readback buffer",
             detail: String::new(),
         };
         assert!(!drain(&cell, first, || Err(other)));
-        assert_eq!(*cell.get(|| Ok(2)).unwrap(), 1);
+        assert_eq!(*cell.get(None, || Ok(2)).unwrap(), 1);
         // 時間切れなら手放し、次は作り直す。
         assert!(drain(&cell, first, || Err(
             ugoe_headless::Error::gpu_wait_timeout(Duration::ZERO)
         )));
-        let second = cell.get(|| Ok(2)).unwrap();
+        let second = cell.get(None, || Ok(2)).unwrap();
         assert_eq!(*second, 2);
         // 前の GPU を手放しても、作り直したものはそのまま。
         cell.discard(first);
-        assert!(std::ptr::eq(cell.get(|| Ok(3)).unwrap(), second));
+        assert!(std::ptr::eq(cell.get(None, || Ok(3)).unwrap(), second));
+    }
+
+    #[test]
+    fn a_gpu_is_recreated_only_when_the_power_preference_changes() {
+        let cell = GpuCell::<u32>::new();
+        let high = Some(PowerPreference::HighPerformance);
+        let first = cell.get(None, || Ok(1)).unwrap();
+        // 同じ希望なら作り直さない
+        assert!(std::ptr::eq(cell.get(None, || Ok(2)).unwrap(), first));
+        // 違う希望なら作り直す (前のものは手放すだけ)
+        let second = cell.get(high, || Ok(2)).unwrap();
+        assert_eq!(*second, 2);
+        assert!(std::ptr::eq(cell.get(high, || Ok(3)).unwrap(), second));
+        // 前の GPU を手放しても、今のものはそのまま
+        cell.discard(first);
+        assert!(std::ptr::eq(cell.get(high, || Ok(3)).unwrap(), second));
+        // 作れなかったことは同じ希望なら覚え、違う希望なら試し直す
+        let low = Some(PowerPreference::LowPower);
+        assert_eq!(
+            cell.get(low, || Err("no adapter".into())),
+            Err("no adapter".into())
+        );
+        assert_eq!(cell.get(low, || Ok(4)), Err("no adapter".into()));
+        assert_eq!(cell.get(None, || Ok(5)).copied(), Ok(5));
     }
 
     #[test]
     fn a_failed_gpu_is_remembered() {
         let cell = GpuCell::<u32>::new();
         assert_eq!(
-            cell.get(|| Err("no adapter".into())),
+            cell.get(None, || Err("no adapter".into())),
             Err("no adapter".into())
         );
-        assert_eq!(cell.get(|| Ok(1)), Err("no adapter".into()));
+        assert_eq!(cell.get(None, || Ok(1)), Err("no adapter".into()));
     }
 
     #[test]
@@ -1515,7 +1569,9 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         drop(tx);
         let events = std::sync::Mutex::new(Vec::new());
-        run(Settings::default(), rx, |e| events.lock().unwrap().push(e));
+        run(Settings::default(), None, rx, |e| {
+            events.lock().unwrap().push(e)
+        });
         let events = events.into_inner().unwrap();
         assert!(matches!(events[0], Event::Status(Status::Starting { .. })));
         assert!(

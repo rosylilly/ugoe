@@ -71,6 +71,13 @@
     "render_stats": {
       "invalid": "出力が報告した描画の負荷の値が正しくありません。"
     },
+    "gpu_settings": {
+      "save_failed": "使う GPU の設定を保存できません: {{reason}}"
+    },
+    "graphics_settings": {
+      "unsupported": "グラフィックの設定は Windows でだけ開けます。",
+      "failed": "グラフィックの設定を開けません: {{reason}}"
+    },
     "output_window": {
       "missing": "出力ウィンドウがありません。",
       "failed": "出力ウィンドウを変えられません: {{reason}}",
@@ -193,6 +200,16 @@
     "tickRate": "刻みの速さ",
     "rateValue": "{{value}} fps",
     "tickRateHint": "出力のフレームレートです。出力はこれより速く新しい形を出せません。",
+    "gpu": "使う GPU",
+    "gpuAuto": "自動",
+    "gpuLowPower": "省電力",
+    "gpuHighPerformance": "高性能",
+    "gpuHint": "ノート PC などで、内蔵の GPU (省電力) と外付けの GPU (高性能) のどちらで描くかを選びます。出力ウィンドウには次にスタジオを起動したときから、仮想カメラには次に始めたときから効きます。ブラウザソースの GPU は OBS が決めます (OBS と OS の設定で選びます)。",
+    "gpuRestart": "出力ウィンドウは、スタジオを起動し直すと「{{preference}}」で描きます (いまは「{{launched}}」)。",
+    "gpuWindowsHint": "Windows で仮想カメラが選んだ GPU を使わないときは、「グラフィックの設定」で ugoe-studio.exe を足し、GPU を選びます。",
+    "graphicsSettings": "グラフィックの設定を開く",
+    "rendererGpu": "{{backend}}・{{adapter}}",
+    "adapterHidden": "GPU の名前は伏せられています",
     "empty": "モデルを開くと負荷を表示します。",
     "tick": "1 刻みの時間",
     "measured": "実際の刻みの速さ",

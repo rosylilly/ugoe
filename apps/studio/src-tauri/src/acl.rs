@@ -35,6 +35,10 @@ pub const COMMANDS: &[&str] = &[
     "set_tick_rate",
     "report_render_stats",
     "report_load_failure",
+    "gpu_settings",
+    "set_gpu_preference",
+    "open_graphics_settings",
+    "output_power_preference",
     "subscribe_pulse",
     "set_tracking",
     "set_tracking_paused",
@@ -82,6 +86,7 @@ pub const OUTPUT_COMMANDS: &[&str] = &[
     "scene_background",
     "report_render_stats",
     "report_load_failure",
+    "output_power_preference",
 ];
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ src/OutputPanel.svelte        操作ウィンドウの「出力ウィンドウ�
                               透過のシーンなのに透過が画面で効かないときの「背景」の欄の注意と、背景をクロマキーにするボタン (T0846・T0849)
 src/StatusBadge.svelte        「いまの状態」の印 1 つ (形・短い文・Tooltip。押すとその設定のパネルへ。中身は lib/status.ts。T0817・T0845)
 src/SettingsDialog.svelte     設定 (ツールバーの歯車): 言語・テーマ・ライセンスの表示 (T0907)
-src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・1 刻みの時間・出力ごとの描画の負荷
+src/LoadPanel.svelte          操作ウィンドウの「フレームレートと負荷」: 刻みの速さ (30 / 60 / 120)・使う GPU (T0860)・1 刻みの時間・出力ごとの描画の負荷と描いている API と GPU
 src/ScenesPanel.svelte        シーンの一覧 (切り替え・追加・複製・並べ替え・削除 (確かめてから)・切り替えのホットキーの表示)
 src/SceneEditor.svelte        シーンの編集 (名前・モデル・モジュール・位置と大きさと回転・背景・ライティング)
 src/LightingEditor.svelte     シーンの光源 (組・環境光・平行光源・点光源)
@@ -44,7 +44,7 @@ src/lib/storageKeys.ts        localStorage のキーの一覧 (`ugoe.studio.*`�
                               docs/studio.md の「覚える値」)
 src/lib/status.ts             「いまの状態」の印 (トラッキング・口パク・ホットキー・負荷・操作 API・ブラウザソース) の形と文と説明 (T0817)
                               透過が効かないかの判定 (`transparencyLost`。T0846)
-src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)
+src/lib/load.ts               負荷の注意の判断 (刻みが遅れた・揺れた・描画が重い・フレームを捨てた・描いていない)・受け手の API と GPU の名前
 src/lib/profile.ts            プロファイルとシーンの形 (profile.rs と同じ)・背景や配置の既定値
 src/lib/inputs.ts             入力・モーション・ホットキーの設定と演技の様子の形 (input.rs・hotkeys.rs・animation.rs と同じ)
 src/lib/api.ts                操作 API とブラウザソースの様子の形 (mod.rs の ApiView・SourceView と同じ)・接続先・ポートの範囲・URL のトークンを伏せる
@@ -76,7 +76,8 @@ src-tauri/                    バックエンド (Rust クレート `ugoe-studio
   src/follower.rs               ネイティブの受け手 (一致の検査と仮想カメラが使う)
   src/lighting.rs               シーンの光源 (LightingSettings の JSON) をレンダラの光源にする (@ugoe/player と同じ規則。仮想カメラが使う)
   src/virtual_camera.rs         仮想カメラの受け手 (Feed: 受け手 + ugoe-headless の常駐の描画) とスレッド (T0807)
-  src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作と、透過が画面で効くか (Linux は GDK に聞く。T0846)
+  src/lib.rs                    刻みのスレッド・Tauri のコマンド・出力ウィンドウの操作と、透過が画面で効くか (Linux は GDK に聞く。T0846)・2 つのウィンドウを作る
+  src/gpu.rs                    使う GPU の設定 (studio-settings.json。機械ごと)・WebView2 の引数・Windows の「グラフィックの設定」を開く (T0860)
   src/error.rs                  コマンドのエラー (`{ code, args, message }`。下の「コマンドのエラー」。T0835)
   src/load_failure.rs           受け手 (出力ウィンドウ・ブラウザソース・仮想カメラ) が今のシーンのファイルを読めなかったことの報告 (今のシーンのものだけを受け、受け手ごとにすべて覚えて操作ウィンドウに配る。T0825・T0836・T0840)
   src/acl.rs                    コマンドの名前と出力ウィンドウが呼べるもの (build.rs が読む。capabilities/ との一致のテスト。T0820)
@@ -111,8 +112,9 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 - **指揮役 (バックエンド):** 刻みのスレッドが設定の速さ (30 / 60 / 120 回/秒。既定 60) で `dt` を測り (0.1 秒で頭打ち)、物理を切った `Puppet` を `update(dt)` して、
   `{seq, revision, dt, values, lip_sync}` のフレーム (`values` は物理の段に入る直前の値。T0134) を出力ウィンドウへ Tauri の `Channel` で配る。WebView の外で回すので、ウィンドウの抑制を受けない。
   操作ウィンドウへは、シーン (パラメータの定義) と、毎秒 10 回に間引いた値・1 刻みの時間・実際の刻みの速さ・受け手の数と描画の負荷を別の `Channel` で配る。
-- **隠れても止まらない:** 両方のウィンドウで WebView のバックグラウンドの抑制を切る (`tauri.conf.json` の `additionalBrowserArgs` と
-  `backgroundThrottling`)。出力ウィンドウは届いたフレームを届いたときに適用し、描画だけを `requestAnimationFrame` で行う。
+- **隠れても止まらない:** 両方のウィンドウで WebView のバックグラウンドの抑制を切る (`tauri.conf.json` の `backgroundThrottling` と、
+  WebView2 の引数 `src/gpu.rs` の `BROWSER_ARGS`)。2 つのウィンドウは `tauri.conf.json` に `create: false` で書き、`setup` で使う GPU の設定を
+  読んでから、同じ引数を足してコードで作る (`lib.rs` の `window_configs`。T0860)。出力ウィンドウは届いたフレームを届いたときに適用し、描画だけを `requestAnimationFrame` で行う。
   OS ごとの効き方と、OBS での取り込みの手順は [docs/studio.md](../../docs/studio.md#隠れても止まらない)。
 - **受け手 (出力ウィンドウ):** `@ugoe/player` の受け手のモード (`Player.startFollowing`)。シーンの通知を受けたら `scene_model(revision)` で
   モデルのバイト列を取って読み、そのシーンのフレームを順にすべて `follow` で適用して (物理・リップシンク・ポーズだけが動く)、最後に 1 回描く。
@@ -144,6 +146,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `set_parameter(id, value)` / `reset_parameters()` | 操作 | 指揮役のパラメータを書き換える |
 | `output_state()` / `set_output_visible(visible)` / `set_output_on_top(onTop)` / `set_output_size(width, height)` | 操作 | 出力ウィンドウ |
 | `tick_rate()` / `set_tick_rate(rate)` | 操作 | 刻みの速さ (30 / 60 / 120。ほかの値はエラー)。プロファイルの `output.tickRate` に持つ |
+| `gpu_settings()` / `set_gpu_preference(preference)` | 操作 | 使う GPU (`auto`・`lowPower`・`highPerformance`) の様子 (今の希望・起動したときの希望・グラフィックの設定を開けるか) と選び直し。機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所) に持つ (T0860。docs/studio.md#使う-gpu) |
+| `open_graphics_settings()` | 操作 | Windows の「グラフィックの設定」を開く (ほかの OS ではエラー) |
 | `subscribe_pulse(channel)` | 操作 | 刻みごとに入力の処理を促すメッセージを受け取る (カメラとマイクの処理。最小化しても止まらない) |
 | `set_tracking(frame)` / `set_tracking_paused(paused)` / `set_auto_eye_blink(enabled)` | 操作 | トラッキングの入力 (`null` で外す)・一時停止・自動の目パチ |
 | `set_lip_sync_level(level)` / `set_lip_sync_paused(paused)` | 操作 | マイクの口を開く量 (0〜1、`null` で止める)・一時停止 |
@@ -158,7 +162,8 @@ vcam/                         仮想カメラの OS の境界 (クレート `ugo
 | `set_source_enabled(enabled)` / `source_url()` / `regenerate_source_token()` | 操作 | ブラウザソースを出す・やめる (覚える)・OBS に入れる URL (トークンを含む)・トークンの作り直し (新しい URL を返す)。様子は `api` の通知の `source` |
 | `subscribe_frames(channel)` | 出力 | シーンの通知 (JSON) とフレーム (バイト列) を受け取る。開き直したページは前の Channel を置き換える |
 | `scene_model(revision)` / `scene_module(revision, index)` / `scene_background(revision)` | 出力 | 今のシーンのモデル・モジュール・背景の画像のバイト列 (今のシーンでなければエラー) |
-| `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム) を約 1 秒ごとに送る。操作ウィンドウに出す |
+| `report_render_stats(stats)` | 出力 | 描画の負荷 (回/秒・1 回の時間の平均と最大・捨てたフレーム・描画の API と GPU の名前) を約 1 秒ごとに送る。操作ウィンドウに出す |
+| `output_power_preference()` | 出力 | 起動したときの「使う GPU」を `WebPuppet.create` の電力の希望 (`default`・`low-power`・`high-performance`) で返す |
 | `report_load_failure(failure)` | 出力 | 今のシーンのモデル・モジュール・背景を読めなかったこと (版・何を・理由のコード) を送る。操作ウィンドウに出す (`subscribe_status` の `loadFailures`。docs/studio.md#受け手が読めなかったとき) |
 | `virtual_camera_state()` | 操作 | 仮想カメラの状態 (止めている・始めている・動いている・止まった。始められない理由も) |
 | `start_virtual_camera(settings?)` / `stop_virtual_camera()` | 操作 | 仮想カメラをプロファイルの設定で始める (動いていれば始め直す。`settings` (色は RGB の配列) を渡すと先にプロファイルの設定にする)・止める。状態の変化は `subscribe_status` の `virtualCamera` で届く |
@@ -256,7 +261,10 @@ webview で思わぬスクリプトが動いても、利用者が選んでいな
 | `animation.unknown_motion` / `animation.unknown_expression` | `name` | その名前のモーション・表情がモデルに無い |
 | `animation.motion_rejected` | | 再生中のモーションより優先度が低くて始まらなかった (ホットキーの知らせだけ) |
 | `tick_rate.unsupported` | `rate` | 刻みの速さが 30 / 60 / 120 でない |
-| `render_stats.invalid` | | 出力の報告した描画の負荷が数でない・負 |
+| `render_stats.invalid` | | 出力の報告した描画の負荷が数でない・負 (API と GPU の名前が 256 バイトを超える) |
+| `gpu_settings.save_failed` | `reason` | 使う GPU の設定を設定ファイルに書けない |
+| `graphics_settings.unsupported` | | Windows の外で「グラフィックの設定」を開こうとした |
+| `graphics_settings.failed` | `reason` | 「グラフィックの設定」を開けない |
 | `output_window.missing` | | 出力ウィンドウが無い |
 | `output_window.failed` | `reason` | 出力ウィンドウの表示・最前面・大きさを変えられない |
 | `output_window.unsupported_size` | `width`・`height` | 出力の大きさが 16〜8192 の外 |

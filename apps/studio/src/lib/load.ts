@@ -58,3 +58,25 @@ export function loadWarnings(status: StatusMessage): LoadWarning[] {
   for (const load of status.renderers) out.push(...rendererWarnings(load, status.tickRate));
   return out;
 }
+
+/** 描画に使う API の表示名 (固有名詞なので訳さない)。知らない名前はそのまま。 */
+const BACKEND_NAMES: Record<string, string> = {
+  webgpu: "WebGPU",
+  webgl2: "WebGL2",
+  vulkan: "Vulkan",
+  dx12: "Direct3D 12",
+  metal: "Metal",
+  gl: "OpenGL",
+};
+
+/**
+ * 受け手が描いている API と GPU の名前 (T0860)。報告に API が無ければ `null` (出さない)。GPU の名前が空 (ブラウザが伏せた)・
+ * 無いときは `adapter` が `null`。
+ */
+export function rendererGpu(
+  load: RendererLoad,
+): { backend: string; adapter: string | null } | null {
+  if (load.backend === undefined || load.backend === null || load.backend === "") return null;
+  const adapter = load.adapter === undefined || load.adapter === "" ? null : load.adapter;
+  return { backend: BACKEND_NAMES[load.backend] ?? load.backend, adapter };
+}

@@ -1,13 +1,14 @@
 <!--
   刻みの速さと負荷 (docs/studio.md#負荷の表示)。操作ウィンドウだけに出す (出力ウィンドウには何も重ねない)。
   指揮役の 1 刻みの時間・実際の刻みの速さと揺れ・出力ごとの描画の回数と時間と捨てたフレームを並べ、遅れていれば注意を出す。
+  使う GPU (自動・省電力・高性能) を選び、受け手ごとに描いている API と GPU の名前を出す (T0860、docs/studio.md#使う-gpu)。
 -->
 <script lang="ts">
 import { formatNumber } from "@ugoe/i18n";
-import { Notice, SegmentedControl } from "@ugoe/ui";
-import type { StatusMessage } from "./lib/host";
+import { Button, Notice, SegmentedControl } from "@ugoe/ui";
+import type { GpuPreference, GpuView, RendererLoad, StatusMessage } from "./lib/host";
 import { t } from "./lib/i18n";
-import { type LoadWarning, loadWarnings } from "./lib/load";
+import { type LoadWarning, loadWarnings, rendererGpu } from "./lib/load";
 import { receiverName } from "./lib/receivers";
 import { TICK_RATES, type TickRate } from "./lib/settings";
 
@@ -16,11 +17,39 @@ interface Props {
   tickRate: TickRate;
   /** 指揮役からの最新の値と負荷 (モデルを開くまでは `null`)。 */
   status: StatusMessage | null;
+  /** 使う GPU の様子 (取れるまでは `null`)。 */
+  gpu: GpuView | null;
   disabled?: boolean;
   onTickRate: (rate: TickRate) => void;
+  onGpuPreference: (preference: GpuPreference) => void;
+  /** Windows の「グラフィックの設定」を開く。 */
+  onGraphicsSettings: () => void;
 }
 
-let { tickRate, status, disabled = false, onTickRate }: Props = $props();
+let {
+  tickRate,
+  status,
+  gpu,
+  disabled = false,
+  onTickRate,
+  onGpuPreference,
+  onGraphicsSettings,
+}: Props = $props();
+
+const GPU_PREFERENCES: readonly GpuPreference[] = ["auto", "lowPower", "highPerformance"];
+
+function gpuLabel(preference: GpuPreference): string {
+  switch (preference) {
+    case "auto":
+      return t("load.gpuAuto");
+    case "lowPower":
+      return t("load.gpuLowPower");
+    case "highPerformance":
+      return t("load.gpuHighPerformance");
+  }
+}
+
+const gpuOptions = $derived(GPU_PREFERENCES.map((p) => ({ value: p, label: gpuLabel(p) })));
 
 const rateOptions = $derived(
   TICK_RATES.map((rate) => ({
@@ -72,6 +101,21 @@ function changeRate(value: string) {
   const rate = TICK_RATES.find((r) => String(r) === value);
   if (rate !== undefined) onTickRate(rate);
 }
+
+function changeGpu(value: string) {
+  const preference = GPU_PREFERENCES.find((p) => p === value);
+  if (preference !== undefined) onGpuPreference(preference);
+}
+
+/** 受け手が描いている API と GPU の名前 (報告に無ければ `null`)。 */
+function gpuText(r: RendererLoad): string | null {
+  const used = rendererGpu(r);
+  if (used === null) return null;
+  return t("load.rendererGpu", {
+    backend: used.backend,
+    adapter: used.adapter ?? t("load.adapterHidden"),
+  });
+}
 </script>
 
 <div class="load">
@@ -83,6 +127,26 @@ function changeRate(value: string) {
     onchange={changeRate}
   />
   <p class="load__hint">{t("load.tickRateHint")}</p>
+
+  <SegmentedControl
+    label={t("load.gpu")}
+    value={gpu?.preference ?? "auto"}
+    options={gpuOptions}
+    disabled={disabled || gpu === null}
+    onchange={changeGpu}
+  />
+  <p class="load__hint">{t("load.gpuHint")}</p>
+  {#if gpu !== null && gpu.preference !== gpu.launched}
+    <Notice tone="info">
+      {t("load.gpuRestart", { preference: gpuLabel(gpu.preference), launched: gpuLabel(gpu.launched) })}
+    </Notice>
+  {/if}
+  {#if gpu?.graphicsSettings}
+    <p class="load__hint">{t("load.gpuWindowsHint")}</p>
+    <div>
+      <Button small {disabled} onclick={onGraphicsSettings}>{t("load.graphicsSettings")}</Button>
+    </div>
+  {/if}
 
   {#if status === null}
     <p class="load__hint">{t("load.empty")}</p>
@@ -110,6 +174,9 @@ function changeRate(value: string) {
                 max: ms(r.renderMaxMs),
                 count: r.dropped,
               })}
+          {#if gpuText(r) !== null}
+            <span class="load__gpu">{gpuText(r)}</span>
+          {/if}
         </dd>
       {/each}
     </dl>
@@ -140,6 +207,13 @@ function changeRate(value: string) {
 
   .load__facts dd {
     margin: 0;
+  }
+
+  .load__gpu {
+    display: block;
+    color: var(--ugoe-color-text-muted);
+    font-size: var(--ugoe-font-size-sm);
+    overflow-wrap: anywhere;
   }
 
   .load__hint {

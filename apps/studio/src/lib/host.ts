@@ -1,7 +1,13 @@
 // バックエンド (src-tauri/src/lib.rs) との口。Tauri の外 (ヘッドレスのブラウザでの確認) では
 // `window.__UGOE_STUDIO_HOST__` に置いたものを使う (README.md#ヘッドレスのブラウザで確かめる)。
 import type { TrackingFrame } from "@ugoe/face-tracking";
-import type { LightingSettings, MotionPriority, PoseGroupInfo, SceneMessage } from "@ugoe/player";
+import type {
+  LightingSettings,
+  MotionPriority,
+  PoseGroupInfo,
+  PowerPreference,
+  SceneMessage,
+} from "@ugoe/player";
 import type { ApiPermission, ApiView } from "./api";
 import { safeChannelHandler } from "./channel";
 import type { CommandMessage } from "./commandMessage";
@@ -55,6 +61,26 @@ export interface RenderStats {
   renderMaxMs: number;
   /** 溢れて捨てたフレームの数 (受け手を作ってからの合計)。 */
   dropped: number;
+  /**
+   * 描画に使っている API (WebView は `webgpu`・`webgl2`、仮想カメラは wgpu のバックエンドの `vulkan`・`dx12`・`metal`・`gl`)。
+   * 分からなければ `null` か省く (T0860)。
+   */
+  backend?: string | null;
+  /** 使っている GPU の名前 (ブラウザが伏せると空文字)。分からなければ `null` か省く (T0860)。 */
+  adapter?: string | null;
+}
+
+/** 使う GPU の希望 (gpu.rs の `GpuPreference`。T0860、docs/studio.md#使う-gpu)。 */
+export type GpuPreference = "auto" | "lowPower" | "highPerformance";
+
+/** 使う GPU の様子 (gpu.rs の `GpuView`)。 */
+export interface GpuView {
+  /** 今の希望 (仮想カメラは次に始めるときにこれを使う)。 */
+  preference: GpuPreference;
+  /** 起動したときの希望 (出力ウィンドウが使っている。今の希望と違えば、起動し直すと効く)。 */
+  launched: GpuPreference;
+  /** OS の「グラフィックの設定」を開けるか (Windows だけ)。 */
+  graphicsSettings: boolean;
 }
 
 /** 出力ごとの描画の負荷 (lib.rs の `RendererLoad`)。 */
@@ -228,6 +254,12 @@ export interface StudioHost {
   tickRate(): Promise<number>;
   /** 刻みの速さを選ぶ (プロファイルに持つ)。選べない値なら例外。 */
   setTickRate(rate: number): Promise<number>;
+  /** 使う GPU の様子 (T0860)。 */
+  gpuSettings(): Promise<GpuView>;
+  /** 使う GPU を選ぶ (機械ごとの設定ファイルに覚える。出力ウィンドウは次の起動から、仮想カメラは次に始めるときから)。 */
+  setGpuPreference(preference: GpuPreference): Promise<GpuView>;
+  /** Windows の「グラフィックの設定」を開く (ほかの OS では例外)。 */
+  openGraphicsSettings(): Promise<void>;
   /** OS の言語 (BCP 47)。取れなければ `null`。 */
   systemLocale(): Promise<string | null>;
   // 入力 (T0803)
@@ -306,6 +338,8 @@ export interface StudioHost {
   startDragging(): Promise<void>;
   /** 描画の負荷を報告する (操作ウィンドウに出す)。 */
   reportRenderStats(stats: RenderStats): Promise<void>;
+  /** 出力ウィンドウが `WebPuppet.create` に渡す GPU の電力の希望 (起動したときの「使う GPU」。T0860)。 */
+  outputPowerPreference(): Promise<PowerPreference>;
   /** 今のシーンのファイルを読めなかったことを報告する (操作ウィンドウに出す)。 */
   reportLoadFailure(failure: LoadFailure): Promise<void>;
 }
@@ -353,6 +387,9 @@ async function tauriHost(): Promise<StudioHost> {
     setOutputSize: (width, height) => invoke("set_output_size", { width, height }),
     tickRate: () => invoke("tick_rate"),
     setTickRate: (rate) => invoke("set_tick_rate", { rate }),
+    gpuSettings: () => invoke("gpu_settings"),
+    setGpuPreference: (preference) => invoke("set_gpu_preference", { preference }),
+    openGraphicsSettings: () => invoke("open_graphics_settings"),
     async systemLocale() {
       const { locale } = await import("@tauri-apps/plugin-os");
       return locale();
@@ -406,6 +443,7 @@ async function tauriHost(): Promise<StudioHost> {
       await getCurrentWindow().startDragging();
     },
     reportRenderStats: (stats) => invoke("report_render_stats", { stats }),
+    outputPowerPreference: () => invoke("output_power_preference"),
     reportLoadFailure: (failure) => invoke("report_load_failure", { failure }),
   };
 }

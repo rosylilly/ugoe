@@ -2198,7 +2198,7 @@ fn the_browser_source_serves_the_scene_and_streams_frames() {
         assert!(std::time::Instant::now() < deadline, "the stats arrive");
         std::thread::sleep(Duration::from_millis(10));
     }
-    let reported = lock(&studio.renders)[source::LABEL].stats;
+    let reported = lock(&studio.renders)[source::LABEL].stats.clone();
     assert_eq!((reported.fps, reported.refresh_fps), (29.5, Some(59.5)));
     // 読めなかったことも返す (今のシーンのものだけ。操作ウィンドウに出る。T0825)。
     let revision = next["revision"].as_u64().unwrap();

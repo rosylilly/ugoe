@@ -71,6 +71,11 @@ if let Some(frame) = resident.poll(&gpu, Wait::No)? { /* frame.bytes は NV12 */
 ## GPU
 
 - サーフェス無しでアダプタを要求する。`Gpu::new(Some("gl"))` のようにバックエンドを選べる (省略時は `WGPU_BACKEND`)。
+- **電力の希望 (T0860):** `Gpu::with_power_preference(backend, Some(PowerPreference::HighPerformance))` のように、アダプタを選ぶときの
+  希望 (`PowerPreference`。wgpu の型の再輸出) を渡せる。`LowPower` は内蔵の GPU を、`HighPerformance` は外付けの GPU を先に選ぶ
+  (wgpu がアダプタを種類で並べ替える。その種類が無ければほかの GPU)。渡した希望は環境変数 `WGPU_POWER_PREF` より優先し、`None` (と `Gpu::new`)
+  なら `WGPU_POWER_PREF` に従う (それも無ければ希望なしで、列挙の順の先頭)。選ばれたアダプタは `Gpu::adapter_info` (名前とバックエンド)。
+  スタジオの仮想カメラが、設定の「使う GPU」で使う ([docs/studio.md](../../docs/studio.md#使う-gpu))。
   GPU の無い環境では Mesa の lavapipe (Vulkan) か llvmpipe (GL) を使う。
 - **破棄しない:** WSL2 の dzn (Vulkan on D3D12) はインスタンスやデバイスの破棄時に SIGSEGV を起こすことがあるので、
   CLI は描いたあと `Gpu::leak` で手放してすぐ終了し、MCP サーバは 1 つの `Gpu` を使い回して破棄しない。

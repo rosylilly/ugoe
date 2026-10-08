@@ -74,6 +74,7 @@ macOS の上で `just app::build PLATFORM=macos` で作ります (署名なし�
 | OBS Studio (30 系) | S14・S15・S29・S30 |
 | Windows 11 の「カメラ」アプリ。あれば Teams・Zoom・Chrome (Google Meet) | S18〜S20 |
 | WebSocket のクライアント (Stream Deck のプラグイン・`websocat` など) | S25・S31 |
+| GPU を 2 つ (内蔵と外付け) 持つノート PC | S33 |
 
 ## 最初の一巡 (Windows、30 分)
 
@@ -403,6 +404,20 @@ macOS の上で `just app::build PLATFORM=macos` で作ります (署名なし�
   動きはこれまでどおり滑らかで、止まった画が古いままにならない。
 - 元: T0857
 - 結果: W 未 ・ M 未
+
+#### S33 「使う GPU」で出力ウィンドウと仮想カメラの GPU を選べる [B: WML]
+
+- 手順: GPU を 2 つ持つノート PC で、モデルのあるシーンを出す。「フレームレートと負荷」の「使う GPU」を「高性能」にし、スタジオを起動し直す。
+  仮想カメラを始め、Windows の「カメラ」アプリ (Linux は `ffplay /dev/video10` など) で映す。「フレームレートと負荷」の出力ウィンドウと仮想カメラの行の
+  GPU の名前と、タスクマネージャーの「詳細」の「GPU エンジン」の列 (`msedgewebview2.exe` と `ugoe-studio.exe`) を見る。次に「省電力」にして、
+  起動し直して同じことを見る。仮想カメラが選んだ GPU を使わなければ、「グラフィックの設定を開く」の手順 ([manual の使う GPU](manual/studio.md#使う-gpu)) も試す。
+  Linux は「自動」のまま `DRI_PRIME=1` (NVIDIA は `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia`) を付けて起動したときも見る。
+  macOS は GPU を 2 つ持つ Intel の Mac があれば。
+- 期待: 「高性能」では、出力ウィンドウと仮想カメラの行に外付けの GPU の名前が出て、「GPU エンジン」も外付けの GPU になる。「省電力」では内蔵の GPU。
+  選び直したときに「起動し直すと…」の知らせが出て、起動し直すと消える。選んだものはスタジオを閉じても残る。違う GPU になるなら、どの受け手が
+  どの GPU かと OS・GPU の型を書く ([studio.md の使う GPU](studio.md#使う-gpu))。
+- 元: T0860
+- 結果: W 未 ・ M 未 ・ L 未
 
 ### V. ビューア
 

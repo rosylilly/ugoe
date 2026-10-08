@@ -825,7 +825,7 @@ OBS の中で大きさや位置を変えやすい。安全性の規則は [ADR 0
   | `frames` | WebSocket。つないだら今の `scene` を最初に送り、以後は出力ウィンドウと同じ順で `scene` (テキスト) と `frame` (バイナリ) を送る |
   | `scene/<revision>/model`・`scene/<revision>/module/<index>`・`scene/<revision>/background` | 今のシーンのファイル (今のシーンでなければ `404`。任意のパスは読ませない) |
 
-- **読むだけ:** ページはファイルとフレームを受け取るだけで、操作はできない。ページから送れるのは描画の負荷 (`{"kind":"renderStats",…}`。
+- **読むだけ:** ページはファイルとフレームを受け取るだけで、操作はできない。ページから送れるのは描画の負荷 (`{"kind":"renderStats",…}`。描いている API と GPU の名前も載せる。
   操作ウィンドウの「フレームレートと負荷」に「ブラウザソース」(2 つ目からは「ブラウザソース (2)」) として出る) と、
   今のシーンのファイルを読めなかったこと (`{"kind":"loadFailure",…}`。[受け手が読めなかったとき](#受け手が読めなかったとき)) だけで、バイナリを送ると閉じる。
 - **ブラウザからの悪用を防ぐ:** 経路に依らない検査 (`Host`・転送ヘッダ・`Origin`) は操作 API と同じ。ページの WebSocket の `Origin` は
@@ -930,6 +930,8 @@ OS の部品の扱いと `unsafe` の例外は [ADR 0028 の 8.](adr/0028-studio
 - 色の変換は BT.709 の限定範囲 (Y は 16〜235)。描画先の値をそのまま R'G'B' とみなし、色差は 2×2 (NV12)・横 2 画素 (YUY2) の平均から作る。
   計算シェーダの無い GPU では CPU で同じ式で変換する (`crates/ugoe-headless/src/yuv.rs`)。
 - 止めている間は、スレッドも受け手も作らない (GPU を使わない)。GPU の機器は一度作ったら破棄しない (`crates/ugoe-headless/README.md#gpu`)。
+- GPU は始めるときの「使う GPU」の設定の希望で作る ([使う GPU](#使う-gpu)。T0860)。設定が変わっていれば、次に始めるときに前の GPU を
+  (破棄せずに) 手放して作り直す。同じ希望なら作り直さない (手放す回数が増えないように。`virtual_camera.rs` の `GpuCell`)。
 - **GPU が止まったとき (T0832):** 毎フレームの描画と読み戻しは待たないのでスレッドは止まらないが、GPU が止まると読み戻しが来なくなり、
   画が止まる。そこで次のように扱う (`virtual_camera.rs` の `Stall`・`drain`・`GpuCell`)。
   - 動いている間: 読み戻しを待っているのに `STALL_LIMIT` (10 秒) 来なければ、GPU が止まったとみなして仮想カメラを止め、
@@ -1118,11 +1120,13 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 
 | OS (WebView) | 手段 | 効くこと |
 | --- | --- | --- |
-| Windows (WebView2) | `tauri.conf.json` の `additionalBrowserArgs` に `--disable-background-timer-throttling`・`--disable-backgrounding-occluded-windows`・`--disable-renderer-backgrounding` と、`--disable-features` に `CalculateNativeWinOcclusion`・`IntensiveWakeUpThrottling` を足す (wry の既定の `msWebOOUI,msPdfOOUI,msSmartScreenProtection` も書き写す) | ほかのウィンドウの裏に隠れても「見えない」とみなさない。タイマーを絞らない |
+| Windows (WebView2) | WebView2 の起動の引数 (`apps/studio/src-tauri/src/gpu.rs` の `BROWSER_ARGS`) に `--disable-background-timer-throttling`・`--disable-backgrounding-occluded-windows`・`--disable-renderer-backgrounding` と、`--disable-features` に `CalculateNativeWinOcclusion`・`IntensiveWakeUpThrottling` を足す (wry の既定の `msWebOOUI,msPdfOOUI,msSmartScreenProtection` も書き写す) | ほかのウィンドウの裏に隠れても「見えない」とみなさない。タイマーを絞らない |
 | macOS (WKWebView) | `backgroundThrottling: "disabled"` (macOS 14 以降。`inactiveSchedulingPolicy` を `none` にする) | 隠れても最小化されても絞らない |
 | Linux (WebKitGTK) | 切る口が無い | 最小化・隠すとページが「見えない」になり、`requestAnimationFrame` が止まる |
 
-- WebView2 は、同じデータの場所を使う WebView の引数が食い違うと作れないので、2 つのウィンドウに同じ引数を書く (`lib.rs` のテストで確かめる)。
+- WebView2 は、同じデータの場所を使う WebView の引数が食い違うと作れないので、2 つのウィンドウに同じ引数を渡す (`lib.rs` のテストで確かめる)。
+  引数は「使う GPU」の設定で変わる ([使う GPU](#使う-gpu)) ので、2 つのウィンドウは `tauri.conf.json` に `create: false` で書き
+  (`backgroundThrottling` などの見た目はそこに書く)、起動したときに設定を読んでから、同じ引数を足してコードで作る (`lib.rs` の `window_configs`)。
 - **受け手の状態は描画に頼らない:** 出力ウィンドウは、届いたフレームを届いたときに `follow` まで適用し、`requestAnimationFrame` では (変わっていれば) 描くだけにする
   (`@ugoe/player` の受け手のモード)。Tauri の `Channel` のメッセージは、ページが隠れていても届いて JS が動くので、どの OS でも物理は止まらない。
   描画が止まっている間 (Linux の最小化・Windows で `hide` した出力ウィンドウ) は画が古いままになるが、表示に戻ったときは最新の形から描く。
@@ -1188,6 +1192,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | 1 刻みの時間 | 指揮役の `tick` (更新とフレームの送り出し) | 刻みの間隔の半分を超える |
 | 実際の刻みの速さと最も長い間隔 | 刻みのスレッドが直近の約 1 秒を測る | 速さが設定の 95% を下回る・間隔が設定の 2 倍を超える |
 | 出力ごとの描画の回数・1 回の時間 (平均と最大)・捨てたフレーム | 出力ウィンドウが約 1 秒ごとに `report_render_stats` で送る (描く機会の回数も送る) | 1 回の時間が刻みの間隔の半分を超える・描く機会の回数が刻みの速さの 95% を下回る・捨てたフレームがある |
+| 出力ごとの描画の API と GPU の名前 (T0860) | 同じ報告に載せる (出力ウィンドウ・ブラウザソースは `WebPuppet.backend()`・`adapter_name()`、仮想カメラは `Gpu::adapter_info`) | 出さない (ブラウザが GPU の名前を伏せると「伏せられています」) |
 | 描いていない | 出力からの報告が 2 秒途絶えた (隠れている・最小化された) | いつも |
 
 - 1 回の描画の時間は、受け手がフレームを適用して `render()` を呼ぶまでの CPU の時間 (GPU の実行の時間は含まない)。
@@ -1199,6 +1204,47 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
   刻みの速さより低いとき (60 Hz の画面で刻み 120) と、描画が重くて画面の更新が遅れるときに下がるので、注意が出るのは今までと同じ場合になる。
   仮想カメラは描く機会ごとに描くので、描いた回数 (`fps`) で判断する。
 - 判断は `apps/studio/src/lib/load.ts`、表示は `apps/studio/src/LoadPanel.svelte`。
+- API と GPU の名前は文字列なので、長すぎるもの (256 バイトを超える。ブラウザソースのページから届く) は報告ごと捨てる (`render_stats.invalid`)。
+
+## 使う GPU
+
+ノート PC などで、外付けの GPU (高性能) と内蔵の GPU (省電力) のどちらで描くかを選ぶ (T0860。利用者の要望 2026-10-08)。
+「フレームレートと負荷」の「使う GPU」で、**自動** (希望なし。今までと同じ)・**省電力**・**高性能** の 3 つから選ぶ。
+選んだとおりになったかは、同じパネルの受け手ごとの行に出る API と GPU の名前 ([負荷の表示](#負荷の表示)) で確かめる。
+
+スタジオで GPU を使うのは 3 か所で、選び方がそれぞれ違う:
+
+| 受け手 | どこで描くか | 選び方 | いつ効くか |
+| --- | --- | --- | --- |
+| 出力ウィンドウ | WebView の GPU のプロセス (Windows は WebView2 の `msedgewebview2.exe`、macOS は WebKit の GPU のプロセス、Linux は WebKitGTK のプロセス) の WebGPU か WebGL2 | `WebPuppet.create` の `powerPreference` (T0499。GPU を失ったときの作り直しでも同じ値)。Windows の「高性能」では、さらに WebView2 を `--force-high-performance-gpu` で起動する | 次にスタジオを起動したとき |
+| 仮想カメラ | スタジオのプロセスのネイティブの wgpu (`ugoe-headless` の `Gpu::with_power_preference`) | wgpu の `PowerPreference` (DX12・Vulkan・Metal で効く)。「自動」は今までどおり環境変数 `WGPU_POWER_PREF` に従う | 次に仮想カメラを始めたとき |
+| ブラウザソース | OBS のプロセス (CEF) | スタジオからは選べない (OBS の設定と OS の設定) | — |
+
+- **設定の置き場所:** 機械ごとの設定ファイル `studio-settings.json` (アプリの設定の場所。`{"format":"ugoe-studio-settings","version":1,"gpu":"highPerformance"}`)。
+  GPU はその機械のものなので、プロファイルに入れない (プロファイルを別の機械に持って行ってもそのまま使える)。無い・読めない・知らない値なら「自動」。
+  書けなければ選び直しを取り消して `gpu_settings.save_failed` を出す (`apps/studio/src-tauri/src/gpu.rs`)。
+- **起動し直しが要る:** WebView2 の引数は起動のときにしか渡せないので、出力ウィンドウは起動したときの値 (`launched`) で描き続ける。
+  選び直して起動したときの値と違えば、パネルに「起動し直すと効く」を出す。仮想カメラは選び直した値を次に始めるときに使う。
+- **Windows の WebView2 (判断 1。利用者の決定 2026-10-08):** Windows の Chromium は `powerPreference` を見ず、ブラウザ全体で 1 つのアダプタ
+  (ノート PC ではたいてい内蔵) を使う。アプリごとの OS のグラフィックの設定は実行ファイルごとに効くが、WebView2 は `ugoe-studio.exe` ではなく
+  WebView2 Runtime の `msedgewebview2.exe` (ほかの WebView2 のアプリと同じ実行ファイル) の GPU のプロセスで描く。そこで「高性能」のときだけ
+  WebView2 を `--force-high-performance-gpu` (Chrome の `chrome://flags/#force-high-performance-gpu` と同じスイッチ) で起動する。
+  引数は WebView2 の環境 (データの場所) ごとなので、スタジオの WebView だけに効く。「省電力」は WebView2 の既定 (たいてい内蔵) に任せる。
+  仮想カメラ (`ugoe-studio.exe`) には Windows のアプリごとの設定も効くので、パネルに Windows の「グラフィックの設定」
+  (`ms-settings:display-advancedgraphics`) を開くボタンと手順 (ugoe-studio.exe を足して GPU を選ぶ) を出す。
+  **OS の設定は書き換えない** (ほかの案は、レジストリ `HKCU\Software\Microsoft\DirectX\UserGpuPreferences` に `ugoe-studio.exe` の希望を書く
+  (利用者が Windows の設定で決めたことを上書きしうるうえ、出力ウィンドウには効かない)、出力ウィンドウは選ばずに仮想カメラだけを選ぶ、だった)。
+- **Linux と macOS (判断 3。推奨のまま):** 文書だけにする。
+  - Linux: WebKitGTK が使う GPU は環境変数 (`DRI_PRIME`・NVIDIA の `__NV_PRIME_RENDER_OFFLOAD` と `__GLX_VENDOR_LIBRARY_NAME`) で決まり、
+    起動の後で変えるには自分を起動し直すか `std::env::set_var` (edition 2024 では `unsafe`) が要るので、出力ウィンドウの GPU はスタジオからは選ばない
+    (「自動」以外でも `powerPreference` は渡すが、効くかは WebKitGTK 次第)。環境変数を付けて起動する手順をマニュアルに書く
+    ([manual/studio.md](manual/studio.md#使う-gpu))。仮想カメラは wgpu の `PowerPreference` で選べる (Vulkan はどの GPU も列挙する)。
+  - macOS: Apple Silicon は GPU が 1 つなので差は無い。2 つの GPU を持つ Intel の Mac では、WebKit が `powerPreference` を見るはずで (未確認)、
+    ネイティブの wgpu (Metal) は `PowerPreference` で低電力の機器を選べる。`Info.plist` の `NSSupportsAutomaticGraphicsSwitching` は書かない
+    (Intel の Mac だけの話。要望があれば別のタスク)。
+- wgpu は `PowerPreference::None` ではアダプタを列挙の順のまま選び、`LowPower` / `HighPerformance` では内蔵 / 外付けを先に並べ替える
+  (wgpu-core 30 の `instance.rs`)。Windows の DXGI の列挙の先頭は、Windows のアプリごとの設定で選んだ GPU になる見込み (未確認)。
+- 効いたかは実機でしか確かめられない ([実機で確かめていないこと](#実機で確かめていないこと))。
 
 ## OBS でのウィンドウの取り込み
 
@@ -1259,6 +1305,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | ホットキー (T0803) | OS へのグローバルなショートカットの登録と、スタジオが前面に無いときに効くこと (Windows・macOS・Linux の X11)、ほかのアプリが使うキーの登録の失敗、Wayland の知らせ | [ホットキー](#ホットキー) |
 | 操作 API (T0805) | 実際のクライアント (Stream Deck など) からの接続、Windows と macOS での待ち受け (`::1`)・ファイアウォールの知らせ | [外部 API](#外部-api) |
 | 承認の OS の側の知らせ (T0856) | 操作ウィンドウを最小化・裏に置いたまま承認を待つクライアントが現れると、Windows のタスクバーが点滅し、macOS の Dock のアイコンが跳ね、Linux の X11 でパネルに「注意を要する」の印が出ること。前に出すと止まること。Wayland (GNOME・KDE) で何か出るか (GTK 3 の urgency hint は X11 のものなので、何も出ない見込み) | [外部 API](#外部-api) |
+| 使う GPU (T0860) | 2 つの GPU を持つ Windows のノート PC で、「高性能」で出力ウィンドウ (`--force-high-performance-gpu`) と仮想カメラが外付けの GPU を使い、「省電力」で内蔵の GPU を使うこと (タスクマネージャーの「GPU エンジン」の列と、「フレームレートと負荷」の GPU の名前)。Linux の PRIME (`DRI_PRIME`・NVIDIA のオフロード) と、Intel の Mac での切り替え | [使う GPU](#使う-gpu) |
 | 仮想カメラ (T0807・T0809) | Windows 11 の登録と映り方、Linux の v4l2loopback、macOS の Camera Extension (Swift のコンパイルを含む) | [Windows](#windows-media-foundation)・[Linux](#linux-v4l2loopback)・[macOS](#macos-camera-extension) の「未確認」 |
 
 ## 実装のタスク

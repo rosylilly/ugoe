@@ -17,6 +17,9 @@ use ugoe_runtime::ModelInstance;
 use crate::image::Rgba8;
 use crate::{Error, Shading, bail};
 
+/// アダプタを選ぶときの電力の希望 ([`Gpu::with_power_preference`]。wgpu の型)。
+pub use wgpu::PowerPreference;
+
 /// 描画先の形式。レンダラの前提 (リニア化しない) に合わせて sRGB 形式にしない。
 pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -68,8 +71,20 @@ impl Gpu {
     /// サーフェス無しでアダプタとデバイスを作る。
     ///
     /// `backend` (例: `vulkan`、`gl`、`vulkan,gl`) を省略すると環境変数 `WGPU_BACKEND` に従い、
-    /// それも無ければ wgpu の既定。`WGPU_POWER_PREF` も参照する。
+    /// それも無ければ wgpu の既定。電力の希望は環境変数 `WGPU_POWER_PREF` に従う ([`Gpu::with_power_preference`] の `None`)。
     pub fn new(backend: Option<&str>) -> Result<Self, Error> {
+        Self::with_power_preference(backend, None)
+    }
+
+    /// [`Gpu::new`] と同じだが、アダプタを選ぶときの電力の希望 (`power`) を渡す。
+    ///
+    /// `None` なら環境変数 `WGPU_POWER_PREF` に従い、それも無ければ希望なし (列挙の順の先頭)。`Some` なら環境変数より優先する。
+    /// `LowPower` は内蔵の GPU を、`HighPerformance` は外付けの GPU を先に選ぶ (wgpu が種類で並べ替える。
+    /// その種類が無ければほかの GPU を選ぶ)。
+    pub fn with_power_preference(
+        backend: Option<&str>,
+        power: Option<PowerPreference>,
+    ) -> Result<Self, Error> {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
         if let Some(backend) = backend {
             desc.backends = wgpu::Backends::from_comma_list(backend);
@@ -83,7 +98,7 @@ impl Gpu {
         let instance = wgpu::Instance::new(desc);
         let adapter =
             match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::from_env().unwrap_or_default(),
+                power_preference: chosen_power(power, PowerPreference::from_env),
                 ..Default::default()
             })) {
                 Ok(adapter) => adapter,
@@ -412,6 +427,14 @@ fn wait_with<T>(
     }
 }
 
+/// 渡された電力の希望 (`power`) を、無ければ環境変数 (`env`) を、それも無ければ希望なしを使う。
+fn chosen_power(
+    power: Option<PowerPreference>,
+    env: impl FnOnce() -> Option<PowerPreference>,
+) -> PowerPreference {
+    power.or_else(env).unwrap_or_default()
+}
+
 pub(crate) fn gpu_error<E: std::fmt::Display>(context: &'static str) -> impl FnOnce(E) -> Error {
     move |e| Error::Gpu {
         context,
@@ -429,6 +452,26 @@ mod tests {
         let err = Gpu::new(Some("nope")).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)), "{err:?}");
         assert!(err.to_string().contains("unknown backend `nope`"), "{err}");
+    }
+
+    /// 渡した希望は環境変数より優先し、渡さなければ環境変数に従う (GPU が無くても確かめられる)。
+    #[test]
+    fn a_given_power_preference_overrides_the_environment() {
+        let env = || Some(PowerPreference::LowPower);
+        assert_eq!(
+            chosen_power(Some(PowerPreference::HighPerformance), env),
+            PowerPreference::HighPerformance
+        );
+        assert_eq!(chosen_power(None, env), PowerPreference::LowPower);
+        assert_eq!(chosen_power(None, || None), PowerPreference::None);
+    }
+
+    /// 知らないバックエンドの名前は、希望を渡しても同じくエラーにする。
+    #[test]
+    fn rejects_unknown_backends_with_a_power_preference() {
+        let err =
+            Gpu::with_power_preference(Some("nope"), Some(PowerPreference::LowPower)).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err:?}");
     }
 
     /// GPU が終わらなければ、上限を超えたところでエラーを返す (止まり続けない)。1 回の待ちは刻みを超えない。

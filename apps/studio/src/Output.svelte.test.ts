@@ -2,12 +2,12 @@
 // 受け手 (Output.svelte) が今のシーンのファイルを読めなかったことを返すか (T0825、docs/studio.md#受け手が読めなかったとき) と、
 // シーンの通知を順に処理して最後のものだけを当てるか (T0826、docs/studio.md#シーンの切り替えと受け手)。
 // Player は偽物に置き換え、読めるかどうかはバイト列の先頭 (0 なら読めない) で決める。
-import type { ModelFile } from "@ugoe/player";
+import type { FollowRenderStats, ModelFile } from "@ugoe/player";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeImage } from "./lib/decodeImage";
 import type { OutputFeed } from "./lib/feed";
-import type { LoadFailure, StreamMessage, StudioScene } from "./lib/host";
+import type { LoadFailure, RenderStats, StreamMessage, StudioScene } from "./lib/host";
 import Output from "./Output.svelte";
 
 const players = vi.hoisted(() => [] as unknown[]);
@@ -27,11 +27,21 @@ vi.mock("@ugoe/player", async (importOriginal) => {
     lightings = 0;
     /** 適用した順 (`follow:<版>`・`continue:<版>`・`pose:<パーツ>`。フェードせずに表示させたものは `pose!:<パーツ>`)。 */
     calls: string[] = [];
+    powerPreference = "default";
+    /** `attach` したときの `powerPreference` (T0860)。 */
+    attachedWith: string[] = [];
+    backend = "webgpu";
+    adapterName = "Fake GPU";
+    onRendered: ((stats: FollowRenderStats) => void) | null = null;
     constructor() {
       players.push(this);
     }
-    startFollowing() {}
-    async attach() {}
+    startFollowing(onRendered: (stats: FollowRenderStats) => void) {
+      this.onRendered = onRendered;
+    }
+    async attach() {
+      this.attachedWith.push(this.powerPreference);
+    }
     setBackground() {}
     pushFrame() {}
     async load(file: ModelFile) {
@@ -91,6 +101,8 @@ interface Fake {
   lightings: number;
   modules: { name: string }[];
   calls: string[];
+  attachedWith: string[];
+  onRendered: ((stats: FollowRenderStats) => void) | null;
 }
 
 const cleanups: (() => void)[] = [];
@@ -122,12 +134,16 @@ const GOOD = new Uint8Array([1]);
 const BROKEN = new Uint8Array([0]);
 
 /** 偽の配信の口。ファイルは `files` から返し (無ければ取れない)、報告を `failures` に溜める。 */
-function receiver(files: {
-  model?: (revision: number) => Promise<Uint8Array>;
-  module?: (revision: number, index: number) => Promise<Uint8Array>;
-  background?: (revision: number) => Promise<Uint8Array>;
-}) {
+function receiver(
+  files: {
+    model?: (revision: number) => Promise<Uint8Array>;
+    module?: (revision: number, index: number) => Promise<Uint8Array>;
+    background?: (revision: number) => Promise<Uint8Array>;
+  },
+  extra: Partial<OutputFeed> = {},
+) {
   const failures: LoadFailure[] = [];
+  const stats: RenderStats[] = [];
   let send: ((message: StreamMessage) => void) | null = null;
   const missing = () => Promise.reject(new Error("not the current scene"));
   const host: OutputFeed = {
@@ -137,10 +153,13 @@ function receiver(files: {
     sceneModel: files.model ?? missing,
     sceneModule: files.module ?? missing,
     sceneBackground: files.background ?? missing,
-    async reportRenderStats() {},
+    async reportRenderStats(s) {
+      stats.push(s);
+    },
     async reportLoadFailure(failure) {
       failures.push(failure);
     },
+    ...extra,
   };
   const target = document.createElement("div");
   document.body.append(target);
@@ -157,6 +176,7 @@ function receiver(files: {
   const player = players.at(-1) as Fake;
   return {
     failures,
+    stats,
     player,
     /** 出力の要素 (背景を描く)。 */
     output: () => target.querySelector<HTMLDivElement>(".output"),
@@ -178,6 +198,28 @@ function receiver(files: {
 async function settle() {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 }
+
+describe("Output GPU", () => {
+  it("draws with the power preference of the output window and reports the GPU", async () => {
+    const r = receiver({}, { outputPowerPreference: async () => "high-performance" });
+    await vi.waitFor(() => expect(r.player.attachedWith).toEqual(["high-performance"]));
+    // 約 1 秒の描画をまとめた報告に、描いている API と GPU の名前を載せる
+    r.player.onRendered?.({ at: 0, drawn: true, renderMs: 1, dropped: 0 });
+    r.player.onRendered?.({ at: 1000, drawn: true, renderMs: 1, dropped: 0 });
+    await vi.waitFor(() => expect(r.stats).toHaveLength(1));
+    expect(r.stats[0]).toMatchObject({ backend: "webgpu", adapter: "Fake GPU" });
+  });
+
+  it("draws without a preference when the feed has none (browser source)", async () => {
+    const r = receiver({});
+    await vi.waitFor(() => expect(r.player.attachedWith).toEqual(["default"]));
+  });
+
+  it("draws without a preference when it cannot be read", async () => {
+    const r = receiver({}, { outputPowerPreference: () => Promise.reject(new Error("no")) });
+    await vi.waitFor(() => expect(r.player.attachedWith).toEqual(["default"]));
+  });
+});
 
 describe("Output load failures", () => {
   it("reports a model that the current scene cannot get or read", async () => {

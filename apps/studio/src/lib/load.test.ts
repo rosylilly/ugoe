@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RendererLoad, StatusMessage } from "./host";
-import { loadWarnings, periodMs } from "./load";
+import { loadWarnings, periodMs, rendererGpu } from "./load";
 
 function status(patch: Partial<StatusMessage> = {}): StatusMessage {
   return {
@@ -99,5 +99,33 @@ describe("load warnings", () => {
     expect(loadWarnings(status({ renderers: [renderer({ stale: true, fps: 0 })] }))).toEqual([
       { kind: "stale", label: "output" },
     ]);
+  });
+});
+
+describe("renderer GPU", () => {
+  it("names the API and the GPU of a receiver", () => {
+    expect(rendererGpu(renderer({ backend: "webgpu", adapter: "Intel(R) UHD" }))).toEqual({
+      backend: "WebGPU",
+      adapter: "Intel(R) UHD",
+    });
+    expect(rendererGpu(renderer({ backend: "dx12", adapter: "NVIDIA GeForce" }))).toEqual({
+      backend: "Direct3D 12",
+      adapter: "NVIDIA GeForce",
+    });
+    // 知らない API はそのまま
+    expect(rendererGpu(renderer({ backend: "noop", adapter: "x" }))?.backend).toBe("noop");
+  });
+
+  it("hides a GPU name the browser does not tell", () => {
+    expect(rendererGpu(renderer({ backend: "webgl2", adapter: "" }))).toEqual({
+      backend: "WebGL2",
+      adapter: null,
+    });
+    expect(rendererGpu(renderer({ backend: "webgl2", adapter: null }))?.adapter).toBeNull();
+  });
+
+  it("shows nothing without the API", () => {
+    expect(rendererGpu(renderer())).toBeNull();
+    expect(rendererGpu(renderer({ backend: null, adapter: "x" }))).toBeNull();
   });
 });

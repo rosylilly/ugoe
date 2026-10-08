@@ -27,6 +27,7 @@ mod attention;
 pub mod conductor;
 mod error;
 pub mod follower;
+mod gpu;
 pub mod hotkeys;
 pub mod input;
 pub mod lighting;
@@ -270,8 +271,11 @@ fn output_transparency(_window: &WebviewWindow) -> Transparency {
     Transparency::Unknown
 }
 
+/// 描画の負荷の報告に載せる名前 (描画に使う API・GPU の名前) の長さの上限 (バイト)。
+const MAX_RENDERER_NAME: usize = 256;
+
 /// 出力ウィンドウが報告する描画の負荷 (直近の約 1 秒)。
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RenderStats {
     /// 描いた回数 (回/秒)。出力ウィンドウとブラウザソースは変わったときだけ描くので、刻みの速さを上限に、届いたフレームの数に従う。
@@ -285,6 +289,13 @@ struct RenderStats {
     render_max_ms: f32,
     /// 溢れて捨てたフレームの数 (受け手を作ってからの合計)。
     dropped: u64,
+    /// 描画に使っている API (WebView は `webgpu`・`webgl2`、仮想カメラは wgpu のバックエンドの `vulkan`・`dx12`・`metal`・`gl`)。
+    /// 分からなければ `None` (T0860)。
+    #[serde(default)]
+    backend: Option<String>,
+    /// 使っている GPU の名前 (WebView は `WebPuppet.adapter_name`。ブラウザが伏せると空)。分からなければ `None` (T0860)。
+    #[serde(default)]
+    adapter: Option<String>,
 }
 
 impl RenderStats {
@@ -297,6 +308,9 @@ impl RenderStats {
         ]
         .iter()
         .all(|v| v.is_finite() && *v >= 0.0)
+            && [&self.backend, &self.adapter]
+                .iter()
+                .all(|name| name.as_ref().is_none_or(|n| n.len() <= MAX_RENDERER_NAME))
     }
 }
 
@@ -374,6 +388,8 @@ struct Studio {
     camera: Mutex<Option<CameraThread>>,
     /// 仮想カメラの最新の状態。
     camera_status: Mutex<Option<virtual_camera::Status>>,
+    /// 使う GPU の設定 (T0860。機械ごとの設定ファイル。`setup` で読む)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
+    gpu: Mutex<gpu::GpuSettings>,
     /// 操作 API (T0805)。
     api: api::Api,
     /// 承認を待つクライアントを OS の側で知らせているか (T0856)。ほかのロックを握ったまま取ってよい (ほかのロックを握らない)。
@@ -416,7 +432,7 @@ fn is_wayland(wayland_display: Option<&std::ffi::OsStr>, session_type: Option<&s
 }
 
 /// 出力から届いた描画の負荷。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Reported {
     stats: RenderStats,
     /// 目標の描く回数 (回/秒)。`None` は刻みの速さ。
@@ -488,7 +504,7 @@ impl Studio {
             .iter()
             .map(|(label, reported)| RendererLoad {
                 label: label.clone(),
-                stats: reported.stats,
+                stats: reported.stats.clone(),
                 stale: now.saturating_duration_since(reported.at) > RENDER_STATS_STALE,
                 target_fps: reported.target_fps,
             })
@@ -879,6 +895,8 @@ impl Studio {
                 render_ms,
                 render_max_ms,
                 dropped,
+                backend,
+                adapter,
             } => {
                 let stats = RenderStats {
                     fps: measured,
@@ -886,6 +904,8 @@ impl Studio {
                     render_ms,
                     render_max_ms,
                     dropped,
+                    backend: Some(backend.to_owned()),
+                    adapter: Some(adapter),
                 };
                 lock(&self.renders).insert(
                     virtual_camera::LABEL.to_owned(),
@@ -1476,6 +1496,47 @@ fn set_tick_rate(studio: tauri::State<'_, Arc<Studio>>, rate: u32) -> Result<u32
     Ok(rate.hz())
 }
 
+/// 使う GPU の設定 (T0860。docs/studio.md#使う-gpu)。
+#[tauri::command]
+fn gpu_settings(studio: tauri::State<'_, Arc<Studio>>) -> gpu::GpuView {
+    lock(&studio.gpu).view()
+}
+
+/// 使う GPU の希望を変えて、機械ごとの設定ファイルに書く。仮想カメラは次に始めるときから、出力ウィンドウは次の起動から効く。
+#[tauri::command]
+async fn set_gpu_preference(
+    studio: tauri::State<'_, Arc<Studio>>,
+    preference: gpu::GpuPreference,
+) -> Result<gpu::GpuView, CommandError> {
+    blocking(&studio, move |studio| {
+        let mut settings = lock(&studio.gpu);
+        settings
+            .set(preference)
+            .map_err(CommandError::gpu_settings_save_failed)?;
+        Ok(settings.view())
+    })
+    .await?
+}
+
+/// Windows の「グラフィックの設定」を開く (仮想カメラの GPU を Windows の側で選ぶため。ほかの OS では `graphics_settings.unsupported`)。
+#[tauri::command]
+async fn open_graphics_settings() -> Result<(), CommandError> {
+    #[cfg(windows)]
+    {
+        gpu::open_graphics_settings().map_err(CommandError::graphics_settings_failed)
+    }
+    #[cfg(not(windows))]
+    {
+        Err(CommandError::graphics_settings_unsupported())
+    }
+}
+
+/// 出力ウィンドウが `WebPuppet.create` に渡す GPU の電力の希望 (起動したときの設定。`@ugoe/player` の `PowerPreference`)。
+#[tauri::command]
+fn output_power_preference(studio: tauri::State<'_, Arc<Studio>>) -> &'static str {
+    lock(&studio.gpu).launched().web()
+}
+
 /// 出力が描画の負荷を報告する (操作ウィンドウに出す。出力ウィンドウには何も重ねない)。
 #[tauri::command]
 fn report_render_stats(
@@ -1602,11 +1663,13 @@ fn start_camera(studio: &Arc<Studio>, settings: CameraSettings) -> Result<(), Co
     if let Some(files) = Studio::camera_scene(&stage, &conductor) {
         let _ = tx.send(CameraCommand::Scene(Box::new(files)));
     }
+    // GPU は始めるときの設定の希望で作る (変えたら次に始めるときから。docs/studio.md#使う-gpu)。
+    let power = lock(&studio.gpu).preference().native();
     let events = Arc::clone(studio);
     let thread = std::thread::Builder::new()
         .name("ugoe-studio-virtual-camera".into())
         .spawn(move || {
-            virtual_camera::run(settings, rx, |event| {
+            virtual_camera::run(settings, power, rx, |event| {
                 events.camera_event(event, settings.fps)
             });
         })
@@ -1734,6 +1797,25 @@ fn permission_response(label: &str, kind: PermissionKind) -> PermissionResponse 
     }
 }
 
+/// `tauri.conf.json` のウィンドウ (どちらも `create: false`) を、使う GPU の設定に合わせて作る形にする。
+/// 2 つのウィンドウの WebView2 の引数が食い違うと作れないので、どちらにも同じ引数 ([`gpu::browser_args`]) を渡す
+/// (docs/studio.md#隠れても止まらない、docs/studio.md#使う-gpu)。
+fn window_configs(
+    windows: &[tauri::utils::config::WindowConfig],
+    preference: gpu::GpuPreference,
+) -> Vec<tauri::utils::config::WindowConfig> {
+    let args = gpu::browser_args(preference);
+    windows
+        .iter()
+        .map(|window| {
+            let mut window = window.clone();
+            window.create = true;
+            window.additional_browser_args = Some(args.clone());
+            window
+        })
+        .collect()
+}
+
 pub fn run() {
     // macOS の App Nap で刻みが遅れないように、アプリの終わりまで活動を始めたままにする (T0855。macOS の外では何もしない)。
     let _activity = app_nap::prevent();
@@ -1760,6 +1842,18 @@ pub fn run() {
         .on_permission_request(|webview, kind| permission_response(webview.label(), kind))
         .manage(studio)
         .setup(move |app| {
+            // 使う GPU の設定を読んでから、2 つのウィンドウを作る (WebView2 の引数は作るときにしか渡せない。T0860)。
+            let gpu_settings = gpu::GpuSettings::load(
+                app.path()
+                    .app_config_dir()
+                    .ok()
+                    .map(|dir| dir.join(gpu::SETTINGS_FILE)),
+            );
+            let launched = gpu_settings.launched();
+            *lock(&staging.gpu) = gpu_settings;
+            for config in window_configs(&app.config().app.windows, launched) {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.build()?;
+            }
             // 最近のプロファイルはアプリのデータの場所に覚える (取れなければ覚えない)。
             let recent = app
                 .path()
@@ -1853,6 +1947,10 @@ pub fn run() {
             set_tick_rate,
             report_render_stats,
             report_load_failure,
+            gpu_settings,
+            set_gpu_preference,
+            open_graphics_settings,
+            output_power_preference,
             subscribe_pulse,
             set_tracking,
             set_tracking_paused,
@@ -1985,6 +2083,8 @@ mod tests {
                     render_ms: 1.5,
                     render_max_ms: 2.0,
                     dropped: 0,
+                    backend: Some("webgpu".into()),
+                    adapter: None,
                 },
                 stale: false,
                 target_fps: None,
@@ -1995,34 +2095,65 @@ mod tests {
             concat!(
                 r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
                 r#""measuredRate":59.5,"maxIntervalMs":null,"renderers":[{"label":"output","fps":60.0,"#,
-                r#""refreshFps":144.0,"renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"stale":false,"targetFps":null}]}"#
+                r#""refreshFps":144.0,"renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"backend":"webgpu","#,
+                r#""adapter":null,"stale":false,"targetFps":null}]}"#
             )
         );
     }
 
     /// 隠れても最小化されても止まらないように、両方のウィンドウでバックグラウンドの抑制を切る (T0804)。
     /// WebView2 は同じデータの場所を使う WebView の引数が食い違うと作れないので、両方を同じにする。
+    /// 2 つのウィンドウは `setup` でコードから作る (使う GPU の設定を読んでから。T0860)。どの設定でも、作る形は両方のウィンドウで
+    /// 同じ引数を持ち、バックグラウンドの抑制を切る。「高性能」のときだけ外付けの GPU を使わせる。
     #[test]
     fn both_windows_disable_background_throttling() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let windows = config["app"]["windows"].as_array().unwrap();
-        assert_eq!(windows.len(), 2);
-        let args = windows[0]["additionalBrowserArgs"].as_str().unwrap();
-        for window in windows {
-            assert_eq!(window["backgroundThrottling"], "disabled", "{window}");
-            assert_eq!(window["additionalBrowserArgs"], args, "{window}");
+        let windows: Vec<tauri::utils::config::WindowConfig> =
+            serde_json::from_value(config["app"]["windows"].clone()).unwrap();
+        assert_eq!(
+            windows.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(),
+            [CONTROL, OUTPUT]
+        );
+        for window in &windows {
+            // Tauri には作らせない (引数を足してから作る)。引数は設定ファイルに書かない (コードで足す)
+            assert!(!window.create, "{}", window.label);
+            assert_eq!(window.additional_browser_args, None, "{}", window.label);
         }
-        for flag in [
-            // wry の既定の引数 (上書きすると消えるので書き写す)
-            "msWebOOUI,msPdfOOUI,msSmartScreenProtection",
-            "CalculateNativeWinOcclusion",
-            "IntensiveWakeUpThrottling",
-            "--disable-background-timer-throttling",
-            "--disable-backgrounding-occluded-windows",
-            "--disable-renderer-backgrounding",
+        for preference in [
+            gpu::GpuPreference::Auto,
+            gpu::GpuPreference::LowPower,
+            gpu::GpuPreference::HighPerformance,
         ] {
-            assert!(args.contains(flag), "{flag}");
+            let configs = window_configs(&windows, preference);
+            assert_eq!(configs.len(), 2);
+            let args = configs[0].additional_browser_args.clone().unwrap();
+            for window in &configs {
+                assert!(window.create);
+                assert_eq!(
+                    window.background_throttling,
+                    Some(tauri::utils::config::BackgroundThrottlingPolicy::Disabled),
+                    "{}",
+                    window.label
+                );
+                assert_eq!(window.additional_browser_args.as_deref(), Some(&*args));
+            }
+            for flag in [
+                // wry の既定の引数 (上書きすると消えるので書き写す)
+                "msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+                "CalculateNativeWinOcclusion",
+                "IntensiveWakeUpThrottling",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+            ] {
+                assert!(args.contains(flag), "{flag}");
+            }
+            assert_eq!(
+                args.contains("--force-high-performance-gpu"),
+                preference == gpu::GpuPreference::HighPerformance,
+                "{preference:?}"
+            );
         }
     }
 
@@ -2219,19 +2350,37 @@ mod tests {
             render_ms: 1.0,
             render_max_ms: 1.0,
             dropped: 0,
+            backend: Some("webgpu".into()),
+            adapter: Some("GPU".into()),
         };
         assert!(stats.is_valid());
         assert!(
             !RenderStats {
                 render_ms: f32::NAN,
-                ..stats
+                ..stats.clone()
+            }
+            .is_valid()
+        );
+        // 名前が長すぎるもの (ブラウザソースのページから届く) は受け取らない
+        assert!(
+            !RenderStats {
+                adapter: Some("x".repeat(MAX_RENDERER_NAME + 1)),
+                ..stats.clone()
+            }
+            .is_valid()
+        );
+        assert!(
+            RenderStats {
+                backend: None,
+                adapter: Some("x".repeat(MAX_RENDERER_NAME)),
+                ..stats.clone()
             }
             .is_valid()
         );
         assert!(
             !RenderStats {
                 refresh_fps: Some(f32::INFINITY),
-                ..stats
+                ..stats.clone()
             }
             .is_valid()
         );
