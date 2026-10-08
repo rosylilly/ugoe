@@ -1,11 +1,11 @@
 ---
 id: T0191
 title: "性能: Puppet の評価が遅くなったら気づける検査を足す (判断が要る)"
-status: todo
+status: in-progress
 milestone: M7
 crates: [ugoe, scripts, justfile, .github/workflows, docs]
 depends_on: [T0190]
-assignee:
+assignee: claude-worker-T0191
 ---
 
 # T0191: 性能: 評価が遅くなったら気づける検査 (判断が要る)
