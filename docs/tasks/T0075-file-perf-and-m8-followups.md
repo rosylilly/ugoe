@@ -1,11 +1,11 @@
 ---
 id: T0075
 title: M7 の性能の目標の検査と、M8 の「起票していない後続の候補」をタスクにする
-status: todo
+status: in-progress
 milestone: M8
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0075
 ---
 
 # T0075: M7 の性能の目標の検査と、M8 の「起票していない後続の候補」をタスクにする
