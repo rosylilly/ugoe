@@ -1,11 +1,11 @@
 ---
 id: T0983
 title: "描かずに返った render (サーフェスの作り直し・時間切れ) の後も、描き直しの印を残して次のフレームで描く (Player・<ugoe-avatar>・エディタ)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [ugoe-wasm, packages/player, bindings/web, apps/editor, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0983
 ---
 
 # T0983: 描かずに返った render の後も、描き直しの印を残して次のフレームで描く
