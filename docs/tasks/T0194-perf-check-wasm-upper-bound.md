@@ -1,11 +1,11 @@
 ---
 id: T0194
 title: "性能: 時間の上限の検査 (just perf・perf.yml) に wasm (ブラウザ) の計測を入れる (判断が要る)"
-status: todo
+status: in-progress
 milestone: M7
 crates: [bindings/web, scripts, justfile, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0194
 ---
 
 # T0194: 性能: 時間の上限の検査に wasm (ブラウザ) の計測を入れる (判断が要る)
