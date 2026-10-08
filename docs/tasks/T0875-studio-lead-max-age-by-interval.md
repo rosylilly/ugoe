@@ -1,11 +1,11 @@
 ---
 id: T0875
 title: "スタジオ: 値がとても少ないとき、見積もりに使う値の古さの上限を値の間隔で延ばすか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0875
 ---
 
 # T0875: スタジオ: 値がとても少ないとき、見積もりに使う値の古さの上限を値の間隔で延ばすか決める (判断が要る)
