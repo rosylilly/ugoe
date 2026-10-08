@@ -1,11 +1,11 @@
 ---
 id: T0856
 title: "スタジオ: 外部 API の承認を待つアプリがあることを、操作ウィンドウが隠れていても OS の側で知らせる (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs, Cargo.toml, Cargo.lock]
 depends_on: []
-assignee:
+assignee: claude-worker-T0856
 ---
 
 # T0856: スタジオ: 承認の OS への知らせ (判断が要る)
