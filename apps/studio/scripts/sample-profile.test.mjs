@@ -1,8 +1,20 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { PRESETS } from "@ugoe/player";
 import { describe, expect, it } from "vitest";
-import { SAMPLES_DIR, sampleProfile } from "./sample-profile.mjs";
+import {
+  PROFILE_FILES,
+  resolveSampleProfile,
+  SAMPLES_DIR,
+  sampleProfile,
+  sampleProfileText,
+} from "./sample-profile.mjs";
+
+/** プロファイルの中のファイルのパス (シーンのモデル・モジュールと、ホットキーの着せ替えのモジュール)。 */
+const filesOf = (profile) => [
+  ...profile.scenes.flatMap((s) => [s.model, ...s.modules]),
+  ...profile.hotkeys.flatMap((h) => (h.action.kind === "dressUp" ? [h.action.module] : [])),
+];
 
 /**
  * バンドル (`.ugoe`) のポーズの要素のパーツ (docs/spec/file-formats.md#バンドル-ugoe)。圧縮していない `MODL` の MessagePack から、
@@ -34,21 +46,32 @@ function poseParts(path) {
 
 describe("sampleProfile", () => {
   for (const lang of ["ja", "en"]) {
-    it(`points at sample files that exist (${lang})`, () => {
-      const profile = sampleProfile(SAMPLES_DIR, lang);
-      const files = [
-        ...profile.scenes.flatMap((s) => [s.model, ...s.modules]),
-        ...profile.hotkeys.flatMap((h) => (h.action.kind === "dressUp" ? [h.action.module] : [])),
-      ];
+    it(`points at sample files that exist with relative paths (${lang})`, () => {
+      const files = filesOf(sampleProfile(lang));
+      expect(files.length).toBeGreaterThan(0);
       for (const file of files) {
+        // プロファイルのフォルダの下だけを指す相対パス (docs/studio.md#プロファイルのパス)
+        expect(file, file).toMatch(/^[\w.-]+(\/[\w.-]+)*$/);
+        expect(file.split("/"), file).not.toContain("..");
+        expect(existsSync(join(SAMPLES_DIR, file)), file).toBe(true);
+      }
+      for (const file of filesOf(resolveSampleProfile(sampleProfile(lang)))) {
         expect(isAbsolute(file), file).toBe(true);
         expect(existsSync(file), file).toBe(true);
       }
     });
+
+    it(`matches the committed ${PROFILE_FILES[lang]} (${lang})`, () => {
+      const path = join(SAMPLES_DIR, PROFILE_FILES[lang]);
+      expect(
+        existsSync(path) && readFileSync(path, "utf8"),
+        `${path} is out of date (run \`pnpm --filter @ugoe/studio sample-profile\`)`,
+      ).toBe(sampleProfileText(lang));
+    });
   }
 
   it("refers to its own scenes and gives every hotkey a different key", () => {
-    const profile = sampleProfile(SAMPLES_DIR);
+    const profile = sampleProfile();
     const ids = profile.scenes.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(profile.activeScene);
@@ -59,9 +82,9 @@ describe("sampleProfile", () => {
   });
 
   it("switches the dress-up scene's pose with hotkeys, including the waving hand", () => {
-    const profile = sampleProfile(SAMPLES_DIR);
+    const profile = sampleProfile();
     const dressUp = profile.scenes.find((s) => s.id === "dress-up");
-    const parts = poseParts(dressUp?.model ?? "");
+    const parts = poseParts(join(SAMPLES_DIR, dressUp?.model ?? ""));
     expect(parts).toEqual(["HandsDown", "Wave"]);
     const hotkeys = profile.hotkeys
       .filter((h) => h.action.kind === "pose")
@@ -71,7 +94,7 @@ describe("sampleProfile", () => {
   });
 
   it("uses the sunset lighting preset as it is", () => {
-    const evening = sampleProfile(SAMPLES_DIR).scenes.find((s) => s.id === "evening");
+    const evening = sampleProfile().scenes.find((s) => s.id === "evening");
     expect(evening?.lighting).toEqual(PRESETS.find((p) => p.id === "sunset")?.settings);
   });
 });

@@ -7,7 +7,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe } from "node:test";
-import { SAMPLES_DIR, sampleProfile } from "../../../apps/studio/scripts/sample-profile.mjs";
+import {
+  resolveSampleProfile,
+  sampleProfile,
+} from "../../../apps/studio/scripts/sample-profile.mjs";
 import {
   captureLogs,
   checkNoCspViolations,
@@ -101,7 +104,7 @@ function rpcClient(url) {
  * プロファイルとして開く。
  */
 function placeSampleProfile() {
-  const profile = sampleProfile(SAMPLES_DIR, "en");
+  const profile = resolveSampleProfile(sampleProfile("en"));
   // ホットキーは OS 全体に登録されるので、テストでは持たない (--headed で利用者の画面を使うときのため)
   profile.hotkeys = [];
   const path = join(work(), "sample-profile.json");

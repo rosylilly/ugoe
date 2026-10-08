@@ -1,7 +1,11 @@
-// scripts/check-pack.mjs のパスの変換のテスト (`just app-build-check`)
+// scripts/check-pack.mjs のパスの変換と見本の写し方のテスト (`just app-build-check`)
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { windowsPath, windowsSampleProfile } from "./check-pack.mjs";
+import { PROFILE_FILES } from "../apps/studio/scripts/sample-profile.mjs";
+import { packSamples, windowsPath } from "./check-pack.mjs";
 
 test("/mnt/<ドライブ>/ の下を Windows のパスにし、それ以外は null", () => {
   assert.equal(windowsPath("/mnt/c/Users/a/ugoe-check"), "C:\\Users\\a\\ugoe-check");
@@ -11,17 +15,28 @@ test("/mnt/<ドライブ>/ の下を Windows のパスにし、それ以外は n
   assert.equal(windowsPath("/mnt/wsl/x"), null);
 });
 
-test("見本のプロファイルのファイルはすべて Windows の区切りで samples の下を指す", () => {
-  const samples = "C:\\Users\\a\\ugoe-check\\samples";
-  const profile = windowsSampleProfile(samples);
-  const files = [
-    ...profile.scenes.flatMap((s) => [s.model, ...s.modules]),
-    ...profile.hotkeys.flatMap((h) => (h.action.kind === "dressUp" ? [h.action.module] : [])),
-  ];
-  assert.ok(files.length > 0);
-  for (const file of files) {
-    assert.ok(file.startsWith(`${samples}\\`), file);
-    assert.ok(!file.includes("/"), file);
+test("見本のモデルとプロファイルを samples/ にそのまま写し、--force が無ければ前のプロファイルを残す", () => {
+  const samples = join(import.meta.dirname, "..", "assets", "samples");
+  const to = join(mkdtempSync(join(tmpdir(), "check-pack-")), "samples");
+  try {
+    packSamples(to, false);
+    for (const name of Object.values(PROFILE_FILES)) {
+      // モデルを相対パスで持つので、書き直さずに写す (T0865)
+      assert.equal(readFileSync(join(to, name), "utf8"), readFileSync(join(samples, name), "utf8"));
+    }
+    assert.ok(existsSync(join(to, "avatar.ugoe")));
+    assert.ok(existsSync(join(to, "dress-up", "long-hair.ugoemod")));
+
+    const profile = join(to, PROFILE_FILES.ja);
+    writeFileSync(profile, "edited");
+    packSamples(to, false);
+    assert.equal(readFileSync(profile, "utf8"), "edited");
+    packSamples(to, true);
+    assert.equal(
+      readFileSync(profile, "utf8"),
+      readFileSync(join(samples, PROFILE_FILES.ja), "utf8"),
+    );
+  } finally {
+    rmSync(join(to, ".."), { recursive: true, force: true });
   }
-  assert.ok(files.includes(`${samples}\\dress-up\\long-hair.ugoemod`));
 });

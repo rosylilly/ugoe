@@ -6,18 +6,18 @@
 //
 // - 出力先を省くと、Windows の利用者のフォルダー (%USERPROFILE%) の下の `ugoe-check`。
 // - `installers/`: `just app::build PLATFORM=windows` が target/dist/<アプリ>/windows/ に作ったインストーラ。
-// - `samples/`: 見本のモデル (assets/samples の .ugoe と .ugoemod)。
+// - `samples/`: 見本のモデル (assets/samples の .ugoe と .ugoemod) と、スタジオの見本のプロファイル
+//   (`ugoe-sample-profile.json`・`ugoe-sample-profile.en.json`)。プロファイルはモデルを相対パスで持つ (T0865) ので、そのまま写す。
+//   `ugoe-check` のフォルダーを動かしても開ける。
 // - `fixtures/`: エディタの取り込みの確認に使う PSD (assets/fixtures/character.psd・layers.psd)。
-// - `ugoe-sample-profile.json`: スタジオの見本のプロファイル (apps/studio/scripts/sample-profile.mjs と同じ中身)。
-//   モデルを Windows のパス (`C:\Users\...\ugoe-check\samples\avatar.ugoe`) で指す。
 // - `manual-check.md`: 確認表の写し (結果を書き込んで返してもらう)。
-// 前の一式があっても、プロファイルと確認表の写しは `--force` を付けないと上書きしない (書き込んだ結果を消さないため)。
+// 前の一式があっても、見本のプロファイルと確認表の写しは `--force` を付けないと上書きしない (書き込んだ結果を消さないため)。
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join, win32 } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { sampleProfile } from "../apps/studio/scripts/sample-profile.mjs";
+import { PROFILE_FILES } from "../apps/studio/scripts/sample-profile.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -33,23 +33,6 @@ export function windowsPath(path) {
   if (!m) return null;
   const rest = (m[2] ?? "").replace(/\/+$/, "").replaceAll("/", "\\");
   return `${m[1].toUpperCase()}:${rest || "\\"}`;
-}
-
-/** 見本のプロファイルの中のファイルのパスを、`samples` (Windows のパス) の下に置き換える。 */
-export function windowsSampleProfile(samples, lang = "ja") {
-  const profile = sampleProfile(samples, lang);
-  // sampleProfile は node:path の join (Linux では `/`) でつなぐので、Windows の区切りにそろえる
-  const fix = (p) => win32.normalize(p);
-  for (const scene of profile.scenes) {
-    scene.model = fix(scene.model);
-    scene.modules = scene.modules.map(fix);
-  }
-  for (const hotkey of profile.hotkeys) {
-    if (hotkey.action.kind === "dressUp" && hotkey.action.module) {
-      hotkey.action.module = fix(hotkey.action.module);
-    }
-  }
-  return profile;
 }
 
 /** Windows の利用者のフォルダー (WSL のパス)。分からなければ null。 */
@@ -95,6 +78,21 @@ function writeUnlessExists(path, write, force) {
   console.log(`wrote ${path}`);
 }
 
+/**
+ * 見本のモデルとモジュール (いつも上書き) と見本のプロファイルを、`to` (`samples/`) にそのまま写す。プロファイルは
+ * 開いた後の変更を自動で保存するので、確認表と同じく `force` が無ければ前のものを残す。
+ */
+export function packSamples(to, force) {
+  const samplesDir = join(root, "assets", "samples");
+  for (const file of filesUnder(samplesDir, [".ugoe", ".ugoemod"])) {
+    copy(join(samplesDir, file), join(to, file));
+  }
+  for (const name of Object.values(PROFILE_FILES)) {
+    const path = join(to, name);
+    writeUnlessExists(path, () => copyFileSync(join(samplesDir, name), path), force);
+  }
+}
+
 function main(argv) {
   const force = argv.includes("--force");
   const args = argv.filter((a) => !a.startsWith("--"));
@@ -133,21 +131,10 @@ function main(argv) {
     );
   }
 
-  const samplesDir = join(root, "assets", "samples");
-  for (const file of filesUnder(samplesDir, [".ugoe", ".ugoemod"])) {
-    copy(join(samplesDir, file), join(dest, "samples", file));
-  }
+  packSamples(join(dest, "samples"), force);
   for (const name of ["character.psd", "layers.psd"]) {
     copy(join(root, "assets", "fixtures", name), join(dest, "fixtures", name));
   }
-
-  const profilePath = join(dest, "ugoe-sample-profile.json");
-  const profile = windowsSampleProfile(win32.join(winDest, "samples"));
-  writeUnlessExists(
-    profilePath,
-    () => writeFileSync(profilePath, `${JSON.stringify(profile, null, 2)}\n`),
-    force,
-  );
   const checkPath = join(dest, "manual-check.md");
   writeUnlessExists(
     checkPath,
@@ -157,7 +144,7 @@ function main(argv) {
 
   console.log(`\npacked into ${dest} (${winDest})`);
   for (const name of installers) console.log(`  installers\\${name}`);
-  console.log(`  samples\\, fixtures\\, ugoe-sample-profile.json, manual-check.md`);
+  console.log(`  samples\\ (with ${PROFILE_FILES.ja}), fixtures\\, manual-check.md`);
   console.log("\nnext: docs/manual-check.md (the first round on Windows)");
 }
 

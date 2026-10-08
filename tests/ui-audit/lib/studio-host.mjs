@@ -16,12 +16,12 @@ const root = join(import.meta.dirname, "..", "..", "..");
 
 /** 偽のホストに渡すデータ (Node の側で作り、ページへ JSON で渡す)。 */
 export async function studioFixture(lang) {
-  const { sampleProfile, SAMPLES_DIR } = await import(
+  const { resolveSampleProfile, sampleProfile, SAMPLES_DIR, PROFILE_FILES } = await import(
     join(root, "apps/studio/scripts/sample-profile.mjs")
   );
   const inputs = await import(join(root, "apps/studio/src/lib/inputs.ts"));
   const camera = await import(join(root, "apps/studio/src/lib/virtualCamera.ts"));
-  const profile = sampleProfile(SAMPLES_DIR, lang);
+  const profile = resolveSampleProfile(sampleProfile(lang));
   profile.output = {
     ...profile.output,
     tickRate: 60,
@@ -34,8 +34,9 @@ export async function studioFixture(lang) {
   return {
     methods: hostMethods(readFileSync(join(root, "apps/studio/src/lib/host.ts"), "utf8")),
     profile,
-    // docs/manual/studio.md#見本のプロファイル の例と同じ名前。拡張子は保存のダイアログが付けるもの (lib.rs の PROFILE_EXTENSION)
-    path: join(SAMPLES_DIR, "..", `ugoe-sample-profile.${profileExtension()}`),
+    // コミットした見本のプロファイルの場所 (docs/manual/studio.md#見本のプロファイル)。拡張子が保存のダイアログが付けるもの
+    // (lib.rs の PROFILE_EXTENSION) と同じことは test/hosts.test.mjs が確かめる
+    path: join(SAMPLES_DIR, PROFILE_FILES[lang] ?? PROFILE_FILES.ja),
     ...avatar,
     api: {
       enabled: true,

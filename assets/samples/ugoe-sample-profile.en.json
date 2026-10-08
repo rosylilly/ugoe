@@ -1,0 +1,216 @@
+{
+  "format": "ugoe-studio-profile",
+  "version": 1,
+  "scenes": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "model": "avatar.ugoe",
+      "modules": [],
+      "lighting": null,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "background": {
+        "kind": "transparent"
+      }
+    },
+    {
+      "id": "evening",
+      "name": "Evening (lighting)",
+      "model": "avatar-lit.ugoe",
+      "modules": [],
+      "lighting": {
+        "enabled": true,
+        "ambient": {
+          "color": "#8c9bd0",
+          "intensity": 0.45
+        },
+        "directional": {
+          "enabled": true,
+          "color": "#ffb070",
+          "intensity": 1,
+          "azimuth": 10,
+          "elevation": 20
+        },
+        "point": {
+          "enabled": false,
+          "color": "#ffffff",
+          "intensity": 1,
+          "x": 0.3,
+          "y": 0.3,
+          "z": 0.4,
+          "range": 1.5
+        }
+      },
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "background": {
+        "kind": "transparent"
+      }
+    },
+    {
+      "id": "dress-up",
+      "name": "Dress-up",
+      "model": "dress-up/dress-up.ugoe",
+      "modules": [
+        "dress-up/long-hair.ugoemod",
+        "dress-up/sailor.ugoemod"
+      ],
+      "lighting": null,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "background": {
+        "kind": "chroma",
+        "color": "#00ff00"
+      }
+    },
+    {
+      "id": "corner",
+      "name": "Game (corner)",
+      "model": "avatar.ugoe",
+      "modules": [],
+      "lighting": null,
+      "transform": {
+        "x": 0.3,
+        "y": 0.22,
+        "scale": 0.55,
+        "rotation": 0
+      },
+      "background": {
+        "kind": "transparent"
+      }
+    }
+  ],
+  "activeScene": "chat",
+  "output": {
+    "size": "1920x1080"
+  },
+  "hotkeys": [
+    {
+      "keys": "Ctrl+Shift+Digit1",
+      "action": {
+        "kind": "scene",
+        "scene": "chat"
+      }
+    },
+    {
+      "keys": "Ctrl+Shift+Digit2",
+      "action": {
+        "kind": "scene",
+        "scene": "evening"
+      }
+    },
+    {
+      "keys": "Ctrl+Shift+Digit3",
+      "action": {
+        "kind": "scene",
+        "scene": "dress-up"
+      }
+    },
+    {
+      "keys": "Ctrl+Shift+Digit4",
+      "action": {
+        "kind": "scene",
+        "scene": "corner"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+Digit1",
+      "action": {
+        "kind": "expression",
+        "expression": "smile",
+        "mode": "toggle"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+Digit2",
+      "action": {
+        "kind": "expression",
+        "expression": "surprised",
+        "mode": "toggle"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+Digit0",
+      "action": {
+        "kind": "clearExpressions"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyN",
+      "action": {
+        "kind": "motion",
+        "motion": "nod",
+        "priority": "normal"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyM",
+      "action": {
+        "kind": "motion",
+        "motion": "shake",
+        "priority": "normal"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyH",
+      "action": {
+        "kind": "dressUp",
+        "slot": "Hair",
+        "module": "dress-up/twin-tails.ugoemod"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyC",
+      "action": {
+        "kind": "dressUp",
+        "slot": "Headwear",
+        "module": "dress-up/cat-ears.ugoemod"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyW",
+      "action": {
+        "kind": "pose",
+        "part": "Wave"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyD",
+      "action": {
+        "kind": "pose",
+        "part": "HandsDown"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyP",
+      "action": {
+        "kind": "trackingPause"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyK",
+      "action": {
+        "kind": "trackingCalibrate"
+      }
+    },
+    {
+      "keys": "Ctrl+Alt+KeyL",
+      "action": {
+        "kind": "lipSyncPause"
+      }
+    }
+  ]
+}

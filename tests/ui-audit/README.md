@@ -60,7 +60,8 @@ cargo (エディタの見本を `ugoe sample dress-up` で作る)。Linux と WS
      本体の変化 (`check_base_change`。T0044)。
    - スタジオ (`lib/studio-host.mjs`): `window.__UGOE_STUDIO_HOST__` に、`StudioHost` (apps/studio/src/lib/host.ts) のすべてのメソッドを置く。
      見本のプロファイル (apps/studio/scripts/sample-profile.mjs) に画面の既定値 (src/lib/inputs.ts・virtualCamera.ts) を足して送る。
-     プロファイルの場所は `assets/ugoe-sample-profile.json` (拡張子は保存のダイアログが付けるもの。`src-tauri/src/lib.rs` の `PROFILE_EXTENSION`)。
+     プロファイルの場所はコミットした見本のプロファイル (`assets/samples/ugoe-sample-profile.json`。英語の画面は `ugoe-sample-profile.en.json`。
+     拡張子は保存のダイアログが付けるもの。`src-tauri/src/lib.rs` の `PROFILE_EXTENSION`)。プロファイルの中のパスは絶対パスに解いて送る (本物のスタジオと同じ)。
      配信中のシーン「雑談」のモデル (`avatar.ugoe`) のパラメータ (27。名前は ID)・モーション・表情・ポーズのグループ (`earwear` / `no_earwear`) は、
      見本を作るソース (`crates/ugoe-cli/src/sample.rs`・`sample/animations/`、`ugoe-model` の `standard.rs`) から読み、本物の指揮役と同じく
      ポーズは各グループの先頭を表示し、待機のモーション `idle` を流している様子で送る (T0047)。

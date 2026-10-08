@@ -6,7 +6,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe } from "node:test";
-import { SAMPLES_DIR, sampleProfile } from "../../../apps/studio/scripts/sample-profile.mjs";
+import {
+  resolveSampleProfile,
+  sampleProfile,
+} from "../../../apps/studio/scripts/sample-profile.mjs";
 import { configHome, invoke, launch, step, switchToTauriWindow, work } from "../lib/harness.mjs";
 import { manualShot, resizeTo, useLocale } from "../lib/manual.mjs";
 import { installPageHelpers } from "../lib/page.mjs";
@@ -40,7 +43,7 @@ function checkApiPortFree() {
  * (`--headed` のときだけ外す)。
  */
 function placeSampleProfile() {
-  const profile = sampleProfile(SAMPLES_DIR, "ja");
+  const profile = resolveSampleProfile(sampleProfile("ja"));
   if (process.env.E2E_HEADED) profile.hotkeys = [];
   const path = join(work(), "sample-ja.json");
   writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`);

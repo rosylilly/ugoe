@@ -12,6 +12,7 @@
 | `dress-up/` | 着せ替えの見本 ([下](#dress-up))。スロットを持つ本体 `dress-up.ugoe` (モーション 5・表情 3、パラメータのグループ 5・ポーズ (手を振る)) と、衣装のモジュール `long-hair`・`twin-tails`・`cat-ears`・`sailor` (`.ugoemod`) | 合わせて約 165KB | `ugoe sample dress-up` がコードで描いて生成 / MIT |
 | `dress-up.jpg` | `dress-up/` を `ugoe render --module` で描いたもの (左から本体だけ、`LongHair`+`CatEars`+`Sailor`、`TwinTails`+`Sailor` (向き・片目・口)、`LongHair` (向き・体)) | 約 40KB | 同上 |
 | `avatar-physics.jpg` | 頭を振る (`AngleX` 0→25→-25→0 を 0.8 秒) モーションと傾ける (`AngleZ` 0→30→0) モーションの途中を `ugoe render --motion --time` で描いたもの (上 4 つが振る、下 4 つが傾ける。0.3/0.5/0.7/0.9 秒) | 約 100KB | 同上 |
+| `ugoe-sample-profile.json`・`ugoe-sample-profile.en.json` | スタジオの見本のプロファイル (シーン 4 つとホットキー。シーンの名前が日本語・英語)。上のモデルとモジュールを、このフォルダからの相対パスで指すので、フォルダごと写しても開ける ([docs/manual/studio.md](../../docs/manual/studio.md#見本のプロファイル)) | 約 4KB ずつ | `pnpm --filter @ugoe/studio sample-profile` が `apps/studio/scripts/sample-profile.mjs` から書き出す (食い違えばそのテストが落ちる) / MIT |
 
 T0702 の全身の絵 (`comfyui-see-through-full-body-parts.psd`) から作った前の見本は、目・口が 1 枚ずつで表情が不自然だったので、
 T0704 でこのバストアップの PSD から作ったものに置き換えました (全身の見本は残していません。要るなら T0702 のコミットのジェネレータで作れます)。

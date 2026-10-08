@@ -38,15 +38,13 @@ just check-pack                    # Windows の %USERPROFILE%\ugoe-check に一
 | パス (`ugoe-check\` の下) | 中身 |
 | --- | --- |
 | `installers\` | 3 つのアプリのインストーラ (`ugoe_<版>_x64-setup.exe` = エディタ、`ugoe-viewer_…`、`ugoe-studio_…`) |
-| `samples\` | 見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up\` の本体とモジュール) |
+| `samples\` | 見本のモデル (`avatar.ugoe`・`avatar-lit.ugoe`・`dress-up\` の本体とモジュール) と、スタジオの見本のプロファイル (`ugoe-sample-profile.json`。リポジトリの `assets/samples` のものをそのまま写す。[manual/studio.md の見本のプロファイル](manual/studio.md#見本のプロファイル)) |
 | `fixtures\` | エディタの取り込みに使う PSD (`character.psd`・`layers.psd`) |
-| `ugoe-sample-profile.json` | スタジオの見本のプロファイル ([manual/studio.md の見本のプロファイル](manual/studio.md#見本のプロファイル) と同じ中身)。モデルを `samples\` の Windows のパスで指す |
 | `manual-check.md` | この確認表の写し。結果を書き込む |
 
-- プロファイルはモデルを絶対パスで持つので、`ugoe-check` フォルダーを動かしたら `just check-pack --force` で作り直します
-  (`--force` が無ければ、結果を書き込んだ `manual-check.md` とプロファイルは上書きしません)。
-- リポジトリの `pnpm --filter @ugoe/studio sample-profile` は、WSL の中で実行すると `/home/...` のパスになり、Windows のスタジオからは読めません。
-  Windows で使うプロファイルは `just check-pack` で作ります。
+- プロファイルはモデルを相対パス (プロファイルのフォルダーからの相対) で持つので、`ugoe-check` フォルダーを動かしても作り直さずに開けます。
+- 前の一式があれば、結果を書き込んだ `manual-check.md` と見本のプロファイル (開いた後の変更が自動で保存される) は、`--force` を
+  付けないと上書きしません。
 - インストーラは署名していません。初回は SmartScreen の「Windows によって PC が保護されました」が出るので、「詳細情報」→「実行」で進めます
   ([apps/editor/README.md の配布物の署名](../apps/editor/README.md#配布物の署名))。
 - スタジオのインストーラは管理者の権限を求めます (仮想カメラの登録のため。UAC の「はい」を押す)。エディタとビューアは求めません。
@@ -57,14 +55,15 @@ just check-pack                    # Windows の %USERPROFILE%\ugoe-check に一
 ```sh
 just app::build PLATFORM=linux     # target/dist/<アプリ>/linux/ に .deb・.rpm・.AppImage
 sudo apt install ./target/dist/studio/linux/*.deb   # 例: スタジオ。エディタとビューアも同じ
-pnpm --filter @ugoe/studio sample-profile ~/ugoe-sample-profile.json   # 見本のプロファイル (リポジトリの assets/samples を指す)
 ```
+
+見本のプロファイルは、リポジトリの `assets/samples/ugoe-sample-profile.json` をそのまま開きます (作る手順は要りません)。
 
 ### macOS
 
 macOS の上で `just app::build PLATFORM=macos` で作ります (署名なし。Gatekeeper の警告は「システム設定」→「プライバシーとセキュリティ」の
 「このまま開く」で越える)。仮想カメラは Apple Developer Program のアカウントが要ります ([release.md の macOS の仮想カメラ](release.md#macos-の仮想カメラ))。
-見本のプロファイルは Linux と同じ `pnpm --filter @ugoe/studio sample-profile` で作ります。
+見本のプロファイルは Linux と同じく、リポジトリの `assets/samples/ugoe-sample-profile.json` を開きます。
 
 ### 要るもの
 
@@ -144,7 +143,8 @@ macOS の上で `just app::build PLATFORM=macos` で作ります (署名なし�
 
 #### S01 見本のプロファイルを開くと、出力ウィンドウにモデルが透過で出る [A: WML]
 
-- 手順: ツールバーの「プロファイル」→「プロファイルを開く…」で `ugoe-sample-profile.json` を選ぶ。出力ウィンドウが隠れていれば、ツールバーの「出力ウィンドウ」を押す。
+- 手順: ツールバーの「プロファイル」→「プロファイルを開く…」で `ugoe-sample-profile.json` を選ぶ (Windows は `ugoe-check\samples\`、
+  Linux と macOS はリポジトリの `assets/samples/` にある)。出力ウィンドウが隠れていれば、ツールバーの「出力ウィンドウ」を押す。
 - 期待: 「雑談」が配信中になり、枠の無い出力ウィンドウにモデルが出る。モデルの外側は透けて後ろのウィンドウが見える (黒や白で塗られない)。目パチと呼吸で動いている。
 - 元: T0801・T0802
 - 結果: W 未 ・ M 未 ・ L 自動 (T0006)

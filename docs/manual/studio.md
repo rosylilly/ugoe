@@ -96,17 +96,16 @@ just studio   # スタジオを開発モードで起動する (wasm の用意も
 ## 見本のプロファイル
 
 見本のモデル (`assets/samples`) を使う 4 つのシーンとホットキーを持つプロファイルを、すぐに試せます。
-見本のモデルはプロファイルのフォルダの外 (リポジトリの中) にあり、プロファイルはそれを絶対パスで持つので、リポジトリの場所に合わせてコマンドで作ります。リポジトリのルートで:
+見本のプロファイルは見本のモデルと同じフォルダ (`assets/samples`) にあり、モデルをプロファイルのフォルダからの相対パスで持つので、
+そのまま開けます (フォルダごと別の場所へ写しても開けます)。
 
-```sh
-pnpm --filter @ugoe/studio sample-profile ~/ugoe-sample-profile.json            # シーンの名前は日本語
-pnpm --filter @ugoe/studio sample-profile ~/ugoe-sample-profile.json --lang en  # シーンの名前を英語に
-```
-
-すでにファイルがあれば書き出しません (`--force` を付けると上書きします)。作ったら次の手順で開きます。
+| ファイル | シーンの名前 |
+| --- | --- |
+| `assets/samples/ugoe-sample-profile.json` | 日本語 |
+| `assets/samples/ugoe-sample-profile.en.json` | 英語 |
 
 1. ツールバーの「プロファイル」→「プロファイルを開く…」を押す。
-2. 作ったファイル (上の例では `ugoe-sample-profile.json`) を選ぶ。
+2. 上のファイル (日本語なら `ugoe-sample-profile.json`) を選ぶ。
    「雑談」のシーンが配信中になり、出力ウィンドウにモデルが出ます (出力ウィンドウを隠していれば、ツールバーの「出力ウィンドウ」で表示する)。
 
 | シーン | モデル | 見どころ |
@@ -126,7 +125,8 @@ pnpm --filter @ugoe/studio sample-profile ~/ugoe-sample-profile.json --lang en  
 | Ctrl + Alt + W / D | ポーズを手を振る差分 (`Wave`) / 手を下ろした姿 (`HandsDown`) に切り替える (「着せ替え」のシーンでだけ効く) |
 | Ctrl + Alt + P / K / L | トラッキングの一時停止・再開 / トラッキングのキャリブレーション / 口パクの一時停止・再開 |
 
-見本のプロファイルは、開いた後の変更を同じファイルに自動で保存します。元に戻したくなったら `--force` を付けて作り直してください。
+見本のプロファイルは、開いた後の変更を同じファイルに自動で保存します。元に戻したくなったら、リポジトリのルートで
+`pnpm --filter @ugoe/studio sample-profile` を実行して書き直してください (2 つのファイルを元の中身にします)。
 中身の作り方は `apps/studio/scripts/sample-profile.mjs` にあります。
 
 ## シーンとプロファイル

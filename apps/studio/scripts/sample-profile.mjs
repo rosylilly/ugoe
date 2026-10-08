@@ -1,14 +1,19 @@
 #!/usr/bin/env node
-// 見本のプロファイルを書き出す (`pnpm --filter @ugoe/studio sample-profile <出力の .json> [--lang en] [--force]`。T0806)。
-// 見本のモデル (assets/samples) を使うシーン・ホットキーを持つ。見本のモデルは出力の .json のフォルダの外にあり、絶対パスで持つ
-// (docs/studio.md#プロファイルのパス) ので、ファイルをコミットせず、このリポジトリの場所に合わせてその場で作る。手順は docs/manual/studio.md#見本のプロファイル。
+// 見本のプロファイル (assets/samples の ugoe-sample-profile.json・ugoe-sample-profile.en.json) を書き出す
+// (`pnpm --filter @ugoe/studio sample-profile [--check]`。T0806・T0865)。
+// 見本のモデル (assets/samples) を使うシーン・ホットキーを持つ。プロファイルは見本のモデルと同じフォルダに置き、モデルを相対パスで持つ
+// (docs/studio.md#プロファイルのパス) ので、コミットしたものをどの機械でもそのまま開ける。手順は docs/manual/studio.md#見本のプロファイル。
+// `--check` は書き出さずに、コミットしたものがここで作るものと同じかを確かめる (違えば 1 で終わる)。
 
-import { existsSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** リポジトリの assets/samples。 */
 export const SAMPLES_DIR = join(import.meta.dirname, "..", "..", "..", "assets", "samples");
+
+/** 見本のプロファイルのファイル名 (`SAMPLES_DIR` の下。シーンの名前の言語ごと)。 */
+export const PROFILE_FILES = { ja: "ugoe-sample-profile.json", en: "ugoe-sample-profile.en.json" };
 
 /** シーンの名前 (プロファイルの中身なので、画面の言語では変わらない。書き出すときに選ぶ)。 */
 const NAMES = {
@@ -32,13 +37,12 @@ const SUNSET = {
 const PLACEMENT = { x: 0, y: 0, scale: 1, rotation: 0 };
 
 /**
- * 見本のプロファイル (`apps/studio/src-tauri/src/profile.rs` の形)。
- * @param {string} samples 見本のモデルのフォルダ (絶対パス)
+ * 見本のプロファイル (`apps/studio/src-tauri/src/profile.rs` の形)。ファイルのパスは `SAMPLES_DIR` からの相対パス (区切りは `/`)。
  * @param {"ja" | "en"} lang シーンの名前の言語
  */
-export function sampleProfile(samples, lang = "ja") {
+export function sampleProfile(lang = "ja") {
   const names = NAMES[lang] ?? NAMES.ja;
-  const file = (...parts) => join(samples, ...parts);
+  const file = (...parts) => parts.join("/");
   const scene = (id, name, model, rest = {}) => ({
     id,
     name,
@@ -98,25 +102,51 @@ export function sampleProfile(samples, lang = "ja") {
   };
 }
 
+/**
+ * プロファイルの中のファイルの相対パス (`sampleProfile`) を、`dir` の下の絶対パスに置き換えた写し
+ * (見本のモデルのフォルダの外にプロファイルを書くとき。e2e と ui-audit の偽のホスト)。
+ * @param {ReturnType<typeof sampleProfile>} profile
+ * @param {string} dir
+ */
+export function resolveSampleProfile(profile, dir = SAMPLES_DIR) {
+  const copy = structuredClone(profile);
+  const file = (path) => join(dir, ...path.split("/"));
+  for (const scene of copy.scenes) {
+    scene.model = file(scene.model);
+    scene.modules = scene.modules.map(file);
+  }
+  for (const hotkey of copy.hotkeys) {
+    if (hotkey.action.kind === "dressUp") hotkey.action.module = file(hotkey.action.module);
+  }
+  return copy;
+}
+
+/** 見本のプロファイルのファイルの中身。 */
+export function sampleProfileText(lang) {
+  return `${JSON.stringify(sampleProfile(lang), null, 2)}\n`;
+}
+
 function main(argv) {
-  const args = argv.filter((a) => !a.startsWith("--"));
-  const langIndex = argv.indexOf("--lang");
-  const lang = langIndex >= 0 ? argv[langIndex + 1] : "ja";
-  const out = args.find((a) => a !== lang);
-  if (out === undefined || !["ja", "en"].includes(lang)) {
-    console.error(
-      "usage: pnpm --filter @ugoe/studio sample-profile <out.json> [--lang ja|en] [--force]",
-    );
+  const check = argv.includes("--check");
+  if (argv.some((a) => a !== "--check")) {
+    console.error("usage: pnpm --filter @ugoe/studio sample-profile [--check]");
     process.exit(2);
   }
-  // pnpm --filter はパッケージのフォルダで動かすので、相対のパスは呼んだ場所から読む
-  const path = resolve(process.env.INIT_CWD ?? process.cwd(), out);
-  if (existsSync(path) && !argv.includes("--force")) {
-    console.error(`${path} already exists (add --force to overwrite)`);
-    process.exit(1);
+  let stale = false;
+  for (const [lang, name] of Object.entries(PROFILE_FILES)) {
+    const path = join(SAMPLES_DIR, name);
+    const text = sampleProfileText(lang);
+    if (check) {
+      if (!existsSync(path) || readFileSync(path, "utf8") !== text) {
+        console.error(`${path} is out of date (run \`pnpm --filter @ugoe/studio sample-profile\`)`);
+        stale = true;
+      }
+    } else {
+      writeFileSync(path, text);
+      console.log(`wrote ${path}`);
+    }
   }
-  writeFileSync(path, `${JSON.stringify(sampleProfile(SAMPLES_DIR, lang), null, 2)}\n`);
-  console.log(`wrote ${path}`);
+  if (stale) process.exit(1);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
