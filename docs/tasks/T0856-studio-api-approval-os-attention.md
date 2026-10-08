@@ -4,7 +4,7 @@ title: "スタジオ: 外部 API の承認を待つアプリがあることを�
 status: todo
 milestone: M8
 crates: [apps/studio, docs, Cargo.toml, Cargo.lock]
-depends_on: [T0855]
+depends_on: []
 assignee:
 ---
 
@@ -58,3 +58,4 @@ A から始める。依存も権限も増えず、Stream Deck のボタンを押
 - T0075 で起票した (元: docs/roadmap.md の M8 の「起票していない後続の候補」の「承認を OS の通知にも出す (T0805)」)。
 - T0855 の後にする: どちらもスタジオの `src-tauri/Cargo.toml` と Cargo.lock を触りうるため (A を選ぶなら依存は増えず、この順は要らない)。
 - 判断 (2026-10-08): 利用者が案 A (Tauri の request_user_attention でウィンドウの注意を引く。依存を足さない) を選んだ。
+- 案 A は依存を足さないので、T0855 との Cargo.toml の重なりが無くなり、依存を外した (2026-10-08)。
