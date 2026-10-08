@@ -72,7 +72,8 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   裏面カリング、1 つの要素が 12 個のマスクを読む `masks-many`)、アニメーション中のマスク (`before` のあるケース: 値を変えた
   **直後のフレーム** を比べる。`masks-moving`・`avatar-moving`。入れ子のマスクが 1 フレーム遅れると合わない)、時間を進めた物理と目パチ・呼吸、
   受け手として進めるケース (`*-follow`。`advance` の代わりに `follow` を呼ぶ。T0449)、実行器の中の指揮役のノードの値で受け手を
-  進めるケース (`*-conduct`。T0454)、
+  進めるケース (`*-conduct`。T0454)、時間を進めるケースの各 `advance` (か `follow`) の後の `is_changed()` (結果の `changed_after_load`。
+  ノードは読み込みの直後に 1 度評価するので、参照もそうして進めた列と完全に一致することを比べる。T1405)、
   バンドルの例、公開仕様の評価の例 (モデルの JSON。`load_model_from_json` で読み、テクスチャが無いので白で描く)、
   KTX2 のテクスチャ (`ktx2-*`。見本のテクスチャと法線マップを `R8G8B8A8_SRGB` に、ミップマップ付きで zstd の `R8G8B8A8_UNORM`。T0222。
   ブロック圧縮の `BC3_UNORM_BLOCK`・zstd の `BC7_SRGB_BLOCK`・法線マップの `BC1_RGB_UNORM_BLOCK`。T0223 で `example/tests/ktx2.gd` から移した。
@@ -149,6 +150,7 @@ puppet.xr_face_tracker = &"/user/face_tracker"
 | `play_in_editor` | エディタの中でも時間を進めるか (既定は止める) |
 | `mask_scale` | マスクの解像度の倍率。1 で画面上の大きさと同じ |
 | `get_mask_resolution_factor()` | マスクがアトラスに収まらずに解像度に掛けている倍率 (1 なら下げていない。下の「描画のしかた」) |
+| `is_changed()` / `get_redraw_count()` | 直前の評価 (`advance`・再生中のフレーム・`follow`) で見た目が変わったか (`ugoe::Puppet::changed`。C ABI の `ugoe_puppet_changed`・Unity の `Puppet.Changed` と同じ。[docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)。モデルが無ければ false) / 読み込んでから頂点のバッファ・描画順・uniform を書き換えた回数 (下の「描画のしかた」。見た目が変わらずマスクの解像度も変わらないフレームでは増えない。読み込むと 0 に戻り、読み込みの直後の評価で 1 になる。T1405) |
 | `modules` | 取り付ける着せ替えのモジュール (`UgoeModule` の配列、合成の順)。シーンに保存される。モデルを読むときに付ける |
 | `ambient_light` / `lights` | 環境光 (既定は白) / 光源の辞書の配列 (`{ "type": "directional", "direction": Vector3, "color": Color }` か `{ "type": "point", "position": Vector3, "color": Color, "range": float }`)。シーンに保存される |
 | `use_scene_lights` / `get_scene_lights()` | シーンの `Light2D` も光源にする (`lights` の後ろに足す。下の「Light2D から取る光源」) / それから求めた今の光源 (`lights` と同じ形の辞書) |
@@ -324,7 +326,8 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   [docs/spec/evaluation.md#見た目の変化](../../docs/spec/evaluation.md#見た目の変化)) は、マスクの解像度が変わらない限り、頂点のバッファ
   (`mesh_surface_update_vertex_region`)・描画順・uniform を何も書き換えない (T1404)。変更フラグは直前の評価との違いしか表さないので、
   描かなかったフレームの変更フラグを積んでおき、次に描くときに足す (`src/render.rs` の `PendingChanges`)。Godot は毎フレーム描くので、
-  省けるのは CPU の書き換えと転送。
+  省けるのは CPU の書き換えと転送。書き換えた回数は `get_redraw_count()` で読め、`example/tests/smoke.gd` が、止まったモデルでは
+  読み込みの後に増えず、パラメータか `mask_scale` を変えると 1 回だけ増えることを確かめる (T1405)。
 - 要素とマスクのカバレッジは、読み込み時に `RenderingServer.mesh_*` でメッシュ (UV と頂点番号) を作ってキャンバスアイテムに 1 度だけ足し、
   毎フレームは頂点の位置だけを `mesh_surface_update_vertex_region` で書き換える (T0460。`canvas_item_add_triangle_array` で
   足し直すと、RenderingServer が呼ぶたびにポリゴンを作り直す)。キャンバスアイテムの矩形 (画面の外の選別) は位置から設定し直す。

@@ -370,7 +370,7 @@ UV とインデックスは静的なデータなので `CompiledModel` から取
 - `true` を見て描かなかったホストは、描くまで自分で覚えておく (次の `update` は描かなかった出力と比べるため)。wasm の
   `WebPuppet::shape_changed` は、これを `render` まで積んだもの ([crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#描くのを省く-t1402))。
 - C ABI は `ugoe_puppet_changed` で同じ値を返す ([crates/ugoe-ffi/README.md](../../crates/ugoe-ffi/README.md#毎フレームの描画の状態-t0490))。
-  Unity (`Puppet.Changed`) と Godot (`Puppet::changed`) は、`false` のフレームで頂点・色の書き換えを省く。変更フラグは直前の評価との
+  Unity (`Puppet.Changed`) と Godot (`Puppet::changed`。ノードの `is_changed()`) は、`false` のフレームで頂点・色の書き換えを省く。変更フラグは直前の評価との
   違いなので、省いたフレームの後に書き換えるときは、すべての要素を書き換えるか、省いた間の変更フラグを積んで足す (T1404)。
 
 ### デフォーマのワールド変換を読む

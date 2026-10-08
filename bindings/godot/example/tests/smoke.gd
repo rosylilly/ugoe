@@ -345,6 +345,31 @@ func _sdk_features(puppet: Node2D) -> void:
 	puppet.motion_event_fired.disconnect(on_fired)
 
 
+## 見た目が変わらないフレームでは頂点のバッファなどを書き換えない (T1404・T1405)。`json_path` は待機モーション・目パチ・呼吸の
+## 無いモデル (single-quad)。
+func _redraws(puppet: Node2D, json_path: String) -> void:
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(json_path)), "load single-quad for redraws")
+	_check(puppet.get_redraw_count() == 1, "loading draws once (%d)" % puppet.get_redraw_count())
+	puppet.advance(1.0 / 60.0)
+	_check(not puppet.is_changed(), "a still model is not changed")
+	for i in 4:
+		puppet.advance(1.0 / 60.0)
+	_check(puppet.get_redraw_count() == 1, "a still model is not redrawn (%d)" % puppet.get_redraw_count())
+	puppet.set_parameter("X", 0.5)
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.is_changed(), "a parameter change is a change")
+	puppet.advance(1.0 / 60.0)
+	_check(not puppet.is_changed(), "the next frame is not changed")
+	_check(puppet.get_redraw_count() == 2, "a parameter change redraws once (%d)" % puppet.get_redraw_count())
+	puppet.mask_scale = 2.0
+	puppet.advance(1.0 / 60.0)
+	puppet.advance(1.0 / 60.0)
+	_check(puppet.get_redraw_count() == 3, "a new mask_scale redraws once (%d)" % puppet.get_redraw_count())
+	puppet.mask_scale = 1.0
+	_check(puppet.load_model_from_json(FileAccess.get_file_as_string(json_path)), "reload single-quad")
+	_check(puppet.get_redraw_count() == 1, "loading resets the redraw count (%d)" % puppet.get_redraw_count())
+
+
 # 木の中で試すため、最初のフレームで始める (`_initialize` の間は root がまだ木に入っていない)。
 func _process(_delta: float) -> bool:
 	if not _started:
@@ -648,6 +673,7 @@ func _run() -> void:
 	_check(not puppet.load_model_from_json("{"), "broken JSON fails")
 	_check(not puppet.attach_module(UgoeModule.from_buffer(PackedByteArray([1, 2, 3]))), "broken module fails")
 
+	_redraws(puppet, json_path)
 	_sdk_features(puppet)
 
 	puppet.queue_free()

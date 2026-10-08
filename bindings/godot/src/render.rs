@@ -589,14 +589,14 @@ impl Renderer {
     /// 直前の `Puppet::update` の結果を描く。`mask_scale` はマスクのテクスチャのキャンバス 1 単位あたりの画素数。
     ///
     /// 見た目が変わらず (`Puppet::changed`。docs/spec/evaluation.md#見た目の変化)、マスクの解像度も変わらなければ、
-    /// 何も書き換えない (前に送った頂点のバッファと uniform のまま)。
-    pub fn draw(&mut self, model: &LoadedModel, mask_scale: f32) {
+    /// 何も書き換えない (前に送った頂点のバッファと uniform のまま)。書き換えたら true。
+    pub fn draw(&mut self, model: &LoadedModel, mask_scale: f32) -> bool {
         let instance = model.puppet.instance();
         let states = instance.drawables();
         let rescale = (mask_scale - self.mask_scale).abs() > 1e-3 * mask_scale;
         self.pending.add(instance.changes());
         if !(self.fresh || rescale || model.puppet.changed()) {
-            return;
+            return false;
         }
         let pending = std::mem::take(&mut self.pending);
         let changes = pending.0.as_slice();
@@ -742,6 +742,7 @@ impl Renderer {
         }
         self.pending = pending;
         self.pending.clear();
+        true
     }
 
     /// マスク用メッシュの今の外接矩形 (`self.masks` の順)。

@@ -44,9 +44,29 @@ pub fn frames(reference: &Frame, actual: &Frame) -> Vec<String> {
 }
 
 /// 各 `update` の後に見た目が変わったか (T1404)。両方にあるときだけ比べ、並びが完全に一致すること
-/// (書くのは `changed` を読めるバインディングだけ。今は C ABI と Unity)。
+/// (書くのは `changed` を読めるバインディングだけ。`changed` は C ABI と Unity、`changed_after_load` は Godot。T1405)。
 fn changed(reference: &Frame, actual: &Frame, errors: &mut Vec<String>) {
-    let (Some(expected), Some(changed)) = (&reference.changed, &actual.changed) else {
+    changed_list(
+        "changed",
+        reference.changed.as_deref(),
+        actual.changed.as_deref(),
+        errors,
+    );
+    changed_list(
+        "changed_after_load",
+        reference.changed_after_load.as_deref(),
+        actual.changed_after_load.as_deref(),
+        errors,
+    );
+}
+
+fn changed_list(
+    key: &str,
+    expected: Option<&[bool]>,
+    changed: Option<&[bool]>,
+    errors: &mut Vec<String>,
+) {
+    let (Some(expected), Some(changed)) = (expected, changed) else {
         return;
     };
     if expected != changed {
@@ -56,7 +76,7 @@ fn changed(reference: &Frame, actual: &Frame, errors: &mut Vec<String>) {
                 .collect::<String>()
         };
         errors.push(format!(
-            "changed: {}, expected {}",
+            "{key}: {}, expected {}",
             show(changed),
             show(expected)
         ));
@@ -335,6 +355,7 @@ mod tests {
             motion_events: None,
             textures: None,
             changed: None,
+            changed_after_load: None,
         }
     }
 
@@ -403,6 +424,15 @@ mod tests {
         assert_eq!(frames(&reference, &actual), ["changed: 111, expected 101"]);
         // 書かないバインディング (wasm・Godot) は比べない
         actual.changed = None;
+        assert!(frames(&reference, &actual).is_empty());
+        // Godot は読み込みの直後に評価した列を書く (T1405)
+        reference.changed_after_load = Some(vec![false, false, true]);
+        actual.changed_after_load = Some(vec![true, false, true]);
+        assert_eq!(
+            frames(&reference, &actual),
+            ["changed_after_load: 101, expected 001"]
+        );
+        actual.changed_after_load = reference.changed_after_load.clone();
         assert!(frames(&reference, &actual).is_empty());
     }
 

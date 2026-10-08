@@ -19,6 +19,8 @@ extends SceneTree
 ##   (`get_values_before_physics`・`get_lip_sync_applied`・`get_part_opacities_applied`) で読んだ値で受け手を `follow` させる (T0454)。
 ## - 計画に `motions` があれば、その番号の `advance` の直前に `start_motion` で始め、各 `advance` の後に発火したイベントと出どころ
 ##   (`get_motion_events`) を結果の `motion_events` に書く (T0462)。
+## - 計画に `steps` があれば、各 `advance` (か `follow`) の後の `is_changed()` を結果の `changed_after_load` に書く (T1405。ノードは
+##   読み込みの直後に 1 度評価するので、`changed` ではなく、参照がそうして進めた列と比べる)。
 ## - `before` があれば、まずその値で数フレーム描き、次のフレームで `parameters` に変えて、その直後のフレームを書く
 ##   (アニメーション中にマスクが 1 フレーム遅れないかを確かめる)。
 ## - モデルは `.ugoe` バンドルなら `load_model_from_buffer`、違えば (モデルの JSON) `load_model_from_json` で読む。
@@ -43,6 +45,8 @@ var _frames := 0
 var _capture_at := WARMUP_FRAMES
 ## 計画の `motions` のあるケースで発火したモーションのイベント (結果の `motion_events`)。
 var _events := []
+## 時間を進めるケースの、各 `advance` (か `follow`) の後の `is_changed()` (結果の `changed_after_load`。T1405)。
+var _changed := []
 
 
 func _vector3(values: Array) -> Vector3:
@@ -188,6 +192,7 @@ func _advance() -> void:
 		_puppet.reset_physics()
 	var motions: Array = _case.get("motions", [])
 	_events = []
+	_changed = []
 	for i in steps.size():
 		if follow.is_empty():
 			for m: Dictionary in motions:
@@ -197,6 +202,7 @@ func _advance() -> void:
 				if started != m["accepted"]:
 					printerr("%s: starting %s at step %d gave %s" % [_case["name"], m["name"], i, started])
 			_puppet.advance(steps[i])
+			_changed.append(_puppet.is_changed())
 			for e: Dictionary in _puppet.get_motion_events():
 				if not motions.is_empty():
 					_events.append({"step": i, "value": e["value"], "time": e["time"], "motion": e["motion"], "number": e["number"]})
@@ -212,11 +218,13 @@ func _advance() -> void:
 				opacities.append({"part": int(p[0]), "value": p[1], "weight": p[2]})
 		if not _puppet.follow(PackedFloat32Array(follow[i]), steps[i], level, strength, opacities):
 			printerr("%s: follow failed at frame %d" % [_case["name"], i])
+		_changed.append(_puppet.is_changed())
 
 
 ## 計画の `conduct` のとおりに指揮役のノードを作って進め、指揮役の口で読んだ値で `_puppet` を `follow` させる (T0454)。
 ## 指揮役は描かないので木に入れない。
 func _conduct(conduct: Dictionary) -> void:
+	_changed = []
 	var name: String = _case["name"]
 	var conductor: Node2D = ClassDB.instantiate("UgoePuppet2D")
 	conductor.playing = false
@@ -257,6 +265,7 @@ func _conduct(conduct: Dictionary) -> void:
 		if not _puppet.follow(conductor.get_values_before_physics(), steps[i], lip_sync.x, lip_sync.y,
 				conductor.get_part_opacities_applied()):
 			printerr("%s: follow failed at frame %d" % [name, i])
+		_changed.append(_puppet.is_changed())
 	conductor.free()
 
 
@@ -306,6 +315,8 @@ func _write_frame() -> void:
 	var frame := {"meshes": meshes, "render_order": order}
 	if not _case.get("motions", []).is_empty():
 		frame["motion_events"] = _events
+	if not _case["steps"].is_empty():
+		frame["changed_after_load"] = _changed
 	var file := FileAccess.open(_out.path_join("%s.json" % _case["name"]), FileAccess.WRITE)
 	# 位置の許容誤差は 0.01 px なので、浮動小数点を丸めずに書く。
 	file.store_string(JSON.stringify(frame, "", false, true))

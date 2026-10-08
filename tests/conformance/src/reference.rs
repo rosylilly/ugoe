@@ -18,13 +18,16 @@ use crate::{Error, read};
 pub fn evaluate(case: &Case) -> Result<Frame, Error> {
     let mut events = Vec::new();
     let mut changed = Vec::new();
-    let puppet = run(case, &mut events, &mut changed)?;
+    let puppet = run(case, false, &mut events, &mut changed)?;
     let mut frame = Frame::from_instance(puppet.instance());
     if !case.motions.is_empty() {
         frame.motion_events = Some(events);
     }
     if !case.steps.is_empty() {
         frame.changed = Some(changed);
+        let mut changed = Vec::new();
+        run(case, true, &mut Vec::new(), &mut changed)?;
+        frame.changed_after_load = Some(changed);
     }
     frame.textures = textures(case, &puppet)?;
     Ok(frame)
@@ -203,13 +206,16 @@ fn toggles(case: &Case) -> ugoe::Toggles {
 
 /// `case` のとおりに作って評価した `Puppet`。
 pub fn puppet(case: &Case) -> Result<Puppet, Error> {
-    run(case, &mut Vec::new(), &mut Vec::new())
+    run(case, false, &mut Vec::new(), &mut Vec::new())
 }
 
 /// [`puppet`] と同じ。計画の `motions` を始め、発火したモーションのイベントを `events` に足す (T0462)。
 /// 各 `update` (か `follow`) の後の `Puppet::changed` を `changed` に足す (T1404)。
+/// `after_load` なら、Godot のノードと同じく、時間を進める前に `update(0)` で 1 度評価する (受け手として進めるなら、
+/// その後で物理を置き直す。T1405)。
 fn run(
     case: &Case,
+    after_load: bool,
     events: &mut Vec<MotionEventFrame>,
     changed: &mut Vec<bool>,
 ) -> Result<Puppet, Error> {
@@ -217,6 +223,9 @@ fn run(
     if !case.steps.is_empty() {
         // 計画の列は `advance` と同じ (`plan::steps`)。バインディングと同じく、列のとおりに進める。
         puppet.set_toggles(toggles(case));
+        if after_load {
+            puppet.update(0.0);
+        }
         if case.follow.is_empty() {
             for (i, &dt) in case.steps.iter().enumerate() {
                 for m in case.motions.iter().filter(|m| m.step == i) {
@@ -252,6 +261,9 @@ fn run(
                 changed.push(puppet.changed());
             }
         } else {
+            if after_load {
+                puppet.reset_physics();
+            }
             for (i, (&dt, values)) in case.steps.iter().zip(&case.follow).enumerate() {
                 let lip_sync = case
                     .follow_lip_sync
@@ -458,6 +470,8 @@ mod tests {
             assert_eq!(changed.len(), case.steps.len(), "{}", case.name);
             // 最初の `update` の後は true
             assert_eq!(changed.first(), Some(&true), "{}", case.name);
+            let after_load = evaluate(case).unwrap().changed_after_load.unwrap();
+            assert_eq!(after_load.len(), case.steps.len(), "{}", case.name);
             for c in changed {
                 seen[usize::from(c)] = true;
             }
@@ -484,6 +498,7 @@ mod tests {
         let expected = Frame {
             textures: None,
             changed: None,
+            changed_after_load: None,
             ..evaluate(case).unwrap()
         };
         let mut stepped = case.clone();
@@ -612,6 +627,7 @@ mod tests {
             let expected = Frame {
                 textures: None,
                 changed: None,
+                changed_after_load: None,
                 ..evaluate(case).unwrap()
             };
             assert_eq!(

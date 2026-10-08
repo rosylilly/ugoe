@@ -174,7 +174,11 @@ C ABI と Unity の C# の層は描画しないので、頂点を比べる。Uni
    (C ABI・wasm・Unity の C# の層) と参照は `before` を使わない (結果は同じでなければならない)。`plan.txt` には書かない。
 4. 時間を進めるケース (`steps` がある) では、各 `update` (か受け手の口) の後に見た目が変わったか (C ABI の `ugoe_puppet_changed`・
    Unity の `Puppet.Changed`) を結果の `changed` に `steps` の順で書いてよい (T1404)。参照は `ugoe::Puppet::changed` で、両方にあれば
-   完全に一致することを比べる (書かないバインディング (wasm・Godot) とは比べない。wasm の `shape_changed` は描くまで積むので意味が違う)。
+   完全に一致することを比べる (書かないバインディング (wasm) とは比べない。wasm の `shape_changed` は描くまで積むので意味が違う)。
+   読み込みの直後に 1 度評価する実行器 (Godot のノード) は、最初の `update` の比べる相手が違う (作ったばかりの `Puppet` の最初の `update` は
+   必ず `true`) ので、同じ値 (Godot の `is_changed()`) を `changed_after_load` に書く。参照は `steps` の前に `update(0)` で 1 度評価し、
+   受け手として進めるなら物理を置き直して (`reset_physics`。Godot の実行器と同じ) 進めた列を `changed_after_load` に書き、
+   両方にあれば完全に一致することを比べる (T1405)。
 5. 結果を書く。形は `src/frame.rs` の `Frame` で、公開仕様の評価の例 (`expected.json` のケース) と同じ
    (`{"meshes": {ID: {"positions": [[x, y], ...], "opacity", ...}}, "render_order": [ID, ...]}`)。取り出せない値は省いてよい
    (`positions` と `render_order` は必須)。評価の結果を読み戻せないなら書かず、比べ合わせを `--images-only` にする。

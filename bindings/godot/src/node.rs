@@ -135,6 +135,8 @@ pub(crate) struct UgoePuppet2D {
     parameters: HashMap<String, f32>,
     /// `update` をまだ反映していない変更があるか (止めている間の描き直し用)。
     dirty: bool,
+    /// 読み込んでから頂点のバッファなどを書き換えた回数 (`get_redraw_count()`。T1405)。
+    redraws: u64,
     base: Base<Node2D>,
 }
 
@@ -181,6 +183,7 @@ impl INode2D for UgoePuppet2D {
             renderer: None,
             parameters: HashMap::new(),
             dirty: false,
+            redraws: 0,
             base,
         }
     }
@@ -328,6 +331,21 @@ impl UgoePuppet2D {
     #[func]
     pub fn get_mask_resolution_factor(&self) -> f32 {
         self.renderer.as_ref().map_or(1.0, Renderer::mask_shrink)
+    }
+
+    /// 直前の評価 (`advance`・再生中のフレーム・`follow`) で見た目が変わったか (`ugoe::Puppet::changed`。
+    /// docs/spec/evaluation.md#見た目の変化)。C ABI の `ugoe_puppet_changed`・Unity の `Puppet.Changed` と同じ。
+    /// モデルが無ければ false。
+    #[func]
+    pub fn is_changed(&self) -> bool {
+        self.loaded.as_ref().is_some_and(|l| l.puppet.changed())
+    }
+
+    /// モデルを読み込んでから、頂点のバッファ・描画順・uniform を書き換えた回数 (T1405)。見た目が変わらず、
+    /// マスクの解像度も変わらないフレームでは増えない (README の「描画のしかた」)。読み込むと 0 に戻る。
+    #[func]
+    pub fn get_redraw_count(&self) -> i64 {
+        to_i64(self.redraws)
     }
 
     // --- 読み込みの上限 (docs/spec/file-formats.md#読み込みの上限)
@@ -1221,6 +1239,7 @@ impl UgoePuppet2D {
             godot_warn!("ugoe: showing the model without the modules");
         }
         self.rebuild_renderer(Vec::new());
+        self.redraws = 0;
         self.step(0.0);
         self.base_mut().notify_property_list_changed();
         self.signals().model_loaded().emit();
@@ -1584,8 +1603,10 @@ impl UgoePuppet2D {
         };
         let mask_scale = self.mask_scale * screen_scale;
         self.dirty = false;
-        if let (Some(loaded), Some(renderer)) = (&self.loaded, &mut self.renderer) {
-            renderer.draw(loaded, mask_scale);
+        if let (Some(loaded), Some(renderer)) = (&self.loaded, &mut self.renderer)
+            && renderer.draw(loaded, mask_scale)
+        {
+            self.redraws += 1;
         }
     }
 }
