@@ -91,6 +91,15 @@ Calling a `control` method with `read` permission fails with `-32001`.
   choose in the studio.
 - Parameter overrides expire (see `parameter.set`), so a crashed client cannot leave the avatar stuck.
 
+## Profiles and saving
+
+The API does not save profiles and does not report the profile's state (its name, unsaved changes, or whether it
+can be saved). Most changes made through the API (scene switches, expressions, motions, parameters) are not kept in
+the profile. `dressup.set` and `pose.set` change the scene on air, and the control window saves them like its own
+edits. When the open profile is one the studio does not overwrite (a sample profile, or a file the studio cannot
+write; see [the studio guide](studio.md#書き換えないプロファイル), Japanese), these changes last only until the
+profile is closed, and only the user in the control window is offered to save a copy. Clients are not told.
+
 ## Messages
 
 Requests without an `id` are JSON-RPC notifications: the studio runs them and sends no response.

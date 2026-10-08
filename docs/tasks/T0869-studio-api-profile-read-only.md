@@ -1,7 +1,7 @@
 ---
 id: T0869
 title: "スタジオ: 外部 API に、今のプロファイルが書き換えないプロファイル (見本・読み取り専用) かを出すか決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
@@ -32,11 +32,11 @@ API から保存はできず、API で変えられるもの (シーンの切り�
 
 ## 受け入れ条件
 
-- [ ] 判断をメモに書いた
+- [x] 判断をメモに書いた
 - [ ] (A) `studio.state` に `profile.readOnly` を足し、変わったら `profile.changed` を送る。docs/studio-api.md・docs/studio-api.schema.json を直し、
       バックエンドのテスト (見本の印のあるプロファイルを開くと `"template"`、写しを保存すると `null`、書けない場所で保存に失敗すると `"notWritable"` とイベント) を足した
-- [ ] (B) docs/studio-api.md に、API がプロファイルの保存と書き換えないプロファイルを扱わないことを書き、docs/roadmap.md の M8 の「起票していない後続の候補」に移した
-- [ ] `just ci` が通る
+- [x] (B) docs/studio-api.md に、API がプロファイルの保存と書き換えないプロファイルを扱わないことを書き、docs/roadmap.md の M8 の「起票していない後続の候補」に移した
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -48,3 +48,9 @@ API から保存はできず、API で変えられるもの (シーンの切り�
 - T0080 で起票した (元の候補: T0866 (書き換えないプロファイルの訳を外部 API のプロファイルの様子にも載せるか))。
 - M8 の後続 (docs/roadmap.md の M8 の「後続のタスク」)。M8 の完了の条件には含めない。
 - 判断 (2026-10-08): 利用者が案 B (外部 API には出さず、API の文書に保存を扱わないと書く) を選んだ。
+- やったこと: 案 B。docs/studio-api.md に「Profiles and saving」の節を足し、API はプロファイルの保存もプロファイルの様子 (名前・未保存の変更・保存できるか) も扱わないこと、
+  API の変更の多くはプロファイルに残らないこと、`dressup.set`・`pose.set` は放送中のシーンを変えて操作ウィンドウが保存すること、書き換えないプロファイルでは
+  それが閉じるまでしか残らず、写しの保存に誘われるのは操作ウィンドウの利用者だけでクライアントには知らせないことを書いた (docs/studio.md#書き換えないプロファイル へのリンク)。
+  docs/roadmap.md の M8 では、T0080 で起票した後続の T0869 の説明を結果に直し、「起票していない後続の候補」に案 A (`studio.state` の `profile.readOnly` と `profile.changed`) を足した。
+- やらなかったこと: コードは変えていない (案 B は文書だけ)。docs/studio.md は T0870 が並行して触るので触っていない (直す必要も無い)。
+- 起票の候補: なし (案 A はロードマップの「起票していない後続の候補」に残した)。
