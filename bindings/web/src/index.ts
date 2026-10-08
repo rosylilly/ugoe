@@ -15,6 +15,7 @@ export {
   formatParameters,
   isBundle,
   type MotionPriority,
+  type PowerPreference,
   parseParameters,
 } from "./attributes.js";
 export {

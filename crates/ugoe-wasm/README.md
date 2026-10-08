@@ -538,7 +538,9 @@ puppet.adapter_name(); // 使っている GPU の名前 (例: "ANGLE (NVIDIA, ..
   出すかは呼ぶ側が決める。
 - 公開の API に含める (T0492 の「エディタ向けの問い合わせ」ではない)。エディタに限らず、スタジオ・ビューア・npm の利用者のどれでも
   GPU を選ぶ・使っている GPU を見せるのに使うため。`@ugoe/player` の `PuppetSurface`・`Player` は `powerPreference` で渡し
-  ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))、npm の `@ugoe/runtime` の `createPuppet`・`<ugoe-avatar>` はまだ渡さない。
+  ([docs/ui.md](../../docs/ui.md#webpuppet-の寿命))、npm の `@ugoe/runtime` は `createPuppet` の `powerPreference` と `<ugoe-avatar>` の
+  `power-preference` 属性 (`powerPreference` のプロパティ。変えると作り直す。知らない値は `"default"` として警告を出す) で渡し、
+  `<ugoe-avatar>` は `adapterName` で GPU の名前を見せる (T1401。[bindings/web/README.md](../../bindings/web/README.md#gpu-の電力の希望))。
 
 ### `code` の一覧 (T0452)
 

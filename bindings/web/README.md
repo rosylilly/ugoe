@@ -26,6 +26,7 @@ WebGPU が使えれば WebGPU、使えなければ WebGL2 で描きます。ラ�
 | --- | --- |
 | `src` | モデルの URL。`.ugoe` バンドル (先頭が `UGOE`) か、モデルの JSON |
 | `backend` | `auto` (既定) / `webgpu` / `webgl2`。`auto` で WebGPU の作成に失敗したら、新しい canvas の WebGL2 で作り直す。変えると作り直す (モデルは読み直し、パラメータの値は引き継ぐ) |
+| `power-preference` | `default` (既定。希望なし) / `low-power` / `high-performance`。GPU の電力の希望 (下の「[GPU の電力の希望](#gpu-の電力の希望)」)。作るときと、GPU を失って作り直すときに渡す。変えると作り直す (`backend` と同じ。意味の変わらない書き換えでは作り直さない)。知らない値は `default` として扱い、警告 (`unknown power-preference`) を出す。プロパティは `powerPreference` |
 | `parameters` | `"ID: 値; ID: 値"` (区切りは `;` か改行、`:` の代わりに `=` も可)。読み込みのたびと、属性を変えたときに設定する。属性から消した ID は元に戻さない |
 | `expression` | バンドルの表情の名前。消すと表情を止める |
 | `motion` | バンドルのモーションの名前。消すとモーションを止める。再生中のモーションより優先度が低くて始められなければ、始められるまで毎フレーム試す (待機モーションは、ほかのモーションが終わってから流れる) |
@@ -57,6 +58,8 @@ avatar.parameters;                         // { AngleX: -20, AngleY: 10, ... } (
 avatar.parameterDefinitions;               // [{ id, name, min, max, default, ... }]
 await avatar.load(bytesOrJsonString);      // src の代わりに直接読み込む。戻り値は文の警告
 avatar.warningDetails;                     // 最後の読み込みの警告の構造 (avatar.warnings と同じ順)
+avatar.powerPreference = "low-power";      // power-preference 属性を書き換える (作り直す)
+avatar.adapterName;                        // 使っている GPU の名前。作成前と切断中は null、ブラウザが伏せると ""
 const puppet = await avatar.ready;         // WebPuppet そのもの (下)。作成に失敗したら reject (下の「失敗とやり直し」)
 puppet.set_lighting_json(JSON.stringify({ ambient: [0.5, 0.5, 0.5] }));
 avatar.requestRender();                    // puppet を直接操作したら描き直しを頼む
@@ -100,7 +103,7 @@ avatar.clearTracking();
     (`the GPU device was lost repeatedly`) は、`error` を送り、`ready` をその理由で reject します。
     誰も `ready` を待っていなくても unhandledrejection にはなりません。
   - その状態では、作成 (作り直し) を待つ `load()` も reject し、後から呼んだ `load()` も待たずに reject します。`src` などの属性は覚えておきます。
-  - やり直すには `avatar.restart()` を呼ぶか、`backend` を変えるか、ページから外して戻します。最後に読み込めたモデル
+  - やり直すには `avatar.restart()` を呼ぶか、`backend`・`power-preference` を変えるか、ページから外して戻します。最後に読み込めたモデル
     (取得中の `src` があればその結果) を読み直し、パラメータの値は引き継ぎます。`restart()` は作り直しの回数も数え直します。
   - 作り直しを始めると (`gpulost` を送ったときも)、`ready` は新しい `WebPuppet` を待つ Promise に変わります (`await avatar.ready` は作り直すたびに取り直す)。
 
@@ -274,7 +277,7 @@ import { createPuppet, fetchModel } from "@ugoe/runtime";
 const canvas = document.querySelector("canvas");
 canvas.width = canvas.clientWidth * devicePixelRatio;
 canvas.height = canvas.clientHeight * devicePixelRatio;
-const puppet = await createPuppet(canvas, { backend: "auto" }); // wasm の初期化もする
+const puppet = await createPuppet(canvas, { backend: "auto" }); // wasm の初期化もする。powerPreference も渡せる (下)
 const warnings = await fetchModel(puppet, "avatar.ugoe");        // または loadModel(puppet, bytes)
 puppet.set_parameter("AngleX", 15);
 let last = performance.now();
@@ -599,8 +602,30 @@ WebGL2 への切り替えは、見本のページで次のように試せます 
 
 自分のページで試すときも、`WebPuppet` を作る前に同じように `navigator.gpu` を書き換えれば同じ経路を通ります。
 描画に使っている API は `load` イベントの `detail.backend` か `puppet.backend()` で分かります。使っている GPU の名前は
-`puppet.adapter_name()` で分かります (ブラウザが伏せると空。GPU の電力の希望 `powerPreference` は
-[crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499))。
+`puppet.adapter_name()` (`<ugoe-avatar>` では `adapterName`) で分かります (ブラウザが伏せると空)。
+
+### GPU の電力の希望
+
+省電力の GPU (ノート PC の内蔵など) で描くか、高性能の GPU (外付けなど) を希望するかを選べます (T1401)。
+
+```ts
+const puppet = await createPuppet(canvas, { powerPreference: "high-performance" }); // "default" (省いたとき) | "low-power" | "high-performance"
+puppet.adapter_name(); // 使っている GPU の名前
+```
+
+```html
+<ugoe-avatar src="avatar.ugoe" power-preference="low-power"></ugoe-avatar>
+```
+
+- 名前は WebGPU の `requestAdapter` と WebGL の `getContext` の `powerPreference` と同じです。`createPuppet` は `WebPuppet.create` の
+  3 つ目の引数に渡し、WebGPU ではアダプタを求めるとき、WebGL2 では canvas のコンテキストを作るときに使われます。
+  `createPuppet` に知らない値を渡すと、コードを持たない `Error` です (`<ugoe-avatar>` の属性は `default` にして警告を出します)。
+- 希望は作るときにしか効きません (WebGL2 は同じ canvas の 2 回目の `getContext` が属性を無視します)。そのため `<ugoe-avatar>` は
+  `power-preference` を変えると、`backend` を変えたときと同じく新しい canvas で作り直します (モデルは読み直し、パラメータの値は引き継ぐ)。
+  `auto` で WebGL2 に切り替えるときと、GPU を失って作り直すときも同じ値を渡します。
+- **希望** なので、効くかはブラウザと OS が決めます (Windows の Chromium は WebGPU の希望を無視するなど)。効いたかは
+  `adapterName` (`puppet.adapter_name()`) で確かめます。環境ごとの効き方は
+  [crates/ugoe-wasm/README.md](../../crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499)。
 
 ## ローカルで使う (npm i 相当)
 

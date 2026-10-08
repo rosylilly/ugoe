@@ -3,6 +3,8 @@
 // 属性:
 // - `src`: モデルの URL (`.ugoe` バンドルかモデルの JSON)
 // - `backend`: `auto` (既定) | `webgpu` | `webgl2`。`auto` で WebGPU の作成に失敗したら、新しい canvas の WebGL2 で作り直す
+// - `power-preference`: `default` (既定) | `low-power` | `high-performance`。GPU の電力の希望 (T1401)。作るときと作り直すときに渡し、
+//   変えたら作り直す (`backend` と同じ)。知らない値は `default` として警告を出す
 // - `parameters`: `"AngleX: 15; EyeLOpen: 0.5"` (読み込みのたびと、属性を変えたときに設定する)
 // - `expression` / `motion` (+ `motion-priority`): バンドルの表情・モーションの名前。再生中のモーションより優先度が低くて
 //   始められないモーションは、始められるまで毎フレーム試す
@@ -13,19 +15,22 @@
 //
 // JS からは `setParameter` / `parameters` / `load` / `setTracking` / `restart` と、ugoe-wasm の `WebPuppet` そのもの (`puppet`) を使う。
 // 作成に失敗したときと GPU を続けて失って諦めたときは、`error` を送って `ready` を reject する。読み込みの途中に GPU を
-// 失ったら (`device_lost`)、`error` は送らずにそのモデルを作り直した後に読む (T0486)。`restart()`・`backend` の変更・
-// 繋ぎ直しで作り直す。
+// 失ったら (`device_lost`)、`error` は送らずにそのモデルを作り直した後に読む (T0486)。`restart()`・`backend` と
+// `power-preference` の変更・繋ぎ直しで作り直す。
 // GPU を失って戻るのを待ち始めたら `gpulost` を送る (WebGL2 の復元を待つ・作り直しで作れずに試し直しを待つ)。WebGL2 の
 // 復元が `RESTORE_TIMEOUT_MS` 待っても届かなければ、新しい canvas で作り直しを試す (T0938。@ugoe/player の PuppetSurface と同じ)。
 // フェイストラッキングはホストが入力を渡す口だけを持つ (トラッカーは持たない。ADR 0025)。
 // 画面外 (IntersectionObserver) と `paused` の間は requestAnimationFrame を回さない。
 
 import {
+  isUnknownPowerPreference,
+  type PowerPreference,
   parseBackend,
   parseCrossOrigin,
   parseIdList,
   parseMotionPriority,
   parseParameters,
+  parsePowerPreference,
 } from "./attributes.js";
 import type { LoadLimits } from "./limits.js";
 import { parameterDefinitions, type UgoeParameterDefinition } from "./queries.js";
@@ -126,6 +131,7 @@ export class UgoeAvatarElement extends BaseElement {
   static readonly observedAttributes = [
     "src",
     "backend",
+    "power-preference",
     "parameters",
     "expression",
     "motion",
@@ -192,6 +198,8 @@ export class UgoeAvatarElement extends BaseElement {
   /** `motion` 属性のモーションを、再生中のモーションより優先度が低くて始められなかった (始められるまで毎フレーム試す)。 */
   #motionPending = false;
   #loadLimits: LoadLimits | null = null;
+  /** 最後に警告した、知らない `power-preference` の値 (作り直すたびに同じ警告を出さないため)。 */
+  #warnedPowerPreference: string | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #intersectionObserver: IntersectionObserver | null = null;
 
@@ -220,6 +228,17 @@ export class UgoeAvatarElement extends BaseElement {
   set crossOrigin(value: string | null) {
     if (value === null) this.removeAttribute("crossorigin");
     else this.setAttribute("crossorigin", value);
+  }
+
+  /**
+   * GPU の電力の希望 (`power-preference` 属性。T1401)。知らない値や省略は `"default"`。代入すると属性を書き換え、
+   * 値が変われば作り直す。効いたかは `adapterName` で確かめる。
+   */
+  get powerPreference(): PowerPreference {
+    return parsePowerPreference(this.getAttribute("power-preference"));
+  }
+  set powerPreference(value: PowerPreference) {
+    this.setAttribute("power-preference", value);
   }
 
   /** 時間を止めているか (`paused` 属性)。 */
@@ -266,6 +285,14 @@ export class UgoeAvatarElement extends BaseElement {
   /** 描画に使っている API (`"webgpu"` | `"webgl2"`)。作成前は `null`。 */
   get backend(): string | null {
     return this.#puppet?.backend() ?? null;
+  }
+
+  /**
+   * 使っている GPU の名前 (`WebPuppet.adapter_name()`。T1401)。作成前と切断中は `null`。ブラウザが伏せると空文字列
+   * (crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499)。
+   */
+  get adapterName(): string | null {
+    return this.#puppet?.adapter_name() ?? null;
   }
 
   /** 最後の読み込みの警告の文。 */
@@ -445,7 +472,7 @@ export class UgoeAvatarElement extends BaseElement {
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     // 開始前 (パーサーが作った要素の昇格など) は `#start` がまとめて適用する。
-    // 作成に失敗した後や諦めた後も、属性は覚えておき (`src` は取得する)、`backend` の変更なら作り直す。
+    // 作成に失敗した後や諦めた後も、属性は覚えておき (`src` は取得する)、`backend`・`power-preference` の変更なら作り直す。
     if (oldValue === newValue || !this.#connected) return;
     switch (name) {
       case "src":
@@ -453,6 +480,10 @@ export class UgoeAvatarElement extends BaseElement {
         break;
       case "backend":
         this.#recreate();
+        break;
+      case "power-preference":
+        // 希望は作るときにしか効かないので作り直す。知らない値は `default` なので、意味が変わらなければ作り直さない。
+        if (parsePowerPreference(oldValue) !== this.#powerPreference()) this.#recreate();
         break;
       case "parameters":
         this.#applyParameters();
@@ -531,13 +562,28 @@ export class UgoeAvatarElement extends BaseElement {
   /** canvas を作って `WebPuppet` を作る。`auto` で失敗したら、新しい canvas の WebGL2 で作り直す。 */
   async #create(session: number): Promise<WebPuppet> {
     const backend = parseBackend(this.getAttribute("backend"));
+    const powerPreference = this.#powerPreference();
     try {
-      return await createPuppet(this.#newCanvas(), { backend });
+      return await createPuppet(this.#newCanvas(), { backend, powerPreference });
     } catch (e) {
       if (backend !== "auto" || session !== this.#session) throw e;
       console.warn("ugoe-avatar: falling back to WebGL2:", e);
-      return createPuppet(this.#newCanvas(), { backend: "webgl2" });
+      return createPuppet(this.#newCanvas(), { backend: "webgl2", powerPreference });
     }
+  }
+
+  /** `power-preference` 属性の値。知らない値は `"default"` にして、値が変わったときに 1 度だけ警告を出す。 */
+  #powerPreference(): PowerPreference {
+    const value = this.getAttribute("power-preference");
+    if (!isUnknownPowerPreference(value)) {
+      this.#warnedPowerPreference = null;
+    } else if (value !== this.#warnedPowerPreference) {
+      this.#warnedPowerPreference = value;
+      console.warn(
+        `ugoe-avatar: unknown power-preference "${value}" (expected default, low-power or high-performance); using default`,
+      );
+    }
+    return parsePowerPreference(value);
   }
 
   #newCanvas(): HTMLCanvasElement {

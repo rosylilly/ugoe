@@ -17,10 +17,16 @@ class FakePuppet {
   values = new Map<string, number>();
   readonly canvas: HTMLCanvasElement;
   readonly backendName: string;
+  /** 作成に渡した GPU の電力の希望 (`createPuppet` の `options.powerPreference`)。 */
+  readonly powerPreference: string | undefined;
 
-  constructor(canvas: HTMLCanvasElement, backend: string) {
+  constructor(canvas: HTMLCanvasElement, backend: string, powerPreference?: string) {
     this.canvas = canvas;
     this.backendName = backend === "webgpu" ? "webgpu" : "webgl2";
+    this.powerPreference = powerPreference;
+  }
+  adapter_name() {
+    return `fake ${this.powerPreference}`;
   }
   free() {
     this.freed = true;
@@ -68,6 +74,8 @@ class FakePuppet {
 
 /** 作成を待たせる・失敗させるための口。 */
 const runtime = vi.hoisted(() => ({
+  /** `createPuppet` に渡された設定 (呼ばれた順。失敗した作成も含む)。 */
+  creates: [] as { backend?: string; powerPreference?: string }[],
   /** 次の作成で投げる例外 (1 回だけ)。 */
   createError: null as Error | null,
   /**
@@ -95,7 +103,11 @@ const runtime = vi.hoisted(() => ({
 }));
 
 vi.mock("./runtime.js", () => ({
-  createPuppet: async (canvas: HTMLCanvasElement, options: { backend?: string } = {}) => {
+  createPuppet: async (
+    canvas: HTMLCanvasElement,
+    options: { backend?: string; powerPreference?: string } = {},
+  ) => {
+    runtime.creates.push(options);
     await Promise.resolve();
     if (runtime.createError) {
       const e = runtime.createError;
@@ -107,7 +119,7 @@ vi.mock("./runtime.js", () => ({
         canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
       throw runtime.contextUnavailable();
     }
-    const puppet = new FakePuppet(canvas, options.backend ?? "auto");
+    const puppet = new FakePuppet(canvas, options.backend ?? "auto", options.powerPreference);
     return puppet;
   },
   loadModel: (puppet: FakePuppet, data: unknown, options: { limits?: unknown } = {}) => {
@@ -128,6 +140,8 @@ defineUgoeAvatar();
 type Avatar = import("./avatar.js").UgoeAvatarElement;
 type UgoeAvatarLoadDetail = import("./avatar.js").UgoeAvatarLoadDetail;
 type UgoeAvatarErrorDetail = import("./avatar.js").UgoeAvatarErrorDetail;
+type PowerPreference = import("./index.js").PowerPreference;
+type CreatePuppetOptions = import("./index.js").CreatePuppetOptions;
 
 const fake = (p: WebPuppet | null) => p as unknown as FakePuppet;
 /** マイクロタスクと rAF (happy-dom はタイマーで回す) を流す。 */
@@ -159,6 +173,7 @@ function newAvatar(attributes: Record<string, string> = {}): Avatar {
 }
 
 beforeEach(() => {
+  runtime.creates = [];
   runtime.createError = null;
   runtime.failing = false;
   runtime.loseOnFailure = false;
@@ -675,6 +690,120 @@ describe("<ugoe-avatar>", () => {
     expect(puppet.backend()).toBe("webgpu");
     await flush();
     expect(puppet.model).toBe("model-a");
+  });
+
+  describe("power-preference (T1401)", () => {
+    it("passes the preference to createPuppet and exposes the adapter name", async () => {
+      expectTypeOf<Avatar["powerPreference"]>().toEqualTypeOf<PowerPreference>();
+      expectTypeOf<Avatar["adapterName"]>().toEqualTypeOf<string | null>();
+      expectTypeOf<CreatePuppetOptions["powerPreference"]>().toEqualTypeOf<
+        PowerPreference | undefined
+      >();
+      const omitted = newAvatar({ backend: "webgl2" });
+      expect(omitted.powerPreference).toBe("default");
+      expect(omitted.adapterName).toBeNull();
+      document.body.append(omitted);
+      await omitted.ready;
+      expect(runtime.creates).toEqual([{ backend: "webgl2", powerPreference: "default" }]);
+      expect(omitted.adapterName).toBe("fake default");
+
+      const avatar = newAvatar({ backend: "webgl2", "power-preference": "low-power" });
+      expect(avatar.powerPreference).toBe("low-power");
+      document.body.append(avatar);
+      expect(fake(await avatar.ready).powerPreference).toBe("low-power");
+      expect(avatar.adapterName).toBe("fake low-power");
+      avatar.remove();
+      expect(avatar.adapterName).toBeNull();
+    });
+
+    it("passes the same preference when falling back to WebGL2", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      runtime.createError = new Error("no WebGPU device");
+      const avatar = newAvatar({ "power-preference": "high-performance" });
+      document.body.append(avatar);
+      await avatar.ready;
+      expect(runtime.creates).toEqual([
+        { backend: "auto", powerPreference: "high-performance" },
+        { backend: "webgl2", powerPreference: "high-performance" },
+      ]);
+    });
+
+    it("passes the same preference when recreating after losing the GPU", async () => {
+      const avatar = newAvatar({ backend: "webgl2", "power-preference": "high-performance" });
+      document.body.append(avatar);
+      const first = fake(await avatar.ready);
+      first.lost = true;
+      first.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+      first.canvas.dispatchEvent(new Event("webglcontextrestored"));
+      const second = fake(await avatar.ready);
+      expect(second).not.toBe(first);
+      expect(second.powerPreference).toBe("high-performance");
+      expect(runtime.creates.map((o) => o.powerPreference)).toEqual([
+        "high-performance",
+        "high-performance",
+      ]);
+    });
+
+    it("recreates the puppet when the preference changes", async () => {
+      const avatar = newAvatar({ backend: "webgl2" });
+      document.body.append(avatar);
+      await avatar.load("model-a");
+      avatar.setParameter("AngleX", 15);
+      const first = fake(avatar.puppet);
+      avatar.powerPreference = "low-power";
+      expect(avatar.getAttribute("power-preference")).toBe("low-power");
+      const second = fake(await avatar.ready);
+      expect(first.freed).toBe(true);
+      expect(second.powerPreference).toBe("low-power");
+      await flush();
+      // モデルは読み直し、パラメータの値は引き継ぐ (`backend` の変更と同じ)
+      expect(second.model).toBe("model-a");
+      expect(second.values.get("AngleX")).toBe(15);
+      // 意味が変わらない書き換え (大文字と小文字・前後の空白) では作り直さない
+      avatar.setAttribute("power-preference", " Low-Power ");
+      await flush();
+      expect(avatar.puppet).toBe(second);
+      avatar.removeAttribute("power-preference");
+      const third = fake(await avatar.ready);
+      expect(third).not.toBe(second);
+      expect(third.powerPreference).toBe("default");
+      expect(runtime.creates).toHaveLength(3);
+    });
+
+    it("recreates the puppet when the preference changes after giving up", async () => {
+      runtime.createError = new Error("no GPU");
+      const avatar = newAvatar({ backend: "webgpu" });
+      avatar.addEventListener("error", () => {});
+      document.body.append(avatar);
+      await expect(avatar.ready).rejects.toThrow("no GPU");
+      avatar.setAttribute("power-preference", "low-power");
+      expect(fake(await avatar.ready).powerPreference).toBe("low-power");
+    });
+
+    it("treats an unknown value as default and warns once", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const avatar = newAvatar({ backend: "webgl2", "power-preference": "fast" });
+      expect(avatar.powerPreference).toBe("default");
+      document.body.append(avatar);
+      const first = fake(await avatar.ready);
+      expect(first.powerPreference).toBe("default");
+      const unknown = () =>
+        warn.mock.calls.filter((args) => String(args[0]).includes("unknown power-preference"));
+      expect(unknown()).toHaveLength(1);
+      expect(unknown()[0]?.[0]).toContain('"fast"');
+      // 作り直しでは同じ警告を繰り返さない
+      avatar.restart();
+      expect(fake(await avatar.ready).powerPreference).toBe("default");
+      expect(unknown()).toHaveLength(1);
+      // 知らない値から default への書き換えは、意味が変わらないので作り直さない
+      const current = avatar.puppet;
+      avatar.setAttribute("power-preference", "default");
+      avatar.setAttribute("power-preference", "faster");
+      await flush();
+      expect(avatar.puppet).toBe(current);
+      expect(unknown()).toHaveLength(2);
+      expect(runtime.creates).toHaveLength(2);
+    });
   });
 
   it("resizes the drawing buffer when only the device pixel ratio changes", async () => {

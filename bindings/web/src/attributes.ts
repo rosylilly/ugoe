@@ -10,6 +10,24 @@ export function parseBackend(value: string | null | undefined): Backend {
 }
 
 /**
+ * GPU の電力の希望 (`WebPuppet.create` の `power_preference`。crates/ugoe-wasm/README.md#gpu-の電力の希望-t0499)。
+ * `"default"` は希望なし。希望なので、効くかはブラウザと OS が決める。
+ */
+export type PowerPreference = "default" | "low-power" | "high-performance";
+
+/** `power-preference` 属性の値。知らない値や省略は `"default"`。 */
+export function parsePowerPreference(value: string | null | undefined): PowerPreference {
+  const v = value?.trim().toLowerCase();
+  return v === "low-power" || v === "high-performance" ? v : "default";
+}
+
+/** `power-preference` 属性の値が知らない値か (省略・空・`default`・`low-power`・`high-performance` 以外)。警告を出すのに使う。 */
+export function isUnknownPowerPreference(value: string | null | undefined): boolean {
+  const v = value?.trim().toLowerCase();
+  return !!v && v !== "default" && parsePowerPreference(v) === "default";
+}
+
+/**
  * `parameters` 属性の値 (`"AngleX: 15; EyeLOpen: 0.5"`) をパラメータの ID と値の組にする。
  *
  * - 区切りは `;` か改行、ID と値の区切りは `:` か `=`。ID は大文字と小文字を区別する

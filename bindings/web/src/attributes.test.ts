@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   formatParameters,
   isBundle,
+  isUnknownPowerPreference,
   parseBackend,
   parseCrossOrigin,
   parseIdList,
   parseMotionPriority,
   parseParameters,
+  parsePowerPreference,
 } from "./attributes.js";
 
 describe("parseCrossOrigin", () => {
@@ -75,6 +77,26 @@ describe("parseBackend", () => {
     expect(parseBackend(" WebGL2 ")).toBe("webgl2");
     expect(parseBackend("webgl")).toBe("auto");
     expect(parseBackend(null)).toBe("auto");
+  });
+});
+
+describe("parsePowerPreference", () => {
+  it("accepts low-power and high-performance and falls back to default", () => {
+    expect(parsePowerPreference("low-power")).toBe("low-power");
+    expect(parsePowerPreference(" High-Performance ")).toBe("high-performance");
+    expect(parsePowerPreference("default")).toBe("default");
+    expect(parsePowerPreference("fast")).toBe("default");
+    expect(parsePowerPreference("")).toBe("default");
+    expect(parsePowerPreference(null)).toBe("default");
+  });
+
+  it("tells unknown values apart from omitted and known ones", () => {
+    expect(isUnknownPowerPreference("fast")).toBe(true);
+    expect(isUnknownPowerPreference("lowpower")).toBe(true);
+    expect(isUnknownPowerPreference("low-power")).toBe(false);
+    expect(isUnknownPowerPreference(" DEFAULT ")).toBe(false);
+    expect(isUnknownPowerPreference(" ")).toBe(false);
+    expect(isUnknownPowerPreference(null)).toBe(false);
   });
 });
 

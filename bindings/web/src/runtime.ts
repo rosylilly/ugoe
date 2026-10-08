@@ -1,6 +1,6 @@
 // wasm の初期化・WebPuppet の作成・モデルの読み込みの薄い補助。
 
-import { type Backend, isBundle } from "./attributes.js";
+import { type Backend, isBundle, type PowerPreference } from "./attributes.js";
 import { type LoadLimits, limitsJson } from "./limits.js";
 import type { UgoeCurveValue } from "./queries.js";
 import init, {
@@ -42,6 +42,12 @@ export function initRuntime(options: InitOptions = {}): Promise<void> {
 export interface CreatePuppetOptions {
   /** 既定は `"auto"` (WebGPU を試し、使えなければ WebGL2)。 */
   backend?: Backend;
+  /**
+   * GPU の電力の希望 (T1401)。既定は `"default"` (希望なし)。WebGPU ではアダプタを求めるとき、WebGL2 では canvas の
+   * コンテキストを作るときに渡す。希望なので、効くかはブラウザと OS が決める (使っている GPU は `puppet.adapter_name()`)。
+   * 知らない値はコードを持たない `Error`。
+   */
+  powerPreference?: PowerPreference;
 }
 
 /**
@@ -57,7 +63,7 @@ export async function createPuppet(
   options: CreatePuppetOptions = {},
 ): Promise<WebPuppet> {
   await initRuntime();
-  return WebPuppet.create(canvas, options.backend ?? "auto");
+  return WebPuppet.create(canvas, options.backend ?? "auto", options.powerPreference ?? "default");
 }
 
 /** `loadModel`・`fetchModel` の設定。 */
