@@ -209,7 +209,14 @@ describe("トラッキングの待ち", () => {
   it("平均・最大・刻みに遅れた割合・余裕を区切りでつなぎ、遅れても注意は出さない", () => {
     const { target } = setup(WINDOWS, {
       ...status([]),
-      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125, marginMs: 1.5 },
+      trackingWait: {
+        meanMs: 1.234,
+        maxMs: 15.5,
+        late: 0.125,
+        values: 8,
+        lateValues: 1,
+        marginMs: 1.5,
+      },
     });
     expect(rowText(target, t("load.trackingWait"))).toBe(
       [...values, t("load.trackingWaitMargin", { value: t("load.ms", { value: 1.5 }) })].join(sep),
@@ -220,7 +227,14 @@ describe("トラッキングの待ち", () => {
   it("促しを寄せていなければ「余裕 —」を出し、読み上げには寄せていないことを読ませる", () => {
     const { target } = setup(WINDOWS, {
       ...status([]),
-      trackingWait: { meanMs: 1.234, maxMs: 15.5, late: 0.125, marginMs: null },
+      trackingWait: {
+        meanMs: 1.234,
+        maxMs: 15.5,
+        late: 0.125,
+        values: 8,
+        lateValues: 1,
+        marginMs: null,
+      },
     });
     const row = [...target.querySelectorAll("dt")].find(
       (el) => el.textContent === t("load.trackingWait"),

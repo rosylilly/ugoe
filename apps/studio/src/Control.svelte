@@ -334,6 +334,7 @@ function onMonitor(message: MonitorMessage) {
       break;
     case "status": {
       status = message;
+      window.__UGOE_STUDIO_STATUS__ = message;
       const ids = scene?.parameterIds ?? [];
       const now = performance.now();
       ids.forEach((id, i) => {

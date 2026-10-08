@@ -151,8 +151,12 @@ export interface TrackingWait {
   meanMs: number;
   /** 待ちの最大 (ミリ秒)。 */
   maxMs: number;
-  /** 届いた値のうち、狙った刻みに遅れた割合 (0〜1)。 */
+  /** 届いた値のうち、狙った刻みに遅れた割合 (0〜1。`lateValues / values`)。 */
   late: number;
+  /** 約 1 秒に届いた値の数 (使われたか置き換わった値。遅れた割合の分母。T0873)。 */
+  values: number;
+  /** そのうち狙った刻みに遅れた値の数 (遅れた割合の分子)。 */
+  lateValues: number;
   /** 今の促しの余裕 (ミリ秒。1〜4)。促しを寄せていなければ `null` (T0867)。 */
   marginMs: number | null;
 }

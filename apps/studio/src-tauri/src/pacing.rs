@@ -508,8 +508,12 @@ pub struct TrackingWait {
     pub mean_ms: f32,
     /// 待ちの最大 (ミリ秒)。
     pub max_ms: f32,
-    /// 届いた値のうち、促しが狙った刻みに遅れた割合 (0〜1。`Ticked::late`)。
+    /// 届いた値のうち、促しが狙った刻みに遅れた割合 (0〜1。`Ticked::late`)。`late_values / values`。
     pub late: f32,
+    /// 約 1 秒に届いた値の数 (使われたか置き換わった値。`Ticked::values`)。遅れた割合の分母。
+    pub values: u32,
+    /// そのうち促しが狙った刻みに遅れた値の数 (`Ticked::late`)。遅れた割合の分子 (T0873)。
+    pub late_values: u32,
     /// 集め終えた刻みの余裕 (ミリ秒。`Ticked::margin`)。促しを寄せていなければ無し (T0867)。
     pub margin_ms: Option<f32>,
 }
@@ -535,6 +539,8 @@ impl WaitMeter {
                 mean_ms: self.total.as_secs_f32() * 1e3 / self.used as f32,
                 max_ms: self.max.as_secs_f32() * 1e3,
                 late: self.late as f32 / self.values.max(1) as f32,
+                values: self.values,
+                late_values: self.late,
                 margin_ms: self.margin.map(|m| m.as_secs_f32() * 1e3),
             });
             *self = Self {
@@ -1537,6 +1543,7 @@ mod tests {
         );
         assert!((measured.max_ms - 15.0).abs() < 1e-3, "{measured:?}");
         assert!((measured.late - 5.0 / 41.0).abs() < 1e-6, "{measured:?}");
+        assert_eq!((measured.values, measured.late_values), (41, 5));
         assert!(
             measured.margin_ms.is_some_and(|m| (m - 1.5).abs() < 1e-3),
             "{measured:?}"

@@ -39,7 +39,11 @@ describe("load warnings", () => {
     expect(loadWarnings(status({ measuredRate: null, maxIntervalMs: null }))).toEqual([]);
     // トラッキングの待ちは目安で、刻みに遅れた値が多くても注意しない (T0863。遅れは刻みのスレッドが自分で減らす。T0864)。
     expect(
-      loadWarnings(status({ trackingWait: { meanMs: 12, maxMs: 30, late: 0.5, marginMs: 4 } })),
+      loadWarnings(
+        status({
+          trackingWait: { meanMs: 12, maxMs: 30, late: 0.5, values: 4, lateValues: 2, marginMs: 4 },
+        }),
+      ),
     ).toEqual([]);
   });
 

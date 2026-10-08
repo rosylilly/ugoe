@@ -2216,6 +2216,8 @@ mod tests {
                 mean_ms: 1.5,
                 max_ms: 4.0,
                 late: 0.25,
+                values: 8,
+                late_values: 2,
                 margin_ms: Some(1.5),
             }),
             renderers: vec![RendererLoad {
@@ -2238,7 +2240,7 @@ mod tests {
             concat!(
                 r#"{"kind":"status","seq":3,"values":[0.5],"tickMs":0.25,"outputs":1,"tickRate":60,"#,
                 r#""measuredRate":59.5,"maxIntervalMs":null,"#,
-                r#""trackingWait":{"meanMs":1.5,"maxMs":4.0,"late":0.25,"marginMs":1.5},"#,
+                r#""trackingWait":{"meanMs":1.5,"maxMs":4.0,"late":0.25,"values":8,"lateValues":2,"marginMs":1.5},"#,
                 r#""renderers":[{"label":"output","fps":60.0,"#,
                 r#""refreshFps":144.0,"renderMs":1.5,"renderMaxMs":2.0,"dropped":0,"backend":"webgpu","#,
                 r#""adapter":null,"stale":false,"targetFps":null}]}"#

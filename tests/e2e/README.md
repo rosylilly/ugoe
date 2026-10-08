@@ -123,15 +123,17 @@ target/e2e/
 
 `studio/tracking.json` の「トラッキングの待ち」(「フレームレートと負荷」の Tracking wait) の欄:
 
-- `trackingWaits`: トラッキングを始めて 6 秒 (見る値が 10 個そろう約 5 秒の後) から 13 秒まで、約 1 秒ごとに読んだ表示
-  (前に読んだものと同じ文は除く)。各回は `atMs` (始めてからの時刻)・`text` (表示の文)・`meanMs`・`maxMs`・`latePercent`
-  (刻みに遅れた値の割合、%)・`marginMs` (余裕)。読めない文 (その約 1 秒に値が届かなかった「—」など) は数が `null`。
-- `trackingWaitSummary`: 読めた回数 `samples`・読めなかった回数 `unread`・遅れた割合の平均 `meanLatePercent` と最大 `maxLatePercent`・
-  待ちの平均の平均 `meanMeanMs`・最大の最大 `maxMaxMs`。表示に値の数は出ないので、割合は各回の割合をそのまま平均する。
-- `trackingWait`: 手順の終わりの表示 (1 回分)。
+- `trackingWaits`: トラッキングを始めて 6 秒 (見る値が 10 個そろう約 5 秒の後) から 13 秒まで、操作ウィンドウに届いた状態
+  (`window.__UGOE_STUDIO_STATUS__` の `trackingWait`。表示の文には値の数が出ないので状態から読む) の約 1 秒ごとの集計
+  (前に読んだものと同じ集計は除く)。各回は `atMs` (始めてからの時刻) と `wait` (`meanMs`・`maxMs`・`late` (刻みに遅れた割合、0〜1)・
+  `values` (届いた値の数)・`lateValues` (そのうち遅れた値の数)・`marginMs` (余裕))。その約 1 秒に値が届かなければ `wait` は `null`。
+- `trackingWaitSummary`: 値の有った回数 `samples`・無かった回数 `unread`・届いた値の数の合計 `values` と遅れた値の数の合計 `lateValues`・
+  値の数で重みを付けた遅れた割合 `latePercent` (合計の比、%)・各回の割合の平均 `meanLatePercent` と最大 `maxLatePercent`・
+  待ちの平均の平均 `meanMeanMs`・最大の最大 `maxMaxMs`。
+- `trackingWait`: 手順の終わりの表示の文 (1 回分)。
 
-1 回の表示は直近の約 1 秒 (検出 200 ms では値 2〜3 個) の集計で、1 つ遅れるだけで 0〜67% と揺れる。`pacing.rs` を変えたときは
-前と後で数回ずつ流し、`trackingWaitSummary` を比べる。筋書きは表示が出ることだけを確かめ、割合や待ちの値では落とさない
+1 回の集計は直近の約 1 秒 (検出 200 ms では値 2〜3 個) で、1 つ遅れるだけで 0〜67% と揺れる。`pacing.rs` を変えたときは
+前と後で数回ずつ流し、`trackingWaitSummary` の `latePercent` (と `values`・`lateValues`) を比べる。筋書きは表示が出ることだけを確かめ、割合や待ちの値では落とさない
 (値は計算機の重さで決まり、閾値を決めると揺れで落ちる。値の良し悪しは `pacing.rs` の仮の時刻のテストで決める)。
 
 CI では失敗したときに `target/e2e` (実行ファイルを除く) を成果物として残す。

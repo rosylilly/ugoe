@@ -360,7 +360,7 @@ Tauri の外では、ページを読む前に `window.__UGOE_STUDIO_HOST__` に 
 置かなければ「Tauri の中で動かしてください」というエラーを出す。操作ウィンドウのトラッカーは `window.__UGOE_TRACKER__`
 (`startReplay(text)` で記録を流せる)。Chrome の偽のカメラ・マイク (`--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<.y4m>
 --use-file-for-fake-audio-capture=<.wav>`) で入力の経路を確かめられる。出力ウィンドウの `Player` は `window.__UGOE_STUDIO_OUTPUT__` で見られる
-(`status`・`following`・`error`)。WebGPU の無いヘッドレスの Chrome でも、SwiftShader の WebGL2 で描ける
+(`status`・`following`・`error`)。操作ウィンドウに直近に届いた状態 (`StatusMessage`。負荷とトラッキングの待ち) は `window.__UGOE_STUDIO_STATUS__`。WebGPU の無いヘッドレスの Chrome でも、SwiftShader の WebGL2 で描ける
 (`--use-angle=swiftshader --enable-unsafe-swiftshader`)。
 
 ## コマンド

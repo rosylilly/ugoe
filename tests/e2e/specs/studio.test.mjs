@@ -42,41 +42,42 @@ function freePort() {
 const TRACKING_MS = 13_000;
 /** 「トラッキングの待ち」を読み始める時刻 (トラッキングを始めてから。見る値が 10 個そろう約 5 秒の後)。 */
 const WAIT_FROM_MS = 6_000;
-/** 「フレームレートと負荷」の「トラッキングの待ち」の文 (値が届いているとき)。平均・最大・遅れた割合・余裕を読む。 */
+/** 「フレームレートと負荷」の「トラッキングの待ち」の文 (値が届いているとき)。平均・最大・遅れた割合・余裕。 */
 const TRACKING_WAIT = /^Average (.+) ms, max (.+) ms, (.+)% missed their tick, margin (.+) ms$/;
 
 /**
- * 「トラッキングの待ち」の文から数を読む。読めない (値が無い・余裕が無い・文の形が違う) ときは数を null にする。
- * @param {string | null} text
+ * 操作ウィンドウに直近に届いた状態の「トラッキングの待ち」(`StatusMessage` の `trackingWait`。届いていない・値が無いときは null)。
+ * 表示の文には値の数が出ないので、状態から読む (T0873)。
  */
-function parseTrackingWait(text) {
-  const m = text === null ? null : TRACKING_WAIT.exec(text);
-  const num = (v) => {
-    const n = Number(v.replaceAll(",", ""));
-    return Number.isFinite(n) ? n : null;
-  };
-  return m
-    ? { meanMs: num(m[1]), maxMs: num(m[2]), latePercent: num(m[3]), marginMs: num(m[4]) }
-    : { meanMs: null, maxMs: null, latePercent: null, marginMs: null };
+function statusTrackingWait(session) {
+  return session.execute(() => {
+    const status = window.__UGOE_STUDIO_STATUS__;
+    return status === undefined ? undefined : status.trackingWait;
+  });
 }
 
 /**
- * 集めた「トラッキングの待ち」のまとめ: 読めた回数・読めなかった回数 (その約 1 秒に値が届かなかった「—」など)・
- * 遅れた割合の平均と最大・待ちの平均の平均・最大の最大。
- * 表示に値の数は出ないので、割合は各回の割合をそのまま平均する (各回の値の数はほぼ同じ)。
- * @param {ReturnType<typeof parseTrackingWait>[]} waits
+ * 集めた「トラッキングの待ち」のまとめ: 値の有った回数・無かった回数 (その約 1 秒に値が届かなかった)・届いた値の数と遅れた値の数の合計・
+ * 値の数で重みを付けた遅れた割合 (合計の比)・各回の割合の平均と最大・待ちの平均の平均・最大の最大。
+ * @param {({ late: number, values: number, lateValues: number, meanMs: number, maxMs: number } | null)[]} waits
  */
 function summarizeTrackingWaits(waits) {
-  const read = waits.filter((w) => w.latePercent !== null);
-  const mean = (xs) => (xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const read = waits.filter((w) => w !== null);
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+  const mean = (xs) => (xs.length > 0 ? sum(xs) / xs.length : null);
   const round = (v) => (v === null ? null : Math.round(v * 100) / 100);
+  const values = sum(read.map((w) => w.values));
+  const lateValues = sum(read.map((w) => w.lateValues));
   return {
     samples: read.length,
     unread: waits.length - read.length,
-    meanLatePercent: round(mean(read.map((w) => w.latePercent))),
-    maxLatePercent: read.length > 0 ? Math.max(...read.map((w) => w.latePercent)) : null,
+    values,
+    lateValues,
+    latePercent: values > 0 ? round((lateValues / values) * 100) : null,
+    meanLatePercent: round(mean(read.map((w) => w.late * 100))),
+    maxLatePercent: read.length > 0 ? round(Math.max(...read.map((w) => w.late * 100))) : null,
     meanMeanMs: round(mean(read.map((w) => w.meanMs))),
-    maxMaxMs: read.length > 0 ? Math.max(...read.map((w) => w.maxMs)) : null,
+    maxMaxMs: read.length > 0 ? round(Math.max(...read.map((w) => w.maxMs))) : null,
   };
 }
 
@@ -333,7 +334,7 @@ describe("studio", () => {
     "tracking under heavy detection reaches the control and the output (T0812)",
     async () => {
       const s = app.session;
-      // 「フレームレートと負荷」の「トラッキングの待ち」を手順の間に読むので、先に開いておく (T0871)
+      // 「フレームレートと負荷」の「トラッキングの待ち」が出ることを手順の終わりに確かめるので、先に開いておく (T0871)
       const trigger = await s.waitFind('[data-panel="load"] .ugoe-section__trigger');
       const wasOpen = (await trigger.attribute("aria-expanded")) === "true";
       if (!wasOpen) await trigger.click();
@@ -350,18 +351,20 @@ describe("studio", () => {
       await startFakeTracking(s, { costMs: 200, seconds: 6 });
       const angleX = [];
       // 「トラッキングの待ち」は直近の約 1 秒 (検出 200 ms では値 2〜3 個) の集計で、1 つ遅れるだけで 0〜67% と揺れる。
-      // 前と後を比べられるよう、見る値が 10 個そろう (docs/studio.md#入力 の「見る値の数」) 約 5 秒の後から、
-      // 約 1 秒ごとに読んで残す。表示は約 1 秒ごとに変わるので、前に読んだものと同じ文なら同じ集計として数えない (T0871)
+      // 前と後を比べられるよう、見る値が 10 個そろう (docs/studio.md#入力 の「見る値の数」) 約 5 秒の後から、状態の集計を
+      // 約 1 秒ごとに 1 つずつ残し (T0871)、値の数と遅れた値の数を足し合わせる (T0873)。状態は 1 秒に何度も届き、集計は約 1 秒ごとに
+      // 変わるので、繰り返しのたびに読み、前に読んだものと同じなら同じ集計として数えない (1 秒より短い間隔で読むので取りこぼさない)
       const waits = [];
       const started = Date.now();
-      let nextWait = started + WAIT_FROM_MS;
+      let last;
       while (Date.now() - started < TRACKING_MS) {
         angleX.push(await s.execute(`return __e2e.sliderValue("^Angle ?X( |$)")`));
-        if (Date.now() >= nextWait) {
-          nextWait = Math.max(nextWait + 1_000, Date.now());
-          const text = await trackingWait();
-          if (text !== waits.at(-1)?.text) {
-            waits.push({ atMs: Date.now() - started, text, ...parseTrackingWait(text) });
+        if (Date.now() - started >= WAIT_FROM_MS) {
+          const wait = await statusTrackingWait(s);
+          const key = JSON.stringify(wait);
+          if (wait !== undefined && key !== last) {
+            last = key;
+            waits.push({ atMs: Date.now() - started, wait });
           }
         }
         await new Promise((r) => setTimeout(r, 250));
@@ -378,7 +381,7 @@ describe("studio", () => {
         tracker,
         angleX,
         trackingWaits: waits,
-        trackingWaitSummary: summarizeTrackingWaits(waits),
+        trackingWaitSummary: summarizeTrackingWaits(waits.map((w) => w.wait)),
       };
       writeFileSync(
         join(process.env.E2E_OUT, "tracking.json"),

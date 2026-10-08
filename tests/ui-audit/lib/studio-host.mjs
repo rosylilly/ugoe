@@ -442,7 +442,14 @@ export function studioPageInit({ osLocale, fixture }) {
           measuredRate: 59.8,
           maxIntervalMs: 17.2,
           // トラッキングの値が届いてから刻みで使われるまでの待ち (lib.rs の `Monitor::Status`。T0863)
-          trackingWait: { meanMs: 1.04, maxMs: 3.41, late: 0.017, marginMs: 1.5 },
+          trackingWait: {
+            meanMs: 1.04,
+            maxMs: 3.41,
+            late: 0.017,
+            values: 59,
+            lateValues: 1,
+            marginMs: 1.5,
+          },
           renderers: [
             {
               label: "output",
