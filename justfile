@@ -341,9 +341,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs
+    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ、手で確かめる一式 (scripts/check-pack.mjs) のパスの検査
 app-build-check:

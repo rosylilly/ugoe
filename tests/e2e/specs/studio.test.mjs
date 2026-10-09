@@ -25,6 +25,7 @@ import {
 } from "../lib/harness.mjs";
 import { countInvokes, installPageHelpers, invokeStats, percentile } from "../lib/page.mjs";
 import { checkImageTracking, startFakeTracking, trackerState } from "../lib/tracking.mjs";
+import { minTrackingDone, trackingMs } from "../lib/tracking-length.mjs";
 import { waitFor } from "../lib/webdriver.mjs";
 
 /** 空いている TCP のポート (操作 API に使う。利用者のスタジオの既定のポートとぶつけない)。 */
@@ -38,8 +39,8 @@ function freePort() {
   });
 }
 
-/** 重い検出の下でトラッキングを流す長さ (ミリ秒)。 */
-const TRACKING_MS = 13_000;
+/** 重い検出の下でトラッキングを流す長さ (ミリ秒)。既定は 13 秒で、`UGOE_E2E_TRACKING_MS` で長くできる (tests/e2e/README.md#長く流す)。 */
+const TRACKING_MS = trackingMs();
 /** 「トラッキングの待ち」を読み始める時刻 (トラッキングを始めてから。見る値が 10 個そろう約 5 秒の後)。 */
 const WAIT_FROM_MS = 6_000;
 /** 「フレームレートと負荷」の「トラッキングの待ち」の文 (値が届いているとき)。平均・最大・遅れた割合・余裕。 */
@@ -375,6 +376,7 @@ describe("studio", () => {
       const done = stats.done.set_tracking ?? 0;
       const p50 = percentile(stats.latency.set_tracking ?? [], 0.5);
       const report = {
+        trackingMs: TRACKING_MS,
         done,
         errors: stats.errors.set_tracking ?? 0,
         p50,
@@ -388,8 +390,12 @@ describe("studio", () => {
         `${JSON.stringify(report, null, 2)}\n`,
       );
       assert.equal(tracker.status, "running", JSON.stringify(tracker));
-      // 直す前は 50 秒で 3 回しか届かず、応答に何秒もかかった (docs/tasks/T0812)
-      assert.ok(done >= 10, `set_tracking reached the backend only ${done} times in ${elapsed} ms`);
+      // 直す前は 50 秒で 3 回しか届かず、応答に何秒もかかった (docs/tasks/T0812)。下限は 13 秒で 10 回で、長く流すときは長さに比例させる
+      const minDone = minTrackingDone(TRACKING_MS);
+      assert.ok(
+        done >= minDone,
+        `set_tracking reached the backend only ${done} times in ${elapsed} ms (expected ${minDone})`,
+      );
       assert.ok(p50 !== null && p50 < 1000, `set_tracking took ${p50} ms (p50)`);
       const seen = angleX.filter((v) => v !== null);
       assert.ok(seen.length > 0, "no AngleX slider in the control window");

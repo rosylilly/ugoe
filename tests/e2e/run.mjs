@@ -17,6 +17,8 @@
 //    エディタはこの計算機の外への HTTP(S) を、手元の止める口 (プロキシ) に向ける。外へ出ようとしたら止め、その手順を失敗にする
 //    (README の「外に出さない」)。
 //
+// 環境変数 UGOE_E2E_TRACKING_MS で、スタジオの重い検出のトラッキングを流す長さ (ミリ秒) を変えられる (README の「長く流す」)。
+//
 // 結果は <out> (既定 target/e2e) に残る: <アプリ>/driver.log (アプリと WebKitWebDriver の出力)、
 // <アプリ>/*.console.json (ページの console)、<アプリ>/failures/<手順>/ (失敗したときのスクリーンショットとログ)、
 // <アプリ>/shots/ (途中のスクリーンショット)。
@@ -44,6 +46,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { exportMbxPath } from "../../scripts/lib/mbx.mjs";
+import { trackingMs } from "./lib/tracking-length.mjs";
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
 exportMbxPath();
@@ -80,6 +83,15 @@ const only = option("--only", Object.keys(APPS).join(",")).split(",");
 for (const app of only) {
   if (!(app in APPS)) {
     console.error(`unknown app: ${app} (choose from ${Object.keys(APPS).join(", ")})`);
+    process.exit(2);
+  }
+}
+// スタジオの重い検出のトラッキングを流す長さ (`UGOE_E2E_TRACKING_MS`。README の「長く流す」) を、ビルドの前に確かめる
+if (only.includes("studio")) {
+  try {
+    trackingMs();
+  } catch (e) {
+    console.error(e.message);
     process.exit(2);
   }
 }
