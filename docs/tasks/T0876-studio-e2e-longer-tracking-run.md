@@ -1,11 +1,11 @@
 ---
 id: T0876
 title: "スタジオの e2e: 重い検出のトラッキングを長く流して、遅れた値の割合を比べられる数だけ集められるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0876
 ---
 
 # T0876: スタジオの e2e: 重い検出のトラッキングを長く流せるようにする
