@@ -10,11 +10,13 @@ src/frame.ts            MediaPipe の結果 → TrackingFrame (頭の向き・�
                         WebPuppet.set_tracking への受け渡し (setPuppetTracking)
 src/pose.ts             Pose Landmarker の点 → 体の値 (体の向きと肩の上下、T0645)
 src/calibration.ts      キャリブレーション (中立の顔を差し引く)
+src/tuning.ts           利用者の調整 (首振りの感度と遊び・瞼と口の開きの境目。T0877)
 src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
 src/status.ts           パネルの状態の文 (顔が見つからないなど) と、その揺れの抑え (T0958)
 src/TrackingPanel.svelte  パネル (入力の選択・映像とランドマーク・調整・記録・値の表示)
+src/TuningSection.svelte  パネルの中の「調整 (感度と境目)」(スライダーと、調整の前と後のメーター)
 src/usage-logging.ts    MediaPipe の利用状況の送信を断る (下の「利用状況の送信」)
 src/mediapipe-bundle.test.ts  入れている MediaPipe の配布物が、上の止め方の頼る形で送るままかを確かめる
 src/i18n.ts             画面の文言 (@ugoe/i18n の名前空間 `face-tracking`。カタログは locales/<言語>.json、原文は英語)
@@ -61,6 +63,41 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
   キャリブレーションした後だけ渡す (`calibration.ts`)。
 - モデル `pose_landmarker_lite.task` (5.5 MiB) も `ugoe-mediapipe-assets` が取得・検証する。無ければ顔だけでトラッキングを続ける。
 - 記録の形式は版 2 (`body` が増えた。版 1 も読める)。
+
+## 利用者の調整 (T0877)
+
+キャリブレーションの後・平滑化の前に、利用者の顔・カメラ・部屋に合わせる調整を当てる (`applyTuning`。
+[docs/spec/avatar-profile.md#実装の範囲](../../docs/spec/avatar-profile.md#実装の範囲) でアプリの責務とされたもの)。
+モデルの `avatar.tracking` の上書き (モデルを作る人が決める) とは別。
+
+```
+検出 → (左右を入れ替えるなら unmirrorFrame) → 記録 → applyCalibration → applyTuning → FrameSmoother → TrackingTarget
+```
+
+| 項目 | 値 | 当て方 |
+| --- | --- | --- |
+| `yaw`・`pitch`・`roll` | `gain` (感度。0〜4、既定 1)・`deadZone` (遊び。度、0〜20、既定 0) | `sign(v) × max(0, abs(v) − deadZone) × gain`。遊びの中は 0、外は 0 から続けてつなぐ |
+| `eyeBlink` (`eyeBlinkLeft`・`eyeBlinkRight`)・`jawOpen` | `low`・`high` (0〜1、既定 0 と 1。間は 0.05 以上) | `clamp((v − low) / (high − low), 0, 1)` |
+
+- **既定値なら何もしない:** `DEFAULT_TUNING` のまま (倍率 1・遊び 0・境目 0 と 1) なら、`applyTuning` は受け取ったフレームをそのまま返す
+  (出力はこの機能の前とビット単位で同じ)。項目ごとにも、既定値の項目は値に触らない。
+- **壊れた値:** `sanitizeTuning` が、無い・知らない項目を捨てて既定値にし、NaN・無限大は既定値、範囲の外は端に寄せ、間が 0.05 より狭い
+  (下が上以上を含む) 境目の組は既定に戻す。`FaceTracker.setTuning` と `applyTuning` の両方で通す。画面のスライダーは片方の境目を
+  動かすと、間を保つようにもう片方を押す (`moveRangeBound`。動かした方は利用者の決めた値のまま)。
+- **左右:** 瞼は左右を 1 つの組で一緒に動かす (下の「決めたこと」)。左右の入れ替え (`swapSides`) は検出の直後に済んでいるので、調整は利用者から見た
+  左右 (出力の左右) に当たる。
+- **変えないもの:** 体 (`body`) と、組に無いブレンドシェイプ (`mouthClose` を含む。`MouthOpenY` = `max(0, jawOpen − mouthClose)` の
+  `jawOpen` だけを伸ばす)。体を使っていないときの体の回転 (Rust の対応付けの頭 × 0.3) は、調整した後の頭から作られる。
+- **記録:** 記録するのは調整の前 (キャリブレーションの前) の値。再生しながら調整し直せる (キャリブレーションと同じ)。
+- **広げるとき:** `TUNING_RANGES` にまとまりとブレンドシェイプの名前を足し、`TrackingTuning`・`DEFAULT_TUNING`・`sanitizeTuning`・
+  スタジオの `input.rs` の `TrackingTuning`・パネル (`TuningSection.svelte` の `RANGES`) と文言に項目を足す。
+- **保存:** パッケージは持つだけで保存しない。スタジオはプロファイルの `input.tuning` に保存する ([docs/studio.md](../../docs/studio.md#入力とホットキーの項目-t0803))。
+  ビューアとエディタは保存しない (開き直すと既定値)。
+- **決めたこと:**
+  - 瞼の左右を一緒にした: 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (向きで揺れる差を固定の値で直すと、正面で
+    片目だけ閉じきる) ため。スライダーの数も半分になる。左右を別にするなら `eyeBlinkLeft`・`eyeBlinkRight` の組を分けて足す。
+  - 遊びは「引いてつなぐ」形 (遊びの境で値が飛ばない)。感度は遊びを引いた後に掛ける (遊びの角度が感度で変わらない)。
+  - 境目は 2 つの値 (下と上) にした: 「開いた」と「閉じた」の両方を決めたい (細目の人は閉じの値が 0 まで下がらず、1 まで上がらない) ため。
 
 ## 利用状況の送信 (T0943)
 

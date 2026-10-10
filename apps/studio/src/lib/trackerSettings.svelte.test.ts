@@ -14,6 +14,7 @@ function setup(initial: InputSettings) {
     swapSides: initial.swapSides,
     trackBody: initial.trackBody,
     stopEyeBlink: initial.stopEyeBlink,
+    tuning: initial.tuning,
     running: false,
     source: null,
     cameraId: "",
@@ -65,6 +66,30 @@ describe("rememberTrackerSettings", () => {
     flushSync();
     expect(sent).toHaveLength(1);
     expect(state.settings.camera).toEqual({ id: "y", label: "Cam Y" });
+    stop();
+  });
+
+  it("remembers the tuning without sending the same values back", () => {
+    const { tracker, state, sent, stop } = setup(DEFAULT_INPUT);
+    tracker.tuning = { ...DEFAULT_INPUT.tuning, yaw: { gain: 2, deadZone: 3 } };
+    flushSync();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.tuning.yaw).toEqual({ gain: 2, deadZone: 3 });
+    // バックエンドから、項目の並びの違う同じ調整が届いても送り返さない。
+    const { yaw, pitch, roll, eyeBlink, jawOpen } = sent[0]?.tuning ?? DEFAULT_INPUT.tuning;
+    state.settings = {
+      ...state.settings,
+      tuning: {
+        jawOpen: { high: jawOpen.high, low: jawOpen.low },
+        eyeBlink,
+        roll,
+        pitch,
+        yaw: { deadZone: yaw.deadZone, gain: yaw.gain },
+      },
+    };
+    tracker.tuning = { ...tracker.tuning };
+    flushSync();
+    expect(sent).toHaveLength(1);
     stop();
   });
 });

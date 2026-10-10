@@ -64,6 +64,53 @@
       "tooltip": "Undo the calibration"
     }
   },
+  "tuning": {
+    "title": "Tuning (sensitivity and thresholds)",
+    "uncalibrated": "Not calibrated: the values still include your neutral face. Calibrate first to tune the movement from neutral",
+    "calibrated": "Values after calibration and before smoothing (before tuning → after tuning)",
+    "yaw": "Head turn (yaw)",
+    "pitch": "Head nod (pitch)",
+    "roll": "Head tilt (roll)",
+    "gain": {
+      "label": "Sensitivity",
+      "tooltip": "Multiplies the angle. Higher makes a small head movement turn the character more"
+    },
+    "deadZone": {
+      "label": "Dead zone",
+      "tooltip": "Angles within this range around neutral are ignored (stops small jitter). Outside it, movement continues smoothly from zero"
+    },
+    "eyeBlink": {
+      "label": "Eyelids (both eyes)",
+      "low": {
+        "label": "Fully open at",
+        "tooltip": "Eye closure at or below this counts as fully open"
+      },
+      "high": {
+        "label": "Fully closed at",
+        "tooltip": "Eye closure at or above this counts as fully closed. Lower it if your eyes never fully close in tracking"
+      }
+    },
+    "jawOpen": {
+      "label": "Mouth opening",
+      "low": {
+        "label": "Closed at",
+        "tooltip": "Mouth opening at or below this counts as closed (ignores slight opening)"
+      },
+      "high": {
+        "label": "Fully open at",
+        "tooltip": "Mouth opening at or above this counts as fully open. Lower it to open the mouth wide with a small movement"
+      }
+    },
+    "left": "Left",
+    "right": "Right",
+    "meter": "{{before}} → {{after}}",
+    "degrees": "°",
+    "times": "×",
+    "reset": {
+      "label": "Reset to defaults",
+      "tooltip": "Reset the sensitivity, dead zones and thresholds"
+    }
+  },
   "recording": {
     "record": {
       "label": "Record",

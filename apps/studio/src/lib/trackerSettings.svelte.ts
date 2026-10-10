@@ -1,12 +1,19 @@
 // トラッキングのパネル (@ugoe/face-tracking) で変えた調整と、使ったカメラを、プロファイルの入力の設定へ書き戻す (InputPanel.svelte)。
-import type { FaceTracker } from "@ugoe/face-tracking";
+import { type FaceTracker, sanitizeTuning } from "@ugoe/face-tracking";
 import { untrack } from "svelte";
 import type { InputSettings } from "./inputs";
 
 /** 書き戻すときに読むトラッカーの値。 */
 export type TrackerView = Pick<
   FaceTracker,
-  "smoothing" | "swapSides" | "trackBody" | "stopEyeBlink" | "running" | "source" | "cameraId"
+  | "smoothing"
+  | "swapSides"
+  | "trackBody"
+  | "stopEyeBlink"
+  | "tuning"
+  | "running"
+  | "source"
+  | "cameraId"
 >;
 
 /**
@@ -28,6 +35,7 @@ export function rememberTrackerSettings(
       swapSides: tracker.swapSides,
       trackBody: tracker.trackBody,
       stopEyeBlink: tracker.stopEyeBlink,
+      tuning: sanitizeTuning(tracker.tuning),
     };
     const camera =
       tracker.running && tracker.source?.kind === "camera" && tracker.cameraId !== ""
@@ -37,7 +45,9 @@ export function rememberTrackerSettings(
     seenCamera = camera?.id ?? null;
     // 設定 (プロファイル) が変わっただけでは書き戻さない。
     untrack(() => {
-      const current = $state.snapshot(settings()) as InputSettings;
+      const snapshot = $state.snapshot(settings()) as InputSettings;
+      // 調整は項目の並びを揃えてから比べる (届いた設定とトラッカーの値で、同じ値でも並びが違うと送り合いが止まらない)。
+      const current = { ...snapshot, tuning: sanitizeTuning(snapshot.tuning) };
       const next = { ...current, ...patch };
       if (JSON.stringify(next) !== JSON.stringify(current)) onsettings(next);
     });

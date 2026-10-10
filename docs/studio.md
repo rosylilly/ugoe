@@ -147,7 +147,7 @@
 | いまの状態 (中央) | 状態の印 (下の「状態の印」)・配信しているシーンとモデル・再生中のモーション・付けている表情。モデルは描かない | T0801・T0803・T0817 |
 | 表情とモーション (中央) | 表情の付け外し・モーションの再生 (優先度) | T0803 |
 | ポーズ (中央) | 配信しているシーンの、ポーズのグループごとに表示する要素 ([ポーズの要素](#ポーズの要素))。欄は表示中の要素 (モーションの切り替えを含む)。モデルにポーズのグループがあるときだけ出す | T0842・T0848 |
-| 入力 | カメラの選択・トラッキングの開始と停止・キャリブレーション・平滑化。マイクの選択・感度・ノイズの閾値・音量のメーター | T0803 |
+| 入力 | カメラの選択・トラッキングの開始と停止・キャリブレーション・調整 (首振りの感度と遊び・瞼と口の開きの境目)・平滑化。マイクの選択・感度・ノイズの閾値・音量のメーター | T0803 |
 | シーンの編集 | 選んだシーンのモデル・着せ替え・ライティング・位置と大きさと回転・背景 (透過・単色・クロマキー・画像) | T0802 |
 | ホットキー | 操作ごとのキーの割り当て (下の「ホットキー」)。ぶつかりと登録できなかったものの表示 | T0803・T0818 |
 | モーションの設定 | 待機モーション・トラッキング中のモーションの優先とトラッキングのままにするパラメータ (T0721・T0722)。配信中には触らないので、表情とモーションの操作から分けて右の列に置く | T0803・T0818 |
@@ -555,6 +555,10 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
   "input": {
     "camera": { "id": "…", "label": "HD Webcam" },
     "smoothing": 0.5, "swapSides": false, "trackBody": true, "stopEyeBlink": true,
+    "tuning": {
+      "yaw": { "gain": 1.5, "deadZone": 2 }, "pitch": { "gain": 1, "deadZone": 0 }, "roll": { "gain": 1, "deadZone": 0 },
+      "eyeBlink": { "low": 0.1, "high": 0.6 }, "jawOpen": { "low": 0, "high": 1 }
+    },
     "microphone": null, "sensitivity": 0.5, "noiseGate": 0.3
   },
   "motion": { "autoIdle": true, "idleMotion": null, "overTracking": true, "trackingKept": ["EyeLOpen", "EyeROpen"] }
@@ -568,6 +572,8 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 | `input.camera`・`input.microphone` | オブジェクト / `null` | 選んだ機器 (`id` と `label`)。`id` が見つからなければ `label` で探し、無ければ既定の機器。`null` は既定の機器 |
 | `input.smoothing` | 数 (0〜1) | トラッキングの平滑化の強さ |
 | `input.swapSides`・`trackBody`・`stopEyeBlink` | 真偽 | 左右を入れ替える・体 (肩) もトラッキングする・トラッキング中は自動の目パチを止める (`@ugoe/face-tracking` の同じ名前の設定) |
+| `input.tuning.yaw`・`pitch`・`roll` | オブジェクト | 頭の回転の軸ごとの調整 (T0877)。`gain` は感度 (0〜4。既定 1)、`deadZone` は遊び (度。0〜20。既定 0)。遊びの中は 0 にし、外は遊びの分を引いてから感度を掛ける |
+| `input.tuning.eyeBlink`・`jawOpen` | オブジェクト | 瞼 (`eyeBlinkLeft`・`eyeBlinkRight` を一緒に) と口の開き (`jawOpen`) の境目 (T0877)。`low` 以下を 0、`high` 以上を 1 とし、間を引き伸ばす (0〜1。既定 0 と 1)。間が 0.05 より狭い (下が上以上を含む) 組は既定に戻して読む |
 | `input.sensitivity` | 数 (0〜1) | マイクの感度。0.5 で等倍、0 で 1/4、1 で 4 倍 |
 | `input.noiseGate` | 数 (0〜1) | ノイズの閾値 (下の「マイクの口パク」の大きさの尺度)。これより小さな音では口を開かない |
 | `motion.autoIdle` | 真偽 | 何も再生していないときに待機モーションを流す |
@@ -707,7 +713,7 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 
 ```
  操作ウィンドウ (WebView)                                   指揮役 (Puppet。物理は切る)
- カメラ → MediaPipe → キャリブレーション・平滑化 ── set_tracking ──► トラッキングの入力 (Rust の対応付けで変換)
+ カメラ → MediaPipe → キャリブレーション・調整・平滑化 ── set_tracking ──► トラッキングの入力 (Rust の対応付けで変換)
  マイク → RMS → dB → 閾値・感度 → 開く速さ・閉じる速さ ── set_lip_sync_level ──► リップシンクの音量
  パネル・ホットキー ── play_motion・set_expression など ──► モーション・表情
 ```
@@ -812,7 +818,14 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 
 ### カメラのフェイストラッキング
 
-`@ugoe/face-tracking` のパネル (入力の選択・映像とランドマーク・平滑化・キャリブレーション・記録) をそのまま使う。調整と使ったカメラはプロファイルの `input` に覚える。
+`@ugoe/face-tracking` のパネル (入力の選択・映像とランドマーク・平滑化・キャリブレーション・調整・記録) をそのまま使う。調整と使ったカメラはプロファイルの `input` に覚える。
+
+- **利用者の調整 (T0877):** キャリブレーションの後・平滑化の前に、首振りの感度と遊び、瞼と口の開きの境目を当てる
+  (`@ugoe/face-tracking` の `applyTuning`。[packages/face-tracking](../packages/face-tracking/README.md#利用者の調整-t0877))。
+  モデルの `avatar.tracking` の上書き (モデルを作る人が決める) とは別の、配信者に付く値なので、平滑化やマイクの感度と同じく
+  プロファイルの `input.tuning` に持ち、アバター (シーン) ごとには分けない ([入力とホットキーの項目](#入力とホットキーの項目-t0803))。
+  パネルで変えると、ほかの `input` の項目と同じくプロファイルに書き戻して自動で保存する。読み込みでは、無い・知らない項目と
+  壊れた値を既定値に戻す (`input.rs` の `TrackingTuning::sanitize`。画面の `sanitizeTuning` と同じ規則)。
 ビューアと同じく、カメラを使えるのは操作ウィンドウだけ (バックエンドの `on_permission_request` が操作ウィンドウのカメラとマイクの要求だけを許す。
 macOS は `Info.plist` の `NSCameraUsageDescription`・`NSMicrophoneUsageDescription` と `Entitlements.plist`)。
 MediaPipe の wasm とモデルはアプリに同梱する (`pnpm mediapipe`。ビューアと同じ `ugoe-mediapipe-assets`)。

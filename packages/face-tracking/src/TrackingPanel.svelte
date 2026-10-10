@@ -11,6 +11,7 @@ import {
   type TrackingCondition,
   trackingCondition,
 } from "./status";
+import TuningSection from "./TuningSection.svelte";
 import type { FaceTracker } from "./tracker.svelte";
 
 interface Props {
@@ -264,6 +265,7 @@ let cameraOptions = $derived(
         !tracker.calibrated,
       )}
     </div>
+    <TuningSection {tracker} level={innerLevel} />
 
     <div class="row">
       {#if tracker.recording}

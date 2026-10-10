@@ -30,6 +30,8 @@ pub struct InputSettings {
     pub track_body: bool,
     /// トラッキング中はモデルの自動の目パチを止める。
     pub stop_eye_blink: bool,
+    /// トラッキングの調整 (首振りの感度と遊び・瞼と口の開きの境目。T0877)。
+    pub tuning: TrackingTuning,
     /// 口パクに使うマイク。`None` は既定の機器。
     pub microphone: Option<Device>,
     /// マイクの感度 (0〜1。0.5 で等倍)。
@@ -46,6 +48,7 @@ impl Default for InputSettings {
             swap_sides: false,
             track_body: true,
             stop_eye_blink: true,
+            tuning: TrackingTuning::default(),
             microphone: None,
             sensitivity: 0.5,
             noise_gate: 0.3,
@@ -85,8 +88,107 @@ impl InputSettings {
         self.smoothing = unit(self.smoothing, default.smoothing);
         self.sensitivity = unit(self.sensitivity, default.sensitivity);
         self.noise_gate = unit(self.noise_gate, default.noise_gate);
+        self.tuning.sanitize();
         sanitize_device(&mut self.camera);
         sanitize_device(&mut self.microphone);
+    }
+}
+
+/// 頭の回転の 1 つの軸の調整 (`@ugoe/face-tracking` の `AxisTuning`。packages/face-tracking/src/tuning.ts)。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AxisTuning {
+    /// 感度 (倍率。0〜4)。遊びを引いた後の角度に掛ける。
+    pub gain: f64,
+    /// 遊び (度。0〜20)。中立のまわりのこの角度の中は 0 にする。
+    pub dead_zone: f64,
+}
+
+impl Default for AxisTuning {
+    fn default() -> Self {
+        Self {
+            gain: 1.0,
+            dead_zone: 0.0,
+        }
+    }
+}
+
+/// ブレンドシェイプの値の境目 (`@ugoe/face-tracking` の `RangeTuning`)。`low` 以下を 0、`high` 以上を 1 にする。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RangeTuning {
+    pub low: f64,
+    pub high: f64,
+}
+
+impl Default for RangeTuning {
+    fn default() -> Self {
+        Self {
+            low: 0.0,
+            high: 1.0,
+        }
+    }
+}
+
+/// トラッキングの調整 (`@ugoe/face-tracking` の `TrackingTuning`)。値は画面 (トラッカー) が使い、ここは保存と収め直しだけをする。
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackingTuning {
+    pub yaw: AxisTuning,
+    pub pitch: AxisTuning,
+    pub roll: AxisTuning,
+    /// 瞼 (`eyeBlinkLeft`・`eyeBlinkRight` を一緒に)。
+    pub eye_blink: RangeTuning,
+    /// 口の開き (`jawOpen`)。
+    pub jaw_open: RangeTuning,
+}
+
+/// 感度の上限 (tuning.ts の `GAIN_MAX`)。
+const GAIN_MAX: f64 = 4.0;
+/// 遊びの上限 (度。tuning.ts の `DEAD_ZONE_MAX`)。
+const DEAD_ZONE_MAX: f64 = 20.0;
+/// 境目の間の最小の幅 (tuning.ts の `RANGE_MIN_SPAN`)。
+const RANGE_MIN_SPAN: f64 = 0.05;
+
+/// 数なら範囲に寄せ、数でなければ `default`。
+fn within(v: f64, min: f64, max: f64, default: f64) -> f64 {
+    if v.is_finite() {
+        v.clamp(min, max)
+    } else {
+        default
+    }
+}
+
+impl AxisTuning {
+    fn sanitize(&mut self) {
+        let default = Self::default();
+        self.gain = within(self.gain, 0.0, GAIN_MAX, default.gain);
+        self.dead_zone = within(self.dead_zone, 0.0, DEAD_ZONE_MAX, default.dead_zone);
+    }
+}
+
+impl RangeTuning {
+    /// 0〜1 に収める。間が最小の幅より狭い (下が上以上を含む) なら既定に戻す。
+    fn sanitize(&mut self) {
+        let default = Self::default();
+        self.low = within(self.low, 0.0, 1.0, default.low);
+        self.high = within(self.high, 0.0, 1.0, default.high);
+        // tuning.ts の `sanitizeRange` と同じく、浮動小数点の誤差の分だけ緩める。
+        if self.high - self.low < RANGE_MIN_SPAN - 1e-9 {
+            *self = default;
+        }
+    }
+}
+
+impl TrackingTuning {
+    /// 値を範囲に収める (数でない値・逆さまの境目は既定に戻す)。
+    pub fn sanitize(&mut self) {
+        for axis in [&mut self.yaw, &mut self.pitch, &mut self.roll] {
+            axis.sanitize();
+        }
+        for range in [&mut self.eye_blink, &mut self.jaw_open] {
+            range.sanitize();
+        }
     }
 }
 
@@ -230,6 +332,90 @@ mod tests {
         );
         let motion: MotionSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(motion, MotionSettings::default());
+    }
+
+    #[test]
+    fn tuning_is_read_with_defaults_and_kept_in_range() {
+        // 無い項目・知らない項目は既定値。
+        let input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": { "yaw": { "gain": 2 }, "eyeBlink": { "low": 0.1, "high": 0.6 }, "brow": {} } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            input.tuning,
+            TrackingTuning {
+                yaw: AxisTuning {
+                    gain: 2.0,
+                    dead_zone: 0.0
+                },
+                eye_blink: RangeTuning {
+                    low: 0.1,
+                    high: 0.6
+                },
+                ..TrackingTuning::default()
+            }
+        );
+        let mut input = InputSettings {
+            tuning: TrackingTuning {
+                yaw: AxisTuning {
+                    gain: f64::NAN,
+                    dead_zone: f64::INFINITY,
+                },
+                pitch: AxisTuning {
+                    gain: 10.0,
+                    dead_zone: -1.0,
+                },
+                eye_blink: RangeTuning {
+                    low: 0.7,
+                    high: 0.3,
+                },
+                jaw_open: RangeTuning {
+                    low: -1.0,
+                    high: 0.5,
+                },
+                ..TrackingTuning::default()
+            },
+            ..InputSettings::default()
+        };
+        input.sanitize();
+        assert_eq!(input.tuning.yaw, AxisTuning::default());
+        assert_eq!(
+            input.tuning.pitch,
+            AxisTuning {
+                gain: GAIN_MAX,
+                dead_zone: 0.0
+            }
+        );
+        assert_eq!(input.tuning.eye_blink, RangeTuning::default());
+        assert_eq!(
+            input.tuning.jaw_open,
+            RangeTuning {
+                low: 0.0,
+                high: 0.5
+            }
+        );
+        // 最小の幅ちょうどの組は残す (画面で決めた値)。
+        let mut range = RangeTuning {
+            low: 0.3,
+            high: 0.35,
+        };
+        range.sanitize();
+        assert_eq!(range.low, 0.3);
+    }
+
+    #[test]
+    fn tuning_is_written_in_the_frontend_shape() {
+        let json = serde_json::to_value(TrackingTuning::default()).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "yaw": { "gain": 1.0, "deadZone": 0.0 },
+                "pitch": { "gain": 1.0, "deadZone": 0.0 },
+                "roll": { "gain": 1.0, "deadZone": 0.0 },
+                "eyeBlink": { "low": 0.0, "high": 1.0 },
+                "jawOpen": { "low": 0.0, "high": 1.0 },
+            })
+        );
     }
 
     #[test]

@@ -502,8 +502,11 @@ defined in [Face tracking](#face-tracking), including the overrides in `tracking
 - It MUST NOT write parameters that are `internal`, or parameters the model does not have.
 - The following are the application's responsibility and are not part of the mapping: converting
   the tracker's output (for example, a rotation matrix) into yaw, pitch and roll; smoothing;
-  calibration (subtracting the user's neutral pose and expression); and what to do when tracking is
-  lost (keep the last values, or return to neutral).
+  calibration (subtracting the user's neutral pose and expression); the user's own tuning of the
+  input to their face, camera and room (for example, the sensitivity of the head rotation, a dead
+  zone around neutral, or the input values at which an eye counts as fully open or closed); and what
+  to do when tracking is lost (keep the last values, or return to neutral). This tuning belongs to
+  the user, not to the model; a model's own adjustments use [Overrides](#overrides).
 - An application that uses the model's automatic eye blink ([model.md](model.md#effects)) while
   tracking eye opening SHOULD let the user turn the blink off, because both act on `EyeLOpen` and
   `EyeROpen`.

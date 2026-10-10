@@ -32,4 +32,19 @@ export {
   type TrackerSource,
   type TrackerStatus,
   type TrackingTarget,
+  type TuningPreview,
 } from "./tracker.svelte";
+export {
+  type AxisTuning,
+  applyTuning,
+  DEFAULT_TUNING,
+  isDefaultTuning,
+  moveRangeBound,
+  type RangeTuning,
+  sanitizeTuning,
+  type TrackingTuning,
+  TUNING_AXES,
+  TUNING_RANGES,
+  type TuningAxis,
+  type TuningRange,
+} from "./tuning";

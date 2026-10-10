@@ -4,7 +4,9 @@
 // カメラの無い環境では、記録した値の列 (recording.ts) を再生して確かめる。
 //
 // 入力 → [MediaPipe] → frameFromLandmarker (+ PoseConverter) → (左右を入れ替えるなら unmirrorFrame) → 記録
-//      → applyCalibration → FrameSmoother → TrackingTarget.setTracking → WebPuppet.set_tracking (Rust)
+//      → applyCalibration → applyTuning → FrameSmoother → TrackingTarget.setTracking → WebPuppet.set_tracking (Rust)
+//
+// 記録するのは調整の前の値 (キャリブレーションと同じく、再生しながら調整し直せるように)。
 //
 // MediaPipe の wasm とモデルはアプリに同梱し (public/mediapipe/。scripts/mediapipe-assets.mjs)、
 // 実行時にネットワークへ取りに行かない。MediaPipe の利用状況の送信も止める (usage-logging.ts)。
@@ -22,7 +24,14 @@ import {
   recordingDuration,
   serializeRecording,
 } from "./recording";
+import { applyTuning, DEFAULT_TUNING, sanitizeTuning, type TrackingTuning } from "./tuning";
 import { blockMediaPipeUsageLogging } from "./usage-logging";
+
+/** 調整のメーターに出す値 (キャリブレーションの後の、調整の前と後。平滑化の前)。 */
+export interface TuningPreview {
+  before: TrackingFrame;
+  after: TrackingFrame;
+}
 
 /**
  * トラッキングの値を受け取るもの (ビューアの Player、エディタのプレビューモード)。値は次のフレームの
@@ -175,7 +184,14 @@ export class FaceTracker {
   faceFound = $state(false);
   /** キャリブレーション済み (中立の顔を差し引いている)。 */
   calibrated = $state(false);
-  /** TrackingTarget に渡した値 (キャリブレーション・平滑化の後)。 */
+  /**
+   * 利用者の調整 (首振りの感度と遊び・瞼と口の開きの境目。tuning.ts)。書き換えるときは `setTuning` を通す
+   * (範囲に収める)。丸ごと置き換える (中を書き換えない)。
+   */
+  tuning = $state.raw<TrackingTuning>(DEFAULT_TUNING);
+  /** 調整のメーターに出す値。止めている間は `null`。 */
+  tuningPreview = $state.raw<TuningPreview | null>(null);
+  /** TrackingTarget に渡した値 (キャリブレーション・調整・平滑化の後)。 */
   output = $state<TrackingFrame | null>(null);
   /** 検出の頻度 (回/秒)。 */
   fps = $state(0);
@@ -337,6 +353,7 @@ export class FaceTracker {
     this.faceFound = false;
     this.bodyFound = false;
     this.output = null;
+    this.tuningPreview = null;
     this.fps = 0;
     this.#landmarks = null;
     this.#poseLandmarks = null;
@@ -359,6 +376,11 @@ export class FaceTracker {
     this.#neutral = null;
     this.calibrated = false;
     this.#smoother.reset();
+  }
+
+  /** 調整を変える (範囲に収め、壊れた値は既定値にする)。 */
+  setTuning(tuning: TrackingTuning): void {
+    this.tuning = sanitizeTuning(tuning);
   }
 
   setStopEyeBlink(stop: boolean): void {
@@ -611,7 +633,7 @@ export class FaceTracker {
     return this.#poseConverter.convert(result, width, height);
   }
 
-  /** 検出した (または再生した) 値を記録し、キャリブレーションと平滑化を通して TrackingTarget に渡す。 */
+  /** 検出した (または再生した) 値を記録し、キャリブレーション・調整・平滑化を通して TrackingTarget に渡す。 */
   #push(raw: TrackingFrame, dt: number, now: number): void {
     this.bodyFound = raw.body !== undefined && raw.body.yaw !== null;
     this.#recent.push(raw);
@@ -621,7 +643,10 @@ export class FaceTracker {
       this.recordedCount = this.#recorded.length;
     }
     this.#smoother.strength = this.smoothing;
-    const out = this.#smoother.smooth(applyCalibration(raw, this.#neutral), dt);
+    const calibrated = applyCalibration(raw, this.#neutral);
+    const tuned = applyTuning(calibrated, this.tuning);
+    this.tuningPreview = { before: calibrated, after: tuned };
+    const out = this.#smoother.smooth(tuned, dt);
     this.output = out;
     this.#target.setTracking(out);
   }

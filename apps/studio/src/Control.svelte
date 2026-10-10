@@ -399,6 +399,7 @@ function applyInput(input: InputSettings) {
   appliedInput = key;
   tracker.smoothing = input.smoothing;
   tracker.swapSides = input.swapSides;
+  tracker.setTuning(input.tuning);
   if (tracker.trackBody !== input.trackBody) tracker.setTrackBody(input.trackBody);
   if (tracker.stopEyeBlink !== input.stopEyeBlink) tracker.setStopEyeBlink(input.stopEyeBlink);
   const camera = input.camera;

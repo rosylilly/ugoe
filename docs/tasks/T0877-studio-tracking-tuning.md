@@ -1,7 +1,7 @@
 ---
 id: T0877
 title: "スタジオ: キャリブレーションの後に、首振りの感度・瞼と口の開きの境目を利用者が調整できるようにする"
-status: in-progress
+status: done
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
@@ -44,15 +44,15 @@ assignee: claude-worker-T0877
 
 ## 受け入れ条件
 
-- [ ] 調整の関数を packages/face-tracking に足し、単体テストで確かめた: 既定値で出力が変わらない・感度と遊び・境目の引き伸ばしとクランプ・左右・NaN と範囲の外の扱い・`swapSides` との順序
-- [ ] トラッカーが、キャリブレーションの後・平滑化の前に調整を当てる (tracker.test.ts で確かめた)。記録・再生 (recording.ts) との関係 (記録するのは調整の前か後か) を決めて書いた
-- [ ] `TrackingPanel.svelte` に調整の画面とメーターを足した (日本語・英語)。部品は packages/ui のものを使う (docs/ui.md)
-- [ ] スタジオのプロファイルの `input` に保存・読み込みでき、壊れた値は既定値に戻る (Rust のテストとフロントエンドのテスト)
-- [ ] docs/studio.md#入力とホットキーの項目-t0803 の表と例、docs/studio.md の入力の節、docs/manual/studio.md、packages/face-tracking の README を直した。
+- [x] 調整の関数を packages/face-tracking に足し、単体テストで確かめた: 既定値で出力が変わらない・感度と遊び・境目の引き伸ばしとクランプ・左右・NaN と範囲の外の扱い・`swapSides` との順序
+- [x] トラッカーが、キャリブレーションの後・平滑化の前に調整を当てる (tracker.test.ts で確かめた)。記録・再生 (recording.ts) との関係 (記録するのは調整の前か後か) を決めて書いた
+- [x] `TrackingPanel.svelte` に調整の画面とメーターを足した (日本語・英語)。部品は packages/ui のものを使う (docs/ui.md)
+- [x] スタジオのプロファイルの `input` に保存・読み込みでき、壊れた値は既定値に戻る (Rust のテストとフロントエンドのテスト)
+- [x] docs/studio.md#入力とホットキーの項目-t0803 の表と例、docs/studio.md の入力の節、docs/manual/studio.md、packages/face-tracking の README を直した。
       docs/spec/avatar-profile.md#実装の範囲 に「利用者の調整 (感度・境目) もアプリが行う」と書いた (英語の spec/ の対応する節も)
-- [ ] `just ui-audit --only studio` が通る (調整を開いた場面を足した)。ビューア・エディタで画面が出るなら `just ui-audit` のその分も
-- [ ] `just e2e --only studio` が通る
-- [ ] `just ci` が通る
+- [x] `just ui-audit --only studio` が通る (調整を開いた場面を足した)。ビューア・エディタで画面が出るなら `just ui-audit` のその分も
+- [x] `just e2e --only studio` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -63,3 +63,41 @@ assignee: claude-worker-T0877
 
 - 利用者の要望 (2026-10-10): 「キャリブレーション後、センシングの閾値をいじれるようにならないと首振りや瞼、口開きの値を調整できない」。オーケストレーターが起票した。
 - M8 の後続 (docs/roadmap.md の M8 の「後続のタスク」)。
+- 実装 (claude-worker-T0877):
+  - `packages/face-tracking/src/tuning.ts`: `TrackingTuning` (`yaw`・`pitch`・`roll` = `gain`・`deadZone`、`eyeBlink`・`jawOpen` = `low`・`high`)、
+    `applyTuning`・`sanitizeTuning`・`moveRangeBound`・`DEFAULT_TUNING`。トラッカーは `applyCalibration` → `applyTuning` → `FrameSmoother` の順に当て、
+    `setTuning` (範囲に収める) と、メーター用の `tuningPreview` (キャリブレーションの後の、調整の前と後。平滑化の前) を持つ。
+  - パネル: `TuningSection.svelte` (TrackingPanel の中の折りたためる「調整 (感度と境目)」。既定で閉じ、閉じている間は中身を作らない)。
+    項目ごとに @ugoe/ui の Slider (感度・遊び・下と上の境目。リセット付き) と、今の値のメーター (帯 = 調整の後、縦の線 = 調整の前、点線 = 遊び・境目。
+    数の文「前 → 後」)。キャリブレーションの前は警告の色で「中立を差し引いていない」と出す。「既定に戻す」のボタン。日本語・英語。
+  - スタジオ: プロファイルの `input.tuning` (`input.rs` の `TrackingTuning`。無い・知らない項目は既定値、NaN・範囲の外・間が 0.05 より狭い境目は
+    `sanitize` で直す)。画面は `rememberTrackerSettings` で書き戻し (自動の保存の対象)、`applyInput` で `tracker.setTuning` に当てる。
+    書き戻しの比較は項目の並びを `sanitizeTuning` で揃えてから行う (Rust と TS で並びが違っても送り合いにならない)。
+  - テスト: tuning.test.ts (既定でフレームをそのまま返す・感度と遊び・境目の引き伸ばしとクランプ・左右を一緒に・NaN と範囲の外・`swapSides` との順序・
+    押して間を保つ)、tracker.test.ts (キャリブレーションの後・平滑化の前に当てる・記録は調整の前・既定値なら値が変わらない・`setTuning` の収め直し)、
+    input.rs (読み込みの既定値・収め直し・フロントエンドと同じ JSON の形)、trackerSettings / InputPanel のテスト (保存・送り合わない・開いて変えて戻す)。
+  - ui-audit: スタジオに場面 `-inputs-tuning` (調整を開いて送った) を足した。`text()` がパッケージのカタログ (`packages/face-tracking`) も引けるようにした。
+    `just ui-audit --only studio`・`--only viewer`・`--only editor` はすべて 0 件。`just e2e --only studio` は 14 件すべて通った。`just ci` は通った。
+- 決めたこと (理由):
+  - **遊びの形:** 遊びの中は 0、外は遊びの分を引いてつなぐ (境で値が飛ばない)。感度は遊びを引いた後に掛ける (遊びの角度が感度で変わらない)。
+    感度 0〜4・遊び 0〜20° (それより大きな値は首振りの用途で要らず、スライダーが細かく動かせなくなる)。
+  - **瞼の左右は一緒:** 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (固定の値で左右差を直すと、正面で片目だけ閉じきる) ため。
+    スライダーも半分で済む。別々にしたいときは `TUNING_RANGES` の組を分けて足せる形にした。
+  - **境目は下と上の 2 つ:** 細目の人は閉じの値が 0 まで下がらず 1 まで上がらないので、両方を決めたい。間は 0.05 以上 (それより狭いとわずかな揺れで
+    0 と 1 を行き来する)。スライダーで片方を動かして間が狭くなるときは、もう片方を押す (動かした方を止めると、Bits UI のつまみが
+    値と違う位置に残るため。下は 0.95 まで、上は 0.05 から)。
+  - **`swapSides` との順序:** 入れ替えは検出の直後 (記録の前) のままにし、調整はその後に当てる。調整は利用者から見た (出力の) 左右に当たる。
+    今は左右を一緒に動かすので結果は順序に依らないが、左右を分けたときにも画面の「左」「右」が出力の左右と合う。
+  - **記録は調整の前:** キャリブレーションと同じく、記録を再生しながら調整し直せるように (記録の形式・版は変えない)。
+  - **口の開きは `jawOpen` だけ:** `mouthClose` は伸ばさない (`MouthOpenY` = `max(0, jawOpen − mouthClose)` で、上の境目を下げると jawOpen だけが大きくなる)。
+  - 体 (`body`) は変えない。体を使っていないときの体の回転 (頭 × 0.3) は、調整した後の頭から作られる。
+- やらなかったこと:
+  - ビューアとエディタでも同じパネルなので調整の画面が出る (既定値なら振る舞いは同じ)。保存はしない (開き直すと既定値)。
+  - docs/manual/images/studio-inputs.png (「入力」のパネルの画像) は撮り直していない (「調整 (感度と境目)」の閉じた見出しが 1 行増えた)。
+  - 実機のカメラで、細目・口の小さな開きの合わせ方を確かめてはいない (ヘッドレスの記録の再生と単体テストで確かめた)。
+- 起票の候補:
+  - ビューアでも調整を保存する (ビューアの設定に `tuning` を足す。平滑化などほかのトラッキングの設定をビューアがどう覚えているかに合わせる)。
+  - 調整の範囲を広げる (眉・視線・口の形・口の閉じ `mouthClose` など。`TUNING_RANGES` に足す)。瞼の左右を別々に決められるようにするか。
+  - 首振りの感度を左右・上下で非対称にする (右だけ振りにくいカメラの位置など) かどうか。
+  - docs/manual/images/studio-inputs.png の撮り直し (と、調整を開いた画像を足すか)。
+

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // 入力の設定 (InputPanel.svelte): プロファイルの通知を待たずに続けて変えても、変更が消えないこと。
 import { FaceTracker } from "@ugoe/face-tracking";
+import { setLocale } from "@ugoe/i18n";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import InputPanel from "./InputPanel.svelte";
@@ -11,6 +12,7 @@ const cleanups: (() => void)[] = [];
 
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
+  setLocale("system");
 });
 
 function setup(initial: InputSettings) {
@@ -68,7 +70,7 @@ describe("InputPanel", () => {
       noiseGate: 0.6,
     });
     expect(sent).toEqual([]);
-    // 感度と閾値を既定に戻し、トラッキングのパネルでなめらかさを変える。
+    // 感度と閾値を既定に戻し、トラッキングのパネルでなめらかさと調整を変える。
     const resets = target.querySelectorAll<HTMLElement>(".ugoe-slider__reset");
     expect(resets).toHaveLength(2);
     resets[0]?.click();
@@ -77,12 +79,45 @@ describe("InputPanel", () => {
     flushSync();
     tracker.smoothing = 0.9;
     flushSync();
+    // 調整もプロファイルに残る。
+    tracker.setTuning({ ...DEFAULT_INPUT.tuning, jawOpen: { low: 0.1, high: 0.6 } });
+    flushSync();
     await notify();
     expect(props.settings).toEqual({
       ...DEFAULT_INPUT,
       sensitivity: 0.5,
       noiseGate: 0.3,
       smoothing: 0.9,
+      tuning: { ...DEFAULT_INPUT.tuning, jawOpen: { low: 0.1, high: 0.6 } },
     });
+  });
+});
+
+describe("InputPanel tracking tuning", () => {
+  it("opens the tuning, saves a change and resets it", async () => {
+    setLocale("en");
+    const { target, tracker, props, notify } = setup(DEFAULT_INPUT);
+    const trigger = [...target.querySelectorAll<HTMLElement>(".ugoe-section__trigger")].find((b) =>
+      b.textContent?.includes("Tuning"),
+    );
+    expect(trigger).toBeDefined();
+    trigger?.click();
+    flushSync();
+    // キャリブレーションの前は、値が中立を差し引いていないことを知らせる。動いていないのでメーターは「—」。
+    expect(target.textContent).toContain("Not calibrated");
+    expect(target.querySelectorAll(".meter-value")[0]?.textContent).toBe("—");
+    const reset = [...target.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "Reset to defaults",
+    );
+    expect(reset?.disabled).toBe(true);
+    tracker.setTuning({ ...DEFAULT_INPUT.tuning, roll: { gain: 0.5, deadZone: 2 } });
+    flushSync();
+    await notify();
+    expect(props.settings.tuning.roll).toEqual({ gain: 0.5, deadZone: 2 });
+    expect(reset?.disabled).toBe(false);
+    reset?.click();
+    flushSync();
+    await notify();
+    expect(props.settings.tuning).toEqual(DEFAULT_INPUT.tuning);
   });
 });

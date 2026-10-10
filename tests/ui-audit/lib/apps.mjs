@@ -14,18 +14,22 @@ import {
 const root = join(import.meta.dirname, "..", "..", "..");
 
 const catalogs = new Map();
-/** アプリのカタログから文言を引く (`a.b.c` の形のキー)。 */
+/**
+ * アプリのカタログから文言を引く (`a.b.c` の形のキー)。`app` に `/` を含めると、リポジトリの根からのそのディレクトリの
+ * カタログ (`packages/face-tracking` など、アプリが使う共有の部品の文言)。
+ */
 export function text(app, lang, key) {
   const name = `${app}/${lang}`;
+  const dir = app.includes("/") ? app : join("apps", app);
   if (!catalogs.has(name)) {
     catalogs.set(
       name,
-      JSON.parse(readFileSync(join(root, "apps", app, "locales", `${lang}.json`), "utf8")),
+      JSON.parse(readFileSync(join(root, dir, "locales", `${lang}.json`), "utf8")),
     );
   }
   const value = key.split(".").reduce((o, k) => o?.[k], catalogs.get(name));
   if (typeof value !== "string")
-    throw new Error(`no text for ${key} in apps/${app}/locales/${lang}.json`);
+    throw new Error(`no text for ${key} in ${dir}/locales/${lang}.json`);
   return value;
 }
 
@@ -845,6 +849,17 @@ export const APPS = {
       // 「入力」のパネル (カメラのフェイストラッキングとマイク。T0951)
       await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));
       await ctx.scene("inputs", { aria: false });
+      // トラッキングの調整を開いた様子 (感度・遊び・境目のスライダーとメーター。T0877)。撮った後は閉じて戻す。
+      const tuning = page.locator("main").getByRole("button", {
+        name: text("packages/face-tracking", ctx.lang, "tuning.title"),
+        exact: true,
+      });
+      await tuning.click();
+      await page.waitForTimeout(300);
+      await scrollToElement(tuning);
+      await ctx.scene("inputs-tuning", { aria: false });
+      await tuning.click();
+      await page.waitForTimeout(300);
       await scrollToTop(page);
 
       // 出力ウィンドウの様子 (大きさ・枠・背景。T0818)
