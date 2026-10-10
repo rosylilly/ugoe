@@ -1,11 +1,11 @@
 ---
 id: T0877
 title: "スタジオ: キャリブレーションの後に、首振りの感度・瞼と口の開きの境目を利用者が調整できるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0877
 ---
 
 # T0877: スタジオ: トラッキングの調整 (首振りの感度・瞼と口の開きの境目)
