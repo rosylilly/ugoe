@@ -9,7 +9,7 @@
 | npm の `@ugoe/runtime` | `.github/workflows/web-runtime-release.yml` | [bindings/web/README.md#リリース](../bindings/web/README.md#リリース) |
 | エディタ・ビューア・スタジオのインストーラ | `.github/workflows/editor-build.yml` (`just app::build` を OS ごとのランナーで実行。Secrets があれば署名し、タグでは [下書きの Release](#github-release-の下書き) に添付) | [apps/editor/README.md#各-os-でのビルド](../apps/editor/README.md#各-os-でのビルド)・[デスクトップアプリの署名](#デスクトップアプリの署名) |
 | Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
-| スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。配布物に入れるのは Release のマイルストーン) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
+| スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。1.0 の配布物には入れない。[1.0 の後の候補](roadmap.md#10-の範囲)) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
 | C ABI (`ugoe-ffi` の共有ライブラリ・静的ライブラリとヘッダ) | `.github/workflows/ffi-release.yml` (OS ごとのランナーで作り、GitHub Release の下書きに添付) | [C ABI の配布物](#c-abi-の配布物) |
 
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。1.0 (v1.0.0) は、[1.0 の範囲](roadmap.md#10-の範囲) (M1〜M11 の完了。
@@ -392,8 +392,9 @@ git-cliff (MIT OR Apache-2.0、Rust 製) を使います。外部の道具を足
 ## macOS の仮想カメラ
 
 スタジオの macOS の仮想カメラ (Camera Extension、[studio.md](studio.md#macos-camera-extension)・ADR 0028 の 8.) を入れたスタジオの、
-署名・公証・entitlement の手順です。**いまは配布しません。** 配布物に入れるのは、利用者が Apple Developer Program のアカウントを
-用意し、署名の名義を Release のマイルストーンで決めてからです。それまでの配布物は `tauri.conf.json` のまま (拡張も
+署名・公証・entitlement の手順です。**いまは配布しません。** 1.0 の配布物には入れず、CI で作って署名・公証し配布物に入れるのは
+1.0 の後です ([1.0 の後の候補](roadmap.md#10-の範囲)。利用者の決定 2026-10-11)。入れるときは、利用者が Apple Developer Program の
+アカウントとプロビジョニングプロファイルを用意し、署名の名義を決めてからです。それまでの配布物は `tauri.conf.json` のまま (拡張も
 System Extension の権限も入れない) で作り、スタジオは「この OS ではまだ仮想カメラを出せません」を出します。
 
 この手順は macOS の実機で確かめていません (T0809 は WSL の上で作った)。初めて行うときに、違っていたらここを直してください。
