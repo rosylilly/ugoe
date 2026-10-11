@@ -607,6 +607,8 @@ fn reading_step(error: &FormatError, bytes: &[u8]) -> &'static str {
         | E::InvalidMotion { .. }
         | E::InvalidExpression { .. } => "validation",
         E::UnknownValues(_) | E::MsgPackEncode(_) => "(not a reading error)",
+        // `FormatError` は `#[non_exhaustive]`。新しい種類は手順を決めるまで、どの例とも合わない名前にする。
+        _ => "(unclassified)",
     }
 }
 

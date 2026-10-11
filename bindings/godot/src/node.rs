@@ -1031,6 +1031,8 @@ fn light_to_dictionary(light: &Light) -> VarDictionary {
         Light::Point {
             position, color, ..
         } => ("point", "position", position, color),
+        // 知らない種類の光源は辞書にしない。
+        _ => return d,
     };
     d.set("type", kind);
     d.set(key, Vector3::new(x, y, z));
@@ -1116,8 +1118,8 @@ fn field_variant(value: FieldValue<'_>) -> Variant {
     match value {
         FieldValue::Index(i) => i64::try_from(i).unwrap_or(i64::MAX).to_variant(),
         FieldValue::Text(t) => t.to_variant(),
-        // 種類の一覧は wasm・C ABI と同じく `, ` でつないだ文 (T0168)。
-        FieldValue::Codes(_) => value.to_string().to_variant(),
+        // 種類の一覧 (`Codes`) は wasm・C ABI と同じく `, ` でつないだ文 (T0168)。
+        _ => value.to_string().to_variant(),
     }
 }
 

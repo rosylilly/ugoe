@@ -63,7 +63,7 @@ fn key_times(doc: &Document) -> Vec<f32> {
             | Segment::Bezier { to, .. }
             | Segment::Stepped { to }
             | Segment::InverseStepped { to } => to.t,
-            Segment::Unknown => f32::NAN,
+            _ => f32::NAN,
         })
         .collect()
 }

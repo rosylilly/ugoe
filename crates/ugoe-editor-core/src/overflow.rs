@@ -243,7 +243,7 @@ fn warp_children(model: &Model) -> Vec<Child<'_>> {
         let (kind, grid) = match &d.kind {
             DeformerKind::Warp(w) => (OverflowPointKind::ControlPoint, Grid::Warp(&w.keyforms)),
             DeformerKind::Rotation(r) => (OverflowPointKind::Origin, Grid::Rotation(&r.keyforms)),
-            DeformerKind::Unknown => return None,
+            _ => return None,
         };
         Some(Child {
             target: KeyformTarget::Deformer(d.id.clone()),

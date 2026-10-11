@@ -770,7 +770,7 @@ fn apply_to(
         Command::SetWarpKeyforms { id, keyforms } => {
             match &mut deformer(model, &id)?.kind {
                 DeformerKind::Warp(warp) => grid::replace(&mut warp.keyforms, keyforms),
-                DeformerKind::Rotation(_) | DeformerKind::Unknown => {
+                _ => {
                     return Err(EditError::DeformerKindMismatch {
                         id: id.to_string(),
                         expected: "warp",
@@ -782,7 +782,7 @@ fn apply_to(
         Command::SetRotationKeyforms { id, keyforms } => {
             match &mut deformer(model, &id)?.kind {
                 DeformerKind::Rotation(rotation) => grid::replace(&mut rotation.keyforms, keyforms),
-                DeformerKind::Warp(_) | DeformerKind::Unknown => {
+                _ => {
                     return Err(EditError::DeformerKindMismatch {
                         id: id.to_string(),
                         expected: "rotation",

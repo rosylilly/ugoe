@@ -278,7 +278,8 @@ Chunks ...      各チャンクは 16 バイト境界に揃える
 
 - `Bundle { model, physics, motions, expressions, textures, normal_maps, meta }`。テクスチャは `TextureData { format: Png | Ktx2, bytes }`。
   法線マップ `normal_maps` は `NRML` チャンクの順で、テクスチャの番号からは `Bundle::normal_map(index)` で引きます。
-- `write_bundle(&Bundle) -> Result<Vec<u8>, FormatError>` / `write_bundle_with(&Bundle, WriteOptions { compress })`
+- `write_bundle(&Bundle) -> Result<Vec<u8>, FormatError>` / `write_bundle_with(&Bundle, WriteOptions)`
+  (`WriteOptions::default().with_compress(true)` で圧縮。`WriteOptions` は `#[non_exhaustive]`)
   - 使っている機能を `features::detect(&Bundle)` で自動で宣言し、宣言があれば `FEAT` を書きます。
   - 未知の値 (`Unknown`) を含むバンドルは `UnknownValues(場所の一覧)` で拒否します ([再保存](#再保存))。
 - `read_bundle(&[u8]) -> Result<Bundle, FormatError>`

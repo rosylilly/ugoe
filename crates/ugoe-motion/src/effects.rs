@@ -45,6 +45,7 @@ impl Rng {
 
 /// 目パチの段階。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BlinkPhase {
     /// 開いたまま次のまばたきを待つ。
     Open,

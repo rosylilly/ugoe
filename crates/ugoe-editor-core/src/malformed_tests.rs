@@ -112,7 +112,7 @@ fn corrupted(model: &Model, how: Corruption) -> Model {
                 }
             }
             DeformerKind::Rotation(rotation) => corrupt(&mut rotation.keyforms, how, &parameter),
-            DeformerKind::Unknown => {}
+            _ => {}
         }
     }
     for mesh in &mut model.meshes {
@@ -367,7 +367,7 @@ fn commands(model: &Model) -> Vec<Command> {
                     &parameter,
                 ));
             }
-            DeformerKind::Unknown => {
+            _ => {
                 commands.extend(grid_commands(
                     &target,
                     &KeyformGrid::<()>::new(Vec::new(), Vec::new()),

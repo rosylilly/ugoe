@@ -199,6 +199,7 @@ pub fn image_size(format: TextureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
             }
             Some((read(20, false)?, read(24, false)?))
         }
+        _ => None,
     }
 }
 
@@ -425,7 +426,8 @@ impl LoadedModel {
             Some(TextureSource::Base(i)) => self.base_textures.get(*i as usize)?.as_ref(),
             // メッシュが `model.textures` の外を参照している (本体だけのとき)
             None if self.modules.is_empty() => self.base_textures.get(index)?.as_ref(),
-            None => None,
+            // 知らない置き場所 (`TextureSource` は `#[non_exhaustive]`)
+            _ => None,
         }
     }
 
@@ -438,6 +440,7 @@ impl LoadedModel {
                 .get(*index as usize)?
                 .as_ref(),
             TextureSource::Base(i) => self.base_normal_maps.get(*i as usize)?.as_ref(),
+            _ => None,
         }
     }
 
@@ -958,6 +961,8 @@ impl LightUniforms {
                     let [x, y, z] = position;
                     ([x, y, z, 1.0], color, 1.0 / range)
                 }
+                // 知らない種類の光源は使わない (参照のレンダラと同じ)。
+                _ => continue,
             };
             if !valid_color(color) {
                 continue;
@@ -1215,7 +1220,8 @@ mod tests {
             format: ugoe::format::TextureFormat::Png,
             bytes: FAKE_PNG.to_vec(),
         }];
-        let bytes = write_bundle_with(&bundle, WriteOptions { compress: true }).expect("write");
+        let bytes =
+            write_bundle_with(&bundle, WriteOptions::default().with_compress(true)).expect("write");
         let limits = LoadLimits {
             read: ReadLimits::default().with_max_total_decompressed(1),
             ..LoadLimits::default()
@@ -1238,7 +1244,8 @@ mod tests {
             .iter()
             .map(|_| bundle.textures[0].clone())
             .collect();
-        let bytes = write_module_with(&file, WriteOptions { compress: true }).expect("write");
+        let bytes =
+            write_module_with(&file, WriteOptions::default().with_compress(true)).expect("write");
         let limits = LoadLimits {
             read: ReadLimits::default().with_max_chunk_decompressed(1),
             ..LoadLimits::default()

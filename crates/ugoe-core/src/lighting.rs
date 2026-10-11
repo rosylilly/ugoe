@@ -36,6 +36,7 @@ impl Default for Lighting {
 ///
 /// 色は 1 を超えてもよい (強さを兼ねる)。
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum Light {
     /// 平行光源。`direction` は光が進む向き (長さは問わない)。
     /// 例: 左上の手前から照らすなら `[1.0, 1.0, -1.0]`。長さが 0 か有限でなければ使わない。

@@ -71,6 +71,7 @@ pub struct PhysicsRig {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PhysicsSource {
     /// x 成分。入力では根元の平行移動の x、出力では 1 つ前の粒子からの相対位置の x。
     X,
@@ -182,6 +183,7 @@ impl<'de> Deserialize<'de> for PhysicsOutput {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PhysicsBlend {
     /// 現在の値を物理の値へ重みの割合で近づける (`param + (value - param) * weight`)。
     #[default]
@@ -218,6 +220,7 @@ impl PhysicsBlend {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PhysicsTarget {
     /// パラメータに書き込む (従来の出力)。
     Parameter {
@@ -258,6 +261,7 @@ pub enum PhysicsTarget {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum VertexOwner {
     /// メッシュの頂点。
     Mesh(MeshId),
@@ -336,6 +340,7 @@ pub struct PhysicsCollider {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ColliderShape {
     /// `center` から `radius` 以内の円の領域。
     Circle {

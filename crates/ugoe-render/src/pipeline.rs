@@ -272,11 +272,6 @@ pub(crate) fn blend_state(mode: BlendMode) -> wgpu::BlendState {
     // 描画先のアルファを保つ (additive / multiply)。
     let keep_dst_alpha = component(BlendFactor::Zero, BlendFactor::One);
     match mode {
-        // 未知のモードは通常の合成で描く (`docs/spec/file-formats.md#未知の値の読み込み`)。
-        BlendMode::Normal | BlendMode::Unknown => wgpu::BlendState {
-            color: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
-            alpha: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
-        },
         BlendMode::Additive => wgpu::BlendState {
             color: component(BlendFactor::One, BlendFactor::One),
             alpha: keep_dst_alpha,
@@ -284,6 +279,11 @@ pub(crate) fn blend_state(mode: BlendMode) -> wgpu::BlendState {
         BlendMode::Multiply => wgpu::BlendState {
             color: component(BlendFactor::Dst, BlendFactor::OneMinusSrcAlpha),
             alpha: keep_dst_alpha,
+        },
+        // `Normal`。未知のモードも通常の合成で描く (`docs/spec/file-formats.md#未知の値の読み込み`)。
+        _ => wgpu::BlendState {
+            color: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
+            alpha: component(BlendFactor::One, BlendFactor::OneMinusSrcAlpha),
         },
     }
 }

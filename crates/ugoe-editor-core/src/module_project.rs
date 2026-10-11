@@ -472,7 +472,7 @@ impl ModuleContext {
                         remap(a)?;
                         remap(b)?;
                     }
-                    ColliderShape::Unknown => {}
+                    _ => {}
                 }
             }
         }

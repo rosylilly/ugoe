@@ -315,6 +315,10 @@ ARKit のブレンドシェイプ (52 種) のように、互いに独立した�
   値で置き換えられる種類は `effective()` (`BlendMode` `MaskMode` `ParameterKind` `KeyformInterpolation` `PhysicsBlend` と許諾の 4 つ) や `KeyformGrid::origin` がフォールバック後の値を返します。
 - `Unknown` は **書き出せません** (シリアライズがエラーになる)。別の値として黙って保存しないためです。
 - 検証 (`validate`) は `Unknown` をエラーにしません。場所は `ugoe_model::unknown` (`in_model` など) で調べられます。
+- Rust の型では、`ugoe-model` の公開の enum (上の拡張されうる enum と、検証の `ValidationError`・`MotionWarning`、
+  アバタープロファイルの検査の `ProfileIssue`・`Severity`) はすべて `#[non_exhaustive]` です。後の版で値を足しても
+  使う側のコードが壊れないように、クレートの外の `match` には `_` の腕が要ります。`Unknown` を持つ種類では、
+  `_` の腕で `Unknown` と同じフォールバックを適用します。
 
 ## 予定されているデータ
 

@@ -248,6 +248,7 @@ pub struct AvatarMeta {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AvatarPermission {
     /// 作者だけ。
     #[default]
@@ -279,6 +280,7 @@ impl AvatarPermission {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CommercialUsage {
     /// 個人の非営利の利用だけ。
     #[default]
@@ -310,6 +312,7 @@ impl CommercialUsage {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CreditNotation {
     /// クレジットの表記が要る。
     #[default]
@@ -339,6 +342,7 @@ impl CreditNotation {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Modification {
     /// 改変を禁止する。
     #[default]
@@ -409,6 +413,7 @@ fn one() -> f32 {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TrackingSource {
     /// 標準の対応表で計算した、パラメータ `input` の値 (値域へのクランプ前)。
     Standard,

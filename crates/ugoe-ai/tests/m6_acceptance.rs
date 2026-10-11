@@ -154,13 +154,7 @@ fn puppet(toggles: Toggles) -> Puppet {
 
 /// 物理だけを有効にした段 (パラメータを手で与えて確かめる)。
 fn physics_only() -> Toggles {
-    Toggles {
-        physics: true,
-        eye_blink: false,
-        breath: false,
-        lip_sync: false,
-        pose: false,
-    }
+    Toggles::NONE.with_physics(true)
 }
 
 fn set(puppet: &mut Puppet, id: &str, value: f32) {
@@ -264,10 +258,7 @@ fn the_adopted_proposal_covers_every_part_and_the_profile_passes() {
 
 #[test]
 fn the_face_angles_eyes_and_mouth_move_at_runtime() {
-    let mut puppet = puppet(Toggles {
-        physics: false,
-        ..physics_only()
-    });
+    let mut puppet = puppet(physics_only().with_physics(false));
     puppet.update(DT);
     let base = meshes(&puppet);
     let nose = |m: &BTreeMap<String, (Vec<Vec2>, f32)>| center(&m["nose"].0);
@@ -313,13 +304,12 @@ fn the_face_angles_eyes_and_mouth_move_at_runtime() {
 
 #[test]
 fn the_effects_blink_breathe_and_lip_sync() {
-    let mut puppet = puppet(Toggles {
-        physics: false,
-        eye_blink: true,
-        breath: true,
-        lip_sync: true,
-        pose: false,
-    });
+    let mut puppet = puppet(
+        Toggles::NONE
+            .with_eye_blink(true)
+            .with_breath(true)
+            .with_lip_sync(true),
+    );
     let (mut breath_min, mut breath_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let (mut neck_min, mut neck_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let mut eye_min = f32::INFINITY;
@@ -351,10 +341,7 @@ fn the_effects_blink_breathe_and_lip_sync() {
 #[test]
 fn the_hair_sways_behind_the_head() {
     let mut moving = puppet(physics_only());
-    let mut still = puppet(Toggles {
-        physics: false,
-        ..physics_only()
-    });
+    let mut still = puppet(physics_only().with_physics(false));
     // 静止: 頭が動かなければ、物理があっても髪は動かない。
     for _ in 0..60 {
         moving.update(DT);

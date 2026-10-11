@@ -67,10 +67,7 @@ pub fn assemble(model: NewModel, modules: &[Arc<Module>]) -> Result<Assembled, L
     if let Some(physics) = bundle.physics {
         puppet = puppet.with_physics(physics);
     }
-    puppet.set_toggles(Toggles {
-        physics: false,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_physics(false));
     if !modules.is_empty() {
         puppet.set_modules(modules.to_vec())?;
     }

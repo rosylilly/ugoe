@@ -27,11 +27,12 @@ pub fn evaluate(segments: &[Segment], t: f32) -> Option<f32> {
     }
     for seg in segments.iter().skip(1) {
         let to = match seg {
-            Segment::Start { .. } | Segment::Unknown => return None,
             Segment::Linear { to }
             | Segment::Bezier { to, .. }
             | Segment::Stepped { to }
             | Segment::InverseStepped { to } => *to,
+            // `Start` と未知のセグメント
+            _ => return None,
         };
         if t <= to.t {
             return Some(segment_value(prev, seg, to, t));
@@ -126,7 +127,7 @@ fn end_point(seg: &Segment) -> Point {
         | Segment::Bezier { to, .. }
         | Segment::Stepped { to }
         | Segment::InverseStepped { to } => *to,
-        Segment::Unknown => Point {
+        _ => Point {
             t: f32::NAN,
             v: f32::NAN,
         },
@@ -157,9 +158,7 @@ fn segment_value(prev: Point, seg: &Segment, to: Point, t: f32) -> f32 {
             }
         }
         // `start` と未知のセグメントは区間にならない (呼び出し側で除く)。直線として扱っておく。
-        Segment::Linear { .. } | Segment::Start { .. } | Segment::Unknown => {
-            prev.v + (to.v - prev.v) * u
-        }
+        _ => prev.v + (to.v - prev.v) * u,
     }
 }
 

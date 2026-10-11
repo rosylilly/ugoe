@@ -15,6 +15,7 @@ use crate::{ParamIndex, ParameterValues};
 
 /// [`CompiledModel::compile`] の失敗。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CompileError {
     /// モデルが検証 (`ugoe_model::validate::validate`) を通らない。
     #[error("{}", ugoe_model::validate::describe_errors("model", .0))]
@@ -154,7 +155,7 @@ impl CompiledModel {
                         resolve_blend_shapes(&params, &rotation.keyforms)?,
                     ),
                     // 未知の種類はキーフォームを持たない恒等変換 (`docs/spec/file-formats.md`)。
-                    DeformerKind::Unknown => (Vec::new(), Vec::new()),
+                    _ => (Vec::new(), Vec::new()),
                 };
                 Ok(CompiledDeformer {
                     parent: d

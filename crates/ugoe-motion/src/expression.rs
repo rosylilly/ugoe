@@ -86,7 +86,7 @@ impl ExpressionPlayer {
                 ExpressionOp::Add => v + p.value * w,
                 ExpressionOp::Multiply => v * (1.0 + (p.value - 1.0) * w),
                 ExpressionOp::Overwrite => v + (p.value - v) * w,
-                ExpressionOp::Unknown => continue,
+                _ => continue,
             };
             parameters.set(index, value);
         }

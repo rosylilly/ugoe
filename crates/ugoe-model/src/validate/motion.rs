@@ -67,6 +67,7 @@ pub fn validate_expression(expression: &Expression) -> Vec<ValidationError> {
 
 /// モーションの警告。エラーと違い、再生の結果は決まっている (`docs/spec/motion.md#カーブ`)。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum MotionWarning {
     /// カーブの点の時刻が、直前の点より前に戻る (書き出しの規則では減らないことが望ましい)。
     #[error("{field} = {time} is earlier than the previous point ({previous})")]

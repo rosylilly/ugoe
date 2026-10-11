@@ -189,7 +189,7 @@ fn with_physics(model: Model, physics: ugoe_model::physics::PhysicsSettings) -> 
 
 /// `dev/` に置く資料。1.0 の基準の機能 (`docs/spec/file-formats.md#1.0-の基準の機能`) をすべて含むようにする。
 fn dev_corpus() -> Vec<(&'static str, Vec<u8>)> {
-    let compressed = WriteOptions { compress: true };
+    let compressed = WriteOptions::default().with_compress(true);
     let bundles = [
         ("single-quad.ugoe", bundle(fixtures::single_quad())),
         (
@@ -525,7 +525,7 @@ fn dev_corpus_roundtrips_byte_for_byte() {
         let rewritten: Vec<Vec<u8>> = [false, true]
             .into_iter()
             .map(|compress| {
-                let options = WriteOptions { compress };
+                let options = WriteOptions::default().with_compress(compress);
                 if name.ends_with(".ugoemod") {
                     let file = read_module_with_report(&bytes).expect(name).0;
                     write_module_with(&file, options).expect(name)

@@ -6,8 +6,10 @@
 //! `@ugoe/runtime` (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TypeScript の和型と比べるので、
 //! Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる。
 //!
-//! 種類を足したら、下の `guard` が網羅の誤りでコンパイルできなくなる。見本を足し、
+//! wasm の種類を足したら、下の `guard` が網羅の誤りでコンパイルできなくなる。見本を足し、
 //! `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直してから TS の型を直す。
+//! SDK とランタイムの誤りと警告 (`ugoe::LoadError`・`CompileError`・`DressUpError`・`ComposeError`・`LoadWarning`) は
+//! `#[non_exhaustive]` なので、`guard` の網羅では気づけない。それらに種類を足したら、ここの見本も足す。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,8 +28,9 @@ use crate::load::{ErrorInfo, LoadError, warning_json};
 /// 種類 (`code`) → 補足の値のキー (その種類の見本に出たものの和)。
 type Codes = BTreeMap<String, BTreeSet<String>>;
 
-/// 見本の種類がすべて網羅されているかをコンパイルで確かめる (種類を足すと、ここが網羅の誤りになる)。
-/// `FormatError` と `RenderError` は、ほかの種類が `invalid_file`・`texture` にまとまるので網羅しない
+/// 見本の種類がすべて網羅されているかをコンパイルで確かめる (wasm の種類を足すと、ここが網羅の誤りになる)。
+/// SDK の種類 (`ugoe::LoadError`・`DressUpError` とその中身・`LoadWarning`) は `#[non_exhaustive]` なので網羅できない
+/// (足したら見本も足す)。`FormatError` と `RenderError` は、ほかの種類が `invalid_file`・`texture` にまとまるので網羅しない
 /// (`ugoe::LoadError::code`・`LoadError::info` で新しい `code` を割り当てたら、見本を足す)。
 fn guard(error: &WardrobeError) {
     match error {
@@ -38,50 +41,14 @@ fn guard(error: &WardrobeError) {
             | LoadError::TextureTooLarge { .. }
             | LoadError::NormalMapTooLarge { .. }
             | LoadError::Register(_)
+            | LoadError::Model(_)
             | LoadError::DeviceLost => {}
-            LoadError::Model(e) => match e {
-                ugoe::LoadError::Format(_) => {}
-                ugoe::LoadError::Compile(e) => match e {
-                    CompileError::Invalid(_)
-                    | CompileError::UnknownParameter(_)
-                    | CompileError::Unsupported(_) => {}
-                },
-            },
         },
         WardrobeError::NoModel
         | WardrobeError::NotLoaded(_)
         | WardrobeError::Texture(_)
-        | WardrobeError::DeviceLost => {}
-        WardrobeError::DressUp(e) => match e {
-            DressUpError::Compile(_) | DressUpError::Physics(_) | DressUpError::NotAttached(_) => {}
-            DressUpError::Compose(e) => match e {
-                ComposeError::InvalidModuleName(_)
-                | ComposeError::DuplicateModule(_)
-                | ComposeError::UnknownSlot { .. }
-                | ComposeError::SlotOccupied { .. }
-                | ComposeError::AvatarLevel { .. }
-                | ComposeError::MissingSlot { .. }
-                | ComposeError::MissingParameter { .. }
-                | ComposeError::ParameterNotExposed { .. }
-                | ComposeError::UnknownMask { .. }
-                | ComposeError::TextureOutOfRange { .. }
-                | ComposeError::UnknownCollider { .. }
-                | ComposeError::PoseNotExposed { .. }
-                | ComposeError::Invalid(_) => {}
-            },
-        },
-    }
-}
-
-/// [`guard`] の読み込みの警告の版。
-fn guard_warning(warning: &LoadWarning) {
-    match warning {
-        LoadWarning::TextureKtx2 { .. }
-        | LoadWarning::TextureMissing { .. }
-        | LoadWarning::NormalMapKtx2 { .. }
-        | LoadWarning::PhysicsRemoved { .. }
-        | LoadWarning::UnknownOptionalFeature { .. }
-        | LoadWarning::UnknownValue { .. } => {}
+        | WardrobeError::DeviceLost
+        | WardrobeError::DressUp(_) => {}
     }
 }
 
@@ -344,7 +311,6 @@ fn actual() -> serde_json::Value {
     }
     let mut load_warning = Codes::new();
     for warning in load_warnings() {
-        guard_warning(&warning);
         add_warning(&mut load_warning, &warning_json(&warning));
     }
     // 付け直せずに外したモジュール (`module_detached`)。`error` の中身は着せ替えの失敗と同じ。

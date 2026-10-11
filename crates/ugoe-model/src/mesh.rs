@@ -125,6 +125,7 @@ impl MaskRef {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MaskMode {
     /// 和集合 `1 − Π(1 − c)`。
     #[default]
@@ -174,6 +175,7 @@ fn black() -> Rgb {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum BlendMode {
     /// 通常の合成 (`src + dst * (1 - src.a)`)。
     #[default]

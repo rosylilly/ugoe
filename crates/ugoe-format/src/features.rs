@@ -15,6 +15,7 @@ use crate::{Bundle, ModuleFile};
 
 /// このランタイムが知っている機能 1 つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Feature {
     /// 安定した機能 ID (例: `mask.intersection`)。
     pub id: &'static str,
@@ -94,6 +95,7 @@ pub fn find(id: &str) -> Option<&'static Feature> {
 
 /// `FEAT` チャンクの 1 項目: バンドルが使う機能の宣言。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct FeatureDecl {
     /// 機能の ID。このランタイムが知っている機能は [`FEATURES`] にある (知らない ID もそのまま読む)。
     pub id: String,

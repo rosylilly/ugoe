@@ -89,7 +89,11 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// 無効にした段はパラメータ・パーツの不透明度に触らない (`docs/spec/motion.md#段の有効無効`)。
 /// エディタのプレビューで、物理やエフェクトを切って確かめるために使う。
+///
+/// 将来ほかの段を足せるように `#[non_exhaustive]` にしている。値を変えるときは
+/// `Toggles::default().with_physics(false)` のように既定値 (すべて有効) か [`Toggles::NONE`] から始める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Toggles {
     /// 8. 物理 (動的物理を含む)。
     pub physics: bool,
@@ -112,6 +116,51 @@ impl Default for Toggles {
             lip_sync: true,
             pose: true,
         }
+    }
+}
+
+impl Toggles {
+    /// すべての段を止めたもの。
+    pub const NONE: Self = Self {
+        physics: false,
+        eye_blink: false,
+        breath: false,
+        lip_sync: false,
+        pose: false,
+    };
+
+    /// 物理 ([`Toggles::physics`]) を `on` にしたもの。
+    pub const fn with_physics(self, on: bool) -> Self {
+        Self {
+            physics: on,
+            ..self
+        }
+    }
+
+    /// 目パチ ([`Toggles::eye_blink`]) を `on` にしたもの。
+    pub const fn with_eye_blink(self, on: bool) -> Self {
+        Self {
+            eye_blink: on,
+            ..self
+        }
+    }
+
+    /// 呼吸 ([`Toggles::breath`]) を `on` にしたもの。
+    pub const fn with_breath(self, on: bool) -> Self {
+        Self { breath: on, ..self }
+    }
+
+    /// リップシンク ([`Toggles::lip_sync`]) を `on` にしたもの。
+    pub const fn with_lip_sync(self, on: bool) -> Self {
+        Self {
+            lip_sync: on,
+            ..self
+        }
+    }
+
+    /// ポーズ ([`Toggles::pose`]) を `on` にしたもの。
+    pub const fn with_pose(self, on: bool) -> Self {
+        Self { pose: on, ..self }
     }
 }
 

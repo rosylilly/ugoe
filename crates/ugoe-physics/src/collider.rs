@@ -43,7 +43,7 @@ impl WorldCollider {
                 b: world.point(b),
                 radius,
             }),
-            ColliderShape::Unknown => None,
+            _ => None,
         }
     }
 

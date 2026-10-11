@@ -92,7 +92,7 @@ fn interpolation_name(interpolation: KeyformInterpolation) -> &'static str {
     match interpolation {
         KeyformInterpolation::Linear => "linear",
         KeyformInterpolation::Smooth => "smooth",
-        KeyformInterpolation::Unknown => "unknown",
+        _ => "unknown",
     }
 }
 
@@ -827,6 +827,8 @@ impl Coded for ProfileIssue {
             Self::UnknownValue { .. } => "avatar.unknown_value",
             Self::InvalidValue { .. } => "avatar.invalid_value",
             Self::InternalTrackingTarget { .. } => "avatar.internal_tracking_target",
+            // `ugoe-model` に種類が増えたら、コードを足すまでは内部の誤りとして英語の文を渡す。
+            _ => "editor.internal",
         })
     }
 
@@ -875,6 +877,7 @@ impl Coded for ProfileIssue {
                 expected,
             } => args! { "field" => field, "value" => *value, "expected" => *expected },
             Self::InternalTrackingTarget { field, id } => args! { "field" => field, "id" => id },
+            other => args! { "detail" => other.to_string() },
         }
     }
 }
@@ -886,6 +889,8 @@ impl Coded for CompileError {
             Self::Invalid(_) => "compile.invalid_model",
             Self::UnknownParameter(_) => "compile.unknown_parameter",
             Self::Unsupported(_) => "compile.unsupported",
+            // `ugoe-runtime` に種類が増えたら、コードを足すまでは対応しない構造として英語の文を渡す。
+            _ => "compile.unsupported",
         })
     }
 
@@ -894,6 +899,7 @@ impl Coded for CompileError {
             Self::Invalid(errors) => validation_args(errors),
             Self::UnknownParameter(parameter) => args! { "parameter" => parameter },
             Self::Unsupported(feature) => args! { "feature" => *feature },
+            other => args! { "feature" => other.to_string() },
         }
     }
 
@@ -1083,6 +1089,8 @@ impl Coded for ValidationError {
                 value,
                 expected,
             } => args! { "field" => field, "value" => *value, "expected" => *expected },
+            // `ugoe-model` に種類が増えたら、引数を足すまでは英語の文を渡す。
+            other => args! { "detail" => other.to_string() },
         }
     }
 }
@@ -1256,6 +1264,8 @@ impl Coded for ComposeError {
                 args! { "module" => module, "slot" => slot, "part" => part }
             }
             Self::Invalid(errors) => validation_args(errors),
+            // `ugoe-runtime` に種類が増えたら、引数を足すまでは英語の文を渡す。
+            other => args! { "detail" => other.to_string() },
         }
     }
 

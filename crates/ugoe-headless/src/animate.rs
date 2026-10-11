@@ -169,11 +169,11 @@ pub fn advance(puppet: &mut Puppet, playback: Playback) -> Result<u32, Error> {
             ))
         })?;
     }
-    puppet.set_toggles(Toggles {
-        eye_blink: playback.effects,
-        breath: playback.effects,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(
+        Toggles::default()
+            .with_eye_blink(playback.effects)
+            .with_breath(playback.effects),
+    );
     if let Some(motion) = playback.motion {
         puppet.start_motion(motion, Priority::Force);
     }

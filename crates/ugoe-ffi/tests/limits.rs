@@ -41,14 +41,14 @@ fn compressed_bundle() -> Vec<u8> {
     let model = fixtures::single_quad();
     let mut bundle = Bundle::new(model.clone());
     bundle.textures = model.textures.iter().map(|_| png()).collect();
-    write_bundle_with(&bundle, WriteOptions { compress: true }).unwrap()
+    write_bundle_with(&bundle, WriteOptions::default().with_compress(true)).unwrap()
 }
 
 /// 圧縮したモジュール。
 fn compressed_module() -> Vec<u8> {
     let mut file = ModuleFile::new(fixtures::long_hair_module());
     file.textures = file.module.textures.iter().map(|_| png()).collect();
-    write_module_with(&file, WriteOptions { compress: true }).unwrap()
+    write_module_with(&file, WriteOptions::default().with_compress(true)).unwrap()
 }
 
 /// 合計の上限だけを `max` にした上限。

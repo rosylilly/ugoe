@@ -771,6 +771,7 @@ fn expected_read_warnings(report: &ugoe::format::ReadReport) -> Vec<WarningRow> 
                     ("unknown_optional_feature", "feature", id)
                 }
                 ReadWarning::UnknownValue(path) => ("unknown_value", "path", path),
+                other => panic!("no expected warning for {other:?}"),
             };
             (
                 code.to_owned(),

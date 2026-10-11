@@ -12,8 +12,7 @@ use ugoe_core::{Rgb, Vec2};
 use ugoe_model::mesh::Mesh;
 use ugoe_model::{BlendMode, MaskRef, Model, fixtures};
 use ugoe_render::{
-    FrameStats, Light, Lighting, MAX_TEXTURES, MaskAtlasOptions, RenderError, Renderer,
-    RendererOptions, View,
+    FrameStats, Light, Lighting, MAX_TEXTURES, RenderError, Renderer, RendererOptions, View,
 };
 use ugoe_runtime::{CompiledModel, ModelInstance};
 
@@ -527,6 +526,13 @@ fn render_order_follows_draw_order() {
 const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 const NONE: [f32; 4] = [0.0; 4];
 
+/// `base` の値を `change` で書き換えた統計 (`FrameStats` は `#[non_exhaustive]` なので構造体の式で作れない)。
+fn stats_with(base: FrameStats, change: impl FnOnce(&mut FrameStats)) -> FrameStats {
+    let mut stats = base;
+    change(&mut stats);
+    stats
+}
+
 /// 一辺 `size` のマスクアトラス 1 枚のバイト数 (RGBA8)。
 fn atlas_bytes(size: u64) -> u64 {
     size * size * 4
@@ -603,14 +609,13 @@ fn mask_clips_drawable() {
     assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 2,
-            mask_sets: 1,
-            mask_draws: 1,
-            mask_atlases: 1,
-            mask_atlas_bytes: atlas_bytes(256),
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 2;
+            s.mask_sets = 1;
+            s.mask_draws = 1;
+            s.mask_atlases = 1;
+            s.mask_atlas_bytes = atlas_bytes(256);
+        })
     );
 }
 
@@ -706,14 +711,13 @@ fn invisible_mask_mesh_is_still_drawn_as_mask() {
     assert_eq!(image.covered_pixels([0; 4]), 16 * 32);
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 1,
-            mask_sets: 1,
-            mask_draws: 1,
-            mask_atlases: 1,
-            mask_atlas_bytes: atlas_bytes(256),
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 1;
+            s.mask_sets = 1;
+            s.mask_draws = 1;
+            s.mask_atlases = 1;
+            s.mask_atlas_bytes = atlas_bytes(256);
+        })
     );
 
     let image = clipped_scene(true, 0.0).render();
@@ -767,14 +771,13 @@ fn drawables_with_same_mask_set_share_mask() {
     // 集合は {M1} と {M1, M2} の 2 つ。マスク用メッシュの描画は 1 + 2 回。
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 6,
-            mask_sets: 2,
-            mask_draws: 3,
-            mask_atlases: 1,
-            mask_atlas_bytes: atlas_bytes(256),
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 6;
+            s.mask_sets = 2;
+            s.mask_draws = 3;
+            s.mask_atlases = 1;
+            s.mask_atlas_bytes = atlas_bytes(256);
+        })
     );
 }
 
@@ -819,10 +822,7 @@ fn mask_sets_overflow_into_more_atlases() {
     let mut scene = five_mask_sets();
     // 一辺 16 のアトラスには 1 チャンネルに 1 セル (10x16 に縮小) しか入らないので、
     // 3 チャンネル分を超えた 4 つ目以降の集合は 2 枚目に回る。
-    scene.options.mask_atlas = MaskAtlasOptions {
-        max_size: 16,
-        ..MaskAtlasOptions::default()
-    };
+    scene.options.mask_atlas.max_size = 16;
     let image = scene.render();
     assert_five_mask_sets(&image, false);
     assert_eq!(image.stats.mask_sets, 5);
@@ -840,14 +840,13 @@ fn unmasked_frame_uses_no_atlas() {
     let image = Scene::new(fixtures::single_quad()).render();
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 1,
-            mask_sets: 0,
-            mask_draws: 0,
-            mask_atlases: 0,
-            mask_atlas_bytes: 0,
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 1;
+            s.mask_sets = 0;
+            s.mask_draws = 0;
+            s.mask_atlases = 0;
+            s.mask_atlas_bytes = 0;
+        })
     );
 }
 
@@ -1006,14 +1005,13 @@ fn nested_masks_inherit_clipping() {
     // Iris と Pupil の 2 つの内容を、レベルごとに別のアトラスに描く。
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 3,
-            mask_sets: 2,
-            mask_draws: 2,
-            mask_atlases: 2,
-            mask_atlas_bytes: 2 * atlas_bytes(256),
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 3;
+            s.mask_sets = 2;
+            s.mask_draws = 2;
+            s.mask_atlases = 2;
+            s.mask_atlas_bytes = 2 * atlas_bytes(256);
+        })
     );
 }
 
@@ -1115,10 +1113,7 @@ fn masks_are_as_sharp_as_the_screen_by_default() {
 #[test]
 fn downscale_option_lowers_mask_resolution() {
     let mut scene = many_sharp_masks();
-    scene.options.mask_atlas = MaskAtlasOptions {
-        downscale: 4,
-        ..MaskAtlasOptions::default()
-    };
+    scene.options.mask_atlas.downscale = 4;
     let image = scene.render();
     // 縁はぼやける (中間の値の画素がある) が、縁から離れた所は同じ。
     let values = red_values(&image);
@@ -1136,14 +1131,10 @@ fn downscale_option_lowers_mask_resolution() {
 const SHRINK_AFTER: u32 = 4;
 
 fn shrinking_options(max_size: u32) -> RendererOptions {
-    RendererOptions {
-        mask_atlas: MaskAtlasOptions {
-            max_size,
-            shrink_after_frames: SHRINK_AFTER,
-            ..MaskAtlasOptions::default()
-        },
-        ..RendererOptions::default()
-    }
+    let mut options = RendererOptions::default();
+    options.mask_atlas.max_size = max_size;
+    options.mask_atlas.shrink_after_frames = SHRINK_AFTER;
+    options
 }
 
 /// `clipped_scene` を一辺 `size` の描画先に描いた結果が、64 画素のときと同じ形か確かめる。
@@ -1345,15 +1336,14 @@ fn static_frames_upload_nothing_after_the_first() {
         assert_clipped(&image);
         assert_eq!(
             image.stats,
-            FrameStats {
-                masks_reused: true,
-                mask_draws: 0,
-                position_bytes: 0,
-                uniform_bytes: 0,
-                index_bytes: 0,
-                uploaded_bytes: 0,
-                ..first.stats
-            },
+            stats_with(first.stats, |s| {
+                s.masks_reused = true;
+                s.mask_draws = 0;
+                s.position_bytes = 0;
+                s.uniform_bytes = 0;
+                s.index_bytes = 0;
+                s.uploaded_bytes = 0;
+            }),
             "update: {update}"
         );
     }
@@ -1639,12 +1629,11 @@ fn adjacent_drawables_with_the_same_state_share_one_draw() {
     image.assert_pixel((36, 44), RED);
     assert_eq!(
         image.stats,
-        FrameStats {
-            drawables: 6,
-            draw_calls: 2,
-            state_changes: 1,
-            ..image.stats
-        }
+        stats_with(image.stats, |s| {
+            s.drawables = 6;
+            s.draw_calls = 2;
+            s.state_changes = 1;
+        })
     );
 }
 

@@ -74,6 +74,8 @@ impl LightRaw {
                     color: rgba(color, 1.0 / range),
                 }
             }),
+            // この版が知らない種類の光源は使わない。
+            _ => None,
         }
     }
 }

@@ -137,7 +137,8 @@ fn bundle_corpus() -> Vec<(String, Vec<u8>)> {
                 .filter(|t| t.normal_map.is_some())
                 .map(|_| png())
                 .collect();
-            let bytes = write_bundle_with(&bundle, WriteOptions { compress }).unwrap();
+            let bytes = write_bundle_with(&bundle, WriteOptions::default().with_compress(compress))
+                .unwrap();
             corpus.push((name, bytes));
         }
     }
@@ -437,7 +438,7 @@ fn physics_with_extremes(settings: &PhysicsSettings, v: f32) -> Vec<PhysicsSetti
                     *b = Vec2::splat(-v);
                     *radius = v;
                 }
-                ColliderShape::Unknown => {}
+                _ => {}
             }
         }
     });

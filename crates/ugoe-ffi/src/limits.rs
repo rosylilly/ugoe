@@ -83,6 +83,8 @@ pub(crate) fn load_error(error: LoadError) -> Error {
         e if e.exceeds_limit() => (UGOE_ERROR_LIMIT_EXCEEDED, e.to_string()),
         LoadError::Format(e) => (UGOE_ERROR_FORMAT, e.to_string()),
         LoadError::Compile(e) => (UGOE_ERROR_INVALID_MODEL, e.to_string()),
+        // SDK に種類が増えたら、戻り値を決めるまではファイルの失敗として返す。
+        e => (UGOE_ERROR_FORMAT, e.to_string()),
     };
     let fields = error
         .fields()

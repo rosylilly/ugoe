@@ -131,14 +131,14 @@ pub(crate) fn blend_code(blend: BlendMode) -> u32 {
     match blend.effective() {
         BlendMode::Additive => UGOE_BLEND_ADDITIVE,
         BlendMode::Multiply => UGOE_BLEND_MULTIPLY,
-        BlendMode::Normal | BlendMode::Unknown => UGOE_BLEND_NORMAL,
+        _ => UGOE_BLEND_NORMAL,
     }
 }
 
 fn mask_mode_code(mode: MaskMode) -> u32 {
     match mode.effective() {
         MaskMode::Intersection => UGOE_MASK_INTERSECTION,
-        MaskMode::Union | MaskMode::Unknown => UGOE_MASK_UNION,
+        _ => UGOE_MASK_UNION,
     }
 }
 
@@ -325,22 +325,25 @@ pub unsafe extern "C" fn ugoe_puppet_texture_count(
     })
 }
 
-/// 画像を C に渡す形にする。
+/// 画像を C に渡す形にする。C ABI に値の無い形式 (`ugoe-format` に後で足した形式) は画像が無いものとして渡す。
 fn texture_value(texture: Option<&TextureData>) -> UgoeTexture {
-    match texture {
-        None => UgoeTexture {
-            format: UGOE_TEXTURE_NONE,
-            data: core::ptr::null(),
-            len: 0,
-        },
-        Some(t) => UgoeTexture {
-            format: match t.format {
-                TextureFormat::Png => UGOE_TEXTURE_PNG,
-                TextureFormat::Ktx2 => UGOE_TEXTURE_KTX2,
-            },
-            data: t.bytes.as_ptr(),
-            len: t.bytes.len(),
-        },
+    let none = UgoeTexture {
+        format: UGOE_TEXTURE_NONE,
+        data: core::ptr::null(),
+        len: 0,
+    };
+    let Some(t) = texture else {
+        return none;
+    };
+    let format = match t.format {
+        TextureFormat::Png => UGOE_TEXTURE_PNG,
+        TextureFormat::Ktx2 => UGOE_TEXTURE_KTX2,
+        _ => return none,
+    };
+    UgoeTexture {
+        format,
+        data: t.bytes.as_ptr(),
+        len: t.bytes.len(),
     }
 }
 

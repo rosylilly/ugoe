@@ -21,6 +21,7 @@ use ugoe_runtime::CompiledModel;
 
 /// マスクアトラスの設定 (`docs/spec/rendering.md` の「精度」)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct MaskAtlasOptions {
     /// アトラス 1 枚の一辺の上限 (texel)。デバイスの `max_texture_dimension_2d` で切り詰める。
     /// 画面上の外接矩形がこれに収まらないマスクは、縮小して描く。

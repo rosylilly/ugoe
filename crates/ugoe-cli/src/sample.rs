@@ -503,7 +503,7 @@ impl Rig {
                         let (keyform, cell) = find(&rotation.keyforms, &values)?;
                         Ok((vec![keyform.origin], Keyform::Rotation(keyform), cell))
                     }
-                    DeformerKind::Unknown => bail!("deformer `{id}` has an unknown kind"),
+                    _ => bail!("deformer `{id}` has an unknown kind"),
                 }
             }
             _ => bail!("{target} is not supported"),
@@ -1497,11 +1497,11 @@ mod tests {
         let mut puppet = ugoe::Puppet::new(model.clone()).unwrap();
         puppet.set_physics(project.physics.clone()).unwrap();
         assert!(puppet.physics().unwrap().is_dynamic());
-        puppet.set_toggles(ugoe::Toggles {
-            eye_blink: false,
-            breath: false,
-            ..ugoe::Toggles::default()
-        });
+        puppet.set_toggles(
+            ugoe::Toggles::default()
+                .with_eye_blink(false)
+                .with_breath(false),
+        );
         let layers = ["earwear-l", "earwear-r", "front hair", "back hair"];
         let angle = puppet
             .instance()

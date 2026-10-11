@@ -328,11 +328,7 @@ fn every_stage_runs_in_one_puppet_in_frame_order() {
 #[test]
 fn physics_reads_breath_and_tracking_but_not_lip_sync() {
     let mut puppet = full_puppet();
-    puppet.set_toggles(Toggles {
-        breath: false,
-        eye_blink: false,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_breath(false).with_eye_blink(false));
     let mut side = 0.0f32;
     for frame in 1..=120 {
         let jaw = if (frame / 15) % 2 == 0 { 0.3 } else { 0.5 };
@@ -525,11 +521,7 @@ fn arkit_frames() -> Vec<TrackingInput> {
 /// 見本のモデルの、ARKit のフレームの列に対する見た目 (描画物の頂点と不透明度)。`body` を各フレームの体の入力にする。
 fn sample_looks(body: BodyInput) -> Vec<Vec<(Vec<Vec2>, f32)>> {
     let mut puppet = Puppet::new(sample_bundle().model).expect("compile the sample");
-    puppet.set_toggles(Toggles {
-        eye_blink: false,
-        breath: false,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_eye_blink(false).with_breath(false));
     arkit_frames()
         .into_iter()
         .map(|input| {
@@ -586,11 +578,7 @@ fn avatar_sample_follows_arkit_tracking() {
     // 頭の動きで揺れることは `crates/ugoe-cli/src/sample.rs` の `physics_sways_earrings_and_hair_after_a_head_shake` が確かめる。
     let mut puppet = Puppet::new(bundle.model).expect("compile the sample");
     // トラッキングの値だけを見るため、目パチと呼吸を止める (ビューアもトラッキング中は目パチを止める)。
-    puppet.set_toggles(Toggles {
-        eye_blink: false,
-        breath: false,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_eye_blink(false).with_breath(false));
     let tracked: Vec<&str> = ugoe::model::avatar::TRACKED_PARAMETERS
         .iter()
         .copied()

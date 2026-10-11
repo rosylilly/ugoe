@@ -3,7 +3,7 @@
 //!
 //! どの警告を出すかは組み込み先が決める (画像のデコードをしない C ABI は KTX2 の警告を出さないなど)。
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -14,6 +14,7 @@ use ugoe_model::validate::ValidationError;
 /// 読み込めたが注意が要ること。`Display` は英語の文で、安定した値として扱わない
 /// (wasm の読み込みの戻り値に入る文。KTX2 の 2 つは T0222 で、対応しない形式だけに出すことに合わせて変えた)。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum LoadWarning {
     /// テクスチャが、デコードしない形式 (ETC2・ASTC・Basis Universal など) の KTX2 なので、白のプレースホルダで代用した。
     #[error(
@@ -64,6 +65,7 @@ pub enum LoadWarning {
 
 /// 警告 ([`LoadWarning::fields`]) と着せ替えの失敗 ([`crate::DressUpError::fields`]) の補足の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FieldValue<'a> {
     /// 番号 (テクスチャの番号など)。
     Index(usize),
@@ -157,6 +159,10 @@ impl From<&ReadWarning> for LoadWarning {
                 feature: feature.clone(),
             },
             ReadWarning::UnknownValue(path) => Self::UnknownValue { path: path.clone() },
+            // `ugoe-format` に種類が増えたら、種類を足すまでは文を場所に入れて未知の値として扱う。
+            other => Self::UnknownValue {
+                path: other.to_string(),
+            },
         }
     }
 }

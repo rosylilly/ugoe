@@ -21,6 +21,7 @@ use crate::{Model, standard};
 
 /// 問題の重さ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Severity {
     /// 準拠していない。
     Error,
@@ -30,6 +31,7 @@ pub enum Severity {
 
 /// 準拠の検査で見つけた問題。`field` は値の場所 (`avatar.tracking[0].parameter` など)。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProfileIssue {
     /// モデルにアバタープロファイル (`avatar`) が無い。
     #[error("model has no avatar profile (`avatar`)")]

@@ -65,7 +65,7 @@ pub fn model_summary(doc: &Document) -> Value {
                     v["kind"] = json!("rotation");
                     v["keyforms"] = grid(&r.keyforms);
                 }
-                DeformerKind::Unknown => v["kind"] = json!("unknown"),
+                _ => v["kind"] = json!("unknown"),
             }
             insert_some(&mut v, "mirror", &d.mirror);
             v

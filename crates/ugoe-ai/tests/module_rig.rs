@@ -317,13 +317,7 @@ fn the_earrings_sway_when_the_head_turns() {
     let base_model = base().doc.model();
     let model = compose(base_model, &[&module]).unwrap();
     let physics = compose_physics(base_model, base().doc.physics().unwrap(), &[&module]).unwrap();
-    let toggles = |physics| Toggles {
-        physics,
-        eye_blink: false,
-        breath: false,
-        lip_sync: false,
-        pose: false,
-    };
+    let toggles = |physics| Toggles::NONE.with_physics(physics);
     let make = |on| {
         let mut p = Puppet::new(model.clone())
             .unwrap()

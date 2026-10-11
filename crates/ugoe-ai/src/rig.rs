@@ -880,7 +880,7 @@ impl Rig {
                         let (keyform, cell) = find(&rotation.keyforms, &values, self.template)?;
                         Ok((vec![keyform.origin], Keyform::Rotation(keyform), cell))
                     }
-                    DeformerKind::Unknown => Err(template(
+                    _ => Err(template(
                         self.template,
                         format!("deformer `{id}` has an unknown kind"),
                     )),

@@ -198,6 +198,7 @@ fn model_error_info(error: &ugoe::LoadError) -> ErrorInfo {
                     // 上限のバイト数は wasm32 の `usize` に収まらないことがあるので、`u64` のまま数にする。
                     LoadErrorValue::Number(n) => n.into(),
                     LoadErrorValue::Text(s) => s.into(),
+                    other => other.to_string().into(),
                 };
                 (key, value)
             })
@@ -307,7 +308,8 @@ pub fn field_json(value: FieldValue<'_>) -> serde_json::Value {
     match value {
         FieldValue::Index(i) => i.into(),
         FieldValue::Text(s) => s.into(),
-        FieldValue::Codes(_) => value.to_string().into(),
+        // 種類の一覧 (`Codes`) は `, ` でつないだ文。
+        _ => value.to_string().into(),
     }
 }
 
@@ -778,6 +780,7 @@ mod tests {
                     "warning": w.to_string(),
                     "path": path,
                 }),
+                other => panic!("no expected JSON for {other:?}"),
             })
             .collect()
     }
@@ -911,9 +914,11 @@ mod tests {
             format: TextureFormat::Png,
             bytes: encode_png(1, 1, &[255; 4]),
         }];
-        let bytes =
-            ugoe::format::write_bundle_with(&bundle, ugoe::format::WriteOptions { compress: true })
-                .unwrap();
+        let bytes = ugoe::format::write_bundle_with(
+            &bundle,
+            ugoe::format::WriteOptions::default().with_compress(true),
+        )
+        .unwrap();
         let limits = LoadLimits {
             read: ReadLimits::default().with_max_total_decompressed(1),
             ..LoadLimits::default()

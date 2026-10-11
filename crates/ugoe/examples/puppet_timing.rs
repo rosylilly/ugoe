@@ -133,13 +133,7 @@ fn main() {
         let follow = measure_follow(subject);
         report(subject.name, "follow", follow);
         medians.push((subject.name, "follow", follow.1));
-        let no_physics = measure_update(
-            subject,
-            Toggles {
-                physics: false,
-                ..Toggles::default()
-            },
-        );
+        let no_physics = measure_update(subject, Toggles::default().with_physics(false));
         report(subject.name, "update without physics", no_physics);
         report(subject.name, "evaluation only", measure_evaluation(subject));
     }
@@ -237,10 +231,7 @@ fn check(subjects: &[&Subject], medians: &[(&str, &str, Duration)]) -> usize {
 fn check_physics_moves(subject: &Subject) {
     let positions = |physics: bool| {
         let mut puppet = subject.puppet();
-        puppet.set_toggles(Toggles {
-            physics,
-            ..Toggles::default()
-        });
+        puppet.set_toggles(Toggles::default().with_physics(physics));
         for k in 0..120 {
             drive(&mut puppet, k);
             puppet.update(DT);

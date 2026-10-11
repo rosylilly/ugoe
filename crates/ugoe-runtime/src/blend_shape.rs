@@ -114,7 +114,7 @@ mod tests {
             match &mut deformer.kind {
                 DeformerKind::Warp(w) => w.keyforms.blend_shapes.clear(),
                 DeformerKind::Rotation(r) => r.keyforms.blend_shapes.clear(),
-                DeformerKind::Unknown => {}
+                _ => {}
             }
         }
         model

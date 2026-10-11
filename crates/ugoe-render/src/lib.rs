@@ -113,6 +113,7 @@ impl View {
 
 /// [`Renderer`] の設定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RendererOptions {
     /// マスクアトラスの大きさの上限と、マスクを描く解像度 (`docs/spec/rendering.md` の「精度」)。
     pub mask_atlas: MaskAtlasOptions,
@@ -132,6 +133,7 @@ impl Default for RendererOptions {
 
 /// 直前の [`Renderer::encode`] で行った描画の統計 (テストやプロファイル用)。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FrameStats {
     /// 本描画で描いた要素の数。
     pub drawables: u32,

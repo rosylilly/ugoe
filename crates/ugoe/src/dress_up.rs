@@ -26,6 +26,7 @@ use crate::{FieldValue, Puppet, validation_fields};
 /// レンダラには、この出どころの画像を合成したモデルのテクスチャの番号で渡す
 /// (`ugoe_render::Renderer::set_texture` / `set_normal_map`)。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextureSource {
     /// 本体の `Model::textures` の添字 (バンドルの画像と同じ順)。
     Base(u32),
@@ -56,6 +57,7 @@ pub struct DressUpChange {
 ///
 /// 組み込み先は [`DressUpError::code`] と [`DressUpError::fields`] で種類と補足の値を読む (`Display` の文は安定した値として扱わない)。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum DressUpError {
     /// 本体とモジュールを合成できない (スロットが無い・埋まっているなど)。
     #[error(transparent)]
@@ -182,6 +184,8 @@ fn compose_fields(error: &ComposeError) -> Vec<(&'static str, FieldValue<'_>)> {
             ("part", Text(part)),
         ],
         C::Invalid(errors) => validation_fields(errors),
+        // `ugoe-runtime` に種類が増えたら、補足の値を足すまでは何も渡さない (種類は `code` で分かる)。
+        _ => Vec::new(),
     }
 }
 

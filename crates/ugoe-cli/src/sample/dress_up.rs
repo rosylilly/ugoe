@@ -2170,11 +2170,11 @@ mod tests {
         let mut puppet = ugoe::Puppet::new(sample.base.model.clone())
             .unwrap()
             .with_physics(physics);
-        puppet.set_toggles(ugoe::Toggles {
-            eye_blink: false,
-            breath: false,
-            ..ugoe::Toggles::default()
-        });
+        puppet.set_toggles(
+            ugoe::Toggles::default()
+                .with_eye_blink(false)
+                .with_breath(false),
+        );
         let model = &sample.base.model;
         let index = model
             .meshes
@@ -2283,11 +2283,11 @@ mod tests {
             (1, &["TwinTails/TailLMesh", "TwinTails/TailRMesh"][..]),
         ] {
             let mut puppet = ugoe::Puppet::new(sample.base.model.clone()).unwrap();
-            puppet.set_toggles(ugoe::Toggles {
-                eye_blink: false,
-                breath: false,
-                ..ugoe::Toggles::default()
-            });
+            puppet.set_toggles(
+                ugoe::Toggles::default()
+                    .with_eye_blink(false)
+                    .with_breath(false),
+            );
             puppet
                 .attach_module(std::sync::Arc::new(sample.modules[index].module.clone()))
                 .unwrap();
@@ -2364,11 +2364,11 @@ mod tests {
             let mut puppet = ugoe::Puppet::new(model.clone())
                 .unwrap()
                 .with_physics(physics.clone());
-            puppet.set_toggles(ugoe::Toggles {
-                eye_blink: false,
-                breath: false,
-                ..ugoe::Toggles::default()
-            });
+            puppet.set_toggles(
+                ugoe::Toggles::default()
+                    .with_eye_blink(false)
+                    .with_breath(false),
+            );
             puppet.attach_module(std::sync::Arc::new(module)).unwrap();
             let rig = puppet
                 .physics()

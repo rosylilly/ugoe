@@ -304,10 +304,7 @@ fn physics_actually_moves_the_follower() {
     follower.set_scene(revision, single(&source), &part_ids(&single(&source)));
     let mut still = Follower::new();
     let mut no_physics = Puppet::new(source.model.clone()).unwrap();
-    no_physics.set_toggles(ugoe::Toggles {
-        physics: false,
-        ..ugoe::Toggles::default()
-    });
+    no_physics.set_toggles(ugoe::Toggles::default().with_physics(false));
     let ids = part_ids(&no_physics);
     still.set_scene(revision, no_physics, &ids);
     for frame in 0..60 {

@@ -17,6 +17,7 @@ pub use ugoe_format::{ReadLimit, ReadLimits};
 ///
 /// ファイルが壊れているとは限らない (上限を上げれば読めることがある)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ReadLimitExceeded {
     /// 展開をやめたチャンクのタグ。
     pub chunk: ChunkTag,
@@ -72,7 +73,8 @@ mod tests {
             format: TextureFormat::Png,
             bytes: vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
         }];
-        let bytes = write_bundle_with(&bundle, WriteOptions { compress: true }).unwrap();
+        let bytes =
+            write_bundle_with(&bundle, WriteOptions::default().with_compress(true)).unwrap();
         assert_eq!(read_bundle(&bytes).unwrap(), bundle);
 
         let limits = ReadLimits::default().with_max_total_decompressed(1);
@@ -101,7 +103,7 @@ mod tests {
             format: TextureFormat::Png,
             bytes: vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
         }];
-        let bytes = write_module_with(&file, WriteOptions { compress: true }).unwrap();
+        let bytes = write_module_with(&file, WriteOptions::default().with_compress(true)).unwrap();
         assert!(read_module_with(&bytes, ReadLimits::default()).is_ok());
         let limits = ReadLimits::default().with_max_chunk_decompressed(1);
         let error = read_module_with(&bytes, limits).unwrap_err();

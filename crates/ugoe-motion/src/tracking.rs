@@ -440,7 +440,7 @@ impl TrackingMap {
                 TrackingSource::Standard => Formula::from_parameter(&o.input).map(Source::Standard),
                 TrackingSource::BlendShape => blend_shape_index(&o.input).map(Source::BlendShape),
                 TrackingSource::Head => Axis::from_name(&o.input).map(Source::Head),
-                TrackingSource::Unknown => None,
+                _ => None,
             };
             let Some(source) = source else { continue };
             let Some(target) = o.target().and_then(|id| parameters.index_of(id)) else {

@@ -439,7 +439,7 @@ fn reexpress(
                     }
                     reference
                 }
-                DeformerKind::Unknown => {
+                _ => {
                     return Err(failed(format!(
                         "deformer `{id}` has an unknown kind and cannot be moved"
                     )));

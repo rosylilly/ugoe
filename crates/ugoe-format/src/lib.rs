@@ -62,6 +62,7 @@ pub const MAGIC: [u8; 4] = *b"UGOE";
 
 /// 読み書きのエラー。読み込みは壊れた入力でパニックせず、このエラーを返す。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FormatError {
     /// 先頭のマジックバイトが [`MAGIC`] でない (ugoe のファイルではない)。
     #[error("not a ugoe file")]

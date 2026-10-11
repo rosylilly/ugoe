@@ -201,7 +201,7 @@ fn chain_axes(
         match &deformer.kind {
             DeformerKind::Warp(w) => grids.push(grid_axes(&w.keyforms)),
             DeformerKind::Rotation(r) => grids.push(grid_axes(&r.keyforms)),
-            DeformerKind::Unknown => {}
+            _ => {}
         }
         parent = deformer.parent.as_ref();
     }

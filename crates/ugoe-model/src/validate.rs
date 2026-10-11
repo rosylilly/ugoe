@@ -31,6 +31,7 @@ pub use physics::validate_physics;
 
 /// モデルの構造の検証で見つけたエラー (`docs/spec/model.md#検証`)。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ValidationError {
     /// 同じ種類の要素で ID が重複している。
     #[error("duplicate {kind} id `{id}`")]

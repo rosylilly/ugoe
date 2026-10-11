@@ -229,7 +229,8 @@ C ABI の `ugoe_puppet_update`・`ugoe_puppet_follow` は、そうした `dt` �
 
 ### 段の有効無効
 
-`Puppet::set_toggles(Toggles { physics, eye_blink, breath, lip_sync, pose })` で、物理・目パチ・呼吸・リップシンク・ポーズの段を止められます (既定はすべて有効)。エディタのプレビューで、物理やエフェクトを切って確かめるためのものです。
+`Puppet::set_toggles(Toggles)` で、物理・目パチ・呼吸・リップシンク・ポーズ (`physics`・`eye_blink`・`breath`・`lip_sync`・`pose`) の段を止められます (既定はすべて有効)。
+`Toggles` は `#[non_exhaustive]` なので、`Toggles::default().with_physics(false)` や `Toggles::NONE.with_physics(true)` のように作ります。エディタのプレビューで、物理やエフェクトを切って確かめるためのものです。
 
 - 止めた段はパラメータにもパーツの不透明度にも触りません。目パチ・呼吸は止めている間は時刻も進まず、再開すると続きから動きます。
 - 物理を止めると、動的物理の加算量を 0 に戻します (揺れた形のまま残さない)。再開すると、粒子はその時の入力に対する静止姿勢から始めます (`PhysicsSystem::reset`)。

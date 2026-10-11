@@ -15,6 +15,7 @@ use crate::{CompiledModel, ParameterValues};
 
 /// 描画可能要素 (メッシュ) 1 つの評価結果。座標はキャンバス座標系。
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct DrawableState {
     /// キャンバス座標の頂点位置 (`Mesh::uvs` と同じ並び)。
     pub positions: Vec<Vec2>,
@@ -273,7 +274,7 @@ impl ModelInstance {
                 DeformerKind::Warp(w) => {
                     vec![Vec2::ZERO; (usize::from(w.rows) + 1) * (usize::from(w.cols) + 1)]
                 }
-                DeformerKind::Rotation(_) | DeformerKind::Unknown => Vec::new(),
+                _ => Vec::new(),
             })
             .collect();
         // 重みの個数は、線形の軸 2 つ・曲線の軸 4 つまでの積 (`keyform::weights`)。
@@ -656,7 +657,7 @@ impl ModelInstance {
                 }
                 // 未知の種類は恒等変換で、不透明度も変えない。子は親の変換をそのまま受ける
                 // (`world_transform` が親をたどる)。
-                DeformerKind::Unknown => 1.0,
+                _ => 1.0,
             };
             let parent_opacity = deformer
                 .parent
@@ -1032,7 +1033,7 @@ fn world_transform<'a>(
                 };
                 return Transform::Affine(a);
             }
-            DeformerKind::Unknown => parent = compiled.deformers.get(d).and_then(|c| c.parent),
+            _ => parent = compiled.deformers.get(d).and_then(|c| c.parent),
         }
     }
     Transform::Identity
@@ -1345,7 +1346,7 @@ mod tests {
                         assert!(instance.warp_world_points(d).is_none());
                         seen.1 += 1;
                     }
-                    DeformerKind::Unknown => {}
+                    _ => {}
                 }
             }
         }

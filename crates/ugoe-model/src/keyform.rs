@@ -150,6 +150,7 @@ impl<T> KeyformGrid<T> {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum KeyformInterpolation {
     /// 各軸で隣り合う 2 つのキーの間を直線で補間する (多重線形)。
     #[default]
@@ -185,6 +186,7 @@ impl KeyformInterpolation {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum KeyformOrigin {
     /// 人が作った (または手で修正した) セル。推定はこのセルを上書きしない。
     #[default]
@@ -240,6 +242,7 @@ pub struct MirrorSource {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "method", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum KeyformInference {
     /// 加算合成 (`docs/spec/keyform-inference.md#加算合成`)。
     Additive,

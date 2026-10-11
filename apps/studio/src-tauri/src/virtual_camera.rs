@@ -456,6 +456,8 @@ impl Feed {
                                 .and_then(Option::as_ref),
                         )
                     }
+                    // 知らない置き場所の画像はプレースホルダで描く。
+                    _ => (None, None),
                 };
                 (
                     texture.cloned().unwrap_or_else(placeholder_texture),

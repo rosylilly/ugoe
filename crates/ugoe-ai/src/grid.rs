@@ -30,7 +30,7 @@ pub(crate) fn bindings<'a>(
                 .and_then(|d| match &d.kind {
                     DeformerKind::Warp(w) => Some(w.keyforms.bindings.as_slice()),
                     DeformerKind::Rotation(r) => Some(r.keyforms.bindings.as_slice()),
-                    DeformerKind::Unknown => None,
+                    _ => None,
                 })
         }
         _ => None,

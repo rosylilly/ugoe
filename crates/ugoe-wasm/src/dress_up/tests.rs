@@ -130,7 +130,7 @@ fn modules_over_the_read_limits_are_rejected_with_a_code() {
     file.textures = vec![png([20, 0, 0, 255])];
     let bytes = ugoe::format::module_file::write_module_with(
         &file,
-        ugoe::format::WriteOptions { compress: true },
+        ugoe::format::WriteOptions::default().with_compress(true),
     )
     .unwrap();
     let limits = LoadLimits {

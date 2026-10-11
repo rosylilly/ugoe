@@ -161,7 +161,7 @@ impl<'a> Splitter<'a> {
                 DeformerKind::Rotation(rotation) => {
                     self.grid(&mut rotation.keyforms, &self.deformers, &what)?;
                 }
-                DeformerKind::Unknown => {}
+                _ => {}
             }
             module.deformers.push(deformer);
         }
@@ -327,9 +327,9 @@ impl<'a> Splitter<'a> {
                     PhysicsTarget::Vertices { owner, .. } => match owner {
                         VertexOwner::Mesh(mesh) => *mesh = self.mesh(mesh, &what)?,
                         VertexOwner::Warp(warp) => *warp = self.deformer(warp, &what)?,
-                        VertexOwner::Unknown => {}
+                        _ => {}
                     },
-                    PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown => {}
+                    _ => {}
                 }
             }
             module.physics.rigs.push(rig);

@@ -550,12 +550,7 @@ fn highlighted_meshes(kind: DifferenceKind, id: &str, modules: &[&Module]) -> Ve
                             owner: VertexOwner::Mesh(mesh),
                             ..
                         } => push(mesh.as_str()),
-                        PhysicsTarget::Parameter { .. }
-                        | PhysicsTarget::Unknown
-                        | PhysicsTarget::Vertices {
-                            owner: VertexOwner::Unknown,
-                            ..
-                        } => {}
+                        _ => {}
                     }
                 }
             }

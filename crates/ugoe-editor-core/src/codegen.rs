@@ -933,7 +933,7 @@ fn keyform_cell_samples(mesh_id: &MeshId, mesh_cell: &KeyformCell) -> Vec<Comman
                     .collect(),
                 Keyform::Rotation(r.keyforms.keyforms[0]),
             ),
-            DeformerKind::Unknown => continue,
+            _ => continue,
         };
         keyforms.push((KeyformTarget::Deformer(d.id.clone()), cell, keyform));
     }

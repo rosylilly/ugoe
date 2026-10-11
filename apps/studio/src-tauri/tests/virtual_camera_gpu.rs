@@ -93,10 +93,7 @@ fn puppet(source: &Bundle, physics: bool) -> Puppet {
     let mut puppet = Puppet::new(source.model.clone())
         .unwrap()
         .with_physics(source.physics.clone().unwrap());
-    puppet.set_toggles(Toggles {
-        physics,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_physics(physics));
     puppet
 }
 

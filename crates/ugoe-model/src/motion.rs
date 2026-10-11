@@ -61,6 +61,7 @@ pub struct Curve {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CurveTarget {
     /// パラメータの値。
     Parameter(ParamId),
@@ -186,6 +187,7 @@ pub struct Point {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Segment {
     /// カーブの最初の点。先頭に 1 つだけ置く。
     Start {

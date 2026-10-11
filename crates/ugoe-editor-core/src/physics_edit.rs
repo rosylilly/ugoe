@@ -571,9 +571,9 @@ pub(crate) fn forget_removed(before: &Model, after: &Model, physics: &mut Option
             PhysicsTarget::Vertices { owner, .. } => match owner {
                 VertexOwner::Mesh(m) => !meshes.contains(m.as_str()),
                 VertexOwner::Warp(d) => !deformers.contains(d.as_str()),
-                VertexOwner::Unknown => true,
+                _ => true,
             },
-            PhysicsTarget::Unknown => true,
+            _ => true,
         });
         if rig
             .frame
@@ -610,7 +610,7 @@ pub(crate) fn forget_removed(before: &Model, after: &Model, physics: &mut Option
                     b: frame.map(b),
                     radius,
                 },
-                ColliderShape::Unknown => ColliderShape::Unknown,
+                _ => ColliderShape::Unknown,
             };
         }
         collider.attach = None;

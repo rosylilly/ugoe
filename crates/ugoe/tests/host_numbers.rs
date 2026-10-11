@@ -136,10 +136,7 @@ fn non_finite_motion_and_expression_data_keep_the_puppet_finite() {
         for (model, physics) in cases() {
             let mut single = make(&model, physics.as_ref());
             let mut conductor = make(&model, physics.as_ref());
-            conductor.set_toggles(Toggles {
-                physics: false,
-                ..Toggles::default()
-            });
+            conductor.set_toggles(Toggles::default().with_physics(false));
             let mut follower = make(&model, physics.as_ref());
             for puppet in [&mut single, &mut conductor] {
                 puppet.start_motion(bad_curves(bad), Priority::Normal);

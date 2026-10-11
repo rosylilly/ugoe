@@ -129,7 +129,7 @@ pub(crate) fn forget_removed(
             DeformerKind::Rotation(rotation) => {
                 forget_mirror_source(&mut rotation.keyforms, &deformer_ids);
             }
-            DeformerKind::Unknown => {}
+            _ => {}
         }
     }
     for mesh in &mut after.meshes {

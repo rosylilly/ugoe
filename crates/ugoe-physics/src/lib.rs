@@ -425,9 +425,9 @@ impl PhysicsSystem {
                             VertexOwner::Mesh(id) => compiled
                                 .mesh_index(id.as_str())
                                 .map_or(Target::Ignore, Target::Mesh),
-                            VertexOwner::Unknown => Target::Ignore,
+                            _ => Target::Ignore,
                         },
-                        PhysicsTarget::Unknown => Target::Ignore,
+                        _ => Target::Ignore,
                     })
                     .collect();
                 let frame = rig.frame.as_ref().and_then(|f| deformer(f.as_str()));
@@ -1010,7 +1010,7 @@ fn root_pose(
         let range = match input.source {
             PhysicsSource::X | PhysicsSource::Y => rig.normalization.position,
             PhysicsSource::Angle => rig.normalization.angle,
-            PhysicsSource::Unknown => continue,
+            _ => continue,
         };
         let mut n = normalize(parameters, index, range);
         if input.reflect {
@@ -1021,7 +1021,7 @@ fn root_pose(
             PhysicsSource::X => pose.translation.x += v,
             PhysicsSource::Y => pose.translation.y += v,
             PhysicsSource::Angle => pose.angle += v,
-            PhysicsSource::Unknown => {}
+            _ => {}
         }
     }
     pose
@@ -1074,19 +1074,18 @@ fn outputs(
                 return None;
             }
             let value = match output.target {
-                PhysicsTarget::Unknown
+                PhysicsTarget::DeformerOffset { .. }
                 | PhysicsTarget::Vertices {
-                    owner: VertexOwner::Unknown,
+                    owner: VertexOwner::Mesh(_) | VertexOwner::Warp(_),
                     ..
-                } => return None,
-                PhysicsTarget::DeformerOffset { .. } | PhysicsTarget::Vertices { .. } => {
+                } => {
                     // 変位 = 根元からの相対位置 - 静止姿勢での相対位置。
                     let rest = chain::rest_offset(&rig.particles, i, input.gravity, input.wind);
                     let d = position(i) - position(0) - rest;
                     match output.source {
                         PhysicsSource::X => Vec2::new(d.x, 0.0),
                         PhysicsSource::Y => Vec2::new(0.0, d.y),
-                        PhysicsSource::Angle | PhysicsSource::Unknown => return None,
+                        _ => return None,
                     }
                 }
                 PhysicsTarget::Parameter { .. } | PhysicsTarget::DeformerAngle { .. } => {
@@ -1112,6 +1111,8 @@ fn outputs(
                     }
                     Vec2::new(source, 0.0)
                 }
+                // 未知の出力先と、未知の持ち主の頂点
+                _ => return None,
             };
             let value = value * output.scale;
             // 有限でない値は捨てる (`docs/spec/physics.md#有限でない状態`)。
@@ -1130,7 +1131,7 @@ fn scalar_source(source: PhysicsSource, parent: Vec2, segment: Vec2) -> Option<f
         PhysicsSource::X => Some(segment.x),
         PhysicsSource::Y => Some(segment.y),
         PhysicsSource::Angle => Some(chain::signed_angle(parent, segment)),
-        PhysicsSource::Unknown => None,
+        _ => None,
     }
 }
 

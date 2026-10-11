@@ -178,6 +178,7 @@ impl fmt::Debug for ChunkTag {
 
 /// テクスチャ画像の形式。`TEXR` チャンクの先頭のシグネチャで判別する。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextureFormat {
     /// PNG。
     Png,
@@ -266,11 +267,22 @@ pub(crate) fn normal_map_of<'a>(
 }
 
 /// 書き出しの設定。
+///
+/// 将来ほかの設定を足せるように `#[non_exhaustive]` にしている。値を変えるときは
+/// `WriteOptions::default().with_compress(true)` のように既定値から始める。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct WriteOptions {
     /// `TEXR` と `NRML` 以外のチャンクを zstd で圧縮する。画像は既に圧縮済みなので対象外。
     /// 展開後が [`MAX_DECOMPRESSED_CHUNK_LEN`] を超えるチャンクも圧縮しない (既定の上限の読み込み器で読めるように)。
     pub compress: bool,
+}
+
+impl WriteOptions {
+    /// 圧縮するか ([`WriteOptions::compress`]) を `compress` にしたもの。
+    pub const fn with_compress(self, compress: bool) -> Self {
+        Self { compress, ..self }
+    }
 }
 
 /// バンドルを既定の設定 (無圧縮) でバイト列に書き出す。
@@ -430,6 +442,7 @@ impl<'a> ChunkWriter<'a> {
 
 /// 読み込みの警告 ([`read_bundle_with_report`])。読み込みは成功しているが、表示が劣化しうる。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ReadWarning {
     /// 知らない任意の機能。仕様の定めるフォールバックを適用して読んだ。
     UnknownOptionalFeature(String),
@@ -449,6 +462,7 @@ impl fmt::Display for ReadWarning {
 
 /// 読み込みの報告。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ReadReport {
     /// `FEAT` チャンクで宣言されていた機能 (知っているものも含む、宣言のまま)。
     pub features: Vec<FeatureDecl>,

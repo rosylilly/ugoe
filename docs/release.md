@@ -223,7 +223,7 @@ node scripts/crates.mjs order
 
 **方針 (利用者 2026-10-11):** 公開も 1.0 の日程も決まっていないので、API・ABI の版や挙動の安定には神経質にならず、よりよいソフトウェアに
 育てることを優先します。公開の範囲・名前・型・C ABI を変えるときも、移行の説明・互換の別名・semver の約束のための仕掛け
-(`unstable-` の feature・`#[non_exhaustive]` の揃え・約束に含めないという注記など) は要りません。下の目安は、約束のためではなく、
+(`unstable-` の feature・約束に含めないという注記など) は要りません。下の目安は、約束のためではなく、
 クレートの中を変えやすく・読みやすく保つためのものです。公開の範囲を狭めるのも「内部の整理」として扱います (T0195 の洗い出しと、
 そこから起票した T0196 (core・runtime・format・motion)・T0336 (physics))。
 
@@ -240,8 +240,20 @@ node scripts/crates.mjs order
 - **テストとコード生成の道具** (`ugoe_model::fixtures`、feature `schema`・`ts` と `ugoe_core::codegen`・`ugoe_model::spec_files`) は
   ワークスペースのテストと道具のためのもので、今の置き場所のまま使います (別の feature の裏へ移すなどはしない)。中身や形は、テストと道具の
   都合で自由に変えてかまいません。
-- **`#[non_exhaustive]`** は、付けると網羅的な `match` が書けなくなる代わりに値を足しやすくなります。揃えることはせず、値が増えていく
-  ことが分かっている型に、作るときに判断して付けます。
+- **`#[non_exhaustive]`** は、付けると網羅的な `match` や構造体の式が書けなくなる代わりに、値やフィールドを足しやすくなります。
+  厳密な約束のためではなく、「足しても使う側を壊したくない」くらいの意味で、付けて害の無い所に付けます (利用者 2026-10-11。T0197)。
+  - **付ける:** 誤りと警告の enum (`FormatError`・`CompileError`・`ComposeError`・`LoadError`・`LoadWarning`・`DressUpError`・
+    `ValidationError` など) と、その補足の値 (`LoadErrorValue`・`FieldValue`・`ReadLimitExceeded`)。設定の struct
+    (`ReadLimits`・`WriteOptions`・`ImageLimits`・`RendererOptions`・`MaskAtlasOptions`・`Toggles`)。`ugoe-model` の公開の enum
+    (デフォーマの種類・合成モードなど。`docs/spec/model.md#未知の値`)。ほかに種類が増えうる enum (`Light`・`TextureFormat`・
+    `TextureSource`・`BlinkPhase`) と、ライブラリが作って返すだけの struct (`ReadReport`・`FrameStats`・`DrawableState`・`Feature`・`FeatureDecl`)。
+  - 設定の struct は既定値から始めて変える (`Toggles::default().with_physics(false)`・`ReadLimits::default().with_max_total_decompressed(n)`、
+    または `let mut o = RendererOptions::default(); o.batch_draws = false;`)。よく使う設定には `with_*` を用意する。
+  - **付けない:** 使う側が中身を全部作って渡す小さな値の struct (`Rgb`・`View`・`Lighting`・トラッキングの入力 (`TrackingInput`・
+    `BodyInput`・`Rotation`)・`LipSyncInput`・`PartOpacityInput`・`DressUpChange`・`Bundle`・`ModuleFile`・`TextureData`・`Rgba8`・
+    `EventSource`・`RestPoseCollision`・`ResolvedMaskRef`・`Particle`)、`ugoe-model` のデータの struct (ツールが構造体の式で作る)、
+    順序の決まった `Priority` (アプリが自分の型と行き来する)。非公開のフィールドを持つ型 (`Puppet`・`Renderer` など) は付けても変わらない。
+    公開しない `ugoe-ffi`・`ugoe-wasm` の型 (C ABI の `#[repr(C)]` の struct など) にも付けない。
 - **外部のクレートの型を公開 API に出すと、その版も API の一部になります** (`glam` の `Vec2` など、`ugoe-render` の `wgpu`、
   feature の下の `schemars`・`ts-rs`)。依存を上げるときに組み込み先が困らないよう、新しく出すときは PR の本文に理由を書きます。
 - 公開の範囲は `cargo +nightly rustdoc -p <クレート> -- -Z unstable-options --output-format json` の JSON で一覧にできます

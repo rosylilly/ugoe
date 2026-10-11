@@ -40,6 +40,7 @@ pub struct ExpressionParameter {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ExpressionOp {
     /// 加算: `v + value * w`。
     Add,

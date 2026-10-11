@@ -32,7 +32,7 @@ fn with_interpolation(mut model: Model, interpolation: KeyformInterpolation) -> 
         match &mut deformer.kind {
             DeformerKind::Warp(w) => apply(&mut w.keyforms, interpolation),
             DeformerKind::Rotation(r) => apply(&mut r.keyforms, interpolation),
-            DeformerKind::Unknown => {}
+            _ => {}
         }
     }
     model

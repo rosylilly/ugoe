@@ -475,11 +475,11 @@ fn check_segments(segments: &[Segment]) -> Result<(), String> {
         let to = match segment {
             Segment::Start { p } if prev.is_none() => *p,
             Segment::Start { .. } => return Err("only the first segment can be `start`".into()),
-            Segment::Unknown => return Err("unknown segment type".into()),
             Segment::Linear { to }
             | Segment::Stepped { to }
             | Segment::InverseStepped { to }
             | Segment::Bezier { to, .. } => *to,
+            _ => return Err("unknown segment type".into()),
         };
         if !(to.t.is_finite() && to.v.is_finite()) {
             return Err(format!("key ({}, {}) is not finite", to.t, to.v));
@@ -515,7 +515,7 @@ fn check_target(model: &Model, target: &CurveTarget) -> Result<(), EditError> {
         CurveTarget::EffectGroup(name) => {
             [EYE_BLINK_GROUP, LIP_SYNC_GROUP].contains(&name.as_str())
         }
-        CurveTarget::Unknown => false,
+        _ => false,
     };
     if exists {
         return Ok(());
@@ -524,7 +524,7 @@ fn check_target(model: &Model, target: &CurveTarget) -> Result<(), EditError> {
         CurveTarget::Parameter(id) => ("parameter", id.to_string()),
         CurveTarget::PartOpacity(id) => ("part", id.to_string()),
         CurveTarget::EffectGroup(name) => ("effect group", name.clone()),
-        CurveTarget::Unknown => ("curve target", "unknown".to_owned()),
+        _ => ("curve target", "unknown".to_owned()),
     };
     Err(EditError::NotFound { kind, id })
 }
@@ -674,7 +674,7 @@ pub fn target_label(target: &CurveTarget) -> String {
         CurveTarget::Parameter(id) => format!("parameter `{id}`"),
         CurveTarget::PartOpacity(id) => format!("part opacity `{id}`"),
         CurveTarget::EffectGroup(name) => format!("effect group `{name}`"),
-        CurveTarget::Unknown => "unknown target".to_owned(),
+        _ => "unknown target".to_owned(),
     }
 }
 
@@ -697,7 +697,7 @@ fn end_point(segment: &Segment) -> Option<Point> {
         | Segment::Bezier { to, .. }
         | Segment::Stepped { to }
         | Segment::InverseStepped { to } => Some(*to),
-        Segment::Unknown => None,
+        _ => None,
     }
 }
 
@@ -708,7 +708,7 @@ fn set_end_point(segment: &mut Segment, point: Point) {
         | Segment::Bezier { to, .. }
         | Segment::Stepped { to }
         | Segment::InverseStepped { to } => *to = point,
-        Segment::Unknown => {}
+        _ => {}
     }
 }
 
@@ -721,7 +721,7 @@ fn same_kind(segment: &Segment, p0: Point, to: Point) -> Segment {
         }
         Segment::Stepped { .. } => Segment::Stepped { to },
         Segment::InverseStepped { .. } => Segment::InverseStepped { to },
-        Segment::Start { .. } | Segment::Linear { .. } | Segment::Unknown => Segment::Linear { to },
+        _ => Segment::Linear { to },
     }
 }
 

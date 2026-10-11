@@ -410,6 +410,7 @@ fn check_avatar_profile(model: &Model) -> usize {
         match issue.severity() {
             Severity::Error => eprintln!("error: {issue}"),
             Severity::Warning => eprintln!("warning: {issue}"),
+            _ => eprintln!("note: {issue}"),
         }
     }
     if let Some(claimed) = report.claimed {
@@ -839,9 +840,7 @@ fn print_atlas_report(report: &ugoe_editor_core::AtlasReport) {
 }
 
 fn write_options(args: &BuildArgs) -> ugoe_format::WriteOptions {
-    ugoe_format::WriteOptions {
-        compress: args.compress,
-    }
+    ugoe_format::WriteOptions::default().with_compress(args.compress)
 }
 
 fn kept_reason(reason: ugoe_editor_core::atlas::KeptReason) -> &'static str {
@@ -1174,6 +1173,7 @@ fn format_name(format: TextureFormat) -> &'static str {
     match format {
         TextureFormat::Png => "png",
         TextureFormat::Ktx2 => "ktx2",
+        _ => "unknown",
     }
 }
 

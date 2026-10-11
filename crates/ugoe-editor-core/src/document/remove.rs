@@ -53,7 +53,7 @@ pub(super) fn remove_parameter(model: &mut Model, id: &ParamId) -> Result<(), Ed
                 grid::collapse_axis(&mut rotation.keyforms, id, default)
             }
             // 未知の種類はキーフォームを持たない。
-            DeformerKind::Unknown => {}
+            _ => {}
         }
     }
     for mesh in &mut model.meshes {

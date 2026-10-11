@@ -108,7 +108,7 @@ fn grid_mut<'a>(model: &'a mut Model, target: &KeyformTarget) -> Result<GridMut<
             match &mut deformer.ok_or_else(missing)?.kind {
                 DeformerKind::Warp(warp) => GridMut::Warp(&mut warp.keyforms),
                 DeformerKind::Rotation(rotation) => GridMut::Rotation(&mut rotation.keyforms),
-                DeformerKind::Unknown => {
+                _ => {
                     return Err(EditError::DeformerKindMismatch {
                         id: id.to_string(),
                         expected: "warp or rotation",

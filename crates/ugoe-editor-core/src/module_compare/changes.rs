@@ -340,7 +340,7 @@ fn deformer_type(kind: &DeformerKind) -> DeformerType {
     match kind {
         DeformerKind::Warp(_) => DeformerType::Warp,
         DeformerKind::Rotation(_) => DeformerType::Rotation,
-        DeformerKind::Unknown => DeformerType::Unknown,
+        _ => DeformerType::Unknown,
     }
 }
 
@@ -509,7 +509,7 @@ fn shape_type(shape: &ColliderShape) -> ColliderShapeType {
     match shape {
         ColliderShape::Circle { .. } => ColliderShapeType::Circle,
         ColliderShape::Capsule { .. } => ColliderShapeType::Capsule,
-        ColliderShape::Unknown => ColliderShapeType::Unknown,
+        _ => ColliderShapeType::Unknown,
     }
 }
 

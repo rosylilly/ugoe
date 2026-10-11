@@ -72,6 +72,8 @@ fn textures(case: &Case, puppet: &Puppet) -> Result<Option<Vec<TextureFrame>>, E
                     file.and_then(|f| f.normal_map(i)),
                 )
             }
+            // 適合テストが知らない置き場所の画像は比べない。
+            _ => (None, None),
         })
         .collect();
     if sources.iter().all(|(t, n)| t.is_none() && n.is_none()) {
@@ -175,12 +177,12 @@ fn drive(
         let effects = conductor_effects(&conductor);
         conductor.set_effects(effects);
     }
-    conductor.set_toggles(ugoe::Toggles {
-        physics,
-        eye_blink: effects,
-        breath: effects,
-        ..ugoe::Toggles::default()
-    });
+    conductor.set_toggles(
+        ugoe::Toggles::default()
+            .with_physics(physics)
+            .with_eye_blink(effects)
+            .with_breath(effects),
+    );
     if let Some(name) = &case.motion {
         let motion = bundle_motion(case, name)?;
         conductor.start_motion(motion, Priority::Normal);
@@ -197,11 +199,9 @@ fn drive(
 
 /// 時間を進めるときの段 (目パチと呼吸は `effects` のとおり、ほかは動かす)。
 fn toggles(case: &Case) -> ugoe::Toggles {
-    ugoe::Toggles {
-        eye_blink: case.effects,
-        breath: case.effects,
-        ..ugoe::Toggles::default()
-    }
+    ugoe::Toggles::default()
+        .with_eye_blink(case.effects)
+        .with_breath(case.effects)
 }
 
 /// `case` のとおりに作って評価した `Puppet`。
@@ -598,12 +598,12 @@ mod tests {
             if let Some(json) = &conduct.effects {
                 conductor.set_effects(serde_json::from_str(json).unwrap());
             }
-            conductor.set_toggles(ugoe::Toggles {
-                physics: false,
-                eye_blink: conduct.effects.is_some(),
-                breath: conduct.effects.is_some(),
-                ..ugoe::Toggles::default()
-            });
+            conductor.set_toggles(
+                ugoe::Toggles::default()
+                    .with_physics(false)
+                    .with_eye_blink(conduct.effects.is_some())
+                    .with_breath(conduct.effects.is_some()),
+            );
             if let Some(name) = &conduct.motion {
                 let motion = bundle_motion(case, name).unwrap();
                 assert!(conductor.start_motion(motion, ugoe::motion::Priority::Normal));

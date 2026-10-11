@@ -18,7 +18,7 @@ fn smooth(mut model: Model) -> Model {
         match &mut deformer.kind {
             DeformerKind::Warp(w) => w.keyforms.interpolation = KeyformInterpolation::Smooth,
             DeformerKind::Rotation(r) => r.keyforms.interpolation = KeyformInterpolation::Smooth,
-            DeformerKind::Unknown => {}
+            _ => {}
         }
     }
     model

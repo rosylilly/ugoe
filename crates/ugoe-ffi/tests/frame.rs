@@ -144,7 +144,7 @@ fn reference(puppet: &Puppet) -> Snapshot {
         let blend = match d.blend.effective() {
             BlendMode::Additive => UGOE_BLEND_ADDITIVE,
             BlendMode::Multiply => UGOE_BLEND_MULTIPLY,
-            BlendMode::Normal | BlendMode::Unknown => UGOE_BLEND_NORMAL,
+            _ => UGOE_BLEND_NORMAL,
         };
         snapshot.states.push((
             d.opacity,

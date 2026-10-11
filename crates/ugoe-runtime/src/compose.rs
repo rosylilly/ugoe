@@ -27,6 +27,7 @@ pub(crate) const REPLACED_PART_PREFIX: &str = "#replaced/";
 
 /// 合成 ([`compose`]) の失敗。モジュールが本体に取り付けられない理由。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ComposeError {
     /// モジュールの名前が空か、`/` を含むか、`#` で始まる。中身はモジュールの名前。
     #[error("module name `{0}` must be non-empty, contain no `/` and not start with `#`")]
@@ -194,7 +195,7 @@ pub fn compose(base: &Model, modules: &[&Module]) -> Result<Model, ComposeError>
             match &mut deformer.kind {
                 DeformerKind::Warp(warp) => rename.grid(&mut warp.keyforms),
                 DeformerKind::Rotation(rotation) => rename.grid(&mut rotation.keyforms),
-                DeformerKind::Unknown => {}
+                _ => {}
             }
             model.deformers.push(deformer);
         }
@@ -342,9 +343,9 @@ fn compose_physics_with(
                     PhysicsTarget::Vertices { owner, .. } => match owner {
                         VertexOwner::Mesh(mesh) => *mesh = rename.id(mesh),
                         VertexOwner::Warp(warp) => *warp = rename.id(warp),
-                        VertexOwner::Unknown => {}
+                        _ => {}
                     },
-                    PhysicsTarget::Parameter { .. } | PhysicsTarget::Unknown => {}
+                    _ => {}
                 }
             }
             physics.rigs.push(rig);

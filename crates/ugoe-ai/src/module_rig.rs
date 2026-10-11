@@ -711,7 +711,7 @@ fn chain_axes(survey: &Survey<'_>, chain: &[&Deformer]) -> ChainAxes {
         let (grid, s) = match &d.kind {
             DeformerKind::Warp(w) => grid_axes(&w.keyforms),
             DeformerKind::Rotation(r) => grid_axes(&r.keyforms),
-            DeformerKind::Unknown => continue,
+            _ => continue,
         };
         smooth |= s;
         for (parameter, keys) in grid {

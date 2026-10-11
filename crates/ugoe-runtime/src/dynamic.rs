@@ -47,7 +47,7 @@ impl DynamicOffsets {
                 .iter()
                 .map(|d| match &d.kind {
                     DeformerKind::Warp(w) => (usize::from(w.rows) + 1) * (usize::from(w.cols) + 1),
-                    DeformerKind::Rotation(_) | DeformerKind::Unknown => 0,
+                    _ => 0,
                 })
                 .collect(),
             mesh_len: model.meshes.iter().map(|m| m.uvs.len()).collect(),

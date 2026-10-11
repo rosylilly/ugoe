@@ -145,7 +145,7 @@ fn grid_view<'a>(model: &'a mut Model, target: &KeyformTarget) -> Result<GridVie
             match &mut deformer.kind {
                 DeformerKind::Warp(warp) => Ok(GridView::new(&mut warp.keyforms)),
                 DeformerKind::Rotation(rotation) => Ok(GridView::new(&mut rotation.keyforms)),
-                DeformerKind::Unknown => Err(EditError::DeformerKindMismatch {
+                _ => Err(EditError::DeformerKindMismatch {
                     id: id.to_string(),
                     expected: "warp or rotation",
                 }),
@@ -165,7 +165,7 @@ fn grid_method(inference: Option<&KeyformInference>) -> Option<InferMethod> {
     match inference {
         None | Some(KeyformInference::Additive) => Some(InferMethod::Additive),
         Some(KeyformInference::DepthRotation(_)) => Some(InferMethod::DepthRotation),
-        Some(KeyformInference::Unknown) => None,
+        _ => None,
     }
 }
 
@@ -519,7 +519,7 @@ fn mirrored_from(model: &Model, target: &KeyformTarget) -> Option<MirrorSource> 
         KeyformTarget::Deformer(id) => match &model.deformers.iter().find(|d| &d.id == id)?.kind {
             DeformerKind::Warp(w) => of(&w.keyforms),
             DeformerKind::Rotation(r) => of(&r.keyforms),
-            DeformerKind::Unknown => None,
+            _ => None,
         },
         KeyformTarget::Part(_) | KeyformTarget::Glue(_) => None,
     }
@@ -594,7 +594,7 @@ fn dependents(model: &mut Model, source: &KeyformTarget) -> Vec<KeyformTarget> {
             .filter(|d| match &d.kind {
                 DeformerKind::Warp(w) => depends(w.keyforms.mirror_source.as_ref()),
                 DeformerKind::Rotation(r) => depends(r.keyforms.mirror_source.as_ref()),
-                DeformerKind::Unknown => false,
+                _ => false,
             })
             .map(|d| d.id.to_string())
             .collect(),

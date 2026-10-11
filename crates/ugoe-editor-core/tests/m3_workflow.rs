@@ -150,10 +150,7 @@ fn saved_and_exported_bundle_plays_in_puppet() {
     assert_eq!(events, 2);
 
     // 物理を止めると、髪は頭と一緒に動くだけになる。
-    puppet.set_toggles(Toggles {
-        physics: false,
-        ..Toggles::default()
-    });
+    puppet.set_toggles(Toggles::default().with_physics(false));
     puppet.update(DT);
     assert_eq!(
         puppet.instance().dynamic_offsets().unwrap().angle(hair1),

@@ -42,6 +42,7 @@ pub struct PartOpacityInput {
 
 /// パラメータの値の並びを受け付けられない。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ParameterValuesError {
     /// 値の数がパラメータの数と違う。
     #[error("expected {expected} parameter values, got {actual}")]
@@ -297,10 +298,7 @@ mod tests {
             };
             let mut single = make(&model);
             let mut conductor = make(&model);
-            conductor.set_toggles(Toggles {
-                physics: false,
-                ..Toggles::default()
-            });
+            conductor.set_toggles(Toggles::default().with_physics(false));
             // 受け手は物理とリップシンクの対象だけを使う (エフェクトは指揮役で済ませる)。
             let mut follower = make(&model);
             // T0133 の形 (リップシンクの後の値を基準値にする) の受け手。リップシンクが物理の入力に入ると合わない。
@@ -353,10 +351,7 @@ mod tests {
             assert!(late_differs);
             // 物理が実際に揺れている (受け手の形が物理なしの形と違う)。
             let mut still = make(&model);
-            still.set_toggles(Toggles {
-                physics: false,
-                ..Toggles::default()
-            });
+            still.set_toggles(Toggles::default().with_physics(false));
             still
                 .follow(
                     conductor.values_before_physics(),
@@ -432,10 +427,7 @@ mod tests {
         let make = || Puppet::new(fixtures::pose_and_effects()).unwrap();
         let mut single = make();
         let mut conductor = make();
-        conductor.set_toggles(Toggles {
-            physics: false,
-            ..Toggles::default()
-        });
+        conductor.set_toggles(Toggles::default().with_physics(false));
         let mut follower = make();
         // T0133・T0134 の形 (パーツの不透明度を配らない) の受け手。
         let mut blind = make();
@@ -557,10 +549,7 @@ mod tests {
         puppet.follow(&sent, None, &[], DT).unwrap();
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
         assert_eq!(puppet.lip_sync_applied(), None);
-        puppet.set_toggles(Toggles {
-            lip_sync: false,
-            ..Toggles::default()
-        });
+        puppet.set_toggles(Toggles::default().with_lip_sync(false));
         puppet.follow(&sent, Some(input), &[], DT).unwrap();
         assert_eq!(param(&puppet, standard::MOUTH_OPEN_Y), 0.0);
         // NaN の入力は何も変えない。
@@ -688,10 +677,7 @@ mod tests {
             }
             puppet
         };
-        let no_breath = Toggles {
-            breath: false,
-            ..Toggles::default()
-        };
+        let no_breath = Toggles::default().with_breath(false);
         // 呼吸で動いた値 (前のフレームの出力) を、そのまま基準値にしたい。
         let mut explicit = breathing();
         let output = values(&explicit);

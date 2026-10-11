@@ -22,6 +22,7 @@ use crate::{DressUpError, FieldValue};
 ///
 /// 組み込み先は [`LoadError::code`] と [`LoadError::fields`] で種類と補足の値を読む (`Display` の文は安定した値として扱わない)。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum LoadError {
     /// ファイルを読めない (壊れている・版が新しい・知らない必須の機能・検査を通らない・読み込みの上限を超えたなど)。
     #[error(transparent)]
@@ -33,6 +34,7 @@ pub enum LoadError {
 
 /// 読み込みの失敗の補足の値 ([`LoadError::fields`])。wasm は数と文字列、C ABI は 10 進の文字列にする。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LoadErrorValue {
     /// 番号・数・大きさ (版・検査のエラーの数・上限のバイト数)。
     Number(u64),

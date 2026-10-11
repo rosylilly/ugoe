@@ -45,6 +45,7 @@ pub struct Parameter {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ParameterKind {
     /// 通常のパラメータ。キーフォームの補間に使う。
     #[default]

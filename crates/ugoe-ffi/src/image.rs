@@ -175,17 +175,15 @@ fn decode(
 ) -> Result<Rgba8, Error> {
     use ugoe_format::image::{decode_ktx2, decode_ktx2_premultiplied};
 
-    match format {
-        TextureFormat::Png => Err(Error::new(
-            UGOE_ERROR_FORMAT,
-            "PNG decoding needs the std build of ugoe-ffi",
-        )
-        .with_kind(UNSUPPORTED_TEXTURE, Vec::new())),
+    let message = match format {
         TextureFormat::Ktx2 if premultiply => {
-            decode_ktx2_premultiplied(bytes, limits).map_err(image_error)
+            return decode_ktx2_premultiplied(bytes, limits).map_err(image_error);
         }
-        TextureFormat::Ktx2 => decode_ktx2(bytes, limits).map_err(image_error),
-    }
+        TextureFormat::Ktx2 => return decode_ktx2(bytes, limits).map_err(image_error),
+        TextureFormat::Png => "PNG decoding needs the std build of ugoe-ffi",
+        _ => "the texture format is not supported",
+    };
+    Err(Error::new(UGOE_ERROR_FORMAT, message).with_kind(UNSUPPORTED_TEXTURE, Vec::new()))
 }
 
 /// `ugoe_image_decode` で作った画像を解放する。NULL なら何もしない。
