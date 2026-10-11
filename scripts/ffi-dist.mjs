@@ -10,13 +10,20 @@
 //       アーカイブ (既定は target/ffi-dist の手元の OS のもの) を一時ディレクトリに展開し、中のファイルの一覧を確かめ、中のヘッダとライブラリと C の見本だけで
 //       見本をビルドして動かす (静的ライブラリと共有ライブラリの両方)。Linux と macOS では、共有ライブラリの soname・インストール名が
 //       中のヘッダの ABI の版と合っているかと、リンクした見本がその名前を記録したかも確かめる。
+//   node scripts/ffi-dist.mjs build-plugin --platform <name> --out <dir>
+//       Unity のプラグインのライブラリ (`BUILDS` の `plugin`。Android・iOS を含む) だけを作り、<dir> に置く (unity.yml の native)。
+//       soname・版の付いた名前は付けない (Unity はファイル名で読み、Android の動的リンカは soname で読み込み済みのライブラリを見分けるため)。
+//
+// ビルドの手順 (ターゲットごとの cargo・macOS の lipo とインストール名・できたファイルの名前) は `pack` と `build-plugin` で共有する
+// (docs/release.md#ワークフロー)。ワークフロー (ffi-release.yml と unity.yml) は分けたまま。
 //
 // Linux と macOS の共有ライブラリは、名前に ABI の版 (`ugoe_ffi::ABI_VERSION`。ヘッダの `UGOE_ABI_VERSION`) を入れた実体
 // (`libugoe_ffi.so.<ABI の版>`・`libugoe_ffi.<ABI の版>.dylib`) と、リンク用のシンボリックリンク (`libugoe_ffi.so`・`libugoe_ffi.dylib`)
 // で配る。soname・インストール名も版の付いた名前にするので、リンクしたプログラムは版の付いた名前を探し、ABI の版が違うライブラリを
 // 読まない (docs/release.md#c-abi-の配布物)。版は lib.rs から読み、手で書いた数を持たない。
 //
-// macOS では arm64 と x86_64 を作って lipo でまとめる (universal)。rustup で 2 つのターゲットを入れておく:
+// どのプラットフォームも `--target` を付けて作る (`BUILDS` の `targets`)。rustup でターゲットを入れておく。macOS では arm64 と x86_64 を
+// 作って lipo でまとめる (universal):
 //   rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
 import { spawnSync } from "node:child_process";
@@ -87,8 +94,120 @@ export function sharedLibraryId(platform, abi) {
   return platform === "macos-universal" ? `@rpath/${versioned(abi)}` : versioned(abi);
 }
 
-/** macOS の universal に入れるアーキテクチャのターゲット。 */
-const MACOS_TARGETS = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+/**
+ * ugoe-ffi をビルドするプラットフォーム (C ABI の配布物の `PLATFORMS` と、Unity のプラグインの並び (unity.yml の native) を合わせたもの)。
+ * - `targets`: cargo のターゲット。2 つなら lipo で 1 つの universal にまとめる (macOS)。
+ * - `android`: cargo-ndk の ABI (Android の NDK でビルドする)。
+ * - `plugin`: Unity のプラグインに置くライブラリ (`build-plugin`。bindings/unity/build.mjs の PLUGINS の from のファイル名)。
+ *   C ABI のアーカイブにしか無いもの (linux-aarch64) は持たない。
+ */
+export const BUILDS = {
+  "linux-x86_64": { targets: ["x86_64-unknown-linux-gnu"], plugin: "libugoe_ffi.so" },
+  "linux-aarch64": { targets: ["aarch64-unknown-linux-gnu"] },
+  "windows-x86_64": { targets: ["x86_64-pc-windows-msvc"], plugin: "ugoe_ffi.dll" },
+  "macos-universal": {
+    targets: ["aarch64-apple-darwin", "x86_64-apple-darwin"],
+    plugin: "libugoe_ffi.dylib",
+  },
+  "android-arm64-v8a": {
+    targets: ["aarch64-linux-android"],
+    android: "arm64-v8a",
+    plugin: "libugoe_ffi.so",
+  },
+  "android-armeabi-v7a": {
+    targets: ["armv7-linux-androideabi"],
+    android: "armeabi-v7a",
+    plugin: "libugoe_ffi.so",
+  },
+  "android-x86_64": {
+    targets: ["x86_64-linux-android"],
+    android: "x86_64",
+    plugin: "libugoe_ffi.so",
+  },
+  // iOS はアプリに静的にリンクする (Unity の iOS のプラグインは静的ライブラリ)
+  "ios-arm64": { targets: ["aarch64-apple-ios"], plugin: "libugoe_ffi.a" },
+};
+
+/** Android の最低の API レベル (cargo-ndk の `--platform`)。 */
+const ANDROID_API = 21;
+
+/**
+ * `platform` の ugoe-ffi をリリースビルドするコマンド (`[コマンド, 引数]` の並び。ターゲットごとに 1 つ)。
+ * - `soname` を渡すと、共有ライブラリの soname をそれにする (Linux の C ABI の配布物だけ。Unity のプラグインには付けない。
+ *   docs/release.md#c-abi-の配布物)。リンクの引数は共有ライブラリにだけ効く (静的ライブラリは変わらない)。
+ * - `hostOs` は手元の `process.platform`。Windows の外で Windows (MSVC) 向けに作るときは cargo-xwin を使う (手元での確かめ用)。
+ */
+export function cargoCommands(platform, { soname = null, hostOs = process.platform } = {}) {
+  const { targets, android } = BUILDS[platform];
+  const common = ["--locked", "--release", "-p", "ugoe-ffi"];
+  return targets.map((target) => {
+    if (android) {
+      return [
+        "cargo",
+        ["ndk", "--target", android, "--platform", String(ANDROID_API), "build", ...common],
+      ];
+    }
+    if (soname) {
+      return [
+        "cargo",
+        [
+          "rustc",
+          ...common,
+          "--lib",
+          "--target",
+          target,
+          "--",
+          "-C",
+          `link-arg=-Wl,-soname,${soname}`,
+        ],
+      ];
+    }
+    const xwin = target.endsWith("-windows-msvc") && hostOs !== "win32";
+    return ["cargo", [...(xwin ? ["xwin", "build"] : ["build"]), ...common, "--target", target]];
+  });
+}
+
+/** cargo の成果物の置き場 (CARGO_TARGET_DIR か、リポジトリの target/)。 */
+function targetDir() {
+  return process.env.CARGO_TARGET_DIR ?? join(root, "target");
+}
+
+/** `platform` のビルドでできたファイル `file` (ターゲットごと)。 */
+export function builtFiles(platform, file, dir = targetDir()) {
+  return BUILDS[platform].targets.map((t) => join(dir, t, "release", file));
+}
+
+/** Unity のプラグインの macOS のインストール名。Unity はファイル名で読むので、版の無いファイル名だけにする。 */
+export const PLUGIN_INSTALL_NAME = "@rpath/libugoe_ffi.dylib";
+
+/** `platform` の ugoe-ffi をリリースビルドする (`cargoCommands`)。 */
+function compile(platform, options) {
+  for (const [cmd, args] of cargoCommands(platform, options)) run(cmd, args);
+}
+
+/**
+ * ビルドしたライブラリ `file` を `dest` に置く。ターゲットが 2 つ (macOS) なら lipo で universal にまとめる。
+ * `installName` を渡すと、共有ライブラリ (macOS) のインストール名をそれにする。macOS の universal とインストール名を扱うのはここだけ。
+ */
+function place(platform, file, dest, installName = null) {
+  const [first, ...more] = builtFiles(platform, file);
+  if (more.length === 0) copyFileSync(first, dest);
+  else run("lipo", ["-create", "-output", dest, first, ...more]);
+  if (installName) run("install_name_tool", ["-id", installName, dest]);
+}
+
+/**
+ * Unity のプラグインのライブラリ (`BUILDS` の `plugin`) を作り、`out` に置く (unity.yml の native。soname・版の付いた名前は付けない)。
+ * Android は cargo-ndk と NDK (ANDROID_NDK_HOME)、ほかの OS 向けは rustup のターゲットを先に用意しておく。
+ */
+export function buildPlugin(platform, out) {
+  const { plugin } = BUILDS[platform];
+  compile(platform);
+  mkdirSync(out, { recursive: true });
+  const dest = join(out, plugin);
+  place(platform, plugin, dest, plugin.endsWith(".dylib") ? PLUGIN_INSTALL_NAME : null);
+  return dest;
+}
 
 /** Node の `process.platform`・`process.arch` から配布のプラットフォームの名前。配らない組み合わせなら null。 */
 export function platformOf(platform, arch) {
@@ -182,56 +301,24 @@ function fail(message) {
 }
 
 /**
- * 手元の OS 向けに ugoe-ffi をリリースビルドし、`lib` に配るライブラリを置く。`abi` は ABI の版。共有ライブラリは版の付いた名前の実体と、
- * そこへのシンボリックリンクにする (`PLATFORMS` の `versioned`)。
+ * `platform` の ugoe-ffi をリリースビルドし、`lib` に配るライブラリを置く。`abi` は ABI の版。共有ライブラリは版の付いた名前の実体と、
+ * そこへのシンボリックリンクにする (`PLATFORMS` の `versioned`)。soname・インストール名もその名前にする。
+ * Linux の soname は配布物のビルドだけで付け、ふだんのビルド (unity.yml のプラグイン・テスト) には付けない (docs/release.md#c-abi-の配布物)。
  */
 function build(platform, lib, abi) {
   mkdirSync(lib, { recursive: true });
-  const { versioned } = PLATFORMS[platform];
-  if (platform === "macos-universal") {
-    for (const target of MACOS_TARGETS) {
-      run("cargo", ["build", "--locked", "--release", "-p", "ugoe-ffi", "--target", target]);
-    }
-    const [shared, ...rest] = PLATFORMS[platform].lib;
-    const lipo = (file, out) =>
-      run("lipo", [
-        "-create",
-        "-output",
-        join(lib, out),
-        ...MACOS_TARGETS.map((t) => join(root, "target", t, "release", file)),
-      ]);
-    lipo(shared, versioned(abi));
-    for (const file of rest) lipo(file, file);
-    // 読み込むときに実行ファイルの rpath から探せるように、インストール名を `@rpath/` と版の付いたファイル名にする
-    run("install_name_tool", ["-id", sharedLibraryId(platform, abi), join(lib, versioned(abi))]);
-    symlinkSync(versioned(abi), join(lib, shared));
-    return;
-  }
+  const { versioned, lib: files } = PLATFORMS[platform];
+  const id = sharedLibraryId(platform, abi);
+  compile(platform, { soname: platform === "macos-universal" ? null : id });
+  const [shared, ...rest] = files;
   if (versioned) {
-    // Linux: soname を版の付いた名前にする。リンクの引数は共有ライブラリにだけ効く (静的ライブラリは変わらない)。
-    // 配布物のビルドだけで付け、ふだんのビルド (unity.yml のプラグイン・テスト) には付けない (docs/release.md#c-abi-の配布物)
-    run("cargo", [
-      "rustc",
-      "--locked",
-      "--release",
-      "-p",
-      "ugoe-ffi",
-      "--lib",
-      "--",
-      "-C",
-      `link-arg=-Wl,-soname,${sharedLibraryId(platform, abi)}`,
-    ]);
-  } else {
-    run("cargo", ["build", "--locked", "--release", "-p", "ugoe-ffi"]);
-  }
-  const [shared, ...rest] = PLATFORMS[platform].lib;
-  if (versioned) {
-    copyFileSync(join(root, "target", "release", shared), join(lib, versioned(abi)));
+    // macOS は読み込むときに実行ファイルの rpath から探せるように、インストール名を `@rpath/` と版の付いたファイル名にする
+    place(platform, shared, join(lib, versioned(abi)), platform === "macos-universal" ? id : null);
     symlinkSync(versioned(abi), join(lib, shared));
   } else {
-    copyFileSync(join(root, "target", "release", shared), join(lib, shared));
+    place(platform, shared, join(lib, shared));
   }
-  for (const file of rest) copyFileSync(join(root, "target", "release", file), join(lib, file));
+  for (const file of rest) place(platform, file, join(lib, file));
 }
 
 function pack(args) {
@@ -285,6 +372,23 @@ function pack(args) {
   const sha = writeChecksum(archive);
   console.log(`wrote ${archive} (sha256 ${sha})`);
   for (const f of files) console.log(`  ${name}/${f}`);
+}
+
+function buildPluginCommand(args) {
+  let platform = null;
+  let out = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--platform" && args[i + 1]) platform = args[++i];
+    else if (args[i] === "--out" && args[i + 1]) out = args[++i];
+    else fail(`unknown argument: ${args[i]}`);
+  }
+  if (!platform || !out)
+    fail("usage: node scripts/ffi-dist.mjs build-plugin --platform <name> --out <dir>");
+  const plugins = Object.keys(BUILDS).filter((p) => BUILDS[p].plugin);
+  if (!plugins.includes(platform)) {
+    fail(`no Unity plugin for ${platform} (one of: ${plugins.join(", ")})`);
+  }
+  console.log(`wrote ${buildPlugin(platform, out)}`);
 }
 
 /** `pack` が既定の置き場 (target/ffi-dist) に作る、手元の OS のアーカイブ。 */
@@ -433,9 +537,11 @@ if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2);
   if (command === "pack") pack(args);
   else if (command === "verify") verify(args);
+  else if (command === "build-plugin") buildPluginCommand(args);
   else {
     console.error(
-      "usage: node scripts/ffi-dist.mjs pack [--out <dir>] [--tag <tag>] | verify [<archive>]",
+      "usage: node scripts/ffi-dist.mjs pack [--out <dir>] [--tag <tag>] | verify [<archive>]" +
+        " | build-plugin --platform <name> --out <dir>",
     );
     process.exit(2);
   }

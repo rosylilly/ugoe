@@ -42,7 +42,9 @@ jobs:
       - name: Unity package
         run: just unity-check
 
-  # 各プラットフォームの ugoe-ffi (リリースビルド)。成果物の名前と中の配置は build.mjs の PLUGINS の from と揃える。
+  # 各プラットフォームの ugoe-ffi (リリースビルド)。ビルド (ターゲットごとの cargo・macOS の lipo とインストール名・ファイルの名前) は
+  # scripts/ffi-dist.mjs の build-plugin が行い、C ABI の配布物 (ffi-release.yml) と共有する。ここは環境の用意とアップロードだけ。
+  # matrix の name は ffi-dist.mjs の BUILDS の名前。成果物の名前と中の配置 (<name>/<ファイル>) は build.mjs の PLUGINS の from と揃う。
   # Rust のキャッシュ (Swatinem/rust-cache) は使わない。ugoe-ffi の依存は少なく、ビルドの時間の大半はキャッシュされない
   # ワークスペースのクレートなので、キャッシュがあっても速くならない (キャッシュ無しで 1 分、キャッシュありで 46 秒〜1 分 54 秒。
   # run 37468407995)。matrix の 1 つごとにキャッシュを持つと 7 個・約 1.5GB になり、リポジトリのキャッシュの上限 (10GB) を
@@ -55,79 +57,52 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-24.04
-            file: libugoe_ffi.so
+            rust_target: x86_64-unknown-linux-gnu
           - name: windows-x86_64
             os: windows-2022
-            file: ugoe_ffi.dll
+            rust_target: x86_64-pc-windows-msvc
           - name: macos-universal
             os: macos-14
-            file: libugoe_ffi.dylib
+            rust_target: aarch64-apple-darwin x86_64-apple-darwin
           - name: android-arm64-v8a
             os: ubuntu-24.04
-            android: arm64-v8a
             rust_target: aarch64-linux-android
-            file: libugoe_ffi.so
+            android: true
           - name: android-armeabi-v7a
             os: ubuntu-24.04
-            android: armeabi-v7a
             rust_target: armv7-linux-androideabi
-            file: libugoe_ffi.so
+            android: true
           - name: android-x86_64
             os: ubuntu-24.04
-            android: x86_64
             rust_target: x86_64-linux-android
-            file: libugoe_ffi.so
+            android: true
           - name: ios-arm64
             os: macos-14
             rust_target: aarch64-apple-ios
-            file: libugoe_ffi.a
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
         shell: bash
         run: rustup show active-toolchain || rustup toolchain install
-      - name: Build (host)
-        if: matrix.rust_target == '' && matrix.name != 'macos-universal'
+      - name: Add the Rust targets
         shell: bash
-        run: |
-          cargo build --locked --release -p ugoe-ffi
-          mkdir -p "out/${{ matrix.name }}"
-          cp "target/release/${{ matrix.file }}" "out/${{ matrix.name }}/"
-      - name: Build (macOS universal)
-        if: matrix.name == 'macos-universal'
-        run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          cargo build --locked --release -p ugoe-ffi --target aarch64-apple-darwin
-          cargo build --locked --release -p ugoe-ffi --target x86_64-apple-darwin
-          mkdir -p "out/${{ matrix.name }}"
-          lipo -create -output "out/${{ matrix.name }}/libugoe_ffi.dylib" \
-            target/aarch64-apple-darwin/release/libugoe_ffi.dylib \
-            target/x86_64-apple-darwin/release/libugoe_ffi.dylib
-          # Unity が名前で読むので、インストール名をファイル名だけにする
-          install_name_tool -id @rpath/libugoe_ffi.dylib "out/${{ matrix.name }}/libugoe_ffi.dylib"
-          lipo -info "out/${{ matrix.name }}/libugoe_ffi.dylib"
+        run: rustup target add ${{ matrix.rust_target }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
       - name: Install cargo-ndk
-        if: matrix.android != ''
+        if: matrix.android
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk@4.1.2
-      - name: Build (Android)
-        if: matrix.android != ''
-        run: |
-          rustup target add ${{ matrix.rust_target }}
-          # ランナーに入っている NDK を使う (ANDROID_NDK_LATEST_HOME)
-          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          cargo ndk --target ${{ matrix.android }} --platform 21 build --locked --release -p ugoe-ffi
-          mkdir -p "out/${{ matrix.name }}"
-          cp "target/${{ matrix.rust_target }}/release/libugoe_ffi.so" "out/${{ matrix.name }}/"
-      - name: Build (iOS)
-        if: matrix.name == 'ios-arm64'
-        run: |
-          rustup target add aarch64-apple-ios
-          cargo build --locked --release -p ugoe-ffi --target aarch64-apple-ios
-          mkdir -p "out/${{ matrix.name }}"
-          cp target/aarch64-apple-ios/release/libugoe_ffi.a "out/${{ matrix.name }}/"
+      # ランナーに入っている NDK を使う (ANDROID_NDK_LATEST_HOME)
+      - name: Use the NDK of the runner
+        if: matrix.android
+        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Build
+        shell: bash
+        run: node scripts/ffi-dist.mjs build-plugin --platform "${{ matrix.name }}" --out "out/${{ matrix.name }}"
       - uses: actions/upload-artifact@v7
         with:
           name: ugoe-ffi-${{ matrix.name }}

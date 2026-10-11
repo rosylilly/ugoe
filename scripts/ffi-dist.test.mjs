@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { PLUGINS } from "../bindings/unity/build.mjs";
 import {
   abiVersionFromHeader,
   abiVersionFromRust,
   archiveName,
+  BUILDS,
+  builtFiles,
+  cargoCommands,
   expectedFiles,
   PLATFORMS,
   parseArchiveName,
@@ -142,5 +146,105 @@ describe("readelfNames", () => {
     assert.deepEqual(readelfNames(output, "NEEDED"), ["libugoe_ffi.so.3", "libc.so.6"]);
     assert.deepEqual(readelfNames(output, "SONAME"), ["libugoe_ffi.so.3"]);
     assert.deepEqual(readelfNames("", "SONAME"), []);
+  });
+});
+
+describe("BUILDS", () => {
+  it("builds every C ABI archive platform", () => {
+    for (const platform of Object.keys(PLATFORMS)) assert.ok(BUILDS[platform], platform);
+  });
+
+  it("has a plugin for every Unity plugin from bindings/unity/build.mjs and nothing else", () => {
+    const plugins = Object.entries(BUILDS)
+      .filter(([, { plugin }]) => plugin)
+      .map(([platform, { plugin }]) => `${platform}/${plugin}`)
+      .sort();
+    assert.deepEqual(plugins, PLUGINS.map((p) => p.from).sort());
+  });
+
+  it("names the Unity plugins without the ABI version", () => {
+    for (const { plugin } of Object.values(BUILDS)) {
+      if (plugin) assert.match(plugin, /^(lib)?ugoe_ffi\.(so|dll|dylib|a)$/);
+    }
+  });
+
+  it("puts the built files under target/<triple>/release", () => {
+    assert.deepEqual(builtFiles("macos-universal", "libugoe_ffi.a", "t"), [
+      join("t", "aarch64-apple-darwin", "release", "libugoe_ffi.a"),
+      join("t", "x86_64-apple-darwin", "release", "libugoe_ffi.a"),
+    ]);
+    assert.deepEqual(builtFiles("windows-x86_64", "ugoe_ffi.dll", "t"), [
+      join("t", "x86_64-pc-windows-msvc", "release", "ugoe_ffi.dll"),
+    ]);
+  });
+});
+
+describe("cargoCommands", () => {
+  it("builds each target with --target and --locked", () => {
+    assert.deepEqual(cargoCommands("linux-x86_64", { hostOs: "linux" }), [
+      [
+        "cargo",
+        [
+          "build",
+          "--locked",
+          "--release",
+          "-p",
+          "ugoe-ffi",
+          "--target",
+          "x86_64-unknown-linux-gnu",
+        ],
+      ],
+    ]);
+    assert.deepEqual(
+      cargoCommands("macos-universal", { hostOs: "darwin" }).map(([, args]) => args.at(-1)),
+      ["aarch64-apple-darwin", "x86_64-apple-darwin"],
+    );
+    assert.deepEqual(cargoCommands("ios-arm64", { hostOs: "darwin" })[0][1].slice(-2), [
+      "--target",
+      "aarch64-apple-ios",
+    ]);
+  });
+
+  it("passes the soname to the linker only when asked (the C ABI archive)", () => {
+    const [[, args]] = cargoCommands("linux-x86_64", {
+      soname: "libugoe_ffi.so.3",
+      hostOs: "linux",
+    });
+    assert.equal(args[0], "rustc");
+    assert.ok(args.includes("--lib"));
+    assert.deepEqual(args.slice(-3), ["--", "-C", "link-arg=-Wl,-soname,libugoe_ffi.so.3"]);
+    for (const platform of Object.keys(BUILDS)) {
+      for (const [, a] of cargoCommands(platform, { hostOs: "linux" })) {
+        assert.ok(!a.some((x) => x.includes("soname")), platform);
+      }
+    }
+  });
+
+  it("uses cargo-ndk with API level 21 for Android", () => {
+    assert.deepEqual(cargoCommands("android-armeabi-v7a", { hostOs: "linux" }), [
+      [
+        "cargo",
+        [
+          "ndk",
+          "--target",
+          "armeabi-v7a",
+          "--platform",
+          "21",
+          "build",
+          "--locked",
+          "--release",
+          "-p",
+          "ugoe-ffi",
+        ],
+      ],
+    ]);
+  });
+
+  it("uses cargo-xwin for Windows outside Windows", () => {
+    assert.equal(cargoCommands("windows-x86_64", { hostOs: "win32" })[0][1][0], "build");
+    assert.deepEqual(cargoCommands("windows-x86_64", { hostOs: "linux" })[0][1].slice(0, 2), [
+      "xwin",
+      "build",
+    ]);
   });
 });

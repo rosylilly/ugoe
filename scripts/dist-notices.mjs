@@ -24,7 +24,7 @@ import {
 
 const root = join(import.meta.dirname, "..");
 
-/** Unity のネイティブライブラリのターゲット (.github/workflows/unity.yml の native の matrix。macOS は universal の 2 つ)。 */
+/** Unity のネイティブライブラリのターゲット (scripts/ffi-dist.mjs の BUILDS の plugin を持つもの。unity.yml の native の matrix。macOS は universal の 2 つ)。 */
 const UNITY_TARGETS = [
   "x86_64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",

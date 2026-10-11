@@ -678,7 +678,8 @@ C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブ�
   - macOS も同じ形にそろえる: dyld もインストール名でライブラリを探すので、Linux と同じ守りになる。`libfoo.<版>.dylib` と
     リンクのための `libfoo.dylib` は macOS の慣例の形で、利用者のリンクの書き方 (`-L lib -lugoe_ffi`) も Linux と同じになる。
   - 付けるのは配布物のビルド (`scripts/ffi-dist.mjs pack`) だけ。Linux は `cargo rustc` に `-Wl,-soname,…` を渡し、macOS は
-    `install_name_tool -id` で付ける。`ugoe-ffi` のビルドすべて (build.rs) には付けない: Unity のプラグイン (unity.yml の Linux・Android の
+    `install_name_tool -id` で付ける。同じスクリプトの `build-plugin` (Unity のプラグイン) には付けない ([ワークフロー](#ワークフロー))。
+    `ugoe-ffi` のビルドすべて (build.rs) には付けない: Unity のプラグイン (unity.yml の Linux・Android の
     `libugoe_ffi.so`・macOS の `libugoe_ffi.dylib`) はファイル名を指定して読み込み、ほかのライブラリがそれにリンクすることは無いので
     soname は働かない。一方で Android の動的リンカは soname で読み込み済みのライブラリを区別するので、ファイル名と違う soname は
     思わぬ食い違いのもとになる。テスト・`just ffi-check`・適合テストは静的ライブラリを使い、Godot の GDExtension は `ugoe-ffi` を
@@ -702,8 +703,9 @@ just ffi-dist-check          # アーカイブを展開し、中のヘッダと�
 ```
 
 `just ffi-dist` (`scripts/ffi-dist.mjs pack`) は、ヘッダが cbindgen の生成物と同じか (`just ffi-check` と同じ検査) を確かめてから、
-`cargo build --locked --release -p ugoe-ffi` で作ったライブラリを詰めます。macOS では `aarch64-apple-darwin` と `x86_64-apple-darwin` の
-ターゲット (`rustup target add`) が要ります (Linux では soname を付けるため `cargo rustc --locked --release -p ugoe-ffi --lib` で作ります)。
+`cargo build --locked --release -p ugoe-ffi --target <ターゲット>` で作ったライブラリを詰めます (ターゲットは `scripts/ffi-dist.mjs` の `BUILDS`)。
+macOS では `aarch64-apple-darwin` と `x86_64-apple-darwin` のターゲット (`rustup target add`) が要ります (Linux では soname を付けるため
+`cargo rustc --locked --release -p ugoe-ffi --lib --target <ターゲット>` で作ります)。
 `just ffi-dist-check` (`verify`) は、ファイルの一覧と SHA-256・共有ライブラリの名前 (上の ABI の版) を確かめ、静的ライブラリと
 共有ライブラリ (`-lugoe_ffi`) のそれぞれにリンクした見本を、見本のモデル (`assets/samples`) で動かします。手元の OS のアーカイブだけを調べられます。
 
@@ -717,6 +719,12 @@ just ffi-dist-check          # アーカイブを展開し、中のヘッダと�
 2. `release` ジョブ (タグのときだけ): すべてのアーカイブと `.sha256` を、`scripts/github-release.mjs` でタグの GitHub Release の下書きに添付します
    ([GitHub Release の下書き](#github-release-の下書き))。
 
-`unity.yml` も `ugoe-ffi` を OS ごとにビルドしますが、共有しません。`unity.yml` は Android・iOS を含む Unity のプラグインの並びを作り、
-こちらは静的ライブラリ・ヘッダ・検査を含みます。`ugoe-ffi` のビルドは 1 分ほどなので、重ねてもかかる時間はわずかで、2 つのワークフローの
-成果物を独立に保てます。
+`unity.yml` も `ugoe-ffi` を OS ごとにビルドします。**ワークフローは分け、ビルドは `scripts/ffi-dist.mjs` を共有します (T1410)。**
+
+- ワークフローを分けるのは、動く条件と成果物を独立に保つため (T1408)。`unity.yml` は Android・iOS を含む Unity のプラグインの並びを作り、
+  こちらは静的ライブラリ・ヘッダ・検査を含みます。`ugoe-ffi` のビルドは 1 分ほどなので、重ねてもかかる時間はわずかです。
+- ビルドの手順 (ターゲットごとの cargo・macOS の `lipo` とインストール名・できたファイルの名前) は `scripts/ffi-dist.mjs` の `BUILDS` と
+  その関数にまとめ、`pack` (こちら) と `build-plugin` (`unity.yml` の `native`) が使います。片方だけ直して食い違うことを防ぐためです。
+  `unity.yml` の `native` に残るのは、環境の用意 (rustup のターゲット・Android の cargo-ndk と NDK) と成果物のアップロードだけです。
+- `build-plugin` は soname・版の付いた名前を付けません ([上](#c-abi-の配布物))。macOS のプラグインのインストール名は
+  `@rpath/libugoe_ffi.dylib` (版の無いファイル名) です。

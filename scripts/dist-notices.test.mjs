@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DISTS, mplSourceLines, renderDistNotices } from "./dist-notices.mjs";
+import { BUILDS } from "./ffi-dist.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -89,7 +90,11 @@ test("npm のパッケージの files に表記が入る", () => {
 test("Unity の表記のターゲットは、unity.yml でビルドするターゲットを含む", () => {
   const unity = DISTS.find((d) => d.name === "unity");
   const yml = readFileSync(join(root, ".github/workflows/unity.yml"), "utf8");
-  const targets = [...yml.matchAll(/rust_target: (\S+)/g)].map((m) => m[1]);
+  const targets = [...yml.matchAll(/rust_target: (.+)/g)].flatMap((m) => m[1].trim().split(/\s+/));
   assert.ok(targets.length > 0);
   for (const target of targets) assert.ok(unity.targets.includes(target), target);
+  // unity.yml の native は scripts/ffi-dist.mjs の build-plugin で作る (ターゲットは BUILDS)
+  for (const { targets: ts, plugin } of Object.values(BUILDS)) {
+    if (plugin) for (const target of ts) assert.ok(unity.targets.includes(target), target);
+  }
 });

@@ -67,13 +67,18 @@ node bindings/unity/build.mjs --plugins <dir>   # CI の成果物のライブラ
   `.meta`・残った `.meta`・GUID の重複を検出する。
 - ネイティブライブラリの置き場所とプラグインの設定 (`.meta` の `PluginImporter`) は `build.mjs` の `PLUGINS`:
 
-| プラットフォーム | ファイル | ビルド |
+| プラットフォーム (`--platform`) | ファイル | ビルド |
 | --- | --- | --- |
-| Linux x86_64 (エディタと Standalone) | `Plugins/Linux/x86_64/libugoe_ffi.so` | `cargo build -p ugoe-ffi --release` |
-| Windows x86_64 (エディタと Standalone) | `Plugins/Windows/x86_64/ugoe_ffi.dll` | 同上 (MSVC) |
-| macOS (エディタと Standalone、universal) | `Plugins/macOS/libugoe_ffi.dylib` | `aarch64-apple-darwin` と `x86_64-apple-darwin` を `lipo -create` |
-| Android arm64-v8a / armeabi-v7a / x86_64 | `Plugins/Android/<ABI>/libugoe_ffi.so` | `cargo ndk -t <ABI> build -p ugoe-ffi --release` |
-| iOS (arm64) | `Plugins/iOS/libugoe_ffi.a` | `cargo build -p ugoe-ffi --release --target aarch64-apple-ios` (静的ライブラリ。`__Internal` で呼ぶ) |
+| Linux x86_64 (エディタと Standalone。`linux-x86_64`) | `Plugins/Linux/x86_64/libugoe_ffi.so` | `cargo build --locked --release -p ugoe-ffi --target x86_64-unknown-linux-gnu` |
+| Windows x86_64 (エディタと Standalone。`windows-x86_64`) | `Plugins/Windows/x86_64/ugoe_ffi.dll` | 同上で `--target x86_64-pc-windows-msvc` (Windows の外では cargo-xwin) |
+| macOS (エディタと Standalone、universal。`macos-universal`) | `Plugins/macOS/libugoe_ffi.dylib` | `aarch64-apple-darwin` と `x86_64-apple-darwin` を `lipo -create` し、インストール名を `@rpath/libugoe_ffi.dylib` にする |
+| Android arm64-v8a / armeabi-v7a / x86_64 (`android-<ABI>`) | `Plugins/Android/<ABI>/libugoe_ffi.so` | `cargo ndk --target <ABI> --platform 21 build --locked --release -p ugoe-ffi` (cargo-ndk と NDK が要る) |
+| iOS (arm64。`ios-arm64`) | `Plugins/iOS/libugoe_ffi.a` | `cargo build --locked --release -p ugoe-ffi --target aarch64-apple-ios` (静的ライブラリ。`__Internal` で呼ぶ) |
+
+CI (`unity.yml` の `native`) のビルドは `node scripts/ffi-dist.mjs build-plugin --platform <名前> --out <dir>` が行う。
+C ABI の配布物 (`ffi-release.yml`) と同じスクリプトで、ターゲットごとの cargo・macOS の `lipo` とインストール名・ファイルの名前を共有する
+([docs/release.md#ワークフロー](../../docs/release.md#ワークフロー))。配布物と違い、soname・版の付いた名前は付けない
+(Unity はファイル名で読み、Android の動的リンカは soname で読み込み済みのライブラリを見分けるため)。
 
 WebGL は対象外 (Emscripten 向けの `ugoe-ffi` のビルドがまだ無い。Web では `bindings/web` を使う)。
 
