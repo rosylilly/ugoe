@@ -28,3 +28,5 @@ assignee:
 - docs/tasks/T0811-studio-third-party-notices.md・T0723-viewer-ui-and-i18n.md のメモ、scripts/check-licenses.mjs
 
 ## メモ
+
+- 判断 (利用者、2026-10-11): 表記は cargo-about (EmbarkStudios、MIT/Apache-2.0) で作る。T1407 も同じ道具を使う。
