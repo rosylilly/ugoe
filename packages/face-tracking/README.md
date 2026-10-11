@@ -10,7 +10,7 @@ src/frame.ts            MediaPipe の結果 → TrackingFrame (頭の向き・�
                         WebPuppet.set_tracking への受け渡し (setPuppetTracking)
 src/pose.ts             Pose Landmarker の点 → 体の値 (体の向きと肩の上下、T0645)
 src/calibration.ts      キャリブレーション (中立の顔を差し引く)
-src/tuning.ts           利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880)
+src/tuning.ts           利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881)
 src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
@@ -78,11 +78,18 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 | --- | --- | --- |
 | `yaw`・`pitch`・`roll` | `gain` (感度。0〜4、既定 1)・`deadZone` (遊び。度、0〜20、既定 0)・`separate` (感度を向きで分けるか。真偽、既定 偽)・`gainNegative` (負の向きの感度。0〜4、既定 1) | `sign(v) × max(0, abs(v) − deadZone) × g`。`g` は `separate` が偽なら `gain`、真なら `v ≥ 0` で `gain`・`v < 0` で `gainNegative`。遊びの中は 0、外は 0 から続けてつなぐ (遊びは両方の向きで共通) |
 | 境目の組 (下の表) | `low`・`high` (0〜1、既定 0 と 1。間は 0.05 以上) | `clamp((v − low) / (high − low), 0, 1)`。組の中のブレンドシェイプには同じ境目を当てる |
-| `eyeBlinkSeparate` | 真偽 (既定 偽) | 瞼の左右を別々にする。真なら `eyeBlink` を `eyeBlinkLeft` に、`eyeBlinkRight` を `eyeBlinkRight` に当てる (偽のときの `eyeBlinkRight` は使わない) |
+| `eyeBlinkSeparate`・`eyeLookSeparate`・`mouthFormSeparate`・`browSeparate` | 真偽 (既定 偽) | まとまりを左右・向きで分ける (`TUNING_SPLITS`。下の表)。真なら組ごとに別の境目を当てる (偽のときの分けた組は使わない) |
+
+| 分けるまとまり (`TUNING_SPLITS`) | 分けたときの組: ブレンドシェイプ |
+| --- | --- |
+| `eyeBlink` (左右) | `eyeBlink` (左目): `eyeBlinkLeft`、`eyeBlinkRight` (右目): `eyeBlinkRight` |
+| `eyeLook` (上下左右。T0881) | `eyeLook` (上): `eyeLookUp*`、`eyeLookDown` (下): `eyeLookDown*`、`eyeLookLeft` (左へ見る): `eyeLookOutLeft`・`eyeLookInRight`、`eyeLookRight` (右へ見る): `eyeLookInLeft`・`eyeLookOutRight` |
+| `mouthForm` (笑みと下がり。T0881) | `mouthForm` (笑み): `mouthSmile*`、`mouthFormFrown` (口角の下がり): `mouthFrown*` |
+| `brow` (上げと下げ。T0881) | `brow` (上げ): `browInnerUp`・`browOuterUp*`、`browDown` (下げ): `browDown*` |
 
 | 境目の組 (`TUNING_RANGES`) | ブレンドシェイプ | 標準のパラメータ (crates/ugoe-motion/src/tracking.rs) |
 | --- | --- | --- |
-| `eyeBlink` | `eyeBlinkLeft`・`eyeBlinkRight` (左右を別々にすると `eyeBlinkLeft` だけ。右は `eyeBlinkRight` の組) | `EyeLOpen`・`EyeROpen` |
+| `eyeBlink` | `eyeBlinkLeft`・`eyeBlinkRight` | `EyeLOpen`・`EyeROpen` |
 | `eyeLook` | `eyeLookIn*`・`eyeLookOut*`・`eyeLookUp*`・`eyeLookDown*` (左右とも) | `EyeBallX`・`EyeBallY` |
 | `jawOpen` | `jawOpen` | `MouthOpenY` = `max(0, jawOpen − mouthClose)` |
 | `mouthClose` | `mouthClose` | `MouthOpenY` (`jawOpen` から引く) |
@@ -90,14 +97,17 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 | `brow` | `browInnerUp`・`browOuterUpLeft`・`browOuterUpRight`・`browDownLeft`・`browDownRight` | `BrowLY`・`BrowRY`・`BrowInnerUp`・`BrowLAngle`・`BrowRAngle` |
 
 - **既定値なら何もしない:** `DEFAULT_TUNING` のまま (倍率 1・遊び 0・境目 0 と 1) なら、`applyTuning` は受け取ったフレームをそのまま返す
-  (出力はこの機能の前とビット単位で同じ)。項目ごとにも、既定値の項目は値に触らない。瞼の左右を別々にしていても、両方の境目が既定なら同じ。
+  (出力はこの機能の前とビット単位で同じ)。項目ごとにも、既定値の項目は値に触らない。左右・向きで分けていても、どの組の境目も既定なら同じ。
   感度を向きで分けていても、両方の感度が 1 で遊びが 0 なら同じ。
 - **壊れた値:** `sanitizeTuning` が、無い・知らない項目を捨てて既定値にし、NaN・無限大は既定値、範囲の外は端に寄せ、間が 0.05 より狭い
-  (下が上以上を含む) 境目の組は既定に戻す。真偽でない `eyeBlinkSeparate`・`separate` は偽にする。`FaceTracker.setTuning` と `applyTuning` の両方で通す。画面のスライダーは片方の境目を
+  (下が上以上を含む) 境目の組は既定に戻す。真偽でない分けるスイッチ (`eyeBlinkSeparate` など)・`separate` は偽にする。
+  分けるスイッチや分けた組が無い形 (T0879・T0880 の形) は、分けないまとまりとして読む。`FaceTracker.setTuning` と `applyTuning` の両方で通す。画面のスライダーは片方の境目を
   動かすと、間を保つようにもう片方を押す (`moveRangeBound`。動かした方は利用者の決めた値のまま)。
-- **左右:** 境目の組は左右を一緒に動かす。瞼だけは「左右を別々にする」(`eyeBlinkSeparate`。既定は切) で左目と右目の境目を別々に持てる
-  (`setEyeBlinkSeparate`。入れたときは今の両目の境目を右目に写すので、入れただけでは出力が変わらない。切ったときは右目の境目を残す)。
-  左右の入れ替え (`swapSides`) は検出の直後に済んでいるので、調整は利用者から見た左右 (出力の左右) に当たる。
+- **左右・向きで分ける:** 境目の組は既定では、まとまりの中 (左右・向き) を一緒に動かす。瞼は「左右を別々にする」(`eyeBlinkSeparate`)、
+  視線・口の形・眉は「向きで分ける」(`eyeLookSeparate`・`mouthFormSeparate`・`browSeparate`。T0881) で、組ごとの境目を持てる
+  (どれも既定は切)。`setRangeSeparate` は入れたときに今のまとまりの境目を分けた組に写す (入れただけでは出力が変わらない)。
+  切ったときは分けた組の境目を残す。左右の入れ替え (`swapSides`) は検出の直後に済んでいるので、調整は利用者から見た左右
+  (出力の左右) に当たる。視線の左右は見る向きで、左へ見るのは左目の外と右目の内 (内と外は目によって逆)。
 - **向き:** 首の軸は「向きで感度を分ける」(`separate`。軸ごと、既定は切) で正の向きと負の向きの感度を別々に持てる (カメラを横に置いていて、
   片側に振ったときだけ検出の角度が小さく出るとき)。正の向きは「向きの約束」の符号で、`swapSides` の後の利用者から見た向き
   (ヨーは自分の左を向く、ピッチは上を向く、ロールは自分の左へ傾ける)。`setAxisSeparate` は入れたときに今の感度を負の向きに写す
@@ -107,6 +117,7 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 - **記録:** 記録するのは調整の前 (キャリブレーションの前) の値。再生しながら調整し直せる (キャリブレーションと同じ)。
 - **広げるとき:** `TUNING_RANGES` にまとまりとブレンドシェイプの名前を足し、`TrackingTuning`・`DEFAULT_TUNING`・`sanitizeTuning`・
   スタジオの `input.rs` の `TrackingTuning`・パネル (`TuningSection.svelte` の `METERS` と `GROUPS`) と文言に項目を足す。
+  左右・向きで分けるなら `TUNING_SPLITS` に組を足し、`<まとまり>Separate` と分けた組の項目、パネルの `SPLIT_TITLES` と文言を足す。
 - **型と既定値:** `TrackingTuning`・`DEFAULT_TUNING`・`sanitizeTuning` は `@ugoe/face-tracking/tuning` からも読める (型のほかに何も
   import しないので、Node で読める。スタジオの `src/lib/inputs.ts` の既定値と ui-audit の偽のホストが使う)。調整を覚えるアプリは
   これで既定値を作り、読み込んだ値を収め直す。

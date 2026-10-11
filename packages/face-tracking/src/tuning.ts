@@ -1,4 +1,4 @@
-// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880)。キャリブレーションと同じく
+// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881)。キャリブレーションと同じく
 // docs/spec/avatar-profile.md#実装の範囲 でアプリの責務とされたもの。キャリブレーションの後・平滑化の前に当てる。
 //
 // 調整は配信者の顔・カメラ・部屋に合わせるもので、モデルの `avatar.tracking` の係数 (モデルを作る人が決める) とは別。
@@ -34,7 +34,7 @@ export type TuningAxis = (typeof TUNING_AXES)[number];
 
 /**
  * 境目を調整できるブレンドシェイプのまとまりと、当てる名前。まとまりの中は 1 つの組で一緒に動かす
- * (瞼だけは「左右を別々にする」(`eyeBlinkSeparate`) で、`eyeBlink` を左目、`eyeBlinkRight` を右目に当てられる)。
+ * (`TUNING_SPLITS` のまとまりは、分けるスイッチを入れると左右・向きごとの組を当てられる)。
  * ほかの入力へ広げるときは、ここに名前を足し、`TrackingTuning` と既定値に項目を足す。
  * 標準のパラメータの式は crates/ugoe-motion/src/tracking.rs。
  */
@@ -62,8 +62,50 @@ export const TUNING_RANGES = {
   brow: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight", "browDownLeft", "browDownRight"],
 } as const satisfies Record<string, readonly string[]>;
 export type TuningRange = keyof typeof TUNING_RANGES;
-/** 境目の組を持つ項目 (`TUNING_RANGES` のまとまりと、左右を別々にしたときの右目の瞼)。 */
-export type TuningRangeKey = TuningRange | "eyeBlinkRight";
+
+/**
+ * 左右・向きで分けられるまとまりと、分けたときの組 (向きの名前・境目の項目・当てる名前)。最初の組はまとまりの項目そのものを使い、
+ * ほかの組は分けたときだけ使う項目を持つ。まとまりの名前のすべてを、どれか 1 つの組が受け持つ。
+ * 左右は利用者から見た左右 (`swapSides` の後)。視線の左右は見る向きで、左へ見るのは左目の外 (`eyeLookOutLeft`) と右目の内
+ * (`eyeLookInRight`) (crates/ugoe-motion/src/tracking.rs の `EyeBallX` と同じ向き)。
+ */
+export const TUNING_SPLITS = {
+  /** 瞼の左右 (T0879)。 */
+  eyeBlink: [
+    { direction: "left", key: "eyeBlink", names: ["eyeBlinkLeft"] },
+    { direction: "right", key: "eyeBlinkRight", names: ["eyeBlinkRight"] },
+  ],
+  /** 視線の上下左右 (T0881)。 */
+  eyeLook: [
+    { direction: "up", key: "eyeLook", names: ["eyeLookUpLeft", "eyeLookUpRight"] },
+    { direction: "down", key: "eyeLookDown", names: ["eyeLookDownLeft", "eyeLookDownRight"] },
+    { direction: "left", key: "eyeLookLeft", names: ["eyeLookOutLeft", "eyeLookInRight"] },
+    { direction: "right", key: "eyeLookRight", names: ["eyeLookInLeft", "eyeLookOutRight"] },
+  ],
+  /** 口の形の笑みと口角の下がり (T0881)。 */
+  mouthForm: [
+    { direction: "smile", key: "mouthForm", names: ["mouthSmileLeft", "mouthSmileRight"] },
+    { direction: "frown", key: "mouthFormFrown", names: ["mouthFrownLeft", "mouthFrownRight"] },
+  ],
+  /** 眉の上げと下げ (T0881)。 */
+  brow: [
+    { direction: "up", key: "brow", names: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight"] },
+    { direction: "down", key: "browDown", names: ["browDownLeft", "browDownRight"] },
+  ],
+} as const satisfies Partial<
+  Record<TuningRange, readonly { direction: string; key: string; names: readonly string[] }[]>
+>;
+/** 左右・向きで分けられるまとまり。 */
+export type SplitRange = keyof typeof TUNING_SPLITS;
+export const SPLIT_RANGES = Object.keys(TUNING_SPLITS) as SplitRange[];
+/** 分けたときの 1 つの組。 */
+export type TuningSplit = (typeof TUNING_SPLITS)[SplitRange][number];
+/** まとまりを分けるかのスイッチの項目。 */
+export type SplitSwitch = `${SplitRange}Separate`;
+/** 分けたときだけ使う境目の項目。 */
+type SplitOnlyKey = Exclude<TuningSplit["key"], TuningRange>;
+/** 境目の組を持つ項目 (`TUNING_RANGES` のまとまりと、分けたときだけ使う組)。 */
+export type TuningRangeKey = TuningRange | SplitOnlyKey;
 
 /** 利用者の調整 (スタジオのプロファイルの `input.tuning`。apps/studio/src-tauri/src/input.rs の `TrackingTuning`)。 */
 export interface TrackingTuning {
@@ -76,11 +118,28 @@ export interface TrackingTuning {
   eyeBlinkSeparate: boolean;
   /** 右目の瞼。`eyeBlinkSeparate` が入のときだけ使う。 */
   eyeBlinkRight: RangeTuning;
+  /** 視線。`eyeLookSeparate` が切なら上下左右、入なら上へ見る量。 */
   eyeLook: RangeTuning;
+  /** 視線を向き (上・下・左・右) で分けるか。 */
+  eyeLookSeparate: boolean;
+  /** 視線の下・左・右 (利用者から見た左右)。`eyeLookSeparate` が入のときだけ使う。 */
+  eyeLookDown: RangeTuning;
+  eyeLookLeft: RangeTuning;
+  eyeLookRight: RangeTuning;
   jawOpen: RangeTuning;
   mouthClose: RangeTuning;
+  /** 口の形。`mouthFormSeparate` が切なら笑みと口角の下がり、入なら笑み。 */
   mouthForm: RangeTuning;
+  /** 口の形を笑みと口角の下がりで分けるか。 */
+  mouthFormSeparate: boolean;
+  /** 口角の下がり。`mouthFormSeparate` が入のときだけ使う。 */
+  mouthFormFrown: RangeTuning;
+  /** 眉。`browSeparate` が切なら上げと下げ、入なら上げ。 */
   brow: RangeTuning;
+  /** 眉を上げと下げで分けるか。 */
+  browSeparate: boolean;
+  /** 眉の下げ。`browSeparate` が入のときだけ使う。 */
+  browDown: RangeTuning;
 }
 
 /** 感度の範囲。 */
@@ -103,10 +162,18 @@ export const DEFAULT_TUNING: TrackingTuning = Object.freeze({
   eyeBlinkSeparate: false,
   eyeBlinkRight: DEFAULT_RANGE,
   eyeLook: DEFAULT_RANGE,
+  eyeLookSeparate: false,
+  eyeLookDown: DEFAULT_RANGE,
+  eyeLookLeft: DEFAULT_RANGE,
+  eyeLookRight: DEFAULT_RANGE,
   jawOpen: DEFAULT_RANGE,
   mouthClose: DEFAULT_RANGE,
   mouthForm: DEFAULT_RANGE,
+  mouthFormSeparate: false,
+  mouthFormFrown: DEFAULT_RANGE,
   brow: DEFAULT_RANGE,
+  browSeparate: false,
+  browDown: DEFAULT_RANGE,
 });
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -139,7 +206,14 @@ export function sanitizeRange(value: unknown): RangeTuning {
   return { low, high };
 }
 
-/** 調整を範囲に収める (知らない項目は捨て、無い・壊れた項目は既定値にする)。 */
+function sanitizeSwitch(v: unknown): boolean {
+  return typeof v === "boolean" ? v : false;
+}
+
+/**
+ * 調整を範囲に収める (知らない項目は捨て、無い・壊れた項目は既定値にする)。分けるスイッチと分けたときの組が無い形
+ * (T0879 より前の形を含む) は、分けないまとまりとして読む。
+ */
 export function sanitizeTuning(value: unknown): TrackingTuning {
   const v = isObject(value) ? value : {};
   return {
@@ -147,25 +221,46 @@ export function sanitizeTuning(value: unknown): TrackingTuning {
     pitch: sanitizeAxis(v.pitch),
     roll: sanitizeAxis(v.roll),
     eyeBlink: sanitizeRange(v.eyeBlink),
-    eyeBlinkSeparate: typeof v.eyeBlinkSeparate === "boolean" ? v.eyeBlinkSeparate : false,
+    eyeBlinkSeparate: sanitizeSwitch(v.eyeBlinkSeparate),
     eyeBlinkRight: sanitizeRange(v.eyeBlinkRight),
     eyeLook: sanitizeRange(v.eyeLook),
+    eyeLookSeparate: sanitizeSwitch(v.eyeLookSeparate),
+    eyeLookDown: sanitizeRange(v.eyeLookDown),
+    eyeLookLeft: sanitizeRange(v.eyeLookLeft),
+    eyeLookRight: sanitizeRange(v.eyeLookRight),
     jawOpen: sanitizeRange(v.jawOpen),
     mouthClose: sanitizeRange(v.mouthClose),
     mouthForm: sanitizeRange(v.mouthForm),
+    mouthFormSeparate: sanitizeSwitch(v.mouthFormSeparate),
+    mouthFormFrown: sanitizeRange(v.mouthFormFrown),
     brow: sanitizeRange(v.brow),
+    browSeparate: sanitizeSwitch(v.browSeparate),
+    browDown: sanitizeRange(v.browDown),
   };
 }
 
+/** まとまりを分けるかのスイッチの項目の名前。 */
+export function splitSwitch(range: SplitRange): SplitSwitch {
+  return `${range}Separate`;
+}
+
 /**
- * 瞼の左右を別々にするかを切り替えた調整。入れるときは右目に今の (両目の) 境目を写す (切り替えただけでは出力が変わらない)。
- * 切るときは右目の境目を残す (使わない)。
+ * まとまりを左右・向きで分けるかを切り替えた調整。入れるときは、分けたときだけ使う組に今の (まとまりの) 境目を写す
+ * (切り替えただけでは出力が変わらない)。切るときは分けたときの組を残す (使わない)。
  */
-export function setEyeBlinkSeparate(tuning: TrackingTuning, separate: boolean): TrackingTuning {
-  if (separate === tuning.eyeBlinkSeparate) return tuning;
-  return separate
-    ? { ...tuning, eyeBlinkSeparate: true, eyeBlinkRight: { ...tuning.eyeBlink } }
-    : { ...tuning, eyeBlinkSeparate: false };
+export function setRangeSeparate(
+  tuning: TrackingTuning,
+  range: SplitRange,
+  separate: boolean,
+): TrackingTuning {
+  const flag = splitSwitch(range);
+  if (separate === tuning[flag]) return tuning;
+  if (!separate) return { ...tuning, [flag]: false };
+  const next: TrackingTuning = { ...tuning, [flag]: true };
+  for (const split of TUNING_SPLITS[range]) {
+    if (split.key !== range) next[split.key] = { ...tuning[range] };
+  }
+  return next;
 }
 
 /**
@@ -211,23 +306,24 @@ function isDefaultRange(r: RangeTuning): boolean {
   return r.low === 0 && r.high === 1;
 }
 
+function isSplitRange(key: TuningRange): key is SplitRange {
+  return key in TUNING_SPLITS;
+}
+
 /**
- * 当てる境目の組と、当てるブレンドシェイプの名前。瞼は、左右を別々にしているときだけ左目と右目に分ける
- * (切のときの `eyeBlinkRight` は使わない)。
+ * 当てる境目の組と、当てるブレンドシェイプの名前。`TUNING_SPLITS` のまとまりは、分けるスイッチが入のときだけ左右・向きの組に分ける
+ * (切のときの分けた組は使わない)。
  */
 export function tuningRanges(tuning: TrackingTuning): [RangeTuning, readonly string[]][] {
   return (Object.keys(TUNING_RANGES) as TuningRange[]).flatMap(
     (key): [RangeTuning, readonly string[]][] =>
-      key === "eyeBlink" && tuning.eyeBlinkSeparate
-        ? [
-            [tuning.eyeBlink, ["eyeBlinkLeft"]],
-            [tuning.eyeBlinkRight, ["eyeBlinkRight"]],
-          ]
+      isSplitRange(key) && tuning[splitSwitch(key)]
+        ? TUNING_SPLITS[key].map((split) => [tuning[split.key], split.names])
         : [[tuning[key], TUNING_RANGES[key]]],
   );
 }
 
-/** 当てても何も変わらないか (左右を別々にしていても、両方の境目が既定なら変わらない)。 */
+/** 当てても何も変わらないか (左右・向きで分けていても、どの組の境目も既定なら変わらない)。 */
 function isIdentityTuning(tuning: TrackingTuning): boolean {
   return (
     TUNING_AXES.every((axis) => isIdentityAxis(tuning[axis])) &&
@@ -236,11 +332,11 @@ function isIdentityTuning(tuning: TrackingTuning): boolean {
 }
 
 /**
- * 既定値と同じか (「既定に戻す」で変わるものが無いか。瞼の左右を別々にしている・感度を向きで分けている軸があるなら既定ではない)。
+ * 既定値と同じか (「既定に戻す」で変わるものが無いか。左右・向きで分けているまとまりや、感度を向きで分けている軸があるなら既定ではない)。
  */
 export function isDefaultTuning(tuning: TrackingTuning): boolean {
   return (
-    !tuning.eyeBlinkSeparate &&
+    SPLIT_RANGES.every((range) => !tuning[splitSwitch(range)]) &&
     TUNING_AXES.every((axis) => !tuning[axis].separate) &&
     isIdentityTuning(tuning)
   );

@@ -115,8 +115,6 @@
     },
     "eyeBlink": {
       "label": "Eyelids (both eyes)",
-      "leftLabel": "Eyelid (left eye)",
-      "rightLabel": "Eyelid (right eye)",
       "low": {
         "label": "Fully open at",
         "tooltip": "Eye closure at or below this counts as fully open"
@@ -124,6 +122,10 @@
       "high": {
         "label": "Fully closed at",
         "tooltip": "Eye closure at or above this counts as fully closed. Lower it if your eyes never fully close in tracking"
+      },
+      "directions": {
+        "left": "Eyelid (left eye)",
+        "right": "Eyelid (right eye)"
       }
     },
     "eyeBlinkSeparate": {
@@ -139,7 +141,17 @@
       "high": {
         "label": "Fully looking at",
         "tooltip": "Gaze at or above this counts as looking all the way in that direction. Lower it if the eyeballs never reach the edge"
+      },
+      "directions": {
+        "up": "Gaze (up)",
+        "down": "Gaze (down)",
+        "left": "Gaze (left)",
+        "right": "Gaze (right)"
       }
+    },
+    "eyeLookSeparate": {
+      "label": "Separate gaze by direction",
+      "tooltip": "Set the thresholds for looking up, down, left and right separately (for example when looking down never lowers the eyeballs fully). Left and right are your own. Turning it on copies the current thresholds to every direction"
     },
     "jawOpen": {
       "label": "Mouth opening",
@@ -172,7 +184,15 @@
       "high": {
         "label": "Fully moved at",
         "tooltip": "Smile and frown at or above this count as the mouth corners fully raised (or lowered). Lower it if your smile barely raises the corners"
+      },
+      "directions": {
+        "smile": "Mouth shape (smile)",
+        "frown": "Mouth shape (frown)"
       }
+    },
+    "mouthFormSeparate": {
+      "label": "Separate smile and frown",
+      "tooltip": "Set the thresholds of the smile and the frown separately (for example when you can smile but the corners barely lower). Turning it on copies the current thresholds to both"
     },
     "brow": {
       "label": "Eyebrows (raise and lower)",
@@ -183,7 +203,15 @@
       "high": {
         "label": "Fully moved at",
         "tooltip": "Eyebrow movement at or above this counts as fully moved. Lower it if your eyebrows move only a little"
+      },
+      "directions": {
+        "up": "Eyebrows (raise)",
+        "down": "Eyebrows (lower)"
       }
+    },
+    "browSeparate": {
+      "label": "Separate raise and lower",
+      "tooltip": "Set the thresholds for raising and lowering the eyebrows separately (for example when raising reads well but lowering barely does). Turning it on copies the current thresholds to both"
     },
     "left": "Left",
     "right": "Right",
@@ -211,7 +239,7 @@
     "times": "×",
     "reset": {
       "label": "Reset to defaults",
-      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids and the sensitivity directions)"
+      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids and the directions of thresholds and sensitivity)"
     }
   },
   "recording": {

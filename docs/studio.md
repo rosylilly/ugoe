@@ -560,8 +560,11 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
       "pitch": { "gain": 1, "deadZone": 0, "separate": false, "gainNegative": 1 },
       "roll": { "gain": 1, "deadZone": 0, "separate": false, "gainNegative": 1 },
       "eyeBlink": { "low": 0.1, "high": 0.6 }, "eyeBlinkSeparate": true, "eyeBlinkRight": { "low": 0.2, "high": 0.6 },
-      "eyeLook": { "low": 0, "high": 0.5 }, "jawOpen": { "low": 0, "high": 1 }, "mouthClose": { "low": 0, "high": 0.3 },
-      "mouthForm": { "low": 0, "high": 0.6 }, "brow": { "low": 0, "high": 1 }
+      "eyeLook": { "low": 0, "high": 0.5 }, "eyeLookSeparate": true, "eyeLookDown": { "low": 0, "high": 0.4 },
+      "eyeLookLeft": { "low": 0, "high": 0.5 }, "eyeLookRight": { "low": 0, "high": 0.7 },
+      "jawOpen": { "low": 0, "high": 1 }, "mouthClose": { "low": 0, "high": 0.3 },
+      "mouthForm": { "low": 0, "high": 0.6 }, "mouthFormSeparate": false, "mouthFormFrown": { "low": 0, "high": 1 },
+      "brow": { "low": 0, "high": 1 }, "browSeparate": true, "browDown": { "low": 0, "high": 0.4 }
     },
     "microphone": null, "sensitivity": 0.5, "noiseGate": 0.3
   },
@@ -577,8 +580,11 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 | `input.smoothing` | 数 (0〜1) | トラッキングの平滑化の強さ |
 | `input.swapSides`・`trackBody`・`stopEyeBlink` | 真偽 | 左右を入れ替える・体 (肩) もトラッキングする・トラッキング中は自動の目パチを止める (`@ugoe/face-tracking` の同じ名前の設定) |
 | `input.tuning.yaw`・`pitch`・`roll` | オブジェクト | 頭の回転の軸ごとの調整 (T0877)。`gain` は感度 (0〜4。既定 1)、`deadZone` は遊び (度。0〜20。既定 0)。遊びの中は 0 にし、外は遊びの分を引いてから感度を掛ける。`separate` (真偽。既定は偽。T0880) が真なら、正の向きに `gain`、負の向きに `gainNegative` (0〜4。既定 1) を掛ける (遊びは共通)。正の向きは利用者から見た向き (`swapSides` の後) で、ヨーは自分の左、ピッチは上、ロールは自分の左へ傾ける向き。偽のときの `gainNegative` は使わない |
-| `input.tuning.eyeBlink`・`eyeLook`・`jawOpen`・`mouthClose`・`mouthForm`・`brow` | オブジェクト | ブレンドシェイプの境目 (T0877・T0879)。瞼 (`eyeBlinkLeft`・`eyeBlinkRight`)・視線 (`eyeLook*`)・口の開き (`jawOpen`)・口の閉じ (`mouthClose`)・口の形 (`mouthSmile*`・`mouthFrown*`)・眉 (`browInnerUp`・`browOuterUp*`・`browDown*`) の組ごとに、`low` 以下を 0、`high` 以上を 1 とし、間を引き伸ばす (0〜1。既定 0 と 1)。間が 0.05 より狭い (下が上以上を含む) 組は既定に戻して読む |
+| `input.tuning.eyeBlink`・`eyeLook`・`jawOpen`・`mouthClose`・`mouthForm`・`brow` | オブジェクト | ブレンドシェイプの境目 (T0877・T0879)。瞼 (`eyeBlinkLeft`・`eyeBlinkRight`)・視線 (`eyeLook*`)・口の開き (`jawOpen`)・口の閉じ (`mouthClose`)・口の形 (`mouthSmile*`・`mouthFrown*`)・眉 (`browInnerUp`・`browOuterUp*`・`browDown*`) の組ごとに、`low` 以下を 0、`high` 以上を 1 とし、間を引き伸ばす (0〜1。既定 0 と 1)。間が 0.05 より狭い (下が上以上を含む) 組は既定に戻して読む。瞼・視線・口の形・眉は、下の行の分けるスイッチが真なら左右・向きの組に分ける |
 | `input.tuning.eyeBlinkSeparate`・`eyeBlinkRight` | 真偽・オブジェクト | 瞼の左右を別々にする (T0879。既定は偽)。真なら `eyeBlink` を左目に、`eyeBlinkRight` (`low`・`high`) を右目に当てる (利用者から見た左右。`swapSides` の後)。偽のときの `eyeBlinkRight` は使わない |
+| `input.tuning.eyeLookSeparate`・`eyeLookDown`・`eyeLookLeft`・`eyeLookRight` | 真偽・オブジェクト | 視線を向きで分ける (T0881。既定は偽)。真なら `eyeLook` を上 (`eyeLookUp*`)、`eyeLookDown` を下 (`eyeLookDown*`)、`eyeLookLeft` を左へ見る量 (`eyeLookOutLeft`・`eyeLookInRight`)、`eyeLookRight` を右へ見る量 (`eyeLookInLeft`・`eyeLookOutRight`) に当てる。左右は利用者から見た左右 (`swapSides` の後) の見る向きで、内と外は目によって逆になる。偽のときの 3 つの組は使わない |
+| `input.tuning.mouthFormSeparate`・`mouthFormFrown` | 真偽・オブジェクト | 口の形を笑みと口角の下がりで分ける (T0881。既定は偽)。真なら `mouthForm` を笑み (`mouthSmile*`)、`mouthFormFrown` を口角の下がり (`mouthFrown*`) に当てる。偽のときの `mouthFormFrown` は使わない |
+| `input.tuning.browSeparate`・`browDown` | 真偽・オブジェクト | 眉を上げと下げで分ける (T0881。既定は偽)。真なら `brow` を上げ (`browInnerUp`・`browOuterUp*`)、`browDown` を下げ (`browDown*`) に当てる。偽のときの `browDown` は使わない |
 | `input.sensitivity` | 数 (0〜1) | マイクの感度。0.5 で等倍、0 で 1/4、1 で 4 倍 |
 | `input.noiseGate` | 数 (0〜1) | ノイズの閾値 (下の「マイクの口パク」の大きさの尺度)。これより小さな音では口を開かない |
 | `motion.autoIdle` | 真偽 | 何も再生していないときに待機モーションを流す |
@@ -833,8 +839,8 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 
 `@ugoe/face-tracking` のパネル (入力の選択・映像とランドマーク・平滑化・キャリブレーション・調整・記録) をそのまま使う。調整と使ったカメラはプロファイルの `input` に覚える。
 
-- **利用者の調整 (T0877・T0879):** キャリブレーションの後・平滑化の前に、首振りの感度と遊び、瞼・視線・口の開きと閉じ・口の形・眉の境目を当てる
-  (瞼は左右を別々にもできる。`@ugoe/face-tracking` の `applyTuning`。[packages/face-tracking](../packages/face-tracking/README.md#利用者の調整-t0877))。
+- **利用者の調整 (T0877・T0879・T0880・T0881):** キャリブレーションの後・平滑化の前に、首振りの感度と遊び、瞼・視線・口の開きと閉じ・口の形・眉の境目を当てる
+  (首の感度は向きで、瞼は左右で、視線・口の形・眉の境目は向きで分けることもできる。`@ugoe/face-tracking` の `applyTuning`。[packages/face-tracking](../packages/face-tracking/README.md#利用者の調整-t0877))。
   モデルの `avatar.tracking` の上書き (モデルを作る人が決める) とは別の、配信者に付く値なので、平滑化やマイクの感度と同じく
   プロファイルの `input.tuning` に持ち、アバター (シーン) ごとには分けない ([入力とホットキーの項目](#入力とホットキーの項目-t0803))。
   パネルで変えると、ほかの `input` の項目と同じくプロファイルに書き戻して自動で保存する。読み込みでは、無い・知らない項目と
@@ -1574,7 +1580,7 @@ WebView は、隠れたり最小化されたりしたページの `requestAnimat
 | 使う GPU (T0860) | 2 つの GPU を持つ Windows のノート PC で、「高性能」で出力ウィンドウ (`--force-high-performance-gpu`) と仮想カメラが外付けの GPU を使い、「省電力」で内蔵の GPU を使うこと (タスクマネージャーの「GPU エンジン」の列と、「フレームレートと負荷」の GPU の名前)。Linux の PRIME (`DRI_PRIME`・NVIDIA のオフロード) と、Intel の Mac での切り替え | [使う GPU](#使う-gpu) |
 | GPU の優先度 (T0861) | Windows の実機で、GPU を使い切るゲーム (かベンチマーク) と OBS を動かしながら「低い」にすると、ゲームの fps と OBS の「レンダリングの遅延によるフレームの欠落」が改善するか、スタジオの「描画の回数」がどのくらい落ちるか。スタジオと WebView2 の GPU のプロセスを `PROCESS_SET_INFORMATION` で開いて当てられるか (注意が出ないか)。WebView2 Runtime が GPU のプロセスを作り直したときに当て直されるか。T0857 (変わったときだけ描く) だけで足りるか | [GPU の優先度](#gpu-の優先度) |
 | 保存の失敗の種類 (T0870) | Windows の実機で、共有違反・ほかのアプリ (ウイルス対策ソフトなど) が開いているファイルへの置き換えの失敗を一時の失敗とし (自動の保存を続ける)、読み取り専用の属性を書けない場所とすること (開き直しの判定 `cannot_reopen`)。実際にディスクが一杯になったとき・ネットワークのドライブが切れたとき・macOS の権限 (書けないファイルとフォルダ。確認表の S39) | [保存の失敗の種類](#保存の失敗の種類) |
-| トラッキングの調整 (T0877・T0879) | 実際のカメラで、首の遊びの中は動かず遊びを越えると滑らかに動き出すこと、細目でも瞼の境目で閉じきり開ききること (左右を別々にしたときの片目だけの合わせ方も)、口の小さな開きが境目で 0 と 1 を行き来しないこと、視線・口の形・眉・口の閉じの境目で表情の動きが大きくなること、記録を再生しながら調整し直せること (確認表の S38) | [入力](#入力) |
+| トラッキングの調整 (T0877・T0879・T0880・T0881) | 実際のカメラで、首の遊びの中は動かず遊びを越えると滑らかに動き出すこと、細目でも瞼の境目で閉じきり開ききること (左右を別々にしたときの片目だけの合わせ方も)、口の小さな開きが境目で 0 と 1 を行き来しないこと、視線・口の形・眉・口の閉じの境目で表情の動きが大きくなること (向きで分けたときの、出にくい向きだけの合わせ方も)、記録を再生しながら調整し直せること (確認表の S38) | [入力](#入力) |
 | 仮想カメラ (T0807・T0809) | Windows 11 の登録と映り方、Linux の v4l2loopback、macOS の Camera Extension (Swift のコンパイルを含む) | [Windows](#windows-media-foundation)・[Linux](#linux-v4l2loopback)・[macOS](#macos-camera-extension) の「未確認」 |
 
 ## 実装のタスク

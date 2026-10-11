@@ -185,6 +185,46 @@ describe("InputPanel tracking tuning", () => {
     // メーターの両端に向きを書く (負の向きが左)。
     expect(target.querySelector(".meter-ends")?.textContent).toBe("rightleft");
   });
+
+  it("separates the eyebrows and the gaze by direction and saves each range", async () => {
+    setLocale("en");
+    const { target, tracker, props, notify } = setup(DEFAULT_INPUT);
+    tracker.setTuning({
+      ...DEFAULT_INPUT.tuning,
+      brow: { low: 0.1, high: 0.5 },
+      eyeLook: { low: 0, high: 0.4 },
+    });
+    flushSync();
+    await notify();
+    openSection(target, "Tuning");
+    openSection(target, "Eyebrows");
+    const toggleFor = (label: string) =>
+      [...target.querySelectorAll<HTMLElement>("[role=switch]")].find((b) =>
+        b.closest(".ugoe-toggle")?.textContent?.includes(label),
+      );
+    expect(target.textContent).toContain("Eyebrows (raise and lower)");
+    toggleFor("Separate raise and lower")?.click();
+    flushSync();
+    await notify();
+    // 入れると下げに今の境目を写す。
+    expect(props.settings.tuning.browSeparate).toBe(true);
+    expect(props.settings.tuning.browDown).toEqual({ low: 0.1, high: 0.5 });
+    expect(target.textContent).toContain("Eyebrows (raise)");
+    expect(target.textContent).toContain("Eyebrows (lower)");
+    expect(target.textContent).not.toContain("Eyebrows (raise and lower)");
+    openSection(target, "Eyes");
+    toggleFor("Separate gaze by direction")?.click();
+    flushSync();
+    await notify();
+    expect(props.settings.tuning.eyeLookSeparate).toBe(true);
+    expect(props.settings.tuning.eyeLookLeft).toEqual({ low: 0, high: 0.4 });
+    for (const direction of ["up", "down", "left", "right"]) {
+      expect(target.textContent).toContain(`Gaze (${direction})`);
+    }
+    // 左へ見る組のメーターは、左目の外と右目の内。
+    expect(target.textContent).toContain("Left out");
+    expect(props.settings.tuning.mouthFormSeparate).toBe(false);
+  });
 });
 
 /** 見出しの名前で折りたたみを開く。 */

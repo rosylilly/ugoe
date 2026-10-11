@@ -149,16 +149,32 @@ pub struct TrackingTuning {
     pub eye_blink_separate: bool,
     /// 右目の瞼 (`eyeBlinkRight`)。`eye_blink_separate` が真のときだけ使う。
     pub eye_blink_right: RangeTuning,
-    /// 視線 (`eyeLook*`)。
+    /// 視線。`eye_look_separate` が偽なら上下左右 (`eyeLook*`)、真なら上 (`eyeLookUp*`)。
     pub eye_look: RangeTuning,
+    /// 視線を向き (上・下・左・右) で分けるか。
+    pub eye_look_separate: bool,
+    /// 視線の下 (`eyeLookDown*`)。`eye_look_separate` が真のときだけ使う。
+    pub eye_look_down: RangeTuning,
+    /// 視線の左 (利用者から見た左へ見る。`eyeLookOutLeft`・`eyeLookInRight`)。`eye_look_separate` が真のときだけ使う。
+    pub eye_look_left: RangeTuning,
+    /// 視線の右 (`eyeLookInLeft`・`eyeLookOutRight`)。`eye_look_separate` が真のときだけ使う。
+    pub eye_look_right: RangeTuning,
     /// 口の開き (`jawOpen`)。
     pub jaw_open: RangeTuning,
     /// 口の閉じ (`mouthClose`)。
     pub mouth_close: RangeTuning,
-    /// 口の形 (`mouthSmile*`・`mouthFrown*`)。
+    /// 口の形。`mouth_form_separate` が偽なら笑みと口角の下がり (`mouthSmile*`・`mouthFrown*`)、真なら笑み。
     pub mouth_form: RangeTuning,
-    /// 眉 (`browInnerUp`・`browOuterUp*`・`browDown*`)。
+    /// 口の形を笑みと口角の下がりで分けるか。
+    pub mouth_form_separate: bool,
+    /// 口角の下がり (`mouthFrown*`)。`mouth_form_separate` が真のときだけ使う。
+    pub mouth_form_frown: RangeTuning,
+    /// 眉。`brow_separate` が偽なら上げと下げ (`browInnerUp`・`browOuterUp*`・`browDown*`)、真なら上げ。
     pub brow: RangeTuning,
+    /// 眉を上げと下げで分けるか。
+    pub brow_separate: bool,
+    /// 眉の下げ (`browDown*`)。`brow_separate` が真のときだけ使う。
+    pub brow_down: RangeTuning,
 }
 
 /// 感度の上限 (tuning.ts の `GAIN_MAX`)。
@@ -209,10 +225,15 @@ impl TrackingTuning {
             &mut self.eye_blink,
             &mut self.eye_blink_right,
             &mut self.eye_look,
+            &mut self.eye_look_down,
+            &mut self.eye_look_left,
+            &mut self.eye_look_right,
             &mut self.jaw_open,
             &mut self.mouth_close,
             &mut self.mouth_form,
+            &mut self.mouth_form_frown,
             &mut self.brow,
+            &mut self.brow_down,
         ] {
             range.sanitize();
         }
@@ -511,6 +532,61 @@ mod tests {
                 gain_negative: 2.5,
             }
         );
+        // 向きで分けたまとまりを読み書きできる。範囲の外は寄せ、逆さまの組は既定に戻す。
+        let mut input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": {
+                "eyeLookSeparate": true, "eyeLookDown": { "low": 0.1, "high": 0.8 },
+                "eyeLookLeft": { "low": -1, "high": 0.4 }, "eyeLookRight": { "high": 2 },
+                "mouthFormSeparate": true, "mouthFormFrown": { "low": 0.6, "high": 0.2 },
+                "browSeparate": true, "browDown": { "low": 0, "high": 0.25 }
+            } }"#,
+        )
+        .unwrap();
+        input.sanitize();
+        let t = input.tuning;
+        assert!(t.eye_look_separate && t.mouth_form_separate && t.brow_separate);
+        assert_eq!(
+            t.eye_look_down,
+            RangeTuning {
+                low: 0.1,
+                high: 0.8
+            }
+        );
+        assert_eq!(
+            t.eye_look_left,
+            RangeTuning {
+                low: 0.0,
+                high: 0.4
+            }
+        );
+        assert_eq!(t.eye_look_right, RangeTuning::default());
+        assert_eq!(t.mouth_form_frown, RangeTuning::default());
+        assert_eq!(
+            t.brow_down,
+            RangeTuning {
+                low: 0.0,
+                high: 0.25
+            }
+        );
+        // T0879 の形 (向きで分けるスイッチと組が無い) は分けないまとまりとして読む。
+        let input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": { "eyeLook": { "low": 0, "high": 0.5 }, "mouthForm": { "low": 0, "high": 0.6 }, "brow": { "low": 0, "high": 1 } } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            input.tuning,
+            TrackingTuning {
+                eye_look: RangeTuning {
+                    low: 0.0,
+                    high: 0.5
+                },
+                mouth_form: RangeTuning {
+                    low: 0.0,
+                    high: 0.6
+                },
+                ..TrackingTuning::default()
+            }
+        );
         // 最小の幅ちょうどの組は残す (画面で決めた値)。
         let mut range = RangeTuning {
             low: 0.3,
@@ -533,10 +609,18 @@ mod tests {
                 "eyeBlinkSeparate": false,
                 "eyeBlinkRight": { "low": 0.0, "high": 1.0 },
                 "eyeLook": { "low": 0.0, "high": 1.0 },
+                "eyeLookSeparate": false,
+                "eyeLookDown": { "low": 0.0, "high": 1.0 },
+                "eyeLookLeft": { "low": 0.0, "high": 1.0 },
+                "eyeLookRight": { "low": 0.0, "high": 1.0 },
                 "jawOpen": { "low": 0.0, "high": 1.0 },
                 "mouthClose": { "low": 0.0, "high": 1.0 },
                 "mouthForm": { "low": 0.0, "high": 1.0 },
+                "mouthFormSeparate": false,
+                "mouthFormFrown": { "low": 0.0, "high": 1.0 },
                 "brow": { "low": 0.0, "high": 1.0 },
+                "browSeparate": false,
+                "browDown": { "low": 0.0, "high": 1.0 },
             })
         );
     }

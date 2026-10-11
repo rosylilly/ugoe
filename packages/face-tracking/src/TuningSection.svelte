@@ -1,5 +1,5 @@
 <script lang="ts">
-// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
+// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
 // 「首」「目」「口」「眉」の小見出しで分け、各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、
 // 顔を動かしながら決められるようにする。閉じている見出しの中身は作らない (メーターが毎フレーム描き直されないように)。
 import { Button, Section, Slider, Toggle } from "@ugoe/ui";
@@ -14,12 +14,16 @@ import {
   isDefaultTuning,
   moveRangeBound,
   RANGE_MIN_SPAN,
+  type SplitRange,
   setAxisSeparate,
-  setEyeBlinkSeparate,
+  setRangeSeparate,
+  splitSwitch,
   TUNING_AXES,
+  TUNING_SPLITS,
   type TuningAxis,
   type TuningRange,
   type TuningRangeKey,
+  type TuningSplit,
 } from "./tuning";
 
 interface Props {
@@ -78,6 +82,51 @@ const GROUPS = [
 ] as const satisfies readonly { key: string; ranges: readonly TuningRange[] }[];
 type Group = (typeof GROUPS)[number]["key"];
 
+function isSplitRange(key: TuningRange): key is SplitRange {
+  return key in TUNING_SPLITS;
+}
+
+/**
+ * 分けたときの 1 つの組のメーター。名前が 1 つなら項目の名前を見せずに読ませ、いくつかならまとまりのメーターから選ぶ
+ * (視線の左なら「左・外」「右・内」)。
+ */
+function splitMeters(range: SplitRange, split: TuningSplit): Meters {
+  const names: readonly string[] = split.names;
+  const [only] = names;
+  return names.length === 1 && only !== undefined
+    ? [[only, null]]
+    : METERS[range].filter(([name]) => names.includes(name));
+}
+
+/** 分けたときの組の名前 (まとまりと向きから)。 */
+const SPLIT_TITLES: {
+  [R in SplitRange]: Record<(typeof TUNING_SPLITS)[R][number]["direction"], () => string>;
+} = {
+  eyeBlink: {
+    left: () => t("tuning.eyeBlink.directions.left"),
+    right: () => t("tuning.eyeBlink.directions.right"),
+  },
+  eyeLook: {
+    up: () => t("tuning.eyeLook.directions.up"),
+    down: () => t("tuning.eyeLook.directions.down"),
+    left: () => t("tuning.eyeLook.directions.left"),
+    right: () => t("tuning.eyeLook.directions.right"),
+  },
+  mouthForm: {
+    smile: () => t("tuning.mouthForm.directions.smile"),
+    frown: () => t("tuning.mouthForm.directions.frown"),
+  },
+  brow: {
+    up: () => t("tuning.brow.directions.up"),
+    down: () => t("tuning.brow.directions.down"),
+  },
+};
+
+function splitTitle(range: SplitRange, split: TuningSplit): string {
+  const titles: Record<string, () => string> = SPLIT_TITLES[range];
+  return titles[split.direction]?.() ?? split.key;
+}
+
 /** 開いているか (閉じている間は中身を作らない。メーターが毎フレーム描き直されないように)。 */
 let open = $state(false);
 let groupOpen = $state<Record<Group, boolean>>({
@@ -130,24 +179,27 @@ function position(v: number, min: number, max: number): number {
           {/each}
         {/if}
         {#each group.ranges as key (key)}
-          {#if key === "eyeBlink"}
+          {#if isSplitRange(key)}
+            {@const flag = splitSwitch(key)}
             <div class="item">
               <Toggle
-                label={t("tuning.eyeBlinkSeparate.label")}
-                tooltip={t("tuning.eyeBlinkSeparate.tooltip")}
-                checked={tuning.eyeBlinkSeparate}
-                onchange={(v) => tracker.setTuning(setEyeBlinkSeparate(tuning, v))}
+                label={t(`tuning.${flag}.label`)}
+                tooltip={t(`tuning.${flag}.tooltip`)}
+                checked={tuning[flag]}
+                onchange={(v) => tracker.setTuning(setRangeSeparate(tuning, key, v))}
               />
             </div>
-            {#if tuning.eyeBlinkSeparate}
-              {@render rangeItem("eyeBlink", "eyeBlink", t("tuning.eyeBlink.leftLabel"), [
-                ["eyeBlinkLeft", null],
-              ])}
-              {@render rangeItem("eyeBlinkRight", "eyeBlink", t("tuning.eyeBlink.rightLabel"), [
-                ["eyeBlinkRight", null],
-              ])}
+            {#if tuning[flag]}
+              {#each TUNING_SPLITS[key] as split (split.key)}
+                {@render rangeItem(
+                  split.key,
+                  key,
+                  splitTitle(key, split),
+                  splitMeters(key, split),
+                )}
+              {/each}
             {:else}
-              {@render rangeItem("eyeBlink", "eyeBlink", t("tuning.eyeBlink.label"), METERS.eyeBlink)}
+              {@render rangeItem(key, key, t(`tuning.${key}.label`), METERS[key])}
             {/if}
           {:else}
             {@render rangeItem(key, key, t(`tuning.${key}.label`), METERS[key])}
@@ -241,7 +293,7 @@ function position(v: number, min: number, max: number): number {
 {/snippet}
 
 <!--
-  境目の 1 つの組。`key` は値の項目、`text` はスライダーの文言の項目 (右目の瞼は瞼の文言を使う)。
+  境目の 1 つの組。`key` は値の項目、`text` はスライダーの文言の項目 (分けたときの組はまとまりの文言を使う)。
   メーターの名前が `null` なら、項目の名前を見せずに読ませる (上に項目の名前を出している)。
 -->
 {#snippet rangeItem(key: TuningRangeKey, text: TuningRange, title: string, meters: Meters)}
