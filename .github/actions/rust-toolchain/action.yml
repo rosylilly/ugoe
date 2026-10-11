@@ -1,0 +1,22 @@
+name: Rust toolchain (rust-toolchain.toml only)
+description: >-
+  rust-toolchain.toml の版を入れて既定にし、ランナーのイメージに入っているほかのツールチェイン (stable) を消す。
+  Swatinem/rust-cache の前に置く (docs/testing.md#ci-のキャッシュ)
+runs:
+  using: composite
+  steps:
+    # rust-cache (v2.9.0 から) は、作業ディレクトリの `rustc -vV` に加えて `rustup toolchain list` のすべてのツールチェインの版を
+    # 環境のハッシュに入れる。イメージの stable が残っていると、イメージが stable を上げるたびにすべてのキーが外れる (T1000)。
+    # そこで固定の版だけを残す。nightly などのほかのツールチェインが要るジョブは、この後に自分で入れる
+    - name: Install the pinned toolchain and remove the others
+      shell: bash
+      run: |
+        rustup toolchain install
+        pinned=$(rustup show active-toolchain | cut -d' ' -f1)
+        rustup default "$pinned"
+        for toolchain in $(rustup toolchain list --quiet); do
+          if [ "$toolchain" != "$pinned" ]; then
+            rustup toolchain uninstall "$toolchain"
+          fi
+        done
+        rustup toolchain list

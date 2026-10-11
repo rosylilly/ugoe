@@ -48,7 +48,7 @@ jobs:
       - name: Check versions
         run: node bindings/web/scripts/release.mjs check ${{ github.ref_type == 'tag' && github.ref_name || '' }}
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # ci.yml の web のジョブが main で保存したキャッシュ (@ugoe/runtime の web-dist を含む) を読むだけにする。
       # タグの run で保存したキャッシュはそのタグからしか読めないので保存しない (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2

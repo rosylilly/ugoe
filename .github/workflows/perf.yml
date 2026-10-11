@@ -33,7 +33,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # release と web-dist のビルドは ci.yml (dev のプロファイル) のキャッシュと成果物が違うので、キーを分ける。
       # main でだけ保存する (タグの run が保存したキャッシュはそのタグからしか読めない。docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2

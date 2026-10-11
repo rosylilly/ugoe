@@ -41,7 +41,7 @@ jobs:
             webkit2gtk-driver xvfb dbus gnome-keyring x11-apps imagemagick
           dpkg-query -W libwebkit2gtk-4.1-0 webkit2gtk-driver xvfb gnome-keyring
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # 自分のキャッシュは持たず、ci.yml の rust (apps) (dev の依存。run.mjs は 3 つのアプリを 1 回の cargo でビルドするので
       # feature の統合が揃う) と web (ugoe-wasm の wasm32 の release) のキャッシュを読むだけにする
       # (docs/testing.md#ci-のキャッシュ、T0059)

@@ -185,9 +185,16 @@ Windows は 2 倍・macOS は 10 倍。T0091):
   環境のハッシュは rustc の版と `CARGO`・`RUST`・`CC` などで始まる環境変数から作るので、キーを共有するジョブは環境変数を揃えます
   (`CARGO_PROFILE_DEV_DEBUG` を ci.yml・release-checks.yml などのワークフロー全体に置くのはこのため)。最後のハッシュは `Cargo.toml` が変わるたびに変わり、
   そのときは最後のハッシュを除いた前方一致で、前のキャッシュから部分的に戻します。
-  環境のハッシュには、`rust-toolchain.toml` の版のほかにランナーに入っている stable の rustc の版も入るので、ランナーのイメージが
-  stable を上げるとすべてのキーが外れ、依存をすべてビルドし直します (2026-10-11 の run で stable が 1.99.0 になり、`rust (apps)` が
-  いつもの約 6 分から約 26 分になった。T0091)。
+- **固定の版だけを鍵に入れる:** rust-cache (v2.9.0 から) は環境のハッシュに、作業ディレクトリの `rustc -vV` (`rust-toolchain.toml`
+  の版) に加えて `rustup toolchain list` のすべてのツールチェインの版を入れます ([src/config.ts の `getRustVersions`](https://github.com/Swatinem/rust-cache/blob/v2.9.2/src/config.ts))。
+  ランナーのイメージの stable が残っていると、イメージが stable を上げるたびにすべてのキーが外れ、依存をすべてビルドし直します
+  (2026-10-11 の run 38098330681 で、ログの「Rust Versions」に固定の 1.98.1 とイメージの 1.99.0 が並び、`rust (apps)` が
+  いつもの約 6 分から約 26 分になった。T0091)。そこで rust-cache を使うジョブは、rust-cache の前に
+  `.github/actions/rust-toolchain` (固定の版を入れて既定にし、ほかのツールチェインを消す) を置きます (T1000)。
+  `add-rust-environment-hash-key: false` は `Cargo.toml` と `Cargo.lock` のハッシュも鍵から外し、鍵が変わらなくなって
+  キャッシュが新しくならない (完全一致では保存しない) ので使いません。nightly が要る fuzz.yml は、この手順の後に nightly を入れるので、
+  nightly の版も鍵に入ります (fuzz の target は nightly でビルドするので、nightly が変われば使えない)。
+  鍵に入った版は、ジョブのログの rust-cache の手順の「Cache Configuration」の「Rust Versions」で確かめられます (1 行だけなら固定の版だけ)。
 - **main でだけ保存する:** `save-if: ${{ github.ref == 'refs/heads/main' }}`。PR やタグの run が保存したキャッシュは、その ref
   (と後の同じ ref の run) からしか読めず、容量を食うだけです ([GitHub の文書](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache))。
   PR とタグの run は main のキャッシュから始まります。

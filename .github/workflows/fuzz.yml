@@ -38,11 +38,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
-      # 整形と clippy は rust-toolchain.toml (stable)、fuzz のビルドは nightly (ADR 0032)
-      - name: Install Rust toolchains (rust-toolchain.toml and nightly)
-        run: |
-          rustup show active-toolchain || rustup toolchain install
-          rustup toolchain install nightly --profile minimal
+      # 整形と clippy は rust-toolchain.toml (stable)、fuzz のビルドは nightly (ADR 0032)。
+      # nightly は固定の版のほかのツールチェインを消した後に入れる (キャッシュの鍵に入る。docs/testing.md#ci-のキャッシュ)
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        uses: ./.github/actions/rust-toolchain
+      - name: Install Rust toolchain (nightly)
+        run: rustup toolchain install nightly --profile minimal
       # install-action の一覧に無いので cargo-binstall で入れる (無ければソースからビルドする)。
       # 入るのはビルド済みの musl の版で、既定のターゲットが musl になるので、fuzz/run.mjs がホストのターゲットを `--target` で明示する (T0087)
       - name: Install cargo-fuzz

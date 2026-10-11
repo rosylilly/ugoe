@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # main で手で起動したときだけ保存する。タグの run で保存したキャッシュはそのタグからしか読めない (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: crates-release

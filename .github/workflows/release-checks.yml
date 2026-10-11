@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # テストや clippy が落ちても依存のキャッシュを保存する。成功するまで保存しないと、落ち続ける間は毎回依存をすべて
       # ビルドする (Windows で約 16 分。T0051)。main (定期と手での起動) でだけ保存する。依存がそろうように、後の手順は前の手順が落ちても流す (`!cancelled()`)
       - uses: Swatinem/rust-cache@v2
@@ -180,7 +180,7 @@ jobs:
         if: matrix.backend == 'vulkan'
         run: vulkaninfo --summary
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # テストのビルドに要る依存は rust (tools) のビルドの依存に含まれる (T0051 で手元で確かめた) ので、そのキャッシュを読むだけにする
       - uses: Swatinem/rust-cache@v2
         with:
@@ -237,7 +237,7 @@ jobs:
           unzip -q "$name.zip" -d godot
           echo "GODOT=$RUNNER_TEMP/godot/$name" >> "$GITHUB_ENV"
       - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # 参照の画像を描く ugoe のクレート (ugoe-cli・ugoe-conformance・ugoe-ffi) は conformance のジョブと同じビルドなので、
       # そのキャッシュを読むだけにする (ルートの target/。同じ run では並んで動くので、前の run が保存したもの)
       - uses: Swatinem/rust-cache@v2
@@ -318,7 +318,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
-        run: rustup show active-toolchain || rustup toolchain install
+        uses: ./.github/actions/rust-toolchain
       # godot のジョブもこのキャッシュを読む (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
