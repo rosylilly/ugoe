@@ -1,0 +1,9 @@
+# Issue を作る画面の設定 (CONTRIBUTING.md)。脆弱性は公開の Issue にせず、SECURITY.md の手順で報告してもらう。
+blank_issues_enabled: false
+contact_links:
+  - name: 脆弱性の報告 / Report a security vulnerability
+    url: https://github.com/rosylilly/ugoe/security/policy
+    about: 公開の Issue に書かず、SECURITY.md の手順 (Private vulnerability reporting) で報告してください。Please report privately as described in SECURITY.md.
+  - name: 貢献の手順 / Contributing guide
+    url: https://github.com/rosylilly/ugoe/blob/main/CONTRIBUTING.md
+    about: PR の前に読んでください。Please read before opening a pull request.

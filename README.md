@@ -25,6 +25,9 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 
 - [docs/manual/](docs/manual/README.md) — エディタの操作マニュアル (リガー向け。PSD から動くモデルを作るチュートリアル)
 - [AGENTS.md](AGENTS.md) — コントリビュータ (人間・AI エージェント) 向けの規約
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 貢献の手順 (人の貢献者向けの短い案内。English summary at the top)
+- [SECURITY.md](SECURITY.md) — 脆弱性の報告先 (公開の Issue に書かない。日本語と英語)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — 行動規範 ([Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) 2.1 をそのまま使う。英語)
 - [docs/](docs/README.md) — ビジョン・アーキテクチャ・仕様・ADR・ロードマップ・タスク
 - [spec/](spec/README.md) — 公開仕様 (英語、草案)。ugoe 以外の実装がモデルとバンドルを読み書きするための仕様
 
@@ -36,5 +39,6 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 - スタジオ (`apps/studio/`): [GPL-3.0-only](apps/studio/LICENSE)
 - アプリで共有するフロントエンドの部品 (`packages/`): GPL-3.0-only (各パッケージの LICENSE)
 - 公開仕様 (`spec/`、英語): [CC BY 4.0](spec/LICENSE)
+- 行動規範 (`CODE_OF_CONDUCT.md`): [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) 2.1 の文のまま ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。2022 年の [Contributor Covenant のリポジトリのライセンス](https://github.com/EthicalSource/contributor_covenant/blob/91532d80ea5f39b6685aff4892bc6854bf2f6d6f/LICENSE.md))
 
 詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0021](docs/adr/0021-public-specification.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md)・[ADR 0028](docs/adr/0028-studio.md) にあります。

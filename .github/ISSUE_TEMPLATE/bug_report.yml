@@ -1,0 +1,66 @@
+# 不具合の報告のテンプレート (CONTRIBUTING.md)。英語で書いてもらってもよい。
+name: 不具合の報告 / Bug report
+description: 期待と違う動き・落ちる・描画がおかしいなど。脆弱性は SECURITY.md へ。Something does not work as expected. Report vulnerabilities via SECURITY.md.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        日本語でも英語でもかまいません。English is fine.
+        脆弱性は公開の Issue にせず、[SECURITY.md](https://github.com/rosylilly/ugoe/security/policy) の手順で報告してください。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 対象 / Component
+      multiple: true
+      options:
+        - ランタイム (Rust のクレート) / Runtime (Rust crates)
+        - C ABI (ugoe-ffi)
+        - Web (@ugoe/runtime・wasm)
+        - Unity
+        - Godot
+        - エディタ / Editor
+        - ビューア / Viewer
+        - スタジオ / Studio
+        - CLI
+        - MCP サーバ / MCP server
+        - 文書・仕様 / Documentation or specification
+        - その他 / Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 起きたこと / What happened
+      description: 出たエラーのメッセージやログがあれば貼ってください。Paste error messages or logs, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現の手順 / Steps to reproduce
+      description: 再現に使うファイル (.ugoe・.ugoeproj・PSD など) があれば添付してください。Attach files needed to reproduce, if any.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した動き / Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版 / Version
+      description: リリースの版か、main のコミット。A release version or a main commit.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境 / Environment
+      description: OS・GPU・ブラウザ・ゲームエンジンなど、関係があるもの。OS, GPU, browser, game engine, where relevant.

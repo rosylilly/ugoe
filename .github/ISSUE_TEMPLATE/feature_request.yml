@@ -1,0 +1,30 @@
+# 要望のテンプレート (CONTRIBUTING.md)。英語で書いてもらってもよい。
+name: 要望 / Feature request
+description: 新しい機能や改善の提案。Suggest a new feature or an improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        日本語でも英語でもかまいません。English is fine.
+        ugoe は Live2D Cubism と機能的に互換を目指しますが、ファイル形式や内部機構との互換は目指しません ([docs/vision.md](https://github.com/rosylilly/ugoe/blob/main/docs/vision.md))。
+        ugoe aims for functional parity with Live2D Cubism, but not for compatibility with its file formats or internals.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 困っていること / Problem
+      description: 何をしたいのか、今は何ができないのか。What you want to do and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案 / Proposal
+      description: どう動いてほしいか。外部の SDK のコードは貼らないでください。How it should work. Please do not paste code from external SDKs.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: ほかの案 / Alternatives
+      description: 考えたほかの方法や、今の回避策。Other approaches you considered, or current workarounds.

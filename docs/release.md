@@ -73,8 +73,13 @@
   Settings → Actions → General で、外の人の PR のワークフローを承認してから動かす設定 (「Require approval for all external contributors」) にし、
   「Workflow permissions」を読み取りだけにします (書き込みが要るジョブは `permissions:` で個別に付けている)。
 - **セキュリティの機能:** Private vulnerability reporting・Dependabot alerts・Secret scanning と push protection を有効にします。
-- **文書:** 公開の時点で、`CONTRIBUTING.md` (貢献の手順。AGENTS.md と `just ci`・Conventional Commits・ライセンスの方針)・`SECURITY.md`
-  (脆弱性の報告先)・`CODE_OF_CONDUCT.md`・Issue と PR のテンプレート (`.github/`) はまだありません。公開の前に用意します (T0096)。
+- **文書:** `CONTRIBUTING.md` (貢献の手順)・`SECURITY.md` (脆弱性の報告先)・`CODE_OF_CONDUCT.md` (Contributor Covenant 2.1)・
+  Issue と PR のテンプレート (`.github/ISSUE_TEMPLATE/`・`.github/pull_request_template.md`) はあります (T0096)。公開の前に次を決めて直します。
+  - **連絡先:** `SECURITY.md` (GitHub を使えない人の連絡先) と `CODE_OF_CONDUCT.md` (Enforcement の節。行動規範の違反の報告先) の
+    `[INSERT CONTACT METHOD]` を、利用者が決めた連絡先 (メールアドレスなど) に置き換えます。`git grep -n "INSERT CONTACT METHOD"` で残りが無いことを確かめます。
+  - **リポジトリの URL:** `SECURITY.md` と `.github/ISSUE_TEMPLATE/` は `https://github.com/rosylilly/ugoe` を指します。公開する場所が違うなら直します。
+  - **Private vulnerability reporting:** `SECURITY.md` の報告先なので、上の「セキュリティの機能」で必ず有効にします。
+  - **ラベル:** Issue のテンプレートは GitHub の既定のラベル `bug`・`enhancement` を付けます。消したなら作り直すかテンプレートを直します。
 
 ## 同梱物のライセンスの表記
 
