@@ -690,6 +690,32 @@ artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が�
 | pnpm | `package.json` の `packageManager` を変え、`pnpm install` でロックファイルが変われば一緒にコミットする |
 | just | `.tool-versions` と、ワークフローの `extractions/setup-just` の `just-version` をすべて変え、`just ci` |
 
+#### 手元の Node.js と pnpm を入れ直す
+
+`.tool-versions` の Node.js と `packageManager` の pnpm が変わったら、手元でも入れ直します。Node.js 25 からは corepack が同梱されないので、
+Node.js の版ごとに corepack を入れ、pnpm は corepack が `packageManager` の版を取ってきます。リポジトリの中 (`.tool-versions` が効く場所) で次を流します。
+
+```sh
+# asdf
+asdf install nodejs          # .tool-versions の版を入れる
+npm i -g corepack            # 新しい版の Node.js に corepack を入れる
+asdf reshim nodejs           # corepack のシムを作る
+corepack enable              # pnpm のシムを Node.js の bin に置く
+asdf reshim nodejs           # pnpm のシムを作る
+
+# mise
+mise install                 # .tool-versions の版を入れる
+npm i -g corepack && corepack enable
+mise reshim                  # シムで使っているときだけ
+
+# どちらでも
+pnpm --version               # packageManager の版を取ってきて表示する
+pnpm install
+```
+
+asdf と mise は版をディレクトリの `.tool-versions` で選ぶので、古い版を固定した worktree (main に追従する前のもの) はそのまま古い版を使います。
+古い版は、それを使う worktree が無くなってから消してください。
+
 GitHub Actions の action (`actions/checkout@v7` などのメジャー版のタグ) はこの一覧に入れません。Dependabot の version updates の
 `github-actions` (`.github/dependabot.yml`) が、ワークフローと `.github/actions/` の composite action の `uses:` を見て、新しい
 メジャー版のタグへ上げる PR を作れます。今は `.github/dependabot.yml` を置いていません。PR の運用に移った後に、github-actions・cargo・npm をまとめて入れます
