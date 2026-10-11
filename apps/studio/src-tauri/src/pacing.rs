@@ -162,13 +162,18 @@ impl Pacer {
     const MAX_MARGIN: Duration = Duration::from_millis(4);
     /// 余裕を見直す区切りの長さ。
     const MARGIN_WINDOW: Duration = Duration::from_secs(1);
-    /// 1 つの区切りで、起きる時刻の揺れで遅れた値が 5% を超えたら増やす量。
+    /// 1 つの区切りで、起きる時刻の揺れで遅れた値が 5% を超え、2 個以上あれば増やす量 (値の少ない区切りでは 1 個で 5% を
+    /// 超えるので、1 個では増やさない。T0883)。
     const MARGIN_UP: Duration = Duration::from_micros(500);
     /// 遅れた値の無い区切りが `MARGIN_CALM` 回続いたら減らす量 (増やすより小さくし、少しずつ戻す)。
     const MARGIN_DOWN: Duration = Duration::from_micros(250);
     const MARGIN_CALM: u32 = 2;
-    /// 1 つの区切りで、これより少ない値しか無ければ見直さない (トラッキングを使っていない)。
+    /// 区切りの値がこれより少なければ、`MARGIN_MAX_WINDOW` まで区切りを延ばす (T0883)。値が 1 つも無ければ (トラッキングを
+    /// 使っていない)、延ばさずに見直さない。
     const MARGIN_MIN_VALUES: u32 = 10;
+    /// 延ばした区切りの長さの上限 (見る値の古さの上限の上限 `MAX_LEAD_MAX_AGE` とそろえる。値が 4 秒に 1 個でも 10 個そろう長さ)。
+    /// これより長くかかっても値がそろわなければ、見直さずに数え直す (古すぎる値で見直さない)。
+    const MARGIN_MAX_WINDOW: Duration = Self::MAX_LEAD_MAX_AGE;
     /// 促してから届くまでの時間を見る長さ。値の間隔が短ければ、これより長く届かないと促しを刻みの直後に戻す (`hold_for`)。
     pub const LEAD_WINDOW: Duration = Duration::from_secs(1);
     /// 促してから届くまでの時間を見る値の数の下限 (T0868。`docs/studio.md#入力`)。直近の約 1 秒の値がこれより少なければ
@@ -465,16 +470,27 @@ impl Pacer {
     ///
     /// 数えるのは、届くまでの時間は見込みのうちなのに刻みに遅れた値 (促しが遅く起きた・刻みが早く起きたなど、起きる時刻の揺れで
     /// 遅れたもの)。届くまでの時間が見込みより長くて遅れた値は寄せる先の選び方 (`best_lead`) が受け持つので、余裕では数えない
-    /// (まれにとても遅い値で余裕を上限まで増やさない)。5% を超えたら増やし、遅れの無い区切りが続いたら少しずつ戻す
+    /// (まれにとても遅い値で余裕を上限まで増やさない)。5% を超え 2 個以上あれば増やし、遅れの無い区切りが続いたら少しずつ戻す
     /// (余裕の分だけ値は古くなる)。
+    ///
+    /// 区切りは約 1 秒。値が `MARGIN_MIN_VALUES` に足りなければ、そろうまで `MARGIN_MAX_WINDOW` を上限に延ばす (検出が重く
+    /// 値が 1 秒に 2 個ほどでも見直す。T0883)。値が 1 つも無い区切り (トラッキングを使っていない) は延ばさずに数え直す。
     fn adjust_margin(&mut self, now: Instant) {
         let start = *self.judge_start.get_or_insert(now);
-        if now.saturating_duration_since(start) < Self::MARGIN_WINDOW {
+        let elapsed = now.saturating_duration_since(start);
+        if elapsed < Self::MARGIN_WINDOW {
+            return;
+        }
+        // 検出が重く値が少なければ (1 秒に 2 個ほど)、値がそろうまで区切りを延ばす (T0883)。
+        if self.judged > 0
+            && self.judged < Self::MARGIN_MIN_VALUES
+            && elapsed < Self::MARGIN_MAX_WINDOW
+        {
             return;
         }
         let mut margin = self.margin;
         if self.judged >= Self::MARGIN_MIN_VALUES {
-            if self.missed.saturating_mul(20) > self.judged {
+            if self.missed >= 2 && self.missed.saturating_mul(20) > self.judged {
                 self.calm = 0;
                 margin = (margin + Self::MARGIN_UP).min(Self::MAX_MARGIN);
             } else if self.missed == 0 {
@@ -1407,6 +1423,52 @@ mod tests {
         }
     }
 
+    #[test]
+    fn margin_is_judged_when_slow_detection_sends_few_values() {
+        // 検出が重く値が 1 秒に約 2 個 (e2e に近い計算機。`late_values_spread_over_phases`) でも、スリープが遅れて起きれば
+        // 余裕を増やす (T0883。1 秒の区切りでは値が `MARGIN_MIN_VALUES` に足りず、一度も見直さなかった)。
+        let start = Instant::now();
+        let seconds = 60;
+        let until = start + Duration::from_secs(u64::from(seconds));
+        let settled = start + Duration::from_secs(10);
+        for rate in TickRate::ALL {
+            for late_ms in [0, 2] {
+                let label = format!("{rate:?} oversleep 0..{late_ms} ms");
+                let run = |pacer| {
+                    let mut detector = Detector::new(start, 500, 200, 2, 11);
+                    let mut sleep = Rng(5);
+                    simulate_with(
+                        pacer,
+                        start,
+                        until,
+                        |now| detector.pulse(now),
+                        || sleep.upto(Duration::from_millis(late_ms)),
+                    )
+                };
+                let before = run(fixed_margin(rate, start));
+                let after = run(Pacer::new(rate, start));
+                let (before_late, after_late) =
+                    (before.late_ratio(settled), after.late_ratio(settled));
+                println!(
+                    "{label}: late {:.1}% -> {:.1}%, margin {:?} (max {:?})",
+                    before_late * 100.0,
+                    after_late * 100.0,
+                    after.pacer.margin,
+                    after.max_margin
+                );
+                if late_ms == 0 {
+                    // スリープが遅れなければ、起きる時刻の揺れで遅れる値は無く、余裕は増やさない。
+                    assert_eq!(after.max_margin, Pacer::MIN_MARGIN, "{label}");
+                } else {
+                    assert!(after.max_margin > Pacer::MIN_MARGIN, "{label}");
+                    assert!(after_late < before_late, "{label}");
+                }
+                assert!(after.max_margin <= Pacer::MAX_MARGIN, "{label}");
+                assert_keeps_the_rate(&after, rate, seconds, &label);
+            }
+        }
+    }
+
     /// 遅れた値の割合を、値の届く時機と刻みの時機のずれ (位相) を 1 刻みの間で振って回した分布 (T0878)。
     struct PhaseSpread {
         /// 位相ごとの割合 (小さい順)。
@@ -1442,11 +1504,16 @@ mod tests {
         }
     }
 
-    /// `Detector` (フレームの間隔・検出・揺れ) と、0〜`oversleep` 遅れて起きるスリープで 60 秒回し、6 秒から後 (e2e の
+    /// `pacer` で作った `Pacer` を、`Detector` (フレームの間隔・検出・揺れ) と、0〜`oversleep` 遅れて起きるスリープで 60 秒回し、6 秒から後 (e2e の
     /// 「トラッキングの待ち」を読む区間と同じ) の遅れた値の割合を、位相を `PHASES` 通りに振って集める。種は同じにし、変えるのは位相だけ。
     /// 位相は、検出に足す時間 (値の届く時刻が刻みに対してずれる) と、フレームの格子のずれ (どの促しが新しいフレームを拾うか) の 2 つで、
     /// 後者は前者と揃わないように 7 倍した位相にする。
-    fn phase_spread(rate: TickRate, detector: (u64, u64, u64), oversleep: Duration) -> PhaseSpread {
+    fn phase_spread(
+        pacer: fn(TickRate, Instant) -> Pacer,
+        rate: TickRate,
+        detector: (u64, u64, u64),
+        oversleep: Duration,
+    ) -> PhaseSpread {
         const PHASES: u32 = 32;
         let start = Instant::now();
         let until = start + Duration::from_secs(60);
@@ -1461,7 +1528,7 @@ mod tests {
                 Detector::new(start, frame, detect, jitter, 11).shifted(phase(k * 7), phase(k));
             let mut sleep = Rng(5);
             let run = simulate_with(
-                Pacer::new(rate, start),
+                pacer(rate, start),
                 start,
                 until,
                 |now| detector.pulse(now),
@@ -1496,15 +1563,17 @@ mod tests {
         // (フレームの間隔, 検出, 検出の揺れ) ミリ秒と、スリープの遅れの上限。
         // - 落ち着いた計算機: ほかのテストと同じ検出 (`few_values_from_slow_detection_are_rarely_late`) と 0〜0.5 ms の遅れ。
         // - e2e に近い計算機: e2e の偽の検出 (200 ms を塞ぐ) は揺れが小さく、ほかのビルドと並ぶ WSL2 ではスリープが 0〜2 ms 遅れる。
-        //   値が 1 秒に約 2 個なので余裕は見直されず (`MARGIN_MIN_VALUES`)、遅れの多くはスリープの遅れによる。
+        //   値が 1 秒に約 2 個なので、遅れの多くはスリープの遅れによる。T0883 の前は 1 秒の区切りに値が `MARGIN_MIN_VALUES` に
+        //   足りず余裕を見直さなかった (余裕を見直さない `fixed_margin` と数が全く同じ。中央値 約 20%)。区切りを値の数で延ばして
+        //   見直すようにし、中央値は約 12% になった (`fixed_margin` との比べはこのテストでも確かめる)。
         //
         // e2e に近い計算機では、位相だけを振っても割合が e2e と同じほど (約 12〜38%) に分かれる。ただし種 (検出とスリープの
         // 揺れの列) を振っても同じほど分かれ、60 秒の 1 回の値 (約 110 個。1 個が約 0.9%) の数え方の揺れ (割合 20% で
         // 標準偏差 約 4 ポイント) と同じ大きさなので、位相が回の初めに決まって残るためというより、1 回の値の数が少ないためと見る
         // (T0878 のメモ)。
         //
-        // 上限は、`pacing.rs` を変えて悪くなれば落ちるように置く。T0878 の時点の値 (メモの表) に、中央値は約 3 ポイント、最大は約 5 ポイント
-        // の余地を足した。仮の時刻なので値は決まっていて揺れない。余地は、良くも悪くもない変更 (寄せる先の選び方の細かな違い) で
+        // 上限は、`pacing.rs` を変えて悪くなれば落ちるように置く。落ち着いた計算機は T0878 の時点、e2e に近い計算機は T0883 の時点の値
+        // (それぞれのメモの表) に、中央値は約 3 ポイント、最大は約 5 ポイントの余地を足した。仮の時刻なので値は決まっていて揺れない。余地は、良くも悪くもない変更 (寄せる先の選び方の細かな違い) で
         // 数個の値が入れ替わるのを許すためのもの。落ち着いた計算機の上限は、T0868 の前 (直近の約 1 秒の値だけを見る) の
         // 中央値 約 16% を落とす。上限 (中央値, 最大) は 30・60・120 刻みの順。
         let cases = [
@@ -1518,16 +1587,26 @@ mod tests {
                 "e2e-like",
                 (500, 200, 2),
                 Duration::from_millis(2),
-                [(0.24, 0.37), (0.26, 0.38), (0.23, 0.43)],
+                [(0.15, 0.21), (0.15, 0.21), (0.14, 0.23)],
             ),
         ];
         for (name, detector, oversleep, bounds) in cases {
             for (rate, (median, max)) in TickRate::ALL.into_iter().zip(bounds) {
-                let spread = phase_spread(rate, detector, oversleep);
+                let spread = phase_spread(Pacer::new, rate, detector, oversleep);
                 let label = format!("{name} {rate:?} {detector:?} oversleep 0..{oversleep:?}");
                 println!("{label}: {spread}");
                 assert!(spread.median() <= median, "{label}: {spread}");
                 assert!(spread.max() <= max, "{label}: {spread}");
+                if name == "e2e-like" {
+                    // 余裕を見直すことで、見直さない形より遅れた値が減る (T0883)。
+                    let fixed = phase_spread(fixed_margin, rate, detector, oversleep);
+                    println!("{label} (fixed margin): {fixed}");
+                    assert!(
+                        spread.median() < fixed.median(),
+                        "{label}: {spread} / {fixed}"
+                    );
+                    assert!(spread.max() < fixed.max(), "{label}: {spread} / {fixed}");
+                }
             }
         }
     }
