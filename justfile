@@ -178,6 +178,16 @@ ffi-header:
 ffi-check:
     @node scripts/ffi.mjs check
 
+# C ABI の配布物 (docs/release.md#c-abi-の配布物): 手元の OS の分のアーカイブ (ヘッダ・共有ライブラリ・静的ライブラリ・LICENSE・README・見本) を
+# target/ffi-dist/ に作る。ヘッダが最新かを確かめてから詰めるので cbindgen が要る。`just ffi-dist --tag v0.1.0` でタグと版も確かめる
+ffi-dist *args:
+    @node scripts/ffi-dist.mjs pack {{args}}
+
+# C ABI の配布物の検査: アーカイブを展開し、中のヘッダとライブラリだけで C の見本をビルドして動かす (静的・共有の両方)。C コンパイラが要る。
+# 引数を省くと target/ffi-dist/ にある手元の OS のアーカイブを調べる
+ffi-dist-check *archive:
+    @node scripts/ffi-dist.mjs verify {{archive}}
+
 # `just godot-build --release` でリリースビルド。Godot は要らない。
 # Godot のバインディング (bindings/godot、ADR 0026) をビルドし、見本 (bindings/godot/example) に置く
 godot-build *args:
@@ -369,9 +379,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
+    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
 # 下書きの Release への添付 (scripts/github-release.mjs) の検査

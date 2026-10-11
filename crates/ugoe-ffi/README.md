@@ -27,6 +27,8 @@ C ABI。Unity・Unreal・Godot などから使う。規約は [docs/portability.
 ヘッダは [`include/ugoe.h`](include/ugoe.h)、ライブラリは `cargo build -p ugoe-ffi --release` で
 `target/release/` にできる `libugoe_ffi.{a,so,dylib}` (Windows では `ugoe_ffi.{lib,dll}`)。
 静的ライブラリをリンクするときは、Linux ではさらに `-lm -lpthread -ldl` が要る。
+OS ごとに作ったライブラリとヘッダのアーカイブ (`just ffi-dist`) は GitHub Release で配る
+([docs/release.md#c-abi-の配布物](../../docs/release.md#c-abi-の配布物))。アーカイブの README は [`archive/README.md`](archive/README.md)。
 
 ```c
 UgoeError *err = ugoe_error_create();

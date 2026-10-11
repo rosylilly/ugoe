@@ -10,6 +10,7 @@
 | エディタ・ビューア・スタジオのインストーラ | `.github/workflows/editor-build.yml` (`just app::build` を OS ごとのランナーで実行。Secrets があれば署名し、タグでは [下書きの Release](#github-release-の下書き) に添付) | [apps/editor/README.md#各-os-でのビルド](../apps/editor/README.md#各-os-でのビルド)・[デスクトップアプリの署名](#デスクトップアプリの署名) |
 | Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
 | スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。配布物に入れるのは Release のマイルストーン) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
+| C ABI (`ugoe-ffi` の共有ライブラリ・静的ライブラリとヘッダ) | `.github/workflows/ffi-release.yml` (OS ごとのランナーで作り、GitHub Release の下書きに添付) | [C ABI の配布物](#c-abi-の配布物) |
 
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。1.0 (v1.0.0) は、[1.0 の範囲](roadmap.md#10-の範囲) (M1〜M11 の完了。
 [ADR 0035](adr/0035-one-point-zero-scope-m1-to-m11.md)) を終えてから、Release のマイルストーンで公開します。
@@ -279,6 +280,8 @@ node scripts/github-release.mjs notes <タグ> <ファイル>       # 本文を�
 
 - そのタグの Release が無ければ、下書きで作ります (`gh release create --draft --verify-tag`。題はタグ、本文は書き直す前提の短い文)。
 - いくつものワークフローが同じ下書きに添付します。同時に作って下書きが重なったら、いちばん古いものに寄せ、添付の無い余分な下書きを消します。
+- 添付は、タグではなく選んだ下書き (いちばん古いもの) の id に対して行います。添付の始まった下書きが重なって残っても、どのワークフローも
+  同じ下書きに添付するためです。
 - 同じ名前のファイルは置き換えます (ジョブをやり直したとき)。公開済みの Release には添付せず、失敗します (配った物を差し替えないため)。
 - 本文は `release-notes.yml` が `notes` で、`just release-notes <タグ>` の出力 ([変更履歴とリリースノート](#リリースノートとワークフロー)) に
   します。`upload` は本文に触らず、`notes` は添付に触りません。どちらも下書きが無ければ作り、重なりを寄せるので、ワークフローの
@@ -290,6 +293,7 @@ node scripts/github-release.mjs notes <タグ> <ファイル>       # 本文を�
 | 添付するもの | ワークフロー |
 | --- | --- |
 | エディタ・ビューア・スタジオのインストーラ (`.msi`・NSIS の `.exe`・`.dmg`・`.deb`・`.rpm`・`.AppImage`) | `editor-build.yml` |
+| C ABI のアーカイブ (`ugoe-ffi-<版>-<プラットフォーム>.tar.gz`・`.zip` と `.sha256`。[C ABI の配布物](#c-abi-の配布物)) | `ffi-release.yml` |
 
 公開の前に、人が次を行います。
 
@@ -450,3 +454,54 @@ spctl --assess --type execute --verbose "$APP"
 2. 仮想カメラを入れると macOS が許可を求めるので、「システム設定」で許可し、もう一度入れる
    (操作ウィンドウが案内する。[studio.md の macOS](studio.md#macos-camera-extension))。
 3. アンインストールはアプリをゴミ箱に入れる。macOS が拡張も外す (外れるのは再起動の後のことがある)。
+
+## C ABI の配布物
+
+C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブラリとヘッダを OS ごとのアーカイブにして配ります
+([portability.md#配布](portability.md#配布) の「C / その他」。T1408)。使い方は [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md)。
+
+| アーカイブ | 作るランナー | `lib/` に入るもの |
+| --- | --- | --- |
+| `ugoe-ffi-<版>-linux-x86_64.tar.gz` | `ubuntu-24.04` | `libugoe_ffi.so`・`libugoe_ffi.a` |
+| `ugoe-ffi-<版>-linux-aarch64.tar.gz` | `ubuntu-24.04-arm` | `libugoe_ffi.so`・`libugoe_ffi.a` |
+| `ugoe-ffi-<版>-windows-x86_64.zip` | `windows-2022` | `ugoe_ffi.dll`・`ugoe_ffi.dll.lib` (DLL のインポートライブラリ)・`ugoe_ffi.lib` (静的ライブラリ) |
+| `ugoe-ffi-<版>-macos-universal.tar.gz` | `macos-14` | `libugoe_ffi.dylib`・`libugoe_ffi.a` (どちらも arm64 と x86_64 を `lipo` でまとめた universal) |
+
+- どのアーカイブも、最上位のディレクトリ `ugoe-ffi-<版>-<プラットフォーム>/` の下に `include/ugoe.h`・`lib/`・`examples/sample.c` (C の見本)・
+  `LICENSE` (MIT)・`README.md` (中身とリンクの例。元は [crates/ugoe-ffi/archive/README.md](../crates/ugoe-ffi/archive/README.md)) を持ちます。
+  隣に SHA-256 の `<アーカイブ>.sha256` を置きます。
+- 形は Windows が `.zip` (Windows に入っているもので開ける)、ほかが `.tar.gz` です。
+- macOS は 1 つの universal にします (アーキテクチャごとに分けると、利用者が両方を `lipo` でまとめ直すことが多いため。
+  unity.yml のプラグインと同じ形)。共有ライブラリのインストール名は `@rpath/libugoe_ffi.dylib` です。
+- Linux は glibc のランナーで作ります (musl は配りません)。
+- **std の無い静的ライブラリ (T0491) は入れません。** std の無い環境 (ゲーム機・組み込み機器) はそれぞれのターゲット
+  (`aarch64-unknown-none` など、SDK ごとのもの) 向けに作るもので、ここで作れるホストの OS 向けのものは使い道がありません。
+  作り方は [crates/ugoe-ffi/README.md#std-の無い環境](../crates/ugoe-ffi/README.md#std-の無い環境) にあり、アーカイブの README からも案内します。
+- Android・iOS のライブラリは入れません (Unity の UPM パッケージにあります)。
+- 第三者のライセンスの表記 (依存するクレートのもの) はまだ入れていません (T1407)。
+
+### 手元で作る
+
+```sh
+just ffi-dist                # target/ffi-dist/ に手元の OS のアーカイブと .sha256 を作る (cbindgen と C コンパイラが要る)
+just ffi-dist --tag v0.1.0   # タグとルートの Cargo.toml の版が揃っているかも確かめる
+just ffi-dist-check          # アーカイブを展開し、中のヘッダとライブラリだけで C の見本をビルドして動かす
+```
+
+`just ffi-dist` (`scripts/ffi-dist.mjs pack`) は、ヘッダが cbindgen の生成物と同じか (`just ffi-check` と同じ検査) を確かめてから、
+`cargo build --locked --release -p ugoe-ffi` で作ったライブラリを詰めます。macOS では `aarch64-apple-darwin` と `x86_64-apple-darwin` の
+ターゲット (`rustup target add`) が要ります。`just ffi-dist-check` (`verify`) は、ファイルの一覧と SHA-256 を確かめ、静的ライブラリと
+共有ライブラリのそれぞれにリンクした見本を、見本のモデル (`assets/samples`) で動かします。手元の OS のアーカイブだけを調べられます。
+
+### ワークフロー
+
+`.github/workflows/ffi-release.yml` は、`v*` のタグ・手での起動・配布物のスクリプトを触った PR で動きます。
+
+1. `archive` ジョブ: 上の表のランナーごとに `pack` と `verify` を行い、アーカイブを成果物 `ugoe-ffi-archive-<プラットフォーム>` に残します。
+   タグのときは `--tag` でタグと版を確かめます。
+2. `release` ジョブ (タグのときだけ): すべてのアーカイブと `.sha256` を、`scripts/github-release.mjs` でタグの GitHub Release の下書きに添付します
+   ([GitHub Release の下書き](#github-release-の下書き))。
+
+`unity.yml` も `ugoe-ffi` を OS ごとにビルドしますが、共有しません。`unity.yml` は main と PR で `crates/` を触るたびに動き、Android・iOS を
+含む Unity のプラグインの並びを作ります。こちらはタグで動き、静的ライブラリ・ヘッダ・検査を含みます。`ugoe-ffi` のビルドは 1 分ほどなので、
+重ねてもかかる時間はわずかで、2 つのワークフローの動く条件と成果物を独立に保てます。

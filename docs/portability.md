@@ -308,7 +308,7 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
 | Unity | UPM パッケージ ([bindings/unity](../bindings/unity/README.md)) | T0405 |
 | Godot | GDExtension (`bindings/godot`。ワークスペースの外、[ADR 0026](adr/0026-godot-binding.md)) | T0406 |
 | Unreal | プラグイン (1.0 の後の候補。[roadmap.md](roadmap.md#10-の範囲)) | T0407 |
-| C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
+| C / その他 | `ugoe-ffi` の共有ライブラリ・静的ライブラリとヘッダ (OS ごとのアーカイブ) | T0401・T1408 |
 
 - **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408、`just conformance`)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。いまは C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity の C# の層 (頂点)・Godot (画像) を比べています。バインディングを足すときの手順は [tests/conformance/README.md](../tests/conformance/README.md#エンジン向けのバインディングを足す)。
 - **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。手順は [release.md](release.md)。
@@ -316,6 +316,7 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。
 - Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)、npm への公開の手順 (タグ `v*` で CI から公開する `web-runtime-release.yml`) は [bindings/web/README.md#リリース](../bindings/web/README.md#リリース)。
 - Unity の UPM パッケージは `bindings/unity/` に置き、MIT で配布します。タグ `v*` で CI (`unity.yml`) が各プラットフォームのライブラリを入れた tarball を作って成果物に残し、配る場所に置くのは手で行います ([bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース))。
+- C ABI の配布物は、OS ごと (Linux の x86_64・aarch64、Windows の x86_64、macOS の universal) のアーカイブに `ugoe-ffi` の共有ライブラリ・静的ライブラリ・`include/ugoe.h`・LICENSE・リンクの例を入れ、MIT で配布します。タグ `v*` で CI (`ffi-release.yml`) が作り、中のヘッダとライブラリだけで C の見本をビルドして動かしてから GitHub Release の下書きに添付します。中身と手順は [release.md#c-abi-の配布物](release.md#c-abi-の配布物)。
 - Godot の GDExtension は `bindings/godot/` に置き、MIT で配布します。依存する godot-rust だけが MPL-2.0 なので、ルートのワークスペースの外に置きます ([ADR 0026](adr/0026-godot-binding.md))。使い方は [bindings/godot/README.md](../bindings/godot/README.md)。
 
 ## 前方互換

@@ -1,7 +1,7 @@
 // scripts/github-release.mjs の、タグの Release を選ぶ規則のテスト (`just app-build-check`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { draftNotes, parseArgs, pickRelease } from "./github-release.mjs";
+import { assetUploadUrl, draftNotes, parseArgs, pickRelease } from "./github-release.mjs";
 
 test("タグの Release が無ければ何も選ばない (下書きを作る)", () => {
   const picked = pickRelease([{ id: 1, tag_name: "v0.1.0", draft: false }], "v0.2.0");
@@ -59,4 +59,15 @@ test("引数: upload はタグとファイルの列、notes はタグと 1 つ�
   assert.equal(parseArgs(["notes", "v1.0.0", "a.md", "b.md"]), undefined);
   assert.equal(parseArgs(["upload"]), undefined);
   assert.equal(parseArgs(["publish", "v1.0.0"]), undefined);
+});
+
+test("添付の URL は下書きの id とファイル名から作る (名前はエンコードする)", () => {
+  assert.equal(
+    assetUploadUrl("o/r", 42, "ugoe-ffi-0.1.0-linux-x86_64.tar.gz"),
+    "https://uploads.github.com/repos/o/r/releases/42/assets?name=ugoe-ffi-0.1.0-linux-x86_64.tar.gz",
+  );
+  assert.equal(
+    assetUploadUrl("o/r", 7, "ugoe editor_0.1.0_x64.msi"),
+    "https://uploads.github.com/repos/o/r/releases/7/assets?name=ugoe%20editor_0.1.0_x64.msi",
+  );
 });

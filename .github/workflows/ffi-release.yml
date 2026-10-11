@@ -1,0 +1,116 @@
+name: C ABI release
+
+# C ABI の配布物 (ugoe-ffi の共有ライブラリ・静的ライブラリ・ヘッダ・LICENSE・README・C の見本) を OS ごとのランナーで作り、
+# アーカイブの中のヘッダとライブラリだけで C の見本をビルドして動かす (docs/release.md#c-abi-の配布物)。
+# - `v*` のタグ (ほかの配布物と同じ。すべての配布物の版を揃える) では、タグとクレートの版が揃っているかを確かめ、
+#   アーカイブをタグの GitHub Release の下書きに添付する (scripts/github-release.mjs。docs/release.md#github-release-の下書き)。
+#   Release を公開するのは人の手。
+# - unity.yml も ugoe-ffi を OS ごとにビルドするが、共有しない。unity.yml は main と PR で crates/ を触るたびに動き、Android・iOS を含む
+#   Unity のプラグインの並びを作る。こちらはタグと配布物のスクリプトを触ったときだけ動き、静的ライブラリ・ヘッダ・検査を含む。
+#   ugoe-ffi のビルドは 1 分ほどなので、重ねても時間はわずかで、2 つのワークフローの動く条件と成果物を独立に保てる。
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "crates/ugoe-ffi/archive/**"
+      - "scripts/ffi.mjs"
+      - "scripts/ffi-dist.mjs"
+      - "scripts/github-release.mjs"
+      - ".github/workflows/ffi-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  # 成果物の名前は ugoe-ffi-archive-<プラットフォーム> (scripts/ffi-dist.mjs の PLATFORMS)。
+  # Rust のキャッシュは使わない (unity.yml の native と同じ理由。ugoe-ffi のビルドの大半はワークスペースのクレートで、キャッシュが効かない)
+  archive:
+    name: archive (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+          - name: windows-x86_64
+            os: windows-2022
+          - name: macos-universal
+            os: macos-14
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Add the macOS targets (universal)
+        if: matrix.name == 'macos-universal'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      # ヘッダが最新かを確かめてから詰める (ci.yml の「Install cbindgen」と同じ版。scripts/ffi.mjs の CBINDGEN_VERSION)
+      - name: Install cbindgen
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen@0.29.4
+      - name: Pack
+        shell: bash
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node scripts/ffi-dist.mjs pack --out dist ${TAG:+--tag "$TAG"}
+      # アーカイブの中のヘッダ・ライブラリ・見本だけで、C の見本をビルドして動かす (静的ライブラリと共有ライブラリの両方)。
+      # C コンパイラは ci.yml の C ABI と同じ (Linux・macOS は cc、Windows はランナーの clang)
+      - name: Verify
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for archive in dist/*.tar.gz dist/*.zip; do
+            node scripts/ffi-dist.mjs verify "$archive"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ugoe-ffi-archive-${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  # タグのときだけ、アーカイブをタグの GitHub Release の下書きに添付する (公開はしない。editor-build.yml の release と同じ形)
+  release:
+    name: attach to the draft release
+    needs: archive
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ugoe-ffi-archive-*
+          path: dist
+          merge-multiple: true
+      - name: Attach to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t files < <(find dist -type f | sort)
+          printf '%s\n' "${files[@]}"
+          node scripts/github-release.mjs upload "$GITHUB_REF_NAME" "${files[@]}"

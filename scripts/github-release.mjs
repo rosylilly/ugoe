@@ -9,12 +9,14 @@
 // - いくつものワークフロー (エディタのインストーラ・C ABI・Unity・Godot) が同じ下書きに添付する。同時に作って下書きが重なったら、
 //   いちばん古いものに寄せ、自分が作った余分な下書きを消す。
 // - 同じ名前のファイルがあれば置き換える (ジョブをやり直したとき)。
+// - 添付はタグではなく、選んだ下書きの id で行う (添付の始まった下書きが重なって残っても、どのワークフローも同じ下書きに添付する)。
 // - 添付 (upload) は本文に触らず、本文 (notes) は添付に触らない。どちらも下書きが無ければ作るので、動く順は問わない
 //   (先に動いた方が下書きを作り、後の方はそれに寄せる。docs/release.md#リリースノートとワークフロー)。
 // - gh (GitHub CLI) と GH_TOKEN (contents: write) が要る。GitHub のランナーには gh が入っている。
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
 
 /** Release の題と本文 (下書き。公開するときに人が書き直す)。 */
 export function draftNotes(tag) {
@@ -111,6 +113,33 @@ function ensureDraft(tag) {
   return picked.release;
 }
 
+/** 下書きに添付したファイル (`{ id, name }` の配列)。 */
+function listAssets(id) {
+  const out = gh(
+    ["api", "--paginate", `repos/{owner}/{repo}/releases/${id}/assets`, "--jq", ".[] | {id, name}"],
+    { capture: true },
+  );
+  return out
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/** owner/repo。Actions では GITHUB_REPOSITORY、手元では gh がリポジトリから決めるもの。 */
+function repoName() {
+  return (
+    process.env.GITHUB_REPOSITORY ||
+    gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], {
+      capture: true,
+    }).trim()
+  );
+}
+
+/** 下書き (id) にファイルを添付する API の URL (純粋な関数。テストする)。 */
+export function assetUploadUrl(repo, id, name) {
+  return `https://uploads.github.com/repos/${repo}/releases/${id}/assets?name=${encodeURIComponent(name)}`;
+}
+
 function upload(tag, files) {
   const missing = files.filter((f) => !existsSync(f));
   if (files.length === 0 || missing.length > 0) {
@@ -118,9 +147,32 @@ function upload(tag, files) {
       files.length === 0 ? "no files to upload" : `missing files: ${missing.join(", ")}`,
     );
   }
-  ensureDraft(tag);
-  // gh release upload はタグで Release を引く (下書きも引ける)。重なりは ensureDraft で消してあるので、引けるのは 1 つ
-  gh(["release", "upload", tag, ...files, "--clobber"]);
+  const release = ensureDraft(tag);
+  // `gh release upload` はタグで Release を引くので、添付の始まった下書きが重なって残っているとどれに添付するか決まらない
+  // (ensureDraft は添付の無い余分な下書きしか消さない)。そこで選んだ下書きの id に、API で添付する。
+  // 同じ名前のファイルがあれば消してから添付する
+  const assets = listAssets(release.id);
+  const repo = repoName();
+  for (const file of files) {
+    const name = basename(file);
+    for (const asset of assets.filter((a) => a.name === name)) {
+      gh(["api", "--method", "DELETE", `repos/{owner}/{repo}/releases/assets/${asset.id}`]);
+    }
+    gh(
+      [
+        "api",
+        "--method",
+        "POST",
+        assetUploadUrl(repo, release.id, name),
+        "-H",
+        "Content-Type: application/octet-stream",
+        "--input",
+        file,
+      ],
+      { capture: true },
+    );
+    console.error(`uploaded ${name}`);
+  }
   console.error(`uploaded ${files.length} file(s) to the draft release ${tag}`);
 }
 

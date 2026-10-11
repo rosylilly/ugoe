@@ -24,7 +24,7 @@ const crate = join(root, "crates", "ugoe-ffi");
 const header = join(crate, "include", "ugoe.h");
 
 /** コマンドを実行し、失敗したらその終了コードで終える。 */
-function run(cmd, args, options = {}) {
+export function run(cmd, args, options = {}) {
   const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", ...options });
   if (r.error) {
     console.error(`error: failed to run ${cmd}: ${r.error.message}`);
@@ -56,7 +56,8 @@ function generate(out) {
   ]);
 }
 
-function check() {
+/** ヘッダが cbindgen の生成物と同じかを確かめ、違えば終える。配布物 (scripts/ffi-dist.mjs) も詰める前に使う。 */
+export function checkHeader() {
   const tmp = mkdtempSync(join(tmpdir(), "ugoe-ffi-"));
   try {
     const fresh = join(tmp, "ugoe.h");
@@ -69,6 +70,88 @@ function check() {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/**
+ * 静的ライブラリ (std がある形) と一緒にリンクする OS のライブラリ。配布物の README (crates/ugoe-ffi/archive/README.md) にも同じものを書く。
+ */
+export const STATIC_SYSTEM_LIBS = {
+  darwin: ["-framework", "CoreFoundation"],
+  linux: ["-lm", "-lpthread", "-ldl"],
+  // `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` が x86_64-pc-windows-msvc で出す
+  // `kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib /defaultlib:msvcrt` に合わせる。最後の C ライブラリは
+  // `-fms-runtime-lib=dll` で揃える (clang の既定は静的な libcmt で、Rust の側の msvcrt とぶつかる)。
+  // `-fms-runtime-lib` が効くのはコンパイル (オブジェクトに埋める `/DEFAULTLIB:msvcrt.lib`) だけで、clang のドライバは
+  // リンクの行に `-defaultlib:libcmt` を必ず足す。MSVC の link.exe はそれで静的な libucrt を選び、見本の `__imp_fopen` などが
+  // 解決できずに落ちる (lld-link は通るので cargo-xwin では見えない。T0079)。`-nodefaultlib:libcmt` でその既定を外す。
+  win32: [
+    "-fms-runtime-lib=dll",
+    "-Wl,-nodefaultlib:libcmt",
+    "-lkernel32",
+    "-lntdll",
+    "-luserenv",
+    "-lws2_32",
+    "-ldbghelp",
+  ],
+};
+
+/**
+ * C の見本 (`source`。既定は examples/c/sample.c) をコンパイルしてリンクする。`include` はヘッダのディレクトリ、`link` は
+ * ライブラリとリンクの引数。
+ * Windows では `cl` ではなく clang (gcc 形式の引数のドライバ) を使う: clang は Visual Studio と Windows SDK を自分で
+ * 探すので、開発者のシェル (vcvars) の外でも MSVC のライブラリとリンクでき、警告の扱い (-Werror -pedantic) を Linux・macOS と
+ * 同じ引数で書ける。CI のランナー (windows-latest) には LLVM が入っている。CC で替えるときも gcc 形式の引数のドライバにする。
+ * `_CRT_SECURE_NO_WARNINGS` は、MSVC の C ライブラリが標準の `fopen` などに付ける非推奨の警告 (-Werror で止まる) を消す
+ */
+export function compileSample({
+  source = join(crate, "examples", "c", "sample.c"),
+  include,
+  link,
+  exe,
+}) {
+  const windows = process.platform === "win32";
+  run(process.env.CC ?? (windows ? "clang" : "cc"), [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-pedantic",
+    ...(windows ? ["-D_CRT_SECURE_NO_WARNINGS"] : []),
+    "-I",
+    include,
+    source,
+    ...link,
+    "-o",
+    exe,
+  ]);
+}
+
+/** 見本のモデルのパス (avatar・法線マップ付きの avatar-lit・着せ替えの本体とモジュール)。 */
+function sampleModels() {
+  const samples = join(root, "assets", "samples");
+  const dressUp = join(samples, "dress-up");
+  const modules = readdirSync(dressUp)
+    .filter((f) => f.endsWith(".ugoemod"))
+    .sort()
+    .map((f) => join(dressUp, f));
+  return {
+    avatar: join(samples, "avatar.ugoe"),
+    lit: join(samples, "avatar-lit.ugoe"),
+    dressUp: join(dressUp, "dress-up.ugoe"),
+    modules,
+  };
+}
+
+/** C の見本を、見本のモデル、法線マップ付きの見本 (ライティング)、着せ替えの見本 (本体とモジュール) で動かす。 */
+export function runSample(exe, options = {}) {
+  const m = sampleModels();
+  run(exe, [m.avatar], options);
+  run(exe, ["--lit", m.lit], options);
+  run(exe, [m.dressUp, ...m.modules], options);
+}
+
+function check() {
+  checkHeader();
 
   // C の見本を静的ライブラリにリンクして実行する。
   run("cargo", ["build", "-p", "ugoe-ffi"]);
@@ -77,60 +160,15 @@ function check() {
   const windows = process.platform === "win32";
   const exe = join(out, windows ? "sample.exe" : "sample");
   const lib = join(root, "target", "debug", windows ? "ugoe_ffi.lib" : "libugoe_ffi.a");
-  const system = {
-    darwin: ["-framework", "CoreFoundation"],
-    linux: ["-lm", "-lpthread", "-ldl"],
-    // `cargo rustc -p ugoe-ffi --lib --crate-type staticlib -- --print native-static-libs` が x86_64-pc-windows-msvc で出す
-    // `kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib /defaultlib:msvcrt` に合わせる。最後の C ライブラリは
-    // `-fms-runtime-lib=dll` で揃える (clang の既定は静的な libcmt で、Rust の側の msvcrt とぶつかる)。
-    // `-fms-runtime-lib` が効くのはコンパイル (オブジェクトに埋める `/DEFAULTLIB:msvcrt.lib`) だけで、clang のドライバは
-    // リンクの行に `-defaultlib:libcmt` を必ず足す。MSVC の link.exe はそれで静的な libucrt を選び、見本の `__imp_fopen` などが
-    // 解決できずに落ちる (lld-link は通るので cargo-xwin では見えない。T0079)。`-nodefaultlib:libcmt` でその既定を外す。
-    // `_CRT_SECURE_NO_WARNINGS` は、MSVC の C ライブラリが標準の `fopen` などに付ける非推奨の警告 (-Werror で止まる) を消す
-    win32: [
-      "-fms-runtime-lib=dll",
-      "-Wl,-nodefaultlib:libcmt",
-      "-D_CRT_SECURE_NO_WARNINGS",
-      "-lkernel32",
-      "-lntdll",
-      "-luserenv",
-      "-lws2_32",
-      "-ldbghelp",
-    ],
-  };
-  // Windows では `cl` ではなく clang (gcc 形式の引数のドライバ) を使う: clang は Visual Studio と Windows SDK を自分で
-  // 探すので、開発者のシェル (vcvars) の外でも MSVC のライブラリとリンクでき、警告の扱い (-Werror -pedantic) を Linux・macOS と
-  // 同じ引数で書ける。CI のランナー (windows-latest) には LLVM が入っている。CC で替えるときも gcc 形式の引数のドライバにする
-  run(process.env.CC ?? (windows ? "clang" : "cc"), [
-    "-std=c11",
-    "-Wall",
-    "-Wextra",
-    "-Werror",
-    "-pedantic",
-    "-I",
-    join(crate, "include"),
-    join(crate, "examples", "c", "sample.c"),
-    lib,
-    ...(system[process.platform] ?? []),
-    "-o",
+  compileSample({
+    include: join(crate, "include"),
+    link: [lib, ...(STATIC_SYSTEM_LIBS[process.platform] ?? [])],
     exe,
-  ]);
-  // 見本のモデル、法線マップ付きの見本 (ライティング)、着せ替えの見本 (本体とモジュール) で動かす。
-  const samples = join(root, "assets", "samples");
-  const dressUp = join(samples, "dress-up");
-  const modules = readdirSync(dressUp)
-    .filter((f) => f.endsWith(".ugoemod"))
-    .sort()
-    .map((f) => join(dressUp, f));
-  run(exe, [join(samples, "avatar.ugoe")]);
-  run(exe, ["--lit", join(samples, "avatar-lit.ugoe")]);
-  run(exe, [join(dressUp, "dress-up.ugoe"), ...modules]);
+  });
+  runSample(exe);
 
-  checkNostd([
-    join(samples, "avatar.ugoe"),
-    join(samples, "avatar-lit.ugoe"),
-    join(dressUp, "dress-up.ugoe"),
-  ]);
+  const m = sampleModels();
+  checkNostd([m.avatar, m.lit, m.dressUp]);
 }
 
 /**
@@ -199,12 +237,14 @@ function checkNostdPanic(exe) {
   console.log("nostd panic handler ok");
 }
 
-const [command] = process.argv.slice(2);
-if (command === "header") {
-  generate(header);
-} else if (command === "check") {
-  check();
-} else {
-  console.error("usage: node scripts/ffi.mjs header|check");
-  process.exit(2);
+if (import.meta.main) {
+  const [command] = process.argv.slice(2);
+  if (command === "header") {
+    generate(header);
+  } else if (command === "check") {
+    check();
+  } else {
+    console.error("usage: node scripts/ffi.mjs header|check");
+    process.exit(2);
+  }
 }
