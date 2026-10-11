@@ -85,6 +85,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just refs` | コードのコメントから文書の見出しへの参照と、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口の呼び出しの過不足を検査 |
 | `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの)。アプリが同梱するライセンスの表記 (`third-party-notices.txt`) が依存と食い違わないかも検査する (作り直しは `just notices`。Rust のクレートの節に cargo-about が要り、`just cargo-about` で入れる。[docs/release.md](docs/release.md#同梱物のライセンスの表記)) |
+| `just secrets` | 秘密の値 (API キー・トークン・秘密鍵など) を gitleaks (版と sha256 を固定) で作業ツリーと履歴から探す (`just ci` と push ごとの CI に含まれる。誤検知の除外は `scripts/gitleaks.toml`。[docs/release.md](docs/release.md#自動の検査)) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
 | `just changelog [vX.Y.Z]` / `just release-notes <vX.Y.Z>` | Conventional Commits から `CHANGELOG.md` を作り直す / 1 つのタグの範囲のリリースノートを出す (git-cliff の固定した版が要る。[docs/release.md](docs/release.md#変更履歴とリリースノート)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
