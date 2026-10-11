@@ -1,5 +1,5 @@
 // 調整のほかのトラッキングの設定 (平滑化・左右の入れ替え・目パチを止める・体) を localStorage に覚える読み書き (T0739)。
-// 調整 (tuningStorage.ts) と同じ形: キーはアプリが決めて渡し (ビューアは `ugoe.viewer.tracking.settings`)、1 つのキーに JSON で置く。
+// 調整 (tuningStorage.ts) と同じ形: キーはアプリが決めて渡し (ビューアは `ugoe.viewer.tracking.settings`、エディタは `ugoe.editor.trackingSettings`)、1 つのキーに JSON で置く。
 // アプリは起動のときに読んで `applyTrackerSettings` で当て、変わったら `trackerSettings` で取り出して覚え直す。
 // 既定値はキーを消して忘れる。読むときは `sanitizeTrackingSettings` を通すので、壊れた項目・範囲の外・知らない項目は項目ごとに既定値になる。
 // 覚えないもの: カメラ (機器の ID は機械や接続で変わる)・ランドマークと鏡像の表示 (見た目だけで、その場で切り替えるもの)。

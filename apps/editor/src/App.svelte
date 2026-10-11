@@ -101,6 +101,8 @@ preview.dressUp.onsaved = () => fileMenu?.refresh();
 
 // プレビューのトラッキングの調整は覚えて、開き直しても戻す (T1678。既定値はキーを消す)。
 $effect(() => preview.saveTuning());
+// ほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) も覚える (T1679。既定値はキーを消す)。
+$effect(() => preview.saveSettings());
 
 // プレビューの光源をビューポートに渡す (編集中もプレビュー中も)。
 $effect(() => viewport.setLighting(lighting.json));

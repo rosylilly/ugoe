@@ -1,5 +1,10 @@
 // プレビューモードのフェイストラッキングの受け口 (PreviewMode の TrackingTarget、T0636)。WebPuppet とビューポートは偽物。
-import { DEFAULT_TUNING, type TrackingTuning } from "@ugoe/face-tracking";
+import {
+  DEFAULT_TRACKING_SETTINGS,
+  DEFAULT_TUNING,
+  type TrackingTuning,
+  trackerSettings,
+} from "@ugoe/face-tracking";
 import { MemoryStorage } from "@ugoe/i18n/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { EditorDocument } from "../document.svelte";
@@ -205,6 +210,63 @@ describe("PreviewMode remembers the tracking tuning", () => {
     expect(setup([], storage).preview.tracker.tuning).toEqual({
       ...DEFAULT_TUNING,
       yaw: { ...DEFAULT_TUNING.yaw, gain: 4 },
+    });
+  });
+});
+
+describe("PreviewMode remembers the other tracking settings", () => {
+  const KEY = STORAGE_KEYS.trackingSettings;
+
+  it("starts from the default when nothing is remembered", () => {
+    const { preview } = setup([], new MemoryStorage());
+    expect(trackerSettings(preview.tracker)).toEqual(DEFAULT_TRACKING_SETTINGS);
+  });
+
+  it("saves the settings and reads them back when made again", () => {
+    const storage = new MemoryStorage();
+    const { preview } = setup([], storage);
+    preview.tracker.smoothing = 0.8;
+    preview.tracker.swapSides = true;
+    preview.tracker.setStopEyeBlink(false);
+    preview.tracker.setTrackBody(false);
+    preview.saveSettings();
+    expect(storage.keys()).toEqual([KEY]);
+    expect(trackerSettings(setup([], storage).preview.tracker)).toEqual({
+      smoothing: 0.8,
+      swapSides: true,
+      stopEyeBlink: false,
+      trackBody: false,
+    });
+  });
+
+  it("keeps the settings and the tuning under separate keys", () => {
+    const storage = new MemoryStorage();
+    const { preview } = setup([], storage);
+    preview.tracker.swapSides = true;
+    preview.saveSettings();
+    preview.saveTuning();
+    expect(storage.keys()).toEqual([KEY]);
+  });
+
+  it("forgets the key when set back to the default", () => {
+    const storage = new MemoryStorage();
+    const { preview } = setup([], storage);
+    preview.tracker.swapSides = true;
+    preview.saveSettings();
+    preview.tracker.swapSides = false;
+    preview.saveSettings();
+    expect(storage.keys()).toEqual([]);
+  });
+
+  it("reads broken or out-of-range values as the default", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(KEY, "{");
+    expect(trackerSettings(setup([], storage).preview.tracker)).toEqual(DEFAULT_TRACKING_SETTINGS);
+    storage.setItem(KEY, JSON.stringify({ smoothing: 7, swapSides: "yes", trackBody: false }));
+    expect(trackerSettings(setup([], storage).preview.tracker)).toEqual({
+      ...DEFAULT_TRACKING_SETTINGS,
+      smoothing: 1,
+      trackBody: false,
     });
   });
 });

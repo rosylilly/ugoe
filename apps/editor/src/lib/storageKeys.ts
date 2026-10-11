@@ -27,6 +27,8 @@ export const STORAGE_KEYS = {
   rightSplit: "ugoe.editor.rightSplit",
   /** プレビューのフェイストラッキングの調整 (感度と境目。JSON。preview/preview.svelte.ts。T1678)。 */
   trackingTuning: "ugoe.editor.trackingTuning",
+  /** プレビューのフェイストラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体。JSON。preview/preview.svelte.ts。T1679)。 */
+  trackingSettings: "ugoe.editor.trackingSettings",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

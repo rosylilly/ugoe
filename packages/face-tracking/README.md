@@ -141,7 +141,7 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
   `loadStoredSettings(key, storage?)`・`saveStoredSettings(key, settings, storage?)` と、`FaceTracker` との受け渡しの `trackerSettings(tracker)`・
   `applyTrackerSettings(tracker, settings)` (目パチと体は `setStopEyeBlink`・`setTrackBody` を通す)。読むときは `sanitizeTrackingSettings` が項目ごとに確かめ
   (型の違う値は既定値、平滑化は 0〜1 に収める)、既定値 (`DEFAULT_TRACKING_SETTINGS` = `FaceTracker` を作ったときの値) ならキーを消す。
-  今はビューアだけが使う (`ugoe.viewer.tracking.settings`)。
+  ビューアは `ugoe.viewer.tracking.settings`、エディタのプレビューは `ugoe.editor.trackingSettings` (T1679) に覚える。
 - **決めたこと:**
   - 瞼の左右は既定で一緒 (T0877): 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (向きで揺れる差を固定の値で直すと、正面で
     片目だけ閉じきる) ため。スライダーの数も半分になる。片目だけ瞼が下がりやすい人・片目だけ眼鏡の反射で検出が弱い人のために、

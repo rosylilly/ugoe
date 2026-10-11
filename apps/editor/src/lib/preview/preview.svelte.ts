@@ -22,14 +22,20 @@
 //   要素 (`pose_visible_json`) を読み、前のフレームから変わったときだけ `poseShown`・`modulePoseShown` を合わせる。
 // - トラッキングの調整 (感度と境目) は localStorage に覚える (T1678。ビューアと同じ @ugoe/face-tracking の tuningStorage.ts)。
 //   作るときに読んで当て、App.svelte の $effect が `saveTuning` で覚え直す。既定値はキーを消す。
+// - ほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) も同じ形で覚える (T1679。ビューアと同じ settingsStorage.ts)。
+//   App.svelte の $effect が `saveSettings` で覚え直す。
 
 import {
+  applyTrackerSettings,
   FaceTracker,
+  loadStoredSettings,
   loadStoredTuning,
+  saveStoredSettings,
   saveStoredTuning,
   setPuppetTracking,
   type TrackingFrame,
   type TrackingTarget,
+  trackerSettings,
 } from "@ugoe/face-tracking";
 import type { EditorDocument } from "../document.svelte";
 import { errorText } from "../errors";
@@ -118,7 +124,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   /** 描いている本体だけのモデルの、本体の版 (比べていなければ `null`)。 */
   #baseRevision: number | null = null;
 
-  /** 調整を覚える場所 (省くと localStorage。テストは偽物を渡す)。 */
+  /** 調整と設定を覚える場所 (省くと localStorage。テストは偽物を渡す)。 */
   #storage: Storage | undefined;
 
   constructor(doc: EditorDocument, viewport: ViewportController, storage?: Storage) {
@@ -127,6 +133,7 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     this.#storage = storage;
     this.tracker = new FaceTracker(this, { saveJson: saveTrackingRecording });
     this.tracker.setTuning(loadStoredTuning(STORAGE_KEYS.trackingTuning, storage));
+    applyTrackerSettings(this.tracker, loadStoredSettings(STORAGE_KEYS.trackingSettings, storage));
     this.dressUp = new DressUp({
       puppet: () => this.#viewport.puppet,
       active: () => this.active,
@@ -144,6 +151,14 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   /** 今のトラッキングの調整を覚える (既定値ならキーを消す)。$effect の中で呼ぶと、調整が変わるたびに覚え直す。 */
   saveTuning(): void {
     saveStoredTuning(STORAGE_KEYS.trackingTuning, this.tracker.tuning, this.#storage);
+  }
+
+  /**
+   * 今のトラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) を覚える (既定値ならキーを消す)。
+   * $effect の中で呼ぶと、設定が変わるたびに覚え直す。
+   */
+  saveSettings(): void {
+    saveStoredSettings(STORAGE_KEYS.trackingSettings, trackerSettings(this.tracker), this.#storage);
   }
 
   /** プレビューモードに入る。スライダーは編集中の姿の値から始める。 */
