@@ -1,11 +1,11 @@
 ---
 id: T0087
 title: "fuzz.yml: CI で cargo-fuzz が musl のターゲットでビルドして、5 つのターゲットがすべて fuzz の前に落ちるのを直す"
-status: todo
+status: in-progress
 milestone: M11
 crates: [.github/workflows, fuzz, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0087
 ---
 
 # T0087: fuzz.yml のビルドの失敗を直す
