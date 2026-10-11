@@ -3,15 +3,15 @@ name: Perf
 # 性能の検査 (`just perf`。docs/testing.md#遅くなったら気づく検査、T0191・T0194): `Puppet` の 1 フレームの評価を、ネイティブ
 # (crates/ugoe/examples/puppet_timing.rs を release で) と wasm (bindings/web/examples/timing の計測のページをヘッドレスの Chrome で) で
 # 測り、中央値が上限を超えたら失敗する。共有のランナーでは時間が 2〜3 割揺れ、
-# 関係の無い PR を落とさないように PR ごとの CI (ci.yml) には入れず、週に 1 度と手動で流す (利用者の決定 2026-10-08)。
+# 関係の無い PR を落とさないように push・PR ごとの CI (ci.yml) には入れず (利用者の決定 2026-10-08)、release-checks.yml
+# (手での起動・定期・リリースの前) が呼ぶ。単独でも手で起動できる (T0091)。
 on:
-  schedule:
-    # 毎週月曜 05:11 (UTC)。fuzz.yml (04:23)・nostd-build-std.yml (04:47) と少しずらす
-    - cron: "11 5 * * 1"
+  workflow_call:
   workflow_dispatch:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: perf-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -34,10 +34,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
-      # release と web-dist のビルドは ci.yml (dev のプロファイル) のキャッシュと成果物が違うので、キーを分ける
+      # release と web-dist のビルドは ci.yml (dev のプロファイル) のキャッシュと成果物が違うので、キーを分ける。
+      # main でだけ保存する (タグの run が保存したキャッシュはそのタグからしか読めない。docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: perf
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@v4
       - name: Resolve wasm-bindgen version
         id: wasm-bindgen

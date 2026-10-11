@@ -19,7 +19,7 @@
 //                                                  core と alloc が配られない tier 3 のターゲット (BUILD_STD_TARGETS。省けばすべて) で、
 //                                                  nightly の `-Zbuild-std` で ugoe-ffi の静的ライブラリを作り、未解決のシンボルが
 //                                                  HOST_SYMBOLS と同じかを llvm-nm で確かめる (`just nostd-build-std`。nightly と
-//                                                  rust-src と llvm-tools が要る。CI は週に 1 度の nostd-build-std.yml。T0495・T0071)
+//                                                  rust-src と llvm-tools が要る。CI は release-checks.yml が呼ぶ nostd-build-std.yml。T0495・T0071)
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

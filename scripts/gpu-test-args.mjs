@@ -6,7 +6,7 @@
 //
 // ただし Tauri のアプリ (scripts/ci-groups.mjs で `tauri: true` のグループのクレート。スタジオの仮想カメラの受け手など) は、
 // CI (環境変数 `CI` がある) では除く。CI の gpu ジョブは Tauri のシステム依存 (webkit など) を入れないため
-// (.github/workflows/ci.yml)。手元の `just test-gpu` では含める。
+// (.github/workflows/release-checks.yml)。手元の `just test-gpu` では含める。
 
 import { execFileSync } from "node:child_process";
 import { GROUPS } from "./ci-groups.mjs";

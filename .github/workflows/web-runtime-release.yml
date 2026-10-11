@@ -2,8 +2,9 @@ name: Web runtime release
 
 # npm のパッケージ @ugoe/runtime (bindings/web。ADR 0025) を作り、npm に公開する。
 # 手順と前提 (npm のアカウント・トークン・`private: true` の外し方) は bindings/web/README.md#リリース。
-# - `v*` のタグ (editor-build.yml と同じ。すべての配布物の版を揃える。docs/portability.md) で公開する。
-#   タグ・クレートの版 (Cargo.toml の workspace.package.version)・package.json の版が揃っていなければ失敗する。
+# - `v*` のタグで、release.yml が重い検査 (release-checks.yml) を通してから呼び、公開する (editor-build.yml と同じ。
+#   すべての配布物の版を揃える。docs/portability.md)。タグ・クレートの版 (Cargo.toml の workspace.package.version)・
+#   package.json の版が揃っていなければ失敗する。
 # - 手で起動したときは、既定で `npm publish --dry-run` (公開しない)。`publish` を選ぶと公開する。
 # - package.json が `private: true` のままなら、どちらでも公開せず、入る内容だけを表示する。
 on:
@@ -13,11 +14,12 @@ on:
         description: "npm に公開する (外すと npm publish --dry-run)"
         type: boolean
         default: false
-  push:
-    tags: ["v*"]
+  # release.yml (タグの push) から。github.event_name は呼んだ側の push になるので公開する
+  workflow_call:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: web-runtime-release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -47,11 +49,11 @@ jobs:
         run: node bindings/web/scripts/release.mjs check ${{ github.ref_type == 'tag' && github.ref_name || '' }}
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
-      # ci.yml の conformance のジョブが main で保存したキャッシュ (ugoe-wasm の release と web-dist を含む) を読むだけにする。
+      # ci.yml の web のジョブが main で保存したキャッシュ (@ugoe/runtime の web-dist を含む) を読むだけにする。
       # タグの run で保存したキャッシュはそのタグからしか読めないので保存しない (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: conformance
+          shared-key: web
           save-if: false
       - uses: extractions/setup-just@v4
       # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない

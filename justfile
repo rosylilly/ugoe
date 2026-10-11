@@ -213,7 +213,7 @@ godot-build *args:
 godot-check *args:
     node bindings/godot/build.mjs --check --conformance {{args}}
 
-# nightly と cargo-fuzz が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では週に 1 度の fuzz.yml)。
+# nightly と cargo-fuzz が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では release-checks.yml が呼ぶ fuzz.yml)。
 # `--` の後ろは libFuzzer に渡す: `just fuzz bundle 300 -- -jobs=4 -workers=4`。見つかった入力は fuzz/artifacts/<target>/
 # fuzz (fuzz/README.md): 外から来る入力のターゲット (bundle・module・image・json・ffi。all ですべて) を [秒] (既定 60) ずつ回す
 fuzz target *args:
@@ -223,7 +223,7 @@ fuzz target *args:
 fuzz-check:
     @node fuzz/run.mjs --check
 
-# PR ごとの CI (ci.yml の rust (runtime)) が流す。C++ のコンパイラが要る (libfuzzer-sys のビルドスクリプトが libFuzzer をコンパイルする)
+# push・PR ごとの CI (ci.yml の rust (runtime)) が流す。C++ のコンパイラが要る (libfuzzer-sys のビルドスクリプトが libFuzzer をコンパイルする)
 # fuzz のクレートの stable での検査 (依存のライセンス・整形・clippy。fuzz-check からターゲットのビルドを除いたもの。nightly は要らない)
 fuzz-lint:
     @node fuzz/run.mjs --lint
@@ -241,7 +241,7 @@ conformance *args:
 unity-build *args:
     node bindings/unity/build.mjs {{args}}
 
-# .NET SDK 8 以降が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では unity.yml の check)。
+# .NET SDK 8 以降が要る (無ければ入れ方を示して止まる)。`just ci` には含めない (CI では release-checks.yml が呼ぶ unity.yml の check)。
 # Unity のパッケージの検査 (.meta・Runtime/Core の dotnet test・Unity の部分のスタブでの型検査を netstandard2.1 と net48 で)
 unity-check *args:
     node bindings/unity/build.mjs --check {{args}}
@@ -273,12 +273,12 @@ nostd-check *names:
 # core と alloc が配られない tier 3 のターゲット (Switch の AArch64 と、64 ビットのアトミック操作の無い 3DS の Arm) で、nightly の
 # `-Zbuild-std` で ugoe-ffi の静的ライブラリを作り、未解決のシンボルが `just nostd-check` と同じ 6 つかを llvm-nm で確かめる (T0071)。
 # 名前を省けばすべて (scripts/nostd-check.mjs の BUILD_STD_TARGETS)。nightly と rust-src と llvm-tools が要る (無ければ入れ方を出して止まる)。
-# `just ci` には含めない (CI では週に 1 度の nostd-build-std.yml)
+# `just ci` には含めない (CI では release-checks.yml が呼ぶ nostd-build-std.yml)
 nostd-build-std *targets:
     @node scripts/nostd-check.mjs build-std {{targets}}
 
 # 性能の検査: `Puppet` の 1 フレームの評価を、ネイティブ (`perf-native`) と wasm (ブラウザ。`perf-wasm`) で測り、中央値が上限を超えたら失敗する
-# (T0191・T0194、docs/testing.md#遅くなったら気づく検査)。時間は機械と負荷で揺れるので `just ci` には含めない (CI では週に 1 度の perf.yml)。
+# (T0191・T0194、docs/testing.md#遅くなったら気づく検査)。時間は機械と負荷で揺れるので `just ci` には含めない (CI では release-checks.yml が呼ぶ perf.yml)。
 # ほかのビルドと重ならないときに流す
 perf: perf-native perf-wasm
 

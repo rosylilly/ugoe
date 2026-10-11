@@ -10,7 +10,7 @@
 //   ページの `navigator.userAgent`・描画の API・タイマーの刻み) も出す。
 // - `--max-us` を付けると、`update` と `follow` の中央値 (`--runs` 回の中央値) を上限 (µs) と比べ、超えたものがあればページを
 //   開き直して 2 回まで測り直し (check.mjs の `RETRIES`)、それでも超えたものを `OVER` と示して終了コード 1 で終わる
-//   (T0194。`just perf` と週に 1 度の CI の perf.yml が流す。docs/testing.md#遅くなったら気づく検査)。
+//   (T0194。`just perf` と、CI の release-checks.yml が呼ぶ perf.yml が流す。docs/testing.md#遅くなったら気づく検査)。
 // - 生成物 (generated.ugoe・bindings/web/dist) か Chrome が無ければ、作り方・指定の仕方を示して終了コード 2 で終わる。
 
 import { spawnSync } from "node:child_process";

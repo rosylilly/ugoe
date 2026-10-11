@@ -50,7 +50,7 @@ const cargo = cargoEnvWithMbx(process.env);
 // なら、共有の target/ には mbx の置き場からの読み取り専用のハードリンクがあり、素の cargo は書き直せずに失敗する
 // (`output file ... is not writeable`)。そのときは参照を描く ugoe のクレートも含めて bindings/godot/target/ に分けてビルドする。
 // CI (`CI` がある) では GDExtension だけを bindings/godot/target/ に分ける。rust-cache は保存の前に、ワークスペースの依存でない
-// ものを target から消すので、ルートの target/ に置くと godot-rust などの依存がキャッシュに残らない (ci.yml の godot のジョブは
+// ものを target から消すので、ルートの target/ に置くと godot-rust などの依存がキャッシュに残らない (release-checks.yml の godot のジョブは
 // bindings/godot/target/ を別のキャッシュにする。docs/testing.md の「CI のキャッシュ」)。参照を描く ugoe のクレートは、
 // conformance のジョブのキャッシュを使えるようにルートの target/ でビルドする。
 const sharedTarget = join(root, "target");
@@ -124,7 +124,7 @@ function requireGodot({ display = false } = {}) {
       [
         `error: Godot が見つからない (GODOT=${godot})。`,
         "  Godot 4.4 以降を https://godotengine.org/download から入れて PATH に置くか、",
-        "  環境変数 GODOT に実行ファイルのパスを指定する (CI の版は .github/workflows/ci.yml の godot のジョブ)。",
+        "  環境変数 GODOT に実行ファイルのパスを指定する (CI の版は .github/workflows/release-checks.yml の godot のジョブ)。",
       ].join("\n"),
     );
     process.exit(1);

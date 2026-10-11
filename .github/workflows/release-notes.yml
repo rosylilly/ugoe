@@ -3,7 +3,8 @@ name: Release notes
 # Conventional Commits のコミットから、タグの範囲のリリースノートを git-cliff で作る (docs/release.md#変更履歴とリリースノート)。
 # 手元と同じ入口 `just release-notes <タグ>` (scripts/changelog.mjs。設定は scripts/cliff.toml) を使い、git-cliff は
 # `just git-cliff-version` の版を入れる (版で出力が変わりうるので、手元と揃える)。
-# - `v*` のタグ: そのタグの範囲 (1 つ前の版のタグから) のノートを作り、ジョブの要約と成果物 (release-notes) に置き、
+# - `v*` のタグ (release.yml が重い検査 (release-checks.yml) を通してから呼ぶ): そのタグの範囲 (1 つ前の版のタグから) のノートを作り、
+#   ジョブの要約と成果物 (release-notes) に置き、
 #   そのタグの GitHub Release の下書きの本文にする (scripts/github-release.mjs notes。docs/release.md#github-release-の下書き)。
 #   下書きが無ければ作る。配布物を添付するワークフロー (editor-build.yml) と同時に動いてもよい (どちらが先でも同じ下書きに寄る)。
 # - 設定・スクリプトを変えた PR と、手で起動したとき: 未リリースのコミットを仮の版 (入力 `tag`) として作る (下見)。
@@ -20,12 +21,12 @@ on:
       - scripts/cliff.toml
       - scripts/changelog.mjs
       - .github/workflows/release-notes.yml
-  push:
-    tags: ["v*"]
+  workflow_call:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-notes-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 permissions:
   contents: read

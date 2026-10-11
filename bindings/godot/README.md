@@ -38,7 +38,7 @@ godot --path bindings/godot/example        # 見本のシーンを開く (エデ
 - CI (環境変数 `CI` がある) では、GDExtension だけを `bindings/godot/target/` でビルドし、参照の画像を描く `ugoe` のクレート
   (`--conformance`) はルートの `target/` でビルドする。rust-cache は保存の前にワークスペースの依存でないものを target から消すので、
   ルートの `target/` に置くと godot-rust などの依存がキャッシュに残らないため ([docs/testing.md](../../docs/testing.md#ci-のキャッシュ)。
-  ci.yml の `godot` のジョブは `bindings/godot/target/` を別のキャッシュにする)。
+  release-checks.yml の `godot` のジョブは `bindings/godot/target/` を別のキャッシュにする)。
 - 見本 (`example/main.tscn`) は `assets/samples/` のモデルを選んで表示し、パラメータごとのスライダーと、表情・モーションの
   ボタン、着せ替えのモジュール (`dress-up.ugoe` 用) のチェックボックスを作る。ライティングを受けるモデル (`avatar-lit.ugoe`)
   では、マウスの位置に点光源を置く。触っていない間は `AngleX` を揺らす。クリックした位置の当たり判定を出力に出す。
@@ -89,8 +89,8 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   `xvfb-run -a godot --path bindings/godot/example --rendering-driver opengl3 --script res://tests/bench.gd`)。最初の行に Godot の版・
   描き方・アダプタ・論理プロセッサの数を出す)。CI の `godot` のジョブは、検査の後にリリースビルドで bench.gd を Compatibility と
   Forward+ で流し、結果をジョブの要約と成果物 `godot-bench` に残す (落ちても検査は落とさない。T0467)。
-- これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/ci.yml` の
-  `godot`) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
+- これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/release-checks.yml` の
+  `godot`。手での起動・月に 2 回・リリースの前) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
 
 ### CI の bench.gd の値 (T0471)
 

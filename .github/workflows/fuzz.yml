@@ -1,20 +1,25 @@
 name: Fuzz
 
 # 外から来る入力 (.ugoe・.ugoemod・画像・JSON・C ABI の呼び出し) の fuzz (cargo-fuzz と libFuzzer。fuzz/README.md、docs/testing.md#fuzz、
-# docs/adr/0032-fuzzing-with-cargo-fuzz.md)。nightly が要り時間もかかるので、PR ごとの CI (ci.yml) には入れず、
-# 週に 1 度と手動で流す (利用者の決定 2026-10-07)。育てた入力 (fuzz/corpus) は actions/cache で次の回へ持ち越す。
+# docs/adr/0032-fuzzing-with-cargo-fuzz.md)。nightly が要り時間もかかるので、push・PR ごとの CI (ci.yml) には入れず
+# (利用者の決定 2026-10-07)、release-checks.yml (手での起動・定期・リリースの前) が呼ぶ。単独でも手で起動できる (T0091)。
+# 育てた入力 (fuzz/corpus) は actions/cache で次の回へ持ち越す。
 on:
-  schedule:
-    # 毎週月曜 04:23 (UTC)
-    - cron: "23 4 * * 1"
+  workflow_call:
+    inputs:
+      seconds:
+        description: "ターゲットごとに回す秒数"
+        type: string
+        default: "300"
   workflow_dispatch:
     inputs:
       seconds:
         description: "ターゲットごとに回す秒数"
         default: "300"
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: fuzz-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -45,14 +50,14 @@ jobs:
         with:
           tool: cargo-fuzz
       - uses: extractions/setup-just@v4
-      # fuzz/ はワークスペースの外 (独自の Cargo.lock) なので、ci.yml のキャッシュとは分ける
+      # fuzz/ はワークスペースの外 (独自の Cargo.lock) なので、ci.yml のキャッシュとは分ける。main でだけ保存する
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: fuzz
           workspaces: fuzz -> target
-          save-if: ${{ matrix.target == 'bundle' }}
+          save-if: ${{ matrix.target == 'bundle' && github.ref == 'refs/heads/main' }}
       # 依存のライセンス (scripts/check-licenses.mjs --fuzz)・整形・clippy・すべてのターゲットのビルド (nightly と cargo-fuzz)。
-      # stable でできる分 (`just fuzz-lint`) は PR ごとの CI (ci.yml の rust (runtime)) も流す
+      # stable でできる分 (`just fuzz-lint`) は push・PR ごとの CI (ci.yml の rust (runtime)) も流す
       - name: Check the fuzz crate
         if: matrix.target == 'bundle'
         run: just fuzz-check

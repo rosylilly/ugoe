@@ -24,7 +24,7 @@
 | Unreal | 段階 B: `ugoe-ffi` + C++ プラグイン + ProceduralMesh または独自の SceneProxy | |
 | Godot | 段階 B: GDExtension (godot-rust で `ugoe` を直接使う。`bindings/godot`) | 描画は Godot の 2D (キャンバスアイテムとシェーダ)。ワークスペースの外に置く ([ADR 0026](adr/0026-godot-binding.md)) |
 | Bevy | 段階 A (wgpu のバージョンが一致する場合) または B | Bevy が使う wgpu のバージョンに合わせた ugoe-render のリリースを検討する |
-| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは (`ugoe_set_panic_handler` で登録されたホストの関数にメッセージを渡してから) `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi))。`core`・`alloc` が配られない tier 3 のターゲット (ゲーム機の多く) は nightly の `-Zbuild-std=core,alloc` (と `-Zbuild-std-features=compiler-builtins-mem`) でビルドする。`aarch64-nintendo-switch-freestanding`・`armv6k-nintendo-3ds` などで通ることを手元で確かめた。PR ごとの CI では検査せず、この 2 つは週に 1 度の CI (`just nostd-build-std`。[docs/testing.md](testing.md#tier-3-のターゲットの-build-std)) が検査する。ポインタの幅のアトミックな比較と交換が要る ([手順](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)) |
+| ゲーム機・組み込み機器 (Rust の `std` が無い環境) | 段階 B: `ugoe-ffi` の `std` の無い形 (`--no-default-features --profile nostd` の staticlib) | アロケータはホストの C ライブラリの `malloc`・`free` など、パニックは (`ugoe_set_panic_handler` で登録されたホストの関数にメッセージを渡してから) `abort`。ヘッダは同じ。PNG と BCn の KTX2 のデコードは無い。検査は `aarch64-unknown-none` でのリンクまでで、実機は確かめていない ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境)、[ADR 0031](adr/0031-no-std-runtime-and-host-neutral-c-abi.md#std-の無い環境への-c-abi))。`core`・`alloc` が配られない tier 3 のターゲット (ゲーム機の多く) は nightly の `-Zbuild-std=core,alloc` (と `-Zbuild-std-features=compiler-builtins-mem`) でビルドする。`aarch64-nintendo-switch-freestanding`・`armv6k-nintendo-3ds` などで通ることを手元で確かめた。push・PR ごとの CI では検査せず、この 2 つは CI の `release-checks.yml` (手での起動・月に 2 回・リリースの前。`just nostd-build-std`。[docs/testing.md](testing.md#tier-3-のターゲットの-build-std)) が検査する。ポインタの幅のアトミックな比較と交換が要る ([手順](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)) |
 
 ## `ugoe` クレートの feature
 
@@ -289,7 +289,7 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
   ホストが評価の状態を別のモデルのものに差し替える)、`ugoe-format` の `image` の単体テスト (壊した KTX2 と PNG)。
   どれも決まった入力で、依存を足さずに stable で動きます。
 - **fuzz:** 決まった入力の外は、cargo-fuzz (libFuzzer、nightly) のターゲット `fuzz/` (バンドル・モジュール・画像・JSON) で探します。
-  `just ci` には入れず、手元の `just fuzz <target>` と週に 1 度の CI のジョブで回します。見つかった入力は直して `broken_input.rs` に
+  `just ci` には入れず、手元の `just fuzz <target>` と、CI の `release-checks.yml` が呼ぶジョブで回します。見つかった入力は直して `broken_input.rs` に
   足します ([testing.md](testing.md#fuzz)、[ADR 0032](adr/0032-fuzzing-with-cargo-fuzz.md))。
 - C ABI (`ugoe-ffi`) も同じ lint を有効にしています (T0491)。C ABI は `std` がある形で `catch_unwind` を残します (後ろの守り)。
   `std` の無い形の静的ライブラリはパニックで `abort` するので、C ABI の入口もパニックしてはなりません。
@@ -315,11 +315,11 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
 
 - **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408、`just conformance`)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。いまは C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity の C# の層 (頂点)・Godot (画像) を比べています。バインディングを足すときの手順は [tests/conformance/README.md](../tests/conformance/README.md#エンジン向けのバインディングを足す)。
 - **リリースの自動化**: タグを打つと、すべての配布物をビルドして公開します。バージョン番号は揃えます。手順は [release.md](release.md)。
-- crates.io には `ugoe` とその依存のクレートだけを公開します (`ugoe-ffi`・`ugoe-wasm`・ツール層は公開しない。[ADR 0027](adr/0027-crates-io-publishing.md))。タグ `v*` で CI (`crates-release.yml`) が予行し、承認の後に公開します ([release.md#cratesio](release.md#cratesio))。
+- crates.io には `ugoe` とその依存のクレートだけを公開します (`ugoe-ffi`・`ugoe-wasm`・ツール層は公開しない。[ADR 0027](adr/0027-crates-io-publishing.md))。タグ `v*` で CI (`release.yml` が重い検査の後に呼ぶ `crates-release.yml`) が予行し、承認の後に公開します ([release.md#cratesio](release.md#cratesio))。
 - ランタイムとライブラリは MIT で配布します ([ADR 0018](adr/0018-licensing-and-1.0-scope.md))。
-- Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)、npm への公開の手順 (タグ `v*` で CI から公開する `web-runtime-release.yml`) は [bindings/web/README.md#リリース](../bindings/web/README.md#リリース)。
-- Unity の UPM パッケージは `bindings/unity/` に置き、MIT で配布します。タグ `v*` で CI (`unity.yml`) が各プラットフォームのライブラリを入れた tarball を作って成果物に残し、配る場所に置くのは手で行います ([bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース))。
-- C ABI の配布物は、OS ごと (Linux の x86_64・aarch64、Windows の x86_64、macOS の universal) のアーカイブに `ugoe-ffi` の共有ライブラリ・静的ライブラリ・`include/ugoe.h`・LICENSE・リンクの例を入れ、MIT で配布します。タグ `v*` で CI (`ffi-release.yml`) が作り、中のヘッダとライブラリだけで C の見本をビルドして動かしてから GitHub Release の下書きに添付します。中身と手順は [release.md#c-abi-の配布物](release.md#c-abi-の配布物)。
+- Web の `@ugoe/runtime` は `bindings/web/` に置き、MIT で配布します。GPL-3.0-only の `packages/` (アプリが共有する部品) とは分けます ([ADR 0025](adr/0025-web-runtime-package.md))。使い方は [bindings/web/README.md](../bindings/web/README.md)、npm への公開の手順 (タグ `v*` で `release.yml` が重い検査の後に呼ぶ `web-runtime-release.yml`) は [bindings/web/README.md#リリース](../bindings/web/README.md#リリース)。
+- Unity の UPM パッケージは `bindings/unity/` に置き、MIT で配布します。タグ `v*` で CI (`release.yml` が重い検査の一部として呼ぶ `unity.yml`) が各プラットフォームのライブラリを入れた tarball を作って成果物に残し、配る場所に置くのは手で行います ([bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース))。
+- C ABI の配布物は、OS ごと (Linux の x86_64・aarch64、Windows の x86_64、macOS の universal) のアーカイブに `ugoe-ffi` の共有ライブラリ・静的ライブラリ・`include/ugoe.h`・LICENSE・リンクの例を入れ、MIT で配布します。タグ `v*` で CI (`release.yml` が重い検査の後に呼ぶ `ffi-release.yml`) が作り、中のヘッダとライブラリだけで C の見本をビルドして動かしてから GitHub Release の下書きに添付します。中身と手順は [release.md#c-abi-の配布物](release.md#c-abi-の配布物)。
 - Godot の GDExtension は `bindings/godot/` に置き、MIT で配布します。依存する godot-rust だけが MPL-2.0 なので、ルートのワークスペースの外に置きます ([ADR 0026](adr/0026-godot-binding.md))。使い方は [bindings/godot/README.md](../bindings/godot/README.md)。
 
 ## 前方互換

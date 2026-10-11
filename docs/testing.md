@@ -21,18 +21,18 @@
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字と押せる部品の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
 | 配布物の適合テスト | `tests/conformance` (`ugoe-conformance`)。C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity (C# の層)・Godot の頂点と画像を参照と比べる。`<ugoe-avatar>` の作り直しのシナリオと、問い合わせの JSON の出力のキーと TS の型の一致も本物のブラウザで確かめる | `just conformance` (C コンパイラ・Chrome・GPU が要る。dotnet・Godot は無ければ飛ばす。[下](#配布物の適合テスト)) |
-| PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
-| エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
-| fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は週に 1 度の `fuzz.yml`。[下](#fuzz)) |
-| tier 3 のターゲットの build-std | `core`・`alloc` が配られない tier 3 のターゲット (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い `armv6k-nintendo-3ds`) で、nightly の `-Zbuild-std` で `ugoe-ffi` の `std` の無い静的ライブラリを作り、未解決のシンボルが決めた一覧と同じかを確かめる | `just nostd-build-std [ターゲット...]` (nightly と rust-src と llvm-tools が要る。`just ci` に入れず、CI は週に 1 度の `nostd-build-std.yml`。[下](#tier-3-のターゲットの-build-std)) |
-| 性能の検査 | `Puppet` の 1 フレームの評価の中央値を上限と比べる。ネイティブは `crates/ugoe/examples/puppet_timing.rs` を `--check` で、wasm (ブラウザ) は計測のページ `bindings/web/examples/timing/` を `measure.mjs --max-us 300` で | `just perf` (= `just perf-native` と `just perf-wasm`。時間は機械と負荷で揺れるので `just ci` に入れず、CI は週に 1 度の `perf.yml`。wasm は wasm-bindgen-cli と Chrome が要る。[下](#遅くなったら気づく検査)) |
+| PuppetSurface のブラウザのテスト | `packages/player/browser-test`。エディタと Player が共有する `PuppetSurface` と `Player` を本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、作成・描画・WebGL2 の喪失からの作り直し・諦め・破棄・devicePixelRatio の追従を確かめる | `just player-browser` (Chrome と wasm-bindgen-cli が要る。CI の `release-checks.yml` の `conformance` ジョブで流す。[下](#puppetsurface-のブラウザのテスト)) |
+| エディタのブラウザのテスト | `apps/editor/browser-test`。ビルドしたエディタの画面を `just ui-audit` の偽のホストと本物の wasm とヘッドレスの Chrome の WebGL2 で動かし、GPU の喪失のまわり (プレビューの着せ替えの読み込みの途中の喪失と、失っている間の付け外し) を確かめる | `just editor-browser` (Chrome・wasm-bindgen-cli・cargo が要る。CI の `release-checks.yml` の `conformance` ジョブで流す。[下](#エディタのブラウザのテスト)) |
+| fuzz | `fuzz/` (cargo-fuzz、ワークスペースの外)。バンドル・モジュール・画像・JSON の読み込みと、読めたモデルの評価 | `just fuzz <target> [秒]` (nightly と cargo-fuzz が要る。`just ci` に入れず、CI は `release-checks.yml` が呼ぶ `fuzz.yml`。[下](#fuzz)) |
+| tier 3 のターゲットの build-std | `core`・`alloc` が配られない tier 3 のターゲット (`aarch64-nintendo-switch-freestanding` と、64 ビットのアトミック操作の無い `armv6k-nintendo-3ds`) で、nightly の `-Zbuild-std` で `ugoe-ffi` の `std` の無い静的ライブラリを作り、未解決のシンボルが決めた一覧と同じかを確かめる | `just nostd-build-std [ターゲット...]` (nightly と rust-src と llvm-tools が要る。`just ci` に入れず、CI は `release-checks.yml` が呼ぶ `nostd-build-std.yml`。[下](#tier-3-のターゲットの-build-std)) |
+| 性能の検査 | `Puppet` の 1 フレームの評価の中央値を上限と比べる。ネイティブは `crates/ugoe/examples/puppet_timing.rs` を `--check` で、wasm (ブラウザ) は計測のページ `bindings/web/examples/timing/` を `measure.mjs --max-us 300` で | `just perf` (= `just perf-native` と `just perf-wasm`。時間は機械と負荷で揺れるので `just ci` に入れず、CI は `release-checks.yml` が呼ぶ `perf.yml`。wasm は wasm-bindgen-cli と Chrome が要る。[下](#遅くなったら気づく検査)) |
 | C ABI の検査 | ヘッダ `crates/ugoe-ffi/include/ugoe.h` が最新か、C の見本 `crates/ugoe-ffi/examples/c/sample.c` のビルドと実行。`std` の無い形の静的ライブラリをホストの C ライブラリとリンクした見本 (`examples/c/nostd.c`) の実行 | `just ffi-check` (cbindgen が要る。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成)) |
 
 `just ci` はこれらを (GPU テスト・C ABI の検査・配布物の適合テスト・fuzz・tier 3 のターゲットの build-std・性能の検査以外) すべて実行します。
 C ABI の検査はワークスペースの外のツール (cbindgen) と C コンパイラが要るので `just ci` に入れず、CI の `rust (bindings)` ジョブで別に実行します ([CI のジョブ](#ci-のジョブ))。
-配布物の適合テストも同じ理由で、CI の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
+配布物の適合テストも同じ理由で、CI の `release-checks.yml` の `conformance` ジョブで別に実行します (比べ合わせの単体テストは `just ci` に入る)。
 PuppetSurface とエディタのブラウザのテストも wasm のビルドと Chrome が要るので `just ci` に入れず、同じ `conformance` ジョブで流します。
-実機の e2e テストは 3 つのアプリをビルドし直すので、PR ごとの CI に入れず、別のワークフロー `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
+実機の e2e テストは 3 つのアプリをビルドし直すので、push・PR ごとの CI に入れず、`release-checks.yml` が呼ぶ `e2e.yml` で流します ([下](#実機の-e2e-テスト))。
 UI の監査も 3 つのアプリをビルドして 200 ほどの場面を撮るので `just ci` に入れず、画面を変える PR で人とエージェントが流します ([下](#ui-の監査))。
 
 ## wasm の生成物の古さ
@@ -68,21 +68,34 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 
 ## CI のジョブ
 
-`.github/workflows/ci.yml` の Rust の検査は、クレートのまとまり (グループ) ごとの別のジョブで行います。
+CI のワークフローは、push・PR ごとに動く軽い検査と、手での起動・定期・リリースの前に動く重い検査に分けています
+(利用者の決定 2026-10-11。T0091)。重いビルド (Windows・macOS・GPU・アプリなど) を毎回の push で流さないためです。
+GitHub Actions の時間は、非公開のリポジトリでは月 3000 分の無料枠から、Windows は 2 倍・macOS は 10 倍で数えて引かれます
+(公開すると標準のランナーは無料になるが、方針は同じ)。
+
+| ワークフロー | 動くとき | 内容 |
+| --- | --- | --- |
+| `ci.yml` (軽い) | main への push・PR | 手元の `just ci` に当たる検査を、Linux のランナーだけで流す。変わったパスで絞る ([下](#変わったパスでの絞り込み)) |
+| `release-checks.yml` (重い) | 手での起動 (`workflow_dispatch`)・定期 (毎月 1 日と 15 日。main が前に通った run から変わっていなければ飛ばす)・リリースの前 (`release.yml` が呼ぶ) | 別のターゲット・Windows と macOS・GPU・Godot・配布物の適合テスト・e2e・Unity・perf・tier 3 の build-std・fuzz ([下](#重い検査とリリースの前の検査)) |
+| `release.yml` | `v*` のタグ | `release-checks.yml` を通してから配布物のワークフローを呼ぶ。検査が落ちたら配布物を作らない ([release.md](release.md)) |
+| `release-notes.yml` | リリースノートの設定・スクリプトを変えた PR (と手での起動・`release.yml`) | git-cliff でノートの下見を作る (Linux で 1 分ほど。[release.md](release.md#リリースノートとワークフロー)) |
+
+`ci.yml` の Rust の検査は、クレートのまとまり (グループ) ごとの別のジョブで行います。
 ワークスペース全体のテストを 1 つのジョブでビルドすると、GitHub Actions のランナーのディスク (空きは約 14GB) を超えるためです
 (デバッグ情報ありで約 17GB。T0002)。グループの定義の正は `scripts/ci-groups.mjs` の `GROUPS` で、CI の matrix もここから作ります。
 
-| ジョブ | 内容 |
+| ジョブ (`ci.yml`) | 内容 |
 | --- | --- |
-| `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just case-check`・`just local-paths`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
+| `rust-checks` | ワークスペースをビルドしない検査と文書の検査 (変わったパスによらず常に動く): fmt・`just layers`・`just case-check`・`just local-paths`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check`・`just ui-audit-check`・公開仕様の検査 (`just spec` と `tools/spec-check`) |
+| `rust-groups` | 変わったファイルから、動かすグループの matrix と `web` を動かすかを決める (`node scripts/ci-groups.mjs changed`。[下](#変わったパスでの絞り込み)) |
 | `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。`aarch64-unknown-none` と、64 ビットのアトミック操作の無い `thumbv7em-none-eabihf`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。fuzz のクレート (`fuzz/`) の stable での検査 (`just fuzz-lint`。[fuzz](#fuzz)) も |
 | `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |
 | `rust (tools)` | `ugoe-fs`・`ugoe-editor-core`・`ugoe-ai`・`ugoe-cli`・`ugoe-mcp` の clippy とテスト |
 | `rust (apps)` | エディタ・ビューア・スタジオ (Tauri) の clippy とテスト、生成物の検査 (`just gen && git diff --exit-code`)。Tauri のシステムの依存はこのジョブでだけ入れる |
-| `rust (cross)` | 手元の OS 以外のターゲットでの clippy (`just cross-check`)。下の「別のターゲットの検査」 |
-| `rust (windows)`・`rust (macos)` | Windows と macOS のランナーでの、ファイルを扱うクレートの clippy とテスト (`just lint-os`・`just test-os`)。C ABI (`just ffi-check`。Windows は `std` がある形だけ)。macOS ではアプリの clippy (`just lint-group apps`) も。下の「Windows と macOS」 |
-| `rust` | 上の全ジョブの結果をまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため) |
+| `rust` | 上の Rust のジョブの結果をまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)。変わったパスでグループを飛ばしたときは成功とみなす |
+| `web` | フロントエンドの lint・型検査・単体テストと、wasm を作ってからのアプリと `@ugoe/runtime` のビルド (`just web-check` に当たる)。文書だけの変更では動かない |
+| `commitlint` | PR のコミットメッセージ |
 
 - 手元では `just lint-group <グループ>` と `just test-group <グループ>` で、CI の 1 つのジョブと同じ clippy とテストを走らせられます。`just ci` は今までどおりワークスペース全体を検査します。
 - `rust (<グループ>)` の各ジョブは、clippy とテストの後に `just doc-group <グループ>` で、そのグループのクレートの API ドキュメントを rustdoc の警告をエラーにして作ります (`just ci` の `just doc-check` のグループの分。T0027)。依存はテストのビルドと同じ check の成果物を使うので、ディスクはあまり増えません。角括弧 (`[0,1]²` など) は intra-doc link と読まれるので、バッククォートで囲むか `\[` と書きます。非公開の項目は公開の文書からリンクせず、バッククォートだけで書きます。
@@ -92,11 +105,10 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 - clippy (`just lint`・`just lint-group`) は、既定の feature と、すべての feature (`--all-features`) の 2 回流します。`gpu-tests` などの feature の下のコード (GPU のテストなど) は既定の feature ではコンパイルされず、警告が溜まっていたためです (T0211・T0013)。グループでの `--all-features` は、選んだクレートの feature だけを有効にします。
 - `-p` で選んだクレートの間でだけ feature が統合されるので、ワークスペース全体では別のクレートが有効にする feature (例: `ugoe-editor-core` が有効にする `ugoe-model/schema`) は、グループの `features` に書きます。`required-features` を持つテストや例 (`gpu-tests` を除く) の feature が書かれていなければ `just groups` が失敗します。`just crate <クレート>` も、グループの `features` のうちそのクレートのもの (`ugoe-format/png` など) を有効にして clippy とテストを流します (T0186)。
 - 各ジョブは、最初にランナーの使わない SDK (.NET・Android SDK・Haskell・CodeQL) を消してディスクを空けます。
-- CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません (ci.yml のワークフロー全体の `env`)。target とキャッシュがおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
+- CI では `CARGO_PROFILE_DEV_DEBUG=0` でデバッグ情報を作りません (ci.yml・release-checks.yml などのワークフロー全体の `env`)。target とキャッシュがおよそ半分になります。パニックの位置 (ファイルと行) はデバッグ情報がなくても表示されますが、バックトレースには行番号が出ません。
 - 依存クレートの成果物は `Swatinem/rust-cache` で持ち越します。方針は下の「CI のキャッシュ」。
-- nightly が要る検査は PR ごとの CI に入れず、PR を止めない別のワークフローで週に 1 度 (月曜) と手動 (`workflow_dispatch`) で流します:
-  `fuzz.yml` ([fuzz](#fuzz)) と `nostd-build-std.yml` ([tier 3 のターゲットの build-std](#tier-3-のターゲットの-build-std))。
-  時間で判定する性能の検査も、ランナーの揺れで関係の無い PR を落とさないように同じ扱いにします: `perf.yml` ([遅くなったら気づく検査](#遅くなったら気づく検査))。
+- nightly が要る検査 (`fuzz.yml`・`nostd-build-std.yml`) と、時間で判定する性能の検査 (`perf.yml`。ランナーの揺れで関係の無い変更を
+  落とさないため) は、push・PR ごとの CI に入れず、`release-checks.yml` の一部として流します ([下](#重い検査とリリースの前の検査))。
 
 各グループの target の大きさの目安 (T0002 で手元で測った値。`CARGO_PROFILE_DEV_DEBUG=0` で clippy とテストのビルドの後):
 
@@ -108,6 +120,58 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 | tools | 約 1.4GB |
 | apps | 約 2.7GB (`just gen` を足して約 2.8GB) |
 
+### 変わったパスでの絞り込み
+
+`ci.yml` の `rust-groups` のジョブが `node scripts/ci-groups.mjs changed <base> HEAD` で、変わったファイルから動かすものを決めます
+(`affected`)。base は、push では push の前のコミット (`github.event.before`)、PR では PR のマージのコミットの 1 つ目の親です。
+前のコミットが取れなければ (新しいブランチ・履歴の書き換え) すべてを動かします。`rust-checks` は絞らず、いつも動きます。
+
+| 変わったもの | 動かすもの |
+| --- | --- |
+| 文書だけ (`docs/` のファイルと、クレートの外の `.md`。下の「テストが読む文書」を除く) | なし (`rust-checks` だけ) |
+| クレートのディレクトリの中 (`crates/<名前>/`・`apps/<アプリ>/src-tauri/` など。README も) | そのクレートと、それに依存する (開発時の依存を含む) クレートのグループと `web` |
+| `apps/<アプリ>/` の src-tauri の外 (フロントエンド・翻訳・設定) | そのアプリのクレートの変更として扱う (src-tauri のテストが翻訳や `tauri.conf.json` を読む) |
+| `packages/`・`bindings/web/`・`tests/e2e/`・`tests/ui-audit/`・`tools/` | `web` だけ |
+| テストが読む文書 (`DOCS_READ_BY_TESTS`: `docs/editor.md`・`docs/spec/`・`docs/studio-api.schema.json`) | 読むクレートの変更として扱う (`web` は動かさない) |
+| それ以外 (`Cargo.toml`・`Cargo.lock`・`rust-toolchain.toml`・`justfile`・`scripts/`・`.github/`・`assets/`・`spec/`・`fuzz/`・`bindings/unity/` など) | すべてのグループと `web` |
+
+- グループの `covers` は、そのグループのジョブがほかのグループのクレートも検査するときに書きます (`runtime` の `just nostd-check` と
+  `just fuzz-lint` は `ugoe-ffi` も検査するので、`covers: ["ugoe-ffi"]`)。
+- Rust のテストが文書を読むようになったら (`include_str!("../../docs/…")` など)、`DOCS_READ_BY_TESTS` に足します。足し忘れると
+  `just groups` が、ソースの中の文字列の全体が `docs/…`・`spec/…` のパスであるものを見つけて失敗します (クレートの外のほかの
+  ファイルを読むテストは、そのファイルが「それ以外」に入るので絞り込みで飛ばされません)。
+- 2026-09-28〜10-11 の main への push (17 回) は、それぞれ数十〜数百のコミットをまとめたもので、ほとんどが `scripts/`・`.github/`・
+  `Cargo.lock` などを含み、絞り込みですべてのグループが動きました (`tools`・`apps` だけになったのは 2 回)。絞り込みが効くのは、
+  文書だけの push と、小さな PR です。
+
+### 重い検査とリリースの前の検査
+
+`release-checks.yml` のジョブと、2026-10-11 の main の run で測った時間 (キャッシュが当たったとき。課金はジョブごとに分に切り上げ、
+Windows は 2 倍・macOS は 10 倍。T0091):
+
+| ジョブ | 内容 | 時間 | 課金の分 |
+| --- | --- | --- | --- |
+| `gate` | 定期の run だけ、前に通った run と main が同じなら残りを飛ばす | 数秒 | 1 |
+| `rust (cross)` | 別のターゲットの clippy ([下](#別のターゲットの検査)) | 約 2 分 | 3 |
+| `rust (windows)`・`rust (macos)` | Windows と macOS のランナーでの、ファイルを扱うクレートの clippy とテストと C ABI ([下](#windows-と-macos)) | 約 9 分・約 2.5 分 | 18・30 |
+| `gpu (vulkan)`・`gpu (gl)` | 描画テスト ([描画テスト](#描画テスト)) | 約 10 分ずつ | 20 |
+| `godot` | Godot のバインディング ([bindings/godot/README.md](../bindings/godot/README.md)) | 約 9 分 | 10 |
+| `conformance` | 配布物の適合テストと、ブラウザの PuppetSurface とエディタ ([配布物の適合テスト](#配布物の適合テスト)) | 約 7.5 分 | 8 |
+| `e2e` (`e2e.yml`) | 実機の e2e テスト ([実機の e2e テスト](#実機の-e2e-テスト)) | 約 24 分 | 24 |
+| `unity` (`unity.yml`) | Unity のパッケージの検査と、7 つのプラットフォームの `ugoe-ffi` (Windows 1・macOS 2) | 約 13 分 (合計) | 49 |
+| `perf` (`perf.yml`) | 1 フレームの評価の時間 ([遅くなったら気づく検査](#遅くなったら気づく検査)) | 約 5 分 | 6 |
+| `nostd-build-std` (`nostd-build-std.yml`) | tier 3 のターゲットの build-std ([下](#tier-3-のターゲットの-build-std)) | 約 2 分 | 3 |
+| `fuzz` (`fuzz.yml`) | 5 つのターゲットを 5 分ずつ ([fuzz](#fuzz)) | 約 8 分ずつ (見込み) | 約 40 |
+
+- 1 回の run は課金で約 210 分 (キャッシュが外れると、Windows・macOS の依存のビルドで約 330 分まで)。定期は月に 2 回なので約 420〜660 分です。
+  キャッシュは main の run でだけ保存するので、定期の run が次の定期の run のためのキャッシュを作ります (7 日使われないキャッシュは
+  GitHub が消すので、半月おきの run ではたいてい外れる見込み)。
+- `e2e.yml`・`unity.yml`・`perf.yml`・`nostd-build-std.yml`・`fuzz.yml` は、`workflow_call` で呼ばれるほか、それぞれ単独で手で起動できます。
+  呼ばれたワークフローの `github.workflow` は呼んだ側の名前になるので、各ワークフローの `concurrency` のグループの名前は書いて決めます
+  (`${{ github.workflow }}` のままだと呼んだ側と同じグループになり、互いを待って止まる)。
+- `ci.yml` (軽い) の 1 回の push は、キャッシュが当たると課金で約 35 分、外れると約 70 分です (グループの絞り込みの前。
+  T0091 の前は 1 回の push で `ci.yml`・`e2e.yml`・`unity.yml` が動き、約 160〜230 分。ほかに毎晩の `e2e.yml` が約 24 分)。
+- 自前のランナー (self-hosted) は使いません (公開すると、フォークからの PR で自前の機械が使われる危険があるため)。
 ### CI のキャッシュ
 
 依存クレートの成果物は [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) で持ち越します。リポジトリのキャッシュは合計 10GB が上限で、
@@ -116,8 +180,11 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 
 - **キー:** rust-cache のキーは `v0-rust-<shared-key>-<OS>-<アーキテクチャ>-<環境のハッシュ>-<Cargo.toml と Cargo.lock のハッシュ>` です。
   環境のハッシュは rustc の版と `CARGO`・`RUST`・`CC` などで始まる環境変数から作るので、キーを共有するジョブは環境変数を揃えます
-  (`CARGO_PROFILE_DEV_DEBUG` を ci.yml のワークフロー全体に置くのはこのため)。最後のハッシュは `Cargo.toml` が変わるたびに変わり、
+  (`CARGO_PROFILE_DEV_DEBUG` を ci.yml・release-checks.yml などのワークフロー全体に置くのはこのため)。最後のハッシュは `Cargo.toml` が変わるたびに変わり、
   そのときは最後のハッシュを除いた前方一致で、前のキャッシュから部分的に戻します。
+  環境のハッシュには、`rust-toolchain.toml` の版のほかにランナーに入っている stable の rustc の版も入るので、ランナーのイメージが
+  stable を上げるとすべてのキーが外れ、依存をすべてビルドし直します (2026-10-11 の run で stable が 1.99.0 になり、`rust (apps)` が
+  いつもの約 6 分から約 26 分になった。T0091)。
 - **main でだけ保存する:** `save-if: ${{ github.ref == 'refs/heads/main' }}`。PR やタグの run が保存したキャッシュは、その ref
   (と後の同じ ref の run) からしか読めず、容量を食うだけです ([GitHub の文書](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache))。
   PR とタグの run は main のキャッシュから始まります。
@@ -127,8 +194,14 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
   | 保存するジョブ (`shared-key`) | 読むだけのジョブ |
   | --- | --- |
   | `rust (tools)` (`group-tools`) | `gpu (vulkan)`・`gpu (gl)` (テストのビルドの依存が `rust (tools)` のテストのビルドに含まれることを手元で確かめた) |
-  | `conformance` (`conformance`) | `web` と web-runtime-release.yml (`ugoe-wasm` の release と web-dist)、`godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`)、e2e.yml (`ugoe-wasm` の release) |
+  | `web` (`web`) | web-runtime-release.yml (`@ugoe/runtime` の web-dist)、e2e.yml (アプリの `pnpm wasm` の `ugoe-wasm` の wasm32 の release) |
+  | `conformance` (`conformance`。release-checks.yml) | `godot` (参照の画像を描く `ugoe-cli`・`ugoe-conformance`・`ugoe-ffi`) |
   | `rust (apps)` (`group-apps`) | e2e.yml (アプリの dev の依存。下の「e2e.yml は自分のキャッシュを持たない」) |
+
+  `ci.yml` (push ごと) のジョブが保存するキャッシュは push のたびに新しくなり、release-checks.yml (月に 2 回と手での起動) のジョブが
+  保存するもの (`conformance`・`cross`・`rust (windows)`・`rust (macos)`・`godot-gdextension`・`perf`・`fuzz`) はその run のときだけ
+  新しくなります。web-runtime-release.yml と e2e.yml がいつも新しいキャッシュを読めるように、`ugoe-wasm` の wasm32 のビルドは
+  push ごとに動く `web` のジョブのキャッシュに置きます (T0091 の前は `conformance` のジョブが push ごとに保存していた)。
 
 - **`godot` の GDExtension は別のキャッシュにする:** rust-cache は保存の前に、`workspaces` に書いたワークスペースの
   「依存でないもの」(`cargo metadata` でそのワークスペースの外にあるパッケージ以外) を target から消します
@@ -153,17 +226,19 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 - **キャッシュを使わないジョブ:** unity.yml (`check` と `native`。`ugoe-ffi` の依存は少なく、ビルドの時間の大半はキャッシュされない
   ワークスペースのクレートなので、キャッシュがあっても速くならない)、editor-build.yml (タグか手での起動でだけ動く。アプリ × OS の
   リリースビルドのキャッシュは大きく、上限を圧迫する)。
-- **e2e.yml は自分のキャッシュを持たない:** rust-cache を 2 つ使い、`conformance` と `group-apps` のキーを `save-if: false` で
+- **perf.yml と fuzz.yml も main でだけ保存する:** release.yml (タグ) から呼ばれたときに保存すると、そのタグからしか読めない
+  キャッシュ (perf の release のビルドは約 0.35GB) が上限を圧迫するためです。
+- **e2e.yml は自分のキャッシュを持たない:** rust-cache を 2 つ使い、`web` と `group-apps` のキーを `save-if: false` で
   読むだけにします (T0059)。`tests/e2e/run.mjs` は、アプリごとの `tauri build` ではなく、各アプリの beforeBuildCommand
   (`pnpm wasm && pnpm build`) の後に、選んだアプリ (と隣に置く `ugoe-mcp`) を 1 回の
   `cargo build --bins --features tauri/custom-protocol -p ugoe-editor -p ugoe-mcp -p ugoe-viewer -p ugoe-studio` でビルドします
   (引数は `tauri build` が中で流すものと同じ。[tests/e2e/README.md](../tests/e2e/README.md#流れ))。アプリをまとめると feature の統合が
   `rust (apps)` (4 つのクレートを 1 回でビルドする) と揃い、違うのは `tauri/custom-protocol` で変わる tauri・プラグインなどの依存
   17 個だけになります (手元で `rust (apps)` の手順の後に 26 秒。アプリを 1 つずつ `tauri build` していたときは約 170 個)。
-  `pnpm wasm` の `ugoe-wasm` の wasm32 の release は `conformance` の `just player-browser` と同じコマンドなので、そのキャッシュに入っています。
+  `pnpm wasm` の `ugoe-wasm` の wasm32 の release は `web` の `just wasm` と同じコマンドなので、そのキャッシュに入っています。
   2 つの rust-cache は同じ `target/` に続けて戻し (同じ名前の成果物は同じ中身)、どちらの環境のハッシュにも 1 つ目の restore が置く
   `CARGO_INCREMENTAL=0` が入ります (ci.yml の 1 つの rust-cache の restore も、キーを作る前に置く) ので、キーは保存する側と揃います。
-  `Cargo.toml` が変わった main への push では、e2e.yml は ci.yml と並んで動くので、新しいキーはまだ保存されておらず、
+  e2e.yml は release-checks.yml から動くので、`Cargo.toml` が変わってから main への push で ci.yml が新しいキーを保存するまでの間は、
   前のキーから前方一致で戻して差分をコンパイルします。
 - **容量の目安:** main の 1 組 (同じ `Cargo.toml` のハッシュのキャッシュ) が上限の半分 (5GB) 程度に収まるようにします
   (`Cargo.toml` が変わった直後は新旧の 2 組が並ぶため)。測るには `gh api repos/{owner}/{repo}/actions/cache/usage` と
@@ -217,8 +292,8 @@ clippy の拒否 (仮想カメラの `clippy::undocumented_unsafe_blocks` など
 ### Windows と macOS
 
 ファイルを書き出す・パスを扱うクレートの誤り (大文字小文字だけが違う名前を同じファイルとして扱う、パスの区切り、ファイルの権限など。T0667) は
-ubuntu では見つからないので、`rust (windows)` (`windows-latest`) と `rust (macos)` (`macos-latest`) のジョブが、毎回の PR と main への push で
-次を流します (T0013)。
+ubuntu では見つからないので、`release-checks.yml` の `rust (windows)` (`windows-latest`) と `rust (macos)` (`macos-latest`) のジョブが
+次を流します (T0013。T0091 の前は毎回の PR と main への push で流していた)。
 
 - 対象のクレートの定義の正は `scripts/ci-groups.mjs` の `OS_CRATES`: `ugoe-format`・`ugoe-fs`・`ugoe-editor-core`・`ugoe-cli`・`ugoe-mcp`。
   ワークスペースのクレートかは `just groups` が検査します。
@@ -266,8 +341,8 @@ nightly の `-Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem` 
 未解決のシンボルが `just nostd-check` と同じ 6 つ (`HOST_SYMBOLS`: `abort`・`aligned_alloc`・`calloc`・`free`・`malloc`・`realloc`) と同じかを
 `llvm-nm` で確かめます (手順は [crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#core-と-alloc-が配られないターゲット-tier-3t0495)。T0495・T0071)。
 
-- nightly が要るので `just ci`・PR ごとの CI には入れず、`.github/workflows/nostd-build-std.yml` が週に 1 度と手動で流します。
-  nightly や依存の変更で壊れても PR は止まりません。fuzz.yml とは失敗の意味と直し方が違うので、別のワークフローにしています。
+- nightly が要るので `just ci`・push・PR ごとの CI には入れず、`.github/workflows/nostd-build-std.yml` を `release-checks.yml` が呼びます
+  (単独でも手で起動できる)。nightly や依存の変更で壊れても PR は止まりません。fuzz.yml とは失敗の意味と直し方が違うので、別のワークフローにしています。
 - 道具は `rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools` で入れます (無ければ入れ方を出して止まります)。
   `llvm-nm` は nightly の llvm-tools のもの (rustc と同じ LLVM) を使い、`LLVM_NM` で変えられます。nightly は `UGOE_NIGHTLY_TOOLCHAIN`
   (既定 `nightly`) で日付を固定できます。nightly はルートの `Cargo.toml` の `rust-version` 以上であることが要ります。
@@ -459,10 +534,10 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
   (出典: [cargo-fuzz の `default_target`](https://github.com/rust-fuzz/cargo-fuzz/blob/0.13.2/src/utils.rs) と
   [リリースの成果物](https://github.com/rust-fuzz/cargo-fuzz/releases/tag/0.13.2))。手元のホストが gnu・apple・msvc のどれでも、
   ソースから入れた cargo-fuzz なら明示しても振る舞いは変わりません。
-- CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
+- CI では `.github/workflows/fuzz.yml` (`release-checks.yml` が呼ぶ。単独でも手で起動できる) がターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
   次の回へ持ち越します。見つかった入力はワークフローの成果物 (`fuzz-artifacts-<target>`) に上げます。
-- PR ごとの CI (ci.yml の `rust (runtime)`) は、`just fuzz-lint` で fuzz のクレートを stable で検査します (依存のライセンス・整形・
-  clippy。T0072)。ターゲットは `ugoe`・`ugoe-format` の公開 API と `ugoe-ffi` の `fuzzing` を使うので、変えて壊れたら週に 1 度のジョブを待たずに PR で気づきます。
+- push・PR ごとの CI (ci.yml の `rust (runtime)`) は、`just fuzz-lint` で fuzz のクレートを stable で検査します (依存のライセンス・整形・
+  clippy。T0072)。ターゲットは `ugoe`・`ugoe-format` の公開 API と `ugoe-ffi` の `fuzzing` を使うので、変えて壊れたら `release-checks.yml` を待たずに PR で気づきます。
   nightly と cargo-fuzz は要りませんが、`libfuzzer-sys` のビルドスクリプトが同梱の libFuzzer (C++) をコンパイルするので C++ の
   コンパイラが要ります。ランタイムの公開 API を変えたら手元でも `just fuzz-lint` を流してください (`just ci` には入れていません)。
 - 依存のライセンスの検査 (`cargo metadata`) と clippy は `--locked` で流すので、ランタイムのクレートに依存を足して `fuzz/Cargo.lock` が
@@ -481,7 +556,7 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
     止まります。cargo は使わず lock のファイルを読むだけなので、ワークスペースをビルドしないジョブで流せます。
   - ずれは、足した依存を `cargo update --workspace` が最新の版で入れたときと、ルートで依存を上げたとき (外の lock は自動では追従しない)
     に起きます。外のクレートの依存が新しい版を求めてルートの版に合わせられないときは、ルートで `cargo update -p <名前>` して両方を新しい版にします。
-- 計装したターゲットのビルド (nightly と cargo-fuzz) まで含めた検査は `just fuzz-check` で、CI では週に 1 度の fuzz.yml が流します。
+- 計装したターゲットのビルド (nightly と cargo-fuzz) まで含めた検査は `just fuzz-check` で、CI では `release-checks.yml` が呼ぶ fuzz.yml が流します。
 - 見つかった入力を直したら、最小にした入力 (`cargo +nightly fuzz tmin`) を `broken_input.rs` の決まった入力に足し、stable の
   `just ci` で再発を止めます (例: `crates/ugoe-format/tests/broken_input.rs` の `found_by_fuzzing`。`ffi` なら
   `crates/ugoe-ffi/tests/fuzzing.rs`)。
@@ -623,7 +698,8 @@ wasm でも 1ms の目標を大きく下回ります (生成のモデルで目�
 wasm-bindgen-cli が無ければ `just web-runtime` が入れ方を出して失敗し、Chrome が無ければ `measure.mjs` が `Chrome is not found` と出して
 終了コード 2 で終わります (飛ばして成功にはしない。上限を確かめずに通ったと誤解しないため)。手元で Chrome を入れないなら `just perf-native` を流します。
 
-- **方針 (利用者の決定 2026-10-08):** 時間の上限を `just perf` と週に 1 度 (月曜) と手動の CI のジョブ (`.github/workflows/perf.yml`) で確かめます。
+- **方針 (利用者の決定 2026-10-08):** 時間の上限を `just perf` と、push・PR ごとではない CI のジョブ (`.github/workflows/perf.yml`。
+  `release-checks.yml` が呼ぶ。単独でも手で起動できる。T0091) で確かめます。
   新しい依存や道具は入れません。共有の CI のランナーでは時間が 2〜3 割揺れるので、PR ごとの CI (`just ci`) で時間を比べると関係の無い
   PR が落ちます。前の値と比べるベンチマーク (`criterion` など) は前の値が別の機械のものになって誤報が多く、命令の数を数える方法
   (`iai-callgrind` と valgrind) は依存と道具が増えるため、今は入れません。PR ごとに細かい後退を止めたくなったら、そのとき命令の数を足します。
@@ -661,7 +737,7 @@ wasm-bindgen-cli が無ければ `just web-runtime` が入れ方を出して失�
 
 ### CI での実行
 
-GPU のない GitHub Actions の Linux ランナーでは、Mesa のソフトウェア実装で実行します (`.github/workflows/ci.yml` の `gpu` ジョブ)。バックエンドごとに matrix で 2 本走ります。
+GPU のない GitHub Actions の Linux ランナーでは、Mesa のソフトウェア実装で実行します (`.github/workflows/release-checks.yml` の `gpu` ジョブ)。バックエンドごとに matrix で 2 本走ります。
 
 | matrix | ドライバ | 意味 |
 | --- | --- | --- |
@@ -944,7 +1020,8 @@ just e2e --update-images  # マニュアルの画像 (docs/manual/images) を本
   (手順は [tests/e2e/README.md](../tests/e2e/README.md#長く流す))。普段の `just e2e` と CI は既定の長さで流す。
 - 失敗したとき: `target/e2e/<アプリ>/failures/<手順>/` にウィンドウごとと画面全体のスクリーンショット・ページの console、
   `target/e2e/<アプリ>/driver.log` にアプリの出力が残る。CI では成果物として残す。
-- CI: `.github/workflows/e2e.yml` が main への push・毎晩・手動で流す (PR ごとの `ci.yml` には入れない)。
+- CI: `.github/workflows/e2e.yml` を `release-checks.yml` (手での起動・月に 2 回・リリースの前) が呼ぶ。単独でも手で起動できる
+  (push・PR ごとの `ci.yml` には入れない。T0091)。
 - **Windows と macOS は流さない。** macOS の WKWebView には WebDriver が無く、tauri-driver も対応していない。Windows は tauri-driver が
   Microsoft Edge Driver に中継して動くはずだが確かめていない。両方とも、リリースの前に手で確かめる一覧 [docs/manual-check.md](manual-check.md) で見る。
 - 手順・偽のカメラと偽の AI のプロバイダの作り・筋書きの足し方は [tests/e2e/README.md](../tests/e2e/README.md)。

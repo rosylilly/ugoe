@@ -1,0 +1,64 @@
+name: Release
+
+# `v*` のタグを push すると、重い検査の一式 (release-checks.yml) を通してから、配布物ごとのワークフローを呼ぶ (docs/release.md)。
+# 検査が 1 つでも落ちたら配布物を作らない (`needs: checks`)。やり直すときは、直したコミットに新しいタグを打つか、
+# Actions の画面でこの run の失敗したジョブを再実行する。
+# 配布物のワークフローは、それぞれ単独で手で起動もできる (予行。タグを ref に選んで公開する入力を持つものもある)。
+# Unity の UPM の tarball は release-checks.yml の unity が成果物に残す (配る場所に置くのは、この run 全体が通ってから。人の手)。
+on:
+  push:
+    tags: ["v*"]
+
+# 公開の途中で止めないよう、取り消さない
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/release-checks.yml
+    permissions:
+      contents: read
+      actions: read
+
+  # リリースノートを下書きの Release の本文にする
+  notes:
+    needs: checks
+    uses: ./.github/workflows/release-notes.yml
+    permissions:
+      contents: write
+
+  # エディタ・ビューア・スタジオのインストーラ (署名の Secrets を使う) を下書きの Release に添付する
+  apps:
+    needs: checks
+    uses: ./.github/workflows/editor-build.yml
+    secrets: inherit
+    permissions:
+      contents: write
+
+  # C ABI のアーカイブを下書きの Release に添付する
+  ffi:
+    needs: checks
+    uses: ./.github/workflows/ffi-release.yml
+    permissions:
+      contents: write
+
+  # crates.io に公開する (environment `crates-io` の承認を待つ)
+  crates:
+    needs: checks
+    uses: ./.github/workflows/crates-release.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
+  # npm の @ugoe/runtime を公開する (provenance に id-token を使う)
+  npm:
+    needs: checks
+    uses: ./.github/workflows/web-runtime-release.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

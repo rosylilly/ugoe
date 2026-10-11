@@ -30,7 +30,7 @@
 //! そのうち最も速いものと中央値を示す (`physics_timing` と同じ測り方)。
 //!
 //! `--check` を付けると、`update` と `follow` の中央値を上限 ([`LIMITS`]) と比べ、超えたものがあれば終了コード 1 で終わる
-//! (T0191。`just perf` と週に 1 度の CI の `perf.yml` が流す。上限の決め方は docs/testing.md#遅くなったら気づく検査)。
+//! (T0191。`just perf` と、CI の `release-checks.yml` が呼ぶ `perf.yml` が流す。上限の決め方は docs/testing.md#遅くなったら気づく検査)。
 //!
 //! `--write <path>` を付けると、測らずに生成のモデル (物理とモーション `idle` を含む) を `.ugoe` に書き出して終わる
 //! (T0192。wasm (ブラウザ) の計測のページ `bindings/web/examples/timing` が読む。docs/testing.md#1-フレームの評価)。

@@ -218,7 +218,7 @@ cargo +nightly rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-featu
   32 ビットのターゲットでもビルドできる。tier 2 の `thumbv7em-none-eabihf` で `just nostd-check` が確かめる)。
 - **確かめたこと (nightly 1.101、2026-10):** 次のターゲットで上のコマンドが通り、未解決のシンボルが上の 6 つだけであることを、
   フリースタンディングの C の見本 [`examples/c/nostd.c`](examples/c/nostd.c) と rust-lld でリンクして確かめた。
-  tier 2 の `aarch64-unknown-none` は `just nostd-check` が PR ごとの CI で検査する。
+  tier 2 の `aarch64-unknown-none` は `just nostd-check` が push・PR ごとの CI で検査する。
 
   | ターゲット | 幅 | 確かめたこと |
   | --- | --- | --- |
@@ -230,8 +230,8 @@ cargo +nightly rustc -p ugoe-ffi --lib --crate-type staticlib --no-default-featu
 - 実機と SDK のツールチェイン (SDK のリンカ・C ライブラリ・スレッドとメモリの設定) では確かめていない。
 - **検査 (`just nostd-build-std`。T0071):** 表の `aarch64-nintendo-switch-freestanding` と `armv6k-nintendo-3ds` で上のコマンドを流し、
   静的ライブラリの未解決のシンボルが上の 6 つと同じかを `llvm-nm` で確かめる (リンクはしない)。nightly と `rust-src` と `llvm-tools` が要る
-  (`rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools`)。nightly が要るので `just ci`・PR ごとの CI には
-  入れず、`.github/workflows/nostd-build-std.yml` が週に 1 度と手動で流す ([docs/testing.md](../../docs/testing.md#tier-3-のターゲットの-build-std))。
+  (`rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools`)。nightly が要るので `just ci`・push・PR ごとの CI には
+  入れず、`.github/workflows/nostd-build-std.yml` を `release-checks.yml` (手での起動・月に 2 回・リリースの前) が呼ぶ ([docs/testing.md](../../docs/testing.md#tier-3-のターゲットの-build-std))。
 
 ## 毎フレームの描画の状態 (T0490)
 

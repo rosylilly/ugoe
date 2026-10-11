@@ -5,8 +5,8 @@
 方針は [ADR 0032](../docs/adr/0032-fuzzing-with-cargo-fuzz.md)、使い方の全体は [docs/testing.md](../docs/testing.md#fuzz)。
 
 ルートのワークスペースの外にあり (空の `[workspace]` と独自の `Cargo.lock`)、`just ci` には入らない。
-PR ごとの CI (ci.yml の `rust (runtime)`) は、stable でできる検査 (`just fuzz-lint`: 依存のライセンス・整形・clippy) を流す。
-`ugoe`・`ugoe-format` の公開 API や `ugoe-ffi` の `fuzzing` を変えてターゲットが壊れたら、週に 1 度の fuzz.yml を待たずに PR で気づく。
+push・PR ごとの CI (ci.yml の `rust (runtime)`) は、stable でできる検査 (`just fuzz-lint`: 依存のライセンス・整形・clippy) を流す。
+`ugoe`・`ugoe-format` の公開 API や `ugoe-ffi` の `fuzzing` を変えてターゲットが壊れたら、release-checks.yml が呼ぶ fuzz.yml を待たずに PR で気づく。
 
 ## ターゲット
 

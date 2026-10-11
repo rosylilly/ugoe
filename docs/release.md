@@ -1,14 +1,23 @@
 # リリース
 
 配布物の一覧と方針は [portability.md#配布](portability.md#配布)。すべての配布物で版を揃え、版の正はルートの `Cargo.toml` の
-`[workspace.package] version` です。`v<版>` のタグ (例: `v0.1.0`) を打つと、配布物ごとのワークフローが動きます。
+`[workspace.package] version` です。`v<版>` のタグ (例: `v0.1.0`) を打つと、`.github/workflows/release.yml` が動きます。
+
+1. まず重い検査の一式 `release-checks.yml` (別のターゲット・Windows と macOS・GPU・Godot・配布物の適合テスト・e2e・Unity・perf・
+   tier 3 の build-std・fuzz。[testing.md#重い検査とリリースの前の検査](testing.md#重い検査とリリースの前の検査)) を流します。
+   push・PR ごとの CI (`ci.yml`) は Linux の軽い検査だけなので、ここで初めて流れる検査があります (利用者の決定 2026-10-11。T0091)。
+2. 検査がすべて通ったら、下の表の配布物ごとのワークフローを `workflow_call` で呼びます。1 つでも落ちたら、配布物は作りません。
+   直したら新しいコミットに新しいタグを打つか、Actions の画面で落ちたジョブを再実行します。
+
+タグを打つ前に確かめたいときは、`Release checks` を手で起動します (main などのブランチで。課金で約 210 分)。配布物のワークフローも
+それぞれ手で起動でき、予行になります (公開や添付はタグを ref に選んで入力を選んだときだけ)。
 
 | 配布物 | ワークフロー | 手順 |
 | --- | --- | --- |
 | crates.io のクレート | `.github/workflows/crates-release.yml` | [crates.io](#cratesio) |
 | npm の `@ugoe/runtime` | `.github/workflows/web-runtime-release.yml` | [bindings/web/README.md#リリース](../bindings/web/README.md#リリース) |
 | エディタ・ビューア・スタジオのインストーラ | `.github/workflows/editor-build.yml` (`just app::build` を OS ごとのランナーで実行。Secrets があれば署名し、タグでは [下書きの Release](#github-release-の下書き) に添付) | [apps/editor/README.md#各-os-でのビルド](../apps/editor/README.md#各-os-でのビルド)・[デスクトップアプリの署名](#デスクトップアプリの署名) |
-| Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
+| Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (`release-checks.yml` の一部として動き、成果物に残すだけ。ほかの検査と並んで作られるので、配る場所に置くのは `release.yml` の run 全体が通ってから) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
 | スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。1.0 の配布物には入れない。[1.0 の後の候補](roadmap.md#10-の範囲)) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
 | C ABI (`ugoe-ffi` の共有ライブラリ・静的ライブラリとヘッダ) | `.github/workflows/ffi-release.yml` (OS ごとのランナーで作り、GitHub Release の下書きに添付) | [C ABI の配布物](#c-abi-の配布物) |
 
@@ -186,7 +195,7 @@ node scripts/crates.mjs order
 
 ### 公開する
 
-- **タグから (通常):** `v<版>` のタグを push すると、`crates-release.yml` の予行 (`package` ジョブ) が動き、通れば
+- **タグから (通常):** `v<版>` のタグを push すると、`release.yml` が重い検査の後に `crates-release.yml` を呼び、予行 (`package` ジョブ) が動き、通れば
   `publish` のジョブが承認を待ちます。承認すると、依存の順に公開します。
 - **手で起動する:** Actions の画面で `Crates release` を実行します。既定では予行だけです。`publish` を選び、ref にタグを
   選んだときだけ公開します (ブランチからは公開しません)。
@@ -363,7 +372,8 @@ node scripts/github-release.mjs notes <タグ> <ファイル>       # 本文を�
   動く順は問いません。公開済みの Release の本文は書き換えず、失敗します。`release-notes.yml` をやり直すと、人が書き直した本文も
   生成したノートで上書きするので注意します。
 - ワークフローの側は、ビルドのジョブの後に `if: startsWith(github.ref, 'refs/tags/v')` のジョブを置き、`permissions: contents: write` で
-  成果物を集めてこのスクリプトを呼びます (`editor-build.yml` の `release` のジョブ)。
+  成果物を集めてこのスクリプトを呼びます (`editor-build.yml` の `release` のジョブ)。`release.yml` から呼ばれるので、`release.yml` の
+  呼ぶジョブにも `permissions: contents: write` を書きます (呼ばれたワークフローは、呼んだ側が渡した権限より強くできない)。
 
 | 添付するもの | ワークフロー |
 | --- | --- |
@@ -438,7 +448,7 @@ git-cliff (MIT OR Apache-2.0、Rust 製) を使います。外部の道具を足
 
 ### リリースノートとワークフロー
 
-`v*` のタグを push すると、`.github/workflows/release-notes.yml` が `just release-notes <タグ>` でそのタグの範囲のノートを作り、
+`v*` のタグを push すると、`release.yml` が重い検査の後に `.github/workflows/release-notes.yml` を呼び、`just release-notes <タグ>` でそのタグの範囲のノートを作り、
 ジョブの要約と成果物 (`release-notes`) に置き、`draft` のジョブがそのタグの下書きの Release の本文にします
 (`node scripts/github-release.mjs notes`。[GitHub Release の下書き](#github-release-の下書き))。
 手で起動したときと、`scripts/cliff.toml`・`scripts/changelog.mjs` を変えた PR では、未リリースのコミットを仮の版として下見を作ります
@@ -594,13 +604,14 @@ just ffi-dist-check          # アーカイブを展開し、中のヘッダと�
 
 ### ワークフロー
 
-`.github/workflows/ffi-release.yml` は、`v*` のタグ・手での起動・配布物のスクリプトを触った PR で動きます。
+`.github/workflows/ffi-release.yml` は、`v*` のタグ (`release.yml` が重い検査の後に呼ぶ) と手での起動で動きます。Windows・macOS の
+ランナーを使うので、PR では動かしません (配布物のスクリプトの単体テストは `just script-check` が `ci.yml` で流す。T0091)。
 
 1. `archive` ジョブ: 上の表のランナーごとに `pack` と `verify` を行い、アーカイブを成果物 `ugoe-ffi-archive-<プラットフォーム>` に残します。
    タグのときは `--tag` でタグと版を確かめます。
 2. `release` ジョブ (タグのときだけ): すべてのアーカイブと `.sha256` を、`scripts/github-release.mjs` でタグの GitHub Release の下書きに添付します
    ([GitHub Release の下書き](#github-release-の下書き))。
 
-`unity.yml` も `ugoe-ffi` を OS ごとにビルドしますが、共有しません。`unity.yml` は main と PR で `crates/` を触るたびに動き、Android・iOS を
-含む Unity のプラグインの並びを作ります。こちらはタグで動き、静的ライブラリ・ヘッダ・検査を含みます。`ugoe-ffi` のビルドは 1 分ほどなので、
-重ねてもかかる時間はわずかで、2 つのワークフローの動く条件と成果物を独立に保てます。
+`unity.yml` も `ugoe-ffi` を OS ごとにビルドしますが、共有しません。`unity.yml` は Android・iOS を含む Unity のプラグインの並びを作り、
+こちらは静的ライブラリ・ヘッダ・検査を含みます。`ugoe-ffi` のビルドは 1 分ほどなので、重ねてもかかる時間はわずかで、2 つのワークフローの
+成果物を独立に保てます。

@@ -2,36 +2,22 @@ name: Unity
 
 # Unity のパッケージ (bindings/unity): Unity に依存しない C# の層の検査と、各プラットフォームのネイティブライブラリ
 # (ugoe-ffi) のビルド。ビルドしたライブラリを UPM パッケージに並べ、成果物として残す (公開はしない)。
-# - `v*` のタグ (ほかの配布物と同じ。docs/release.md) では、タグ・クレートの版・package.json の版が揃っているかを確かめ、
-#   UPM の tarball (com.ugoe.unity-<版>.tgz と .sha256) を成果物 `com.ugoe.unity-tarball` に残す。
-#   配る場所 (GitHub の Release など) に置くのは利用者が行う (bindings/unity/README.md#リリース)。
+# Windows・macOS のランナーを使い重いので、push・PR ごとには動かさない。release-checks.yml (手での起動・定期・リリースの前) が呼び、
+# 単独でも手で起動できる (利用者の決定 2026-10-11。T0091)。
+# - `v*` のタグ (release.yml が release-checks.yml を通して呼ぶ。docs/release.md) では、タグ・クレートの版・package.json の版が
+#   揃っているかを確かめ、UPM の tarball (com.ugoe.unity-<版>.tgz と .sha256) を成果物 `com.ugoe.unity-tarball` に残す。
+#   配る場所 (GitHub の Release など) に置くのは利用者が行う (bindings/unity/README.md#リリース)。tarball はほかの検査と並んで
+#   作られるので、置くのは release.yml の run 全体が通ってから。
 # Unity のエディタは使わない (bindings/unity/README.md#制限と確かめていないこと)。
 
 on:
-  push:
-    branches: [main]
-    # タグの push ではパスの絞り込みは効かない (常に動く)
-    tags: ["v*"]
-    paths:
-      - "crates/**"
-      - "bindings/unity/**"
-      - "assets/samples/**"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - ".github/workflows/unity.yml"
-  pull_request:
-    paths:
-      - "crates/**"
-      - "bindings/unity/**"
-      - "assets/samples/**"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - ".github/workflows/unity.yml"
+  workflow_call:
   workflow_dispatch:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: unity-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   CARGO_TERM_COLOR: always

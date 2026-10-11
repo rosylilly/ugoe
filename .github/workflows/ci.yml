@@ -1,5 +1,9 @@
 name: CI
 
+# push・PR ごとの軽い検査 (手元の `just ci` に当たるもの。docs/testing.md#ci-のジョブ)。Linux のランナーだけで動かし、
+# 変わったパスで Rust のグループとフロントエンドの検査を絞る (scripts/ci-groups.mjs の affected)。
+# Windows・macOS・別のターゲット・GPU・適合テスト・Godot・e2e・Unity・perf・fuzz などの重い検査は push では動かさず、
+# release-checks.yml (手での起動・定期・リリースの前) で流す (利用者の決定 2026-10-11。T0091)。
 on:
   push:
     branches: [main]
@@ -12,8 +16,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # デバッグ情報を作らない (target とキャッシュがおよそ半分になる)。パニックの位置はデバッグ情報がなくても表示される。
-  # Swatinem/rust-cache は CARGO で始まる環境変数をキーに含めるので、キーを共有するジョブ (gpu と rust (tools) など) で
-  # 値を揃えるためにワークフロー全体に置く (docs/testing.md#ci-のキャッシュ)
+  # Swatinem/rust-cache は CARGO で始まる環境変数をキーに含めるので、キーを共有するジョブ (release-checks.yml の gpu と
+  # rust (tools) など) で値を揃えるためにワークフロー全体に置く (release-checks.yml などにも同じ値を置く。docs/testing.md#ci-のキャッシュ)
   CARGO_PROFILE_DEV_DEBUG: "0"
 
 jobs:
@@ -36,7 +40,8 @@ jobs:
           --from ${{ github.event.pull_request.base.sha }}
           --to ${{ github.event.pull_request.head.sha }}
 
-  # Rust の検査のうち、ワークスペースをビルドしないもの (cargo metadata だけを読む)
+  # Rust の検査のうち、ワークスペースをビルドしないもの (cargo metadata だけを読む) と、文書の検査。
+  # 変わったパスによらず常に動かす (文書だけの変更でも、見出しへの参照・文書のリンク・タスクのファイルを確かめる)
   rust-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -96,26 +101,51 @@ jobs:
       # UI の監査の道具 (tests/ui-audit) の単体テスト。監査そのもの (just ui-audit) はアプリのビルドが重いので流さない
       - name: UI audit check
         run: just ui-audit-check
+      # 公開仕様の検査 (docs/spec/public-spec.md#同期の検査)。ajv を使うので pnpm install の後に置く
+      - name: Specification
+        run: node scripts/check-md-links.mjs docs spec && node scripts/check-spec.mjs
+      # 公開仕様だけで書いた独立の読み込み器の型検査とテスト (tools/spec-check/README.md)
+      - run: pnpm --filter ugoe-spec-check check
+      - run: node --test tools/spec-check/test/
 
-  # rust-group の matrix を scripts/ci-groups.mjs の GROUPS から作る (グループの定義は 1 か所に置く)
+  # 変わったファイルから、動かす rust-group の matrix (scripts/ci-groups.mjs の GROUPS のうち、変わったクレートとそれに依存する
+  # クレートのグループ) と、web を動かすかを決める (docs/testing.md#変わったパスでの絞り込み)。
+  # push は push の前のコミット (github.event.before) から、PR は PR のマージのコミットの 1 つ目の親 (base) からの差分。
+  # 前のコミットが取れなければ (新しいブランチ・履歴の書き換え) すべてを動かす
   rust-groups:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.groups.outputs.matrix }}
+      rust: ${{ steps.groups.outputs.rust }}
+      web: ${{ steps.groups.outputs.web }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
+      # ワークスペースのクレートのディレクトリと依存を cargo metadata で読む
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      # 差分は 2 つのコミットの木を比べるだけなので、push の前のコミットは深さ 1 で取れば足りる
+      - name: Fetch the commit before the push
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: git fetch --no-tags --depth=1 origin "$BEFORE" || echo "could not fetch $BEFORE"
       - id: groups
-        run: echo "matrix=$(node scripts/ci-groups.mjs matrix)" >> "$GITHUB_OUTPUT"
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+        run: node scripts/ci-groups.mjs changed "$BASE" HEAD >> "$GITHUB_OUTPUT"
 
   # clippy とテストを、クレートのグループごとの別のジョブで行う (docs/testing.md#ci-のジョブ)。
   # ワークスペース全体を 1 つのジョブでビルドすると、ランナーのディスク (空きは約 14GB) を超える。
   rust-group:
     name: rust (${{ matrix.group }})
     needs: rust-groups
+    if: needs.rust-groups.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -138,7 +168,7 @@ jobs:
       - name: Install Rust toolchain (rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
       # キャッシュはグループごとに分け、main でだけ保存する (PR は main のキャッシュから始める)。
-      # gpu のジョブは tools のキャッシュを読む (docs/testing.md#ci-のキャッシュ)
+      # release-checks.yml の gpu は tools の、e2e.yml は apps のキャッシュを読む (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: group-${{ matrix.group }}
@@ -173,7 +203,7 @@ jobs:
           node scripts/nostd-check.mjs targets | xargs rustup target add
           just nostd-check
       # fuzz のクレート (fuzz/。ワークスペースの外で独自の Cargo.lock) を stable で検査する (`just fuzz-lint`: 依存のライセンス・
-      # 整形・clippy。T0072)。ターゲットは ugoe・ugoe-format の公開 API と ugoe-ffi の fuzzing を使うので、変えて壊れたら週に 1 度の fuzz.yml を待たずに気づく。
+      # 整形・clippy。T0072)。ターゲットは ugoe・ugoe-format の公開 API と ugoe-ffi の fuzzing を使うので、変えて壊れたら release-checks.yml の fuzz を待たずに気づく。
       # ランタイムの API を変える PR が必ず流すこのジョブに置く。nightly と cargo-fuzz は要らない (計装したビルドは fuzz.yml)。
       # ビルドは fuzz/target で、rust-cache (target だけを持ち越す) の外: 依存は 50 ほどで、libfuzzer-sys のビルドスクリプトが
       # libFuzzer (C++。ランナーの g++ でコンパイルする) を含めても手元の 4 並列で約 10 秒なので、キャッシュは足さない。
@@ -202,318 +232,32 @@ jobs:
           df -h /
           du -sh target || true
 
-  # 手元の OS 以外のターゲットでの clippy (`just cross-check`、定義は scripts/cross-check.mjs の CHECKS)。
-  # `#[cfg(windows)]`・`#[cfg(target_os = "macos")]` の中のコード (仮想カメラの unsafe など) は rust-group (ubuntu) では
-  # コンパイルされないので、ubuntu のまま --target を変えて検査する。リンクしないので、ターゲットの標準ライブラリだけを足す
-  cross:
-    name: rust (cross)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-      - name: Install Rust targets
-        run: node scripts/cross-check.mjs targets | xargs rustup target add
-      # 依存のビルドスクリプトがターゲット向けにコンパイルする C とリソースのためのツール (アプリの windows-gnu の MinGW)
-      - name: Install cross tools
-        run: |
-          sudo apt-get update
-          node scripts/cross-check.mjs apt | xargs sudo apt-get install -y --no-install-recommends
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cross
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: extractions/setup-just@v4
-      - name: Clippy
-        run: just cross-check
-
-  # Windows と macOS の上で、ファイルを扱うクレート (scripts/ci-groups.mjs の OS_CRATES) の clippy とテストを流す
-  # (docs/testing.md#windows-と-macos)。大文字小文字を区別しないファイルシステムやパスの区切りの違いの誤りは
-  # ubuntu では見つからない (T0667)。macOS では、Apple の SDK が要って rust (cross) で検査できないアプリの
-  # src-tauri の macOS のコードを、`just lint-group apps` で検査する
-  rust-os:
-    name: rust (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows
-            os: windows-latest
-          - name: macos
-            os: macos-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
-      # テストや clippy が落ちても依存のキャッシュを保存する。成功するまで保存しないと、落ち続ける間は毎回依存をすべて
-      # ビルドする (Windows で約 16 分。T0051)。依存がそろうように、後の手順は前の手順が落ちても流す (`!cancelled()`)
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.name }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-on-failure: true
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-      - uses: extractions/setup-just@v4
-      - name: Clippy
-        run: just lint-os
-      - name: Test
-        if: ${{ !cancelled() }}
-        run: just test-os
-      - name: Clippy (apps)
-        if: ${{ !cancelled() && matrix.name == 'macos' }}
-        run: just lint-group apps
-      # C ABI (`just ffi-check`): rust (bindings) と同じく、ヘッダが最新かと、C の見本を静的ライブラリにリンクして実行する。
-      # macOS は std がある形と std の無い形の両方で、macOS の C ライブラリ (`aligned_alloc` は macOS 10.15 以降) とリンクのフラグ
-      # (`-framework CoreFoundation`) を見続ける (T0067。crates/ugoe-ffi/README.md#std-の無い環境)。Windows は std がある形だけで、
-      # ランナーに入っている clang (Visual Studio と Windows SDK を自分で探すので vcvars は要らない) で MSVC のライブラリとリンクする
-      # (T0069。std の無い形は MSVC の C ライブラリに `aligned_alloc` が無いので scripts/ffi.mjs が飛ばす)。
-      # cbindgen は rust (bindings) の「Install cbindgen」と同じ版を入れる。
-      - name: Install cbindgen
-        if: ${{ !cancelled() }}
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cbindgen@0.29.4
-      - name: C ABI
-        if: ${{ !cancelled() }}
-        run: just ffi-check
-
-  # Rust の全ジョブの結果を 1 つにまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)
+  # Rust の全ジョブの結果を 1 つにまとめる (ブランチの保護で必須にする検査の名前を、グループが増えても変えないため)。
+  # 変わったパスで rust-group を飛ばしたとき (rust-groups の rust が false) は、飛ばしたことを成功とみなす
   rust:
     if: always()
-    needs: [rust-checks, rust-groups, rust-group, cross, rust-os]
+    needs: [rust-checks, rust-groups, rust-group]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check results
         if: >-
-          contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') ||
-          contains(needs.*.result, 'skipped')
+          needs.rust-checks.result != 'success' || needs.rust-groups.result != 'success' ||
+          (needs.rust-group.result != 'success' &&
+            (needs.rust-groups.outputs.rust == 'true' || needs.rust-group.result != 'skipped'))
         run: |
           echo "rust-checks: ${{ needs.rust-checks.result }}"
-          echo "rust-groups: ${{ needs.rust-groups.result }}"
+          echo "rust-groups: ${{ needs.rust-groups.result }} (rust: ${{ needs.rust-groups.outputs.rust }})"
           echo "rust-group: ${{ needs.rust-group.result }}"
-          echo "cross: ${{ needs.cross.result }}"
-          echo "rust-os: ${{ needs.rust-os.result }}"
           exit 1
 
-  # 描画テスト (`just test-gpu`)。GPU のないランナーで Mesa のソフトウェア実装を使う。
-  # vulkan: lavapipe / gl: llvmpipe (EGL)。gl は WebGL2 相当のバックエンドで動くことの確認。
-  # ugoe-render などのテストだけをビルドするので、Tauri のシステム依存は入れない。
-  gpu:
-    name: gpu (${{ matrix.backend }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [vulkan, gl]
-    env:
-      WGPU_BACKEND: ${{ matrix.backend }}
-      # GL をハードウェアドライバではなく llvmpipe に固定する
-      LIBGL_ALWAYS_SOFTWARE: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Mesa software rasterizers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            mesa-vulkan-drivers libvulkan1 vulkan-tools libegl1 libegl-mesa0 libgl1-mesa-dri
-      - name: Restrict Vulkan loader to lavapipe
-        run: |
-          icd="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n 1)"
-          echo "lavapipe ICD: $icd"
-          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
-          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
-      - name: Show Vulkan devices
-        if: matrix.backend == 'vulkan'
-        run: vulkaninfo --summary
-      - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
-      # テストのビルドに要る依存は rust (tools) のビルドの依存に含まれる (T0051 で手元で確かめた) ので、そのキャッシュを読むだけにする
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: group-tools
-          save-if: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-      - uses: extractions/setup-just@v4
-      # --nocapture でテストが選んだアダプタ (名前・ドライバ・バックエンド) をログに残す
-      - name: GPU tests
-        run: just test-gpu -- --nocapture
-
-  # Godot のバインディング (bindings/godot。ワークスペースの外、ADR 0026): 依存のライセンス・ヘッドレスの Godot での
-  # 動作 (smoke.gd)・`ugoe render` の画像との比べ合わせ (conformance.gd)。`just godot-check` と同じ。
-  # 版を固定する: Godot は公式のビルド (SHA-512 を書いておいて確かめる)、Xvfb と Mesa はランナーの ubuntu-24.04 のもの。
-  # Godot を上げるときは、リリースの SHA512-SUMS.txt の値に GODOT_SHA512 を書き換える。
-  # Godot は Xvfb の上の llvmpipe (Compatibility / OpenGL) で、参照の画像 (ugoe render) は EGL の llvmpipe で描く。
-  # 続けて適合テストを Forward+ (RenderingDevice の Vulkan) で lavapipe の上でも流し、最後に bench.gd で 1 フレームの時間を
-  # 測って要約と成果物に残す (測るだけで、落ちてもジョブは落とさない。T0467)。
-  godot:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    env:
-      GODOT_VERSION: 4.7.1-stable
-      GODOT_SHA512: 4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9
-      LIBGL_ALWAYS_SOFTWARE: "1"
-      WGPU_BACKEND: gl
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Xvfb and Mesa
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            xvfb xauth libgl1-mesa-dri libegl1 libegl-mesa0 libglx-mesa0 \
-            libxcursor1 libxinerama1 libxrandr2 libxi6 libfontconfig1 \
-            mesa-vulkan-drivers libvulkan1
-          dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers
-      # Godot の Forward+ (Vulkan) を lavapipe で動かす (参照の画像は WGPU_BACKEND=gl のまま)
-      - name: Restrict Vulkan loader to lavapipe
-        run: |
-          icd="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n 1)"
-          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
-          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
-      - name: Install Godot
-        run: |
-          name="Godot_v${GODOT_VERSION}_linux.x86_64"
-          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
-          cd "$RUNNER_TEMP"
-          curl -fsSLO "$base/$name.zip"
-          echo "$GODOT_SHA512  $name.zip" | sha512sum -c -
-          unzip -q "$name.zip" -d godot
-          echo "GODOT=$RUNNER_TEMP/godot/$name" >> "$GITHUB_ENV"
-      - name: Install Rust toolchain (rust-toolchain.toml)
-        run: rustup show active-toolchain || rustup toolchain install
-      # 参照の画像を描く ugoe のクレート (ugoe-cli・ugoe-conformance・ugoe-ffi) は conformance のジョブと同じビルドなので、
-      # そのキャッシュを読むだけにする (ルートの target/)
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: conformance
-          save-if: false
-      # GDExtension (bindings/godot はワークスペースの外) は、CI では build.mjs が bindings/godot/target/ でビルドする。
-      # rust-cache は保存の前に、そのワークスペースの依存でないものを target から消すので、ルートの target/ とは別のキャッシュにして
-      # godot-rust などの依存を残す (docs/testing.md の「CI のキャッシュ」)
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: godot-gdextension
-          workspaces: bindings/godot -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-      - uses: extractions/setup-just@v4
-      - name: Godot binding
-        run: just godot-check
-      - name: Godot conformance (Forward+ on lavapipe)
-        run: node bindings/godot/build.mjs --conformance --renderer forward_plus
-      # 落ちたときに画像 (参照・Godot・違いの画像) を見られるように残す
-      - name: Upload conformance results
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: godot-conformance
-          path: target/conformance
-      # 1 フレームの時間 (bindings/godot/README.md の「検査」)。ランナーは共有の仮想機械なので、値は目安
-      - name: Benchmark (bench.gd)
-        continue-on-error: true
-        run: |
-          mkdir -p target/godot-bench
-          node bindings/godot/build.mjs --release --bench | tee target/godot-bench/compatibility.txt
-          node bindings/godot/build.mjs --release --bench --renderer forward_plus | tee target/godot-bench/forward_plus.txt
-          for f in compatibility forward_plus; do
-            echo "### bench.gd ($f)"
-            echo '```'
-            grep -E '^(godot |avatar|dress-up)' "target/godot-bench/$f.txt"
-            echo '```'
-          done >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload benchmark
-        if: success() || failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: godot-bench
-          path: target/godot-bench
-          if-no-files-found: ignore
-
-  # 配布物の適合テスト (tests/conformance/README.md、`just conformance`)。C ABI と wasm (npm パッケージ) の
-  # 頂点と画像を、ModelInstance と `ugoe render` の参照と比べる。参照の画像は Mesa の lavapipe で、
-  # wasm はヘッドレスの Chrome (ランナーに入っている) の WebGL2 (SwiftShader) で描く。
-  # 続けて、エディタと Player が共有する PuppetSurface (`just player-browser`) とエディタの画面 (`just editor-browser`) を
-  # ヘッドレスの Chrome で確かめる。
-  conformance:
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    env:
-      WGPU_BACKEND: vulkan
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Mesa software rasterizers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
-      - name: Restrict Vulkan loader to lavapipe
-        run: |
-          icd="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n 1)"
-          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
-          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .tool-versions
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
-        run: rustup show active-toolchain || rustup toolchain install
-      # godot と web のジョブもこのキャッシュを読む (docs/testing.md#ci-のキャッシュ)
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: conformance
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: extractions/setup-just@v4
-      - name: Resolve wasm-bindgen version
-        id: wasm-bindgen
-        run: echo "version=$(just wasm-bindgen-version)" >> "$GITHUB_OUTPUT"
-      - name: Install wasm-bindgen-cli (prebuilt)
-        uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
-      - name: Conformance
-        run: just conformance
-      # PuppetSurface と Player (packages/player。GPL なので tests/conformance の外) を同じ Chrome と wasm で確かめる (T0936・T0939)。
-      # 適合テストが落ちても流す (別のものを確かめるため)
-      - name: PuppetSurface in the browser
-        if: success() || failure()
-        run: just player-browser
-      # エディタの画面 (apps/editor。GPL) を同じ Chrome と wasm で、UI の監査の偽のホストを置いて確かめる (T1656)
-      - name: Editor in the browser
-        if: success() || failure()
-        run: just editor-browser
-      # 落ちたときに画像 (参照・各バインディング・違いの画像) と Chrome・ページのログを見られるように残す
-      - name: Upload results
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: conformance
-          path: |
-            target/conformance
-            target/player-browser/page.log
-            target/editor-browser/page.log
-            target/editor-browser/*-FAILED.png
-
   # フロントエンドは `just wasm` の生成物 (ugoe-wasm の JS バインディング) を読むので、
-  # 先に wasm をビルドしてから、本物の型で検査・ビルドする。
+  # 先に wasm をビルドしてから、本物の型で検査・ビルドする。文書だけの変更では動かさない (rust-groups の web)
   web:
+    needs: rust-groups
+    if: needs.rust-groups.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -523,12 +267,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome check .
-      # 公開仕様の検査 (docs/spec/public-spec.md#同期の検査)。ajv を使うので pnpm install の後に置く
-      - name: Specification
-        run: node scripts/check-md-links.mjs docs spec && node scripts/check-spec.mjs
-      # 公開仕様だけで書いた独立の読み込み器の型検査とテスト (tools/spec-check/README.md)
-      - run: pnpm --filter ugoe-spec-check check
-      - run: node --test tools/spec-check/test/
       - run: pnpm --filter @ugoe/editor test
       - run: pnpm --filter @ugoe/viewer test
       - run: pnpm --filter @ugoe/studio test
@@ -545,11 +283,12 @@ jobs:
       - run: pnpm --filter @ugoe/runtime test
       - name: Install Rust toolchain (rust-toolchain.toml, wasm32 target included)
         run: rustup show active-toolchain || rustup toolchain install
-      # ugoe-wasm のビルド (release と web-dist) は conformance のジョブのビルドに含まれるので、そのキャッシュを読むだけにする
+      # ugoe-wasm の wasm32 のビルド (アプリの release と @ugoe/runtime の web-dist) のキャッシュ。main でだけ保存し、
+      # e2e.yml (アプリの `pnpm wasm`) と web-runtime-release.yml (@ugoe/runtime) も読む (docs/testing.md#ci-のキャッシュ)
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: conformance
-          save-if: false
+          shared-key: web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@v4
       # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない
       - name: Resolve wasm-bindgen version

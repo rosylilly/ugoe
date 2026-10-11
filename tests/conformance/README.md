@@ -61,7 +61,7 @@ target/conformance/
   エンジンの道具は重く、C ABI と wasm だけを確かめたい人や CI のジョブが多いため。
 - `--only` で名前を挙げたとき: 挙げたバインディングの道具が足りなければ、どれでも止まる (飛ばしたのに通ったように見えないように)。
 
-CI では `.github/workflows/ci.yml` の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオ・問い合わせの JSON のキー・見本の MediaPipe の利用状況の送信も含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
+CI では `.github/workflows/release-checks.yml` (手での起動・月に 2 回・リリースの前) の `conformance` ジョブが `just conformance` を実行し (`<ugoe-avatar>` のシナリオ・問い合わせの JSON のキー・見本の MediaPipe の利用状況の送信も含む。ランナーに dotnet があれば Unity も、Godot は無いので飛ぶ)、
 `godot` ジョブの `just godot-check` (`build.mjs --conformance`) が `--only godot` を、続けて `--renderer forward_plus` で
 Forward+ (lavapipe) でも実行する (T0467)。落ちたら `target/conformance` を成果物として残す。
 このクレートの単体テスト (ケースの展開・生成するモデル・比べ合わせ・参照の評価) は `cargo test` に入るので `just ci` で動く。

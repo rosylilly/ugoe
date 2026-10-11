@@ -5,7 +5,7 @@
 //   node fuzz/run.mjs all [秒]                 # すべてのターゲットを順に、それぞれ [秒] ずつ回す
 //   node fuzz/run.mjs <target> [秒] -- <引数>  # `--` の後ろは libFuzzer に渡す (例: -jobs=4 -workers=4)
 //   node fuzz/run.mjs --check                  # 依存のライセンスと版 (ルートの Cargo.lock とそろうか) の検査・整形の検査・clippy・すべてのターゲットのビルド
-//   node fuzz/run.mjs --lint                   # --check のうち stable でできるもの (ビルド以外。PR ごとの CI が流す)
+//   node fuzz/run.mjs --lint                   # --check のうち stable でできるもの (ビルド以外。push・PR ごとの CI が流す)
 //   node fuzz/run.mjs --list                   # ターゲットと種の置き場所を表示する
 //
 // 見つかった入力は fuzz/artifacts/<target>/ に、育てた入力の集まり (コーパス) は fuzz/corpus/<target>/ に残る (どちらも git の管理外)。

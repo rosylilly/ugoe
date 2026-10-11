@@ -2,8 +2,8 @@
 // ワークスペースのクレートを、CI でジョブを分けるためのまとまり (グループ) に分ける。定義の正はこのファイルの GROUPS。
 // 分け方と、クレートを足したときの手順は docs/testing.md#ci-のジョブ。
 //
-//   node scripts/ci-groups.mjs check          すべてのクレートがちょうど 1 つのグループに入っているかなどを検査する
-//                                            (`just groups`。`just ci` に含まれる)
+//   node scripts/ci-groups.mjs check          すべてのクレートがちょうど 1 つのグループに入っているか、Rust のテストが読む `.md` が
+//                                            文書だけの変更に入っていないかなどを検査する (`just groups`。`just ci` に含まれる)
 //   node scripts/ci-groups.mjs args <group> [--all-features]
 //                                            `cargo clippy` / `cargo test` に渡す引数 (`-p <crate>` の並びと --features)。
 //                                            `just lint-group <group>` / `just test-group <group>` が使う。--all-features を付けると
@@ -14,7 +14,10 @@
 //   node scripts/ci-groups.mjs os <clippy|test> [<cargo の引数>...]
 //                                            OS_CRATES の clippy (すべての feature) / テストを流す (`just lint-os` / `just test-os`。
 //                                            CI の rust (windows)・rust (macos)。Windows の PowerShell からも動くよう cargo を直接呼ぶ)
-//   node scripts/ci-groups.mjs matrix         GitHub Actions の matrix (JSON の 1 行。.github/workflows/ci.yml の rust-groups)
+//   node scripts/ci-groups.mjs changed <base> [<head>]
+//                                            base から head (既定 HEAD) で変わったファイルから、動かすグループの GitHub Actions の matrix と
+//                                            Rust・フロントエンドの検査を動かすか (`matrix=…`・`rust=…`・`web=…` の行。
+//                                            .github/workflows/ci.yml の rust-groups が $GITHUB_OUTPUT に書く。affected)
 //   node scripts/ci-groups.mjs list           グループとクレートの一覧
 //
 // `cargo test --workspace` と違い、`-p` で選んだクレートの間でだけ feature が統合される。ワークスペース全体では
@@ -24,11 +27,14 @@
 // 型検査と lint をするため (T0013)。
 
 import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 /**
  * グループの定義。`tauri` が true のグループだけ、CI で Tauri のシステムの依存 (webkit など) を入れる。
- * @type {Record<string, { crates: string[], features?: string[], tauri?: boolean }>}
+ * `covers` は、グループのジョブがほかのグループのクレートも検査するときのそのクレート (変わったら、このグループも動かす)。
+ * @type {Record<string, { crates: string[], features?: string[], tauri?: boolean, covers?: string[] }>}
  */
 export const GROUPS = {
   // ランタイム層 (crates.io に公開するクレート)。ワークスペースでは ugoe-editor-core が schema と ts を、
@@ -46,6 +52,9 @@ export const GROUPS = {
       "ugoe",
     ],
     features: ["ugoe-format/png", "ugoe-model/schema", "ugoe-model/ts"],
+    // CI のこのジョブの `just nostd-check` (std の無い ugoe-ffi の静的ライブラリ) と `just fuzz-lint` (ugoe_ffi::fuzzing) は
+    // ugoe-ffi も検査するので、ugoe-ffi が変わったときもこのグループを動かす (下の affected)
+    covers: ["ugoe-ffi"],
   },
   // バインディングと配布物の適合テスト。CI では wasm32 と C ABI の検査もこのジョブで行う。
   // ugoe-ffi の fuzzing は、fuzz の入口を決まった入力で回す結合テスト (tests/fuzzing.rs) の required-features
@@ -114,6 +123,10 @@ export function validate(groups, metadata) {
       } else if (packages.has(name) && !(flag in packages.get(name).features)) {
         errors.push(`${group}: ${name} に feature ${flag} がない`);
       }
+    }
+    for (const name of def.covers ?? []) {
+      if (!packages.has(name))
+        errors.push(`${group}: covers の ${name} はワークスペースのクレートではない`);
     }
     for (const name of def.crates) {
       for (const target of packages.get(name)?.targets ?? []) {
@@ -192,6 +205,187 @@ export function osCargoArgs(command, crates, extra = []) {
   }
 }
 
+/**
+ * 文書 (docs/ と、クレートの外の `.md`) のうち、Rust のテストが読むものと読むクレート。変わったら文書だけの変更とはみなさず、
+ * そのクレートの変更として扱う。Rust のソースが読む文書と食い違わないかを `just groups` (validateDocsReads) が確かめる。
+ * @type {Array<{ path: RegExp, crates: string[] }>}
+ */
+export const DOCS_READ_BY_TESTS = [
+  // メッセージのコードの表 (ugoe-editor-core の message_tests.rs、エディタの error.rs)
+  { path: /^docs\/editor\.md$/, crates: ["ugoe-editor-core", "ugoe-editor"] },
+  // 機能とフォールバックの一覧 (ugoe-format の features.rs)
+  { path: /^docs\/spec\//, crates: ["ugoe-format"] },
+  // スタジオの API のスキーマ (スタジオの api/tests.rs)
+  { path: /^docs\/studio-api\.schema\.json$/, crates: ["ugoe-studio"] },
+];
+
+/** フロントエンドの検査 (CI の `web`) だけを動かすパス。Rust のテストはここを読まない。 */
+export const WEB_ONLY_PATHS = [
+  /^packages\//,
+  /^bindings\/web\//,
+  /^tests\/e2e\//,
+  /^tests\/ui-audit\//,
+  /^tools\//,
+];
+
+/**
+ * `cargo metadata --no-deps` から、ワークスペースのクレートの名前・ディレクトリ (ルートからの相対で末尾に `/`)・
+ * ワークスペースの中の依存 (開発時の依存も) を取り出す。
+ * @returns {Array<{ name: string, dir: string, deps: string[] }>}
+ */
+export function workspaceCrates(metadata) {
+  const names = new Set(metadata.packages.map((p) => p.name));
+  return metadata.packages.map((p) => ({
+    name: p.name,
+    dir: `${relative(metadata.workspace_root, dirname(p.manifest_path)).split(sep).join("/")}/`,
+    deps: [
+      ...new Set(
+        p.dependencies.filter((d) => d.path !== undefined && names.has(d.name)).map((d) => d.name),
+      ),
+    ],
+  }));
+}
+
+/** ワークスペースのクレートのディレクトリの中のファイルなら、そのクレート (いちばん深いもの)。 */
+function crateOf(file, crates) {
+  let found;
+  for (const c of crates) {
+    if (file.startsWith(c.dir) && (found === undefined || c.dir.length > found.dir.length))
+      found = c;
+  }
+  return found;
+}
+
+/**
+ * 文書だけの変更か (CI の Rust の検査もフロントエンドの検査も動かさない)。docs/ のファイルと、クレートの外の `.md` で、
+ * テストが読むもの (DOCS_READ_BY_TESTS) でないもの。クレートの中の README などはテストが読む (ugoe-mcp) ので
+ * クレートの変更として扱う。
+ */
+export function isDocsOnly(file, crates) {
+  return (
+    (file.startsWith("docs/") || file.endsWith(".md")) &&
+    crateOf(file, crates) === undefined &&
+    !DOCS_READ_BY_TESTS.some((e) => e.path.test(file))
+  );
+}
+
+/**
+ * 変わったファイル (リポジトリのルートからの相対) から、CI (ci.yml) で動かす Rust のグループとフロントエンドの検査を決める
+ * (docs/testing.md#変わったパスでの絞り込み)。
+ * - 文書だけ (isDocsOnly) は何も動かさない (ビルドしない検査 `rust-checks` は常に動く)。テストが読む文書は、読むクレートの変更。
+ * - クレートの中のファイルは、そのクレートと、それに (開発時の依存も含めて) 依存するクレートのグループを動かす。
+ *   グループの `covers` のクレートが変わったら、そのグループも動かす。
+ * - `apps/<アプリ>/` の src-tauri の外 (フロントエンド・翻訳・設定) は、そのアプリのクレートの変更として扱う
+ *   (src-tauri のテストが翻訳や tauri.conf.json を読む)。
+ * - WEB_ONLY_PATHS はフロントエンドの検査だけ。
+ * - それ以外 (Cargo.lock・rust-toolchain.toml・justfile・scripts/・.github/・assets/・spec/・fuzz/ など) はすべてのグループを動かす。
+ * フロントエンドの検査は、文書だけの変更でなければ動かす (wasm と生成した型を使うため)。
+ * @param {string[]} files
+ * @param {Record<string, { crates: string[], covers?: string[] }>} groups
+ * @param {Array<{ name: string, dir: string, deps: string[] }>} crates
+ * @returns {{ groups: string[], web: boolean }}
+ */
+export function affected(files, groups, crates) {
+  const changed = new Set();
+  let all = false;
+  let web = false;
+  for (const file of files) {
+    const read = DOCS_READ_BY_TESTS.find((e) => e.path.test(file));
+    if (read !== undefined) {
+      for (const name of read.crates) changed.add(name);
+      continue;
+    }
+    if (isDocsOnly(file, crates)) continue;
+    web = true;
+    const crate = crateOf(file, crates);
+    const app = /^apps\/[^/]+\//.exec(file)?.[0];
+    if (crate !== undefined) {
+      changed.add(crate.name);
+    } else if (app !== undefined) {
+      for (const c of crates) if (c.dir.startsWith(app)) changed.add(c.name);
+    } else if (!WEB_ONLY_PATHS.some((re) => re.test(file))) {
+      all = true;
+    }
+  }
+  if (all) return { groups: Object.keys(groups), web };
+  const dependents = new Map(crates.map((c) => [c.name, []]));
+  for (const c of crates) for (const d of c.deps) dependents.get(d)?.push(c.name);
+  const queue = [...changed];
+  while (queue.length > 0) {
+    for (const next of dependents.get(queue.pop()) ?? []) {
+      if (!changed.has(next)) {
+        changed.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  const selected = Object.entries(groups)
+    .filter(([, def]) => [...def.crates, ...(def.covers ?? [])].some((name) => changed.has(name)))
+    .map(([name]) => name);
+  return { groups: selected, web };
+}
+
+/**
+ * ワークスペースのクレートの Rust のソースが読む文書 (文字列の全体が `docs/…`・`spec/…` で終わるパス。`../` や
+ * `CARGO_MANIFEST_DIR` からの相対も) が、文書だけの変更 (isDocsOnly) に入っていないか、DOCS_READ_BY_TESTS の
+ * 読むクレートに入っているかを確かめ、問題を文字列の配列で返す。コメントの行と、文の中のパス (メッセージ) は見ない。
+ * @param {Array<{ file: string, text: string }>} sources ルートからの相対のパスと中身
+ */
+export function validateDocsReads(sources, crates) {
+  const errors = [];
+  for (const { file, text } of sources) {
+    const reader = crateOf(file, crates)?.name;
+    text.split("\n").forEach((line, i) => {
+      if (line.trimStart().startsWith("//")) return;
+      for (const [, path] of line.matchAll(/"(?:\/?(?:\.\.\/)*)((?:docs|spec)\/[\w./-]+)"/g)) {
+        const read = DOCS_READ_BY_TESTS.find((e) => e.path.test(path));
+        if (isDocsOnly(path, crates)) {
+          errors.push(
+            `${file}:${i + 1}: ${path} を読んでいるが、CI では文書だけの変更とみなしてテストを動かさない ` +
+              "(scripts/ci-groups.mjs の DOCS_READ_BY_TESTS に足す)",
+          );
+        } else if (read !== undefined && !read.crates.includes(reader)) {
+          errors.push(
+            `${file}:${i + 1}: ${path} を読んでいるが、DOCS_READ_BY_TESTS の読むクレートに ${reader} が無い`,
+          );
+        }
+      }
+    });
+  }
+  return errors;
+}
+
+/** クレートのディレクトリの `.rs` (target/ を除く)。 */
+function rustSources(root, crates) {
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+      const path = `${dir}${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name !== "target" && entry.name !== "node_modules") walk(`${path}/`);
+      } else if (entry.name.endsWith(".rs")) {
+        sources.push({ file: path, text: readFileSync(join(root, path), "utf8") });
+      }
+    }
+  };
+  for (const c of crates) walk(c.dir);
+  return sources;
+}
+
+/** `git diff` で変わったファイル。base が無い (新しいブランチ・全 0) か取れなければ undefined (すべてを動かす)。 */
+function changedFiles(base, head) {
+  if (!base || /^0+$/.test(base)) return undefined;
+  try {
+    const out = execFileSync("git", ["diff", "--name-only", "--no-renames", base, head], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return out.split("\n").filter((line) => line !== "");
+  } catch {
+    return undefined;
+  }
+}
+
 function metadata() {
   return JSON.parse(
     execFileSync("cargo", ["metadata", "--no-deps", "--format-version", "1"], {
@@ -207,7 +401,12 @@ function main([command, group, ...rest]) {
   switch (command) {
     case "check": {
       const meta = metadata();
-      const errors = [...validate(GROUPS, meta), ...validateOs(OS_CRATES, meta)];
+      const crates = workspaceCrates(meta);
+      const errors = [
+        ...validate(GROUPS, meta),
+        ...validateOs(OS_CRATES, meta),
+        ...validateDocsReads(rustSources(meta.workspace_root, crates), crates),
+      ];
       for (const e of errors) console.error(`error: ${e}`);
       if (errors.length === 0) console.log(`groups ok (${Object.keys(GROUPS).length} groups)`);
       return errors.length > 0 ? 1 : 0;
@@ -246,12 +445,25 @@ function main([command, group, ...rest]) {
       }
       return 0;
     }
-    case "matrix": {
-      const include = Object.entries(GROUPS).map(([name, def]) => ({
+    case "changed": {
+      const files = changedFiles(group, rest[0] ?? "HEAD");
+      const result =
+        files === undefined
+          ? { groups: Object.keys(GROUPS), web: true }
+          : affected(files, GROUPS, workspaceCrates(metadata()));
+      const include = result.groups.map((name) => ({
         group: name,
-        tauri: def.tauri ?? false,
+        tauri: GROUPS[name].tauri ?? false,
       }));
-      console.log(JSON.stringify({ include }));
+      console.error(
+        files === undefined
+          ? `base ${group || "(none)"} からの差分が取れないので、すべてを動かす`
+          : `${files.length} 個のファイルが変わった`,
+      );
+      console.error(`groups: ${result.groups.join(" ") || "(none)"} / web: ${result.web}`);
+      console.log(`matrix=${JSON.stringify({ include })}`);
+      console.log(`rust=${result.groups.length > 0}`);
+      console.log(`web=${result.web}`);
       return 0;
     }
     case "list": {
@@ -262,7 +474,7 @@ function main([command, group, ...rest]) {
     }
     default:
       console.error(
-        "usage: node scripts/ci-groups.mjs <check|args <group> [--all-features]|crate-args <crate>|os <clippy|test>|matrix|list>",
+        "usage: node scripts/ci-groups.mjs <check|args <group> [--all-features]|crate-args <crate>|os <clippy|test>|changed <base> [<head>]|list>",
       );
       return 1;
   }

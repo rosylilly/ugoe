@@ -735,7 +735,7 @@ node bindings/web/examples/timing/serve.mjs              # 手元のブラウザ
   `measure.mjs` はこれを読み、ページを `--runs` 回開き直した中央値と、測った前後の load average も出します。
 - `measure.mjs --max-us 300` は `update` と `follow` の中央値を上限と比べ、超えたものを `OVER` と示して終了コード 1 で終わります
   (超えたらページを開き直して 2 回まで測り直す。判定は `check.mjs`、単体テストは `check.test.mjs`)。ビルドから比較までは `just perf-wasm`
-  (`just perf` に含まれる。週に 1 度の CI の perf.yml も流す。[docs/testing.md#遅くなったら気づく検査](../../docs/testing.md#遅くなったら気づく検査))。
+  (`just perf` に含まれる。CI の release-checks.yml が呼ぶ perf.yml も流す。[docs/testing.md#遅くなったら気づく検査](../../docs/testing.md#遅くなったら気づく検査))。
 
 ## リリース
 
@@ -756,12 +756,14 @@ npm への公開は、パッケージを使う人 (このリポジトリを持�
 2. `package.json` から `"private": true` を消してコミットします (消すかどうかは利用者の判断です)。
 3. CI から公開するなら、次のどちらかを用意します。
    - npm の **trusted publishing**: npm のパッケージの設定で、GitHub のこのリポジトリとワークフロー
-     `web-runtime-release.yml` を信頼する発行元にします (トークンは要りません)。最初の版は手で公開する必要があります。
+     `release.yml` を信頼する発行元にします (トークンは要りません)。`web-runtime-release.yml` はタグの push で動く `release.yml` から
+     呼ばれるワークフロー (`workflow_call`) で、npm は呼んだ側のワークフローの名前で照合する見込みです (まだ確かめていない。
+     手での起動から公開するなら `web-runtime-release.yml` が呼んだ側になる)。最初の版は手で公開する必要があります。
    - **トークン**: npm の automation トークン (公開の権限) を、リポジトリのシークレット `NPM_TOKEN` に置きます。
 
 ### 公開する
 
-- **CI (推奨):** クレートの版を上げたコミットに `v<版>` のタグを付けて push します。`.github/workflows/web-runtime-release.yml` が、
+- **CI (推奨):** クレートの版を上げたコミットに `v<版>` のタグを付けて push します。`release.yml` が重い検査 (`release-checks.yml`) を通してから `.github/workflows/web-runtime-release.yml` を呼び、
   タグ・クレート・`package.json` の版が揃っているかを確かめ、wasm と TypeScript をビルドし、型検査・テスト・ライセンスの検査の後、
   来歴 (provenance) を付けて `npm publish` します。手で起動したとき (workflow_dispatch) は、既定で `--dry-run` です。
 - **手元:** リポジトリのルートで次を実行します。

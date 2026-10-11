@@ -30,7 +30,7 @@ UGOE_E2E_TRACKING_MS=60000 just e2e --only studio --no-build  # 重い検出の�
 | (あれば) xwd と ImageMagick | 失敗したときに画面全体のスクリーンショットを撮る |
 
 足りないものがあれば、入れ方を出して止まる (終了コード 2)。gnome-keyring-daemon だけは無くても流せる (飛ばした筋書きは node:test の skip になる)。`just ci` には含めない (道具が要り、アプリのビルドが重いため)。
-CI では `.github/workflows/e2e.yml` が流す ([docs/testing.md](../../docs/testing.md#実機の-e2e-テスト))。
+CI では `.github/workflows/e2e.yml` が流す (push・PR ごとではなく、`release-checks.yml` が手での起動・月に 2 回・リリースの前に呼ぶ。[docs/testing.md](../../docs/testing.md#実機の-e2e-テスト))。
 
 ## 流れ
 

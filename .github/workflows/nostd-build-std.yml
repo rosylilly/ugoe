@@ -3,16 +3,16 @@ name: No-std build-std
 # core と alloc が配られない tier 3 のターゲット (ゲーム機。aarch64-nintendo-switch-freestanding と、64 ビットのアトミック操作の無い
 # armv6k-nintendo-3ds) で、nightly の -Zbuild-std で ugoe-ffi の std の無い静的ライブラリを作り、未解決のシンボルが決めた一覧
 # (`just nostd-check` と同じ 6 つ) と同じかを確かめる (`just nostd-build-std`。crates/ugoe-ffi/README.md、docs/testing.md、T0495・T0071)。
-# nightly が要り、nightly の変更で壊れても PR を止めたくないので、PR ごとの CI (ci.yml) には入れず、週に 1 度と手動で流す。
+# nightly が要り、nightly の変更で壊れても PR を止めたくないので、push・PR ごとの CI (ci.yml) には入れず、release-checks.yml
+# (手での起動・定期・リリースの前) が呼ぶ。単独でも手で起動できる (T0091)。
 # fuzz.yml とは分ける (失敗の意味と直し方が違い、片方だけを手動で流せるように。fuzz の matrix と corpus のキャッシュにも混ぜない)。
 on:
-  schedule:
-    # 毎週月曜 04:47 (UTC)。fuzz.yml (04:23) と少しずらす
-    - cron: "47 4 * * 1"
+  workflow_call:
   workflow_dispatch:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: nostd-build-std-${{ github.ref }}
   cancel-in-progress: true
 
 env:

@@ -59,7 +59,7 @@ node bindings/unity/build.mjs --plugins <dir>   # CI の成果物のライブラ
   `net48` には無い)。`net48` の参照アセンブリは NuGet の `Microsoft.NETFramework.ReferenceAssemblies` から取るので、Windows 以外でも
   Developer Pack は要らない。Unity の「.NET Framework」の実際の参照アセンブリ (Mono の) とは一致しないので、厳しめの近似として扱う。
 - `--check` には .NET SDK (8 以降) が要る (無ければ入れ方を示して止まる)。これらは `just ci` に含まれない。
-  CI では `.github/workflows/unity.yml` が、`check` (= `just unity-check`)、`native` (下の表の各プラットフォームの
+  CI では `.github/workflows/unity.yml` (`release-checks.yml` が手での起動・月に 2 回・リリースの前に呼ぶ。単独でも手で起動できる) が、`check` (= `just unity-check`)、`native` (下の表の各プラットフォームの
   リリースビルド)、`package` (ライブラリを `Runtime/Plugins/` に並べた `com.ugoe.unity` と、その UPM の tarball を成果物に残す。
   公開はしない。[リリース](#リリース)) を実行する。
 - `.meta` の GUID はパッケージの中のパスから決める (作り直しても変わらない)。Unity は `.meta` の無いファイルを
@@ -354,8 +354,9 @@ node bindings/unity/release.mjs pack dist          # dist/com.ugoe.unity-<版>.t
   **Add package from tarball...** か、`manifest.json` の `"com.ugoe.unity": "file:<パス>/com.ugoe.unity-<版>.tgz"` で入る)。
   `build.mjs` の `PLUGINS` のすべてのライブラリと `.meta`、見本のモデルが入っていなければ失敗する
   (`--allow-missing` で、手元の OS の分だけの tarball も作れる)。
-- **CI:** `v<版>` のタグを push すると `.github/workflows/unity.yml` が動き、`package` のジョブが版を確かめてから tarball を作り、
+- **CI:** `v<版>` のタグを push すると `release.yml` の重い検査 (`release-checks.yml`) の一部として `.github/workflows/unity.yml` が動き、`package` のジョブが版を確かめてから tarball を作り、
   成果物 `com.ugoe.unity-tarball` (tarball と SHA-256) に残す。ブランチでも同じ tarball を作る (版の照合はタグと比べない)。
+  tarball はほかの検査と並んで作られるので、Release に添付するのは `release.yml` の run 全体が通ってから。
 - **公開は手で行う:** 成果物をダウンロードし、GitHub の Release に添付する (利用者は tarball をダウンロードして入れる)。
   スコープ付きのレジストリ (OpenUPM や自前の npm レジストリ) に置くなら、tarball をそのまま `npm publish <tgz> --registry <URL>`
   できる。OpenUPM は Git のタグからパッケージを作るので、ネイティブライブラリをコミットしないこのリポジトリのままでは使えない。

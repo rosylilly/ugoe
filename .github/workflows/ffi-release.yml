@@ -2,26 +2,22 @@ name: C ABI release
 
 # C ABI の配布物 (ugoe-ffi の共有ライブラリ・静的ライブラリ・ヘッダ・LICENSE・README・C の見本) を OS ごとのランナーで作り、
 # アーカイブの中のヘッダとライブラリだけで C の見本をビルドして動かす (docs/release.md#c-abi-の配布物)。
-# - `v*` のタグ (ほかの配布物と同じ。すべての配布物の版を揃える) では、タグとクレートの版が揃っているかを確かめ、
+# - `v*` のタグ (release.yml が重い検査 (release-checks.yml) を通してから呼ぶ。ほかの配布物と同じ。すべての配布物の版を揃える) では、
+#   タグとクレートの版が揃っているかを確かめ、
 #   アーカイブをタグの GitHub Release の下書きに添付する (scripts/github-release.mjs。docs/release.md#github-release-の下書き)。
 #   Release を公開するのは人の手。
-# - unity.yml も ugoe-ffi を OS ごとにビルドするが、共有しない。unity.yml は main と PR で crates/ を触るたびに動き、Android・iOS を含む
-#   Unity のプラグインの並びを作る。こちらはタグと配布物のスクリプトを触ったときだけ動き、静的ライブラリ・ヘッダ・検査を含む。
-#   ugoe-ffi のビルドは 1 分ほどなので、重ねても時間はわずかで、2 つのワークフローの動く条件と成果物を独立に保てる。
+# - 手での起動 (workflow_dispatch) はアーカイブを作って確かめるだけ。Windows・macOS のランナーを使うので、PR では動かさない
+#   (配布物のスクリプトの単体テストは `just script-check`。T0091)。
+# - unity.yml も ugoe-ffi を OS ごとにビルドするが、共有しない。unity.yml は Android・iOS を含む Unity のプラグインの並びを作り、
+#   こちらは静的ライブラリ・ヘッダ・検査を含む。ugoe-ffi のビルドは 1 分ほどなので、重ねても時間はわずかで、2 つのワークフローの
+#   成果物を独立に保てる。
 on:
-  push:
-    tags: ["v*"]
-  pull_request:
-    paths:
-      - "crates/ugoe-ffi/archive/**"
-      - "scripts/ffi.mjs"
-      - "scripts/ffi-dist.mjs"
-      - "scripts/github-release.mjs"
-      - ".github/workflows/ffi-release.yml"
+  workflow_call:
   workflow_dispatch:
 
+# 呼ばれたとき (workflow_call) の github.workflow は呼んだ側の名前になるので、グループの名前は書いて決める
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ffi-release-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
