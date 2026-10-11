@@ -84,6 +84,8 @@ jobs:
           shared-key: cross
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Clippy
         run: just cross-check
 
@@ -123,6 +125,8 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Clippy
         run: just lint-os
       - name: Test
@@ -190,6 +194,8 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       # --nocapture でテストが選んだアダプタ (名前・ドライバ・バックエンド) をログに残す
       - name: GPU tests
         run: just test-gpu -- --nocapture
@@ -256,6 +262,8 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Godot binding
         run: just godot-check
       - name: Godot conformance (Forward+ on lavapipe)
@@ -325,6 +333,8 @@ jobs:
           shared-key: conformance
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Resolve wasm-bindgen version
         id: wasm-bindgen
         run: echo "version=$(just wasm-bindgen-version)" >> "$GITHUB_OUTPUT"

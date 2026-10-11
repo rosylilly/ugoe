@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers case-check local-paths repo-url secrets refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
+ci: fmt-check lint sdk-no-render-check test layers case-check local-paths repo-url secrets actionlint refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -186,6 +186,12 @@ repo-url:
 # 既定は履歴のすべて。`just secrets --since <rev>` で `<rev>..HEAD` のコミットだけ (CI の push・PR の差分)
 secrets *args:
     @node scripts/secrets.mjs {{args}}
+
+# GitHub Actions のワークフローと composite action を actionlint で検査する (`run:` のシェルは shellcheck で)。actionlint と shellcheck の
+# 版と sha256 は scripts/actionlint.mjs で固定し、初回にメインの作業ツリーの target/tools/ へ取得する (手元に入っているものは使わない)。
+# 引数はそのまま actionlint に渡す: `just actionlint .github/workflows/ci.yml`
+actionlint *args:
+    @node scripts/actionlint.mjs {{args}}
 
 # 一覧は scripts/tool-updates.mjs の PINNED_TOOLS、上げ方は docs/release.md#固定した道具の版。比べるだけで版は書き換えず、新しい版があっても
 # 落ちない。ネットワークを使うので `just ci` には含めない (CI は release-checks.yml の tool-updates)。`--list` で一覧だけ (ネットワークを使わない)。
@@ -411,9 +417,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、秘密の値の検査の道具の取得と範囲 scripts/secrets.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、秘密の値の検査の道具の取得と範囲 scripts/secrets.mjs、ワークフローの検査の道具の版 scripts/actionlint.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/secrets.test.mjs scripts/tool-updates.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
+    @node --test --test-reporter=dot scripts/actionlint.test.mjs scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/secrets.test.mjs scripts/tool-updates.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
 # 下書きの Release への添付 (scripts/github-release.mjs) の検査

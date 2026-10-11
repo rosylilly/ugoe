@@ -57,6 +57,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Format
         run: cargo fmt --all -- --check
       - name: Layers
@@ -76,6 +78,9 @@ jobs:
         env:
           SINCE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: just secrets --since "$SINCE"
+      # ワークフローと composite action (actionlint と shellcheck。版は scripts/actionlint.mjs で固定)
+      - name: Actionlint
+        run: just actionlint
       # コードから文書の見出しへの参照と、C ABI のヘッダとバインディングの宣言の突き合わせ
       - name: Refs
         run: just refs
@@ -186,6 +191,8 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       - name: Clippy
         run: just lint-group ${{ matrix.group }}
       - name: Test
@@ -299,6 +306,8 @@ jobs:
           shared-key: web
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない
       - name: Resolve wasm-bindgen version
         id: wasm-bindgen

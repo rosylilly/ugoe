@@ -90,6 +90,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       # wasm-bindgen-cli は Cargo.lock の wasm-bindgen と同じ版でなければならない
       - name: Resolve wasm-bindgen version
         id: wasm-bindgen

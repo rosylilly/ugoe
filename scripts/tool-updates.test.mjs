@@ -1,5 +1,7 @@
 // scripts/tool-updates.mjs の単体テスト (`just script-check` が実行する)。上流には問い合わせない (fetch を差し替える)。
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   checkTool,
@@ -10,6 +12,8 @@ import {
   pickLatest,
   readPins,
   resultTable,
+  SETUP_JUST_VERSION,
+  SETUP_JUST_WORKFLOWS,
 } from "./tool-updates.mjs";
 
 describe("parseVersion", () => {
@@ -140,6 +144,34 @@ describe("readPins", () => {
     const { pins, problems } = readPins();
     assert.deepEqual(problems, []);
     assert.equal(pins.length, PINNED_TOOLS.length);
+  });
+});
+
+describe("setup-just の版", () => {
+  const workflows = join(import.meta.dirname, "..", ".github", "workflows");
+
+  it("版の写しの正規表現は with: の just-version を読み、行末のコメントを含めない", () => {
+    const text = [
+      "      - uses: extractions/setup-just@v4",
+      "        with:",
+      "          just-version: 1.58.0  # .tool-versions の just と同じ版",
+    ].join("\n");
+    assert.deepEqual(
+      [...text.matchAll(SETUP_JUST_VERSION)].map((m) => m[1]),
+      ["1.58.0"],
+    );
+  });
+
+  it("setup-just を使うワークフローはすべて一覧にあり、どの setup-just も just-version を渡す", () => {
+    const using = [];
+    for (const name of readdirSync(workflows).filter((n) => /\.ya?ml$/.test(n))) {
+      const text = readFileSync(join(workflows, name), "utf8");
+      const uses = text.match(/uses: extractions\/setup-just@/g)?.length ?? 0;
+      if (uses === 0) continue;
+      using.push(`.github/workflows/${name}`);
+      assert.equal([...text.matchAll(SETUP_JUST_VERSION)].length, uses, name);
+    }
+    assert.deepEqual(using.sort(), [...SETUP_JUST_WORKFLOWS].sort());
   });
 });
 

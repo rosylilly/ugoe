@@ -26,6 +26,27 @@ const PLAIN_TAG = /^v?(\d+(?:\.\d+)*)$/;
 const USER_AGENT = "ugoe-tool-updates (https://github.com/rosylilly/ugoe)";
 
 /**
+ * ワークフローの `extractions/setup-just` に渡す just の版 (`.tool-versions` の写し)。すべての setup-just が `with:` の
+ * `just-version` を持つことは単体テストが確かめる。
+ */
+export const SETUP_JUST_VERSION =
+  /uses: extractions\/setup-just@\S+\n\s*with:\n\s*just-version: ([^\s#]+)/g;
+
+/** setup-just を使うワークフロー (足したらここにも足す。漏れは単体テストが見つける)。 */
+export const SETUP_JUST_WORKFLOWS = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/e2e.yml",
+  ".github/workflows/editor-build.yml",
+  ".github/workflows/fuzz.yml",
+  ".github/workflows/nostd-build-std.yml",
+  ".github/workflows/perf.yml",
+  ".github/workflows/release-checks.yml",
+  ".github/workflows/release-notes.yml",
+  ".github/workflows/unity.yml",
+  ".github/workflows/web-runtime-release.yml",
+];
+
+/**
  * 版を固定した道具の一覧。
  * - `pin`: 版を書いた元の場所 (リポジトリのルートからのファイルと、版を 1 つ目の組で取り出す正規表現)。
  * - `mirrors`: 同じ版を写した場所 (正規表現は `g` 付き。合うものがすべて pin と同じ版で、1 つ以上合わなければならない)。
@@ -40,6 +61,20 @@ export const PINNED_TOOLS = [
     mirrors: [{ file: "scripts/secrets.mjs", pattern: /releases\/download\/v([^/]+)\/gitleaks_/g }],
     upstream: { github: "gitleaks/gitleaks" },
     bump: "copy the sha256 of GITLEAKS_ASSETS from the release's checksums.txt; run `just secrets`",
+  },
+  {
+    name: "actionlint",
+    pin: { file: "scripts/actionlint.mjs", pattern: /ACTIONLINT_VERSION = "([^"]+)"/ },
+    mirrors: [{ file: "scripts/actionlint.mjs", pattern: /actionlint_([\d.]+)_/g }],
+    upstream: { github: "rhysd/actionlint" },
+    bump: "copy the sha256 of ACTIONLINT_ASSETS from the release's checksums.txt; run `just actionlint`",
+  },
+  {
+    name: "shellcheck",
+    pin: { file: "scripts/actionlint.mjs", pattern: /SHELLCHECK_VERSION = "([^"]+)"/ },
+    mirrors: [{ file: "scripts/actionlint.mjs", pattern: /shellcheck-v([\d.]+)[./]/g }],
+    upstream: { github: "koalaman/shellcheck" },
+    bump: "copy the sha256 of SHELLCHECK_ASSETS from the release assets' digest; run `just actionlint`",
   },
   {
     name: "cargo-about",
@@ -133,9 +168,9 @@ export const PINNED_TOOLS = [
   {
     name: "just",
     pin: { file: ".tool-versions", pattern: /^just (\S+)$/m },
-    mirrors: [],
+    mirrors: SETUP_JUST_WORKFLOWS.map((file) => ({ file, pattern: SETUP_JUST_VERSION })),
     upstream: { github: "casey/just" },
-    bump: "CI's setup-just takes the latest just regardless; `just ci`",
+    bump: "change `just-version` of every extractions/setup-just in the workflows too; `just ci`",
   },
 ];
 

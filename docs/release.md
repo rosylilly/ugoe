@@ -83,7 +83,9 @@
 - **PR の運用へ移る:** 公開するまでは、オーケストレーターが手元の main にマージを重ねてまとめて push しています。公開したら、
   タスクごとに PR を作って `ci.yml` の検査を通してからマージする運用に移ります。必須の検査は `ci.yml` の `rust`・`web`・`rust-checks`
   (`release-checks.yml` は PR で動かないので入れない)。公開の前に、手元の main を push し終えておきます
-  ([multi-agent.md](workflow/multi-agent.md#main-を-push-する区切り)。T0099)。
+  ([multi-agent.md](workflow/multi-agent.md#main-を-push-する区切り)。T0099)。PR の運用に移ったら、Dependabot の version updates
+  (`.github/dependabot.yml`) を `github-actions`・`cargo`・`npm` について入れます (PR が自動で作られるので、それまでは入れない。
+  利用者の決定 2026-10-12。[固定した道具の版](#固定した道具の版))。
 - **Secrets:** 公開しても Secrets の値は見えませんが、書き込める人のワークフローからは読めます。公開に使うもの
   (`CARGO_REGISTRY_TOKEN`・`NPM_TOKEN`・`APPLE_*`・`AZURE_*`) は environment に置き、Deployment branches and tags を `v*` に絞り、
   required reviewers を付けます ([crates.io](#cratesio)・[Secrets を置く](#secrets-を置く-初回だけ人の手))。
@@ -648,7 +650,7 @@ git-cliff (MIT OR Apache-2.0、Rust 製) を使います。外部の道具を足
 
 ## 固定した道具の版
 
-手元と CI で使う道具のうち、版を手で固定したもの (gitleaks・cargo-about・git-cliff・cbindgen・cargo-ndk・tauri-driver・
+手元と CI で使う道具のうち、版を手で固定したもの (gitleaks・actionlint・shellcheck・cargo-about・git-cliff・cbindgen・cargo-ndk・tauri-driver・
 artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が見ないので、新しい版 (脆弱性の修正を含む) に自分で気づく
 必要があります。
 
@@ -662,8 +664,9 @@ artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が�
   上流を読めなくてもジョブは落としません (リリースの前の検査を止めないため)。上流は main と関係なく進むので、`gate` を待たず毎回動きます。
   Node.js のように古いメジャー版の修正が後から出る道具のため、最新とは別に「固定したメジャー版の中の最新」も出します。
 - **固定していないもの:** cargo-fuzz・cargo-xwin は版を決めずに最新を入れます。wasm-bindgen-cli は `Cargo.lock` の wasm-bindgen と同じ版
-  (`just wasm-bindgen-version`) で、依存として上げます。CI の just は `extractions/setup-just` が最新を入れ、`.tool-versions` の版は
-  手元 (asdf など) だけのものです。
+  (`just wasm-bindgen-version`) で、依存として上げます。
+- **CI の just:** `extractions/setup-just` の `just-version` に `.tool-versions` と同じ版を書きます (setup-just は版のファイルを
+  読まないので写す)。写しは `PINNED_TOOLS` の just の `mirrors` で、setup-just を使うのに版を渡さないワークフローがあると単体テストが落ちます。
 
 ### 版を上げる
 
@@ -673,6 +676,8 @@ artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が�
 | 道具 | 上げるときにすること |
 | --- | --- |
 | gitleaks | Release の `gitleaks_<版>_checksums.txt` から `GITLEAKS_ASSETS` の sha256 を写し、`just secrets` で履歴のすべてが通るのを確かめる ([自動の検査](#自動の検査)) |
+| actionlint | Release の `actionlint_<版>_checksums.txt` から `scripts/actionlint.mjs` の `ACTIONLINT_ASSETS` の sha256 を写し、`just actionlint` で新しい指摘を直す |
+| shellcheck | Release に checksums のファイルが無いので、`gh api repos/koalaman/shellcheck/releases/tags/v<版>` の各ファイルの `digest` から `SHELLCHECK_ASSETS` の sha256 を写し、`just actionlint` で新しい指摘を直す |
 | cargo-about | `just cargo-about` で入れ直し、`just notices` の差分を読む ([同梱物のライセンスの表記](#同梱物のライセンスの表記)) |
 | git-cliff | `just changelog` の出力を前の版と比べる ([道具](#道具)) |
 | cbindgen | `just ffi-header` でヘッダを作り直してコミットし、`just ffi-check` (crates/ugoe-ffi/README.md) |
@@ -683,12 +688,12 @@ artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が�
 | Rust | `rust-toolchain.toml` を変え、新しい clippy の指摘を直してから `just ci`・`just wasm-check`・`just nostd-check` |
 | Node.js | `.tool-versions` を変え (CI もこの版を使う)、`just ci` |
 | pnpm | `package.json` の `packageManager` を変え、`pnpm install` でロックファイルが変われば一緒にコミットする |
-| just | `.tool-versions` を変える (CI は最新を使うので、手元を CI に合わせるだけ) |
+| just | `.tool-versions` と、ワークフローの `extractions/setup-just` の `just-version` をすべて変え、`just ci` |
 
 GitHub Actions の action (`actions/checkout@v7` などのメジャー版のタグ) はこの一覧に入れません。Dependabot の version updates の
 `github-actions` (`.github/dependabot.yml`) が、ワークフローと `.github/actions/` の composite action の `uses:` を見て、新しい
-メジャー版のタグへ上げる PR を作れます。今は `.github/dependabot.yml` を置いていません (置くと PR が自動で作られるので、置くかは
-リポジトリを持つ人が決める。T1004 のメモ)。
+メジャー版のタグへ上げる PR を作れます。今は `.github/dependabot.yml` を置いていません。PR の運用に移った後に、github-actions・cargo・npm をまとめて入れます
+(利用者の決定 2026-10-12。[人がすること](#人がすること)の「PR の運用へ移る」)。
 
 ## macOS の仮想カメラ
 

@@ -32,6 +32,8 @@ jobs:
       - name: Install nightly with rust-src and llvm-tools
         run: rustup toolchain install nightly --profile minimal --component rust-src,llvm-tools
       - uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0  # .tool-versions の just と同じ版
       # Swatinem/rust-cache は使わない (nightly が毎回変わり、キャッシュの鍵の rustc の版が一致しないため)。
       # 失敗したターゲットがあっても残りのターゲットを続け、最後に失敗する
       - name: Build the ugoe-ffi staticlib with -Zbuild-std

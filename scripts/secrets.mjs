@@ -3,7 +3,7 @@
 // (T0098。`just secrets`。docs/release.md#自動の検査)。
 //
 // gitleaks は版と sha256 を固定し (下の GITLEAKS_VERSION と GITLEAKS_ASSETS)、GitHub の Release から
-// `<メインの作業ツリー>/target/tools/gitleaks-<版>/` に取得する (worktree でも共有する。リポジトリには置かない)。
+// `<メインの作業ツリー>/target/tools/gitleaks-<版>/` に取得する (scripts/lib/release-tool.mjs。worktree でも共有する。リポジトリには置かない)。
 // 設定は scripts/gitleaks.toml (既定の規則と、秘密の値ではないものを外す allowlist)。
 //
 // 見るものは 2 つ:
@@ -16,10 +16,10 @@
 // 見つけた値はログに出さない (`--redact`。CI のログは公開すると見える)。
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { ensureReleaseTool } from "./lib/release-tool.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -149,13 +149,6 @@ function tryGit(args) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-/** メインの作業ツリー (worktree なら、その元)。道具はその target/ に置いて共有する。 */
-function mainWorktree() {
-  const common = tryGit(["rev-parse", "--git-common-dir"]);
-  if (!common) return root;
-  return dirname(isAbsolute(common) ? common : resolve(root, common));
-}
-
 /** 固定した版の gitleaks を (無ければ取得して sha256 を確かめてから) 用意し、実行ファイルのパスを返す。 */
 async function ensureGitleaks() {
   const asset = assetFor();
@@ -164,27 +157,13 @@ async function ensureGitleaks() {
       `gitleaks ${GITLEAKS_VERSION} is not set up for ${process.platform}-${process.arch} (scripts/secrets.mjs の GITLEAKS_ASSETS)`,
     );
   }
-  const dir = join(mainWorktree(), "target", "tools", `gitleaks-${GITLEAKS_VERSION}`);
-  const exe = join(dir, process.platform === "win32" ? "gitleaks.exe" : "gitleaks");
-  if (existsSync(exe)) return exe;
-
-  const url = assetUrl(asset);
-  console.log(`downloading ${url}`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`failed to download ${url}: ${res.status} ${res.statusText}`);
-  const data = Buffer.from(await res.arrayBuffer());
-  const sha = createHash("sha256").update(data).digest("hex");
-  if (sha !== asset.sha256) {
-    throw new Error(`sha256 mismatch for ${asset.file}: expected ${asset.sha256}, got ${sha}`);
-  }
-  mkdirSync(dir, { recursive: true });
-  const archive = join(dir, asset.file);
-  writeFileSync(archive, data);
-  // tar.gz と zip のどちらも tar で展開する (Windows の tar は bsdtar で zip も読める)
-  const r = spawnSync("tar", ["-xf", archive, "-C", dir], { stdio: "inherit" });
-  rmSync(archive, { force: true });
-  if (r.status !== 0 || !existsSync(exe)) throw new Error(`failed to extract ${asset.file}`);
-  return exe;
+  return ensureReleaseTool({
+    root,
+    name: "gitleaks",
+    version: GITLEAKS_VERSION,
+    asset: { ...asset, exe: process.platform === "win32" ? "gitleaks.exe" : "gitleaks" },
+    url: assetUrl(asset),
+  });
 }
 
 /** 浅い clone のときに、範囲 `<since>..HEAD` のコミットがすべてそろうまで深くする。そろえば true。 */
