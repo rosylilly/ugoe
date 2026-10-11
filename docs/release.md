@@ -62,6 +62,10 @@
   マージの方法 (squash・rebase・merge commit) をそろえ、「Automatically delete head branches」を有効にします。
 - **ブランチとタグの保護 (Rulesets):** `main` は PR を通さない push・force push・削除を禁じ、CI (`ci.yml` のジョブ) を必須の
   チェックにします。`v*` のタグは公開のワークフロー (crates.io・npm・インストーラ・C ABI) を動かすので、作れる人を限ります。
+- **PR の運用へ移る:** 公開するまでは、オーケストレーターが手元の main にマージを重ねてまとめて push しています。公開したら、
+  タスクごとに PR を作って `ci.yml` の検査を通してからマージする運用に移ります。必須の検査は `ci.yml` の `rust`・`web`・`rust-checks`
+  (`release-checks.yml` は PR で動かないので入れない)。公開の前に、手元の main を push し終えておきます
+  ([multi-agent.md](workflow/multi-agent.md#main-を-push-する区切り)。T0099)。
 - **Secrets:** 公開しても Secrets の値は見えませんが、書き込める人のワークフローからは読めます。公開に使うもの
   (`CARGO_REGISTRY_TOKEN`・`NPM_TOKEN`・`APPLE_*`・`AZURE_*`) は environment に置き、Deployment branches and tags を `v*` に絞り、
   required reviewers を付けます ([crates.io](#cratesio)・[Secrets を置く](#secrets-を置く-初回だけ人の手))。
