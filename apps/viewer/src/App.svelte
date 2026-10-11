@@ -1,5 +1,10 @@
 <script lang="ts">
-import { FaceTracker, TrackingPanel } from "@ugoe/face-tracking";
+import {
+  FaceTracker,
+  loadStoredTuning,
+  saveStoredTuning,
+  TrackingPanel,
+} from "@ugoe/face-tracking";
 import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
   announce,
@@ -43,7 +48,7 @@ import PosePanel from "./lib/PosePanel.svelte";
 import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
 import { screenshotErrorText, screenshotFileName } from "./lib/screenshot";
-import { loadTrackingTuning, saveTrackingTuning } from "./lib/trackingTuning";
+import { STORAGE_KEYS } from "./lib/storageKeys";
 import Viewport from "./lib/Viewport.svelte";
 import { loadWasm } from "./lib/wasm/load";
 
@@ -57,9 +62,9 @@ window.__UGOE_VIEWER__ = player;
 const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
 // トラッキングの調整は覚えて、開き直しても戻す (T0738。既定値はキーを消す)。
-tracker.setTuning(loadTrackingTuning());
+tracker.setTuning(loadStoredTuning(STORAGE_KEYS["tracking.tuning"]));
 $effect(() => {
-  saveTrackingTuning(tracker.tuning);
+  saveStoredTuning(STORAGE_KEYS["tracking.tuning"], tracker.tuning);
 });
 
 let dropping = $state(false);

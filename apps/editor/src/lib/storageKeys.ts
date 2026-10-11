@@ -25,6 +25,8 @@ export const STORAGE_KEYS = {
   timelineHeight: "ugoe.editor.timelineHeight",
   /** 右の列の上下の分け方 (lib/layout.ts)。 */
   rightSplit: "ugoe.editor.rightSplit",
+  /** プレビューのフェイストラッキングの調整 (感度と境目。JSON。preview/preview.svelte.ts。T1678)。 */
+  trackingTuning: "ugoe.editor.trackingTuning",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

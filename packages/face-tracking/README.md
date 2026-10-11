@@ -110,9 +110,12 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 - **型と既定値:** `TrackingTuning`・`DEFAULT_TUNING`・`sanitizeTuning` は `@ugoe/face-tracking/tuning` からも読める (型のほかに何も
   import しないので、Node で読める。スタジオの `src/lib/inputs.ts` の既定値と ui-audit の偽のホストが使う)。調整を覚えるアプリは
   これで既定値を作り、読み込んだ値を収め直す。
-- **保存:** パッケージは持つだけで保存しない。スタジオはプロファイルの `input.tuning` に保存する ([docs/studio.md](../../docs/studio.md#入力とホットキーの項目-t0803))。
-  ビューアは `localStorage` の `ugoe.viewer.tracking.tuning` に覚える ([apps/viewer/README.md](../../apps/viewer/README.md#フェイストラッキング-t0703)。T0738)。
-  エディタは保存しない (開き直すと既定値)。
+- **保存:** `FaceTracker` は持つだけで保存しない。スタジオはプロファイルの `input.tuning` に保存する ([docs/studio.md](../../docs/studio.md#入力とホットキーの項目-t0803))。
+  ビューアとエディタは `localStorage` に覚える (`src/tuningStorage.ts` の `loadStoredTuning(key, storage?)`・`saveStoredTuning(key, tuning, storage?)`。
+  キーはアプリが渡す。ビューアは `ugoe.viewer.tracking.tuning` ([apps/viewer/README.md](../../apps/viewer/README.md#フェイストラッキング-t0703)。T0738)、
+  エディタは `ugoe.editor.trackingTuning` ([docs/editor.md](../../docs/editor.md#覚える値)。T1678))。読むときは `sanitizeTuning` を通すので、
+  壊れた値・範囲の外・知らない項目は既定値になる。既定値ならキーを消す。読み書きは `@ugoe/i18n` の `readStoredItem` などを通す
+  (使えない localStorage でも例外を出さない)。`tuning.ts` は型のほかに何も import しないので、別のファイルに置く。
 - **決めたこと:**
   - 瞼の左右は既定で一緒 (T0877): 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (向きで揺れる差を固定の値で直すと、正面で
     片目だけ閉じきる) ため。スライダーの数も半分になる。片目だけ瞼が下がりやすい人・片目だけ眼鏡の反射で検出が弱い人のために、

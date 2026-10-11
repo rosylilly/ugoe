@@ -634,6 +634,10 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
     (`avatar.tracking`) です。止めると `clear_tracking` し、トラッキングが書いていたパラメータを既定値に戻します。
   - 目パチはビューアと同じく、トラッキング中は既定で止めます (「Stop eye blink」)。目パチの段は「Eye blink」と
     トラッキングの指定のどちらも有効なときだけ動きます。プレビューを出るとトラッキングも止まります。
+  - 調整 (感度と境目。T1678): パネルの「調整」は localStorage の `ugoe.editor.trackingTuning` に覚え ([覚える値](#覚える値))、
+    エディタを開き直しても同じ値から始めます (`PreviewMode` を作るときに読んで `tracker.setTuning` に当て、`App.svelte` の `$effect` が
+    `saveTuning` で覚え直す)。読み書きはビューアと同じ `@ugoe/face-tracking` の `loadStoredTuning`・`saveStoredTuning` で、
+    「既定に戻す」でキーを消します。ビューアとはキーが別なので、別々に覚えます。
   - 体のトラッキング (T0645): 同じパネルの「Body (shoulders)」(既定で入れる) で、MediaPipe Pose Landmarker (lite) の
     体の向きと肩の上下も渡します (`setPuppetTracking` が `set_tracking` の体の引数に渡す)。式とキャリブレーションの扱いは
     [spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker](spec/avatar-profile.md#体のトラッキング-mediapipe-pose-landmarker)。
@@ -2397,6 +2401,7 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 | `ugoe.editor.rightWidth` | 右の列の幅 (px) | 320 | 同上 |
 | `ugoe.editor.timelineHeight` | タイムラインの高さ (px) | 窓の高さに合わせる (覚えない) | 同上 |
 | `ugoe.editor.rightSplit` | 右の列のインスペクタの高さの割合 | 0.6 | 同上 |
+| `ugoe.editor.trackingTuning` | フェイストラッキングの調整 (感度と境目) の JSON | 既定値 (既定値ならキーを消す) | [プレビューモード](#プレビューモード)のトラッキングの「調整」(`src/lib/preview/preview.svelte.ts`。読み書きは `@ugoe/face-tracking` の `loadStoredTuning`・`saveStoredTuning`。T1678)。壊れた値・範囲の外は既定値に戻して読む |
 
 ### ダイアログ
 

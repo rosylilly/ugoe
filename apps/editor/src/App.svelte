@@ -99,6 +99,9 @@ lighting.onsaved = () => fileMenu?.refresh();
 void preview.dressUp.load();
 preview.dressUp.onsaved = () => fileMenu?.refresh();
 
+// プレビューのトラッキングの調整は覚えて、開き直しても戻す (T1678。既定値はキーを消す)。
+$effect(() => preview.saveTuning());
+
 // プレビューの光源をビューポートに渡す (編集中もプレビュー中も)。
 $effect(() => viewport.setLighting(lighting.json));
 

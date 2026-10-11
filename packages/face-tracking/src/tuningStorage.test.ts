@@ -1,10 +1,14 @@
-import { DEFAULT_TUNING, type TrackingTuning } from "@ugoe/face-tracking";
 import { BrokenStorage, MemoryStorage } from "@ugoe/i18n/testing";
 import { describe, expect, it } from "vitest";
-import { STORAGE_KEYS } from "./storageKeys";
-import { loadTrackingTuning, saveTrackingTuning } from "./trackingTuning";
+import { DEFAULT_TUNING, type TrackingTuning } from "./tuning";
+import { loadStoredTuning, saveStoredTuning } from "./tuningStorage";
 
-const KEY = STORAGE_KEYS["tracking.tuning"];
+// ビューアのキー (アプリの決めたキーをそのまま使い、ビューアが覚えた値はそのまま読める)。
+const KEY = "ugoe.viewer.tracking.tuning";
+
+const loadTrackingTuning = (storage: Storage) => loadStoredTuning(KEY, storage);
+const saveTrackingTuning = (tuning: TrackingTuning, storage: Storage) =>
+  saveStoredTuning(KEY, tuning, storage);
 
 const TUNED: TrackingTuning = {
   ...DEFAULT_TUNING,
@@ -65,6 +69,14 @@ describe("remembered tracking tuning", () => {
       pitch: { ...DEFAULT_TUNING.pitch, deadZone: 3 },
       jawOpen: { low: 0.3, high: 0.6 },
     });
+  });
+
+  it("keeps each key apart", () => {
+    const storage = new MemoryStorage();
+    saveStoredTuning("ugoe.editor.trackingTuning", TUNED, storage);
+    expect(storage.keys()).toEqual(["ugoe.editor.trackingTuning"]);
+    expect(loadStoredTuning(KEY, storage)).toEqual(DEFAULT_TUNING);
+    expect(loadStoredTuning("ugoe.editor.trackingTuning", storage)).toEqual(TUNED);
   });
 
   it("does not throw when localStorage is unusable", () => {

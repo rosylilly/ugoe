@@ -1,6 +1,9 @@
 // プレビューモードのフェイストラッキングの受け口 (PreviewMode の TrackingTarget、T0636)。WebPuppet とビューポートは偽物。
+import { DEFAULT_TUNING, type TrackingTuning } from "@ugoe/face-tracking";
+import { MemoryStorage } from "@ugoe/i18n/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { EditorDocument } from "../document.svelte";
+import { STORAGE_KEYS } from "../storageKeys";
 import type { FrameDriver, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import type { PreviewMode as PreviewModeType } from "./preview.svelte";
@@ -54,7 +57,7 @@ function fakePuppet(loadWarnings: unknown[] = []) {
   return { puppet: puppet as unknown as WebPuppet, calls, values };
 }
 
-function setup(loadWarnings: unknown[] = []) {
+function setup(loadWarnings: unknown[] = [], storage: Storage = new MemoryStorage()) {
   const { puppet, calls, values } = fakePuppet(loadWarnings);
   let driver: FrameDriver | null = null;
   const viewport = {
@@ -79,7 +82,7 @@ function setup(loadWarnings: unknown[] = []) {
     expressions: [],
     physics: null,
   } as unknown as EditorDocument;
-  const preview = new PreviewMode(doc, viewport);
+  const preview = new PreviewMode(doc, viewport, storage);
   preview.enter();
   calls.length = 0;
   return { preview, puppet, calls, values };
@@ -159,5 +162,49 @@ describe("PreviewMode load warnings", () => {
     expect(preview.warnings).toEqual(["Texture 1 has no image, so it is drawn white."]);
     preview.loaded(puppet);
     expect(preview.warnings).toHaveLength(1);
+  });
+});
+
+describe("PreviewMode remembers the tracking tuning", () => {
+  const KEY = STORAGE_KEYS.trackingTuning;
+  const TUNED: TrackingTuning = {
+    ...DEFAULT_TUNING,
+    yaw: { ...DEFAULT_TUNING.yaw, gain: 1.5, deadZone: 2 },
+    jawOpen: { low: 0.1, high: 0.9 },
+  };
+
+  it("starts from the default when nothing is remembered", () => {
+    const { preview } = setup([], new MemoryStorage());
+    expect(preview.tracker.tuning).toEqual(DEFAULT_TUNING);
+  });
+
+  it("saves the tuning and reads it back when made again", () => {
+    const storage = new MemoryStorage();
+    const { preview } = setup([], storage);
+    preview.tracker.setTuning(TUNED);
+    preview.saveTuning();
+    expect(storage.keys()).toEqual([KEY]);
+    expect(setup([], storage).preview.tracker.tuning).toEqual(TUNED);
+  });
+
+  it("forgets the key when set back to the default", () => {
+    const storage = new MemoryStorage();
+    const { preview } = setup([], storage);
+    preview.tracker.setTuning(TUNED);
+    preview.saveTuning();
+    preview.tracker.setTuning(DEFAULT_TUNING);
+    preview.saveTuning();
+    expect(storage.keys()).toEqual([]);
+  });
+
+  it("reads broken or out-of-range values as the default", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(KEY, "{");
+    expect(setup([], storage).preview.tracker.tuning).toEqual(DEFAULT_TUNING);
+    storage.setItem(KEY, JSON.stringify({ yaw: { gain: 99, deadZone: -5 } }));
+    expect(setup([], storage).preview.tracker.tuning).toEqual({
+      ...DEFAULT_TUNING,
+      yaw: { ...DEFAULT_TUNING.yaw, gain: 4 },
+    });
   });
 });

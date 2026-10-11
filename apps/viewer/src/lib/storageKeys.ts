@@ -12,7 +12,7 @@ export const STORAGE_KEYS = {
   locale: "ugoe.viewer.locale",
   /** テーマ (@ugoe/ui の initTheme。index.html も読む)。 */
   theme: "ugoe.viewer.theme",
-  /** フェイストラッキングの調整 (感度と境目。JSON。trackingTuning.ts。T0738)。 */
+  /** フェイストラッキングの調整 (感度と境目。JSON。@ugoe/face-tracking の tuningStorage.ts。T0738)。 */
   "tracking.tuning": "ugoe.viewer.tracking.tuning",
 } as const;
 

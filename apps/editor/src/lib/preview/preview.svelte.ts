@@ -20,9 +20,13 @@
 //   読み込みのたびに読み直す (`modulePoseGroups`)。選んだ要素は WebPuppet の ID で `modulePoseShown` に持つ。
 //   モーションがパーツの不透明度のカーブで要素を切り替えると、欄も追従する (T0736): 毎フレーム `update` の後で表示中の
 //   要素 (`pose_visible_json`) を読み、前のフレームから変わったときだけ `poseShown`・`modulePoseShown` を合わせる。
+// - トラッキングの調整 (感度と境目) は localStorage に覚える (T1678。ビューアと同じ @ugoe/face-tracking の tuningStorage.ts)。
+//   作るときに読んで当て、App.svelte の $effect が `saveTuning` で覚え直す。既定値はキーを消す。
 
 import {
   FaceTracker,
+  loadStoredTuning,
+  saveStoredTuning,
   setPuppetTracking,
   type TrackingFrame,
   type TrackingTarget,
@@ -32,6 +36,7 @@ import { errorText } from "../errors";
 import { t } from "../i18n";
 import { type Expression, ipc, type Motion, type PoseGroup } from "../ipc";
 import { showEntry } from "../panels/poses/poses";
+import { STORAGE_KEYS } from "../storageKeys";
 import type { FrameDriver, PuppetStage, ViewportController } from "../viewport/controller.svelte";
 import type { WebPuppet } from "../viewport/wasm";
 import { editingName } from "./dressUp";
@@ -113,10 +118,15 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
   /** 描いている本体だけのモデルの、本体の版 (比べていなければ `null`)。 */
   #baseRevision: number | null = null;
 
-  constructor(doc: EditorDocument, viewport: ViewportController) {
+  /** 調整を覚える場所 (省くと localStorage。テストは偽物を渡す)。 */
+  #storage: Storage | undefined;
+
+  constructor(doc: EditorDocument, viewport: ViewportController, storage?: Storage) {
     this.#doc = doc;
     this.#viewport = viewport;
+    this.#storage = storage;
     this.tracker = new FaceTracker(this, { saveJson: saveTrackingRecording });
+    this.tracker.setTuning(loadStoredTuning(STORAGE_KEYS.trackingTuning, storage));
     this.dressUp = new DressUp({
       puppet: () => this.#viewport.puppet,
       active: () => this.active,
@@ -129,6 +139,11 @@ export class PreviewMode implements FrameDriver, TrackingTarget {
     });
     // ヘッドレスのブラウザでの確認のため (記録した値の列の再生など)。
     window.__UGOE_TRACKER__ = this.tracker;
+  }
+
+  /** 今のトラッキングの調整を覚える (既定値ならキーを消す)。$effect の中で呼ぶと、調整が変わるたびに覚え直す。 */
+  saveTuning(): void {
+    saveStoredTuning(STORAGE_KEYS.trackingTuning, this.tracker.tuning, this.#storage);
   }
 
   /** プレビューモードに入る。スライダーは編集中の姿の値から始める。 */

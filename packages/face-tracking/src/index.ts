@@ -52,3 +52,4 @@ export {
   type TuningRangeKey,
   tuningRanges,
 } from "./tuning";
+export { loadStoredTuning, saveStoredTuning } from "./tuningStorage";
