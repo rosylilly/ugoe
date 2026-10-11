@@ -24,9 +24,10 @@ import { pathToFileURL } from "node:url";
 import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
 import {
   CARGO_ABOUT_VERSION,
-  cargoAboutJson,
+  excludedSummary,
   installCargoAbout,
   renderRustNotices,
+  rustNoticeSources,
   rustNotices,
 } from "./lib/rust-notices.mjs";
 
@@ -263,8 +264,8 @@ export async function bundledPackageDirs(appDir) {
   return dirs;
 }
 
-/** アプリの表記を生成する。 */
-export async function generate(app) {
+/** アプリの表記を生成する。`log` は Rust のクレートの節から除いたクレートの数を受け取る。 */
+export async function generate(app, log = () => {}) {
   const appDir = join(root, app.dir);
   const mediapipe = mediapipeSections(readFileSync(join(root, FACE_TRACKING_NOTICES), "utf8"));
   const packages = [...(await bundledPackageDirs(appDir))]
@@ -275,7 +276,9 @@ export async function generate(app) {
   const sorted = [...unique.values()].sort(
     (a, b) => a.name.localeCompare(b.name, "en") || a.version.localeCompare(b.version, "en"),
   );
-  const rust = rustNotices(cargoAboutJson(root, app.manifest));
+  const { about, compileOnly } = rustNoticeSources(root, app.manifest);
+  const rust = rustNotices(about, { compileOnly });
+  log(excludedSummary(rust));
   return renderNotices(app.name, mediapipe, sorted, rust);
 }
 
@@ -292,7 +295,7 @@ async function main(argv) {
   let failed = false;
   for (const app of APPS) {
     const path = join(root, app.dir, NOTICES_PATH);
-    const text = await generate(app);
+    const text = await generate(app, (line) => check || console.log(`${app.dir}: ${line}`));
     const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
     const rel = `${app.dir}/${NOTICES_PATH}`;
     if (current === text) continue;

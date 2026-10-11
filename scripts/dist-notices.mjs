@@ -15,7 +15,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { cargoAboutJson, renderRustNotices, rustNotices } from "./lib/rust-notices.mjs";
+import {
+  excludedSummary,
+  renderRustNotices,
+  rustNoticeSources,
+  rustNotices,
+} from "./lib/rust-notices.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -153,9 +158,11 @@ export function renderDistNotices(dist, rust) {
   return `${[title, "=".repeat(title.length), "", ...intro, "", "", ...body].join("\n")}\n`;
 }
 
-/** 配布物の表記を生成する。 */
-export function generate(dist) {
-  const rust = rustNotices(cargoAboutJson(root, dist.manifest, { targets: dist.targets }));
+/** 配布物の表記を生成する。`log` は除いたクレートの数を受け取る。 */
+export function generate(dist, log = () => {}) {
+  const { about, compileOnly } = rustNoticeSources(root, dist.manifest, { targets: dist.targets });
+  const rust = rustNotices(about, { compileOnly });
+  log(excludedSummary(rust));
   return renderDistNotices(dist, rust);
 }
 
@@ -172,7 +179,7 @@ function main(argv) {
   let failed = false;
   for (const dist of dists) {
     const path = join(root, dist.out);
-    const text = generate(dist);
+    const text = generate(dist, (line) => check || console.log(`${dist.out}: ${line}`));
     const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
     if (current === text) continue;
     if (check) {

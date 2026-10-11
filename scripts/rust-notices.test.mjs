@@ -4,11 +4,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  ABOUT_CONFIG,
   aboutArgs,
+  aboutList,
   CARGO_ABOUT_VERSION,
+  compileOnlyCrates,
   crateAuthors,
   crateSource,
+  excludedSummary,
   isLicenseFile,
+  metadataArgs,
   parseCargoAboutVersion,
   renderRustNotices,
   rustNotices,
@@ -175,4 +180,113 @@ test("ターゲットは 1 つずつ --target に渡す", () => {
     "wasm32-unknown-unknown",
   ]);
   assert.ok(!aboutArgs("a/Cargo.toml").includes("--target"));
+});
+
+test("ターゲットは 1 つずつ --filter-platform に渡す (cargo metadata)", () => {
+  const args = metadataArgs("a/Cargo.toml", ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]);
+  assert.deepEqual(args.slice(-4), [
+    "--filter-platform",
+    "x86_64-unknown-linux-gnu",
+    "--filter-platform",
+    "wasm32-unknown-unknown",
+  ]);
+  assert.ok(args.includes("--frozen"));
+  assert.ok(!metadataArgs("a/Cargo.toml", []).includes("--filter-platform"));
+});
+
+/** cargo metadata の packages の 1 つ (`kind` は lib の target の kind)。 */
+function metaPkg(name, version, kind = ["lib"]) {
+  return {
+    id: `${REGISTRY}#${name}@${version}`,
+    name,
+    version,
+    targets: [{ kind }, { kind: ["test"] }],
+  };
+}
+
+/** cargo metadata の resolve の deps の 1 つ。 */
+function dep(to, ...kinds) {
+  return { pkg: to.id, dep_kinds: (kinds.length > 0 ? kinds : [null]).map((kind) => ({ kind })) };
+}
+
+test("手続きマクロのクレートと、手続きマクロ・ビルドスクリプトだけが使うクレートを求める", () => {
+  const app = { ...metaPkg("app", "0.0.0", ["bin"]), id: "path+file:///r/app#0.0.0" };
+  const serde = metaPkg("serde", "1.0.0");
+  const serdeDerive = metaPkg("serde_derive", "1.0.0", ["proc-macro"]);
+  const syn = metaPkg("syn", "2.0.0");
+  const quote = metaPkg("quote", "1.0.0");
+  const pm2 = metaPkg("proc-macro2", "1.0.0");
+  const cc = metaPkg("cc", "1.0.0");
+  const runtimeSyn = metaPkg("parser", "1.0.0");
+  const devOnly = metaPkg("png", "0.18.0");
+  const node = (p, ...deps) => ({ id: p.id, deps });
+  const metadata = {
+    packages: [app, serde, serdeDerive, syn, quote, pm2, cc, runtimeSyn, devOnly],
+    workspace_members: [app.id],
+    resolve: {
+      root: app.id,
+      nodes: [
+        node(app, dep(serde), dep(runtimeSyn), dep(cc, "build"), dep(devOnly, "dev")),
+        node(serde, dep(serdeDerive)),
+        node(serdeDerive, dep(syn), dep(quote), dep(pm2)),
+        node(syn, dep(quote), dep(pm2)),
+        node(quote, dep(pm2)),
+        node(pm2),
+        node(cc),
+        // 通常の依存から使われる proc-macro2 は残す
+        node(runtimeSyn, dep(pm2)),
+        node(devOnly),
+      ],
+    },
+  };
+  assert.deepEqual([...compileOnlyCrates(metadata)].sort(), [
+    ["cc 1.0.0", "compile-time"],
+    ["png 0.18.0", "compile-time"],
+    ["quote 1.0.0", "compile-time"],
+    ["serde_derive 1.0.0", "proc-macro"],
+    ["syn 2.0.0", "compile-time"],
+  ]);
+  // 根が無ければワークスペースのクレートから
+  const noRoot = { ...metadata, resolve: { ...metadata.resolve, root: null } };
+  assert.equal(compileOnlyCrates(noRoot).size, 5);
+});
+
+test("コンパイルのときだけ使うクレートを表記から除き、数を数える", () => {
+  const a = pkg("a", "1.0.0", "MIT");
+  const derive = pkg("a_derive", "1.0.0", "MIT");
+  const syn = pkg("syn", "2.0.0", "MIT OR Apache-2.0");
+  const notices = rustNotices(
+    {
+      crates: [a, derive, syn].map((p) => ({ package: p, license: p.license })),
+      licenses: [
+        lic("MIT", "MIT text", "/r/a-1.0.0/LICENSE", a, derive),
+        lic("MIT", "syn MIT text", "/r/syn-2.0.0/LICENSE-MIT", syn),
+      ],
+    },
+    {
+      compileOnly: new Map([
+        ["a_derive 1.0.0", "proc-macro"],
+        ["syn 2.0.0", "compile-time"],
+      ]),
+    },
+  );
+  assert.deepEqual(
+    notices.crates.map((c) => c.name),
+    ["a"],
+  );
+  // 除いたクレートだけが使う文も載らない
+  assert.deepEqual(
+    notices.texts.map((t) => [t.text, t.crates]),
+    [["MIT text", ["a 1.0.0"]]],
+  );
+  assert.deepEqual(notices.excluded, { "proc-macro": 1, "compile-time": 1 });
+  assert.match(excludedSummary(notices), /手続きマクロのクレート 1 個.* 1 個を除いた/);
+});
+
+test("選べるライセンスは MIT・MIT-0・Apache-2.0 の順に選ぶ (about.toml の accepted の並び)", () => {
+  const toml = readFileSync(join(import.meta.dirname, "..", ABOUT_CONFIG), "utf8");
+  const accepted = aboutList(toml, "accepted");
+  assert.deepEqual(accepted.slice(0, 3), ["MIT", "MIT-0", "Apache-2.0"]);
+  assert.ok(aboutList(toml, "targets").includes("x86_64-unknown-linux-gnu"));
+  assert.equal(aboutList(toml, "missing"), undefined);
 });

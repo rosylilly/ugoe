@@ -4,12 +4,13 @@
 
 # 使ってよいライセンス。どのライセンスで使えるかの方針と検査は scripts/check-licenses.mjs (GPL_COMPATIBLE) が正で、ここはそれと同じ集合。
 # 並びは優先の順: 選べるライセンス (`MIT OR Apache-2.0` など) は、前にあるものを使ったとして表記する。寛容なものを先に置き、
-# その中では MIT を最初にする (JS のライブラリの表記と同じく、選べるなら MIT)。
+# その中では MIT を最初にする (JS のライブラリの表記と同じく、選べるなら MIT)。MIT が選べないときは、文の短い MIT-0 を
+# Apache-2.0 より先にする (`CC0-1.0 OR MIT-0 OR Apache-2.0` の dunce など)。
 accepted = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "MIT-0",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",

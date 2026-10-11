@@ -76,9 +76,17 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
   ライセンスの文 (同じ文は 1 つにまとめ、使うクレートを添える) を並べる。組み立ては `scripts/lib/rust-notices.mjs`、
   cargo-about の設定は `scripts/about.toml`。
   - 対象: Windows・macOS・Linux (x86_64 と aarch64) のどれかのビルドに入るクレート。ビルドスクリプトだけ・テストだけが使う
-    クレートは載せない。手続きマクロのクレートは載る (バイナリには入らないが、cargo-about は通常の依存と区別しない)。
-    ワークスペースのクレート (ugoe 自身) は載せない。版は `Cargo.lock` のもの。
-  - 選べるライセンス (`MIT OR Apache-2.0` など) は、`scripts/about.toml` の `accepted` の前にあるものを選ぶ (MIT を最初に置く)。
+    クレートは載せない。ワークスペースのクレート (ugoe 自身) は載せない。版は `Cargo.lock` のもの。
+  - 手続きマクロのクレート (`serde_derive`・`thiserror-impl` など。`cargo metadata` の target の kind が `proc-macro`) と、
+    手続きマクロ・ビルドスクリプトからしか使われないクレート (`syn`・`quote`・`proc-macro2` など) も載せない。どちらもホスト向けに
+    ビルドされてコンパイラが読み込むか、手続きマクロ・ビルドスクリプトにリンクされるだけで、配布物のバイナリには入らない。
+    cargo-about はこれらを通常の依存と区別しないので、`scripts/lib/rust-notices.mjs` が `cargo metadata` の依存をアプリの
+    クレートから通常の依存だけでたどり (手続きマクロのクレートの先はたどらない)、たどれないものを cargo-about の結果から除く。
+    通常の依存からも使われるクレートは残る。除いた数は `just notices` のログに出る。
+    `cargo metadata` は機能をホスト向けの依存と合わせて解くので、ホスト向けの機能だけが引き込むクレート (Tauri の `tauri-utils` の
+    ビルド用の機能の依存など) は残る (載せすぎるほうに寄せる)。
+  - 選べるライセンス (`MIT OR Apache-2.0` など) は、`scripts/about.toml` の `accepted` の前にあるものを選ぶ (MIT を最初に、
+    MIT-0 を Apache-2.0 より前に置く。`CC0-1.0 OR MIT-0 OR Apache-2.0` の `dunce` は MIT-0 の文になる)。
     `accepted` は `scripts/check-licenses.mjs` の GPL-3.0 と両立するライセンスと同じ集合で、`just licenses` が突き合わせる。
   - 文はクレートのライセンスのファイル (LICENSE・COPYING・NOTICE など) から取る。cargo-about はソースのファイルの見出しからも文を
     拾うが、ソースの全文になるので載せない。ライセンスのファイルを持たないクレートは SPDX の標準の文を載せ、著作権者の欄の代わりに
@@ -120,6 +128,8 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
 
 - ugoe 自身のクレートは載せず、表記の頭で ugoe が MIT であること (ライセンスの文の在り処) を示します。
 - 対象のクレートは、配布物のライブラリのクレートを表のターゲットのどれかに向けてビルドしたときに入るもの (既定の features)。
+  アプリと同じく、手続きマクロのクレートと、手続きマクロ・ビルドスクリプトだけが使うクレートは載せない (`wasm-bindgen-macro`・
+  `godot-macros`・`syn` など)。
   ターゲットを足したら `scripts/dist-notices.mjs` の `DISTS` も直します (Unity は `unity.yml` の Android・iOS のターゲットを
   含むかをテストが確かめる)。
 - Godot のアドオンには godot-rust のクレート (MPL-2.0) が入ります。MPL-2.0 の 3.2 は実行形式を配るときにソースの在り処を示すことを
