@@ -568,10 +568,31 @@ async function treeDragScenes(page, ctx) {
 }
 
 /**
+ * スタジオの帯を待つ上限 (ミリ秒。T0884)。自動の保存は変えてから約 0.8 秒で動き、帯はふつう 1 秒ほどで出る (CPU を 8 倍に
+ * 遅くしても、ロードアベレージ 50 の機械でも 1.3 秒ほど)。出るまでの条件の待ちなので、長くしても通る回は遅くならない。
+ */
+const NOTICE_TIMEOUT_MS = 20000;
+
+/** 画面にある帯 (`.ugoe-notice`) のトーンと文 (帯を待って出なかったときの手がかり)。 */
+async function noticesOnPage(page) {
+  const found = await page
+    .locator(".ugoe-notice")
+    .evaluateAll((els) =>
+      els.map(
+        (el) => `${el.dataset.tone}: ${el.textContent.replace(/\s+/g, " ").trim().slice(0, 80)}`,
+      ),
+    )
+    .catch(() => []);
+  return found.length ? found.join(" | ") : "none";
+}
+
+/**
  * スタジオの自動の保存を失敗させる (T0874): 偽のホストの今の保存先への保存を `kind` の失敗にし (`failSave`)、保存先のある
- * 変えたプロファイルを送って、`notices` の帯 (トーンと含む文) が出るのを待つ。出なければ場面の失敗にする。
+ * 変えたプロファイルを送って、`notices` の帯 (トーンと含む文) が出るのを待つ。出なければ場面の失敗にする
+ * (失敗の文に、待った時間と画面にあった帯を添える。T0884)。
  */
 async function autosaveFailureScene(page, ctx, kind, notices) {
+  const started = performance.now();
   await page.evaluate(
     ({ profile, failure }) => {
       window.__uiAuditStudio.failSave(failure);
@@ -582,9 +603,12 @@ async function autosaveFailureScene(page, ctx, kind, notices) {
   for (const notice of notices) {
     await page
       .locator(`.ugoe-notice[data-tone="${notice.tone}"]`, { hasText: notice.text })
-      .waitFor({ timeout: 5000 })
-      .catch(() => {
-        throw new Error(`the ${kind} autosave failure did not show the ${notice.tone} notice`);
+      .waitFor({ timeout: NOTICE_TIMEOUT_MS })
+      .catch(async () => {
+        const waited = ((performance.now() - started) / 1000).toFixed(1);
+        throw new Error(
+          `the ${kind} autosave failure did not show the ${notice.tone} notice in ${waited}s (notices: ${await noticesOnPage(page)})`,
+        );
       });
   }
 }
@@ -957,12 +981,13 @@ export const APPS = {
       await page.waitForTimeout(300);
       await ctx.scene("approved", { aria: false });
 
-      // 自動の保存の失敗 (T0874)。保存先のある自分のプロファイルを変え、自動の保存 (変えてから約 0.8 秒) が失敗した帯を待つ。
+      // 自動の保存の失敗 (T0874)。保存先のある自分のプロファイルを変え、自動の保存 (変えてから約 0.8 秒) が失敗した帯を
+      // 出るまで待つ (`NOTICE_TIMEOUT_MS`。T0884)。
       // 前の場面の承認の知らせは閉じる (帯の並びの頭に失敗の帯を置いて撮る)。後から出る帯の閉じるボタンの Tooltip が
       // 出ないよう、フォーカスとポインタを外す
       const approved = page.locator('.ugoe-notice[data-tone="success"]');
       await approved.getByRole("button").last().click();
-      await approved.waitFor({ state: "detached", timeout: 5000 });
+      await approved.waitFor({ state: "detached", timeout: NOTICE_TIMEOUT_MS });
       await page.evaluate(() => document.activeElement?.blur());
       await page.mouse.move(1, 300);
       // 一時の失敗 (ディスクが一杯): 閉じられる赤の帯に、エラーと「もう一度自動で保存する」の文

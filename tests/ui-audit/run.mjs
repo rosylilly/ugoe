@@ -2,7 +2,7 @@
 // 3 つのアプリの UI を監査する (`just ui-audit`。tests/ui-audit/README.md)。
 //
 //   node tests/ui-audit/run.mjs [--only editor,viewer,studio] [--quick] [--variants forced,zoom200] [--no-build] [--out DIR]
-//                               [--compare DIR] [--strict] [--jobs N]
+//                               [--compare DIR] [--strict] [--jobs N] [--variant-timeout SEC] [--deadline SEC]
 //
 // 1. アプリのフロントエンドをビルドする (`just wasm` と `vite build`)。エディタには見本のプロジェクトも作る (`ugoe sample dress-up`)。
 // 2. ビルドした画面を小さな静的サーバで配り、ヘッドレスの Chrome (playwright-core) で開く。Tauri の代わりに偽のホストを置く
@@ -15,6 +15,8 @@
 //    <out>/summary.md と summary.json にまとめを書く。`--compare` は前の summary.json と比べて増減を出す。
 //
 // `--strict` なら見つけたものがあれば終了コード 1 (既定は、場面が開けなかったときだけ 1)。`just ci` には含めない (重いので)。
+// 組ごとの時間の上限 (`--variant-timeout`。既定 480 秒) を過ぎた組は場面の失敗にして次へ進み、全体の締め切り (`--deadline`。
+// 起動から数える。既定なし) を過ぎたら残りの組を飛ばして報告を書き、終了コード 1 で終わる (T0884)。
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,6 +24,7 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
 import { APPS } from "./lib/apps.mjs";
 import { auditScene, PAGE_CHECKS } from "./lib/audit.mjs";
+import { deadline, secondsOption, TimeLimitError, withTimeLimit } from "./lib/limits.mjs";
 import { appReport, compare, countsTable, formatCompare, summarize } from "./lib/report.mjs";
 import { serve } from "./lib/serve.mjs";
 import { formatWalk, tabWalk, walkProblems } from "./lib/walk.mjs";
@@ -52,6 +55,17 @@ if (!(Number.isInteger(jobs) && jobs >= 1)) {
   console.error(`--jobs must be a positive integer (got ${option("--jobs")})`);
   process.exit(2);
 }
+// 組ごとの時間の上限と全体の締め切り (秒。0 なら上限なし。T0884)
+let variantTimeout;
+let deadlineSeconds;
+try {
+  variantTimeout = secondsOption(option("--variant-timeout"), "--variant-timeout", 480);
+  deadlineSeconds = secondsOption(option("--deadline"), "--deadline");
+} catch (e) {
+  console.error(e.message);
+  process.exit(2);
+}
+const runDeadline = deadline(deadlineSeconds);
 const out = resolve(option("--out", join(target, "ui-audit")));
 const compareDir = option("--compare", null);
 // 比べる前の結果は、書き換える前に読んでおく (同じ場所に出すときのため)
@@ -250,6 +264,8 @@ const browser = await chromium.launch({
 
 const summaries = {};
 let failedScenes = 0;
+/** 締め切りで飛ばした組 (`<アプリ>/<組>`)。 */
+const skipped = [];
 const appendix = {};
 
 for (const app of only) {
@@ -263,8 +279,25 @@ for (const app of only) {
 
   /** 1 つの組を開いて場面を撮る。組ごとに別のブラウザのコンテキスト (と偽のホスト) を使うので、組どうしを並行に流せる。 */
   async function auditVariant(v) {
+    if (runDeadline.passed()) {
+      skipped.push(`${app}/${v.name}`);
+      return {
+        scenes: [
+          {
+            name: v.name,
+            findings: [
+              { check: "error", target: "deadline", detail: "skipped (--deadline passed)" },
+            ],
+          },
+        ],
+        tabText: null,
+        unknown: [],
+      };
+    }
     const scenes = [];
     let tabText = null;
+    /** 最後に撮った場面 (時間の上限を過ぎたときに、どこまで進んだかを出す)。 */
+    let lastScene = null;
     const context = await browser.newContext({
       viewport: { width: v.size[0], height: v.size[1] },
       deviceScaleFactor: v.dpr,
@@ -321,12 +354,55 @@ for (const app of only) {
           expectOverlay: overlay,
         });
         scenes.push({ name: full, findings: r.findings, stats: r.stats });
+        lastScene = full;
         console.log(
           `  ${full}: ${r.findings.length} finding(s), text ${r.stats.textChecked} checked / ${r.stats.textByPixels} by pixels / ${r.stats.textUnmeasured} unmeasured`,
         );
       },
     };
+    // 組の時間の上限 (締め切りが先ならそこまで)。過ぎたらコンテキストを閉じて、待っている操作を失敗させる
+    const limit = Math.min(
+      variantTimeout === null ? Infinity : variantTimeout * 1000,
+      runDeadline.remaining(),
+    );
+    let timedOut = false;
     try {
+      await withTimeLimit(
+        () => auditBody(),
+        limit,
+        () => {
+          timedOut = true;
+          context.close().catch(() => {});
+        },
+      );
+    } catch (e) {
+      failedScenes++;
+      const message =
+        e instanceof TimeLimitError
+          ? `${e.message} (${runDeadline.passed() ? "--deadline" : "--variant-timeout"}; last scene: ${lastScene ?? "none"})`
+          : String(e.message ?? e).split("\n")[0];
+      console.log(`  ${v.name}: FAILED ${message}`);
+      scenes.push({
+        name: v.name,
+        findings: [{ check: "error", target: "scene", detail: message }],
+      });
+      if (!timedOut) {
+        await page
+          .screenshot({ path: join(dir, `${v.name}-FAILED.png`), timeout: 10000 })
+          .catch(() => {});
+      }
+    }
+    if (errors.length) {
+      scenes.push({
+        name: v.name,
+        findings: errors.map((m) => ({ check: "error", target: m.slice(0, 160), detail: "" })),
+      });
+    }
+    await context.close().catch(() => {});
+    // 上限を過ぎた後も止まりきらない場面が足すものは数えない
+    return { scenes: [...scenes], tabText, unknown: [...(ctx.editorHost?.unknown ?? [])] };
+
+    async function auditBody() {
       await def.setup(page, ctx);
       await def.load(page, ctx);
       await ctx.scene("main");
@@ -366,24 +442,7 @@ for (const app of only) {
         }
         await def.extras(page, ctx);
       }
-    } catch (e) {
-      failedScenes++;
-      const message = String(e.message ?? e).split("\n")[0];
-      console.log(`  ${v.name}: FAILED ${message}`);
-      scenes.push({
-        name: v.name,
-        findings: [{ check: "error", target: "scene", detail: message }],
-      });
-      await page.screenshot({ path: join(dir, `${v.name}-FAILED.png`) }).catch(() => {});
     }
-    if (errors.length) {
-      scenes.push({
-        name: v.name,
-        findings: errors.map((m) => ({ check: "error", target: m.slice(0, 160), detail: "" })),
-      });
-    }
-    await context.close();
-    return { scenes, tabText, unknown: [...(ctx.editorHost?.unknown ?? [])] };
   }
 
   const results = await inParallel(
@@ -433,5 +492,11 @@ if (before) {
   console.log(`\ncompared with ${compareDir}:\n${formatCompare(compare(before.apps, summaries))}`);
 }
 
+if (skipped.length) {
+  console.log(
+    `\n--deadline (${deadlineSeconds}s) passed: skipped ${skipped.length} variant(s): ${skipped.join(", ")}`,
+  );
+}
+
 const found = Object.values(summaries).some((s) => s.findings.length > 0);
-process.exit(failedScenes > 0 || (strict && found) ? 1 : 0);
+process.exit(failedScenes > 0 || skipped.length > 0 || (strict && found) ? 1 : 0);
