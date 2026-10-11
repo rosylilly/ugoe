@@ -42,3 +42,5 @@ T1408 はワークフローを分けた (動く条件と成果物を独立に保
 - Release のマイルストーン (docs/roadmap.md の Release)。
 - T1409 (soname) と同じ `scripts/ffi-dist.mjs` のビルドを触り、soname を付ける場所 (C ABI の配布物だけか、すべての Linux のビルドか) の決定が
   Unity の `.so` に関わるので、T1409 の後に行う。T0421 (UPM の tarball を Release に添付) と T0091 (CI の見直し。起動の条件) も `unity.yml` を触る。並べて進めるときは片方が入ってから追従する。
+
+- 注意 (T1409 から、オーケストレーター): unity.yml の native を ffi-dist.mjs に寄せるとき、soname と版付きのファイル名は Unity のビルドに入れない (Unity は .so をファイル名で読み、Android のリンカは soname で見分けるため)。pack の配布用のビルドと分ける。
