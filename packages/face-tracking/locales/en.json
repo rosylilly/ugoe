@@ -153,6 +153,25 @@
       "label": "Separate gaze by direction",
       "tooltip": "Set the thresholds for looking up, down, left and right separately (for example when looking down never lowers the eyeballs fully). Left and right are your own. Turning it on copies the current thresholds to every direction"
     },
+    "eyeWide": {
+      "label": "Wide eyes (both eyes)",
+      "low": {
+        "label": "Not wide below",
+        "tooltip": "Eye widening at or below this counts as not widened (so the usual eye opening does not widen the eyes)"
+      },
+      "high": {
+        "label": "Fully wide at",
+        "tooltip": "Eye widening at or above this counts as fully widened. Lower it if widening your eyes barely registers"
+      },
+      "directions": {
+        "left": "Wide eyes (left eye)",
+        "right": "Wide eyes (right eye)"
+      }
+    },
+    "eyeWideSeparate": {
+      "label": "Separate left and right wide eyes",
+      "tooltip": "Set the widening thresholds of the left and right eyes separately (when only one eye barely widens). Turning it on copies the current thresholds to both eyes"
+    },
     "jawOpen": {
       "label": "Mouth opening",
       "low": {
@@ -194,6 +213,36 @@
       "label": "Separate smile and frown",
       "tooltip": "Set the thresholds of the smile and the frown separately (for example when you can smile but the corners barely lower). Turning it on copies the current thresholds to both"
     },
+    "mouthSide": {
+      "label": "Mouth sideways (left and right)",
+      "low": {
+        "label": "Still below",
+        "tooltip": "Moving the mouth sideways at or below this does not move the mouth (stops slight jitter)"
+      },
+      "high": {
+        "label": "Fully moved at",
+        "tooltip": "Moving the mouth sideways at or above this counts as fully moved. Lower it if the mouth barely moves when you shift it sideways"
+      },
+      "directions": {
+        "left": "Mouth sideways (left)",
+        "right": "Mouth sideways (right)"
+      }
+    },
+    "mouthSideSeparate": {
+      "label": "Separate mouth left and right",
+      "tooltip": "Set the thresholds for moving the mouth to the left and to the right separately (for example when it barely moves to one side). Left and right are your own. Turning it on copies the current thresholds to both"
+    },
+    "cheekPuff": {
+      "label": "Cheek puff",
+      "low": {
+        "label": "Not puffed below",
+        "tooltip": "Cheek puff at or below this counts as not puffed (so just closing the mouth does not puff the cheeks)"
+      },
+      "high": {
+        "label": "Fully puffed at",
+        "tooltip": "Cheek puff at or above this counts as fully puffed. Lower it if puffing your cheeks barely registers"
+      }
+    },
     "brow": {
       "label": "Eyebrows (raise and lower)",
       "low": {
@@ -228,6 +277,8 @@
       "mouthSmileRight": "Smile right",
       "mouthFrownLeft": "Frown left",
       "mouthFrownRight": "Frown right",
+      "mouthLeft": "Left",
+      "mouthRight": "Right",
       "browInnerUp": "Inner up",
       "browOuterUpLeft": "Outer up left",
       "browOuterUpRight": "Outer up right",
@@ -239,7 +290,7 @@
     "times": "×",
     "reset": {
       "label": "Reset to defaults",
-      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids and the directions of thresholds and sensitivity)"
+      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids and wide eyes, and the directions of thresholds and sensitivity)"
     }
   },
   "recording": {

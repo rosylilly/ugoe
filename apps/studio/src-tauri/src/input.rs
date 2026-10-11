@@ -159,6 +159,12 @@ pub struct TrackingTuning {
     pub eye_look_left: RangeTuning,
     /// 視線の右 (`eyeLookInLeft`・`eyeLookOutRight`)。`eye_look_separate` が真のときだけ使う。
     pub eye_look_right: RangeTuning,
+    /// 目の見開き。`eye_wide_separate` が偽なら両目 (`eyeWideLeft`・`eyeWideRight` を一緒に)、真なら左目 (利用者から見た左)。
+    pub eye_wide: RangeTuning,
+    /// 目の見開きの左右を別々にするか。
+    pub eye_wide_separate: bool,
+    /// 右目の見開き (`eyeWideRight`)。`eye_wide_separate` が真のときだけ使う。
+    pub eye_wide_right: RangeTuning,
     /// 口の開き (`jawOpen`)。
     pub jaw_open: RangeTuning,
     /// 口の閉じ (`mouthClose`)。
@@ -169,6 +175,14 @@ pub struct TrackingTuning {
     pub mouth_form_separate: bool,
     /// 口角の下がり (`mouthFrown*`)。`mouth_form_separate` が真のときだけ使う。
     pub mouth_form_frown: RangeTuning,
+    /// 口の左右。`mouth_side_separate` が偽なら左右へ寄せる量 (`mouthLeft`・`mouthRight` を一緒に)、真なら左へ (利用者から見た左)。
+    pub mouth_side: RangeTuning,
+    /// 口の左右を向き (左へ・右へ) で分けるか。
+    pub mouth_side_separate: bool,
+    /// 口を右へ寄せる量 (`mouthRight`)。`mouth_side_separate` が真のときだけ使う。
+    pub mouth_side_right: RangeTuning,
+    /// 頬の膨らみ (`cheekPuff`)。
+    pub cheek_puff: RangeTuning,
     /// 眉。`brow_separate` が偽なら上げと下げ (`browInnerUp`・`browOuterUp*`・`browDown*`)、真なら上げ。
     pub brow: RangeTuning,
     /// 眉を上げと下げで分けるか。
@@ -228,10 +242,15 @@ impl TrackingTuning {
             &mut self.eye_look_down,
             &mut self.eye_look_left,
             &mut self.eye_look_right,
+            &mut self.eye_wide,
+            &mut self.eye_wide_right,
             &mut self.jaw_open,
             &mut self.mouth_close,
             &mut self.mouth_form,
             &mut self.mouth_form_frown,
+            &mut self.mouth_side,
+            &mut self.mouth_side_right,
+            &mut self.cheek_puff,
             &mut self.brow,
             &mut self.brow_down,
         ] {
@@ -386,7 +405,7 @@ mod tests {
     fn tuning_is_read_with_defaults_and_kept_in_range() {
         // 無い項目・知らない項目は既定値。
         let input: InputSettings = serde_json::from_str(
-            r#"{ "tuning": { "yaw": { "gain": 2 }, "eyeBlink": { "low": 0.1, "high": 0.6 }, "cheekPuff": {} } }"#,
+            r#"{ "tuning": { "yaw": { "gain": 2 }, "eyeBlink": { "low": 0.1, "high": 0.6 }, "tongueOut": {} } }"#,
         )
         .unwrap();
         assert_eq!(
@@ -587,6 +606,63 @@ mod tests {
                 ..TrackingTuning::default()
             }
         );
+        // 頬・口の左右・目の見開きを読み書きできる。範囲の外は寄せ、狭すぎる組は既定に戻す。
+        let mut input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": {
+                "eyeWide": { "low": 0.1, "high": 2 }, "eyeWideSeparate": true, "eyeWideRight": { "low": 0.4, "high": 0.42 },
+                "mouthSide": { "low": 0, "high": 0.5 }, "mouthSideSeparate": true, "mouthSideRight": { "low": -1, "high": 0.3 },
+                "cheekPuff": { "low": 0.05, "high": 0.25 }
+            } }"#,
+        )
+        .unwrap();
+        input.sanitize();
+        let t = input.tuning;
+        assert!(t.eye_wide_separate && t.mouth_side_separate);
+        assert_eq!(
+            t.eye_wide,
+            RangeTuning {
+                low: 0.1,
+                high: 1.0
+            }
+        );
+        assert_eq!(t.eye_wide_right, RangeTuning::default());
+        assert_eq!(
+            t.mouth_side,
+            RangeTuning {
+                low: 0.0,
+                high: 0.5
+            }
+        );
+        assert_eq!(
+            t.mouth_side_right,
+            RangeTuning {
+                low: 0.0,
+                high: 0.3
+            }
+        );
+        assert_eq!(
+            t.cheek_puff,
+            RangeTuning {
+                low: 0.05,
+                high: 0.25
+            }
+        );
+        // T0881 の形 (頬・口の左右・目の見開きが無い) は、それらを既定として読む。
+        let input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": { "browSeparate": true, "browDown": { "low": 0, "high": 0.4 }, "eyeLookSeparate": false } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            input.tuning,
+            TrackingTuning {
+                brow_separate: true,
+                brow_down: RangeTuning {
+                    low: 0.0,
+                    high: 0.4
+                },
+                ..TrackingTuning::default()
+            }
+        );
         // 最小の幅ちょうどの組は残す (画面で決めた値)。
         let mut range = RangeTuning {
             low: 0.3,
@@ -613,11 +689,18 @@ mod tests {
                 "eyeLookDown": { "low": 0.0, "high": 1.0 },
                 "eyeLookLeft": { "low": 0.0, "high": 1.0 },
                 "eyeLookRight": { "low": 0.0, "high": 1.0 },
+                "eyeWide": { "low": 0.0, "high": 1.0 },
+                "eyeWideSeparate": false,
+                "eyeWideRight": { "low": 0.0, "high": 1.0 },
                 "jawOpen": { "low": 0.0, "high": 1.0 },
                 "mouthClose": { "low": 0.0, "high": 1.0 },
                 "mouthForm": { "low": 0.0, "high": 1.0 },
                 "mouthFormSeparate": false,
                 "mouthFormFrown": { "low": 0.0, "high": 1.0 },
+                "mouthSide": { "low": 0.0, "high": 1.0 },
+                "mouthSideSeparate": false,
+                "mouthSideRight": { "low": 0.0, "high": 1.0 },
+                "cheekPuff": { "low": 0.0, "high": 1.0 },
                 "brow": { "low": 0.0, "high": 1.0 },
                 "browSeparate": false,
                 "browDown": { "low": 0.0, "high": 1.0 },

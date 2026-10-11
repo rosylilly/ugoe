@@ -20,6 +20,10 @@ const TUNED: TrackingTuning = {
   eyeBlinkRight: { low: 0.1, high: 0.6 },
   jawOpen: { low: 0.1, high: 0.9 },
   brow: { low: 0, high: 0.4 },
+  eyeWideSeparate: true,
+  eyeWideRight: { low: 0.1, high: 0.5 },
+  mouthSide: { low: 0, high: 0.6 },
+  cheekPuff: { low: 0.05, high: 0.3 },
 };
 
 describe("remembered tracking tuning", () => {
@@ -68,6 +72,23 @@ describe("remembered tracking tuning", () => {
       yaw: { ...DEFAULT_TUNING.yaw, gain: 4 },
       pitch: { ...DEFAULT_TUNING.pitch, deadZone: 3 },
       jawOpen: { low: 0.3, high: 0.6 },
+    });
+  });
+
+  it("reads the T0881 shape without the cheeks, the mouth sides and the wide eyes", () => {
+    const storage = new MemoryStorage();
+    const old = Object.fromEntries(
+      Object.entries({
+        ...DEFAULT_TUNING,
+        eyeLookSeparate: true,
+        eyeLookDown: { low: 0, high: 0.7 },
+      }).filter(([key]) => !/^(eyeWide|mouthSide|cheekPuff)/.test(key)),
+    );
+    storage.setItem(KEY, JSON.stringify(old));
+    expect(loadTrackingTuning(storage)).toEqual({
+      ...DEFAULT_TUNING,
+      eyeLookSeparate: true,
+      eyeLookDown: { low: 0, high: 0.7 },
     });
   });
 

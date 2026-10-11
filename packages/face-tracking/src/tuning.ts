@@ -1,4 +1,4 @@
-// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881)。キャリブレーションと同じく
+// 利用者の調整 (首振りの感度と遊び・瞼・視線・目の見開き・口・頬・眉の境目。T0877・T0879・T0880・T0881・T0882)。キャリブレーションと同じく
 // docs/spec/avatar-profile.md#実装の範囲 でアプリの責務とされたもの。キャリブレーションの後・平滑化の前に当てる。
 //
 // 調整は配信者の顔・カメラ・部屋に合わせるもので、モデルの `avatar.tracking` の係数 (モデルを作る人が決める) とは別。
@@ -52,12 +52,18 @@ export const TUNING_RANGES = {
     "eyeLookUpRight",
     "eyeLookDownRight",
   ],
+  /** 目の見開き (`EyeLWide`・`EyeRWide` の元)。上の境目は「見開ききった」と見なす値。 */
+  eyeWide: ["eyeWideLeft", "eyeWideRight"],
   /** 口の開き (`MouthOpenY` = `max(0, jawOpen − mouthClose)` の元)。 */
   jawOpen: ["jawOpen"],
   /** 口の閉じ (`MouthOpenY` で `jawOpen` から引く)。上の境目は「閉じた」と見なす値。 */
   mouthClose: ["mouthClose"],
   /** 口の形 (笑みと口角の下がり。`MouthForm` の元)。 */
   mouthForm: ["mouthSmileLeft", "mouthSmileRight", "mouthFrownLeft", "mouthFrownRight"],
+  /** 口の左右 (口を横へ寄せる量。`MouthX` = `mouthLeft − mouthRight` の元)。 */
+  mouthSide: ["mouthLeft", "mouthRight"],
+  /** 頬の膨らみ (`CheekPuff` の元)。 */
+  cheekPuff: ["cheekPuff"],
   /** 眉 (上げと下げ。`BrowLY`・`BrowRY` などの元)。 */
   brow: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight", "browDownLeft", "browDownRight"],
 } as const satisfies Record<string, readonly string[]>;
@@ -82,10 +88,20 @@ export const TUNING_SPLITS = {
     { direction: "left", key: "eyeLookLeft", names: ["eyeLookOutLeft", "eyeLookInRight"] },
     { direction: "right", key: "eyeLookRight", names: ["eyeLookInLeft", "eyeLookOutRight"] },
   ],
+  /** 目の見開きの左右 (T0882)。 */
+  eyeWide: [
+    { direction: "left", key: "eyeWide", names: ["eyeWideLeft"] },
+    { direction: "right", key: "eyeWideRight", names: ["eyeWideRight"] },
+  ],
   /** 口の形の笑みと口角の下がり (T0881)。 */
   mouthForm: [
     { direction: "smile", key: "mouthForm", names: ["mouthSmileLeft", "mouthSmileRight"] },
     { direction: "frown", key: "mouthFormFrown", names: ["mouthFrownLeft", "mouthFrownRight"] },
+  ],
+  /** 口を左へ寄せると右へ寄せる (利用者から見た左右。T0882)。 */
+  mouthSide: [
+    { direction: "left", key: "mouthSide", names: ["mouthLeft"] },
+    { direction: "right", key: "mouthSideRight", names: ["mouthRight"] },
   ],
   /** 眉の上げと下げ (T0881)。 */
   brow: [
@@ -126,6 +142,12 @@ export interface TrackingTuning {
   eyeLookDown: RangeTuning;
   eyeLookLeft: RangeTuning;
   eyeLookRight: RangeTuning;
+  /** 目の見開き。`eyeWideSeparate` が切なら両目、入なら左目 (利用者から見た左)。 */
+  eyeWide: RangeTuning;
+  /** 目の見開きの左右を別々にするか。 */
+  eyeWideSeparate: boolean;
+  /** 右目の見開き。`eyeWideSeparate` が入のときだけ使う。 */
+  eyeWideRight: RangeTuning;
   jawOpen: RangeTuning;
   mouthClose: RangeTuning;
   /** 口の形。`mouthFormSeparate` が切なら笑みと口角の下がり、入なら笑み。 */
@@ -134,6 +156,14 @@ export interface TrackingTuning {
   mouthFormSeparate: boolean;
   /** 口角の下がり。`mouthFormSeparate` が入のときだけ使う。 */
   mouthFormFrown: RangeTuning;
+  /** 口の左右。`mouthSideSeparate` が切なら左右へ寄せる量、入なら左へ寄せる量 (利用者から見た左)。 */
+  mouthSide: RangeTuning;
+  /** 口の左右を向き (左へ・右へ) で分けるか。 */
+  mouthSideSeparate: boolean;
+  /** 口を右へ寄せる量。`mouthSideSeparate` が入のときだけ使う。 */
+  mouthSideRight: RangeTuning;
+  /** 頬の膨らみ。 */
+  cheekPuff: RangeTuning;
   /** 眉。`browSeparate` が切なら上げと下げ、入なら上げ。 */
   brow: RangeTuning;
   /** 眉を上げと下げで分けるか。 */
@@ -166,11 +196,18 @@ export const DEFAULT_TUNING: TrackingTuning = Object.freeze({
   eyeLookDown: DEFAULT_RANGE,
   eyeLookLeft: DEFAULT_RANGE,
   eyeLookRight: DEFAULT_RANGE,
+  eyeWide: DEFAULT_RANGE,
+  eyeWideSeparate: false,
+  eyeWideRight: DEFAULT_RANGE,
   jawOpen: DEFAULT_RANGE,
   mouthClose: DEFAULT_RANGE,
   mouthForm: DEFAULT_RANGE,
   mouthFormSeparate: false,
   mouthFormFrown: DEFAULT_RANGE,
+  mouthSide: DEFAULT_RANGE,
+  mouthSideSeparate: false,
+  mouthSideRight: DEFAULT_RANGE,
+  cheekPuff: DEFAULT_RANGE,
   brow: DEFAULT_RANGE,
   browSeparate: false,
   browDown: DEFAULT_RANGE,
@@ -228,11 +265,18 @@ export function sanitizeTuning(value: unknown): TrackingTuning {
     eyeLookDown: sanitizeRange(v.eyeLookDown),
     eyeLookLeft: sanitizeRange(v.eyeLookLeft),
     eyeLookRight: sanitizeRange(v.eyeLookRight),
+    eyeWide: sanitizeRange(v.eyeWide),
+    eyeWideSeparate: sanitizeSwitch(v.eyeWideSeparate),
+    eyeWideRight: sanitizeRange(v.eyeWideRight),
     jawOpen: sanitizeRange(v.jawOpen),
     mouthClose: sanitizeRange(v.mouthClose),
     mouthForm: sanitizeRange(v.mouthForm),
     mouthFormSeparate: sanitizeSwitch(v.mouthFormSeparate),
     mouthFormFrown: sanitizeRange(v.mouthFormFrown),
+    mouthSide: sanitizeRange(v.mouthSide),
+    mouthSideSeparate: sanitizeSwitch(v.mouthSideSeparate),
+    mouthSideRight: sanitizeRange(v.mouthSideRight),
+    cheekPuff: sanitizeRange(v.cheekPuff),
     brow: sanitizeRange(v.brow),
     browSeparate: sanitizeSwitch(v.browSeparate),
     browDown: sanitizeRange(v.browDown),

@@ -1,6 +1,6 @@
 <script lang="ts">
-// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
-// 「首」「目」「口」「眉」の小見出しで分け、各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、
+// 調整 (首振りの感度と遊び・瞼・視線・目の見開き・口・頬・眉の境目。T0877・T0879・T0880・T0881・T0882、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
+// 「首」「目」「口」「眉」の小見出しで分け (頬は「口」に置く)、各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、
 // 顔を動かしながら決められるようにする。閉じている見出しの中身は作らない (メーターが毎フレーム描き直されないように)。
 import { Button, Section, Slider, Toggle } from "@ugoe/ui";
 import { t } from "./i18n";
@@ -56,6 +56,10 @@ const METERS: Record<TuningRange, Meters> = {
     ["eyeLookUpRight", () => t("tuning.shapes.eyeLookUpRight")],
     ["eyeLookDownRight", () => t("tuning.shapes.eyeLookDownRight")],
   ],
+  eyeWide: [
+    ["eyeWideLeft", () => t("tuning.left")],
+    ["eyeWideRight", () => t("tuning.right")],
+  ],
   jawOpen: [["jawOpen", null]],
   mouthClose: [["mouthClose", null]],
   mouthForm: [
@@ -64,6 +68,11 @@ const METERS: Record<TuningRange, Meters> = {
     ["mouthFrownLeft", () => t("tuning.shapes.mouthFrownLeft")],
     ["mouthFrownRight", () => t("tuning.shapes.mouthFrownRight")],
   ],
+  mouthSide: [
+    ["mouthLeft", () => t("tuning.shapes.mouthLeft")],
+    ["mouthRight", () => t("tuning.shapes.mouthRight")],
+  ],
+  cheekPuff: [["cheekPuff", null]],
   brow: [
     ["browInnerUp", () => t("tuning.shapes.browInnerUp")],
     ["browOuterUpLeft", () => t("tuning.shapes.browOuterUpLeft")],
@@ -76,8 +85,8 @@ const METERS: Record<TuningRange, Meters> = {
 /** 小見出しのまとまり (首は軸、ほかは境目)。 */
 const GROUPS = [
   { key: "head", ranges: [] },
-  { key: "eyes", ranges: ["eyeBlink", "eyeLook"] },
-  { key: "mouth", ranges: ["jawOpen", "mouthClose", "mouthForm"] },
+  { key: "eyes", ranges: ["eyeBlink", "eyeLook", "eyeWide"] },
+  { key: "mouth", ranges: ["jawOpen", "mouthClose", "mouthForm", "mouthSide", "cheekPuff"] },
   { key: "brow", ranges: ["brow"] },
 ] as const satisfies readonly { key: string; ranges: readonly TuningRange[] }[];
 type Group = (typeof GROUPS)[number]["key"];
@@ -112,9 +121,17 @@ const SPLIT_TITLES: {
     left: () => t("tuning.eyeLook.directions.left"),
     right: () => t("tuning.eyeLook.directions.right"),
   },
+  eyeWide: {
+    left: () => t("tuning.eyeWide.directions.left"),
+    right: () => t("tuning.eyeWide.directions.right"),
+  },
   mouthForm: {
     smile: () => t("tuning.mouthForm.directions.smile"),
     frown: () => t("tuning.mouthForm.directions.frown"),
+  },
+  mouthSide: {
+    left: () => t("tuning.mouthSide.directions.left"),
+    right: () => t("tuning.mouthSide.directions.right"),
   },
   brow: {
     up: () => t("tuning.brow.directions.up"),

@@ -225,6 +225,38 @@ describe("InputPanel tracking tuning", () => {
     expect(target.textContent).toContain("Left out");
     expect(props.settings.tuning.mouthFormSeparate).toBe(false);
   });
+
+  it("shows the wide eyes, the mouth sides and the cheeks and separates their sides", async () => {
+    setLocale("en");
+    const { target, tracker, props, notify } = setup(DEFAULT_INPUT);
+    tracker.setTuning({ ...DEFAULT_INPUT.tuning, mouthSide: { low: 0.1, high: 0.5 } });
+    flushSync();
+    await notify();
+    openSection(target, "Tuning");
+    openSection(target, "Eyes");
+    openSection(target, "Mouth");
+    const toggleFor = (label: string) =>
+      [...target.querySelectorAll<HTMLElement>("[role=switch]")].find((b) =>
+        b.closest(".ugoe-toggle")?.textContent?.includes(label),
+      );
+    expect(target.textContent).toContain("Wide eyes (both eyes)");
+    expect(target.textContent).toContain("Mouth sideways (left and right)");
+    expect(target.textContent).toContain("Cheek puff");
+    toggleFor("Separate mouth left and right")?.click();
+    flushSync();
+    await notify();
+    // 入れると右へ寄せる組に今の境目を写す。
+    expect(props.settings.tuning.mouthSideSeparate).toBe(true);
+    expect(props.settings.tuning.mouthSideRight).toEqual({ low: 0.1, high: 0.5 });
+    expect(target.textContent).toContain("Mouth sideways (left)");
+    expect(target.textContent).toContain("Mouth sideways (right)");
+    toggleFor("Separate left and right wide eyes")?.click();
+    flushSync();
+    await notify();
+    expect(props.settings.tuning.eyeWideSeparate).toBe(true);
+    expect(target.textContent).toContain("Wide eyes (left eye)");
+    expect(target.textContent).toContain("Wide eyes (right eye)");
+  });
 });
 
 /** 見出しの名前で折りたたみを開く。 */

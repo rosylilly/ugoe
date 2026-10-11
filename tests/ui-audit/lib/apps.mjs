@@ -874,8 +874,8 @@ export const APPS = {
       await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));
       await ctx.scene("inputs", { aria: false });
       // トラッキングの調整を開いた様子 (感度・遊び・境目のスライダーとメーター。T0877)。「首」「目」「口」「眉」の小見出しを
-      // すべて開き (T0879)、瞼の左右を別々にした様子と、首の左右の感度を向きで分けた様子 (T0880)、視線・口の形・眉を向きで分けた様子
-      // (T0881) も撮る。撮った後は切って閉じて戻す。
+      // すべて開き (T0879。目の見開き・口の左右・頬も入る。T0882)、瞼の左右を別々にした様子と、首の左右の感度を向きで分けた様子 (T0880)、
+      // 視線・口の形・眉 (T0881) と目の見開き・口の左右 (T0882) を分けた様子も撮る。撮った後は切って閉じて戻す。
       const tuningText = (key) => text("packages/face-tracking", ctx.lang, key);
       const tuning = page.locator("main").getByRole("button", {
         name: tuningText("tuning.title"),
@@ -912,8 +912,15 @@ export const APPS = {
       await ctx.scene("inputs-tuning-directions", { aria: false });
       await directions.click();
       await page.waitForTimeout(300);
-      // 視線・口の形・眉の境目を向きで分けた様子 (T0881。向きごとの境目のスライダーとメーター)。視線のスイッチまで送って撮る。
-      const rangeSwitches = ["eyeLookSeparate", "mouthFormSeparate", "browSeparate"].map((key) =>
+      // 視線・口の形・眉の境目を向きで分けた様子 (T0881。向きごとの境目のスライダーとメーター) と、目の見開き・口の左右を
+      // 分けた様子 (T0882)。視線のスイッチまで送って撮る。
+      const rangeSwitches = [
+        "eyeLookSeparate",
+        "eyeWideSeparate",
+        "mouthFormSeparate",
+        "mouthSideSeparate",
+        "browSeparate",
+      ].map((key) =>
         page
           .locator("main")
           .getByRole("switch", { name: tuningText(`tuning.${key}.label`), exact: true }),

@@ -434,10 +434,99 @@ describe("applyTuning with the ranges separated by direction", () => {
   });
 });
 
+describe("applyTuning on the cheeks, the mouth sides and the wide eyes", () => {
+  const face: TrackingFrame = {
+    head: { yaw: 0, pitch: 0, roll: 0 },
+    blendShapes: {
+      eyeWideLeft: 0.2,
+      eyeWideRight: 0.3,
+      mouthLeft: 0.2,
+      mouthRight: 0.1,
+      cheekPuff: 0.15,
+      jawOpen: 0.2,
+    },
+  };
+
+  it("returns the same frame when the switches are on but every range is the default", () => {
+    const t = setRangeSeparate(
+      setRangeSeparate(DEFAULT_TUNING, "eyeWide", true),
+      "mouthSide",
+      true,
+    );
+    expect(t.eyeWideSeparate && t.mouthSideSeparate).toBe(true);
+    expect(isDefaultTuning(t)).toBe(false);
+    expect(applyTuning(face, t)).toBe(face);
+    // 切のときの右の組は使わない。
+    const unused = tuning({
+      eyeWideRight: { low: 0.1, high: 0.3 },
+      mouthSideRight: { low: 0.1, high: 0.3 },
+    });
+    expect(isDefaultTuning(unused)).toBe(true);
+    expect(applyTuning(face, unused)).toBe(face);
+    // 頬は分けない。
+    expect(isDefaultTuning(tuning({ cheekPuff: { low: 0, high: 0.5 } }))).toBe(false);
+  });
+
+  it("stretches the cheeks, both mouth sides and both wide eyes together", () => {
+    const b = applyTuning(
+      face,
+      tuning({
+        eyeWide: { low: 0.1, high: 0.5 },
+        mouthSide: { low: 0, high: 0.4 },
+        cheekPuff: { low: 0.05, high: 0.25 },
+      }),
+    ).blendShapes;
+    expect(b.eyeWideLeft).toBeCloseTo(0.25);
+    expect(b.eyeWideRight).toBeCloseTo(0.5);
+    expect(b.mouthLeft).toBeCloseTo(0.5);
+    expect(b.mouthRight).toBeCloseTo(0.25);
+    expect(b.cheekPuff).toBeCloseTo(0.5);
+    // ほかは変えない。
+    expect(b.jawOpen).toBe(0.2);
+  });
+
+  it("copies the range when a switch is turned on and applies each side its own range", () => {
+    const before = tuning({ eyeWide: { low: 0, high: 0.6 }, mouthSide: { low: 0, high: 0.4 } });
+    let on = setRangeSeparate(setRangeSeparate(before, "eyeWide", true), "mouthSide", true);
+    expect(on.eyeWideRight).toEqual({ low: 0, high: 0.6 });
+    expect(on.mouthSideRight).toEqual({ low: 0, high: 0.4 });
+    // 入れただけでは出力が変わらない。
+    expect(applyTuning(face, on).blendShapes).toEqual(applyTuning(face, before).blendShapes);
+    on = {
+      ...on,
+      eyeWide: { low: 0, high: 0.4 },
+      eyeWideRight: { low: 0.1, high: 0.5 },
+      mouthSide: { low: 0.1, high: 0.3 },
+      mouthSideRight: { low: 0, high: 0.2 },
+    };
+    const b = applyTuning(face, on).blendShapes;
+    expect(b.eyeWideLeft).toBeCloseTo(0.5);
+    expect(b.eyeWideRight).toBeCloseTo(0.5);
+    expect(b.mouthLeft).toBeCloseTo(0.5);
+    expect(b.mouthRight).toBeCloseTo(0.5);
+    // 切ると右の組は残るが使わない。
+    const off = setRangeSeparate(on, "mouthSide", false);
+    expect(off.mouthSideRight).toEqual({ low: 0, high: 0.2 });
+    expect(applyTuning(face, off).blendShapes.mouthRight).toBeCloseTo(0);
+  });
+
+  it("splits the mouth sides by the sides the user sees after swapping sides", () => {
+    // 検出 (反転した映像) で左へ寄せている = 入れ替えると利用者から見て右へ寄せている。
+    const raw = { head: { yaw: 0, pitch: 0, roll: 0 }, blendShapes: { mouthLeft: 0.3 } };
+    const swapped = applyCalibration(unmirrorFrame(raw), null);
+    const t = {
+      ...setRangeSeparate(DEFAULT_TUNING, "mouthSide", true),
+      mouthSideRight: { low: 0, high: 0.3 },
+    };
+    expect(applyTuning(swapped, t).blendShapes.mouthRight).toBe(1);
+    expect(applyTuning(raw, t).blendShapes.mouthLeft).toBe(0.3);
+  });
+});
+
 describe("sanitizeTuning", () => {
   it("fills missing items and drops unknown ones", () => {
     expect(sanitizeTuning(null)).toEqual(DEFAULT_TUNING);
-    const t = sanitizeTuning({ yaw: { gain: 2 }, cheekPuff: { low: 0.1, high: 0.2 } });
+    const t = sanitizeTuning({ yaw: { gain: 2 }, tongueOut: { low: 0.1, high: 0.2 } });
     expect(t).toEqual({ ...DEFAULT_TUNING, yaw: axis({ gain: 2, deadZone: 0 }) });
     expect(Object.keys(t)).toEqual(Object.keys(DEFAULT_TUNING));
     // T0877 の形 (眉・視線・口の形・口の閉じ・瞼の左右が無い) も読める。
@@ -552,6 +641,45 @@ describe("sanitizeTuning", () => {
       eyeLook: { low: 0, high: 0.5 },
       mouthForm: { low: 0, high: 0.6 },
       brow: { low: 0.1, high: 1 },
+    });
+  });
+});
+
+describe("sanitizeTuning on the cheeks, the mouth sides and the wide eyes", () => {
+  it("keeps the switches and ranges in range", () => {
+    const t = sanitizeTuning({
+      eyeWide: { low: 0.1, high: 2 },
+      eyeWideSeparate: "on",
+      eyeWideRight: { low: 0.4, high: 0.42 },
+      mouthSide: { low: Number.NaN, high: 0.5 },
+      mouthSideSeparate: true,
+      mouthSideRight: { low: 0.7, high: 0.3 },
+      cheekPuff: { low: -1, high: Number.POSITIVE_INFINITY },
+    });
+    expect(t.eyeWide).toEqual({ low: 0.1, high: 1 });
+    expect(t.eyeWideSeparate).toBe(false);
+    expect(t.eyeWideRight).toEqual({ low: 0, high: 1 });
+    expect(t.mouthSide).toEqual({ low: 0, high: 0.5 });
+    expect(t.mouthSideSeparate).toBe(true);
+    expect(t.mouthSideRight).toEqual({ low: 0, high: 1 });
+    expect(t.cheekPuff).toEqual({ low: 0, high: 1 });
+  });
+
+  it("reads the T0881 shape with the defaults for the cheeks, the mouth sides and the wide eyes", () => {
+    const old = {
+      ...Object.fromEntries(
+        Object.entries(DEFAULT_TUNING).filter(
+          ([key]) => !/^(eyeWide|mouthSide|cheekPuff)/.test(key),
+        ),
+      ),
+      browSeparate: true,
+      browDown: { low: 0, high: 0.4 },
+    };
+    expect(Object.keys(old)).not.toContain("cheekPuff");
+    expect(sanitizeTuning(old)).toEqual({
+      ...DEFAULT_TUNING,
+      browSeparate: true,
+      browDown: { low: 0, high: 0.4 },
     });
   });
 });
