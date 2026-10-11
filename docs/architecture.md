@@ -110,7 +110,8 @@
 | 法線マップによるライティング | [0015](adr/0015-lighting.md) |
 | 描画順を保ったまま描画を自動で統合する | [0016](adr/0016-draw-batching.md) |
 | すべての配布物を 1 つのコアから作る | [0017](adr/0017-single-runtime-distribution.md) |
-| ライブラリは MIT、アプリ (エディタ・ビューア) は GPL-3.0-only。1.0 は AI 連携を除く全機能 | [0018](adr/0018-licensing-and-1.0-scope.md) |
+| ライブラリは MIT、アプリ (エディタ・ビューア・スタジオ) は GPL-3.0-only | [0018](adr/0018-licensing-and-1.0-scope.md) |
+| 1.0 は今進めている開発すべて (M1〜M11、AI 支援を含む) の完了と、公開 (Release) の作業 | [0020](adr/0020-milestone-order-and-ai-in-1.0.md)、[0035](adr/0035-one-point-zero-scope-m1-to-m11.md) |
 | ビューアもエディタと同じ GPL-3.0-only | [0019](adr/0019-viewer-license.md) |
 | 配信用のスタジオは、バックエンドの指揮役がパラメータと `dt` を配り、出力ごとに物理を回して描く | [0028](adr/0028-studio.md) |
 

@@ -11,7 +11,8 @@
 | Unity の UPM パッケージ (tarball) | `.github/workflows/unity.yml` (成果物に残すだけ) | [bindings/unity/README.md#リリース](../bindings/unity/README.md#リリース) |
 | スタジオの macOS の仮想カメラ (Camera Extension) | まだ無い (手で作る。配布物に入れるのは Release のマイルストーン) | [macOS の仮想カメラ](#macos-の仮想カメラ) |
 
-公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。
+公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。1.0 (v1.0.0) は、[1.0 の範囲](roadmap.md#10-の範囲) (M1〜M11 の完了。
+[ADR 0035](adr/0035-one-point-zero-scope-m1-to-m11.md)) を終えてから、Release のマイルストーンで公開します。
 
 ## 同梱物のライセンスの表記
 

@@ -27,9 +27,9 @@
 | [0015](0015-lighting.md) | ライティング (法線マップ) | Accepted |
 | [0016](0016-draw-batching.md) | 描画コストの自動最適化 | Accepted |
 | [0017](0017-single-runtime-distribution.md) | 単一ランタイムと 1 行導入 | Accepted |
-| [0018](0018-licensing-and-1.0-scope.md) | ライセンスと 1.0 の範囲 | 一部 Superseded (1.0 の範囲は 0020) |
+| [0018](0018-licensing-and-1.0-scope.md) | ライセンスと 1.0 の範囲 | 一部 Superseded (1.0 の範囲は 0020、さらに 0035) |
 | [0019](0019-viewer-license.md) | ビューア (apps/viewer) のライセンスは GPL-3.0-only | Accepted |
-| [0020](0020-milestone-order-and-ai-in-1.0.md) | マイルストーンの順序と、AI 支援を 1.0 に含めること | Accepted |
+| [0020](0020-milestone-order-and-ai-in-1.0.md) | マイルストーンの順序と、AI 支援を 1.0 に含めること | 一部 Superseded (1.0 の範囲は 0035) |
 | [0021](0021-public-specification.md) | 公開のモデル仕様 (英語版を正とし、CC BY 4.0) | Accepted |
 | [0022](0022-multiple-ai-providers-and-agents.md) | 複数の AI プロバイダと、エージェントに判断を任せる経路 | Accepted |
 | [0023](0023-editor-mcp-bridge.md) | 実行中のエディタと MCP をつなぐ (エディタの中の MCP サーバと、stdio の中継) | Accepted |
@@ -44,3 +44,4 @@
 | [0032](0032-fuzzing-with-cargo-fuzz.md) | 外から来る入力を cargo-fuzz (libFuzzer、nightly) で続けて fuzz する。ワークスペースの外に置き、`just ci` に入れない | Accepted |
 | [0033](0033-studio-profile-relative-paths.md) | スタジオのプロファイルは、プロファイルのフォルダの下のファイルを相対パスで持つ (`..` を含む相対パスは読まない) | Accepted |
 | [0034](0034-studio-gpu-priority.md) | スタジオの GPU の優先度を、`unsafe` を許す専用のクレート (`ugoe-studio-gpu-priority`) で Windows でだけ下げる | Accepted |
+| [0035](0035-one-point-zero-scope-m1-to-m11.md) | 1.0 の範囲を、今進めている開発すべて (M1〜M11) の完了にする | Accepted |

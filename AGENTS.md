@@ -10,7 +10,8 @@ ugoe は Live2D Cubism と **機能的に互換** な 2D リギング・アニ�
 - 実装言語は Rust。エディタは Tauri v2 + Svelte 5。
 - コアの描画は wgpu (WebGPU API) で、ネイティブ・Web・ゲームエンジンに移植できるようにする。
 - Live2D の **ファイル形式や内部機構との互換は目指さない**。できることは同等にするが、データ形式とアルゴリズムは独自のもの。
-- 将来は AI 連携 (PSD 取り込み → レイヤー意味分類 → 自動メッシュ → 自動パラメータ設定) を持つ。
+- AI 連携 (PSD 取り込み → レイヤー意味分類 → 自動メッシュ → 自動パラメータ設定) を、編集の提案として持つ。
+- 1.0 の範囲は M1〜M11 の完了と公開の作業 ([docs/roadmap.md](docs/roadmap.md#10-の範囲)、[ADR 0035](docs/adr/0035-one-point-zero-scope-m1-to-m11.md))。
 
 目標と非目標の詳細は [docs/vision.md](docs/vision.md)、全体構成は [docs/architecture.md](docs/architecture.md) にあります。
 

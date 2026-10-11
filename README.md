@@ -2,12 +2,13 @@
 
 Live2D Cubism と**機能的に互換**な 2D リギング・アニメーションのエンジンとツールチェインです。Rust で書いています。
 
-> 状態: 設計初期 (M0)。API とファイル形式はまだ頻繁に変わります。
+> 状態: 開発中 (未リリース)。1.0 の範囲 (M1〜M11。[docs/roadmap.md](docs/roadmap.md#10-の範囲)) のマイルストーンは完了し、残りの後続のタスクと公開の準備を進めています。
+> 1.0 より前は API とファイル形式が予告なく変わります。
 
 - **ランタイム**: Rust 製。CPU で決定的に変形を評価し、描画は wgpu (WebGPU API) で行います。ネイティブ・Web・ゲームエンジンに組み込めます。
-- **エディタ**: Tauri v2 + Svelte 5 で作ります。ビューポートは同じランタイムを wasm にして描画します。
+- **アプリ**: エディタ (リギング)・ビューア (確かめる)・スタジオ (配信) を Tauri v2 + Svelte 5 で作ります。描画は同じランタイムを wasm にして行います。
 - **非互換**: Live2D の `.moc3` などのファイル形式や内部機構とは互換性がありません。データ形式は独自で、Live2D と同じことができるようにします。
-- **AI 連携 (予定)**: PSD の取り込み → レイヤーの意味分類 → 自動メッシュ → 自動パラメータ設定。
+- **AI 支援**: PSD の取り込み → レイヤーの意味分類 → 自動メッシュ → 自動パラメータ設定を、編集の提案として出します (適用は人が承認する)。MCP サーバから外部のエージェントも使えます。
 
 ## 始め方
 
@@ -29,9 +30,11 @@ just cli fixture single-quad > /tmp/quad.json && just cli info /tmp/quad.json
 
 ## ライセンス
 
-- ランタイム・ライブラリ・ツール (`crates/`)・文書 (`docs/`): [MIT](LICENSE)
+- ランタイム・ライブラリ・ツール (`crates/`)・バインディング (`bindings/`)・文書 (`docs/`): [MIT](LICENSE)
 - エディタ (`apps/editor/`): [GPL-3.0-only](apps/editor/LICENSE)
 - ビューア (`apps/viewer/`): [GPL-3.0-only](apps/viewer/LICENSE)
+- スタジオ (`apps/studio/`): [GPL-3.0-only](apps/studio/LICENSE)
+- アプリで共有するフロントエンドの部品 (`packages/`): GPL-3.0-only (各パッケージの LICENSE)
 - 公開仕様 (`spec/`、英語): [CC BY 4.0](spec/LICENSE)
 
-詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0021](docs/adr/0021-public-specification.md) にあります。
+詳細と依存ライブラリの方針は [ADR 0018](docs/adr/0018-licensing-and-1.0-scope.md)・[ADR 0019](docs/adr/0019-viewer-license.md)・[ADR 0021](docs/adr/0021-public-specification.md)・[ADR 0025](docs/adr/0025-web-runtime-package.md)・[ADR 0028](docs/adr/0028-studio.md) にあります。

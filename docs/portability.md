@@ -307,7 +307,7 @@ Rust の公開 API で添字を引数に取るものも、範囲の外でパニ�
 | Web | npm の `@ugoe/runtime` と Web Components の `<ugoe-avatar>` | T0404 |
 | Unity | UPM パッケージ ([bindings/unity](../bindings/unity/README.md)) | T0405 |
 | Godot | GDExtension (`bindings/godot`。ワークスペースの外、[ADR 0026](adr/0026-godot-binding.md)) | T0406 |
-| Unreal | プラグイン | T0407 |
+| Unreal | プラグイン (1.0 の後の候補。[roadmap.md](roadmap.md#10-の範囲)) | T0407 |
 | C / その他 | `ugoe-ffi` の共有ライブラリとヘッダ | T0401 |
 
 - **適合テスト**: すべての配布物で、同じモデル・同じパラメータから同じ頂点と画像が得られることを CI で検査します (T0408、`just conformance`)。参照となる出力は `ModelInstance` と `ugoe render` から作ります。いまは C ABI・wasm (npm パッケージ。WebGL2 と WebGPU)・Unity の C# の層 (頂点)・Godot (画像) を比べています。バインディングを足すときの手順は [tests/conformance/README.md](../tests/conformance/README.md#エンジン向けのバインディングを足す)。
