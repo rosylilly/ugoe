@@ -10,6 +10,7 @@
 //   signCommand は署名しない (docs/release.md#デスクトップアプリの署名)。無ければ署名しない。
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { signWindowsFile } from "../../../scripts/lib/app-signing.mjs";
 import { exportMbxPath } from "../../../scripts/lib/mbx.mjs";
@@ -46,6 +47,11 @@ if (result.error) {
 }
 if (result.status !== 0) process.exit(result.status ?? 1);
 const dll = join(root, "target", "vcam", target, "release", "ugoe_studio_vcam.dll");
+// インストーラのフックはこの場所の DLL を入れる。無ければ makensis より先に、ここで分かるように止まる
+if (!existsSync(dll)) {
+  console.error(`error: cargo finished but ${dll} was not built`);
+  process.exit(1);
+}
 try {
   if (signWindowsFile(dll)) console.error(`signed ${dll}`);
 } catch (e) {

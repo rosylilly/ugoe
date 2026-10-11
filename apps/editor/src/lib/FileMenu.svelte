@@ -9,7 +9,7 @@
 // `Module:` の印を押すとモジュールの設定 (ModuleSettingsDialog)。「Open base project」で本体を開いている間は、
 // モジュールに戻る帯 (ModuleReturnBar) を出す。
 // 保存・書き出しの結果は Toast、失敗はヘッダーの下の知らせの帯 (Notice)、保存していない変更を捨てる操作は確かめのダイアログ。
-// 流れ (操作を重ねないことも) は fileMenu.svelte.ts の FileMenuFlow が持ち、ここは表示と呼び出しだけ。
+// 流れ (操作を重ねないことも) は fileMenuFlow.svelte.ts の FileMenuFlow が持ち、ここは表示と呼び出しだけ。
 import {
   AlertDialog,
   Button,
@@ -27,7 +27,7 @@ import ExportPanel from "./ExportPanel.svelte";
 import ExternalChangeDialog from "./ExternalChangeDialog.svelte";
 import { messageText } from "./errors";
 import { CHECK_INTERVAL_MS } from "./externalChange";
-import { type FileActivity, FileMenuFlow, type PathAction } from "./fileMenu.svelte";
+import { type FileActivity, FileMenuFlow, type PathAction } from "./fileMenuFlow.svelte";
 import { parentDir } from "./filePaths";
 import { t } from "./i18n";
 import ModuleProblemBar from "./ModuleProblemBar.svelte";

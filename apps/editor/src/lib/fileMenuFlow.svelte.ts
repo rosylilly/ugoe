@@ -1,5 +1,5 @@
 // ファイルメニューの流れ (開く・保存・書き出し・外での書き換え・本体の変化・本体の問題の直し方)。
-// FileMenu.svelte は表示と呼び出しだけを持ち、流れはここに置く (fileMenu.test.ts で IPC を偽物にして確かめる)。
+// FileMenu.svelte は表示と呼び出しだけを持ち、流れはここに置く (fileMenuFlow.test.ts で IPC を偽物にして確かめる)。
 // docs/editor.md#外での書き換え、docs/editor.md#本体の変化、docs/editor.md#本体の問題の直し方。
 //
 // 操作は重ねない: 利用者の操作 (保存・上書き・開き直し・ダイアログで選ぶ操作など) は `busy` を立てて 1 つずつ行い、

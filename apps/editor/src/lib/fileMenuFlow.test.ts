@@ -2,7 +2,7 @@
 // 本体の問題で開けないときの直し方 (docs/editor.md#外での書き換え、docs/editor.md#本体の変化、docs/editor.md#本体の問題の直し方)。
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { FileDialogs } from "./fileDialogs";
-import { FileMenuFlow, type FileMenuHost } from "./fileMenu.svelte";
+import { FileMenuFlow, type FileMenuHost } from "./fileMenuFlow.svelte";
 import type {
   ApplyReport,
   Command,

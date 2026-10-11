@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
+ci: fmt-check lint sdk-no-render-check test layers case-check refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -160,6 +160,11 @@ spec:
 # クレート依存方向の検査
 layers:
     @node scripts/check-layers.mjs
+
+# 大文字と小文字だけが違う名前 (import の解決を含む) が同じディレクトリに無いか (macOS・Windows で同じファイルになる。scripts/check-case-collisions.mjs)
+case-check:
+    @node --test --test-reporter=dot scripts/check-case-collisions.test.mjs
+    @node scripts/check-case-collisions.mjs
 
 # 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口 (ugoe_ffi::fuzzing) の呼び出しの過不足
 # (docs/workflow/code-review.md#m9-の結果)

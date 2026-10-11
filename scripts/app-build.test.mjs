@@ -1,5 +1,6 @@
 // scripts/app-build.mjs の引数と組み合わせの検査のテスト (`just app-build-check`)
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   APPS,
@@ -277,4 +278,17 @@ test("ビルドに渡す前に、空の署名の環境変数を消す (GitHub Ac
     PATH: "",
   });
   assert.deepEqual(env, { AZURE_CLIENT_ID: "id", PATH: "" });
+});
+
+test("インストーラのフック (NSIS) の File のパスは `\\` で区切る (Windows の makensis は `/` で区切られたパスを探せない。T0088)", () => {
+  const hooks = readFileSync(
+    new URL("../apps/studio/src-tauri/windows/hooks.nsh", import.meta.url),
+    "utf8",
+  );
+  const paths = hooks
+    .split("\n")
+    .map((line) => line.replace(/;.*$/, "").trim())
+    .flatMap((line) => line.match(/^(?:!define\s+\S+|File)\s+"([^"]*)"/)?.slice(1) ?? []);
+  assert.ok(paths.length > 0);
+  for (const path of paths) assert.doesNotMatch(path, /\//, path);
 });

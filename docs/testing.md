@@ -12,6 +12,7 @@
 | フロントエンドの検査 | Biome + svelte-check + Vitest (`apps/*/src/**/*.test.ts`・`packages/*/src/**/*.test.ts`。部品を描くテストは [下](#エディタの部品のテスト)) | `just web-check` (先に `just wasm-fresh` で古い wasm の生成物を作り直す。[下](#wasm-の生成物の古さ)) |
 | wasm の型の写しの検査 | `scripts/check-wasm-types.mjs`。手書きの型の写し (`bindings/web/stub/ugoe_wasm.d.ts`・`@ugoe/player` と `@ugoe/face-tracking` の interface) を `just wasm` の生成物と比べる | `just wasm-types` (生成物が無ければ一部の写しをスタブと比べる。CI の web ジョブは `just wasm` の後に生成物と比べる) |
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
+| 名前の大文字と小文字の検査 | `scripts/check-case-collisions.mjs`。同じディレクトリに大文字と小文字だけが違う名前が無いか (macOS と Windows のファイルシステムでは同じファイルになる)。スクリプトの拡張子を取った import の名前も比べる (`FileMenu.svelte` と、`./fileMenu.svelte` で import する `fileMenu.svelte.ts` がぶつかる。T0088) | `just case-check` |
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと、Unity の宣言・fuzz の入口 `ugoe_ffi::fuzzing` の呼び出しの過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか)・`scripts/check-lock-sync.mjs` (ワークスペースの外の `Cargo.lock` の依存の版がルートとそろうか。[fuzz](#fuzz)) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
 | 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・`--locked` で lock が古いときの文・npm のライセンスの例外・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
@@ -72,7 +73,7 @@ ugoe-wasm の API が変わっても作業ツリーには前の生成物が残�
 
 | ジョブ | 内容 |
 | --- | --- |
-| `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
+| `rust-checks` | ワークスペースをビルドしない検査: fmt・`just layers`・`just case-check`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check` |
 | `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。`aarch64-unknown-none` と、64 ビットのアトミック操作の無い `thumbv7em-none-eabihf`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。fuzz のクレート (`fuzz/`) の stable での検査 (`just fuzz-lint`。[fuzz](#fuzz)) も |
 | `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |
 | `rust (assets)` | `ugoe-psd`・`ugoe-mesher`・`ugoe-rigging`・`ugoe-headless` の clippy とテスト |

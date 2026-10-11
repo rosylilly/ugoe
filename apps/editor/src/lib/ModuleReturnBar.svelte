@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 import { Notice } from "@ugoe/ui";
-import type { ModuleReturn } from "./fileMenu.svelte";
+import type { ModuleReturn } from "./fileMenuFlow.svelte";
 import { t } from "./i18n";
 import TipButton from "./ui/TipButton.svelte";
 

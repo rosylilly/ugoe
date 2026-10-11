@@ -5,8 +5,9 @@
 
 !define UGOE_VCAM_DLL "ugoe_studio_vcam.dll"
 ; 入れる DLL の場所。`${__FILEDIR__}` は、マクロの中では差し込んだ先 (installer.nsi) の場所になるので、読み込んだときに決める。
-; 区切りは `/` にする (Windows と Linux の makensis のどちらでも読める)。
-!define UGOE_VCAM_SOURCE "${__FILEDIR__}/../../../../target/vcam/x86_64-pc-windows-msvc/release/${UGOE_VCAM_DLL}"
+; 区切りは `\` にする。Windows の makensis は File のパスを最後の `\` でディレクトリとファイル名に分けるので、`/` で
+; つなぐと `windows/../..` までをファイル名として探し、見つからない (T0088)。Linux の makensis は `\` を `/` に直して読む。
+!define UGOE_VCAM_SOURCE "${__FILEDIR__}\..\..\..\..\target\vcam\x86_64-pc-windows-msvc\release\${UGOE_VCAM_DLL}"
 
 !macro NSIS_HOOK_PREINSTALL
   ; 入れ直しのとき、前の DLL は Frame Server が読み込んだままのことがある。使用中のファイルは上書きできないが、

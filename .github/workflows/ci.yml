@@ -56,6 +56,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Layers
         run: just layers
+      # 大文字と小文字だけが違う名前 (macOS・Windows で同じファイルになる)
+      - name: Case collisions
+        run: just case-check
       # コードから文書の見出しへの参照と、C ABI のヘッダとバインディングの宣言の突き合わせ
       - name: Refs
         run: just refs

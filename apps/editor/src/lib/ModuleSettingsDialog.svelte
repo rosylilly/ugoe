@@ -10,7 +10,7 @@
 import { Button, Checkbox, Dialog, Select, TextField } from "@ugoe/ui";
 import { untrack } from "svelte";
 import { errorText } from "./errors";
-import type { SettingsRetry } from "./fileMenu.svelte";
+import type { SettingsRetry } from "./fileMenuFlow.svelte";
 import { t } from "./i18n";
 import type { Command, ModuleStatus } from "./ipc";
 import ModuleErrorHelp from "./ModuleErrorHelp.svelte";
