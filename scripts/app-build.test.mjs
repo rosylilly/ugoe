@@ -15,6 +15,7 @@ import {
   notarytoolAuthArgs,
   signingPlan,
   signingSummary,
+  UNSIGNED_REASON_ENV,
   WINDOWS_SIGN_ENV,
   windowsSignArgv,
   withoutEmptySigningEnv,
@@ -268,6 +269,22 @@ test("ジョブの要約は、アプリと OS ごとに署名と公証の有無�
   ]);
   assert.match(summary, /\| editor \| macos \| yes \| yes \| {2}\|/);
   assert.match(summary, /\| editor \| linux \| no \| - \| Linux packages are not signed \|/);
+});
+
+test("呼ぶ側が渡した署名しない理由 (タグでないジョブ) を、署名しないときの理由の前に出す", () => {
+  const env = { [UNSIGNED_REASON_ENV]: "not a v* tag" };
+  assert.equal(signingPlan("windows", env).reason, `not a v* tag; ${WINDOWS_SIGN_ENV} is not set`);
+  assert.equal(signingPlan("macos", env).reason, "not a v* tag; APPLE_SIGNING_IDENTITY is not set");
+  assert.equal(signingPlan("linux", env).reason, "Linux packages are not signed");
+  // 署名するときは理由を出さない (署名の環境変数が勝つ)
+  const signed = signingPlan("windows", { ...env, [WINDOWS_SIGN_ENV]: "sign %1" });
+  assert.equal(signed.sign, true);
+  assert.equal(signed.reason, null);
+  // 空の値は無いのと同じ
+  assert.equal(
+    signingPlan("windows", { [UNSIGNED_REASON_ENV]: " " }).reason,
+    `${WINDOWS_SIGN_ENV} is not set`,
+  );
 });
 
 test("ビルドに渡す前に、空の署名の環境変数を消す (GitHub Actions は無い Secrets を空で渡す)", () => {

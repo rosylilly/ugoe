@@ -5,8 +5,10 @@ name: Editor build
 # 手元と同じ入口 `just app::build TARGET=<アプリ> PLATFORM=<OS>` (scripts/app-build.mjs) を使い、アプリごとの違い
 # (エディタのサイドカー・スタジオの仮想カメラの DLL など) はそのスクリプトが持つ。できたものは target/dist/<アプリ>/<OS>/ に集まる。
 # (Linux から Windows 向けの NSIS だけを作るクロスビルドもあるが、MSI を作れないので CI では使わない。)
-# 署名と公証は、リポジトリの Secrets があるときだけ行う (docs/release.md#デスクトップアプリの署名)。無ければ今までどおり署名せずに作り、
-# フォークや Secrets を置く前でも失敗しない。署名したかはジョブの要約に出る (scripts/app-build.mjs)。
+# 署名と公証の Secrets は、`v*` のタグからだけ使える environment `release` に置く (docs/release.md#secrets-を置く-初回だけ人の手)。
+# タグでは build-signed のジョブが environment を付けて署名し、それ以外 (手での起動・ブランチ) では build のジョブが environment を
+# 付けずに署名せずに作る (ブランチから動かしても environment の保護の規則で失敗しない)。2 つのジョブの中身は YAML のアンカーで共有する。
+# Secrets が無ければ署名せずに作るので、フォークや Secrets を置く前でも失敗しない。署名したかはジョブの要約に出る (scripts/app-build.mjs)。
 # `v*` のタグでは、release.yml が重い検査 (release-checks.yml) を通してから呼び、できたインストーラをそのタグの GitHub Release の
 # 下書きに添付する (release のジョブ。公開するのは人)。手での起動 (workflow_dispatch) は検査を待たずにビルドだけする。
 # ビューア (apps/viewer) とスタジオ (apps/studio) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701・T0801)。
@@ -26,11 +28,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # タグでないとき: environment を付けない。署名の Secrets は environment `release` にだけあるので空になり、署名せずに作る
+  # (リポジトリの Secrets に残っていると署名してしまうので、移したら消す。docs/release.md#secrets-を置く-初回だけ人の手)
   build:
     name: build (${{ matrix.app }}, ${{ matrix.label }})
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    strategy:
+    env:
+      # ジョブの要約の「Code signing」の表に出す、署名しなかった理由 (scripts/lib/app-signing.mjs)
+      UGOE_UNSIGNED_REASON: not a v* tag (the signing secrets are only in the release environment)
+    strategy: &build-strategy
       fail-fast: false
       matrix:
         app: [editor, viewer, studio]
@@ -49,10 +57,10 @@ jobs:
             os: macos-latest
             label: macos-universal
             rust-targets: aarch64-apple-darwin x86_64-apple-darwin
-    defaults:
+    defaults: &build-defaults
       run:
         shell: bash
-    steps:
+    steps: &build-steps
       - uses: actions/checkout@v7
       - name: Install Tauri system dependencies
         if: runner.os == 'Linux'
@@ -88,7 +96,7 @@ jobs:
       # beforeBuildCommand (tauri.conf.json) でも `pnpm wasm` が走るが、ビルド済みなのですぐ終わる。
       # Windows でも just はレシピを windows-shell (PowerShell) で実行するので、手元の Windows と同じ経路になる。
       # Windows: Azure Artifact Signing (artifact-signing-cli が signtool と Azure CLI で署名する。どちらもランナーに入っている)。
-      # Secrets が無ければ UGOE_WINDOWS_SIGN_COMMAND を設定せず、署名しない
+      # Secrets が無ければ (タグでない build のジョブでも) UGOE_WINDOWS_SIGN_COMMAND を設定せず、署名しない
       - name: Set up Windows code signing
         if: runner.os == 'Windows'
         env:
@@ -134,13 +142,28 @@ jobs:
           if-no-files-found: error
           path: target/dist/${{ matrix.app }}/${{ matrix.platform }}/
 
+  # `v*` のタグのとき: environment `release` の Secrets で署名する。environment の Deployment branches and tags が
+  # `v*` のタグに絞ってあるので、ほかの ref からは Secrets を読めない。deployment: false で、行列の 9 つのジョブごとに
+  # デプロイメントを作らない (Secrets と保護の規則は効く)
+  build-signed:
+    name: build signed (${{ matrix.app }}, ${{ matrix.label }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: release
+      deployment: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy: *build-strategy
+    defaults: *build-defaults
+    steps: *build-steps
+
   # `v*` のタグのときだけ、9 つのインストーラをそのタグの GitHub Release (下書き) に添付する。
   # ほかの配布物のワークフローと同じ下書きに添付する (scripts/github-release.mjs、docs/release.md#github-release-の下書き)。
   # Release を公開するのは人の手。
   release:
     name: attach to the draft release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: build-signed
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

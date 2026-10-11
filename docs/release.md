@@ -261,6 +261,8 @@ cargo publish --locked -p ugoe-physics -p ugoe-render -p ugoe
   Tauri は空の値も設定されていると読むため)。
 - 最後に、アプリと OS ごとに署名・公証したかを表示します。GitHub Actions では同じ表をジョブの要約 (`$GITHUB_STEP_SUMMARY`) に書きます。
   `DRY_RUN=1` では、署名するかどうか (`would be signed`) だけを表示します。
+- 環境変数 `UGOE_UNSIGNED_REASON` があれば、署名しないときの理由の前に出します (`editor-build.yml` のタグでないジョブが、
+  署名の Secrets を読めない理由を書く。[Secrets を置く](#secrets-を置く-初回だけ人の手))。
 
 ### Windows (Authenticode)
 
@@ -335,8 +337,22 @@ apt や dnf のリポジトリで配る・AppImage に GPG の署名を埋める
 
 ### Secrets を置く (初回だけ。人の手)
 
-GitHub のリポジトリの Settings → Secrets and variables → Actions の **Repository secrets** に置きます。置いた分の OS だけが署名され、
-置いていない OS は今までどおり署名しません。
+署名の Secrets は、`v*` のタグからだけ使える environment `release` に置きます。`editor-build.yml` は、`v*` のタグのときだけ
+`build-signed` のジョブに `environment: release` を付けて署名し、それ以外 (手での起動・ブランチ) では `build` のジョブが environment を
+付けずに署名せずに作ります (ブランチから動かしても保護の規則で失敗しません)。ジョブの要約の「Code signing」の表には、署名しなかった理由
+(`not a v* tag ...`) が出ます。
+
+1. GitHub のリポジトリの Settings → Environments で、environment `release` を作ります。
+   - **Deployment branches and tags** を「Selected branches and tags」にし、タグの規則 `v*` だけを許します (ブランチは加えない)。
+   - **Required reviewers** は任意です。付けると、タグの run の 9 つの署名するジョブが承認を待ちます (承認の画面でまとめて承認できます)。
+     付けなくても、Secrets を読めるのは `v*` のタグの run だけです。
+2. その environment の **Environment secrets** に、下の表の Secrets を置きます。置いた分の OS だけが署名され、置いていない OS は
+   今までどおり署名しません。
+3. Settings → Secrets and variables → Actions の **Repository secrets** に同じ名前の Secrets が残っていれば消します (残っていると、
+   タグでない `build` のジョブもそれで署名してしまいます)。
+
+`crates-io` の environment ([公開できるようにする](#公開できるようにする-初回だけ)) は公開の前に人の承認を待つためのもので
+(required reviewers が要る)、`release` は Secrets を読める ref をタグに絞るためのものです (承認は任意)。
 
 | Secret | 中身 |
 | --- | --- |
@@ -349,11 +365,12 @@ GitHub のリポジトリの Settings → Secrets and variables → Actions の 
 | `APPLE_API_ISSUER`・`APPLE_API_KEY` | App Store Connect の「ユーザーとアクセス」→「統合」→ API キーの発行者 ID とキー ID |
 | `APPLE_API_PRIVATE_KEY` | API キーの `.p8` の中身 (`-----BEGIN PRIVATE KEY-----` から) |
 
-- Secrets はリポジトリに書き込める人のワークフローから読めます。タグのときだけに絞るなら、environment を作って
-  Deployment branches and tags を `v*` に絞り、Secrets をその environment に移し、`editor-build.yml` のジョブに `environment:` を付けます
-  (そのときは手動の実行をブランチから行うと失敗するので、手動の実行もタグを選んで行います)。
+- **手での起動で署名を試す:** Actions の画面で `Editor build` を「Run workflow」し、「Use workflow from」で **`v*` のタグ** を選びます
+  (ブランチを選ぶと署名しません)。タグを ref にした run は `build-signed` のジョブで署名し、`release` のジョブがそのタグの
+  GitHub Release の下書きにインストーラを添付します (下書きが無ければ作る)。試すだけなら、捨ててよいタグ (例: `v0.0.0-signing-test`)
+  を打って選び、後で下書きの Release とタグを消します。
 - 証明書や API キーを取り消した・更新したら、Secrets も置き換えます。Artifact Signing の証明書は Microsoft が更新するので置き換えは要りません。
-- 置いた後の最初のタグ (または手動の実行) で、ジョブの要約の「Code signing」の表が `signed` になっていることと、下の確かめ方で
+- 置いた後の最初のタグ (またはタグを選んだ手動の実行) で、ジョブの要約の「Code signing」の表が `signed` になっていることと、下の確かめ方で
   署名と公証を確かめます。
 
 ### 署名を確かめる
@@ -375,7 +392,7 @@ spctl --assess --type open --context context:primary-signature --verbose ugoe_<�
 ```
 
 SmartScreen の評価はダウンロードの実績で付くので、署名した直後の版でも警告が出ることがあります (署名していれば、発行元に名義が出る)。
-確かめていないことは [manual-check.md の D 節](manual-check.md#d-開発者向け-ビルドci配布バインディング) の D10・D11。
+確かめていないことは [manual-check.md の D 節](manual-check.md#d-開発者向け-ビルドci配布バインディング) の D10〜D12 と、environment の保護の規則での実行。
 
 ## GitHub Release の下書き
 

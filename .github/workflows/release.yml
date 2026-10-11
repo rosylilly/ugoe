@@ -31,7 +31,8 @@ jobs:
     permissions:
       contents: write
 
-  # エディタ・ビューア・スタジオのインストーラ (署名の Secrets を使う) を下書きの Release に添付する
+  # エディタ・ビューア・スタジオのインストーラを下書きの Release に添付する (署名の Secrets は、呼ばれた側のジョブが
+  # environment `release` から読む。docs/release.md#secrets-を置く-初回だけ人の手)
   apps:
     needs: checks
     uses: ./.github/workflows/editor-build.yml

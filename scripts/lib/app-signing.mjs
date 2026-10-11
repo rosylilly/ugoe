@@ -8,6 +8,12 @@ import { spawnSync } from "node:child_process";
 /** Windows の署名のコマンド。Tauri の `bundle.windows.signCommand` と同じ形 (`%1` が署名するファイル)。 */
 export const WINDOWS_SIGN_ENV = "UGOE_WINDOWS_SIGN_COMMAND";
 
+/**
+ * 署名しなかった理由を呼ぶ側が渡す環境変数 (GitHub Actions のタグでないジョブ。署名の Secrets が environment `release` にだけ
+ * あるため)。署名の環境変数が無くて署名しないとき、ジョブの要約にこの理由を出す。
+ */
+export const UNSIGNED_REASON_ENV = "UGOE_UNSIGNED_REASON";
+
 /** macOS の公証の資格情報の組 (Tauri が読む環境変数。どちらか 1 組が揃っていれば公証する)。 */
 export const NOTARIZE_ENV_SETS = [
   ["APPLE_API_ISSUER", "APPLE_API_KEY", "APPLE_API_KEY_PATH"],
@@ -42,6 +48,10 @@ export function withoutEmptySigningEnv(env) {
 
 const set = (env, name) => (env[name] ?? "").trim() !== "";
 
+/** 署名しない理由。呼ぶ側の理由 (`UNSIGNED_REASON_ENV`) があればそれを、無ければ `fallback` (足りない環境変数) を返す。 */
+const unsignedReason = (env, fallback) =>
+  set(env, UNSIGNED_REASON_ENV) ? `${env[UNSIGNED_REASON_ENV].trim()}; ${fallback}` : fallback;
+
 /**
  * 1 つの OS 向けのビルドで、署名と公証をするか (純粋な関数。テストする)。
  *
@@ -57,7 +67,7 @@ export function signingPlan(platform, env = process.env) {
           sign: false,
           notarize: false,
           config: null,
-          reason: `${WINDOWS_SIGN_ENV} is not set`,
+          reason: unsignedReason(env, `${WINDOWS_SIGN_ENV} is not set`),
         };
       }
       const command = env[WINDOWS_SIGN_ENV].trim();
@@ -83,7 +93,7 @@ export function signingPlan(platform, env = process.env) {
           sign: false,
           notarize: false,
           config: null,
-          reason: "APPLE_SIGNING_IDENTITY is not set",
+          reason: unsignedReason(env, "APPLE_SIGNING_IDENTITY is not set"),
         };
       }
       if (set(env, "APPLE_CERTIFICATE") !== set(env, "APPLE_CERTIFICATE_PASSWORD")) {
