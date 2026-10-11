@@ -11,6 +11,8 @@ src/frame.ts            MediaPipe の結果 → TrackingFrame (頭の向き・�
 src/pose.ts             Pose Landmarker の点 → 体の値 (体の向きと肩の上下、T0645)
 src/calibration.ts      キャリブレーション (中立の顔を差し引く)
 src/tuning.ts           利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880・T0881)
+src/tuningStorage.ts    調整を localStorage に覚える読み書き (T0738・T1678)
+src/settingsStorage.ts  ほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) を localStorage に覚える読み書き (T0739)
 src/filter.ts           One Euro フィルタによる平滑化
 src/recording.ts        記録した値の列 (JSON) の形式・再生
 src/tracker.svelte.ts   FaceTracker: 入力 (カメラ・動画・画像・記録) → MediaPipe → 上の処理 → TrackingTarget
@@ -127,6 +129,11 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
   エディタは `ugoe.editor.trackingTuning` ([docs/editor.md](../../docs/editor.md#覚える値)。T1678))。読むときは `sanitizeTuning` を通すので、
   壊れた値・範囲の外・知らない項目は既定値になる。既定値ならキーを消す。読み書きは `@ugoe/i18n` の `readStoredItem` などを通す
   (使えない localStorage でも例外を出さない)。`tuning.ts` は型のほかに何も import しないので、別のファイルに置く。
+- **ほかの設定の保存 (T0739):** 平滑化・左右の入れ替え・目パチを止める・体 (`TrackingSettings`) は `src/settingsStorage.ts` で同じ形に覚える:
+  `loadStoredSettings(key, storage?)`・`saveStoredSettings(key, settings, storage?)` と、`FaceTracker` との受け渡しの `trackerSettings(tracker)`・
+  `applyTrackerSettings(tracker, settings)` (目パチと体は `setStopEyeBlink`・`setTrackBody` を通す)。読むときは `sanitizeTrackingSettings` が項目ごとに確かめ
+  (型の違う値は既定値、平滑化は 0〜1 に収める)、既定値 (`DEFAULT_TRACKING_SETTINGS` = `FaceTracker` を作ったときの値) ならキーを消す。
+  今はビューアだけが使う (`ugoe.viewer.tracking.settings`)。
 - **決めたこと:**
   - 瞼の左右は既定で一緒 (T0877): 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (向きで揺れる差を固定の値で直すと、正面で
     片目だけ閉じきる) ため。スライダーの数も半分になる。片目だけ瞼が下がりやすい人・片目だけ眼鏡の反射で検出が弱い人のために、

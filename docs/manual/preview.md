@@ -83,6 +83,9 @@
 | 「Head and blend shapes」「Tracked parameters」 | 検出した頭の向き・体の値 (「Body」。無い値は「—」)・表情の値 (0〜1)、それで動くパラメータの今の値 |
 | 「Third-party licenses」 | 同梱している MediaPipe (顔と体の検出) のライセンス |
 
+- ビューアは「Swap sides」「Stop eye blink」「Body (shoulders)」「Smoothing」も覚えていて、開き直しても同じ値になります
+  (戻すときは、それぞれのスイッチとスライダーで既定の値に戻す)。カメラの選択・「Mirror view」・「Landmarks」は覚えません。
+  エディタのプレビューは、調整のほかは覚えません。
 - 「Runtime」の「Eye blink」を切っているときは、トラッキングを止めてもまばたきはしません。
 - トラッキングで動いているパラメータは、スライダーで動かしても上書きされます。
 - プレビューを出ると、トラッキングも止まります。

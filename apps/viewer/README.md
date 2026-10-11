@@ -369,6 +369,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | `ugoe.viewer.motionOverTracking` | トラッキング中もモーションを優先するか | @ugoe/player ([フェイストラッキングと同時に使う](#フェイストラッキングと同時に使う)) |
 | `ugoe.viewer.motionOverTracking.kept` | モーションを優先してもトラッキングのままにするパラメータ | 同上 |
 | `ugoe.viewer.tracking.tuning` | フェイストラッキングの調整 (感度と境目。JSON。既定値なら消す) | `App.svelte` (`@ugoe/face-tracking` の `loadStoredTuning`・`saveStoredTuning`。[フェイストラッキング](#フェイストラッキング-t0703)) |
+| `ugoe.viewer.tracking.settings` | フェイストラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体。JSON。既定値なら消す) | `App.svelte` (`@ugoe/face-tracking` の `loadStoredSettings`・`saveStoredSettings`。[フェイストラッキング](#フェイストラッキング-t0703)) |
 | `ugoe.viewer.rememberedOrder` | 覚えたものの一覧の並び | `MemoryDialog.svelte` (`player.storage`。[覚えたものの一覧](#覚えたものの一覧-t0714)) |
 
 ## モデルごとに覚える (T0711)
@@ -650,8 +651,13 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 - **調整 (感度と境目。T0738):** パネルの「調整」([packages/face-tracking](../../packages/face-tracking/README.md#利用者の調整-t0877)) は
   `ugoe.viewer.tracking.tuning` に JSON で覚え、起動のときに読んで `tracker.setTuning` に当てる (`App.svelte`。読み書きは `@ugoe/face-tracking` の `loadStoredTuning`・`saveStoredTuning`。エディタと共有。T1678)。
   読むときは `sanitizeTuning` を通すので、壊れた値・範囲の外・知らない項目は既定値になる。既定値 (「既定に戻す」を含む) になったらキーを消す
-  (覚えていないのと同じにし、「覚えたもの」を増やさない)。ほかのトラッキングの設定 (カメラ・平滑化・左右の入れ替え・目パチを止める・体) は覚えない
-  (要望が出たら同じ分野 `tracking.*` のキーに足す)。
+  (覚えていないのと同じにし、「覚えたもの」を増やさない)。
+- **ほかの設定 (T0739):** 平滑化・左右の入れ替え・目パチを止める・体は `ugoe.viewer.tracking.settings` に 1 つの JSON
+  (`{"smoothing", "swapSides", "stopEyeBlink", "trackBody"}`) で覚え、起動のときに `applyTrackerSettings` で当てる (`App.svelte`。読み書きは
+  `@ugoe/face-tracking` の `loadStoredSettings`・`saveStoredSettings`・`trackerSettings`)。調整と同じく、読むときは `sanitizeTrackingSettings` を通して
+  項目ごとに確かめ (型の違う値は既定値、平滑化は 0〜1 に収める)、すべて既定値になったらキーを消す。戻すのは各スイッチとスライダーで足りる
+  (「既定に戻す」は調整だけを戻す)。項目ごとのキーにしないのは、いつも一緒に読み書きし、`tracking.*` の分野のキーを増やさないため。
+  - 覚えないもの: カメラ (機器の ID は機械や接続で変わり、無い機器のときの戻し方まで要る)・ランドマークと鏡像の表示 (表示だけで、その場で切り替えるもの)。
 - **目パチ:** トラッキング中は、既定でモデルの自動の目パチを止める (「目パチを止める」、`WebPuppet.set_enabled("eye_blink", false)`)。
   目パチは基準値に重なるので、止めないとトラッキングの目の開閉と目パチが混ざる。止めると元に戻す。
 - カメラの無い環境 (CI・ヘッドレス) では「ファイル…」で動画・画像、または記録した値の JSON を入れる。

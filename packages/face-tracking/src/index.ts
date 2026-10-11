@@ -23,6 +23,17 @@ export {
   recordingDuration,
   serializeRecording,
 } from "./recording";
+export {
+  applyTrackerSettings,
+  DEFAULT_TRACKING_SETTINGS,
+  isDefaultTrackingSettings,
+  loadStoredSettings,
+  sanitizeTrackingSettings,
+  saveStoredSettings,
+  type TrackingSettings,
+  type TrackingSettingsHolder,
+  trackerSettings,
+} from "./settingsStorage";
 export { default as TrackingPanel } from "./TrackingPanel.svelte";
 export {
   animationFrames,

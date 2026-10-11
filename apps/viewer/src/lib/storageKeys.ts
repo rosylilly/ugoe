@@ -14,6 +14,8 @@ export const STORAGE_KEYS = {
   theme: "ugoe.viewer.theme",
   /** フェイストラッキングの調整 (感度と境目。JSON。@ugoe/face-tracking の tuningStorage.ts。T0738)。 */
   "tracking.tuning": "ugoe.viewer.tracking.tuning",
+  /** フェイストラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体。JSON。@ugoe/face-tracking の settingsStorage.ts。T0739)。 */
+  "tracking.settings": "ugoe.viewer.tracking.settings",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

@@ -1,9 +1,13 @@
 <script lang="ts">
 import {
+  applyTrackerSettings,
   FaceTracker,
+  loadStoredSettings,
   loadStoredTuning,
+  saveStoredSettings,
   saveStoredTuning,
   TrackingPanel,
+  trackerSettings,
 } from "@ugoe/face-tracking";
 import { encodePng, type ModelFile, Player, visibleSlots } from "@ugoe/player";
 import {
@@ -65,6 +69,11 @@ window.__UGOE_TRACKER__ = tracker;
 tracker.setTuning(loadStoredTuning(STORAGE_KEYS["tracking.tuning"]));
 $effect(() => {
   saveStoredTuning(STORAGE_KEYS["tracking.tuning"], tracker.tuning);
+});
+// ほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) も覚える (T0739。既定値はキーを消す)。
+applyTrackerSettings(tracker, loadStoredSettings(STORAGE_KEYS["tracking.settings"]));
+$effect(() => {
+  saveStoredSettings(STORAGE_KEYS["tracking.settings"], trackerSettings(tracker));
 });
 
 let dropping = $state(false);
