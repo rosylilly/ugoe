@@ -1,11 +1,11 @@
 ---
 id: T0738
 title: "ビューア: トラッキングの調整 (感度と境目) を覚え、起動し直しても戻す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/viewer, packages/face-tracking, tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0738
 ---
 
 # T0738: ビューアでトラッキングの調整を覚える

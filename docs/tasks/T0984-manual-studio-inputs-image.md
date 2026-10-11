@@ -1,11 +1,11 @@
 ---
 id: T0984
 title: "マニュアル: スタジオの「入力」のパネルの画像を撮り直し、調整 (感度と境目) を開いた画像を足す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0984
 ---
 
 # T0984: マニュアル: スタジオの「入力」の画像

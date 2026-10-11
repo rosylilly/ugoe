@@ -1,11 +1,11 @@
 ---
 id: T1408
 title: "公開: C ABI の配布物 (ugoe-ffi の共有ライブラリ・静的ライブラリとヘッダ) を OS ごとにまとめ、タグで GitHub Release に添付する"
-status: todo
+status: in-progress
 milestone: Release
 crates: [ugoe-ffi, .github/workflows, scripts, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1408
 ---
 
 # T1408: C ABI の配布物

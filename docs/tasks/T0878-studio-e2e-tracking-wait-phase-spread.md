@@ -1,11 +1,11 @@
 ---
 id: T0878
 title: "スタジオ: 「トラッキングの待ち」の遅れた値の割合が回ごとに分かれるのを、時機を取り直して少ない回数で比べられるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/e2e, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0878
 ---
 
 # T0878: 遅れた値の割合を、値の届く時機をばらして比べる

@@ -1,11 +1,11 @@
 ---
 id: T0084
 title: "公開: デスクトップアプリの署名と公証の手順を書き、タグのときにインストーラを GitHub Release に添付する"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0084
 ---
 
 # T0084: デスクトップアプリの署名と GitHub Release への添付
