@@ -3,8 +3,7 @@ import { DEFAULT_STORAGE_PREFIX, PlayerStorage, STORAGE_NAMES } from "@ugoe/play
 import { describe, expect, it } from "vitest";
 import { STORAGE_KEYS, STORAGE_PREFIX } from "./storageKeys";
 
-// 名前は camelCase。`.` は分野の区切り (`dressUp.autoRestore`) にだけ使う (docs/ui.md#名前と切り替え)。
-const NAME = /^[a-z][A-Za-z0-9]*$/;
+// 名前は camelCase。`.` は分野の区切り (`dressUp.autoRestore`・`tracking.tuning`) にだけ使う (docs/ui.md#名前と切り替え)。
 const DOTTED_NAME = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/;
 
 describe("localStorage keys", () => {
@@ -13,7 +12,7 @@ describe("localStorage keys", () => {
   it("are all ugoe.viewer.<name> with the name of the entry", () => {
     expect(STORAGE_PREFIX).toBe("ugoe.viewer");
     for (const [name, key] of keys) {
-      expect(name).toMatch(NAME);
+      expect(name).toMatch(DOTTED_NAME);
       expect(key).toBe(`${STORAGE_PREFIX}.${name}`);
     }
   });

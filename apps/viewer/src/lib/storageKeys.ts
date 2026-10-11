@@ -12,6 +12,8 @@ export const STORAGE_KEYS = {
   locale: "ugoe.viewer.locale",
   /** テーマ (@ugoe/ui の initTheme。index.html も読む)。 */
   theme: "ugoe.viewer.theme",
+  /** フェイストラッキングの調整 (感度と境目。JSON。trackingTuning.ts。T0738)。 */
+  "tracking.tuning": "ugoe.viewer.tracking.tuning",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

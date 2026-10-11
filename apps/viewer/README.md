@@ -33,6 +33,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/drop.ts           ドロップしたファイルの開き方 (モデルとモジュールを一緒に落としたとき。T0713)
   lib/samples.ts        同梱の見本の一覧と開き方 (ツールバーの「サンプル」)
   lib/screenshot.ts     画像の保存の既定のファイル名 (T0420。画素の検査と PNG への変換は @ugoe/player の screenshot.ts、T0730)
+  lib/trackingTuning.ts フェイストラッキングの調整 (感度と境目) を覚える (T0738。下の「フェイストラッキング」)
   lib/wasm/             ugoe-wasm の読み込み (`Player` に `loadWasm` として渡す)。generated/ は `pnpm wasm` の出力 (gitignore 済み)
   global.d.ts           `window.__UGOE_VIEWER__` の型
 public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス。`node scripts/third-party-notices.mjs` が生成する) だけコミットする
@@ -368,6 +369,7 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
 | `ugoe.viewer.autoIdle` | 待機モーションを自動で流すか | 同上 |
 | `ugoe.viewer.motionOverTracking` | トラッキング中もモーションを優先するか | @ugoe/player ([フェイストラッキングと同時に使う](#フェイストラッキングと同時に使う)) |
 | `ugoe.viewer.motionOverTracking.kept` | モーションを優先してもトラッキングのままにするパラメータ | 同上 |
+| `ugoe.viewer.tracking.tuning` | フェイストラッキングの調整 (感度と境目。JSON。既定値なら消す) | `lib/trackingTuning.ts` ([フェイストラッキング](#フェイストラッキング-t0703)) |
 | `ugoe.viewer.rememberedOrder` | 覚えたものの一覧の並び | `MemoryDialog.svelte` (`player.storage`。[覚えたものの一覧](#覚えたものの一覧-t0714)) |
 
 ## モデルごとに覚える (T0711)
@@ -646,6 +648,11 @@ webview で思わぬスクリプトが動いても、外へ送れず、利用者
     MediaPipe の値をそのまま使う)。「左右を入れ替える」を選ぶと、左右の名前とヨー・ロールの符号を入れ替え、モデルが鏡に映った
     自分のように動く。入力の映像がすでに反転しているとき (反転済みの仮想カメラなど) も、これで直す。
     「鏡像で表示」は映像の表示だけを反転し、値は変えない。
+- **調整 (感度と境目。T0738):** パネルの「調整」([packages/face-tracking](../../packages/face-tracking/README.md#利用者の調整-t0877)) は
+  `ugoe.viewer.tracking.tuning` に JSON で覚え、起動のときに読んで `tracker.setTuning` に当てる (`lib/trackingTuning.ts`)。
+  読むときは `sanitizeTuning` を通すので、壊れた値・範囲の外・知らない項目は既定値になる。既定値 (「既定に戻す」を含む) になったらキーを消す
+  (覚えていないのと同じにし、「覚えたもの」を増やさない)。ほかのトラッキングの設定 (カメラ・平滑化・左右の入れ替え・目パチを止める・体) は覚えない
+  (要望が出たら同じ分野 `tracking.*` のキーに足す)。
 - **目パチ:** トラッキング中は、既定でモデルの自動の目パチを止める (「目パチを止める」、`WebPuppet.set_enabled("eye_blink", false)`)。
   目パチは基準値に重なるので、止めないとトラッキングの目の開閉と目パチが混ざる。止めると元に戻す。
 - カメラの無い環境 (CI・ヘッドレス) では「ファイル…」で動画・画像、または記録した値の JSON を入れる。

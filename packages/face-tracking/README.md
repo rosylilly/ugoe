@@ -92,7 +92,8 @@ pnpm --filter @ugoe/face-tracking check   # svelte-check
 - **広げるとき:** `TUNING_RANGES` にまとまりとブレンドシェイプの名前を足し、`TrackingTuning`・`DEFAULT_TUNING`・`sanitizeTuning`・
   スタジオの `input.rs` の `TrackingTuning`・パネル (`TuningSection.svelte` の `RANGES`) と文言に項目を足す。
 - **保存:** パッケージは持つだけで保存しない。スタジオはプロファイルの `input.tuning` に保存する ([docs/studio.md](../../docs/studio.md#入力とホットキーの項目-t0803))。
-  ビューアとエディタは保存しない (開き直すと既定値)。
+  ビューアは `localStorage` の `ugoe.viewer.tracking.tuning` に覚える ([apps/viewer/README.md](../../apps/viewer/README.md#フェイストラッキング-t0703)。T0738)。
+  エディタは保存しない (開き直すと既定値)。
 - **決めたこと:**
   - 瞼の左右を一緒にした: 細目の度合いは左右でほぼ同じで、検出の左右差は首の向きで変わる (向きで揺れる差を固定の値で直すと、正面で
     片目だけ閉じきる) ため。スライダーの数も半分になる。左右を別にするなら `eyeBlinkLeft`・`eyeBlinkRight` の組を分けて足す。

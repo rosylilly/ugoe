@@ -43,6 +43,7 @@ import PosePanel from "./lib/PosePanel.svelte";
 import SettingsDialog from "./lib/SettingsDialog.svelte";
 import { openSample, SAMPLES, type Sample } from "./lib/samples";
 import { screenshotErrorText, screenshotFileName } from "./lib/screenshot";
+import { loadTrackingTuning, saveTrackingTuning } from "./lib/trackingTuning";
 import Viewport from "./lib/Viewport.svelte";
 import { loadWasm } from "./lib/wasm/load";
 
@@ -55,6 +56,11 @@ const player = new Player({
 window.__UGOE_VIEWER__ = player;
 const tracker = new FaceTracker(player, { saveJson: saveJsonFile });
 window.__UGOE_TRACKER__ = tracker;
+// トラッキングの調整は覚えて、開き直しても戻す (T0738。既定値はキーを消す)。
+tracker.setTuning(loadTrackingTuning());
+$effect(() => {
+  saveTrackingTuning(tracker.tuning);
+});
 
 let dropping = $state(false);
 /**
