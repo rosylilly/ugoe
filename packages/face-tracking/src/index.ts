@@ -42,6 +42,7 @@ export {
   moveRangeBound,
   type RangeTuning,
   sanitizeTuning,
+  setAxisSeparate,
   setEyeBlinkSeparate,
   type TrackingTuning,
   TUNING_AXES,

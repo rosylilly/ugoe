@@ -113,10 +113,17 @@ describe("InputPanel tracking tuning", () => {
       (b) => b.textContent === "Reset to defaults",
     );
     expect(reset?.disabled).toBe(true);
-    tracker.setTuning({ ...DEFAULT_INPUT.tuning, roll: { gain: 0.5, deadZone: 2 } });
+    tracker.setTuning({
+      ...DEFAULT_INPUT.tuning,
+      roll: { ...DEFAULT_INPUT.tuning.roll, gain: 0.5, deadZone: 2 },
+    });
     flushSync();
     await notify();
-    expect(props.settings.tuning.roll).toEqual({ gain: 0.5, deadZone: 2 });
+    expect(props.settings.tuning.roll).toEqual({
+      ...DEFAULT_INPUT.tuning.roll,
+      gain: 0.5,
+      deadZone: 2,
+    });
     expect(reset?.disabled).toBe(false);
     reset?.click();
     flushSync();
@@ -146,6 +153,37 @@ describe("InputPanel tracking tuning", () => {
     expect(target.textContent).toContain("Eyelid (left eye)");
     expect(target.textContent).toContain("Eyelid (right eye)");
     expect(target.textContent).not.toContain("Eyelids (both eyes)");
+  });
+
+  it("separates the head turn sensitivity by direction and saves both", async () => {
+    setLocale("en");
+    const { target, tracker, props, notify } = setup(DEFAULT_INPUT);
+    tracker.setTuning({ ...DEFAULT_INPUT.tuning, yaw: { ...DEFAULT_INPUT.tuning.yaw, gain: 1.5 } });
+    flushSync();
+    await notify();
+    openSection(target, "Tuning");
+    openSection(target, "Head");
+    const toggles = [...target.querySelectorAll<HTMLElement>("[role=switch]")].filter((b) =>
+      b.closest(".ugoe-toggle")?.textContent?.includes("Separate sensitivity by direction"),
+    );
+    // 軸ごとに 1 つ (ヨー・ピッチ・ロール)。
+    expect(toggles).toHaveLength(3);
+    expect(target.querySelector(".meter-ends")).toBeNull();
+    toggles[0]?.click();
+    flushSync();
+    await notify();
+    // 入れると負の向きに今の感度を写す。ほかの軸は分けない。
+    expect(props.settings.tuning.yaw).toEqual({
+      ...DEFAULT_INPUT.tuning.yaw,
+      gain: 1.5,
+      separate: true,
+      gainNegative: 1.5,
+    });
+    expect(props.settings.tuning.pitch.separate).toBe(false);
+    expect(target.textContent).toContain("Sensitivity (left)");
+    expect(target.textContent).toContain("Sensitivity (right)");
+    // メーターの両端に向きを書く (負の向きが左)。
+    expect(target.querySelector(".meter-ends")?.textContent).toBe("rightleft");
   });
 });
 

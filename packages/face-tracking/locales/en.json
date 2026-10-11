@@ -91,6 +91,28 @@
       "label": "Dead zone",
       "tooltip": "Angles within this range around neutral are ignored (stops small jitter). Outside it, movement continues smoothly from zero"
     },
+    "gainSeparate": {
+      "label": "Separate sensitivity by direction",
+      "tooltip": "Use a different sensitivity for each direction (left and right, up and down), for example when the camera is to one side and turning one way reads smaller. Turning it on copies the current sensitivity to both directions"
+    },
+    "gainToward": {
+      "label": "Sensitivity ({{direction}})",
+      "tooltip": "Multiplies the angle in this direction (after the dead zone). The dead zone is shared by both directions"
+    },
+    "directions": {
+      "yaw": {
+        "positive": "left",
+        "negative": "right"
+      },
+      "pitch": {
+        "positive": "up",
+        "negative": "down"
+      },
+      "roll": {
+        "positive": "left",
+        "negative": "right"
+      }
+    },
     "eyeBlink": {
       "label": "Eyelids (both eyes)",
       "leftLabel": "Eyelid (left eye)",
@@ -189,7 +211,7 @@
     "times": "×",
     "reset": {
       "label": "Reset to defaults",
-      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids)"
+      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids and the sensitivity directions)"
     }
   },
   "recording": {

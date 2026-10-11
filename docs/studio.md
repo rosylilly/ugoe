@@ -556,7 +556,9 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
     "camera": { "id": "…", "label": "HD Webcam" },
     "smoothing": 0.5, "swapSides": false, "trackBody": true, "stopEyeBlink": true,
     "tuning": {
-      "yaw": { "gain": 1.5, "deadZone": 2 }, "pitch": { "gain": 1, "deadZone": 0 }, "roll": { "gain": 1, "deadZone": 0 },
+      "yaw": { "gain": 1.5, "deadZone": 2, "separate": true, "gainNegative": 2 },
+      "pitch": { "gain": 1, "deadZone": 0, "separate": false, "gainNegative": 1 },
+      "roll": { "gain": 1, "deadZone": 0, "separate": false, "gainNegative": 1 },
       "eyeBlink": { "low": 0.1, "high": 0.6 }, "eyeBlinkSeparate": true, "eyeBlinkRight": { "low": 0.2, "high": 0.6 },
       "eyeLook": { "low": 0, "high": 0.5 }, "jawOpen": { "low": 0, "high": 1 }, "mouthClose": { "low": 0, "high": 0.3 },
       "mouthForm": { "low": 0, "high": 0.6 }, "brow": { "low": 0, "high": 1 }
@@ -574,7 +576,7 @@ UTF-8 の JSON の 1 ファイルで、書くときは一時ファイルに書�
 | `input.camera`・`input.microphone` | オブジェクト / `null` | 選んだ機器 (`id` と `label`)。`id` が見つからなければ `label` で探し、無ければ既定の機器。`null` は既定の機器 |
 | `input.smoothing` | 数 (0〜1) | トラッキングの平滑化の強さ |
 | `input.swapSides`・`trackBody`・`stopEyeBlink` | 真偽 | 左右を入れ替える・体 (肩) もトラッキングする・トラッキング中は自動の目パチを止める (`@ugoe/face-tracking` の同じ名前の設定) |
-| `input.tuning.yaw`・`pitch`・`roll` | オブジェクト | 頭の回転の軸ごとの調整 (T0877)。`gain` は感度 (0〜4。既定 1)、`deadZone` は遊び (度。0〜20。既定 0)。遊びの中は 0 にし、外は遊びの分を引いてから感度を掛ける |
+| `input.tuning.yaw`・`pitch`・`roll` | オブジェクト | 頭の回転の軸ごとの調整 (T0877)。`gain` は感度 (0〜4。既定 1)、`deadZone` は遊び (度。0〜20。既定 0)。遊びの中は 0 にし、外は遊びの分を引いてから感度を掛ける。`separate` (真偽。既定は偽。T0880) が真なら、正の向きに `gain`、負の向きに `gainNegative` (0〜4。既定 1) を掛ける (遊びは共通)。正の向きは利用者から見た向き (`swapSides` の後) で、ヨーは自分の左、ピッチは上、ロールは自分の左へ傾ける向き。偽のときの `gainNegative` は使わない |
 | `input.tuning.eyeBlink`・`eyeLook`・`jawOpen`・`mouthClose`・`mouthForm`・`brow` | オブジェクト | ブレンドシェイプの境目 (T0877・T0879)。瞼 (`eyeBlinkLeft`・`eyeBlinkRight`)・視線 (`eyeLook*`)・口の開き (`jawOpen`)・口の閉じ (`mouthClose`)・口の形 (`mouthSmile*`・`mouthFrown*`)・眉 (`browInnerUp`・`browOuterUp*`・`browDown*`) の組ごとに、`low` 以下を 0、`high` 以上を 1 とし、間を引き伸ばす (0〜1。既定 0 と 1)。間が 0.05 より狭い (下が上以上を含む) 組は既定に戻して読む |
 | `input.tuning.eyeBlinkSeparate`・`eyeBlinkRight` | 真偽・オブジェクト | 瞼の左右を別々にする (T0879。既定は偽)。真なら `eyeBlink` を左目に、`eyeBlinkRight` (`low`・`high`) を右目に当てる (利用者から見た左右。`swapSides` の後)。偽のときの `eyeBlinkRight` は使わない |
 | `input.sensitivity` | 数 (0〜1) | マイクの感度。0.5 で等倍、0 で 1/4、1 で 4 倍 |

@@ -211,13 +211,14 @@ describe("studio manual images", () => {
       { interval: 20, message: "the replayed head near the front" },
     );
     await s.clickText(".studio__panels button", "キャリブレーション");
-    // 値を既定から動かし、メーターに遊び・境目の点線が出るようにする (マニュアルの調整の節の例)
+    // 値を既定から動かし、メーターに遊び・境目の点線が出るようにする (マニュアルの調整の節の例)。
+    // 首の左右は感度を向きで分ける (T0880。左と右の感度と、メーターの両端の向きが写る)
     await s.execute(() => {
       const tracker = window.__UGOE_TRACKER__;
       tracker.setTuning({
         ...tracker.tuning,
-        yaw: { gain: 1.5, deadZone: 3 },
-        roll: { gain: 1, deadZone: 2 },
+        yaw: { ...tracker.tuning.yaw, gain: 1.5, deadZone: 3, separate: true, gainNegative: 2 },
+        roll: { ...tracker.tuning.roll, deadZone: 2 },
         eyeBlink: { low: 0.1, high: 0.7 },
         eyeLook: { low: 0, high: 0.6 },
         jawOpen: { low: 0.1, high: 0.75 },

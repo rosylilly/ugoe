@@ -1,11 +1,12 @@
 <script lang="ts">
-// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
+// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
 // 「首」「目」「口」「眉」の小見出しで分け、各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、
 // 顔を動かしながら決められるようにする。閉じている見出しの中身は作らない (メーターが毎フレーム描き直されないように)。
 import { Button, Section, Slider, Toggle } from "@ugoe/ui";
 import { t } from "./i18n";
 import type { FaceTracker } from "./tracker.svelte";
 import {
+  type AxisTuning,
   DEAD_ZONE_MAX,
   DEFAULT_TUNING,
   GAIN_MAX,
@@ -13,6 +14,7 @@ import {
   isDefaultTuning,
   moveRangeBound,
   RANGE_MIN_SPAN,
+  setAxisSeparate,
   setEyeBlinkSeparate,
   TUNING_AXES,
   type TuningAxis,
@@ -88,7 +90,10 @@ let tuning = $derived(tracker.tuning);
 let preview = $derived(tracker.tuningPreview);
 let groupLevel = $derived((level + 1) as 4 | 5 | 6);
 
-function setAxis(axis: TuningAxis, patch: Partial<{ gain: number; deadZone: number }>) {
+function setAxis(
+  axis: TuningAxis,
+  patch: Partial<Pick<AxisTuning, "gain" | "deadZone" | "gainNegative">>,
+) {
   tracker.setTuning({ ...tuning, [axis]: { ...tuning[axis], ...patch } });
 }
 
@@ -160,8 +165,12 @@ function position(v: number, min: number, max: number): number {
   {/if}
 </Section>
 
-<!-- 首の 1 つの軸 (感度と遊び)。 -->
+<!--
+  首の 1 つの軸 (感度と遊び)。感度を向きで分けているときは、正の向き (`gain`) と負の向き (`gainNegative`) の 2 つの感度を出し、
+  メーターの両端に向きを書く (メーターは負の向きが左、正の向きが右)。
+-->
 {#snippet axisItem(axis: TuningAxis)}
+  {@const separate = tuning[axis].separate}
   <div class="item">
     {@render meter(
       t(`tuning.${axis}`),
@@ -172,19 +181,34 @@ function position(v: number, min: number, max: number): number {
       [-tuning[axis].deadZone, tuning[axis].deadZone],
       degrees,
       "title",
+      separate
+        ? [t(`tuning.directions.${axis}.negative`), t(`tuning.directions.${axis}.positive`)]
+        : null,
     )}
-    <Slider
-      label={t("tuning.gain.label")}
-      tooltip={t("tuning.gain.tooltip")}
-      min={GAIN_MIN}
-      max={GAIN_MAX}
-      step={0.05}
-      decimals={2}
-      unit={t("tuning.times")}
-      defaultValue={DEFAULT_TUNING[axis].gain}
-      value={tuning[axis].gain}
-      onchange={(v) => setAxis(axis, { gain: v })}
+    <Toggle
+      label={t("tuning.gainSeparate.label")}
+      tooltip={t("tuning.gainSeparate.tooltip")}
+      checked={separate}
+      onchange={(v) => tracker.setTuning(setAxisSeparate(tuning, axis, v))}
     />
+    {#if separate}
+      {@render gainSlider(
+        t("tuning.gainToward.label", { direction: t(`tuning.directions.${axis}.positive`) }),
+        t("tuning.gainToward.tooltip"),
+        tuning[axis].gain,
+        (v) => setAxis(axis, { gain: v }),
+      )}
+      {@render gainSlider(
+        t("tuning.gainToward.label", { direction: t(`tuning.directions.${axis}.negative`) }),
+        t("tuning.gainToward.tooltip"),
+        tuning[axis].gainNegative,
+        (v) => setAxis(axis, { gainNegative: v }),
+      )}
+    {:else}
+      {@render gainSlider(t("tuning.gain.label"), t("tuning.gain.tooltip"), tuning[axis].gain, (v) =>
+        setAxis(axis, { gain: v }),
+      )}
+    {/if}
     <Slider
       label={t("tuning.deadZone.label")}
       tooltip={t("tuning.deadZone.tooltip")}
@@ -198,6 +222,22 @@ function position(v: number, min: number, max: number): number {
       onchange={(v) => setAxis(axis, { deadZone: v })}
     />
   </div>
+{/snippet}
+
+<!-- 感度のスライダー (既定は 1 倍)。 -->
+{#snippet gainSlider(label: string, tooltip: string, value: number, onchange: (v: number) => void)}
+  <Slider
+    {label}
+    {tooltip}
+    min={GAIN_MIN}
+    max={GAIN_MAX}
+    step={0.05}
+    decimals={2}
+    unit={t("tuning.times")}
+    defaultValue={DEFAULT_TUNING.yaw.gain}
+    {value}
+    {onchange}
+  />
 {/snippet}
 
 <!--
@@ -250,6 +290,7 @@ function position(v: number, min: number, max: number): number {
   今の値のメーター。帯は調整の後の値 (中央から、または左から)、縦の線は調整の前の値、点線は遊び・境目。
   帯と線は見た目だけで (読み上げは数の文で足りる)、数の文は毎フレーム変わるので live region にしない。
   `nameStyle`: `title` は名前を項目の名前として太く出す、`hidden` は見せずに読ませる (上に項目の名前を出しているとき)。
+  `ends`: 中央からのメーターの左端と右端の向きの名前 (感度を向きで分けているとき。スライダーの名前で読めるので読み上げない)。
 -->
 {#snippet meter(
   name: string,
@@ -260,6 +301,7 @@ function position(v: number, min: number, max: number): number {
   marks: number[],
   format: (v: number) => string,
   nameStyle: "title" | "plain" | "hidden",
+  ends: [string, string] | null = null,
 )}
   {@const centered = min < 0}
   {@const zero = position(0, min, max)}
@@ -290,6 +332,9 @@ function position(v: number, min: number, max: number): number {
         ? "—"
         : t("tuning.meter", { before: format(before), after: format(after) })}</span
     >
+    {#if ends}
+      <span class="meter-ends" aria-hidden="true"><span>{ends[0]}</span><span>{ends[1]}</span></span>
+    {/if}
   </div>
 {/snippet}
 
@@ -331,6 +376,14 @@ function position(v: number, min: number, max: number): number {
     color: var(--ugoe-color-text-muted);
     text-align: right;
     min-width: 7.5rem;
+  }
+  .meter-ends {
+    grid-column: 2;
+    display: flex;
+    justify-content: space-between;
+    margin-top: calc(-1 * var(--ugoe-space-1));
+    font-size: var(--ugoe-font-size-xs);
+    color: var(--ugoe-color-text-muted);
   }
   .meter-track {
     position: relative;

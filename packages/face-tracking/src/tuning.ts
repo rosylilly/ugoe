@@ -1,4 +1,4 @@
-// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879)。キャリブレーションと同じく
+// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879・T0880)。キャリブレーションと同じく
 // docs/spec/avatar-profile.md#実装の範囲 でアプリの責務とされたもの。キャリブレーションの後・平滑化の前に当てる。
 //
 // 調整は配信者の顔・カメラ・部屋に合わせるもので、モデルの `avatar.tracking` の係数 (モデルを作る人が決める) とは別。
@@ -7,12 +7,19 @@
 // このファイルは型のほかに何も import しない (ui-audit の偽のホストが Node で `@ugoe/face-tracking/tuning` を読む)。
 import type { HeadPose, TrackingFrame } from "./frame";
 
-/** 頭の回転の 1 つの軸の調整。 */
+/**
+ * 頭の回転の 1 つの軸の調整。正の向きは「向きの約束」(frame.ts) の符号で、`swapSides` の後の、利用者から見た向き
+ * (ヨーは自分の左を向く、ピッチは上を向く、ロールは自分の左へ傾ける)。
+ */
 export interface AxisTuning {
-  /** 感度 (倍率)。遊びを引いた後の角度に掛ける。 */
+  /** 感度 (倍率)。遊びを引いた後の角度に掛ける。`separate` が入なら正の向きだけ。 */
   gain: number;
-  /** 遊び (度)。中立のまわりのこの角度の中は 0 にし、外は遊びの分を引いて続けてつなぐ。 */
+  /** 遊び (度)。中立のまわりのこの角度の中は 0 にし、外は遊びの分を引いて続けてつなぐ。向きに依らず共通。 */
   deadZone: number;
+  /** 感度を向きで分けるか (カメラを横に置いて片側だけ振れ幅が小さいとき)。 */
+  separate: boolean;
+  /** 負の向きの感度。`separate` が入のときだけ使う。 */
+  gainNegative: number;
 }
 
 /** ブレンドシェイプの値の境目。`low` 以下を 0、`high` 以上を 1 とし、その間を引き伸ばす。 */
@@ -84,7 +91,7 @@ export const DEAD_ZONE_MAX = 20;
 /** 境目の間の最小の幅 (これより狭いと、わずかな揺れで 0 と 1 を行き来する)。 */
 export const RANGE_MIN_SPAN = 0.05;
 
-const DEFAULT_AXIS: AxisTuning = { gain: 1, deadZone: 0 };
+const DEFAULT_AXIS: AxisTuning = { gain: 1, deadZone: 0, separate: false, gainNegative: 1 };
 const DEFAULT_RANGE: RangeTuning = { low: 0, high: 1 };
 
 /** 既定値 (今までの振る舞いと同じ。倍率 1・遊び 0・境目 0 と 1)。 */
@@ -117,6 +124,8 @@ export function sanitizeAxis(value: unknown): AxisTuning {
   return {
     gain: inRange(value.gain, GAIN_MIN, GAIN_MAX, DEFAULT_AXIS.gain),
     deadZone: inRange(value.deadZone, 0, DEAD_ZONE_MAX, DEFAULT_AXIS.deadZone),
+    separate: typeof value.separate === "boolean" ? value.separate : DEFAULT_AXIS.separate,
+    gainNegative: inRange(value.gainNegative, GAIN_MIN, GAIN_MAX, DEFAULT_AXIS.gainNegative),
   };
 }
 
@@ -160,6 +169,23 @@ export function setEyeBlinkSeparate(tuning: TrackingTuning, separate: boolean): 
 }
 
 /**
+ * 軸の感度を向きで分けるかを切り替えた調整。入れるときは負の向きに今の感度を写す (切り替えただけでは出力が変わらない)。
+ * 切るときは負の向きの感度を残す (使わない)。
+ */
+export function setAxisSeparate(
+  tuning: TrackingTuning,
+  axis: TuningAxis,
+  separate: boolean,
+): TrackingTuning {
+  const a = tuning[axis];
+  if (separate === a.separate) return tuning;
+  return {
+    ...tuning,
+    [axis]: separate ? { ...a, separate: true, gainNegative: a.gain } : { ...a, separate: false },
+  };
+}
+
+/**
  * 境目の片方を動かしたときの組 (画面のスライダーから)。もう片方との間が `RANGE_MIN_SPAN` より狭くなるなら、もう片方を押して
  * 間を保つ (動かした方は利用者の決めた値のまま。下の境目は `1 − RANGE_MIN_SPAN` まで、上の境目は `RANGE_MIN_SPAN` から)。
  */
@@ -176,8 +202,9 @@ export function moveRangeBound(
   return { low: Math.min(range.low, high - RANGE_MIN_SPAN), high };
 }
 
-function isDefaultAxis(a: AxisTuning): boolean {
-  return a.gain === 1 && a.deadZone === 0;
+/** 当てても角度が変わらないか (向きで分けていても、両方の感度が 1 なら変わらない。分けていないときの `gainNegative` は見ない)。 */
+function isIdentityAxis(a: AxisTuning): boolean {
+  return a.gain === 1 && a.deadZone === 0 && (!a.separate || a.gainNegative === 1);
 }
 
 function isDefaultRange(r: RangeTuning): boolean {
@@ -203,20 +230,30 @@ export function tuningRanges(tuning: TrackingTuning): [RangeTuning, readonly str
 /** 当てても何も変わらないか (左右を別々にしていても、両方の境目が既定なら変わらない)。 */
 function isIdentityTuning(tuning: TrackingTuning): boolean {
   return (
-    TUNING_AXES.every((axis) => isDefaultAxis(tuning[axis])) &&
+    TUNING_AXES.every((axis) => isIdentityAxis(tuning[axis])) &&
     tuningRanges(tuning).every(([range]) => isDefaultRange(range))
   );
 }
 
-/** 既定値と同じか (「既定に戻す」で変わるものが無いか。瞼の左右を別々にしているなら既定ではない)。 */
+/**
+ * 既定値と同じか (「既定に戻す」で変わるものが無いか。瞼の左右を別々にしている・感度を向きで分けている軸があるなら既定ではない)。
+ */
 export function isDefaultTuning(tuning: TrackingTuning): boolean {
-  return !tuning.eyeBlinkSeparate && isIdentityTuning(tuning);
+  return (
+    !tuning.eyeBlinkSeparate &&
+    TUNING_AXES.every((axis) => !tuning[axis].separate) &&
+    isIdentityTuning(tuning)
+  );
 }
 
-/** 角度に遊びと感度を当てる (遊びの中は 0、外は遊びの分を引いて倍率を掛ける。符号は保つ)。 */
+/**
+ * 角度に遊びと感度を当てる (遊びの中は 0、外は遊びの分を引いて倍率を掛ける。符号は保つ)。向きで分けているなら、
+ * 負の角度には `gainNegative` を掛ける (遊びの中はどちらも 0 なので、0 をまたいで続く)。
+ */
 export function tuneAngle(value: number, axis: AxisTuning): number {
-  if (isDefaultAxis(axis)) return value;
-  const magnitude = Math.max(0, Math.abs(value) - axis.deadZone) * axis.gain;
+  if (isIdentityAxis(axis)) return value;
+  const gain = axis.separate && value < 0 ? axis.gainNegative : axis.gain;
+  const magnitude = Math.max(0, Math.abs(value) - axis.deadZone) * gain;
   return value < 0 && magnitude > 0 ? -magnitude : magnitude;
 }
 

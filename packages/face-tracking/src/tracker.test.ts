@@ -98,7 +98,7 @@ describe("FaceTracker tuning", () => {
     tracker.calibrate();
     tracker.setTuning({
       ...DEFAULT_TUNING,
-      yaw: { gain: 2, deadZone: 1 },
+      yaw: { ...DEFAULT_TUNING.yaw, gain: 2, deadZone: 1 },
       jawOpen: { low: 0, high: 0.5 },
     });
     tracker.startRecording();
@@ -134,12 +134,12 @@ describe("FaceTracker tuning", () => {
     const { tracker } = harness();
     tracker.setTuning({
       ...DEFAULT_TUNING,
-      pitch: { gain: Number.NaN, deadZone: 50 },
+      pitch: { ...DEFAULT_TUNING.pitch, gain: Number.NaN, deadZone: 50 },
       eyeBlink: { low: 0.9, high: 0.1 },
     });
     expect(tracker.tuning).toEqual({
       ...DEFAULT_TUNING,
-      pitch: { gain: 1, deadZone: 20 },
+      pitch: { ...DEFAULT_TUNING.pitch, deadZone: 20 },
     });
   });
 });

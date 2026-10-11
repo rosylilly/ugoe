@@ -71,10 +71,18 @@ describe("rememberTrackerSettings", () => {
 
   it("remembers the tuning without sending the same values back", () => {
     const { tracker, state, sent, stop } = setup(DEFAULT_INPUT);
-    tracker.tuning = { ...DEFAULT_INPUT.tuning, yaw: { gain: 2, deadZone: 3 } };
+    tracker.tuning = {
+      ...DEFAULT_INPUT.tuning,
+      yaw: { gain: 2, deadZone: 3, separate: true, gainNegative: 0.5 },
+    };
     flushSync();
     expect(sent).toHaveLength(1);
-    expect(sent[0]?.tuning.yaw).toEqual({ gain: 2, deadZone: 3 });
+    expect(sent[0]?.tuning.yaw).toEqual({
+      gain: 2,
+      deadZone: 3,
+      separate: true,
+      gainNegative: 0.5,
+    });
     // バックエンドから、項目の並びの違う同じ調整が届いても送り返さない。
     const tuning = sent[0]?.tuning ?? DEFAULT_INPUT.tuning;
     const reversed = Object.fromEntries(

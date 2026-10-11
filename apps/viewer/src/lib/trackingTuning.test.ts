@@ -8,9 +8,9 @@ const KEY = STORAGE_KEYS["tracking.tuning"];
 
 const TUNED: TrackingTuning = {
   ...DEFAULT_TUNING,
-  yaw: { gain: 1.5, deadZone: 2 },
-  pitch: { gain: 0.8, deadZone: 0 },
-  roll: { gain: 1, deadZone: 1 },
+  yaw: { gain: 1.5, deadZone: 2, separate: true, gainNegative: 2.5 },
+  pitch: { ...DEFAULT_TUNING.pitch, gain: 0.8 },
+  roll: { ...DEFAULT_TUNING.roll, deadZone: 1 },
   eyeBlink: { low: 0.2, high: 0.7 },
   eyeBlinkSeparate: true,
   eyeBlinkRight: { low: 0.1, high: 0.6 },
@@ -51,6 +51,7 @@ describe("remembered tracking tuning", () => {
     storage.setItem(
       KEY,
       JSON.stringify({
+        // T0877 の形の軸 (感度を向きで分けない)。
         yaw: { gain: 99, deadZone: -5 },
         pitch: { gain: "fast", deadZone: 3 },
         eyeBlink: { low: 0.9, high: 0.1 },
@@ -60,8 +61,8 @@ describe("remembered tracking tuning", () => {
     );
     expect(loadTrackingTuning(storage)).toEqual({
       ...DEFAULT_TUNING,
-      yaw: { gain: 4, deadZone: 0 },
-      pitch: { gain: 1, deadZone: 3 },
+      yaw: { ...DEFAULT_TUNING.yaw, gain: 4 },
+      pitch: { ...DEFAULT_TUNING.pitch, deadZone: 3 },
       jawOpen: { low: 0.3, high: 0.6 },
     });
   });

@@ -850,7 +850,7 @@ export const APPS = {
       await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));
       await ctx.scene("inputs", { aria: false });
       // トラッキングの調整を開いた様子 (感度・遊び・境目のスライダーとメーター。T0877)。「首」「目」「口」「眉」の小見出しを
-      // すべて開き (T0879)、瞼の左右を別々にした様子も撮る。撮った後は切って閉じて戻す。
+      // すべて開き (T0879)、瞼の左右を別々にした様子と、首の左右の感度を向きで分けた様子 (T0880) も撮る。撮った後は切って閉じて戻す。
       const tuningText = (key) => text("packages/face-tracking", ctx.lang, key);
       const tuning = page.locator("main").getByRole("button", {
         name: tuningText("tuning.title"),
@@ -875,6 +875,17 @@ export const APPS = {
       await scrollToElement(separate);
       await ctx.scene("inputs-tuning-eyelids", { aria: false });
       await separate.click();
+      await page.waitForTimeout(300);
+      // 3 つの軸に同じ名前のスイッチがある。1 つ目は首の左右 (ヨー)。
+      const directions = page
+        .locator("main")
+        .getByRole("switch", { name: tuningText("tuning.gainSeparate.label"), exact: true })
+        .first();
+      await directions.click();
+      await page.waitForTimeout(300);
+      await scrollToElement(directions);
+      await ctx.scene("inputs-tuning-directions", { aria: false });
+      await directions.click();
       await page.waitForTimeout(300);
       await tuning.click();
       await page.waitForTimeout(300);

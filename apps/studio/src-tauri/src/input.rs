@@ -98,10 +98,14 @@ impl InputSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AxisTuning {
-    /// 感度 (倍率。0〜4)。遊びを引いた後の角度に掛ける。
+    /// 感度 (倍率。0〜4)。遊びを引いた後の角度に掛ける。`separate` が真なら正の向きだけ。
     pub gain: f64,
-    /// 遊び (度。0〜20)。中立のまわりのこの角度の中は 0 にする。
+    /// 遊び (度。0〜20)。中立のまわりのこの角度の中は 0 にする。向きに依らず共通。
     pub dead_zone: f64,
+    /// 感度を向きで分けるか。
+    pub separate: bool,
+    /// 負の向きの感度 (倍率。0〜4)。`separate` が真のときだけ使う。
+    pub gain_negative: f64,
 }
 
 impl Default for AxisTuning {
@@ -109,6 +113,8 @@ impl Default for AxisTuning {
         Self {
             gain: 1.0,
             dead_zone: 0.0,
+            separate: false,
+            gain_negative: 1.0,
         }
     }
 }
@@ -176,6 +182,7 @@ impl AxisTuning {
         let default = Self::default();
         self.gain = within(self.gain, 0.0, GAIN_MAX, default.gain);
         self.dead_zone = within(self.dead_zone, 0.0, DEAD_ZONE_MAX, default.dead_zone);
+        self.gain_negative = within(self.gain_negative, 0.0, GAIN_MAX, default.gain_negative);
     }
 }
 
@@ -366,7 +373,7 @@ mod tests {
             TrackingTuning {
                 yaw: AxisTuning {
                     gain: 2.0,
-                    dead_zone: 0.0
+                    ..AxisTuning::default()
                 },
                 eye_blink: RangeTuning {
                     low: 0.1,
@@ -380,10 +387,19 @@ mod tests {
                 yaw: AxisTuning {
                     gain: f64::NAN,
                     dead_zone: f64::INFINITY,
+                    separate: true,
+                    gain_negative: f64::NAN,
                 },
                 pitch: AxisTuning {
                     gain: 10.0,
                     dead_zone: -1.0,
+                    separate: false,
+                    gain_negative: -2.0,
+                },
+                roll: AxisTuning {
+                    separate: true,
+                    gain_negative: 9.0,
+                    ..AxisTuning::default()
                 },
                 eye_blink: RangeTuning {
                     low: 0.7,
@@ -414,12 +430,27 @@ mod tests {
             ..InputSettings::default()
         };
         input.sanitize();
-        assert_eq!(input.tuning.yaw, AxisTuning::default());
+        assert_eq!(
+            input.tuning.yaw,
+            AxisTuning {
+                separate: true,
+                ..AxisTuning::default()
+            }
+        );
         assert_eq!(
             input.tuning.pitch,
             AxisTuning {
                 gain: GAIN_MAX,
-                dead_zone: 0.0
+                gain_negative: 0.0,
+                ..AxisTuning::default()
+            }
+        );
+        assert_eq!(
+            input.tuning.roll,
+            AxisTuning {
+                separate: true,
+                gain_negative: GAIN_MAX,
+                ..AxisTuning::default()
             }
         );
         assert_eq!(input.tuning.eye_blink, RangeTuning::default());
@@ -466,6 +497,20 @@ mod tests {
                 high: 0.3
             }
         );
+        // 感度を向きで分けた軸を読み書きできる (T0877 の形の軸は分けない)。
+        let input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": { "yaw": { "gain": 1.5, "separate": true, "gainNegative": 2.5 } } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            input.tuning.yaw,
+            AxisTuning {
+                gain: 1.5,
+                dead_zone: 0.0,
+                separate: true,
+                gain_negative: 2.5,
+            }
+        );
         // 最小の幅ちょうどの組は残す (画面で決めた値)。
         let mut range = RangeTuning {
             low: 0.3,
@@ -481,9 +526,9 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "yaw": { "gain": 1.0, "deadZone": 0.0 },
-                "pitch": { "gain": 1.0, "deadZone": 0.0 },
-                "roll": { "gain": 1.0, "deadZone": 0.0 },
+                "yaw": { "gain": 1.0, "deadZone": 0.0, "separate": false, "gainNegative": 1.0 },
+                "pitch": { "gain": 1.0, "deadZone": 0.0, "separate": false, "gainNegative": 1.0 },
+                "roll": { "gain": 1.0, "deadZone": 0.0, "separate": false, "gainNegative": 1.0 },
                 "eyeBlink": { "low": 0.0, "high": 1.0 },
                 "eyeBlinkSeparate": false,
                 "eyeBlinkRight": { "low": 0.0, "high": 1.0 },
