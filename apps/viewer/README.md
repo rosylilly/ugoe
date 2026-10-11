@@ -762,6 +762,6 @@ GitHub Actions の Editor build のワークフローは、ビューアのイン
 署名もエディタと同じで、Secrets があれば署名し、無ければ署名しない ([apps/editor/README.md#配布物の署名](../editor/README.md#配布物の署名))。
 チェックサム (`.sha256`) と成果物の証明もエディタと同じに添える ([docs/release.md#配布物を確かめる](../../docs/release.md#配布物を確かめる))。
 
-アイコンは `src-tauri/icons/icon.png` から `pnpm tauri icon src-tauri/icons/icon.png -o src-tauri/icons` で作り直せる
+アイコンは `assets/brand/viewer.svg` から `just app::icons` で作り直せる
 (Android・iOS 用に出力されるディレクトリは使わないので消す)。アイコンの出所とライセンスは
 [docs/release.md#アプリのアイコン](../../docs/release.md#アプリのアイコン) の表に書く。

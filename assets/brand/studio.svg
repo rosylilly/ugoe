@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- ugoe スタジオのアイコン (MIT。assets/brand/README.md)。赤の角丸の四角に、少し傾けた白い顔と、右上の配信中の印 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f43f5e"/>
+      <stop offset="1" stop-color="#be123c"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bg)"/>
+  <g transform="rotate(-10 256 280)">
+    <ellipse cx="256" cy="280" rx="150" ry="140" fill="#fff"/>
+    <ellipse cx="200" cy="270" rx="26" ry="38" fill="#881337"/>
+    <ellipse cx="312" cy="270" rx="26" ry="38" fill="#881337"/>
+    <path d="M222 340 Q256 368 290 340" fill="none" stroke="#881337" stroke-width="20" stroke-linecap="round"/>
+  </g>
+  <circle cx="404" cy="108" r="50" fill="#fff"/>
+  <circle cx="404" cy="108" r="30" fill="#be123c"/>
+</svg>
