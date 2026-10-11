@@ -187,6 +187,12 @@ repo-url:
 secrets *args:
     @node scripts/secrets.mjs {{args}}
 
+# 一覧は scripts/tool-updates.mjs の PINNED_TOOLS、上げ方は docs/release.md#固定した道具の版。比べるだけで版は書き換えず、新しい版があっても
+# 落ちない。ネットワークを使うので `just ci` には含めない (CI は release-checks.yml の tool-updates)。`--list` で一覧だけ (ネットワークを使わない)。
+# 版を手で固定した道具 (gitleaks・cargo-about・git-cliff・cbindgen・Godot・Rust・Node.js など) を上流 (GitHub の Release・crates.io) の最新の版と比べる
+tool-updates *args:
+    @node scripts/tool-updates.mjs {{args}}
+
 # 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口 (ugoe_ffi::fuzzing) の呼び出しの過不足
 # (docs/workflow/code-review.md#m9-の結果)
 refs:
@@ -407,7 +413,7 @@ studio-build *args:
 
 # 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、秘密の値の検査の道具の取得と範囲 scripts/secrets.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/secrets.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
+    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/secrets.test.mjs scripts/tool-updates.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
 # 下書きの Release への添付 (scripts/github-release.mjs) の検査

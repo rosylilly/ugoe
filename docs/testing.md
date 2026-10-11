@@ -80,7 +80,7 @@ GitHub Actions の時間は、非公開のリポジトリでは月 3000 分の�
 | ワークフロー | 動くとき | 内容 |
 | --- | --- | --- |
 | `ci.yml` (軽い) | main への push・PR | 手元の `just ci` に当たる検査を、Linux のランナーだけで流す。変わったパスで絞る ([下](#変わったパスでの絞り込み)) |
-| `release-checks.yml` (重い) | 手での起動 (`workflow_dispatch`)・定期 (毎月 1 日と 15 日。main が前に通った run から変わっていなければ飛ばす)・リリースの前 (`release.yml` が呼ぶ) | 別のターゲット・Windows と macOS・GPU・Godot・配布物の適合テスト・e2e・Unity・perf・tier 3 の build-std・fuzz ([下](#重い検査とリリースの前の検査)) |
+| `release-checks.yml` (重い) | 手での起動 (`workflow_dispatch`)・定期 (毎月 1 日と 15 日。main が前に通った run から変わっていなければ飛ばす)・リリースの前 (`release.yml` が呼ぶ) | 別のターゲット・Windows と macOS・GPU・Godot・配布物の適合テスト・e2e・Unity・perf・tier 3 の build-std・fuzz・固定した道具の新しい版の表 ([release.md](release.md#固定した道具の版)。落ちない) ([下](#重い検査とリリースの前の検査)) |
 | `release.yml` | `v*` のタグ | `release-checks.yml` を通してから配布物のワークフローを呼ぶ。検査が落ちたら配布物を作らない ([release.md](release.md)) |
 | `release-notes.yml` | リリースノートの設定・スクリプトを変えた PR (と手での起動・`release.yml`) | git-cliff でノートの下見を作る (Linux で 1 分ほど。[release.md](release.md#リリースノートとワークフロー)) |
 
@@ -166,6 +166,7 @@ Windows は 2 倍・macOS は 10 倍。T0091):
 | `perf` (`perf.yml`) | 1 フレームの評価の時間 ([遅くなったら気づく検査](#遅くなったら気づく検査)) | 約 5 分 | 6 |
 | `nostd-build-std` (`nostd-build-std.yml`) | tier 3 のターゲットの build-std ([下](#tier-3-のターゲットの-build-std)) | 約 2 分 | 3 |
 | `fuzz` (`fuzz.yml`) | 5 つのターゲットを 5 分ずつ ([fuzz](#fuzz)) | 約 8 分ずつ (見込み) | 約 40 |
+| `tool-updates` | 版を手で固定した道具を上流の最新の版と比べ、表をジョブの要約に書く (落ちない。`gate` を待たず定期の run でも毎回動く。[release.md](release.md#固定した道具の版)) | 1 分未満 (見込み) | 1 |
 
 - 1 回の run は課金で約 210 分 (キャッシュが外れると、Windows・macOS の依存のビルドで約 330 分まで)。定期は月に 2 回なので約 420〜660 分です。
   キャッシュは main の run でだけ保存するので、定期の run が次の定期の run のためのキャッシュを作ります (7 日使われないキャッシュは

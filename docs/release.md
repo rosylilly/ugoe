@@ -646,6 +646,50 @@ git-cliff (MIT OR Apache-2.0、Rust 製) を使います。外部の道具を足
 手で起動したときと、`scripts/cliff.toml`・`scripts/changelog.mjs` を変えた PR では、未リリースのコミットを仮の版として下見を作ります
 (下書きには触りません)。
 
+## 固定した道具の版
+
+手元と CI で使う道具のうち、版を手で固定したもの (gitleaks・cargo-about・git-cliff・cbindgen・cargo-ndk・tauri-driver・
+artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が見ないので、新しい版 (脆弱性の修正を含む) に自分で気づく
+必要があります。
+
+- **一覧:** `scripts/tool-updates.mjs` の `PINNED_TOOLS` に、道具ごとの版を書いた元の場所 (`pin`)・同じ版を写した場所 (`mirrors`。
+  ワークフローの `tool: cbindgen@<版>`・文書の `cargo install … --version <版>` など)・上流 (GitHub の Release か crates.io) を
+  まとめています。`just tool-updates --list` で表を出します (ネットワークを使わない)。写した場所の版が元と食い違うと、単体テスト
+  (`just script-check`。`just ci` に入る) が落ちます。道具を足したり、版を新しい場所に写したりしたら、この一覧にも足します。
+- **新しい版に気づく:** `just tool-updates` が上流の最新の版と比べて表を出します (ネットワークを使うので `just ci` には入れない。
+  GitHub の API は `GH_TOKEN` か `GITHUB_TOKEN` があれば使う)。比べるだけで版は書き換えません。CI では `release-checks.yml` の
+  `tool-updates` のジョブ (定期の毎月 1 日と 15 日・手での起動・リリースの前) が同じ表をジョブの要約に書きます。新しい版があっても、
+  上流を読めなくてもジョブは落としません (リリースの前の検査を止めないため)。上流は main と関係なく進むので、`gate` を待たず毎回動きます。
+  Node.js のように古いメジャー版の修正が後から出る道具のため、最新とは別に「固定したメジャー版の中の最新」も出します。
+- **固定していないもの:** cargo-fuzz・cargo-xwin は版を決めずに最新を入れます。wasm-bindgen-cli は `Cargo.lock` の wasm-bindgen と同じ版
+  (`just wasm-bindgen-version`) で、依存として上げます。CI の just は `extractions/setup-just` が最新を入れ、`.tool-versions` の版は
+  手元 (asdf など) だけのものです。
+
+### 版を上げる
+
+`PINNED_TOOLS` の `pin` の版を変え、`mirrors` の場所を同じ版にそろえてから (`just tool-updates --list` が食い違いを出す)、
+道具ごとに次を確かめます。
+
+| 道具 | 上げるときにすること |
+| --- | --- |
+| gitleaks | Release の `gitleaks_<版>_checksums.txt` から `GITLEAKS_ASSETS` の sha256 を写し、`just secrets` で履歴のすべてが通るのを確かめる ([自動の検査](#自動の検査)) |
+| cargo-about | `just cargo-about` で入れ直し、`just notices` の差分を読む ([同梱物のライセンスの表記](#同梱物のライセンスの表記)) |
+| git-cliff | `just changelog` の出力を前の版と比べる ([道具](#道具)) |
+| cbindgen | `just ffi-header` でヘッダを作り直してコミットし、`just ffi-check` (crates/ugoe-ffi/README.md) |
+| cargo-ndk | `unity.yml` を手で起動して Android のビルドを確かめる |
+| tauri-driver | `just e2e` (と `e2e.yml` の手での起動) |
+| artifact-signing-cli | `editor-build.yml` で Windows のインストーラに署名できるかを確かめる ([Windows (Authenticode)](#windows-authenticode)) |
+| Godot | `release-checks.yml` の `GODOT_VERSION` と、Release の `SHA512-SUMS.txt` から写した `GODOT_SHA512` を変え、`godot` のジョブを流す |
+| Rust | `rust-toolchain.toml` を変え、新しい clippy の指摘を直してから `just ci`・`just wasm-check`・`just nostd-check` |
+| Node.js | `.tool-versions` を変え (CI もこの版を使う)、`just ci` |
+| pnpm | `package.json` の `packageManager` を変え、`pnpm install` でロックファイルが変われば一緒にコミットする |
+| just | `.tool-versions` を変える (CI は最新を使うので、手元を CI に合わせるだけ) |
+
+GitHub Actions の action (`actions/checkout@v7` などのメジャー版のタグ) はこの一覧に入れません。Dependabot の version updates の
+`github-actions` (`.github/dependabot.yml`) が、ワークフローと `.github/actions/` の composite action の `uses:` を見て、新しい
+メジャー版のタグへ上げる PR を作れます。今は `.github/dependabot.yml` を置いていません (置くと PR が自動で作られるので、置くかは
+リポジトリを持つ人が決める。T1004 のメモ)。
+
 ## macOS の仮想カメラ
 
 スタジオの macOS の仮想カメラ (Camera Extension、[studio.md](studio.md#macos-camera-extension)・ADR 0028 の 8.) を入れたスタジオの、

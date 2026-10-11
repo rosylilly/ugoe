@@ -5,7 +5,7 @@ name: Release checks
 # - 定期: 毎月 1 日と 15 日。前に成功した run と main が同じなら飛ばす (gate)。
 # - リリースの前: release.yml (`v*` のタグ) が workflow_call で呼び、通ってから配布物を作る (docs/release.md)。
 # ジョブ: 別のターゲット (cross)・Windows と macOS (rust-os)・GPU (gpu)・Godot (godot)・配布物の適合テスト (conformance) と、
-# e2e.yml・unity.yml・perf.yml・nostd-build-std.yml・fuzz.yml (それぞれ単独でも手で起動できる)。
+# e2e.yml・unity.yml・perf.yml・nostd-build-std.yml・fuzz.yml (それぞれ単独でも手で起動できる)、固定した道具の新しい版 (tool-updates)。
 on:
   workflow_dispatch:
   workflow_call:
@@ -384,3 +384,19 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     uses: ./.github/workflows/fuzz.yml
+
+  # 版を手で固定した道具 (scripts/tool-updates.mjs の PINNED_TOOLS) を上流の最新の版と比べ、表をジョブの要約に書く
+  # (docs/release.md#固定した道具の版)。新しい版があっても、上流を読めなくても落とさない (知らせるだけ)。上流は main と関係なく
+  # 進むので gate を待たず、定期の run でも毎回動かす。Rust も依存も入れない軽いジョブ
+  tool-updates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - name: Compare pinned tools with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/tool-updates.mjs
