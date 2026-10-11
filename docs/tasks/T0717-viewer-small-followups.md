@@ -69,7 +69,7 @@ T0713・T0714 の後続の候補をまとめる。
     モデルごとの記憶にも入る (日時付き)。
   - 左上を中心に 1200% → 円は寄せて点線・白抜きの中心・中央の向きの矢印。平行光源の取っ手にフォーカスして F → 100% に戻り、フォーカスは取っ手のまま。
   - 日時なしの前の保存値を 1 つ入れて一覧を開く → 新しい順で 2 行に日時、前の保存値は「日時なし」で最後。名前の順に切り替えられる。
-  - スクリーンショット: `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0717/shots/`
+  - スクリーンショット: `<scratchpad>/T0717/shots/`
     の `01-hover-all.png`・`02-hover-some.png`・`03-hover-none.png`・`04-mixed-drop.png`・`05-range-grip.png`・`06-range-grip-dragged.png`・
     `07-shifted-dial.png`・`08-memory-recent.png`・`09-memory-name.png`。
   - 読み込み時の 404 が 1 件 (T0707 以降と同じもの)。

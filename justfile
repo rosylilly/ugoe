@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers case-check refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
+ci: fmt-check lint sdk-no-render-check test layers case-check local-paths refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -168,6 +168,12 @@ layers:
 case-check:
     @node --test --test-reporter=dot scripts/check-case-collisions.test.mjs
     @node scripts/check-case-collisions.mjs
+
+# 機械に固有のパス (ホームのディレクトリ・エージェントの一時ディレクトリ) が入っていないか (公開するため。scripts/check-local-paths.mjs、
+# docs/release.md#公開の前の点検)
+local-paths:
+    @node --test --test-reporter=dot scripts/check-local-paths.test.mjs
+    @node scripts/check-local-paths.mjs
 
 # 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口 (ugoe_ffi::fuzzing) の呼び出しの過不足
 # (docs/workflow/code-review.md#m9-の結果)

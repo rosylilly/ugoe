@@ -49,12 +49,12 @@ T0720 の後続の候補をまとめる。見本のモーションは頭と体�
 - テスト: Rust 3 件 (`tracking::tests::motion_over_tracking_*` 2 件、`animation::tests::active_expressions_follow_the_operations`)、Vitest 3 件
   (`defaultIdleMotion`・`motionOverTrackingActive`・`loadToggle`/`saveToggle`)。文書: viewer README・ugoe-wasm README・`docs/manual/motions.md`。
 - **確かめたこと**: `just ci`・`just wasm-check`・`pnpm --filter @ugoe/runtime check`・`vite build`・`just viewer-build --bundles deb`。
-  ヘッドレス Chrome (SwiftShader の WebGL2、`vite preview`) で見本の アバター・着せ替え (スクリプト `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0721/check.mjs`、出力 `run.log`):
+  ヘッドレス Chrome (SwiftShader の WebGL2、`vite preview`) で見本の アバター・着せ替え (スクリプト `<scratchpad>/T0721/check.mjs`、出力 `run.log`):
   開くと idle が流れる・nod が終わると idle に戻る・shake を止めると idle に戻る・idle を ■ で止めると流れない・待機を tilt に替えると
   (ループしないので) 繰り返す・トラッキング (ヨー 20°、jawOpen 0.4) 中は idle の AngleX がトラッキングの 20・shake で AngleX が 12.5
   (優先を切ると 20)・終わると 20 に戻る・nod + smile で AngleY が nod、MouthOpenY はトラッキングの 0.4、MouthForm は smile の 1・
   表情 smile+surprised → smile を外す (フェード中) → surprised だけ → sad → 空・自動再生を切って読み直しても覚えている。
-  スクリーンショットは `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0721/shots/` (`01-idle-auto.png`〜`06-expressions.png`)。読み込み時の 404 が 1 件 (前のタスクと同じ)。サーバーは止めた。
+  スクリーンショットは `<scratchpad>/T0721/shots/` (`01-idle-auto.png`〜`06-expressions.png`)。読み込み時の 404 が 1 件 (前のタスクと同じ)。サーバーは止めた。
 - **確かめていないこと**: 本物のカメラと顔での併用 (入力は `setTracking` で直接渡した)、Tauri 版の画面 (WebKitGTK)、本物の GPU。
 - **範囲外の変更**: なし。
 - **後続の候補**: 待機モーションの選択をモデルごとに覚える (要望があれば `modelMemory.ts` の入れ物を足し、覚えたものの一覧に出す)。

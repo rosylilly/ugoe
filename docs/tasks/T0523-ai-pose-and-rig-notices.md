@@ -64,7 +64,7 @@ T0521 の後続の候補をまとめる。
   「Labels」に「hat / cap」→ 直接写す形で提案 (理由に「the AI classified “hat”, “cap” as alternative drawings」) → 採用 → 化粧の頂点を消す →
   ツリーで化粧を選ぶとインスペクタに知らせ → 保存 (`project.json` に `editor.rigged_meshes`) → 別のプロジェクトを開いて戻る → タブに「AI •」と
   知らせ → Dismiss。横のはみ出し 0。スクリーンショット: scratchpad/T0523/shots/t0523-01〜10 (04b を含む)。ブリッジと vite preview は止めた。
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)
 - **確かめていないこと:** 実際の Tauri のウィンドウ。実際の AI の API が `variant_sets` を答えること (録画と FakeProvider だけ。OpenAI の strict で
   入れ子の配列の形が受け入れられるかも実機では見ていない)。本物の本体を保存して開き直す経路での指紋の照合 (テストは同じメタ情報から作り直した
   セッション。テストの本体はテクスチャを持たず保存できなかった)。ポーズの見た目の確認で、見本の腕 A / B は服の写しなので見分けられず、髪と服で確かめた。

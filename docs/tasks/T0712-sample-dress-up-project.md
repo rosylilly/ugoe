@@ -60,7 +60,7 @@ T0710 の後続の候補。着せ替えの見本 (`ugoe sample dress-up`) は `.
   ビューア (ビルド済みの `dist/` を `vite preview`) で「サンプル」→「着せ替え」が今までどおり開け (スロット 3 つ、`LongHair*`・`CatEars*`・`Sailor*`、
   警告なし)、「差し替える」で `TwinTails` に替わる: scratchpad/T0712/viewer/shots/0{1..4}-*.png。読み込み時の 404 が 1 件出るのは T0710 と同じ
   (見本のファイルではない)。使ったブリッジと vite preview は止めた。
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)
 - **確かめていないこと:** 実際の Tauri のウィンドウ。`just test-gpu` (描画・構造体の変更なし) は流していない。エディタでの編集・保存の往復
   (開いて書き出すまで)。ビューアでアバタープロファイルの `slots` を使う画面は無い (ビューアは公開の有無を見ていない)。
 - **範囲外の変更:** なし (ugoe-cli・assets・docs だけ)。

@@ -62,7 +62,7 @@ assignee: claude-worker-T1632
     B は全部が 1 行に入るが名前が読めず、C は切れて隠れるタブに気づきにくい。A の影響: 並びの順が変わる (manual の screen.md の並びの書き方)、
     「Slots タブで足す」などの案内は「その他」の中を指す言い方に直す、`TabStrip` に幅の測りが入る (部品のテストを足す)。
   - **比べる画像** (前・A・B・C を横に並べ、右の列の頭を切り出した。worktree の外へは出していない):
-    `/home/rosylilly/src/github.com/rosylilly/ugoe/.worktrees/T1632/target/ui-audit-t1632/compare/overview.png` (日本語 1024px・
+    `<repo>/.worktrees/T1632/target/ui-audit-t1632/compare/overview.png` (日本語 1024px・
     グルーを選んだ日本語・AI (3) の英語・200% の英語 2 つ)。場面ごとは同じ所の `<組>[-tab-glue|-ai].png` (en/ja-light-narrow・
     ja-dark-narrow・en-light-zoom200・ja-light-wide)。元の撮影は `target/ui-audit-t1632/{before,a,b,c}/editor/`。
   - 日本語の 200% の拡大の場面は ui-audit に無い (en-light-zoom200 だけ)。幅の計算では A の日本語の 200% は「インスペクタ・物理・その他」。

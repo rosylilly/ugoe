@@ -65,17 +65,17 @@ T0712 の後続の候補をまとめる。
 - **確かめたこと:** main (T0410・T0718・T0127 など) に rebase した後、`just wasm-check`・`just wasm` 2 つ・`just gen` (差分なし)・`just ci`
   (`cargo check -p ugoe-editor` を含む)・`just test-gpu`。bindings/web の手書きの型 (`stub/ugoe_wasm.d.ts`) には `avatar_slots_json` を足していない
   (`pnpm --filter @ugoe/runtime check` は通る。使っていないため。生成物から作り直すときに入る)。
-  - `ugoe render` (llvmpipe) で視線・眉・口の形・体の Y/Z、モジュールを付けた体の傾きを描いた: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0715/render/row1.png・row2.png。
+  - `ugoe render` (llvmpipe) で視線・眉・口の形・体の Y/Z、モジュールを付けた体の傾きを描いた: <scratchpad>/T0715/render/row1.png・row2.png。
   - ビューア (ヘッドレスの Chrome、SwiftShader、ビルドした `dist/` を `vite preview`): 「サンプル」→「着せ替え」は今までどおり 3 スロット (`LongHair*`・`CatEars*`・`Sailor*`)。
     `Headwear` を公開しない版 (`--project` の本体の `avatar.slots` を書き換えて `ugoe build`) では「2 / 2 スロット」で `Headwear` が出ず、`cat-ears.ugoemod` を開くと
     付けずに「公開されていない」の行と理由が出る (「付ける」は無効)。横のはみ出し 0。前の指紋で覚えた組が場所の鍵で戻る。
-    スクリーンショット: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0715/viewer/shots/01-sample.png・02-hidden.png・03-hidden-module.png・04-restored-old-memory.png。読み込み時の 404 が 1 件出るのは T0710 と同じ。
-  - エディタ (ヘッドレスの Chrome と使い捨ての HTTP ブリッジ /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0715/bridge。T0653 のものに `open_sample_project` を足した): 「Open Sample…」→ ダイアログ
+    スクリーンショット: <scratchpad>/T0715/viewer/shots/01-sample.png・02-hidden.png・03-hidden-module.png・04-restored-old-memory.png。読み込み時の 404 が 1 件出るのは T0710 と同じ。
+  - エディタ (ヘッドレスの Chrome と使い捨ての HTTP ブリッジ <scratchpad>/T0715/bridge。T0653 のものに `open_sample_project` を足した): 「Open Sample…」→ ダイアログ
     (「Choose a folder to put the dress-up sample projects in」) → `ugoe-dress-up-sample/dress-up.ugoeproj` が開く (レベル 2、スロット 3 つ、パラメータ 15、
     リグ `HairSway`)、知らせにフォルダー。続けて「Open…」はそのフォルダーから始まり、`long-hair.ugoeproj` で `Module: Hair`、物理のタブに `HairSway` (本体の行)と
     `Sway (LongHair/Sway)`、▲▼ はどちらも無効 (説明つき)。もう一度「Open Sample…」で `ugoe-dress-up-sample-2`。横のはみ出し 0。
     **ブリッジの `open_sample_project` は CLI の `--project` で書く** (エディタの `sample.rs` そのものは単体テストで確かめた)。
-    スクリーンショット: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0715/editor/shots/t0715-0{1,2,3}-*.png。使った vite preview とブリッジは止めた。
+    スクリーンショット: <scratchpad>/T0715/editor/shots/t0715-0{1,2,3}-*.png。使った vite preview とブリッジは止めた。
 - **確かめていないこと:** 実際の Tauri のウィンドウ (ダイアログ・`include_bytes!` を含むビルド)。`.deb` のビルド。見本の新しいパラメータをフェイストラッキングで
   動かすこと (標準の対応なので式は同じ)。エディタのプレビューの着せ替え (エディタの Preview モードは公開の有無を見ていない。T0715 はビューアだけ)。
 - **範囲外の変更:** `crates/ugoe-wasm` (`dress_up::published_slots`・`WebPuppet.avatar_slots_json`・テスト 1 件・README 1 行)。ビューアが avatar.slots を読む口が

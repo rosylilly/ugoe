@@ -59,7 +59,7 @@ T0717 の後続の候補をまとめる。
   - 見本「アバター (ライティング)」の夜のランプ (円が画面を覆う) → 取っ手は右下の角 (光源は左上)。光源を画面の中央のわずかに右下
     (51%, 52%) へ → 取っ手は左上の角 (T0717 では右の縁)。取っ手を光源の向きへ 150px → 範囲 1.4 → 1.209。
   - 覚えたものの一覧で「名前の順」を選ぶ → 閉じて開き直しても、ページを読み込み直しても名前の順。
-  - スクリーンショット: `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0718/shots/`
+  - スクリーンショット: `<scratchpad>/T0718/shots/`
     の `01-browser-unknown.png`・`02-browser-some.png`・`03-browser-none.png`・`04-grip-lamp.png`・`05-grip-near-center.png`・
     `06-grip-dragged.png`・`07-memory-order-kept.png`。
   - 読み込み時の 404 が 1 件 (T0707 以降と同じもの)。

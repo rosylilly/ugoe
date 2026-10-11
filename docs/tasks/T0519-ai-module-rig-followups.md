@@ -72,7 +72,7 @@ T0517 の後続の候補をまとめる。
   - `cat-ears.ugoeproj`: Ears を選んで「Form edit」→ 取っ手が耳に重なり (`local_to_canvas`)、ドラッグで `set_keyform_cell` が通る
     (`canvas_to_local`。T0517 の ugoe-rigging の修正の画面での確認)。横のはみ出し 0。
   スクリーンショット: scratchpad/T0519/shots/t0519-0{1..8}-*.png (06b を含む)。使い終えた vite preview とブリッジは止めた。
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)
 - **確かめていないこと**: 実際の Tauri のウィンドウ、実際の AI の API (AI の経路は組み方を渡すだけで、録画は既存のもの)。衝突体で揺れが実際に
   止まる様子 (見本の揺れは小さく当たらない。数値は ugoe-physics のテストに任せた)。本体のポーズの要素への追従 (`links`) の画面 (見本の本体に
   ポーズがない。テストだけ)。直接写す形で衣装のメッシュを編集した後の組み直し。マニュアルの画像は足していない。

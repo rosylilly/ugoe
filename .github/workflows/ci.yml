@@ -59,6 +59,9 @@ jobs:
       # 大文字と小文字だけが違う名前 (macOS・Windows で同じファイルになる)
       - name: Case collisions
         run: just case-check
+      # 機械に固有のパス (ホームのディレクトリ・エージェントの一時ディレクトリ。docs/release.md#公開の前の点検)
+      - name: Local paths
+        run: just local-paths
       # コードから文書の見出しへの参照と、C ABI のヘッダとバインディングの宣言の突き合わせ
       - name: Refs
         run: just refs

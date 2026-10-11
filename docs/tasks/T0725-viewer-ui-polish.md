@@ -49,7 +49,7 @@ assignee: claude-worker-T0725
 - **監査 (`just ui-audit --only viewer`):** 前 (main e9ef06f9) は Tab の止まり 1 (1)・ARIA 1 (28)、後はすべての検査で 0 件 (49 場面)。
   `--compare`: `+0 -2 ~0` (光源の印のフォーカスの印・`.viewport` の nested-interactive が消えた)。
 - **前と後の画像の比べ (ライト・ダーク × 日英 × 1280・360、と 1600・1200・720 の高さを自前で撮った):**
-  画像は `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/t0725/before-audit/` と `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/t0725/after-audit/` (監査の全場面) と `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/t0725/after/` (1600×900・1280×720・1200×800・360×740)。
+  画像は `<scratchpad>/t0725/before-audit/` と `<scratchpad>/t0725/after-audit/` (監査の全場面) と `<scratchpad>/t0725/after/` (1600×900・1280×720・1200×800・360×740)。
   - 1280×800: 前はトラッキングを開くとライティングが「光源を当てる」1 行、モーションと表情・ポーズは見出しだけ、パラメータは 2 行ほど。後は 2 列で、
     トラッキング・ライティングが上から読め、パラメータは 10 行ほど見える。モデルの表示は幅 940 → 620px だが、縦長のモデルは高さで決まるので大きさは同じ。
   - 360×740: 前はツールバー 4 行 (名前の行を含む)・モデルの表示 250px ほど。後はツールバー 3 行・モデルの表示 300px ほど。
@@ -57,7 +57,7 @@ assignee: claude-worker-T0725
   - 200% (en-light-zoom200): 640px の幅で 1 列 (2 列にならない)、道具が右下に重なる。崩れ・重なりは無い。
 - **やらなかったこと・判断が要るもの (好みが分かれるので決めずに残した):**
   - 360px でツールバーが 3 行のまま (開く・サンプル・覚えたもの / 背景 / 透明・画像を保存・設定。日本語は設定だけが 3 行目に回る。
-    `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/t0725/after-audit/en-light-narrow.png`・`ja-light-narrow.png`)。部品の幅の合計 (英語で 1 行目 336px・2 行目 376px) が 328px に収まらない。
+    `<scratchpad>/t0725/after-audit/en-light-narrow.png`・`ja-light-narrow.png`)。部品の幅の合計 (英語で 1 行目 336px・2 行目 376px) が 328px に収まらない。
     案: (A) 背景の色と「透明」を 1 つの「背景」の Popover にまとめる (2 行になる。推奨。どちらもまれな操作で、docs/ui.md の「まれな操作は奥に」に合う)、
     (B) 「画像を保存」をビューポートの右下の道具に移す (アイコンが要る。カメラのアイコンは @ugoe/ui に無い)、(C) 狭い幅だけ「背景」の文字を隠す
     (見えるラベルが無くなるので推奨しない)。docs/ui.md の「残したもの」に理由を書いた。

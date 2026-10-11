@@ -40,10 +40,10 @@ assignee: claude-worker-T0720
   同じ 4 行を足した (bindings/web の README の規則)。C ABI は変えていない。`docs/spec/motion.md` の JS の操作の一覧にも足した。
 - **確かめたこと**: `just ci`・`just wasm-check`・`pnpm --filter @ugoe/runtime check`・`vite build`・`just viewer-build --bundles deb`。
   ヘッドレス Chrome (SwiftShader の WebGL2、`vite preview`) で「サンプル」の アバター・アバター (ライティング)・着せ替え から再生
-  (スクリプト `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0720/check.mjs`、出力 `run.log`): nod の再生とイベント `nod-end`・待機の idle (ループ) を通常の tilt が置き換え、
+  (スクリプト `<scratchpad>/T0720/check.mjs`、出力 `run.log`): nod の再生とイベント `nod-end`・待機の idle (ループ) を通常の tilt が置き換え、
   tilt の再生中は待機の idle が始まらない・繰り返し・停止・表情の set → add → stop → set → すべて止める (`MouthForm` などの値で確認)・
   トラッキング (ヨー 20°) と同時に nod と smile (AngleX はトラッキングの 20、MouthForm は smile の 1)・着せ替えで髪を差し替えてもモーションが続く。
-  スクリーンショットは `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0720/shots/` (`01-avatar-open.png`〜`07-avatar-lit.png`、マニュアル用 `manual-motions-viewer.png` = `docs/manual/images/motions-viewer.png`)。
+  スクリーンショットは `<scratchpad>/T0720/shots/` (`01-avatar-open.png`〜`07-avatar-lit.png`、マニュアル用 `manual-motions-viewer.png` = `docs/manual/images/motions-viewer.png`)。
   読み込み時の 404 が 1 件 (前のタスクと同じもの)。確認に使ったサーバーは止めた。
 - **確かめていないこと**: 本物のカメラ・顔でのトラッキングとの併用 (入力は `setTracking` で直接渡した)、Tauri 版の画面 (WebKitGTK)、本物の GPU。
 - **後続の候補**: トラッキング中にモーションを優先する (トラッキングを一時的に外す・対象を絞る) 切り替え。待機モーションを自動で流し、ほかのモーションが

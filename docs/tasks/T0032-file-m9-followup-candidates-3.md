@@ -28,7 +28,6 @@ T0026 の後に集めた候補の一覧を読み、重複をまとめ、既存�
 
 ## 参考
 
-- オーケストレーターの集計: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/run2/candidates-for-T0032.md
 - T0019・T0026 (1 回目・2 回目)
 - docs/tasks/README.md、docs/workflow/multi-agent.md#タスクの書き方-オーケストレーター向け
 

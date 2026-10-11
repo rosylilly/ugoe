@@ -61,7 +61,7 @@ T0708・T0709 の後続の候補をまとめる。
 
 - `just ci` (main (T0713) に rebase し、`just wasm` と ビューア用の `just wasm` をやり直した後)・`vite build`・`just viewer-build --bundles deb`。
 - ヘッドレスの Chrome (SwiftShader の WebGL2、ビルドした `dist/` を `vite preview`) で「サンプル」→「アバター (ライティング)」
-  (スクリプトは `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0714/check.mjs`、出力は `run.log`):
+  (スクリプトは `<scratchpad>/T0714/check.mjs`、出力は `run.log`):
   - Tab で平行光源の取っ手にフォーカス (輪が出る) → →→→ Shift+↓ で方位 135°/高さ 45° → 139.4°/62.6°、モデルごとの記憶に入る。
   - 夜のランプで点光源にフォーカス → → Shift+↓ PageUp + で (0.25, 0.3, 0.35, 1.4) → (0.26, 0.4, 0.37, 1.45)。
   - 取っ手の上の Shift + ホイール 3 回で手前 0.37 → 0.43、倍率は変わらない。ホイールだけならズーム (100% → 116%)。
@@ -72,7 +72,7 @@ T0708・T0709 の後続の候補をまとめる。
   - 「着せ替え」で TwinTails に差し替え (ライティングのパネルは出ない) → 一覧に 2 行 (開いているモデルが先頭) → avatar-lit の光源を忘れる →
     開いているモデルの組を忘れる (`dressUpRemembered` が偽に) → また覚えさせて、パネルの「覚えたもの…」から「すべて忘れる」→ 空、
     localStorage には `ugoe-viewer.lighting` だけが残り、パネルは「このモデル用の設定はまだありません」。
-  - スクリーンショット: `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0714/shots/` の `01-open.png`・`02-keyboard-directional.png` (フォーカスの輪)・`03-keyboard-point.png`・
+  - スクリーンショット: `<scratchpad>/T0714/shots/` の `01-open.png`・`02-keyboard-directional.png` (フォーカスの輪)・`03-keyboard-point.png`・
     `04-range-dragged.png`・`05-zoomed-dial-at-edge.png`・`06-zoomed-point-at-edge.png`・`07-memory-list.png`・`08-forget-all-confirm.png`・`09-forgot-all.png`。
   - 読み込み時の 404 が 1 件 (T0707・T0708 と同じもの)。
 

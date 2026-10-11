@@ -54,7 +54,7 @@ T0721 の後続の候補をまとめる。
   読み直して開くと tilt・着せ替えは既定の idle → 「(なし)」を覚える → アバターに戻ると tilt・一覧に両方の行 → 一覧と パネルから忘れる。
   トラッキング (ヨー 20、eyeBlinkLeft 0.75) 中に shake で AngleX 12.5 → 頭の向きを外すと 20・tilt で EyeBallX 0.5 → 目を外すと 0 →
   AngleZ も外すと 0 (印は「トラッキングで隠れる」)・選択は読み直しても残る。スクリーンショットは
-  `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0722/shots/` (`01-idle-remembered.png`・`02-memory-dialog.png`・`03-groups-head-kept.png`・`04-eyes-angley-kept.png`)。
+  `<scratchpad>/T0722/shots/` (`01-idle-remembered.png`・`02-memory-dialog.png`・`03-groups-head-kept.png`・`04-eyes-angley-kept.png`)。
   読み込み時の 404 が 1 件 (前のタスクと同じ)。
 - **確かめていないこと**: `just test-gpu` (描画は触っていない)、Tauri 版 (WebKitGTK) と `just viewer-build` の deb、本物のカメラ、
   `<ugoe-avatar>` の属性を実際のブラウザで (単体テストと型検査だけ)。

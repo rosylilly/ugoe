@@ -66,7 +66,7 @@ T0715 の後続の候補をまとめる。
   `save_bundle_projects` で書く) で: 「Open Sample…」の本体に Motions 4 (`idle`・`nod`・`shake`・`tilt`)・Expressions 3 が入り、プレビューにも出る。
   Slots タブで `Headwear` の「Show to apps」を外してプレビューに入り、`cat-ears.ugoemod`・`long-hair.ugoemod` を読み込むと、`Headwear` の行に
   `authors only` が付き、`CatEars` は付けられる。横のはみ出し 0。使ったブリッジと vite preview は止めた。
-  スクリーンショット: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0655/editor/shots/t0655-0{1,2,3,4}-*.png。
+  スクリーンショット: <scratchpad>/T0655/editor/shots/t0655-0{1,2,3,4}-*.png。
 - **確かめていないこと:** 実際の Tauri のウィンドウ (ダイアログ・`include_bytes!` を含むビルド)。ブラウザ以外のホスト (FFI・Unity・Godot) で、
   衝突体を公開するスロットにモデルだけで付けること (どれも Puppet を通るので同じ規則)。
 - **範囲外の変更:** なし。

@@ -58,7 +58,7 @@ T0651 の後続の候補をまとめる。
     `doc.refresh`) で今の編集だけ取り直し (本体 0 回)、耳のない今の編集と耳のあるファイルを差し替えて見比べた。出て入り直しても本体は 0 回、
     `reload_base` の後は 1 回。横のはみ出し 0。
   スクリーンショット: scratchpad/T0653/shots/t0653-*.png (マニュアルの画像は module-compare-exported.png を足した)。使い終えた vite preview とブリッジは止めた。
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)
 - **確かめていないこと:** 実際の Tauri のウィンドウ (`State` 越しの `get_preview_module(name)`)。利用者が画面から行うプレビュー中の編集 (プレビュー中は
   編集の列が隠れ、Undo のボタンも無い。取り直しの経路はエージェントの編集で確かめた)。カプセルの衝突体の写し直し (円と同じ関数。画面では円だけ)。
   物理を動かしたときの揺れ方 (写し直すのは基準の姿だけ)。

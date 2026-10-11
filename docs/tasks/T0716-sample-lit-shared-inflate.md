@@ -49,8 +49,8 @@ T0518 の後続の候補。T0518 で、部位のまとまりでふくらませ�
   (耳飾りは細いので、ほとんどの画素が輪郭の近く)。T0518 の見積もりと合う。
 - 描画 (1024 の全体) の差は RMSE 0.4〜0.6%。並べて見ても違いは分からない (肩の上の腕の輪郭の線も出ていない)。
 
-画像 (scratchpad): `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0716/before-after.png` (上が前・下が新しい jpg)・`face-before-after.png`・`body-before-after.png`
-(顔・体の拡大。左・右・上の光、上が前)。前の見本は `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0716/avatar-lit.ugoe`・`avatar-lit.jpg`、作る手順は `panels.sh`。
+画像 (scratchpad): `<scratchpad>/T0716/before-after.png` (上が前・下が新しい jpg)・`face-before-after.png`・`body-before-after.png`
+(顔・体の拡大。左・右・上の光、上が前)。前の見本は `<scratchpad>/T0716/avatar-lit.ugoe`・`avatar-lit.jpg`、作る手順は `panels.sh`。
 
 ### 確かめたこと
 

@@ -52,14 +52,14 @@ assignee: claude-worker-T0708
 
 - `just ci` (main (T0125) に rebase し、`just wasm` をやり直した後)・`vite build`。
 - ヘッドレスの Chrome (SwiftShader の WebGL2、ビルドした `dist/` を `vite preview`) で「サンプル」→「アバター (ライティング)」
-  (スクリプトは `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0708/check.mjs`、出力は `run.log`):
+  (スクリプトは `<scratchpad>/T0708/check.mjs`、出力は `run.log`):
   - 平行光源の取っ手を円の右の外へ → 方位 0°・高さ 0°、描画の左右の明るさ (背景を除く平均) 左 123 / 右 113.7 → 左 75.1 / 右 89.2。
     パネルのスライダーも同じ値。モデルごとの記憶への書き込みはドラッグ 1 回につき 1 回 (`setItem` を数えた)。
   - 「夜のランプ」で点光源の取っ手を (80%, 70%) へ → パネル・モデルごとの記憶・最後に使った設定がどれも (0.8, 0.7)、明るさ 左 42.4 / 右 76.8。
   - 空いたところのドラッグはパンになり光源は変わらない。ズーム (448%) とパンの後も取っ手の位置が `view` から計算した位置と 0.1px 以内。
     ズームした状態でのドラッグも、画面の移動量 / 倍率どおりに位置が変わる。ダブルクリックでフィットすると印も戻る。
   - 印を消す → 読み直しても消えたまま → 出す。光源を切ると印も消える。ライティングのないモデル (「アバター」) では出ない。
-  - スクリーンショット: `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0708/shots/01-markers.png` (標準、平行光源の円と取っ手)・`02-directional-right.png`・`03-lamp.png`・
+  - スクリーンショット: `<scratchpad>/T0708/shots/01-markers.png` (標準、平行光源の円と取っ手)・`02-directional-right.png`・`03-lamp.png`・
     `04-point-dragged.png`・`05-zoomed-panned.png`・`06-markers-off.png`。
   - 読み込み時の 404 が 1 件 (T0707・T0710 と同じもの)。
 

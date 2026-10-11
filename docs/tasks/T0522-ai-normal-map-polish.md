@@ -61,7 +61,7 @@ T0520 の後続の候補をまとめる。
   眼鏡を足した見本のアバター → AI タブで顔の行を開く (edges 48 px · smoothing 2.0 px) → 顔を縁 40 px・ならし 4 px、前髪を縁だけ 12 px に →
   提案の理由が英語で「edge 40 px, smoothing 4.0 px」「edge 12 px」→ 区切りの中が「set_normal_map face」など → Preview → Adopt (25/25) →
   Lighting タブで顔に「Edge width (px) 48」「Smoothing (px) 2.0」。横のはみ出し 0。ブリッジと vite preview は止めた。
-  画像 (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad):
+  画像 (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない):
   `T0522/shots/t0522-01-face-shape.png`・`-02-edited.png`・`-03-proposal.png`・`-04-viewport.png`・`-05-lighting-face.png`、マニュアル用の元 `manual-ai-normal-maps.png`・`manual-lighting.png`。
 
 ### 確かめていないこと・後続の候補

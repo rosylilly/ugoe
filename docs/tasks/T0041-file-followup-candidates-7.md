@@ -28,7 +28,6 @@ T0040 の後に集めた候補の一覧を読み、重複をまとめ、既存�
 
 ## 参考
 
-- オーケストレーターの集計: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/run2/candidates-for-T0041.md
 - T0019・T0026・T0032・T0036・T0038・T0040 (1〜6 回目)。リリース前なので移行の説明や互換の別名は要らない (利用者の方針)
 - docs/tasks/README.md、docs/workflow/multi-agent.md#タスクの書き方-オーケストレーター向け
 

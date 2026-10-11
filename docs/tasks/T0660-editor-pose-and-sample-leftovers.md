@@ -73,7 +73,7 @@ T0523・T0655 の後続の候補をまとめる。
   本体のプレビューで「Pose」→ Group 1 を Clothes にすると髪が消えて服が出る → Pose の段を切ると選択が無効になり理由 → 出て入り直すと Hair から。
   `twin-tails.ugoeproj` (物理あり) は物理の画面に案内なし、プレビュー (今の編集を付けて比べる) で本体のグループを切り替えられる。物理なしの `twin-tails.ugoeproj` は
   「Colliders」に案内。肩に当たる `long-hair.ugoeproj` を物理なしの本体で開くと `base_needs_physics` の枠 (「Open base project」)。横のはみ出し 0。
-  スクリーンショット: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0660/shots/t0660-0{1,2,3,4,5,5b,6}-*.png。
+  スクリーンショット: <scratchpad>/T0660/shots/t0660-0{1,2,3,4,5,5b,6}-*.png。
   使ったブリッジと vite preview は止めた。
 - **確かめていないこと:** 実際の Tauri のウィンドウ。モジュールのプロジェクトで、モジュール自身のポーズのグループをプレビューで切り替えること (接頭辞の付け替えは
   Vitest だけ。見本のモジュールにはパーツが 1 つしかなく、グループを作れなかった)。実際の AI・MCP クライアントが `variant_sets` を渡すこと (stdio のテストだけ)。

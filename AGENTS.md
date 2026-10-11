@@ -160,7 +160,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 - タスクに関するコミットは、件名の末尾にタスク ID を付ける: `(T0104)`。
 - 件名は 100 文字以内。命令形・小文字始まり・末尾にピリオドを付けない。
 - Git フックは lefthook で管理する (`lefthook.yml`)。`pnpm install` で有効になる。
-  - pre-commit: rustfmt と Biome による自動整形、依存方向の検査、タスクファイルの検査
+  - pre-commit: rustfmt と Biome による自動整形、依存方向の検査、タスクファイルの検査、機械に固有のパス (ホームのディレクトリ・エージェントの一時ディレクトリ) の検査 (`just local-paths`。文書には `<repo>` などと書く)
   - commit-msg: commitlint によるメッセージの検査
   - pre-push: clippy、全テスト、svelte-check と `@ugoe/runtime` などの型検査 (先に古い wasm の生成物を作り直す。[docs/testing.md](docs/testing.md#wasm-の生成物の古さ))
 - **`--no-verify` でフックを飛ばしてはならない。** フックが失敗したら原因を直す。CI でも同じ検査を行う。

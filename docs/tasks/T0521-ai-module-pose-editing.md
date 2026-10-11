@@ -73,7 +73,7 @@ T0519 の後続の候補をまとめる。
     理由に帽子とキャップのポーズと化粧の目への追従 → Adopt (キャップのパーツの不透明度 0) → 化粧の頂点を 1 つ消す (ブリッジ経由の編集) →
     AI タブに「Propose the rig again · makeup」、タブに「AI •」→ Dismiss で消える → Poses タブに本体のグループと衣装のグループ。
   横のはみ出し 0。スクリーンショット: scratchpad/T0521/shots/t0521-0{1..7}-*.png。使い終えた vite preview とブリッジは止めた。
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)
 - **確かめていないこと:** 実際の Tauri のウィンドウ。ビューポートの描画 (この worktree で wasm を作っていないので、画面の確認はパネルだけ。
   合わせて写した化粧の動きは数値のテスト)。メッシュの編集の画面 (Edit mesh) からの知らせ (頂点の削除はブリッジで送った。ドキュメントの
   変化で `get_proposals` を読み直す経路は同じ)。実際の AI の API (AI の経路は変えていない)。本体に見えている差分と隠した差分がある PSD での、

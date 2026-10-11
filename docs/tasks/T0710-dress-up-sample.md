@@ -58,7 +58,7 @@ assignee: claude-worker-T0710
 - ヘッドレスの Chrome (SwiftShader の WebGL2、`vite preview` のビルド済みの `dist/`) で「サンプル」→「着せ替え」を開き、
   スロット 3 つ・`LongHair*`・`CatEars*`・`Sailor*` が付き、「差し替える」で `TwinTails` に替わること、`AngleX` = 30 で房が揺れることを確かめた。
   スクリーンショット: scratchpad/T0710/shots/01-menu.png・02-dress-up.png・03-swapped.png・04-sway.png
-  (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad)。
+  (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない)。
   読み込み時に 404 が 1 件出るが、見本のファイルではない (favicon などと思われる。確かめていない)。
 
 ### 確かめていないこと・後続の候補

@@ -61,12 +61,12 @@ T0707 の後続の候補。T0707 の見本 (`ugoe sample avatar --lit`) は、�
 ### 確かめたこと
 
 - `just ci` (main (T0713) に rebase し、`just wasm` 2 つの後にもう一度)・`just test-gpu`。`cargo check -p ugoe-editor` は ci の clippy に含まれる。
-- 描いた絵 (GPU テストの書き出し、胸から上の PSD、名前のラベル、環境光 0.55 + 平行光源 0.6、高さ 45°): `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0518/bustup-bulge-left.png`・`-right.png`・`-top.png`
+- 描いた絵 (GPU テストの書き出し、胸から上の PSD、名前のラベル、環境光 0.55 + 平行光源 0.6、高さ 45°): `<scratchpad>/T0518/bustup-bulge-left.png`・`-right.png`・`-top.png`
   (比べる前の絵は `bustup-unlit.png`)。光の側が明るく、首と肩・肩の上の腕の境目に段差や線は見えない。
 - ヘッドレスの Chrome (SwiftShader の WebGL2、`vite preview`) と本物の `Document`・`ugoe_ai::normal` への使い捨ての HTTP ブリッジ (scratchpad `T0518/bridge`、
   `T0518/shot.mjs`) で、見本のアバターのプロジェクトを開き → Lighting タブで eyewhite-l を選ぶ (「Group “face” with face, mouth_open, …」・強さ 0.35) →
   「Generate for the group」→ neck (body、顔を形に加える・0.3)・front hair・back hair・ears-l (ears_r と)・earwear-l も同じく → 24/24 のテクスチャに法線マップ →
-  光源の Direction を左・右・上にして陰影が変わる。横のはみ出し 0。画像: `/tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0518/shots/t0518-01-eye-group.png`・`t0518-03-body.png`・
+  光源の Direction を左・右・上にして陰影が変わる。横のはみ出し 0。画像: `<scratchpad>/T0518/shots/t0518-01-eye-group.png`・`t0518-03-body.png`・
   `t0518-04-{left,right,top}.png`・`t0518-05-viewport-{left,right,top}.png`。ブリッジと vite preview は止めた。
 
 ### 確かめていないこと・後続の候補

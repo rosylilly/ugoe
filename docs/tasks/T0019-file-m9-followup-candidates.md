@@ -28,7 +28,6 @@ M9 の後続のタスクを並列で進めたワーカーは、新しいタス�
 
 ## 参考
 
-- オーケストレーターの集計: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/026b491e-8c79-47ed-ac14-04f23c5addc0/scratchpad/run2/candidates.md
 - docs/tasks/README.md、docs/workflow/multi-agent.md#タスクの書き方-オーケストレーター向け
 
 ## メモ

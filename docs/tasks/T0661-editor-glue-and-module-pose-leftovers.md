@@ -69,7 +69,7 @@ T0659・T0660 の後続の候補のうち、エディタの画面で閉じるも
   「Sailor group 1」(ScarfA / CollarB) が出て CollarB に切り替わる。D. sailor のプロジェクト (グループなし) でファイル (グループあり) を読み込み、
   今の編集を付けてグループを押すと破線の輪郭と「Removed: ScarfA / CollarB is not in your current edits; …」。E. 物理の無い本体で肩に当たる long-hair を
   開く → 枠の「Open without these colliders…」→ 確認 (Sway → Shoulders) →「Remove and open」で開き、リグの衝突体は空、未保存の印、知らせ。
-  横のはみ出し 0。スクリーンショット: /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0661/shots/t0661-01〜10-*.png。vite preview とブリッジは止めた。
+  横のはみ出し 0。スクリーンショット: <scratchpad>/T0661/shots/t0661-01〜10-*.png。vite preview とブリッジは止めた。
 - **確かめていないこと:** 実際の Tauri のウィンドウ (IPC の引数名 `dropColliders` → `drop_colliders` の変換は Tauri の既定に頼っている)。本体のプロジェクトでのグルーの
   組の編集 (モジュールのプロジェクトだけで見た)。組んだ頂点がグルーで重なっているときに、重なった頂点の片方を選び分けること (上に描いた B が押される)。
   大きなメッシュでの頂点の丸の数 (すべて描く)。本体のポーズとモジュールのポーズの両方があるときの並び (Vitest だけ)。モジュールの追従 (`links`) だけを

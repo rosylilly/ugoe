@@ -15,6 +15,51 @@
 公開するかどうか、いつ公開するかは、リポジトリを持つ人 (利用者) が決めて行います。1.0 (v1.0.0) は、[1.0 の範囲](roadmap.md#10-の範囲) (M1〜M11 の完了。
 [ADR 0035](adr/0035-one-point-zero-scope-m1-to-m11.md)) を終えてから、Release のマイルストーンで公開します。
 
+## 公開の前の点検
+
+リポジトリを公開 (Public) にすると、作業ツリーだけでなく履歴 (すべてのコミットの差分とメッセージ・著者) も見えます。
+公開の前に、見せてはいけないもの・見せる意味の無いものが無いかを調べます。2026-10-11 の点検の結果と、履歴の扱いの推奨は
+[T0090](tasks/T0090-pre-publication-audit.md) のメモにあります。
+
+### 自動の検査
+
+- **機械に固有のパス:** `just local-paths` (`scripts/check-local-paths.mjs`) が、ホームのディレクトリ (`/home/<名前>`・`/Users/<名前>`・
+  `C:\Users\<名前>`・WSL の `\home\<名前>`) とエージェントの一時ディレクトリ (`/tmp/claude-<番号>/…`) を見つけたら落ちます。`just ci`・
+  CI の `rust-checks`・pre-commit (lefthook) で動きます。文書やタスクのメモでは、リポジトリの中の相対パスか `<repo>`・`<scratchpad>`・
+  `$HOME`・`%USERPROFILE%` と書きます。テストや例のパスは 1 文字の名前 (`/home/u`・`C:\Users\a`) か、スクリプトの `PLACEHOLDER_USERS`
+  の名前 (`me`・`you` など) を使います。
+- **秘密の値:** 自動の検査はありません。公開の直前に [gitleaks](https://github.com/gitleaks/gitleaks) を版を固定して (T0090 では 8.24.3)
+  リポジトリの外に置き、作業ツリーと履歴の両方を見ます:
+  `gitleaks dir . --no-banner` と `gitleaks git . --log-opts="--all" --no-banner`。T0090 では、WebSocket の RFC 6455 の例の
+  `Sec-WebSocket-Key` (`apps/studio/src-tauri/src/api/`) だけが見つかりました (秘密の値ではありません)。
+- **外部 SDK・ライセンス:** `just licenses` が依存のライセンスを見ます。画像・モデル・PSD の出所は `assets/fixtures/README.md`・
+  `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。
+
+### 人がすること
+
+公開の前に、リポジトリを持つ人が GitHub の設定で行います。
+
+- **履歴の扱いを決める。** T0090 のメモの「履歴の点検」の一覧を読み、書き換え (`git filter-repo` など) が要るかを決めます。
+  書き換えると、すべてのコミットの ID が変わります (タスクファイルや文書のコミットの ID・CI の実行への参照が切れる)。
+- **コミットの著者:** 履歴のすべてのコミットの著者の名前とメールアドレスが見えます。今後のコミットで隠すなら、GitHub の
+  `<ID>+<ユーザー名>@users.noreply.github.com` を `git config user.email` にし、Settings → Emails の
+  「Block command line pushes that expose my email」を有効にします (過去のコミットは書き換えないと変わりません)。
+- **push するもの:** `main` とタグ (`v*`) だけを push します。タスクのブランチ (`task/…`)・worktree・stash は手元のものなので、
+  `git push --mirror` や `git push --all` はしません。
+- **リポジトリの設定:** 既定のブランチは `main`。Issues を有効にし、Discussions・Wiki・Projects を使うかを決めます (使わないなら切る)。
+  マージの方法 (squash・rebase・merge commit) をそろえ、「Automatically delete head branches」を有効にします。
+- **ブランチとタグの保護 (Rulesets):** `main` は PR を通さない push・force push・削除を禁じ、CI (`ci.yml` のジョブ) を必須の
+  チェックにします。`v*` のタグは公開のワークフロー (crates.io・npm・インストーラ・C ABI) を動かすので、作れる人を限ります。
+- **Secrets:** 公開しても Secrets の値は見えませんが、書き込める人のワークフローからは読めます。公開に使うもの
+  (`CARGO_REGISTRY_TOKEN`・`NPM_TOKEN`・`APPLE_*`・`AZURE_*`) は environment に置き、Deployment branches and tags を `v*` に絞り、
+  required reviewers を付けます ([crates.io](#cratesio)・[Secrets を置く](#secrets-を置く-初回だけ人の手))。
+- **フォークからの PR:** ワークフローは `pull_request_target` を使っていないので、フォークからの PR に Secrets は渡りません (この形を保つ)。
+  Settings → Actions → General で、外の人の PR のワークフローを承認してから動かす設定 (「Require approval for all external contributors」) にし、
+  「Workflow permissions」を読み取りだけにします (書き込みが要るジョブは `permissions:` で個別に付けている)。
+- **セキュリティの機能:** Private vulnerability reporting・Dependabot alerts・Secret scanning と push protection を有効にします。
+- **文書:** 公開の時点で、`CONTRIBUTING.md` (貢献の手順。AGENTS.md と `just ci`・Conventional Commits・ライセンスの方針)・`SECURITY.md`
+  (脆弱性の報告先)・`CODE_OF_CONDUCT.md`・Issue と PR のテンプレート (`.github/`) はまだありません。公開の前に用意します。
+
 ## 同梱物のライセンスの表記
 
 エディタ・ビューア・スタジオは、同梱する第三者のもの (MediaPipe の wasm とモデル、バンドルに入る JS のライブラリ、バイナリに入る

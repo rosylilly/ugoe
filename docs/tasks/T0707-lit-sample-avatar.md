@@ -65,11 +65,11 @@ assignee: claude-worker-T0707
 
 - `just ci` (main (T0711) に rebase し、`just wasm` をやり直した後も)・`just test-gpu`・`just viewer-build --bundles deb`。
 - `ugoe render` (llvmpipe) で左・右・上から光を当てて目で確かめた (環境光 0.55、平行光源 0.6、高さ 45°。ビューアの「標準」に近い):
-  /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0707/final-lrt.png (全身)・final-face.png・final-body.png (顔・体の拡大、左・右・上)。途中の版は T0707/v1〜v10 (v1〜v2 はマルチグリッドのバグで髪が平ら、
+  <scratchpad>/T0707/final-lrt.png (全身)・final-face.png・final-body.png (顔・体の拡大、左・右・上)。途中の版は T0707/v1〜v10 (v1〜v2 はマルチグリッドのバグで髪が平ら、
   v3〜v6 は肩の上の腕の輪郭に線)。まとめは `assets/samples/avatar-lit.jpg`。
 - ヘッドレスの Chrome (SwiftShader の WebGL2、`vite preview` のビルド済みの `dist/`) で「サンプル」→「アバター (ライティング)」を開き、
   `usesLighting` が真でライティングのパネルが出ること、方位を変えると陰影が変わること、「アバター」に戻すとパネルが消えることを確かめた:
-  /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad/T0707/shots/01-menu.png・02-lit-standard.png・03-left.png・03-right.png・03-top.png (lrt.png にまとめ)。
+  <scratchpad>/T0707/shots/01-menu.png・02-lit-standard.png・03-left.png・03-right.png・03-top.png (lrt.png にまとめ)。
   読み込み時に 404 が 1 件出る (T0710 と同じもの。見本のファイルではない)。
 
 ### 確かめていないこと・後続の候補

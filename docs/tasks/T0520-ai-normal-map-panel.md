@@ -68,7 +68,7 @@ T0518 の後続の候補をまとめる。
   取り込んだもの → 光源を左から → AI タブにまとまり 6 行 (顔は「15 textures, 1 direction only」) → 顔を 0.3・耳飾りを外して「Propose normal maps (23)」→
   区切り 6 つ (顔 15・体 4・前髪 1・後ろ髪 1・耳 2・ライティング 1) → Preview で陰影が付く → 前髪の区切りを外すとプレビューが作り直される (23 of 24) → 戻して Adopt
   (23/25 のテクスチャに法線マップ・ライティング有効) → Lighting タブで眼鏡の表示 → Undo で 0/25・提案が再び出る。横のはみ出し 0。ブリッジと vite preview は止めた。
-  画像 (scratchpad = /tmp/claude-1000/-home-rosylilly-src-github-com-rosylilly-ugoe/32f91561-94f7-4861-9c03-8fe8c9ff7192/scratchpad): `T0520/shots/t0520-01-groups.png`・`-02-preview.png`・
+  画像 (scratchpad は作業したエージェントの一時ディレクトリ。もう残っていない): `T0520/shots/t0520-01-groups.png`・`-02-preview.png`・
   `-03-viewport-left.png`・`-04-viewport-no-front-hair.png`・`-05-lighting-eyewear.png`・`-06-lighting-face.png`、マニュアル用の元 `manual-ai-normal-maps.png`・`manual-lighting.png`。
 
 ### 確かめていないこと・後続の候補

@@ -18,6 +18,9 @@ pre-commit:
     - name: layers
       glob: "*Cargo.toml"
       run: node scripts/check-layers.mjs
+    # 機械に固有のパス (ホームのディレクトリ・エージェントの一時ディレクトリ。docs/release.md#公開の前の点検)
+    - name: local-paths
+      run: node scripts/check-local-paths.mjs {staged_files}
     - name: tasks
       glob: "docs/tasks/*.md"
       run: node scripts/tasks.mjs > /dev/null
