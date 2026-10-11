@@ -1,7 +1,7 @@
 ---
 id: T0619
 title: エディタの実機での動作確認 (手動)
-status: todo
+status: done
 milestone: M2
 crates: []
 depends_on: [T0617, T0618]
@@ -70,3 +70,9 @@ just editor
 - WSL2 からクロスビルドした NSIS のインストーラ (`just editor-build-windows`、T0625) で Windows にインストールし、起動できた。
 - `assets/fixtures/character.psd` の読み込みまで成功した (WebView2)。
 
+
+### 閉じた (T0083、2026-10-11)
+
+- 残りの確認項目は T0007 で [実機の確認表](../manual-check.md) の「E. エディタ」(E01〜E15) と U05 (WebView2・WKWebView) に移し、
+  以後の結果はそちらに書く流れになっているので、このタスクは「確認表に移した」として done にした (確認そのものは済んでいない)。
+  チェックの無い項目は、確認表の E03〜E07 の結果の欄で追う。
