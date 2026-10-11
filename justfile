@@ -105,11 +105,25 @@ tasks *args:
     @node scripts/tasks.mjs {{args}}
 
 # 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md) と、アプリが同梱する表記の突き合わせ
-# (apps/*/public/third-party-notices.txt。食い違えば `node scripts/third-party-notices.mjs` で生成し直す。docs/release.md#同梱物のライセンスの表記)
+# (apps/*/public/third-party-notices.txt。食い違えば `just notices` で生成し直す。cargo-about が要る (`just cargo-about`)。docs/release.md#同梱物のライセンスの表記)
 licenses:
     @node scripts/check-licenses.mjs
     @node --test --test-reporter=dot scripts/third-party-notices.test.mjs
+    @node --test --test-reporter=dot scripts/rust-notices.test.mjs
     @node scripts/third-party-notices.mjs --check
+
+# アプリが同梱するライセンスの表記 (apps/*/public/third-party-notices.txt) を作り直す。JS のライブラリと Rust のクレートの
+# 依存が変わったら実行し、差分を読んでからコミットする (docs/release.md#同梱物のライセンスの表記)。cargo-about が要る
+notices:
+    @node scripts/third-party-notices.mjs
+
+# 表記を作る cargo-about を決めた版で入れる (scripts/lib/rust-notices.mjs の CARGO_ABOUT_VERSION。無いか版が違うときだけ)
+cargo-about:
+    @node scripts/third-party-notices.mjs --install-cargo-about
+
+# 決めた cargo-about の版を出す (CI のキャッシュの鍵)
+cargo-about-version:
+    @node scripts/third-party-notices.mjs --cargo-about-version
 
 # crates.io に公開するクレートの準備の検査 (メタデータ・LICENSE の写し・内部の依存の版・missing_docs。docs/release.md#cratesio)
 publish-check:

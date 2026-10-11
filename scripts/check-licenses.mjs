@@ -19,6 +19,8 @@
 //   godot-rust のクレートだけ MPL-2.0 を認める。`node bindings/godot/build.mjs --check` が実行する。
 // - fuzz のクレート (fuzz/) もワークスペースの外にあり、`--fuzz` を付けたときだけ検査する
 //   (docs/adr/0032-fuzzing-with-cargo-fuzz.md)。MIT で、依存は寛容なライセンスに限る。libfuzzer-sys だけ NCSA も認める。`node fuzz/run.mjs --check` と `--lint` が実行する。
+// - アプリの表記の Rust のクレートの節を作る cargo-about の設定 (scripts/about.toml) の accepted が、GPL_COMPATIBLE と
+//   同じ集合であること。
 // ライセンスが SPDX の式で書かれていない依存を追加する場合は、EXCEPTIONS に理由付きで登録する。
 
 import { spawnSync } from "node:child_process";
@@ -356,6 +358,23 @@ if (
   !specLicense.includes("Creative Commons Attribution 4.0 International Public License")
 ) {
   errors.push("spec/LICENSE: CC BY 4.0 の条文であるべき");
+}
+
+// cargo-about の設定 (scripts/about.toml。アプリの表記の Rust のクレートの節) の accepted が、GPL_COMPATIBLE と同じ集合であること
+// (WITH の例外付きのものは、元のライセンスと例外がここで認められていること)。
+const aboutToml = readFileSync(new URL("about.toml", import.meta.url), "utf8");
+const accepted = [
+  ...(/^accepted\s*=\s*\[([^\]]*)\]/m.exec(aboutToml)?.[1] ?? "").matchAll(/"([^"]+)"/g),
+].map((m) => m[1]);
+for (const id of accepted) {
+  if (!satisfies(id, GPL_COMPATIBLE)) {
+    errors.push(`scripts/about.toml: accepted の ${id} は GPL_COMPATIBLE に無い`);
+  }
+}
+for (const id of GPL_COMPATIBLE) {
+  if (!accepted.includes(id)) {
+    errors.push(`scripts/about.toml: accepted に ${id} が無い (GPL_COMPATIBLE と同じ集合にする)`);
+  }
 }
 
 for (const e of [...new Set(errors)]) console.error(`error: ${e}`);

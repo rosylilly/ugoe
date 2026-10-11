@@ -87,15 +87,36 @@ test("face-tracking の表記から、最初の節から終わりまでを取り
   assert.throws(() => mediapipeSections("Title\n=====\n\nno sections\n"));
 });
 
-test("表記の全文に、アプリの名前・MediaPipe の節・各パッケージの名前と版とライセンスの文が入る", () => {
-  const text = renderNotices("ugoe viewer", "MediaPipe\n---------\n\nbody", [
-    { name: "a", version: "1.0.0", license: "MIT", source: "https://x/a", text: "MIT A" },
-    { name: "b", version: "2.0.0", license: "ISC", source: "https://x/b", text: "ISC B" },
-  ]);
+test("表記の全文に、アプリの名前・MediaPipe の節・各パッケージとクレートの名前と版とライセンスの文が入る", () => {
+  const text = renderNotices(
+    "ugoe viewer",
+    "MediaPipe\n---------\n\nbody",
+    [
+      { name: "a", version: "1.0.0", license: "MIT", source: "https://x/a", text: "MIT A" },
+      { name: "b", version: "2.0.0", license: "ISC", source: "https://x/b", text: "ISC B" },
+    ],
+    {
+      crates: [
+        {
+          name: "c",
+          version: "3.0.0",
+          license: "MIT",
+          source: "https://x/c",
+          authors: [],
+          used: ["MIT"],
+        },
+      ],
+      texts: [
+        { id: "MIT", name: "MIT License", text: "MIT C", standard: false, crates: ["c 3.0.0"] },
+      ],
+    },
+  );
   assert.ok(text.startsWith("Third-party software and models bundled with ugoe viewer\n====="));
   assert.ok(text.includes("ugoe viewer itself is licensed under GPL-3.0-only"));
   assert.ok(text.includes("\nMediaPipe\n---------\n\nbody\n"));
   assert.ok(text.includes("\na 1.0.0\nLicense: MIT\nSource: https://x/a\n\nMIT A\n"));
   assert.ok(text.indexOf("a 1.0.0") < text.indexOf("b 2.0.0"));
-  assert.ok(text.endsWith("ISC B\n"));
+  assert.ok(text.indexOf("ISC B\n") < text.indexOf("Rust crates compiled into the application"));
+  assert.ok(text.includes("\nc 3.0.0\n  License: MIT\n  Source: https://x/c\n"));
+  assert.ok(text.endsWith("Used by:\n  c 3.0.0\n\nMIT C\n"));
 });

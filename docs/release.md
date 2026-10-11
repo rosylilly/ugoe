@@ -16,28 +16,50 @@
 
 ## 同梱物のライセンスの表記
 
-エディタ・ビューア・スタジオは、同梱する第三者のもの (MediaPipe の wasm とモデル、バンドルに入る JS のライブラリ) のライセンスの
-表記を `apps/<アプリ>/public/third-party-notices.txt` に持ち、アプリの「ライセンス」の画面で表示します (T0926)。この 3 つのファイルは
-手で書かず、`scripts/third-party-notices.mjs` が次の 2 つから生成します。
+エディタ・ビューア・スタジオは、同梱する第三者のもの (MediaPipe の wasm とモデル、バンドルに入る JS のライブラリ、バイナリに入る
+Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/third-party-notices.txt` に持ち、アプリの「ライセンス」の画面で
+表示します (T0926・T0005)。この 3 つのファイルは手で書かず、`just notices` (`scripts/third-party-notices.mjs`) が次の 3 つから生成します。
 
 - MediaPipe の節: `packages/face-tracking/third-party-notices.txt` の最初の節から終わりまで (Apache-2.0 の条文を含む)。
 - JS のライブラリの節: アプリを書き出さずに `vite build` し、バンドルに入ったモジュールの node_modules のパッケージごとに、
   名前・版・ライセンス・ソースと、パッケージのライセンスの文 (LICENSE をそのまま) を並べる。版はロックファイルで決まる
   node_modules のもの。MIT と別のライセンスから選べるもの (Tauri の JS API など) は MIT の文を載せ、文のファイルが無い
   Tauri のプラグインは `LICENSE.spdx` の著作権者と MIT の文を載せる。仮想のモジュール (Vite・rolldown が足す小さな補助) は載せない。
+- Rust のクレートの節: アプリのバックエンド (`apps/<アプリ>/src-tauri/Cargo.toml`) を
+  [cargo-about](https://github.com/EmbarkStudios/cargo-about) にかけ、クレートの一覧 (名前・版・ライセンス・ソース) と
+  ライセンスの文 (同じ文は 1 つにまとめ、使うクレートを添える) を並べる。組み立ては `scripts/lib/rust-notices.mjs`、
+  cargo-about の設定は `scripts/about.toml`。
+  - 対象: Windows・macOS・Linux (x86_64 と aarch64) のどれかのビルドに入るクレート。ビルドスクリプトだけ・テストだけが使う
+    クレートは載せない。手続きマクロのクレートは載る (バイナリには入らないが、cargo-about は通常の依存と区別しない)。
+    ワークスペースのクレート (ugoe 自身) は載せない。版は `Cargo.lock` のもの。
+  - 選べるライセンス (`MIT OR Apache-2.0` など) は、`scripts/about.toml` の `accepted` の前にあるものを選ぶ (MIT を最初に置く)。
+    `accepted` は `scripts/check-licenses.mjs` の GPL-3.0 と両立するライセンスと同じ集合で、`just licenses` が突き合わせる。
+  - 文はクレートのライセンスのファイル (LICENSE・COPYING・NOTICE など) から取る。cargo-about はソースのファイルの見出しからも文を
+    拾うが、ソースの全文になるので載せない。ライセンスのファイルを持たないクレートは SPDX の標準の文を載せ、著作権者の欄の代わりに
+    Cargo.toml の authors (名前だけ) を添える。文が 1 つも見つからないクレートがあると生成が失敗する。
+  - 文の取り出しはネットワークを使わない (`--frozen`。手元とネットワークの状態で結果が変わらないように)。
+  - cargo-about の版は `scripts/lib/rust-notices.mjs` の `CARGO_ABOUT_VERSION` に固定し、`just cargo-about` が
+    その版を入れる (`cargo install cargo-about --version <版> --locked --features cli`)。CI (ci.yml の rust-checks) も同じ
+    レシピで入れる。cargo-about は依存のすべてのファイルを読むのでアプリ 1 つに数十秒かかり、結果は入力 (cargo-about の版・設定・
+    `Cargo.lock`・すべての `Cargo.toml`) のハッシュごとに `target/cargo-about/` に覚える。
 
-`just licenses` (`just ci` に含まれる) が生成したものとコミットしたものを突き合わせ、食い違えば失敗します。
+`just licenses` (`just ci` に含まれる) が生成したものとコミットしたものを突き合わせ、食い違えば失敗します (JS の依存の版がロックファイルと
+変わったとき、Rust の依存が変わったときを含む)。これには cargo-about が要ります (無ければ `just cargo-about` を案内して失敗します)。
 
 依存やモデルを更新したときの手順:
 
-1. JS の依存を足す・上げる・外したら (`pnpm install` でロックファイルが変わったら)、`node scripts/third-party-notices.mjs` で
-   3 つのファイルを生成し直し、差分 (載るパッケージ・版・ライセンスの文) を読んでからコミットする。
+1. JS の依存を足す・上げる・外したら (`pnpm install` でロックファイルが変わったら)、Rust の依存を足す・上げる・外したら
+   (`Cargo.lock` やアプリの `Cargo.toml` が変わったら)、`just notices` で 3 つのファイルを生成し直し、差分 (載るパッケージと
+   クレート・版・ライセンスの文) を読んでからコミットする。
    ライセンスの文のファイルを持たないパッケージがバンドルに入ると生成が失敗するので、ライセンスを確かめてスクリプトに扱いを足す。
 2. MediaPipe の wasm やモデルを更新したら (`packages/face-tracking/scripts/mediapipe-assets.mjs` の URL とハッシュ)、
    `packages/face-tracking/third-party-notices.txt` の節 (ファイル・取得元・モデルカード・ライセンス) を直してから、1 と同じく生成し直す。
-3. 新しいアプリを足したら、スクリプトの `APPS` に加え、アプリの「ライセンス」の画面が `third-party-notices.txt` を読むようにする。
+3. 新しいアプリを足したら、スクリプトの `APPS` に (バックエンドの `Cargo.toml` とともに) 加え、アプリの「ライセンス」の画面が
+   `third-party-notices.txt` を読むようにする。
+4. cargo-about の版を上げるときは `CARGO_ABOUT_VERSION` を変え、`just cargo-about` で入れてから `just notices` で生成し直す。
 
-Rust のクレート (Tauri のバックエンドなど) のライセンスの表記は、ここではまだ扱っていません。
+MIT の配布物 (npm の @ugoe/runtime・Unity・Godot・C ABI) の表記は、同じ cargo-about の設定と `scripts/lib/rust-notices.mjs` で作る
+予定です (T1407)。
 
 ## crates.io
 

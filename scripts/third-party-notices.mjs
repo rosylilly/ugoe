@@ -3,28 +3,40 @@
 // アプリ (エディタ・ビューア・スタジオ) が同梱する第三者のもののライセンスの表記 (apps/*/public/third-party-notices.txt) を
 // 生成する。`--check` は生成したものとコミットしたものを突き合わせ、食い違えば失敗する (`just licenses`)。
 //
-// 表記は次の 2 つから作る (docs/release.md#同梱物のライセンスの表記)。
+// 表記は次の 3 つから作る (docs/release.md#同梱物のライセンスの表記)。
 // - MediaPipe の wasm とモデルの節: packages/face-tracking/third-party-notices.txt (アプリが mediapipe/ に写す表記) の
 //   最初の節から終わりまで。
 // - JS のライブラリの節: アプリを `vite build` (書き出さない) し、バンドルに入ったモジュールの node_modules の
 //   パッケージを集め、それぞれの名前・版・ライセンス・ソースとライセンスの文 (パッケージの LICENSE をそのまま) を並べる。
 //   バンドルに入らないもの (svelte のコンパイラの依存など) は載らない。版はロックファイルで決まる node_modules のもの。
+// - Rust のクレートの節: アプリのバックエンド (src-tauri) を cargo-about にかけ、Windows・macOS・Linux のどれかのビルドに
+//   入るクレートの名前・版・ライセンス・ソースと、ライセンスの文を並べる (scripts/lib/rust-notices.mjs・scripts/about.toml)。
+//   版は Cargo.lock のもの。cargo-about の決めた版 (`just cargo-about` が入れる) が要る。
 //
-// 使い方: `node scripts/third-party-notices.mjs` (書き出す)・`node scripts/third-party-notices.mjs --check` (検査)
+// 使い方: `node scripts/third-party-notices.mjs` (書き出す。`just notices`)・`node scripts/third-party-notices.mjs --check`
+// (検査。`just licenses`)・`--install-cargo-about` (決めた版の cargo-about を入れる。`just cargo-about`)・
+// `--cargo-about-version` (その版を出す。CI が使う)
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { NPM_LICENSE_EXCEPTIONS } from "./lib/npm-license-exceptions.mjs";
+import {
+  CARGO_ABOUT_VERSION,
+  cargoAboutJson,
+  installCargoAbout,
+  renderRustNotices,
+  rustNotices,
+} from "./lib/rust-notices.mjs";
 
 const root = join(import.meta.dirname, "..");
 
-/** 表記を同梱するアプリ (ディレクトリ・表記の中の名前)。 */
+/** 表記を同梱するアプリ (ディレクトリ・表記の中の名前・Rust のバックエンドの Cargo.toml)。 */
 export const APPS = [
-  { dir: "apps/editor", name: "ugoe editor" },
-  { dir: "apps/viewer", name: "ugoe viewer" },
-  { dir: "apps/studio", name: "ugoe studio" },
+  { dir: "apps/editor", name: "ugoe editor", manifest: "apps/editor/src-tauri/Cargo.toml" },
+  { dir: "apps/viewer", name: "ugoe viewer", manifest: "apps/viewer/src-tauri/Cargo.toml" },
+  { dir: "apps/studio", name: "ugoe studio", manifest: "apps/studio/src-tauri/Cargo.toml" },
 ];
 
 /** 表記の出力先 (アプリのディレクトリから)。 */
@@ -168,8 +180,11 @@ export function mediapipeSections(text) {
   return text.slice(match.index).trimEnd();
 }
 
-/** アプリの表記の全文を組み立てる。`packages` は名前と版で並べておく。 */
-export function renderNotices(appName, mediapipe, packages) {
+/**
+ * アプリの表記の全文を組み立てる。`packages` は名前と版で並べておく。`rust` は rustNotices (scripts/lib/rust-notices.mjs)
+ * の結果。
+ */
+export function renderNotices(appName, mediapipe, packages, rust) {
   const title = `Third-party software and models bundled with ${appName}`;
   const lines = [
     title,
@@ -177,8 +192,8 @@ export function renderNotices(appName, mediapipe, packages) {
     "",
     `${appName} itself is licensed under GPL-3.0-only (see the LICENSE file of the`,
     "application). This file lists the components that are distributed with it under",
-    "other licenses. It is generated from the JavaScript bundle of the application",
-    "(scripts/third-party-notices.mjs in the ugoe repository).",
+    "other licenses. It is generated from the JavaScript bundle and the Rust crates of",
+    "the application (scripts/third-party-notices.mjs in the ugoe repository).",
     "",
     "",
     mediapipe,
@@ -206,6 +221,21 @@ export function renderNotices(appName, mediapipe, packages) {
       pkg.text,
     );
   }
+  lines.push(
+    "",
+    "",
+    RULE,
+    "",
+    "",
+    "Rust crates compiled into the application",
+    "-----------------------------------------",
+    "",
+    "The following Rust crates are compiled into the application (the builds for",
+    "Windows, macOS and Linux together). Where a crate is offered under a choice of",
+    "licenses, the license under which it is used is given in parentheses. The license",
+    "texts follow the list, each with the crates it applies to.",
+    ...renderRustNotices(rust),
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -245,10 +275,19 @@ export async function generate(app) {
   const sorted = [...unique.values()].sort(
     (a, b) => a.name.localeCompare(b.name, "en") || a.version.localeCompare(b.version, "en"),
   );
-  return renderNotices(app.name, mediapipe, sorted);
+  const rust = rustNotices(cargoAboutJson(root, app.manifest));
+  return renderNotices(app.name, mediapipe, sorted, rust);
 }
 
 async function main(argv) {
+  if (argv.includes("--cargo-about-version")) {
+    console.log(CARGO_ABOUT_VERSION);
+    return;
+  }
+  if (argv.includes("--install-cargo-about")) {
+    installCargoAbout();
+    return;
+  }
   const check = argv.includes("--check");
   let failed = false;
   for (const app of APPS) {
@@ -259,7 +298,7 @@ async function main(argv) {
     if (current === text) continue;
     if (check) {
       console.error(
-        `error: ${rel} が依存と食い違う (node scripts/third-party-notices.mjs で生成し直してコミットする。docs/release.md#同梱物のライセンスの表記)`,
+        `error: ${rel} が依存と食い違う (just notices で生成し直してコミットする。docs/release.md#同梱物のライセンスの表記)`,
       );
       failed = true;
     } else {

@@ -12,7 +12,7 @@ Live2D Cubism と**機能的に互換**な 2D リギング・アニメーショ�
 
 ## 始め方
 
-必要なもの: Rust (`rust-toolchain.toml` で自動導入)、Node.js 26+ (`.tool-versions`)、pnpm (`package.json` の `packageManager` で固定。Node 26 は corepack を同梱しないため `npm i -g corepack && corepack enable` で導入)、[just](https://github.com/casey/just)、各 OS の [Tauri 前提パッケージ](https://v2.tauri.app/start/prerequisites/)。
+必要なもの: Rust (`rust-toolchain.toml` で自動導入)、Node.js 26+ (`.tool-versions`)、pnpm (`package.json` の `packageManager` で固定。Node 26 は corepack を同梱しないため `npm i -g corepack && corepack enable` で導入)、[just](https://github.com/casey/just)、各 OS の [Tauri 前提パッケージ](https://v2.tauri.app/start/prerequisites/)、`just ci` のライセンスの表記の検査に cargo-about (`just cargo-about` で決めた版を入れる)。
 
 ```sh
 just setup      # pnpm install など

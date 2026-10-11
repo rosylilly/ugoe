@@ -6,8 +6,8 @@ ugoe のエディタ (Tauri v2 + Svelte 5)。設計は [docs/editor.md](../../do
 src/              フロントエンド (Svelte 5 + TS)
   lib/ipc.ts        バックエンドとの通信はすべてここを通す
   lib/preview/      プレビューモード。フェイストラッキングは共有の @ugoe/face-tracking (packages/face-tracking/)
-public/third-party-notices.txt 同梱する第三者のもの (MediaPipe・JS のライブラリ) のライセンスの表記。プレビューの「Third-party licenses」で表示する。
-                  `node scripts/third-party-notices.mjs` が生成する ([docs/release.md](../../docs/release.md#同梱物のライセンスの表記))
+public/third-party-notices.txt 同梱する第三者のもの (MediaPipe・JS のライブラリ・Rust のクレート) のライセンスの表記。プレビューの「Third-party licenses」で表示する。
+                  `just notices` が生成する ([docs/release.md](../../docs/release.md#同梱物のライセンスの表記))
 public/mediapipe/ MediaPipe の wasm とモデル。`pnpm mediapipe` (dev・build の前にも) が用意する (gitignore 済み)
 src-tauri/        バックエンド (Rust クレート `ugoe-editor`)
   src/commands.rs   IPC コマンド。薄く保ち、編集ロジックは ugoe-editor-core に置く

@@ -36,7 +36,7 @@ src/                  フロントエンド (Svelte 5 + TS。npm パッケージ
   lib/trackingTuning.ts フェイストラッキングの調整 (感度と境目) を覚える (T0738。下の「フェイストラッキング」)
   lib/wasm/             ugoe-wasm の読み込み (`Player` に `loadWasm` として渡す)。generated/ は `pnpm wasm` の出力 (gitignore 済み)
   global.d.ts           `window.__UGOE_VIEWER__` の型
-public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス。`node scripts/third-party-notices.mjs` が生成する) だけコミットする
+public/               そのまま配る静的ファイル。third-party-notices.txt (同梱物のライセンス。`just notices` が生成する) だけコミットする
   mediapipe/            MediaPipe の wasm とモデル。`pnpm mediapipe` が用意する (gitignore 済み)
 src-tauri/            バックエンド (Rust クレート `ugoe-viewer`)
 ```

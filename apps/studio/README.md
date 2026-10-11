@@ -29,7 +29,7 @@ src/HotkeysPanel.svelte       ホットキーの割り当て (キーを押して
 src/ReceiverFailuresNotices.svelte 操作ウィンドウの上の、受け手が読めなかったことの知らせ (受け手ごとに 1 つ。読めなかったものをすべて並べる。T0840)
 src/VirtualCameraPanel.svelte 操作ウィンドウの「仮想カメラ」: 開始と停止・解像度・フレームレート・透過を埋める色・止まった/遅れたの知らせと案内
 src/LicenseDialog.svelte      ライセンスの表示 (設定の「ライセンスを表示…」)。本文は public/third-party-notices.txt
-public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ) のライセンスの表記 (`node scripts/third-party-notices.mjs` が生成する)
+public/third-party-notices.txt 同梱する第三者のもの (MediaPipe の wasm とモデル・JS のライブラリ・Rust のクレート) のライセンスの表記 (`just notices` が生成する)
 src/ApiPanel.svelte           操作 API (有効にする・接続先・ポート・トークンの写しと作り直し・承認したアプリの切断と取り消し・承認を待つアプリ)
 src/ApiApproval.svelte        操作 API に初めて接続したアプリの承認の知らせ (権限の選択・承認・拒否・後で)
 src/SourcePanel.svelte        ブラウザソース (OBS): 出す・やめる・URL のコピー (トークンは伏せて出す)・作り直し・OBS での設定の手順

@@ -640,7 +640,7 @@ Tauri コマンドは `check_avatar_profile()` (`src-tauri/src/avatar.rs`)。
   - MediaPipe の wasm とモデルは、`pnpm dev` / `pnpm build` の前に `ugoe-mediapipe-assets public/mediapipe`
     (パッケージの `scripts/mediapipe-assets.mjs`) が用意します。wasm は npm パッケージから写し、モデル
     (`face_landmarker.task`・`pose_landmarker_lite.task`) は版を固定した URL から取って SHA-256 を検証します。`public/mediapipe/` はコミットしません。
-    パネルの「Third-party licenses」は、MediaPipe とバンドルに入る JS のライブラリのライセンスの表記 (`public/third-party-notices.txt`。
+    パネルの「Third-party licenses」は、MediaPipe とバンドルに入る JS のライブラリとバイナリに入る Rust のクレートのライセンスの表記 (`public/third-party-notices.txt`。
     ビューア・スタジオと同じ形) を表示します。生成と検査は [release.md](release.md#同梱物のライセンスの表記)。
   - 映像と画像はこの計算機の中で処理し、どこにも送りません。MediaPipe が 60 秒ごとに送ろうとする利用状況
     (`https://odml.pa.googleapis.com/v1/log`) は、`@ugoe/face-tracking` が送る前に断り、CSP の `connect-src` も許しません

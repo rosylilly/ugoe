@@ -62,6 +62,18 @@ jobs:
       # すべてのクレートが、どれか 1 つのグループ (下の rust-group のジョブ) に入っているか
       - name: Groups
         run: just groups
+      # アプリの表記の Rust のクレートの節は cargo-about で作る (docs/release.md#同梱物のライセンスの表記)。
+      # 版は scripts/lib/rust-notices.mjs で決め、ビルドした実行ファイルを版ごとに覚える
+      - name: Resolve cargo-about version
+        id: cargo-about
+        run: echo "version=$(just cargo-about-version)" >> "$GITHUB_OUTPUT"
+      - name: Cache cargo-about
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-about
+          key: cargo-about-${{ runner.os }}-${{ steps.cargo-about.outputs.version }}
+      - name: Install cargo-about
+        run: just cargo-about
       - name: Licenses
         run: just licenses
       # crates.io に公開するクレートの準備 (メタデータ・LICENSE の写し・内部の依存の版。docs/release.md#cratesio)
