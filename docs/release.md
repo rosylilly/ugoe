@@ -27,8 +27,13 @@
 ## 公開の前の点検
 
 リポジトリを公開 (Public) にすると、作業ツリーだけでなく履歴 (すべてのコミットの差分とメッセージ・著者) も見えます。
-公開の前に、見せてはいけないもの・見せる意味の無いものが無いかを調べます。2026-10-11 の点検の結果と、履歴の扱いの推奨は
+公開の前に、見せてはいけないもの・見せる意味の無いものが無いかを調べます。2026-10-11 の点検の結果は
 [T0090](tasks/T0090-pre-publication-audit.md) のメモにあります。
+
+**決定 (利用者 2026-10-11): 履歴は書き換えません。** T0090 の履歴の点検で見つかったのは、タスクファイルの古い版に残る機械に固有のパス
+(WSL と Windows のユーザー名・ディレクトリの置き方・エージェントのセッションの UUID) だけで、秘密の値・外部 SDK・生成物は
+ありませんでした。書き換えるとすべてのコミットの ID が変わり、タスクファイルや文書のコミットの ID・CI の実行への参照が切れるので、
+`git filter-repo` などは使わず、今の作業ツリーだけを `just local-paths` で守ります。
 
 ### 自動の検査
 
@@ -37,22 +42,20 @@
   CI の `rust-checks`・pre-commit (lefthook) で動きます。文書やタスクのメモでは、リポジトリの中の相対パスか `<repo>`・`<scratchpad>`・
   `$HOME`・`%USERPROFILE%` と書きます。テストや例のパスは 1 文字の名前 (`/home/u`・`C:\Users\a`) か、スクリプトの `PLACEHOLDER_USERS`
   の名前 (`me`・`you` など) を使います。
-- **秘密の値:** 自動の検査はありません。公開の直前に [gitleaks](https://github.com/gitleaks/gitleaks) を版を固定して (T0090 では 8.24.3)
+- **秘密の値:** 自動の検査はありません (CI や `just` で回すかは T0098 で決める)。公開の直前に [gitleaks](https://github.com/gitleaks/gitleaks) を版を固定して (T0090 では 8.24.3)
   リポジトリの外に置き、作業ツリーと履歴の両方を見ます:
   `gitleaks dir . --no-banner` と `gitleaks git . --log-opts="--all" --no-banner`。T0090 では、WebSocket の RFC 6455 の例の
   `Sec-WebSocket-Key` (`apps/studio/src-tauri/src/api/`) だけが見つかりました (秘密の値ではありません)。
 - **外部 SDK・ライセンス:** `just licenses` が依存のライセンスを見ます。画像・モデル・PSD の出所は `assets/fixtures/README.md`・
-  `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。
+  `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。アプリのアイコンの出所はまだ書いていません (T0097)。
 
 ### 人がすること
 
 公開の前に、リポジトリを持つ人が GitHub の設定で行います。
 
-- **履歴の扱いを決める。** T0090 のメモの「履歴の点検」の一覧を読み、書き換え (`git filter-repo` など) が要るかを決めます。
-  書き換えると、すべてのコミットの ID が変わります (タスクファイルや文書のコミットの ID・CI の実行への参照が切れる)。
 - **コミットの著者:** 履歴のすべてのコミットの著者の名前とメールアドレスが見えます。今後のコミットで隠すなら、GitHub の
   `<ID>+<ユーザー名>@users.noreply.github.com` を `git config user.email` にし、Settings → Emails の
-  「Block command line pushes that expose my email」を有効にします (過去のコミットは書き換えないと変わりません)。
+  「Block command line pushes that expose my email」を有効にします (履歴は書き換えないので、過去のコミットの著者はそのまま見えます)。
 - **push するもの:** `main` とタグ (`v*`) だけを push します。タスクのブランチ (`task/…`)・worktree・stash は手元のものなので、
   `git push --mirror` や `git push --all` はしません。
 - **リポジトリの設定:** 既定のブランチは `main`。Issues を有効にし、Discussions・Wiki・Projects を使うかを決めます (使わないなら切る)。
@@ -67,7 +70,7 @@
   「Workflow permissions」を読み取りだけにします (書き込みが要るジョブは `permissions:` で個別に付けている)。
 - **セキュリティの機能:** Private vulnerability reporting・Dependabot alerts・Secret scanning と push protection を有効にします。
 - **文書:** 公開の時点で、`CONTRIBUTING.md` (貢献の手順。AGENTS.md と `just ci`・Conventional Commits・ライセンスの方針)・`SECURITY.md`
-  (脆弱性の報告先)・`CODE_OF_CONDUCT.md`・Issue と PR のテンプレート (`.github/`) はまだありません。公開の前に用意します。
+  (脆弱性の報告先)・`CODE_OF_CONDUCT.md`・Issue と PR のテンプレート (`.github/`) はまだありません。公開の前に用意します (T0096)。
 
 ## 同梱物のライセンスの表記
 
@@ -172,8 +175,13 @@ node scripts/crates.mjs order
 ### 公開の範囲
 
 公開するクレートの `pub` の項目は、そのまま利用者の API になります (`ugoe` は下位のクレートを `ugoe::core`・`ugoe::model` などとして
-丸ごと再公開するので、下位のクレートの公開の項目はすべて `ugoe` の API でもあります)。公開した版は取り消せず、1.0 の後に公開の範囲を
-狭めるのは破壊的な変更になるので、項目を足すときは次の約束を守ります。1.0 の前の洗い出しと、狭める項目の一覧は T0195 のメモにあります。
+丸ごと再公開するので、下位のクレートの公開の項目はすべて `ugoe` の API でもあります)。
+
+**方針 (利用者 2026-10-11):** 公開も 1.0 の日程も決まっていないので、API・ABI の版や挙動の安定には神経質にならず、よりよいソフトウェアに
+育てることを優先します。公開の範囲・名前・型・C ABI を変えるときも、移行の説明・互換の別名・semver の約束のための仕掛け
+(`unstable-` の feature・`#[non_exhaustive]` の揃え・約束に含めないという注記など) は要りません。下の目安は、約束のためではなく、
+クレートの中を変えやすく・読みやすく保つためのものです。公開の範囲を狭めるのも「内部の整理」として扱います (T0195 の洗い出しと、
+そこから起票した T0196 (core・runtime・format・motion)・T0336 (physics))。
 
 - **既定は `pub(crate)`。** `pub` にするのは、次のどれかに当たる項目だけです。
   - ほかの公開するクレートが使う (`ugoe-physics` が `ugoe-runtime` の `ParameterValues` を使うなど)。
@@ -184,13 +192,14 @@ node scripts/crates.mjs order
   利用者にも意味のある口かを考え、そうでなければ公開するクレートの側に意味のある口を足します。
 - **1 つの項目に道は 1 つ。** モジュールの項目をすべてクレートの根で再公開するなら、モジュールは非公開にします (ファイルの分け方を
   API にしない)。根で再公開しない項目を持つモジュール (`ugoe_core::lighting`・`ugoe_model` のデータのモジュールなど) は公開のままです。
-- **`#[doc(hidden)]` は、公開するクレート同士の配管で利用者に見せない項目だけに使い、doc コメントに「semver の約束に含めない」と書きます。**
-  利用者に見せたくないだけの項目は `pub(crate)` にします。
+- **`#[doc(hidden)]` は、公開するクレート同士の配管で利用者に見せない項目だけに使います。** 利用者に見せたくないだけの項目は `pub(crate)` にします。
 - **テストとコード生成の道具** (`ugoe_model::fixtures`、feature `schema`・`ts` と `ugoe_core::codegen`・`ugoe_model::spec_files`) は
-  ワークスペースのテストと道具のためのものです。扱い (feature の裏に置くか、semver の約束に含めないと書くか) は T0195 のメモの判断待ちで、
-  決まるまで項目を足すときは今の置き場所 (`fixtures` の関数・feature の下) に足します。
+  ワークスペースのテストと道具のためのもので、今の置き場所のまま使います (別の feature の裏へ移すなどはしない)。中身や形は、テストと道具の
+  都合で自由に変えてかまいません。
+- **`#[non_exhaustive]`** は、付けると網羅的な `match` が書けなくなる代わりに値を足しやすくなります。揃えることはせず、値が増えていく
+  ことが分かっている型に、作るときに判断して付けます。
 - **外部のクレートの型を公開 API に出すと、その版も API の一部になります** (`glam` の `Vec2` など、`ugoe-render` の `wgpu`、
-  feature の下の `schemars`・`ts-rs`)。新しく出すときは PR の本文に理由を書きます。
+  feature の下の `schemars`・`ts-rs`)。依存を上げるときに組み込み先が困らないよう、新しく出すときは PR の本文に理由を書きます。
 - 公開の範囲は `cargo +nightly rustdoc -p <クレート> -- -Z unstable-options --output-format json` の JSON で一覧にできます
   (手元で一度使うだけの道具なので、リポジトリには入れていません。調べ方は T0195 のメモ)。
 

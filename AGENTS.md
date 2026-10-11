@@ -12,6 +12,8 @@ ugoe は Live2D Cubism と **機能的に互換** な 2D リギング・アニ�
 - Live2D の **ファイル形式や内部機構との互換は目指さない**。できることは同等にするが、データ形式とアルゴリズムは独自のもの。
 - AI 連携 (PSD 取り込み → レイヤー意味分類 → 自動メッシュ → 自動パラメータ設定) を、編集の提案として持つ。
 - 1.0 の範囲は M1〜M11 の完了と公開の作業 ([docs/roadmap.md](docs/roadmap.md#10-の範囲)、[ADR 0035](docs/adr/0035-one-point-zero-scope-m1-to-m11.md))。
+- 公開も 1.0 の日程も決まっていないので、API・ABI の版や挙動の安定には神経質にならず、よりよいソフトウェアに育てることを優先する (利用者の方針 2026-10-11)。
+  公開 API・ABI・ファイル形式を変えるときも、移行の説明や互換の別名は要らない ([docs/release.md#公開の範囲](docs/release.md#公開の範囲))。
 
 目標と非目標の詳細は [docs/vision.md](docs/vision.md)、全体構成は [docs/architecture.md](docs/architecture.md) にあります。
 
@@ -88,7 +90,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just nostd-check` | ランタイム層のクレートが `std` 無し (`aarch64-unknown-none`) でビルドできるか (ランタイム層を触ったら実行。対象は `scripts/nostd-check.mjs`、規則は [docs/portability.md](docs/portability.md#ランタイム層が守る制約-移植性のため)) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |
-| `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
+| `just ui-audit` | 3 つのアプリの UI の監査 (偽のホストとヘッドレスの Chrome で画面を開き、コントラスト・はみ出し・押せる大きさ・名前の無い部品を数える。重いので `just ci` には含めない。画面を変えたら実行。混んだ機械では `--only <アプリ>` でアプリごとに流すか `--deadline <秒>` を付ける。[tests/ui-audit/README.md](tests/ui-audit/README.md)) |
 | `just fuzz <target> [秒]` | 外から来る入力 (バンドル・モジュール・画像・JSON・C ABI の呼び出し) を cargo-fuzz で回す (nightly と cargo-fuzz が要る。`just ci` には含めない。ランタイムの公開 API を変えたら `just fuzz-check`。[docs/testing.md](docs/testing.md#fuzz)) |
 | `just perf` | `Puppet` の 1 フレームの評価をネイティブ (release) と wasm (ヘッドレスの Chrome) で測り、中央値が上限を超えたら失敗する (時間は揺れるので `just ci` には含めない。CI は release-checks.yml が呼ぶ perf.yml。評価のまわりを変えたら実行。[docs/testing.md](docs/testing.md#遅くなったら気づく検査)) |
 | `just wt-add <ID>` / `just wt-remove <ID>` | タスク用 worktree の作成・削除 (mbx が無効なら main の `target/` をコピーしてビルドを省く。[docs/workflow/build-cache.md](docs/workflow/build-cache.md)) |
