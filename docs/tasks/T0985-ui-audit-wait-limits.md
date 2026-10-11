@@ -1,11 +1,11 @@
 ---
 id: T0985
 title: "ui-audit: ダイアログ・メニュー・Popover などを待つ 5 秒の上限を、混んだ機械でも揺れない 1 つの上限にそろえる"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0985
 ---
 
 # T0985: ui-audit の待ちの上限をそろえる
