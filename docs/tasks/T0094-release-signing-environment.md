@@ -1,11 +1,11 @@
 ---
 id: T0094
 title: "公開: デスクトップアプリの署名の Secrets を、v* のタグからだけ使える release environment に移す"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0094
 ---
 
 # T0094: 署名の Secrets を release environment に移す

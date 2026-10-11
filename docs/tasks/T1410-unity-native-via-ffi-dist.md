@@ -1,11 +1,11 @@
 ---
 id: T1410
 title: "公開: unity.yml の native ジョブの ugoe-ffi のビルドを scripts/ffi-dist.mjs に寄せる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, bindings/unity, docs]
 depends_on: [T1409]
-assignee:
+assignee: claude-worker-T1410
 ---
 
 # T1410: unity.yml の native を ffi-dist.mjs に寄せる

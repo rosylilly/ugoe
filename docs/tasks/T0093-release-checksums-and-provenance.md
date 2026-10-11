@@ -1,11 +1,11 @@
 ---
 id: T0093
 title: "公開: 配布物に SHA-256 のチェックサムと GitHub の成果物の証明 (build provenance) を添える"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0093
 ---
 
 # T0093: 配布物のチェックサムと成果物の証明
