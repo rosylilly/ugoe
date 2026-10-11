@@ -154,7 +154,7 @@ mod tests {
     use ugoe_runtime::ParamIndex;
 
     use super::*;
-    use crate::easing;
+    use crate::player::easing;
 
     const EPS: f32 = 1e-5;
 

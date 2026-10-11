@@ -26,17 +26,17 @@
 extern crate alloc;
 
 mod blend_shape;
-pub mod compile;
-pub mod compose;
+mod compile;
+mod compose;
 mod deform;
-pub mod dynamic;
+mod dynamic;
 mod hit;
 mod id_index;
 /// 1 体分の評価の状態 ([`ModelInstance`]) と、描画要素の評価結果 ([`DrawableState`])。
-pub mod instance;
+mod instance;
 pub mod keyform;
 /// パラメータの値 ([`ParameterValues`]) と、ID からインデックスへの対応 ([`ParameterLayout`])。
-pub mod parameters;
+mod parameters;
 
 pub use compile::{CompileError, CompiledModel, ResolvedMaskRef};
 pub use compose::{ComposeError, compose, compose_physics, compose_physics_without_base};

@@ -93,7 +93,7 @@ pub fn weights(bindings: &[ResolvedBinding], values: &[f32], out: &mut Weights) 
 
 /// すべての軸を線形として重みを計算する (不透明度・描画順・色など形以外のフィールド用)。
 /// 曲線の軸がなければ [`weights`] と同じ。
-pub fn linear_weights(bindings: &[ResolvedBinding], values: &[f32], out: &mut Weights) {
+pub(crate) fn linear_weights(bindings: &[ResolvedBinding], values: &[f32], out: &mut Weights) {
     weights_with(bindings, values, false, out);
 }
 
@@ -193,14 +193,14 @@ fn locate(keys: &[f32], v: f32) -> (usize, f32) {
 
 /// 形のフィールドの重み (`shape`) と、形以外のフィールドの重み (`linear`) の作業領域。
 #[derive(Debug, Default)]
-pub struct GridWeights {
+pub(crate) struct GridWeights {
     pub(crate) shape: Weights,
     pub(crate) linear: Weights,
 }
 
 impl GridWeights {
     /// 重みの列を `capacity` 個ずつ確保して作る。
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             shape: Weights::with_capacity(capacity),
             linear: Weights::with_capacity(capacity),
@@ -209,7 +209,7 @@ impl GridWeights {
 
     /// 重みを求めて `(形の重み, 形以外の重み)` を返す。曲線の軸がなければ両方とも同じ列
     /// (線形の格子は 1 回だけ計算する)。
-    pub fn compute(
+    pub(crate) fn compute(
         &mut self,
         bindings: &[ResolvedBinding],
         values: &[f32],

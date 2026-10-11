@@ -20,16 +20,16 @@ const MAX_BLINK_PHASES_PER_ADVANCE: u32 = 4000;
 
 /// 決定的な擬似乱数 (SplitMix64)。シードが 0 でも偏らない。
 #[derive(Debug, Clone)]
-pub struct Rng(u64);
+pub(crate) struct Rng(u64);
 
 impl Rng {
     /// 状態を `seed` にした生成器を作る。
-    pub fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Self(seed)
     }
 
     /// 次の 64 ビットの値 (SplitMix64。`docs/spec/motion.md#目パチ`)。
-    pub fn next_u64(&mut self) -> u64 {
+    pub(crate) fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -38,7 +38,7 @@ impl Rng {
     }
 
     /// `[0, 1)` の一様乱数 (上位 24 ビットを使う)。
-    pub fn next_f32(&mut self) -> f32 {
+    pub(crate) fn next_f32(&mut self) -> f32 {
         (self.next_u64() >> 40) as f32 / (1u32 << 24) as f32
     }
 }
@@ -61,7 +61,7 @@ pub enum BlinkPhase {
 /// 対象パラメータを、開いている間は 1、閉じる間は 1 → 0 (線形)、閉じている間は 0、
 /// 開く間は 0 → 1 (線形) と動かす「開き具合」を作り、現在の値に掛ける。
 /// 次のまばたきまでの間隔は `[0.5, 1.5) * interval` の一様分布 (平均 `interval`) で、
-/// シード付きの [`Rng`] で決める。
+/// シード付きの決定的な擬似乱数 (SplitMix64) で決める。
 #[derive(Debug, Clone)]
 pub struct EyeBlinkPlayer {
     config: EyeBlink,

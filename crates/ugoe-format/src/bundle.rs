@@ -31,16 +31,16 @@ use crate::{FormatError, MAGIC, check_schema_version};
 pub const CONTAINER_VERSION: u32 = 0;
 
 /// ヘッダのバイト数。
-pub const HEADER_LEN: usize = 16;
+pub(crate) const HEADER_LEN: usize = 16;
 
 /// チャンク表 1 項目のバイト数。
-pub const CHUNK_ENTRY_LEN: usize = 24;
+pub(crate) const CHUNK_ENTRY_LEN: usize = 24;
 
 /// チャンクの開始位置の境界 (バイト)。
-pub const CHUNK_ALIGN: usize = 16;
+pub(crate) const CHUNK_ALIGN: usize = 16;
 
 /// チャンクフラグ bit0: ペイロードが zstd で圧縮されている。
-pub const CHUNK_FLAG_ZSTD: u32 = 1;
+pub(crate) const CHUNK_FLAG_ZSTD: u32 = 1;
 
 /// 圧縮チャンク 1 つの展開後の大きさで、仕様がどの読み込み器にも既定で読めることを求める下限 (256 MiB)。
 ///

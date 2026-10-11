@@ -13,7 +13,7 @@ use crate::resolve::ResolvedParams;
 pub(crate) const MAX_LAPS_PER_ADVANCE: u32 = 1000;
 
 /// フェードの曲線 `0.5 - 0.5 cos(π x)`。`x` は `[0, 1]` にクランプする。
-pub fn easing(x: f32) -> f32 {
+pub(crate) fn easing(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     0.5 - 0.5 * math::cos(core::f32::consts::PI * x)
 }

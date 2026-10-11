@@ -31,9 +31,9 @@ mod pose;
 mod resolve;
 pub mod tracking;
 
-pub use effects::{BlinkPhase, BreathPlayer, EyeBlinkPlayer, LipSyncPlayer, Rng};
+pub use effects::{BlinkPhase, BreathPlayer, EyeBlinkPlayer, LipSyncPlayer};
 pub use expression::{ExpressionManager, ExpressionPlayer};
 pub use manager::{EventSource, MotionManager, PartOpacityBuffer, Priority};
-pub use player::{MotionPlayer, easing};
+pub use player::MotionPlayer;
 pub use pose::PosePlayer;
 pub use tracking::{BodyInput, Rotation, TrackingInput, TrackingMap};

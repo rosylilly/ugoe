@@ -23,7 +23,7 @@ use ugoe_model::{DeformerId, Model, Module, Part, PartId, Slot, standard};
 
 /// 置き換えられるパーツを隠すために挟むパーツの ID の接頭辞 (`#replaced/<パーツの ID>`)。
 /// モジュールの名前は `#` で始まれないので、モジュールの要素の ID とは衝突しない。
-pub const REPLACED_PART_PREFIX: &str = "#replaced/";
+pub(crate) const REPLACED_PART_PREFIX: &str = "#replaced/";
 
 /// 合成 ([`compose`]) の失敗。モジュールが本体に取り付けられない理由。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

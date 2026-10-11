@@ -28,8 +28,8 @@ extern crate alloc;
 #[cfg(any(feature = "ts", feature = "schema"))]
 pub mod codegen;
 /// 色 ([`Rgb`])。
-pub mod color;
-pub mod id;
+mod color;
+mod id;
 pub mod lighting;
 pub mod math;
 
