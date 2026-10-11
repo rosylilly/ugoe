@@ -1,11 +1,11 @@
 ---
 id: T1002
 title: "アプリのアイコンを SVG で描き直す (エディタ・ビューア・スタジオ。スタジオは専用のものに)。ライセンスは MIT"
-status: todo
+status: in-progress
 milestone: Release
 crates: [apps/editor, apps/viewer, apps/studio, assets, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1002
 ---
 
 # T1002: アプリのアイコンを SVG で描き直す
