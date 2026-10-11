@@ -199,6 +199,38 @@ describe("studio manual images", () => {
     await panelShot(s, "入力", "studio-inputs");
   });
 
+  step(app, "studio-inputs-tuning", async () => {
+    const s = app.session;
+    // 記録の再生の首が正面の近くを通る時にキャリブレーションする (中立が正面からずれて、メーターが片寄らないように)
+    await waitFor(
+      () =>
+        s.execute(() => {
+          const head = window.__UGOE_TRACKER__?.tuningPreview?.before.head;
+          return !!head && Math.abs(head.yaw) < 3 && Math.abs(head.roll) < 3;
+        }),
+      { interval: 20, message: "the replayed head near the front" },
+    );
+    await s.clickText(".studio__panels button", "キャリブレーション");
+    // 値を既定から動かし、メーターに遊び・境目の点線が出るようにする (マニュアルの調整の節の例)
+    await s.execute(() => {
+      const tracker = window.__UGOE_TRACKER__;
+      tracker.setTuning({
+        ...tracker.tuning,
+        yaw: { gain: 1.5, deadZone: 3 },
+        roll: { gain: 1, deadZone: 2 },
+        eyeBlink: { low: 0.1, high: 0.7 },
+        jawOpen: { low: 0.1, high: 0.75 },
+      });
+    });
+    const section = await panel(s, "調整 (感度と境目)");
+    await new Promise((r) => setTimeout(r, 300));
+    // 下はすぐ後に「記録」の行が続くので、余白を狭く
+    await manualShot(s, "studio-inputs-tuning", { clip: section, pad: [8, 2, 2, 8] });
+    // 戻して閉じる (この後の画像に写さない)
+    await s.clickText(".studio__panels button", "既定に戻す");
+    await (await section.find(".ugoe-section__trigger")).click();
+  });
+
   step(app, "studio-output-panel", async () => {
     const s = app.session;
     await s.clickText(".studio__toolbar button", "出力ウィンドウ");
