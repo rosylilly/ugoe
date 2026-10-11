@@ -448,6 +448,15 @@ cargo test -p ugoe-format --test compat   # 作り直した資料で、もう一
     スクリプトの `omit` に理由付きで置く (T0498)。どの台本で届くかまでは見ない。
 - 手元では `just fuzz <target> [秒]` (既定 60 秒。`all` ですべて)。nightly と cargo-fuzz が要り、無ければ入れ方を示して止まります。
   nightly は fuzz のビルドだけで使い、`rust-toolchain.toml` (stable) は変えません。
+- **ビルドのターゲット (T0087):** `fuzz/run.mjs` は、nightly の rustc のホスト (`rustc +nightly -vV` の `host:`) を `cargo fuzz build`・
+  `cargo fuzz run` に `--target` で明示します。cargo-fuzz は `--target` が無いと、cargo-fuzz 自身をビルドしたときのターゲット
+  (crate `current_platform` が埋め込む値) を使うためです。`cargo install cargo-fuzz` でソースから入れれば手元のホストと同じですが、
+  配布されているビルド済みの cargo-fuzz (0.13.2 の時点で Linux は `x86_64-unknown-linux-musl`、macOS は `x86_64-apple-darwin` だけ) を
+  使うとホストと食い違います。CI (taiki-e/install-action が cargo-binstall で入れる) は musl の版を使い、明示する前は 5 つのターゲットが
+  すべて「sanitizer is incompatible with statically linked libc」でビルドの段で落ちました
+  (出典: [cargo-fuzz の `default_target`](https://github.com/rust-fuzz/cargo-fuzz/blob/0.13.2/src/utils.rs) と
+  [リリースの成果物](https://github.com/rust-fuzz/cargo-fuzz/releases/tag/0.13.2))。手元のホストが gnu・apple・msvc のどれでも、
+  ソースから入れた cargo-fuzz なら明示しても振る舞いは変わりません。
 - CI では `.github/workflows/fuzz.yml` が週に 1 度 (と手動で) ターゲットごとに 5 分回し、育てた入力 (`fuzz/corpus/`) をキャッシュで
   次の回へ持ち越します。見つかった入力はワークフローの成果物 (`fuzz-artifacts-<target>`) に上げます。
 - PR ごとの CI (ci.yml の `rust (runtime)`) は、`just fuzz-lint` で fuzz のクレートを stable で検査します (依存のライセンス・整形・

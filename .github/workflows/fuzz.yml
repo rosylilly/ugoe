@@ -38,7 +38,8 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup toolchain install nightly --profile minimal
-      # install-action の一覧に無いので cargo-binstall で入れる (無ければソースからビルドする)
+      # install-action の一覧に無いので cargo-binstall で入れる (無ければソースからビルドする)。
+      # 入るのはビルド済みの musl の版で、既定のターゲットが musl になるので、fuzz/run.mjs がホストのターゲットを `--target` で明示する (T0087)
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
         with:

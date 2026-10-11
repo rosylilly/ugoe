@@ -51,9 +51,13 @@ just fuzz-lint            # fuzz-check のうち stable でできるもの (タ�
   `cargo update … --precise` を出して止まる。足した依存を `cargo update --workspace` が新しい版で入れたときや、ルートで依存を
   上げたときに起きる。理由は [docs/testing.md](../docs/testing.md#fuzz)。
 
+- `just fuzz`・`just fuzz-check` は、nightly の rustc のホスト (`rustc +nightly -vV` の `host:`) を cargo-fuzz に `--target` で渡す。
+  cargo-fuzz の既定のターゲットは cargo-fuzz 自身をビルドしたターゲットで、ビルド済みの cargo-fuzz (Linux は musl の版だけ。CI が
+  cargo-binstall で入れるもの) ではホストと食い違い、AddressSanitizer のビルドが落ちるため (T0087。[docs/testing.md](../docs/testing.md#fuzz))。
+  手で `cargo +nightly fuzz …` を呼ぶときも、ビルド済みの cargo-fuzz なら `--target <ホスト>` を付ける。
 - 育てた入力は `fuzz/corpus/<target>/`、見つかった入力は `fuzz/artifacts/<target>/` に残る (どちらも git の管理外)。
 - 1 つの入力に 10 秒を超えたら止まらないループとみなす (`-timeout=10`)。メモリの上限は libFuzzer の既定 (2048 MB)。
-- 再現は `cargo +nightly fuzz run <target> fuzz/artifacts/<target>/<ファイル>`、最小にするのは `cargo +nightly fuzz tmin <target> <ファイル>`。
+- 再現は `cargo +nightly fuzz run <target> fuzz/artifacts/<target>/<ファイル>` (ビルド済みの cargo-fuzz なら `--target <ホスト>` も付ける)、最小にするのは `cargo +nightly fuzz tmin <target> <ファイル>`。
 - 直したら、最小にした入力を `crates/ugoe-format/tests/broken_input.rs` (読み込みとデコード) か `crates/ugoe/tests/broken_input.rs`
   (`Puppet`) の決まった入力に足す (stable の `just ci` で再発を止めるため)。`ffi` なら `crates/ugoe-ffi/tests/fuzzing.rs` に足す。
 

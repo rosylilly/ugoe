@@ -14,6 +14,11 @@
 //
 // nightly のツールチェイン (環境変数 UGOE_FUZZ_TOOLCHAIN、既定は nightly) と cargo-fuzz が要る。
 // このクレートはルートのワークスペースの外にあり、fuzz/target/ でビルドする (cargo-fuzz のビルドは mbx を通さない)。
+//
+// ビルドのターゲットは、ツールチェインの rustc のホスト (`rustc -vV` の host) を `--target` で明示する。cargo-fuzz は
+// `--target` が無いと、cargo-fuzz 自身をビルドしたときのターゲットを使う。配布されているビルド済みの cargo-fuzz の
+// Linux 向けは musl (x86_64-unknown-linux-musl) だけで、CI (taiki-e/install-action が cargo-binstall で入れる) はこれを使う。
+// 既定のままだと musl でビルドしようとして、sanitizer と静的にリンクした libc が合わずに落ちる (T0087、docs/testing.md#fuzz)。
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -99,8 +104,11 @@ for (const target of names) {
   ]);
 }
 
-/** `cargo +<toolchain> fuzz <args>` をルートで実行する (cargo-fuzz はルートの fuzz/ を見つける)。 */
-function cargoFuzz(fuzzArgs) {
+/**
+ * `cargo +<toolchain> fuzz <subcommand> --target <ホスト> <args>` をルートで実行する (cargo-fuzz はルートの fuzz/ を見つける)。
+ * `--target` は上の説明のとおり、cargo-fuzz をビルドしたターゲットではなく、ツールチェインのホストにそろえるため。
+ */
+function cargoFuzz([subcommand, ...fuzzArgs]) {
   const probe = spawnSync("cargo", [`+${toolchain}`, "fuzz", "--version"], {
     cwd: root,
     env: fuzzEnv,
@@ -116,7 +124,26 @@ function cargoFuzz(fuzzArgs) {
     );
     process.exit(1);
   }
-  run("cargo", [`+${toolchain}`, "fuzz", ...fuzzArgs], fuzzEnv);
+  run(
+    "cargo",
+    [`+${toolchain}`, "fuzz", subcommand, "--target", hostTriple(), ...fuzzArgs],
+    fuzzEnv,
+  );
+}
+
+/** ツールチェインの rustc のホストのターゲット (`rustc -vV` の `host:` の行)。 */
+function hostTriple() {
+  const result = spawnSync("rustc", [`+${toolchain}`, "-vV"], {
+    cwd: root,
+    env: fuzzEnv,
+    encoding: "utf8",
+  });
+  const host = result.status === 0 ? /^host: (\S+)$/m.exec(result.stdout)?.[1] : undefined;
+  if (host === undefined) {
+    console.error(`error: \`rustc +${toolchain} -vV\` からホストのターゲットを読めない`);
+    process.exit(1);
+  }
+  return host;
 }
 
 function run(command, commandArgs, env) {
