@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers case-check local-paths secrets refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
+ci: fmt-check lint sdk-no-render-check test layers case-check local-paths repo-url secrets refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -174,6 +174,12 @@ case-check:
 local-paths:
     @node --test --test-reporter=dot scripts/check-local-paths.test.mjs
     @node scripts/check-local-paths.mjs
+
+# このリポジトリを指す URL (SECURITY.md・Issue のテンプレート・README・各パッケージの設定など) が、ルートの Cargo.toml の
+# workspace.package.repository と食い違わないか (scripts/check-repo-url.mjs、docs/release.md#自動の検査)
+repo-url:
+    @node --test --test-reporter=dot scripts/check-repo-url.test.mjs
+    @node scripts/check-repo-url.mjs
 
 # 秘密の値 (API キー・トークン・秘密鍵など) が作業ツリーとコミットに入っていないか (gitleaks。版と sha256 は scripts/secrets.mjs で固定し、
 # 初回にメインの作業ツリーの target/tools/ へ取得する。設定と誤検知の allowlist は scripts/gitleaks.toml。docs/release.md#自動の検査)。

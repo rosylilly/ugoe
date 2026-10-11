@@ -42,6 +42,14 @@
   CI の `rust-checks`・pre-commit (lefthook) で動きます。文書やタスクのメモでは、リポジトリの中の相対パスか `<repo>`・`<scratchpad>`・
   `$HOME`・`%USERPROFILE%` と書きます。テストや例のパスは 1 文字の名前 (`/home/u`・`C:\Users\a`) か、スクリプトの `PLACEHOLDER_USERS`
   の名前 (`me`・`you` など) を使います。
+- **リポジトリの URL:** `just repo-url` (`scripts/check-repo-url.mjs`) が、ルートの `Cargo.toml` の `workspace.package.repository` を正とし、
+  作業ツリーのファイル (文書・Issue のテンプレート・コード・パッケージの設定) にあるこのリポジトリを指す URL が正と食い違ったら落ちます。
+  `just ci` と CI の `rust-checks` で動きます。GitHub の owner と repo の組 (`https://github.com/<owner>/<repo>`・`git@github.com:`・
+  `raw.githubusercontent.com`・npm の `github:<owner>/<repo>`・`gh` の `--repo <owner>/<repo>`) を拾い、owner か repo の片方だけが正と
+  同じものを「古い場所でこのリポジトリを指している」とみなします。両方が違うものはほかのリポジトリ (依存・出典) として見ません。
+  パッケージの設定の `repository` (npm と Unity の `package.json`、`Cargo.toml` の `repository = "…"`) はそのパッケージ自身の置き場なので、
+  両方が違っても落ちます。正の owner か repo と同じ名前のほかのリポジトリへリンクするときは、スクリプトの `OTHER_REPOS` に足します。
+  owner と repo を一度に両方変えると古い URL を拾えないので、片方ずつ変えて検査を流すか、変える前の URL を `git grep` で探して直します。
 - **秘密の値:** `just secrets` (`scripts/secrets.mjs`) が [gitleaks](https://github.com/gitleaks/gitleaks) で、作業ツリー (Git が
   無視するものを除く) とコミットを調べ、見つけたら落ちます (見つけた値はログに出さない)。gitleaks は版と sha256 をスクリプトに固定し、
   初回に GitHub の Release から取得してメインの作業ツリーの `target/tools/` に置きます (リポジトリには置かない)。手元の `just secrets` と
@@ -89,7 +97,9 @@
 - **文書:** `CONTRIBUTING.md` (貢献の手順)・`SECURITY.md` (脆弱性の報告先)・`CODE_OF_CONDUCT.md` (Contributor Covenant 2.1)・
   Issue と PR のテンプレート (`.github/ISSUE_TEMPLATE/`・`.github/pull_request_template.md`) はあります (T0096)。公開の前に次を決めて直します。
   - **連絡先:** 報告先は GitHub の Private vulnerability reporting だけにする (利用者の決定、2026-10-11)。`SECURITY.md` と `CODE_OF_CONDUCT.md` (Enforcement の節。行動規範の違反の報告先) はどちらもそこを指します。
-  - **リポジトリの URL:** `SECURITY.md` と `.github/ISSUE_TEMPLATE/` は `https://github.com/rosylilly/ugoe` を指します。公開する場所が違うなら直します。
+  - **リポジトリの URL:** `SECURITY.md`・`.github/ISSUE_TEMPLATE/`・README・各パッケージの設定などは、ルートの `Cargo.toml` の
+    `workspace.package.repository` (今は `https://github.com/rosylilly/ugoe`) と同じ場所を指します。公開する場所が違うなら、
+    `Cargo.toml` の `repository` を直してから `just repo-url` が挙げるところを直します ([自動の検査](#自動の検査))。
   - **Private vulnerability reporting:** `SECURITY.md` の報告先なので、上の「セキュリティの機能」で必ず有効にします。
   - **ラベル:** Issue のテンプレートは GitHub の既定のラベル `bug`・`enhancement` を付けます。消したなら作り直すかテンプレートを直します。
 
