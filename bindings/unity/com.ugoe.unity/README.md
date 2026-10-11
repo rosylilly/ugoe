@@ -11,4 +11,4 @@
 ネイティブライブラリは `Runtime/Plugins/` に置く (リリースの tarball `com.ugoe.unity-<版>.tgz` には入っている。
 Git のリポジトリには入っていないので、CI で作ったパッケージを使うか、自分でビルドする)。使い方とビルドの方法: https://github.com/rosylilly/ugoe/tree/main/bindings/unity
 
-ライセンス: MIT (`LICENSE.md`)。
+ライセンス: MIT (`LICENSE.md`)。ネイティブライブラリに入る第三者のクレートのライセンスは `Third Party Notices.md`。

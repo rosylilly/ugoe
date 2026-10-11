@@ -5,6 +5,8 @@
 
 **ライセンス:** MIT。パッケージの依存は `ugoe-ffi` (MIT) だけ。Unity の参照アセンブリ (`UnityEngine.dll` など) は
 リポジトリに入れない (Unity の部分の型検査は、API の形だけを手で書いたスタブ `tests/UnityCompile/UnityStubs.cs` で行う)。
+ネイティブライブラリに入る Rust のクレートのライセンスの表記は `com.ugoe.unity/Third Party Notices.md` (tarball に入る。生成と検査は
+[docs/release.md#mit-の配布物](../../docs/release.md#mit-の配布物))。
 
 検査 (`tests/`) だけが NuGet のパッケージに依存する。配布物 (`com.ugoe.unity/`) には入らない。
 

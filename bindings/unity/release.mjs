@@ -46,7 +46,13 @@ export function versionProblems({ packageVersion, crate, tag }) {
 /** tarball に入っているべきファイル (package/ からのパス)。無いものを返す。 */
 export function missingEntries(entries, { allowMissing }) {
   const have = new Set(entries.map((e) => e.replace(/^package\//, "")));
-  const required = ["package.json", "LICENSE.md", "README.md", "Runtime/Ugoe.Runtime.asmdef"];
+  const required = [
+    "package.json",
+    "LICENSE.md",
+    "Third Party Notices.md",
+    "README.md",
+    "Runtime/Ugoe.Runtime.asmdef",
+  ];
   if (!allowMissing) {
     for (const p of PLUGINS)
       required.push(`Runtime/Plugins/${p.path}`, `Runtime/Plugins/${p.path}.meta`);

@@ -59,8 +59,28 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
    `third-party-notices.txt` を読むようにする。
 4. cargo-about の版を上げるときは `CARGO_ABOUT_VERSION` を変え、`just cargo-about` で入れてから `just notices` で生成し直す。
 
-MIT の配布物 (npm の @ugoe/runtime・Unity・Godot・C ABI) の表記は、同じ cargo-about の設定と `scripts/lib/rust-notices.mjs` で作る
-予定です (T1407)。
+### MIT の配布物
+
+ランタイムを外へ出す MIT の配布物も、中に入る Rust のクレート (MIT・Apache-2.0 など。表記を配布物に入れることを求める) の表記を
+持ちます (T1407)。表記は `scripts/dist-notices.mjs` (`just notices`) が、アプリの Rust のクレートの節と同じ道具と形
+(cargo-about・`scripts/about.toml`・`scripts/lib/rust-notices.mjs`) で生成し、`just licenses` が依存 (`Cargo.lock`・
+`bindings/godot/Cargo.lock`・`Cargo.toml`) と突き合わせます。手で書き直しません。
+
+| 配布物 | 表記のファイル | 対象のクレートとターゲット |
+| --- | --- | --- |
+| npm の `@ugoe/runtime` | `bindings/web/THIRD-PARTY-NOTICES.txt` (`package.json` の `files` に入れる) | `ugoe-wasm` の `wasm32-unknown-unknown` |
+| Unity の UPM パッケージ | `bindings/unity/com.ugoe.unity/Third Party Notices.md` (Unity の慣例の名前。tarball に入っているかを `release.mjs pack` が確かめる) | `ugoe-ffi` の `unity.yml` のターゲット (Windows・macOS の 2 つ・Linux・Android の 3 つ・iOS) |
+| Godot のアドオン | `bindings/godot/example/addons/ugoe/THIRD-PARTY-NOTICES.txt` (アドオンのフォルダに入る) | `bindings/godot` の `.gdextension` のターゲット (Windows・macOS の 2 つ・Linux の 2 つ) |
+| C ABI のアーカイブ | `crates/ugoe-ffi/THIRD-PARTY-NOTICES.txt` | `ugoe-ffi` の Windows・macOS の 2 つ・Linux の 2 つ |
+
+- ugoe 自身のクレートは載せず、表記の頭で ugoe が MIT であること (ライセンスの文の在り処) を示します。
+- 対象のクレートは、配布物のライブラリのクレートを表のターゲットのどれかに向けてビルドしたときに入るもの (既定の features)。
+  ターゲットを足したら `scripts/dist-notices.mjs` の `DISTS` も直します (Unity は `unity.yml` の Android・iOS のターゲットを
+  含むかをテストが確かめる)。
+- Godot のアドオンには godot-rust のクレート (MPL-2.0) が入ります。MPL-2.0 の 3.2 は実行形式を配るときにソースの在り処を示すことを
+  求めるので、MPL-2.0 で使うクレートごとに crates.io のその版のページ・`.crate` のアーカイブ・リポジトリの URL を表記の終わりに書きます
+  (変更は加えていない。[ADR 0026](adr/0026-godot-binding.md))。
+- C ABI のアーカイブには、`scripts/ffi-dist.mjs` がこのファイルを `THIRD-PARTY-NOTICES.txt` として詰めます。
 
 ## crates.io
 
@@ -468,7 +488,8 @@ C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブ�
 | `ugoe-ffi-<版>-macos-universal.tar.gz` | `macos-14` | `libugoe_ffi.dylib`・`libugoe_ffi.a` (どちらも arm64 と x86_64 を `lipo` でまとめた universal) |
 
 - どのアーカイブも、最上位のディレクトリ `ugoe-ffi-<版>-<プラットフォーム>/` の下に `include/ugoe.h`・`lib/`・`examples/sample.c` (C の見本)・
-  `LICENSE` (MIT)・`README.md` (中身とリンクの例。元は [crates/ugoe-ffi/archive/README.md](../crates/ugoe-ffi/archive/README.md)) を持ちます。
+  `LICENSE` (MIT)・`README.md` (中身とリンクの例。元は [crates/ugoe-ffi/archive/README.md](../crates/ugoe-ffi/archive/README.md))・
+  `THIRD-PARTY-NOTICES.txt` (入っている Rust のクレートの表記。元は `crates/ugoe-ffi/THIRD-PARTY-NOTICES.txt`。[MIT の配布物](#mit-の配布物)) を持ちます。
   隣に SHA-256 の `<アーカイブ>.sha256` を置きます。
 - 形は Windows が `.zip` (Windows に入っているもので開ける)、ほかが `.tar.gz` です。
 - macOS は 1 つの universal にします (アーキテクチャごとに分けると、利用者が両方を `lipo` でまとめ直すことが多いため。

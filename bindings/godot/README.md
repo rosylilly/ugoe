@@ -5,7 +5,9 @@
 
 **ライセンス:** このクレートは MIT。依存する godot-rust のクレートは MPL-2.0 (ファイル単位のコピーレフト)。
 ルートのワークスペースの外に置き、依存のライセンスは `node scripts/check-licenses.mjs --godot` で別に検査する
-([ADR 0026](../../docs/adr/0026-godot-binding.md))。
+([ADR 0026](../../docs/adr/0026-godot-binding.md))。GDExtension のライブラリに入る Rust のクレートのライセンスの表記 (godot-rust の
+ソースの在り処を含む) は `example/addons/ugoe/THIRD-PARTY-NOTICES.txt` (アドオンのフォルダに入る。生成と検査は
+[docs/release.md#mit-の配布物](../../docs/release.md#mit-の配布物))。
 
 ## 構成
 
@@ -389,8 +391,8 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
    (Linux x86_64 / arm64 の `libugoe_godot.so`、Windows x86_64 の `ugoe_godot.dll`、macOS の `libugoe_godot.dylib`)。
    Linux の arm64 と Linux・Windows を分けるなら、`.gdextension` の名前を `libugoe_godot.linux.x86_64.so` などに変える。
    macOS は universal (x86_64 と arm64 を `lipo` でまとめる) にし、配るなら署名と公証をする。
-2. 配るフォルダを作る: `example/addons/ugoe/` (`ugoe.gdextension`・`*.gd` と Godot が作る `*.uid`・`bin/`) に、リポジトリの `LICENSE` (MIT) と、
-   godot-rust (MPL-2.0) のライセンスの告知 (ソースの入手先 https://github.com/godot-rust/gdext) を足す。
+2. 配るフォルダを作る: `example/addons/ugoe/` (`ugoe.gdextension`・`*.gd` と Godot が作る `*.uid`・`bin/`・
+   Rust のクレートのライセンスの表記 `THIRD-PARTY-NOTICES.txt` (godot-rust (MPL-2.0) のソースの在り処を含む)) に、リポジトリの `LICENSE` (MIT) を足す。
 3. 新しい Godot のプロジェクトに写し、エディタで開いて見本のシーンと同じことができるか (モデルの表示・`.ugoe` がリソースとして
    見えるか・書き出したゲームで動くか) を確かめる。
 4. `addons/ugoe/` だけを含む zip を GitHub のリリースに置く。

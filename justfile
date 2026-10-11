@@ -104,18 +104,21 @@ wt-remove id *flags:
 tasks *args:
     @node scripts/tasks.mjs {{args}}
 
-# 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md) と、アプリが同梱する表記の突き合わせ
-# (apps/*/public/third-party-notices.txt。食い違えば `just notices` で生成し直す。cargo-about が要る (`just cargo-about`)。docs/release.md#同梱物のライセンスの表記)
+# 依存クレートのライセンスの検査 (docs/adr/0018-licensing-and-1.0-scope.md) と、アプリと MIT の配布物が同梱する表記の突き合わせ
+# (apps/*/public/third-party-notices.txt と scripts/dist-notices.mjs の DISTS。食い違えば `just notices` で生成し直す。cargo-about が要る (`just cargo-about`)。docs/release.md#同梱物のライセンスの表記)
 licenses:
     @node scripts/check-licenses.mjs
     @node --test --test-reporter=dot scripts/third-party-notices.test.mjs
-    @node --test --test-reporter=dot scripts/rust-notices.test.mjs
+    @node --test --test-reporter=dot scripts/rust-notices.test.mjs scripts/dist-notices.test.mjs
     @node scripts/third-party-notices.mjs --check
+    @node scripts/dist-notices.mjs --check
 
-# アプリが同梱するライセンスの表記 (apps/*/public/third-party-notices.txt) を作り直す。JS のライブラリと Rust のクレートの
-# 依存が変わったら実行し、差分を読んでからコミットする (docs/release.md#同梱物のライセンスの表記)。cargo-about が要る
+# アプリが同梱するライセンスの表記 (apps/*/public/third-party-notices.txt) と、MIT の配布物 (@ugoe/runtime・Unity・Godot・C ABI) が
+# 同梱する Rust のクレートの表記 (scripts/dist-notices.mjs の DISTS) を作り直す。JS のライブラリと Rust のクレートの依存が
+# 変わったら実行し、差分を読んでからコミットする (docs/release.md#同梱物のライセンスの表記)。cargo-about が要る
 notices:
     @node scripts/third-party-notices.mjs
+    @node scripts/dist-notices.mjs
 
 # 表記を作る cargo-about を決めた版で入れる (scripts/lib/rust-notices.mjs の CARGO_ABOUT_VERSION。無いか版が違うときだけ)
 cargo-about:

@@ -8,6 +8,8 @@ ugoe のランタイムを Web で使うための npm パッケージです。�
 
 WebGPU が使えれば WebGPU、使えなければ WebGL2 で描きます。ライセンスは **MIT** です
 ([ADR 0025](../../docs/adr/0025-web-runtime-package.md)。GPL-3.0-only の `packages/` とは別の場所に置いています)。
+wasm に入る Rust のクレートのライセンスの表記は `THIRD-PARTY-NOTICES.txt` (パッケージに入る。生成と検査は
+[docs/release.md#mit-の配布物](../../docs/release.md#mit-の配布物))。
 
 > まだ npm には公開していません (`private: true`)。下の「ローカルで使う」の手順で tarball を作って入れます。
 > 公開の手順と自動化は「[リリース](#リリース)」にあります。

@@ -12,6 +12,7 @@ lib/                   ライブラリ (下の表)
 examples/sample.c      見本 (.ugoe を読み、パラメータを動かして更新し、描画の状態を取り出す)
 LICENSE
 README.md
+THIRD-PARTY-NOTICES.txt  ライブラリに入っている Rust のクレートのライセンスの表記
 ```
 
 | アーカイブ | 共有ライブラリ | 静的ライブラリ |

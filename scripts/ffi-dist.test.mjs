@@ -50,10 +50,11 @@ describe("archiveName", () => {
 });
 
 describe("expectedFiles", () => {
-  it("lists the header, the libraries, the sample, LICENSE and README", () => {
+  it("lists the header, the libraries, the sample, LICENSE, README and the notices", () => {
     assert.deepEqual(expectedFiles("windows-x86_64"), [
       "LICENSE",
       "README.md",
+      "THIRD-PARTY-NOTICES.txt",
       "examples/sample.c",
       "include/ugoe.h",
       "lib/ugoe_ffi.dll",
@@ -63,6 +64,7 @@ describe("expectedFiles", () => {
     assert.deepEqual(expectedFiles("linux-x86_64"), [
       "LICENSE",
       "README.md",
+      "THIRD-PARTY-NOTICES.txt",
       "examples/sample.c",
       "include/ugoe.h",
       "lib/libugoe_ffi.a",

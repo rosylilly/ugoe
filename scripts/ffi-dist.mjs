@@ -79,6 +79,7 @@ export function expectedFiles(platform) {
   return [
     "LICENSE",
     "README.md",
+    "THIRD-PARTY-NOTICES.txt",
     "examples/sample.c",
     "include/ugoe.h",
     ...PLATFORMS[platform].lib.map((f) => `lib/${f}`),
@@ -174,6 +175,8 @@ function pack(args) {
   mkdirSync(join(stage, "examples"), { recursive: true });
   copyFileSync(join(crate, "examples", "c", "sample.c"), join(stage, "examples", "sample.c"));
   copyFileSync(join(root, "LICENSE"), join(stage, "LICENSE"));
+  // 入っている Rust のクレートのライセンスの表記 (scripts/dist-notices.mjs が生成する。docs/release.md#mit-の配布物)
+  copyFileSync(join(crate, "THIRD-PARTY-NOTICES.txt"), join(stage, "THIRD-PARTY-NOTICES.txt"));
   const readme = readFileSync(join(crate, "archive", "README.md"), "utf8");
   writeFileSync(join(stage, "README.md"), readme.replaceAll("@VERSION@", version));
 

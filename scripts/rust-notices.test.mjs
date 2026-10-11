@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  aboutArgs,
   CARGO_ABOUT_VERSION,
   crateAuthors,
   crateSource,
@@ -163,4 +164,15 @@ test("文が見つからないクレートがあれば失敗する", () => {
       }),
     /a 1\.0\.0/,
   );
+});
+
+test("ターゲットは 1 つずつ --target に渡す", () => {
+  const args = aboutArgs("a/Cargo.toml", ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]);
+  assert.deepEqual(args.slice(-4), [
+    "--target",
+    "x86_64-unknown-linux-gnu",
+    "--target",
+    "wasm32-unknown-unknown",
+  ]);
+  assert.ok(!aboutArgs("a/Cargo.toml").includes("--target"));
 });

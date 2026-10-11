@@ -63,6 +63,16 @@ export function assertCargoAbout() {
 }
 
 /**
+ * `cargo about generate` の引数。`targets` は 1 つずつ `--target` に渡す (cargo-about の `--target` は値を 1 つしか取らない)。
+ */
+export function aboutArgs(manifest, targets) {
+  const args = ["about", "generate", "--format", "json", "--frozen", "--fail"];
+  args.push("--config", ABOUT_CONFIG, "--manifest-path", manifest);
+  for (const target of targets ?? []) args.push("--target", target);
+  return args;
+}
+
+/**
  * `manifest` (Cargo.toml、リポジトリのルートから) のクレートについて、cargo-about の JSON を返す。
  * 取り出しはネットワークを使わない (`--frozen`。結果が手元とネットワークの状態で変わらないように)。
  * 先に `cargo fetch --locked` でクレートのソースを揃える。`targets` を渡すと about.toml の targets を上書きする。
@@ -88,10 +98,7 @@ export function cargoAboutJson(root, manifest, { targets } = {}) {
     return r.stdout;
   };
   run(["fetch", "--locked", "--quiet", "--manifest-path", manifest]);
-  const args = ["about", "generate", "--format", "json", "--frozen", "--fail"];
-  args.push("--config", ABOUT_CONFIG, "--manifest-path", manifest);
-  if (targets) args.push("--target", ...targets);
-  const out = run(args);
+  const out = run(aboutArgs(manifest, targets));
   const json = JSON.parse(out);
   if (cached) {
     mkdirSync(join(root, CACHE_DIR), { recursive: true });
@@ -102,11 +109,11 @@ export function cargoAboutJson(root, manifest, { targets } = {}) {
 }
 
 /**
- * cargo-about の結果を左右するファイル (設定・Cargo.lock・git が追う Cargo.toml) と `extra` の SHA-256。
+ * cargo-about の結果を左右するファイル (設定・git が追う Cargo.lock と Cargo.toml。bindings/godot は自分の Cargo.lock を持つ) と `extra` の SHA-256。
  * git が使えなければ undefined (覚えない)。
  */
 function cacheKey(root, extra) {
-  const r = spawnSync("git", ["ls-files", "-z", "--", "Cargo.lock", "*Cargo.toml", ABOUT_CONFIG], {
+  const r = spawnSync("git", ["ls-files", "-z", "--", "*Cargo.lock", "*Cargo.toml", ABOUT_CONFIG], {
     cwd: root,
     encoding: "utf8",
   });

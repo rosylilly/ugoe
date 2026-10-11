@@ -28,6 +28,7 @@ test("the tarball needs every native library unless allowed", () => {
   const base = [
     "package.json",
     "LICENSE.md",
+    "Third Party Notices.md",
     "README.md",
     "Runtime/Ugoe.Runtime.asmdef",
     "Samples~/Basic/Models/avatar.ugoe",
@@ -60,4 +61,15 @@ test("the tarball needs every native library unless allowed", () => {
       { allowMissing: false },
     )[0].startsWith("Samples~"),
   );
+});
+
+test("the tarball needs the third-party notices", () => {
+  const entries = ["package.json", "LICENSE.md", "README.md", "Runtime/Ugoe.Runtime.asmdef"];
+  const missing = missingEntries(
+    [...entries, "Runtime/Plugins/Linux/x86_64/libugoe_ffi.so", "Samples~/Basic/Models/a.ugoe"].map(
+      (e) => `package/${e}`,
+    ),
+    { allowMissing: true },
+  );
+  assert.deepEqual(missing, ["Third Party Notices.md"]);
 });
