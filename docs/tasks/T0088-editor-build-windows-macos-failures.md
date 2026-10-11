@@ -1,11 +1,11 @@
 ---
 id: T0088
 title: "editor-build.yml の初回の失敗を直す: エディタの fileMenu の名前の衝突 (Windows・macOS) と、スタジオの Windows のインストーラが仮想カメラの DLL を見つけない"
-status: todo
+status: in-progress
 milestone: Release
 crates: [apps/editor, apps/studio, .github/workflows, scripts, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0088
 ---
 
 # T0088: editor-build.yml の初回の失敗を直す
