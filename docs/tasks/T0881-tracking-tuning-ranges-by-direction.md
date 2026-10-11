@@ -1,11 +1,11 @@
 ---
 id: T0881
 title: "スタジオ: トラッキングの調整で、眉・口の形・視線の境目を向き (上げと下げ・笑みと下がり・上下左右) で分けられるようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0881
 ---
 
 # T0881: 眉・口の形・視線の境目を向きで分ける
