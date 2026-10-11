@@ -130,7 +130,7 @@ impl HeadSlot {
     /// 枠を取る。`MAX_READING_HEADS` 個すべて使っていれば `None`。
     fn take(reading: &Arc<AtomicUsize>) -> Option<Self> {
         reading
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
                 (n < MAX_READING_HEADS).then_some(n + 1)
             })
             .ok()
