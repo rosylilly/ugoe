@@ -1,11 +1,11 @@
 ---
 id: T0884
 title: "ui-audit: 3 つのアプリをまとめて流す重い回でも、スタジオの -autosave-error の場面が帯を待てるようにし、場面の失敗で全体が時間切れにならないようにする"
-status: todo
+status: in-progress
 milestone: M8
 crates: [tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0884
 ---
 
 # T0884: ui-audit の autosave-error の場面の揺れ
