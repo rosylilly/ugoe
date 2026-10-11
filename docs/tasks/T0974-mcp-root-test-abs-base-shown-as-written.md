@@ -1,7 +1,7 @@
 ---
 id: T0974
 title: "mcp: T0973 の後、macOS の CI で root_confines_module_bases が落ちる (絶対パスで書いた本体は書いたままの形で見せる)"
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-mcp]
 depends_on: []
@@ -36,3 +36,5 @@ abs.ugoeproj: base model /var/folders/.../outside/dress-up.ugoe: outside the roo
 
 - CI の失敗から起票した (2026-10-06)。オーケストレーターの T0973 の直し方の誤り。
 - 直したこと: 期待値をプロジェクトごとに分けた (`rel`・`dots` は canonicalize した通常の形、`abs` は `outside_abs`)。Linux では両者が同じなので手元では違いが出ない。macOS・Windows は次の main の CI で確かめる。
+
+- 完了の確認 (オーケストレーター、2026-10-11): 直しは origin/main にあり、run 37738790150 (6f7c1621) で rust (macos) は success、rust (windows) でも `root_confines_module_bases` は ok (windows の失敗は ffi-check の link だけで T0079 で直した)。
