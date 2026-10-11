@@ -291,6 +291,9 @@ for (uint32_t k = 0; k < frame.drawable_count; k++) {
 - そのため、構造体にフィールドを足したくなったら、既存の構造体は変えずに別の関数や構造体を足す
   (例: 描画可能要素がライティングを受けるかは `UgoeDrawableInfo` に足さず、`ugoe_puppet_drawable_lit` にした)。
 - 知らないエラーコードが返ることがある (足したもの)。0 以外はすべて失敗として扱い、`ugoe_error_message` を出せばよい。
+- 配布物 (docs/release.md#c-abi-の配布物) の Linux・macOS の共有ライブラリは、この版を名前に入れる (`libugoe_ffi.so.<ABI の版>`
+  (soname も同じ)・`libugoe_ffi.<ABI の版>.dylib` (インストール名は `@rpath/` 付き))。版を上げると名前が変わるので、古い版でリンクした
+  プログラムは新しいライブラリを読まない。版は `ABI_VERSION` から作る (`scripts/ffi-dist.mjs`)。
 - 今の版は 3。T0489 (`UgoeError`) で 1 から 2 に上げ、T0490 (毎フレームの描画の状態をまとめて受け取る形。描画要素ごとの
   `ugoe_puppet_drawable_state`・`ugoe_puppet_positions` などを消した) も同じ 2 に含めた。T0494 (`ugoe_set_panic_handler`) で 3 に上げた。
   関数を足すだけだが、std の無い形のパニックの扱い (ホストの関数を呼んでから `abort`) が変わったことを版で確かめられるよう、利用者の判断で上げた。

@@ -1,14 +1,22 @@
 // scripts/ffi-dist.mjs (C ABI の配布物) の単体テスト (`just script-check` が実行する)。
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  abiVersionFromHeader,
+  abiVersionFromRust,
   archiveName,
   expectedFiles,
   PLATFORMS,
   parseArchiveName,
   platformOf,
+  readelfNames,
+  sharedLibraryId,
   tagProblem,
 } from "./ffi-dist.mjs";
+
+const crate = join(import.meta.dirname, "..", "crates", "ugoe-ffi");
 
 describe("platformOf", () => {
   it("maps the hosts that have an archive", () => {
@@ -51,7 +59,7 @@ describe("archiveName", () => {
 
 describe("expectedFiles", () => {
   it("lists the header, the libraries, the sample, LICENSE, README and the notices", () => {
-    assert.deepEqual(expectedFiles("windows-x86_64"), [
+    assert.deepEqual(expectedFiles("windows-x86_64", 3), [
       "LICENSE",
       "README.md",
       "THIRD-PARTY-NOTICES.txt",
@@ -61,7 +69,7 @@ describe("expectedFiles", () => {
       "lib/ugoe_ffi.dll.lib",
       "lib/ugoe_ffi.lib",
     ]);
-    assert.deepEqual(expectedFiles("linux-x86_64"), [
+    assert.deepEqual(expectedFiles("linux-x86_64", 3), [
       "LICENSE",
       "README.md",
       "THIRD-PARTY-NOTICES.txt",
@@ -69,7 +77,12 @@ describe("expectedFiles", () => {
       "include/ugoe.h",
       "lib/libugoe_ffi.a",
       "lib/libugoe_ffi.so",
+      "lib/libugoe_ffi.so.3",
     ]);
+    assert.deepEqual(
+      expectedFiles("macos-universal", 4).filter((f) => f.startsWith("lib/")),
+      ["lib/libugoe_ffi.4.dylib", "lib/libugoe_ffi.a", "lib/libugoe_ffi.dylib"],
+    );
   });
 
   it("ships a shared and a static library on every platform", () => {
@@ -91,5 +104,43 @@ describe("tagProblem", () => {
     assert.equal(tagProblem("v0.1.0", "0.1.0"), null);
     assert.match(tagProblem("v0.1.1", "0.1.0"), /does not match/);
     assert.match(tagProblem("0.1.0", "0.1.0"), /expected v0\.1\.0/);
+  });
+});
+
+describe("ABI version", () => {
+  it("reads the version from lib.rs and the header", () => {
+    assert.equal(abiVersionFromRust("/// doc\npub const ABI_VERSION: u32 = 12;\n"), 12);
+    assert.equal(abiVersionFromRust("const ABI_VERSION: u32 = 1;"), null);
+    assert.equal(abiVersionFromHeader("#define UGOE_ABI_VERSION 7\n"), 7);
+    assert.equal(abiVersionFromHeader("// UGOE_ABI_VERSION 7\n"), null);
+  });
+
+  it("is the same in lib.rs and the committed header", () => {
+    const rust = abiVersionFromRust(readFileSync(join(crate, "src", "lib.rs"), "utf8"));
+    const header = abiVersionFromHeader(readFileSync(join(crate, "include", "ugoe.h"), "utf8"));
+    assert.ok(Number.isInteger(rust));
+    assert.equal(header, rust);
+  });
+
+  it("names the shared library after the ABI version on Linux and macOS only", () => {
+    assert.equal(sharedLibraryId("linux-x86_64", 3), "libugoe_ffi.so.3");
+    assert.equal(sharedLibraryId("linux-aarch64", 3), "libugoe_ffi.so.3");
+    assert.equal(sharedLibraryId("macos-universal", 3), "@rpath/libugoe_ffi.3.dylib");
+    assert.equal(sharedLibraryId("windows-x86_64", 3), null);
+  });
+});
+
+describe("readelfNames", () => {
+  it("picks the names of a dynamic section tag", () => {
+    const output = [
+      "Dynamic section at offset 0x1 contains 3 entries:",
+      "  Tag        Type                         Name/Value",
+      " 0x0000000000000001 (NEEDED)             Shared library: [libugoe_ffi.so.3]",
+      " 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]",
+      " 0x000000000000000e (SONAME)             Library soname: [libugoe_ffi.so.3]",
+    ].join("\n");
+    assert.deepEqual(readelfNames(output, "NEEDED"), ["libugoe_ffi.so.3", "libc.so.6"]);
+    assert.deepEqual(readelfNames(output, "SONAME"), ["libugoe_ffi.so.3"]);
+    assert.deepEqual(readelfNames("", "SONAME"), []);
   });
 });

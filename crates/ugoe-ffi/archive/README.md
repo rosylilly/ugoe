@@ -17,11 +17,18 @@ THIRD-PARTY-NOTICES.txt  ライブラリに入っている Rust のクレート�
 
 | アーカイブ | 共有ライブラリ | 静的ライブラリ |
 | --- | --- | --- |
-| `linux-x86_64`・`linux-aarch64` (glibc) | `libugoe_ffi.so` | `libugoe_ffi.a` |
+| `linux-x86_64`・`linux-aarch64` (glibc) | `libugoe_ffi.so.<ABI の版>` (soname も同じ) と、そこへのシンボリックリンク `libugoe_ffi.so` | `libugoe_ffi.a` |
 | `windows-x86_64` (MSVC) | `ugoe_ffi.dll` と、リンクに使うインポートライブラリ `ugoe_ffi.dll.lib` | `ugoe_ffi.lib` |
-| `macos-universal` (arm64 と x86_64) | `libugoe_ffi.dylib` (インストール名は `@rpath/libugoe_ffi.dylib`) | `libugoe_ffi.a` |
+| `macos-universal` (arm64 と x86_64) | `libugoe_ffi.<ABI の版>.dylib` (インストール名は `@rpath/libugoe_ffi.<ABI の版>.dylib`) と、そこへのシンボリックリンク `libugoe_ffi.dylib` | `libugoe_ffi.a` |
 
-どちらか一方をリンクします。読み込んだライブラリがヘッダと同じ ABI かは、`ugoe_abi_version()` と `UGOE_ABI_VERSION` を比べて確かめます。
+どちらか一方をリンクします。`<ABI の版>` はヘッダの `UGOE_ABI_VERSION` です。
+
+Linux と macOS の共有ライブラリは、ABI の版を名前に入れています。`-lugoe_ffi` でリンクすると、実行ファイルには版の付いた名前
+(`libugoe_ffi.so.<ABI の版>`・`@rpath/libugoe_ffi.<ABI の版>.dylib`) が残り、実行するときはその名前のファイルを読みます。
+ABI を壊した新しい版のライブラリ (名前の版が違う) を同じ場所に入れても、古い版でビルドしたプログラムがそれを読むことはありません。
+実行するときに置くのは版の付いた名前のファイルです (シンボリックリンクはリンクするときだけ要ります)。
+読み込んだライブラリがヘッダと同じ ABI かは、`ugoe_abi_version()` と `UGOE_ABI_VERSION` を比べても確かめられます (Windows の DLL は
+名前に版を持たないので、こちらで確かめます)。
 
 ## リンクの例
 
@@ -32,7 +39,7 @@ Linux:
 
 ```sh
 # 共有ライブラリ (実行するときに lib/ から読むよう rpath を付ける)
-cc -std=c11 -I include examples/sample.c -L lib -l:libugoe_ffi.so -lm -Wl,-rpath,'$ORIGIN/lib' -o sample
+cc -std=c11 -I include examples/sample.c -L lib -lugoe_ffi -lm -Wl,-rpath,'$ORIGIN/lib' -o sample
 # 静的ライブラリ (C ライブラリの数学・スレッド・動的読み込みも要る)
 cc -std=c11 -I include examples/sample.c lib/libugoe_ffi.a -lm -lpthread -ldl -o sample
 ```
@@ -41,7 +48,7 @@ macOS:
 
 ```sh
 # 共有ライブラリ
-cc -std=c11 -I include examples/sample.c lib/libugoe_ffi.dylib -Wl,-rpath,@executable_path/lib -o sample
+cc -std=c11 -I include examples/sample.c -L lib -lugoe_ffi -Wl,-rpath,@executable_path/lib -o sample
 # 静的ライブラリ
 cc -std=c11 -I include examples/sample.c lib/libugoe_ffi.a -framework CoreFoundation -o sample
 ```

@@ -96,6 +96,9 @@ wgpu は入りません (T0166)。`ugoe-render` は外せても crates.io には
 - ヘッダファイルは cbindgen で生成して `crates/ugoe-ffi/include/ugoe.h` に置き、CI で最新かどうかを検査します (`just ffi-header` で作り直し、`just ffi-check` で検査と C の見本の実行)。cbindgen は MPL-2.0 なので、ワークスペースの依存には入れず、版を固定した CLI として使います。`just ffi-check` は `just ci` に含めません ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#ヘッダの生成))。
 - `ugoe_abi_version()` の値は、ABI を壊す変更をしたら上げます。関数・型・定数・エラーコードを足すだけなら上げません
   (既存の構造体にフィールドを足すのは壊す変更なので、別の関数や構造体を足します。[crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#abi-の版))。
+  配布する Linux・macOS の共有ライブラリは、この版を名前 (soname・インストール名) に入れます (`libugoe_ffi.so.<ABI の版>`・
+  `@rpath/libugoe_ffi.<ABI の版>.dylib`)。古い ABI でビルドしたプログラムが、ABI を壊した版のライブラリを黙って読むことはありません
+  ([release.md#c-abi-の配布物](release.md#c-abi-の配布物))。
 - 可変長の結果は、ホストのバッファ (`out`・`capacity`) に書いて数を返し、足りなければ `UGOE_ERROR_BUFFER_TOO_SMALL` で数だけを返します。
 - 着せ替えなど、失敗の種類を機械が読む必要がある関数は、`UgoeError` の `ugoe_error_kind(e)` と `ugoe_error_field(e, key)` で wasm と同じ `code` と補足の値を返します。
   補足の値は `ugoe_error_field_count(e)`・`ugoe_error_field_key_at(e, i)`・`ugoe_error_field_value_at(e, i)` で列挙もでき、バインディングはキーの一覧を写さずに済みます (T0464)。

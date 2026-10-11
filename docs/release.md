@@ -538,10 +538,10 @@ C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブ�
 
 | アーカイブ | 作るランナー | `lib/` に入るもの |
 | --- | --- | --- |
-| `ugoe-ffi-<版>-linux-x86_64.tar.gz` | `ubuntu-24.04` | `libugoe_ffi.so`・`libugoe_ffi.a` |
-| `ugoe-ffi-<版>-linux-aarch64.tar.gz` | `ubuntu-24.04-arm` | `libugoe_ffi.so`・`libugoe_ffi.a` |
+| `ugoe-ffi-<版>-linux-x86_64.tar.gz` | `ubuntu-24.04` | `libugoe_ffi.so.<ABI の版>`・`libugoe_ffi.so` (シンボリックリンク)・`libugoe_ffi.a` |
+| `ugoe-ffi-<版>-linux-aarch64.tar.gz` | `ubuntu-24.04-arm` | `libugoe_ffi.so.<ABI の版>`・`libugoe_ffi.so` (シンボリックリンク)・`libugoe_ffi.a` |
 | `ugoe-ffi-<版>-windows-x86_64.zip` | `windows-2022` | `ugoe_ffi.dll`・`ugoe_ffi.dll.lib` (DLL のインポートライブラリ)・`ugoe_ffi.lib` (静的ライブラリ) |
-| `ugoe-ffi-<版>-macos-universal.tar.gz` | `macos-14` | `libugoe_ffi.dylib`・`libugoe_ffi.a` (どちらも arm64 と x86_64 を `lipo` でまとめた universal) |
+| `ugoe-ffi-<版>-macos-universal.tar.gz` | `macos-14` | `libugoe_ffi.<ABI の版>.dylib`・`libugoe_ffi.dylib` (シンボリックリンク)・`libugoe_ffi.a` (どれも arm64 と x86_64 を `lipo` でまとめた universal) |
 
 - どのアーカイブも、最上位のディレクトリ `ugoe-ffi-<版>-<プラットフォーム>/` の下に `include/ugoe.h`・`lib/`・`examples/sample.c` (C の見本)・
   `LICENSE` (MIT)・`README.md` (中身とリンクの例。元は [crates/ugoe-ffi/archive/README.md](../crates/ugoe-ffi/archive/README.md))・
@@ -549,7 +549,28 @@ C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブ�
   隣に SHA-256 の `<アーカイブ>.sha256` を置きます。
 - 形は Windows が `.zip` (Windows に入っているもので開ける)、ほかが `.tar.gz` です。
 - macOS は 1 つの universal にします (アーキテクチャごとに分けると、利用者が両方を `lipo` でまとめ直すことが多いため。
-  unity.yml のプラグインと同じ形)。共有ライブラリのインストール名は `@rpath/libugoe_ffi.dylib` です。
+  unity.yml のプラグインと同じ形)。
+- **共有ライブラリの名前に ABI の版を入れます (T1409)。** `<ABI の版>` は `ugoe_ffi::ABI_VERSION` (ヘッダの `UGOE_ABI_VERSION`。今は 3)。
+  - Linux: 実体は `libugoe_ffi.so.<ABI の版>` で、soname も同じ。`libugoe_ffi.so` はそこへのシンボリックリンク (`-lugoe_ffi` でのリンク用)。
+  - macOS: 実体は `libugoe_ffi.<ABI の版>.dylib` で、インストール名は `@rpath/libugoe_ffi.<ABI の版>.dylib`。`libugoe_ffi.dylib` は
+    そこへのシンボリックリンク。
+  - Windows: DLL には soname・インストール名に当たるものが無いので、`ugoe_ffi.dll` のまま。
+  - 理由: リンクしたプログラムには soname・インストール名が残り、動的リンカはその名前のファイルを探す。ABI を壊した版
+    (`UGOE_ABI_VERSION` を上げた版) のライブラリを同じ場所に入れても、名前が違うので、古い ABI でビルドしたプログラムが黙って
+    新しいライブラリを読むことはなく、見つからないという分かりやすい失敗になる。ABI を壊さない版の更新 (関数を足すだけ) は名前が
+    同じなので、入れ替えるだけで読める。版はライブラリの版 (`ugoe_version()`) でなく ABI の版にする (ABI を壊さない更新で
+    リンクし直しを求めないため)。
+  - macOS も同じ形にそろえる: dyld もインストール名でライブラリを探すので、Linux と同じ守りになる。`libfoo.<版>.dylib` と
+    リンクのための `libfoo.dylib` は macOS の慣例の形で、利用者のリンクの書き方 (`-L lib -lugoe_ffi`) も Linux と同じになる。
+  - 付けるのは配布物のビルド (`scripts/ffi-dist.mjs pack`) だけ。Linux は `cargo rustc` に `-Wl,-soname,…` を渡し、macOS は
+    `install_name_tool -id` で付ける。`ugoe-ffi` のビルドすべて (build.rs) には付けない: Unity のプラグイン (unity.yml の Linux・Android の
+    `libugoe_ffi.so`・macOS の `libugoe_ffi.dylib`) はファイル名を指定して読み込み、ほかのライブラリがそれにリンクすることは無いので
+    soname は働かない。一方で Android の動的リンカは soname で読み込み済みのライブラリを区別するので、ファイル名と違う soname は
+    思わぬ食い違いのもとになる。テスト・`just ffi-check`・適合テストは静的ライブラリを使い、Godot の GDExtension は `ugoe-ffi` を
+    使わない。
+  - 版は `crates/ugoe-ffi/src/lib.rs` の `ABI_VERSION` から読む (手で書いた数を持たない)。`pack` はそれがヘッダの `UGOE_ABI_VERSION` と
+    一致するかを確かめてから付け、`verify` はアーカイブの中のヘッダの版で、シンボリックリンクが展開で保たれたか、soname
+    (`readelf -d`)・インストール名 (`otool -D`) が版の付いた名前か、`-lugoe_ffi` でリンクした見本がその名前を記録したかを確かめる。
 - Linux は glibc のランナーで作ります (musl は配りません)。
 - **std の無い静的ライブラリ (T0491) は入れません。** std の無い環境 (ゲーム機・組み込み機器) はそれぞれのターゲット
   (`aarch64-unknown-none` など、SDK ごとのもの) 向けに作るもので、ここで作れるホストの OS 向けのものは使い道がありません。
@@ -567,8 +588,9 @@ just ffi-dist-check          # アーカイブを展開し、中のヘッダと�
 
 `just ffi-dist` (`scripts/ffi-dist.mjs pack`) は、ヘッダが cbindgen の生成物と同じか (`just ffi-check` と同じ検査) を確かめてから、
 `cargo build --locked --release -p ugoe-ffi` で作ったライブラリを詰めます。macOS では `aarch64-apple-darwin` と `x86_64-apple-darwin` の
-ターゲット (`rustup target add`) が要ります。`just ffi-dist-check` (`verify`) は、ファイルの一覧と SHA-256 を確かめ、静的ライブラリと
-共有ライブラリのそれぞれにリンクした見本を、見本のモデル (`assets/samples`) で動かします。手元の OS のアーカイブだけを調べられます。
+ターゲット (`rustup target add`) が要ります (Linux では soname を付けるため `cargo rustc --locked --release -p ugoe-ffi --lib` で作ります)。
+`just ffi-dist-check` (`verify`) は、ファイルの一覧と SHA-256・共有ライブラリの名前 (上の ABI の版) を確かめ、静的ライブラリと
+共有ライブラリ (`-lugoe_ffi`) のそれぞれにリンクした見本を、見本のモデル (`assets/samples`) で動かします。手元の OS のアーカイブだけを調べられます。
 
 ### ワークフロー
 
