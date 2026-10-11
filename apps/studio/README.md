@@ -382,3 +382,6 @@ cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮�
 
 必要な道具 (Rust・Node.js・pnpm・just・wasm-bindgen-cli・各 OS の前提パッケージ) はエディタと同じ
 ([apps/editor/README.md#各-os-でのビルド](../editor/README.md#各-os-でのビルド))。
+署名もエディタと同じ ([apps/editor/README.md#配布物の署名](../editor/README.md#配布物の署名))。署名の環境変数があれば、
+Tauri が署名しない仮想カメラの DLL にも `pnpm vcam` が同じコマンドで署名する
+([docs/release.md#デスクトップアプリの署名](../../docs/release.md#デスクトップアプリの署名))。無ければ DLL も署名しない。

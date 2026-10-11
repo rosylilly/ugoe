@@ -10,6 +10,8 @@
 //   Windows 向けは cargo-xwin でクロスビルドする (NSIS だけ。署名なし)。作れない組み合わせは、何も作らずに理由と代わりを示して止まる。
 // - VCAM=1: macOS 向けのスタジオに仮想カメラの Camera Extension を入れる (署名の環境変数が要る。docs/release.md#macos-の仮想カメラ)。
 // - DRY_RUN=1: 道具を調べ、実行するコマンドを表示するだけ。
+// - 署名と公証は環境変数があるときだけ行う (scripts/lib/app-signing.mjs、docs/release.md#デスクトップアプリの署名)。
+//   無ければ署名せずに作る。署名したかを最後に出し、GitHub Actions ではジョブの要約 (`$GITHUB_STEP_SUMMARY`) にも書く。
 // - それ以外の引数は、すべての tauri build にそのまま渡す (例: `--debug`、`--bundles deb`、`--target aarch64-apple-darwin`)。
 //
 // できたインストーラは target/dist/<アプリ>/<OS>/ に集め、最後に一覧を出す。
@@ -18,6 +20,7 @@
 import { spawnSync } from "node:child_process";
 import {
   accessSync,
+  appendFileSync,
   constants,
   copyFileSync,
   existsSync,
@@ -26,8 +29,15 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { delimiter, join } from "node:path";
+import {
+  notarytoolAuthArgs,
+  signingPlan,
+  signingSummary,
+  withoutEmptySigningEnv,
+} from "./lib/app-signing.mjs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -77,6 +87,9 @@ export const PLATFORMS = ["windows", "macos", "linux"];
 export const WINDOWS_CROSS_TARGET = "x86_64-pc-windows-msvc";
 /** macOS 向けの既定のターゲット (Apple Silicon と Intel の両方で動く 1 つの .dmg。CI も同じ)。 */
 export const MACOS_TARGET = "universal-apple-darwin";
+
+/** 署名の設定を重ねるファイル (`signingPlan` の `config` を書く。リポジトリのルートから)。 */
+export const SIGNING_CONFIG = join("target", "app-signing", "windows.conf.json");
 
 /** 集めるインストーラ (tauri のバンドルの種類のディレクトリと拡張子)。 */
 const BUNDLE_KINDS = [
@@ -215,7 +228,7 @@ export function unsupportedReason(host, platform) {
  * 1 つのアプリと OS の組み合わせのビルドの計画を作る (純粋な関数。テストする)。
  * `extra` は利用者が渡した tauri build の引数。`--target` や `--bundles` があれば、既定のものを足さない。
  */
-export function planBuild({ app, platform, host, vcam = false, extra = [] }) {
+export function planBuild({ app, platform, host, vcam = false, extra = [], signing = null }) {
   const def = APPS[app];
   const cross = host !== platform;
   const userTarget = optionValue(extra, "--target", "-t");
@@ -226,6 +239,8 @@ export function planBuild({ app, platform, host, vcam = false, extra = [] }) {
   }
   const vcamDef = def.vcam?.[platform];
   if (vcam && vcamDef) args.push("--config", vcamDef.config);
+  // 署名の設定はアプリのディレクトリから見たパスでなく、ルートからの絶対パスで渡す
+  if (signing?.config) args.push("--config", join(root, SIGNING_CONFIG));
 
   let target = userTarget;
   if (cross && platform === "windows") {
@@ -252,20 +267,29 @@ export function planBuild({ app, platform, host, vcam = false, extra = [] }) {
     args,
     bundleDir,
     dist: join("target", "dist", app, platform),
+    signing,
   };
 }
 
-/** すべての組み合わせの計画。作れない組み合わせがあれば `{ errors }` を返す (1 つも作らない)。 */
-export function planAll({ apps, platforms, host, vcam, extra }) {
+/**
+ * すべての組み合わせの計画。作れない組み合わせや半端な署名の設定があれば `{ errors }` を返す (1 つも作らない)。
+ * `env` は署名の環境変数を読む先 (scripts/lib/app-signing.mjs)。
+ */
+export function planAll({ apps, platforms, host, vcam, extra, env = {} }) {
   const errors = [];
+  const signing = {};
   for (const platform of platforms) {
     const reason = unsupportedReason(host, platform);
     if (reason) errors.push(`${platform} from ${host}: ${reason}`);
+    signing[platform] = signingPlan(platform, env);
+    if (signing[platform].error) errors.push(`signing for ${platform}: ${signing[platform].error}`);
   }
   if (errors.length > 0) return { errors };
   const builds = [];
   for (const platform of platforms) {
-    for (const app of apps) builds.push(planBuild({ app, platform, host, vcam, extra }));
+    for (const app of apps) {
+      builds.push(planBuild({ app, platform, host, vcam, extra, signing: signing[platform] }));
+    }
   }
   return { builds };
 }
@@ -381,7 +405,7 @@ function isWsl() {
 
 /** ビルドに渡す環境変数。 */
 function buildEnv(build) {
-  const env = { ...process.env };
+  const env = withoutEmptySigningEnv(process.env);
   // WSL では AppImage を作る linuxdeploy が PATH の Windows のディレクトリ (/mnt/c/...) を読めずに失敗するので外す
   if (build.platform === "linux" && isWsl()) {
     env.PATH = (env.PATH ?? "")
@@ -430,6 +454,43 @@ function collect(build, startedAt) {
   return files;
 }
 
+/**
+ * 署名した .dmg を公証してステープルする (Tauri が公証するのは .app だけ)。
+ * `xcrun notarytool` と `xcrun stapler` は macOS にしか無い。
+ */
+function notarizeDmgs(files) {
+  for (const file of files.filter((f) => f.endsWith(".dmg"))) {
+    const path = join(root, file);
+    console.error(`\n==> notarizing ${file}`);
+    const steps = [
+      ["notarytool", "submit", path, ...notarytoolAuthArgs(), "--wait"],
+      ["stapler", "staple", path],
+    ];
+    for (const args of steps) {
+      const r = spawnSync("xcrun", args, { cwd: root, stdio: "inherit" });
+      if (r.error || r.status !== 0) {
+        console.error(`error: xcrun ${args[0]} failed for ${file}`);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** 署名したかを表示し、GitHub Actions ではジョブの要約にも書く。 */
+function reportSigning(builds, dryRun = false) {
+  const rows = builds.map((b) => ({ app: b.app, platform: b.platform, plan: b.signing }));
+  for (const { app, platform, plan } of rows) {
+    const state = plan.sign ? (plan.notarize ? "signed and notarized" : "signed") : "not signed";
+    console.error(
+      `  ${app}/${platform}: ${dryRun ? `would be ${state}` : state}${plan.reason ? ` (${plan.reason})` : ""}`,
+    );
+  }
+  if (process.env.GITHUB_STEP_SUMMARY && !dryRun) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, signingSummary(rows));
+  }
+}
+
 function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
@@ -449,7 +510,7 @@ function main(argv) {
   }
   if (parsed.platforms.length === 0) parsed.platforms = [host];
 
-  const plan = planAll({ ...parsed, host });
+  const plan = planAll({ ...parsed, host, env: process.env });
   if (plan.errors) {
     console.error(
       "error: some of the requested builds cannot be made on this machine (nothing was built):",
@@ -479,6 +540,12 @@ function main(argv) {
     return 1;
   }
 
+  const signingConfig = plan.builds.find((b) => b.signing.config)?.signing.config;
+  if (signingConfig && !parsed.dryRun) {
+    mkdirSync(join(root, "target", "app-signing"), { recursive: true });
+    writeFileSync(join(root, SIGNING_CONFIG), `${JSON.stringify(signingConfig, null, 2)}\n`);
+  }
+
   const results = [];
   for (const build of plan.builds) {
     const label = `${build.app} for ${build.platform}${build.cross ? " (cross build)" : ""}`;
@@ -501,10 +568,17 @@ function main(argv) {
       console.error(`error: the build of ${label} failed (exit ${r.status})`);
       return r.status ?? 1;
     }
-    results.push([build, collect(build, startedAt)]);
+    const files = collect(build, startedAt);
+    if (build.signing.notarize && build.platform === "macos" && !notarizeDmgs(files)) return 1;
+    results.push([build, files]);
   }
 
-  if (parsed.dryRun) return 0;
+  console.error("\nCode signing (docs/release.md#デスクトップアプリの署名):");
+  if (parsed.dryRun) {
+    reportSigning(plan.builds, true);
+    return 0;
+  }
+  reportSigning(results.map(([build]) => build));
   console.error("\nInstallers (copied from the tauri bundle directories):");
   for (const [build, files] of results) {
     if (files.length === 0) {

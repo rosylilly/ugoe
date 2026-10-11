@@ -7,8 +7,17 @@ import {
   parseArgs,
   planAll,
   planBuild,
+  SIGNING_CONFIG,
   unsupportedReason,
 } from "./app-build.mjs";
+import {
+  notarytoolAuthArgs,
+  signingPlan,
+  signingSummary,
+  WINDOWS_SIGN_ENV,
+  windowsSignArgv,
+  withoutEmptySigningEnv,
+} from "./lib/app-signing.mjs";
 
 test("引数がなければすべてのアプリ、OS は呼ぶ側が今の OS で埋める", () => {
   const parsed = parseArgs([], {});
@@ -139,4 +148,133 @@ test("reads options from environment variables when not given as arguments", () 
   assert.equal(r.dryRun, true);
   assert.deepEqual(r.platforms, ["linux"]);
   assert.deepEqual(r.apps, ["editor"]);
+});
+
+// --- 署名 (scripts/lib/app-signing.mjs、docs/release.md#デスクトップアプリの署名) ---
+
+test("署名の環境変数が無ければ、どの OS も署名せずに作る (今までと同じ引数)", () => {
+  for (const platform of ["windows", "macos", "linux"]) {
+    const plan = signingPlan(platform, {});
+    assert.equal(plan.sign, false);
+    assert.equal(plan.notarize, false);
+    assert.equal(plan.config, null);
+    assert.ok(plan.reason);
+  }
+  const { builds } = planAll({
+    apps: ["viewer"],
+    platforms: ["windows"],
+    host: "windows",
+    vcam: false,
+    extra: [],
+    env: {},
+  });
+  assert.deepEqual(builds[0].args, ["--filter", "@ugoe/viewer", "tauri", "build"]);
+});
+
+test("Windows は署名のコマンドがあれば signCommand の設定を重ねる", () => {
+  const env = { [WINDOWS_SIGN_ENV]: " trusted-signing-cli -e https://x -a A -c P -d ugoe %1 " };
+  const plan = signingPlan("windows", env);
+  assert.equal(plan.sign, true);
+  assert.deepEqual(plan.config, {
+    bundle: { windows: { signCommand: "trusted-signing-cli -e https://x -a A -c P -d ugoe %1" } },
+  });
+  const { builds } = planAll({
+    apps: ["editor"],
+    platforms: ["windows"],
+    host: "windows",
+    vcam: false,
+    extra: [],
+    env,
+  });
+  const args = builds[0].args;
+  assert.equal(args.at(-2), "--config");
+  assert.ok(args.at(-1).endsWith(SIGNING_CONFIG));
+  // Linux 向けには重ねない
+  const linux = planAll({ apps: ["editor"], platforms: ["linux"], host: "linux", extra: [], env });
+  assert.equal(linux.builds[0].signing.sign, false);
+  assert.ok(!linux.builds[0].args.some((a) => a.endsWith(SIGNING_CONFIG)));
+});
+
+test("Windows の署名のコマンドに %1 が無ければ、何も作らずに止まる", () => {
+  const env = { [WINDOWS_SIGN_ENV]: "signtool sign /a" };
+  assert.match(signingPlan("windows", env).error, /%1/);
+  const plan = planAll({
+    apps: ["editor"],
+    platforms: ["windows"],
+    host: "windows",
+    extra: [],
+    env,
+  });
+  assert.equal(plan.builds, undefined);
+  assert.match(plan.errors[0], /^signing for windows/);
+});
+
+test("署名のコマンドは Tauri と同じく空白で分け、%1 をパスに替える", () => {
+  assert.deepEqual(windowsSignArgv("tool  sign -f %1 --x=%1", "C:/a.dll"), [
+    "tool",
+    "sign",
+    "-f",
+    "C:/a.dll",
+    "--x=C:/a.dll",
+  ]);
+});
+
+test("macOS は署名の名義で署名し、公証の資格情報が 1 組揃っていれば公証する", () => {
+  const identity = { APPLE_SIGNING_IDENTITY: "Developer ID Application: X (TEAM)" };
+  const signOnly = signingPlan("macos", identity);
+  assert.equal(signOnly.sign, true);
+  assert.equal(signOnly.notarize, false);
+  assert.match(signOnly.reason, /notarization/);
+
+  const api = { APPLE_API_ISSUER: "i", APPLE_API_KEY: "k", APPLE_API_KEY_PATH: "/p.p8" };
+  const withApi = signingPlan("macos", { ...identity, ...api });
+  assert.equal(withApi.notarize, true);
+  assert.equal(withApi.reason, null);
+  assert.deepEqual(notarytoolAuthArgs(api), ["--issuer", "i", "--key-id", "k", "--key", "/p.p8"]);
+
+  const appleId = { APPLE_ID: "a@b", APPLE_PASSWORD: "pw", APPLE_TEAM_ID: "T" };
+  assert.equal(signingPlan("macos", { ...identity, ...appleId }).notarize, true);
+  assert.deepEqual(notarytoolAuthArgs(appleId), [
+    "--apple-id",
+    "a@b",
+    "--password",
+    "pw",
+    "--team-id",
+    "T",
+  ]);
+});
+
+test("macOS の半端な設定 (公証の組の一部・名義の無い資格情報・証明書だけ) は止まる", () => {
+  const identity = { APPLE_SIGNING_IDENTITY: "Developer ID Application: X (TEAM)" };
+  assert.match(
+    signingPlan("macos", { ...identity, APPLE_API_ISSUER: "i", APPLE_API_KEY: "k" }).error,
+    /missing APPLE_API_KEY_PATH/,
+  );
+  assert.match(signingPlan("macos", { APPLE_ID: "a@b" }).error, /APPLE_SIGNING_IDENTITY/);
+  assert.match(signingPlan("macos", { APPLE_CERTIFICATE: "x" }).error, /APPLE_SIGNING_IDENTITY/);
+  assert.match(
+    signingPlan("macos", { ...identity, APPLE_CERTIFICATE: "x" }).error,
+    /APPLE_CERTIFICATE_PASSWORD/,
+  );
+  // 空の値は無いのと同じ (Secrets が無いと GitHub Actions は空の文字列を渡す)
+  assert.equal(signingPlan("macos", { APPLE_SIGNING_IDENTITY: "", APPLE_ID: "" }).sign, false);
+});
+
+test("ジョブの要約は、アプリと OS ごとに署名と公証の有無を表にする", () => {
+  const summary = signingSummary([
+    { app: "editor", platform: "macos", plan: { sign: true, notarize: true, reason: null } },
+    { app: "editor", platform: "linux", plan: signingPlan("linux", {}) },
+  ]);
+  assert.match(summary, /\| editor \| macos \| yes \| yes \| {2}\|/);
+  assert.match(summary, /\| editor \| linux \| no \| - \| Linux packages are not signed \|/);
+});
+
+test("ビルドに渡す前に、空の署名の環境変数を消す (GitHub Actions は無い Secrets を空で渡す)", () => {
+  const env = withoutEmptySigningEnv({
+    APPLE_SIGNING_IDENTITY: "",
+    APPLE_CERTIFICATE: " ",
+    AZURE_CLIENT_ID: "id",
+    PATH: "",
+  });
+  assert.deepEqual(env, { AZURE_CLIENT_ID: "id", PATH: "" });
 });

@@ -158,7 +158,7 @@ just app::build TARGET=editor PLATFORM=windows   # エディタだけ (`just edi
 - WSL2 からは、実行ファイルを Windows 側にコピーしてそのまま起動できる
   (例: `cp target/x86_64-pc-windows-msvc/release/ugoe-editor.exe /mnt/c/Users/<名前>/Downloads/` してエクスプローラーから開く)。
 - **NSIS だけ。** `.msi` (WiX) は Windows でしか作れない。
-- **署名していない** ([配布物の署名](#配布物の署名))。SmartScreen の警告が出る。
+- **署名しない** (手元で作るものは署名の道具が無いため。署名して配る版は CI の Windows ランナーで作る。[配布物の署名](#配布物の署名))。SmartScreen の警告が出る。
 - **WebView2:** インストーラは、WebView2 Runtime がなければ Microsoft からブートストラッパーを
   ダウンロードして入れる (Tauri の既定の `downloadBootstrapper`。インターネット接続が要る)。
   Windows 10 (1803 以降)・11 には通常入っているので、何も起きない。実行ファイルを直接起動するときも WebView2 Runtime が要る。
@@ -188,7 +188,19 @@ just app::build TARGET=editor PLATFORM=windows   # エディタだけ (`just edi
 
 ### 配布物の署名
 
-インストーラは**コード署名をしていない** (署名と公証は後続のタスク)。そのため、初回の起動時に OS の警告が出る。
+署名と公証は、署名の環境変数 (CI では GitHub の Secrets) があるときだけ行う。手順・環境変数・Secrets の名前は
+[docs/release.md#デスクトップアプリの署名](../../docs/release.md#デスクトップアプリの署名)。3 つのアプリで同じ。
+署名したかは `just app::build` の最後の表示と、CI のジョブの要約の「Code signing」の表に出る。
+
+**署名したもの** (Secrets を置いたリポジトリの CI・署名の環境変数を設定した手元のビルド):
+
+- **Windows:** 実行ファイル・インストーラ (NSIS の `.exe` と `.msi`)・エディタのサイドカー `ugoe-mcp.exe`・スタジオの仮想カメラの DLL に
+  Authenticode の署名とタイムスタンプが付く。SmartScreen の画面には発行元の名義が出る。評価はダウンロードの実績で付くので、
+  新しい版では、署名していても初めのうちは「Windows によって PC が保護されました」が出ることがある (越え方は下と同じ)。
+- **macOS:** Developer ID Application で署名し、公証してステープルした `.app` と `.dmg`。Gatekeeper の警告は出ない。
+- **Linux:** 署名しない (下と同じ)。
+
+**署名しないもの** (Secrets の無いビルド: フォーク・Secrets を置く前の CI・手元のビルド)。初回の起動時に OS の警告が出る。
 
 - **Windows:** SmartScreen の「Windows によって PC が保護されました」が出る。「詳細情報」→「実行」で起動できる。
 - **macOS:** Gatekeeper が「開発元を検証できない」または「壊れているため開けません」として止める。

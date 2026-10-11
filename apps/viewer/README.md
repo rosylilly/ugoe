@@ -754,6 +754,7 @@ just web-check                   # Biome + svelte-check + Vitest (エディタ�
 [apps/editor/README.md#各-os-でのビルド](../editor/README.md#各-os-でのビルド) を参照。
 Linux (WSL2) から Windows 向けのクロスビルドも同じ (`just app::build TARGET=viewer PLATFORM=windows`)。
 GitHub Actions の Editor build のワークフローは、ビューアのインストーラ (`ugoe-viewer-<OS>`) も作る。
+署名もエディタと同じで、Secrets があれば署名し、無ければ署名しない ([apps/editor/README.md#配布物の署名](../editor/README.md#配布物の署名))。
 
 アイコンは `src-tauri/icons/icon.png` から `pnpm tauri icon src-tauri/icons/icon.png -o src-tauri/icons` で作り直せる
 (Android・iOS 用に出力されるディレクトリは使わないので消す)。

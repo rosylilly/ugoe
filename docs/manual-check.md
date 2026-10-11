@@ -46,7 +46,7 @@ just check-pack                    # Windows の %USERPROFILE%\ugoe-check に一
 - 前の一式があれば、結果を書き込んだ `manual-check.md` は、`--force` を付けないと上書きしません。見本のプロファイルはスタジオが
   書き換えない (変えたら写しを保存させる。[manual/studio.md の書き換えないプロファイル](manual/studio.md#書き換えないプロファイル)) ので、
   いつも上書きします。
-- インストーラは署名していません。初回は SmartScreen の「Windows によって PC が保護されました」が出るので、「詳細情報」→「実行」で進めます
+- 手元で作ったインストーラは署名していません。初回は SmartScreen の「Windows によって PC が保護されました」が出るので、「詳細情報」→「実行」で進めます
   ([apps/editor/README.md の配布物の署名](../apps/editor/README.md#配布物の署名))。
 - スタジオのインストーラは管理者の権限を求めます (仮想カメラの登録のため。UAC の「はい」を押す)。エディタとビューアは求めません。
 - WebView2 Runtime は Windows 10 (1803 以降)・11 には入っています。無ければインストーラが取りに行きます。
@@ -860,6 +860,9 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
 | D07 | crates.io と npm への公開、README の表示 | — | T0403・T0410 | 未 |
 | D08 | Web ランタイムを本物の GPU の WebGPU・Firefox・Safari で | WML | T0404・T0413・T0719・T0904 | 未 |
 | D09 | 本物の GPU での WebGL2 の喪失 (ドライバのリセット・GPU プロセスの不調・コンテキストの上限) で、ビューア・エディタ・`<ugoe-avatar>` が復元を待って作り直し、wasm が panic しない | WML | T0938・T0475・T0944 | 未 |
+| D10 | 署名した Windows のインストーラ: `Get-AuthenticodeSignature` が Valid でタイムスタンプがある、入れた `ugoe-mcp.exe` とスタジオの `ugoe_studio_vcam.dll` も署名されている、SmartScreen の画面に発行元の名義が出る (評価が付くまでの警告の出方も記録する) ([release.md の署名を確かめる](release.md#署名を確かめる)) | W | T0084 | 未 |
+| D11 | 署名と公証をした macOS の `.app` と `.dmg`: `spctl --assess` が Notarized Developer ID、`xcrun stapler validate` が通る、ダウンロードした `.dmg` から入れて Gatekeeper の警告なしに開ける ([release.md の署名を確かめる](release.md#署名を確かめる)) | M | T0084 | 未 |
+| D12 | `v*` のタグで `Editor build` がインストーラを下書きの Release に添付し、ジョブの要約に署名の表が出る (Secrets の有無の両方) | — | T0084 | 未 |
 
 ## 結果を書き戻す
 

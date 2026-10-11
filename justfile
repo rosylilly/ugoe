@@ -345,9 +345,10 @@ studio-build *args:
 script-check:
     @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
-# アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせ、手で確かめる一式 (scripts/check-pack.mjs) のパスの検査
+# アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
+# 下書きの Release への添付 (scripts/github-release.mjs) の検査
 app-build-check:
-    @node --test --test-reporter=dot scripts/app-build.test.mjs scripts/check-pack.test.mjs
+    @node --test --test-reporter=dot scripts/app-build.test.mjs scripts/check-pack.test.mjs scripts/github-release.test.mjs
 
 # CLI 実行: `just cli info model.json`
 cli *args:

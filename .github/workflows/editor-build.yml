@@ -5,12 +5,17 @@ name: Editor build
 # 手元と同じ入口 `just app::build TARGET=<アプリ> PLATFORM=<OS>` (scripts/app-build.mjs) を使い、アプリごとの違い
 # (エディタのサイドカー・スタジオの仮想カメラの DLL など) はそのスクリプトが持つ。できたものは target/dist/<アプリ>/<OS>/ に集まる。
 # (Linux から Windows 向けの NSIS だけを作るクロスビルドもあるが、MSI を作れないので CI では使わない。)
-# 署名はしていない (apps/editor/README.md#配布物の署名)。
+# 署名と公証は、リポジトリの Secrets があるときだけ行う (docs/release.md#デスクトップアプリの署名)。無ければ今までどおり署名せずに作り、
+# フォークや Secrets を置く前でも失敗しない。署名したかはジョブの要約に出る (scripts/app-build.mjs)。
+# `v*` のタグでは、できたインストーラをそのタグの GitHub Release の下書きに添付する (release のジョブ。公開するのは人)。
 # ビューア (apps/viewer) とスタジオ (apps/studio) も同じ手順でビルドできるので、アプリを行列に加えて一緒に作る (T0701・T0801)。
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -81,10 +86,78 @@ jobs:
         run: pnpm --filter "@ugoe/${{ matrix.app }}" wasm
       # beforeBuildCommand (tauri.conf.json) でも `pnpm wasm` が走るが、ビルド済みなのですぐ終わる。
       # Windows でも just はレシピを windows-shell (PowerShell) で実行するので、手元の Windows と同じ経路になる。
+      # Windows: Azure Artifact Signing (artifact-signing-cli が signtool と Azure CLI で署名する。どちらもランナーに入っている)。
+      # Secrets が無ければ UGOE_WINDOWS_SIGN_COMMAND を設定せず、署名しない
+      - name: Set up Windows code signing
+        if: runner.os == 'Windows'
+        env:
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+        run: |
+          if [ -z "$AZURE_CLIENT_SECRET" ]; then
+            echo "No Windows signing secrets; building unsigned installers"
+            exit 0
+          fi
+          cargo install artifact-signing-cli --version 0.11.0 --locked
+          echo "UGOE_WINDOWS_SIGN_COMMAND=artifact-signing-cli -e $AZURE_ARTIFACT_SIGNING_ENDPOINT -d ugoe %1" >> "$GITHUB_ENV"
+      # macOS: Tauri が APPLE_CERTIFICATE (.p12) を一時のキーチェーンに入れて署名し、APPLE_API_* で公証する。
+      # API キー (.p8) は中身を Secrets に置き、ここでファイルに書いて APPLE_API_KEY_PATH で渡す
+      - name: Set up macOS notarization key
+        if: runner.os == 'macOS'
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APPLE_API_PRIVATE_KEY" ]; then
+            echo "No notarization key; the app is not notarized"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key"
+          echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
       - name: Build ${{ matrix.app }}
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: just app::build TARGET=${{ matrix.app }} PLATFORM=${{ matrix.platform }}
       - uses: actions/upload-artifact@v7
         with:
           name: ugoe-${{ matrix.app }}-${{ matrix.label }}
           if-no-files-found: error
           path: target/dist/${{ matrix.app }}/${{ matrix.platform }}/
+
+  # `v*` のタグのときだけ、9 つのインストーラをそのタグの GitHub Release (下書き) に添付する。
+  # ほかの配布物のワークフローと同じ下書きに添付する (scripts/github-release.mjs、docs/release.md#github-release-の下書き)。
+  # Release を公開するのは人の手。
+  release:
+    name: attach to the draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ugoe-*
+          path: dist
+          merge-multiple: true
+      - name: Upload installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t files < <(find dist -type f | sort)
+          printf '%s\n' "${files[@]}"
+          node scripts/github-release.mjs upload "$GITHUB_REF_NAME" "${files[@]}"

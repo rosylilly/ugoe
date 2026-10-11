@@ -6,9 +6,12 @@
 //   target を分ける。
 // - Frame Server (OS のサービス) が読み込むので、VC++ のランタイムに頼らないよう CRT を静的にリンクする。
 // - Windows では cargo、ほかの OS では cargo-xwin でクロスビルドする (apps/editor/README.md の Windows 向けのクロスビルドと同じ道具)。
+// - 署名のコマンド (UGOE_WINDOWS_SIGN_COMMAND) があれば DLL に署名する。DLL はインストーラのフックが入れるので、Tauri の
+//   signCommand は署名しない (docs/release.md#デスクトップアプリの署名)。無ければ署名しない。
 
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { signWindowsFile } from "../../../scripts/lib/app-signing.mjs";
 import { exportMbxPath } from "../../../scripts/lib/mbx.mjs";
 
 // mbx (ビルドのキャッシュ。docs/workflow/build-cache.md) の shim が入っていれば、justfile と同じく cargo を mbx に通す
@@ -41,4 +44,11 @@ if (result.error) {
   console.error(`error: ${result.error.message}`);
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+const dll = join(root, "target", "vcam", target, "release", "ugoe_studio_vcam.dll");
+try {
+  if (signWindowsFile(dll)) console.error(`signed ${dll}`);
+} catch (e) {
+  console.error(`error: ${e.message}`);
+  process.exit(1);
+}
