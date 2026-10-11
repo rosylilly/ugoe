@@ -1,11 +1,11 @@
 ---
 id: T0739
 title: "ビューア: トラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) も覚え、起動し直しても戻す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/viewer, packages/face-tracking, docs]
 depends_on: [T1678]
-assignee:
+assignee: claude-worker-T0739
 ---
 
 # T0739: ビューアでトラッキングのほかの設定も覚える

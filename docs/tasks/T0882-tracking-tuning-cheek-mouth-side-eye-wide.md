@@ -1,11 +1,11 @@
 ---
 id: T0882
 title: "スタジオ: トラッキングの調整の境目を、頬 (cheekPuff)・口の左右 (mouthLeft・mouthRight)・目の見開き (eyeWide*) に広げる"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: [T0881]
-assignee:
+assignee: claude-worker-T0882
 ---
 
 # T0882: 頬・口の左右・目の見開きの境目
