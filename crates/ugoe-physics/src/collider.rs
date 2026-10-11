@@ -8,7 +8,7 @@ use ugoe_runtime::WorldTransform;
 
 /// キャンバス座標に置いた衝突体の形状。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum WorldCollider {
+pub(crate) enum WorldCollider {
     /// 円。
     Circle {
         /// 中心 (キャンバス座標)。
@@ -32,7 +32,7 @@ impl WorldCollider {
     ///
     /// 位置 (`center`・`a`・`b`) だけを写し、半径はキャンバスのピクセルのまま (取り付け先の
     /// 拡大・ワープの伸縮を受けない)。未知の形状は `None`。
-    pub fn new(shape: &ColliderShape, world: &WorldTransform<'_>) -> Option<Self> {
+    pub(crate) fn new(shape: &ColliderShape, world: &WorldTransform<'_>) -> Option<Self> {
         match *shape {
             ColliderShape::Circle { center, radius } => Some(Self::Circle {
                 center: world.point(center),
@@ -59,7 +59,7 @@ impl WorldCollider {
     ///
     /// `q` が半径を `margin` だけ広げた衝突体の内側にあるか、区間 (線分) が衝突体そのもの
     /// (`margin` なし) を横切れば当たる。`parent` が衝突体そのものの内側にあれば、区間の判定はしない。
-    pub fn blocks(&self, parent: Vec2, q: Vec2, margin: f32) -> bool {
+    pub(crate) fn blocks(&self, parent: Vec2, q: Vec2, margin: f32) -> bool {
         self.blocks_from(self.distance_to(parent), parent, q, margin)
     }
 
@@ -89,7 +89,7 @@ impl WorldCollider {
     /// 押し出す向きは、形状の芯 (円の中心・カプセルの線分) の最も近い点から `p` への向き。
     /// `p` が芯の上にあって向きが決まらなければ、円は上 (`-y`)、カプセルは線分の法線
     /// (線分の向きを反時計回りに 90 度回したもの) の向きに押し出す。
-    pub fn push_out(&self, p: &mut Vec2, margin: f32) {
+    pub(crate) fn push_out(&self, p: &mut Vec2, margin: f32) {
         let (core, radius, fallback) = match *self {
             Self::Circle { center, radius } => (center, radius, Vec2::NEG_Y),
             Self::Capsule { a, b, radius } => {
@@ -117,7 +117,7 @@ impl WorldCollider {
 }
 
 /// 掃引で調べる角度の刻みの上限 (度)。
-pub const SWEEP_MAX_STEP_DEGREES: f32 = 10.0;
+pub(crate) const SWEEP_MAX_STEP_DEGREES: f32 = 10.0;
 
 /// 掃引の刻みを決めるときの、衝突体の半径の下限 (ピクセル)。半径が 0 に近い衝突体で刻みが細かくなりすぎないようにする。
 const SWEEP_MIN_RADIUS: f32 = 0.5;
@@ -136,7 +136,7 @@ const SWEEP_BISECTIONS: u32 = 16;
 /// 衝突体の数はモデルで決まり上限が無いので、決まった大きさの配列 (スタック) ではなく、呼び出し側が持って使い回す
 /// `Vec` にした (容量が足りた後は確保しない)。中身は呼び出しの間で引き継がない。
 #[derive(Debug, Clone, Default)]
-pub struct SweepBuffer {
+pub(crate) struct SweepBuffer {
     near: Vec<NearCollider>,
 }
 
@@ -155,7 +155,7 @@ struct NearCollider {
 /// 当たっていれば、そこから最も近い当たらない向き (同じ角度なら時計回り) から回す。どの向きでも当たるなら、
 /// 衝突体ごとに表面の最も近い点へ押し出す ([`WorldCollider::push_out`]。区間は伸びる)。
 /// どの衝突体にも当たらなければ `to` を変えない。`buffer` は作業用 (呼び出しのたびに確保しないため)。
-pub fn constrain_segment(
+pub(crate) fn constrain_segment(
     colliders: &[WorldCollider],
     margin: f32,
     parent: Vec2,

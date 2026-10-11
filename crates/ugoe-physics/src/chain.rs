@@ -10,7 +10,7 @@ use ugoe_core::math;
 use ugoe_model::physics::PhysicsParticle;
 
 /// 根元の回転に、子の粒子が引きずられる割合 (`docs/spec/physics.md#係数の意味`)。
-pub const ROOT_ROTATION_FOLLOW: f32 = 0.2;
+pub(crate) const ROOT_ROTATION_FOLLOW: f32 = 0.2;
 
 /// 粒子 1 つの実行時状態。座標は物理空間 (y 軸下向き)。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,7 +35,7 @@ impl Particle {
 
 /// 制約のフック ([`Chain::step`]・[`Chain::settle`]) に渡す、粒子 1 つ (i >= 1) の区間の情報。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Segment {
+pub(crate) struct Segment {
     /// 粒子の添字。
     pub index: usize,
     /// 親 (粒子 i-1) の、補正した後の位置。
@@ -47,7 +47,7 @@ pub struct Segment {
 
 /// 1 ステップ分の外部入力。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StepInput {
+pub(crate) struct StepInput {
     /// 粒子 0 (根元) を置く位置。
     pub root: Vec2,
     /// このステップでの根元の回転の変化量 (度、時計回りが正)。
@@ -60,10 +60,8 @@ pub struct StepInput {
     pub time_scale: f32,
 }
 
-/// 振り子チェーン 1 本の実行時状態。
-///
-/// [`Chain::settle`]・[`Chain::step`] に渡す粒子の定義 `defs` は、[`Chain::new`] に渡したものと同じ
-/// (少なくとも同じ長さ) でなければならない (短いと添字が範囲外になる)。
+/// 振り子チェーン 1 本の実行時状態。外からは [`PhysicsSystem::chain`](crate::PhysicsSystem::chain) で
+/// 読むだけで、作って進めるのは [`PhysicsSystem`](crate::PhysicsSystem) の中だけ。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chain {
     particles: Vec<Particle>,
@@ -71,7 +69,10 @@ pub struct Chain {
 
 impl Chain {
     /// 粒子を初期位置 (`root + PhysicsParticle::position`) に静止させて作る。
-    pub fn new(defs: &[PhysicsParticle], root: Vec2) -> Self {
+    ///
+    /// [`Chain::settle`]・[`Chain::step`] に渡す粒子の定義 `defs` は、ここに渡したものと同じ
+    /// (少なくとも同じ長さ) でなければならない (短いと添字が範囲外になる)。
+    pub(crate) fn new(defs: &[PhysicsParticle], root: Vec2) -> Self {
         Self {
             particles: defs
                 .iter()
@@ -97,7 +98,7 @@ impl Chain {
     /// 読み込み直後やリセット後に、初期姿勢から揺れ始めないようにするために使う。
     /// `constrain` は [`Chain::step`] と同じく粒子ごと (i >= 1) に呼ばれ、置いた位置を補正できる
     /// (補正後の位置を次の粒子の親にする)。`Segment::from` は初期位置の区間の向き。
-    pub fn settle(
+    pub(crate) fn settle(
         &mut self,
         defs: &[PhysicsParticle],
         root: Vec2,
@@ -131,7 +132,7 @@ impl Chain {
     /// `constrain` は距離拘束の直後に粒子ごと (i >= 1) に呼ばれ、位置を補正できる
     /// (衝突体からの押し出しなど。補正後の位置から速度を求める)。`Segment::from` はステップの始めの
     /// 区間 (親と粒子のステップの始めの位置) の向き。
-    pub fn step(
+    pub(crate) fn step(
         &mut self,
         defs: &[PhysicsParticle],
         input: &StepInput,
@@ -190,7 +191,7 @@ impl Chain {
 
 /// 静止姿勢での粒子 i の、根元 (粒子 0) からの相対位置 (衝突体を考えない)。
 /// `i` が 0 か範囲外なら零ベクトル。動的物理の変位の基準に使う。
-pub fn rest_offset(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -> Vec2 {
+pub(crate) fn rest_offset(defs: &[PhysicsParticle], i: usize, gravity: Vec2, wind: Vec2) -> Vec2 {
     (1..=i.min(defs.len().saturating_sub(1)))
         .map(|k| rest_segment(defs, k, gravity, wind))
         .fold(Vec2::ZERO, |a, b| a + b)
@@ -225,7 +226,7 @@ fn rest_direction(defs: &[PhysicsParticle], i: usize) -> Vec2 {
 
 /// `from` から `to` への符号付きの角度 (度、y 軸下向きの座標で時計回りが正)。
 /// どちらかが零ベクトルなら 0。
-pub fn signed_angle(from: Vec2, to: Vec2) -> f32 {
+pub(crate) fn signed_angle(from: Vec2, to: Vec2) -> f32 {
     if from == Vec2::ZERO || to == Vec2::ZERO {
         return 0.0;
     }

@@ -1,7 +1,7 @@
 ---
 id: T0336
 title: "内部の整理: ugoe-physics の積分と衝突の部品を pub(crate) にし、Chain・Particle を読むだけの型にする (T0316 の所見)"
-status: in-progress
+status: done
 milestone: M9
 crates: [ugoe-physics, ugoe-wasm, ugoe, docs]
 depends_on: []
@@ -18,16 +18,16 @@ T0316 (物理のレビュー) が見送った「公開の範囲の見直し」�
 
 ## 受け入れ条件
 
-- [ ] モジュール `chain`・`collider` を非公開にし、`Chain`・`Particle` を根で再公開した
-- [ ] `Chain::new`・`settle`・`step`、`Segment`・`StepInput`・`WorldCollider` (`blocks`・`push_out` を含む)・`SweepBuffer`・`constrain_segment`・
+- [x] モジュール `chain`・`collider` を非公開にし、`Chain`・`Particle` を根で再公開した
+- [x] `Chain::new`・`settle`・`step`、`Segment`・`StepInput`・`WorldCollider` (`blocks`・`push_out` を含む)・`SweepBuffer`・`constrain_segment`・
       `SWEEP_MAX_STEP_DEGREES`・`signed_angle`・`rest_offset`・`ROOT_ROTATION_FOLLOW`・`BASE_FPS`・`MAX_STEPS_PER_UPDATE` を `pub(crate)` にした
-- [ ] `Chain` は `particles`・`is_finite` などの読むメソッドだけを公開にした。`ugoe-wasm` の物理の表示 (`PhysicsSystem::chain` → `particles`) と
+- [x] `Chain` は `particles`・`is_finite` などの読むメソッドだけを公開にした。`ugoe-wasm` の物理の表示 (`PhysicsSystem::chain` → `particles`) と
       `crates/ugoe/tests/m3_puppet.rs` がそのまま使える (使えなければ使う側を直す)
-- [ ] 狭めて使われなくなった項目は消すかテストの中へ移した (`#[allow(dead_code)]` で黙らせない)。単体テストは今の数値のまま通る
-- [ ] crates/ugoe-physics/README.md の `chain::Chain`・`collider::…` の説明を直した (docs/spec/physics.md の `ROOT_ROTATION_FOLLOW`・`MAX_STEPS_PER_UPDATE` は
+- [x] 狭めて使われなくなった項目は消すかテストの中へ移した (`#[allow(dead_code)]` で黙らせない)。単体テストは今の数値のまま通る
+- [x] crates/ugoe-physics/README.md の `chain::Chain`・`collider::…` の説明を直した (docs/spec/physics.md の `ROOT_ROTATION_FOLLOW`・`MAX_STEPS_PER_UPDATE` は
       値の説明として残す。docs/testing.md の `WorldCollider::blocks` は内部の時間の内訳の説明なのでそのまま)
-- [ ] `just wasm-check`・`just nostd-check` が通る
-- [ ] `just ci` が通る
+- [x] `just wasm-check`・`just nostd-check` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -40,3 +40,14 @@ T0316 (物理のレビュー) が見送った「公開の範囲の見直し」�
   WorldCollider・constrain_segment・signed_angle・rest_offset などを pub(crate)、モジュール chain・collider を非公開。README も))。
 - M9 の後続 (T0195・T0316 と同じ)。番号は物理・モーションの帯の空き。互換の別名・移行の説明・semver の注記は要らない (利用者の方針 2026-10-11)。
 - `crates:` の `ugoe-wasm`・`ugoe` は、使う側の追従 (呼び方を変える小さな直し) だけ。
+- 結果 (T0336): モジュール `chain`・`collider` を非公開にし、根では `Chain`・`Particle` (と `PhysicsSystem`・`RestPoseCollision`・
+  `DEFAULT_FPS`) だけを公開した。受け入れ条件に挙げた項目はすべて `pub(crate)`。`Chain` の公開メソッドは `particles`・`is_finite` だけ。
+  `Particle` は今のまま公開のフィールドを持つ値の型 (外から得られるのは `&[Particle]` だけなので鎖は書き換えられない)。
+- 狭めて使われなくなった項目は無かった (どれも crate の中の積分・衝突・テストで使っている)。`#[allow(dead_code)]` は足していない。
+  golden のハッシュを含む単体テストは変えずに通る。
+- 公開の doc から非公開の項目へのリンク (`Chain` の doc の `Chain::new`・`settle`・`step`、`rest_pose_collisions` の
+  `WorldCollider::blocks`) を `cargo doc` が警告したので、`Chain` の doc は「`PhysicsSystem::chain` で読むだけ」とし、
+  `defs` の長さの約束は `Chain::new` の doc へ、`rest_pose_collisions` は当たりの条件を言葉で書いた。
+- `ugoe-wasm`・`ugoe` (`m3_puppet.rs`) は `PhysicsSystem::chain` → `particles` だけを使っていて、直す所は無かった。
+  fuzz・bindings・tests/conformance も狭めた項目を使っていない (fuzz の入口は触っていないので `just fuzz-check` は流していない)。
+- 確かめたこと: `just crate ugoe-physics`・`ugoe`・`ugoe-wasm`、`just wasm-check`・`just nostd-check`・`just conformance`・`just ci` が通った。

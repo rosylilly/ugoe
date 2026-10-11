@@ -23,8 +23,8 @@
 
 extern crate alloc;
 
-pub mod chain;
-pub mod collider;
+mod chain;
+mod collider;
 
 use alloc::sync::Arc;
 use alloc::vec;
@@ -39,15 +39,15 @@ use ugoe_model::physics::{
 };
 use ugoe_runtime::{CompiledModel, ModelInstance, ParamIndex, ParameterLayout, ParameterValues};
 
-pub use chain::{Chain, Particle, Segment, StepInput};
-use collider::SweepBuffer;
-pub use collider::WorldCollider;
+pub use chain::{Chain, Particle};
+use chain::{Segment, StepInput};
+use collider::{SweepBuffer, WorldCollider};
 
 /// 1 回の `update` で実行するステップ数の上限 (`docs/spec/physics.md#時間の進め方`)。
-pub const MAX_STEPS_PER_UPDATE: u32 = 8;
+pub(crate) const MAX_STEPS_PER_UPDATE: u32 = 8;
 
 /// 係数の時間の基準となるフレームレート。`mobility` と `delay` は 1/30 秒あたりの値。
-pub const BASE_FPS: f32 = 30.0;
+pub(crate) const BASE_FPS: f32 = 30.0;
 
 /// `PhysicsSettings::fps` が正の有限値でないときに使うステップの周波数。
 pub const DEFAULT_FPS: f32 = 60.0;
@@ -502,8 +502,8 @@ impl PhysicsSystem {
     ///
     /// `instance` の今のパラメータ (ふつうは既定値) で 1 段目の評価を行い、各リグの鎖を、その入力と
     /// 重力・風に対する静止姿勢 (衝突体を考えない。中継の入力は最初の `update` と同じく、前のリグの
-    /// 静止姿勢の出力を読む) に置いて、区間 (粒子 i-1 → i) が
-    /// [`WorldCollider::blocks`] で衝突体に当たるものを返す。当たっている区間は、最初の `update` で
+    /// 静止姿勢の出力を読む) に置いて、区間 (粒子 i-1 → i) が衝突体に当たる (粒子が余白を足した衝突体の
+    /// 内側にあるか、区間が衝突体を横切る) ものを返す。当たっている区間は、最初の `update` で
     /// 衝突体の外の最も近い向きへ回され、髪は衝突体に沿って置かれる。作者が意図しない姿勢になりやすいので、
     /// 取り込みやエディタで警告に使う。物理の状態 (粒子) は変えない。動的物理を使わない設定では空。
     pub fn rest_pose_collisions(&mut self, instance: &mut ModelInstance) -> Vec<RestPoseCollision> {
