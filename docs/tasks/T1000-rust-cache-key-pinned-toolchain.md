@@ -1,11 +1,11 @@
 ---
 id: T1000
 title: "CI: ランナーのイメージの stable の rustc が上がっても、rust-cache のキャッシュがすべて外れないようにする"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, rust-toolchain.toml, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1000
 ---
 
 # T1000: rust-cache の鍵とランナーの stable
