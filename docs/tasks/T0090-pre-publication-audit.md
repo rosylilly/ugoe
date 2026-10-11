@@ -1,11 +1,11 @@
 ---
 id: T0090
 title: "公開の前の点検: 作業ツリーと履歴に、機械に固有のパス・秘密の値・外部 SDK・個人の情報が無いかを調べ、作業ツリーの分を直す"
-status: todo
+status: in-progress
 milestone: Release
 crates: [docs, scripts, justfile, .github/workflows]
 depends_on: []
-assignee:
+assignee: claude-worker-T0090
 ---
 
 # T0090: 公開の前の点検

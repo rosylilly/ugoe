@@ -1,11 +1,11 @@
 ---
 id: T0091
 title: "CI を見直す: push ごとは軽い検査だけにし、重いビルド (Windows・macOS・GPU・適合テスト・e2e・Unity・Godot など) はリリースの前と定期・手動に回す"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0091
 ---
 
 # T0091: CI を、push ごとは軽く、重いものはリリースの前に
