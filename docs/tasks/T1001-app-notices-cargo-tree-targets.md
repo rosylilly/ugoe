@@ -1,11 +1,11 @@
 ---
 id: T1001
 title: "公開: アプリのライセンスの表記の対象を cargo tree で求め、ホスト向けの機能だけが引き込むクレートを除く"
-status: todo
+status: in-progress
 milestone: Release
 crates: [scripts, apps/editor, apps/viewer, apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1001
 ---
 
 # T1001: アプリの表記をターゲットごとの実際の依存に絞る
