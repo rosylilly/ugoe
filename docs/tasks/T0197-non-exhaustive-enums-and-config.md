@@ -1,11 +1,11 @@
 ---
 id: T0197
 title: "#[non_exhaustive] を、誤り・警告の enum、設定の struct、モデルのデータの enum に付ける"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-core, ugoe-model, ugoe-runtime, ugoe-format, ugoe-physics, ugoe-motion, ugoe-render, ugoe, ugoe-ffi, ugoe-wasm, docs, spec]
 depends_on: [T0196]
-assignee:
+assignee: claude-worker-T0197
 ---
 
 # T0197: #[non_exhaustive] を付ける
