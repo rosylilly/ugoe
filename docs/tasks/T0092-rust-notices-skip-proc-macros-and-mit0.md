@@ -1,11 +1,11 @@
 ---
 id: T0092
 title: "公開: Rust のクレートのライセンスの表記から手続きマクロのクレートを外し、選べるライセンスで MIT-0 を Apache-2.0 より先にする"
-status: todo
+status: in-progress
 milestone: Release
 crates: [scripts, apps/editor, apps/viewer, apps/studio, bindings/web, bindings/unity, bindings/godot, crates/ugoe-ffi, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0092
 ---
 
 # T0092: 手続きマクロを表記から外し、MIT-0 を先にする

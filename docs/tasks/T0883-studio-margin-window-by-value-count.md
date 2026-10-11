@@ -1,11 +1,11 @@
 ---
 id: T0883
 title: "スタジオ: 検出が遅い (値が 1 秒に数個) ときも促しの余裕を見直すよう、見直しの区切りを値の数で延ばす"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, tests/e2e, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0883
 ---
 
 # T0883: 余裕を見直す区切りを値の数で延ばす

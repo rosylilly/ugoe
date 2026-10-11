@@ -1,11 +1,11 @@
 ---
 id: T1678
 title: "エディタ: プレビューのトラッキングの調整 (感度と境目) を覚え、起動し直しても戻す"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/editor, apps/viewer, packages/face-tracking, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1678
 ---
 
 # T1678: エディタのプレビューでトラッキングの調整を覚える

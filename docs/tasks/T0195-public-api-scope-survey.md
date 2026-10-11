@@ -1,11 +1,11 @@
 ---
 id: T0195
 title: "1.0 の前に、crates.io に公開する 8 つのクレートの公開 API の範囲を洗い出し、狭めるものをクレートごとに決める"
-status: todo
+status: in-progress
 milestone: M9
 crates: [docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0195
 ---
 
 # T0195: 公開 API の範囲の洗い出し

@@ -1,11 +1,11 @@
 ---
 id: T1409
 title: "公開: C ABI の Linux の共有ライブラリに ABI の版の soname (libugoe_ffi.so.<ABI の版>) を付ける"
-status: todo
+status: in-progress
 milestone: Release
 crates: [ugoe-ffi, scripts, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1409
 ---
 
 # T1409: C ABI の soname
