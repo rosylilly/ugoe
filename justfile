@@ -28,7 +28,7 @@ setup:
     rustup show active-toolchain
 
 # CI と同じ検査一式
-ci: fmt-check lint sdk-no-render-check test layers case-check local-paths refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
+ci: fmt-check lint sdk-no-render-check test layers case-check local-paths secrets refs groups licenses publish-check spec web-check i18n app-build-check script-check doc-check ui-audit-check
 
 # コミットメッセージを検査: `just commitlint "feat(runtime): add foo"`
 commitlint message:
@@ -174,6 +174,12 @@ case-check:
 local-paths:
     @node --test --test-reporter=dot scripts/check-local-paths.test.mjs
     @node scripts/check-local-paths.mjs
+
+# 秘密の値 (API キー・トークン・秘密鍵など) が作業ツリーとコミットに入っていないか (gitleaks。版と sha256 は scripts/secrets.mjs で固定し、
+# 初回にメインの作業ツリーの target/tools/ へ取得する。設定と誤検知の allowlist は scripts/gitleaks.toml。docs/release.md#自動の検査)。
+# 既定は履歴のすべて。`just secrets --since <rev>` で `<rev>..HEAD` のコミットだけ (CI の push・PR の差分)
+secrets *args:
+    @node scripts/secrets.mjs {{args}}
 
 # 参照の突き合わせ: コードのコメントから文書の見出しへの参照の切れと、C ABI のヘッダとバインディング (Unity) の宣言・fuzz の入口 (ugoe_ffi::fuzzing) の呼び出しの過不足
 # (docs/workflow/code-review.md#m9-の結果)
@@ -393,9 +399,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、C ABI の配布物の名前と中身 scripts/ffi-dist.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、秘密の値の検査の道具の取得と範囲 scripts/secrets.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
+    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/ffi-dist.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/secrets.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
 # 下書きの Release への添付 (scripts/github-release.mjs) の検査

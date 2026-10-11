@@ -14,9 +14,10 @@
 | 依存方向の検査 | `scripts/check-layers.mjs` | `just layers` |
 | 名前の大文字と小文字の検査 | `scripts/check-case-collisions.mjs`。同じディレクトリに大文字と小文字だけが違う名前が無いか (macOS と Windows のファイルシステムでは同じファイルになる)。スクリプトの拡張子を取った import の名前も比べる (`FileMenu.svelte` と、`./fileMenu.svelte` で import する `fileMenu.svelte.ts` がぶつかる。T0088) | `just case-check` |
 | 機械に固有のパスの検査 | `scripts/check-local-paths.mjs`。ホームのディレクトリ (`/home/<名前>`・`/Users/<名前>`・`C:\Users\<名前>`) とエージェントの一時ディレクトリ (`/tmp/claude-<番号>/…`) が入っていないか (公開するため。例のパスは 1 文字の名前か `PLACEHOLDER_USERS` の名前を使う。T0090、[release.md](release.md#公開の前の点検))。pre-commit でも動く | `just local-paths` |
+| 秘密の値の検査 | `scripts/secrets.mjs` (gitleaks。版と sha256 を固定して取得する) と設定 `scripts/gitleaks.toml` (既定の規則と、理由を書いた誤検知の allowlist)。作業ツリー (Git が無視するものを除く) とコミットに API キー・トークン・秘密鍵などが無いか (T0098、[release.md](release.md#自動の検査)) | `just secrets` (既定は履歴のすべて。CI の `rust-checks` は `--since` で push・PR で入るコミットだけ。初回の取得にネットワークが要る) |
 | 参照の検査 | `scripts/check-doc-refs.mjs` (コードのコメントから `docs/`・`spec/` の見出しへの参照)・`scripts/check-ffi-bindings.mjs` (C ABI のヘッダと、Unity の宣言・fuzz の入口 `ugoe_ffi::fuzzing` の呼び出しの過不足) | `just refs` |
 | CI のグループの検査 | `scripts/ci-groups.mjs` (すべてのクレートがどれか 1 つのグループに入っているか)・`scripts/check-lock-sync.mjs` (ワークスペースの外の `Cargo.lock` の依存の版がルートとそろうか。[fuzz](#fuzz)) | `just groups` ([CI のジョブ](#ci-のジョブ)) |
-| 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・`--locked` で lock が古いときの文・npm のライセンスの例外・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
+| 補助スクリプトの単体テスト | `scripts/*.test.mjs` のうち、ほかのレシピが流さないもの (mbx の判定・`--locked` で lock が古いときの文・npm のライセンスの例外・秘密の値の検査の道具の取得と範囲・wasm の生成物の古さの判定・worktree の cargo の設定) | `just script-check` |
 | API ドキュメントの検査 | rustdoc の警告 (壊れた intra-doc link、公開の文書から非公開の項目へのリンク、URL の書き方など) をエラーにして `cargo doc --workspace --no-deps`。wasm32 でだけコンパイルするコード (`ugoe-wasm` の `src/web.rs`・`src/web/`) は wasm32 のターゲットで `cargo doc -p ugoe-wasm` | `just doc-check` (CI はグループごとに `just doc-group <グループ>`)。wasm32 の分は `just wasm-check` |
 | UI の監査 | `tests/ui-audit`。3 つのアプリのビルドした画面を偽のホストとヘッドレスの Chrome で開き、テーマ・言語・幅・devicePixelRatio を変えて撮り、コントラスト・はみ出し・文字と押せる部品の重なり・押せる大きさ・名前・Tab の順を数える | `just ui-audit` (Chrome が要る。重いので `just ci` に入れない。道具の単体テストは `just ui-audit-check`。[下](#ui-の監査)) |
 | 実機の e2e テスト | `tests/e2e`。本物の Tauri のアプリ (エディタ・ビューア・スタジオ。WebKitGTK) を起動し、WebDriver で主な流れを操作する | `just e2e` (Linux だけ。tauri-driver・WebKitWebDriver・Xvfb が要る。[下](#実機の-e2e-テスト)) |
@@ -88,7 +89,7 @@ GitHub Actions の時間は、非公開のリポジトリでは月 3000 分の�
 
 | ジョブ (`ci.yml`) | 内容 |
 | --- | --- |
-| `rust-checks` | ワークスペースをビルドしない検査と文書の検査 (変わったパスによらず常に動く): fmt・`just layers`・`just case-check`・`just local-paths`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check`・`just ui-audit-check`・公開仕様の検査 (`just spec` と `tools/spec-check`) |
+| `rust-checks` | ワークスペースをビルドしない検査と文書の検査 (変わったパスによらず常に動く): fmt・`just layers`・`just case-check`・`just local-paths`・`just secrets --since <push の前か PR の base>`・`just refs`・`just groups`・`just licenses` (cargo-about を `just cargo-about` で入れ、実行ファイルを版ごとに覚える)・`just publish-check`・`just tasks`・`just app-build-check`・`just script-check`・`just ui-audit-check`・公開仕様の検査 (`just spec` と `tools/spec-check`) |
 | `rust-groups` | 変わったファイルから、動かすグループの matrix と `web` を動かすかを決める (`node scripts/ci-groups.mjs changed`。[下](#変わったパスでの絞り込み)) |
 | `rust (runtime)` | ランタイム層 (`ugoe-core` から `ugoe` まで) の clippy とテスト、参照レンダラを外した `ugoe` の clippy とテストと wgpu に依存しないことの検査 (`just sdk-no-render-check`。[portability.md](portability.md#ugoe-クレートの-feature))、`std` 無しのビルド (`just nostd-check`。`aarch64-unknown-none` と、64 ビットのアトミック操作の無い `thumbv7em-none-eabihf`。[portability.md](portability.md#ランタイム層が守る制約-移植性のため))。`ugoe-format`・`ugoe-ffi` の `std` の無い形の単体テスト (ホストで `--no-default-features`。下の「std の無い形の単体テスト」) と、`ugoe-ffi` の `std` の無い静的ライブラリを C の見本とリンクし、未解決のシンボルを調べる検査を含む ([crates/ugoe-ffi/README.md](../crates/ugoe-ffi/README.md#std-の無い環境))。fuzz のクレート (`fuzz/`) の stable での検査 (`just fuzz-lint`。[fuzz](#fuzz)) も |
 | `rust (bindings)` | `ugoe-ffi`・`ugoe-wasm`・`ugoe-conformance` の clippy とテスト、wasm32 の clippy と rustdoc (`just wasm-check`)、C ABI (`just ffi-check`) |

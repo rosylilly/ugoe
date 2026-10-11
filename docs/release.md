@@ -42,10 +42,19 @@
   CI の `rust-checks`・pre-commit (lefthook) で動きます。文書やタスクのメモでは、リポジトリの中の相対パスか `<repo>`・`<scratchpad>`・
   `$HOME`・`%USERPROFILE%` と書きます。テストや例のパスは 1 文字の名前 (`/home/u`・`C:\Users\a`) か、スクリプトの `PLACEHOLDER_USERS`
   の名前 (`me`・`you` など) を使います。
-- **秘密の値:** 自動の検査はありません (CI や `just` で回すかは T0098 で決める)。公開の直前に [gitleaks](https://github.com/gitleaks/gitleaks) を版を固定して (T0090 では 8.24.3)
-  リポジトリの外に置き、作業ツリーと履歴の両方を見ます:
-  `gitleaks dir . --no-banner` と `gitleaks git . --log-opts="--all" --no-banner`。T0090 では、WebSocket の RFC 6455 の例の
-  `Sec-WebSocket-Key` (`apps/studio/src-tauri/src/api/`) だけが見つかりました (秘密の値ではありません)。
+- **秘密の値:** `just secrets` (`scripts/secrets.mjs`) が [gitleaks](https://github.com/gitleaks/gitleaks) で、作業ツリー (Git が
+  無視するものを除く) とコミットを調べ、見つけたら落ちます (見つけた値はログに出さない)。gitleaks は版と sha256 をスクリプトに固定し、
+  初回に GitHub の Release から取得してメインの作業ツリーの `target/tools/` に置きます (リポジトリには置かない)。手元の `just secrets` と
+  `just ci` は履歴のすべて (`--log-opts=--all`) を、CI の `rust-checks` は push・PR ごとに作業ツリーと、その push・PR で入るコミット
+  (`just secrets --since <push の前のコミットか PR の base>`) を見ます (利用者の決定 2026-10-11。T0098)。
+  - **CI で履歴のすべてを見ない理由:** CI の checkout は浅い (深さ 1) ので、履歴のすべてを見るには毎回すべてを取り直すことになり、
+    それは履歴とともに伸びます。入る前のコミットは前の push・PR の検査を通っているので、差分のコミットと作業ツリーで足ります。
+    範囲のコミットがそろうまでは `git fetch --deepen` で深くし、push の前のコミットが取れない (新しいブランチ・履歴の書き換え) ときは
+    履歴のすべてを見ます。gitleaks の版や設定を変えたときは、手元の `just secrets` で履歴のすべてを確かめます。
+  - **誤検知:** 秘密の値ではないと確かめたものは、`scripts/gitleaks.toml` の allowlist に理由と出典を書いて外します (ファイルや規則ごとでなく、
+    その値だけに絞る)。今あるのは WebSocket の RFC 6455 の例の `Sec-WebSocket-Key` (`apps/studio/src-tauri/src/api/`) だけです。
+  - **版を上げる:** `scripts/secrets.mjs` の `GITLEAKS_VERSION` と、Release の `gitleaks_<版>_checksums.txt` から写した
+    `GITLEAKS_ASSETS` の sha256 を変え、`just secrets` で履歴のすべてが通るのを確かめます。
 - **外部 SDK・ライセンス:** `just licenses` が依存のライセンスを見ます。画像・モデル・PSD の出所は `assets/fixtures/README.md`・
   `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。アプリのアイコンの出所はまだ書いていません (T0097)。
 

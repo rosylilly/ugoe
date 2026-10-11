@@ -67,6 +67,12 @@ jobs:
       # 機械に固有のパス (ホームのディレクトリ・エージェントの一時ディレクトリ。docs/release.md#公開の前の点検)
       - name: Local paths
         run: just local-paths
+      # 秘密の値 (gitleaks。docs/release.md#自動の検査)。作業ツリーと、push・PR で入るコミットだけを見る (履歴のすべては見ない。
+      # PR はマージのコミットの 1 つ目の親 (base) から、push は push の前のコミットから。浅い clone は scripts/secrets.mjs が深くする)
+      - name: Secrets
+        env:
+          SINCE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+        run: just secrets --since "$SINCE"
       # コードから文書の見出しへの参照と、C ABI のヘッダとバインディングの宣言の突き合わせ
       - name: Refs
         run: just refs
