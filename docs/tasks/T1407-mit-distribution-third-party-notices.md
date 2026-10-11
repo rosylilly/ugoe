@@ -1,11 +1,11 @@
 ---
 id: T1407
 title: "公開: MIT の配布物 (npm の @ugoe/runtime・Unity・Godot・C ABI) に、入っている Rust のクレートのライセンスの表記を入れる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [bindings/web, bindings/unity, bindings/godot, scripts, justfile, .github/workflows, docs]
 depends_on: [T0005]
-assignee:
+assignee: claude-worker-T1407
 ---
 
 # T1407: MIT の配布物の第三者ライセンスの表記
