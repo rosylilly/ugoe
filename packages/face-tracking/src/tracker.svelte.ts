@@ -185,7 +185,7 @@ export class FaceTracker {
   /** キャリブレーション済み (中立の顔を差し引いている)。 */
   calibrated = $state(false);
   /**
-   * 利用者の調整 (首振りの感度と遊び・瞼と口の開きの境目。tuning.ts)。書き換えるときは `setTuning` を通す
+   * 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。tuning.ts)。書き換えるときは `setTuning` を通す
    * (範囲に収める)。丸ごと置き換える (中を書き換えない)。
    */
   tuning = $state.raw<TrackingTuning>(DEFAULT_TUNING);

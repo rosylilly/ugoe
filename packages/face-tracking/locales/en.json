@@ -11,12 +11,18 @@
     "replayPosition": "{{time}} / {{duration}} s"
   },
   "camera": {
-    "select": { "tooltip": "Camera" },
+    "select": {
+      "tooltip": "Camera"
+    },
     "default": "Camera (default)",
     "numbered": "Camera {{index}}",
     "fallbackName": "Camera",
-    "start": { "label": "Start" },
-    "stop": { "label": "Stop" }
+    "start": {
+      "label": "Start"
+    },
+    "stop": {
+      "label": "Stop"
+    }
   },
   "file": {
     "label": "File…",
@@ -68,6 +74,12 @@
     "title": "Tuning (sensitivity and thresholds)",
     "uncalibrated": "Not calibrated: the values still include your neutral face. Calibrate first to tune the movement from neutral",
     "calibrated": "Values after calibration and before smoothing (before tuning → after tuning)",
+    "groups": {
+      "head": "Head",
+      "eyes": "Eyes",
+      "mouth": "Mouth",
+      "brow": "Eyebrows"
+    },
     "yaw": "Head turn (yaw)",
     "pitch": "Head nod (pitch)",
     "roll": "Head tilt (roll)",
@@ -81,6 +93,8 @@
     },
     "eyeBlink": {
       "label": "Eyelids (both eyes)",
+      "leftLabel": "Eyelid (left eye)",
+      "rightLabel": "Eyelid (right eye)",
       "low": {
         "label": "Fully open at",
         "tooltip": "Eye closure at or below this counts as fully open"
@@ -88,6 +102,21 @@
       "high": {
         "label": "Fully closed at",
         "tooltip": "Eye closure at or above this counts as fully closed. Lower it if your eyes never fully close in tracking"
+      }
+    },
+    "eyeBlinkSeparate": {
+      "label": "Separate left and right eyelids",
+      "tooltip": "Set the thresholds of the left and right eyes separately (when only one eye does not close fully). Turning it on copies the current thresholds to both eyes"
+    },
+    "eyeLook": {
+      "label": "Gaze",
+      "low": {
+        "label": "Still below",
+        "tooltip": "Gaze at or below this does not move the eyes in that direction (stops small jitter)"
+      },
+      "high": {
+        "label": "Fully looking at",
+        "tooltip": "Gaze at or above this counts as looking all the way in that direction. Lower it if the eyeballs never reach the edge"
       }
     },
     "jawOpen": {
@@ -101,14 +130,66 @@
         "tooltip": "Mouth opening at or above this counts as fully open. Lower it to open the mouth wide with a small movement"
       }
     },
+    "mouthClose": {
+      "label": "Lip closure",
+      "low": {
+        "label": "Not closed below",
+        "tooltip": "Lip closure at or below this counts as not closed"
+      },
+      "high": {
+        "label": "Fully closed at",
+        "tooltip": "Lip closure at or above this counts as fully closed (subtracts the most from the mouth opening). Lower it if the mouth stays slightly open when you close it"
+      }
+    },
+    "mouthForm": {
+      "label": "Mouth shape (smile and frown)",
+      "low": {
+        "label": "Still below",
+        "tooltip": "Smile and frown at or below this do not move the mouth"
+      },
+      "high": {
+        "label": "Fully moved at",
+        "tooltip": "Smile and frown at or above this count as the mouth corners fully raised (or lowered). Lower it if your smile barely raises the corners"
+      }
+    },
+    "brow": {
+      "label": "Eyebrows (raise and lower)",
+      "low": {
+        "label": "Still below",
+        "tooltip": "Eyebrow movement at or below this does not move the eyebrows"
+      },
+      "high": {
+        "label": "Fully moved at",
+        "tooltip": "Eyebrow movement at or above this counts as fully moved. Lower it if your eyebrows move only a little"
+      }
+    },
     "left": "Left",
     "right": "Right",
+    "shapes": {
+      "eyeLookInLeft": "Left in",
+      "eyeLookOutLeft": "Left out",
+      "eyeLookUpLeft": "Left up",
+      "eyeLookDownLeft": "Left down",
+      "eyeLookInRight": "Right in",
+      "eyeLookOutRight": "Right out",
+      "eyeLookUpRight": "Right up",
+      "eyeLookDownRight": "Right down",
+      "mouthSmileLeft": "Smile left",
+      "mouthSmileRight": "Smile right",
+      "mouthFrownLeft": "Frown left",
+      "mouthFrownRight": "Frown right",
+      "browInnerUp": "Inner up",
+      "browOuterUpLeft": "Outer up left",
+      "browOuterUpRight": "Outer up right",
+      "browDownLeft": "Down left",
+      "browDownRight": "Down right"
+    },
     "meter": "{{before}} → {{after}}",
     "degrees": "°",
     "times": "×",
     "reset": {
       "label": "Reset to defaults",
-      "tooltip": "Reset the sensitivity, dead zones and thresholds"
+      "tooltip": "Reset all sensitivities, dead zones and thresholds (and join the left and right eyelids)"
     }
   },
   "recording": {
@@ -116,8 +197,12 @@
       "label": "Record",
       "tooltip": "Record the detected values (save them as JSON to replay without a camera)"
     },
-    "stop": { "label": "Stop recording ({{frames}})" },
-    "save": { "label": "Save ({{frames}})" },
+    "stop": {
+      "label": "Stop recording ({{frames}})"
+    },
+    "save": {
+      "label": "Save ({{frames}})"
+    },
     "defaultName": "Recording"
   },
   "values": {

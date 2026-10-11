@@ -103,6 +103,9 @@ describe("InputPanel tracking tuning", () => {
     expect(trigger).toBeDefined();
     trigger?.click();
     flushSync();
+    // 小見出しは閉じていて、中身を作らない。
+    expect(target.querySelectorAll(".meter-value")).toHaveLength(0);
+    openSection(target, "Head");
     // キャリブレーションの前は、値が中立を差し引いていないことを知らせる。動いていないのでメーターは「—」。
     expect(target.textContent).toContain("Not calibrated");
     expect(target.querySelectorAll(".meter-value")[0]?.textContent).toBe("—");
@@ -120,4 +123,38 @@ describe("InputPanel tracking tuning", () => {
     await notify();
     expect(props.settings.tuning).toEqual(DEFAULT_INPUT.tuning);
   });
+
+  it("separates the left and right eyelids and saves both", async () => {
+    setLocale("en");
+    const { target, tracker, props, notify } = setup(DEFAULT_INPUT);
+    tracker.setTuning({ ...DEFAULT_INPUT.tuning, eyeBlink: { low: 0.1, high: 0.6 } });
+    flushSync();
+    await notify();
+    openSection(target, "Tuning");
+    openSection(target, "Eyes");
+    expect(target.textContent).toContain("Eyelids (both eyes)");
+    const toggle = [...target.querySelectorAll<HTMLElement>("[role=switch]")].find((b) =>
+      b.closest(".ugoe-toggle")?.textContent?.includes("Separate left and right eyelids"),
+    );
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    toggle?.click();
+    flushSync();
+    await notify();
+    // 入れると右目に両目の境目を写す。
+    expect(props.settings.tuning.eyeBlinkSeparate).toBe(true);
+    expect(props.settings.tuning.eyeBlinkRight).toEqual({ low: 0.1, high: 0.6 });
+    expect(target.textContent).toContain("Eyelid (left eye)");
+    expect(target.textContent).toContain("Eyelid (right eye)");
+    expect(target.textContent).not.toContain("Eyelids (both eyes)");
+  });
 });
+
+/** 見出しの名前で折りたたみを開く。 */
+function openSection(target: HTMLElement, title: string): void {
+  const trigger = [...target.querySelectorAll<HTMLElement>(".ugoe-section__trigger")].find(
+    (b) => b.textContent?.trim().startsWith(title) && b.getAttribute("aria-expanded") !== "true",
+  );
+  expect(trigger).toBeDefined();
+  trigger?.click();
+  flushSync();
+}

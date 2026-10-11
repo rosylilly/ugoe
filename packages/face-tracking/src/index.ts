@@ -42,9 +42,12 @@ export {
   moveRangeBound,
   type RangeTuning,
   sanitizeTuning,
+  setEyeBlinkSeparate,
   type TrackingTuning,
   TUNING_AXES,
   TUNING_RANGES,
   type TuningAxis,
   type TuningRange,
+  type TuningRangeKey,
+  tuningRanges,
 } from "./tuning";

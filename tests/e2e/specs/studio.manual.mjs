@@ -219,9 +219,15 @@ describe("studio manual images", () => {
         yaw: { gain: 1.5, deadZone: 3 },
         roll: { gain: 1, deadZone: 2 },
         eyeBlink: { low: 0.1, high: 0.7 },
+        eyeLook: { low: 0, high: 0.6 },
         jawOpen: { low: 0.1, high: 0.75 },
       });
     });
+    // 「首」と「目」の小見出しを開く (T0879。「口」「眉」は閉じたまま。全部開くと縦に長すぎる)
+    await resizeTo(s, 1280, 1600);
+    await panel(s, "調整 (感度と境目)");
+    await panel(s, "首");
+    await panel(s, "目");
     const section = await panel(s, "調整 (感度と境目)");
     await new Promise((r) => setTimeout(r, 300));
     // 下はすぐ後に「記録」の行が続くので、余白を狭く
@@ -229,6 +235,7 @@ describe("studio manual images", () => {
     // 戻して閉じる (この後の画像に写さない)
     await s.clickText(".studio__panels button", "既定に戻す");
     await (await section.find(".ugoe-section__trigger")).click();
+    await resizeTo(s, 1280, 1000);
   });
 
   step(app, "studio-output-panel", async () => {

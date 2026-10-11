@@ -7,11 +7,15 @@ import { loadTrackingTuning, saveTrackingTuning } from "./trackingTuning";
 const KEY = STORAGE_KEYS["tracking.tuning"];
 
 const TUNED: TrackingTuning = {
+  ...DEFAULT_TUNING,
   yaw: { gain: 1.5, deadZone: 2 },
   pitch: { gain: 0.8, deadZone: 0 },
   roll: { gain: 1, deadZone: 1 },
   eyeBlink: { low: 0.2, high: 0.7 },
+  eyeBlinkSeparate: true,
+  eyeBlinkRight: { low: 0.1, high: 0.6 },
   jawOpen: { low: 0.1, high: 0.9 },
+  brow: { low: 0, high: 0.4 },
 };
 
 describe("remembered tracking tuning", () => {
@@ -55,10 +59,9 @@ describe("remembered tracking tuning", () => {
       }),
     );
     expect(loadTrackingTuning(storage)).toEqual({
+      ...DEFAULT_TUNING,
       yaw: { gain: 4, deadZone: 0 },
       pitch: { gain: 1, deadZone: 3 },
-      roll: { gain: 1, deadZone: 0 },
-      eyeBlink: { low: 0, high: 1 },
       jawOpen: { low: 0.3, high: 0.6 },
     });
   });

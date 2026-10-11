@@ -1,7 +1,7 @@
 ---
 id: T0879
 title: "スタジオ: トラッキングの調整を眉・視線・口の形・口の閉じに広げるか、瞼の左右を別々にするか決める (判断が要る)"
-status: in-progress
+status: done
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
@@ -45,15 +45,15 @@ T0877 で、キャリブレーションの後・平滑化の前に当てる利�
 
 ## 受け入れ条件
 
-- [ ] 1 と 2 の判断をメモに書いた
-- [ ] (1-A) 足した項目の調整を `applyTuning` と `sanitizeTuning` に入れ、単体テスト (既定値で出力が変わらない・境目の引き伸ばしとクランプ・NaN と範囲の外) で確かめた
-- [ ] (2-B) 左右を別々にしたときと一緒のときの両方を単体テストで確かめた (`swapSides` との順序を含む)
-- [ ] スタジオのプロファイルの `input.tuning` に読み書きでき、無い項目・壊れた値は既定値に戻る (Rust の `input.rs` とフロントエンドのテスト。Rust と TS で並びが違っても送り合わない)
-- [ ] 画面 (`TuningSection.svelte`) に項目とメーターを足した (日本語・英語)。部品は packages/ui のもの
-- [ ] docs/studio.md#入力とホットキーの項目-t0803 の表と例、docs/manual/studio.md#調整-感度と境目、packages/face-tracking の README、docs/manual-check.md の S38 を直した
-- [ ] `just ui-audit --only studio` (と、パネルが出るビューアとエディタの分) が通る
-- [ ] `just e2e --only studio` が通る
-- [ ] `just ci` が通る
+- [x] 1 と 2 の判断をメモに書いた
+- [x] (1-A) 足した項目の調整を `applyTuning` と `sanitizeTuning` に入れ、単体テスト (既定値で出力が変わらない・境目の引き伸ばしとクランプ・NaN と範囲の外) で確かめた
+- [x] (2-B) 左右を別々にしたときと一緒のときの両方を単体テストで確かめた (`swapSides` との順序を含む)
+- [x] スタジオのプロファイルの `input.tuning` に読み書きでき、無い項目・壊れた値は既定値に戻る (Rust の `input.rs` とフロントエンドのテスト。Rust と TS で並びが違っても送り合わない)
+- [x] 画面 (`TuningSection.svelte`) に項目とメーターを足した (日本語・英語)。部品は packages/ui のもの
+- [x] docs/studio.md#入力とホットキーの項目-t0803 の表と例、docs/manual/studio.md#調整-感度と境目、packages/face-tracking の README、docs/manual-check.md の S38 を直した
+- [x] `just ui-audit --only studio` (と、パネルが出るビューアとエディタの分) が通る
+- [x] `just e2e --only studio` が通る
+- [x] `just ci` が通る
 
 ## 参考
 
@@ -69,3 +69,32 @@ T0877 で、キャリブレーションの後・平滑化の前に当てる利�
 - リリース前なので、プロファイルの `input.tuning` の形を変えても移行の書き方は要らない (利用者の方針)。
 
 - 判断 (利用者、2026-10-11): 推奨の案に決まった。
+- 実装 (claude-worker-T0879):
+  - 判断 1 は案 A、判断 2 は案 B (上の利用者の判断)。
+  - `packages/face-tracking/src/tuning.ts`: `TUNING_RANGES` に `eyeLook` (`eyeLook*` の 8 つ)・`mouthClose`・`mouthForm` (`mouthSmile*`・`mouthFrown*`)・
+    `brow` (`browInnerUp`・`browOuterUp*`・`browDown*`) を足し、`TrackingTuning` に `eyeBlinkSeparate` (真偽) と `eyeBlinkRight` を足した。
+    当てる組は `tuningRanges` (左右を別々にしているときだけ `eyeBlink` を左目、`eyeBlinkRight` を右目に)。`setEyeBlinkSeparate` は入れるときに
+    両目の境目を右目に写す (入れただけでは出力が変わらない)。切るときは右目の境目を残す (使わない)。`isDefaultTuning` は「既定に戻す」で
+    変わるものが無いか (左右を別々にしていれば既定でない)、`applyTuning` の素通しは「当てても変わらないか」で判定するので、既定値なら
+    フレームをそのまま返す (ビット単位で同じ)。
+  - 型と既定値を `@ugoe/face-tracking/tuning` (package.json の exports) からも読めるようにし、スタジオの `inputs.ts` の既定値の写しを
+    `DEFAULT_TUNING` の参照に替えた (ui-audit の偽のホストが Node で読めることを確かめた)。ビューア (T0738) は `@ugoe/face-tracking` の
+    `sanitizeTuning`・`isDefaultTuning` を使っているので、そのまま追従する。
+  - 画面: `TuningSection.svelte` を「首」「目」「口」「眉」の小見出し (@ugoe/ui の Section。既定で閉じ、開いた見出しだけ中身を作る) に分け、
+    目に「瞼の左右を別々にする」(Toggle) を足した。メーターは眉・口の形・視線のブレンドシェイプごと。日本語・英語。
+  - スタジオ: `input.rs` の `TrackingTuning` に同じ項目を足した (無い項目は既定値、NaN・範囲の外・狭い境目は `sanitize` で直す)。
+  - テスト: tuning.test.ts (足した組の引き伸ばしとクランプ・既定値と左右を別々にしても既定ならフレームをそのまま返す・左右を一緒と別々・
+    入れた直後に出力が変わらない・`swapSides` との順序・壊れた値・T0877 の形が読める)、input.rs (読み込みと収め直し・フロントエンドと同じ JSON の形)、
+    trackerSettings (並びを逆にした調整を送り返さない)、InputPanel (小見出しを開く・左右を別々にして保存する)。
+  - ui-audit: スタジオの `-inputs-tuning` で小見出しをすべて開き、`-inputs-tuning-eyelids` (左右を別々にした) を足した。
+- 確かめたこと: `just ui-audit --only studio`・`--only viewer`・`--only editor` はすべて 0 件 (main への追従の前)。`just e2e --only studio` は通った
+  (T0738・T0984 への追従の後に `--update-images` で流した)。`just ci` は main に追従した後に通った。
+- T0984 の後: `tests/e2e/specs/studio.manual.mjs` の調整の画像を「首」「目」の小見出しを開いて撮るようにし、`just e2e --update-images --only studio` で
+  `studio-inputs.png`・`studio-inputs-tuning.png` だけを撮り直した (ほかの画像の差分は戻した。画像に機械に固有のパスが入っていないことを確かめた)。
+- `crates:` の外の変更: apps/viewer/src/lib/trackingTuning.test.ts (T0738 のテストが調整の項目を全部書いていたので、`DEFAULT_TUNING` を広げる形に直した。
+  rebase の後に `just ci` を通すための小さな追従)。docs/manual/preview.md (調整の要約の 1 行。T0738 の文と合わせた)。
+- やらなかったこと:
+  - 実機のカメラで、視線・口の形・眉・口の閉じの境目の合わせ方と、片目だけの瞼の合わせ方を確かめてはいない (単体テストとヘッドレスの画面で確かめた。確認表の S38 に足した)。
+- 起票の候補:
+  - 眉・口の形・視線を向き (上げと下げ・笑みと下がり・上下左右) で分けて境目を持つか (S38 の結果で要望が出たら)。
+  - 頬 (`cheekPuff`)・口の左右 (`mouthLeft`・`mouthRight`)・目の見開き (`eyeWide*`) などにも境目を広げるか (S38 の結果で)。

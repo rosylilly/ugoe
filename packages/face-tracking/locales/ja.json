@@ -11,12 +11,18 @@
     "replayPosition": "{{time}} / {{duration}} 秒"
   },
   "camera": {
-    "select": { "tooltip": "カメラ" },
+    "select": {
+      "tooltip": "カメラ"
+    },
     "default": "カメラ (既定)",
     "numbered": "カメラ {{index}}",
     "fallbackName": "カメラ",
-    "start": { "label": "開始" },
-    "stop": { "label": "停止" }
+    "start": {
+      "label": "開始"
+    },
+    "stop": {
+      "label": "停止"
+    }
   },
   "file": {
     "label": "ファイル…",
@@ -68,6 +74,12 @@
     "title": "調整 (感度と境目)",
     "uncalibrated": "キャリブレーションの前です。値は中立の顔を差し引いていません。先にキャリブレーションすると、中立からの動きで調整できます",
     "calibrated": "キャリブレーションの後・平滑化の前の値 (調整の前 → 調整の後)",
+    "groups": {
+      "head": "首",
+      "eyes": "目",
+      "mouth": "口",
+      "brow": "眉"
+    },
     "yaw": "首の左右 (ヨー)",
     "pitch": "首の上下 (ピッチ)",
     "roll": "首の傾き (ロール)",
@@ -81,6 +93,8 @@
     },
     "eyeBlink": {
       "label": "瞼 (両目)",
+      "leftLabel": "瞼 (左目)",
+      "rightLabel": "瞼 (右目)",
       "low": {
         "label": "開いたと見なす値",
         "tooltip": "目の閉じの値がこれ以下なら、完全に開いたとする"
@@ -88,6 +102,21 @@
       "high": {
         "label": "閉じたと見なす値",
         "tooltip": "目の閉じの値がこれ以上なら、完全に閉じたとする。目を閉じても閉じきらないときは下げる"
+      }
+    },
+    "eyeBlinkSeparate": {
+      "label": "瞼の左右を別々にする",
+      "tooltip": "左目と右目の境目を別々に決める (片目だけ閉じきらないとき)。入れたときは今の境目を両目に写す"
+    },
+    "eyeLook": {
+      "label": "視線",
+      "low": {
+        "label": "動かないと見なす値",
+        "tooltip": "視線の値がこれ以下なら、その向きには動かさない (小さな揺れを止める)"
+      },
+      "high": {
+        "label": "見きったと見なす値",
+        "tooltip": "視線の値がこれ以上なら、その向きを見きったとする。目を動かしても目玉が端まで動かないときは下げる"
       }
     },
     "jawOpen": {
@@ -101,14 +130,66 @@
         "tooltip": "口の開きの値がこれ以上なら、開ききったとする。下げると、少し開けただけで大きく開く"
       }
     },
+    "mouthClose": {
+      "label": "口の閉じ",
+      "low": {
+        "label": "閉じていないと見なす値",
+        "tooltip": "口の閉じの値がこれ以下なら、閉じていないとする"
+      },
+      "high": {
+        "label": "閉じたと見なす値",
+        "tooltip": "口の閉じの値がこれ以上なら、閉じきったとする (口の開きから引く量が最も大きくなる)。口を閉じても口が少し開いたままのときは下げる"
+      }
+    },
+    "mouthForm": {
+      "label": "口の形 (笑み・口角の下がり)",
+      "low": {
+        "label": "動かないと見なす値",
+        "tooltip": "笑み・口角の下がりの値がこれ以下なら、動かさない"
+      },
+      "high": {
+        "label": "動ききったと見なす値",
+        "tooltip": "笑み・口角の下がりの値がこれ以上なら、口角が上がりきった (下がりきった) とする。笑っても口角が上がりにくいときは下げる"
+      }
+    },
+    "brow": {
+      "label": "眉 (上げ・下げ)",
+      "low": {
+        "label": "動かないと見なす値",
+        "tooltip": "眉の上げ・下げの値がこれ以下なら、動かさない"
+      },
+      "high": {
+        "label": "動ききったと見なす値",
+        "tooltip": "眉の上げ・下げの値がこれ以上なら、動ききったとする。眉の動きが小さいときは下げる"
+      }
+    },
     "left": "左",
     "right": "右",
+    "shapes": {
+      "eyeLookInLeft": "左・内",
+      "eyeLookOutLeft": "左・外",
+      "eyeLookUpLeft": "左・上",
+      "eyeLookDownLeft": "左・下",
+      "eyeLookInRight": "右・内",
+      "eyeLookOutRight": "右・外",
+      "eyeLookUpRight": "右・上",
+      "eyeLookDownRight": "右・下",
+      "mouthSmileLeft": "笑み・左",
+      "mouthSmileRight": "笑み・右",
+      "mouthFrownLeft": "下がり・左",
+      "mouthFrownRight": "下がり・右",
+      "browInnerUp": "内の上げ",
+      "browOuterUpLeft": "外の上げ・左",
+      "browOuterUpRight": "外の上げ・右",
+      "browDownLeft": "下げ・左",
+      "browDownRight": "下げ・右"
+    },
     "meter": "{{before}} → {{after}}",
     "degrees": "°",
     "times": "倍",
     "reset": {
       "label": "既定に戻す",
-      "tooltip": "感度・遊び・境目をすべて既定値に戻す"
+      "tooltip": "感度・遊び・境目をすべて既定値に戻す (瞼の左右も一緒にする)"
     }
   },
   "recording": {
@@ -116,8 +197,12 @@
       "label": "記録",
       "tooltip": "検出した値を記録する (JSON に保存して、カメラの無い環境で再生できる)"
     },
-    "stop": { "label": "記録を止める ({{frames}})" },
-    "save": { "label": "保存 ({{frames}})" },
+    "stop": {
+      "label": "記録を止める ({{frames}})"
+    },
+    "save": {
+      "label": "保存 ({{frames}})"
+    },
     "defaultName": "記録"
   },
   "values": {

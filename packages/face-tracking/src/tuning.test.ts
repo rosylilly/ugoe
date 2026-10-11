@@ -8,6 +8,7 @@ import {
   moveRangeBound,
   RANGE_MIN_SPAN,
   sanitizeTuning,
+  setEyeBlinkSeparate,
   type TrackingTuning,
   tuneAngle,
   tuneScore,
@@ -113,11 +114,137 @@ describe("applyTuning", () => {
   });
 });
 
+describe("applyTuning on the added ranges", () => {
+  const face: TrackingFrame = {
+    head: { yaw: 0, pitch: 0, roll: 0 },
+    blendShapes: {
+      eyeBlinkLeft: 0.3,
+      eyeBlinkRight: 0.3,
+      eyeLookInLeft: 0.25,
+      eyeLookOutRight: 0.5,
+      eyeLookUpLeft: 0.1,
+      eyeLookDownRight: 0.6,
+      jawOpen: 0.2,
+      mouthClose: 0.04,
+      mouthSmileLeft: 0.3,
+      mouthFrownRight: 0.05,
+      browInnerUp: 0.2,
+      browOuterUpLeft: 0.4,
+      browDownRight: 0.01,
+      cheekPuff: 0.5,
+    },
+  };
+
+  it("returns the same frame with the defaults, also when the eyelids are separate", () => {
+    expect(applyTuning(face, DEFAULT_TUNING)).toBe(face);
+    const separate = setEyeBlinkSeparate(DEFAULT_TUNING, true);
+    expect(isDefaultTuning(separate)).toBe(false);
+    expect(applyTuning(face, separate)).toBe(face);
+    // 切のときの右目の境目は使わない。
+    expect(applyTuning(face, tuning({ eyeBlinkRight: { low: 0.1, high: 0.2 } }))).toBe(face);
+  });
+
+  it("stretches each group with one pair of bounds and clamps outside", () => {
+    const out = applyTuning(
+      face,
+      tuning({
+        eyeLook: { low: 0, high: 0.5 },
+        mouthClose: { low: 0, high: 0.08 },
+        mouthForm: { low: 0.1, high: 0.5 },
+        brow: { low: 0.05, high: 0.25 },
+      }),
+    );
+    const b = out.blendShapes;
+    // 視線: 0.5 で見きった。
+    expect(b.eyeLookInLeft).toBeCloseTo(0.5);
+    expect(b.eyeLookOutRight).toBe(1);
+    expect(b.eyeLookUpLeft).toBeCloseTo(0.2);
+    expect(b.eyeLookDownRight).toBe(1);
+    // 口の閉じ: 0.08 で閉じた。
+    expect(b.mouthClose).toBeCloseTo(0.5);
+    // 口の形: 笑みと口角の下がりを一緒に。下の境目より下は 0。
+    expect(b.mouthSmileLeft).toBeCloseTo(0.5);
+    expect(b.mouthFrownRight).toBe(0);
+    // 眉: 内・外の上げと下げを一緒に。
+    expect(b.browInnerUp).toBeCloseTo(0.75);
+    expect(b.browOuterUpLeft).toBe(1);
+    expect(b.browDownRight).toBe(0);
+    // ほかは変えない。
+    expect(b.eyeBlinkLeft).toBe(0.3);
+    expect(b.jawOpen).toBe(0.2);
+    expect(b.cheekPuff).toBe(0.5);
+  });
+
+  it("tunes the eyelids together or separately", () => {
+    const together = applyTuning(face, tuning({ eyeBlink: { low: 0, high: 0.6 } }));
+    expect(together.blendShapes.eyeBlinkLeft).toBeCloseTo(0.5);
+    expect(together.blendShapes.eyeBlinkRight).toBeCloseTo(0.5);
+    // 入れた直後は右目に両目の境目を写すので、出力は変わらない。
+    const on = setEyeBlinkSeparate(tuning({ eyeBlink: { low: 0, high: 0.6 } }), true);
+    expect(on.eyeBlinkRight).toEqual({ low: 0, high: 0.6 });
+    expect(applyTuning(face, on).blendShapes).toEqual(together.blendShapes);
+    // 右目だけ変える。
+    const separate = { ...on, eyeBlinkRight: { low: 0.2, high: 0.4 } };
+    const out = applyTuning(face, separate);
+    expect(out.blendShapes.eyeBlinkLeft).toBeCloseTo(0.5);
+    expect(out.blendShapes.eyeBlinkRight).toBeCloseTo(0.5);
+    const out2 = applyTuning(face, { ...separate, eyeBlink: { low: 0.3, high: 1 } });
+    expect(out2.blendShapes.eyeBlinkLeft).toBe(0);
+    expect(out2.blendShapes.eyeBlinkRight).toBeCloseTo(0.5);
+    // 切ると右目の境目は残るが使わない。
+    const off = setEyeBlinkSeparate(separate, false);
+    expect(off.eyeBlinkRight).toEqual({ low: 0.2, high: 0.4 });
+    expect(applyTuning(face, off).blendShapes).toEqual(together.blendShapes);
+    expect(setEyeBlinkSeparate(off, false)).toBe(off);
+  });
+
+  it("applies the separate eyelids to the sides the user sees after swapping sides", () => {
+    // 検出の左目が閉じ、右目が開いている。入れ替えると利用者から見た右目が閉じている。
+    const raw = {
+      head: { yaw: 0, pitch: 0, roll: 0 },
+      blendShapes: { eyeBlinkLeft: 0.5, eyeBlinkRight: 0.1 },
+    };
+    const swapped = applyCalibration(unmirrorFrame(raw), null);
+    expect(swapped.blendShapes.eyeBlinkRight).toBe(0.5);
+    const out = applyTuning(swapped, {
+      ...setEyeBlinkSeparate(DEFAULT_TUNING, true),
+      // 左目 (利用者から見た左) だけ 0.4 で閉じる。
+      eyeBlink: { low: 0, high: 0.4 },
+      eyeBlinkRight: { low: 0, high: 1 },
+    });
+    expect(out.blendShapes.eyeBlinkLeft).toBeCloseTo(0.25);
+    expect(out.blendShapes.eyeBlinkRight).toBe(0.5);
+    // 入れ替えずに同じ調整を当てると、検出の左目 (0.5) に左の境目が当たる。
+    const unswapped = applyTuning(raw, {
+      ...setEyeBlinkSeparate(DEFAULT_TUNING, true),
+      eyeBlink: { low: 0.4, high: 0.6 },
+      eyeBlinkRight: { low: 0, high: 1 },
+    });
+    expect(unswapped.blendShapes.eyeBlinkLeft).toBeCloseTo(0.5);
+    expect(unswapped.blendShapes.eyeBlinkRight).toBe(0.1);
+  });
+});
+
 describe("sanitizeTuning", () => {
   it("fills missing items and drops unknown ones", () => {
     expect(sanitizeTuning(null)).toEqual(DEFAULT_TUNING);
-    const t = sanitizeTuning({ yaw: { gain: 2 }, brow: { low: 0.1, high: 0.2 } });
+    const t = sanitizeTuning({ yaw: { gain: 2 }, cheekPuff: { low: 0.1, high: 0.2 } });
     expect(t).toEqual({ ...DEFAULT_TUNING, yaw: { gain: 2, deadZone: 0 } });
+    expect(Object.keys(t)).toEqual(Object.keys(DEFAULT_TUNING));
+    // T0877 の形 (眉・視線・口の形・口の閉じ・瞼の左右が無い) も読める。
+    const old = sanitizeTuning({
+      yaw: { gain: 1.5, deadZone: 2 },
+      pitch: { gain: 1, deadZone: 0 },
+      roll: { gain: 1, deadZone: 0 },
+      eyeBlink: { low: 0.1, high: 0.7 },
+      jawOpen: { low: 0.05, high: 0.8 },
+    });
+    expect(old).toEqual({
+      ...DEFAULT_TUNING,
+      yaw: { gain: 1.5, deadZone: 2 },
+      eyeBlink: { low: 0.1, high: 0.7 },
+      jawOpen: { low: 0.05, high: 0.8 },
+    });
   });
 
   it("keeps values in range", () => {
@@ -138,6 +265,24 @@ describe("sanitizeTuning", () => {
       low: 0,
       high: 1,
     });
+  });
+
+  it("keeps the added ranges and the eyelid switch in range", () => {
+    const t = sanitizeTuning({
+      eyeBlinkSeparate: "yes",
+      eyeBlinkRight: { low: 0.2, high: Number.POSITIVE_INFINITY },
+      eyeLook: { low: Number.NaN, high: 0.5 },
+      mouthClose: { low: 0, high: 3 },
+      mouthForm: { low: 0.9, high: 0.1 },
+      brow: "wide",
+    });
+    expect(t.eyeBlinkSeparate).toBe(false);
+    expect(t.eyeBlinkRight).toEqual({ low: 0.2, high: 1 });
+    expect(t.eyeLook).toEqual({ low: 0, high: 0.5 });
+    expect(t.mouthClose).toEqual({ low: 0, high: 1 });
+    expect(t.mouthForm).toEqual({ low: 0, high: 1 });
+    expect(t.brow).toEqual({ low: 0, high: 1 });
+    expect(sanitizeTuning({ eyeBlinkSeparate: true }).eyeBlinkSeparate).toBe(true);
   });
 });
 

@@ -76,17 +76,17 @@ describe("rememberTrackerSettings", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.tuning.yaw).toEqual({ gain: 2, deadZone: 3 });
     // バックエンドから、項目の並びの違う同じ調整が届いても送り返さない。
-    const { yaw, pitch, roll, eyeBlink, jawOpen } = sent[0]?.tuning ?? DEFAULT_INPUT.tuning;
-    state.settings = {
-      ...state.settings,
-      tuning: {
-        jawOpen: { high: jawOpen.high, low: jawOpen.low },
-        eyeBlink,
-        roll,
-        pitch,
-        yaw: { deadZone: yaw.deadZone, gain: yaw.gain },
-      },
-    };
+    const tuning = sent[0]?.tuning ?? DEFAULT_INPUT.tuning;
+    const reversed = Object.fromEntries(
+      Object.entries(tuning)
+        .reverse()
+        .map(([key, value]) => [
+          key,
+          typeof value === "object" ? Object.fromEntries(Object.entries(value).reverse()) : value,
+        ]),
+    ) as typeof tuning;
+    expect(Object.keys(reversed)).not.toEqual(Object.keys(tuning));
+    state.settings = { ...state.settings, tuning: reversed };
     tracker.tuning = { ...tracker.tuning };
     flushSync();
     expect(sent).toHaveLength(1);

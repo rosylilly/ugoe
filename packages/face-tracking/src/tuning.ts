@@ -1,8 +1,10 @@
-// 利用者の調整 (首振りの感度と遊び・瞼と口の開きの境目。T0877)。キャリブレーションと同じく
+// 利用者の調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879)。キャリブレーションと同じく
 // docs/spec/avatar-profile.md#実装の範囲 でアプリの責務とされたもの。キャリブレーションの後・平滑化の前に当てる。
 //
 // 調整は配信者の顔・カメラ・部屋に合わせるもので、モデルの `avatar.tracking` の係数 (モデルを作る人が決める) とは別。
 // 既定値 (`DEFAULT_TUNING`) のままなら、フレームをそのまま返す (出力はビット単位で変わらない)。
+// 型・既定値・収め直し (`sanitizeTuning`) はここに置き、調整を覚えるアプリ (スタジオのプロファイル・ビューアの設定) はこれを使う。
+// このファイルは型のほかに何も import しない (ui-audit の偽のホストが Node で `@ugoe/face-tracking/tuning` を読む)。
 import type { HeadPose, TrackingFrame } from "./frame";
 
 /** 頭の回転の 1 つの軸の調整。 */
@@ -24,24 +26,54 @@ export const TUNING_AXES = ["yaw", "pitch", "roll"] as const satisfies readonly 
 export type TuningAxis = (typeof TUNING_AXES)[number];
 
 /**
- * 境目を調整できるブレンドシェイプのまとまりと、当てる名前。左右は 1 つの組で一緒に動かす。
- * ほかの入力 (眉・視線・口の形など) へ広げるときは、ここに名前を足し、`TrackingTuning` と既定値に項目を足す。
+ * 境目を調整できるブレンドシェイプのまとまりと、当てる名前。まとまりの中は 1 つの組で一緒に動かす
+ * (瞼だけは「左右を別々にする」(`eyeBlinkSeparate`) で、`eyeBlink` を左目、`eyeBlinkRight` を右目に当てられる)。
+ * ほかの入力へ広げるときは、ここに名前を足し、`TrackingTuning` と既定値に項目を足す。
+ * 標準のパラメータの式は crates/ugoe-motion/src/tracking.rs。
  */
 export const TUNING_RANGES = {
-  /** 瞼 (目の閉じ。0 が開いた、1 が閉じた)。 */
+  /** 瞼 (目の閉じ。0 が開いた、1 が閉じた。`EyeLOpen`・`EyeROpen` の元)。 */
   eyeBlink: ["eyeBlinkLeft", "eyeBlinkRight"],
+  /** 視線 (上下左右へ見る量。`EyeBallX`・`EyeBallY` の元)。上の境目は「見きった」と見なす値。 */
+  eyeLook: [
+    "eyeLookInLeft",
+    "eyeLookOutLeft",
+    "eyeLookUpLeft",
+    "eyeLookDownLeft",
+    "eyeLookInRight",
+    "eyeLookOutRight",
+    "eyeLookUpRight",
+    "eyeLookDownRight",
+  ],
   /** 口の開き (`MouthOpenY` = `max(0, jawOpen − mouthClose)` の元)。 */
   jawOpen: ["jawOpen"],
+  /** 口の閉じ (`MouthOpenY` で `jawOpen` から引く)。上の境目は「閉じた」と見なす値。 */
+  mouthClose: ["mouthClose"],
+  /** 口の形 (笑みと口角の下がり。`MouthForm` の元)。 */
+  mouthForm: ["mouthSmileLeft", "mouthSmileRight", "mouthFrownLeft", "mouthFrownRight"],
+  /** 眉 (上げと下げ。`BrowLY`・`BrowRY` などの元)。 */
+  brow: ["browInnerUp", "browOuterUpLeft", "browOuterUpRight", "browDownLeft", "browDownRight"],
 } as const satisfies Record<string, readonly string[]>;
 export type TuningRange = keyof typeof TUNING_RANGES;
+/** 境目の組を持つ項目 (`TUNING_RANGES` のまとまりと、左右を別々にしたときの右目の瞼)。 */
+export type TuningRangeKey = TuningRange | "eyeBlinkRight";
 
 /** 利用者の調整 (スタジオのプロファイルの `input.tuning`。apps/studio/src-tauri/src/input.rs の `TrackingTuning`)。 */
 export interface TrackingTuning {
   yaw: AxisTuning;
   pitch: AxisTuning;
   roll: AxisTuning;
+  /** 瞼。`eyeBlinkSeparate` が切なら両目、入なら左目 (利用者から見た左。`swapSides` の後の左右)。 */
   eyeBlink: RangeTuning;
+  /** 瞼の左右を別々にするか。 */
+  eyeBlinkSeparate: boolean;
+  /** 右目の瞼。`eyeBlinkSeparate` が入のときだけ使う。 */
+  eyeBlinkRight: RangeTuning;
+  eyeLook: RangeTuning;
   jawOpen: RangeTuning;
+  mouthClose: RangeTuning;
+  mouthForm: RangeTuning;
+  brow: RangeTuning;
 }
 
 /** 感度の範囲。 */
@@ -61,7 +93,13 @@ export const DEFAULT_TUNING: TrackingTuning = Object.freeze({
   pitch: DEFAULT_AXIS,
   roll: DEFAULT_AXIS,
   eyeBlink: DEFAULT_RANGE,
+  eyeBlinkSeparate: false,
+  eyeBlinkRight: DEFAULT_RANGE,
+  eyeLook: DEFAULT_RANGE,
   jawOpen: DEFAULT_RANGE,
+  mouthClose: DEFAULT_RANGE,
+  mouthForm: DEFAULT_RANGE,
+  brow: DEFAULT_RANGE,
 });
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -100,8 +138,25 @@ export function sanitizeTuning(value: unknown): TrackingTuning {
     pitch: sanitizeAxis(v.pitch),
     roll: sanitizeAxis(v.roll),
     eyeBlink: sanitizeRange(v.eyeBlink),
+    eyeBlinkSeparate: typeof v.eyeBlinkSeparate === "boolean" ? v.eyeBlinkSeparate : false,
+    eyeBlinkRight: sanitizeRange(v.eyeBlinkRight),
+    eyeLook: sanitizeRange(v.eyeLook),
     jawOpen: sanitizeRange(v.jawOpen),
+    mouthClose: sanitizeRange(v.mouthClose),
+    mouthForm: sanitizeRange(v.mouthForm),
+    brow: sanitizeRange(v.brow),
   };
+}
+
+/**
+ * 瞼の左右を別々にするかを切り替えた調整。入れるときは右目に今の (両目の) 境目を写す (切り替えただけでは出力が変わらない)。
+ * 切るときは右目の境目を残す (使わない)。
+ */
+export function setEyeBlinkSeparate(tuning: TrackingTuning, separate: boolean): TrackingTuning {
+  if (separate === tuning.eyeBlinkSeparate) return tuning;
+  return separate
+    ? { ...tuning, eyeBlinkSeparate: true, eyeBlinkRight: { ...tuning.eyeBlink } }
+    : { ...tuning, eyeBlinkSeparate: false };
 }
 
 /**
@@ -129,12 +184,33 @@ function isDefaultRange(r: RangeTuning): boolean {
   return r.low === 0 && r.high === 1;
 }
 
-/** 既定値と同じか (当てても何も変わらないか)。 */
-export function isDefaultTuning(tuning: TrackingTuning): boolean {
+/**
+ * 当てる境目の組と、当てるブレンドシェイプの名前。瞼は、左右を別々にしているときだけ左目と右目に分ける
+ * (切のときの `eyeBlinkRight` は使わない)。
+ */
+export function tuningRanges(tuning: TrackingTuning): [RangeTuning, readonly string[]][] {
+  return (Object.keys(TUNING_RANGES) as TuningRange[]).flatMap(
+    (key): [RangeTuning, readonly string[]][] =>
+      key === "eyeBlink" && tuning.eyeBlinkSeparate
+        ? [
+            [tuning.eyeBlink, ["eyeBlinkLeft"]],
+            [tuning.eyeBlinkRight, ["eyeBlinkRight"]],
+          ]
+        : [[tuning[key], TUNING_RANGES[key]]],
+  );
+}
+
+/** 当てても何も変わらないか (左右を別々にしていても、両方の境目が既定なら変わらない)。 */
+function isIdentityTuning(tuning: TrackingTuning): boolean {
   return (
     TUNING_AXES.every((axis) => isDefaultAxis(tuning[axis])) &&
-    (Object.keys(TUNING_RANGES) as TuningRange[]).every((key) => isDefaultRange(tuning[key]))
+    tuningRanges(tuning).every(([range]) => isDefaultRange(range))
   );
+}
+
+/** 既定値と同じか (「既定に戻す」で変わるものが無いか。瞼の左右を別々にしているなら既定ではない)。 */
+export function isDefaultTuning(tuning: TrackingTuning): boolean {
+  return !tuning.eyeBlinkSeparate && isIdentityTuning(tuning);
 }
 
 /** 角度に遊びと感度を当てる (遊びの中は 0、外は遊びの分を引いて倍率を掛ける。符号は保つ)。 */
@@ -158,12 +234,11 @@ export function tuneScore(value: number, range: RangeTuning): number {
  */
 export function applyTuning(frame: TrackingFrame, tuning: TrackingTuning): TrackingFrame {
   const t = sanitizeTuning(tuning);
-  if (isDefaultTuning(t)) return frame;
+  if (isIdentityTuning(t)) return frame;
   const blendShapes = { ...frame.blendShapes };
-  for (const key of Object.keys(TUNING_RANGES) as TuningRange[]) {
-    const range = t[key];
+  for (const [range, names] of tuningRanges(t)) {
     if (isDefaultRange(range)) continue;
-    for (const name of TUNING_RANGES[key]) {
+    for (const name of names) {
       const v = blendShapes[name];
       if (v !== undefined) blendShapes[name] = tuneScore(v, range);
     }

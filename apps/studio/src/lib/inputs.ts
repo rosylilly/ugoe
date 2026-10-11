@@ -1,5 +1,6 @@
 // 入力・モーション・ホットキーの形 (src-tauri/src/input.rs・hotkeys.rs・animation.rs と同じ。docs/studio.md#入力、T0803)。
-import type { TrackingTuning } from "@ugoe/face-tracking";
+// 調整は @ugoe/face-tracking の tuning.ts だけを読む (ui-audit の偽のホストが Node でこのファイルを読むので、パネルを読まない)。
+import { DEFAULT_TUNING, type TrackingTuning } from "@ugoe/face-tracking/tuning";
 import type { MotionInfo, MotionPriority } from "@ugoe/player";
 
 /** 入力の機器 (input.rs の `Device`)。 */
@@ -16,7 +17,7 @@ export interface InputSettings {
   swapSides: boolean;
   trackBody: boolean;
   stopEyeBlink: boolean;
-  /** トラッキングの調整 (首振りの感度と遊び・瞼と口の開きの境目。input.rs の `TrackingTuning`)。 */
+  /** トラッキングの調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。input.rs の `TrackingTuning`)。 */
   tuning: TrackingTuning;
   microphone: Device | null;
   /** マイクの感度 (0〜1。0.5 で等倍)。 */
@@ -25,23 +26,13 @@ export interface InputSettings {
   noiseGate: number;
 }
 
-/** 調整の既定値 (`@ugoe/face-tracking` の `DEFAULT_TUNING` と同じ。ui-audit の偽のホストが Node で読むので、パネルを読まずに書く)。 */
-const DEFAULT_AXIS = { gain: 1, deadZone: 0 };
-const DEFAULT_RANGE = { low: 0, high: 1 };
-
 export const DEFAULT_INPUT: InputSettings = {
   camera: null,
   smoothing: 0.5,
   swapSides: false,
   trackBody: true,
   stopEyeBlink: true,
-  tuning: {
-    yaw: DEFAULT_AXIS,
-    pitch: DEFAULT_AXIS,
-    roll: DEFAULT_AXIS,
-    eyeBlink: DEFAULT_RANGE,
-    jawOpen: DEFAULT_RANGE,
-  },
+  tuning: DEFAULT_TUNING,
   microphone: null,
   sensitivity: 0.5,
   noiseGate: 0.3,

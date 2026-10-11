@@ -1,7 +1,8 @@
 <script lang="ts">
-// 調整 (首振りの感度と遊び・瞼と口の開きの境目。T0877、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
-// 各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、顔を動かしながら決められるようにする。
-import { Button, Section, Slider } from "@ugoe/ui";
+// 調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879、tuning.ts)。TrackingPanel の中の折りたためるまとまり。
+// 「首」「目」「口」「眉」の小見出しで分け、各項目のスライダーと、今の値 (キャリブレーションの後の、調整の前と後) のメーターを並べ、
+// 顔を動かしながら決められるようにする。閉じている見出しの中身は作らない (メーターが毎フレーム描き直されないように)。
+import { Button, Section, Slider, Toggle } from "@ugoe/ui";
 import { t } from "./i18n";
 import type { FaceTracker } from "./tracker.svelte";
 import {
@@ -12,9 +13,11 @@ import {
   isDefaultTuning,
   moveRangeBound,
   RANGE_MIN_SPAN,
+  setEyeBlinkSeparate,
   TUNING_AXES,
   type TuningAxis,
   type TuningRange,
+  type TuningRangeKey,
 } from "./tuning";
 
 interface Props {
@@ -28,31 +31,68 @@ let { tracker, level }: Props = $props();
 /** 頭のメーターの端 (度)。 */
 const ANGLE_SCALE = 45;
 
-/** 境目のまとまりと、メーターに出すブレンドシェイプ (左右は別のメーター)。 */
-const RANGES: readonly {
-  key: TuningRange;
-  meters: readonly [string, "left" | "right" | null][];
-}[] = [
-  {
-    key: "eyeBlink",
-    meters: [
-      ["eyeBlinkLeft", "left"],
-      ["eyeBlinkRight", "right"],
-    ],
-  },
-  { key: "jawOpen", meters: [["jawOpen", null]] },
-];
+/** メーターに出すブレンドシェイプと、その名前の文言 (`null` は項目の名前を見せずに読ませる)。 */
+type Meters = readonly (readonly [string, (() => string) | null])[];
+
+/** 境目のまとまりと、メーター (左右・向きは別のメーター)。 */
+const METERS: Record<TuningRange, Meters> = {
+  eyeBlink: [
+    ["eyeBlinkLeft", () => t("tuning.left")],
+    ["eyeBlinkRight", () => t("tuning.right")],
+  ],
+  eyeLook: [
+    ["eyeLookInLeft", () => t("tuning.shapes.eyeLookInLeft")],
+    ["eyeLookOutLeft", () => t("tuning.shapes.eyeLookOutLeft")],
+    ["eyeLookUpLeft", () => t("tuning.shapes.eyeLookUpLeft")],
+    ["eyeLookDownLeft", () => t("tuning.shapes.eyeLookDownLeft")],
+    ["eyeLookInRight", () => t("tuning.shapes.eyeLookInRight")],
+    ["eyeLookOutRight", () => t("tuning.shapes.eyeLookOutRight")],
+    ["eyeLookUpRight", () => t("tuning.shapes.eyeLookUpRight")],
+    ["eyeLookDownRight", () => t("tuning.shapes.eyeLookDownRight")],
+  ],
+  jawOpen: [["jawOpen", null]],
+  mouthClose: [["mouthClose", null]],
+  mouthForm: [
+    ["mouthSmileLeft", () => t("tuning.shapes.mouthSmileLeft")],
+    ["mouthSmileRight", () => t("tuning.shapes.mouthSmileRight")],
+    ["mouthFrownLeft", () => t("tuning.shapes.mouthFrownLeft")],
+    ["mouthFrownRight", () => t("tuning.shapes.mouthFrownRight")],
+  ],
+  brow: [
+    ["browInnerUp", () => t("tuning.shapes.browInnerUp")],
+    ["browOuterUpLeft", () => t("tuning.shapes.browOuterUpLeft")],
+    ["browOuterUpRight", () => t("tuning.shapes.browOuterUpRight")],
+    ["browDownLeft", () => t("tuning.shapes.browDownLeft")],
+    ["browDownRight", () => t("tuning.shapes.browDownRight")],
+  ],
+};
+
+/** 小見出しのまとまり (首は軸、ほかは境目)。 */
+const GROUPS = [
+  { key: "head", ranges: [] },
+  { key: "eyes", ranges: ["eyeBlink", "eyeLook"] },
+  { key: "mouth", ranges: ["jawOpen", "mouthClose", "mouthForm"] },
+  { key: "brow", ranges: ["brow"] },
+] as const satisfies readonly { key: string; ranges: readonly TuningRange[] }[];
+type Group = (typeof GROUPS)[number]["key"];
 
 /** 開いているか (閉じている間は中身を作らない。メーターが毎フレーム描き直されないように)。 */
 let open = $state(false);
+let groupOpen = $state<Record<Group, boolean>>({
+  head: false,
+  eyes: false,
+  mouth: false,
+  brow: false,
+});
 let tuning = $derived(tracker.tuning);
 let preview = $derived(tracker.tuningPreview);
+let groupLevel = $derived((level + 1) as 4 | 5 | 6);
 
 function setAxis(axis: TuningAxis, patch: Partial<{ gain: number; deadZone: number }>) {
   tracker.setTuning({ ...tuning, [axis]: { ...tuning[axis], ...patch } });
 }
 
-function setBound(key: TuningRange, bound: "low" | "high", value: number) {
+function setBound(key: TuningRangeKey, bound: "low" | "high", value: number) {
   tracker.setTuning({ ...tuning, [key]: moveRangeBound(tuning[key], bound, value) });
 }
 
@@ -76,87 +116,40 @@ function position(v: number, min: number, max: number): number {
     {tracker.calibrated ? t("tuning.calibrated") : t("tuning.uncalibrated")}
   </p>
 
-  {#each TUNING_AXES as axis (axis)}
-    {@const before = preview?.before.head[axis] ?? null}
-    {@const after = preview?.after.head[axis] ?? null}
-    <div class="item">
-      {@render meter(
-        t(`tuning.${axis}`),
-        before,
-        after,
-        -ANGLE_SCALE,
-        ANGLE_SCALE,
-        [-tuning[axis].deadZone, tuning[axis].deadZone],
-        degrees,
-        "title",
-      )}
-      <Slider
-        label={t("tuning.gain.label")}
-        tooltip={t("tuning.gain.tooltip")}
-        min={GAIN_MIN}
-        max={GAIN_MAX}
-        step={0.05}
-        decimals={2}
-        unit={t("tuning.times")}
-        defaultValue={DEFAULT_TUNING[axis].gain}
-        value={tuning[axis].gain}
-        onchange={(v) => setAxis(axis, { gain: v })}
-      />
-      <Slider
-        label={t("tuning.deadZone.label")}
-        tooltip={t("tuning.deadZone.tooltip")}
-        min={0}
-        max={DEAD_ZONE_MAX}
-        step={0.5}
-        decimals={1}
-        unit={t("tuning.degrees")}
-        defaultValue={DEFAULT_TUNING[axis].deadZone}
-        value={tuning[axis].deadZone}
-        onchange={(v) => setAxis(axis, { deadZone: v })}
-      />
-    </div>
-  {/each}
-
-  {#each RANGES as { key, meters } (key)}
-    {@const range = tuning[key]}
-    <div class="item">
-      <span class="item-title">{t(`tuning.${key}.label`)}</span>
-      {#each meters as [name, side] (name)}
-        {@render meter(
-          side === null ? t(`tuning.${key}.label`) : t(`tuning.${side}`),
-          preview?.before.blendShapes[name] ?? null,
-          preview?.after.blendShapes[name] ?? null,
-          0,
-          1,
-          [range.low, range.high],
-          score,
-          side === null ? "hidden" : "plain",
-        )}
-      {/each}
-      <!-- 下の境目は 1 − 最小の幅まで、上の境目は最小の幅から (間を保つためにもう片方を押す。moveRangeBound) -->
-      <Slider
-        label={t(`tuning.${key}.low.label`)}
-        tooltip={t(`tuning.${key}.low.tooltip`)}
-        min={0}
-        max={1 - RANGE_MIN_SPAN}
-        step={0.01}
-        decimals={2}
-        defaultValue={DEFAULT_TUNING[key].low}
-        value={range.low}
-        onchange={(v) => setBound(key, "low", v)}
-      />
-      <Slider
-        label={t(`tuning.${key}.high.label`)}
-        tooltip={t(`tuning.${key}.high.tooltip`)}
-        min={RANGE_MIN_SPAN}
-        max={1}
-        step={0.01}
-        decimals={2}
-        defaultValue={DEFAULT_TUNING[key].high}
-        value={range.high}
-        onchange={(v) => setBound(key, "high", v)}
-      />
-    </div>
+  {#each GROUPS as group (group.key)}
+    <Section title={t(`tuning.groups.${group.key}`)} level={groupLevel} bind:open={groupOpen[group.key]}>
+      {#if groupOpen[group.key]}
+        {#if group.key === "head"}
+          {#each TUNING_AXES as axis (axis)}
+            {@render axisItem(axis)}
+          {/each}
+        {/if}
+        {#each group.ranges as key (key)}
+          {#if key === "eyeBlink"}
+            <div class="item">
+              <Toggle
+                label={t("tuning.eyeBlinkSeparate.label")}
+                tooltip={t("tuning.eyeBlinkSeparate.tooltip")}
+                checked={tuning.eyeBlinkSeparate}
+                onchange={(v) => tracker.setTuning(setEyeBlinkSeparate(tuning, v))}
+              />
+            </div>
+            {#if tuning.eyeBlinkSeparate}
+              {@render rangeItem("eyeBlink", "eyeBlink", t("tuning.eyeBlink.leftLabel"), [
+                ["eyeBlinkLeft", null],
+              ])}
+              {@render rangeItem("eyeBlinkRight", "eyeBlink", t("tuning.eyeBlink.rightLabel"), [
+                ["eyeBlinkRight", null],
+              ])}
+            {:else}
+              {@render rangeItem("eyeBlink", "eyeBlink", t("tuning.eyeBlink.label"), METERS.eyeBlink)}
+            {/if}
+          {:else}
+            {@render rangeItem(key, key, t(`tuning.${key}.label`), METERS[key])}
+          {/if}
+        {/each}
+      {/if}
+    </Section>
   {/each}
 
   <div class="row">
@@ -166,6 +159,92 @@ function position(v: number, min: number, max: number): number {
   </div>
   {/if}
 </Section>
+
+<!-- 首の 1 つの軸 (感度と遊び)。 -->
+{#snippet axisItem(axis: TuningAxis)}
+  <div class="item">
+    {@render meter(
+      t(`tuning.${axis}`),
+      preview?.before.head[axis] ?? null,
+      preview?.after.head[axis] ?? null,
+      -ANGLE_SCALE,
+      ANGLE_SCALE,
+      [-tuning[axis].deadZone, tuning[axis].deadZone],
+      degrees,
+      "title",
+    )}
+    <Slider
+      label={t("tuning.gain.label")}
+      tooltip={t("tuning.gain.tooltip")}
+      min={GAIN_MIN}
+      max={GAIN_MAX}
+      step={0.05}
+      decimals={2}
+      unit={t("tuning.times")}
+      defaultValue={DEFAULT_TUNING[axis].gain}
+      value={tuning[axis].gain}
+      onchange={(v) => setAxis(axis, { gain: v })}
+    />
+    <Slider
+      label={t("tuning.deadZone.label")}
+      tooltip={t("tuning.deadZone.tooltip")}
+      min={0}
+      max={DEAD_ZONE_MAX}
+      step={0.5}
+      decimals={1}
+      unit={t("tuning.degrees")}
+      defaultValue={DEFAULT_TUNING[axis].deadZone}
+      value={tuning[axis].deadZone}
+      onchange={(v) => setAxis(axis, { deadZone: v })}
+    />
+  </div>
+{/snippet}
+
+<!--
+  境目の 1 つの組。`key` は値の項目、`text` はスライダーの文言の項目 (右目の瞼は瞼の文言を使う)。
+  メーターの名前が `null` なら、項目の名前を見せずに読ませる (上に項目の名前を出している)。
+-->
+{#snippet rangeItem(key: TuningRangeKey, text: TuningRange, title: string, meters: Meters)}
+  {@const range = tuning[key]}
+  <div class="item">
+    <span class="item-title">{title}</span>
+    {#each meters as [name, label] (name)}
+      {@render meter(
+        label === null ? title : label(),
+        preview?.before.blendShapes[name] ?? null,
+        preview?.after.blendShapes[name] ?? null,
+        0,
+        1,
+        [range.low, range.high],
+        score,
+        label === null ? "hidden" : "plain",
+      )}
+    {/each}
+    <!-- 下の境目は 1 − 最小の幅まで、上の境目は最小の幅から (間を保つためにもう片方を押す。moveRangeBound) -->
+    <Slider
+      label={t(`tuning.${text}.low.label`)}
+      tooltip={t(`tuning.${text}.low.tooltip`)}
+      min={0}
+      max={1 - RANGE_MIN_SPAN}
+      step={0.01}
+      decimals={2}
+      defaultValue={DEFAULT_TUNING[key].low}
+      value={range.low}
+      onchange={(v) => setBound(key, "low", v)}
+    />
+    <Slider
+      label={t(`tuning.${text}.high.label`)}
+      tooltip={t(`tuning.${text}.high.tooltip`)}
+      min={RANGE_MIN_SPAN}
+      max={1}
+      step={0.01}
+      decimals={2}
+      defaultValue={DEFAULT_TUNING[key].high}
+      value={range.high}
+      onchange={(v) => setBound(key, "high", v)}
+    />
+  </div>
+{/snippet}
 
 <!--
   今の値のメーター。帯は調整の後の値 (中央から、または左から)、縦の線は調整の前の値、点線は遊び・境目。

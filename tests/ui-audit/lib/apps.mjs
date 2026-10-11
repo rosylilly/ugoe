@@ -849,15 +849,33 @@ export const APPS = {
       // 「入力」のパネル (カメラのフェイストラッキングとマイク。T0951)
       await scrollToSection(page, text("studio", ctx.lang, "inputs.heading"));
       await ctx.scene("inputs", { aria: false });
-      // トラッキングの調整を開いた様子 (感度・遊び・境目のスライダーとメーター。T0877)。撮った後は閉じて戻す。
+      // トラッキングの調整を開いた様子 (感度・遊び・境目のスライダーとメーター。T0877)。「首」「目」「口」「眉」の小見出しを
+      // すべて開き (T0879)、瞼の左右を別々にした様子も撮る。撮った後は切って閉じて戻す。
+      const tuningText = (key) => text("packages/face-tracking", ctx.lang, key);
       const tuning = page.locator("main").getByRole("button", {
-        name: text("packages/face-tracking", ctx.lang, "tuning.title"),
+        name: tuningText("tuning.title"),
         exact: true,
       });
       await tuning.click();
       await page.waitForTimeout(300);
+      for (const group of ["head", "eyes", "mouth", "brow"]) {
+        await page
+          .locator("main")
+          .getByRole("button", { name: tuningText(`tuning.groups.${group}`), exact: true })
+          .click();
+      }
+      await page.waitForTimeout(300);
       await scrollToElement(tuning);
       await ctx.scene("inputs-tuning", { aria: false });
+      const separate = page
+        .locator("main")
+        .getByRole("switch", { name: tuningText("tuning.eyeBlinkSeparate.label"), exact: true });
+      await separate.click();
+      await page.waitForTimeout(300);
+      await scrollToElement(separate);
+      await ctx.scene("inputs-tuning-eyelids", { aria: false });
+      await separate.click();
+      await page.waitForTimeout(300);
       await tuning.click();
       await page.waitForTimeout(300);
       await scrollToTop(page);

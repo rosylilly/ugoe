@@ -30,7 +30,7 @@ pub struct InputSettings {
     pub track_body: bool,
     /// トラッキング中はモデルの自動の目パチを止める。
     pub stop_eye_blink: bool,
-    /// トラッキングの調整 (首振りの感度と遊び・瞼と口の開きの境目。T0877)。
+    /// トラッキングの調整 (首振りの感度と遊び・瞼・視線・口・眉の境目。T0877・T0879)。
     pub tuning: TrackingTuning,
     /// 口パクに使うマイク。`None` は既定の機器。
     pub microphone: Option<Device>,
@@ -137,10 +137,22 @@ pub struct TrackingTuning {
     pub yaw: AxisTuning,
     pub pitch: AxisTuning,
     pub roll: AxisTuning,
-    /// 瞼 (`eyeBlinkLeft`・`eyeBlinkRight` を一緒に)。
+    /// 瞼。`eye_blink_separate` が偽なら両目 (`eyeBlinkLeft`・`eyeBlinkRight` を一緒に)、真なら左目 (利用者から見た左)。
     pub eye_blink: RangeTuning,
+    /// 瞼の左右を別々にするか。
+    pub eye_blink_separate: bool,
+    /// 右目の瞼 (`eyeBlinkRight`)。`eye_blink_separate` が真のときだけ使う。
+    pub eye_blink_right: RangeTuning,
+    /// 視線 (`eyeLook*`)。
+    pub eye_look: RangeTuning,
     /// 口の開き (`jawOpen`)。
     pub jaw_open: RangeTuning,
+    /// 口の閉じ (`mouthClose`)。
+    pub mouth_close: RangeTuning,
+    /// 口の形 (`mouthSmile*`・`mouthFrown*`)。
+    pub mouth_form: RangeTuning,
+    /// 眉 (`browInnerUp`・`browOuterUp*`・`browDown*`)。
+    pub brow: RangeTuning,
 }
 
 /// 感度の上限 (tuning.ts の `GAIN_MAX`)。
@@ -186,7 +198,15 @@ impl TrackingTuning {
         for axis in [&mut self.yaw, &mut self.pitch, &mut self.roll] {
             axis.sanitize();
         }
-        for range in [&mut self.eye_blink, &mut self.jaw_open] {
+        for range in [
+            &mut self.eye_blink,
+            &mut self.eye_blink_right,
+            &mut self.eye_look,
+            &mut self.jaw_open,
+            &mut self.mouth_close,
+            &mut self.mouth_form,
+            &mut self.brow,
+        ] {
             range.sanitize();
         }
     }
@@ -338,7 +358,7 @@ mod tests {
     fn tuning_is_read_with_defaults_and_kept_in_range() {
         // 無い項目・知らない項目は既定値。
         let input: InputSettings = serde_json::from_str(
-            r#"{ "tuning": { "yaw": { "gain": 2 }, "eyeBlink": { "low": 0.1, "high": 0.6 }, "brow": {} } }"#,
+            r#"{ "tuning": { "yaw": { "gain": 2 }, "eyeBlink": { "low": 0.1, "high": 0.6 }, "cheekPuff": {} } }"#,
         )
         .unwrap();
         assert_eq!(
@@ -373,6 +393,22 @@ mod tests {
                     low: -1.0,
                     high: 0.5,
                 },
+                eye_blink_right: RangeTuning {
+                    low: 0.2,
+                    high: f64::INFINITY,
+                },
+                eye_look: RangeTuning {
+                    low: f64::NAN,
+                    high: 0.5,
+                },
+                mouth_close: RangeTuning {
+                    low: 0.0,
+                    high: 3.0,
+                },
+                mouth_form: RangeTuning {
+                    low: 0.9,
+                    high: 0.1,
+                },
                 ..TrackingTuning::default()
             },
             ..InputSettings::default()
@@ -394,6 +430,42 @@ mod tests {
                 high: 0.5
             }
         );
+        assert_eq!(
+            input.tuning.eye_blink_right,
+            RangeTuning {
+                low: 0.2,
+                high: 1.0
+            }
+        );
+        assert_eq!(
+            input.tuning.eye_look,
+            RangeTuning {
+                low: 0.0,
+                high: 0.5
+            }
+        );
+        assert_eq!(input.tuning.mouth_close, RangeTuning::default());
+        assert_eq!(input.tuning.mouth_form, RangeTuning::default());
+        // 瞼の左右の切り替えと足した境目を読み書きできる。
+        let input: InputSettings = serde_json::from_str(
+            r#"{ "tuning": { "eyeBlinkSeparate": true, "eyeBlinkRight": { "low": 0.1, "high": 0.5 }, "brow": { "high": 0.3 } } }"#,
+        )
+        .unwrap();
+        assert!(input.tuning.eye_blink_separate);
+        assert_eq!(
+            input.tuning.eye_blink_right,
+            RangeTuning {
+                low: 0.1,
+                high: 0.5
+            }
+        );
+        assert_eq!(
+            input.tuning.brow,
+            RangeTuning {
+                low: 0.0,
+                high: 0.3
+            }
+        );
         // 最小の幅ちょうどの組は残す (画面で決めた値)。
         let mut range = RangeTuning {
             low: 0.3,
@@ -413,7 +485,13 @@ mod tests {
                 "pitch": { "gain": 1.0, "deadZone": 0.0 },
                 "roll": { "gain": 1.0, "deadZone": 0.0 },
                 "eyeBlink": { "low": 0.0, "high": 1.0 },
+                "eyeBlinkSeparate": false,
+                "eyeBlinkRight": { "low": 0.0, "high": 1.0 },
+                "eyeLook": { "low": 0.0, "high": 1.0 },
                 "jawOpen": { "low": 0.0, "high": 1.0 },
+                "mouthClose": { "low": 0.0, "high": 1.0 },
+                "mouthForm": { "low": 0.0, "high": 1.0 },
+                "brow": { "low": 0.0, "high": 1.0 },
             })
         );
     }
