@@ -1,11 +1,11 @@
 ---
 id: T0086
 title: "Conventional Commits から変更履歴 (CHANGELOG) とリリースノートを自動で作る方式を決めて入れる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [scripts, justfile, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0086
 ---
 
 # T0086: Conventional Commits から変更履歴を自動で作る

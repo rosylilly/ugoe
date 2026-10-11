@@ -1,11 +1,11 @@
 ---
 id: T0085
 title: "1.0 の範囲を「今進めている開発 (M1〜M11)」に改め (新しい ADR)、M7・M11 を完了にする"
-status: todo
+status: in-progress
 milestone: M11
 crates: [docs, spec]
 depends_on: []
-assignee:
+assignee: claude-worker-T0085
 ---
 
 # T0085: 1.0 の範囲を改め、M7・M11 を完了にする

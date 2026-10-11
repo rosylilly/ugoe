@@ -1,11 +1,11 @@
 ---
 id: T0005
 title: 3 つのデスクトップアプリの配布物に、Rust のクレートのライセンスの表記を入れる
-status: todo
+status: in-progress
 milestone: Release
 crates: [apps/editor, apps/viewer, apps/studio, scripts, justfile, docs]
 depends_on: [T0811]
-assignee:
+assignee: claude-worker-T0005
 ---
 
 # T0005: Rust のクレートのライセンスの表記

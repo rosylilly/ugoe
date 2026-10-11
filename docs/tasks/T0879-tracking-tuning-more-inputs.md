@@ -1,11 +1,11 @@
 ---
 id: T0879
 title: "スタジオ: トラッキングの調整を眉・視線・口の形・口の閉じに広げるか、瞼の左右を別々にするか決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0879
 ---
 
 # T0879: トラッキングの調整の範囲を広げる (判断が要る)
