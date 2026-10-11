@@ -1,11 +1,11 @@
 ---
 id: T0336
 title: "内部の整理: ugoe-physics の積分と衝突の部品を pub(crate) にし、Chain・Particle を読むだけの型にする (T0316 の所見)"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-physics, ugoe-wasm, ugoe, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0336
 ---
 
 # T0336: 物理の公開の範囲を狭める

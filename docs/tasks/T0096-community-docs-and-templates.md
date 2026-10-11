@@ -1,11 +1,11 @@
 ---
 id: T0096
 title: "公開: CONTRIBUTING.md・SECURITY.md・CODE_OF_CONDUCT.md と、Issue と PR のテンプレートを書く"
-status: todo
+status: in-progress
 milestone: Release
 crates: [docs, .github, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, README.md]
 depends_on: []
-assignee:
+assignee: claude-worker-T0096
 ---
 
 # T0096: 公開の前のコミュニティの文書

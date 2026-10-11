@@ -1,11 +1,11 @@
 ---
 id: T0196
 title: "内部の整理: ugoe-core・ugoe-runtime・ugoe-format・ugoe-motion の、外で使わない公開の項目とモジュールを狭める"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe-core, ugoe-runtime, ugoe-format, ugoe-motion, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0196
 ---
 
 # T0196: 公開の範囲を狭める (core・runtime・format・motion)

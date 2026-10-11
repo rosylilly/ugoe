@@ -1,11 +1,11 @@
 ---
 id: T0099
 title: "運用: main への push の回数を減らし、軽い CI の課金を無料枠に収める運用を決める"
-status: todo
+status: in-progress
 milestone: Release
 crates: [docs/workflow, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0099
 ---
 
 # T0099: push の回数を減らす運用

@@ -1,11 +1,11 @@
 ---
 id: T1679
 title: "エディタのプレビュー: トラッキングのほかの設定 (平滑化・左右の入れ替え・目パチを止める・体) も覚える"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/editor, packages/face-tracking, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1679
 ---
 
 # T1679: エディタのプレビューでトラッキングの設定を覚える

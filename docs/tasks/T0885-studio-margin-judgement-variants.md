@@ -1,11 +1,11 @@
 ---
 id: T0885
 title: "スタジオ: 促しの余裕の見直しで、区切りの値の数と遅れの判定の幅を変えて、値の少ない形と落ち着いた形を両立できるか比べる"
-status: todo
+status: in-progress
 milestone: M8
 crates: [apps/studio, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0885
 ---
 
 # T0885: 促しの余裕の見直しの判定を比べる

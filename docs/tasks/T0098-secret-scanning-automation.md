@@ -1,11 +1,11 @@
 ---
 id: T0098
 title: "公開: 秘密の値の検査 (gitleaks) を自動で回すかを決め、決めた形で入れる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.github/workflows, scripts, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0098
 ---
 
 # T0098: 秘密の値の検査を自動で回すか
