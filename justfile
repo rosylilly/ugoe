@@ -130,6 +130,20 @@ publish-check:
     @node --test --test-reporter=dot scripts/crates.test.mjs
     @node scripts/crates.mjs check
 
+# 変更履歴 CHANGELOG.md を Conventional Commits から作り直す (git-cliff。設定は scripts/cliff.toml。docs/release.md#変更履歴とリリースノート)。
+# リリースの準備では、これから打つタグを渡して未リリースのコミットをその版として書く: `just changelog v1.0.0`
+changelog *tag:
+    @node scripts/changelog.mjs changelog {{tag}}
+
+# 1 つのタグの範囲のリリースノート (1 つ前の版のタグから): `just release-notes v1.0.0`。まだ打っていないタグなら未リリースの下見。
+# `--output <file>` でファイルに書く
+release-notes tag *args:
+    @node scripts/changelog.mjs notes {{tag}} {{args}}
+
+# 固定した git-cliff の版 (CI はこの版を入れる)
+git-cliff-version:
+    @node scripts/changelog.mjs version
+
 # crates.io への公開の予行 (パッケージを作り、crates.io の代わりに一時的なレジストリでビルドする。公開はしない)。
 # crates.io の索引を読むのでネットワークが要る。`just ci` には含めない (CI では crates-release.yml が実行する)
 publish-dry-run *args:
@@ -355,9 +369,9 @@ studio:
 studio-build *args:
     @node scripts/app-build.mjs TARGET=studio {{args}}
 
-# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs)
+# 補助スクリプトの単体テスト (mbx の判定 scripts/lib/mbx.mjs と cargo を呼ぶスクリプトがそれを使うか、`--locked` で lock が古いときの文 scripts/lib/cargo-locked.mjs、npm のライセンスの例外 scripts/lib/npm-license-exceptions.mjs、worktree の cargo の設定 scripts/lib/worktree-cargo-config.mjs、wasm の生成物の古さの判定 scripts/wasm.mjs、e2e のトラッキングを流す長さ tests/e2e/lib/tracking-length.mjs、変更履歴の生成 scripts/changelog.mjs と scripts/cliff.toml)
 script-check:
-    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
+    @node --test --test-reporter=dot scripts/cargo-locked.test.mjs scripts/changelog.test.mjs scripts/mbx.test.mjs scripts/npm-license-exceptions.test.mjs scripts/wasm.test.mjs scripts/worktree-cargo-config.test.mjs tests/e2e/test/
 
 # アプリのビルドの入口 (scripts/app-build.mjs) の引数と組み合わせと署名、手で確かめる一式 (scripts/check-pack.mjs) のパス、
 # 下書きの Release への添付 (scripts/github-release.mjs) の検査

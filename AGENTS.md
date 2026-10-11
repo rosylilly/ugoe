@@ -84,6 +84,7 @@ assets/compat/      互換性テストの資料 (リリースごとのファイ�
 | `just test-group <group>` / `just lint-group <group>` | CI の 1 つのグループ (`scripts/ci-groups.mjs`) だけテスト / clippy |
 | `just licenses` | 依存するクレートと npm パッケージのライセンスを検査 (MIT のクレートにコピーレフトを入れない。アプリと packages/ の npm の依存は GPL-3.0 と両立するもの)。アプリが同梱するライセンスの表記 (`third-party-notices.txt`) が依存と食い違わないかも検査する (作り直しは `just notices`。Rust のクレートの節に cargo-about が要り、`just cargo-about` で入れる。[docs/release.md](docs/release.md#同梱物のライセンスの表記)) |
 | `just publish-check` | crates.io に公開するクレートの準備を検査 (メタデータ・LICENSE の写し・内部の依存の版。[docs/release.md](docs/release.md#cratesio)) |
+| `just changelog [vX.Y.Z]` / `just release-notes <vX.Y.Z>` | Conventional Commits から `CHANGELOG.md` を作り直す / 1 つのタグの範囲のリリースノートを出す (git-cliff の固定した版が要る。[docs/release.md](docs/release.md#変更履歴とリリースノート)) |
 | `just wasm-check` | wasm32 でビルドできるか (ランタイム層を触ったら実行) |
 | `just nostd-check` | ランタイム層のクレートが `std` 無し (`aarch64-unknown-none`) でビルドできるか (ランタイム層を触ったら実行。対象は `scripts/nostd-check.mjs`、規則は [docs/portability.md](docs/portability.md#ランタイム層が守る制約-移植性のため)) |
 | `just cross-check` / `just vcam-check` | 手元の OS 以外のターゲット (Windows・macOS) で clippy (`#[cfg(windows)]` などのコードを触ったら実行。[docs/testing.md](docs/testing.md#別のターゲットの検査)) |

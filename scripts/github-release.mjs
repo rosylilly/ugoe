@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // タグの GitHub Release (下書き) に配布物を添付する。`v*` のタグで動くワークフローが呼ぶ (docs/release.md#github-release-の下書き)。
 //
-//   node scripts/github-release.mjs upload <タグ> <ファイル...>
+//   node scripts/github-release.mjs upload <タグ> <ファイル...>   配布物を添付する
+//   node scripts/github-release.mjs notes <タグ> <ファイル>       本文をファイルの中身 (`just release-notes <タグ>` の出力) にする
 //
 // - そのタグの Release が無ければ下書きで作る。公開するのは人の手 (このスクリプトは公開しない)。
 // - 公開済みの Release には添付しない (配った物を差し替えないため。止まる)。
 // - いくつものワークフロー (エディタのインストーラ・C ABI・Unity・Godot) が同じ下書きに添付する。同時に作って下書きが重なったら、
 //   いちばん古いものに寄せ、自分が作った余分な下書きを消す。
 // - 同じ名前のファイルがあれば置き換える (ジョブをやり直したとき)。
+// - 添付 (upload) は本文に触らず、本文 (notes) は添付に触らない。どちらも下書きが無ければ作るので、動く順は問わない
+//   (先に動いた方が下書きを作り、後の方はそれに寄せる。docs/release.md#リリースノートとワークフロー)。
 // - gh (GitHub CLI) と GH_TOKEN (contents: write) が要る。GitHub のランナーには gh が入っている。
 
 import { spawnSync } from "node:child_process";
@@ -58,17 +61,14 @@ function listReleases() {
     .map((line) => JSON.parse(line));
 }
 
-function upload(tag, files) {
-  const missing = files.filter((f) => !existsSync(f));
-  if (files.length === 0 || missing.length > 0) {
-    throw new Error(
-      files.length === 0 ? "no files to upload" : `missing files: ${missing.join(", ")}`,
-    );
-  }
-
+/**
+ * タグの下書きの Release を返す。無ければ作る。ほかのワークフローが同時に作って重なったら、いちばん古いものに寄せ、
+ * 添付の無い余分な下書きを消す。公開済みなら失敗する。
+ */
+function ensureDraft(tag) {
   let picked = pickRelease(listReleases(), tag);
   if (picked.published) {
-    throw new Error(`the release ${tag} is already published; not replacing its assets`);
+    throw new Error(`the release ${tag} is already published; not changing it`);
   }
   if (!picked.release) {
     console.error(`creating a draft release for ${tag}`);
@@ -108,20 +108,58 @@ function upload(tag, files) {
     }
   }
   if (!picked.release) throw new Error(`could not find the draft release for ${tag}`);
+  return picked.release;
+}
 
-  // gh release upload はタグで Release を引く (下書きも引ける)。重なりは上で消してあるので、引けるのは 1 つ
+function upload(tag, files) {
+  const missing = files.filter((f) => !existsSync(f));
+  if (files.length === 0 || missing.length > 0) {
+    throw new Error(
+      files.length === 0 ? "no files to upload" : `missing files: ${missing.join(", ")}`,
+    );
+  }
+  ensureDraft(tag);
+  // gh release upload はタグで Release を引く (下書きも引ける)。重なりは ensureDraft で消してあるので、引けるのは 1 つ
   gh(["release", "upload", tag, ...files, "--clobber"]);
   console.error(`uploaded ${files.length} file(s) to the draft release ${tag}`);
 }
 
+function notes(tag, file) {
+  if (!existsSync(file)) throw new Error(`missing notes file: ${file}`);
+  const release = ensureDraft(tag);
+  // 重なった下書きがまだ残っていてもよいように、タグではなく id で本文を書き換える。`body=@<file>` はファイルの中身
+  gh([
+    "api",
+    "--method",
+    "PATCH",
+    `repos/{owner}/{repo}/releases/${release.id}`,
+    "-F",
+    `body=@${file}`,
+    "--silent",
+  ]);
+  console.error(`set the notes of the draft release ${tag} from ${file}`);
+}
+
+/** 引数を読む (純粋な関数。テストする)。読めなければ undefined。 */
+export function parseArgs(argv) {
+  const [command, tag, ...rest] = argv;
+  if (!tag) return undefined;
+  if (command === "upload") return { command, tag, files: rest };
+  if (command === "notes" && rest.length === 1) return { command, tag, file: rest[0] };
+  return undefined;
+}
+
 function main(argv) {
-  const [command, tag, ...files] = argv;
-  if (command !== "upload" || !tag) {
-    console.error("usage: node scripts/github-release.mjs upload <tag> <files...>");
+  const args = parseArgs(argv);
+  if (!args) {
+    console.error(
+      "usage: node scripts/github-release.mjs upload <tag> <files...> | notes <tag> <file>",
+    );
     return 2;
   }
   try {
-    upload(tag, files);
+    if (args.command === "upload") upload(args.tag, args.files);
+    else notes(args.tag, args.file);
     return 0;
   } catch (e) {
     console.error(`error: ${e.message}`);

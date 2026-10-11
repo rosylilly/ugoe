@@ -1,0 +1,84 @@
+name: Release notes
+
+# Conventional Commits のコミットから、タグの範囲のリリースノートを git-cliff で作る (docs/release.md#変更履歴とリリースノート)。
+# 手元と同じ入口 `just release-notes <タグ>` (scripts/changelog.mjs。設定は scripts/cliff.toml) を使い、git-cliff は
+# `just git-cliff-version` の版を入れる (版で出力が変わりうるので、手元と揃える)。
+# - `v*` のタグ: そのタグの範囲 (1 つ前の版のタグから) のノートを作り、ジョブの要約と成果物 (release-notes) に置き、
+#   そのタグの GitHub Release の下書きの本文にする (scripts/github-release.mjs notes。docs/release.md#github-release-の下書き)。
+#   下書きが無ければ作る。配布物を添付するワークフロー (editor-build.yml) と同時に動いてもよい (どちらが先でも同じ下書きに寄る)。
+# - 設定・スクリプトを変えた PR と、手で起動したとき: 未リリースのコミットを仮の版 (入力 `tag`) として作る (下見)。
+# Release を公開するのは人の手。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "下見の版のタグ (まだ打っていないもの。例: v1.0.0)"
+        type: string
+        default: v0.0.0-preview
+  pull_request:
+    paths:
+      - scripts/cliff.toml
+      - scripts/changelog.mjs
+      - .github/workflows/release-notes.yml
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # 前の版のタグを探すので、すべての履歴とタグを取る
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: extractions/setup-just@v4
+      - name: Resolve git-cliff version
+        id: git-cliff
+        run: echo "version=$(just git-cliff-version)" >> "$GITHUB_OUTPUT"
+      - name: Install git-cliff (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff@${{ steps.git-cliff.outputs.version }}
+      - name: Generate release notes
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.0.0-preview' }}
+        run: |
+          just release-notes "$TAG" --output release-notes.md
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  # `v*` のタグのときだけ、ノートを下書きの Release の本文にする (書き込みの権限はこのジョブだけに渡す)
+  draft:
+    name: set the draft release notes
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+      - name: Set the notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/github-release.mjs notes "$GITHUB_REF_NAME" release-notes.md

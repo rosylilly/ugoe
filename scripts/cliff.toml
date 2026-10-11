@@ -1,0 +1,62 @@
+# 変更履歴 (CHANGELOG.md) とリリースノートの生成の設定 (git-cliff)。手順と方針は docs/release.md#変更履歴とリリースノート。
+# - `just changelog` で CHANGELOG.md を作り直し、`just release-notes <タグ>` で 1 つのタグの範囲のリリースノートを出す。
+# - git-cliff の版は justfile の `git_cliff_version` に固定する (手元と CI で同じ出力にするため)。
+# - コミットは英語の Conventional Commits (commitlint.config.mjs) なので、出力も英語。
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to ugoe are listed here. This file is generated from the Conventional Commits \
+by [git-cliff](https://git-cliff.org) (`just changelog`); do not edit it by hand.
+"""
+# 載せる type は commit_parsers で決める。破壊的な変更 (`!` か `BREAKING CHANGE:`) は type によらず
+# 先頭の「Breaking changes」に集め、type の節には重ねて載せない。
+body = """
+
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% set breaking = commits | filter(attribute="breaking", value=true) -%}
+{% if breaking | length > 0 %}
+### Breaking changes
+{% for commit in breaking %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} ([{{ commit.id | truncate(length=8, end="") }}](https://github.com/rosylilly/ugoe/commit/{{ commit.id }}))
+{%- if commit.breaking_description != commit.message %}
+{{ commit.breaking_description | indent(prefix="  ", first=true) }}
+{%- endif %}
+{%- endfor %}
+{% endif -%}
+{% for group, group_commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in group_commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} ([{{ commit.id | truncate(length=8, end="") }}](https://github.com/rosylilly/ugoe/commit/{{ commit.id }}))
+{%- endfor %}
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+# Conventional Commits でないコミット (commitlint の前のものなど) は載せない
+filter_unconventional = true
+split_commits = false
+# 節の並びは group の先頭の HTML コメントの番号で決める (表示では striptags で消す)
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^revert", group = "<!-- 3 -->Reverts" },
+  # 利用者から見えない変更は載せない (破壊的なものは protect_breaking_commits で残り、Breaking changes に載る)
+  { message = "^(build|chore|ci|docs|refactor|style|test)", skip = true },
+]
+protect_breaking_commits = true
+# commit_parsers のどれにも当たらないコミットを落とす
+filter_commits = true
+# 版のタグだけを区切りにする (docs/release.md。`v<版>`)
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+"
+topo_order = false
+sort_commits = "oldest"

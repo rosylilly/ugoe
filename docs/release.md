@@ -90,8 +90,10 @@ node scripts/crates.mjs order
 2. `node scripts/crates.mjs sync` で、`[workspace.dependencies]` の公開するクレートの `version` を揃えます。
 3. `node bindings/web/scripts/release.mjs sync` と `node bindings/unity/release.mjs sync` で、npm のパッケージと
    Unity のパッケージの版も揃えます。
-4. `cargo update --workspace` で `Cargo.lock` を更新し、コミットします。
-5. `v<版>` のタグを打って push します。
+4. `cargo update --workspace` で `Cargo.lock` を更新します。
+5. `just changelog v<版>` で `CHANGELOG.md` を作り直し、差分を読みます ([変更履歴とリリースノート](#変更履歴とリリースノート))。
+   1〜5 の変更を 1 つのコミットにします。
+6. そのコミットに `v<版>` のタグを打って push します。
 
 ### 公開できるようにする (初回だけ)
 
@@ -272,11 +274,16 @@ SmartScreen の評価はダウンロードの実績で付くので、署名し�
 
 ```sh
 node scripts/github-release.mjs upload <タグ> <ファイル...>   # GH_TOKEN (contents: write) と gh が要る
+node scripts/github-release.mjs notes <タグ> <ファイル>       # 本文をファイルの中身にする
 ```
 
 - そのタグの Release が無ければ、下書きで作ります (`gh release create --draft --verify-tag`。題はタグ、本文は書き直す前提の短い文)。
 - いくつものワークフローが同じ下書きに添付します。同時に作って下書きが重なったら、いちばん古いものに寄せ、添付の無い余分な下書きを消します。
 - 同じ名前のファイルは置き換えます (ジョブをやり直したとき)。公開済みの Release には添付せず、失敗します (配った物を差し替えないため)。
+- 本文は `release-notes.yml` が `notes` で、`just release-notes <タグ>` の出力 ([変更履歴とリリースノート](#リリースノートとワークフロー)) に
+  します。`upload` は本文に触らず、`notes` は添付に触りません。どちらも下書きが無ければ作り、重なりを寄せるので、ワークフローの
+  動く順は問いません。公開済みの Release の本文は書き換えず、失敗します。`release-notes.yml` をやり直すと、人が書き直した本文も
+  生成したノートで上書きするので注意します。
 - ワークフローの側は、ビルドのジョブの後に `if: startsWith(github.ref, 'refs/tags/v')` のジョブを置き、`permissions: contents: write` で
   成果物を集めてこのスクリプトを呼びます (`editor-build.yml` の `release` のジョブ)。
 
@@ -287,8 +294,76 @@ node scripts/github-release.mjs upload <タグ> <ファイル...>   # GH_TOKEN (
 公開の前に、人が次を行います。
 
 1. 下書きに、配布物がそろっていることを確かめる (ワークフローがすべて終わってから)。
-2. 本文 (変更点・既知の問題・署名の有無) を書き直す。
+2. 本文 (生成したリリースノート) に、要約・既知の問題・署名の有無を書き足す。
 3. 「Publish release」で公開する。
+
+## 変更履歴とリリースノート
+
+変更履歴 (`CHANGELOG.md`) とリリースノートは手で書かず、Conventional Commits のコミット (commitlint で検査している。
+[AGENTS.md#コミット](../AGENTS.md#コミット)) から [git-cliff](https://git-cliff.org) で作ります (T0086)。設定は `scripts/cliff.toml`、
+入口は `scripts/changelog.mjs` です。
+
+| コマンド | 内容 |
+| --- | --- |
+| `just changelog` | `CHANGELOG.md` を作り直す (タグの無いコミットは `Unreleased` の節) |
+| `just changelog v1.0.0` | まだ打っていないタグを渡すと、未リリースのコミットをその版の節として書く (リリースの準備) |
+| `just release-notes v1.0.0` | そのタグの範囲 (1 つ前の版のタグから。最初の版は最初のコミットから) のリリースノートを出す。タグがまだ無ければ未リリースのコミットの下見。`--output <file>` でファイルに書く |
+| `just git-cliff-version` | 固定した git-cliff の版 |
+
+### 道具
+
+git-cliff (MIT OR Apache-2.0、Rust 製) を使います。外部の道具を足さず scripts/ の Node のスクリプトで作る案と比べて、
+こちらを選んだ理由は次のとおりです。
+
+- Conventional Commits の読み取り (scope・`!`・`BREAKING CHANGE:` のフッター)、タグの範囲の切り出し、節の並びを、設定と
+  テンプレートだけで書ける。自前で書くと、フッターの解釈やタグの範囲の扱いを自分で持ち、テストし続けることになる。
+- 出力の形はテンプレート (`scripts/cliff.toml` の `body`) で変えられ、コードを書き換えずに済む。
+
+代わりに、手元と CI に git-cliff を入れる手間があります。次のように扱います。
+
+- **版の固定:** 版は `scripts/changelog.mjs` の `GIT_CLIFF_VERSION` (今は 2.14.2) に 1 つだけ書きます。スクリプトは
+  `git-cliff --version` がこの版でなければ、入れ方を出して止まります。手元では
+  `cargo install git-cliff --version 2.14.2 --locked`、CI では `just git-cliff-version` の版を `taiki-e/install-action` で
+  入れます (ビルド済みのもの)。同じ版・同じ設定・同じ履歴なら、手元と CI で同じ出力になります (日付はタグのコミットの日付)。
+- **`just licenses` との関係:** git-cliff はワークスペースの依存 (`Cargo.lock`) にも npm の依存にも入らない、手元で使うだけの
+  道具なので、`just licenses` の検査の対象になりません。配布物にも入りません。
+- **`just ci` との関係:** `just ci` は git-cliff を呼びません (入っていない機械でも通るように)。設定の検査は単体テスト
+  (`scripts/changelog.test.mjs`。commitlint のすべての type の扱いと、タグの形の一致) と、設定を変えた PR で動く
+  `release-notes.yml` (実際に git-cliff で下見を作る) で行います。
+
+版を上げるときは、出力を前の版と比べてから上げます (`just changelog` の差分を読む)。
+
+### 分け方
+
+コミットが英語なので、出力も英語です。
+
+- **節:** `Breaking changes`・`Features` (feat)・`Bug fixes` (fix)・`Performance` (perf)・`Reverts` (revert) の順。
+  利用者から見えない type (build・chore・ci・docs・refactor・style・test) は載せません。
+- **破壊的な変更:** 件名の `!` か `BREAKING CHANGE:` のフッターがあるコミットは、type によらず (載せない type でも) 先頭の
+  `Breaking changes` に集め、type の節には重ねて載せません。フッターの説明があれば、その行の下に字下げして載せます。
+- **scope:** 行の頭に太字で出します (`- **runtime:** Evaluate ...`)。scope の無いコミットは件名だけ。
+- **タスク ID:** 件名の末尾の `(T0123)` は文字のまま残し、リンクにはしません。タスクファイルの名前には ID の後に短い名前が付く
+  (`docs/tasks/T0123-<slug>.md`) ので、ID だけからは安定した URL を作れないためです。ID でリポジトリを検索すれば辿れます。
+- **コミット:** 各行の末尾に、短いハッシュと GitHub のコミットへのリンクを付けます。
+- 件名の最初の文字は大文字にします (コミットの件名は小文字始まりの規約なので)。
+
+### CHANGELOG.md の扱い
+
+1.0 より前はタグが無く、すべてのコミットが `Unreleased` になるので、`CHANGELOG.md` は **最初のタグを打つまで作らず、コミット
+もしません**。`Unreleased` の節をコミットしておくと、コミットのたびに古くなり、並行する作業の間で食い違うためです。
+
+リリースのときは、[版を上げる](#版を上げる) のタグを打つ前に `just changelog v<版>` で作り直し、版を上げるコミットに含めます
+(タグがそのコミットを指すので、`CHANGELOG.md` の最新の節とタグが一致します)。最初の版の節とリリースノートは、それまでの
+すべてのコミットを並べるので長くなります (今の履歴で feat・fix・perf がおよそ 500 行)。必要なら、公開する前に Release の
+本文の先頭へ人が要約を書き足します。
+
+### リリースノートとワークフロー
+
+`v*` のタグを push すると、`.github/workflows/release-notes.yml` が `just release-notes <タグ>` でそのタグの範囲のノートを作り、
+ジョブの要約と成果物 (`release-notes`) に置き、`draft` のジョブがそのタグの下書きの Release の本文にします
+(`node scripts/github-release.mjs notes`。[GitHub Release の下書き](#github-release-の下書き))。
+手で起動したときと、`scripts/cliff.toml`・`scripts/changelog.mjs` を変えた PR では、未リリースのコミットを仮の版として下見を作ります
+(下書きには触りません)。
 
 ## macOS の仮想カメラ
 
