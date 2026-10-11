@@ -139,10 +139,10 @@ export const PINNED_TOOLS = [
   {
     name: "Godot",
     pin: { file: ".github/workflows/release-checks.yml", pattern: /GODOT_VERSION: (\S+)/ },
-    mirrors: [],
+    mirrors: [{ file: "bindings/godot/README.md", pattern: /版を固定した Godot \((\S+?)\)/g }],
     upstream: { github: "godotengine/godot" },
     tag: /^(\d+(?:\.\d+)*)-stable$/,
-    bump: "copy GODOT_SHA512 from the release's SHA512-SUMS.txt; run the godot job",
+    bump: "copy GODOT_SHA512 from the release's SHA512-SUMS.txt; run the godot job; recheck api-4-x and compatibility_minimum",
   },
   {
     name: "Rust",

@@ -9,6 +9,16 @@
 ソースの在り処を含む) は `example/addons/ugoe/THIRD-PARTY-NOTICES.txt` (アドオンのフォルダに入る。生成と検査は
 [docs/release.md#mit-の配布物](../../docs/release.md#mit-の配布物))。
 
+## 対応する Godot の版
+
+- 下限は Godot 4.4。godot-rust の API の版を `Cargo.toml` の feature `api-4-4` で選び、`.gdextension` の
+  `compatibility_minimum = 4.4` をそれに合わせる。GDExtension の API は新しい版の Godot でも使えるので、下限のまま新しい版で動く。
+- 下限を上げるのは、新しい版にしか無い Godot の API が要るときだけにする。そのときは feature (`api-4-x`)・`compatibility_minimum`・
+  この README の冒頭・アセットライブラリに出す版 (下の「配布 (Godot のアセットライブラリ)」) を一緒に変える。
+  下限を下げる (4.3 以前) ことはしない (godot-rust 0.5 の feature はあるが、確かめる環境を持たないため)。
+- 確かめている版は、CI の `godot` のジョブが版を固定した Godot (4.7.2-stable)。上げ方は
+  [docs/release.md#固定した道具の版](../../docs/release.md#固定した道具の版)。下限の 4.4 そのものでの動作は CI では確かめていない。
+
 ## 構成
 
 | パス | 内容 |
@@ -90,7 +100,7 @@ cargo clippy --manifest-path bindings/godot/Cargo.toml --all-targets -- -D warni
   描き方・アダプタ・論理プロセッサの数を出す)。CI の `godot` のジョブは、検査の後にリリースビルドで bench.gd を Compatibility と
   Forward+ で流し、結果をジョブの要約と成果物 `godot-bench` に残す (落ちても検査は落とさない。T0467)。
 - これらは `just ci` に含まれない (ルートのワークスペースの外にあるため)。CI では別のジョブ (`.github/workflows/release-checks.yml` の
-  `godot`。手での起動・月に 2 回・リリースの前) が、版を固定した Godot (4.7.1) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
+  `godot`。手での起動・月に 2 回・リリースの前) が、版を固定した Godot (4.7.2-stable) と Xvfb の上で `just godot-check` を実行し、適合テストを Forward+ (lavapipe) でも流す。
 
 ### CI の bench.gd の値 (T0471)
 
@@ -343,11 +353,11 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
   - PNG (libpng の簡易 API) は `gAMA` のガンマを sRGB に補正して値を変える (適合テストの `png-16bit` にガンマ 1.0 の `gAMA` を書くと
     87.5% の画素しか一致しなかった)。読む前にチャンクを取り除く方法は選ばなかった: 16 ビットの丸めやパレットの展開も libpng の
     決まりに頼ることになり、参照と同じになることを Godot の版ごとに確かめる必要が残るため。
-    Godot の挙動は [drivers/png/png_driver_common.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/drivers/png/png_driver_common.cpp) で調べた。
+    Godot の挙動は [drivers/png/png_driver_common.cpp](https://github.com/godotengine/godot/blob/4.7.2-stable/drivers/png/png_driver_common.cpp) で調べた。
   - KTX2 は、Godot 4.7 が `R8G8B8(A8)_SRGB` をリニアに変換して読み (8 ビットのまま。戻せない)、`R8G8B8(A8)_UNORM` と
     `BC*_SRGB_BLOCK` を読めず、アルファの無い `BC1_RGB_*` をアルファのあるもの (`FORMAT_DXT1`) として展開して 3 色のモードの
     4 つ目の色を透明にする。以前はヘッダを書き換えて読ませ、展開した後でアルファを直していたが、参照のデコーダで読むので要らなくなった (T0481)。
-    Godot の挙動は [modules/ktx/texture_loader_ktx.cpp](https://github.com/godotengine/godot/blob/4.7.1-stable/modules/ktx/texture_loader_ktx.cpp) で調べた。
+    Godot の挙動は [modules/ktx/texture_loader_ktx.cpp](https://github.com/godotengine/godot/blob/4.7.2-stable/modules/ktx/texture_loader_ktx.cpp) で調べた。
 - KTX2 で読むのは参照と同じく、圧縮していない 8 ビットの RGB / RGBA と、ブロック圧縮の BC1〜BC5・BC7 (超圧縮は無しか zstd)。
   ブロック圧縮は CPU で展開してから乗算する (GPU では圧縮しないで持つ)。ミップマップは最初の段だけを使う。
   ほかの形式 (ETC2・ASTC・Basis Universal・`B8G8R8A8_*` など) は、読めない PNG と同じく警告を出して白で描く (法線マップなら使わない)。
@@ -408,7 +418,7 @@ Godot の `XRFaceTracker` は Unified Expressions (`BlendShapeEntry` の 143 個
 - 着せ替えのモジュールの読み込みの警告は、取り付けている間だけ読める (`get_module_load_warnings(name)`。`UgoeModule` は
   GDScript のリソースで中身を読まないため、付ける前のモジュールからは読めない)。
 - 当たり判定・パラメータなどの Godot の API の自動テストは、ヘッドレスの Godot で動く `example/tests/smoke.gd` だけ。
-- Godot 4.7.1 で、GDExtension のクラスを持つプロジェクトの初回の `--import` の終わりに異常終了することがある
+- Godot 4.7.1・4.7.2 で、GDExtension のクラスを持つプロジェクトの初回の `--import` の終わりに異常終了することがある
   (godot-rust の最小のクラスでも起き、2 回目からは起きない)。`build.mjs` は 1 回だけやり直す。
 
 ## 関連タスク

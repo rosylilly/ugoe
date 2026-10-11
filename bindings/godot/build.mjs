@@ -153,7 +153,7 @@ function runGodot(godotArgs, { display = false } = {}) {
 if (check || conformance || importProject || bench) {
   requireGodot({ display: conformance || bench });
   // 初回はプロジェクトの読み込み (.godot/ の作成と拡張の登録) が要る。
-  // Godot 4.7.1 は、GDExtension のクラスを持つプロジェクトの初回の --import の終わりに異常終了することがある
+  // Godot 4.7.1・4.7.2 は、GDExtension のクラスを持つプロジェクトの初回の --import の終わりに異常終了することがある
   // (godot-rust の最小のクラスでも起きる。2 回目からは起きない) ので、1 回だけやり直す。
   try {
     runGodot(["--headless", "--path", example, "--import"]);

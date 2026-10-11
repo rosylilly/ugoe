@@ -684,7 +684,7 @@ artifact-signing-cli・Godot・Rust・Node.js・pnpm・just) は Dependabot が�
 | cargo-ndk | `unity.yml` を手で起動して Android のビルドを確かめる |
 | tauri-driver | `just e2e` (と `e2e.yml` の手での起動) |
 | artifact-signing-cli | `editor-build.yml` で Windows のインストーラに署名できるかを確かめる ([Windows (Authenticode)](#windows-authenticode)) |
-| Godot | `release-checks.yml` の `GODOT_VERSION` と、Release の `SHA512-SUMS.txt` から写した `GODOT_SHA512` を変え、`godot` のジョブを流す |
+| Godot | `release-checks.yml` の `GODOT_VERSION` と、Release の `SHA512-SUMS.txt` から写した `GODOT_SHA512` を変え、`godot` のジョブを流す。godot-rust の `api-4-x` と `.gdextension` の `compatibility_minimum` は上げなくてよい (下限の方針は [bindings/godot/README.md](../bindings/godot/README.md#対応する-godot-の版)) |
 | Rust | `rust-toolchain.toml` を変え、新しい clippy の指摘を直してから `just ci`・`just wasm-check`・`just nostd-check` |
 | Node.js | `.tool-versions` を変え (CI もこの版を使う)、`just ci` |
 | pnpm | `package.json` の `packageManager` を変え、`pnpm install` でロックファイルが変われば一緒にコミットする |
