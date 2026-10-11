@@ -1309,6 +1309,8 @@ mod tests {
         last_cost: Duration,
         /// 前に検出したフレームの番号。
         last_frame: Option<u128>,
+        /// フレームの格子を刻みの格子からずらす量 (`shifted`。T0878)。
+        frame_shift: Duration,
     }
 
     impl Detector {
@@ -1322,7 +1324,16 @@ mod tests {
                 last_end: None,
                 last_cost: Duration::ZERO,
                 last_frame: None,
+                frame_shift: Duration::ZERO,
             }
+        }
+
+        /// 値の届く時機を刻みの時機からずらす (T0878)。検出に `cost` を足し (値の届く時刻が刻みに対してずれる)、
+        /// フレームの格子を `frame` だけずらす (どの促しが新しいフレームを拾うかが変わる)。
+        fn shifted(mut self, frame: Duration, cost: Duration) -> Self {
+            self.frame_shift = frame;
+            self.detect += cost;
+            self
         }
 
         /// `now` の促しで送る値の、促しから届くまでの時間 (送らなければ `None`)。
@@ -1334,7 +1345,8 @@ mod tests {
                 }
             }
             // 最初のフレームは少しずらす (刻みの格子と揃わないように)。
-            let frame = (now - self.start + self.frame / 3).as_nanos() / self.frame.as_nanos();
+            let frame = (now - self.start + self.frame / 3 + self.frame_shift).as_nanos()
+                / self.frame.as_nanos();
             if self.last_frame.is_some_and(|last| last >= frame) {
                 self.last_end = Some(now);
                 self.last_cost = Duration::ZERO;
@@ -1391,6 +1403,131 @@ mod tests {
                 );
                 assert_keeps_the_rate(&before, rate, seconds, &label);
                 assert_keeps_the_rate(&after, rate, seconds, &label);
+            }
+        }
+    }
+
+    /// 遅れた値の割合を、値の届く時機と刻みの時機のずれ (位相) を 1 刻みの間で振って回した分布 (T0878)。
+    struct PhaseSpread {
+        /// 位相ごとの割合 (小さい順)。
+        lates: Vec<f64>,
+        /// すべての位相の値を合わせた割合。
+        pooled: f64,
+        /// 位相ごとの待ちの平均の、最小と最大。
+        waits: (Duration, Duration),
+    }
+
+    impl PhaseSpread {
+        fn median(&self) -> f64 {
+            self.lates[self.lates.len() / 2]
+        }
+
+        fn max(&self) -> f64 {
+            self.lates[self.lates.len() - 1]
+        }
+    }
+
+    impl std::fmt::Display for PhaseSpread {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "late min {:.1}% median {:.1}% max {:.1}% (all phases {:.1}%), wait {:.2?}..{:.2?}",
+                self.lates[0] * 100.0,
+                self.median() * 100.0,
+                self.max() * 100.0,
+                self.pooled * 100.0,
+                self.waits.0,
+                self.waits.1,
+            )
+        }
+    }
+
+    /// `Detector` (フレームの間隔・検出・揺れ) と、0〜`oversleep` 遅れて起きるスリープで 60 秒回し、6 秒から後 (e2e の
+    /// 「トラッキングの待ち」を読む区間と同じ) の遅れた値の割合を、位相を `PHASES` 通りに振って集める。種は同じにし、変えるのは位相だけ。
+    /// 位相は、検出に足す時間 (値の届く時刻が刻みに対してずれる) と、フレームの格子のずれ (どの促しが新しいフレームを拾うか) の 2 つで、
+    /// 後者は前者と揃わないように 7 倍した位相にする。
+    fn phase_spread(rate: TickRate, detector: (u64, u64, u64), oversleep: Duration) -> PhaseSpread {
+        const PHASES: u32 = 32;
+        let start = Instant::now();
+        let until = start + Duration::from_secs(60);
+        let from = start + Duration::from_secs(6);
+        let (frame, detect, jitter) = detector;
+        let phase = |k: u32| rate.period() * (k % PHASES) / PHASES;
+        let mut lates = Vec::new();
+        let mut total = Counts::default();
+        let mut waits = (Duration::MAX, Duration::ZERO);
+        for k in 0..PHASES {
+            let mut detector =
+                Detector::new(start, frame, detect, jitter, 11).shifted(phase(k * 7), phase(k));
+            let mut sleep = Rng(5);
+            let run = simulate_with(
+                Pacer::new(rate, start),
+                start,
+                until,
+                |now| detector.pulse(now),
+                || sleep.upto(oversleep),
+            );
+            let mut counts = Counts::default();
+            counts.add(&run, from, until);
+            total.add(&run, from, until);
+            lates.push(counts.late_ratio());
+            let wait = counts.mean_wait();
+            waits = (waits.0.min(wait), waits.1.max(wait));
+            assert_keeps_the_rate(
+                &run,
+                rate,
+                60,
+                &format!("{rate:?} ({frame}, {detect}, {jitter}) phase {k}"),
+            );
+        }
+        lates.sort_by(f64::total_cmp);
+        PhaseSpread {
+            lates,
+            pooled: total.late_ratio(),
+            waits,
+        }
+    }
+
+    #[test]
+    fn late_values_spread_over_phases() {
+        // e2e (T0812 の手順) は回ごとに遅れた値の割合が 9〜32% と分かれた (T0876)。値の届く時機と刻みの時機の関係 (位相) が回の
+        // 初めに決まるためかを、仮の時刻で位相を振って確かめ、`pacing.rs` を変えるときの物差しにする (T0878)。
+        //
+        // (フレームの間隔, 検出, 検出の揺れ) ミリ秒と、スリープの遅れの上限。
+        // - 落ち着いた計算機: ほかのテストと同じ検出 (`few_values_from_slow_detection_are_rarely_late`) と 0〜0.5 ms の遅れ。
+        // - e2e に近い計算機: e2e の偽の検出 (200 ms を塞ぐ) は揺れが小さく、ほかのビルドと並ぶ WSL2 ではスリープが 0〜2 ms 遅れる。
+        //   値が 1 秒に約 2 個なので余裕は見直されず (`MARGIN_MIN_VALUES`)、遅れの多くはスリープの遅れによる。
+        //
+        // e2e に近い計算機では、位相だけを振っても割合が e2e と同じほど (約 12〜38%) に分かれる。ただし種 (検出とスリープの
+        // 揺れの列) を振っても同じほど分かれ、60 秒の 1 回の値 (約 110 個。1 個が約 0.9%) の数え方の揺れ (割合 20% で
+        // 標準偏差 約 4 ポイント) と同じ大きさなので、位相が回の初めに決まって残るためというより、1 回の値の数が少ないためと見る
+        // (T0878 のメモ)。
+        //
+        // 上限は、`pacing.rs` を変えて悪くなれば落ちるように置く。T0878 の時点の値 (メモの表) に、中央値は約 3 ポイント、最大は約 5 ポイント
+        // の余地を足した。仮の時刻なので値は決まっていて揺れない。余地は、良くも悪くもない変更 (寄せる先の選び方の細かな違い) で
+        // 数個の値が入れ替わるのを許すためのもの。落ち着いた計算機の上限は、T0868 の前 (直近の約 1 秒の値だけを見る) の
+        // 中央値 約 16% を落とす。上限 (中央値, 最大) は 30・60・120 刻みの順。
+        let cases = [
+            (
+                "calm",
+                (500, 200, 8),
+                Duration::from_micros(500),
+                [(0.10, 0.12), (0.10, 0.12), (0.13, 0.17)],
+            ),
+            (
+                "e2e-like",
+                (500, 200, 2),
+                Duration::from_millis(2),
+                [(0.24, 0.37), (0.26, 0.38), (0.23, 0.43)],
+            ),
+        ];
+        for (name, detector, oversleep, bounds) in cases {
+            for (rate, (median, max)) in TickRate::ALL.into_iter().zip(bounds) {
+                let spread = phase_spread(rate, detector, oversleep);
+                let label = format!("{name} {rate:?} {detector:?} oversleep 0..{oversleep:?}");
+                println!("{label}: {spread}");
+                assert!(spread.median() <= median, "{label}: {spread}");
+                assert!(spread.max() <= max, "{label}: {spread}");
             }
         }
     }
