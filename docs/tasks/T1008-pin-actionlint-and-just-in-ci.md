@@ -1,11 +1,11 @@
 ---
 id: T1008
 title: "actionlint を固定して CI で回し、CI の just を .tool-versions の版にそろえる。Dependabot は公開後に入れると書く"
-status: todo
+status: in-progress
 milestone: Release
 crates: [.tool-versions, scripts, justfile, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1008
 ---
 
 # T1008: actionlint と just の版を CI でそろえる

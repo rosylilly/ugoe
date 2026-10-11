@@ -1,11 +1,11 @@
 ---
 id: T1007
 title: "Node.js を v26.11.1、pnpm を v12.12.1 に上げる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [package.json, pnpm-lock.yaml, .tool-versions, apps, packages, bindings/web, tests, scripts, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1007
 ---
 
 # T1007: Node.js と pnpm を上げる

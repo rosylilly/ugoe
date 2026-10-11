@@ -1,11 +1,11 @@
 ---
 id: T1005
 title: "Rust のツールチェインを 1.99.0 に上げる"
-status: todo
+status: in-progress
 milestone: Release
 crates: [rust-toolchain.toml, crates, apps, bindings, fuzz, tests, scripts, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1005
 ---
 
 # T1005: Rust を 1.99.0 に上げる

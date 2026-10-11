@@ -1,11 +1,11 @@
 ---
 id: T1006
 title: "Godot を 4.7.2 に上げる (godot-check・CI のヘッドレスの Godot・GDExtension の互換)"
-status: todo
+status: in-progress
 milestone: Release
 crates: [bindings/godot, scripts, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1006
 ---
 
 # T1006: Godot を 4.7.2 に上げる
