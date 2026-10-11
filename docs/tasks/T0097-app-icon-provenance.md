@@ -1,11 +1,11 @@
 ---
 id: T0097
 title: "公開: エディタ・ビューア・スタジオのアプリのアイコンの出所とライセンスを記録する"
-status: todo
+status: in-progress
 milestone: Release
 crates: [apps/editor, apps/viewer, apps/studio, assets, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0097
 ---
 
 # T0097: アプリのアイコンの出所
