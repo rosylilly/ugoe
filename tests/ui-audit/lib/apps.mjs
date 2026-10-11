@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createEditorHost, editorPageInit, ipcBinding } from "./editor-host.mjs";
+import { WAIT_TIMEOUT_MS, waitUntil } from "./limits.mjs";
 import {
   attentionMessages,
   autosaveFailure,
@@ -40,17 +41,32 @@ export function pattern(value) {
 }
 
 /**
+ * `locator` が `state` (既定は見える) になるのを、条件の待ちの上限 (`WAIT_TIMEOUT_MS`。`timeout` で変えられる) まで待つ。
+ * 時間切れの失敗の文に `what` (何を待っていたか) と、`hint` (省ける) の返す画面の手がかりを添える (`waitUntil`。T0985)。
+ */
+function waitFor(locator, what, { state = "visible", ...options } = {}) {
+  return waitUntil(what, (timeout) => locator.waitFor({ state, timeout }), options);
+}
+
+/**
+ * 重い読み込み (ビューアのサンプルのモデル・GPU を戻した後の描き直し) を待つ上限 (ミリ秒。T0985)。ふつうの条件の待ちの 3 倍。
+ */
+const LOAD_TIMEOUT_MS = 3 * WAIT_TIMEOUT_MS;
+
+/**
  * 開いたダイアログ・メニュー・Popover (`overlay`) を Esc で閉じ、閉じたのを待つ (T0053)。開いたときにフォーカスした部品の
  * Tooltip が先に Esc を受けることがあるので、閉じるまで 3 回まで押す。閉じるとフォーカスが開いたボタンに戻ってその Tooltip が
- * 出るので、フォーカスとポインタを外す (後の場面の部品に重なって押せなくならないように)。閉じられなければ場面の失敗にする。
+ * 出るので、フォーカスとポインタを外す (後の場面の部品に重なって押せなくならないように)。3 回押しても閉じなければ、条件の待ちの
+ * 上限まで待ってから場面の失敗にする。
  */
 async function closeOverlay(page, overlay) {
   const shown = overlay.first();
   for (let i = 0; i < 3 && (await shown.isVisible()); i++) {
     await page.keyboard.press("Escape");
+    // 次の Esc を押すまでの間 (上限ではない。閉じなければ下で `WAIT_TIMEOUT_MS` まで待つ)
     await shown.waitFor({ state: "hidden", timeout: 2000 }).catch(() => {});
   }
-  if (await shown.isVisible()) throw new Error("the dialog, menu or popover did not close");
+  await waitFor(shown, `${overlay} to close after Escape`, { state: "hidden" });
   await page.evaluate(() => document.activeElement?.blur());
   await page.mouse.move(1, 300);
   await page.waitForTimeout(300);
@@ -59,7 +75,7 @@ async function closeOverlay(page, overlay) {
 /** 設定のダイアログを開いて撮り、Esc で閉じる。 */
 async function settingsScene(page, ctx, name) {
   await page.getByRole("button", { name, exact: true }).first().click();
-  await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+  await waitFor(page.getByRole("dialog").first(), "the settings dialog to open");
   await ctx.scene("settings", { overlay: true });
   await closeOverlay(page, page.getByRole("dialog"));
 }
@@ -186,7 +202,7 @@ async function aiScenes(page, ctx) {
     .getByRole("button", { name: text("editor", ctx.lang, "app.settings.label"), exact: true })
     .first()
     .click();
-  await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+  await waitFor(page.getByRole("dialog").first(), "the settings dialog to open (AI provider)");
   await page
     .getByRole("tab", { name: text("editor", ctx.lang, "settings.ai.tab"), exact: true })
     .click();
@@ -226,7 +242,7 @@ async function aiScenes(page, ctx) {
   await page
     .getByRole("button", { name: text("editor", ctx.lang, "proposals.classify"), exact: true })
     .click();
-  await page.getByRole("alertdialog").first().waitFor({ timeout: 5000 });
+  await waitFor(page.getByRole("alertdialog").first(), "the AI consent dialog to open");
   await ctx.scene("consent", { overlay: true });
   await page
     .getByRole("button", { name: text("editor", ctx.lang, "consent.send.label"), exact: true })
@@ -275,7 +291,7 @@ async function dressUpScenes(page, ctx) {
   // 本体の変化: ウィンドウに戻ったときの確かめで見つかったダイアログ (T0953)
   host.set({ baseChange: true });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+  await waitFor(page.getByRole("dialog").first(), "the base-change dialog to open");
   await page.waitForTimeout(300);
   await ctx.scene("base-change", { overlay: true });
   await closeOverlay(page, page.getByRole("dialog"));
@@ -287,8 +303,8 @@ async function dressUpScenes(page, ctx) {
   await togglePreview(page, ctx, true);
   // 違いを比べ終えるのを待って開く
   const differences = page.locator(".differences summary, .differences-toggle").first();
-  await differences.waitFor({ timeout: 10000 }).catch(() => {});
-  if ((await differences.count()) > 0) await differences.click();
+  await waitFor(differences, "the module's differences to finish comparing");
+  await differences.click();
   await page.waitForTimeout(400);
   await scrollToElement(dressUpTitle);
   await ctx.scene("module-preview", { errors: true });
@@ -319,7 +335,7 @@ async function dressUpWaitingScene(page, ctx, dressUpTitle) {
   const stopIgnoring = ctx.ignoreErrors(/^ugoe: WebGL context lost/);
   if (!(await page.evaluate(() => window.__uiAuditLoseGpu())))
     throw new Error("no canvas with a live WebGL2 context to lose");
-  await gpuWaiting.first().waitFor({ timeout: 20000 });
+  await waitFor(gpuWaiting.first(), "the dress-up section to wait for the lost GPU");
   // 読めないファイルの行 (押せない) を除き、付いている行と付いていない行を 1 つずつ切り替える
   const boxes = section.locator(".modules [role=checkbox]:not(:disabled)");
   const states = await boxes.evaluateAll((els) =>
@@ -334,17 +350,21 @@ async function dressUpWaitingScene(page, ctx, dressUpTitle) {
   await page.evaluate(() => document.activeElement?.blur());
   await page.mouse.move(1, 300);
   for (const note of waiting)
-    await section.getByText(note, { exact: true }).first().waitFor({ timeout: 5000 });
+    await waitFor(section.getByText(note, { exact: true }).first(), `the dress-up note "${note}"`);
   await scrollToElement(dressUpTitle);
   // 見本の読めないファイルと付けられないモジュールの行の失敗の文は `-preview-dress-up` と同じ
   await ctx.scene("preview-dress-up-waiting", { errors: true });
   await page.evaluate(() => window.__uiAuditRestoreGpu());
-  await gpuWaiting.first().waitFor({ state: "hidden", timeout: 60000 });
+  await waitFor(gpuWaiting.first(), "the dress-up section to stop waiting for the restored GPU", {
+    state: "hidden",
+    timeout: LOAD_TIMEOUT_MS,
+  });
   for (const note of waiting)
-    await section
-      .getByText(note, { exact: true })
-      .first()
-      .waitFor({ state: "hidden", timeout: 60000 });
+    await waitFor(
+      section.getByText(note, { exact: true }).first(),
+      `the dress-up note "${note}" to go away after the GPU came back`,
+      { state: "hidden", timeout: LOAD_TIMEOUT_MS },
+    );
   stopIgnoring();
 }
 
@@ -373,9 +393,10 @@ async function manyParametersScenes(page, ctx) {
   await page.waitForTimeout(400);
   await ctx.scene("parameter-filter", { aria: false });
   await filter.first().fill("no-such-parameter");
-  await page.getByRole("status").filter({ hasText: "no-such-parameter" }).first().waitFor({
-    timeout: 5000,
-  });
+  await waitFor(
+    page.getByRole("status").filter({ hasText: "no-such-parameter" }).first(),
+    "the parameter filter's no-match status",
+  );
   await ctx.scene("parameter-filter-none");
   await filter.first().fill("");
   await page.waitForTimeout(300);
@@ -409,7 +430,10 @@ async function glueScene(page, ctx) {
   await scrollToElement(pairs);
   // 組の行の「×」にフォーカスすると、行とビューポートのその組が強調される (T1651)
   await pairs.first().locator("li").nth(1).getByRole("button").focus();
-  await page.locator(".pair-list li.highlighted").first().waitFor({ timeout: 5000 });
+  await waitFor(
+    page.locator(".pair-list li.highlighted").first(),
+    "the glue pair to be highlighted on focus",
+  );
   await page.waitForTimeout(300);
   await ctx.scene("glue-pair-focus", { aria: false });
   await page.evaluate(() => document.activeElement?.blur());
@@ -526,10 +550,11 @@ async function treeDragScenes(page, ctx) {
   };
   const release = async () => {
     await tree.dispatchEvent("pointercancel");
-    await page.locator(".tree.dragging, .tree .row[class*=drop-]").first().waitFor({
-      state: "detached",
-      timeout: 5000,
-    });
+    await waitFor(
+      page.locator(".tree.dragging, .tree .row[class*=drop-]").first(),
+      "the tree's drag and drop marks to go away after pointercancel",
+      { state: "detached" },
+    );
     await page.mouse.move(1, 300);
     await page.mouse.up();
     await page.waitForTimeout(200);
@@ -550,7 +575,7 @@ async function treeDragScenes(page, ctx) {
     await page.mouse.down();
     await page.mouse.move(source.x + 10, source.middle, { steps: 2 });
     try {
-      await page.locator(".tree.dragging").first().waitFor({ timeout: 2000 });
+      await waitFor(page.locator(".tree.dragging").first(), "the tree to start dragging a row");
       const targets = rows.filter((r) => r.key !== source.key);
       for (const [mark, name, options] of scenes) {
         if (!pending.has(mark)) continue;
@@ -567,12 +592,6 @@ async function treeDragScenes(page, ctx) {
     throw new Error(`no row in the tree showed the drop mark: ${[...pending].join(", ")}`);
 }
 
-/**
- * スタジオの帯を待つ上限 (ミリ秒。T0884)。自動の保存は変えてから約 0.8 秒で動き、帯はふつう 1 秒ほどで出る (CPU を 8 倍に
- * 遅くしても、ロードアベレージ 50 の機械でも 1.3 秒ほど)。出るまでの条件の待ちなので、長くしても通る回は遅くならない。
- */
-const NOTICE_TIMEOUT_MS = 20000;
-
 /** 画面にある帯 (`.ugoe-notice`) のトーンと文 (帯を待って出なかったときの手がかり)。 */
 async function noticesOnPage(page) {
   const found = await page
@@ -588,11 +607,11 @@ async function noticesOnPage(page) {
 
 /**
  * スタジオの自動の保存を失敗させる (T0874): 偽のホストの今の保存先への保存を `kind` の失敗にし (`failSave`)、保存先のある
- * 変えたプロファイルを送って、`notices` の帯 (トーンと含む文) が出るのを待つ。出なければ場面の失敗にする
- * (失敗の文に、待った時間と画面にあった帯を添える。T0884)。
+ * 変えたプロファイルを送って、`notices` の帯 (トーンと含む文) が出るのを待つ。自動の保存は変えてから約 0.8 秒で動き、帯は
+ * ふつう 1 秒ほどで出る (CPU を 8 倍に遅くしても、ロードアベレージ 50 の機械でも 1.3 秒ほど)。条件の待ちの上限
+ * (`WAIT_TIMEOUT_MS`) までに出なければ場面の失敗にする (失敗の文に、待った時間と画面にあった帯を添える。T0884)。
  */
 async function autosaveFailureScene(page, ctx, kind, notices) {
-  const started = performance.now();
   await page.evaluate(
     ({ profile, failure }) => {
       window.__uiAuditStudio.failSave(failure);
@@ -601,15 +620,11 @@ async function autosaveFailureScene(page, ctx, kind, notices) {
     autosaveFailure(ctx.fixture, kind),
   );
   for (const notice of notices) {
-    await page
-      .locator(`.ugoe-notice[data-tone="${notice.tone}"]`, { hasText: notice.text })
-      .waitFor({ timeout: NOTICE_TIMEOUT_MS })
-      .catch(async () => {
-        const waited = ((performance.now() - started) / 1000).toFixed(1);
-        throw new Error(
-          `the ${kind} autosave failure did not show the ${notice.tone} notice in ${waited}s (notices: ${await noticesOnPage(page)})`,
-        );
-      });
+    await waitFor(
+      page.locator(`.ugoe-notice[data-tone="${notice.tone}"]`, { hasText: notice.text }),
+      `the ${notice.tone} notice of the ${kind} autosave failure`,
+      { hint: async () => `notices: ${await noticesOnPage(page)}` },
+    );
   }
 }
 
@@ -640,17 +655,17 @@ export const APPS = {
         name: text("editor", ctx.lang, "fileMenu.open.label"),
         exact: true,
       });
-      await open.first().waitFor({ timeout: 20000 });
+      await waitFor(open.first(), "the editor's Open button (empty start screen)");
       await page.waitForTimeout(800);
       await ctx.scene("empty");
       await page.evaluate((p) => {
         window.__uiAuditNextPath = p;
       }, ctx.sample.project);
       await open.first().click();
-      await page.waitForFunction(
-        () => document.querySelectorAll("[role=treeitem]").length > 0,
-        null,
-        { timeout: 20000 },
+      await waitUntil("the sample project's tree to show its rows", (timeout) =>
+        page.waitForFunction(() => document.querySelectorAll("[role=treeitem]").length > 0, null, {
+          timeout,
+        }),
       );
       await page.waitForTimeout(2000);
     },
@@ -661,7 +676,7 @@ export const APPS = {
         .getByRole("button", { name: text("editor", ctx.lang, "fileMenu.menu.label"), exact: true })
         .first()
         .click();
-      await page.getByRole("menu").first().waitFor({ timeout: 5000 });
+      await waitFor(page.getByRole("menu").first(), "the File menu to open");
       await ctx.scene("file-menu", { aria: false, overlay: true });
       await closeOverlay(page, page.getByRole("menu"));
       await page
@@ -671,7 +686,7 @@ export const APPS = {
         })
         .first()
         .click();
-      await page.locator(".ugoe-popover").first().waitFor({ timeout: 5000 });
+      await waitFor(page.locator(".ugoe-popover").first(), "the Export popover to open");
       await page.waitForTimeout(300);
       await ctx.scene("export", { overlay: true });
       await closeOverlay(page, page.locator(".ugoe-popover"));
@@ -681,7 +696,7 @@ export const APPS = {
         .getByRole("button", { name: text("editor", ctx.lang, "fileMenu.save.label"), exact: true })
         .first()
         .click();
-      await page.getByRole("dialog").first().waitFor({ timeout: 5000 });
+      await waitFor(page.getByRole("dialog").first(), "the external-change dialog to open on Save");
       await page.waitForTimeout(300);
       await ctx.scene("external-change", { overlay: true });
       // 閉じる前に外の変化を消す (閉じた後の確かめ (一定の間隔・ウィンドウに戻ったとき) で開き直さないように)
@@ -730,7 +745,7 @@ export const APPS = {
           exact: true,
         })
         .click();
-      await page.locator(".ugoe-popover").first().waitFor({ timeout: 5000 });
+      await waitFor(page.locator(".ugoe-popover").first(), "the motion settings popover to open");
       await ctx.scene("motion-settings", { aria: false, overlay: true });
       await closeOverlay(page, page.locator(".ugoe-popover"));
       // ビューポートの道具: ワープのギズモと、メッシュの編集 (見本の HeadWarp・Face。T0675)
@@ -791,12 +806,12 @@ export const APPS = {
     async setup() {},
     async load(page, ctx) {
       await page.goto(`${ctx.url}/`);
-      await page.waitForFunction(
-        () => ["empty", "unavailable"].includes(window.__UGOE_VIEWER__?.status),
-        null,
-        {
-          timeout: 20000,
-        },
+      await waitUntil("the viewer to start (status empty or unavailable)", (timeout) =>
+        page.waitForFunction(
+          () => ["empty", "unavailable"].includes(window.__UGOE_VIEWER__?.status),
+          null,
+          { timeout },
+        ),
       );
       await page.waitForTimeout(500);
       await ctx.scene("empty");
@@ -807,7 +822,7 @@ export const APPS = {
           exact: true,
         })
         .click();
-      await page.getByRole("menu").first().waitFor({ timeout: 5000 });
+      await waitFor(page.getByRole("menu").first(), "the samples menu to open");
       await ctx.scene("samples-menu", { aria: false, overlay: true });
       await page
         .getByRole("menuitem", {
@@ -815,9 +830,15 @@ export const APPS = {
           exact: true,
         })
         .click();
-      await page.waitForFunction(() => window.__UGOE_VIEWER__?.status === "ready", null, {
-        timeout: 30000,
-      });
+      await waitUntil(
+        "the viewer to load the sample model (status ready)",
+        (timeout) =>
+          page.waitForFunction(() => window.__UGOE_VIEWER__?.status === "ready", null, { timeout }),
+        {
+          timeout: LOAD_TIMEOUT_MS,
+          hint: () => page.evaluate(() => `status: ${window.__UGOE_VIEWER__?.status}`),
+        },
+      );
       // 動きを止めて、撮るたびに同じ絵にする
       await page.evaluate(() => {
         const p = window.__UGOE_VIEWER__;
@@ -836,7 +857,7 @@ export const APPS = {
         })
         .focus();
       await page.keyboard.press("Enter");
-      await page.locator(".ugoe-popover").waitFor({ timeout: 5000 });
+      await waitFor(page.locator(".ugoe-popover"), "the background popover to open");
       await ctx.scene("background", { aria: false, overlay: true });
       await closeOverlay(page, page.locator(".ugoe-popover"));
       await settingsScene(page, ctx, text("viewer", ctx.lang, "toolbar.settings.aria"));
@@ -858,7 +879,7 @@ export const APPS = {
     },
     async load(page, ctx) {
       await page.goto(`${ctx.url}/index.html`);
-      await page.waitForSelector("header", { timeout: 20000 });
+      await waitFor(page.locator("header").first(), "the studio's header (start screen)");
       await page.waitForTimeout(1500);
     },
     async extras(page, ctx) {
@@ -866,7 +887,7 @@ export const APPS = {
       await page
         .getByRole("button", { name: text("studio", ctx.lang, "toolbar.profile"), exact: true })
         .click();
-      await page.getByRole("menu").first().waitFor({ timeout: 5000 });
+      await waitFor(page.getByRole("menu").first(), "the profile menu to open");
       await ctx.scene("profile-menu", { aria: false, overlay: true });
       await closeOverlay(page, page.getByRole("menu"));
 
@@ -944,7 +965,7 @@ export const APPS = {
         name: text("studio", ctx.lang, "output.opaqueChroma"),
         exact: true,
       });
-      await chroma.waitFor({ timeout: 5000 });
+      await waitFor(chroma, "the output panel's chroma key button (transparency unsupported)");
       await chroma.scrollIntoViewIfNeeded();
       await ctx.scene("opaque");
       await page.evaluate(() => window.__uiAuditStudio.setOutput({ transparency: "supported" }));
@@ -989,12 +1010,15 @@ export const APPS = {
       await ctx.scene("approved", { aria: false });
 
       // 自動の保存の失敗 (T0874)。保存先のある自分のプロファイルを変え、自動の保存 (変えてから約 0.8 秒) が失敗した帯を
-      // 出るまで待つ (`NOTICE_TIMEOUT_MS`。T0884)。
+      // 出るまで待つ (`WAIT_TIMEOUT_MS`。T0884・T0985)。
       // 前の場面の承認の知らせは閉じる (帯の並びの頭に失敗の帯を置いて撮る)。後から出る帯の閉じるボタンの Tooltip が
       // 出ないよう、フォーカスとポインタを外す
       const approved = page.locator('.ugoe-notice[data-tone="success"]');
       await approved.getByRole("button").last().click();
-      await approved.waitFor({ state: "detached", timeout: NOTICE_TIMEOUT_MS });
+      await waitFor(approved, "the approval notice to close", {
+        state: "detached",
+        hint: async () => `notices: ${await noticesOnPage(page)}`,
+      });
       await page.evaluate(() => document.activeElement?.blur());
       await page.mouse.move(1, 300);
       // 一時の失敗 (ディスクが一杯): 閉じられる赤の帯に、エラーと「もう一度自動で保存する」の文

@@ -377,10 +377,11 @@ for (const app of only) {
       );
     } catch (e) {
       failedScenes++;
+      // 最後に撮った場面を添える (どの場面の後で止まったか。条件の待ちの時間切れは何を待っていたかを文に持つ。T0985)
       const message =
         e instanceof TimeLimitError
           ? `${e.message} (${runDeadline.passed() ? "--deadline" : "--variant-timeout"}; last scene: ${lastScene ?? "none"})`
-          : String(e.message ?? e).split("\n")[0];
+          : `${String(e.message ?? e).split("\n")[0]} (last scene: ${lastScene ?? "none"})`;
       console.log(`  ${v.name}: FAILED ${message}`);
       scenes.push({
         name: v.name,

@@ -1,7 +1,15 @@
-// UI の監査の時間の上限 (組ごとの上限と全体の締め切り。T0884) のテスト (`just ui-audit-check`)
+// UI の監査の時間の上限 (組ごとの上限と全体の締め切り。T0884。条件の待ち。T0985) のテスト (`just ui-audit-check`)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deadline, secondsOption, TimeLimitError, withTimeLimit } from "../lib/limits.mjs";
+import {
+  deadline,
+  secondsOption,
+  TimeLimitError,
+  WAIT_TIMEOUT_MS,
+  WaitTimeoutError,
+  waitUntil,
+  withTimeLimit,
+} from "../lib/limits.mjs";
 
 const never = () => new Promise(() => {});
 
@@ -87,4 +95,65 @@ test("secondsOption reads seconds, 0 as no limit and rejects bad values", () => 
   for (const bad of ["-1", "abc", "NaN", "Infinity"]) {
     assert.throws(() => secondsOption(bad, "--deadline"), /--deadline/);
   }
+});
+
+/** Playwright の時間切れ (`TimeoutError`) を投げる待ち。 */
+const timesOut = async () => {
+  const e = new Error("locator.waitFor: Timeout 20000ms exceeded.");
+  e.name = "TimeoutError";
+  throw e;
+};
+
+test("waitUntil passes the shared limit to the wait and returns its result", async () => {
+  let given = null;
+  const r = await waitUntil("the menu", async (timeout) => {
+    given = timeout;
+    return "shown";
+  });
+  assert.equal(r, "shown");
+  assert.equal(given, WAIT_TIMEOUT_MS);
+  assert.equal(await waitUntil("the menu", async (timeout) => timeout, { timeout: 50 }), 50);
+});
+
+test("waitUntil names what it waited for, how long and the hint when the wait times out", async () => {
+  let clock = 1000;
+  const now = () => clock;
+  await assert.rejects(
+    waitUntil(
+      "the File menu to open",
+      async () => {
+        clock += 20000;
+        return timesOut();
+      },
+      { now, hint: async () => "notices: none" },
+    ),
+    (e) =>
+      e instanceof WaitTimeoutError &&
+      e.message === "timed out after 20.0s waiting for the File menu to open (notices: none)" &&
+      e.what === "the File menu to open",
+  );
+  await assert.rejects(
+    waitUntil("the dialog", timesOut, { now }),
+    /^WaitTimeoutError: timed out after 0\.0s waiting for the dialog$/,
+  );
+});
+
+test("waitUntil keeps the timeout message when the hint itself fails", async () => {
+  await assert.rejects(
+    waitUntil("the dialog", timesOut, {
+      hint: async () => {
+        throw new Error("page closed");
+      },
+    }),
+    (e) => e instanceof WaitTimeoutError && !e.message.includes("("),
+  );
+});
+
+test("waitUntil passes other failures through", async () => {
+  await assert.rejects(
+    waitUntil("the dialog", async () => {
+      throw new Error("strict mode violation");
+    }),
+    (e) => !(e instanceof WaitTimeoutError) && /strict mode/.test(e.message),
+  );
 });
