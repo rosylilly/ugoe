@@ -763,4 +763,5 @@ GitHub Actions の Editor build のワークフローは、ビューアのイン
 チェックサム (`.sha256`) と成果物の証明もエディタと同じに添える ([docs/release.md#配布物を確かめる](../../docs/release.md#配布物を確かめる))。
 
 アイコンは `src-tauri/icons/icon.png` から `pnpm tauri icon src-tauri/icons/icon.png -o src-tauri/icons` で作り直せる
-(Android・iOS 用に出力されるディレクトリは使わないので消す)。
+(Android・iOS 用に出力されるディレクトリは使わないので消す)。アイコンの出所とライセンスは
+[docs/release.md#アプリのアイコン](../../docs/release.md#アプリのアイコン) の表に書く。

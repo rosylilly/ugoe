@@ -56,7 +56,8 @@
   - **版を上げる:** `scripts/secrets.mjs` の `GITLEAKS_VERSION` と、Release の `gitleaks_<版>_checksums.txt` から写した
     `GITLEAKS_ASSETS` の sha256 を変え、`just secrets` で履歴のすべてが通るのを確かめます。
 - **外部 SDK・ライセンス:** `just licenses` が依存のライセンスを見ます。画像・モデル・PSD の出所は `assets/fixtures/README.md`・
-  `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。アプリのアイコンの出所はまだ書いていません (T0097)。
+  `assets/fixtures/psd-real/README.md`・`assets/samples/README.md` の表に書きます (表に無いものを足さない)。アプリのアイコンの出所は
+  [アプリのアイコン](#アプリのアイコン) の表に書きます (エディタ・ビューア・スタジオの作者とライセンスはまだ決まっていない。下の「人がすること」)。
 
 ### 人がすること
 
@@ -82,6 +83,9 @@
   Settings → Actions → General で、外の人の PR のワークフローを承認してから動かす設定 (「Require approval for all external contributors」) にし、
   「Workflow permissions」を読み取りだけにします (書き込みが要るジョブは `permissions:` で個別に付けている)。
 - **セキュリティの機能:** Private vulnerability reporting・Dependabot alerts・Secret scanning と push protection を有効にします。
+- **アプリのアイコン:** [アプリのアイコン](#アプリのアイコン) の表の「利用者に確かめる」を埋めます。エディタのアイコンを誰がどう作ったか、
+  ビューア (とスタジオ) のアイコンの元の絵を何で描いたか、3 つのアイコンをどのライセンスで配るかを、リポジトリを持つ人が確かめて書きます
+  (分からない・再配布できないものがあれば作り直す。T0097)。
 - **文書:** `CONTRIBUTING.md` (貢献の手順)・`SECURITY.md` (脆弱性の報告先)・`CODE_OF_CONDUCT.md` (Contributor Covenant 2.1)・
   Issue と PR のテンプレート (`.github/ISSUE_TEMPLATE/`・`.github/pull_request_template.md`) はあります (T0096)。公開の前に次を決めて直します。
   - **連絡先:** 報告先は GitHub の Private vulnerability reporting だけにする (利用者の決定、2026-10-11)。`SECURITY.md` と `CODE_OF_CONDUCT.md` (Enforcement の節。行動規範の違反の報告先) はどちらもそこを指します。
@@ -165,6 +169,24 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
   求めるので、MPL-2.0 で使うクレートごとに crates.io のその版のページ・`.crate` のアーカイブ・リポジトリの URL を表記の終わりに書きます
   (変更は加えていない。[ADR 0026](adr/0026-godot-binding.md))。
 - C ABI のアーカイブには、`scripts/ffi-dist.mjs` がこのファイルを `THIRD-PARTY-NOTICES.txt` として詰めます。
+
+### アプリのアイコン
+
+エディタ・ビューア・スタジオのアイコン (`apps/<アプリ>/src-tauri/icons/`。`tauri.conf.json` の `bundle.icon` が指し、インストーラと
+アプリの窓に入る) の出所です。アイコンの絵はアプリ (GPL-3.0-only) と一緒に配りますが、絵そのもののライセンスはこの表に書きます (T0097)。
+
+| アプリ | 元の絵 | 出所 (作者・作り方・道具) | ライセンス |
+| --- | --- | --- | --- |
+| エディタ | `apps/editor/src-tauri/icons/icon.png` (512x512 の PNG。紫の円に薄紫の波) | 最初のコミット (`16554161`、T0001 のリポジトリの土台) で入った。作者・作り方・使った道具の記録はタスクファイルにもコミットにも無い (**利用者に確かめる**) | **利用者に確かめる** |
+| ビューア | `apps/viewer/src-tauri/icons/icon.png` (512x512 の PNG。青い角丸の四角に白い顔) | T0701 (`b03ca52c`) の作業で自作した (タスクファイルのメモ)。`icon.png` を何で描いたかの記録は無い (**利用者に確かめる**) | **利用者に確かめる** |
+| スタジオ | `apps/studio/src-tauri/icons/icon.png` | T0801 (`37bcb15a`) でビューアのアイコンを写した (すべてのファイルがビューアのものとバイトまで同じ) | ビューアと同じ |
+
+- 大きさ違いのファイル (`32x32.png`・`128x128.png`・`128x128@2x.png`・`Square*Logo.png`・`StoreLogo.png`・`icon.ico`・`icon.icns`) は、
+  どのアプリも `icon.png` から Tauri の CLI で作ります: `pnpm tauri icon src-tauri/icons/icon.png -o src-tauri/icons` (アプリのディレクトリで。
+  Android・iOS 用に出力されるディレクトリは使わないので消す)。絵は `icon.png` と同じなので、出所とライセンスも `icon.png` に従います。
+- 元の絵として残っているのは 512x512 の `icon.png` だけで、SVG やもっと大きな絵はリポジトリにありません (リポジトリの外にあるかも
+  記録が無い)。大きさ違いはこの `icon.png` から作り直せます。512 より大きな絵が要るとき (高い解像度のストアの画像など) は描き直します。
+- エディタの `icon.png` は、エディタが作る Claude Desktop 向けの MCP サーバの束 (`.mcpb`) のアイコンにもなります ([editor.md](editor.md))。
 
 ## crates.io
 
