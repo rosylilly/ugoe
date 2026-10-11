@@ -4,6 +4,13 @@
   "version": "0.0.0",
   "description": "ugoe runtime for the web: WebAssembly bindings, TypeScript types and the <ugoe-avatar> element",
   "license": "MIT",
+  "homepage": "https://github.com/rosylilly/ugoe/tree/main/bindings/web#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rosylilly/ugoe.git",
+    "directory": "bindings/web"
+  },
+  "bugs": "https://github.com/rosylilly/ugoe/issues",
   "type": "module",
   "exports": {
     ".": {
