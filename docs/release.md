@@ -110,14 +110,19 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
   cargo-about の設定は `scripts/about.toml`。
   - 対象: Windows・macOS・Linux (x86_64 と aarch64) のどれかのビルドに入るクレート。ビルドスクリプトだけ・テストだけが使う
     クレートは載せない。ワークスペースのクレート (ugoe 自身) は載せない。版は `Cargo.lock` のもの。
-  - 手続きマクロのクレート (`serde_derive`・`thiserror-impl` など。`cargo metadata` の target の kind が `proc-macro`) と、
-    手続きマクロ・ビルドスクリプトからしか使われないクレート (`syn`・`quote`・`proc-macro2` など) も載せない。どちらもホスト向けに
-    ビルドされてコンパイラが読み込むか、手続きマクロ・ビルドスクリプトにリンクされるだけで、配布物のバイナリには入らない。
-    cargo-about はこれらを通常の依存と区別しないので、`scripts/lib/rust-notices.mjs` が `cargo metadata` の依存をアプリの
-    クレートから通常の依存だけでたどり (手続きマクロのクレートの先はたどらない)、たどれないものを cargo-about の結果から除く。
-    通常の依存からも使われるクレートは残る。除いた数は `just notices` のログに出る。
-    `cargo metadata` は機能をホスト向けの依存と合わせて解くので、ホスト向けの機能だけが引き込むクレート (Tauri の `tauri-utils` の
-    ビルド用の機能の依存など) は残る (載せすぎるほうに寄せる)。
+  - 載せるクレートは、`scripts/about.toml` の targets のそれぞれについて実際のビルドと同じ解き方で求めた依存の和と一致させる:
+    `cargo tree -e normal,no-proc-macro --target <ターゲット> --prefix none -f '{p}' --frozen` をターゲットごとに流し、
+    ワークスペースのクレート (パスの付いた行) を除いた名前と版の和を取り (`scripts/lib/rust-notices.mjs` の `parseCargoTree`)、
+    cargo-about の結果をその集合に絞る。cargo-about は機能をホスト向けの依存と合わせて解き、ターゲットの合わせ方も広く取るので、
+    バイナリに入らないクレートも見つけるため。除くのは次のもの。
+    - 手続きマクロのクレート (`serde_derive`・`thiserror-impl` など) と、手続きマクロ・ビルドスクリプトからしか使われないクレート
+      (`syn`・`quote`・`proc-macro2` など)。ホスト向けにビルドされてコンパイラが読み込むか、手続きマクロ・ビルドスクリプトに
+      リンクされるだけ。通常の依存からも使われるクレートは残る。
+    - ホスト向けの機能だけが引き込むクレート (Tauri の `tauri-utils` のビルド用の機能の依存の `cargo_metadata`・`html5ever`・
+      `cssparser`・`schemars 0.8` など)。resolver 2 は実際のビルドでホスト向けの依存の機能を分けて解くので、バイナリに入らない。
+    - どのターゲットのビルドにも入らないプラットフォーム別のクレート (`windows_x86_64_gnu`・`winapi` など)。
+    cargo tree の和にあって cargo-about が見つけていないクレートがあると生成が失敗する (除きすぎないように)。載せた数と除いた数は
+    `just notices` のログに出る。`tauri build` が足す機能 (`tauri/custom-protocol`) は依存を変えない。
   - 選べるライセンス (`MIT OR Apache-2.0` など) は、`scripts/about.toml` の `accepted` の前にあるものを選ぶ (MIT を最初に、
     MIT-0 を Apache-2.0 より前に置く。`CC0-1.0 OR MIT-0 OR Apache-2.0` の `dunce` は MIT-0 の文になる)。
     `accepted` は `scripts/check-licenses.mjs` の GPL-3.0 と両立するライセンスと同じ集合で、`just licenses` が突き合わせる。
@@ -128,7 +133,7 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
   - cargo-about の版は `scripts/lib/rust-notices.mjs` の `CARGO_ABOUT_VERSION` に固定し、`just cargo-about` が
     その版を入れる (`cargo install cargo-about --version <版> --locked --features cli`)。CI (ci.yml の rust-checks) も同じ
     レシピで入れる。cargo-about は依存のすべてのファイルを読むのでアプリ 1 つに数十秒かかり、結果は入力 (cargo-about の版・設定・
-    `Cargo.lock`・すべての `Cargo.toml`) のハッシュごとに `target/cargo-about/` に覚える。
+    `Cargo.lock`・すべての `Cargo.toml`) のハッシュごとに `target/cargo-about/` に覚える (cargo tree の和もいっしょに)。
 
 `just licenses` (`just ci` に含まれる) が生成したものとコミットしたものを突き合わせ、食い違えば失敗します (JS の依存の版がロックファイルと
 変わったとき、Rust の依存が変わったときを含む)。これには cargo-about が要ります (無ければ `just cargo-about` を案内して失敗します)。
@@ -161,8 +166,8 @@ Rust のクレート) のライセンスの表記を `apps/<アプリ>/public/th
 
 - ugoe 自身のクレートは載せず、表記の頭で ugoe が MIT であること (ライセンスの文の在り処) を示します。
 - 対象のクレートは、配布物のライブラリのクレートを表のターゲットのどれかに向けてビルドしたときに入るもの (既定の features)。
-  アプリと同じく、手続きマクロのクレートと、手続きマクロ・ビルドスクリプトだけが使うクレートは載せない (`wasm-bindgen-macro`・
-  `godot-macros`・`syn` など)。
+  アプリと同じく、表のターゲットごとの `cargo tree -e normal,no-proc-macro` の和に絞る (手続きマクロのクレートと、
+  手続きマクロ・ビルドスクリプトだけが使うクレートは載らない。`wasm-bindgen-macro`・`godot-macros`・`syn` など)。
   ターゲットを足したら `scripts/dist-notices.mjs` の `DISTS` も直します (Unity は `unity.yml` の Android・iOS のターゲットを
   含むかをテストが確かめる)。
 - Godot のアドオンには godot-rust のクレート (MPL-2.0) が入ります。MPL-2.0 の 3.2 は実行形式を配るときにソースの在り処を示すことを

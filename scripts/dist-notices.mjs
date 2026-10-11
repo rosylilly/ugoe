@@ -160,8 +160,8 @@ export function renderDistNotices(dist, rust) {
 
 /** 配布物の表記を生成する。`log` は除いたクレートの数を受け取る。 */
 export function generate(dist, log = () => {}) {
-  const { about, compileOnly } = rustNoticeSources(root, dist.manifest, { targets: dist.targets });
-  const rust = rustNotices(about, { compileOnly });
+  const { about, shipped } = rustNoticeSources(root, dist.manifest, { targets: dist.targets });
+  const rust = rustNotices(about, { shipped });
   log(excludedSummary(rust));
   return renderDistNotices(dist, rust);
 }

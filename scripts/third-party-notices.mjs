@@ -276,8 +276,8 @@ export async function generate(app, log = () => {}) {
   const sorted = [...unique.values()].sort(
     (a, b) => a.name.localeCompare(b.name, "en") || a.version.localeCompare(b.version, "en"),
   );
-  const { about, compileOnly } = rustNoticeSources(root, app.manifest);
-  const rust = rustNotices(about, { compileOnly });
+  const { about, shipped } = rustNoticeSources(root, app.manifest);
+  const rust = rustNotices(about, { shipped });
   log(excludedSummary(rust));
   return renderNotices(app.name, mediapipe, sorted, rust);
 }

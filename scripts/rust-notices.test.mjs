@@ -8,16 +8,16 @@ import {
   aboutArgs,
   aboutList,
   CARGO_ABOUT_VERSION,
-  compileOnlyCrates,
   crateAuthors,
   crateSource,
   excludedSummary,
   isLicenseFile,
-  metadataArgs,
   parseCargoAboutVersion,
+  parseCargoTree,
   renderRustNotices,
   rustNotices,
   stripPlaceholders,
+  treeArgs,
 } from "./lib/rust-notices.mjs";
 
 const REGISTRY = "registry+https://github.com/rust-lang/crates.io-index";
@@ -182,94 +182,53 @@ test("ターゲットは 1 つずつ --target に渡す", () => {
   assert.ok(!aboutArgs("a/Cargo.toml").includes("--target"));
 });
 
-test("ターゲットは 1 つずつ --filter-platform に渡す (cargo metadata)", () => {
-  const args = metadataArgs("a/Cargo.toml", ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]);
-  assert.deepEqual(args.slice(-4), [
-    "--filter-platform",
-    "x86_64-unknown-linux-gnu",
-    "--filter-platform",
-    "wasm32-unknown-unknown",
-  ]);
+test("cargo tree はターゲットごとに、通常の依存だけを手続きマクロを除いて 1 行に 1 クレートで出す", () => {
+  const args = treeArgs("a/Cargo.toml", "x86_64-pc-windows-msvc");
+  assert.equal(args[0], "tree");
+  assert.equal(args[args.indexOf("-e") + 1], "normal,no-proc-macro");
+  assert.equal(args[args.indexOf("--target") + 1], "x86_64-pc-windows-msvc");
+  assert.equal(args[args.indexOf("--prefix") + 1], "none");
+  assert.equal(args[args.indexOf("-f") + 1], "{p}");
+  assert.equal(args[args.indexOf("--manifest-path") + 1], "a/Cargo.toml");
   assert.ok(args.includes("--frozen"));
-  assert.ok(!metadataArgs("a/Cargo.toml", []).includes("--filter-platform"));
 });
 
-/** cargo metadata の packages の 1 つ (`kind` は lib の target の kind)。 */
-function metaPkg(name, version, kind = ["lib"]) {
-  return {
-    id: `${REGISTRY}#${name}@${version}`,
-    name,
-    version,
-    targets: [{ kind }, { kind: ["test"] }],
-  };
-}
-
-/** cargo metadata の resolve の deps の 1 つ。 */
-function dep(to, ...kinds) {
-  return { pkg: to.id, dep_kinds: (kinds.length > 0 ? kinds : [null]).map((kind) => ({ kind })) };
-}
-
-test("手続きマクロのクレートと、手続きマクロ・ビルドスクリプトだけが使うクレートを求める", () => {
-  const app = { ...metaPkg("app", "0.0.0", ["bin"]), id: "path+file:///r/app#0.0.0" };
-  const serde = metaPkg("serde", "1.0.0");
-  const serdeDerive = metaPkg("serde_derive", "1.0.0", ["proc-macro"]);
-  const syn = metaPkg("syn", "2.0.0");
-  const quote = metaPkg("quote", "1.0.0");
-  const pm2 = metaPkg("proc-macro2", "1.0.0");
-  const cc = metaPkg("cc", "1.0.0");
-  const runtimeSyn = metaPkg("parser", "1.0.0");
-  const devOnly = metaPkg("png", "0.18.0");
-  const node = (p, ...deps) => ({ id: p.id, deps });
-  const metadata = {
-    packages: [app, serde, serdeDerive, syn, quote, pm2, cc, runtimeSyn, devOnly],
-    workspace_members: [app.id],
-    resolve: {
-      root: app.id,
-      nodes: [
-        node(app, dep(serde), dep(runtimeSyn), dep(cc, "build"), dep(devOnly, "dev")),
-        node(serde, dep(serdeDerive)),
-        node(serdeDerive, dep(syn), dep(quote), dep(pm2)),
-        node(syn, dep(quote), dep(pm2)),
-        node(quote, dep(pm2)),
-        node(pm2),
-        node(cc),
-        // 通常の依存から使われる proc-macro2 は残す
-        node(runtimeSyn, dep(pm2)),
-        node(devOnly),
-      ],
-    },
-  };
-  assert.deepEqual([...compileOnlyCrates(metadata)].sort(), [
-    ["cc 1.0.0", "compile-time"],
-    ["png 0.18.0", "compile-time"],
-    ["quote 1.0.0", "compile-time"],
-    ["serde_derive 1.0.0", "proc-macro"],
-    ["syn 2.0.0", "compile-time"],
+test("cargo tree の出力から、ワークスペースの外のクレートの名前と版を読む", () => {
+  const output = [
+    "ugoe-editor v0.0.0 (/r/apps/editor/src-tauri)",
+    "keyring-core v1.0.0",
+    "ash v0.38.0+1.3.281",
+    "ugoe-core v0.0.0 (/r/crates/ugoe-core)",
+    "glam v0.33.11 (*)",
+    "ugoe-core v0.0.0 (/r/crates/ugoe-core) (*)",
+    "serde_derive v1.0.229 (proc-macro)",
+    "serde_derive v1.0.229 (proc-macro) (*)",
+    "foo v0.1.0 (https://github.com/o/foo?rev=abc#abcdef01)",
+    "vcam v0.0.0 (C:\\r\\apps\\studio\\vcam (x))",
+    "",
+  ].join("\r\n");
+  assert.deepEqual([...parseCargoTree(output)].sort(), [
+    "ash 0.38.0+1.3.281",
+    "foo 0.1.0",
+    "glam 0.33.11",
+    "keyring-core 1.0.0",
   ]);
-  // 根が無ければワークスペースのクレートから
-  const noRoot = { ...metadata, resolve: { ...metadata.resolve, root: null } };
-  assert.equal(compileOnlyCrates(noRoot).size, 5);
+  assert.throws(() => parseCargoTree("└── bad"), /cargo tree の行を読めない/);
 });
 
-test("コンパイルのときだけ使うクレートを表記から除き、数を数える", () => {
+test("cargo tree の和の外のクレートを表記から除き、数を数える", () => {
   const a = pkg("a", "1.0.0", "MIT");
   const derive = pkg("a_derive", "1.0.0", "MIT");
-  const syn = pkg("syn", "2.0.0", "MIT OR Apache-2.0");
-  const notices = rustNotices(
-    {
-      crates: [a, derive, syn].map((p) => ({ package: p, license: p.license })),
-      licenses: [
-        lic("MIT", "MIT text", "/r/a-1.0.0/LICENSE", a, derive),
-        lic("MIT", "syn MIT text", "/r/syn-2.0.0/LICENSE-MIT", syn),
-      ],
-    },
-    {
-      compileOnly: new Map([
-        ["a_derive 1.0.0", "proc-macro"],
-        ["syn 2.0.0", "compile-time"],
-      ]),
-    },
-  );
+  const html = pkg("html5ever", "0.39.0", "MIT OR Apache-2.0");
+  const own = pkg("ugoe-core", "0.0.0", "MIT", { source: null });
+  const about = {
+    crates: [a, derive, html, own].map((p) => ({ package: p, license: p.license })),
+    licenses: [
+      lic("MIT", "MIT text", "/r/a-1.0.0/LICENSE", a, derive),
+      lic("MIT", "html5ever MIT text", "/r/html5ever-0.39.0/LICENSE-MIT", html),
+    ],
+  };
+  const notices = rustNotices(about, { shipped: new Set(["a 1.0.0"]) });
   assert.deepEqual(
     notices.crates.map((c) => c.name),
     ["a"],
@@ -279,8 +238,23 @@ test("コンパイルのときだけ使うクレートを表記から除き、�
     notices.texts.map((t) => [t.text, t.crates]),
     [["MIT text", ["a 1.0.0"]]],
   );
-  assert.deepEqual(notices.excluded, { "proc-macro": 1, "compile-time": 1 });
-  assert.match(excludedSummary(notices), /手続きマクロのクレート 1 個.* 1 個を除いた/);
+  // ワークスペースのクレートは数えない
+  assert.equal(notices.excluded, 2);
+  assert.match(excludedSummary(notices), /和の 1 個を載せ、.* 2 個を除いた/);
+  // 集合を渡さなければすべて載せる
+  assert.equal(rustNotices(about).crates.length, 3);
+});
+
+test("cargo tree にあって cargo-about が見つけていないクレートがあれば失敗する (除きすぎない)", () => {
+  const a = pkg("a", "1.0.0", "MIT");
+  const about = {
+    crates: [{ package: a, license: "MIT" }],
+    licenses: [lic("MIT", "MIT text", "/r/a-1.0.0/LICENSE", a)],
+  };
+  assert.throws(
+    () => rustNotices(about, { shipped: new Set(["a 1.0.0", "b 2.0.0"]) }),
+    /cargo-about が見つけていないクレート: b 2\.0\.0/,
+  );
 });
 
 test("選べるライセンスは MIT・MIT-0・Apache-2.0 の順に選ぶ (about.toml の accepted の並び)", () => {

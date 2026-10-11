@@ -2,8 +2,8 @@
 // アプリの表記 (scripts/third-party-notices.mjs) が使う。設定は scripts/about.toml、手順は docs/release.md#同梱物のライセンスの表記。
 //
 // cargo-about の JSON の出力 (`cargo about generate --format json`) を読み、文はここで組み立てる (handlebars の
-// テンプレートは使わない)。ワークスペースのクレート (ugoe 自身) と、バイナリに入らない手続きマクロのクレート
-// (`cargo metadata` で求める。compileOnlyCrates) を除き、ライセンスのファイルではないソースの見出しから
+// テンプレートは使わない)。ワークスペースのクレート (ugoe 自身) と、配布物のバイナリに入らないクレート
+// (ターゲットごとの `cargo tree` の和の外。parseCargoTree) を除き、ライセンスのファイルではないソースの見出しから
 // 拾った文を除き、ライセンスのファイルを持たないクレートには Cargo.toml の authors を添えるため。
 
 import { spawnSync } from "node:child_process";
@@ -80,58 +80,55 @@ export function aboutList(toml, key) {
   return [...body.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
 }
 
-/** `cargo metadata` の引数。`targets` は 1 つずつ `--filter-platform` に渡す (cargo-about の `--target` と同じ対象にする)。 */
-export function metadataArgs(manifest, targets) {
-  const args = ["metadata", "--format-version", "1", "--frozen", "--manifest-path", manifest];
-  for (const target of targets) args.push("--filter-platform", target);
-  return args;
-}
-
 /**
- * コンパイルのときだけ動き、配布物のバイナリに入らないクレート (鍵は名前と版、値は理由) を `cargo metadata` の結果から求める。
- * - `"proc-macro"`: 手続きマクロのクレート (target の kind が `proc-macro`)。コンパイラがホスト向けにビルドして読み込み、
- *   生成したコードだけが残る。
- * - `"compile-time"`: 手続きマクロのクレートとビルドスクリプトからしか使われないクレート (`syn`・`quote`・`proc-macro2` など)。
- *   ホスト向けにビルドされて手続きマクロかビルドスクリプトにリンクされるだけで、配布物のバイナリにはリンクされない。
- *   テストだけが使うクレート (cargo-about も載せない) もこちらになる。
- *
- * 根のクレート (`resolve.root`。無ければワークスペースのクレート) から通常の依存 (kind が null) だけをたどり、手続きマクロの
- * クレートの先はたどらない。たどれないものが上の 2 つ。通常の依存からも使われるクレートは残る。
- * cargo metadata の依存はワークスペースのすべてのクレートの機能を合わせた上での集合なので、根のビルドに入らないクレート
- * (ほかのクレートが有効にした機能の先) も通ってしまう。`within` (cargo-about が見つけたクレートの鍵の集合) を渡すと、その中だけを
- * たどる (バイナリに入るクレートへの道は、すべてバイナリに入るクレートを通るので、除きすぎることはない)。
+ * `cargo tree` の引数。配布物のバイナリに入るクレートを、実際のビルドと同じ解き方で並べる: 通常の依存だけをたどり
+ * (`-e normal`。ビルドスクリプトとテストだけの依存を除く)、手続きマクロのクレートとその先を除き (`no-proc-macro`)、
+ * 機能は resolver 2 のビルドと同じくホスト向けの依存と分けて `target` に向けて解く。1 行に 1 クレート (`{p}`) を出す。
  */
-export function compileOnlyCrates(metadata, within) {
-  const packages = new Map(metadata.packages.map((p) => [p.id, p]));
-  const nodes = new Map(metadata.resolve.nodes.map((n) => [n.id, n]));
-  const isProcMacro = (id) =>
-    packages.get(id)?.targets.some((t) => t.kind.includes("proc-macro")) ?? false;
-  const roots = metadata.resolve.root ? [metadata.resolve.root] : metadata.workspace_members;
-  const reached = new Set(roots);
-  const queue = [...roots];
-  while (queue.length > 0) {
-    const node = nodes.get(queue.pop());
-    for (const dep of node?.deps ?? []) {
-      if (reached.has(dep.pkg) || isProcMacro(dep.pkg)) continue;
-      const pkg = packages.get(dep.pkg);
-      if (within && pkg && !within.has(crateKey(pkg))) continue;
-      if (!dep.dep_kinds.some((k) => k.kind === null)) continue;
-      reached.add(dep.pkg);
-      queue.push(dep.pkg);
-    }
-  }
-  const result = new Map();
-  for (const id of nodes.keys()) {
-    if (reached.has(id)) continue;
-    const pkg = packages.get(id);
-    if (pkg) result.set(crateKey(pkg), isProcMacro(id) ? "proc-macro" : "compile-time");
-  }
-  return result;
+export function treeArgs(manifest, target) {
+  return [
+    "tree",
+    "-e",
+    "normal,no-proc-macro",
+    "--target",
+    target,
+    "--prefix",
+    "none",
+    "-f",
+    "{p}",
+    "--frozen",
+    "--manifest-path",
+    manifest,
+  ];
 }
 
 /**
- * `manifest` (Cargo.toml、リポジトリのルートから) のクレートについて、cargo-about の JSON (`about`) と、表記から除く
- * コンパイルのときだけ使うクレート (`compileOnly`。compileOnlyCrates) を返す。
+ * `cargo tree` の出力 (treeArgs) から、ワークスペースの外のクレートの鍵 (名前と版) の集合を読む。
+ * 行は `名前 v版` に、ソースの印 (パスで依存するクレートはそのパス、git のクレートは URL) と、手続きマクロの印 `(proc-macro)`、
+ * 前に出たクレートの印 `(*)` が続く。パスの付いたクレート (ワークスペースのクレート。ugoe 自身) と手続きマクロのクレートは入れない。
+ * 読めない行があれば例外。
+ */
+export function parseCargoTree(output) {
+  const keys = new Set();
+  for (const raw of output.split(/\r?\n/)) {
+    let line = raw.trim();
+    if (line === "") continue;
+    line = line.replace(/ \(\*\)$/, "");
+    const procMacro = / \(proc-macro\)$/.test(line);
+    line = line.replace(/ \(proc-macro\)$/, "");
+    const match = /^(\S+) v(\S+)(?: \((.*)\))?$/.exec(line);
+    if (!match) throw new Error(`cargo tree の行を読めない: ${raw}`);
+    const [, name, version, source] = match;
+    const local = source !== undefined && !/^[a-z][a-z0-9+.-]*:\/\//i.test(source);
+    if (local || procMacro) continue;
+    keys.add(`${name} ${version}`);
+  }
+  return keys;
+}
+
+/**
+ * `manifest` (Cargo.toml、リポジトリのルートから) のクレートについて、cargo-about の JSON (`about`) と、配布物のバイナリに入る
+ * クレートの鍵の集合 (`shipped`。ターゲットごとの `cargo tree` (treeArgs) の和) を返す。
  * 取り出しはネットワークを使わない (`--frozen`。結果が手元とネットワークの状態で変わらないように)。
  * 先に `cargo fetch --locked` でクレートのソースを揃える。`targets` を渡すと about.toml の targets を上書きする。
  */
@@ -140,14 +137,14 @@ export function rustNoticeSources(root, manifest, { targets } = {}) {
   // (cargo-about の版・設定・Cargo.lock・すべての Cargo.toml・対象) が同じなら、前の結果を使う
   const key = cacheKey(root, [
     CARGO_ABOUT_VERSION,
-    "compile-only",
+    "cargo-tree",
     manifest,
     JSON.stringify(targets ?? null),
   ]);
   const cached = key && join(root, CACHE_DIR, `${key}.json`);
   if (cached && existsSync(cached)) {
-    const { about, compileOnly } = JSON.parse(readFileSync(cached, "utf8"));
-    return { about, compileOnly: new Map(compileOnly) };
+    const { about, shipped } = JSON.parse(readFileSync(cached, "utf8"));
+    return { about, shipped: new Set(shipped) };
   }
   assertCargoAbout();
   const run = (args) => {
@@ -167,14 +164,17 @@ export function rustNoticeSources(root, manifest, { targets } = {}) {
   const about = JSON.parse(run(aboutArgs(manifest, targets)));
   const platforms =
     targets ?? aboutList(readFileSync(join(root, ABOUT_CONFIG), "utf8"), "targets") ?? [];
-  const within = new Set(about.crates.map((c) => crateKey(c.package)));
-  const compileOnly = compileOnlyCrates(JSON.parse(run(metadataArgs(manifest, platforms))), within);
+  // 機能の解き方はターゲットごとに違うので、1 つずつ求めて和を取る
+  const shipped = new Set();
+  for (const target of platforms) {
+    for (const k of parseCargoTree(run(treeArgs(manifest, target)))) shipped.add(k);
+  }
   if (cached) {
     mkdirSync(join(root, CACHE_DIR), { recursive: true });
-    writeFileSync(`${cached}.tmp`, JSON.stringify({ about, compileOnly: [...compileOnly] }));
+    writeFileSync(`${cached}.tmp`, JSON.stringify({ about, shipped: [...shipped].sort() }));
     renameSync(`${cached}.tmp`, cached);
   }
-  return { about, compileOnly };
+  return { about, shipped };
 }
 
 /**
@@ -242,22 +242,24 @@ export function stripPlaceholders(text) {
 /**
  * cargo-about の JSON から、表記に載せるクレートと文を作る。
  * - ワークスペースのクレート (ソースが無い、パスで依存するもの。ugoe 自身) は載せない。
- * - `compileOnly` (compileOnlyCrates の結果) のクレートは、バイナリに入らないので載せない。
+ * - `shipped` (配布物のバイナリに入るクレートの鍵の集合。rustNoticeSources の結果) を渡すと、その外のクレートは載せない。
+ *   cargo-about は機能をホスト向けの依存と合わせて解き、手続きマクロとそれだけが使うクレートも区別しないので、バイナリに入らない
+ *   クレートも見つける。`shipped` の中に cargo-about が見つけていないクレートがあれば例外 (除きすぎないように、載せるものは
+ *   `shipped` と一致させる)。
  * - 同じ文は 1 つにまとめ、使うクレートを並べる。
  * - 文が 1 つも残らないクレートがあれば例外 (ライセンスを確かめて about.toml か読み方を直す)。
  *
  * 返すもの: `crates` (名前と版で並ぶ。name・version・license・source・authors・used (使ったライセンスの ID)・
  * noFile (ライセンスのファイルを持たず、標準の文を使う)) と `texts` (ID と最初のクレートで並ぶ。id・name・text・
- * standard (標準の文か)・crates (鍵の列))、`excluded` (`compileOnly` で除いたクレートの数を理由ごとに。`proc-macro`・`compile-time`)。
+ * standard (標準の文か)・crates (鍵の列))、`excluded` (`shipped` の外で除いたクレートの数)。
  */
-export function rustNotices(about, { compileOnly = new Map() } = {}) {
+export function rustNotices(about, { shipped } = {}) {
   const crates = new Map();
-  const excluded = { "proc-macro": 0, "compile-time": 0 };
+  let excluded = 0;
   for (const { package: pkg } of about.crates) {
     if (pkg.source === null || pkg.source === undefined) continue;
-    const reason = compileOnly.get(crateKey(pkg));
-    if (reason) {
-      excluded[reason] += 1;
+    if (shipped && !shipped.has(crateKey(pkg))) {
+      excluded += 1;
       continue;
     }
     crates.set(crateKey(pkg), {
@@ -295,6 +297,12 @@ export function rustNotices(about, { compileOnly = new Map() } = {}) {
     }
     texts.set(id, entry);
   }
+  const unknown = [...(shipped ?? [])].filter((k) => !crates.has(k));
+  if (unknown.length > 0) {
+    throw new Error(
+      `cargo tree にあって cargo-about が見つけていないクレート: ${unknown.join(", ")}`,
+    );
+  }
   const missing = [...crates.keys()].filter((k) => crates.get(k).used.size === 0);
   if (missing.length > 0) {
     throw new Error(`ライセンスの文が見つからないクレート: ${missing.join(", ")}`);
@@ -318,9 +326,9 @@ export function rustNotices(about, { compileOnly = new Map() } = {}) {
   };
 }
 
-/** rustNotices で除いたクレートの数を、生成のログの 1 行にする。 */
-export function excludedSummary({ excluded }) {
-  return `手続きマクロのクレート ${excluded["proc-macro"]} 個と、手続きマクロ・ビルドスクリプトだけが使うクレート ${excluded["compile-time"]} 個を除いた`;
+/** rustNotices で載せたクレートと除いたクレートの数を、生成のログの 1 行にする。 */
+export function excludedSummary({ crates, excluded }) {
+  return `cargo tree の和の ${crates.length} 個を載せ、どのターゲットのビルドにも入らないクレート ${excluded} 個を除いた`;
 }
 
 /** クレートの一覧と文を、表記の行の列にする (節の見出しは呼ぶ側が付ける)。 */
