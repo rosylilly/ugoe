@@ -1,11 +1,11 @@
 ---
 id: T0198
 title: "SDK の誤りと警告の種類ごとの見本を SDK の中の網羅の match で作り、wasm・C ABI の写しの検査が新しい種類に気づけるようにする"
-status: todo
+status: in-progress
 milestone: M9
 crates: [ugoe, ugoe-wasm, ugoe-ffi, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0198
 ---
 
 # T0198: SDK の誤りと警告のコードの網羅

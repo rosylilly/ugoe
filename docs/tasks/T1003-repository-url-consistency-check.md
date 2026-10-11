@@ -1,11 +1,11 @@
 ---
 id: T1003
 title: "リポジトリの URL (SECURITY.md・CODE_OF_CONDUCT.md・Issue のテンプレート・README など) が Cargo.toml の repository と食い違わないかを検査する"
-status: todo
+status: in-progress
 milestone: Release
 crates: [scripts, justfile, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1003
 ---
 
 # T1003: リポジトリの URL の食い違いの検査

@@ -1,11 +1,11 @@
 ---
 id: T1004
 title: "版を固定した道具 (gitleaks・cargo-about・git-cliff・actionlint など) の新しい版に気づく仕組みを足す"
-status: todo
+status: in-progress
 milestone: Release
 crates: [scripts, justfile, .github/workflows, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T1004
 ---
 
 # T1004: 固定した道具の新しい版に気づく
