@@ -1,11 +1,11 @@
 ---
 id: T0880
 title: "スタジオ: 首振りの感度を左右・上下で別々にする (非対称にする) か決める (判断が要る)"
-status: todo
+status: in-progress
 milestone: M8
 crates: [packages/face-tracking, apps/studio, tests/ui-audit, docs]
 depends_on: []
-assignee:
+assignee: claude-worker-T0880
 ---
 
 # T0880: 首振りの感度を非対称にする (判断が要る)
