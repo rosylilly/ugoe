@@ -1,6 +1,8 @@
 // scripts/app-build.mjs の引数と組み合わせの検査のテスト (`just app-build-check`)
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   APPS,
@@ -20,6 +22,7 @@ import {
   windowsSignArgv,
   withoutEmptySigningEnv,
 } from "./lib/app-signing.mjs";
+import { checksumLine, readChecksum, sha256File, writeChecksum } from "./lib/checksum.mjs";
 
 test("引数がなければすべてのアプリ、OS は呼ぶ側が今の OS で埋める", () => {
   const parsed = parseArgs([], {});
@@ -308,4 +311,22 @@ test("インストーラのフック (NSIS) の File のパスは `\\` で区切
     .flatMap((line) => line.match(/^(?:!define\s+\S+|File)\s+"([^"]*)"/)?.slice(1) ?? []);
   assert.ok(paths.length > 0);
   for (const path of paths) assert.doesNotMatch(path, /\//, path);
+});
+
+test("インストーラの隣に sha256sum の形の .sha256 を書く (C ABI のアーカイブと同じ形)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ugoe-checksum-"));
+  try {
+    const file = join(dir, "ugoe_0.1.0_amd64.deb");
+    writeFileSync(file, "abc");
+    // "abc" の SHA-256 (FIPS 180-2 の例)
+    const sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    assert.equal(sha256File(file), sha);
+    assert.equal(writeChecksum(file), sha);
+    // ディレクトリを含まない名前にする (利用者が同じディレクトリで `sha256sum -c` で確かめる)
+    assert.equal(readFileSync(`${file}.sha256`, "utf8"), `${sha}  ugoe_0.1.0_amd64.deb\n`);
+    assert.equal(checksumLine(sha, file), `${sha}  ugoe_0.1.0_amd64.deb\n`);
+    assert.equal(readChecksum(`${file}.sha256`), sha);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

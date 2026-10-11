@@ -254,7 +254,7 @@ cargo publish --locked -p ugoe-physics -p ugoe-render -p ugoe
 | --- | --- | --- |
 | Windows | `UGOE_WINDOWS_SIGN_COMMAND` (`%1` が署名するファイル) | Tauri の `bundle.windows.signCommand` に渡す設定 (`target/app-signing/windows.conf.json`) を重ねる。スタジオの仮想カメラの DLL にも同じコマンドで署名する |
 | macOS | `APPLE_SIGNING_IDENTITY` (と `APPLE_CERTIFICATE`・`APPLE_CERTIFICATE_PASSWORD`) | Tauri が `.app` に署名する。公証の資格情報が 1 組揃っていれば、Tauri が `.app` を公証してステープルし、スクリプトが `.dmg` も公証してステープルする |
-| Linux | (無い) | 署名しない |
+| Linux | (無い) | 署名しない (代わりにチェックサムと成果物の証明で確かめる。[Linux](#linux)) |
 
 - 設定が半端なとき (公証の資格情報の組の一部だけ・署名の名義の無い証明書・`%1` の無いコマンド) は、黙って署名せずに作らず、何も作らずに止まります。
 - 空の値は「無い」と同じに扱い、`tauri build` に渡す前に消します (GitHub Actions は置いていない Secrets を空の文字列で渡し、
@@ -331,9 +331,16 @@ Tauri は `.dmg` を公証しないので、`scripts/app-build.mjs` が `target/
 
 ### Linux
 
-Linux の `.deb`・`.rpm`・`.AppImage` には署名しません。配布の形 (GitHub Release からのダウンロード) では、署名しても利用者が検証する
-手順がふつう無いためです。GitHub Release は添付したファイルごとに SHA256 のダイジェストを表示するので、取り違えはそれで確かめられます。
-apt や dnf のリポジトリで配る・AppImage に GPG の署名を埋める (Tauri の `SIGN=1`) ときは、そのとき鍵の扱いと一緒に決めます。
+Linux の `.deb`・`.rpm`・`.AppImage` には署名しません (利用者の決定 2026-10-11。T0093)。
+
+- 1.0 は GitHub Release からのダウンロードだけで配り、apt・dnf のリポジトリは作りません。リポジトリが無いと、`.deb`・`.rpm` の
+  GPG の署名を利用者のパッケージマネージャが確かめる経路が無く (公開鍵を入れる手順を別に案内することになる)、AppImage に埋めた署名
+  (Tauri の `SIGN=1`) も確かめる道具がふつう入っていません。鍵を守り続ける手間に比べて、確かめる人がほとんどいないためです。
+- 代わりに、ほかの配布物と同じく **SHA-256 のチェックサム** (`<ファイル>.sha256`) と **GitHub の成果物の証明** (build provenance) を
+  添えます。証明は、そのファイルがこのリポジトリのどのワークフローの、どのコミット・タグのビルドで作られたかを Sigstore で署名して記録
+  したもので、利用者は `gh attestation verify` で確かめます ([配布物を確かめる](#配布物を確かめる))。鍵は GitHub Actions の OIDC で
+  ビルドごとに作られるので、守る鍵がありません。
+- apt や dnf のリポジトリで配ると決めたら、そのとき鍵の扱いと一緒に GPG の署名を決めます。
 
 ### Secrets を置く (初回だけ。人の手)
 
@@ -394,6 +401,62 @@ spctl --assess --type open --context context:primary-signature --verbose ugoe_<�
 SmartScreen の評価はダウンロードの実績で付くので、署名した直後の版でも警告が出ることがあります (署名していれば、発行元に名義が出る)。
 確かめていないことは [manual-check.md の D 節](manual-check.md#d-開発者向け-ビルドci配布バインディング) の D10〜D12 と、environment の保護の規則での実行。
 
+## 配布物を確かめる
+
+ダウンロードした配布物が、このリポジトリの CI で作ったものと同じかを、利用者が確かめるための仕組みです (T0093)。
+署名 ([デスクトップアプリの署名](#デスクトップアプリの署名)) とは別に、すべての OS の配布物に付けます。
+
+| 配布物 | チェックサム | 成果物の証明 | 作るところ |
+| --- | --- | --- | --- |
+| エディタ・ビューア・スタジオのインストーラ | `<インストーラ>.sha256` (下書きの Release に添付) | `actions/attest-build-provenance` | `editor-build.yml` の `build`・`build-signed` (`.sha256` は `scripts/app-build.mjs`) |
+| C ABI のアーカイブ | `<アーカイブ>.sha256` (下書きの Release に添付) | `actions/attest-build-provenance` | `ffi-release.yml` の `archive` (`.sha256` は `scripts/ffi-dist.mjs`) |
+| npm の `@ugoe/runtime` | npm のレジストリが持つ (`integrity`。`npm install` が確かめる) | npm の来歴 (`npm publish --provenance`) | `web-runtime-release.yml` |
+| Unity の UPM の tarball・Godot の zip | 同じ形で付ける予定 (T0421) | 同じ形で付ける予定 (T0421) | — |
+
+- `.sha256` の中身は `sha256sum` と同じ 1 行 (`<16 進のダイジェスト>  <ファイル名>`) です (`scripts/lib/checksum.mjs`)。
+  手元の `just app::build`・`just ffi-dist` も同じファイルを作ります。インストーラの `.sha256` は、macOS の `.dmg` の公証のステープル
+  (ファイルを書き換える) の後に作ります。
+- 成果物の証明は、ビルドしたジョブで、`.sha256` をまとめたもの (`subject-checksums`) を主体にして付けます。タグ (`release.yml` から
+  呼ばれたとき) と手での起動の両方で付けます (手での起動で証明の付け方を予行できるように)。PR の CI (`ci.yml`) は配布物を作らない
+  ので付けません。ブランチから手で起動したビルドにも証明は付くので、配った版を確かめるときは `--source-ref` でタグに絞ります (下)。
+- 証明を付けるジョブにだけ `id-token: write` (Sigstore の証明書を得る OIDC のトークン) と `attestations: write` (証明をリポジトリに
+  置く) を与えます。`release.yml` の呼ぶジョブ (`apps`・`ffi`) にも同じ権限を書きます (呼ばれたワークフローは、呼んだ側が渡した権限より
+  強くできない)。
+- 非公開のリポジトリでは、GitHub のプランによって成果物の証明を作れません。そのため証明のステップは、リポジトリが公開のとき
+  (`github.event.repository.private` が偽) だけ動きます。非公開のうちはチェックサムだけを作ります。公開してから打つタグには証明が付きます。
+- npm の `@ugoe/runtime` は、npm の来歴 (provenance) で足ります。`npm publish --provenance` は GitHub Actions の OIDC で同じ Sigstore の
+  証明 (SLSA の来歴) を作って npm のレジストリに置き、npmjs.com のパッケージのページに出し、利用者は `npm audit signatures` で確かめます。
+  tarball のダイジェストもレジストリが持ち、`npm install` がいつも確かめるので、`.sha256` や `actions/attest-build-provenance` を重ねません。
+- crates.io のクレートは、crates.io の索引がダイジェストを持ち cargo が確かめるので、何も足しません。
+
+### 確かめ方 (利用者)
+
+チェックサム: ダウンロードしたファイルと `.sha256` を同じディレクトリに置きます。
+
+```sh
+# Linux (macOS は sha256sum の代わりに `shasum -a 256 -c`)
+sha256sum -c ugoe_<版>_amd64.deb.sha256        # ugoe_<版>_amd64.deb: OK
+```
+
+```powershell
+# Windows: 表示されたハッシュが .sha256 の最初の語と同じこと (大文字小文字は問わない)
+(Get-FileHash .\ugoe_<版>_x64-setup.exe -Algorithm SHA256).Hash
+Get-Content .\ugoe_<版>_x64-setup.exe.sha256
+```
+
+成果物の証明: [GitHub CLI](https://cli.github.com/) (`gh`) が要ります ([gh attestation verify](https://cli.github.com/manual/gh_attestation_verify))。
+
+```sh
+gh attestation verify ugoe_<版>_amd64.deb --repo rosylilly/ugoe
+# 配った版のタグのビルドに絞る (ブランチから手で起動したビルドの証明を受け付けない)
+gh attestation verify ugoe_<版>_amd64.deb --repo rosylilly/ugoe --source-ref refs/tags/v<版>
+```
+
+成功すると、証明を付けたワークフロー (`editor-build.yml`・`ffi-release.yml`) と、元のコミット・タグが表示されます。
+`.sha256` はファイルの取り違え・壊れたダウンロードを見つけるもので、`.sha256` も同じ Release から来るので、Release そのものが
+差し替えられたことは見つけられません。それを確かめるのが成果物の証明です。
+確かめていないことは [manual-check.md の D 節](manual-check.md#d-開発者向け-ビルドci配布バインディング) の D14・D15。
+
 ## GitHub Release の下書き
 
 `v<版>` のタグで動くワークフローは、配布物をそのタグの GitHub Release の **下書き** に添付します。Release を公開する (下書きを
@@ -419,13 +482,13 @@ node scripts/github-release.mjs notes <タグ> <ファイル>       # 本文を�
 
 | 添付するもの | ワークフロー |
 | --- | --- |
-| エディタ・ビューア・スタジオのインストーラ (`.msi`・NSIS の `.exe`・`.dmg`・`.deb`・`.rpm`・`.AppImage`) | `editor-build.yml` |
+| エディタ・ビューア・スタジオのインストーラ (`.msi`・NSIS の `.exe`・`.dmg`・`.deb`・`.rpm`・`.AppImage`) と、それぞれの `.sha256` ([配布物を確かめる](#配布物を確かめる)) | `editor-build.yml` |
 | C ABI のアーカイブ (`ugoe-ffi-<版>-<プラットフォーム>.tar.gz`・`.zip` と `.sha256`。[C ABI の配布物](#c-abi-の配布物)) | `ffi-release.yml` |
 
 公開の前に、人が次を行います。
 
 1. 下書きに、配布物がそろっていることを確かめる (ワークフローがすべて終わってから)。
-2. 本文 (生成したリリースノート) に、要約・既知の問題・署名の有無を書き足す。
+2. 本文 (生成したリリースノート) に、要約・既知の問題・署名の有無と、確かめ方 ([配布物を確かめる](#配布物を確かめる) へのリンク) を書き足す。
 3. 「Publish release」で公開する。
 
 ## 変更履歴とリリースノート
@@ -598,7 +661,7 @@ C・C++ やほかの言語から使う人のために、`ugoe-ffi` のライブ�
 - どのアーカイブも、最上位のディレクトリ `ugoe-ffi-<版>-<プラットフォーム>/` の下に `include/ugoe.h`・`lib/`・`examples/sample.c` (C の見本)・
   `LICENSE` (MIT)・`README.md` (中身とリンクの例。元は [crates/ugoe-ffi/archive/README.md](../crates/ugoe-ffi/archive/README.md))・
   `THIRD-PARTY-NOTICES.txt` (入っている Rust のクレートの表記。元は `crates/ugoe-ffi/THIRD-PARTY-NOTICES.txt`。[MIT の配布物](#mit-の配布物)) を持ちます。
-  隣に SHA-256 の `<アーカイブ>.sha256` を置きます。
+  隣に SHA-256 の `<アーカイブ>.sha256` を置き、CI では成果物の証明も付けます ([配布物を確かめる](#配布物を確かめる))。
 - 形は Windows が `.zip` (Windows に入っているもので開ける)、ほかが `.tar.gz` です。
 - macOS は 1 つの universal にします (アーキテクチャごとに分けると、利用者が両方を `lipo` でまとめ直すことが多いため。
   unity.yml のプラグインと同じ形)。
@@ -649,8 +712,8 @@ just ffi-dist-check          # アーカイブを展開し、中のヘッダと�
 `.github/workflows/ffi-release.yml` は、`v*` のタグ (`release.yml` が重い検査の後に呼ぶ) と手での起動で動きます。Windows・macOS の
 ランナーを使うので、PR では動かしません (配布物のスクリプトの単体テストは `just script-check` が `ci.yml` で流す。T0091)。
 
-1. `archive` ジョブ: 上の表のランナーごとに `pack` と `verify` を行い、アーカイブを成果物 `ugoe-ffi-archive-<プラットフォーム>` に残します。
-   タグのときは `--tag` でタグと版を確かめます。
+1. `archive` ジョブ: 上の表のランナーごとに `pack` と `verify` を行い、アーカイブに成果物の証明を付け (公開のリポジトリのとき)、
+   成果物 `ugoe-ffi-archive-<プラットフォーム>` に残します。タグのときは `--tag` でタグと版を確かめます。
 2. `release` ジョブ (タグのときだけ): すべてのアーカイブと `.sha256` を、`scripts/github-release.mjs` でタグの GitHub Release の下書きに添付します
    ([GitHub Release の下書き](#github-release-の下書き))。
 

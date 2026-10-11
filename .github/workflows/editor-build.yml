@@ -5,6 +5,8 @@ name: Editor build
 # 手元と同じ入口 `just app::build TARGET=<アプリ> PLATFORM=<OS>` (scripts/app-build.mjs) を使い、アプリごとの違い
 # (エディタのサイドカー・スタジオの仮想カメラの DLL など) はそのスクリプトが持つ。できたものは target/dist/<アプリ>/<OS>/ に集まる。
 # (Linux から Windows 向けの NSIS だけを作るクロスビルドもあるが、MSI を作れないので CI では使わない。)
+# できたインストーラの隣には SHA-256 の `<インストーラ>.sha256` を置き (app-build.mjs)、GitHub の成果物の証明 (build provenance) を付ける
+# (build と build-signed の両方。タグでも手での起動でも。PR では動かない。docs/release.md#配布物を確かめる)。
 # 署名と公証の Secrets は、`v*` のタグからだけ使える environment `release` に置く (docs/release.md#secrets-を置く-初回だけ人の手)。
 # タグでは build-signed のジョブが environment を付けて署名し、それ以外 (手での起動・ブランチ) では build のジョブが environment を
 # 付けずに署名せずに作る (ブランチから動かしても environment の保護の規則で失敗しない)。2 つのジョブの中身は YAML のアンカーで共有する。
@@ -35,6 +37,12 @@ jobs:
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    # 成果物の証明 (actions/attest-build-provenance) に id-token と attestations を使う。
+    # release.yml の呼ぶジョブにも同じ権限が要る (呼ばれたワークフローは、呼んだ側が渡した権限より強くできない)
+    permissions: &build-permissions
+      contents: read
+      id-token: write
+      attestations: write
     env:
       # ジョブの要約の「Code signing」の表に出す、署名しなかった理由 (scripts/lib/app-signing.mjs)
       UGOE_UNSIGNED_REASON: not a v* tag (the signing secrets are only in the release environment)
@@ -136,6 +144,20 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: just app::build TARGET=${{ matrix.app }} PLATFORM=${{ matrix.platform }}
+      # インストーラの .sha256 (app-build.mjs が書いた) をまとめ、同じダイジェストに証明を付ける。
+      # 非公開のリポジトリでは GitHub のプランによって証明を作れないので、公開してからだけ付ける (チェックサムはいつでも作る)
+      - name: Collect checksums
+        id: checksums
+        run: |
+          sums="$RUNNER_TEMP/checksums.txt"
+          cat target/dist/${{ matrix.app }}/${{ matrix.platform }}/*.sha256 > "$sums"
+          cat "$sums"
+          echo "path=$sums" >> "$GITHUB_OUTPUT"
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: ${{ steps.checksums.outputs.path }}
       - uses: actions/upload-artifact@v7
         with:
           name: ugoe-${{ matrix.app }}-${{ matrix.label }}
@@ -153,11 +175,12 @@ jobs:
       deployment: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    permissions: *build-permissions
     strategy: *build-strategy
     defaults: *build-defaults
     steps: *build-steps
 
-  # `v*` のタグのときだけ、9 つのインストーラをそのタグの GitHub Release (下書き) に添付する。
+  # `v*` のタグのときだけ、9 つのインストーラとそれぞれの .sha256 をそのタグの GitHub Release (下書き) に添付する。
   # ほかの配布物のワークフローと同じ下書きに添付する (scripts/github-release.mjs、docs/release.md#github-release-の下書き)。
   # Release を公開するのは人の手。
   release:

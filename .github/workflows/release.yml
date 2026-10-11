@@ -31,21 +31,26 @@ jobs:
     permissions:
       contents: write
 
-  # エディタ・ビューア・スタジオのインストーラを下書きの Release に添付する (署名の Secrets は、呼ばれた側のジョブが
-  # environment `release` から読む。docs/release.md#secrets-を置く-初回だけ人の手)
+  # エディタ・ビューア・スタジオのインストーラと .sha256 を下書きの Release に添付する (署名の Secrets は、呼ばれた側のジョブが
+  # environment `release` から読む。docs/release.md#secrets-を置く-初回だけ人の手)。
+  # 成果物の証明 (build provenance) に id-token と attestations を渡す (呼ばれた側の build・build-signed のジョブが使う)
   apps:
     needs: checks
     uses: ./.github/workflows/editor-build.yml
     secrets: inherit
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
-  # C ABI のアーカイブを下書きの Release に添付する
+  # C ABI のアーカイブと .sha256 を下書きの Release に添付する (成果物の証明は apps と同じ)
   ffi:
     needs: checks
     uses: ./.github/workflows/ffi-release.yml
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
   # crates.io に公開する (environment `crates-io` の承認を待つ)
   crates:

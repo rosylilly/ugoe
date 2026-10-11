@@ -31,3 +31,7 @@ T0415・T0420 から、公開に関わる項目を分けた。公開の時期は
 - T0089 から: T0093 (配布物に SHA-256 のチェックサムと GitHub の成果物の証明を添える。利用者の決定 2026-10-11) と同じ形で、Release に添付する
   UPM の tarball と Godot の zip にもチェックサム (`<ファイル>.sha256`) と `actions/attest-build-provenance` の証明を付ける。
   T0093 が先に入っていればその形に合わせ、こちらが先なら T0093 が合わせる。T1410 (unity.yml の native を ffi-dist.mjs に寄せる) と同じ `unity.yml` を触る。
+- T0093 から (T0093 が先に入った): 形は docs/release.md#配布物を確かめる。`.sha256` は `scripts/lib/checksum.mjs` の `writeChecksum` で
+  (`sha256sum` の形の 1 行)、作ったジョブで `.sha256` をまとめたファイルを `actions/attest-build-provenance@v4` の `subject-checksums` に渡す
+  (公開のリポジトリのときだけ: `if: ${{ !github.event.repository.private }}`)。そのジョブに `id-token: write`・`attestations: write` を置き、
+  `release.yml` の呼ぶジョブにも同じ権限を書く。docs/release.md#配布物を確かめる の表の Unity・Godot の行も直す。

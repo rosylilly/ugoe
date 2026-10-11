@@ -20,7 +20,6 @@
 //   rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -38,6 +37,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { workspaceVersion } from "./crates.mjs";
 import { checkHeader, compileSample, run, runSample, STATIC_SYSTEM_LIBS } from "./ffi.mjs";
+import { readChecksum, sha256File, writeChecksum } from "./lib/checksum.mjs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -282,8 +282,7 @@ function pack(args) {
   if (PLATFORMS[platform].format === "zip")
     run(tar(), ["-a", "-c", "-f", archive, "-C", out, name]);
   else run(tar(), ["-c", "-z", "-f", archive, "-C", out, name]);
-  const sha = createHash("sha256").update(readFileSync(archive)).digest("hex");
-  writeFileSync(`${archive}.sha256`, `${sha}  ${basename(archive)}\n`);
+  const sha = writeChecksum(archive);
   console.log(`wrote ${archive} (sha256 ${sha})`);
   for (const f of files) console.log(`  ${name}/${f}`);
 }
@@ -308,8 +307,8 @@ function verify(args) {
 
   const sums = `${archive}.sha256`;
   if (existsSync(sums)) {
-    const want = readFileSync(sums, "utf8").split(/\s+/)[0];
-    const got = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    const want = readChecksum(sums);
+    const got = sha256File(archive);
     if (want !== got) fail(`sha256 mismatch for ${archive}: ${got} (expected ${want})`);
     console.log("sha256 ok");
   }

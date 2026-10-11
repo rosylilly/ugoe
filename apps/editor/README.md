@@ -182,7 +182,7 @@ just app::build TARGET=editor PLATFORM=windows   # エディタだけ (`just edi
 `just app::build` は、このうちインストーラ (`.deb`・`.rpm`・`.AppImage`・`.msi`・NSIS の `.exe`・`.dmg`) を
 `target/dist/<アプリ>/<OS>/` (`<OS>` は `windows`・`macos`・`linux`) に写す。バンドルのディレクトリはアプリの間で共有なので、
 製品名 (`tauri.conf.json` の `productName`。エディタは `ugoe`、ビューアは `ugoe-viewer`、スタジオは `ugoe-studio`) と版で始まり、
-そのビルドでできたファイルだけを選ぶ。CI はこのディレクトリを成果物として上げる。
+そのビルドでできたファイルだけを選ぶ。それぞれの隣に SHA-256 の `<インストーラ>.sha256` も置く。CI はこのディレクトリを成果物として上げる。
 
 実行ファイルだけなら `target/release/ugoe-editor` (Windows は `ugoe-editor.exe`) にもできる。
 
@@ -207,3 +207,7 @@ just app::build TARGET=editor PLATFORM=windows   # エディタだけ (`just edi
   「システム設定」→「プライバシーとセキュリティ」の「このまま開く」を押すか、
   `xattr -dr com.apple.quarantine /Applications/ugoe.app` で隔離属性を外す。
 - **Linux:** 警告はない。AppImage は `chmod +x` してから実行する。
+
+**ダウンロードしたものを確かめる:** 署名の有無によらず、GitHub Release のインストーラには `.sha256` と GitHub の成果物の証明を添える
+(Linux は署名しない代わりにこれで確かめる)。`sha256sum -c <インストーラ>.sha256`・`gh attestation verify <インストーラ> --repo rosylilly/ugoe`
+などの手順は [docs/release.md#配布物を確かめる](../../docs/release.md#配布物を確かめる)。

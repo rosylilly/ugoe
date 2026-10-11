@@ -14,7 +14,8 @@
 //   無ければ署名せずに作る。署名したかを最後に出し、GitHub Actions ではジョブの要約 (`$GITHUB_STEP_SUMMARY`) にも書く。
 // - それ以外の引数は、すべての tauri build にそのまま渡す (例: `--debug`、`--bundles deb`、`--target aarch64-apple-darwin`)。
 //
-// できたインストーラは target/dist/<アプリ>/<OS>/ に集め、最後に一覧を出す。
+// できたインストーラは target/dist/<アプリ>/<OS>/ に集め、それぞれの隣に SHA-256 の `<インストーラ>.sha256` を置き
+// (C ABI のアーカイブと同じ形。docs/release.md#配布物を確かめる)、最後に一覧を出す。
 // アプリごとの違い (同梱するもの・重ねる設定) は下の APPS だけに書く。
 
 import { spawnSync } from "node:child_process";
@@ -38,6 +39,7 @@ import {
   signingSummary,
   withoutEmptySigningEnv,
 } from "./lib/app-signing.mjs";
+import { writeChecksum } from "./lib/checksum.mjs";
 import { exportMbxPath } from "./lib/mbx.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -570,6 +572,8 @@ function main(argv) {
     }
     const files = collect(build, startedAt);
     if (build.signing.notarize && build.platform === "macos" && !notarizeDmgs(files)) return 1;
+    // 公証のステープルは .dmg を書き換えるので、チェックサムはその後に作る
+    for (const file of files) writeChecksum(join(root, file));
     results.push([build, files]);
   }
 
@@ -579,7 +583,9 @@ function main(argv) {
     return 0;
   }
   reportSigning(results.map(([build]) => build));
-  console.error("\nInstallers (copied from the tauri bundle directories):");
+  console.error(
+    "\nInstallers (copied from the tauri bundle directories, each with a .sha256 file):",
+  );
   for (const [build, files] of results) {
     if (files.length === 0) {
       console.error(

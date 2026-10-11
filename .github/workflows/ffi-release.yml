@@ -6,7 +6,8 @@ name: C ABI release
 #   タグとクレートの版が揃っているかを確かめ、
 #   アーカイブをタグの GitHub Release の下書きに添付する (scripts/github-release.mjs。docs/release.md#github-release-の下書き)。
 #   Release を公開するのは人の手。
-# - 手での起動 (workflow_dispatch) はアーカイブを作って確かめるだけ。Windows・macOS のランナーを使うので、PR では動かさない
+# - どちらでも、アーカイブに GitHub の成果物の証明 (build provenance) を付ける (公開のリポジトリのとき。docs/release.md#配布物を確かめる)。
+# - 手での起動 (workflow_dispatch) はアーカイブを作って確かめるだけ (下書きには添付しない)。Windows・macOS のランナーを使うので、PR では動かさない
 #   (配布物のスクリプトの単体テストは `just script-check`。T0091)。
 # - unity.yml も ugoe-ffi を OS ごとにビルドするが、共有しない。unity.yml は Android・iOS を含む Unity のプラグインの並びを作り、
 #   こちらは静的ライブラリ・ヘッダ・検査を含む。ugoe-ffi のビルドは 1 分ほどなので、重ねても時間はわずかで、2 つのワークフローの
@@ -45,6 +46,12 @@ jobs:
             os: macos-14
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # 成果物の証明 (actions/attest-build-provenance) に id-token と attestations を使う。
+    # release.yml の呼ぶジョブにも同じ権限が要る (editor-build.yml の build と同じ)
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain (rust-toolchain.toml)
@@ -75,6 +82,21 @@ jobs:
           for archive in dist/*.tar.gz dist/*.zip; do
             node scripts/ffi-dist.mjs verify "$archive"
           done
+      # pack が書いた .sha256 をまとめ、同じダイジェストに証明を付ける (確かめた後に。editor-build.yml の build と同じ。
+      # 非公開のリポジトリでは GitHub のプランによって作れないので、公開してからだけ付ける)
+      - name: Collect checksums
+        id: checksums
+        shell: bash
+        run: |
+          sums="$RUNNER_TEMP/checksums.txt"
+          cat dist/*.sha256 > "$sums"
+          cat "$sums"
+          echo "path=$sums" >> "$GITHUB_OUTPUT"
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: ${{ steps.checksums.outputs.path }}
       - uses: actions/upload-artifact@v7
         with:
           name: ugoe-ffi-archive-${{ matrix.name }}

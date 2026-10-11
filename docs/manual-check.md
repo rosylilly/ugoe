@@ -882,6 +882,8 @@ M10 (UI の品質) で直した画面を、ヘッドレスの Chrome (`just ui-a
 | D11 | 署名と公証をした macOS の `.app` と `.dmg`: `spctl --assess` が Notarized Developer ID、`xcrun stapler validate` が通る、ダウンロードした `.dmg` から入れて Gatekeeper の警告なしに開ける ([release.md の署名を確かめる](release.md#署名を確かめる)) | M | T0084 | 未 |
 | D12 | `v*` のタグで `Editor build` がインストーラを下書きの Release に添付し、ジョブの要約に署名の表が出る (Secrets の有無の両方) | — | T0084 | 未 |
 | D13 | environment `release` での署名 ([release.md の Secrets を置く](release.md#secrets-を置く-初回だけ人の手)): `v*` のタグの run で `build-signed` のジョブが environment の Secrets で署名する (required reviewers を付けたなら、承認を待ってから始まる)、ブランチを選んだ手での起動で `build` のジョブが保護の規則で失敗せずに署名せずに作り、要約の表に `not a v* tag` の理由が出る、タグを選んだ手での起動で署名する、`deployment: false` でデプロイメントが作られない | — | T0094 | 未 |
+| D14 | `v*` のタグ (公開のリポジトリ) で、インストーラと C ABI のアーカイブの `.sha256` が下書きの Release に添付され、`Editor build`・`C ABI release` の run の要約に成果物の証明が出る (リポジトリの Attestations にも並ぶ)。非公開のうちは証明のステップが飛ばされ、チェックサムだけが付く ([release.md の配布物を確かめる](release.md#配布物を確かめる)) | — | T0093 | 未 |
+| D15 | 下書きの Release からダウンロードしたインストーラ・アーカイブを `sha256sum -c`・`shasum -a 256 -c`・PowerShell の `Get-FileHash` で確かめ、`gh attestation verify <ファイル> --repo rosylilly/ugoe --source-ref refs/tags/v<版>` が通る。公開した `@ugoe/runtime` が npmjs.com で来歴を表示し、`npm audit signatures` が通る ([release.md の確かめ方](release.md#確かめ方-利用者)) | WML | T0093 | 未 |
 
 ## 結果を書き戻す
 

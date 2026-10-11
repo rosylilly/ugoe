@@ -385,3 +385,4 @@ cargo test -p ugoe-studio --features gpu-tests --test virtual_camera_gpu  # 仮�
 署名もエディタと同じ ([apps/editor/README.md#配布物の署名](../editor/README.md#配布物の署名))。署名の環境変数があれば、
 Tauri が署名しない仮想カメラの DLL にも `pnpm vcam` が同じコマンドで署名する
 ([docs/release.md#デスクトップアプリの署名](../../docs/release.md#デスクトップアプリの署名))。無ければ DLL も署名しない。
+チェックサム (`.sha256`) と成果物の証明もエディタと同じに添える ([docs/release.md#配布物を確かめる](../../docs/release.md#配布物を確かめる))。
