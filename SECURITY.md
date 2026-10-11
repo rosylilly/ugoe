@@ -10,8 +10,6 @@
 [Private vulnerability reporting](https://github.com/rosylilly/ugoe/security/advisories/new) で非公開に報告してください
 (リポジトリの「Security」タブの「Report a vulnerability」)。
 
-GitHub を使えない場合の連絡先: [INSERT CONTACT METHOD]
-
 報告は公開されず、メンテナだけが読みます。受け取ったら確認の返事をし、直し方と公開の時期を報告した人と相談します。
 返事と修正の期限は約束できません (少人数で開発しているため)。
 
@@ -42,8 +40,6 @@ Please **do not report vulnerabilities in public issues, discussions or pull req
 Report them privately through GitHub's
 [Private vulnerability reporting](https://github.com/rosylilly/ugoe/security/advisories/new)
 ("Report a vulnerability" in the repository's Security tab). Reports in English or Japanese are welcome.
-
-If you cannot use GitHub: [INSERT CONTACT METHOD]
 
 Only the maintainers can read the report. We will acknowledge it and discuss the fix and the disclosure timeline with you.
 We cannot promise a response or fix deadline (ugoe is developed by a small team).
