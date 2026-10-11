@@ -259,6 +259,10 @@ node scripts/crates.mjs order
     `TextureSource`・`BlinkPhase`) と、ライブラリが作って返すだけの struct (`ReadReport`・`FrameStats`・`DrawableState`・`Feature`・`FeatureDecl`)。
   - 設定の struct は既定値から始めて変える (`Toggles::default().with_physics(false)`・`ReadLimits::default().with_max_total_decompressed(n)`、
     または `let mut o = RendererOptions::default(); o.batch_draws = false;`)。よく使う設定には `with_*` を用意する。
+  - 組み込み先 (wasm・C ABI) が誤りと警告の種類 (`code`) を網羅しているかは、クレートの外の網羅の `match` では確かめられない。
+    代わりに、enum を持つクレートが種類ごとの見本を返す `#[doc(hidden)]` の `samples()` (`LoadError`・`DressUpError`・`LoadWarning`・
+    `CompileError`・`ComposeError`) を持ち、その中の網羅の `match` で見本の足し忘れに気づく。wasm (`crates/ugoe-wasm/src/codes.rs`) と
+    C ABI (`crates/ugoe-ffi/src/codes.rs`) のテストが、すべての見本を自分の種類と戻り値にできるか、`codes.json`・README に載っているかを確かめる (T0198)。
   - **付けない:** 使う側が中身を全部作って渡す小さな値の struct (`Rgb`・`View`・`Lighting`・トラッキングの入力 (`TrackingInput`・
     `BodyInput`・`Rotation`)・`LipSyncInput`・`PartOpacityInput`・`DressUpChange`・`Bundle`・`ModuleFile`・`TextureData`・`Rgba8`・
     `EventSource`・`RestPoseCollision`・`ResolvedMaskRef`・`Particle`)、`ugoe-model` のデータの struct (ツールが構造体の式で作る)、

@@ -41,6 +41,8 @@ extern crate alloc;
 extern crate std;
 
 mod animation;
+#[cfg(test)]
+mod codes;
 mod drawable;
 mod dress_up;
 mod error;

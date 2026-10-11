@@ -6,17 +6,17 @@
 //! `@ugoe/runtime` (`bindings/web/src/codes.test.ts`) は同じ `codes.json` を TypeScript の和型と比べるので、
 //! Rust と TS の片方だけに種類やキーを足すと、どちらかのテストが落ちる。
 //!
-//! wasm の種類を足したら、下の `guard` が網羅の誤りでコンパイルできなくなる。見本を足し、
+//! wasm の種類を足したら、下の `guard` などの網羅の `match` でコンパイルできなくなる。見本を足し、
 //! `UGOE_UPDATE_CODES=1 cargo test -p ugoe-wasm codes` で `codes.json` を書き直してから TS の型を直す。
-//! SDK とランタイムの誤りと警告 (`ugoe::LoadError`・`CompileError`・`DressUpError`・`ComposeError`・`LoadWarning`) は
-//! `#[non_exhaustive]` なので、`guard` の網羅では気づけない。それらに種類を足したら、ここの見本も足す。
+//! SDK とランタイムの誤りと警告 (`ugoe::LoadError`・`DressUpError`・`LoadWarning`・`CompileError`・`ComposeError`) は
+//! `#[non_exhaustive]` なので、見本は SDK とランタイムの `samples()` (それぞれの中の網羅の `match` で種類の足し忘れに気づく) を使う。
+//! SDK に種類が増えると、その見本の `code` が `codes.json` に無いので、このテストが落ちる。
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ugoe::format::{ChunkTag, FormatError, ReadLimit};
+use ugoe::format::FormatError;
 use ugoe::model::validate::ValidationError;
 use ugoe::render::RenderError;
-use ugoe::runtime::{CompileError, ComposeError};
 use ugoe::{DressUpError, LoadWarning};
 
 use crate::animation::AnimationError;
@@ -29,9 +29,8 @@ use crate::load::{ErrorInfo, LoadError, warning_json};
 type Codes = BTreeMap<String, BTreeSet<String>>;
 
 /// 見本の種類がすべて網羅されているかをコンパイルで確かめる (wasm の種類を足すと、ここが網羅の誤りになる)。
-/// SDK の種類 (`ugoe::LoadError`・`DressUpError` とその中身・`LoadWarning`) は `#[non_exhaustive]` なので網羅できない
-/// (足したら見本も足す)。`FormatError` と `RenderError` は、ほかの種類が `invalid_file`・`texture` にまとまるので網羅しない
-/// (`ugoe::LoadError::code`・`LoadError::info` で新しい `code` を割り当てたら、見本を足す)。
+/// SDK の種類 (`ugoe::LoadError`・`DressUpError`) は SDK の `samples()` が網羅する。`RenderError` は、ほかの種類が `texture` に
+/// まとまるので網羅しない (`LoadError::info` で新しい `code` を割り当てたら、見本を足す)。
 fn guard(error: &WardrobeError) {
     match error {
         WardrobeError::Load(e) => match e {
@@ -58,32 +57,11 @@ fn validation() -> Vec<ValidationError> {
     }]
 }
 
-/// 読み込みの失敗の見本 (`LoadError` のすべての種類と、`code` が分かれる中身)。網羅は [`wardrobe_errors`] の [`guard`] で確かめる。
+/// 読み込みの失敗の見本 (`LoadError` のすべての種類と、`code` が分かれる中身。ファイルとモデルの失敗は SDK の見本)。
+/// 網羅は [`wardrobe_errors`] の [`guard`] で確かめる。
 fn load_errors() -> Vec<LoadError> {
     let (index, width, height, max) = (0, 2, 1, 1);
-    vec![
-        FormatError::BadMagic.into(),
-        FormatError::UnsupportedVersion {
-            found: 9,
-            supported: 1,
-        }
-        .into(),
-        FormatError::UnsupportedContainerVersion {
-            found: 9,
-            supported: 1,
-        }
-        .into(),
-        FormatError::UnsupportedFeatures(vec!["x.a".into()]).into(),
-        FormatError::InvalidPhysics(validation()).into(),
-        FormatError::ReadLimitExceeded {
-            tag: ChunkTag::MODL,
-            limit: ReadLimit::TotalDecompressed,
-            max: 1,
-        }
-        .into(),
-        CompileError::Invalid(validation()).into(),
-        CompileError::UnknownParameter("p".into()).into(),
-        CompileError::Unsupported("x").into(),
+    let wasm = vec![
         LoadError::Texture {
             index,
             message: String::new(),
@@ -121,69 +99,18 @@ fn load_errors() -> Vec<LoadError> {
         RenderError::MissingTexture(0).into(),
         LoadError::Register(String::new()),
         LoadError::DeviceLost,
-    ]
+    ];
+    ugoe::LoadError::samples()
+        .into_iter()
+        .map(LoadError::Model)
+        .chain(wasm)
+        .collect()
 }
 
-/// 着せ替えの失敗の見本 (`WardrobeError` のすべての種類。読み込みの失敗は `load_module` が返しうるもの)。
+/// 着せ替えの失敗の見本 (`WardrobeError` のすべての種類。読み込みの失敗は `load_module` が返しうるもの、
+/// 付け外しの失敗は SDK の見本)。
 fn wardrobe_errors() -> Vec<WardrobeError> {
     let s = |v: &str| v.to_owned();
-    let compose = [
-        ComposeError::InvalidModuleName(s("m")),
-        ComposeError::DuplicateModule(s("m")),
-        ComposeError::UnknownSlot {
-            module: s("m"),
-            slot: s("s"),
-        },
-        ComposeError::SlotOccupied {
-            slot: s("s"),
-            first: s("a"),
-            second: s("b"),
-        },
-        ComposeError::AvatarLevel {
-            module: s("m"),
-            required: 2,
-            actual: Some(1),
-        },
-        ComposeError::MissingSlot {
-            module: s("m"),
-            slot: s("s"),
-        },
-        ComposeError::MissingParameter {
-            module: s("m"),
-            parameter: s("p"),
-        },
-        ComposeError::ParameterNotExposed {
-            module: s("m"),
-            slot: s("s"),
-            parameter: s("p"),
-        },
-        ComposeError::UnknownMask {
-            module: s("m"),
-            mesh: s("x"),
-            mask: s("k"),
-        },
-        ComposeError::TextureOutOfRange {
-            module: s("m"),
-            mesh: s("x"),
-            texture: 1,
-        },
-        ComposeError::UnknownCollider {
-            module: s("m"),
-            rig: s("r"),
-            collider: s("c"),
-        },
-        ComposeError::PoseNotExposed {
-            module: s("m"),
-            slot: s("s"),
-            part: s("p"),
-        },
-        ComposeError::Invalid(validation()),
-    ];
-    let dress_up = compose.into_iter().map(DressUpError::from).chain([
-        CompileError::Unsupported("x").into(),
-        DressUpError::Physics(validation()),
-        DressUpError::NotAttached(s("m")),
-    ]);
     load_errors()
         .into_iter()
         .map(WardrobeError::Load)
@@ -193,7 +120,11 @@ fn wardrobe_errors() -> Vec<WardrobeError> {
             WardrobeError::Texture(s("t")),
             WardrobeError::DeviceLost,
         ])
-        .chain(dress_up.map(WardrobeError::DressUp))
+        .chain(
+            DressUpError::samples()
+                .into_iter()
+                .map(WardrobeError::DressUp),
+        )
         .collect()
 }
 
@@ -260,23 +191,6 @@ fn animation_errors() -> Vec<AnimationError> {
     all
 }
 
-/// 読み込みの警告の見本 (`LoadWarning` のすべての種類)。
-fn load_warnings() -> Vec<LoadWarning> {
-    vec![
-        LoadWarning::TextureKtx2 { texture: 0 },
-        LoadWarning::TextureMissing { texture: 0 },
-        LoadWarning::NormalMapKtx2 { texture: 0 },
-        LoadWarning::PhysicsRemoved {
-            reason: "r".into(),
-            codes: vec!["invalid_module_name"],
-        },
-        LoadWarning::UnknownOptionalFeature {
-            feature: "f".into(),
-        },
-        LoadWarning::UnknownValue { path: "p".into() },
-    ]
-}
-
 fn add(codes: &mut Codes, info: &ErrorInfo) {
     codes
         .entry(info.code.to_owned())
@@ -310,7 +224,7 @@ fn actual() -> serde_json::Value {
         add(&mut dress_up_error, &error_info(error));
     }
     let mut load_warning = Codes::new();
-    for warning in load_warnings() {
+    for warning in LoadWarning::samples() {
         add_warning(&mut load_warning, &warning_json(&warning));
     }
     // 付け直せずに外したモジュール (`module_detached`)。`error` の中身は着せ替えの失敗と同じ。
@@ -368,4 +282,34 @@ fn codes_json_lists_every_code_and_field() {
          and update bindings/web/src (warnings.ts・limits.ts・render-errors.ts・create-errors.ts・settings-errors.ts)\n{}",
         serde_json::to_string_pretty(&actual).unwrap()
     );
+}
+
+/// SDK の見本は、どれも SDK の `code` と補足の値のキーのまま JS に渡る (wasm の側で別の種類にまとめない。
+/// 例外は、着せ替えの読み込みの失敗で上限を超えたもの以外を `invalid_file` にまとめること)。
+#[test]
+fn sdk_samples_keep_their_codes() {
+    let keys = |fields: &[(&'static str, serde_json::Value)]| -> Vec<&str> {
+        fields.iter().map(|(k, _)| *k).collect()
+    };
+    for sample in ugoe::LoadError::samples() {
+        let (code, fields) = (sample.code(), sample.fields());
+        let info = LoadError::Model(sample).info();
+        assert_eq!(info.code, code);
+        let expected: Vec<_> = fields.iter().map(|(k, _)| *k).collect();
+        assert_eq!(keys(&info.fields), expected, "{code}");
+    }
+    for sample in DressUpError::samples() {
+        let code = sample.code();
+        let expected: Vec<_> = sample.fields().iter().map(|(k, _)| *k).collect();
+        let info = error_info(&WardrobeError::DressUp(sample));
+        assert_eq!(info.code, code);
+        assert_eq!(keys(&info.fields), expected, "{code}");
+    }
+    for sample in LoadWarning::samples() {
+        let json = warning_json(&sample);
+        assert_eq!(json["code"], sample.code());
+        for (key, _) in sample.fields() {
+            assert!(json.get(key).is_some(), "{}: {key}", sample.code());
+        }
+    }
 }

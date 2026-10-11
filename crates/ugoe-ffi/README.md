@@ -409,7 +409,7 @@ if (r != UGOE_OK) {
 - 引数の誤り (NULL・UTF-8 でない JSON) は種類を持たない (`ugoe_error_kind` は NULL)。
 - `.ugoemod` の読み込み (`ugoe_module_create`) は今までどおり、上限を超えたものだけ `read_limit_exceeded` で、ほかは `invalid_file`
   ([着せ替え](#着せ替え-t0409)。wasm の `load_module` と同じ)。
-- テストは `tests/load_errors.rs`。
+- テストは `tests/load_errors.rs`。SDK のすべての種類に戻り値があり、この表に載っているかは `src/codes.rs` が確かめる (T0198)。
 
 ## テクスチャのデコード (T0466)
 

@@ -150,6 +150,36 @@ impl LoadWarning {
             Self::UnknownValue { path } => vec![("path", FieldValue::Text(path))],
         }
     }
+
+    /// 種類 (`code`) ごとの見本 ([`crate::LoadError::samples`] と同じ使い方)。`physics_removed` は検査のエラーの種類を持つもの
+    /// (補足の値のキーがすべて出る)。種類を足すと下の `match` が網羅の誤りになるので、見本も足す。
+    #[doc(hidden)]
+    pub fn samples() -> Vec<Self> {
+        let all = vec![
+            Self::TextureKtx2 { texture: 0 },
+            Self::TextureMissing { texture: 0 },
+            Self::NormalMapKtx2 { texture: 0 },
+            Self::PhysicsRemoved {
+                reason: "r".into(),
+                codes: vec!["invalid_module_name"],
+            },
+            Self::UnknownOptionalFeature {
+                feature: "f".into(),
+            },
+            Self::UnknownValue { path: "p".into() },
+        ];
+        for warning in &all {
+            match warning {
+                Self::TextureKtx2 { .. }
+                | Self::TextureMissing { .. }
+                | Self::NormalMapKtx2 { .. }
+                | Self::PhysicsRemoved { .. }
+                | Self::UnknownOptionalFeature { .. }
+                | Self::UnknownValue { .. } => {}
+            }
+        }
+        all
+    }
 }
 
 impl From<&ReadWarning> for LoadWarning {

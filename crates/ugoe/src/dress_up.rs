@@ -99,6 +99,27 @@ impl DressUpError {
         self.info().1
     }
 
+    /// 種類 (`code`) ごとの見本 ([`crate::LoadError::samples`] と同じ使い方)。合成とコンパイルの失敗は
+    /// [`ComposeError::samples`]・[`CompileError::samples`] のすべて。種類を足すと下の `match` が網羅の誤りになるので、見本も足す。
+    #[doc(hidden)]
+    pub fn samples() -> Vec<Self> {
+        let invalid = ValidationError::InvalidModuleName {
+            name: String::new(),
+        };
+        let all: Vec<Self> = ComposeError::samples()
+            .into_iter()
+            .map(Self::Compose)
+            .chain(CompileError::samples().into_iter().map(Self::Compile))
+            .chain([Self::Physics(vec![invalid]), Self::NotAttached("m".into())])
+            .collect();
+        for error in &all {
+            match error {
+                Self::Compose(_) | Self::Compile(_) | Self::Physics(_) | Self::NotAttached(_) => {}
+            }
+        }
+        all
+    }
+
     fn info(&self) -> (&'static str, Vec<(&'static str, FieldValue<'_>)>) {
         use FieldValue::Text;
         match self {

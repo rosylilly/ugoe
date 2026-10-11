@@ -9,6 +9,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use ugoe_core::Id;
@@ -155,6 +156,83 @@ impl ComposeError {
             // SDK の `DressUpError` の一覧で、物理の検査の失敗 (`invalid_physics`) と区別するための名前。
             Self::Invalid(_) => "invalid_composition",
         }
+    }
+
+    /// 種類ごとの見本を 1 つずつ返す ([`CompileError::samples`](crate::CompileError::samples) と同じ使い方)。
+    /// 種類を足すと下の `match` が網羅の誤りになるので、見本も足す。
+    #[doc(hidden)]
+    pub fn samples() -> Vec<Self> {
+        let s = |v: &str| v.to_owned();
+        let all = vec![
+            Self::InvalidModuleName(s("m")),
+            Self::DuplicateModule(s("m")),
+            Self::UnknownSlot {
+                module: s("m"),
+                slot: s("s"),
+            },
+            Self::SlotOccupied {
+                slot: s("s"),
+                first: s("a"),
+                second: s("b"),
+            },
+            Self::AvatarLevel {
+                module: s("m"),
+                required: 2,
+                actual: Some(1),
+            },
+            Self::MissingSlot {
+                module: s("m"),
+                slot: s("s"),
+            },
+            Self::MissingParameter {
+                module: s("m"),
+                parameter: s("p"),
+            },
+            Self::ParameterNotExposed {
+                module: s("m"),
+                slot: s("s"),
+                parameter: s("p"),
+            },
+            Self::UnknownMask {
+                module: s("m"),
+                mesh: s("x"),
+                mask: s("k"),
+            },
+            Self::TextureOutOfRange {
+                module: s("m"),
+                mesh: s("x"),
+                texture: 1,
+            },
+            Self::UnknownCollider {
+                module: s("m"),
+                rig: s("r"),
+                collider: s("c"),
+            },
+            Self::PoseNotExposed {
+                module: s("m"),
+                slot: s("s"),
+                part: s("p"),
+            },
+            Self::Invalid(vec![ValidationError::InvalidModuleName { name: s("") }]),
+        ];
+        for error in &all {
+            match error {
+                Self::InvalidModuleName(_)
+                | Self::DuplicateModule(_)
+                | Self::UnknownSlot { .. }
+                | Self::SlotOccupied { .. }
+                | Self::AvatarLevel { .. }
+                | Self::MissingSlot { .. }
+                | Self::MissingParameter { .. }
+                | Self::ParameterNotExposed { .. }
+                | Self::UnknownMask { .. }
+                | Self::TextureOutOfRange { .. }
+                | Self::UnknownCollider { .. }
+                | Self::PoseNotExposed { .. }
+                | Self::Invalid(_) => {}
+            }
+        }
+        all
     }
 }
 
@@ -565,6 +643,14 @@ mod tests {
 
     fn composed() -> Model {
         compose(&dress_up_base(), &[&long_hair_module(), &dress_module()]).unwrap()
+    }
+
+    /// 見本は種類ごとに 1 つで、`code` も種類ごとに違う。
+    #[test]
+    fn samples_have_distinct_codes() {
+        let samples = ComposeError::samples();
+        let codes: BTreeSet<_> = samples.iter().map(ComposeError::code).collect();
+        assert_eq!(codes.len(), samples.len());
     }
 
     #[test]

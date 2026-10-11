@@ -34,7 +34,7 @@ pub(crate) struct Warning {
 
 impl Warning {
     /// `warning` の種類と補足の値に、文 `message` を添える。
-    fn new(warning: &LoadWarning, message: &str) -> Self {
+    pub(crate) fn new(warning: &LoadWarning, message: &str) -> Self {
         Self {
             code: c_string(warning.code()),
             message: c_string(message),
@@ -44,6 +44,26 @@ impl Warning {
                 .map(|(k, v)| (c_string(k), c_string(&v.to_string())))
                 .collect(),
         }
+    }
+
+    /// 種類 (テストで読む)。
+    #[cfg(test)]
+    pub(crate) fn code(&self) -> &str {
+        self.code.to_str().unwrap_or_default()
+    }
+
+    /// 補足の値のキーと値 (テストで読む)。
+    #[cfg(test)]
+    pub(crate) fn fields(&self) -> Vec<(&str, &str)> {
+        self.fields
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.to_str().unwrap_or_default(),
+                    v.to_str().unwrap_or_default(),
+                )
+            })
+            .collect()
     }
 
     fn to_c(&self) -> UgoeWarning {

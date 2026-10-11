@@ -28,6 +28,30 @@ pub enum CompileError {
     Unsupported(&'static str),
 }
 
+impl CompileError {
+    /// 種類ごとの見本を 1 つずつ返す。組み込み先 (wasm・C ABI) のテストが、すべての種類を誤りのコードにできるかを
+    /// 確かめるのに使う (この enum は `#[non_exhaustive]` なので、クレートの外では網羅の `match` で気づけない)。
+    /// 種類を足すと下の `match` が網羅の誤りになるので、見本も足す。
+    #[doc(hidden)]
+    pub fn samples() -> Vec<Self> {
+        let all = vec![
+            Self::Invalid(vec![
+                ugoe_model::validate::ValidationError::InvalidModuleName {
+                    name: String::new(),
+                },
+            ]),
+            Self::UnknownParameter("p".into()),
+            Self::Unsupported("x"),
+        ];
+        for error in &all {
+            match error {
+                Self::Invalid(_) | Self::UnknownParameter(_) | Self::Unsupported(_) => {}
+            }
+        }
+        all
+    }
+}
+
 /// 評価用に前処理したモデル。複数インスタンスで共有できる (不変)。
 #[derive(Debug)]
 pub struct CompiledModel {

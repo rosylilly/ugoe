@@ -85,6 +85,48 @@ impl LoadError {
         matches!(self, Self::Format(e) if ReadLimitExceeded::from_error(e).is_some())
     }
 
+    /// 種類 (`code`) ごとの見本。組み込み先 (wasm・C ABI) のテストが、すべての種類を自分の誤りのコードにできるかを
+    /// 確かめるのに使う (この enum は `#[non_exhaustive]` なので、クレートの外では網羅の `match` で気づけない)。
+    ///
+    /// 種類を足すと下の `match` が網羅の誤りになるので、見本も足す。コンパイルの失敗は
+    /// [`CompileError::samples`] のすべて。ファイルの失敗 ([`FormatError`]) は種類が多く、`code` を割り当てたもの
+    /// ([`LoadError::code`]) 以外は `invalid_file` にまとまるので、`code` ごとに 1 つ (と `invalid_model` になる検査の失敗) だけを置く。
+    /// [`LoadError::code`] で新しい `code` を割り当てたら、ここにも足す。
+    #[doc(hidden)]
+    pub fn samples() -> Vec<Self> {
+        let format = [
+            FormatError::BadMagic,
+            FormatError::UnsupportedVersion {
+                found: 9,
+                supported: 1,
+            },
+            FormatError::UnsupportedContainerVersion {
+                found: 9,
+                supported: 1,
+            },
+            FormatError::UnsupportedFeatures(vec!["x.a".into()]),
+            FormatError::InvalidPhysics(vec![ValidationError::InvalidModuleName {
+                name: String::new(),
+            }]),
+            FormatError::ReadLimitExceeded {
+                tag: ugoe_format::ChunkTag::MODL,
+                limit: ugoe_format::ReadLimit::TotalDecompressed,
+                max: 1,
+            },
+        ];
+        let all: Vec<Self> = format
+            .into_iter()
+            .map(Self::Format)
+            .chain(CompileError::samples().into_iter().map(Self::Compile))
+            .collect();
+        for error in &all {
+            match error {
+                Self::Format(_) | Self::Compile(_) => {}
+            }
+        }
+        all
+    }
+
     fn info(&self) -> (&'static str, Vec<(&'static str, LoadErrorValue)>) {
         use LoadErrorValue::{Number, Text};
         let invalid = |errors: &[ValidationError]| {
@@ -261,6 +303,25 @@ mod tests {
         let format = LoadError::from(FormatError::Invalid(errors));
         assert_eq!(format.code(), "invalid_model");
         assert_eq!(format.fields(), expected);
+    }
+
+    /// 見本は [`LoadError::code`] の説明にあるすべての種類を含む。
+    #[test]
+    fn samples_cover_every_documented_code() {
+        let mut codes: Vec<_> = LoadError::samples().iter().map(LoadError::code).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(
+            codes,
+            [
+                "compile",
+                "invalid_file",
+                "invalid_model",
+                "read_limit_exceeded",
+                "unsupported_features",
+                "unsupported_version",
+            ]
+        );
     }
 
     #[test]
