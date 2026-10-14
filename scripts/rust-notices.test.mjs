@@ -190,6 +190,7 @@ test("cargo tree はターゲットごとに、通常の依存だけを手続き
   assert.equal(args[args.indexOf("--prefix") + 1], "none");
   assert.equal(args[args.indexOf("-f") + 1], "{p}");
   assert.equal(args[args.indexOf("--manifest-path") + 1], "a/Cargo.toml");
+  assert.equal(args[args.indexOf("--color") + 1], "never");
   assert.ok(args.includes("--frozen"));
 });
 

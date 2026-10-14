@@ -84,6 +84,7 @@ export function aboutList(toml, key) {
  * `cargo tree` の引数。配布物のバイナリに入るクレートを、実際のビルドと同じ解き方で並べる: 通常の依存だけをたどり
  * (`-e normal`。ビルドスクリプトとテストだけの依存を除く)、手続きマクロのクレートとその先を除き (`no-proc-macro`)、
  * 機能は resolver 2 のビルドと同じくホスト向けの依存と分けて `target` に向けて解く。1 行に 1 クレート (`{p}`) を出す。
+ * 色は付けない (`--color never`。CI の `CARGO_TERM_COLOR=always` で `(*)` などに色のエスケープが入ると読めない)。
  */
 export function treeArgs(manifest, target) {
   return [
@@ -96,6 +97,8 @@ export function treeArgs(manifest, target) {
     "none",
     "-f",
     "{p}",
+    "--color",
+    "never",
     "--frozen",
     "--manifest-path",
     manifest,
