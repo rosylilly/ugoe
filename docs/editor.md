@@ -2195,7 +2195,8 @@ T0516 ([crates/ugoe-mcp/README.md](../crates/ugoe-mcp/README.md#実行中のエ�
 - **ugoe-mcp の同梱 (サイドカー):** Tauri の `externalBin` (`binaries/ugoe-mcp-<ターゲットの三つ組>[.exe]`)。`tauri.conf.json` には書かず、
   `src-tauri/tauri.bundle.conf.json` を `just editor-build` が `--config` で重ねる (tauri-build は `externalBin` のファイルが無いと
   `cargo check`・`tauri dev` も失敗させるため)。重ねた設定の `beforeBuildCommand` が `pnpm sidecar` (`scripts/sidecar.mjs`) で
-  ターゲット向けに `ugoe-mcp` をリリースでビルドして置く (Linux から Windows 向けは cargo-xwin、`universal-apple-darwin` は lipo)。
+  ターゲット向けに `ugoe-mcp` をリリースでビルドして置く (Linux から Windows 向けは cargo-xwin、`universal-apple-darwin` は lipo。
+  Tauri はアプリをアーキテクチャごとにビルドしてそのたびにファイルを確かめるので、アーキテクチャごとの実行ファイルも置く)。
   開発中 (`just editor`) は同梱の `ugoe-mcp` が無いので、画面は PATH の `ugoe-mcp` を使うコマンドを出す。
 
 | コマンド | 内容 |

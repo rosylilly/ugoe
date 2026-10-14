@@ -7,7 +7,9 @@
 // ugoe-mcp をリリースでビルドし、Tauri の externalBin の名前の規則どおり
 // src-tauri/binaries/ugoe-mcp-<三つ組>[.exe] に置く。
 // - Linux などから Windows (*-windows-msvc) 向けに作るときは cargo-xwin を使う (just app::build PLATFORM=windows と同じ)。
-// - universal-apple-darwin は aarch64 と x86_64 を作って lipo で 1 つにする。
+// - universal-apple-darwin は aarch64 と x86_64 を作って lipo で 1 つにする。Tauri は universal でもアプリを
+//   アーキテクチャごとにビルドし、そのビルドスクリプトが ugoe-mcp-<アーキテクチャの三つ組> があるかを確かめるので、
+//   それぞれの実行ファイルも置く。
 // tauri.conf.json には externalBin を書かない (cargo check や tauri dev がサイドカーのビルドを待たずに済むように)。
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
@@ -53,7 +55,12 @@ const host = hostTriple();
 const triple = process.argv[2] ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? host;
 mkdirSync(binaries, { recursive: true });
 if (triple === "universal-apple-darwin") {
-  const parts = ["aarch64-apple-darwin", "x86_64-apple-darwin"].map((t) => build(t, host));
+  const archs = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+  const parts = archs.map((t) => {
+    const exe = build(t, host);
+    copyFileSync(exe, join(binaries, `ugoe-mcp-${t}`));
+    return exe;
+  });
   run("lipo", ["-create", "-output", join(binaries, `ugoe-mcp-${triple}`), ...parts]);
 } else {
   const ext = triple.includes("windows") ? ".exe" : "";
